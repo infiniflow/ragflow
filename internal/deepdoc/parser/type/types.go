@@ -195,6 +195,12 @@ type TableItem struct {
 	// by the pipeline and used by parity/replay harnesses to map replay
 	// intermediates (which are keyed by page) back onto the correct table.
 	Page int
+	// RenderVH marks tables assembled by an EE V/H (vertical/horizontal span)
+	// assembler. It is false for every OSS-built table; the EE tree's
+	// AttachSpanInfo sets it and the EE tree's ConstructTableVH renders those
+	// tables. It is a plain (non-build-tagged) field so the shared
+	// ConstructTable can dispatch without branching on the edition.
+	RenderVH bool
 }
 
 // TSRCell represents one table cell from TSR.
@@ -207,6 +213,11 @@ type TSRCell struct {
 	// so the production table assembly needs it to de-duplicate rows/columns
 	// the same way Python does.
 	Score float64
+	// ColSpan / RowSpan record grid span from the v/h edge-clustering
+	// assembler (deepdoc/vision/tsr.py port). 0 means no span. They are set
+	// only by the EE V/H builder; the OSS pipeline leaves them at zero.
+	ColSpan int
+	RowSpan int
 }
 
 func (c TSRCell) Bounds() (float64, float64, float64, float64) {

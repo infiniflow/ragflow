@@ -502,8 +502,8 @@ func requestField[T any](value *T, present bool) *T {
 // validateDocumentName mirrors Python's validate_document_name: length check
 // (101), then extension check (101), then duplicate check (102).
 func (s *DocumentService) validateDocumentName(ctx context.Context, doc *entity.Document, newName string) (common.ErrorCode, error) {
-	if len([]byte(newName)) > 255 {
-		return common.CodeArgumentError, errors.New("File name must be 255 bytes or less.")
+	if err := common.ValidateNameRunes(newName, common.NameLimit255); err != nil {
+		return common.CodeArgumentError, err
 	}
 
 	oldName := ""

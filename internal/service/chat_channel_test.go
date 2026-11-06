@@ -207,6 +207,44 @@ func TestChatChannelServiceUpdateChatChannelSuccess(t *testing.T) {
 	}
 }
 
+func TestChatChannelServiceCreateRejectsOverlongName(t *testing.T) {
+	setupChatChannelServiceTestDB(t)
+	_, err := NewChatChannelService().CreateChatChannel(
+		serviceTestContext(t, "tenant-1", "tenant-1"),
+		strings.Repeat("a", common.NameLimit128+1),
+		"dingtalk",
+		entity.JSONMap{},
+		nil,
+	)
+	if err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("CreateChatChannel overlong name error = %v, want length error", err)
+	}
+}
+
+func TestChatChannelServiceUpdateRejectsOverlongName(t *testing.T) {
+	db := setupChatChannelServiceTestDB(t)
+	createServiceTestChannel(t, db, &entity.ChatChannel{
+		ID:       "cc-overlong",
+		TenantID: "tenant-1",
+		Name:     "bot-a",
+		Channel:  "wecom",
+		Config:   entity.JSONMap{},
+		Status:   1,
+	})
+
+	_, code, err := NewChatChannelService().UpdateChatChannel(
+		serviceTestContext(t, "tenant-1", "tenant-1"),
+		"cc-overlong",
+		map[string]interface{}{"name": strings.Repeat("a", common.NameLimit128+1)},
+	)
+	if err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("UpdateChatChannel overlong name error = %v, want length error", err)
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("UpdateChatChannel code = %v, want CodeDataError", code)
+	}
+}
+
 func TestChatChannelServiceUpdateChatChannelRejectsCrossTenantDialog(t *testing.T) {
 	db := setupChatChannelServiceTestDB(t)
 	createServiceTestDialog(t, db, "dialog-2", "tenant-2", "Assistant B")

@@ -45,8 +45,8 @@ import (
 )
 
 const (
-	// MemoryNameLimit is the maximum length allowed for memory names
-	MemoryNameLimit = 128
+	// MemoryNameLimit is the maximum length allowed for memory names.
+	MemoryNameLimit = common.NameLimit128
 	// MemorySizeLimit is the maximum memory size in bytes (5MB)
 	MemorySizeLimit = 5242880
 )
@@ -535,7 +535,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, req *CreateMemoryReque
 		}
 	}
 
-	if err := common.ValidateName(req.Name); err != nil {
+	if err := common.ValidateNameRunes(req.Name, MemoryNameLimit); err != nil {
 		return nil, err
 	}
 
@@ -643,7 +643,7 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, memoryID string, req *
 
 	if req.Name != nil {
 		memoryName := strings.TrimSpace(*req.Name)
-		if err = common.ValidateName(memoryName); err != nil {
+		if err = common.ValidateNameRunes(memoryName, MemoryNameLimit); err != nil {
 			return nil, err
 		}
 		available, nameErr := common.NameAvailable(strings.TrimSpace(currentMemory.Name), memoryName, func(candidate string) (bool, error) {
@@ -1899,10 +1899,10 @@ func (s *MemoryService) listMemoryMessages(ctx context.Context, memory *entity.M
 		return nil, errors.New("message store is not initialized")
 	}
 	if page <= 0 {
-		page = 1
+		page = common.DefaultPage
 	}
 	if pageSize <= 0 {
-		pageSize = defaultMessageLimit
+		pageSize = common.DefaultPageSize
 	} else if pageSize > maxMessageLimit {
 		pageSize = maxMessageLimit
 	}

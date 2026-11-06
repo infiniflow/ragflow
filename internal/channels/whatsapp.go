@@ -39,6 +39,7 @@ import (
 
 const (
 	defaultGatewayBaseURL = "http://127.0.0.1:3005"
+	dockerGatewayBaseURL  = "http://host.docker.internal:3005"
 	defaultTimeout        = 30 * time.Second
 	startTimeout          = 2 * time.Minute
 	wsHandshakeTimeout    = 2 * time.Minute
@@ -101,7 +102,8 @@ var liveWhatsAppChannels sync.Map
 // newWhatsAppChannel creates a WhatsApp channel instance with default runtime settings filled in.
 func newWhatsAppChannel(account whatsappAccount) *whatsappChannel {
 	account.GatewayBaseURL = strings.TrimSpace(account.GatewayBaseURL)
-	allowDefaultGateway := account.GatewayBaseURL == "" || strings.TrimRight(account.GatewayBaseURL, "/") == defaultGatewayBaseURL
+	baseURL := strings.TrimRight(account.GatewayBaseURL, "/")
+	allowDefaultGateway := baseURL == "" || baseURL == defaultGatewayBaseURL || baseURL == dockerGatewayBaseURL
 	if account.GatewayBaseURL == "" {
 		account.GatewayBaseURL = defaultGatewayBaseURL
 	}

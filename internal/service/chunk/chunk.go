@@ -412,8 +412,8 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		Question:               modifiedQuestion,
 		KbIDs:                  []string(req.Datasets),
 		DocIDs:                 docIDs,
-		Page:                   common.CoalesceInt(req.Page, 1),
-		PageSize:               common.CoalesceInt(req.Size, 30),
+		Page:                   common.CoalesceInt(req.Page, common.DefaultPage),
+		PageSize:               common.CoalesceInt(req.Size, common.DefaultPageSize),
 		RerankCandidatesCount:  &rerankCandidatesCount,
 		KNNTopK:                &topK,
 		SimilarityThreshold:    &similarityThreshold,
@@ -836,8 +836,8 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest)
 
 	indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
 
-	page := common.CoalesceInt(req.Page, 1)
-	size := common.CoalesceInt(req.Size, 30)
+	page := common.CoalesceInt(req.Page, common.DefaultPage)
+	size := common.CoalesceInt(req.Size, common.DefaultPageSize)
 	keywords := strings.TrimSpace(req.Keywords)
 	var orderBy *types.OrderByExpr
 	matchExprs := make([]interface{}, 0, 1)

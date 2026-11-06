@@ -119,9 +119,18 @@ func (s *FileService) UploadFile(ctx context.Context, parentID string, files []*
 			}
 		}
 
-		location := fileObjNames[len(fileObjNames)-1]
-		for storageImpl.ObjExist(ctx, lastFolder.ID, location) {
-			location += "_"
+		baseName := fileObjNames[len(fileObjNames)-1]
+		uniqueName, err := s.getUniqueFilename(ctx, baseName, lastFolder.ID, tenantID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get unique filename: %w", err)
+		}
+
+		var location string
+		for attempt := 0; ; attempt++ {
+			location = utility.StorageObjectName(uniqueName, attempt, utility.StorageKeyMaxBytes)
+			if !storageImpl.ObjExist(ctx, lastFolder.ID, location) {
+				break
+			}
 		}
 
 		var src multipart.File
@@ -139,12 +148,6 @@ func (s *FileService) UploadFile(ctx context.Context, parentID string, files []*
 
 		if err = storageImpl.Put(ctx, lastFolder.ID, location, data); err != nil {
 			return nil, fmt.Errorf("failed to store file: %w", err)
-		}
-
-		var uniqueName string
-		uniqueName, err = s.getUniqueFilename(ctx, fileObjNames[len(fileObjNames)-1], lastFolder.ID, tenantID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get unique filename: %w", err)
 		}
 
 		fileRecord := &entity.File{
@@ -221,6 +224,9 @@ func (s *FileService) UploadInfos(ctx context.Context, files []*multipart.FileHe
 			contentType = http.DetectContentType(data)
 		}
 		filename, contentType, data = utility.NormalizeUploadInfoContent(filename, contentType, data)
+		if err := validateUploadInfoFilename(filename); err != nil {
+			return nil, err
+		}
 		resp, err := s.storeUploadInfoBlob(ctx, storageImpl, filename, contentType, data)
 		if err != nil {
 			return nil, err
@@ -292,7 +298,16 @@ func (s *FileService) checkUploadInfoHealth(ctx context.Context, filename string
 			}
 		}
 	}
-	if len([]byte(filename)) > 255 {
+	if err := validateUploadInfoFilename(filename); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateUploadInfoFilename enforces the stored name limit after any
+// content-derived extension has been added.
+func validateUploadInfoFilename(filename string) error {
+	if err := common.ValidateNameRunes(filename, common.NameLimit255); err != nil {
 		return fmt.Errorf("exceed the maximum length of file name")
 	}
 	return nil

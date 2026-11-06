@@ -68,7 +68,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		return nil, common.CodeDataError, errors.New("dataset name can't be empty")
 	}
 	if utf8.RuneCountInString(name) > entity.DatasetNameLimit {
-		return nil, common.CodeDataError, fmt.Errorf("Dataset name length is %d which is large than %d", utf8.RuneCountInString(name), entity.DatasetNameLimit)
+		return nil, common.CodeDataError, fmt.Errorf("dataset name length is %d which is larger than %d", utf8.RuneCountInString(name), entity.DatasetNameLimit)
 	}
 
 	tenant, err := d.tenantDAO.GetByID(ctx, dao.DB, tenantID)
@@ -323,7 +323,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 // dedupeDatasetName returns a non-colliding dataset name within the tenant,
 // appending (1), (2), ... when the requested name is already taken.
 func (d *DatasetService) dedupeDatasetName(ctx context.Context, name, tenantID string) (string, error) {
-	return common.UniqueNameCharacters(name, entity.DatasetNameLimit, func(candidate string) (bool, error) {
+	return common.UniqueName(name, entity.DatasetNameLimit, func(candidate string) (bool, error) {
 		return d.kbDAO.NameExists(ctx, dao.DB, tenantID, candidate)
 	})
 }
@@ -605,10 +605,10 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 	name = strings.TrimSpace(name)
 
 	if page <= 0 {
-		page = 1
+		page = common.DefaultPage
 	}
 	if pageSize <= 0 {
-		pageSize = 30
+		pageSize = common.DefaultPageSize
 	}
 
 	terms = keepDatasetOrderTerms(terms)

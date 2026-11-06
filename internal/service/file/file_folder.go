@@ -439,7 +439,7 @@ func (s *FileService) createFolderRecursive(ctx context.Context, parentFolder *e
 // getUniqueFilename returns a non-colliding file name within the folder,
 // appending (1), (2), ... when the requested name is already taken.
 func (s *FileService) getUniqueFilename(ctx context.Context, name, parentID, tenantID string) (string, error) {
-	return common.UniqueFileName(name, 255, func(candidate string) (bool, error) {
+	return common.UniqueFileName(name, common.NameLimit255, func(candidate string) (bool, error) {
 		return s.fileDAO.NameExists(ctx, dao.DB, candidate, parentID, tenantID, "")
 	})
 }
@@ -497,9 +497,9 @@ func (s *FileService) CreateFolder(ctx context.Context, name, parentID, fileType
 	var uniqueName string
 	if fileType == FileTypeFolder {
 		// A folder is not a file: append the counter to the whole name.
-		uniqueName, err = common.UniqueName(name, 255, existsInParent)
+		uniqueName, err = common.UniqueName(name, common.NameLimit255, existsInParent)
 	} else {
-		uniqueName, err = common.UniqueFileName(name, 255, existsInParent)
+		uniqueName, err = common.UniqueFileName(name, common.NameLimit255, existsInParent)
 	}
 	if err != nil {
 		return nil, err
@@ -596,7 +596,15 @@ func (s *FileService) MoveFiles(ctx context.Context, srcFileIDs []string, destFi
 		}
 	}
 
+	trimmedName := strings.TrimSpace(newName)
+	if newName != "" && trimmedName == "" {
+		return errors.New("new_name must not be blank")
+	}
+	newName = trimmedName
 	if newName != "" {
+		if err := common.ValidateNameRunes(newName, common.NameLimit255); err != nil {
+			return err
+		}
 		if len(srcFileIDs) > 1 {
 			return errors.New("new name can only be used with a single file")
 		}

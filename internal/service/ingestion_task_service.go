@@ -15,6 +15,7 @@ import (
 	ingestionpipeline "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/observability"
 	"ragflow/internal/permission"
+	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -1166,6 +1167,7 @@ func (s *IngestionTaskService) buildOpenLogInput(ctx context.Context, task *enti
 			}
 		}
 	}
+	input.PipelineTitle = utility.TruncateRunes(input.PipelineTitle, common.PipelineTitleLimit)
 	return input, nil
 }
 

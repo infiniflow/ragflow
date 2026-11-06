@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -46,6 +47,20 @@ func TestCreateConnectorRejectsNonPositiveFreq(t *testing.T) {
 		} else if !errors.Is(err, ErrConnectorInvalidFreq) {
 			t.Fatalf("%s: error = %v, want ErrConnectorInvalidFreq", name, err)
 		}
+	}
+}
+
+func TestCreateConnectorRejectsOverlongName(t *testing.T) {
+	setupFreqValidationConnector(t)
+	svc := NewConnectorService()
+
+	_, err := svc.CreateConnector(serviceTestContext(t, "user-1", "user-1"), &CreateConnectorRequest{
+		Name:   strings.Repeat("a", common.NameLimit128+1),
+		Source: "rss",
+		Config: entity.JSONMap{},
+	})
+	if err == nil || !errors.Is(err, ErrConnectorInvalidName) {
+		t.Fatalf("CreateConnector overlong name error = %v, want ErrConnectorInvalidName", err)
 	}
 }
 
