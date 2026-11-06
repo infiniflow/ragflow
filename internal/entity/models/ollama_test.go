@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"ragflow/internal/common"
+	"reflect"
 	"testing"
 )
 
@@ -259,6 +260,85 @@ func assertOllamaToolCallArgumentsAreObjects(t *testing.T, body map[string]inter
 	}
 	if !found {
 		t.Fatal("no assistant message with tool_calls in request payload")
+	}
+}
+
+// TestOllamaBuildMessagesDoesNotMutateToolCallArguments asserts that
+// buildOllamaMessages leaves the caller's messages slice untouched: the
+// assistant tool_calls arguments must still be a JSON string (the form
+// appendToolResults and OpenAI-compatible providers expect on the wire) after
+// the Ollama request path has converted its own copy to objects. This is the
+// load-bearing part of the implementation, so it is covered as a property
+// test rather than only in prose.
+func TestOllamaBuildMessagesDoesNotMutateToolCallArguments(t *testing.T) {
+	withSSRFBypass(t)
+	messages := ollamaToolCallTestMessages()
+	original := messages[1].ToolCalls[0]["function"].(map[string]any)["arguments"].(string)
+
+	_ = buildOllamaMessages(messages)
+
+	got, ok := messages[1].ToolCalls[0]["function"].(map[string]any)["arguments"].(string)
+	if !ok {
+		t.Fatalf("input arguments type=%T, want string (must not be mutated)",
+			messages[1].ToolCalls[0]["function"].(map[string]any)["arguments"])
+	}
+	if got != original {
+		t.Fatalf("input arguments=%q, want %q (must not be mutated)", got, original)
+	}
+}
+
+// TestOllamaNormalizesMalformedToolCallArguments verifies that empty,
+// whitespace-only, and unparseable string arguments are normalised to an empty
+// JSON object rather than left as strings. Ollama rejects the whole /api/chat
+// request when arguments is not an object, so leaving these as strings would
+// reproduce the 400 the request-path conversion was meant to close.
+func TestOllamaNormalizesMalformedToolCallArguments(t *testing.T) {
+	withSSRFBypass(t)
+	messages := []Message{
+		{Role: "user", Content: "run the tools"},
+		{
+			Role:    "assistant",
+			Content: nil,
+			ToolCalls: []map[string]any{
+				{"id": "call_empty", "type": "function", "function": map[string]any{"name": "a", "arguments": ""}},
+				{"id": "call_ws", "type": "function", "function": map[string]any{"name": "b", "arguments": "   "}},
+				{"id": "call_bad", "type": "function", "function": map[string]any{"name": "c", "arguments": "{not json"}},
+				{"id": "call_arr", "type": "function", "function": map[string]any{"name": "d", "arguments": "[1,2]"}},
+				{"id": "call_scalar", "type": "function", "function": map[string]any{"name": "e", "arguments": "123"}},
+				{"id": "call_obj", "type": "function", "function": map[string]any{"name": "f", "arguments": `{"x":1}`}},
+			},
+		},
+	}
+
+	apiMessages := buildOllamaMessages(messages)
+	assistant, ok := apiMessages[1].(map[string]any)
+	if !ok {
+		t.Fatalf("apiMessages[1]=%T, want map", apiMessages[1])
+	}
+	calls, ok := assistant["tool_calls"].([]map[string]any)
+	if !ok {
+		t.Fatalf("tool_calls=%T, want []map[string]any", assistant["tool_calls"])
+	}
+	want := map[string]any{}
+	for i, call := range calls {
+		fn, ok := call["function"].(map[string]any)
+		if !ok {
+			t.Fatalf("call[%d].function=%T, want map", i, call["function"])
+		}
+		args, ok := fn["arguments"].(map[string]any)
+		if !ok {
+			t.Errorf("call[%d] arguments=%v (%T), want JSON object", i, fn["arguments"], fn["arguments"])
+			continue
+		}
+		if call["id"] == "call_obj" {
+			if args["x"] != float64(1) {
+				t.Errorf("call[%d] arguments=%v, want {\"x\":1}", i, args)
+			}
+			continue
+		}
+		if !reflect.DeepEqual(args, want) {
+			t.Errorf("call[%d] (id=%v) arguments=%v, want empty object {}", i, call["id"], args)
+		}
 	}
 }
 

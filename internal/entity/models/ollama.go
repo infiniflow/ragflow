@@ -89,10 +89,7 @@ func buildOllamaMessages(messages []Message) []map[string]any {
 // copy whose function.arguments has been converted from the internal
 // JSON-string form to a JSON object, matching the Ollama chat API. The
 // original messages are not mutated: a history that later fails over to an
-// OpenAI-compatible provider must still carry arguments as a string. A
-// non-string value (a provider that already ships an object) or an unparseable
-// string is left untouched so the request still carries the tool call for
-// Ollama to surface.
+// OpenAI-compatible provider must still carry arguments as a string.
 func ollamaObjectArguments(apiMessages []map[string]any) {
 	for _, msg := range apiMessages {
 		calls, ok := msg["tool_calls"].([]map[string]any)
@@ -104,25 +101,47 @@ func ollamaObjectArguments(apiMessages []map[string]any) {
 }
 
 // ollamaToolCallsWithObjectArguments returns a shallow copy of calls in which
-// each call's function map (also copied) has its arguments converted from a
-// JSON string to a JSON object when possible.
+// each call's function map (also copied) has its arguments converted to the
+// JSON object Ollama expects. Empty, whitespace-only, or unparseable string
+// arguments are normalised to an empty object: Ollama rejects the whole
+// /api/chat request with an opaque "cannot unmarshal string into Go struct
+// field" when arguments is not an object, so leaving a string through does not
+// surface the tool call — it fails the request. A non-string value that is
+// already a map (for example a provider that ships arguments as an object) is
+// left untouched.
 func ollamaToolCallsWithObjectArguments(calls []map[string]any) []map[string]any {
 	converted := make([]map[string]any, len(calls))
 	for i, call := range calls {
 		cp := cloneMap(call)
 		if fn, ok := cp["function"].(map[string]any); ok {
 			fn = cloneMap(fn)
-			if argsStr, ok := fn["arguments"].(string); ok && strings.TrimSpace(argsStr) != "" {
-				var argsObj map[string]any
-				if err := json.Unmarshal([]byte(argsStr), &argsObj); err == nil {
-					fn["arguments"] = argsObj
-				}
-			}
+			fn["arguments"] = ollamaArgumentsAsObject(fn["arguments"])
 			cp["function"] = fn
 		}
 		converted[i] = cp
 	}
 	return converted
+}
+
+// ollamaArgumentsAsObject converts the OpenAI JSON-string form of tool-call
+// arguments to the JSON object Ollama expects. A value that is already a map
+// is returned as-is; any string (empty, whitespace-only, or unparseable) is
+// decoded when possible and otherwise normalised to an empty object so the
+// request is not rejected over a malformed arguments field. Other value types
+// are returned unchanged.
+func ollamaArgumentsAsObject(value any) any {
+	if argsObj, ok := value.(map[string]any); ok {
+		return argsObj
+	}
+	argsStr, ok := value.(string)
+	if !ok {
+		return value
+	}
+	var obj map[string]any
+	if err := json.Unmarshal([]byte(argsStr), &obj); err == nil {
+		return obj
+	}
+	return map[string]any{}
 }
 
 func ollamaMultimodalContent(content interface{}) (string, []string, bool) {
