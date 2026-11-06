@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"ragflow/internal/common"
+	"strings"
 	"testing"
 )
 
@@ -340,5 +341,81 @@ func TestOllamaChatToolCallsWithoutContentOrThinking(t *testing.T) {
 	}
 	if len(response.ToolCalls) != 1 {
 		t.Fatalf("len(ToolCalls)=%d, want 1", len(response.ToolCalls))
+	}
+}
+
+// TestOllamaStreamingResponsePreservesToolCalls verifies the streaming handler
+// accumulates tool_calls across stream events and writes them to
+// chatConfig.ToolCallsResult after done, so the streaming agent loop
+// (chat_tools.go) sees the calls instead of failing with "round N: no content
+// and no tool_calls". Counterpart to TestOllamaChatPreservesToolCalls for the
+// non-streaming path. Calls handleOllamaStreamingResponse directly so the
+// assertion does not depend on tool dispatch in the integration loop.
+func TestOllamaStreamingResponsePreservesToolCalls(t *testing.T) {
+	withSSRFBypass(t)
+	body := strings.NewReader(`{"message":{"content":"","thinking":"","tool_calls":[{"function":{"name":"query_summary","arguments":{"monthFrom":"1","monthTo":"10"}}}]},"done":true}` + "\n")
+	chatCfg := &ChatConfig{}
+
+	err := handleOllamaStreamingResponse(body, &common.ModelUsage{}, chatCfg, func(*string, *string) error { return nil })
+	if err != nil {
+		t.Fatalf("handleOllamaStreamingResponse: %v", err)
+	}
+	if chatCfg.ToolCallsResult == nil {
+		t.Fatal("ToolCallsResult=nil, want non-nil (streaming path dropped tool calls)")
+	}
+	calls := *chatCfg.ToolCallsResult
+	if len(calls) != 1 {
+		t.Fatalf("len(ToolCallsResult)=%d, want 1", len(calls))
+	}
+	fn, ok := calls[0]["function"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("function=%v, want map", calls[0]["function"])
+	}
+	if fn["name"] != "query_summary" {
+		t.Errorf("name=%v, want query_summary", fn["name"])
+	}
+	args, _ := fn["arguments"].(string)
+	var parsed map[string]interface{}
+	if err := json.Unmarshal([]byte(args), &parsed); err != nil {
+		t.Fatalf("arguments=%q is not valid JSON: %v", args, err)
+	}
+	if parsed["monthFrom"] != "1" || parsed["monthTo"] != "10" {
+		t.Errorf("arguments=%v, want {monthFrom:1, monthTo:10}", parsed)
+	}
+}
+
+// TestOllamaToolCallsMissingArgumentsDefaultsToEmptyObject covers the case
+// where a tool call's function map has no arguments field. Previously
+// json.Marshal(nil) produced the string "null", which the tool then received
+// as nil args; the conversion now defaults to "{}" so the tool gets an empty
+// object, matching how the request direction handles empty arguments (#22061).
+func TestOllamaToolCallsMissingArgumentsDefaultsToEmptyObject(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"message":{"content":"","thinking":"","tool_calls":[{"function":{"name":"no_args"}}]},"done":true}`)
+	}))
+	defer srv.Close()
+
+	response, err := newOllamaForChatTest(srv.URL).ChatWithMessages(
+		t.Context(),
+		"qwen3.5:9b",
+		[]Message{{Role: "user", Content: "test"}},
+		&APIConfig{},
+		&ChatConfig{},
+		&common.ModelUsage{},
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	if len(response.ToolCalls) != 1 {
+		t.Fatalf("len(ToolCalls)=%d, want 1", len(response.ToolCalls))
+	}
+	fn, ok := response.ToolCalls[0]["function"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("function=%v, want map", response.ToolCalls[0]["function"])
+	}
+	args, _ := fn["arguments"].(string)
+	if args != "{}" {
+		t.Errorf("arguments=%q, want {} (missing arguments should default to empty object, not null)", args)
 	}
 }
