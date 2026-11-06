@@ -15,8 +15,8 @@ import (
 // otherwise activate the EE ClickHouse sink.
 func TestIngestionLogConfigStubIsInertNoSection(t *testing.T) {
 	c := &Config{}
-	if err := c.ParseIngestionLogConfig(viper.New()); err != nil {
-		t.Fatalf("non-ee ParseIngestionLogConfig must be a no-op: %v", err)
+	if err := c.ParseIngestLogConfig(viper.New()); err != nil {
+		t.Fatalf("non-ee ParseIngestLogConfig must be a no-op: %v", err)
 	}
 	if c.ingestionLog.Type != "" {
 		t.Fatalf("non-ee stub must not set Type, got %q", c.ingestionLog.Type)
@@ -33,8 +33,8 @@ func TestIngestionLogConfigStubIgnoresClickHouse(t *testing.T) {
 		t.Fatalf("read config: %v", err)
 	}
 	c := &Config{}
-	if err := c.ParseIngestionLogConfig(v); err != nil {
-		t.Fatalf("non-ee ParseIngestionLogConfig must be a no-op: %v", err)
+	if err := c.ParseIngestLogConfig(v); err != nil {
+		t.Fatalf("non-ee ParseIngestLogConfig must be a no-op: %v", err)
 	}
 	if c.ingestionLog.Type != "" {
 		t.Fatalf("non-ee stub must ignore [ingestion_log].type, got %q", c.ingestionLog.Type)

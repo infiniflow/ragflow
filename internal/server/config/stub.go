@@ -99,10 +99,10 @@ func (c *Config) ParseOAuthConfig(v *viper.Viper) error { return nil }
 
 func (c *Config) ParseAuditConfig(v *viper.Viper) error { return nil }
 
-// ParseIngestionLogConfig ignores ingestion-log configuration: the OSS build has
+// ParseIngestLogConfig ignores ingestion-log configuration: the OSS build has
 // no ingestion event sink. The EE build overrides this with the real parser that
 // wires ingestion lifecycle events into ClickHouse.
-func (c *Config) ParseIngestionLogConfig(v *viper.Viper) error { return nil }
+func (c *Config) ParseIngestLogConfig(v *viper.Viper) error { return nil }
 
 func (c *Config) GetAuditConfig() AuditConfig {
 	return c.audit
