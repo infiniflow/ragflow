@@ -395,6 +395,11 @@ export const useDeleteTenantUser = () => {
       });
       if (data.code === 0) {
         message.success(t('message.deleted'));
+        // Refresh the member table; the tenant list also changes when the
+        // deleted user is the current user quitting a team.
+        queryClient.invalidateQueries({
+          queryKey: [UserSettingApiAction.ListTenantUser],
+        });
         queryClient.invalidateQueries({
           queryKey: [UserSettingApiAction.ListTenant],
         });
