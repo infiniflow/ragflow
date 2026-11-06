@@ -56,7 +56,7 @@ func (f *fakeAgentFileService) UploadFromURL(ctx context.Context, _ string) (map
 	}
 	return f.urlUpload, nil
 }
-func (f *fakeAgentFileService) DownloadAgentFile(ctx context.Context, _ string, _ string) ([]byte, error) {
+func (f *fakeAgentFileService) DownloadAgentFile(ctx context.Context, _ string) ([]byte, error) {
 	if f.err != nil {
 		return nil, f.err
 	}

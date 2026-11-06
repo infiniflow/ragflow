@@ -630,7 +630,7 @@ func dispatchMinerUPDF(
 	// That default used to arrive implicitly through defaultSetups() - which
 	// also fed captions, so a knowledge base that never chose a language got
 	// Chinese captions (issue #20727). Keeping it here confines it to the engine.
-	lang := firstNonEmpty(getStringOr(setup, "mineru_lang", ""), getStringOr(setup, "lang", ""))
+	lang := common.FirstNonEmpty(getStringOr(setup, "mineru_lang", ""), getStringOr(setup, "lang", ""))
 	if lang == "" {
 		lang = minerUDefaultLanguage
 	}

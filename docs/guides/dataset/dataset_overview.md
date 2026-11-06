@@ -18,15 +18,15 @@ In terms of responsibility, a dataset is more than a "folder". It converts raw d
 
 ## Basic Information
 
-The configuration page allows you to manage the core settings of a knowledge base. Basic information includes the name, language, avatar, description, permissions, embedding model and PageRank.
+The configuration page allows you to manage the core settings of a Dataset. Basic information includes the name, language, avatar, description, permissions, embedding model and PageRank.
 
-- **Name**: The name of the knowledge base. It can be changed after creation and is displayed on knowledge base cards and detail page headers.
-- **Language**: The primary language of the knowledge base. This setting affects the language assumptions used during parsing and model processing.
-- **Avatar**: The avatar of the knowledge base. Image uploads are supported, with a maximum file size of 4 MB.
-- **Description**: A description of the knowledge base, used to explain its data scope, business purpose, or maintenance information.
-- **Permissions**: Controls access to the knowledge base and the scope of allowed operations.
+- **Name**: The name of the Dataset. It can be changed after creation and is displayed on Dataset cards and detail page headers.
+- **Language**: The primary language of the Dataset. This setting affects the language assumptions used during parsing and model processing.
+- **Avatar**: The avatar of the Dataset. Image uploads are supported, with a maximum file size of 4 MB.
+- **Description**: A description of the Dataset, used to explain its data scope, business purpose, or maintenance information.
+- **Permissions**: Controls access to the Dataset and the scope of allowed operations.
 - **Embedding model**: The model used to vectorize chunks. When chunks already exist, changing the model requires a compatibility check against existing vectors. Saving the change does not automatically re-embed existing chunks.
-- **PageRank**: Sets the PageRank score for the knowledge base. During retrieval, this score is added to the hybrid similarity score of matching chunks from the knowledge base, increasing their ranking weight. This is useful when searching across multiple knowledge bases, and you want to prioritize content from a specific knowledge base.
+- **PageRank**: Sets the PageRank score for the Dataset. During retrieval, this score is added to the hybrid similarity score of matching chunks from the Dataset, increasing their ranking weight. This is useful when searching across multiple Datasets, and you want to prioritize content from a specific Dataset.
 
 ## Dataset Page Overview
 

@@ -11,7 +11,7 @@ export interface MemoryListParams {
   page_size?: number;
   orderby?: string;
   desc?: boolean;
-  owner_ids?: string;
+  tenant_id?: string;
 }
 export type MemoryType = 'raw' | 'semantic' | 'episodic' | 'procedural';
 export type StorageType = 'table' | 'graph';

@@ -20,9 +20,7 @@ import (
 )
 
 func TestPaddleOCRHighlightsThroughPipeline(t *testing.T) {
-	previous := common.AllowAnyHostForTest
-	common.AllowAnyHostForTest = true
-	t.Cleanup(func() { common.AllowAnyHostForTest = previous })
+	t.Setenv(common.EnvAllowAnyHost, "true")
 	tokenizer.SetEngineType("infinity")
 	t.Cleanup(func() { tokenizer.SetEngineType("") })
 	body, err := os.ReadFile("../../../entity/models/testdata/paddleocr_layout.json")

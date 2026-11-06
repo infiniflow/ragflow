@@ -21,6 +21,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
 // page builds a wikiPageProjection with the full "<page_type>/<slug>" identity.
@@ -69,7 +71,7 @@ func TestProjectWikiGraphRowsWritesSearchContent(t *testing.T) {
 	var payload struct {
 		Description string `json:"description"`
 	}
-	if err := json.Unmarshal([]byte(metaString(entity, "content_with_weight")), &payload); err != nil {
+	if err := json.Unmarshal([]byte(kccommon.MetaString(entity, "content_with_weight")), &payload); err != nil {
 		t.Fatalf("decode graph entity: %v", err)
 	}
 	if payload.Description != p.Summary {

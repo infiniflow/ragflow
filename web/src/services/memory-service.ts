@@ -28,7 +28,6 @@ const {
   deleteMemoryMessage,
   getMessageContent,
   updateMessageState,
-  // getMemoryDetailShare,
 } = api;
 const methods = {
   createMemory: {

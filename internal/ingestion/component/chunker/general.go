@@ -260,6 +260,7 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 		}
 		joinSep := "\n"
 		if !customDelimiter {
+			body, bodySources = joinPDFContinuations(body, bodySources)
 			body = separateGeneralTextBlocks(body)
 			body, bodySources = splitPDFUnits(body, bodySources, primaryPattern, true)
 			joinSep = ""
@@ -268,7 +269,7 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 		chunks = append(chunks, merged...)
 		chunkSources = append(chunkSources, mergedSources...)
 		body = body[:0]
-		bodySources = bodySources[:0]
+		bodySources = nil
 	}
 	for index, unit := range units {
 		if itemDocType(unit) == "text" {
