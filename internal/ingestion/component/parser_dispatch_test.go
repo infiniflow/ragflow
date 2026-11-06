@@ -2160,3 +2160,44 @@ func TestConfigureParserFromSetups_Visual(t *testing.T) {
 	})
 
 }
+
+// TestConfigureParserFromSetups_Slides verifies that PPTX and PPT parsers
+// receive their flatten_media_to_text configuration from the "slides" setups family.
+func TestConfigureParserFromSetups_Slides(t *testing.T) {
+	setups := defaultSetups()
+	setups["slides"] = schema.ParserSetup{
+		"parse_method":          "deepdoc",
+		"flatten_media_to_text": true,
+	}
+
+	t.Run("pptx parser receives flatten_media_to_text", func(t *testing.T) {
+		p, _, err := parser.GetParser(utility.FileTypePPTX, nil)
+		if err != nil {
+			t.Fatalf("GetParser(FileTypePPTX): %v", err)
+		}
+		configureParserFromSetups(p, utility.FileTypePPTX, setups)
+		pptxP, ok := p.(*parser.PPTXParser)
+		if !ok {
+			t.Fatalf("expected *parser.PPTXParser, got %T", p)
+		}
+		if !pptxP.FlattenMediaToText {
+			t.Errorf("PPTXParser.FlattenMediaToText = false, want true")
+		}
+	})
+
+	t.Run("ppt parser receives flatten_media_to_text", func(t *testing.T) {
+		p, _, err := parser.GetParser(utility.FileTypePPT, nil)
+		if err != nil {
+			t.Fatalf("GetParser(FileTypePPT): %v", err)
+		}
+		configureParserFromSetups(p, utility.FileTypePPT, setups)
+		pptP, ok := p.(*parser.PPTParser)
+		if !ok {
+			t.Fatalf("expected *parser.PPTParser, got %T", p)
+		}
+		if !pptP.FlattenMediaToText {
+			t.Errorf("PPTParser.FlattenMediaToText = false, want true")
+		}
+	})
+}
+

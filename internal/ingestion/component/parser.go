@@ -335,13 +335,15 @@ func defaultSetups() map[string]schema.ParserSetup {
 			},
 		},
 		"html": {
+			"flatten_media_to_text": false,
 			"suffix":               []string{"htm", "html"},
 			"remove_toc":           false,
 			"remove_header_footer": false,
 		},
 		"slides": {
-			"parse_method": "deepdoc",
-			"suffix":       []string{"pptx", "ppt"},
+			"parse_method":          "deepdoc",
+			"flatten_media_to_text": false,
+			"suffix":                []string{"pptx", "ppt"},
 		},
 		"image": {
 			// Default stays on the legacy parse_method shape. ocr_enabled is
@@ -373,7 +375,9 @@ func defaultSetups() map[string]schema.ParserSetup {
 			"prompt": "",
 		},
 		"epub": {
-			"suffix": []string{"epub"},
+			"flatten_media_to_text": false,
+			"remove_toc":            false,
+			"suffix":                []string{"epub"},
 		},
 		"json": {
 			"suffix": []string{"json", "jsonl", "ldjson"},
