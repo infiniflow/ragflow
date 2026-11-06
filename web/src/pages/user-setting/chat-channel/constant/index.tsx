@@ -246,6 +246,39 @@ export const ChatChannelFormFields: Record<ChatChannelKey, FormFieldConfig[]> =
         type: FormFieldType.Password,
         required: true,
       },
+      {
+        label: 'Streaming',
+        name: 'config.credential.stream',
+        type: FormFieldType.Switch,
+        required: false,
+        defaultValue: false,
+      },
+      {
+        label: 'AI Card Template ID',
+        name: 'config.credential.card_template_id',
+        type: FormFieldType.Text,
+        required: true,
+        defaultValue: '',
+        shouldRender: (values: any) =>
+          values?.config?.credential?.stream === true,
+        customValidate: (val: string, values: any) =>
+          values?.config?.credential?.stream === true && !(val ?? '').trim()
+            ? 'AI card template ID is required when streaming is on'
+            : true,
+      },
+      {
+        label: 'Stream Content Key',
+        name: 'config.credential.stream_content_key',
+        type: FormFieldType.Text,
+        required: true,
+        defaultValue: 'content',
+        shouldRender: (values: any) =>
+          values?.config?.credential?.stream === true,
+        customValidate: (val: string, values: any) =>
+          values?.config?.credential?.stream === true && !(val ?? '').trim()
+            ? 'Stream content key is required when streaming is on'
+            : true,
+      },
     ],
     [ChatChannelKey.FEISHU]: [
       {
@@ -271,6 +304,13 @@ export const ChatChannelFormFields: Record<ChatChannelKey, FormFieldConfig[]> =
           { label: 'Feishu (mainland)', value: 'feishu' },
           { label: 'Lark (international)', value: 'lark' },
         ],
+      },
+      {
+        label: 'Streaming',
+        name: 'config.credential.stream',
+        type: FormFieldType.Switch,
+        required: false,
+        defaultValue: false,
       },
     ],
     [ChatChannelKey.GOOGLECHAT]: [
@@ -689,6 +729,15 @@ export const ChatChannelFormFields: Record<ChatChannelKey, FormFieldConfig[]> =
         shouldRender: (values: any) =>
           values?.config?.credential?.connection_type !== 'websocket',
       },
+      {
+        label: 'Streaming',
+        name: 'config.credential.stream',
+        type: FormFieldType.Switch,
+        required: false,
+        defaultValue: false,
+        shouldRender: (values: any) =>
+          values?.config?.credential?.connection_type === 'websocket',
+      },
     ],
     [ChatChannelKey.WHATSAPP]: [
       {
@@ -775,8 +824,17 @@ ChatChannelFormDefaultValues[
 ChatChannelFormDefaultValues[
   ChatChannelKey.WECOM
 ].config.credential.connection_type = 'webhook';
+ChatChannelFormDefaultValues[ChatChannelKey.WECOM].config.credential.stream =
+  false;
+ChatChannelFormDefaultValues[ChatChannelKey.DINGTALK].config.credential.stream =
+  false;
+ChatChannelFormDefaultValues[
+  ChatChannelKey.DINGTALK
+].config.credential.stream_content_key = 'content';
 ChatChannelFormDefaultValues[ChatChannelKey.FEISHU].config.credential.domain =
   'feishu';
+ChatChannelFormDefaultValues[ChatChannelKey.FEISHU].config.credential.stream =
+  false;
 export const getChatChannelFields = (
   key?: ChatChannelKey,
 ): FormFieldConfig[] => {

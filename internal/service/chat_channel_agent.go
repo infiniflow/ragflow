@@ -56,7 +56,7 @@ func validateChannelBinding(ctx context.Context, chatID, agentID *string) error 
 	return permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, ref, operation)
 }
 
-func (s *ChatChannelService) handleChannelAgentMessage(ctx context.Context, channel *entity.ChatChannel, msg ChatChannelIncomingMessage) (string, error) {
+func (s *ChatChannelService) handleChannelAgentMessage(ctx context.Context, channel *entity.ChatChannel, msg ChatChannelIncomingMessage, onDelta func(string)) (string, error) {
 	sessionID := channelSessionID(*channel.AgentID, channel.ID, msg.ChatID)
 	// RunAgent creates and authorizes the persisted session; this boundary only
 	// supplies its stable identity for the first message and subsequent turns.
@@ -70,6 +70,13 @@ func (s *ChatChannelService) handleChannelAgentMessage(ctx context.Context, chan
 	var answer strings.Builder
 	var runErr error
 	thinking := false
+	// Report every visible change so a streaming channel can render the answer as it
+	// grows; thinking blocks are already filtered out above.
+	emit := func() {
+		if onDelta != nil && answer.Len() > 0 {
+			onDelta(answer.String())
+		}
+	}
 	for {
 		select {
 		case <-ctx.Done():
@@ -96,6 +103,7 @@ func (s *ChatChannelService) handleChannelAgentMessage(ctx context.Context, chan
 				}
 				if !thinking {
 					answer.WriteString(data.Content)
+					emit()
 				}
 			case "waiting_for_user":
 				var data canvas.WaitingForUserEvent
@@ -105,6 +113,7 @@ func (s *ChatChannelService) handleChannelAgentMessage(ctx context.Context, chan
 				if len(data.Inputs) > 1 {
 					answer.Reset()
 					answer.WriteString("This workflow requires structured input. Please continue in RAGFlow.")
+					emit()
 					continue
 				}
 				if answer.Len() > 0 && data.Tips != "" {
@@ -114,6 +123,7 @@ func (s *ChatChannelService) handleChannelAgentMessage(ctx context.Context, chan
 				if answer.Len() == 0 {
 					answer.WriteString("Please reply to continue.")
 				}
+				emit()
 			case "error":
 				// Provider/internal errors may contain credentials or implementation
 				// details; adapters receive an error, never that raw event payload.

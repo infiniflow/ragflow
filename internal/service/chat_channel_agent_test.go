@@ -71,7 +71,7 @@ func TestChatChannelRejectsCrossTenantBindingAndExecution(t *testing.T) {
 	createServiceTestChannel(t, db, &entity.ChatChannel{
 		ID: "historical", TenantID: "other", Channel: "telegram", Config: entity.JSONMap{}, ChatID: new("private"), Status: 1,
 	})
-	if _, err := svc.HandleIncomingMessage(t.Context(), ChatChannelIncomingMessage{AccountID: "historical", ChatID: "external", Text: "hello"}); !errors.Is(err, permission.ErrPermissionDenied) {
+	if _, err := svc.HandleIncomingMessage(t.Context(), ChatChannelIncomingMessage{AccountID: "historical", ChatID: "external", Text: "hello"}, nil); !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("historical unauthorized binding: %v", err)
 	}
 }
@@ -95,7 +95,7 @@ func TestChatChannelAgentRevokedAccess(t *testing.T) {
 		t.Fatal("revoked workflow must not execute")
 		return nil, nil
 	})
-	if _, err := svc.HandleIncomingMessage(t.Context(), ChatChannelIncomingMessage{AccountID: channel.ID, ChatID: "external", Text: "hello"}); !errors.Is(err, permission.ErrPermissionDenied) {
+	if _, err := svc.HandleIncomingMessage(t.Context(), ChatChannelIncomingMessage{AccountID: channel.ID, ChatID: "external", Text: "hello"}, nil); !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("revoked workflow binding: %v", err)
 	}
 }
@@ -142,7 +142,7 @@ func testChatChannelAgentUpdateDuringPause(t *testing.T, mode string) {
 		t.Fatal(err)
 	}
 	msg := ChatChannelIncomingMessage{AccountID: channel.ID, ChatID: "external-one", Text: "start"}
-	answer, err := svc.HandleIncomingMessage(t.Context(), msg)
+	answer, err := svc.HandleIncomingMessage(t.Context(), msg, nil)
 	if err != nil || !strings.Contains(answer, "Your answer?") {
 		t.Fatalf("waiting: %q %v", answer, err)
 	}
@@ -162,16 +162,16 @@ func testChatChannelAgentUpdateDuringPause(t *testing.T, mode string) {
 		t.Fatalf("session name = %v", session.Name)
 	}
 	msg.Text = "hello"
-	answer, err = svc.HandleIncomingMessage(t.Context(), msg)
+	answer, err = svc.HandleIncomingMessage(t.Context(), msg, nil)
 	if err != nil || answer != "got: hello" {
 		t.Fatalf("resume: %q %v", answer, err)
 	}
-	answer, err = svc.HandleIncomingMessage(t.Context(), msg)
+	answer, err = svc.HandleIncomingMessage(t.Context(), msg, nil)
 	if err != nil || answer != "updated" {
 		t.Fatalf("fresh turn after resume: %q %v", answer, err)
 	}
 	msg.ChatID = "external-two"
-	answer, err = svc.HandleIncomingMessage(t.Context(), msg)
+	answer, err = svc.HandleIncomingMessage(t.Context(), msg, nil)
 	if err != nil || answer != "updated" {
 		t.Fatalf("isolated conversation: %q %v", answer, err)
 	}
@@ -183,7 +183,7 @@ func testChatChannelAgentUpdateDuringPause(t *testing.T, mode string) {
 	if err := db.Model(&entity.ChatChannel{}).Where("id = ?", channel.ID).Update("status", 0).Error; err != nil {
 		t.Fatalf("disable: %v", err)
 	}
-	if answer, err := svc.HandleIncomingMessage(t.Context(), msg); answer != "" || err != nil {
+	if answer, err := svc.HandleIncomingMessage(t.Context(), msg, nil); answer != "" || err != nil {
 		t.Fatalf("disabled channel: %q %v", answer, err)
 	}
 }
@@ -259,7 +259,7 @@ func TestChatChannelAgentUpdatesPreserveConversation(t *testing.T) {
 		t.Fatal(err)
 	}
 	msg := ChatChannelIncomingMessage{AccountID: channel.ID, ChatID: "external", Text: "first"}
-	if answer, err := svc.HandleIncomingMessage(t.Context(), msg); err != nil || answer != "v1" {
+	if answer, err := svc.HandleIncomingMessage(t.Context(), msg, nil); err != nil || answer != "v1" {
 		t.Fatalf("first turn: %q %v", answer, err)
 	}
 	sessionID := channelSessionID("workflow", channel.ID, msg.ChatID)
@@ -286,7 +286,7 @@ func TestChatChannelAgentUpdatesPreserveConversation(t *testing.T) {
 		t.Fatal(err)
 	}
 	msg.Text = "second"
-	if answer, err := svc.HandleIncomingMessage(t.Context(), msg); err != nil || answer != "v2" {
+	if answer, err := svc.HandleIncomingMessage(t.Context(), msg, nil); err != nil || answer != "v2" {
 		t.Fatalf("updated same conversation: %q %v", answer, err)
 	}
 	session = getAPIConversationForTest(t, db, sessionID)
@@ -303,7 +303,7 @@ func TestChatChannelAgentUpdatesPreserveConversation(t *testing.T) {
 	run("new-ordinary", "", "v2")
 	for _, chatID := range []string{"new-external", "external"} {
 		msg.ChatID = chatID
-		if answer, err := svc.HandleIncomingMessage(t.Context(), msg); err != nil || answer != "v2" {
+		if answer, err := svc.HandleIncomingMessage(t.Context(), msg, nil); err != nil || answer != "v2" {
 			t.Fatalf("conversation %s: %q %v", chatID, answer, err)
 		}
 	}
@@ -314,14 +314,14 @@ func TestChatChannelAgentUpdatesPreserveConversation(t *testing.T) {
 		}
 		return false
 	})
-	if _, err := svc.HandleIncomingMessage(t.Context(), msg); !errors.Is(err, ErrAgentStorageError) {
+	if _, err := svc.HandleIncomingMessage(t.Context(), msg, nil); !errors.Is(err, ErrAgentStorageError) {
 		t.Fatalf("unavailable interrupt state must prevent execution: %v", err)
 	}
 	mr.Server().SetPreHook(nil)
 	if _, _, err := svc.UpdateChatChannel(ctx, channel.ID, map[string]any{"agent_id": "other"}); err != nil {
 		t.Fatal(err)
 	}
-	if answer, err := svc.HandleIncomingMessage(t.Context(), msg); err != nil || answer != "other" {
+	if answer, err := svc.HandleIncomingMessage(t.Context(), msg, nil); err != nil || answer != "other" {
 		t.Fatalf("switched target: %q %v", answer, err)
 	}
 	otherSession := getAPIConversationForTest(t, db, channelSessionID("other", channel.ID, msg.ChatID))
@@ -357,7 +357,7 @@ func TestChatChannelAgentErrorAndThinking(t *testing.T) {
 				close(events)
 				return events, nil
 			})}
-			answer, err := svc.handleChannelAgentMessage(t.Context(), &entity.ChatChannel{ID: "channel", AgentID: new("agent")}, ChatChannelIncomingMessage{ChatID: "chat", Text: "hello"})
+			answer, err := svc.handleChannelAgentMessage(t.Context(), &entity.ChatChannel{ID: "channel", AgentID: new("agent")}, ChatChannelIncomingMessage{ChatID: "chat", Text: "hello"}, nil)
 			if answer != tc.want || (err != nil) != tc.failed {
 				t.Fatalf("answer=%q err=%v", answer, err)
 			}

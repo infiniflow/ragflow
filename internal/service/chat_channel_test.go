@@ -521,3 +521,122 @@ func TestGetOrCreateForChannelFallbackNames(t *testing.T) {
 		}
 	})
 }
+
+func TestConsumeChannelStreamAccumulatesDeltas(t *testing.T) {
+	frames := make(chan string, 8)
+	frames <- `data:{"code": 0, "message": "success", "data": {"answer": "Hel"}}` + "\n\n"
+	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "lo", "start_to_think": false}}` + "\n\n"
+	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "Hello", "final": true}}` + "\n\n"
+	frames <- "data:" + `{"code": 0, "message": "success", "data": true}` + "\n\n"
+	close(frames)
+
+	var seen []string
+	got := consumeChannelStream(frames, func(text string) { seen = append(seen, text) })
+
+	if got.err != nil {
+		t.Fatalf("consumeChannelStream error = %v", got.err)
+	}
+	if got.answer != "Hello" {
+		t.Fatalf("answer = %q, want Hello", got.answer)
+	}
+	if len(seen) == 0 || seen[len(seen)-1] != "Hello" {
+		t.Fatalf("last delta = %v, want the complete answer", seen)
+	}
+}
+
+func TestConsumeChannelStreamReportsErrorFrames(t *testing.T) {
+	frames := make(chan string, 2)
+	frames <- "data:" + `{"code": 500, "message": "model configuration unavailable", "data": {"answer": "**ERROR**: model configuration unavailable"}}` + "\n\n"
+	close(frames)
+
+	got := consumeChannelStream(frames, func(string) {})
+	if got.err == nil || !strings.Contains(got.err.Error(), "model configuration unavailable") {
+		t.Fatalf("consumeChannelStream error = %v, want the frame message", got.err)
+	}
+}
+
+func TestConsumeChannelStreamDropsThinking(t *testing.T) {
+	frames := make(chan string, 6)
+	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "<think>", "start_to_think": true}}` + "\n\n"
+	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "secret reasoning"}}` + "\n\n"
+	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "</think>Hello", "end_to_think": true}}` + "\n\n"
+	close(frames)
+
+	var seen []string
+	got := consumeChannelStream(frames, func(text string) { seen = append(seen, text) })
+
+	if got.err != nil {
+		t.Fatalf("consumeChannelStream error = %v", got.err)
+	}
+	if got.answer != "Hello" {
+		t.Fatalf("answer = %q, want Hello", got.answer)
+	}
+	if len(seen) != 1 || seen[0] != "Hello" {
+		t.Fatalf("deltas = %v, want only the visible answer", seen)
+	}
+}
+
+func TestStripChannelThink(t *testing.T) {
+	inThink := false
+	if got := stripChannelThink("<think>", &inThink); got != "" || !inThink {
+		t.Fatalf("opening marker = %q inThink=%t, want an empty drop", got, inThink)
+	}
+	if got := stripChannelThink("still thinking", &inThink); got != "" || !inThink {
+		t.Fatalf("reasoning text = %q, want it dropped", got)
+	}
+	if got := stripChannelThink("</think>Answer", &inThink); got != "Answer" || inThink {
+		t.Fatalf("closing marker = %q inThink=%t, want the trailing answer", got, inThink)
+	}
+	if got := stripChannelThink("plain", &inThink); got != "plain" {
+		t.Fatalf("plain text = %q, want plain", got)
+	}
+}
+
+func TestConsumeChannelStreamStripsThinkFromFinal(t *testing.T) {
+	frames := make(chan string, 6)
+	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "<think>", "start_to_think": true}}` + "\n\n"
+	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "secret reasoning"}}` + "\n\n"
+	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "</think>Hello", "end_to_think": true}}` + "\n\n"
+	// The agentic pipeline ships its authoritative answer with the thinking segment
+	// wrapped in <think> tags, so the final frame must not reach the channel as is.
+	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "<think>secret reasoning</think>\n\nHello there", "final": true}}` + "\n\n"
+	close(frames)
+
+	var seen []string
+	got := consumeChannelStream(frames, func(text string) { seen = append(seen, text) })
+
+	if got.err != nil {
+		t.Fatalf("consumeChannelStream error = %v", got.err)
+	}
+	if got.answer != "Hello there" {
+		t.Fatalf("answer = %q, want the visible final answer", got.answer)
+	}
+	if len(seen) == 0 || seen[len(seen)-1] != "Hello there" {
+		t.Fatalf("deltas = %v, want the visible final answer last", seen)
+	}
+	for _, text := range seen {
+		if strings.Contains(text, "think") || strings.Contains(text, "secret reasoning") {
+			t.Fatalf("deltas = %v, want the reasoning dropped", seen)
+		}
+	}
+}
+
+func TestConsumeChannelStreamAdoptsRewrittenFinal(t *testing.T) {
+	frames := make(chan string, 4)
+	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "Hello"}}` + "\n\n"
+	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "Different answer", "final": true}}` + "\n\n"
+	close(frames)
+
+	var seen []string
+	got := consumeChannelStream(frames, func(text string) { seen = append(seen, text) })
+
+	if got.err != nil {
+		t.Fatalf("consumeChannelStream error = %v", got.err)
+	}
+	if got.answer != "Different answer" {
+		t.Fatalf("answer = %q, want the authoritative final text", got.answer)
+	}
+	if len(seen) != 2 || seen[0] != "Hello" || seen[1] != "Different answer" {
+		t.Fatalf("deltas = %v, want the delta and then the final text", seen)
+	}
+}
