@@ -506,7 +506,7 @@ func TestFeishuSendStreamReturnsErrorWhenUpdateKeepsFailing(t *testing.T) {
 	}
 }
 
-func TestFeishuSendStreamKeepsAnswerWhenSettingsFail(t *testing.T) {
+func TestFeishuSendStreamReportsFailedClose(t *testing.T) {
 	server, fake := newFeishuFakeAPI(t, 0)
 	fake.settingsFails = true
 	ch := newFeishuChannelAgainstFakeAPI(server)
@@ -515,8 +515,10 @@ func TestFeishuSendStreamKeepsAnswerWhenSettingsFail(t *testing.T) {
 	text <- "Hello"
 	close(text)
 
-	if err := ch.SendStream(context.Background(), core.OutgoingMessage{ChatID: "chat-1"}, text); err != nil {
-		t.Fatalf("SendStream returned error: %v", err)
+	// The close failed, so the caller has to know: it falls back to a one-shot send
+	// instead of leaving the card in the streaming state.
+	if err := ch.SendStream(context.Background(), core.OutgoingMessage{ChatID: "chat-1"}, text); err == nil {
+		t.Fatal("SendStream succeeded although the card was never closed")
 	}
 
 	var last string
