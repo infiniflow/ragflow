@@ -7,10 +7,7 @@ import { ListDeletionKey } from '@/constants/list-deletion';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useHandleSearchChange } from '@/hooks/logic-hooks';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
-import memoryService, {
-  getMemoryDetailById,
-  updateMemoryById,
-} from '@/services/memory-service';
+import memoryService, { updateMemoryById } from '@/services/memory-service';
 import { markListItemsDeleted } from '@/utils/list-deletion-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
@@ -176,6 +173,7 @@ export const useFetchMemoryFilters = () => {
   return { data, isLoading, isError };
 };
 
+/** Loads the memory configuration for a route or shared memory link. */
 export const useFetchMemoryDetail = (tenantId?: string) => {
   const { id } = useParams();
 
@@ -190,10 +188,7 @@ export const useFetchMemoryDetail = (tenantId?: string) => {
       if (!memoryId) {
         throw new Error('Memory id is required');
       }
-      const { data: response } = await getMemoryDetailById(
-        memoryId,
-        shared_id ? { tenant_id: tenantId } : {},
-      );
+      const { data: response } = await memoryService.getMemoryConfig(memoryId);
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to fetch memory detail');
       }

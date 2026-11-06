@@ -19,25 +19,30 @@ import { renderHook, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useSearchParams } from 'react-router';
 import { useFetchMemoryDetail } from './hooks';
 
-const mockGetMemoryDetailById = jest.fn();
+const mockGetMemoryConfig = jest.fn();
 
 jest.mock('@/services/memory-service', () => ({
   __esModule: true,
-  default: {},
-  getMemoryDetailById: (...args: unknown[]) => mockGetMemoryDetailById(...args),
+  default: {
+    getMemoryConfig: (...args: unknown[]) => mockGetMemoryConfig(...args),
+  },
 }));
 
 describe('useFetchMemoryDetail', () => {
   beforeEach(() => {
-    mockGetMemoryDetailById.mockReset();
+    mockGetMemoryConfig.mockReset();
   });
 
-  it('loads a shared memory through the Go memory endpoint', async () => {
+  it('loads a shared memory through the configuration endpoint', async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
-    const responseData = { messages: [], storage_type: 'elasticsearch' };
-    mockGetMemoryDetailById.mockResolvedValue({
+    const responseData = {
+      id: 'memory-shared',
+      name: 'Shared memory',
+      memory_config: { top_k: 6 },
+    };
+    mockGetMemoryConfig.mockResolvedValue({
       data: { code: 0, data: responseData },
     });
     const wrapper = ({ children }: { children?: unknown }) => (
@@ -61,23 +66,25 @@ describe('useFetchMemoryDetail', () => {
     });
 
     await waitFor(() => {
-      expect(mockGetMemoryDetailById).toHaveBeenCalled();
+      expect(mockGetMemoryConfig).toHaveBeenCalled();
     });
     await waitFor(() => {
       expect(result.current.data).toEqual(responseData);
     });
-    expect(mockGetMemoryDetailById).toHaveBeenCalledWith('memory-shared', {
-      tenant_id: 'tenant-1',
-    });
+    expect(mockGetMemoryConfig).toHaveBeenCalledWith('memory-shared');
     queryClient.clear();
   });
 
-  it('loads a memory by route id through the same endpoint', async () => {
+  it('loads a memory by route id through the configuration endpoint', async () => {
     const queryClient = new QueryClient({
       defaultOptions: { queries: { retry: false } },
     });
-    const responseData = { messages: [], storage_type: 'elasticsearch' };
-    mockGetMemoryDetailById.mockResolvedValue({
+    const responseData = {
+      id: 'memory-1',
+      name: 'Memory',
+      memory_config: { top_k: 6 },
+    };
+    mockGetMemoryConfig.mockResolvedValue({
       data: { code: 0, data: responseData },
     });
     const wrapper = ({ children }: { children?: unknown }) => (
@@ -95,7 +102,7 @@ describe('useFetchMemoryDetail', () => {
     await waitFor(() => {
       expect(result.current.data).toEqual(responseData);
     });
-    expect(mockGetMemoryDetailById).toHaveBeenCalledWith('memory-1', {});
+    expect(mockGetMemoryConfig).toHaveBeenCalledWith('memory-1');
     queryClient.clear();
   });
 });
