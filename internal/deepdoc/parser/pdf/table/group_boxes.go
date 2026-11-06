@@ -22,16 +22,16 @@ func GroupBoxesByRC(boxes []pdf.TextBox) [][]pdf.TSRCell {
 	if len(boxes) == 0 {
 		return nil
 	}
-	// If no box carries an R annotation, fall back to YX coordinate grouping —
-	// matching Python's construct_table when every R is missing.
-	hasR := false
+	// Distinguish an annotated table from raw boxes. R/C zero values are the
+	// Go default, so R=0 alone is not evidence of annotation.
+	hasAnnotations := false
 	for _, b := range boxes {
-		if b.R >= 0 {
-			hasR = true
+		if b.HasTableAnnotations || b.R > 0 || b.C > 0 || b.H > 0 || b.SP > 0 {
+			hasAnnotations = true
 			break
 		}
 	}
-	if !hasR {
+	if !hasAnnotations {
 		return GroupBoxesByYX(boxes)
 	}
 
@@ -106,7 +106,9 @@ func assignRows(boxes []pdf.TextBox) []int {
 	}
 	btm := boxes[0].Bottom
 	for i := 1; i < len(boxes); i++ {
-		if boxes[i-1].R != boxes[i].R || (boxes[i].R < 0 && boxes[i].Top >= btm-3) {
+		if boxes[i].PageNumber != boxes[i-1].PageNumber ||
+			boxes[i-1].R != boxes[i].R ||
+			(boxes[i].R < 0 && boxes[i].Top >= btm-3) {
 			rowOf[i] = rowOf[i-1] + 1
 			btm = boxes[i].Bottom
 			continue

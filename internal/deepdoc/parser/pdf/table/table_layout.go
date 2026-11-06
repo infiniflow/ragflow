@@ -244,6 +244,7 @@ func annotateTableBoxes(boxes []pdf.TextBox, grid [][]pdf.TSRCell, rows []pdf.TS
 		if boxes[i].LayoutType != pdf.LayoutTypeTable && boxes[i].LayoutType != "" {
 			continue
 		}
+		boxes[i].HasTableAnnotations = true
 		// R: Python find_overlapped_with_threshold(box, rows, 0.3). Python
 		// leaves R unset when no row line matches; using Go's zero value would
 		// silently put that box in row 0, so start from -1 and only write a

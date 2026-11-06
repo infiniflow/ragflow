@@ -270,21 +270,26 @@ func TestAnnotateTableBoxes_MovesRowspanOriginToTopRow(t *testing.T) {
 	}
 }
 
-func TestRowBandsFiltersNonRowStructure(t *testing.T) {
+func TestRowBandsSplitGridAndAnnotationSemantics(t *testing.T) {
 	cells := []pdf.TSRCell{
 		{X0: 0, Y0: 0, X1: 100, Y1: 100, Label: "table column header"},
 		{X0: 0, Y0: 0, X1: 100, Y1: 20, Label: "table row"},
 		{X0: 0, Y0: 0, X1: 10, Y1: 100, Label: "table column"},
 		{X0: 0, Y0: 20, X1: 100, Y1: 40, Label: "table row"},
+		{X0: 0, Y0: 40, X1: 100, Y1: 60, Label: "table projected row header"},
 	}
 
-	rows := RowBands(cells)
-
-	if len(rows) != 2 {
-		t.Fatalf("RowBands returned %d rows, want 2 (table row only): %+v", len(rows), rows)
+	gridRows := GridRowBands(cells)
+	if len(gridRows) != 2 {
+		t.Fatalf("GridRowBands returned %d rows, want 2 (table row only): %+v", len(gridRows), gridRows)
 	}
-	if rows[0].Y0 != 0 || rows[1].Y0 != 20 {
-		t.Errorf("row bands = (%v, %v), want (0, 20)", rows[0].Y0, rows[1].Y0)
+	if gridRows[0].Y0 != 0 || gridRows[1].Y0 != 20 {
+		t.Errorf("grid row bands = (%v, %v), want (0, 20)", gridRows[0].Y0, gridRows[1].Y0)
+	}
+
+	annotationRows := AnnotationRowBands(cells)
+	if len(annotationRows) != 4 {
+		t.Fatalf("AnnotationRowBands returned %d rows, want 4 (row + header): %+v", len(annotationRows), annotationRows)
 	}
 }
 

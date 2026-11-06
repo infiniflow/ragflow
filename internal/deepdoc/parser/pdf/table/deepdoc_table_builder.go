@@ -45,8 +45,7 @@ func (b *DeepDocTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 		return nil
 	}
 
-	// 1. Collect and sort structural elements. Rows come from the shared
-	// RowBands helper used by the annotator, so both stages see the same set.
+	// 1. Collect and sort structural elements.
 	var cols, spans []pdf.TSRCell
 	var header *pdf.TSRCell
 
@@ -62,7 +61,7 @@ func (b *DeepDocTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 		}
 	}
 
-	rows := RowBands(cells)
+	rows := GridRowBands(cells)
 	if len(rows) == 0 {
 		return nil
 	}
@@ -145,19 +144,32 @@ func (b *DeepDocTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 	return grid
 }
 
-// RowBands extracts the TSR "table row" lines used for R annotation. The
-// header component is handled separately by GroupCells. An empty result tells
-// callers to fall back to grid rows.
-func RowBands(cells []pdf.TSRCell) []pdf.TSRCell {
+// GridRowBands returns the TSR "table row" lines used to build the grid.
+// The header component is handled separately by GroupCells.
+func GridRowBands(cells []pdf.TSRCell) []pdf.TSRCell {
+	return rowBands(cells, func(label string) bool {
+		return strings.HasSuffix(strings.TrimSpace(strings.ToLower(label)), "table row")
+	})
+}
+
+// AnnotationRowBands returns the TSR row and header lines used for R
+// annotation, matching Python's gather(r".* (row|header)").
+func AnnotationRowBands(cells []pdf.TSRCell) []pdf.TSRCell {
+	return rowBands(cells, func(label string) bool {
+		label = strings.TrimSpace(strings.ToLower(label))
+		return strings.HasSuffix(label, " row") || strings.HasSuffix(label, " header")
+	})
+}
+
+func rowBands(cells []pdf.TSRCell, match func(string) bool) []pdf.TSRCell {
 	var rows []pdf.TSRCell
 	for _, c := range cells {
-		if strings.HasSuffix(strings.TrimSpace(strings.ToLower(c.Label)), " row") {
+		if match(c.Label) {
 			rows = append(rows, c)
 		}
 	}
 	SortYFirstly(rows, 10)
-	rows = layoutCleanup(rows, nil, 5, 0.6)
-	return rows
+	return layoutCleanup(rows, nil, 5, 0.6)
 }
 
 // rowOverlapRatio reports the fraction of row's height covered by header.

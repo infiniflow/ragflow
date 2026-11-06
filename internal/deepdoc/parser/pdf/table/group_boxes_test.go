@@ -149,6 +149,29 @@ func TestFillCellTextFromBoxes_RCOnly(t *testing.T) {
 	}
 }
 
+func TestGroupBoxesByRC_ZeroValueBoxesFallBackToYX(t *testing.T) {
+	// Zero-value TextBox has R=0, C=0. That must not be mistaken for an
+	// annotated first row: these four boxes form a 2x2 grid by geometry.
+	boxes := []pdf.TextBox{
+		{X0: 0, X1: 50, Top: 0, Bottom: 10, Text: "A"},
+		{X0: 60, X1: 110, Top: 0, Bottom: 10, Text: "B"},
+		{X0: 0, X1: 50, Top: 20, Bottom: 30, Text: "C"},
+		{X0: 60, X1: 110, Top: 20, Bottom: 30, Text: "D"},
+	}
+
+	rows := GroupBoxesByRC(boxes)
+
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 rows from unannotated boxes, got %d: %v", len(rows), rowTexts(rows))
+	}
+	if len(rows[0]) < 2 || rows[0][0].Text != "A" || rows[0][1].Text != "B" {
+		t.Errorf("row 0 = %v, want [A B]", rowTexts(rows[0:1]))
+	}
+	if len(rows[1]) < 2 || rows[1][0].Text != "C" || rows[1][1].Text != "D" {
+		t.Errorf("row 1 = %v, want [C D]", rowTexts(rows[1:2]))
+	}
+}
+
 func TestGroupBoxesByRC_FallbackToYXWhenNoAnnotations(t *testing.T) {
 	// When all boxes have R=-1 (Python's case: regex didn't match "table" label),
 	// groupBoxesByRC should fall back to YX coordinate grouping.
@@ -226,6 +249,20 @@ func TestAssignRows_SameR(t *testing.T) {
 			t.Errorf("rowOf = %v, want %v", rowOf, want)
 			break
 		}
+	}
+}
+
+func TestAssignRows_PageChangeStartsNewRow(t *testing.T) {
+	// Per-page R numbering can repeat; a page boundary must still start a new
+	// row even when R and Y are unchanged.
+	boxes := []pdf.TextBox{
+		{X0: 0, X1: 40, Top: 0, Bottom: 10, Text: "A", R: 0, C: 0, RTop: 0, RBott: 10},
+		{X0: 0, X1: 40, Top: 0, Bottom: 10, Text: "B", R: 0, C: 0, PageNumber: 1, RTop: 0, RBott: 10},
+	}
+	sortRFirstly(boxes)
+	rowOf := assignRows(boxes)
+	if !reflect.DeepEqual(rowOf, []int{0, 1}) {
+		t.Errorf("rowOf = %v, want [0 1]", rowOf)
 	}
 }
 
