@@ -442,7 +442,7 @@ func TestDingTalkPushCardDeltaRetriesWithSameGuid(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := ch.pushCardDelta(context.Background(), "track-1", "hello", false); err != nil {
+	if err := ch.pushCardDelta(context.Background(), "track-1", "hello", false, false); err != nil {
 		t.Fatalf("pushCardDelta() error = %v", err)
 	}
 	if len(guids) != 2 {
@@ -450,5 +450,17 @@ func TestDingTalkPushCardDeltaRetriesWithSameGuid(t *testing.T) {
 	}
 	if guids[0] == "" || guids[0] != guids[1] {
 		t.Fatalf("guids = %v, want the retry to reuse the idempotency id", guids)
+	}
+}
+
+func TestDingTalkStreamDeltaReplacesRewrittenAnswer(t *testing.T) {
+	delta, replace := dingTalkStreamDelta("Hello", "Hello world")
+	if delta != " world" || replace {
+		t.Fatalf("delta = %q replace = %t, want an append of the new tail", delta, replace)
+	}
+
+	delta, replace = dingTalkStreamDelta("Half an answer", "Please continue in RAGFlow.")
+	if delta != "Please continue in RAGFlow." || !replace {
+		t.Fatalf("delta = %q replace = %t, want the whole rewritten answer replacing the card", delta, replace)
 	}
 }

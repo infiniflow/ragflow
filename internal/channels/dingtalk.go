@@ -546,14 +546,15 @@ func (c *dingTalkChannel) SendStream(ctx context.Context, msg core.OutgoingMessa
 			latest = value
 		case <-ticker.C:
 			if sent != latest {
-				if err := c.pushCardDelta(ctx, outTrackID, dingTalkStreamDelta(sent, latest), false); err != nil {
+				delta, replace := dingTalkStreamDelta(sent, latest)
+				if err := c.pushCardDelta(ctx, outTrackID, delta, replace, false); err != nil {
 					return fail(err)
 				}
 				sent = latest
 				continue
 			}
 			if text == nil {
-				if err := c.pushCardDelta(ctx, outTrackID, "", true); err != nil {
+				if err := c.pushCardDelta(ctx, outTrackID, "", false, true); err != nil {
 					return fail(err)
 				}
 				return nil
@@ -586,13 +587,14 @@ func (c *dingTalkChannel) markCardFailed(ctx context.Context, outTrackID, conten
 	}
 }
 
-// dingTalkStreamDelta returns the part of the answer the card has not received yet. A
-// rewritten answer is sent whole so the card cannot stall on a stale prefix.
-func dingTalkStreamDelta(shown, target string) string {
+// dingTalkStreamDelta returns the text the card still needs and whether it replaces the
+// card content. A rewritten answer has to replace: the streaming API appends whenever
+// isFull is false, which would leave the stale answer in front of the new one.
+func dingTalkStreamDelta(shown, target string) (string, bool) {
 	if strings.HasPrefix(target, shown) {
-		return target[len(shown):]
+		return target[len(shown):], false
 	}
-	return target
+	return target, true
 }
 
 // createAICard delivers an empty AI card to the conversation and returns its instance id.
@@ -630,10 +632,10 @@ func (c *dingTalkChannel) createAICard(ctx context.Context, chatID string) (stri
 	return outTrackID, nil
 }
 
-// pushCardDelta appends content to the card's streaming variable and optionally closes it.
-// Every push is one request, so a transient failure is retried with the same idempotency
-// id instead of failing the whole reply.
-func (c *dingTalkChannel) pushCardDelta(ctx context.Context, outTrackID, content string, finalize bool) error {
+// pushCardDelta writes content to the card's streaming variable: replace decides between a
+// full rewrite and an append, finalize closes the stream. Every push is one request, so a
+// transient failure is retried with the same idempotency id instead of failing the reply.
+func (c *dingTalkChannel) pushCardDelta(ctx context.Context, outTrackID, content string, replace, finalize bool) error {
 	guid := common.GenerateToken()
 	return retryChannelCall(ctx, dingTalkStreamAttempts, dingTalkStreamCallLimit, dingTalkStreamBackoff, func(callCtx context.Context) error {
 		token, err := c.openAPIToken(callCtx)
@@ -645,7 +647,7 @@ func (c *dingTalkChannel) pushCardDelta(ctx context.Context, outTrackID, content
 			"guid":       guid,
 			"key":        c.account.StreamContentKey,
 			"content":    content,
-			"isFull":     false,
+			"isFull":     replace,
 			"isFinalize": finalize,
 			"isError":    false,
 		}, nil)
