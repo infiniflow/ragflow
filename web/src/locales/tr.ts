@@ -746,9 +746,8 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       paddleocrApiUrlPlaceholder:
         'örn. https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: "AI Studio Erişim Token'ı",
-      paddleocrAccessTokenTip:
-        "PaddleOCR API için erişim token'ı (isteğe bağlı)",
-      paddleocrAccessTokenPlaceholder: "AI Studio token'ınız (isteğe bağlı)",
+      paddleocrAccessTokenTip: "PaddleOCR API için erişim token'ı",
+      paddleocrAccessTokenPlaceholder: "AI Studio token'ınız",
       paddleocrAlgorithm: 'PaddleOCR Algoritması',
       paddleocrAlgorithmTip:
         'PaddleOCR ayrıştırması için kullanılacak algoritma',
@@ -1463,7 +1462,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldTenantId: 'Kiracı Kimliği',
       dataSourceFieldClientId: 'İstemci Kimliği',
       dataSourceFieldClientSecret: 'İstemci Gizli Anahtarı',
-      dataSourceFieldFolderPathOptional: 'Klasör Yolu (isteğe bağlı)',
+      dataSourceFieldFolderPathOptional: 'Klasör Yolu',
       dataSourceFieldBatchSize: 'Toplu İşlem Boyutu',
       dataSourceFieldFeishuAppId: 'Feishu uygulama kimliği',
       dataSourceFieldFeishuAppSecret: 'Feishu uygulama gizli anahtarı',
@@ -1477,8 +1476,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceValidationFeishuBatchSize:
         'Toplu işlem boyutu 1 ile 10 arasında olmalıdır',
       dataSourceFieldMailFolder: 'Posta Klasörü',
-      dataSourceFieldMailboxUserIds:
-        'Posta Kutusu Kullanıcı Kimlikleri (isteğe bağlı)',
+      dataSourceFieldMailboxUserIds: 'Posta Kutusu Kullanıcı Kimlikleri',
       dataSourceFieldInstanceUrl: "Örnek URL'si",
       dataSourceFieldObjects: 'Nesneler',
       dataSourceFieldApiVersion: 'API Sürümü',
@@ -1489,7 +1487,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldContainerUrl: "Konteyner URL'si",
       dataSourceFieldSasToken: "SAS Token'ı",
       dataSourceFieldContainerName: 'Konteyner Adı',
-      dataSourceFieldPrefixOptional: 'Ön ek (isteğe bağlı)',
+      dataSourceFieldPrefixOptional: 'Ön ek',
       dataSourceFieldFeedUrl: "Besleme URL'si",
       dataSourceFieldSitemapUrl: "Site haritası URL'si",
       dataSourceFieldUrlFilter: 'URL filtresi (regex)',
@@ -2223,9 +2221,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       paddleocrApiUrlPlaceholder:
         'örn. https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: "AI Studio Erişim Token'ı",
-      paddleocrAccessTokenMessage:
-        "PaddleOCR API için erişim token'ı (isteğe bağlı)",
-      paddleocrAccessTokenPlaceholder: "AI Studio token'ınız (isteğe bağlı)",
+      paddleocrAccessTokenMessage: "PaddleOCR API için erişim token'ı",
+      paddleocrAccessTokenPlaceholder: "AI Studio token'ınız",
       paddleocrAlgorithm: 'PaddleOCR Algoritması',
       paddleocrAlgorithmMessage: 'Lütfen bir PaddleOCR algoritması seçin',
       paddleocrSelectAlgorithm: 'Algoritma Seçin',
@@ -2233,8 +2230,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       mineruApiserverMessage: "Lütfen MinerU API Sunucusu URL'sini girin!",
       mineruApiserverPlaceholder: 'örn. http://host.docker.internal:9987',
       mineruApiToken: "MinerU API token'ı",
-      mineruApiTokenPlaceholder:
-        'mineru.net API yönetiminden alınan token (isteğe bağlı)',
+      mineruApiTokenPlaceholder: 'mineru.net API yönetiminden alınan token',
       mineruApiTokenTip:
         "Ayarlandığında RAGFlow resmi hassas API'yi (/api/v4, vlm dahil) kullanır. Oturum açma gerektirmeyen ajan API'sini kullanmak için boş bırakın. Kendi barındırdığınız MinerU sunucusu için gerekli değildir.",
       mineruOutputDir: 'MinerU Çıktı Dizini',
@@ -2312,7 +2308,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         apiUrl: "PaddleOCR API URL'si",
         apiUrlPlaceholder: 'Örnek: https://paddleocr-server.com/layout-parsing',
         accessToken: "AI Studio Erişim Token'ı",
-        accessTokenPlaceholder: "AI Studio token'ınız (isteğe bağlı)",
+        accessTokenPlaceholder: "AI Studio token'ınız",
         algorithm: 'PaddleOCR Algoritması',
         selectAlgorithm: 'Algoritma Seçin',
         modelNamePlaceholder: 'Örnek: paddleocr-from-env-1',
