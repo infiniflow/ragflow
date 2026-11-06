@@ -797,13 +797,14 @@ func exchangeGoogleWebOAuthCode(clientConfig map[string]interface{}, scopes []st
 
 	clientID := strings.TrimSpace(stringValue(webConfig["client_id"]))
 	clientSecret := strings.TrimSpace(stringValue(webConfig["client_secret"]))
-	tokenURI := strings.TrimSpace(stringValue(webConfig["token_uri"]))
-	if tokenURI == "" {
-		tokenURI = googleOAuthTokenURL
+	configuredTokenURI := strings.TrimSpace(stringValue(webConfig["token_uri"]))
+	if configuredTokenURI != "" && configuredTokenURI != googleOAuthTokenURL {
+		return "", fmt.Errorf("invalid Google OAuth client configuration: token_uri must use Google's token endpoint")
 	}
-	if clientID == "" || tokenURI == "" {
+	if clientID == "" {
 		return "", fmt.Errorf("invalid Google OAuth client configuration")
 	}
+	tokenURI := googleOAuthTokenURL
 
 	form := url.Values{}
 	form.Set("client_id", clientID)
