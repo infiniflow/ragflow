@@ -522,12 +522,12 @@ func (dao *DocumentDAO) CountByTenantID(ctx context.Context, db *gorm.DB, tenant
 	return count, err
 }
 
-// CountByUserID counts documents attributed to a user, including rows whose
-// created_by field contains the tenant ID instead of the user ID.
+// CountByUserID counts documents attributed to a user. created_by may contain
+// either a user ID or a tenant ID, so it is not a reliable user scope.
 func (dao *DocumentDAO) CountByUserID(ctx context.Context, db *gorm.DB, userID string) (int64, error) {
 	var count int64
 	err := db.WithContext(ctx).Model(&entity.Document{}).
-		Where("user_id = ? OR created_by = ?", userID, userID).
+		Where("user_id = ?", userID).
 		Count(&count).Error
 	return count, err
 }

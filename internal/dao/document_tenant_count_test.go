@@ -59,13 +59,15 @@ func TestDocumentDAOCountByTenantIDUsesKnowledgebaseTenant(t *testing.T) {
 	}
 }
 
-func TestDocumentDAOCountByUserIDHandlesMixedCreatedByValues(t *testing.T) {
+func TestDocumentDAOCountByUserIDUsesUserIDWhenCreatedByIsTenant(t *testing.T) {
 	db := documentCountTestDB(t)
-	if err := db.Exec("INSERT INTO document (id, kb_id, created_by, user_id) VALUES (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?)",
+	if err := db.Exec("INSERT INTO document (id, kb_id, created_by, user_id) VALUES (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?)",
 		"doc-1", "kb-1", "tenant-1", "user-1",
 		"doc-2", "kb-1", "user-2", "user-1",
 		"doc-3", "kb-2", "user-1", "user-3",
 		"doc-4", "kb-2", "user-4", "user-4",
+		"doc-5", "kb-1", "tenant-1", "user-2",
+		"doc-6", "kb-1", "tenant-1", "tenant-1",
 	).Error; err != nil {
 		t.Fatalf("insert documents: %v", err)
 	}
@@ -74,7 +76,15 @@ func TestDocumentDAOCountByUserIDHandlesMixedCreatedByValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CountByUserID: %v", err)
 	}
-	if count != 3 {
-		t.Fatalf("CountByUserID = %d, want 3 documents attributed to user-1", count)
+	if count != 2 {
+		t.Fatalf("CountByUserID = %d, want 2 documents attributed to user-1", count)
+	}
+
+	tenantOwnerCount, err := NewDocumentDAO().CountByUserID(t.Context(), db, "tenant-1")
+	if err != nil {
+		t.Fatalf("CountByUserID for tenant owner: %v", err)
+	}
+	if tenantOwnerCount != 1 {
+		t.Fatalf("CountByUserID for tenant owner = %d, want 1 owner document", tenantOwnerCount)
 	}
 }
