@@ -13,12 +13,12 @@ import (
 	permissionresponse "ragflow/internal/permission/response"
 )
 
-func (s *DocumentService) ListIngestionTasks(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
-	return s.ingestionTaskSvc.ListByUser(ctx, userID, datasetID, page, pageSize)
+func (s *DocumentService) ListIngestionTasks(ctx context.Context, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
+	return s.ingestionTaskSvc.List(ctx, datasetID, page, pageSize)
 }
 
-func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
-	responses, err := s.ingestionTaskSvc.CreateForDocuments(ctx, datasetID, userID, docIDs)
+func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
+	responses, err := s.ingestionTaskSvc.CreateForDocuments(ctx, datasetID, docIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -26,15 +26,17 @@ func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID, userID
 	return responses, nil
 }
 
-func (s *DocumentService) StopIngestionTasks(ctx context.Context, tasks []string, userID string) ([]*entity.IngestionTask, error) {
+func (s *DocumentService) StopIngestionTasks(ctx context.Context, tasks []string) ([]*entity.IngestionTask, error) {
+	userID := permission.UserIDFromContext(ctx)
 	return s.ingestionTaskSvc.RequestStopMany(ctx, tasks, &userID)
 }
 
-func (s *DocumentService) RemoveIngestionTasks(ctx context.Context, tasks []string, userID string) ([]map[string]string, error) {
+func (s *DocumentService) RemoveIngestionTasks(ctx context.Context, tasks []string) ([]map[string]string, error) {
+	userID := permission.UserIDFromContext(ctx)
 	return s.ingestionTaskSvc.RemoveMany(ctx, tasks, &userID)
 }
 
-func (s *DocumentService) Ingest(ctx context.Context, userID string, req *IngestDocumentRequest) (common.ErrorCode, error) {
+func (s *DocumentService) Ingest(ctx context.Context, req *IngestDocumentRequest) (common.ErrorCode, error) {
 	run := fmt.Sprint(req.Run)
 
 	docs, err := s.documentDAO.GetByIDs(ctx, dao.DB, req.DocIDs)
@@ -112,7 +114,7 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		for _, vd := range toStart {
 			doc := vd.doc
 			kb := vd.kb
-			if err = s.StartParseDocuments(ctx, doc, kb, userID, StartParseOptions{
+			if err = s.StartParseDocuments(ctx, doc, kb, StartParseOptions{
 				ApplyKB:         req.ApplyKB,
 				RerunWithDelete: req.Delete,
 			}); err != nil {

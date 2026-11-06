@@ -52,8 +52,8 @@ type documentServiceIface interface {
 	GetDocumentByID(ctx context.Context, id string) (*document.DocumentResponse, error)
 	UpdateDocument(ctx context.Context, id string, req *document.UpdateDocumentRequest) (common.ErrorCode, error)
 	DeleteDocument(ctx context.Context, id string) error
-	DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID, userID string) (int, error)
-	ParseDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
+	DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID string) (int, error)
+	ParseDocuments(ctx context.Context, datasetID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
 	StopParseDocuments(ctx context.Context, datasetID string, docIDs []string) (map[string]interface{}, error)
 	StopParseDocumentsAll(ctx context.Context, datasetID string, runStatuses []string) (map[string]interface{}, error)
 	ListDocuments(ctx context.Context, page, pageSize int) ([]*document.DocumentResponse, int64, error)
@@ -63,27 +63,27 @@ type documentServiceIface interface {
 	GetDocumentFiltersByDatasetID(ctx context.Context, opts dao.DocumentListOptions) (map[string]interface{}, int64, error)
 	GetMetadataByKBs(ctx context.Context, kbIDs []string) (map[string]interface{}, error)
 	GetDocumentsByAuthorID(ctx context.Context, authorID, page, pageSize int) ([]*document.DocumentResponse, int64, error)
-	GetThumbnails(ctx context.Context, userID string, docIDs []string) (map[string]string, error)
-	GetDocumentImage(ctx context.Context, userID, imageID string) ([]byte, error)
-	GetDocumentImageForDocument(ctx context.Context, userID, docID, imageID string) ([]byte, error)
+	GetThumbnails(ctx context.Context, docIDs []string) (map[string]string, error)
+	GetDocumentImage(ctx context.Context, imageID string) ([]byte, error)
+	GetDocumentImageForDocument(ctx context.Context, docID, imageID string) ([]byte, error)
 	GetDocumentThumbnail(ctx context.Context, docID string) ([]byte, error)
 	GetMetadataSummary(ctx context.Context, kbID string, docIDs []string) (map[string]interface{}, error)
 	GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]interface{}, error)
-	GetDocumentArtifact(ctx context.Context, filename, userID string) (*document.ArtifactResponse, error)
+	GetDocumentArtifact(ctx context.Context, filename string) (*document.ArtifactResponse, error)
 	GetDocumentPreview(ctx context.Context, docID string) (*document.DocumentPreview, error)
-	UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string)
-	UploadWebDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name, url string) (map[string]interface{}, common.ErrorCode, error)
-	UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error)
+	UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string)
+	UploadWebDocument(ctx context.Context, kb *entity.Knowledgebase, name, url string) (map[string]interface{}, common.ErrorCode, error)
+	UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, name string) (map[string]interface{}, common.ErrorCode, error)
 	DownloadDocument(ctx context.Context, datasetID, docID string) (*document.DownloadDocumentResp, error)
-	UpdateDatasetDocument(ctx context.Context, userID, datasetID, documentID string, req *document.UpdateDatasetDocumentRequest, present map[string]bool) (*document.UpdateDatasetDocumentResponse, common.ErrorCode, error)
-	ApplyDatasetParserConfig(ctx context.Context, userID, datasetID string) (*document.ApplyDatasetParserConfigResponse, common.ErrorCode, error)
+	UpdateDatasetDocument(ctx context.Context, datasetID, documentID string, req *document.UpdateDatasetDocumentRequest, present map[string]bool) (*document.UpdateDatasetDocumentResponse, common.ErrorCode, error)
+	ApplyDatasetParserConfig(ctx context.Context, datasetID string) (*document.ApplyDatasetParserConfigResponse, common.ErrorCode, error)
 	BatchUpdateDocumentMetadatas(ctx context.Context, datasetID string, selector *document.MetadataSelector, updates []document.MetadataUpdate, deletes []document.MetadataDelete) (*document.BatchUpdateMetadatasResponse, common.ErrorCode, error)
-	ListIngestionTasks(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error)
-	IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
-	StopIngestionTasks(ctx context.Context, tasks []string, userID string) ([]*entity.IngestionTask, error)
-	Ingest(ctx context.Context, userID string, req *document.IngestDocumentRequest) (common.ErrorCode, error)
-	RemoveIngestionTasks(ctx context.Context, tasks []string, userID string) ([]map[string]string, error)
-	BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, DocumentIDs []string) (map[string]interface{}, common.ErrorCode, error)
+	ListIngestionTasks(ctx context.Context, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error)
+	IngestDocuments(ctx context.Context, datasetID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
+	StopIngestionTasks(ctx context.Context, tasks []string) ([]*entity.IngestionTask, error)
+	Ingest(ctx context.Context, req *document.IngestDocumentRequest) (common.ErrorCode, error)
+	RemoveIngestionTasks(ctx context.Context, tasks []string) ([]map[string]string, error)
+	BatchUpdateDocumentStatus(ctx context.Context, datasetID, status string, DocumentIDs []string) (map[string]interface{}, common.ErrorCode, error)
 	HasActiveIngestionTasks(ctx context.Context, datasetID string) (bool, error)
 }
 
@@ -93,8 +93,8 @@ type latestIngestionEventLookup interface {
 
 // fileUploadIface defines the FileService upload methods used by DocumentHandler.
 type fileUploadIface interface {
-	UploadDocumentInfos(ctx context.Context, userID string, files []*multipart.FileHeader) ([]map[string]interface{}, common.ErrorCode, error)
-	UploadDocumentInfoByURL(ctx context.Context, userID, rawURL string) (map[string]interface{}, common.ErrorCode, error)
+	UploadDocumentInfos(ctx context.Context, files []*multipart.FileHeader) ([]map[string]interface{}, common.ErrorCode, error)
+	UploadDocumentInfoByURL(ctx context.Context, rawURL string) (map[string]interface{}, common.ErrorCode, error)
 }
 
 // DocumentHandler document handler
@@ -121,11 +121,6 @@ func NewDocumentHandler(documentService documentServiceIface, datasetService *da
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [get]
 func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	id := c.Param("id")
 	if id == "" {
@@ -150,7 +145,7 @@ func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
 
 // GetThumbnail Get thumbnails for documents.
 func (h *DocumentHandler) GetThumbnail(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
 		return
@@ -163,7 +158,7 @@ func (h *DocumentHandler) GetThumbnail(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	result, err := h.documentService.GetThumbnails(ctx, user.ID, docIDs)
+	result, err := h.documentService.GetThumbnails(ctx, docIDs)
 	if err != nil {
 		common.RespondError(c, common.CodeServerError, err.Error())
 		return
@@ -194,14 +189,14 @@ func parseThumbnailDocIDs(c *gin.Context) []string {
 
 // GetDocumentImage returns a document image from object storage.
 func (h *DocumentHandler) GetDocumentImage(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 	imageID := c.Param("image_id")
 	ctx := c.Request.Context()
-	data, err := h.documentService.GetDocumentImage(ctx, user.ID, imageID)
+	data, err := h.documentService.GetDocumentImage(ctx, imageID)
 	if err != nil {
 		common.RespondError(c, common.CodeDataError, "Image not found.")
 		return
@@ -210,12 +205,12 @@ func (h *DocumentHandler) GetDocumentImage(c *gin.Context) {
 }
 
 func (h *DocumentHandler) GetDocumentImageForDocument(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
-	data, err := h.documentService.GetDocumentImageForDocument(c.Request.Context(), user.ID, c.Param("id"), c.Param("image_id"))
+	data, err := h.documentService.GetDocumentImageForDocument(c.Request.Context(), c.Param("id"), c.Param("image_id"))
 	if err != nil {
 		common.RespondError(c, common.CodeDataError, "Image not found.")
 		return
@@ -224,11 +219,6 @@ func (h *DocumentHandler) GetDocumentImageForDocument(c *gin.Context) {
 }
 
 func (h *DocumentHandler) GetDocumentThumbnail(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 	data, err := h.documentService.GetDocumentThumbnail(c.Request.Context(), c.Param("id"))
 	if err != nil {
 		common.RespondError(c, common.CodeDataError, "Image not found.")
@@ -265,14 +255,14 @@ func documentImageContentType(data []byte) string {
 }
 
 func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {
-	user, code, msg := GetUser(c)
+	_, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
 		common.RespondError(c, code, msg)
 		return
 	}
 	filename := c.Param("filename")
 	ctx := c.Request.Context()
-	artifact, err := h.documentService.GetDocumentArtifact(ctx, filename, user.ID)
+	artifact, err := h.documentService.GetDocumentArtifact(ctx, filename)
 	if err != nil {
 		switch {
 		case errors.Is(err, document.ErrArtifactInvalidFilename),
@@ -297,11 +287,6 @@ func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {
 }
 
 func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	docID := c.Param("id")
 
@@ -353,11 +338,6 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [put]
 func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	id := c.Param("id")
 	if id == "" {
@@ -386,7 +366,7 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 		return
 	}
 
-	if errorCode, err = h.documentService.UpdateDocument(ctx, id, &req); err != nil {
+	if errorCode, err := h.documentService.UpdateDocument(ctx, id, &req); err != nil {
 		if errorCode == common.CodeServerError {
 			common.Respond(c, http.StatusInternalServerError, errorCode, nil, err.Error())
 		} else {
@@ -408,11 +388,6 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [delete]
 func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	id := c.Param("id")
 	if id == "" {
@@ -541,9 +516,8 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 		}
 	}
 
-	userID := c.GetString("user_id")
 	ctx := c.Request.Context()
-	deleted, err := h.documentService.DeleteDocuments(ctx, ids, req.DeleteAll, datasetID, userID)
+	deleted, err := h.documentService.DeleteDocuments(ctx, ids, req.DeleteAll, datasetID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, false) {
 			operationLog.Code = int(common.CodePermissionError)
@@ -561,14 +535,14 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 
 // BatchUpdateDocumentStatus Batch update status of documents within a dataset.
 func (h *DocumentHandler) BatchUpdateDocumentStatus(c *gin.Context) {
-	user, code, errorMessage := GetUser(c)
+	_, code, errorMessage := GetUser(c)
 	if code != common.CodeSuccess {
 		common.RespondError(c, code, errorMessage)
 		return
 	}
 
-	userID := strings.TrimSpace(user.ID)
-	if userID == "" {
+	ctx := c.Request.Context()
+	if permission.UserIDFromContext(ctx) == "" {
 		common.RespondError(c, common.CodeArgumentError, "invalid user id")
 		return
 	}
@@ -611,8 +585,7 @@ func (h *DocumentHandler) BatchUpdateDocumentStatus(c *gin.Context) {
 		return
 	}
 
-	ctx := c.Request.Context()
-	result, code, err := h.documentService.BatchUpdateDocumentStatus(ctx, userID, datasetID, status, documentIDs)
+	result, code, err := h.documentService.BatchUpdateDocumentStatus(ctx, datasetID, status, documentIDs)
 	if err != nil {
 		message := err.Error()
 		if code == common.CodeServerError {
@@ -629,10 +602,11 @@ func (h *DocumentHandler) BatchUpdateDocumentStatus(c *gin.Context) {
 func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 
 	datasetID := c.Param("dataset_id")
-	pageStr := c.Query("page")
-	pageSizeStr := c.Query("page_size")
-	page, _ := strconv.Atoi(pageStr)
-	pageSize, _ := strconv.Atoi(pageSizeStr)
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
+	}
 
 	if orderby := c.Query("orderby"); orderby != "" {
 		switch orderby {
@@ -647,13 +621,6 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
 		respondPermissionError(c, err, false)
 		return
-	}
-
-	if page < 1 {
-		page = 1
-	}
-	if pageSize < 1 || pageSize > 100 {
-		pageSize = 10
 	}
 
 	opts, errMsg := parseDocumentListOptions(c, datasetID)
@@ -1023,16 +990,15 @@ func invalidRunStatuses(statuses []string) []string {
 }
 
 func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
+	ctx := c.Request.Context()
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		common.RespondError(c, common.CodeUnauthorized, permission.ErrUnauthenticated.Error())
 		return
 	}
-	tenantID := user.ID
 	datasetID := c.Param("dataset_id")
 	uploadType := strings.ToLower(c.DefaultQuery("type", "local"))
 
-	ctx := c.Request.Context()
 	kb, err := h.datasetService.GetKnowledgebaseByID(ctx, datasetID)
 	if err != nil || kb == nil {
 		common.RespondError(c, common.CodeDataError, fmt.Sprintf("Can't find the dataset with ID %s!", datasetID))
@@ -1045,17 +1011,22 @@ func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
 
 	switch uploadType {
 	case "web":
-		h.uploadWebDocument(c, kb, tenantID)
+		h.uploadWebDocument(c, kb)
 	case "empty":
-		h.uploadEmptyDocument(c, kb, tenantID)
+		h.uploadEmptyDocument(c, kb)
 	case "local":
-		h.uploadLocalDocuments(c, kb, tenantID)
+		h.uploadLocalDocuments(c, kb)
 	default:
 		common.RespondError(c, common.CodeArgumentError, `"type" must be one of "local", "web", or "empty".`)
 	}
 }
 
-func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowledgebase, tenantID string) {
+func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowledgebase) {
+	userID := permission.UserIDFromContext(c.Request.Context())
+	if userID == "" {
+		common.RespondError(c, common.CodeUnauthorized, permission.ErrUnauthenticated.Error())
+		return
+	}
 	form, err := c.MultipartForm()
 	if err != nil || form == nil || len(form.File["file"]) == 0 {
 		common.RespondError(c, common.CodeArgumentError, "No file part!")
@@ -1068,7 +1039,7 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 			totalSize += fh.Size
 		}
 	}
-	if !billingEnforceStorage(c, tenantID, totalSize) {
+	if !billingEnforceStorage(c, userID, totalSize) {
 		return
 	}
 	for _, fh := range files {
@@ -1076,8 +1047,8 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 			common.RespondError(c, common.CodeArgumentError, "No file selected!")
 			return
 		}
-		if len([]byte(fh.Filename)) > 255 {
-			common.RespondError(c, common.CodeArgumentError, "File name must be 255 bytes or less.")
+		if err := common.ValidateNameRunes(fh.Filename, common.NameLimit255); err != nil {
+			common.RespondError(c, common.CodeArgumentError, "File name must be at most 255 characters.")
 			return
 		}
 	}
@@ -1101,7 +1072,7 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 		}
 	}
 	ctx := c.Request.Context()
-	data, errMsgs := h.documentService.UploadLocalDocuments(ctx, kb, tenantID, files, c.PostForm("parent_path"), override)
+	data, errMsgs := h.documentService.UploadLocalDocuments(ctx, kb, files, c.PostForm("parent_path"), override)
 	if len(errMsgs) > 0 {
 		common.RespondError(c, common.CodeServerError, strings.Join(errMsgs, "\n"))
 		return
@@ -1122,7 +1093,7 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 	common.RespondSuccessList(c, mapped, "success")
 }
 
-func (h *DocumentHandler) uploadEmptyDocument(c *gin.Context, kb *entity.Knowledgebase, tenantID string) {
+func (h *DocumentHandler) uploadEmptyDocument(c *gin.Context, kb *entity.Knowledgebase) {
 	var req struct {
 		Name string `json:"name"`
 	}
@@ -1138,12 +1109,12 @@ func (h *DocumentHandler) uploadEmptyDocument(c *gin.Context, kb *entity.Knowled
 		common.RespondError(c, common.CodeArgumentError, "File name can't be empty.")
 		return
 	}
-	if len([]byte(name)) > 255 {
-		common.RespondError(c, common.CodeArgumentError, "File name must be 255 bytes or less.")
+	if err := common.ValidateNameRunes(name, common.NameLimit255); err != nil {
+		common.RespondError(c, common.CodeArgumentError, "File name must be at most 255 characters.")
 		return
 	}
 	ctx := c.Request.Context()
-	data, code, err := h.documentService.UploadEmptyDocument(ctx, kb, tenantID, name)
+	data, code, err := h.documentService.UploadEmptyDocument(ctx, kb, name)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
@@ -1151,7 +1122,7 @@ func (h *DocumentHandler) uploadEmptyDocument(c *gin.Context, kb *entity.Knowled
 	common.RespondSuccess(c, mapDocKeysWithRunStatus(data), "success")
 }
 
-func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledgebase, tenantID string) {
+func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledgebase) {
 	name := strings.TrimSpace(c.PostForm("name"))
 	rawURL := c.PostForm("url")
 	if name == "" {
@@ -1162,8 +1133,8 @@ func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledge
 		common.RespondError(c, common.CodeArgumentError, `Lack of "url"`)
 		return
 	}
-	if len([]byte(name)) > 255 {
-		common.RespondError(c, common.CodeArgumentError, "File name must be 255 bytes or less.")
+	if err := common.ValidateNameRunes(name, common.NameLimit255); err != nil {
+		common.RespondError(c, common.CodeArgumentError, "File name must be at most 255 characters.")
 		return
 	}
 	if !isValidHTTPURL(rawURL) {
@@ -1171,7 +1142,7 @@ func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledge
 		return
 	}
 	ctx := c.Request.Context()
-	data, code, err := h.documentService.UploadWebDocument(ctx, kb, tenantID, name, rawURL)
+	data, code, err := h.documentService.UploadWebDocument(ctx, kb, name, rawURL)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
@@ -1369,14 +1340,14 @@ func stringValue(value *string) string {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/ingest [post]
 func (h *DocumentHandler) Ingest(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
-	userID := strings.TrimSpace(user.ID)
-	if userID == "" {
+	ctx := c.Request.Context()
+	if permission.UserIDFromContext(ctx) == "" {
 		common.RespondError(c, common.CodeAuthenticationError, "no authentication")
 		return
 	}
@@ -1386,8 +1357,7 @@ func (h *DocumentHandler) Ingest(c *gin.Context) {
 		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
 	}
-	ctx := c.Request.Context()
-	if code, err := h.documentService.Ingest(ctx, userID, &req); err != nil {
+	if code, err := h.documentService.Ingest(ctx, &req); err != nil {
 		common.RespondError(c, code, err.Error())
 		return
 	}
@@ -1406,8 +1376,6 @@ func (h *DocumentHandler) ListIngestionTasks(c *gin.Context) {
 		return
 	}
 
-	userID := c.GetString("user_id")
-
 	var parseResult []*entity.IngestionTask
 	var err error
 	ctx := c.Request.Context()
@@ -1417,7 +1385,7 @@ func (h *DocumentHandler) ListIngestionTasks(c *gin.Context) {
 			return
 		}
 	}
-	parseResult, err = h.documentService.ListIngestionTasks(ctx, userID, req.DatasetID, 0, 0)
+	parseResult, err = h.documentService.ListIngestionTasks(ctx, req.DatasetID, 0, 0)
 	if err != nil {
 		common.RespondError(c, IngestionTaskErrorCode(err), err.Error())
 		return
@@ -1475,7 +1443,7 @@ func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 		return
 	}
 
-	parseResult, err := h.documentService.IngestDocuments(ctx, datasetID, userID, req.DocumentIDs)
+	parseResult, err := h.documentService.IngestDocuments(ctx, datasetID, req.DocumentIDs)
 	if err != nil {
 		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
@@ -1501,9 +1469,8 @@ func (h *DocumentHandler) StopIngestionTasks(c *gin.Context) {
 		return
 	}
 
-	userID := c.GetString("user_id")
 	ctx := c.Request.Context()
-	parseResult, err := h.documentService.StopIngestionTasks(ctx, req.Tasks, userID)
+	parseResult, err := h.documentService.StopIngestionTasks(ctx, req.Tasks)
 	if err != nil {
 		common.RespondError(c, IngestionTaskErrorCode(err), err.Error())
 		return
@@ -1527,10 +1494,9 @@ func (h *DocumentHandler) RemoveIngestionTasks(c *gin.Context) {
 		return
 	}
 
-	userID := c.GetString("user_id")
 	ctx := c.Request.Context()
 
-	deletedTasks, err := h.documentService.RemoveIngestionTasks(ctx, req.Tasks, userID)
+	deletedTasks, err := h.documentService.RemoveIngestionTasks(ctx, req.Tasks)
 	if err != nil {
 		common.RespondError(c, IngestionTaskErrorCode(err), err.Error())
 		return
@@ -1551,14 +1517,13 @@ func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
 		return
 	}
 
-	userID := c.GetString("user_id")
 	ctx := c.Request.Context()
 	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRun); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
 
-	parseResult, err := h.documentService.ParseDocuments(ctx, datasetID, userID, req.Documents)
+	parseResult, err := h.documentService.ParseDocuments(ctx, datasetID, req.Documents)
 	if err != nil {
 		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
@@ -1640,11 +1605,6 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 }
 
 func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	datasetID := c.Param("dataset_id")
 	if datasetID == "" {
@@ -1743,7 +1703,7 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 		}
 	}
 	ctx := c.Request.Context()
-	data, code, err := h.documentService.UpdateDatasetDocument(ctx, user.ID, datasetID, documentID, &req, present)
+	data, code, err := h.documentService.UpdateDatasetDocument(ctx, datasetID, documentID, &req, present)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
@@ -1809,7 +1769,7 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 	}
 
 	if rawURL != "" {
-		data, code, err := h.fileService.UploadDocumentInfoByURL(ctx, user.ID, rawURL)
+		data, code, err := h.fileService.UploadDocumentInfoByURL(ctx, rawURL)
 		if err != nil {
 			common.RespondError(c, code, err.Error())
 			return
@@ -1818,7 +1778,7 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 		return
 	}
 
-	data, code, err := h.fileService.UploadDocumentInfos(ctx, user.ID, fileHeaders)
+	data, code, err := h.fileService.UploadDocumentInfos(ctx, fileHeaders)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
@@ -1848,11 +1808,6 @@ func (h *DocumentHandler) UpdateDocumentMetadatas(c *gin.Context) {
 }
 
 func (h *DocumentHandler) handleBatchUpdateDocumentMetadatas(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
 	if datasetID == "" {

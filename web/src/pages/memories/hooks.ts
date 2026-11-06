@@ -49,6 +49,7 @@ export const useCreateMemory = () => {
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to create memory');
       }
+      queryClient.invalidateQueries({ queryKey: MemoryKeys.list() });
       queryClient.invalidateQueries({ queryKey: MemoryKeys.filters() });
       return response.data;
     },
@@ -95,7 +96,7 @@ export const useFetchMemoryList = () => {
   };
 
   if (Array.isArray(owner) && owner.length > 0) {
-    requestParams.owner_ids = owner.join(',');
+    requestParams.tenant_id = owner.join(',');
   }
   const { data, isLoading, isError, refetch } = useQuery<
     MemoryListResponse,
@@ -232,9 +233,6 @@ export const useDeleteMemory = () => {
     onSuccess: () => {
       message.success(t('message.deleted'));
     },
-    onError: (error) => {
-      message.error(t('message.error', { error: error.message }));
-    },
   });
 
   const deleteMemory = useCallback(
@@ -274,6 +272,7 @@ export const useUpdateMemory = () => {
       queryClient.invalidateQueries({
         queryKey: [MemoryApiAction.FetchMemoryDetail],
       });
+      queryClient.invalidateQueries({ queryKey: MemoryKeys.list() });
       queryClient.invalidateQueries({ queryKey: MemoryKeys.filters() });
     },
   });
@@ -323,24 +322,22 @@ export const useRenameMemory = () => {
 
   const onMemoryRenameOk = useCallback(
     async (data: ICreateMemoryProps, callBack?: () => void) => {
-      let res;
-      if (memory?.id) {
-        try {
+      let saved = false;
+      try {
+        if (memory?.id) {
           await updateMemory({
-            // ...memoryDataTemp,
             name: data.name,
-            id: memory?.id,
+            id: memory.id,
           } as unknown as IMemoryAppDetailProps);
-        } catch (e) {
-          console.error('error', e);
+        } else {
+          await createMemory(data);
         }
-      } else {
-        res = await createMemory(data);
+        saved = true;
+      } catch {
+        // Request failures are already reported by the request layer; keep
+        // the dialog open so the user can retry.
       }
-      // if (res && !memory?.id) {
-      //   navigateToMemory(res?.id)();
-      // }
-      if (res) {
+      if (saved) {
         callBack?.();
         handleHideModal();
       }

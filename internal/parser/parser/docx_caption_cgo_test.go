@@ -134,11 +134,12 @@ func TestDOCXParser_TableCaptionFromHeading_EndToEnd(t *testing.T) {
 	}
 }
 
-// TestDOCXParser_CaptionStyledParagraphBecomesTableCaption_EndToEnd pins the
-// Go-side temporary stopgap (docx_caption_scan.go): a "Caption"-styled
-// paragraph immediately above a table is attached as the table caption and is
-// NOT emitted as its own text section. (office_oxide itself never surfaces the
-// paragraph style; the Go parser recovers it by re-parsing document.xml.)
+// TestDOCXParser_CaptionStyledParagraphBecomesTableCaption_EndToEnd exercises
+// the real extraction path: office_oxide 0.1.16 surfaces the Word paragraph
+// style name in the IR "style" field (yfedoseev/office_oxide#455), and the Go
+// parser reads it directly. A "Caption"-styled paragraph immediately above a
+// table is attached as the table caption and is NOT emitted as its own text
+// section.
 func TestDOCXParser_CaptionStyledParagraphBecomesTableCaption_EndToEnd(t *testing.T) {
 	res := docxCaptionParse(t, docxCaptionPara("Caption", "设备流转明细")+docxCaptionTable())
 	td := docxCaptionFindTable(t, res)

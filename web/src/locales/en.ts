@@ -606,6 +606,15 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       runningStatus3: 'Success',
       runningStatus4: 'Fail',
       runningStatusQueued: 'Queued',
+      cancelParsingTasks: 'Cancel parsing tasks',
+      filesParsing: '{{count}} files parsing',
+      filesPending: '{{count}} files pending',
+      cancelParsingConfirmTitle: 'Cancel parsing',
+      cancelParsingConfirm:
+        'Cancel parsing for the {{count}} files that are currently parsing?',
+      cancelPendingConfirm:
+        'Remove the {{count}} pending files from the parsing queue?',
+      cancelTasksSuccess: 'Canceled {{count}} parsing tasks',
       pageRanges: 'Page ranges',
       pageRangesTip:
         'Range of pages to be parsed; pages outside this range will not be processed.',
@@ -1356,6 +1365,55 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       deleteSelectedConfirm: 'Delete the selected {{count}} session(s)?',
     },
     setting: {
+      gpustack: {
+        serverUrl: 'GPUStack server URL',
+        serverUrlTip: 'Must be reachable from the RAGFlow container.',
+        loopbackWarning:
+          'localhost points to the RAGFlow container itself. Use the IP address or host.docker.internal instead.',
+        apiKey: 'API key',
+        apiKeyTip: 'Create one in GPUStack under Access Control > API Keys.',
+        apiKeyKeep: 'Leave blank to keep the saved key',
+        connect: 'Connect',
+        connecting: 'Connecting...',
+        connected: 'Connected. {{count}} running models found.',
+        connectedShort: '{{count}} running',
+        errorAuth:
+          'GPUStack rejected this API key. Check it under Access Control > API Keys.',
+        errorUnreachable:
+          'Cannot reach this server from RAGFlow. Check the URL and that the port is open to the RAGFlow container.',
+        errorOther: 'Could not list models: {{message}}',
+        emptyTitle: 'No running models found',
+        emptyBody:
+          'GPUStack only exposes models that are running and have a route. Deploy a model with "Enable model route" turned on, then refresh.',
+        emptyLink: 'Read the integration guide',
+        addModels: 'Add {{count}} models',
+        addSelected: 'Add {{count}} selected',
+        adding: 'Adding...',
+        refresh: 'Refresh',
+        editInstance: 'Edit instance',
+        saveInstance: 'Save instance',
+        cancel: 'Cancel',
+        availableTitle: 'Available in GPUStack',
+        addedTitle: 'Added models',
+        modelsLoadFailed:
+          "Could not load this instance's models. Reload the page and try again.",
+        notRunning: 'Not running',
+        notRunningTip:
+          'GPUStack is not serving this model right now, so calls to it will fail.',
+        tokens: '{{count}} tokens',
+        changeType: 'Model type for {{name}}',
+        select: 'Select {{name}}',
+        remove: 'Remove {{name}}',
+        noAdded: 'No models added yet.',
+        kind_chat: 'Chat',
+        kind_vision: 'Chat + Vision',
+        kind_embedding: 'Embedding',
+        kind_rerank: 'Rerank',
+        kind_asr: 'Speech to text',
+        kind_tts: 'Text to speech',
+        typeHint:
+          'Types come from GPUStack. GPUStack cannot tell whether a model accepts images, so choose Chat + Vision for those.',
+      },
       Verify: 'Verify',
       keyValid: 'Your API Key is valid.',
       keyInvalid: 'Your API Key is invalid.',
@@ -2053,10 +2111,10 @@ Example: Virtual Hosted Style`,
       deleteChannelModalContent:
         'Are you sure you want to delete this chat channel bot? This action cannot be undone.',
       connectDialog: 'Connect assistant or Agent',
-      connectDialogTitle: 'Connect {{name}} to an assistant or Agent',
-      selectDialog: 'Select an assistant or Agent',
+      connectDialogTitle: 'Connect {{name}} to an assistant',
+      selectDialog: 'Select an assistant',
       connectDialogTip:
-        'Messages received by this channel will be answered by the connected assistant or Agent. Clear the selection to disconnect.',
+        'Messages received by this channel will be answered by the connected assistant. Clear the selection to disconnect.',
       notConnected: 'No assistant or Agent connected',
       chatChannelAssistant: 'Chat assistant',
       chatChannelAgent: 'Agent',
@@ -2824,11 +2882,15 @@ Best for: Documents with flowing, contextually connected content — such as boo
         'Use a vision model to parse image and table blocks; when off, they are treated as plain text.',
       imageOcr: 'OCR',
       imageOcrTip:
-        'Extract text from uploaded images with local OCR or the selected PaddleOCR model. Vision enhancement adds descriptions independently of this switch.',
-      imageOcrModel: 'OCR model',
-      imageOcrLocal: 'DeepDoc',
-      imageOcrModelTip:
-        'Choose DeepDoc for local OCR, or an added PaddleOCR or PaddleOCR.local model. Turning OCR off keeps this choice but skips OCR; SVG text is read directly.',
+        'Extract text from images. DeepDoc parses an image as a one-page document, so it includes layout analysis and table structure; an external OCR model returns text only. Vision enhancement adds descriptions independently of this switch.',
+      imageOcrParsingMethod: 'Parsing method',
+      imageOcrParsingMethodTip:
+        'DeepDoc runs locally and performs OCR, layout analysis, and table structure recognition. An external OCR model uses an added PaddleOCR model and returns text only. Turning OCR off keeps this choice but skips OCR; SVG text is read directly.',
+      imageOcrDeepDoc: 'DeepDoc',
+      imageOcrDeepDocDescription: 'OCR + layout analysis + table structure',
+      imageOcrExternal: 'External OCR model',
+      imageOcrExternalDescription: 'Text only; no table structure',
+      imageOcrModelPlaceholder: 'Select an OCR model',
       imageOcrModelsError:
         'Could not load OCR models. Your selection is unchanged. Try again later, or choose DeepDoc for local OCR.',
       imageOcrNoModels:

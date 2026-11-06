@@ -18,6 +18,7 @@ package component
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net"
@@ -26,6 +27,7 @@ import (
 	"net/url"
 	"ragflow/internal/common"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -35,14 +37,10 @@ import (
 	"go.uber.org/zap/zaptest/observer"
 )
 
-// Reset the environment opt-in so tests select private-host access explicitly
-// through either ALLOW_ANY_HOST or the in-memory test hook.
+// Set the environment opt-in so tests select private-host access explicitly.
 func setupAllowAnyHost(t *testing.T, enabled bool) {
 	t.Helper()
-	t.Setenv(common.EnvAllowAnyHost, "")
-	prev := common.AllowAnyHostForTest
-	common.AllowAnyHostForTest = enabled
-	t.Cleanup(func() { common.AllowAnyHostForTest = prev })
+	t.Setenv(common.EnvAllowAnyHost, strconv.FormatBool(enabled))
 }
 
 // TestInvoke_GET exercises the happy path: a GET request to a stub
@@ -327,7 +325,7 @@ func TestInvoke_AllowAnyHostRejectsInvalidURLs(t *testing.T) {
 }
 
 // TestInvoke_SSRFGuard_BlocksLoopback mirrors PR #15426: when
-// AllowAnyHostForTest is unset (production shape), the Invoke
+// ALLOW_ANY_HOST is unset, the Invoke
 // component must reject loopback / link-local / RFC1918 URLs
 // BEFORE any HTTP request is made. The test sets up an
 // httptest server on 127.0.0.1, points Invoke at it, and
@@ -697,5 +695,80 @@ func TestInvoke_ProxyRejectsHostnameTarget(t *testing.T) {
 	}
 	if got, _ := out["_ERROR"].(string); got != "URL not valid" {
 		t.Errorf("hostname+proxy target: _ERROR = %q, want %q", got, "URL not valid")
+	}
+}
+
+func TestInvoke_ParameterTypes(t *testing.T) {
+	setupAllowAnyHost(t, true)
+	for _, tc := range []struct {
+		name, kind string
+		value      any
+		invalid    bool
+	}{
+		{"legacy", "", `{"nested":{"items":[1,true]}}`, false},
+		{"string", "string", `{"nested":{"items":[1,true]}}`, false},
+		{"object", "object", `{"nested":{"items":[1,true]}}`, false},
+		{"native", "object", map[string]any{"nested": map[string]any{"items": []any{float64(1), true}}}, false},
+		{"invalid", "object", `{`, true},
+		{"array", "object", `[]`, true},
+		{"null", "object", `null`, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, ref := range []string{"", "source@result"} {
+				var captured any
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var body map[string]any
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						t.Error(err)
+					}
+					captured = body["input"]
+					w.Write([]byte(`ok`))
+				}))
+				c, err := NewInvokeComponent(map[string]any{"url": srv.URL, "method": "POST", "variables": []any{map[string]any{"key": "input", "type": tc.kind, "value": tc.value, "ref": ref}}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, err = c.Invoke(t.Context(), nil, map[string]any{"source@result": tc.value})
+				srv.Close()
+				if tc.invalid {
+					if err == nil || !strings.Contains(err.Error(), `parameter "input" must be a valid JSON object`) {
+						t.Fatalf("error = %v", err)
+					}
+					continue
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				expected := tc.value
+				if tc.kind == "object" {
+					expected = map[string]any{"nested": map[string]any{"items": []any{float64(1), true}}}
+				}
+				if !reflect.DeepEqual(captured, expected) {
+					t.Fatalf("wire value = %#v, want %#v", captured, expected)
+				}
+			}
+		})
+	}
+}
+
+func TestInvoke_ExplicitBodyIgnoresParameterTypes(t *testing.T) {
+	setupAllowAnyHost(t, true)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		if string(body) != `{"explicit":true}` {
+			t.Errorf("body = %s", body)
+		}
+		w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+	c, err := NewInvokeComponent(map[string]any{
+		"url": srv.URL, "method": "PUT", "body": `{"explicit":true}`,
+		"variables": []any{map[string]any{"key": "ignored", "type": "object", "value": "invalid JSON"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.Invoke(t.Context(), nil, nil); err != nil {
+		t.Fatal(err)
 	}
 }

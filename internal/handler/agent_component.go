@@ -49,11 +49,6 @@ import (
 
 // GetComponentInputForm GET /api/v1/agents/:canvas_id/components/:component_id/input-form
 func (h *AgentHandler) GetComponentInputForm(c *gin.Context) {
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		common.RespondError(c, code, msg)
-		return
-	}
 	canvasID := c.Param("canvas_id")
 	componentID := c.Param("component_id")
 	if canvasID == "" || componentID == "" {
@@ -61,7 +56,7 @@ func (h *AgentHandler) GetComponentInputForm(c *gin.Context) {
 		return
 	}
 
-	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, canvasID)
+	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), canvasID)
 	if err != nil {
 		if errors.Is(err, dao.ErrUserCanvasNotFound) {
 			common.RespondError(c, common.CodeOperatingError, canvasNoAccessMessage)
@@ -71,7 +66,7 @@ func (h *AgentHandler) GetComponentInputForm(c *gin.Context) {
 		return
 	}
 
-	form, err := h.componentInputForm(c.Request.Context(), cv.DSL, componentID, user.ID)
+	form, err := h.componentInputForm(c.Request.Context(), cv.DSL, componentID)
 	if err != nil {
 		mapDSLError(c, componentID, err)
 		return
@@ -85,7 +80,7 @@ func (h *AgentHandler) GetComponentInputForm(c *gin.Context) {
 // it instantiates the runtime component and calls its GetInputForm method.
 // This mirrors Python's Canvas.get_component_input_form which invokes the
 // component's own get_input_form when the static field is absent.
-func (h *AgentHandler) componentInputForm(ctx context.Context, dslMap map[string]any, componentID, userID string) (map[string]any, error) {
+func (h *AgentHandler) componentInputForm(ctx context.Context, dslMap map[string]any, componentID string) (map[string]any, error) {
 	form, err := dsl.ExtractComponentInputForm(dslMap, componentID)
 	if err == nil {
 		return form, nil
@@ -153,7 +148,7 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 		return
 	}
 
-	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), user.ID, canvasID)
+	cv, err := h.loader.LoadCanvasByID(c.Request.Context(), canvasID)
 	if err != nil {
 		if errors.Is(err, dao.ErrUserCanvasNotFound) {
 			common.RespondError(c, common.CodeOperatingError, canvasNoAccessMessage)

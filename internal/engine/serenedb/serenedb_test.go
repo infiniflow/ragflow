@@ -438,7 +438,7 @@ func TestRunSQLRejectsMutationStatementsBeforeExecution(t *testing.T) {
 			defer db.Close()
 
 			engine := &serenedbEngine{db: db}
-			_, err = engine.RunSQL(context.Background(), "chunks", query, nil, "json")
+			_, err = engine.RunSQL(context.Background(), query, "json")
 			if err == nil {
 				t.Fatalf("RunSQL(%q) error = %v, want read-only SELECT rejection before query execution", query, err)
 			}
@@ -461,7 +461,7 @@ func TestRunSQLUsesReadOnlyTransaction(t *testing.T) {
 	mock.ExpectCommit()
 
 	engine := &serenedbEngine{db: db}
-	rows, err := engine.RunSQL(context.Background(), "chunks", "SELECT 1", nil, "json")
+	rows, err := engine.RunSQL(context.Background(), "SELECT 1", "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}

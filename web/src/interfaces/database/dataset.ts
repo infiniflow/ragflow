@@ -50,6 +50,7 @@ export interface IDataset {
   tenant_avatar: string;
   tenant_embd_id: number;
   tenant_id: string;
+  operator_permission: number;
   token_num: number;
   update_date: string;
   update_time: number;

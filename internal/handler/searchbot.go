@@ -28,6 +28,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
 	"go.uber.org/zap"
@@ -131,11 +132,6 @@ func (h *SearchBotHandler) SetAskService(svc *service.AskService) { h.askSvc = s
 // @Router /api/v1/searchbots/related-questions [post]
 func (h *SearchBotHandler) Handle(c *gin.Context) {
 	ctx := c.Request.Context()
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	var req SearchBotRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -169,11 +165,6 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searchbots/retrieval [post]
 func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.Respond(c, http.StatusUnauthorized, errorCode, nil, errorMessage)
-		return
-	}
 
 	var req SearchBotRetrievalTestRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -202,6 +193,10 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	}
 	req.VectorSimilarityWeight = vectorSimilarityWeight
 
+	if err := common.ValidatePagination(req.Page, nil, req.Size); err != nil {
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		return
+	}
 	applyRetrievalDefaults(&req)
 
 	if req.TopK != nil && *req.TopK <= 0 {
@@ -234,11 +229,6 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searchbots/ask [post]
 func (h *SearchBotHandler) Ask(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	var req SearchBotAskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -269,12 +259,12 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 	// Resolve chat model ID.
 	modelID := ""
 	options := service.AskStreamOptions{}
-	askAccess, accessErr := service.ResolveIdentity(c.Request.Context())
-	if accessErr != nil {
-		if respondPermissionErrorIf(c, accessErr, true) {
-			return
-		}
-		jsonInternalError(c, accessErr)
+	modelTenantID := strings.TrimSpace(permission.TenantIDFromContext(c.Request.Context()))
+	if modelTenantID == "" {
+		modelTenantID = permission.UserIDFromContext(c.Request.Context())
+	}
+	if modelTenantID == "" {
+		jsonInternalError(c, permission.ErrUnauthenticated)
 		return
 	}
 	if req.SearchID != "" {
@@ -292,6 +282,9 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 			return
 		}
 		searchConfig := searchConfigFromDetail(detail)
+		if tenantID, ok := detail["tenant_id"].(string); ok && strings.TrimSpace(tenantID) != "" {
+			modelTenantID = strings.TrimSpace(tenantID)
+		}
 		options = service.BuildAskStreamOptions(req.SearchID, searchConfig)
 		if chatID, ok := searchConfig["chat_id"].(string); ok && chatID != "" {
 			modelID = chatID
@@ -299,7 +292,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 	}
 	if modelID == "" && h.modelFactory != nil {
 		ctx := c.Request.Context()
-		if info, infoErr := h.modelFactory.ResolveDefaultInfo(ctx, askAccess, entity.ModelTypeChat); infoErr == nil {
+		if info, infoErr := h.modelFactory.ResolveDefaultInfo(permission.WithTenantID(ctx, modelTenantID), entity.ModelTypeChat); infoErr == nil {
 			modelID = service.ModelReference(info)
 		}
 	}
@@ -323,9 +316,10 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 	}
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
+	ctx = permission.WithTenantID(ctx, modelTenantID)
 	c.Request = c.Request.WithContext(ctx)
 	hadError := false
-	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, Identity: askAccess, ModelID: modelID}
+	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, ModelID: modelID}
 	for delta := range h.askSvc.StreamWithOptions(ctx, adapter, req.Question, filtered, options) {
 		var ok bool
 		switch delta.Kind {
@@ -360,11 +354,6 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searchbots/mindmap [post]
 func (h *SearchBotHandler) MindMap(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	var req SearchBotMindMapRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -392,6 +381,10 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 	}
 
 	searchConfig := map[string]interface{}{}
+	modelTenantID := strings.TrimSpace(permission.TenantIDFromContext(c.Request.Context()))
+	if modelTenantID == "" {
+		modelTenantID = permission.UserIDFromContext(c.Request.Context())
+	}
 	if req.SearchID != "" {
 		if h.searchSvc == nil {
 			jsonInternalError(c, fmt.Errorf("search service not configured"))
@@ -407,17 +400,21 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 			return
 		}
 		searchConfig = searchConfigFromDetail(detail)
+		if tenantID, ok := detail["tenant_id"].(string); ok && strings.TrimSpace(tenantID) != "" {
+			modelTenantID = strings.TrimSpace(tenantID)
+		}
 	}
 
 	ctx := c.Request.Context()
 	mindMap, err := runMindMap(ctx, mindMapRunConfig{
-		Question:     req.Question,
-		KbIDs:        filtered,
-		SearchID:     req.SearchID,
-		SearchConfig: searchConfig,
-		ChunkSvc:     h.chunkSvc,
-		LLM:          h.modelFactory,
-		TenantSvc:    h.tenantSvc,
+		Question:      req.Question,
+		KbIDs:         filtered,
+		SearchID:      req.SearchID,
+		SearchConfig:  searchConfig,
+		ModelTenantID: modelTenantID,
+		ChunkSvc:      h.chunkSvc,
+		LLM:           h.modelFactory,
+		TenantSvc:     h.tenantSvc,
 	})
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
@@ -588,11 +585,11 @@ func toRetrievalServiceRequest(h *SearchBotRetrievalTestRequest) *service.Retrie
 // search_config, which a default here would hide.
 func applyRetrievalDefaults(req *SearchBotRetrievalTestRequest) {
 	if req.Page == nil {
-		v := 1
+		v := common.DefaultPage
 		req.Page = &v
 	}
 	if req.Size == nil {
-		v := 30
+		v := common.DefaultPageSize
 		req.Size = &v
 	}
 	if req.UseKG == nil {

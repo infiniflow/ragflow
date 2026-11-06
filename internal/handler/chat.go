@@ -71,13 +71,6 @@ type ChatMindMapRequest struct {
 // @Success 200 {object} service.ListChatsResponse
 // @Router /api/v1/chats [get]
 func (h *ChatHandler) ListChats(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-	userID := user.ID
-
 	// Parse query parameters
 	keywords := c.Query("keywords")
 	// Exact id and name filters take precedence over the fuzzy keyword
@@ -88,18 +81,10 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 		keywords = ""
 	}
 
-	page := 0
-	if pageStr := c.Query("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
-		}
-	}
-
-	pageSize := 0
-	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
-		if ps, err := strconv.Atoi(pageSizeStr); err == nil && ps > 0 {
-			pageSize = ps
-		}
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
 	}
 
 	// `sort` supersedes the older pair, so a request it can order is not rejected
@@ -125,7 +110,7 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// List chats - default to valid status "1" (same as Python StatusEnum.VALID.value)
-	result, err := h.chatService.ListChats(ctx, userID, "1", keywords, id, name, page, pageSize, terms, ownerIDs)
+	result, err := h.chatService.ListChats(ctx, "1", keywords, id, name, page, pageSize, terms, ownerIDs)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, false) {
 			return
@@ -154,12 +139,6 @@ func (h *ChatHandler) Create(c *gin.Context) {
 		return
 	}
 
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
 	var req map[string]interface{}
 	decoder := json.NewDecoder(c.Request.Body)
 	decoder.UseNumber()
@@ -172,7 +151,7 @@ func (h *ChatHandler) Create(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	result, code, err := h.chatService.Create(ctx, user.ID, req)
+	result, code, err := h.chatService.Create(ctx, req)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
@@ -189,11 +168,6 @@ func (h *ChatHandler) Create(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/chat/mindmap [post]
 func (h *ChatHandler) MindMap(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 
 	var req ChatMindMapRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -252,13 +226,6 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 }
 
 func (h *ChatHandler) DeleteChat(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-	userID := user.ID
-
 	chatID := c.Param("chat_id")
 	if chatID == "" {
 		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "chat_id is required")
@@ -266,7 +233,7 @@ func (h *ChatHandler) DeleteChat(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	if err := h.chatService.DeleteChat(ctx, userID, chatID); err != nil {
+	if err := h.chatService.DeleteChat(ctx, chatID); err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
@@ -279,12 +246,6 @@ func (h *ChatHandler) DeleteChat(c *gin.Context) {
 
 // BulkDeleteChats soft deletes multiple chats owned by the current user.
 func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-	userID := user.ID
 	if c.Request.Body == nil || c.Request.ContentLength == 0 {
 		common.RespondSuccess(c, map[string]interface{}{}, "success")
 		return
@@ -299,7 +260,7 @@ func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 	ctx := c.Request.Context()
 	if len(req.IDs) == 0 && !req.DeleteAll {
 		if req.ChatID != "" {
-			if err := h.chatService.DeleteChat(ctx, userID, req.ChatID); err != nil {
+			if err := h.chatService.DeleteChat(ctx, req.ChatID); err != nil {
 				if respondPermissionErrorIf(c, err, true) {
 					return
 				}
@@ -315,7 +276,7 @@ func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 		return
 	}
 
-	result, err := h.chatService.BulkDeleteChats(ctx, userID, &req)
+	result, err := h.chatService.BulkDeleteChats(ctx, &req)
 	if err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
@@ -342,14 +303,6 @@ func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 // Python implementation details:
 // - Route: @manager.route("/chats/<chat_id>", methods=["GET"])
 func (h *ChatHandler) GetChat(c *gin.Context) {
-	// Get current user from context (same as Python current_user)
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-	userID := user.ID
-
 	// Get chat_id from path parameter (same as Python <chat_id>)
 	chatID := c.Param("chat_id")
 	if chatID == "" {
@@ -359,7 +312,7 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 
 	// Get chat detail with permission check
 	ctx := c.Request.Context()
-	chat, err := h.chatService.GetChat(ctx, userID, chatID)
+	chat, err := h.chatService.GetChat(ctx, chatID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -411,17 +364,12 @@ func (h *ChatHandler) GetChat(c *gin.Context) {
 
 // GetAgenticRAGConfig returns defaults and effective Agentic RAG settings.
 func (h *ChatHandler) GetAgenticRAGConfig(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 	chatID := c.Param("chat_id")
 	if chatID == "" {
 		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "chat_id is required")
 		return
 	}
-	settings, err := h.chatService.GetAgenticRAGConfig(c.Request.Context(), user.ID, chatID)
+	settings, err := h.chatService.GetAgenticRAGConfig(c.Request.Context(), chatID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -443,12 +391,6 @@ func (h *ChatHandler) PatchChat(c *gin.Context) {
 }
 
 func (h *ChatHandler) updateChatByMethod(c *gin.Context, patch bool) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
 	chatID := c.Param("chat_id")
 	if chatID == "" {
 		common.RespondError(c, common.CodeBadRequest, "chat_id is required")
@@ -465,9 +407,9 @@ func (h *ChatHandler) updateChatByMethod(c *gin.Context, patch bool) {
 	var err error
 	ctx := c.Request.Context()
 	if patch {
-		result, err = h.chatService.PatchChat(ctx, user.ID, chatID, req)
+		result, err = h.chatService.PatchChat(ctx, chatID, req)
 	} else {
-		result, err = h.chatService.UpdateChat(ctx, user.ID, chatID, req)
+		result, err = h.chatService.UpdateChat(ctx, chatID, req)
 	}
 	if err != nil {
 		if respondPermissionErrorIf(c, err, false) {

@@ -535,7 +535,7 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 		req.TTSID = &value
 	}
 
-	code, err := h.userTenantService.SetModelSettings(ctx, user.ID, &req)
+	code, err := h.userTenantService.SetModelSettings(ctx, &req)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		operationLog.Code = int(code)

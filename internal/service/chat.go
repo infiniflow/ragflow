@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+
 	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -107,7 +108,7 @@ type ListChatsResponse struct {
 }
 
 // ListChats list chats for a user
-func (s *ChatService) ListChats(ctx context.Context, userID, status, keywords, id, name string, page, pageSize int, terms []dao.OrderTerm, ownerIDs []string) (*ListChatsResponse, error) {
+func (s *ChatService) ListChats(ctx context.Context, status, keywords, id, name string, page, pageSize int, terms []dao.OrderTerm, ownerIDs []string) (*ListChatsResponse, error) {
 	chatScope, err := s.permissionChecker.Scope(ctx, permission.ScopeQuery{
 		Kind:      permission.ResourceKindChat,
 		Operation: permission.OperationRead,
@@ -196,8 +197,9 @@ type CreateChatRequest struct {
 	TenantID               *string `json:"tenant_id"`
 }
 
-func (s *ChatService) Create(ctx context.Context, userID string, req map[string]interface{}) (map[string]interface{}, common.ErrorCode, error) {
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+func (s *ChatService) Create(ctx context.Context, req map[string]interface{}) (map[string]interface{}, common.ErrorCode, error) {
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		code, normalized := permissionresponse.Normalize(err)
 		return nil, code, normalized
@@ -241,7 +243,7 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 		datasetIDsValue, hasDatasetIDs = req["kb_ids"]
 	}
 	if hasDatasetIDs {
-		kbIDs, err := s.validateCreateDatasetIDs(ctx, datasetIDsValue, userID)
+		kbIDs, err := s.validateCreateDatasetIDs(ctx, datasetIDsValue)
 		if err != nil {
 			return nil, common.CodeDataError, err
 		}
@@ -346,7 +348,7 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 	applyCreatePromptDefaults(req)
 	filterCreateChatPersistedFields(req)
 
-	name, err = common.UniqueName(name, 255, func(candidate string) (bool, error) {
+	name, err = common.UniqueName(name, common.NameLimit255, func(candidate string) (bool, error) {
 		return s.chatDAO.ExistsByNameTenantStatus(ctx, dao.DB, candidate, tenantID, string(entity.StatusValid))
 	})
 	if err != nil {
@@ -355,6 +357,7 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 	req["name"] = name
 
 	chat := buildCreateChatEntity(req, tenantID)
+	chat.UserID = userID
 	if err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := s.chatDAO.Create(ctx, tx, chat); err != nil {
 			return err
@@ -388,13 +391,13 @@ func validateCreateChatName(value interface{}) (string, error) {
 	if name == "" {
 		return "", errors.New("`name` is required")
 	}
-	if len([]byte(name)) > 255 {
-		return "", fmt.Errorf("chat name length is %d which is larger than 255", len([]byte(name)))
+	if err := common.ValidateNameRunes(name, common.NameLimit255); err != nil {
+		return "", err
 	}
 	return name, nil
 }
 
-func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interface{}, userID string) ([]string, error) {
+func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interface{}) ([]string, error) {
 	if value == nil {
 		return []string{}, nil
 	}
@@ -434,7 +437,7 @@ func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interf
 	return normalizedIDs, nil
 }
 
-func validateChatDatasetAccess(ctx context.Context, userID string, kbIDs entity.JSONSlice) error {
+func validateChatDatasetAccess(ctx context.Context, kbIDs entity.JSONSlice) error {
 	for _, rawID := range kbIDs {
 		datasetID, ok := rawID.(string)
 		if !ok || strings.TrimSpace(datasetID) == "" {
@@ -474,7 +477,7 @@ func resolveCreateLLMID(ctx context.Context, llmID, tenantID string, llmSetting 
 		}
 	}
 	modelFactory := NewModelFactory()
-	target, err := modelFactory.ResolveInfo(ctx, Identity{TenantID: tenantID}, modelType, llmID)
+	target, err := modelFactory.ResolveInfo(permission.WithTenantID(ctx, tenantID), modelType, llmID)
 	if err != nil {
 		return "", fmt.Errorf("`llm_id` %s doesn't exist", llmID)
 	}
@@ -490,7 +493,7 @@ func resolveCreateRerankID(ctx context.Context, rerankID, tenantID string) (stri
 		return "", nil
 	}
 	modelFactory := NewModelFactory()
-	target, err := modelFactory.ResolveInfo(ctx, Identity{TenantID: tenantID}, entity.ModelTypeRerank, rerankID)
+	target, err := modelFactory.ResolveInfo(permission.WithTenantID(ctx, tenantID), entity.ModelTypeRerank, rerankID)
 	if err != nil {
 		return "", fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
 	}
@@ -819,7 +822,7 @@ const (
 	pyDefaultEmptyResponse = "Sorry! No relevant content was found in the knowledge base!"
 )
 
-func (s *ChatService) getChatForOperation(ctx context.Context, userID, chatID string, operation permission.Operation) (*entity.Chat, error) {
+func (s *ChatService) getChatForOperation(ctx context.Context, chatID string, operation permission.Operation) (*entity.Chat, error) {
 	if err := s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, operation); err != nil {
 		return nil, err
 	}
@@ -869,19 +872,23 @@ var defaultRerankModels = map[string]struct{}{
 }
 
 // UpdateChat mirrors PUT /api/v1/chats/<chat_id> in the Python REST API.
-func (s *ChatService) UpdateChat(ctx context.Context, userID, chatID string, req map[string]interface{}) (map[string]interface{}, error) {
-	return s.updateChatREST(ctx, userID, chatID, req, false)
+func (s *ChatService) UpdateChat(ctx context.Context, chatID string, req map[string]interface{}) (map[string]interface{}, error) {
+	return s.updateChatREST(ctx, chatID, req, false)
 }
 
 // PatchChat mirrors PATCH /api/v1/chats/<chat_id> in the Python REST API.
-func (s *ChatService) PatchChat(ctx context.Context, userID, chatID string, req map[string]interface{}) (map[string]interface{}, error) {
-	return s.updateChatREST(ctx, userID, chatID, req, true)
+func (s *ChatService) PatchChat(ctx context.Context, chatID string, req map[string]interface{}) (map[string]interface{}, error) {
+	return s.updateChatREST(ctx, chatID, req, true)
 }
 
-func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string, req map[string]interface{}, patch bool) (map[string]interface{}, error) {
-	currentChat, err := s.getChatForOperation(ctx, userID, chatID, permission.OperationUpdate)
+func (s *ChatService) updateChatREST(ctx context.Context, chatID string, req map[string]interface{}, patch bool) (map[string]interface{}, error) {
+	currentChat, err := s.getChatForOperation(ctx, chatID, permission.OperationUpdate)
 	if err != nil {
 		return nil, err
+	}
+	modelTenantID := strings.TrimSpace(permission.TenantIDFromContext(ctx))
+	if modelTenantID == "" {
+		modelTenantID = currentChat.TenantID
 	}
 
 	if !patch && isTruthy(req["tenant_id"]) {
@@ -908,7 +915,7 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 		value, hasDatasetIDs = req["kb_ids"]
 	}
 	if hasDatasetIDs {
-		kbIDs, err := s.validateRESTDatasetIDs(ctx, value, userID)
+		kbIDs, err := s.validateRESTDatasetIDs(ctx, value)
 		if err != nil {
 			return nil, err
 		}
@@ -932,7 +939,7 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 
 	if value, ok := req["llm_id"]; ok {
 		llmID := fmt.Sprint(value)
-		tenantLLMID, err := s.resolveRESTLLMID(ctx, llmID, userID, llmSetting)
+		tenantLLMID, err := s.resolveRESTLLMID(ctx, llmID, modelTenantID, llmSetting)
 		if err != nil {
 			return nil, err
 		}
@@ -949,7 +956,7 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 			req["tenant_decision_id"] = nil
 		} else {
 			modelFactory := NewModelFactory()
-			target, err := modelFactory.ResolveInfo(ctx, Identity{TenantID: userID}, entity.ModelTypeDecision, decisionID)
+			target, err := modelFactory.ResolveInfo(permission.WithTenantID(ctx, modelTenantID), entity.ModelTypeDecision, decisionID)
 			if err != nil {
 				return nil, fmt.Errorf("`decision_id` %s doesn't exist", decisionID)
 			}
@@ -959,7 +966,7 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 
 	if value, ok := req["rerank_id"]; ok {
 		rerankID := fmt.Sprint(value)
-		tenantRerankID, err := s.resolveRESTRerankID(ctx, rerankID, userID)
+		tenantRerankID, err := s.resolveRESTRerankID(ctx, rerankID, modelTenantID)
 		if err != nil {
 			return nil, err
 		}
@@ -1013,7 +1020,7 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 			currentName = *currentChat.Name
 		}
 		available, err := common.NameAvailable(currentName, name, func(candidate string) (bool, error) {
-			return s.chatDAO.ExistsByNameTenantStatus(ctx, dao.DB, candidate, userID, string(entity.StatusValid))
+			return s.chatDAO.ExistsByNameTenantStatus(ctx, dao.DB, candidate, currentChat.TenantID, string(entity.StatusValid))
 		})
 		if err != nil {
 			return nil, err
@@ -1132,13 +1139,13 @@ func validateRESTChatName(value interface{}, required bool) (string, bool, error
 		}
 		return "", false, errors.New("`name` cannot be empty")
 	}
-	if len([]byte(name)) > 255 {
-		return "", false, fmt.Errorf("chat name length is %d which is larger than 255", len([]byte(name)))
+	if err := common.ValidateNameRunes(name, common.NameLimit255); err != nil {
+		return "", false, err
 	}
 	return name, true, nil
 }
 
-func (s *ChatService) validateRESTDatasetIDs(ctx context.Context, value interface{}, userID string) (entity.JSONSlice, error) {
+func (s *ChatService) validateRESTDatasetIDs(ctx context.Context, value interface{}) (entity.JSONSlice, error) {
 	if value == nil {
 		return entity.JSONSlice{}, nil
 	}
@@ -1203,7 +1210,7 @@ func (s *ChatService) resolveRESTLLMID(ctx context.Context, llmID, tenantID stri
 		}
 	}
 	modelFactory := NewModelFactory()
-	target, err := modelFactory.ResolveInfo(ctx, Identity{TenantID: tenantID}, modelType, llmID)
+	target, err := modelFactory.ResolveInfo(permission.WithTenantID(ctx, tenantID), modelType, llmID)
 	if err != nil {
 		return "", fmt.Errorf("`llm_id` %s doesn't exist", llmID)
 	}
@@ -1219,7 +1226,7 @@ func (s *ChatService) resolveRESTRerankID(ctx context.Context, rerankID, tenantI
 		return "", nil
 	}
 	modelFactory := NewModelFactory()
-	target, err := modelFactory.ResolveInfo(ctx, Identity{TenantID: tenantID}, entity.ModelTypeRerank, rerankID)
+	target, err := modelFactory.ResolveInfo(permission.WithTenantID(ctx, tenantID), entity.ModelTypeRerank, rerankID)
 	if err != nil {
 		return "", fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
 	}
@@ -1293,8 +1300,8 @@ func (s *ChatService) buildRESTChatResponse(ctx context.Context, chat *entity.Ch
 }
 
 // DeleteChat soft deletes a single chat owned by the current user.
-func (s *ChatService) DeleteChat(ctx context.Context, userID, chatID string) error {
-	if _, err := s.getChatForOperation(ctx, userID, chatID, permission.OperationDelete); err != nil {
+func (s *ChatService) DeleteChat(ctx context.Context, chatID string) error {
+	if _, err := s.getChatForOperation(ctx, chatID, permission.OperationDelete); err != nil {
 		return err
 	}
 	if err := s.chatDAO.UpdateByID(ctx, dao.DB, chatID, map[string]interface{}{
@@ -1338,7 +1345,7 @@ func checkDuplicateChatIDs(ids []string) ([]string, []string) {
 }
 
 // BulkDeleteChats soft deletes chats owned by the current user with partial success semantics.
-func (s *ChatService) BulkDeleteChats(ctx context.Context, userID string, req *BulkDeleteChatsRequest) (map[string]interface{}, error) {
+func (s *ChatService) BulkDeleteChats(ctx context.Context, req *BulkDeleteChatsRequest) (map[string]interface{}, error) {
 	ids := req.IDs
 	if len(ids) == 0 && req.DeleteAll {
 		chatScope, err := s.permissionChecker.Scope(ctx, permission.ScopeQuery{
@@ -1364,7 +1371,7 @@ func (s *ChatService) BulkDeleteChats(ctx context.Context, userID string, req *B
 	successCount := 0
 
 	for _, chatID := range uniqueIDs {
-		if _, err := s.getChatForOperation(ctx, userID, chatID, permission.OperationDelete); err != nil {
+		if _, err := s.getChatForOperation(ctx, chatID, permission.OperationDelete); err != nil {
 			errorsList = append(errorsList, fmt.Sprintf("Chat(%s) not found.", chatID))
 			continue
 		}
@@ -1409,7 +1416,7 @@ type GetChatResponse struct {
 }
 
 // GetChat gets chat detail by ID with permission check
-func (s *ChatService) GetChat(ctx context.Context, userID string, chatID string) (*GetChatResponse, error) {
+func (s *ChatService) GetChat(ctx context.Context, chatID string) (*GetChatResponse, error) {
 	if err := s.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChat, ID: chatID}, permission.OperationRead); err != nil {
 		return nil, err
 	}

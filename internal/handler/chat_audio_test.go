@@ -29,9 +29,7 @@ func TestChatAudioSpeechFailureOmitsProviderError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	prevAllow := common.AllowAnyHostForTest
-	common.AllowAnyHostForTest = true
-	t.Cleanup(func() { common.AllowAnyHostForTest = prevAllow })
+	t.Setenv(common.EnvAllowAnyHost, "true")
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
 	if err != nil {

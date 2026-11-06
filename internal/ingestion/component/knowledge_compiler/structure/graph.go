@@ -147,7 +147,7 @@ func RebuildStructureGraph(products []common.Product, compileType string) map[st
 				relations = append(relations, rel)
 			}
 		case "entity":
-			if ent := graphEntity(payload, metaStrings(p.Meta, "source_chunk_ids")); ent != nil {
+			if ent := graphEntity(payload, common.MetaStringSlice(p.Meta, "source_chunk_ids")); ent != nil {
 				entities = append(entities, ent)
 			}
 		}

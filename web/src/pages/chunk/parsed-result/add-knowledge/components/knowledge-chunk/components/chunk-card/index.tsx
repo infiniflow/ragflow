@@ -7,6 +7,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useDatasetEditButtonDisabled } from '@/ee/hooks/logic-hooks/use-permission';
 import type { ChunkDocType, IChunk } from '@/interfaces/database/dataset';
 import { cn } from '@/lib/utils';
 import { sanitizeHtmlWithImagesAsText } from '@/utils/dom-util';
@@ -41,6 +42,8 @@ const ChunkCard = ({
   t: imageCacheKey,
 }: IProps) => {
   const { t } = useTranslation();
+  const datasetEditButtonDisabled = useDatasetEditButtonDisabled();
+
   const available = Number(item.available_int);
   const [enabled, setEnabled] = useState(false);
 
@@ -145,6 +148,7 @@ const ChunkCard = ({
             onCheckedChange={onChange}
             aria-readonly
             className="!m-0"
+            disabled={datasetEditButtonDisabled}
           />
         </div>
       </div>

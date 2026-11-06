@@ -270,7 +270,7 @@ func (z *ZhipuAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 }
 
 func (z *ZhipuAIModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", z.Name())
 }
 
 func (z *ZhipuAIModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
@@ -555,7 +555,7 @@ func writeZhipuASRField(writer *multipart.Writer, key string, value interface{})
 }
 
 func (z *ZhipuAIModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", z.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", z.Name())
 }
 
 // AudioSpeech convert text to audio
@@ -782,17 +782,17 @@ func (z *ZhipuAIModel) OCRFile(ctx context.Context, modelName *string, content [
 
 // ParseFile parse file
 func (z *ZhipuAIModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", z.Name())
 }
 
 func (z *ZhipuAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", z.Name())
 }
 
 func (z *ZhipuAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", z.Name())
 }
 
 func (z *ZhipuAIModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", z.Name())
+	return nil, fmt.Errorf("%s: no such method: Decide", z.Name())
 }

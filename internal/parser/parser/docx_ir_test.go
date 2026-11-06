@@ -54,23 +54,64 @@ func TestBuildDOCXJSONSections_EmptyTableSkipped(t *testing.T) {
 	}
 }
 
-// TestBuildDOCXJSONSections_MergesSplitDocTable pins the fix for the
-// office_oxide .doc artifact where a table whose first row is a styled
-// header is emitted as a 1-row "header" table immediately followed by the
-// body table. The two fragments share the same column count and sit under
-// the same heading, so they must be rejoined into a single table item
-// (otherwise the chunker emits a header chunk + body chunk, each carrying
-// the same caption).
-func TestBuildDOCXJSONSections_MergesSplitDocTable(t *testing.T) {
-	const cell = `{"content":[{"type":"paragraph","content":[{"type":"text","text":"x"}]}]}`
-	// header: 1 row x 3 cols; body: 2 rows x 3 cols — same width.
-	irJSON := fmt.Sprintf(`{"sections":[{"title":"","elements":[
-		{"type":"heading","level":1,"content":[{"type":"text","text":"H"}]},
-		{"type":"table","rows":[{"cells":[%s,%s,%s]}]},
-		{"type":"table","rows":[{"cells":[%s,%s,%s]},{"cells":[%s,%s,%s]}]}
-	]}]}`, cell, cell, cell, cell, cell, cell, cell, cell, cell)
+// TestBuildDOCXJSONSections_PreservesMergedHeaderSpans pins that office_oxide's
+// row/column spans and repeated-header flags survive the IR -> TableData
+// projection. The header is two rows: row 0 carries the colspan/rowspan
+// geometry, row 1 fills the seven columns the vertical merges leave open, and
+// the body has ten columns.
+func TestBuildDOCXJSONSections_PreservesMergedHeaderSpans(t *testing.T) {
+	cell := func(text string, colSpan, rowSpan int) docxIRCell {
+		return docxIRCell{
+			Content: []docxIRElement{para(text)},
+			ColSpan: colSpan,
+			RowSpan: rowSpan,
+		}
+	}
+	row := func(header bool, cells ...docxIRCell) docxIRRow {
+		return docxIRRow{IsHeader: header, Cells: cells}
+	}
+	ir := docxIRDocument{Sections: []docxIRSection{{
+		Elements: []docxIRElement{
+			{Type: "heading", Level: 1, Content: rawJSON([]docxIRRun{{Type: "text", Text: "H"}})},
+			{Type: "table", Rows: []docxIRRow{
+				row(true,
+					cell("单位名称", 1, 2),
+					cell("集团公司采用", 3, 1),
+					cell("中国中铁采用", 2, 1),
+					cell("国资委采用", 2, 1),
+					cell("得分", 1, 2),
+					cell("排名", 1, 2),
+				),
+				row(true,
+					cell("政务", 1, 1),
+					cell("政工", 1, 1),
+					cell("得分", 1, 1),
+					cell("数量", 1, 1),
+					cell("得分", 1, 1),
+					cell("数量", 1, 1),
+					cell("得分", 1, 1),
+				),
+				row(false,
+					cell("西安公司", 1, 1),
+					cell("15（1）", 1, 1),
+					cell("12", 1, 1),
+					cell("265", 1, 1),
+					cell("4（3）", 1, 1),
+					cell("50", 1, 1),
+					cell("2（2）", 1, 1),
+					cell("40", 1, 1),
+					cell("355", 1, 1),
+					cell("1", 1, 1),
+				),
+			}},
+		},
+	}}}
+	encoded, err := json.Marshal(ir)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	got := buildDOCXJSONSections(irJSON, nil)
+	got := buildDOCXJSONSections(string(encoded), nil)
 	var tables []map[string]any
 	for _, it := range got {
 		if dt, _ := it["doc_type_kwd"].(string); dt == "table" {
@@ -78,26 +119,61 @@ func TestBuildDOCXJSONSections_MergesSplitDocTable(t *testing.T) {
 		}
 	}
 	if len(tables) != 1 {
-		t.Fatalf("expected 1 merged table item, got %d: %#v", len(tables), got)
+		t.Fatalf("expected 1 table item, got %d: %#v", len(tables), got)
 	}
 	td, ok := tables[0]["table"].(*entity.TableData)
 	if !ok || td == nil {
-		t.Fatalf("merged table has no TableData: %#v", tables[0])
+		t.Fatalf("table has no TableData: %#v", tables[0])
 	}
-	if len(td.Grid) != 3 {
-		t.Errorf("merged table should have 3 rows (1 header + 2 body), got %d: %#v", len(td.Grid), td.Grid)
+	if td.HeaderRows != 2 {
+		t.Fatalf("HeaderRows = %d, want 2", td.HeaderRows)
 	}
 	if td.Caption != "Table Location: H" {
-		t.Errorf("merged table caption = %q, want %q", td.Caption, "Table Location: H")
+		t.Errorf("caption = %q, want %q", td.Caption, "Table Location: H")
+	}
+	if len(td.Grid) != 3 {
+		t.Fatalf("grid rows = %d, want 3", len(td.Grid))
+	}
+	for i, row := range td.Grid {
+		if len(row) != 10 {
+			t.Fatalf("grid row %d width = %d, want 10: %#v", i, len(row), row)
+		}
+	}
+	if got := td.Grid[0][0]; got.Text != "单位名称" || got.RowSpan != 2 {
+		t.Errorf("header cell 0 = %#v, want 单位名称 rowspan 2", got)
+	}
+	if got := td.Grid[0][1]; got.Text != "集团公司采用" || got.ColSpan != 3 {
+		t.Errorf("header cell 1 = %#v, want 集团公司采用 colspan 3", got)
+	}
+	if got := td.Grid[0][4]; got.Text != "中国中铁采用" || got.ColSpan != 2 {
+		t.Errorf("header cell at col 4 = %#v, want 中国中铁采用 colspan 2", got)
+	}
+	if got := td.Grid[0][6]; got.Text != "国资委采用" || got.ColSpan != 2 {
+		t.Errorf("header cell at col 6 = %#v, want 国资委采用 colspan 2", got)
+	}
+	if got := td.Grid[0][8]; got.Text != "得分" || got.RowSpan != 2 {
+		t.Errorf("header cell at col 8 = %#v, want 得分 rowspan 2", got)
+	}
+	if got := td.Grid[0][9]; got.Text != "排名" || got.RowSpan != 2 {
+		t.Errorf("header cell at col 9 = %#v, want 排名 rowspan 2", got)
+	}
+	for _, col := range []int{2, 3, 5, 7} {
+		if got := td.Grid[0][col]; !got.Covered {
+			t.Errorf("row 0 col %d = %#v, want covered by a colspan", col, got)
+		}
+	}
+	if got := td.Grid[1][0]; !got.Covered {
+		t.Errorf("row 1 col 0 = %#v, want covered by the rowspan", got)
+	}
+	if got := td.Grid[1][1]; got.Text != "政务" {
+		t.Errorf("row 1 col 1 = %#v, want 政务", got)
 	}
 }
 
-// TestBuildDOCXJSONSections_DifferentColumnTablesStaySeparate pins that
-// two adjacent tables of different column counts are NOT merged: they are
-// genuinely separate tables, not fragments of one.
+// TestBuildDOCXJSONSections_DifferentColumnTablesStaySeparate pins that two
+// adjacent tables of different column counts remain separate.
 func TestBuildDOCXJSONSections_DifferentColumnTablesStaySeparate(t *testing.T) {
 	const cell = `{"content":[{"type":"paragraph","content":[{"type":"text","text":"x"}]}]}`
-	// a 1-row 3-col table followed by a 2-row 2-col table: different widths.
 	irJSON := fmt.Sprintf(`{"sections":[{"title":"","elements":[
 		{"type":"table","rows":[{"cells":[%s,%s,%s]}]},
 		{"type":"table","rows":[{"cells":[%s,%s]},{"cells":[%s,%s]}]}
@@ -114,15 +190,11 @@ func TestBuildDOCXJSONSections_DifferentColumnTablesStaySeparate(t *testing.T) {
 	}
 }
 
-// TestBuildDOCXJSONSections_AdjacentMultiRowTablesStaySeparate is the key
-// regression guard for the 1-row merge gate: two genuinely separate multi-row
-// tables of the SAME width, stacked with only a blank paragraph between them
-// (so they are adjacent in the IR), must NOT be merged. Only a 1-row header
-// fragment is folded into the following table.
-func TestBuildDOCXJSONSections_AdjacentMultiRowTablesStaySeparate(t *testing.T) {
+// TestBuildDOCXJSONSections_AdjacentTablesStaySeparate pins that adjacent
+// tables remain separate items. The parser no longer merges table elements;
+// office_oxide now emits one element per logical table.
+func TestBuildDOCXJSONSections_AdjacentTablesStaySeparate(t *testing.T) {
 	const cell = `{"content":[{"type":"paragraph","content":[{"type":"text","text":"x"}]}]}`
-	// table A: 2 rows x 3 cols; table B: 2 rows x 3 cols — same width, both
-	// multi-row, no element between. These are two distinct tables.
 	irJSON := fmt.Sprintf(`{"sections":[{"title":"","elements":[
 		{"type":"table","rows":[{"cells":[%s,%s,%s]},{"cells":[%s,%s,%s]}]},
 		{"type":"table","rows":[{"cells":[%s,%s,%s]},{"cells":[%s,%s,%s]}]}
@@ -135,7 +207,7 @@ func TestBuildDOCXJSONSections_AdjacentMultiRowTablesStaySeparate(t *testing.T) 
 		}
 	}
 	if len(tables) != 2 {
-		t.Fatalf("expected 2 separate multi-row tables, got %d: %#v", len(tables), got)
+		t.Fatalf("expected 2 separate tables, got %d: %#v", len(tables), got)
 	}
 	for i, tb := range tables {
 		td, ok := tb["table"].(*entity.TableData)
@@ -145,29 +217,6 @@ func TestBuildDOCXJSONSections_AdjacentMultiRowTablesStaySeparate(t *testing.T) 
 		if len(td.Grid) != 2 {
 			t.Errorf("table %d should keep its 2 rows, got %d: %#v", i, len(td.Grid), td.Grid)
 		}
-	}
-}
-
-// TestBuildDOCXJSONSections_HeaderFragmentWithParagraphBetweenStaysSplit pins
-// that a 1-row header fragment is only merged when the body is the VERY NEXT
-// element. A paragraph (even blank) between them keeps them as distinct
-// tables, so the gate never reaches across intervening content.
-func TestBuildDOCXJSONSections_HeaderFragmentWithParagraphBetweenStaysSplit(t *testing.T) {
-	const cell = `{"content":[{"type":"paragraph","content":[{"type":"text","text":"x"}]}]}`
-	irJSON := fmt.Sprintf(`{"sections":[{"title":"","elements":[
-		{"type":"table","rows":[{"cells":[%s,%s,%s]}]},
-		{"type":"paragraph","content":[{"type":"text","text":"note"}]},
-		{"type":"table","rows":[{"cells":[%s,%s,%s]},{"cells":[%s,%s,%s]}]}
-	]}]}`, cell, cell, cell, cell, cell, cell, cell, cell, cell)
-	got := buildDOCXJSONSections(irJSON, nil)
-	var n int
-	for _, it := range got {
-		if dt, _ := it["doc_type_kwd"].(string); dt == "table" {
-			n++
-		}
-	}
-	if n != 2 {
-		t.Fatalf("expected 2 separate tables (paragraph between), got %d: %#v", n, got)
 	}
 }
 
