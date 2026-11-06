@@ -46,27 +46,40 @@ export const useSaveGraph = (
         return;
       }
 
-      const params: Record<string, any> = {
-        id,
-        title: data.title,
-        dsl: buildDslData(currentNodes, otherParam),
-      };
+      try {
+        const params: Record<string, any> = {
+          id,
+          title: data.title,
+          dsl: buildDslData(currentNodes, otherParam),
+        };
 
-      if (release) {
-        params.release = 'true';
-      }
-      // Both the debounced auto-save and the explicit Save button pass
-      // autosave:true so the backend refreshes only the live draft and never
-      // mints a new version. Only publishing (release) writes a version row,
-      // optionally carrying an alias into user_canvas_version.
-      if (autosave) {
-        params.autosave = true;
-      }
-      if (alias) {
-        params.alias = alias;
-      }
+        if (release) {
+          params.release = 'true';
+        }
+        // Both the debounced auto-save and the explicit Save button pass
+        // autosave:true so the backend refreshes only the live draft and never
+        // mints a new version. Only publishing (release) writes a version row,
+        // optionally carrying an alias into user_canvas_version.
+        if (autosave) {
+          params.autosave = true;
+        }
+        if (alias) {
+          params.alias = alias;
+        }
 
-      return saveAgent(params);
+        const result = await saveAgent(params);
+        if (result?.code !== undefined && result.code !== 0) {
+          message.error(result.message || i18n.t('message.requestError'));
+        }
+        return result;
+      } catch (error) {
+        message.error(
+          error instanceof Error && error.message
+            ? error.message
+            : i18n.t('message.requestError'),
+        );
+        return undefined;
+      }
     },
     [id, data.title, buildDslData, saveAgent],
   );
