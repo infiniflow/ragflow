@@ -119,9 +119,9 @@ func (s *MetadataService) SearchMetadata(ctx context.Context, kbID, tenantID str
 	}, nil
 }
 
-// SearchMetadataByKBs searches each tenant's metadata store, with size as the
-// per-tenant limit and the KB filter scoped to that tenant.
-func (s *MetadataService) SearchMetadataByKBs(ctx context.Context, kbIDs []string, size int) (*SearchMetadataResponse, error) {
+// SearchMetadataByKBs returns the metadata rows of every document of the
+// knowledge bases, reading each tenant's metadata store.
+func (s *MetadataService) SearchMetadataByKBs(ctx context.Context, kbIDs []string) (*SearchMetadataResponse, error) {
 	if len(kbIDs) == 0 {
 		return &SearchMetadataResponse{MetadataRecords: []map[string]interface{}{}}, nil
 	}
@@ -133,20 +133,50 @@ func (s *MetadataService) SearchMetadataByKBs(ctx context.Context, kbIDs []strin
 
 	response := &SearchMetadataResponse{MetadataRecords: make([]map[string]interface{}, 0)}
 	for _, group := range groups {
-		searchReq := &types.SearchMetadataRequest{
-			TenantID: group.TenantID,
-			Limit:    size,
-			Filter: map[string]interface{}{
-				"kb_id": group.KBIDs,
-			},
-		}
-		searchResult, err := s.docEngine.SearchMetadata(ctx, searchReq)
+		records, err := s.scanMetadata(ctx, group.TenantID, map[string]interface{}{"kb_id": group.KBIDs})
 		if err != nil {
 			return nil, fmt.Errorf("metadata search for tenant %s failed: %w", group.TenantID, err)
 		}
-		response.MetadataRecords = append(response.MetadataRecords, searchResult.MetadataRecords...)
+		response.MetadataRecords = append(response.MetadataRecords, records...)
 	}
 	return response, nil
+}
+
+// metadataScanPage is the size of the first page scanMetadata reads.
+const metadataScanPage = 5000
+
+// scanMetadata reads every metadata row of a tenant that matches filter. The
+// rows are sorted on id so an engine can page past its result window:
+// Elasticsearch walks offsets past index.max_result_window with search_after,
+// which needs a sort, and walks again from the first row on every request.
+// So after the first page, the rest is read in one request sized by the
+// reported total, and the walk to the offset happens once instead of once per
+// page. Without a total, or when rows were added meanwhile, the scan goes on
+// page by page until a short page.
+func (s *MetadataService) scanMetadata(ctx context.Context, tenantID string, filter map[string]interface{}) ([]map[string]interface{}, error) {
+	records := []map[string]interface{}{}
+	offset, limit := 0, metadataScanPage
+	for {
+		searchResult, err := s.docEngine.SearchMetadata(ctx, &types.SearchMetadataRequest{
+			TenantID: tenantID,
+			Offset:   offset,
+			Limit:    limit,
+			Filter:   filter,
+			OrderBy:  (&types.OrderByExpr{}).Asc("id"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, searchResult.MetadataRecords...)
+		if len(searchResult.MetadataRecords) < limit {
+			return records, nil
+		}
+		offset += len(searchResult.MetadataRecords)
+		if total := int(searchResult.Total); total > 0 && offset >= total {
+			return records, nil
+		}
+		limit = max(int(searchResult.Total)-offset, metadataScanPage)
+	}
 }
 
 // MetadataForDocIDs returns doc_id → its metadata fields, reading ONLY the given documents
@@ -216,8 +246,7 @@ func (s *MetadataService) GetFlattedMetaByKBs(ctx context.Context, kbIDs []strin
 		return make(common.MetaData), nil
 	}
 
-	// Get metadata for all docs in KBs (use large limit like Python's 10000)
-	result, err := s.SearchMetadataByKBs(ctx, kbIDs, 10000)
+	result, err := s.SearchMetadataByKBs(ctx, kbIDs)
 	if err != nil {
 		return nil, err
 	}

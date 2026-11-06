@@ -147,7 +147,7 @@ func (s *DocumentService) GetMetadataByKBs(ctx context.Context, kbIDs []string) 
 		return make(map[string]interface{}), nil
 	}
 
-	searchResult, err := s.metadataSvc.SearchMetadataByKBs(ctx, kbIDs, 10000)
+	searchResult, err := s.metadataSvc.SearchMetadataByKBs(ctx, kbIDs)
 	if err != nil {
 		return nil, err
 	}
