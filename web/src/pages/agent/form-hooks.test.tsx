@@ -17,14 +17,19 @@
 import { renderHook } from '@testing-library/react';
 import { useBuildSortOptions } from './form-hooks';
 
-jest.mock('@/hooks/common-hooks', () => ({
-  useTranslate: () => ({
-    t: (key: string, options?: { defaultValue?: string }) =>
-      ({ data: 'Data', relevance: 'Relevance' })[key] ??
-      options?.defaultValue ??
-      key,
-  }),
-}));
+jest.mock('@/hooks/common-hooks', () => {
+  const translations: Record<string, string> = {
+    data: 'Data',
+    relevance: 'Relevance',
+  };
+
+  return {
+    useTranslate: () => ({
+      t: (key: string, options?: { defaultValue?: string }) =>
+        translations[key] ?? options?.defaultValue ?? key,
+    }),
+  };
+});
 
 describe('useBuildSortOptions', () => {
   it('uses the sort values accepted by Google Scholar', () => {

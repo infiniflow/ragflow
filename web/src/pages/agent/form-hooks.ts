@@ -1,6 +1,7 @@
 import { useTranslate } from '@/hooks/common-hooks';
 import { useMemo } from 'react';
 
+/** Builds Google Scholar sort options with API-supported values and translated labels. */
 export const useBuildSortOptions = () => {
   const { t } = useTranslate('flow');
 
