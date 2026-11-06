@@ -18,8 +18,8 @@ func TestIngestionLogConfigStubIsInertNoSection(t *testing.T) {
 	if err := c.ParseIngestLogConfig(viper.New()); err != nil {
 		t.Fatalf("non-ee ParseIngestLogConfig must be a no-op: %v", err)
 	}
-	if c.ingestionLog.Type != "" {
-		t.Fatalf("non-ee stub must not set Type, got %q", c.ingestionLog.Type)
+	if c.ingestLog.Type != "" {
+		t.Fatalf("non-ee stub must not set Type, got %q", c.ingestLog.Type)
 	}
 }
 
@@ -36,7 +36,7 @@ func TestIngestionLogConfigStubIgnoresClickHouse(t *testing.T) {
 	if err := c.ParseIngestLogConfig(v); err != nil {
 		t.Fatalf("non-ee ParseIngestLogConfig must be a no-op: %v", err)
 	}
-	if c.ingestionLog.Type != "" {
-		t.Fatalf("non-ee stub must ignore [ingestion_log].type, got %q", c.ingestionLog.Type)
+	if c.ingestLog.Type != "" {
+		t.Fatalf("non-ee stub must ignore [ingestion_log].type, got %q", c.ingestLog.Type)
 	}
 }
