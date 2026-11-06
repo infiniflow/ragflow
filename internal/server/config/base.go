@@ -45,4 +45,5 @@ type Config struct {
 	billing       BillingConfig
 	oAuth         OAuthConfig
 	audit         AuditConfig
+	ingestionLog  IngestLogConfig
 }

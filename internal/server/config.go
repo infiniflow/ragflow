@@ -166,6 +166,11 @@ func Init(configPath string) error {
 		return fmt.Errorf("parse audit log config error: %w", err)
 	}
 
+	err = globalConfig.ParseIngestionLogConfig(v)
+	if err != nil {
+		return fmt.Errorf("parse ingestion log config error: %w", err)
+	}
+
 	return nil
 }
 
