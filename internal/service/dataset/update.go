@@ -253,6 +253,18 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 				txCode = common.CodeDataError
 				return fmt.Errorf("Dataset name '%s' already exists", nameValue)
 			}
+			if nameValue != lockedKB.Name {
+				code, renameErr := renameDatasetFolder(ctx, tx, lockedKB, nameValue)
+				if renameErr != nil {
+					txCode = code
+					if code == common.CodeServerError {
+						common.Warn("dataset folder rename failed",
+							zap.String("dataset_id", lockedKB.ID), zap.Error(renameErr))
+						return errors.New("database operation failed")
+					}
+					return renameErr
+				}
+			}
 		}
 
 		if pipelineID != nil {
@@ -505,6 +517,67 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 	data := datasetToMap(ctx, updatedKB)
 	data["connectors"] = datasetConnectorsOrEmpty(linkedConnectors)
 	return data, common.CodeSuccess, nil
+}
+
+// renameDatasetFolder updates an existing dataset folder in the caller's
+// transaction. Datasets without a folder do not create one during a rename.
+func renameDatasetFolder(ctx context.Context, tx *gorm.DB, kb *entity.Knowledgebase, newName string) (common.ErrorCode, error) {
+	var root entity.File
+	err := tx.WithContext(ctx).
+		Where("tenant_id = ? AND parent_id = id AND type = ?", kb.TenantID, "folder").
+		Take(&root).Error
+	if dao.IsNotFoundErr(err) {
+		return common.CodeSuccess, nil
+	}
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	var kbRoot entity.File
+	err = tx.WithContext(ctx).
+		Where("tenant_id = ? AND parent_id = ? AND name = ?",
+			kb.TenantID, root.ID, dao.DatasetFolderName).
+		Take(&kbRoot).Error
+	if dao.IsNotFoundErr(err) {
+		return common.CodeSuccess, nil
+	}
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	if kbRoot.Type != "folder" {
+		return common.CodeDataError, errors.New("Knowledgebase root is not a folder")
+	}
+	fileDAO := dao.NewFileDAO()
+
+	entries := func() *gorm.DB {
+		return tx.WithContext(ctx).Model(&entity.File{}).
+			Where("tenant_id = ? AND parent_id = ?", kb.TenantID, kbRoot.ID)
+	}
+	var original entity.File
+	// Uploads reuse entries by tenant, parent and name, regardless of source.
+	err = entries().Where("name = ?", kb.Name).
+		Take(&original).Error
+	if err != nil && !dao.IsNotFoundErr(err) {
+		return common.CodeServerError, err
+	}
+	if original.ID != "" && original.Type != "folder" {
+		return common.CodeDataError, errors.New("Dataset path is not a folder")
+	}
+
+	exists, err := fileDAO.NameExists(ctx, tx, newName, kbRoot.ID, kb.TenantID, original.ID)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	if exists {
+		return common.CodeDataError, fmt.Errorf("Dataset folder name '%s' already exists", newName)
+	}
+	if original.ID == "" {
+		return common.CodeSuccess, nil
+	}
+	if err = entries().Where("id = ? AND type = ?", original.ID, "folder").Update("name", newName).Error; err != nil {
+		return common.CodeServerError, err
+	}
+	return common.CodeSuccess, nil
 }
 
 func (d *DatasetService) updateDatasetPagerankChunks(ctx context.Context, update datasetPagerankUpdate) error {
