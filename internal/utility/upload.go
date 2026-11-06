@@ -123,8 +123,7 @@ func NormalizeUploadInfoContent(filename, contentType string, data []byte) (stri
 			filename += ".pdf"
 		}
 		lowerCT = "application/pdf"
-	}
-	if lowerCT == "text/html" || lowerCT == "application/xhtml+xml" || LooksLikeHTML(data) {
+	} else if lowerCT == "text/html" || lowerCT == "application/xhtml+xml" || LooksLikeHTML(data) {
 		data = htmlToReadableMarkdown(data)
 		if lowerCT == "" {
 			lowerCT = "text/html"
