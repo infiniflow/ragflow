@@ -1138,6 +1138,7 @@ const (
 	mineruMaxMiddleBytes = 64 << 20
 )
 
+// setupRemoveHeaderFooter reads the parser setup flag that controls header/footer removal.
 func setupRemoveHeaderFooter(setup schema.ParserSetup) bool {
 	v, _ := setup["remove_header_footer"].(bool)
 	return v

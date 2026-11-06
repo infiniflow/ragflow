@@ -135,12 +135,20 @@ func TestFinalizePDFResultRemoveTOCContentsHeading(t *testing.T) {
 func TestFinalizePDFResultKeepsProseOnTOCOutlinePage(t *testing.T) {
 	stubPDFOutlines(t, nil)
 	p := &PDFParser{RemoveTOC: true}
-	longPreface := strings.Repeat("Preface paragraph. ", 8)
-	result := pdfItemsToResult("doc.pdf", []map[string]any{
-		{"text": longPreface, "layout": "text", "page_number": 1},
+	prose := []string{
+		"The way that can be told of is not the eternal way and the name that can be named is not the eternal name.",
+		"The named is the mother of ten thousand things and ever desireless one can see the mystery of it all here.",
+		"These two spring from the same source but differ in name and this appears as darkness within darkness.",
+	}
+	items := []map[string]any{
+		{"text": prose[0], "layout": "text", "page_number": 1},
+		{"text": prose[1], "layout": "text", "page_number": 1},
+		{"text": prose[2], "layout": "text", "page_number": 1},
 		{"text": "Contents", "layout": "title", "page_number": 1},
 		{"text": "Intro .......... 1", "layout": "text", "page_number": 1},
-	}, 1)
+		{"text": "Chapter body on page two.", "layout": "text", "page_number": 2},
+	}
+	result := pdfItemsToResult("doc.pdf", items, 2)
 	result.File["outline"] = []map[string]any{
 		{"title": "Contents", "level": 0, "page_number": 1},
 		{"title": "Chapter 1", "level": 0, "page_number": 2},
@@ -148,7 +156,7 @@ func TestFinalizePDFResultKeepsProseOnTOCOutlinePage(t *testing.T) {
 	result = p.FinalizePDFResult(nil, result)
 	kept := false
 	for _, item := range result.JSON {
-		if strings.Contains(itemText(item.ToMap()), "Preface paragraph.") {
+		if strings.Contains(itemText(item.ToMap()), "eternal way") {
 			kept = true
 		}
 	}

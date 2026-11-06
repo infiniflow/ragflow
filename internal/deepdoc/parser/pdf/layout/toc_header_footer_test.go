@@ -422,6 +422,19 @@ func TestRemoveTOCBoxes_MergedBlockRespectsProseGuard(t *testing.T) {
 // TestRemoveTOCBoxes_OutlineRespectsProseGuard: a stale or malformed bookmark
 // that names a content page must not delete body text, while the box signal
 // still drops the real TOC page.
+func TestPageCarriesProseFromTexts_MatchesBodyPage(t *testing.T) {
+	texts := make([]string, 0, 3)
+	for _, box := range bodyPageBoxes(0) {
+		texts = append(texts, box.Text)
+	}
+	if !PageCarriesProseFromTexts(texts) {
+		t.Fatal("body page texts must carry prose")
+	}
+	if PageCarriesProseFromTexts([]string{"Intro .......... 1", "Chapter .......... 2"}) {
+		t.Fatal("TOC entry lines alone must not carry prose")
+	}
+}
+
 func TestRemoveTOCBoxes_OutlineRespectsProseGuard(t *testing.T) {
 	boxes := tocPageBoxes(0, 3)
 	boxes = append(boxes, bodyPageBoxes(1)...)
