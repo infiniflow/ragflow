@@ -102,10 +102,10 @@ import requests
 # build ships Clip@13).
 ORT_RELEASE_TAG = "onnxruntime-v1.29.0-patch2"
 
-# pdf_oxide go-ffi release. Bare module version (the "v" is added by
-# pdf_oxide_url); matches the value build.sh uses to validate the embedded
-# .a stamp.
-PDF_OXIDE_VERSION = "0.3.73"
+# pdf_oxide go-ffi release. The bare module version is derived from go.mod at
+# download/extract time (see pdf_oxide_url / the extraction block below) via
+# go_module_version(), so there is no second hardcoded copy to drift from what
+# the Go build actually links (mirrors office_oxide).
 
 # pdfium release, as the numeric build number after "chromium%2F" (the "v" and
 # the URL-encoded slash are added by pdfium_url). Its bare value is bound to
@@ -241,9 +241,12 @@ def pdfium_static_version(repo_root: str) -> str:
 # maps above.
 
 
-def pdf_oxide_url(goos: str, goarch: str) -> str:
-    """pdf_oxide go-ffi tarball for the target platform."""
-    return f"{gh_proxy()}https://github.com/yfedoseev/pdf_oxide/releases/download/v{PDF_OXIDE_VERSION}/{PDF_OXIDE_ASSETS[(goos, goarch)]}"
+def pdf_oxide_url(repo_root: str, goos: str, goarch: str) -> str:
+    """pdf_oxide go-ffi tarball for the target platform. The version is derived
+    from go.mod so it always matches what the Go build actually links (no second
+    hardcoded copy to drift -- mirrors office_oxide_url)."""
+    version = go_module_version("github.com/yfedoseev/pdf_oxide/go", repo_root)
+    return f"{gh_proxy()}https://github.com/yfedoseev/pdf_oxide/releases/download/v{version}/{PDF_OXIDE_ASSETS[(goos, goarch)]}"
 
 
 def pdfium_url(goos: str, goarch: str) -> str:
@@ -840,7 +843,7 @@ def main():
     _download_ort_archive(os.path.join(RAGFLOW_DEPS_DIR, ort_zip), goos, goarch)
     archives = [
         (pdfium_url(goos, goarch), PDFIUM_STATIC_ASSETS[(goos, goarch)]),
-        (pdf_oxide_url(goos, goarch), PDF_OXIDE_ASSETS[(goos, goarch)]),
+        (pdf_oxide_url(REPO_ROOT, goos, goarch), PDF_OXIDE_ASSETS[(goos, goarch)]),
         (office_oxide_url(REPO_ROOT, goos, goarch), OFFICE_OXIDE_ASSETS[(goos, goarch)]),
     ]
     for url, filename in archives:
@@ -858,9 +861,10 @@ def main():
     # version-keyed subdir (v<version>/) so a mounted cache can hold several
     # versions at once; see extract_native_lib().
     office_version = go_module_version("github.com/yfedoseev/office_oxide/go", REPO_ROOT)
+    pdf_oxide_version = go_module_version("github.com/yfedoseev/pdf_oxide/go", REPO_ROOT)
     extractions = [
         ("pdfium-static", PDFIUM_STATIC_ASSETS[(goos, goarch)], "v" + PDFIUM_VERSION, ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"], None, "null"),
-        ("pdf_oxide", PDF_OXIDE_ASSETS[(goos, goarch)], "v" + PDF_OXIDE_VERSION, [f"lib/{goos}_{goarch}/libpdf_oxide.a", "include/pdf_oxide.h"], PDF_OXIDE_VERSION, "text"),
+        ("pdf_oxide", PDF_OXIDE_ASSETS[(goos, goarch)], "v" + pdf_oxide_version, [f"lib/{goos}_{goarch}/libpdf_oxide.a", "include/pdf_oxide.h"], pdf_oxide_version, "text"),
         ("office_oxide", OFFICE_OXIDE_ASSETS[(goos, goarch)], "v" + office_version, ["lib/liboffice_oxide.a", "include/office_oxide_c/office_oxide.h"], office_version, "null"),
     ]
 

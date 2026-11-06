@@ -202,8 +202,8 @@ def test_url_builders_select_platform_assets(monkeypatch):
     assert native.pdfium_url("linux", "amd64").endswith("/pdfium-linux-x64-static.tgz")
     assert native.pdfium_url("linux", "arm64").endswith("/pdfium-linux-arm64-static.tgz")
     assert native.pdfium_url("darwin", "arm64").endswith("/pdfium-mac-arm64-static.tgz")
-    assert native.pdf_oxide_url("linux", "amd64").endswith("/pdf_oxide-go-ffi-linux-amd64.tar.gz")
-    assert native.pdf_oxide_url("darwin", "amd64").endswith("/pdf_oxide-go-ffi-darwin-amd64.tar.gz")
+    assert native.pdf_oxide_url(native.REPO_ROOT, "linux", "amd64").endswith("/pdf_oxide-go-ffi-linux-amd64.tar.gz")
+    assert native.pdf_oxide_url(native.REPO_ROOT, "darwin", "amd64").endswith("/pdf_oxide-go-ffi-darwin-amd64.tar.gz")
     assert native.ort_url("1.29.0", native.ort_target("darwin", "amd64")).endswith("/onnxruntime-v1.29.0-osx-universal.zip")
 
 
@@ -213,10 +213,33 @@ def test_office_oxide_url_selects_platform_asset(tmp_path):
     assert native.office_oxide_url(str(tmp_path), "darwin", "arm64").endswith("/v0.1.12/native-macos-aarch64.tar.gz")
 
 
+def test_pdf_oxide_url_derives_from_go_mod(tmp_path):
+    # pdf_oxide version MUST come from go.mod (the single source of truth
+    # build.sh also reads), never a hardcoded constant. Otherwise build.sh and
+    # the downloader silently drift apart. A fixture go.mod pins a non-default
+    # version; the produced URL must reflect exactly that version.
+    (tmp_path / "go.mod").write_text("module fixture\n\nrequire github.com/yfedoseev/pdf_oxide/go v0.4.1\n")
+    url = native.pdf_oxide_url(str(tmp_path), "linux", "amd64")
+    assert "/v0.4.1/pdf_oxide-go-ffi-linux-amd64.tar.gz" in url
+
+
+def test_pdf_oxide_url_reads_its_own_module_line(tmp_path):
+    # Adversarial: a go.mod that pins office_oxide and pdf_oxide to DIFFERENT
+    # versions. pdf_oxide_url must read the pdf_oxide line, not the
+    # office_oxide one (a naive "read the first version in go.mod" would pick
+    # the wrong library). office_oxide_url must likewise stay on its own line.
+    (tmp_path / "go.mod").write_text("module fixture\n\nrequire github.com/yfedoseev/office_oxide/go v0.1.12\nrequire github.com/yfedoseev/pdf_oxide/go v0.4.1\n")
+    pdf_url = native.pdf_oxide_url(str(tmp_path), "linux", "amd64")
+    office_url = native.office_oxide_url(str(tmp_path), "linux", "amd64")
+    assert "/v0.4.1/" in pdf_url  # pdf_oxide's own version
+    assert "/v0.1.12/" in office_url  # office_oxide's own version
+    assert "/v0.1.12/" not in pdf_url  # not coupled to office_oxide's line
+
+
 def test_url_builders_honor_gh_proxy(monkeypatch):
     monkeypatch.setenv("GH_PROXY", "https://gh-proxy.com/")
     assert native.pdfium_url("linux", "amd64").startswith("https://gh-proxy.com/https://github.com/")
-    assert native.pdf_oxide_url("linux", "arm64").startswith("https://gh-proxy.com/https://github.com/")
+    assert native.pdf_oxide_url(native.REPO_ROOT, "linux", "arm64").startswith("https://gh-proxy.com/https://github.com/")
 
 
 def test_dev_downloader_rejects_untrusted_gh_proxy(monkeypatch):
