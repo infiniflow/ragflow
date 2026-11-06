@@ -3117,6 +3117,8 @@ func (m *ModelProviderService) ListAllModels(pageIndex, pageSize int) ([]map[str
 	if start >= len(models) {
 		return []map[string]interface{}{}, nil
 	}
+	// Models are loaded from a file and kept in memory, so slice-based pagination is appropriate.
+	// If models are stored in a database, apply pagination in the query instead.
 	return models[start:min(start+pageSize, len(models))], nil
 }
 
