@@ -59,6 +59,7 @@ func (s *ChatChannelService) handleChannelAgentMessage(ctx context.Context, chan
 	// RunAgent creates and authorizes the persisted session; this boundary only
 	// supplies its stable identity for the first message and subsequent turns.
 	ctx = WithAgentSessionID(ctx, sessionID)
+	ctx = withAgentChannelName(ctx, channel.Name)
 	events, err := s.agentRunner.RunAgent(ctx, *channel.AgentID, sessionID, "", msg.Text, nil)
 	if err != nil {
 		return "", err

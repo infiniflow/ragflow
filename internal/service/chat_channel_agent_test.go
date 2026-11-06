@@ -135,6 +135,13 @@ func TestChatChannelAgentRealEngineContinuationAndResume(t *testing.T) {
 	if err != nil || !strings.Contains(answer, "Your answer?") {
 		t.Fatalf("waiting: %q %v", answer, err)
 	}
+	var session entity.API4Conversation
+	if err := db.First(&session, "id = ?", channelSessionID("workflow", channel.ID, "external-one")).Error; err != nil {
+		t.Fatalf("load session: %v", err)
+	}
+	if session.Name == nil || *session.Name != "(channel: channel) start" {
+		t.Fatalf("session name = %v", session.Name)
+	}
 	msg.Text = "hello"
 	answer, err = svc.HandleIncomingMessage(t.Context(), msg)
 	if err != nil || answer != "got: hello" {
