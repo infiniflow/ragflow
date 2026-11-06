@@ -16,10 +16,8 @@ type rb struct {
 }
 
 // GroupBoxesByRC groups text boxes into a cell grid by R/C annotations.
-// Matches Python's construct_table: sort_R_firstly, then split rows when the
-// R label changes; boxes without an R (a row the TSR model missed) also split
-// on a Y advance. A missing-R box keeps its Y position instead of collapsing
-// into row 0, so the missed row is still assembled from its text boxes.
+// Rows split on R changes; missing-R boxes keep their Y position and also
+// split when Y advances, so a row missed by TSR is still assembled.
 func GroupBoxesByRC(boxes []pdf.TextBox) [][]pdf.TSRCell {
 	if len(boxes) == 0 {
 		return nil
@@ -108,10 +106,6 @@ func assignRows(boxes []pdf.TextBox) []int {
 	}
 	btm := boxes[0].Bottom
 	for i := 1; i < len(boxes); i++ {
-		// Python: a new row when R changes; when R is missing (our -1),
-		// a Y advance also starts a new row (Python's -1 vs -2 sentinel
-		// comparison). Same-R boxes on different lines stay in one row, so a
-		// multi-line cell is not split into two rows.
 		if boxes[i-1].R != boxes[i].R || (boxes[i].R < 0 && boxes[i].Top >= btm-3) {
 			rowOf[i] = rowOf[i-1] + 1
 			btm = boxes[i].Bottom
@@ -229,34 +223,20 @@ func GroupBoxesByYX(boxes []pdf.TextBox) [][]pdf.TSRCell {
 }
 
 // cellPosFromBox returns the position coordinates and label for a cell
-// derived from a text box.  Header cells use HLeft/HRight/HTop/HBott
-// for spanning-aware positions; regular cells use the box's own bounds.
+// derived from a text box. Header and span cells use the H* bounds copied
+// from the matched TSR cell; regular cells use the box's own bounds.
 func cellPosFromBox(b pdf.TextBox) (x0, y0, x1, y1 float64, label string) {
 	x0, y0, x1, y1 = b.X0, b.Top, b.X1, b.Bottom
-	// SP wins over H: a header cell that is also a span origin must carry the
-	// spanning label or CalSpans drops its rowspan/colspan. Python's
-	// __cal_spans only spans cells with "SP"; header detection reads b.H
-	// directly and does not depend on this label.
+	// SP wins over H: CalSpans only spans cells labelled "table spanning
+	// cell", so a header cell that is also a span origin must keep that label.
 	if b.SP > 0 || b.H > 0 {
 		if b.SP > 0 {
 			label = "table spanning cell"
 		} else {
 			label = "table header"
 		}
-		// A pure-SP box (H==0) still carries the span's full extent in
-		// HLeft/HRight/HTop/HBott, copied together from the TSR spanning cell
-		// by AnnotateTableBoxes (PR #18707). Rebuild the cell from those bounds
-		// so CalSpans covers every column/row the span crosses — matching
-		// Python's _annotate_table_boxes. Without this, the span cell falls
-		// back to the box's own narrow text bounds, under-covers by one
-		// column, and the header row keeps an extra empty cell (real_pdfs/1.pdf
-		// row0 = 4 vs Python's 3; see known_diffs rule
-		// table-1pdf-colspan-assembly-loss, resolved).
-		//
-		// HLeft/HRight (and HTop/HBott) are set together, so treat an axis as
-		// propagated whenever either edge is set. This preserves a real edge at
-		// coordinate 0 (a nonzero check would mistake it for "unset" and fall
-		// back to the box's own bounds, dropping the span's left/top edge).
+		// Either edge being set means the axis carries the TSR extent; a
+		// real edge may be exactly 0.
 		if b.HLeft != 0 || b.HRight != 0 {
 			x0, x1 = b.HLeft, b.HRight
 		}
@@ -289,10 +269,8 @@ func collectBoxesPerRow(boxes []pdf.TextBox, rowOf []int) map[int]map[int]*rb {
 			if t != "" {
 				v.txt += " " + t
 			}
-			// Merge spanning coordinates (use widest extent). A spanning
-			// label must survive a later header-only box in the same cell:
-			// Python's __cal_spans only spans SP cells, so overwriting
-			// "table spanning cell" with "table header" drops the span.
+			// Keep the spanning label if any box in this cell is a span;
+			// CalSpans only spans cells labelled "table spanning cell".
 			if b.SP > 0 {
 				v.label = "table spanning cell"
 			} else if b.H > 0 && v.label != "table spanning cell" {
@@ -319,17 +297,9 @@ func collectBoxesPerRow(boxes []pdf.TextBox, rowOf []int) map[int]map[int]*rb {
 	return cmap
 }
 
-// compressColIndices assigns every box a column from a GLOBAL rank of the
-// table's distinct C labels, mirroring Python's construct_table which groups
-// boxes into columns by their per-char C assignment (each distinct C yields a
-// column, in C order; a box whose C is the previous box's C+1 always starts a
-// new column — Python never merges adjacent C values by X overlap).
-//
-// A table-wide mapping keeps the same C in the same column across ALL rows: a
-// per-row re-compression would misalign cell text (a C=4 box landing in
-// column 3 in one row and column 4 in another). Every row is sized to the
-// table-wide column count, matching Python's uniform-width construct_table
-// output (rows missing a C render empty cells).
+// compressColIndices maps the table's distinct C labels to contiguous column
+// indices. The mapping is table-wide so the same C always lands in the same
+// column across rows; rows without a C render as empty cells.
 func compressColIndices(boxes []pdf.TextBox, rowOf []int, compressed int) (map[int]map[int]int, int) {
 	distinctC := make(map[int]bool)
 	for _, b := range boxes {

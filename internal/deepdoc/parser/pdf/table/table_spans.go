@@ -68,23 +68,9 @@ func CalSpans(rows [][]pdf.TSRCell) (map[[2]int][2]int, map[[2]int]bool) {
 	nCols := len(colLeft)
 	nRows := len(rowTop)
 
-	// For each spanning cell, compute how many cols/rows it covers.
-	// Only cells explicitly recognized as a span participate. Python's
-	// __cal_spans (table_structure_recognizer.py:500-528) iterates boxes that
-	// carry an "SP" annotation (`if "SP" not in b: continue`) and never
-	// treats an ordinary "table header" as a span origin. In Go the TSR
-	// "table spanning cell" component is the SP equivalent and is labelled
-	// "spanning" by GroupBoxesByRC/GroupCells, so that is the only branch we
-	// honour here.
-	//
-	// A previous Go-only branch also spanned "table header" cells whose
-	// HLeft/HRight bbox straddled a neighbour column. That diverges from
-	// Python and is unsafe: when a cross-page merge widens a header cell's
-	// bbox (e.g. icbccs "类型" after MergeTablesAcrossPages stacks two pages'
-	// grids), its X1 can reach past the neighbour column's center and get
-	// misclassified as a colspan, folding the neighbour's text in and dropping
-	// a column from the rendered row. Removing the header branch makes Go
-	// match Python and avoids that regression.
+	// Only cells explicitly labelled "spanning" participate (Python's SP).
+	// A plain header must never become a span origin: a cross-page merge can
+	// widen a header bbox over a neighbouring column.
 	for i, row := range rows {
 		for j, cell := range row {
 			if j >= nCols || covered[[2]int{i, j}] {
@@ -169,14 +155,9 @@ func CalSpans(rows [][]pdf.TSRCell) (map[[2]int][2]int, map[[2]int]bool) {
 					}
 				}
 			}
-			// Fold the covered cells' text into the span origin cell,
-			// matching Python's __cal_spans (table_structure_recognizer.py:
-			// 530-577): it walks the covered region row-major and extends
-			// the span cell's text with every covered cell's text (skipping
-			// already-folded duplicates via join(arr)). Because Go's
-			// GroupCells no longer zeroes covered bboxes, those cells hold
-			// their own box text by fill time; without this fold the span
-			// cell would render empty and the covered text would be lost.
+			// Fold covered-cell text into the span origin, matching Python's
+			// __cal_spans. Covered cells keep their bbox and text, so this is
+			// where their text reaches the rendered span cell.
 			var merged []string
 			seen := map[string]bool{}
 			for ri := minR; ri <= maxR && ri < nRows; ri++ {

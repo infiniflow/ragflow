@@ -187,58 +187,38 @@ func spanTopRowIndex(rows []pdf.TSRCell, sp pdf.TSRCell) int {
 	return -1
 }
 
-// AnnotateBoxesWithGridAndRows derives per-box R/C/H/SP annotations in the
-// SAME coordinate frame as grid (e.g. a table's crop space), using Python's
-// _table_transformer_job semantics. Rows are matched against the raw TSR
-// "table row" bands, not the span-extended grid cells, so a rowspan cell does
-// not pull the rows below it into its origin row.
+// AnnotateBoxesWithGridAndRows derives R/C/H/SP for boxes in the same
+// coordinate frame as grid. R is matched against the raw TSR row bands, not
+// span-extended grid rows.
 func AnnotateBoxesWithGridAndRows(boxes []pdf.TextBox, grid [][]pdf.TSRCell, rows []pdf.TSRCell) {
 	annotateTableBoxes(boxes, grid, rows)
 }
 
-// AnnotateTableBoxes is the fallback for callers without raw TSR structure
-// lines: Rows are matched against the grid's rows. A grid cell whose bbox was
-// extended by a rowspan covers the rows below it, so this path can assign a
-// lower-row box to the span's origin row; production uses
-// AnnotateBoxesWithGridAndRows.
-//
-// Python: pdf_parser.py:518-554
+// AnnotateTableBoxes is the fallback when raw TSR rows are unavailable. It
+// matches R against grid rows, which can over-merge a rowspan header;
+// production uses AnnotateBoxesWithGridAndRows.
 func AnnotateTableBoxes(boxes []pdf.TextBox, grid [][]pdf.TSRCell) {
 	annotateTableBoxes(boxes, grid, nil)
 }
 
 func annotateTableBoxes(boxes []pdf.TextBox, grid [][]pdf.TSRCell, rows []pdf.TSRCell) {
-	// grid[0] is the header row.  Spans are computed by calSpans later.
 	var headers, spans []pdf.TSRCell
 	var clmns []pdf.TSRCell
-	// Python t_recognizer.py: headers = gather(r".*header$") — the set of layout
-	// cells whose label ends in "header", NOT the first grid row. Collect them
-	// from every grid row so a header that sits on a row other than 0 is still
-	// matched and tagged with H>0 (fixes the grid[0] approximation).
+	// Collect header and spanning cells from every grid row. A header is not
+	// necessarily in row 0, and box.SP must be set or CalSpans drops the span.
 	for _, row := range grid {
 		for _, cell := range row {
 			if isHeaderLabel(cell.Label) {
 				headers = append(headers, cell)
 			}
-			// Collect spanning cells so the SP annotation is propagated to
-			// overlapping boxes (Python _table_transformer_job appends every
-			// "SP" cell to its `spans` list and matches boxes against it at
-			// pdf_parser.py:518-554). Without this, box.SP stays 0, the
-			// rebuilt grid (GroupBoxesByRC) loses the span, and
-			// ConstructTable/CalSpans drops the colspan/rowspan — Go emits
-			// independent empty <th> where Python emits <th colspan=6>
-			// (e.g. real_pdfs/1.pdf).
 			if strings.Contains(cell.Label, "spanning") {
 				spans = append(spans, cell)
 			}
 		}
 	}
 	if len(grid) > 0 && len(grid[0]) > 0 {
-		// Python's clmns are the "table column" lines: vertical bboxes spanning
-		// the whole table height. Recover each column's X range from the
-		// non-spanning grid cells: grid[0] alone is not reliable because a
-		// spanning cell widens its origin cell over the columns it covers, so
-		// using it would assign every box under the span to that one column.
+		// Recover column edges from non-spanning cells: grid[0] alone can be
+		// widened by a span origin and would absorb neighbouring columns.
 		colLeft, colRight, _, _ := gridBounds(grid)
 		nCols := len(colLeft)
 		tableTop := grid[0][0].Y0
@@ -260,10 +240,7 @@ func annotateTableBoxes(boxes []pdf.TextBox, grid [][]pdf.TSRCell, rows []pdf.TS
 	SortXFirstly(clmns, 10)
 
 	for i := range boxes {
-		// Python processes only boxes whose layout_type is "table"; callers
-		// (processOneTable / WriteTableAnnotations) already pass the table
-		// region's box subset, so an empty LayoutType (e.g. OCR-replay boxes
-		// that carry no DLA annotation) is treated as table content too.
+		// Empty LayoutType is table content too (e.g. OCR replay boxes).
 		if boxes[i].LayoutType != pdf.LayoutTypeTable && boxes[i].LayoutType != "" {
 			continue
 		}
@@ -281,10 +258,8 @@ func annotateTableBoxes(boxes []pdf.TextBox, grid [][]pdf.TSRCell, rows []pdf.TS
 				boxes[i].RBott = rows[ri].Y1
 			}
 		} else {
-			// Fallback for callers without the raw structure lines: use the
-			// grid rows. A rowspan-extended cell makes the row bbox taller than
-			// the physical row, so this path can assign a lower-row box to the
-			// span's origin row; production passes raw rows to avoid it.
+			// Fallback: match against grid rows. A span-extended row can
+			// over-merge; production passes raw rows to avoid it.
 			for ri, row := range grid {
 				if len(row) == 0 {
 					continue
@@ -303,11 +278,8 @@ func annotateTableBoxes(boxes []pdf.TextBox, grid [][]pdf.TSRCell, rows []pdf.TS
 			boxes[i].HBott = headers[idx].Y1
 			boxes[i].HLeft = headers[idx].X0
 			boxes[i].HRight = headers[idx].X1
-			// Offset by 1: store idx+1 so a box matching the FIRST header cell
-			// (idx == 0) is distinguishable from "no header overlap" (the
-			// default H == 0). All readers check H > 0, so this keeps the
-			// boolean semantics while fixing single-column / first-column
-			// header detection (parity #4, asymmetry 1).
+			// Store idx+1: H>0 means matched, and an index of 0 is still
+			// distinguishable from "no header".
 			boxes[i].H = idx + 1
 		}
 		// C: Python find_horizontally_tightest_fit(box, clmns).
@@ -319,27 +291,17 @@ func annotateTableBoxes(boxes []pdf.TextBox, grid [][]pdf.TSRCell, rows []pdf.TS
 			}
 		}
 		if idx := findOverlappedWithThreshold(boxes[i], spans, 0.3); idx >= 0 {
-			// Offset by 1 so a box matching the FIRST spanning cell
-			// (idx == 0) is distinguishable from "no span overlap" (the
-			// default SP == 0). All readers check SP > 0, matching Python's
-			// boolean SP semantics (pdf_parser.py:518-554).
+			// Store idx+1: SP>0 means matched, including span index 0.
 			boxes[i].SP = idx + 1
-			// Python _annotate_table_boxes (pdf_parser.py:632-635) copies the
-			// spanning cell's bbox onto the box as H_top/H_bott/H_left/H_right.
-			// GroupBoxesByRC then builds the span cell from these full extents
-			// (cellPosFromBox uses HLeft/HRight when H>0), so CalSpans covers
-			// every column the span crosses. Without this, the span cell falls
-			// back to the box's own narrow bounds and Go emits colspan=5 where
-			// Python emits colspan=6 (real_pdfs/1.pdf).
+			// Copy the span's full extent so cellPosFromBox can build a cell
+			// that covers every row/column the span crosses.
 			boxes[i].HTop = spans[idx].Y0
 			boxes[i].HBott = spans[idx].Y1
 			boxes[i].HLeft = spans[idx].X0
 			boxes[i].HRight = spans[idx].X1
-			// A rowspan cell's text is vertically centred, so its text box
-			// often sits in the lower row while the TSR span starts in the
-			// upper row. Python's __cal_spans moves the merged cell to
-			// tbl[minR][minC]; assign R from the span's top row here so the
-			// origin is already the top-left cell.
+			// A rowspan cell's text is vertically centred and may sit in the
+			// lower row; move R to the span's top row (Python __cal_spans
+			// places the merged cell at tbl[minR][minC]).
 			if len(rows) > 0 {
 				if sr := spanTopRowIndex(rows, spans[idx]); sr >= 0 {
 					boxes[i].R = sr
@@ -350,8 +312,7 @@ func annotateTableBoxes(boxes []pdf.TextBox, grid [][]pdf.TSRCell, rows []pdf.TS
 		}
 	}
 
-	// Two-pass C fallback: after all R values are assigned, compute C by X-order within each row.
-	// This matches Python's behavior when TSR provides few "table column" cells.
+	// No usable column structure: assign C by X order within each R group.
 	if len(clmns) <= 1 {
 		// Collect all table boxes grouped by R (LayoutType empty → table content).
 		rBoxes := make(map[int][]int)
