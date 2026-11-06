@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 
 	"ragflow/internal/agentic_rag"
@@ -878,7 +879,13 @@ func (s *ChatPipelineService) AsyncChat(
 				kbinfos["chunks"] = served
 			}
 		}
-		knowledges = s.kbPrompt(kbinfos, modelMaxTokens)
+		// The passages get what the window leaves after the system prompt, the
+		// citation rules appended to it and the completion reserve.
+		chatCfg := BuildChatConfig(chat, kwargs)
+		systemTemplate, _ := promptConfig["system"].(string)
+		modelMaxOutput, _ := llmModelConfig["max_output"].(int)
+		reserve := completionReserve(chatCfg, modelMaxOutput, modelMaxTokens)
+		knowledges = s.kbPrompt(kbinfos, s.knowledgeTokenBudget(modelMaxTokens, systemTemplate, kwargs, quote, reserve))
 		common.Info("Phase 10: Build LLM Request")
 		common.Debug("Knowledge prompt",
 			zap.String("question", strings.Join(questions, " ")),
@@ -908,10 +915,7 @@ func (s *ChatPipelineService) AsyncChat(
 		//      otherwise see an empty reply.
 		if emptyResponseApplies(len(knowledges), attachments, hasImageAttachments) {
 			if emptyResp, ok := promptConfig["empty_response"].(string); ok && emptyResp != "" {
-				finalReference := kbinfos
-				if !quote {
-					finalReference = map[string]interface{}{}
-				}
+				finalReference := emptyResponseReference(kbinfos, knowledges, quote)
 				if !sendResult(AsyncChatResult{
 					Answer:    emptyResp,
 					Reference: map[string]interface{}{},
@@ -1052,7 +1056,6 @@ func (s *ChatPipelineService) AsyncChat(
 			return
 		}
 
-		chatCfg := BuildChatConfig(chat, kwargs)
 		// The citation template joins the prompt only when the request is issued
 		// (prompt+prompt4citation, below), which is after messageFitIn sized the
 		// window — so its tokens are added here by hand. They are deliberately NOT
@@ -2096,8 +2099,8 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 
 // buildLLMModelConfig returns only the public metadata needed by RAG's token
 // fitting and attachment dispatch. The persisted legacy max_tokens value is
-// the input/context budget; generated output limits are enforced by ChatModel
-// against ModelInfo.MaxOutput.
+// the input/context budget; max_output is the catalog output limit, which
+// sizes the completion reserve and which ChatModel enforces on generation.
 func (s *ChatPipelineService) buildLLMModelConfig(info *modelModule.ModelInfo) (map[string]interface{}, string, string, string, error) {
 	if info == nil {
 		return nil, "", "", "", fmt.Errorf("chat model metadata is unavailable")
@@ -2110,6 +2113,7 @@ func (s *ChatPipelineService) buildLLMModelConfig(info *modelModule.ModelInfo) (
 		"model_type":  "chat",
 		"llm_name":    info.Name,
 		"max_tokens":  contextLength,
+		"max_output":  info.MaxOutput,
 		"llm_factory": info.ProviderName,
 	}
 	return cfg, info.Name, info.ProviderName, "", nil
@@ -2257,6 +2261,18 @@ func gateImageAttachments(llmID, modelType string, images []string) (kept []stri
 // the model could still answer from.
 func emptyResponseApplies(knowledgeCount int, attachments string, imageAttachments bool) bool {
 	return knowledgeCount == 0 && attachments == "" && !imageAttachments
+}
+
+// emptyResponseReference is the reference the empty-response fallback closes
+// the stream with. With citations off it is empty. With citations on it is the
+// retrieval result, unless retrieval returned chunks but none of them entered
+// the prompt (no room in the knowledge budget): then it is empty too, so the
+// client never gets sources for passages the answer could not have used.
+func emptyResponseReference(kbinfos map[string]interface{}, knowledges []string, quote bool) map[string]interface{} {
+	if !quote || (len(knowledges) == 0 && len(chunksFromKBInfos(kbinfos)) > 0) {
+		return map[string]interface{}{}
+	}
+	return kbinfos
 }
 
 // splitFileAttachments mirrors Python's `split_file_attachments` at
@@ -2557,47 +2573,18 @@ func (s *ChatPipelineService) enrichChunksWithMetadata(ctx context.Context, kbin
 	s.MetadataSvc.EnrichChunksWithDocMetadata(ctx, chunks, tenantID, fields)
 }
 
-// kbPrompt builds knowledge prompt blocks from retrieved chunks.
-// Mirrors Python's kb_prompt() in rag/prompts/generator.py.
+// kbPrompt builds knowledge prompt blocks from retrieved chunks, keeping
+// blocks until their tokens, headers included, pass 97% of maxTokens. A
+// non-positive maxTokens leaves no room for any block.
 func (s *ChatPipelineService) kbPrompt(kbinfos map[string]interface{}, maxTokens int) []string {
 	chunksRaw, ok := kbinfos["chunks"].([]map[string]interface{})
-	if !ok || len(chunksRaw) == 0 {
+	if !ok || len(chunksRaw) == 0 || maxTokens <= 0 {
 		return nil
 	}
 
-	// Pass 1: count content tokens to determine how many chunks fit.
-	type chunkContent struct {
-		content string
-	}
-	contents := make([]chunkContent, 0, len(chunksRaw))
-	for _, ck := range chunksRaw {
-		c := getMapString(ck, "content_with_weight", "content")
-		if c == "" {
-			continue
-		}
-		contents = append(contents, chunkContent{content: c})
-	}
-
-	usedTokenCount := 0
-	chunksNum := 0
-	for _, cc := range contents {
-		usedTokenCount += graph.NumTokensFromString(cc.content)
-		chunksNum++
-		if float64(maxTokens)*0.97 < float64(usedTokenCount) {
-			common.Warn("Not all the retrieval into prompt",
-				zap.Int("kept", chunksNum),
-				zap.Int("total", len(contents)))
-			break
-		}
-	}
-
-	// Pass 2: format chunks with tree structure, capped at chunksNum.
-	if chunksNum > len(chunksRaw) {
-		chunksNum = len(chunksRaw)
-	}
 	var result []string
-	for i := 0; i < chunksNum; i++ {
-		ck := chunksRaw[i]
+	usedTokenCount := 0
+	for i, ck := range chunksRaw {
 		c := getMapString(ck, "content_with_weight", "content")
 		if c == "" {
 			continue
@@ -2623,6 +2610,14 @@ func (s *ChatPipelineService) kbPrompt(kbinfos map[string]interface{}, maxTokens
 		cnt += "\n└── Content:\n"
 		cnt += c
 		result = append(result, cnt)
+
+		usedTokenCount += graph.NumTokensFromString(cnt)
+		if float64(maxTokens)*0.97 < float64(usedTokenCount) {
+			common.Warn("Not all the retrieval into prompt",
+				zap.Int("kept", len(result)),
+				zap.Int("total", len(chunksRaw)))
+			break
+		}
 	}
 
 	return result
@@ -4916,6 +4911,43 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 	}
 
 	return cfg
+}
+
+// defaultCompletionReserve is the completion room kept when neither the chat
+// nor the model catalog sets an output limit. It matches the web UI model presets.
+const defaultCompletionReserve = 4096
+
+// completionReserve is the room kept for the answer in a window of
+// modelMaxTokens: the chat's max_tokens when set, honoured exactly; otherwise
+// the model's catalog output limit, else defaultCompletionReserve, both capped
+// at a quarter of the window so a large catalog limit cannot take it all.
+func completionReserve(cfg *modelModule.ChatConfig, modelMaxOutput, modelMaxTokens int) int {
+	if cfg != nil && cfg.MaxTokens != nil && *cfg.MaxTokens > 0 {
+		return *cfg.MaxTokens
+	}
+	reserve := defaultCompletionReserve
+	if modelMaxOutput > 0 {
+		reserve = modelMaxOutput
+	}
+	return min(reserve, modelMaxTokens/4)
+}
+
+// knowledgeTokenBudget is the room the retrieved passages may take in a window
+// of modelMaxTokens: what the system prompt, the citation rules sent after it
+// (when quoting) and the completion reserve leave. The system prompt is measured
+// as formatPrompt renders it from kwargs, with the knowledge left out, so a
+// prompt parameter carrying a large value is counted. formatPrompt writes the
+// passages at every {knowledge} of the template, and AsyncChat appends them once
+// to a template without one, so the room is split across those insertions.
+func (s *ChatPipelineService) knowledgeTokenBudget(modelMaxTokens int, systemTemplate string, kwargs map[string]interface{}, quote bool, reserve int) int {
+	params := maps.Clone(kwargs)
+	delete(params, "knowledge")
+	used := graph.NumTokensFromString(s.formatPrompt(systemTemplate, params)) + reserve
+	if quote {
+		used += graph.NumTokensFromString(ragprompts.CitationPrompt(""))
+	}
+	insertions := max(strings.Count(systemTemplate, "{knowledge}"), 1)
+	return max(modelMaxTokens-used, 0) / insertions
 }
 
 func clampChatConfigMaxTokens(cfg *modelModule.ChatConfig, modelMaxTokens, usedTokenCount int) (int, bool, error) {
