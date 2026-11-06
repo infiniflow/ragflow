@@ -418,6 +418,10 @@ func consumeChannelStream(frames <-chan string, onDelta func(string)) channelStr
 		if final, _ := chunk["final"].(bool); final {
 			// The final frame carries the authoritative answer, so it replaces whatever the
 			// deltas produced even when that rewrites the text; the channel repaints.
+			// Pipelines that persist reasoning keep it inside <think> tags in that answer,
+			// so it goes through the same filter as the deltas instead of reaching the user.
+			finalThink := false
+			text = strings.TrimLeft(stripChannelThink(text, &finalThink), "\r\n")
 			if text != "" {
 				answer.Reset()
 				answer.WriteString(text)
