@@ -51,8 +51,6 @@ import (
 	"ragflow/internal/tokenizer"
 )
 
-const ComponentNameGroupTitleChunker = "GroupTitleChunker"
-
 // MIN_GROUP_TOKENS / MAX_GROUP_TOKENS mirror the python constants in
 // group_chunker.py:22-23. They drive the merge heuristic for adjacent
 // text records.

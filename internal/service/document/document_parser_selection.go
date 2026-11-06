@@ -66,7 +66,7 @@ func parserParamsDeclaresFamily(params map[string]any, family string) bool {
 // config, or a malformed one): the config cannot answer then.
 func configDeclaredFamily(config entity.JSONMap, family string) (declared, found bool) {
 	for cpnID, raw := range config {
-		if !pipelinepkg.IsParserComponentID(cpnID) {
+		if !common.IsParserComponentID(cpnID) {
 			continue
 		}
 		params, ok := raw.(map[string]any)
@@ -94,7 +94,7 @@ func templateDeclaredFamily(ctx context.Context, parserID, family string) (decla
 		return false, false
 	}
 	for cpnID, params := range defaults {
-		if !pipelinepkg.IsParserComponentID(cpnID) {
+		if !common.IsParserComponentID(cpnID) {
 			continue
 		}
 		return parserParamsDeclaresFamily(params, family), true

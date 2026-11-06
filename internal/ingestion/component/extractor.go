@@ -66,8 +66,8 @@ import (
 )
 
 // componentNameExtractor is the canonical Extractor component name; the value
-// lives in the schema package so the pipeline layer can reference the same
-// identity.
+// lives in common and is re-exported by the schema package so both layers
+// reference the same identity.
 const componentNameExtractor = schema.ComponentNameExtractor
 
 // defaultExtractorChatTimeout bounds one Extractor LLM call, including

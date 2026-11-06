@@ -44,8 +44,6 @@ import (
 	"ragflow/internal/parser/tableutil"
 )
 
-const ComponentNameGeneralChunker = "GeneralChunker"
-
 var contextSentencePattern = regexp.MustCompile(`([。!?？；！\n]|\. )`)
 
 type generalChunkerParam struct {

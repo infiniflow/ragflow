@@ -98,7 +98,7 @@ import (
 	"ragflow/internal/tokenizer"
 )
 
-const ComponentNameTokenizer = "Tokenizer"
+const ComponentNameTokenizer = schema.ComponentNameTokenizer
 
 // titleExtRE strips a trailing file-extension (e.g. ".pdf") from the
 // upstream document name before tokenizing it. Mirrors the python

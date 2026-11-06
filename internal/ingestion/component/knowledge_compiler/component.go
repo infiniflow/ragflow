@@ -47,8 +47,8 @@ var chunkerOutputs = map[string]string{
 // (rag/flow/compiler/compiler.py registers component_name = "Compiler"), so a
 // canvas saved by the Python frontend and Go's built-in ingestion templates
 // both reference the node as "Compiler" and resolve to the same component.
-// The value itself lives in the schema package so the pipeline layer can
-// reference the same identity.
+// The value itself lives in common and is re-exported by the schema package so
+// the pipeline layer references the same identity.
 const componentNameCompiler = schema.ComponentNameCompiler
 
 // KnowledgeCompilerComponent is the runtime.Component surface. Param is set at
