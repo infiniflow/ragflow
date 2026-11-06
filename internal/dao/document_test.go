@@ -18,6 +18,7 @@ package dao
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -692,5 +693,67 @@ func TestDocumentListParserConfigsByKBIDs(t *testing.T) {
 	}
 	if len(res["kb-2"]) != 1 {
 		t.Fatalf("expected 1 config for kb-2, got %d: %v", len(res["kb-2"]), res["kb-2"])
+	}
+}
+
+// The suffix and status counters are group totals, so they must come out the
+// same whether the database groups them or every row is tallied: a status
+// shared across suffixes is added up, an empty suffix is left out of the
+// suffix counter but still counted, and the list filters still apply.
+func TestGetFilterByKBIDGroupsSuffixAndStatus(t *testing.T) {
+	db := setupDocumentTestDB(t)
+	if err := db.AutoMigrate(
+		&entity.File{},
+		&entity.File2Document{},
+		&entity.IngestionTask{},
+	); err != nil {
+		t.Fatalf("migrate document-list dependencies: %v", err)
+	}
+	create := func(value interface{}) {
+		t.Helper()
+		if err := db.Create(value).Error; err != nil {
+			t.Fatalf("create %T: %v", value, err)
+		}
+	}
+	docs := []struct {
+		id, kb, suffix, status string
+	}{
+		{"pdf-done-1", "kb-1", "pdf", common.COMPLETED},
+		{"pdf-done-2", "kb-1", "pdf", common.COMPLETED},
+		{"pdf-failed", "kb-1", "pdf", common.FAILED},
+		{"txt-done", "kb-1", "txt", common.COMPLETED},
+		{"no-suffix", "kb-1", "", ""},
+		{"other-kb", "kb-2", "pdf", common.COMPLETED},
+	}
+	for _, doc := range docs {
+		create(&entity.Document{ID: doc.id, KbID: doc.kb, Suffix: doc.suffix, ParserConfig: entity.JSONMap{}, Name: sp(doc.id)})
+		create(&entity.File{ID: "file-" + doc.id, ParentID: "parent-1", TenantID: "tenant-1", CreatedBy: "user-1", Name: doc.id, Type: "document"})
+		create(&entity.File2Document{ID: "link-" + doc.id, FileID: sp("file-" + doc.id), DocumentID: sp(doc.id)})
+		if doc.status != "" {
+			create(&entity.IngestionTask{ID: "task-" + doc.id, DocumentID: doc.id, DatasetID: doc.kb, Status: doc.status})
+		}
+	}
+
+	dao := NewDocumentDAO()
+	filters, total, err := dao.GetFilterByKBID(t.Context(), db, DocumentListOptions{KbID: "kb-1"})
+	if err != nil {
+		t.Fatalf("GetFilterByKBID: %v", err)
+	}
+	if total != 5 {
+		t.Errorf("total = %d, want 5", total)
+	}
+	if got, want := filters["suffix"].(map[string]int64), map[string]int64{"pdf": 3, "txt": 1}; !reflect.DeepEqual(got, want) {
+		t.Errorf("suffix = %v, want %v", got, want)
+	}
+	if got, want := filters["ingestion_status"].(map[string]int64), map[string]int64{common.COMPLETED: 3, common.FAILED: 1, "UNSTART": 1}; !reflect.DeepEqual(got, want) {
+		t.Errorf("ingestion_status = %v, want %v", got, want)
+	}
+
+	filters, total, err = dao.GetFilterByKBID(t.Context(), db, DocumentListOptions{KbID: "kb-1", Suffixes: []string{"pdf"}})
+	if err != nil || total != 3 {
+		t.Fatalf("GetFilterByKBID(pdf): total %d, err %v", total, err)
+	}
+	if got, want := filters["ingestion_status"].(map[string]int64), map[string]int64{common.COMPLETED: 2, common.FAILED: 1}; !reflect.DeepEqual(got, want) {
+		t.Errorf("ingestion_status(pdf) = %v, want %v", got, want)
 	}
 }
