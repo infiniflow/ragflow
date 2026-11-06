@@ -682,14 +682,13 @@ func migrateUserCanvasTitleUnique(ctx context.Context, db *gorm.DB) error {
 }
 
 // knowledgebaseParserConfigTargetVersion is the database version a completed
-// knowledgebase parser config cleanup brings the database to. It is stored in
-// system_settings under mysql_migration.database.version, the marker shared with
-// the other versioned steps, so work already performed by a previous run is
-// skipped.
-const knowledgebaseParserConfigTargetVersion = "v1.0.0-rc2"
+// ingestion/parser config migration brings the database to. It is stored in
+// the shared system_settings migration marker and precedes the tenant-model
+// max_tokens backfill.
+const knowledgebaseParserConfigTargetVersion = "v1.0.0-rc2.dev1"
 
 // removedParserConfigKeys are the top level knowledgebase parser config keys the
-// v1.0.0-rc2 step deletes. raptor and graphrag moved out of the dataset
+// cleanup deletes. raptor and graphrag moved out of the dataset
 // parser config, so the stored sections are dead data.
 var removedParserConfigKeys = []string{"raptor", "graphrag"}
 

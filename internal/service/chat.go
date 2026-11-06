@@ -970,7 +970,9 @@ func (s *ChatService) updateChatREST(ctx context.Context, chatID string, req map
 		if err != nil {
 			return nil, err
 		}
-		if tenantRerankID != "" {
+		if tenantRerankID == "" {
+			req["tenant_rerank_id"] = nil
+		} else {
 			req["tenant_rerank_id"] = tenantRerankID
 		}
 	}
