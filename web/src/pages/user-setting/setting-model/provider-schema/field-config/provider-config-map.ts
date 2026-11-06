@@ -806,4 +806,80 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       model_info: [],
     }),
   },
+
+  // ============ Unlimited-OCR-2 ============
+  [LLMFactory.UnlimitedOCR]: {
+    llmFactory: LLMFactory.UnlimitedOCR,
+    title: 'Unlimited-OCR-2',
+    fields: [
+      {
+        name: 'instance_name',
+        label: 'instanceName',
+        type: FormFieldType.Text,
+        required: true,
+        placeholder: 'instanceNameMessage',
+        tooltip: 'instanceNameTip',
+        validation: { message: 'instanceNameMessage' },
+      },
+      {
+        name: 'unlimited_ocr_server_url',
+        label: 'baseUrl',
+        type: FormFieldType.Text,
+        required: true,
+        defaultValue: 'http://127.0.0.1:18000',
+        placeholder: 'unlimitedOcrServerUrlPlaceholder',
+        validation: { message: 'unlimitedOcrServerUrlMessage' },
+      },
+      {
+        name: 'unlimited_ocr_api_key',
+        label: 'apiKey',
+        type: FormFieldType.Password,
+        required: false,
+        placeholder: 'apiKeyPlaceholder',
+      },
+    ],
+    verifyTransform: (values) => {
+      const cfg: Record<string, any> = {};
+      if (values.unlimited_ocr_server_url) {
+        cfg.unlimited_ocr_server_url = values.unlimited_ocr_server_url;
+        cfg.unlimited_ocr_apiserver = values.unlimited_ocr_server_url;
+      }
+      if (values.unlimited_ocr_api_key) {
+        cfg.unlimited_ocr_api_key = values.unlimited_ocr_api_key;
+      }
+      return {
+        apiKey: cfg,
+        baseUrl: values.unlimited_ocr_server_url,
+        modelInfo: [],
+      };
+    },
+    submitTransform: (values) => {
+      const cfg: Record<string, any> = {};
+      if (values.unlimited_ocr_server_url) {
+        cfg.unlimited_ocr_server_url = values.unlimited_ocr_server_url;
+        cfg.unlimited_ocr_apiserver = values.unlimited_ocr_server_url;
+      }
+      if (values.unlimited_ocr_api_key) {
+        cfg.unlimited_ocr_api_key = values.unlimited_ocr_api_key;
+      }
+      return {
+        instance_name: values.instance_name,
+        llm_factory: LLMFactory.UnlimitedOCR,
+        api_key: cfg,
+        base_url: values.unlimited_ocr_server_url ?? '',
+        model_info: [],
+      };
+    },
+    echoTransform: (instance) => {
+      const obj = parseApiKeyAsObject(instance.api_key_config) ?? {};
+      return {
+        unlimited_ocr_server_url:
+          obj.unlimited_ocr_server_url ??
+          obj.unlimited_ocr_apiserver ??
+          instance.base_url ??
+          'http://127.0.0.1:18000',
+        unlimited_ocr_api_key: obj.unlimited_ocr_api_key ?? '',
+      };
+    },
+  },
 };

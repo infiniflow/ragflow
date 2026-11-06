@@ -247,6 +247,10 @@ export function transformParserParams(params: ParserFormSchemaType) {
             mineru_lang: cur.mineru_lang,
             mineru_formula_enable: cur.mineru_formula_enable,
             mineru_table_enable: cur.mineru_table_enable,
+            unlimited_ocr_crop_mode: cur.unlimited_ocr_crop_mode,
+            unlimited_ocr_no_repeat_ngram_size:
+              cur.unlimited_ocr_no_repeat_ngram_size,
+            unlimited_ocr_page_guard: cur.unlimited_ocr_page_guard,
             lang: cur.lang,
             enable_multi_column: cur.enable_multi_column,
             remove_toc: cur.remove_toc,

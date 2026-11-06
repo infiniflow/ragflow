@@ -149,6 +149,27 @@ describe('transformParserParams MinerU settings', () => {
       }
     },
   );
+
+  it('preserves Unlimited-OCR-2 options when serializing PDF setups', () => {
+    const result = transformParserParams({
+      setups: [
+        {
+          fileFormat: FileType.PDF,
+          parse_method: 'unlimited-ocr-model-id',
+          unlimited_ocr_crop_mode: 'gundam',
+          unlimited_ocr_no_repeat_ngram_size: 40,
+          unlimited_ocr_page_guard: false,
+        },
+      ],
+    } as any);
+    const saved = JSON.parse(JSON.stringify(result)).pdf;
+    expect(saved).toMatchObject({
+      parse_method: 'unlimited-ocr-model-id',
+      unlimited_ocr_crop_mode: 'gundam',
+      unlimited_ocr_no_repeat_ngram_size: 40,
+      unlimited_ocr_page_guard: false,
+    });
+  });
 });
 
 describe('transformParserParams vision settings', () => {

@@ -586,6 +586,9 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 		if layout != "" {
 			item["layout"] = layout
 		}
+		if nHeading, ok := child.(*ast.Heading); ok && nHeading.Level > 0 {
+			item["heading_level"] = nHeading.Level
+		}
 
 		// Resolve Markdown images from the AST node of THIS block only, so
 		// the image payload (and doc_type_kwd:"image") is attached to the

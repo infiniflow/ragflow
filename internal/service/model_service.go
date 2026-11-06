@@ -492,6 +492,8 @@ var providerAPIKeyConfigFields = map[string]struct{}{
 	"paddleocr_algorithm":      {},
 	"paddleocr_api_url":        {},
 	"provider_order":           {},
+	"unlimited_ocr_apiserver":  {},
+	"unlimited_ocr_server_url": {},
 }
 
 var safeProviderAPIKeyConfigFields = map[string]struct{}{
@@ -511,6 +513,8 @@ var safeProviderAPIKeyConfigFields = map[string]struct{}{
 	"paddleocr_algorithm":      {},
 	"paddleocr_api_url":        {},
 	"provider_order":           {},
+	"unlimited_ocr_apiserver":  {},
+	"unlimited_ocr_server_url": {},
 }
 
 func hasSavedProviderAPIKeyConfig(raw json.RawMessage) bool {
@@ -1869,6 +1873,7 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, re
 	// Mirror Python's ensure_*_from_env calls.
 	if permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, tenantID, permission.TenantOwner) == nil {
 		_ = m.ensureMineruFromEnv(ctx, tenantID)
+		_ = m.ensureUnlimitedOCRFromEnv(ctx, tenantID)
 		_ = m.ensureMonkeyOCRv2FromEnv(ctx, tenantID)
 		_ = m.ensureMonkeyOCRFromEnv(ctx, tenantID)
 		_ = m.ensurePaddleOCREnabledFromEnv(ctx, tenantID)
@@ -2130,6 +2135,32 @@ func (m *ModelProviderService) ensureOpenDataLoaderFromEnv(ctx context.Context, 
 	return m.ensureOCRProviderFromEnv(ctx, tenantID, "OpenDataLoader", "opendataloader-from-env", config)
 }
 
+func buildUnlimitedOCRProviderConfig(config map[string]any) map[string]interface{} {
+	if config == nil {
+		return nil
+	}
+	return map[string]interface{}{
+		"unlimited_ocr_server_url": config[common.EnvUnlimitedOCRServerURL],
+		"unlimited_ocr_apiserver":  config[common.EnvUnlimitedOCRAPIServer],
+		"unlimited_ocr_timeout":    config[common.EnvUnlimitedOCRTimeout],
+	}
+}
+
+// ensureUnlimitedOCRFromEnv registers the local Unlimited-OCR-2 provider with zero friction.
+func (m *ModelProviderService) ensureUnlimitedOCRFromEnv(ctx context.Context, tenantID string) error {
+	config := collectEnvConfig(unlimitedOCREnvKeys, unlimitedOCRDefaultConfig)
+	if config == nil {
+		return nil
+	}
+	serverURL, _ := config[common.EnvUnlimitedOCRServerURL].(string)
+	apiServer, _ := config[common.EnvUnlimitedOCRAPIServer].(string)
+	if strings.TrimSpace(serverURL) == "" && strings.TrimSpace(apiServer) == "" {
+		return nil
+	}
+	providerConfig := buildUnlimitedOCRProviderConfig(config)
+	return m.ensureOCRProviderFromEnv(ctx, tenantID, "Unlimited-OCR-2", "unlimited-ocr-2-from-env", providerConfig)
+}
+
 // ensureMonkeyOCRv2FromEnv mirrors Python's ensure_monkeyocrv2_from_env.
 func (m *ModelProviderService) ensureMonkeyOCRv2FromEnv(ctx context.Context, tenantID string) error {
 	config := collectEnvConfig(monkeyOCRv2EnvKeys, monkeyOCRv2DefaultConfig)
@@ -2204,6 +2235,16 @@ var (
 		common.EnvMonkeyOCRServerURL:    "",
 		common.EnvMonkeyOCRBackend:      "vlm-engine",
 		common.EnvMonkeyOCRDeleteOutput: 1,
+	}
+	unlimitedOCREnvKeys = []string{
+		common.EnvUnlimitedOCRServerURL,
+		common.EnvUnlimitedOCRAPIServer,
+		common.EnvUnlimitedOCRTimeout,
+	}
+	unlimitedOCRDefaultConfig = map[string]interface{}{
+		common.EnvUnlimitedOCRServerURL: "",
+		common.EnvUnlimitedOCRAPIServer: "",
+		common.EnvUnlimitedOCRTimeout:   600,
 	}
 )
 

@@ -6,8 +6,10 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"mime"
 	"mime/multipart"
@@ -109,6 +111,8 @@ func maybeDispatchPDFVision(
 	return result, true, result.Err
 }
 
+// dispatchPDFBackend checks whether the configured parser setup matches a dedicated
+// OCR backend (such as Unlimited-OCR-2, MinerU, MonkeyOCRv2, or PaddleOCR) and routes parsing accordingly.
 func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID string, setup schema.ParserSetup) (parser.ParseResult, bool, error) {
 	method := getStringOr(setup, "parse_method", "")
 	layout := getStringOr(setup, "layout_recognizer", "")
@@ -136,11 +140,48 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 		return res, true, err
 	}
 
+	methodLower := strings.ToLower(strings.TrimSpace(method))
+
+	// Unlimited-OCR-2 dispatch: parse_method "unlimited-ocr-2" or "unlimited_ocr",
+	// a layout_recognizer naming Unlimited-OCR-2, or a composite selector.
+	isUnlimitedOCRMatch := strings.EqualFold(strings.TrimSpace(method), "unlimited-ocr-2") ||
+		strings.EqualFold(strings.TrimSpace(method), "unlimited-ocr") ||
+		strings.EqualFold(strings.TrimSpace(method), "unlimited_ocr") ||
+		strings.Contains(layoutLower, "unlimited-ocr") ||
+		strings.Contains(layoutLower, "unlimited_ocr") ||
+		strings.Contains(layoutLower, "@unlimited-ocr-2") ||
+		strings.Contains(methodLower, "@unlimited-ocr-2") ||
+		strings.Contains(layoutLower, "@unlimited-ocr") ||
+		strings.Contains(methodLower, "@unlimited-ocr")
+	unlimitedOCRSelector := layout
+	if strings.TrimSpace(unlimitedOCRSelector) == "" {
+		unlimitedOCRSelector = method
+	}
+	isUnlimitedOCRByUUID := false
+	if !isUnlimitedOCRMatch && tenantID != "" && strings.TrimSpace(unlimitedOCRSelector) != "" &&
+		!parser.IsPDFParseMethod(unlimitedOCRSelector) {
+		isUnlimitedOCRByUUID = isUnlimitedOCRLayoutModelID(ctx, db, tenantID, unlimitedOCRSelector)
+	}
+	if isUnlimitedOCRMatch || isUnlimitedOCRByUUID {
+		common.Info("pdf vision dispatch: Unlimited-OCR-2 branch matched",
+			zap.String("parse_method", method),
+			zap.String("layout_recognizer", layout),
+			zap.String("tenant_id", tenantID))
+		dispatchModelID := ""
+		if isUnlimitedOCRByUUID || strings.Contains(unlimitedOCRSelector, "@") {
+			dispatchModelID = unlimitedOCRSelector
+		}
+		res, err := dispatchUnlimitedOCR2PDF(ctx, db, filename, binary, tenantID, setup, dispatchModelID)
+		if err != nil {
+			return parser.ParseResult{}, true, err
+		}
+		return res, true, nil
+	}
+
 	// MinerU dispatch: parse_method "mineru", a layout_recognizer naming
 	// MinerU, a composite model@instance@provider selector naming MinerU in
 	// either field, or a bare tenant model UUID (in either field) that
 	// resolves to a MinerU OCR model.
-	methodLower := strings.ToLower(strings.TrimSpace(method))
 	isMinerUMatch := methodLower == "mineru" ||
 		strings.HasPrefix(layoutLower, "mineru") ||
 		strings.Contains(layoutLower, "@mineru") ||
@@ -362,12 +403,491 @@ func normalizePDFMarkdown(ctx context.Context, filename, md string, setup schema
 
 var isMonkeyOCRv2LayoutModelID = defaultIsMonkeyOCRv2LayoutModelID
 
+// defaultIsMonkeyOCRv2LayoutModelID checks the database for a MonkeyOCRv2 model configuration.
 func defaultIsMonkeyOCRv2LayoutModelID(ctx context.Context, db *gorm.DB, tenantID, modelID string) bool {
 	if db == nil || strings.TrimSpace(modelID) == "" {
 		return false
 	}
 	resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
 	return err == nil && strings.EqualFold(resolved.driver.Name(), "monkeyocrv2")
+}
+
+// isUnlimitedOCRDriver reports whether driver is an Unlimited-OCR-2 variant.
+func isUnlimitedOCRDriver(driver modelModule.ModelDriver) bool {
+	if driver == nil {
+		return false
+	}
+	name := strings.ToLower(driver.Name())
+	return name == "unlimited_ocr" || strings.Contains(name, "unlimited")
+}
+
+// isUnlimitedOCRLayoutModelID tests whether a model ID resolves to an Unlimited-OCR provider.
+var isUnlimitedOCRLayoutModelID = defaultIsUnlimitedOCRLayoutModelID
+
+// defaultIsUnlimitedOCRLayoutModelID checks the database for an Unlimited-OCR model configuration.
+func defaultIsUnlimitedOCRLayoutModelID(ctx context.Context, db *gorm.DB, tenantID, modelID string) bool {
+	if db == nil || strings.TrimSpace(modelID) == "" {
+		return false
+	}
+	resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+	return err == nil && isUnlimitedOCRDriver(resolved.driver)
+}
+
+// dispatchUnlimitedOCR2PDF routes PDF parsing to the Unlimited-OCR-2 inference engine.
+func dispatchUnlimitedOCR2PDF(
+	ctx context.Context,
+	db *gorm.DB,
+	filename string,
+	binary []byte,
+	tenantID string,
+	setup schema.ParserSetup,
+	modelRef string,
+) (parser.ParseResult, error) {
+	environmentURL := strings.TrimRight(os.Getenv(common.EnvUnlimitedOCRServerURL), "/")
+	if environmentURL == "" {
+		environmentURL = strings.TrimRight(os.Getenv(common.EnvUnlimitedOCRAPIServer), "/")
+	}
+	baseURL := strings.TrimRight(getStringOr(setup, "unlimited_ocr_server_url", environmentURL), "/")
+
+	var resolvedDriver *modelModule.UnlimitedOCRModel
+	var resolvedAPIConfig *modelModule.APIConfig
+	if tenantID != "" {
+		var driver modelModule.ModelDriver
+		var apiConfig *modelModule.APIConfig
+		var err error
+		if modelRef != "" {
+			driver, _, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeOCR, modelRef)
+		} else {
+			driver, _, apiConfig, _, err = resolveTenantOCRModelByProvider(ctx, db, tenantID, "Unlimited-OCR-2")
+		}
+		if err != nil {
+			if modelRef != "" || (environmentURL == "" && getStringOr(setup, "unlimited_ocr_server_url", "") == "") {
+				return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 model: %w", err)
+			}
+			common.Warn("pdf vision dispatch: Unlimited-OCR-2 model resolution failed, falling back to environment/setup URL",
+				zap.String("tenant_id", tenantID),
+				zap.Error(err),
+				zap.String("fallback_url", baseURL),
+			)
+		} else {
+			if !isUnlimitedOCRDriver(driver) {
+				return parser.ParseResult{}, fmt.Errorf(
+					"parser: Unlimited-OCR-2 requires an Unlimited-OCR-2 OCR model; found %q", driver.Name())
+			}
+			if uDriver, ok := driver.(*modelModule.UnlimitedOCRModel); ok {
+				resolvedDriver = uDriver
+			}
+			if apiConfig != nil {
+				resolvedAPIConfig = apiConfig
+				if apiConfig.BaseURL != nil && strings.TrimSpace(*apiConfig.BaseURL) != "" {
+					baseURL = strings.TrimRight(*apiConfig.BaseURL, "/")
+				} else if configuredURL := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "unlimited_ocr_server_url"); configuredURL != "" {
+					baseURL = strings.TrimRight(configuredURL, "/")
+				} else if modelModule.ResolveUnlimitedOCRBearerToken(apiConfig) != "" {
+					if environmentURL == "" {
+						return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 tenant credential requires a server URL on the model or %s", common.EnvUnlimitedOCRServerURL)
+					}
+					baseURL = environmentURL
+				}
+			}
+		}
+	}
+	if baseURL == "" {
+		baseURL = "http://host.docker.internal:18000"
+	}
+	timeout := unlimitedOCR2RequestTimeout(setup, resolvedAPIConfig)
+
+	var driver *modelModule.UnlimitedOCRModel
+	if resolvedDriver != nil {
+		driver = resolvedDriver.NewInstance(map[string]string{"default": baseURL}).(*modelModule.UnlimitedOCRModel)
+	} else {
+		driver = modelModule.NewUnlimitedOCRModel(
+			map[string]string{"default": baseURL},
+			modelModule.URLSuffix{DocumentParse: "file_parse", Task: "tasks"},
+		)
+	}
+	effectiveAPIConfig := &modelModule.APIConfig{
+		BaseURL: &baseURL,
+	}
+	if resolvedAPIConfig != nil && resolvedAPIConfig.ApiKey != nil {
+		effectiveAPIConfig.ApiKey = resolvedAPIConfig.ApiKey
+	}
+
+	cropMode := getStringOr(setup, "unlimited_ocr_crop_mode", "auto")
+	noRepeatNgram := getIntOr(setup, "unlimited_ocr_no_repeat_ngram_size", 35)
+	pageGuard := getBoolOr(setup, "unlimited_ocr_page_guard", true)
+
+	backend := "pipeline"
+	parseConfig := &modelModule.ParseFileConfig{
+		CropMode:          cropMode,
+		NoRepeatNgramSize: noRepeatNgram,
+		PageGuard:         &pageGuard,
+	}
+	task, err := driver.ParseFile(ctx, &backend, binary, nil, effectiveAPIConfig, parseConfig, nil)
+	if err != nil {
+		return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 submit: %w", err)
+	}
+	taskResult, err := pollUnlimitedOCRTaskResult(ctx, driver, task.TaskID, effectiveAPIConfig, timeout)
+	if err != nil {
+		return parser.ParseResult{}, fmt.Errorf("parser: Unlimited-OCR-2 result: %w", err)
+	}
+
+	if strings.TrimSpace(taskResult.Markdown) != "" {
+		res := normalizePDFMarkdown(ctx, filename, taskResult.Markdown, setup)
+		if res.File == nil {
+			res.File = map[string]any{}
+		}
+		res.File["name"] = filename
+		res.File["parse_method"] = "unlimited_ocr"
+		if len(taskResult.ContentList) > 0 {
+			sizes, _ := mineruPageSizes(ctx, binary)
+			res = unlimitedOCRAttachPositions(res, taskResult.ContentList, sizes)
+			pageCount := unlimitedOCRContentListPageCount(taskResult.ContentList)
+			if pageCount > 0 {
+				res.File["page_count"] = pageCount
+			}
+		}
+		return res, nil
+	}
+
+	if len(taskResult.ContentList) > 0 {
+		sizes, _ := mineruPageSizes(ctx, binary)
+		items := make([]map[string]any, 0, len(taskResult.ContentList))
+		for _, rawItem := range taskResult.ContentList {
+			if converted := mineruContentItemToJSON(rawItem, nil, sizes); converted != nil {
+				items = append(items, converted)
+			}
+		}
+		if len(items) > 0 {
+			return parser.ParseResult{
+				File: map[string]any{
+					"name":         filename,
+					"page_count":   mineruItemPageCount(items),
+					"outline":      []map[string]any{},
+					"parse_method": "unlimited_ocr",
+				},
+				JSON: parser.MapsToItems(items),
+			}, nil
+		}
+	}
+
+	return normalizePDFMarkdown(ctx, filename, taskResult.Markdown, setup), nil
+}
+
+// pollUnlimitedOCRTaskResult queries task status periodically until Markdown and/or content_list is ready.
+func pollUnlimitedOCRTaskResult(ctx context.Context, driver *modelModule.UnlimitedOCRModel, taskID string, apiConfig *modelModule.APIConfig, timeout time.Duration) (*modelModule.UnlimitedOCRTaskResult, error) {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+	for {
+		res, err := driver.ShowUnlimitedOCRTask(ctx, taskID, apiConfig)
+		if err == nil {
+			if strings.TrimSpace(res.Markdown) != "" || len(res.ContentList) > 0 {
+				return res, nil
+			}
+		} else {
+			if errors.Is(err, modelModule.ErrTaskAuthorization) {
+				return nil, fmt.Errorf("Unlimited-OCR-2 task %s result: %w", taskID, err)
+			}
+			lastErr = err
+		}
+		if time.Now().After(deadline) {
+			if lastErr != nil {
+				return nil, fmt.Errorf("timed out waiting for Unlimited-OCR-2 task %s: last error: %w", taskID, lastErr)
+			}
+			return nil, fmt.Errorf("timed out waiting for Unlimited-OCR-2 task %s", taskID)
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
+}
+
+// unlimitedOCR2RequestTimeout resolves the polling timeout for Unlimited-OCR-2,
+// checking setup parameters, model instance configuration, and environment variables.
+func unlimitedOCR2RequestTimeout(setup schema.ParserSetup, apiConfig *modelModule.APIConfig) time.Duration {
+	value := ""
+	if raw, ok := setup["unlimited_ocr_timeout"]; ok {
+		value = strings.TrimSpace(fmt.Sprint(raw))
+	}
+	if value == "" {
+		value = modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "unlimited_ocr_timeout", common.EnvUnlimitedOCRTimeout)
+	}
+	if value == "" {
+		value = os.Getenv(common.EnvUnlimitedOCRTimeout)
+	}
+	seconds, err := strconv.Atoi(value)
+	if err != nil || seconds <= 0 {
+		return 30 * time.Minute
+	}
+	return time.Duration(seconds) * time.Second
+}
+
+// DispatchUnlimitedOCR2PDFForTest exposes dispatchUnlimitedOCR2PDF for integration tests.
+func DispatchUnlimitedOCR2PDFForTest(
+	ctx context.Context,
+	db *gorm.DB,
+	filename string,
+	binary []byte,
+	tenantID string,
+	setup schema.ParserSetup,
+	modelRef string,
+) (parser.ParseResult, error) {
+	return dispatchUnlimitedOCR2PDF(ctx, db, filename, binary, tenantID, setup, modelRef)
+}
+
+func stringAny(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	if v == nil {
+		return ""
+	}
+	return fmt.Sprint(v)
+}
+
+func unlimitedOCRNormalizeText(text string) string {
+	return strings.Join(strings.Fields(text), " ")
+}
+
+var unlimitedOCRMarkdownPrefix = regexp.MustCompile(`^(#{1,6}\s+|[-*]\s+|\d+\.\s+)`)
+
+func unlimitedOCRStripMarkdownPrefix(text string) (string, bool) {
+	stripped := unlimitedOCRMarkdownPrefix.ReplaceAllString(text, "")
+	return stripped, stripped != text
+}
+
+func extractHeadingLevel(text string) int {
+	trimmed := strings.TrimSpace(text)
+	level := 0
+	for level < len(trimmed) && trimmed[level] == '#' {
+		level++
+	}
+	if level > 0 && level <= 6 && (level == len(trimmed) || trimmed[level] == ' ') {
+		return level
+	}
+	return 0
+}
+
+func unlimitedOCRContentListPageCount(contentList []map[string]any) int {
+	maxPage := 0
+	for _, item := range contentList {
+		if pageIdx, ok := mineruJSONInt(item["page_idx"]); ok && pageIdx >= 0 {
+			if page := pageIdx + 1; page > maxPage {
+				maxPage = page
+			}
+		}
+	}
+	return maxPage
+}
+
+type unlimitedOCRTextMatch struct {
+	pageNo    int
+	positions [][]any
+	level     int
+}
+
+type unlimitedOCRTableGroup struct {
+	firstPage int
+	positions [][]any
+}
+
+func unlimitedOCRAttachPositions(res parser.ParseResult, contentList []map[string]any, pageSizes map[int][2]float64) parser.ParseResult {
+	if res.Err != nil || len(res.JSON) == 0 || len(contentList) == 0 {
+		return res
+	}
+
+	textMatches := map[string][]unlimitedOCRTextMatch{}
+	var tableGroups []unlimitedOCRTableGroup
+	var curTableGroup *unlimitedOCRTableGroup
+
+	for _, item := range contentList {
+		typ := strings.ToLower(strings.TrimSpace(stringAny(item["type"])))
+		pageIdx, _ := mineruJSONInt(item["page_idx"])
+		pageNo := pageIdx + 1
+		pos := mineruItemPositions(item, pageSizes)
+
+		isTable := typ == "table" || typ == "cross_table" || typ == "append_table"
+		if isTable {
+			if curTableGroup == nil || (typ != "cross_table" && typ != "append_table" && curTableGroup.firstPage != 0 && pageNo < curTableGroup.firstPage) {
+				tableGroups = append(tableGroups, unlimitedOCRTableGroup{firstPage: pageNo})
+				curTableGroup = &tableGroups[len(tableGroups)-1]
+			}
+			if curTableGroup.firstPage == 0 {
+				curTableGroup.firstPage = pageNo
+			}
+			if len(pos) > 0 {
+				curTableGroup.positions = append(curTableGroup.positions, pos...)
+			}
+			continue
+		}
+
+		curTableGroup = nil
+
+		text := unlimitedOCRNormalizeText(stringAny(item["text"]))
+		if text == "" {
+			continue
+		}
+		level := 0
+		if typ == "title" {
+			if lvl, ok := mineruJSONInt(item["level"]); ok && lvl > 0 {
+				level = lvl
+			} else if lvl, ok := mineruJSONInt(item["heading_level"]); ok && lvl > 0 {
+				level = lvl
+			} else {
+				level = extractHeadingLevel(stringAny(item["text"]))
+			}
+		}
+
+		m := unlimitedOCRTextMatch{
+			pageNo:    pageNo,
+			positions: pos,
+			level:     level,
+		}
+		textMatches[text] = append(textMatches[text], m)
+		if stripped, changed := unlimitedOCRStripMarkdownPrefix(text); changed && stripped != "" {
+			textMatches[stripped] = append(textMatches[stripped], m)
+		}
+	}
+
+	numTablesInJSON := 0
+	for _, it := range res.JSON {
+		m := it.ToMap()
+		if m["doc_type_kwd"] == "table" || m["layout"] == "table" {
+			numTablesInJSON++
+		}
+	}
+	if numTablesInJSON == 1 && len(tableGroups) > 1 {
+		var combinedPos [][]any
+		firstPage := tableGroups[0].firstPage
+		for _, tg := range tableGroups {
+			combinedPos = append(combinedPos, tg.positions...)
+			if firstPage == 0 || (tg.firstPage > 0 && tg.firstPage < firstPage) {
+				firstPage = tg.firstPage
+			}
+		}
+		tableGroups = []unlimitedOCRTableGroup{{firstPage: firstPage, positions: combinedPos}}
+	}
+
+	itemMaps := make([]map[string]any, len(res.JSON))
+	usedText := map[string]int{}
+	tableIdx := 0
+
+	for i, item := range res.JSON {
+		m := maps.Clone(item.ToMap())
+		layout, _ := m["layout"].(string)
+		docType, _ := m["doc_type_kwd"].(string)
+
+		if docType == "table" || layout == "table" {
+			if tableIdx < len(tableGroups) {
+				tg := tableGroups[tableIdx]
+				tableIdx++
+				if tg.firstPage > 0 {
+					m["page_number"] = tg.firstPage
+				}
+				if len(tg.positions) > 0 {
+					m["positions"] = tg.positions
+					m["_pdf_positions"] = tg.positions
+				}
+			}
+			itemMaps[i] = m
+			continue
+		}
+
+		rawText := stringAny(m["text"])
+		norm := unlimitedOCRNormalizeText(rawText)
+		stripped, _ := unlimitedOCRStripMarkdownPrefix(norm)
+
+		isHeading := layout == "heading" || layout == "title"
+		var match *unlimitedOCRTextMatch
+
+		for _, key := range []string{stripped, norm} {
+			if key == "" {
+				continue
+			}
+			if matches, ok := textMatches[key]; ok {
+				idx := usedText[key]
+				if idx < len(matches) {
+					match = &matches[idx]
+					usedText[key]++
+					break
+				}
+			}
+		}
+
+		if match != nil {
+			if match.pageNo > 0 {
+				m["page_number"] = match.pageNo
+			}
+			if len(match.positions) > 0 {
+				m["positions"] = match.positions
+				m["_pdf_positions"] = match.positions
+			}
+			if isHeading && m["heading_level"] == nil && match.level > 0 {
+				m["heading_level"] = match.level
+			}
+		}
+
+		if isHeading {
+			if m["heading_level"] == nil {
+				if lvl := extractHeadingLevel(rawText); lvl > 0 {
+					m["heading_level"] = lvl
+				} else {
+					m["heading_level"] = 1
+				}
+			}
+		}
+
+		itemMaps[i] = m
+	}
+
+	res.JSON = parser.MapsToItems(itemMaps)
+	return res
+}
+
+// getIntOr safely extracts an integer from a parameter map with a fallback default.
+func getIntOr(m map[string]any, key string, def int) int {
+	if m == nil {
+		return def
+	}
+	v, ok := m[key]
+	if !ok || v == nil {
+		return def
+	}
+	switch val := v.(type) {
+	case int:
+		return val
+	case int64:
+		return int(val)
+	case float64:
+		return int(val)
+	case string:
+		if i, err := strconv.Atoi(strings.TrimSpace(val)); err == nil {
+			return i
+		}
+	}
+	return def
+}
+
+// getBoolOr safely extracts a boolean from a parameter map with a fallback default.
+func getBoolOr(m map[string]any, key string, def bool) bool {
+	if m == nil {
+		return def
+	}
+	v, ok := m[key]
+	if !ok || v == nil {
+		return def
+	}
+	switch val := v.(type) {
+	case bool:
+		return val
+	case string:
+		if b, err := strconv.ParseBool(strings.TrimSpace(val)); err == nil {
+			return b
+		}
+	}
+	return def
 }
 
 func monkeyOCRv2ParseRequest(ctx context.Context, apiURL, filename string, binary []byte, timeout time.Duration) ([]byte, error) {
@@ -1607,6 +2127,22 @@ func mineruContentItemToJSONBudget(item map[string]any, images map[string]*zip.F
 		"text":         text,
 		"doc_type_kwd": docType,
 		"layout":       layout,
+	}
+	if typ == "title" {
+		if lvl, ok := mineruJSONInt(item["level"]); ok && lvl > 0 {
+			jsonItem["heading_level"] = lvl
+		} else if lvl, ok := mineruJSONInt(item["heading_level"]); ok && lvl > 0 {
+			jsonItem["heading_level"] = lvl
+		} else {
+			trimmed := strings.TrimSpace(text)
+			level := 0
+			for level < len(trimmed) && trimmed[level] == '#' {
+				level++
+			}
+			if level > 0 && level <= 6 && (level == len(trimmed) || trimmed[level] == ' ') {
+				jsonItem["heading_level"] = level
+			}
+		}
 	}
 	// MinerU folds its own VLM description into text for image/chart items.
 	// Mark them so the shared vision enhancement skips them instead of
