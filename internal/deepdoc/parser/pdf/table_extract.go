@@ -186,8 +186,11 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		annotGrid := tb.GroupCells(cells)
 		if len(annotGrid) > 0 {
 			// Derive R/C/H/SP with Python's _table_transformer_job semantics
-			// (whole-row/whole-column line matching), in crop space.
-			tbl.AnnotateBoxesWithGrid(boxInCrop, annotGrid)
+			// (whole-row/whole-column line matching), in crop space. R is
+			// matched against the raw TSR row bands, not the span-extended
+			// grid rows, so a rowspan header cell does not pull the next
+			// physical row into its origin row.
+			tbl.AnnotateBoxesWithGridAndRows(boxInCrop, annotGrid, tbl.RowBands(cells))
 			boxInCrop = dedupSameCellOCRBoxes(boxInCrop)
 			// Rebuild the grid from the derived per-char R/C, exactly like
 			// Python's construct_table groups boxes by their R/C labels —

@@ -166,6 +166,128 @@ func TestAnnotateTableBoxes(t *testing.T) {
 	}
 }
 
+// TestAnnotateTableBoxes_NoRowMatchLeavesRMissing pins Python's missing-R
+// state: a box that overlaps no row line must stay unassigned (-1), not fall
+// back to Go's zero value (row 0). The old behavior silently folded a row the
+// TSR model missed into the header row.
+func TestAnnotateTableBoxes_NoRowMatchLeavesRMissing(t *testing.T) {
+	grid := [][]pdf.TSRCell{
+		{{X0: 0, Y0: 0, X1: 100, Y1: 20, Label: "table row"}},
+	}
+	boxes := []pdf.TextBox{
+		{X0: 0, X1: 100, Top: 100, Bottom: 120, Text: "成都公司", LayoutType: pdf.LayoutTypeTable},
+	}
+
+	AnnotateTableBoxes(boxes, grid)
+
+	if boxes[0].R != -1 {
+		t.Errorf("unmatched box R = %d, want -1 (missing); a zero value makes GroupBoxesByRC fold it into row 0", boxes[0].R)
+	}
+}
+
+// TestAnnotateTableBoxes_RawRowBandsOverrideSpanExtendedGrid pins that R is
+// matched against the raw TSR row lines, not the span-extended grid cells.
+// grid[0] covers both physical rows because a rowspan cell was extended over
+// them; a box in the second physical row must still get R=1.
+func TestAnnotateTableBoxes_RawRowBandsOverrideSpanExtendedGrid(t *testing.T) {
+	grid := [][]pdf.TSRCell{
+		// The first row's bbox was extended to y=100 by a rowspan cell, but
+		// the cell itself is not a span (so it must not pull R up by span
+		// origin relocation either).
+		{{X0: 0, Y0: 0, X1: 100, Y1: 100, Label: "table row"}},
+		{{X0: 0, Y0: 20, X1: 100, Y1: 40, Label: "table row"}},
+	}
+	rows := []pdf.TSRCell{
+		{X0: 0, Y0: 0, X1: 100, Y1: 20, Label: "table row"},
+		{X0: 0, Y0: 20, X1: 100, Y1: 40, Label: "table row"},
+	}
+	boxes := []pdf.TextBox{
+		{X0: 0, X1: 100, Top: 20, Bottom: 40, Text: "第二行", LayoutType: pdf.LayoutTypeTable},
+	}
+
+	AnnotateBoxesWithGridAndRows(boxes, grid, rows)
+
+	if boxes[0].R != 1 {
+		t.Errorf("second physical row R = %d, want 1; the span-extended grid row 0 must not swallow it", boxes[0].R)
+	}
+	if boxes[0].RTop != 20 || boxes[0].RBott != 40 {
+		t.Errorf("R band = (%v, %v), want (20, 40)", boxes[0].RTop, boxes[0].RBott)
+	}
+}
+
+// TestAnnotateTableBoxes_ColumnBoundsIgnoreSpanExtension pins that C is
+// matched against the real column boundaries, recovered from non-spanning
+// cells. Using grid[0] directly would let a wide spanning header cover every
+// column and assign all boxes under it to the span's origin column.
+func TestAnnotateTableBoxes_ColumnBoundsIgnoreSpanExtension(t *testing.T) {
+	grid := [][]pdf.TSRCell{
+		{
+			{X0: 0, Y0: 0, X1: 300, Y1: 40, Label: "table spanning cell"},
+			{X0: 100, Y0: 0, X1: 200, Y1: 20, Label: "table column header"},
+			{X0: 200, Y0: 0, X1: 300, Y1: 20, Label: "table column header"},
+		},
+		{
+			{X0: 0, Y0: 20, X1: 100, Y1: 40, Label: "table row"},
+			{X0: 100, Y0: 20, X1: 200, Y1: 40, Label: "table row"},
+			{X0: 200, Y0: 20, X1: 300, Y1: 40, Label: "table row"},
+		},
+	}
+	boxes := []pdf.TextBox{
+		{X0: 250, X1: 300, Top: 0, Bottom: 20, Text: "第三列", LayoutType: pdf.LayoutTypeTable},
+	}
+
+	AnnotateTableBoxes(boxes, grid)
+
+	if boxes[0].C != 2 {
+		t.Errorf("box in the third column got C=%d, want 2; a span-extended grid[0] column must not absorb it", boxes[0].C)
+	}
+}
+
+// TestAnnotateTableBoxes_MovesRowspanOriginToTopRow pins that a rowspan cell
+// whose text is vertically centred in the lower row is moved to the span's
+// top row, matching Python __cal_spans (tbl[minR][minC]).
+func TestAnnotateTableBoxes_MovesRowspanOriginToTopRow(t *testing.T) {
+	grid := [][]pdf.TSRCell{
+		{{X0: 0, Y0: 0, X1: 100, Y1: 40, Label: "table spanning cell"}},
+		{{X0: 0, Y0: 20, X1: 100, Y1: 40, Label: "table row"}},
+	}
+	rows := []pdf.TSRCell{
+		{X0: 0, Y0: 0, X1: 100, Y1: 20, Label: "table row"},
+		{X0: 0, Y0: 20, X1: 100, Y1: 40, Label: "table row"},
+	}
+	boxes := []pdf.TextBox{
+		// Text is centred in the lower row, but the span starts at row 0.
+		{X0: 0, X1: 100, Top: 25, Bottom: 35, Text: "单位名称", LayoutType: pdf.LayoutTypeTable},
+	}
+
+	AnnotateBoxesWithGridAndRows(boxes, grid, rows)
+
+	if boxes[0].R != 0 {
+		t.Errorf("rowspan origin R = %d, want 0 (top row of the span)", boxes[0].R)
+	}
+	if boxes[0].SP <= 0 {
+		t.Errorf("span not detected: SP=%d", boxes[0].SP)
+	}
+}
+
+func TestRowBandsFiltersNonRowStructure(t *testing.T) {
+	cells := []pdf.TSRCell{
+		{X0: 0, Y0: 0, X1: 100, Y1: 100, Label: "table column header"},
+		{X0: 0, Y0: 0, X1: 100, Y1: 20, Label: "table row"},
+		{X0: 0, Y0: 0, X1: 10, Y1: 100, Label: "table column"},
+		{X0: 0, Y0: 20, X1: 100, Y1: 40, Label: "table row"},
+	}
+
+	rows := RowBands(cells)
+
+	if len(rows) != 2 {
+		t.Fatalf("RowBands returned %d rows, want 2 (table row only): %+v", len(rows), rows)
+	}
+	if rows[0].Y0 != 0 || rows[1].Y0 != 20 {
+		t.Errorf("row bands = (%v, %v), want (0, 20)", rows[0].Y0, rows[1].Y0)
+	}
+}
+
 // ── GroupTSRCellsToRows ─────────────────────────────────────────
 
 func TestGroupTSRCellsToRowsLabeled(t *testing.T) {

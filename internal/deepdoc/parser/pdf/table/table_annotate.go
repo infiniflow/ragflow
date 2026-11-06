@@ -505,7 +505,9 @@ func WriteTableAnnotations(boxes []pdf.TextBox, boxIdx []int, cells []pdf.TSRCel
 		}
 	}
 	annotGrid := tb.GroupCells(tableCells)
-	AnnotateTableBoxes(tblBoxes, annotGrid)
+	if len(annotGrid) > 0 {
+		AnnotateBoxesWithGridAndRows(tblBoxes, annotGrid, RowBands(tableCells))
+	}
 	for k, idx := range boxIdx {
 		bp := &tblBoxes[k]
 		boxes[idx].R = bp.R

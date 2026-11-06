@@ -3,6 +3,7 @@ package table
 import (
 	"context"
 	"image"
+	"math"
 	"strings"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -44,14 +45,13 @@ func (b *DeepDocTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 		return nil
 	}
 
-	// 1. Collect and sort structural elements.
-	var rows, cols, spans []pdf.TSRCell
+	// 1. Collect and sort structural elements. Rows come from the shared
+	// RowBands helper used by the annotator, so both stages see the same set.
+	var cols, spans []pdf.TSRCell
 	var header *pdf.TSRCell
 
 	for _, c := range cells {
 		switch {
-		case strings.HasSuffix(c.Label, "table row"):
-			rows = append(rows, c)
 		case strings.HasSuffix(c.Label, "table column"):
 			cols = append(cols, c)
 		case strings.Contains(strings.ToLower(c.Label), "spanning"):
@@ -62,23 +62,18 @@ func (b *DeepDocTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 		}
 	}
 
+	rows := RowBands(cells)
 	if len(rows) == 0 {
 		return nil
 	}
 
-	SortYFirstly(rows, 10)
 	SortXFirstly(cols, 10)
 
 	// Python's _table_transformer_job de-duplicates the structure lines before
-	// grouping: rows via gather (layouts_cleanup far=5 thr=0.6), columns via
-	// layouts_cleanup far=5 thr=0.5. Overlapping duplicate row/column lines are
-	// collapsed (higher detection score wins), so the cross-product grid rows
-	// match the rows Python's per-char R/C view counts.
-	rows = layoutCleanup(rows, nil, 5, 0.6)
+	// grouping: columns via layouts_cleanup far=5 thr=0.5. Overlapping
+	// duplicate column lines are collapsed (higher detection score wins), so
+	// the cross-product grid columns match Python's per-char R/C view.
 	cols = layoutCleanup(cols, nil, 5, 0.5)
-	if len(rows) == 0 {
-		return nil
-	}
 
 	// 2. If no column cells, synthesize one wide column from row extents.
 	if len(cols) == 0 {
@@ -104,8 +99,11 @@ func (b *DeepDocTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 	// 4. Header propagation.
 	if header != nil {
 		for ri := range rows {
-			if rows[ri].Y0 >= header.Y0 && rows[ri].Y1 <= header.Y1 ||
-				overlapsY(rows[ri], *header) {
+			// A header row must be substantially covered by the header
+			// component, not merely touch it: the TSR header box ends at
+			// y=160.6 while the first data row starts at y=160.4, and the old
+			// any-overlap test marked that data row as a header too.
+			if rowOverlapRatio(rows[ri], *header) >= 0.5 {
 				for cj := range grid[ri] {
 					grid[ri][cj].Label = "table column header"
 				}
@@ -140,12 +138,17 @@ func (b *DeepDocTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 	for _, sp := range spans {
 		firstR, firstC := -1, -1
 		for ri := range grid {
-			cy := (grid[ri][0].Y0 + grid[ri][0].Y1) / 2
+			// Use the raw row/column structure lines for the cell centre, not
+			// grid[ri][0]/grid[ri][cj]: an earlier spanning cell may already
+			// have widened those cells' bboxes, which shifts the computed
+			// centre outside a later span and silently drops its span (the
+			// three column-group headers in the merged-header regression).
+			cy := (rows[ri].Y0 + rows[ri].Y1) / 2
 			if cy < sp.Y0 || cy > sp.Y1 {
 				continue
 			}
 			for cj := range grid[ri] {
-				cx := (grid[ri][cj].X0 + grid[ri][cj].X1) / 2
+				cx := (cols[cj].X0 + cols[cj].X1) / 2
 				if cx >= sp.X0 && cx <= sp.X1 {
 					if firstR == -1 || ri < firstR || (ri == firstR && cj < firstC) {
 						firstR, firstC = ri, cj
@@ -173,9 +176,36 @@ func (b *DeepDocTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf.TSRCell {
 	return grid
 }
 
-// overlapsY reports whether two cells overlap in the Y dimension.
-func overlapsY(a, b pdf.TSRCell) bool {
-	return a.Y0 < b.Y1 && a.Y1 > b.Y0
+// RowBands extracts the TSR "table row" structure lines used for R
+// annotation. Python's _table_transformer_job gathers rows with
+// gather(r".* (row|header)") and de-duplicates them with layouts_cleanup; the
+// header component is handled separately by GroupCells, so only concrete row
+// lines are returned here. An empty result tells the annotator to fall back to
+// the grid rows.
+func RowBands(cells []pdf.TSRCell) []pdf.TSRCell {
+	var rows []pdf.TSRCell
+	for _, c := range cells {
+		if strings.HasSuffix(strings.TrimSpace(strings.ToLower(c.Label)), " row") {
+			rows = append(rows, c)
+		}
+	}
+	SortYFirstly(rows, 10)
+	rows = layoutCleanup(rows, nil, 5, 0.6)
+	return rows
+}
+
+// rowOverlapRatio reports the fraction of row's height covered by header.
+func rowOverlapRatio(row, header pdf.TSRCell) float64 {
+	h := row.Y1 - row.Y0
+	if h <= 0 {
+		return 0
+	}
+	top := math.Max(row.Y0, header.Y0)
+	btm := math.Min(row.Y1, header.Y1)
+	if btm <= top {
+		return 0
+	}
+	return (btm - top) / h
 }
 
 // FinalizeGrid returns annotGrid unchanged. The DeepDoc builder folds OCR

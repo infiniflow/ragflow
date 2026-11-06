@@ -6,46 +6,31 @@ import (
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
-// calSpans computes colspan and rowspan for spanning cells in the grid.
-// Returns spanInfo (row,col → colspan,rowspan) and covered (cells hidden by spans).
-// Matches Python's __cal_spans (table_structure_recognizer.py:535).
-func CalSpans(rows [][]pdf.TSRCell) (map[[2]int][2]int, map[[2]int]bool) {
-	spanInfo := make(map[[2]int][2]int)
-	covered := make(map[[2]int]bool)
+// gridBounds returns the per-column and per-row geometry from non-spanning
+// cells. Spanning cells are excluded because their bbox is extended over the
+// covered region; zero-position padding cells are excluded because they would
+// drag boundaries to the origin. Both span detection and R/C annotation use
+// these bounds, so the two stages agree on the table's real column edges.
+func gridBounds(rows [][]pdf.TSRCell) (colLeft, colRight, rowTop, rowBott []float64) {
 	if len(rows) == 0 || len(rows[0]) == 0 {
-		return spanInfo, covered
+		return nil, nil, nil, nil
 	}
-
-	// Compute column center positions.
-	nCols := len(rows[0])
-	colLeft := make([]float64, nCols)
-	colRight := make([]float64, nCols)
+	nCols, nRows := len(rows[0]), len(rows)
+	colLeft = make([]float64, nCols)
+	colRight = make([]float64, nCols)
+	rowTop = make([]float64, nRows)
+	rowBott = make([]float64, nRows)
 	for j := 0; j < nCols; j++ {
-		colLeft[j] = 1e9
-		colRight[j] = -1e9
+		colLeft[j], colRight[j] = 1e9, -1e9
 	}
-	nRows := len(rows)
-	rowTop := make([]float64, nRows)
-	rowBott := make([]float64, nRows)
 	for i := 0; i < nRows; i++ {
-		rowTop[i] = 1e9
-		rowBott[i] = -1e9
+		rowTop[i], rowBott[i] = 1e9, -1e9
 	}
-
 	for i, row := range rows {
 		for j, cell := range row {
-			if j >= nCols {
+			if j >= nCols || strings.Contains(cell.Label, "spanning") {
 				continue
 			}
-			// Exclude spanning cells from column/row boundary calculations.
-			// Use label-based detection (O(1), no dependency on column midpoints).
-			if strings.Contains(cell.Label, "spanning") {
-				continue
-			}
-			// Cells without position data (e.g. the zero-coordinate cells
-			// padded by MergeTablesAcrossPages to align per-page column
-			// counts) must not define column/row geometry, or they would drag
-			// boundaries to the origin and corrupt span detection.
 			if cell.X0 == 0 && cell.X1 == 0 && cell.Y0 == 0 && cell.Y1 == 0 {
 				continue
 			}
@@ -63,6 +48,25 @@ func CalSpans(rows [][]pdf.TSRCell) (map[[2]int][2]int, map[[2]int]bool) {
 			}
 		}
 	}
+	return colLeft, colRight, rowTop, rowBott
+}
+
+// calSpans computes colspan and rowspan for spanning cells in the grid.
+// Returns spanInfo (row,col → colspan,rowspan) and covered (cells hidden by spans).
+// Matches Python's __cal_spans (table_structure_recognizer.py:535).
+func CalSpans(rows [][]pdf.TSRCell) (map[[2]int][2]int, map[[2]int]bool) {
+	spanInfo := make(map[[2]int][2]int)
+	covered := make(map[[2]int]bool)
+	if len(rows) == 0 || len(rows[0]) == 0 {
+		return spanInfo, covered
+	}
+
+	colLeft, colRight, rowTop, rowBott := gridBounds(rows)
+	if colLeft == nil {
+		return spanInfo, covered
+	}
+	nCols := len(colLeft)
+	nRows := len(rowTop)
 
 	// For each spanning cell, compute how many cols/rows it covers.
 	// Only cells explicitly recognized as a span participate. Python's

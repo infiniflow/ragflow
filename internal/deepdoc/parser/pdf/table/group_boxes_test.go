@@ -1,7 +1,7 @@
 package table
 
 import (
-	"sort"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -68,6 +68,58 @@ func TestGroupBoxesByRC_RDiffSplitsRow(t *testing.T) {
 	}
 }
 
+func TestGroupBoxesByRC_MissingRowStaysInYOrder(t *testing.T) {
+	// Mirrors the 01_两行合并表头 PDF: the TSR model missed the 成都公司 row,
+	// so its boxes have no R (-1), while the two header rows carry the raw
+	// TSR row indices 0 and 1. Python's construct_table keeps missing-R boxes
+	// at their Y position, so 成都 must land between 深圳 and 武汉 — not inside
+	// the header row.
+	boxes := []pdf.TextBox{
+		{X0: 10, X1: 90, Top: 0, Bottom: 20, Text: "单位名称", R: 0, C: 0},
+		{X0: 110, X1: 190, Top: 0, Bottom: 20, Text: "集团公司采用", R: 0, C: 1},
+		{X0: 110, X1: 190, Top: 25, Bottom: 45, Text: "政务", R: 1, C: 1},
+		{X0: 210, X1: 290, Top: 25, Bottom: 45, Text: "政工", R: 1, C: 2},
+		{X0: 10, X1: 90, Top: 50, Bottom: 70, Text: "深圳公司", R: 5, C: 0},
+		{X0: 10, X1: 90, Top: 100, Bottom: 120, Text: "成都公司", R: -1, C: 0},
+		{X0: 110, X1: 190, Top: 100, Bottom: 120, Text: "20（1）", R: -1, C: 1},
+		{X0: 10, X1: 90, Top: 150, Bottom: 170, Text: "武汉公司", R: 6, C: 0},
+	}
+
+	rows := GroupBoxesByRC(boxes)
+
+	if len(rows) != 5 {
+		t.Fatalf("expected 5 rows (header0, header1, 深圳, 成都, 武汉), got %d: %v", len(rows), rowTexts(rows))
+	}
+	want := []string{"单位名称", "政务", "深圳公司", "成都公司", "武汉公司"}
+	for i, w := range want {
+		got := ""
+		for _, c := range rows[i] {
+			if c.Text != "" {
+				got = c.Text
+				break
+			}
+		}
+		if got != w {
+			t.Errorf("row %d first text = %q, want %q (rows=%v)", i, got, w, rowTexts(rows))
+		}
+	}
+	if rows[3][0].Text != "成都公司" || rows[3][1].Text != "20（1）" {
+		t.Errorf("成都 row cells = %v, want [成都公司 20（1）]", rowTexts(rows[3:4]))
+	}
+}
+
+func rowTexts(rows [][]pdf.TSRCell) [][]string {
+	out := make([][]string, len(rows))
+	for i, row := range rows {
+		for _, c := range row {
+			if c.Text != "" {
+				out[i] = append(out[i], c.Text)
+			}
+		}
+	}
+	return out
+}
+
 func TestFillCellTextFromBoxes_RCOnly(t *testing.T) {
 	cells := []pdf.TSRCell{
 		{X0: 0, Y0: 0, X1: 100, Y1: 50, Label: "table"},
@@ -107,7 +159,7 @@ func TestGroupBoxesByRC_FallbackToYXWhenNoAnnotations(t *testing.T) {
 		{X0: 110, X1: 190, Top: 35, Bottom: 65, Text: "D", R: -1, C: -1},
 	}
 	rows := GroupBoxesByRC(boxes)
-	// R=-1 for all → maxR = -1 → grid would be 0 rows. Must fall back to YX.
+	// R=-1 for all → no box carries an R annotation → must fall back to YX.
 	if len(rows) == 0 {
 		t.Fatal("groupBoxesByRC returned 0 rows when R=-1 — no YX fallback")
 	}
@@ -134,61 +186,61 @@ func TestGroupBoxesByRC_ColspanMissing(t *testing.T) {
 	_ = rows
 }
 
-func TestCompressRowIndices(t *testing.T) {
+func TestAssignRows_RChanges(t *testing.T) {
 	// 6 boxes with 6 different R values → 6 rows.
 	boxes := []pdf.TextBox{
-		{X0: 10, X1: 90, Top: 0, Bottom: 30, Text: "A", R: 0, C: 0},
-		{X0: 110, X1: 190, Top: 0, Bottom: 30, Text: "B", R: 1, C: 1},
-		{X0: 210, X1: 290, Top: 0, Bottom: 30, Text: "C", R: 2, C: 2},
-		{X0: 10, X1: 90, Top: 35, Bottom: 65, Text: "D", R: 3, C: 0},
-		{X0: 110, X1: 190, Top: 35, Bottom: 65, Text: "E", R: 4, C: 1},
-		{X0: 210, X1: 290, Top: 35, Bottom: 65, Text: "F", R: 5, C: 2},
+		{X0: 10, X1: 90, Top: 0, Bottom: 30, Text: "A", R: 0, C: 0, RTop: 0, RBott: 30},
+		{X0: 110, X1: 190, Top: 0, Bottom: 30, Text: "B", R: 1, C: 1, RTop: 0, RBott: 30},
+		{X0: 210, X1: 290, Top: 0, Bottom: 30, Text: "C", R: 2, C: 2, RTop: 0, RBott: 30},
+		{X0: 10, X1: 90, Top: 35, Bottom: 65, Text: "D", R: 3, C: 0, RTop: 35, RBott: 65},
+		{X0: 110, X1: 190, Top: 35, Bottom: 65, Text: "E", R: 4, C: 1, RTop: 35, RBott: 65},
+		{X0: 210, X1: 290, Top: 35, Bottom: 65, Text: "F", R: 5, C: 2, RTop: 35, RBott: 65},
 	}
-	// Sort first (as GroupBoxesByRC does)
-	sort.Slice(boxes, func(i, j int) bool {
-		if boxes[i].R != boxes[j].R {
-			return boxes[i].R < boxes[j].R
-		}
-		if boxes[i].Top != boxes[j].Top {
-			return boxes[i].Top < boxes[j].Top
-		}
-		return boxes[i].X0 < boxes[j].X0
-	})
-
-	rowMap, compressed := compressRowIndices(boxes)
-	if compressed != 5 { // 0-based, 6 elements → max index 5
-		t.Errorf("compressed = %d, want 5", compressed)
+	sortRFirstly(boxes)
+	rowOf := assignRows(boxes)
+	want := []int{0, 1, 2, 3, 4, 5}
+	if len(rowOf) != len(want) {
+		t.Fatalf("rowOf len = %d, want %d", len(rowOf), len(want))
 	}
-	if rowMap[0] != 0 || rowMap[1] != 1 || rowMap[2] != 2 || rowMap[3] != 3 || rowMap[4] != 4 || rowMap[5] != 5 {
-		t.Errorf("rowMap mapping incorrect: %v", rowMap)
+	for i := range want {
+		if rowOf[i] != want[i] {
+			t.Errorf("rowOf = %v, want %v", rowOf, want)
+			break
+		}
 	}
 }
 
-func TestCompressRowIndices_SameR(t *testing.T) {
-	// Multiple boxes with same R → same compressed row.
+func TestAssignRows_SameR(t *testing.T) {
+	// Multiple boxes with same R and overlapping Y → same row.
 	boxes := []pdf.TextBox{
-		{X0: 10, X1: 90, Top: 0, Bottom: 30, Text: "A", R: 0, C: 0},
-		{X0: 110, X1: 190, Top: 0, Bottom: 30, Text: "B", R: 0, C: 1},
-		{X0: 10, X1: 90, Top: 35, Bottom: 65, Text: "C", R: 1, C: 0},
-		{X0: 110, X1: 190, Top: 35, Bottom: 65, Text: "D", R: 1, C: 1},
+		{X0: 10, X1: 90, Top: 0, Bottom: 30, Text: "A", R: 0, C: 0, RTop: 0, RBott: 30},
+		{X0: 110, X1: 190, Top: 0, Bottom: 30, Text: "B", R: 0, C: 1, RTop: 0, RBott: 30},
+		{X0: 10, X1: 90, Top: 35, Bottom: 65, Text: "C", R: 1, C: 0, RTop: 35, RBott: 65},
+		{X0: 110, X1: 190, Top: 35, Bottom: 65, Text: "D", R: 1, C: 1, RTop: 35, RBott: 65},
 	}
-	// Sort first
-	sort.Slice(boxes, func(i, j int) bool {
-		if boxes[i].R != boxes[j].R {
-			return boxes[i].R < boxes[j].R
+	sortRFirstly(boxes)
+	rowOf := assignRows(boxes)
+	want := []int{0, 0, 1, 1}
+	for i := range want {
+		if rowOf[i] != want[i] {
+			t.Errorf("rowOf = %v, want %v", rowOf, want)
+			break
 		}
-		if boxes[i].Top != boxes[j].Top {
-			return boxes[i].Top < boxes[j].Top
-		}
-		return boxes[i].X0 < boxes[j].X0
-	})
+	}
+}
 
-	rowMap, compressed := compressRowIndices(boxes)
-	if compressed != 1 { // 0-based, 2 rows → max index 1
-		t.Errorf("compressed = %d, want 1", compressed)
+func TestAssignRows_SameRMultilineStaysOneRow(t *testing.T) {
+	// Two text boxes in the same cell on separate lines share R; Python keeps
+	// them in one row because the Y-advance branch only applies when R is
+	// missing. Splitting here would break multi-line OCR cells.
+	boxes := []pdf.TextBox{
+		{X0: 0, X1: 40, Top: 5, Bottom: 10, Text: "R/W", R: 0, C: 0, RTop: 0, RBott: 60},
+		{X0: 0, X1: 40, Top: 12, Bottom: 17, Text: "R/W", R: 0, C: 0, RTop: 0, RBott: 60},
 	}
-	if rowMap[0] != 0 || rowMap[1] != 1 {
-		t.Errorf("rowMap mapping incorrect: %v", rowMap)
+	sortRFirstly(boxes)
+	rowOf := assignRows(boxes)
+	if !reflect.DeepEqual(rowOf, []int{0, 0}) {
+		t.Errorf("rowOf = %v, want [0 0] (same-R lines stay in one row)", rowOf)
 	}
 }
 
@@ -199,19 +251,9 @@ func TestCollectBoxesPerRow(t *testing.T) {
 		{X0: 10, X1: 90, Top: 35, Bottom: 65, Text: "C", R: 1, C: 0},
 		{X0: 110, X1: 190, Top: 35, Bottom: 65, Text: "D", R: 1, C: 1},
 	}
-	// Sort first
-	sort.Slice(boxes, func(i, j int) bool {
-		if boxes[i].R != boxes[j].R {
-			return boxes[i].R < boxes[j].R
-		}
-		if boxes[i].Top != boxes[j].Top {
-			return boxes[i].Top < boxes[j].Top
-		}
-		return boxes[i].X0 < boxes[j].X0
-	})
-
-	rowMap, _ := compressRowIndices(boxes)
-	cmap, maxCols := collectBoxesPerRow(boxes, rowMap)
+	sortRFirstly(boxes)
+	rowOf := assignRows(boxes)
+	cmap := collectBoxesPerRow(boxes, rowOf)
 
 	if len(cmap) != 2 {
 		t.Errorf("cmap has %d rows, want 2", len(cmap))
@@ -222,9 +264,6 @@ func TestCollectBoxesPerRow(t *testing.T) {
 	if cmap[1][0].txt != "C" || cmap[1][1].txt != "D" {
 		t.Errorf("row 1 incorrect: %v, %v", cmap[1][0], cmap[1][1])
 	}
-	if maxCols[0] != 1 || maxCols[1] != 1 {
-		t.Errorf("maxCols incorrect: %v", maxCols)
-	}
 }
 
 func TestCollectBoxesPerRow_MergeSameCell(t *testing.T) {
@@ -232,19 +271,9 @@ func TestCollectBoxesPerRow_MergeSameCell(t *testing.T) {
 		{X0: 10, X1: 50, Top: 0, Bottom: 30, Text: "Hello", R: 0, C: 0},
 		{X0: 50, X1: 90, Top: 0, Bottom: 30, Text: "World", R: 0, C: 0},
 	}
-	// Sort first
-	sort.Slice(boxes, func(i, j int) bool {
-		if boxes[i].R != boxes[j].R {
-			return boxes[i].R < boxes[j].R
-		}
-		if boxes[i].Top != boxes[j].Top {
-			return boxes[i].Top < boxes[j].Top
-		}
-		return boxes[i].X0 < boxes[j].X0
-	})
-
-	rowMap, _ := compressRowIndices(boxes)
-	cmap, _ := collectBoxesPerRow(boxes, rowMap)
+	sortRFirstly(boxes)
+	rowOf := assignRows(boxes)
+	cmap := collectBoxesPerRow(boxes, rowOf)
 
 	if cmap[0][0].txt != "Hello World" {
 		t.Errorf("merged text incorrect: %q", cmap[0][0].txt)
@@ -258,19 +287,10 @@ func TestCompressColIndices(t *testing.T) {
 		{X0: 10, X1: 90, Top: 35, Bottom: 65, Text: "C", R: 1, C: 0},
 		{X0: 110, X1: 190, Top: 35, Bottom: 65, Text: "D", R: 1, C: 1},
 	}
-	// Sort first
-	sort.Slice(boxes, func(i, j int) bool {
-		if boxes[i].R != boxes[j].R {
-			return boxes[i].R < boxes[j].R
-		}
-		if boxes[i].Top != boxes[j].Top {
-			return boxes[i].Top < boxes[j].Top
-		}
-		return boxes[i].X0 < boxes[j].X0
-	})
-
-	rowMap, compressed := compressRowIndices(boxes)
-	cCompressed, cMaxCol := compressColIndices(boxes, rowMap, compressed)
+	sortRFirstly(boxes)
+	rowOf := assignRows(boxes)
+	compressed := rowOf[len(rowOf)-1]
+	cCompressed, maxCol := compressColIndices(boxes, rowOf, compressed)
 
 	if cCompressed[0][0] != 0 || cCompressed[0][1] != 1 {
 		t.Errorf("row 0 compression incorrect: %v", cCompressed[0])
@@ -278,8 +298,8 @@ func TestCompressColIndices(t *testing.T) {
 	if cCompressed[1][0] != 0 || cCompressed[1][1] != 1 {
 		t.Errorf("row 1 compression incorrect: %v", cCompressed[1])
 	}
-	if cMaxCol[0] != 1 || cMaxCol[1] != 1 {
-		t.Errorf("cMaxCol incorrect: %v", cMaxCol)
+	if maxCol != 1 {
+		t.Errorf("maxCol = %d, want 1", maxCol)
 	}
 }
 
@@ -292,27 +312,18 @@ func TestCompressColIndices_AdjacentCAlwaysNewColumn(t *testing.T) {
 		{X0: 10, X1: 100, Top: 0, Bottom: 30, Text: "A", R: 0, C: 0},
 		{X0: 90, X1: 190, Top: 0, Bottom: 30, Text: "B", R: 0, C: 1}, // X-overlaps A but C is adjacent
 	}
-	// Sort first
-	sort.Slice(boxes, func(i, j int) bool {
-		if boxes[i].R != boxes[j].R {
-			return boxes[i].R < boxes[j].R
-		}
-		if boxes[i].Top != boxes[j].Top {
-			return boxes[i].Top < boxes[j].Top
-		}
-		return boxes[i].X0 < boxes[j].X0
-	})
-
-	rowMap, compressed := compressRowIndices(boxes)
-	cCompressed, cMaxCol := compressColIndices(boxes, rowMap, compressed)
+	sortRFirstly(boxes)
+	rowOf := assignRows(boxes)
+	compressed := rowOf[len(rowOf)-1]
+	cCompressed, maxCol := compressColIndices(boxes, rowOf, compressed)
 
 	// C=0 → column 0, C=1 → column 1 (distinct C rank, never merged).
 	if cCompressed[0][0] != 0 || cCompressed[0][1] != 1 {
 		t.Errorf("adjacent C must split into separate columns: %v", cCompressed[0])
 	}
-	// Table-wide column count = 2 → cMaxCol == 1.
-	if cMaxCol[0] != 1 {
-		t.Errorf("cMaxCol incorrect: got %d, want 1 (2 distinct C → 2 columns)", cMaxCol[0])
+	// Table-wide column count = 2 → maxCol == 1.
+	if maxCol != 1 {
+		t.Errorf("maxCol = %d, want 1 (2 distinct C → 2 columns)", maxCol)
 	}
 }
 
@@ -323,22 +334,13 @@ func TestBuildGrid(t *testing.T) {
 		{X0: 10, X1: 90, Top: 35, Bottom: 65, Text: "C", R: 1, C: 0},
 		{X0: 110, X1: 190, Top: 35, Bottom: 65, Text: "D", R: 1, C: 1},
 	}
-	// Sort first
-	sort.Slice(boxes, func(i, j int) bool {
-		if boxes[i].R != boxes[j].R {
-			return boxes[i].R < boxes[j].R
-		}
-		if boxes[i].Top != boxes[j].Top {
-			return boxes[i].Top < boxes[j].Top
-		}
-		return boxes[i].X0 < boxes[j].X0
-	})
+	sortRFirstly(boxes)
+	rowOf := assignRows(boxes)
+	compressed := rowOf[len(rowOf)-1]
+	cmap := collectBoxesPerRow(boxes, rowOf)
+	cCompressed, maxCol := compressColIndices(boxes, rowOf, compressed)
 
-	rowMap, compressed := compressRowIndices(boxes)
-	cmap, _ := collectBoxesPerRow(boxes, rowMap)
-	cCompressed, cMaxCol := compressColIndices(boxes, rowMap, compressed)
-
-	rows := buildGrid(cmap, cCompressed, cMaxCol, compressed)
+	rows := buildGrid(cmap, cCompressed, maxCol, compressed)
 
 	if len(rows) != 2 {
 		t.Fatalf("expected 2 rows, got %d", len(rows))

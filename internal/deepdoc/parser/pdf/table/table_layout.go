@@ -174,19 +174,40 @@ func findHorizontallyTightestFit(box pdf.TextBox, clmns []pdf.TSRCell) int {
 	return best
 }
 
-// AnnotateBoxesWithGrid derives per-box R/C/H/SP annotations in the SAME
-// coordinate frame as grid (e.g. a table's crop space), using Python's
-// _table_transformer_job semantics. It is the production entry point for
-// deriving R/C so the grid can be rebuilt from them (GroupBoxesByRC).
-func AnnotateBoxesWithGrid(boxes []pdf.TextBox, grid [][]pdf.TSRCell) {
-	AnnotateTableBoxes(boxes, grid)
+// spanTopRowIndex returns the first row whose centre lies inside the span's
+// Y range — the top row of the merged rectangle (Python __cal_spans minR).
+// Returns -1 when no row centre falls inside the span.
+func spanTopRowIndex(rows []pdf.TSRCell, sp pdf.TSRCell) int {
+	for i, r := range rows {
+		cy := (r.Y0 + r.Y1) / 2
+		if cy >= sp.Y0 && cy <= sp.Y1 {
+			return i
+		}
+	}
+	return -1
 }
 
-// annotateTableBoxes tags table boxes with row/header/column indices using
-// TSR cell labels. Matching Python's R/H/C/SP annotation logic.
+// AnnotateBoxesWithGridAndRows derives per-box R/C/H/SP annotations in the
+// SAME coordinate frame as grid (e.g. a table's crop space), using Python's
+// _table_transformer_job semantics. Rows are matched against the raw TSR
+// "table row" bands, not the span-extended grid cells, so a rowspan cell does
+// not pull the rows below it into its origin row.
+func AnnotateBoxesWithGridAndRows(boxes []pdf.TextBox, grid [][]pdf.TSRCell, rows []pdf.TSRCell) {
+	annotateTableBoxes(boxes, grid, rows)
+}
+
+// AnnotateTableBoxes is the fallback for callers without raw TSR structure
+// lines: Rows are matched against the grid's rows. A grid cell whose bbox was
+// extended by a rowspan covers the rows below it, so this path can assign a
+// lower-row box to the span's origin row; production uses
+// AnnotateBoxesWithGridAndRows.
 //
 // Python: pdf_parser.py:518-554
 func AnnotateTableBoxes(boxes []pdf.TextBox, grid [][]pdf.TSRCell) {
+	annotateTableBoxes(boxes, grid, nil)
+}
+
+func annotateTableBoxes(boxes []pdf.TextBox, grid [][]pdf.TSRCell, rows []pdf.TSRCell) {
 	// grid[0] is the header row.  Spans are computed by calSpans later.
 	var headers, spans []pdf.TSRCell
 	var clmns []pdf.TSRCell
@@ -214,13 +235,25 @@ func AnnotateTableBoxes(boxes []pdf.TextBox, grid [][]pdf.TSRCell) {
 	}
 	if len(grid) > 0 && len(grid[0]) > 0 {
 		// Python's clmns are the "table column" lines: vertical bboxes spanning
-		// the whole table height. Derive them from the grid (each column's X
-		// range from the first row, Y range from the table's top/bottom rows).
+		// the whole table height. Recover each column's X range from the
+		// non-spanning grid cells: grid[0] alone is not reliable because a
+		// spanning cell widens its origin cell over the columns it covers, so
+		// using it would assign every box under the span to that one column.
+		colLeft, colRight, _, _ := gridBounds(grid)
+		nCols := len(colLeft)
 		tableTop := grid[0][0].Y0
 		tableBot := grid[len(grid)-1][0].Y1
-		clmns = make([]pdf.TSRCell, len(grid[0]))
-		for ci := range grid[0] {
-			clmns[ci] = pdf.TSRCell{X0: grid[0][ci].X0, Y0: tableTop, X1: grid[0][ci].X1, Y1: tableBot}
+		if len(rows) > 0 {
+			tableTop = rows[0].Y0
+			tableBot = rows[len(rows)-1].Y1
+		}
+		clmns = make([]pdf.TSRCell, nCols)
+		for ci := 0; ci < nCols; ci++ {
+			if colLeft[ci] == 1e9 {
+				// No non-spanning cell in this column: keep the grid bounds.
+				colLeft[ci], colRight[ci] = grid[0][ci].X0, grid[0][ci].X1
+			}
+			clmns[ci] = pdf.TSRCell{X0: colLeft[ci], Y0: tableTop, X1: colRight[ci], Y1: tableBot}
 		}
 	}
 	SortYFirstly(headers, 10)
@@ -234,19 +267,35 @@ func AnnotateTableBoxes(boxes []pdf.TextBox, grid [][]pdf.TSRCell) {
 		if boxes[i].LayoutType != pdf.LayoutTypeTable && boxes[i].LayoutType != "" {
 			continue
 		}
-		// R: Python find_overlapped_with_threshold(box, rows, 0.3) over the
-		// WHOLE row line — the grid row's bbox spans the table width (the row
-		// line's own X range), not individual grid cells.
-		for ri, row := range grid {
-			if len(row) == 0 {
-				continue
-			}
-			rowBBox := pdf.TSRCell{X0: row[0].X0, Y0: row[0].Y0, X1: row[len(row)-1].X1, Y1: row[0].Y1}
-			if findOverlappedWithThreshold(boxes[i], []pdf.TSRCell{rowBBox}, 0.3) >= 0 {
+		// R: Python find_overlapped_with_threshold(box, rows, 0.3). Python
+		// leaves R unset when no row line matches; using Go's zero value would
+		// silently put that box in row 0, so start from -1 and only write a
+		// row when the match succeeds.
+		boxes[i].R = -1
+		boxes[i].RTop = 0
+		boxes[i].RBott = 0
+		if len(rows) > 0 {
+			if ri := findOverlappedWithThreshold(boxes[i], rows, 0.3); ri >= 0 {
 				boxes[i].R = ri
-				boxes[i].RTop = row[0].Y0
-				boxes[i].RBott = row[0].Y1
-				break
+				boxes[i].RTop = rows[ri].Y0
+				boxes[i].RBott = rows[ri].Y1
+			}
+		} else {
+			// Fallback for callers without the raw structure lines: use the
+			// grid rows. A rowspan-extended cell makes the row bbox taller than
+			// the physical row, so this path can assign a lower-row box to the
+			// span's origin row; production passes raw rows to avoid it.
+			for ri, row := range grid {
+				if len(row) == 0 {
+					continue
+				}
+				rowBBox := pdf.TSRCell{X0: row[0].X0, Y0: row[0].Y0, X1: row[len(row)-1].X1, Y1: row[0].Y1}
+				if findOverlappedWithThreshold(boxes[i], []pdf.TSRCell{rowBBox}, 0.3) >= 0 {
+					boxes[i].R = ri
+					boxes[i].RTop = row[0].Y0
+					boxes[i].RBott = row[0].Y1
+					break
+				}
 			}
 		}
 		if idx := findOverlappedWithThreshold(boxes[i], headers, 0.3); idx >= 0 {
@@ -286,6 +335,18 @@ func AnnotateTableBoxes(boxes []pdf.TextBox, grid [][]pdf.TSRCell) {
 			boxes[i].HBott = spans[idx].Y1
 			boxes[i].HLeft = spans[idx].X0
 			boxes[i].HRight = spans[idx].X1
+			// A rowspan cell's text is vertically centred, so its text box
+			// often sits in the lower row while the TSR span starts in the
+			// upper row. Python's __cal_spans moves the merged cell to
+			// tbl[minR][minC]; assign R from the span's top row here so the
+			// origin is already the top-left cell.
+			if len(rows) > 0 {
+				if sr := spanTopRowIndex(rows, spans[idx]); sr >= 0 {
+					boxes[i].R = sr
+					boxes[i].RTop = rows[sr].Y0
+					boxes[i].RBott = rows[sr].Y1
+				}
+			}
 		}
 	}
 

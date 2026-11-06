@@ -108,21 +108,12 @@ func constructTableCore(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string
 		}
 		return tableutil.RenderTableHTML(ToTableData(rows, caption, hdrs, spanInfo, covered))
 	}
-	// Fallback: boxes with R/C annotations.
-	if len(boxes) > 0 && BoxesHaveAnnotations(boxes) {
+	// Fallback: rebuild the grid from boxes. GroupBoxesByRC uses the R/C
+	// annotations when present and falls back to Y/X grouping when none are
+	// available, so this single path covers both the annotated and the
+	// annotation-free test/replay callers.
+	if len(boxes) > 0 {
 		rows := GroupBoxesByRC(boxes)
-		if HasText(rows) {
-			if item != nil {
-				item.Rows = RowsToStrings(rows)
-			}
-			spanInfo, covered := CalSpans(rows)
-			return tableutil.RenderTableHTML(ToTableData(rows, caption, BoxHeaderSet(rows, boxes), spanInfo, covered))
-		}
-	}
-	// Test-only: Y/X coordinate grouping (matching Python construct_table).
-	// Used by table_parity_test.go to verify pipeline with Python boxes.
-	if len(boxes) > 0 && !BoxesHaveAnnotations(boxes) {
-		rows := GroupBoxesByYX(boxes)
 		if HasText(rows) {
 			if item != nil {
 				item.Rows = RowsToStrings(rows)
