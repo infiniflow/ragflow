@@ -8,6 +8,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/permission"
 )
 
 // OntologyFixRequest is one edit a reader confirmed on the compile-quality
@@ -48,9 +49,9 @@ const (
 // Nothing here reasons about the documents: re-compiling the affected ones is
 // the caller's next step, and doing it is what makes the ledger's numbers move.
 func (s *CompilationTemplateGroupService) ApplyOntologyFix(
-	ctx context.Context, tenantID, templateID string, fix OntologyFixRequest,
+	ctx context.Context, templateID string, fix OntologyFixRequest,
 ) (*GroupTemplate, error) {
-	return s.ApplyOntologyFixes(ctx, tenantID, templateID, []OntologyFixRequest{fix})
+	return s.ApplyOntologyFixes(ctx, templateID, []OntologyFixRequest{fix})
 }
 
 // ApplyOntologyFixes applies the edits a reader selected, as ONE write.
@@ -64,8 +65,16 @@ func (s *CompilationTemplateGroupService) ApplyOntologyFix(
 // whole batch and nothing is written, so a half-applied selection can never be
 // what the next compile runs against.
 func (s *CompilationTemplateGroupService) ApplyOntologyFixes(
-	ctx context.Context, tenantID, templateID string, fixes []OntologyFixRequest,
+	ctx context.Context, templateID string, fixes []OntologyFixRequest,
 ) (*GroupTemplate, error) {
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
+	tenantID := strings.TrimSpace(permission.TenantIDFromContext(ctx))
+	if tenantID == "" {
+		tenantID = userID
+	}
 	if len(fixes) == 0 {
 		return nil, fmt.Errorf("no fixes were selected.")
 	}
@@ -115,7 +124,7 @@ func (s *CompilationTemplateGroupService) ApplyOntologyFixes(
 			Config:      config,
 		})
 	}
-	if _, err := s.UpdateGroup(ctx, tenantID, *tpl.GroupID, req); err != nil {
+	if _, err := s.UpdateGroup(ctx, *tpl.GroupID, req); err != nil {
 		return nil, err
 	}
 	return &GroupTemplate{

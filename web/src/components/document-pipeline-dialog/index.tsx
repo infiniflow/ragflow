@@ -29,7 +29,7 @@ import { ParseType } from '@/constants/knowledge';
 import { IModalProps } from '@/interfaces/common';
 import { IChangeParserRequestBody } from '@/interfaces/request/document';
 import { useCallback } from 'react';
-import { FieldErrors, useFormState, useWatch } from 'react-hook-form';
+import { FieldErrors, useFormState } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useParserSelectHandler } from '@/hooks/use-parser-select-handler';
 import {
@@ -67,7 +67,7 @@ export function DocumentPipelineDialog({
     operatorValues,
     showOperatorTabs,
     buildSubmitData,
-    latestVersionId,
+    versionOutdated,
     parserOptionMissing,
   } = useDocumentPipelineForm({
     parserId,
@@ -78,17 +78,9 @@ export function DocumentPipelineDialog({
 
   const handleParserSelect = useParserSelectHandler(form);
 
-  const selectedVersionId = useWatch({
-    control: form.control,
-    name: 'pipeline_version_id',
-  });
-
-  // Outdated = pinned to a non-latest version. A pinned version that was
-  // deleted entirely is covered by the select's missing display plus the
-  // parserOptionMissing guard below, so no separate Missing banner lives here.
-  const versionOutdated =
-    !!selectedVersionId && selectedVersionId !== latestVersionId;
-
+  // A pinned version that was deleted entirely is covered by the select's
+  // missing display plus the parserOptionMissing guard below, so no separate
+  // Missing banner lives here.
   const onSubmit = useCallback(
     async (data: Parameters<typeof buildSubmitData>[0]) => {
       // A deleted pinned version/parser never reaches the backend; the

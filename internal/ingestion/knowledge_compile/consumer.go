@@ -555,7 +555,7 @@ func filterWikiPageCandidates(candidates []kccommon.Product) []kccommon.Product 
 		if cand.Variant != kccommon.VariantWiki {
 			continue // tree/structure products never enter the wiki merge
 		}
-		if metaString(cand.Meta, "kind") != "page" {
+		if kccommon.MetaString(cand.Meta, "kind") != "page" {
 			continue
 		}
 		filtered = append(filtered, cand)
@@ -672,7 +672,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	for _, entry := range disabled {
 		retractedDocIDs = append(retractedDocIDs, entry.DocID)
 	}
-	retractedDocIDs = uniqueSortedStrings(retractedDocIDs)
+	retractedDocIDs = common.DeduplicateSorted(retractedDocIDs)
 	wikiDiff, err := c.prepareWikiContributionDiff(ctx, tenant, kb, completed, retractedDocIDs)
 	if err != nil {
 		return err
@@ -1237,7 +1237,7 @@ func completedDocsWithoutNavInput(completed []BacklogEntry, inputs []nav.UpsertD
 			withoutNav = append(withoutNav, entry.DocID)
 		}
 	}
-	return uniqueSortedStrings(withoutNav)
+	return common.DeduplicateSorted(withoutNav)
 }
 
 func copyMeta(input map[string]any) map[string]any {
@@ -1256,7 +1256,7 @@ func (c *Consumer) mergeEntityModeCandidates(ctx context.Context, tenant, kb str
 	var entityCandidates []kccommon.Product
 	var topic []kccommon.Product
 	for _, candidate := range candidates {
-		pageType := strings.ToLower(strings.TrimSpace(metaString(candidate.Meta, "page_type")))
+		pageType := strings.ToLower(strings.TrimSpace(kccommon.MetaString(candidate.Meta, "page_type")))
 		if pageType != "entity" && pageType != "concept" {
 			topic = append(topic, candidate)
 			continue
@@ -1307,7 +1307,7 @@ func (c *Consumer) mergeWikiProductsBySlug(ctx context.Context, tenant, kb strin
 				exists = true
 				continue
 			}
-			if strings.EqualFold(strings.TrimSpace(metaString(current.Meta, "page_type")), "topic") {
+			if strings.EqualFold(strings.TrimSpace(kccommon.MetaString(current.Meta, "page_type")), "topic") {
 				current = mergeTopicPage(current, candidate)
 			} else {
 				current = wikiEntityMerge(current, candidate)
@@ -1358,11 +1358,11 @@ func rewriteMergedWikiPages(ctx context.Context, tenant string, pages []kccommon
 		jobs = append(jobs, func() error {
 			page := pages[idx]
 			prompt := fmt.Sprintf("PAGE TYPE: %s\nTITLE: %s\nTOPIC: %s\nENTITIES: %s\nSUMMARY: %s\n\nEVIDENCE MARKDOWN:\n%s",
-				metaString(page.Meta, "page_type"),
-				metaString(page.Meta, "title"),
-				metaString(page.Meta, "topic"),
-				strings.Join(metaStringSlice(page.Meta, "entity_names"), ", "),
-				metaString(page.Meta, "summary"),
+				kccommon.MetaString(page.Meta, "page_type"),
+				kccommon.MetaString(page.Meta, "title"),
+				kccommon.MetaString(page.Meta, "topic"),
+				strings.Join(kccommon.MetaStringSlice(page.Meta, "entity_names"), ", "),
+				kccommon.MetaString(page.Meta, "summary"),
 				page.Content)
 			response, err := deps.Chat.Chat(ctx, kccommon.ChatRequest{
 				LLMID:        defaultLLMID,
@@ -1371,14 +1371,14 @@ func rewriteMergedWikiPages(ctx context.Context, tenant string, pages []kccommon
 				Temperature:  floatPtr(0.1),
 			})
 			if err != nil {
-				return fmt.Errorf("rewrite Wiki page %q: %w", metaString(page.Meta, "slug"), err)
+				return fmt.Errorf("rewrite Wiki page %q: %w", kccommon.MetaString(page.Meta, "slug"), err)
 			}
 			if response == nil {
-				return fmt.Errorf("rewrite Wiki page %q returned no response", metaString(page.Meta, "slug"))
+				return fmt.Errorf("rewrite Wiki page %q returned no response", kccommon.MetaString(page.Meta, "slug"))
 			}
 			content := strings.TrimSpace(response.Content)
 			if content == "" {
-				return fmt.Errorf("rewrite Wiki page %q returned empty content", metaString(page.Meta, "slug"))
+				return fmt.Errorf("rewrite Wiki page %q returned empty content", kccommon.MetaString(page.Meta, "slug"))
 			}
 			pages[idx].Content = content
 			return nil
@@ -1390,11 +1390,11 @@ func rewriteMergedWikiPages(ctx context.Context, tenant string, pages []kccommon
 func floatPtr(value float64) *float64 { return &value }
 
 func wikiPageMergeKey(product kccommon.Product) string {
-	slug := strings.TrimSpace(metaString(product.Meta, "slug"))
+	slug := strings.TrimSpace(kccommon.MetaString(product.Meta, "slug"))
 	if slug == "" {
 		return ""
 	}
-	pageType := strings.ToLower(strings.TrimSpace(metaString(product.Meta, "page_type")))
+	pageType := strings.ToLower(strings.TrimSpace(kccommon.MetaString(product.Meta, "page_type")))
 	return pageType + "\x00" + strings.ToLower(strings.Join(strings.Fields(slug), " "))
 }
 
@@ -1657,13 +1657,13 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 		if p.Variant != kccommon.VariantStructure && p.Variant != kccommon.VariantMindmap {
 			continue
 		}
-		nameKey := normalizedStructureEntityName(metaString(p.Meta, "name"))
+		nameKey := normalizedStructureEntityName(kccommon.MetaString(p.Meta, "name"))
 		if nameKey == "" {
 			continue
 		}
-		typ := strings.TrimSpace(metaString(p.Meta, "entity_type"))
+		typ := strings.TrimSpace(kccommon.MetaString(p.Meta, "entity_type"))
 		if structureEntityTypeKey(typ) == "" {
-			typ = strings.TrimSpace(metaString(p.Meta, "type"))
+			typ = strings.TrimSpace(kccommon.MetaString(p.Meta, "type"))
 		}
 		if structureEntityTypeKey(typ) == "" {
 			continue
@@ -1698,14 +1698,14 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 		}
 		// Dataset rows retain the producing compilation kind. Extraction shape
 		// is separate metadata and does not determine the stored kind.
-		ckwd := enginetypes.CanonicalCompilationKind(kccommon.FirstNonEmpty(p.Kind, metaString(p.Meta, "compile_kwd")))
+		ckwd := enginetypes.CanonicalCompilationKind(kccommon.FirstNonEmpty(p.Kind, kccommon.MetaString(p.Meta, "compile_kwd")))
 		if ckwd == "" {
 			ckwd = compileKwdForVariant(p.Variant)
 		}
-		kind := metaString(p.Meta, "kind")
+		kind := kccommon.MetaString(p.Meta, "kind")
 		template := structureTemplateIdentity(p.TemplateID, p.Kind)
-		from := metaString(p.Meta, "from")
-		to := metaString(p.Meta, "to")
+		from := kccommon.MetaString(p.Meta, "from")
+		to := kccommon.MetaString(p.Meta, "to")
 		if kind == "relation" || (from != "" && to != "") {
 			from = strings.TrimSpace(from)
 			to = strings.TrimSpace(to)
@@ -1715,17 +1715,17 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 			if from == "" || to == "" {
 				continue
 			}
-			relType := metaString(p.Meta, "relation_type")
+			relType := kccommon.MetaString(p.Meta, "relation_type")
 			if relType == "" {
-				relType = metaString(p.Meta, "type")
+				relType = kccommon.MetaString(p.Meta, "type")
 			}
 			if relType == "" {
 				relType = "related"
 			}
 			fromName := normalizedStructureEntityName(from)
 			toName := normalizedStructureEntityName(to)
-			fromType := resolveProductClass(fromName, strings.TrimSpace(metaString(p.Meta, "from_type")))
-			toType := resolveProductClass(toName, strings.TrimSpace(metaString(p.Meta, "to_type")))
+			fromType := resolveProductClass(fromName, strings.TrimSpace(kccommon.MetaString(p.Meta, "from_type")))
+			toType := resolveProductClass(toName, strings.TrimSpace(kccommon.MetaString(p.Meta, "to_type")))
 			k := rkey{
 				template: template,
 				from:     fromName,
@@ -1755,10 +1755,10 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 			continue
 		}
 		// entity bucket
-		name := metaString(p.Meta, "name")
-		typ := strings.TrimSpace(metaString(p.Meta, "entity_type"))
+		name := kccommon.MetaString(p.Meta, "name")
+		typ := strings.TrimSpace(kccommon.MetaString(p.Meta, "entity_type"))
 		if structureEntityTypeKey(typ) == "" {
-			typ = strings.TrimSpace(metaString(p.Meta, "type"))
+			typ = strings.TrimSpace(kccommon.MetaString(p.Meta, "type"))
 		}
 		if name == "" {
 			continue
@@ -1916,6 +1916,26 @@ func appendBucket(b *StructureBucket, p kccommon.Product) {
 	// _struct_merge_graph_entities, which folds the entity description, not the
 	// whole payload). Fall back to Content only when it is not a JSON object.
 	desc := structureProductDescription(p.Content)
+	if desc == "" {
+		// Match Python's dataset merger fallback: mindmap entities only carry
+		// name/type, while their dataset row still needs searchable text.
+		// Relations likewise use the endpoint names and relation type when the
+		// source payload has no description.
+		from := kccommon.MetaString(p.Meta, "from")
+		to := kccommon.MetaString(p.Meta, "to")
+		if kind := kccommon.MetaString(p.Meta, "kind"); kind == "relation" || (from != "" && to != "") {
+			relType := kccommon.MetaString(p.Meta, "relation_type")
+			if relType == "" {
+				relType = kccommon.MetaString(p.Meta, "type")
+			}
+			if relType == "" {
+				relType = "related"
+			}
+			desc = strings.TrimSpace(strings.Join([]string{from, relType, to}, " "))
+		} else {
+			desc = strings.TrimSpace(kccommon.MetaString(p.Meta, "name"))
+		}
+	}
 	if desc != "" {
 		if b.Description != "" {
 			b.Description += "\n"
@@ -1927,13 +1947,13 @@ func appendBucket(b *StructureBucket, p kccommon.Product) {
 	// stated. Only the DECLARED attributes reach `attr` (the projection filters
 	// them), so this cannot smuggle model-invented keys into a filterable column.
 	b.Attr = mergeBucketAttrs(b.Attr, chunkJSONObject(p.Meta["attr"]))
-	b.SourceDocIDs = appendUnique(b.SourceDocIDs, []string{p.DocID})
-	b.SourceChunkIDs = appendUnique(b.SourceChunkIDs, metaStringSlice(p.Meta, "source_chunk_ids"))
+	b.SourceDocIDs = common.AppendUnique(b.SourceDocIDs, []string{p.DocID})
+	b.SourceChunkIDs = common.AppendUnique(b.SourceChunkIDs, kccommon.MetaStringSlice(p.Meta, "source_chunk_ids"))
 	// A bucket can fold rows compiled by different model versions (a publish
 	// does not recompile the corpus). The highest one is reported, because that
 	// is the version the bucket's latest rows come from — and the only honest
 	// answer when they disagree is the newest, not the first seen.
-	if v, ok := metaInt(p.Meta, "compilation_template_version"); ok && int(v) > b.TemplateVersion {
+	if v, ok := kccommon.MetaInt(p.Meta, "compilation_template_version"); ok && int(v) > b.TemplateVersion {
 		b.TemplateVersion = int(v)
 	}
 	// mention_count_int: sum the per-entity mention counts (Python
@@ -1941,7 +1961,7 @@ func appendBucket(b *StructureBucket, p kccommon.Product) {
 	// Each entity product carries mention_count ≥ 1 (structure compile.go L231);
 	// mindmap entities carry none, so they contribute a default of 0 and are
 	// simply not stamped (mention_count_int is omitted when 0).
-	if mc, ok := metaInt(p.Meta, "mention_count"); ok && mc > 0 {
+	if mc, ok := kccommon.MetaInt(p.Meta, "mention_count"); ok && mc > 0 {
 		b.MentionCount += int(mc)
 	}
 	if len(p.Vector) > 0 {
@@ -2070,22 +2090,6 @@ func structureProductDescription(content string) string {
 		}
 	}
 	return content
-}
-
-// appendUnique appends only values not already present, preserving order.
-func appendUnique(dst, values []string) []string {
-	seen := make(map[string]bool, len(dst)+len(values))
-	for _, v := range dst {
-		seen[v] = true
-	}
-	for _, v := range values {
-		if v == "" || seen[v] {
-			continue
-		}
-		seen[v] = true
-		dst = append(dst, v)
-	}
-	return dst
 }
 
 // upsertNavLocked places the batch's Tree/PageIndex summaries into the dataset

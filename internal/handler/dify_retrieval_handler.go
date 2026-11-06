@@ -21,7 +21,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+
 	"ragflow/internal/dao"
+	"ragflow/internal/permission"
 	"strconv"
 	"strings"
 
@@ -29,7 +31,6 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
-	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/service/graph"
 	"ragflow/internal/service/nlp"
@@ -49,8 +50,8 @@ type KBServiceIface interface {
 
 // ModelCreator supplies typed model instances to Dify retrieval.
 type ModelCreator interface {
-	NewEmbeddingModel(ctx context.Context, access service.Identity, modelRef string) (*modelModule.EmbeddingModel, error)
-	NewDefaultChatModel(ctx context.Context, access service.Identity) (*modelModule.ChatModel, error)
+	NewEmbeddingModel(ctx context.Context, modelRef string) (*modelModule.EmbeddingModel, error)
+	NewDefaultChatModel(ctx context.Context) (*modelModule.ChatModel, error)
 }
 
 // MetadataServiceIface abstracts MetadataService for the Dify handler.
@@ -130,7 +131,7 @@ type difyRecord struct {
 // --- Handler ---
 
 type resourcePermissionChecker interface {
-	CheckResource(context.Context, permission.Subject, permission.ResourceRef, permission.Operation) error
+	CheckResource(context.Context, permission.ResourceRef, permission.Operation) error
 }
 
 // DifyRetrievalHandler handles Dify-compatible retrieval requests.
@@ -169,16 +170,16 @@ func NewDifyRetrievalHandler(
 // Retrieval handles POST/GET /api/v1/dify/retrieval.
 // Matches Python: api/apps/restful_apis/dify_retrieval_api.py::retrieval()
 func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
-	user, errCode, errMsg := GetUser(c)
+	_, errCode, errMsg := GetUser(c)
 	if errCode != common.CodeSuccess {
-		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, errCode, nil, errMsg)
+		common.Respond(c, http.StatusUnauthorized, errCode, nil, errMsg)
 		return
 	}
 
 	var req difyRetrievalRequest
 	if c.Request.Method == http.MethodGet {
 		if err := c.ShouldBindQuery(&req); err != nil {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "invalid query parameters")
+			common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "invalid query parameters")
 			return
 		}
 		// Manually extract top_k and score_threshold from query (flat params, not nested)
@@ -200,13 +201,13 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		}
 	} else {
 		if err := c.ShouldBindJSON(&req); err != nil {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "invalid request body")
+			common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "invalid request body")
 			return
 		}
 	}
 
 	if req.KnowledgeID == "" || req.Query == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "knowledge_id and query are required")
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "knowledge_id and query are required")
 		return
 	}
 
@@ -214,14 +215,14 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	kb, err := h.kbSvc.GetKnowledgebaseByID(ctx, req.KnowledgeID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			common.ResponseWithHttpCodeData(c, http.StatusNotFound, common.CodeNotFound, nil, "Knowledge base not found!")
+			common.Respond(c, http.StatusNotFound, common.CodeNotFound, nil, "Knowledge base not found!")
 		} else {
-			common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, "failed to query knowledge base")
+			common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, "failed to query knowledge base")
 		}
 		return
 	}
 
-	if err := h.permissionChecker.CheckResource(ctx, permission.Subject{UserID: user.ID}, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: req.KnowledgeID}, permission.OperationUse); err != nil {
+	if err := h.permissionChecker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: req.KnowledgeID}, permission.OperationUse); err != nil {
 		respondHTTPPermissionError(c, err, false)
 		return
 	}
@@ -238,17 +239,17 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	pageSize := 1024
 	if topK != nil {
 		if *topK < 1 || *topK > 1024 {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "top_k must be between 1 and 1024")
+			common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "top_k must be between 1 and 1024")
 			return
 		}
 		pageSize = *topK
 	}
 
 	// Get embedding model
-	access := service.Identity{UserID: user.ID, TenantID: kb.TenantID}
-	embModel, err := h.modelFactory.NewEmbeddingModel(ctx, access, kb.EmbdID)
+	ctx = permission.WithTenantID(ctx, kb.TenantID)
+	embModel, err := h.modelFactory.NewEmbeddingModel(ctx, kb.EmbdID)
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprintf("failed to get embedding model: %v", err))
+		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprintf("failed to get embedding model: %v", err))
 		return
 	}
 
@@ -298,10 +299,10 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	result, err := h.retrievalSvc.Retrieval(c.Request.Context(), sr)
 	if err != nil {
 		if strings.Contains(err.Error(), "not_found") {
-			common.ResponseWithHttpCodeData(c, http.StatusNotFound, common.CodeNotFound, nil, "No chunk found! Check the chunk status please!")
+			common.Respond(c, http.StatusNotFound, common.CodeNotFound, nil, "No chunk found! Check the chunk status please!")
 			return
 		}
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
+		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 		return
 	}
 
@@ -310,7 +311,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 
 	// KG retrieval (optional)
 	if req.UseKG {
-		chatModel, kgErr := h.modelFactory.NewDefaultChatModel(ctx, access)
+		chatModel, kgErr := h.modelFactory.NewDefaultChatModel(ctx)
 		if kgErr != nil {
 			common.Warn("KG retrieval: failed to get chat model", zap.String("kbID", req.KnowledgeID), zap.Error(kgErr))
 		} else if chatModel != nil {
@@ -347,7 +348,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		var docs []*entity.Document
 		docs, err = h.docDAO.GetByIDs(ctx, dao.DB, allDocIDs)
 		if err != nil {
-			common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprintf("failed to load documents: %v", err))
+			common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprintf("failed to load documents: %v", err))
 			return
 		}
 		for _, d := range docs {
@@ -409,5 +410,5 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 
 // HealthCheck Health check returns a simple health check response.
 func (h *DifyRetrievalHandler) HealthCheck(c *gin.Context) {
-	common.SuccessWithData(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }

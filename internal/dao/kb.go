@@ -134,6 +134,9 @@ func (dao *KnowledgebaseDAO) EmbeddingBaseName(ctx context.Context, db *gorm.DB,
 // model library's "how many datasets does this affect" is either derived from
 // the config just written or the two disagree.
 func (dao *KnowledgebaseDAO) Create(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase) error {
+	if kb.UserID == "" {
+		kb.UserID = kb.CreatedBy
+	}
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(kb).Error; err != nil {
 			return err

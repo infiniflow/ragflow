@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"net/http"
 	"strconv"
 
 	"ragflow/internal/common"
@@ -62,10 +63,10 @@ func (h *CompilationModelHandler) List(c *gin.Context) {
 	}
 	models, err := h.governance.ListModels(c.Request.Context(), dao.DB, tenantID, c.Query("kind"))
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, gin.H{"models": models, "total": len(models)}, "success")
+	common.RespondSuccess(c, gin.H{"models": models, "total": len(models)}, "success")
 }
 
 // Check reports what stands between the current draft and a publish. It writes
@@ -84,10 +85,10 @@ func (h *CompilationModelHandler) Check(c *gin.Context) {
 	}
 	check, err := h.governance.PublishCheck(c.Request.Context(), dao.DB, tenantID, c.Param("template_id"))
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, check, "success")
+	common.RespondSuccess(c, check, "success")
 }
 
 // SubmitForReview moves a draft to review. A model with a blocker is refused
@@ -108,10 +109,10 @@ func (h *CompilationModelHandler) SubmitForReview(c *gin.Context) {
 	if err != nil {
 		// The check travels with the refusal: the dialog that explains why the
 		// submit failed is the same one that would have shown the findings.
-		common.ResponseWithCodeData(c, common.CodeExceptionError, check, err.Error())
+		common.Respond(c, http.StatusOK, common.CodeExceptionError, check, err.Error())
 		return
 	}
-	common.SuccessWithData(c, check, "success")
+	common.RespondSuccess(c, check, "success")
 }
 
 type publishModelRequest struct {
@@ -139,15 +140,15 @@ func (h *CompilationModelHandler) Publish(c *gin.Context) {
 	}
 	var req publishModelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeArgumentError, "invalid publish payload")
+		common.RespondError(c, common.CodeArgumentError, "invalid publish payload")
 		return
 	}
 	check, err := h.governance.PublishVersion(c.Request.Context(), dao.DB, tenantID, c.Param("template_id"), user.ID, req.Note, req.Force)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, check, err.Error())
+		common.Respond(c, http.StatusOK, common.CodeExceptionError, check, err.Error())
 		return
 	}
-	common.SuccessWithData(c, check, "success")
+	common.RespondSuccess(c, check, "success")
 }
 
 type rejectModelRequest struct {
@@ -170,14 +171,14 @@ func (h *CompilationModelHandler) Reject(c *gin.Context) {
 	}
 	var req rejectModelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeArgumentError, "invalid reject payload")
+		common.RespondError(c, common.CodeArgumentError, "invalid reject payload")
 		return
 	}
 	if err := h.governance.RejectReview(c.Request.Context(), dao.DB, tenantID, c.Param("template_id"), user.ID, req.Reason); err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, gin.H{"template_id": c.Param("template_id"), "publish_status": "draft"}, "success")
+	common.RespondSuccess(c, gin.H{"template_id": c.Param("template_id"), "publish_status": "draft"}, "success")
 }
 
 // Retire withdraws a published model from use. Its versions stay readable, so
@@ -195,10 +196,10 @@ func (h *CompilationModelHandler) Retire(c *gin.Context) {
 		return
 	}
 	if err := h.governance.RetireModel(c.Request.Context(), dao.DB, tenantID, c.Param("template_id"), user.ID); err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, gin.H{"template_id": c.Param("template_id"), "publish_status": "retired"}, "success")
+	common.RespondSuccess(c, gin.H{"template_id": c.Param("template_id"), "publish_status": "retired"}, "success")
 }
 
 // ListVersions returns a model's published versions, newest first.
@@ -216,10 +217,10 @@ func (h *CompilationModelHandler) ListVersions(c *gin.Context) {
 	}
 	versions, err := h.governance.ListVersions(c.Request.Context(), dao.DB, tenantID, c.Param("template_id"))
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, gin.H{"versions": versions, "total": len(versions)}, "success")
+	common.RespondSuccess(c, gin.H{"versions": versions, "total": len(versions)}, "success")
 }
 
 // VersionDiff reports the difference between two versions. `from=0` means the
@@ -243,10 +244,10 @@ func (h *CompilationModelHandler) VersionDiff(c *gin.Context) {
 	to, _ := strconv.Atoi(c.DefaultQuery("to", "0"))
 	diff, err := h.governance.VersionDiff(c.Request.Context(), dao.DB, tenantID, c.Param("template_id"), from, to)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, diff, "success")
+	common.RespondSuccess(c, diff, "success")
 }
 
 type trialModelRequest struct {
@@ -277,7 +278,7 @@ func (h *CompilationModelHandler) Trial(c *gin.Context) {
 	var req trialModelRequest
 	if c.Request.ContentLength > 0 {
 		if err := c.ShouldBindJSON(&req); err != nil {
-			common.ErrorWithCode(c, common.CodeArgumentError, "invalid trial payload")
+			common.RespondError(c, common.CodeArgumentError, "invalid trial payload")
 			return
 		}
 	}
@@ -286,10 +287,10 @@ func (h *CompilationModelHandler) Trial(c *gin.Context) {
 		Documents: req.Documents,
 	})
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, trial, "success")
+	common.RespondSuccess(c, trial, "success")
 }
 
 // Impact lists the datasets a model reaching a change will affect.
@@ -310,10 +311,10 @@ func (h *CompilationModelHandler) Impact(c *gin.Context) {
 	}
 	impact, err := h.governance.Impact(c.Request.Context(), dao.DB, tenantID, c.Param("template_id"))
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, impact, "success")
+	common.RespondSuccess(c, impact, "success")
 }
 
 // Instances returns what a model produced: the instances of one declared class,
@@ -350,7 +351,7 @@ func (h *CompilationModelHandler) Instances(c *gin.Context) {
 	if raw := c.Query("limit"); raw != "" {
 		parsed, err := strconv.Atoi(raw)
 		if err != nil {
-			common.ResponseWithCodeData(c, common.CodeExceptionError, nil, "limit must be an integer")
+			common.RespondError(c, common.CodeExceptionError, "limit must be an integer")
 			return
 		}
 		limit = parsed
@@ -369,10 +370,10 @@ func (h *CompilationModelHandler) Instances(c *gin.Context) {
 		Limit:      limit,
 	})
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // AssertionReviewQueue lists the assertions of a model by review state.
@@ -413,10 +414,10 @@ func (h *CompilationModelHandler) AssertionReviewQueue(c *gin.Context) {
 		Offset:     offset,
 	})
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, queue, "success")
+	common.RespondSuccess(c, queue, "success")
 }
 
 // DecideAssertions records accept/reject/reset decisions on compiled assertions.
@@ -439,7 +440,7 @@ func (h *CompilationModelHandler) DecideAssertions(c *gin.Context) {
 	}
 	var req assertionReviewRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeArgumentError, "invalid review payload")
+		common.RespondError(c, common.CodeArgumentError, "invalid review payload")
 		return
 	}
 	items := make([]service.ModelAssertionReviewDecision, 0, len(req.Items))
@@ -458,10 +459,10 @@ func (h *CompilationModelHandler) DecideAssertions(c *gin.Context) {
 		Items:      items,
 	})
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // assertionReviewRequest is the decision batch body.
@@ -490,7 +491,7 @@ func (h *CompilationModelHandler) parseAssertionReviewPaging(c *gin.Context) (in
 		}
 		parsed, err := strconv.Atoi(raw)
 		if err != nil {
-			common.ResponseWithCodeData(c, common.CodeExceptionError, nil, spec.name+" must be an integer")
+			common.RespondError(c, common.CodeExceptionError, spec.name+" must be an integer")
 			return 0, 0, false
 		}
 		*spec.into = parsed
@@ -514,16 +515,17 @@ func (h *CompilationModelHandler) resolveWriter(c *gin.Context) (*entity.User, s
 func (h *CompilationModelHandler) resolve(c *gin.Context, requirement permission.TenantRequirement) (*entity.User, string, bool) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		common.ErrorWithCode(c, code, msg)
+		common.RespondError(c, code, msg)
 		return nil, "", false
 	}
 	tenantID := c.Query("tenant_id")
 	if tenantID == "" {
 		return user, user.ID, true
 	}
-	if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(
-		c.Request.Context(), permission.Subject{UserID: user.ID}, tenantID, requirement,
-	); err != nil {
+	ctx := permission.WithIdentity(
+		c.Request.Context(), user.ID, permission.TenantIDFromContext(c.Request.Context()),
+	)
+	if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, tenantID, requirement); err != nil {
 		respondPermissionError(c, err, false)
 		return nil, "", false
 	}

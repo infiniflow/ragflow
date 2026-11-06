@@ -34,9 +34,9 @@ func generalDSL(t *testing.T) []byte {
 					},
 				},
 			},
-			"Chunker:LegalReadersDecide": map[string]any{
+			"GeneralChunker:LegalReadersDecide": map[string]any{
 				"obj": map[string]any{
-					"component_name": "Chunker",
+					"component_name": "GeneralChunker",
 					"params": map[string]any{
 						"outputs":       map[string]any{},
 						"chunk_size":    float64(512),
@@ -165,9 +165,9 @@ func TestBuildParserConfig_ShallowMerge_NestedParam(t *testing.T) {
 	// A component with a nested-map param "chunk" that has sub-keys.
 	dsl := map[string]any{
 		"components": map[string]any{
-			"Chunker:xyz": map[string]any{
+			"GeneralChunker:xyz": map[string]any{
 				"obj": map[string]any{
-					"component_name": "Chunker",
+					"component_name": "GeneralChunker",
 					"params": map[string]any{
 						"outputs": map[string]any{},
 						"chunk": map[string]any{
@@ -186,15 +186,15 @@ func TestBuildParserConfig_ShallowMerge_NestedParam(t *testing.T) {
 
 	// User only overrides one sub-key of "chunk".
 	overrides := map[string]any{
-		"Chunker:xyz": map[string]any{
+		"GeneralChunker:xyz": map[string]any{
 			"chunk": map[string]any{"size": float64(1024)},
 		},
 	}
 
 	result := buildTestParserConfig(t, dslJSON, overrides)
-	chunker, ok := result["Chunker:xyz"].(map[string]any)
+	chunker, ok := result["GeneralChunker:xyz"].(map[string]any)
 	if !ok {
-		t.Fatal("expected Chunker:xyz in result")
+		t.Fatal("expected GeneralChunker:xyz in result")
 	}
 	chunk, ok := chunker["chunk"].(map[string]any)
 	if !ok {
@@ -348,14 +348,14 @@ func TestNormalizeParserConfigSetups_EmptyNestedMap(t *testing.T) {
 func TestBuildParserConfig_ScalarOverridePreservesOtherDefaults(t *testing.T) {
 	dslJSON := generalDSL(t)
 	overrides := map[string]any{
-		"Chunker:LegalReadersDecide": map[string]any{
+		"GeneralChunker:LegalReadersDecide": map[string]any{
 			"chunk_size": float64(1024),
 		},
 	}
 	result := buildTestParserConfig(t, dslJSON, overrides)
-	chunker, ok := result["Chunker:LegalReadersDecide"].(map[string]any)
+	chunker, ok := result["GeneralChunker:LegalReadersDecide"].(map[string]any)
 	if !ok {
-		t.Fatal("expected Chunker:LegalReadersDecide in result")
+		t.Fatal("expected GeneralChunker:LegalReadersDecide in result")
 	}
 	if chunker["chunk_size"] != float64(1024) {
 		t.Errorf("expected chunk_size=1024, got %v", chunker["chunk_size"])
@@ -398,8 +398,8 @@ func TestBuildParserConfig_AllComponentsPresent(t *testing.T) {
 	if _, ok := result["Parser:HipSignsRhyme"]; !ok {
 		t.Error("expected Parser:HipSignsRhyme")
 	}
-	if _, ok := result["Chunker:LegalReadersDecide"]; !ok {
-		t.Error("expected Chunker:LegalReadersDecide")
+	if _, ok := result["GeneralChunker:LegalReadersDecide"]; !ok {
+		t.Error("expected GeneralChunker:LegalReadersDecide")
 	}
 }
 
@@ -470,7 +470,7 @@ func TestComponentParamsDefaults_Basic(t *testing.T) {
 	if _, ok := parser["pdf"]; !ok {
 		t.Error("expected pdf to be present")
 	}
-	chunker := result["Chunker:LegalReadersDecide"]
+	chunker := result["GeneralChunker:LegalReadersDecide"]
 	if chunker["chunk_size"] != float64(512) {
 		t.Errorf("expected chunk_size=512, got %v", chunker["chunk_size"])
 	}
@@ -1048,7 +1048,7 @@ func TestBuildParserConfig_TitleFamilyParamsSurviveBuiltinTemplates(t *testing.T
 var operatorFormParamKeys = map[string][]string{
 	"TitleChunker": {
 		"method", "levels", "hierarchy", "include_heading_content",
-		"root_chunk_as_heading", "chunk_token_cap",
+		"root_chunk_as_heading", "chunk_token_cap", "table_context_size", "image_context_size",
 		// Per-method persistence keys: each method's rules, hierarchy value
 		// and token cap are stored under their own key so the dataset config
 		// keeps them independent of the active method (the runtime reads only
@@ -1058,6 +1058,7 @@ var operatorFormParamKeys = map[string][]string{
 	},
 	"ManualChunker": {
 		"method", "levels", "hierarchy", "root_chunk_as_heading",
+		"table_context_size", "image_context_size",
 		"hierarchyRules", "groupRules", "hierarchyHierarchy", "hierarchyGroup",
 	},
 	"TokenChunker": {

@@ -11,21 +11,12 @@ export function deleteAllDownstreamAgentsAndTool(
     [nodeId],
   );
 
-  const downstreamAgentAndToolEdges = downstreamAgentAndToolNodeIds.reduce<
-    Edge[]
-  >((pre, cur) => {
-    const relatedEdges = edges.filter(
-      (x) => x.source === cur || x.target === cur,
-    );
-
-    relatedEdges.forEach((x) => {
-      if (!pre.some((y) => y.id !== x.id)) {
-        pre.push(x);
-      }
-    });
-
-    return pre;
-  }, []);
+  const downstreamNodeIdSet = new Set(downstreamAgentAndToolNodeIds);
+  const downstreamAgentAndToolEdges = edges.filter(
+    (edge) =>
+      downstreamNodeIdSet.has(edge.source) ||
+      downstreamNodeIdSet.has(edge.target),
+  );
 
   return {
     downstreamAgentAndToolNodeIds,

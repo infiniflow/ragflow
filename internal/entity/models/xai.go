@@ -150,7 +150,7 @@ func (x *XAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]List
 
 // Balance is not exposed by the xAI API, so this returns "no such method".
 func (x *XAIModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Balance", x.Name())
 }
 
 // CheckConnection runs a lightweight ListModels call to verify the API key.
@@ -297,7 +297,7 @@ func (x *XAIModel) TranscribeAudio(ctx context.Context, modelName *string, file 
 }
 
 func (x *XAIModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", x.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", x.Name())
 }
 
 // AudioSpeech convert text to audio
@@ -363,27 +363,27 @@ func (x *XAIModel) AudioSpeech(ctx context.Context, modelName *string, audioCont
 }
 
 func (x *XAIModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", x.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", x.Name())
 }
 
 // OCRFile OCR file
 func (x *XAIModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", x.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", x.Name())
 }
 
 // ParseFile parse file
 func (x *XAIModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", x.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", x.Name())
 }
 
 func (x *XAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", x.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", x.Name())
 }
 
 func (x *XAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", x.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", x.Name())
 }
 
 func (x *XAIModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", x.Name())
+	return nil, fmt.Errorf("%s: no such method: Decide", x.Name())
 }

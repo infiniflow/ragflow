@@ -32,6 +32,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/extension"
 	gmhtml "github.com/yuin/goldmark/renderer/html"
 
 	iow "ragflow/internal/agent/component/io"
@@ -135,7 +136,7 @@ func exportMessageAttachment(ctx context.Context, format, content string) (map[s
 // export.
 func markdownToHTML(content string) string {
 	var buf bytes.Buffer
-	md := goldmark.New(goldmark.WithRendererOptions(gmhtml.WithUnsafe()))
+	md := goldmark.New(goldmark.WithExtensions(extension.Table), goldmark.WithRendererOptions(gmhtml.WithUnsafe()))
 	if err := md.Convert([]byte(content), &buf); err != nil {
 		return content
 	}

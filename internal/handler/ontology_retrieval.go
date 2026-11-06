@@ -73,12 +73,12 @@ type ontologyABoxRetrievalBody struct {
 func (h *OntologyABoxRetrievalHandler) Retrieve(c *gin.Context) {
 	user, code, msg := GetUser(c)
 	if user == nil {
-		common.ResponseWithCodeData(c, code, nil, msg)
+		common.RespondError(c, code, msg)
 		return
 	}
 	var body ontologyABoxRetrievalBody
 	if err := c.ShouldBindJSON(&body); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
+		common.RespondError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
 		return
 	}
 	result, err := h.service.Retrieve(c.Request.Context(), &service.OntologyABoxRetrievalRequest{
@@ -99,7 +99,7 @@ func (h *OntologyABoxRetrievalHandler) Retrieve(c *gin.Context) {
 		HypergraphRecall:    body.HypergraphRecall,
 	})
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 	// The grade is read off the digest, which owns it: a second field on the
@@ -108,7 +108,7 @@ func (h *OntologyABoxRetrievalHandler) Retrieve(c *gin.Context) {
 	if result.Digest != nil {
 		evidenceLevel = result.Digest.EvidenceLevel
 	}
-	common.SuccessWithData(c, gin.H{
+	common.RespondSuccess(c, gin.H{
 		"chunks":            result.Chunks,
 		"total":             result.Total,
 		"filter":            result.Filter,

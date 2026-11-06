@@ -92,14 +92,6 @@ For local deployment, see [Local Deployment](#-local-deployment).
 
 See the [full release notes](https://ragflow.io/docs/dev/release_notes) for more updates.
 
-## 🎉 Stay Tuned
-
-⭐️ Star our repository to stay up-to-date with exciting new features and improvements! Get instant notifications for new releases! 🌟
-
-<div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
-</div>
-
 ## 🌟 Key Features
 
 ### 🍭 **"Quality in, quality out"**
@@ -196,10 +188,10 @@ Local deployment supports both Docker deployment and launching from source. Dock
    cd ragflow/docker
    ```
 
-   Check out the `v1.0.0-rc3` release tag.
+   Check out the `v1.0.0` release tag.
 
    ```bash
-   git checkout v1.0.0-rc3
+   git checkout v1.0.0
    ```
 
    Start the RAGFlow services and their dependencies.

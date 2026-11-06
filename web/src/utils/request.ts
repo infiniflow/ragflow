@@ -19,11 +19,12 @@
 
 import message from '@/components/ui/message';
 import { Authorization } from '@/constants/authorization';
+import { redirectToLogin } from '@/ee/utils/private-util';
+import { handleEnterpriseResponseError } from '@/ee/utils/response-private';
 import { ResponseType } from '@/interfaces/database/base';
 import i18n from '@/locales/config';
 import authorizationUtil, {
   getAuthorization,
-  redirectToLogin,
 } from '@/utils/authorization-util';
 import notification from '@/utils/notification';
 import { RequestMethod, extend } from 'umi-request';
@@ -90,7 +91,7 @@ const errorHandler = (error: {
       });
     }
   }
-  return response ?? { data: { code: 1999 } };
+  return response ?? ({ data: { code: 1999 } } as unknown as Response);
 };
 
 const request: RequestMethod = extend({
@@ -128,9 +129,11 @@ request.interceptors.request.use((url: string, options: any) => {
   };
 });
 
-request.interceptors.response.use(async (response: Response, options) => {
+request.interceptors.response.use(async (response: Response, options: any) => {
   if (response?.status === 413 || response?.status === 504) {
-    message.error(RetcodeMessage[response?.status as ResultCode]);
+    if (!options.noToast) {
+      return response;
+    }
   }
 
   // Handle HTTP 401
@@ -163,9 +166,7 @@ request.interceptors.response.use(async (response: Response, options) => {
   // Per-request opt-out for response codes that the caller handles itself
   // (e.g. a vanished folder on a list request is a normal navigation case,
   // not a user-facing error).
-  const skipErrorCodes = (options as any)?.skipErrorCodes as
-    | number[]
-    | undefined;
+  const skipErrorCodes = options?.skipErrorCodes as number[] | undefined;
 
   const data: ResponseType = await response?.clone()?.json();
 
@@ -178,7 +179,9 @@ request.interceptors.response.use(async (response: Response, options) => {
   }
 
   if (data?.code === 100) {
-    message.error(data?.message);
+    if (!options.noToast) {
+      message.error(data?.message);
+    }
   } else if (data?.code === 401) {
     if (!isRedirecting) {
       isRedirecting = true;
@@ -193,25 +196,27 @@ request.interceptors.response.use(async (response: Response, options) => {
     authorizationUtil.removeAll();
     redirectToLogin();
   } else if (data?.code !== 0 && !skipErrorCodes?.includes(data?.code)) {
-    notification.error({
-      message: `${i18n.t('message.hint')} : ${data?.code}`,
-      description: data?.message,
-      duration: 3,
-    });
+    if (!(await handleEnterpriseResponseError(data, options))) {
+      if (!options.noToast) {
+        notification.error({
+          message: `${i18n.t('message.hint')} : ${data?.code}`,
+          description: data?.message,
+          duration: 3,
+        });
+      }
+    }
   }
   return response;
 });
 
 export default request;
 
-export const get = (url: string) => {
-  return request.get(url);
-};
-
-export const post = (url: string, body: any) => {
+export const post = (url: string, body?: any) => {
   return request.post(url, { data: body });
 };
 
-export const drop = () => {};
+export const drop = (url: string, body?: any) => {
+  return request.delete(url, { data: body });
+};
 
 export const put = () => {};

@@ -15,9 +15,9 @@ import (
 // predicate the retrieval paths use, with the calling user as the subject.
 func TestFilterAuthorizedDatasetIDsDropsUnauthorizedScopes(t *testing.T) {
 	var checked []string
-	check := func(_ context.Context, subject permission.Subject, datasetID string, operation permission.Operation) error {
-		if subject.UserID != "user-1" {
-			t.Fatalf("subject = %#v, want the calling user", subject)
+	check := func(_ context.Context, userID, datasetID string, operation permission.Operation) error {
+		if userID != "user-1" {
+			t.Fatalf("userID = %q, want the calling user", userID)
 		}
 		if operation != permission.OperationUse {
 			t.Fatalf("operation = %v, want use", operation)
@@ -45,7 +45,7 @@ func TestFilterAuthorizedDatasetIDsDropsUnauthorizedScopes(t *testing.T) {
 // unfiltered lookup: with no scope fetchChunksByIDs resolves nothing, so the
 // citations stay unresolved instead of resolving outside the caller's reach.
 func TestFilterAuthorizedDatasetIDsLeavesAnEmptyScopeWhenAllDenied(t *testing.T) {
-	deny := func(context.Context, permission.Subject, string, permission.Operation) error {
+	deny := func(context.Context, string, string, permission.Operation) error {
 		return errors.New("denied")
 	}
 	got := filterAuthorizedDatasetIDs(context.Background(), deny, "user-1", []string{"kb-a", "kb-b"})

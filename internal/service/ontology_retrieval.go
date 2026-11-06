@@ -831,7 +831,7 @@ func (r *kbScopeResolver) Resolve(ctx context.Context, userID string, datasetIDs
 	seen := map[string]bool{}
 	records := make([]*entity.Knowledgebase, 0, len(datasetIDs))
 	for _, datasetID := range datasetIDs {
-		if err := CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUse); err != nil {
+		if err := checkDatasetAccess(ctx, userID, datasetID, permission.OperationUse); err != nil {
 			return scope, fmt.Errorf("only the owner of dataset %s is authorized for this operation", datasetID)
 		}
 		kb, err := r.kbDAO.GetByID(ctx, dao.DB, datasetID)
@@ -853,9 +853,11 @@ func (r *kbScopeResolver) Resolve(ctx context.Context, userID string, datasetIDs
 	if embdID := records[0].EmbdID; embdID != "" {
 		// Same factory the main retrieval uses, so both paths embed the question
 		// with the model the dataset itself resolves to.
-		model, err := NewModelFactory().NewEmbeddingModel(
-			ctx, ModelAccess{TenantID: scope.TenantIDs[0]}, embdID,
-		)
+		modelCtx := ctx
+		if len(scope.TenantIDs) > 0 && scope.TenantIDs[0] != "" {
+			modelCtx = permission.WithTenantID(ctx, scope.TenantIDs[0])
+		}
+		model, err := NewModelFactory().NewEmbeddingModel(modelCtx, embdID)
 		if err != nil {
 			return scope, fmt.Errorf("failed to resolve the embedding model for the ontology search: %w", err)
 		}

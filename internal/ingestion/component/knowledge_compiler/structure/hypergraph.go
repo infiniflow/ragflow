@@ -453,7 +453,7 @@ func buildHypergraph(ctx context.Context, deps common.Deps, cfg CompileConfig, p
 		if name == "" {
 			continue
 		}
-		byName[name] = append(byName[name], metaStrings(p.Meta, "source_chunk_ids")...)
+		byName[name] = append(byName[name], common.MetaStringSlice(p.Meta, "source_chunk_ids")...)
 	}
 
 	for _, d := range drafts {

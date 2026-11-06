@@ -32,10 +32,12 @@ import (
 	knowledgecompiler "ragflow/internal/ingestion/component/knowledge_compiler"
 	kc "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/knowledge_compile"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
 	appcommon "ragflow/internal/common"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -146,7 +148,7 @@ func compileDirtyWikiDocument(ctx context.Context, request knowledge_compile.Wik
 	if len(affectedSlugs) == 0 && len(removedSlugs) == 0 {
 		return persistDirtyWikiActiveStates(ctx, request, activeStates)
 	}
-	return replaceDirtyWikiProducts(ctx, request, compiled, uniqueStrings(affectedSlugs), uniqueStrings(removedSlugs), activeStates, false)
+	return replaceDirtyWikiProducts(ctx, request, compiled, appcommon.DeduplicateTrimmed(affectedSlugs), appcommon.DeduplicateTrimmed(removedSlugs), activeStates, false)
 }
 
 func loadWikiCompilerParams(ctx context.Context, doc *entity.Document) (map[string]any, error) {
@@ -206,13 +208,13 @@ func resolveWikiTemplateIDs(ctx context.Context, tenantID string, params map[str
 	groupIDs := stringValues(params["compilation_template_group_id"])
 	groupIDs = append(groupIDs, stringValues(params["compilation_template_group_ids"])...)
 	if len(groupIDs) > 0 {
-		resolved, err := dao.NewCompilationTemplateDAO().ResolveGroupTemplateIDs(ctx, kcWiringDeps.DB, tenantID, uniqueStrings(groupIDs))
+		resolved, err := dao.NewCompilationTemplateDAO().ResolveGroupTemplateIDs(ctx, kcWiringDeps.DB, tenantID, appcommon.DeduplicateTrimmed(groupIDs))
 		if err != nil {
 			return nil, err
 		}
 		ids = append(ids, resolved...)
 	}
-	ids = uniqueStrings(ids)
+	ids = appcommon.DeduplicateTrimmed(ids)
 	if len(ids) == 0 {
 		return nil, nil
 	}
@@ -231,7 +233,7 @@ func resolveWikiTemplateIDs(ctx context.Context, tenantID string, params map[str
 			wikiIDs = append(wikiIDs, template.ID)
 		}
 	}
-	return uniqueStrings(wikiIDs), nil
+	return appcommon.DeduplicateTrimmed(wikiIDs), nil
 }
 
 func loadActiveSourceChunks(ctx context.Context, request knowledge_compile.WikiDirtyRequest) ([]map[string]any, error) {
@@ -353,7 +355,7 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 				removedSlugs = append(removedSlugs, anyString(row["slug_kwd"]))
 			}
 		}
-		removedSlugs = uniqueStrings(removedSlugs)
+		removedSlugs = appcommon.DeduplicateTrimmed(removedSlugs)
 	}
 	staleIDs := make([]string, 0)
 	if existing != nil {
@@ -516,23 +518,6 @@ func stringValues(value any) []string {
 	return nil
 }
 
-func uniqueStrings(values []string) []string {
-	seen := make(map[string]struct{}, len(values))
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		result = append(result, value)
-	}
-	return result
-}
-
 // newKnowledgeCompilerGroupResolver builds the production GroupResolver backed by
 // the compilation_template DAO. Without it, any config carrying
 // compilation_template_group_id would fail loud at runtime (the component
@@ -599,7 +584,7 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 			// actually run instead of failing / falling back to a no-op. Use the
 			// tenant model ID so later model resolution can use the same persisted
 			// tenant model directly.
-			defaultInfo, derr := modelFactory.ResolveDefaultInfo(modelCtx, service.Identity{TenantID: tenantID}, entity.ModelTypeChat)
+			defaultInfo, derr := modelFactory.ResolveDefaultInfo(permission.WithTenantID(modelCtx, tenantID), entity.ModelTypeChat)
 			if derr != nil || defaultInfo == nil || strings.TrimSpace(defaultInfo.ID) == "" {
 				return kc.Deps{}, fmt.Errorf("knowledge_compiler: llm_id is empty and no tenant default chat model available: %w", derr)
 			}
@@ -613,7 +598,7 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 		// generation cap and must not be used as the input budget.
 		llmMax := kc.DefaultLLMContextLength
 		// Bound the model-config lookup and inherit cancellation from the task.
-		modelInfo, contextLengthErr := modelFactory.ResolveInfo(modelCtx, service.Identity{TenantID: tenantID}, entity.ModelTypeChat, llmID)
+		modelInfo, contextLengthErr := modelFactory.ResolveInfo(permission.WithTenantID(modelCtx, tenantID), entity.ModelTypeChat, llmID)
 		if contextLengthErr == nil && modelInfo != nil && modelInfo.ContextLength > 0 {
 			llmMax = modelInfo.ContextLength
 		}
@@ -659,7 +644,7 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	if req.LLMID != "" {
 		llmID = req.LLMID
 	}
-	chatModel, err := c.factory.NewChatModel(ctx, service.Identity{TenantID: c.tenantID}, llmID)
+	chatModel, err := c.factory.NewChatModel(permission.WithTenantID(ctx, c.tenantID), llmID)
 	if err != nil {
 		return nil, err
 	}
@@ -671,13 +656,22 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	// (extraction 0.1, merge judging 0.0); nil leaves the driver default.
 	var config *models.ChatConfig
 	// Build a provider config only for per-call overrides. In particular, do not
-	// inject the model's configured max_output as max_tokens: knowledge
-	// compilation call sites that need an output cap must set MaxTokens
-	// explicitly, while the model driver remains responsible for its default.
-	if req.Temperature != nil || req.MaxTokens != nil || req.DisableThinking {
+	// inject the model's configured max_output as max_tokens: call-site or
+	// compiler-node settings may override it, while the model driver remains
+	// responsible for its configured default when neither is set.
+	if req.Temperature != nil || req.TopP != nil || req.PresencePenalty != nil || req.FrequencyPenalty != nil || req.MaxTokens != nil || req.Thinking != nil || req.DisableThinking {
 		config = &models.ChatConfig{}
 		if req.Temperature != nil {
 			config.Temperature = req.Temperature
+		}
+		if req.TopP != nil {
+			config.TopP = req.TopP
+		}
+		if req.PresencePenalty != nil {
+			config.PresencePenalty = req.PresencePenalty
+		}
+		if req.FrequencyPenalty != nil {
+			config.FrequencyPenalty = req.FrequencyPenalty
 		}
 		if req.MaxTokens != nil {
 			config.MaxTokens = req.MaxTokens
@@ -686,7 +680,9 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 		// budget on visible COT before the structured reply; compilation should
 		// run with thinking off. MiniMaxModel maps Thinking=false to
 		// `thinking: {"type": "disabled"}` in the request body.
-		if req.DisableThinking {
+		if req.Thinking != nil {
+			config.Thinking = req.Thinking
+		} else if req.DisableThinking {
 			off := false
 			config.Thinking = &off
 		}
@@ -839,7 +835,7 @@ func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, e
 // loudly instead of silently producing empty vectors.
 func (e *kcEmbedder) resolveModel(ctx context.Context) (*models.EmbeddingModel, error) {
 	if embdID := strings.TrimSpace(e.embdID); embdID != "" {
-		embeddingModel, err := e.factory.NewEmbeddingModel(ctx, service.Identity{TenantID: e.tenantID}, embdID)
+		embeddingModel, err := e.factory.NewEmbeddingModel(permission.WithTenantID(ctx, e.tenantID), embdID)
 		if err != nil {
 			return nil, fmt.Errorf("knowledge_compiler: resolve embedding model: %w", err)
 		}
@@ -848,7 +844,7 @@ func (e *kcEmbedder) resolveModel(ctx context.Context) (*models.EmbeddingModel, 
 		}
 		return embeddingModel, nil
 	}
-	embeddingModel, err := e.factory.NewDefaultEmbeddingModel(ctx, service.Identity{TenantID: e.tenantID})
+	embeddingModel, err := e.factory.NewDefaultEmbeddingModel(permission.WithTenantID(ctx, e.tenantID))
 	if err != nil {
 		return nil, fmt.Errorf("knowledge_compiler: embedding_model is required and no tenant default embedding model is set: %w", err)
 	}
@@ -871,17 +867,22 @@ func float64sToFloat32(in []float64) []float32 {
 }
 
 type kcWikiPageStore struct {
-	docEngine engine.DocEngine
+	docEngine               engine.DocEngine
+	vectorSearchUnavailable atomic.Bool
 }
 
 func (s *kcWikiPageStore) FindSimilarPages(ctx context.Context, tenantID, datasetID string, queryVec []float32, k int) ([]kc.WikiPageCandidate, error) {
 	if s == nil || s.docEngine == nil || len(queryVec) == 0 || k <= 0 || strings.TrimSpace(datasetID) == "" {
 		return nil, nil
 	}
+	if s.vectorSearchUnavailable.Load() {
+		return nil, nil
+	}
 	vec := make([]float64, len(queryVec))
 	for i, v := range queryVec {
 		vec[i] = float64(v)
 	}
+	vectorField := fmt.Sprintf("q_%d_vec", len(vec))
 	req := &enginetypes.SearchRequest{
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
@@ -892,7 +893,7 @@ func (s *kcWikiPageStore) FindSimilarPages(ctx context.Context, tenantID, datase
 			"type_kwd": "wiki_page",
 		},
 		MatchExprs: []interface{}{&enginetypes.MatchDenseExpr{
-			VectorColumnName:  fmt.Sprintf("q_%d_vec", len(vec)),
+			VectorColumnName:  vectorField,
 			EmbeddingData:     vec,
 			EmbeddingDataType: "float",
 			DistanceType:      "cosine",
@@ -901,7 +902,22 @@ func (s *kcWikiPageStore) FindSimilarPages(ctx context.Context, tenantID, datase
 		}},
 	}
 	res, err := s.docEngine.Search(ctx, req)
-	if err != nil || res == nil {
+	if err != nil {
+		if isMissingVectorFieldMappingError(err, vectorField) {
+			if s.vectorSearchUnavailable.CompareAndSwap(false, true) {
+				appcommon.Warn("wiki: skipping similar-page lookup because vector field is not mapped",
+					zap.String("tenant_id", tenantID),
+					zap.String("dataset_id", datasetID),
+					zap.String("index_name", req.IndexNames[0]),
+					zap.String("vector_field", vectorField),
+					zap.Error(err),
+				)
+			}
+			return nil, nil
+		}
+		return nil, err
+	}
+	if res == nil {
 		return nil, err
 	}
 	out := make([]kc.WikiPageCandidate, 0, len(res.Chunks))
@@ -913,6 +929,10 @@ func (s *kcWikiPageStore) FindSimilarPages(ctx context.Context, tenantID, datase
 		out = append(out, candidate)
 	}
 	return out, nil
+}
+
+func isMissingVectorFieldMappingError(err error, field string) bool {
+	return err != nil && strings.Contains(err.Error(), fmt.Sprintf("field [%s] does not exist in the mapping", field))
 }
 
 func (s *kcWikiPageStore) GetPageBySlug(ctx context.Context, tenantID, datasetID, slug string) (*kc.WikiPageCandidate, error) {

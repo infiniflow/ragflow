@@ -93,14 +93,6 @@
 
 راجع [ملاحظات الإصدار الكاملة](https://ragflow.io/docs/dev/release_notes) لمزيد من التحديثات.
 
-## 🎉 تابعونا
-
-⭐️ قم بتمييز مستودعنا بنجمة لتبقى على اطلاع بالميزات والتحسينات الجديدة والمثيرة! احصل على إشعارات فورية بالإصدارات الجديدة! 🌟
-
-<div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
-</div>
-
 ## 🌟 الميزات الرئيسية
 
 ### 🍭 **"الجودة في الداخل، الجودة في الخارج"**
@@ -176,7 +168,7 @@
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc3
+   git checkout v1.0.0
    docker compose -f docker-compose.yml up -d
    ```
 

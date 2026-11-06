@@ -631,6 +631,9 @@ func Run(ctx context.Context, in Input) (RunOutput, error) {
 		inputMessageIDs[adk.GetMessageID(msg)] = true
 	}
 	final, evidence, runErr := consumeAgentEvents(ctx, iter, in.OnDelta, in.ToolCallCounts, in.ToolCallErrors, in.ToolErrorSamples)
+	if runErr != nil {
+		runErr = fmt.Errorf("agentic research failed: %w", withCancellationCause(ctx, runErr))
+	}
 
 	// Recovery, cheapest and most faithful first. A run that ended on a
 	// narration tail or on a bare tool call still holds the model's own answer
@@ -664,7 +667,7 @@ func Run(ctx context.Context, in Input) (RunOutput, error) {
 		// would reintroduce the failure this call exists to survive. The
 		// unbounded-work risk that WithoutCancel normally carries is covered
 		// by the bounded budget attached here.
-		synthCtx, synthCancel := context.WithTimeout(context.WithoutCancel(ctx), finalizeTimeout)
+		synthCtx, synthCancel := context.WithTimeoutCause(context.WithoutCancel(ctx), finalizeTimeout, fmt.Errorf("final answer synthesis timed out after %s", finalizeTimeout))
 		defer synthCancel()
 		synthCtx = tokenizer.WithUsagePhase(synthCtx, "synth")
 		synthMessages := in.Messages
@@ -672,15 +675,17 @@ func Run(ctx context.Context, in Input) (RunOutput, error) {
 			synthMessages = append([]*schema.Message{schema.SystemMessage(tmpl.Content)}, synthMessages...)
 		}
 		synth, synthErr := finalizeAnswer(synthCtx, synthModelFor(in), synthMessages, final, evidence)
+		if synthErr == nil && strings.TrimSpace(synth) == "" {
+			synthErr = errors.New("empty answer")
+		}
 		if synthErr != nil {
+			synthErr = fmt.Errorf("final answer synthesis failed: %w", withCancellationCause(synthCtx, synthErr))
 			// Without this an empty final is completely silent: the run looks
 			// healthy in every other log line and the user simply gets nothing.
 			common.WarnCtx(ctx, "agentic_rag: finalizeAnswer failed", zap.Error(synthErr))
-		} else if strings.TrimSpace(synth) == "" {
-			common.WarnCtx(ctx, "agentic_rag: finalizeAnswer returned an empty answer")
 		}
 		switch {
-		case synthErr == nil && strings.TrimSpace(synth) != "":
+		case synthErr == nil:
 			// Replace rather than append: appending leaves the reader with a
 			// narration paragraph followed by the real answer. The single
 			// answer emission at the end of Run carries it.
@@ -689,6 +694,8 @@ func Run(ctx context.Context, in Input) (RunOutput, error) {
 		case runErr == nil:
 			// Normal termination but synthesis failed — surface the reason.
 			runErr = synthErr
+		default:
+			runErr = fmt.Errorf("%w; %w", runErr, synthErr)
 		}
 	}
 
@@ -698,6 +705,16 @@ func Run(ctx context.Context, in Input) (RunOutput, error) {
 	// handed several competing answers.
 	emit(ctx, in.OnDelta, final, "")
 	return RunOutput{Answer: final, Digest: digest}, runErr
+}
+
+// Eino wraps ctx.Err(), which omits cancellation causes such as token exhaustion.
+func withCancellationCause(ctx context.Context, err error) error {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		if cause := context.Cause(ctx); cause != nil && !errors.Is(err, cause) {
+			return fmt.Errorf("%w: %w", cause, err)
+		}
+	}
+	return err
 }
 
 var modelFailureRe = regexp.MustCompile(`exceeds max retries|failed on every model|short-circuited by failover cooldown|overloaded_error|status 529|insufficient balance`)

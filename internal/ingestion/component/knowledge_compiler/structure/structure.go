@@ -9,11 +9,10 @@ package structure
 import (
 	"context"
 	"fmt"
-	"os"
-	"strconv"
 	"sync"
 
 	"ragflow/internal/agent/runtime"
+	appcommon "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
@@ -82,6 +81,17 @@ func structureInputBudget(modelContextLen, promptOverhead int) int {
 	return budget
 }
 
+// structureBatchCap returns the optional STRUCT_MAX_CHUNKS_PER_BATCH override
+// (0 means off). appcommon.GetEnvInt falls back to 0 on an unset or unparseable
+// value, so the caller only needs to check cap > 0.
+func structureBatchCap() int {
+	v := appcommon.GetEnvInt("STRUCT_MAX_CHUNKS_PER_BATCH", 0)
+	if v <= 0 {
+		return 0
+	}
+	return v
+}
+
 // Run executes the structure variant:
 //  1. MAP — per-batch two-stage (node → edge) extraction, parallel across
 //     batches, results kept in batch order (mirrors _run_chunked_pipeline).
@@ -137,8 +147,8 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// per extraction batch (0 = window-packed only — a heading has to see its
 	// whole section to own it; the 4-per-batch rule belongs to tree's claim
 	// harvesting). Overridable for benchmarking, mirrored verbatim.
-	if v, err := strconv.Atoi(os.Getenv("STRUCT_MAX_CHUNKS_PER_BATCH")); err == nil && v > 0 {
-		batches = capBatchChunkCount(batches, v)
+	if cap := structureBatchCap(); cap > 0 {
+		batches = capBatchChunkCount(batches, cap)
 	}
 	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
 		"%s-template: %d chunk(s) -> %d batch(es)", compileType, len(inputs.Chunks), len(batches)))

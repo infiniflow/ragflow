@@ -117,7 +117,9 @@ function DocGeneratorForm({ node }: INextOperatorForm) {
                 <Input placeholder={t('flow.footerText')}></Input>
               </RAGFlowFormItem>
 
-              {outputFormat === DocGeneratorOutputFormat.Pdf && (
+              {(outputFormat === DocGeneratorOutputFormat.Pdf ||
+                outputFormat === DocGeneratorOutputFormat.Docx ||
+                outputFormat === DocGeneratorOutputFormat.Html) && (
                 <RAGFlowFormItem
                   label={t('flow.watermarkText')}
                   name="watermark_text"
@@ -126,11 +128,13 @@ function DocGeneratorForm({ node }: INextOperatorForm) {
                 </RAGFlowFormItem>
               )}
 
-              <SwitchFormField
-                vertical={false}
-                label={t('flow.addPageNumbers')}
-                name="add_page_numbers"
-              />
+              {outputFormat === DocGeneratorOutputFormat.Pdf && (
+                <SwitchFormField
+                  vertical={false}
+                  label={t('flow.addPageNumbers')}
+                  name="add_page_numbers"
+                />
+              )}
             </>
           )}
 

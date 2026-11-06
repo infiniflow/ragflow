@@ -587,7 +587,7 @@ func (r *kbTenantResolver) ResolveTenants(ctx context.Context, userID string, da
 	seen := make(map[string]bool, len(datasetIDs))
 	tenants := make([]string, 0, len(datasetIDs))
 	for _, datasetID := range datasetIDs {
-		if err := CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUse); err != nil {
+		if err := checkDatasetAccess(ctx, userID, datasetID, permission.OperationUse); err != nil {
 			return nil, fmt.Errorf("only the owner of dataset %s is authorized for this operation", datasetID)
 		}
 		kb, err := r.kbDAO.GetByID(ctx, dao.DB, datasetID)

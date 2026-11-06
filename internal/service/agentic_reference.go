@@ -25,6 +25,7 @@ import (
 
 	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/permission"
@@ -149,9 +150,23 @@ func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantI
 }
 
 // datasetAccessCheck is the permission predicate a citation scope is filtered
-// with. It is the same CheckDatasetAccess the retrieval paths use, taken as a
-// parameter so the filtering itself can be exercised without a database.
-type datasetAccessCheck func(ctx context.Context, subject permission.Subject, datasetID string, operation permission.Operation) error
+// with. It takes the caller explicitly because the scope is resolved before the
+// turn's context necessarily carries an identity, and it is a parameter so the
+// filtering itself can be exercised without a database.
+type datasetAccessCheck func(ctx context.Context, userID, datasetID string, operation permission.Operation) error
+
+// checkDatasetAccess authorizes a dataset for an explicit caller.
+//
+// The policy reads the caller from the context, so the id is attached here; the
+// active tenant is preserved as-is because CheckResource derives the effective
+// tenant from the dataset itself.
+func checkDatasetAccess(ctx context.Context, userID, datasetID string, operation permission.Operation) error {
+	ctx = permission.WithIdentity(ctx, userID, permission.TenantIDFromContext(ctx))
+	return permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
+		Kind: permission.ResourceKindDataset,
+		ID:   datasetID,
+	}, operation)
+}
 
 // filterAuthorizedDatasetIDs keeps the ids the caller may use as a citation
 // scope, in their original order and deduped.
@@ -164,13 +179,12 @@ type datasetAccessCheck func(ctx context.Context, subject permission.Subject, da
 func filterAuthorizedDatasetIDs(ctx context.Context, check datasetAccessCheck, userID string, datasetIDs []string) []string {
 	out := make([]string, 0, len(datasetIDs))
 	seen := make(map[string]bool, len(datasetIDs))
-	subject := permission.Subject{UserID: userID}
 	for _, datasetID := range datasetIDs {
 		datasetID = strings.TrimSpace(datasetID)
 		if datasetID == "" || seen[datasetID] {
 			continue
 		}
-		if err := check(ctx, subject, datasetID, permission.OperationUse); err != nil {
+		if err := check(ctx, userID, datasetID, permission.OperationUse); err != nil {
 			common.WarnCtx(ctx, "agentic reference: knowledge dataset not authorized",
 				zap.String("dataset_id", datasetID), zap.Error(err))
 			continue

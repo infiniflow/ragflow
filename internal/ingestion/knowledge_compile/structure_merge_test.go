@@ -661,7 +661,7 @@ func TestProductFromChunkMap_RestoresModelVersion(t *testing.T) {
 	if !ok {
 		t.Fatal("row should reconstruct")
 	}
-	if v, _ := metaInt(p.Meta, "compilation_template_version"); v != 4 {
+	if v, _ := kccommon.MetaInt(p.Meta, "compilation_template_version"); v != 4 {
 		t.Errorf("Meta.compilation_template_version = %v, want 4", p.Meta["compilation_template_version"])
 	}
 	// An unversioned row (never published, or written before the column existed)
