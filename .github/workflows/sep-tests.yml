@@ -243,16 +243,6 @@ jobs:
             export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
           fi
 
-          # Fail fast if the native-lib user cache is not mounted: a missing or
-          # empty cache would otherwise surface as a cryptic cgo link error later.
-          NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
-          for lib in office_oxide pdfium-static pdf_oxide onnxruntime; do
-            if [ ! -d "${NATIVE_LIBS_DIR}/${lib}" ]; then
-              echo "ERROR: ${NATIVE_LIBS_DIR}/${lib} missing — native-lib cache not mounted on this runner." >&2
-              exit 1
-            fi
-          done
-
           BUILDER_CONTAINER=ragflow_build_${GITHUB_RUN_ID}_${DOC_ENGINE}_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
           cleanup_builder() {
             if [[ -n "${BUILDER_CONTAINER:-}" ]]; then
@@ -262,21 +252,11 @@ jobs:
           trap cleanup_builder EXIT
 
           TZ=${TZ:-$(readlink -f /etc/localtime | awk -F '/zoneinfo/' '{print $2}')}
-          # Mount the native static-lib user cache into the builder container.
-          # build.sh resolves the libs from RAGFLOW_NATIVE_LIBS_DIR (default
-          # ~/ragflow-native-libs); this pins the same root for the container and
-          # bind-mounts it read-only so the cgo link finds the versioned
-          # v<version>/ dirs without an /opt pre-bake. CI mounts the cache from
-          # the build host (populated by download_dev_deps.py); a missing mount is
-          # caught by the assert below, not by a cryptic cgo link error.
-          export RAGFLOW_NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
           sudo docker run --privileged -d --name "${BUILDER_CONTAINER}" \
             -e TZ="${TZ}" \
             -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
-            -e "RAGFLOW_NATIVE_LIBS_DIR=${RAGFLOW_NATIVE_LIBS_DIR}" \
             -v "${PWD}:/ragflow" \
             -v "${PWD}/internal/binding/cpp/resource:/usr/share/infinity/resource" \
-            -v "${RAGFLOW_NATIVE_LIBS_DIR}:${RAGFLOW_NATIVE_LIBS_DIR}:ro" \
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
           ./build.sh --go
@@ -830,16 +810,6 @@ jobs:
             export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
           fi
 
-          # Fail fast if the native-lib user cache is not mounted: a missing or
-          # empty cache would otherwise surface as a cryptic cgo link error later.
-          NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
-          for lib in office_oxide pdfium-static pdf_oxide onnxruntime; do
-            if [ ! -d "${NATIVE_LIBS_DIR}/${lib}" ]; then
-              echo "ERROR: ${NATIVE_LIBS_DIR}/${lib} missing — native-lib cache not mounted on this runner." >&2
-              exit 1
-            fi
-          done
-
           BUILDER_CONTAINER=ragflow_build_${GITHUB_RUN_ID}_${DOC_ENGINE}_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
           cleanup_builder() {
             if [[ -n "${BUILDER_CONTAINER:-}" ]]; then
@@ -849,21 +819,11 @@ jobs:
           trap cleanup_builder EXIT
 
           TZ=${TZ:-$(readlink -f /etc/localtime | awk -F '/zoneinfo/' '{print $2}')}
-          # Mount the native static-lib user cache into the builder container.
-          # build.sh resolves the libs from RAGFLOW_NATIVE_LIBS_DIR (default
-          # ~/ragflow-native-libs); this pins the same root for the container and
-          # bind-mounts it read-only so the cgo link finds the versioned
-          # v<version>/ dirs without an /opt pre-bake. CI mounts the cache from
-          # the build host (populated by download_dev_deps.py); a missing mount is
-          # caught by the assert below, not by a cryptic cgo link error.
-          export RAGFLOW_NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
           sudo docker run --privileged -d --name "${BUILDER_CONTAINER}" \
             -e TZ="${TZ}" \
             -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
-            -e "RAGFLOW_NATIVE_LIBS_DIR=${RAGFLOW_NATIVE_LIBS_DIR}" \
             -v "${PWD}:/ragflow" \
             -v "${PWD}/internal/binding/cpp/resource:/usr/share/infinity/resource" \
-            -v "${RAGFLOW_NATIVE_LIBS_DIR}:${RAGFLOW_NATIVE_LIBS_DIR}:ro" \
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
           ./build.sh --go
@@ -1426,16 +1386,6 @@ jobs:
         # integration tests; the per-engine go jobs build the full server.
         run: |
           set -euo pipefail
-          # Fail fast if the native-lib user cache is not mounted: a missing or
-          # empty cache would otherwise surface as a cryptic cgo link error later.
-          NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
-          for lib in office_oxide pdfium-static pdf_oxide onnxruntime; do
-            if [ ! -d "${NATIVE_LIBS_DIR}/${lib}" ]; then
-              echo "ERROR: ${NATIVE_LIBS_DIR}/${lib} missing — native-lib cache not mounted on this runner." >&2
-              exit 1
-            fi
-          done
-
           BUILDER_CONTAINER=ragflow_build_${GITHUB_RUN_ID}_native_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
           cleanup_builder() {
             if [[ -n "${BUILDER_CONTAINER:-}" ]]; then
@@ -1445,21 +1395,11 @@ jobs:
           trap cleanup_builder EXIT
 
           TZ=${TZ:-$(readlink -f /etc/localtime | awk -F '/zoneinfo/' '{print $2}')}
-          # Mount the native static-lib user cache into the builder container.
-          # build.sh resolves the libs from RAGFLOW_NATIVE_LIBS_DIR (default
-          # ~/ragflow-native-libs); this pins the same root for the container and
-          # bind-mounts it read-only so the cgo link finds the versioned
-          # v<version>/ dirs without an /opt pre-bake. CI mounts the cache from
-          # the build host (populated by download_dev_deps.py); a missing mount is
-          # caught by the assert below, not by a cryptic cgo link error.
-          export RAGFLOW_NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
           sudo docker run --privileged -d --name "${BUILDER_CONTAINER}" \
             -e TZ="${TZ}" \
             -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
-            -e "RAGFLOW_NATIVE_LIBS_DIR=${RAGFLOW_NATIVE_LIBS_DIR}" \
             -v "${PWD}:/ragflow" \
             -v "${PWD}/internal/binding/cpp/resource:/usr/share/infinity/resource" \
-            -v "${RAGFLOW_NATIVE_LIBS_DIR}:${RAGFLOW_NATIVE_LIBS_DIR}:ro" \
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
 
@@ -1546,16 +1486,6 @@ jobs:
         # starts only the dependency services, not the ragflow-cpu container.
         run: |
           set -euo pipefail
-          # Fail fast if the native-lib user cache is not mounted: a missing or
-          # empty cache would otherwise surface as a cryptic cgo link error later.
-          NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
-          for lib in office_oxide pdfium-static pdf_oxide onnxruntime; do
-            if [ ! -d "${NATIVE_LIBS_DIR}/${lib}" ]; then
-              echo "ERROR: ${NATIVE_LIBS_DIR}/${lib} missing — native-lib cache not mounted on this runner." >&2
-              exit 1
-            fi
-          done
-
           BUILDER_CONTAINER=ragflow_build_${GITHUB_RUN_ID}_go_int_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
           cleanup_builder() {
             if [[ -n "${BUILDER_CONTAINER:-}" ]]; then
@@ -1564,21 +1494,11 @@ jobs:
           }
           trap cleanup_builder EXIT
           TZ=${TZ:-$(readlink -f /etc/localtime | awk -F '/zoneinfo/' '{print $2}')}
-          # Mount the native static-lib user cache into the builder container.
-          # build.sh resolves the libs from RAGFLOW_NATIVE_LIBS_DIR (default
-          # ~/ragflow-native-libs); this pins the same root for the container and
-          # bind-mounts it read-only so the cgo link finds the versioned
-          # v<version>/ dirs without an /opt pre-bake. CI mounts the cache from
-          # the build host (populated by download_dev_deps.py); a missing mount is
-          # caught by the assert below, not by a cryptic cgo link error.
-          export RAGFLOW_NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
           sudo docker run --privileged -d --name "${BUILDER_CONTAINER}" \
             -e TZ="${TZ}" \
             -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
-            -e "RAGFLOW_NATIVE_LIBS_DIR=${RAGFLOW_NATIVE_LIBS_DIR}" \
             -v "${PWD}:/ragflow" \
             -v "${PWD}/internal/binding/cpp/resource:/usr/share/infinity/resource" \
-            -v "${RAGFLOW_NATIVE_LIBS_DIR}:${RAGFLOW_NATIVE_LIBS_DIR}:ro" \
             infiniflow/infinity_builder:ubuntu22_clang20
           sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
 
