@@ -25,6 +25,11 @@ const (
 	// MaxManualPullMessages is the largest task batch the administrative queue
 	// pull endpoint accepts.
 	MaxManualPullMessages = 100
+	// TaskMaxDeliver is how many times the broker delivers a task message
+	// before it stops. The ingestor fails a task on its last delivery, so a
+	// message that crashes the worker every time cannot leave its task
+	// RUNNING forever.
+	TaskMaxDeliver = 16
 
 	TaskTypeIngestionTask = "ingestion_task"
 	TaskTypeIngestionTest = "ingestion_test"
@@ -53,6 +58,10 @@ type TaskHandle interface {
 	// signalling the broker that the worker is still processing. Call
 	// periodically during long tasks to avoid in-flight redelivery.
 	InProgress() error
+
+	// NumDelivered returns how many times the broker has delivered this
+	// message, this delivery included (1 on the first), or 0 when unknown.
+	NumDelivered() uint64
 }
 
 // RawMessage is a broker message carrying opaque bytes (used by the dataset-level
