@@ -51,6 +51,7 @@ const (
 	feishuStreamAttempts  = 3
 	feishuStreamBackoff   = 300 * time.Millisecond
 	feishuStreamCallLimit = 10 * time.Second
+	feishuCloseTimeout    = feishuStreamAttempts*feishuStreamCallLimit + feishuStreamAttempts*feishuStreamBackoff
 	feishuStreamElementID = "ragflow_stream"
 )
 
@@ -417,9 +418,9 @@ func feishuRetry(ctx context.Context, call func(context.Context) error) error {
 
 // closeStreamCard ends the card's streaming state, logging a failed close. The turn
 // context may already be cancelled when this runs, so the call uses a detached context
-// with its own deadline.
+// whose budget covers every retry attempt.
 func (c *feishuChannel) closeStreamCard(ctx context.Context, cardID string, sequence *int) {
-	closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), feishuStreamCallLimit)
+	closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), feishuCloseTimeout)
 	defer cancel()
 	if err := c.finishStreamCard(closeCtx, cardID, sequence); err != nil {
 		common.Error("feishu: card settings failed", err, zap.String("account_id", c.account.AccountID), zap.String("card_id", cardID))
