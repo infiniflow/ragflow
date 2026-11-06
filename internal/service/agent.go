@@ -98,6 +98,8 @@ func (s *AgentService) RunAgentWithWebhook(
 
 type agentSessionIDContextKey struct{}
 
+type agentChannelNameContextKey struct{}
+
 type openAICompatMessagesContextKey struct{}
 
 // WithAgentSessionID lets an HTTP boundary allocate the session identity while
@@ -113,6 +115,24 @@ func AgentSessionIDFromContext(ctx context.Context) string {
 	}
 	sessionID, _ := ctx.Value(agentSessionIDContextKey{}).(string)
 	return sessionID
+}
+
+// withAgentChannelName lets a chat-channel boundary record the channel name so
+// the session RunAgent creates carries it in its display name.
+func withAgentChannelName(ctx context.Context, channelName string) context.Context {
+	name := strings.TrimSpace(channelName)
+	if name == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, agentChannelNameContextKey{}, name)
+}
+
+func agentChannelNameFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	name, _ := ctx.Value(agentChannelNameContextKey{}).(string)
+	return name
 }
 
 // WithOpenAICompatMessages attaches the complete OpenAI messages list to an
@@ -2668,6 +2688,9 @@ func (s *AgentService) createAgentRunSession(
 	}
 	source := "agent"
 	name := deriveAgentSessionName(userInput)
+	if channelName := agentChannelNameFromContext(ctx); channelName != "" {
+		name = channelSessionName(name, channelName)
+	}
 	session := &entity.API4Conversation{
 		ID:        sessionID,
 		Name:      &name,
