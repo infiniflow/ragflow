@@ -52,6 +52,70 @@ type Engine struct {
 	deferredCheckpoints []deferredCheckpoint // for DurabilityExit mode
 }
 
+type resumeMapContextKey struct{}
+
+func withResumeMap(ctx context.Context, config *types.RunnableConfig) context.Context {
+	if config == nil || config.Configurable == nil {
+		return ctx
+	}
+	configured, ok := config.Configurable[constants.ConfigKeyResumeMap].(map[string]any)
+	if !ok || len(configured) == 0 {
+		return ctx
+	}
+	merged := make(map[string]any)
+	if inherited, ok := ctx.Value(resumeMapContextKey{}).(map[string]any); ok {
+		for key, value := range inherited {
+			merged[key] = value
+		}
+	}
+	for key, value := range configured {
+		merged[key] = value
+	}
+	return context.WithValue(ctx, resumeMapContextKey{}, merged)
+}
+
+func resumeValuesForTask(ctx context.Context, namespace string, task *Task) []any {
+	if task == nil {
+		return nil
+	}
+	resumeMap, ok := ctx.Value(resumeMapContextKey{}).(map[string]any)
+	if !ok {
+		return nil
+	}
+	keys := make([]string, 0, 4)
+	if namespace != "" {
+		if path := TaskPathStr(task.Path); path != "" {
+			keys = append(keys, namespace+string(constants.NSSep)+path)
+		}
+		keys = append(keys, namespace+string(constants.NSSep)+task.Name)
+	}
+	if path := TaskPathStr(task.Path); path != "" {
+		keys = append(keys, path)
+	}
+	keys = append(keys, task.Name, task.ID)
+	for _, key := range keys {
+		if value, ok := resumeMap[key]; ok {
+			if values, ok := value.([]any); ok {
+				return values
+			}
+			return []any{value}
+		}
+	}
+	return nil
+}
+
+func (e *Engine) contextForTask(ctx context.Context, task *Task) context.Context {
+	taskCtx := interrupt.WithInterruptContext(ctx)
+	var namespace string
+	if e.config != nil {
+		namespace = e.config.GetOrEmpty(constants.ConfigKeyCheckpointNS)
+	}
+	for _, value := range resumeValuesForTask(ctx, namespace, task) {
+		interrupt.AppendResumeValue(taskCtx, value)
+	}
+	return taskCtx
+}
+
 // deferredCheckpoint stores checkpoint data for deferred saving (DurabilityExit mode)
 type deferredCheckpoint struct {
 	ThreadID     string
@@ -203,6 +267,7 @@ type ExecuteResult struct {
 func (e *Engine) Run(ctx context.Context, input any, mode types.StreamMode) (<-chan any, <-chan error) {
 	outputCh := make(chan any, 100)
 	errCh := make(chan error, 1)
+	ctx = withResumeMap(ctx, e.config)
 
 	go func() {
 		defer close(errCh)
@@ -1164,7 +1229,8 @@ func (e *Engine) executeTasksAsync(
 			retryPolicy := e.resolveRetryPolicy(t)
 
 			// Execute with async pipeline
-			resultCh := asyncPipeline.ExecuteNode(ctx, t.Name, executeFn, &RetryConfig{Policy: retryPolicy})
+			taskCtx := e.contextForTask(ctx, t)
+			resultCh := asyncPipeline.ExecuteNode(taskCtx, t.Name, executeFn, &RetryConfig{Policy: retryPolicy})
 
 			// Wait for result
 			select {
@@ -1221,6 +1287,8 @@ func (e *Engine) executeTask(
 	task *Task,
 	registry *channels.Registry,
 ) *TaskResult {
+	ctx = e.contextForTask(ctx, task)
+
 	// Read input for this task
 	input, err := e.readTaskInput(registry, task)
 	if err != nil {
