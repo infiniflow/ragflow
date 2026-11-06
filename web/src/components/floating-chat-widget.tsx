@@ -869,18 +869,23 @@ const FloatingChatWidget = () => {
               background: `linear-gradient(to right, ${widgetAccentColor}, ${widgetAccentColorStrong})`,
             }}
           >
-            <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
+            <div className="flex items-center space-x-3 min-w-0">
+              <div className="w-8 h-8 bg-white bg-opacity-20 rounded-full flex items-center justify-center shrink-0">
                 <MessageCircle size={18} />
               </div>
-              <div>
+              <div className="min-w-0">
                 <h3
-                  className="font-semibold text-sm"
+                  className="font-semibold text-sm truncate"
                   style={{ color: widgetHeaderTextColor }}
+                  title={displayTitle}
                 >
                   {displayTitle}
                 </h3>
-                <p className="text-xs" style={{ color: widgetHeaderTextColor }}>
+                <p
+                  className="text-xs truncate"
+                  style={{ color: widgetHeaderTextColor }}
+                  title={displaySubtitle}
+                >
                   {displaySubtitle}
                 </p>
               </div>
@@ -1060,23 +1065,28 @@ const FloatingChatWidget = () => {
               background: `linear-gradient(to right, ${widgetAccentColor}, ${widgetAccentColorStrong})`,
             }}
           >
-            <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
+            <div className="flex items-center space-x-3 min-w-0">
+              <div className="w-8 h-8 bg-white bg-opacity-20 rounded-full flex items-center justify-center shrink-0">
                 <MessageCircle size={18} />
               </div>
-              <div>
+              <div className="min-w-0">
                 <h3
-                  className="font-semibold text-sm"
+                  className="font-semibold text-sm truncate"
                   style={{ color: widgetHeaderTextColor }}
+                  title={displayTitle}
                 >
                   {displayTitle}
                 </h3>
-                <p className="text-xs" style={{ color: widgetHeaderTextColor }}>
+                <p
+                  className="text-xs truncate"
+                  style={{ color: widgetHeaderTextColor }}
+                  title={displaySubtitle}
+                >
                   {displaySubtitle}
                 </p>
               </div>
             </div>
-            <div className="flex items-center space-x-1">
+            <div className="flex items-center space-x-1 shrink-0">
               <button
                 type="button"
                 onClick={minimizeChat}
