@@ -37,8 +37,8 @@ it later does not change an existing account's password.
 ```bash
 # Enter the Docker deployment directory.
 cd ragflow/docker
-# Check out the Go v1.0.0-rc3 release tag.
-git checkout v1.0.0-rc3
+# Check out the Go v1.0.0 release tag.
+git checkout v1.0.0
 # Start the Go services and their dependencies in the background.
 docker compose -f docker-compose.yml up -d
 ```

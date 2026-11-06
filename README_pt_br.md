@@ -170,7 +170,7 @@ O Docker é indicado para avaliação rápida, testes de integração e produç�
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc3
+   git checkout v1.0.0
    docker compose -f docker-compose.yml up -d
    ```
 
