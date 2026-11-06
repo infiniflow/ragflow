@@ -305,16 +305,14 @@ func TestOllamaNormalizesMalformedToolCallArguments(t *testing.T) {
 				{"id": "call_bad", "type": "function", "function": map[string]any{"name": "c", "arguments": "{not json"}},
 				{"id": "call_arr", "type": "function", "function": map[string]any{"name": "d", "arguments": "[1,2]"}},
 				{"id": "call_scalar", "type": "function", "function": map[string]any{"name": "e", "arguments": "123"}},
+				{"id": "call_null", "type": "function", "function": map[string]any{"name": "g", "arguments": "null"}},
 				{"id": "call_obj", "type": "function", "function": map[string]any{"name": "f", "arguments": `{"x":1}`}},
 			},
 		},
 	}
 
 	apiMessages := buildOllamaMessages(messages)
-	assistant, ok := apiMessages[1].(map[string]any)
-	if !ok {
-		t.Fatalf("apiMessages[1]=%T, want map", apiMessages[1])
-	}
+	assistant := apiMessages[1]
 	calls, ok := assistant["tool_calls"].([]map[string]any)
 	if !ok {
 		t.Fatalf("tool_calls=%T, want []map[string]any", assistant["tool_calls"])
