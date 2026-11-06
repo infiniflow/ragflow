@@ -900,6 +900,20 @@ func (e *Engine) updateChunksByQuery(ctx context.Context, indexName string, cond
 		bodyBytes, _ := io.ReadAll(res.Body)
 		return fmt.Errorf("elasticsearch update by query error: %s, body: %s", res.Status(), string(bodyBytes))
 	}
+	// HTTP 200 also covers timed-out updates and skipped version conflicts.
+	// Report partial updates as errors so callers do not treat them as complete.
+	var result struct {
+		TimedOut         bool              `json:"timed_out"`
+		VersionConflicts int               `json:"version_conflicts"`
+		Failures         []json.RawMessage `json:"failures"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decode Elasticsearch update by query result: %w", err)
+	}
+	if result.TimedOut || result.VersionConflicts > 0 || len(result.Failures) > 0 {
+		return fmt.Errorf("elasticsearch update by query incomplete: timed_out=%t version_conflicts=%d failures=%d",
+			result.TimedOut, result.VersionConflicts, len(result.Failures))
+	}
 
 	common.Debug("ElasticsearchConnection.updateChunksByQuery completed", zap.String("indexName", indexName))
 	return nil

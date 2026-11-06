@@ -813,18 +813,34 @@ func firstStringField(m map[string]interface{}, keys ...string) string {
 
 func (s *DocumentService) updateDocumentStatusOnly(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, status int) error {
 	statusStr := strconv.Itoa(status)
+	// The index can disagree with the row after a partial write or a
+	// database rollback. Even an unchanged status must reconcile it.
+	// A completed index write can precede ApplyDocCounts. A zero scalar
+	// count therefore cannot prove that there are no rows to update.
+	needsIndexUpdate := doc.ChunkNum > 0
+	if s.docEngine == nil {
+		if needsIndexUpdate {
+			return fmt.Errorf("document engine not initialized")
+		}
+	} else {
+		if !needsIndexUpdate {
+			exists, err := s.docEngine.ChunkStoreExists(ctx, fmt.Sprintf("ragflow_%s", kb.TenantID), doc.KbID)
+			if err != nil {
+				return fmt.Errorf("check document index: %w", err)
+			}
+			needsIndexUpdate = exists
+		}
+		if needsIndexUpdate {
+			if err := s.updateDocumentChunkAvailability(ctx, kb.TenantID, doc.KbID, doc.ID, status); err != nil {
+				return err
+			}
+		}
+	}
 	if doc.Status != nil && *doc.Status == statusStr {
 		return nil
 	}
-
 	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"status": statusStr}); err != nil {
 		return errors.New("database error (Document update)")
-	}
-
-	if s.docEngine != nil {
-		if err := s.updateDocumentChunkAvailability(ctx, kb.TenantID, doc.KbID, doc.ID, status); err != nil {
-			return err
-		}
 	}
 	// A status transition changes document availability, not its parsed
 	// content. The status event handles dataset-level retraction/re-enable;

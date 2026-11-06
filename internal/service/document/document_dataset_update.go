@@ -87,49 +87,16 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, dataset
 			continue
 		}
 
-		currentStatus := ""
-		if doc.Status != nil {
-			currentStatus = *doc.Status
-		}
-		if currentStatus == status {
-			result[docID] = map[string]string{"status": status}
-			continue
-		}
-		previousStatus := interface{}(nil)
-		if doc.Status != nil {
-			previousStatus = *doc.Status
-		}
-		if err = s.documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{"status": status}); err != nil {
-			result[docID] = map[string]string{"error": "Database error (Document update)!"}
+		if _, err := s.validateDocumentModifiable(ctx, doc); err != nil {
+			result[docID] = map[string]string{"error": err.Error()}
 			hasError = true
 			continue
 		}
-
-		if doc.ChunkNum > 0 {
-			if s.docEngine == nil {
-				_ = s.documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{"status": previousStatus})
-				result[docID] = map[string]string{"error": "Document store update failed: document engine not initialized"}
-				hasError = true
-				continue
-			}
-			err = s.updateDocumentChunkAvailability(ctx, kb.TenantID, doc.KbID, docID, statusInt)
-			if err != nil {
-				_ = s.documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{"status": previousStatus})
-				msg := err.Error()
-				if strings.Contains(msg, "3022") {
-					result[docID] = map[string]string{"error": "Document store table missing."}
-				} else {
-					result[docID] = map[string]string{"error": "Document store update failed: " + msg}
-				}
-				hasError = true
-				continue
-			}
+		if err := s.updateDocumentStatusOnly(ctx, doc, kb, statusInt); err != nil {
+			result[docID] = map[string]string{"error": err.Error()}
+			hasError = true
+			continue
 		}
-		// A status transition changes document availability, not its parsed
-		// content. The status event handles dataset-level retraction/re-enable;
-		// scheduling a delayed Wiki recompilation here creates duplicate events
-		// and a visible 20-second oscillation.
-		s.publishKnowledgeCompileStatusChange(ctx, kb.TenantID, doc.KbID, docID, statusInt)
 		result[docID] = map[string]string{"status": status}
 	}
 
@@ -394,7 +361,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, 
 	return resp, common.CodeSuccess, nil
 }
 
-// validateDocumentModifiable rejects configuration edits while the document is
+// validateDocumentModifiable rejects document edits while the document is
 // actively parsing or scheduled.
 func (s *DocumentService) validateDocumentModifiable(ctx context.Context, doc *entity.Document) (common.ErrorCode, error) {
 	if s.ingestionTaskDAO == nil {
@@ -413,7 +380,7 @@ func (s *DocumentService) validateDocumentModifiable(ctx context.Context, doc *e
 	switch {
 	case common.IsActiveTaskStatus(task.Status):
 		return common.CodeDataError, fmt.Errorf(
-			"document is currently %q and cannot be modified; stop parsing or wait for it to finish before updating its configuration", task.Status)
+			"document is currently %q and cannot be modified; stop parsing or wait for it to finish before updating it", task.Status)
 	case common.IsTerminalTaskStatus(task.Status):
 		return common.CodeSuccess, nil
 	default:
