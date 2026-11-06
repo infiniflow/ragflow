@@ -19,20 +19,25 @@ package channels
 import (
 	"errors"
 	"net/url"
+	"strings"
 )
 
-// redactURLError strips the query string from transport errors. WeCom carries
-// the access token / corp secret in the request URL query, and *url.Error keeps
-// the full URL in its message, so raw errors must not reach the log sinks.
+// redactURLError strips the query string from transport errors. WeCom and
+// DingTalk carry the access token / corp secret / session credential in the
+// request URL query, and *url.Error keeps the full URL in its message, so raw
+// errors must not reach the log sinks. A URL too malformed to parse is cut at
+// the query delimiter instead, because the parse error itself carries it.
 func redactURLError(err error) error {
 	var urlErr *url.Error
 	if !errors.As(err, &urlErr) {
 		return err
 	}
-	parsed, parseErr := url.Parse(urlErr.URL)
-	if parseErr != nil {
-		return urlErr
+	redacted := ""
+	if parsed, parseErr := url.Parse(urlErr.URL); parseErr == nil {
+		parsed.RawQuery = ""
+		redacted = parsed.String()
+	} else {
+		redacted, _, _ = strings.Cut(urlErr.URL, "?")
 	}
-	parsed.RawQuery = ""
-	return &url.Error{Op: urlErr.Op, URL: parsed.String(), Err: redactURLError(urlErr.Err)}
+	return &url.Error{Op: urlErr.Op, URL: redacted, Err: redactURLError(urlErr.Err)}
 }
