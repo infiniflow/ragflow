@@ -71,7 +71,7 @@ func TestChatChannelRejectsCrossTenantBindingAndExecution(t *testing.T) {
 	createServiceTestChannel(t, db, &entity.ChatChannel{
 		ID: "historical", TenantID: "other", Channel: "telegram", Config: entity.JSONMap{}, ChatID: new("private"), Status: 1,
 	})
-	if _, err := svc.HandleIncomingMessage(t.Context(), ChatChannelIncomingMessage{AccountID: "historical", ChatID: "external", Text: "hello"}, nil); !errors.Is(err, permission.ErrPermissionDenied) {
+	if _, err := svc.HandleIncomingMessage(t.Context(), ChatChannelIncomingMessage{AccountID: "historical", ChatID: "external", Text: "hello"}, nil); !isAccessDeniedOrHidden(err) {
 		t.Fatalf("historical unauthorized binding: %v", err)
 	}
 }
@@ -83,6 +83,7 @@ func TestChatChannelAgentRevokedAccess(t *testing.T) {
 	if err := db.Create(agent).Error; err != nil {
 		t.Fatal(err)
 	}
+	grantServiceTestResource(t, "owner", "canvas", "shared", "owner", testResourcePermissionRead)
 	svc := NewChatChannelService()
 	channel, err := svc.CreateChatChannel(ctx, "channel", "telegram", entity.JSONMap{}, nil, new("shared"))
 	if err != nil {
@@ -91,6 +92,7 @@ func TestChatChannelAgentRevokedAccess(t *testing.T) {
 	if err := db.Model(agent).Update("permission", string(entity.TenantPermissionMe)).Error; err != nil {
 		t.Fatal(err)
 	}
+	revokeServiceTestResource(t, "owner", "canvas", "shared", "owner")
 	svc.agentRunner = channelAgentRunnerFunc(func(context.Context, string, string, string, any, []map[string]any) (<-chan canvas.RunEvent, error) {
 		t.Fatal("revoked workflow must not execute")
 		return nil, nil
