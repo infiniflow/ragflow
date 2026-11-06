@@ -2,6 +2,7 @@ package parser
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	pdfLayout "ragflow/internal/deepdoc/parser/pdf/layout"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
@@ -13,8 +14,18 @@ var pdfHeaderFooterLayouts = map[string]struct{}{
 	"page_number": {},
 	"page-header": {},
 	"page-footer": {},
+	"page_header": {},
+	"page_footer": {},
 	"discarded":   {},
 }
+
+// Mirror DeepDoc TOC guards (layout/toc_header_footer.go) at JSON item granularity.
+const (
+	pdfTOCMaxProseRunes = 60
+	pdfTOCMaxLongBoxes  = 2
+	pdfTOCBBodyRunes    = 20
+	pdfTOCMaxBodyBoxes  = 2
+)
 
 // FinalizePDFResult attaches bookmarks from the source PDF and applies the
 // remove_toc / remove_header_footer parser options to JSON items. DeepDoc applies
@@ -109,14 +120,63 @@ func dropPDFItemsOnTOCOutlinePages(items []map[string]any, pages0 map[int]bool) 
 	if len(pages0) == 0 {
 		return items
 	}
+	perPage := make(map[int][]map[string]any)
+	docPages := make(map[int]struct{})
+	for _, item := range items {
+		pages := collectPDFPageNumbers(item)
+		if len(pages) == 0 {
+			if page := int(numberValue(item["page_number"])); page > 0 {
+				pages = map[int]struct{}{page: {}}
+			}
+		}
+		for page := range pages {
+			perPage[page] = append(perPage[page], item)
+			docPages[page] = struct{}{}
+		}
+	}
+	droppable0 := make(map[int]bool)
+	droppedPages := 0
+	for page1 := range docPages {
+		page0 := page1 - 1
+		if !pages0[page0] {
+			continue
+		}
+		if pdfPageItemsCarryProse(perPage[page1]) {
+			continue
+		}
+		droppable0[page0] = true
+		droppedPages++
+	}
+	if droppedPages == 0 || droppedPages == len(docPages) {
+		return items
+	}
 	filtered := make([]map[string]any, 0, len(items))
 	for _, item := range items {
-		if onTOCPage(item, pages0) {
+		if onTOCPage(item, droppable0) {
 			continue
 		}
 		filtered = append(filtered, item)
 	}
 	return filtered
+}
+
+func pdfPageItemsCarryProse(pageItems []map[string]any) bool {
+	var prose, body int
+	for _, item := range pageItems {
+		text := itemText(item)
+		if text == "" {
+			continue
+		}
+		runes := utf8.RuneCountInString(text)
+		if runes > pdfTOCMaxProseRunes {
+			prose++
+			continue
+		}
+		if runes > pdfTOCBBodyRunes {
+			body++
+		}
+	}
+	return prose > pdfTOCMaxLongBoxes || body > pdfTOCMaxBodyBoxes
 }
 
 func onTOCPage(item map[string]any, pages0 map[int]bool) bool {

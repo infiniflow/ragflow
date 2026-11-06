@@ -132,6 +132,31 @@ func TestFinalizePDFResultRemoveTOCContentsHeading(t *testing.T) {
 	}
 }
 
+func TestFinalizePDFResultKeepsProseOnTOCOutlinePage(t *testing.T) {
+	stubPDFOutlines(t, nil)
+	p := &PDFParser{RemoveTOC: true}
+	longPreface := strings.Repeat("Preface paragraph. ", 8)
+	result := pdfItemsToResult("doc.pdf", []map[string]any{
+		{"text": longPreface, "layout": "text", "page_number": 1},
+		{"text": "Contents", "layout": "title", "page_number": 1},
+		{"text": "Intro .......... 1", "layout": "text", "page_number": 1},
+	}, 1)
+	result.File["outline"] = []map[string]any{
+		{"title": "Contents", "level": 0, "page_number": 1},
+		{"title": "Chapter 1", "level": 0, "page_number": 2},
+	}
+	result = p.FinalizePDFResult(nil, result)
+	kept := false
+	for _, item := range result.JSON {
+		if strings.Contains(itemText(item.ToMap()), "Preface paragraph.") {
+			kept = true
+		}
+	}
+	if !kept {
+		t.Fatalf("prose on TOC outline page was dropped: %#v", result.JSON)
+	}
+}
+
 // bookmarkedPDF builds a two-page PDF whose outline is Chapter 1 (page 1) with
 // a Section 1.1 child (page 2), then Chapter 2 (page 2). It is hand-written so
 // the native extraction test has a deterministic fixture with no binary asset.

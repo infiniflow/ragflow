@@ -401,6 +401,34 @@ func TestMinerUExtractJSONItemsKeepsHeaderWhenNotRemoving(t *testing.T) {
 	}
 }
 
+func TestMinerUExtractJSONItemsStructuredKeepsHeaderWhenNotRemoving(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	structured, err := zw.Create("structured_content.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = structured.Write([]byte(`{
+		"pages": [{
+			"page_idx": 0,
+			"blocks": [
+				{"type":"text","content":"Hello"},
+				{"type":"header","content":"Running head"}
+			]
+		}]
+	}`))
+	if err = zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	items, _, err := mineruExtractJSONItems(buf.Bytes(), nil, false)
+	if err != nil {
+		t.Fatalf("mineruExtractJSONItems: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("len(items)=%d, want 2 (structured header kept when remove_header_footer is off)", len(items))
+	}
+}
+
 func TestMinerUBBoxPositionScalesAndClamps(t *testing.T) {
 	sizes := map[int][2]float64{0: {600, 800}}
 	for _, tc := range []struct {

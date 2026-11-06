@@ -1200,7 +1200,7 @@ func mineruExtractJSONItems(zipBytes []byte, pdfPageSizes map[int][2]float64, dr
 			return nil, nil, fmt.Errorf("parse content_list.json: %w", err)
 		}
 	case len(structured) > 0:
-		rawItems, err = mineruItemsFromStructuredContent(structured)
+		rawItems, err = mineruItemsFromStructuredContent(structured, dropHeaderFooter)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1319,7 +1319,7 @@ func mineruReadZipFile(f *zip.File) ([]byte, error) {
 	return body, nil
 }
 
-func mineruItemsFromStructuredContent(raw []byte) ([]map[string]any, error) {
+func mineruItemsFromStructuredContent(raw []byte, dropHeaderFooter bool) ([]map[string]any, error) {
 	var doc struct {
 		Pages []struct {
 			PageIdx int              `json:"page_idx"`
@@ -1332,7 +1332,7 @@ func mineruItemsFromStructuredContent(raw []byte) ([]map[string]any, error) {
 	items := make([]map[string]any, 0)
 	for _, page := range doc.Pages {
 		for _, block := range page.Blocks {
-			if item := mineruStructuredBlockToContentItem(page.PageIdx, block); item != nil {
+			if item := mineruStructuredBlockToContentItem(page.PageIdx, block, dropHeaderFooter); item != nil {
 				items = append(items, item)
 			}
 		}
@@ -1340,12 +1340,17 @@ func mineruItemsFromStructuredContent(raw []byte) ([]map[string]any, error) {
 	return items, nil
 }
 
-func mineruStructuredBlockToContentItem(pageIdx int, block map[string]any) map[string]any {
+func mineruStructuredBlockToContentItem(pageIdx int, block map[string]any, dropHeaderFooter bool) map[string]any {
 	typ, _ := block["type"].(string)
 	typ = strings.ToLower(strings.TrimSpace(typ))
-	switch typ {
-	case "header", "footer", "page_number", "page-header", "page-footer", "page_header", "page_footer", "aside_text", "discarded":
+	if typ == "discarded" {
 		return nil
+	}
+	if dropHeaderFooter {
+		switch typ {
+		case "header", "footer", "page_number", "page-header", "page-footer", "page_header", "page_footer":
+			return nil
+		}
 	}
 	content, _ := block["content"].(string)
 	captions := mineruAnnotationTexts(block["captions"])
@@ -1527,7 +1532,7 @@ func mineruContentItemToJSONBudget(item map[string]any, images map[string]*zip.F
 	}
 	if dropHeaderFooter {
 		switch typ {
-		case "header", "footer", "page_number", "page-header", "page-footer", "page_header", "page_footer", "aside_text":
+		case "header", "footer", "page_number", "page-header", "page-footer", "page_header", "page_footer":
 			return nil
 		}
 	}
