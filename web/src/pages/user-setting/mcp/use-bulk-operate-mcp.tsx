@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+import { useOwnerMcpList } from '@/ee/pages/user-setting/mcp/use-owner-mcp-list';
 import { useDeleteMcpServer } from '@/hooks/use-mcp-request';
 import { IMcpServer } from '@/interfaces/database/mcp';
 import { Trash2, Upload } from 'lucide-react';
@@ -35,9 +36,7 @@ export function useBulkOperateMCP(mcpList: IMcpServer[]) {
     const deletedIds = selectedList;
     const ret = await deleteMcpServer(deletedIds);
     if (ret.code === 0) {
-      setSelectedList((list) =>
-        list.filter((id) => !deletedIds.includes(id)),
-      );
+      setSelectedList((list) => list.filter((id) => !deletedIds.includes(id)));
     }
   }, [deleteMcpServer, selectedList]);
 
@@ -47,12 +46,23 @@ export function useBulkOperateMCP(mcpList: IMcpServer[]) {
     });
   }, []);
 
+  const ownerMcpList = useOwnerMcpList(mcpList);
+
   const handleSelectAll = useCallback(
     (checked: boolean) => {
-      setSelectedList(() => (checked ? mcpList.map((item) => item.id) : []));
+      setSelectedList(() =>
+        checked ? ownerMcpList.map((item) => item.id) : [],
+      );
     },
-    [mcpList],
+    [ownerMcpList],
   );
+
+  const selectAllChecked: boolean | 'indeterminate' =
+    selectedList.length === 0
+      ? false
+      : selectedList.length === ownerMcpList.length
+        ? true
+        : 'indeterminate';
 
   const list = [
     {
@@ -76,6 +86,7 @@ export function useBulkOperateMCP(mcpList: IMcpServer[]) {
     handleDelete,
     handleExportMcp: handleExportMcpJson(selectedList),
     handleSelectAll,
+    selectAllChecked,
     resetSelection,
   };
 }

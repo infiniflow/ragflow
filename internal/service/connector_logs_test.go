@@ -80,7 +80,7 @@ func TestListLogsPaginationModes(t *testing.T) {
 	svc := NewConnectorService()
 	ctx := serviceTestContext(t, "user-1", "user-1")
 
-	all, total, code, err := svc.ListLogs(ctx, "user-1", "", 1, 0)
+	all, total, code, err := svc.ListLogs(ctx, "", 1, 0)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListLogs(all): code=%v err=%v", code, err)
 	}
@@ -88,7 +88,7 @@ func TestListLogsPaginationModes(t *testing.T) {
 		t.Fatalf("ListLogs(all) = total %d len %d, want 5/5", total, len(all))
 	}
 
-	first, total, code, err := svc.ListLogs(ctx, "user-1", "", 1, 2)
+	first, total, code, err := svc.ListLogs(ctx, "", 1, 2)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListLogs(page): code=%v err=%v", code, err)
 	}
@@ -96,7 +96,7 @@ func TestListLogsPaginationModes(t *testing.T) {
 		t.Fatalf("ListLogs(page) = total %d len %d, want 5/2", total, len(first))
 	}
 
-	second, total, code, err := svc.ListLogs(ctx, "user-1", "", 2, 2)
+	second, total, code, err := svc.ListLogs(ctx, "", 2, 2)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListLogs(page2): code=%v err=%v", code, err)
 	}
@@ -104,7 +104,7 @@ func TestListLogsPaginationModes(t *testing.T) {
 		t.Fatalf("ListLogs(page2) = total %d len %d, want 5/2", total, len(second))
 	}
 
-	normalized, total, code, err := svc.ListLogs(ctx, "user-1", "", 0, 101)
+	normalized, total, code, err := svc.ListLogs(ctx, "", 0, 101)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListLogs(normalize): code=%v err=%v", code, err)
 	}
@@ -183,7 +183,7 @@ func TestListLogsStatusPriority(t *testing.T) {
 	svc := NewConnectorService()
 	ctx := serviceTestContext(t, "user-1", "user-1")
 
-	byConnector, total, code, err := svc.ListLog(ctx, "conn-1", "user-1", 1, 100)
+	byConnector, total, code, err := svc.ListLog(ctx, "conn-1", 1, 100)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListLog: code=%v err=%v", code, err)
 	}
@@ -192,7 +192,7 @@ func TestListLogsStatusPriority(t *testing.T) {
 	}
 	assertLogOrder(t, "ListLog", byConnector, want)
 
-	tenantWide, total, code, err := svc.ListLogs(ctx, "user-1", "", 1, 100)
+	tenantWide, total, code, err := svc.ListLogs(ctx, "", 1, 100)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListLogs: code=%v err=%v", code, err)
 	}

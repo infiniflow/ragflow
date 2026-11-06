@@ -48,8 +48,6 @@ import (
 	"ragflow/internal/tokenizer"
 )
 
-const ComponentNameQAChunker = "QAChunker"
-
 type qaChunkerParam struct {
 	Lang string `json:"lang,omitempty"`
 }

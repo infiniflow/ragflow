@@ -3,12 +3,12 @@ package document
 import (
 	"mime/multipart"
 	"reflect"
-	"strings"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/permission/testsupport"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/storage"
 	syncerconnector "ragflow/internal/syncer/connector"
@@ -150,19 +150,7 @@ func tableParserConfig() entity.JSONMap {
 
 func seedDocumentParserTenant(t *testing.T, tenantID, ownerID string) {
 	t.Helper()
-	if err := dao.DB.Create(&entity.Tenant{ID: tenantID}).Error; err != nil {
-		t.Fatalf("insert tenant: %v", err)
-	}
-	status := string(entity.StatusValid)
-	if err := dao.DB.Create(&entity.UserTenant{
-		ID: "owner-" + tenantID, UserID: ownerID, TenantID: tenantID, Role: "owner", Status: &status,
-		LLMID: "llm-default", EmbdID: "embd-default", ASRID: "asr-default",
-	}).Error; err != nil {
-		t.Fatalf("insert tenant owner membership: %v", err)
-	}
-	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, tenantID, ownerID); err != nil {
-		t.Fatalf("prepare parser tenant permission fixture: %v", err)
-	}
+	insertUserTenantForAccessCheck(t, ownerID, tenantID)
 }
 
 // TestResolveDocumentParser_Priority pins the resolution order: the dataset's
@@ -499,7 +487,7 @@ func TestUploadLocalDocuments_RoutesFileTypesToDedicatedParsers(t *testing.T) {
 		t.Fatalf("insert kb: %v", err)
 	}
 
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-1", "")
 	svc := testDocumentService(t)
 	files := []*multipart.FileHeader{
 		makeTestFileHeader(t, "file", "photo.jpg", []byte("jpeg-bytes")),
@@ -508,7 +496,7 @@ func TestUploadLocalDocuments_RoutesFileTypesToDedicatedParsers(t *testing.T) {
 		makeTestFileHeader(t, "file", "talk.mp3", []byte("mp3-bytes")),
 		makeTestFileHeader(t, "file", "notes.txt", []byte("plain text")),
 	}
-	got, errs := svc.UploadLocalDocuments(ctx, kb, "user-1", files, "", nil)
+	got, errs := svc.UploadLocalDocuments(ctx, kb, files, "", nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errs: %v", errs)
 	}
@@ -582,7 +570,7 @@ func TestUploadLocalDocuments_FallsBackWhenSelectionLacksFamily(t *testing.T) {
 
 	seedDocumentParserTenant(t, "tenant-1", "user-1")
 
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-1", "")
 	svc := testDocumentService(t)
 
 	presentationKB := &entity.Knowledgebase{
@@ -596,7 +584,7 @@ func TestUploadLocalDocuments_FallsBackWhenSelectionLacksFamily(t *testing.T) {
 	if err := dao.DB.Create(presentationKB).Error; err != nil {
 		t.Fatalf("insert presentation kb: %v", err)
 	}
-	got, errs := svc.UploadLocalDocuments(ctx, presentationKB, "user-1", []*multipart.FileHeader{
+	got, errs := svc.UploadLocalDocuments(ctx, presentationKB, []*multipart.FileHeader{
 		makeTestFileHeader(t, "file", "laws.txt", []byte("plain text")),
 		makeTestFileHeader(t, "file", "deck.pptx", []byte("pptx-bytes")),
 	}, "", nil)
@@ -625,7 +613,7 @@ func TestUploadLocalDocuments_FallsBackWhenSelectionLacksFamily(t *testing.T) {
 	if err := dao.DB.Create(canvasKB).Error; err != nil {
 		t.Fatalf("insert canvas kb: %v", err)
 	}
-	got, errs = svc.UploadLocalDocuments(ctx, canvasKB, "user-1", []*multipart.FileHeader{
+	got, errs = svc.UploadLocalDocuments(ctx, canvasKB, []*multipart.FileHeader{
 		makeTestFileHeader(t, "file", "report.pdf", []byte("%PDF-1.4")),
 		makeTestFileHeader(t, "file", "laws.txt", []byte("plain text")),
 	}, "", nil)
@@ -680,9 +668,9 @@ func TestUploadLocalDocuments_SwitchesVideoToPicture(t *testing.T) {
 		t.Fatalf("insert kb: %v", err)
 	}
 
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-1", "")
 	svc := testDocumentService(t)
-	got, errs := svc.UploadLocalDocuments(ctx, kb, "user-1", []*multipart.FileHeader{
+	got, errs := svc.UploadLocalDocuments(ctx, kb, []*multipart.FileHeader{
 		makeTestFileHeader(t, "file", "clip.mov", []byte("mov-bytes")),
 		makeTestFileHeader(t, "file", "movie.mp4", []byte("mp4-bytes")),
 		makeTestFileHeader(t, "file", "legacy.rmvb", []byte("rmvb-bytes")),
@@ -775,7 +763,7 @@ func parserFamilySetup(t *testing.T, doc map[string]interface{}, family string) 
 		t.Fatalf("%v parser_config = %T, want map", doc["name"], doc["parser_config"])
 	}
 	for cpnID, raw := range cfg {
-		if !strings.HasPrefix(cpnID, "Parser:") {
+		if !common.IsParserComponentID(cpnID) {
 			continue
 		}
 		params, _ := raw.(map[string]interface{})

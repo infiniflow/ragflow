@@ -10,12 +10,6 @@ title: Manage User Accounts
 
 User accounts are managed on the **Users** page. Administrators can view the user list, including `Email`, `Nickname`, `Status`, and `User type`.
 
-![User Management](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/disable_or_restore_accounts.jpg)
-
-![User Management](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/set_backend_administrator_identity.jpg)
-
-![User Management](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_user_details_and_resource_impact.jpg)
-
 Use the search box in the upper-right corner to search users by `Email` or `Nickname`. You can also filter `Active` or `Inactive` users by `Status`.
 
 ![View And Search Users](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_and_search_users_1.jpg)
@@ -105,7 +99,7 @@ Before deleting a user, set their account status to **Inactive**. If their user 
 
 **Caution:** The currently logged-in administrator cannot delete their own account through list **Actions**.
 
-Deleting a user is a high-risk operation. Before doing it, confirm whether the user's related data, knowledge bases, Agents, files, API keys, and business responsibilities have been handed over. If you only need to temporarily prevent login, change the account status to `Inactive` first.
+Deleting a user is a high-risk operation. Before doing it, confirm whether the user's related data, Datasets, Agents, files, API keys, and business responsibilities have been handed over. If you only need to temporarily prevent login, change the account status to `Inactive` first.
 
 ## View User Details and Resource Impact
 

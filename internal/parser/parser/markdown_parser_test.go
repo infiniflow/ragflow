@@ -39,6 +39,32 @@ func TestMarkdownParser_ParseWithResult_Basic(t *testing.T) {
 	}
 }
 
+func TestMarkdownParser_BlockquoteKeepsItsBlocksApart(t *testing.T) {
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	for _, tc := range []struct {
+		md   string
+		want string
+	}{
+		{"> First quote\n>\n> Second quote\n", "First quote\nSecond quote"},
+		{"> One\n>\n> Two\n>\n> Three\n", "One\nTwo\nThree"},
+		{"> Intro\n>\n> - item one\n> - item two\n", "Intro\nitem one\nitem two"},
+	} {
+		res := p.ParseWithResult(t.Context(), "test.md", []byte(tc.md))
+		if res.Err != nil {
+			t.Fatalf("ParseWithResult(%q): %v", tc.md, res.Err)
+		}
+		if len(res.JSON) != 1 {
+			t.Fatalf("ParseWithResult(%q) returned %d items, want 1", tc.md, len(res.JSON))
+		}
+		if got, _ := res.JSON[0].ToMap()["text"].(string); got != tc.want {
+			t.Fatalf("ParseWithResult(%q) text = %q, want %q", tc.md, got, tc.want)
+		}
+	}
+}
+
 // A UTF-8 BOM in front of the first heading must not demote it to a paragraph.
 func TestMarkdownParser_ParseWithResult_UTF8BOM(t *testing.T) {
 	p, err := NewMarkdownParser(GoMarkdown)
@@ -302,9 +328,7 @@ func TestMarkdownParser_TableDataURIWithLeadingSpace(t *testing.T) {
 }
 
 func TestMarkdownParser_ResolvedRemoteImageKeepsAltOnly(t *testing.T) {
-	previous := ssrfAllowLoopback
-	ssrfAllowLoopback = true
-	t.Cleanup(func() { ssrfAllowLoopback = previous })
+	allowLoopbackImages(t)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
@@ -578,10 +602,8 @@ func TestResolveImageURL_LocalPathNotFetched(t *testing.T) {
 func TestResolveImageURL_HTTPImage(t *testing.T) {
 	// httptest servers bind loopback, which the SSRF guard rejects by
 	// default. Allow loopback for this test so the HTTP fetch path is
-	// exercised (production keeps ssrfAllowLoopback == false).
-	prev := ssrfAllowLoopback
-	ssrfAllowLoopback = true
-	defer func() { ssrfAllowLoopback = prev }()
+	// exercised (production keeps the loopback rejection).
+	allowLoopbackImages(t)
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("Content-Type", "image/png")
@@ -606,9 +628,7 @@ func TestResolveImageURL_HTTPImage(t *testing.T) {
 }
 
 func TestMarkdownImageBudgetSkipsFetchAfterCountLimit(t *testing.T) {
-	previous := ssrfAllowLoopback
-	ssrfAllowLoopback = true
-	t.Cleanup(func() { ssrfAllowLoopback = previous })
+	allowLoopbackImages(t)
 
 	var fetches atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

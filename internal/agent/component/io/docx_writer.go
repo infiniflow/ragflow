@@ -26,7 +26,7 @@
 //   - //go:embed     — the static XML parts (Content_Types, _rels, styles)
 //
 // The output is a Word-compatible .docx. The XML is intentionally
-// minimal: a single font, a single style, paragraphs, and native tables.
+// minimal: a single font, heading styles, paragraphs, and native tables.
 package io
 
 import (
@@ -54,6 +54,7 @@ var relsXML []byte
 //go:embed templates/document_rels.xml.tmpl
 //go:embed templates/styles.xml.tmpl
 //go:embed templates/document.xml.tmpl
+//go:embed templates/numbering.xml.tmpl
 //go:embed templates/header.xml.tmpl
 //go:embed templates/footer.xml.tmpl
 var tmplFS embed.FS
@@ -74,6 +75,7 @@ type DOCXOptions struct {
 // DOCXOptions and Document flatten into this when the writer is
 // invoked.
 type docModel struct {
+	Lists          []*docxList
 	Blocks         []docxBlock
 	HeaderText     string
 	FooterText     string
@@ -89,8 +91,18 @@ type docModel struct {
 }
 
 type docxBlock struct {
-	Text string
-	Rows [][]string
+	Text         string
+	Rows         [][]string
+	HeadingLevel int
+	List         *docxList
+	Indent       int
+}
+
+type docxList struct {
+	ID      int
+	Ordered bool
+	Start   int
+	Indent  int
 }
 
 // tmplFuncs registers the {{xml}} helper used to escape user content
@@ -138,7 +150,14 @@ func WriteDOCX(content string, opts DOCXOptions) ([]byte, error) {
 		Timestamp:      nowUTC(),
 	}
 
-	// Pre-parse all 5 templates once; FuncMaps are shared.
+	for _, block := range model.Blocks {
+		if block.List != nil && block.List.ID == 0 {
+			block.List.ID = len(model.Lists) + 1
+			model.Lists = append(model.Lists, block.List)
+		}
+	}
+
+	// Pre-parse templates once; FuncMaps are shared.
 	docTmpl, err := template.New("document.xml.tmpl").Funcs(tmplFuncs).ParseFS(tmplFS, "templates/document.xml.tmpl")
 	if err != nil {
 		return nil, fmt.Errorf("DOCX: parse document template: %w", err)
@@ -160,6 +179,11 @@ func WriteDOCX(content string, opts DOCXOptions) ([]byte, error) {
 		return nil, fmt.Errorf("DOCX: parse document_rels template: %w", err)
 	}
 
+	numberingTmpl, err := template.New("numbering.xml.tmpl").ParseFS(tmplFS, "templates/numbering.xml.tmpl")
+	if err != nil {
+		return nil, fmt.Errorf("DOCX: parse numbering template: %w", err)
+	}
+
 	buf := &bytes.Buffer{}
 	zw := zip.NewWriter(buf)
 
@@ -174,6 +198,9 @@ func WriteDOCX(content string, opts DOCXOptions) ([]byte, error) {
 
 	// word/document.xml.rels — relationships for header / footer / styles.
 	if err := writeZipTmpl(zw, "word/_rels/document.xml.rels", docRelsTmpl, model); err != nil {
+		return nil, err
+	}
+	if err := writeZipTmpl(zw, "word/numbering.xml", numberingTmpl, model); err != nil {
 		return nil, err
 	}
 	// word/styles.xml
@@ -207,9 +234,41 @@ func markdownDOCXBlocks(content string) []docxBlock {
 	content = normalizeMarkdownTableSeparators(content)
 	source := []byte(content)
 	document := goldmark.New(goldmark.WithExtensions(extension.Table)).Parser().Parse(gmtext.NewReader(source))
-	blocks := make([]docxBlock, 0, document.ChildCount())
-	for node := document.FirstChild(); node != nil; node = node.NextSibling() {
+	blocks := docxChildBlocks(document, source)
+	if len(blocks) == 0 {
+		return []docxBlock{{}}
+	}
+	return blocks
+}
+
+func docxChildBlocks(parent ast.Node, source []byte) []docxBlock {
+	var blocks []docxBlock
+	for node := parent.FirstChild(); node != nil; node = node.NextSibling() {
 		switch n := node.(type) {
+		case *ast.Heading:
+			blocks = append(blocks, docxBlock{Text: inlinePDFText(n, source), HeadingLevel: n.Level})
+		case *ast.List:
+			depth := 1
+			for ancestor := n.Parent(); ancestor != nil; ancestor = ancestor.Parent() {
+				if _, ok := ancestor.(*ast.List); ok {
+					depth++
+				}
+			}
+			list := &docxList{Ordered: n.IsOrdered(), Start: max(1, n.Start), Indent: depth * 720}
+			for item := n.FirstChild(); item != nil; item = item.NextSibling() {
+				children := docxChildBlocks(item, source)
+				for i := range children {
+					if children[i].Indent == 0 && children[i].Rows == nil {
+						children[i].Indent = list.Indent
+						if i == 0 {
+							children[i].List = list
+						}
+					}
+				}
+				blocks = append(blocks, children...)
+			}
+		case *ast.ListItem, *ast.Blockquote:
+			blocks = append(blocks, docxChildBlocks(n, source)...)
 		case *ast.FencedCodeBlock:
 			text := rawPDFBlockText(n, source)
 			if strings.EqualFold(string(n.Language(source)), "markdown") || strings.EqualFold(string(n.Language(source)), "md") {
@@ -232,13 +291,10 @@ func markdownDOCXBlocks(content string) []docxBlock {
 			}
 			blocks = append(blocks, docxBlock{Rows: rows})
 		default:
-			if text := rawPDFBlockText(n, source); text != "" || node == document.FirstChild() {
+			if text := rawPDFBlockText(n, source); text != "" || node == parent.FirstChild() {
 				blocks = append(blocks, docxBlock{Text: text})
 			}
 		}
-	}
-	if len(blocks) == 0 {
-		return []docxBlock{{}}
 	}
 	return blocks
 }

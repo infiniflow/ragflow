@@ -63,6 +63,10 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to modify column types: %w", err)
 	}
 
+	if err := migrateNameColumnWidths(ctx, db); err != nil {
+		return fmt.Errorf("failed to widen name columns: %w", err)
+	}
+
 	// Add case-insensitive unique constraint on knowledgebase (tenant_id, name)
 	if err := migrateKnowledgebaseNameUnique(ctx, db); err != nil {
 		return fmt.Errorf("failed to add unique index on knowledgebase (tenant_id, name): %w", err)
@@ -113,6 +117,59 @@ func dropModelGroupTables(ctx context.Context, db *gorm.DB) error {
 			return fmt.Errorf("drop %s: %w", table, err)
 		}
 		common.Info("Dropped unused table", zap.String("table", table))
+	}
+	return nil
+}
+
+// migrateNameColumnWidths widens name columns whose values are copied from a
+// wider source. It is idempotent: it reads the current width and only issues
+// DDL when the column is narrower than the target.
+//
+// On MySQL, widening pipeline_title from varchar(32) to varchar(255) changes
+// the VARCHAR length prefix for utf8mb4 and can rebuild the table. Run it
+// through the standalone --migrate action during a maintenance window.
+func migrateNameColumnWidths(ctx context.Context, db *gorm.DB) error {
+	specs := []struct {
+		model  any
+		field  string
+		table  string
+		column string
+		width  int64
+	}{
+		{&entity.PipelineOperationLog{}, "PipelineTitle", "pipeline_operation_log", "pipeline_title", common.PipelineTitleLimit},
+		{&entity.Tenant{}, "Name", "tenant", "name", common.TenantNameLimit},
+	}
+
+	migrator := db.WithContext(ctx).Migrator()
+	for _, spec := range specs {
+		if !migrator.HasTable(spec.model) {
+			continue
+		}
+		types, err := migrator.ColumnTypes(spec.model)
+		if err != nil {
+			return fmt.Errorf("read %s columns: %w", spec.table, err)
+		}
+		for _, ct := range types {
+			if ct.Name() != spec.column {
+				continue
+			}
+			length, ok := ct.Length()
+			if !ok {
+				// Dialects that cannot report a width are left to AutoMigrate.
+				break
+			}
+			if length >= spec.width {
+				break
+			}
+			if err := migrator.AlterColumn(spec.model, spec.field); err != nil {
+				return fmt.Errorf("widen %s.%s to %d: %w", spec.table, spec.column, spec.width, err)
+			}
+			common.Info("Widened name column",
+				zap.String("table", spec.table),
+				zap.String("column", spec.column),
+				zap.Int64("width", spec.width))
+			break
+		}
 	}
 	return nil
 }
@@ -433,10 +490,9 @@ func migrateIngestionTaskPipelineLogID(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
-// migrateIngestionLogRunIdentity adds the columns and indexes that make each
-// ingestion event belong to one immutable pipeline-operation-log run. It is
-// deliberately explicit: the runtime startup path auto-migrates ingestion
-// tables and cannot be trusted to converge an existing schema safely.
+// migrateIngestionLogRunIdentity adds the run identity and pipeline version
+// columns. It is explicit because runtime AutoMigrate cannot be trusted to
+// converge an existing schema safely.
 func migrateIngestionLogRunIdentity(ctx context.Context, db *gorm.DB) error {
 	migrator := db.WithContext(ctx).Migrator()
 	if migrator.HasTable(&entity.PipelineOperationLog{}) {
@@ -449,6 +505,13 @@ func migrateIngestionLogRunIdentity(ctx context.Context, db *gorm.DB) error {
 		}
 		if err := createIngestionLogIndexIfMissing(migrator, &entity.PipelineOperationLog{}, "idx_pipeline_operation_log_document_run", "add pipeline_operation_log document/run index"); err != nil {
 			return err
+		}
+		if !migrator.HasColumn(&entity.PipelineOperationLog{}, "pipeline_version_id") {
+			if err := db.WithContext(ctx).Exec(
+				"ALTER TABLE pipeline_operation_log ADD COLUMN pipeline_version_id varchar(32) NULL",
+			).Error; err != nil && !isDuplicateColumnError(err) {
+				return fmt.Errorf("add pipeline_operation_log.pipeline_version_id: %w", err)
+			}
 		}
 	}
 
@@ -489,12 +552,17 @@ func createIngestionLogIndexIfMissing(migrator ingestionLogSchemaMigrator, model
 	return nil
 }
 
+// isDuplicateColumnError reports whether err means the column is already
+// there: MySQL's Error 1060 on the MySQL wire, or the duplicate-object
+// SQLSTATEs on the Vastbase connection. A bare "already exists" text match is
+// deliberately absent — unrelated failures phrase themselves that way too.
 func isDuplicateColumnError(err error) bool {
 	if err == nil {
 		return false
 	}
 	text := err.Error()
-	return strings.Contains(text, "Error 1060") && strings.Contains(text, "Duplicate column name")
+	return (strings.Contains(text, "Error 1060") && strings.Contains(text, "Duplicate column name")) ||
+		isPostgresDuplicateObjectErr(err)
 }
 
 // migrateKnowledgebaseNameUnique adds a case-insensitive unique constraint on
@@ -614,14 +682,13 @@ func migrateUserCanvasTitleUnique(ctx context.Context, db *gorm.DB) error {
 }
 
 // knowledgebaseParserConfigTargetVersion is the database version a completed
-// knowledgebase parser config cleanup brings the database to. It is stored in
-// system_settings under mysql_migration.database.version, the marker shared with
-// the other versioned steps, so work already performed by a previous run is
-// skipped.
-const knowledgebaseParserConfigTargetVersion = "v1.0.0-rc2"
+// ingestion/parser config migration brings the database to. It is stored in
+// the shared system_settings migration marker and precedes the tenant-model
+// max_tokens backfill.
+const knowledgebaseParserConfigTargetVersion = "v1.0.0-rc2.dev1"
 
 // removedParserConfigKeys are the top level knowledgebase parser config keys the
-// v1.0.0-rc2 step deletes. raptor and graphrag moved out of the dataset
+// cleanup deletes. raptor and graphrag moved out of the dataset
 // parser config, so the stored sections are dead data.
 var removedParserConfigKeys = []string{"raptor", "graphrag"}
 
@@ -732,6 +799,18 @@ func dropRemovedParserConfigKeys(config map[string]interface{}) bool {
 // entities, so AutoMigrate converges on the same definition and the two paths
 // cannot fight over the column.
 func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
+	// The specs carry MySQL type names (int, longtext, datetime) compared
+	// against COLUMN_TYPE to keep the shared schema aligned with the Python
+	// models. On Vastbase the columns are created by AutoMigrate's postgres
+	// mapping, whose reported type names (integer, bigint, timestamp) never
+	// compare equal to the specs, so every startup would re-issue the MODIFY
+	// and AutoMigrate would flip the column back — an ALTER loop measured on
+	// a live instance (spec int NOT NULL vs stored bigint YES). The columns
+	// are already correct there; there is nothing to align.
+	if isVastbaseMetaDB(db) {
+		return nil
+	}
+
 	specs := []columnSpec{
 		// dialog.top_k mirrors Python's IntegerField(default=1024).
 		{

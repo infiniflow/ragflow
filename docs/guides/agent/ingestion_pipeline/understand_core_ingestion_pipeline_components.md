@@ -37,4 +37,6 @@ The connection menu depends on the selected node and the components already on t
 2. In the Compiler panel, select a template group under **Operator**. To create a group from this panel, click **Create template** beside the field and complete the dialog. You can also manage groups on the **Compilation operator** tab. Select the execution model under **Model** and review its model settings. The selected group determines the compilation tasks, such as a knowledge tree or wiki.
 3. Connect **Compiler → Indexer** to index the original and generated chunks. Click **Save draft**, publish a version, and [validate the pipeline](./test_run.md) with a sample document.
 
+![Compiler Operator selection, Create template, and model settings](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pipeline_compiler_operator_model.jpg)
+
 Example: **Begin → Parser → Token Chunker → Compiler → Indexer**. After parsing, check the generated content and retrieval results. If the template group or model is unavailable after import, select an accessible one.

@@ -143,9 +143,7 @@ func TestMigratedIngestionConfigReachesRuntime(t *testing.T) {
 // process-wide SSRF bypass, so this test and its subtests must not run in parallel.
 func TestMigratedMinerUControlsReachRequest(t *testing.T) {
 	t.Setenv(common.EnvMineruBackend, "pipeline")
-	previous := common.AllowAnyHostForTest
-	common.AllowAnyHostForTest = true
-	t.Cleanup(func() { common.AllowAnyHostForTest = previous })
+	t.Setenv(common.EnvAllowAnyHost, "true")
 
 	var response bytes.Buffer
 	archive := zip.NewWriter(&response)
@@ -200,7 +198,7 @@ func TestMigratedMinerUControlsReachRequest(t *testing.T) {
 				}))
 				t.Cleanup(server.Close)
 				db := openIngestionRuntimeDB(t)
-				if err := db.AutoMigrate(&entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+				if err := db.AutoMigrate(&entity.UserTenant{}, &entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
 					t.Fatal(err)
 				}
 				extra, err := json.Marshal(map[string]string{"base_url": server.URL})
@@ -208,7 +206,7 @@ func TestMigratedMinerUControlsReachRequest(t *testing.T) {
 					t.Fatal(err)
 				}
 				for _, row := range []any{
-					&entity.TenantModelProvider{ID: "provider-mineru", TenantID: "tenant", ProviderName: "MinerU"},
+					&entity.TenantModelProvider{ID: "provider-mineru", UserID: "tenant", TenantID: "tenant", ProviderName: "MinerU"},
 					&entity.TenantModelInstance{ID: "instance-mineru", ProviderID: "provider-mineru", InstanceName: "default", APIKey: "synthetic-mineru-key", Status: "active", Extra: string(extra)},
 					&entity.TenantModel{ID: "model-mineru", ProviderID: "provider-mineru", InstanceID: "instance-mineru", ModelName: "MinerU-model", ModelType: int(entity.ModelTypeOCR), Status: "active"},
 				} {
@@ -715,7 +713,7 @@ func openIngestionRuntimeDB(t *testing.T) *gorm.DB {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.SystemSettings{}); err != nil {
+	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.SystemSettings{}, &entity.UserTenant{}); err != nil {
 		t.Fatal(err)
 	}
 	return db

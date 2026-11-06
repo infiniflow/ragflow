@@ -25,7 +25,7 @@ func setupChatChannelServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err = db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.User{}, &entity.UserTenant{}); err != nil {
+	if err = db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.UserCanvas{}, &entity.User{}, &entity.UserTenant{}); err != nil {
 		t.Fatalf("failed to migrate test schema: %v", err)
 	}
 
@@ -95,11 +95,10 @@ func TestChatChannelServiceCreateAndList(t *testing.T) {
 	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
 	channel, err := svc.CreateChatChannel(
 		ctx,
-		"tenant-1",
 		"bot-a",
 		"dingtalk",
 		entity.JSONMap{"token": "abc"},
-		&chatID,
+		&chatID, nil,
 	)
 	if err != nil {
 		t.Fatalf("CreateChatChannel failed: %v", err)
@@ -111,7 +110,7 @@ func TestChatChannelServiceCreateAndList(t *testing.T) {
 		t.Fatalf("unexpected created channel: %+v", channel)
 	}
 
-	list, err := svc.List(ctx, "tenant-1")
+	list, err := svc.List(ctx)
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
@@ -137,7 +136,7 @@ func TestChatChannelServiceGetChatChannelAllowsJoinedTenant(t *testing.T) {
 
 	ctx := serviceTestContext(t, "user-2", "tenant-1")
 	grantServiceTestResource(t, "tenant-1", "dialog", "cc-1", "user-2", testResourcePermissionRead)
-	channel, code, err := NewChatChannelService().GetChatChannel(ctx, "user-2", "cc-1")
+	channel, code, err := NewChatChannelService().GetChatChannel(ctx, "cc-1")
 	if err != nil {
 		t.Fatalf("GetChatChannel failed: %v", err)
 	}
@@ -161,7 +160,7 @@ func TestChatChannelServiceListUsesPermissionScope(t *testing.T) {
 
 	ctx := serviceTestContext(t, "user-2", "tenant-1")
 	grantServiceTestResource(t, "tenant-1", "dialog", "channel-team", "user-2", testResourcePermissionRead)
-	channels, err := NewChatChannelService().List(ctx, "user-2")
+	channels, err := NewChatChannelService().List(ctx)
 	if err != nil {
 		t.Fatalf("List() failed: %v", err)
 	}
@@ -186,7 +185,7 @@ func TestChatChannelServiceUpdateChatChannelSuccess(t *testing.T) {
 	})
 
 	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
-	updated, code, err := NewChatChannelService().UpdateChatChannel(ctx, "tenant-1", "cc-1", map[string]interface{}{
+	updated, code, err := NewChatChannelService().UpdateChatChannel(ctx, "cc-1", map[string]interface{}{
 		"name":    "bot-b",
 		"config":  map[string]interface{}{"token": "new"},
 		"chat_id": "dialog-2",
@@ -208,6 +207,45 @@ func TestChatChannelServiceUpdateChatChannelSuccess(t *testing.T) {
 	}
 }
 
+func TestChatChannelServiceCreateRejectsOverlongName(t *testing.T) {
+	setupChatChannelServiceTestDB(t)
+	_, err := NewChatChannelService().CreateChatChannel(
+		serviceTestContext(t, "tenant-1", "tenant-1"),
+		strings.Repeat("a", common.NameLimit128+1),
+		"dingtalk",
+		entity.JSONMap{},
+		nil,
+		nil,
+	)
+	if err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("CreateChatChannel overlong name error = %v, want length error", err)
+	}
+}
+
+func TestChatChannelServiceUpdateRejectsOverlongName(t *testing.T) {
+	db := setupChatChannelServiceTestDB(t)
+	createServiceTestChannel(t, db, &entity.ChatChannel{
+		ID:       "cc-overlong",
+		TenantID: "tenant-1",
+		Name:     "bot-a",
+		Channel:  "wecom",
+		Config:   entity.JSONMap{},
+		Status:   1,
+	})
+
+	_, code, err := NewChatChannelService().UpdateChatChannel(
+		serviceTestContext(t, "tenant-1", "tenant-1"),
+		"cc-overlong",
+		map[string]interface{}{"name": strings.Repeat("a", common.NameLimit128+1)},
+	)
+	if err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("UpdateChatChannel overlong name error = %v, want length error", err)
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("UpdateChatChannel code = %v, want CodeDataError", code)
+	}
+}
+
 func TestChatChannelServiceUpdateChatChannelRejectsCrossTenantDialog(t *testing.T) {
 	db := setupChatChannelServiceTestDB(t)
 	createServiceTestDialog(t, db, "dialog-2", "tenant-2", "Assistant B")
@@ -221,7 +259,7 @@ func TestChatChannelServiceUpdateChatChannelRejectsCrossTenantDialog(t *testing.
 	})
 
 	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
-	_, code, err := NewChatChannelService().UpdateChatChannel(ctx, "tenant-1", "cc-1", map[string]interface{}{
+	_, code, err := NewChatChannelService().UpdateChatChannel(ctx, "cc-1", map[string]interface{}{
 		"chat_id": "dialog-2",
 	})
 	if code != common.CodeNotFound {
@@ -246,7 +284,7 @@ func TestChatChannelServiceUpdateChatChannelRequiresChannelOwnerAccess(t *testin
 	createServiceTestMembership(t, db, "user-1", "tenant-1")
 	createServiceTestMembership(t, db, "user-1", "tenant-2")
 
-	_, code, err := NewChatChannelService().UpdateChatChannel(serviceTestContext(t, "user-1", "tenant-1", "tenant-1"), "user-1", "cc-1", map[string]interface{}{
+	_, code, err := NewChatChannelService().UpdateChatChannel(serviceTestContext(t, "user-1", "tenant-1", "tenant-1"), "cc-1", map[string]interface{}{
 		"chat_id": "dialog-2",
 	})
 	if code != common.CodeNotFound || !errors.Is(err, permission.ErrPermissionDenied) {
@@ -271,8 +309,8 @@ func TestChatChannelServiceDeleteChatChannel(t *testing.T) {
 
 	svc := NewChatChannelService()
 
-	ctx := permission.WithSubject(t.Context(), permission.Subject{UserID: "user-2", TenantID: "tenant-2"})
-	deleted, code, err := svc.DeleteChatChannel(ctx, "user-2", "cc-1")
+	ctx := permission.WithIdentity(t.Context(), "user-2", "tenant-2")
+	deleted, code, err := svc.DeleteChatChannel(ctx, "cc-1")
 	if code != common.CodeNotFound || err == nil {
 		t.Fatalf("expected hidden resource-not-found response, got code=%v err=%v", code, err)
 	}
@@ -283,7 +321,7 @@ func TestChatChannelServiceDeleteChatChannel(t *testing.T) {
 		t.Fatal("expected delete to be rejected")
 	}
 
-	deleted, code, err = svc.DeleteChatChannel(serviceTestContext(t, "tenant-1", "tenant-1"), "tenant-1", "cc-1")
+	deleted, code, err = svc.DeleteChatChannel(serviceTestContext(t, "tenant-1", "tenant-1"), "cc-1")
 	if err != nil {
 		t.Fatalf("DeleteChatChannel failed: %v", err)
 	}
@@ -482,4 +520,123 @@ func TestGetOrCreateForChannelFallbackNames(t *testing.T) {
 			t.Fatalf("unexpected session name: %v", session.Name)
 		}
 	})
+}
+
+func TestConsumeChannelStreamAccumulatesDeltas(t *testing.T) {
+	frames := make(chan string, 8)
+	frames <- `data:{"code": 0, "message": "success", "data": {"answer": "Hel"}}` + "\n\n"
+	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "lo", "start_to_think": false}}` + "\n\n"
+	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "Hello", "final": true}}` + "\n\n"
+	frames <- "data:" + `{"code": 0, "message": "success", "data": true}` + "\n\n"
+	close(frames)
+
+	var seen []string
+	got := consumeChannelStream(frames, func(text string) { seen = append(seen, text) })
+
+	if got.err != nil {
+		t.Fatalf("consumeChannelStream error = %v", got.err)
+	}
+	if got.answer != "Hello" {
+		t.Fatalf("answer = %q, want Hello", got.answer)
+	}
+	if len(seen) == 0 || seen[len(seen)-1] != "Hello" {
+		t.Fatalf("last delta = %v, want the complete answer", seen)
+	}
+}
+
+func TestConsumeChannelStreamReportsErrorFrames(t *testing.T) {
+	frames := make(chan string, 2)
+	frames <- "data:" + `{"code": 500, "message": "model configuration unavailable", "data": {"answer": "**ERROR**: model configuration unavailable"}}` + "\n\n"
+	close(frames)
+
+	got := consumeChannelStream(frames, func(string) {})
+	if got.err == nil || !strings.Contains(got.err.Error(), "model configuration unavailable") {
+		t.Fatalf("consumeChannelStream error = %v, want the frame message", got.err)
+	}
+}
+
+func TestConsumeChannelStreamDropsThinking(t *testing.T) {
+	frames := make(chan string, 6)
+	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "<think>", "start_to_think": true}}` + "\n\n"
+	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "secret reasoning"}}` + "\n\n"
+	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "</think>Hello", "end_to_think": true}}` + "\n\n"
+	close(frames)
+
+	var seen []string
+	got := consumeChannelStream(frames, func(text string) { seen = append(seen, text) })
+
+	if got.err != nil {
+		t.Fatalf("consumeChannelStream error = %v", got.err)
+	}
+	if got.answer != "Hello" {
+		t.Fatalf("answer = %q, want Hello", got.answer)
+	}
+	if len(seen) != 1 || seen[0] != "Hello" {
+		t.Fatalf("deltas = %v, want only the visible answer", seen)
+	}
+}
+
+func TestStripChannelThink(t *testing.T) {
+	inThink := false
+	if got := stripChannelThink("<think>", &inThink); got != "" || !inThink {
+		t.Fatalf("opening marker = %q inThink=%t, want an empty drop", got, inThink)
+	}
+	if got := stripChannelThink("still thinking", &inThink); got != "" || !inThink {
+		t.Fatalf("reasoning text = %q, want it dropped", got)
+	}
+	if got := stripChannelThink("</think>Answer", &inThink); got != "Answer" || inThink {
+		t.Fatalf("closing marker = %q inThink=%t, want the trailing answer", got, inThink)
+	}
+	if got := stripChannelThink("plain", &inThink); got != "plain" {
+		t.Fatalf("plain text = %q, want plain", got)
+	}
+}
+
+func TestConsumeChannelStreamStripsThinkFromFinal(t *testing.T) {
+	frames := make(chan string, 6)
+	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "<think>", "start_to_think": true}}` + "\n\n"
+	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "secret reasoning"}}` + "\n\n"
+	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "</think>Hello", "end_to_think": true}}` + "\n\n"
+	// The agentic pipeline ships its authoritative answer with the thinking segment
+	// wrapped in <think> tags, so the final frame must not reach the channel as is.
+	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "<think>secret reasoning</think>\n\nHello there", "final": true}}` + "\n\n"
+	close(frames)
+
+	var seen []string
+	got := consumeChannelStream(frames, func(text string) { seen = append(seen, text) })
+
+	if got.err != nil {
+		t.Fatalf("consumeChannelStream error = %v", got.err)
+	}
+	if got.answer != "Hello there" {
+		t.Fatalf("answer = %q, want the visible final answer", got.answer)
+	}
+	if len(seen) == 0 || seen[len(seen)-1] != "Hello there" {
+		t.Fatalf("deltas = %v, want the visible final answer last", seen)
+	}
+	for _, text := range seen {
+		if strings.Contains(text, "think") || strings.Contains(text, "secret reasoning") {
+			t.Fatalf("deltas = %v, want the reasoning dropped", seen)
+		}
+	}
+}
+
+func TestConsumeChannelStreamAdoptsRewrittenFinal(t *testing.T) {
+	frames := make(chan string, 4)
+	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "Hello"}}` + "\n\n"
+	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "Different answer", "final": true}}` + "\n\n"
+	close(frames)
+
+	var seen []string
+	got := consumeChannelStream(frames, func(text string) { seen = append(seen, text) })
+
+	if got.err != nil {
+		t.Fatalf("consumeChannelStream error = %v", got.err)
+	}
+	if got.answer != "Different answer" {
+		t.Fatalf("answer = %q, want the authoritative final text", got.answer)
+	}
+	if len(seen) != 2 || seen[0] != "Hello" || seen[1] != "Different answer" {
+		t.Fatalf("deltas = %v, want the delta and then the final text", seen)
+	}
 }

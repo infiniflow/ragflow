@@ -44,8 +44,6 @@ import (
 	"ragflow/internal/parser/tableutil"
 )
 
-const ComponentNameGeneralChunker = "GeneralChunker"
-
 var contextSentencePattern = regexp.MustCompile(`([。!?？；！\n]|\. )`)
 
 type generalChunkerParam struct {
@@ -233,11 +231,19 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 
 	primaryPattern := compileDelimPattern(c.param.Delimiters)
 	childrenPattern := compileDelimPattern(c.param.ChildrenDelimiters)
+	var unitSources [][]pdfSourceSpan
+	if childrenPattern != nil {
+		unitSources = pdfUnitSources(units)
+	}
 	customDelimiter := hasCustomDelim(c.param.Delimiters)
 	if customDelimiter {
-		units = splitGeneralUnits(units, primaryPattern, false)
+		units, unitSources = splitPDFUnits(units, unitSources, primaryPattern, false)
 	}
-	units = sortPDFUnits(units)
+	if unitSources != nil {
+		units, unitSources = sortPDFUnitsWithSources(units, unitSources)
+	} else {
+		units = sortPDFUnits(units)
+	}
 	if hasPDFPositions(units) && hasUnpositionedPDFMedia(units) {
 		common.Warn("GeneralChunker: PDF media is missing position metadata; using degraded context/order fallback")
 	}
@@ -245,32 +251,49 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 
 	chunks := make([]schema.ChunkDoc, 0, len(units))
 	body := make([]schema.ChunkDoc, 0, len(units))
+	var chunkSources, bodySources [][]pdfSourceSpan
 	flushBody := func() {
 		if len(body) == 0 {
 			return
 		}
 		joinSep := "\n"
 		if !customDelimiter {
+			body, bodySources = joinPDFContinuations(body, bodySources)
 			body = separateGeneralTextBlocks(body)
-			body = splitGeneralUnits(body, primaryPattern, true)
+			body, bodySources = splitPDFUnits(body, bodySources, primaryPattern, true)
 			joinSep = ""
 		}
-		chunks = append(chunks, mergeGeneralUnits(body, c.param.ChunkTokenSize, c.param.OverlappedPercent, joinSep)...)
+		merged, mergedSources := mergeGeneralUnitsWithSources(body, bodySources, c.param.ChunkTokenSize, c.param.OverlappedPercent, joinSep)
+		chunks = append(chunks, merged...)
+		chunkSources = append(chunkSources, mergedSources...)
 		body = body[:0]
+		bodySources = nil
 	}
-	for _, unit := range units {
+	for index, unit := range units {
 		if itemDocType(unit) == "text" {
 			body = append(body, unit)
+			if unitSources != nil {
+				bodySources = append(bodySources, unitSources[index])
+			}
 		} else {
 			flushBody()
 			media := cloneChunkDoc(unit)
 			media.Text = normalizeGeneralNewlines(media.Text)
 			media.DocType = itemDocType(media)
 			chunks = append(chunks, media)
+			if unitSources != nil {
+				chunkSources = append(chunkSources, nil)
+			}
 		}
 	}
 	flushBody()
 
+	for i := range chunks {
+		if itemDocType(chunks[i]) == "text" {
+			chunks[i].Text = removeTag(chunks[i].Text)
+		}
+	}
+	chunks = splitGeneralChildrenWithSources(chunks, chunkSources, childrenPattern)
 	engine, err := newPDFEngineFromUpstream(ctx, db, upstream)
 	if err != nil {
 		common.Warn("GeneralChunker: could not open PDF for on-demand cropping", zap.Error(err))
@@ -279,7 +302,7 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 		defer engine.Close()
 		chunks = cropImageChunks(ctx, engine, chunks)
 	}
-	chunks = finalizeGeneralChunks(chunks, childrenPattern)
+	chunks = finalizeGeneralChunks(chunks, nil)
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("GeneralChunker: %w", err)
 	}
@@ -294,15 +317,25 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 // order. Units with explicit parser order or without coordinates are barriers:
 // they stay at their parser positions and preserve their relative order.
 func sortPDFUnits(units []schema.ChunkDoc) []schema.ChunkDoc {
+	ordered, _ := sortPDFUnitsWithSources(units, nil)
+	return ordered
+}
+
+func sortPDFUnitsWithSources(units []schema.ChunkDoc, sources [][]pdfSourceSpan) ([]schema.ChunkDoc, [][]pdfSourceSpan) {
 	type positionedUnit struct {
 		unit       schema.ChunkDoc
 		row        []float64
 		positioned bool
+		sources    []pdfSourceSpan
 	}
 	ordered := make([]positionedUnit, 0, len(units))
-	for _, unit := range units {
+	for index, unit := range units {
 		row, ok := firstPositionRow(lineRecord{pdfPositions: unit.PDFPositions, positions: unit.Positions})
-		ordered = append(ordered, positionedUnit{unit: cloneChunkDoc(unit), row: row, positioned: ok && !unit.PreserveOrder})
+		item := positionedUnit{unit: cloneChunkDoc(unit), row: row, positioned: ok && !unit.PreserveOrder}
+		if sources != nil {
+			item.sources = sources[index]
+		}
+		ordered = append(ordered, item)
 	}
 	runStart := -1
 	flush := func(end int) {
@@ -325,10 +358,14 @@ func sortPDFUnits(units []schema.ChunkDoc) []schema.ChunkDoc {
 		flush(i)
 	}
 	result := make([]schema.ChunkDoc, 0, len(ordered))
+	var orderedSources [][]pdfSourceSpan
 	for _, item := range ordered {
 		result = append(result, item.unit)
+		if sources != nil {
+			orderedSources = append(orderedSources, item.sources)
+		}
 	}
-	return result
+	return result, orderedSources
 }
 
 func hasPDFPositions(units []schema.ChunkDoc) bool {
@@ -1175,14 +1212,24 @@ func (c *GeneralChunkerComponent) chunkGeneral(ctx context.Context, upstream sch
 // appended while the current chunk is at or below the overlap-scaled target;
 // the append itself may cross the target. Oversized units remain indivisible.
 func mergeGeneralUnits(units []schema.ChunkDoc, target int, overlapPct float64, joinSep string) []schema.ChunkDoc {
+	merged, _ := mergeGeneralUnitsWithSources(units, nil, target, overlapPct, joinSep)
+	return merged
+}
+
+func mergeGeneralUnitsWithSources(units []schema.ChunkDoc, sources [][]pdfSourceSpan, target int, overlapPct float64, joinSep string) ([]schema.ChunkDoc, [][]pdfSourceSpan) {
 	overlapPct = max(0, min(100, overlapPct))
 	threshold := float64(target) * (100 - overlapPct) / 100
 	merged := make([]schema.ChunkDoc, 0, len(units))
+	var mergedSources [][]pdfSourceSpan
+	tracked := sources != nil
 	current := -1
 
-	for _, unit := range units {
+	for index, unit := range units {
 		if itemDocType(unit) != "text" {
 			merged = append(merged, cloneChunkDoc(unit))
+			if tracked {
+				mergedSources = append(mergedSources, sources[index])
+			}
 			current = -1
 			continue
 		}
@@ -1196,19 +1243,40 @@ func mergeGeneralUnits(units []schema.ChunkDoc, target int, overlapPct float64, 
 		unit.TKNums = intPtr(count)
 		if count > target {
 			merged = append(merged, cloneChunkDoc(unit))
+			if tracked {
+				mergedSources = append(mergedSources, sources[index])
+			}
 			current = -1
 			continue
 		}
 		if current < 0 || float64(intValue(merged[current].TKNums)) > threshold {
 			merged = append(merged, cloneChunkDoc(unit))
+			if tracked {
+				mergedSources = append(mergedSources, sources[index])
+			}
 			current = len(merged) - 1
 			continue
 		}
 
+		if tracked {
+			if mergedSources[current] == nil || sources[index] == nil {
+				mergedSources[current] = nil
+			} else {
+				offset := len(removeTag(merged[current].Text))
+				if merged[current].Text != "" && unit.Text != "" {
+					offset += len(removeTag(joinSep))
+				}
+				for _, span := range sources[index] {
+					span.start += offset
+					span.end += offset
+					mergedSources[current] = append(mergedSources[current], span)
+				}
+			}
+		}
 		mergeGeneralChunk(&merged[current], unit, joinSep)
 	}
 
-	return applyGeneralOverlap(merged, overlapPct, joinSep)
+	return applyGeneralOverlapWithSources(merged, mergedSources, overlapPct, joinSep)
 }
 
 func sameSpreadsheetTable(first, second schema.ChunkDoc) bool {
@@ -1294,8 +1362,13 @@ func mergeGeneralPositions(first, second json.RawMessage) json.RawMessage {
 }
 
 func applyGeneralOverlap(chunks []schema.ChunkDoc, overlapPct float64, joinSep string) []schema.ChunkDoc {
+	result, _ := applyGeneralOverlapWithSources(chunks, nil, overlapPct, joinSep)
+	return result
+}
+
+func applyGeneralOverlapWithSources(chunks []schema.ChunkDoc, sources [][]pdfSourceSpan, overlapPct float64, joinSep string) ([]schema.ChunkDoc, [][]pdfSourceSpan) {
 	if overlapPct <= 0 {
-		return chunks
+		return chunks, sources
 	}
 	previousText := -1
 	for i := range chunks {
@@ -1307,6 +1380,24 @@ func applyGeneralOverlap(chunks []schema.ChunkDoc, overlapPct float64, joinSep s
 			prefix, _ := computeOverlapPrefix(chunks[previousText].Text, overlapPct)
 			if prefix != "" {
 				current := cloneChunkDoc(chunks[i])
+				if sources != nil {
+					previous := chunks[previousText]
+					previousVisible := removeTag(previous.Text)
+					if sources[previousText] == nil || sources[i] == nil || !strings.HasSuffix(previousVisible, prefix) {
+						sources[i] = nil
+					} else {
+						start := len(previousVisible) - len(prefix)
+						spans := slicePDFSourceSpans(sources[previousText], previousVisible, start, len(previousVisible))
+						joined := joinGeneralOverlapText(prefix, current.Text, joinSep)
+						offset := len(removeTag(joined)) - len(removeTag(current.Text))
+						for _, span := range sources[i] {
+							span.start += offset
+							span.end += offset
+							spans = append(spans, span)
+						}
+						sources[i] = spans
+					}
+				}
 				current.Text = joinGeneralOverlapText(prefix, current.Text, joinSep)
 				current.TKNums = intPtr(tokenizeStr(current.Text))
 				chunks[i] = current
@@ -1314,7 +1405,7 @@ func applyGeneralOverlap(chunks []schema.ChunkDoc, overlapPct float64, joinSep s
 		}
 		previousText = i
 	}
-	return chunks
+	return chunks, sources
 }
 
 func joinGeneralOverlapText(prefix, text, separator string) string {
@@ -1435,26 +1526,50 @@ func normalizeGeneralNewlines(text string) string {
 // (@@...##) carry no visual height and are excluded from the ratio, mirroring
 // the Token path (chunkFromItem/splitOversizedText).
 func sliceGeneralSplitPieces(unit schema.ChunkDoc, parts []string) []schema.ChunkDoc {
+	return sliceGeneralSplitPiecesWithSources(unit, parts, nil)
+}
+
+func sliceGeneralSplitPiecesWithSources(unit schema.ChunkDoc, parts []string, sources []pdfSourceSpan) []schema.ChunkDoc {
 	out := make([]schema.ChunkDoc, 0, len(parts))
 	if len(parts) == 0 {
 		return out
 	}
-	counts := make([]int, len(parts))
-	for i, part := range parts {
-		counts[i] = utf8.RuneCountInString(removeTag(part))
-	}
-	pdfSliced, posSliced := slicePositionsByCounts(unit.PDFPositions, unit.Positions, counts)
+	var pdfSliced, posSliced []json.RawMessage
+	cursor := 0
 	for i, part := range parts {
 		piece := cloneChunkDoc(unit)
 		piece.Text = part
 		piece.TKNums = intPtr(tokenizeStr(part))
-		piece.PDFPositions = pdfSliced[i]
-		piece.Positions = posSliced[i]
+		positioned := false
+		if sources != nil {
+			if offset := strings.Index(unit.Text[cursor:], part); offset >= 0 {
+				start := cursor + offset
+				cursor = start + len(part)
+				spans := slicePDFSourceSpans(sources, unit.Text, start, cursor)
+				pdfPositions, positions := pdfSourcePositions(spans)
+				if len(pdfPositions) > 0 || len(positions) > 0 {
+					piece.PDFPositions, piece.Positions = pdfPositions, positions
+					positioned = true
+				}
+			}
+		}
+		if !positioned {
+			if pdfSliced == nil {
+				counts := make([]int, len(parts))
+				for index, text := range parts {
+					counts[index] = utf8.RuneCountInString(removeTag(text))
+				}
+				pdfSliced, posSliced = slicePositionsByCounts(unit.PDFPositions, unit.Positions, counts)
+			}
+			piece.PDFPositions, piece.Positions = pdfSliced[i], posSliced[i]
+		}
 		out = append(out, piece)
 	}
 	return out
 }
 
+// finalizeGeneralChunks drops empty chunks after media context and on-demand
+// PDF cropping have run, then applies the shared child-delimiter split.
 func finalizeGeneralChunks(chunks []schema.ChunkDoc, childrenPattern *regexp.Regexp) []schema.ChunkDoc {
 	visible := make([]schema.ChunkDoc, 0, len(chunks))
 	for _, chunk := range chunks {
@@ -1462,8 +1577,10 @@ func finalizeGeneralChunks(chunks []schema.ChunkDoc, childrenPattern *regexp.Reg
 		// Keep a chunk whenever it still carries retrievable content. A
 		// streamed crop upload sets ImgID and clears Image, so an uploaded
 		// media chunk (text may be only a position tag, or empty) must be
-		// retained via its ImgID — otherwise the already-uploaded image is
-		// dropped and its MinIO object orphaned.
+		// retained via its ImgID - otherwise the already-uploaded image is
+		// dropped and its MinIO object orphaned. Position-only media without
+		// a crop result is dropped here; cropImageChunks runs immediately
+		// before this pass.
 		if strings.TrimSpace(chunk.Text) == "" && !hasMediaPayload(chunk) {
 			continue
 		}
@@ -1481,11 +1598,15 @@ func finalizeGeneralChunks(chunks []schema.ChunkDoc, childrenPattern *regexp.Reg
 // TokenChunker splitByChildren helper intentionally drops delimiters and is
 // therefore not reused here.
 func splitGeneralChildren(chunks []schema.ChunkDoc, pattern *regexp.Regexp) []schema.ChunkDoc {
+	return splitGeneralChildrenWithSources(chunks, nil, pattern)
+}
+
+func splitGeneralChildrenWithSources(chunks []schema.ChunkDoc, sources [][]pdfSourceSpan, pattern *regexp.Regexp) []schema.ChunkDoc {
 	if pattern == nil {
 		return chunks
 	}
 	result := make([]schema.ChunkDoc, 0, len(chunks))
-	for _, chunk := range chunks {
+	for index, chunk := range chunks {
 		if itemDocType(chunk) != "text" {
 			result = append(result, chunk)
 			continue
@@ -1503,7 +1624,11 @@ func splitGeneralChildren(chunks []schema.ChunkDoc, pattern *regexp.Regexp) []sc
 			result = append(result, chunk)
 			continue
 		}
-		for _, piece := range sliceGeneralSplitPieces(chunk, parts) {
+		var spans []pdfSourceSpan
+		if sources != nil {
+			spans = sources[index]
+		}
+		for _, piece := range sliceGeneralSplitPiecesWithSources(chunk, parts, spans) {
 			piece.Mom = mom
 			result = append(result, piece)
 		}

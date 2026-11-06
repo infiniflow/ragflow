@@ -23,15 +23,17 @@ The panel lists **Auto keywords**, **Auto-question**, **Tags**, **Summary**, and
 
 ## Configure Extraction Functions
 
-| Function | Settings and purpose |
-| --- | --- |
+| Function      | Settings and purpose                                                                                                                  |
+|---------------|---------------------------------------------------------------------------------------------------------------------------------------|
 | Auto keywords | Set **Number of keywords to extract** and review **System prompt**. The model extracts key terms from each chunk to assist retrieval. |
-| Auto-question | Set **Auto-question number** and review **System prompt**. The model generates questions that the chunk can answer. |
-| Tags | Set **Auto-tags** to control the number of tags and select the source under **Tag file**. The model assigns tags from that source. |
-| Summary | Review or customize **System prompt** to control how the model summarizes chunk content. |
-| Metadata | Enable metadata generation and click **Settings** to define custom fields or select built-in fields. See the steps below. |
+| Auto-question | Set **Auto-question number** and review **System prompt**. The model generates questions that the chunk can answer.                   |
+| Tags          | Set **Auto-tags** to control the number of tags and select the source under **Tag file**. The model assigns tags from that source.    |
+| Summary       | Review or customize **System prompt** to control how the model summarizes chunk content.                                              |
+| Metadata      | Enable metadata generation and click **Settings** to define custom fields or select built-in fields. See the steps below.             |
 
 Enable only the functions you need. Review the prompts for your document language, required output, and business scope before processing a large collection of files.
+
+![Transformer model, enrichment functions, and Metadata Settings](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pipeline_transformer_model_and_metadata.jpg)
 
 ## Configure Metadata
 

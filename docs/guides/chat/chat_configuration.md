@@ -33,6 +33,8 @@ Expand **Advanced settings** below **Datasets**. It contains shared options foll
 
 The groups configure how each mode works. To choose the mode for a question, use the selector beside the message box; expanding a group in the settings panel does not switch the conversation's mode.
 
+![Chat advanced settings with shared options and Naive and Agentic groups](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_advanced_settings_groups.jpg)
+
 ### Shared Options
 
 | Setting | Purpose and operation |
@@ -126,3 +128,9 @@ The mode selector is beside the message box. Before sending a question, open it 
 ![Select a Thinking mode](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/select_thinking_mode.jpg)
 
 Selecting a mode chooses the flow for the question. Configure that flow in the corresponding **Naive** or **Agentic** settings group, save the Chat, and test both modes with representative questions. See [Using Chat conversations](./using_chat_sessions.md) for the message-box controls.
+
+## Use a Shared Dataset
+
+In **Chat setting > Datasets**, select the shared Dataset, then click **Save**. Select the model for generating answers under **Chat setting > Model**.
+
+See [Team resource permissions](../team/resource_sharing/resource_sharing_and_permissions.md#member-permissions) for access to shared resources and how model use differs between Chat and Dataset parsing.

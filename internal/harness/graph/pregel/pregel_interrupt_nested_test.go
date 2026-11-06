@@ -4,12 +4,16 @@
 package pregel
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
 
+	"ragflow/internal/harness/graph/channels"
 	"ragflow/internal/harness/graph/checkpoint"
 	"ragflow/internal/harness/graph/constants"
+	"ragflow/internal/harness/graph/graph"
+	graphinterrupt "ragflow/internal/harness/graph/interrupt"
 	"ragflow/internal/harness/graph/types"
 )
 
@@ -136,6 +140,47 @@ func TestInterrupt_WithCheckpointer(t *testing.T) {
 	})
 	if cp != nil {
 		t.Log("checkpoint saved at interrupt")
+	}
+}
+
+func TestInterrupt_ResumeValueFromConfig(t *testing.T) {
+	saver := checkpoint.NewMemorySaver()
+	cfg := &types.RunnableConfig{Configurable: map[string]interface{}{
+		constants.ConfigKeyThreadID: "dynamic-interrupt-resume",
+	}}
+	sg := graph.NewStateGraph(map[string]any{"value": ""})
+	sg.AddChannel("value", channels.NewLastValue(""))
+	sg.AddNode("request_approval", func(ctx context.Context, state any) (any, error) {
+		value, err := graphinterrupt.Interrupt(ctx, "approval required")
+		if err != nil {
+			return nil, err
+		}
+		state.(map[string]any)["value"] = value
+		return state, nil
+	})
+	if err := sg.AddEdge(constants.Start, "request_approval"); err != nil {
+		t.Fatal(err)
+	}
+	if err := sg.AddEdge("request_approval", constants.End); err != nil {
+		t.Fatal(err)
+	}
+	engine := NewEngine(sg,
+		WithRecursionLimit(10),
+		WithCheckpointer(saver),
+		WithConfig(cfg),
+	)
+
+	if _, err := engine.RunSync(t.Context(), map[string]any{"value": ""}); err == nil {
+		t.Fatal("expected the first execution to interrupt")
+	}
+
+	cfg.Configurable[constants.ConfigKeyResumeMap] = map[string]interface{}{"request_approval": "approved"}
+	result, err := engine.RunSync(t.Context(), map[string]any{"value": ""})
+	if err != nil {
+		t.Fatalf("resume execution: %v", err)
+	}
+	if got := result.(map[string]any)["value"]; got != "approved" {
+		t.Fatalf("resumed value = %v, want approved", got)
 	}
 }
 

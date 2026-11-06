@@ -23,6 +23,7 @@ import (
 	"net"
 	"net/http"
 	_ "net/http/pprof"
+
 	"ragflow/internal/agent/audio"
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/retrievalbridge"
@@ -32,6 +33,7 @@ import (
 	"ragflow/internal/channels"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/handler"
+	"ragflow/internal/permission"
 	"ragflow/internal/router"
 	"ragflow/internal/server/local"
 	"ragflow/internal/service"
@@ -106,6 +108,7 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 
 	// Initialize service layer
 	userService := service.NewUserService()
+	userTenantService := service.NewUserTenantService()
 	documentService := document.NewDocumentService()
 	datasetsService := dataset.NewDatasetService()
 	metadataService := service.NewMetadataService()
@@ -120,13 +123,12 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	statsService := service.NewStatsService()
 	connectorService := service.NewConnectorService()
 	searchService := service.NewSearchService()
-	searchService.SetTenantService(tenantService)
 	fileService := file.NewFileService(documentService)
 	memoryService := service.NewMemoryService(dao.DB, engine.Get(), service.WithMemoryKvrocks(kvrocks.Get()), service.WithMemoryMQEngine(engine.GetMessageQueueEngine()))
 	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
 	modelFactory := service.NewModelFactory()
-	modelCallService := service.NewModelCallServiceWithProviderService(modelProviderService, modelFactory)
+	modelCallService := service.NewModelCallService()
 
 	// Wire the real MemorySaver so the Message component can persist
 	// conversation turns to memory stores declared in the canvas DSL.
@@ -154,21 +156,19 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 		documentDAO,
 		agenttool.RetrievalModelConstructors{
 			Embedding: func(ctx context.Context, tenantID, modelRef string) (*modelModule.EmbeddingModel, error) {
-				access := service.ModelAccess{TenantID: tenantID}
 				if strings.TrimSpace(modelRef) == "" {
-					return modelFactory.NewDefaultEmbeddingModel(ctx, access)
+					return modelFactory.NewDefaultEmbeddingModel(permission.WithTenantID(ctx, tenantID))
 				}
-				return modelFactory.NewEmbeddingModel(ctx, access, modelRef)
+				return modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), modelRef)
 			},
 			Chat: func(ctx context.Context, tenantID, modelRef string) (*modelModule.ChatModel, error) {
-				access := service.ModelAccess{TenantID: tenantID}
 				if strings.TrimSpace(modelRef) == "" {
-					return modelFactory.NewDefaultChatModel(ctx, access)
+					return modelFactory.NewDefaultChatModel(permission.WithTenantID(ctx, tenantID))
 				}
-				return modelFactory.NewChatModel(ctx, access, modelRef)
+				return modelFactory.NewChatModel(permission.WithTenantID(ctx, tenantID), modelRef)
 			},
 			Rerank: func(ctx context.Context, tenantID, modelRef string) (*modelModule.RerankModel, error) {
-				return modelFactory.NewRerankModel(ctx, service.ModelAccess{TenantID: tenantID}, modelRef)
+				return modelFactory.NewRerankModel(permission.WithTenantID(ctx, tenantID), modelRef)
 			},
 		},
 		retrievalEnhancer,
@@ -202,8 +202,8 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 
 	// Initialize handler layer
 	authHandler := handler.NewAuthHandler()
-	userHandler := handler.NewUserHandler(userService)
-	tenantHandler := handler.NewTenantHandler(tenantService, userService, datasetsService)
+	userHandler := handler.NewUserHandler(userService, userTenantService)
+	tenantHandler := handler.NewTenantHandler(tenantService, userTenantService, datasetsService)
 	documentHandler := handler.NewDocumentHandler(documentService, datasetsService, fileService)
 	datasetsHandler := handler.NewDatasetsHandler(datasetsService, metadataService)
 	systemHandler := handler.NewSystemHandler(systemService)
@@ -368,7 +368,7 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	// Setup routes
 	r.Setup(ginEngine)
 
-	_, err := channels.Start(ctx)
+	_, err := channels.Start(ctx, agentService)
 	if err != nil {
 		return fmt.Errorf("start chat-channel: %w", err)
 	}
@@ -457,6 +457,10 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 
 	// Set log level
 	bootstrap.SetLogger(serverName, arguments)
+
+	// Initialize the ingestion lifecycle event sink (best-effort; stdout is
+	// always on, ingestor.log.path adds an optional rotated file). Flush it on shutdown.
+	bootstrap.SetIngestLog(serverName)
 
 	// Start server in a goroutine
 	go func() {

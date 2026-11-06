@@ -110,9 +110,7 @@ func TestMarkdownParserPreservesImageBesideInlineTable(t *testing.T) {
 		_, _ = w.Write([]byte("hello"))
 	}))
 	defer server.Close()
-	old := ssrfAllowLoopback
-	ssrfAllowLoopback = true
-	defer func() { ssrfAllowLoopback = old }()
+	allowLoopbackImages(t)
 	p, _ := NewMarkdownParser(GoMarkdown)
 	res := p.ParseWithResult(t.Context(), "table.md", []byte("![logo]("+server.URL+"/logo.png) <table><tr><td>Owner</td><td>RET</td></tr></table>"))
 	if res.Err != nil {
@@ -254,8 +252,20 @@ func TestPPTXTableOnlySlideIsNotEmpty(t *testing.T) {
 	}
 }
 
-func TestOfficeTableRetainsDefaultHeaderCount(t *testing.T) {
+func TestOfficeTableUsesRepeatedHeaderFlags(t *testing.T) {
 	ir := `{"sections":[{"elements":[{"type":"table","rows":[{"is_header":true,"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"H1"}]}]}]},{"is_header":true,"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"H2"}]}]}]}]}]}]}`
+	items := buildDOCXJSONSections(ir, nil)
+	if len(items) != 1 {
+		t.Fatalf("items=%#v", items)
+	}
+	td := items[0]["table"].(*entity.TableData)
+	if td.HeaderRows != 2 || len(td.Grid) != 2 {
+		t.Fatalf("table=%+v, want two rows and two repeated header rows", td)
+	}
+}
+
+func TestOfficeTableDefaultsToOneHeaderWithoutFlags(t *testing.T) {
+	ir := `{"sections":[{"elements":[{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"H1"}]}]}]},{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"H2"}]}]}]}]}]}]}`
 	items := buildDOCXJSONSections(ir, nil)
 	if len(items) != 1 {
 		t.Fatalf("items=%#v", items)

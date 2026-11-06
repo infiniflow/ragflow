@@ -12,7 +12,7 @@ sidebar_custom_props: {
 
 ## Data Source Overview
 
-Data sources are used to connect external systems and synchronize their documents, records, emails, or messages to RAGFlow knowledge bases. After configuring a data source, users can reduce the workload of manually uploading files, and can retrieve and ask questions about content from external systems in the knowledge base.
+Data sources are used to connect external systems and synchronize their documents, records, emails, or messages to RAGFlow Datasets. After configuring a data source, users can reduce the workload of manually uploading files, and can retrieve and ask questions about content from external systems in the Dataset.
 
 ## Data Source Page Management
 
@@ -26,7 +26,7 @@ Enter the **Data Source** page from **User Settings**. The upper part of the pag
 
 Select the system you need to connect from the available data sources. The system opens the creation window for the corresponding data source. When creating a data source, you usually need to complete the following operations:
 
-1. Fill in the connection name, which is used to identify the connection on the data source page and in the knowledge base.
+1. Fill in the connection name, which is used to identify the connection on the data source page and in the Dataset.
 2. Fill in connection information such as the account, token, address, path, or storage scope.
 3. Set the synchronization options available in the window, then click **Test connection**.
 4. Click **Confirm** to create the connection.
@@ -41,28 +41,30 @@ Successfully created data sources are displayed in the connected data source are
 
 **Settings**: Click the settings button to enter the settings page of the data source connection and view or modify connection parameters.
 
-**Delete**: Click the delete button to delete the data source connection. Before deleting it, confirm whether the connection is still used by a knowledge base to avoid affecting subsequent synchronization.
+**Delete**: Click the delete button to delete the data source connection. Before deleting it, confirm whether the connection is still used by a Dataset to avoid affecting subsequent synchronization.
 
 Area description: the connected data source area is used to manage the connection itself; the available data source area is used to create new data source connections.
 
 ### Set a Connected Data Source
 
-Click the settings button on the right side of a connected data source to enter the settings page of that connection. The settings page is used to view and maintain the configuration of the current connection. It is suitable for use when a token expires, the synchronization scope changes, the refresh frequency needs to be adjusted, or the synchronization result is abnormal.
+Click the settings button on the right side of a connected data source to enter the settings page of that connection.
+
+![Set a Connected Data Source](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/Set_a_Connected_Data_Source.jpg)
+
+The settings page is used to view and maintain the configuration of the current connection. It is suitable for use when a token expires, the synchronization scope changes, the refresh frequency needs to be adjusted, or the synchronization result is abnormal.
 
 Common fields on the settings page include:
 
 - **Name**: The connection name, displayed as read-only after creation.
 - **Authentication information**: The account, token, key, or authorization file used to access the external system.
 - **Synchronization scope**: The pages, folders, buckets, database tables, channels, or project scope that need to be read.
-- **Sync deleted files**: After this is enabled, content deleted from the external system is removed from the knowledge base index during subsequent synchronization or cleanup tasks.
+- **Sync deleted files**: After this is enabled, content deleted from the external system is removed from the Dataset index during subsequent synchronization or cleanup tasks.
 - **Refresh interval**: The interval at which RAGFlow checks the external system for newly added or updated content.
 - **Cleanup interval**: The interval at which RAGFlow checks the external system for deleted content. It takes effect only when sync deleted files is enabled.
 - **Timeout**: The maximum time that a single connection or synchronization task is allowed to wait.
 - **Test connection**: Verifies whether the current configuration can successfully connect to the external data source. It is recommended to test the connection before saving the configuration or starting a sync task.
 
 After changing settings, click **Test connection**, then **Save**. With no unsaved changes, the primary button may show **Stop** or **Resume**, depending on the connection status. Updated settings apply to subsequent synchronization tasks.
-
-![Set a Connected Data Source](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/Set_a_Connected_Data_Source.jpg)
 
 ### View Connected Data Source Logs
 
@@ -72,10 +74,10 @@ Log fields are described as follows:
 
 - **Start time**: The time when the synchronization task started.
 - **Status**: The execution result of the synchronization task, such as successful, failed, or in progress.
-- **Knowledge base**: The knowledge base that the synchronization task writes to.
+- **Dataset**: The Dataset that the synchronization task writes to.
 - **Task type**: `sync` synchronizes source content; `prune` removes content deleted from the source.
 - **Summary**: The synchronization summary or error description, used to troubleshoot permissions, fields, networks, rate limits, and other issues.
 
-If the log is empty, it usually means that the data source has not been used by any knowledge base, or that no synchronization task has been triggered.
+If the log is empty, it usually means that the data source has not been used by any Dataset, or that no synchronization task has been triggered.
 
 ![View Connected Data Source Logs](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/View_Connected_Data_Source_Logs.jpg)

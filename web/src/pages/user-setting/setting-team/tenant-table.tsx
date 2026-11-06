@@ -141,15 +141,15 @@ const TenantTable = ({ searchTerm }: { searchTerm: string }) => {
                   {tenant.status === TenantMembershipStatus.Invited ? (
                     <div className="flex gap-2">
                       <Button
-                        variant="link"
-                        className="p-0 h-auto"
+                        variant="secondary"
+                        className=" h-auto"
                         onClick={handleAgree(tenant.tenant_id, true)}
                       >
                         {t(`setting.agree`)}
                       </Button>
                       <Button
-                        variant="link"
-                        className="p-0 h-auto"
+                        variant="secondary"
+                        className=" h-auto"
                         onClick={handleAgree(tenant.tenant_id, false)}
                       >
                         {t(`setting.refuse`)}
@@ -158,9 +158,9 @@ const TenantTable = ({ searchTerm }: { searchTerm: string }) => {
                   ) : tenant.role === TenantRole.Normal &&
                     user.id !== tenant.tenant_id ? (
                     <Button
-                      variant="ghost"
+                      variant="secondary"
                       size="icon"
-                      className="h-8 w-8 p-0"
+                      className="h-8 w-8 "
                       onClick={handleQuitTenantUser(user.id, tenant.tenant_id)}
                     >
                       {/* {t('setting.quit')} */}

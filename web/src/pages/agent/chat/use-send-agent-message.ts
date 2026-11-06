@@ -305,7 +305,7 @@ export const useSendAgentMessage = ({
   const prologue = useGetBeginNodePrologue();
   const {
     derivedMessages,
-    scrollRef,
+    virtualizer,
     messageContainerRef,
     removeLatestMessage,
     removeMessageById,
@@ -316,7 +316,7 @@ export const useSendAgentMessage = ({
     scrollToBottom,
     addPrologue,
     setDerivedMessages,
-  } = useSelectDerivedMessages();
+  } = useSelectDerivedMessages(activeSessionId);
   const { addEventList: addEventListFun } = useContext(AgentChatLogContext);
   const {
     appendUploadResponseList,
@@ -611,7 +611,7 @@ export const useSendAgentMessage = ({
     value,
     sendLoading: !done,
     derivedMessages,
-    scrollRef,
+    virtualizer,
     messageContainerRef,
     handlePressEnter,
     handleInputChange,

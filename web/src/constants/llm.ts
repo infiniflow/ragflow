@@ -86,6 +86,7 @@ export enum LLMFactory {
   MinerUNet = 'MinerU.Net',
   PaddleOCR = 'PaddleOCR',
   PaddleOCRLocal = 'PaddleOCR.local',
+  MiniCPMOCR = 'MiniCPM-OCR',
   OpenDataLoader = 'OpenDataLoader',
   SoMark = 'SoMark',
   N1n = 'n1n',
@@ -123,6 +124,8 @@ export enum LLMFactory {
   Cheapaimodel = 'cheapaimodel',
   SystemOne = 'SystemOne',
   HostingerRouter = 'Hostinger Router',
+  Wally = 'Wally',
+  Synap = 'Synap',
 }
 
 // Please lowercase the file name
@@ -192,6 +195,7 @@ export const IconMap = {
   [LLMFactory.MinerUNet]: 'mineru',
   [LLMFactory.PaddleOCR]: 'paddleocr',
   [LLMFactory.PaddleOCRLocal]: 'paddleocr',
+  [LLMFactory.MiniCPMOCR]: 'minicpm-ocr',
   [LLMFactory.N1n]: 'n1n',
   [LLMFactory.Avian]: 'avian',
   [LLMFactory.RAGcon]: 'ragcon',
@@ -227,6 +231,8 @@ export const IconMap = {
   [LLMFactory.Obscurify]: 'obscurify',
   [LLMFactory.HostingerRouter]: 'hostinger-router',
   [LLMFactory.Cheapaimodel]: 'cheapaimodel',
+  [LLMFactory.Wally]: 'wally',
+  [LLMFactory.Synap]: 'synap',
 };
 
 /**
@@ -282,6 +288,8 @@ export const APIMapUrl = {
   [LLMFactory.HostingerRouter]: 'https://hpanel.hostinger.com/ai-router',
   [LLMFactory.Cheapaimodel]:
     'https://console.cheapaimodel.ai/keys?utm_source=ragflow',
+  [LLMFactory.Wally]: 'https://console.runanywhere.ai',
+  [LLMFactory.Synap]: 'https://synap.linkrra.com/pricing',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
@@ -332,6 +340,7 @@ export const APIMapUrl = {
   [LLMFactory.TokenPony]: 'https://www.tokenpony.cn/#/user/keys',
   [LLMFactory.DeepInfra]: 'https://deepinfra.com/dash/api_keys',
   [LLMFactory.PaddleOCR]: 'https://aistudio.baidu.com/paddleocr',
+  [LLMFactory.MiniCPMOCR]: 'https://platform.modelbest.cn/console/keys',
   [LLMFactory.SoMark]: 'https://somark.cn/workbench/apikey',
   [LLMFactory.N1n]: 'https://docs.n1n.ai',
   [LLMFactory.Avian]: 'https://avian.io',

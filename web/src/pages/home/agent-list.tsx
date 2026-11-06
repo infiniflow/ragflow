@@ -3,6 +3,7 @@ import { MoreButton } from '@/components/more-button';
 import { RenameDialog } from '@/components/rename-dialog';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchAgentListByPage } from '@/hooks/use-agent-request';
+import { IFlow } from '@/interfaces/database/agent';
 import { AgentListItem, AgentListItemType } from '@/interfaces/database/agent';
 import { useEffect, useMemo } from 'react';
 import { AgentDropdown } from '../agents/agent-dropdown';
@@ -11,9 +12,11 @@ import { useRenameAgent } from '../agents/use-rename-agent';
 export function Agents({
   setListLength,
   setLoading,
+  showPrivilegeModal,
 }: {
   setListLength: (length: number) => void;
   setLoading?: (loading: boolean) => void;
+  showPrivilegeModal: (agent: IFlow) => () => void;
 }) {
   const { data, loading } = useFetchAgentListByPage();
   const { navigateToAgent } = useNavigatePage();
@@ -51,6 +54,7 @@ export function Agents({
             <AgentDropdown
               showAgentRenameModal={showAgentRenameModal}
               agent={x}
+              showPrivilegeModal={showPrivilegeModal(x)}
             >
               <MoreButton></MoreButton>
             </AgentDropdown>

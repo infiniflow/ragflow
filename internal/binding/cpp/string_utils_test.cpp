@@ -5,6 +5,12 @@
 #include "string_utils.h"
 
 int main() {
+    const std::string truncated_utf8 = "\xE3";
+    assert(FullWidthToHalfWidth(truncated_utf8) == truncated_utf8);
+    const std::string invalid_continuation = "\xE3\x80";
+    assert(FullWidthToHalfWidth(invalid_continuation) == invalid_continuation);
+    assert(FullWidthToHalfWidth("\xEF\xBC\xA1\xE3\x80\x80") == "A ");
+
     constexpr size_t output_limit = 4096 * 3;
     std::string input(output_limit * 2, 'A');
     std::vector<char> guarded_output(output_limit + 2, 'x');

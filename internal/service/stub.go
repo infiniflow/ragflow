@@ -23,6 +23,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 
 	"gorm.io/gorm"
 )
@@ -40,16 +41,18 @@ func (h *AdminClient) UpdateClient(clientInfo any) error { return nil }
 
 // prepareAgentCreation grants no additional permissions before an agent is
 // created.
-func prepareAgentCreation(_ context.Context, userID string) (string, error) { return userID, nil }
+func prepareAgentCreation(ctx context.Context) (string, error) {
+	return permission.UserIDFromContext(ctx), nil
+}
 
 // tenantMemberPermissionEE leaves membership checks to the community policy.
-func tenantMemberPermissionEE(ctx context.Context, db *gorm.DB, userID, tenantID string, required int32) (*entity.UserTenant, int32, bool, error) {
+func tenantMemberPermissionEE(ctx context.Context, db *gorm.DB, tenantID string, required int32) (*entity.UserTenant, int32, bool, error) {
 	return nil, 0, false, nil
 }
 
 // recordTenantPermissionChangeEE records nothing: the community edition has no
 // permission audit trail.
-func recordTenantPermissionChangeEE(tx *gorm.DB, tenantID, actorUserID, eventType, targetType, targetID, resourceType, resourceID, actionType string, beforePermission, afterPermission int32, beforeData, afterData interface{}) error {
+func recordTenantPermissionChangeEE(ctx context.Context, tx *gorm.DB, tenantID, eventType, targetType, targetID, resourceType, resourceID, actionType string, beforePermission, afterPermission int32, beforeData, afterData interface{}) error {
 	return nil
 }
 
@@ -70,13 +73,13 @@ func resolveCurrentUserTenantEE(context.Context, string) (*entity.UserTenant, bo
 }
 
 // resolveDefaultTenantIDEE leaves tenant resolution to the community path.
-func resolveDefaultTenantIDEE(context.Context, string) (string, bool, error) {
+func resolveDefaultTenantIDEE(context.Context) (string, bool, error) {
 	return "", false, nil
 }
 
-// resolveUserAuthTenant keeps the token's tenant unchanged.
-func resolveUserAuthTenant(_ context.Context, _ *entity.User, tenantID string) (string, error) {
-	return tenantID, nil
+// resolveUserAuthTenant discards tenant context because community credentials identify only a user.
+func resolveUserAuthTenant(_ context.Context, _ *entity.User, _ string) (string, error) {
+	return "", nil
 }
 
 // LoginChannel is one authentication channel advertised to the login page.

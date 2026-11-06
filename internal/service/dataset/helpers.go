@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
@@ -202,23 +203,19 @@ func validateDatasetParserConfigSize(parserConfig map[string]interface{}) error 
 	return nil
 }
 
-// DropUnscopedParserConfigKeys removes top-level parser_config keys that are
-// not component-scoped (i.e. do not contain ":"), since the Go backend only
-// consumes keys keyed by a component id (e.g. "Parser:abc123" or
-// "Extractor:AutoExtractDefault"). Flat keys are legacy transport artifacts
-// that downstream consumers (BuildParserConfig) never read, so they are
-// dropped rather than rejected. Only top-level keys are affected; a key nested
-// inside a component node (e.g. "Extractor:AutoExtractDefault.metadata") keeps
-// its existing name. It mutates the provided map in place and returns the names
-// of the dropped keys so callers can log the silent drop. A nil or empty map is
-// returned untouched with a nil result.
+// DropUnscopedParserConfigKeys removes top-level parser_config keys that
+// common.IsComponentKey does not recognize as component-scoped. Flat keys are
+// transport artifacts that BuildParserConfig never reads, so they are dropped
+// rather than rejected. Only top-level keys are affected; nested keys keep
+// their names. It mutates parserConfig and returns the dropped names so callers
+// can log them. A nil or empty map is returned untouched.
 func DropUnscopedParserConfigKeys(parserConfig map[string]any) []string {
 	if len(parserConfig) == 0 {
 		return nil
 	}
 	var dropped []string
 	for key := range parserConfig {
-		if !strings.Contains(key, ":") {
+		if !common.IsComponentKey(key) {
 			dropped = append(dropped, key)
 		}
 	}
@@ -300,8 +297,8 @@ func pythonStringListRepr(items []string) string {
 	return "[" + strings.Join(quoted, ", ") + "]"
 }
 
-func canvasAccessibleForUser(ctx context.Context, subject permission.Subject, canvasID string) (bool, error) {
-	err := service.CheckCanvasPermission(ctx, subject, canvasID, permission.OperationUse)
+func canvasAccessibleForUser(ctx context.Context, canvasID string) (bool, error) {
+	err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}, permission.OperationUse)
 	if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
 		return false, nil
 	}
@@ -369,10 +366,10 @@ func preserveDatasetParserConfigState(next, existing entity.JSONMap, incoming ma
 	}
 	var mm map[string]any
 	if incoming != nil {
-		mm = extractorNodeMetadata(incoming)
+		mm = extractorNodeMetadata(incoming, next)
 	}
 	if mm == nil && existing != nil {
-		mm = extractorNodeMetadata(existing)
+		mm = extractorNodeMetadata(existing, next)
 	}
 	if mm != nil {
 		next["metadata"] = mm
@@ -447,18 +444,19 @@ func preserveDatasetParserConfigState(next, existing entity.JSONMap, incoming ma
 }
 
 // extractorNodeMetadata returns the modular metadata object ({enabled, metadata,
-// built_in_metadata}) from the first Extractor node in a parser_config, or nil
-// if none is present. Metadata is component-scoped under Extractor nodes; this
-// helper reads it back for preservation across partial updates.
-func extractorNodeMetadata(parserConfig map[string]interface{}) map[string]any {
+// built_in_metadata}) from the first Extractor node present in validConfig, or
+// nil if none is present. validConfig is the rebuilt parser_config for the
+// current DSL; keys outside it are ignored so stale nodes cannot override the
+// active configuration.
+func extractorNodeMetadata(parserConfig, validConfig map[string]interface{}) map[string]any {
 	if parserConfig == nil {
 		return nil
 	}
-	for cpnID, raw := range parserConfig {
-		lower := strings.ToLower(cpnID)
-		if !strings.HasPrefix(lower, "extractor:") && !strings.HasPrefix(lower, "extractor_") {
+	for _, cpnID := range common.SortedExtractorKeys(parserConfig) {
+		if _, ok := validConfig[cpnID]; !ok {
 			continue
 		}
+		raw := parserConfig[cpnID]
 		params, ok := raw.(map[string]any)
 		if !ok {
 			continue

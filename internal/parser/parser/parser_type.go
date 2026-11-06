@@ -22,17 +22,39 @@ import (
 	"ragflow/internal/utility"
 )
 
-// GetTextOnlyParser returns a parser for readable-text extraction: previews,
-// attachments, agent uploads and CLI parsing. Embedded media is skipped even
-// when the extraction is nested inside an ingestion run (email attachments).
-// These paths also work without an injected run media cache.
-func GetTextOnlyParser(fileType utility.FileType) (ParseResultProducer, error) {
-	return newParser(fileType, true)
+// TryParser optionally identifies a format before full parsing by inspecting
+// recognition structures. FileTypeOTHER means unknown: keep the requested type.
+type TryParser interface {
+	TryParse(data []byte) utility.FileType
 }
 
-// GetParser returns the ingestion parser for the given file type.
-func GetParser(fileType utility.FileType) (ParseResultProducer, error) {
-	return newParser(fileType, false)
+// GetTextOnlyParser selects a parser and effective file type for readable-text
+// extraction: previews, attachments, agent uploads and CLI parsing.
+// Embedded media is skipped even when extraction is nested inside an ingestion
+// run (email attachments).
+// These paths also work without an injected run media cache.
+func GetTextOnlyParser(fileType utility.FileType, data []byte) (ParseResultProducer, utility.FileType, error) {
+	return selectParser(fileType, data, true)
+}
+
+// GetParser selects the ingestion parser and effective file type from the
+// requested type and contents. Unrecognized contents keep the requested type.
+func GetParser(fileType utility.FileType, data []byte) (ParseResultProducer, utility.FileType, error) {
+	return selectParser(fileType, data, false)
+}
+
+func selectParser(fileType utility.FileType, data []byte, textOnly bool) (ParseResultProducer, utility.FileType, error) {
+	p, err := newParser(fileType, textOnly)
+	if err != nil {
+		return nil, fileType, err
+	}
+	if probe, ok := p.(TryParser); ok {
+		if actual := probe.TryParse(data); actual != "" && actual != utility.FileTypeOTHER && actual != fileType {
+			p, err = newParser(actual, textOnly)
+			return p, actual, err
+		}
+	}
+	return p, fileType, nil
 }
 
 // newParser owns the format routes for both ingestion and text extraction.
@@ -54,12 +76,7 @@ func newParser(fileType utility.FileType, textOnly bool) (ParseResultProducer, e
 		p.textOnly = textOnly
 		return p, nil
 	case utility.FileTypeXLS:
-		p, err := NewXLSParser("")
-		if err != nil {
-			return nil, err
-		}
-		p.textOnly = textOnly
-		return p, nil
+		return NewXLSParser("")
 	case utility.FileTypeCSV:
 		return NewCSVParser(), nil
 	case utility.FileTypeDOCX:
@@ -77,7 +94,13 @@ func newParser(fileType utility.FileType, textOnly bool) (ParseResultProducer, e
 		p.textOnly = textOnly
 		return p, nil
 	case utility.FileTypeMarkdown:
-		return NewMarkdownParser(GoMarkdown)
+		p, err := NewMarkdownParser(GoMarkdown)
+		if err != nil {
+			return nil, err
+		}
+		p.textOnly = textOnly
+		p.mediaRefs = !textOnly
+		return p, nil
 	case utility.FileTypeTXT:
 		return NewTextParser(), nil
 	case utility.FileTypeEPUB:

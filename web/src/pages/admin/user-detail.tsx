@@ -16,6 +16,7 @@ import { Card, CardHeader } from '@/components/ui/card';
 import { getUserDetails } from '@/services/admin-service';
 
 import EnterpriseFeature from './components/enterprise-feature';
+import UserDetailAssets from '@/ee/pages/admin/user-detail-assets';
 import { parseBooleanish } from './utils';
 
 function AdminUserDetail() {
@@ -126,6 +127,8 @@ function AdminUserDetail() {
             </div>
           </section>
         </CardHeader>
+
+        <UserDetailAssets userId={id} />
       </Card>
     </section>
   );

@@ -186,18 +186,18 @@ func TestRESTAgentSessions(t *testing.T) {
 	}
 	restCode(t, restCall(t, TestConfig, http.MethodGet, "/agents/"+otherID+"/sessions/"+sessionID, nil, nil), http.StatusOK, 404)
 	wrongDelete := restOK(t, restCall(t, TestConfig, http.MethodDelete, "/agents/"+otherID+"/sessions/"+sessionID, nil, nil))
-	if wrongDelete["data"] != false {
-		t.Fatalf("cross-agent session delete must be a no-op: %v", wrongDelete)
+	if data, exists := wrongDelete["data"]; exists {
+		t.Fatalf("data must be omitted, got %v", data)
 	}
 	restOK(t, restCall(t, TestConfig, http.MethodGet, path+"/"+sessionID, nil, nil))
 	deleted := restOK(t, restCall(t, TestConfig, http.MethodDelete, path+"/"+sessionID, nil, nil))
-	if deleted["data"] != true {
-		t.Fatalf("session deletion returned %v", deleted)
+	if data, exists := deleted["data"]; exists {
+		t.Fatalf("data must be omitted, got %v", data)
 	}
 	restCode(t, restCall(t, TestConfig, http.MethodGet, path+"/"+sessionID, nil, nil), http.StatusOK, 404)
 	repeated := restOK(t, restCall(t, TestConfig, http.MethodDelete, path+"/"+sessionID, nil, nil))
-	if repeated["data"] != false {
-		t.Fatalf("repeated deletion must be a no-op: %v", repeated)
+	if data, exists := repeated["data"]; exists {
+		t.Fatalf("data must be omitted, got %v", data)
 	}
 	restOK(t, restCall(t, TestConfig, http.MethodGet, path+"/"+secondID, nil, nil))
 	for _, tc := range []struct {

@@ -366,7 +366,7 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition map[string]interfac
 
 	// Case 1: Single document update (when condition["id"] is a string)
 	if chunkID, ok := condition["id"].(string); ok {
-		return e.updateSingleChunk(ctx, fullIndexName, chunkID, newValue)
+		return e.updateSingleChunk(ctx, fullIndexName, chunkID, condition, newValue)
 	}
 
 	// Case 2: Multi-document update via UpdateByQuery
@@ -520,13 +520,30 @@ func mapMemoryMessageESConditionFields(condition map[string]interface{}) map[str
 }
 
 // updateSingleChunk handles single document update
-func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID string, newValue map[string]interface{}) error {
+func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID string, condition, newValue map[string]interface{}) error {
 	common.Debug("ElasticsearchConnection.updateSingleChunk called", zap.String("indexName", indexName), zap.String("chunkID", chunkID))
 
-	// First find the document by id field to get the actual _id
+	// Resolve the actual _id only within all of the caller's update conditions.
+	filters := make([]map[string]interface{}, 0, len(condition))
+	for field, value := range condition {
+		switch field {
+		case "and", "or", "must_not", "exists":
+			return fmt.Errorf("unsupported single chunk update condition %q", field)
+		}
+		if items, ok := conditionTermsList(value); ok {
+			filters = append(filters, map[string]interface{}{"terms": map[string]interface{}{field: items}})
+			continue
+		}
+		switch value.(type) {
+		case string, bool, int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+			filters = append(filters, map[string]interface{}{"term": map[string]interface{}{field: value}})
+		default:
+			return fmt.Errorf("unsupported single chunk update condition %q: %T", field, value)
+		}
+	}
 	searchReq := map[string]interface{}{
 		"query": map[string]interface{}{
-			"term": map[string]interface{}{"id": chunkID},
+			"bool": map[string]interface{}{"filter": filters},
 		},
 	}
 
@@ -1002,6 +1019,9 @@ func formatOrderedTagFeas(v any) (json.RawMessage, bool) {
 
 // DeleteChunks deletes chunks from a dataset index by condition
 func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
+	if datasetID == "" {
+		return 0, fmt.Errorf("dataset_id is required")
+	}
 	// For ES, index name is just indexName (e.g., "ragflow_{tenantID}"), not indexName_datasetID
 	fullIndexName := indexName
 	common.Info("Deleting chunks from Elasticsearch index", zap.String("index_name", fullIndexName), zap.Any("condition", condition))
@@ -1016,6 +1036,17 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 		return 0, nil
 	}
 
+	// Scope the delete to the dataset the caller asked for. The tenant index is
+	// shared by every dataset, so without this a condition that omits kb_id
+	// deletes matching chunks in other datasets too.
+	condition = copyFields(condition)
+	if idVal, ok := condition["id"]; ok {
+		items, isList := conditionTermsList(idVal)
+		if idVal == nil || (isList && len(items) == 0) {
+			return 0, fmt.Errorf("ES delete aborted: empty id list on index %s", fullIndexName)
+		}
+	}
+	condition["kb_id"] = datasetID
 	condition = types.CompilationFilter(condition)
 	// Build bool query from condition
 	var mustClauses []map[string]interface{}
@@ -1151,6 +1182,15 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 	deleted := int64(0)
 	if d, ok := result["deleted"].(float64); ok {
 		deleted = int64(d)
+	}
+
+	// delete_by_query can answer 200 while only part of the work was done.
+	// Surface that so callers do not treat leftover chunks as deleted.
+	if timedOut, _ := result["timed_out"].(bool); timedOut {
+		return deleted, fmt.Errorf("elasticsearch delete by query timed out after deleting %d chunks from %s", deleted, fullIndexName)
+	}
+	if failures, ok := result["failures"].([]interface{}); ok && len(failures) > 0 {
+		return deleted, fmt.Errorf("elasticsearch delete by query reported %d failures after deleting %d chunks from %s", len(failures), deleted, fullIndexName)
 	}
 
 	common.Info("Successfully deleted chunks", zap.String("index_name", fullIndexName), zap.Int64("deleted_count", deleted))
@@ -2324,22 +2364,13 @@ func buildBoolQueryFromConditionRaw(filter map[string]interface{}, kbIDs []strin
 		if v == nil || v == "" {
 			continue
 		}
-		if isMemoryIndex && k == "session_id_contains" {
+		if isMemoryIndex && (k == "session_id" || k == "session_id_contains") {
 			if text, ok := v.(string); ok {
 				pattern := strings.NewReplacer(`\`, `\\`, "*", `\*`, "?", `\?`).Replace(text)
 				filterClauses = append(filterClauses, map[string]interface{}{"wildcard": map[string]interface{}{"session_id": "*" + pattern + "*"}})
+				continue
 			}
-			continue
-		}
-		if isMemoryIndex && k == "session_id" {
-			if strVal, ok := v.(string); ok && strVal != "" {
-				filterClauses = append(filterClauses, map[string]interface{}{
-					"query_string": map[string]interface{}{
-						"query":            fmt.Sprintf("*%s*", strVal),
-						"fields":           []string{"session_id"},
-						"analyze_wildcard": true,
-					},
-				})
+			if k == "session_id_contains" {
 				continue
 			}
 		}

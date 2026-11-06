@@ -34,7 +34,7 @@ This switch is separate from **OCR** under Image: OCR recognizes text, while vis
 
 The **Parser** dropdown includes **DeepDOC**, **Naive**, **Docling**, **OpenDataLoader**, **TCADP Parser**, and **MonkeyOCRv2**, followed by available configured models grouped by provider. Choose a parser appropriate for your deployment and document layout, and validate its results on a sample file. **Naive** provides simple text extraction for text-based PDFs.
 
-![Configure PDF parser method](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_the_parser_component_1.jpg)
+![Configure PDF parser method](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pipeline_parser_pdf_settings.jpg)
 
 Some selections expose additional controls:
 
@@ -51,6 +51,8 @@ Configured OCR and vision models depend on the pipeline owner's available provid
 3. To generate image descriptions, enable the shared **Enable vision enhancement** switch at the top of the panel and configure its model and prompt.
 
 To turn OCR off, enable vision enhancement first. The panel rejects a configuration with both disabled.
+
+![Parser image OCR settings and shared vision enhancement](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pipeline_parser_image_ocr.jpg)
 
 ## Other File Categories
 

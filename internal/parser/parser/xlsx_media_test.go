@@ -56,7 +56,7 @@ func TestXLSXTextParserSkipsImagesWithoutCache(t *testing.T) {
 			t.Fatalf("AddPictureFromBytes: %v", err)
 		}
 	})
-	p, err := GetTextOnlyParser(utility.FileTypeXLSX)
+	p, _, err := GetTextOnlyParser(utility.FileTypeXLSX, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
