@@ -61,6 +61,7 @@ const parseCrawlTimeout = (value: unknown) => {
 const normalizeCrawlTimeout = (value: unknown) =>
   parseCrawlTimeout(value) ?? initialQueritContentsValues.crawl_timeout;
 
+/** Renders the Querit Contents form and keeps its timeout valid while editing. */
 function QueritContentsForm({ node }: INextOperatorForm) {
   const { t } = useTranslate('flow');
   const values = useFormValues(initialQueritContentsValues, node);

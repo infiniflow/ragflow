@@ -21,7 +21,7 @@ const nodeLabelApiKeyOperators: string[] = [
   Operator.SofyaSearch,
 ];
 
-const webhookSecretFields = {
+const WebhookSecretFields = {
   token: 'token_value',
   basic_auth: 'password',
   jwt: 'secret',
@@ -69,7 +69,7 @@ function clearWebhookSecrets(value: Record<string, any>) {
 
   let changed = false;
   const sanitizedSecurity = { ...security };
-  for (const [section, field] of Object.entries(webhookSecretFields)) {
+  for (const [section, field] of Object.entries(WebhookSecretFields)) {
     const auth = sanitizedSecurity[section];
     if (isPlainObject(auth) && auth[field]) {
       sanitizedSecurity[section] = { ...auth, [field]: '' };
@@ -82,6 +82,7 @@ function clearWebhookSecrets(value: Record<string, any>) {
   }
 }
 
+/** Returns a copy of the DSL with recognized credentials removed. */
 export function clearSensitiveFields<T>(obj: T): T {
   return cloneDeepWith(obj, (value) => {
     if (!isPlainObject(value)) {
