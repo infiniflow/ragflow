@@ -110,7 +110,10 @@ func redactCometAPIBalanceRequestError(err error) error {
 
 	requestURL, parseErr := url.Parse(requestErr.URL)
 	if parseErr != nil {
-		return redactedCometAPIRequestCause{cause: err}
+		return &url.Error{
+			Op:  requestErr.Op,
+			Err: redactedCometAPIRequestCause{cause: requestErr.Err},
+		}
 	}
 	query := requestURL.Query()
 	query.Del("key")

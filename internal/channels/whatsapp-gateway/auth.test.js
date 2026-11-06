@@ -15,6 +15,10 @@ test('requires the configured bearer token for control requests', () => {
     false,
   );
   assert.equal(
+    isAuthorized({ headers: { authorization: 'Bearer gateway-secreu' } }, 'gateway-secret'),
+    false,
+  );
+  assert.equal(
     isAuthorized({ headers: { authorization: 'Bearer gateway-secret' } }, 'gateway-secret'),
     true,
   );
