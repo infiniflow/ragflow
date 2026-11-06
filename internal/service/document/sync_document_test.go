@@ -16,6 +16,7 @@ import (
 	"ragflow/internal/service"
 	"ragflow/internal/storage"
 	syncerconnector "ragflow/internal/syncer/connector"
+	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
 )
@@ -483,5 +484,24 @@ func TestSyncDocumentFilenameKeepsUTF8WhenTruncating(t *testing.T) {
 	}
 	if want := strings.Repeat("数", 83) + ".txt"; got != want {
 		t.Fatalf("filename = %q, want %q", got, want)
+	}
+}
+
+// TestSyncDocumentFilenameKeepsExtensionAtLengthLimit verifies a configured
+// extension that fits in 255 bytes is not cut when the semantic name leaves no
+// room beside it.
+func TestSyncDocumentFilenameKeepsExtensionAtLengthLimit(t *testing.T) {
+	singleSegment := "." + strings.Repeat("a", 251) + "pdf"
+	if got := syncDocumentFilename("source", singleSegment, "source-id"); got != singleSegment {
+		t.Fatalf("filename = %q, want the extension %q", got, singleSegment)
+	}
+
+	dotted := "." + strings.Repeat("a", 250) + ".pdf"
+	got := syncDocumentFilename("source", dotted, "source-id")
+	if len(got) > 255 {
+		t.Fatalf("filename is %d bytes, want at most 255", len(got))
+	}
+	if filetype := utility.FilenameType(got); filetype != utility.FileTypePDF {
+		t.Fatalf("FilenameType(%q) = %v, want %v", got, filetype, utility.FileTypePDF)
 	}
 }

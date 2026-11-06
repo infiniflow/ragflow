@@ -351,7 +351,10 @@ func syncDocumentFilename(name, extension, fallback string) string {
 
 	ext := filepath.Ext(name)
 	baseLimit := 255 - len(ext)
-	if baseLimit < 1 {
+	if baseLimit == 0 {
+		return ext
+	}
+	if baseLimit < 0 {
 		return truncateUTF8Bytes(name, 255)
 	}
 
