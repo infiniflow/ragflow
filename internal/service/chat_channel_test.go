@@ -592,7 +592,7 @@ func TestStripChannelThink(t *testing.T) {
 	}
 }
 
-func TestConsumeChannelStreamKeepsShownTextWhenFinalRewrites(t *testing.T) {
+func TestConsumeChannelStreamAdoptsRewrittenFinal(t *testing.T) {
 	frames := make(chan string, 4)
 	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "Hello"}}` + "\n\n"
 	frames <- "data:" + `{"code": 0, "message": "success", "data": {"answer": "Different answer", "final": true}}` + "\n\n"
@@ -604,10 +604,10 @@ func TestConsumeChannelStreamKeepsShownTextWhenFinalRewrites(t *testing.T) {
 	if got.err != nil {
 		t.Fatalf("consumeChannelStream error = %v", got.err)
 	}
-	if got.answer != "Hello" {
-		t.Fatalf("answer = %q, want the text already shown", got.answer)
+	if got.answer != "Different answer" {
+		t.Fatalf("answer = %q, want the authoritative final text", got.answer)
 	}
-	if len(seen) != 1 || seen[0] != "Hello" {
-		t.Fatalf("deltas = %v, want the shown text once", seen)
+	if len(seen) != 2 || seen[0] != "Hello" || seen[1] != "Different answer" {
+		t.Fatalf("deltas = %v, want the delta and then the final text", seen)
 	}
 }

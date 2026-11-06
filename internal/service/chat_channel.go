@@ -416,9 +416,9 @@ func consumeChannelStream(frames <-chan string, onDelta func(string)) channelStr
 		}
 		text, _ := chunk["answer"].(string)
 		if final, _ := chunk["final"].(bool); final {
-			// Adopt the final answer only when it extends the text already shown; a rewrite
-			// would make a streaming channel repaint the whole message in one block.
-			if text != "" && strings.HasPrefix(text, answer.String()) {
+			// The final frame carries the authoritative answer, so it replaces whatever the
+			// deltas produced even when that rewrites the text; the channel repaints.
+			if text != "" {
 				answer.Reset()
 				answer.WriteString(text)
 				onDelta(answer.String())
