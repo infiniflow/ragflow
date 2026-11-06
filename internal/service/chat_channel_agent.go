@@ -30,6 +30,8 @@ type chatChannelAgentRunner interface {
 	RunAgent(context.Context, string, string, string, any, []map[string]any) (<-chan canvas.RunEvent, error)
 }
 
+type channelAgentRunContextKey struct{}
+
 func normalizedChannelTarget(id *string) *string {
 	if id == nil || strings.TrimSpace(*id) == "" {
 		return nil
@@ -59,6 +61,7 @@ func (s *ChatChannelService) handleChannelAgentMessage(ctx context.Context, chan
 	// RunAgent creates and authorizes the persisted session; this boundary only
 	// supplies its stable identity for the first message and subsequent turns.
 	ctx = WithAgentSessionID(ctx, sessionID)
+	ctx = context.WithValue(ctx, channelAgentRunContextKey{}, true)
 	events, err := s.agentRunner.RunAgent(ctx, *channel.AgentID, sessionID, "", msg.Text, nil)
 	if err != nil {
 		return "", err
