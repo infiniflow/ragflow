@@ -258,8 +258,8 @@ func TestGet_HitAndMiss(t *testing.T) {
 }
 
 // TestPurgeTask_DeletesEveryEntryThenManifest asserts persist-time reclaim
-// removes all recorded entries and finally the manifest itself, leaving no
-// key behind that would otherwise wait out the 7-day TTL.
+// removes all recorded entries in one batch and then the manifest itself,
+// leaving no key behind that would otherwise wait out the 7-day TTL.
 func TestPurgeTaskDeletesEveryEntryAndManifest(t *testing.T) {
 	f := newFakeStore()
 	ctx := taskCtx("task-1")
@@ -269,19 +269,18 @@ func TestPurgeTaskDeletesEveryEntryAndManifest(t *testing.T) {
 
 	PurgeTask(context.Background(), f, "task-1")
 
-	// The manifest and every entry travel in one batch; there is no per-key
-	// delete fallback, and nothing may remain afterwards.
+	// Entries are reclaimed in one batch; the manifest is deleted separately
+	// (so a failed entry batch leaves the task resumable). Nothing may remain.
 	if f.deleteManyCalls != 1 {
 		t.Fatalf("DeleteMany calls = %d, want 1 (single batch)", f.deleteManyCalls)
 	}
-	if len(f.deleted) != 0 {
-		t.Errorf("per-key Delete called for %v; batch path expected", f.deleted)
+	if len(f.deleted) != 1 || f.deleted[0] != manifestKey("task-1") {
+		t.Fatalf("per-key Delete = %v, want exactly the manifest key", f.deleted)
 	}
 	want := map[string]bool{
 		"kc:emb:c":                true,
 		"kc:extractor:keywords:a": true,
 		"kc:meta:b":               true,
-		manifestKey("task-1"):     true,
 	}
 	if len(f.lastDeleteMany) != len(want) {
 		t.Fatalf("batch size = %d, want %d (%v)", len(f.lastDeleteMany), len(want), f.lastDeleteMany)

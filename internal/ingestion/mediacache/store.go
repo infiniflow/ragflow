@@ -208,6 +208,13 @@ func quotaKeys(scope string) (digestKey, stateKey string) {
 }
 
 // PurgeTask removes media after durable persistence. Failed runs rely on TTL.
+//
+// Entries and quota keys are reclaimed in one batched DeleteMany; the manifest
+// is deleted on its own (a separate Delete) only after that batch succeeds. This
+// keeps the manifest intact if the entry batch fails or is only partially
+// applied (a large manifest is split across several DELs, and a later batch may
+// fail after an earlier one already removed its keys), so the task stays
+// resumable instead of orphaning surviving entries under a deleted manifest.
 func PurgeTask(ctx context.Context, backend chunkcache.Store, taskID string) error {
 	if backend == nil || taskID == "" {
 		return nil
@@ -218,10 +225,13 @@ func PurgeTask(ctx context.Context, backend chunkcache.Store, taskID string) err
 		return fmt.Errorf("mediacache: read manifest: %w", err)
 	}
 	digestKey, stateKey := quotaKeys(taskID)
-	batch := append([]string{mk}, keys...)
+	batch := append([]string{}, keys...)
 	batch = append(batch, digestKey, stateKey)
 	if !backend.DeleteMany(ctx, batch...) {
 		return fmt.Errorf("mediacache: purge task %s", taskID)
+	}
+	if !backend.Delete(ctx, mk) {
+		return fmt.Errorf("mediacache: delete manifest %s", taskID)
 	}
 	return nil
 }

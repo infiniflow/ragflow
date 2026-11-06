@@ -22,12 +22,12 @@ import (
 	"testing"
 )
 
-// TestPurgeTaskUsesSingleBatchDelete is the adversarial test for the E2 batch
-// optimization: it asserts PurgeTask reclaims every entry key AND the manifest
-// in exactly ONE Store.DeleteMany call and never falls back to per-key Delete.
-// A naive loop-based implementation that merely "deletes everything" would pass
-// a happy-path test, so we pin the call shape: deleteManyCalls must be 1 and the
-// per-key Delete counter (deleted) must stay empty.
+// TestPurgeTaskUsesSingleBatchDelete pins the E2 batch call shape: entries are
+// reclaimed in exactly ONE Store.DeleteMany call, and the manifest is deleted
+// separately (one per-key Delete) ONLY after that batch succeeds. A naive
+// loop-based implementation would pass a happy-path test, so we assert the
+// batch carries the entries but NOT the manifest, and that the manifest's own
+// Delete is the sole per-key call.
 func TestPurgeTaskUsesSingleBatchDelete(t *testing.T) {
 	f := newFakeStore()
 	ctx := taskCtx("task-1")
@@ -40,11 +40,13 @@ func TestPurgeTaskUsesSingleBatchDelete(t *testing.T) {
 		t.Fatalf("PurgeTask error = %v, want nil", err)
 	}
 
+	// Entries travel in one batch.
 	if f.deleteManyCalls != 1 {
 		t.Errorf("DeleteMany calls = %d, want 1 (single batch)", f.deleteManyCalls)
 	}
-	if len(f.deleted) != 0 {
-		t.Errorf("per-key Delete still called for %v; batch path expected", f.deleted)
+	// Exactly one per-key Delete, for the manifest only.
+	if len(f.deleted) != 1 || f.deleted[0] != manifestKey("task-1") {
+		t.Errorf("per-key Delete = %v, want exactly the manifest key", f.deleted)
 	}
 	if len(f.kv) != 0 {
 		t.Errorf("kv not fully reclaimed: %v", f.kv)
@@ -53,9 +55,10 @@ func TestPurgeTaskUsesSingleBatchDelete(t *testing.T) {
 		t.Errorf("manifest %q not removed", manifestKey("task-1"))
 	}
 
-	// The single batch must have carried the manifest plus every entry key.
-	want := make(map[string]bool, len(entryKeys)+1)
-	want[manifestKey("task-1")] = true
+	// The batch must carry every entry key, but NOT the manifest: the manifest
+	// is deleted on its own after the batch succeeds (so a failed batch leaves
+	// it intact and the task resumable).
+	want := make(map[string]bool, len(entryKeys))
 	for _, k := range entryKeys {
 		want[k] = true
 	}
@@ -65,6 +68,9 @@ func TestPurgeTaskUsesSingleBatchDelete(t *testing.T) {
 	for _, k := range f.lastDeleteMany {
 		if !want[k] {
 			t.Errorf("batch carried unexpected key %q", k)
+		}
+		if k == manifestKey("task-1") {
+			t.Errorf("batch must not include the manifest key; it is deleted separately")
 		}
 	}
 }
@@ -87,9 +93,9 @@ func TestPurgeTaskBatchHandlesEmptyManifest(t *testing.T) {
 	}
 }
 
-// TestPurgeTaskBatchPropagatesFailure asserts the batch is all-or-nothing: when
-// one key in the batch cannot be deleted, PurgeTask returns an error and leaves
-// the manifest intact rather than partially reclaiming.
+// TestPurgeTaskBatchPropagatesFailure asserts that when an entry batch cannot be
+// fully deleted, PurgeTask returns an error and leaves the manifest intact
+// rather than deleting it alongside a partially-reclaimed batch.
 func TestPurgeTaskBatchPropagatesFailure(t *testing.T) {
 	f := newFakeStore()
 	ctx := taskCtx("task-1")
@@ -98,10 +104,37 @@ func TestPurgeTaskBatchPropagatesFailure(t *testing.T) {
 	f.deleteFails = map[string]bool{key: true}
 
 	if err := PurgeTask(context.Background(), f, "task-1"); err == nil {
-		t.Fatal("PurgeTask error = nil, want failure when a batch key cannot be deleted")
+		t.Fatal("PurgeTask error = nil, want failure when an entry cannot be deleted")
 	}
 	if _, ok := f.sets[manifestKey("task-1")]; !ok {
-		t.Fatal("manifest must survive a failed batch (all-or-nothing)")
+		t.Fatal("manifest must survive a failed entry batch (resumable)")
+	}
+}
+
+// TestPurgeTaskManifestSurvivesEntryFailure is the adversarial test for the
+// large-manifest safety property: when an entry batch reports failure (e.g. a
+// store outage that hits a later DEL batch after an earlier one already
+// succeeded), PurgeTask must NOT delete the manifest, so the task stays
+// resumable and the surviving entries are reclaimed on retry. This must hold
+// regardless of how many entry batches the manifest is split into.
+func TestPurgeTaskManifestSurvivesEntryFailure(t *testing.T) {
+	f := newFakeStore()
+	ctx := taskCtx("task-1")
+	entryKeys := make([]string, 0, 5)
+	for i := 0; i < 5; i++ {
+		k := fmt.Sprintf("kc:extractor:keywords:%d", i)
+		Set(ctx, f, k, fmt.Sprintf("v%d", i))
+		entryKeys = append(entryKeys, k)
+	}
+	// Fail one entry so the entry batch reports failure.
+	f.deleteFails = map[string]bool{entryKeys[3]: true}
+
+	if err := PurgeTask(context.Background(), f, "task-1"); err == nil {
+		t.Fatal("PurgeTask error = nil, want failure when an entry cannot be deleted")
+	}
+	// Manifest must survive so the task remains resumable.
+	if _, ok := f.sets[manifestKey("task-1")]; !ok {
+		t.Fatal("manifest must survive a failed entry batch")
 	}
 }
 

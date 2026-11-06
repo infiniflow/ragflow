@@ -19,17 +19,19 @@ import (
 	"testing"
 )
 
-// TestPurgeTaskUsesSingleBatchDelete is the adversarial test for the E2 batch
-// optimization in the media cache: every entry key, the media manifest, and the
-// quota (digest/state) keys must be reclaimed in exactly ONE Store.DeleteMany
-// call, with no per-key Delete fallback. We pin the call shape rather than only
-// asserting "everything is gone", because a loop-based implementation would pass
-// the happy path.
+// TestPurgeTaskUsesSingleBatchDelete pins the E2 batch call shape in the media
+// cache: every entry key plus the quota (digest/state) keys travel in exactly
+// ONE Store.DeleteMany call, and the manifest is deleted separately (one
+// per-key Delete) only after that batch succeeds. A loop-based implementation
+// would pass a happy-path test, so we assert the batch carries the entries and
+// quota but NOT the manifest, and the manifest's own Delete is the sole
+// per-key call.
 func TestPurgeTaskUsesSingleBatchDelete(t *testing.T) {
 	backend := newFakeStore()
 	ctx := taskContext("task-1")
 	store := New(backend, "task-1")
-	if _, err := store.Put(ctx, "html", "image/png", []byte("hello")); err != nil {
+	ref, err := store.Put(ctx, "html", "image/png", []byte("hello"))
+	if err != nil {
 		t.Fatal(err)
 	}
 
@@ -40,16 +42,19 @@ func TestPurgeTaskUsesSingleBatchDelete(t *testing.T) {
 	if backend.deleteManyCalls != 1 {
 		t.Errorf("DeleteMany calls = %d, want 1 (single batch)", backend.deleteManyCalls)
 	}
-	if len(backend.deleted) != 0 {
-		t.Errorf("per-key Delete still called for %v; batch path expected", backend.deleted)
+	// Exactly one per-key Delete, for the manifest only.
+	if len(backend.deleted) != 1 || backend.deleted[0] != manifestKey("task-1") {
+		t.Errorf("per-key Delete = %v, want exactly the manifest key", backend.deleted)
 	}
 	if len(backend.kv) != 0 || len(backend.sets) != 0 {
 		t.Errorf("leftover after purge kv=%v sets=%v", backend.kv, backend.sets)
 	}
 
-	// The single batch must carry the media manifest plus the quota keys.
+	// The batch must carry the entry key plus the quota keys, but NOT the
+	// manifest (deleted separately after the batch succeeds).
 	digestKey, stateKey := quotaKeys("task-1")
-	required := []string{manifestKey("task-1"), digestKey, stateKey}
+	entryKey := store.key(ref.SHA256)
+	required := []string{entryKey, digestKey, stateKey}
 	for _, k := range required {
 		found := false
 		for _, got := range backend.lastDeleteMany {
@@ -60,6 +65,11 @@ func TestPurgeTaskUsesSingleBatchDelete(t *testing.T) {
 		}
 		if !found {
 			t.Errorf("batch did not include required key %q (batch=%v)", k, backend.lastDeleteMany)
+		}
+	}
+	for _, got := range backend.lastDeleteMany {
+		if got == manifestKey("task-1") {
+			t.Errorf("batch must not include the manifest key; it is deleted separately")
 		}
 	}
 }
@@ -86,8 +96,9 @@ func TestPurgeTaskBatchHandlesEmptyManifest(t *testing.T) {
 	}
 }
 
-// TestPurgeTaskBatchPropagatesFailure asserts the media batch is all-or-nothing:
-// a failing key leaves the manifest intact.
+// TestPurgeTaskBatchPropagatesFailure asserts that when an entry batch fails, the
+// media manifest is preserved (resumable), not deleted alongside a partially
+// reclaimed batch.
 func TestPurgeTaskBatchPropagatesFailure(t *testing.T) {
 	backend := newFakeStore()
 	ctx := taskContext("task-1")
@@ -100,10 +111,33 @@ func TestPurgeTaskBatchPropagatesFailure(t *testing.T) {
 	backend.deleteFails = map[string]bool{key: true}
 
 	if err := PurgeTask(ctx, backend, "task-1"); err == nil {
-		t.Fatal("expected error when a batch key cannot be deleted")
+		t.Fatal("expected error when an entry cannot be deleted")
 	}
 	if len(backend.sets[manifestKey("task-1")]) == 0 {
-		t.Fatal("manifest must survive a failed batch (all-or-nothing)")
+		t.Fatal("manifest must survive a failed entry batch (resumable)")
+	}
+}
+
+// TestPurgeTaskManifestSurvivesEntryFailure asserts that when an entry batch
+// fails, the media manifest is preserved (resumable), not deleted alongside a
+// partially-reclaimed batch. This must hold regardless of how many DEL batches
+// the entry list is split into.
+func TestPurgeTaskManifestSurvivesEntryFailure(t *testing.T) {
+	backend := newFakeStore()
+	ctx := taskContext("task-1")
+	store := New(backend, "task-1")
+	ref, err := store.Put(ctx, "html", "image/png", []byte("first"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := store.key(ref.SHA256)
+	backend.deleteFails = map[string]bool{key: true}
+
+	if err := PurgeTask(ctx, backend, "task-1"); err == nil {
+		t.Fatal("expected error when an entry cannot be deleted")
+	}
+	if len(backend.sets[manifestKey("task-1")]) == 0 {
+		t.Fatal("manifest must survive a failed entry batch (resumable)")
 	}
 }
 

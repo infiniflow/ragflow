@@ -175,17 +175,22 @@ func Set(ctx context.Context, s Store, key, value string) {
 }
 
 // PurgeTask drops every cache entry recorded for taskID, then the manifest
-// itself, in a single batched delete. Call it once the task's chunks are
-// durably persisted: from that point nothing can read the entries back, so
-// holding them for the remaining TTL is pure waste. A manifest read failure is
-// returned because callers that remove the task row must not make resumable
-// cleanup look complete while Redis is unavailable.
+// itself. Call it once the task's chunks are durably persisted: from that point
+// nothing can read the entries back, so holding them for the remaining TTL is
+// pure waste. A manifest read failure is returned because callers that remove
+// the task row must not make resumable cleanup look complete while Redis is
+// unavailable.
 //
-// The manifest is reclaimed in the same DEL as its entries: losing the manifest
-// first would orphan the entries it lists, so both travel together and either
-// both go or, on a store outage, neither does. A key that has already expired
-// is not an error (DEL reports only the count removed), so a purge that races
-// TTL eviction still completes instead of failing on a vanished entry.
+// Entries are reclaimed in one batched DeleteMany; the manifest is deleted on
+// its own (a separate Delete) only after that batch succeeds. This ordering
+// keeps the manifest intact when the entry batch fails or is only partially
+// applied (a large manifest is split across several DELs, and a later batch may
+// fail after an earlier one already removed its keys) so the task stays
+// resumable instead of orphaning surviving entries under a deleted manifest.
+// Any entry a failed batch already dropped is reclaimed by its TTL. A key that
+// has already expired is not an error (DEL reports only the count removed), so
+// a purge that races TTL eviction still completes instead of failing on a
+// vanished entry.
 func PurgeTask(ctx context.Context, s Store, taskID string) error {
 	if s == nil || taskID == "" {
 		return nil
@@ -195,8 +200,11 @@ func PurgeTask(ctx context.Context, s Store, taskID string) error {
 	if err != nil {
 		return fmt.Errorf("read chunk cache manifest %s: %w", mk, err)
 	}
-	if !s.DeleteMany(ctx, append([]string{mk}, keys...)...) {
+	if !s.DeleteMany(ctx, keys...) {
 		return fmt.Errorf("purge chunk cache entries for %s", taskID)
+	}
+	if !s.Delete(ctx, mk) {
+		return fmt.Errorf("delete chunk cache manifest %s", taskID)
 	}
 	return nil
 }
