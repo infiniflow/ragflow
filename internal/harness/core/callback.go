@@ -199,19 +199,23 @@ func DeleteRunLocalValue(ctx context.Context, key string) error {
 
 func SendEvent(ctx context.Context, event *AgentEvent) error {
 	ec := getChatModelExecCtx(ctx)
-	if ec == nil || ec.generator == nil {
+	if !ec.canSend() {
 		return errNotInAgentExec
 	}
-	ec.send(event)
+	if !ec.send(event) {
+		return errAgentEventTypeMismatch
+	}
 	return nil
 }
 
 func TypedSendEvent[M MessageType](ctx context.Context, event *TypedAgentEvent[M]) error {
 	ec := getReActExecCtx[M](ctx)
-	if ec == nil || ec.generator == nil {
+	if !ec.canSend() {
 		return errNotInAgentExec
 	}
-	ec.send(event)
+	if !ec.send(event) {
+		return errAgentEventTypeMismatch
+	}
 	return nil
 }
 
@@ -220,6 +224,7 @@ type AgentExecError struct{ Message string }
 func (e *AgentExecError) Error() string { return e.Message }
 
 var errNotInAgentExec = &AgentExecError{Message: "must be called within ReActAgent Run/Resume"}
+var errAgentEventTypeMismatch = &AgentExecError{Message: "event type does not match the active ReAct agent"}
 
 // checkGobEncodability probes whether the value can be gob-encoded as part of
 // a map[string]any, which is exactly how session values are serialized during
