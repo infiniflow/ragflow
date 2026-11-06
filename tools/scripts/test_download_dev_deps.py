@@ -357,7 +357,7 @@ def _make_pdfium_archive(path, names):
 
 
 def test_extracts_pdfium_into_versioned_dir(tmp_path, monkeypatch):
-    monkeypatch.setattr(native, "NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
+    monkeypatch.setenv("RAGFLOW_NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
     archive = tmp_path / "pdfium-linux-x64-static.tgz"
     _make_pdfium_archive(archive, ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"])
     native.extract_native_lib(
@@ -373,7 +373,7 @@ def test_extracts_pdfium_into_versioned_dir(tmp_path, monkeypatch):
 
 
 def test_extract_native_lib_idempotent_on_rerun(tmp_path, monkeypatch):
-    monkeypatch.setattr(native, "NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
+    monkeypatch.setenv("RAGFLOW_NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
     archive = tmp_path / "pdfium-linux-x64-static.tgz"
     _make_pdfium_archive(archive, ["lib/libpdfium.a"])
     native.extract_native_lib(str(archive), "pdfium-static", "v7809", ["lib/libpdfium.a"], None)
@@ -403,7 +403,7 @@ def test_pdf_oxide_stamp_text_accepts_matching_version(tmp_path, monkeypatch):
     # stamp_format="text", or auto-download would reject a good archive and
     # build.sh's controlled download path would fail closed.
     version = native.go_module_version("github.com/yfedoseev/pdf_oxide/go", native.REPO_ROOT)
-    monkeypatch.setattr(native, "NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
+    monkeypatch.setenv("RAGFLOW_NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
     archive = tmp_path / "pdf_oxide-go-ffi-linux-amd64.tar.gz"
     _make_stamped_archive(archive, "lib/linux_amd64/libpdf_oxide.a", f"pdf_oxide {version}".encode(), "include/pdf_oxide.h")
     native.extract_native_lib(
@@ -422,7 +422,7 @@ def test_pdf_oxide_stamp_text_rejects_wrong_version(tmp_path, monkeypatch):
     # silently accepted (the whole point of the stamp check is to catch a
     # mismatched/wrong native build).
     version = native.go_module_version("github.com/yfedoseev/pdf_oxide/go", native.REPO_ROOT)
-    monkeypatch.setattr(native, "NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
+    monkeypatch.setenv("RAGFLOW_NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
     archive = tmp_path / "pdf_oxide-go-ffi-linux-amd64.tar.gz"
     _make_stamped_archive(archive, "lib/linux_amd64/libpdf_oxide.a", b"pdf_oxide 0.9.9", "include/pdf_oxide.h")
     with pytest.raises(RuntimeError, match=f"missing required native files or version {version}"):
@@ -440,7 +440,7 @@ def test_office_oxide_stamp_null_accepts_matching_version(tmp_path, monkeypatch)
     # Regression guard: office_oxide keeps its null-delimited stamp token; the
     # "text" vs "null" split must not break it.
     version = native.go_module_version("github.com/yfedoseev/office_oxide/go", native.REPO_ROOT)
-    monkeypatch.setattr(native, "NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
+    monkeypatch.setenv("RAGFLOW_NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
     archive = tmp_path / "native-linux-x86_64.tar.gz"
     _make_stamped_archive(archive, "lib/liboffice_oxide.a", f"\x00{version}\x00".encode(), "include/office_oxide_c/office_oxide.h")
     native.extract_native_lib(
@@ -845,3 +845,145 @@ def test_ensure_deps_dir_creates_missing(monkeypatch, tmp_path):
     monkeypatch.setattr(native, "RAGFLOW_DEPS_DIR", str(missing))
     native.ensure_deps_dir()
     assert missing.is_dir()
+
+
+# ── ORT version-stamp symlink must be RELATIVE and read-only-safe (Fix #1/#2) ──
+# build.sh stamps the ORT archive with a v<version>-<sha16> symlink so an
+# in-place .a upgrade invalidates Go's build cache. The symlink MUST be relative
+# (resolves under any cache mount: build host, runner, CI builder) and build.sh
+# MUST skip the write when an existing link already resolves to the same archive
+# (so a read-only CI mount is a no-op instead of a fatal `ln` on a read-only fs).
+
+
+_ORT_STAMP_SH = os.path.join(native.REPO_ROOT, "tools", "scripts", "ort_stamp.sh")
+
+
+def _stamp_eval(versioned_dir, archive_file):
+    assert os.path.isfile(_ORT_STAMP_SH), f"ort_stamp.sh not found at {_ORT_STAMP_SH}"
+    cmd = f'source "{_ORT_STAMP_SH}" && ragflow_ort_stamp_target "$@"'
+    return subprocess.run(
+        ["bash", "-c", cmd, "_", versioned_dir, archive_file],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_ort_stamp_target_is_relative(tmp_path):
+    versioned = tmp_path / "cache" / "onnxruntime" / "static_lib" / "v1.29.0-abc123"
+    versioned.mkdir(parents=True)
+    archive = tmp_path / "cache" / "onnxruntime" / "static_lib" / "onnxruntime-linux-x64-static_lib-1.29.0-glibc2_28" / "lib" / "libonnxruntime.a"
+    archive.parent.mkdir(parents=True)
+    archive.write_bytes(b"ort")
+    res = _stamp_eval(str(versioned), str(archive))
+    assert res.returncode == 0, res.stderr
+    needs, target = res.stdout.strip().split("|")
+    assert needs == "yes"
+    assert not os.path.isabs(target), f"stamp target must be relative, got {target!r}"
+    assert (versioned / target).resolve() == archive.resolve()
+
+
+def test_ort_stamp_target_skips_when_existing_link_correct(tmp_path):
+    # ro-safe: an existing symlink already pointing at the archive means no write.
+    versioned = tmp_path / "cache" / "onnxruntime" / "static_lib" / "v1.29.0-abc123"
+    versioned.mkdir(parents=True)
+    archive = tmp_path / "cache" / "onnxruntime" / "static_lib" / "norm" / "lib" / "libonnxruntime.a"
+    archive.parent.mkdir(parents=True)
+    archive.write_bytes(b"ort")
+    rel = os.path.relpath(archive, versioned)
+    os.symlink(rel, versioned / "libonnxruntime.a")
+    res = _stamp_eval(str(versioned), str(archive))
+    assert res.returncode == 0, res.stderr
+    needs, target = res.stdout.strip().split("|")
+    assert needs == "no", "existing correct symlink must need no write (ro-safe)"
+    assert target == rel
+
+
+def test_ort_stamp_target_writes_when_link_missing(tmp_path):
+    versioned = tmp_path / "v1.29.0-abc123"
+    versioned.mkdir(parents=True)
+    archive = tmp_path / "norm" / "lib" / "libonnxruntime.a"
+    archive.parent.mkdir(parents=True)
+    archive.write_bytes(b"ort")
+    res = _stamp_eval(str(versioned), str(archive))
+    assert res.returncode == 0, res.stderr
+    needs, _ = res.stdout.strip().split("|")
+    assert needs == "yes"
+
+
+# ── download_dev_deps.py pre-creates the ORT stamp dir during population ──────
+# build.sh's stamp step is a no-op on a read-only CI mount ONLY if the stamp dir
+# already exists in the cache. The downloader must therefore create the
+# v<version>-<sha16> dir (relative symlink) while it still has write access.
+
+
+def test_stamp_onnxruntime_version_creates_relative_symlink(tmp_path):
+    static_lib = tmp_path / "onnxruntime" / "static_lib"
+    static_lib.mkdir(parents=True)
+    norm = static_lib / "onnxruntime-linux-x64-static_lib-1.29.0-glibc2_28"
+    (norm / "lib").mkdir(parents=True)
+    (norm / "lib" / "libonnxruntime.a").write_bytes(b"!<arch>\nort")
+    native.stamp_onnxruntime_version(
+        str(static_lib),
+        "onnxruntime-linux-x64-static_lib-1.29.0-glibc2_28",
+        "1.29.0",
+    )
+    stamp_dirs = list(static_lib.glob("v1.29.0-*"))
+    assert len(stamp_dirs) == 1, f"expected exactly one stamp dir, found {stamp_dirs}"
+    link = stamp_dirs[0] / "libonnxruntime.a"
+    assert link.is_symlink(), "stamp must be a symlink"
+    assert not os.path.isabs(os.readlink(link)), "stamp symlink must be relative"
+    assert link.resolve() == (norm / "lib" / "libonnxruntime.a").resolve()
+
+
+def test_stamp_onnxruntime_version_idempotent(tmp_path):
+    static_lib = tmp_path / "onnxruntime" / "static_lib"
+    static_lib.mkdir(parents=True)
+    norm_dir = "onnxruntime-linux-x64-static_lib-1.29.0-glibc2_28"
+    norm = static_lib / norm_dir
+    (norm / "lib").mkdir(parents=True)
+    (norm / "lib" / "libonnxruntime.a").write_bytes(b"!<arch>\nort")
+    native.stamp_onnxruntime_version(str(static_lib), norm_dir, "1.29.0")
+    before = sorted(p.name for p in static_lib.iterdir())
+    native.stamp_onnxruntime_version(str(static_lib), norm_dir, "1.29.0")
+    after = sorted(p.name for p in static_lib.iterdir())
+    assert before == after
+
+
+# ── Documentation contract: IDE CGO snippet uses the versioned layout ─────────
+# The native libs live under <lib>/v<version>/ (one mounted cache holds several
+# versions). The IDE CGO snippet must point there, or a developer following the
+# doc links a .a that does not exist at the legacy flat path.
+
+
+def test_development_doc_ide_cgo_uses_versioned_layout():
+    doc = os.path.join(native.REPO_ROOT, "internal", "development.md")
+    with open(doc, encoding="utf-8") as file:
+        text = file.read()
+    # Version-keyed paths must appear for every native lib the IDE snippet links
+    # (resolved via v*/ glob, matching download_dev_deps.py / build.sh).
+    assert "office_oxide/v" in text, "office_oxide must use v<version> layout"
+    assert "pdfium-static/v" in text, "pdfium-static must use v<version> layout"
+    assert "pdf_oxide/v" in text, "pdf_oxide must use v<version> layout"
+    # The legacy flat layout must be gone so it cannot mislead.
+    assert "office_oxide/lib/liboffice_oxide.a" not in text
+    assert "pdfium-static/lib/libpdfium.a" not in text
+
+
+# ── Versioned-extraction fixtures must isolate via env, not the module attr ───
+# native_libs_dir() reads RAGFLOW_NATIVE_LIBS_DIR (env); monkeypatching the
+# NATIVE_LIBS_DIR module attribute only isolates when that env is unset, so under
+# CI (where the env is set to the real cache) the attribute stub is ignored and
+# files leak into the real cache. The fixtures must isolate via env.
+
+
+def test_extract_native_lib_honors_ragflow_native_libs_dir_env(tmp_path, monkeypatch):
+    # Adversarial: with the env set (as CI does) AND the module attribute stubbed
+    # to a different path, extraction must follow the env, not the attribute.
+    monkeypatch.setenv("RAGFLOW_NATIVE_LIBS_DIR", str(tmp_path / "isolated"))
+    monkeypatch.setattr(native, "NATIVE_LIBS_DIR", "/attribute-path-ignored")
+    archive = tmp_path / "pdfium-linux-x64-static.tgz"
+    _make_pdfium_archive(archive, ["lib/libpdfium.a"])
+    native.extract_native_lib(str(archive), "pdfium-static", "v7809", ["lib/libpdfium.a"], None)
+    assert (tmp_path / "isolated" / "pdfium-static" / "v7809" / "lib" / "libpdfium.a").is_file()
+    assert not os.path.exists("/attribute-path-ignored")

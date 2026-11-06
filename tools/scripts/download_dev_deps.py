@@ -563,6 +563,7 @@ def extract_onnxruntime(static_lib_dir, archive_path, expected_dir):
     expected_path = os.path.join(static_lib_dir, expected_dir)
     if os.path.isdir(expected_path) and has_static_archives(expected_path):
         print(f"  ✓ onnxruntime/static_lib ({expected_dir}) already extracted to {expected_path}")
+        stamp_onnxruntime_version(static_lib_dir, expected_dir, ORT_VERSION)
         return True
     os.makedirs(static_lib_dir, exist_ok=True)
     print(f"  Extracting {os.path.basename(archive_path)} → {static_lib_dir}")
@@ -580,7 +581,35 @@ def extract_onnxruntime(static_lib_dir, archive_path, expected_dir):
                 shutil.rmtree(normalized)
             print(f"  Renaming {os.path.basename(extracted)} → {os.path.basename(normalized)}")
             os.rename(extracted, normalized)
+    # Pre-create the version-stamp symlink (Fix #2) while the cache is still
+    # writable, so a read-only CI mount already has it and build.sh's stamp step
+    # is a no-op there.
+    stamp_onnxruntime_version(static_lib_dir, expected_dir, ORT_VERSION)
     return True
+
+
+def stamp_onnxruntime_version(static_lib_dir, normalized_dir, version):
+    """Pre-create the version-stamp ORT symlink inside the native cache.
+
+    build.sh keys its ORT link flag on onnxruntime/static_lib/v<version>-<sha16>/
+    (the sha16 disambiguates a re-issued archive of the same version). That dir
+    is created HERE, at population time when the cache is still writable, with a
+    RELATIVE symlink to the real libonnxruntime.a so it resolves under any mount
+    point. Idempotent: an existing correct symlink is left untouched, which keeps
+    a read-only CI mount a no-op (build.sh's stamp step then skips the write)."""
+    primary = os.path.join(static_lib_dir, normalized_dir, "lib", "libonnxruntime.a")
+    if not os.path.isfile(primary):
+        return
+    sha16 = _sha256_of(primary)[:16]
+    stamp_dir = os.path.join(static_lib_dir, f"v{version}-{sha16}")
+    stamp_link = os.path.join(stamp_dir, "libonnxruntime.a")
+    rel = os.path.relpath(primary, stamp_dir)
+    if os.path.islink(stamp_link) and os.path.realpath(stamp_link) == os.path.realpath(primary):
+        return
+    os.makedirs(stamp_dir, exist_ok=True)
+    if os.path.lexists(stamp_link):
+        os.unlink(stamp_link)
+    os.symlink(rel, stamp_link)
 
 
 def _fetch_ort_sidecar_sha(url):

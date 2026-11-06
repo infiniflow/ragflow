@@ -21,6 +21,9 @@ PROJECT_ROOT="$SCRIPT_DIR"
 # come from go.mod (office_oxide / pdf_oxide), environments.go (ORT) and
 # native_lib_version.sh (pdfium) — see that file for the single source of truth.
 source "${SCRIPT_DIR}/tools/scripts/native_lib_version.sh"
+# ort_stamp.sh: pure helper that computes the relative, read-only-safe ORT
+# version-stamp symlink target (Fix #1/#2).
+source "${SCRIPT_DIR}/tools/scripts/ort_stamp.sh"
 
 # Native static-lib user-cache root. Overridable via RAGFLOW_NATIVE_LIBS_DIR so
 # CI can mount the cache at a fixed host path (sep-tests.yml Slice 3); defaults
@@ -981,11 +984,20 @@ setup_cgo_env() {
         "${PROJECT_ROOT}/internal/common/environments.go" \
         | sed -E 's/.*"([^"]+)".*/\1/')"
     local ort_versioned_dir="${ONNXRUNTIME_STATIC_PREFIX}/v${ort_version}-${ORT_A_SHA256:0:16}"
-    mkdir -p "$ort_versioned_dir"
     local ort_a_versioned=""
-    local f
+    local f stamp needs_write want_target
     for f in $ORT_A_FILES; do
-        ln -sf "$f" "$ort_versioned_dir/$(basename "$f")"
+        # Relative, read-only-safe stamp (Fix #1/#2): the symlink target is
+        # relative to the versioned dir so it resolves under any cache mount, and
+        # the write is skipped when an existing link already points at the same
+        # archive (a read-only CI mount is then a no-op).
+        stamp="$(ragflow_ort_stamp_target "$ort_versioned_dir" "$f")"
+        needs_write="${stamp%%|*}"
+        want_target="${stamp#*|}"
+        if [ "$needs_write" = "yes" ]; then
+            mkdir -p "$ort_versioned_dir"
+            ln -sf "$want_target" "$ort_versioned_dir/$(basename "$f")"
+        fi
         ort_a_versioned="$ort_a_versioned $ort_versioned_dir/$(basename "$f")"
     done
 
