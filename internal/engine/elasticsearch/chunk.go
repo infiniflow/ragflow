@@ -1019,6 +1019,9 @@ func formatOrderedTagFeas(v any) (json.RawMessage, bool) {
 
 // DeleteChunks deletes chunks from a dataset index by condition
 func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
+	if datasetID == "" {
+		return 0, fmt.Errorf("dataset_id is required")
+	}
 	// For ES, index name is just indexName (e.g., "ragflow_{tenantID}"), not indexName_datasetID
 	fullIndexName := indexName
 	common.Info("Deleting chunks from Elasticsearch index", zap.String("index_name", fullIndexName), zap.Any("condition", condition))
@@ -1033,6 +1036,17 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 		return 0, nil
 	}
 
+	// Scope the delete to the dataset the caller asked for. The tenant index is
+	// shared by every dataset, so without this a condition that omits kb_id
+	// deletes matching chunks in other datasets too.
+	condition = copyFields(condition)
+	if idVal, ok := condition["id"]; ok {
+		items, isList := conditionTermsList(idVal)
+		if idVal == nil || (isList && len(items) == 0) {
+			return 0, fmt.Errorf("ES delete aborted: empty id list on index %s", fullIndexName)
+		}
+	}
+	condition["kb_id"] = datasetID
 	condition = types.CompilationFilter(condition)
 	// Build bool query from condition
 	var mustClauses []map[string]interface{}
@@ -2350,22 +2364,13 @@ func buildBoolQueryFromConditionRaw(filter map[string]interface{}, kbIDs []strin
 		if v == nil || v == "" {
 			continue
 		}
-		if isMemoryIndex && k == "session_id_contains" {
+		if isMemoryIndex && (k == "session_id" || k == "session_id_contains") {
 			if text, ok := v.(string); ok {
 				pattern := strings.NewReplacer(`\`, `\\`, "*", `\*`, "?", `\?`).Replace(text)
 				filterClauses = append(filterClauses, map[string]interface{}{"wildcard": map[string]interface{}{"session_id": "*" + pattern + "*"}})
+				continue
 			}
-			continue
-		}
-		if isMemoryIndex && k == "session_id" {
-			if strVal, ok := v.(string); ok && strVal != "" {
-				filterClauses = append(filterClauses, map[string]interface{}{
-					"query_string": map[string]interface{}{
-						"query":            fmt.Sprintf("*%s*", strVal),
-						"fields":           []string{"session_id"},
-						"analyze_wildcard": true,
-					},
-				})
+			if k == "session_id_contains" {
 				continue
 			}
 		}
