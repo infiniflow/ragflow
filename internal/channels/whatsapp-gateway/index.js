@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { mkdir } from 'node:fs/promises';
+import { isAuthorized } from './auth.js';
 import { decodeSessionKey, resolveSessionDir } from './session-path.js';
 
 import makeWASocket, {
@@ -96,14 +97,6 @@ function buildWsFrame(text) {
 
 function sendWsText(socket, payload) {
   socket.write(buildWsFrame(JSON.stringify(payload)));
-}
-
-function isAuthorized(req) {
-  if (!AUTH_TOKEN) {
-    return true;
-  }
-  const auth = String(req.headers.authorization || '').trim();
-  return auth === `Bearer ${AUTH_TOKEN}`;
 }
 
 class WhatsAppSession {
@@ -431,7 +424,7 @@ const server = http.createServer(async (req, res) => {
       return sendError(res, 404, 'not found');
     }
 
-    if (!isAuthorized(req)) {
+    if (!isAuthorized(req, AUTH_TOKEN)) {
       return sendError(res, 401, 'unauthorized');
     }
 
@@ -492,7 +485,7 @@ server.on('upgrade', (req, socket) => {
       socket.destroy();
       return;
     }
-    if (!isAuthorized(req)) {
+    if (!isAuthorized(req, AUTH_TOKEN)) {
       socket.destroy();
       return;
     }

@@ -31,7 +31,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const tenantModelMaxTokensTargetVersion = "v1.0.0-rc2"
+const tenantModelMaxTokensTargetVersion = "v1.0.0-rc2.dev2"
 
 type tenantModelMaxTokensTarget struct {
 	ID         string `gorm:"column:id"`
@@ -61,8 +61,8 @@ type tenantModelMaxTokensUpdate struct {
 // migration. Existing extra.max_tokens values are never overwritten.
 // Values identical to the factory catalog are not stored as tenant overrides.
 //
-// It runs after the rc1 migrations because all database migrations share one
-// monotonically increasing version marker.
+// It runs after the ingestion/parser config migration because all database
+// migrations share one monotonically increasing version marker.
 func migrateTenantModelMaxTokens(ctx context.Context, db *gorm.DB) error {
 	currentVersion, err := GetDatabaseMigrationVersion(ctx, db)
 	if err != nil {

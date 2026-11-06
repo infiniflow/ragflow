@@ -150,6 +150,7 @@ const AwaitInteraction = ({
   if (isActive) {
     return (
       <DebugContent
+        className="[&_input]:text-inherit [&_textarea]:text-inherit"
         parameters={buildInputList(message)}
         message={message}
         ok={handleOk(message)}
@@ -348,10 +349,15 @@ const FloatingChatWidget = () => {
       </div>
     );
   };
+  const widgetFormControlStyle = {
+    color: widgetTextColor,
+    '--bg-input': `color-mix(in srgb, ${widgetTextColor} 5%, transparent)`,
+    '--border-button': `color-mix(in srgb, ${widgetTextColor} 20%, transparent)`,
+  } as React.CSSProperties;
   const bodyContainerStyle: React.CSSProperties = {
+    ...widgetFormControlStyle,
     borderRadius: '0 0 16px 16px',
     backgroundColor: widgetBackgroundColor,
-    color: widgetTextColor,
   };
   const inputStyle: React.CSSProperties = {
     minHeight: '44px',
@@ -746,8 +752,9 @@ const FloatingChatWidget = () => {
         size="small"
         className="w-[calc(100vw-2rem)]"
       >
-        <div className="mb-4">
+        <div className="mb-4" style={widgetFormControlStyle}>
           <DebugContent
+            className="[&_input]:text-inherit [&_textarea]:text-inherit"
             parameters={buildBeginInputListFromObject(beginInputs ?? {})}
             ok={handleSubmitBeginParams}
             isNext={false}
@@ -862,18 +869,23 @@ const FloatingChatWidget = () => {
               background: `linear-gradient(to right, ${widgetAccentColor}, ${widgetAccentColorStrong})`,
             }}
           >
-            <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
+            <div className="flex items-center space-x-3 min-w-0">
+              <div className="w-8 h-8 bg-white bg-opacity-20 rounded-full flex items-center justify-center shrink-0">
                 <MessageCircle size={18} />
               </div>
-              <div>
+              <div className="min-w-0">
                 <h3
-                  className="font-semibold text-sm"
+                  className="font-semibold text-sm truncate"
                   style={{ color: widgetHeaderTextColor }}
+                  title={displayTitle}
                 >
                   {displayTitle}
                 </h3>
-                <p className="text-xs" style={{ color: widgetHeaderTextColor }}>
+                <p
+                  className="text-xs truncate"
+                  style={{ color: widgetHeaderTextColor }}
+                  title={displaySubtitle}
+                >
                   {displaySubtitle}
                 </p>
               </div>
@@ -921,7 +933,7 @@ const FloatingChatWidget = () => {
                       hasAwaitInputs(message)
                         ? 'w-full'
                         : 'max-w-[280px]'
-                    } px-4 py-2 rounded-2xl ${
+                    } min-w-0 break-words px-4 py-2 rounded-2xl ${
                       message.role === MessageType.User
                         ? 'text-white rounded-br-md'
                         : 'rounded-bl-md'
@@ -936,7 +948,7 @@ const FloatingChatWidget = () => {
                     }
                   >
                     {message.role === MessageType.User ? (
-                      <p className="text-sm leading-relaxed whitespace-pre-wrap">
+                      <p className="text-sm leading-relaxed whitespace-pre-wrap text-wrap">
                         {message.content}
                       </p>
                     ) : (
@@ -1053,23 +1065,28 @@ const FloatingChatWidget = () => {
               background: `linear-gradient(to right, ${widgetAccentColor}, ${widgetAccentColorStrong})`,
             }}
           >
-            <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-white bg-opacity-20 rounded-full flex items-center justify-center">
+            <div className="flex items-center space-x-3 min-w-0">
+              <div className="w-8 h-8 bg-white bg-opacity-20 rounded-full flex items-center justify-center shrink-0">
                 <MessageCircle size={18} />
               </div>
-              <div>
+              <div className="min-w-0">
                 <h3
-                  className="font-semibold text-sm"
+                  className="font-semibold text-sm truncate"
                   style={{ color: widgetHeaderTextColor }}
+                  title={displayTitle}
                 >
                   {displayTitle}
                 </h3>
-                <p className="text-xs" style={{ color: widgetHeaderTextColor }}>
+                <p
+                  className="text-xs truncate"
+                  style={{ color: widgetHeaderTextColor }}
+                  title={displaySubtitle}
+                >
                   {displaySubtitle}
                 </p>
               </div>
             </div>
-            <div className="flex items-center space-x-1">
+            <div className="flex items-center space-x-1 shrink-0">
               <button
                 type="button"
                 onClick={minimizeChat}
@@ -1132,7 +1149,7 @@ const FloatingChatWidget = () => {
                         hasAwaitInputs(message)
                           ? 'w-full'
                           : 'max-w-[280px]'
-                      } px-4 py-2 rounded-2xl ${
+                      } min-w-0 break-words px-4 py-2 rounded-2xl ${
                         message.role === MessageType.User
                           ? 'text-white rounded-br-md'
                           : 'rounded-bl-md'

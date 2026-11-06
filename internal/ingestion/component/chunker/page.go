@@ -34,8 +34,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const ComponentNamePageChunker = "PageChunker"
-
 type pageChunkerParam struct{}
 
 func (p *pageChunkerParam) Update(conf map[string]any) {}

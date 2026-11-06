@@ -356,21 +356,16 @@ func canonicalChunkText(ck schema.ChunkDoc) string {
 // keeps the source from colliding with ordinary chunk text.
 const mediaChunkIDPrefix = "\x00media:"
 
-// canonicalChunkID returns the deterministic chunk id: the single identity
-// used both as the MinIO object key and as ck["id"]. The id formula (ChunkID
-// over chunkIDSource) is centralized here, so the identity that feeds the
-// hash lives in exactly one place. The decorator in register.go re-derives
-// ck["id"] from the same already-finalized text as a fallback for chunks that
-// bypassed the streamed crop-upload path; the two routes cannot disagree
-// because a chunk is either stamped by crop-upload (and the decorator reuses
-// that id) or computed by the decorator fallback — never both. Position-only
-// title media instead reuses the coordinate-and-text id finalized after headings
-// are applied.
+// canonicalChunkID derives the crop/upload key from the canonical chunk source.
+// The decorator in register.go reuses stamped IDs or derives the same identity
+// from finalized text, media payloads and crop regions for chunks without a stamp.
+// Title-family media IDs also retain source identity when context or headings
+// give distinct captionless media the same text.
 func canonicalChunkID(docID string, ck schema.ChunkDoc) string {
-	// Title-family position-only media is stamped with both coordinates and
-	// finalized heading text. Keep that identity through crop uploads,
-	// including failed-upload retries.
-	if isMediaChunk(ck) && ck.ID != "" {
+	// A title-family captionless image can already carry a source/payload/body
+	// identity. Only the title crop bridge marks these finalized IDs; other
+	// chunkers may carry upstream IDs whose text they have since rewritten.
+	if ck.ID != "" && string(ck.Extra[titleMediaContextIDKey]) == "true" {
 		return ck.ID
 	}
 	return common.ChunkID(docID, chunkIDSource(ck))

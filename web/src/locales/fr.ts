@@ -698,8 +698,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         'Par exemple : https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: "Jeton d'accès AI Studio",
-      paddleocrAccessTokenTip: "Jeton d'accès à l'API PaddleOCR (optionnel)",
-      paddleocrAccessTokenPlaceholder: 'Votre jeton AI Studio (optionnel)',
+      paddleocrAccessTokenTip: "Jeton d'accès à l'API PaddleOCR",
+      paddleocrAccessTokenPlaceholder: 'Votre jeton AI Studio',
       paddleocrAlgorithm: 'Algorithme PaddleOCR',
       paddleocrAlgorithmTip: "Algorithme utilisé pour l'analyse PaddleOCR",
       paddleocrSelectAlgorithm: 'Sélectionner un algorithme',
@@ -1232,9 +1232,8 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       paddleocrApiUrlPlaceholder:
         'Ex. : https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: "Jeton d'accès AI Studio",
-      paddleocrAccessTokenMessage:
-        "Jeton d'accès à l'API PaddleOCR (optionnel)",
-      paddleocrAccessTokenPlaceholder: 'Votre jeton AI Studio (optionnel)',
+      paddleocrAccessTokenMessage: "Jeton d'accès à l'API PaddleOCR",
+      paddleocrAccessTokenPlaceholder: 'Votre jeton AI Studio',
       paddleocrAlgorithm: 'Algorithme PaddleOCR',
       paddleocrAlgorithmMessage:
         'Veuillez sélectionner un algorithme PaddleOCR',
@@ -1301,7 +1300,7 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
         apiUrlPlaceholder:
           'Par exemple : https://paddleocr-server.com/layout-parsing',
         accessToken: "Jeton d'accès AI Studio",
-        accessTokenPlaceholder: 'Votre jeton AI Studio (optionnel)',
+        accessTokenPlaceholder: 'Votre jeton AI Studio',
         algorithm: 'Algorithme PaddleOCR',
         selectAlgorithm: 'Sélectionner un algorithme',
         modelNamePlaceholder: 'Par exemple : paddleocr-from-env-1',
@@ -2364,9 +2363,9 @@ Exemple : Virtual Hosted Style`,
       jsonFormatTip:
         'Le composant en amont doit fournir une chaîne JSON au format suivant :',
       toEmailTip: 'to_email : Email du destinataire (Obligatoire)',
-      ccEmailTip: 'cc_email : Email en copie (Optionnel)',
-      subjectTip: "subject : Sujet de l'email (Optionnel)",
-      contentTip: "content : Contenu de l'email (Optionnel)",
+      ccEmailTip: 'cc_email : Email en copie',
+      subjectTip: "subject : Sujet de l'email",
+      contentTip: "content : Contenu de l'email",
       jsonUploadTypeErrorMessage: 'Veuillez uploader un fichier JSON',
       jsonUploadContentErrorMessage: 'Erreur dans le fichier JSON',
       iteration: 'Itération',

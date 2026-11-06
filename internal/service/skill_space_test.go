@@ -38,6 +38,62 @@ import (
 // the handler returns, so inheriting it left the space at status "2" forever:
 // the delete endpoint answers with the idempotent "already deleting" success on
 // every retry and space creation refuses the same name.
+// UpdateSpace must reject a supplied name that becomes empty after trimming,
+// while an omitted name remains a no-op for the other fields.
+func TestUpdateSpaceRejectsWhitespaceOnlyName(t *testing.T) {
+	db := setupServiceTestDB(t)
+	models := append([]interface{}{&entity.SkillSpace{}}, permissionChangeLogTestModels()...)
+	if err := db.AutoMigrate(models...); err != nil {
+		t.Fatalf("failed to migrate skill space: %v", err)
+	}
+	pushServiceDB(t, db)
+
+	valid := string(entity.StatusValid)
+	if err := db.Create(&entity.UserTenant{
+		ID:       "owner-membership",
+		UserID:   "owner-1",
+		TenantID: "tenant-1",
+		Role:     string(permission.RoleOwner),
+		Status:   &valid,
+	}).Error; err != nil {
+		t.Fatalf("create membership: %v", err)
+	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "owner-1"); err != nil {
+		t.Fatalf("prepare skill space permission fixture: %v", err)
+	}
+	if err := db.Create(&entity.File{
+		ID:        "folder-1",
+		ParentID:  "skills-root",
+		TenantID:  "tenant-1",
+		CreatedBy: "owner-1",
+		Name:      "skills",
+		Type:      "folder",
+	}).Error; err != nil {
+		t.Fatalf("create space folder: %v", err)
+	}
+
+	space := &entity.SkillSpace{
+		ID:       "space-1",
+		UserID:   "owner-1",
+		TenantID: "tenant-1",
+		Name:     "skills",
+		FolderID: "folder-1",
+		Status:   entity.SpaceStatusActive,
+	}
+	if err := db.Create(space).Error; err != nil {
+		t.Fatalf("create space: %v", err)
+	}
+
+	ctx := permission.WithIdentity(context.Background(), "owner-1", "tenant-1")
+	name := "   "
+	if _, code, err := NewSkillSpaceService(nil).UpdateSpace(ctx, space.ID, &UpdateSpaceRequest{Name: &name}); err == nil || code != common.CodeDataError {
+		t.Fatalf("UpdateSpace = (%v, %v), want CodeDataError", code, err)
+	}
+	if _, code, err := NewSkillSpaceService(nil).UpdateSpace(ctx, space.ID, &UpdateSpaceRequest{Description: "updated"}); err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateSpace with omitted name = (%v, %v), want success", code, err)
+	}
+}
+
 func TestAsyncDeleteSpaceOutlivesTheRequestContext(t *testing.T) {
 	db := setupServiceTestDB(t)
 	models := append([]interface{}{&entity.SkillSpace{}}, permissionChangeLogTestModels()...)
@@ -331,7 +387,7 @@ func TestDeleteSpaceRestartsCleanupLeftInTheDeletingState(t *testing.T) {
 	}
 
 	ctx := permission.WithIdentity(context.Background(), "owner-1", "tenant-1")
-	code, err := NewSkillSpaceService(nil).DeleteSpace(ctx, "owner-1", space.ID, nil)
+	code, err := NewSkillSpaceService(nil).DeleteSpace(ctx, space.ID, nil)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("DeleteSpace = (%v, %v), want success", code, err)
 	}

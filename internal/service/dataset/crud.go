@@ -68,7 +68,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		return nil, common.CodeDataError, errors.New("dataset name can't be empty")
 	}
 	if utf8.RuneCountInString(name) > entity.DatasetNameLimit {
-		return nil, common.CodeDataError, fmt.Errorf("Dataset name length is %d which is large than %d", utf8.RuneCountInString(name), entity.DatasetNameLimit)
+		return nil, common.CodeDataError, fmt.Errorf("dataset name length is %d which is larger than %d", utf8.RuneCountInString(name), entity.DatasetNameLimit)
 	}
 
 	tenant, err := d.tenantDAO.GetByID(ctx, dao.DB, tenantID)
@@ -233,10 +233,10 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	var parserConfigMap map[string]interface{} = parserConfig
 
 	modelFactory := service.NewModelFactory()
-	identity := service.Identity{UserID: userID, TenantID: tenantID}
+	modelCtx := permission.WithTenantID(ctx, tenantID)
 	embdID, tenantEmbdID := "", ""
 	if embeddingModel == "" {
-		embeddingInfo, embeddingErr := modelFactory.ResolveDefaultInfo(ctx, identity, entity.ModelTypeEmbedding)
+		embeddingInfo, embeddingErr := modelFactory.ResolveDefaultInfo(modelCtx, entity.ModelTypeEmbedding)
 		if embeddingErr == nil {
 			embdID = service.ModelReference(embeddingInfo)
 			tenantEmbdID = embeddingInfo.ID
@@ -245,7 +245,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		}
 	}
 	if embeddingModel != "" {
-		ok, message := d.verifyEmbeddingAvailability(ctx, embeddingModel, identity)
+		ok, message := d.verifyEmbeddingAvailability(ctx, embeddingModel, tenantID)
 		if !ok {
 			return nil, common.CodeDataError, errors.New(message)
 		}
@@ -253,7 +253,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		tenantEmbdID = ""
 	}
 	if embdID != "" && tenantEmbdID == "" {
-		target, err := modelFactory.ResolveInfo(ctx, identity, entity.ModelTypeEmbedding, embdID)
+		target, err := modelFactory.ResolveInfo(modelCtx, entity.ModelTypeEmbedding, embdID)
 		if err == nil {
 			tenantEmbdID = target.ID
 		} else {
@@ -271,7 +271,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	name = dedupedName
 
 	llmID := ""
-	chatInfo, chatErr := modelFactory.ResolveDefaultInfo(ctx, identity, entity.ModelTypeChat)
+	chatInfo, chatErr := modelFactory.ResolveDefaultInfo(modelCtx, entity.ModelTypeChat)
 	if chatErr == nil {
 		llmID = service.ModelReference(chatInfo)
 	} else if !errors.Is(chatErr, service.ErrNoDefaultModel) {
@@ -323,12 +323,12 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 // dedupeDatasetName returns a non-colliding dataset name within the tenant,
 // appending (1), (2), ... when the requested name is already taken.
 func (d *DatasetService) dedupeDatasetName(ctx context.Context, name, tenantID string) (string, error) {
-	return common.UniqueNameCharacters(name, entity.DatasetNameLimit, func(candidate string) (bool, error) {
+	return common.UniqueName(name, entity.DatasetNameLimit, func(candidate string) (bool, error) {
 		return d.kbDAO.NameExists(ctx, dao.DB, tenantID, candidate)
 	})
 }
 
-func (d *DatasetService) GetDataset(ctx context.Context, datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) GetDataset(ctx context.Context, datasetID string) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New("lack of \"Dataset ID\"")
@@ -588,7 +588,7 @@ func datasetNameAndID(kb *entity.Knowledgebase) string {
 	return fmt.Sprintf("%s (%s)", kb.Name, kb.ID)
 }
 
-func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page, pageSize int, terms []dao.OrderTerm, keywords string, ownerIDs []string, parserID, userID string, ids []string, canvasID string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
+func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page, pageSize int, terms []dao.OrderTerm, keywords string, ownerIDs []string, parserID string, ids []string, canvasID string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
 	id = strings.TrimSpace(id)
 	canvasID = strings.TrimSpace(canvasID)
 	if id != "" && len(ids) > 0 {
@@ -605,10 +605,10 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 	name = strings.TrimSpace(name)
 
 	if page <= 0 {
-		page = 1
+		page = common.DefaultPage
 	}
 	if pageSize <= 0 {
-		pageSize = 30
+		pageSize = common.DefaultPageSize
 	}
 
 	terms = keepDatasetOrderTerms(terms)
@@ -722,7 +722,7 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 	}
 	if len(deniedIDs) > 0 {
 		common.Warn("User lacks permission for datasets",
-			zap.String("user_id", userID),
+			zap.String("user_id", permission.UserIDFromContext(ctx)),
 			zap.Strings("dataset_ids", common.Deduplicate(deniedIDs)),
 		)
 	}
@@ -751,7 +751,7 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 	return data, total, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) ListDatasetFilters(ctx context.Context, userID, canvasID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) ListDatasetFilters(ctx context.Context, canvasID string) (map[string]interface{}, common.ErrorCode, error) {
 	owners := make([]*entity.DatasetOwnerFilter, 0)
 	err := dao.DB.Transaction(func(tx *gorm.DB) error {
 		query := permission.ScopeQuery{Kind: permission.ResourceKindDataset, Operation: permission.OperationRead}

@@ -3,7 +3,6 @@ package file
 import (
 	"context"
 	"fmt"
-	"gorm.io/gorm"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -15,6 +14,8 @@ import (
 	"ragflow/internal/utility"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 const defaultDeploymentUploadMaxBytes int64 = common.DefaultMaxMultipartRequestBodyBytes
@@ -24,12 +25,15 @@ func DeploymentUploadMaxBytes() int64 {
 }
 
 // UploadFile uploads files to a folder
-func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string, files []*multipart.FileHeader, maxBytes int64) ([]map[string]interface{}, error) {
-	userID, currentTenantID, err := fileRequestIdentity(ctx, tenantID)
-	if err != nil {
-		return nil, err
+func (s *FileService) UploadFile(ctx context.Context, parentID string, files []*multipart.FileHeader, maxBytes int64) ([]map[string]interface{}, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
 	}
-	tenantID = currentTenantID
+	tenantID := permission.TenantIDFromContext(ctx)
+	if tenantID == "" {
+		tenantID = userID
+	}
 	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "file", permission.ActionWrite); err != nil {
 		return nil, err
 	}
@@ -48,7 +52,7 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 	if parentFolder.TenantID != tenantID {
 		return nil, permission.ErrResourceNotFound
 	}
-	if err := checkFileAccess(ctx, userID, parentFolder, permission.OperationCreate); err != nil {
+	if err := checkFileAccess(ctx, parentFolder, permission.OperationCreate); err != nil {
 		return nil, err
 	}
 
@@ -102,7 +106,7 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 				return nil, fmt.Errorf("folder not found")
 			}
 			var createdFolder *entity.File
-			createdFolder, err = s.createFolderRecursive(ctx, lastFolder, fileObjNames, len(idList), tenantID, userID)
+			createdFolder, err = s.createFolderRecursive(ctx, lastFolder, fileObjNames, len(idList), tenantID)
 			if err != nil {
 				return nil, fmt.Errorf("failed to create folder: %w", err)
 			}
@@ -115,9 +119,18 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 			}
 		}
 
-		location := fileObjNames[len(fileObjNames)-1]
-		for storageImpl.ObjExist(ctx, lastFolder.ID, location) {
-			location += "_"
+		baseName := fileObjNames[len(fileObjNames)-1]
+		uniqueName, err := s.getUniqueFilename(ctx, baseName, lastFolder.ID, tenantID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get unique filename: %w", err)
+		}
+
+		var location string
+		for attempt := 0; ; attempt++ {
+			location = utility.StorageObjectName(uniqueName, attempt, utility.StorageKeyMaxBytes)
+			if !storageImpl.ObjExist(ctx, lastFolder.ID, location) {
+				break
+			}
 		}
 
 		var src multipart.File
@@ -135,12 +148,6 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 
 		if err = storageImpl.Put(ctx, lastFolder.ID, location, data); err != nil {
 			return nil, fmt.Errorf("failed to store file: %w", err)
-		}
-
-		var uniqueName string
-		uniqueName, err = s.getUniqueFilename(ctx, fileObjNames[len(fileObjNames)-1], lastFolder.ID, tenantID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get unique filename: %w", err)
 		}
 
 		fileRecord := &entity.File{
@@ -190,7 +197,7 @@ func readDeploymentUploadData(r io.Reader, maxBytes int64) ([]byte, error) {
 // UploadInfos mirrors Python's upload_info file branch: store raw bytes in the
 // per-user downloads bucket and return lightweight upload descriptors instead
 // of creating full File rows in the file-management tree.
-func (s *FileService) UploadInfos(ctx context.Context, userID string, files []*multipart.FileHeader) ([]map[string]interface{}, error) {
+func (s *FileService) UploadInfos(ctx context.Context, files []*multipart.FileHeader) ([]map[string]interface{}, error) {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, fmt.Errorf("storage not initialized")
@@ -199,7 +206,7 @@ func (s *FileService) UploadInfos(ctx context.Context, userID string, files []*m
 	results := make([]map[string]interface{}, 0, len(files))
 	for _, fileHeader := range files {
 		filename := fileHeader.Filename
-		if err := s.checkUploadInfoHealth(ctx, userID, filename); err != nil {
+		if err := s.checkUploadInfoHealth(ctx, filename); err != nil {
 			return nil, err
 		}
 		src, err := fileHeader.Open()
@@ -217,7 +224,10 @@ func (s *FileService) UploadInfos(ctx context.Context, userID string, files []*m
 			contentType = http.DetectContentType(data)
 		}
 		filename, contentType, data = utility.NormalizeUploadInfoContent(filename, contentType, data)
-		resp, err := s.storeUploadInfoBlob(ctx, storageImpl, userID, filename, contentType, data)
+		if err := validateUploadInfoFilename(filename); err != nil {
+			return nil, err
+		}
+		resp, err := s.storeUploadInfoBlob(ctx, storageImpl, filename, contentType, data)
 		if err != nil {
 			return nil, err
 		}
@@ -269,7 +279,8 @@ func (s *FileService) toUploadInfoResponse(file *entity.File, mimeType string) m
 	}
 }
 
-func (s *FileService) checkUploadInfoHealth(ctx context.Context, userID, filename string) error {
+func (s *FileService) checkUploadInfoHealth(ctx context.Context, filename string) error {
+	userID := permission.UserIDFromContext(ctx)
 	if filename == "" {
 		return fmt.Errorf("No file selected!")
 	}
@@ -278,7 +289,7 @@ func (s *FileService) checkUploadInfoHealth(ctx context.Context, userID, filenam
 		var maxNum int64
 		if _, err := fmt.Sscanf(maxFileNumPerUser, "%d", &maxNum); err == nil && maxNum > 0 {
 			var docCount int64
-			docCount, err = s.GetDocCount(ctx, userID)
+			docCount, err = dao.NewDocumentDAO().CountByUserID(ctx, dao.DB, userID)
 			if err != nil {
 				return fmt.Errorf("failed to get document count: %w", err)
 			}
@@ -287,13 +298,23 @@ func (s *FileService) checkUploadInfoHealth(ctx context.Context, userID, filenam
 			}
 		}
 	}
-	if len([]byte(filename)) > 255 {
+	if err := validateUploadInfoFilename(filename); err != nil {
+		return err
+	}
+	return nil
+}
+
+// validateUploadInfoFilename enforces the stored name limit after any
+// content-derived extension has been added.
+func validateUploadInfoFilename(filename string) error {
+	if err := common.ValidateNameRunes(filename, common.NameLimit255); err != nil {
 		return fmt.Errorf("exceed the maximum length of file name")
 	}
 	return nil
 }
 
-func (s *FileService) storeUploadInfoBlob(ctx context.Context, storageImpl storage.Storage, userID, filename, contentType string, data []byte) (map[string]interface{}, error) {
+func (s *FileService) storeUploadInfoBlob(ctx context.Context, storageImpl storage.Storage, filename, contentType string, data []byte) (map[string]interface{}, error) {
+	userID := permission.UserIDFromContext(ctx)
 	location := common.GenerateUUID()
 	bucket := fmt.Sprintf("%s-downloads", userID)
 	if err := storageImpl.Put(ctx, bucket, location, data); err != nil {
@@ -318,8 +339,8 @@ func (s *FileService) storeUploadInfoBlob(ctx context.Context, storageImpl stora
 // UploadDocumentInfos is the document-level wrapper that stores uploaded blobs
 // without creating Document rows, then returns the file metadata including
 // size/mime-type/extension.
-func (s *FileService) UploadDocumentInfos(ctx context.Context, userID string, files []*multipart.FileHeader) ([]map[string]interface{}, common.ErrorCode, error) {
-	data, err := s.UploadInfos(ctx, userID, files)
+func (s *FileService) UploadDocumentInfos(ctx context.Context, files []*multipart.FileHeader) ([]map[string]interface{}, common.ErrorCode, error) {
+	data, err := s.UploadInfos(ctx, files)
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
@@ -328,8 +349,12 @@ func (s *FileService) UploadDocumentInfos(ctx context.Context, userID string, fi
 
 // UploadDocumentInfoByURL fetches a remote URL, stores the content without
 // creating a Document row, then returns file metadata.
-func (s *FileService) UploadDocumentInfoByURL(ctx context.Context, userID, rawURL string) (map[string]interface{}, common.ErrorCode, error) {
-	data, err := s.UploadFromURL(ctx, userID, rawURL)
+func (s *FileService) UploadDocumentInfoByURL(ctx context.Context, rawURL string) (map[string]interface{}, common.ErrorCode, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, common.CodeUnauthorized, permission.ErrUnauthenticated
+	}
+	data, err := s.UploadFromURL(ctx, rawURL)
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"ragflow/internal/service"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,6 +16,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/knowledge_compile"
 	ingestionpipeline "ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/permission"
 	"ragflow/internal/storage"
 
 	"gorm.io/gorm"
@@ -112,7 +112,10 @@ func (s *DocumentService) deletePreparedDocumentTask(ctx context.Context, docID 
 // KB config (ApplyKB), validates storage, and enqueues an ingestion task.
 // Extracted from Ingest so other entry points (e.g. ChunkService.Parse)
 // can reuse the same start-parse flow.
-func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, userID string, opts StartParseOptions) error {
+func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, opts StartParseOptions) error {
+	if permission.UserIDFromContext(ctx) == "" {
+		return permission.ErrUnauthenticated
+	}
 	// Validate storage first so we don't clear prior results and then fail
 	// because the document can't be read, leaving the document with neither
 	// old nor new parse results.
@@ -134,7 +137,7 @@ func (s *DocumentService) StartParseDocuments(ctx context.Context, doc *entity.D
 		}
 	}
 
-	responses, err := s.IngestDocuments(ctx, doc.KbID, userID, []string{doc.ID})
+	responses, err := s.IngestDocuments(ctx, doc.KbID, []string{doc.ID})
 	if err != nil {
 		return err
 	}
@@ -194,7 +197,7 @@ func (s *DocumentService) applyKnowledgebaseParserConfig(ctx context.Context, do
 	if metaOK {
 		merged["metadata"] = deepCopyValue(meta)
 	} else {
-		for _, cpnID := range sortedExtractorKeys(merged) {
+		for _, cpnID := range common.SortedExtractorKeys(map[string]any(merged)) {
 			params, ok := nodeParams(merged[cpnID])
 			if !ok {
 				continue
@@ -221,21 +224,6 @@ func (s *DocumentService) applyKnowledgebaseParserConfig(ctx context.Context, do
 	}
 	doc.ParserConfig = merged
 	return nil
-}
-
-// sortedExtractorKeys returns the component IDs in parserConfig that name
-// Extractor nodes, in sorted order so multi-Extractor configs resolve
-// deterministically instead of depending on Go map iteration order.
-func sortedExtractorKeys(parserConfig entity.JSONMap) []string {
-	var keys []string
-	for k := range parserConfig {
-		lower := strings.ToLower(k)
-		if strings.HasPrefix(lower, "extractor:") || strings.HasPrefix(lower, "extractor_") {
-			keys = append(keys, k)
-		}
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // nodeParams returns a writable view of a component node's params, accepting
@@ -277,7 +265,7 @@ func resolveDatasetModularMetadata(parserConfig entity.JSONMap) (map[string]any,
 	if mm, ok := parserConfig["metadata"].(entity.JSONMap); ok {
 		return map[string]any(mm), true, true
 	}
-	for _, cpnID := range sortedExtractorKeys(parserConfig) {
+	for _, cpnID := range common.SortedExtractorKeys(map[string]any(parserConfig)) {
 		params, ok := nodeParams(parserConfig[cpnID])
 		if !ok {
 			continue
@@ -297,7 +285,7 @@ func resolveDatasetLLMID(parserConfig entity.JSONMap) string {
 	if s, ok := parserConfig["llm_id"].(string); ok && strings.TrimSpace(s) != "" {
 		return s
 	}
-	for _, cpnID := range sortedExtractorKeys(parserConfig) {
+	for _, cpnID := range common.SortedExtractorKeys(map[string]any(parserConfig)) {
 		params, ok := nodeParams(parserConfig[cpnID])
 		if !ok {
 			continue
@@ -431,7 +419,7 @@ func (s *DocumentService) clearKBChunkNumWhenRerun(doc *entity.Document) error {
 	}).Error
 }
 
-func (s *DocumentService) ParseDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
+func (s *DocumentService) ParseDocuments(ctx context.Context, datasetID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
 	// deduplicate the document id
 	uniqueDocIDs := common.Deduplicate(docIDs)
 	if uniqueDocIDs == nil || len(uniqueDocIDs) == 0 {

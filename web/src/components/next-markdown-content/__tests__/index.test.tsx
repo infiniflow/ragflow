@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 
 import MarkdownContent from '..';
 
@@ -47,6 +47,15 @@ jest.mock('react-markdown', () => ({
   __esModule: true,
   default: ({ children, components }: any) => {
     const ReactLib = jest.requireActual('react');
+    const linkMatch = String(children).match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+    if (linkMatch) {
+      const Anchor = components.a;
+      return ReactLib.createElement(
+        Anchor,
+        { href: linkMatch[2] },
+        linkMatch[1],
+      );
+    }
     const CustomTypography = components['custom-typography'];
     return ReactLib.createElement(CustomTypography, null, String(children));
   },
@@ -216,5 +225,40 @@ describe('MarkdownContent citations', () => {
 
     expect(chipTexts()).toEqual(['[1]']);
     expect(screen.queryByTestId('popover')).toBeNull();
+  });
+
+  it('downloads artifacts marked as attachments instead of opening their blob', async () => {
+    const request = jest.requireMock('@/utils/request').default as jest.Mock;
+    const { downloadFileFromBlob } = jest.requireMock('@/utils/file-util');
+    request.mockResolvedValue({
+      data: new Blob(['<script>window.pwned = true</script>'], {
+        type: 'text/html',
+      }),
+      response: {
+        headers: {
+          get: (name: string) =>
+            name === 'content-disposition' ? 'attachment' : null,
+        },
+      },
+    });
+    const open = jest.spyOn(window, 'open').mockImplementation(() => null);
+
+    render(
+      <MarkdownContent
+        content={'[Download report](/api/v1/documents/artifact/report.html)'}
+        loading={false}
+        reference={undefined}
+      />,
+    );
+    fireEvent.click(screen.getByRole('link', { name: 'Download report' }));
+
+    await waitFor(() =>
+      expect(downloadFileFromBlob).toHaveBeenCalledWith(
+        expect.any(Blob),
+        'report.html',
+      ),
+    );
+    expect(request).toHaveBeenCalled();
+    expect(open).not.toHaveBeenCalled();
   });
 });

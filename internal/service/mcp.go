@@ -40,7 +40,6 @@ import (
 const (
 	mcpServerTypeSSE            = "sse"
 	mcpServerTypeStreamableHTTP = "streamable-http"
-	mcpServerNameLimit          = 255
 	mcpServerPreviewID          = "preview"
 	defaultMCPFetchTimeoutSec   = 10
 	mcpPermissionBatchSize      = 256
@@ -108,7 +107,12 @@ type ListMCPServersResponse struct {
 const maxMCPFetchTimeoutSec = 60
 
 // CreateMCPServer creates an MCP server in the caller's owned tenant.
-func (s *MCPService) CreateMCPServer(ctx context.Context, userID string, req CreateMCPServerRequest) (*CreateMCPServerResponse, common.ErrorCode, error) {
+func (s *MCPService) CreateMCPServer(ctx context.Context, req CreateMCPServerRequest) (*CreateMCPServerResponse, common.ErrorCode, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		code, normalized := permissionresponse.Normalize(permission.ErrUnauthenticated)
+		return nil, code, normalized
+	}
 	if req.Timeout < 0 || req.Timeout > maxMCPFetchTimeoutSec {
 		return nil, common.CodeDataError, errors.New("invalid timeout")
 	}
@@ -116,14 +120,14 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, userID string, req Cre
 		return nil, common.CodeDataError, errors.New("unsupported MCP server type")
 	}
 
-	if req.Name == "" || len([]byte(req.Name)) > mcpServerNameLimit {
-		return nil, common.CodeDataError, fmt.Errorf("Invalid MCP name or length is %d which is large than 255.", len([]byte(req.Name)))
+	if err := common.ValidateNameRunes(req.Name, common.NameLimit255); err != nil {
+		return nil, common.CodeDataError, err
 	}
 	if req.URL == "" {
 		return nil, common.CodeDataError, errors.New("invalid url")
 	}
 
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		code, normalized := permissionresponse.Normalize(err)
 		return nil, code, normalized
@@ -133,7 +137,7 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, userID string, req Cre
 		return nil, code, normalized
 	}
 
-	name, err := common.UniqueName(req.Name, mcpServerNameLimit, func(candidate string) (bool, error) {
+	name, err := common.UniqueName(req.Name, common.NameLimit255, func(candidate string) (bool, error) {
 		return s.mcpServerDAO.ExistsByNameAndTenant(ctx, dao.DB, candidate, tenantID)
 	})
 	if err != nil {
@@ -369,7 +373,7 @@ func importedMCPHeaders(raw interface{}) (map[string]string, map[string]interfac
 	return headers, values, true
 }
 
-func (s *MCPService) GetMCPServer(ctx context.Context, userID, mcpID string) (*entity.MCPServer, common.ErrorCode, error) {
+func (s *MCPService) GetMCPServer(ctx context.Context, mcpID string) (*entity.MCPServer, common.ErrorCode, error) {
 	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindMCPServer, ID: mcpID}, permission.OperationRead); err != nil {
 		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
@@ -385,8 +389,8 @@ func (s *MCPService) GetMCPServer(ctx context.Context, userID, mcpID string) (*e
 	return server, common.CodeSuccess, nil
 }
 
-func (s *MCPService) ExportMCPServer(ctx context.Context, userID, mcpID string) (*ExportMCPServerResponse, common.ErrorCode, error) {
-	server, code, err := s.GetMCPServer(ctx, userID, mcpID)
+func (s *MCPService) ExportMCPServer(ctx context.Context, mcpID string) (*ExportMCPServerResponse, common.ErrorCode, error) {
+	server, code, err := s.GetMCPServer(ctx, mcpID)
 	if err != nil {
 		return nil, code, err
 	}
@@ -394,7 +398,7 @@ func (s *MCPService) ExportMCPServer(ctx context.Context, userID, mcpID string) 
 }
 
 // UpdateMCPServer updates an MCP server the caller can manage.
-func (s *MCPService) UpdateMCPServer(ctx context.Context, userID, mcpID string, req UpdateMCPServerRequest) (*entity.MCPServer, common.ErrorCode, error) {
+func (s *MCPService) UpdateMCPServer(ctx context.Context, mcpID string, req UpdateMCPServerRequest) (*entity.MCPServer, common.ErrorCode, error) {
 	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindMCPServer, ID: mcpID}, permission.OperationUpdate); err != nil {
 		code, normalized := permissionresponse.NormalizeHidden(err)
 		return nil, code, normalized
@@ -428,8 +432,10 @@ func (s *MCPService) UpdateMCPServer(ctx context.Context, userID, mcpID string, 
 		serverName = value
 		serverNameProvided = true
 	}
-	if serverName != "" && len([]byte(serverName)) > mcpServerNameLimit {
-		return nil, common.CodeDataError, fmt.Errorf("Invalid MCP name or length is %d which is large than 255.", len([]byte(serverName)))
+	if serverName != "" {
+		if err := common.ValidateNameRunes(serverName, common.NameLimit255); err != nil {
+			return nil, common.CodeDataError, err
+		}
 	}
 	if serverNameProvided {
 		available, err := common.NameAvailable(server.Name, serverName, func(candidate string) (bool, error) {
@@ -542,11 +548,11 @@ func headerOrVariablesChanged(req UpdateMCPServerRequest) bool {
 }
 
 // ListMCPServers lists MCP servers belonging to a tenant the caller can use.
-func (s *MCPService) ListMCPServers(ctx context.Context, userID, requestedTenantID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) (*ListMCPServersResponse, common.ErrorCode, error) {
+func (s *MCPService) ListMCPServers(ctx context.Context, requestedTenantID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) (*ListMCPServersResponse, common.ErrorCode, error) {
 	tenantID := strings.TrimSpace(requestedTenantID)
 	if tenantID == "" {
 		var err error
-		tenantID, err = requireCurrentTenantID(ctx, userID)
+		tenantID, err = requireCurrentTenantID(ctx)
 		if errors.Is(err, permission.ErrMembershipNotFound) {
 			return &ListMCPServersResponse{MCPServers: []*MCPServerListItem{}}, common.CodeSuccess, nil
 		}
@@ -628,7 +634,7 @@ func (s *MCPService) ListMCPServers(ctx context.Context, userID, requestedTenant
 }
 
 // DeleteMCPServer deletes an MCP server the caller can manage.
-func (s *MCPService) DeleteMCPServer(ctx context.Context, userID, mcpID string) (bool, common.ErrorCode, error) {
+func (s *MCPService) DeleteMCPServer(ctx context.Context, mcpID string) (bool, common.ErrorCode, error) {
 	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindMCPServer, ID: mcpID}, permission.OperationDelete); err != nil {
 		code, normalized := permissionresponse.NormalizeHidden(err)
 		return false, code, normalized
@@ -727,8 +733,12 @@ type ImportResult struct {
 }
 
 // ImportServers bulk-imports MCP servers from a {"mcpServers": {name: config}} map.
-func (s *MCPService) ImportServers(ctx context.Context, userID string, servers map[string]map[string]interface{}, timeoutSeconds float64) ([]ImportResult, error) {
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+func (s *MCPService) ImportServers(ctx context.Context, servers map[string]map[string]interface{}, timeoutSeconds float64) ([]ImportResult, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		_, normalized := permissionresponse.Normalize(err)
 		return nil, normalized
@@ -750,8 +760,8 @@ func (s *MCPService) ImportServers(ctx context.Context, userID string, servers m
 			results = append(results, ImportResult{Server: serverName, Success: false, Message: "Missing required fields (type or url)"})
 			continue
 		}
-		if serverName == "" || len([]byte(serverName)) > mcpServerNameLimit {
-			results = append(results, ImportResult{Server: serverName, Success: false, Message: fmt.Sprintf("Invalid MCP name or length is %d which is large than 255.", len(serverName))})
+		if err := common.ValidateNameRunes(serverName, common.NameLimit255); err != nil {
+			results = append(results, ImportResult{Server: serverName, Success: false, Message: err.Error()})
 			continue
 		}
 		if !isValidMCPServerType(stype) {
@@ -855,7 +865,7 @@ func (s *MCPService) ImportServers(ctx context.Context, userID string, servers m
 }
 
 func (s *MCPService) nextAvailableMCPName(ctx context.Context, base, tenantID string) (string, error) {
-	return common.UniqueName(base, mcpServerNameLimit, func(candidate string) (bool, error) {
+	return common.UniqueName(base, common.NameLimit255, func(candidate string) (bool, error) {
 		return s.mcpServerDAO.ExistsByNameAndTenant(ctx, dao.DB, candidate, tenantID)
 	})
 }
@@ -871,7 +881,7 @@ type TestServerRequest struct {
 }
 
 // TestServer opens a live MCP session and returns the tools the server advertises.
-func (s *MCPService) TestServer(ctx context.Context, userID, mcpID string, req *TestServerRequest) ([]map[string]interface{}, error) {
+func (s *MCPService) TestServer(ctx context.Context, mcpID string, req *TestServerRequest) ([]map[string]interface{}, error) {
 	if req == nil || req.URL == "" {
 		return nil, fmt.Errorf("%w: Invalid MCP url", ErrMCPInvalidURL)
 	}

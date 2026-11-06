@@ -15,13 +15,21 @@ import (
 	"gorm.io/gorm"
 )
 
-// GetRootFolder gets or creates root folder for tenant
-func (s *FileService) GetRootFolder(ctx context.Context, tenantID string) (map[string]interface{}, error) {
+// GetRootFolder gets or creates root folder for the active tenant.
+func (s *FileService) GetRootFolder(ctx context.Context) (map[string]interface{}, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
+	tenantID := permission.TenantIDFromContext(ctx)
+	if tenantID == "" {
+		tenantID = userID
+	}
 	file, err := s.fileDAO.GetRootFolder(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, err
 	}
-	if err = checkFileAccess(ctx, tenantID, file, permission.OperationRead); err != nil {
+	if err = checkFileAccess(ctx, file, permission.OperationRead); err != nil {
 		return nil, err
 	}
 	return s.toFileResponse(file), nil
@@ -37,28 +45,22 @@ func lookupError(err error, message string) error {
 	return err
 }
 
-// ListFiles lists files by parent folder ID (matching Python /files endpoint)
-// This method includes init_dataset_docs initialization when parent_id is empty
-func (s *FileService) ListFiles(ctx context.Context, tenantID, pfID string, page, pageSize int, terms []dao.OrderTerm, keywords string) (*ListFilesResponse, error) {
-	return s.listFiles(ctx, tenantID, tenantID, pfID, page, pageSize, terms, keywords)
-}
-
 // ListFilesForTenant allows active tenant members to browse the tenant's files.
-func (s *FileService) ListFilesForTenant(ctx context.Context, userID, tenantID, pfID string, page, pageSize int, terms []dao.OrderTerm, keywords string) (*ListFilesResponse, error) {
+func (s *FileService) ListFilesForTenant(ctx context.Context, tenantID, pfID string, page, pageSize int, terms []dao.OrderTerm, keywords string) (*ListFilesResponse, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
 	if userID != tenantID {
 		if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, tenantID, permission.TenantMember); err != nil {
 			return nil, err
 		}
 	}
-	var err error
-	ctx, err = tenantFileContext(ctx, userID, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	return s.listFiles(ctx, userID, tenantID, pfID, page, pageSize, terms, keywords)
+	return s.listFiles(ctx, tenantID, pfID, page, pageSize, terms, keywords)
 }
 
-func (s *FileService) listFiles(ctx context.Context, userID, tenantID, pfID string, page, pageSize int, terms []dao.OrderTerm, keywords string) (*ListFilesResponse, error) {
+func (s *FileService) listFiles(ctx context.Context, tenantID, pfID string, page, pageSize int, terms []dao.OrderTerm, keywords string) (*ListFilesResponse, error) {
+	userID := permission.UserIDFromContext(ctx)
 	if tenantID == "" {
 		return nil, permission.ErrInvalidPermission
 	}
@@ -68,7 +70,7 @@ func (s *FileService) listFiles(ctx context.Context, userID, tenantID, pfID stri
 		if err != nil {
 			return nil, fmt.Errorf("failed to get root folder: %w", err)
 		}
-		if err := checkFileAccess(ctx, userID, rootFolder, permission.OperationRead); err != nil {
+		if err := checkFileAccess(ctx, rootFolder, permission.OperationRead); err != nil {
 			return nil, err
 		}
 		pfID = rootFolder.ID
@@ -99,7 +101,7 @@ func (s *FileService) listFiles(ctx context.Context, userID, tenantID, pfID stri
 	if folder.TenantID != tenantID {
 		return nil, permission.ErrResourceNotFound
 	}
-	if err := s.checkFilePathAccess(ctx, userID, tenantID, folder.ID); err != nil {
+	if err := s.checkFilePathAccess(ctx, tenantID, folder.ID); err != nil {
 		return nil, err
 	}
 
@@ -306,7 +308,7 @@ func (s *FileService) fileInfoToResponse(info *FileInfo) map[string]interface{} 
 }
 
 // GetParentFolder gets parent folder of a file with permission check
-func (s *FileService) GetParentFolder(ctx context.Context, userID, fileID string) (map[string]interface{}, error) {
+func (s *FileService) GetParentFolder(ctx context.Context, fileID string) (map[string]interface{}, error) {
 	// Get file
 	file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
 	if err != nil {
@@ -314,7 +316,7 @@ func (s *FileService) GetParentFolder(ctx context.Context, userID, fileID string
 	}
 
 	// Permission check
-	if err := checkFileAccess(ctx, userID, file, permission.OperationRead); err != nil {
+	if err := checkFileAccess(ctx, file, permission.OperationRead); err != nil {
 		return nil, err
 	}
 
@@ -323,7 +325,7 @@ func (s *FileService) GetParentFolder(ctx context.Context, userID, fileID string
 	if err != nil {
 		return nil, err
 	}
-	if err := checkFileAccess(ctx, userID, parentFolder, permission.OperationRead); err != nil {
+	if err := checkFileAccess(ctx, parentFolder, permission.OperationRead); err != nil {
 		return nil, err
 	}
 
@@ -331,30 +333,29 @@ func (s *FileService) GetParentFolder(ctx context.Context, userID, fileID string
 }
 
 // GetAllParentFolders gets all parent folders in path with permission check
-func (s *FileService) GetAllParentFolders(ctx context.Context, userID, fileID string) ([]map[string]interface{}, error) {
-	return s.getAllParentFolders(ctx, userID, "", fileID)
+func (s *FileService) GetAllParentFolders(ctx context.Context, fileID string) ([]map[string]interface{}, error) {
+	return s.getAllParentFolders(ctx, "", fileID)
 }
 
 // GetAllParentFoldersForTenant allows active tenant members to resolve file paths.
 // The file and every ancestor must belong to tenantID.
-func (s *FileService) GetAllParentFoldersForTenant(ctx context.Context, userID, tenantID, fileID string) ([]map[string]interface{}, error) {
+func (s *FileService) GetAllParentFoldersForTenant(ctx context.Context, tenantID, fileID string) ([]map[string]interface{}, error) {
 	if tenantID == "" {
 		return nil, permission.ErrInvalidPermission
+	}
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
 	}
 	if userID != tenantID {
 		if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, tenantID, permission.TenantMember); err != nil {
 			return nil, err
 		}
 	}
-	var err error
-	ctx, err = tenantFileContext(ctx, userID, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	return s.getAllParentFolders(ctx, userID, tenantID, fileID)
+	return s.getAllParentFolders(ctx, tenantID, fileID)
 }
 
-func (s *FileService) getAllParentFolders(ctx context.Context, userID, tenantID, fileID string) ([]map[string]interface{}, error) {
+func (s *FileService) getAllParentFolders(ctx context.Context, tenantID, fileID string) ([]map[string]interface{}, error) {
 	// Get file
 	file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
 	if err != nil {
@@ -365,7 +366,7 @@ func (s *FileService) getAllParentFolders(ctx context.Context, userID, tenantID,
 	}
 
 	// Permission check
-	if err := checkFileAccess(ctx, userID, file, permission.OperationRead); err != nil {
+	if err := checkFileAccess(ctx, file, permission.OperationRead); err != nil {
 		return nil, err
 	}
 
@@ -378,7 +379,7 @@ func (s *FileService) getAllParentFolders(ctx context.Context, userID, tenantID,
 		if tenantID != "" && folder.TenantID != tenantID {
 			return nil, permission.ErrResourceNotFound
 		}
-		if err := checkFileAccess(ctx, userID, folder, permission.OperationRead); err != nil {
+		if err := checkFileAccess(ctx, folder, permission.OperationRead); err != nil {
 			return nil, err
 		}
 	}
@@ -392,7 +393,7 @@ func (s *FileService) getAllParentFolders(ctx context.Context, userID, tenantID,
 	return result, nil
 }
 
-func (s *FileService) checkFilePathAccess(ctx context.Context, userID, tenantID, fileID string) error {
+func (s *FileService) checkFilePathAccess(ctx context.Context, tenantID, fileID string) error {
 	folders, err := s.fileDAO.GetAllParentFolders(ctx, dao.DB, fileID)
 	if err != nil {
 		return err
@@ -401,7 +402,7 @@ func (s *FileService) checkFilePathAccess(ctx context.Context, userID, tenantID,
 		if folder.TenantID != tenantID {
 			return permission.ErrResourceNotFound
 		}
-		if err := checkFileAccess(ctx, userID, folder, permission.OperationRead); err != nil {
+		if err := checkFileAccess(ctx, folder, permission.OperationRead); err != nil {
 			return err
 		}
 	}
@@ -414,7 +415,7 @@ func (s *FileService) GetDocCount(ctx context.Context, tenantID string) (int64, 
 	return documentDAO.CountByTenantID(ctx, dao.DB, tenantID)
 }
 
-func (s *FileService) createFolderRecursive(ctx context.Context, parentFolder *entity.File, names []string, count int, tenantID, userID string) (*entity.File, error) {
+func (s *FileService) createFolderRecursive(ctx context.Context, parentFolder *entity.File, names []string, count int, tenantID string) (*entity.File, error) {
 	if count > len(names)-2 {
 		return parentFolder, nil
 	}
@@ -422,7 +423,7 @@ func (s *FileService) createFolderRecursive(ctx context.Context, parentFolder *e
 	var newFolder *entity.File
 	err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var createErr error
-		newFolder, createErr = s.fileDAO.CreateFolder(ctx, tx, parentFolder.ID, tenantID, userID, names[count], FileTypeFolder)
+		newFolder, createErr = s.fileDAO.CreateFolder(ctx, tx, parentFolder.ID, tenantID, permission.UserIDFromContext(ctx), names[count], FileTypeFolder)
 		if createErr != nil {
 			return createErr
 		}
@@ -432,23 +433,28 @@ func (s *FileService) createFolderRecursive(ctx context.Context, parentFolder *e
 		return nil, err
 	}
 
-	return s.createFolderRecursive(ctx, newFolder, names, count+1, tenantID, userID)
+	return s.createFolderRecursive(ctx, newFolder, names, count+1, tenantID)
 }
 
 // getUniqueFilename returns a non-colliding file name within the folder,
 // appending (1), (2), ... when the requested name is already taken.
 func (s *FileService) getUniqueFilename(ctx context.Context, name, parentID, tenantID string) (string, error) {
-	return common.UniqueFileName(name, 255, func(candidate string) (bool, error) {
+	return common.UniqueFileName(name, common.NameLimit255, func(candidate string) (bool, error) {
 		return s.fileDAO.NameExists(ctx, dao.DB, candidate, parentID, tenantID, "")
 	})
 }
 
 // CreateFolder creates a new folder or virtual file
-func (s *FileService) CreateFolder(ctx context.Context, userID, name, parentID, fileType string) (map[string]interface{}, error) {
-	userID, tenantID, err := fileRequestIdentity(ctx, userID)
-	if err != nil {
-		return nil, err
+func (s *FileService) CreateFolder(ctx context.Context, name, parentID, fileType string) (map[string]interface{}, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
 	}
+	tenantID := permission.TenantIDFromContext(ctx)
+	if tenantID == "" {
+		tenantID = userID
+	}
+	var err error
 	if err = permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "file", permission.ActionWrite); err != nil {
 		return nil, err
 	}
@@ -474,7 +480,7 @@ func (s *FileService) CreateFolder(ctx context.Context, userID, name, parentID, 
 	if parentFolder.TenantID != tenantID {
 		return nil, permission.ErrResourceNotFound
 	}
-	if err = checkFileAccess(ctx, userID, parentFolder, permission.OperationCreate); err != nil {
+	if err = checkFileAccess(ctx, parentFolder, permission.OperationCreate); err != nil {
 		return nil, err
 	}
 
@@ -491,9 +497,9 @@ func (s *FileService) CreateFolder(ctx context.Context, userID, name, parentID, 
 	var uniqueName string
 	if fileType == FileTypeFolder {
 		// A folder is not a file: append the counter to the whole name.
-		uniqueName, err = common.UniqueName(name, 255, existsInParent)
+		uniqueName, err = common.UniqueName(name, common.NameLimit255, existsInParent)
 	} else {
-		uniqueName, err = common.UniqueFileName(name, 255, existsInParent)
+		uniqueName, err = common.UniqueFileName(name, common.NameLimit255, existsInParent)
 	}
 	if err != nil {
 		return nil, err
@@ -525,7 +531,11 @@ func (s *FileService) CreateFolder(ctx context.Context, userID, name, parentID, 
 // - new_name only: rename in place (no storage operation)
 // - dest_file_id only: move to new folder (keep names)
 // - both: move and rename simultaneously
-func (s *FileService) MoveFiles(ctx context.Context, userID string, srcFileIDs []string, destFileID string, newName string) error {
+func (s *FileService) MoveFiles(ctx context.Context, srcFileIDs []string, destFileID string, newName string) error {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return permission.ErrUnauthenticated
+	}
 	files, err := s.fileDAO.GetByIDs(ctx, dao.DB, srcFileIDs)
 	if err != nil {
 		return err
@@ -561,7 +571,7 @@ func (s *FileService) MoveFiles(ctx context.Context, userID string, srcFileIDs [
 		if err != nil || destFolder == nil || destFolder.Type != FileTypeFolder {
 			return errors.New("parent folder not found")
 		}
-		if err := checkFileAccess(ctx, userID, destFolder, permission.OperationCreate); err != nil {
+		if err := checkFileAccess(ctx, destFolder, permission.OperationCreate); err != nil {
 			return err
 		}
 
@@ -586,7 +596,15 @@ func (s *FileService) MoveFiles(ctx context.Context, userID string, srcFileIDs [
 		}
 	}
 
+	trimmedName := strings.TrimSpace(newName)
+	if newName != "" && trimmedName == "" {
+		return errors.New("new_name must not be blank")
+	}
+	newName = trimmedName
 	if newName != "" {
+		if err := common.ValidateNameRunes(newName, common.NameLimit255); err != nil {
+			return err
+		}
 		if len(srcFileIDs) > 1 {
 			return errors.New("new name can only be used with a single file")
 		}
@@ -637,7 +655,7 @@ func (s *FileService) MoveFiles(ctx context.Context, userID string, srcFileIDs [
 
 	if destFolder != nil {
 		for _, fileID := range srcFileIDs {
-			if err := s.moveEntryRecursive(ctx, userID, filesByID[fileID], destFolder, newName); err != nil {
+			if err := s.moveEntryRecursive(ctx, filesByID[fileID], destFolder, newName); err != nil {
 				return err
 			}
 		}
@@ -716,7 +734,7 @@ func (s *FileService) renameLinkedDocuments(ctx context.Context, fileID, newName
 }
 
 // moveEntryRecursive recursively moves a file or folder entry
-func (s *FileService) moveEntryRecursive(ctx context.Context, userID string, sourceFile *entity.File, destFolder *entity.File, overrideName string) error {
+func (s *FileService) moveEntryRecursive(ctx context.Context, sourceFile *entity.File, destFolder *entity.File, overrideName string) error {
 	effectiveName := overrideName
 	if effectiveName == "" {
 		effectiveName = sourceFile.Name
@@ -735,13 +753,13 @@ func (s *FileService) moveEntryRecursive(ctx context.Context, userID string, sou
 				return fmt.Errorf("cannot move folder into itself")
 			}
 			newFolder = existingFolders[0]
-			if err := checkFileAccess(ctx, userID, newFolder, permission.OperationCreate); err != nil {
+			if err := checkFileAccess(ctx, newFolder, permission.OperationCreate); err != nil {
 				return err
 			}
 		} else {
 			// Create new folder
 			var err error
-			newFolder, err = s.fileDAO.CreateFolder(ctx, dao.DB, destFolder.ID, sourceFile.TenantID, userID, effectiveName, FileTypeFolder)
+			newFolder, err = s.fileDAO.CreateFolder(ctx, dao.DB, destFolder.ID, sourceFile.TenantID, permission.UserIDFromContext(ctx), effectiveName, FileTypeFolder)
 			if err != nil {
 				return fmt.Errorf("failed to create destination folder: %w", err)
 			}
@@ -753,7 +771,7 @@ func (s *FileService) moveEntryRecursive(ctx context.Context, userID string, sou
 			return err
 		}
 		for _, subFile := range subFiles {
-			if err = s.moveEntryRecursive(ctx, userID, subFile, newFolder, ""); err != nil {
+			if err = s.moveEntryRecursive(ctx, subFile, newFolder, ""); err != nil {
 				return err
 			}
 		}

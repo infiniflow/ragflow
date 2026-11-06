@@ -40,6 +40,7 @@ import (
 	"ragflow/internal/server"
 	servicepkg "ragflow/internal/service"
 	"ragflow/internal/storage"
+	"ragflow/internal/utility"
 	"regexp"
 	"strings"
 	"time"
@@ -216,7 +217,7 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 
 	// 2. Create tenant (tenant_id = user_id)
 	// tenant name = nickname + "'s Kingdom" (same as Python)
-	tenantName := user.Nickname + "'s Kingdom"
+	tenantName := utility.TruncateRunes(user.Nickname+"'s Kingdom", common.TenantNameLimit)
 
 	// Get default model IDs from config
 	cfg := server.GetConfig()
@@ -1549,7 +1550,7 @@ func (s *Service) InitDefaultAdmin() error {
 func (s *Service) addTenantForAdmin(userID, nickname string) error {
 	status := "1"
 	role := "owner"
-	tenantName := nickname + "'s Kingdom"
+	tenantName := utility.TruncateRunes(nickname+"'s Kingdom", common.TenantNameLimit)
 
 	tenant := &entity.Tenant{
 		ID:   userID,
@@ -1572,18 +1573,6 @@ func (s *Service) addTenantForAdmin(userID, nickname string) error {
 	}
 
 	return dao.DB.Create(userTenant).Error
-}
-
-// ListAllModels list all models
-func (s *Service) ListAllModels(pageIndex, pageSize int) ([]map[string]interface{}, error) {
-	models, err := dao.GetModelProviderManager().ListAllModels()
-	if err != nil {
-		return nil, err
-	}
-	if pageSize > 0 && pageIndex >= 0 && pageIndex*pageSize < len(models) {
-		return models[pageIndex*pageSize : (pageIndex+1)*pageSize], nil
-	}
-	return models, nil
 }
 
 func (s *Service) GetModelByModelName(modelName string) (*modelModule.Model, error) {

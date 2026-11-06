@@ -132,6 +132,9 @@ func (s *DocumentService) UpdateDocument(ctx context.Context, id string, req *Up
 	if req.Name == nil {
 		return common.CodeSuccess, nil
 	}
+	if code, err := s.validateDocumentName(ctx, document, *req.Name); err != nil {
+		return code, err
+	}
 	kb, err := s.kbDAO.GetByID(ctx, dao.DB, document.KbID)
 	if err != nil {
 		return common.CodeServerError, err
@@ -216,7 +219,7 @@ func (s *DocumentService) DeleteDocument(ctx context.Context, id string) error {
 //
 //	ids: specific document IDs; deleteAll: delete all docs in the dataset.
 //	Returns the number of successfully deleted documents.
-func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID, userID string) (int, error) {
+func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID string) (int, error) {
 	// Deleting the entire dataset requires dataset-level access; deleting
 	// explicit documents also accepts direct document grants.
 	if deleteAll {
@@ -392,7 +395,7 @@ func (s *DocumentService) InsertDocument(ctx context.Context, doc *entity.Docume
 // Returns an error when the existing-name lookup fails so callers never write
 // blind and risk duplicated document names.
 func (s *DocumentService) UniqueDocumentName(ctx context.Context, kbID, name string) (string, error) {
-	return common.UniqueFileName(name, 255, func(candidate string) (bool, error) {
+	return common.UniqueFileName(name, common.NameLimit255, func(candidate string) (bool, error) {
 		return s.documentDAO.NameExistsInKB(ctx, dao.DB, kbID, candidate)
 	})
 }

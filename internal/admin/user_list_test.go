@@ -49,7 +49,6 @@ func TestListUsersRejectsInvalidQueryBeforeDatabaseAccess(t *testing.T) {
 		{name: "index", field: "index", page: 1, pageSize: 10},
 		{name: "zero page", pageSize: 10},
 		{name: "negative page", page: -1, pageSize: 10},
-		{name: "zero page size", page: 1},
 		{name: "negative page size", page: 1, pageSize: -1},
 		{name: "offset overflow to negative", page: math.MaxInt, pageSize: 10},
 		{name: "offset overflow to zero", page: math.MaxInt/2 + 2, pageSize: 4},
@@ -82,6 +81,16 @@ func TestParseUserListOptionsPaginationBounds(t *testing.T) {
 				t.Fatalf("parseUserListOptions() = (%+v, %v), want offset %d, limit %d", opts, err, tt.wantOffset, tt.pageSize)
 			}
 		})
+	}
+}
+
+// pageSize==0 is the "unpaged" request: the handler only produces it from the
+// omitted page_size default, and the DAO leaves the query unlimited when
+// Limit is 0, so offset must stay 0 and no division by pageSize may run.
+func TestParseUserListOptionsUnpagedReturnsEveryUser(t *testing.T) {
+	opts, err := parseUserListOptions(1, 0, "", "", "", "")
+	if err != nil || opts.Offset != 0 || opts.Limit != 0 {
+		t.Fatalf("parseUserListOptions(1, 0) = (%+v, %v), want unpaged options", opts, err)
 	}
 }
 

@@ -161,16 +161,27 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	role := c.DefaultQuery("role", "")
 	sort := c.DefaultQuery("sort", "")     // asc or desc
 	orderBy := c.DefaultQuery("order", "") // order by field
-	pageInt, err := common.ParseRequestIntPositive(c, c.Query("page"), "page", 1)
-	if err != nil {
-		common.RespondError(c, common.CodeBadRequest, err.Error())
-		return
+	// The admin UI and existing admin clients request the user list without
+	// pagination and slice it client-side, so omitting both page and page_size
+	// returns every user (pageSizeInt=0). When pagination is requested, use
+	// the standard pagination parser.
+	query := c.Request.URL.Query()
+	var (
+		pageInt     int
+		pageSizeInt int
+	)
+	if query.Has("page") || query.Has("page_size") {
+		var err error
+		pageInt, pageSizeInt, err = common.ParsePagination(query)
+		if err != nil {
+			common.RespondError(c, common.CodeBadRequest, err.Error())
+			return
+		}
+	} else {
+		pageInt = 1
+		pageSizeInt = 0
 	}
-	pageSizeInt, err := common.ParseRequestIntPositive(c, c.Query("page_size"), "page_size", 10)
-	if err != nil {
-		common.RespondError(c, common.CodeBadRequest, err.Error())
-		return
-	}
+
 	plan := c.Query("plan") // plan name
 	topInt, err := common.ParseRequestIntPositive(c, c.Query("top"), "top", 0)
 	if err != nil {
@@ -226,11 +237,13 @@ func (h *Handler) ListUsers(c *gin.Context) {
 }
 
 func validateAdminUserListPagination(c *gin.Context, page, pageSize, top int) bool {
-	if page < 1 || pageSize < 1 {
+	// pageSize==0 is the "unpaged" sentinel: it only arrives from the omitted
+	// page_size default, because an explicit page_size=0 is rejected here.
+	query := c.Request.URL.Query()
+	if page < 1 || (pageSize < 1 && query.Has("page_size")) {
 		common.RespondError(c, common.CodeBadRequest, "page and page_size must be positive integers")
 		return false
 	}
-	query := c.Request.URL.Query()
 	if query.Has("top") {
 		if top < 1 {
 			common.RespondError(c, common.CodeBadRequest, "top must be a positive integer")
@@ -1143,22 +1156,14 @@ func (h *Handler) Reports(c *gin.Context) {
 
 func (h *Handler) ListAllModels(c *gin.Context) {
 
-	page := 0
-	if v := c.Query("page"); v != "" {
-		if p, err := strconv.Atoi(v); err == nil && p > 0 {
-			page = p
-		}
-	}
-
-	pageSize := 0
-	if v := c.Query("page_size"); v != "" {
-		if ps, err := strconv.Atoi(v); err == nil && ps > 0 {
-			pageSize = ps
-		}
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
+	if err != nil {
+		common.RespondError(c, common.CodeBadRequest, err.Error())
+		return
 	}
 
 	// List models
-	models, err := h.service.ListAllModels(page, pageSize)
+	models, err := h.service.modelProviderService.ListAllModels(page, pageSize)
 	if err != nil {
 		common.RespondError(c, common.CodeServerError, err.Error())
 		return
