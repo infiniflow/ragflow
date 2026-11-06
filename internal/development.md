@@ -215,8 +215,8 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 > `CGO_LDFLAGS`, this breakage surfaces at build time instead of at runtime. If
 > you see `Error: ONNX Runtime static libraries are not linked`, run
 > `uv run tools/scripts/download_dev_deps.py` (or pre-seed the versioned user
-> cache at `${RAGFLOW_NATIVE_LIBS_DIR:-$HOME/ragflow-native-libs}/onnxruntime/
-> v<version>`; CI mounts the host cache into the builder). There is no ORT-free
+> cache at `${RAGFLOW_NATIVE_LIBS_DIR:-$HOME/ragflow-native-libs}/onnxruntime/static_lib
+> `; CI mounts the host cache into the builder). There is no ORT-free
 > production build path — if ORT is absent the binary fails at startup, so the
 > remedy is always to seed the static lib above, never to build without it.
 

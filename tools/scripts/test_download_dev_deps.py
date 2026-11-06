@@ -402,34 +402,36 @@ def test_pdf_oxide_stamp_text_accepts_matching_version(tmp_path, monkeypatch):
     # null-delimited token office_oxide uses). complete() must accept it when
     # stamp_format="text", or auto-download would reject a good archive and
     # build.sh's controlled download path would fail closed.
+    version = native.go_module_version("github.com/yfedoseev/pdf_oxide/go", native.REPO_ROOT)
     monkeypatch.setattr(native, "NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
     archive = tmp_path / "pdf_oxide-go-ffi-linux-amd64.tar.gz"
-    _make_stamped_archive(archive, "lib/linux_amd64/libpdf_oxide.a", b"pdf_oxide 0.3.73", "include/pdf_oxide.h")
+    _make_stamped_archive(archive, "lib/linux_amd64/libpdf_oxide.a", f"pdf_oxide {version}".encode(), "include/pdf_oxide.h")
     native.extract_native_lib(
         str(archive),
         "pdf_oxide",
-        "v0.3.73",
+        f"v{version}",
         ["lib/linux_amd64/libpdf_oxide.a", "include/pdf_oxide.h"],
-        "0.3.73",
+        version,
         "text",
     )
-    assert (tmp_path / "native-libs" / "pdf_oxide" / "v0.3.73" / "lib" / "linux_amd64" / "libpdf_oxide.a").is_file()
+    assert (tmp_path / "native-libs" / "pdf_oxide" / f"v{version}" / "lib" / "linux_amd64" / "libpdf_oxide.a").is_file()
 
 
 def test_pdf_oxide_stamp_text_rejects_wrong_version(tmp_path, monkeypatch):
     # A pdf_oxide .a stamped with a different version must be rejected, not
     # silently accepted (the whole point of the stamp check is to catch a
     # mismatched/wrong native build).
+    version = native.go_module_version("github.com/yfedoseev/pdf_oxide/go", native.REPO_ROOT)
     monkeypatch.setattr(native, "NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
     archive = tmp_path / "pdf_oxide-go-ffi-linux-amd64.tar.gz"
     _make_stamped_archive(archive, "lib/linux_amd64/libpdf_oxide.a", b"pdf_oxide 0.9.9", "include/pdf_oxide.h")
-    with pytest.raises(RuntimeError, match="missing required native files or version 0.3.73"):
+    with pytest.raises(RuntimeError, match=f"missing required native files or version {version}"):
         native.extract_native_lib(
             str(archive),
             "pdf_oxide",
-            "v0.3.73",
+            f"v{version}",
             ["lib/linux_amd64/libpdf_oxide.a", "include/pdf_oxide.h"],
-            "0.3.73",
+            version,
             "text",
         )
 
@@ -437,18 +439,19 @@ def test_pdf_oxide_stamp_text_rejects_wrong_version(tmp_path, monkeypatch):
 def test_office_oxide_stamp_null_accepts_matching_version(tmp_path, monkeypatch):
     # Regression guard: office_oxide keeps its null-delimited stamp token; the
     # "text" vs "null" split must not break it.
+    version = native.go_module_version("github.com/yfedoseev/office_oxide/go", native.REPO_ROOT)
     monkeypatch.setattr(native, "NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
     archive = tmp_path / "native-linux-x86_64.tar.gz"
-    _make_stamped_archive(archive, "lib/liboffice_oxide.a", b"\x000.1.16\x00", "include/office_oxide_c/office_oxide.h")
+    _make_stamped_archive(archive, "lib/liboffice_oxide.a", f"\x00{version}\x00".encode(), "include/office_oxide_c/office_oxide.h")
     native.extract_native_lib(
         str(archive),
         "office_oxide",
-        "v0.1.16",
+        f"v{version}",
         ["lib/liboffice_oxide.a", "include/office_oxide_c/office_oxide.h"],
-        "0.1.16",
+        version,
         "null",
     )
-    assert (tmp_path / "native-libs" / "office_oxide" / "v0.1.16" / "lib" / "liboffice_oxide.a").is_file()
+    assert (tmp_path / "native-libs" / "office_oxide" / f"v{version}" / "lib" / "liboffice_oxide.a").is_file()
 
 
 # ── Local-dev one-stop: the dev downloader must also fetch the runtime
@@ -714,8 +717,12 @@ def test_deepdoc_ort_version_reads_environments_go(tmp_path):
 
 
 def test_deepdoc_ort_version_against_real_repo():
-    # Sanity: parses the checked-out repo's actual pin.
-    assert native.deepdoc_ort_version(native.REPO_ROOT) == "1.29.0"
+    # Sanity: parses the checked-out repo's actual pin. Assert the shape (semver)
+    # rather than a hardcoded literal so the test tracks environments.go on bumps.
+    import re
+
+    version = native.deepdoc_ort_version(native.REPO_ROOT)
+    assert re.match(r"^\d+\.\d+\.\d+", version), version
 
 
 def test_pdfium_static_version_reads_single_source(tmp_path):

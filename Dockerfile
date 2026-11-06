@@ -232,7 +232,7 @@ COPY Dockerfile ./
 
 # ONNX Runtime static archives are provisioned by build.sh from the versioned
 # user cache at ONNXRUNTIME_STATIC_PREFIX (${RAGFLOW_NATIVE_LIBS_DIR:-$HOME/
-# ragflow-native-libs}/onnxruntime/v<version>). There is NO /opt pre-bake: on CI
+# ragflow-native-libs}/onnxruntime/static_lib). There is NO /opt pre-bake: on CI
 # the host cache is mounted in at build time, and for the product image build
 # (where no host cache is mounted) build.sh falls back to _ensure_native_libs_installed,
 # which runs `uv run tools/scripts/download_dev_deps.py`. That downloader fetches

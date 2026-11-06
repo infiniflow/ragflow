@@ -574,8 +574,7 @@ check_office_oxide_deps() {
         echo -e "${RED}Error: office_oxide native lib version mismatch${NC}"
         echo "  Required: v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}"
         echo "  A stale lib silently loses PPT97 (.ppt) slide content. Refresh:"
-        echo "    rm -rf ~/ragflow-native-libs/office_oxide deps/$(office_oxide_asset)"
-        echo "    uv run tools/scripts/download_dev_deps.py"
+        echo "    uv run tools/scripts/download_dev_deps.py   # re-extracts into ${OFFICE_OXIDE_PREFIX}"
         exit 1
     fi
 

@@ -243,8 +243,8 @@ jobs:
             export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
           fi
 
-          # Fail fast if the native-lib user cache is not mounted: a missing or
-          # empty cache would otherwise surface as a cryptic cgo link error later.
+          # Fail fast if the native-lib user cache is not mounted: a missing
+          # cache would otherwise surface as a cryptic cgo link error later.
           NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
           for lib in office_oxide pdfium-static pdf_oxide onnxruntime; do
             if [ ! -d "${NATIVE_LIBS_DIR}/${lib}" ]; then
@@ -830,8 +830,8 @@ jobs:
             export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
           fi
 
-          # Fail fast if the native-lib user cache is not mounted: a missing or
-          # empty cache would otherwise surface as a cryptic cgo link error later.
+          # Fail fast if the native-lib user cache is not mounted: a missing
+          # cache would otherwise surface as a cryptic cgo link error later.
           NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
           for lib in office_oxide pdfium-static pdf_oxide onnxruntime; do
             if [ ! -d "${NATIVE_LIBS_DIR}/${lib}" ]; then
@@ -1426,8 +1426,8 @@ jobs:
         # integration tests; the per-engine go jobs build the full server.
         run: |
           set -euo pipefail
-          # Fail fast if the native-lib user cache is not mounted: a missing or
-          # empty cache would otherwise surface as a cryptic cgo link error later.
+          # Fail fast if the native-lib user cache is not mounted: a missing
+          # cache would otherwise surface as a cryptic cgo link error later.
           NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
           for lib in office_oxide pdfium-static pdf_oxide onnxruntime; do
             if [ ! -d "${NATIVE_LIBS_DIR}/${lib}" ]; then
@@ -1546,8 +1546,8 @@ jobs:
         # starts only the dependency services, not the ragflow-cpu container.
         run: |
           set -euo pipefail
-          # Fail fast if the native-lib user cache is not mounted: a missing or
-          # empty cache would otherwise surface as a cryptic cgo link error later.
+          # Fail fast if the native-lib user cache is not mounted: a missing
+          # cache would otherwise surface as a cryptic cgo link error later.
           NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
           for lib in office_oxide pdfium-static pdf_oxide onnxruntime; do
             if [ ! -d "${NATIVE_LIBS_DIR}/${lib}" ]; then
