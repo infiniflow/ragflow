@@ -11,6 +11,8 @@ import (
 
 func init() {
 	gob.Register(&RunStep{})
+	gob.Register(&TypedAgentInput[*schema.Message]{})
+	gob.Register(&TypedAgentInput[*schema.AgenticMessage]{})
 }
 
 // MessageType is the sealed type constraint for agent message types.

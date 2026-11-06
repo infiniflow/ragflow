@@ -227,7 +227,7 @@ func NewEventSenderToolMiddleware[M MessageType]() ToolInvokeMiddleware {
 				return nil, err
 			}
 			ec := getReActExecCtx[M](ctx)
-			if ec != nil && ec.generator != nil && result != nil {
+			if ec != nil && ec.canSend() && result != nil {
 				content := result.Content
 				if content == "" {
 					content = result.Error
