@@ -2,6 +2,7 @@ package parser
 
 import (
 	"context"
+	"encoding/json"
 	"image"
 	"strings"
 	"testing"
@@ -221,6 +222,36 @@ func TestPDFParseResultToJSONConvertsPositiveSourcePageNumbers(t *testing.T) {
 	}
 	if got, want := res.JSON[0].ToMap()["doc_type_kwd"], "table"; got != want {
 		t.Fatalf("JSON[0].doc_type_kwd = %v, want %v", got, want)
+	}
+}
+
+func TestPDFParseResultToJSONAnchorsCrossPageTable(t *testing.T) {
+	parsed := &deepdoctype.ParseResult{
+		Sections: []deepdoctype.Section{{
+			Text:       "<table><tr><td>Cross-page table</td></tr></table>",
+			LayoutType: deepdoctype.LayoutTypeTable,
+			Positions: []deepdoctype.Position{{
+				PageNumbers: []int{6, 7},
+				Left:        43,
+				Right:       550,
+				Top:         520,
+				Bottom:      772,
+			}},
+		}},
+	}
+	res := pdfParseResultToJSON("cross-page.pdf", parsed)
+	if res.Err != nil || len(res.JSON) != 1 {
+		t.Fatalf("got %d items, err = %v, want one table", len(res.JSON), res.Err)
+	}
+	item := res.JSON[0].ToMap()
+	want := `[[7,43,550,520,772]]`
+	for _, key := range []string{"_pdf_positions", "positions"} {
+		if got, err := json.Marshal(item[key]); err != nil || string(got) != want {
+			t.Errorf("%s = %s, err = %v, want %s", key, got, err, want)
+		}
+	}
+	if got := item["page_number"]; got != 7 {
+		t.Errorf("page_number = %v, want 7", got)
 	}
 }
 

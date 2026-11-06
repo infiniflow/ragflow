@@ -158,8 +158,13 @@ func SectionsToJSON(sections []pdf.Section) []map[string]any {
 	for i, s := range sections {
 		positions := make([][]any, len(s.Positions))
 		for j, p := range s.Positions {
-			pages := make([]any, len(p.PageNumbers))
-			for k, pn := range p.PageNumbers {
+			pageNumbers := p.PageNumbers
+			if j == 0 && s.LayoutType == pdf.LayoutTypeTable && len(pageNumbers) > 1 {
+				// A merged table's primary bounds belong to its first page.
+				pageNumbers = pageNumbers[:1]
+			}
+			pages := make([]any, len(pageNumbers))
+			for k, pn := range pageNumbers {
 				pages[k] = pn
 			}
 			positions[j] = []any{pages, p.Left, p.Right, p.Top, p.Bottom}
