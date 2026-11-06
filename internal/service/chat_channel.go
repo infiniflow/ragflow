@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -289,6 +290,31 @@ func (s *ChatChannelService) GetChatChannelRuntime(ctx context.Context, channelI
 // When onDelta is non-nil the answer is generated as a stream and onDelta receives the
 // cumulative display text as it grows; the returned string is always the complete answer.
 func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg ChatChannelIncomingMessage, onDelta func(string)) (string, error) {
+	if onDelta != nil {
+		send := onDelta
+		onDelta = func(text string) { send(stripChannelCitations(text, true)) }
+	}
+	answer, err := s.handleIncomingMessage(ctx, msg, onDelta)
+	return stripChannelCitations(answer, false), err
+}
+
+// Channels cannot render references. Filter every cumulative snapshot as well as
+// the final answer so split markers never reach a platform or its fallback send.
+var channelCitationPattern = regexp.MustCompile(`(?i)[\[(【]\s*\**\s*ID\s*[:：][^\[\]()【】\n]*(?:[\])】]|$)|\[[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+\]`)
+var channelCitationTailPattern = regexp.MustCompile(`(?i)[\[(【]\s*\**\s*(?:I(?:D\s*)?|S(?:L(?:O(?:T\s*[0-9]*)?)?)?|[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]*)$|#{1,2}(?:[0-9]+\$?)?$|\bref\s*[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]*$`)
+
+var channelCitationWordTailPattern = regexp.MustCompile(`(?i)\br(?:e)?$`)
+
+func stripChannelCitations(text string, streaming bool) string {
+	if streaming {
+		text = channelCitationWordTailPattern.ReplaceAllString(text, "")
+	}
+	text = channelCitationTailPattern.ReplaceAllString(text, "")
+	text = stripCitations(text)
+	return channelCitationPattern.ReplaceAllString(text, "")
+}
+
+func (s *ChatChannelService) handleIncomingMessage(ctx context.Context, msg ChatChannelIncomingMessage, onDelta func(string)) (string, error) {
 	if strings.TrimSpace(msg.Text) == "" {
 		return "", nil
 	}
