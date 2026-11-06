@@ -20,6 +20,13 @@ export default {
       rename: 'Rename',
       name: 'Name',
       save: 'Save',
+      saving: 'Saving...',
+      loading: 'Loading...',
+      searching: 'Searching...',
+      refresh: 'Refresh',
+      view: 'View',
+      optional: 'Optional',
+      description: 'Description',
       stop: 'Stop',
       resume: 'Resume',
       namePlaceholder: 'Please input name',
@@ -4156,6 +4163,9 @@ Important structured information may include: names, dates, locations, events, k
       import: 'Import',
       description: 'Description',
       noDescription: 'No description',
+      userCreatedSuccessfully: 'User created successfully',
+      userDeletedSuccessfully: 'User deleted successfully',
+      passwordChangedSuccessfully: 'Password changed successfully',
       none: 'None',
 
       resourceType: {
