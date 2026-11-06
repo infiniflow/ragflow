@@ -16,23 +16,27 @@
 
 package canvas
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // DecodeFromDSL converts a canonical canvas DSL map into a Canvas.
 // It accepts both canonical IMPORT shape (`obj.component_name`) and the
 // normalized flat shape (`name`/`params`) that NormalizeForCanvas emits.
 func DecodeFromDSL(dsl map[string]any) (*Canvas, error) {
 	if len(dsl) == 0 {
-		return nil, fmt.Errorf("canvas: empty DSL")
+		return nil, fmt.Errorf("agent: empty DSL")
 	}
 	rawComps, ok := dsl["components"].(map[string]any)
 	if !ok || len(rawComps) == 0 {
-		return nil, fmt.Errorf("canvas: no components")
+		return nil, fmt.Errorf("agent: no components")
 	}
 	c := &Canvas{
 		Components:  make(map[string]CanvasComponent, len(rawComps)),
 		NodeParents: make(map[string]string),
 	}
+	displayNames := make(map[string]string)
 	if p, ok := dsl["path"].([]any); ok {
 		c.Path = make([]string, 0, len(p))
 		for _, v := range p {
@@ -58,6 +62,11 @@ func DecodeFromDSL(dsl map[string]any) (*Canvas, error) {
 				if id != "" && parentID != "" {
 					c.NodeParents[id] = parentID
 				}
+				data, _ := node["data"].(map[string]any)
+				displayName, _ := data["name"].(string)
+				if id != "" && strings.TrimSpace(displayName) != "" {
+					displayNames[id] = displayName
+				}
 			}
 		}
 	}
@@ -68,9 +77,10 @@ func DecodeFromDSL(dsl map[string]any) (*Canvas, error) {
 		}
 		name, params, downstream, upstream := decodeComponentFields(comp)
 		if name == "" {
-			return nil, fmt.Errorf("canvas: component %q has empty component_name", cpnID)
+			return nil, fmt.Errorf("agent: component %q has empty component_name", cpnID)
 		}
 		c.Components[cpnID] = CanvasComponent{
+			DisplayName: displayNames[cpnID],
 			Obj: CanvasComponentObj{
 				ComponentName: name,
 				Params:        params,
@@ -80,7 +90,7 @@ func DecodeFromDSL(dsl map[string]any) (*Canvas, error) {
 		}
 	}
 	if len(c.Components) == 0 {
-		return nil, fmt.Errorf("canvas: no components")
+		return nil, fmt.Errorf("agent: no components")
 	}
 	return c, nil
 }

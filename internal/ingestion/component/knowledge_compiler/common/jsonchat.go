@@ -33,6 +33,23 @@ const jsonRetryDelay = 2 * time.Second
 // retry before giving up.
 var fencedJSONRE = regexp.MustCompile("(?s)```(?:json)?\\s*(.*?)\\s*```")
 
+// retryDelayCtxKey carries a test-only override for jsonRetryDelay. Production
+// code never sets it, so the real backoff budget is preserved at runtime.
+type retryDelayCtxKey struct{}
+
+// WithRetryDelay returns a ctx that makes GenJSON use d as the initial
+// exponential-backoff delay instead of jsonRetryDelay. It exists so tests that
+// exercise the LLM-failure retry path need not wait out the real ~60s budget
+// per failed call. Pass 0 or a negative value to keep the default.
+func WithRetryDelay(ctx context.Context, d time.Duration) context.Context {
+	return context.WithValue(ctx, retryDelayCtxKey{}, d)
+}
+
+func RetryDelayFromCtx(ctx context.Context) (time.Duration, bool) {
+	d, ok := ctx.Value(retryDelayCtxKey{}).(time.Duration)
+	return d, ok && d > 0
+}
+
 // GenJSON dispatches a chat call in JSON mode and parses the response into a
 // map. It first tries the raw content, then a fenced ```json ... ``` block the
 // model may have wrapped around the JSON, and finally the outermost {...} span
@@ -57,6 +74,9 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 	req.DisableRetry = true
 	var lastErr error
 	delay := jsonRetryDelay
+	if d, ok := RetryDelayFromCtx(ctx); ok {
+		delay = d
+	}
 	failureReporter := RetryFailureReporter{}
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		resp, err := chat.Chat(ctx, req)

@@ -39,13 +39,11 @@ export interface IChangeParserConfigRequestBody {
 export interface IChangeParserRequestBody {
   parser_id: string;
   pipeline_id?: string;
+  // Pins a specific dataflow canvas version (design section 5 sticky snapshot).
+  // Empty/omitted means the latest published version is used at runtime.
+  pipeline_version_id?: string;
   // 1 = BuiltIn (parser_id), 2 = Pipeline (pipeline_id); omitted = unspecified.
-  parseType?: number;
+  parse_type?: number;
   doc_id?: string;
   parser_config: IChangeParserConfigRequestBody;
-}
-
-export interface IDocumentMetaRequestBody {
-  documentId: string;
-  meta: string; // json format string
 }

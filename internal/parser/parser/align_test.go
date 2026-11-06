@@ -390,8 +390,11 @@ func tableCellSignature(text string) string {
 func tableSignatures(items []map[string]any) map[string]bool {
 	sigs := map[string]bool{}
 	for _, it := range items {
+		// A structured table item carries the TableData contract (no HTML
+		// text); render it back to the legacy markup so the cell signature
+		// matches the Python golden, which keeps raw <table> HTML.
+		text := renderedText(it)
 		kd, _ := it["doc_type_kwd"].(string)
-		text, _ := it["text"].(string)
 		if kd != "table" && !isStandaloneTable(text) {
 			continue
 		}

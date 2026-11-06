@@ -10,9 +10,11 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/ingestion/component"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 )
 
-func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string) ([]map[string]interface{}, common.ErrorCode, error) {
 	if len(datasetIDs) == 0 {
 		return nil, common.CodeDataError, errors.New("Lack of dataset_ids in query parameters")
 	}
@@ -32,7 +34,9 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 	// chunk-level aggregation.
 	loader := d.tagVocabularyLoader
 	if loader == nil {
-		loader = component.TagVocabularyFromTagFileID
+		loader = func(ctx context.Context, tagFileID, ownerTenantID string) (map[string]int, error) {
+			return component.TagVocabularyFromTagFileID(ctx, dao.DB, tagFileID, ownerTenantID)
+		}
 	}
 	merged := make(map[string]int)
 	// The handler accepts repeated IDs, and distinct raw IDs can normalize to
@@ -66,8 +70,9 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 	}
 	authorized := make([]authorizedDataset, 0, len(orderedIDs))
 	for _, datasetID := range orderedIDs {
-		if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-			return nil, common.CodeDataError, fmt.Errorf("No authorization for dataset '%s'", datasetID)
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
+			code, permissionErr := permissionresponse.Normalize(err)
+			return nil, code, permissionErr
 		}
 		kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 		if err != nil {

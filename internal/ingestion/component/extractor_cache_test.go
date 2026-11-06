@@ -258,20 +258,14 @@ func TestCallTextCached_NoStoreStillCalls(t *testing.T) {
 	}
 }
 
-// TestExtractor_ResolvesDefaultModelOncePerRun is the regression test for
-// review finding #3: on the default-model path (empty llm_id) the model
-// identity used to key the per-chunk cache must be resolved exactly ONCE per
-// run and reused across every chunk — not re-resolved per chunk. The per-chunk
-// re-resolution was a real performance regression introduced by this PR's
-// correctness fix (the cache key now derives from the resolved default model,
-// not the empty override), and is most visible when there is no cache at all
-// (every call reaches the resolver for nothing).
+// TestExtractor_ResolvesDefaultModelOncePerRun asserts that on the
+// default-model path (empty llm_id) the chat-target resolution happens exactly
+// ONCE for the whole run and is reused across every chunk — not re-resolved
+// per chunk, and not even once per callRaw. The run-level warm
+// (withExtractorModelCache in Invoke) resolves the default model a single
+// time; every callRaw and the per-chunk cache-key build then hit the cache.
 //
-// The invariant: the chat-target resolver override is consulted once for each
-// real LLM call (callRaw resolves its target) and exactly once more for the
-// whole run (the run-level cache-key model resolution). So
-// resolverCalls == stub.Calls()+1. Before the fix the cache-key build
-// re-resolved the model per chunk, giving 2*stub.Calls().
+// The invariant: resolverCalls == 1 regardless of how many LLM calls happened.
 func TestExtractor_ResolvesDefaultModelOncePerRun(t *testing.T) {
 	var resolverCalls atomic.Int32
 	SetExtractorChatTargetResolverOverride(func(llmID string) (string, string, string, string, bool) {
@@ -289,8 +283,8 @@ func TestExtractor_ResolvesDefaultModelOncePerRun(t *testing.T) {
 	}
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
-		LLMID:    "", // default-model path — the one #3 is about
-		Keywords: schema.KeywordExtractConfig{TopN: 3},
+		LLMID:    "", // default-model path
+		Keywords: schema.KeywordExtractConfig{Enabled: true, TopN: 3},
 		Metadata: schema.MetadataExtractConfig{
 			Enabled:  true,
 			Metadata: []common.MetadataFieldDef{{Key: "category", Type: "string"}},
@@ -303,14 +297,14 @@ func TestExtractor_ResolvesDefaultModelOncePerRun(t *testing.T) {
 
 	// Sanity: the run actually exercised the LLM so the assertion below is
 	// not vacuously true.
-	if n := stub.Calls(); n == 0 {
+	llmCalls := stub.Calls()
+	if llmCalls == 0 {
 		t.Fatal("no LLM calls happened; test did not exercise the extraction path")
 	}
 
-	want := stub.Calls() + 1
-	if got := resolverCalls.Load(); got != want {
-		t.Errorf("resolver calls = %d, want %d (== stub.Calls()+1: one run-level model resolution, reused across all chunks)",
-			got, want)
+	if got := resolverCalls.Load(); got != 1 {
+		t.Errorf("resolver calls = %d, want 1 (default model resolved once per run, reused across all %d LLM calls)",
+			got, llmCalls)
 	}
 }
 

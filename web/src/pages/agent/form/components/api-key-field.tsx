@@ -1,32 +1,19 @@
-import {
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Input } from '@/components/ui/input';
 import { t } from 'i18next';
-import { useFormContext } from 'react-hook-form';
 
 interface IApiKeyFieldProps {
   placeholder?: string;
+  required?: boolean;
 }
-export function ApiKeyField({ placeholder }: IApiKeyFieldProps) {
-  const form = useFormContext();
+export function ApiKeyField({ placeholder, required }: IApiKeyFieldProps) {
   return (
-    <FormField
-      control={form.control}
+    <RAGFlowFormItem
       name="api_key"
-      render={({ field }) => (
-        <FormItem>
-          <FormLabel>{t('flow.apiKey')}</FormLabel>
-          <FormControl>
-            <Input type="password" {...field} placeholder={placeholder}></Input>
-          </FormControl>
-          <FormMessage />
-        </FormItem>
-      )}
-    />
+      label={t('flow.apiKey')}
+      required={required}
+    >
+      <Input type="password" placeholder={placeholder}></Input>
+    </RAGFlowFormItem>
   );
 }

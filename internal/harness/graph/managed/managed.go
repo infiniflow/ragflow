@@ -662,23 +662,6 @@ func cloneMap(src map[string]any) map[string]any {
 	return clone
 }
 
-// DEFAULT_RUNTIME is the default runtime instance with nil values.
-// Configurable is nil (not an empty map) so that direct mutation via Set
-// panics with nil pointer dereference rather than silently corrupting a
-// shared global. Callers must use Clone() to obtain a safe copy.
-// This corresponds to Python's DEFAULT_RUNTIME in runtime.py
-var DEFAULT_RUNTIME = &Runtime{
-	TaskID:       "",
-	NodeName:     "",
-	Step:         0,
-	Configurable: nil,
-	CheckpointNS: "",
-	Context:      nil,
-	Store:        nil,
-	StreamWriter: nil,
-	Previous:     nil,
-}
-
 // GetTaskID returns the task ID from config.
 func GetTaskID(config map[string]interface{}) string {
 	if config == nil {

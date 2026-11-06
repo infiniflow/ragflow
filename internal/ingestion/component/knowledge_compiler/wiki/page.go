@@ -22,7 +22,6 @@ type wikiPageResult struct {
 	RelatedKBPages []string
 	ContentRaw     string
 	Content        string
-	Summary        string
 	Outlinks       []string
 	SourceChunkIDs []string
 	SourceDocIDs   []string
@@ -111,7 +110,6 @@ func buildPageProducts(tenantID, docID, page string, sourceChunkIDs []string) []
 		Action:         "CREATE",
 		ContentRaw:     page,
 		Content:        page,
-		Summary:        firstParagraph(page),
 		SourceChunkIDs: sourceChunkIDs,
 		SourceDocIDs:   []string{docID},
 	}})
@@ -167,12 +165,9 @@ func buildWikiPageProducts(tenantID, docID string, pages []wikiPageResult) []com
 		if strings.TrimSpace(content) == "" {
 			content = page.ContentRaw
 		}
-		summary := strings.TrimSpace(page.Summary)
-		if summary == "" {
-			summary = firstParagraph(content)
-		}
-		sourceChunkIDs := uniqueStrings(page.SourceChunkIDs)
-		sourceDocIDs := uniqueStrings(page.SourceDocIDs)
+		summary := summarizeMarkdown(content, title)
+		sourceChunkIDs := appcommon.DeduplicateTrimmed(page.SourceChunkIDs)
+		sourceDocIDs := appcommon.DeduplicateTrimmed(page.SourceDocIDs)
 		if len(sourceDocIDs) == 0 && docID != "" {
 			sourceDocIDs = []string{docID}
 		}
@@ -191,9 +186,9 @@ func buildWikiPageProducts(tenantID, docID string, pages []wikiPageResult) []com
 				"page_type":        pageType,
 				"topic":            common.NormalizeWikiTopicPath(page.Topic),
 				"summary":          summary,
-				"entity_names":     uniqueStrings(page.EntityNames),
-				"related_kb_pages": uniqueStrings(page.RelatedKBPages),
-				"outlinks":         uniqueStrings(page.Outlinks),
+				"entity_names":     appcommon.DeduplicateTrimmed(page.EntityNames),
+				"related_kb_pages": appcommon.DeduplicateTrimmed(page.RelatedKBPages),
+				"outlinks":         appcommon.DeduplicateTrimmed(page.Outlinks),
 				"source_chunk_ids": sourceChunkIDs,
 				"source_doc_ids":   sourceDocIDs,
 				"content_md_raw":   page.ContentRaw,

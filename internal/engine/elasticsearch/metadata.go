@@ -159,9 +159,50 @@ func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]inter
 		return nil, fmt.Errorf("failed to parse bulk response: %w", err)
 	}
 
-	// Check for errors in bulk response
-	if errors, ok := bulkResponse["errors"].(bool); ok && errors {
-		common.Warn("Bulk request had some errors")
+	// Check for errors in bulk response. ES reports a 200 at the top level
+	// even when individual bulk items fail, so inspect the items and surface
+	// the reasons instead of returning success while metadata was silently
+	// dropped.
+	if hasErrs, ok := bulkResponse["errors"].(bool); ok && hasErrs {
+		var failures []string
+		failed := 0
+		if items, ok := bulkResponse["items"].([]interface{}); ok {
+			for _, it := range items {
+				im, ok := it.(map[string]interface{})
+				if !ok {
+					continue
+				}
+				for _, op := range im {
+					om, ok := op.(map[string]interface{})
+					if !ok {
+						continue
+					}
+					errObj, ok := om["error"].(map[string]interface{})
+					if !ok {
+						continue
+					}
+					failed++
+					reason, _ := errObj["reason"].(string)
+					docID, _ := om["_id"].(string)
+					switch {
+					case docID != "" && reason != "":
+						failures = append(failures, docID+": "+reason)
+					case docID != "":
+						failures = append(failures, docID)
+					case reason != "":
+						failures = append(failures, reason)
+					}
+				}
+			}
+		}
+		shown := failures
+		if len(shown) > 5 {
+			shown = shown[:5]
+		}
+		common.Error("Elasticsearch bulk request had item errors",
+			fmt.Errorf("index %s: %d failed items; first failures: %v", indexName, failed, shown))
+		return nil, fmt.Errorf("elasticsearch bulk request had %d item errors (index %s); first failures: %v",
+			failed, indexName, shown)
 	}
 
 	common.Info("ElasticsearchConnection.InsertMetadata result", zap.String("index_name", indexName), zap.Int("count", len(metadata)))
@@ -317,6 +358,15 @@ func (e *Engine) DeleteMetadata(ctx context.Context, condition map[string]interf
 	deleted := int64(0)
 	if d, ok := result["deleted"].(float64); ok {
 		deleted = int64(d)
+	}
+
+	// delete_by_query can answer 200 while only part of the work was done.
+	// Surface that so callers do not treat leftover metadata as deleted.
+	if timedOut, _ := result["timed_out"].(bool); timedOut {
+		return deleted, fmt.Errorf("elasticsearch delete metadata by query timed out after deleting %d metadata documents from %s", deleted, indexName)
+	}
+	if failures, ok := result["failures"].([]interface{}); ok && len(failures) > 0 {
+		return deleted, fmt.Errorf("elasticsearch delete metadata by query reported %d failures after deleting %d metadata documents from %s", len(failures), deleted, indexName)
 	}
 
 	common.Info("ElasticsearchConnection.DeleteMetadata completes", zap.String("index_name", indexName), zap.Int64("deleted_count", deleted))
@@ -723,19 +773,19 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 		return nil
 	}
 
-	// Execute search for each tenant (use first KB to get tenant)
-	kb := kbIDs[0]
-	tenantID, err := dao.GetTenantIDByKBID(ctx, sqlDB, kb)
+	groups, err := dao.GroupKBIDsByTenant(ctx, sqlDB, kbIDs)
 	if err != nil {
-		common.Warn("FilterDocIdsByMetaPushdown: failed to get tenant for KB", zap.String("kbID", kb), zap.Error(err))
+		common.Warn("FilterDocIdsByMetaPushdown: failed to resolve KB tenants", zap.Strings("kbIDs", kbIDs), zap.Error(err))
 		return nil
 	}
-	indexName := buildMetadataIndexName(tenantID)
-
-	// Check if index exists
-	exists, err := e.indexExists(ctx, indexName)
-	if err != nil || !exists {
-		return nil
+	indexNames := make([]string, 0, len(groups))
+	for _, group := range groups {
+		indexName := buildMetadataIndexName(group.TenantID)
+		exists, err := e.indexExists(ctx, indexName)
+		if err != nil || !exists {
+			return nil
+		}
+		indexNames = append(indexNames, indexName)
 	}
 
 	// Build the filter query using the full meta_filter logic
@@ -765,13 +815,17 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 
 	res, err := e.client.Search(
 		e.client.Search.WithContext(ctx),
-		e.client.Search.WithIndex(indexName),
+		e.client.Search.WithIndex(indexNames...),
+		e.client.Search.WithAllowPartialSearchResults(false),
 		e.client.Search.WithBody(&buf),
 	)
-	if err != nil || res.IsError() {
+	if err != nil {
 		return nil
 	}
 	defer res.Body.Close()
+	if res.IsError() {
+		return nil
+	}
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {

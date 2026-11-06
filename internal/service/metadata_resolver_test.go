@@ -18,10 +18,58 @@ package service
 
 import (
 	"context"
+	"errors"
+	"reflect"
 	"testing"
 
 	"gorm.io/gorm"
+
+	"ragflow/internal/dao"
+	"ragflow/internal/engine/types"
 )
+
+type tenantMetadataEngine struct {
+	fakeChatDocEngine
+	requests []*types.SearchMetadataRequest
+	fail     bool
+}
+
+func (e *tenantMetadataEngine) SearchMetadata(_ context.Context, req *types.SearchMetadataRequest) (*types.SearchMetadataResult, error) {
+	e.requests = append(e.requests, req)
+	if e.fail && req.TenantID == "tenant-b" {
+		return nil, errors.New("metadata unavailable")
+	}
+	return &types.SearchMetadataResult{MetadataRecords: []map[string]interface{}{
+		{"id": "doc-" + req.TenantID, "meta_fields": map[string]interface{}{"author": "Alice"}},
+	}}, nil
+}
+
+func TestMetadataFallbackSearchesAllTenants(t *testing.T) {
+	pushServiceDB(t, setupServiceTestDB(t))
+	insertTestKB(t, "kb-a", "tenant-a", 0, 0, 0)
+	insertTestKB(t, "kb-b", "tenant-a", 0, 0, 0)
+	insertTestKB(t, "kb-c", "tenant-b", 0, 0, 0)
+	eng := &tenantMetadataEngine{}
+	svc := NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), eng)
+	meta, err := svc.GetFlattedMetaByKBs(t.Context(), []string{"kb-a", "kb-c", "kb-b", "kb-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := meta["author"]["Alice"]; !reflect.DeepEqual(got, []string{"doc-tenant-a", "doc-tenant-b"}) {
+		t.Fatalf("matching documents = %v, want both tenants", got)
+	}
+	if len(eng.requests) != 2 || eng.requests[0].TenantID != "tenant-a" || eng.requests[1].TenantID != "tenant-b" {
+		t.Fatalf("metadata requests = %#v, want one per tenant", eng.requests)
+	}
+	if !reflect.DeepEqual(eng.requests[0].Filter["kb_id"], []string{"kb-a", "kb-b"}) ||
+		!reflect.DeepEqual(eng.requests[1].Filter["kb_id"], []string{"kb-c"}) {
+		t.Fatal("metadata queries were not scoped to each tenant's datasets")
+	}
+	eng.fail = true
+	if got, err := svc.GetFlattedMetaByKBs(t.Context(), []string{"kb-a", "kb-c"}); err == nil || got != nil {
+		t.Fatalf("partial metadata = %v, err = %v, want error without partial result", got, err)
+	}
+}
 
 // pushdownDocEngine is the shared fake with a scripted push-down answer: the agentic
 // metadata_search adapter is only interesting for what it does with the engine's

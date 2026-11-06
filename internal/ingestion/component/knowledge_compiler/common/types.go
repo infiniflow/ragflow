@@ -11,7 +11,10 @@ package common
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
+
+	appcommon "ragflow/internal/common"
 )
 
 // Variant identifies which knowledge-compile strategy to run.
@@ -56,6 +59,7 @@ type Param struct {
 
 	LLMID          string
 	EmbeddingModel string
+	ChatSettings   ChatSettings
 	Language       string
 	// SimilarityThreshold defaults to 0.99 when not provided (see Defaults).
 	SimilarityThreshold   float64
@@ -127,10 +131,7 @@ type Product struct {
 	DocID    string
 	TenantID string
 	Variant  Variant
-	// Kind is the original compilation_template.kind (e.g. "page_index"),
-	// distinct from Variant (the collapsed Go strategy, e.g. "structure"). It
-	// is stamped onto compilation_template_kind_kwd so the document-structure
-	// endpoint can group rows by the true template kind.
+	// Kind identifies the producing template's knowledge compilation kind.
 	Kind string
 	// TemplateID is the compilation template that produced this row.
 	TemplateID string
@@ -176,6 +177,42 @@ func ParseParam(m map[string]any) (Param, error) {
 	if v, ok := m["llm_id"].(string); ok {
 		p.LLMID = v
 	}
+	var err error
+	if p.ChatSettings.Temperature, err = optionalFloatSetting(m, "temperature", "temperatureEnabled"); err != nil {
+		return p, err
+	}
+	if p.ChatSettings.TopP, err = optionalFloatSetting(m, "top_p", "topPEnabled"); err != nil {
+		return p, err
+	}
+	if p.ChatSettings.PresencePenalty, err = optionalFloatSetting(m, "presence_penalty", "presencePenaltyEnabled"); err != nil {
+		return p, err
+	}
+	if p.ChatSettings.FrequencyPenalty, err = optionalFloatSetting(m, "frequency_penalty", "frequencyPenaltyEnabled"); err != nil {
+		return p, err
+	}
+	if p.ChatSettings.MaxTokens, err = optionalIntSetting(m, "max_tokens", "maxTokensEnabled"); err != nil {
+		return p, err
+	}
+	if raw, ok := m["thinking"]; ok && raw != nil {
+		thinking, valid := raw.(string)
+		if !valid {
+			return p, fmt.Errorf("knowledge_compiler: thinking must be a string")
+		}
+		switch strings.TrimSpace(thinking) {
+		case "", "default":
+			p.ChatSettings.ThinkingSet = true
+		case "enabled":
+			enabled := true
+			p.ChatSettings.Thinking = &enabled
+			p.ChatSettings.ThinkingSet = true
+		case "disabled":
+			disabled := false
+			p.ChatSettings.Thinking = &disabled
+			p.ChatSettings.ThinkingSet = true
+		default:
+			return p, fmt.Errorf("knowledge_compiler: unsupported thinking setting %q", thinking)
+		}
+	}
 	if v, ok := m["embedding_model"].(string); ok {
 		p.EmbeddingModel = v
 	}
@@ -197,6 +234,64 @@ func ParseParam(m map[string]any) (Param, error) {
 		p.Extra = raw
 	}
 	return p, nil
+}
+
+func optionalFloatSetting(params map[string]any, key, enabledKey string) (*float64, error) {
+	if !settingEnabled(params, enabledKey) {
+		return nil, nil
+	}
+	raw, ok := params[key]
+	if !ok {
+		return nil, nil
+	}
+	value, ok := numericValue(raw)
+	if !ok {
+		return nil, fmt.Errorf("knowledge_compiler: %s must be numeric", key)
+	}
+	return &value, nil
+}
+
+func optionalIntSetting(params map[string]any, key, enabledKey string) (*int, error) {
+	if !settingEnabled(params, enabledKey) {
+		return nil, nil
+	}
+	raw, ok := params[key]
+	if !ok {
+		return nil, nil
+	}
+	value, ok := numericValue(raw)
+	maxInt := int(^uint(0) >> 1)
+	if !ok || math.Trunc(value) != value || value <= 0 || value >= float64(maxInt) {
+		return nil, fmt.Errorf("knowledge_compiler: %s must be a positive integer", key)
+	}
+	intValue := int(value)
+	return &intValue, nil
+}
+
+func settingEnabled(params map[string]any, enabledKey string) bool {
+	raw, exists := params[enabledKey]
+	if !exists {
+		return true
+	}
+	enabled, ok := raw.(bool)
+	return ok && enabled
+}
+
+func numericValue(value any) (float64, bool) {
+	switch value := value.(type) {
+	case float64:
+		return value, true
+	case float32:
+		return float64(value), true
+	case int:
+		return float64(value), true
+	case int64:
+		return float64(value), true
+	case int32:
+		return float64(value), true
+	default:
+		return 0, false
+	}
 }
 
 // PlanEnabled reports whether wiki topic mode is selected. An unset value
@@ -282,14 +377,64 @@ func VariantToTaskType(variant Variant) string {
 	}
 }
 
-// FirstNonEmpty returns the first string that is non-empty after trimming.
+// FirstNonEmpty returns the first string that is non-empty after trimming,
+// trimmed. It delegates to the generic helper in internal/common so the
+// knowledge_compiler package shares one implementation with the rest of the
+// codebase (the generic component layer no longer needs to reach into this
+// package for a meta-agnostic string helper). The trimmed return value preserves
+// the historical contract of the wiki pipeline's local helper.
 func FirstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if strings.TrimSpace(v) != "" {
-			return v
+	return appcommon.FirstNonEmpty(vals...)
+}
+
+// MetaInt extracts an integer from a Product.Meta value that may be boxed as
+// int64, int, float64 (JSON number), or even a numeric string — the
+// engine/JSON round-trip does not guarantee a single numeric type. It returns
+// (0, false) when the key is absent or not a parseable number. The int64 form
+// is the canonical one so callers can store it directly without a narrowing
+// conversion.
+func MetaInt(meta map[string]any, key string) (int64, bool) {
+	switch v := meta[key].(type) {
+	case int64:
+		return v, true
+	case int:
+		return int64(v), true
+	case float64:
+		return int64(v), true
+	case string:
+		var n int64
+		if _, err := fmt.Sscanf(v, "%d", &n); err == nil {
+			return n, true
 		}
 	}
-	return ""
+	return 0, false
+}
+
+// MetaStringSlice reads a []string (or []any) Product.Meta key, keeping
+// non-empty strings and dropping empties. Both the []string and []any branches
+// filter empties so the result is independent of how the value was boxed (the
+// engine/JSON round-trip does not guarantee a single type). Returns nil when no
+// strings are present; a present but empty key yields a non-nil empty slice.
+func MetaStringSlice(meta map[string]any, key string) []string {
+	switch v := meta[key].(type) {
+	case []string:
+		out := make([]string, 0, len(v))
+		for _, e := range v {
+			if e != "" {
+				out = append(out, e)
+			}
+		}
+		return out
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, e := range v {
+			if s, ok := e.(string); ok && s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 // VectorFromChunkMap extracts a pre-computed embedding from a chunk map. The

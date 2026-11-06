@@ -116,12 +116,10 @@ func resumeInternal[M MessageType](a TypedAgent[M], store CheckPointStore, ctx c
 	o := getCommonOptions(nil, opts...)
 	if o.sharedParentSession {
 		if ps := getSession(ctx); ps != nil {
-			rc.Session.Values = ps.Values
+			rc.Session.shareValuesFrom(ps)
 		}
 	}
-	if rc.Session.Values == nil {
-		rc.Session.Values = make(map[string]any)
-	}
+	rc.Session.ensureValues()
 	ctx = setRunCtx(ctx, rc)
 	AddSessionValues(ctx, o.sessionValues)
 

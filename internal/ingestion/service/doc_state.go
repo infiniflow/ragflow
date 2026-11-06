@@ -24,7 +24,6 @@ import (
 	"ragflow/internal/common"
 	taskpkg "ragflow/internal/ingestion/task"
 	documentpkg "ragflow/internal/service/document"
-	"ragflow/internal/utility"
 )
 
 // docStateSvc is the subset of *service.DocumentService needed to finalize a
@@ -38,7 +37,7 @@ type docStateSvc interface {
 }
 
 // docStateUpdater applies a pipeline run's results to document state: it
-// merges the pipeline-produced metadata (filling only keys not already present)
+// replaces metadata keys produced by the pipeline while preserving other keys,
 // and bumps the document/dataset chunk and token counters. Both steps are
 // best-effort; failures are logged and do not fail the task.
 type docStateUpdater struct {
@@ -77,23 +76,22 @@ func (u *docStateUpdater) apply(ctx context.Context, r *taskpkg.PipelineResult) 
 	}
 }
 
-// mergeDocMetadata reads existing metadata, unions it with the freshly
-// aggregated doc metadata (list values merged + de-duplicated, scalars from the
-// stored map winning — matching Python task_executor.py:572
-// update_metadata_to(metadata, existing_meta)), then splits combined values
-// before writing the merged map back (Python doc_metadata_service.py:468
-// _split_combined_values). A read failure aborts the merge: SetDocumentMetadata
-// is a full overwrite, so writing with an empty baseline would destroy existing
-// keys.
+// mergeDocMetadata replaces stored keys with the freshly aggregated values,
+// regardless of value type, and retains stored keys absent from this run.
+// It splits combined string-list values before writing the complete map back.
+// A read failure aborts the merge to avoid losing keys during replacement.
 func mergeDocMetadata(ctx context.Context, svc docStateSvc, docID string, metadata map[string]any) error {
 	existing, err := svc.GetDocumentMetadataByID(ctx, docID)
 	if err != nil {
 		return err
 	}
-	if existing == nil {
-		existing = map[string]any{}
+	merged := make(map[string]any, len(existing)+len(metadata))
+	for key, value := range existing {
+		merged[key] = value
 	}
-	merged := utility.UpdateMetadataTo(metadata, existing)
+	for key, value := range metadata {
+		merged[key] = value
+	}
 	merged = common.SplitCombinedMetadataValues(merged)
 	return svc.SetDocumentMetadata(ctx, docID, merged)
 }
@@ -123,14 +121,5 @@ func applyBuiltInMetadata(ctx context.Context, svc docStateSvc, docID, docName s
 	if len(builtIn) == 0 {
 		return nil
 	}
-	existing, err := svc.GetDocumentMetadataByID(ctx, docID)
-	if err != nil {
-		return err
-	}
-	if existing == nil {
-		existing = map[string]any{}
-	}
-	merged := utility.UpdateMetadataTo(existing, builtIn)
-	merged = common.SplitCombinedMetadataValues(merged)
-	return svc.SetDocumentMetadata(ctx, docID, merged)
+	return mergeDocMetadata(ctx, svc, docID, builtIn)
 }

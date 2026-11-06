@@ -11,8 +11,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/cespare/xxhash/v2"
@@ -24,8 +22,10 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/chunkcache"
 	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const (
@@ -56,8 +56,6 @@ const (
 	// rankDecayWeightPower is the power exponent applied to relative tag weight.
 	rankDecayWeightPower = 0.4
 )
-
-const taggerLLMConcurrency = 8
 
 var taggerTimeout = 60 * time.Second
 
@@ -366,16 +364,16 @@ func isHighConfidenceMatch(matched *schema.TaggedChunk) bool {
 	return false
 }
 
-func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in extractorInputs, w fractionWindow) ([]map[string]any, error) {
+func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in extractorInputs, w progress.Window) ([]map[string]any, error) {
 	// Hand the whole window to the next phase on every exit path, including the
 	// skip paths below that do no measurable work.
-	defer w.report(ctx, 1)
+	defer w.Report(ctx, 1)
 	lang := in.lang
 	if lang == "" {
 		lang = detectTextLanguage(in.chunks)
 	}
 
-	indexed, ok := c.resolveTagSource(ctx, lang)
+	indexed, ok := c.resolveTagSource(ctx, db, lang)
 	if !ok || len(in.chunks) == 0 {
 		common.Info("extractor tags: skipped",
 			zap.Int("chunk_count", len(in.chunks)),
@@ -404,34 +402,8 @@ func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in ex
 		}
 	}
 
-	if len(docsToTag) > 0 {
-		driver, model, apiKey, baseURL, err := resolveExtractorChatTarget(ctx, db, in.llmID)
-		if err != nil {
-			common.Warn("extractor tag: resolve model failed, skipping LLM tagging", zap.Error(err))
-		}
-		if driver != "" && model != "" {
-			inv := getExtractorChatInvoker()
-			sem := make(chan struct{}, taggerLLMConcurrency)
-			var wg sync.WaitGroup
-			var tagged atomic.Int64
-			total := int64(len(docsToTag))
-
-			for i := range docsToTag {
-				wg.Add(1)
-				go func(idx int) {
-					defer wg.Done()
-					defer func() { w.report(ctx, float64(tagged.Add(1))/float64(total)) }()
-					select {
-					case sem <- struct{}{}:
-						defer func() { <-sem }()
-					case <-ctx.Done():
-						return
-					}
-					llmTagChunk(ctx, db, inv, docsToTag[idx], indexed.allTags, examples, in.cache, in.llmID, in.modelID, driver, model, apiKey, baseURL, topN, indexed)
-				}(i)
-			}
-			wg.Wait()
-		}
+	if err := c.runLLMTags(ctx, db, in, docsToTag, indexed, examples, w); err != nil {
+		return nil, err
 	}
 
 	taggedCount := 0
@@ -453,19 +425,47 @@ func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in ex
 	return in.chunks, nil
 }
 
-func (c *ExtractorComponent) resolveTagSource(ctx context.Context, lang string) (*MemoryTagIndex, bool) {
+// runLLMTags submits unmatched chunks to the shared Extractor pool.
+func (c *ExtractorComponent) runLLMTags(ctx context.Context, db *gorm.DB, in extractorInputs, chunks []map[string]any, indexed *MemoryTagIndex, examples []schema.TaggedChunk, w progress.Window) error {
+	if len(chunks) == 0 {
+		return nil
+	}
+	driver, model, apiKey, baseURL, err := resolveExtractorChatTarget(ctx, db, in.llmID)
+	if err != nil {
+		common.Warn("extractor tag: resolve model failed, skipping LLM tagging", zap.Error(err))
+	}
+	if driver == "" || model == "" {
+		return nil
+	}
+	inv := getExtractorChatInvoker()
+	topN := c.Param.Tags.TopN
+	futs := make([]utility.WorkerPoolFuture[extractorJob, struct{}], 0, len(chunks))
+	for _, chunk := range chunks {
+		f, err := extractorPool.Submit(ctx, func() error {
+			llmTagChunk(ctx, db, inv, chunk, indexed.allTags, examples, in.cache, in.llmID, in.modelID, driver, model, apiKey, baseURL, topN, indexed)
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		futs = append(futs, f)
+	}
+	return awaitFutures(ctx, futs, w)
+}
+
+func (c *ExtractorComponent) resolveTagSource(ctx context.Context, db *gorm.DB, lang string) (*MemoryTagIndex, bool) {
 	if c.Param.Tags.TagFileID == "" {
 		return nil, false
 	}
-	return c.loadTagFileIndexed(ctx, lang)
+	return c.loadTagFileIndexed(ctx, db, lang)
 }
 
-func (c *ExtractorComponent) loadTagFileIndexed(ctx context.Context, lang string) (*MemoryTagIndex, bool) {
+func (c *ExtractorComponent) loadTagFileIndexed(ctx context.Context, db *gorm.DB, lang string) (*MemoryTagIndex, bool) {
 	// Same IDOR guard as TagVocabularyFromTagFileID: tag_file_id is
 	// user-controlled through parser_config, so it must resolve inside the
 	// caller's tenant before the bytes are read.
 	tenantID := globals.GlobalOrInput(ctx, nil, "tenant_id", "")
-	f, err := resolveTagSourceFile(ctx, c.Param.Tags.TagFileID, tenantID)
+	f, err := resolveTagSourceFile(ctx, db, c.Param.Tags.TagFileID, tenantID)
 	if err != nil {
 		common.Warn(fmt.Sprintf("extractor tags: resolve tag_file_id %q: %v", c.Param.Tags.TagFileID, err))
 		return nil, false

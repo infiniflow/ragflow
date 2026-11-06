@@ -75,19 +75,28 @@ type ExtractorFromUpstream struct {
 func (ExtractorFromUpstream) Validate() error { return nil }
 
 // KeywordExtractConfig configures automatic keyword extraction.
+// Enabled is the single execution gate; TopN is the extraction count and
+// must be >= 1 when Enabled (enforced at canvas build time for params that
+// carry an explicit "enabled" key; legacy DSLs without it derive Enabled
+// from TopN > 0 — see NewExtractorComponent).
 type KeywordExtractConfig struct {
+	Enabled      bool   `json:"enabled"`
 	TopN         int    `json:"top_n"`
 	SystemPrompt string `json:"system_prompt,omitempty"`
 }
 
 // QuestionExtractConfig configures automatic question generation.
+// Same Enabled/TopN contract as KeywordExtractConfig.
 type QuestionExtractConfig struct {
+	Enabled      bool   `json:"enabled"`
 	TopN         int    `json:"top_n"`
 	SystemPrompt string `json:"system_prompt,omitempty"`
 }
 
 // TagExtractConfig configures automatic tag extraction.
+// Same Enabled/TopN contract as KeywordExtractConfig.
 type TagExtractConfig struct {
+	Enabled   bool   `json:"enabled"`
 	TopN      int    `json:"top_n"`
 	TagFileID string `json:"tag_file_id,omitempty"`
 }

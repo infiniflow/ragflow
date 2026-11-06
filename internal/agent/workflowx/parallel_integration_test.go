@@ -25,6 +25,7 @@ package workflowx
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"sync"
@@ -188,6 +189,67 @@ func TestIntegration_InvokeResume_ReplaysOnlyNonCompletedIndices(t *testing.T) {
 	// 2 additional calls: replay of items 2 and 3 only.
 	if got := calls.Load(); got != 6 {
 		t.Errorf("total calls: got %d, want 6", got)
+	}
+}
+
+func TestIntegration_InvokeResume_PreservesCompletedResultsAcrossInterrupts(t *testing.T) {
+	ctx := t.Context()
+	first, err := encodeParallelState(ParallelInterruptState{
+		OriginalInputsJSON: []byte(`[0,1]`),
+		CompletedResults:   map[int]any{0: 10},
+		InterruptedIndices: []int{1},
+		TotalCount:         2,
+	})
+	if err != nil {
+		t.Fatalf("encode first interrupt: %v", err)
+	}
+	var calls [2]atomic.Int32
+	interruptAgain := true
+	runner := testCountingRunnable{fn: func(ctx context.Context, in int, _ ...compose.Option) (int, error) {
+		calls[in].Add(1)
+		if in == 1 && interruptAgain {
+			return 0, compose.StatefulInterrupt(ctx, "second pause", in)
+		}
+		return in + 10, nil
+	}}
+	opts := getParallelOptions([]ParallelOption{WithParallelMaxConcurrency(0), WithParallelEnableSubCheckpoint(false)})
+	_, err = runParallelInvoke(injectResumeState(ctx, first), "par", runner, []int{0, 1}, opts, newParallelBridgeState(nil))
+	if err == nil {
+		t.Fatal("first resume: expected second interrupt")
+	}
+	encodedSignal, err := json.Marshal(err)
+	if err != nil {
+		t.Fatalf("marshal composite interrupt: %v", err)
+	}
+	var signal struct{ State []byte }
+	if err := json.Unmarshal(encodedSignal, &signal); err != nil {
+		t.Fatalf("decode composite interrupt: %v", err)
+	}
+	var second ParallelInterruptState
+	if err := json.Unmarshal(signal.State, &second); err != nil {
+		t.Fatalf("decode second checkpoint: %v", err)
+	}
+	if got := second.CompletedResults[0]; got != float64(10) {
+		t.Errorf("completed item 0 missing from second checkpoint: got %v", got)
+	}
+	if len(second.InterruptedIndices) != 1 || second.InterruptedIndices[0] != 1 {
+		t.Errorf("second checkpoint pending indices = %v, want [1]", second.InterruptedIndices)
+	}
+
+	interruptAgain = false
+	out, err := runParallelInvoke(injectResumeState(ctx, signal.State), "par", runner, []int{0, 1}, opts, newParallelBridgeState(nil))
+	if err != nil {
+		t.Fatalf("second resume: %v", err)
+	}
+	for i, want := range []int{10, 11} {
+		if out[i] != want {
+			t.Errorf("out[%d] = %d, want %d", i, out[i], want)
+		}
+	}
+	for i, want := range []int32{0, 2} {
+		if got := calls[i].Load(); got != want {
+			t.Errorf("item %d invoked %d times, want %d", i, got, want)
+		}
 	}
 }
 

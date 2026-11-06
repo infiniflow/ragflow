@@ -14,12 +14,15 @@
  *  limitations under the License.
  */
 
+import anysearchLogo from '@/assets/anysearch.webp';
 import braveLogo from '@/assets/svg/brave.svg';
 import exaLogo from '@/assets/exa.png';
 import firecrawlLogo from '@/assets/firecrawl.png';
 import linkupLogo from '@/assets/linkup.png';
 import parallelLogo from '@/assets/svg/parallel.svg';
 import queritLogo from '@/assets/querit.png';
+import search1apiLogo from '@/assets/search1api.png';
+import searchapiLogo from '@/assets/searchapi.png';
 import serplyLogo from '@/assets/serply.png';
 import tavilyLogo from '@/assets/svg/tavily.svg';
 import youcomLogo from '@/assets/svg/youcom.svg';
@@ -39,6 +42,11 @@ interface IProps {
 // One entry per provider. `name` is the BRAND, so it stays untranslated; it is what
 // the key field's label is interpolated into (chat.webSearchApiKeyLabel).
 const webSearchProviderCatalog = [
+  {
+    name: 'AnySearch',
+    logo: anysearchLogo,
+    value: WebSearchProvider.AnySearch,
+  },
   {
     name: 'Brave Search',
     logo: braveLogo,
@@ -68,6 +76,16 @@ const webSearchProviderCatalog = [
     name: 'Querit',
     logo: queritLogo,
     value: WebSearchProvider.Querit,
+  },
+  {
+    name: 'Search1API',
+    logo: search1apiLogo,
+    value: WebSearchProvider.Search1API,
+  },
+  {
+    name: 'SearchApi',
+    logo: searchapiLogo,
+    value: WebSearchProvider.SearchApi,
   },
   {
     name: 'Serply',
@@ -112,6 +130,12 @@ const providerDisplayName = (provider?: WebSearchProvider) =>
   '';
 
 const providerKeyConfig = {
+  [WebSearchProvider.AnySearch]: {
+    name: 'prompt_config.anysearch_api_key',
+    tip: 'anysearchApiKeyTip',
+    placeholder: 'anysearchApiKeyMessage',
+    helpUrl: 'https://anysearch.com/console/api-keys',
+  },
   [WebSearchProvider.Brave]: {
     name: 'prompt_config.brave_api_key',
     tip: 'braveApiKeyTip',
@@ -147,6 +171,18 @@ const providerKeyConfig = {
     tip: 'queritApiKeyTip',
     placeholder: 'queritApiKeyMessage',
     helpUrl: 'https://querit.ai',
+  },
+  [WebSearchProvider.Search1API]: {
+    name: 'prompt_config.search1api_api_key',
+    tip: 'search1apiApiKeyTip',
+    placeholder: 'search1apiApiKeyMessage',
+    helpUrl: 'https://app.s1.dev',
+  },
+  [WebSearchProvider.SearchApi]: {
+    name: 'prompt_config.searchapi_api_key',
+    tip: 'searchapiApiKeyTip',
+    placeholder: 'searchapiApiKeyMessage',
+    helpUrl: 'https://www.searchapi.io',
   },
   [WebSearchProvider.Serply]: {
     name: 'prompt_config.serply_api_key',

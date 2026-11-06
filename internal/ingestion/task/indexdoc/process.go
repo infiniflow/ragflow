@@ -18,7 +18,6 @@ package indexdoc
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"ragflow/internal/common"
@@ -94,12 +93,30 @@ func ProcessChunksForPipeline(
 		}
 
 		cleanupConsumedChunkFields(ck)
+		// The spreadsheet identity is keyed off fields the strip is about to
+		// remove, so it must be read before it.
+		spreadsheet := isSpreadsheetChunk(ck)
 		stripPipelineOnlyFields(ck)
 		metadata = mergeChunkMetadata(metadata, ck)
 		RenameTextToContentWithWeight(ck)
-		processChunkPositions(ck)
+		processChunkPositions(ck, spreadsheet)
 	}
 	return metadata, nil
+}
+
+// StampDatasetPagerank writes the dataset's pagerank onto every chunk a run is
+// about to index. Python's index-time doc template carries it
+// (`if task["pagerank"]: doc[PAGERANK_FLD] = int(...)`), which is what makes a
+// pagerank configured before parsing apply to the chunks it produces. Without
+// it only the chunks that already existed when the setting was saved carry the
+// value, since the dataset-level update rewrites rows rather than future ones.
+func StampDatasetPagerank(chunks []map[string]any, pagerank int64) {
+	if pagerank == 0 {
+		return
+	}
+	for _, chunk := range chunks {
+		chunk[common.PAGERANK_FLD] = pagerank
+	}
 }
 
 // requireStringText enforces the pre-index wire contract: every chunk must
@@ -141,20 +158,21 @@ func cleanupConsumedChunkFields(ck map[string]any) {
 }
 
 // pipelineOnlyFields are the parser/chunker BOOKKEEPING keys: each one is
-// consumed inside the pipeline (ck_type drives chunk merging and the image-crop
-// decision, tk_nums carries the chunker's token count into the Tokenizer,
-// layout*/image/context_* describe the media block, and page_number/table_id/
-// sheet/headers/cells describe the table or spreadsheet block) and NONE of them
-// is a chunk-store column.
+// consumed inside the pipeline (layout drives block-kind decisions, tk_nums
+// carries the chunker's token count into the Tokenizer, layout*/image/context_*
+// describe the media block, and page_number/table_id/sheet/headers/cells
+// describe the table or spreadsheet block) and NONE of them is a chunk-store
+// column.
 //
 // The Python index doc carries none of them — its chunk builder emits only the
 // persist fields — but Go's chunker hands them on, and the write boundary is
-// strict about unknown columns: Infinity rejects the whole insert with
-// "Column ck_type not found in table" (InfinityException 3013). Elasticsearch
-// merely swallowed them, because a dynamic mapping accepts any field.
+// where they stop: Elasticsearch and Vastbase would add a field for each key,
+// and Infinity would drop each key at insert with a warning. media_ref is the
+// deferred-image reference consumed by the upload pass; a chunk that still
+// carries one must not reach the index.
 var pipelineOnlyFields = []string{
-	"ck_type", "tk_nums", "layout", "layout_type", "layoutno", "image",
-	"context_above", "context_below", "page_number",
+	"tk_nums", "layout", "layout_type", "layoutno", "image", "media_ref",
+	"context_above", "context_below", "page_number", "_preserve_order",
 	"table_id", "sheet", "sheet_index", "headers", "cells",
 	"row_start", "row_end", "col_start", "col_end",
 }
@@ -188,23 +206,31 @@ func mergeChunkMetadata(metadata map[string]any, ck map[string]any) map[string]a
 }
 
 // processChunkPositions converts the raw "positions" field into indexable
-// position fields (page_num_int, top_int, position_int) via AddPositions,
-// then removes the raw "positions" and the sibling "_pdf_positions" internal
-// field. _pdf_positions is the parser-emitted position matrix consumed by
-// the chunker's image-crop pass (pdfcrop_cgo.go); after the chunker it is
-// dead weight with no index column, so it is pruned unconditionally —
-// independent of "positions" and not gated on the early-return below.
+// position fields, then removes the raw "positions" and the sibling
+// "_pdf_positions" internal field. _pdf_positions is the parser-emitted
+// position matrix consumed by the chunker's image-crop pass (pdfcrop_cgo.go);
+// after the chunker it is dead weight with no index column, so it is pruned
+// unconditionally — independent of "positions" and not gated on the
+// early-return below.
+//
+// The field carries two vocabularies, and the branch on them is explicit
+// rather than inferred from the shape:
+//   - PDF items: [page, left, right, top, bottom] → page_num_int, top_int and
+//     position_int (addPDFPositions);
+//   - spreadsheet items (identity present): [sheet, rowStart, rowEnd,
+//     colStart, colEnd] → position_int only (addSpreadsheetPositions), which
+//     leaves the chunk's own top_int — the QA chunker's row index — intact.
 //
 // Two source types reach this point:
-//   - []float64 — flat array of 5-tuples [page,left,right,top,bottom,…] from
-//     parsers that emit positions directly as a flat float64 slice.
+//   - []float64 — flat array of 5-tuples from parsers that emit positions
+//     directly as a flat float64 slice.
 //   - [][]float64 — the production path: positions flow through ChunkDoc
 //     (json.RawMessage → decodeStructuredValue) which produces a slice of
 //     5-element groups.
 //
-// Both are flattened into a single []float64 for AddPositions, which groups
-// by 5 internally. Unexpected types are logged and discarded.
-func processChunkPositions(ck map[string]any) {
+// Both are flattened into a single []float64, which the store helpers group by
+// five. Unexpected types are logged and discarded.
+func processChunkPositions(ck map[string]any, spreadsheet bool) {
 	delete(ck, "_pdf_positions")
 	poss, exists := ck["positions"]
 	if !exists {
@@ -212,17 +238,53 @@ func processChunkPositions(ck map[string]any) {
 	}
 	switch v := poss.(type) {
 	case []float64:
-		AddPositions(ck, v)
+		storePositions(ck, v, spreadsheet)
 	case [][]float64:
 		flat := make([]float64, 0, len(v)*5)
 		for _, group := range v {
 			flat = append(flat, group...)
 		}
-		AddPositions(ck, flat)
+		storePositions(ck, flat, spreadsheet)
+	case [][]any:
+		if flat, ok := flattenMixedPositions(v); ok {
+			storePositions(ck, flat, spreadsheet)
+		} else {
+			common.Warn(fmt.Sprintf("chunk positions %T contained no usable rows; discarding", poss))
+		}
+	case []any:
+		rows, ok := positionRowsFromAny(v)
+		if !ok {
+			common.Warn(fmt.Sprintf("chunk positions %T contained no usable rows; discarding", poss))
+			break
+		}
+		if flat, ok := flattenMixedPositions(rows); ok {
+			storePositions(ck, flat, spreadsheet)
+		} else {
+			common.Warn("chunk positions contained no usable rows; discarding")
+		}
 	default:
 		common.Warn(fmt.Sprintf("chunk positions unexpected type %T; discarding", poss))
 	}
 	delete(ck, "positions")
+}
+
+func storePositions(ck map[string]any, flat []float64, spreadsheet bool) {
+	if spreadsheet {
+		addSpreadsheetPositions(ck, flat)
+		return
+	}
+	addPDFPositions(ck, flat)
+}
+
+// isSpreadsheetChunk reports whether a chunk's "positions" carry the
+// spreadsheet vocabulary, judged by the identity fields the strip removes
+// later in the chunk loop.
+func isSpreadsheetChunk(ck map[string]any) bool {
+	if v, ok := ck["sheet_index"]; ok && v != nil {
+		return true
+	}
+	sheet, ok := ck["sheet"].(string)
+	return ok && sheet != ""
 }
 
 // AggregateTableDocMetadata collects unique per-column values across all chunks
@@ -313,7 +375,7 @@ func resolveTableColumnConfig(parserConfig map[string]interface{}) (mode string,
 		return mode, roles, rawNames
 	}
 	for cid, raw := range parserConfig {
-		if !strings.HasPrefix(cid, "Parser:") {
+		if !common.IsParserComponentID(cid) {
 			continue
 		}
 		comp, _ := raw.(map[string]interface{})

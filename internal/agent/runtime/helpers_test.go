@@ -227,8 +227,7 @@ func TestWithTimeout_ParentCancellation(t *testing.T) {
 // which is the documented contract of context.WithTimeout, not a
 // helper bug.
 func TestWithTimeout_PassesContextToFn(t *testing.T) {
-	type ctxKey struct{}
-	parent := context.WithValue(t.Context(), ctxKey{}, "v")
+	parent := context.WithValue(t.Context(), struct{}{}, "v")
 	type captured struct {
 		ctx         context.Context
 		errInFlight error
@@ -251,7 +250,7 @@ func TestWithTimeout_PassesContextToFn(t *testing.T) {
 	if cap.ctx == parent {
 		t.Fatal("fn received the parent ctx directly — expected a derived child ctx")
 	}
-	if v, _ := cap.ctx.Value(ctxKey{}).(string); v != "v" {
+	if v, _ := cap.ctx.Value(struct{}{}).(string); v != "v" {
 		t.Errorf("child ctx did not carry parent's Value(): got %q, want %q", v, "v")
 	}
 	if cap.errInFlight != nil {

@@ -35,14 +35,11 @@ interface CreateSearchProps {
 }
 
 interface CreateSearchResponse {
-  id: string;
-  name: string;
-  description: string;
+  search_id: string;
 }
 
 export const useCreateSearch = () => {
   const { t } = useTranslation();
-
   const {
     data,
     isError,
@@ -58,9 +55,6 @@ export const useCreateSearch = () => {
     },
     onSuccess: () => {
       message.success(t('message.created'));
-    },
-    onError: (error) => {
-      message.error(t('message.error', { error: error.message }));
     },
   });
 
@@ -91,6 +85,7 @@ export interface ISearchAppProps {
   id: string;
   name: string;
   nickname: string;
+  operator_permission?: number;
   status: string;
   tenant_avatar: any;
   tenant_id: string;
@@ -170,7 +165,6 @@ interface DeleteSearchProps {
 
 interface DeleteSearchResponse {
   code: number;
-  data: boolean;
   message: string;
 }
 
@@ -215,16 +209,12 @@ export interface ISearchAppDetailProps {
     top_k: number;
     rerank_candidates_count: number;
     use_kg: boolean;
-    vector_similarity_weight: number;
+    keywords_similarity_weight?: number;
     web_search: boolean;
     chat_settingcross_languages: string[];
     meta_data_filter?: {
       method: string;
       manual: { key: string; op: string; value: string }[];
-    };
-    reference_metadata?: {
-      include?: boolean;
-      fields?: string[];
     };
   };
   tenant_id: string;
@@ -289,9 +279,6 @@ export const useDeleteSearch = () => {
     },
     onSuccess: () => {
       message.success(t('message.deleted'));
-    },
-    onError: (error) => {
-      message.error(t('message.error', { error: error.message }));
     },
   });
 
@@ -373,34 +360,41 @@ export const useRenameSearch = () => {
 
   const onSearchRenameOk = useCallback(
     async (name: string, callBack?: () => void) => {
-      let res;
       setLoading(true);
-      if (search?.id) {
-        try {
+      let saved = false;
+      try {
+        if (search?.id) {
           const response = await searchService.getSearchDetail({
-            search_id: search?.id,
+            search_id: search.id,
           });
           const detail = response.data?.data;
 
           // oxlint-disable-next-line typescript/no-unused-vars
           const { id, created_by, update_time, ...searchDataTemp } = detail;
-          res = await updateSearch({
+          await updateSearch({
             ...searchDataTemp,
-            name: name,
-            search_id: search?.id,
+            name,
+            search_id: search.id,
           } as unknown as IUpdateSearchProps);
-        } catch (e) {
-          console.error('error', e);
+          saved = true;
+        } else {
+          const created = await createSearch({ name });
+          if (created && !search?.id) {
+            navigateToSearch(created.search_id)();
+            saved = true;
+          }
         }
-      } else {
-        res = await createSearch({ name: name });
+      } catch {
+        // Request failures are already reported by the request layer; keep
+        // the dialog open so the user can retry.
+      } finally {
+        // Always release the loading state, even when the request throws.
+        setLoading(false);
       }
-      if (res && !search?.id) {
-        navigateToSearch(res?.search_id)();
+      if (saved) {
+        callBack?.();
+        handleHideModal();
       }
-      callBack?.();
-      setLoading(false);
-      handleHideModal();
     },
     [search, createSearch, handleHideModal, navigateToSearch, updateSearch],
   );

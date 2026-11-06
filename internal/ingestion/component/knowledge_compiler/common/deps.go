@@ -6,6 +6,8 @@ import (
 	"sync"
 
 	"gorm.io/gorm"
+
+	"ragflow/internal/ingestion/component/progress"
 )
 
 // DefaultLLMContextLength is the fallback chat-model context window (tokens)
@@ -19,26 +21,75 @@ type ChatRequest struct {
 	SystemPrompt string
 	UserPrompt   string
 	JSONMode     bool
-	// Temperature is optional; nil leaves the driver default. Python's
-	// knowledge compilation pins extraction at 0.1 and merge judging at 0.0,
-	// so variants set it per call site.
-	Temperature *float64
-	// MaxTokens is an optional per-call override. Normal knowledge-compilation
-	// calls use the selected model's configured max_output value.
-	MaxTokens *int
-	APIKey    string
-	BaseURL   string
-	// DisableThinking asks the driver to turn chain-of-thought OFF. Reasoning
-	// models (MiniMax-M1/M3, kimi, qwen) otherwise spend the completion budget
-	// (and minutes) on visible COT before returning the structured payload —
-	// the fastest way to slow knowledge compilation to a crawl. Providers that
-	// have no thinking control silently ignore it. Defaults to false, so only
-	// call sites that know the model reasons opt in.
+	// These fields are per-call defaults. Run-level ChatSettings override them
+	// when the caller explicitly enables a setting in the compiler node.
+	Temperature      *float64
+	TopP             *float64
+	PresencePenalty  *float64
+	FrequencyPenalty *float64
+	MaxTokens        *int
+	// Thinking explicitly controls reasoning when non-nil. DisableThinking is a
+	// call-site default retained for compiler steps that must avoid reasoning;
+	// an explicit Thinking setting takes precedence.
+	Thinking        *bool
 	DisableThinking bool
+	APIKey          string
+	BaseURL         string
 	// DisableRetry tells the production ChatInvoker that the caller owns
 	// transient-error retries (GenJSON is such a caller). It is internal
 	// plumbing and is not part of the user-facing model request.
 	DisableRetry bool
+}
+
+// ChatSettings are caller-provided LLM overrides for every request in one
+// knowledge-compilation run. Nil values leave each call site's defaults intact;
+// ThinkingSet distinguishes an explicit "default" choice from no setting.
+type ChatSettings struct {
+	Temperature      *float64
+	TopP             *float64
+	PresencePenalty  *float64
+	FrequencyPenalty *float64
+	MaxTokens        *int
+	Thinking         *bool
+	ThinkingSet      bool
+}
+
+type chatSettingsInvoker struct {
+	next     ChatInvoker
+	settings ChatSettings
+}
+
+// WithChatSettings applies explicit run-level settings over each compiler
+// call's defaults while preserving fields the caller did not configure.
+func WithChatSettings(next ChatInvoker, settings ChatSettings) ChatInvoker {
+	settingsEmpty := settings.Temperature == nil && settings.TopP == nil && settings.PresencePenalty == nil && settings.FrequencyPenalty == nil && settings.MaxTokens == nil && !settings.ThinkingSet
+	if next == nil || settingsEmpty {
+		return next
+	}
+	return chatSettingsInvoker{next: next, settings: settings}
+}
+
+func (c chatSettingsInvoker) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
+	if c.settings.Temperature != nil {
+		req.Temperature = c.settings.Temperature
+	}
+	if c.settings.TopP != nil {
+		req.TopP = c.settings.TopP
+	}
+	if c.settings.PresencePenalty != nil {
+		req.PresencePenalty = c.settings.PresencePenalty
+	}
+	if c.settings.FrequencyPenalty != nil {
+		req.FrequencyPenalty = c.settings.FrequencyPenalty
+	}
+	if c.settings.MaxTokens != nil {
+		req.MaxTokens = c.settings.MaxTokens
+	}
+	if c.settings.ThinkingSet {
+		req.Thinking = c.settings.Thinking
+		req.DisableThinking = false
+	}
+	return c.next.Chat(ctx, req)
 }
 
 // ChatResponse holds the LLM's text answer.
@@ -165,6 +216,8 @@ type RedisClient interface {
 // interfaces so tests inject stubs; production wiring lives in
 // internal/ingestion/task (see PORT_PLAN.md §4 dependency injection seam).
 type Deps struct {
+	// Progress is the fraction budget allocated to this compilation template.
+	Progress      progress.Window
 	Chat          ChatInvoker
 	Embed         Embedder
 	Tokenizer     Tokenizer
@@ -190,8 +243,9 @@ type Deps struct {
 	ModelMaxOutput int
 }
 
-// DepsResolver resolves the per-run Deps from a tenant/llm/embedding triple.
-type DepsResolver func(tenantID, llmID, embeddingModel string) (Deps, error)
+// DepsResolver resolves the per-run Deps from the active task context and
+// tenant/model references.
+type DepsResolver func(ctx context.Context, tenantID, llmID, embeddingModel string) (Deps, error)
 
 // DepsResolver / SetDepsResolver / ResolveDeps are the only injection seams the
 // component exposes. The component is DB-independent: it compiles knowledge
@@ -214,14 +268,14 @@ func SetDepsResolver(r DepsResolver) {
 }
 
 // ResolveDeps resolves Deps via the installed resolver.
-func ResolveDeps(tenantID, llmID, embeddingModel string) (Deps, error) {
+func ResolveDeps(ctx context.Context, tenantID, llmID, embeddingModel string) (Deps, error) {
 	depsResolverMu.RLock()
 	r := depsResolver
 	depsResolverMu.RUnlock()
 	if r == nil {
 		return Deps{}, fmt.Errorf("knowledge_compiler: no DepsResolver registered (call common.SetDepsResolver in production wiring)")
 	}
-	return r(tenantID, llmID, embeddingModel)
+	return r(ctx, tenantID, llmID, embeddingModel)
 }
 
 // GroupResolver resolves compilation-template-group ids to the concrete

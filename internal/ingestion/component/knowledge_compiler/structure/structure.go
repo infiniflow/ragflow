@@ -9,11 +9,10 @@ package structure
 import (
 	"context"
 	"fmt"
-	"os"
-	"strconv"
 	"sync"
 
 	"ragflow/internal/agent/runtime"
+	appcommon "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
@@ -68,6 +67,17 @@ func structureInputBudget(modelContextLen, promptOverhead int) int {
 		budget = floor
 	}
 	return budget
+}
+
+// structureBatchCap returns the optional STRUCT_MAX_CHUNKS_PER_BATCH override
+// (0 means off). appcommon.GetEnvInt falls back to 0 on an unset or unparseable
+// value, so the caller only needs to check cap > 0.
+func structureBatchCap() int {
+	v := appcommon.GetEnvInt("STRUCT_MAX_CHUNKS_PER_BATCH", 0)
+	if v <= 0 {
+		return 0
+	}
+	return v
 }
 
 // Run executes the structure variant:
@@ -125,8 +135,8 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// per extraction batch (0 = window-packed only — a heading has to see its
 	// whole section to own it; the 4-per-batch rule belongs to tree's claim
 	// harvesting). Overridable for benchmarking, mirrored verbatim.
-	if v, err := strconv.Atoi(os.Getenv("STRUCT_MAX_CHUNKS_PER_BATCH")); err == nil && v > 0 {
-		batches = capBatchChunkCount(batches, v)
+	if cap := structureBatchCap(); cap > 0 {
+		batches = capBatchChunkCount(batches, cap)
 	}
 	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
 		"%s-template: %d chunk(s) -> %d batch(es)", compileType, len(inputs.Chunks), len(batches)))
@@ -143,6 +153,13 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// The progress callback is supplied by the caller and is not required to be
 	// goroutine-safe; pool workers report out of order, so serialise it.
 	var progressMu sync.Mutex
+	// LLM extraction owns 80%; the four subsequent phases share the remainder.
+	mapWindow := deps.Progress
+	mapWindow.Span *= 0.8
+	remainingWindow := deps.Progress
+	remainingWindow.Base += mapWindow.Span
+	remainingWindow.Span -= mapWindow.Span
+	mapDone := mapWindow.Counter(ctx, len(batches))
 	for i, batch := range batches {
 		i, batch := i, batch
 		jobs = append(jobs, func() error {
@@ -150,6 +167,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 				"%s-template: extracting batch %d/%d", compileType, i+1, len(batches)))
 			packed, batchIDs := PackBatch(batch)
 			if len(batchIDs) == 0 {
+				mapDone()
 				return nil
 			}
 			nodes, edges, err := extractHypergraph(ctx, deps, cfg, nodePrompt, edgePromptTmpl, packed)
@@ -178,6 +196,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 				"%s-template: batch %d/%d done: %d entities, %d relations",
 				compileType, i+1, len(batches), len(nodes), len(edges)))
 			progressMu.Unlock()
+			mapDone()
 			return nil
 		})
 	}
@@ -187,6 +206,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	if err := runBatches(ctx, jobs); err != nil {
 		return common.Outputs{}, err
 	}
+	mapWindow.Report(ctx, 1)
 	// Embed each extracted batch serially after all MAP jobs have returned.
 	// This avoids nesting Embed.Encode (and its batch jobs) inside a worker
 	// already occupied by the shared compiler pool.
@@ -201,27 +221,33 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		}
 		perBatch[i] = rows
 		rowCount += len(rows)
+		remainingWindow.Sub(0, 4).Report(ctx, float64(i+1)/float64(len(extracted)))
 		runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
 			"%s-template: embedded batch %d/%d (%d rows so far)", compileType, i+1, len(batches), rowCount))
 	}
 	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
 		"%s-template: deduplicating %d row(s)", compileType, rowCount))
 
+	remainingWindow.Sub(0, 4).Report(ctx, 1)
 	// ---- DEDUP ----
 	// Sequential in batch order so merge outcomes are deterministic and match
 	// Python's _struct_local_dedup (which folds docs in list order).
 	decider := NewLLMMergeDecider(deps.Chat, llmID, deps.Embed, param.SimilarityThreshold)
 	deduper := NewGroupedDeduper(decider)
+	dedupDone := remainingWindow.Sub(1, 4).Counter(ctx, rowCount)
 	for _, rows := range perBatch {
 		for _, row := range rows {
 			if err := deduper.Add(ctx, row); err != nil {
 				return common.Outputs{}, err
 			}
+			dedupDone()
 		}
 	}
+	remainingWindow.Sub(1, 4).Report(ctx, 1)
 	if err := deduper.RewriteRelations(ctx, decider.Aliases(), deps.Embed); err != nil {
 		return common.Outputs{}, err
 	}
+	remainingWindow.Sub(2, 4).Report(ctx, 1)
 	stats := deduper.Stats()
 	prods := filterSelfLoopRelations(deduper.Rows())
 	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(

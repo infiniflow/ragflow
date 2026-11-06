@@ -22,9 +22,12 @@ import (
 	"sort"
 	"strings"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
+
+	"gorm.io/gorm"
 )
 
 const (
@@ -85,20 +88,9 @@ func TagFileIDFromParserConfig(parserConfig map[string]any) string {
 	if v := tagFileIDFromTagsMap(parserConfig["tags"]); v != "" {
 		return v
 	}
-	// Several Extractor nodes can each declare their own tags block, so the
-	// winner has to be picked in a stable order: Go randomizes map iteration,
-	// and an unstable pick would let the dataset's tag source change between
-	// process restarts (different chunks tagged, different retrieval
-	// features). Sorting makes it deterministic; "Extractor" sorts before
-	// "Extractor:<name>" because it is a prefix, so the unscoped node wins.
-	keys := make([]string, 0, len(parserConfig))
-	for key := range parserConfig {
-		if key == "Extractor" || strings.HasPrefix(key, "Extractor:") {
-			keys = append(keys, key)
-		}
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
+	// Several Extractor nodes can each declare their own tags block. Pick the
+	// winner deterministically by sorted component ID.
+	for _, key := range common.SortedExtractorKeys(parserConfig) {
 		extractorMap, ok := asStringAnyMap(parserConfig[key])
 		if !ok {
 			continue
@@ -154,14 +146,14 @@ type resolvedTagSource struct {
 // all_tags_in_portion / tag_query: Go has no tag dataset, so the records come
 // from the tag source file. Returns (nil, nil) when refs is empty or yields no
 // usable records.
-func LoadTagQueryIndex(ctx context.Context, refs []TagSourceRef) (*MemoryTagIndex, error) {
+func LoadTagQueryIndex(ctx context.Context, db *gorm.DB, refs []TagSourceRef) (*MemoryTagIndex, error) {
 	resolved := make([]resolvedTagSource, 0, len(refs))
 	tokens := make([]string, 0, len(refs))
 	for _, ref := range refs {
 		if ref.FileID == "" {
 			continue
 		}
-		f, err := resolveTagSourceFile(ctx, ref.FileID, ref.TenantID)
+		f, err := resolveTagSourceFile(ctx, db, ref.FileID, ref.TenantID)
 		if err != nil {
 			return nil, err
 		}

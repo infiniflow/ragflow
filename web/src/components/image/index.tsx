@@ -26,6 +26,7 @@ interface IImage extends React.ImgHTMLAttributes<HTMLImageElement> {
   documentId?: string;
   t?: string | number;
   label?: string;
+  previewButton?: React.ReactNode;
 }
 
 type ImageCacheItem = {
@@ -267,7 +268,7 @@ export const AuthenticatedImg = ({
 };
 
 const Image = React.forwardRef<HTMLImageElement, IImage>(function Image(
-  { id, documentId, t, label, className, ...props },
+  { id, documentId, t, label, previewButton, className, ...props },
   ref,
 ) {
   const src = useDocumentImageUrl(id, documentId, t);
@@ -287,6 +288,7 @@ const Image = React.forwardRef<HTMLImageElement, IImage>(function Image(
   return (
     <div className="relative inline-block w-full">
       {imageElement}
+      {previewButton}
       <div className="absolute bottom-2 right-2 bg-accent-primary text-white px-2 py-0.5 rounded-xl text-xs font-normal backdrop-blur-sm">
         {label}
       </div>

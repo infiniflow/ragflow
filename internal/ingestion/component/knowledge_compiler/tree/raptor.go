@@ -35,11 +35,11 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	if deps.Chat == nil {
 		return common.Outputs{}, fmt.Errorf("tree: chat model required")
 	}
-	docID := firstNonEmpty(inputs.DocID, deps.DatasetID)
+	docID := common.FirstNonEmpty(inputs.DocID, deps.DatasetID)
 	if docID == "" {
 		docID = "unknown"
 	}
-	llmID := firstNonEmpty(param.LLMID, inputs.LLMID)
+	llmID := common.FirstNonEmpty(param.LLMID, inputs.LLMID)
 	tenantID := deps.TenantID
 
 	treeOrder := resolveTreeOrder(param)
@@ -47,24 +47,25 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 
 	// Build leaf summary products (one per cluster) and recursively summarize up,
 	// collecting every node into a plain slice. The component merges these into
-	// the upstream chunk stream (matching Python, which appends summaries onto the
-	// chunk list). buildTree reads the texts, ids, and embeddings directly from
-	// the source chunks.
+	// the upstream chunk stream. buildTree reads the texts, ids, and embeddings
+	// directly from the source chunks.
 	var products []common.Product
 	var claimsByChunk map[string][]Claim
 	if err := buildTree(ctx, deps, llmID, tenantID, docID, inputs.Chunks, treeOrder, taskPrompt, param, &products, &claimsByChunk); err != nil {
 		return common.Outputs{}, err
 	}
 
-	// Rename duplicate summary titles whose descriptions differ (Python
-	// rewrite_duplicate_tree_names), BEFORE the graph projection: titles are
+	deps.Progress.Sub(2, 5).Report(ctx, 1)
+	// Rename duplicate summary titles whose descriptions differ, BEFORE the
+	// graph projection: titles are
 	// the entity names and the relation endpoints, so two nodes sharing a
 	// title would render as one ambiguous node. Best-effort — a rewrite
 	// failure must not cost us the tree.
 	rewriteDuplicateTreeNames(ctx, deps, llmID, products)
+	deps.Progress.Sub(3, 5).Report(ctx, 1)
 
 	// Project the RAPTOR tree onto the {entities, relations} structure-graph
-	// shape (Python raptor_tree_to_graph) and persist it as entity/relation rows
+	// shape and persist it as entity/relation rows
 	// plus per-row entity/relation rows (knowledge_graph_kwd="entity"|
 	// "relation"), so the
 	// document-structure /structure/graph endpoint can serve the tree. A failure
@@ -100,27 +101,11 @@ func resolveTreeOrder(param common.Param) int {
 	if !ok {
 		return DefaultTreeOrder
 	}
-	v, ok := toInt(raw)
+	v, ok := rfcommon.ToInt(raw)
 	if !ok || v < MinTreeOrder || v > MaxTreeOrder {
 		return DefaultTreeOrder
 	}
 	return v
-}
-
-// toInt coerces the common param-extra value types to int.
-func toInt(v any) (int, bool) {
-	switch x := v.(type) {
-	case int:
-		return x, true
-	case int64:
-		return int(x), true
-	case float64:
-		return int(x), true
-	case float32:
-		return int(x), true
-	default:
-		return 0, false
-	}
 }
 
 const (
@@ -130,18 +115,17 @@ const (
 )
 
 // raptorTruncationMarkerRE strips model truncation notices that some LLMs emit
-// when a response is cut short. Mirrors Python _summarize_texts (raptor.py:405).
+// when a response is cut short.
 var raptorTruncationMarkerRE = regexp.MustCompile(
 	strings.Repeat("\u00b7", 6) + "\n由于长度的原因，回答被截断了，要继续吗？|For the content length reason, it stopped, continue?",
 )
 
 // resolveMaxToken returns the target summary length and the input truncation
 // budget. It is a soft output-size guideline, not a provider max_tokens cap.
-// Python uses max(self._max_token, 512) (raptor.py:427); we honour an
-// extra["max_token"] override with the same 512 floor.
+// It honours an extra["max_token"] override, applying the same 512 floor.
 func resolveMaxToken(param common.Param) int {
 	if v, ok := param.Extra["max_token"]; ok {
-		if n, ok := toInt(v); ok && n > 0 {
+		if n, ok := rfcommon.ToInt(v); ok && n > 0 {
 			if n < raptorDefaultMaxToken {
 				return raptorDefaultMaxToken
 			}
@@ -151,12 +135,11 @@ func resolveMaxToken(param common.Param) int {
 	return raptorDefaultMaxToken
 }
 
-// resolveMaxErrors returns the per-tree error ceiling before RAPTOR aborts.
-// Python defaults _max_errors to 3 and skips individual failed clusters below
-// that threshold (raptor.py:_summarize_texts).
+// resolveMaxErrors returns the per-tree error ceiling before RAPTOR aborts. It
+// defaults to 3 and skips individual failed clusters below that threshold.
 func resolveMaxErrors(param common.Param) int {
 	if v, ok := param.Extra["max_errors"]; ok {
-		if n, ok := toInt(v); ok && n > 0 {
+		if n, ok := rfcommon.ToInt(v); ok && n > 0 {
 			return n
 		}
 	}
@@ -198,16 +181,16 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 		}
 		embeddings = toFloat64Matrix(vectors)
 	}
+	deps.Progress.Sub(0, 5).Report(ctx, 1)
 	// Extract claims before clustering so each cluster can be summarised from
 	// its members' claims instead of their truncated raw text. Claims are far
 	// more compact than the source, so the per-chunk truncation in
 	// buildClusterContent no longer discards content, and the abstraction is
 	// guaranteed to agree with the claims attached to the same cluster.
 	//
-	// The gate mode comes from the template config, mirroring Python
-	// _struct_evidence_gate_mode(parser_config); the extraction toggle and the
-	// template-declared extraction contract mirror Python's
-	// raptor_config.get("extract_claims", True) / raptor_config["claim_prompt"].
+	// The gate mode comes from the template config; the extraction toggle and the
+	// template-declared extraction contract come from the template's raptor
+	// section.
 	var claimsByChunk map[string][]Claim
 	if resolveExtractClaims(param) {
 		claimsByChunk = ExtractClaimsForChunks(ctx, deps, llmID, chunks,
@@ -216,13 +199,14 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 			rfcommon.Info("tree: extracted claims", zap.Int("chunks_with_claims", len(claimsByChunk)), zap.Int("chunks", len(chunks)))
 		}
 	}
+	deps.Progress.Sub(1, 5).Report(ctx, 1)
 	if claimOut != nil {
 		*claimOut = claimsByChunk
 	}
 
-	// Claim-view clustering vectors (mirrors Python build_doc_tree): each chunk
-	// is represented to the clustering layer by the embedding of its claims +
-	// verbatim evidence, not by its raw-text vector. Claims are the chunk's
+	// Claim-view clustering vectors: each chunk is represented to the clustering
+	// layer by the embedding of its claims + verbatim evidence, not by its
+	// raw-text vector. Claims are the chunk's
 	// semantics stripped of layout noise, so topic clusters form around what
 	// the chunks actually assert. Chunks without claims keep their raw vector,
 	// and a claim vector whose dimension disagrees with the chunk vectors is
@@ -301,9 +285,8 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 		queue = queue[1:]
 
 		// Gather the source text for this cluster's points and truncate each
-		// text to a per-chunk token budget so the cluster fits the LLM context
-		// (Python: len_per_chunk = (max_length - max_token) / len(texts);
-		// truncate(t, len_per_chunk), raptor.py:389-390).
+		// text to a per-chunk token budget so the cluster fits the LLM context;
+		// the budget is (max_length - max_token) / len(texts).
 		//
 		// At the bottom level, prefer the members' claims: BuildClaimContent
 		// returns "" when a cluster has none, so we fall through to the raw
@@ -403,13 +386,14 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 
 	// Root product ties the tree together. The root summary is the synthesis of
 	// the highest-level summaries (the leaves of the upper tree) using the same
-	// standard task prompt Python applies to every cluster — NOT a separate
+	// standard task prompt applied to every cluster — NOT a separate
 	// "Synthesize the overall theme" prompt, and NOT the union of all leaf
 	// summaries (which would just re-summarize the same text repeatedly).
 	if len(topLevelTexts) == 0 {
 		// No summaries survived (e.g. every deepest cluster failed while the
 		// error budget was not yet exhausted). Return the partial tree without a
-		// root node — Python drops the root in this case rather than crashing.
+		// root node — the Go tree drops the root in this case
+		// rather than crashing.
 		rfcommon.Warn("tree: no top-level summaries produced, skipping root node")
 		return nil
 	}
@@ -418,8 +402,8 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 		raptorSystemHelper+strings.Replace(taskPrompt, "{cluster_content}", rootContent, 1),
 		raptorTitleInstruction, maxToken)
 	if err != nil {
-		// A failed root must not abort the whole tree: Python drops the root
-		// node and returns the rest of the tree.
+		// A failed root must not abort the whole tree: the legacy
+		// implementation drops the root node and returns the rest of the tree.
 		rfcommon.Warn("tree: root synthesis failed, skipping root node", zap.Error(err))
 		return nil
 	}
@@ -445,13 +429,12 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 	return nil
 }
 
-// summarizeTexts asks the LLM for a summary and normalises the response to match
-// Python _summarize_texts / _chat:
-//   - retries up to raptorMaxRetries times with linear backoff (Python: 3 attempts);
+// summarizeTexts asks the LLM for a summary and normalises the response:
+//   - retries up to raptorMaxRetries times with linear backoff;
 //   - strips a reasoning-model preamble up to the final </think> / </think:6124c78e> tag;
-//   - treats a "**ERROR**" marker as a transient failure (Python raises on it, so
-//     it is retried like any other LLM error);
-//   - strips model truncation notices (raptor.py:405);
+//   - treats a "**ERROR**" marker as a transient failure, retried like any other
+//     LLM error;
+//   - strips model truncation notices;
 //   - trims surrounding whitespace.
 //
 // systemText is the fully-built system prompt (helper + filled task template) and
@@ -459,6 +442,16 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 // passed as the user turn so the model emits a one-line title on the first line
 // of the summary. maxToken is deliberately not sent as MaxTokens: the provider
 // controls its own output budget, while the prompt guides the target length.
+// summarizeBackoff returns the per-attempt backoff unit for summarizeTexts
+// retries. A ctx carrying common.WithRetryDelay shortens it so failure-path
+// tests need not wait out the real ~1s-per-attempt budget.
+func summarizeBackoff(ctx context.Context) time.Duration {
+	if d, ok := common.RetryDelayFromCtx(ctx); ok {
+		return d
+	}
+	return time.Second
+}
+
 func summarizeTexts(ctx context.Context, deps common.Deps, llmID, systemText, userText string, maxToken int) (string, error) {
 	userPrompt := fmt.Sprintf("%s Keep the summary concise and target approximately %d tokens.", userText, maxToken)
 	for attempt := 0; attempt < raptorMaxRetries; attempt++ {
@@ -466,7 +459,7 @@ func summarizeTexts(ctx context.Context, deps common.Deps, llmID, systemText, us
 			select {
 			case <-ctx.Done():
 				return "", ctx.Err()
-			case <-time.After(time.Duration(1+attempt) * time.Second):
+			case <-time.After(time.Duration(attempt+1) * summarizeBackoff(ctx)):
 			}
 		}
 		req := common.ChatRequest{
@@ -480,8 +473,7 @@ func summarizeTexts(ctx context.Context, deps common.Deps, llmID, systemText, us
 			continue
 		}
 		content := resp.Content
-		// Strip reasoning preamble up to the final thinking close tag
-		// (Python: re.sub(r"^.*</think>", "", response, DOTALL)). The
+		// Strip reasoning preamble up to the final thinking close tag. The
 		// else-if keeps the vendor-specific </think:6124c78e> fallback
 		// active only when no standard </think> is present, preserving
 		// the original control flow.
@@ -490,19 +482,18 @@ func summarizeTexts(ctx context.Context, deps common.Deps, llmID, systemText, us
 		} else if i := strings.LastIndex(content, "</think:6124c78e>"); i >= 0 {
 			content = content[i+len("</think:6124c78e>"):]
 		}
-		// Python raises on the "**ERROR**" marker; treat it as a retryable error.
+		// Treat the "**ERROR**" marker as a retryable error.
 		if strings.Contains(content, "**ERROR**") {
 			continue
 		}
-		// Strip model truncation notices (Python _summarize_texts).
+		// Strip model truncation notices.
 		content = raptorTruncationMarkerRE.ReplaceAllString(content, "")
 		return strings.TrimSpace(content), nil
 	}
 	return "", fmt.Errorf("raptor: summarization failed after %d attempts", raptorMaxRetries)
 }
 
-// titleOf returns the first line of a summary completion (Python stores
-// summary_ti = cnt.split("\n")[0]).
+// titleOf returns the first line of a summary completion.
 func titleOf(summary string) string {
 	if i := strings.IndexByte(summary, '\n'); i >= 0 {
 		return summary[:i]
@@ -510,12 +501,11 @@ func titleOf(summary string) string {
 	return summary
 }
 
-// buildClusterContent joins the selected texts with a single newline (matching
-// Python's "\n".join) and truncates each text to a per-chunk token budget so the
-// whole cluster fits the LLM context window (Python: len_per_chunk =
-// (max_length - max_token) / len(texts); truncate(t, len_per_chunk)). The token
-// budget uses the cl100k_base encoder, mirroring Python's truncate (token-level,
-// not character-level).
+// buildClusterContent joins the selected texts with a single newline and
+// truncates each text to a per-chunk token budget so the whole cluster fits the
+// LLM context window; the budget is (modelContextLen - maxToken) / len(idxs),
+// clamped to a minimum of one token. The
+// token budget uses the cl100k_base encoder (token-level, not character-level).
 func buildClusterContent(texts []string, idxs []int, modelContextLen, maxToken int) string {
 	if len(idxs) == 0 {
 		return ""
@@ -546,7 +536,7 @@ func allIndices(n int) []int {
 
 // chunkTextOf returns the text of a chunk, preferring Text over Content.
 func chunkTextOf(c common.Chunk) string {
-	return firstNonEmpty(c.Text, c.Content)
+	return common.FirstNonEmpty(c.Text, c.Content)
 }
 
 // chunkHasText reports whether a chunk carries non-blank text. Empty chunks
@@ -646,15 +636,6 @@ func collectIDs(chunkIDs []string, pointIdxs []int) []string {
 	return out
 }
 
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
 func toFloat64Matrix(vecs [][]float32) [][]float64 {
 	out := make([][]float64, len(vecs))
 	for i, v := range vecs {
@@ -667,28 +648,19 @@ func toFloat64Matrix(vecs [][]float32) [][]float64 {
 	return out
 }
 
-// defaultRaptorPrompt is the summary task template. It mirrors the production
-// prompt from api/db/init_data/compilation_templates/tree.yaml (the tree
-// compilation template), NOT the Python fallback in compiler.py:128. The
-// {cluster_content} placeholder is filled with the joined cluster text. The
-// YAML literal block carries a base indent of 6 spaces before {cluster_content};
-// those 6 spaces are part of the prompt and MUST be preserved. A caller may
-// override it via extra["prompt"] (Python: raptor_cfg["prompt"]).
+// defaultRaptorPrompt is the summary task template.
 const defaultRaptorPrompt = "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize."
 
-// raptorSystemHelper mirrors the leading "You're a helpful assistant.\n\nHelp me
-// with the following task.\n\n" wrapper Python prepends to the task prompt.
+// raptorSystemHelper is the leading "You're a helpful assistant.\n\nHelp me with
+// the following task.\n\n" wrapper prepended to the task prompt.
 const raptorSystemHelper = "You're a helpful assistant.\n\nHelp me with the following task.\n\n"
 
 // raptorTitleInstruction is sent as the user turn so the model also emits a
-// one-line title on the first line of the summary (Python: "Beside the
-// summarization, give a title at the first line of your summarization. Must be
-// in the same language as the paragraphs.").
+// one-line title on the first line of the summary.
 const raptorTitleInstruction = "Beside the summarization, give a title at the first line of your summarization. Must be in the same language as the paragraphs."
 
 // templateRaptorString reads a string field from the template config's
-// "raptor" section (tree.yaml's raptor: block, which Python compiles into
-// raptor_config — compiler.py) and returns "" when absent.
+// "raptor" section (tree.yaml's raptor: block) and returns "" when absent.
 func templateRaptorString(param common.Param, key string) string {
 	cfg, ok := param.TemplateConfig["raptor"].(map[string]any)
 	if !ok {
@@ -714,8 +686,8 @@ func cfgStr(v any) string {
 }
 
 // resolveRaptorPrompt returns the summary task template, honouring in order an
-// extra["prompt"] caller override, the template's raptor.prompt (Python:
-// raptor_cfg["prompt"]), and the built-in default.
+// extra["prompt"] caller override, the template's raptor.prompt, and the
+// built-in default.
 func resolveRaptorPrompt(param common.Param) string {
 	if raw, ok := param.Extra["prompt"]; ok {
 		if s, ok := raw.(string); ok && strings.TrimSpace(s) != "" {
@@ -730,9 +702,8 @@ func resolveRaptorPrompt(param common.Param) string {
 
 // resolveClaimPrompt returns the claim-extraction system prompt, honouring in
 // order an extra["claim_prompt"] caller override and the template's
-// raptor.claim_prompt (Python passes raptor_config["claim_prompt"] into
-// extract_claims_for_chunks). An empty result means "use the built-in
-// contract" — the same None-fallback Python applies.
+// raptor.claim_prompt. An empty result means "use the built-in contract" — the
+// same None-fallback the template applies.
 func resolveClaimPrompt(param common.Param) string {
 	if raw, ok := param.Extra["claim_prompt"]; ok {
 		if s, ok := raw.(string); ok && strings.TrimSpace(s) != "" {
@@ -742,9 +713,9 @@ func resolveClaimPrompt(param common.Param) string {
 	return templateRaptorString(param, "claim_prompt")
 }
 
-// resolveExtractClaims mirrors Python raptor_config.get("extract_claims", True):
-// claim harvesting is on unless the template (or a caller override) turns it
-// off, in which case clusters summarise from raw chunk text.
+// resolveExtractClaims reports whether claim harvesting is enabled: claim
+// harvesting is on unless the template (or a caller override) turns it off, in
+// which case clusters summarise from raw chunk text.
 func resolveExtractClaims(param common.Param) bool {
 	if raw, ok := param.Extra["extract_claims"]; ok {
 		if b, ok := raw.(bool); ok {

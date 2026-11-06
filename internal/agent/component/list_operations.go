@@ -37,6 +37,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/common"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -105,7 +107,14 @@ func (p *listOperationsParam) Update(conf map[string]any) error {
 		p.Operations = "nth"
 	}
 	p.Operations = normalizeListOperationName(p.Operations)
-	p.N = toInt(conf["n"])
+	var ok bool
+
+	p.N, ok = common.ToInt(conf["n"])
+	if !ok {
+		common.Error("n must be an integer", nil)
+		return &ParamError{Field: "n", Reason: "must be an integer"}
+	}
+
 	if v, ok := conf["strict"]; ok {
 		p.Strict = coerceBool(v)
 	}
@@ -211,31 +220,6 @@ func parseSortByFieldList(v any) []string {
 	return out
 }
 
-// toInt coerces a value to int. Floats are truncated; strings parsed
-// via Atoi; bools follow Python's int() semantics (true → 1, false → 0);
-// everything else falls back to 0. Mirrors Python's _coerce_n in
-// agent/component/list_operations.py:73-77.
-func toInt(v any) int {
-	switch x := v.(type) {
-	case int:
-		return x
-	case int64:
-		return int(x)
-	case float64:
-		return int(x)
-	case string:
-		var n int
-		fmt.Sscanf(x, "%d", &n)
-		return n
-	case bool:
-		if x {
-			return 1
-		}
-		return 0
-	}
-	return 0
-}
-
 // ListOperationsComponent implements the 6 list transforms.
 type ListOperationsComponent struct {
 	name  string
@@ -306,7 +290,14 @@ func (l *ListOperationsComponent) Invoke(ctx context.Context, db *gorm.DB, _ map
 		if raw == nil {
 			items = []any{}
 		} else {
-			return nil, fmt.Errorf("ListOperations: input is not a list (got %T)", raw)
+			rv := reflect.ValueOf(raw)
+			if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
+				return nil, fmt.Errorf("ListOperations: input is not a list (got %T)", raw)
+			}
+			items = make([]any, rv.Len())
+			for i := range items {
+				items[i] = rv.Index(i).Interface()
+			}
 		}
 	}
 	// A typed nil []any satisfies the assertion above (ok=true, items=nil)

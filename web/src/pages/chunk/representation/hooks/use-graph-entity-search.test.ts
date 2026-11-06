@@ -127,3 +127,69 @@ describe('useGraphEntitySearch handleSelectEntity', () => {
     expect(mockFetchDocumentStructureGraph).toHaveBeenLastCalledWith('');
   });
 });
+
+describe('useGraphEntitySearch keyword channel sync', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    jest.useFakeTimers();
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
+  // Repro: Enter a keyword with no match (graphKeywords='sun'), then type an
+  // existing entity into the expandable search input that takes over when the
+  // result kind is not a graph. The select must show the keyword that actually
+  // drives the current subgraph, not the stale failed one.
+  it('shows the expandable-input keyword that drives the fetch, not the stale graph keyword', () => {
+    const { result } = setupHook([{ id: 'e1', name: 'swallow' }]);
+
+    act(() => {
+      result.current.handleNoMatchEnter('sun');
+    });
+    expect(result.current.graphSelectValue).toBe('sun');
+
+    // The debounce timer is scheduled by an effect after the state-change
+    // render, so the keystroke and the timer advance need separate acts.
+    act(() => {
+      result.current.handleSearchKeywordChange('乾坤');
+    });
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+
+    expect(mockFetchDocumentStructureGraph).toHaveBeenLastCalledWith('乾坤');
+    expect(result.current.graphSelectValue).toBe('乾坤');
+  });
+
+  // The two keyword sources must stay mutually exclusive: after an
+  // expandable-input search, picking an entity has to re-arm the fetch with
+  // the entity name instead of staying shadowed by the old searchKeyword.
+  it('picking an entity re-arms the fetch with the entity name after an expandable-input search', () => {
+    const { result } = setupHook([
+      { id: 'e1', name: 'swallow' },
+      { id: 'e2', name: '乾坤' },
+    ]);
+
+    act(() => {
+      result.current.handleSearchKeywordChange('乾坤');
+    });
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+    expect(mockFetchDocumentStructureGraph).toHaveBeenLastCalledWith('乾坤');
+
+    act(() => {
+      result.current.handleSelectEntity('swallow');
+    });
+    // The cleared searchKeyword flushes through its debounce before the
+    // graph keyword drives the fetch again.
+    act(() => {
+      jest.advanceTimersByTime(500);
+    });
+
+    expect(mockFetchDocumentStructureGraph).toHaveBeenLastCalledWith('swallow');
+    expect(result.current.graphSelectValue).toBe('swallow');
+  });
+});

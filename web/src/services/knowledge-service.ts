@@ -37,9 +37,7 @@ const {
   documentIngest,
   listTagByKnowledgeIds,
   listPipelines,
-  setMeta,
   getMeta,
-  getMetaKeys,
   retrievalTestShare,
 } = api;
 
@@ -64,20 +62,12 @@ const methods = {
     url: documentThumbnails,
     method: 'get',
   },
-  setMeta: {
-    url: setMeta,
-    method: 'post',
-  },
   listTagByKnowledgeIds: {
     url: listTagByKnowledgeIds,
     method: 'get',
   },
   getMeta: {
     url: getMeta,
-    method: 'get',
-  },
-  getMetaKeys: {
-    url: getMetaKeys,
     method: 'get',
   },
   retrievalTestShare: {
@@ -196,7 +186,7 @@ const chunkService = {
       page: rest.page,
       page_size: rest.page_size ?? rest.size,
       similarity_threshold: rest.similarity_threshold,
-      vector_similarity_weight: rest.vector_similarity_weight,
+      keywords_similarity_weight: rest.keywords_similarity_weight,
       top_k: rest.top_k,
       knn_top_k: rest.knn_top_k,
       knn_num_candidates: rest.knn_num_candidates,
@@ -209,9 +199,7 @@ const chunkService = {
       meta_data_filter: rest.meta_data_filter,
       chat_id: rest.chat_id,
       use_kg: rest.use_kg,
-      toc_enhance: rest.toc_enhance,
       include_knowledge_compilation: rest.include_knowledge_compilation,
-      reference_metadata: rest.reference_metadata,
     };
     const response = await request.post(api.retrievalTest, {
       data,
@@ -358,14 +346,14 @@ export const listDataset = (params?: IFetchKnowledgeListRequestParams) =>
 
 // Fetch datasets by a set of IDs via the `ids` query param (comma-joined).
 // Used to echo back already-selected datasets whose names are not present
-// in the first page of the paginated list. `ownerTenantId` scopes the lookup
-// to the canvas owner's tenant when viewing a shared canvas.
-export const listDatasetByIds = (ids: string[], ownerTenantId?: string) =>
+// in the first page of the paginated list. `canvasID` limits results to
+// datasets usable by both the canvas owner and the current user.
+export const listDatasetByIds = (ids: string[], canvasID?: string) =>
   request.get(api.kbList, {
     params: {
       ids: ids.join(','),
       page_size: ids.length,
-      ...(ownerTenantId ? { tenant_id: ownerTenantId } : {}),
+      ...(canvasID ? { canvas_id: canvasID } : {}),
     },
   });
 
@@ -397,6 +385,34 @@ const compilationStatusProxy = registerNextServer({
 export const getDatasetCompilationStatus = (datasetId: string, kind: string) =>
   compilationStatusProxy.getDatasetCompilationStatus(
     { datasetId, params: { kind } },
+    true,
+  );
+
+const datasetParserConfigProxy = registerNextServer({
+  applyDatasetParserConfig: {
+    url: ({ datasetId }: { datasetId: string }) =>
+      `/api/v1/datasets/${datasetId}/documents/apply-parser-config`,
+    method: 'post',
+  },
+});
+
+export const applyDatasetParserConfig = (datasetId: string) =>
+  datasetParserConfigProxy.applyDatasetParserConfig(
+    { datasetId, skipGlobalErrorNotification: true },
+    true,
+  );
+
+const stopAllDocumentsProxy = registerNextServer({
+  stopAllDocuments: {
+    url: ({ datasetId }: { datasetId: string }) =>
+      api.stopAllDocuments(datasetId),
+    method: 'post',
+  },
+});
+
+export const stopAllDocuments = (datasetId: string, runStatuses: string[]) =>
+  stopAllDocumentsProxy.stopAllDocuments(
+    { datasetId, data: { cancel_all: true, run_statuses: runStatuses } },
     true,
   );
 

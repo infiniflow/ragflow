@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -51,6 +52,52 @@ func setupSyncTaskTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func TestListDatasetSyncTasksKeepsRunningAndLatestPerConnector(t *testing.T) {
+	db := setupSyncTaskTestDB(t)
+	if err := db.AutoMigrate(&entity.Connector2Kb{}); err != nil {
+		t.Fatalf("migrate connector links: %v", err)
+	}
+	links := []entity.Connector2Kb{
+		{ID: "link-a", ConnectorID: "connector-a", KbID: "dataset-1"},
+		{ID: "link-a-duplicate", ConnectorID: "connector-a", KbID: "dataset-1"},
+		{ID: "link-b", ConnectorID: "connector-b", KbID: "dataset-1"},
+		{ID: "link-other", ConnectorID: "connector-unlinked", KbID: "dataset-2"},
+	}
+	if err := db.Create(&links).Error; err != nil {
+		t.Fatalf("create connector links: %v", err)
+	}
+	task := func(id, connectorID, status string, updateTime int64) entity.SyncLogs {
+		return entity.SyncLogs{
+			ID: id, ConnectorID: connectorID, KbID: "dataset-1", TaskType: TaskTypeSync, Status: status,
+			BaseModel: entity.BaseModel{UpdateTime: &updateTime},
+		}
+	}
+	tasks := []entity.SyncLogs{
+		task("a-done-old", "connector-a", SyncStatusDone, 100),
+		task("a-running", "connector-a", SyncStatusRunning, 200),
+		task("a-done-new", "connector-a", SyncStatusDone, 300),
+		task("b-running", "connector-b", SyncStatusRunning, 250),
+		task("unlinked", "connector-unlinked", SyncStatusRunning, 400),
+	}
+	if err := db.Create(&tasks).Error; err != nil {
+		t.Fatalf("create sync tasks: %v", err)
+	}
+
+	got, err := NewSyncTaskDAO(db).ListDatasetSyncTasks(context.Background(), "dataset-1")
+	if err != nil {
+		t.Fatalf("list dataset sync tasks: %v", err)
+	}
+	wantIDs := []string{"a-done-new", "b-running", "a-running"}
+	if len(got) != len(wantIDs) {
+		t.Fatalf("task count = %d, want %d: %+v", len(got), len(wantIDs), got)
+	}
+	for i, wantID := range wantIDs {
+		if got[i].ID != wantID {
+			t.Fatalf("task %d = %q, want %q", i, got[i].ID, wantID)
+		}
+	}
+}
+
 func insertRunningSyncTask(t *testing.T, db *gorm.DB, taskID string, errorCount, retryCount int64, errorClass string) {
 	t.Helper()
 	if err := db.Create(&entity.SyncLogs{
@@ -64,6 +111,50 @@ func insertRunningSyncTask(t *testing.T, db *gorm.DB, taskID string, errorCount,
 		ErrorClass:  errorClass,
 	}).Error; err != nil {
 		t.Fatalf("insert task: %v", err)
+	}
+}
+
+func TestRescheduleClaimedPreservesNewerClaim(t *testing.T) {
+	db := setupSyncTaskTestDB(t)
+	if err := db.AutoMigrate(&entity.Connector{}); err != nil {
+		t.Fatalf("migrate connector: %v", err)
+	}
+	dao := NewSyncTaskDAO(db)
+	staleStartedAt := time.Now().Truncate(time.Millisecond)
+	currentStartedAt := staleStartedAt.Add(time.Second)
+	if err := db.Create(&entity.SyncLogs{
+		ID:          "task-1",
+		ConnectorID: "conn-1",
+		KbID:        "kb-1",
+		TaskType:    TaskTypeSync,
+		Status:      SyncStatusRunning,
+		TimeStarted: &currentStartedAt,
+	}).Error; err != nil {
+		t.Fatalf("insert task: %v", err)
+	}
+
+	restored, err := dao.RescheduleClaimed(t.Context(), "task-1", &staleStartedAt)
+	if err != nil {
+		t.Fatalf("reschedule stale claim: %v", err)
+	}
+	if restored {
+		t.Fatal("stale claim restored a newer claim")
+	}
+
+	var task entity.SyncLogs
+	if err = db.First(&task, "id = ?", "task-1").Error; err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.Status != SyncStatusRunning {
+		t.Fatalf("status = %s, want running", task.Status)
+	}
+
+	restored, err = dao.RescheduleClaimed(t.Context(), "task-1", &currentStartedAt)
+	if err != nil {
+		t.Fatalf("reschedule current claim: %v", err)
+	}
+	if !restored {
+		t.Fatal("current claim was not restored")
 	}
 }
 

@@ -16,34 +16,44 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"go.uber.org/zap"
 
-	"ragflow/internal/utility"
-
+	"gorm.io/gorm"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 )
 
 type ChatChannelService struct {
 	chatChannelDAO *dao.ChatChannelDAO
 	chatDAO        *dao.ChatDAO
-	userTenantDAO  *dao.UserTenantDAO
 	chatSessionSvc *ChatSessionService
+	agentRunner    chatChannelAgentRunner
 }
 
 func NewChatChannelService() *ChatChannelService {
 	return &ChatChannelService{
 		chatChannelDAO: dao.NewChatChannel(),
 		chatDAO:        dao.NewChatDAO(),
-		userTenantDAO:  dao.NewUserTenantDAO(),
 		chatSessionSvc: NewChatSessionService(),
+		agentRunner:    NewAgentService(),
 	}
+}
+
+// NewChatChannelServiceWithAgentService shares the API's agent run infrastructure.
+func NewChatChannelServiceWithAgentService(agentService *AgentService) *ChatChannelService {
+	s := NewChatChannelService()
+	s.agentRunner = agentService
+	return s
 }
 
 type ChatChannelIncomingMessage struct {
@@ -78,119 +88,98 @@ func getChatChannelRuntimeProvider() ChatChannelRuntimeProvider {
 	return chatChannelRuntimeProvider
 }
 
-func (s *ChatChannelService) Insert(ctx context.Context, channel *entity.ChatChannel) error {
-	if channel == nil {
-		return errors.New("channel is nil")
+func (s *ChatChannelService) List(ctx context.Context) ([]*entity.ChatChannelListResponse, error) {
+	channelScope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.ScopeQuery{
+		Kind:      permission.ResourceKindChatChannel,
+		Operation: permission.OperationRead,
+	})
+	if err != nil {
+		return nil, err
 	}
-	if channel.ID == "" {
-		channel.ID = utility.GenerateUUID()
+	channelIDs := channelScope.ResourceIDs
+	if channelScope.Mode != permission.ScopeIDs {
+		channelIDs = []string{}
 	}
-	if channel.Status == 0 {
-		channel.Status = 1
-	}
-	return s.chatChannelDAO.Create(ctx, dao.DB, channel)
+	return s.chatChannelDAO.ListByIDs(ctx, dao.DB, channelIDs)
 }
 
-func (s *ChatChannelService) GetByID(ctx context.Context, id string) (*entity.ChatChannel, error) {
-	if id == "" {
-		return nil, errors.New("id is empty")
+func (s *ChatChannelService) CreateChatChannel(ctx context.Context, name, channelType string, config entity.JSONMap, chatID, agentID *string) (*entity.ChatChannel, error) {
+	userID := permission.UserIDFromContext(ctx)
+	tenantID, err := requireCurrentTenantID(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return s.chatChannelDAO.GetByIDOnly(ctx, dao.DB, id)
-}
-
-func (s *ChatChannelService) List(ctx context.Context, tenantID string) ([]*entity.ChatChannelListResponse, error) {
-	return s.chatChannelDAO.ListByTenantID(ctx, dao.DB, tenantID)
-}
-
-func (s *ChatChannelService) CreateChatChannel(ctx context.Context, tenantID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error) {
-	if chatID != nil && *chatID != "" {
-		dialog, err := s.chatDAO.GetByID(ctx, dao.DB, *chatID)
-		if err != nil {
-			if dao.IsNotFoundErr(err) {
-				return nil, errors.New("can't find this chat assistant")
-			}
-			return nil, err
-		}
-		if dialog.TenantID != tenantID {
-			return nil, errors.New("no authorization")
-		}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "chat", permission.ActionWrite); err != nil {
+		return nil, err
+	}
+	chatID, agentID = normalizedChannelTarget(chatID), normalizedChannelTarget(agentID)
+	if err := validateChannelBinding(ctx, chatID, agentID); err != nil {
+		return nil, err
+	}
+	if err := validateChannelBinding(permission.WithIdentity(ctx, tenantID, tenantID), chatID, agentID); err != nil {
+		return nil, err
+	}
+	name = strings.TrimSpace(name)
+	if err := common.ValidateNameRunes(name, common.NameLimit128); err != nil {
+		return nil, err
 	}
 	row := &entity.ChatChannel{
-		ID:       utility.GenerateUUID(),
+		ID:       common.GenerateUUID(),
+		UserID:   userID,
 		TenantID: tenantID,
 		Name:     name,
 		Channel:  channelType,
 		Config:   config,
 		ChatID:   chatID,
+		AgentID:  agentID,
 		Status:   1,
 	}
 
-	if err := s.Insert(ctx, row); err != nil {
+	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.chatChannelDAO.Create(ctx, tx, row); err != nil {
+			return err
+		}
+		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatChannel, ID: row.ID})
+	}); err != nil {
 		return nil, err
 	}
 
-	created, err := s.GetByID(ctx, row.ID)
+	created, err := s.chatChannelDAO.GetByID(ctx, dao.DB, row.ID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to load created chat channel: %w", err)
 	}
 	return created, nil
 }
 
-func (s *ChatChannelService) accessible(ctx context.Context, userID, channelID string) (*entity.ChatChannel, bool, error) {
-	channel, err := s.chatChannelDAO.GetByIDOnly(ctx, dao.DB, channelID)
+func (s *ChatChannelService) GetChatChannel(ctx context.Context, channelID string) (*entity.ChatChannel, common.ErrorCode, error) {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatChannel, ID: channelID}, permission.OperationRead); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		return nil, code, permissionErr
+	}
+
+	channel, err := s.chatChannelDAO.GetByID(ctx, dao.DB, channelID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, false, nil
-		}
-		return nil, false, err
-	}
-
-	if channel.TenantID == userID {
-		return channel, true, nil
-	}
-
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
-	if err != nil {
-		return nil, false, err
-	}
-	for _, tenantID := range tenantIDs {
-		if tenantID == channel.TenantID {
-			return channel, true, nil
-		}
-	}
-
-	return channel, false, nil
-}
-
-func (s *ChatChannelService) GetChatChannel(ctx context.Context, userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error) {
-	_, ok, err := s.accessible(ctx, userID, channelID)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("no authorization")
-	}
-
-	channel, err := s.chatChannelDAO.GetByIDOnly(ctx, dao.DB, channelID)
-	if err != nil {
-		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("can't find this chat channel")
+			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
+			return nil, code, permissionErr
 		}
 		return nil, common.CodeServerError, err
 	}
 	return channel, common.CodeSuccess, nil
 }
 
-func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, userID, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error) {
-	channel, ok, err := s.accessible(ctx, userID, channelID)
+func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error) {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatChannel, ID: channelID}, permission.OperationUpdate); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		return nil, code, permissionErr
+	}
+	channel, err := s.chatChannelDAO.GetByID(ctx, dao.DB, channelID)
 	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
+			return nil, code, permissionErr
+		}
 		return nil, common.CodeServerError, err
-	}
-	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("no authorization")
-	}
-	if channel == nil {
-		return nil, common.CodeDataError, errors.New("can't find this chat channel")
 	}
 
 	updates := map[string]interface{}{}
@@ -199,6 +188,10 @@ func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, userID, chan
 		name, ok := value.(string)
 		if !ok {
 			return nil, common.CodeDataError, errors.New("name must be string")
+		}
+		name = strings.TrimSpace(name)
+		if err := common.ValidateNameRunes(name, common.NameLimit128); err != nil {
+			return nil, common.CodeDataError, err
 		}
 		updates["name"] = name
 	}
@@ -215,28 +208,37 @@ func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, userID, chan
 		}
 	}
 
-	if value, exists := req["chat_id"]; exists {
-		if value == nil {
-			updates["chat_id"] = nil
-		} else {
-			chatID, ok := value.(string)
-			if !ok {
-				return nil, common.CodeDataError, errors.New("chat_id must be string or null")
-			}
-			if chatID != "" {
-				dialog, err := s.chatDAO.GetByID(ctx, dao.DB, chatID)
-				if err != nil {
-					if dao.IsNotFoundErr(err) {
-						return nil, common.CodeDataError, errors.New("can't find this chat assistant")
-					}
-					return nil, common.CodeServerError, err
+	chatID, agentID := channel.ChatID, channel.AgentID
+	bindingChanged := false
+	for _, field := range []string{"chat_id", "agent_id"} {
+		if value, exists := req[field]; exists {
+			bindingChanged = true
+			var id *string
+			if value != nil {
+				text, ok := value.(string)
+				if !ok {
+					return nil, common.CodeDataError, fmt.Errorf("%s must be string or null", field)
 				}
-				if dialog.TenantID != channel.TenantID {
-					return nil, common.CodeAuthenticationError, errors.New("no authorization")
-				}
+				id = normalizedChannelTarget(&text)
 			}
-			updates["chat_id"] = chatID
+			if field == "chat_id" {
+				chatID = id
+			} else {
+				agentID = id
+			}
 		}
+	}
+	if bindingChanged {
+		if chatID != nil && agentID != nil {
+			return nil, common.CodeDataError, errors.New("chat_id and agent_id are mutually exclusive")
+		}
+		for _, bindingCtx := range []context.Context{ctx, permission.WithIdentity(ctx, channel.TenantID, channel.TenantID)} {
+			if err := validateChannelBinding(bindingCtx, chatID, agentID); err != nil {
+				code, normalizedErr := permissionresponse.NormalizeHidden(err)
+				return nil, code, normalizedErr
+			}
+		}
+		updates["chat_id"], updates["agent_id"] = chatID, agentID
 	}
 
 	if len(updates) > 0 {
@@ -245,10 +247,11 @@ func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, userID, chan
 		}
 	}
 
-	updated, err := s.chatChannelDAO.GetByIDOnly(ctx, dao.DB, channelID)
+	updated, err := s.chatChannelDAO.GetByID(ctx, dao.DB, channelID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("can't find this chat channel")
+			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
+			return nil, code, permissionErr
 		}
 		return nil, common.CodeServerError, err
 	}
@@ -256,16 +259,18 @@ func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, userID, chan
 }
 
 // GetChatChannelRuntime returns the live runtime metadata for a WhatsApp chat channel.
-func (s *ChatChannelService) GetChatChannelRuntime(ctx context.Context, userID, channelID string) (map[string]any, common.ErrorCode, error) {
-	conn, ok, err := s.accessible(ctx, userID, channelID)
+func (s *ChatChannelService) GetChatChannelRuntime(ctx context.Context, channelID string) (map[string]any, common.ErrorCode, error) {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatChannel, ID: channelID}, permission.OperationUse); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		return nil, code, permissionErr
+	}
+	conn, err := s.chatChannelDAO.GetByID(ctx, dao.DB, channelID)
 	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
+			return nil, code, permissionErr
+		}
 		return nil, common.CodeServerError, err
-	}
-	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("no authorization")
-	}
-	if conn == nil {
-		return nil, common.CodeDataError, errors.New("can't find this chat channel")
 	}
 
 	if conn.Channel != "whatsapp" {
@@ -281,17 +286,31 @@ func (s *ChatChannelService) GetChatChannelRuntime(ctx context.Context, userID, 
 }
 
 // HandleIncomingMessage routes one external channel message through the bound RAGFlow dialog.
-func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg ChatChannelIncomingMessage) (string, error) {
+// When onDelta is non-nil the answer is generated as a stream and onDelta receives the
+// cumulative display text as it grows; the returned string is always the complete answer.
+func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg ChatChannelIncomingMessage, onDelta func(string)) (string, error) {
 	if strings.TrimSpace(msg.Text) == "" {
 		return "", nil
 	}
 
-	channel, err := s.chatChannelDAO.GetByIDOnly(ctx, dao.DB, msg.AccountID)
+	channel, err := s.chatChannelDAO.GetByID(ctx, dao.DB, msg.AccountID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return "", nil
 		}
 		return "", err
+	}
+	if channel.Status != 1 {
+		return "", nil
+	}
+	ownerCtx := permission.WithIdentity(ctx, channel.TenantID, channel.TenantID)
+	if err := validateChannelBinding(ownerCtx, channel.ChatID, channel.AgentID); err != nil {
+		return "", err
+	}
+	if channel.AgentID != nil {
+		ctx, cancel := context.WithTimeout(ownerCtx, 5*time.Minute)
+		defer cancel()
+		return s.handleChannelAgentMessage(ctx, channel, msg, onDelta)
 	}
 	if channel.ChatID == nil || strings.TrimSpace(*channel.ChatID) == "" {
 		return "", nil
@@ -305,14 +324,27 @@ func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg Chat
 		return "", err
 	}
 
-	session, err := s.chatSessionSvc.GetOrCreateForChannel(ctx, dialog.ID, channel.ID, msg.ChatID)
+	session, err := s.chatSessionSvc.GetOrCreateForChannel(ctx, dialog.ID, channel.ID, msg.ChatID, msg.Text, channel.Name)
 	if err != nil {
 		return "", err
 	}
 
+	stream := onDelta != nil
+	var streamChan chan string
+	var streamed chan channelStreamResult
+	if stream {
+		streamChan = make(chan string, 64)
+		streamed = make(chan channelStreamResult, 1)
+		go func() {
+			streamed <- consumeChannelStream(streamChan, onDelta)
+		}()
+	}
+
+	// Channel chat sessions are owned by the dialog tenant; authorization above
+	// separately enforces the channel owner's current access to that dialog.
+	completionCtx := permission.WithIdentity(ctx, dialog.TenantID, dialog.TenantID)
 	result, err := s.chatSessionSvc.ChatCompletions(
-		ctx,
-		dialog.TenantID,
+		completionCtx,
 		dialog.ID,
 		session.ID,
 		[]map[string]interface{}{{"role": "user", "content": msg.Text}},
@@ -322,9 +354,21 @@ func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg Chat
 		nil,
 		map[string]interface{}{"quote": false},
 		false,
-		false,
-		nil,
+		stream,
+		streamChan,
 	)
+	if stream {
+		close(streamChan)
+		consumed := <-streamed
+		if err != nil {
+			common.Error("chat channel completion failed", err, zap.String("channel_id", channel.ID))
+			return "Sorry, I couldn't process your message right now.", nil
+		}
+		if consumed.err != nil {
+			common.Warn("chat channel stream reported an error", zap.Error(consumed.err), zap.String("channel_id", channel.ID))
+		}
+		return consumed.answer, nil
+	}
 	if err != nil {
 		common.Error("chat channel completion failed", err, zap.String("channel_id", channel.ID))
 		return "Sorry, I couldn't process your message right now.", nil
@@ -336,16 +380,103 @@ func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg Chat
 	return answer, nil
 }
 
-func (s *ChatChannelService) DeleteChatChannel(ctx context.Context, userID, channelID string) (bool, common.ErrorCode, error) {
-	channel, ok, err := s.accessible(ctx, userID, channelID)
+// channelStreamResult is what consumeChannelStream reports back to its caller.
+type channelStreamResult struct {
+	answer string
+	err    error
+}
+
+// consumeChannelStream drains the SSE frames ChatCompletions writes on frames and reports
+// the cumulative display text through onDelta. Reasoning wrapped in <think>...</think> and
+// the markers themselves are dropped, so the streamed text matches what the non-stream
+// answer contains.
+func consumeChannelStream(frames <-chan string, onDelta func(string)) channelStreamResult {
+	var answer strings.Builder
+	inThink := false
+	for frame := range frames {
+		payload, ok := strings.CutPrefix(frame, "data:")
+		if !ok {
+			continue
+		}
+		var wrapper struct {
+			Code    int             `json:"code"`
+			Message string          `json:"message"`
+			Data    json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimSpace(payload)), &wrapper); err != nil {
+			continue
+		}
+		if wrapper.Code != 0 {
+			return channelStreamResult{answer: answer.String(), err: errors.New(wrapper.Message)}
+		}
+		var chunk map[string]interface{}
+		if err := json.Unmarshal(wrapper.Data, &chunk); err != nil {
+			// `data: true` closes the stream.
+			continue
+		}
+		text, _ := chunk["answer"].(string)
+		if final, _ := chunk["final"].(bool); final {
+			// The final frame carries the authoritative answer, so it replaces whatever the
+			// deltas produced even when that rewrites the text; the channel repaints.
+			// Pipelines that persist reasoning keep it inside <think> tags in that answer,
+			// so it goes through the same filter as the deltas instead of reaching the user.
+			finalThink := false
+			text = strings.TrimLeft(stripChannelThink(text, &finalThink), "\r\n")
+			if text != "" {
+				answer.Reset()
+				answer.WriteString(text)
+				onDelta(answer.String())
+			}
+			continue
+		}
+		text = stripChannelThink(text, &inThink)
+		if text == "" {
+			continue
+		}
+		answer.WriteString(text)
+		onDelta(answer.String())
+	}
+	return channelStreamResult{answer: answer.String()}
+}
+
+// stripChannelThink removes the <think>...</think> reasoning block from a delta. The
+// closing marker can share a delta with the answer text that follows it.
+func stripChannelThink(text string, inThink *bool) string {
+	for {
+		if *inThink {
+			idx := strings.Index(text, "</think>")
+			if idx < 0 {
+				return ""
+			}
+			text = text[idx+len("</think>"):]
+			*inThink = false
+			continue
+		}
+		idx := strings.Index(text, "<think>")
+		if idx < 0 {
+			break
+		}
+		text = text[idx+len("<think>"):]
+		*inThink = true
+	}
+	if *inThink {
+		return ""
+	}
+	return text
+}
+
+func (s *ChatChannelService) DeleteChatChannel(ctx context.Context, channelID string) (bool, common.ErrorCode, error) {
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindChatChannel, ID: channelID}, permission.OperationDelete); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		return false, code, permissionErr
+	}
+	channel, err := s.chatChannelDAO.GetByID(ctx, dao.DB, channelID)
 	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
+			return false, code, permissionErr
+		}
 		return false, common.CodeServerError, err
-	}
-	if !ok {
-		return false, common.CodeAuthenticationError, errors.New("no authorization")
-	}
-	if channel == nil {
-		return false, common.CodeAuthenticationError, errors.New("no authorization")
 	}
 
 	if err = s.chatChannelDAO.DeleteByID(ctx, dao.DB, channelID, channel.TenantID); err != nil {

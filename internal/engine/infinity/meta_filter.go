@@ -158,10 +158,10 @@ func (t *MetaFilterTranslator) translateIn(key string, value interface{}, flt ma
 
 	var conditions []string
 	if len(stringParts) > 0 {
-		conditions = append(conditions, "("+strings.Join(stringParts, " OR ")+")")
+		conditions = append(conditions, joinBalanced(stringParts, " OR "))
 	}
 	if len(numParts) > 0 {
-		conditions = append(conditions, "("+strings.Join(numParts, " OR ")+")")
+		conditions = append(conditions, joinBalanced(numParts, " OR "))
 	}
 
 	return "(" + strings.Join(conditions, " OR ") + ")"
@@ -263,8 +263,13 @@ func BuildInfinityFilter(filters []map[string]interface{}, logic string) (string
 	if logic == "or" {
 		joiner = " OR "
 	}
+	if len(fragments) == 0 {
+		return "()", nil
+	}
 
-	return "(" + strings.Join(fragments, joiner) + ")", nil
+	// Balanced so a long OR chain (many metadata values) cannot exceed Infinity's
+	// Thrift expression depth (see joinBalanced).
+	return joinBalanced(fragments, joiner), nil
 }
 
 // IsPushdownSupported checks if all filters can be pushed down

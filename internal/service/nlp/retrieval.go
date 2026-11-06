@@ -73,6 +73,9 @@ type RetrievalRequest struct {
 	// bridge a wording gap the query's own words cannot cross; the scoring pass
 	// then uses the engine's kNN score directly instead of re-scoring tokens.
 	VectorOnly bool
+	// Language is the dataset language ("" = English); diacritic-folding
+	// languages (Slovak, Czech) fold the query so its tokens match index tokens.
+	Language string
 }
 
 // RetrievalResult result from retrieval search
@@ -82,9 +85,22 @@ type RetrievalResult struct {
 	Total   int64                    // Threshold-valid matches across the retrieval candidate set
 }
 
+// Retrieval window limits. They bound the candidate set one request may ask the
+// shared doc engine (and the reranker) to score, so an oversized request cannot
+// exhaust shared retrieval resources. The KNN limits mirror the HTTP validation
+// in internal/handler/dataset.go, which only covers the dataset endpoints; this
+// is the contract every other entry point (chat, agent tools, saved search
+// configs) shares. maxRerankCandidates is 1024 because Dify retrieval defaults
+// its window to top_k, which is itself capped at 1024.
+const (
+	maxRerankCandidates = 1024
+	maxKNNTopK          = 2048
+	maxKNNNumCandidates = 10000
+)
+
 // Retrieval performs hybrid search + reranking + pagination
 // - Retrieve candidates for reranking
-// - Perform reranking via Rerank()
+// - Perform reranking via scoreSearchResult()
 // - Sort indices by score descending and filter by threshold
 // - Require Page * PageSize to fit within RerankCandidatesCount
 // - Support only the first page when a rerank model is configured
@@ -140,6 +156,15 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	if rerankCandidatesCount <= 0 || req.Page > rerankCandidatesCount/pageSize {
 		return nil, fmt.Errorf("rerank_candidates_count(%d) must be greater than or equal to page(%d) * page_size(%d)", rerankCandidatesCount, req.Page, pageSize)
 	}
+	if rerankCandidatesCount > maxRerankCandidates {
+		return nil, fmt.Errorf("rerank_candidates_count(%d) must not exceed %d", rerankCandidatesCount, maxRerankCandidates)
+	}
+	if *req.KNNTopK > maxKNNTopK {
+		return nil, fmt.Errorf("knn_top_k(%d) must not exceed %d", *req.KNNTopK, maxKNNTopK)
+	}
+	if *req.KNNNumCandidates > maxKNNNumCandidates {
+		return nil, fmt.Errorf("knn_num_candidates(%d) must not exceed %d", *req.KNNNumCandidates, maxKNNNumCandidates)
+	}
 	if req.RerankModel != nil && req.Page != 1 {
 		return nil, fmt.Errorf("Pagination is not supported when rerank_mdl is specified. Please set page=1 to retrieve the top %d results.", pageSize)
 	}
@@ -178,6 +203,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		AllowDenseFallback:     req.AllowDenseFallback,
 		VectorOnly:             req.VectorOnly,
 		Filter:                 req.Filter,
+		Language:               req.Language,
 	}
 	searchResult, err := s.Search(ctx, searchReq)
 	if err != nil {
@@ -298,6 +324,9 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		if v, ok := chunk["kb_id"]; ok {
 			resultChunk["kb_id"] = v
 		}
+		if kind := firstStringValue(chunk["compile_kwd"]); kind != "" {
+			resultChunk["compile_kwd"] = kind
+		}
 		if v, ok := chunk["important_kwd"]; ok {
 			resultChunk["important_kwd"] = v
 		}
@@ -403,6 +432,9 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 			if v, ok := chunk["doc_id"].(string); ok {
 				docID = v
 			}
+			if kbID, _ := chunk["kb_id"].(string); docID != "" && docID == kbID {
+				continue
+			}
 			if entry, exists := docAggsMap[docName]; exists {
 				entry.count++
 				docAggsMap[docName] = entry
@@ -447,13 +479,19 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	}, nil
 }
 
+// scoreSearchResult computes the per-chunk term, vector, and fused
+// similarity scores for a search result, reranking through the configured
+// model when the engine does not fuse natively.
 func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *RetrievalRequest, searchResult *RetrievalSearchResult) ([]float64, []float64, []float64, error) {
 	// sim = tkWeight*tsim + vtWeight*vsim
 	vtWeight := *req.VectorSimilarityWeight
 	tkWeight := 1.0 - vtWeight
 	qb := GetQueryBuilder()
-	useInfinity := engine.GetEngineType() == "infinity"
+	useInfinity := s.docEngine.GetType() == string(engine.EngineInfinity)
 	useOceanBase := engine.IsOceanBaseFamily(s.docEngine.GetType())
+	// Vastbase fusion returns a single fused score per chunk, so the
+	// tsim/vsim decomposition below needs the local rerank — same as OB.
+	useVastbase := engine.IsVastbase(s.docEngine.GetType())
 
 	if req.RerankModel != nil && searchResult.Total > 0 {
 		return RerankByModel(
@@ -468,6 +506,7 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 			"content_ltks",
 			qb,
 			*req.RankFeature,
+			req.Language,
 		)
 	}
 
@@ -487,7 +526,7 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 		return sim, sim, sim, nil
 	}
 
-	if useOceanBase {
+	if useOceanBase || useVastbase {
 		sim, tsim, vsim := RerankStandard(
 			searchResult.Chunks,
 			nil,
@@ -498,6 +537,7 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 			"content_ltks",
 			qb,
 			*req.RankFeature,
+			req.Language,
 		)
 		return sim, tsim, vsim, nil
 	}
@@ -538,7 +578,13 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 		for i, id := range searchResult.IDs {
 			sim[i] = scores[id]
 		}
-		return sim, make([]float64, len(sim)), sim, nil
+		// A dense-only request has no scored bool query, so the engine never
+		// applies its rank_feature clauses; the rank features have to be added
+		// here to reach the similarity at all.
+		// The boost mutates sim, so vector_similarity is sampled first.
+		rawSim := slices.Clone(sim)
+		sim = applyRankFeatureScoresForIDs(searchResult.IDs, searchResult.Field, sim, *req.RankFeature)
+		return sim, make([]float64, len(sim)), rawSim, nil
 	}
 
 	knnResult, err := s.docEngine.KNNScores(ctx, searchResult.Chunks, searchResult.QueryVector, len(searchResult.IDs))
@@ -554,6 +600,7 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 			"content_ltks",
 			qb,
 			*req.RankFeature,
+			req.Language,
 		)
 		return sim, tsim, vsim, nil
 	}
@@ -570,6 +617,7 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 		"content_ltks",
 		qb,
 		*req.RankFeature,
+		req.Language,
 	)
 	return sim, tsim, vsim, nil
 }
@@ -596,6 +644,8 @@ type RetrievalSearchRequest struct {
 	EmbeddingModel         *models.EmbeddingModel
 	VectorSimilarityWeight *float64
 	AllowDenseFallback     *bool
+	// Language is the dataset language ("" = English).
+	Language string
 }
 
 func buildInfinityFusionExpr(topn int, vectorSimilarityWeight *float64) *types.FusionExpr {
@@ -691,20 +741,29 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 	// Result pagination is independent of the KNN candidate pool size.
 	pageSize := req.PageSize
 	if pageSize <= 0 {
-		pageSize = 30
+		pageSize = common.DefaultPageSize
 	}
 	limit := pageSize
 
 	// Build Source field list
 	src := []string{
 		"docnm_kwd", "content_ltks", "kb_id", "img_id", "title_tks", "important_kwd", "position_int",
-		"doc_id", "chunk_order_int", "page_num_int", "top_int", "create_timestamp_flt", "knowledge_graph_kwd",
+		"doc_id", "chunk_order_int", "page_num_int", "top_int", "create_timestamp_flt", "type_kwd", "knowledge_graph_kwd",
 		// Fields the projection below reads off each chunk. This list IS the ES
 		// _source filter, so omitting one returns it empty even though the
 		// document carries it: content_with_weight is the text the caller
 		// displays, doc_type_kwd marks image/table chunks, mom_id is what promotes
 		// child fragments to their parent, row_id() the table row identity.
 		"content_with_weight", "doc_type_kwd", "mom_id", "row_id()",
+		"compile_kwd", "scope_kwd",
+		// Generated questions: question_tks feeds the reranker's term input (×6),
+		// question_kwd is what the dataset search API reports as "questions".
+		"question_tks", "question_kwd",
+		// Rank-feature inputs. The reranker reads them off searchResult.Field,
+		// which is the engine's projection of exactly this list, so leaving them
+		// out scored every chunk at pagerank 0 and dropped the tag-feature
+		// weight entirely. Python's default src carries both.
+		common.PAGERANK_FLD, common.TAG_FLD,
 		"_score",
 	}
 
@@ -740,7 +799,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		// Non-empty question
 
 		// Compute keywords via QueryBuilder
-		matchText, keywords := GetQueryBuilder().Question(req.Question, "", minMatch(req.VectorSimilarityWeight, 0.3))
+		matchText, keywords := GetQueryBuilder().Question(req.Question, "", minMatch(req.VectorSimilarityWeight, 0.3), req.Language)
 		for _, k := range keywords {
 			kwds[k] = struct{}{}
 		}
@@ -783,7 +842,8 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			// Build source with vector column for ES
 			searchSrc := make([]string, len(searchRequest.SelectFields))
 			copy(searchSrc, searchRequest.SelectFields)
-			if engine.GetEngineType() == "elasticsearch" || engine.IsOceanBaseFamily(engine.GetEngineType()) {
+			driverType := s.docEngine.GetType()
+			if driverType == string(engine.EngineElasticsearch) || engine.IsOceanBaseFamily(driverType) || engine.IsVastbase(driverType) {
 				searchSrc = append(searchSrc, matchDense.VectorColumnName)
 			}
 
@@ -803,53 +863,35 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			if err != nil {
 				return nil, fmt.Errorf("search failed: %w", err)
 			}
-			// If result is empty, retry with relaxed conditions
+			// If the result is empty, retry with relaxed conditions. Every leg
+			// keeps at least one MATCH expression: without one Infinity cannot
+			// project a score (error 3013) and every similarity reads back as
+			// 0.0, the "all scores collapsed" signature of infinity#3523.
+			//
+			// No filter-only fallback, deliberately, even for a document scope:
+			// unscored rows carry no relevance and were fed to an LLM as context.
+			// Callers that want a document's chunks use ChunkService.List.
 			if engineResult.Total == 0 {
-				_, hasDocIDFilter := filters["doc_id"]
 				if req.VectorOnly || matchText == nil {
 					if *req.AllowDenseFallback {
 						common.Debug("Retrieval dense-only fallback after empty initial search")
-						matchDense = cloneDenseExpr(denseTemplate)
-						matchDense.ExtraOptions["similarity"] = 0.17
-						searchRequest.MatchExprs = []any{matchDense}
-						engineResult, err = s.docEngine.Search(ctx, searchRequest)
+						engineResult, err = s.searchDenseOnly(ctx, searchRequest, denseTemplate)
 						if err != nil {
 							return nil, fmt.Errorf("dense-only fallback failed: %w", err)
 						}
 					}
-				} else if hasDocIDFilter {
-					// When a doc_id filter is present (e.g. from metadata filter like era=960)
-					// and the hybrid search returns no results, fall back to a filter-only
-					// search (no text match, no vector match). This ensures that when a
-					// metadata filter restricts the search to a specific set of documents
-					// that happen to have no relevant content for the query, we still
-					// return those documents' chunks (ordered by the request's sort/order).
-					//
-					// Example: searching "打虎" with metadata filter era≠960 limits the
-					// search to Three Kingdoms documents (era=220). Since "打虎" only
-					// appears in Water Margin (era=960), the hybrid search returns 0
-					// results. This fallback returns all chunks from Three Kingdoms
-					// documents instead of returning an empty result.
-					searchRequest.SelectFields = src
-					searchRequest.MatchExprs = []interface{}{}
-					searchRequest.RankFeature = nil
-
-					engineResult, err = s.docEngine.Search(ctx, searchRequest)
-					if err != nil {
-						return nil, fmt.Errorf("search retry failed: %w", err)
-					}
 				} else {
-					// No doc_id filter — retry with lower min_match (0.1 vs default 0.3)
-					// and lower vector similarity threshold (0.17 vs default 0.1-0.2).
-					// This provides a second chance for queries that were too strict
-					// on the first attempt.
-					matchText, _ := GetQueryBuilder().Question(req.Question, "qa", minMatch(req.VectorSimilarityWeight, 0.1))
+					// Retry with lower min_match (0.1 vs default 0.3) and lower
+					// vector similarity threshold (0.17 vs default 0.1-0.2).
+					// This provides a second chance for queries that were too
+					// strict on the first attempt.
+					relaxedText, _ := GetQueryBuilder().Question(req.Question, "qa", minMatch(req.VectorSimilarityWeight, 0.1), req.Language)
 					matchDense = cloneDenseExpr(denseTemplate)
 					matchDense.ExtraOptions["similarity"] = 0.17
-					if req.VectorOnly || matchText == nil {
+					if relaxedText == nil {
 						searchRequest.MatchExprs = []interface{}{matchDense}
 					} else {
-						searchRequest.MatchExprs = []interface{}{matchText, matchDense, fusionExpr}
+						searchRequest.MatchExprs = []interface{}{relaxedText, matchDense, fusionExpr}
 					}
 					searchRequest.RankFeature = req.RankFeature
 
@@ -858,12 +900,9 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 						return nil, fmt.Errorf("search retry failed: %w", err)
 					}
 					// Zero-only by design: any lexical hit keeps the existing hybrid candidate semantics.
-					if engineResult.Total == 0 && matchText != nil && *req.AllowDenseFallback {
+					if engineResult.Total == 0 && relaxedText != nil && *req.AllowDenseFallback {
 						common.Debug("Retrieval dense-only fallback after empty hybrid retries")
-						matchDense = cloneDenseExpr(denseTemplate)
-						matchDense.ExtraOptions["similarity"] = 0.17
-						searchRequest.MatchExprs = []any{matchDense}
-						engineResult, err = s.docEngine.Search(ctx, searchRequest)
+						engineResult, err = s.searchDenseOnly(ctx, searchRequest, denseTemplate)
 						if err != nil {
 							return nil, fmt.Errorf("dense-only fallback failed: %w", err)
 						}
@@ -875,9 +914,10 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		}
 
 		// Build kwds from keywords with fine-grained tokenization
+		tok := tokenizer.New(req.Language)
 		for _, k := range keywords {
 			kwds[k] = struct{}{}
-			fgToken, _ := tokenizer.FineGrainedTokenize(k)
+			fgToken, _ := tok.FineGrainedTokenize(k)
 			for kk := range strings.FieldsSeq(fgToken) {
 				if len(kk) < 2 {
 					continue
@@ -962,6 +1002,16 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 	}, nil
 }
 
+// searchDenseOnly re-runs the request with the dense leg alone and the vector
+// floor dropped to 0.17. Unlike a filter-only query, a lone MATCH VECTOR still
+// projects a score.
+func (s *RetrievalService) searchDenseOnly(ctx context.Context, searchRequest *types.SearchRequest, denseTemplate *types.MatchDenseExpr) (*types.SearchResult, error) {
+	matchDense := cloneDenseExpr(denseTemplate)
+	matchDense.ExtraOptions["similarity"] = 0.17
+	searchRequest.MatchExprs = []any{matchDense}
+	return s.docEngine.Search(ctx, searchRequest)
+}
+
 func cloneDenseExpr(source *types.MatchDenseExpr) *types.MatchDenseExpr {
 	clone := *source
 	clone.EmbeddingData = slices.Clone(source.EmbeddingData)
@@ -979,7 +1029,7 @@ func (s *RetrievalService) GetVector(ctx context.Context, txt string, embModel *
 	// query encoding (Cohere search_query / Voyage query / Jina retrieval.query
 	// / NVIDIA query). Embedding it as a document would put the query vector in
 	// the wrong space for those providers.
-	embeddings, err := embModel.ModelDriver.Embed(ctx, embModel.ModelName, models.EmbedRequest{Texts: []string{txt}, Query: true}, embModel.APIConfig, embeddingConfig, nil)
+	embeddings, err := embModel.Embed(ctx, models.EmbedRequest{Texts: []string{txt}, Query: true}, embeddingConfig, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -1070,7 +1120,7 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 	for key, childList := range momChunks {
 		momID := key.momID
 		parentResult, err := docEngine.Search(ctx, &types.SearchRequest{
-			IndexNames:         []string{indexNames[0]},
+			IndexNames:         indexNames,
 			KbIDs:              []string{key.kbID},
 			Limit:              1,
 			IncludeUnavailable: true,
@@ -1183,24 +1233,24 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 	return remainingChunks
 }
 
-// PruneDeletedChunks removes chunks whose documents no longer exist
+// PruneDeletedChunks keeps source-backed chunks and dataset compilation chunks.
 func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *RetrievalSearchResult) (*RetrievalSearchResult, error) {
 	if s.documentDAO == nil {
 		return nil, fmt.Errorf("documentDAO is not initialized")
 	}
-	// Collect all doc_ids from chunks
-	chunkDocIDs := make([]string, 0, len(result.Field))
-	for _, chunk := range result.Field {
-		if docID, ok := chunk["doc_id"].(string); ok && docID != "" {
+	// Collect source document IDs from the ordered candidates.
+	chunkDocIDs := make([]string, 0, len(result.IDs))
+	for _, chunkID := range result.IDs {
+		chunk := result.Field[chunkID]
+		if len(chunk) == 0 || isDatasetCompilationChunk(chunk) {
+			continue
+		}
+		if docID := strings.TrimSpace(firstStringValue(chunk["doc_id"])); docID != "" {
 			chunkDocIDs = append(chunkDocIDs, docID)
 		}
 	}
 
-	if len(chunkDocIDs) == 0 {
-		return result, nil
-	}
-
-	// Deduplicate chunkDocIDs for correct comparison with existingDocIDs
+	// Deduplicate source IDs before the batch lookup.
 	uniqueDocIDs := make([]string, 0, len(chunkDocIDs))
 	seen := make(map[string]struct{}, len(chunkDocIDs))
 	for _, id := range chunkDocIDs {
@@ -1221,42 +1271,26 @@ func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *Retri
 		existingDocIDs[doc.ID] = struct{}{}
 	}
 
-	// Early return if all docs exist
-	if len(existingDocIDs) == len(uniqueDocIDs) {
-		return result, nil
-	}
-
-	// Filter out chunks with deleted documents
+	// Validate every candidate, including ghosts and chunks without a source ID.
 	filteredIDs := make([]string, 0, len(result.IDs))
-	filteredChunks := make([]map[string]interface{}, 0, len(result.IDs))
 	filteredField := make(map[string]map[string]interface{}, len(result.IDs))
 	filteredHighlight := make(map[string]string)
 	removed := 0
 
 	for _, chunkID := range result.IDs {
-		chunk, exists := result.Field[chunkID]
-		if !exists {
-			continue
-		}
-		docID, ok := chunk["doc_id"].(string)
-		if !ok || docID == "" {
-			// Keep chunks without doc_id
-			filteredIDs = append(filteredIDs, chunkID)
-			filteredChunks = append(filteredChunks, chunk)
-			filteredField[chunkID] = chunk
-			if result.Highlight != nil {
-				if hl, ok := result.Highlight[chunkID]; ok {
-					filteredHighlight[chunkID] = hl
-				}
-			}
-			continue
-		}
-		if _, docExists := existingDocIDs[docID]; !docExists {
+		chunk := result.Field[chunkID]
+		if len(chunk) == 0 {
 			removed++
 			continue
 		}
+		if !isDatasetCompilationChunk(chunk) {
+			docID := strings.TrimSpace(firstStringValue(chunk["doc_id"]))
+			if _, docExists := existingDocIDs[docID]; docID == "" || !docExists {
+				removed++
+				continue
+			}
+		}
 		filteredIDs = append(filteredIDs, chunkID)
-		filteredChunks = append(filteredChunks, chunk)
 		filteredField[chunkID] = chunk
 		if result.Highlight != nil {
 			if hl, ok := result.Highlight[chunkID]; ok {
@@ -1265,9 +1299,26 @@ func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *Retri
 		}
 	}
 
-	if removed > 0 {
-		common.Warn("Pruned stale chunks whose documents no longer exist", zap.Int("removed", removed))
+	if removed == 0 {
+		return result, nil
 	}
+
+	// Preserve raw engine fields needed by KNN and local scoring.
+	chunksByID := make(map[string]map[string]interface{}, len(result.Chunks))
+	for _, chunk := range result.Chunks {
+		ids := s.docEngine.GetChunkIDs([]map[string]interface{}{chunk})
+		if len(ids) == 1 {
+			chunksByID[ids[0]] = chunk
+		}
+	}
+	filteredChunks := make([]map[string]interface{}, 0, len(filteredIDs))
+	for _, chunkID := range filteredIDs {
+		if chunk, ok := chunksByID[chunkID]; ok {
+			filteredChunks = append(filteredChunks, chunk)
+		}
+	}
+
+	common.Warn("Pruned chunks without an existing source document", zap.Int("removed", removed))
 
 	return &RetrievalSearchResult{
 		Chunks:      filteredChunks,
@@ -1279,17 +1330,27 @@ func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *Retri
 		Keywords:    result.Keywords,
 		Aggregation: result.Aggregation,
 		Options:     result.Options,
+		IndexNames:  result.IndexNames,
 	}, nil
 }
 
-// buildIndexNames creates index names for the given tenant IDs.
+func isDatasetCompilationChunk(chunk map[string]interface{}) bool {
+	docID, _ := chunk["doc_id"].(string)
+	kbID, _ := chunk["kb_id"].(string)
+	compileKind, _ := chunk["compile_kwd"].(string)
+	return chunk["scope_kwd"] == "dataset" && compileKind != "" && docID != "" && docID == kbID
+}
+
+// buildIndexNames creates one index name per distinct tenant ID.
 // Each tenantID may be a comma-separated list.
 func buildIndexNames(tenantIDs []string) []string {
 	var indexNames []string
+	seen := make(map[string]bool)
 	for _, tid := range tenantIDs {
 		for part := range strings.SplitSeq(tid, ",") {
 			part = strings.TrimSpace(part)
-			if part != "" {
+			if part != "" && !seen[part] {
+				seen[part] = true
 				indexNames = append(indexNames, fmt.Sprintf("ragflow_%s", part))
 			}
 		}

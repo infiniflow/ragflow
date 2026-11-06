@@ -11,6 +11,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/server/config"
+	"ragflow/internal/service"
 )
 
 func TestStandaloneMCPIdentityAndRevocation(t *testing.T) {
@@ -19,7 +20,7 @@ func TestStandaloneMCPIdentityAndRevocation(t *testing.T) {
 			calls := 0
 			revoked := false
 			lastKey := ""
-			auth := &AuthHandler{userService: &stubUserTokenResolver{getUserByTokenFn: func(ctx context.Context, key string) (*entity.User, common.ErrorCode, error) {
+			auth := &AuthHandler{userService: &stubUserTokenResolver{resolveAccessTokenFn: func(ctx context.Context, key string) (*service.AuthIdentity, common.ErrorCode, error) {
 				calls++
 				lastKey = key
 				if mode == "self-host" && calls == 1 {
@@ -30,7 +31,7 @@ func TestStandaloneMCPIdentityAndRevocation(t *testing.T) {
 				if revoked {
 					return nil, common.CodeUnauthorized, errors.New("revoked")
 				}
-				return &entity.User{ID: key}, common.CodeSuccess, nil
+				return &service.AuthIdentity{User: &entity.User{ID: key}}, common.CodeSuccess, nil
 			}}}
 			h, err := (&MCPServerHandler{}).NewStandalone(t.Context(), auth, config.MCPConfig{LaunchMode: mode, HostAPIKey: "configured-key", SSE: true, StreamableHTTP: true, JSONResponse: true})
 			if err != nil {

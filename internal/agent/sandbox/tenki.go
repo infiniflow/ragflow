@@ -14,8 +14,7 @@
 //  limitations under the License.
 //
 
-// tenki.go is the Go port of
-// `agent/sandbox/providers/tenki.py::TenkiProvider`. It runs each
+// Tenki runs each
 // CodeExec call in a disposable Tenki microVM: CreateInstance
 // provisions a fresh sandbox, ExecuteCode runs `python3 -c <wrapped>`
 // or `node -e <wrapped>` inside it, and DestroyInstance terminates it.

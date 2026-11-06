@@ -1,6 +1,6 @@
 import { isEmpty } from 'lodash';
 import { useMemo } from 'react';
-import { Operator } from '../../constant';
+import { Operator, RetrievalFrom } from '../../constant';
 import { useAgentToolInitialValues } from '../../hooks/use-agent-tool-initial-values';
 import useGraphStore from '../../store';
 
@@ -42,14 +42,20 @@ export function useValues() {
     // field so the edited tool persists `dataset_ids` and save/run
     // validation can see the binding.
     const legacyDatasetIds = Array.isArray(formData?.dataset_ids)
-      ? undefined
+      ? formData.dataset_ids
       : Array.isArray(formData?.kb_ids)
         ? formData.kb_ids
         : undefined;
 
-    return legacyDatasetIds
-      ? { ...formData, dataset_ids: legacyDatasetIds }
-      : { ...formData };
+    // Both bindings stay concrete arrays and `retrieval_from` always resolves,
+    // so an unbound tool is written back with the keys the canvas checklist
+    // and the form schema inspect instead of dropping them.
+    return {
+      ...formData,
+      dataset_ids: legacyDatasetIds ?? [],
+      memory_ids: formData?.memory_ids ?? [],
+      retrieval_from: formData?.retrieval_from ?? RetrievalFrom.Dataset,
+    };
   }, [
     clickedNodeId,
     clickedToolId,

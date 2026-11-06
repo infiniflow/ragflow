@@ -55,11 +55,11 @@ func runBatches(ctx context.Context, jobs []func() error) error {
 
 // Run executes the mindmap variant.
 func Run(ctx context.Context, deps common.Deps, param common.Param, inputs common.Inputs) (common.Outputs, error) {
-	docID := firstNonEmpty(inputs.DocID, deps.DatasetID)
+	docID := common.FirstNonEmpty(inputs.DocID, deps.DatasetID)
 	if docID == "" {
 		docID = "unknown"
 	}
-	llmID := firstNonEmpty(param.LLMID, inputs.LLMID)
+	llmID := common.FirstNonEmpty(param.LLMID, inputs.LLMID)
 	tenantID := deps.TenantID
 
 	if deps.Chat == nil {
@@ -70,6 +70,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	batches := packMindmapBatches(inputs.Chunks, deps.Tokenizer)
 	results := make([]mindmapBatchResult, len(batches))
 	jobs := make([]func() error, 0, len(batches))
+	generated := deps.Progress.Sub(0, 3).Counter(ctx, len(batches))
 	for i, batch := range batches {
 		i, batch := i, batch
 		jobs = append(jobs, func() error {
@@ -91,6 +92,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 				// Distinct slice index per batch → no cross-goroutine contention.
 				if tree, parseErr := parseJSONTreeWithError(resp.Content, batch.ids); parseErr == nil {
 					results[i].tree = tree
+					generated()
 					return nil
 				} else {
 					lastParseErr = parseErr
@@ -99,6 +101,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 			runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
 				"[ERROR] Mindmap batch %d/%d JSON parsing failed after %d attempts: %s",
 				i+1, len(batches), mindmapJSONRetryMax, common.CompactError(lastParseErr)))
+			generated()
 			return nil
 		})
 	}
@@ -109,12 +112,14 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		return common.Outputs{}, err
 	}
 
+	deps.Progress.Sub(0, 3).Report(ctx, 1)
 	// Merge every successfully parsed JSON tree. A failed batch is skipped after
 	// its user-facing error is reported and must not erase other batches.
 	root := mergeMindmapBatchResults(results)
 
 	products := treeToProducts(tenantID, docID, root, mindmapSourceChunkIDs(inputs.Chunks))
 
+	deps.Progress.Sub(1, 3).Report(ctx, 1)
 	// Batched embedding of each node's content for downstream vector search.
 	if len(products) > 0 && deps.Embed != nil {
 		texts := make([]string, len(products))
@@ -149,7 +154,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 //
 // Mapping:
 //   - each node (including the root) → an entity product (kind="entity",
-//     name = node id, type = "mindmap").
+//     name = node id, type = "mind_map").
 //   - each parent→child edge → a relation product (kind="relation",
 //     from = parent id, to = child id, type = "related", matching Python's
 //     mindmap structure-graph projection).
@@ -165,12 +170,12 @@ func treeToProducts(tenantID, docID string, root *utility.Node, fallbackSourceCh
 	seen := map[string]bool{}
 	// Entity: root node.
 	rootSourceChunkIDs := nodeSourceChunkIDs(root, fallbackSourceChunkIDs)
-	rootPayload := map[string]any{"name": root.ID, "type": "mindmap"}
+	rootPayload := map[string]any{"name": root.ID, "type": "mind_map"}
 	rootMeta := map[string]any{
 		"kind":        "entity",
 		"name":        root.ID,
-		"entity_type": "mindmap",
-		"compile_kwd": "mindmap",
+		"entity_type": "mind_map",
+		"compile_kwd": "mind_map",
 	}
 	if len(rootSourceChunkIDs) > 0 {
 		rootPayload["source_chunk_ids"] = rootSourceChunkIDs
@@ -203,12 +208,12 @@ func treeToProducts(tenantID, docID string, root *utility.Node, fallbackSourceCh
 			if !seen[child.ID] {
 				seen[child.ID] = true
 				childSourceChunkIDs := nodeSourceChunkIDs(child, fallbackSourceChunkIDs)
-				childPayload := map[string]any{"name": child.ID, "type": "mindmap"}
+				childPayload := map[string]any{"name": child.ID, "type": "mind_map"}
 				childMeta := map[string]any{
 					"kind":        "entity",
 					"name":        child.ID,
-					"entity_type": "mindmap",
-					"compile_kwd": "mindmap",
+					"entity_type": "mind_map",
+					"compile_kwd": "mind_map",
 				}
 				if len(childSourceChunkIDs) > 0 {
 					childPayload["source_chunk_ids"] = childSourceChunkIDs
@@ -242,7 +247,7 @@ func treeToProducts(tenantID, docID string, root *utility.Node, fallbackSourceCh
 						"from":          p.parent,
 						"to":            child.ID,
 						"relation_type": "related",
-						"compile_kwd":   "mindmap",
+						"compile_kwd":   "mind_map",
 					},
 				})
 			}
@@ -263,7 +268,7 @@ func mindmapSourceChunkIDs(chunks []common.Chunk) []string {
 	seen := make(map[string]struct{}, len(chunks))
 	ids := make([]string, 0, len(chunks))
 	for i, chunk := range chunks {
-		if strings.TrimSpace(firstNonEmpty(chunk.Text, chunk.Content)) == "" {
+		if strings.TrimSpace(common.FirstNonEmpty(chunk.Text, chunk.Content)) == "" {
 			continue
 		}
 		id := strings.TrimSpace(chunk.ID)
@@ -420,20 +425,11 @@ func payloadJSON(payload map[string]any) string {
 func chunkTexts(chunks []common.Chunk) []string {
 	var out []string
 	for _, c := range chunks {
-		t := firstNonEmpty(c.Text, c.Content)
+		t := common.FirstNonEmpty(c.Text, c.Content)
 		if strings.TrimSpace(t) == "" {
 			continue
 		}
 		out = append(out, t)
 	}
 	return out
-}
-
-func firstNonEmpty(vals ...string) string {
-	for _, v := range vals {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }

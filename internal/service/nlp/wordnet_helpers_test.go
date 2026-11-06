@@ -21,14 +21,13 @@ import (
 )
 
 // requireWordNetData skips the test when the WordNet dictionary files
-// are not present at testWordNetDir. The data ships outside the repo
-// (downloaded by Python `download_deps.py`), so CI hosts without it
-// must skip rather than fail. The check looks for the lemma-pos offset
+// are not present at testWordNetDir. The data ships outside the repo, so
+// hosts without it must skip rather than fail. The check looks for the lemma-pos offset
 // file the loader opens first.
 func requireWordNetData(t testing.TB) {
 	t.Helper()
 	probe := filepath.Join(testWordNetDir, "index.noun")
 	if _, err := os.Stat(probe); err != nil {
-		t.Skipf("WordNet data not present at %s; skipping (run download_deps.py to populate)", testWordNetDir)
+		t.Skipf("WordNet data not present at %s", testWordNetDir)
 	}
 }

@@ -50,7 +50,6 @@ import { useTheme } from '../theme-provider';
 import { Button } from '../ui/button';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
 import styles from './index.module.less';
-import { ReferenceDocumentList } from './reference-document-list';
 import { ReferenceImageList } from './reference-image-list';
 import { UploadedMessageFiles } from './uploaded-message-files';
 
@@ -110,12 +109,6 @@ function MessageItem({
     }
   }, [loading, setLastSendLoadingFunc, item.id]);
 
-  const referenceDocuments = useMemo(() => {
-    const docs = reference?.doc_aggs ?? {};
-
-    return Object.values(docs);
-  }, [reference?.doc_aggs]);
-
   const documentDownloadInfos = useMemo(
     () => item.downloads ?? [],
     [item.downloads],
@@ -143,7 +136,7 @@ function MessageItem({
   );
 
   const renderContent = useCallback(() => {
-    if (!messageContent && !(item.data || (sendLoading && !isShare))) {
+    if (!messageContent && !(item.data || sendLoading)) {
       return null;
     }
 
@@ -162,7 +155,7 @@ function MessageItem({
         {hasCustomChildren ? (
           children
         ) : sendLoading && isEmpty(messageContent) ? (
-          <>{!isShare && <LoadingDots className="text-text-secondary" />}</>
+          <LoadingDots className="text-text-secondary" />
         ) : (
           <MarkdownContent
             loading={loading}
@@ -178,7 +171,7 @@ function MessageItem({
     children,
     clickDocumentButton,
     isAssistant,
-    isShare,
+    isUser,
     item.data,
     loading,
     messageContent,
@@ -309,12 +302,6 @@ function MessageItem({
                 referenceChunks={reference?.chunks}
                 messageContent={messageContent}
               ></ReferenceImageList>
-            )}
-
-            {isAssistant && referenceDocuments.length > 0 && (
-              <ReferenceDocumentList
-                list={referenceDocuments}
-              ></ReferenceDocumentList>
             )}
 
             {isUser && (

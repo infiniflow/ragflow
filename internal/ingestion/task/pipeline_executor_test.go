@@ -16,6 +16,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 )
@@ -25,6 +26,37 @@ import (
 // =============================================================================
 
 func strPtr(s string) *string { return &s }
+
+func TestProcessOutputPurgesRunStateOnSuccessfulNoOutput(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		output map[string]any
+	}{
+		{name: "nil output", output: nil},
+		{name: "empty output", output: map[string]any{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			taskCtx := &TaskContext{
+				Doc:           entity.Document{ID: "doc-1"},
+				IngestionTask: &entity.IngestionTask{ID: "task-1"},
+			}
+			var purgedTaskID string
+			exec := &PipelineExecutor{
+				taskCtx: taskCtx,
+				purgeTaskState: func(ctx context.Context, taskID string) error {
+					purgedTaskID = taskID
+					return nil
+				},
+			}
+			if _, err := exec.processOutput(context.Background(), tc.output, time.Now()); err != nil {
+				t.Fatalf("processOutput: %v", err)
+			}
+			if purgedTaskID != "task-1" {
+				t.Fatalf("purged task id = %q, want task-1", purgedTaskID)
+			}
+		})
+	}
+}
 
 // TestMarkCompiledProductsHidden verifies the pipeline caller stages ONLY the
 // wiki variant's per-document rows as available_int=0 (they are intermediate
@@ -155,9 +187,17 @@ func setupPipelineExecutorTestDB(t *testing.T) func() {
 	return func() { dao.DB = origDB }
 }
 
+// testPipelineDeps builds the dependency bundle the package tests use: the
+// swapped-in test database (see setupPipelineExecutorDB) and no engine —
+// executor tests stub the index writer with WithInsertFunc, and the
+// engine-touching paths guard a nil engine.
+func testPipelineDeps() *ingestion.Deps {
+	return &ingestion.Deps{DB: dao.DB}
+}
+
 func mustNewPipelineExecutor(t *testing.T, taskCtx *TaskContext, canvasID string, docBulkSize int) *PipelineExecutor {
 	t.Helper()
-	svc, err := NewPipelineExecutor(taskCtx, canvasID, docBulkSize)
+	svc, err := NewPipelineExecutor(taskCtx, canvasID, docBulkSize, testPipelineDeps())
 	if err != nil {
 		t.Fatalf("NewPipelineExecutor: %v", err)
 	}
@@ -169,7 +209,7 @@ func mustNewPipelineExecutor(t *testing.T, taskCtx *TaskContext, canvasID string
 // =============================================================================
 
 func TestNewPipelineExecutor_Basic(t *testing.T) {
-	svc, err := NewPipelineExecutor(makeTaskCtx(), "flow-1", 0)
+	svc, err := NewPipelineExecutor(makeTaskCtx(), "flow-1", 0, testPipelineDeps())
 	if err != nil {
 		t.Fatalf("NewPipelineExecutor: %v", err)
 	}
@@ -185,14 +225,14 @@ func TestNewPipelineExecutor_Basic(t *testing.T) {
 }
 
 func TestNewPipelineExecutor_RejectsNilTaskContext(t *testing.T) {
-	_, err := NewPipelineExecutor(nil, "flow-1", 0)
+	_, err := NewPipelineExecutor(nil, "flow-1", 0, testPipelineDeps())
 	if err == nil {
 		t.Fatal("expected error for nil task context")
 	}
 }
 
 func TestNewPipelineExecutor_RejectsEmptyCanvasID(t *testing.T) {
-	_, err := NewPipelineExecutor(makeTaskCtx(), "", 0)
+	_, err := NewPipelineExecutor(makeTaskCtx(), "", 0, testPipelineDeps())
 	if err == nil {
 		t.Fatal("expected error for empty canvas id")
 	}
@@ -213,7 +253,7 @@ func TestNewPipelineExecutor_RejectsIncompleteTaskContext(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := makeTaskCtx()
 			tt.mutate(ctx)
-			_, err := NewPipelineExecutor(ctx, "flow-1", 0)
+			_, err := NewPipelineExecutor(ctx, "flow-1", 0, testPipelineDeps())
 			if err == nil {
 				t.Fatal("expected validation error")
 			}
@@ -229,7 +269,7 @@ func TestNewPipelineExecutor_AcceptsDebugTaskContext(t *testing.T) {
 	ctx := makeTaskCtx()
 	ctx.KB = entity.Knowledgebase{ID: ""}
 	ctx.Doc.KbID = ""
-	if _, err := NewPipelineExecutor(ctx, "flow-1", 0); err != nil {
+	if _, err := NewPipelineExecutor(ctx, "flow-1", 0, testPipelineDeps()); err != nil {
 		t.Fatalf("debug TaskContext rejected: %v", err)
 	}
 }
@@ -368,6 +408,51 @@ func TestRecordPipelineLog_SharedWriterTerminalWithoutDSL(t *testing.T) {
 	}
 }
 
+func TestRecordPipelineLogKeepsResolvedVersionWhenTerminalWriterHasNone(t *testing.T) {
+	cleanup := setupPipelineExecutorTestDB(t)
+	defer cleanup()
+	version := "ver-1"
+	if err := dao.DB.Create(&entity.PipelineOperationLog{
+		ID:                "run-1",
+		DocumentID:        "doc-1",
+		TenantID:          "tenant-1",
+		KbID:              "kb-1",
+		OperationStatus:   string(entity.TaskStatusRunning),
+		PipelineVersionID: &version,
+	}).Error; err != nil {
+		t.Fatalf("seed pipeline log: %v", err)
+	}
+
+	docName := "terminal.pdf"
+	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
+		TenantID:   "tenant-1",
+		KbID:       "kb-1",
+		DocumentID: "doc-1",
+		Status:     string(entity.TaskStatusFail),
+		Document: entity.Document{
+			ID:           "doc-1",
+			KbID:         "kb-1",
+			ParserID:     "naive",
+			ParserConfig: entity.JSONMap{},
+			SourceType:   "local",
+			Type:         "pdf",
+			Name:         &docName,
+			Suffix:       ".pdf",
+		},
+		PipelineLogID: "run-1",
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var log entity.PipelineOperationLog
+	if err := dao.DB.First(&log, "id = ?", "run-1").Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if log.PipelineVersionID == nil || *log.PipelineVersionID != version {
+		t.Fatalf("PipelineVersionID = %v, want the mid-run version %q", log.PipelineVersionID, version)
+	}
+}
+
 func TestRecordPipelineLogRejectsMissingRunIdentity(t *testing.T) {
 	err := RecordPipelineLog(t.Context(), nil, PipelineLogInput{DocumentID: "doc-1", Status: "3"})
 	if !errors.Is(err, ErrMissingRunIdentity) {
@@ -392,7 +477,7 @@ func TestRecordPipelineLog_TerminalWithoutDSLResolvesCanvasTitle(t *testing.T) {
 		Title:  strPtr("My Pipeline"),
 		Avatar: strPtr("a.png"),
 	}).Error; err != nil {
-		t.Fatalf("seed canvas: %v", err)
+		t.Fatalf("seed agent: %v", err)
 	}
 	if err := dao.DB.AutoMigrate(&entity.Knowledgebase{}); err != nil {
 		t.Fatalf("migrate knowledgebase: %v", err)
@@ -424,13 +509,13 @@ func TestRecordPipelineLog_TerminalWithoutDSLResolvesCanvasTitle(t *testing.T) {
 		t.Fatalf("seed document: %v", err)
 	}
 
-	// Mirrors Ingestor.recordTerminalPipelineLog: only the terminal status is
-	// known; pipeline_id and DSL are absent and must come from the document.
 	if err := RecordPipelineLog(t.Context(), dao.DB, PipelineLogInput{
-		KbID:          "kb-1",
-		DocumentID:    "doc-1",
-		Status:        "3",
-		PipelineLogID: "run-1",
+		KbID:                    "kb-1",
+		DocumentID:              "doc-1",
+		PipelineID:              "canvas-1",
+		Status:                  "3",
+		PipelineLogID:           "run-1",
+		PipelineBindingResolved: true,
 	}); err != nil {
 		t.Fatalf("RecordPipelineLog: %v", err)
 	}
@@ -991,8 +1076,7 @@ func TestPipelineExecutor_Execute_DoesNotLogCanceledRun(t *testing.T) {
 // Execute is the ctx received by runPipelineFunc - the task context must flow
 // through to the pipeline run.
 func TestPipelineExecutor_Execute_PropagatesContext(t *testing.T) {
-	type ctxKey string
-	const key ctxKey = "trace"
+	const key string = "trace"
 	taskCtx := makeTaskCtx()
 	ctx := t.Context()
 	taskCtx.Ctx = context.WithValue(ctx, key, "task-ctx")
@@ -1431,5 +1515,176 @@ func TestBuildLogDSL_PreviewKeepsOutputs(t *testing.T) {
 	paParams, _ := paObj["params"].(map[string]any)
 	if _, ok := paParams["outputs"]; ok {
 		t.Error("persisted log DSL must NOT carry business data even when a ResultSink preview exists")
+	}
+}
+
+func TestExecutePersistsResolvedVersionBeforeRun(t *testing.T) {
+	restore := setupPipelineExecutorTestDB(t)
+	defer restore()
+	db := dao.DB
+	if err := db.AutoMigrate(&entity.UserCanvas{}, &entity.UserCanvasVersion{}); err != nil {
+		t.Fatalf("migrate canvas tables: %v", err)
+	}
+	release := true
+	if err := db.Create(&entity.UserCanvas{
+		ID:             "canvas-1",
+		UserID:         "user-1",
+		CanvasCategory: "dataflow_canvas",
+	}).Error; err != nil {
+		t.Fatalf("seed canvas: %v", err)
+	}
+	if err := db.Create(&entity.UserCanvasVersion{
+		ID:           "ver-1",
+		UserCanvasID: "canvas-1",
+		DSL:          entity.JSONMap{"nodes": []any{}, "edges": []any{}},
+		Release:      release,
+		BaseModel:    entity.BaseModel{CreateTime: int64PtrForTest(1000)},
+	}).Error; err != nil {
+		t.Fatalf("seed canvas version: %v", err)
+	}
+
+	logID := "run-1"
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID:              logID,
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		DocumentName:    "test-doc.pdf",
+		DocumentSuffix:  ".pdf",
+		DocumentType:    "pdf",
+		SourceFrom:      "local",
+		OperationStatus: string(entity.TaskStatusRunning),
+		TaskType:        string(entity.PipelineTaskTypeParse),
+	}).Error; err != nil {
+		t.Fatalf("seed pipeline log: %v", err)
+	}
+
+	taskCtx := makeTaskCtx()
+	taskCtx.PipelineID = "canvas-1"
+	taskCtx.IngestionTask.PipelineLogID = &logID
+	exec := mustNewPipelineExecutor(t, taskCtx, "canvas-1", 0)
+	exec.WithRunPipelineFunc(func(context.Context, string) (map[string]any, string, error) {
+		return nil, "", errors.New("pipeline failed")
+	})
+
+	if _, err := exec.Execute(t.Context()); err == nil {
+		t.Fatal("expected the injected pipeline failure")
+	}
+
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", logID).Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if run.PipelineID == nil || *run.PipelineID != "canvas-1" {
+		t.Fatalf("PipelineID = %v, want canvas-1 after a failed run", run.PipelineID)
+	}
+	if run.PipelineVersionID == nil || *run.PipelineVersionID != "ver-1" {
+		t.Fatalf("PipelineVersionID = %v, want the latest resolved version after a failed run", run.PipelineVersionID)
+	}
+}
+
+func int64PtrForTest(v int64) *int64 { return &v }
+
+func TestExecuteClearsStaleBindingForBuiltinRun(t *testing.T) {
+	restore := setupPipelineExecutorTestDB(t)
+	defer restore()
+	db := dao.DB
+
+	oldPipelineID := "canvas-1"
+	oldVersionID := "ver-1"
+	logID := "run-1"
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID:                logID,
+		DocumentID:        "doc-1",
+		TenantID:          "tenant-1",
+		KbID:              "kb-1",
+		ParserID:          "naive",
+		DocumentName:      "test-doc.pdf",
+		DocumentSuffix:    ".pdf",
+		DocumentType:      "pdf",
+		SourceFrom:        "local",
+		OperationStatus:   string(entity.TaskStatusRunning),
+		TaskType:          string(entity.PipelineTaskTypeParse),
+		PipelineID:        &oldPipelineID,
+		PipelineVersionID: &oldVersionID,
+	}).Error; err != nil {
+		t.Fatalf("seed pipeline log: %v", err)
+	}
+
+	taskCtx := makeTaskCtx()
+	taskCtx.IngestionTask.PipelineLogID = &logID
+	exec := mustNewPipelineExecutor(t, taskCtx, "naive", 0)
+	exec.WithLoadDSLFunc(func(_ context.Context, canvasID string) (string, string, error) {
+		return `{"nodes":[],"edges":[]}`, canvasID, nil
+	})
+	exec.WithRunPipelineFunc(func(context.Context, string) (map[string]any, string, error) {
+		return nil, "", errors.New("pipeline failed")
+	})
+
+	if _, err := exec.Execute(t.Context()); err == nil {
+		t.Fatal("expected the injected pipeline failure")
+	}
+
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", logID).Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if run.PipelineID != nil || run.PipelineVersionID != nil {
+		t.Fatalf("pipeline binding = (%v, %v), want both nil after a builtin run", run.PipelineID, run.PipelineVersionID)
+	}
+}
+
+func TestRecordPipelineLogClearsStaleBindingForResolvedVersionlessRun(t *testing.T) {
+	restore := setupPipelineExecutorTestDB(t)
+	defer restore()
+	db := dao.DB
+
+	oldPipelineID := "canvas-1"
+	oldVersionID := "ver-1"
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID:                "run-1",
+		DocumentID:        "doc-1",
+		TenantID:          "tenant-1",
+		KbID:              "kb-1",
+		ParserID:          "naive",
+		DocumentName:      "test-doc.pdf",
+		DocumentSuffix:    ".pdf",
+		DocumentType:      "pdf",
+		SourceFrom:        "local",
+		OperationStatus:   string(entity.TaskStatusRunning),
+		TaskType:          string(entity.PipelineTaskTypeParse),
+		PipelineID:        &oldPipelineID,
+		PipelineVersionID: &oldVersionID,
+	}).Error; err != nil {
+		t.Fatalf("seed pipeline log: %v", err)
+	}
+	currentPipelineID := "canvas-2"
+	docName := "test-doc.pdf"
+	if err := db.Create(&entity.Document{
+		ID: "doc-1", KbID: "kb-1", ParserID: "naive", ParserConfig: entity.JSONMap{},
+		Name: &docName, Suffix: ".pdf", Type: "pdf", SourceType: "local", Status: strPtr("1"),
+		PipelineID: &currentPipelineID,
+	}).Error; err != nil {
+		t.Fatalf("seed document: %v", err)
+	}
+
+	if err := RecordPipelineLog(t.Context(), db, PipelineLogInput{
+		TenantID:                "tenant-1",
+		KbID:                    "kb-1",
+		DocumentID:              "doc-1",
+		Status:                  string(entity.TaskStatusDone),
+		PipelineLogID:           "run-1",
+		PipelineBindingResolved: true,
+	}); err != nil {
+		t.Fatalf("RecordPipelineLog: %v", err)
+	}
+
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", "run-1").Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if run.PipelineID != nil || run.PipelineVersionID != nil {
+		t.Fatalf("pipeline binding = (%v, %v), want both nil for a versionless run", run.PipelineID, run.PipelineVersionID)
 	}
 }

@@ -9,6 +9,61 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v1.0.0-rc3
+
+Released on Oct 30, 2026.
+
+1.0.0-rc3 is the third and final release candidate before the official v1.0.0 release. It fixes several issues found in rc2 and introduces new features and enhancements.
+
+Key updates:
+1. Introduced the decision model for evidence sufficiency judgment within the agentic tool loop, and the Categorize component for agents.
+2. Added support for multiple versions of ingestion pipeline DSL.
+3. Chat history now stores and displays prompts, token usage, and execution time.
+4. Compatible with existing v1.0.0-rc2 schema, allowing a direct upgrade.
+
+## v1.0.0-rc2
+
+Released on Oct 16, 2026.
+
+1.0.0-rc2 is the second release candidate for v1.0.0. This release fixes several issues in rc1 and introduces new features and expanded support.
+
+### Highlights
+1. Introduced Agentic mode for chat, replacing the Low, Medium, High, and Ultra thinking levels.
+2. Preserved compatibility with existing v1.0.0-rc1 data, allowing direct upgrades.
+3. Added support for Team/Me sharing.
+4. Added support for model providers DemonRoute and Opper, web search tools Firecrawl and Search1API, and the MinerU 4 model.
+5. Added retrieval support for Czech and Slovak.
+6. Unified the 12 built-in document parsers with the Pipeline parsers.
+7. Added Docker images for the arm64 architecture.
+
+## v1.0.0-rc1
+
+Released on Sep 29, 2026.
+
+RAGFlow v1.0.0-rc1 is a preview release of v1.0.0. This release marks a comprehensive rewrite of RAGFlow in Go, delivering a substantial reduction in system resource consumption and replacing the previous heavyweight deployment model with a lightweight architecture.
+
+### Architecture changes
+- **Message queue:** Migrated from Redis to NATS.
+- **Cache and checkpoints:** Kvrocks now serves as the backing store for both cache and checkpoints.
+
+### Data upgrade
+
+Upon container startup, RAGFlow automatically initiates the data upgrade process, migrating existing data from v0.27.2 to v1.0.0-rc1. Note that this upgrade is irreversible — once completed, data cannot be rolled back to v0.27.2.
+### Upgrade prerequisites and precautions
+1. Back up all data prior to upgrading.
+2. Ensure your existing deployment is already on v0.27.2 before proceeding.
+3. Should the upgrade fail, restore your system from the backup and submit an issue detailing the failure.
+
+### Compatibility
+1. **RAGFlow CLI:** Reimplemented in Go, replacing the previous Python version.
+2. **API compatibility:** [Deprecated APIs](https://ragflow.io/docs/http_api_reference#removed-api-aliases) are no longer supported by the Go implementation.
+3. **SDK compatibility:** The Python SDK remains unaffected.
+
+### Known issues
+1. DeepDoc currently supports CPU environments only.
+2. The local sandbox is no longer supported.
+3. The **Team/Me** permission model is not yet supported.
+
 ## v0.27.2
 
 Released on Sep 10, 2026.
@@ -62,7 +117,7 @@ Released on Aug 28, 2026.
 - Retrieval API exposes rerank_candidates_count, knn top_k, and num_candidates ([#18768](https://github.com/infiniflow/ragflow/pull/18768), [#18737](https://github.com/infiniflow/ragflow/pull/18737))
 - Metadata filters pushed down to the metadata index for faster retrieval ([#18219](https://github.com/infiniflow/ragflow/pull/18219))
 - Chat settings form auto-scrolls to the error location on save ([#18811](https://github.com/infiniflow/ragflow/pull/18811))
-- Search page validates deleted knowledge bases ([#18522](https://github.com/infiniflow/ragflow/pull/18522))
+- Search page validates deleted Datasets ([#18522](https://github.com/infiniflow/ragflow/pull/18522))
 
 ### Bug fixes
 - Fixed PDF parsing failure in chat ([#18860](https://github.com/infiniflow/ragflow/pull/18860))
@@ -91,7 +146,7 @@ Released on Aug 28, 2026.
 Released on Aug 19, 2026.
 
 ### New features
-- Brand new document level and dataset level knowledge compilation, supporting Wiki, Graph, Tree, Page Index, Mind Map, Timeline, and To Skills ([#16777](https://github.com/infiniflow/ragflow/pull/16777), [#17546](https://github.com/infiniflow/ragflow/pull/17546), [#16797](https://github.com/infiniflow/ragflow/pull/16797), [#16749](https://github.com/infiniflow/ragflow/pull/16749), [#16899](https://github.com/infiniflow/ragflow/pull/16899), [#17996](https://github.com/infiniflow/ragflow/pull/17996))
+- Brand new document level and dataset level knowledge compilation, supporting Wiki, Graph, Tree, Page Index, Mindmap, Timeline, and To Skills ([#16777](https://github.com/infiniflow/ragflow/pull/16777), [#17546](https://github.com/infiniflow/ragflow/pull/17546), [#16797](https://github.com/infiniflow/ragflow/pull/16797), [#16749](https://github.com/infiniflow/ragflow/pull/16749), [#16899](https://github.com/infiniflow/ragflow/pull/16899), [#17996](https://github.com/infiniflow/ragflow/pull/17996))
    - The previous GraphRAG and RAPTOR features have been deprecated and are no longer available in the UI. Their replacements, Graph and Tree, are now integrated into Knowledge Compilation. Previously generated GraphRAG and RAPTOR content remains searchable.
 - Brand new Agentic RAG with four thinking modes when answering - Low, Medium, High, and Ultra ([#18303](https://github.com/infiniflow/ragflow/pull/18303), [#18138](https://github.com/infiniflow/ragflow/pull/18138), [#17342](https://github.com/infiniflow/ragflow/pull/17342), [#17444](https://github.com/infiniflow/ragflow/pull/17444))
 
@@ -303,7 +358,6 @@ Released on May 26, 2026.
 
 ### New features
 
-- Agent: Adds a **Browser** component that enables AI to autonomously navigate and interact with web pages. [#14888](https://github.com/infiniflow/ragflow/pull/14888)
 
 ### Improvements
 
@@ -696,7 +750,7 @@ Released on October 23, 2025.
 
 ### New features
 
-- Experimental: Adds support for PDF document parsing using MinerU. See [here](./faq.mdx#how-to-use-mineru-to-parse-pdf-documents).
+- Experimental: Adds support for PDF document parsing using MinerU. See [here](./faq.mdx#how-do-i-use-mineru-to-parse-pdf-documents).
 
 ### Improvements
 
@@ -743,7 +797,7 @@ Released on September 10, 2025.
 
 - Agent:
   - Agent Performance Optimized: Improves planning and reflection speed for simple tasks; optimizes concurrent tool calls for parallelizable scenarios, significantly reducing overall response time.
-  - Four framework-level prompt blocks are available in the **System prompt** section, enabling customization and overriding of prompts at the framework level, thereby enhancing flexibility and control. See [here](./guides/agent/agent_workflow/basic_component.md#prompt-configuration).
+  - Four framework-level prompt blocks are available in the **System prompt** section, enabling customization and overriding of prompts at the framework level, thereby enhancing flexibility and control.
   - **Execute SQL** component enhanced: Replaces the original variable reference component with a text input field, allowing users to write free-form SQL queries and reference variables. See [here](./guides/agent/agent_workflow/tool_components.md#execute-sql).
 - Chat: Re-enables **Reasoning** and **Cross-language search**.
 
@@ -836,7 +890,7 @@ Released on August 20, 2025.
 
 #### Deprecated
 
-[Create session with agent](./references/http_api_reference.md#create-session-with-agent)
+Create session with agent
 
 ## v0.20.1
 
@@ -855,8 +909,8 @@ Released on August 8, 2025.
 ### New agent templates (both workflow and agentic)
 
 - Text-to-SQL data expert Workflow: Empowers non-technical teams (e.g., operations, product) to independently query business data.
-- Choose Your Knowledge Base Workflow: Lets users select a dataset to query during conversations. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
-- Choose Your Knowledge Base Agent: Delivers higher-quality responses with extended reasoning time, suited for complex queries. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
+- Choose Your Dataset Workflow: Lets users select a dataset to query during conversations. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
+- Choose Your Dataset Agent: Delivers higher-quality responses with extended reasoning time, suited for complex queries. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
 
 ### Fixed Issues
 
@@ -922,7 +976,7 @@ Released on May 26, 2025.
 
 ### New features
 
-- [Cross-language search](./references/glossary.mdx#cross-language-search) is supported in the Knowledge and Chat modules, enhancing search accuracy and user experience in multilingual environments, such as in Chinese-English datasets.
+- Cross-language search is supported in the Knowledge and Chat modules, enhancing search accuracy and user experience in multilingual environments, such as in Chinese-English datasets.
 - Agent component: A new Code component supports Python and JavaScript scripts, enabling developers to handle more complex tasks like dynamic data processing.
 - Enhanced image display: Images in Chat and Search now render directly within responses, rather than as external references. Knowledge retrieval testing can retrieve images directly, instead of texts extracted from images.
 - Claude 4 and ChatGPT o3: Developers can now use the newly released, most advanced Claude model and OpenAI’s latest ChatGPT o3 inference model.
@@ -930,14 +984,14 @@ Released on May 26, 2025.
 > The following features have been contributed by our community:
 
 - Agent component: Enables tool calling within the Generate Component. Thanks to [notsyncing](https://github.com/notsyncing).
-- Markdown rendering: Image references in a markdown file can be displayed after chunking. Thanks to [Woody-Hu](https://github.com/Woody-Hu).
+- Markdown rendering: Image references in a Markdown file can be displayed after chunking. Thanks to [Woody-Hu](https://github.com/Woody-Hu).
 - Document engine support: OpenSearch can now be used as RAGFlow's document engine. Thanks to [pyyuhao](https://github.com/pyyuhao).
 
 ### Documentation
 
 #### Added documents
 
-- [Select PDF parser](./guides/dataset/configuration.md#document-parsing-configuration)
+- [Select PDF parser](./guides/dataset/configuration.md#pdf-parsing)
 - [Enable Excel2HTML]
 - [Code component](./guides/agent/agent_workflow/data_manipulation_components.md#code-component)
 
@@ -1002,11 +1056,11 @@ From this release onwards, if you still see RAGFlow's responses being cut short 
 
 #### HTTP APIs
 
-- [Create chat completion](./references/http_api_reference.md#openai-compatible-api)
+- [Create chat completion](./references/http_api_reference.md#create-chat-completion)
 
 #### Python APIs
 
-- [Create chat completion](./references/python_api_reference.md#openai-compatible-api)
+- [Create chat completion](./references/python_api_reference.md#create-chat-completion)
 
 ## v0.17.1
 
@@ -1045,7 +1099,7 @@ Released on March 3, 2025.
 - AI chat: Leverages Tavily-based web search to enhance contexts in agentic reasoning. To activate this, enter the correct Tavily API key under the **Assistant settings** tab of your chat assistant dialogue.
 - AI chat: Supports starting a chat without specifying datasets.
 - AI chat: HTML files can also be previewed and referenced, in addition to PDF files.
-- Dataset: Adds a **PDF parser**, aka **Document parser**, dropdown menu to dataset configurations. This includes a DeepDoc model option, which is time-consuming, a much faster **naive** option (plain text), which skips DLA (Document Layout Analysis), OCR (Optical Character Recognition), and TSR (Table Structure Recognition) tasks, and several currently *experimental* large model options. See [here](./guides/dataset/configuration.md#document-parsing-configuration).
+- Dataset: Adds a **PDF parser**, aka **Document parser**, dropdown menu to dataset configurations. This includes a DeepDoc model option, which is time-consuming, a much faster **naive** option (plain text), which skips DLA (Document Layout Analysis), OCR (Optical Character Recognition), and TSR (Table Structure Recognition) tasks, and several currently *experimental* large model options. See [here](./guides/dataset/configuration.md#pdf-parsing).
 - Agent component: **(x)** or a forward slash `/` can be used to insert available keys (variables) in the system prompt field of the **Generate** or **Template** component.
 - Object storage: Supports using Aliyun OSS (Object Storage Service) as a file storage option.
 - Models: Updates the supported model list for Tongyi-Qianwen (Qwen), adding DeepSeek-specific models; adds ModelScope as a model provider.
@@ -1082,7 +1136,7 @@ Released on February 6, 2025.
 ### New features
 
 - Supports DeepSeek R1 and DeepSeek V3.
-- GraphRAG refactor: Knowledge graph is dynamically built on an entire dataset rather than on an individual file, and automatically updated when a newly uploaded file starts parsing. See [here](./guides/knowledge_compilation/built_in_templates_and_dedicated_configuration.md#graph).
+- GraphRAG refactor: Knowledge graph is dynamically built on an entire dataset rather than on an individual file, and automatically updated when a newly uploaded file starts parsing.
 - Adds an **Iteration** agent component and a **Research report generator** agent template. See [here](./guides/agent/agent_workflow/flow_components.md#iteration).
 - New UI language: Portuguese.
 - Allows setting metadata for a specific file in a dataset to enhance AI-powered chats. See [here](./guides/dataset/metadata_management.md).
@@ -1224,7 +1278,7 @@ From this release onwards, **service_config.yaml.template** replaces **service_c
 This approach eliminates the need to manually update **service_config.yaml** after making changes to **.env**, facilitating dynamic environment configurations.
 
 :::danger IMPORTANT
-Ensure that you [upgrade **both** your code **and** Docker image to this release](./administrator/upgrade_ragflow.mdx#upgrade-ragflow-to-given-release) before trying this new approach.
+Ensure that you [upgrade **both** your code **and** Docker image to this release](./administrator/upgrade_and_migration/upgrading.mdx#upgrade-ragflow-to-given-release) before trying this new approach.
 :::
 
 ### API changes
@@ -1237,15 +1291,15 @@ Ensure that you [upgrade **both** your code **and** Docker image to this release
 #### Python APIs
 
 - [Create session with agent](https://ragflow.io/docs/dev/python_api_reference#create-session-with-agent)
-- [Converse with agent](https://ragflow.io/docs/dev/python_api_reference#create-session-with-agent)
+- [Converse with agent](https://ragflow.io/docs/dev/python_api_reference#converse-with-agent)
 
 ### Documentation
 
 #### Added documents
 
 - [Configurations](https://ragflow.io/docs/dev/configurations)
-- [Manage team members](./guides/team/team_management/index.md)
-- [Run health check on RAGFlow's dependencies](https://ragflow.io/docs/dev/run_health_check)
+- [Manage team members](guides/team/team_management/manage_team_members.md)
+- Run health check on RAGFlow's dependencies
 
 ## v0.13.0
 
@@ -1302,13 +1356,13 @@ The default Docker image edition is `nightly-slim`. The following list clarifies
 - `nightly`: The full edition of the most recent tested Docker image.
 - `v0.12.0`: The full edition of the most recent **officially released** Docker image.
 
-See [Upgrade RAGFlow](./administrator/upgrade_ragflow.mdx) for instructions on upgrading.
+See [Upgrade RAGFlow](./administrator/upgrade_and_migration/upgrading.mdx) for instructions on upgrading.
 
 ### Documentation
 
 #### Added documents
 
-- [Upgrade RAGFlow](./administrator/upgrade_ragflow.mdx)
+- [Upgrade RAGFlow](./administrator/upgrade_and_migration/upgrading.mdx)
 
 ## v0.11.0
 

@@ -304,6 +304,31 @@ func TestIsOverLimitErrorMatchesDelimitedNumbers(t *testing.T) {
 		{"code 120015", `SILICONFLOW API error: 400 Bad Request, body: {"code":120015}`, false},
 		{"code 200150", `SILICONFLOW API error: 400 Bad Request, body: {"code":200150}`, false},
 		{"status 1400", `API error: 1400 Bad Request, body: too long`, false},
+		// llama-server's two embedding rejections. The first is wrongly reported as
+		// HTTP 500 but is fixed by a shorter input; the second is a 400 whose wording
+		// matches none of the generic phrases, so both need explicit handling.
+		{
+			"llama-server over physical batch (500)",
+			`vLLM embeddings API error: 500 Internal Server Error, body: {"error":{"code":500,"message":"input (2068 tokens) is too large to process. increase the physical batch size (current batch size: 2048)","type":"server_error"}}`,
+			true,
+		},
+		{
+			"llama-server wording under another 5xx",
+			`vLLM embeddings API error: 503 Service Unavailable, body: {"error":{"code":503,"message":"input (2068 tokens) is too large to process. increase the physical batch size (current batch size: 2048)","type":"server_error"}}`,
+			false,
+		},
+		{
+			// A 500 in the body (a token count) must not be read as the HTTP status:
+			// only the status field counts.
+			"llama-server wording under 503 with 500 in the body",
+			`vLLM embeddings API error: 503 Service Unavailable, body: {"error":{"code":503,"message":"input (500 tokens) is too large to process. increase the physical batch size","type":"server_error"}}`,
+			false,
+		},
+		{
+			"llama-server over slot context (400)",
+			`vLLM embeddings API error: 400 Bad Request, body: {"error":{"code":400,"message":"input (2068 tokens) is larger than the max context size (2048 tokens). skipping","type":"exceed_context_size_error"}}`,
+			true,
+		},
 		// Rate limits and provider failures must not be mistaken for size.
 		{"rate limit", `SILICONFLOW API error: 429 Too Many Requests, body: {"message":"Request was rejected due to rate limiting. Details: TPM limit reached."}`, false},
 		{"server error", `SILICONFLOW API error: 500 Internal Server Error, body: too long`, false},

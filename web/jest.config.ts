@@ -15,6 +15,9 @@ const config: Config = {
     // Drags the app shell (routes/react-router) into jsdom; see __mocks__
     '^@/components/layout-recognize-form-field$':
       '<rootDir>/__mocks__/layout-recognize-form-field.js',
+    // The app shell itself: createBrowserRouter runs at module scope and
+    // needs the fetch Request global, which jsdom does not provide.
+    '^@/routes$': '<rootDir>/__mocks__/routes.js',
     '^@/(.*)$': '<rootDir>/src/$1',
     '^human-id$': '<rootDir>/__mocks__/human-id.js',
   },

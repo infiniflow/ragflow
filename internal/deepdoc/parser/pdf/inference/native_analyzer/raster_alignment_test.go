@@ -58,7 +58,7 @@ func repoRoot(t *testing.T) string {
 	}
 	// .../internal/deepdoc/parser/pdf/inference/native_analyzer -> repo root is 6 levels up.
 	root := filepath.Join(dir, "..", "..", "..", "..", "..", "..")
-	if _, err := os.Stat(filepath.Join(root, "rag", "res", "deepdoc")); err != nil {
+	if _, err := os.Stat(filepath.Join(root, "internal", "rag", "res", "deepdoc")); err != nil {
 		t.Fatalf("repoRoot %s missing model dir: %v", root, err)
 	}
 	return root

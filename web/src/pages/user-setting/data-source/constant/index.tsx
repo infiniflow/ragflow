@@ -15,7 +15,6 @@
  */
 
 import { FormFieldType } from '@/components/dynamic-form';
-import { pickByBackend } from '@/utils/backend-variant';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { TFunction } from 'i18next';
@@ -1023,7 +1022,7 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       label: t('setting.dataSourceFieldMyDriveEmails'),
       name: 'config.my_drive_emails',
       type: FormFieldType.Text,
-      required: true,
+      required: false,
       placeholder: 'user1@example.com,user2@example.com',
       tooltip: t('setting.google_driveMyDriveEmailsTip'),
     },
@@ -2646,7 +2645,7 @@ export const DataSourceFormDefaultValues = {
       metadata_columns: '',
       id_column: '',
       timestamp_column: '',
-      batch_size: pickByBackend({ go: 32, python: 2 }),
+      batch_size: 32,
       credentials: {
         username: '',
         password: '',
@@ -2665,7 +2664,7 @@ export const DataSourceFormDefaultValues = {
       metadata_columns: '',
       id_column: '',
       timestamp_column: '',
-      batch_size: pickByBackend({ go: 32, python: 2 }),
+      batch_size: 32,
       credentials: {
         username: '',
         password: '',

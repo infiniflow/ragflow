@@ -14,6 +14,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 )
 
@@ -27,15 +29,14 @@ func TestChatAudioSpeechFailureOmitsProviderError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	prevAllow := common.AllowAnyHostForTest
-	common.AllowAnyHostForTest = true
-	t.Cleanup(func() { common.AllowAnyHostForTest = prevAllow })
+	t.Setenv(common.EnvAllowAnyHost, "true")
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
 	if err != nil {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 	if err = db.AutoMigrate(
+		&entity.User{},
 		&entity.Tenant{},
 		&entity.UserTenant{},
 		&entity.TenantModel{},
@@ -53,10 +54,24 @@ func TestChatAudioSpeechFailureOmitsProviderError(t *testing.T) {
 	if err = db.Create(&entity.Tenant{
 		ID:        "user-1",
 		Name:      &tenantName,
-		TTSID:     &ttsModelID,
 		ParserIDs: "naive",
 	}).Error; err != nil {
 		t.Fatalf("failed to create tenant: %v", err)
+	}
+	activeStatus := string(entity.StatusValid)
+	if err = db.Create(&entity.UserTenant{
+		ID:        "user-1-membership",
+		UserID:    "user-1",
+		TenantID:  "user-1",
+		Role:      "owner",
+		InvitedBy: "user-1",
+		Status:    &activeStatus,
+		TTSID:     &ttsModelID,
+	}).Error; err != nil {
+		t.Fatalf("failed to create tenant owner membership: %v", err)
+	}
+	if err = testsupport.PrepareEnterprisePermissionFixture(db, "user-1", "user-1"); err != nil {
+		t.Fatalf("prepare chat audio permission fixture: %v", err)
 	}
 	if err = db.Create(&entity.TenantModel{
 		ID:         ttsModelID,
@@ -71,6 +86,7 @@ func TestChatAudioSpeechFailureOmitsProviderError(t *testing.T) {
 	}
 	if err = db.Create(&entity.TenantModelProvider{
 		ID:           "prov-1",
+		UserID:       "user-1",
 		ProviderName: "SILICONFLOW",
 		TenantID:     "user-1",
 	}).Error; err != nil {
@@ -88,9 +104,10 @@ func TestChatAudioSpeechFailureOmitsProviderError(t *testing.T) {
 	}
 
 	h := NewChatHandler(service.NewChatService(), service.NewUserService())
-	h.SetMindMapDependencies(nil, nil, service.NewModelProviderService(), nil)
+	h.SetMindMapDependencies(nil, nil, service.NewModelFactory(), nil)
 
 	c, w := setupGinContextWithUser(http.MethodPost, "/api/v1/chat/audio/speech", `{"text":"hello"}`)
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user-1", "user-1"))
 	h.ChatAudioSpeech(c)
 
 	body := w.Body.String()

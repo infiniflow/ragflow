@@ -18,7 +18,7 @@ import { Operator } from '@/constants/agent';
 import {
   initialCompilationValues,
   initialGeneralChunkerValues,
-  initialGoExtractorValues,
+  initialExtractorValues,
   initialParserValues,
   initialTitleChunkerValues,
   initialTokenChunkerValues,
@@ -71,7 +71,7 @@ function getOperatorInitialValues(operatorType: Operator) {
     case Operator.ManualChunker:
       return initialTitleChunkerValues;
     case Operator.Extractor:
-      return initialGoExtractorValues;
+      return initialExtractorValues;
     case Operator.Compiler:
       return initialCompilationValues;
     case Operator.Tokenizer:

@@ -39,8 +39,8 @@ func TestPPTXParser_ParseWithResult_CGO(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Errorf("OutputFormat = %q, want %q", res.OutputFormat, "json")
+	if !res.Produced() {
+		t.Errorf("produced = %t, want true", res.Produced())
 	}
 	if got := res.File["format"]; got != "pptx" {
 		t.Errorf("File[format] = %v, want %q", got, "pptx")
@@ -85,7 +85,7 @@ func TestPPTXParser_ParseWithResult_MultiSlide_CGO(t *testing.T) {
 		{"Slide One Title\nFirst slide body about the Alpha topic.", 1},
 		{"Slide Two Title\nSecond slide body about the Beta topic.", 2},
 	} {
-		it := res.JSON[i]
+		it := res.JSON[i].ToMap()
 		if got := it["text"]; got != want.text {
 			t.Errorf("item %d text = %q, want %q", i, got, want.text)
 		}
@@ -124,29 +124,11 @@ func TestPPTXParser_ParseWithResult_EmptySlide_CGO(t *testing.T) {
 	if len(res.JSON) != 3 {
 		t.Fatalf("JSON items = %d, want 3 (one per slide): %#v", len(res.JSON), res.JSON)
 	}
-	if got := res.JSON[1]["text"]; got != "" {
+	if got := res.JSON[1].ToMap()["text"]; got != "" {
 		t.Errorf("empty slide text = %q, want empty", got)
 	}
-	if got := res.JSON[1]["slide_number"]; got != 2 {
+	if got := res.JSON[1].ToMap()["slide_number"]; got != 2 {
 		t.Errorf("empty slide slide_number = %v, want 2", got)
-	}
-}
-
-// TestPPTParser_ParseWithResult_CGO verifies that PPTParser
-// delegates correctly to PPTXParser{format:"ppt"} and, via the
-// bidirectional magic-byte fallback, correctly opens OOXML content
-// through the PPTX path. A .pptx payload uploaded as .ppt should
-// succeed and report File["format"] == "pptx" (real container).
-func TestPPTParser_ParseWithResult_CGO(t *testing.T) {
-	ctx := t.Context()
-	p := NewPPTParser()
-	data := buildPPTX(t, "Hello")
-	res := p.ParseWithResult(ctx, "test.ppt", data)
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
-	}
-	if got := res.File["format"]; got != "pptx" {
-		t.Errorf("File[format] = %v, want %q (OOXML fallback ppt->pptx)", got, "pptx")
 	}
 }
 
@@ -159,8 +141,7 @@ func TestPPTParser_TCADPFileType(t *testing.T) {
 	// PPTParser delegates to PPTXParser{format:"ppt"}.
 	p := NewPPTParser()
 	setup := map[string]any{
-		"parse_method":  "tcadp",
-		"output_format": "json",
+		"parse_method": "tcadp",
 	}
 	p.ConfigureFromSetup(setup)
 
@@ -172,9 +153,6 @@ func TestPPTParser_TCADPFileType(t *testing.T) {
 	if p.pptx.ParseMethod != "tcadp" {
 		t.Errorf("PPTParser.pptx.ParseMethod = %q, want %q", p.pptx.ParseMethod, "tcadp")
 	}
-	if p.pptx.OutputFormat != "json" {
-		t.Errorf("PPTParser.pptx.OutputFormat = %q, want %q", p.pptx.OutputFormat, "json")
-	}
 }
 
 // TestPPTXParser_TCADPFileType verifies that a PPTXParser
@@ -185,8 +163,7 @@ func TestPPTXParser_TCADPFileType(t *testing.T) {
 		t.Fatalf("NewPPTXParser().format = %q, want pptx", p.format)
 	}
 	setup := map[string]any{
-		"parse_method":  "tcadp",
-		"output_format": "json",
+		"parse_method": "tcadp",
 	}
 	p.ConfigureFromSetup(setup)
 	if p.ParseMethod != "tcadp" {
@@ -248,7 +225,6 @@ func testPresentationTCADPIntegration(t *testing.T, p tcadpPresentationParser, w
 
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":    "tcadp",
-		"output_format":   "json",
 		"tcadp_apiserver": server.URL,
 	})
 	ctx := t.Context()
@@ -259,8 +235,8 @@ func testPresentationTCADPIntegration(t *testing.T, p tcadpPresentationParser, w
 	if gotFileType != wantFileType {
 		t.Errorf("TCADP request file_type = %q, want %q", gotFileType, wantFileType)
 	}
-	if res.OutputFormat != "json" {
-		t.Errorf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Errorf("produced = %t, want true", res.Produced())
 	}
 	if len(res.JSON) == 0 {
 		t.Fatalf("JSON items = 0, want the fixture's parsed content")
@@ -288,7 +264,6 @@ func TestPPTXParser_TCADPDownloadHTTPError(t *testing.T) {
 	p := NewPPTXParser()
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":    "tcadp",
-		"output_format":   "json",
 		"tcadp_apiserver": server.URL,
 	})
 	ctx := t.Context()

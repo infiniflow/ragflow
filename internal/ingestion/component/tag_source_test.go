@@ -128,7 +128,7 @@ func TestIsTagSourceNotFoundExcludesDatabaseFailures(t *testing.T) {
 		t.Fatalf("close: %v", err)
 	}
 
-	_, err = resolveTagSourceFile(context.Background(), "file-transient-db", "tenant-1")
+	_, err = resolveTagSourceFile(context.Background(), dao.DB, "file-transient-db", "tenant-1")
 	if err == nil {
 		t.Fatal("expected the query against a closed database to fail")
 	}

@@ -1,7 +1,7 @@
 package parser
 
 import (
-	"fmt"
+	"context"
 	"strings"
 )
 
@@ -16,39 +16,14 @@ func pdfFileMeta(filename string, pageCount int) map[string]any {
 	}
 }
 
-func pdfItemsToResult(filename string, items []map[string]any, outputFormat string, pageCount int) ParseResult {
+func pdfItemsToResult(filename string, items []map[string]any, pageCount int) ParseResult {
 	if len(items) == 0 {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
 	pageCount = normalizePDFPageCount(pageCount, items)
-	switch strings.ToLower(strings.TrimSpace(outputFormat)) {
-	case "", "json":
-		return ParseResult{
-			OutputFormat: "json",
-			File:         pdfFileMeta(filename, pageCount),
-			JSON:         items,
-		}
-	case "markdown":
-		var b strings.Builder
-		for _, item := range items {
-			text, _ := item["text"].(string)
-			layout, _ := item["layout"].(string)
-			if strings.TrimSpace(text) == "" {
-				continue
-			}
-			if layout == "title" && !strings.HasPrefix(strings.TrimSpace(text), "#") {
-				b.WriteString("## ")
-			}
-			b.WriteString(text)
-			b.WriteString("\n\n")
-		}
-		return ParseResult{
-			OutputFormat: "markdown",
-			File:         pdfFileMeta(filename, pageCount),
-			Markdown:     strings.TrimRight(b.String(), "\n"),
-		}
-	default:
-		return ParseResult{Err: fmt.Errorf("parser: unsupported PDF output_format %q", outputFormat)}
+	return ParseResult{
+		File: pdfFileMeta(filename, pageCount),
+		JSON: MapsToItems(items),
 	}
 }
 
@@ -75,7 +50,7 @@ func collectPDFPageNumbers(raw any) map[int]struct{} {
 	walk = func(node any) {
 		switch v := node.(type) {
 		case map[string]any:
-			for _, key := range []string{"page_number", "page_num", "page_no", "page_index", "page_idx", "page"} {
+			for _, key := range []string{"page number", "page_number", "page_num", "page_no", "page_index", "page_idx", "page"} {
 				if page := int(numberValue(v[key])); page > 0 {
 					pages[page] = struct{}{}
 				}
@@ -129,4 +104,8 @@ func rowsHaveText(rows [][]string) bool {
 		}
 	}
 	return false
+}
+
+func pdfMarkdownToResult(ctx context.Context, filename, markdown string, pageCount int) ParseResult {
+	return (&PDFParser{}).normalizePDFMarkdown(ctx, filename, markdown, pdfFileMeta(filename, pageCount))
 }

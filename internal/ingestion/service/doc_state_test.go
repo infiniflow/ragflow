@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 
@@ -44,13 +45,33 @@ func (s *stubDocStateSvc) GetDocumentMetadataByID(ctx context.Context, docID str
 
 func (s *stubDocStateSvc) SetDocumentMetadata(ctx context.Context, docID string, meta map[string]any) error {
 	s.setCalled = true
-	if s.metaData == nil {
-		s.metaData = make(map[string]any)
-	}
+	s.metaData = make(map[string]any, len(meta))
 	for k, v := range meta {
 		s.metaData[k] = v
 	}
 	return nil
+}
+
+func TestDocStateUpdater_PreservesTypedMetadataOnReplacement(t *testing.T) {
+	svc := &stubDocStateSvc{metaData: map[string]any{
+		"year": float64(2024), "verified": false, "null": nil,
+		"tags":    []any{"contract", float64(123)},
+		"outline": []any{map[string]any{"title": "Intro", "depth": float64(1)}},
+	}}
+	u := &docStateUpdater{docSvc: svc}
+	u.apply(t.Context(), &taskpkg.PipelineResult{
+		DocID: "doc-1", Metadata: map[string]any{
+			"author": "Alice", "year": map[string]any{"value": float64(2025)},
+		},
+	})
+	want := map[string]any{
+		"author": "Alice", "year": map[string]any{"value": float64(2025)}, "verified": false, "null": nil,
+		"tags":    []any{"contract", float64(123)},
+		"outline": []any{map[string]any{"title": "Intro", "depth": float64(1)}},
+	}
+	if !svc.setCalled || !reflect.DeepEqual(svc.metaData, want) {
+		t.Fatalf("stored metadata = %#v, want %#v", svc.metaData, want)
+	}
 }
 
 func (s *stubDocStateSvc) ApplyDocCounts(ctx context.Context, docID, kbID string, chunkNum, tokenNum int, duration float64) error {
@@ -102,20 +123,17 @@ func TestDocStateUpdater_MergesNewKeys(t *testing.T) {
 	}
 }
 
-func TestDocStateUpdater_PreservesExistingKey(t *testing.T) {
+func TestDocStateUpdater_ReplacesExistingKey(t *testing.T) {
 	svc := &stubDocStateSvc{metaData: map[string]any{"author": "Alice"}}
 	u := &docStateUpdater{docSvc: svc}
 	ctx := t.Context()
 	u.apply(ctx, &taskpkg.PipelineResult{DocID: "doc-1", Metadata: map[string]any{"author": "Bob"}, ChunkCount: 1, TokenConsumption: 10})
-	if svc.metaData["author"] != "Alice" {
-		t.Errorf("existing key must NOT be overwritten: got %q", svc.metaData["author"])
+	if svc.metaData["author"] != "Bob" {
+		t.Errorf("new value must replace existing key: got %q", svc.metaData["author"])
 	}
 }
 
-func TestDocStateUpdater_UnionsListValues(t *testing.T) {
-	// Stored doc metadata already has a list value; a new run extracts more
-	// (possibly overlapping) values. The merge must union + de-dupe, matching
-	// Python update_metadata_to(metadata, existing_meta).
+func TestDocStateUpdater_ReplacesListValues(t *testing.T) {
 	svc := &stubDocStateSvc{metaData: map[string]any{"people": []string{"关羽", "张辽"}}}
 	u := &docStateUpdater{docSvc: svc}
 	ctx := t.Context()
@@ -128,37 +146,40 @@ func TestDocStateUpdater_UnionsListValues(t *testing.T) {
 	if !ok {
 		t.Fatalf("people should be []string, got %T", svc.metaData["people"])
 	}
-	want := []string{"张辽", "刘备", "关羽"}
-	if len(got) != len(want) {
-		t.Fatalf("people=%v, want union %v", got, want)
-	}
-	seen := map[string]bool{}
-	for _, p := range got {
-		if seen[p] {
-			t.Fatalf("duplicate %q in %v", p, got)
-		}
-		seen[p] = true
-	}
-	for _, w := range want {
-		if !seen[w] {
-			t.Fatalf("missing %q in %v", w, got)
-		}
+	want := []string{"张辽", "刘备"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("people=%v, want replacement %v", got, want)
 	}
 }
 
-func TestDocStateUpdater_PreservesExistingScalar(t *testing.T) {
-	// Python update_metadata_to keeps the stored scalar when both sides carry
-	// a scalar for the same key (stored wins).
-	svc := &stubDocStateSvc{metaData: map[string]any{"author": "Alice"}}
-	u := &docStateUpdater{docSvc: svc}
-	ctx := t.Context()
-	u.apply(ctx, &taskpkg.PipelineResult{
-		DocID:      "doc-1",
-		Metadata:   map[string]any{"author": "Bob"},
-		ChunkCount: 1, TokenConsumption: 10,
-	})
-	if svc.metaData["author"] != "Alice" {
-		t.Fatalf("stored scalar must win: got %q", svc.metaData["author"])
+func TestDocStateUpdater_NewValuesReplaceStoredValues(t *testing.T) {
+	tests := []struct {
+		name              string
+		stored, extracted any
+	}{
+		{"number", float64(2024), float64(2025)},
+		{"false", true, false},
+		{"zero", float64(42), float64(0)},
+		{"null", "old", nil},
+		{"object to scalar", map[string]any{"x": 1}, "new"},
+		{"scalar to object", "old", map[string]any{"x": 2}},
+		{"structured list to scalar", []any{1, 2}, float64(42)},
+		{"scalar to structured list", "old", []any{1, 2}},
+		{"structured list", []any{1, 2}, []any{3, false}},
+		{"object", map[string]any{"x": 1}, map[string]any{"x": 2}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &stubDocStateSvc{metaData: map[string]any{"key": tt.stored, "keep": false}}
+			u := &docStateUpdater{docSvc: svc}
+			u.apply(t.Context(), &taskpkg.PipelineResult{
+				DocID: "doc-1", Metadata: map[string]any{"key": tt.extracted},
+			})
+			want := map[string]any{"key": tt.extracted, "keep": false}
+			if !svc.setCalled || !reflect.DeepEqual(svc.metaData, want) {
+				t.Fatalf("stored metadata = %#v, want %#v", svc.metaData, want)
+			}
+		})
 	}
 }
 
@@ -224,21 +245,31 @@ func TestDocStateUpdater_BuiltInMetadataGatedOff(t *testing.T) {
 }
 
 func TestDocStateUpdater_BuiltInMetadataOverwritesExisting(t *testing.T) {
-	svc := &stubDocStateSvc{metaData: map[string]any{"update_time": "2020-01-01 00:00:00"}}
+	svc := &stubDocStateSvc{metaData: map[string]any{
+		"update_time": []any{float64(2020)},
+		"file_name":   map[string]any{"old": true},
+		"keep":        false,
+	}}
 	u := &docStateUpdater{docSvc: svc}
 	ctx := t.Context()
 	u.apply(ctx, &taskpkg.PipelineResult{
-		DocID:                 "doc-1",
-		DocName:               "annual-report.pdf",
-		AutoMetadataEnabled:   true,
-		BuiltInMetadataConfig: []any{map[string]any{"key": "update_time", "type": "time"}},
-		ChunkCount:            1, TokenConsumption: 10,
+		DocID:               "doc-1",
+		DocName:             "annual-report.pdf",
+		AutoMetadataEnabled: true,
+		BuiltInMetadataConfig: []any{
+			map[string]any{"key": "update_time", "type": "time"},
+			map[string]any{"key": "file_name", "type": "string"},
+		},
+		ChunkCount: 1, TokenConsumption: 10,
 	})
 	if svc.metaData["update_time"] == "2020-01-01 00:00:00" {
 		t.Errorf("built-in update_time must overwrite the stored value: %v", svc.metaData["update_time"])
 	}
 	if _, ok := svc.metaData["update_time"].(string); !ok {
 		t.Fatalf("update_time = %T, want string", svc.metaData["update_time"])
+	}
+	if svc.metaData["file_name"] != "annual-report.pdf" || svc.metaData["keep"] != false {
+		t.Fatalf("built-in fields must overwrite structures and retain other keys: %#v", svc.metaData)
 	}
 }
 

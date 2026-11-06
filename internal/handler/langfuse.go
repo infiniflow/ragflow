@@ -29,9 +29,9 @@ import (
 // LangfuseService is the behaviour the handler depends on (interface enables
 // mocking in tests).
 type LangfuseService interface {
-	SetAPIKey(ctx context.Context, tenantID, secretKey, publicKey, host string) (*entity.TenantLangfuse, common.ErrorCode, error)
-	GetAPIKey(ctx context.Context, tenantID string) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error)
-	DeleteAPIKey(ctx context.Context, tenantID string) (bool, common.ErrorCode, string, error)
+	SetAPIKey(ctx context.Context, secretKey, publicKey, host string) (*entity.TenantLangfuse, common.ErrorCode, error)
+	GetAPIKey(ctx context.Context) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error)
+	DeleteAPIKey(ctx context.Context) (bool, common.ErrorCode, string, error)
 }
 
 // LangfuseHandler handles /langfuse/api-key HTTP requests.
@@ -59,27 +59,21 @@ type SetLangfuseRequest struct {
 
 // SetAPIKey handles POST/PUT /langfuse/api-key.
 func (h *LangfuseHandler) SetAPIKey(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
 	var req SetLangfuseRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Invalid request: "+err.Error())
+		common.RespondError(c, common.CodeDataError, "Invalid request: "+err.Error())
 		return
 	}
 	ctx := c.Request.Context()
 
-	row, code, err := h.langfuseService.SetAPIKey(ctx, user.ID, req.SecretKey, req.PublicKey, req.Host)
+	row, code, err := h.langfuseService.SetAPIKey(ctx, req.SecretKey, req.PublicKey, req.Host)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
 	// Echo back the stored keys, matching the Python langfuse_keys payload.
-	common.SuccessWithData(c, gin.H{
+	common.RespondSuccess(c, gin.H{
 		"tenant_id":  row.TenantID,
 		"secret_key": row.SecretKey,
 		"public_key": row.PublicKey,
@@ -89,39 +83,24 @@ func (h *LangfuseHandler) SetAPIKey(c *gin.Context) {
 
 // GetAPIKey handles GET /langfuse/api-key.
 func (h *LangfuseHandler) GetAPIKey(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
 	ctx := c.Request.Context()
 
-	data, code, message, err := h.langfuseService.GetAPIKey(ctx, user.ID)
+	data, code, message, err := h.langfuseService.GetAPIKey(ctx)
 	if err != nil {
-		common.ResponseWithCodeData(c, code, nil, message)
+		common.RespondError(c, code, message)
 		return
 	}
-	common.ResponseWithCodeData(c, code, data, message)
+	common.RespondSuccess(c, data, message)
 }
 
 // DeleteAPIKey handles DELETE /langfuse/api-key.
 func (h *LangfuseHandler) DeleteAPIKey(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
 	ctx := c.Request.Context()
 
-	ok, code, message, err := h.langfuseService.DeleteAPIKey(ctx, user.ID)
+	_, code, message, err := h.langfuseService.DeleteAPIKey(ctx)
 	if err != nil {
-		common.ResponseWithCodeData(c, code, nil, message)
+		common.RespondError(c, code, message)
 		return
 	}
-	// No record: mirror get_json_result(message=...) with data=nil.
-	if message != "" {
-		common.SuccessWithData(c, nil, message)
-		return
-	}
-	common.SuccessWithData(c, ok, "success")
+	common.RespondSuccess(c, nil, message)
 }

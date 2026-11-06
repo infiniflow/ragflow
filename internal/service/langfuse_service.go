@@ -24,6 +24,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	permissionresponse "ragflow/internal/permission/response"
 
 	"gorm.io/gorm"
 )
@@ -68,8 +69,13 @@ func NewLangfuseService() *LangfuseService {
 }
 
 // SetAPIKey validates and stores (insert or update) the Langfuse credentials
-// for a tenant.
-func (s *LangfuseService) SetAPIKey(ctx context.Context, tenantID, secretKey, publicKey, host string) (*entity.TenantLangfuse, common.ErrorCode, error) {
+// for the current tenant.
+func (s *LangfuseService) SetAPIKey(ctx context.Context, secretKey, publicKey, host string) (*entity.TenantLangfuse, common.ErrorCode, error) {
+	tenantID, err := requireCurrentTenantID(ctx)
+	if err != nil {
+		code, normalized := permissionresponse.NormalizeHidden(err)
+		return nil, code, normalized
+	}
 	if secretKey == "" || publicKey == "" || host == "" {
 		return nil, common.CodeDataError, errors.New("missing required fields")
 	}
@@ -96,9 +102,14 @@ func (s *LangfuseService) SetAPIKey(ctx context.Context, tenantID, secretKey, pu
 	return row, common.CodeSuccess, nil
 }
 
-// GetAPIKey returns the stored credentials enriched with the Langfuse project
-// id/name.
-func (s *LangfuseService) GetAPIKey(ctx context.Context, tenantID string) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error) {
+// GetAPIKey returns the current tenant credentials enriched with the Langfuse
+// project id/name.
+func (s *LangfuseService) GetAPIKey(ctx context.Context) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error) {
+	tenantID, err := requireCurrentTenantID(ctx)
+	if err != nil {
+		code, normalized := permissionresponse.NormalizeHidden(err)
+		return nil, code, "", normalized
+	}
 	row, err := s.langfuseDAO.GetByTenantID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, common.CodeServerError, "", err
@@ -129,8 +140,13 @@ func (s *LangfuseService) GetAPIKey(ctx context.Context, tenantID string) (*enti
 	return info, common.CodeSuccess, "success", nil
 }
 
-// DeleteAPIKey removes the stored credentials for a tenant.
-func (s *LangfuseService) DeleteAPIKey(ctx context.Context, tenantID string) (bool, common.ErrorCode, string, error) {
+// DeleteAPIKey removes the stored credentials for the current tenant.
+func (s *LangfuseService) DeleteAPIKey(ctx context.Context) (bool, common.ErrorCode, string, error) {
+	tenantID, err := requireCurrentTenantID(ctx)
+	if err != nil {
+		code, normalized := permissionresponse.NormalizeHidden(err)
+		return false, code, "", normalized
+	}
 	if err := s.langfuseDAO.DeleteExistingByTenantID(ctx, dao.DB, tenantID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return false, common.CodeSuccess, "Have not record any Langfuse keys.", nil

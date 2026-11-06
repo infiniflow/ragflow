@@ -40,7 +40,11 @@ import * as React from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import storage from '@/utils/authorization-util';
+import {
+  setThinkingLevel,
+  ThinkingMode,
+  useThinkingLevel,
+} from '@/hooks/use-thinking-level';
 import { SelectWithSearch } from '../originui/select-with-search';
 import { AudioButton } from '../ui/audio-button';
 
@@ -50,13 +54,6 @@ export type NextMessageInputOnPressEnterParameter = {
   storeHistoryMessages?: boolean;
   omitSessionId?: boolean;
 };
-
-// The selector only offers numeric thinking levels; a value persisted by a
-// since-removed mode is not one, so it falls back to the default rather than
-// reaching the request as NaN.
-function normalizeThinkingLevel(level: string) {
-  return /^[0-4]$/.test(level) ? level : '1';
-}
 
 interface NextMessageInputProps {
   disabled: boolean;
@@ -104,9 +101,7 @@ export function NextMessageInput({
     null,
   );
 
-  const [enableThinking, setEnableThinking] = useState(() =>
-    normalizeThinkingLevel(storage.getThinkingLevel()),
-  );
+  const enableThinking = useThinkingLevel();
   const [enableInternet, setEnableInternet] = useState(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -159,33 +154,24 @@ export function NextMessageInput({
     };
   }, [isResizing]);
 
+  // Level 5 is not a deeper step on the same ladder: the backend hands it to
+  // the agentic RAG agent, which runs its own retrieval instead of the
+  // pipeline's.
   const thinkingOptions = [
     {
-      label: t('chat.thinkingLevelUltra'),
-      value: '4',
-      description: t('chat.thinkingLevelUltraDescription'),
-    },
-    {
-      label: t('chat.thinkingLevelHigh'),
-      value: '3',
-      description: t('chat.thinkingLevelHighDescription'),
-    },
-    {
-      label: t('chat.thinkingLevelMedium'),
-      value: '2',
-      description: t('chat.thinkingLevelMediumDescription'),
-    },
-    {
-      label: t('chat.thinkingLevelLow'),
-      value: '1',
-      description: t('chat.thinkingLevelLowDescription'),
+      label: t('chat.thinkingLevelAgentic'),
+      value: '5',
+      description: t('chat.thinkingLevelAgenticDescription'),
     },
     { label: t('chat.thinkingLevelNone'), value: '0' },
   ];
 
   const handleThinkingChange = useCallback((value: string) => {
-    setEnableThinking(value);
-    storage.setThinkingLevel(value);
+    setThinkingLevel(
+      value === ThinkingMode.Agentic
+        ? ThinkingMode.Agentic
+        : ThinkingMode.Naive,
+    );
   }, []);
 
   const handleInternetToggle = useCallback(() => {

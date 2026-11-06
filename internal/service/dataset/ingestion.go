@@ -8,13 +8,28 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
+	syncerconnector "ragflow/internal/syncer/connector"
+
+	"go.uber.org/zap"
 )
 
 const (
 	defaultIngestionMessagesLimit = 200
 	maxIngestionMessagesLimit     = 500
 )
+
+type syncCheckpointLoader interface {
+	LoadSyncCheckpoint(ctx context.Context, taskID string) (*syncerconnector.SyncCheckpointState, error)
+}
+
+type downloadStatus struct {
+	RunningCount int64 `json:"running_count"`
+	DoneCount    int64 `json:"done_count"`
+	FailCount    int64 `json:"fail_count"`
+}
 
 // IngestionMessagesResponse is one immutable run's keyset-paginated event
 // stream. IDs are database event IDs and must be returned unchanged by clients
@@ -29,12 +44,13 @@ type IngestionMessagesResponse struct {
 	Terminal      bool                         `json:"terminal"`
 }
 
-func (d *DatasetService) GetIngestionSummary(ctx context.Context, datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) GetIngestionSummary(ctx context.Context, datasetID string) (map[string]interface{}, common.ErrorCode, error) {
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}
-	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("no authorization")
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 
 	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
@@ -49,18 +65,91 @@ func (d *DatasetService) GetIngestionSummary(ctx context.Context, datasetID, use
 	if err != nil {
 		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
+	downloadStatus, err := d.getDownloadStatus(ctx, datasetID)
+	if err != nil {
+		return nil, common.CodeServerError, errors.New("database operation failed")
+	}
 
 	return map[string]interface{}{
-		"doc_num":   kb.DocNum,
-		"chunk_num": kb.ChunkNum,
-		"token_num": kb.TokenNum,
-		"status":    status,
+		"doc_num":         kb.DocNum,
+		"chunk_num":       kb.ChunkNum,
+		"token_num":       kb.TokenNum,
+		"status":          status,
+		"download_status": downloadStatus,
 	}, common.CodeSuccess, nil
+}
+
+func (d *DatasetService) getDownloadStatus(ctx context.Context, datasetID string) (downloadStatus, error) {
+	connectors, err := d.connectorDAO.ListByDatasetID(ctx, dao.DB, datasetID)
+	if err != nil {
+		return downloadStatus{}, err
+	}
+	if len(connectors) == 0 {
+		return downloadStatus{}, nil
+	}
+
+	sourceTypes := make([]string, 0, len(connectors))
+	for _, connector := range connectors {
+		sourceTypes = append(sourceTypes, service.SourceType(connector.Source, connector.ID))
+	}
+	doneCount, err := d.documentDAO.CountByKBAndSourceTypes(ctx, dao.DB, datasetID, sourceTypes)
+	if err != nil {
+		return downloadStatus{}, err
+	}
+
+	tasks, err := d.syncTaskDAO.ListDatasetSyncTasks(ctx, datasetID)
+	if err != nil {
+		return downloadStatus{}, err
+	}
+
+	status := downloadStatus{DoneCount: doneCount}
+	latestByConnector := make(map[string]entity.SyncLogs, len(connectors))
+	runningErrors := make(map[string]int64)
+	loadCheckpoints := d.checkpointLoader != nil
+	for _, task := range tasks {
+		if _, ok := latestByConnector[task.ConnectorID]; !ok {
+			latestByConnector[task.ConnectorID] = task
+		}
+		if task.Status != dao.SyncStatusRunning {
+			continue
+		}
+
+		// Go's retry path also increments error_count for source-level errors.
+		// Without a checkpoint, those retries cannot be counted as file failures.
+		if task.ErrorClass == "" {
+			runningErrors[task.ID] = task.ErrorCount
+		}
+		runningCount := task.NewDocsIndexed - runningErrors[task.ID]
+		if runningCount < 0 {
+			runningCount = 0
+		}
+		if loadCheckpoints {
+			checkpoint, loadErr := d.checkpointLoader.LoadSyncCheckpoint(ctx, task.ID)
+			if loadErr != nil {
+				common.Warn("load dataset download checkpoint failed", zap.String("task_id", task.ID), zap.Error(loadErr))
+				loadCheckpoints = false
+			} else if checkpoint != nil && checkpoint.TaskID == task.ID && checkpoint.ConnectorID == task.ConnectorID && checkpoint.KBID == datasetID {
+				runningCount = checkpoint.Added + checkpoint.Updated
+				runningErrors[task.ID] = checkpoint.ErrorCount
+			}
+		}
+		status.RunningCount += runningCount
+	}
+
+	for _, task := range latestByConnector {
+		switch task.Status {
+		case dao.SyncStatusRunning:
+			status.FailCount += runningErrors[task.ID]
+		case dao.SyncStatusDone:
+			status.FailCount += task.ErrorCount
+		}
+	}
+	return status, nil
 }
 
 // ListIngestionMessages returns events owned by the requested immutable
 // pipeline log.
-func (d *DatasetService) ListIngestionMessages(ctx context.Context, datasetID, userID, logID string, limit int, afterID, beforeID *int) (*IngestionMessagesResponse, common.ErrorCode, error) {
+func (d *DatasetService) ListIngestionMessages(ctx context.Context, datasetID, logID string, limit int, afterID, beforeID *int) (*IngestionMessagesResponse, common.ErrorCode, error) {
 	if datasetID == "" {
 		return nil, common.CodeArgumentError, errors.New(`lack of "Dataset ID"`)
 	}
@@ -82,8 +171,9 @@ func (d *DatasetService) ListIngestionMessages(ctx context.Context, datasetID, u
 	if limit < 0 || limit > maxIngestionMessagesLimit {
 		return nil, common.CodeArgumentError, fmt.Errorf("limit must be between 1 and %d", maxIngestionMessagesLimit)
 	}
-	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("no authorization")
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 
 	run, err := d.pipelineLogDAO.GetByIDAndKBID(ctx, dao.DB, logID, datasetID)
@@ -138,19 +228,82 @@ func isReadableIngestionLog(log *entity.PipelineOperationLog) bool {
 	return log.RunCount == nil || *log.RunCount > 0
 }
 
-func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID, userID string, page, pageSize int, terms []dao.OrderTerm, operationStatus []string, createDateFrom, createDateTo, logType, keywords, documentID string) (map[string]interface{}, common.ErrorCode, error) {
+// ListSyncLogs returns paginated sync logs for connectors currently linked to an accessible dataset.
+func (d *DatasetService) ListSyncLogs(ctx context.Context, datasetID string, page, pageSize int) (map[string]interface{}, common.ErrorCode, error) {
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}
-	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("no authorization")
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 
 	if page <= 0 {
-		page = 1
+		page = common.DefaultPage
 	}
 	if pageSize <= 0 {
-		pageSize = 30
+		pageSize = common.DefaultPageSize
+	}
+
+	connectors, err := d.connectorDAO.ListByDatasetID(ctx, dao.DB, datasetID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("list dataset connectors for sync logs: %w", err)
+	}
+	checker := permission.NewDatabaseChecker(dao.DB)
+	taskIDs := make([]string, 0)
+	for _, connector := range connectors {
+		connectorRef := permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connector.ID}
+		scope, scopeErr := checker.Scope(ctx, permission.ScopeQuery{
+			Kind:      permission.ResourceKindSyncTask,
+			Parent:    connectorRef,
+			Operation: permission.OperationRead,
+			Entry:     &connectorRef,
+			EntryOp:   permission.OperationUse,
+		})
+		if scopeErr != nil {
+			if errors.Is(scopeErr, permission.ErrPermissionDenied) ||
+				errors.Is(scopeErr, permission.ErrMembershipNotFound) ||
+				errors.Is(scopeErr, permission.ErrResourceNotFound) {
+				continue
+			}
+			code, permissionErr := permissionresponse.Normalize(scopeErr)
+			return nil, code, permissionErr
+		}
+		if scope.Mode == permission.ScopeIDs {
+			taskIDs = append(taskIDs, scope.ResourceIDs...)
+		}
+	}
+	logs, total, err := d.connectorDAO.ListLogsByTaskIDs(ctx, dao.DB, taskIDs, datasetID, (page-1)*pageSize, pageSize)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("list dataset connector sync logs: %w", err)
+	}
+	if logs == nil {
+		logs = []*entity.ConnectorSyncLog{}
+	}
+
+	return map[string]interface{}{
+		"total": total,
+		"logs":  logs,
+	}, common.CodeSuccess, nil
+}
+
+func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID string, page, pageSize int, terms []dao.OrderTerm, operationStatus []string, createDateFrom, createDateTo, logType, keywords, documentID string) (map[string]interface{}, common.ErrorCode, error) {
+	if datasetID == "" {
+		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
+	}
+	if logType != "dataset" && logType != "file" {
+		return nil, common.CodeDataError, errors.New(`Invalid "log_type", expected "dataset" or "file"`)
+	}
+
+	if page <= 0 {
+		page = common.DefaultPage
+	}
+	if pageSize <= 0 {
+		pageSize = common.DefaultPageSize
 	}
 
 	var (
@@ -196,15 +349,16 @@ func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID, userI
 	}, common.CodeSuccess, nil
 }
 
-func (d *DatasetService) GetIngestionLog(ctx context.Context, datasetID, userID, logID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) GetIngestionLog(ctx context.Context, datasetID, logID string) (map[string]interface{}, common.ErrorCode, error) {
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}
 	if logID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Log ID"`)
 	}
-	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("no authorization")
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 
 	log, err := d.pipelineLogDAO.GetByIDAndKBID(ctx, dao.DB, logID, datasetID)
@@ -269,6 +423,7 @@ func fileIngestionLogToMap(log *entity.PipelineOperationLog, latestEvent *servic
 		"kb_id":                  log.KbID,
 		"pipeline_id":            stringPointerValue(log.PipelineID),
 		"pipeline_title":         stringPointerValue(log.PipelineTitle),
+		"pipeline_version_id":    stringPointerValue(log.PipelineVersionID),
 		"parser_id":              log.ParserID,
 		"document_name":          log.DocumentName,
 		"document_suffix":        log.DocumentSuffix,

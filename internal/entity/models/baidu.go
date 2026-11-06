@@ -58,11 +58,10 @@ func (b *BaiduModel) ChatWithMessages(ctx context.Context, modelName string, mes
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
+	url, err := b.baseModel.EndpointURL(apiConfig, b.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, b.baseModel.URLSuffix.Chat)
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
@@ -128,11 +127,10 @@ func (b *BaiduModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 		return fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
+	url, err := b.baseModel.EndpointURL(apiConfig, b.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), b.baseModel.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
@@ -216,11 +214,10 @@ func (b *BaiduModel) Embed(ctx context.Context, modelName *string, request Embed
 		return []EmbeddingData{}, nil
 	}
 
-	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
+	url, err := b.baseModel.EndpointURL(apiConfig, b.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, b.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -312,11 +309,10 @@ func (b *BaiduModel) Rerank(ctx context.Context, modelName *string, request Rera
 		return &RerankResponse{}, nil
 	}
 
-	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
+	url, err := b.baseModel.EndpointURL(apiConfig, b.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), b.baseModel.URLSuffix.Rerank)
 
 	var topN = rerankConfig.TopN
 	if rerankConfig.TopN == 0 {
@@ -386,20 +382,20 @@ func (b *BaiduModel) Rerank(ctx context.Context, modelName *string, request Rera
 
 // TranscribeAudio transcribe audio
 func (b *BaiduModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", b.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", b.Name())
 }
 
 func (b *BaiduModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", b.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", b.Name())
 }
 
 // AudioSpeech convert text to audio
 func (b *BaiduModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", b.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", b.Name())
 }
 
 func (b *BaiduModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", b.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", b.Name())
 }
 
 // OCRFile OCR file
@@ -426,11 +422,10 @@ func (b *BaiduModel) OCRFile(ctx context.Context, modelName *string, content []b
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
+	url, err := b.baseModel.EndpointURL(apiConfig, b.baseModel.URLSuffix.OCR)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, b.baseModel.URLSuffix.OCR)
 
 	reqData := map[string]interface{}{
 		"model": *modelName,
@@ -509,11 +504,10 @@ func (b *BaiduModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Li
 		return nil, err
 	}
 
-	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
+	url, err := b.baseModel.EndpointURL(apiConfig, b.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, b.baseModel.URLSuffix.Models)
 
 	reqBody := map[string]string{}
 
@@ -558,7 +552,7 @@ func (b *BaiduModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Li
 }
 
 func (b *BaiduModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", b.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", b.Name())
 }
 
 func (b *BaiduModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
@@ -567,13 +561,17 @@ func (b *BaiduModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) 
 }
 
 func (b *BaiduModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", b.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", b.Name())
 }
 
 func (b *BaiduModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", b.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", b.Name())
 }
 
 func (b *BaiduModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", b.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", b.Name())
+}
+
+func (b *BaiduModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", b.Name())
 }

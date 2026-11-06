@@ -180,7 +180,7 @@ func TestSelfManaged_EndToEnd_FullLoop(t *testing.T) {
 
 // TestNewSelfManagedProviderFromConfig_MinimalConfig pins the
 // settings-driven init path: a minimal JSON config yields the
-// expected defaults (default endpoint, 30s timeout, pool size 3,
+// expected defaults (default endpoint, 30s timeout,
 // no per-language base image override).
 func TestNewSelfManagedProviderFromConfig_MinimalConfig(t *testing.T) {
 	t.Parallel()
@@ -191,9 +191,6 @@ func TestNewSelfManagedProviderFromConfig_MinimalConfig(t *testing.T) {
 	if p.timeout != 30*time.Second {
 		t.Errorf("timeout = %v, want 30s", p.timeout)
 	}
-	if p.poolSize != 3 {
-		t.Errorf("poolSize = %d, want 3", p.poolSize)
-	}
 	if p.baseImages["python"] != "" || p.baseImages["nodejs"] != "" {
 		t.Errorf("baseImages should be empty, got %+v", p.baseImages)
 	}
@@ -201,7 +198,7 @@ func TestNewSelfManagedProviderFromConfig_MinimalConfig(t *testing.T) {
 
 // TestNewSelfManagedProviderFromConfig_FullConfig verifies that
 // every config key propagates: a custom endpoint, a custom timeout
-// in seconds-as-float, a non-default pool size, and per-language
+// in seconds-as-float and per-language
 // base images.
 func TestNewSelfManagedProviderFromConfig_FullConfig(t *testing.T) {
 	t.Parallel()
@@ -218,9 +215,6 @@ func TestNewSelfManagedProviderFromConfig_FullConfig(t *testing.T) {
 	}
 	if p.timeout != 45*time.Second {
 		t.Errorf("timeout = %v, want 45s", p.timeout)
-	}
-	if p.poolSize != 10 {
-		t.Errorf("poolSize = %d, want 10", p.poolSize)
 	}
 	if p.baseImages["python"] != "registry.example.com/py:latest" {
 		t.Errorf("python baseImage = %q", p.baseImages["python"])
@@ -627,9 +621,6 @@ func TestLoadFromSettingsWithReader_HappyPath(t *testing.T) {
 	}
 	if sm.timeout != 5*time.Second {
 		t.Errorf("timeout = %v, want 5s (from settings)", sm.timeout)
-	}
-	if sm.poolSize != 7 {
-		t.Errorf("poolSize = %d, want 7 (from settings)", sm.poolSize)
 	}
 	if sm.baseImages["python"] != "reg.example.com/py:1" {
 		t.Errorf("python baseImage = %q (from settings)", sm.baseImages["python"])

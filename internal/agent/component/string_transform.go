@@ -30,6 +30,7 @@ package component
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"regexp"
 	"strings"
 
@@ -45,7 +46,7 @@ type stringTransformParam struct {
 	Method     string   `json:"method"`     // "split" or "merge"
 	Script     string   `json:"script"`     // merge mode: template
 	SplitRef   string   `json:"split_ref"`  // split mode: state ref to read
-	Delimiters []string `json:"delimiters"` // split mode: literal delimiters
+	Delimiters []string `json:"delimiters"` // split: literal delimiters; merge: first delimiter joins arrays
 }
 
 // Update copies a fresh param map into the receiver.
@@ -72,6 +73,13 @@ func (p *stringTransformParam) Update(conf map[string]any) error {
 	case []string:
 		// already correct shape
 		p.Delimiters = append(p.Delimiters[:0], v...)
+	case string:
+		// the agent UI saves merge-mode delimiters as a single string;
+		// not trimmed, since "\n", "\t" and " " are valid delimiters
+		p.Delimiters = nil
+		if v != "" {
+			p.Delimiters = []string{v}
+		}
 	case nil:
 		// leave unchanged
 	default:
@@ -283,8 +291,10 @@ func (s *StringTransformComponent) doSplit(_ context.Context, state *runtime.Can
 	// matches. This mirrors Python's re.split with a capture group
 	// (which interleaves content and delimiter tokens) followed by
 	// dropping the odd-indexed (delimiter) tokens. When there are no
-	// matches, the whole input is a single content token.
-	kept := make([]string, 0, len(matches)+1)
+	// matches, the whole input is a single content token. The result is
+	// []any, like other canvas lists, so ListOperations and the
+	// VariableAssigner list operators accept it.
+	kept := make([]any, 0, len(matches)+1)
 	prevEnd := 0
 	for _, m := range matches {
 		kept = append(kept, varValue[prevEnd:m[0]])
@@ -300,11 +310,37 @@ func (s *StringTransformComponent) doSplit(_ context.Context, state *runtime.Can
 // the resolved script.
 func (s *StringTransformComponent) doMerge(_ context.Context, state *runtime.CanvasState, inputs map[string]any) map[string]any {
 	script := s.param.Script
+	formatValue := func(value any) string {
+		v := reflect.ValueOf(value)
+		if v.Kind() == reflect.Slice || v.Kind() == reflect.Array {
+			parts := make([]string, v.Len())
+			for i := range parts {
+				parts[i] = fmt.Sprintf("%v", v.Index(i).Interface())
+			}
+			return strings.Join(parts, s.param.Delimiters[0])
+		}
+		return fmt.Sprintf("%v", value)
+	}
 
 	// First pass: state-level template resolution for any runtime ref
 	// syntax the canvas supports, including single-brace legacy refs and
-	// iteration aliases like {item}/{index}.
-	if resolved, err := runtime.ResolveTemplateAuto(script, state); err == nil {
+	// iteration aliases like {item}/{index}. Resolve arrays before the
+	// generic template renderer can stringify them.
+	if !runtime.ContainsJinjaSyntax(script) {
+		resolved := true
+		merged := runtime.VarRefPattern.ReplaceAllStringFunc(script, func(match string) string {
+			ref := runtime.VarRefPattern.FindStringSubmatch(match)[1]
+			value, err := state.GetVar(ref)
+			if err != nil || value == nil {
+				resolved = false
+				return match
+			}
+			return formatValue(value)
+		})
+		if resolved {
+			script = merged
+		}
+	} else if resolved, err := runtime.ResolveTemplateAuto(script, state); err == nil {
 		script = resolved
 	}
 
@@ -323,7 +359,7 @@ func (s *StringTransformComponent) doMerge(_ context.Context, state *runtime.Can
 		} else {
 			value = ""
 		}
-		script = strings.ReplaceAll(script, placeholder, fmt.Sprintf("%v", value))
+		script = strings.ReplaceAll(script, placeholder, formatValue(value))
 	}
 	return map[string]any{"result": script}
 }

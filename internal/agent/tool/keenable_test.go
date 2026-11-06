@@ -464,6 +464,56 @@ func TestKeenable_ComponentContractReferencesAndOutputs(t *testing.T) {
 	}
 }
 
+// TestKeenable_ReferencesReadSnippet verifies that a result's content comes
+// from "snippet", which carries the page text in Keenable responses, and
+// falls back to "description" only when "snippet" is empty.
+func TestKeenable_ReferencesReadSnippet(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"results":[
+			{"title":"A","url":"https://a","description":"","snippet":"alpha page text"},
+			{"title":"B","url":"https://b","description":"beta description","snippet":""},
+			{"title":"C","url":"https://c","description":"gamma description"},
+			{"title":"D","url":"https://d","description":"delta description","snippet":"delta page text"},
+			{"title":"E","url":"https://e","description":"","snippet":""}
+		]}`))
+	}))
+	defer srv.Close()
+
+	helper := NewHTTPHelper().WithClient(&http.Client{
+		Transport: rewriteHostTransport(srv.URL),
+	})
+	tool := NewKeenableToolWithEnvBaseURL(helper, func() string { return "https://" + srv.URL[len("http://"):] })
+
+	out, err := tool.InvokableRun(ctx, `{"query":"x"}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	var envelope map[string]any
+	if jerr := json.Unmarshal([]byte(out), &envelope); jerr != nil {
+		t.Fatalf("output not valid JSON: %v (raw=%s)", jerr, out)
+	}
+
+	chunks, docAggs := tool.BuildReferences(ctx, envelope)
+	want := []struct{ title, content string }{
+		{"A", "alpha page text"},
+		{"B", "beta description"},
+		{"C", "gamma description"},
+		{"D", "delta page text"},
+	}
+	if len(chunks) != len(want) || len(docAggs) != len(want) {
+		t.Fatalf("references = %#v / %#v, want %d of each", chunks, docAggs, len(want))
+	}
+	for i, w := range want {
+		if chunks[i]["document_name"] != w.title || chunks[i]["content"] != w.content {
+			t.Errorf("chunks[%d] = %q/%q, want %q/%q", i, chunks[i]["document_name"], chunks[i]["content"], w.title, w.content)
+		}
+	}
+}
+
 func TestKeenable_BuildByNameAcceptsCanvasParams(t *testing.T) {
 	t.Parallel()
 

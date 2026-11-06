@@ -296,18 +296,18 @@ func fanOutItems(
 	return resultCh
 }
 
-// loadParallelSnapshot reads the parallel state from interrupt resume values.
+// loadParallelSnapshot reads the parallel state from context set by checkpoint restore.
 func loadParallelSnapshot(ctx context.Context) (*parallelInterruptState, bool) {
-	values := interrupt.GetResumeValues(ctx)
-	for _, v := range values {
+	if ctx != nil {
 		var data []byte
-		switch tv := v.(type) {
+		switch value := ctx.Value(interrupt.SubGraphStateCtxKey).(type) {
 		case []byte:
-			data = tv
+			data = value
 		case string:
-			data = []byte(tv)
-		default:
-			continue
+			data = []byte(value)
+		}
+		if data == nil {
+			return nil, false
 		}
 		var st parallelInterruptState
 		if err := json.Unmarshal(data, &st); err == nil && st.TotalCount > 0 {

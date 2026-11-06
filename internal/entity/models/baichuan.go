@@ -57,11 +57,10 @@ func (b *BaichuanModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
+	url, err := b.baseModel.EndpointURL(apiConfig, b.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, b.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	body, err := b.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
@@ -81,11 +80,10 @@ func (b *BaichuanModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		return fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
+	url, err := b.baseModel.EndpointURL(apiConfig, b.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, b.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
@@ -104,11 +102,10 @@ func (b *BaichuanModel) Embed(ctx context.Context, modelName *string, request Em
 		return []EmbeddingData{}, nil
 	}
 
-	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
+	url, err := b.baseModel.EndpointURL(apiConfig, b.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, b.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -182,53 +179,57 @@ func (b *BaichuanModel) Embed(ctx context.Context, modelName *string, request Em
 }
 
 func (b *BaichuanModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Rerank", b.Name())
 }
 
 // TranscribeAudio transcribe audio
 func (b *BaichuanModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", b.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", b.Name())
 }
 
 func (b *BaichuanModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", b.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", b.Name())
 }
 
 // AudioSpeech convert text to audio
 func (b *BaichuanModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", b.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", b.Name())
 }
 
 func (b *BaichuanModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", b.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", b.Name())
 }
 
 // OCRFile OCR file
 func (b *BaichuanModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", b.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", b.Name())
 }
 
 // ParseFile parse file
 func (b *BaichuanModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", b.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", b.Name())
 }
 
 func (b *BaichuanModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: ListModels", b.Name())
 }
 
 func (b *BaichuanModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Balance", b.Name())
 }
 
 func (b *BaichuanModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
-	return fmt.Errorf("no such method")
+	return fmt.Errorf("%s: no such method: CheckConnection", b.Name())
 }
 
 func (b *BaichuanModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", b.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", b.Name())
 }
 
 func (b *BaichuanModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", b.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", b.Name())
+}
+
+func (b *BaichuanModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", b.Name())
 }

@@ -173,7 +173,7 @@ func Compile(ctx context.Context, c *Canvas, opts ...CompileOption) (*CompiledCa
 			}
 		}
 		if n > 0 {
-			common.Info("canvas: Compile received Canvas with legacy LoopItem/IterationItem/Iteration nodes; this path bypassed dsl.NormalizeForCanvas — the fold step is not applied", zap.Int("n", n))
+			common.Info("agent: Compile received Canvas with legacy LoopItem/IterationItem/Iteration nodes; this path bypassed dsl.NormalizeForCanvas — the fold step is not applied", zap.Int("n", n))
 		}
 	}
 
@@ -206,7 +206,7 @@ func Compile(ctx context.Context, c *Canvas, opts ...CompileOption) (*CompiledCa
 			}
 		}
 		if len(bad) > 0 {
-			return nil, fmt.Errorf("canvas: Compile: WithInterruptAfterNonTerminalCpn forbids UserFillUp/legacy-no-op nodes %v (plan §4.2.b): ingestion has no user to fill up and no-op nodes do not report progress, breaking the resume/percent invariant", bad)
+			return nil, fmt.Errorf("agent: Compile: WithInterruptAfterNonTerminalCpn forbids UserFillUp/legacy-no-op nodes %v (plan §4.2.b): ingestion has no user to fill up and no-op nodes do not report progress, breaking the resume/percent invariant", bad)
 		}
 	}
 
@@ -220,7 +220,7 @@ func Compile(ctx context.Context, c *Canvas, opts ...CompileOption) (*CompiledCa
 
 	wf, err := BuildWorkflow(ctx, c)
 	if err != nil {
-		return nil, fmt.Errorf("canvas: build workflow: %w", err)
+		return nil, fmt.Errorf("agent: build workflow: %w", err)
 	}
 
 	compileOpts := make([]compose.GraphCompileOption, 0, 4)
@@ -249,7 +249,7 @@ func Compile(ctx context.Context, c *Canvas, opts ...CompileOption) (*CompiledCa
 
 	runnable, err := wf.Compile(ctx, compileOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("canvas: eino compile: %w", err)
+		return nil, fmt.Errorf("agent: eino compile: %w", err)
 	}
 	return &CompiledCanvas{Workflow: runnable, CheckPointID: cfg.CheckPointID}, nil
 }

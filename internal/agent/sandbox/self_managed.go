@@ -14,19 +14,11 @@
 //  limitations under the License.
 //
 
-// self_managed.go is the Go port of
-// `agent/sandbox/providers/self_managed.py`.
+// Self-managed execution calls the external service maintained at
+// https://github.com/infiniflow/sandbox. That service owns container lifecycle
+// and isolation; this file implements only its HTTP client.
 //
-// The provider wraps the existing executor_manager HTTP API
-// (default `http://sandbox-executor-manager:9385`) which manages a
-// pool of Docker containers with gVisor for secure code execution.
-// We do NOT port the container pool itself — that's the Python
-// FastAPI service and stays in Python. We only port the *client*
-// surface that the Go CodeExec tool needs to dispatch a code
-// execution request.
-//
-// Wire format (matches the Python `requests.post` call in
-// self_managed.py::execute_code):
+// Request:
 //
 //   POST {endpoint}/run
 //   Content-Type: application/json
@@ -37,7 +29,7 @@
 //   }
 //
 // Response (executor_manager's CodeExecutionResult, see
-// agent/sandbox/executor_manager/models/schemas.py):
+// https://github.com/infiniflow/sandbox/blob/main/executor_manager/models/schemas.py):
 //
 //   {
 //     "status":          "ok" | "PROGRAM_RUNNER_ERROR" | ...,
@@ -62,7 +54,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -74,17 +65,24 @@ import (
 )
 
 // selfManagedDefaultEndpoint is the canonical executor_manager
-// endpoint baked into the Python side. Operators override via
+// endpoint for the optional Compose service. Operators override via
 // SANDBOX_EXECUTOR_MANAGER_URL.
 const selfManagedDefaultEndpoint = "http://sandbox-executor-manager:9385"
 
-// SelfManagedProvider is the Go port of
-// `agent/sandbox/providers/self_managed.py::SelfManagedProvider`.
+// selfManagedMaxErrorBody bounds how much of a non-2xx executor_manager
+// response is quoted into the returned error. A failure body is
+// diagnostic text rather than a payload, so this is far smaller than the
+// 4 MiB the agent tools cap successful HTTP responses at. Without a cap
+// the drain is unbounded: the executor_manager is operator-configured and
+// reached over the network, so a compromised or misbehaving one can make
+// this process buffer — and then log — an arbitrarily large body from the
+// failure path alone.
+const selfManagedMaxErrorBody = 64 << 10
+
+// SelfManagedProvider calls the external executor-manager API.
 type SelfManagedProvider struct {
 	endpoint     string
 	timeout      time.Duration
-	poolSize     int
-	maxRetries   int
 	helper       *HTTPClient
 	healthHelper *HTTPClient
 	mu           sync.Mutex
@@ -94,18 +92,13 @@ type SelfManagedProvider struct {
 	// fully-qualified Docker image references. Empty string means
 	// "use the executor_manager's default" — no override.
 	//
-	// Mirrors the Python side's
-	// `SANDBOX_BASE_PYTHON_IMAGE` / `SANDBOX_BASE_NODEJS_IMAGE`
-	// env vars (default: `infiniflow/sandbox-base-python:latest`
-	// and `infiniflow/sandbox-base-nodejs:latest`). The Go port
-	// reads the same env vars; operators who customize one
-	// language's image get a per-language override path that the
-	// executor_manager can then route at container-create time.
+	// Sent as base_image for custom managers; the reference service uses
+	// its deployment environment instead of this request field.
 	baseImages map[string]string
 	// apiToken is the shared secret authenticating this RAGFlow
 	// instance towards the executor_manager's /run endpoint
-	// (Authorization: Bearer). Empty means the executor_manager runs
-	// without authentication (backwards compatibility).
+	// (Authorization: Bearer). Empty omits the header; the service decides
+	// whether unauthenticated requests are accepted.
 	apiToken string
 }
 
@@ -120,15 +113,7 @@ func newSelfManagedProviderFromEnv() *SelfManagedProvider {
 	return newSelfManagedProviderFromConfig(map[string]any{})
 }
 
-// The provider resolves each field through one canonical chain: the
-// lowercase admin-panel settings schema first (endpoint, timeout,
-// max_retries, pool_size, api_token — the exact schema
-// agent/sandbox/providers/self_managed.py persists and reads; pool_size
-// additionally accepts its executor_manager_pool_size spelling, which the
-// Python provider reads first), then the SANDBOX_* environment variable for
-// fields absent from persisted settings, then the built-in default. Keeping
-// a single resolution path on both runtimes means a settings row plus
-// environment variables configures Python and Go identically.
+// Settings take precedence over environment variables and built-in defaults.
 func configStringEnv(cfg map[string]any, envName string, keys ...string) string {
 	for _, key := range keys {
 		// Blank-after-trim values count as absent so they fall through to
@@ -139,20 +124,6 @@ func configStringEnv(cfg map[string]any, envName string, keys ...string) string 
 		}
 	}
 	return common.GetEnv(envName)
-}
-
-func configIntEnv(cfg map[string]any, fallback int, envName string, keys ...string) int {
-	for _, key := range keys {
-		if _, ok := cfg[key]; ok && cfg[key] != nil {
-			return configInt(cfg, key, fallback)
-		}
-	}
-	if envValue := common.GetEnv(envName); envValue != "" {
-		if parsed, err := strconv.Atoi(envValue); err == nil {
-			return parsed
-		}
-	}
-	return fallback
 }
 
 func configDurationEnv(cfg map[string]any, fallback time.Duration, envName string, keys ...string) time.Duration {
@@ -169,13 +140,7 @@ func configDurationEnv(cfg map[string]any, fallback time.Duration, envName strin
 	return fallback
 }
 
-// newSelfManagedProviderFromConfig builds the provider from the persisted
-// settings JSON (the `sandbox.self_managed` row written by the admin panel,
-// lowercase keys: endpoint, timeout, max_retries, pool_size, api_token,
-// optionally base_python_image / base_nodejs_image). Fields absent from the
-// settings fall back to their SANDBOX_* environment variable before the
-// built-in default, mirroring the Python provider's config-over-env
-// resolution.
+// newSelfManagedProviderFromConfig resolves connection settings and image overrides.
 func newSelfManagedProviderFromConfig(cfg map[string]any) *SelfManagedProvider {
 	endpoint := configStringEnv(cfg, common.EnvSandboxExecutorManagerURL, "endpoint")
 	if endpoint == "" {
@@ -184,10 +149,6 @@ func newSelfManagedProviderFromConfig(cfg map[string]any) *SelfManagedProvider {
 	endpoint = strings.TrimRight(endpoint, "/")
 
 	timeout := configDurationEnv(cfg, 30*time.Second, common.EnvSandboxExecutorManagerTimeout, "timeout")
-	poolSize := configIntEnv(cfg, 3, common.EnvSandboxExecutorManagerPoolSize, "executor_manager_pool_size", "pool_size")
-	// max_retries maps to the HTTP client's total attempt count (first try
-	// included), matching its default of 3 attempts.
-	maxRetries := configIntEnv(cfg, 3, common.EnvSandboxExecutorManagerMaxRetries, "max_retries")
 
 	// Per-language base image overrides. Empty = executor_manager
 	// default; non-empty = the operator picked a custom base image
@@ -204,12 +165,11 @@ func newSelfManagedProviderFromConfig(cfg map[string]any) *SelfManagedProvider {
 	return &SelfManagedProvider{
 		endpoint:   endpoint,
 		timeout:    timeout,
-		poolSize:   poolSize,
 		baseImages: baseImages,
 		apiToken:   apiToken,
 		helper: NewHTTPClient(HTTPConfig{
 			Timeout:     timeout,
-			MaxAttempts: maxRetries,
+			MaxAttempts: 1,
 		}),
 		healthHelper: NewHTTPClient(HTTPConfig{
 			Timeout: 5 * time.Second,
@@ -256,9 +216,8 @@ func (p *SelfManagedProvider) CreateInstance(ctx context.Context, template strin
 		Provider:   ProviderSelfManaged,
 		Status:     "running",
 		Metadata: map[string]any{
-			"language":  lang,
-			"endpoint":  p.endpoint,
-			"pool_size": p.poolSize,
+			"language": lang,
+			"endpoint": p.endpoint,
 		},
 	}, nil
 }
@@ -313,7 +272,7 @@ func (p *SelfManagedProvider) ExecuteCode(
 
 	start := time.Now()
 	// Shared-secret authentication towards the executor_manager; empty
-	// token keeps the request unauthenticated (backwards compatibility).
+	// token omits the header; it does not change service authentication policy.
 	var reqHeaders map[string]string
 	if p.apiToken != "" {
 		reqHeaders = map[string]string{"Authorization": "Bearer " + p.apiToken}
@@ -325,10 +284,19 @@ func (p *SelfManagedProvider) ExecuteCode(
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		// Drain for connection reuse and return a typed error.
-		var b strings.Builder
-		_, _ = io.Copy(&b, resp.Body)
-		return nil, fmt.Errorf("self_managed: POST /run returned %d: %s", resp.StatusCode, b.String())
+		// Drain for connection reuse and return a typed error. The drain is
+		// bounded because everything read here is quoted into an error that
+		// gets logged, and the peer controls the body length. Reading one byte
+		// past the cap distinguishes "exactly at the limit" from "too large",
+		// matching how the agent tools cap HTTP response bodies.
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, selfManagedMaxErrorBody+1))
+		detail := string(body)
+		if len(body) > selfManagedMaxErrorBody {
+			// Slicing can land mid-rune; keep the logged text valid UTF-8.
+			detail = strings.ToValidUTF8(detail[:selfManagedMaxErrorBody], "")
+			detail += "… (truncated)"
+		}
+		return nil, fmt.Errorf("self_managed: POST /run returned %d: %s", resp.StatusCode, detail)
 	}
 
 	var raw struct {

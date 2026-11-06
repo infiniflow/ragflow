@@ -12,6 +12,13 @@ export function getToolOperatorName(toolName?: string | null) {
   if (normalizedName === Operator.QueritContents.toLowerCase()) {
     return Operator.QueritContents;
   }
+  // Search1API keeps its brand casing, which the generic split below loses.
+  if (normalizedName === Operator.Search1APISearch.toLowerCase()) {
+    return Operator.Search1APISearch;
+  }
+  if (normalizedName === Operator.Search1APICrawl.toLowerCase()) {
+    return Operator.Search1APICrawl;
+  }
 
   return toolName
     .split('_')

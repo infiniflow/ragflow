@@ -18,10 +18,14 @@ package dao
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"regexp"
+	"slices"
+	"sort"
 	"strings"
 
 	"go.uber.org/zap"
@@ -59,6 +63,10 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to modify column types: %w", err)
 	}
 
+	if err := migrateNameColumnWidths(ctx, db); err != nil {
+		return fmt.Errorf("failed to widen name columns: %w", err)
+	}
+
 	// Add case-insensitive unique constraint on knowledgebase (tenant_id, name)
 	if err := migrateKnowledgebaseNameUnique(ctx, db); err != nil {
 		return fmt.Errorf("failed to add unique index on knowledgebase (tenant_id, name): %w", err)
@@ -78,7 +86,91 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to migrate tenant model data: %w", err)
 	}
 
+	// Drop the unused tenant-level model group tables. Failover is configured
+	// per conversation instead, so nothing reads or writes these any more.
+	if err := dropModelGroupTables(ctx, db); err != nil {
+		return fmt.Errorf("failed to drop tenant model group tables: %w", err)
+	}
+
 	common.Info("All manual migrations completed successfully")
+	return nil
+}
+
+// dropModelGroupTables removes tenant_model_group and
+// tenant_model_group_mapping.
+//
+// The tables were created by AutoMigrate for a tenant-scoped failover-group
+// feature that was never shipped: no service read them, and the per-conversation
+// failover path replaced the concept entirely. Their Go definitions are gone, so
+// without this they would linger in every existing database with no way to remove
+// them. AutoMigrate cannot express a drop, hence the explicit migration.
+//
+// Guarded by HasTable so a database that never had them is a no-op, and
+// mapping-first because it references the group table.
+func dropModelGroupTables(ctx context.Context, db *gorm.DB) error {
+	migrator := db.WithContext(ctx).Migrator()
+	for _, table := range []string{"tenant_model_group_mapping", "tenant_model_group"} {
+		if !migrator.HasTable(table) {
+			continue
+		}
+		if err := migrator.DropTable(table); err != nil {
+			return fmt.Errorf("drop %s: %w", table, err)
+		}
+		common.Info("Dropped unused table", zap.String("table", table))
+	}
+	return nil
+}
+
+// migrateNameColumnWidths widens name columns whose values are copied from a
+// wider source. It is idempotent: it reads the current width and only issues
+// DDL when the column is narrower than the target.
+//
+// On MySQL, widening pipeline_title from varchar(32) to varchar(255) changes
+// the VARCHAR length prefix for utf8mb4 and can rebuild the table. Run it
+// through the standalone --migrate action during a maintenance window.
+func migrateNameColumnWidths(ctx context.Context, db *gorm.DB) error {
+	specs := []struct {
+		model  any
+		field  string
+		table  string
+		column string
+		width  int64
+	}{
+		{&entity.PipelineOperationLog{}, "PipelineTitle", "pipeline_operation_log", "pipeline_title", common.PipelineTitleLimit},
+		{&entity.Tenant{}, "Name", "tenant", "name", common.TenantNameLimit},
+	}
+
+	migrator := db.WithContext(ctx).Migrator()
+	for _, spec := range specs {
+		if !migrator.HasTable(spec.model) {
+			continue
+		}
+		types, err := migrator.ColumnTypes(spec.model)
+		if err != nil {
+			return fmt.Errorf("read %s columns: %w", spec.table, err)
+		}
+		for _, ct := range types {
+			if ct.Name() != spec.column {
+				continue
+			}
+			length, ok := ct.Length()
+			if !ok {
+				// Dialects that cannot report a width are left to AutoMigrate.
+				break
+			}
+			if length >= spec.width {
+				break
+			}
+			if err := migrator.AlterColumn(spec.model, spec.field); err != nil {
+				return fmt.Errorf("widen %s.%s to %d: %w", spec.table, spec.column, spec.width, err)
+			}
+			common.Info("Widened name column",
+				zap.String("table", spec.table),
+				zap.String("column", spec.column),
+				zap.Int64("width", spec.width))
+			break
+		}
+	}
 	return nil
 }
 
@@ -229,17 +321,8 @@ func migrateIngestionTaskDocumentIDUnique(ctx context.Context, db *gorm.DB) erro
 		return nil
 	}
 
-	var duplicateCount int64
-	if err = db.WithContext(ctx).Raw(`
-		SELECT COUNT(*) FROM (
-			SELECT document_id FROM ingestion_task GROUP BY document_id HAVING COUNT(*) > 1
-		) AS duplicates
-	`).Scan(&duplicateCount).Error; err != nil {
+	if err = repairDuplicateIngestionTasks(ctx, db); err != nil {
 		return err
-	}
-	if duplicateCount > 0 {
-		common.Warn("Found duplicate document_id values in ingestion_task, cannot add unique index", zap.Int64("count", duplicateCount))
-		return nil
 	}
 
 	// A non-unique index under the same name would block the unique one.
@@ -248,6 +331,132 @@ func migrateIngestionTaskDocumentIDUnique(ctx context.Context, db *gorm.DB) erro
 	}
 
 	return addUniqueIndex(ctx, db, "ingestion_task", indexName, columns)
+}
+
+// repairDuplicateIngestionTasks keeps the task selected by GetByDocumentID and
+// removes older terminal rows before the unique document index is created.
+// Active duplicates and terminal rows whose bound pipeline log is still open
+// require operator intervention because deleting them could orphan a worker or
+// run ledger.
+func repairDuplicateIngestionTasks(ctx context.Context, db *gorm.DB) error {
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var documentIDs []string
+		if err := tx.Model(&entity.IngestionTask{}).
+			Select("document_id").
+			Group("document_id").
+			Having("COUNT(*) > 1").
+			Order("document_id").
+			Pluck("document_id", &documentIDs).Error; err != nil {
+			return fmt.Errorf("find duplicate ingestion_task.document_id values: %w", err)
+		}
+		if len(documentIDs) == 0 {
+			return nil
+		}
+
+		hasPipelineLogID := tx.Migrator().HasColumn(&entity.IngestionTask{}, "pipeline_log_id")
+		columns := "id, document_id, status, create_time"
+		if hasPipelineLogID {
+			columns += ", pipeline_log_id"
+		}
+
+		var staleTasks []entity.IngestionTask
+		for _, documentID := range documentIDs {
+			var tasks []entity.IngestionTask
+			if err := tx.Model(&entity.IngestionTask{}).
+				Select(columns).
+				Where("document_id = ?", documentID).
+				Order("COALESCE(create_time, 0) DESC").
+				Order("id DESC").
+				Find(&tasks).Error; err != nil {
+				return fmt.Errorf("load duplicate ingestion tasks for document %s: %w", documentID, err)
+			}
+			if len(tasks) < 2 {
+				continue
+			}
+			for _, task := range tasks[1:] {
+				if !common.IsTerminalTaskStatus(task.Status) {
+					return fmt.Errorf(
+						"cannot add unique index on ingestion_task.document_id: duplicate task %s for document %s is %s; stop ingestors and resolve the duplicate task before upgrading",
+						task.ID, task.DocumentID, task.Status,
+					)
+				}
+				if hasPipelineLogID && task.PipelineLogID != nil && *task.PipelineLogID != "" {
+					if err := requireSettledDuplicateTaskRun(tx, task); err != nil {
+						return err
+					}
+				}
+				staleTasks = append(staleTasks, task)
+			}
+		}
+
+		for _, task := range staleTasks {
+			result := tx.Where("id = ? AND status = ?", task.ID, task.Status).
+				Delete(&entity.IngestionTask{})
+			if result.Error != nil {
+				return fmt.Errorf("delete duplicate ingestion task %s: %w", task.ID, result.Error)
+			}
+			if result.RowsAffected != 1 {
+				return fmt.Errorf(
+					"cannot delete duplicate ingestion task %s for document %s: task changed during migration",
+					task.ID, task.DocumentID,
+				)
+			}
+		}
+		common.Warn(
+			"Removed duplicate terminal ingestion tasks before adding the unique document index",
+			zap.Int("rows", len(staleTasks)),
+		)
+		return nil
+	})
+}
+
+func requireSettledDuplicateTaskRun(tx *gorm.DB, task entity.IngestionTask) error {
+	if !tx.Migrator().HasTable("pipeline_operation_log") {
+		return fmt.Errorf(
+			"cannot add unique index on ingestion_task.document_id: duplicate task %s for document %s references pipeline log %s, but pipeline_operation_log is missing",
+			task.ID, task.DocumentID, *task.PipelineLogID,
+		)
+	}
+
+	var operationStatus string
+	err := tx.Table("pipeline_operation_log").
+		Select("operation_status").
+		Where("id = ? AND document_id = ?", *task.PipelineLogID, task.DocumentID).
+		Take(&operationStatus).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return fmt.Errorf(
+			"cannot add unique index on ingestion_task.document_id: duplicate task %s for document %s references missing pipeline log %s",
+			task.ID, task.DocumentID, *task.PipelineLogID,
+		)
+	}
+	if err != nil {
+		return fmt.Errorf("load pipeline log %s for duplicate task %s: %w", *task.PipelineLogID, task.ID, err)
+	}
+	if isOpenPipelineOperationStatus(operationStatus) {
+		return fmt.Errorf(
+			"cannot add unique index on ingestion_task.document_id: duplicate task %s for document %s is bound to open pipeline log %s; settle the log before upgrading",
+			task.ID, task.DocumentID, *task.PipelineLogID,
+		)
+	}
+	if !isTerminalPipelineOperationStatus(operationStatus) {
+		return fmt.Errorf(
+			"cannot add unique index on ingestion_task.document_id: duplicate task %s for document %s is bound to pipeline log %s with unknown status %q",
+			task.ID, task.DocumentID, *task.PipelineLogID, operationStatus,
+		)
+	}
+	return nil
+}
+
+func isOpenPipelineOperationStatus(status string) bool {
+	return slices.Contains(expandPipelineOperationStatuses(OpenPipelineOperationStatuses()), status)
+}
+
+func isTerminalPipelineOperationStatus(status string) bool {
+	return slices.Contains(expandPipelineOperationStatuses([]string{
+		string(entity.TaskStatusCancel),
+		string(entity.TaskStatusDone),
+		string(entity.TaskStatusFail),
+	}), status)
 }
 
 // migrateIngestionTaskPipelineLogID adds ingestion_task.pipeline_log_id when
@@ -281,10 +490,9 @@ func migrateIngestionTaskPipelineLogID(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
-// migrateIngestionLogRunIdentity adds the columns and indexes that make each
-// ingestion event belong to one immutable pipeline-operation-log run. It is
-// deliberately explicit: the runtime startup path auto-migrates ingestion
-// tables and cannot be trusted to converge an existing schema safely.
+// migrateIngestionLogRunIdentity adds the run identity and pipeline version
+// columns. It is explicit because runtime AutoMigrate cannot be trusted to
+// converge an existing schema safely.
 func migrateIngestionLogRunIdentity(ctx context.Context, db *gorm.DB) error {
 	migrator := db.WithContext(ctx).Migrator()
 	if migrator.HasTable(&entity.PipelineOperationLog{}) {
@@ -297,6 +505,13 @@ func migrateIngestionLogRunIdentity(ctx context.Context, db *gorm.DB) error {
 		}
 		if err := createIngestionLogIndexIfMissing(migrator, &entity.PipelineOperationLog{}, "idx_pipeline_operation_log_document_run", "add pipeline_operation_log document/run index"); err != nil {
 			return err
+		}
+		if !migrator.HasColumn(&entity.PipelineOperationLog{}, "pipeline_version_id") {
+			if err := db.WithContext(ctx).Exec(
+				"ALTER TABLE pipeline_operation_log ADD COLUMN pipeline_version_id varchar(32) NULL",
+			).Error; err != nil && !isDuplicateColumnError(err) {
+				return fmt.Errorf("add pipeline_operation_log.pipeline_version_id: %w", err)
+			}
 		}
 	}
 
@@ -337,12 +552,17 @@ func createIngestionLogIndexIfMissing(migrator ingestionLogSchemaMigrator, model
 	return nil
 }
 
+// isDuplicateColumnError reports whether err means the column is already
+// there: MySQL's Error 1060 on the MySQL wire, or the duplicate-object
+// SQLSTATEs on the Vastbase connection. A bare "already exists" text match is
+// deliberately absent — unrelated failures phrase themselves that way too.
 func isDuplicateColumnError(err error) bool {
 	if err == nil {
 		return false
 	}
 	text := err.Error()
-	return strings.Contains(text, "Error 1060") && strings.Contains(text, "Duplicate column name")
+	return (strings.Contains(text, "Error 1060") && strings.Contains(text, "Duplicate column name")) ||
+		isPostgresDuplicateObjectErr(err)
 }
 
 // migrateKnowledgebaseNameUnique adds a case-insensitive unique constraint on
@@ -461,11 +681,136 @@ func migrateUserCanvasTitleUnique(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
+// knowledgebaseParserConfigTargetVersion is the database version a completed
+// ingestion/parser config migration brings the database to. It is stored in
+// the shared system_settings migration marker and precedes the tenant-model
+// max_tokens backfill.
+const knowledgebaseParserConfigTargetVersion = "v1.0.0-rc2.dev1"
+
+// removedParserConfigKeys are the top level knowledgebase parser config keys the
+// cleanup deletes. raptor and graphrag moved out of the dataset
+// parser config, so the stored sections are dead data.
+var removedParserConfigKeys = []string{"raptor", "graphrag"}
+
+// migrateKnowledgebaseParserConfig deletes the retired raptor and graphrag
+// sections from knowledgebase.parser_config, leaving every other key of the
+// stored JSON untouched.
+//
+// It runs after AutoMigrate: the shared version marker is monotonic, and this
+// step's version sorts above the conversation split's, so running it any
+// earlier would mark that split as done on a database that has not run it yet.
+func migrateKnowledgebaseParserConfig(ctx context.Context, db *gorm.DB) error {
+	currentVersion, err := GetDatabaseMigrationVersion(ctx, db)
+	if err != nil {
+		return fmt.Errorf("read database migration version: %w", err)
+	}
+	if shouldSkipMigration(currentVersion, knowledgebaseParserConfigTargetVersion) {
+		common.Info("Knowledgebase parser configs already cleaned, skipping",
+			zap.String("current_version", currentVersion),
+			zap.String("target_version", knowledgebaseParserConfigTargetVersion))
+		return nil
+	}
+	if !db.WithContext(ctx).Migrator().HasTable("knowledgebase") {
+		return nil
+	}
+
+	common.Info("Running knowledgebase parser config migration",
+		zap.String("current_version", currentVersion),
+		zap.String("target_version", knowledgebaseParserConfigTargetVersion))
+	migrated, err := removeParserConfigKeys(ctx, db)
+	if err != nil {
+		return err
+	}
+	if err := setDatabaseMigrationVersion(ctx, db, knowledgebaseParserConfigTargetVersion); err != nil {
+		return fmt.Errorf("mark database migration version %s: %w", knowledgebaseParserConfigTargetVersion, err)
+	}
+	common.Info("Knowledgebase parser config migration completed",
+		zap.Int("knowledgebases", migrated),
+		zap.String("version", knowledgebaseParserConfigTargetVersion))
+	return nil
+}
+
+// knowledgebaseParserConfigRow reads one knowledgebase row's parser config as
+// raw text, so a malformed payload is skipped instead of failing the stage.
+type knowledgebaseParserConfigRow struct {
+	ID           string  `gorm:"column:id"`
+	ParserConfig *string `gorm:"column:parser_config"`
+}
+
+func removeParserConfigKeys(ctx context.Context, db *gorm.DB) (int, error) {
+	var migrated int
+	var rows []knowledgebaseParserConfigRow
+	result := db.WithContext(ctx).Model(&entity.Knowledgebase{}).
+		Select("id", "parser_config").Order("id").
+		FindInBatches(&rows, parserConfigMigrationBatchSize, func(batchDB *gorm.DB, _ int) error {
+			return batchDB.Transaction(func(tx *gorm.DB) error {
+				for _, row := range rows {
+					config, ok := parseParserConfig(row.ParserConfig)
+					if !ok || !dropRemovedParserConfigKeys(config) {
+						continue
+					}
+					if err := tx.Model(&entity.Knowledgebase{}).Where("id = ?", row.ID).
+						Update("parser_config", entity.JSONMap(config)).Error; err != nil {
+						return fmt.Errorf("update knowledgebase parser config %q: %w", row.ID, err)
+					}
+					migrated++
+				}
+				return nil
+			})
+		})
+	if result.Error != nil {
+		return migrated, fmt.Errorf("read knowledgebase parser configs: %w", result.Error)
+	}
+	return migrated, nil
+}
+
+// parseParserConfig decodes one stored parser config. It reports false for a
+// missing, empty or non-object payload, which no cleanup can apply to.
+func parseParserConfig(raw *string) (map[string]interface{}, bool) {
+	if raw == nil {
+		return nil, false
+	}
+	trimmed := strings.TrimSpace(*raw)
+	if trimmed == "" {
+		return nil, false
+	}
+	config := make(map[string]interface{})
+	if err := json.Unmarshal([]byte(trimmed), &config); err != nil {
+		return nil, false
+	}
+	return config, true
+}
+
+// dropRemovedParserConfigKeys deletes the retired sections and reports whether
+// the config changed, so only rows that actually carry them are rewritten.
+func dropRemovedParserConfigKeys(config map[string]interface{}) bool {
+	removed := false
+	for _, key := range removedParserConfigKeys {
+		if _, ok := config[key]; ok {
+			delete(config, key)
+			removed = true
+		}
+	}
+	return removed
+}
+
 // modifyColumnTypes aligns columns whose stored type must match the Python
 // models in api/db/db_models.py. The target types are also declared on the Go
 // entities, so AutoMigrate converges on the same definition and the two paths
 // cannot fight over the column.
 func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
+	// The specs carry MySQL type names (int, longtext, datetime) compared
+	// against COLUMN_TYPE to keep the shared schema aligned with the Python
+	// models. On Vastbase the columns are created by AutoMigrate's postgres
+	// mapping, whose reported type names (integer, bigint, timestamp) never
+	// compare equal to the specs, so every startup would re-issue the MODIFY
+	// and AutoMigrate would flip the column back — an ALTER loop measured on
+	// a live instance (spec int NOT NULL vs stored bigint YES). The columns
+	// are already correct there; there is nothing to align.
+	if isVastbaseMetaDB(db) {
+		return nil
+	}
+
 	specs := []columnSpec{
 		// dialog.top_k mirrors Python's IntegerField(default=1024).
 		{
@@ -515,14 +860,53 @@ func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
 			definition: "datetime",
 		},
 	}
+	specs = append(specs, tenantModelIDColumnSpecs()...)
 
 	for _, spec := range specs {
 		if err := applyColumnSpec(ctx, db, spec); err != nil {
 			return err
 		}
 	}
-
 	return nil
+}
+
+// tenantModelIDColumnSpecs projects tenantModelIDFields into column specs for
+// the tenant model id columns. These columns were once declared *int64, so a
+// database built by one of those releases holds them as bigint and the daily
+// cast back to varchar(32) is what lets AutoMigrate succeed at all. Sharing
+// tenantModelIDFields keeps this list and the backfill reading one inventory.
+func tenantModelIDColumnSpecs() []columnSpec {
+	tables := tenantModelIDFieldTables()
+
+	total := 0
+	for _, table := range tables {
+		total += len(tenantModelIDFields[table])
+	}
+
+	specs := make([]columnSpec, 0, total)
+	for _, table := range tables {
+		for _, field := range tenantModelIDFields[table] {
+			specs = append(specs, columnSpec{
+				table:      table,
+				column:     field.tenantIDColumn,
+				columnType: "varchar(32)", nullable: true,
+				definition: "varchar(32)",
+				keepLength: 32,
+			})
+		}
+	}
+	return specs
+}
+
+// tenantModelIDFieldTables lists the tables carrying tenant model id columns in
+// a stable order, so both the spec builder and anything reporting on them agree.
+func tenantModelIDFieldTables() []string {
+	tables := make([]string, 0, len(tenantModelIDFields))
+	for table := range tenantModelIDFields {
+		tables = append(tables, table)
+	}
+	sort.Strings(tables)
+	return tables
 }
 
 // renameColumnIfExists renames a column if it exists and the new column doesn't exist
@@ -822,6 +1206,7 @@ type columnSpec struct {
 	columnType string // compared against INFORMATION_SCHEMA.COLUMNS.COLUMN_TYPE
 	nullable   bool
 	definition string // used verbatim when an ALTER is required
+	keepLength int    // when non-zero, values wider or narrower than this are orphaned by the type change and reset to NULL
 }
 
 // applyColumnSpec aligns a column with its expected definition, issuing DDL only
@@ -855,6 +1240,49 @@ func applyColumnSpec(ctx context.Context, db *gorm.DB, spec columnSpec) error {
 			zap.String("table", spec.table),
 			zap.String("column", spec.column),
 			zap.Error(err))
+		return nil
 	}
+	discardOrphanedColumnValues(ctx, db, spec)
 	return nil
+}
+
+// discardOrphanedColumnValues clears values that the type change in spec leaves
+// behind. This exists because a successful MODIFY says nothing about whether
+// the surviving values are still meaningful: an int column converted to a
+// hex-id column keeps "3", which every reader treats as an unresolved model
+// reference rather than as the unset value it has become.
+//
+// LENGTH() is NULL on NULL rows and NULL <> any number is not true, so rows
+// already unset are never counted or rewritten.
+func discardOrphanedColumnValues(ctx context.Context, db *gorm.DB, spec columnSpec) {
+	if spec.keepLength <= 0 {
+		return
+	}
+
+	stale := fmt.Sprintf("SELECT COUNT(1) FROM %s WHERE LENGTH(%s) <> %d", spec.table, spec.column, spec.keepLength)
+	var count int64
+	if err := db.WithContext(ctx).Raw(stale).Scan(&count).Error; err != nil {
+		common.Warn("Failed to count orphaned values",
+			zap.String("table", spec.table),
+			zap.String("column", spec.column),
+			zap.Error(err))
+		return
+	}
+	if count == 0 {
+		return
+	}
+
+	common.Info("Discarding orphaned values from converted column",
+		zap.String("table", spec.table),
+		zap.String("column", spec.column),
+		zap.Int64("count", count))
+	result := db.WithContext(ctx).Exec(
+		fmt.Sprintf("UPDATE %s SET %s = NULL WHERE LENGTH(%s) <> %d", spec.table, spec.column, spec.column, spec.keepLength),
+	)
+	if result.Error != nil {
+		common.Warn("Failed to discard orphaned values",
+			zap.String("table", spec.table),
+			zap.String("column", spec.column),
+			zap.Error(result.Error))
+	}
 }

@@ -9,10 +9,14 @@ jest.mock('@/constants/agent', () => ({
     BGPT: 'Bing',
     QueritContents: 'QueritContents',
     QueritSearch: 'QueritSearch',
+    Search1APISearch: 'Search1APISearch',
+    Search1APICrawl: 'Search1APICrawl',
+    Begin: 'Begin',
   },
+  AgentDialogueMode: { Webhook: 'Webhook' },
 }));
 
-import { Operator } from '@/constants/agent';
+import { AgentDialogueMode, Operator } from '@/constants/agent';
 import { clearSensitiveFields } from './clear-sensitive-fields';
 
 describe('clearSensitiveFields', () => {
@@ -183,6 +187,54 @@ describe('clearSensitiveFields', () => {
     expect(dsl.tools[0].params.api_key).toBe('sofya-tool-secret');
   });
 
+  it.each([
+    'Search1APISearch',
+    'Search1APICrawl',
+    'search1apisearch',
+    'search1apicrawl',
+    'search1api',
+    'search1api_crawl',
+  ])(
+    'clears a %s key from a canvas node and from a tool record',
+    (operator) => {
+      const dsl = {
+        graph: {
+          nodes: [
+            {
+              data: {
+                label: operator,
+                form: {
+                  api_key: 'search1api-graph-secret',
+                  channel: 'news',
+                },
+              },
+            },
+          ],
+        },
+        tools: [
+          {
+            component_name: operator,
+            params: {
+              api_key: 'search1api-tool-secret',
+              search_service: 'reuters',
+            },
+          },
+        ],
+      };
+
+      const sanitized = clearSensitiveFields(dsl);
+
+      expect(sanitized.graph.nodes[0].data.form.api_key).toBe('');
+      expect(sanitized.graph.nodes[0].data.form.channel).toBe('news');
+      expect(sanitized.tools[0].params.api_key).toBe('');
+      expect(sanitized.tools[0].params.search_service).toBe('reuters');
+      expect(dsl.graph.nodes[0].data.form.api_key).toBe(
+        'search1api-graph-secret',
+      );
+      expect(dsl.tools[0].params.api_key).toBe('search1api-tool-secret');
+    },
+  );
+
   it('does not change standalone graph export behavior for other tools', () => {
     const dsl = {
       graph: {
@@ -200,5 +252,65 @@ describe('clearSensitiveFields', () => {
     };
 
     expect(clearSensitiveFields(dsl)).toEqual(dsl);
+  });
+
+  it('clears webhook authentication secrets from a begin node', () => {
+    const dsl = {
+      graph: {
+        nodes: [
+          {
+            data: {
+              label: Operator.Begin,
+              form: {
+                mode: AgentDialogueMode.Webhook,
+                security: {
+                  auth_type: 'basic',
+                  token: {
+                    token_header: 'X-Token',
+                    token_value: 'token-secret',
+                  },
+                  basic_auth: { username: 'service', password: 'basic-secret' },
+                  jwt: { secret: 'jwt-secret', issuer: 'ragflow' },
+                  hmac: { header: 'X-Signature', secret: 'hmac-secret' },
+                },
+              },
+            },
+          },
+        ],
+      },
+      components: {
+        begin: {
+          obj: {
+            component_name: Operator.Begin,
+            params: {
+              mode: AgentDialogueMode.Webhook,
+              security: {
+                auth_type: 'token',
+                token: { token_value: 'component-token-secret' },
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const sanitized = clearSensitiveFields(dsl);
+    const security = sanitized.graph.nodes[0].data.form.security;
+
+    expect(security.token.token_value).toBe('');
+    expect(security.basic_auth.password).toBe('');
+    expect(security.jwt.secret).toBe('');
+    expect(security.hmac.secret).toBe('');
+    expect(security.basic_auth.username).toBe('service');
+    expect(security.token.token_header).toBe('X-Token');
+    expect(
+      sanitized.components.begin.obj.params.security.token.token_value,
+    ).toBe('');
+    expect(dsl.graph.nodes[0].data.form.security.token.token_value).toBe(
+      'token-secret',
+    );
+    expect(dsl.components.begin.obj.params.security.token.token_value).toBe(
+      'component-token-secret',
+    );
   });
 });

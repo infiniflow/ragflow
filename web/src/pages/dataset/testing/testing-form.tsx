@@ -18,9 +18,9 @@ import { RerankFormFields } from '@/components/rerank';
 import {
   SimilaritySliderFormField,
   initialSimilarityThresholdValue,
-  initialVectorSimilarityWeightValue,
+  initialKeywordsSimilarityWeightValue,
   similarityThresholdSchema,
-  vectorSimilarityWeightSchema,
+  keywordsSimilarityWeightSchema,
 } from '@/components/similarity-slider';
 import { TopSelectFormItem } from '@/components/top-select';
 import { ButtonLoading } from '@/components/ui/button';
@@ -63,7 +63,7 @@ export default function TestingForm({
         message: t('knowledgeDetails.testTextPlaceholder'),
       }),
       ...similarityThresholdSchema,
-      ...vectorSimilarityWeightSchema,
+      ...keywordsSimilarityWeightSchema,
       dataset_ids: z.array(z.string()).optional(),
       ...MetadataFilterSchema,
       page_size: z.number().int().min(1).max(100),
@@ -78,7 +78,7 @@ export default function TestingForm({
     resolver: zodResolver(formSchema),
     defaultValues: {
       ...initialSimilarityThresholdValue,
-      ...initialVectorSimilarityWeightValue,
+      ...initialKeywordsSimilarityWeightValue,
       dataset_ids: [knowledgeBaseId],
       page_size: 10,
       rerank_candidates_count: 64,

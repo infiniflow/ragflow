@@ -16,17 +16,8 @@
 
 // Package sandbox implements RAGFlow's Go-side CodeExec sandbox subsystem.
 //
-// The package is the Go port of `agent/sandbox/` in the Python repo. It
-// exposes a single active provider (self_managed or aliyun_codeinterpreter
-// today; e2b is a loud stub) through a ProviderManager. The
-// ManagerClient returned by NewManagerClient implements the
-// tool.SandboxClient interface in the parent package, so the CodeExec
-// tool can dispatch code execution through this manager without
-// knowing which provider is active.
-//
-// See §17 of docs/develop/agent-go-port-design.md for the decision
-// record and the SDK gap that forced an HTTP fallback for the
-// aliyun execute path.
+// ProviderManager selects the active backend. ManagerClient adapts it to
+// tool.SandboxClient without exposing provider details to CodeExec.
 package sandbox
 
 import (
@@ -36,9 +27,7 @@ import (
 	"strings"
 )
 
-// ProviderType is the canonical identifier for a sandbox backend. The
-// values match the Python-side `sandbox.provider_type` system setting
-// and the keys in `agent/sandbox/providers/__init__.py`.
+// ProviderType identifies a backend stored in sandbox.provider_type.
 type ProviderType string
 
 const (
@@ -90,11 +79,7 @@ var ErrE2BProviderNotImplemented = errors.New(
 		"ErrCodeExecSandboxMissing pattern in tool.SandboxClient)",
 )
 
-// ExecutionResult is the wire shape returned by every provider. The
-// fields mirror the Python `agent/sandbox/providers/base.py`
-// ExecutionResult dataclass so downstream consumers (the CodeExec
-// tool, the Message component, rich-content rendering) can pattern
-// match unchanged across the two ports.
+// ExecutionResult carries streams, exit status, and provider metadata.
 type ExecutionResult struct {
 	// Stdout is the captured standard output from the sandbox.
 	Stdout string
@@ -127,11 +112,7 @@ type SandboxInstance struct {
 	Metadata map[string]any
 }
 
-// SandboxProvider is the contract every backend must satisfy. The
-// shape mirrors `agent/sandbox/providers/base.py` SandboxProvider ABC
-// so the Go port's providers are semantically interchangeable with
-// the Python ones — same lifecycle, same argument shape, same result
-// shape.
+// SandboxProvider is the lifecycle and execution contract for each backend.
 type SandboxProvider interface {
 	// Initialize configures the provider. Returns an error if the
 	// provider is misconfigured or the upstream is unreachable. The

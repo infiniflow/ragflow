@@ -37,8 +37,8 @@ type ChunkOptions struct {
 	// strategy degrades to "sentence" inside the operator.
 	SplitStrategy string
 
-	// Postprocess configuration. Zero values mean "do not run that
-	// step"; non-zero values enable it.
+	// MergeTargetSize > 0 enables the merge step; its value is the
+	// per-chunk budget in runes (Unicode code points).
 	MergeTargetSize int
 
 	// FilterMinLength > 0 drops chunks shorter than that (rune count).

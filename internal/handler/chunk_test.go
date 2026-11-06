@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"ragflow/internal/common"
-	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -20,12 +20,12 @@ import (
 // mockChunkSvc implements chunkSvcIface for testing ChunkHandler.
 // Only the methods actually called by the test are set; others panic.
 type mockChunkSvc struct {
-	retrievalTestFn func(ctx context.Context, req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error)
-	addChunkFn      func(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error)
-	listFn          func(ctx context.Context, req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error)
-	switchChunksFn  func(ctx context.Context, userID, datasetID, documentID string, availableInt int, chunkIDs []string) error
-	updateChunkFn   func(ctx context.Context, req *service.UpdateChunkRequest, userID string) error
-	stopParsingFn   func(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error)
+	addChunkFn     func(ctx context.Context, req *service.AddChunkRequest) (*service.AddChunkResponse, error)
+	listFn         func(ctx context.Context, req *service.ListChunksRequest) (*service.ListChunksResponse, error)
+	switchChunksFn func(ctx context.Context, datasetID, documentID string, availableInt int, chunkIDs []string) error
+	updateChunkFn  func(ctx context.Context, req *service.UpdateChunkRequest) error
+	stopParsingFn  func(ctx context.Context, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error)
+	removeChunksFn func(context.Context, *service.RemoveChunksRequest) (int64, error)
 }
 
 type codedTestError struct {
@@ -41,75 +41,100 @@ func (e codedTestError) Code() common.ErrorCode {
 	return e.code
 }
 
-func (m *mockChunkSvc) RetrievalTest(ctx context.Context, req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
-	if m.retrievalTestFn != nil {
-		return m.retrievalTestFn(ctx, req, userID)
-	}
-	return &service.RetrievalTestResponse{
-		Chunks: []map[string]interface{}{{"docnm_kwd": "test", "content_with_weight": "content"}},
-		Total:  1,
-	}, nil
-}
-func (m *mockChunkSvc) Get(context.Context, *service.GetChunkRequest, string) (*service.GetChunkResponse, error) {
+func (m *mockChunkSvc) Get(context.Context, *service.GetChunkRequest) (*service.GetChunkResponse, error) {
 	panic("not implemented")
 }
-func (m *mockChunkSvc) List(ctx context.Context, req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error) {
+func (m *mockChunkSvc) List(ctx context.Context, req *service.ListChunksRequest) (*service.ListChunksResponse, error) {
 	if m.listFn != nil {
-		return m.listFn(ctx, req, userID)
+		return m.listFn(ctx, req)
 	}
 	panic("not implemented")
 }
-func (m *mockChunkSvc) SwitchChunks(ctx context.Context, userID, datasetID, documentID string, availableInt int, chunkIDs []string) error {
+func (m *mockChunkSvc) SwitchChunks(ctx context.Context, datasetID, documentID string, availableInt int, chunkIDs []string) error {
 	if m.switchChunksFn != nil {
-		return m.switchChunksFn(ctx, userID, datasetID, documentID, availableInt, chunkIDs)
+		return m.switchChunksFn(ctx, datasetID, documentID, availableInt, chunkIDs)
 	}
 	panic("not implemented")
 }
-func (m *mockChunkSvc) UpdateChunk(ctx context.Context, req *service.UpdateChunkRequest, userID string) error {
+func (m *mockChunkSvc) UpdateChunk(ctx context.Context, req *service.UpdateChunkRequest) error {
 	if m.updateChunkFn != nil {
-		return m.updateChunkFn(ctx, req, userID)
+		return m.updateChunkFn(ctx, req)
 	}
 	panic("not implemented")
 }
-func (m *mockChunkSvc) RemoveChunks(context.Context, *service.RemoveChunksRequest, string) (int64, error) {
+func (m *mockChunkSvc) RemoveChunks(ctx context.Context, req *service.RemoveChunksRequest) (int64, error) {
+	if m.removeChunksFn != nil {
+		return m.removeChunksFn(ctx, req)
+	}
 	panic("not implemented")
 }
-func (m *mockChunkSvc) StopParsing(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
+
+func TestChunkRemoveUsesRouteIDs(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		err   error
+		code  int
+		count int64
+	}{
+		{name: "success", code: 0, count: 1},
+		{name: "nothing deleted", code: 0, count: 0},
+		{name: "mismatched dataset", err: permission.ErrResourceNotFound, code: 404},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			called := false
+			mock := &mockChunkSvc{removeChunksFn: func(ctx context.Context, req *service.RemoveChunksRequest) (int64, error) {
+				called = true
+				if req.DatasetID != "kb-1" || req.DocID != "doc-1" || permission.UserIDFromContext(ctx) != "user-1" {
+					t.Fatalf("unexpected delete target: %#v, user %q", req, permission.UserIDFromContext(ctx))
+				}
+				if !reflect.DeepEqual(req.ChunkIDs, []string{"chunk-1"}) {
+					t.Fatalf("unexpected chunk IDs: %v", req.ChunkIDs)
+				}
+				return tc.count, tc.err
+			}}
+			r, h := setupChunkHandlerWithUser("user-1", mock)
+			r.DELETE("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.RemoveChunks)
+			request := httptest.NewRequest(http.MethodDelete, "/api/v1/datasets/kb-1/documents/doc-1/chunks",
+				strings.NewReader(`{"dataset_id":"body-kb","doc_id":"body-doc","chunk_ids":["chunk-1"]}`))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			r.ServeHTTP(response, request)
+			if !called {
+				t.Fatal("delete service was not called")
+			}
+			var payload map[string]interface{}
+			if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+				t.Fatal(err)
+			}
+			if response.Code != http.StatusOK || payload["code"] != float64(tc.code) {
+				t.Fatalf("unexpected response: HTTP %d, %s", response.Code, response.Body.String())
+			}
+			if tc.err != nil && (payload["message"] != "Resource not found" || payload["data"] != nil) {
+				t.Fatalf("unexpected resource error: %s", response.Body.String())
+			}
+			if tc.err == nil {
+				data, ok := payload["data"].(map[string]interface{})
+				if !ok || data["deleted_count"] != float64(tc.count) {
+					t.Fatalf("unexpected deletion count: %s", response.Body.String())
+				}
+			}
+		})
+	}
+}
+func (m *mockChunkSvc) StopParsing(ctx context.Context, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
 	if m.stopParsingFn != nil {
-		return m.stopParsingFn(ctx, userID, datasetID, req)
+		return m.stopParsingFn(ctx, datasetID, req)
 	}
 	panic("not implemented")
 }
-func (m *mockChunkSvc) Parse(context.Context, string, string, *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error) {
+func (m *mockChunkSvc) Parse(context.Context, string, *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error) {
 	panic("not implemented")
 }
-func (m *mockChunkSvc) AddChunk(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
+func (m *mockChunkSvc) AddChunk(ctx context.Context, req *service.AddChunkRequest) (*service.AddChunkResponse, error) {
 	if m.addChunkFn != nil {
-		return m.addChunkFn(ctx, req, userID)
+		return m.addChunkFn(ctx, req)
 	}
 	return &service.AddChunkResponse{Chunk: map[string]interface{}{"id": "chunk-1"}}, nil
-}
-
-func setupChunkRetrievalTest(userID string) (*gin.Engine, *mockChunkSvc) {
-	mock := &mockChunkSvc{}
-	h := &ChunkHandler{chunkService: mock}
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.Use(func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: userID})
-	})
-	r.POST("/api/v1/datasets/search", h.RetrievalTest)
-	return r, mock
-}
-
-func setupChunkRetrievalTestNoAuth() *gin.Engine {
-	// Returns a router without the user middleware — used for error-path
-	// tests that don't call the service.
-	h := &ChunkHandler{}
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.POST("/api/v1/datasets/search", h.RetrievalTest)
-	return r
 }
 
 func setupChunkStopParsingTest(userID string) (*gin.Engine, *mockChunkSvc) {
@@ -118,7 +143,7 @@ func setupChunkStopParsingTest(userID string) (*gin.Engine, *mockChunkSvc) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: userID})
+		c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), userID, ""))
 	})
 	r.DELETE("/api/v1/datasets/:dataset_id/chunks", h.StopParsing)
 	return r, mock
@@ -129,7 +154,7 @@ func setupChunkHandlerWithUser(userID string, mock *mockChunkSvc) (*gin.Engine, 
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: userID})
+		c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), userID, ""))
 	})
 	return r, h
 }
@@ -139,9 +164,9 @@ func TestChunkHandlerListChunksMapsPathAndQuery(t *testing.T) {
 	r, h := setupChunkHandlerWithUser("user-1", mock)
 	r.GET("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.ListChunks)
 
-	mock.listFn = func(ctx context.Context, req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error) {
-		if userID != "user-1" {
-			t.Fatalf("userID = %q, want user-1", userID)
+	mock.listFn = func(ctx context.Context, req *service.ListChunksRequest) (*service.ListChunksResponse, error) {
+		if permission.UserIDFromContext(ctx) != "user-1" {
+			t.Fatalf("context userID = %q, want user-1", permission.UserIDFromContext(ctx))
 		}
 		if req.DatasetID != "kb-1" || req.DocID != "doc-1" {
 			t.Fatalf("req ids = %q/%q, want kb-1/doc-1", req.DatasetID, req.DocID)
@@ -191,9 +216,9 @@ func TestChunkHandlerListChunksMapsAvailableFalse(t *testing.T) {
 	r, h := setupChunkHandlerWithUser("user-1", mock)
 	r.GET("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.ListChunks)
 
-	mock.listFn = func(ctx context.Context, req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error) {
-		if userID != "user-1" {
-			t.Fatalf("userID = %q, want user-1", userID)
+	mock.listFn = func(ctx context.Context, req *service.ListChunksRequest) (*service.ListChunksResponse, error) {
+		if permission.UserIDFromContext(ctx) != "user-1" {
+			t.Fatalf("context userID = %q, want user-1", permission.UserIDFromContext(ctx))
 		}
 		if req.AvailableInt == nil || *req.AvailableInt != 0 {
 			t.Fatalf("available_int = %v, want 0", req.AvailableInt)
@@ -219,9 +244,9 @@ func TestChunkHandlerSwitchChunksCallsService(t *testing.T) {
 	r, h := setupChunkHandlerWithUser("user-1", mock)
 	r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.SwitchChunks)
 
-	mock.switchChunksFn = func(ctx context.Context, userID, datasetID, documentID string, availableInt int, chunkIDs []string) error {
-		if userID != "user-1" || datasetID != "kb-1" || documentID != "doc-1" {
-			t.Fatalf("ids = %q/%q/%q, want user-1/kb-1/doc-1", userID, datasetID, documentID)
+	mock.switchChunksFn = func(ctx context.Context, datasetID, documentID string, availableInt int, chunkIDs []string) error {
+		if permission.UserIDFromContext(ctx) != "user-1" || datasetID != "kb-1" || documentID != "doc-1" {
+			t.Fatalf("identity and ids = %q/%q/%q, want user-1/kb-1/doc-1", permission.UserIDFromContext(ctx), datasetID, documentID)
 		}
 		if availableInt != 0 {
 			t.Fatalf("availableInt = %d, want 0", availableInt)
@@ -245,8 +270,11 @@ func TestChunkHandlerSwitchChunksCallsService(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &res); err != nil {
 		t.Fatalf("invalid JSON response: %v", err)
 	}
-	if res["data"] != true {
-		t.Fatalf("data = %v, want true", res["data"])
+	if res["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected success, got %v", res)
+	}
+	if data, exists := res["data"]; exists {
+		t.Fatalf("data must be omitted, got %v", data)
 	}
 }
 
@@ -270,9 +298,9 @@ func TestChunkHandlerUpdateChunkUsesPathIDs(t *testing.T) {
 	r, h := setupChunkHandlerWithUser("user-1", mock)
 	r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks/:chunk_id", h.UpdateChunk)
 
-	mock.updateChunkFn = func(ctx context.Context, req *service.UpdateChunkRequest, userID string) error {
-		if userID != "user-1" {
-			t.Fatalf("userID = %q, want user-1", userID)
+	mock.updateChunkFn = func(ctx context.Context, req *service.UpdateChunkRequest) error {
+		if permission.UserIDFromContext(ctx) != "user-1" {
+			t.Fatalf("context userID = %q, want user-1", permission.UserIDFromContext(ctx))
 		}
 		if req.DatasetID != "kb-1" || req.DocumentID != "doc-1" || req.ChunkID != "chunk-1" {
 			t.Fatalf("ids = %q/%q/%q, want kb-1/doc-1/chunk-1", req.DatasetID, req.DocumentID, req.ChunkID)
@@ -298,7 +326,7 @@ func TestChunkHandlerUpdateChunkValidationErrorIsBadRequest(t *testing.T) {
 	r, h := setupChunkHandlerWithUser("user-1", mock)
 	r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks/:chunk_id", h.UpdateChunk)
 
-	mock.updateChunkFn = func(ctx context.Context, req *service.UpdateChunkRequest, userID string) error {
+	mock.updateChunkFn = func(ctx context.Context, req *service.UpdateChunkRequest) error {
 		return codedTestError{code: common.CodeArgumentError, msg: "`tag_feas` values must be finite numbers greater than 0"}
 	}
 
@@ -317,7 +345,7 @@ func TestChunkHandlerUpdateChunkForwardsImageFields(t *testing.T) {
 	r, h := setupChunkHandlerWithUser("user-1", mock)
 	r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks/:chunk_id", h.UpdateChunk)
 
-	mock.updateChunkFn = func(ctx context.Context, req *service.UpdateChunkRequest, userID string) error {
+	mock.updateChunkFn = func(ctx context.Context, req *service.UpdateChunkRequest) error {
 		if req.ImageBase64 == nil || *req.ImageBase64 != "aGVsbG8=" {
 			t.Fatalf("image_base64 = %v, want aGVsbG8=", req.ImageBase64)
 		}
@@ -354,7 +382,7 @@ func TestChunkHandlerUpdateChunkRejectsNonStringImageFields(t *testing.T) {
 			r, h := setupChunkHandlerWithUser("user-1", mock)
 			r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks/:chunk_id", h.UpdateChunk)
 
-			mock.updateChunkFn = func(context.Context, *service.UpdateChunkRequest, string) error {
+			mock.updateChunkFn = func(context.Context, *service.UpdateChunkRequest) error {
 				t.Fatal("service must not be called for a malformed image field")
 				return nil
 			}
@@ -383,12 +411,95 @@ func TestChunkHandlerUpdateChunkRejectsNonStringImageFields(t *testing.T) {
 	}
 }
 
+func TestChunkHandlerUpdateChunkForwardsTagKwd(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want []string
+	}{
+		{"tags", `{"tag_kwd":["alpha","beta"]}`, []string{"alpha", "beta"}},
+		{"empty list clears tags", `{"tag_kwd":[]}`, []string{}},
+		{"absent", `{"content":"updated"}`, nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockChunkSvc{}
+			r, h := setupChunkHandlerWithUser("user-1", mock)
+			r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks/:chunk_id", h.UpdateChunk)
+
+			called := false
+			mock.updateChunkFn = func(ctx context.Context, req *service.UpdateChunkRequest) error {
+				called = true
+				if !reflect.DeepEqual(req.TagKwd, tc.want) {
+					t.Fatalf("tag_kwd = %#v, want %#v", req.TagKwd, tc.want)
+				}
+				return nil
+			}
+
+			req := httptest.NewRequest(http.MethodPatch, "/api/v1/datasets/kb-1/documents/doc-1/chunks/chunk-1", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+			}
+			if !called {
+				t.Fatal("service was not called")
+			}
+		})
+	}
+}
+
+func TestChunkHandlerUpdateChunkRejectsInvalidTagKwd(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"string", `{"tag_kwd":"alpha"}`, "`tag_kwd` is required to be a list"},
+		{"object", `{"tag_kwd":{}}`, "`tag_kwd` is required to be a list"},
+		{"non-string item", `{"tag_kwd":["alpha",1]}`, "`tag_kwd` must be a list of strings"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockChunkSvc{}
+			r, h := setupChunkHandlerWithUser("user-1", mock)
+			r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks/:chunk_id", h.UpdateChunk)
+
+			mock.updateChunkFn = func(context.Context, *service.UpdateChunkRequest) error {
+				t.Fatal("service must not be called for a malformed tag_kwd")
+				return nil
+			}
+
+			req := httptest.NewRequest(http.MethodPatch, "/api/v1/datasets/kb-1/documents/doc-1/chunks/chunk-1", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+			}
+			var resp map[string]interface{}
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if resp["message"] != tc.want {
+				t.Fatalf("message = %v, want %q", resp["message"], tc.want)
+			}
+			if resp["code"] != float64(common.CodeDataError) {
+				t.Fatalf("code = %v, want %d", resp["code"], common.CodeDataError)
+			}
+		})
+	}
+}
+
 func TestChunkHandlerUpdateChunkStillRejectsUnknownFields(t *testing.T) {
 	mock := &mockChunkSvc{}
 	r, h := setupChunkHandlerWithUser("user-1", mock)
 	r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks/:chunk_id", h.UpdateChunk)
 
-	mock.updateChunkFn = func(context.Context, *service.UpdateChunkRequest, string) error {
+	mock.updateChunkFn = func(context.Context, *service.UpdateChunkRequest) error {
 		t.Fatal("service must not be called for an unsupported field")
 		return nil
 	}
@@ -406,50 +517,18 @@ func TestChunkHandlerUpdateChunkStillRejectsUnknownFields(t *testing.T) {
 		t.Fatalf("decode response: %v", err)
 	}
 	message, _ := resp["message"].(string)
-	for _, field := range []string{"image_base64", "image_update_mode"} {
+	for _, field := range []string{"image_base64", "image_update_mode", "tag_kwd"} {
 		if !strings.Contains(message, field) {
 			t.Fatalf("message = %q, want it to list %s as updatable", message, field)
 		}
 	}
 }
 
-func TestChunkRetrieval_EmptyQuestion(t *testing.T) {
-	r, _ := setupChunkRetrievalTest("user1")
-
-	body := `{"dataset_ids": ["kb1"], "question": ""}`
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/datasets/search", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	var resp map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatal(err)
-	}
-	if resp["code"] != float64(common.CodeSuccess) {
-		t.Errorf("expected code 0, got %v: %q", resp["code"], resp["message"])
-	}
-	data, ok := resp["data"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected data to be object, got %T", resp["data"])
-	}
-	chunks, _ := data["chunks"].([]interface{})
-	if chunks == nil || len(chunks) != 0 {
-		t.Errorf("expected empty chunks array, got %v", chunks)
-	}
-	if total, _ := data["total"].(float64); total != 0 {
-		t.Errorf("expected total 0, got %v", total)
-	}
-}
-
 func TestChunkStopParsing_Success(t *testing.T) {
 	r, mock := setupChunkStopParsingTest("user1")
-	mock.stopParsingFn = func(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
-		if userID != "user1" {
-			t.Fatalf("expected user1, got %q", userID)
+	mock.stopParsingFn = func(ctx context.Context, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
+		if permission.UserIDFromContext(ctx) != "user1" {
+			t.Fatalf("expected user1, got %q", permission.UserIDFromContext(ctx))
 		}
 		if datasetID != "kb1" {
 			t.Fatalf("expected kb1, got %q", datasetID)
@@ -482,7 +561,7 @@ func TestChunkStopParsing_Success(t *testing.T) {
 
 func TestChunkStopParsingRouteRequiresDocumentIDs(t *testing.T) {
 	r, mock := setupChunkStopParsingTest("user1")
-	mock.stopParsingFn = func(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
+	mock.stopParsingFn = func(ctx context.Context, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
 		t.Fatal("service should not be called when document_ids is missing")
 		return nil, common.CodeSuccess, nil
 	}
@@ -507,9 +586,9 @@ func TestChunkStopParsingRouteRequiresDocumentIDs(t *testing.T) {
 	}
 }
 
-func TestChunkStopParsing_InvalidStateIncludesPythonErrorCode(t *testing.T) {
+func TestChunkStopParsing_InvalidStateOmitsData(t *testing.T) {
 	r, mock := setupChunkStopParsingTest("user1")
-	mock.stopParsingFn = func(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
+	mock.stopParsingFn = func(ctx context.Context, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
 		return &service.StopParsingResponse{
 			Data: map[string]interface{}{"error_code": "DOC_STOP_PARSING_INVALID_STATE"},
 		}, common.CodeDataError, errors.New("can't stop parsing document that has not started or already completed")
@@ -530,209 +609,11 @@ func TestChunkStopParsing_InvalidStateIncludesPythonErrorCode(t *testing.T) {
 	if resp["code"] != float64(common.CodeDataError) {
 		t.Fatalf("expected data error, got %v: %s", resp["code"], w.Body.String())
 	}
-	data, ok := resp["data"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected data object, got %T", resp["data"])
-	}
-	if data["error_code"] != "DOC_STOP_PARSING_INVALID_STATE" {
-		t.Fatalf("unexpected error_code: %v", data["error_code"])
+	if _, ok := resp["data"]; ok {
+		t.Fatalf("error response must omit data: %v", resp)
 	}
 	if resp["message"] != "can't stop parsing document that has not started or already completed" {
 		t.Fatalf("unexpected message: %v", resp["message"])
-	}
-}
-
-func TestChunkRetrieval_WhitespaceQuestion(t *testing.T) {
-	r, _ := setupChunkRetrievalTest("user1")
-
-	body := `{"dataset_ids": ["kb1"], "question": "   "}`
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/datasets/search", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	var resp map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatal(err)
-	}
-	if resp["code"] != float64(common.CodeSuccess) {
-		t.Errorf("expected code 0, got %v", resp["code"])
-	}
-}
-
-func TestChunkRetrieval_TopKZero(t *testing.T) {
-	r, _ := setupChunkRetrievalTest("user1")
-
-	body := `{"dataset_ids": ["kb1"], "question": "test", "top_k": 0}`
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/datasets/search", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Fatalf("expected 400, got %d: %s", w.Code, w.Body.String())
-	}
-	var resp map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatal(err)
-	}
-	if msg, _ := resp["message"].(string); msg != "top_k must be greater than 0" {
-		t.Errorf("expected 'top_k must be greater than 0', got %q", msg)
-	}
-}
-
-func TestChunkRetrieval_MissingDatasetIDs(t *testing.T) {
-	r, _ := setupChunkRetrievalTest("user1")
-
-	body := `{"question": "test"}`
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/datasets/search", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d", w.Code)
-	}
-}
-
-func TestChunkRetrieval_EmptyDatasetIDs(t *testing.T) {
-	r, _ := setupChunkRetrievalTest("user1")
-
-	body := `{"dataset_ids": [], "question": "test"}`
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/datasets/search", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d", w.Code)
-	}
-	var resp map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatal(err)
-	}
-	if msg, _ := resp["message"].(string); msg != "kb_id array cannot be empty" {
-		t.Errorf("expected 'kb_id array cannot be empty', got %q", msg)
-	}
-}
-
-func TestChunkRetrieval_NoAuth(t *testing.T) {
-	r := setupChunkRetrievalTestNoAuth()
-
-	body := `{"dataset_ids": ["kb1"], "question": "test"}`
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/datasets/search", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Errorf("expected 200, got %d", w.Code)
-	}
-	// jsonError returns HTTP 200 with error code in body
-	var resp map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatal(err)
-	}
-	if resp["code"] == float64(common.CodeSuccess) {
-		t.Errorf("expected error code, got %v", resp["code"])
-	}
-}
-
-func TestChunkRetrieval_InvalidJSON(t *testing.T) {
-	r, _ := setupChunkRetrievalTest("user1")
-
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/datasets/search", strings.NewReader("{invalid}"))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusBadRequest {
-		t.Errorf("expected 400, got %d", w.Code)
-	}
-}
-
-func TestChunkRetrieval_Success(t *testing.T) {
-	_, mock := setupChunkRetrievalTest("user1")
-	mock.retrievalTestFn = func(ctx context.Context, req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
-		if userID != "user1" {
-			t.Errorf("expected userID 'user1', got %q", userID)
-		}
-		return &service.RetrievalTestResponse{
-			Chunks:  []map[string]interface{}{{"docnm_kwd": "result"}},
-			DocAggs: []map[string]interface{}{{"doc_id": "1", "count": float64(1)}},
-			Total:   1,
-		}, nil
-	}
-
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.Use(func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "user1"})
-	})
-	h := &ChunkHandler{chunkService: mock}
-	r.POST("/api/v1/datasets/search", h.RetrievalTest)
-
-	body := `{"dataset_ids": ["kb1"], "question": "test"}`
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/datasets/search", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	var resp map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatal(err)
-	}
-	if resp["code"] != float64(common.CodeSuccess) {
-		t.Fatalf("expected code 0, got %v: %q", resp["code"], resp["message"])
-	}
-	data, ok := resp["data"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected data object, got %T", resp["data"])
-	}
-	if total, _ := data["total"].(float64); total != 1 {
-		t.Errorf("expected total 1, got %v", total)
-	}
-}
-
-func TestChunkRetrieval_ServiceError(t *testing.T) {
-	_, mock := setupChunkRetrievalTest("user1")
-	mock.retrievalTestFn = func(ctx context.Context, req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error) {
-		return nil, errors.New("db connection refused")
-	}
-
-	gin.SetMode(gin.TestMode)
-	r := gin.New()
-	r.Use(func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "user1"})
-	})
-	h := &ChunkHandler{chunkService: mock}
-	r.POST("/api/v1/datasets/search", h.RetrievalTest)
-
-	body := `{"dataset_ids": ["kb1"], "question": "test"}`
-	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("POST", "/api/v1/datasets/search", strings.NewReader(body))
-	req.Header.Set("Content-Type", "application/json")
-	r.ServeHTTP(w, req)
-
-	if w.Code != http.StatusInternalServerError {
-		t.Fatalf("expected 500, got %d: %s", w.Code, w.Body.String())
-	}
-	var resp map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatal(err)
-	}
-	msg, _ := resp["message"].(string)
-	if msg != "dataset search failed" {
-		t.Errorf("expected generic error message, got %q", msg)
-	}
-	if strings.Contains(msg, "db connection refused") {
-		t.Errorf("internal error details leaked to response: %q", msg)
 	}
 }
 
@@ -746,9 +627,9 @@ func (e addChunkTestError) Code() common.ErrorCode { return e.code }
 
 func TestChunkHandlerAddChunkSuccess(t *testing.T) {
 	mock := &mockChunkSvc{
-		addChunkFn: func(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
-			if userID != "user1" {
-				t.Fatalf("userID = %q, want user1", userID)
+		addChunkFn: func(ctx context.Context, req *service.AddChunkRequest) (*service.AddChunkResponse, error) {
+			if permission.UserIDFromContext(ctx) != "user1" {
+				t.Fatalf("context userID = %q, want user1", permission.UserIDFromContext(ctx))
 			}
 			if req.DatasetID != "kb1" || req.DocumentID != "doc1" || req.Content != "chunk body" {
 				t.Fatalf("unexpected request: %#v", req)
@@ -760,7 +641,7 @@ func TestChunkHandlerAddChunkSuccess(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "user1"})
+		c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user1", ""))
 	})
 	h := &ChunkHandler{chunkService: mock}
 	r.POST("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.AddChunk)
@@ -784,7 +665,7 @@ func TestChunkHandlerAddChunkSuccess(t *testing.T) {
 
 func TestChunkHandlerAddChunkPathIDsOverrideBody(t *testing.T) {
 	mock := &mockChunkSvc{
-		addChunkFn: func(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
+		addChunkFn: func(ctx context.Context, req *service.AddChunkRequest) (*service.AddChunkResponse, error) {
 			if req.DatasetID != "kb1" || req.DocumentID != "doc1" {
 				t.Fatalf("path IDs were not preserved: %#v", req)
 			}
@@ -798,7 +679,7 @@ func TestChunkHandlerAddChunkPathIDsOverrideBody(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "user1"})
+		c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user1", ""))
 	})
 	h := &ChunkHandler{chunkService: mock}
 	r.POST("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.AddChunk)
@@ -815,7 +696,7 @@ func TestChunkHandlerAddChunkPathIDsOverrideBody(t *testing.T) {
 
 func TestChunkHandlerAddChunkCodedError(t *testing.T) {
 	mock := &mockChunkSvc{
-		addChunkFn: func(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
+		addChunkFn: func(ctx context.Context, req *service.AddChunkRequest) (*service.AddChunkResponse, error) {
 			return nil, addChunkTestError{code: common.CodeDataError, msg: "`content` is required"}
 		},
 	}
@@ -823,7 +704,7 @@ func TestChunkHandlerAddChunkCodedError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "user1"})
+		c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user1", ""))
 	})
 	h := &ChunkHandler{chunkService: mock}
 	r.POST("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.AddChunk)
@@ -856,12 +737,27 @@ func TestChunkHandlerAddChunkValidatesListFields(t *testing.T) {
 			body:    `{"content":"chunk body","important_keywords":{}}`,
 			wantMsg: "`important_keywords` is required to be a list",
 		},
+		{
+			name:    "tag_kwd null",
+			body:    `{"content":"chunk body","tag_kwd":null}`,
+			wantMsg: "`tag_kwd` is required to be a list",
+		},
+		{
+			name:    "tag_kwd type",
+			body:    `{"content":"chunk body","tag_kwd":{}}`,
+			wantMsg: "`tag_kwd` is required to be a list",
+		},
+		{
+			name:    "tag_kwd element type",
+			body:    `{"content":"chunk body","tag_kwd":["ok",42]}`,
+			wantMsg: "`tag_kwd` must be a list of strings",
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mock := &mockChunkSvc{
-				addChunkFn: func(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
+				addChunkFn: func(ctx context.Context, req *service.AddChunkRequest) (*service.AddChunkResponse, error) {
 					t.Fatal("service should not be called for invalid request")
 					return nil, nil
 				},
@@ -869,7 +765,7 @@ func TestChunkHandlerAddChunkValidatesListFields(t *testing.T) {
 			gin.SetMode(gin.TestMode)
 			r := gin.New()
 			r.Use(func(c *gin.Context) {
-				c.Set("user", &entity.User{ID: "user1"})
+				c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user1", ""))
 			})
 			h := &ChunkHandler{chunkService: mock}
 			r.POST("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.AddChunk)
@@ -890,9 +786,78 @@ func TestChunkHandlerAddChunkValidatesListFields(t *testing.T) {
 	}
 }
 
+// TestChunkHandlerAddChunkForwardsTagKwd pins the Go/Python parity contract
+// that callers can attach a tag list at write time and the field survives on
+// the service-side AddChunkRequest. Issue #20138 documented that the Go path
+// was silently dropping the field while the Python chunk API accepted it.
+func TestChunkHandlerAddChunkForwardsTagKwd(t *testing.T) {
+	cases := []struct {
+		name    string
+		body    string
+		wantTag []string
+		wantNil bool
+	}{
+		{
+			name:    "tag_kwd omitted",
+			body:    `{"content":"chunk body"}`,
+			wantNil: true,
+		},
+		{
+			name:    "tag_kwd explicit empty list",
+			body:    `{"content":"chunk body","tag_kwd":[]}`,
+			wantTag: []string{},
+		},
+		{
+			name:    "tag_kwd with values",
+			body:    `{"content":"chunk body","tag_kwd":["alpha","beta"]}`,
+			wantTag: []string{"alpha", "beta"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var got *service.AddChunkRequest
+			mock := &mockChunkSvc{
+				addChunkFn: func(ctx context.Context, req *service.AddChunkRequest) (*service.AddChunkResponse, error) {
+					got = req
+					return &service.AddChunkResponse{Chunk: map[string]interface{}{"id": "chunk-1"}}, nil
+				},
+			}
+			gin.SetMode(gin.TestMode)
+			r := gin.New()
+			r.Use(func(c *gin.Context) {
+				c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user1", ""))
+			})
+			h := &ChunkHandler{chunkService: mock}
+			r.POST("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.AddChunk)
+
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest("POST", "/api/v1/datasets/kb1/documents/doc1/chunks", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+			}
+			if got == nil {
+				t.Fatal("service was not called")
+			}
+			if tc.wantNil {
+				if got.TagKwd != nil {
+					t.Fatalf("TagKwd = %v, want nil", got.TagKwd)
+				}
+				return
+			}
+			if !reflect.DeepEqual(got.TagKwd, tc.wantTag) {
+				t.Fatalf("TagKwd = %v, want %v", got.TagKwd, tc.wantTag)
+			}
+		})
+	}
+}
+
 func TestChunkHandlerAddChunkHidesServerErrorDetails(t *testing.T) {
 	mock := &mockChunkSvc{
-		addChunkFn: func(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
+		addChunkFn: func(ctx context.Context, req *service.AddChunkRequest) (*service.AddChunkResponse, error) {
 			return nil, addChunkTestError{code: common.CodeServerError, msg: "encode chunk embedding: provider secret"}
 		},
 	}
@@ -900,7 +865,7 @@ func TestChunkHandlerAddChunkHidesServerErrorDetails(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "user1"})
+		c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user1", ""))
 	})
 	h := &ChunkHandler{chunkService: mock}
 	r.POST("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.AddChunk)

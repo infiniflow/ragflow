@@ -22,7 +22,45 @@ import (
 	"math"
 	"strings"
 	"testing"
+
+	"ragflow/internal/agentic_rag"
 )
+
+func TestBuildAgenticReferenceRetainsWebChunkCitations(t *testing.T) {
+	for _, answer := range []string{
+		"Public facts. [ID:1]",
+		"Public facts. [Public source](https://example.com/source)",
+	} {
+		t.Run(answer, func(t *testing.T) {
+			registry := agentic_rag.NewEvidenceRegistry()
+			registry.Stamp("uncited-corpus-chunk")
+			web := agentic_rag.WebResult{Title: "Public source", URL: "https://example.com/source", Content: "Public facts."}
+			registry.StampWebResult(web)
+			registry.StampWebResult(agentic_rag.WebResult{URL: "https://example.com/uncited", Content: "Other facts."})
+			s := &ChatPipelineService{}
+			reference, marked := s.buildAgenticReference(t.Context(), "tenant", []string{"kb"}, answer, registry)
+			if !strings.Contains(marked, "[ID:0]") || strings.Contains(marked, "[ID:1]") {
+				t.Errorf("citation was not compacted to its reference position: %q", marked)
+			}
+			chunks, ok := reference["chunks"].([]map[string]interface{})
+			if !ok || len(chunks) != 1 {
+				t.Fatalf("expected only the cited web chunk: %v", reference)
+			}
+			chunk := chunks[0]
+			if chunk["id"] != registry.IDs()[1] || chunk["document_id"] != web.URL || chunk["document_name"] != web.Title || chunk["content"] != web.Content || chunk["url"] != web.URL {
+				t.Errorf("web reference lost its source metadata: %v", chunk)
+			}
+			aggs, ok := reference["doc_aggs"].([]interface{})
+			if !ok || len(aggs) != 1 {
+				t.Fatalf("expected one web source card: %v", reference["doc_aggs"])
+			}
+			agg, ok := aggs[0].(map[string]interface{})
+			if !ok || agg["url"] != web.URL || agg["doc_name"] != web.Title || agg["count"] != 1 {
+				t.Errorf("web source card lost its URL or snippet count: %v", agg)
+			}
+		})
+	}
+}
 
 func TestSentenceSplit_PlainText(t *testing.T) {
 	result := sentenceSplit("Hello world. This is a test.")
@@ -337,182 +375,6 @@ func TestRepairBadCitationFormats(t *testing.T) {
 }
 
 // -----------------------------------------------------------------------
-// RepairSlotCitations — leaked "[ID:Slot N]" markers (Bug: slot-table
-// citations in the final answer, unlocatable by the user).
-// -----------------------------------------------------------------------
-
-func TestRepairSlotCitations_MapsSlotToEvidenceChunk(t *testing.T) {
-	chunks := []map[string]interface{}{
-		{"chunk_id": "c1", "content": "one"},
-		{"chunk_id": "c2", "content": "two"},
-		{"id": "c9", "content": "slot evidence"},
-	}
-	answer := "Gustave Eiffel designed it [ID:Slot 0]. It opened in 1889."
-	got := RepairSlotCitations(answer, map[string][]string{"0": {"c9", "missing"}}, chunks)
-	if strings.Contains(got, "Slot") {
-		t.Fatalf("slot marker leaked: %q", got)
-	}
-	if !strings.Contains(got, "[ID:2]") {
-		t.Fatalf("slot marker not mapped to the evidence chunk position: %q", got)
-	}
-	if got != "Gustave Eiffel designed it [ID:2]. It opened in 1889." {
-		t.Fatalf("unexpected rewrite: %q", got)
-	}
-}
-
-func TestRepairSlotCitations_DropsUnresolvable(t *testing.T) {
-	chunks := []map[string]interface{}{{"chunk_id": "c1", "content": "one"}}
-	answer := "Fact one [ID:Slot 0]. Fact two [Slot 1]."
-	got := RepairSlotCitations(answer, map[string][]string{"0": {"not-in-pool"}, "1": {"also-missing"}}, chunks)
-	if strings.Contains(strings.ToLower(got), "slot") {
-		t.Fatalf("unresolvable slot markers must be dropped, got %q", got)
-	}
-	if got != "Fact one . Fact two ." {
-		t.Fatalf("unexpected rewrite: %q", got)
-	}
-}
-
-func TestRepairSlotCitations_MarkerVariants(t *testing.T) {
-	chunks := []map[string]interface{}{{"chunk_id": "a"}, {"id": "b"}}
-	cases := []struct {
-		marker string
-		want   string
-	}{
-		{"[ID:Slot 1]", "[ID:1]"},
-		{"[ID: slot 1]", "[ID:1]"},
-		{"[Slot 1]", "[ID:1]"},
-		{"[slot 1]", "[ID:1]"},
-	}
-	for _, c := range cases {
-		got := RepairSlotCitations("x "+c.marker+" y", map[string][]string{"1": {"b"}}, chunks)
-		if !strings.Contains(got, c.want) {
-			t.Errorf("marker %q: got %q, want it rewritten to %q", c.marker, got, c.want)
-		}
-	}
-}
-
-func TestRepairSlotCitations_NoopWithoutSlotMarkersOrMap(t *testing.T) {
-	answer := "Plain answer [ID:0]."
-	if got := RepairSlotCitations(answer, nil, nil); got != answer {
-		t.Fatalf("nil map must be a no-op, got %q", got)
-	}
-	if got := RepairSlotCitations(answer, map[string][]string{"0": {"c"}}, nil); got != answer {
-		t.Fatalf("no slot markers must be a no-op, got %q", got)
-	}
-}
-
-// -----------------------------------------------------------------------
-// ExpandRangeCitations — range-merged citations ("[ID:1-3]") the model
-// produces on its own (no code path emits them).
-// -----------------------------------------------------------------------
-
-func TestExpandRangeCitations(t *testing.T) {
-	cases := []struct {
-		name     string
-		answer   string
-		poolSize int
-		want     string
-	}{
-		{
-			"plain range",
-			"Fact [ID:1-3].",
-			5,
-			"Fact [ID:1][ID:2][ID:3].",
-		},
-		{
-			"spaced dash variant",
-			"Fact [ID: 1 - 3].",
-			5,
-			"Fact [ID:1][ID:2][ID:3].",
-		},
-		{
-			"tilde variant",
-			"Fact [ID:1~3].",
-			5,
-			"Fact [ID:1][ID:2][ID:3].",
-		},
-		{
-			"reversed bounds swap",
-			"Fact [ID:3-1].",
-			5,
-			"Fact [ID:1][ID:2][ID:3].",
-		},
-		{
-			"single-bound range",
-			"Fact [ID:2-2].",
-			5,
-			"Fact [ID:2].",
-		},
-		{
-			"out of bounds dropped",
-			"Fact [ID:99-102].",
-			5,
-			"Fact .",
-		},
-		{
-			"partially out of bounds dropped",
-			"Fact [ID:2-99].",
-			5,
-			"Fact .",
-		},
-		{
-			"empty pool dropped",
-			"Fact [ID:1-3].",
-			0,
-			"Fact .",
-		},
-		{
-			"no ranges untouched",
-			"Fact [ID:1] and [ID:2].",
-			5,
-			"Fact [ID:1] and [ID:2].",
-		},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := ExpandRangeCitations(c.answer, c.poolSize); got != c.want {
-				t.Fatalf("ExpandRangeCitations(%q, %d) = %q, want %q", c.answer, c.poolSize, got, c.want)
-			}
-		})
-	}
-}
-
-// TestDecorateHarnessAnswerExpandsRangeCitations pins the end-to-end fix for
-// the [ID:1-3] report: the final answer carries only individual citations,
-// each resolving to a pooled chunk, and only the cited doc reaches the
-// reference.
-func TestDecorateHarnessAnswerExpandsRangeCitations(t *testing.T) {
-	kbinfos := map[string]interface{}{
-		"chunks": []map[string]interface{}{
-			{"chunk_id": "c0", "content_with_weight": "a", "doc_id": "d1", "docnm_kwd": "Doc One"},
-			{"chunk_id": "c1", "content_with_weight": "b", "doc_id": "d1", "docnm_kwd": "Doc One"},
-			{"chunk_id": "c2", "content_with_weight": "c", "doc_id": "d1", "docnm_kwd": "Doc One"},
-			{"chunk_id": "c3", "content_with_weight": "d", "doc_id": "d1", "docnm_kwd": "Doc One"},
-		},
-		"doc_aggs": []interface{}{
-			map[string]interface{}{"doc_id": "d1", "doc_name": "Doc One"},
-			map[string]interface{}{"doc_id": "d2", "doc_name": "Doc Two"},
-		},
-	}
-	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer("The range claim holds [ID:1-3].", kbinfos, nil, nil, true)
-
-	if strings.Contains(res.Answer, "1-3") {
-		t.Fatalf("final answer still carries the range citation: %q", res.Answer)
-	}
-	// Expanded markers keep the 0-based indexes the client resolves against
-	// reference.chunks.
-	for _, want := range []string{"[ID:1]", "[ID:2]", "[ID:3]"} {
-		if !strings.Contains(res.Answer, want) {
-			t.Fatalf("final answer missing expanded citation %s: %q", want, res.Answer)
-		}
-	}
-	// Every cited chunk belongs to Doc One, so the uncited Doc Two must be
-	// filtered out of the reference (recall_docs = cited docs).
-	if aggs, _ := res.Reference["doc_aggs"].([]interface{}); len(aggs) != 1 {
-		t.Fatalf("reference doc_aggs = %#v, want the single cited doc", res.Reference["doc_aggs"])
-	}
-}
 
 func TestCitationStreamFilter(t *testing.T) {
 	var filter citationStreamFilter
@@ -527,96 +389,5 @@ func TestCitationStreamFilter(t *testing.T) {
 	got += filter.flush()
 	if got != want {
 		t.Fatalf("filtered answer=%q, want %q", got, want)
-	}
-}
-
-// TestReportsNoAnswer covers the three signals: the dialog's configured
-// empty_response, the shipped not-found line, and a grounded answer that must
-// keep its citations.
-func TestReportsNoAnswer(t *testing.T) {
-	cases := []struct {
-		name          string
-		answer        string
-		emptyResponse string
-		want          bool
-	}{
-		{
-			name:          "configured empty response",
-			answer:        "未在资料库中找到相关内容。",
-			emptyResponse: "未在资料库中找到相关内容。",
-			want:          true,
-		},
-		{
-			name:   "shipped phrase",
-			answer: "知识库中未找到您要的答案！",
-			want:   true,
-		},
-		{
-			name:   "shipped phrase with marker injected mid-sentence",
-			answer: "知识库中未找到您要的答案！因 [ID:3]此无法统计。",
-			want:   true,
-		},
-		{
-			name:   "shipped phrase split by line breaks",
-			answer: "知识库中\n未找到您要的\n答案！",
-			want:   true,
-		},
-		{
-			name:          "grounded answer keeps citations",
-			answer:        "Texas and California agreed in 1924 [ID:0].",
-			emptyResponse: "知识库中未找到您要的答案！",
-			want:          false,
-		},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := reportsNoAnswer(c.answer, c.emptyResponse); got != c.want {
-				t.Fatalf("reportsNoAnswer(%q, %q) = %v, want %v", c.answer, c.emptyResponse, got, c.want)
-			}
-		})
-	}
-}
-
-// TestDecorateQuote pins that a not-found answer is decorated with quoting off
-// (no markers, no reference), while a grounded one keeps quoting on.
-func TestDecorateQuote(t *testing.T) {
-	if decorateQuote(true, "知识库中未找到您要的答案！", "") {
-		t.Fatal("not-found answer must be decorated without quoting")
-	}
-	if !decorateQuote(true, "California voted for the same nominee [ID:0].", "知识库中未找到您要的答案！") {
-		t.Fatal("grounded answer must keep quoting")
-	}
-	if decorateQuote(false, "California voted for the same nominee [ID:0].", "") {
-		t.Fatal("quote=false must stay off")
-	}
-}
-
-// TestDecorateHarnessAnswerDropsCitationsForNotFoundAnswer is the end-to-end
-// shape of the report: an answer that only says the knowledge base has no answer
-// must come back without [ID:n] markers, even though the evidence pool and a
-// resolvable marker are present. The evidence itself still ships — what the
-// cite switch removes is the doc_aggs cards the markers would have opened.
-func TestDecorateHarnessAnswerDropsCitationsForNotFoundAnswer(t *testing.T) {
-	kbinfos := map[string]interface{}{
-		"chunks": []map[string]interface{}{
-			{"chunk_id": "c0", "content_with_weight": "a", "doc_id": "d1", "docnm_kwd": "Doc One"},
-		},
-		"doc_aggs": []interface{}{
-			map[string]interface{}{"doc_id": "d1", "doc_name": "Doc One"},
-		},
-	}
-	answer := "知识库中未找到您要的答案！因此无法统计得克萨斯州和加利福尼亚州 [ID:0] 选出同一候选人的次数。"
-	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer(answer, kbinfos, nil, nil, decorateQuote(true, answer, ""))
-
-	if strings.Contains(res.Answer, "[ID:") {
-		t.Fatalf("not-found answer still carries citation markers: %q", res.Answer)
-	}
-	if _, has := res.Reference["doc_aggs"]; has {
-		t.Fatalf("not-found answer still carries doc_aggs: %#v", res.Reference)
-	}
-	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
-	if len(chunks) != 1 || chunks[0]["id"] != "c0" {
-		t.Fatalf("reference chunks = %#v, want the evidence passage", res.Reference["chunks"])
 	}
 }

@@ -111,6 +111,7 @@ func TestEinoChatModelAppliesExplicitToolChoice(t *testing.T) {
 		name       string
 		tools      []*schema.ToolInfo
 		choice     string
+		callOpts   []einomodel.Option
 		wantChoice string
 		wantValue  map[string]any // nil for the keyword forms
 	}{
@@ -137,6 +138,41 @@ func TestEinoChatModelAppliesExplicitToolChoice(t *testing.T) {
 			},
 		},
 		{
+			name:       "web search uses the object form",
+			tools:      []*schema.ToolInfo{{Name: "web_search"}, {Name: "search_bm25_chunks"}},
+			choice:     "web_search",
+			wantChoice: "web_search",
+			wantValue: map[string]any{
+				"type":     "function",
+				"function": map[string]any{"name": "web_search"},
+			},
+		},
+		{
+			name:       "per-call web search overrides initial none",
+			tools:      []*schema.ToolInfo{{Name: "web_search"}, {Name: "search_chunks"}},
+			choice:     "none",
+			callOpts:   []einomodel.Option{einomodel.WithToolChoice(schema.ToolChoiceForced, "web_search")},
+			wantChoice: "web_search",
+			wantValue: map[string]any{
+				"type":     "function",
+				"function": map[string]any{"name": "web_search"},
+			},
+		},
+		{
+			name:       "per-call auto releases initial web search",
+			tools:      []*schema.ToolInfo{{Name: "web_search"}},
+			choice:     "web_search",
+			callOpts:   []einomodel.Option{einomodel.WithToolChoice(schema.ToolChoiceAllowed)},
+			wantChoice: "auto",
+		},
+		{
+			name:       "per-call none clears the named function",
+			tools:      []*schema.ToolInfo{{Name: "web_search"}},
+			choice:     "web_search",
+			callOpts:   []einomodel.Option{einomodel.WithToolChoice(schema.ToolChoiceForbidden)},
+			wantChoice: "none",
+		},
+		{
 			name:       "no explicit choice keeps the execute_code default",
 			tools:      []*schema.ToolInfo{{Name: "execute_code"}},
 			wantChoice: "required",
@@ -161,6 +197,13 @@ func TestEinoChatModelAppliesExplicitToolChoice(t *testing.T) {
 			cfg, err := wrapper.chatConfigForGenerate()
 			if err != nil {
 				t.Fatalf("chatConfigForGenerate: %v", err)
+			}
+			if tc.choice != "" {
+				opts := append([]einomodel.Option{einomodel.WithTools(tc.tools)}, tc.callOpts...)
+				cfg, err = wrapper.chatConfigWithOptsTools(cfg, opts)
+				if err != nil {
+					t.Fatalf("chatConfigWithOptsTools: %v", err)
+				}
 			}
 			if cfg.ToolChoice == nil {
 				t.Fatalf("ToolChoice = nil, want %q", tc.wantChoice)
@@ -548,6 +591,9 @@ func (d *captureToolDriver) ListTasks(ctx context.Context, _ *APIConfig) ([]List
 	return nil, nil
 }
 func (d *captureToolDriver) ShowTask(ctx context.Context, _ string, _ *APIConfig) (*TaskResponse, error) {
+	return nil, nil
+}
+func (u *captureToolDriver) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, nil
 }
 

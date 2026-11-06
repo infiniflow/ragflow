@@ -1,23 +1,10 @@
-let mockIsGo = false;
-
-jest.mock('@/utils/backend-variant', () => ({
-  pickByBackend: ({ go, python }: { go: unknown; python: unknown }) =>
-    mockIsGo ? go : python,
-}));
-
 import {
   adaptDocumentFilter,
   adaptDocumentRunStatusFilter,
 } from './document-filter-adapter';
 
 describe('document status filter adapter', () => {
-  beforeEach(() => {
-    mockIsGo = false;
-  });
-
-  it('groups Go task statuses into the visible document status options', () => {
-    mockIsGo = true;
-
+  it('groups task statuses into the visible document status options', () => {
     expect(
       adaptDocumentFilter({
         suffix: { pdf: 8 },
@@ -51,9 +38,7 @@ describe('document status filter adapter', () => {
     ]);
   });
 
-  it('only shows Go status options present in the dataset', () => {
-    mockIsGo = true;
-
+  it('only shows status options present in the dataset', () => {
     expect(
       adaptDocumentFilter({
         suffix: { pdf: 2 },
@@ -66,14 +51,11 @@ describe('document status filter adapter', () => {
     });
   });
 
-  it('keeps the Python filter response and selected status values', () => {
-    const filter = {
-      suffix: { docx: 2 },
-      metadata: {},
-      run_status: { '1': 1, '3': 1 },
-    };
-
-    expect(adaptDocumentFilter(filter)).toEqual(filter);
-    expect(adaptDocumentRunStatusFilter(['1', '3'])).toEqual(['1', '3']);
+  it('expands each selected option into its task statuses', () => {
+    expect(adaptDocumentRunStatusFilter(['1', '3'])).toEqual([
+      'RUNNING',
+      'STOPPING',
+      'COMPLETED',
+    ]);
   });
 });

@@ -238,10 +238,6 @@ func fileOrderClause(terms []OrderTerm) string {
 	return orderClause(fileOrderableColumns, terms, defaultOrderColumn)
 }
 
-func knowledgebaseOrderClause(terms []OrderTerm) string {
-	return orderClause(knowledgebaseOrderableColumns, terms, defaultOrderColumn)
-}
-
 func knowledgebaseQualifiedOrderClause(terms []OrderTerm) string {
 	return qualifiedOrderClause("knowledgebase", knowledgebaseOrderableColumns, terms, defaultOrderColumn)
 }

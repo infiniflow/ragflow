@@ -24,7 +24,6 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
-	"strings"
 )
 
 // VoyageModel implements ModelDriver for Voyage AI.
@@ -76,12 +75,10 @@ func (v *VoyageModel) Embed(ctx context.Context, modelName *string, request Embe
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	baseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	url, err := v.baseModel.EndpointURL(apiConfig, v.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.baseModel.URLSuffix.Embedding)
 
 	// Python VoyageEmbed.embed passes input_type="document"; encode_queries
 	// passes "query". The Voyage API applies a different (asymmetric) encoding
@@ -189,12 +186,10 @@ func (v *VoyageModel) Rerank(ctx context.Context, modelName *string, request Rer
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	baseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	url, err := v.baseModel.EndpointURL(apiConfig, v.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.baseModel.URLSuffix.Rerank)
 
 	topK := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 {
@@ -264,58 +259,62 @@ func (v *VoyageModel) Rerank(ctx context.Context, modelName *string, request Rer
 }
 
 func (v *VoyageModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", v.Name())
+	return nil, fmt.Errorf("%s: no such method: ListModels", v.Name())
 }
 
 func (v *VoyageModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
-	return fmt.Errorf("%s, no such method", v.Name())
+	return fmt.Errorf("%s: no such method: CheckConnection", v.Name())
 }
 
 // ChatWithMessages is not exposed by the Voyage AI API.
 func (v *VoyageModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", v.Name())
+	return nil, fmt.Errorf("%s: no such method: ChatWithMessages", v.Name())
 }
 
 func (v *VoyageModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", v.Name())
+	return fmt.Errorf("%s: no such method: ChatStreamlyWithSender", v.Name())
 }
 
 // Balance is not exposed by the Voyage AI API.
 func (v *VoyageModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", v.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", v.Name())
 }
 
 // TranscribeAudio / AudioSpeech / OCRFile: Voyage does not host any of
 // these surfaces.
 func (v *VoyageModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", v.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", v.Name())
 }
 
 func (v *VoyageModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", v.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", v.Name())
 }
 
 func (v *VoyageModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", v.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", v.Name())
 }
 
 func (v *VoyageModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", v.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", v.Name())
 }
 
 func (v *VoyageModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", v.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", v.Name())
 }
 
 // ParseFile parse file
 func (v *VoyageModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", v.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", v.Name())
 }
 
 func (v *VoyageModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", v.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", v.Name())
 }
 
 func (v *VoyageModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", v.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", v.Name())
+}
+
+func (v *VoyageModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", v.Name())
 }

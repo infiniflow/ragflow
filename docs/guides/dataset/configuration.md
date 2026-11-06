@@ -12,19 +12,19 @@ sidebar_custom_props: {
 
 ## Basic Information
 
-The configuration page is used to maintain the core configuration of a dataset. Basic information includes **Name**, **Language**, **Avatar**, **Description**, **Embedding model**, **PageRank**, and **Tag sets**.
+The configuration page is used to maintain the core configuration of a dataset. Basic information includes **Name**, **Language**, **Avatar**, **Description**, **Permissions**, **Embedding model**, **PageRank**.
 
 - **Name**: The dataset name. It can still be modified after creation and is used in list cards and the detail page title.
 - **Language**: The primary language of the dataset. The language setting affects language assumptions during parsing and model processing.
 - **Avatar**: The dataset avatar. Image uploads are supported, and the maximum image size is 4 MB.
 - **Description**: The dataset description, used to describe the material scope, business purpose, or maintenance notes.
-- **Embedding model**: The model used to vectorize chunks. Changing the embedding model after content has already been parsed usually affects the index and should be handled carefully.
+- **Permissions**: Choose **Only me** for personal access or **Team** to share the dataset with workspace members.
+- **Embedding model**: The model used to vectorize chunks. Before the dataset contains chunks, you can change the model directly. Once chunks exist, selecting a different model on the configuration page triggers a compatibility check against sampled existing vectors. The vector dimensions must match, and the average cosine similarity must be at least 0.9. If the check fails, the previous selection is restored. Saving a model change does not automatically re-embed existing chunks.
 - **PageRank**: Sets the dataset's PageRank score. During retrieval, this score is added to the hybrid similarity score of matched chunks in the dataset, increasing their ranking weight. This is suitable when content from a specific dataset needs higher priority during retrieval across multiple datasets.
-- **Tag sets**: Used to associate one or more tag sets with a dataset and add tags to chunks in bulk based on text similarity. During retrieval, queries are also automatically associated with corresponding tags, improving retrieval accuracy with tag information. A tag set must be generated as a sample before use.
 
 ## Parsing Method
 
-The parsing method determines how a dataset processes uploaded documents and how documents are converted into chunks. **Parse type** in configuration provides two entries: **Built-in** and **Pipeline**.
+The parsing method determines how uploaded documents are processed into chunks. In **Parsing mode**, select a built-in template or expand a custom ingestion pipeline and select one of its published versions from the same dropdown.
 
 ### Built-in Parsing
 
@@ -40,90 +40,263 @@ The following built-in parsing methods are available:
 - **Book**: Designed for DOCX, PDF, and TXT books or other long documents with a chapter-based structure.
 - **Laws**: Designed for legal documents in DOCX, PDF, and TXT formats. Chunk boundaries are identified based on the structural characteristics of legal documents.
 - **Presentation**: Designed for presentations in PDF and PPTX formats. Each page or slide is typically treated as an individual chunk.
+- **Picture**: Processes image and video materials into searchable text using OCR and visual descriptions. Configure the relevant OCR or vision model for the content you want to process.
 - **One**: Treats the entire document as a single chunk. This method is suitable for relatively short documents when the complete context needs to be preserved.
-- **Tag**: Used to create a tag set. A dataset using this method provides tags for chunks and queries in other datasets and does not directly participate in the RAG retrieval process.
+- **Audio**: An audio parsing method for audio files such as WAV, MP3, AAC, FLAC, and OGG. It uses an ASR model to transcribe audio into text and then generates chunks from the transcription.
+- **Email**: An email parsing method for email files such as EML and MSG. It extracts content including the sender, recipients, subject, body, and attachments, and generates chunks from the extracted content.
 
-> **Tip:** On the built-in parsing configuration page, click **Built-in pipeline introduction** on the right to view the supported file formats, detailed chunking rules, and examples for each parsing method.
+> **Tip:** On the built-in parsing configuration page, click **View built-in parser details** on the right to view the supported file formats, detailed chunking rules, and examples for each parsing method.
 
 Selection suggestion: choose the parsing method based on the form of the material itself. Use **General** first for regular documents; use **Table** first for tabular materials; choose the corresponding method for Q&A collections, manuals, papers, images, audio, and emails to reduce later chunk adjustment costs.
 
-### Chunk and Parsing Configuration
+### Built-in Parsing Configuration
 
-After selecting a **Built-in** parsing method, you can further configure document parsing, chunk splitting, and content enhancement parameters. Reasonable configuration helps improve the accuracy and recall of later retrieval.
+After selecting a built-in template parsing method, you can further configure document parsing, chunking, and content enhancement. Appropriate settings can improve the accuracy and recall of subsequent retrieval.
 
-Different built-in methods display different configuration items. Use the current interface as the source of truth.
+Different built-in methods display different configuration options. Refer to the options shown in your current interface.
 
-#### Document Parsing Configuration
+#### Parser Configuration
 
-- **PDF parser**: Specifies the parser used when parsing PDF documents. Different parsers differ in text recognition, table structure recognition, layout analysis, processing speed, and other aspects. Choose one based on the content type and parsing requirements of the PDF. The system provides the following PDF parsers by default:
-  - **DeepDoc**: The default PDF parser in RAGFlow. It can perform OCR, table structure recognition (TSR), document layout understanding (DLR), and other tasks. It is suitable for PDFs that contain complex layouts, images, scanned content, or tables. Because additional document analysis is required, parsing may take relatively longer.
-  - **Naive**: Suitable for PDFs mainly composed of plain text. This method skips OCR, TSR, DLR, and other processing, reducing unnecessary parsing overhead. If a PDF contains scanned pages, complex layouts, or tables, this method is not recommended.
-  - **Docling**: An open-source document processing tool that can parse documents such as PDFs and extract structured content.
-  - **TCADPParser**: Tencent's open-source document parsing tool, which can be used for PDF content parsing.
+Parser configuration determines how different types of content are processed. You can configure parsing parameters for each format according to the document structure, layout complexity, and extraction requirements. This helps improve content extraction and the accuracy of subsequent chunk generation.
 
-In addition to the built-in parsers above, you can also use a vision-language model (VLM) that supports PDF parsing. To use a third-party vision model to parse PDFs, first configure the default VLM under **Model Providers > Set default model**. After configuration, select the corresponding model from the **PDF parser** drop-down list.
+##### Vision Enhancement
 
-Usually, some vision models whose names contain identifiers such as **VL** or **V** support PDF parsing. For documents with complex layouts or mixed text and images, a more capable vision model may produce better parsing results, but it also incurs additional model calls and token consumption. The specific support and parsing effect depend on the model used.
+- **Enable vision enhancement**: Uses a vision model to describe image and table blocks. This shared setting applies across document formats.
+- **Model**: Select an available vision model after enabling enhancement.
+- **System prompt**: Set instructions for the generated descriptions. Vision enhancement adds model calls and token usage.
 
-#### Chunk Splitting Configuration
+##### PDF Parsing
 
-The following configurations are mainly used for built-in methods that need to split text according to specified rules, such as **General**.
+Configure how PDF documents are parsed. You can select a parsing method based on the PDF layout and set options such as page ranges and vision models.
 
-- **Recommended chunk size**: Sets the recommended target size when generating chunks. Smaller chunks can provide more fine-grained retrieval results but may lack context. Larger chunks can preserve more context, but retrieval result granularity is relatively coarse.
-- **Delimiter for text**: Sets the delimiter used for text splitting. The system splits text based on the delimiter and chunk size. It is recommended to set an appropriate delimiter based on the original paragraph and line-break structure to preserve semantic completeness as much as possible.
-- **Overlapped percent (%)**: Sets the content overlap ratio between adjacent chunks. Increasing overlap appropriately can reduce context loss caused by split boundaries, but an overly high overlap ratio increases repeated content.
-- **Child chunk are used for retrieval**: Controls whether finer-grained child chunks participate in retrieval. This is suitable for long documents where fine-grained recall needs to be improved.
+- **Multi-column layout recognition:** Recognizes PDFs with complex layouts, such as two-column or multi-column pages. When enabled, the parser identifies text regions and extracts content in a suitable reading order. This is useful for papers, journals, reports, and other multi-column documents.
+- **Remove original table of contents:** Removes the PDF's existing table of contents during parsing so that its text does not enter subsequent chunks or search results as body content.
+- **Remove headers and footers:** Identifies and removes repeated page headers and footers to reduce irrelevant content in the Dataset.
+- **Parsing method:** Selects a parser for PDF or table content. Parsing methods differ in text recognition, layout analysis, table recognition, and handling of complex documents. Built-in methods include:
+  - **DeepDOC:** RAGFlow's default document parser. It performs OCR, table structure recognition, and document layout analysis. It is suitable for PDFs containing complex layouts, images, scanned content, or tables.
+  - **Naive:** Suitable for PDFs that primarily contain plain text. It reduces OCR, table recognition, and complex layout analysis, making it faster for simple text-based PDFs.
+  - **Docling:** An open-source document parsing tool that can parse PDFs and other documents and extract structured content.
+  - **OpenDataLoader:** Extracts text, layout, and structured information from documents. It can serve as an alternative to other built-in parsing methods.
+  - **TCADP Parser:** An open-source parser from Tencent that can parse PDF content.
+  - **MonkeyOCRv2:** A vision-based parsing method that combines OCR and visual understanding to process scanned documents, complex layouts, and mixed text and images.
 
-#### Page and Multimodal Content Configuration
+  In addition to these built-in methods, you can select an external model service already configured in the system. For example, a vision-language model (VLM) or another model with document understanding capabilities connected through a model provider can be used to parse PDFs or tables.
 
-- **Page Index**: Controls whether Page Index-related capabilities are used to process document page information.
-- **Image & table context window**: Sets the context range between images or tables and surrounding text. Increasing this value appropriately can preserve more related context when processing images or tables.
+  External models are often better suited to complex layouts, scanned documents, images, borderless tables, and mixed text and images. However, they incur additional model calls and token usage. The available models depend on the configured model providers and their capabilities.
+- **Page range:** Specifies which PDF pages to parse. You can set a start and end page and add multiple page ranges to avoid processing unnecessary content.
 
-#### Content Enhancement Configuration
+##### Table Parsing
 
-Some built-in methods provide the following content enhancement configurations, such as **General**, **Manual**, **Paper**, **Book**, and **Laws**.
+Select **DeepDOC** or **TCADP Parser** from the **Parser** list to extract table content and structure. Vision models are configured through the shared **Enable vision enhancement** setting above.
 
-- **Auto metadata**: Controls whether metadata is generated automatically. After it is enabled, the generation method for metadata can be further configured through **Settings**.
-- **Auto-keyword**: Sets the number of keywords automatically generated for chunks to supplement chunk semantic information.
-- **Auto-question**: Sets the number of questions automatically generated based on chunk content to supplement query expressions that may match the current chunk.
+##### Image Parsing
 
-#### Table Parsing Configuration
+- **OCR**: Extracts text from images and is enabled by default.
+- **OCR model**: Select **DeepDoc** for local OCR or an available **PaddleOCR** model.
+- **Enable vision enhancement**: Adds visual descriptions using the shared model and prompt settings above. It can run together with OCR.
 
-When **Table** is selected, the interface provides a dedicated **Column mode** configuration used to control how table columns participate in generating chunk content and metadata.
+Keep OCR or vision enhancement enabled so images can produce searchable text. To turn OCR off, first enable vision enhancement.
 
-- **Auto**: The system processes table columns according to the default rules. By default, all columns are included in the chunk text and are also saved as metadata.
-- **Manual**: Manually configures the table columns that need to participate in processing. This configuration mainly targets structured table data and differs from chunk splitting configuration for ordinary text-based built-in methods.
+##### Markdown Parsing
 
-#### Other Format Processing Configuration
+Parse Markdown documents while preserving their text and basic structure for subsequent chunking.
 
-Some built-in methods may also provide configuration for specific file formats, for example:
+##### HTML Parsing
 
-- **Excel to HTML**: Controls whether Excel content is converted into HTML for processing, preserving table structure information.
+Parse HTML documents to extract useful text and structured content while filtering page elements that need not be included in Dataset retrieval.
 
-Different built-in methods use different parsing logic, so not all configuration items appear at the same time. After selecting a built-in method, configure only the parameters displayed in the current interface. In general, for ordinary text documents, focus on chunk splitting parameters such as **Recommended chunk size**, **Delimiter for text**, and **Overlapped percent (%)**. For PDFs, papers, books, manuals, or legal documents, focus on **PDF parser** and the corresponding content enhancement configuration. For table data, focus on **Column mode**. When you need to further enrich retrieval information, use content enhancement features such as **Auto metadata**, **Auto-keyword**, and **Auto-question** according to actual requirements.
+- **Remove headers and footers:** Attempts to remove repeated headers and footers, reducing the effect of navigation and copyright information on chunking and retrieval.
 
-After configuration is complete, click **Save** to save the settings. When documents are parsed later, the system processes them according to the currently selected built-in method and its configuration.
+For HTML files saved or exported from websites, keep headers and footers if they contain information you need.
 
-### Pipeline: Custom Parsing
+##### DOC Parsing
+
+Parse Word documents in `.doc` format. Use **Remove headers and footers** to exclude repeated content. Visual descriptions use the shared **Enable vision enhancement** setting above.
+
+- **Remove headers and footers:** Attempts to remove repeated headers and footers so that page numbers, document titles, and copyright information do not repeatedly appear in chunks.
+
+##### DOCX Parsing
+
+Parse Word documents in `.docx` format. Use **Remove headers and footers** to exclude repeated content. Visual descriptions use the shared **Enable vision enhancement** setting above.
+
+- **Remove headers and footers:** Removes repeated headers and footers to reduce irrelevant information in subsequent chunks and search results.
+
+##### PPTX Parsing
+
+Configure how PPTX files are parsed. Text, tables, images, and other slide content are extracted and converted into text for subsequent chunking and retrieval.
+
+- **Parsing method:** Selects how PPTX files are processed.
+  - **DeepDOC:** RAGFlow's built-in document parser. It extracts text, tables, and layout content from slides and is suitable for most standard PPTX files.
+  - **TCADP Parser:** An open-source parser from Tencent that can extract text and structured content from PPTX files.
+  - **External model:** Uses a configured model with document or visual understanding capabilities. External models are grouped by model provider in the drop-down list. Availability depends on the configured providers and model capabilities.
+
+For PPTX files mainly containing text and standard tables, consider starting with DeepDOC or TCADP Parser. For complex layouts, mixed text and images, many images, or content requiring visual interpretation, choose a capable external model. External models may incur additional model calls and token usage.
+
+Parsing quality depends on slide layout, image quality, content complexity, and the selected method.
+
+##### Audio Parsing
+
+Configure how audio files are parsed. An external model transcribes speech into text for subsequent chunking and retrieval.
+
+Select a configured external model with automatic speech recognition (ASR) capabilities. Audio parsing supports only external models already configured in the system.
+
+Available models depend on the configured providers and their capabilities. Models may differ in language support, accent recognition, handling of multiple speakers or background noise, and long-audio transcription.
+
+External models may incur additional calls and token usage. Transcription quality depends on recording clarity, background noise, speaking speed, language, and accent.
+
+#### Chunker Configuration
+
+##### General Chunker
+
+Configure general chunking of parsed content. The system splits content into chunks based on the target chunk size, overlap ratio, and delimiters. It can also add context to tables and images or use parent-child chunks to improve retrieval precision.
+
+- **Recommended chunk size:** Sets the target size of each chunk in tokens. The default is **512**. The system attempts to combine adjacent content to reach this size, but the value is a target rather than a strict limit. An indivisible content segment that already exceeds the target may remain as one chunk.
+- **Overlap ratio (%):** Sets how much content adjacent chunks share. When overlap is enabled, content from the end of one chunk is copied to the start of the next. This reduces context loss at chunk boundaries and improves semantic continuity. Set it to **0** for no overlap.
+- **Table context window:** Sets the amount of preceding and following context, in tokens, attached to a table chunk. More context can preserve the relationship between a table and the surrounding text. Set it to **0** to add no extra table context.
+- **Image context window:** Sets the amount of preceding and following context, in tokens, attached to an image chunk. This is useful when nearby text is needed to understand an image. Set it to **0** to add no extra image context.
+- **Delimiters:** Sets the separators used to split text, such as the newline character `\n`, periods, question marks, exclamation marks, and semicolons.
+  - **Split by delimiter:** Text is first split at the configured delimiters. The system then combines adjacent segments according to the recommended chunk size to form chunks of suitable size while preserving meaning where possible.
+  - **Split positions:** Displays all configured delimiters so you can see which boundaries are used for chunking.
+  - **Add:** Adds a custom delimiter. You can use characters that mark meaningful boundaries in your documents, such as heading or paragraph markers.
+- **Use sub-chunks for retrieval:** Enables parent-child chunking. The system creates smaller child chunks from larger parent chunks and uses the child chunks for retrieval. When a relevant child chunk matches, its parent chunk can provide more complete context.
+
+For ordinary documents, start with the default **512-token** chunk size and choose delimiters that match the document structure. Increase overlap when context frequently crosses chunk boundaries. Configure context windows for documents with many tables or images. Enable sub-chunks when you need precise retrieval while retaining broader context.
+
+##### Title Chunker
+
+The Title Chunker identifies document structure from heading levels and organizes content into chunks. It provides two modes: **Hierarchy** and **Group**.
+
+###### Hierarchy
+
+Hierarchy builds a document tree from heading levels and generates independent chunks. Each chunk retains its full parent heading path. For example, a chunk may contain `Part 1 > Chapter 3 > Section 2` followed by the body text. This helps identify the chunk's location even when it is retrieved outside the original document.
+
+Hierarchy is suitable for documents with relatively independent sections and meaningful heading structures, such as legal provisions, regulations, contracts, and technical specifications.
+
+- **Chunk token limit:** Sets the maximum token count for a chunk. Content exceeding the limit is split further to avoid overly large chunks.
+- **Heading level:** Selects the heading level used to generate chunks, such as **H3**. The system identifies H1, H2, H3, and other levels according to the configured heading rules, then organizes and splits content at the selected level.
+- **Separate parent heading content:** Controls whether body content directly under a parent heading is handled separately. Enabling it prevents the parent section's own content from being mixed with its child sections in one chunk.
+- **Set first chunk as global context:** Uses the document's first chunk as document-level background information for subsequent chunks.
+- **Rules:** Define how headings are recognized in different documents. Each rule can contain regular expressions for H1 through H5.
+  - **Regular expressions for H1–H5:** Identify headings at each level. For example, expressions can match Markdown headings such as `#`, `##`, and `###`; numbered Chinese headings; or English headings such as `PART`, `Chapter`, `Section`, and `Article`.
+  - **Add regular expression:** Adds a heading level and its expression to the current rule.
+  - **Add rule:** Adds another set of heading recognition rules for a different language, numbering system, or document format.
+
+Hierarchy works well when the location of content within the document matters. Its chunks retain the relevant heading relationships so that retrieval results can include both the body text and its section path.
+
+###### Group
+
+Group creates flatter chunks at a selected heading level and combines adjacent small sections to preserve semantic continuity. Unlike Hierarchy, Group does not add the full parent heading path to every chunk. It emphasizes continuity between nearby content.
+
+Group is suitable for books, user manuals, reports, articles, and other documents whose neighboring paragraphs or sections depend on one another.
+
+- **Chunk token limit:** Sets the maximum token count for a chunk. The system combines adjacent sections based on heading structure while attempting to keep chunks within this limit.
+- **Heading level:** Sets the heading level used to group and split content.
+  - **Automatic:** Lets the system choose an appropriate level based on the detected document structure.
+  - **H1, H2, H3, and other levels:** Select a specific level according to the document structure to control where content is grouped.
+- **Rules:** Define how headings are recognized. As with Hierarchy, you can use multiple sets of regular expressions for different formats, languages, and numbering systems.
+  - **Regular expressions for H1–H5:** Define matching patterns for each heading level.
+  - **Add regular expression:** Adds another heading-level expression to the current rule.
+  - **Add rule:** Adds another heading recognition rule for a different document structure.
+
+Group works well when continuity between nearby sections matters. It combines adjacent sections at heading boundaries to keep chunks meaningful without adding the full parent heading path to each one.
+
+#### Extractor Configuration
+
+Open the **Extractor** tab to configure enrichment after chunking. Expand a function to view its settings and use the switch beside its name to enable it; expanding the section alone does not enable processing. The panel lists **Auto keywords**, **Auto-question**, **Tags**, **Summary**, and **Metadata**.
+
+The Extractor adds information to chunks after chunking. It can use a model to generate keywords, questions, tags, contextual summaries, and metadata. These additions can improve subsequent retrieval and question answering.
+
+##### Model
+
+Select the model used by the Extractor. Enabled keyword, question, summary, and metadata generation functions call the selected model. Available models depend on the configured providers and their capabilities.
+
+##### Auto keywords
+
+Automatically extract keywords or phrases that represent the main content of each chunk.
+
+- **Number of keywords to extract:** Sets how many keywords are generated for each chunk. Turn on the **Auto keywords** switch and set the required number. Turn the switch off to disable extraction.
+- **System prompt:** Sets the instruction sent to the model. The default prompt asks the model to analyze the text and extract the `{{ topn }}` most important keywords or phrases. You can adapt the prompt to specify keyword types, output language, or format.
+
+Generated keywords add semantic information to chunks and can help with retrieval and content matching.
+
+##### Auto-question
+
+Automatically generate questions that each chunk can answer. This adds query-like expressions to the content.
+
+- **Auto-question number:** Sets how many questions are generated for each chunk. Turn on the **Auto-question** switch and set the required number. Turn the switch off to disable question generation.
+- **System prompt:** Sets the instruction sent to the model. The default prompt asks the model to understand the text and generate `{{ topn }}` questions related to its main content.
+
+Generated questions should cover important information in the chunk without repeating the same meaning. They can make document content easier to match with users' natural-language questions.
+
+##### Tags
+
+Extract or match tags for chunks using a prepared tag file. Tags can classify knowledge content and add semantic information.
+
+- **Auto-tags:** Sets how many tags are extracted for each chunk. Enable the **Tags** switch to use this function; turn it off to disable processing.
+- **Tag file:** Selects the file used for tag extraction. The system matches or generates tags for chunks based on the selected tag collection.
+
+Prepare a tag file suitable for the Dataset before using this feature. A well-designed tag system can support content classification, retrieval, and filtering.
+
+##### Summary
+
+Generate a concise contextual summary for each chunk and add it as supplementary information. This helps a chunk retain essential background when viewed separately from its source document.
+
+- **Summary** switch: Enables the selected model to summarize chunk content. Turn it off when summaries are not required.
+- **System prompt:** Sets the instruction sent to the model. The default prompt asks for a concise summary faithful to the source content, without introducing information absent from it.
+
+Augmented context is useful when a chunk may lose important background after splitting. For example, a chunk containing only a short passage can gain a summary of its subject and context, helping retrieval and model understanding.
+
+Enabling this feature increases model calls and token usage.
+
+##### Metadata
+
+Add structured metadata to parsed content. Metadata describes document or chunk attributes and can be used for retrieval, filtering, and content management.
+
+- **Metadata** switch: Enables extraction or generation according to the configured fields.
+- **Settings:** Opens the metadata generation settings, where you configure the fields to extract or generate.
+
+Metadata generation settings provide the following options:
+
+- **Generation:** Define metadata fields to generate. Add fields and configure their descriptions, types, and values. The system generates metadata based on these settings.
+- **Built-in:** Enable predefined fields such as `update_time` and `file_name`.
+- **Add:** Add a metadata field with a name, description, type, and value according to your needs.
+
+For example, you can add fields for document type, department, author, subject, date, or business category. Well-configured metadata lets you narrow subsequent searches with metadata conditions. Metadata generated by a model may incur additional model calls and token usage.
+
+#### Indexer Configuration
+
+Indexer prepares chunks for the retrieval engine. **Search method** displays the methods configured for the selected parsing mode, such as **Embedding** and **Full-text**. Review these labels, then configure **Filename embedding weight** and **Field** below. The Indexer uses the embedding model configured for the Dataset; this panel has no separate embedding model selector.
+
+- **Search method:** Displays **Embedding** and **Full-text** as labels. These are not selectable checkboxes in the current panel.
+  - **Embedding:** Creates vector representations and a vector index for semantic retrieval. A relevant chunk may be retrieved even when the query does not use the same words as the source text.
+  - **Full-text:** Creates a full-text index for keyword matching. This is useful for product codes, names, technical terms, code, and other content requiring exact matches.
+- **Filename embedding weight:** Sets the filename's weight in the vector representation. The filename contributes semantic information alongside the chunk content. A higher value gives it more influence. Increase the weight when filenames clearly express document topics; decrease it when filenames are random identifiers or have little meaning.
+- **Field:** Selects the content to embed. Available fields are **Processed text**, **Questions**, and **Augmented context**.
+  - **Processed text:** Indexes the chunk body produced by the Parser, Chunker, and other preceding steps. This is the most direct method and the default selection.
+  - **Questions:** Indexes questions generated by the Extractor's **Auto-question** function. A user's question can then match a pre-generated question, which is useful for question-answering Datasets. Configure automatic question extraction before using this field.
+  - **Augmented context:** Embeds the summary generated by the Extractor's **Summary** function. This is useful when chunks need additional background for effective retrieval.
+
+Start with **Processed text**. To use **Questions**, first enable **Auto-question** in Extractor; to use **Augmented context**, enable **Summary**. Validate that the required content is generated before relying on it for retrieval.
+
+### Custom Ingestion Pipeline
 
 **Pipeline** means using a custom **Ingestion Pipeline** as the dataset's parsing method. It is suitable for scenarios that require custom document processing logic or complex processing flows.
 
-The pipeline must be created and configured in **Agent > Ingestion Pipeline** in advance. In the dataset, you do not need to configure the processing nodes inside the pipeline again. You only need to select the created pipeline.
+Create and publish the pipeline in **Agent > Ingestion pipeline** before applying it to a Dataset. A saved draft alone is not selectable for parsing.
 
-Usage:
+1. Configure the pipeline, click **Save draft**, and resolve any **Checklist** issues.
+2. Click **Publish** and confirm to create a version.
+3. Open the Dataset's **Configuration > Parsing mode**.
+4. Expand the custom pipeline and select the published version you want to use within the same dropdown. There is no separate Version selector. **No published versions** means you must publish the pipeline first. Entries marked **Built in** can be selected directly.
+5. Click **Save**, then parse a sample document to validate the result.
 
-1. Create and configure an **Ingestion Pipeline** in **Agent > Pipeline**.
-2. Go to **Dataset > Configuration** and select **Pipeline** as the parsing method.
-3. Select the pipeline to use from the pipeline list.
-4. Save the configuration. Afterward, documents in the dataset are processed according to the selected pipeline.
+The Dataset retains its selected version when another version is published. To apply an update, select the new version in **Parsing mode**, save, and reparse the documents that need the updated processing. Existing chunks are not regenerated automatically.
 
-If no pipeline is currently available, you can use the entry provided in the pipeline area to go to **Agent** and create one.
-
-> Note: For pipeline creation, node configuration, and flow orchestration, see [**Ingestion Pipeline**](../../guides/agent/agent_overview.md).
+> Note: For pipeline creation, node configuration, and flow orchestration, see [**Ingestion Pipeline**](../agent/ingestion_pipeline/create_ingestion_pipeline.md).
 
 ### Auto Metadata: Automatic Metadata Configuration
 
-**Auto Metadata** is used to configure metadata automatically generated during document parsing. The system supports two types of metadata: **Generation** and **Built-in**. You can configure them separately as needed.
+Open **Extractor > Metadata > Settings** to configure metadata automatically generated during document parsing. Enable the **Metadata** switch for the settings to take effect during processing. The system supports two types of metadata: **Generation** and **Built-in**. You can configure them separately as needed.
 
 > Note: Changes in **Metadata generation settings** only take effect for newly parsed documents later. They do not automatically update documents that have already completed parsing. To apply the new configuration to existing documents, parse the relevant documents again.
 
@@ -138,6 +311,8 @@ If no pipeline is currently available, you can use the entry provided in the pip
 
 After saving, the system generates corresponding metadata from document content during subsequent document parsing based on these field definitions.
 
+![Configure a generated metadata field](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/auto_metadata_configuration_2.jpg)
+
 #### Built-in: Built-in Metadata
 
 **Built-in** provides system-predefined metadata fields. You do not need to manually create or configure field rules. Use the switch on the right side of each corresponding field to choose whether to generate that metadata during document parsing. The following built-in fields are currently supported:
@@ -146,6 +321,8 @@ After saving, the system generates corresponding metadata from document content 
 - **file_name**: Records the document file name.
 
 Select the fields to use, enable their switches, and then click **Save** to save the configuration. Generated metadata can be used in document management and retrieval filtering. To view or edit generated metadata, [**Metadata management**](../dataset/metadata_management.md).
+
+![Enable built-in metadata fields](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/auto_metadata_configuration_3.jpg)
 
 ### Table Column Role Configuration
 
@@ -167,10 +344,10 @@ Users can assign one of the following roles to each column through the drop-down
 
 For example, if a table contains four columns, **Title**, **Content**, **Category**, and **Year**, you can set them according to actual use:
 
-- **Title -> Both**: The title participates in retrieval and can also be used as metadata.
-- **Content -> Indexing**: The body text is mainly used for content retrieval.
-- **Category -> Metadata**: Used to filter retrieval results by category.
-- **Year -> Metadata**: Used to filter retrieval results by year.
+- **Title → Both**: The title participates in retrieval and can also be used as metadata.
+- **Content → Indexing**: The body text is mainly used for content retrieval.
+- **Category → Metadata**: Used to filter retrieval results by category.
+- **Year → Metadata**: Used to filter retrieval results by year.
 
 In this way, fields that do not need to participate in content retrieval can be prevented from entering chunk text, while these fields are still preserved as retrieval filter conditions.
 
@@ -183,3 +360,14 @@ The **Data source** area is used to associate the current dataset with data sour
 Click **Link data source** and select the data source to associate from existing data sources. After association, the current dataset can use the data provided by that data source. This area is only used to establish and manage the association between the dataset and data sources. It does not provide data source creation or connection configuration.
 
 > Tip: To add a new data source, or configure data source connection information, synchronization methods, and other settings, see [**Data source**](../../guides/data_source/overview_and_page_management.md). After adding the data source, return to the dataset configuration page to associate it.
+
+## Sharing Scope
+
+1. Open **Dataset** and select the Dataset.
+2. Open **Configuration > Basic** and find **Permissions**.
+3. Select **Only me** to keep it private, or **Team** to share it with your team.
+4. Click **Save**.
+
+![Open Source Edition Sharing Scope Configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/open_source_edition_sharing_scope_configuration.jpg)
+
+See [Team resource permissions](../team/resource_sharing/resource_sharing_and_permissions.md#member-permissions) for what members can do after sharing.

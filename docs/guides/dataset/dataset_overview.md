@@ -16,17 +16,17 @@ A dataset is the workspace in RAGFlow that carries knowledge sources and retriev
 
 In terms of responsibility, a dataset is more than a "folder". It converts raw documents into retrievable chunks, stores the enabled status of documents and chunks, maintains metadata, and provides foundational data for knowledge artifacts and log tracing.
 
-## Basic Workflow
+## Basic Information
 
-The following briefly introduces the basic dataset workflow and helps you quickly understand the overall process from creating a dataset to testing retrieval results. The specific operations, configuration items, and feature descriptions involved in each step are described in detail in later sections.
+The configuration page allows you to manage the core settings of a Dataset. Basic information includes the name, language, avatar, description, permissions, embedding model and PageRank.
 
-1. Create a dataset and select an embedding model and parsing method.
-2. Complete dataset configuration under **Configuration**.
-3. Upload or add documents under **Document Management**.
-4. Parse documents and generate chunks.
-5. Check and adjust chunks and metadata.
-6. Use **Retrieval Testing** to test retrieval results.
-7. Adjust parsing or retrieval configuration based on the test results.
+- **Name**: The name of the Dataset. It can be changed after creation and is displayed on Dataset cards and detail page headers.
+- **Language**: The primary language of the Dataset. This setting affects the language assumptions used during parsing and model processing.
+- **Avatar**: The avatar of the Dataset. Image uploads are supported, with a maximum file size of 4 MB.
+- **Description**: A description of the Dataset, used to explain its data scope, business purpose, or maintenance information.
+- **Permissions**: Controls access to the Dataset and the scope of allowed operations.
+- **Embedding model**: The model used to vectorize chunks. When chunks already exist, changing the model requires a compatibility check against existing vectors. Saving the change does not automatically re-embed existing chunks.
+- **PageRank**: Sets the PageRank score for the Dataset. During retrieval, this score is added to the hybrid similarity score of matching chunks from the Dataset, increasing their ranking weight. This is useful when searching across multiple Datasets, and you want to prioritize content from a specific Dataset.
 
 ## Dataset Page Overview
 
@@ -35,5 +35,5 @@ The following briefly introduces the main entries on the dataset detail page and
 - **File list**: The default entry on the dataset detail page. It is used to manage documents, parsing status, enabled status, chunk count, metadata field count, and document-level operations in the dataset.
 - **Retrieval Testing**: Used to enter test questions and adjust retrieval parameters to verify the recall effect of the current dataset. Test parameter adjustments are not saved automatically and must be applied separately in **Chat Assistant** or the **Retrieval Agent** component.
 - **Artifacts**: Used to view entries for knowledge artifacts related to the current dataset, such as **Wiki**, **Navigation**, and **Graph**. This dataset manual only introduces the entry and viewing method. For generation and updates, see **Knowledge Compilation**.
-- **Logs**: Used to view document parsing and dataset-level task records, including document logs and dataset-level logs.
+- **Logs**: Used to view document parsing and dataset-level task records, including document logs, dataset-level logs, and data source synchronization logs.
 - **Configuration**: Used to maintain the dataset's basic information, embedding model, parsing method, data source associations, and other configurations.

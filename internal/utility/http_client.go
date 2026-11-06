@@ -259,7 +259,7 @@ func (c *HTTPClient) Delete(path string) (*http.Response, error) {
 	return c.httpClient.Do(req)
 }
 
-// Do performs a request with the given method
+// Do perform a request with the given method
 func (c *HTTPClient) Do(method, path string, body []byte) (*http.Response, error) {
 	urlStr := c.GetFullURL(path)
 	var bodyReader io.Reader

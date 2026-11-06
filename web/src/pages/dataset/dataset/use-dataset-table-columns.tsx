@@ -8,6 +8,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { useDatasetEditButtonDisabled } from '@/ee/hooks/logic-hooks/use-permission';
 import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useSetDocumentStatus } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
@@ -39,6 +40,7 @@ export function useDatasetTableColumns({
   showLog,
   setRowSelection,
 }: UseDatasetTableColumnsType) {
+  const datasetEditButtonDisabled = useDatasetEditButtonDisabled();
   const { t } = useTranslation('translation', {
     keyPrefix: 'knowledgeDetails',
   });
@@ -61,6 +63,7 @@ export function useDatasetTableColumns({
               table.toggleAllPageRowsSelected(!!value)
             }
             aria-label="Select all"
+            disabled={datasetEditButtonDisabled}
           />
         ),
         cell: ({ row }) => (
@@ -68,6 +71,7 @@ export function useDatasetTableColumns({
             checked={row.getIsSelected()}
             onCheckedChange={(value) => row.toggleSelected(!!value)}
             aria-label="Select row"
+            disabled={datasetEditButtonDisabled}
           />
         ),
         enableSorting: false,
@@ -175,7 +179,15 @@ export function useDatasetTableColumns({
         accessorKey: 'meta_fields',
         header: t('metadata.metadata'),
         cell: ({ row }) => {
-          const length = Object.keys(row.getValue('meta_fields') || {}).length;
+          const metaFields =
+            (row.getValue('meta_fields') as Record<string, any>) || {};
+          const length = Object.entries(metaFields).filter(([, value]) => {
+            if (value == null || value === '') return false;
+            if (Array.isArray(value)) {
+              return value.some((item) => item != null && item !== '');
+            }
+            return true;
+          }).length;
           return (
             <Button
               variant="static"
@@ -231,6 +243,7 @@ export function useDatasetTableColumns({
               record={row.original}
               showChangeParserModal={showChangeParserModal}
               showLog={showLog}
+              datasetEditButtonDisabled={datasetEditButtonDisabled}
             />
           );
         },
@@ -247,6 +260,7 @@ export function useDatasetTableColumns({
               record={record}
               showRenameModal={showRenameModal}
               setRowSelection={setRowSelection}
+              datasetEditButtonDisabled={datasetEditButtonDisabled}
             />
           );
         },
@@ -262,6 +276,7 @@ export function useDatasetTableColumns({
       showManageMetadataModal,
       showLog,
       setRowSelection,
+      datasetEditButtonDisabled,
     ],
   );
 

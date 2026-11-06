@@ -60,6 +60,9 @@ func TestNavInputFromProducts_TreeAndPageIndex(t *testing.T) {
 	if !ok {
 		t.Fatal("missing PageIndex nav input for d2")
 	}
+	if treeIn.CompileKind != "tree" || pageIndexIn.CompileKind != "page_index" {
+		t.Fatalf("navigation kinds = %q/%q", treeIn.CompileKind, pageIndexIn.CompileKind)
+	}
 	if _, found := byDoc["d3"]; found {
 		t.Fatal("Graph structure product must not produce navigation input")
 	}

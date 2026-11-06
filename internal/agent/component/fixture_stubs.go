@@ -17,7 +17,7 @@
 // Package component contains e2e fixture stubs used directly by tests.
 //
 // The test fixtures under internal/agent/dsl/testdata reference
-// fixture-backed component names that are registered here: Generate, Answer,
+// fixture-backed component names that are registered here: Generate,
 // Iteration, and IterationItem. The fixture stub bodies are deliberately trivial — they
 // echo a stable, template-friendly output shape and never call
 // the network or DB. The contract is "registered, non-panicking,
@@ -36,8 +36,6 @@ package component
 import (
 	"context"
 	"fmt"
-
-	"ragflow/internal/agent/runtime"
 
 	"gorm.io/gorm"
 )
@@ -130,65 +128,6 @@ func buildLLMParamFromV1Params(p map[string]any) (LLMParam, error) {
 		out.BaseURL = v
 	}
 	return out, nil
-}
-
-// ----- Answer -----
-
-const componentNameAnswer = "Answer"
-
-// AnswerStub is a fixture stub for the Answer component. Answer
-// is the agent's "wait for user" node (it pairs with ExeSQL or
-// Message in conversational flows). The real implementation
-// pauses the run and resumes on user input via the eino
-// interrupt path (see canvas/interrupt_resume.go); the stub
-// returns an empty answer immediately so the e2e flow can
-// complete.
-type AnswerStub struct{}
-
-// NewAnswerStub constructs an Answer stub.
-func NewAnswerStub(_ map[string]any) (Component, error) {
-	return &AnswerStub{}, nil
-}
-
-// Name returns the registered component name.
-func (a *AnswerStub) Name() string { return componentNameAnswer }
-
-// Invoke returns an empty answer. Real implementation will block
-// until the user provides input; the stub is fire-and-forget so
-// the e2e flow doesn't deadlock.
-func (a *AnswerStub) Invoke(ctx context.Context, db *gorm.DB, _ map[string]any) (map[string]any, error) {
-	// Mirror the no-state-check pattern of Message/Retrieval: we
-	// don't read state, but the signature must match.
-	if _, err := runtime.GetStateFromContext(ctx); err != nil {
-		return nil, fmt.Errorf("Answer: %w", err)
-	}
-	return map[string]any{"answer": ""}, nil
-}
-
-// Stream mirrors Invoke.
-func (a *AnswerStub) Stream(ctx context.Context, db *gorm.DB, inputs map[string]any) (<-chan map[string]any, error) {
-	out, err := a.Invoke(ctx, db, inputs)
-	if err != nil {
-		return nil, err
-	}
-	ch := make(chan map[string]any, 1)
-	ch <- out
-	close(ch)
-	return ch, nil
-}
-
-// Inputs returns the DSL param surface.
-func (a *AnswerStub) Inputs() map[string]string {
-	return map[string]string{
-		"question": "Optional clarification question to surface to the user.",
-	}
-}
-
-// Outputs returns the public output surface.
-func (a *AnswerStub) Outputs() map[string]string {
-	return map[string]string{
-		"answer": "User's response text.",
-	}
 }
 
 // ----- Iteration / IterationItem (alias to Parallel) -----
@@ -318,7 +257,6 @@ func init() {
 	Register("search_my_dateset", newRetrievalComponent)
 	Register(componentNameCodeExec, newCodeExecComponent)
 	Register(componentNameGenerate, NewGenerateStub)
-	Register(componentNameAnswer, NewAnswerStub)
 	Register(componentNameIteration, NewIterationStub)
 	Register(componentNameIterationItem, NewIterationItemStub)
 }

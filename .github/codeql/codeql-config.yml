@@ -13,12 +13,6 @@
 # the office_oxide C library is not installed, so this exclusion
 # brings CodeQL in line with the rest of the toolchain.
 paths-ignore:
-  - internal/ingestion/parser/doc_parser.go
-  - internal/ingestion/parser/docx_parser.go
-  - internal/ingestion/parser/ppt_parser.go
-  - internal/ingestion/parser/pptx_parser.go
-  - internal/ingestion/parser/xls_parser.go
-  - internal/ingestion/parser/xlsx_parser.go
   # Generated / vendored — also break analysis without adding signal.
   - "**/testdata/**"
   - "**/node_modules/**"

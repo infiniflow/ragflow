@@ -4,63 +4,155 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strings"
+
+	"gorm.io/gorm"
 )
 
-// GetRootFolder gets or creates root folder for tenant
-func (s *FileService) GetRootFolder(ctx context.Context, tenantID string) (map[string]interface{}, error) {
+// GetRootFolder gets or creates root folder for the active tenant.
+func (s *FileService) GetRootFolder(ctx context.Context) (map[string]interface{}, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
+	tenantID := permission.TenantIDFromContext(ctx)
+	if tenantID == "" {
+		tenantID = userID
+	}
 	file, err := s.fileDAO.GetRootFolder(ctx, dao.DB, tenantID)
 	if err != nil {
+		return nil, err
+	}
+	if err = checkFileAccess(ctx, file, permission.OperationRead); err != nil {
 		return nil, err
 	}
 	return s.toFileResponse(file), nil
 }
 
-// ListFiles lists files by parent folder ID (matching Python /files endpoint)
-// This method includes init_dataset_docs initialization when parent_id is empty
-func (s *FileService) ListFiles(ctx context.Context, tenantID, pfID string, page, pageSize int, terms []dao.OrderTerm, keywords string) (*ListFilesResponse, error) {
+// lookupError classifies a file lookup failure: a missing row is a client-facing
+// not-found (CodeNotFound), while any other error (connection loss, timeout,
+// etc.) is returned unchanged so handlers keep reporting it as a server error.
+func lookupError(err error, message string) error {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return common.NewCodedError(common.CodeNotFound, message)
+	}
+	return err
+}
+
+// ListFilesForTenant allows active tenant members to browse the tenant's files.
+func (s *FileService) ListFilesForTenant(ctx context.Context, tenantID, pfID string, page, pageSize int, terms []dao.OrderTerm, keywords string) (*ListFilesResponse, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
+	if userID != tenantID {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, tenantID, permission.TenantMember); err != nil {
+			return nil, err
+		}
+	}
+	return s.listFiles(ctx, tenantID, pfID, page, pageSize, terms, keywords)
+}
+
+func (s *FileService) listFiles(ctx context.Context, tenantID, pfID string, page, pageSize int, terms []dao.OrderTerm, keywords string) (*ListFilesResponse, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if tenantID == "" {
+		return nil, permission.ErrInvalidPermission
+	}
 	// If pfID is empty, get root folder and initialize dataset docs
 	if pfID == "" {
 		rootFolder, err := s.fileDAO.GetRootFolder(ctx, dao.DB, tenantID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get root folder: %w", err)
 		}
+		if err := checkFileAccess(ctx, rootFolder, permission.OperationRead); err != nil {
+			return nil, err
+		}
 		pfID = rootFolder.ID
 
-		// Initialize dataset docs (matching Python init_knowledgebase_docs logic)
-		if err = s.initDatasetDocs(ctx, pfID, tenantID); err != nil {
-			return nil, fmt.Errorf("failed to initialize dataset docs: %w", err)
-		}
+		// Keep tenant-scoped lookups read-only. The default self-owned file
+		// listing retains its existing folder initialization.
+		if tenantID == userID {
+			// Initialize dataset docs (matching Python init_knowledgebase_docs logic)
+			if err = s.initDatasetDocs(ctx, pfID, tenantID); err != nil {
+				return nil, fmt.Errorf("failed to initialize dataset docs: %w", err)
+			}
 
-		// Initialize skills folder (matching Python init_skills_folder logic)
-		if err = s.initSkillsFolder(ctx, pfID, tenantID); err != nil {
-			return nil, fmt.Errorf("failed to initialize skills folder: %w", err)
+			// Initialize skills folder (matching Python init_skills_folder logic)
+			if err = s.initSkillsFolder(ctx, pfID, tenantID); err != nil {
+				return nil, fmt.Errorf("failed to initialize skills folder: %w", err)
+			}
 		}
 	}
 
 	// Check if parent folder exists
 	folder, err := s.fileDAO.GetByID(ctx, dao.DB, pfID)
 	if err != nil {
-		return nil, fmt.Errorf("folder not found")
+		return nil, lookupError(err, "folder not found")
+	}
+	if folder.Type != FileTypeFolder {
+		return nil, permission.ErrResourceNotFound
+	}
+	if folder.TenantID != tenantID {
+		return nil, permission.ErrResourceNotFound
+	}
+	if err := s.checkFilePathAccess(ctx, tenantID, folder.ID); err != nil {
+		return nil, err
 	}
 
-	// Get files by parent folder ID
+	// Apply file visibility in SQL before count and pagination. Community
+	// permission policy compiles this to correlated EXISTS predicates so large
+	// folders do not need to materialize every candidate ID.
 	excludeSkills := folder.ID == folder.ParentID
-	files, total, err := s.fileDAO.GetByPfID(ctx, dao.DB, tenantID, pfID, page, pageSize, terms, keywords, excludeSkills)
+	checker := permission.NewDatabaseChecker(dao.DB)
+	visibilityScope, err := checker.QueryScope(ctx, permission.ScopeQuery{
+		Kind:      permission.ResourceKindFile,
+		Parent:    permission.ResourceRef{Kind: permission.ResourceKindFolder, ID: folder.ID},
+		Operation: permission.OperationRead,
+	})
 	if err != nil {
 		return nil, err
+	}
+	files, total, err := s.fileDAO.GetByPfID(ctx, dao.DB, tenantID, pfID, page, pageSize, terms, keywords, excludeSkills, visibilityScope.Apply)
+	if err != nil {
+		return nil, err
+	}
+	refs := make([]permission.ResourceRef, 0, len(files))
+	refsByFileID := make(map[string]permission.ResourceRef, len(files))
+	for _, file := range files {
+		kind := permission.ResourceKindFile
+		if file.Type == FileTypeFolder {
+			kind = permission.ResourceKindFolder
+		}
+		ref := permission.ResourceRef{Kind: kind, ID: file.ID}
+		if _, exists := refsByFileID[file.ID]; exists {
+			continue
+		}
+		refsByFileID[file.ID] = ref
+		refs = append(refs, ref)
+	}
+	accesses, err := checker.FilterAccesses(ctx, refs, permission.OperationRead)
+	if err != nil {
+		return nil, err
+	}
+	if len(accesses) != len(refs) {
+		// The SQL visibility predicate and the resolved permissions must agree.
+		// Fail closed if authorization changed while this page was being read.
+		return nil, permission.ErrPermissionDenied
 	}
 
 	// Get parent folder
 	parentFolder, err := s.fileDAO.GetParentFolder(ctx, dao.DB, pfID)
 	if err != nil {
 		return nil, fmt.Errorf("folder not found")
+	}
+	if parentFolder.TenantID != tenantID {
+		return nil, permission.ErrResourceNotFound
 	}
 
 	// Process files to add additional info, deduplicating by ID as a safety net
@@ -94,7 +186,9 @@ func (s *FileService) ListFiles(ctx context.Context, tenantID, pfID string, page
 			fileInfo.KbsInfo = kbsInfo
 		}
 
-		fileResponses = append(fileResponses, s.fileInfoToResponse(fileInfo))
+		fileResponse := s.fileInfoToResponse(fileInfo)
+		fileResponse["operator_permission"] = accesses[refsByFileID[file.ID]].PermissionMask
+		fileResponses = append(fileResponses, fileResponse)
 	}
 
 	return &ListFilesResponse{
@@ -141,8 +235,9 @@ func (s *FileService) initSkillsFolder(ctx context.Context, rootID, tenantID str
 	}
 
 	folder := &entity.File{
-		ID:         utility.GenerateToken(),
+		ID:         common.GenerateToken(),
 		ParentID:   rootID,
+		UserID:     tenantID,
 		TenantID:   tenantID,
 		CreatedBy:  tenantID,
 		Name:       SkillsFolderName,
@@ -213,16 +308,16 @@ func (s *FileService) fileInfoToResponse(info *FileInfo) map[string]interface{} 
 }
 
 // GetParentFolder gets parent folder of a file with permission check
-func (s *FileService) GetParentFolder(ctx context.Context, userID, fileID string) (map[string]interface{}, error) {
+func (s *FileService) GetParentFolder(ctx context.Context, fileID string) (map[string]interface{}, error) {
 	// Get file
 	file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
 	if err != nil {
-		return nil, err
+		return nil, lookupError(err, "file or folder not found")
 	}
 
 	// Permission check
-	if !s.checkFilePerm(ctx, s.fileDAO, file, userID) {
-		return nil, ErrNoAuthorization
+	if err := checkFileAccess(ctx, file, permission.OperationRead); err != nil {
+		return nil, err
 	}
 
 	// Get parent folder
@@ -230,27 +325,63 @@ func (s *FileService) GetParentFolder(ctx context.Context, userID, fileID string
 	if err != nil {
 		return nil, err
 	}
+	if err := checkFileAccess(ctx, parentFolder, permission.OperationRead); err != nil {
+		return nil, err
+	}
 
 	return s.toFileResponse(parentFolder), nil
 }
 
 // GetAllParentFolders gets all parent folders in path with permission check
-func (s *FileService) GetAllParentFolders(ctx context.Context, userID, fileID string) ([]map[string]interface{}, error) {
+func (s *FileService) GetAllParentFolders(ctx context.Context, fileID string) ([]map[string]interface{}, error) {
+	return s.getAllParentFolders(ctx, "", fileID)
+}
+
+// GetAllParentFoldersForTenant allows active tenant members to resolve file paths.
+// The file and every ancestor must belong to tenantID.
+func (s *FileService) GetAllParentFoldersForTenant(ctx context.Context, tenantID, fileID string) ([]map[string]interface{}, error) {
+	if tenantID == "" {
+		return nil, permission.ErrInvalidPermission
+	}
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
+	if userID != tenantID {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, tenantID, permission.TenantMember); err != nil {
+			return nil, err
+		}
+	}
+	return s.getAllParentFolders(ctx, tenantID, fileID)
+}
+
+func (s *FileService) getAllParentFolders(ctx context.Context, tenantID, fileID string) ([]map[string]interface{}, error) {
 	// Get file
 	file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
 	if err != nil {
-		return nil, err
+		return nil, lookupError(err, "file or folder not found")
+	}
+	if tenantID != "" && file.TenantID != tenantID {
+		return nil, permission.ErrResourceNotFound
 	}
 
 	// Permission check
-	if !s.checkFilePerm(ctx, s.fileDAO, file, userID) {
-		return nil, ErrNoAuthorization
+	if err := checkFileAccess(ctx, file, permission.OperationRead); err != nil {
+		return nil, err
 	}
 
 	// Get all parent folders
 	parentFolders, err := s.fileDAO.GetAllParentFolders(ctx, dao.DB, fileID)
 	if err != nil {
 		return nil, err
+	}
+	for _, folder := range parentFolders {
+		if tenantID != "" && folder.TenantID != tenantID {
+			return nil, permission.ErrResourceNotFound
+		}
+		if err := checkFileAccess(ctx, folder, permission.OperationRead); err != nil {
+			return nil, err
+		}
 	}
 
 	// Convert to response format
@@ -260,6 +391,22 @@ func (s *FileService) GetAllParentFolders(ctx context.Context, userID, fileID st
 	}
 
 	return result, nil
+}
+
+func (s *FileService) checkFilePathAccess(ctx context.Context, tenantID, fileID string) error {
+	folders, err := s.fileDAO.GetAllParentFolders(ctx, dao.DB, fileID)
+	if err != nil {
+		return err
+	}
+	for _, folder := range folders {
+		if folder.TenantID != tenantID {
+			return permission.ErrResourceNotFound
+		}
+		if err := checkFileAccess(ctx, folder, permission.OperationRead); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // GetDocCount gets document count for a tenant
@@ -273,7 +420,15 @@ func (s *FileService) createFolderRecursive(ctx context.Context, parentFolder *e
 		return parentFolder, nil
 	}
 
-	newFolder, err := s.fileDAO.CreateFolder(ctx, dao.DB, parentFolder.ID, tenantID, names[count], FileTypeFolder)
+	var newFolder *entity.File
+	err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var createErr error
+		newFolder, createErr = s.fileDAO.CreateFolder(ctx, tx, parentFolder.ID, tenantID, permission.UserIDFromContext(ctx), names[count], FileTypeFolder)
+		if createErr != nil {
+			return createErr
+		}
+		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindFolder, ID: newFolder.ID})
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -281,41 +436,33 @@ func (s *FileService) createFolderRecursive(ctx context.Context, parentFolder *e
 	return s.createFolderRecursive(ctx, newFolder, names, count+1, tenantID)
 }
 
+// getUniqueFilename returns a non-colliding file name within the folder,
+// appending (1), (2), ... when the requested name is already taken.
 func (s *FileService) getUniqueFilename(ctx context.Context, name, parentID, tenantID string) (string, error) {
-	existingFiles, err := s.fileDAO.Query(ctx, dao.DB, name, parentID, tenantID)
-	if err != nil {
-		return "", err
-	}
-
-	if len(existingFiles) == 0 {
-		return name, nil
-	}
-
-	base := filepath.Base(name)
-	ext := filepath.Ext(name)
-	nameWithoutExt := strings.TrimSuffix(base, ext)
-
-	counter := 1
-	for {
-		newName := fmt.Sprintf("%s_%d%s", nameWithoutExt, counter, ext)
-		existingFiles, err = s.fileDAO.Query(ctx, dao.DB, newName, parentID, tenantID)
-		if err != nil {
-			return "", err
-		}
-		if len(existingFiles) == 0 {
-			return newName, nil
-		}
-		counter++
-	}
+	return common.UniqueFileName(name, common.NameLimit255, func(candidate string) (bool, error) {
+		return s.fileDAO.NameExists(ctx, dao.DB, candidate, parentID, tenantID, "")
+	})
 }
 
 // CreateFolder creates a new folder or virtual file
-func (s *FileService) CreateFolder(ctx context.Context, tenantID, name, parentID, fileType string) (map[string]interface{}, error) {
+func (s *FileService) CreateFolder(ctx context.Context, name, parentID, fileType string) (map[string]interface{}, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
+	tenantID := permission.TenantIDFromContext(ctx)
+	if tenantID == "" {
+		tenantID = userID
+	}
+	var err error
+	if err = permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "file", permission.ActionWrite); err != nil {
+		return nil, err
+	}
 	// "/" is the root folder name and the path separator used by recursive
 	// folder creation, so names containing it collide with the root folder
 	// and break path-based lookups.
 	if strings.Contains(name, "/") {
-		return nil, errors.New(`Folder name cannot contain "/"`)
+		return nil, errors.New(`folder name cannot contain "/"`)
 	}
 
 	if parentID == "" {
@@ -326,29 +473,52 @@ func (s *FileService) CreateFolder(ctx context.Context, tenantID, name, parentID
 		parentID = rootFolder.ID
 	}
 
-	if !s.fileDAO.IsParentFolderExist(ctx, dao.DB, parentID) {
+	parentFolder, err := s.fileDAO.GetByID(ctx, dao.DB, parentID)
+	if err != nil || parentFolder == nil || parentFolder.Type != FileTypeFolder {
 		return nil, fmt.Errorf("parent folder not found")
 	}
-
-	existingFiles, err := s.fileDAO.Query(ctx, dao.DB, name, parentID, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query existing files: %w", err)
+	if parentFolder.TenantID != tenantID {
+		return nil, permission.ErrResourceNotFound
 	}
-	if len(existingFiles) > 0 {
-		return nil, fmt.Errorf("duplicated folder name in the same folder")
+	if err = checkFileAccess(ctx, parentFolder, permission.OperationCreate); err != nil {
+		return nil, err
 	}
 
 	if fileType == "" {
 		fileType = FileTypeVirtual
 	}
-
-	if fileType == FileTypeFolder {
-		fileType = FileTypeFolder
-	} else {
+	if fileType != FileTypeFolder {
 		fileType = FileTypeVirtual
 	}
 
-	folder, err := s.fileDAO.CreateFolder(ctx, dao.DB, parentID, tenantID, name, fileType)
+	existsInParent := func(candidate string) (bool, error) {
+		return s.fileDAO.NameExists(ctx, dao.DB, candidate, parentID, tenantID, "")
+	}
+	var uniqueName string
+	if fileType == FileTypeFolder {
+		// A folder is not a file: append the counter to the whole name.
+		uniqueName, err = common.UniqueName(name, common.NameLimit255, existsInParent)
+	} else {
+		uniqueName, err = common.UniqueFileName(name, common.NameLimit255, existsInParent)
+	}
+	if err != nil {
+		return nil, err
+	}
+	name = uniqueName
+
+	var folder *entity.File
+	err = dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var createErr error
+		folder, createErr = s.fileDAO.CreateFolder(ctx, tx, parentID, tenantID, userID, name, fileType)
+		if createErr != nil {
+			return createErr
+		}
+		kind := permission.ResourceKindFile
+		if fileType == FileTypeFolder {
+			kind = permission.ResourceKindFolder
+		}
+		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: kind, ID: folder.ID})
+	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create folder: %w", err)
 	}
@@ -361,150 +531,180 @@ func (s *FileService) CreateFolder(ctx context.Context, tenantID, name, parentID
 // - new_name only: rename in place (no storage operation)
 // - dest_file_id only: move to new folder (keep names)
 // - both: move and rename simultaneously
-func (s *FileService) MoveFiles(ctx context.Context, uid string, srcFileIDs []string, destFileID string, newName string) (bool, string) {
-	// 1. Get all source files
+func (s *FileService) MoveFiles(ctx context.Context, srcFileIDs []string, destFileID string, newName string) error {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return permission.ErrUnauthenticated
+	}
 	files, err := s.fileDAO.GetByIDs(ctx, dao.DB, srcFileIDs)
-	if err != nil || len(files) == 0 {
-		return false, "source files not found"
+	if err != nil {
+		return err
+	}
+	if len(files) == 0 {
+		return errors.New("source files not found")
+	}
+	filesByID := make(map[string]*entity.File, len(files))
+	for _, file := range files {
+		filesByID[file.ID] = file
 	}
 
-	// Create a map for quick lookup
-	filesMap := make(map[string]*entity.File)
-	for _, f := range files {
-		filesMap[f.ID] = f
-	}
-
-	// 2. Validate all source files
 	for _, fileID := range srcFileIDs {
-		file, ok := filesMap[fileID]
+		file, ok := filesByID[fileID]
 		if !ok {
-			return false, "file or folder not found"
+			return errors.New("file or folder not found")
 		}
 		if file.TenantID == "" {
-			return false, "tenant not found"
+			return errors.New("tenant not found")
 		}
-		// 3. Permission check
-		if !s.checkFilePerm(ctx, s.fileDAO, file, uid) {
-			return false, "no authorization"
+		if err := s.checkFileTreeAccess(ctx, file, permission.OperationUpdate); err != nil {
+			return err
 		}
 	}
 
-	// 4. Validate destination folder if provided
+	if ok, msg := s.checkSourcesDisjoint(ctx, files); !ok {
+		return errors.New(msg)
+	}
+
 	var destFolder *entity.File
 	if destFileID != "" {
 		destFolder, err = s.fileDAO.GetByID(ctx, dao.DB, destFileID)
-		if err != nil || destFolder == nil {
-			return false, "parent folder not found"
+		if err != nil || destFolder == nil || destFolder.Type != FileTypeFolder {
+			return errors.New("parent folder not found")
 		}
-		// Check destination folder permission
-		if !s.checkFilePerm(ctx, s.fileDAO, destFolder, uid) {
-			return false, "no authorization to write to destination folder"
-		}
-
-		if destFolder.Type != FileTypeFolder {
-			return false, "destination is not a folder"
+		if err := checkFileAccess(ctx, destFolder, permission.OperationCreate); err != nil {
+			return err
 		}
 
 		destAncestors, err := s.fileDAO.GetAllParentFolders(ctx, dao.DB, destFolder.ID)
 		if err != nil {
-			return false, "parent folder not found"
+			return errors.New("parent folder not found")
 		}
-
 		destAncestorIDs := make(map[string]struct{}, len(destAncestors))
 		for _, folder := range destAncestors {
 			destAncestorIDs[folder.ID] = struct{}{}
 		}
-
 		for _, file := range files {
 			if file.Type != FileTypeFolder {
 				continue
 			}
-
 			if file.ID == destFolder.ID {
-				return false, "cannot move a folder to itself"
+				return errors.New("cannot move a folder to itself")
 			}
-
 			if _, ok := destAncestorIDs[file.ID]; ok {
-				return false, "cannot move a folder into its own subfolder"
+				return errors.New("cannot move a folder into its own subfolder")
 			}
 		}
 	}
 
-	// 5. Validate new_name if provided
+	trimmedName := strings.TrimSpace(newName)
+	if newName != "" && trimmedName == "" {
+		return errors.New("new_name must not be blank")
+	}
+	newName = trimmedName
 	if newName != "" {
+		if err := common.ValidateNameRunes(newName, common.NameLimit255); err != nil {
+			return err
+		}
 		if len(srcFileIDs) > 1 {
-			return false, "new name can only be used with a single file"
+			return errors.New("new name can only be used with a single file")
 		}
 		if strings.Contains(newName, "/") {
-			return false, `Name cannot contain "/"`
+			return errors.New(`Name cannot contain "/"`)
 		}
 
-		file := filesMap[srcFileIDs[0]]
-		// Check extension for non-folder files
-		if file.Type != FileTypeFolder {
-			oldExt := utility.GetFileExtension(file.Name)
-			newExt := utility.GetFileExtension(newName)
-			if oldExt != newExt {
-				return false, "The extension of file can't be changed"
-			}
+		file := filesByID[srcFileIDs[0]]
+		if file.Type != FileTypeFolder && utility.GetFileExtension(file.Name) != utility.GetFileExtension(newName) {
+			return errors.New("The extension of file can't be changed")
 		}
 
-		// Check for duplicate names in target folder
 		targetParentID := file.ParentID
 		if destFolder != nil {
 			targetParentID = destFolder.ID
 		}
-		var existingFiles []*entity.File
-		existingFiles, err = s.fileDAO.Query(ctx, dao.DB, newName, targetParentID, file.TenantID)
-		if err != nil {
-			return false, fmt.Sprintf("failed to query existing files: %v", err)
+		existsInTarget := func(candidate string) (bool, error) {
+			return s.fileDAO.NameExists(ctx, dao.DB, candidate, targetParentID, file.TenantID, file.ID)
 		}
-		for _, f := range existingFiles {
-			if f.Name == newName {
-				return false, "duplicated file name in the same folder"
+		if targetParentID == file.ParentID {
+			available, err := common.NameAvailable(file.Name, newName, existsInTarget)
+			if err != nil {
+				return fmt.Errorf("failed to query existing files: %w", err)
+			}
+			if !available {
+				return errors.New("duplicated file name in the same folder")
+			}
+		} else {
+			taken, err := existsInTarget(newName)
+			if err != nil {
+				return fmt.Errorf("failed to query existing files: %w", err)
+			}
+			if taken {
+				return errors.New("duplicated file name in the same folder")
 			}
 		}
 	} else if destFolder != nil {
-		// Plain move (no rename): check for duplicate names in destination folder
 		for _, file := range files {
-			var existingFiles []*entity.File
-			existingFiles, err = s.fileDAO.Query(ctx, dao.DB, file.Name, destFolder.ID, file.TenantID)
+			exists, err := s.fileDAO.NameExists(ctx, dao.DB, file.Name, destFolder.ID, file.TenantID, file.ID)
 			if err != nil {
-				return false, fmt.Sprintf("failed to query existing files: %v", err)
+				return fmt.Errorf("failed to query existing files: %w", err)
 			}
-			for _, f := range existingFiles {
-				// Ignore the source file itself
-				if f.ID != file.ID {
-					return false, "Duplicated file name in the same folder."
-				}
+			if exists {
+				return errors.New("Duplicated file name in the same folder.")
 			}
 		}
 	}
 
-	// 6. Perform the move operation
 	if destFolder != nil {
-		// Move to destination folder
-		for _, file := range files {
-			if err = s.moveEntryRecursive(ctx, file, destFolder, newName); err != nil {
-				return false, err.Error()
+		for _, fileID := range srcFileIDs {
+			if err := s.moveEntryRecursive(ctx, filesByID[fileID], destFolder, newName); err != nil {
+				return err
 			}
 		}
-	} else {
-		// Pure rename: no storage operation needed
-		if newName == "" {
-			return false, "new_name is required for rename"
-		}
-		if len(srcFileIDs) == 0 {
-			return false, "Source files not found!"
-		}
-		file := filesMap[srcFileIDs[0]]
-		if err = s.fileDAO.UpdateByID(ctx, dao.DB, file.ID, map[string]interface{}{"name": newName}); err != nil {
-			return false, "Database error (File rename)!"
-		}
+		return nil
+	}
+	if newName == "" {
+		return errors.New("new_name is required for rename")
+	}
+	if len(srcFileIDs) == 0 {
+		return errors.New("Source files not found!")
+	}
+	file := filesByID[srcFileIDs[0]]
+	if err := s.fileDAO.UpdateByID(ctx, dao.DB, file.ID, map[string]interface{}{"name": newName}); err != nil {
+		return errors.New("Database error (File rename)!")
+	}
+	if err := s.renameLinkedDocuments(ctx, file.ID, newName); err != nil {
+		return errors.New("Database error (Document rename)!")
+	}
+	return nil
+}
 
-		// Update names of all linked documents if any exist
-		if err = s.renameLinkedDocuments(ctx, file.ID, newName); err != nil {
-			return false, "Database error (Document rename)!"
+// checkSourcesDisjoint reports false with a message when a selected source
+// entry is an ancestor or descendant of another selected source entry.
+// moveEntryRecursive already relocates and deletes an entire subtree, so a
+// descendant selected alongside its ancestor would otherwise be processed
+// twice, recreating a duplicate folder or moving an already-removed object.
+func (s *FileService) checkSourcesDisjoint(ctx context.Context, files []*entity.File) (bool, string) {
+	if len(files) < 2 {
+		return true, ""
+	}
+
+	srcIDs := make(map[string]struct{}, len(files))
+	for _, f := range files {
+		srcIDs[f.ID] = struct{}{}
+	}
+
+	for _, file := range files {
+		ancestors, err := s.fileDAO.GetAllParentFolders(ctx, dao.DB, file.ID)
+		if err != nil {
+			return false, "failed to check source folder hierarchy"
+		}
+		for _, ancestor := range ancestors {
+			if ancestor.ID == file.ID {
+				// GetAllParentFolders includes the entry itself.
+				continue
+			}
+			if _, ok := srcIDs[ancestor.ID]; ok {
+				return false, "cannot move a folder together with its descendant"
+			}
 		}
 	}
 
@@ -553,10 +753,13 @@ func (s *FileService) moveEntryRecursive(ctx context.Context, sourceFile *entity
 				return fmt.Errorf("cannot move folder into itself")
 			}
 			newFolder = existingFolders[0]
+			if err := checkFileAccess(ctx, newFolder, permission.OperationCreate); err != nil {
+				return err
+			}
 		} else {
 			// Create new folder
 			var err error
-			newFolder, err = s.fileDAO.CreateFolder(ctx, dao.DB, destFolder.ID, sourceFile.TenantID, effectiveName, FileTypeFolder)
+			newFolder, err = s.fileDAO.CreateFolder(ctx, dao.DB, destFolder.ID, sourceFile.TenantID, permission.UserIDFromContext(ctx), effectiveName, FileTypeFolder)
 			if err != nil {
 				return fmt.Errorf("failed to create destination folder: %w", err)
 			}

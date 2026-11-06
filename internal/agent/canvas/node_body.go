@@ -83,7 +83,7 @@ type nodeBodyFn = func(ctx context.Context, in map[string]any) (map[string]any, 
 // (componentFactoryFromContext): the override is threaded through
 // canvas.Compile → BuildWorkflow → buildNodeBody without the canvas
 // package ever importing the ingestion layer.
-const ctxKeyOverrideParams ctxKey = "canvas_override_params"
+const ctxKeyOverrideParams = "canvas_override_params"
 
 // withOverrideParams attaches a run-level override map to ctx. It is
 // a no-op when m is nil so callers can pass a possibly-nil run parameter
@@ -120,11 +120,11 @@ func applyOverrideParams(params, cpnOverride map[string]any) map[string]any {
 	return out
 }
 
-func buildNodeBody(ctx context.Context, cpnID, name string, params map[string]any) (nodeBodyFn, error) {
-	return buildNodeBodyWithOptions(ctx, cpnID, name, params, runtime.ComponentExecutionOptions{})
+func buildNodeBody(ctx context.Context, cpnID, name, displayName string, params map[string]any) (nodeBodyFn, error) {
+	return buildNodeBodyWithOptions(ctx, cpnID, name, displayName, params, runtime.ComponentExecutionOptions{})
 }
 
-func buildNodeBodyWithOptions(ctx context.Context, cpnID, name string, params map[string]any, opts runtime.ComponentExecutionOptions) (nodeBodyFn, error) {
+func buildNodeBodyWithOptions(ctx context.Context, cpnID, name, displayName string, params map[string]any, opts runtime.ComponentExecutionOptions) (nodeBodyFn, error) {
 	if overrides := overrideParamsFromContext(ctx); len(overrides) > 0 {
 		// overrides is keyed by cpnID; a component only sees its own
 		// entry. Components absent from the map are left untouched.
@@ -144,29 +144,82 @@ func buildNodeBodyWithOptions(ctx context.Context, cpnID, name string, params ma
 	// (compose.Interrupt) and resumes from the orchestrator's
 	// compose.ResumeWithData call.
 	if strings.EqualFold(name, "UserFillUp") {
+		if err := runtime.ValidateUserFillUpOptions(params, false); err != nil {
+			return nil, runtime.NewUserFacingError(err.Error())
+		}
 		return UserFillUpNodeBody(cpnID, params), nil
 	}
 	if factory := resolveComponentFactory(ctx); factory != nil {
 		comp, err := factory(name, params)
 		if err != nil {
-			return nil, fmt.Errorf("canvas: component %q (%s): factory: %w", cpnID, name, err)
+			return nil, fmt.Errorf("agent: component %q (%s): factory: %w", cpnID, name, err)
 		}
 		if comp == nil {
-			return nil, fmt.Errorf("canvas: component %q (%s): factory returned nil component", cpnID, name)
+			return nil, fmt.Errorf("agent: component %q (%s): factory returned nil component", cpnID, name)
 		}
 		// Pass the class name through to the body for structured logging
 		// without the runtime.Component interface needing to expose Name().
 		// The factory returns the class name as the DSL's `component_name`
 		// field, which is also what ComponentBase.Name() would have returned.
-		return realComponentBodyWithOptions(cpnID, name, comp, opts), nil
+		body := realComponentBodyWithOptions(cpnID, name, displayName, comp, opts)
+		return withExceptionHandler(cpnID, params, body), nil
 	}
 	// Fallback: no factory registered. This path is only exercised by
 	// canvas-only unit tests; production wiring always installs a
 	// factory via component.init().
 	if !isKnownPrimitive(name) {
-		return nil, fmt.Errorf("canvas: component %q has unknown component_name %q (typo? not in isKnownPrimitive, not in legacyNoOpNames)", cpnID, name)
+		return nil, fmt.Errorf("agent: component %q has unknown component_name %q (typo? not in isKnownPrimitive, not in legacyNoOpNames)", cpnID, name)
 	}
 	return placeholderBody(cpnID), nil
+}
+
+func exceptionTargets(params map[string]any) []string {
+	switch targets := params["exception_goto"].(type) {
+	case []string:
+		return targets
+	case []any:
+		return decodeStringSlice(targets)
+	}
+	return nil
+}
+
+func withExceptionHandler(cpnID string, params map[string]any, body nodeBodyFn) nodeBodyFn {
+	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
+		out, invokeErr := body(ctx, in)
+		err := invokeErr
+		if err == nil {
+			if message, _ := out["_ERROR"].(string); message != "" {
+				err = errors.New(message)
+			}
+		}
+		if err == nil || IsInterruptError(err) || errors.Is(err, context.Canceled) || ctx.Err() != nil {
+			return out, err
+		}
+		switch params["exception_method"] {
+		case "goto":
+			if targets := exceptionTargets(params); len(targets) > 0 {
+				if out == nil {
+					out = make(map[string]any)
+				}
+				out["_ERROR"] = err.Error()
+				out["_next"] = targets
+				out["__cpn_id__"] = cpnID
+				return out, nil
+			}
+		case "comment":
+			if value, _ := params["exception_default_value"].(string); value != "" {
+				runtime.EmitCanvasMessage(ctx, value)
+				if out == nil {
+					out = make(map[string]any)
+				}
+				out["content"] = value
+				out["_ERROR"] = err.Error()
+				out["__cpn_id__"] = cpnID
+				return out, nil
+			}
+		}
+		return out, err
+	}
 }
 
 // legacyNoOpBody returns the body installed for DSL v1 sentinel
@@ -185,6 +238,9 @@ func legacyNoOpBody(cpnID string) nodeBodyFn {
 	return func(_ context.Context, in map[string]any) (map[string]any, error) {
 		out := make(map[string]any, len(in)+2)
 		for k, v := range in {
+			if k == "state" {
+				continue
+			}
 			out[k] = v
 		}
 		out["__cpn_id__"] = cpnID
@@ -216,19 +272,22 @@ func legacyNoOpBody(cpnID string) nodeBodyFn {
 //     dataflow-result UI can show per-node timing without each
 //     component repeating the bookkeeping.
 //
-// Timeout errors are surfaced as `timeout after Xs: <wrapped>`;
-// parent-context cancellation as `cancelled: <wrapped>`; all other
-// errors wrap the component's own error with the cpn_id for diagnostics.
+// Invocation errors identify the component by display name, falling back to the
+// cpn_id when no display name is available.
 //
 // The output map is tagged with __cpn_id__ before return so statePost
 // can attribute the result; if the component already populated that
 // key it is overwritten with the canvas-controlled value to keep
 // attribution authoritative.
-func realComponentBody(cpnID, componentClass string, comp runtime.Component) nodeBodyFn {
-	return realComponentBodyWithOptions(cpnID, componentClass, comp, runtime.ComponentExecutionOptions{})
+func realComponentBody(cpnID, componentClass, displayName string, comp runtime.Component) nodeBodyFn {
+	return realComponentBodyWithOptions(cpnID, componentClass, displayName, comp, runtime.ComponentExecutionOptions{})
 }
 
-func realComponentBodyWithOptions(cpnID, componentClass string, comp runtime.Component, opts runtime.ComponentExecutionOptions) nodeBodyFn {
+func realComponentBodyWithOptions(cpnID, componentClass, displayName string, comp runtime.Component, opts runtime.ComponentExecutionOptions) nodeBodyFn {
+	logName := strings.TrimSpace(displayName)
+	if logName == "" {
+		logName = cpnID
+	}
 	return func(ctx context.Context, in map[string]any) (map[string]any, error) {
 		// The framework imposes no wall-clock deadline on component execution.
 		// Long-running components (notably knowledge compilation, which fans out
@@ -245,11 +304,16 @@ func realComponentBodyWithOptions(cpnID, componentClass string, comp runtime.Com
 		cctx = runtime.BindComponentFraction(cctx, cpnID)
 
 		var out map[string]any
+		var componentOut map[string]any
 		invokeErr := runtime.TrackProgress(cpnID, runtime.ProgressCallbackFromContext(ctx), func() error {
 			var e error
 			out, e = runtime.TrackElapsed(componentClass, func() (map[string]any, error) {
-				return comp.Invoke(runtime.WithComponentExecutionOptions(cctx, opts), dao.DB, in)
+				componentOut, e = comp.Invoke(runtime.WithComponentExecutionOptions(cctx, opts), dao.DB, in)
+				return componentOut, e
 			})
+			if out == nil {
+				out = componentOut
+			}
 			return e
 		})
 		if invokeErr != nil {
@@ -258,24 +322,24 @@ func realComponentBodyWithOptions(cpnID, componentClass string, comp runtime.Com
 				// A user cancel is a normal control path; the authoritative
 				// "Task ... cancelled" line is logged by the service layer, so
 				// keep this at debug to avoid duplicate noise.
-				common.Debug("canvas: component invoke cancelled",
+				common.Debug("agent: component invoke cancelled",
 					zap.String("component_id", cpnID),
 					zap.String("component_class", componentClass))
-				return nil, fmt.Errorf("canvas: component %q invoke: cancelled: %w", cpnID, invokeErr)
+				return out, fmt.Errorf("agent: component %q invoke: cancelled: %w", logName, invokeErr)
 			case errors.Is(invokeErr, context.DeadlineExceeded):
-				common.Error("canvas: component invoke failed", invokeErr,
+				common.Error("agent: component invoke failed", invokeErr,
 					zap.String("component_id", cpnID),
 					zap.String("component_class", componentClass))
-				return nil, fmt.Errorf("canvas: component %q invoke: context deadline exceeded: %w", cpnID, invokeErr)
+				return out, fmt.Errorf("agent: component %q invoke: context deadline exceeded: %w", logName, invokeErr)
 			default:
 				// Surface the failure as a structured log line. The wrapped error
 				// already carries the full cause chain (e.g. deepseek DNS/timeout),
 				// but without this the failure only showed up as a generic
 				// "Task ... failed" line with no clear cause in the logs.
-				common.Error("canvas: component invoke failed", invokeErr,
+				common.Error("agent: component invoke failed", invokeErr,
 					zap.String("component_id", cpnID),
 					zap.String("component_class", componentClass))
-				return nil, fmt.Errorf("canvas: component %q invoke: %w", cpnID, invokeErr)
+				return out, fmt.Errorf("agent: component %q invoke: %w", logName, invokeErr)
 			}
 		}
 		if out == nil {
@@ -337,6 +401,9 @@ func withStateBracket(cpnID, componentName string, body nodeBodyFn) nodeBodyFn {
 		out, err := body(ctx, in)
 		if err != nil {
 			if state != nil {
+				if invocations, ok := out["tool_invocations"]; ok {
+					state.SetVar(cpnID, "tool_invocations", invocations)
+				}
 				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, err)
 			}
 			return nil, err
@@ -354,14 +421,14 @@ func withStateBracket(cpnID, componentName string, body nodeBodyFn) nodeBodyFn {
 			return out, nil
 		}
 		for k, v := range out {
-			if k == "__cpn_id__" || k == "state" || k == "__legacy_noop__" {
+			if k == "__cpn_id__" || k == "__legacy_noop__" {
 				continue
 			}
 			state.SetVar(outputCpnID, k, v)
 		}
 		if runtime.IsDeferredStream(out["content"]) {
-			runtime.RegisterDeferredNode(ctx, cpnID, func() {
-				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
+			runtime.RegisterDeferredNode(ctx, cpnID, func(nodeErr error) {
+				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nodeErr)
 			})
 		} else {
 			nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)

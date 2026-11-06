@@ -2,7 +2,6 @@ import { DynamicForm } from '@/components/dynamic-form';
 import { Button } from '@/components/ui/button';
 import Divider from '@/components/ui/divider';
 import { Form } from '@/components/ui/form';
-import { MainContainer } from '@/pages/dataset/setting/python/configuration-form-container';
 import { TopTitle } from '@/pages/dataset/dataset-title';
 import { IMemory } from '@/pages/memories/interface';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -81,7 +80,7 @@ export default function MemoryMessage() {
           <Form {...form}>
             <form onSubmit={form.handleSubmit(() => {})} className="space-y-6 ">
               <div className="w-[768px] h-[calc(100vh-300px)] pr-1 overflow-y-auto scrollbar-auto pb-4">
-                <MainContainer className="text-text-secondary !space-y-10">
+                <section className="space-y-5 text-text-secondary !space-y-10">
                   <div className="text-base font-medium text-text-primary">
                     {t('knowledgeConfiguration.baseInfo')}
                   </div>
@@ -89,7 +88,7 @@ export default function MemoryMessage() {
                   <Divider />
                   <MemoryModelForm />
                   <AdvancedSettingsForm />
-                </MainContainer>
+                </section>
               </div>
               <div className="text-right items-center flex justify-end gap-3 w-[768px]">
                 <Button

@@ -21,6 +21,13 @@ const nodeLabelApiKeyOperators: string[] = [
   Operator.SofyaSearch,
 ];
 
+const WebhookSecretFields = {
+  token: 'token_value',
+  basic_auth: 'password',
+  jwt: 'secret',
+  hmac: 'secret',
+} as const;
+
 function isQueritOperator(value: unknown) {
   if (typeof value !== 'string') {
     return false;
@@ -31,14 +38,51 @@ function isQueritOperator(value: unknown) {
   );
 }
 
+function isSearch1APIOperator(value: unknown) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  return ['search1api', 'search1apisearch', 'search1apicrawl'].includes(
+    value.replace(/_/g, '').toLowerCase(),
+  );
+}
+
 function isNodeLabelApiKeyOperator(value: unknown) {
   if (typeof value !== 'string') {
     return false;
   }
 
-  return isQueritOperator(value) || nodeLabelApiKeyOperators.includes(value);
+  return (
+    isQueritOperator(value) ||
+    isSearch1APIOperator(value) ||
+    nodeLabelApiKeyOperators.includes(value)
+  );
 }
 
+/** Returns a copy with recognized webhook credentials blanked. */
+function clearWebhookSecrets(value: Record<string, any>) {
+  const security = value.security;
+  if (!isPlainObject(security)) {
+    return;
+  }
+
+  let changed = false;
+  const sanitizedSecurity = { ...security };
+  for (const [section, field] of Object.entries(WebhookSecretFields)) {
+    const auth = sanitizedSecurity[section];
+    if (isPlainObject(auth) && auth[field]) {
+      sanitizedSecurity[section] = { ...auth, [field]: '' };
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    return { ...value, security: sanitizedSecurity };
+  }
+}
+
+/** Returns a copy of the DSL with recognized credentials removed. */
 export function clearSensitiveFields<T>(obj: T): T {
   return cloneDeepWith(obj, (value) => {
     if (!isPlainObject(value)) {
@@ -47,7 +91,8 @@ export function clearSensitiveFields<T>(obj: T): T {
 
     if (
       (apiKeyOperators.includes(value.component_name) ||
-        isQueritOperator(value.component_name)) &&
+        isQueritOperator(value.component_name) ||
+        isSearch1APIOperator(value.component_name)) &&
       get(value, 'params.api_key')
     ) {
       return { ...value, params: { ...value.params, api_key: '' } };
@@ -67,6 +112,11 @@ export function clearSensitiveFields<T>(obj: T): T {
           },
         },
       };
+    }
+
+    const sanitizedWebhookForm = clearWebhookSecrets(value);
+    if (sanitizedWebhookForm) {
+      return sanitizedWebhookForm;
     }
   });
 }

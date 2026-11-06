@@ -252,13 +252,8 @@ func TestMergeStructureDataset_DescriptionFallbacks(t *testing.T) {
 }
 
 // TestMergeStructureDataset_CompileKwdIsAutotypeNotTemplateKind covers the
-// option-A alignment: the dataset row's compile_kwd is the doc row's inferred
-// compile type (autotype, e.g. "hypergraph"/"mindmap"), NOT the template kind.
-// The template kind travels on the separate TemplateKind field (stamped to
-// compilation_template_kind_kwd by WriteMergedStructure), which is what read/
-// delete paths match on. This mirrors Python _do_build (compile_kwd passes
-// through verbatim) + get_dataset_structure (matches template kind).
-func TestMergeStructureDataset_CompileKwdIsAutotypeNotTemplateKind(t *testing.T) {
+// Dataset rows retain the producing compilation kind, independent of extraction shape.
+func TestMergeStructureDataset_CompileKwdIsCanonicalKind(t *testing.T) {
 	c := &Consumer{writer: &fakeWriter{}}
 	products := []kccommon.Product{
 		{Variant: kccommon.VariantStructure, DocID: "d1", Kind: "knowledge_graph", TemplateID: "tpl-graph",
@@ -279,8 +274,8 @@ func TestMergeStructureDataset_CompileKwdIsAutotypeNotTemplateKind(t *testing.T)
 		b := fw.buckets[i]
 		switch b.Name {
 		case "Engine":
-			if b.CompileKwd != "hypergraph" {
-				t.Errorf("Engine compile_kwd = %q, want autotype \"hypergraph\" (not template kind)", b.CompileKwd)
+			if b.CompileKwd != "graph" {
+				t.Errorf("Engine compile_kwd = %q, want \"graph\"", b.CompileKwd)
 			}
 			if b.TemplateKind != "knowledge_graph" {
 				t.Errorf("Engine TemplateKind = %q, want \"knowledge_graph\"", b.TemplateKind)
@@ -289,8 +284,8 @@ func TestMergeStructureDataset_CompileKwdIsAutotypeNotTemplateKind(t *testing.T)
 				t.Errorf("Engine TemplateID = %q, want \"tpl-graph\"", b.TemplateID)
 			}
 		case "Fuel":
-			if b.CompileKwd != "mindmap" {
-				t.Errorf("Fuel compile_kwd = %q, want autotype \"mindmap\" (not template kind)", b.CompileKwd)
+			if b.CompileKwd != "mind_map" {
+				t.Errorf("Fuel compile_kwd = %q, want \"mind_map\"", b.CompileKwd)
 			}
 			if b.TemplateKind != "mind_map" {
 				t.Errorf("Fuel TemplateKind = %q, want \"mind_map\"", b.TemplateKind)
@@ -406,5 +401,67 @@ func TestProductFromChunkMap_RestoresStructureTreeKind(t *testing.T) {
 	}
 	if kind, _ := tp.Meta["kind"].(string); kind != "root" {
 		t.Errorf("tree Meta.kind = %q, want root (so nav dispatch can pick it)", kind)
+	}
+}
+
+func TestProductFromChunkMap_PreservesStructurePayloadFieldsThroughMerge(t *testing.T) {
+	rows := []map[string]interface{}{
+		{
+			"id": "entity-acme", "doc_id": "d1", "compile_kwd": "knowledge_graph",
+			"content_with_weight": `{"name":" Acme Corp ","type":"organization","description":"Supplier"}`,
+			"knowledge_graph_kwd": "graph", "type_kwd": "entity", "name_kwd": "acme corp",
+		},
+		{
+			"id": "entity-beta", "doc_id": "d1", "compile_kwd": "knowledge_graph",
+			"content_with_weight": `{"text":"Beta Ltd","type":"organization","description":"Vendor"}`,
+			"knowledge_graph_kwd": "graph", "type_kwd": "entity", "name_kwd": "beta ltd",
+		},
+		{
+			"id": "relation-supplies", "doc_id": "d1", "compile_kwd": "knowledge_graph",
+			"content_with_weight": `{"from":"Acme Corp","to":"Beta Ltd","type":"supplies","description":"supply"}`,
+			"knowledge_graph_kwd": "graph", "type_kwd": "relation",
+			"from_entity_kwd": " ACME CORP ", "to_entity_kwd": "BETA LTD ",
+		},
+		{
+			"id": "relation-owns", "doc_id": "d1", "compile_kwd": "knowledge_graph",
+			"content_with_weight": `{"from":"Acme Corp","to":"Beta Ltd","type":"owns","description":"ownership"}`,
+			"knowledge_graph_kwd": "graph", "type_kwd": "relation",
+			"from_entity_kwd": " ACME CORP ", "to_entity_kwd": "BETA LTD ",
+		},
+	}
+	products := make([]kccommon.Product, 0, len(rows))
+	for _, row := range rows {
+		product, ok := productFromChunkMap(row, "t1", kccommon.VariantStructure)
+		if !ok {
+			t.Fatalf("row %q should reconstruct", row["id"])
+		}
+		products = append(products, product)
+	}
+
+	c := &Consumer{writer: &fakeWriter{}}
+	if err := c.mergeStructureDataset(context.Background(), "t1", "kb1", products); err != nil {
+		t.Fatalf("mergeStructureDataset: %v", err)
+	}
+	buckets := c.writer.(*fakeWriter).buckets
+	if len(buckets) != 4 {
+		t.Fatalf("want 2 entities and 2 typed relations, got %d: %+v", len(buckets), buckets)
+	}
+	entities := map[string]bool{}
+	relations := map[string]bool{}
+	for _, bucket := range buckets {
+		if bucket.Type == "relation" {
+			relations[bucket.RelationType] = true
+			if bucket.FromEntity != "Acme Corp" || bucket.ToEntity != "Beta Ltd" {
+				t.Errorf("relation endpoints = %q -> %q, want trimmed entity spellings", bucket.FromEntity, bucket.ToEntity)
+			}
+			continue
+		}
+		entities[bucket.Name] = true
+	}
+	if !entities["Acme Corp"] || !entities["Beta Ltd"] {
+		t.Errorf("entity display names = %v, want extracted spelling", entities)
+	}
+	if !relations["supplies"] || !relations["owns"] {
+		t.Errorf("relation types = %v, want supplies and owns", relations)
 	}
 }

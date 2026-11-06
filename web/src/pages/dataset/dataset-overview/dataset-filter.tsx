@@ -48,6 +48,10 @@ const DatasetFilter = (
               value: LogTabs.DATASET_LOGS,
               label: t('knowledgeDetails.datasetLogs'),
             },
+            {
+              value: LogTabs.DATASOURCE_LOGS,
+              label: t('knowledgeDetails.datasourceLogs'),
+            },
           ]}
           onChange={(value) =>
             setActive?.(value as (typeof LogTabs)[keyof typeof LogTabs])
@@ -55,22 +59,24 @@ const DatasetFilter = (
         />
       </div>
 
-      <div className="flex items-center gap-4">
-        <FilterPopover
-          value={value}
-          onChange={onChange}
-          filters={filters}
-          onOpenChange={onOpenChange}
-        >
-          <FilterButton count={filterCount}></FilterButton>
-        </FilterPopover>
+      {active !== LogTabs.DATASOURCE_LOGS && (
+        <div className="flex items-center gap-4">
+          <FilterPopover
+            value={value}
+            onChange={onChange}
+            filters={filters}
+            onOpenChange={onOpenChange}
+          >
+            <FilterButton count={filterCount}></FilterButton>
+          </FilterPopover>
 
-        <SearchInput
-          value={searchString}
-          onChange={onSearchChange}
-          className="w-32"
-        ></SearchInput>
-      </div>
+          <SearchInput
+            value={searchString}
+            onChange={onSearchChange}
+            className="w-32"
+          ></SearchInput>
+        </div>
+      )}
     </div>
   );
 };

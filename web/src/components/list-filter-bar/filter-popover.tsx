@@ -25,6 +25,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { useForm } from 'react-hook-form';
@@ -158,11 +159,18 @@ function CheckboxFormMultiple({
     setOpen(false);
   }, [fieldsDict, onChange, setOpen]);
 
+  // The form takes the applied value when the popover opens and when a new
+  // value is applied, never when the filter options refresh: the document list
+  // refetches them on every poll while documents parse, and a reset there
+  // would discard the selections not yet submitted.
+  const filtersReady = filters.length > 0;
+  const fieldsDictRef = useRef(fieldsDict);
+  fieldsDictRef.current = fieldsDict;
   useEffect(() => {
-    if (filters.length > 0) {
-      form.reset(value || fieldsDict);
+    if (filtersReady) {
+      form.reset(value || fieldsDictRef.current);
     }
-  }, [form, value, filters, fieldsDict]);
+  }, [form, value, filtersReady]);
 
   const filterList = useMemo(() => {
     const filterSet = filterGroup

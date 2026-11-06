@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"ragflow/internal/common"
 )
 
 func newVllmRerankServer(t *testing.T, expectAuth string, handler func(t *testing.T, body map[string]interface{}, w http.ResponseWriter)) *httptest.Server {
@@ -222,5 +224,34 @@ func TestVllmRerankRejectsOutOfRangeIndex(t *testing.T) {
 	_, err := model.Rerank(ctx, &modelName, RerankRequest{Query: "q", Documents: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{}, nil)
 	if err == nil || !strings.Contains(err.Error(), "unexpected rerank index") {
 		t.Errorf("expected out-of-range error, got %v", err)
+	}
+}
+
+// The rerank response's usage is the oracle a local reranker's tokenizer
+// calibration has; without it a llama-server/vLLM deployment reports 0 tokens.
+func TestVllmRerankReportsUsage(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newVllmRerankServer(t, "Bearer test-key", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":      "rerank-1",
+			"results": []map[string]interface{}{{"index": 0, "relevance_score": 0.5}},
+			"usage":   map[string]interface{}{"prompt_tokens": 7, "total_tokens": 7},
+		})
+	})
+	defer srv.Close()
+
+	model := newVllmModelForTest(srv.URL)
+	apiKey := "test-key"
+	modelName := "BAAI/bge-reranker-v2-m3"
+	usage := &common.ModelUsage{}
+	if _, err := model.Rerank(ctx, &modelName, RerankRequest{Query: "q", Documents: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, &RerankConfig{}, usage); err != nil {
+		t.Fatalf("Rerank failed: %v", err)
+	}
+	if usage.InputTokens != 7 || usage.TotalTokens != 7 {
+		t.Fatalf("usage=(%d,%d), want (7,7)", usage.InputTokens, usage.TotalTokens)
+	}
+	if usage.Type != "rerank" {
+		t.Fatalf("usage.Type=%q, want rerank", usage.Type)
 	}
 }

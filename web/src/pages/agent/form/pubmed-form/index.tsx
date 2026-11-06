@@ -25,7 +25,7 @@ import { QueryVariable } from '../components/query-variable';
 
 export const PubMedFormPartialSchema = {
   top_n: z.number(),
-  email: z.string().email(),
+  email: z.string().email().or(z.literal('')),
 };
 
 export const FormSchema = z.object({

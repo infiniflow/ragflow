@@ -15,6 +15,7 @@
  */
 
 import { AgentCategory, AgentQuery } from '@/constants/agent';
+import { AgentListItemType } from '@/interfaces/database/agent';
 import { NavigateToDataflowResultProps } from '@/pages/dataflow-result/interface';
 import { Routes } from '@/routes';
 import { useCallback } from 'react';
@@ -110,9 +111,19 @@ export const useNavigatePage = () => {
     [navigate],
   );
 
-  const navigateToAgents = useCallback(() => {
-    navigate(Routes.Agents);
-  }, [navigate]);
+  // The agents list selects its tab from the canvas_category query param, so
+  // callers back on a canvas page pass their own category to land on the
+  // matching tab instead of the default workflow tab.
+  const navigateToAgents = useCallback(
+    (canvasCategory?: AgentCategory) => {
+      navigate(
+        canvasCategory
+          ? `${Routes.Agents}?${AgentQuery.CanvasCategory}=${canvasCategory}`
+          : Routes.Agents,
+      );
+    },
+    [navigate],
+  );
 
   const navigateToAgentList = useCallback(() => {
     navigate(Routes.AgentList);
@@ -121,6 +132,18 @@ export const useNavigatePage = () => {
   const navigateToAgent = useCallback(
     (id: string, category?: AgentCategory) => () => {
       navigate(`${Routes.Agent}/${id}?${AgentQuery.Category}=${category}`);
+    },
+    [navigate],
+  );
+
+  // Built-in pipelines open on the dedicated read-only canvas, not on the
+  // editing canvas. The dataflow_canvas category query keeps the pipeline
+  // rendering semantics (handle topology, node forms) identical to editing.
+  const navigateToBuiltinPipeline = useCallback(
+    (id: string) => () => {
+      navigate(
+        `${Routes.Pipeline}/${id}?${AgentQuery.Category}=${AgentCategory.DataflowCanvas}`,
+      );
     },
     [navigate],
   );
@@ -139,9 +162,29 @@ export const useNavigatePage = () => {
     [navigate],
   );
 
-  const navigateToAgentTemplates = useCallback(() => {
-    navigate(Routes.AgentTemplates);
-  }, [navigate]);
+  const navigateToAgentTemplates = useCallback(
+    (canvasCategory: string) => {
+      const params = new URLSearchParams({
+        [AgentQuery.CanvasCategory]: canvasCategory,
+      });
+      navigate(`${Routes.AgentTemplates}?${params.toString()}`);
+    },
+    [navigate],
+  );
+
+  const navigateToCompilationEditor = useCallback(
+    (id?: string) => {
+      const params = new URLSearchParams({
+        source: 'agents',
+        [AgentQuery.CanvasCategory]: AgentListItemType.CompilationTemplateGroup,
+      });
+      const path = id
+        ? `${Routes.CompilationTemplatesEditNext}/${id}`
+        : Routes.CompilationTemplatesEditNext;
+      navigate(`${path}?${params.toString()}`);
+    },
+    [navigate],
+  );
 
   const navigateToSearchList = useCallback(() => {
     navigate(Routes.Searches);
@@ -251,6 +294,8 @@ export const useNavigatePage = () => {
     navigateToAgentExplore,
     navigateToAgentLogs,
     navigateToAgentTemplates,
+    navigateToCompilationEditor,
+    navigateToBuiltinPipeline,
     navigateToSearchList,
     navigateToSearch,
     navigateToFiles,

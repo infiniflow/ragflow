@@ -19,11 +19,11 @@ package dao
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/common"
 	"strings"
 	"time"
 
 	"ragflow/internal/entity"
-	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
 )
@@ -193,19 +193,20 @@ func OpenPipelineOperationStatuses() []string {
 // columns that are known before the pipeline finishes; the DSL and the final
 // progress/counters stay empty until the terminal writer fills them in.
 type OpenLogInput struct {
-	DocumentID      string
-	KbID            string
-	TenantID        string
-	PipelineID      string
-	PipelineTitle   string
-	ParserID        string
-	DocumentName    string
-	DocumentSuffix  string
-	DocumentType    string
-	SourceFrom      string
-	Avatar          *string
-	OperationStatus string
-	RunCount        int
+	DocumentID        string
+	KbID              string
+	TenantID          string
+	PipelineID        string
+	PipelineTitle     string
+	PipelineVersionID string
+	ParserID          string
+	DocumentName      string
+	DocumentSuffix    string
+	DocumentType      string
+	SourceFrom        string
+	Avatar            *string
+	OperationStatus   string
+	RunCount          int
 }
 
 // CreateOpenLog opens the pre-terminal row for a queued, numbered run. Its
@@ -218,7 +219,7 @@ func (dao *PipelineOperationLogDAO) CreateOpenLog(ctx context.Context, db *gorm.
 	now := time.Now().Local()
 	runCount := input.RunCount
 	log := &entity.PipelineOperationLog{
-		ID:              utility.GenerateUUID(),
+		ID:              common.GenerateUUID(),
 		DocumentID:      input.DocumentID,
 		RunCount:        &runCount,
 		TenantID:        input.TenantID,
@@ -246,6 +247,10 @@ func (dao *PipelineOperationLogDAO) CreateOpenLog(ctx context.Context, db *gorm.
 		title := input.PipelineTitle
 		log.PipelineTitle = &title
 	}
+	if input.PipelineVersionID != "" {
+		versionID := input.PipelineVersionID
+		log.PipelineVersionID = &versionID
+	}
 	if err := db.WithContext(ctx).Create(log).Error; err != nil {
 		return nil, err
 	}
@@ -272,16 +277,40 @@ func (dao *PipelineOperationLogDAO) NextRunCount(ctx context.Context, db *gorm.D
 // the from-states the caller declares:
 // the transitions are monotonic (unstart -> schedule -> running), so a late
 // queued write cannot regress a row a concurrent writer already advanced.
-// A row that already left the declared from-states is left untouched. The
-// legacy progress_msg column is intentionally not updated; run text belongs
-// to ingestion_task_log events.
-func (dao *PipelineOperationLogDAO) AdvanceOpenLog(ctx context.Context, db *gorm.DB, logID string, fromStatuses []string, operationStatus string) error {
+// A row that already left the declared from-states is left untouched and the
+// returned bool is false. The legacy progress_msg column is intentionally not
+// updated; run text belongs to ingestion_task_log events.
+func (dao *PipelineOperationLogDAO) AdvanceOpenLog(ctx context.Context, db *gorm.DB, logID string, fromStatuses []string, operationStatus string) (bool, error) {
 	if logID == "" || len(fromStatuses) == 0 {
+		return false, nil
+	}
+	result := db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
+		Where("id = ? AND operation_status IN ?", logID, fromStatuses).
+		Update("operation_status", operationStatus)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected == 1, nil
+}
+
+// SetResolvedPipeline records the pipeline and version a run resolved.
+func (dao *PipelineOperationLogDAO) SetResolvedPipeline(ctx context.Context, db *gorm.DB, logID, pipelineID, versionID string) error {
+	if logID == "" {
 		return nil
 	}
+	var pipelineValue, versionValue interface{}
+	if pipelineID != "" {
+		pipelineValue = pipelineID
+	}
+	if versionID != "" {
+		versionValue = versionID
+	}
 	return db.WithContext(ctx).Model(&entity.PipelineOperationLog{}).
-		Where("id = ? AND operation_status IN ?", logID, fromStatuses).
-		Update("operation_status", operationStatus).Error
+		Where("id = ? AND operation_status IN ?", logID, OpenPipelineOperationStatuses()).
+		Updates(map[string]interface{}{
+			"pipeline_id":         pipelineValue,
+			"pipeline_version_id": versionValue,
+		}).Error
 }
 
 // GetByIDAndKBID fetches a single ingestion log scoped to its knowledge base.
@@ -298,7 +327,7 @@ func (dao *PipelineOperationLogDAO) GetByIDAndKBID(ctx context.Context, db *gorm
 // GetByIDAndKBID instead.
 func (dao *PipelineOperationLogDAO) GetByID(ctx context.Context, db *gorm.DB, logID string) (*entity.PipelineOperationLog, error) {
 	var log entity.PipelineOperationLog
-	if err := db.WithContext(ctx).Where("id = ?", logID).First(&log).Error; err != nil {
+	if err := db.WithContext(ctx).Take(&log, "id = ?", logID).Error; err != nil {
 		return nil, err
 	}
 	return &log, nil

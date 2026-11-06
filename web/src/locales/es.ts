@@ -78,6 +78,8 @@ export default {
       searchKnowledgePlaceholder: 'Buscar',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'Continúa con la carga y el sistema cambiará automáticamente estos archivos a una configuración de análisis integrada compatible.',
       dataset: 'Conjunto de datos',
       testing: 'Pruebas de recuperación',
       files: 'Archivos',
@@ -94,7 +96,7 @@ export default {
       webCrawl: 'Rastreo web',
       chunkNumber: 'Número de fragmentos',
       uploadDate: 'Fecha de carga',
-      chunkMethod: 'Método de fragmentación',
+      parsingMode: 'Modo de análisis',
       enabled: 'Habilitar',
       disabled: 'Deshabilitar',
       action: 'Acción',
@@ -167,15 +169,16 @@ export default {
     },
 
     knowledgeConfiguration: {
+      parsingMode: 'Modo de análisis',
+      builtInSuffix: ' (built in)',
       paddleocrOptions: 'Opciones de PaddleOCR',
       paddleocrApiUrl: 'URL de API de PaddleOCR',
       paddleocrApiUrlTip:
         'La URL del endpoint de la API para el servicio PaddleOCR',
       paddleocrApiUrlPlaceholder: 'ej: https://servidor-paddleocr.com/api',
       paddleocrAccessToken: 'Token de acceso de AI Studio',
-      paddleocrAccessTokenTip:
-        'Token de acceso para la API de PaddleOCR (opcional)',
-      paddleocrAccessTokenPlaceholder: 'Su token de AI Studio (opcional)',
+      paddleocrAccessTokenTip: 'Token de acceso para la API de PaddleOCR',
+      paddleocrAccessTokenPlaceholder: 'Su token de AI Studio',
       paddleocrAlgorithm: 'Algoritmo de PaddleOCR',
       paddleocrAlgorithmTip:
         'Algoritmo a utilizar para el análisis de PaddleOCR',
@@ -388,19 +391,19 @@ export default {
         'El modelo LLM de chat predeterminado que todas las nuevas bases de conocimiento utilizarán.',
       embeddingModel: 'Modelo de embeddings',
       embeddingModelTip:
-        'El modelo de incrustación predeterminado para cada nueva base de conocimiento creada. Si no puedes encontrar un modelo de incrustación en el menú desplegable, verifica si estás utilizando la edición slim de RAGFlow (que no incluye modelos de incrustación) o consulta https://ragflow.io/docs/dev/supported_models para comprobar si tu proveedor de modelos admite este modelo.',
+        'El modelo de incrustación predeterminado para cada nueva base de conocimiento creada. Si no puedes encontrar un modelo de incrustación en el menú desplegable, consulta la página Proveedores de modelos para comprobar si tu proveedor de modelos admite este modelo.',
       img2txtModel: 'Modelo de img2txt',
       img2txtModelTip:
-        'El modelo predeterminado img2txt para cada base de conocimiento recién creada. Describe una imagen o video. Si no puedes encontrar un modelo en el menú desplegable, consulta https://ragflow.io/docs/dev/supported_models para ver si tu proveedor de modelos admite este modelo.',
+        'El modelo predeterminado img2txt para cada base de conocimiento recién creada. Describe una imagen o video. Si no puedes encontrar un modelo en el menú desplegable, consulta la página Proveedores de modelos para ver si tu proveedor de modelos admite este modelo.',
       sequence2txtModel: 'Modelo de secuencia a texto',
       sequence2txtModelTip:
-        'El modelo ASR predeterminado que todas las nuevas bases de conocimiento utilizarán. Usa este modelo para transcribir voces a texto correspondiente. Si no puedes encontrar un modelo en el menú desplegable, consulta https://ragflow.io/docs/dev/supported_models para ver si tu proveedor de modelos admite este modelo.',
+        'El modelo ASR predeterminado que todas las nuevas bases de conocimiento utilizarán. Usa este modelo para transcribir voces a texto correspondiente. Si no puedes encontrar un modelo en el menú desplegable, consulta la página Proveedores de modelos para ver si tu proveedor de modelos admite este modelo.',
       rerankModel: 'Modelo de reordenamiento',
       rerankModelTip:
-        'El modelo de rerank predeterminado para reranking de fragmentos. Si no encuentra un modelo en el menú desplegable, consulte https://ragflow.io/docs/dev/supported_models para comprobar si su proveedor de modelos es compatible con este modelo.',
+        'El modelo de rerank predeterminado para reranking de fragmentos. Si no encuentra un modelo en el menú desplegable, consulte la página Proveedores de modelos para comprobar si su proveedor de modelos es compatible con este modelo.',
       ttsModel: 'Modelo TTS',
       ttsModelTip:
-        'El modelo de text-to-speech predeterminado. Si no encuentra un modelo en el menú desplegable, consulte https://ragflow.io/docs/dev/supported_models para comprobar si su proveedor de modelos es compatible con este modelo.',
+        'El modelo de text-to-speech predeterminado. Si no encuentra un modelo en el menú desplegable, consulte la página Proveedores de modelos para comprobar si su proveedor de modelos es compatible con este modelo.',
       workspace: 'Espacio de trabajo',
       upgrade: 'Actualizar',
       addLlmTitle: 'Agregar LLM',
@@ -417,7 +420,7 @@ export default {
         apiUrlPlaceholder:
           'Por ejemplo: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Token de acceso de AI Studio',
-        accessTokenPlaceholder: 'Su token de AI Studio (opcional)',
+        accessTokenPlaceholder: 'Su token de AI Studio',
         algorithm: 'Algoritmo de PaddleOCR',
         selectAlgorithm: 'Seleccionar algoritmo',
         modelNamePlaceholder: 'Por ejemplo: paddleocr-from-env-1',
@@ -549,7 +552,7 @@ export default {
       destinationFolder: 'Carpeta de destino',
     },
     flow: {
-      cite: 'Citar',
+      cite: 'Mostrar citas',
       citeTip: 'Consejo de cita',
       name: 'Nombre',
       nameMessage: 'Por favor ingresa el nombre',
@@ -941,7 +944,7 @@ export default {
       invalidUrl:
         'Debe ser una URL válida o una URL con marcadores de posición de variables en el formato {nombre_variable} o {componente@variable}',
       tags: 'Etiquetas',
-      canvasCategory: 'Categoría de canvas',
+      agentCategory: 'Categoría de canvas',
       created: 'Creado',
       id: 'ID',
       logTitle: 'Título',

@@ -47,7 +47,7 @@ func TestNativeAnalyzerUninitializedNegative(t *testing.T) {
 	}
 	modelDir := os.Getenv("MODEL_DIR")
 	if modelDir == "" {
-		modelDir = filepath.Join("..", "..", "..", "..", "rag", "res", "deepdoc")
+		modelDir = filepath.Join("..", "..", "..", "..", "internal", "rag", "res", "deepdoc")
 	}
 	if _, err := NewAnalyzer(modelDir, DefaultDropScore); err == nil {
 		t.Error("NewAnalyzer succeeded before ONNX Runtime init; expected error")
@@ -130,6 +130,18 @@ func TestNativeAnalyzerInProcess(t *testing.T) {
 	tsr, err := a.TSR(ctx, src)
 	if err != nil {
 		t.Fatalf("TSR: %v", err)
+	}
+	for _, c := range tsr {
+		if c.X1 < c.X0 || c.Y1 < c.Y0 {
+			t.Errorf("TSR cell has inverted bounds: %+v", c)
+		}
+		// The analyzer must hand consumers coordinates clamped into the
+		// source image (mirroring tsr_adapter.py); tsrPostprocess itself
+		// does not clamp, so a bottom-edge box can otherwise come back at
+		// e.g. 370.18 on a 370-tall crop.
+		if c.X0 < 0 || c.Y0 < 0 || c.X1 > w || c.Y1 > h {
+			t.Errorf("TSR cell out of image bounds (%dx%d): %+v", int(w), int(h), c)
+		}
 	}
 	t.Logf("TSR: %d cells", len(tsr))
 
