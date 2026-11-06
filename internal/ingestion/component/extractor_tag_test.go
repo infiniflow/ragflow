@@ -635,6 +635,36 @@ func TestParseTagSourceByFilename_CommaCSVWithTabInField(t *testing.T) {
 	}
 }
 
+// The delimiter rule matches csv_pair_delimiter in rag/app/qa.py. It cannot
+// read these files correctly, and the Python rule gives the same delimiter for
+// each one. The test pins the current output, so a change to the rule shows here.
+func TestParseTagSourceByFilename_KnownDelimiterLimits(t *testing.T) {
+	for _, tc := range []struct {
+		data string
+		want []schema.TagLabel
+	}{
+		// A TAB file with two comma lines before the first record reads with comma.
+		{"Animal tags, part one\nMore tags, part two\ncontent\ttag1,tag2", []schema.TagLabel{
+			{Content: "Animal tags", Tags: []string{"part one"}},
+			{Content: "More tags", Tags: []string{"part two"}},
+			{Content: "content\ttag1", Tags: []string{"tag2"}},
+		}},
+		// One comma pair cannot outnumber the TAB row, so the file reads with TAB.
+		{"first line,alpha\npress\tTab,keys", []schema.TagLabel{
+			{Content: "first line,alpha\npress", Tags: []string{"Tab", "keys"}},
+		}},
+		// A TAB in the first row selects TAB, and the comma row is dropped.
+		{"press\tTab,keys\nlast,omega", []schema.TagLabel{
+			{Content: "press", Tags: []string{"Tab", "keys"}},
+		}},
+	} {
+		got, err := parseTagSourceByFilename([]byte(tc.data), "tags.csv")
+		if err != nil || !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%q: got %+v (err=%v), want %+v", tc.data, got, err, tc.want)
+		}
+	}
+}
+
 func TestCSVTagSourceDelimiter(t *testing.T) {
 	for _, tc := range []struct {
 		data string
