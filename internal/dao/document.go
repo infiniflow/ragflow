@@ -512,10 +512,23 @@ func (dao *DocumentDAO) GetByDocumentIDAndDatasetID(ctx context.Context, db *gor
 	return &document, err
 }
 
-// CountByTenantID counts documents by tenant ID
+// CountByTenantID counts documents belonging to datasets owned by a tenant.
 func (dao *DocumentDAO) CountByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
 	var count int64
-	err := db.WithContext(ctx).Model(&entity.Document{}).Where("created_by = ?", tenantID).Count(&count).Error
+	err := db.WithContext(ctx).Model(&entity.Document{}).
+		Joins("JOIN knowledgebase ON knowledgebase.id = document.kb_id").
+		Where("knowledgebase.tenant_id = ?", tenantID).
+		Count(&count).Error
+	return count, err
+}
+
+// CountByUserID counts documents attributed to a user, including rows whose
+// created_by field contains the tenant ID instead of the user ID.
+func (dao *DocumentDAO) CountByUserID(ctx context.Context, db *gorm.DB, userID string) (int64, error) {
+	var count int64
+	err := db.WithContext(ctx).Model(&entity.Document{}).
+		Where("user_id = ? OR created_by = ?", userID, userID).
+		Count(&count).Error
 	return count, err
 }
 
