@@ -52,6 +52,70 @@ type Engine struct {
 	deferredCheckpoints []deferredCheckpoint // for DurabilityExit mode
 }
 
+type resumeMapContextKey struct{}
+
+func withResumeMap(ctx context.Context, config *types.RunnableConfig) context.Context {
+	if config == nil || config.Configurable == nil {
+		return ctx
+	}
+	configured, ok := config.Configurable[constants.ConfigKeyResumeMap].(map[string]any)
+	if !ok || len(configured) == 0 {
+		return ctx
+	}
+	merged := make(map[string]any)
+	if inherited, ok := ctx.Value(resumeMapContextKey{}).(map[string]any); ok {
+		for key, value := range inherited {
+			merged[key] = value
+		}
+	}
+	for key, value := range configured {
+		merged[key] = value
+	}
+	return context.WithValue(ctx, resumeMapContextKey{}, merged)
+}
+
+func resumeValuesForTask(ctx context.Context, namespace string, task *Task) []any {
+	if task == nil {
+		return nil
+	}
+	resumeMap, ok := ctx.Value(resumeMapContextKey{}).(map[string]any)
+	if !ok {
+		return nil
+	}
+	keys := make([]string, 0, 4)
+	if namespace != "" {
+		if path := TaskPathStr(task.Path); path != "" {
+			keys = append(keys, namespace+string(constants.NSSep)+path)
+		}
+		keys = append(keys, namespace+string(constants.NSSep)+task.Name)
+	}
+	if path := TaskPathStr(task.Path); path != "" {
+		keys = append(keys, path)
+	}
+	keys = append(keys, task.Name, task.ID)
+	for _, key := range keys {
+		if value, ok := resumeMap[key]; ok {
+			if values, ok := value.([]any); ok {
+				return values
+			}
+			return []any{value}
+		}
+	}
+	return nil
+}
+
+func (e *Engine) contextForTask(ctx context.Context, task *Task) context.Context {
+	taskCtx := interrupt.WithInterruptContext(ctx)
+	var namespace string
+	if e.config != nil {
+		namespace = e.config.GetOrEmpty(constants.ConfigKeyCheckpointNS)
+	}
+	for _, value := range resumeValuesForTask(ctx, namespace, task) {
+		interrupt.AppendResumeValue(taskCtx, value)
+	}
+	return taskCtx
+}
+
 // deferredCheckpoint stores checkpoint data for deferred saving (DurabilityExit mode)
 type deferredCheckpoint struct {
 	ThreadID     string
@@ -203,6 +267,7 @@ type ExecuteResult struct {
 func (e *Engine) Run(ctx context.Context, input any, mode types.StreamMode) (<-chan any, <-chan error) {
 	outputCh := make(chan any, 100)
 	errCh := make(chan error, 1)
+	ctx = withResumeMap(ctx, e.config)
 
 	go func() {
 		defer close(errCh)
@@ -786,7 +851,10 @@ func (e *Engine) prepareNextTasksWithMode(
 
 	// AnyPredecessor (Pregel/BSP) mode: determine next nodes from the
 	// last completed node's outgoing edges.
-	nextNodes := e.getNextNodes(ctx, lastCompletedNode, currentState)
+	nextNodes, err := e.getNextNodes(ctx, lastCompletedNode, currentState)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	for nodeName := range nextNodes {
 		node := e.getNode(nodeName)
@@ -1164,7 +1232,8 @@ func (e *Engine) executeTasksAsync(
 			retryPolicy := e.resolveRetryPolicy(t)
 
 			// Execute with async pipeline
-			resultCh := asyncPipeline.ExecuteNode(ctx, t.Name, executeFn, &RetryConfig{Policy: retryPolicy})
+			taskCtx := e.contextForTask(ctx, t)
+			resultCh := asyncPipeline.ExecuteNode(taskCtx, t.Name, executeFn, &RetryConfig{Policy: retryPolicy})
 
 			// Wait for result
 			select {
@@ -1221,6 +1290,8 @@ func (e *Engine) executeTask(
 	task *Task,
 	registry *channels.Registry,
 ) *TaskResult {
+	ctx = e.contextForTask(ctx, task)
+
 	// Read input for this task
 	input, err := e.readTaskInput(registry, task)
 	if err != nil {
@@ -1439,7 +1510,7 @@ func (e *Engine) getNode(name string) *types.Node {
 	return node
 }
 
-func (e *Engine) getNextNodes(ctx context.Context, node string, state any) map[string]bool {
+func (e *Engine) getNextNodes(ctx context.Context, node string, state any) (map[string]bool, error) {
 	common.Debug("getNextNodes",
 		zap.String("node", node),
 		zap.Any("state", state))
@@ -1457,7 +1528,7 @@ func (e *Engine) getNextNodes(ctx context.Context, node string, state any) map[s
 		hasConditional = true
 		conditionResult, err := condEdge.Condition(ctx, state)
 		if err != nil {
-			common.Debug("conditional edge failed", zap.String("from", node), zap.Error(err))
+			return nil, fmt.Errorf("conditional edge from %q: %w", node, err)
 		}
 		conditionKey := fmt.Sprintf("%v", conditionResult)
 		targetNode, ok := condEdge.Mapping[conditionKey]
@@ -1465,7 +1536,7 @@ func (e *Engine) getNextNodes(ctx context.Context, node string, state any) map[s
 			continue
 		}
 		if targetNode == constants.End {
-			return nextNodes
+			return nextNodes, nil
 		}
 		nextNodes[targetNode] = true
 	}
@@ -1475,7 +1546,7 @@ func (e *Engine) getNextNodes(ctx context.Context, node string, state any) map[s
 		for _, edge := range e.graph.GetEdges() {
 			if edge.From == node {
 				if edge.To == constants.End {
-					return nextNodes
+					return nextNodes, nil
 				}
 				nextNodes[edge.To] = true
 			}
@@ -1513,7 +1584,7 @@ func (e *Engine) getNextNodes(ctx context.Context, node string, state any) map[s
 		if branch.From == node {
 			branchResult, err := branch.Condition(ctx, state)
 			if err != nil {
-				continue
+				return nil, fmt.Errorf("branch from %q: %w", node, err)
 			}
 			targets := branch.Then(branchResult)
 			for _, target := range targets {
@@ -1525,7 +1596,7 @@ func (e *Engine) getNextNodes(ctx context.Context, node string, state any) map[s
 		}
 	}
 
-	return nextNodes
+	return nextNodes, nil
 }
 
 func (e *Engine) getTriggers(node *types.Node) []string {

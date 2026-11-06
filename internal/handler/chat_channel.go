@@ -26,7 +26,7 @@ import (
 )
 
 type ChatChannelService interface {
-	CreateChatChannel(ctx context.Context, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error)
+	CreateChatChannel(ctx context.Context, name, channelType string, config entity.JSONMap, chatID, agentID *string) (*entity.ChatChannel, error)
 	List(ctx context.Context) ([]*entity.ChatChannelListResponse, error)
 	GetChatChannel(ctx context.Context, channelID string) (*entity.ChatChannel, common.ErrorCode, error)
 	UpdateChatChannel(ctx context.Context, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error)
@@ -52,6 +52,7 @@ type CreateChatChannelRequest struct {
 	Channel string         `json:"channel" binding:"required"`
 	Config  entity.JSONMap `json:"config"`
 	ChatID  *string        `json:"chat_id"`
+	AgentID *string        `json:"agent_id"`
 }
 
 // CreateChatChannel handles POST /chat-channels.
@@ -64,6 +65,15 @@ func (h *ChatChannelHandler) CreateChatChannel(c *gin.Context) {
 	if req.Config == nil {
 		req.Config = entity.JSONMap{}
 	}
+	req.Name = strings.TrimSpace(req.Name)
+	if err := common.ValidateNameRunes(req.Name, common.NameLimit128); err != nil {
+		common.RespondError(c, common.CodeDataError, err.Error())
+		return
+	}
+	if req.ChatID != nil && strings.TrimSpace(*req.ChatID) != "" && req.AgentID != nil && strings.TrimSpace(*req.AgentID) != "" {
+		common.RespondError(c, common.CodeDataError, "chat_id and agent_id are mutually exclusive")
+		return
+	}
 
 	ctx := c.Request.Context()
 
@@ -73,6 +83,7 @@ func (h *ChatChannelHandler) CreateChatChannel(c *gin.Context) {
 		req.Channel,
 		req.Config,
 		req.ChatID,
+		req.AgentID,
 	)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {

@@ -132,7 +132,7 @@ request.interceptors.request.use((url: string, options: any) => {
 request.interceptors.response.use(async (response: Response, options: any) => {
   if (response?.status === 413 || response?.status === 504) {
     if (!options.noToast) {
-      message.error(RetcodeMessage[response?.status as ResultCode]);
+      return response;
     }
   }
 

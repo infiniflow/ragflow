@@ -119,6 +119,10 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 	if !emailRegex.MatchString(req.Email) {
 		return nil, common.CodeOperatingError, fmt.Errorf("invalid email address: %s", req.Email)
 	}
+	req.Nickname = strings.TrimSpace(req.Nickname)
+	if err := common.ValidateNameRunes(req.Nickname, common.NicknameLimit); err != nil {
+		return nil, common.CodeDataError, err
+	}
 
 	existUser, err := s.userDAO.GetByEmail(ctx, dao.DB, req.Email)
 	if existUser != nil {
@@ -696,7 +700,11 @@ func (s *UserService) UpdateUserSettings(ctx context.Context, user *entity.User,
 		}
 	}
 	if req.Nickname != nil {
-		user.Nickname = *req.Nickname
+		nickname := strings.TrimSpace(*req.Nickname)
+		if err := common.ValidateNameRunes(nickname, common.NicknameLimit); err != nil {
+			return common.CodeDataError, err
+		}
+		user.Nickname = nickname
 	}
 	if req.Avatar != nil {
 		// In Go version, avatar might be stored differently

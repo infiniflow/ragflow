@@ -2882,11 +2882,15 @@ Best for: Documents with flowing, contextually connected content — such as boo
         'Use a vision model to parse image and table blocks; when off, they are treated as plain text.',
       imageOcr: 'OCR',
       imageOcrTip:
-        'Extract text from uploaded images with local OCR or the selected PaddleOCR model. Vision enhancement adds descriptions independently of this switch.',
-      imageOcrModel: 'OCR model',
-      imageOcrLocal: 'DeepDoc',
-      imageOcrModelTip:
-        'Choose DeepDoc for local OCR, or an added PaddleOCR or PaddleOCR.local model. Turning OCR off keeps this choice but skips OCR; SVG text is read directly.',
+        'Extract text from images. DeepDoc parses an image as a one-page document, so it includes layout analysis and table structure; an external OCR model returns text only. Vision enhancement adds descriptions independently of this switch.',
+      imageOcrParsingMethod: 'Parsing method',
+      imageOcrParsingMethodTip:
+        'DeepDoc runs locally and performs OCR, layout analysis, and table structure recognition. An external OCR model uses an added PaddleOCR model and returns text only. Turning OCR off keeps this choice but skips OCR; SVG text is read directly.',
+      imageOcrDeepDoc: 'DeepDoc',
+      imageOcrDeepDocDescription: 'OCR + layout analysis + table structure',
+      imageOcrExternal: 'External OCR model',
+      imageOcrExternalDescription: 'Text only; no table structure',
+      imageOcrModelPlaceholder: 'Select an OCR model',
       imageOcrModelsError:
         'Could not load OCR models. Your selection is unchanged. Try again later, or choose DeepDoc for local OCR.',
       imageOcrNoModels:

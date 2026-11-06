@@ -16,7 +16,7 @@
 
 // Package component — Begin component (T3).
 //
-// Begin is the DSL entry node. It injects the request's `inputs` into
+// Begin is the DSL entry node. It injects the request's query into
 // the shared *CanvasState.Sys namespace and passes the input map
 // through to its downstream unchanged. File-input handling
 // (FileService.get_files) handles `query`, `user_id`, and file
@@ -64,9 +64,10 @@ func NewBeginComponent(params map[string]any) (Component, error) {
 // the eino node-name injection in BuildWorkflow.
 func (b *BeginComponent) Name() string { return b.name }
 
-// Invoke writes inputs["query"] and (when present) inputs["user_id"] into
-// the shared *CanvasState.Sys namespace, then returns the input map as
-// outputs, exposing structured webhook sections at top level.
+// Invoke writes inputs["query"] into the shared *CanvasState.Sys namespace,
+// then returns the input map as outputs, exposing structured webhook
+// sections at top level. Other inputs, including user_id, remain ordinary
+// Begin outputs and cannot override the authenticated runtime identity.
 // The input map is shallow-copied to avoid aliasing
 // surprises across concurrent goroutines that share an inputs map.
 func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
@@ -81,13 +82,6 @@ func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[str
 	// Query: required to drive downstream components.
 	query, _ := inputs["query"].(string)
 	state.SetSys("query", query)
-
-	// Optional user_id — present in interactive chat flows, absent in
-	// background jobs. Always a string when set; cast failure silently
-	// drops the value (mirrors Python's getattr fallback).
-	if uid, ok := inputs["user_id"].(string); ok && uid != "" {
-		state.SetSys("user_id", uid)
-	}
 
 	// Webhook payload injection. The webhook HTTP handler sets
 	// root["webhook_payload"] (see service/agent.go RunAgentWithWebhook)
@@ -213,7 +207,7 @@ func (b *BeginComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[str
 func (b *BeginComponent) Inputs() map[string]string {
 	return map[string]string{
 		"query":           "User query string (the chat input).",
-		"user_id":         "Optional user/tenant identifier.",
+		"user_id":         "Optional user identifier passed through as a Begin input.",
 		"webhook_payload": "Optional structured webhook request (set by the webhook HTTP handler; absent on chat flows).",
 		"inputs":          "Optional free-form inputs map; passthrough only.",
 	}

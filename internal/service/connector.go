@@ -89,6 +89,9 @@ var (
 	// ErrConnectorInvalidFreq is returned when a connector frequency is not
 	// positive. Handlers map it to a client error; callers match with errors.Is.
 	ErrConnectorInvalidFreq = errors.New("connector frequency must be positive")
+	// ErrConnectorInvalidName is returned when a connector name is empty or
+	// wider than the connector.name column. Handlers map it to a client error.
+	ErrConnectorInvalidName = errors.New("connector name is invalid")
 )
 
 // ConnectorService connector service
@@ -282,13 +285,18 @@ func (s *ConnectorService) CreateConnector(ctx context.Context, req *CreateConne
 	if userID == "" {
 		return nil, permission.ErrUnauthenticated
 	}
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "file", permission.ActionWrite); err != nil {
 		return nil, err
 	}
+	name := strings.TrimSpace(req.Name)
+	if err := common.ValidateNameRunes(name, common.NameLimit128); err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrConnectorInvalidName, err)
+	}
+	req.Name = name
 	if req.RefreshFreq != nil && *req.RefreshFreq <= 0 {
 		return nil, fmt.Errorf("%w: refresh_freq got %d", ErrConnectorInvalidFreq, *req.RefreshFreq)
 	}
@@ -367,7 +375,7 @@ func (s *ConnectorService) ListConnectors(ctx context.Context, requestedTenantID
 	tenantID := strings.TrimSpace(requestedTenantID)
 	if tenantID == "" {
 		var err error
-		tenantID, err = requireCurrentTenantID(ctx, userID)
+		tenantID, err = requireCurrentTenantID(ctx)
 		if errors.Is(err, permission.ErrMembershipNotFound) {
 			return &ListConnectorsResponse{Connectors: []*dao.ConnectorListItem{}}, nil
 		}
@@ -1313,10 +1321,10 @@ func (s *ConnectorService) ListLog(ctx context.Context, connectorID string, page
 	}
 
 	if page < 1 {
-		page = 1
+		page = common.DefaultPage
 	}
-	if pageSize <= 0 || pageSize > 100 {
-		pageSize = 15
+	if pageSize <= 0 || pageSize > common.MaxPageSize {
+		pageSize = common.DefaultPageSize
 	}
 	offset := (page - 1) * pageSize
 
@@ -1380,10 +1388,10 @@ func (s *ConnectorService) ListLogs(ctx context.Context, datasetID string, page,
 		limit = 0
 	} else {
 		if page < 1 {
-			page = 1
+			page = common.DefaultPage
 		}
-		if pageSize > 100 {
-			limit = 15
+		if pageSize > common.MaxPageSize {
+			limit = common.DefaultPageSize
 		}
 		offset = (page - 1) * limit
 	}

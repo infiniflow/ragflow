@@ -92,8 +92,7 @@ func TestRunSQLExecutesInReadOnlyRolledBackTransaction(t *testing.T) {
 		WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow("c1"))
 	mock.ExpectRollback()
 
-	rows, err := engine.RunSQL(context.Background(), "t1",
-		`SELECT "id" FROM "t1" WHERE kb_id = 'kb-1'`, []string{"kb-1"}, "")
+	rows, err := engine.RunSQL(context.Background(), `SELECT "id" FROM "t1" WHERE kb_id = 'kb-1'`, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,8 +119,7 @@ func TestRunSQLDataModifyingCTEFailsInsideReadOnlyTransaction(t *testing.T) {
 		WillReturnError(fmt.Errorf("cannot execute DELETE in a read-only transaction"))
 	mock.ExpectRollback()
 
-	if _, err := engine.RunSQL(context.Background(), "t1",
-		`WITH d AS (DELETE FROM "t1" RETURNING *) SELECT * FROM d`, nil, ""); err == nil {
+	if _, err := engine.RunSQL(context.Background(), `WITH d AS (DELETE FROM "t1" RETURNING *) SELECT * FROM d`, ""); err == nil {
 		t.Fatal("data-modifying CTE must fail inside the read-only transaction")
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
@@ -142,15 +140,12 @@ func TestRunSQLRejectsMalformedInputBeforeTouchingTheDatabase(t *testing.T) {
 	defer db.Close()
 	engine := newEngineWithDB(config.VastbaseConfig{DBCompatibility: compatPG}, db)
 
-	if _, err := engine.RunSQL(context.Background(), "bad;table", "SELECT 1", nil, ""); err == nil {
-		t.Fatal("invalid table names must be rejected")
-	}
 	for _, bad := range []string{
 		"DELETE FROM t1",
 		"UPDATE t1 SET x = 1",
 		"SELECT 1; DELETE FROM t1",
 	} {
-		if _, err := engine.RunSQL(context.Background(), "t1", bad, nil, ""); err == nil {
+		if _, err := engine.RunSQL(context.Background(), bad, ""); err == nil {
 			t.Fatalf("must reject %q", bad)
 		}
 	}

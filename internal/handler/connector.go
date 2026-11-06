@@ -22,7 +22,6 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -192,24 +191,10 @@ func decodeUpdateConnectorRequest(c *gin.Context) (*service.UpdateConnectorReque
 // @Router /api/v1/connectors/{connector_id}/logs [get]
 func (h *ConnectorHandler) ListLogs(c *gin.Context) {
 
-	page := 1
-	if rawPage := strings.TrimSpace(c.DefaultQuery("page", "1")); rawPage != "" {
-		parsedPage, err := strconv.Atoi(rawPage)
-		if err != nil {
-			common.RespondError(c, common.CodeArgumentError, "page must be an integer")
-			return
-		}
-		page = parsedPage
-	}
-
-	pageSize := 15
-	if rawPageSize := strings.TrimSpace(c.DefaultQuery("page_size", "15")); rawPageSize != "" {
-		parsedPageSize, err := strconv.Atoi(rawPageSize)
-		if err != nil {
-			common.RespondError(c, common.CodeArgumentError, "page_size must be an integer")
-			return
-		}
-		pageSize = parsedPageSize
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
 	}
 
 	ctx := c.Request.Context()
@@ -238,23 +223,10 @@ func (h *ConnectorHandler) ListLogs(c *gin.Context) {
 // @Router /api/v1/connectors/sync-logs [get]
 func (h *ConnectorHandler) ListSyncLogs(c *gin.Context) {
 
-	page := 1
-	pageSize := 15
-	if rawPage := strings.TrimSpace(c.Query("page")); rawPage != "" {
-		parsedPage, err := strconv.Atoi(rawPage)
-		if err != nil {
-			common.RespondError(c, common.CodeArgumentError, "page must be an integer")
-			return
-		}
-		page = parsedPage
-	}
-	if rawPageSize := strings.TrimSpace(c.Query("page_size")); rawPageSize != "" {
-		parsedPageSize, err := strconv.Atoi(rawPageSize)
-		if err != nil {
-			common.RespondError(c, common.CodeArgumentError, "page_size must be an integer")
-			return
-		}
-		pageSize = parsedPageSize
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
 	}
 
 	datasetID := strings.TrimSpace(c.Query("dataset_id"))
@@ -306,7 +278,7 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 
 	connector, err := h.connectorService.CreateConnector(ctx, &req)
 	if err != nil {
-		if errors.Is(err, service.ErrConnectorInvalidFreq) {
+		if errors.Is(err, service.ErrConnectorInvalidFreq) || errors.Is(err, service.ErrConnectorInvalidName) {
 			common.RespondError(c, common.CodeDataError, err.Error())
 			return
 		}

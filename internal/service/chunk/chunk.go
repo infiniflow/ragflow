@@ -27,6 +27,7 @@ import (
 	"image/draw"
 	"image/jpeg"
 	"math"
+
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
@@ -260,9 +261,9 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	if filter != nil {
 		method, _ := filter["method"].(string)
 		if method == "auto" || method == "semi_auto" {
-			access := service.Identity{TenantID: tenantIDs[0]}
+			modelCtx := permission.WithTenantID(ctx, tenantIDs[0])
 			if chatID != "" {
-				chatModelForFilter, getErr = modelFactory.NewChatModel(ctx, access, chatID)
+				chatModelForFilter, getErr = modelFactory.NewChatModel(modelCtx, chatID)
 				if getErr != nil {
 					common.Warn("Failed to get chat model from search_config chat_id, using tenant default", zap.String("chatID", chatID), zap.Error(getErr))
 				} else {
@@ -273,7 +274,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 			}
 
 			if chatModelForFilter == nil {
-				chatModelForFilter, getErr = modelFactory.NewDefaultChatModel(ctx, access)
+				chatModelForFilter, getErr = modelFactory.NewDefaultChatModel(modelCtx)
 				if getErr != nil {
 					common.Warn("Failed to get tenant default chat model for meta_data_filter", zap.Error(getErr))
 				}
@@ -309,7 +310,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	var llmModelName string
 	if len(req.CrossLanguages) > 0 || (req.Keyword != nil && *req.Keyword) {
 		var err error
-		chatModel, err = modelFactory.NewDefaultChatModel(ctx, service.Identity{TenantID: tenantIDs[0]})
+		chatModel, err = modelFactory.NewDefaultChatModel(permission.WithTenantID(ctx, tenantIDs[0]))
 		if err != nil {
 			common.Warn("Failed to get default chat model name for LLM transformations", zap.Error(err))
 		} else {
@@ -356,22 +357,22 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	labels := metadataSvc.LabelQuestion(ctx, modifiedQuestion, kbRecords)
 
 	// Determine embedding model.
-	access := service.Identity{TenantID: tenantIDs[0]}
+	modelCtx := permission.WithTenantID(ctx, tenantIDs[0])
 	var embeddingModel *models.EmbeddingModel
 	var embdID string
 	if kbRecords[0].TenantEmbdID != nil && *kbRecords[0].TenantEmbdID != "" {
-		embeddingModel, getErr = modelFactory.NewEmbeddingModel(ctx, access, *kbRecords[0].TenantEmbdID)
+		embeddingModel, getErr = modelFactory.NewEmbeddingModel(modelCtx, *kbRecords[0].TenantEmbdID)
 		if getErr != nil {
 			return nil, fmt.Errorf("failed to get embedding model by tenant_embd_id: %w", getErr)
 		}
 	} else if kbRecords[0].EmbdID != "" {
 		embdID = kbRecords[0].EmbdID
-		embeddingModel, getErr = modelFactory.NewEmbeddingModel(ctx, access, embdID)
+		embeddingModel, getErr = modelFactory.NewEmbeddingModel(modelCtx, embdID)
 		if getErr != nil {
 			return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", getErr)
 		}
 	} else {
-		embeddingModel, getErr = modelFactory.NewDefaultEmbeddingModel(ctx, access)
+		embeddingModel, getErr = modelFactory.NewDefaultEmbeddingModel(modelCtx)
 		if getErr != nil {
 			return nil, fmt.Errorf("failed to get tenant default embedding model: %w", getErr)
 		}
@@ -391,12 +392,12 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	// Get rerank model if RerankID is specified
 	var rerankModel *models.RerankModel
 	if tenantRerankID != nil && *tenantRerankID != "" {
-		rerankModel, getErr = modelFactory.NewRerankModel(ctx, access, *tenantRerankID)
+		rerankModel, getErr = modelFactory.NewRerankModel(modelCtx, *tenantRerankID)
 		if getErr != nil {
 			return nil, fmt.Errorf("failed to get rerank model by tenant_rerank_id: %w", getErr)
 		}
 	} else if rerankID != nil && *rerankID != "" {
-		rerankModel, getErr = modelFactory.NewRerankModel(ctx, access, *rerankID)
+		rerankModel, getErr = modelFactory.NewRerankModel(modelCtx, *rerankID)
 		if getErr != nil {
 			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", getErr)
 		}
@@ -411,8 +412,8 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		Question:               modifiedQuestion,
 		KbIDs:                  []string(req.Datasets),
 		DocIDs:                 docIDs,
-		Page:                   common.CoalesceInt(req.Page, 1),
-		PageSize:               common.CoalesceInt(req.Size, 30),
+		Page:                   common.CoalesceInt(req.Page, common.DefaultPage),
+		PageSize:               common.CoalesceInt(req.Size, common.DefaultPageSize),
 		RerankCandidatesCount:  &rerankCandidatesCount,
 		KNNTopK:                &topK,
 		SimilarityThreshold:    &similarityThreshold,
@@ -835,8 +836,8 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest)
 
 	indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
 
-	page := common.CoalesceInt(req.Page, 1)
-	size := common.CoalesceInt(req.Size, 30)
+	page := common.CoalesceInt(req.Page, common.DefaultPage)
+	size := common.CoalesceInt(req.Size, common.DefaultPageSize)
 	keywords := strings.TrimSpace(req.Keywords)
 	var orderBy *types.OrderByExpr
 	matchExprs := make([]interface{}, 0, 1)
@@ -1741,7 +1742,7 @@ func (s *ChunkService) getEmbeddingModel(ctx context.Context, tenantID, embdID s
 	if s.getEmbeddingModelFunc != nil {
 		return s.getEmbeddingModelFunc(tenantID, embdID)
 	}
-	embeddingModel, err := service.NewModelFactory().NewEmbeddingModel(ctx, service.Identity{TenantID: tenantID}, embdID)
+	embeddingModel, err := service.NewModelFactory().NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embdID)
 	if err != nil {
 		return nil, err
 	}

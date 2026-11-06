@@ -239,10 +239,10 @@ func (d *DatasetService) ListSyncLogs(ctx context.Context, datasetID string, pag
 	}
 
 	if page <= 0 {
-		page = 1
+		page = common.DefaultPage
 	}
 	if pageSize <= 0 {
-		pageSize = 30
+		pageSize = common.DefaultPageSize
 	}
 
 	connectors, err := d.connectorDAO.ListByDatasetID(ctx, dao.DB, datasetID)
@@ -300,10 +300,10 @@ func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID string
 	}
 
 	if page <= 0 {
-		page = 1
+		page = common.DefaultPage
 	}
 	if pageSize <= 0 {
-		pageSize = 30
+		pageSize = common.DefaultPageSize
 	}
 
 	var (

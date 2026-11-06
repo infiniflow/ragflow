@@ -357,16 +357,16 @@ func (f *fakeDocumentService) HasActiveIngestionTasks(ctx context.Context, datas
 func (f *fakeDocumentService) GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]interface{}, error) {
 	return nil, nil
 }
-func (f *fakeDocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, tenantID string, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string) {
+func (f *fakeDocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.Knowledgebase, files []*multipart.FileHeader, parentPath string, parserConfigOverride map[string]interface{}) ([]map[string]interface{}, []string) {
 	f.uploadLocalKB = kb
 	f.uploadLocalPath = parentPath
 	f.uploadOverride = parserConfigOverride
 	return f.uploadLocalData, f.uploadLocalErrs
 }
-func (f *fakeDocumentService) UploadWebDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name, url string) (map[string]interface{}, common.ErrorCode, error) {
+func (f *fakeDocumentService) UploadWebDocument(ctx context.Context, kb *entity.Knowledgebase, name, url string) (map[string]interface{}, common.ErrorCode, error) {
 	return nil, common.CodeServerError, fmt.Errorf("not implemented")
 }
-func (f *fakeDocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, tenantID, name string) (map[string]interface{}, common.ErrorCode, error) {
+func (f *fakeDocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Knowledgebase, name string) (map[string]interface{}, common.ErrorCode, error) {
 	return nil, common.CodeServerError, fmt.Errorf("not implemented")
 }
 

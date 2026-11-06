@@ -2,6 +2,8 @@ package chunker
 
 import (
 	"image"
+	"math"
+	"strconv"
 	"sync"
 	"testing"
 	"time"
@@ -31,7 +33,7 @@ func renderCountingFake(rendered *map[int]int, mu *sync.Mutex) func(int) (image.
 }
 
 func TestLRUPageCache_BasicMissThenHit(t *testing.T) {
-	c := newLRUPageCache(2)
+	c := newLRUPageCache(2, math.MaxInt64)
 	rendered := make(map[int]int)
 	var mu sync.Mutex
 	r := renderCountingFake(&rendered, &mu)
@@ -55,7 +57,7 @@ func TestLRUPageCache_BasicMissThenHit(t *testing.T) {
 }
 
 func TestLRUPageCache_EvictsLeastRecent(t *testing.T) {
-	c := newLRUPageCache(2)
+	c := newLRUPageCache(2, math.MaxInt64)
 	rendered := make(map[int]int)
 	var mu sync.Mutex
 	r := renderCountingFake(&rendered, &mu)
@@ -86,7 +88,7 @@ func TestLRUPageCache_EvictsLeastRecent(t *testing.T) {
 }
 
 func TestLRUPageCache_GetRefreshesRecency(t *testing.T) {
-	c := newLRUPageCache(2)
+	c := newLRUPageCache(2, math.MaxInt64)
 	rendered := make(map[int]int)
 	var mu sync.Mutex
 	r := renderCountingFake(&rendered, &mu)
@@ -105,7 +107,7 @@ func TestLRUPageCache_GetRefreshesRecency(t *testing.T) {
 }
 
 func TestLRUPageCache_CapacityClampedTo1(t *testing.T) {
-	c := newLRUPageCache(0)
+	c := newLRUPageCache(0, math.MaxInt64)
 	rendered := make(map[int]int)
 	var mu sync.Mutex
 	r := renderCountingFake(&rendered, &mu)
@@ -125,7 +127,7 @@ func TestLRUPageCache_CapacityClampedTo1(t *testing.T) {
 // be evicted under the LRU cap, so the worker never loses the bitmap it is
 // still cropping from and never re-renders it.
 func TestLRUPageCache_InFlightPageNotEvicted(t *testing.T) {
-	c := newLRUPageCache(2)
+	c := newLRUPageCache(2, math.MaxInt64)
 	rendered := make(map[int]int)
 	var mu sync.Mutex
 	r := renderCountingFake(&rendered, &mu)
@@ -148,7 +150,7 @@ func TestLRUPageCache_InFlightPageNotEvicted(t *testing.T) {
 }
 
 func TestLRUPageCache_ReleasedPageBecomesEvictable(t *testing.T) {
-	c := newLRUPageCache(2)
+	c := newLRUPageCache(2, math.MaxInt64)
 	rendered := make(map[int]int)
 	var mu sync.Mutex
 	r := renderCountingFake(&rendered, &mu)
@@ -170,7 +172,7 @@ func TestLRUPageCache_ReleasedPageBecomesEvictable(t *testing.T) {
 }
 
 func TestLRUPageCache_ConcurrentSafe(t *testing.T) {
-	c := newLRUPageCache(8)
+	c := newLRUPageCache(8, math.MaxInt64)
 	var wg sync.WaitGroup
 	for g := 0; g < 32; g++ {
 		wg.Add(1)
@@ -208,7 +210,7 @@ func TestLRUPageCache_ConcurrentSamePageRendersOnce(t *testing.T) {
 		workers = 8
 		pn      = 7
 	)
-	c := newLRUPageCache(4)
+	c := newLRUPageCache(4, math.MaxInt64)
 
 	var (
 		mu      sync.Mutex
@@ -295,7 +297,7 @@ func TestLRUPageCache_ConcurrentSamePageRendersOnce(t *testing.T) {
 // not take the page-load stripe. Pages 7 and 71 share a stripe (71%64 == 7);
 // rendering page 71 must not delay a hit on page 7.
 func TestLRUPageCache_HitDoesNotWaitForSameStripeRender(t *testing.T) {
-	c := newLRUPageCache(4)
+	c := newLRUPageCache(4, math.MaxInt64)
 	if _, ok := c.Acquire(func(int) (image.Image, bool) { return fakeImg(7), true }, 7); !ok {
 		t.Fatal("prime page 7")
 	}
@@ -373,5 +375,92 @@ func TestPageCacheLimit_DefaultAndOverride(t *testing.T) {
 	t.Setenv("RAGFLOW_PAGE_CACHE_LIMIT", "0") // invalid → fall back to default
 	if got := pageCacheLimit(); got != 64 {
 		t.Fatalf("invalid override should fall back to 64, got %d", got)
+	}
+}
+
+// sizedRender returns a render func whose page pn is a w×w RGBA bitmap
+// (4*w*w bytes) for w = widths[pn], counting renders per page.
+func sizedRender(widths map[int]int, rendered map[int]int) func(int) (image.Image, bool) {
+	return func(pn int) (image.Image, bool) {
+		rendered[pn]++
+		w := widths[pn]
+		return image.NewRGBA(image.Rect(0, 0, w, w)), true
+	}
+}
+
+// TestLRUPageCache_ByteBudgetEvictsLeastRecent proves the byte cap evicts idle
+// pages even when the page cap has room: three 400-byte pages under an
+// 800-byte budget keep only the two most recent.
+func TestLRUPageCache_ByteBudgetEvictsLeastRecent(t *testing.T) {
+	c := newLRUPageCache(64, 800)
+	rendered := make(map[int]int)
+	r := sizedRender(map[int]int{1: 10, 2: 10, 3: 10}, rendered)
+	for _, pn := range []int{1, 2, 3} {
+		if _, ok := c.Acquire(r, pn); !ok {
+			t.Fatalf("acquire page %d failed", pn)
+		}
+		c.Release(pn)
+	}
+	if got := c.ll.Len(); got != 2 {
+		t.Fatalf("retained pages = %d, want 2 (byte budget holds two 400-byte pages)", got)
+	}
+	if c.bytes != 800 {
+		t.Fatalf("retained bytes = %d, want 800", c.bytes)
+	}
+	if _, ok := c.items[1]; ok {
+		t.Fatal("page 1 is least recent and should have been evicted by the byte budget")
+	}
+	c.Acquire(r, 1)
+	c.Release(1)
+	if rendered[1] != 2 {
+		t.Fatalf("page 1 rendered %d times, want 2 (re-render after byte eviction)", rendered[1])
+	}
+}
+
+// TestLRUPageCache_OversizedPageServedThenDropped proves a page larger than the
+// whole byte budget is still served to its holder, is not evicted while held,
+// and is dropped as soon as it is released.
+func TestLRUPageCache_OversizedPageServedThenDropped(t *testing.T) {
+	c := newLRUPageCache(64, 800)
+	rendered := make(map[int]int)
+	r := sizedRender(map[int]int{1: 10, 9: 20}, rendered) // 400 and 1600 bytes
+	c.Acquire(r, 1)
+	c.Release(1)
+
+	img, ok := c.Acquire(r, 9)
+	if !ok || img.Bounds().Dx() != 20 {
+		t.Fatalf("oversized page not served: ok=%v img=%v", ok, img)
+	}
+	if _, held := c.items[9]; !held {
+		t.Fatal("oversized page evicted while still referenced")
+	}
+	if _, kept := c.items[1]; kept {
+		t.Fatal("idle page 1 should have been evicted to make room")
+	}
+	c.Release(9)
+	if c.ll.Len() != 0 || c.bytes != 0 {
+		t.Fatalf("after release: %d pages / %d bytes retained, want 0 / 0", c.ll.Len(), c.bytes)
+	}
+}
+
+func TestPageCacheBytes_DefaultAndOverride(t *testing.T) {
+	const def = int64(1 << 30)
+	maxMB := int64(math.MaxInt64 >> 20)
+	for _, tc := range []struct {
+		env  string
+		want int64
+	}{
+		{"", def},
+		{"256", 256 << 20},
+		{strconv.FormatInt(maxMB, 10), maxMB << 20},
+		{"0", def},
+		{"-1", def},
+		{"lots", def},
+		{strconv.FormatInt(maxMB+1, 10), def}, // overflows when shifted into bytes
+	} {
+		t.Setenv("RAGFLOW_PAGE_CACHE_MB", tc.env)
+		if got := pageCacheBytes(); got != tc.want {
+			t.Errorf("RAGFLOW_PAGE_CACHE_MB=%q: pageCacheBytes() = %d, want %d", tc.env, got, tc.want)
+		}
 	}
 }
