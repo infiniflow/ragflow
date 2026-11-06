@@ -269,7 +269,7 @@ jobs:
           # v<version>/ dirs without an /opt pre-bake. CI mounts the cache from
           # the build host (populated by download_dev_deps.py); a missing mount is
           # caught by the assert below, not by a cryptic cgo link error.
-          export RAGFLOW_NATIVE_LIBS_DIR="${HOME}/ragflow-native-libs"
+          export RAGFLOW_NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
           sudo docker run --privileged -d --name "${BUILDER_CONTAINER}" \
             -e TZ="${TZ}" \
             -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
@@ -856,7 +856,7 @@ jobs:
           # v<version>/ dirs without an /opt pre-bake. CI mounts the cache from
           # the build host (populated by download_dev_deps.py); a missing mount is
           # caught by the assert below, not by a cryptic cgo link error.
-          export RAGFLOW_NATIVE_LIBS_DIR="${HOME}/ragflow-native-libs"
+          export RAGFLOW_NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
           sudo docker run --privileged -d --name "${BUILDER_CONTAINER}" \
             -e TZ="${TZ}" \
             -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
@@ -1452,7 +1452,7 @@ jobs:
           # v<version>/ dirs without an /opt pre-bake. CI mounts the cache from
           # the build host (populated by download_dev_deps.py); a missing mount is
           # caught by the assert below, not by a cryptic cgo link error.
-          export RAGFLOW_NATIVE_LIBS_DIR="${HOME}/ragflow-native-libs"
+          export RAGFLOW_NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
           sudo docker run --privileged -d --name "${BUILDER_CONTAINER}" \
             -e TZ="${TZ}" \
             -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
@@ -1571,7 +1571,7 @@ jobs:
           # v<version>/ dirs without an /opt pre-bake. CI mounts the cache from
           # the build host (populated by download_dev_deps.py); a missing mount is
           # caught by the assert below, not by a cryptic cgo link error.
-          export RAGFLOW_NATIVE_LIBS_DIR="${HOME}/ragflow-native-libs"
+          export RAGFLOW_NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
           sudo docker run --privileged -d --name "${BUILDER_CONTAINER}" \
             -e TZ="${TZ}" \
             -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
