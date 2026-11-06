@@ -1348,6 +1348,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       serplyApiKeyTip:
         'When Serply is selected, its web search results supplement dataset retrieval.',
       serplyApiKeyMessage: 'Please enter your Serply API Key',
+      specstreamApiKeyTip:
+        'When SpecStream is selected, its web search results supplement dataset retrieval.',
+      specstreamApiKeyMessage: 'Please enter your SpecStream API Key',
       tavilyApiKeyTip:
         'If an API Key is correctly set here, Tavily-based web searches will be used to supplement dataset retrieval.',
       tavilyApiKeyMessage: 'Please enter your Tavily API Key',
@@ -3087,6 +3090,16 @@ Best for: Documents with flowing, contextually connected content — such as boo
       search1APICrawlUrl: 'URL',
       search1APICrawlUrlTip:
         'The absolute HTTP or HTTPS URL of the page to read. As an agent tool, the agent supplies the URL.',
+      specStreamSearch: 'SpecStream',
+      specStreamSearchDescription:
+        'Search the live web with the SpecStream Search API and return ranked results with titles, URLs, and snippets. An API Key is required.',
+      specStreamApiKeyTip: 'Required. Create an API Key at specstream.ai.',
+      specStreamExtract: 'SpecStream extract',
+      specStreamExtractDescription:
+        'Read a web page or document (PDF, Word, Excel) with the SpecStream Extract API and return its title and main text. An API Key is required.',
+      specStreamExtractUrl: 'URL',
+      specStreamExtractUrlTip:
+        'The absolute HTTP or HTTPS URL of the page or document to read. As an agent tool, the agent supplies the URL.',
       docGenerator: 'Doc Generator',
       docGeneratorDescription: `Generate a file from Markdown content.`,
       subtitle: 'Subtitle',

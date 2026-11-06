@@ -18,7 +18,7 @@ In the tables below, **No** means manual input is optional; keep any default sho
 
 | Tool Category | Typical Components | Use Case |
 | --- | --- | --- |
-| Web search | Tavily, Google, DuckDuckGo, SearXNG, Keenable, Sofya, Search1API | Retrieve web pages, news, public information, or content from specified sites. |
+| Web search | Tavily, Google, DuckDuckGo, SearXNG, Keenable, Sofya, Search1API, SpecStream | Retrieve web pages, news, public information, or content from specified sites. |
 | Academic search | Google Scholar, ArXiv, PubMed, BGPT | Retrieve papers, medical literature, and research materials. |
 | Data and financial queries | Execute SQL, Yahoo Finance, WenCai | Query databases, market data, or financial screening results. |
 | Content output | Email, Document Generator | Send emails or generate downloadable documents. |
@@ -336,6 +336,53 @@ Search1API Crawl reads one web page and returns its title and full content. A co
 #### Output Result
 
 `json` contains the page title, link, content, and any metadata returned by Search1API.
+
+### SpecStream
+
+SpecStream searches the live web through the [SpecStream Search API](https://specstream.ai/search-api) and returns ranked search sources with titles, URLs, snippets, and optional page text passages. An API key is required and can be created at [specstream.ai](https://specstream.ai).
+
+#### Parameter Description
+
+| Field | Type | Required | Default Value | Description |
+| --- | --- | --- | --- | --- |
+| query | string | Yes | `{sys.query}` | Search question or keywords in everyday words. |
+| passages | boolean | No | false | When true, also return extracted passages from the top matching pages. |
+| api_key | string | Yes | Empty | SpecStream API key. |
+| top_n | integer | No | 10 | Maximum number of results, up to 20. |
+
+#### Configuration Example
+
+| Configuration Item | Example Value |
+| --- | --- |
+| Query | RAGFlow Go release |
+| API Key | `<your-specstream-api-key>` |
+| Top N | 10 |
+
+#### Output Result
+
+The output contains titles, URLs, snippets, and optional page text passages returned by SpecStream. `formalized_content` is commonly used as Agent context, while `json` preserves the raw result list.
+
+### SpecStream Extract
+
+SpecStream Extract reads one web page or document (PDF, Word, Excel) through the [SpecStream Extract API](https://specstream.ai/extract-api) and returns its title and main text in Markdown. It uses the same API key as SpecStream.
+
+#### Parameter Description
+
+| Field | Type | Required | Default Value | Description |
+| --- | --- | --- | --- | --- |
+| url | string | Yes | Empty | The absolute HTTP or HTTPS URL of the page or document to read. As an Agent tool, the Agent supplies the URL. |
+| api_key | string | Yes | Empty | SpecStream API key. |
+
+#### Configuration Example
+
+| Configuration Item | Example Value |
+| --- | --- |
+| URL | `https://ragflow.io/docs/dev/` |
+| API Key | `<your-specstream-api-key>` |
+
+#### Output Result
+
+`json` contains the extracted page `url`, `status`, `title`, `text`, `published`, and `read_from` fields returned by SpecStream.
 
 ### Wikipedia
 The Wikipedia component searches encyclopedia entries and extracts entry summaries. It is suitable for querying clear entities, concepts, and historical events. Query terms should be as close as possible to the entry title.
