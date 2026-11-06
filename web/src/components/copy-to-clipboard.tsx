@@ -33,6 +33,7 @@ const CopyToClipboard = ({
 
   const handleCopy = (_text: string, result: boolean) => {
     if (!result) {
+      setCopied(false);
       return;
     }
 

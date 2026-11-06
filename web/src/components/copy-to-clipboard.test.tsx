@@ -81,4 +81,22 @@ describe('CopyToClipboard', () => {
     expect(button.querySelector('[aria-label="copied"]')).toBeInTheDocument();
     expect(screen.getByTestId('tooltip')).toHaveAttribute('data-open', 'true');
   });
+
+  it('clears success when a later copy fails', () => {
+    mockCopyResult = true;
+    render(<CopyToClipboard text="text" avoidButtonWrapper />);
+
+    const button = screen.getByRole('button');
+    fireEvent.click(button);
+    expect(button.querySelector('[aria-label="copied"]')).toBeInTheDocument();
+
+    mockCopyResult = false;
+    fireEvent.click(button);
+
+    expect(
+      button.querySelector('[aria-label="copied"]'),
+    ).not.toBeInTheDocument();
+    expect(button.querySelector('[aria-label="copy"]')).toBeInTheDocument();
+    expect(screen.getByTestId('tooltip')).toHaveAttribute('data-open', 'false');
+  });
 });
