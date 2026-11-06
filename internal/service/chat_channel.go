@@ -16,6 +16,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -285,7 +286,9 @@ func (s *ChatChannelService) GetChatChannelRuntime(ctx context.Context, channelI
 }
 
 // HandleIncomingMessage routes one external channel message through the bound RAGFlow dialog.
-func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg ChatChannelIncomingMessage) (string, error) {
+// When onDelta is non-nil the answer is generated as a stream and onDelta receives the
+// cumulative display text as it grows; the returned string is always the complete answer.
+func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg ChatChannelIncomingMessage, onDelta func(string)) (string, error) {
 	if strings.TrimSpace(msg.Text) == "" {
 		return "", nil
 	}
@@ -307,7 +310,7 @@ func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg Chat
 	if channel.AgentID != nil {
 		ctx, cancel := context.WithTimeout(ownerCtx, 5*time.Minute)
 		defer cancel()
-		return s.handleChannelAgentMessage(ctx, channel, msg)
+		return s.handleChannelAgentMessage(ctx, channel, msg, onDelta)
 	}
 	if channel.ChatID == nil || strings.TrimSpace(*channel.ChatID) == "" {
 		return "", nil
@@ -326,6 +329,17 @@ func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg Chat
 		return "", err
 	}
 
+	stream := onDelta != nil
+	var streamChan chan string
+	var streamed chan channelStreamResult
+	if stream {
+		streamChan = make(chan string, 64)
+		streamed = make(chan channelStreamResult, 1)
+		go func() {
+			streamed <- consumeChannelStream(streamChan, onDelta)
+		}()
+	}
+
 	// Channel chat sessions are owned by the dialog tenant; authorization above
 	// separately enforces the channel owner's current access to that dialog.
 	completionCtx := permission.WithIdentity(ctx, dialog.TenantID, dialog.TenantID)
@@ -340,9 +354,21 @@ func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg Chat
 		nil,
 		map[string]interface{}{"quote": false},
 		false,
-		false,
-		nil,
+		stream,
+		streamChan,
 	)
+	if stream {
+		close(streamChan)
+		consumed := <-streamed
+		if err != nil {
+			common.Error("chat channel completion failed", err, zap.String("channel_id", channel.ID))
+			return "Sorry, I couldn't process your message right now.", nil
+		}
+		if consumed.err != nil {
+			common.Warn("chat channel stream reported an error", zap.Error(consumed.err), zap.String("channel_id", channel.ID))
+		}
+		return consumed.answer, nil
+	}
 	if err != nil {
 		common.Error("chat channel completion failed", err, zap.String("channel_id", channel.ID))
 		return "Sorry, I couldn't process your message right now.", nil
@@ -352,6 +378,91 @@ func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg Chat
 	}
 	answer, _ := result["answer"].(string)
 	return answer, nil
+}
+
+// channelStreamResult is what consumeChannelStream reports back to its caller.
+type channelStreamResult struct {
+	answer string
+	err    error
+}
+
+// consumeChannelStream drains the SSE frames ChatCompletions writes on frames and reports
+// the cumulative display text through onDelta. Reasoning wrapped in <think>...</think> and
+// the markers themselves are dropped, so the streamed text matches what the non-stream
+// answer contains.
+func consumeChannelStream(frames <-chan string, onDelta func(string)) channelStreamResult {
+	var answer strings.Builder
+	inThink := false
+	for frame := range frames {
+		payload, ok := strings.CutPrefix(frame, "data:")
+		if !ok {
+			continue
+		}
+		var wrapper struct {
+			Code    int             `json:"code"`
+			Message string          `json:"message"`
+			Data    json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(strings.TrimSpace(payload)), &wrapper); err != nil {
+			continue
+		}
+		if wrapper.Code != 0 {
+			return channelStreamResult{answer: answer.String(), err: errors.New(wrapper.Message)}
+		}
+		var chunk map[string]interface{}
+		if err := json.Unmarshal(wrapper.Data, &chunk); err != nil {
+			// `data: true` closes the stream.
+			continue
+		}
+		text, _ := chunk["answer"].(string)
+		if final, _ := chunk["final"].(bool); final {
+			// The final frame carries the authoritative answer, so it replaces whatever the
+			// deltas produced even when that rewrites the text; the channel repaints.
+			// Pipelines that persist reasoning keep it inside <think> tags in that answer,
+			// so it goes through the same filter as the deltas instead of reaching the user.
+			finalThink := false
+			text = strings.TrimLeft(stripChannelThink(text, &finalThink), "\r\n")
+			if text != "" {
+				answer.Reset()
+				answer.WriteString(text)
+				onDelta(answer.String())
+			}
+			continue
+		}
+		text = stripChannelThink(text, &inThink)
+		if text == "" {
+			continue
+		}
+		answer.WriteString(text)
+		onDelta(answer.String())
+	}
+	return channelStreamResult{answer: answer.String()}
+}
+
+// stripChannelThink removes the <think>...</think> reasoning block from a delta. The
+// closing marker can share a delta with the answer text that follows it.
+func stripChannelThink(text string, inThink *bool) string {
+	for {
+		if *inThink {
+			idx := strings.Index(text, "</think>")
+			if idx < 0 {
+				return ""
+			}
+			text = text[idx+len("</think>"):]
+			*inThink = false
+			continue
+		}
+		idx := strings.Index(text, "<think>")
+		if idx < 0 {
+			break
+		}
+		text = text[idx+len("<think>"):]
+		*inThink = true
+	}
+	if *inThink {
+		return ""
+	}
+	return text
 }
 
 func (s *ChatChannelService) DeleteChatChannel(ctx context.Context, channelID string) (bool, common.ErrorCode, error) {
