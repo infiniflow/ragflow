@@ -18,6 +18,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
+	"ragflow/internal/service/document"
 	filesvc "ragflow/internal/service/file"
 )
 
@@ -257,5 +258,139 @@ WHERE l.OBJECT_SCHEMA = ? AND l.OBJECT_NAME = 'file'`, schema).Scan(&n).Error; e
 			}
 			t.Logf("observed MySQL lock wait; final dataset=%s, create=%s", wantKB, wantCreated)
 		})
+	}
+}
+
+// Both writers must serialize on the dataset even before its folder parent exists.
+func TestDatasetRenameConcurrentUploadIntegration(t *testing.T) {
+	for _, first := range []string{"rename", "upload"} {
+		for _, parentsExist := range []bool{false, true} {
+			name := first + "/missing-parents"
+			if parentsExist {
+				name = first + "/existing-parents"
+			}
+			t.Run(name, func(t *testing.T) {
+				db, schema := setupFolderConcurrencyDB(t)
+				pushServiceDB(t, db)
+				insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+				if parentsExist {
+					insertRenameTestFolder(t, "root", "root", "tenant-1", "/", "")
+					insertRenameTestFolder(t, "kb-root", "root", "tenant-1", ".knowledgebase", "knowledgebase")
+					insertRenameTestFolder(t, "original", "kb-root", "tenant-1", "Original", "knowledgebase")
+				}
+				stale, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+				if err != nil {
+					t.Fatal(err)
+				}
+				ctx, cancel := context.WithTimeout(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), 20*time.Second)
+				defer cancel()
+				checked, release := make(chan struct{}), make(chan struct{})
+				var paused atomic.Bool
+				var releaseOnce sync.Once
+				unblock := func() { releaseOnce.Do(func() { close(release) }) }
+				if err := db.Callback().Query().After("gorm:query").Register("upload_test:pause", func(tx *gorm.DB) {
+					if tx.Statement.Context.Value(folderConcurrencyActor{}) != first || tx.Statement.Table != "knowledgebase" || !strings.Contains(tx.Statement.SQL.String(), "FOR UPDATE") || !paused.CompareAndSwap(false, true) {
+						return
+					}
+					close(checked)
+					select {
+					case <-release:
+					case <-ctx.Done():
+					}
+				}); err != nil {
+					t.Fatal(err)
+				}
+				defer func() { _ = db.Callback().Query().Remove("upload_test:pause") }()
+				datasets := testDatasetUpdateService(t)
+				documents := document.NewDocumentService()
+				run := func(actor string) folderConcurrencyResult {
+					actorCtx := context.WithValue(ctx, folderConcurrencyActor{}, actor)
+					if actor == "rename" {
+						renamed := "Renamed"
+						_, code, err := datasets.UpdateDataset(actorCtx, "kb-1", service.UpdateDatasetRequest{Name: &renamed})
+						return folderConcurrencyResult{code: code, err: err}
+					}
+					_, code, err := documents.UploadEmptyDocument(actorCtx, stale, "a.txt")
+					return folderConcurrencyResult{code: code, err: err}
+				}
+				firstDone, secondDone := make(chan folderConcurrencyResult, 1), make(chan folderConcurrencyResult, 1)
+				var workers sync.WaitGroup
+				defer func() { unblock(); cancel(); workers.Wait() }()
+				workers.Add(1)
+				go func() { defer workers.Done(); firstDone <- run(first) }()
+				select {
+				case <-checked:
+				case result := <-firstDone:
+					t.Fatalf("first writer stopped before dataset lock: %+v", result)
+				case <-ctx.Done():
+					t.Fatal("first writer did not acquire dataset lock")
+				}
+				second := "rename"
+				if first == "rename" {
+					second = "upload"
+				}
+				workers.Add(1)
+				go func() { defer workers.Done(); secondDone <- run(second) }()
+				ticker := time.NewTicker(10 * time.Millisecond)
+				defer ticker.Stop()
+				for waiting := false; !waiting; {
+					select {
+					case result := <-secondDone:
+						t.Fatalf("second writer bypassed dataset lock: %+v", result)
+					case <-ctx.Done():
+						t.Fatal("second writer did not wait for dataset lock")
+					case <-ticker.C:
+						var n int64
+						if err := db.WithContext(ctx).Raw(`SELECT COUNT(*) FROM performance_schema.data_lock_waits w
+JOIN performance_schema.data_locks l ON l.ENGINE = w.ENGINE AND l.ENGINE_LOCK_ID = w.REQUESTING_ENGINE_LOCK_ID
+WHERE l.OBJECT_SCHEMA = ? AND l.OBJECT_NAME = 'knowledgebase'`, schema).Scan(&n).Error; err != nil {
+							t.Fatal(err)
+						}
+						waiting = n > 0
+					}
+				}
+				unblock()
+				for _, done := range []<-chan folderConcurrencyResult{firstDone, secondDone} {
+					select {
+					case result := <-done:
+						if result.err != nil || result.code != common.CodeSuccess {
+							t.Fatalf("writer failed: %+v", result)
+						}
+					case <-ctx.Done():
+						t.Fatal("writer did not finish")
+					}
+				}
+				folderFor := func(kbID string) entity.File {
+					t.Helper()
+					var folder entity.File
+					err := db.Table("file").Select("file.*").Joins("JOIN file AS child ON child.parent_id = file.id").Joins("JOIN file2document ON file2document.file_id = child.id").Joins("JOIN document ON document.id = file2document.document_id").Where("document.kb_id = ?", kbID).Take(&folder).Error
+					if err != nil {
+						t.Fatal(err)
+					}
+					return folder
+				}
+				aFolder := folderFor("kb-1")
+				if aFolder.Name != "Renamed" {
+					t.Fatalf("A folder: %+v", aFolder)
+				}
+				var oldCount int64
+				if err := db.Model(&entity.File{}).Where("parent_id = ? AND name = ?", aFolder.ParentID, "Original").Count(&oldCount).Error; err != nil || oldCount != 0 {
+					t.Fatalf("stale folders=%d err=%v", oldCount, err)
+				}
+				insertDatasetUpdateKB(t, "kb-2", "tenant-1", "Original")
+				b, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-2")
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, code, err := documents.UploadEmptyDocument(ctx, b, "b.txt"); err != nil || code != common.CodeSuccess {
+					t.Fatalf("B upload: code=%v err=%v", code, err)
+				}
+				bFolder := folderFor("kb-2")
+				if bFolder.ID == aFolder.ID || bFolder.Name != "Original" {
+					t.Fatalf("folder binding: A=%+v B=%+v", aFolder, bFolder)
+				}
+				t.Log("observed dataset row lock wait; A and B retained separate folders")
+			})
+		}
 	}
 }
