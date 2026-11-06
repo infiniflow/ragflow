@@ -202,6 +202,19 @@ def pdfium_url(goos: str, goarch: str) -> str:
     return f"{gh_proxy()}https://github.com/kognitos/pdfium-static/releases/download/chromium%2F{PDFIUM_VERSION}/{PDFIUM_STATIC_ASSETS[(goos, goarch)]}"
 
 
+def pdfium_required_files(goos: str) -> list[str]:
+    """Required files inside the pdfium-static archive for `goos`.
+
+    kognitos/pdfium-static bundles lib/libc++.a and lib/libc++abi.a only in the
+    Linux tarballs (which build.sh links with -fuse-ld=lld on Linux); the macOS
+    tarballs ship lib/libpdfium.a and include/fpdfview.h and rely on the system
+    libc++ from the macOS SDK.
+    """
+    if goos == "linux":
+        return ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"]
+    return ["lib/libpdfium.a", "include/fpdfview.h"]
+
+
 def office_oxide_url(repo_root: str, goos: str, goarch: str) -> str:
     """office_oxide native tarball for the target platform. The version is
     derived from go.mod so it always matches what the Go build actually links
@@ -342,7 +355,7 @@ def _valid_download(filename):
     return True
 
 
-def _extract_native_archive(archive_path, target, required_files, version=None):
+def _extract_native_archive(archive_path, target, required_files, version=None, platform=None):
     """Extract ARCHIVE_PATH into TARGET, verifying REQUIRED_FILES (and, for .a
     files, an optional null-delimited VERSION stamp) before promoting the
     staged tree.
@@ -350,8 +363,19 @@ def _extract_native_archive(archive_path, target, required_files, version=None):
     Path-traversal / absolute / non-regular members are rejected before
     extraction, and an incomplete archive raises instead of replacing a
     previously good directory."""
+    platform_token = None
+    if platform is not None:
+        platform_token = f"{platform[0]}/{platform[1]}" if isinstance(platform, tuple) else str(platform)
 
-    def complete(directory):
+    def complete(directory, check_platform=False):
+        """Return True when directory holds all required_files, version stamps, and matching platform."""
+        if check_platform and platform_token is not None:
+            stamp_path = os.path.join(directory, ".ragflow_platform")
+            if not os.path.isfile(stamp_path):
+                return False
+            with open(stamp_path, encoding="utf-8") as stamp_file:
+                if stamp_file.read().strip() != platform_token:
+                    return False
         for name in required_files:
             path = os.path.join(directory, name)
             if not os.path.isfile(path) or os.path.getsize(path) == 0:
@@ -362,7 +386,7 @@ def _extract_native_archive(archive_path, target, required_files, version=None):
                         return False
         return True
 
-    if complete(target):
+    if complete(target, check_platform=True):
         print(f"  ✓ {os.path.basename(target)} already extracted to {target}")
         return
     os.makedirs(os.path.dirname(target), exist_ok=True)
@@ -376,6 +400,9 @@ def _extract_native_archive(archive_path, target, required_files, version=None):
             archive.extractall(staging, members=members)
         if not complete(staging):
             raise RuntimeError(f"{archive_path} is missing required native files or version {version}")
+        if platform_token is not None:
+            with open(os.path.join(staging, ".ragflow_platform"), "w", encoding="utf-8") as stamp_file:
+                stamp_file.write(f"{platform_token}\n")
         if os.path.isdir(target):
             shutil.rmtree(target)
         os.replace(staging, target)
@@ -724,7 +751,7 @@ def main():
     # Ensures build.sh can find them without network access.
     office_version = go_module_version("github.com/yfedoseev/office_oxide/go", REPO_ROOT)
     extractions = [
-        (PDFIUM_STATIC_ASSETS[(goos, goarch)], "pdfium-static", ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"], None),
+        (PDFIUM_STATIC_ASSETS[(goos, goarch)], "pdfium-static", pdfium_required_files(goos), None),
         (PDF_OXIDE_ASSETS[(goos, goarch)], "pdf_oxide", [f"lib/{goos}_{goarch}/libpdf_oxide.a", "include/pdf_oxide.h"], None),
         (OFFICE_OXIDE_ASSETS[(goos, goarch)], "office_oxide", ["lib/liboffice_oxide.a", "include/office_oxide_c/office_oxide.h"], office_version),
     ]
@@ -736,7 +763,7 @@ def main():
             continue
         target = os.path.join(NATIVE_LIBS_DIR, subdir)
         try:
-            _extract_native_archive(archive_path, target, required_files, version)
+            _extract_native_archive(archive_path, target, required_files, version, platform=(goos, goarch))
         except (tarfile.TarError, EOFError, RuntimeError):
             os.unlink(archive_path)
             raise
