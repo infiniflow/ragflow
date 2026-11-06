@@ -217,19 +217,11 @@ func PurgeTask(ctx context.Context, backend chunkcache.Store, taskID string) err
 	if err != nil {
 		return fmt.Errorf("mediacache: read manifest: %w", err)
 	}
-	for _, key := range keys {
-		if !backend.Delete(ctx, key) {
-			return fmt.Errorf("mediacache: delete %s", key)
-		}
-	}
-	if !backend.Delete(ctx, mk) {
-		return fmt.Errorf("mediacache: delete manifest %s", mk)
-	}
 	digestKey, stateKey := quotaKeys(taskID)
-	for _, key := range []string{digestKey, stateKey} {
-		if !backend.Delete(ctx, key) {
-			return fmt.Errorf("mediacache: delete quota state %s", key)
-		}
+	batch := append([]string{mk}, keys...)
+	batch = append(batch, digestKey, stateKey)
+	if !backend.DeleteMany(ctx, batch...) {
+		return fmt.Errorf("mediacache: purge task %s", taskID)
 	}
 	return nil
 }

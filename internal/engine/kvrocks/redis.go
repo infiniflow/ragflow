@@ -927,6 +927,25 @@ func (r *Client) Delete(ctx context.Context, key string) bool {
 	return true
 }
 
+// DeleteMany deletes multiple keys in a single DEL command. A key that no
+// longer exists is not an error (DEL reports only the count removed), so a
+// purge that races a TTL expiration still completes instead of failing on a
+// vanished key. An empty key list is a no-op: go-redis rejects a zero-argument
+// DEL, and there is nothing to remove anyway.
+func (r *Client) DeleteMany(ctx context.Context, keys ...string) bool {
+	if r.client == nil {
+		return false
+	}
+	if len(keys) == 0 {
+		return true
+	}
+	if err := r.client.Del(ctx, keys...).Err(); err != nil {
+		common.Warn("Redis DeleteMany error", zap.Strings("keys", keys), zap.Error(err))
+		return false
+	}
+	return true
+}
+
 // Expire sets expiration on a key
 func (r *Client) Expire(ctx context.Context, key string, exp time.Duration) bool {
 	if r.client == nil {

@@ -30,17 +30,20 @@ import (
 )
 
 type fakeStore struct {
-	kv          map[string]string
-	sets        map[string]map[string]bool
-	ttl         map[string]time.Duration
-	getErr      error
-	failSet     bool
-	expireFails bool
-	setCalls    int
-	addCalls    int
-	mediaPuts   int
-	deleteFails map[string]bool
-	quotaBytes  map[string]int64
+	kv              map[string]string
+	sets            map[string]map[string]bool
+	ttl             map[string]time.Duration
+	getErr          error
+	failSet         bool
+	expireFails     bool
+	setCalls        int
+	addCalls        int
+	mediaPuts       int
+	deleted         []string
+	deleteFails     map[string]bool
+	deleteManyCalls int
+	lastDeleteMany  []string
+	quotaBytes      map[string]int64
 }
 
 func newFakeStore() *fakeStore {
@@ -151,12 +154,30 @@ func (f *fakeStore) SMembers(_ context.Context, key string) ([]string, error) {
 }
 
 func (f *fakeStore) Delete(_ context.Context, key string) bool {
+	f.deleted = append(f.deleted, key)
 	if f.deleteFails[key] {
 		return false
 	}
 	delete(f.kv, key)
 	delete(f.sets, key)
 	delete(f.quotaBytes, key)
+	return true
+}
+
+func (f *fakeStore) DeleteMany(_ context.Context, keys ...string) bool {
+	f.deleteManyCalls++
+	f.lastDeleteMany = append([]string(nil), keys...)
+	for _, k := range keys {
+		if f.deleteFails[k] {
+			return false
+		}
+	}
+	for _, k := range keys {
+		delete(f.kv, k)
+		delete(f.sets, k)
+		delete(f.quotaBytes, k)
+		delete(f.ttl, k)
+	}
 	return true
 }
 

@@ -59,6 +59,7 @@ type Store interface {
 	SAdd(ctx context.Context, key, member string) bool
 	SMembers(ctx context.Context, key string) ([]string, error)
 	Delete(ctx context.Context, key string) bool
+	DeleteMany(ctx context.Context, keys ...string) bool
 	Expire(ctx context.Context, key string, exp time.Duration) bool
 }
 
@@ -174,15 +175,17 @@ func Set(ctx context.Context, s Store, key, value string) {
 }
 
 // PurgeTask drops every cache entry recorded for taskID, then the manifest
-// itself. Call it once the task's chunks are durably persisted: from that point
-// nothing can read the entries back, so holding them for the remaining TTL is
-// pure waste. A manifest read failure is returned because callers that remove
-// the task row must not make resumable cleanup look complete while Redis is
-// unavailable.
+// itself, in a single batched delete. Call it once the task's chunks are
+// durably persisted: from that point nothing can read the entries back, so
+// holding them for the remaining TTL is pure waste. A manifest read failure is
+// returned because callers that remove the task row must not make resumable
+// cleanup look complete while Redis is unavailable.
 //
-// The manifest is deleted last: losing it first would orphan the entries it
-// still lists, leaving them to expire. Best-effort — a failed reclaim only
-// means the entries wait out their TTL.
+// The manifest is reclaimed in the same DEL as its entries: losing the manifest
+// first would orphan the entries it lists, so both travel together and either
+// both go or, on a store outage, neither does. A key that has already expired
+// is not an error (DEL reports only the count removed), so a purge that races
+// TTL eviction still completes instead of failing on a vanished entry.
 func PurgeTask(ctx context.Context, s Store, taskID string) error {
 	if s == nil || taskID == "" {
 		return nil
@@ -192,13 +195,8 @@ func PurgeTask(ctx context.Context, s Store, taskID string) error {
 	if err != nil {
 		return fmt.Errorf("read chunk cache manifest %s: %w", mk, err)
 	}
-	for _, k := range keys {
-		if !s.Delete(ctx, k) {
-			return fmt.Errorf("delete chunk cache entry %s", k)
-		}
-	}
-	if !s.Delete(ctx, mk) {
-		return fmt.Errorf("delete chunk cache manifest %s", mk)
+	if !s.DeleteMany(ctx, append([]string{mk}, keys...)...) {
+		return fmt.Errorf("purge chunk cache entries for %s", taskID)
 	}
 	return nil
 }
