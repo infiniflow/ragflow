@@ -94,6 +94,11 @@ func maybeDispatchPDFVision(
 		pdf := parser.PDFParser{FlattenMediaToText: flatten}
 		return parser.AttachPDFOutlines(pdf.NormalizeResult(ctx, filename, result), binary)
 	}
+	if shouldAdaptiveChapterSplit(setup, binary) {
+		if result, handled, err := dispatchAdaptiveChapterPDF(ctx, db, filename, binary, tenantID, setup, normalize); handled {
+			return result, true, err
+		}
+	}
 	if result, handled, err := maybeDispatchTenantPDFParser(ctx, db, filename, binary, tenantID, setup); handled {
 		if err != nil {
 			return result, true, err

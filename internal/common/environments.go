@@ -529,6 +529,13 @@ const (
 	// web_search is NEVER in scope because its hits carry no corpus document with
 	// a source_chunk_ids linkage.
 	EnvCompiledServeScope = "RAGFLOW_COMPILED_SERVE_SCOPE"
+
+	// Adaptive chapter splitter settings for large PDF documents.
+	EnvEnableAdaptiveChapterSplit = "PARSER_ENABLE_ADAPTIVE_CHAPTER_SPLIT"
+	EnvChapterSplitThreshold      = "PARSER_CHAPTER_SPLIT_THRESHOLD"
+	EnvChapterMinPages            = "PARSER_CHAPTER_MIN_PAGES"
+	EnvChapterMaxPages            = "PARSER_CHAPTER_MAX_PAGES"
+	EnvChapterConcurrency         = "PARSER_CHAPTER_CONCURRENCY"
 )
 
 // EnvLLMHTTPResponseHeaderTimeout bounds how long an outbound provider call may
