@@ -400,7 +400,7 @@ func (h *FileHandler) DeleteFiles(c *gin.Context) {
 type MoveFileRequest struct {
 	SrcFileIDs []string `json:"src_file_ids" binding:"required,min=1"`
 	DestFileID string   `json:"dest_file_id"`
-	NewName    string   `json:"new_name" binding:"max=255"`
+	NewName    string   `json:"new_name"`
 }
 
 // MoveFiles moves and/or renames files
