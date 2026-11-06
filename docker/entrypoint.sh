@@ -167,8 +167,8 @@ if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
 fi
 
 if [[ "${ENABLE_API_SERVER}" -eq 1 ]]; then
-    echo "Starting nginx..."
-    /usr/sbin/nginx -c /etc/nginx/nginx.conf
+    #echo "Starting nginx..."
+    #/usr/sbin/nginx -c /etc/nginx/nginx.conf
 
     echo "Starting RAGFlow go server..."
     run_with_restart "RAGFlow go server" bin/ragflow_server --api &

@@ -8,7 +8,7 @@ ARG TARGETARCH
 # --platform linux/amd64,linux/arm64). BuildKit only resolves the alias stage
 # that matches the target platform, so a single-arch build never requires both
 # runner images to be present.
-FROM infiniflow/github_action_runner:latest      AS runner-amd64
+FROM infiniflow/github_action_runner:latest AS runner-amd64
 FROM infiniflow/github_action_runner:latest-arm64 AS runner-arm64
 
 # base stage
@@ -136,48 +136,6 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/* && apt-get clean
 
-ARG NGINX_VERSION=1.31.3-1~noble
-RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
-    apt -o Acquire::Retries=5 update && \
-    apt -o Acquire::Retries=5 install -y --no-install-recommends gnupg && \
-    mkdir -p /etc/apt/keyrings && \
-    curl --retry 5 --retry-delay 2 --retry-all-errors -fsSL https://nginx.org/keys/nginx_signing.key | gpg --dearmor -o /etc/apt/keyrings/nginx-archive-keyring.gpg && \
-    echo "deb [signed-by=/etc/apt/keyrings/nginx-archive-keyring.gpg] https://nginx.org/packages/mainline/ubuntu/ noble nginx" > /etc/apt/sources.list.d/nginx.list && \
-    apt -o Acquire::Retries=5 update && \
-    apt -o Acquire::Retries=5 install -y --no-install-recommends nginx=${NGINX_VERSION} && \
-    apt-mark hold nginx && \
-    apt-get purge -y gnupg && \
-    apt-get autoremove -y && \
-    rm -rf /var/lib/apt/lists/* && apt-get clean
-
-
-# ── web-builder stage ──
-
-FROM runner-${TARGETARCH} AS web-builder
-USER root
-
-WORKDIR /ragflow
-
-
-# Install frontend dependencies — depends only on package manifests so
-# web source / docs changes don't invalidate this layer.
-COPY web/package.json web/package-lock.json web/.npmrc ./web/
-RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
-    cd web && NODE_OPTIONS="--max-old-space-size=8192" npm install
-
-# Copy full web source and docs for the frontend build.
-COPY web web
-COPY docs docs
-RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
-    cd web && NODE_OPTIONS="--max-old-space-size=8192" VITE_BUILD_SOURCEMAP=false VITE_MINIFY=esbuild npm run build
-
-# Stamp the build version into /ragflow/VERSION. Requires git, which must be
-# preinstalled in the github_action_runner base image (the former apt-get install
-# git step was removed), and the host .git tree bound in at build time.
-RUN --mount=type=bind,source=.git,target=/ragflow/.git \
-    version_info=$(git describe --tags --match=v* --first-parent --always) && \
-    echo "$version_info" > /ragflow/VERSION
-
 
 
 # Native static-lib cache supplied by CI as a named build context
@@ -287,6 +245,13 @@ RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod,sharing=locked
     fi; \
     ./build.sh --go
 
+# Stamp the build version into /ragflow/VERSION. Requires git, which must be
+# preinstalled in the github_action_runner base image (the former apt-get install
+# git step was removed), and the host .git tree bound in at build time.
+RUN --mount=type=bind,source=.git,target=/ragflow/.git \
+    version_info=$(git describe --tags --match=v* --first-parent --always) && \
+    echo "$version_info" > /ragflow/VERSION
+
 
 ##### production stage
 FROM base AS production
@@ -302,14 +267,6 @@ ENV PYTHONPATH=/ragflow/
 COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
 COPY --chmod=755 docker/entrypoint*.sh ./
 
-# Copy nginx configuration for frontend serving
-RUN mkdir -p /etc/nginx/conf.d /var/log/nginx
-
-COPY docker/nginx/nginx.conf docker/nginx/proxy.conf /etc/nginx/
-COPY docker/nginx/ragflow.conf /etc/nginx/conf.d/
-
-RUN rm -f /etc/nginx/sites-enabled/default
-
 
 COPY conf conf
 COPY internal/agent/templates agent/templates
@@ -319,11 +276,9 @@ COPY internal/agent/templates agent/templates
 COPY internal/ingestion/knowledge_compile/templates ./internal/ingestion/knowledge_compile/templates
 
 
-# Copy compiled web pages
-COPY --from=web-builder /ragflow/web/dist /ragflow/web/dist
 
 # Copy version info
-COPY --from=web-builder /ragflow/VERSION /ragflow/VERSION
+COPY --from=go-builder /ragflow/VERSION /ragflow/VERSION
 
 # Set environment variables
 ENV HF_ENDPOINT=https://hf-mirror.com

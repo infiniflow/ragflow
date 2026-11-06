@@ -1,0 +1,29 @@
+FROM node:26.3.0-slim as builder
+
+WORKDIR /ragflow
+
+RUN mkdir -p /ragflow/web
+
+# Install frontend dependencies — depends only on package manifests so
+# web source / docs changes don't invalidate this layer.
+COPY web/package.json web/package-lock.json web/.npmrc ./web/
+RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
+    cd web && NODE_OPTIONS="--max-old-space-size=8192" npm install
+
+# Copy full web source and docs for the frontend build.
+COPY web web
+COPY docs docs
+RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
+    cd web && NODE_OPTIONS="--max-old-space-size=8192" VITE_BUILD_SOURCEMAP=false VITE_MINIFY=esbuild npm run build
+
+
+FROM nginx:1.31.8
+
+ENV ADMIN_UPSTREAM=localhost
+ENV API_UPSTREAM=localhost
+
+WORKDIR /ragflow
+COPY docker/nginx/nginx.conf docker/nginx/proxy.conf /etc/nginx/
+COPY docker/nginx/ragflow.conf /etc/nginx/templates/ragflow.conf.template
+
+COPY --from=builder /ragflow/web/dist /ragflow/web/dist
