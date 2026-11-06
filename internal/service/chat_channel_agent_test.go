@@ -3,10 +3,12 @@ package service
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/alicebob/miniredis/v2/server"
 	"github.com/redis/go-redis/v9"
 
 	"ragflow/internal/agent/canvas"
@@ -99,6 +101,12 @@ func TestChatChannelAgentRevokedAccess(t *testing.T) {
 }
 
 func TestChatChannelAgentRealEngineContinuationAndResume(t *testing.T) {
+	for _, mode := range []string{"local", "different-process", "without-tracker"} {
+		t.Run(mode, func(t *testing.T) { testChatChannelAgentUpdateDuringPause(t, mode) })
+	}
+}
+
+func testChatChannelAgentUpdateDuringPause(t *testing.T, mode string) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	if err := db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.APIToken{},
@@ -124,6 +132,9 @@ func TestChatChannelAgentRealEngineContinuationAndResume(t *testing.T) {
 	tracker, mr := newRunTrackerForTest(t, time.Hour)
 	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
 	t.Cleanup(func() { _ = client.Close() })
+	if mode == "without-tracker" {
+		tracker = nil
+	}
 	runner := NewAgentServiceWithOptions(canvas.NewKvrocksCheckPointStoreWithClient(client, time.Hour), nil, tracker)
 	svc := NewChatChannelServiceWithAgentService(runner)
 	channel, err := svc.CreateChatChannel(ctx, "channel", "telegram", entity.JSONMap{}, nil, new("workflow"))
@@ -134,6 +145,14 @@ func TestChatChannelAgentRealEngineContinuationAndResume(t *testing.T) {
 	answer, err := svc.HandleIncomingMessage(t.Context(), msg, nil)
 	if err != nil || !strings.Contains(answer, "Your answer?") {
 		t.Fatalf("waiting: %q %v", answer, err)
+	}
+	updated := channelMessageDSL("updated")
+	if err := db.Model(&entity.UserCanvas{}).Where("id = ?", "workflow").Update("dsl", entity.JSONMap(updated)).Error; err != nil {
+		t.Fatal(err)
+	}
+	if mode == "different-process" {
+		// Recover the persisted interrupt without the first process's Runner.
+		svc.agentRunner = NewAgentServiceWithOptions(canvas.NewKvrocksCheckPointStoreWithClient(client, time.Hour), nil, tracker)
 	}
 	var session entity.API4Conversation
 	if err := db.First(&session, "id = ?", channelSessionID("workflow", channel.ID, "external-one")).Error; err != nil {
@@ -147,9 +166,13 @@ func TestChatChannelAgentRealEngineContinuationAndResume(t *testing.T) {
 	if err != nil || answer != "got: hello" {
 		t.Fatalf("resume: %q %v", answer, err)
 	}
+	answer, err = svc.HandleIncomingMessage(t.Context(), msg, nil)
+	if err != nil || answer != "updated" {
+		t.Fatalf("fresh turn after resume: %q %v", answer, err)
+	}
 	msg.ChatID = "external-two"
 	answer, err = svc.HandleIncomingMessage(t.Context(), msg, nil)
-	if err != nil || !strings.Contains(answer, "Your answer?") {
+	if err != nil || answer != "updated" {
 		t.Fatalf("isolated conversation: %q %v", answer, err)
 	}
 	var count int64
@@ -162,6 +185,148 @@ func TestChatChannelAgentRealEngineContinuationAndResume(t *testing.T) {
 	}
 	if answer, err := svc.HandleIncomingMessage(t.Context(), msg, nil); answer != "" || err != nil {
 		t.Fatalf("disabled channel: %q %v", answer, err)
+	}
+}
+
+func channelMessageDSL(text string) map[string]any {
+	return map[string]any{
+		"components": map[string]any{
+			"begin": map[string]any{"obj": map[string]any{"component_name": "Begin", "params": map[string]any{}}, "downstream": []any{"message"}},
+			"message": map[string]any{
+				"obj":      map[string]any{"component_name": "Message", "params": map[string]any{"text": text}},
+				"upstream": []any{"begin"},
+			},
+		},
+	}
+}
+
+func TestRefreshChannelAgentDSLRetainsOnlyCompatibleConversationState(t *testing.T) {
+	draft := channelMessageDSL("updated")
+	draft["globals"] = map[string]any{"env.keep": "default", "env.changed": "new", "env.retyped": 1.0, "env.added": true}
+	draft["variables"] = map[string]any{"changed": map[string]any{"type": "string", "value": "new"}}
+	old := map[string]any{
+		"history": []any{[]any{"user", "previous"}},
+		"memory":  []any{[]any{"remembered"}},
+		"path":    []any{"removed"},
+		"globals": map[string]any{
+			"env.keep": "remembered", "env.changed": "old", "env.retyped": "string", "env.removed": "old",
+			"sys.history": []any{"user: previous"}, "sys.conversation_turns": 3.0, "removed@output": "stale",
+		},
+		"variables": map[string]any{"changed": map[string]any{"type": "string", "value": "old"}},
+	}
+	got := refreshChannelAgentDSL(draft, old)
+	for _, key := range []string{"history", "memory"} {
+		if !reflect.DeepEqual(got[key], old[key]) {
+			t.Fatalf("%s = %#v, want %#v", key, got[key], old[key])
+		}
+	}
+	globals := got["globals"].(map[string]any)
+	for key, want := range map[string]any{
+		"env.keep": "remembered", "env.changed": "new", "env.retyped": 1.0, "env.added": true,
+		"sys.history": []any{"user: previous"}, "sys.conversation_turns": 3.0,
+	} {
+		if !reflect.DeepEqual(globals[key], want) {
+			t.Fatalf("%s = %#v, want %#v", key, globals[key], want)
+		}
+	}
+	for _, key := range []string{"env.removed", "removed@output"} {
+		if _, ok := globals[key]; ok {
+			t.Fatalf("retained obsolete state %s", key)
+		}
+	}
+	if len(got["path"].([]any)) != 0 || draft["globals"].(map[string]any)["env.keep"] != "default" {
+		t.Fatal("retained old execution path or mutated draft")
+	}
+}
+
+func TestChatChannelAgentUpdatesPreserveConversation(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	if err := db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.APIToken{},
+		&entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+		t.Fatal(err)
+	}
+	ctx := serviceTestContext(t, "owner", "owner")
+	makeCanvasWithDSL(t, "workflow", "owner", "owner", "released", channelMessageDSL("v1"))
+	makeCanvasWithDSL(t, "other", "owner", "owner", "other-version", channelMessageDSL("other"))
+	tracker, mr := newRunTrackerForTest(t, time.Hour)
+	client := redis.NewClient(&redis.Options{Addr: mr.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	runner := NewAgentServiceWithOptions(canvas.NewKvrocksCheckPointStoreWithClient(client, time.Hour), nil, tracker)
+	svc := NewChatChannelServiceWithAgentService(runner)
+	channel, err := svc.CreateChatChannel(ctx, "channel", "telegram", entity.JSONMap{}, nil, new("workflow"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	msg := ChatChannelIncomingMessage{AccountID: channel.ID, ChatID: "external", Text: "first"}
+	if answer, err := svc.HandleIncomingMessage(t.Context(), msg, nil); err != nil || answer != "v1" {
+		t.Fatalf("first turn: %q %v", answer, err)
+	}
+	sessionID := channelSessionID("workflow", channel.ID, msg.ChatID)
+	session := getAPIConversationForTest(t, db, sessionID)
+	beforeHistory := session.DSL["history"].([]any)
+	if len(beforeHistory) != 2 {
+		t.Fatalf("first turn history = %#v", beforeHistory)
+	}
+	// Ordinary and explicit-version sessions retain their established snapshots.
+	run := func(id, version, want string) {
+		t.Helper()
+		events, err := runner.RunAgent(WithAgentSessionID(ctx, id), "workflow", id, version, "probe", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		messages, _, errs, _, _ := drainAgentEvents(t, events)
+		if len(errs) != 0 || len(messages) != 1 || messages[0].Content != want {
+			t.Fatalf("ordinary session %s: messages=%+v errors=%+v", id, messages, errs)
+		}
+	}
+	run("ordinary", "", "v1")
+	updated := channelMessageDSL("v2")
+	if err := db.Model(&entity.UserCanvas{}).Where("id = ?", "workflow").Update("dsl", entity.JSONMap(updated)).Error; err != nil {
+		t.Fatal(err)
+	}
+	msg.Text = "second"
+	if answer, err := svc.HandleIncomingMessage(t.Context(), msg, nil); err != nil || answer != "v2" {
+		t.Fatalf("updated same conversation: %q %v", answer, err)
+	}
+	session = getAPIConversationForTest(t, db, sessionID)
+	history := session.DSL["history"].([]any)
+	if len(history) != 4 || !reflect.DeepEqual(history[0], beforeHistory[0]) {
+		t.Fatalf("conversation history = %#v", history)
+	}
+	message := session.DSL["components"].(map[string]any)["message"].(map[string]any)
+	if text := message["params"].(map[string]any)["text"]; text != "v2" {
+		t.Fatalf("persisted graph text = %v", text)
+	}
+	run("ordinary", "", "v1")
+	run("explicit-version", "released", "v1")
+	run("new-ordinary", "", "v2")
+	for _, chatID := range []string{"new-external", "external"} {
+		msg.ChatID = chatID
+		if answer, err := svc.HandleIncomingMessage(t.Context(), msg, nil); err != nil || answer != "v2" {
+			t.Fatalf("conversation %s: %q %v", chatID, answer, err)
+		}
+	}
+	mr.Server().SetPreHook(func(peer *server.Peer, command string, args ...string) bool {
+		if strings.EqualFold(command, "HGET") && len(args) == 2 && args[1] == "interrupt_id" {
+			peer.WriteError("ERR unavailable interrupt state")
+			return true
+		}
+		return false
+	})
+	if _, err := svc.HandleIncomingMessage(t.Context(), msg, nil); !errors.Is(err, ErrAgentStorageError) {
+		t.Fatalf("unavailable interrupt state must prevent execution: %v", err)
+	}
+	mr.Server().SetPreHook(nil)
+	if _, _, err := svc.UpdateChatChannel(ctx, channel.ID, map[string]any{"agent_id": "other"}); err != nil {
+		t.Fatal(err)
+	}
+	if answer, err := svc.HandleIncomingMessage(t.Context(), msg, nil); err != nil || answer != "other" {
+		t.Fatalf("switched target: %q %v", answer, err)
+	}
+	otherSession := getAPIConversationForTest(t, db, channelSessionID("other", channel.ID, msg.ChatID))
+	if otherSession.DialogID != "other" || len(otherSession.DSL["history"].([]any)) != 2 {
+		t.Fatalf("switched target session = %+v", otherSession)
 	}
 }
 
