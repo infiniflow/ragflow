@@ -310,7 +310,7 @@ func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg Chat
 	if channel.AgentID != nil {
 		ctx, cancel := context.WithTimeout(ownerCtx, 5*time.Minute)
 		defer cancel()
-		return s.handleChannelAgentMessage(ctx, channel, msg)
+		return s.handleChannelAgentMessage(ctx, channel, msg, onDelta)
 	}
 	if channel.ChatID == nil || strings.TrimSpace(*channel.ChatID) == "" {
 		return "", nil

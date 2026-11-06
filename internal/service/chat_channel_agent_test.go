@@ -69,7 +69,7 @@ func TestChatChannelRejectsCrossTenantBindingAndExecution(t *testing.T) {
 	createServiceTestChannel(t, db, &entity.ChatChannel{
 		ID: "historical", TenantID: "other", Channel: "telegram", Config: entity.JSONMap{}, ChatID: new("private"), Status: 1,
 	})
-	if _, err := svc.HandleIncomingMessage(t.Context(), ChatChannelIncomingMessage{AccountID: "historical", ChatID: "external", Text: "hello"}); !errors.Is(err, permission.ErrPermissionDenied) {
+	if _, err := svc.HandleIncomingMessage(t.Context(), ChatChannelIncomingMessage{AccountID: "historical", ChatID: "external", Text: "hello"}, nil); !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("historical unauthorized binding: %v", err)
 	}
 }
@@ -93,7 +93,7 @@ func TestChatChannelAgentRevokedAccess(t *testing.T) {
 		t.Fatal("revoked workflow must not execute")
 		return nil, nil
 	})
-	if _, err := svc.HandleIncomingMessage(t.Context(), ChatChannelIncomingMessage{AccountID: channel.ID, ChatID: "external", Text: "hello"}); !errors.Is(err, permission.ErrPermissionDenied) {
+	if _, err := svc.HandleIncomingMessage(t.Context(), ChatChannelIncomingMessage{AccountID: channel.ID, ChatID: "external", Text: "hello"}, nil); !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("revoked workflow binding: %v", err)
 	}
 }
@@ -131,17 +131,17 @@ func TestChatChannelAgentRealEngineContinuationAndResume(t *testing.T) {
 		t.Fatal(err)
 	}
 	msg := ChatChannelIncomingMessage{AccountID: channel.ID, ChatID: "external-one", Text: "start"}
-	answer, err := svc.HandleIncomingMessage(t.Context(), msg)
+	answer, err := svc.HandleIncomingMessage(t.Context(), msg, nil)
 	if err != nil || !strings.Contains(answer, "Your answer?") {
 		t.Fatalf("waiting: %q %v", answer, err)
 	}
 	msg.Text = "hello"
-	answer, err = svc.HandleIncomingMessage(t.Context(), msg)
+	answer, err = svc.HandleIncomingMessage(t.Context(), msg, nil)
 	if err != nil || answer != "got: hello" {
 		t.Fatalf("resume: %q %v", answer, err)
 	}
 	msg.ChatID = "external-two"
-	answer, err = svc.HandleIncomingMessage(t.Context(), msg)
+	answer, err = svc.HandleIncomingMessage(t.Context(), msg, nil)
 	if err != nil || !strings.Contains(answer, "Your answer?") {
 		t.Fatalf("isolated conversation: %q %v", answer, err)
 	}
@@ -153,7 +153,7 @@ func TestChatChannelAgentRealEngineContinuationAndResume(t *testing.T) {
 	if err := db.Model(&entity.ChatChannel{}).Where("id = ?", channel.ID).Update("status", 0).Error; err != nil {
 		t.Fatalf("disable: %v", err)
 	}
-	if answer, err := svc.HandleIncomingMessage(t.Context(), msg); answer != "" || err != nil {
+	if answer, err := svc.HandleIncomingMessage(t.Context(), msg, nil); answer != "" || err != nil {
 		t.Fatalf("disabled channel: %q %v", answer, err)
 	}
 }
@@ -185,7 +185,7 @@ func TestChatChannelAgentErrorAndThinking(t *testing.T) {
 				close(events)
 				return events, nil
 			})}
-			answer, err := svc.handleChannelAgentMessage(t.Context(), &entity.ChatChannel{ID: "channel", AgentID: new("agent")}, ChatChannelIncomingMessage{ChatID: "chat", Text: "hello"})
+			answer, err := svc.handleChannelAgentMessage(t.Context(), &entity.ChatChannel{ID: "channel", AgentID: new("agent")}, ChatChannelIncomingMessage{ChatID: "chat", Text: "hello"}, nil)
 			if answer != tc.want || (err != nil) != tc.failed {
 				t.Fatalf("answer=%q err=%v", answer, err)
 			}
