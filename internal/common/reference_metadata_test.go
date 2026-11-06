@@ -140,3 +140,36 @@ func TestResolveReferenceMetadata_PartialOverride(t *testing.T) {
 		t.Errorf("expected [from_config], got %v", fields)
 	}
 }
+
+func TestResolveReferenceMetadata_StringSliceFields(t *testing.T) {
+	request := map[string]interface{}{
+		"include_metadata": true,
+		"metadata_fields":  []string{"author", "year"},
+	}
+	include, fields := ResolveReferenceMetadata(request, nil)
+	if !include {
+		t.Error("expected include=true")
+	}
+	if len(fields) != 2 || fields[0] != "author" || fields[1] != "year" {
+		t.Errorf("expected [author year], got %v", fields)
+	}
+}
+
+func TestResolveReferenceMetadata_EmptyFieldsSelectEveryField(t *testing.T) {
+	config := map[string]interface{}{
+		"reference_metadata": map[string]interface{}{"include": true, "fields": []interface{}{"from_config"}},
+	}
+	for _, request := range []map[string]interface{}{
+		{"metadata_fields": []interface{}{}},
+		{"metadata_fields": []string{}},
+		{"reference_metadata": map[string]interface{}{"fields": []interface{}{}}},
+	} {
+		include, fields := ResolveReferenceMetadata(request, config)
+		if !include {
+			t.Errorf("request %v: expected include=true", request)
+		}
+		if fields != nil {
+			t.Errorf("request %v: expected nil fields, got %#v", request, fields)
+		}
+	}
+}

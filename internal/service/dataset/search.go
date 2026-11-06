@@ -144,6 +144,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 
 	// Override request fields with values from saved search config
 	var chatID string
+	var searchConfig map[string]interface{}
 	if searchID != "" {
 		if d.searchService == nil {
 			common.Warn("Search service is not initialized for search_id", zap.String("searchID", searchID))
@@ -164,7 +165,8 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			common.Warn("Invalid search_id", zap.String("searchID", searchID))
 			return nil, fmt.Errorf("invalid search_id")
 		}
-		if searchConfig, ok := searchDetail["search_config"].(map[string]interface{}); ok && searchConfig != nil {
+		searchConfig, _ = searchDetail["search_config"].(map[string]interface{})
+		if searchConfig != nil {
 			rerankCandidatesCount = 100
 			if scMetadataFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
 				metadataFilter = scMetadataFilter
@@ -333,6 +335,11 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	}
 
 	filteredChunks = nlp.RetrievalByChildren(filteredChunks, tenantIDs, d.docEngine, ctx)
+
+	if includeMetadata, metadataFields := req.DocumentMetadataSelection(searchConfig); includeMetadata {
+		attachDocumentMetadata(ctx, metadataSvc, filteredChunks, kbRecords, metadataFields)
+	}
+
 	formatDatasetSearchChunks(filteredChunks, req.IncludeCompiledChunks)
 
 	common.Info("SearchDatasets completed", zap.String("userID", userID), zap.Any("kbID", datasetIDs), zap.String("question", question), zap.Int64("chunkCount", int64(len(filteredChunks))))
@@ -345,6 +352,29 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		Labels:  &labels,
 		Total:   retrievalResult.Total,
 	}, nil
+}
+
+type docMetadataEnricher interface {
+	EnrichChunksWithDocMetadata(ctx context.Context, chunks []map[string]interface{}, tenantID string, metadataFields []string)
+}
+
+// attachDocumentMetadata sets document_metadata on retrieved chunks. Chunks are
+// enriched per owning tenant because each tenant has its own metadata index.
+func attachDocumentMetadata(ctx context.Context, enricher docMetadataEnricher, chunks []map[string]interface{}, kbRecords []*entity.Knowledgebase, metadataFields []string) {
+	tenantByKB := make(map[string]string, len(kbRecords))
+	for _, kb := range kbRecords {
+		tenantByKB[kb.ID] = kb.TenantID
+	}
+	chunksByTenant := make(map[string][]map[string]interface{})
+	for _, chunk := range chunks {
+		kbID, _ := chunk["kb_id"].(string)
+		if tenantID, ok := tenantByKB[kbID]; ok {
+			chunksByTenant[tenantID] = append(chunksByTenant[tenantID], chunk)
+		}
+	}
+	for tenantID, tenantChunks := range chunksByTenant {
+		enricher.EnrichChunksWithDocMetadata(ctx, tenantChunks, tenantID, metadataFields)
+	}
 }
 
 // formatDatasetSearchChunks applies API field names and compilation visibility after parent promotion.
