@@ -78,3 +78,51 @@ func TestKvrocksDeleteMany(t *testing.T) {
 		t.Error("DeleteMany with no keys should be a successful no-op")
 	}
 }
+
+// TestKvrocksDeleteManyChunks verifies DeleteMany splits a key list larger than
+// deleteBatchSize into multiple DEL calls and still removes every key. Seeding
+// five keys with a batch size of two forces three batches; a wrong chunk boundary
+// (e.g. a dropped trailing partial batch) would leave keys alive.
+func TestKvrocksDeleteManyChunks(t *testing.T) {
+	resetKvrocksState()
+	addr := os.Getenv("KVROCKS_TEST_ADDR")
+	if addr == "" {
+		mr, err := miniredis.Run()
+		if err != nil {
+			t.Fatalf("miniredis: %v", err)
+		}
+		t.Cleanup(mr.Close)
+		addr = mr.Addr()
+	}
+	loadConfigForTest(t, addr)
+	if err := Init(context.Background()); err != nil {
+		t.Fatalf("kvrocks.Init: %v", err)
+	}
+	defer Close()
+
+	// Shrink the batch so a handful of keys spans several DEL calls.
+	prev := deleteBatchSize
+	deleteBatchSize = 2
+	defer func() { deleteBatchSize = prev }()
+
+	ctx := context.Background()
+	c := Get()
+	if c == nil {
+		t.Fatal("kvrocks client should be initialized")
+	}
+
+	keys := []string{"ck:a", "ck:b", "ck:c", "ck:d", "ck:e"}
+	for _, k := range keys {
+		if !c.Set(ctx, k, "v", 0) {
+			t.Fatalf("seed %s failed", k)
+		}
+	}
+	if !c.DeleteMany(ctx, keys...) {
+		t.Fatal("DeleteMany returned false across multiple batches")
+	}
+	for _, k := range keys {
+		if v, _ := c.Get(ctx, k); v != "" {
+			t.Errorf("key %s not removed by chunked delete", k)
+		}
+	}
+}
