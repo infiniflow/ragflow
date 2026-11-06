@@ -184,6 +184,18 @@ func (dao *UserCanvasDAO) GetList(ctx context.Context, db *gorm.DB, tenantID str
 	return canvases, err
 }
 
+// ListMetadataByIDs loads only the fields needed by the version catalog.
+func (dao *UserCanvasDAO) ListMetadataByIDs(ctx context.Context, db *gorm.DB, canvasIDs []string, category string) ([]entity.UserCanvas, error) {
+	if len(canvasIDs) == 0 {
+		return []entity.UserCanvas{}, nil
+	}
+	var canvases []entity.UserCanvas
+	err := db.WithContext(ctx).Select("id", "title").
+		Where("id IN ? AND canvas_category = ?", canvasIDs, category).
+		Order("create_time DESC").Order("id ASC").Find(&canvases).Error
+	return canvases, err
+}
+
 // UserCanvasListItem is the joined row returned by ListByIDs.
 type UserCanvasListItem struct {
 	ID                 string  `gorm:"column:id"`
@@ -284,13 +296,18 @@ type CategoryFilterItem struct {
 }
 
 // GetOwnerFilterByCanvasIDs aggregates permission-filtered canvases by owner.
-func (dao *UserCanvasDAO) GetOwnerFilterByCanvasIDs(ctx context.Context, db *gorm.DB, canvasIDs []string) ([]*OwnerFilterItem, error) {
+// A non-empty canvasCategory scopes the aggregation to that category.
+func (dao *UserCanvasDAO) GetOwnerFilterByCanvasIDs(ctx context.Context, db *gorm.DB, canvasIDs []string, canvasCategory string) ([]*OwnerFilterItem, error) {
 	if len(canvasIDs) == 0 {
 		return nil, nil
 	}
 	var items []*OwnerFilterItem
-	err := db.WithContext(ctx).Model(&entity.UserCanvas{}).
-		Where("user_canvas.id IN ?", canvasIDs).
+	q := db.WithContext(ctx).Model(&entity.UserCanvas{}).
+		Where("user_canvas.id IN ?", canvasIDs)
+	if canvasCategory != "" {
+		q = q.Where("user_canvas.canvas_category = ?", canvasCategory)
+	}
+	err := q.
 		Select("user_canvas.user_id AS id, user.nickname AS label, COUNT(user_canvas.id) AS count").
 		Joins("LEFT JOIN user ON user_canvas.user_id = user.id").
 		Group("user_canvas.user_id, user.nickname").

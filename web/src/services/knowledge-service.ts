@@ -38,7 +38,6 @@ const {
   listTagByKnowledgeIds,
   listPipelines,
   getMeta,
-  getMetaKeys,
   retrievalTestShare,
 } = api;
 
@@ -69,10 +68,6 @@ const methods = {
   },
   getMeta: {
     url: getMeta,
-    method: 'get',
-  },
-  getMetaKeys: {
-    url: getMetaKeys,
     method: 'get',
   },
   retrievalTestShare: {
@@ -390,6 +385,34 @@ const compilationStatusProxy = registerNextServer({
 export const getDatasetCompilationStatus = (datasetId: string, kind: string) =>
   compilationStatusProxy.getDatasetCompilationStatus(
     { datasetId, params: { kind } },
+    true,
+  );
+
+const datasetParserConfigProxy = registerNextServer({
+  applyDatasetParserConfig: {
+    url: ({ datasetId }: { datasetId: string }) =>
+      `/api/v1/datasets/${datasetId}/documents/apply-parser-config`,
+    method: 'post',
+  },
+});
+
+export const applyDatasetParserConfig = (datasetId: string) =>
+  datasetParserConfigProxy.applyDatasetParserConfig(
+    { datasetId, skipGlobalErrorNotification: true },
+    true,
+  );
+
+const stopAllDocumentsProxy = registerNextServer({
+  stopAllDocuments: {
+    url: ({ datasetId }: { datasetId: string }) =>
+      api.stopAllDocuments(datasetId),
+    method: 'post',
+  },
+});
+
+export const stopAllDocuments = (datasetId: string, runStatuses: string[]) =>
+  stopAllDocumentsProxy.stopAllDocuments(
+    { datasetId, data: { cancel_all: true, run_statuses: runStatuses } },
     true,
   );
 

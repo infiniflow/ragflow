@@ -52,12 +52,21 @@ func (c *CLI) APIShowVersionCommand(commandCount int, cmd *Command) (ResponseIf,
 		return nil, fmt.Errorf("failed to show version: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
 	}
 
-	var result KeyValueResponse
-	if err = json.Unmarshal(resp.Body, &result); err != nil {
+	var payload struct {
+		Code int `json:"code"`
+		Data struct {
+			Version string `json:"version"`
+		} `json:"data"`
+	}
+	if err = json.Unmarshal(resp.Body, &payload); err != nil {
 		return nil, fmt.Errorf("show version failed: invalid JSON (%w)", err)
 	}
-	result.Key = "version"
-	result.Duration = resp.Duration
+	result := KeyValueResponse{
+		Code:     payload.Code,
+		Key:      "version",
+		Value:    payload.Data.Version,
+		Duration: resp.Duration,
+	}
 
 	return &result, nil
 }
@@ -978,7 +987,7 @@ func (c *CLI) DevCreateChunkStoreCommand(commandCount int, cmd *Command) (Respon
 		"vector_size": vectorSize,
 	}
 
-	resp, err := httpClient.Request(commandCount, "POST", "/tenant/chunk_store", httpClient.AuthKind(), nil, payload)
+	resp, err := httpClient.Request(commandCount, "POST", "/tenant/chunk-store", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create chunk store: %w", err)
 	}
@@ -1030,7 +1039,7 @@ func (c *CLI) DevDropChunkStoreCommand(commandCount int, cmd *Command) (Response
 		"kb_id": datasetID,
 	}
 
-	resp, err := httpClient.Request(commandCount, "DELETE", "/tenant/chunk_store", httpClient.AuthKind(), nil, payload)
+	resp, err := httpClient.Request(commandCount, "DELETE", "/tenant/chunk-store", httpClient.AuthKind(), nil, payload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop chunk store: %w", err)
 	}
@@ -1067,7 +1076,7 @@ func (c *CLI) DevCreateMetadataStoreCommand(commandCount int, cmd *Command) (Res
 		return nil, err
 	}
 
-	resp, err := httpClient.Request(commandCount, "POST", "/tenant/metadata_store", httpClient.AuthKind(), nil, nil)
+	resp, err := httpClient.Request(commandCount, "POST", "/tenant/metadata-store", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create metadata store: %w", err)
 	}
@@ -1104,7 +1113,7 @@ func (c *CLI) DevDropMetadataStoreCommand(commandCount int, cmd *Command) (Respo
 		return nil, err
 	}
 
-	resp, err := httpClient.Request(commandCount, "DELETE", "/tenant/metadata_store", httpClient.AuthKind(), nil, nil)
+	resp, err := httpClient.Request(commandCount, "DELETE", "/tenant/metadata-store", httpClient.AuthKind(), nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to drop metadata store: %w", err)
 	}
@@ -1787,7 +1796,7 @@ func (c *CLI) APIChatToModelCommand(commandCount int, cmd *Command) (ResponseIf,
 	effort := cmd.Params["effort"].(string)
 	verbosity := cmd.Params["verbosity"].(string)
 
-	url := "/chat/to_model"
+	url := "/chat/to-model"
 
 	payload := map[string]interface{}{
 		"messages": formattedMessages,
@@ -2939,16 +2948,18 @@ func (c *CLI) DevRemoveChunksCommand(commandCount int, cmd *Command) (ResponseIf
 	var result SimpleResponse
 	result.Code = int(code)
 	if result.Code == 0 {
-		deletedCount := int64(0)
-		switch data := resJSON["data"].(type) {
-		case float64:
-			deletedCount = int64(data)
-		case map[string]interface{}:
-			var count float64
-			if count, ok = data["deleted_count"].(float64); ok {
-				deletedCount = int64(count)
-			}
+		var payload struct {
+			Data *struct {
+				DeletedCount *int64 `json:"deleted_count"`
+			} `json:"data"`
 		}
+		if err := json.Unmarshal(resp.Body, &payload); err != nil {
+			return nil, fmt.Errorf("invalid chunk deletion response: %w", err)
+		}
+		if payload.Data == nil || payload.Data.DeletedCount == nil || *payload.Data.DeletedCount < 0 {
+			return nil, fmt.Errorf("invalid response format: data.deleted_count must be a non-negative integer")
+		}
+		deletedCount := *payload.Data.DeletedCount
 		result.Message = fmt.Sprintf("Success to remove chunks from document %s: %d chunks deleted", docID, deletedCount)
 	} else {
 		result.Message = fmt.Sprintf("Failed to remove chunks: %v", resJSON)
@@ -3023,14 +3034,16 @@ func (c *CLI) APIParseLocalFileCommand(commandCount int, cmd *Command) (Response
 	}
 
 	fileType := utility.GetFileType(filename)
-	fileParser, err := parser.GetParser(fileType)
-	if err != nil {
-		return nil, err
-	}
-
 	fileContent, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read dsl file: %w", err)
+	}
+	fileParser, actual, err := parser.GetTextOnlyParser(fileType, fileContent)
+	if err != nil {
+		return nil, err
+	}
+	if actual != fileType {
+		fmt.Fprintf(os.Stderr, "WARNING: file %q: requested format %s; detected %s; continuing with the %s parser\n", filepath.Base(filename), fileType, actual, actual)
 	}
 
 	ctx := context.Background()
@@ -3123,7 +3136,7 @@ func (c *CLI) APIListSyncLogsCommand(commandCount int, cmd *Command) (ResponseIf
 		datasetID = id
 	}
 
-	url := "/connectors/sync_logs"
+	url := "/connectors/sync-logs"
 	query := netUrl.Values{}
 	if datasetID != "" {
 		query.Set("dataset_id", datasetID)

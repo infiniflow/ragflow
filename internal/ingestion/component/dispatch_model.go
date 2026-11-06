@@ -24,19 +24,21 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"ragflow/internal/common"
 	"strings"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/modelcontext"
 	"ragflow/internal/permission"
 
 	"gorm.io/gorm"
 )
 
 type tenantModelExtra struct {
-	MaxTokens *int `json:"max_tokens"`
+	MaxTokens json.RawMessage `json:"max_tokens"`
 }
 
 type resolvedModelConfig struct {
@@ -113,8 +115,7 @@ var resolveTenantOCRModelByProvider = defaultResolveTenantOCRModelByProvider
 // model is resolved by ID; its resolution error is returned rather than trying
 // another model.
 func defaultResolveTenantOCRModelByProvider(ctx context.Context, db *gorm.DB, tenantID string, providerName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	providerDAO := dao.NewTenantModelProviderDAO()
-	provider, err := providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, providerName)
+	provider, err := getTenantModelProviderByName(ctx, db, tenantID, providerName)
 	if err != nil {
 		// Some OCR capabilities are registered under sibling provider names
 		// (cloud vs. local). Tolerate the alternate spelling before giving up
@@ -123,7 +124,7 @@ func defaultResolveTenantOCRModelByProvider(ctx context.Context, db *gorm.DB, te
 			if alias == providerName {
 				continue
 			}
-			if p, aerr := providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, alias); aerr == nil {
+			if p, aerr := getTenantModelProviderByName(ctx, db, tenantID, alias); aerr == nil {
 				provider, err = p, nil
 				break
 			}
@@ -176,11 +177,10 @@ func ocrProviderAliases(providerName string) []string {
 
 func resolveDefaultModelMembership(ctx context.Context, db *gorm.DB, tenantID string) (*entity.UserTenant, error) {
 	membershipDAO := dao.NewUserTenantDAO()
-	if subject, ok := permission.SubjectFromContext(ctx); ok && subject.UserID != "" && (subject.TenantID == "" || subject.TenantID == tenantID) {
-		membership, err := membershipDAO.FilterByUserIDAndTenantID(ctx, db, subject.UserID, tenantID)
-		if err == nil {
-			return membership, nil
-		}
+	userID := permission.UserIDFromContext(ctx)
+	contextTenantID := permission.TenantIDFromContext(ctx)
+	if userID != "" && (contextTenantID == "" || contextTenantID == tenantID) {
+		return membershipDAO.FilterByUserIDAndTenantID(ctx, db, userID, tenantID)
 	}
 	return membershipDAO.GetOwnerByTenantID(ctx, db, tenantID)
 }
@@ -242,8 +242,12 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 
 	// Scope the lookup itself so missing and foreign models are indistinguishable
 	// before exposing status, type, instance configuration, or driver details.
+	owner, err := dao.NewUserTenantDAO().GetOwnerByTenantID(ctx, db, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("resolve tenant owner for model lookup: %w", err)
+	}
 	providers := db.Session(&gorm.Session{}).Model(&entity.TenantModelProvider{}).
-		Select("id").Where("tenant_id = ?", tenantID)
+		Select("id").Where("tenant_id = ? AND user_id = ?", tenantID, owner.UserID)
 	scopedDB := db.Session(&gorm.Session{}).Where("provider_id IN (?)", providers)
 	modelObj, err := modelDAO.GetByID(ctx, scopedDB, modelID)
 	if err != nil {
@@ -307,8 +311,8 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 		if err := json.Unmarshal([]byte(modelObj.Extra), &tenantExtra); err != nil {
 			return nil, err
 		}
-		if tenantExtra.MaxTokens != nil && *tenantExtra.MaxTokens > 0 {
-			contextLength = *tenantExtra.MaxTokens
+		if maxTokens := modelcontext.MaxTokensFromJSON(tenantExtra.MaxTokens); maxTokens > 0 {
+			contextLength = maxTokens
 		}
 	}
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
@@ -319,17 +323,16 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 }
 
 func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	pureModelName, instanceName, providerName, err := parseCompositeModelName(modelName)
+	pureModelName, instanceName, providerName, err := common.ParseCompositeModelName(modelName)
 	if err != nil {
 		return nil, "", nil, 0, err
 	}
 	catalogName := modelModule.CatalogProviderName(providerName)
 
-	providerDAO := dao.NewTenantModelProviderDAO()
 	instanceDAO := dao.NewTenantModelInstanceDAO()
 	modelDAO := dao.NewTenantModelDAO()
 
-	provider, err := providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, providerName)
+	provider, err := getTenantModelProviderByName(ctx, db, tenantID, providerName)
 	if err != nil {
 		return nil, "", nil, 0, fmt.Errorf("provider %q lookup failed: %w", providerName, err)
 	}
@@ -380,8 +383,8 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 			if err := json.Unmarshal([]byte(modelObj.Extra), &tenantExtra); err != nil {
 				return nil, "", nil, 0, err
 			}
-			if tenantExtra.MaxTokens != nil && *tenantExtra.MaxTokens > 0 {
-				contextLength = *tenantExtra.MaxTokens
+			if maxTokens := modelcontext.MaxTokensFromJSON(tenantExtra.MaxTokens); maxTokens > 0 {
+				contextLength = maxTokens
 			}
 		}
 		apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
@@ -418,20 +421,6 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 	return driver, llmInfo.Name, apiConfig, contextLength, nil
 }
 
-func parseCompositeModelName(compositeName string) (modelName, instanceName, providerName string, err error) {
-	parts := strings.Split(compositeName, "@")
-	switch len(parts) {
-	case 3:
-		return parts[0], parts[1], parts[2], nil
-	case 2:
-		return parts[0], "default", parts[1], nil
-	case 1:
-		return parts[0], "", "", fmt.Errorf("provider name missing in model name: %s", compositeName)
-	}
-	n := len(parts)
-	return strings.Join(parts[:n-2], "@"), parts[n-2], parts[n-1], nil
-}
-
 func newModelDriverForBaseURLLocal(driver modelModule.ModelDriver, providerName, region, baseURL string) (modelModule.ModelDriver, error) {
 	if driver == nil {
 		return nil, fmt.Errorf("provider %s driver not found", providerName)
@@ -452,4 +441,12 @@ func newModelDriverForBaseURLLocal(driver modelModule.ModelDriver, providerName,
 
 func errorsIsRecordNotFound(err error) bool {
 	return err != nil && (errors.Is(err, gorm.ErrRecordNotFound) || strings.Contains(err.Error(), gorm.ErrRecordNotFound.Error()))
+}
+
+func getTenantModelProviderByName(ctx context.Context, db *gorm.DB, tenantID, providerName string) (*entity.TenantModelProvider, error) {
+	owner, err := dao.NewUserTenantDAO().GetOwnerByTenantID(ctx, db, tenantID)
+	if err != nil {
+		return nil, err
+	}
+	return dao.NewTenantModelProviderDAO().GetByTenantIDAndUserIDAndProviderName(ctx, db, tenantID, owner.UserID, providerName)
 }

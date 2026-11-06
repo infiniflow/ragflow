@@ -37,10 +37,9 @@ import (
 // constructed once per process at the assembly point and threaded through the
 // Ingestor, TaskContext, PipelineExecutor, and the knowledge-compile Consumer.
 //
-// KV is optional: a nil client disables the chunkcache and the memory id
-// generator, which fall back to their documented no-cache / local-id paths.
-// Engine, DB, and MQ are required for a production run; Validate reports the
-// missing ones at startup instead of failing mid-task.
+// Engine, DB, MQ and KV are required for a production ingestor. HTML
+// ingestion uses KV to hand decoded images to downstream components, so
+// Validate reports a missing client at startup.
 type Deps struct {
 	// Engine persists and searches chunks (document index, memory messages,
 	// compiled knowledge products).
@@ -50,13 +49,11 @@ type Deps struct {
 	DB *gorm.DB
 	// MQ is the task broker (NATS JetStream) the ingestor consumes.
 	MQ engine.MessageQueue
-	// KV is the kvrocks client (chunkcache, run trackers, memory ids). nil
-	// disables those optional accelerators.
+	// KV is the Kvrocks client for HTML media, chunkcache, run trackers and memory ids.
 	KV *kvrocks.Client
 }
 
-// Validate reports the required dependencies that are missing. KV is allowed
-// to be nil (optional accelerator); Engine, DB, and MQ are not.
+// Validate reports the required production ingestor dependencies that are missing.
 func (d *Deps) Validate() error {
 	if d == nil {
 		return fmt.Errorf("ingestion deps: nil dependency bundle")
@@ -70,6 +67,9 @@ func (d *Deps) Validate() error {
 	}
 	if d.MQ == nil {
 		missing = append(missing, "message queue")
+	}
+	if d.KV == nil || d.KV.GetClient() == nil {
+		missing = append(missing, "kvrocks")
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("ingestion deps: missing required dependencies: %v", missing)

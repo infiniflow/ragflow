@@ -82,6 +82,10 @@ export function useCanvasChecklist({
   const { validIds: modelValidIds, isFetched: modelsFetched } =
     useModelValidIds(ModelTypeMap.llm_id, ownerTenantId);
   const {
+    validIds: categorizeModelValidIds,
+    isFetched: categorizeModelsFetched,
+  } = useModelValidIds(['chat', 'vision', 'decision'], ownerTenantId);
+  const {
     groups: templateGroups,
     isFetched: templateGroupsFetched,
     isError: templateGroupsError,
@@ -105,6 +109,9 @@ export function useCanvasChecklist({
           ? new Set(memoryList?.map((x) => x.id))
           : undefined,
       modelValidIds: modelsFetched ? modelValidIds : undefined,
+      categorizeModelValidIds: categorizeModelsFetched
+        ? categorizeModelValidIds
+        : undefined,
       staleDatasetIds: datasetsSettled ? staleDatasetIds : undefined,
       // The groups query fetches only the first page (page_size: 100) — a
       // full page means some groups live beyond it, so hold off instead of
@@ -127,6 +134,8 @@ export function useCanvasChecklist({
       memoryList,
       modelsFetched,
       modelValidIds,
+      categorizeModelsFetched,
+      categorizeModelValidIds,
       datasetsSettled,
       staleDatasetIds,
       templateGroups,

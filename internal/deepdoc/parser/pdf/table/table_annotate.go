@@ -199,24 +199,22 @@ func cleanupLayouts(regs []annRegion, boxes []pdf.TextBox) []annRegion {
 	return regs
 }
 
-// nmsDLARegions applies per-class non-maximum suppression to raw DLA regions,
-// mirroring Python's layout model postprocess (layout_recognizer.py:246,
-// operators.py:667 nms with iou_thresh). For each label, detections are sorted
-// by confidence descending; the top one is kept and any other same-label
-// detection whose IoU (using the +1 overlap convention from operators.py:685)
-// exceeds iouThresh is suppressed. This runs on the raw, pre-scale detections
-// just as Python's postprocess does, before cleanup/annotation.
-//
-// It is idempotent with a server-side NMS: applying it again to already-suppressed
-// boxes yields the same set, so it safely converges Go to Python regardless of
-// where suppression happens upstream.
+// nmsDLARegions suppresses overlapping raw DLA regions within each label.
+// Figure and table captions share a group so competing labels for the same
+// region are resolved by confidence before annotation's type priority applies.
+// The highest-confidence detection wins when IoU exceeds iouThresh, using
+// the +1 overlap convention from Python's operators.py:685-688.
 func nmsDLARegions(regions []pdf.DLARegion, iouThresh float64) []pdf.DLARegion {
 	if len(regions) == 0 {
 		return regions
 	}
 	byLabel := map[string][]int{}
 	for i, r := range regions {
-		byLabel[r.Label] = append(byLabel[r.Label], i)
+		label := r.Label
+		if label == pdf.DLALabelTableCaption {
+			label = pdf.DLALabelFigureCaption
+		}
+		byLabel[label] = append(byLabel[label], i)
 	}
 	suppressed := make([]bool, len(regions))
 	for _, idxs := range byLabel {
@@ -294,10 +292,10 @@ func nmsIoU(a, b pdf.DLARegion) float64 {
 // top-to-bottom (sort_Y_firstly), and figure and equation regions receive
 // separate geometry namespaces (figure-N /
 // equation-N) so they never collide.
-// FilteredDLARegions returns the DLA regions after per-class NMS, the
+// FilteredDLARegions returns the DLA regions after NMS, the
 // confidence filter, Y-sort, and cleanup — i.e. the exact set fed to
 // annotation. It mirrors Python's page_layout (layout_recognizer.py:84-100):
-//   - nmsDLARegions(0.45)                         == layout model postprocess (operators.py:667)
+//   - nmsDLARegions(0.45), with figure/table captions competing by confidence
 //   - keep if score >= 0.4 OR type not garbage    == layout_recognizer.py:97
 //   - sortYFirstly                                == layout_recognizer.py:99 (sort_Y_firstly)
 //   - cleanupLayouts                              == layout_recognizer.py:100 (layouts_cleanup)

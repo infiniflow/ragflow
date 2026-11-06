@@ -14,29 +14,32 @@
 // limitations under the License.
 //
 
-// Media dispatch runs image OCR and optional vision enhancement, audio
-// transcription, and video dispatch at the component layer.
+// Media dispatch runs image OCR, table structure recognition, optional vision
+// enhancement, audio transcription, and video dispatch at the component layer.
 
 package component
 
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"image"
+	"image/png"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
-	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
+	imageparser "ragflow/internal/deepdoc/parser/image"
+	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/media"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 
@@ -76,10 +79,13 @@ func maybeDispatchVideo(
 		fmt.Errorf("Parser: video parsing is not yet supported; underlying video analysis capability is pending")
 }
 
-// maybeDispatchImage extracts local or selected-model OCR (native text for SVG),
-// preserves the original image and optionally appends global vision enhancement.
+// maybeDispatchImage extracts local or selected-model OCR (native text for SVG)
+// and emits structured table/text/figure items when the page pipeline finds
+// them. Without a table it keeps the single whole-image item; with a table it
+// emits text and table/figure crops instead, matching PDF page output.
 func maybeDispatchImage(
 	ctx context.Context,
+	p parser.ParseResultProducer,
 	db *gorm.DB,
 	fileType utility.FileType,
 	filename string,
@@ -108,7 +114,7 @@ func maybeDispatchImage(
 		return parser.ParseResult{}, true, err
 	}
 	defer release()
-	if len(binary) == 0 || len(binary) > parser.MaxImagePayloadBytes {
+	if len(binary) == 0 || len(binary) > media.ImageMaxBytes() {
 		return parser.ParseResult{}, true, fmt.Errorf("parser: image payload exceeds size limits")
 	}
 	// SVG carries its text in the document, so it is read rather than
@@ -116,6 +122,7 @@ func maybeDispatchImage(
 	isSVG := isSVGFilename(filename)
 	var text string
 	var ocrErr error
+	var blocks []imageparser.Block
 	if isSVG {
 		text, err = extractSVGText(ctx, binary)
 		if err != nil {
@@ -129,7 +136,14 @@ func maybeDispatchImage(
 		}
 		if useOCR {
 			if ocrModelID == "" {
-				text, ocrErr = extractImageText(ctx, img)
+				var analyzer deepdoctype.DocAnalyzer
+				analyzer, ocrErr = parser.GetDocAnalyzer()
+				if ocrErr == nil {
+					blocks, ocrErr = imageparser.Parse(ctx, img, analyzer)
+					if ocrErr == nil {
+						text = imageBlockText(blocks)
+					}
+				}
 			} else {
 				// Selected OCR uses original bytes, so media admission need not
 				// cover database resolution or remote inference.
@@ -139,22 +153,28 @@ func maybeDispatchImage(
 		}
 	}
 	release()
-	parsed := dispatchParse(ctx, fileType, filename, binary, setups, progress.Window{})
+	parsed := dispatchParse(ctx, p, fileType, filename, binary, setups, progress.Window{})
 	if parsed.Err != nil {
 		return parsed, true, parsed.Err
 	}
 	if len(parsed.JSON) == 0 {
 		return parsed, true, fmt.Errorf("parser: image parser returned no image item")
 	}
-	imageData, _ := parsed.JSON[0].ToMap()["image"].(string)
-	m := parsed.JSON[0].ToMap()
-	m["text"] = text
-	parsed.JSON[0] = parser.DocItemFromMap(m)
+	imageItem := parsed.JSON[0].ToMap()
+	imageData, _ := imageItem["image"].(string)
+	hasTables := imageHasTables(blocks)
+	var items []parser.DocItem
+	if hasTables {
+		items = imageBlockItems(blocks)
+	} else {
+		imageItem["text"] = text
+		items = []parser.DocItem{parser.DocItemFromMap(imageItem)}
+	}
 	if ocrErr != nil {
 		parsed.Warnings = append(parsed.Warnings, fmt.Sprintf("image OCR unavailable: %v", ocrErr))
 	} else if isSVG && text == "" {
 		parsed.Warnings = append(parsed.Warnings, "image SVG contains no text")
-	} else if useOCR && strings.TrimSpace(text) == "" {
+	} else if useOCR && strings.TrimSpace(text) == "" && !hasTables {
 		parsed.Warnings = append(parsed.Warnings, "image OCR returned no text")
 	}
 	if !useOCR && !enableVisionEnhancement {
@@ -183,10 +203,18 @@ func maybeDispatchImage(
 		description, warnings := describeImage(ctx, db, imageData, getStringOr(inputs, "tenant_id", ""), setup, inputs, imageVision)
 		parsed.Warnings = append(parsed.Warnings, warnings...)
 		if description != "" {
-			m := parsed.JSON[0].ToMap()
-			appendItemText(m, description)
-			parsed.JSON[0] = parser.DocItemFromMap(m)
-		} else if strings.TrimSpace(text) == "" {
+			if hasTables {
+				if imageData != "" {
+					items = append(items, parser.ImageItem{Text: description, Image: imageData})
+				} else {
+					items = append(items, parser.NewTextJSONItem(description))
+				}
+			} else {
+				imageItem["text"] = text
+				appendItemText(imageItem, description)
+				items[0] = parser.DocItemFromMap(imageItem)
+			}
+		} else if strings.TrimSpace(text) == "" && !hasTables {
 			// Enhancement was permitted and the model produced nothing usable,
 			// so the item still has no text at all. Without this the chunk is
 			// dropped downstream with no trace, which is what the two other
@@ -195,6 +223,7 @@ func maybeDispatchImage(
 				"image has no searchable text: the vision model returned no description, so the Tokenizer will discard this item")
 		}
 	}
+	parsed.JSON = items
 	return parsed, true, nil
 }
 
@@ -225,28 +254,70 @@ func decodeDispatchImage(data []byte, decodeRaster bool) (image.Image, error) {
 	return img, nil
 }
 
-func extractImageText(ctx context.Context, img image.Image) (string, error) {
-	analyzer, err := parser.GetDocAnalyzer()
-	if err != nil {
-		return "", err
-	}
-	if analyzer == nil || !analyzer.Health() {
-		return "", fmt.Errorf("local OCR analyzer is unavailable")
-	}
-	boxes := deepdocpdf.OCRImage(ctx, img, analyzer, 1.0)
-	sort.SliceStable(boxes, func(i, j int) bool {
-		if boxes[i].Top == boxes[j].Top {
-			return boxes[i].X0 < boxes[j].X0
+// imageBlockText is the flat OCR text used by the single-image fallback and
+// the vision-description path. Table content stays in the table items.
+func imageBlockText(blocks []imageparser.Block) string {
+	texts := make([]string, 0, len(blocks))
+	for _, block := range blocks {
+		if block.Kind != imageparser.BlockText && block.Kind != imageparser.BlockImage {
+			continue
 		}
-		return boxes[i].Top < boxes[j].Top
-	})
-	texts := make([]string, 0, len(boxes))
-	for _, box := range boxes {
-		if text := strings.TrimSpace(box.Text); text != "" {
+		if text := strings.TrimSpace(block.Text); text != "" {
 			texts = append(texts, text)
 		}
 	}
-	return strings.Join(texts, "\n"), nil
+	return strings.Join(texts, "\n")
+}
+
+func imageHasTables(blocks []imageparser.Block) bool {
+	for _, block := range blocks {
+		if block.Kind == imageparser.BlockTable && block.Table != nil {
+			return true
+		}
+	}
+	return false
+}
+
+func imageBlockItems(blocks []imageparser.Block) []parser.DocItem {
+	items := make([]parser.DocItem, 0, len(blocks))
+	for _, block := range blocks {
+		switch block.Kind {
+		case imageparser.BlockText:
+			if strings.TrimSpace(block.Text) == "" {
+				continue
+			}
+			items = append(items, parser.TextItem{Text: block.Text})
+		case imageparser.BlockTable:
+			if block.Table == nil {
+				continue
+			}
+			extra := map[string]any{"layout": "table"}
+			if uri := encodeMediaImage(block.Image); uri != "" {
+				extra["image"] = uri
+			}
+			items = append(items, parser.TableItem{Table: block.Table, Extra: extra})
+		case imageparser.BlockImage:
+			if uri := encodeMediaImage(block.Image); uri != "" {
+				items = append(items, parser.ImageItem{
+					Text:  block.Text,
+					Image: uri,
+					Extra: map[string]any{"layout": "figure"},
+				})
+			}
+		}
+	}
+	return items
+}
+
+func encodeMediaImage(img image.Image) string {
+	if img == nil {
+		return ""
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return ""
+	}
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes())
 }
 
 func describeImage(
@@ -297,7 +368,7 @@ func describeImage(
 	// (the key the Python parser's image branch used) stays readable for canvases
 	// saved before the move. Do NOT read setup["prompt"] here — that key is for
 	// the video family, not image.
-	if v := firstNonEmpty(vision.systemPrompt, getStringOr(setup, "system_prompt", "")); v != "" {
+	if v := common.FirstNonEmpty(vision.systemPrompt, getStringOr(setup, "system_prompt", "")); v != "" {
 		prompt = v
 	}
 	messages := []modelModule.Message{{

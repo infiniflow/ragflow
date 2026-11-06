@@ -23,7 +23,7 @@ func TestPaddleOCRPDFResultPageGeometry(t *testing.T) {
 		{Index: 1, Width: 900, Height: 1200},
 		{Index: 2, Width: 600, Height: 800, Blocks: []models.OCRBlock{{Text: "third", Label: "text", BBox: []float64{30, 40, 300, 160}}, {Text: "<table><tr><td>42</td></tr></table>", Label: "table", BBox: []float64{30, 200, 300, 400}}}},
 	}}
-	result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
+	result := OCRPDFResult(t.Context(), "PaddleOCR", "sample.pdf", data, response)
 	if result.Err != nil {
 		t.Fatal(result.Err)
 	}
@@ -50,7 +50,7 @@ func TestPaddleOCRPDFResultLocatesUnstructuredTableText(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Width: 1191, Height: 1684, Blocks: []models.OCRBlock{{Text: "Item: 42", Label: "table", BBox: []float64{20, 40, 100, 120}}}}}}
-	result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
+	result := OCRPDFResult(t.Context(), "PaddleOCR", "sample.pdf", data, response)
 	if result.Err != nil || len(result.JSON) != 1 {
 		t.Fatalf("result=%+v", result)
 	}
@@ -67,7 +67,7 @@ func TestPaddleOCRPDFResultKeepsGeometryAfterOnePageFails(t *testing.T) {
 	}
 	block := models.OCRBlock{Label: "text", Text: "body", BBox: []float64{10, 20, 100, 200}}
 	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Width: 1191, Height: 1684, Blocks: []models.OCRBlock{block}}, {Index: 99, Width: 1191, Height: 1684, Blocks: []models.OCRBlock{block}}}}
-	result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
+	result := OCRPDFResult(t.Context(), "PaddleOCR", "sample.pdf", data, response)
 	if result.Err != nil {
 		t.Fatal(result.Err)
 	}
@@ -76,6 +76,34 @@ func TestPaddleOCRPDFResultKeepsGeometryAfterOnePageFails(t *testing.T) {
 	}
 	if len(result.Warnings) == 0 || result.JSON[0].ToMap()["positions"] == nil || result.JSON[1].ToMap()["positions"] != nil {
 		t.Fatalf("result=%+v", result)
+	}
+}
+
+func TestPaddleOCRPDFResultLocatesMediaRegions(t *testing.T) {
+	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Width: 1191, Height: 1684, Blocks: []models.OCRBlock{
+		{Label: "figure", Text: "![pipeline](https://example.invalid/p.png)", BBox: []float64{10, 20, 100, 120}},
+		{Label: "image", Text: "Figure 1: pipeline", BBox: []float64{10, 130, 100, 230}},
+	}}}}
+	result := OCRPDFResult(t.Context(), "PaddleOCR", "sample.pdf", data, response)
+	if result.Err != nil || len(result.JSON) != 2 {
+		t.Fatalf("result=%+v", result)
+	}
+	for i, want := range [][]any{
+		{1, float64(5), float64(50), float64(10), float64(60)},
+		{1, float64(5), float64(50), float64(65), float64(115)},
+	} {
+		fields := result.JSON[i].ToMap()
+		positions, ok := fields["_pdf_positions"].([][]any)
+		if !ok || len(positions) != 1 || !reflect.DeepEqual(positions[0], want) {
+			t.Fatalf("item %d positions = %v, want %v", i, fields["_pdf_positions"], want)
+		}
+		if !reflect.DeepEqual(fields["positions"], fields["_pdf_positions"]) {
+			t.Fatalf("item %d positions mismatch: %v vs %v", i, fields["positions"], fields["_pdf_positions"])
+		}
 	}
 }
 
@@ -104,7 +132,7 @@ func TestPaddleOCRPDFResultDropsMismatchedPageGeometry(t *testing.T) {
 					{Text: "second", BBox: []float64{30, 200, 100, 240}},
 				},
 			}}}
-			result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
+			result := OCRPDFResult(t.Context(), "PaddleOCR", "sample.pdf", data, response)
 			if result.Err != nil || len(result.JSON) != 2 {
 				t.Fatalf("result=%+v", result)
 			}
@@ -128,5 +156,58 @@ func TestPaddleOCRPDFResultDropsMismatchedPageGeometry(t *testing.T) {
 				t.Fatalf("warnings=%v", result.Warnings)
 			}
 		})
+	}
+}
+
+func TestPaddleOCRPDFResultKeepsMediaItems(t *testing.T) {
+	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Width: 1191, Height: 1684, Blocks: []models.OCRBlock{
+		{Label: "figure", Text: "![pipeline](https://example.invalid/p.png)", BBox: []float64{10, 20, 100, 120}},
+		{Label: "image", Text: "Figure 1: pipeline", BBox: []float64{10, 130, 100, 230}},
+		{Label: "chart", Text: "![chart](https://example.invalid/c.png)", BBox: []float64{10, 240, 100, 340}},
+		{Label: "seal", Text: "![seal](https://example.invalid/s.png)", BBox: []float64{10, 350, 100, 450}},
+		{Text: "![uncaptioned](https://example.invalid/u.png)", BBox: []float64{10, 460, 100, 560}},
+	}}}}
+	result := OCRPDFResult(t.Context(), "PaddleOCR", "sample.pdf", data, response)
+	if result.Err != nil || len(result.JSON) != 5 {
+		t.Fatalf("result=%+v", result)
+	}
+	for i, wantText := range []string{"", "Figure 1: pipeline", "", "", ""} {
+		item := result.JSON[i].ToMap()
+		gotText, _ := item["text"].(string)
+		if item["doc_type_kwd"] != "image" || item["layout"] != "figure" || gotText != wantText {
+			t.Fatalf("item %d = %v", i, item)
+		}
+		if item["page_number"] != 1 {
+			t.Fatalf("item %d page_number = %v", i, item["page_number"])
+		}
+		if item["positions"] == nil {
+			t.Fatalf("item %d lost its crop region: %v", i, item)
+		}
+	}
+}
+
+func TestPaddleOCRMediaItemsSurviveNormalize(t *testing.T) {
+	data, err := os.ReadFile("testdata/paddleocr_pages.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 0, Width: 1191, Height: 1684, Blocks: []models.OCRBlock{
+		{Label: "figure", Text: "![pipeline](https://example.invalid/p.png)", BBox: []float64{10, 20, 100, 120}},
+		{Label: "image", Text: "Figure 1: pipeline", BBox: []float64{10, 130, 100, 230}},
+	}}}}
+	result := NewPDFParser().NormalizeResult(t.Context(), "sample.pdf", OCRPDFResult(t.Context(), "PaddleOCR", "sample.pdf", data, response))
+	if result.Err != nil || len(result.JSON) != 2 {
+		t.Fatalf("result=%+v", result)
+	}
+	for i, wantText := range []string{"", "Figure 1: pipeline"} {
+		item := result.JSON[i].ToMap()
+		gotText, _ := item["text"].(string)
+		if item["doc_type_kwd"] != "image" || item["layout"] != "figure" || gotText != wantText || item["page_number"] != 1 {
+			t.Fatalf("item %d = %v", i, item)
+		}
 	}
 }

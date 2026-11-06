@@ -1,8 +1,9 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { MemoryRouter } from 'react-router';
+import { MemoryRouter, useLocation } from 'react-router';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { AgentCategory } from '@/constants/agent';
+import { AgentListItemType } from '@/interfaces/database/agent';
 import Agents from './index';
 
 // Fully isolate the agents list from the request/router/modal layers.
@@ -31,10 +32,13 @@ jest.mock('@/hooks/use-compilation-template-group-request', () => ({
 jest.mock('@/hooks/logic-hooks', () => ({
   useGoToPreviousPageOnEmpty: jest.fn(),
 }));
+const mockNavigateToAgentTemplates = jest.fn();
+const mockNavigateToCompilationEditor = jest.fn();
 jest.mock('@/hooks/logic-hooks/navigate-hooks', () => ({
   useNavigatePage: () => ({
     navigateToAgent: jest.fn(),
-    navigateToAgentTemplates: jest.fn(),
+    navigateToAgentTemplates: mockNavigateToAgentTemplates,
+    navigateToCompilationEditor: mockNavigateToCompilationEditor,
     navigateToBuiltinPipeline: jest.fn(() => jest.fn()),
   }),
 }));
@@ -53,15 +57,16 @@ jest.mock('@/pages/agents/hooks/use-create-agent', () => ({
   }),
 }));
 jest.mock('@/pages/agents/hooks/use-select-filters', () => ({
-  useSelectFilters: () => [],
+  useSelectFilters: jest.fn(() => []),
 }));
+const mockHandleImportJson = jest.fn();
 jest.mock('@/pages/agents/use-import-json', () => ({
-  useHandleImportJsonFile: () => ({
-    handleImportJson: jest.fn(),
+  useHandleImportJsonFile: jest.fn(() => ({
+    handleImportJson: mockHandleImportJson,
     fileUploadVisible: false,
     onFileUploadOk: jest.fn(),
     hideFileUploadModal: jest.fn(),
-  }),
+  })),
 }));
 jest.mock('@/pages/agents/use-rename-agent', () => ({
   useRenameAgent: () => ({
@@ -76,6 +81,8 @@ jest.mock('@/pages/agents/use-rename-agent', () => ({
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const agentRequest = jest.requireMock('@/hooks/use-agent-request');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const importJson = jest.requireMock('@/pages/agents/use-import-json');
 
 const catalog = [
   {
@@ -87,13 +94,24 @@ const catalog = [
   { id: 'book', title: 'Book', description: 'Long doc', filename: 'b.json' },
 ];
 
-const wrapper = ({ children }: { children: React.ReactNode }) => (
-  <MemoryRouter>
-    <QueryClientProvider client={new QueryClient()}>
-      <TooltipProvider>{children}</TooltipProvider>
-    </QueryClientProvider>
-  </MemoryRouter>
-);
+let currentSearch = '';
+function LocationProbe() {
+  currentSearch = useLocation().search;
+  return null;
+}
+
+function renderAgents(initialEntry = '/') {
+  return render(
+    <MemoryRouter initialEntries={[initialEntry]}>
+      <QueryClientProvider client={new QueryClient()}>
+        <TooltipProvider>
+          <Agents />
+          <LocationProbe />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </MemoryRouter>,
+  );
+}
 
 const defaultListPage = {
   data: [] as Array<Record<string, unknown>>,
@@ -125,20 +143,137 @@ function setBuiltin(canvas = catalog, loading = false) {
 }
 
 beforeEach(() => {
+  jest.clearAllMocks();
   setBuiltin();
   setListPage();
+  currentSearch = '';
+});
+
+describe('Agents tabs', () => {
+  it('defaults to the Workflow tab and requests the agent canvas list', () => {
+    renderAgents();
+    expect(agentRequest.useFetchAgentListByPage).toHaveBeenCalledWith(
+      AgentCategory.AgentCanvas,
+    );
+  });
+
+  it('renders the three tabs in Compilation / Pipeline / Workflow order', () => {
+    renderAgents();
+    expect(screen.getByText('Compilation operator')).toBeInTheDocument();
+    expect(screen.getByText('Ingestion pipeline')).toBeInTheDocument();
+    expect(screen.getByText('Workflow')).toBeInTheDocument();
+  });
+
+  it('switches the tab through the URL and resets the page', () => {
+    renderAgents('/?page=3');
+    fireEvent.click(screen.getByText('Ingestion pipeline'));
+
+    expect(currentSearch).toContain(
+      `canvas_category=${AgentCategory.DataflowCanvas}`,
+    );
+    expect(currentSearch).toContain('page=1');
+    expect(agentRequest.useFetchAgentListByPage.mock.calls.at(-1)?.[0]).toBe(
+      AgentCategory.DataflowCanvas,
+    );
+  });
+
+  it('falls back to the Workflow tab for an unknown canvas_category', () => {
+    renderAgents('/?canvas_category=bogus');
+    expect(agentRequest.useFetchAgentListByPage).toHaveBeenCalledWith(
+      AgentCategory.AgentCanvas,
+    );
+  });
+});
+
+describe('Agents create actions per tab', () => {
+  // The + dropdown and the non-search empty state render the same action
+  // list; the empty state exposes them as plain buttons, which jsdom can
+  // click reliably (radix dropdowns require pointer-capture polyfills).
+  it('shows all three actions on the Workflow tab', () => {
+    setListPage({ data: [], debouncedSearchString: '' });
+    renderAgents();
+    expect(screen.getByText('Create from blank')).toBeInTheDocument();
+    expect(screen.getByText('Create from template')).toBeInTheDocument();
+    expect(screen.getByText('Import JSON file')).toBeInTheDocument();
+    expect(screen.getByTestId('create-agent')).toBeInTheDocument();
+  });
+
+  it('shows all three actions on the Pipeline tab', () => {
+    setListPage({ data: [], debouncedSearchString: '' });
+    // An empty built-in catalog keeps the Pipeline tab on the empty card.
+    setBuiltin([]);
+    renderAgents(`/?canvas_category=${AgentCategory.DataflowCanvas}`);
+    expect(screen.getByText('Create from blank')).toBeInTheDocument();
+    expect(screen.getByText('Create from template')).toBeInTheDocument();
+    expect(screen.getByText('Import JSON file')).toBeInTheDocument();
+  });
+
+  it('shows only blank creation on the Compilation tab', () => {
+    setListPage({ data: [], debouncedSearchString: '' });
+    renderAgents(
+      `/?canvas_category=${AgentListItemType.CompilationTemplateGroup}`,
+    );
+    expect(screen.getByText('Create from blank')).toBeInTheDocument();
+    expect(screen.queryByText('Create from template')).toBeNull();
+    expect(screen.queryByText('Import JSON file')).toBeNull();
+  });
+
+  it('navigates straight to the compilation editor from the + button (no dropdown)', () => {
+    renderAgents(
+      `/?canvas_category=${AgentListItemType.CompilationTemplateGroup}`,
+    );
+    fireEvent.click(screen.getByTestId('create-agent'));
+    expect(mockNavigateToCompilationEditor).toHaveBeenCalledWith();
+    expect(screen.queryByTestId('agent-create-menu')).toBeNull();
+  });
+
+  it('carries the active category when navigating to templates', () => {
+    setListPage({ data: [], debouncedSearchString: '' });
+    setBuiltin([]);
+    renderAgents(`/?canvas_category=${AgentCategory.DataflowCanvas}`);
+    fireEvent.click(screen.getByText('Create from template'));
+    expect(mockNavigateToAgentTemplates).toHaveBeenCalledWith(
+      AgentCategory.DataflowCanvas,
+    );
+  });
+
+  it('opens the compilation editor for blank creation on the Compilation tab', () => {
+    setListPage({ data: [], debouncedSearchString: '' });
+    renderAgents(
+      `/?canvas_category=${AgentListItemType.CompilationTemplateGroup}`,
+    );
+    fireEvent.click(screen.getByTestId('agents-empty-create'));
+    expect(mockNavigateToCompilationEditor).toHaveBeenCalledWith();
+  });
+
+  it('scopes JSON import to the active tab category', () => {
+    renderAgents(`/?canvas_category=${AgentCategory.DataflowCanvas}`);
+    expect(importJson.useHandleImportJsonFile).toHaveBeenCalledWith(
+      AgentCategory.DataflowCanvas,
+    );
+  });
+
+  it('scopes the filter popover data to the active tab category', () => {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const selectFilters = jest.requireMock(
+      '@/pages/agents/hooks/use-select-filters',
+    );
+    renderAgents(`/?canvas_category=${AgentCategory.DataflowCanvas}`);
+    expect(selectFilters.useSelectFilters).toHaveBeenCalledWith(
+      AgentCategory.DataflowCanvas,
+    );
+  });
 });
 
 describe('Agents empty-state (built-in pipeline regression)', () => {
-  it('shows the search-empty card on a zero-match search in the All view', () => {
+  it('shows the search-empty card on a zero-match search in the Pipeline tab', () => {
     // The bug: builtinVisible (category eligibility) kept the empty
     // CardContainer mounted instead of the search-empty card.
     setListPage({
-      filterValue: undefined,
       data: [],
       debouncedSearchString: 'zzz-no-match',
     });
-    render(<Agents />, { wrapper });
+    renderAgents(`/?canvas_category=${AgentCategory.DataflowCanvas}`);
 
     expect(screen.getByTestId('agents-search-empty')).toBeInTheDocument();
     expect(
@@ -148,37 +283,43 @@ describe('Agents empty-state (built-in pipeline regression)', () => {
 
   it('keeps the built-in section when the search matches a built-in pipeline', () => {
     setListPage({
-      filterValue: undefined,
       data: [],
       debouncedSearchString: 'general',
     });
-    render(<Agents />, { wrapper });
+    renderAgents(`/?canvas_category=${AgentCategory.DataflowCanvas}`);
 
     expect(screen.getByTestId('builtin-pipeline-section')).toBeInTheDocument();
     expect(screen.queryByTestId('agents-search-empty')).not.toBeInTheDocument();
   });
 
-  it('shows the non-search empty card when there is nothing and no search', () => {
-    setListPage({
-      filterValue: undefined,
-      data: [],
-      debouncedSearchString: '',
-    });
-    setBuiltin([]); // empty catalog
-    render(<Agents />, { wrapper });
+  it('shows the non-search empty card with the tab-scoped actions', () => {
+    setListPage({ data: [], debouncedSearchString: '' });
+    renderAgents();
 
     expect(screen.queryByTestId('agents-search-empty')).not.toBeInTheDocument();
-    // The non-search empty card exposes the create actions.
+    // Workflow tab: the empty card exposes all three create actions.
     expect(screen.getByTestId('agents-empty-create')).toBeInTheDocument();
+    expect(screen.getByText('Create from template')).toBeInTheDocument();
+    expect(screen.getByText('Import JSON file')).toBeInTheDocument();
   });
 
-  it('shows the search-empty card in the Agent view (built-ins not eligible)', () => {
+  it('shows only blank creation in the Compilation empty card', () => {
+    setListPage({ data: [], debouncedSearchString: '' });
+    renderAgents(
+      `/?canvas_category=${AgentListItemType.CompilationTemplateGroup}`,
+    );
+
+    expect(screen.getByTestId('agents-empty-create')).toBeInTheDocument();
+    expect(screen.queryByText('Create from template')).toBeNull();
+    expect(screen.queryByText('Import JSON file')).toBeNull();
+  });
+
+  it('shows the search-empty card in the Workflow tab (built-ins not eligible)', () => {
     setListPage({
-      filterValue: { canvasCategory: AgentCategory.AgentCanvas },
       data: [],
       debouncedSearchString: 'zzz-no-match',
     });
-    render(<Agents />, { wrapper });
+    renderAgents();
 
     expect(screen.getByTestId('agents-search-empty')).toBeInTheDocument();
     expect(
@@ -187,8 +328,8 @@ describe('Agents empty-state (built-in pipeline regression)', () => {
   });
 
   it('renders nothing while the user list is loading', () => {
-    setListPage({ filterValue: undefined, data: [], loading: true });
-    render(<Agents />, { wrapper });
+    setListPage({ data: [], loading: true });
+    renderAgents();
 
     expect(screen.queryByTestId('agents-search-empty')).not.toBeInTheDocument();
     expect(screen.queryByTestId('agents-empty-create')).not.toBeInTheDocument();
@@ -196,7 +337,6 @@ describe('Agents empty-state (built-in pipeline regression)', () => {
 
   it('renders the content branch with user items (and footer) without an empty card', () => {
     setListPage({
-      filterValue: undefined,
       data: [
         {
           id: 'user-1',
@@ -207,7 +347,7 @@ describe('Agents empty-state (built-in pipeline regression)', () => {
       ],
       debouncedSearchString: '',
     });
-    render(<Agents />, { wrapper });
+    renderAgents();
 
     // No empty state is shown when there is at least one user item.
     expect(screen.queryByTestId('agents-search-empty')).not.toBeInTheDocument();

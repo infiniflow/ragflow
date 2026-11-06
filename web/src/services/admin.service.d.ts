@@ -39,12 +39,15 @@ declare namespace AdminService {
   };
 
   export type ListUsersItem = {
-    create_date: string;
+    create_date: number;
     email: string;
     is_active: '0' | '1';
     is_superuser: boolean;
-    role: string;
     nickname: string;
+    role?: string;
+    ldap_server?: string;
+    last_login_time?: string;
+    plan?: string;
   };
 
   export type UserDetail = {

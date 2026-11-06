@@ -23,6 +23,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 // mistralOCRStoredKey is the api_key Python's "Mistral OCR" factory stored when
@@ -58,7 +59,6 @@ func TestModelFactoryResolvesStoredMistralOCRProvider(t *testing.T) {
 	useModelProviderServiceTestDB(t, db)
 	seedStoredMistralOCRProvider(t, db)
 
-	access := ModelAccess{TenantID: "user-1", UserID: "user-1"}
 	for _, tc := range []struct {
 		name      string
 		modelRef  string
@@ -69,7 +69,7 @@ func TestModelFactoryResolvesStoredMistralOCRProvider(t *testing.T) {
 		{name: "catalog composite", modelRef: "mistral-ocr-2512@default@Mistral OCR", wantModel: "mistral-ocr-2512"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			target, err := NewModelFactory().resolveConfig(t.Context(), access, entity.ModelTypeOCR, tc.modelRef)
+			target, err := NewModelFactory().resolveConfig(serviceTestContext(t, "user-1", "user-1"), entity.ModelTypeOCR, tc.modelRef)
 			if err != nil {
 				t.Fatalf("resolveConfig(%q): %v", tc.modelRef, err)
 			}
@@ -96,7 +96,7 @@ func TestModelFactoryResolveModelTypeForStoredMistralOCRProvider(t *testing.T) {
 	useModelProviderServiceTestDB(t, db)
 	seedStoredMistralOCRProvider(t, db)
 
-	types, err := NewModelFactory().ResolveModelType(t.Context(), ModelAccess{TenantID: "user-1", UserID: "user-1"}, "mistral-ocr-2512@default@Mistral OCR")
+	types, err := NewModelFactory().ResolveModelType(permission.WithTenantID(serviceTestContext(t, "user-1", "user-1"), "user-1"), "mistral-ocr-2512@default@Mistral OCR")
 	if err != nil {
 		t.Fatalf("ResolveModelType: %v", err)
 	}
@@ -115,28 +115,27 @@ func TestCatalogToolSupportForStoredMistralOCRProvider(t *testing.T) {
 	}
 }
 
-// The model call service resolves a "Mistral OCR" model by tenant model id and
-// by composite reference.
-func TestModelCallServiceResolvesStoredMistralOCRProvider(t *testing.T) {
+// ModelFactory preserves the stored OCR capability for the Mistral OCR provider.
+func TestModelFactoryResolvesStoredMistralOCRCapability(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
 	seedStoredMistralOCRProvider(t, db)
 
-	svc := NewModelCallService()
+	factory := NewModelFactory()
 	for _, modelRef := range []string{"model-mistral-ocr", "mistral-ocr-latest@default@Mistral OCR"} {
 		t.Run(modelRef, func(t *testing.T) {
-			info, err := svc.resolveModelInfo(t.Context(), modelRef, "user-1")
+			target, err := factory.resolveConfig(permission.WithTenantID(serviceTestContext(t, "user-1", "user-1"), "user-1"), 0, modelRef)
 			if err != nil {
-				t.Fatalf("resolveModelInfo(%q): %v", modelRef, err)
+				t.Fatalf("resolve model %q: %v", modelRef, err)
 			}
-			if info.ProviderInfo == nil || info.ProviderInfo.Name != "Mistral" {
-				t.Fatalf("provider info = %+v, want the Mistral catalog entry", info.ProviderInfo)
+			if target.ProviderName != "Mistral OCR" {
+				t.Fatalf("provider name = %q, want the stored provider row", target.ProviderName)
 			}
-			if info.ModelInfo == nil || info.ModelInfo.Name != "mistral-ocr-latest" {
-				t.Fatalf("model info = %+v, want mistral-ocr-latest", info.ModelInfo)
+			if target.ModelInfo == nil || target.ModelInfo.Name != "mistral-ocr-latest" {
+				t.Fatalf("model info = %+v, want mistral-ocr-latest", target.ModelInfo)
 			}
-			if info.ProviderEntity == nil || info.ProviderEntity.ProviderName != "Mistral OCR" {
-				t.Fatalf("provider entity = %+v, want the stored row", info.ProviderEntity)
+			if !target.ModelInfo.ModelTypeMap["ocr"] || target.ModelInfo.ModelTypeMap["doc_parse"] {
+				t.Fatalf("model info = %+v, want OCR capability without unsupported document-parse capability", target.ModelInfo)
 			}
 		})
 	}
@@ -152,7 +151,7 @@ func TestListProvidersOfTenantSkipsStoredMistralOCRProvider(t *testing.T) {
 		t.Fatalf("create provider: %v", err)
 	}
 
-	providers, code, err := NewModelProviderService().ListProvidersOfTenant(t.Context(), "user-1")
+	providers, code, err := NewModelProviderService().ListProvidersOfTenant(serviceTestContext(t, "user-1", "user-1"))
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListProvidersOfTenant = (%v, %v)", code, err)
 	}

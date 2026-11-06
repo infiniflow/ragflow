@@ -179,6 +179,9 @@ func (c *SkillInstallCommand) Execute(args []string) error {
 	if parsedArgs.SkillName != "" {
 		bundle.Name = parsedArgs.SkillName
 	}
+	if !isValidSkillName(bundle.Name) {
+		return fmt.Errorf("invalid skill name %q", bundle.Name)
+	}
 
 	// 3. Check if skill already exists
 	exists, err := c.skillExists(ctx, parsedArgs.SpaceID, bundle.Name)
@@ -206,6 +209,14 @@ func (c *SkillInstallCommand) Execute(args []string) error {
 		fmt.Printf("✓ Security check passed: %s\n\n", reason)
 	}
 
+	// Stage and validate every bundle file before --force can remove the
+	// existing skill.
+	tempDir, skillDir, err := stageSkillBundle(bundle)
+	if err != nil {
+		return fmt.Errorf("failed to stage skill: %w", err)
+	}
+	defer os.RemoveAll(tempDir)
+
 	// 5. Force mode: delete existing skill first
 	if parsedArgs.Force && exists {
 		fmt.Printf("Force mode: removing existing skill '%s'...\n", bundle.Name)
@@ -217,7 +228,7 @@ func (c *SkillInstallCommand) Execute(args []string) error {
 
 	// 6. Install skill
 	fmt.Printf("Installing skill '%s' to space '%s'...\n", bundle.Name, parsedArgs.SpaceID)
-	if err := c.installSkill(ctx, parsedArgs.SpaceID, bundle, parsedArgs.Force); err != nil {
+	if err := c.installStagedSkill(ctx, parsedArgs.SpaceID, bundle, skillDir, parsedArgs.Force); err != nil {
 		return fmt.Errorf("failed to install skill: %w", err)
 	}
 
@@ -264,43 +275,118 @@ func (c *SkillInstallCommand) uninstallSkill(ctx stdctx.Context, spaceID, skillN
 	return nil
 }
 
-// installSkill installs a skill bundle using existing SkillUploader
+// installSkill installs a skill bundle using existing SkillUploader.
 func (c *SkillInstallCommand) installSkill(ctx stdctx.Context, spaceID string, bundle *source.SkillBundle, force bool) error {
-	// Create a temporary directory to hold the skill files
-	tempDir, err := os.MkdirTemp("", "skill-install-*")
+	tempDir, skillDir, err := stageSkillBundle(bundle)
 	if err != nil {
-		return fmt.Errorf("failed to create temp directory: %w", err)
+		return err
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Write files to temp directory
+	return c.installStagedSkill(ctx, spaceID, bundle, skillDir, force)
+}
+
+func stageSkillBundle(bundle *source.SkillBundle) (string, string, error) {
+	if bundle == nil {
+		return "", "", fmt.Errorf("skill bundle is required")
+	}
+	if !isValidSkillName(bundle.Name) {
+		return "", "", fmt.Errorf("invalid skill name %q", bundle.Name)
+	}
+
+	tempDir, err := os.MkdirTemp("", "skill-install-*")
+	if err != nil {
+		return "", "", fmt.Errorf("failed to create temp directory: %w", err)
+	}
+	fail := func(err error) (string, string, error) {
+		_ = os.RemoveAll(tempDir)
+		return "", "", err
+	}
+
 	skillDir := filepath.Join(tempDir, bundle.Name)
-	if err := os.MkdirAll(skillDir, 0755); err != nil {
-		return fmt.Errorf("failed to create skill directory: %w", err)
+	type stagedFile struct {
+		path    string
+		content []byte
 	}
-
+	stagedFiles := make([]stagedFile, 0, len(bundle.Files))
 	for relPath, content := range bundle.Files {
-		filePath := filepath.Join(skillDir, relPath)
-		dir := filepath.Dir(filePath)
-		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("failed to create directory %s: %w", dir, err)
+		filePath, err := resolveSkillFilePath(skillDir, relPath)
+		if err != nil {
+			return fail(err)
 		}
-		if err := os.WriteFile(filePath, content, 0644); err != nil {
-			return fmt.Errorf("failed to write file %s: %w", relPath, err)
-		}
+		stagedFiles = append(stagedFiles, stagedFile{path: filePath, content: content})
 	}
 
-	// Use existing SkillUploader to upload the skill
+	if err := os.MkdirAll(skillDir, 0755); err != nil {
+		return fail(fmt.Errorf("failed to create skill directory: %w", err))
+	}
+	for _, file := range stagedFiles {
+		if err := os.MkdirAll(filepath.Dir(file.path), 0755); err != nil {
+			return fail(fmt.Errorf("failed to create directory for skill file: %w", err))
+		}
+		if err := os.WriteFile(file.path, file.content, 0644); err != nil {
+			return fail(fmt.Errorf("failed to write skill file: %w", err))
+		}
+	}
+	if err := validateStagedSkill(skillDir, bundle); err != nil {
+		return fail(err)
+	}
+
+	return tempDir, skillDir, nil
+}
+
+func validateStagedSkill(skillDir string, bundle *source.SkillBundle) error {
+	version := ""
+	if bundle.Metadata != nil {
+		version = bundle.Metadata.Version
+	}
+	result, _, err := ValidateSkillDirectory(skillDir, version, bundle.Name)
+	if err != nil {
+		return fmt.Errorf("failed to validate staged skill: %w", err)
+	}
+	if !result.Valid {
+		return fmt.Errorf("failed to validate staged skill: %s", GetValidationErrorMessage(result))
+	}
+	return nil
+}
+
+func (c *SkillInstallCommand) installStagedSkill(ctx stdctx.Context, spaceID string, bundle *source.SkillBundle, skillDir string, force bool) error {
 	uploader := NewSkillUploader(c.client, c.fileProvider)
 	uploader.SetSkillProvider(c.skillProvider)
 	uploader.SetForce(force)
 
-	version := bundle.Metadata.Version
+	version := ""
+	if bundle.Metadata != nil {
+		version = bundle.Metadata.Version
+	}
 	if version == "" {
 		version = "1.0.0"
 	}
 
 	return uploader.UploadSkill(ctx, skillDir, version, fmt.Sprintf("skills/%s", spaceID), bundle.Name)
+}
+
+func resolveSkillFilePath(root, relPath string) (string, error) {
+	if relPath == "" {
+		return "", fmt.Errorf("invalid skill file path %q", relPath)
+	}
+	// Bundle paths may use Windows separators when fetched from a local
+	// source. Normalize them before the local-path and containment checks.
+	relPath = strings.ReplaceAll(relPath, "\\", "/")
+	localPath := filepath.Clean(filepath.FromSlash(relPath))
+	if localPath == "." || !filepath.IsLocal(localPath) {
+		return "", fmt.Errorf("invalid skill file path %q", relPath)
+	}
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return "", fmt.Errorf("resolve skill directory: %w", err)
+	}
+	filePath := filepath.Join(root, localPath)
+	relativePath, err := filepath.Rel(root, filePath)
+	if err != nil || !filepath.IsLocal(relativePath) {
+		return "", fmt.Errorf("skill file path %q escapes the skill directory", relPath)
+	}
+	return filePath, nil
 }
 
 // skillExists checks if a skill already exists

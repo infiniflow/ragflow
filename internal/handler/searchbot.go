@@ -17,6 +17,7 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -27,6 +28,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
 	"go.uber.org/zap"
@@ -48,7 +50,7 @@ type SearchBotMindMapRequest struct {
 	SearchID string             `json:"search_id,omitempty"`
 }
 
-// SearchBotRetrievalTestRequest is the request body for POST /api/v1/searchbots/retrieval_test.
+// SearchBotRetrievalTestRequest is the request body for POST /api/v1/searchbots/retrieval.
 type SearchBotRetrievalTestRequest struct {
 	KbIDs                    common.StringSlice     `json:"kb_ids" binding:"required"`
 	Question                 string                 `json:"question" binding:"required"`
@@ -88,7 +90,7 @@ func (r *SearchBotRetrievalTestRequest) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// SearchBotRequest is the request body for POST /api/v1/searchbots/related_questions.
+// SearchBotRequest is the request body for POST /api/v1/searchbots/related-questions.
 // Question is validated manually below so the error message follows the
 // established API contract instead of the Gin validator format.
 type SearchBotRequest struct {
@@ -98,8 +100,8 @@ type SearchBotRequest struct {
 
 // SearchBotHandler handles searchbot endpoints:
 //
-//	POST /api/v1/searchbots/related_questions
-//	POST /api/v1/searchbots/retrieval_test
+//	POST /api/v1/searchbots/related-questions
+//	POST /api/v1/searchbots/retrieval
 //	POST /api/v1/searchbots/ask
 //	POST /api/v1/searchbots/mindmap
 type SearchBotHandler struct {
@@ -127,37 +129,32 @@ func (h *SearchBotHandler) SetAskService(svc *service.AskService) { h.askSvc = s
 // @Produce json
 // @Param request body SearchBotRequest true "Request body"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/v1/searchbots/related_questions [post]
+// @Router /api/v1/searchbots/related-questions [post]
 func (h *SearchBotHandler) Handle(c *gin.Context) {
 	ctx := c.Request.Context()
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
 
 	var req SearchBotRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
 
 	if req.Question == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "question is required")
+		common.RespondError(c, common.CodeArgumentError, "question is required")
 		return
 	}
 
-	questions, err := service.GenerateRelatedQuestions(ctx, user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.modelFactory)
+	questions, err := service.GenerateRelatedQuestions(ctx, req.Question, req.SearchID, h.searchSvc, h.modelFactory)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
 		common.Warn("searchbot related questions failed", zap.String("error", err.Error()))
-		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
+		common.RespondError(c, common.CodeOperatingError, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, questions, "success")
+	common.RespondSuccessList(c, questions, "success")
 }
 
 // RetrievalTest performs a retrieval test against specified knowledge bases.
@@ -166,17 +163,12 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 // @Tags searchBots
 // @Param request body SearchBotRetrievalTestRequest true "Retrieval test parameters"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/v1/searchbots/retrieval_test [post]
+// @Router /api/v1/searchbots/retrieval [post]
 func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, errorCode, nil, errorMessage)
-		return
-	}
 
 	var req SearchBotRetrievalTestRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 
@@ -190,37 +182,41 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	req.KbIDs = filtered
 
 	if len(req.KbIDs) == 0 || req.Question == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_id and question are required")
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_id and question are required")
 		return
 	}
 
 	vectorSimilarityWeight, err := service.ResolveVectorSimilarityWeight(req.KeywordsSimilarityWeight, req.VectorSimilarityWeight)
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 	req.VectorSimilarityWeight = vectorSimilarityWeight
 
+	if err := common.ValidatePagination(req.Page, nil, req.Size); err != nil {
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		return
+	}
 	applyRetrievalDefaults(&req)
 
 	if req.TopK != nil && *req.TopK <= 0 {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "top_k must be greater than 0")
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "top_k must be greater than 0")
 		return
 	}
 
 	svcReq := toRetrievalServiceRequest(&req)
 	ctx := c.Request.Context()
-	result, err := h.chunkSvc.RetrievalTest(ctx, svcReq, user.ID)
+	result, err := h.chunkSvc.RetrievalTest(ctx, svcReq)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
 		common.Warn("search bot retrieval test failed", zap.String("error", err.Error()))
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, result, "success")
+	common.RespondSuccess(c, result, "success")
 }
 
 // Ask performs a retrieval-augmented Q&A with streaming SSE response.
@@ -233,21 +229,16 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searchbots/ask [post]
 func (h *SearchBotHandler) Ask(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
 
 	var req SearchBotAskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 
 	question, err := service.ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 	req.Question = question
@@ -261,38 +252,48 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		filtered = append(filtered, id)
 	}
 	if len(filtered) == 0 || strings.TrimSpace(req.Question) == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
 		return
 	}
 
 	// Resolve chat model ID.
 	modelID := ""
 	options := service.AskStreamOptions{}
+	modelTenantID := strings.TrimSpace(permission.TenantIDFromContext(c.Request.Context()))
+	if modelTenantID == "" {
+		modelTenantID = permission.UserIDFromContext(c.Request.Context())
+	}
+	if modelTenantID == "" {
+		jsonInternalError(c, permission.ErrUnauthenticated)
+		return
+	}
 	if req.SearchID != "" {
 		if h.searchSvc == nil {
 			jsonInternalError(c, fmt.Errorf("search service not configured"))
 			return
 		}
 		ctx := c.Request.Context()
-		detail, err := h.searchSvc.GetDetail(ctx, user.ID, req.SearchID)
+		detail, err := h.searchSvc.GetDetail(ctx, req.SearchID)
 		if err != nil {
 			if respondPermissionErrorIf(c, err, true) {
 				return
 			}
-			common.ErrorWithCode(c, common.CodeDataError, err.Error())
+			common.RespondError(c, common.CodeDataError, err.Error())
 			return
 		}
 		searchConfig := searchConfigFromDetail(detail)
+		if tenantID, ok := detail["tenant_id"].(string); ok && strings.TrimSpace(tenantID) != "" {
+			modelTenantID = strings.TrimSpace(tenantID)
+		}
 		options = service.BuildAskStreamOptions(req.SearchID, searchConfig)
 		if chatID, ok := searchConfig["chat_id"].(string); ok && chatID != "" {
 			modelID = chatID
 		}
 	}
-	if modelID == "" && h.tenantSvc != nil {
+	if modelID == "" && h.modelFactory != nil {
 		ctx := c.Request.Context()
-		defaultModel, err := h.tenantSvc.GetDefaultModelName(ctx, user.ID, entity.ModelTypeChat)
-		if err == nil && defaultModel != "" {
-			modelID = defaultModel
+		if info, infoErr := h.modelFactory.ResolveDefaultInfo(permission.WithTenantID(ctx, modelTenantID), entity.ModelTypeChat); infoErr == nil {
+			modelID = service.ModelReference(info)
 		}
 	}
 	if modelID == "" {
@@ -313,24 +314,33 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		h.sseWriter.Write(c, sseError("model factory not configured"))
 		return
 	}
-	ctx := c.Request.Context()
-	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, TenantID: user.ID, ModelID: modelID}
-	for delta := range h.askSvc.StreamWithOptions(ctx, adapter, user.ID, req.Question, filtered, options) {
+	ctx, cancel := context.WithCancel(c.Request.Context())
+	defer cancel()
+	ctx = permission.WithTenantID(ctx, modelTenantID)
+	c.Request = c.Request.WithContext(ctx)
+	hadError := false
+	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, ModelID: modelID}
+	for delta := range h.askSvc.StreamWithOptions(ctx, adapter, req.Question, filtered, options) {
+		var ok bool
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
-			h.sseWriter.Write(c, sseAnswer(delta.Value, nil, false))
+			ok = h.sseWriter.Write(c, sseAnswer(delta.Value, nil, false))
 		case service.AskDeltaMarker:
-			h.sseWriter.Write(c, sseMarker(delta.Value))
+			ok = h.sseWriter.Write(c, sseMarker(delta.Value))
 		case service.AskDeltaError:
-			h.sseWriter.Write(c, sseError(delta.Value))
+			hadError = true
+			ok = h.sseWriter.Write(c, sseError(delta.Value))
 		case service.AskDeltaFinal:
-			h.sseWriter.Write(c, sseAnswer(delta.Value, delta.Refs, true))
+			ok = h.sseWriter.Write(c, sseAnswer(delta.Value, delta.Refs, true))
+		}
+		if !ok || ctx.Err() != nil {
+			cancel()
+			break
 		}
 	}
-	c.Stream(func(w io.Writer) bool {
-		fmt.Fprintf(w, "data: {\"code\": 0, \"message\": \"success\", \"data\": true}\n\n")
-		return false
-	})
+	if !hadError && ctx.Err() == nil {
+		h.sseWriter.Write(c, "data: {\"code\": 0, \"message\": \"success\", \"data\": true}\n\n")
+	}
 
 }
 
@@ -344,15 +354,10 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searchbots/mindmap [post]
 func (h *SearchBotHandler) MindMap(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
 
 	var req SearchBotMindMapRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
 
@@ -363,7 +368,7 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 		}
 	}
 	if len(filtered) == 0 || strings.TrimSpace(req.Question) == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
 		return
 	}
 	if h.chunkSvc == nil {
@@ -376,13 +381,17 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 	}
 
 	searchConfig := map[string]interface{}{}
+	modelTenantID := strings.TrimSpace(permission.TenantIDFromContext(c.Request.Context()))
+	if modelTenantID == "" {
+		modelTenantID = permission.UserIDFromContext(c.Request.Context())
+	}
 	if req.SearchID != "" {
 		if h.searchSvc == nil {
 			jsonInternalError(c, fmt.Errorf("search service not configured"))
 			return
 		}
 		ctx := c.Request.Context()
-		detail, err := h.searchSvc.GetDetail(ctx, user.ID, req.SearchID)
+		detail, err := h.searchSvc.GetDetail(ctx, req.SearchID)
 		if err != nil {
 			if respondPermissionErrorIf(c, err, true) {
 				return
@@ -391,6 +400,9 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 			return
 		}
 		searchConfig = searchConfigFromDetail(detail)
+		if tenantID, ok := detail["tenant_id"].(string); ok && strings.TrimSpace(tenantID) != "" {
+			modelTenantID = strings.TrimSpace(tenantID)
+		}
 	}
 
 	ctx := c.Request.Context()
@@ -399,8 +411,7 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 		KbIDs:         filtered,
 		SearchID:      req.SearchID,
 		SearchConfig:  searchConfig,
-		AuthUserID:    user.ID,
-		ModelTenantID: user.ID,
+		ModelTenantID: modelTenantID,
 		ChunkSvc:      h.chunkSvc,
 		LLM:           h.modelFactory,
 		TenantSvc:     h.tenantSvc,
@@ -410,10 +421,10 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 			return
 		}
 		common.Warn("searchbot mindmap failed", zap.String("error", err.Error()))
-		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
+		common.RespondError(c, common.CodeOperatingError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, mindMap, "success")
+	common.RespondSuccess(c, mindMap, "success")
 }
 
 // SearchBotDetail returns the public share-page bootstrap payload for a
@@ -423,23 +434,24 @@ func (h *SearchBotHandler) SearchBotDetail(c *gin.Context) {
 	ctx := c.Request.Context()
 	searchID := strings.TrimSpace(c.Query("search_id"))
 	if searchID == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "search_id is required")
+		common.RespondError(c, common.CodeArgumentError, "search_id is required")
 		return
 	}
 
 	userSvc := service.NewUserService()
 	identity, code, err := userSvc.ResolveBetaAPIToken(ctx, c.GetHeader("Authorization"))
 	if err != nil {
-		common.ResponseWithCodeData(c, code, nil, "Authentication error: API key is invalid!")
+		common.RespondError(c, code, "Authentication error: API key is invalid!")
 		return
 	}
 	setAuthIdentity(c, identity)
+	ctx = c.Request.Context()
 	c.Set("auth_via_beta_token", true)
 	if h.searchSvc == nil {
 		jsonInternalError(c, fmt.Errorf("search service not configured"))
 		return
 	}
-	detail, err := h.searchSvc.GetSearchShareDetail(ctx, identity.User.ID, searchID)
+	detail, err := h.searchSvc.GetSearchShareDetail(ctx, searchID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
 			return
@@ -448,7 +460,7 @@ func (h *SearchBotHandler) SearchBotDetail(c *gin.Context) {
 		return
 	}
 
-	common.SuccessWithData(c, detail, "success")
+	common.RespondSuccess(c, detail, "success")
 }
 
 // ---- SSE helpers ----
@@ -522,17 +534,22 @@ func sseMarker(marker string) string {
 }
 
 type SSEWriter interface {
-	Write(c *gin.Context, data string)
+	Write(c *gin.Context, data string) bool
 }
 
 // ginSSEWriter is the production SSEWriter backed by gin.Context.Stream.
 type ginSSEWriter struct{}
 
-func (w *ginSSEWriter) Write(c *gin.Context, data string) {
-	c.Stream(func(w io.Writer) bool {
-		fmt.Fprint(w, data)
+func (w *ginSSEWriter) Write(c *gin.Context, data string) bool {
+	if c.Request.Context().Err() != nil {
+		return false
+	}
+	var writeErr error
+	clientGone := c.Stream(func(w io.Writer) bool {
+		_, writeErr = fmt.Fprint(w, data)
 		return false
 	})
+	return !clientGone && writeErr == nil && c.Request.Context().Err() == nil
 }
 
 // toRetrievalServiceRequest maps the handler DTO to the service DTO.
@@ -561,18 +578,18 @@ func toRetrievalServiceRequest(h *SearchBotRetrievalTestRequest) *service.Retrie
 }
 
 // applyRetrievalDefaults fills in default values for optional fields,
-// matching Python bot_api.py retrieval_test endpoint.
+// matching the Python bot_api.py retrieval_test endpoint.
 //
 // similarity_threshold, vector_similarity_weight and top_k are left nil:
 // ChunkService.RetrievalTest resolves them against the search app's saved
 // search_config, which a default here would hide.
 func applyRetrievalDefaults(req *SearchBotRetrievalTestRequest) {
 	if req.Page == nil {
-		v := 1
+		v := common.DefaultPage
 		req.Page = &v
 	}
 	if req.Size == nil {
-		v := 30
+		v := common.DefaultPageSize
 		req.Size = &v
 	}
 	if req.UseKG == nil {

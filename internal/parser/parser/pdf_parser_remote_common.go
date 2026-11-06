@@ -50,7 +50,7 @@ func collectPDFPageNumbers(raw any) map[int]struct{} {
 	walk = func(node any) {
 		switch v := node.(type) {
 		case map[string]any:
-			for _, key := range []string{"page_number", "page_num", "page_no", "page_index", "page_idx", "page"} {
+			for _, key := range []string{"page number", "page_number", "page_num", "page_no", "page_index", "page_idx", "page"} {
 				if page := int(numberValue(v[key])); page > 0 {
 					pages[page] = struct{}{}
 				}

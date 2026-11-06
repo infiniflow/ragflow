@@ -12,17 +12,23 @@ sidebar_custom_props: {
 
 The configuration page is used to maintain a memory's basic information, model configuration, capacity configuration, and advanced settings. After making changes, click **Confirm** to save them, or click **Cancel** to discard unsaved content.
 
-On the memory page, click the target memory **> Configurations** to view and update its settings.
+On the memory page, click the target memory **> Configuration** to view and update its settings.
 
 ### Basic Information
 
 The name, avatar, and description are mainly used to distinguish memories. Fill them in according to the page prompts. The avatar image must not exceed 4 MB.
 
-The embedding model and large language model are the basic configuration for memory extraction and retrieval. The embedding model is used to convert memory content into vectors and supports subsequent similarity retrieval. The large language model is used to analyze conversation content and extract structured memories. After messages have already been written to a memory, frequent model changes are not recommended.
+The embedding model and large language model are the basic configuration for memory extraction and retrieval. The embedding model is used to convert memory content into vectors and supports subsequent similarity retrieval. The large language model is used to analyze conversation content and extract structured memories.
+
+Once a memory contains messages, you cannot change its embedding model, the associated embedding model instance, or its memory types. Saving a change to any of these settings is rejected. Choose these settings before writing messages; create a new memory if you need a different configuration while retaining the existing memory's messages. The large language model can still be changed, but changing it does not automatically re-extract existing messages.
+
+![Memory basic information and model configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/basic_information.jpg)
 
 ### Memory Type
 
 Multiple memory types can be selected, but **Raw (`raw`)** is required and cannot be removed. When multiple types are selected, the system saves or extracts memories at different levels according to the selected types.
+
+Memory types can be changed only while the memory is empty.
 
 - **Raw (`raw`)**: Saves the original conversation content between the user and the Agent. It is suitable for scenarios where the complete context needs to be traced, and it is also the basis for extracting other types of memory.
 - **Semantic (`semantic`)**: Extracts relatively stable facts, preferences, attributes, or background information, such as user preferences, customer profiles, and common requirements. It is suitable for long-term reuse.
@@ -37,9 +43,18 @@ Memory size is used to limit the capacity that the memory can occupy. The value 
 
 Advanced settings are used to control the memory's visibility scope, storage method, and extraction effect. If there are no special requirements, you can keep the default configuration.
 
-- **Permissions**: Select **Only me** or **Team**. **Only me** means that only the current user can see the memory. **Team** means that team members can see and use the memory.
+- **Permission**: Select **Only me** to keep the memory private, or **Team** to share it with your team. Click **Confirm** to save. See [Sharing Scope](#sharing-scope) for the full steps.
 - **Storage type**: Currently, **Table (`table`)** can be selected. It is suitable for general messages, field queries, and regular retrieval.
 - **Forgetting policy**: Currently, **First in, first out (FIFO)** can be selected. When the capacity reaches the upper limit, the system preferentially cleans up content written earlier.
 - **Temperature**: The value range is `0-1`. It is used to control the randomness of memory extraction. A lower value makes the extraction result more stable, while a higher value makes the expression more divergent.
 - **System prompt**: Used to define the role, output format, and structure constraints for memory extraction. Adjust it only when you need to unify the extraction format or strengthen extraction rules.
 - **User prompt**: Used to supplement user-side extraction requirements. If there are no special requirements, it can be left empty.
+
+## Sharing Scope
+
+1. Open **Memory** and select the memory.
+2. Click **Configuration** and expand **Advanced settings**.
+3. Under **Permission**, select **Only me** to keep it private, or **Team** to share it with your team.
+4. Click **Confirm**.
+
+See [Team resource permissions](../team/resource_sharing/resource_sharing_and_permissions.md#member-permissions) for what members can do after sharing.

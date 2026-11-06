@@ -32,6 +32,17 @@ export const normalizeCitationDigits = (text: string) => {
 
 export type CitationKey = number | string;
 
+// Knowledge-base citation markers are positional indices produced by
+// strconv.Itoa, so they stay numeric and small. Sixteen-digit hex agent IDs
+// exceed Number.MAX_SAFE_INTEGER and must keep their string form; leading-zero
+// values are opaque ids for the same reason.
+const maxNumericCitationIndexDigits = 15;
+
+const isNumericCitationIndex = (value: string) =>
+  /^\d+$/.test(value) &&
+  value.length <= maxNumericCitationIndexDigits &&
+  (value.length === 1 || value[0] !== '0');
+
 export const parseCitationIndex = (value: string): CitationKey => {
   const normalized = normalizeCitationDigits(value);
   const markerMatch = normalized.match(
@@ -39,6 +50,9 @@ export const parseCitationIndex = (value: string): CitationKey => {
   );
   if (markerMatch) {
     const captured = markerMatch[1];
+    if (/^\s*\[?ID:/i.test(normalized)) {
+      return isNumericCitationIndex(captured) ? Number(captured) : captured;
+    }
     return /^\d+$/.test(captured) ? Number(captured) : captured;
   }
   if (/^\d+$/.test(normalized)) return Number(normalized);
@@ -48,15 +62,23 @@ export const parseCitationIndex = (value: string): CitationKey => {
 export const citationMarkerReg =
   /\[(?:ID:)?([0-9a-fA-F\u0660-\u0669\u06F0-\u06F9]+)\]/g;
 
+// react-string-replace hands the callback the last capture group, not the whole
+// match. citationMarkerReg groups only the id, so feeding it to
+// reactStringReplace would strip the brackets and turn an opaque all-digit id
+// into a positional index. This expression captures the whole marker instead;
+// the renderer can then pass it to parseCitationIndex unchanged.
+export const citationWholeMarkerReg =
+  /(\[(?:ID:)?[0-9a-fA-F\u0660-\u0669\u06F0-\u06F9]+\])/g;
+
 // Resolve the chunk a citation marker points at. A numeric key is the
 // chunk's position in the payload — the plain-chat contract, where the
 // backend numbers each marker by its index into reference.chunks. A string
 // key is the chunk id an agent answer embeds in its [ID:<chunkId>] markers;
 // match it against the chunk's own id, never positionally: the payload
 // ships in retrieval order, which is unrelated to the order the answer
-// cites passages in, so a positional read permutes the sources. A chunk id
-// is 16 hex chars — an all-digit id would parse as a position (~0.05% per
-// id), accepted and recorded here so it is not rediscovered as a mystery.
+// cites passages in, so a positional read permutes the sources. A 16-char
+// hex chunk id stays a string even when all its characters are digits;
+// parseCitationIndex only treats short decimal markers as positions.
 export const resolveCitationChunk = (
   chunks:
     | IReferenceChunk[]

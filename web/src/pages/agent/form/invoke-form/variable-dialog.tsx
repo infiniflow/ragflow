@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import {
   Dialog,
   DialogContent,
@@ -15,15 +16,17 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { IModalProps } from '@/interfaces/common';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isEmpty } from 'lodash';
 import { useEffect } from 'react';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
+import { InvokeParameterTypeOptions } from '../../constant';
 import { QueryVariable } from '../components/query-variable';
-import { VariableFormSchemaType } from './schema';
+import { VariableFormSchema, VariableFormSchemaType } from './schema';
 
 type ModalFormProps = {
   initialValue: VariableFormSchemaType;
@@ -39,18 +42,17 @@ function VariableForm({
   submit,
 }: ModalFormProps) {
   const { t } = useTranslation();
-  const FormSchema = z.object({
-    key: z
-      .string()
-      .trim()
-      .min(1)
-      .refine(
-        (value) =>
-          !value || !otherThanCurrentQuery.some((x) => x.key === value),
-        { message: 'The key cannot be repeated!' },
-      ),
-    ref: z.string(),
-    value: z.string(),
+  const FormSchema = VariableFormSchema.superRefine(({ key }, context) => {
+    if (
+      !key.trim() ||
+      otherThanCurrentQuery.some((x) => x.key === key.trim())
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['key'],
+        message: !key.trim() ? 'Required' : 'The key cannot be repeated!',
+      });
+    }
   });
 
   const form = useForm<z.infer<typeof FormSchema>>({
@@ -60,18 +62,21 @@ function VariableForm({
       key: '',
       value: '',
       ref: '',
+      type: 'string',
     },
   });
 
   useEffect(() => {
     if (!isEmpty(initialValue)) {
-      form.reset(initialValue);
+      form.reset({ type: 'string', ...initialValue });
     }
   }, [form, initialValue]);
 
   function onSubmit(data: z.infer<typeof FormSchema>) {
-    submit(data);
+    submit({ ...data, key: data.key.trim() });
   }
+
+  const parameterType = useWatch({ control: form.control, name: 'type' });
 
   return (
     <Form {...form}>
@@ -96,13 +101,34 @@ function VariableForm({
         />
         <QueryVariable name="ref" label={t('flow.ref')}></QueryVariable>
         <FormField
+          name="type"
+          control={form.control}
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('flow.type')}</FormLabel>
+              <FormControl>
+                <SelectWithSearch
+                  value={field.value ?? 'string'}
+                  onChange={field.onChange}
+                  options={InvokeParameterTypeOptions}
+                />
+              </FormControl>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
           name="value"
           control={form.control}
           render={({ field }) => (
             <FormItem>
               <FormLabel>{t('flow.value')}</FormLabel>
               <FormControl>
-                <Input {...field} />
+                {parameterType === 'object' ? (
+                  <Textarea {...field} className="font-mono" rows={5} />
+                ) : (
+                  <Input {...field} />
+                )}
               </FormControl>
               <FormMessage />
             </FormItem>

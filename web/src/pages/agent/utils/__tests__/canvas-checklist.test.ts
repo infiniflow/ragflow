@@ -796,6 +796,23 @@ describe('collectCanvasIssues: stale resources', () => {
     );
   });
 
+  it('accepts a decision model for Categorize while keeping Agent chat-only', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Categorize:c1', 'Categorize', { llm_id: 'decision-model' }),
+        makeNode('Agent:a1', 'Agent', { llm_id: 'decision-model' }),
+      ],
+      modelValidIds: new Set(['chat-model']),
+      categorizeModelValidIds: new Set(['chat-model', 'decision-model']),
+    });
+
+    expect(
+      issues.filter((x) => x.messageKey === 'common.modelUnavailable'),
+    ).toEqual([
+      expect.objectContaining({ nodeId: 'Agent:a1', blocksRun: true }),
+    ]);
+  });
+
   it('flags a stale dataset on a Retrieval node', () => {
     const issues = collect({
       nodes: [
@@ -911,7 +928,19 @@ describe('collectCanvasIssues: required tool API key', () => {
           name: 'Sofya',
           params: { api_key: 'secret' },
         },
-        { component_name: 'ExeSQL', id: 'tool-2', params: {} },
+        {
+          component_name: 'ExeSQL',
+          id: 'tool-2',
+          params: {
+            db_type: 'mysql',
+            database: 'db',
+            username: 'root',
+            host: 'db.internal',
+            port: 3306,
+            password: 'secret',
+            max_records: 1024,
+          },
+        },
       ],
     });
 
@@ -919,6 +948,63 @@ describe('collectCanvasIssues: required tool API key', () => {
 
     expect(
       issues.filter((x) => x.messageKey === 'flow.apiKeyMissing'),
+    ).toHaveLength(0);
+  });
+
+  it('flags an agent-embedded ExeSQL tool with incomplete connection fields', () => {
+    const agent = makeNode('Agent:a1', 'Agent', {
+      llm_id: 'model-1',
+      tools: [
+        {
+          component_name: 'ExeSQL',
+          id: 'tool-1',
+          name: 'QueryOrders',
+          params: { db_type: 'mysql', username: 'root', port: 3306 },
+        },
+      ],
+    });
+
+    const issues = collect({
+      nodes: [agent, makeNode('Tool:t1', 'Tool')],
+      edges: [makeEdge('Agent:a1', 'Tool:t1', 'tool')],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Tool:t1',
+        toolId: 'tool-1',
+        nodeName: 'Agent:a1 / QueryOrders',
+        operatorLabel: 'ExeSQL',
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.nodeFormInvalid',
+        blocksRun: true,
+      }),
+    );
+  });
+
+  it('passes an agent-embedded ExeSQL tool with complete connection fields', () => {
+    const agent = makeNode('Agent:a1', 'Agent', {
+      llm_id: 'model-1',
+      tools: [
+        {
+          component_name: 'ExeSQL',
+          id: 'tool-1',
+          params: {
+            db_type: 'trino',
+            database: 'db',
+            username: 'root',
+            host: 'db.internal',
+            port: 8080,
+            max_records: 1024,
+          },
+        },
+      ],
+    });
+
+    const issues = collect({ nodes: [agent] });
+
+    expect(
+      issues.filter((x) => x.messageKey === 'flow.nodeFormInvalid'),
     ).toHaveLength(0);
   });
 });

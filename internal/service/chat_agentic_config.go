@@ -8,8 +8,8 @@ import (
 )
 
 // GetAgenticRAGConfig resolves the chat's saved override against current defaults.
-func (s *ChatService) GetAgenticRAGConfig(ctx context.Context, userID, chatID string) (*agentic_rag.Settings, error) {
-	chat, err := s.getChatForOperation(ctx, userID, chatID, permission.OperationRead)
+func (s *ChatService) GetAgenticRAGConfig(ctx context.Context, chatID string) (*agentic_rag.Settings, error) {
+	chat, err := s.getChatForOperation(ctx, chatID, permission.OperationRead)
 	if err != nil {
 		return nil, err
 	}

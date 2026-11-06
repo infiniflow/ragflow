@@ -3,7 +3,7 @@
   "position": 5,
   "link": {
     "type": "generated-index",
-    "description": "RAGFlow v0.8.0 introduces an agent mechanism, featuring a no-code workflow editor on the front end and a comprehensive graph-based task orchestration framework on the backend."
+    "description": "Build visual Agent workflows for knowledge retrieval, model reasoning, tool calls, branching, iteration, and data processing."
   },
   "customProps": {
     "categoryIcon": "RagAiAgent"

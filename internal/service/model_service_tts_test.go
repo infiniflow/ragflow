@@ -23,9 +23,10 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
-// insertTTSTestTenant inserts a tenant row; ttsID may be nil (no default
+// insertTTSTestTenant inserts a tenant and owner membership; ttsID may be nil (no default
 // TTS model configured).
 func insertTTSTestTenant(t *testing.T, id string, ttsID *string) {
 	t.Helper()
@@ -58,7 +59,8 @@ func TestAudioSpeech_NoSelectionNoDefaultTTS(t *testing.T) {
 
 	svc := NewModelCallService()
 	text := "hello"
-	resp, code, err := svc.AudioSpeech(t.Context(), "", "tenant-1", &text, nil)
+	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
+	resp, code, err := svc.AudioSpeech(ctx, "", &text, nil)
 	if err == nil {
 		t.Fatalf("expected error for missing default TTS model, got resp=%v", resp)
 	}
@@ -81,7 +83,7 @@ func TestResolveDefaultModelConfig_NilTTSPointer(t *testing.T) {
 	pushServiceDB(t, testDB)
 	insertTTSTestTenant(t, "tenant-2", nil)
 
-	_, err := NewModelFactory().resolveDefaultConfig(t.Context(), ModelAccess{TenantID: "tenant-2"}, entity.ModelTypeTTS)
+	_, err := NewModelFactory().resolveDefaultConfig(permission.WithTenantID(t.Context(), "tenant-2"), entity.ModelTypeTTS)
 	if err == nil {
 		t.Fatal("expected error for nil tts_id, got nil")
 	}

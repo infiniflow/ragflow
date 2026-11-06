@@ -31,8 +31,10 @@ func setupTenantDAOTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.Tenant{}); err != nil {
-		t.Fatalf("failed to migrate tenant: %v", err)
+	models := []interface{}{&entity.Tenant{}}
+	models = append(models, tenantDAOTestExtraModels()...)
+	if err := db.AutoMigrate(models...); err != nil {
+		t.Fatalf("failed to migrate tenant tables: %v", err)
 	}
 	return db
 }

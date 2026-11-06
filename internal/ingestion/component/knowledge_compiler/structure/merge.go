@@ -286,7 +286,7 @@ func (d *LLMMergeDecider) BuildReplacement(ctx context.Context, existing, incomi
 	}
 	merged = applyMergeInvariants(existing, merged)
 
-	chunkIDs := unionOrdered(metaStrings(existing.Meta, "source_chunk_ids"), metaStrings(incoming.Meta, "source_chunk_ids"))
+	chunkIDs := unionOrdered(common.MetaStringSlice(existing.Meta, "source_chunk_ids"), common.MetaStringSlice(incoming.Meta, "source_chunk_ids"))
 	texts := []string{payloadDescription(merged)}
 	vecs, err := d.Embed.Encode(ctx, texts)
 	if err != nil {
@@ -662,23 +662,6 @@ func entityNameValue(p common.Product) string {
 	return strings.TrimSpace(name)
 }
 
-// metaStrings reads a []string meta value (tolerating []any).
-func metaStrings(meta map[string]any, key string) []string {
-	switch v := meta[key].(type) {
-	case []string:
-		return v
-	case []any:
-		out := make([]string, 0, len(v))
-		for _, e := range v {
-			if s, ok := e.(string); ok {
-				out = append(out, s)
-			}
-		}
-		return out
-	}
-	return nil
-}
-
 // unionOrdered mirrors _common.union_ordered: concatenated, deduped,
 // first-seen order preserved.
 func unionOrdered(lists ...[]string) []string {
@@ -747,7 +730,7 @@ func MergeIntoStore(ctx context.Context, store *common.MemStore, decider MergeDe
 			stats.survivorID = droppedExisting.ID
 			// Fold the incoming source_chunk_ids into the surviving entry.
 			if dropped && droppedExisting.ID != "" {
-				if ids := metaStrings(row.Meta, "source_chunk_ids"); len(ids) > 0 {
+				if ids := common.MetaStringSlice(row.Meta, "source_chunk_ids"); len(ids) > 0 {
 					store.MergeSourceChunkIDs(droppedExisting.ID, ids)
 				}
 			}
@@ -830,7 +813,7 @@ func (g *GroupedDeduper) Add(ctx context.Context, row common.Product) error {
 				}
 			})
 			if err == nil && action == common.KeepDrop {
-				store.MergeSourceChunkIDs(candidateID, metaStrings(row.Meta, "source_chunk_ids"))
+				store.MergeSourceChunkIDs(candidateID, common.MetaStringSlice(row.Meta, "source_chunk_ids"))
 			}
 		} else {
 			var stats MergeStats

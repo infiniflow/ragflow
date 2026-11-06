@@ -39,7 +39,7 @@ func TestParseArgsStandardSyntaxMatrix(t *testing.T) {
 		{"--port", "8080"},
 		{"--admin-host", "1.2.3.4:5678"},
 		{"--deepdoc-inference-concurrency", "4"},
-		{"--ingestor-max-concurrent-workers", "8"},
+		{"--ingestor-concurrent-workers", "8"},
 		{"--ingestor-page-concurrency", "4"},
 		{"--deepdoc-inference-cpu-cores", "2"},
 	}
@@ -333,7 +333,7 @@ func TestParseArgsValueEdgeCases(t *testing.T) {
 func TestParseArgsMissingValue(t *testing.T) {
 	valueFlags := []string{
 		"--log-level", "--config", "--name", "--port", "--admin-host",
-		"--deepdoc-inference-concurrency", "--ingestor-max-concurrent-workers",
+		"--deepdoc-inference-concurrency", "--ingestor-concurrent-workers",
 		"--ingestor-page-concurrency", "--deepdoc-inference-cpu-cores",
 	}
 	for _, flag := range valueFlags {
@@ -356,7 +356,7 @@ func TestParseArgsMissingValue(t *testing.T) {
 // integer flags, preserving the pre-migration validation rules.
 func TestParseArgsNumericValidation(t *testing.T) {
 	positiveInvalid := []string{"0", "-1", "abc", "1.5"}
-	for _, flag := range []string{"--deepdoc-inference-concurrency", "--ingestor-max-concurrent-workers", "--ingestor-page-concurrency"} {
+	for _, flag := range []string{"--deepdoc-inference-concurrency", "--ingestor-concurrent-workers", "--ingestor-page-concurrency"} {
 		for _, v := range positiveInvalid {
 			if _, err := parseArgsFrom([]string{"ragflow_server", "--api", flag + "=" + v}); err == nil {
 				t.Errorf("%s=%s error = nil, want rejection", flag, v)
@@ -420,15 +420,15 @@ func TestParseArgsPresenceSemantics(t *testing.T) {
 		t.Fatalf("parseArgsFrom error = %v", err)
 	}
 	for name, got := range map[string]bool{
-		"logLevel":                     args.LogLevel != nil,
-		"configPath":                   args.ConfigPath != nil,
-		"port":                         args.Port != nil,
-		"adminHost":                    args.AdminHost != nil,
-		"name":                         args.Name != nil,
-		"deepdocInferenceConcurrency":  args.DeepdocInferenceConcurrency != nil,
-		"ingestorMaxConcurrentWorkers": args.IngestorMaxConcurrentWorkers != nil,
-		"ingestorPageConcurrency":      args.IngestorPageConcurrency != nil,
-		"deepdocInferenceCPUCores":     args.DeepdocInferenceCPUCores != nil,
+		"logLevel":                    args.LogLevel != nil,
+		"configPath":                  args.ConfigPath != nil,
+		"port":                        args.Port != nil,
+		"adminHost":                   args.AdminHost != nil,
+		"name":                        args.Name != nil,
+		"deepdocInferenceConcurrency": args.DeepdocInferenceConcurrency != nil,
+		"ingestorConcurrentWorkers":   args.IngestorConcurrentWorkers != nil,
+		"ingestorPageConcurrency":     args.IngestorPageConcurrency != nil,
+		"deepdocInferenceCPUCores":    args.DeepdocInferenceCPUCores != nil,
 	} {
 		if got {
 			t.Errorf("%s set with no flag on the command line", name)

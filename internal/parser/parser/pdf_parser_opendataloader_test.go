@@ -1,12 +1,15 @@
 package parser
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"ragflow/internal/entity"
 )
@@ -128,6 +131,73 @@ func TestPDFParser_ParseWithResult_OpenDataLoaderRequiresAPIServer(t *testing.T)
 	}
 }
 
+// opendataloader_timeout is the only bound a synchronous OpenDataLoader parse
+// gets, so a stalled server has to be cut off at the configured value instead
+// of at the transport's 20-minute header timeout.
+func TestPDFParser_ParseWithResult_OpenDataLoaderAppliesConfiguredTimeout(t *testing.T) {
+	withSSRFBypass(t)
+	server := openDataLoaderStallServer(t, 3*time.Second)
+	defer server.Close()
+
+	pdf := NewPDFParser()
+	pdf.ConfigureFromSetup(map[string]any{
+		"parse_method":             "OpenDataLoader",
+		"opendataloader_apiserver": server.URL,
+		"opendataloader_timeout":   1,
+	})
+
+	start := time.Now()
+	res := pdf.ParseWithResult(t.Context(), "sample.pdf", []byte("%PDF-1.4\nmock"))
+	elapsed := time.Since(start)
+	if !errors.Is(res.Err, context.DeadlineExceeded) {
+		t.Fatalf("error = %v, want context.DeadlineExceeded", res.Err)
+	}
+	// The configured value is in seconds: neither firing early (milliseconds)
+	// nor never firing (the setting ignored) is a pass.
+	if elapsed < 900*time.Millisecond || elapsed >= 2500*time.Millisecond {
+		t.Fatalf("elapsed = %s, want the request cut off at the configured 1s", elapsed)
+	}
+}
+
+// A pipeline cancellation must reach the in-flight request even when the
+// parser carries no configured timeout.
+func TestPDFParser_ParseWithResult_OpenDataLoaderAbortsOnCancelledContext(t *testing.T) {
+	withSSRFBypass(t)
+	server := openDataLoaderStallServer(t, 3*time.Second)
+	defer server.Close()
+
+	pdf := NewPDFParser()
+	pdf.ConfigureFromSetup(map[string]any{
+		"parse_method":             "OpenDataLoader",
+		"opendataloader_apiserver": server.URL,
+	})
+	pdf.OpenDataLoaderTimeout = 0
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
+	if !errors.Is(res.Err, context.Canceled) {
+		t.Fatalf("error = %v, want context.Canceled", res.Err)
+	}
+}
+
+// openDataLoaderStallServer answers /file_parse only after stall has passed,
+// which stands in for an OpenDataLoader server that is still parsing.
+func openDataLoaderStallServer(t *testing.T, stall time.Duration) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/file_parse" {
+			http.NotFound(w, r)
+			return
+		}
+		select {
+		case <-time.After(stall):
+			_, _ = w.Write([]byte(`{"json_doc":null,"md_text":"late"}`))
+		case <-r.Context().Done():
+		}
+	}))
+}
+
 func TestOpenDataLoaderItems_TableCellsFallback(t *testing.T) {
 	root := map[string]any{
 		"type": "table",
@@ -136,7 +206,7 @@ func TestOpenDataLoaderItems_TableCellsFallback(t *testing.T) {
 			map[string]any{"row": 0, "content": "b"},
 		},
 	}
-	items := openDataLoaderItems(root)
+	items, _ := openDataLoaderItemsWithGeometry(root, nil)
 	if len(items) != 1 {
 		t.Fatalf("items len = %d, want 1", len(items))
 	}
@@ -164,7 +234,7 @@ func TestOpenDataLoaderItems_TableCellsFallbackSparseRows(t *testing.T) {
 			map[string]any{"row": 5, "content": "z"},
 		},
 	}
-	items := openDataLoaderItems(root)
+	items, _ := openDataLoaderItemsWithGeometry(root, nil)
 	if len(items) != 1 {
 		t.Fatalf("items len = %d, want 1", len(items))
 	}

@@ -476,8 +476,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         'Например: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'Токен доступа AI Studio',
-      paddleocrAccessTokenTip: 'Токен доступа к API PaddleOCR (необязательно)',
-      paddleocrAccessTokenPlaceholder: 'Ваш токен AI Studio (необязательно)',
+      paddleocrAccessTokenTip: 'Токен доступа к API PaddleOCR',
+      paddleocrAccessTokenPlaceholder: 'Ваш токен AI Studio',
       paddleocrAlgorithm: 'Алгоритм PaddleOCR',
       paddleocrAlgorithmTip: 'Алгоритм, используемый для обработки PaddleOCR',
       paddleocrSelectAlgorithm: 'Выбрать алгоритм',
@@ -1322,7 +1322,7 @@ export default {
         apiUrlPlaceholder:
           'Например: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Токен доступа AI Studio',
-        accessTokenPlaceholder: 'Ваш токен AI Studio (необязательно)',
+        accessTokenPlaceholder: 'Ваш токен AI Studio',
         algorithm: 'Алгоритм PaddleOCR',
         selectAlgorithm: 'Выбрать алгоритм',
         modelNamePlaceholder: 'Например: paddleocr-from-env-1',
@@ -1473,6 +1473,7 @@ export default {
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       showToc: 'Показать содержание',
       hideToc: 'Скрыть содержание',
@@ -2088,9 +2089,9 @@ export default {
       jsonFormatTip:
         'Вышестоящий компонент должен предоставить JSON строку в следующем формате:',
       toEmailTip: 'to_email: Email получателя (Обязательно)',
-      ccEmailTip: 'cc_email: Email копии (Опционально)',
-      subjectTip: 'subject: Тема email (Опционально)',
-      contentTip: 'content: Содержимое email (Опционально)',
+      ccEmailTip: 'cc_email: Email копии',
+      subjectTip: 'subject: Тема email',
+      contentTip: 'content: Содержимое email',
       jsonUploadTypeErrorMessage: 'Пожалуйста, загрузите json файл',
       jsonUploadContentErrorMessage: 'Ошибка json файла',
       iteration: 'Итерация',
@@ -2484,7 +2485,7 @@ export default {
       failed: 'Ошибка',
       logTitle: 'Заголовок',
       tags: 'Теги',
-      canvasCategory: 'Категория канваса',
+      agentCategory: 'Категория канваса',
     },
     llmTools: {
       bad_calculator: {
@@ -2673,10 +2674,10 @@ export default {
         share: 'Поделиться',
       },
 
-      serviceStatus: 'Статус сервиса',
-      userManagement: 'Управление пользователями',
-      sandboxSettings: 'Настройки песочницы',
-      registrationWhitelist: 'Белый список регистрации',
+      serviceStatus: 'Сервисы',
+      userManagement: 'Пользователи',
+      sandboxSettings: 'Песочница',
+      registrationWhitelist: 'Белый список',
       roles: 'Роли',
       monitoring: 'Мониторинг',
 
@@ -2782,7 +2783,7 @@ export default {
       importWhitelist: 'Импорт белого списка (Excel)',
       importSelectExcelFile: 'Excel файл (.xlsx)',
       importOverwriteExistingEmails: 'Перезаписать существующие emails',
-      importInvalidExcelFile: 'Пожалуйста, выберите действительный Excel файл',
+      importValidExcelFile: 'Пожалуйста, выберите действительный Excel файл',
       importFileRequired: 'Пожалуйста, выберите файл для импорта',
       importFileTips:
         'Файл должен содержать один заголовочный столбец с именем <code>email</code>.',
@@ -2796,7 +2797,6 @@ export default {
       permission: 'Права доступа',
 
       agentTitle: 'Название агента',
-      canvasCategory: 'Категория канваса',
 
       newRole: 'Новая роль',
       addNewRole: 'Добавить новую роль',
@@ -2815,18 +2815,14 @@ export default {
     },
     explore: {
       title: 'Запуск',
-      canvasList: 'Список канвасов',
       sessions: 'Сессии',
       newSession: 'Новая сессия',
       newSessionLabel: 'Начать новый разговор',
       deleteSession: 'Удалить сессию',
-      searchCanvas: 'Поиск по канвасу...',
       searchSessions: 'Поиск по сессиям...',
-      noCanvasSelected: 'Выберите канвас',
       noSessionSelected: 'Выберите сессию или создайте новую',
       noSessionsFound: 'Сессии не найдены',
       createFirstSession: 'Создайте первую сессию',
-      noCanvasFound: 'Канвасы не найдены',
       deleteSelectedConfirm: 'Удалить выбранные сеансы ({{count}})?',
       batchDeleteSessions: 'Удалить сессии',
     },

@@ -5,13 +5,15 @@ import { Operator } from '../constant';
 import {
   useFetchAgent,
   useResetAgent,
-  useSetAgent,
+  useSaveAgent,
 } from '@/hooks/use-agent-request';
+import { useFetchCanvasPresence } from '@/ee/hooks/use-agent-presence';
 import {
   GlobalVariableType,
   RAGFlowNodeType,
 } from '@/interfaces/database/agent';
 import { formatDate } from '@/utils/date';
+import { canEditAgent } from '@/ee/pages/agent/can-edit-agent';
 import i18n from '@/locales/config';
 import { useDebounceEffect } from 'ahooks';
 import { useCallback, useEffect, useState } from 'react';
@@ -22,10 +24,10 @@ import { useBuildDslData } from './use-build-dsl';
 
 export const useSaveGraph = (
   showMessage: boolean = true,
-  skipInvalidation: boolean = false,
+  skipDetailRefresh: boolean = false,
 ) => {
   const { data } = useFetchAgent();
-  const { setAgent, loading } = useSetAgent(showMessage, skipInvalidation);
+  const { saveAgent, loading } = useSaveAgent(showMessage, skipDetailRefresh);
   const { id } = useParams();
   const { buildDslData } = useBuildDslData();
 
@@ -37,6 +39,8 @@ export const useSaveGraph = (
         globalVariables: Record<string, GlobalVariableType>;
       },
       release?: boolean,
+      autosave?: boolean,
+      alias?: string,
     ) => {
       if (!id) {
         return;
@@ -51,10 +55,20 @@ export const useSaveGraph = (
       if (release) {
         params.release = 'true';
       }
+      // Both the debounced auto-save and the explicit Save button pass
+      // autosave:true so the backend refreshes only the live draft and never
+      // mints a new version. Only publishing (release) writes a version row,
+      // optionally carrying an alias into user_canvas_version.
+      if (autosave) {
+        params.autosave = true;
+      }
+      if (alias) {
+        params.alias = alias;
+      }
 
-      return setAgent(params);
+      return saveAgent(params);
     },
-    [id, data.title, buildDslData, setAgent],
+    [id, data.title, buildDslData, saveAgent],
   );
 
   return { saveGraph, loading };
@@ -98,7 +112,7 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
         );
         return;
       }
-      const saveRet = await saveGraph(nextNodes);
+      const saveRet = await saveGraph(nextNodes, undefined, undefined, true);
       if (saveRet?.code === 0) {
         // Call the reset api before opening the run drawer each time
         const resetRet = await resetAgent();
@@ -149,6 +163,7 @@ export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
   const edges = useGraphStore((state) => state.edges);
   const { saveGraph } = useSaveGraph(false, true);
   const { data: flowDetail } = useFetchAgent();
+  const { data: presence } = useFetchCanvasPresence();
 
   const setSaveTime = useCallback((updateTime: number) => {
     setTime(formatDate(updateTime));
@@ -166,11 +181,12 @@ export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
         agentLoaded: Boolean(flowDetail?.id),
         nodeCount: nodes.length,
         edgeCount: edges.length,
-      })
+      }) ||
+      !canEditAgent(presence.operator_permission ?? 0)
     ) {
       return;
     }
-    const ret = await saveGraph();
+    const ret = await saveGraph(undefined, undefined, undefined, true);
     if (ret?.data?.update_time) {
       setSaveTime(ret.data.update_time);
     }
@@ -182,6 +198,7 @@ export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
     nodes.length,
     saveGraph,
     setSaveTime,
+    presence.operator_permission,
   ]);
 
   useDebounceEffect(

@@ -146,10 +146,10 @@ func imageOCRFixture(t *testing.T, provider string, fail bool) (*gorm.DB, *image
 	}
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err := db.AutoMigrate(&entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+	if err := db.AutoMigrate(&entity.UserTenant{}, &entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
 		t.Fatal(err)
 	}
-	rows := []any{&entity.TenantModelProvider{ID: "provider", TenantID: "tenant-1", ProviderName: provider}}
+	rows := []any{&entity.TenantModelProvider{ID: "provider", UserID: "tenant-1", TenantID: "tenant-1", ProviderName: provider}}
 	for _, instance := range []struct{ id, url string }{{"a", decoy.URL}, {"b", server.URL}} {
 		rows = append(rows,
 			&entity.TenantModelInstance{ID: "instance-" + instance.id, ProviderID: "provider", InstanceName: instance.id,
@@ -174,7 +174,7 @@ func TestImageOCRSelectedTenantModel(t *testing.T) {
 			data := picturePNG(t)
 			setups := imageSwitchSetups(t, true)
 			setups["image"]["ocr_model_id"] = "model-b"
-			res, handled, err := maybeDispatchImage(t.Context(), db, utility.FileTypeVISUAL,
+			res, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), db, utility.FileTypeVISUAL,
 				"invoice.png", data, map[string]any{"tenant_id": "tenant-1"}, setups, false, visionSettings{})
 			if err != nil || !handled {
 				t.Fatalf("handled=%v error=%v", handled, err)
@@ -238,7 +238,7 @@ func TestImageOCRReleasesMediaAdmissionBeforeRequest(t *testing.T) {
 			}
 			setups := imageSwitchSetups(t, true)
 			setups["image"]["ocr_model_id"] = "model-b"
-			result, _, err := maybeDispatchImage(t.Context(), db, utility.FileTypeVISUAL,
+			result, _, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), db, utility.FileTypeVISUAL,
 				"invoice.png", picturePNG(t), map[string]any{"tenant_id": "tenant-1"}, setups, false, visionSettings{})
 			if err != nil || len(result.JSON) != 1 {
 				t.Fatalf("err=%v result=%+v", err, result)
@@ -275,7 +275,7 @@ func TestImageOCRFailureRetainsAttachment(t *testing.T) {
 			db, requests := imageOCRFixture(t, provider, true)
 			setups := imageSwitchSetups(t, true)
 			setups["image"]["ocr_model_id"] = "model-b"
-			res, _, err := maybeDispatchImage(t.Context(), db, utility.FileTypeVISUAL,
+			res, _, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), db, utility.FileTypeVISUAL,
 				"invoice.png", picturePNG(t), map[string]any{"tenant_id": "tenant-1"}, setups, false, visionSettings{})
 			if err != nil {
 				t.Fatal(err)
@@ -321,7 +321,7 @@ func TestImageOCRInvalidSelectionNeverFallsBack(t *testing.T) {
 			}
 			setups := imageSwitchSetups(t, true)
 			setups["image"]["ocr_model_id"] = tc.ref
-			res, _, err := maybeDispatchImage(t.Context(), db, utility.FileTypeVISUAL,
+			res, _, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), db, utility.FileTypeVISUAL,
 				"invoice.png", picturePNG(t), map[string]any{"tenant_id": tc.tenant}, setups, false, visionSettings{})
 			if err != nil {
 				t.Fatal(err)
@@ -351,7 +351,7 @@ func TestImageOCRSelectionRespectsSwitchAndSVG(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			setups := imageSwitchSetups(t, tc.ocr)
 			setups["image"]["ocr_model_id"] = "model-b"
-			res, _, err := maybeDispatchImage(t.Context(), db, utility.FileTypeVISUAL,
+			res, _, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), db, utility.FileTypeVISUAL,
 				tc.filename, tc.data, map[string]any{"tenant_id": "tenant-1"}, setups, false, visionSettings{})
 			if err != nil || len(res.JSON) != 1 {
 				t.Fatalf("err=%v result=%+v", err, res)
@@ -390,7 +390,7 @@ func TestImageOCRDoesNotUseGlobalEndpoint(t *testing.T) {
 // OCR requests even when the model was explicitly selected.
 func TestImageOCRKeepsCloudSSRFGuard(t *testing.T) {
 	db, requests := imageOCRFixture(t, "PaddleOCR", false)
-	common.AllowAnyHostForTest = false
+	t.Setenv(common.EnvAllowAnyHost, "")
 	_, err := extractSelectedImageOCR(t.Context(), db, "tenant-1", "model-b", picturePNG(t))
 	if err == nil || !strings.Contains(err.Error(), "non-public address") || len(requests.list()) != 0 {
 		t.Fatalf("cloud transport policy changed: err=%v requests=%v", err, requests.list())

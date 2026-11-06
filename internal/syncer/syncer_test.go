@@ -239,6 +239,11 @@ func setupSyncerDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sqlite connection: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	if err = db.AutoMigrate(&entity.Connector{}, &entity.Connector2Kb{}, &entity.Knowledgebase{}, &entity.SyncLogs{}, &entity.Document{}); err != nil {
 		t.Fatalf("migrate sqlite: %v", err)
 	}
@@ -1224,6 +1229,43 @@ func TestCancelStopsRunningSync(t *testing.T) {
 	}
 	if connectorRow.Status != dao.SyncStatusCancel {
 		t.Fatalf("connector status = %s, want cancel", connectorRow.Status)
+	}
+}
+
+func TestCheckTaskCanceledDuringQuery(t *testing.T) {
+	queryErr := errors.New("interrupted (9)")
+	for _, tt := range []struct {
+		name     string
+		cancel   bool
+		queryErr error
+		wantErr  error
+	}{
+		{"canceled_query_error", true, queryErr, context.Canceled},
+		{"canceled_successful_query", true, nil, context.Canceled},
+		{"query_error", false, queryErr, queryErr},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupSyncerDB(t)
+			insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+
+			// Cancel as the status query returns, independent of goroutine timing.
+			if err := db.Callback().Query().After("gorm:query").Register("test:cancel_status_query", func(tx *gorm.DB) {
+				if tt.cancel {
+					cancel()
+				}
+				if tt.queryErr != nil {
+					tx.AddError(tt.queryErr)
+				}
+			}); err != nil {
+				t.Fatalf("register query callback: %v", err)
+			}
+
+			if err := checkTaskCanceled(dao.NewSyncTaskDAO(db), ctx, "task-1"); !errors.Is(err, tt.wantErr) {
+				t.Fatalf("checkTaskCanceled error = %v, want %v", err, tt.wantErr)
+			}
+		})
 	}
 }
 

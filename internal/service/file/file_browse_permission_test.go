@@ -7,6 +7,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 )
 
 func seedFileBrowsing(t *testing.T) {
@@ -19,6 +20,9 @@ func seedFileBrowsing(t *testing.T) {
 		if err := db.Create(&membership).Error; err != nil {
 			t.Fatal(err)
 		}
+	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "owner", "owner", "reader"); err != nil {
+		t.Fatalf("prepare tenant permission fixture: %v", err)
 	}
 	for _, entry := range []entity.File{
 		{ID: "root", ParentID: "root", TenantID: "owner", CreatedBy: "owner", Name: "/", Type: FileTypeFolder},
@@ -36,8 +40,8 @@ func seedFileBrowsing(t *testing.T) {
 func TestTenantMemberSeesOnlyReadableFilesAndPaths(t *testing.T) {
 	seedFileBrowsing(t)
 	svc := testFileService()
-	ctx := t.Context()
-	list, err := svc.ListFilesForTenant(ctx, "reader", "owner", "", 1, 1, nil, "")
+	ctx := permission.WithIdentity(t.Context(), "reader", "owner")
+	list, err := svc.ListFilesForTenant(ctx, "owner", "", 1, 1, nil, "")
 	if err != nil {
 		t.Fatalf("list shared tenant files: %v", err)
 	}
@@ -50,20 +54,20 @@ func TestTenantMemberSeesOnlyReadableFilesAndPaths(t *testing.T) {
 	if list.Files[0]["operator_permission"] != permission.ResourcePermissionOwner {
 		t.Fatalf("owner file permission mask = %v, want %d", list.Files[0]["operator_permission"], permission.ResourcePermissionOwner)
 	}
-	ancestors, err := svc.GetAllParentFoldersForTenant(ctx, "reader", "owner", "tags")
+	ancestors, err := svc.GetAllParentFoldersForTenant(ctx, "owner", "tags")
 	if err != nil {
 		t.Fatalf("resolve shared tenant tag file: %v", err)
 	}
 	if len(ancestors) != 2 {
 		t.Fatalf("ancestor count = %d, want 2", len(ancestors))
 	}
-	if _, err := svc.GetAllParentFoldersForTenant(ctx, "reader", "owner", "private"); !errors.Is(err, permission.ErrPermissionDenied) {
+	if _, err := svc.GetAllParentFoldersForTenant(ctx, "owner", "private"); !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("resolve private file path error = %v, want permission denied", err)
 	}
-	if _, err := svc.GetFileContent(ctx, "reader", "private"); !errors.Is(err, permission.ErrPermissionDenied) {
+	if _, err := svc.GetFileContent(ctx, "private"); !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("read private file error = %v, want permission denied", err)
 	}
-	if err := svc.MoveFiles(ctx, "reader", []string{"private"}, "", "new-private.txt"); !errors.Is(err, permission.ErrPermissionDenied) {
+	if err := svc.MoveFiles(ctx, []string{"private"}, "", "new-private.txt"); !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("rename private file error = %v, want permission denied", err)
 	}
 }
@@ -71,16 +75,18 @@ func TestTenantMemberSeesOnlyReadableFilesAndPaths(t *testing.T) {
 func TestTenantFileBrowsingRejectsNonmember(t *testing.T) {
 	seedFileBrowsing(t)
 	svc := testFileService()
-	if _, err := svc.ListFilesForTenant(t.Context(), "outsider", "owner", "", 1, 100, nil, ""); err == nil {
+	outsiderCtx := permission.WithIdentity(t.Context(), "outsider", "owner")
+	if _, err := svc.ListFilesForTenant(outsiderCtx, "owner", "", 1, 100, nil, ""); err == nil {
 		t.Fatal("nonmember listed another tenant's files")
 	}
-	if _, err := svc.GetAllParentFoldersForTenant(t.Context(), "outsider", "owner", "tags"); err == nil {
+	if _, err := svc.GetAllParentFoldersForTenant(outsiderCtx, "owner", "tags"); err == nil {
 		t.Fatal("nonmember resolved another tenant's file path")
 	}
 	if err := dao.DB.Model(&entity.UserTenant{}).Where("id = ?", "reader-membership").Update("status", "0").Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.ListFilesForTenant(t.Context(), "reader", "owner", "", 1, 100, nil, ""); err == nil {
+	readerCtx := permission.WithIdentity(t.Context(), "reader", "owner")
+	if _, err := svc.ListFilesForTenant(readerCtx, "owner", "", 1, 100, nil, ""); err == nil {
 		t.Fatal("inactive member listed another tenant's files")
 	}
 }
@@ -88,10 +94,11 @@ func TestTenantFileBrowsingRejectsNonmember(t *testing.T) {
 func TestTenantFileBrowsingRejectsForeignEntries(t *testing.T) {
 	seedFileBrowsing(t)
 	svc := testFileService()
-	if _, err := svc.ListFilesForTenant(t.Context(), "reader", "owner", "foreign-root", 1, 100, nil, ""); !errors.Is(err, permission.ErrResourceNotFound) {
+	readerCtx := permission.WithIdentity(t.Context(), "reader", "owner")
+	if _, err := svc.ListFilesForTenant(readerCtx, "owner", "foreign-root", 1, 100, nil, ""); !errors.Is(err, permission.ErrResourceNotFound) {
 		t.Fatalf("foreign folder error = %v, want resource not found", err)
 	}
-	if _, err := svc.GetAllParentFoldersForTenant(t.Context(), "reader", "owner", "foreign-tags"); !errors.Is(err, permission.ErrResourceNotFound) {
+	if _, err := svc.GetAllParentFoldersForTenant(readerCtx, "owner", "foreign-tags"); !errors.Is(err, permission.ErrResourceNotFound) {
 		t.Fatalf("foreign file error = %v, want resource not found", err)
 	}
 }

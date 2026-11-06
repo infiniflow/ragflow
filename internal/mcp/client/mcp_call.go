@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"ragflow/internal/utility"
 	"time"
 )
@@ -41,7 +42,7 @@ type CallOptions struct {
 	HTTPClient *http.Client
 	// AllowPrivateHosts relaxes the public-routability requirement so
 	// self-hosted MCP servers on private/docker networks work. Callers source
-	// it from the deployment flag (RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS); scheme
+	// it from the deployment flag (ALLOW_ANY_HOST); scheme
 	// validation, DNS resolution, and IP pinning still apply.
 	AllowPrivateHosts bool
 }
@@ -84,10 +85,19 @@ func CallTool(ctx context.Context, opts CallOptions) (*CallResult, error) {
 	}
 	if opts.HTTPClient == nil {
 		opts.HTTPClient = utility.PinnedHTTPClient(hostname, resolvedIP, opts.Timeout)
+	} else {
+		opts.HTTPClient = restrictClientRedirects(opts.HTTPClient, opts.AllowPrivateHosts)
 	}
 	headers, headerErr := renderHeaders(opts.Headers, opts.Variables)
 	if headerErr != nil {
 		return nil, headerErr
+	}
+	// The private-host allowlist also permits http:// endpoints; never send
+	// configured credential headers in cleartext.
+	if len(headers) > 0 {
+		if u, perr := url.Parse(opts.URL); perr == nil && u.Scheme == "http" {
+			return nil, errors.New("MCP refuses to send credential headers over cleartext http")
+		}
 	}
 	connectCtx, cancel := context.WithTimeout(ctx, opts.Timeout)
 	defer cancel()

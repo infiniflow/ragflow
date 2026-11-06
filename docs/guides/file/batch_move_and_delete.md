@@ -19,6 +19,8 @@ Checkboxes are available on the left side of the file list. After you select at 
 3. Select the target folder in the directory tree.
 4. Click **Save** to save the move result.
 
+![Move selected files](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/batch_move.jpg)
+
 ## Batch Delete
 
 1. Select one or more files.
@@ -27,3 +29,5 @@ Checkboxes are available on the left side of the file list. After you select at 
 4. After confirming that everything is correct, submit the deletion.
 
 Some system folders, external data source files, or files from special sources cannot be selected or cannot perform certain batch operations. This is normal behavior caused by permission and source controls.
+
+![Delete selected files](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/batch_delete.jpg)

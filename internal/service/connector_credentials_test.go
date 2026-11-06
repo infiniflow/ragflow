@@ -76,7 +76,7 @@ func TestUpdateConnectorEncryptsCredentialsAtRest(t *testing.T) {
 	db := setupConnectorCredentialsServiceDB(t)
 	insertConnectorWithToken(t, db, "conn-1", "old-token")
 
-	connector, code, err := NewConnectorService().UpdateConnector(t.Context(), "conn-1", "tenant-1", &UpdateConnectorRequest{
+	connector, code, err := NewConnectorService().UpdateConnector(serviceTestContext(t, "tenant-1", "tenant-1"), "conn-1", &UpdateConnectorRequest{
 		Config: entity.JSONMap{"credentials": map[string]interface{}{"api_token": "tok-123"}, "wiki": "y"},
 	})
 	if err != nil || code != common.CodeSuccess {
@@ -95,7 +95,7 @@ func TestCreateConnectorEncryptsCredentialsAtRest(t *testing.T) {
 	t.Setenv(common.EnvRAGFlowConnectorKey, testConnectorKey)
 	db := setupConnectorCredentialsServiceDB(t)
 
-	connector, err := NewConnectorService().CreateConnector(t.Context(), "tenant-1", &CreateConnectorRequest{
+	connector, err := NewConnectorService().CreateConnector(serviceTestContext(t, "tenant-1", "tenant-1"), &CreateConnectorRequest{
 		Name:   "conn",
 		Source: "mock",
 		Config: entity.JSONMap{"credentials": map[string]interface{}{"api_token": "tok-123"}},
@@ -118,7 +118,7 @@ func TestGetConnectorDecryptsCredentials(t *testing.T) {
 	insertConnectorWithToken(t, db, "conn-1", "tok-123")
 	svc := NewConnectorService()
 
-	connector, err := svc.GetConnector(t.Context(), "conn-1", "tenant-1")
+	connector, err := svc.GetConnector(serviceTestContext(t, "tenant-1", "tenant-1"), "conn-1")
 	if err != nil {
 		t.Fatalf("GetConnector: %v", err)
 	}
@@ -127,7 +127,7 @@ func TestGetConnectorDecryptsCredentials(t *testing.T) {
 	}
 
 	t.Setenv(common.EnvRAGFlowConnectorKey, "")
-	_, err = svc.GetConnector(t.Context(), "conn-1", "tenant-1")
+	_, err = svc.GetConnector(serviceTestContext(t, "tenant-1", "tenant-1"), "conn-1")
 	if err == nil || err.Error() != "connector credentials are encrypted but RAGFLOW_CONNECTOR_KEY is not set" {
 		t.Fatalf("GetConnector without key error = %v", err)
 	}
@@ -141,7 +141,7 @@ func TestConnectorWithLostKeyCanBeUpdatedAndDeleted(t *testing.T) {
 	t.Setenv(common.EnvRAGFlowConnectorKey, "")
 	svc := NewConnectorService()
 
-	connector, code, err := svc.UpdateConnector(t.Context(), "conn-1", "tenant-1", &UpdateConnectorRequest{
+	connector, code, err := svc.UpdateConnector(serviceTestContext(t, "tenant-1", "tenant-1"), "conn-1", &UpdateConnectorRequest{
 		Config: entity.JSONMap{"credentials": map[string]interface{}{"api_token": "new-token"}},
 	})
 	if err != nil || code != common.CodeSuccess {
@@ -151,7 +151,7 @@ func TestConnectorWithLostKeyCanBeUpdatedAndDeleted(t *testing.T) {
 		t.Fatalf("returned config = %#v, want the new credentials", connector.Config)
 	}
 
-	deleted, code, err := svc.DeleteConnector(t.Context(), "conn-2", "tenant-1")
+	deleted, code, err := svc.DeleteConnector(serviceTestContext(t, "tenant-1", "tenant-1"), "conn-2")
 	if err != nil || code != common.CodeSuccess || !deleted {
 		t.Fatalf("DeleteConnector: deleted=%v code=%v err=%v", deleted, code, err)
 	}
@@ -197,7 +197,7 @@ func TestUpdateConnectorWithLostKeyAndNoNewConfigChangesNothing(t *testing.T) {
 			}
 			t.Setenv(common.EnvRAGFlowConnectorKey, tc.key)
 
-			_, code, err := NewConnectorService().UpdateConnector(t.Context(), "conn-1", "tenant-1", tc.req)
+			_, code, err := NewConnectorService().UpdateConnector(serviceTestContext(t, "tenant-1", "tenant-1"), "conn-1", tc.req)
 			if err == nil || err.Error() != tc.err || code != common.CodeServerError {
 				t.Fatalf("UpdateConnector: code=%v err=%v, want CodeServerError and %q", code, err, tc.err)
 			}
@@ -232,7 +232,7 @@ func TestUpdateConnectorRejectsEncryptedCredentialsInput(t *testing.T) {
 	insertConnectorWithToken(t, db, "conn-1", "tok-123")
 	before := rawConnectorConfigColumn(t, db, "conn-1")
 
-	_, code, err := NewConnectorService().UpdateConnector(t.Context(), "conn-1", "tenant-1", &UpdateConnectorRequest{
+	_, code, err := NewConnectorService().UpdateConnector(serviceTestContext(t, "tenant-1", "tenant-1"), "conn-1", &UpdateConnectorRequest{
 		Config: entity.JSONMap{"credentials": "enc:v1:abc"},
 	})
 	if !errors.Is(err, ErrConnectorEncryptedCredentials) || code != common.CodeDataError {
@@ -247,7 +247,7 @@ func TestCreateConnectorRejectsEncryptedCredentialsInput(t *testing.T) {
 	t.Setenv(common.EnvRAGFlowConnectorKey, testConnectorKey)
 	db := setupConnectorCredentialsServiceDB(t)
 
-	_, err := NewConnectorService().CreateConnector(t.Context(), "tenant-1", &CreateConnectorRequest{
+	_, err := NewConnectorService().CreateConnector(serviceTestContext(t, "tenant-1", "tenant-1"), &CreateConnectorRequest{
 		Name:   "conn",
 		Source: "mock",
 		Config: entity.JSONMap{"credentials": "enc:v1:abc"},
@@ -278,7 +278,7 @@ func TestConnectorServiceTestConnectorDecryptsStoredCredentials(t *testing.T) {
 	svc := NewConnectorService()
 	svc.connectorRegistry = registry
 
-	if err := svc.TestConnector(t.Context(), "conn-1", "tenant-1", nil); err != nil {
+	if err := svc.TestConnector(serviceTestContext(t, "tenant-1", "tenant-1"), "conn-1", nil); err != nil {
 		t.Fatalf("TestConnector: %v", err)
 	}
 	if connectorToken(entity.ConnectorConfig(capturedConfig)) != "tok-123" {
@@ -287,10 +287,10 @@ func TestConnectorServiceTestConnectorDecryptsStoredCredentials(t *testing.T) {
 
 	t.Setenv(common.EnvRAGFlowConnectorKey, "")
 	request := entity.JSONMap{"source": "mock", "config": entity.JSONMap{"credentials": map[string]interface{}{"api_token": "new-token"}}}
-	if err := svc.TestConnector(t.Context(), "conn-1", "tenant-1", request); err != nil {
+	if err := svc.TestConnector(serviceTestContext(t, "tenant-1", "tenant-1"), "conn-1", request); err != nil {
 		t.Fatalf("TestConnector with request config and no key: %v", err)
 	}
-	err := svc.TestConnector(t.Context(), "conn-1", "tenant-1", nil)
+	err := svc.TestConnector(serviceTestContext(t, "tenant-1", "tenant-1"), "conn-1", nil)
 	if err == nil || !strings.Contains(err.Error(), "RAGFLOW_CONNECTOR_KEY is not set") {
 		t.Fatalf("TestConnector with stored config and no key error = %v", err)
 	}
@@ -305,7 +305,7 @@ func TestConnectorServiceTestConnectorRejectsEncryptedCredentialsInput(t *testin
 	svc := NewConnectorService()
 	svc.connectorRegistry = registry
 
-	err := svc.TestConnector(t.Context(), "missing", "tenant-1", entity.JSONMap{
+	err := svc.TestConnector(serviceTestContext(t, "tenant-1", "tenant-1"), "missing", entity.JSONMap{
 		"source": "mock",
 		"config": entity.JSONMap{"credentials": "enc:v1:abc"},
 	})

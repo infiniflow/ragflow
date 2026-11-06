@@ -17,14 +17,13 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"ragflow/internal/common"
-	"ragflow/internal/engine/clickhouse"
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/server"
 	"ragflow/internal/server/local"
-	"strconv"
 	"time"
 
 	"ragflow/internal/service"
@@ -35,13 +34,15 @@ import (
 
 // UserHandler user handler
 type UserHandler struct {
-	userService *service.UserService
+	userService       *service.UserService
+	userTenantService *service.UserTenantService
 }
 
 // NewUserHandler create user handler
-func NewUserHandler(userService *service.UserService) *UserHandler {
+func NewUserHandler(userService *service.UserService, userTenantService *service.UserTenantService) *UserHandler {
 	return &UserHandler{
-		userService: userService,
+		userService:       userService,
+		userTenantService: userTenantService,
 	}
 }
 
@@ -57,11 +58,6 @@ const oauthAuthCookie = "ragflow_auth"
 // Authorization header on subsequent fetches. The server checks the token
 // signature and expiry on each request.
 func setOAuthAuthCookie(c *gin.Context, token string) {
-	// the SPA's bootstrap credential after the OAuth redirect. The
-	// SPA reads it via document.cookie and copies it into the
-	// Authorization header. Setting HttpOnly would break the login
-	// flow. The API validates the token signature and expiry on each request.
-	// codeql[go/cookie-httponly-not-set] Intentional: this cookie is
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     oauthAuthCookie,
 		Value:    token,
@@ -82,30 +78,44 @@ func setOAuthAuthCookie(c *gin.Context, token string) {
 // @Router /api/v1/users [post]
 func (h *UserHandler) Register(c *gin.Context) {
 	ctx := c.Request.Context()
+	startAt := time.Now()
+	operationLog := &common.OperationLog{
+		EventTime:  startAt,
+		Operation:  "register",
+		APIPath:    c.FullPath(),
+		HTTPMethod: c.Request.Method,
+		IPAddress:  c.ClientIP(),
+	}
+	defer func() {
+		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.Audit(operationLog)
+	}()
+
 	var req service.RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, false, err.Error())
+		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
 	user, code, err := h.userService.Register(ctx, &req)
 	if err != nil {
-		var data interface{} = false
-		if code == common.CodeExceptionError {
-			data = nil
-		}
-		common.ResponseWithCodeData(c, code, data, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
+	operationLog.UserID = user.ID
 
 	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, false, err.Error())
+		common.RespondError(c, common.CodeServerError, err.Error())
+		operationLog.Code = int(common.CodeBadRequest)
+		operationLog.Error = err
 		return
 	}
 	authToken, err := issueUserAccessToken(user, secretKey)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, false, "Failed to generate auth token")
+		common.RespondError(c, common.CodeServerError, "Failed to generate auth token")
+		operationLog.Code = int(common.CodeBadRequest)
+		operationLog.Error = err
 		return
 	}
 
@@ -117,7 +127,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
 	profile := h.userService.GetUserProfile(ctx, user)
-	common.SuccessWithData(c, profile, fmt.Sprintf("%s, welcome aboard!", req.Nickname))
+	common.RespondSuccess(c, profile, fmt.Sprintf("%s, welcome aboard!", req.Nickname))
 }
 
 // Login user login
@@ -139,30 +149,24 @@ func (h *UserHandler) Login(c *gin.Context) {
 	}
 	defer func() {
 		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		clickhouseDriver := clickhouse.GetDriver()
-		err := clickhouseDriver.SaveOperationLog(operationLog)
-		if err != nil {
-			common.ResponseWithCodeData(c, common.CodeServerError, false, err.Error())
-			return
-		}
+		common.Audit(operationLog)
 	}()
 
 	var req service.LoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, false, err.Error())
-		operationLog.ErrorCode = uint16(common.CodeBadRequest)
-		operationLog.Message = err.Error()
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.RespondError(c, common.CodeBadRequest, err.Error())
+		operationLog.Code = int(common.CodeBadRequest)
+		operationLog.Error = err
 		return
 	}
-	operationLog.ResourceName = req.Username
+	operationLog.Resources = make(map[string]any)
+	operationLog.Resources["user_name"] = req.Username
 
 	user, code, err := h.userService.Login(ctx, &req)
 	if err != nil {
-		common.ResponseWithCodeData(c, code, false, err.Error())
-		operationLog.ErrorCode = uint16(code)
-		operationLog.Message = err.Error()
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.RespondError(c, code, err.Error())
+		operationLog.Code = int(code)
+		operationLog.Error = err
 		return
 	}
 	operationLog.UserID = user.ID
@@ -170,19 +174,17 @@ func (h *UserHandler) Login(c *gin.Context) {
 	// Sign the access token with the active tenant context.
 	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
-		errMessage := fmt.Sprintf("Failed to get secret key: %s", err.Error())
-		common.ResponseWithCodeData(c, common.CodeServerError, false, errMessage)
-		operationLog.ErrorCode = uint16(common.CodeServerError)
-		operationLog.Message = errMessage
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		errMessage := fmt.Errorf("failed to get secret key: %s", err.Error())
+		common.RespondError(c, common.CodeServerError, errMessage.Error())
+		operationLog.Code = int(common.CodeServerError)
+		operationLog.Error = errMessage
 		return
 	}
 	authToken, err := issueUserAccessToken(user, secretKey)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, false, "Failed to generate auth token")
-		operationLog.ErrorCode = uint16(common.CodeServerError)
-		operationLog.Message = "Failed to generate auth token"
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.RespondError(c, common.CodeServerError, "Failed to generate auth token")
+		operationLog.Code = int(common.CodeServerError)
+		operationLog.Error = err
 		return
 	}
 
@@ -196,7 +198,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
 	profile := h.userService.GetUserProfile(ctx, user)
-	common.SuccessWithData(c, profile, "Welcome back!")
+	common.RespondSuccess(c, profile, "Welcome back!")
 }
 
 // LoginByEmail user login by email
@@ -218,65 +220,56 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 	}
 	defer func() {
 		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		clickhouseDriver := clickhouse.GetDriver()
-		err := clickhouseDriver.SaveOperationLog(operationLog)
-		if err != nil {
-			common.ResponseWithCodeData(c, common.CodeServerError, false, err.Error())
-			return
-		}
+		common.Audit(operationLog)
 	}()
 
 	var req service.EmailLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, false, err.Error())
-		operationLog.ErrorCode = uint16(common.CodeBadRequest)
-		operationLog.Message = err.Error()
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.RespondError(c, common.CodeBadRequest, err.Error())
+		operationLog.Code = int(common.CodeBadRequest)
+		operationLog.Error = err
 		return
 	}
-	operationLog.ResourceName = req.Email
+	operationLog.Resources = make(map[string]any)
+	operationLog.Resources["user_name"] = req.Email
 
 	if !local.IsAdminAvailable() {
 		adminStatus := local.GetAdminStatus()
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, "No", adminStatus.Reason)
-		operationLog.ErrorCode = uint16(common.CodeAuthenticationError)
-		operationLog.Message = adminStatus.Reason
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.RespondError(c, common.CodeAuthenticationError, adminStatus.Reason)
+		operationLog.Code = int(common.CodeAuthenticationError)
+		operationLog.Error = errors.New(adminStatus.Reason)
 		return
 	}
 
 	user, code, err := h.userService.LoginByEmail(ctx, &req)
 	if err != nil {
-		common.ResponseWithCodeData(c, code, false, err.Error())
-		operationLog.ErrorCode = uint16(code)
-		operationLog.Message = err.Error()
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.RespondError(c, code, err.Error())
+		operationLog.Code = int(code)
+		operationLog.Error = err
 		return
 	}
 	operationLog.UserID = user.ID
 
 	if user.IsSuperuser != nil && *user.IsSuperuser {
-		common.ResponseWithCodeData(c, common.CodeForbidden, false, "super admin should not login to this page.")
-		operationLog.ErrorCode = uint16(common.CodeForbidden)
-		operationLog.Message = "super admin should not login to this page."
+		common.RespondError(c, common.CodeForbidden, "super admin should not login to this page.")
+		operationLog.Code = int(common.CodeForbidden)
+		operationLog.Error = fmt.Errorf("super admin should not login to this page")
 		return
 	}
 
 	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
-		errorMessage := fmt.Sprintf("Failed to get secret key: %s", err.Error())
-		common.ResponseWithCodeData(c, common.CodeServerError, false, errorMessage)
-		operationLog.ErrorCode = uint16(common.CodeServerError)
-		operationLog.Message = errorMessage
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		errorMessage := fmt.Errorf("failed to get secret key: %s", err.Error())
+		common.RespondError(c, common.CodeServerError, errorMessage.Error())
+		operationLog.Code = int(common.CodeServerError)
+		operationLog.Error = errorMessage
 		return
 	}
 	authToken, err := issueUserAccessToken(user, secretKey)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, false, "Failed to generate auth token")
-		operationLog.ErrorCode = uint16(common.CodeServerError)
-		operationLog.Message = "Failed to generate auth token"
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.RespondError(c, common.CodeServerError, "Failed to generate auth token")
+		operationLog.Code = int(common.CodeServerError)
+		operationLog.Error = err
 		return
 	}
 	setOAuthAuthCookie(c, authToken)
@@ -287,7 +280,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
 	profile := h.userService.GetUserProfile(ctx, user)
-	common.SuccessWithData(c, profile, "Welcome back!")
+	common.RespondSuccess(c, profile, "Welcome back!")
 }
 
 // GetUserByID get user by ID
@@ -299,20 +292,15 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 // @Router /api/v1/users/{id} [get]
 func (h *UserHandler) GetUserByID(c *gin.Context) {
 	ctx := c.Request.Context()
-	idStr := c.Param("id")
-	id, err := strconv.ParseUint(idStr, 10, 32)
+	id := c.Param("id")
+
+	user, code, err := h.userService.GetUserByID(ctx, id)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, false, "invalid user id")
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
-	user, code, err := h.userService.GetUserByID(ctx, uint(id))
-	if err != nil {
-		common.ResponseWithCodeData(c, code, false, err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, user, "success")
+	common.RespondSuccess(c, user, "success")
 }
 
 // Logout user logout
@@ -334,12 +322,7 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	}
 	defer func() {
 		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		clickhouseDriver := clickhouse.GetDriver()
-		err := clickhouseDriver.SaveOperationLog(operationLog)
-		if err != nil {
-			common.ResponseWithCodeData(c, common.CodeServerError, false, err.Error())
-			return
-		}
+		common.Audit(operationLog)
 	}()
 
 	http.SetCookie(c.Writer, &http.Cookie{
@@ -355,22 +338,20 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	// Same as AuthMiddleware@auth.go
 	token := c.GetHeader("Authorization")
 	if token == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, common.CodeUnauthorized, nil, "Missing Authorization header")
+		common.Respond(c, http.StatusUnauthorized, common.CodeUnauthorized, nil, "missing authorization header")
 		c.Abort()
-		operationLog.ErrorCode = uint16(common.CodeUnauthorized)
-		operationLog.Message = "Missing Authorization header"
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		operationLog.Code = int(common.CodeUnauthorized)
+		operationLog.Error = fmt.Errorf("missing authorization header")
 		return
 	}
 
 	// Get user by access token
 	identity, code, err := h.userService.ResolveAccessToken(ctx, token)
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, code, nil, "Invalid access token")
+		common.Respond(c, http.StatusUnauthorized, code, nil, "Invalid access token")
 		c.Abort()
-		operationLog.ErrorCode = uint16(code)
-		operationLog.Message = "Invalid access token"
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		operationLog.Code = int(code)
+		operationLog.Error = err
 		return
 	}
 	user := identity.User
@@ -379,14 +360,13 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	// Logout user
 	code, err = h.userService.Logout(ctx, user)
 	if err != nil {
-		common.ResponseWithCodeData(c, code, false, err.Error())
-		operationLog.ErrorCode = uint16(code)
-		operationLog.Message = err.Error()
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.RespondError(c, code, err.Error())
+		operationLog.Code = int(code)
+		operationLog.Error = err
 		return
 	}
 
-	common.SuccessWithData(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // Info get user profile information
@@ -400,14 +380,14 @@ func (h *UserHandler) Info(c *gin.Context) {
 	ctx := c.Request.Context()
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	// Get user profile
 	profile := h.userService.GetUserProfile(ctx, user)
 
-	common.SuccessWithData(c, profile, "success")
+	common.RespondSuccess(c, profile, "success")
 }
 
 // Setting update user settings
@@ -422,29 +402,25 @@ func (h *UserHandler) Setting(c *gin.Context) {
 	ctx := c.Request.Context()
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	// Parse request
 	var req service.UpdateSettingsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, false, err.Error())
+		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
 	// Update user settings
 	code, err := h.userService.UpdateUserSettings(ctx, user, &req)
 	if err != nil {
-		if code == common.CodeExceptionError {
-			common.ResponseWithCodeData(c, common.CodeExceptionError, false, err.Error())
-			return
-		}
-		common.ResponseWithCodeData(c, code, false, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 // ChangePassword change user password
@@ -459,41 +435,25 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 	ctx := c.Request.Context()
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
 		return
 	}
 
 	// Parse request
 	var req service.ChangePasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, false, err.Error())
+		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
 	// Change password
 	code, err := h.userService.ChangePassword(ctx, user, &req)
 	if err != nil {
-		common.ResponseWithCodeData(c, code, false, err.Error())
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, true, "password changed successfully")
-}
-
-// GetLoginChannels get all supported authentication channels
-// @Summary Get Login Channels
-// @Description Get all supported OAuth authentication channels
-// @Tags users
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/user/login/channels [get]
-func (h *UserHandler) GetLoginChannelsDeprecated(c *gin.Context) {
-	channels, code, err := h.userService.GetLoginChannels()
-	if err != nil {
-		common.ResponseWithCodeData(c, code, []interface{}{}, "Load channels failure, error: "+err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, channels, "success")
+	common.RespondSuccess(c, nil, "password changed successfully")
 }
 
 // SetTenantInfo update tenant information
@@ -501,23 +461,41 @@ func (h *UserHandler) GetLoginChannelsDeprecated(c *gin.Context) {
 // @Description Update tenant model configuration
 // @Tags users
 // @Security ApiKeyAuth
-// @Param request body service.SetTenantInfoRequest true "tenant info"
+// @Param request body service.SetModelSettingsRequest true "tenant model settings"
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/user/set_tenant_info [post]
 func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 	ctx := c.Request.Context()
+	startAt := time.Now()
+	operationLog := &common.OperationLog{
+		EventTime:  startAt,
+		Operation:  "set_tenant_info",
+		APIPath:    c.FullPath(),
+		HTTPMethod: c.Request.Method,
+		IPAddress:  c.ClientIP(),
+	}
+	defer func() {
+		operationLog.DurationMS = time.Since(startAt).Milliseconds()
+		common.Audit(operationLog)
+	}()
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
+		common.RespondError(c, errorCode, errorMessage)
+		operationLog.Code = int(errorCode)
+		operationLog.Error = errors.New(errorMessage)
 		return
 	}
+	operationLog.UserID = user.ID
 
 	requiredKeys := []string{"tenant_id", "asr_id", "embd_id", "img2txt_id", "llm_id"}
 	missingArgumentMessage := "required argument are missing: tenant_id,asr_id,embd_id,img2txt_id,llm_id; "
 
 	var payload map[string]interface{}
 	if err := c.ShouldBindBodyWith(&payload, binding.JSON); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, missingArgumentMessage)
+		common.RespondError(c, common.CodeArgumentError, missingArgumentMessage)
+		operationLog.Code = int(common.CodeArgumentError)
+		operationLog.Error = err
 		return
 	}
 
@@ -528,11 +506,13 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 		}
 	}
 	if len(missing) > 0 {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("required argument are missing: %s; ", joinStrings(missing)))
+		common.RespondError(c, common.CodeArgumentError, fmt.Sprintf("required argument are missing: %s; ", joinStrings(missing)))
+		operationLog.Code = int(common.CodeArgumentError)
+		operationLog.Error = errors.New(fmt.Sprintf("required argument are missing: %s; ", joinStrings(missing)))
 		return
 	}
 
-	req := service.SetTenantInfoRequest{Raw: payload}
+	req := service.SetModelSettingsRequest{Raw: payload}
 	if value, ok := payload["tenant_id"].(string); ok {
 		req.TenantID = &value
 	}
@@ -555,13 +535,15 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 		req.TTSID = &value
 	}
 
-	code, err := h.userService.SetTenantInfo(ctx, user.ID, &req)
+	code, err := h.userTenantService.SetModelSettings(ctx, &req)
 	if err != nil {
-		common.ResponseWithCodeData(c, code, nil, err.Error())
+		common.RespondError(c, code, err.Error())
+		operationLog.Code = int(code)
+		operationLog.Error = err
 		return
 	}
 
-	common.SuccessWithData(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
 func joinStrings(values []string) string {
@@ -573,166 +555,4 @@ func joinStrings(values []string) string {
 		result += "," + values[i]
 	}
 	return result
-}
-
-// ---- Forgot-password flow (fixes #15282) -----------------------------
-//
-// Mirrors api/apps/restful_apis/user_api.py /auth/password/... endpoints.
-//
-// Contract divergence from Python: the Python endpoint returns a
-// rendered image (Content-Type: image/JPEG) from the python-captcha
-// library and stores the captcha under captcha:<email>. This Go port
-// returns a server-issued captcha_id plus a PNG captcha image (as a
-// data URL the FE drops straight into <img src>), and stores
-// captcha:<captcha_id>. The plaintext text only ever appears as
-// raster pixels — the OTP step reuses the captcha_id to look the
-// expected text up server-side.
-//
-// The PNG is rendered using stdlib `image/png` + a hand-rolled 5x7
-// bitmap font in internal/utility/captcha_png.go, because no Go
-// captcha library is vendored in go.mod (no network during build).
-// PR #15290 review (Hz-186) explicitly asked for a raster after the
-// earlier SVG implementation: the SVG embedded the answer in <text>
-// nodes, so a scripted client could base64-decode the response and
-// grep the captcha directly. PNG closes that attack — the response
-// bytes never reference the original text.
-
-type forgotCaptchaRequest struct {
-	Email string `form:"email" json:"email"`
-}
-
-// ForgotCaptcha POST /api/v1/auth/password/forgot/captcha
-// @Summary Issue forgot-password captcha
-// @Description Generates a captcha for the email and stores it in Redis
-// for 60 seconds keyed by a server-issued captcha_id. Returns the id
-// and a PNG image (data URL) the FE renders inside <img src>. The
-// plaintext code never appears in the response — only as raster
-// pixels — so a scripted client can't regex it out (fixes the
-// SVG-text leak from the previous iteration, per PR #15290 review).
-// @Tags auth
-// @Accept json
-// @Produce json
-// @Param email query string false "user email (also accepted in JSON body)"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/auth/password/forgot/captcha [post]
-func (h *UserHandler) ForgotCaptcha(c *gin.Context) {
-	var req forgotCaptchaRequest
-	// Python reads from request.args (query string), accept both for parity.
-	if v := c.Query("email"); v != "" {
-		req.Email = v
-	} else {
-		_ = c.ShouldBindJSON(&req)
-	}
-
-	ctx := c.Request.Context()
-	captchaID, captchaImage, errCode, err := h.userService.ForgotIssueCaptcha(ctx, req.Email)
-	if err != nil {
-		common.ResponseWithCodeData(c, errCode, false, err.Error())
-		return
-	}
-	common.SuccessWithData(c, gin.H{
-		"captcha_id":    captchaID,
-		"captcha_image": captchaImage,
-	}, "captcha issued")
-}
-
-type forgotSendOTPRequest struct {
-	Email     string `json:"email"`
-	CaptchaID string `json:"captcha_id"`
-	Captcha   string `json:"captcha"`
-}
-
-// ForgotSendOTP POST /api/v1/auth/password/forgot/otp
-// @Summary Send forgot-password OTP
-// @Description Validates the captcha (looked up by captcha_id), then
-// mints a one-time code, stores a salted hash in Redis (5 min TTL,
-// attempt cap, resend cooldown), and emails the OTP to the user.
-// @Tags auth
-// @Param request body forgotSendOTPRequest true "email + captcha_id + captcha"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/auth/password/forgot/otp [post]
-func (h *UserHandler) ForgotSendOTP(c *gin.Context) {
-	var req forgotSendOTPRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, false, err.Error())
-		return
-	}
-	ctx := c.Request.Context()
-	errCode, err := h.userService.ForgotSendOTP(ctx, req.Email, req.CaptchaID, req.Captcha)
-	if err != nil {
-		common.ResponseWithCodeData(c, errCode, false, err.Error())
-		return
-	}
-	common.SuccessWithData(c, true, "verification passed, email sent")
-}
-
-type forgotVerifyOTPRequest struct {
-	Email string `json:"email"`
-	OTP   string `json:"otp"`
-}
-
-// ForgotVerifyOTP POST /api/v1/auth/password/forgot/otp/verify
-// @Summary Verify forgot-password OTP
-// @Description Consumes the OTP if it matches, sets a short-lived
-// verified flag the reset endpoint will gate on. Wrong-OTP attempts
-// are counted and a 30-minute lockout kicks in at the limit.
-// @Tags auth
-// @Param request body forgotVerifyOTPRequest true "email + otp"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/auth/password/forgot/otp/verify [post]
-func (h *UserHandler) ForgotVerifyOTP(c *gin.Context) {
-	var req forgotVerifyOTPRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, false, err.Error())
-		return
-	}
-	ctx := c.Request.Context()
-	errCode, err := h.userService.ForgotVerifyOTP(ctx, req.Email, req.OTP)
-	if err != nil {
-		common.ResponseWithCodeData(c, errCode, false, err.Error())
-		return
-	}
-	common.SuccessWithData(c, true, "otp verified")
-}
-
-// ForgotResetPassword POST /api/v1/auth/password/reset
-// @Summary Reset password after OTP verification
-// @Description Requires a successful prior verify call (verified flag
-// set in Redis). Updates the password hash and rotates the access
-// token so the response can auto-login the user.
-// @Tags auth
-// @Accept json
-// @Produce json
-// @Param request body service.ForgotResetPasswordRequest true "email + new password"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/auth/password/reset [post]
-func (h *UserHandler) ForgotResetPassword(c *gin.Context) {
-	ctx := c.Request.Context()
-	var req service.ForgotResetPasswordRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, false, err.Error())
-		return
-	}
-
-	user, code, err := h.userService.ForgotResetPassword(ctx, &req)
-	if err != nil {
-		common.ResponseWithCodeData(c, code, false, err.Error())
-		return
-	}
-
-	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
-	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, false, fmt.Sprintf("Failed to get secret key: %s", err.Error()))
-		return
-	}
-	authToken, err := issueUserAccessToken(user, secretKey)
-	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, false, "Failed to generate auth token")
-		return
-	}
-	c.Header("Authorization", authToken)
-	c.Header("Access-Control-Expose-Headers", "Authorization")
-
-	profile := h.userService.GetUserProfile(ctx, user)
-	common.SuccessWithData(c, profile, "Password reset successful. Logged in.")
 }
