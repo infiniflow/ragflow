@@ -402,3 +402,53 @@ func TestDingTalkSendStreamMarksCardFailed(t *testing.T) {
 		t.Fatalf("failed card content = %v, want the text that actually reached the card", paramMap["content"])
 	}
 }
+
+func TestDingTalkPushCardDeltaRetriesWithSameGuid(t *testing.T) {
+	var guids []string
+	failures := 1
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := map[string]any{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1.0/oauth2/accessToken":
+			_, _ = w.Write([]byte(`{"accessToken":"token-1","expireIn":7200}`))
+		case "/v1.0/card/streaming":
+			guid, _ := body["guid"].(string)
+			guids = append(guids, guid)
+			if failures > 0 {
+				failures--
+				_, _ = w.Write([]byte(`{"success":false,"code":"ServiceUnavailable","message":"try later"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"success":true,"result":{}}`))
+		default:
+			_, _ = w.Write([]byte(`{"success":true,"result":{}}`))
+		}
+	}))
+	defer server.Close()
+	allowChannelURLForTest(t, server.URL)
+
+	ch, err := newDingTalkChannel(dingTalkAccount{
+		AccountID:    "account-1",
+		ClientID:     "client-1",
+		ClientSecret: "secret-1",
+		APIBaseURL:   server.URL,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ch.pushCardDelta(context.Background(), "track-1", "hello", false); err != nil {
+		t.Fatalf("pushCardDelta() error = %v", err)
+	}
+	if len(guids) != 2 {
+		t.Fatalf("push attempts = %d, want the failed attempt and the successful retry", len(guids))
+	}
+	if guids[0] == "" || guids[0] != guids[1] {
+		t.Fatalf("guids = %v, want the retry to reuse the idempotency id", guids)
+	}
+}

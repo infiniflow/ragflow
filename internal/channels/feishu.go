@@ -389,30 +389,9 @@ func (c *feishuChannel) createStreamCard(ctx context.Context) (string, error) {
 	return stringValue(resp.Data.CardId), nil
 }
 
-// feishuRetry runs call up to feishuStreamAttempts times, bounding every attempt so a
-// stalled request cannot consume the whole reply, and backing off between attempts.
+// feishuRetry retries a card API call with the Feishu streaming policy.
 func feishuRetry(ctx context.Context, call func(context.Context) error) error {
-	var err error
-	for attempt := 1; attempt <= feishuStreamAttempts; attempt++ {
-		attemptCtx, cancel := context.WithTimeout(ctx, feishuStreamCallLimit)
-		err = call(attemptCtx)
-		cancel()
-		if err == nil {
-			return nil
-		}
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		if attempt == feishuStreamAttempts {
-			break
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(time.Duration(attempt) * feishuStreamBackoff):
-		}
-	}
-	return err
+	return retryChannelCall(ctx, feishuStreamAttempts, feishuStreamCallLimit, feishuStreamBackoff, call)
 }
 
 // closeStreamCard ends the card's streaming state and reports a failed close. The turn

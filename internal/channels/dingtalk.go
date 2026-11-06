@@ -48,6 +48,9 @@ const (
 	dingTalkStreamTick        = 100 * time.Millisecond
 	dingTalkTokenMargin       = 60 * time.Second
 	dingTalkCardFailTimeout   = 10 * time.Second
+	dingTalkStreamAttempts    = 3
+	dingTalkStreamBackoff     = 300 * time.Millisecond
+	dingTalkStreamCallLimit   = 10 * time.Second
 )
 
 // errDingTalkNothingStreamed reports that no text was available for a streamed card, so
@@ -628,20 +631,25 @@ func (c *dingTalkChannel) createAICard(ctx context.Context, chatID string) (stri
 }
 
 // pushCardDelta appends content to the card's streaming variable and optionally closes it.
+// Every push is one request, so a transient failure is retried with the same idempotency
+// id instead of failing the whole reply.
 func (c *dingTalkChannel) pushCardDelta(ctx context.Context, outTrackID, content string, finalize bool) error {
-	token, err := c.openAPIToken(ctx)
-	if err != nil {
-		return err
-	}
-	return c.doOpenAPI(ctx, http.MethodPut, "/v1.0/card/streaming", token, map[string]any{
-		"outTrackId": outTrackID,
-		"guid":       common.GenerateToken(),
-		"key":        c.account.StreamContentKey,
-		"content":    content,
-		"isFull":     false,
-		"isFinalize": finalize,
-		"isError":    false,
-	}, nil)
+	guid := common.GenerateToken()
+	return retryChannelCall(ctx, dingTalkStreamAttempts, dingTalkStreamCallLimit, dingTalkStreamBackoff, func(callCtx context.Context) error {
+		token, err := c.openAPIToken(callCtx)
+		if err != nil {
+			return err
+		}
+		return c.doOpenAPI(callCtx, http.MethodPut, "/v1.0/card/streaming", token, map[string]any{
+			"outTrackId": outTrackID,
+			"guid":       guid,
+			"key":        c.account.StreamContentKey,
+			"content":    content,
+			"isFull":     false,
+			"isFinalize": finalize,
+			"isError":    false,
+		}, nil)
+	})
 }
 
 // openAPIToken returns a cached DingTalk open API access token.
