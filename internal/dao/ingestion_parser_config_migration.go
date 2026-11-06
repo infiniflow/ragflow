@@ -1164,12 +1164,9 @@ func migrateExtractorConfig(config map[string]any, parserID string, pipelineID *
 			targets = append(targets, newNode)
 		}
 	} else {
-		for id, raw := range config {
-			id = strings.ToLower(id)
-			if strings.HasPrefix(id, "extractor:") || strings.HasPrefix(id, "extractor_") {
-				if node, ok := raw.(map[string]any); ok {
-					targets = append(targets, node)
-				}
+		for _, id := range common.SortedExtractorKeys(config) {
+			if node, ok := config[id].(map[string]any); ok {
+				targets = append(targets, node)
 			}
 		}
 		if len(targets) == 0 {

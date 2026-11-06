@@ -82,8 +82,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const ComponentNameTitleChunker = "TitleChunker"
-
 type titleChunkerParam struct {
 	schema.TitleChunkerParam
 }

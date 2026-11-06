@@ -90,8 +90,6 @@ import (
 	"ragflow/internal/parser/chunk"
 )
 
-const ComponentNameTokenChunker = "TokenChunker"
-
 type tokenChunkerParam struct {
 	schema.TokenChunkerParam
 }
