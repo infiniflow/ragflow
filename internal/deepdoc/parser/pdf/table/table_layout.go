@@ -174,11 +174,16 @@ func findHorizontallyTightestFit(box pdf.TextBox, clmns []pdf.TSRCell) int {
 	return best
 }
 
-// spanTopRowIndex returns the first row whose centre lies inside the span's
-// Y range — the top row of the merged rectangle (Python __cal_spans minR).
-// Returns -1 when no row centre falls inside the span.
+// spanTopRowIndex returns the first physical table row whose centre lies
+// inside the span's Y range — the top row of the merged rectangle (Python
+// __cal_spans minR). Header components are skipped: they are not rows, and
+// using their index would put the span in a different R space from the row
+// cells. Returns -1 when no table row centre falls inside the span.
 func spanTopRowIndex(rows []pdf.TSRCell, sp pdf.TSRCell) int {
 	for i, r := range rows {
+		if isHeaderLabel(r.Label) {
+			continue
+		}
 		cy := (r.Y0 + r.Y1) / 2
 		if cy >= sp.Y0 && cy <= sp.Y1 {
 			return i

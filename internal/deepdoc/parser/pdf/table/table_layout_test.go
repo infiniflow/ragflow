@@ -270,6 +270,99 @@ func TestAnnotateTableBoxes_MovesRowspanOriginToTopRow(t *testing.T) {
 	}
 }
 
+func TestAnnotateBoxesWithGridAndRows_SpanUsesRowNotHeaderIndex(t *testing.T) {
+	rows := []pdf.TSRCell{
+		{X0: 0, Y0: 0, X1: 100, Y1: 100, Label: "table column header"}, // index 0
+		{X0: 0, Y0: 0, X1: 100, Y1: 40, Label: "table row"},            // index 1
+		{X0: 0, Y0: 40, X1: 100, Y1: 80, Label: "table row"},           // index 2
+	}
+	grid := [][]pdf.TSRCell{
+		{
+			{X0: 0, Y0: 0, X1: 50, Y1: 80, Label: "table spanning cell"},
+			{X0: 50, Y0: 0, X1: 100, Y1: 40, Label: "table row"},
+		},
+		{
+			{X0: 0, Y0: 40, X1: 50, Y1: 80, Label: "table row"},
+			{X0: 50, Y0: 40, X1: 100, Y1: 80, Label: "table row"},
+		},
+	}
+	boxes := []pdf.TextBox{
+		// Span text sits in the lower row but the span starts at row 1.
+		{X0: 10, X1: 40, Top: 45, Bottom: 55, Text: "span", LayoutType: pdf.LayoutTypeTable},
+		// Normal cell in the first header row.
+		{X0: 60, X1: 90, Top: 5, Bottom: 15, Text: "normal", LayoutType: pdf.LayoutTypeTable},
+	}
+
+	AnnotateBoxesWithGridAndRows(boxes, grid, rows)
+
+	if boxes[0].SP == 0 {
+		t.Fatal("span box was not annotated")
+	}
+	if boxes[0].R != 1 {
+		t.Errorf("span R = %d, want 1 (table row index); the header component is index 0", boxes[0].R)
+	}
+	if boxes[1].R != 1 {
+		t.Errorf("normal header cell R = %d, want 1", boxes[1].R)
+	}
+}
+
+func TestAnnotateBoxesWithGridAndRows_RealPDFSpanRIndex(t *testing.T) {
+	// 1.pdf header coordinates from TestGroupCellsInjectsSpanning:
+	// header band 110.9..231.0, row0 111.4..138.9, row1 138.3..231.4,
+	// rowspan span #18 135.3..229.7.
+	cells := []pdf.TSRCell{
+		{X0: 81.1, Y0: 110.4, X1: 212.6, Y1: 290.6, Label: "table column"},
+		{X0: 211.5, Y0: 110.4, X1: 249.5, Y1: 290.6, Label: "table column"},
+		{X0: 249.4, Y0: 110.4, X1: 286.1, Y1: 290.6, Label: "table column"},
+		{X0: 287.2, Y0: 110.4, X1: 331.3, Y1: 290.6, Label: "table column"},
+		{X0: 80.3, Y0: 111.4, X1: 503.0, Y1: 138.9, Label: "table row"},
+		{X0: 80.3, Y0: 138.3, X1: 502.2, Y1: 231.4, Label: "table row"},
+		{X0: 80.3, Y0: 230.3, X1: 501.8, Y1: 290.6, Label: "table row"},
+		{X0: 79.1, Y0: 110.9, X1: 503.6, Y1: 231.0, Label: "table column header"},
+		{X0: 210.3, Y0: 135.3, X1: 249.7, Y1: 229.7, Label: "table spanning cell"},
+	}
+
+	grid := (&DeepDocTableBuilder{}).GroupCells(cells)
+	if grid == nil {
+		t.Fatal("GroupCells returned nil")
+	}
+
+	boxes := []pdf.TextBox{
+		{X0: 90, X1: 200, Top: 112, Bottom: 138, Text: "h0c0", LayoutType: pdf.LayoutTypeTable},
+		{X0: 250, X1: 280, Top: 112, Bottom: 138, Text: "h0c2", LayoutType: pdf.LayoutTypeTable},
+		{X0: 290, X1: 325, Top: 112, Bottom: 138, Text: "h0c3", LayoutType: pdf.LayoutTypeTable},
+		{X0: 90, X1: 200, Top: 140, Bottom: 229, Text: "h1c0", LayoutType: pdf.LayoutTypeTable},
+		{X0: 250, X1: 280, Top: 140, Bottom: 229, Text: "h1c2", LayoutType: pdf.LayoutTypeTable},
+		{X0: 290, X1: 325, Top: 140, Bottom: 229, Text: "h1c3", LayoutType: pdf.LayoutTypeTable},
+		{X0: 220, X1: 240, Top: 160, Bottom: 180, Text: "名称", LayoutType: pdf.LayoutTypeTable},
+		{X0: 90, X1: 200, Top: 240, Bottom: 280, Text: "d0", LayoutType: pdf.LayoutTypeTable},
+		{X0: 250, X1: 280, Top: 240, Bottom: 280, Text: "d2", LayoutType: pdf.LayoutTypeTable},
+		{X0: 290, X1: 325, Top: 240, Bottom: 280, Text: "d3", LayoutType: pdf.LayoutTypeTable},
+	}
+
+	rowsBands := AnnotationRowBands(cells)
+	AnnotateBoxesWithGridAndRows(boxes, grid, rowsBands)
+
+	spanIdx, row1Idx := 6, 3
+	if boxes[spanIdx].SP == 0 {
+		t.Fatal("span box was not annotated with SP")
+	}
+	if got := spanTopRowIndex(rowsBands, cells[len(cells)-1]); got != boxes[row1Idx].R {
+		t.Errorf("span top row = %d, row1 R = %d; they must use the same annotation index", got, boxes[row1Idx].R)
+	}
+	if boxes[spanIdx].R != boxes[row1Idx].R {
+		t.Errorf("span R = %d, row1 cell R = %d; mixed R index spaces", boxes[spanIdx].R, boxes[row1Idx].R)
+	}
+
+	rows := GroupBoxesByRC(boxes)
+	if len(rows) != 3 {
+		t.Fatalf("expected 3 logical rows (2 header + 1 data), got %d: %v", len(rows), rowTexts(rows))
+	}
+	if len(rows[1]) != 4 || len(rows[2]) != 4 {
+		t.Errorf("header/data row widths = %d/%d, want 4/4", len(rows[1]), len(rows[2]))
+	}
+}
+
 func TestRowBandsSplitGridAndAnnotationSemantics(t *testing.T) {
 	cells := []pdf.TSRCell{
 		{X0: 0, Y0: 0, X1: 100, Y1: 100, Label: "table column header"},
