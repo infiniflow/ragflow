@@ -104,6 +104,16 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
     undefined,
     'https://platform.openai.com/docs/models/gpt-4',
   ),
+  [LLMFactory.Shengsuanyun]: {
+    ...buildLocalConfig(
+      LLMFactory.Shengsuanyun,
+      'Shengsuanyun',
+      false,
+      undefined,
+      'https://lean.shengsuanyun.com/apidocs',
+    ),
+    defaultInstanceName: 'shengsuanyun',
+  },
   [LLMFactory.MWS]: buildLocalConfig(
     LLMFactory.MWS,
     'MWS',

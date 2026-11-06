@@ -1,0 +1,14 @@
+{
+  "name": "Shengsuanyun",
+  "rank": 985,
+  "url": {
+    "default": "https://router.shengsuanyun.com/api/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "embedding": "embeddings"
+  },
+  "class": "shengsuanyun",
+  "models": []
+}

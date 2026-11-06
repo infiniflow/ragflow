@@ -126,6 +126,7 @@ export enum LLMFactory {
   HostingerRouter = 'Hostinger Router',
   Wally = 'Wally',
   Synap = 'Synap',
+  Shengsuanyun = 'Shengsuanyun',
 }
 
 // Please lowercase the file name
@@ -233,6 +234,7 @@ export const IconMap = {
   [LLMFactory.Cheapaimodel]: 'cheapaimodel',
   [LLMFactory.Wally]: 'wally',
   [LLMFactory.Synap]: 'synap',
+  [LLMFactory.Shengsuanyun]: 'shengsuanyun',
 };
 
 /**
@@ -378,4 +380,6 @@ export const APIMapUrl = {
   [LLMFactory.PaddleOCRLocal]: 'https://aistudio.baidu.com/paddleocr',
   [LLMFactory.RAGcon]: 'https://connect.ragcon.com',
   [LLMFactory.FunASR]: 'https://github.com/modelscope/FunASR',
+  [LLMFactory.Shengsuanyun]:
+    'https://www.shengsuanyun.com/zh/?from=ragflow',
 };
