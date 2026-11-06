@@ -50,6 +50,7 @@ const (
 
 // CSVParser reads RFC-4180 CSV data and emits structured table JSON items.
 type CSVParser struct {
+	FlattenMediaToText             bool
 	ParseMethod                    string
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
@@ -71,6 +72,9 @@ func (p *CSVParser) String() string {
 func (p *CSVParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
+	}
+	if v, ok := setup["flatten_media_to_text"].(bool); ok {
+		p.FlattenMediaToText = v
 	}
 	if v, ok := setup["parse_method"].(string); ok && v != "" {
 		p.ParseMethod = v
@@ -99,11 +103,17 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	method := normalizeXLSXParseMethod(p.ParseMethod)
 	switch method {
 	case "tcadp":
-		return parseWithTCADP(
+		res := parseWithTCADP(
 			ctx, filename, data, "CSV",
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
 		)
+		if res.Err == nil && p.FlattenMediaToText {
+			items := ItemsToMaps(res.JSON)
+			items = flattenSpreadsheetMediaToText(items)
+			res.JSON = MapsToItems(items)
+		}
+		return res
 	case "", "csv":
 		// Continue with the local CSV parser.
 	default:
@@ -142,6 +152,9 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	// One wire shape for csv as for xlsx: a single segmented HTML table with
 	// row-aligned positions (csv has no in-cell image anchors).
 	items := buildSheetItems(records, csvSheetName, 1, 1, dataRows, nil, nil)
+	if p.FlattenMediaToText {
+		items = flattenSpreadsheetMediaToText(items)
+	}
 	return ParseResult{
 		File: map[string]any{
 			"name":     filename,

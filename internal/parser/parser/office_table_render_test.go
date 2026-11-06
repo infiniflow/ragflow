@@ -1,6 +1,7 @@
 package parser
 
 import (
+	"encoding/base64"
 	"html"
 	"reflect"
 	"regexp"
@@ -1171,5 +1172,147 @@ func TestXLSXParser_EmptySheet(t *testing.T) {
 	}
 	if len(res.JSON) != 0 {
 		t.Fatalf("empty sheet must yield empty JSON, got:\n%v", res.JSON)
+	}
+}
+
+func TestFlattenSpreadsheetMediaToText(t *testing.T) {
+	td := &entity.TableData{
+		Grid: [][]entity.TableCell{
+			{{Text: "Col1"}, {Text: "Col2"}},
+			{{Text: "A"}, {Text: "B"}},
+		},
+		HeaderRows: 1,
+	}
+	items := []map[string]any{
+		{
+			"text":         "Preamble",
+			"doc_type_kwd": "text",
+		},
+		{
+			"table":        td,
+			"doc_type_kwd": "table",
+		},
+		{
+			"text":         "",
+			"image":        "base64data",
+			"doc_type_kwd": "image",
+		},
+	}
+
+	flattened := flattenSpreadsheetMediaToText(items)
+	if len(flattened) != 3 {
+		t.Fatalf("len(flattened) = %d, want 3", len(flattened))
+	}
+
+	// 1. Text item remains text
+	if got := flattened[0]["doc_type_kwd"]; got != "text" {
+		t.Errorf("item[0] doc_type_kwd = %v, want text", got)
+	}
+	if got := flattened[0]["text"]; got != "Preamble" {
+		t.Errorf("item[0] text = %v, want 'Preamble'", got)
+	}
+
+	// 2. Table item rendered to HTML text and doc_type_kwd set to text
+	if got := flattened[1]["doc_type_kwd"]; got != "text" {
+		t.Errorf("item[1] doc_type_kwd = %v, want text", got)
+	}
+	if _, ok := flattened[1]["table"]; ok {
+		t.Errorf("item[1] still has table field after flatten")
+	}
+	tableText, _ := flattened[1]["text"].(string)
+	if !strings.Contains(tableText, "<table>") || !strings.Contains(tableText, "Col1") {
+		t.Errorf("item[1] text = %q, want rendered HTML table", tableText)
+	}
+
+	// 3. Image item doc_type_kwd set to text
+	if got := flattened[2]["doc_type_kwd"]; got != "text" {
+		t.Errorf("item[2] doc_type_kwd = %v, want text", got)
+	}
+}
+
+func TestXLSXParser_FlattenMediaToText(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Name")
+		mustSetCell(t, f, "Sheet1", "B1", "Score")
+		mustSetCell(t, f, "Sheet1", "A2", "Alice")
+		mustSetCell(t, f, "Sheet1", "B2", "100")
+	})
+
+	// 1. Default: doc_type_kwd = "table", table field present
+	pDefault, _ := NewXLSXParser("")
+	resDefault := pDefault.ParseWithResult(t.Context(), "test.xlsx", data)
+	if resDefault.Err != nil {
+		t.Fatalf("ParseWithResult default: %v", resDefault.Err)
+	}
+	if len(resDefault.JSON) != 1 {
+		t.Fatalf("len(resDefault.JSON) = %d, want 1", len(resDefault.JSON))
+	}
+	defaultMap := resDefault.JSON[0].ToMap()
+	if defaultMap["doc_type_kwd"] != "table" {
+		t.Errorf("default doc_type_kwd = %v, want 'table'", defaultMap["doc_type_kwd"])
+	}
+	if defaultMap["table"] == nil {
+		t.Error("default item missing table field")
+	}
+
+	// 2. FlattenMediaToText = true: doc_type_kwd = "text", table field removed, HTML text present
+	pFlatten, _ := NewXLSXParser("")
+	pFlatten.ConfigureFromSetup(map[string]any{"flatten_media_to_text": true})
+	if !pFlatten.FlattenMediaToText {
+		t.Fatal("FlattenMediaToText not configured")
+	}
+	resFlatten := pFlatten.ParseWithResult(t.Context(), "test.xlsx", data)
+	if resFlatten.Err != nil {
+		t.Fatalf("ParseWithResult flatten: %v", resFlatten.Err)
+	}
+	if len(resFlatten.JSON) != 1 {
+		t.Fatalf("len(resFlatten.JSON) = %d, want 1", len(resFlatten.JSON))
+	}
+	flattenMap := resFlatten.JSON[0].ToMap()
+	if flattenMap["doc_type_kwd"] != "text" {
+		t.Errorf("flattened doc_type_kwd = %v, want 'text'", flattenMap["doc_type_kwd"])
+	}
+	if _, ok := flattenMap["table"]; ok {
+		t.Error("flattened item should not have table field")
+	}
+	text, _ := flattenMap["text"].(string)
+	if !strings.Contains(text, "<table>") || !strings.Contains(text, "Alice") {
+		t.Errorf("flattened item text = %q, want rendered HTML table", text)
+	}
+}
+
+func TestXLSParser_FlattenMediaToText(t *testing.T) {
+	data, err := base64.StdEncoding.DecodeString(strings.ReplaceAll(strings.TrimSpace(genuineBIFF8FixtureBase64), "\n", ""))
+	if err != nil {
+		t.Fatalf("decode genuine BIFF8 fixture: %v", err)
+	}
+
+	p, err := NewXLSParser("excelize")
+	if err != nil {
+		t.Fatalf("NewXLSParser failed: %v", err)
+	}
+	p.ConfigureFromSetup(map[string]any{"flatten_media_to_text": true})
+	if !p.FlattenMediaToText {
+		t.Fatal("FlattenMediaToText not configured")
+	}
+	res := p.ParseWithResult(t.Context(), "sample.xls", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if len(res.JSON) == 0 {
+		t.Fatal("expected items from sample.xls")
+	}
+	for i, item := range res.JSON {
+		m := item.ToMap()
+		if m["doc_type_kwd"] != "text" {
+			t.Errorf("item[%d] doc_type_kwd = %v, want 'text'", i, m["doc_type_kwd"])
+		}
+		if _, ok := m["table"]; ok {
+			t.Errorf("item[%d] still has table field after flatten", i)
+		}
+		text, _ := m["text"].(string)
+		if !strings.Contains(text, "<table>") {
+			t.Errorf("item[%d] text = %q, want rendered HTML table", i, text)
+		}
 	}
 }

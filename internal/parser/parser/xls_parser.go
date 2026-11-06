@@ -33,6 +33,7 @@ import (
 var CompoundDocumentSignature = []byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1}
 
 type XLSParser struct {
+	FlattenMediaToText             bool
 	ParseMethod                    string
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
@@ -54,6 +55,9 @@ func (p *XLSParser) String() string {
 func (p *XLSParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
+	}
+	if v, ok := setup["flatten_media_to_text"].(bool); ok {
+		p.FlattenMediaToText = v
 	}
 	if v, ok := setup["parse_method"].(string); ok && v != "" {
 		p.ParseMethod = v
@@ -78,11 +82,17 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 	method := normalizeXLSXParseMethod(p.ParseMethod)
 	switch method {
 	case "tcadp":
-		return parseWithTCADP(
+		res := parseWithTCADP(
 			ctx, filename, data, "XLS",
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
 		)
+		if res.Err == nil && p.FlattenMediaToText {
+			items := ItemsToMaps(res.JSON)
+			items = flattenSpreadsheetMediaToText(items)
+			res.JSON = MapsToItems(items)
+		}
+		return res
 	case "", "excelize":
 		// Continue with the local Excelize parser.
 	default:
@@ -97,6 +107,10 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 	}
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("xls parse: %w", err)}
+	}
+
+	if p.FlattenMediaToText {
+		items = flattenSpreadsheetMediaToText(items)
 	}
 
 	return ParseResult{
