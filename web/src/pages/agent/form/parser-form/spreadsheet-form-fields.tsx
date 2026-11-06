@@ -22,6 +22,7 @@ export function SpreadsheetFormFields({ prefix }: CommonProps) {
         name={buildFieldNameWithPrefix('parse_method', prefix)}
         label={t('flow.parserMethod')}
         className="space-y-0"
+        labelClassName="pb-2"
       >
         <SelectWithSearch options={parserMethodOptions} />
       </RAGFlowFormItem>

@@ -13,18 +13,20 @@ jest.mock('@/hooks/use-pipeline-operator', () => ({
 // The hook now fetches the canvas version list itself and derives the latest
 // id reactively, so we mock the fetch and drive it via a mutable array.
 let mockVersions: Array<{ id: string; version?: number; name?: string }> = [];
-jest.mock('@/hooks/use-agent-request', () => ({
-  useFetchCanvasVersionList: () => ({
+jest.mock('@/hooks/use-pipeline-version-request', () => ({
+  useFetchPipelineVersionList: () => ({
     data: mockVersions,
     loading: false,
     isError: false,
   }),
-  // The three hooks below back useParserTreeData, which the form hook
-  // consults for the missing-option validation.
+  useFetchPipelineVersionCatalog: () => ({
+    data: [],
+    loading: false,
+    isError: false,
+  }),
+}));
+jest.mock('@/hooks/use-agent-request', () => ({
   useFetchBuiltinPipelines: () => ({ options: [], loading: false }),
-  useFetchAgentList: () => ({ data: { canvas: [], total: 0 }, loading: false }),
-  useFetchCanvasVersions: (canvasIds: string[]) =>
-    canvasIds.map(() => ({ isSuccess: true, data: mockVersions })),
 }));
 
 // Cut the chain parser-config-validation -> compilation-form -> locales/config
@@ -96,5 +98,45 @@ describe('useDocumentPipelineForm pipeline_version_id default (design S8: never 
       });
     });
     expect(result.current.form.getValues('pipeline_version_id')).toBe('v3');
+  });
+});
+
+describe('useDocumentPipelineForm versionOutdated', () => {
+  beforeEach(() => {
+    mockVersions = [];
+  });
+
+  it('is true when the pinned version differs from the latest (Pipeline mode)', () => {
+    mockVersions = [{ id: 'v2', version: 2, name: 'v2' }];
+    const { result } = renderForm({
+      parserId: 'naive',
+      pipelineId: 'canvas-1',
+      pipelineVersionId: 'v1',
+    });
+    expect(result.current.versionOutdated).toBe(true);
+  });
+
+  it('is false when the pinned version is the latest (Pipeline mode)', () => {
+    mockVersions = [{ id: 'v2', version: 2, name: 'v2' }];
+    const { result } = renderForm({
+      parserId: 'naive',
+      pipelineId: 'canvas-1',
+      pipelineVersionId: 'v2',
+    });
+    expect(result.current.versionOutdated).toBe(false);
+  });
+
+  it('is false in BuiltIn mode even when a stale pin survives in the form', () => {
+    // A pipeline→builtin switch clears pipeline_id but the backend keeps
+    // pipeline_version_id, so a reopened dialog seeds the stale pin; the bang
+    // must not show beside a builtin parser.
+    mockVersions = [{ id: 'v2', version: 2, name: 'v2' }];
+    const { result } = renderForm({
+      parserId: 'naive',
+      pipelineId: undefined,
+      pipelineVersionId: 'v1',
+    });
+    expect(result.current.form.getValues('pipeline_version_id')).toBe('v1');
+    expect(result.current.versionOutdated).toBe(false);
   });
 });

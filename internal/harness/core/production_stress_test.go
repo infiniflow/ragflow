@@ -501,6 +501,7 @@ func TestProduction_LargeStateGraph(t *testing.T) {
 		sg.AddNode(name, func(ctx context.Context, state interface{}) (interface{}, error) {
 			s := state.(*dagState)
 			s.Step = idx
+			s.Messages = nil // This node adds no messages.
 			return s, nil
 		})
 		if i == 0 {

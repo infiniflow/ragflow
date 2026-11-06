@@ -97,8 +97,8 @@ func TestDeleteChatHandlerSuccess(t *testing.T) {
 	if resp["code"] != float64(common.CodeSuccess) {
 		t.Fatalf("expected success code, got %v", resp["code"])
 	}
-	if resp["data"] != true {
-		t.Fatalf("expected data=true, got %v", resp["data"])
+	if data, exists := resp["data"]; exists {
+		t.Fatalf("data must be omitted, got %v", data)
 	}
 }
 

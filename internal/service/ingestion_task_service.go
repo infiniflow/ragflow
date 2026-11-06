@@ -14,6 +14,8 @@ import (
 	"ragflow/internal/entity"
 	ingestionpipeline "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/observability"
+	"ragflow/internal/permission"
+	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -185,17 +187,25 @@ func (s *IngestionTaskService) emitLifecycleEvent(ctx context.Context, task *ent
 	if logID != nil && *logID != "" && s.pipelineLogDAO != nil {
 		run, _ = s.pipelineLogDAO.GetByID(ctx, dao.DB, *logID)
 	}
-	s.eventEmitter.EmitIngestLog(ctx, observability.BuildIngestLog(task, doc, run, typ, status, errorInfo))
+	s.eventEmitter.EmitIngestLog(ctx, observability.BuildIngestLog(task, doc, run, typ, status, errorInfo, "", ""))
 }
 
-func (s *IngestionTaskService) ListByUser(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
+func (s *IngestionTaskService) List(ctx context.Context, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
 	if datasetID == nil {
 		return s.ingestionTaskDAO.ListByUserID(ctx, dao.DB, userID, page, pageSize)
 	}
 	return s.ingestionTaskDAO.ListByUserIDAndDatasetID(ctx, dao.DB, userID, *datasetID, page, pageSize)
 }
 
-func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*ParseDocumentResponse, error) {
+func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID string, docIDs []string) ([]*ParseDocumentResponse, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
 	uniqueDocIDs := common.Deduplicate(docIDs)
 	if len(uniqueDocIDs) == 0 {
 		return nil, fmt.Errorf("no documents to parse")
@@ -1144,6 +1154,9 @@ func (s *IngestionTaskService) buildOpenLogInput(ctx context.Context, task *enti
 	if doc.PipelineID != nil {
 		if pipelineID := strings.TrimSpace(*doc.PipelineID); pipelineID != "" {
 			input.PipelineID = pipelineID
+			if doc.PipelineVersionID != nil {
+				input.PipelineVersionID = strings.TrimSpace(*doc.PipelineVersionID)
+			}
 			if canvas, err := s.userCanvasDAO.GetByID(ctx, dao.DB, pipelineID); err == nil && canvas != nil {
 				if canvas.Title != nil && *canvas.Title != "" {
 					input.PipelineTitle = *canvas.Title
@@ -1154,6 +1167,7 @@ func (s *IngestionTaskService) buildOpenLogInput(ctx context.Context, task *enti
 			}
 		}
 	}
+	input.PipelineTitle = utility.TruncateRunes(input.PipelineTitle, common.PipelineTitleLimit)
 	return input, nil
 }
 
@@ -1182,35 +1196,11 @@ func (s *IngestionTaskService) RecordMessage(ctx context.Context, pipelineLogID,
 	return s.insertEvent(ctx, ingestionEventMessage, pipelineLogID, taskID, "", 0, message)
 }
 
-// persistProcessEndAt records the authoritative terminal end time for a run.
-// It is idempotent: if a real process_end_at is already persisted, the existing
-// value is left untouched, so a later terminal event cannot rewrite the recorded
-// completion instant. Best-effort: errors are logged, never returned, because a
-// failure here must not fail the terminal settlement.
-func (s *IngestionTaskService) persistProcessEndAt(ctx context.Context, pipelineLogID string) {
-	if dao.DB == nil {
-		return
-	}
-	if updErr := dao.DB.WithContext(ctx).
-		Model(&entity.PipelineOperationLog{}).
-		Where("id = ?", pipelineLogID).
-		Where("process_end_at IS NULL").
-		Update("process_end_at", time.Now()).Error; updErr != nil {
-		common.Warn(fmt.Sprintf("persist process_end_at for run %s: %v", pipelineLogID, updErr))
-	}
-}
-
 // RecordTerminal writes the terminal explanation associated with a run.
 func (s *IngestionTaskService) RecordTerminal(ctx context.Context, pipelineLogID, taskID, message string) error {
 	if err := s.ensureTerminalEvent(ctx, pipelineLogID, taskID, message); err != nil {
 		return err
 	}
-	// Persist the authoritative terminal end time so ingestion observability
-	// events and any downstream duration query read a real value instead of
-	// falling back to the transition time. Idempotent: a run whose end time
-	// was already recorded keeps it, so a repeated terminal settlement (e.g.
-	// overlapping failure/timeout events) cannot rewrite the completion instant.
-	s.persistProcessEndAt(context.WithoutCancel(ctx), pipelineLogID)
 	foldContext := context.WithoutCancel(ctx)
 	foldStarted := time.Now()
 	foldResult, foldErr := s.foldIngestionRun(foldContext, pipelineLogID, s.logSettings.MaxRowsPerRun)

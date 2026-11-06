@@ -277,6 +277,8 @@ jobs:
         #     (bpe_loader_anchors_test.go) are tagged `manual` and need the
         #     docker builder's /usr/share/infinity/resource, so they stay out
         #     of the default run.
+        # Skip when only frontend (web) code changed: HAS_GO is false then.
+        if: ${{ env.HAS_GO == 'true' }}
         run: |
           set -euo pipefail
 
@@ -714,13 +716,6 @@ jobs:
           set -eo pipefail
           exit ${TEST_RC}
 
-      - name: Upload coverage reports to Codecov
-        uses: codecov/codecov-action@v5
-        if: ${{ !cancelled() }}
-        with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: false
-
       - name: Collect ragflow log Infinity
         if: ${{ !cancelled() }}
         # Log collection is diagnostics only: rebuild the artifacts path here
@@ -849,6 +844,8 @@ jobs:
         #     (bpe_loader_anchors_test.go) are tagged `manual` and need the
         #     docker builder's /usr/share/infinity/resource, so they stay out
         #     of the default run.
+        # Skip when only frontend (web) code changed: HAS_GO is false then.
+        if: ${{ env.HAS_GO == 'true' }}
         run: |
           set -euo pipefail
 

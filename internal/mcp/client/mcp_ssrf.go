@@ -17,6 +17,8 @@
 package mcpclient
 
 import (
+	"fmt"
+	"net/http"
 	"net/url"
 	"ragflow/internal/common"
 	"strings"
@@ -82,11 +84,25 @@ func AssertMCPURLSafe(rawURL string, allowPrivateHosts bool) (hostname, resolved
 }
 
 // AssertMCPURLSafeSameOrigin validates a server-advertised URL (e.g., the POST
-// URL from an SSE endpoint event). Public URLs are accepted. Private URLs are
-// accepted only when allowPrivateHosts is true AND the advertised URL shares the
-// same origin (scheme, port, and host) as originURL, so the server cannot bounce
-// POSTs to another service on the same host but a different port or scheme.
+// URL from an SSE endpoint event). The URL must share the origin (scheme,
+// port, and host) with originURL — checked before any success path — and
+// private URLs additionally require allowPrivateHosts, so the server cannot
+// bounce POSTs to a cleartext downgrade or an unrelated target.
 func AssertMCPURLSafeSameOrigin(rawURL, originURL string, allowPrivateHosts bool) (hostname, resolvedIP string, err error) {
+	// The advertised URL must keep the full origin — scheme, host and
+	// effective port — before any success path, so a server cannot bounce
+	// POSTs to a cleartext downgrade or a different public/internal target.
+	origin, perr := url.Parse(strings.TrimSpace(originURL))
+	if perr != nil || origin.Hostname() == "" {
+		return "", "", fmt.Errorf("invalid MCP origin URL %q", originURL)
+	}
+	parsed, perr := url.Parse(strings.TrimSpace(rawURL))
+	if perr != nil {
+		return "", "", perr
+	}
+	if !sameOrigin(parsed, origin) {
+		return "", "", fmt.Errorf("MCP advertised URL %q does not match origin %q", rawURL, originURL)
+	}
 	hostname, resolvedIP, err = common.AssertURLSafe(rawURL)
 	if err == nil {
 		return hostname, resolvedIP, nil
@@ -94,16 +110,31 @@ func AssertMCPURLSafeSameOrigin(rawURL, originURL string, allowPrivateHosts bool
 	if !allowPrivateHosts {
 		return "", "", err
 	}
-	origin, perr := url.Parse(strings.TrimSpace(originURL))
-	if perr != nil || origin.Hostname() == "" {
-		return "", "", err
-	}
-	parsed, perr := url.Parse(strings.TrimSpace(rawURL))
-	if perr != nil {
-		return "", "", err
-	}
-	if !sameOrigin(parsed, origin) {
-		return "", "", err
-	}
 	return AssertMCPURLSafe(rawURL, allowPrivateHosts)
+}
+
+// restrictClientRedirects returns a copy of a caller-supplied HTTP client
+// whose redirect policy keeps credential headers on the validated origin:
+// it rejects HTTPS downgrades and any redirect target that is not the same
+// origin as the first request. The default PinnedHTTPClient applies the same
+// rules; a supplied client must not quietly bypass them.
+func restrictClientRedirects(client *http.Client, allowPrivateHosts bool) *http.Client {
+	restricted := *client
+	inner := restricted.CheckRedirect
+	restricted.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return fmt.Errorf("stopped after 10 redirects")
+		}
+		if via[0].URL.Scheme == "https" && req.URL.Scheme == "http" {
+			return fmt.Errorf("refusing HTTPS to HTTP redirect to %q", req.URL)
+		}
+		if _, _, err := AssertMCPURLSafeSameOrigin(req.URL.String(), via[0].URL.String(), allowPrivateHosts); err != nil {
+			return err
+		}
+		if inner != nil {
+			return inner(req, via)
+		}
+		return nil
+	}
+	return &restricted
 }

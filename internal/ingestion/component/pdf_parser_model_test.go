@@ -483,7 +483,7 @@ func TestTenantPDFParserEnvironmentIsolation(t *testing.T) {
 // bypass the repository's production transport policy.
 func TestTenantPDFParserKeepsSSRFGuard(t *testing.T) {
 	db, ref, requests := tenantPDFParserFixture(t, "SoMark")
-	common.AllowAnyHostForTest = false
+	t.Setenv(common.EnvAllowAnyHost, "")
 	_, handled, err := maybeDispatchTenantPDFParser(t.Context(), db, "sample.pdf", []byte("pdf"),
 		"tenant-1", schema.ParserSetup{"parse_method": ref})
 	if !handled || err == nil || !strings.Contains(err.Error(), "non-public address") || len(requests) != 0 {

@@ -120,7 +120,7 @@ func TestImageUploadDecorator_MarkdownMediaRefMaterializes(t *testing.T) {
 	}
 	cache := &chunkerMediaCache{}
 	ctx := medialib.WithCache(t.Context(), cache)
-	p, err := parserlib.GetParser(utility.FileTypeMarkdown)
+	p, _, err := parserlib.GetParser(utility.FileTypeMarkdown, nil)
 	if err != nil {
 		t.Fatalf("GetParser(FileTypeMarkdown): %v", err)
 	}
