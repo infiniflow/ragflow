@@ -72,7 +72,8 @@ jest.mock('@/components/ui/range-picker', () => ({
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key: string, options?: { page: number }) =>
+      key === 'pagination.page' && options ? `${options.page} per page` : key,
   }),
 }));
 
@@ -81,6 +82,23 @@ jest.mock('react-router', () => ({
 }));
 
 import AgentLogPage from '../agent-log-page';
+
+const originalResizeObserver = globalThis.ResizeObserver;
+const originalScrollIntoView = Element.prototype.scrollIntoView;
+
+beforeAll(() => {
+  globalThis.ResizeObserver = jest.fn().mockImplementation(() => ({
+    observe: jest.fn(),
+    unobserve: jest.fn(),
+    disconnect: jest.fn(),
+  }));
+  Element.prototype.scrollIntoView = jest.fn();
+});
+
+afterAll(() => {
+  globalThis.ResizeObserver = originalResizeObserver;
+  Element.prototype.scrollIntoView = originalScrollIntoView;
+});
 
 describe('AgentLogPage reset button (#17050)', () => {
   beforeEach(() => {
@@ -134,23 +152,25 @@ describe('AgentLogPage reset button (#17050)', () => {
     expect(mockRefetchAgentLog).not.toHaveBeenCalled();
   });
 
-  it('resets from page 2 to page 1 without refetching the stale query', () => {
+  it('resets from page 2 to page 1 while preserving page size and avoiding a stale refetch', () => {
     mockUseFetchAgentLog.mockReturnValue({
-      data: { sessions: [], total: 20 },
+      data: { sessions: [], total: 41 },
       loading: false,
       refetch: mockRefetchAgentLog,
     });
     render(<AgentLogPage />);
 
+    fireEvent.click(screen.getByRole('combobox'));
+    fireEvent.click(screen.getByRole('option', { name: /^20\b/ }));
     fireEvent.click(screen.getByRole('link', { name: '2' }));
     expect(mockUseFetchAgentLog).toHaveBeenLastCalledWith(
-      expect.objectContaining({ page: 2 }),
+      expect.objectContaining({ page: 2, page_size: 20 }),
     );
 
     fireEvent.click(screen.getByRole('button', { name: 'common.reset' }));
 
     expect(mockUseFetchAgentLog).toHaveBeenLastCalledWith(
-      expect.objectContaining({ page: 1 }),
+      expect.objectContaining({ page: 1, page_size: 20 }),
     );
     expect(mockRefetchAgentLog).not.toHaveBeenCalled();
   });
