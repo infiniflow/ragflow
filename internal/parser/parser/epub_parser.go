@@ -52,7 +52,8 @@ import (
 
 // EPUBParser extracts text from EPUB archives.
 type EPUBParser struct {
-	textOnly bool
+	RemoveTOC bool
+	textOnly  bool
 }
 
 func NewEPUBParser() *EPUBParser {
@@ -68,6 +69,16 @@ func NewEPUBTextParser() *EPUBParser {
 
 func (p *EPUBParser) String() string {
 	return "EPUBParser"
+}
+
+// ConfigureFromSetup reads the EPUB family setup map.
+func (p *EPUBParser) ConfigureFromSetup(setup map[string]any) {
+	if p == nil || setup == nil {
+		return
+	}
+	if v, ok := setup["remove_toc"].(bool); ok {
+		p.RemoveTOC = v
+	}
 }
 
 // ParseWithResult implements ParseResultProducer. It extracts XHTML
@@ -99,7 +110,7 @@ func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data 
 		return ParseResult{Err: fmt.Errorf("epub: opf: %w", err)}
 	}
 
-	items, detectedEnc, warnings, err := extractEPUBTextItems(ctx, reader, opf, p.textOnly)
+	items, detectedEnc, warnings, err := extractEPUBTextItems(ctx, reader, opf, p.textOnly, p.RemoveTOC)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("epub: %w", err)}
 	}
@@ -283,8 +294,8 @@ func normalizeEPUBSelfClosing(source string) string {
 // skipped and no other item could be read, it returns an error instead of an
 // empty result. An item that holds no text (an image-only chapter) still counts
 // as read, and an empty item counts as neither.
-func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest, textOnly bool) ([]map[string]any, string, []string, error) {
-	var items []map[string]any
+func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest, textOnly bool, removeTOC bool) ([]map[string]any, string, []string, error) {
+	var leaves []map[string]any
 	var failures []string
 	read := 0
 	state := &htmlWalkState{
@@ -309,7 +320,7 @@ func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest, 
 		}
 	}
 	detectedEncoding := "utf-8"
-	for _, href := range opf.SpineHrefs {
+	for chIdx, href := range opf.SpineHrefs {
 		if state.err != nil {
 			break
 		}
@@ -337,7 +348,13 @@ func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest, 
 		}
 		// Image sources are relative to the chapter, not to the OPF.
 		state.resolveMedia = epubMediaResolver(entries, state, chapterEntry, opf.Images)
-		items = appendEPUBChapter(items, doc, state)
+		chLeaves := extractEPUBChapterLeaves(doc, state)
+		for _, leaf := range chLeaves {
+			// Carries the spine position through TOC removal so collapse keeps
+			// chapter boundaries when entries are dropped.
+			leaf["__epub_chapter"] = chIdx
+			leaves = append(leaves, leaf)
+		}
 	}
 	if state.err != nil {
 		return nil, detectedEncoding, state.warnings(), state.err
@@ -345,6 +362,10 @@ func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest, 
 	if len(failures) > 0 && read == 0 {
 		return nil, detectedEncoding, state.warnings(), fmt.Errorf("no readable content: %d of %d content items could not be read (%s)", len(failures), len(opf.SpineHrefs), failures[0])
 	}
+	if removeTOC {
+		leaves = removeEPUBContentsTable(leaves, isEnglishItems(leaves))
+	}
+	items := collapseEPUBLeaves(leaves)
 	return items, detectedEncoding, state.warnings(), nil
 }
 
@@ -427,34 +448,174 @@ func (s *htmlWalkState) loadEPUBMedia(name, mime string, entry *zip.File) (*enti
 	return ref, ref != nil
 }
 
-// appendEPUBChapter keeps continuous chapter prose together, splitting only
-// at tables and images. The shared leaf walker preserves their source order.
-func appendEPUBChapter(items []map[string]any, doc *html.Node, state *htmlWalkState) []map[string]any {
+// isBlockElement reports whether n starts a new text block or table. The
+// document wrappers count as blocks so the walker recurses into them instead of
+// folding a whole chapter into one inline run.
+func isBlockElement(n *html.Node) bool {
+	return n.Type == html.ElementNode && (isBlockTag(n.Data) || n.Data == "html" || n.Data == "body" || n.Data == "table")
+}
+
+// extractEPUBChapterLeaves walks a chapter document and collects discrete leaf items
+// (headings, paragraphs, tables, images) preserving source order.
+func extractEPUBChapterLeaves(doc *html.Node, state *htmlWalkState) []map[string]any {
 	var chapter []map[string]any
-	for root := doc.FirstChild; root != nil; root = root.NextSibling {
-		if root.Type != html.ElementNode {
-			continue
+	var buf bytes.Buffer
+	writer := &leafWriter{b: &buf}
+	flush := func() { flushLeafText(writer, &chapter, "text", false) }
+	hasChildBlock := func(n *html.Node) bool {
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			if isBlockElement(c) {
+				return true
+			}
 		}
-		for part := root.FirstChild; part != nil; part = part.NextSibling {
-			htmlLeafTextWithState(part, &chapter, "text", true, state)
-		}
+		return false
 	}
-	start := len(items)
+
+	var collectLeaves func(n *html.Node)
+	collectLeaves = func(n *html.Node) {
+		if n == nil {
+			return
+		}
+		if n.Type == html.DocumentNode {
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				collectLeaves(c)
+			}
+			flush()
+			return
+		}
+		if n.Type == html.ElementNode && (n.Data == "html" || n.Data == "body" || hasChildBlock(n)) {
+			// Adjacent inline children share one writer so a text run broken by
+			// an inline element keeps its original spacing ("inter<b>nation</b>al"
+			// stays one word instead of becoming three leaves).
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				if isBlockElement(c) {
+					flush()
+					collectLeaves(c)
+					continue
+				}
+				walkHTMLLeaf(c, writer, &chapter, "text", false, state)
+			}
+			flush()
+			return
+		}
+		walkHTMLLeaf(n, writer, &chapter, "text", false, state)
+		flush()
+	}
+	collectLeaves(doc)
+
+	var leaves []map[string]any
 	for _, item := range chapter {
 		if item["doc_type_kwd"] != "text" {
-			items = append(items, item)
+			leaves = append(leaves, item)
 			continue
 		}
 		text := strings.Join(strings.FieldsFunc(stringValue(item["text"]), isCollapsibleWS), " ")
 		if text == "" {
 			continue
 		}
-		if len(items) > start && items[len(items)-1]["doc_type_kwd"] == "text" {
-			items[len(items)-1]["text"] = stringValue(items[len(items)-1]["text"]) + " " + text
+		item["text"] = text
+		leaves = append(leaves, item)
+	}
+	return leaves
+}
+
+// removeEPUBContentsTable runs the shared contents-table heuristic inside each
+// spine item. A single pass over every leaf can treat a preface chapter between
+// the TOC and the chapter that carries the matching heading as part of the TOC
+// block and delete it.
+func removeEPUBContentsTable(leaves []map[string]any, eng bool) []map[string]any {
+	cleaned := make([]map[string]any, 0, len(leaves))
+	for start := 0; start < len(leaves); {
+		end := start + 1
+		chapter := leaves[start]["__epub_chapter"]
+		for end < len(leaves) && leaves[end]["__epub_chapter"] == chapter {
+			end++
+		}
+		for _, item := range removeContentsTable(appendTOCTerminator(leaves[start:end], leaves[end:], eng), eng) {
+			if _, ok := item["__epub_toc_terminator"]; ok {
+				continue
+			}
+			cleaned = append(cleaned, item)
+		}
+		start = end
+	}
+	return cleaned
+}
+
+// appendTOCTerminator appends the first text leaf from a later spine item that
+// shares the TOC entry prefix. removeContentsTable drops entries up to the next
+// prefix match; when the TOC has its own spine item, that match lives in the
+// body chapters, so without a terminator the last entries would survive.
+func appendTOCTerminator(group, later []map[string]any, eng bool) []map[string]any {
+	for i, item := range group {
+		if !isTOCHeading(itemText(item)) {
+			continue
+		}
+		if i+1 >= len(group) || group[i+1]["doc_type_kwd"] != "text" {
+			return group
+		}
+		prefix := tocPrefix(itemText(group[i+1]), eng)
+		if prefix == "" {
+			return group
+		}
+		for _, candidate := range later {
+			if candidate["doc_type_kwd"] != "text" || !strings.HasPrefix(itemText(candidate), prefix) {
+				continue
+			}
+			// Copy first: appending to group would overwrite the first leaf of
+			// the next chapter, which shares the backing array.
+			withTerminator := make([]map[string]any, len(group), len(group)+1)
+			copy(withTerminator, group)
+			return append(withTerminator, map[string]any{
+				"text":                  itemText(candidate),
+				"doc_type_kwd":          "text",
+				"__epub_chapter":        item["__epub_chapter"],
+				"__epub_toc_terminator": true,
+			})
+		}
+		return group
+	}
+	return group
+}
+
+// collapseEPUBLeaves collapses continuous prose within the same chapter into
+// single text items, splitting at tables and images and at chapter boundaries.
+func collapseEPUBLeaves(leaves []map[string]any) []map[string]any {
+	var items []map[string]any
+	var run strings.Builder
+	// run holds the text of items[len(items)-1] while that run is open.
+	flush := func() {
+		if run.Len() == 0 {
+			return
+		}
+		items[len(items)-1]["text"] = run.String()
+		run.Reset()
+	}
+	lastChapter := -1
+	for _, item := range leaves {
+		ch, _ := item["__epub_chapter"].(int)
+		delete(item, "__epub_chapter")
+		if item["doc_type_kwd"] != "text" {
+			flush()
+			items = append(items, item)
+			lastChapter = -1
+			continue
+		}
+		text, _ := item["text"].(string)
+		if text == "" {
+			continue
+		}
+		if len(items) > 0 && lastChapter == ch && items[len(items)-1]["doc_type_kwd"] == "text" {
+			run.WriteString(" ")
+			run.WriteString(text)
 		} else {
+			flush()
 			items = append(items, map[string]any{"text": text, "doc_type_kwd": "text"})
+			run.WriteString(text)
+			lastChapter = ch
 		}
 	}
+	flush()
 	return items
 }
 

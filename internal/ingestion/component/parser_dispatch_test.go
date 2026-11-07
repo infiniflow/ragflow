@@ -2160,3 +2160,19 @@ func TestConfigureParserFromSetups_Visual(t *testing.T) {
 	})
 
 }
+
+func TestConfigureParserFromSetups_EPUB(t *testing.T) {
+	setups := defaultSetups()
+
+	t.Run("epub resolves to the epub setup with remove_toc disabled", func(t *testing.T) {
+		got := &captureSetupConfigurer{}
+		configureParserFromSetups(got, utility.FileTypeEPUB, setups)
+		want := map[string]any(setups["epub"])
+		if got.setup == nil {
+			t.Fatal("ConfigureFromSetup not called for FileTypeEPUB")
+		}
+		if v, ok := got.setup["remove_toc"].(bool); !ok || v != want["remove_toc"] {
+			t.Errorf("FileTypeEPUB remove_toc = %v, want %v", v, want["remove_toc"])
+		}
+	})
+}

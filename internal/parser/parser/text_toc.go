@@ -41,10 +41,7 @@ func itemText(item map[string]any) string {
 func removeContentsTable(items []map[string]any, eng bool) []map[string]any {
 	i := 0
 	for i < len(items) {
-		text := itemText(items[i])
-		// Strip @@ suffix and whitespace before matching.
-		normalized := whitespacePattern.ReplaceAllString(strings.SplitN(text, "@@", 2)[0], "")
-		if !tocHeadingPattern.MatchString(normalized) {
+		if !isTOCHeading(itemText(items[i])) {
 			i++
 			continue
 		}
@@ -85,6 +82,13 @@ func removeContentsTable(items []map[string]any, eng bool) []map[string]any {
 		}
 	}
 	return items
+}
+
+// isTOCHeading reports whether text is a contents-table heading.
+func isTOCHeading(text string) bool {
+	// Strip @@ suffix and whitespace before matching.
+	normalized := whitespacePattern.ReplaceAllString(strings.SplitN(text, "@@", 2)[0], "")
+	return tocHeadingPattern.MatchString(normalized)
 }
 
 // tocPrefix returns the TOC-entry prefix: first 3 chars for CJK,
