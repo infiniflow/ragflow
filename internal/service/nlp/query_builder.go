@@ -468,7 +468,9 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64, langu
 			var sm []string
 			if qb.NeedFineGrainedTokenize(term) {
 				fineGrained, err := tok.FineGrainedTokenize(term)
-				if err == nil && fineGrained != "" {
+				// An unchanged term provides no fine-grained expansion. Quoting
+				// it adds whole-clause phrase branches for Infinity queries.
+				if err == nil && fineGrained != "" && fineGrained != term {
 					sm = strings.Fields(fineGrained)
 				}
 			}
