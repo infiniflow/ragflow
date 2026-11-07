@@ -99,7 +99,364 @@ func (s *Scanner) scanFile(filename, content string) []Finding {
 		}
 	}
 
+	for i, line := range lines {
+		if operand, ok := scanQuotedRmExpansion(line); ok {
+			findings = append(findings, Finding{
+				PatternID:   "rm_quoted_expansion",
+				Severity:    "high",
+				Category:    "destructive",
+				File:        filename,
+				Line:        i + 1,
+				Match:       strings.TrimSpace(operand),
+				Description: "recursive rm of a quoted operand with a separator before an expansion",
+			})
+		}
+	}
+
 	return findings
+}
+
+// scanQuotedRmExpansion is a quote-aware pass that stays out of
+// ThreatPatterns: a regular expression over the raw line cannot track quote
+// and escape state across an operand. It flags a recursive rm operand that
+// carries a separator inside a double-quoted span with a later expansion in
+// the same operand. The operand can continue after the closing quote with
+// more quoted or unquoted fragments, and `\"` does not end the quoted span.
+// Return the operand that carries the hidden expansion.
+func scanQuotedRmExpansion(line string) (string, bool) {
+	code := shellCodeMask(line)
+	for i := 0; i+2 <= len(line); i++ {
+		if !code[i] || !code[i+1] {
+			continue
+		}
+		if line[i:i+2] != "rm" || (i > 0 && isShellWordByte(line[i-1])) {
+			continue
+		}
+		if i+2 < len(line) && line[i+2] != ' ' && line[i+2] != '\t' {
+			continue
+		}
+		// "rm" is only destructive at a shell command position; as an
+		// argument of another command (`echo rm -rf ...`) it is inert text.
+		if !isCommandPosition(line, i, code) {
+			continue
+		}
+
+		recursive, endOfOptions := false, false
+		var operands []string
+		for _, word := range shellWords(line[i+2:]) {
+			if !endOfOptions && word == "--" {
+				endOfOptions = true
+				continue
+			}
+			if !endOfOptions && len(word) > 1 && word[0] == '-' {
+				if isRecursiveFlag(word) {
+					recursive = true
+				}
+				continue
+			}
+			operands = append(operands, word)
+		}
+		if !recursive {
+			continue
+		}
+		for _, operand := range operands {
+			if operandHidesExpansion(operand) {
+				return operand, true
+			}
+		}
+	}
+	return "", false
+}
+
+// isCommandPosition reports whether the "rm" starting at offset i sits at a
+// shell command position: preceded by nothing, by a command separator, or by
+// a chain of command prefixes — variable assignments, sudo/env and friends,
+// or the path head of the executable itself (`/bin/rm`, `./rm`). An rm that
+// is a word of another command (`echo rm -rf ...`) is inert and must not
+// reach the quoted-operand pass. A quoted word is never a prefix, so
+// `"echo" rm` stays a command of echo.
+func isCommandPosition(line string, i int, code []bool) bool {
+	// Inside a larger word only a path head keeps rm a command (`/bin/rm`);
+	// anything else (`myrm`, `transform-rm`) is not an rm invocation.
+	wordStart := i
+	for wordStart > 0 && line[wordStart-1] != ' ' && line[wordStart-1] != '\t' && !isCommandSeparator(line, wordStart-1, code) {
+		wordStart--
+	}
+	if wordStart < i {
+		switch head := line[wordStart:i]; head[0] {
+		case '/', '.':
+		default:
+			return false
+		}
+	}
+	for j := wordStart; j > 0; {
+		for j > 0 && (line[j-1] == ' ' || line[j-1] == '\t') {
+			j--
+		}
+		if j == 0 || isCommandSeparator(line, j-1, code) {
+			return true
+		}
+		start := j
+		for start > 0 && line[start-1] != ' ' && line[start-1] != '\t' && !isCommandSeparator(line, start-1, code) {
+			start--
+		}
+		if !isCommandPrefix(line[start:j]) {
+			return false
+		}
+		j = start
+	}
+	return true
+}
+
+// isCommandSeparator reports whether the byte at pos ends a shell command
+// outside quotes; the same bytes inside quotes are ordinary data.
+func isCommandSeparator(line string, pos int, code []bool) bool {
+	if !code[pos] {
+		return false
+	}
+	switch line[pos] {
+	case ';', '|', '&', '(':
+		return true
+	}
+	return false
+}
+
+// isCommandPrefix reports whether word is a prefix token another command word
+// may follow: a variable assignment or a command wrapper that preserves the
+// wrapped command's identity.
+func isCommandPrefix(word string) bool {
+	if name, _, ok := strings.Cut(word, "="); ok && name != "" {
+		for i := 0; i < len(name); i++ {
+			if !isShellWordByte(name[i]) {
+				return false
+			}
+		}
+		// A variable name cannot start with a digit.
+		if name[0] >= '0' && name[0] <= '9' {
+			return false
+		}
+		return true
+	}
+	switch word {
+	case "sudo", "exec", "env", "nohup", "nice", "command", "xargs":
+		return true
+	}
+	return false
+}
+
+func isShellWordByte(c byte) bool {
+	return c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+}
+
+func isRecursiveFlag(word string) bool {
+	if strings.HasPrefix(word, "--") {
+		name := word[2:]
+		return name != "" && !strings.ContainsRune(name, '=') && strings.HasPrefix("recursive", name)
+	}
+	for i := 1; i < len(word); i++ {
+		if word[i] == 'r' || word[i] == 'R' {
+			return true
+		}
+	}
+	return false
+}
+
+// shellCodeMask marks the characters that belong to unquoted code. A command
+// name inside a quoted string or after a comment is not a command.
+func shellCodeMask(line string) []bool {
+	mask := make([]bool, len(line))
+	inSingle, inDouble, escaped := false, false, false
+	atWordStart := true
+
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		switch {
+		case escaped:
+			escaped = false
+			mask[i] = !inSingle && !inDouble
+			atWordStart = false
+		case inSingle:
+			if c == '\'' {
+				inSingle = false
+			}
+		case inDouble:
+			switch c {
+			case '\\':
+				escaped = true
+			case '"':
+				inDouble = false
+			}
+		default:
+			switch c {
+			case '\\':
+				escaped = true
+				mask[i] = true
+				atWordStart = false
+			case '\'':
+				inSingle = true
+				atWordStart = false
+			case '"':
+				inDouble = true
+				atWordStart = false
+			case '#':
+				if atWordStart {
+					return mask
+				}
+				mask[i] = true
+				atWordStart = false
+			case ' ', '\t':
+				mask[i] = true
+				atWordStart = true
+			case ';', '&', '|':
+				mask[i] = true
+				atWordStart = true
+			default:
+				mask[i] = true
+				atWordStart = false
+			}
+		}
+	}
+	return mask
+}
+
+// shellWords splits one simple command into words. Quoted spans are kept
+// whole, a backslash hides the next character outside single quotes, an
+// unquoted separator ends the command, and an unquoted `#` at a word start
+// opens a comment.
+func shellWords(s string) []string {
+	var words []string
+	var word strings.Builder
+	inWord := false
+	flush := func() {
+		if inWord {
+			words = append(words, word.String())
+			word.Reset()
+			inWord = false
+		}
+	}
+
+	for i := 0; i < len(s); i++ {
+		switch c := s[i]; c {
+		case ' ', '\t', '\r':
+			flush()
+		case ';', '&', '|', '\n':
+			flush()
+			return words
+		case '#':
+			if !inWord {
+				return words
+			}
+			inWord = true
+			word.WriteByte(c)
+		case '\'':
+			inWord = true
+			word.WriteByte(c)
+			j := i + 1
+			for j < len(s) && s[j] != '\'' {
+				word.WriteByte(s[j])
+				j++
+			}
+			if j < len(s) {
+				word.WriteByte(s[j])
+			}
+			i = j
+		case '"':
+			inWord = true
+			word.WriteByte(c)
+			j := i + 1
+			for j < len(s) {
+				if s[j] == '\\' && j+1 < len(s) {
+					word.WriteByte(s[j])
+					word.WriteByte(s[j+1])
+					j += 2
+					continue
+				}
+				if s[j] == '"' {
+					word.WriteByte(s[j])
+					j++
+					break
+				}
+				word.WriteByte(s[j])
+				j++
+			}
+			i = j - 1
+		case '\\':
+			inWord = true
+			word.WriteByte(c)
+			if i+1 < len(s) {
+				i++
+				word.WriteByte(s[i])
+			}
+		default:
+			inWord = true
+			word.WriteByte(c)
+		}
+	}
+	flush()
+	return words
+}
+
+// isDoubleQuoteEscapable reports whether a backslash gives the next byte
+// special meaning inside double quotes.
+func isDoubleQuoteEscapable(c byte) bool {
+	switch c {
+	case '$', '`', '"', '\\', '\n':
+		return true
+	}
+	return false
+}
+
+// operandHidesExpansion reports whether a word holds a separator inside a
+// double-quoted span before an expansion anywhere later in the same word. A
+// single-quoted or escaped `$` expands nothing.
+func operandHidesExpansion(operand string) bool {
+	inSingle, inDouble, escaped := false, false, false
+	separatorInDouble := false
+
+	for i := 0; i < len(operand); i++ {
+		c := operand[i]
+		switch {
+		case escaped:
+			escaped = false
+		case inSingle:
+			if c == '\'' {
+				inSingle = false
+			}
+		case inDouble:
+			switch c {
+			case '\\':
+				// Inside double quotes a backslash only escapes $, `, ", \
+				// and newline; before anything else it stays literal and the
+				// next byte keeps its meaning, so `a\;$T` still holds a
+				// separator ahead of the expansion.
+				if i+1 < len(operand) && isDoubleQuoteEscapable(operand[i+1]) {
+					escaped = true
+				}
+			case '"':
+				inDouble = false
+			case '$':
+				if separatorInDouble {
+					return true
+				}
+			case ';', '&', '|', '#':
+				separatorInDouble = true
+			}
+		default:
+			switch c {
+			case '\\':
+				escaped = true
+			case '\'':
+				inSingle = true
+			case '"':
+				inDouble = true
+			case '$':
+				if separatorInDouble {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // determineVerdict determines the overall verdict based on findings
