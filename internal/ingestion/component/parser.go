@@ -374,7 +374,8 @@ func defaultSetups() map[string]schema.ParserSetup {
 			"prompt": "",
 		},
 		"epub": {
-			"suffix": []string{"epub"},
+			"remove_toc": false,
+			"suffix":     []string{"epub"},
 		},
 		"json": {
 			"suffix": []string{"json", "jsonl", "ldjson"},

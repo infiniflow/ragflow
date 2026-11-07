@@ -1068,3 +1068,208 @@ func TestEPUBParserPreservesImageOrderAndAlt(t *testing.T) {
 		t.Fatalf("second image = %#v", items[3])
 	}
 }
+
+func TestEPUBParser_ConfigureFromSetup(t *testing.T) {
+	p := NewEPUBParser()
+	p.ConfigureFromSetup(map[string]any{"remove_toc": true})
+	if !p.RemoveTOC {
+		t.Error("RemoveTOC = false, want true")
+	}
+
+	// nil safe
+	p2 := NewEPUBParser()
+	p2.ConfigureFromSetup(nil)
+	if p2.RemoveTOC {
+		t.Error("flag should stay false after nil setup")
+	}
+}
+
+func TestEPUBParser_RemoveTOC(t *testing.T) {
+	data := buildTestEPUBWithImages(t, []epubTestChapter{{
+		name: "ch1.xhtml",
+		content: epubTestHTML(`<h1>前言</h1>
+<h1>目录</h1>
+<p>第一章 概述</p>
+<p>第二章 方法</p>
+<h1>第一章 概述</h1>
+<p>正文第一章开始讨论...</p>`),
+	}}, nil)
+
+	// 1. Without RemoveTOC
+	pDefault := NewEPUBParser()
+	resDefault := pDefault.ParseWithResult(context.Background(), "book.epub", data)
+	if resDefault.Err != nil {
+		t.Fatalf("ParseWithResult default: %v", resDefault.Err)
+	}
+	tocFound := false
+	for _, it := range ItemsToMaps(resDefault.JSON) {
+		if text, _ := it["text"].(string); strings.Contains(text, "目录") {
+			tocFound = true
+		}
+	}
+	if !tocFound {
+		t.Fatal("expected TOC to be present when RemoveTOC is false")
+	}
+
+	// 2. With RemoveTOC = true (realistic layout: TOC entries precede matching body heading)
+	pTOC := NewEPUBParser()
+	pTOC.ConfigureFromSetup(map[string]any{"remove_toc": true})
+	resTOC := pTOC.ParseWithResult(context.Background(), "book.epub", data)
+	if resTOC.Err != nil {
+		t.Fatalf("ParseWithResult with remove_toc: %v", resTOC.Err)
+	}
+	var resTexts []string
+	for _, it := range ItemsToMaps(resTOC.JSON) {
+		text, _ := it["text"].(string)
+		if strings.Contains(text, "目录") {
+			t.Errorf("TOC heading %q was not removed", text)
+		}
+		if strings.Contains(text, "第二章 方法") {
+			t.Errorf("second TOC entry %q was not removed", text)
+		}
+		resTexts = append(resTexts, text)
+	}
+	// "前言", body heading "第一章 概述", and body "正文第一章开始讨论..." should survive.
+	full := strings.Join(resTexts, " ")
+	if !strings.Contains(full, "前言") || !strings.Contains(full, "第一章 概述") || !strings.Contains(full, "正文第一章开始讨论") {
+		t.Errorf("expected body content to survive, got %q", full)
+	}
+
+	// 3. Nested container blocks (nav / section / div)
+	nestedData := buildTestEPUBWithImages(t, []epubTestChapter{{
+		name: "ch2.xhtml",
+		content: epubTestHTML(`<h1>前言</h1>
+<nav epub:type="toc">
+  <h2>Table of Contents</h2>
+  <ul>
+    <li><a href="#ch1">Chapter 1: Intro</a></li>
+    <li><a href="#ch2">Chapter 2: Methods</a></li>
+  </ul>
+</nav>
+<div class="content"><h1>Chapter 1: Intro</h1><p>Chapter body text</p></div>`),
+	}}, nil)
+	pNested := NewEPUBParser()
+	pNested.ConfigureFromSetup(map[string]any{"remove_toc": true})
+	resNested := pNested.ParseWithResult(context.Background(), "nested.epub", nestedData)
+	if resNested.Err != nil {
+		t.Fatalf("ParseWithResult nested: %v", resNested.Err)
+	}
+	var nestedTexts []string
+	for _, it := range ItemsToMaps(resNested.JSON) {
+		text, _ := it["text"].(string)
+		nestedTexts = append(nestedTexts, text)
+		if strings.Contains(text, "Table of Contents") {
+			t.Errorf("nested TOC heading %q was not removed", text)
+		}
+		if strings.Contains(text, "Chapter 2: Methods") {
+			t.Errorf("nested TOC entry %q was not removed", text)
+		}
+	}
+	fullNested := strings.Join(nestedTexts, " ")
+	if !strings.Contains(fullNested, "前言") || !strings.Contains(fullNested, "Chapter 1: Intro") || !strings.Contains(fullNested, "Chapter body text") {
+		t.Errorf("expected body chapters and foreword to survive, got %q", fullNested)
+	}
+}
+
+func TestEPUBParser_DefaultPathEquivalence(t *testing.T) {
+	ctx, _ := recordingMediaContext()
+	data := buildTestEPUBWithImages(t, []epubTestChapter{
+		{
+			name: "ch1.xhtml",
+			content: epubTestHTML(`<h1>Chapter 1</h1>
+<p>Paragraph one.</p>
+<p>Paragraph two.</p>
+<table><tr><td>Header</td></tr><tr><td>Data</td></tr></table>
+<p>Paragraph three.</p>
+<img src="Images/img1.png" alt="photo">
+<p>Paragraph four.</p>`),
+		},
+		{
+			name: "ch2.xhtml",
+			content: epubTestHTML(`<h2>Chapter 2</h2>
+<p>Paragraph five across chapter boundary.</p>`),
+		},
+	}, []epubTestImage{
+		{name: "Images/img1.png", content: "img-bytes"},
+	})
+
+	p := NewEPUBParser()
+	// Default configuration: RemoveTOC = false
+	res := p.ParseWithResult(ctx, "book.epub", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult default: %v", res.Err)
+	}
+	items := ItemsToMaps(res.JSON)
+
+	// Expected items:
+	// 1. Text: "Chapter 1 Paragraph one. Paragraph two."
+	// 2. Table: doc_type_kwd == "table", table != nil
+	// 3. Text: "Paragraph three."
+	// 4. Image: doc_type_kwd == "image", image != nil
+	// 5. Text: "Paragraph four."
+	// 6. Text: "Chapter 2 Paragraph five across chapter boundary." (distinct from ch1)
+	if len(items) != 6 {
+		t.Fatalf("expected 6 collapsed items in default path, got %d: %#v", len(items), items)
+	}
+
+	if items[0]["doc_type_kwd"] != DocTypeText || !strings.Contains(stringValue(items[0]["text"]), "Paragraph one. Paragraph two.") {
+		t.Errorf("item 0 prose not collapsed: %#v", items[0])
+	}
+	if items[1]["doc_type_kwd"] != DocTypeTable || items[1]["table"] == nil {
+		t.Errorf("item 1 table entity not preserved: %#v", items[1])
+	}
+	if items[2]["doc_type_kwd"] != DocTypeText || !strings.Contains(stringValue(items[2]["text"]), "Paragraph three.") {
+		t.Errorf("item 2 prose mismatch: %#v", items[2])
+	}
+	if items[3]["doc_type_kwd"] != DocTypeImage || items[3]["media_ref"] == nil {
+		t.Errorf("item 3 image not preserved: %#v", items[3])
+	}
+	if items[4]["doc_type_kwd"] != DocTypeText || !strings.Contains(stringValue(items[4]["text"]), "Paragraph four.") {
+		t.Errorf("item 4 prose mismatch: %#v", items[4])
+	}
+	if items[5]["doc_type_kwd"] != DocTypeText || !strings.Contains(stringValue(items[5]["text"]), "Chapter 2 Paragraph five") {
+		t.Errorf("item 5 chapter 2 boundary collapsed across chapters: %#v", items[5])
+	}
+}
+
+// A TOC-only spine item followed by the body chapters is the common EPUB
+// layout: the nav document is its own spine entry, so the TOC headings and
+// entries sit in a different chapter from the body headings they mirror.
+func TestEPUBParser_RemoveTOCSeparateSpineItem(t *testing.T) {
+	data := buildTestEPUBWithImages(t, []epubTestChapter{
+		{name: "toc.xhtml", content: epubTestHTML(`<h1>目录</h1>
+<p>第一章 概述</p>
+<p>第二章 方法</p>`)},
+		{name: "ch1.xhtml", content: epubTestHTML(`<h1>第一章 概述</h1><p>正文第一章开始讨论...</p>`)},
+		{name: "ch2.xhtml", content: epubTestHTML(`<h1>第二章 方法</h1><p>正文第二章...</p>`)},
+	}, nil)
+
+	p := NewEPUBParser()
+	p.ConfigureFromSetup(map[string]any{"remove_toc": true})
+	res := p.ParseWithResult(context.Background(), "book.epub", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	var texts []string
+	for _, it := range ItemsToMaps(res.JSON) {
+		text, _ := it["text"].(string)
+		texts = append(texts, text)
+	}
+	full := strings.Join(texts, " ")
+	if strings.Contains(full, "目录") {
+		t.Errorf("TOC heading survived: %q", full)
+	}
+	// Each chapter title appears once in the body and once in the TOC; only the
+	// body occurrence should remain.
+	if got := strings.Count(full, "第一章 概述"); got != 1 {
+		t.Errorf("第一章 概述 occurrences = %d, want 1: %q", got, full)
+	}
+	if got := strings.Count(full, "第二章 方法"); got != 1 {
+		t.Errorf("第二章 方法 occurrences = %d, want 1: %q", got, full)
+	}
+	for _, want := range []string{"正文第一章开始讨论", "正文第二章"} {
+		if !strings.Contains(full, want) {
+			t.Errorf("missing body text %q in %q", want, full)
+		}
+	}
+}
