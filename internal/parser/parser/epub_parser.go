@@ -563,11 +563,21 @@ func appendTOCTerminator(group, later []map[string]any, eng bool) []map[string]a
 // single text items, splitting at tables and images and at chapter boundaries.
 func collapseEPUBLeaves(leaves []map[string]any) []map[string]any {
 	var items []map[string]any
+	var run strings.Builder
+	// run holds the text of items[len(items)-1] while that run is open.
+	flush := func() {
+		if run.Len() == 0 {
+			return
+		}
+		items[len(items)-1]["text"] = run.String()
+		run.Reset()
+	}
 	lastChapter := -1
 	for _, item := range leaves {
 		ch, _ := item["__epub_chapter"].(int)
 		delete(item, "__epub_chapter")
 		if item["doc_type_kwd"] != "text" {
+			flush()
 			items = append(items, item)
 			lastChapter = -1
 			continue
@@ -577,12 +587,16 @@ func collapseEPUBLeaves(leaves []map[string]any) []map[string]any {
 			continue
 		}
 		if len(items) > 0 && lastChapter == ch && items[len(items)-1]["doc_type_kwd"] == "text" {
-			items[len(items)-1]["text"] = stringValue(items[len(items)-1]["text"]) + " " + text
+			run.WriteString(" ")
+			run.WriteString(text)
 		} else {
+			flush()
 			items = append(items, map[string]any{"text": text, "doc_type_kwd": "text"})
+			run.WriteString(text)
 			lastChapter = ch
 		}
 	}
+	flush()
 	return items
 }
 
