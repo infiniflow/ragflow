@@ -12,6 +12,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/knowledge_compile"
@@ -339,7 +340,17 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 		return err
 	}
 	if !exists {
-		return nil
+		// OceanBase/SeekDB gain chunk columns only through CreateChunkStore, so a
+		// table that predates a column reports "not exists" here even though it
+		// holds data. CreateChunkStore only adds what is missing, and cleanup
+		// below selects knowledge-compile fields, so upgrade before it runs
+		// instead of leaving the previous chunks behind.
+		if !engine.IsOceanBaseFamily(s.docEngine.GetType()) {
+			return nil
+		}
+		if err := s.docEngine.CreateChunkStore(ctx, indexName, doc.KbID, 0, "", ""); err != nil {
+			return fmt.Errorf("upgrade chunk store for document %s: %w", doc.ID, err)
+		}
 	}
 	variants, taskTypes, err := s.documentKnowledgeCompileTypes(ctx, tenantID, doc.KbID, doc.ID)
 	if err != nil {
