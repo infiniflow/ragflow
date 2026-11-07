@@ -766,7 +766,11 @@ def get_metadata_keys(dataset_ids: list[str], tenant_id: str):
 
     from api.db.services.doc_metadata_service import DocMetadataService
 
-    return True, DocMetadataService.get_metadata_keys_by_kbs(dataset_ids)
+    try:
+        return True, DocMetadataService.get_metadata_keys_by_kbs(dataset_ids)
+    except Exception as e:
+        logging.exception("Failed to retrieve metadata keys for datasets %s", dataset_ids)
+        return False, f"Failed to retrieve metadata keys. {e}"
 
 
 def get_auto_metadata(dataset_id: str, tenant_id: str):
