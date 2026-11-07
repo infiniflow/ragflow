@@ -114,13 +114,14 @@ var ThreatPatterns = []ThreatPattern{
 	// `#` glued to the previous word stays literal. Inside double quotes a
 	// separator is literal, so that span absorbs it along with any `$`
 	// expansion; the trailing anchor stays reachable by backtracking. A
-	// redirection is consumed together with the file it names, because that
-	// file is written to or read from, not removed; any operand after the
-	// redirection still counts. The command name needs a word boundary so a
-	// benign word ending in `rm` does not match, and `--rec*` covers the
-	// abbreviations GNU rm accepts.
+	// redirection is consumed together with the whole file it names, because
+	// that file is written to or read from, not removed; the target must end
+	// at a word boundary so its own expansion is not read as an operand, and
+	// any operand after the redirection still counts. The command name needs a
+	// word boundary so a benign word ending in `rm` does not match, and
+	// `--rec*` covers the abbreviations GNU rm accepts.
 	{
-		Pattern:     `\brm\s+(?:--?[a-zA-Z][a-zA-Z-]*(?:=\S+)?\s+)*(?:-[a-zA-Z]*r[a-zA-Z]*|--rec[a-zA-Z]*)\s+(?:[^;&|<>\n#]|"[^"\n]*"|'[^'\n]*'|[^;&|<>\n\s#]#|\d*[<>]{1,2}[ \t]*(?:"[^"\n]*"|'[^'\n]*'|[^;&|<>\n \t#'"]+)[ \t]*)*\$HOME|\brmdir\s+(?:[^;&|<>\n#]|"[^"\n]*"|'[^'\n]*'|[^;&|<>\n\s#]#|\d*[<>]{1,2}[ \t]*(?:"[^"\n]*"|'[^'\n]*'|[^;&|<>\n \t#'"]+)[ \t]*)*\$HOME`,
+		Pattern:     `\brm\s+(?:--?[a-zA-Z][a-zA-Z-]*(?:=\S+)?\s+)*(?:-[a-zA-Z]*r[a-zA-Z]*|--rec[a-zA-Z]*)\s+(?:[^;&|<>\n#]|"[^"\n]*"|'[^'\n]*'|[^;&|<>\n\s#]#|\d*[<>]{1,2}[ \t]*(?:"[^"\n]*"|'[^'\n]*'|&\d+|[^;&|<>\n \t#'"]+)(?:[ \t]|$))*\$HOME|\brmdir\s+(?:[^;&|<>\n#]|"[^"\n]*"|'[^'\n]*'|[^;&|<>\n\s#]#|\d*[<>]{1,2}[ \t]*(?:"[^"\n]*"|'[^'\n]*'|&\d+|[^;&|<>\n \t#'"]+)(?:[ \t]|$))*\$HOME`,
 		PatternID:   "destructive_home_rm",
 		Severity:    "critical",
 		Category:    "destructive",
@@ -148,7 +149,7 @@ var ThreatPatterns = []ThreatPattern{
 		Description: "Python rmtree on absolute or root-relative path",
 	},
 	{
-		Pattern:     `\brm\s+(?:--?[a-zA-Z][a-zA-Z-]*(?:=\S+)?\s+)*(?:-[a-zA-Z]*r[a-zA-Z]*|--rec[a-zA-Z]*)\s+(?:[^;&|<>\n#]|"[^"\n]*"|'[^'\n]*'|[^;&|<>\n\s#]#|\d*[<>]{1,2}[ \t]*(?:"[^"\n]*"|'[^'\n]*'|[^;&|<>\n \t#'"]+)[ \t]*)*\$`,
+		Pattern:     `\brm\s+(?:--?[a-zA-Z][a-zA-Z-]*(?:=\S+)?\s+)*(?:-[a-zA-Z]*r[a-zA-Z]*|--rec[a-zA-Z]*)\s+(?:[^;&|<>\n#]|"[^"\n]*"|'[^'\n]*'|[^;&|<>\n\s#]#|\d*[<>]{1,2}[ \t]*(?:"[^"\n]*"|'[^'\n]*'|&\d+|[^;&|<>\n \t#'"]+)(?:[ \t]|$))*\$`,
 		PatternID:   "rm_recursive_dangerous",
 		Severity:    "high",
 		Category:    "destructive",
