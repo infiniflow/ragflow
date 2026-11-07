@@ -48,6 +48,7 @@ import (
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -496,7 +497,7 @@ func (s *MemoryMessageService) extractByLLM(ctx context.Context, mem *CreateMemo
 	if mem.TenantLLMID != nil && *mem.TenantLLMID != "" {
 		llmRef = *mem.TenantLLMID
 	}
-	chatModel, err := NewModelFactory().NewChatModel(ctx, ModelAccess{TenantID: mem.TenantID}, llmRef)
+	chatModel, err := NewModelFactory().NewChatModel(permission.WithTenantID(ctx, mem.TenantID), llmRef)
 	if err != nil {
 		return nil, fmt.Errorf("resolve chat model: %w", classifyMemoryTaskDependencyError(err))
 	}

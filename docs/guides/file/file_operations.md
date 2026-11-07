@@ -14,7 +14,7 @@ After you hover over a file row, the **Operations** column displays the availabl
 
 ![File operations](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/file_operations.jpg)
 
-**Add to Knowledge Base**: Applies to files. Associates the file with one or more knowledge bases, allowing the knowledge base to use the file as a data source.
+**Add to Dataset**: Applies to files. Associates the file with one or more Datasets, allowing the Dataset to use the file as a data source.
 
 **Move**: Applies to files or folders. After selecting a target folder and saving, the system moves the selected item to the target directory.
 
@@ -26,5 +26,5 @@ After you hover over a file row, the **Operations** column displays the availabl
 
 **Delete**: Applies to files or folders. A confirmation dialog appears before deletion. After confirmation, the file is removed from the current directory.
 
-Deleting files or folders may affect knowledge base data sources that are already associated with them. Before deleting, confirm that the file is no longer used by business workflows, knowledge base parsing, or agent retrieval.
+Deleting files or folders may affect Dataset data sources that are already associated with them. Before deleting, confirm that the file is no longer used by business workflows, Dataset parsing, or agent retrieval.
 

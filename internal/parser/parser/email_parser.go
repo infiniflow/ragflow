@@ -35,6 +35,7 @@ import (
 	"golang.org/x/text/transform"
 
 	"ragflow/internal/common"
+	charsetlib "ragflow/internal/parser/charset"
 	"ragflow/internal/utility"
 )
 
@@ -174,7 +175,7 @@ func targetFieldsSet(fields []string) map[string]bool {
 // the non-UTF-8 charsets via charsetEncoding.
 var rfc2047Decoder = &mime.WordDecoder{
 	CharsetReader: func(charset string, input io.Reader) (io.Reader, error) {
-		if enc, ok := charsetEncoding(charset); ok {
+		if enc, ok := charsetlib.CharsetEncoding(charset); ok {
 			return transform.NewReader(input, enc.NewDecoder()), nil
 		}
 		return nil, fmt.Errorf("email: unsupported header charset %q", charset)
@@ -389,16 +390,24 @@ func isAttachmentPart(part *multipart.Part) bool {
 }
 
 // attachmentFilename extracts a filename from the part's
-// Content-Disposition or Content-Type headers.
+// Content-Disposition or Content-Type headers. Mail clients write a
+// non-ASCII name as RFC 2047 encoded-words inside the parameter, as in
+// filename="=?utf-8?B?...?=", and the mime package leaves them encoded. Such
+// a name has no file extension, so rechunkEmailAttachments skipped the
+// attachment; it is decoded here. The filename is decoded before
+// filepath.Base drops any directory from it, as part.FileName does, because a
+// base64 encoded-word can contain a "/".
 func attachmentFilename(part *multipart.Part) string {
-	if fn := part.FileName(); fn != "" {
-		return fn
+	if _, params, err := mime.ParseMediaType(part.Header.Get("Content-Disposition")); err == nil {
+		if fn := params["filename"]; fn != "" {
+			return filepath.Base(decodeHeaderWord(fn))
+		}
 	}
 	ct := part.Header.Get("Content-Type")
 	if ct != "" {
 		_, params, _ := mime.ParseMediaType(ct)
 		if name, ok := params["name"]; ok {
-			return name
+			return decodeHeaderWord(name)
 		}
 	}
 	return "attachment.bin"
@@ -409,7 +418,7 @@ func decodeMailPayload(payload []byte, charset string) string {
 	if len(payload) == 0 {
 		return ""
 	}
-	decoded, _ := DecodeToUTF8(payload, charset)
+	decoded, _ := charsetlib.DecodeToUTF8(payload, charset)
 	return string(decoded)
 }
 
@@ -596,15 +605,16 @@ func recoverParse(fn func() ParseResult) (res ParseResult, panicked bool) {
 // attachment via naive_chunk and merges the resulting chunks into the same
 // document.
 //
-// KNOWN LIMITATION: re-chunk uses the default-config parser returned by
-// GetParser(ft) (and, for a nested email, only the top-level p.fields — no
-// tenant/setup language, parse_method, or OCR/VLM model). The extracted
-// attachment text may therefore differ from ingesting the same file as a
-// standalone document through the pipeline's tenant/setup-configured
-// parser. This is a deliberate, best-effort approximation for making
-// attachment content retrievable (the same simplification Python's
-// email.py naive_chunk makes), not a correctness bug; threading the full
-// tenant/setup config into re-chunk is intentionally out of scope here.
+// KNOWN LIMITATION: re-chunk uses the text-only, default-config parser
+// returned by GetTextOnlyParser (and, for a nested email, only the
+// top-level p.fields — no tenant/setup language, parse_method, or OCR/VLM
+// model). The extracted attachment text may therefore differ from ingesting
+// the same file as a standalone document through the pipeline's
+// tenant/setup-configured parser. This is a deliberate, best-effort
+// approximation for making attachment content retrievable (the same
+// simplification Python's email.py naive_chunk makes), not a correctness
+// bug; threading the full tenant/setup config into re-chunk is intentionally
+// out of scope here.
 //
 // Attachments whose extension has no text-oriented parser (images, audio,
 // video) are skipped: they carry no plain text in this pipeline and would
@@ -678,9 +688,12 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 				return ep.parseEmail(ctx, fn, []byte(payload), depth+1)
 			})
 		} else {
-			np, err := GetParser(ft)
+			np, actual, err := GetTextOnlyParser(ft, []byte(payload))
 			if err != nil {
 				continue
+			}
+			if actual != ft {
+				common.Warn(fmt.Sprintf("email attachment %q: requested format %s; detected %s; continuing with the %s parser", fn, ft, actual, actual))
 			}
 			res, panicked = recoverParse(func() ParseResult {
 				return np.ParseWithResult(ctx, fn, []byte(payload))

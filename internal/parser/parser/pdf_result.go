@@ -94,7 +94,14 @@ func (p *PDFParser) NormalizeResult(ctx context.Context, filename string, result
 				fields["text"] = strings.TrimSpace(tableutil.RenderTableHTML(table) + "\n" + text)
 				delete(fields, "table")
 			}
-			fields["doc_type_kwd"] = "text"
+			// Flattening moves an item's content into text. A crop-only media
+			// item has no content to move: rewriting it to text would hide the
+			// region from vision enhancement and leave an empty item the
+			// chunker drops, so it keeps its media type and stays available to
+			// the on-demand cropper.
+			if hasPDFTextCarrier(fields) || len(positions) == 0 {
+				fields["doc_type_kwd"] = "text"
+			}
 		}
 		items = appendPDFItem(items, fields)
 	}
@@ -158,6 +165,15 @@ func (p *PDFParser) normalizePDFMarkdown(ctx context.Context, filename, markdown
 	}
 	if converted.File == nil {
 		converted.File = fileMeta
+	} else {
+		// The markdown parser always sets File with at least the name, so a
+		// nil check alone would silently drop producer-seeded metadata like
+		// page_count. Merge any keys the parser did not supply.
+		for key, value := range fileMeta {
+			if _, ok := converted.File[key]; !ok {
+				converted.File[key] = value
+			}
+		}
 	}
 	return p.NormalizeResult(ctx, filename, converted)
 }
@@ -293,6 +309,18 @@ func pdfPositionHasRegion(values [5]float64) bool {
 		return false
 	}
 	return values[2] > values[1] && values[4] > values[3]
+}
+
+// hasPDFTextCarrier reports whether flattening an item has any content to move
+// into text: a body, an inline image payload, or a deferred media reference.
+func hasPDFTextCarrier(fields map[string]any) bool {
+	if text, _ := fields["text"].(string); strings.TrimSpace(text) != "" {
+		return true
+	}
+	if img, _ := fields["image"].(string); img != "" {
+		return true
+	}
+	return entity.MediaRefFromAny(fields["media_ref"]) != nil
 }
 
 // HasPDFCropRegion reports whether the item carries at least one PDF crop

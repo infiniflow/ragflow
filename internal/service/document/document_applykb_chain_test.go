@@ -15,7 +15,6 @@ package document
 import (
 	"encoding/json"
 	"sort"
-	"strings"
 	"testing"
 
 	"gorm.io/gorm"
@@ -23,7 +22,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	datasetsvc "ragflow/internal/service/dataset"
 )
@@ -43,8 +41,7 @@ func firstExtractorMetadata(t *testing.T, parserConfig entity.JSONMap) map[strin
 	t.Helper()
 	var keys []string
 	for k := range parserConfig {
-		lower := strings.ToLower(k)
-		if strings.HasPrefix(lower, "extractor:") || strings.HasPrefix(lower, "extractor_") {
+		if common.IsExtractorComponentID(k) {
 			keys = append(keys, k)
 		}
 	}
@@ -131,9 +128,9 @@ func TestIngest_ApplyKB_RealDatasetAPIChain(t *testing.T) {
 		t.Fatalf("seed document: %v", err)
 	}
 
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	enabled := true
-	if _, code, err := newDatasetService().UpdateMetadataConfig(ctx, "kb-1", "user-1", &service.MetadataConfigRequest{
+	if _, code, err := newDatasetService().UpdateMetadataConfig(ctx, "kb-1", &service.MetadataConfigRequest{
 		Enabled:         &enabled,
 		Metadata:        []service.MetadataConfigField{{Key: "author", Type: "string"}},
 		BuiltInMetadata: []service.MetadataConfigField{{Key: "document_name", Type: "string"}},
@@ -164,7 +161,7 @@ func TestIngest_ApplyKB_RealDatasetAPIChain(t *testing.T) {
 	svc := testDocumentService(t)
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
 
-	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+	code, err := svc.Ingest(ctx, &IngestDocumentRequest{
 		DocIDs:  []string{"doc-1"},
 		Run:     string(entity.TaskStatusRunning),
 		Delete:  true,
@@ -246,9 +243,9 @@ func TestIngest_ApplyKB_DisabledDatasetAPIChain(t *testing.T) {
 		t.Fatalf("seed document: %v", err)
 	}
 
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	disabled := false
-	if _, code, err := newDatasetService().UpdateMetadataConfig(ctx, "kb-1", "user-1", &service.MetadataConfigRequest{
+	if _, code, err := newDatasetService().UpdateMetadataConfig(ctx, "kb-1", &service.MetadataConfigRequest{
 		Enabled: &disabled,
 	}); err != nil || code != common.CodeSuccess {
 		t.Fatalf("UpdateMetadataConfig err=%v code=%v", err, code)
@@ -258,7 +255,7 @@ func TestIngest_ApplyKB_DisabledDatasetAPIChain(t *testing.T) {
 	svc := testDocumentService(t)
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
 
-	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+	code, err := svc.Ingest(ctx, &IngestDocumentRequest{
 		DocIDs:  []string{"doc-1"},
 		Run:     string(entity.TaskStatusRunning),
 		Delete:  true,
@@ -308,12 +305,12 @@ func TestIngest_ApplyKB_RealCreatedDatasetChain(t *testing.T) {
 	// resolved embedding model id, keeping CreateDataset on its real path
 	// (no embedding override).
 	if err := dao.DB.Model(&entity.UserTenant{}).Where("user_id = ? AND tenant_id = ?", "user-1", "tenant-1").Update(
-		"tenant_embd_id", "embd-1",
+		"tenant_embd_id", "embd-default",
 	).Error; err != nil {
 		t.Fatalf("set membership embd id: %v", err)
 	}
 
-	ctx := t.Context()
+	ctx := documentTestContext(t.Context())
 	parserID := "general"
 	parseType := 1
 	team := "team"
@@ -336,7 +333,7 @@ func TestIngest_ApplyKB_RealCreatedDatasetChain(t *testing.T) {
 				},
 			},
 		},
-	}, permission.Subject{UserID: "user-1", TenantID: "tenant-1"})
+	})
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("CreateDataset err=%v code=%v", err, code)
 	}
@@ -387,7 +384,7 @@ func TestIngest_ApplyKB_RealCreatedDatasetChain(t *testing.T) {
 	svc := testDocumentService(t)
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
 
-	code, err = svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+	code, err = svc.Ingest(ctx, &IngestDocumentRequest{
 		DocIDs:  []string{"doc-1"},
 		Run:     string(entity.TaskStatusRunning),
 		Delete:  true,

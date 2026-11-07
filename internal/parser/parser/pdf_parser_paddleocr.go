@@ -23,14 +23,15 @@ func isStructuralOCRTextLayout(fields map[string]any) bool {
 	return false
 }
 
-// PaddleOCRPDFResult projects OCR regions onto the PDF's page geometry and
-// emits the structured items consumed by the existing PDF chunk pipeline.
-func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, response *models.OCRFileResponse) ParseResult {
+// OCRPDFResult projects the page blocks of an OCR provider onto the PDF's page
+// geometry and emits the structured items consumed by the existing PDF chunk
+// pipeline. provider names the OCR service in errors and warnings.
+func OCRPDFResult(ctx context.Context, provider, filename string, data []byte, response *models.OCRFileResponse) ParseResult {
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}
 	if response == nil || len(response.Pages) == 0 {
-		return ParseResult{Err: fmt.Errorf("parser: PaddleOCR returned no page blocks")}
+		return ParseResult{Err: fmt.Errorf("parser: %s returned no page blocks", provider)}
 	}
 	sizes, pageCount, geometryErr := paddleOCRPageSizes(ctx, data, response.Pages)
 	if err := ctx.Err(); err != nil {
@@ -39,7 +40,7 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 	result := ParseResult{Warnings: append([]string(nil), response.Warnings...)}
 	hasPageCount := pageCount > 0
 	if geometryErr != nil {
-		result.Warnings = append(result.Warnings, "PaddleOCR PDF geometry unavailable: "+geometryErr.Error())
+		result.Warnings = append(result.Warnings, provider+" PDF geometry unavailable: "+geometryErr.Error())
 	}
 	markdown, err := NewMarkdownParser(GoMarkdown)
 	if err != nil {
@@ -52,12 +53,25 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 		}
 		size := sizes[page.Index]
 		if paddleOCRPositive(page.Width) && paddleOCRPositive(page.Height) && paddleOCRPositive(size[0]) && paddleOCRPositive(size[1]) && !paddleOCRAspectRatioMatches(page, size) {
-			result.Warnings = append(result.Warnings, fmt.Sprintf("PaddleOCR page %d: OCR dimensions %gx%g do not match PDF aspect ratio %gx%g; coordinates omitted", page.Index+1, page.Width, page.Height, size[0], size[1]))
+			result.Warnings = append(result.Warnings, fmt.Sprintf("%s page %d: OCR dimensions %gx%g do not match PDF aspect ratio %gx%g; coordinates omitted", provider, page.Index+1, page.Width, page.Height, size[0], size[1]))
 			size = [2]float64{}
 		}
 		for _, block := range page.Blocks {
 			if err := ctx.Err(); err != nil {
 				return ParseResult{Err: err}
+			}
+			label := strings.ToLower(strings.TrimSpace(block.Label))
+			if models.IsOCRMediaLabel(label) || models.IsOCRImageOnlyText(block.Text) {
+				text := strings.TrimSpace(utility.StripMarkdownImages(block.Text))
+				position := paddleOCRBlockPosition(page, block.BBox, size)
+				// A block with neither body text nor a crop region has nothing
+				// media can act on: a crop preview needs positive-area geometry,
+				// and a synthetic text body would index as retrievable text.
+				if text == "" && len(position) == 0 {
+					continue
+				}
+				result.JSON = append(result.JSON, paddleOCRMediaItem(page, text, position))
+				continue
 			}
 			content := strings.TrimSpace(utility.StripMarkdownImages(block.Text))
 			if content == "" {
@@ -69,7 +83,6 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 			}
 			result.Warnings = append(result.Warnings, parsed.Warnings...)
 			position := paddleOCRBlockPosition(page, block.BBox, size)
-			label := strings.ToLower(strings.TrimSpace(block.Label))
 			isTitle := label == "doc_title" || label == "paragraph_title"
 			if label == "figure_title" || label == "table_title" {
 				label = "caption"
@@ -126,10 +139,32 @@ func PaddleOCRPDFResult(ctx context.Context, filename string, data []byte, respo
 		return ParseResult{Err: err}
 	}
 	if len(result.JSON) == 0 {
-		return ParseResult{Err: fmt.Errorf("parser: PaddleOCR returned empty text")}
+		return ParseResult{Err: fmt.Errorf("parser: %s returned empty text", provider)}
 	}
 	result.File = pdfFileMeta(filename, pageCount)
 	return result
+}
+
+// paddleOCRMediaItem keeps a figure-like block as a media item. The text stays
+// empty when the block carries no body text: the region is preserved for the
+// vision pass and the on-demand crop, while a synthetic placeholder would
+// index as retrievable body text (#21218). The chunker drops a text-less media
+// item that never became retrievable, matching the DeepDoc figure path.
+func paddleOCRMediaItem(page models.OCRPage, text string, position []any) DocItem {
+	fields := map[string]any{
+		"doc_type_kwd":    "image",
+		"layout":          "figure",
+		"page_number":     page.Index + 1,
+		"_preserve_order": true,
+	}
+	if text != "" {
+		fields["text"] = text
+	}
+	if len(position) > 0 {
+		matrix := [][]any{position}
+		fields["positions"], fields["_pdf_positions"] = matrix, matrix
+	}
+	return DocItemFromMap(fields)
 }
 
 func paddleOCRBlockPosition(page models.OCRPage, bbox []float64, size [2]float64) []any {

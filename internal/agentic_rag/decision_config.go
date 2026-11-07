@@ -46,15 +46,21 @@ import (
 type decisionScope struct {
 	tenantID string
 	chatID   string
+	userID   string
 }
 
 type decisionScopeContextKey struct{}
 
 // withDecisionScope attaches the tenant/chat the run belongs to.
-func withDecisionScope(ctx context.Context, tenantID, chatID string) context.Context {
+func withDecisionScope(ctx context.Context, tenantID, chatID string, userIDs ...string) context.Context {
+	userID := ""
+	if len(userIDs) > 0 {
+		userID = strings.TrimSpace(userIDs[0])
+	}
 	return context.WithValue(ctx, decisionScopeContextKey{}, decisionScope{
 		tenantID: strings.TrimSpace(tenantID),
 		chatID:   strings.TrimSpace(chatID),
+		userID:   userID,
 	})
 }
 
@@ -103,7 +109,7 @@ func resolveDecisionBackend(ctx context.Context) *decisionBackend {
 	// ownership check only runs on a miss. Keyed by model id alone, a second
 	// tenant that names the same id within the TTL would receive the first
 	// tenant's backend without the check ever running.
-	cacheKey := scope.tenantID + "\x00" + modelID
+	cacheKey := scope.tenantID + "\x00" + scope.userID + "\x00" + modelID
 
 	decisionConfigMu.Lock()
 	entry := decisionConfigCache[cacheKey]
@@ -144,7 +150,14 @@ func decisionModelIDFor(ctx context.Context, scope decisionScope) string {
 		}
 	}
 	if scope.tenantID != "" {
-		membership, err := dao.NewUserTenantDAO().GetOwnerByTenantID(ctx, dao.DB, scope.tenantID)
+		membershipDAO := dao.NewUserTenantDAO()
+		var membership *entity.UserTenant
+		var err error
+		if scope.userID != "" {
+			membership, err = membershipDAO.FilterByUserIDAndTenantID(ctx, dao.DB, scope.userID, scope.tenantID)
+		} else {
+			membership, err = membershipDAO.GetOwnerByTenantID(ctx, dao.DB, scope.tenantID)
+		}
 		if err == nil && membership != nil {
 			if id := resolvedDecisionID(membership.TenantDecisionID, membership.DecisionID); id != "" {
 				return id

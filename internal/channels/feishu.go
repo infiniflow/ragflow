@@ -26,9 +26,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/gorilla/websocket"
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	"github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
+	larkcardkit "github.com/larksuite/oapi-sdk-go/v3/service/cardkit/v1"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 	"go.uber.org/zap"
@@ -38,12 +40,29 @@ import (
 )
 
 const (
-	defaultFeishuDomain  = "feishu"
-	defaultFeishuTimeout = 30 * time.Second
-	feishuMessageTTL     = time.Hour
-	feishuQueueSize      = 64
-	feishuWorkerIdle     = 5 * time.Minute
+	defaultFeishuDomain   = "feishu"
+	defaultFeishuTimeout  = 30 * time.Second
+	feishuTurnBudget      = 5 * time.Minute
+	feishuMessageTTL      = time.Hour
+	feishuQueueSize       = 64
+	feishuWorkerIdle      = 5 * time.Minute
+	feishuStreamTick      = 100 * time.Millisecond
+	feishuStreamStep      = 10
+	feishuStreamAttempts  = 3
+	feishuStreamBackoff   = 300 * time.Millisecond
+	feishuStreamCallLimit = 10 * time.Second
+	feishuCloseTimeout    = feishuStreamAttempts*feishuStreamCallLimit + feishuStreamAttempts*feishuStreamBackoff
+	feishuStreamElementID = "ragflow_stream"
 )
+
+// feishuStreamCardJSON is the card 2.0 payload whose markdown element receives the
+// streamed answer. Streaming mode and shared-card mode are both required by the
+// card element content API.
+var feishuStreamCardJSON = `{"schema":"2.0","config":{"streaming_mode":true,"update_multi":true,"summary":{"content":"RAGFlow"}},"body":{"elements":[{"tag":"markdown","element_id":"` + feishuStreamElementID + `","content":""}]}}`
+
+// errFeishuNothingStreamed reports that no text reached the card, so the caller still
+// has to deliver the answer.
+var errFeishuNothingStreamed = errors.New("feishu: no streamed text to display")
 
 type feishuAccount struct {
 	AccountID string
@@ -51,6 +70,7 @@ type feishuAccount struct {
 	AppSecret string
 	Domain    string
 	Timeout   time.Duration
+	Stream    bool
 }
 
 type feishuChannel struct {
@@ -84,17 +104,24 @@ func newFeishuChannel(account feishuAccount) *feishuChannel {
 		seen:    map[string]time.Time{},
 		workers: map[string]*feishuWorker{},
 	}
+	transportPolicy := channelURLPolicy{exactHosts: []string{"open.feishu.cn", "open.larksuite.com"}}
+	safeClient := newSafeChannelHTTPClient(account.Timeout, transportPolicy)
 	ch.rest = lark.NewClient(
 		account.AppID,
 		account.AppSecret,
 		lark.WithOpenBaseUrl(feishuBaseURL(account.Domain)),
+		lark.WithHttpClient(safeClient),
 		lark.WithLogLevel(larkcore.LogLevelInfo),
 		lark.WithReqTimeout(account.Timeout),
 	)
+	wsDialer := *websocket.DefaultDialer
+	wsDialer.HandshakeTimeout = account.Timeout
 	ch.wsClient = larkws.NewClient(
 		account.AppID,
 		account.AppSecret,
 		larkws.WithDomain(feishuBaseURL(account.Domain)),
+		larkws.WithHttpClient(safeClient),
+		larkws.WithWebSocketDialer(newChannelSDKWebSocketDialer(&wsDialer)),
 		larkws.WithEventHandler(ch.eventDispatcher()),
 		larkws.WithLogLevel(larkcore.LogLevelInfo),
 	)
@@ -122,6 +149,7 @@ func newFeishuChannelFromConfig(accountID string, cfg map[string]any) (*feishuCh
 		AppSecret: appSecret,
 		Domain:    valueOrDefault(firstString(cfg, "domain"), defaultFeishuDomain),
 		Timeout:   timeout,
+		Stream:    cfg["stream"] == true,
 	}), nil
 }
 
@@ -190,15 +218,135 @@ func (c *feishuChannel) Send(ctx context.Context, msg core.OutgoingMessage) erro
 	}
 
 	content, _ := json.Marshal(map[string]string{"text": msg.Text})
-	contentText := string(content)
-	msgType := "text"
+	return c.sendMessage(ctx, msg, "text", string(content))
+}
 
+// StreamEnabled reports whether this account streams replies.
+func (c *feishuChannel) StreamEnabled() bool {
+	return c.account.Stream
+}
+
+// SendStream delivers the answer as a streaming card: the card is created once the
+// first text arrives, refreshed at a fixed interval, and closed when text is drained.
+// An error means no text reached the card, so the caller still sends the full answer.
+func (c *feishuChannel) SendStream(ctx context.Context, msg core.OutgoingMessage, text <-chan string) error {
+	if strings.TrimSpace(msg.ChatID) == "" {
+		return errors.New("chat_id is required")
+	}
+
+	var first string
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case value, open := <-text:
+		if !open || strings.TrimSpace(value) == "" {
+			return errFeishuNothingStreamed
+		}
+		first = value
+	}
+
+	cardID, err := c.createStreamCard(ctx)
+	if err != nil {
+		return err
+	}
+	cardMessage, _ := json.Marshal(map[string]any{"type": "card", "data": map[string]string{"card_id": cardID}})
+	if err := c.sendMessage(ctx, msg, "interactive", string(cardMessage)); err != nil {
+		return err
+	}
+
+	sequence := 0
+	latest, sent := first, ""
+	flush := func(value string) error {
+		if value == "" || value == sent {
+			return nil
+		}
+		next := sequence + 1
+		uuid := common.GenerateToken()
+		err := feishuRetry(ctx, func(callCtx context.Context) error {
+			resp, err := c.rest.Cardkit.V1.CardElement.Content(callCtx, larkcardkit.NewContentCardElementReqBuilder().
+				CardId(cardID).
+				ElementId(feishuStreamElementID).
+				Body(larkcardkit.NewContentCardElementReqBodyBuilder().
+					Content(value).
+					Sequence(next).
+					Uuid(uuid).
+					Build()).
+				Build())
+			if err != nil {
+				return err
+			}
+			return feishuResponseError("card content", resp.Code, resp.Msg)
+		})
+		if err != nil {
+			return err
+		}
+		sequence = next
+		sent = value
+		return nil
+	}
+	// fail reports an update that stayed broken after the retries. The bridge then sends
+	// the complete answer as a normal message, including text that was already streamed.
+	fail := func(action string, err error) error {
+		common.Error("feishu: "+action, err, zap.String("account_id", c.account.AccountID), zap.String("card_id", cardID))
+		_ = c.closeStreamCard(ctx, cardID, &sequence)
+		return err
+	}
+	ticker := time.NewTicker(feishuStreamTick)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			// The turn is over, but the card still has to be closed or it keeps rendering as
+			// in progress.
+			_ = c.closeStreamCard(ctx, cardID, &sequence)
+			return ctx.Err()
+		case value, open := <-text:
+			if !open {
+				// A closed channel returns immediately forever, so stop selecting on it and
+				// let the ticker drain what is still unsent.
+				text = nil
+				continue
+			}
+			latest = value
+		case <-ticker.C:
+			if sent != latest {
+				if err := flush(nextStreamText(sent, latest, feishuStreamStep)); err != nil {
+					return fail("card content failed", err)
+				}
+				continue
+			}
+			if text == nil {
+				return c.closeStreamCard(ctx, cardID, &sequence)
+			}
+		}
+	}
+}
+
+// nextStreamText returns the text to display this tick, advancing by at most step runes.
+// A rewritten target starts from its first rune so it cannot trigger a full block update.
+func nextStreamText(shown, target string, step int) string {
+	if step < 1 {
+		step = 1
+	}
+	runes := []rune(target)
+	at := 0
+	if strings.HasPrefix(target, shown) {
+		at = len([]rune(shown))
+	}
+	if len(runes)-at <= step {
+		return target
+	}
+	return string(runes[:at+step])
+}
+
+// sendMessage posts msgType/content to the chat, as a reply when msg carries a target.
+func (c *feishuChannel) sendMessage(ctx context.Context, msg core.OutgoingMessage, msgType, content string) error {
 	if strings.TrimSpace(msg.ReplyToMessageID) != "" {
 		resp, err := c.rest.Im.Message.Reply(ctx, larkim.NewReplyMessageReqBuilder().
 			MessageId(msg.ReplyToMessageID).
 			Body(larkim.NewReplyMessageReqBodyBuilder().
 				MsgType(msgType).
-				Content(contentText).
+				Content(content).
 				Build()).
 			Build())
 		if err != nil {
@@ -212,13 +360,76 @@ func (c *feishuChannel) Send(ctx context.Context, msg core.OutgoingMessage) erro
 		Body(larkim.NewCreateMessageReqBodyBuilder().
 			ReceiveId(msg.ChatID).
 			MsgType(msgType).
-			Content(contentText).
+			Content(content).
 			Build()).
 		Build())
 	if err != nil {
 		return err
 	}
 	return feishuResponseError("create", resp.Code, resp.Msg)
+}
+
+// createStreamCard creates the card entity that carries the streamed answer.
+func (c *feishuChannel) createStreamCard(ctx context.Context) (string, error) {
+	resp, err := c.rest.Cardkit.V1.Card.Create(ctx, larkcardkit.NewCreateCardReqBuilder().
+		Body(larkcardkit.NewCreateCardReqBodyBuilder().
+			Type("card_json").
+			Data(feishuStreamCardJSON).
+			Build()).
+		Build())
+	if err != nil {
+		return "", err
+	}
+	if err := feishuResponseError("card create", resp.Code, resp.Msg); err != nil {
+		return "", err
+	}
+	if resp.Data == nil || stringValue(resp.Data.CardId) == "" {
+		return "", errors.New("feishu card create returned no card id")
+	}
+	return stringValue(resp.Data.CardId), nil
+}
+
+// feishuRetry retries a card API call with the Feishu streaming policy.
+func feishuRetry(ctx context.Context, call func(context.Context) error) error {
+	return retryChannelCall(ctx, feishuStreamAttempts, feishuStreamCallLimit, feishuStreamBackoff, call)
+}
+
+// closeStreamCard ends the card's streaming state and reports a failed close. The turn
+// context may already be cancelled when this runs, so the call uses a detached context
+// whose budget covers every retry attempt.
+func (c *feishuChannel) closeStreamCard(ctx context.Context, cardID string, sequence *int) error {
+	closeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), feishuCloseTimeout)
+	defer cancel()
+	err := c.finishStreamCard(closeCtx, cardID, sequence)
+	if err != nil {
+		common.Error("feishu: card settings failed", err, zap.String("account_id", c.account.AccountID), zap.String("card_id", cardID))
+	}
+	return err
+}
+
+// finishStreamCard turns streaming mode off so the card stops rendering as in progress.
+func (c *feishuChannel) finishStreamCard(ctx context.Context, cardID string, sequence *int) error {
+	next := *sequence + 1
+	uuid := common.GenerateToken()
+	err := feishuRetry(ctx, func(callCtx context.Context) error {
+		resp, err := c.rest.Cardkit.V1.Card.Settings(callCtx, larkcardkit.NewSettingsCardReqBuilder().
+			CardId(cardID).
+			Body(larkcardkit.NewSettingsCardReqBodyBuilder().
+				Settings(`{"config":{"streaming_mode":false}}`).
+				Sequence(next).
+				Uuid(uuid).
+				Build()).
+			Build())
+		if err != nil {
+			return err
+		}
+		return feishuResponseError("card settings", resp.Code, resp.Msg)
+	})
+	if err != nil {
+		return err
+	}
+	*sequence = next
+	return nil
 }
 
 // run keeps the SDK WebSocket client active until the channel stops.
@@ -335,7 +546,7 @@ func (c *feishuChannel) runWorker(ctx context.Context, chatID string, worker *fe
 			if ctx.Err() != nil {
 				return
 			}
-			handlerCtx, cancel := context.WithTimeout(ctx, c.account.Timeout)
+			handlerCtx, cancel := context.WithTimeout(ctx, feishuTurnBudget)
 			c.handleIncoming(handlerCtx, msg)
 			cancel()
 			resetTimer(idle, feishuWorkerIdle)

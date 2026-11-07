@@ -47,9 +47,6 @@ func TestAgentVersionActions(t *testing.T) {
 				}
 				c, w, db := setupGinContextWithUserAndDB(t, action.method, path)
 				c.Params = gin.Params{{Key: "canvas_id", Value: "canvas-1"}, {Key: "version_id", Value: "version-1"}}
-				if err := db.Create(&entity.User{ID: "user-1", Nickname: "owner", Email: "owner@test.com"}).Error; err != nil {
-					t.Fatal(err)
-				}
 				current := entity.UserCanvas{
 					ID: "canvas-1", UserID: "user-1", Title: sptr("Current Agent"),
 					Description: sptr("Current description"), Tags: "keep", Release: true,
@@ -86,6 +83,9 @@ func TestAgentVersionActions(t *testing.T) {
 					wantCode = common.CodeOperatingError
 				case "unauthenticated":
 					delete(c.Keys, "user")
+					delete(c.Keys, "user_id")
+					delete(c.Keys, "tenant_id")
+					c.Request = c.Request.WithContext(t.Context())
 					wantCode = common.CodeUnauthorized
 				case "nil_dsl":
 					version.DSL = nil
@@ -114,7 +114,7 @@ func TestAgentVersionActions(t *testing.T) {
 				}
 				var response struct {
 					Code    common.ErrorCode `json:"code"`
-					Data    interface{}      `json:"data"`
+					Data    json.RawMessage  `json:"data"`
 					Message string           `json:"message"`
 				}
 				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
@@ -123,8 +123,8 @@ func TestAgentVersionActions(t *testing.T) {
 				if response.Code != wantCode || response.Message == "" {
 					t.Fatalf("unexpected response: %s", w.Body.String())
 				}
-				if wantCode == common.CodeSuccess && response.Data != true {
-					t.Fatalf("success data = %v, want true", response.Data)
+				if len(response.Data) != 0 {
+					t.Fatalf("data must be omitted, got %s", response.Data)
 				}
 				persisted, err := dao.NewUserCanvasDAO().GetByID(t.Context(), db, current.ID)
 				if err != nil {
@@ -133,7 +133,9 @@ func TestAgentVersionActions(t *testing.T) {
 				wantDSL, wantRelease, wantCount := current.DSL, current.Release, initialCount
 				if wantCode == common.CodeSuccess {
 					if action.name == "apply" {
-						wantDSL, wantRelease, wantCount = version.DSL, false, initialCount+1
+						// Restoring overwrites only the live draft; it never
+						// creates a user_canvas_version row.
+						wantDSL, wantRelease = version.DSL, false
 					} else {
 						wantCount--
 					}

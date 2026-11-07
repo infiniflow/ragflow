@@ -32,12 +32,11 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 
 	"gorm.io/gorm"
 )
-
-const ComponentNameOneChunker = "OneChunker"
 
 type oneChunkerParam struct{}
 
@@ -137,7 +136,7 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 		it := src[0]
 		docType := itemDocType(it)
 		text := itemTextOrFallback(it)
-		if strings.TrimSpace(text) == "" && it.Image == "" {
+		if strings.TrimSpace(text) == "" && !hasMediaPayload(it) {
 			return emptyOutputs()
 		}
 		out := schema.ChunkDoc{
@@ -145,6 +144,8 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 			Text:         removeTag(text),
 			DocType:      docType,
 			Image:        it.Image,
+			ImgID:        it.ImgID,
+			MediaRef:     it.MediaRef,
 			Positions:    it.Positions,
 			PDFPositions: it.PDFPositions,
 			Sheet:        it.Sheet,
@@ -155,6 +156,7 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 
 	var parts []string
 	var img string
+	var mediaRef *entity.MediaRef
 	for _, it := range src {
 		if t := itemTextOrFallback(it); t != "" {
 			// Strip parser coordinate tags before joining (see emitOne).
@@ -163,9 +165,12 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 		if img == "" && it.Image != "" {
 			img = it.Image
 		}
+		if mediaRef == nil && it.MediaRef != nil {
+			mediaRef = it.MediaRef
+		}
 	}
 	merged := strings.Join(parts, "\n")
-	if strings.TrimSpace(merged) == "" && img == "" {
+	if strings.TrimSpace(merged) == "" && img == "" && mediaRef == nil {
 		return emptyOutputs()
 	}
 	out := schema.ChunkDoc{Text: merged, DocType: "text"}
@@ -177,6 +182,7 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 	if img != "" {
 		out.Image = img
 	}
+	out.MediaRef = mediaRef
 	return chunkOutputs([]schema.ChunkDoc{out})
 }
 

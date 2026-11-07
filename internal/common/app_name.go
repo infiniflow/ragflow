@@ -54,8 +54,9 @@ func splitNameCounter(stem string) (string, int, bool) {
 // counter. Use UniqueFileName for file or document names that must keep their
 // extension at the end.
 //
-// maxLen is the maximum allowed length in bytes for the generated name;
-// maxLen <= 0 falls back to AppNameLimit.
+// maxLen is the maximum allowed length in Unicode code points for the
+// generated name; maxLen <= 0 falls back to AppNameLimit. Code points match
+// the character semantics of VARCHAR(n) on MySQL and PostgreSQL.
 //
 //	UniqueName("topic", 0, ...)        -> "topic(1)"
 //	UniqueName("topic(1)", 0, ...)     -> "topic(2)"
@@ -84,7 +85,7 @@ func uniqueName(name string, maxLen int, keepExtension bool, exists func(candida
 		maxLen = AppNameLimit
 	}
 	current := name
-	if err := validateNameLimit(current, maxLen); err != nil {
+	if err := ValidateNameRunes(current, maxLen); err != nil {
 		return "", err
 	}
 	for i := 0; i < maxNameRetries; i++ {
@@ -107,7 +108,7 @@ func uniqueName(name string, maxLen int, keepExtension bool, exists func(candida
 			base = stem
 		}
 		current = fmt.Sprintf("%s(%d)%s", base, counter+1, ext)
-		if err := validateNameLimit(current, maxLen); err != nil {
+		if err := ValidateNameRunes(current, maxLen); err != nil {
 			return "", err
 		}
 	}
@@ -134,26 +135,7 @@ func NameAvailable(currentName, newName string, exists func(candidate string) (b
 	return !taken, nil
 }
 
-// AppNameLimit is the maximum allowed length of a name, in bytes.
-const AppNameLimit = 256
-
-// ValidateName rejects empty names and names longer than AppNameLimit bytes.
-func ValidateName(name string) error {
-	return validateNameLimit(name, AppNameLimit)
-}
-
-// validateNameLimit rejects empty names and names longer than maxLen bytes.
-func validateNameLimit(name string, maxLen int) error {
-	// Validate name is not empty after trimming
-	trimmedName := strings.TrimSpace(name)
-	if trimmedName == "" {
-		return fmt.Errorf("name cannot be empty or whitespace")
-	}
-
-	// Validate name length in bytes (not characters) - same as Python len(search_name.encode("utf-8"))
-	if len([]byte(name)) > maxLen {
-		return fmt.Errorf("name length is %d which is large than %d", len([]byte(name)), maxLen)
-	}
-
-	return nil
-}
+// AppNameLimit is the fallback maximum length of a name, in Unicode code
+// points, when a caller does not pass a column-specific limit. It matches the
+// widest user-facing name column.
+const AppNameLimit = NameLimit255

@@ -324,9 +324,8 @@ export default {
       paddleocrApiUrlTip: 'A URL do endpoint da API para o serviço PaddleOCR',
       paddleocrApiUrlPlaceholder: 'ex: https://servidor-paddleocr.com/api',
       paddleocrAccessToken: 'Token de Acesso do AI Studio',
-      paddleocrAccessTokenTip:
-        'Token de acesso para a API do PaddleOCR (opcional)',
-      paddleocrAccessTokenPlaceholder: 'Seu token do AI Studio (opcional)',
+      paddleocrAccessTokenTip: 'Token de acesso para a API do PaddleOCR',
+      paddleocrAccessTokenPlaceholder: 'Seu token do AI Studio',
       paddleocrAlgorithm: 'Algoritmo do PaddleOCR',
       paddleocrAlgorithmTip:
         'Algoritmo a ser usado para a análise do PaddleOCR',
@@ -557,7 +556,7 @@ export default {
         'O modelo LLM padrão que todos os novos bancos de conhecimento usarão.',
       embeddingModel: 'Modelo de incorporação',
       embeddingModelTip:
-        'O modelo de incorporação padrão para cada nova base de conhecimento criada. Se você não encontrar um modelo de incorporação na lista suspensa, verifique se está usando a edição slim do RAGFlow (que não inclui modelos de incorporação) ou consulte a página Provedores de modelos para verificar se o provedor do modelo suporta este modelo.',
+        'O modelo de incorporação padrão para cada nova base de conhecimento criada. Se você não encontrar um modelo de incorporação na lista suspensa, consulte a página Provedores de modelos para verificar se o provedor do modelo suporta este modelo.',
       img2txtModel: 'Modelo Img2Txt',
       img2txtModelTip:
         'O modelo padrão img2txt para cada base de conhecimento recém-criada. Ele descreve uma imagem ou vídeo. Se você não conseguir encontrar um modelo no menu suspenso, verifique a página Provedores de modelos para ver se seu provedor de modelo suporta este modelo.',
@@ -586,7 +585,7 @@ export default {
         apiUrlPlaceholder:
           'Por exemplo: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Token de acesso do AI Studio',
-        accessTokenPlaceholder: 'Seu token do AI Studio (opcional)',
+        accessTokenPlaceholder: 'Seu token do AI Studio',
         algorithm: 'Algoritmo do PaddleOCR',
         selectAlgorithm: 'Selecionar algoritmo',
         modelNamePlaceholder: 'Por exemplo: paddleocr-from-env-1',
@@ -1174,9 +1173,9 @@ export default {
       jsonFormatTip:
         'O componente anterior deve fornecer a string JSON no seguinte formato:',
       toEmailTip: 'to_email: Email do destinatário (Obrigatório)',
-      ccEmailTip: 'cc_email: Email CC (Opcional)',
-      subjectTip: 'subject: Assunto do email (Opcional)',
-      contentTip: 'content: Conteúdo do email (Opcional)',
+      ccEmailTip: 'cc_email: Email CC',
+      subjectTip: 'subject: Assunto do email',
+      contentTip: 'content: Conteúdo do email',
       jsonUploadTypeErrorMessage: 'Por favor, carregue um arquivo json',
       jsonUploadContentErrorMessage: 'Erro no arquivo json',
 
@@ -1207,7 +1206,7 @@ export default {
         'Use o prompt do sistema para descrever a tarefa para o LLM, especificar como ele deve responder e esboçar outros requisitos diversos. O prompt do sistema é frequentemente usado em conjunto com chaves (variáveis), que servem como várias entradas de dados para o LLM. Use uma barra `/` ou o botão (x) para mostrar as chaves a serem usadas.',
       promptMessage: 'O prompt é obrigatório',
       runningHintText: 'está rodando...🕞',
-      canvasCategory: 'Categoria de canvas',
+      agentCategory: 'Categoria de canvas',
       tags: 'Tags',
       created: 'Criado',
       id: 'ID',

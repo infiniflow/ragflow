@@ -14,6 +14,7 @@ type Doc = {
 const mockUpload = jest.fn();
 const mockRun = jest.fn();
 const mockWarning = jest.fn();
+const mockFetchQuery = jest.fn();
 
 // Per-test gap fixtures: pre-upload gaps by file name, and post-upload
 // document gaps keyed by document name. The real gap detection is covered by
@@ -21,6 +22,22 @@ const mockWarning = jest.fn();
 // which documents the hook auto-parses.
 let mockUploadGaps: Array<Record<string, unknown>> = [];
 let mockDocumentGaps: Record<string, Array<Record<string, unknown>>> = {};
+// The warning mock auto-confirms by default so the pre-existing gap tests
+// keep flowing into the upload; cancellation tests flip this off.
+let mockAutoConfirmWarning = true;
+
+// The pipeline-missing check runs imperatively at submit time through
+// queryClient.fetchQuery, so the suite stubs the client plus the query
+// options factory instead of rendering a provider.
+jest.mock('@/hooks/use-agent-request', () => ({
+  canvasVersionListQuery: (canvasId: string) => ({
+    queryKey: ['canvasVersionList', canvasId],
+  }),
+}));
+
+jest.mock('@tanstack/react-query', () => ({
+  useQueryClient: () => ({ fetchQuery: mockFetchQuery }),
+}));
 
 jest.mock('@/hooks/use-document-request', () => ({
   useUploadDocument: () => ({ uploadDocument: mockUpload, loading: false }),
@@ -40,7 +57,9 @@ jest.mock('@/components/ui/modal/modal', () => ({
   Modal: {
     warning: (options: { onOk?: () => void }) => {
       mockWarning(options);
-      options.onOk?.();
+      if (mockAutoConfirmWarning) {
+        options.onOk?.();
+      }
     },
   },
 }));
@@ -63,7 +82,10 @@ beforeEach(() => {
   jest.clearAllMocks();
   mockUploadGaps = [];
   mockDocumentGaps = {};
+  mockAutoConfirmWarning = true;
   mockUpload.mockResolvedValue(uploadOkResponse([makeDoc()]));
+  // Default to a live pipeline: the version list resolves non-empty.
+  mockFetchQuery.mockResolvedValue([{ id: 'version-1' }]);
 });
 
 // The regression case for the auto-parse bug: an unsupported file type (here
@@ -217,4 +239,122 @@ it('auto-parses every document on the no-gap path without a warning modal', asyn
     documentIds: ['doc-a', 'doc-b'],
     run: 1,
   });
+});
+
+// When the dataset's configured pipeline is gone, parse-on-creation would
+// silently parse nothing, so the hook confirms first and drops the auto-parse
+// on "Continue upload".
+it('warns and uploads without parsing when the dataset pipeline is missing', async () => {
+  mockFetchQuery.mockResolvedValue([]);
+
+  const { result } = renderHook(() => useHandleUploadDocument('canvas-1'));
+  await act(async () => {
+    await result.current.onDocumentUploadOk({
+      fileList: [new File(['x'], 'a.pdf')],
+      parseOnCreation: true,
+    });
+  });
+
+  expect(mockWarning).toHaveBeenCalledTimes(1);
+  expect(mockWarning).toHaveBeenCalledWith(
+    expect.objectContaining({
+      title: 'knowledgeDetails.uploadPipelineDeletedTitle',
+      content: 'knowledgeDetails.uploadPipelineDeletedContent',
+    }),
+  );
+  await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(1));
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(mockRun).not.toHaveBeenCalled();
+});
+
+it('warns when the version list request fails', async () => {
+  mockFetchQuery.mockRejectedValue(new Error('request failed'));
+
+  const { result } = renderHook(() => useHandleUploadDocument('canvas-1'));
+  await act(async () => {
+    await result.current.onDocumentUploadOk({
+      fileList: [new File(['x'], 'a.pdf')],
+      parseOnCreation: true,
+    });
+  });
+
+  expect(mockWarning).toHaveBeenCalledTimes(1);
+  expect(mockWarning).toHaveBeenCalledWith(
+    expect.objectContaining({
+      title: 'knowledgeDetails.uploadPipelineDeletedTitle',
+    }),
+  );
+  await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(1));
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(mockRun).not.toHaveBeenCalled();
+});
+
+it('uploads without a warning when parse-on-creation is off even if the pipeline is missing', async () => {
+  mockFetchQuery.mockResolvedValue([]);
+
+  const { result } = renderHook(() => useHandleUploadDocument('canvas-1'));
+  await act(async () => {
+    await result.current.onDocumentUploadOk({
+      fileList: [new File(['x'], 'a.pdf')],
+      parseOnCreation: false,
+    });
+  });
+
+  expect(mockWarning).not.toHaveBeenCalled();
+  await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(1));
+});
+
+it('chains the gap warning after the pipeline warning, then uploads without parsing', async () => {
+  mockFetchQuery.mockResolvedValue([]);
+  mockUploadGaps = [
+    { reason: 'unsupportedType', name: 'deck.pptx', fileType: 'PowerPoint' },
+  ];
+  mockUpload.mockResolvedValue(
+    uploadOkResponse([makeDoc({ id: 'doc-deck', name: 'deck.pptx' })]),
+  );
+
+  const { result } = renderHook(() => useHandleUploadDocument('canvas-1'));
+  await act(async () => {
+    await result.current.onDocumentUploadOk({
+      fileList: [new File(['x'], 'deck.pptx')],
+      parseOnCreation: true,
+    });
+  });
+
+  expect(mockWarning).toHaveBeenCalledTimes(2);
+  expect(mockWarning.mock.calls[0][0].title).toBe(
+    'knowledgeDetails.uploadPipelineDeletedTitle',
+  );
+  expect(mockWarning.mock.calls[1][0].title).toBe(
+    'knowledgeDetails.uploadUnsupportedTypesTitle',
+  );
+  await waitFor(() => expect(mockUpload).toHaveBeenCalledTimes(1));
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(mockRun).not.toHaveBeenCalled();
+});
+
+it('does not upload when the pipeline warning is cancelled', async () => {
+  mockFetchQuery.mockResolvedValue([]);
+  mockAutoConfirmWarning = false;
+
+  const { result } = renderHook(() => useHandleUploadDocument('canvas-1'));
+  await act(async () => {
+    await result.current.onDocumentUploadOk({
+      fileList: [new File(['x'], 'a.pdf')],
+      parseOnCreation: true,
+    });
+  });
+
+  expect(mockWarning).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    await Promise.resolve();
+  });
+  expect(mockUpload).not.toHaveBeenCalled();
+  expect(mockRun).not.toHaveBeenCalled();
 });

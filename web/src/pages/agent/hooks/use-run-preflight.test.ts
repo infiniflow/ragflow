@@ -7,7 +7,7 @@ import {
   useSaveGraphBeforeOpeningDebugDrawer,
 } from './use-save-graph';
 
-const mockSetAgent = jest.fn();
+const mockSaveAgent = jest.fn();
 const mockResetAgent = jest.fn();
 const mockBuildDslData = jest.fn();
 
@@ -21,7 +21,7 @@ jest.mock('@/components/model-tree-select', () => ({
 
 jest.mock('@/hooks/use-agent-request', () => ({
   useFetchAgent: () => ({ data: { title: 'Draft' } }),
-  useSetAgent: () => ({ setAgent: mockSetAgent, loading: false }),
+  useSaveAgent: () => ({ saveAgent: mockSaveAgent, loading: false }),
   useResetAgent: () => ({ resetAgent: mockResetAgent }),
 }));
 jest.mock('./use-build-dsl', () => ({
@@ -51,7 +51,7 @@ const node = (label: string, form: Record<string, unknown>) =>
 describe('Run preflight', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    mockSetAgent.mockResolvedValue({ code: 0 });
+    mockSaveAgent.mockResolvedValue({ code: 0 });
     mockResetAgent.mockResolvedValue({ code: 0 });
     useGraphStore.setState({ nodes: [], edges: [], editedNodeFormIds: [] });
   });
@@ -77,7 +77,7 @@ describe('Run preflight', () => {
     expect(message.error).toHaveBeenCalledWith(
       'Future block: future.emptyEntry',
     );
-    expect(mockSetAgent).not.toHaveBeenCalled();
+    expect(mockSaveAgent).not.toHaveBeenCalled();
     expect(mockResetAgent).not.toHaveBeenCalled();
     expect(show).not.toHaveBeenCalled();
   });
@@ -112,7 +112,7 @@ describe('Run preflight', () => {
       await result.current.handleRun();
     });
     expect(message.error).not.toHaveBeenCalled();
-    expect(mockSetAgent).toHaveBeenCalled();
+    expect(mockSaveAgent).toHaveBeenCalled();
     expect(mockResetAgent).toHaveBeenCalled();
     expect(show).toHaveBeenCalledTimes(1);
   });
@@ -140,7 +140,7 @@ describe('Run preflight', () => {
     await act(async () => {
       await result.current.saveGraph();
     });
-    expect(mockSetAgent).toHaveBeenCalled();
+    expect(mockSaveAgent).toHaveBeenCalled();
     expect(message.error).not.toHaveBeenCalled();
   });
 

@@ -50,7 +50,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const ComponentNameFile = "File"
+const ComponentNameFile = schema.ComponentNameFile
 
 // FileComponent resolves document/file metadata and forwards enough
 // identity for downstream Parser to fetch bytes.

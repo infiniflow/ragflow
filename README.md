@@ -92,14 +92,6 @@ For local deployment, see [Local Deployment](#-local-deployment).
 
 See the [full release notes](https://ragflow.io/docs/dev/release_notes) for more updates.
 
-## 🎉 Stay Tuned
-
-⭐️ Star our repository to stay up-to-date with exciting new features and improvements! Get instant notifications for new releases! 🌟
-
-<div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
-</div>
-
 ## 🌟 Key Features
 
 ### 🍭 **"Quality in, quality out"**
@@ -196,10 +188,10 @@ Local deployment supports both Docker deployment and launching from source. Dock
    cd ragflow/docker
    ```
 
-   Check out the `v1.0.0-rc2` release tag.
+   Check out the `v1.0.0` release tag.
 
    ```bash
-   git checkout v1.0.0-rc2
+   git checkout v1.0.0
    ```
 
    Start the RAGFlow services and their dependencies.
@@ -229,7 +221,7 @@ Local deployment supports both Docker deployment and launching from source. Dock
    ```
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
 
-   > With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number), because the default HTTP serving port `80` can be omitted when using the default configuration.
+   > With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**without** port number), because the default HTTP serving port `80` can be omitted when using the default configuration.
 
 6. After signing in, add an LLM, embedding, and reranker on the model provider page, including the model name, service address, and API key.
 
@@ -262,7 +254,7 @@ For document-engine changes, configuration updates, restarting services, and ret
    uv run tools/scripts/download_dev_deps.py
    ```
 
-   This is the local-dev one-stop: after one run the environment is ready, and already-present files are skipped so re-running never re-downloads. The image-facing counterpart `deps/download_deps.py` fetches the same runtime resources PLUS the stagehand server binary (used by the Browser component) and skips the native `.a` files — run it only when building the dependency image or in CI, not for local development.
+   This is the local-dev one-stop: after one run the environment is ready, and already-present files are skipped so re-running never re-downloads. The image-facing counterpart `deps/download_deps.py` fetches the same runtime resources and skips the native `.a` files — run it only when building the dependency image or in CI, not for local development.
 
    `download_dev_deps.py` pulls and unpacks pdfium, pdf_oxide, office_oxide, and onnxruntime under `~/ragflow-native-libs`, and writes the cl100k vocabulary, DeepDoc models, and embedding tokenizer assets under `deps/`. It is a Python script; `uv run` installs its declared dependencies (`requests` and `huggingface-hub`) automatically. Skip this step if you have prepared the same resources by other means. When started from the repository root, Go services automatically find `internal/rag/res/deepdoc`; to start from another directory, set `DEEPDOC_MODEL_DIR` to its absolute path.
 

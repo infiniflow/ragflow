@@ -290,7 +290,7 @@ func TestUserCanvasDAOOwnerAndCategoryFilters(t *testing.T) {
 	}
 
 	visibleCanvasIDs := []string{"c1", "c2", "c3"}
-	owners, err := d.GetOwnerFilterByCanvasIDs(ctx, db, visibleCanvasIDs)
+	owners, err := d.GetOwnerFilterByCanvasIDs(ctx, db, visibleCanvasIDs, "")
 	if err != nil {
 		t.Fatalf("GetOwnerFilterByCanvasIDs failed: %v", err)
 	}
@@ -326,6 +326,18 @@ func TestUserCanvasDAOOwnerAndCategoryFilters(t *testing.T) {
 	}
 	if catByID["dataflow_canvas"] != 1 {
 		t.Fatalf("dataflow_canvas count = %d, want 1", catByID["dataflow_canvas"])
+	}
+
+	// Scoped to dataflow_canvas, only c2 remains visible to the aggregation.
+	scopedOwners, err := d.GetOwnerFilterByCanvasIDs(ctx, db, visibleCanvasIDs, "dataflow_canvas")
+	if err != nil {
+		t.Fatalf("GetOwnerFilterByCanvasIDs with category failed: %v", err)
+	}
+	if len(scopedOwners) != 1 {
+		t.Fatalf("scoped owner filter rows = %d, want 1", len(scopedOwners))
+	}
+	if scopedOwners[0].ID != "user-1" || scopedOwners[0].Count != 1 {
+		t.Fatalf("scoped owner = %+v, want user-1 with count 1", scopedOwners[0])
 	}
 }
 

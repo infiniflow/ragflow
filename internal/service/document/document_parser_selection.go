@@ -9,6 +9,7 @@ import (
 	componentpkg "ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/schema"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/utility"
 
@@ -35,8 +36,7 @@ func dedicatedDocumentParserID(filetype utility.FileType, filename string) strin
 	}
 
 	// The presentation and email extensions all classify as FileTypeDOC, so the
-	// name decides (same name-based rule as Python's get_parser and the
-	// document parser_id guard in document_dataset_update.go).
+	// name decides which dedicated pipeline owns them.
 	name := strings.ToLower(filename)
 	switch {
 	case strings.HasSuffix(name, ".ppt"),
@@ -66,7 +66,7 @@ func parserParamsDeclaresFamily(params map[string]any, family string) bool {
 // config, or a malformed one): the config cannot answer then.
 func configDeclaredFamily(config entity.JSONMap, family string) (declared, found bool) {
 	for cpnID, raw := range config {
-		if !pipelinepkg.IsParserComponentID(cpnID) {
+		if !common.IsParserComponentID(cpnID) {
 			continue
 		}
 		params, ok := raw.(map[string]any)
@@ -85,7 +85,7 @@ func configDeclaredFamily(config entity.JSONMap, family string) (declared, found
 // dataset row storing a historical parser_id is judged by the template it
 // actually runs.
 func templateDeclaredFamily(ctx context.Context, parserID, family string) (declared, found bool) {
-	dslJSON, err := service.LoadPipelineDSL(ctx, false, parserID, nil)
+	dslJSON, err := service.LoadPipelineDSL(ctx, false, parserID, nil, nil)
 	if err != nil {
 		return false, false
 	}
@@ -94,7 +94,7 @@ func templateDeclaredFamily(ctx context.Context, parserID, family string) (decla
 		return false, false
 	}
 	for cpnID, params := range defaults {
-		if !pipelinepkg.IsParserComponentID(cpnID) {
+		if !common.IsParserComponentID(cpnID) {
 			continue
 		}
 		return parserParamsDeclaresFamily(params, family), true
@@ -182,14 +182,19 @@ func resolveDocumentParser(ctx context.Context, kb *entity.Knowledgebase, filena
 // the caller keeps the dataset's selection instead of writing a half-switched
 // row.
 func rebuildParserConfig(ctx context.Context, kb *entity.Knowledgebase, target, filename string, base entity.JSONMap) (entity.JSONMap, bool) {
-	dslJSON, err := service.LoadPipelineDSL(ctx, false, target, nil)
+	dslJSON, err := service.LoadPipelineDSL(ctx, false, target, nil, nil)
 	if err != nil {
 		common.Warn("document: target pipeline DSL unavailable, keeping dataset selection",
 			zap.String("parser_id", target), zap.String("filename", filename), zap.Error(err))
 		return nil, false
 	}
 	raw := map[string]interface{}(base)
-	cleaned := pipelinepkg.BuildParserConfig(dslJSON, raw)
+	cleaned, err := pipelinepkg.BuildParserConfig(dslJSON, raw)
+	if err != nil {
+		common.Warn("document: invalid target pipeline DSL",
+			zap.String("parser_id", target), zap.Error(err))
+		return nil, false
+	}
 	// The dataset-level metadata group is parser-independent; keep it so the
 	// target pipeline's Extractor node inherits the dataset setting instead of
 	// falling back to disabled.
@@ -197,7 +202,10 @@ func rebuildParserConfig(ctx context.Context, kb *entity.Knowledgebase, target, 
 		cleaned["metadata"] = meta
 	}
 	pipelinepkg.ApplyParentChildChunkerConfig(cleaned, raw)
-	llmID, _ := service.NewTenantService().GetDefaultModelNameForTenant(ctx, kb.TenantID, entity.ModelTypeChat)
+	llmID := ""
+	if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, kb.TenantID), entity.ModelTypeChat); modelErr == nil {
+		llmID = service.ModelReference(modelInfo)
+	}
 	cleaned = service.ApplyComponentScopedParserConfig(cleaned, llmID)
 	return cleaned, true
 }

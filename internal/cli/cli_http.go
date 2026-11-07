@@ -161,6 +161,10 @@ func (c *CLI) ExecuteAdminCommand(commandCount int, cmd *Command) (ResponseIf, e
 		return c.AdminShutdownIngestor(commandCount, cmd)
 	case "list_admin_ingestion_tasks":
 		return c.ListAdminIngestionTasks(commandCount, cmd)
+	case "admin_show_ingestion_log":
+		return c.AdminShowIngestionLogCommand(commandCount, cmd)
+	case "admin_show_ingestion_messages":
+		return c.AdminShowIngestionMessagesCommand(commandCount, cmd)
 	case "user_list_message_queue_command":
 		return c.UserListMessageQueueCommand(commandCount, cmd)
 	case "user_publish_message_command":

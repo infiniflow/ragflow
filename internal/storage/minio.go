@@ -54,17 +54,26 @@ func NewMinioStorage(config config.MinioConfig) (*MinioStorage, error) {
 	return storage, nil
 }
 
-func (m *MinioStorage) connect() error {
-	var transport http.RoundTripper
+func newMinioTransport(cfg config.MinioConfig) (*http.Transport, error) {
+	transport, err := minio.DefaultTransport(cfg.Secure)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create default transport: %w", err)
+	}
 
-	// Configure transport for SSL/TLS verification
-	if m.config.Secure {
-		verify := m.config.Verify
-		transport = &http.Transport{
-			TLSClientConfig: &tls.Config{
-				InsecureSkipVerify: !verify,
-			},
+	if cfg.Secure {
+		if transport.TLSClientConfig == nil {
+			transport.TLSClientConfig = &tls.Config{}
 		}
+		transport.TLSClientConfig.InsecureSkipVerify = !cfg.Verify
+	}
+
+	return transport, nil
+}
+
+func (m *MinioStorage) connect() error {
+	transport, err := newMinioTransport(m.config)
+	if err != nil {
+		return fmt.Errorf("failed to create MinIO transport: %w", err)
 	}
 
 	client, err := minio.New(m.config.Host, &minio.Options{
@@ -103,19 +112,25 @@ func (m *MinioStorage) resolveBucketAndPath(bucket, fnm string) (string, string)
 
 func (m *MinioStorage) Type() string { return "minio" }
 
-// Health checks MinIO service availability
+// Health checks endpoint liveness with a read-only probe, not bucket permissions.
 func (m *MinioStorage) Health(ctx context.Context) bool {
-	cancelFunction, err := m.client.HealthCheck(time.Second * 5)
-	if cancelFunction != nil {
-		defer cancelFunction()
+	probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if probeCtx.Err() != nil {
+		return false
 	}
 
-	if err != nil {
+	// A missing or inaccessible probe bucket still proves the endpoint responds.
+	_, err := m.client.BucketExists(probeCtx, "ragflow-health-check")
+	if probeCtx.Err() != nil {
+		return false
+	}
+	if err != nil && minio.ToErrorResponse(err).Code != minio.AccessDenied {
 		common.Warn("Failed to check MinIO health", zap.Error(err))
 		return false
 	}
 
-	return m.client.IsOnline()
+	return true
 }
 
 // Put uploads an object to MinIO

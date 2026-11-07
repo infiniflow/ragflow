@@ -54,35 +54,35 @@ func (p *PaddleOCRLocalModel) Name() string {
 }
 
 func (p *PaddleOCRLocalModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
-	return nil, fmt.Errorf("%s no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: ChatWithMessages", p.Name())
 }
 
 func (p *PaddleOCRLocalModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s no such method", p.Name())
+	return fmt.Errorf("%s: no such method: ChatStreamlyWithSender", p.Name())
 }
 
 func (p *PaddleOCRLocalModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("%s no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: Embed", p.Name())
 }
 
 func (p *PaddleOCRLocalModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: Rerank", p.Name())
 }
 
 func (p *PaddleOCRLocalModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", p.Name())
 }
 
 func (p *PaddleOCRLocalModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s no such method", p.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", p.Name())
 }
 
 func (p *PaddleOCRLocalModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", p.Name())
 }
 
 func (p *PaddleOCRLocalModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s no such method", p.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", p.Name())
 }
 
 func (p *PaddleOCRLocalModel) OCRFile(ctx context.Context, modelName *string, content []byte, fileURL *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
@@ -183,7 +183,7 @@ func (p *PaddleOCRLocalModel) OCRFile(ctx context.Context, modelName *string, co
 }
 
 func (p *PaddleOCRLocalModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", p.Name())
 }
 
 func (p *PaddleOCRLocalModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
@@ -214,21 +214,21 @@ func (p *PaddleOCRLocalModel) ListModels(ctx context.Context, apiConfig *APIConf
 }
 
 func (p *PaddleOCRLocalModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", p.Name())
 }
 
 func (p *PaddleOCRLocalModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
-	return fmt.Errorf("%s no such method", p.Name())
+	return fmt.Errorf("%s: no such method: CheckConnection", p.Name())
 }
 
 func (p *PaddleOCRLocalModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", p.Name())
 }
 
 func (p *PaddleOCRLocalModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", p.Name())
 }
 
 func (p *PaddleOCRLocalModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: Decide", p.Name())
 }

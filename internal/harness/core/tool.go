@@ -114,8 +114,94 @@ func (t *agentTool) Invoke(ctx context.Context, args string, opts ...ToolOption)
 	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: t.agent})
 	messages := []Message{schema.UserMessage(args)}
 	if t.opts.FullChatHistoryAsInput {
-		if ec := getChatModelExecCtx(ctx); ec != nil {
-			// TODO: extract full chat history from parent execution context
+		if rc := getRunCtx(ctx); rc != nil {
+			var rootMsgs []Message
+			switch inp := rc.RootInput.(type) {
+			case *AgentInput:
+				if inp != nil {
+					for _, m := range inp.Messages {
+						if m != nil && m.Role != schema.RoleSystem {
+							rootMsgs = append(rootMsgs, m)
+						}
+					}
+				}
+			case []Message:
+				for _, m := range inp {
+					if m != nil && m.Role != schema.RoleSystem {
+						rootMsgs = append(rootMsgs, m)
+					}
+				}
+			}
+			history := append([]Message(nil), rootMsgs...)
+
+			if rc.Session != nil {
+				rootIdx := 0
+				for _, ev := range rc.Session.getEvents() {
+					if ae, ok := ev.(*AgentEvent); ok {
+						if m := msgFromEvent(ae); m != nil {
+							// Deduplicate turns that already exist in RootInput prefix (e.g. on session restore/resume)
+							matched := false
+							for i := rootIdx; i < len(rootMsgs); i++ {
+								if equalMessages(rootMsgs[i], m) {
+									rootIdx = i + 1
+									matched = true
+									break
+								}
+							}
+							if !matched {
+								history = append(history, m)
+							}
+						}
+					}
+				}
+			}
+
+			// Exclude or sanitize assistant messages containing pending (unresolved)
+			// tool calls so inner agent does not receive dangling tool calls without results.
+			// Also omit orphan tool results that do not answer any accepted assistant tool call.
+			if len(history) > 0 {
+				availableResults := make(map[string]int)
+				for _, m := range history {
+					if m.Role == schema.RoleTool && m.Name != "" {
+						availableResults[m.Name]++
+					}
+				}
+
+				expectedResults := make(map[string]int)
+				var sanitized []Message
+				for _, m := range history {
+					if m.Role == schema.RoleAssistant && len(m.ToolCalls) > 0 {
+						var completedCalls []schema.ToolCall
+						for _, tc := range m.ToolCalls {
+							if availableResults[tc.ID] > 0 {
+								availableResults[tc.ID]--
+								completedCalls = append(completedCalls, tc)
+								expectedResults[tc.ID]++
+							}
+						}
+						if len(completedCalls) > 0 {
+							cp := *m
+							cp.ToolCalls = completedCalls
+							sanitized = append(sanitized, &cp)
+						} else if m.Content != "" {
+							cp := *m
+							cp.ToolCalls = nil
+							sanitized = append(sanitized, &cp)
+						}
+					} else if m.Role == schema.RoleTool {
+						if expectedResults[m.Name] > 0 {
+							expectedResults[m.Name]--
+							sanitized = append(sanitized, m)
+						}
+					} else {
+						sanitized = append(sanitized, m)
+					}
+				}
+				history = sanitized
+			}
+			if len(history) > 0 {
+				messages = append(history, schema.UserMessage(args))
+			}
 		}
 	}
 
@@ -173,4 +259,27 @@ func (t *agentTool) Stream(ctx context.Context, args string, opts ...ToolOption)
 		return nil, err
 	}
 	return schema.StreamReaderFromArray([]string{r}), nil
+}
+
+func equalMessages(a, b *schema.Message) bool {
+	if a == b {
+		return true
+	}
+	if a == nil || b == nil {
+		return false
+	}
+	if a.Role != b.Role || a.Content != b.Content || a.Name != b.Name || a.ToolName != b.ToolName {
+		return false
+	}
+	if len(a.ToolCalls) != len(b.ToolCalls) {
+		return false
+	}
+	for i := range a.ToolCalls {
+		if a.ToolCalls[i].ID != b.ToolCalls[i].ID ||
+			a.ToolCalls[i].Function.Name != b.ToolCalls[i].Function.Name ||
+			a.ToolCalls[i].Function.Arguments != b.ToolCalls[i].Function.Arguments {
+			return false
+		}
+	}
+	return true
 }

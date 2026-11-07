@@ -62,6 +62,7 @@ export type CanvasChecklistInputs = {
   editedNodeFormIds: string[];
   memoryIds?: Set<string>;
   modelValidIds?: Set<string>;
+  categorizeModelValidIds?: Set<string>;
   staleDatasetIds?: Set<string>;
   compilationTemplateGroupIds?: Set<string>;
   variables?: Record<string, any>;
@@ -431,6 +432,7 @@ export function collectCanvasIssues({
   editedNodeFormIds,
   memoryIds,
   modelValidIds,
+  categorizeModelValidIds,
   staleDatasetIds,
   compilationTemplateGroupIds,
   variables,
@@ -775,6 +777,20 @@ export function collectCanvasIssues({
             operatorLabel: tool.component_name ?? Operator.Tool,
           };
           issues.push(...collectSearchFilterIssues(tool?.params, toolTarget));
+          // Embedded ExeSQL tools omit `sql` (the agent writes it), which the
+          // schema allows; the connection fields are validated the same way as
+          // the standalone node.
+          if (
+            tool?.component_name === Operator.ExeSQL &&
+            !ExeSQLFormSchema.safeParse(tool.params).success
+          ) {
+            issues.push({
+              ...toolTarget,
+              type: CanvasIssueType.MissingRequired,
+              messageKey: 'flow.nodeFormInvalid',
+              blocksRun: true,
+            });
+          }
           if (isRetrieval) {
             issues.push(
               ...collectRetrievalBindingIssues(tool?.params, toolTarget, {
@@ -905,11 +921,15 @@ export function collectCanvasIssues({
       });
     }
 
+    const validModelIds =
+      label === Operator.Categorize
+        ? (categorizeModelValidIds ?? modelValidIds)
+        : modelValidIds;
     if (
-      modelValidIds &&
+      validModelIds &&
       typeof (form?.model_id ?? form?.llm_id) === 'string' &&
       (form?.model_id ?? form?.llm_id) &&
-      !modelValidIds.has(form?.model_id ?? form?.llm_id)
+      !validModelIds.has(form?.model_id ?? form?.llm_id)
     ) {
       issues.push({
         ...target,

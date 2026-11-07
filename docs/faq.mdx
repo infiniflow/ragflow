@@ -1,5 +1,5 @@
 ---
-sidebar_position: 20
+sidebar_position: 21
 slug: /faq
 sidebar_custom_props: {
   sidebarIcon: LucideCircleQuestionMark
@@ -33,9 +33,7 @@ RAGFlow provides an end-to-end RAG platform that goes beyond basic document chun
 
 ### Where can I find the RAGFlow version, and how do I interpret it?
 
-You can find the RAGFlow version number on the **System** page of the UI:
-
-![Image](https://github.com/user-attachments/assets/20cf7213-2537-4e18-a88c-4dadf6228c6b)
+For self-hosted deployments, open **User settings** on a desktop-sized screen. The RAGFlow version number is displayed at the bottom-left of the settings page. It is hidden on narrow screens and is not displayed in RAGFlow Cloud (`cloud.ragflow.io`).
 
 If you build RAGFlow from source, the Go admin and ingestor log their versions at startup. The server also prints its version with `bin/ragflow_server --api --version`.
 
@@ -326,13 +324,11 @@ If your model is not currently supported but has APIs compatible with those of O
 
 ### How do I change the file size limit?
 
-The Go file-manager upload endpoint allows up to 1 GiB per file by default. The dataset document upload path has a separate 128 MiB per-file limit. Check which upload endpoint rejected the file before changing deployment settings.
+The Go API limits non-multipart request bodies to 1 MiB by default. Set `MAX_JSON_CONTENT_LENGTH` to change that limit in bytes. Multipart upload requests share a 1 GiB default total-body limit; set `MAX_MULTIPART_CONTENT_LENGTH` to change it in bytes. Upload endpoints can enforce smaller per-file or per-request limits.
 
-To change the file-manager upload limit in a Go Compose deployment, set `MAX_CONTENT_LENGTH` in **docker/.env** to the desired number of bytes. The default 1 GiB value is `1073741824`.
+The file-manager per-file limit follows `MAX_MULTIPART_CONTENT_LENGTH` (1 GiB by default). Dataset documents allow 128 MiB per file by default; set `MAX_DOCUMENT_UPLOAD_SIZE` to change that limit in bytes. The total multipart request limit must also be large enough for the file and multipart overhead. Document-info uploads allow 100 MiB per file, and increasing the shared multipart limit does not raise that limit.
 
-If you raise the limit above 1 GiB, also increase `client_max_body_size` in **docker/nginx/nginx.conf**. The Go image contains its own copy of this file, so make the change effective by either rebuilding `RAGFLOW_IMAGE` or enabling the `./nginx/nginx.conf:/etc/nginx/nginx.conf` bind mount for the deployed service in **docker/docker-compose.yml**, then recreate that service. Lowering `MAX_CONTENT_LENGTH` below 1 GiB does not require changing the default Nginx limit.
-
-These settings do not raise the dataset document upload path's fixed 128 MiB limit.
+If you raise the multipart limit above 1 GiB, also increase `client_max_body_size` in **docker/nginx/nginx.conf**. The Go image contains its own copy of this file, so make the change effective by either rebuilding `RAGFLOW_IMAGE` or enabling the `./nginx/nginx.conf:/etc/nginx/nginx.conf` bind mount for the deployed service in **docker/docker-compose.yml**, then recreate that service.
 
 ---
 
@@ -532,12 +528,14 @@ Use the following environment variables when MinerU is not configured directly i
 | `MINERU_APISERVER`     | URL of the MinerU API service      | _unset_                             | `MINERU_APISERVER=http://your-mineru-server:8886`                                              |
 | `MINERU_API_KEY`       | API key, when required by MinerU   | _unset_                             | `MINERU_API_KEY=your-key`                                                                       |
 | `MINERU_BACKEND`       | MinerU 3.x backend or 4.0 tier     | `pipeline`                          | `MINERU_BACKEND=pipeline\|standard\|vlm-http-client` |
+| `MINERU_TIMEOUT`       | MinerU request timeout             | `1800` (30m)                        | `MINERU_TIMEOUT=3600`                                                                           |
 
 1. Set `MINERU_APISERVER` to point RAGFlow to your MinerU API server.
 2. Set `MINERU_API_KEY` if your MinerU service requires authentication.
 3. Set `MINERU_BACKEND` to specify the backend sent with the parse request.
+4. Optionally set `MINERU_TIMEOUT` (seconds or duration string like `1h`) to bound the parse request.
 
-For a custom Parser component, the numeric `mineru_timeout_seconds` setup field controls how long RAGFlow polls for the result. Its default is 30 seconds; zero or a negative value also falls back to 30 seconds.
+For native ingestion pipeline component parsing (`dispatchMinerUPDF`), `mineru_timeout` or `mineru_timeout_seconds` in the parser setup overrides this timeout; zero or negative values fall back to the default 30 minutes. Note that the legacy `PDFParser` path (`pdf_parser_mineru.go`) continues to use `mineru_timeout_seconds` with a 30s poll interval default.
 
 :::tip NOTE
 For other environment variables supported by MinerU itself, see the [MinerU environment variable documentation](https://opendatalab.github.io/MinerU/usage/cli_tools/#environment-variables-description).

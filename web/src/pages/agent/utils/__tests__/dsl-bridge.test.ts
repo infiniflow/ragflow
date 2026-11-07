@@ -157,10 +157,9 @@ const roundTrip = (bridge: any, input: any): any => {
 };
 
 describe('dsl-bridge round-trip stability', () => {
-  // Realistic v2 fixture with React-Flow-internal fields. Mirrors
-  // the structure of internal/agent/dsl/testdata/browser.json
-  // but inlined here so the test is self-contained.
-  const v2BrowserLike = {
+  // Realistic v2 fixture with React-Flow-internal fields, inlined
+  // here so the test is self-contained.
+  const v2CrawlerLike = {
     graph: {
       nodes: [
         {
@@ -175,13 +174,13 @@ describe('dsl-bridge round-trip stability', () => {
           measured: { width: 200, height: 81 },
         },
         {
-          id: 'Browser:BusyHatsSink',
+          id: 'Crawler:BusyHatsSink',
           type: 'ragNode',
           position: { x: 385.29, y: 264.35 },
           data: {
-            label: 'Browser',
-            name: 'Browser_0',
-            form: { headless: true, max_steps: 30 },
+            label: 'Crawler',
+            name: 'Crawler_0',
+            form: { extract_type: 'markdown', query: 'https://example.com' },
           },
           sourcePosition: 'right',
           targetPosition: 'left',
@@ -196,7 +195,7 @@ describe('dsl-bridge round-trip stability', () => {
           data: {
             label: 'Message',
             name: 'Reply_0',
-            form: { content: ['{Browser:BusyHatsSink@content}'] },
+            form: { content: ['{Crawler:BusyHatsSink@content}'] },
           },
           sourcePosition: 'right',
           targetPosition: 'left',
@@ -207,16 +206,16 @@ describe('dsl-bridge round-trip stability', () => {
       ],
       edges: [
         {
-          id: 'xy-edge__beginstart-Browser:BusyHatsSinkend',
+          id: 'xy-edge__beginstart-Crawler:BusyHatsSinkend',
           source: 'begin',
           sourceHandle: 'start',
-          target: 'Browser:BusyHatsSink',
+          target: 'Crawler:BusyHatsSink',
           targetHandle: 'end',
           data: { isHovered: false },
         },
         {
-          id: 'xy-edge__Browser:BusyHatsSinkstart-Message:QuietMonkeysLeadend',
-          source: 'Browser:BusyHatsSink',
+          id: 'xy-edge__Crawler:BusyHatsSinkstart-Message:QuietMonkeysLeadend',
+          source: 'Crawler:BusyHatsSink',
           sourceHandle: 'start',
           target: 'Message:QuietMonkeysLead',
           targetHandle: 'end',
@@ -230,13 +229,13 @@ describe('dsl-bridge round-trip stability', () => {
           component_name: 'Begin',
           params: { prologue: 'Hi', mode: 'conversational' },
         },
-        downstream: ['Browser:BusyHatsSink'],
+        downstream: ['Crawler:BusyHatsSink'],
         upstream: [],
       },
-      'Browser:BusyHatsSink': {
+      'Crawler:BusyHatsSink': {
         obj: {
-          component_name: 'Browser',
-          params: { headless: true, max_steps: 30 },
+          component_name: 'Crawler',
+          params: { extract_type: 'markdown', query: 'https://example.com' },
         },
         downstream: ['Message:QuietMonkeysLead'],
         upstream: ['begin'],
@@ -244,10 +243,10 @@ describe('dsl-bridge round-trip stability', () => {
       'Message:QuietMonkeysLead': {
         obj: {
           component_name: 'Message',
-          params: { content: ['{Browser:BusyHatsSink@content}'] },
+          params: { content: ['{Crawler:BusyHatsSink@content}'] },
         },
         downstream: [],
-        upstream: ['Browser:BusyHatsSink'],
+        upstream: ['Crawler:BusyHatsSink'],
       },
     },
     retrieval: [],
@@ -325,14 +324,14 @@ describe('dsl-bridge round-trip stability', () => {
   });
 
   it('v2 input round-trip: graph + components survive export (modulo RF internals)', () => {
-    const exported = roundTrip(bridge, v2BrowserLike) as any;
+    const exported = roundTrip(bridge, v2CrawlerLike) as any;
 
     // The structural parts (graph, components) must be byte-stable.
     // Top-level envelope fields like `retrieval`/`history` are
     // stripped by v2 exportDsl on purpose, so we focus on `graph`
     // and `components` — the two payloads that carry the canvas
     // state.
-    const diff = diffDsl(v2BrowserLike.graph, exported.graph, 'graph');
+    const diff = diffDsl(v2CrawlerLike.graph, exported.graph, 'graph');
     if (diff.warnings.length > 0) {
       // oxlint-disable-next-line no-console
       console.warn(
@@ -345,8 +344,8 @@ describe('dsl-bridge round-trip stability', () => {
     // Components round-trip too
     expect(exported.components).toBeDefined();
     expect(Object.keys(exported.components)).toHaveLength(3);
-    expect(exported.components['Browser:BusyHatsSink'].obj.component_name).toBe(
-      'Browser',
+    expect(exported.components['Crawler:BusyHatsSink'].obj.component_name).toBe(
+      'Crawler',
     );
   });
 

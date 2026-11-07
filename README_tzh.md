@@ -94,14 +94,6 @@
 
 更多更新請參閱[完整發佈記錄](https://ragflow.io/docs/dev/release_notes)。
 
-## 🎉 關注項目
-
-⭐️ 點擊右上角的 Star 關注 RAGFlow，可以獲取最新發佈的實時通知！🌟
-
-<div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
-</div>
-
 ## 🌟 主要功能
 
 ### 🍭 **"Quality in, quality out"**
@@ -198,10 +190,10 @@
    cd ragflow/docker
    ```
 
-   切換到 `v1.0.0-rc2` 發佈標籤。
+   切換到 `v1.0.0` 發佈標籤。
 
    ```bash
-   git checkout v1.0.0-rc2
+   git checkout v1.0.0
    ```
 
    在啓動 RAGFlow 服務及其依賴服務。
@@ -210,10 +202,10 @@
    docker compose -f docker-compose.yml up -d
    ```
 
-   > 💡 **鏡像下載提示：** 如果無法從默認倉庫拉取鏡像，請先在 `docker/.env` 中將 `RAGFLOW_IMAGE` 設置為以下鏡像源之一，並保留 `v1.0.0-rc2` 標籤：
+   > 💡 **鏡像下載提示：** 如果無法從默認倉庫拉取鏡像，請先在 `docker/.env` 中將 `RAGFLOW_IMAGE` 設置為以下鏡像源之一，並保留 `v1.0.0` 標籤：
    >
-   > - 華為雲：`swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:v1.0.0-rc2`
-   > - 阿里雲：`registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:v1.0.0-rc2`
+   > - 華為雲：`swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:v1.0.0`
+   > - 阿里雲：`registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:v1.0.0`
 
    默認 MySQL 配置下，鏡像入口會先執行數據庫遷移，再啓動 Admin、Syncer、Ingestor 和 API 等服務。
 

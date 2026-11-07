@@ -98,7 +98,7 @@ import (
 	"ragflow/internal/tokenizer"
 )
 
-const ComponentNameTokenizer = "Tokenizer"
+const ComponentNameTokenizer = schema.ComponentNameTokenizer
 
 // titleExtRE strips a trailing file-extension (e.g. ".pdf") from the
 // upstream document name before tokenizing it. Mirrors the python
@@ -297,17 +297,32 @@ func newTokenizerComponent(params map[string]any, resolver EmbedderResolver) (ru
 			}
 		}
 		if v, ok := params["fields"]; ok {
+			// Replace (not append) so fields = ["summary"] does not
+			// silently embed the default "text" as well. Blank names
+			// are dropped: an empty selection keeps the default
+			// instead of selecting no text at all.
+			var fields []string
+			add := func(s string) {
+				if s = strings.TrimSpace(s); s != "" {
+					fields = append(fields, s)
+				}
+			}
 			switch t := v.(type) {
 			case string:
-				p.Fields = []string{t}
+				add(t)
 			case []any:
 				for _, x := range t {
 					if s, ok := x.(string); ok {
-						p.Fields = append(p.Fields, s)
+						add(s)
 					}
 				}
 			case []string:
-				p.Fields = append(p.Fields, t...)
+				for _, s := range t {
+					add(s)
+				}
+			}
+			if len(fields) > 0 {
+				p.Fields = fields
 			}
 		}
 	}
@@ -485,6 +500,14 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 	// cacheHits counts the chunks served from the per-chunk embedding cache;
 	// they are already-resolved work, so the progress fraction starts from them.
 	cacheHits := 0
+	// fieldsResolvedNoText counts chunks where the configured fields produced
+	// nothing at all, which is the signature of a `fields` value naming a chunk
+	// field this pipeline does not produce.
+	fieldsResolvedNoText := 0
+	// emptyAfterTrim counts chunks whose text survived that check but produced
+	// nothing after trimming, which means the embedder's trimmer returned no
+	// text for non-empty input.
+	emptyAfterTrim := 0
 	for i, ck := range chunks {
 		raw := concatFields(ck, c.param.Fields)
 		// Python parity (tokenizer.py:86-89): strip table-structure tags
@@ -492,6 +515,15 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 		// empty-table chunk contributes nothing to the batch.
 		txt := cleanEmbedText(raw)
 		if txt == "" {
+			// Two different causes reach this branch and only one is a defect:
+			// no configured field produced text at all (misconfiguration),
+			// versus a chunk that really is only table tags or whitespace (the
+			// supported empty-table case, which must stay silent). Only a
+			// literally empty concatFields result is the first — whitespace-only
+			// content is still content a field produced.
+			if raw == "" {
+				fieldsResolvedNoText++
+			}
 			continue
 		}
 		// Per-chunk embedding cache: identical (dataset embd_id, chunk, embedded
@@ -504,6 +536,19 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 		// every model would collapse onto one key and served vectors could come
 		// from a different model.
 		trunc := trimForEmbedding(embedder, txt)
+		// A provider rejects the WHOLE batch when any input carries no content
+		// token — vLLM answers 400 "Input validation error: `inputs` cannot be
+		// empty" — so an empty input must never reach the batch. The
+		// EmbedderTrimmer seam promises nothing about the result, so a trimmer
+		// that returns no text for non-empty input is handled by embedding the
+		// pre-trim text: that keeps this chunk's vector requirement intact
+		// (validateTokenizerOutputs decides embeddability on the pre-trim text)
+		// and lets the embedder's own over-limit ladder re-cut it if the
+		// untrimmed text is too long.
+		if strings.TrimSpace(trunc) == "" {
+			emptyAfterTrim++
+			trunc = txt
+		}
 		if chunkID, ok := ck.GetExtraString("id"); ok && embdID != "" && store != nil {
 			if cached, hit := chunkcache.Get(ctx, store, chunkcache.Key("emb", embdID, chunkID, trunc)); hit {
 				var vec []float64
@@ -517,6 +562,20 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 		texts = append(texts, trunc)
 		truncs = append(truncs, trunc)
 		pairs = append(pairs, i)
+	}
+	// Both warnings sit outside the early return on purpose: a mixed batch can
+	// embed some chunks and drop others, and the dropped ones must still be
+	// reported. Each reports how many chunks it covers, not the batch size.
+	if fieldsResolvedNoText > 0 {
+		common.Warn("Tokenizer: configured fields produced no text for some chunks; they were skipped",
+			zap.Strings("fields", c.param.Fields),
+			zap.Int("chunks", fieldsResolvedNoText),
+			zap.Int("total_chunks", len(chunks)))
+	}
+	if emptyAfterTrim > 0 {
+		common.Warn("Tokenizer: embedder returned no text after trimming; embedded the untrimmed text instead",
+			zap.Int("chunks", emptyAfterTrim),
+			zap.Int("total_chunks", len(chunks)))
 	}
 	if len(texts) == 0 && cacheHits == 0 {
 		// Nothing to embed and nothing to serve from cache: return before the
@@ -1122,18 +1181,6 @@ func getStringOr(m map[string]any, key, def string) string {
 		return v
 	}
 	return def
-}
-
-// firstNonEmpty returns the first non-empty value, or "" when all are empty.
-// Used to walk a settings precedence chain (global choice → legacy per-family
-// choice).
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // cloneInputs returns a shallow copy of m with room for one extra key.

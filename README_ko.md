@@ -94,15 +94,6 @@
 
 자세한 내용은 [전체 릴리스 노트](https://ragflow.io/docs/dev/release_notes)를 참조하세요.
 
-
-## 🎉 계속 지켜봐 주세요
-
-⭐️우리의 저장소를 즐겨찾기에 등록하여 흥미로운 새로운 기능과 업데이트를 최신 상태로 유지하세요! 모든 새로운 릴리스에 대한 즉시 알림을 받으세요! 🌟
-
-<div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
-</div>
-
 ## 🌟 주요 기능
 
 ### 🍭 **"Quality in, quality out"**
@@ -187,7 +178,7 @@ Docker는 빠른 평가, 통합 테스트 및 프로덕션에 적합하고 소�
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc2
+   git checkout v1.0.0
    docker compose -f docker-compose.yml up -d
    ```
 

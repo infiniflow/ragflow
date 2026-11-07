@@ -52,8 +52,12 @@ import {
   resolveCitationChunk,
   unescapeAngleBrackets,
 } from '@/utils/chat';
-import type { CitationKey } from '@/utils/citation-utils';
+import {
+  citationWholeMarkerReg,
+  type CitationKey,
+} from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
+import * as HoverCardPrimitive from '@radix-ui/react-hover-card';
 
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import { useLoadingPause } from '@/hooks/use-loading-pause';
@@ -74,26 +78,22 @@ import styles from './index.module.less';
 
 const getChunkKey = (match: string) => parseCitationIndex(match);
 
-// react-string-replace hands the callback the LAST capture group, not the
-// full match — citationMarkerReg groups only the id, so replacing with it
-// would strip the brackets. This group wraps the whole marker, letting an
-// unresolved marker be returned unchanged.
-const WholeMarkerReg = /(\[(?:ID:)?[0-9a-fA-F\u0660-\u0669\u06F0-\u06F9]+\])/g;
 const isArtifactUrl = (url?: string) =>
   Boolean(url && url.includes('/api/v1/documents/artifact/'));
 
-const fetchArtifactBlob = async (url: string): Promise<Blob> => {
-  const response = await request(url, {
+const fetchArtifactResponse = (url: string) =>
+  request(url, {
     method: 'GET',
     responseType: 'blob',
   });
 
-  return response.data as Blob;
-};
+const fetchArtifactBlob = async (url: string): Promise<Blob> =>
+  (await fetchArtifactResponse(url)).data as Blob;
 
 const getArtifactName = (url?: string, fallback?: string) =>
   fallback || url?.split('/').pop()?.split('?')[0] || 'artifact';
 
+/** Downloads attachment responses and previews other artifact blobs. */
 function ArtifactLink({
   href,
   className,
@@ -107,7 +107,19 @@ function ArtifactLink({
     async (e: React.MouseEvent<HTMLAnchorElement>) => {
       e.preventDefault();
       try {
-        const blob = await fetchArtifactBlob(href);
+        const response = await fetchArtifactResponse(href);
+        const blob = response.data as Blob;
+        const contentDisposition = response.response.headers.get(
+          'content-disposition',
+        );
+        if (
+          typeof contentDisposition === 'string' &&
+          /^\s*attachment(?:;|$)/i.test(contentDisposition)
+        ) {
+          downloadFileFromBlob(blob, getArtifactName(href));
+          return;
+        }
+
         const objectUrl = URL.createObjectURL(blob);
         window.open(objectUrl, '_blank', 'noopener,noreferrer');
         window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60 * 1000);
@@ -231,9 +243,22 @@ function MarkdownContent({
         (value: string) => replaceThinkToSection(value, thinkSummary),
         replaceRetrievingToSection,
         preprocessLaTeX,
+        // Entity decoding can expose a line-leading > after the first escape.
+        escapeUnmatchedAngleBrackets,
       )(nextText),
     );
   }, [content, loading, t]);
+
+  // Scope the display numbering to the whole message: each text node only
+  // sees its own markers, so a per-node map restarts at 0 every time and
+  // every distinct [ID:xxx] in a long answer renders as [1]. Building once
+  // from the rendered source (which keeps [n]/[ID:xxx] markers through the
+  // sanitize/latex/section pipeline) makes the numbers unique across the
+  // message while the tooltip still resolves chunks by the marker itself.
+  const citationDisplayMap = useMemo(
+    () => buildCitationDisplayMap(contentWithCursor),
+    [contentWithCursor],
+  );
 
   useEffect(() => {
     const docAggs = reference?.doc_aggs;
@@ -396,44 +421,51 @@ function MarkdownContent({
 
   const renderReference = useCallback(
     (text: string) => {
-      // Chip numbers follow each unique marker's first occurrence, so the
-      // same citation always renders as the same [N] chip. That numbering is
+      // Chip numbers follow each unique marker's first occurrence in the
+      // full message (citationDisplayMap), so the same citation always
+      // renders as the same [N] chip and distinct citations get distinct
+      // numbers across paragraphs and list items. That numbering is
       // display-only: the chunk behind a marker is resolved from the marker
       // itself (position for numeric markers, chunk id for agent
       // [ID:<chunkId>] markers), never from the display position — the
       // payload ships in retrieval order, which is unrelated to the order
       // the answer cites passages in.
-      const keyToDisplay = buildCitationDisplayMap(text);
-      const replacedText = reactStringReplace(text, WholeMarkerReg, (match) => {
-        const chunkKey = getChunkKey(match);
-        const displayIndex = keyToDisplay.get(chunkKey) ?? 0;
-        const chunkItem = resolveCitationChunk(reference?.chunks, chunkKey);
-        // The reference lands at message_end, after the answer stream, so an
-        // unresolved marker keeps its chip while loading. Afterwards it
-        // stays as literal text rather than pointing at the wrong chunk.
-        if (!chunkItem && !loading) {
-          return match;
-        }
+      const replacedText = reactStringReplace(
+        text,
+        citationWholeMarkerReg,
+        (match) => {
+          const chunkKey = getChunkKey(match);
+          const displayIndex = citationDisplayMap.get(chunkKey) ?? 0;
+          const chunkItem = resolveCitationChunk(reference?.chunks, chunkKey);
+          // The reference lands at message_end, after the answer stream, so an
+          // unresolved marker keeps its chip while loading. Afterwards it
+          // stays as literal text rather than pointing at the wrong chunk.
+          if (!chunkItem && !loading) {
+            return match;
+          }
 
-        return (
-          <HoverCard key={`${String(chunkKey)}-${displayIndex}`}>
-            <HoverCardTrigger>
-              <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
-                [{displayIndex + 1}]
-              </bdi>
-            </HoverCardTrigger>
-            {chunkItem && (
-              <HoverCardContent className="max-w-3xl">
-                {renderPopoverContent(chunkKey)}
-              </HoverCardContent>
-            )}
-          </HoverCard>
-        );
-      });
+          return (
+            <HoverCard key={`${String(chunkKey)}-${displayIndex}`}>
+              <HoverCardTrigger>
+                <bdi className="text-text-secondary bg-bg-card rounded-2xl px-1 mx-1 text-nowrap inline-block">
+                  [{displayIndex + 1}]
+                </bdi>
+              </HoverCardTrigger>
+              {chunkItem && (
+                <HoverCardPrimitive.Portal>
+                  <HoverCardContent className="max-w-3xl">
+                    {renderPopoverContent(chunkKey)}
+                  </HoverCardContent>
+                </HoverCardPrimitive.Portal>
+              )}
+            </HoverCard>
+          );
+        },
+      );
 
       return replacedText;
     },
-    [loading, reference?.chunks, renderPopoverContent],
+    [citationDisplayMap, loading, reference?.chunks, renderPopoverContent],
   );
 
   const dir = getDirAttribute(content?.replace(currentReg, ''));

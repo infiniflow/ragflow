@@ -257,6 +257,13 @@ func TestToolBackedComponentRegisteredFactories(t *testing.T) {
 			inputKey:  "stock_code",
 		},
 		{
+			name:      "YouComSearch",
+			toolName:  "YouComSearch",
+			params:    map[string]any{"api_key": "stored-key", "freshness": "week", "top_n": float64(3), "outputs": map[string]any{"json": map[string]any{}}},
+			outputKey: "json",
+			inputKey:  "query",
+		},
+		{
 			name:      "TavilyExtract",
 			toolName:  "TavilyExtract",
 			params:    map[string]any{"api_key": "stored-key", "extract_depth": "advanced", "format": "text", "outputs": map[string]any{"json": map[string]any{}}},
@@ -311,7 +318,7 @@ func TestToolBackedComponentWenCaiInvoke(t *testing.T) {
 }
 
 func TestToolBackedComponentRegisteredBuildWorkflow(t *testing.T) {
-	for _, componentName := range []string{"ArXiv", "BGPT", "DuckDuckGo", "Email", "Google", "GoogleScholar", "KeenableSearch", "PubMed", "QueritContents", "QueritSearch", "Search1APICrawl", "Search1APISearch", "SearXNG", "SofyaSearch", "WenCai", "TavilyExtract", "TavilySearch", "Wikipedia", "YahooFinance"} {
+	for _, componentName := range []string{"ArXiv", "BGPT", "DuckDuckGo", "Email", "Google", "GoogleScholar", "KeenableSearch", "PubMed", "QueritContents", "QueritSearch", "Search1APICrawl", "Search1APISearch", "SearXNG", "SofyaSearch", "WenCai", "TavilyExtract", "TavilySearch", "Wikipedia", "YahooFinance", "YouComSearch"} {
 		t.Run(componentName, func(t *testing.T) {
 			c := &canvas.Canvas{
 				Components: map[string]canvas.CanvasComponent{

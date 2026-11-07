@@ -1,31 +1,32 @@
 ---
+title: Quickstart
+sidebar_label: Quickstart
 sidebar_position: 2
 slug: /
 sidebar_custom_props: {
   sidebarIcon: LucideRocket
 }
 ---
+
 RAGFlow is an open-source RAG (Retrieval-Augmented Generation) engine based on deep document understanding. When integrated with LLMs, it is capable of providing truthful question-answering capabilities, backed by well-founded citations from various complex formatted data.
 
-This quick start guide describes a general process from:
+This guide takes you from deploying RAGFlow with Docker Compose to asking your first question about your documents. After deployment, follow the 10-minute tutorial to configure models, create a Dataset, upload a document, and start a Chat.
 
-- Starting up a local RAGFlow server,
-- Creating a dataset,
-- Establishing an AI chat based on your datasets.
-
-:::danger IMPORTANT
-This guide deploys the Go backend with the repository's Go Docker image and Compose configuration. The supported native Docker build target is Linux x86-64. Linux ARM64 is not currently a supported native target because the Go image depends on native libraries published for x86-64.
-:::
+If RAGFlow is already running, go directly to the [10-Minute Tutorial](#10-minute-tutorial).
 
 ## Prerequisites
 
-- A recommended starting configuration of 4 CPU cores (x86-64), 16 GB RAM, and 50 GB free disk space. Actual requirements depend on the document engine, data volume, parsing workload, and concurrency. Local models and OceanBase require additional resources.
+- A recommended starting configuration of 4 CPU cores (x86-64 or ARM64), 16 GB RAM, and 50 GB free disk space. Actual requirements depend on the document engine, data volume, parsing workload, and concurrency. Local models and OceanBase require additional resources.
 - Docker &ge; 24.0.0 with Docker Compose &ge; v2.26.1 and BuildKit;
 - Access to the dependency image `infiniflow/ragflow_deps:latest` during the image build, and to an LLM and embedding model at runtime.
 
 If Docker is not installed, see [Install Docker Engine](https://docs.docker.com/engine/install/).
 
-## Start up the server
+## Start Up the Server {#start-up-the-server}
+
+:::note
+This guide deploys RAGFlow using Docker images and the Docker Compose configuration provided in the repository. Docker images are available for Linux x86-64 and ARM64 starting with v1.0.0. Docker automatically selects the image matching your host architecture when you use the release tag.
+:::
 
 1. For the default Elasticsearch document engine, ensure `vm.max_map_count` is at least 262144 on the Docker host:
 
@@ -42,23 +43,25 @@ If Docker is not installed, see [Install Docker Engine](https://docs.docker.com/
    git clone https://github.com/infiniflow/ragflow.git
    ```
 
-3. Check out the Go release tag and start the prebuilt Go image with Docker Compose:
+3. Check out the release tag and start the prebuilt RAGFlow Docker image with Docker Compose:
 
    ```bash
    # Enter the Docker deployment directory.
    cd ragflow/docker
-   # Check out the Go v1.0.0-rc2 release tag.
-   git checkout v1.0.0-rc2
-   # Start the Go services and their dependencies in the background.
+   # Check out the latest release tag; replace it with another version if needed.
+   git checkout v1.0.0
+   # Start the RAGFlow services and their dependencies in the background.
    docker compose -f docker-compose.yml up -d
    ```
+
+   To deploy another version, replace `v1.0.0` with a tag from the [Releases](https://github.com/infiniflow/ragflow/releases) page. Before starting the services, ensure `RAGFLOW_IMAGE` in `docker/.env` uses the matching image tag.
 
    The `docker/.env` file controls `DOC_ENGINE`, service ports, and dependency credentials. Change the default passwords before deploying to a network-accessible host.
 
    In the RAGFlow open-source 1.0 release, DeepDoc layout analysis, OCR, and table recognition use CPU inference.
 
    :::caution Development checkouts
-   A development checkout can report a code version older than the database migration version, including immediately after its own migrations. In that case, the Go server refuses to start with `Refusing to start: database was migrated by a newer version`. For local development with this checkout, set `RAGFLOW_DEV_MODE=true` in `.env` and run the Compose command again. This disables the database downgrade check; leave `RAGFLOW_DEV_MODE=false` for production, and use a binary whose version is at least the database migration version.
+   A development checkout can report a code version older than the database migration version, including immediately after its own migrations. In that case, the RAGFlow server refuses to start with `Refusing to start: database was migrated by a newer version`. For local development with this checkout, set `RAGFLOW_DEV_MODE=true` in `.env` and run the Compose command again. This disables the database downgrade check; leave `RAGFLOW_DEV_MODE=false` for production, and use a binary whose version is at least the database migration version.
    :::
 
 4. Check that the service is running:
@@ -68,7 +71,7 @@ If Docker is not installed, see [Install Docker Engine](https://docs.docker.com/
    docker logs -f ragflow-cpu
    ```
 
-   After initialization, check the Go API and its dependencies through the web port from another terminal:
+   After initialization, check the RAGFlow API and its dependencies through the web port from another terminal:
 
    ```bash
    curl -f http://localhost/api/v1/system/healthz
@@ -76,116 +79,105 @@ If Docker is not installed, see [Install Docker Engine](https://docs.docker.com/
 
    A successful response has HTTP status 200. If you changed `SVR_WEB_HTTP_PORT` in `.env`, include that port in the URL. Wait for this check to pass before opening the web interface.
 
-5. Open `http://IP_OF_YOUR_MACHINE` in a browser and log in. If you changed `SVR_WEB_HTTP_PORT` in `.env`, include that port in the URL.
+5. Open `http://IP_OF_YOUR_MACHINE` in a browser and log in. If you changed `SVR_WEB_HTTP_PORT` in `.env`, include that port in the URL. For first-time access, register an account if registration is available, or use an account provided by your administrator.
 
-The Go container runs the API server, ingestion workers, and data synchronization. Its startup script runs the Go database migrations before starting the services.
+The RAGFlow container runs the API server, ingestion workers, and data synchronization. Its startup script runs the database migrations before starting the services.
 
-## Configure LLMs
+## 10-Minute Tutorial
 
-RAGFlow is a RAG engine and needs to work with an LLM to offer grounded, hallucination-free question-answering capabilities. RAGFlow supports most mainstream LLMs.
+Create a Dataset, upload a document, and use Chat to ask questions about its content. By the end of this tutorial, you will have a Chat that answers questions with references to your document.
 
-:::note
-RAGFlow also supports deploying models locally using Ollama or vLLM, but this part is not covered in this quick start guide. See [Deploy Local Models](./guides/models/deploy_local_llm.mdx) for instructions.
-:::
+Configure models → Create a Dataset → Upload a document → Start chatting
 
-To add and configure an LLM:
+Before you begin, log in to RAGFlow and prepare:
 
-1. Click on your logo on the top right of the page **>** **Model providers**.
+- Access to a Chat model and an Embedding model, including any credentials required by your model provider.
+- A small TXT, Markdown, or text-based PDF document containing information you want to ask about.
 
-2. Click on the desired LLM and update the API key accordingly.
+Document parsing and response times depend on the file size, model, and available resources.
 
-3. Click **Set default models** to select the default models:
+### Configure Models {#configure-llms}
 
-   - Chat model,
-   - Embedding model,
-   - Image-to-text model,
-   - and more.
+The **Chat model** generates answers. The **Embedding model** makes document content searchable. If both models are already available in your account, skip to [Create Your First Dataset](#create-your-first-dataset). Otherwise, configure them as follows:
 
-> Some models, such as the image-to-text model **qwen-vl-max**, are subsidiary to a specific LLM. And you may need to update your API key to access these models.
+1. Open **User settings** from your avatar, then select **Model providers**.
+2. Under **Available models**, select your provider and create a provider instance.
+3. Enter the required connection details, such as **API Key** and **Base URL**.
+4. Add or select the Chat and Embedding models you will use, verify them, and save the instance.
+5. Under **Set default models**, select your Chat model and Embedding model.
 
-## Create your first dataset
+If your Chat and Embedding models use different providers, configure an instance for each provider.
 
-You can upload files to a dataset in RAGFlow and parse them into chunks. A dataset is a collection of documents. Question answering in RAGFlow can be based on one or more datasets. Supported file formats include documents (PDF, DOC, DOCX, TXT, MD, MDX), tables (CSV, XLSX, XLS), images (JPEG, JPG, PNG, TIF, GIF), and slides (PPT, PPTX).
+For provider-specific instructions, see [Configure Model Providers](./guides/models/llm_api_key_setup.md). For locally hosted models, see [Deploy Local Models](./guides/models/deploy_local_llm.mdx).
 
-To create your first dataset:
+### Create Your First Dataset {#create-your-first-dataset}
 
-1. Click the **Dataset** tab in the top middle of the page **>** **Create dataset**.
+A Dataset holds the documents your Chat will search when answering questions.
 
-2. Input the name of your dataset and click **OK** to confirm your changes.
+1. Select **Dataset** in the navigation bar, then click **Create dataset**.
 
-   _You are taken to the **Configuration** page of your dataset._
+   <img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_dataset_2.jpg" alt="Open the Dataset page and create a Dataset" width="100%" />
 
-   ![dataset configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_knowledge_base.jpg)
+2. Enter a **Name**, such as `My first Dataset`.
+3. Select the **Embedding model** configured above.
+4. In **Parsing mode**, select **General** and click **Save**.
 
-3. RAGFlow offers multiple chunk templates that cater to different document layouts and file formats. Select the embedding model and chunking method (template) for your dataset.
+Your new Dataset opens. Keep the default configuration for this tutorial and use the **Files** page to add your document.
 
-   :::danger IMPORTANT
-   Once you have selected an embedding model and used it to parse a file, you are no longer allowed to change it. The obvious reason is that we must ensure that all files in a specific dataset are parsed using the *same* embedding model (ensure that they are being compared in the same embedding space).
-   :::
+Choose your Embedding model before parsing documents. For other parsing methods and model changes, see [Dataset Configuration](./guides/dataset/configuration.md).
 
-   _You are taken to the **Dataset** page of your dataset._
+### Upload and Parse a Document
 
-4. Click **+ Add file** **>** **Local files** to start uploading a particular file to the dataset.
+Parsing converts your document into smaller sections, called chunks, that RAGFlow can retrieve when answering a question.
 
-5. In the uploaded file entry, click the play button to start file parsing:
+1. On the Dataset's **Files** page, click **Add file > Upload file**.
+2. Select your document, enable **Parse on creation**, and click **Save**.
 
-   ![parse file](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/parse_file.jpg)
+   <img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/upload_local_document.jpg" alt="Upload a document, enable Parse on creation, and save" width="600" />
 
-   If parsing stalls, check the `ragflow-cpu` service logs with the Compose command above for ingestion errors.
+3. Wait for parsing to complete. If you uploaded without enabling **Parse on creation**, select the document and click **Run** to start parsing.
+4. Check that parsing completed successfully and the document has chunks before continuing.
 
-## Intervene with file parsing
+If parsing fails, open the document's **Logs** to view the error. See [Dataset Document Management](./guides/dataset/files_dataset_document_management.md) for parsing and troubleshooting instructions.
 
-RAGFlow features visibility and explainability, allowing you to view the chunking results and intervene where necessary. To do so:
+### Create a Chat and Ask a Question {#set-up-an-ai-chat}
 
-1. Click on the file that completes file parsing to view the chunking results:
+1. Select **Chat** in the navigation bar and click **Create chat**.
+2. Enter a name, such as `My first Chat`, and confirm creation.
+3. Click the gear icon to open **Chat setting**. In **Model**, select your Chat model. In **Datasets**, select the Dataset you just prepared.
 
-   _You are taken to the **Chunk** page:_
+   <img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_chat.jpg" alt="Select the Chat model and the prepared Dataset in Chat setting" width="600" />
 
-   ![chunks](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/file_chunks.jpg)
+4. Expand **Advanced settings** and enable **Show citations**. Keep the other settings at their defaults and click **Save**.
+5. In the chat window, select **Naive** beside the message box and ask a question whose answer is in your document.
+6. Read the answer and open its citations to check the supporting document content.
 
-2. Hover over each snapshot for a quick view of each chunk.
+Check that the answer contains information from your document and that opening a citation shows the supporting source content. You can then continue asking questions about the same document.
 
-3. Double click the chunked texts to add keywords or make *manual* changes where necessary:
+For additional settings, see [Chat Configuration](./guides/chat/chat_configuration.md).
 
-   ![update chunk](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/add_keyword_question.jpg)
+### Optional: Check Retrieval Results {#intervene-with-file-parsing}
 
-   :::caution NOTE
-   You can add keywords or questions to a file chunk to improve its ranking for queries containing those keywords. This action increases its keyword weight and can improve its position in search list.
-   :::
+Use this optional check to inspect the document content or investigate answers that do not match your expectations.
 
-4. In Retrieval testing, ask a quick question in **Test text** to double check if your configurations work:
+1. Click the parsed document's name to view its chunks. Check that the text you expect is present and readable.
 
-   _As you can tell from the following, RAGFlow responds with truthful citations._
+   <img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/file_chunks.jpg" alt="View the document chunks" width="100%" />
 
-   ![retrieval test](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/retrieval_test.jpg)
+2. Return to the Dataset and open **Retrieval testing**.
+3. Enter a question whose answer is in the document in **Test text**, then run the test.
+4. Check that the results contain content that answers your question.
 
-## Set up an AI chat
+### If You Need Help
 
-Conversations in RAGFlow are based on a particular dataset or multiple datasets. Once you have created your dataset and finished file parsing, you can go ahead and start an AI conversation.
+- **A model is not available for selection**: Check that it has been added and verified under **User settings > Model providers**. See [Configure Model Providers](./guides/models/llm_api_key_setup.md#verify-models).
+- **Document parsing fails**: Open the document's **Logs** to view the error, then follow [View Parsing Status](./guides/dataset/files_dataset_document_management.md#view-parsing-status).
+- **The answer has no citations**: Check that **Show citations** is enabled and that your Dataset contains parsed, enabled documents. Use [Retrieval testing](#intervene-with-file-parsing) to check whether your question finds supporting content.
 
-1. Click the **Chat** tab in the middle top of the page **>** **Create chat** to create a chat assistant.
-2. Click the created chat app to enter its configuration page.
-   > RAGFlow lets you choose a chat model for each dialogue. You can configure the defaults under **Set default models**.
+### Next Steps
 
-3. Update **Chat setting** on the right of the configuration page:
+- **Sync external content**: [Connect a data source](./guides/data_source/overview_and_page_management.md) to keep your Dataset updated with less manual uploading.
+- **Collaborate with your team**: [Invite team members](./guides/team/index.md) to manage and use shared Datasets together.
+- **Make your Chat available on your website**: [Embed your Chat](./guides/chat/using_chat_sessions.md#embed-into-a-website) so visitors can ask questions about your content.
 
-   - Name your assistant and specify your datasets.
-   - **Empty response**:
-     - If you wish to *confine* RAGFlow's answers to your datasets, leave a response here. Then when it doesn't retrieve an answer, it *uniformly* responds with what you set here.
-     - If you wish RAGFlow to *improvise* when it doesn't retrieve an answer from your datasets, leave it blank, which may give rise to hallucinations.
-
-4. Update **System prompt** or leave it as is for the beginning.
-
-5. Select a chat model in the **Model** dropdown list.
-
-6. Now, let's start the show:
-
-   ![chat_thermal_solution](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/chat_thermal_solution.jpg)
-
-
-:::tip NOTE
-RAGFlow also offers an HTTP API for integrating its capabilities into your applications:
-
-- [Acquire a RAGFlow API key](./develop/acquire_ragflow_api_key.md)
-- [HTTP API reference](./references/http_api_reference.md)
-:::
+For more features and detailed instructions, see the [User Guides](./category/user-guides).

@@ -5,22 +5,19 @@ import { BuiltinPipelineCard } from './builtin-pipeline-card';
 
 // BuiltinPipelineSection renders the read-only built-in pipeline catalog after
 // the user's own canvases. It owns the catalog query so the request is issued
-// only when this component is mounted (the agents page mounts it solely for the
-// "All" and "Pipeline" views), keeping the "fire a query where its data is
-// rendered" convention and avoiding a needless request in the Agent /
-// compilation-template views. The cards use the same responsive CardContainer
-// grid as the user items so the section does not stretch into one long column.
+// only when this component is mounted by the Pipeline tab. The cards use the
+// same responsive CardContainer grid as the user items.
 export function BuiltinPipelineSection({
-  rawCategory,
+  canvasCategory,
   searchString,
   showDivider,
 }: {
-  rawCategory?: string | string[] | Record<string, string[]>;
+  canvasCategory: string;
   searchString?: string;
   showDivider?: boolean;
 }) {
   const { t } = useTranslation();
-  const { items: builtinItems } = useBuiltinItems(rawCategory, searchString);
+  const { items: builtinItems } = useBuiltinItems(canvasCategory, searchString);
 
   if (builtinItems.length === 0) {
     return null;

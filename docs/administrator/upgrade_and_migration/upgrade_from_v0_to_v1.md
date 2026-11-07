@@ -93,7 +93,7 @@ Keep one application replica running and do not resume data-writing tasks until 
 
 At every checkpoint, confirm that:
 
-- Existing users can sign in and see their knowledge bases.
+- Existing users can sign in and see their Datasets.
 - Existing files can be listed and opened.
 - Retrieval returns content from previously parsed documents.
 - A new document can be uploaded, parsed, and retrieved.
@@ -109,7 +109,7 @@ These sections contain only the additional checks for each release. Use them tog
 
 ### 2.1. v0.22.1
 
-Use `v0.22.1` rather than `v0.22.0`. If a knowledge base used the embedding model from the former `full` image, select an available replacement model. If the compatibility check fails, use another compatible model or re-parse the existing chunks with the new model.
+Use `v0.22.1` rather than `v0.22.0`. If a Dataset used the embedding model from the former `full` image, select an available replacement model. If the compatibility check fails, use another compatible model or re-parse the existing chunks with the new model.
 
 ### 2.2. v0.25.6
 
@@ -196,7 +196,7 @@ docker compose -p docker -f docker/docker-compose.yml ps
 curl -f http://127.0.0.1/api/v1/system/healthz
 ```
 
-The health-check command uses the default web port `80`. If `SVR_WEB_HTTP_PORT` has been changed in `docker/.env`, use that port in the URL.
+The health check command uses the default web port `80`. If `SVR_WEB_HTTP_PORT` has been changed in `docker/.env`, use that port in the URL.
 
 If the logs report a migration error, stop the v1 deployment and preserve the logs. Do not retry against the partially migrated data. Restore the complete `v0.27.2` recovery point, resolve the cause in a separate test environment, and retry the upgrade only from the restored recovery point.
 

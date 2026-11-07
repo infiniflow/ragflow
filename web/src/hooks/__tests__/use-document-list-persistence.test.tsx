@@ -374,7 +374,8 @@ it("does not reuse another dataset's filter catalog on parameter routes", async 
             filter: {
               suffix: id === 'dataset-a' ? { pdf: 1 } : { docx: 1 },
               metadata: {},
-              ingestion_status: {},
+              ingestion_status:
+                id === 'dataset-a' ? { RUNNING: 2 } : { SCHEDULED: 3 },
             },
           },
         },
@@ -386,6 +387,8 @@ it("does not reuse another dataset's filter catalog on parameter routes", async 
   await waitFor(() =>
     expect(catalog.result.current.filter.suffix).toHaveProperty('pdf'),
   );
+  expect(catalog.result.current.filterLoaded).toBe(true);
+  expect(catalog.result.current.statusCounts).toEqual({ RUNNING: 2 });
 
   mockDatasetId = 'dataset-b';
   catalog.rerender();
@@ -393,6 +396,8 @@ it("does not reuse another dataset's filter catalog on parameter routes", async 
   await waitFor(() =>
     expect(catalog.result.current.filter.suffix).toHaveProperty('docx'),
   );
+  expect(catalog.result.current.filterLoaded).toBe(true);
+  expect(catalog.result.current.statusCounts).toEqual({ SCHEDULED: 3 });
 
   mockDatasetId = 'dataset-a';
   catalog.rerender();
