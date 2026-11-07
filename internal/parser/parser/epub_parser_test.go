@@ -1068,3 +1068,91 @@ func TestEPUBParserPreservesImageOrderAndAlt(t *testing.T) {
 		t.Fatalf("second image = %#v", items[3])
 	}
 }
+
+func TestEPUBParser_ConfigureFromSetup(t *testing.T) {
+	p := NewEPUBParser()
+	p.ConfigureFromSetup(map[string]any{
+		"flatten_media_to_text": true,
+	})
+	if !p.FlattenMediaToText {
+		t.Error("FlattenMediaToText = false, want true")
+	}
+
+	// nil safe
+	p2 := NewEPUBParser()
+	p2.ConfigureFromSetup(nil)
+	if p2.FlattenMediaToText {
+		t.Error("flags should stay false after nil setup")
+	}
+}
+
+func TestEPUBParser_FlattenMediaToText(t *testing.T) {
+	ctx, _ := recordingMediaContext()
+	data := buildTestEPUBWithImages(t, []epubTestChapter{{
+		name:    "ch1.xhtml",
+		content: epubTestHTML(`<h1>Chapter 1</h1><table><tr><td>Product</td><td><img src="Images/pic.png" alt="sample"></td></tr><tr><td>Book</td><td>$10</td></tr></table><p>Next</p>`),
+	}}, []epubTestImage{{name: "Images/pic.png", content: "sample-img"}})
+
+	// 1. Without FlattenMediaToText
+	pDefault := NewEPUBParser()
+	resDefault := pDefault.ParseWithResult(ctx, "book.epub", data)
+	if resDefault.Err != nil {
+		t.Fatalf("ParseWithResult default: %v", resDefault.Err)
+	}
+	itemsDefault := ItemsToMaps(resDefault.JSON)
+	hasTable := false
+	hasImage := false
+	for _, it := range itemsDefault {
+		if it["doc_type_kwd"] == DocTypeTable {
+			hasTable = true
+			if it["table"] == nil {
+				t.Fatalf("table item missing table entity: %#v", it)
+			}
+			if it["source_table_id"] == nil {
+				t.Errorf("default table item should carry source_table_id: %#v", it)
+			}
+		}
+		if it["doc_type_kwd"] == DocTypeImage {
+			hasImage = true
+			if it["parent_table_id"] == nil {
+				t.Errorf("default cell image should carry parent_table_id: %#v", it)
+			}
+		}
+	}
+	if !hasTable || !hasImage {
+		t.Fatalf("default items should contain table and image, got: %#v", itemsDefault)
+	}
+
+	// 2. With FlattenMediaToText = true
+	pFlatten := NewEPUBParser()
+	pFlatten.ConfigureFromSetup(map[string]any{"flatten_media_to_text": true})
+	resFlatten := pFlatten.ParseWithResult(ctx, "book.epub", data)
+	if resFlatten.Err != nil {
+		t.Fatalf("ParseWithResult flattened: %v", resFlatten.Err)
+	}
+	itemsFlatten := ItemsToMaps(resFlatten.JSON)
+	tableRendered := false
+	for _, it := range itemsFlatten {
+		if it["doc_type_kwd"] != DocTypeText {
+			t.Errorf("expected all doc_type_kwd to be text, got %q in %#v", it["doc_type_kwd"], it)
+		}
+		if it["table"] != nil {
+			t.Errorf("table entity should be deleted when flattened: %#v", it)
+		}
+		if it["source_table_id"] != nil {
+			t.Errorf("source_table_id should be cleared when flattened: %#v", it)
+		}
+		if it["parent_table_id"] != nil {
+			t.Errorf("parent_table_id should be cleared when flattened: %#v", it)
+		}
+		if it["row_index"] != nil || it["column_index"] != nil {
+			t.Errorf("row_index/column_index should be cleared when flattened: %#v", it)
+		}
+		if text, _ := it["text"].(string); strings.Contains(text, "<table>") && strings.Contains(text, "Product") {
+			tableRendered = true
+		}
+	}
+	if !tableRendered {
+		t.Errorf("table was not rendered into HTML text: %#v", itemsFlatten)
+	}
+}
