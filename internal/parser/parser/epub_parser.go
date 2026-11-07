@@ -363,7 +363,7 @@ func extractEPUBTextItems(ctx context.Context, r *zip.Reader, opf *opfManifest, 
 		return nil, detectedEncoding, state.warnings(), fmt.Errorf("no readable content: %d of %d content items could not be read (%s)", len(failures), len(opf.SpineHrefs), failures[0])
 	}
 	if removeTOC {
-		leaves = removeContentsTable(leaves, isEnglishItems(leaves))
+		leaves = removeEPUBContentsTable(leaves, isEnglishItems(leaves))
 	}
 	items := collapseEPUBLeaves(leaves)
 	return items, detectedEncoding, state.warnings(), nil
@@ -498,6 +498,65 @@ func extractEPUBChapterLeaves(doc *html.Node, state *htmlWalkState) []map[string
 		leaves = append(leaves, item)
 	}
 	return leaves
+}
+
+// removeEPUBContentsTable runs the shared contents-table heuristic inside each
+// spine item. A single pass over every leaf can treat a preface chapter between
+// the TOC and the chapter that carries the matching heading as part of the TOC
+// block and delete it.
+func removeEPUBContentsTable(leaves []map[string]any, eng bool) []map[string]any {
+	cleaned := make([]map[string]any, 0, len(leaves))
+	for start := 0; start < len(leaves); {
+		end := start + 1
+		chapter := leaves[start]["__epub_chapter"]
+		for end < len(leaves) && leaves[end]["__epub_chapter"] == chapter {
+			end++
+		}
+		for _, item := range removeContentsTable(appendTOCTerminator(leaves[start:end], leaves[end:], eng), eng) {
+			if _, ok := item["__epub_toc_terminator"]; ok {
+				continue
+			}
+			cleaned = append(cleaned, item)
+		}
+		start = end
+	}
+	return cleaned
+}
+
+// appendTOCTerminator appends the first text leaf from a later spine item that
+// shares the TOC entry prefix. removeContentsTable drops entries up to the next
+// prefix match; when the TOC has its own spine item, that match lives in the
+// body chapters, so without a terminator the last entries would survive.
+func appendTOCTerminator(group, later []map[string]any, eng bool) []map[string]any {
+	for i, item := range group {
+		if !isTOCHeading(itemText(item)) {
+			continue
+		}
+		if i+1 >= len(group) || group[i+1]["doc_type_kwd"] != "text" {
+			return group
+		}
+		prefix := tocPrefix(itemText(group[i+1]), eng)
+		if prefix == "" {
+			return group
+		}
+		for _, candidate := range later {
+			if candidate["doc_type_kwd"] != "text" || !strings.HasPrefix(itemText(candidate), prefix) {
+				continue
+			}
+			// Copy first: appending to group would overwrite the first leaf of
+			// the next chapter, which shares the backing array.
+			withTerminator := make([]map[string]any, len(group), len(group)+1)
+			copy(withTerminator, group)
+			return append(withTerminator, map[string]any{
+				"text":                  itemText(candidate),
+				"doc_type_kwd":          "text",
+				"__epub_chapter":        item["__epub_chapter"],
+				"__epub_toc_terminator": true,
+			})
+		}
+		return group
+	}
+	return group
 }
 
 // collapseEPUBLeaves collapses continuous prose within the same chapter into

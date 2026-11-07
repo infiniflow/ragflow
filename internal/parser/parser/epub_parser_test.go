@@ -1273,3 +1273,43 @@ func TestEPUBParser_RemoveTOCSeparateSpineItem(t *testing.T) {
 		}
 	}
 }
+
+// A preface spine item between the TOC and the chapter that carries the
+// matching heading must survive: the shared heuristic stops dropping entries at
+// the next prefix match, so a single pass over every leaf would treat the
+// preface as part of the TOC block.
+func TestEPUBParser_RemoveTOCKeepsPrefaceChapter(t *testing.T) {
+	data := buildTestEPUBWithImages(t, []epubTestChapter{
+		{name: "toc.xhtml", content: epubTestHTML(`<h1>目录</h1>
+<p>第一章 概述</p>
+<p>第二章 方法</p>`)},
+		{name: "preface.xhtml", content: epubTestHTML(`<h1>前言</h1><p>这是一段必须保留的前言正文。</p>`)},
+		{name: "ch1.xhtml", content: epubTestHTML(`<h1>第一章 概述</h1><p>正文第一章开始讨论...</p>`)},
+	}, nil)
+
+	p := NewEPUBParser()
+	p.ConfigureFromSetup(map[string]any{"remove_toc": true})
+	res := p.ParseWithResult(context.Background(), "book.epub", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	var texts []string
+	for _, it := range ItemsToMaps(res.JSON) {
+		texts = append(texts, stringValue(it["text"]))
+	}
+	full := strings.Join(texts, " ")
+	if strings.Contains(full, "目录") {
+		t.Errorf("TOC heading survived: %q", full)
+	}
+	if got := strings.Count(full, "第一章 概述"); got != 1 {
+		t.Errorf("TOC entry occurrences = %d, want 1: %q", got, full)
+	}
+	if got := strings.Count(full, "第二章 方法"); got != 0 {
+		t.Errorf("second TOC entry occurrences = %d, want 0: %q", got, full)
+	}
+	for _, want := range []string{"前言", "这是一段必须保留的前言正文", "正文第一章开始讨论"} {
+		if !strings.Contains(full, want) {
+			t.Errorf("missing %q in %q", want, full)
+		}
+	}
+}
