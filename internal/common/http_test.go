@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
@@ -357,5 +358,22 @@ func TestProviderHTTPClientResponseHeaderTimeoutIgnoresInvalidValues(t *testing.
 				t.Errorf("SSRF response header timeout = %v, want default %v for %q", got, ssrfResponseHeaderTimeoutDefault, value)
 			}
 		})
+	}
+}
+
+func TestParseRequestIntPositiveRejectsNegativeWithoutFormatArtifact(t *testing.T) {
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+
+	for _, parameter := range []string{"-1", "-42"} {
+		got, err := ParseRequestIntPositive(c, parameter, "page", 1)
+		if err == nil {
+			t.Fatalf("ParseRequestIntPositive(%q) error = nil, want a rejection", parameter)
+		}
+		if got != 1 {
+			t.Errorf("ParseRequestIntPositive(%q) = %d, want the default 1", parameter, got)
+		}
+		if want := "page must be a positive integer or zero"; err.Error() != want {
+			t.Errorf("ParseRequestIntPositive(%q) error = %q, want %q", parameter, err.Error(), want)
+		}
 	}
 }
