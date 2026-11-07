@@ -639,7 +639,7 @@ const SkillsPage: React.FC = () => {
               <BulkOperateBar
                 className="mt-4"
                 count={selectedSpaceCount}
-                unit={t('skills.space') || 'spaces'}
+                unit={t('skills.space', { defaultValue: 'spaces' })}
                 list={[
                   {
                     id: 'delete',
@@ -933,8 +933,8 @@ const SkillsPage: React.FC = () => {
               onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
               title={
                 sortOrder === 'asc'
-                  ? t('skills.sortDesc') || 'Sort Descending'
-                  : t('skills.sortAsc') || 'Sort Ascending'
+                  ? t('skills.sortDesc', { defaultValue: 'Sort Descending' })
+                  : t('skills.sortAsc', { defaultValue: 'Sort Ascending' })
               }
             >
               {sortOrder === 'asc' ? (
