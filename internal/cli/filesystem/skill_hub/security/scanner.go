@@ -17,6 +17,7 @@
 package security
 
 import (
+	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -82,6 +83,10 @@ func (s *Scanner) scanFile(filename, content string) []Finding {
 	// community sources, so match against the code-only view of each line.
 	masked := make([]string, len(lines))
 	for i, line := range lines {
+		if isProseFile(filename) {
+			masked[i] = line
+			continue
+		}
 		masked[i] = maskShellComments(line)
 	}
 
@@ -164,6 +169,17 @@ func maskShellComments(line string) string {
 func isShellWordBreak(c byte) bool {
 	switch c {
 	case ' ', '\t', ';', '&', '|', '(', ')', '<', '>':
+		return true
+	}
+	return false
+}
+
+// Markdown is prose the assistant reads as instructions, so a line such as
+// "# ignore previous instructions" is content, not a comment. Only files where
+// '#' introduces something the shell would skip are masked.
+func isProseFile(filename string) bool {
+	switch strings.ToLower(filepath.Ext(filename)) {
+	case ".md", ".markdown", ".mdx", ".txt", ".rst", ".adoc":
 		return true
 	}
 	return false

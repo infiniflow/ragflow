@@ -113,11 +113,13 @@ var ThreatPatterns = []ThreatPattern{
 	// A word-initial `#` opens a shell comment, so the operand stops there; a
 	// `#` glued to the previous word stays literal. Inside double quotes a
 	// separator is literal, so that span absorbs it along with any `$`
-	// expansion; the trailing anchor stays reachable by backtracking. The
-	// command name needs a word boundary so a benign word ending in `rm` does
-	// not match, and `--rec*` covers the abbreviations GNU rm accepts.
+	// expansion; the trailing anchor stays reachable by backtracking. A
+	// redirection operator also ends the operand, because the file it names is
+	// written to, not removed. The command name needs a word boundary so a
+	// benign word ending in `rm` does not match, and `--rec*` covers the
+	// abbreviations GNU rm accepts.
 	{
-		Pattern:     `\brm\s+(?:--?[a-zA-Z][a-zA-Z-]*(?:=\S+)?\s+)*(?:-[a-zA-Z]*r[a-zA-Z]*|--rec[a-zA-Z]*)\s+(?:[^;&|\n#]|"[^"\n]*"|'[^'\n]*'|[^;&|\n\s#]#)*\$HOME|\brmdir\s+(?:[^;&|\n#]|"[^"\n]*"|'[^'\n]*'|[^;&|\n\s#]#)*\$HOME`,
+		Pattern:     `\brm\s+(?:--?[a-zA-Z][a-zA-Z-]*(?:=\S+)?\s+)*(?:-[a-zA-Z]*r[a-zA-Z]*|--rec[a-zA-Z]*)\s+(?:[^;&|<>\n#]|"[^"\n]*"|'[^'\n]*'|[^;&|<>\n\s#]#)*\$HOME|\brmdir\s+(?:[^;&|<>\n#]|"[^"\n]*"|'[^'\n]*'|[^;&|<>\n\s#]#)*\$HOME`,
 		PatternID:   "destructive_home_rm",
 		Severity:    "critical",
 		Category:    "destructive",
@@ -145,7 +147,7 @@ var ThreatPatterns = []ThreatPattern{
 		Description: "Python rmtree on absolute or root-relative path",
 	},
 	{
-		Pattern:     `\brm\s+(?:--?[a-zA-Z][a-zA-Z-]*(?:=\S+)?\s+)*(?:-[a-zA-Z]*r[a-zA-Z]*|--rec[a-zA-Z]*)\s+(?:[^;&|\n#]|"[^"\n]*"|'[^'\n]*'|[^;&|\n\s#]#)*\$`,
+		Pattern:     `\brm\s+(?:--?[a-zA-Z][a-zA-Z-]*(?:=\S+)?\s+)*(?:-[a-zA-Z]*r[a-zA-Z]*|--rec[a-zA-Z]*)\s+(?:[^;&|<>\n#]|"[^"\n]*"|'[^'\n]*'|[^;&|<>\n\s#]#)*\$`,
 		PatternID:   "rm_recursive_dangerous",
 		Severity:    "high",
 		Category:    "destructive",
