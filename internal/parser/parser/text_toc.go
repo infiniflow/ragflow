@@ -5,17 +5,21 @@ import (
 	"strings"
 )
 
-// tocHeadingPattern matches TOC heading text. Mirrors Python
-// rag/nlp/__init__.py:945 — case-insensitive match against
-// contents/目录/目次/table of contents/致谢/acknowledge after
-// stripping all spaces (ASCII + fullwidth).
+// tocHeadingPattern matches TOC heading text — case-insensitive match against
+// contents/目录/目次/table of contents after stripping all spaces (ASCII + fullwidth).
+// Standalone front/back-matter headings such as 致谢/acknowledgements are excluded
+// so their content is not mistakenly dropped as a TOC.
 // The heading is matched after whitespacePattern has removed its spaces, so a
 // multi-word heading is listed without them: "Table of Contents" reads "tableofcontents".
-var tocHeadingPattern = regexp.MustCompile(`(?i)^(contents|目录|目次|tableofcontents|致谢|acknowledge)$`)
+var tocHeadingPattern = regexp.MustCompile(`(?i)^(contents|目录|目次|tableofcontents)$`)
 
 // whitespacePattern matches ASCII spaces and fullwidth space (U+3000)
 // for normalization before heading match.
 var whitespacePattern = regexp.MustCompile("[ \t\u3000]+")
+
+// listMarkerPattern matches unordered list markers (*, -, +) or ordered list
+// markers (e.g. 1., 2), as emitted by markdownListMarker) at the start of a string.
+var listMarkerPattern = regexp.MustCompile(`^(?:[\*\-\+]|\d+[\.\)])\s+`)
 
 // itemText extracts the text field from a parser item map. Falls
 // back to empty string when the field is missing or not a string.
@@ -24,6 +28,23 @@ func itemText(item map[string]any) string {
 		return strings.TrimSpace(s)
 	}
 	return ""
+}
+
+// cleanTOCItemText strips leading Markdown ATX heading markers (#), bullet markers
+// (*, -, +), ordered list markers (e.g. 1., 1)), and whitespace so TOC headings,
+// list items, and body headings can match on their core text. HTML and plain text
+// items without list markers are unchanged.
+func cleanTOCItemText(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.TrimLeft(s, "# \t")
+	for {
+		if loc := listMarkerPattern.FindStringIndex(s); loc != nil {
+			s = strings.TrimSpace(s[loc[1]:])
+		} else {
+			break
+		}
+	}
+	return s
 }
 
 // removeContentsTable drops the table-of-contents entries from a list
@@ -43,7 +64,8 @@ func removeContentsTable(items []map[string]any, eng bool) []map[string]any {
 	for i < len(items) {
 		text := itemText(items[i])
 		// Strip @@ suffix and whitespace before matching.
-		normalized := whitespacePattern.ReplaceAllString(strings.SplitN(text, "@@", 2)[0], "")
+		rawNoAt := strings.SplitN(text, "@@", 2)[0]
+		normalized := strings.TrimLeft(whitespacePattern.ReplaceAllString(rawNoAt, ""), "#")
 		if !tocHeadingPattern.MatchString(normalized) {
 			i++
 			continue
@@ -54,13 +76,15 @@ func removeContentsTable(items []map[string]any, eng bool) []map[string]any {
 			break
 		}
 		// Determine the prefix from the entry right after the heading.
-		prefix := tocPrefix(itemText(items[i]), eng)
+		cleanText := cleanTOCItemText(itemText(items[i]))
+		prefix := tocPrefix(cleanText, eng)
 		for prefix == "" {
 			items = append(items[:i], items[i+1:]...)
 			if i >= len(items) {
 				break
 			}
-			prefix = tocPrefix(itemText(items[i]), eng)
+			cleanText = cleanTOCItemText(itemText(items[i]))
+			prefix = tocPrefix(cleanText, eng)
 		}
 		if i >= len(items) || prefix == "" {
 			break
@@ -76,7 +100,8 @@ func removeContentsTable(items []map[string]any, eng bool) []map[string]any {
 			limit = len(items)
 		}
 		for j := i; j < limit; j++ {
-			if !strings.HasPrefix(itemText(items[j]), prefix) {
+			cleanTarget := cleanTOCItemText(itemText(items[j]))
+			if !strings.HasPrefix(cleanTarget, prefix) {
 				continue
 			}
 			// Drop entries [i, j).
@@ -126,7 +151,7 @@ func isEnglishTexts(texts []string) bool {
 	if len(sampled) == 0 {
 		return false
 	}
-	pat := regexp.MustCompile("^[" + "`" + "a-zA-Z0-9\\s.,':;/\"?<>!()-]+$")
+	pat := regexp.MustCompile("^[" + "`" + "a-zA-Z0-9\\s.,':;/\"?<>!()#*+_-]+$")
 	eng := 0
 	for _, t := range sampled {
 		if pat.MatchString(t) {
