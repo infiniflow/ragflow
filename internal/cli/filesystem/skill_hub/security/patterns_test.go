@@ -227,6 +227,8 @@ func TestScanSkillIgnoresRedirectionTargetAsRemovalOperand(t *testing.T) {
 		`rm -rf build 2> "$LOG"`,
 		`rm -rf build >> $LOG`,
 		`rm -rf build > "$HOME/build.log"`,
+		`rm -rf build 2>/dev/null > "$LOG"`,
+		`rm -rf build 2>/dev/null > "$HOME"`,
 	}
 	for _, line := range safe {
 		t.Run(line, func(t *testing.T) {
@@ -249,6 +251,33 @@ func TestScanSkillIgnoresRedirectionTargetAsRemovalOperand(t *testing.T) {
 			if len(result.Findings) == 0 {
 				t.Fatalf("%q raised no destructive-rm finding", line)
 			}
+		})
+	}
+}
+
+// A redirection only shields the file it names; a later operand is still
+// removed and must keep raising.
+func TestScanSkillMatchesOperandAfterRedirection(t *testing.T) {
+	tests := []struct {
+		line      string
+		patternID string
+	}{
+		{`rm -rf build 2>/dev/null "$HOME"`, "destructive_home_rm"},
+		{`rm -rf build > /dev/null "$HOME"`, "destructive_home_rm"},
+		{`rm -rf build 2>/dev/null $TARGET`, "rm_recursive_dangerous"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.line, func(t *testing.T) {
+			result := NewScanner().ScanSkill("skill", "github", "community", map[string][]byte{
+				"install.sh": []byte("#!/bin/sh\n" + tt.line + "\n"),
+			})
+			for _, finding := range result.Findings {
+				if finding.PatternID == tt.patternID {
+					return
+				}
+			}
+			t.Fatalf("%q did not raise %s: %v", tt.line, tt.patternID, result.Findings)
 		})
 	}
 }
