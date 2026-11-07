@@ -2,6 +2,7 @@ package pregel
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -90,6 +91,90 @@ func TestGenerateCacheKey(t *testing.T) {
 	}
 	if key1 == key3 {
 		t.Error("expected different nodes to generate different keys")
+	}
+}
+
+// Regression: LRU eviction must follow the actual access order, not wall-clock
+// timestamps. All the operations below complete within a single OS clock tick
+// on Windows (and on any host with a coarse monotonic clock), so ordering by
+// time.Now() left tied entries to map iteration order and evicted an arbitrary
+// key. The cache now stamps lastAccess from a logical clock, which makes the
+// eviction victim deterministic on every platform. Survivors are asserted via
+// the entry map so the checks themselves do not refresh recency.
+func TestMemoryCacheLRUEvictionFollowsLogicalClock(t *testing.T) {
+	ctx := t.Context()
+	cache := NewMemoryCache(3, EvictLRU)
+
+	cache.Set(ctx, "key1", "value1", 0)
+	cache.Set(ctx, "key2", "value2", 0)
+	cache.Set(ctx, "key3", "value3", 0)
+
+	// key1 was touched last, so key2 is the least recently used entry even
+	// though every operation above shares one wall-clock tick.
+	cache.Get(ctx, "key1")
+	cache.Set(ctx, "key4", "value4", 0)
+
+	if _, ok := cache.data["key2"]; ok {
+		t.Error("expected key2 (least recently used) to be evicted")
+	}
+	for _, key := range []string{"key1", "key3", "key4"} {
+		if _, ok := cache.data[key]; !ok {
+			t.Errorf("expected %s to survive", key)
+		}
+	}
+
+	// Same-tick churn must evict strictly in insertion order, never a
+	// map-order random pick, while keeping the cache within maxSize.
+	churn := NewMemoryCache(4, EvictLRU)
+	for i := 0; i < 24; i++ {
+		churn.Set(ctx, fmt.Sprintf("k%02d", i), i, 0)
+	}
+	if len(churn.data) != 4 {
+		t.Errorf("cache size = %d, want 4", len(churn.data))
+	}
+	for i := 0; i < 20; i++ {
+		if _, ok := churn.data[fmt.Sprintf("k%02d", i)]; ok {
+			t.Errorf("expected k%02d to be evicted", i)
+		}
+	}
+	for i := 20; i < 24; i++ {
+		if _, ok := churn.data[fmt.Sprintf("k%02d", i)]; !ok {
+			t.Errorf("expected k%02d to survive", i)
+		}
+	}
+}
+
+func TestMemoryCacheLFUEvictionBreaksHitTiesByLRU(t *testing.T) {
+	ctx := t.Context()
+	cache := NewMemoryCache(3, EvictLFU)
+
+	cache.Set(ctx, "used", "a", 0)
+	cache.Set(ctx, "old-tie", "b", 0)
+	cache.Set(ctx, "new-tie", "c", 0)
+
+	// "used" has one hit, the other two have none and tie on hits, so the
+	// older of the two is the least valuable entry.
+	cache.Get(ctx, "used")
+	cache.Set(ctx, "fourth", "d", 0)
+	if _, ok := cache.data["old-tie"]; ok {
+		t.Error("expected old-tie (hit tie, least recently used) to be evicted")
+	}
+	for _, key := range []string{"used", "new-tie", "fourth"} {
+		if _, ok := cache.data[key]; !ok {
+			t.Errorf("expected %s to survive", key)
+		}
+	}
+
+	// The next eviction faces the same 0-hit tie between new-tie and fourth
+	// and must again take the older one, not a map-order random pick.
+	cache.Set(ctx, "fifth", "e", 0)
+	if _, ok := cache.data["new-tie"]; ok {
+		t.Error("expected new-tie (hit tie, least recently used) to be evicted")
+	}
+	for _, key := range []string{"used", "fourth", "fifth"} {
+		if _, ok := cache.data[key]; !ok {
+			t.Errorf("expected %s to survive", key)
+		}
 	}
 }
 
