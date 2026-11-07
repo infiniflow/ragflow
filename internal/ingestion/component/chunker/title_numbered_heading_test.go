@@ -198,3 +198,50 @@ func TestResolveTitleLevels_LongMarkdownHeadingStaysHeading(t *testing.T) {
 		t.Errorf("body line level = %d, want body", levels[1])
 	}
 }
+
+func TestResolveTitleLevels_InlineChineseClauses(t *testing.T) {
+	records := []lineRecord{
+		{text: "一、本通知所称跨国公司，是指以资本为联结纽带、由境内外母公司及其控股子公司组成的企业联合体。", docType: "text"},
+		{text: "二、符合条件的跨国公司应当按照本通知的规定，向所在地主管部门提交相关材料并完成必要的登记手续。", docType: "text"},
+	}
+	p := numberedHeadingParam()
+	p.IncludeHeadingContent = false
+	for i, level := range resolveTitleLevels(records, p) {
+		if level != 3 {
+			t.Errorf("clause %d level = %d, want 3", i+1, level)
+		}
+	}
+
+	chunker, err := NewHierarchyTitleChunker(map[string]any{
+		"hierarchy":               2,
+		"levels":                  numberedHeadingLevels,
+		"include_heading_content": false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := chunker.Invoke(t.Context(), nil, map[string]any{
+		"name": "regulation.txt",
+		"text": records[0].text + "\n" + records[1].text,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
+	if !ok || len(chunks) != len(records) {
+		t.Fatalf("chunks = %#v, want one chunk per clause", chunks)
+	}
+	for i, chunk := range chunks {
+		text, _ := chunk["text"].(string)
+		if strings.TrimSpace(text) != records[i].text {
+			t.Errorf("chunk %d text = %q, want %q", i+1, chunk["text"], records[i].text)
+		}
+	}
+
+	p.IncludeHeadingContent = true
+	for i, level := range resolveTitleLevels(records, p) {
+		if level != bodyLevel {
+			t.Errorf("clause %d level = %d with heading content enabled, want body", i+1, level)
+		}
+	}
+}

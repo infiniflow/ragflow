@@ -163,30 +163,15 @@ func defaultsTitle() titleChunkerParam {
 // selectLevelGroup mirrors common.py:select_level_group. Returns the
 // regex-list family with the highest hit count across the input
 // lines.
-func selectLevelGroup(lines []string, rawLevels [][]string) []string {
+func selectLevelGroup(lines []string, rawLevels [][]string, allowInlineClauses bool) []string {
 	if len(rawLevels) == 0 {
 		return nil
 	}
 	hits := make([]int, len(rawLevels))
 	for i, group := range rawLevels {
 		for _, line := range lines {
-			text := trim(line)
-			if text == "" {
-				continue
-			}
-			// Mirror common.py:select_level_group — a bullet-looking
-			// line cannot count as a heading hit for any family.
-			// A long body paragraph does not count either.
-			if notHeadingCandidate(text) {
-				continue
-			}
-			for _, pattern := range group {
-				if re := compileLevelPattern(pattern); re != nil {
-					if re.MatchString(text) {
-						hits[i]++
-						break
-					}
-				}
+			if matchRegexLevel(line, group, allowInlineClauses) != 0 {
+				hits[i]++
 			}
 		}
 	}
@@ -212,14 +197,15 @@ func selectLevelGroup(lines []string, rawLevels [][]string) []string {
 
 // matchRegexLevel mirrors common.py:match_regex_level. Levels are
 // 1-indexed; "" or no-match returns 0 (BODY).
-func matchRegexLevel(text string, group []string) int {
+func matchRegexLevel(text string, group []string, allowInlineClauses bool) int {
 	stripped := trim(text)
-	if stripped == "" {
+	if stripped == "" || notBullet(stripped) {
 		return 0
 	}
-	// Mirror common.py:match_regex_level — a bullet-looking line is not
-	// a heading regardless of the regex family.
-	if notHeadingCandidate(stripped) {
+	// An enumeration such as "一、" can mark a clause whose body starts
+	// on the same line. Only honor it when headings are not prepended to
+	// descendant chunks, so long numbered paragraphs are not repeated.
+	if headingTooLong(stripped) && !(allowInlineClauses && inlineChineseClause.MatchString(stripped)) {
 		return 0
 	}
 	for lvl, pattern := range group {
@@ -230,6 +216,8 @@ func matchRegexLevel(text string, group []string) int {
 	}
 	return 0
 }
+
+var inlineChineseClause = regexp.MustCompile(`^[零一二三四五六七八九十百]+、`)
 
 // notBulletPatterns mirrors rag/nlp.not_bullet. A line matching any of
 // these looks like a numbered/bulleted list item rather than a section
@@ -382,7 +370,8 @@ func resolveTitleLevels(records []lineRecord, p *titleChunkerParam) []int {
 	for i, r := range records {
 		lines[i] = r.text
 	}
-	group := selectLevelGroup(lines, p.Levels)
+	allowInlineClauses := !p.IncludeHeadingContent
+	group := selectLevelGroup(lines, p.Levels, allowInlineClauses)
 	fallbackLevel := len(group) + 1
 	out := make([]int, len(records))
 	for i, rec := range records {
@@ -397,7 +386,7 @@ func resolveTitleLevels(records []lineRecord, p *titleChunkerParam) []int {
 			out[i] = bodyLevel
 			continue
 		}
-		if lvl := matchRegexLevel(rec.text, group); lvl != 0 {
+		if lvl := matchRegexLevel(rec.text, group, allowInlineClauses); lvl != 0 {
 			out[i] = lvl
 			continue
 		}
