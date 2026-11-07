@@ -232,6 +232,9 @@ func TestScanSkillIgnoresRedirectionTargetAsRemovalOperand(t *testing.T) {
 		`rm -rf build > /tmp/$HOME`,
 		`rm -rf build > /tmp/$TARGET`,
 		`rm -rf build > $HOME`,
+		`rm -rf build > /tmp/"$HOME"`,
+		`rm -rf build > /tmp/a#b`,
+		`rm -rf build >/tmp/"log";echo "$HOME"`,
 		`rm -rf build > /dev/null; echo "$HOME"`,
 	}
 	for _, line := range safe {
@@ -271,6 +274,10 @@ func TestScanSkillMatchesOperandAfterRedirection(t *testing.T) {
 		{`rm -rf build 2>&1 "$HOME"`, "destructive_home_rm"},
 		{`rm -rf build >/dev/null "$HOME"`, "destructive_home_rm"},
 		{`rm -rf build > "$LOG" "$HOME"`, "destructive_home_rm"},
+		{`rm -rf build > /tmp/"log" "$HOME"`, "destructive_home_rm"},
+		{`rm -rf build > /tmp/"log" $TARGET`, "rm_recursive_dangerous"},
+		{`rm -rf build > /dev/null 2>&1 "$HOME"`, "destructive_home_rm"},
+		{`rm -rf build > /tmp/a#b "$HOME"`, "destructive_home_rm"},
 		{`rm -rf build 2>/dev/null $TARGET`, "rm_recursive_dangerous"},
 	}
 
