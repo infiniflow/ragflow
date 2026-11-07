@@ -36,6 +36,8 @@ import (
 	"cloud.google.com/go/civil"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
+
+	"ragflow/internal/utility"
 )
 
 const (
@@ -717,8 +719,8 @@ func (c *BigQueryConnector) rowToSourceDocument(row map[string]any, schema []big
 			semanticID = strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(bigQueryValueString(value), "\n", " "), "\r", " "))
 			if semanticID == "" {
 				semanticID = "bigquery_record"
-			} else if len(semanticID) > 100 {
-				semanticID = semanticID[:100]
+			} else {
+				semanticID = utility.TruncateRunes(semanticID, 100)
 			}
 		}
 	}

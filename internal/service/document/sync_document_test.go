@@ -7,6 +7,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -15,6 +16,7 @@ import (
 	"ragflow/internal/service"
 	"ragflow/internal/storage"
 	syncerconnector "ragflow/internal/syncer/connector"
+	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
 )
@@ -469,5 +471,37 @@ func TestSyncDocumentParseContextUsesConnectorIdentity(t *testing.T) {
 	}
 	if got := permission.TenantIDFromContext(parseCtx); got != "connector-tenant" {
 		t.Fatalf("parse context tenant id = %q, want connector-tenant", got)
+	}
+}
+
+// TestSyncDocumentFilenameKeepsUTF8WhenTruncating verifies a filename longer
+// than 255 bytes is shortened on a character boundary, so a multi-byte name
+// never ends in a partial character.
+func TestSyncDocumentFilenameKeepsUTF8WhenTruncating(t *testing.T) {
+	got := syncDocumentFilename(strings.Repeat("数", 100), ".txt", "source-id")
+	if !utf8.ValidString(got) {
+		t.Fatalf("filename %q is not valid UTF-8", got)
+	}
+	if want := strings.Repeat("数", 83) + ".txt"; got != want {
+		t.Fatalf("filename = %q, want %q", got, want)
+	}
+}
+
+// TestSyncDocumentFilenameKeepsExtensionAtLengthLimit verifies a configured
+// extension that fits in 255 bytes is not cut when the semantic name leaves no
+// room beside it.
+func TestSyncDocumentFilenameKeepsExtensionAtLengthLimit(t *testing.T) {
+	singleSegment := "." + strings.Repeat("a", 251) + "pdf"
+	if got := syncDocumentFilename("source", singleSegment, "source-id"); got != singleSegment {
+		t.Fatalf("filename = %q, want the extension %q", got, singleSegment)
+	}
+
+	dotted := "." + strings.Repeat("a", 250) + ".pdf"
+	got := syncDocumentFilename("source", dotted, "source-id")
+	if len(got) > 255 {
+		t.Fatalf("filename is %d bytes, want at most 255", len(got))
+	}
+	if filetype := utility.FilenameType(got); filetype != utility.FileTypePDF {
+		t.Fatalf("FilenameType(%q) = %v, want %v", got, filetype, utility.FileTypePDF)
 	}
 }
