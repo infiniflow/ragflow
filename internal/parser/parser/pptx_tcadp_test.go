@@ -93,8 +93,8 @@ func TestPPTXParser_ParseWithResult_TCADPParserSpelling(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	testCases := []struct {
-		name         string
-		parser       interface {
+		name   string
+		parser interface {
 			ConfigureFromSetup(map[string]any)
 			ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult
 		}
