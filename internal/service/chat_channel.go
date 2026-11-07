@@ -298,9 +298,18 @@ func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg Chat
 	return stripChannelCitations(answer, false), err
 }
 
-// Channels cannot render references. Filter every cumulative snapshot as well as
-// the final answer so split markers never reach a platform or its fallback send.
-var channelCitationPattern = regexp.MustCompile(`(?i)[\[(【]\s*\**\s*ID\s*[:：][^\[\]()【】\n]*(?:[\])】]|$)|\[[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+\]`)
+// Channels cannot render references, so citation markers are filtered from
+// every cumulative snapshot and from the final answer.
+var channelIDCitationPattern = regexp.MustCompile(`(?i)[\[(【]\s*\**\s*ID\s*[:：][^\[\]()【】\n]*(?:[\])】]|$)`)
+
+// channelNumericCitationPattern matches bare "[1]" citations. A bracket that
+// continues an expression (arr[0], f()[0], a[0][1]) is code, not a citation,
+// so the opening bracket has to start a token.
+var channelNumericCitationPattern = regexp.MustCompile(`(^|[\s.;:!?"'”’、。；：！？])(?:\[[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+\])+`)
+
+// channelCitationTailPattern matches a marker a streamed snapshot may have cut
+// in half. A complete answer keeps its own trailing text (a "C#" language name,
+// "by ref", an opening bracket), so only snapshots use it.
 var channelCitationTailPattern = regexp.MustCompile(`(?i)[\[(【]\s*\**\s*(?:I(?:D\s*)?|S(?:L(?:O(?:T\s*[0-9]*)?)?)?|[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]*)$|#{1,2}(?:[0-9]+\$?)?$|\bref\s*[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]*$`)
 
 var channelCitationWordTailPattern = regexp.MustCompile(`(?i)\br(?:e)?$`)
@@ -308,10 +317,11 @@ var channelCitationWordTailPattern = regexp.MustCompile(`(?i)\br(?:e)?$`)
 func stripChannelCitations(text string, streaming bool) string {
 	if streaming {
 		text = channelCitationWordTailPattern.ReplaceAllString(text, "")
+		text = channelCitationTailPattern.ReplaceAllString(text, "")
 	}
-	text = channelCitationTailPattern.ReplaceAllString(text, "")
 	text = stripCitations(text)
-	return channelCitationPattern.ReplaceAllString(text, "")
+	text = channelIDCitationPattern.ReplaceAllString(text, "")
+	return channelNumericCitationPattern.ReplaceAllString(text, "$1")
 }
 
 func (s *ChatChannelService) handleIncomingMessage(ctx context.Context, msg ChatChannelIncomingMessage, onDelta func(string)) (string, error) {
