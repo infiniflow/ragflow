@@ -448,13 +448,23 @@ func (s *htmlWalkState) loadEPUBMedia(name, mime string, entry *zip.File) (*enti
 	return ref, ref != nil
 }
 
+// isBlockElement reports whether n starts a new text block or table. The
+// document wrappers count as blocks so the walker recurses into them instead of
+// folding a whole chapter into one inline run.
+func isBlockElement(n *html.Node) bool {
+	return n.Type == html.ElementNode && (isBlockTag(n.Data) || n.Data == "html" || n.Data == "body" || n.Data == "table")
+}
+
 // extractEPUBChapterLeaves walks a chapter document and collects discrete leaf items
 // (headings, paragraphs, tables, images) preserving source order.
 func extractEPUBChapterLeaves(doc *html.Node, state *htmlWalkState) []map[string]any {
 	var chapter []map[string]any
+	var buf bytes.Buffer
+	writer := &leafWriter{b: &buf}
+	flush := func() { flushLeafText(writer, &chapter, "text", false) }
 	hasChildBlock := func(n *html.Node) bool {
 		for c := n.FirstChild; c != nil; c = c.NextSibling {
-			if c.Type == html.ElementNode && (isBlockTag(c.Data) || c.Data == "table") {
+			if isBlockElement(c) {
 				return true
 			}
 		}
@@ -470,17 +480,26 @@ func extractEPUBChapterLeaves(doc *html.Node, state *htmlWalkState) []map[string
 			for c := n.FirstChild; c != nil; c = c.NextSibling {
 				collectLeaves(c)
 			}
+			flush()
 			return
 		}
-		if n.Type == html.ElementNode {
-			if n.Data == "html" || n.Data == "body" || hasChildBlock(n) {
-				for c := n.FirstChild; c != nil; c = c.NextSibling {
+		if n.Type == html.ElementNode && (n.Data == "html" || n.Data == "body" || hasChildBlock(n)) {
+			// Adjacent inline children share one writer so a text run broken by
+			// an inline element keeps its original spacing ("inter<b>nation</b>al"
+			// stays one word instead of becoming three leaves).
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				if isBlockElement(c) {
+					flush()
 					collectLeaves(c)
+					continue
 				}
-				return
+				walkHTMLLeaf(c, writer, &chapter, "text", false, state)
 			}
+			flush()
+			return
 		}
-		htmlLeafTextWithState(n, &chapter, "text", false, state)
+		walkHTMLLeaf(n, writer, &chapter, "text", false, state)
+		flush()
 	}
 	collectLeaves(doc)
 

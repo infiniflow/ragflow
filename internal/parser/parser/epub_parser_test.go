@@ -1313,3 +1313,40 @@ func TestEPUBParser_RemoveTOCKeepsPrefaceChapter(t *testing.T) {
 		}
 	}
 }
+
+// Inline runs next to a block child stay one text unit: splitting the inline
+// children into separate leaves inserted spaces inside words ("inter nation al").
+func TestEPUBParser_KeepsInlineRunsIntact(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{
+			name: "inline run before a paragraph",
+			body: `<div>inter<span>nation</span>al Next<p>para</p></div>`,
+			want: "Test international Next para",
+		},
+		{
+			name: "inline run before a nested list",
+			body: `<li>Item <b>one</b><ul><li>nested</li></ul></li>`,
+			want: "Test Item one nested",
+		},
+		{
+			name: "inline run before a div",
+			body: `<section>inter<span>nation</span>al Next<div>block</div></section>`,
+			want: "Test international Next block",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			res := parseTestEPUB(t, []epubTestChapter{{name: "ch1.xhtml", content: epubTestHTML(tc.body)}})
+			if res.Err != nil {
+				t.Fatalf("ParseWithResult: %v", res.Err)
+			}
+			if got := epubTestText(res); got != tc.want {
+				t.Errorf("text = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
