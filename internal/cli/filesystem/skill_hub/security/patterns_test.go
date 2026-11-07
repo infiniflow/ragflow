@@ -150,3 +150,71 @@ func TestScanSkillIgnoresExpansionAfterRemovalCommand(t *testing.T) {
 		})
 	}
 }
+
+// A commented-out example is documentation, not a command. Both rm rules match
+// inside comments on the raw line, and a single caution verdict blocks a
+// community install, so the scanner has to ignore comments without losing the
+// code that precedes them.
+func TestScanSkillIgnoresCommandsInsideComments(t *testing.T) {
+	lines := []string{
+		`# Example: rm -rf $TARGET`,
+		`# Example: rm -rf $HOME`,
+		`  # cleanup: rmdir $HOME/tmp`,
+		`# run rm --recursive "$TARGET" when the cache is stale`,
+	}
+
+	for _, line := range lines {
+		t.Run(line, func(t *testing.T) {
+			result := NewScanner().ScanSkill("skill", "github", "community", map[string][]byte{
+				"install.sh": []byte("#!/bin/sh\n" + line + "\n"),
+			})
+			if len(result.Findings) != 0 {
+				t.Fatalf("%q raised %v", line, result.Findings)
+			}
+		})
+	}
+}
+
+func TestScanSkillStillMatchesCodeBeforeATrailingComment(t *testing.T) {
+	tests := []struct {
+		line      string
+		patternID string
+	}{
+		{`rm -rf $TARGET # cleanup`, "rm_recursive_dangerous"},
+		{`rm -rf "$HOME" # scratch only`, "destructive_home_rm"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.line, func(t *testing.T) {
+			result := NewScanner().ScanSkill("skill", "github", "community", map[string][]byte{
+				"install.sh": []byte("#!/bin/sh\n" + tt.line + "\n"),
+			})
+			for _, finding := range result.Findings {
+				if finding.PatternID == tt.patternID {
+					return
+				}
+			}
+			t.Fatalf("%q did not raise %s: %v", tt.line, tt.patternID, result.Findings)
+		})
+	}
+}
+
+func TestMaskShellCommentsKeepsDataHashes(t *testing.T) {
+	tests := []struct{ line, want string }{
+		{`echo a#b`, `echo a#b`},
+		{`echo $#`, `echo $#`},
+		{`echo "#dir"`, `echo "#dir"`},
+		{`echo 'a #b'`, `echo 'a #b'`},
+		{`rm -rf x # note`, `rm -rf x       `},
+		{`#note`, `     `},
+		{`rm -rf x;#note`, `rm -rf x;     `},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.line, func(t *testing.T) {
+			if got := maskShellComments(tt.line); got != tt.want {
+				t.Fatalf("maskShellComments(%q) = %q, want %q", tt.line, got, tt.want)
+			}
+		})
+	}
+}

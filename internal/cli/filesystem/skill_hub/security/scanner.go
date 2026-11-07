@@ -77,6 +77,13 @@ func (s *Scanner) ScanSkill(skillName, source, trustLevel string, files map[stri
 func (s *Scanner) scanFile(filename, content string) []Finding {
 	var findings []Finding
 	lines := strings.Split(content, "\n")
+	// A commented-out example such as "# Example: rm -rf $TARGET" is not a
+	// command, but a destructive-rm finding makes the skill uninstallable for
+	// community sources, so match against the code-only view of each line.
+	masked := make([]string, len(lines))
+	for i, line := range lines {
+		masked[i] = maskShellComments(line)
+	}
 
 	for _, pattern := range s.patterns {
 		re, err := regexp.Compile("(?i:" + pattern.Pattern + ")")
@@ -84,22 +91,82 @@ func (s *Scanner) scanFile(filename, content string) []Finding {
 			continue
 		}
 
-		for i, line := range lines {
-			if matches := re.FindString(line); matches != "" {
-				findings = append(findings, Finding{
-					PatternID:   pattern.PatternID,
-					Severity:    pattern.Severity,
-					Category:    pattern.Category,
-					File:        filename,
-					Line:        i + 1,
-					Match:       strings.TrimSpace(matches),
-					Description: pattern.Description,
-				})
+		for i, line := range masked {
+			loc := re.FindStringIndex(line)
+			if loc == nil {
+				continue
 			}
+			findings = append(findings, Finding{
+				PatternID:   pattern.PatternID,
+				Severity:    pattern.Severity,
+				Category:    pattern.Category,
+				File:        filename,
+				Line:        i + 1,
+				Match:       strings.TrimSpace(lines[i][loc[0]:loc[1]]),
+				Description: pattern.Description,
+			})
 		}
 	}
 
 	return findings
+}
+
+// maskShellComments blanks the text a POSIX shell treats as a comment without
+// changing the line length, so match offsets stay valid for the original line.
+// A '#' opens a comment only where a word may start and only outside quotes;
+// '#' inside a word (a#b), in an expansion ($#) or in a quoted string is data.
+func maskShellComments(line string) string {
+	var masked []byte
+	inComment := false
+	var quote byte
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		if inComment {
+			if masked == nil {
+				masked = []byte(line)
+			}
+			masked[i] = ' '
+			continue
+		}
+		if quote != 0 {
+			if c == '\\' && quote == '"' && i+1 < len(line) {
+				i++
+				continue
+			}
+			if c == quote {
+				quote = 0
+			}
+			continue
+		}
+		switch c {
+		case '\\':
+			if i+1 < len(line) {
+				i++
+			}
+		case '\'', '"':
+			quote = c
+		case '#':
+			if i == 0 || isShellWordBreak(line[i-1]) {
+				inComment = true
+				if masked == nil {
+					masked = []byte(line)
+				}
+				masked[i] = ' '
+			}
+		}
+	}
+	if masked == nil {
+		return line
+	}
+	return string(masked)
+}
+
+func isShellWordBreak(c byte) bool {
+	switch c {
+	case ' ', '\t', ';', '&', '|', '(', ')', '<', '>':
+		return true
+	}
+	return false
 }
 
 // determineVerdict determines the overall verdict based on findings
