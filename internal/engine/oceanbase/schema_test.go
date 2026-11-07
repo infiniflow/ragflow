@@ -182,3 +182,25 @@ func TestTableCollationMatchesEngine(t *testing.T) {
 		})
 	}
 }
+
+// StartParseDocuments resolves knowledge-compilation routing metadata before any
+// row is written, so these fields must be served by real columns instead of the
+// extra JSON blob. A missing column in chunkExtraColumns would also keep
+// ChunkStoreExists false, which is what adds the column to existing tables.
+func TestKnowledgeCompileColumnsAreSelectableAndUpgraded(t *testing.T) {
+	for _, field := range []string{"compile_kwd", "compilation_template_kind_kwd", "type_kwd"} {
+		if _, _, err := buildSelectFields([]string{field}, "chunk"); err != nil {
+			t.Errorf("selecting %q from a chunk table: %v", field, err)
+		}
+	}
+
+	upgraded := make(map[string]bool, len(chunkExtraColumns))
+	for _, column := range chunkExtraColumns {
+		upgraded[column.name] = true
+	}
+	for _, name := range []string{"compile_kwd", "compilation_template_kind_kwd"} {
+		if !upgraded[name] {
+			t.Errorf("%q is missing from chunkExtraColumns, so existing tables never gain the column", name)
+		}
+	}
+}
