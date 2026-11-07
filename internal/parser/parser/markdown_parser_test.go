@@ -1083,7 +1083,7 @@ func TestMarkdownParser_RemoveTOC_Chinese(t *testing.T) {
 
 	wantTexts := map[string]bool{
 		"# 前言":     false,
-		"前言内容。":     false,
+		"前言内容。":    false,
 		"# 第一章 概述": false,
 		"第一章正文内容。": false,
 		"# 第二章 架构": false,
@@ -1146,12 +1146,12 @@ Second chapter content.
 	}
 
 	wantTexts := map[string]bool{
-		"# Overview":                 false,
-		"Project overview.":          false,
+		"# Overview":                  false,
+		"Project overview.":           false,
 		"# Chapter 1 Getting Started": false,
-		"First chapter content.":     false,
-		"# Chapter 2 Deep Dive":      false,
-		"Second chapter content.":    false,
+		"First chapter content.":      false,
+		"# Chapter 2 Deep Dive":       false,
+		"Second chapter content.":     false,
 	}
 	for _, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
@@ -1249,9 +1249,9 @@ Run npm install.
 	}
 
 	wantTexts := map[string]bool{
-		"# Introduction":           false,
+		"# Introduction":          false,
 		"Welcome to the project.": false,
-		"# Installation":           false,
+		"# Installation":          false,
 		"Run npm install.":        false,
 	}
 	for _, item := range ItemsToMaps(res.JSON) {
@@ -1292,9 +1292,9 @@ We thank all contributors for their support.
 	}
 
 	wantTexts := map[string]bool{
-		"# 致谢":                                false,
-		"感谢所有开源贡献者的付出。":                          false,
-		"# Acknowledgments":                    false,
+		"# 致谢": false,
+		"感谢所有开源贡献者的付出。":                                false,
+		"# Acknowledgments":                            false,
 		"We thank all contributors for their support.": false,
 	}
 	for _, item := range ItemsToMaps(res.JSON) {
