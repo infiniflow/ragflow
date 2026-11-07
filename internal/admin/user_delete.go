@@ -553,9 +553,7 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 		ids   []string
 	}{
 		{"conversation messages", &entity.ConversationMessage{}, conversationIDs},
-		{"conversation references", &entity.ConversationReference{}, conversationIDs},
 		{"API conversation messages", &entity.API4ConversationMessage{}, apiConversationIDs},
-		{"API conversation references", &entity.API4ConversationReference{}, apiConversationIDs},
 	} {
 		if err := removeIDs(child.label, child.model, "conversation_id", child.ids); err != nil {
 			return err
