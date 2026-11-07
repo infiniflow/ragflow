@@ -92,6 +92,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewCheaperInferenceModel(baseURL, urlSuffix), nil
 	case "cohere":
 		return NewCoHereModel(baseURL, urlSuffix), nil
+	case "aimlapi.com":
+		return NewAimlapiModel(baseURL, urlSuffix), nil
 	case "cometapi":
 		return NewCometAPIModel(baseURL, urlSuffix), nil
 	case "daoxe":
