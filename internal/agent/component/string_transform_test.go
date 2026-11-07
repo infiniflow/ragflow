@@ -390,3 +390,98 @@ func TestGetInputElementsFromText(t *testing.T) {
 		t.Errorf("getInputElementsFromText = %#v, want %#v", got, want)
 	}
 }
+
+// TestStringTransform_MergePaddedPlaceholder: the merge placeholder pattern accepts
+// whitespace inside the braces, so "{{ name }}" must resolve exactly like "{{name}}".
+func TestStringTransform_MergePaddedPlaceholder(t *testing.T) {
+	c, err := NewStringTransformComponent(map[string]any{
+		"method":     "merge",
+		"delimiters": []string{","},
+		"script":     "hello {{ name }}!",
+	})
+	if err != nil {
+		t.Fatalf("NewStringTransformComponent: %v", err)
+	}
+	state := canvas.NewCanvasState("run-pad", "task-pad")
+	ctx := canvas.WithState(t.Context(), state)
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"name": "World"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, want := out["result"], "hello World!"; got != want {
+		t.Errorf("padded placeholder: got %q, want %q", got, want)
+	}
+}
+
+// TestStringTransform_MergeValueKeepsDollarSyntax: a substituted value is data, so
+// "$1" must survive instead of being expanded as a replacement group.
+func TestStringTransform_MergeValueKeepsDollarSyntax(t *testing.T) {
+	c, err := NewStringTransformComponent(map[string]any{
+		"method":     "merge",
+		"delimiters": []string{","},
+		"script":     "price {{ amount }}",
+	})
+	if err != nil {
+		t.Fatalf("NewStringTransformComponent: %v", err)
+	}
+	state := canvas.NewCanvasState("run-dollar", "task-dollar")
+	ctx := canvas.WithState(t.Context(), state)
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"amount": "$1.00"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, want := out["result"], "price $1.00"; got != want {
+		t.Errorf("dollar value: got %q, want %q", got, want)
+	}
+}
+
+// TestStringTransform_MergeDoesNotRescanSubstitutedValues: a value is data, so a
+// value that itself looks like "{{ y }}" must survive verbatim instead of being
+// resolved when a later placeholder is processed.
+func TestStringTransform_MergeDoesNotRescanSubstitutedValues(t *testing.T) {
+	c, err := NewStringTransformComponent(map[string]any{
+		"method":     "merge",
+		"delimiters": []string{","},
+		"script":     "{{x}} and {{y}}",
+	})
+	if err != nil {
+		t.Fatalf("NewStringTransformComponent: %v", err)
+	}
+	state := canvas.NewCanvasState("run-rescan", "task-rescan")
+	ctx := canvas.WithState(t.Context(), state)
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"x": "{{ y }}", "y": "bar"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, want := out["result"], "{{ y }} and bar"; got != want {
+		t.Errorf("substituted value was rescanned: got %q, want %q", got, want)
+	}
+}
+
+// TestStringTransform_MergeDoesNotRescanFirstPassValues: a value inserted by the
+// runtime-ref pass (here the iteration alias) is data too, so the placeholder
+// pass must not expand it a second time.
+func TestStringTransform_MergeDoesNotRescanFirstPassValues(t *testing.T) {
+	c, err := NewStringTransformComponent(map[string]any{
+		"method":     "merge",
+		"delimiters": []string{","},
+		"script":     "{item} {{y}}",
+	})
+	if err != nil {
+		t.Fatalf("NewStringTransformComponent: %v", err)
+	}
+	state := canvas.NewCanvasState("run-mixed", "task-mixed")
+	state.Globals["__item__"] = "{{ y }}"
+	ctx := canvas.WithState(t.Context(), state)
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"y": "bar"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, want := out["result"], "{{ y }} bar"; got != want {
+		t.Errorf("first-pass value was rescanned: got %q, want %q", got, want)
+	}
+}
