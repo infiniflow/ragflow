@@ -61,10 +61,10 @@ type emailParams struct {
 // emailCallParams is the subset of emailParams that may be supplied by the
 // model. SMTP configuration must come only from the Canvas node.
 type emailCallParams struct {
-	ToEmail string `json:"to_email"`
-	CCEmail string `json:"cc_email"`
-	Content string `json:"content"`
-	Subject string `json:"subject"`
+	ToEmail string `json:"to_email" doc:"The target email address." required:"true"`
+	CCEmail string `json:"cc_email,omitempty" doc:"Other email addresses to send to, separated by commas."`
+	Content string `json:"content,omitempty" doc:"The content of the email."`
+	Subject string `json:"subject,omitempty" doc:"The subject/title of the email."`
 }
 
 // emailEnvelope is what the model sees.
@@ -99,32 +99,7 @@ func newEmailTool(defaults emailParams) *EmailTool {
 
 // Info returns the tool's metadata for the chat model.
 func (e *EmailTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: emailToolName,
-		Desc: emailToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"to_email": {
-				Type:     schema.String,
-				Desc:     "The target email address.",
-				Required: true,
-			},
-			"cc_email": {
-				Type:     schema.String,
-				Desc:     "Other email addresses to send to, separated by commas.",
-				Required: false,
-			},
-			"subject": {
-				Type:     schema.String,
-				Desc:     "The subject/title of the email.",
-				Required: false,
-			},
-			"content": {
-				Type:     schema.String,
-				Desc:     "The content of the email.",
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(emailToolName, emailToolDescription, emailCallParams{})
 }
 
 func (e *EmailTool) ComponentSpec() ComponentSpec {

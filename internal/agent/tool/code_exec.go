@@ -56,11 +56,11 @@ const codeExecToolDescription = "This tool has a sandbox that can execute code w
 // tool accepts "lang" + "script"; we also accept "code" as a
 // synonym since some DSLs and tests use that spelling.
 type codeExecArgs struct {
-	Language string         `json:"language,omitempty"`
-	Lang     string         `json:"lang,omitempty"`
-	Script   string         `json:"script,omitempty"`
-	Code     string         `json:"code,omitempty"`
-	Args     map[string]any `json:"arguments,omitempty"`
+	Language string         `json:"language,omitempty" schema:"-"`
+	Lang     string         `json:"lang,omitempty" doc:"The programming language of this piece of code." enum:"python,javascript" required:"true"`
+	Script   string         `json:"script,omitempty" doc:"A piece of code in the correct format. It must define main(...)." required:"true"`
+	Code     string         `json:"code,omitempty" schema:"-"`
+	Args     map[string]any `json:"arguments,omitempty" schema:"-"`
 	// Timeout is the per-execution wall-clock budget in seconds. 0
 	// (the default) defers to the sandbox provider's own default
 	// (typically 30s). Mirrors Python's
@@ -68,7 +68,7 @@ type codeExecArgs struct {
 	// but the value flows per-call rather than per-process, which
 	// lets the model dial up/down for known-fast vs. known-slow
 	// scripts.
-	Timeout int `json:"timeout,omitempty"`
+	Timeout int `json:"timeout,omitempty" schema:"-"`
 }
 
 // codeExecResult is the JSON envelope returned to the model. The output
@@ -101,23 +101,7 @@ func NewCodeExecTool() *CodeExecTool {
 // Info returns the tool's metadata for the chat model. The schema mirrors
 // the Python CodeExecParam ToolMeta (plan, field alignment).
 func (c *CodeExecTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: codeExecToolName,
-		Desc: codeExecToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"lang": {
-				Type:     schema.String,
-				Desc:     "The programming language of this piece of code.",
-				Enum:     []string{"python", "javascript"},
-				Required: true,
-			},
-			"script": {
-				Type:     schema.String,
-				Desc:     "A piece of code in the correct format. It must define main(...).",
-				Required: true,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(codeExecToolName, codeExecToolDescription, codeExecArgs{})
 }
 
 // InvokableRun validates the inputs and dispatches to the

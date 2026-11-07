@@ -51,10 +51,10 @@ var bgptNewlinePattern = regexp.MustCompile(`\n+`)
 // runtime input. Info exposes only query; api_key / top_n / days_back
 // come from canvas DSL params and live in BGPTTool.defaults.
 type bgptParams struct {
-	Query    string `json:"query"`
-	TopN     int    `json:"top_n"`
-	APIKey   string `json:"api_key,omitempty"`
-	DaysBack int    `json:"days_back,omitempty"`
+	Query    string `json:"query" doc:"Natural-language scientific search query." required:"true"`
+	TopN     int    `json:"top_n" schema:"-"`
+	APIKey   string `json:"api_key,omitempty" schema:"-"`
+	DaysBack int    `json:"days_back,omitempty" schema:"-"`
 }
 
 // bgptEnv is what the model sees.
@@ -101,17 +101,7 @@ func newBGPTTool(h *HTTPHelper, defaults bgptParams) *BGPTTool {
 
 // Info returns the tool's metadata for the chat model.
 func (b *BGPTTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: bgptToolName,
-		Desc: bgptToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "Natural-language scientific search query.",
-				Required: true,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(bgptToolName, bgptToolDescription, bgptParams{})
 }
 
 func (b *BGPTTool) ComponentSpec() ComponentSpec {
