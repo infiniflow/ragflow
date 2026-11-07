@@ -183,13 +183,22 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 >   SYS_LIBS="-fuse-ld=lld -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
 > fi
 >
-> export CGO_CFLAGS="-I${RAGFLOW_DEPS}/office_oxide/include/office_oxide_c"
+> # Native libs are version-keyed under <lib>/v<version>/ (one mounted cache can
+> # hold several versions at once), matching the layout download_dev_deps.py and
+> # build.sh resolve. Resolve each .a by glob, like ORT above.
+> OFFICE_OXIDE_A="$(ls ${RAGFLOW_DEPS}/office_oxide/v*/lib/liboffice_oxide.a | head -1)"
+> PDFIUM_A="$(ls ${RAGFLOW_DEPS}/pdfium-static/v*/lib/libpdfium.a | head -1)"
+> PDFIUM_CXX_A="$(ls ${RAGFLOW_DEPS}/pdfium-static/v*/lib/libc++.a | head -1)"
+> PDFIUM_CXXABI_A="$(ls ${RAGFLOW_DEPS}/pdfium-static/v*/lib/libc++abi.a | head -1)"
+> PDF_OXIDE_A="$(ls ${RAGFLOW_DEPS}/pdf_oxide/v*/lib/${PLATFORM}/libpdf_oxide.a | head -1)"
+>
+> export CGO_CFLAGS="-I${RAGFLOW_DEPS}/office_oxide/v*/include/office_oxide_c"
 > export CGO_LDFLAGS="\
->     ${RAGFLOW_DEPS}/office_oxide/lib/liboffice_oxide.a \
->     ${RAGFLOW_DEPS}/pdfium-static/lib/libpdfium.a \
->     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++.a \
->     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++abi.a \
->     ${RAGFLOW_DEPS}/pdf_oxide/lib/${PLATFORM}/libpdf_oxide.a \
+>     ${OFFICE_OXIDE_A} \
+>     ${PDFIUM_A} \
+>     ${PDFIUM_CXX_A} \
+>     ${PDFIUM_CXXABI_A} \
+>     ${PDF_OXIDE_A} \
 >     ${ORT_LINK} \
 >     ${SYS_LIBS}"
 > ```
@@ -214,11 +223,11 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 > Since `build.sh` (`build_go`) now **fails fast** when ORT is absent from
 > `CGO_LDFLAGS`, this breakage surfaces at build time instead of at runtime. If
 > you see `Error: ONNX Runtime static libraries are not linked`, run
-> `uv run tools/scripts/download_dev_deps.py` (or pre-seed
-> `/opt/ragflow-native-libs/onnxruntime` as the CI runner image does). There is
-> no ORT-free production build path — if ORT is absent the binary fails at
-> startup, so the remedy is always to seed the static lib above, never to build
-> without it.
+> `uv run tools/scripts/download_dev_deps.py` (or pre-seed the versioned user
+> cache at `${RAGFLOW_NATIVE_LIBS_DIR:-$HOME/ragflow-native-libs}/onnxruntime/static_lib
+> `; CI mounts the host cache into the builder). There is no ORT-free
+> production build path — if ORT is absent the binary fails at startup, so the
+> remedy is always to seed the static lib above, never to build without it.
 
 > **Note**: The ONNX Runtime native version is pinned in a few places that must
 > stay in sync. Bumping it in one spot and not the others fails the build with
