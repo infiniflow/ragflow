@@ -21,6 +21,8 @@ package syncer
 import (
 	"context"
 	"fmt"
+	"time"
+
 	"ragflow/internal/server/local"
 
 	"ragflow/internal/common"
@@ -30,9 +32,8 @@ import (
 )
 
 // Run starts the RAGFlow file syncer. It blocks until ctx is cancelled (OS
-// shutdown signal) or the syncer receives a shutdown command from the admin,
-// then gracefully stops the syncer.
-func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args *bootstrap.ServerArgs) error {
+// shutdown signal), then gracefully stops the syncer.
+func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) error {
 	globalConfig := server.GetConfig()
 	syncerConfig := globalConfig.GetSyncerConfig()
 	fileSyncer := syncer.NewSyncer(syncerConfig.MaxConcurrentSyncs)
@@ -68,17 +69,16 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 		defer hb.Stop()
 	}
 
-	// Wait for either an OS shutdown signal or a shutdown command from the admin
-	select {
-	case <-ctx.Done():
-		common.Info("Received shutdown signal")
-		common.Info(fmt.Sprintf("Shutting down RAGFlow file syncer %s ...", *args.Name))
-	case <-fileSyncer.ShutdownCh:
-		common.Info(fmt.Sprintf("Received shutdown command from admin, stopping file syncer %s ...", *args.Name))
-		cancel()
-	}
+	// Wait for OS shutdown signal
+	<-ctx.Done()
+	common.Info("Received shutdown signal")
+	common.Info(fmt.Sprintf("Shutting down RAGFlow file syncer %s ...", *args.Name))
 
-	fileSyncer.Stop()
+	// Create context with timeout for graceful shutdown
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
+
+	fileSyncer.Stop(shutdownCtx)
 	common.Info(fmt.Sprintf("File syncer %s shutdown complete", *args.Name))
 
 	return nil
