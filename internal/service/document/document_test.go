@@ -5845,3 +5845,75 @@ func TestRenameDocumentChunkStore(t *testing.T) {
 		})
 	}
 }
+
+// chunkStoreUpgradeEngine reports a chunk store that exists physically but
+// predates a column: the OceanBase/SeekDB implementation answers false until
+// CreateChunkStore adds the missing column.
+type chunkStoreUpgradeEngine struct {
+	fakeChatDocEngine
+	engineType  string
+	storeExists bool
+	created     bool
+}
+
+func (e *chunkStoreUpgradeEngine) GetType() string { return e.engineType }
+
+func (e *chunkStoreUpgradeEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
+	return e.storeExists, nil
+}
+
+func (e *chunkStoreUpgradeEngine) CreateChunkStore(context.Context, string, string, int, string, string) error {
+	e.created = true
+	e.storeExists = true
+	return nil
+}
+
+func TestClearParseResultsUpgradesOceanBaseTableBeforeCleanup(t *testing.T) {
+	for _, engineType := range []string{"oceanbase", "seekdb"} {
+		t.Run(engineType, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+			insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+			svc := testDocumentService(t)
+			svc.purgeTaskState = func(context.Context, string) error { return nil }
+			docEngine := &chunkStoreUpgradeEngine{engineType: engineType}
+			svc.docEngine = docEngine
+
+			doc, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1")
+			if err != nil {
+				t.Fatalf("load document: %v", err)
+			}
+			if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1", taskTerminalMessageSuperseded); err != nil {
+				t.Fatalf("clearDocumentParseResults: %v", err)
+			}
+			if !docEngine.created {
+				t.Fatal("chunk store was not upgraded before cleanup, so stale chunks would survive a rerun")
+			}
+		})
+	}
+}
+
+func TestClearParseResultsSkipsMissingSchemalessStore(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	svc := testDocumentService(t)
+	svc.purgeTaskState = func(context.Context, string) error { return nil }
+	docEngine := &chunkStoreUpgradeEngine{engineType: "elasticsearch"}
+	svc.docEngine = docEngine
+
+	doc, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1")
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1", taskTerminalMessageSuperseded); err != nil {
+		t.Fatalf("clearDocumentParseResults: %v", err)
+	}
+	if docEngine.created {
+		t.Fatal("a schemaless engine must not have its store created by parse cleanup")
+	}
+}

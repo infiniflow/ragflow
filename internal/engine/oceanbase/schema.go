@@ -75,6 +75,8 @@ var chunkColumns = []columnDefinition{
 	{"top_int", "ARRAY(INTEGER) NULL"},
 	{"knowledge_graph_kwd", "VARCHAR(256) NULL"},
 	{"type_kwd", "VARCHAR(256) NULL"},
+	{"compile_kwd", "VARCHAR(256) NULL"},
+	{"compilation_template_kind_kwd", "VARCHAR(256) NULL"},
 	{"source_id", "ARRAY(VARCHAR(256)) NULL"},
 	{"entity_kwd", "VARCHAR(256) NULL"},
 	{"entity_type_kwd", "VARCHAR(256) NULL"},
@@ -104,6 +106,8 @@ var chunkExtraColumns = selectColumnDefinitions(chunkColumns,
 	"raptor_kwd",
 	"raptor_layer_int",
 	"n_hop_with_weight",
+	"compile_kwd",
+	"compilation_template_kind_kwd",
 )
 
 var memoryColumns = []columnDefinition{

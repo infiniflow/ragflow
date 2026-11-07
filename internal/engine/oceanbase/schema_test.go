@@ -182,3 +182,67 @@ func TestTableCollationMatchesEngine(t *testing.T) {
 		})
 	}
 }
+
+// StartParseDocuments resolves knowledge-compilation routing metadata before any
+// row is written, so these fields must be served by real columns instead of the
+// extra JSON blob. A missing column in chunkExtraColumns would also keep
+// ChunkStoreExists false, which is what adds the column to existing tables.
+func TestKnowledgeCompileColumnsAreSelectableAndUpgraded(t *testing.T) {
+	for _, field := range []string{"compile_kwd", "compilation_template_kind_kwd", "type_kwd"} {
+		if _, _, err := buildSelectFields([]string{field}, "chunk"); err != nil {
+			t.Errorf("selecting %q from a chunk table: %v", field, err)
+		}
+	}
+
+	upgraded := make(map[string]bool, len(chunkExtraColumns))
+	for _, column := range chunkExtraColumns {
+		upgraded[column.name] = true
+	}
+	for _, name := range []string{"compile_kwd", "compilation_template_kind_kwd"} {
+		if !upgraded[name] {
+			t.Errorf("%q is missing from chunkExtraColumns, so existing tables never gain the column", name)
+		}
+	}
+}
+
+// ChunkStoreExists is the gate that makes InsertChunks call CreateChunkStore,
+// which is the only place an existing table gains a new column. A table that
+// predates compile_kwd must therefore report not-ready, otherwise the additive
+// DDL never runs and selects of that column fail.
+func TestChunkStoreExistsDetectsMissingKnowledgeCompileColumn(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	engine := newEngineWithDB("seekdb", "legacy_doc", db)
+	engine.flags.enableFullTextSearch = false
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?")).
+		WithArgs("legacy_doc", "ragflow_tenant_1").
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(1))
+	columnQuery := regexp.QuoteMeta("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?")
+	for _, column := range chunkExtraColumns {
+		present := 1
+		if column.name == "compile_kwd" {
+			present = 0
+		}
+		mock.ExpectQuery(columnQuery).
+			WithArgs("legacy_doc", "ragflow_tenant_1", column.name).
+			WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(present))
+		if present == 0 {
+			break // an absent column answers false immediately
+		}
+	}
+
+	ready, err := engine.ChunkStoreExists(t.Context(), "ragflow_tenant_1", "kb-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ready {
+		t.Fatal("a chunk table without compile_kwd reported ready, so the additive upgrade would never run")
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
