@@ -152,14 +152,18 @@ type OCRFileResponse struct {
 }
 
 type ListModelResponse struct {
-	Name          string         `json:"name"`
-	ContextLength *int           `json:"context_length"`
-	MaxOutput     *int           `json:"max_output"`
-	ModelTypes    []string       `json:"model_types"`
-	Thinking      *ModelThinking `json:"thinking"`
-	MaxDimension  *int           `json:"max_dimension"`  // used by embedding models
-	MaxBatchSize  *int           `json:"max_batch_size"` // used by embedding models
-	Dimensions    []int          `json:"dimensions"`
+	Name          string   `json:"name"`
+	ContextLength *int     `json:"context_length"`
+	MaxOutput     *int     `json:"max_output"`
+	ModelTypes    []string `json:"model_types"`
+	// ModelTypesInferred reports that ModelTypes was guessed from the model
+	// name rather than declared by the provider, so a catalog entry may
+	// override it when listings are merged.
+	ModelTypesInferred bool           `json:"-"`
+	Thinking           *ModelThinking `json:"thinking"`
+	MaxDimension       *int           `json:"max_dimension"`  // used by embedding models
+	MaxBatchSize       *int           `json:"max_batch_size"` // used by embedding models
+	Dimensions         []int          `json:"dimensions"`
 }
 
 type ParseFileResponse struct {

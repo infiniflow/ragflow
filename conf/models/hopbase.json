@@ -1,0 +1,65 @@
+{
+  "name": "HopBase",
+  "url": {
+    "default": "https://api.hop-base.com/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models"
+  },
+  "class": "hopbase",
+  "models": [
+    {
+      "name": "deepseek-v4.1-flash",
+      "context_length": 1000000,
+      "max_output": 393216,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen3.8-max",
+      "context_length": 1000000,
+      "max_output": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-5.3-flash",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "kimi-k3",
+      "context_length": 1048576,
+      "max_output": 32768,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "gpt-6-sol",
+      "context_length": 1050000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ]
+    }
+  ]
+}
