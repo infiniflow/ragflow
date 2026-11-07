@@ -258,16 +258,127 @@ func parseDoclingStandardResult(ctx context.Context, filename string, body []byt
 	pageCount := doclingPageCount(docs, sourcePages)
 	for _, doc := range docs {
 		if md := strings.TrimSpace(doc.MDContent); md != "" {
-			return doclingAttachPositions(pdfMarkdownToResult(ctx, filename, md, pageCount), doc.JSONContent), true
+			return doclingMarkdownResult(ctx, filename, md, pageCount, doc.JSONContent), true
 		}
 		if txt := strings.TrimSpace(doc.TextContent); txt != "" {
 			return doclingAttachPositions(doclingTextsToResult(filename, []string{txt}, pageCount), doc.JSONContent), true
 		}
 		if md, _ := doc.JSONContent["md_content"].(string); strings.TrimSpace(md) != "" {
-			return doclingAttachPositions(pdfMarkdownToResult(ctx, filename, md, pageCount), doc.JSONContent), true
+			return doclingMarkdownResult(ctx, filename, md, pageCount, doc.JSONContent), true
 		}
 	}
 	return ParseResult{}, false
+}
+
+const doclingImagePlaceholder = "<!-- image -->"
+
+func doclingMarkdownResult(ctx context.Context, filename, markdown string, pages int, content map[string]any) ParseResult {
+	res := doclingAttachPositions(pdfMarkdownToResult(ctx, filename, markdown, pages), content)
+	if res.Err != nil || !strings.Contains(markdown, doclingImagePlaceholder) {
+		return res
+	}
+
+	pictures := doclingBodyPictures(content)
+	// Placeholder export has no picture IDs. Only pair them when the
+	// structured document and Markdown agree on the number of pictures.
+	placeholderCount := 0
+	for _, item := range res.JSON {
+		if strings.TrimSpace(stringValue(item.ToMap()["text"])) == doclingImagePlaceholder {
+			placeholderCount++
+		}
+	}
+	if placeholderCount == 0 || placeholderCount != len(pictures) {
+		return res
+	}
+
+	texts := make(map[string]map[string]any)
+	for _, entry := range doclingTextEntries(content) {
+		texts[stringValue(entry["self_ref"])] = entry
+	}
+	heights := doclingPageHeights(content)
+	items := make([]DocItem, 0, len(res.JSON))
+	pictureIndex := 0
+	for _, item := range res.JSON {
+		items = append(items, item)
+		if strings.TrimSpace(stringValue(item.ToMap()["text"])) != doclingImagePlaceholder {
+			continue
+		}
+		picture := pictures[pictureIndex]
+		pictureIndex++
+		// Captions are already serialized separately in Markdown.
+		seen := make(map[string]bool)
+		for _, ref := range doclingChildRefs(picture, "captions") {
+			seen[ref] = true
+		}
+		for _, ref := range doclingChildRefs(picture, "children") {
+			entry := texts[ref]
+			text := strings.TrimSpace(stringValue(entry["text"]))
+			if text == "" || seen[ref] {
+				continue
+			}
+			seen[ref] = true
+			ocr := NewTextJSONItem(text).ToMap()
+			var positions [][]any
+			for _, prov := range doclingProvs(entry) {
+				if pos := doclingProvPosition(prov, heights); pos != nil {
+					positions = append(positions, pos)
+				}
+			}
+			if len(positions) > 0 {
+				ocr["positions"] = positions
+				ocr["_pdf_positions"] = positions
+			}
+			items = append(items, DocItemFromMap(ocr))
+		}
+	}
+	res.JSON = items
+	return res
+}
+
+func doclingChildRefs(node map[string]any, key string) []string {
+	children, _ := node[key].([]any)
+	refs := make([]string, 0, len(children))
+	for _, child := range children {
+		obj, _ := child.(map[string]any)
+		if ref := stringValue(obj["$ref"]); ref != "" {
+			refs = append(refs, ref)
+		}
+	}
+	return refs
+}
+
+func doclingBodyPictures(content map[string]any) []map[string]any {
+	nodes := make(map[string]map[string]any)
+	for _, key := range []string{"groups", "pictures"} {
+		entries, _ := content[key].([]any)
+		for _, entry := range entries {
+			node, _ := entry.(map[string]any)
+			if ref := stringValue(node["self_ref"]); ref != "" {
+				nodes[ref] = node
+			}
+		}
+	}
+
+	var pictures []map[string]any
+	body, _ := content["body"].(map[string]any)
+	seen := make(map[string]bool)
+	var visit func(map[string]any)
+	visit = func(node map[string]any) {
+		for _, ref := range doclingChildRefs(node, "children") {
+			child := nodes[ref]
+			if child == nil || seen[ref] {
+				continue
+			}
+			seen[ref] = true
+			if strings.HasPrefix(ref, "#/pictures/") {
+				pictures = append(pictures, child)
+			} else {
+				visit(child)
+			}
+		}
+	}
+	visit(body)
+	return pictures
 }
 
 // doclingPageCount returns the number of PDF pages described by the Docling
