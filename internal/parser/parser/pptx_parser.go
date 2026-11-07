@@ -30,10 +30,11 @@ import (
 var pptxExtract = deepdocoffice.OpenAndExtract
 
 // PPTXParser parses both .pptx (OOXML) and .ppt (OLE binary)
-// files via the office_oxide backend. The format field controls
-// the container format passed to OpenFromBytes — "pptx" for
-// ZIP-based OOXML presentations and "ppt" for the legacy binary
-// OLE format.
+// presentations. ParseWithResult dispatches TCADP-configured
+// presentations to parseWithTCADP and uses the office_oxide backend
+// for local extraction. The format field controls the container
+// format passed to OpenFromBytes ("pptx" for ZIP-based OOXML and
+// "ppt" for legacy binary OLE).
 type PPTXParser struct {
 	format   string
 	textOnly bool
@@ -47,7 +48,11 @@ type PPTXParser struct {
 }
 
 func NewPPTXParser() *PPTXParser {
-	return &PPTXParser{format: "pptx"}
+	return &PPTXParser{
+		format:                         "pptx",
+		TCADPTableResultType:           "1",
+		TCADPMarkdownImageResponseType: "1",
+	}
 }
 
 func (p *PPTXParser) String() string {
@@ -60,21 +65,32 @@ func (p *PPTXParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
 	}
-	if v, ok := setup["parse_method"].(string); ok {
+	if v, ok := setup["parse_method"].(string); ok && v != "" {
 		p.ParseMethod = v
 	}
-	if v, ok := setup["tcadp_apiserver"].(string); ok {
+	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
 	}
 	if v, ok := setup["tcadp_api_key"].(string); ok {
 		p.TCADPAPIKey = v
 	}
-	if v, ok := setup["table_result_type"].(string); ok {
+	if v, ok := setup["table_result_type"].(string); ok && v != "" {
 		p.TCADPTableResultType = v
 	}
-	if v, ok := setup["markdown_image_response_type"].(string); ok {
+	if v, ok := setup["markdown_image_response_type"].(string); ok && v != "" {
 		p.TCADPMarkdownImageResponseType = v
 	}
+}
+
+func normalizePresentationParseMethod(raw string) string {
+	method := strings.ToLower(strings.TrimSpace(raw))
+	if method == "tcadp parser" {
+		return "tcadp"
+	}
+	if method == "deepdoc" || method == "deepdoc parser" {
+		return ""
+	}
+	return method
 }
 
 // ParseWithResult emits one JSON item per slide with the slide's plain text,
@@ -88,7 +104,7 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 	if p == nil {
 		return ParseResult{Err: fmt.Errorf("PPTXParser is nil")}
 	}
-	method := strings.ToLower(strings.TrimSpace(p.ParseMethod))
+	method := normalizePresentationParseMethod(p.ParseMethod)
 	switch method {
 	case "tcadp":
 		return parseWithTCADP(ctx,
