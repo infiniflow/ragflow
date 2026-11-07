@@ -39,6 +39,7 @@ const (
 	defaultWebDAVSizeThreshold = 20 * 1024 * 1024
 	webdavRequestTimeout       = 60 * time.Second
 	maxWebDAVResponseSize      = 32 * 1024 * 1024
+	webdavMtimeTolerance       = 24 * time.Hour
 	webdavPropfindBody         = `<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><allprop/></propfind>`
 )
 
@@ -186,9 +187,19 @@ func (c *WebDAVConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 	if err != nil {
 		return nil, err
 	}
-	start := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
+	// A WebDAV server's Last-Modified clock can lag ours, typically from a
+	// timezone misconfiguration. The previous cycle's end is the lower bound,
+	// so a skewed mtime sits permanently below the watermark and the file is
+	// skipped on every poll. Widen the bound by a day so such files are
+	// selected again; the metadata fingerprint lets SyncRunner drop the ones
+	// that did not change without downloading them.
+	epoch := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
+	start := epoch
 	if request.WindowStart != nil {
-		start = *request.WindowStart
+		start = request.WindowStart.Add(-webdavMtimeTolerance)
+		if start.Before(epoch) {
+			start = epoch
+		}
 	}
 	end := request.WindowEnd
 	if end.IsZero() {
@@ -201,21 +212,17 @@ func (c *WebDAVConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 		if !file.hasModified {
 			file.modified = end
 		}
-		if !start.Before(file.modified) || file.modified.After(end) {
+		if file.modified.Before(start) || file.modified.After(end) {
 			continue
 		}
 		if !c.isAcceptedExtension(file) || !file.hasSize || file.size > c.sizeThreshold {
 			continue
 		}
-		blob, err := c.downloadFile(ctx, file.url)
-		if err != nil || len(blob) == 0 {
-			continue
-		}
-		documents = append(documents, c.buildDocument(file, blob, nameCounts))
+		documents = append(documents, c.buildDocument(file, nameCounts))
 	}
 	sort.Slice(documents, func(i, j int) bool { return documents[i].SourceID < documents[j].SourceID })
 
-	session := &webdavSyncSession{documents: documents, batchSize: c.batchSize}
+	session := &webdavSyncSession{documents: documents, batchSize: c.batchSize, download: c.downloadFile}
 	if err := session.applyResume(request.Resume); err != nil {
 		return nil, err
 	}
@@ -239,16 +246,31 @@ func (c *WebDAVConnector) OpenPrune(ctx context.Context, request PruneRequest) (
 	return &webdavPruneSession{documents: documents, batchSize: c.batchSize}, nil
 }
 
-func (c *WebDAVConnector) buildDocument(file webdavFile, blob []byte, nameCounts map[string]int) SourceDocument {
+func (c *WebDAVConnector) buildDocument(file webdavFile, nameCounts map[string]int) SourceDocument {
 	return SourceDocument{
 		SourceID:           c.sourceID(file.url),
 		SemanticIdentifier: webdavSemanticIdentifier(file, c.remotePath, nameCounts),
 		Extension:          webdavExtension(file.url),
-		Blob:               blob,
+		FetchRef:           &FetchReference{Key: file.url, SizeHint: file.size},
 		UpdatedAt:          file.modified,
 		SizeBytes:          file.size,
-		Fingerprint:        contentFingerprint(blob),
+		Fingerprint:        webdavFingerprint(file),
 	}
+}
+
+// webdavFingerprint identifies one revision from the PROPFIND metadata, which
+// is already in hand. SyncRunner compares it with the stored value before it
+// fetches a body, so an unchanged file costs no download. Servers that omit
+// Last-Modified get an empty fingerprint and are fetched on every poll, because
+// nothing in the listing can tell their revisions apart.
+func webdavFingerprint(file webdavFile) string {
+	if !file.hasModified {
+		return ""
+	}
+	return stableFingerprint(map[string]any{
+		"size":     file.size,
+		"modified": file.modified.UTC().Format(time.RFC3339Nano),
+	})
 }
 
 func (c *WebDAVConnector) sourceID(fileURL string) string {
@@ -275,6 +297,7 @@ type webdavSyncSession struct {
 	documents []SourceDocument
 	batchSize int
 	index     int
+	download  func(ctx context.Context, fileURL string) ([]byte, error)
 }
 
 // NextBatch returns the next WebDAV document batch.
@@ -295,6 +318,22 @@ func (s *webdavSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 // Close closes the WebDAV sync session.
 func (s *webdavSyncSession) Close() error {
 	return nil
+}
+
+// Fetch downloads a selected WebDAV file. SyncRunner calls it only for a
+// document whose fingerprint differs from the stored one. A download failure
+// is a per-document skip, not a task failure: before fetching became lazy this
+// file was dropped from the listing and the run still completed, and one
+// unreadable file must not fail every later retry of the task.
+func (s *webdavSyncSession) Fetch(ctx context.Context, ref FetchReference) ([]byte, error) {
+	blob, err := s.download(ctx, ref.Key)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s: %v", ErrDocumentSkipped, ref.Key, err)
+	}
+	if len(blob) == 0 {
+		return nil, fmt.Errorf("%w: %s returned an empty body", ErrDocumentSkipped, ref.Key)
+	}
+	return blob, nil
 }
 
 // applyResume advances past the last committed WebDAV document when retrying a task.
