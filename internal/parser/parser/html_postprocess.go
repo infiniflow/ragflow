@@ -77,4 +77,3 @@ func flattenHTMLMediaToText(items []map[string]any) []map[string]any {
 	}
 	return items
 }
-

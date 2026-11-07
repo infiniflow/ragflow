@@ -326,4 +326,3 @@ func TestFlattenHTMLMediaToText(t *testing.T) {
 		t.Errorf("item 2 = %+v", flattened[2])
 	}
 }
-
