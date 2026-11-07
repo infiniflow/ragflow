@@ -9,9 +9,10 @@ import { useMemo } from 'react';
 
 export const EMPTY_METADATA_FIELD = 'empty_metadata';
 
+/** Expose catalog readiness alongside options so empty results remain distinguishable from loading. */
 export function useSelectDatasetFilters() {
   const { t } = useTranslate('knowledgeDetails');
-  const { filter, onOpenChange } = useGetDocumentFilter();
+  const { filter, filterLoaded, onOpenChange } = useGetDocumentFilter();
 
   const fileTypes = useMemo(() => {
     if (filter.suffix) {
@@ -90,5 +91,5 @@ export function useSelectDatasetFilters() {
     [t('systemAttribute')]: ['type', 'run'],
     // [t('metadataField')]: ['metadata'],
   };
-  return { filters, onOpenChange, filterGroup };
+  return { filters, filterLoaded, onOpenChange, filterGroup };
 }
