@@ -448,7 +448,7 @@ func TestBotService_ChatbotCompletion_NewSessionSkipsLLM(t *testing.T) {
 	// The persisted session must hold exactly the prologue turn —
 	// no empty user message may be written.
 	ctx := t.Context()
-	row, derr := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, got[0].SessionID, "dlg-1")
+	row, derr := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, got[0].SessionID, "dlg-1", true)
 	if derr != nil || row == nil {
 		t.Fatalf("session not persisted: row=%v err=%v", row, derr)
 	}
@@ -525,7 +525,7 @@ func TestPersistChatbotTurn_AppendsPairAndReference(t *testing.T) {
 	if err := svc.persistChatbotQuestion(ctx, sess, "What is Go?", "msg-p1", 2); err != nil {
 		t.Fatalf("persist question: %v", err)
 	}
-	questionRow, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, "sess-p1", "dlg-p1", dao.ConversationHistoryOptions{IncludeReference: true})
+	questionRow, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, "sess-p1", "dlg-p1", true, dao.ConversationHistoryOptions{IncludeReference: true})
 	if err != nil || questionRow == nil {
 		t.Fatalf("read pending question: %v", err)
 	}
@@ -536,7 +536,7 @@ func TestPersistChatbotTurn_AppendsPairAndReference(t *testing.T) {
 		t.Fatalf("persistChatbotTurn: %v", err)
 	}
 
-	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, "sess-p1", "dlg-p1", dao.ConversationHistoryOptions{IncludeReference: true})
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, "sess-p1", "dlg-p1", true, dao.ConversationHistoryOptions{IncludeReference: true})
 	if err != nil || row == nil {
 		t.Fatalf("re-read session: row=%v err=%v", row, err)
 	}
@@ -592,7 +592,7 @@ func TestPersistChatbotTurn_NilReferenceDefaultsToEmpty(t *testing.T) {
 		t.Fatalf("persistChatbotTurn: %v", err)
 	}
 
-	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, "sess-p2", "dlg-p1", dao.ConversationHistoryOptions{IncludeReference: true})
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, "sess-p2", "dlg-p1", true, dao.ConversationHistoryOptions{IncludeReference: true})
 	if err != nil || row == nil {
 		t.Fatalf("re-read session: row=%v err=%v", row, err)
 	}
@@ -654,7 +654,7 @@ func TestPersistChatbotTurn_ConcurrentSameSession(t *testing.T) {
 	}
 	wg.Wait()
 
-	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, "sess-p3", "dlg-p1", dao.ConversationHistoryOptions{IncludeReference: true})
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(ctx, dao.DB, "sess-p3", "dlg-p1", true, dao.ConversationHistoryOptions{IncludeReference: true})
 	if err != nil || row == nil {
 		t.Fatalf("re-read session: row=%v err=%v", row, err)
 	}
@@ -757,7 +757,7 @@ func TestStreamChatbotTurn_FinalFrameAndPersistenceUseRawStreamText(t *testing.T
 		t.Errorf("delta frames must forward their own delta: %+v %+v", frames[0], frames[1])
 	}
 
-	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, "sess-s1", "dlg-s1")
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, "sess-s1", "dlg-s1", true)
 	if err != nil || row == nil {
 		t.Fatalf("re-read session: row=%v err=%v", row, err)
 	}
@@ -792,7 +792,7 @@ func TestStreamChatbotTurn_ThinkMarkersPersistedAsTags(t *testing.T) {
 	for range svc.streamChatbotTurn(t.Context(), sess, "q2", "msg-s2", results) {
 	}
 
-	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, "sess-s2", "dlg-s1")
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, "sess-s2", "dlg-s1", true)
 	if err != nil || row == nil {
 		t.Fatalf("re-read session: row=%v err=%v", row, err)
 	}
@@ -833,7 +833,7 @@ func TestStreamChatbotTurn_SingleShotFinalKeepsText(t *testing.T) {
 		t.Errorf("single-shot final must carry the text, got %q", frames[0].Data)
 	}
 
-	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, "sess-s3", "dlg-s1")
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, "sess-s3", "dlg-s1", true)
 	if err != nil || row == nil {
 		t.Fatalf("re-read session: row=%v err=%v", row, err)
 	}
@@ -869,7 +869,7 @@ func TestStreamChatbotTurn_ErrorKeptOnWireAndNotPersisted(t *testing.T) {
 		t.Errorf("error final must carry the text, got %q", frames[0].Data)
 	}
 
-	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, "sess-s4", "dlg-s1")
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, "sess-s4", "dlg-s1", true)
 	if err != nil || row == nil {
 		t.Fatalf("re-read session: row=%v err=%v", row, err)
 	}
@@ -911,7 +911,7 @@ func TestStreamChatbotTurn_ErrorAfterDeltasKeptOnWire(t *testing.T) {
 		t.Errorf("error final after deltas must carry the error text, got %+v", frames[1])
 	}
 
-	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, "sess-s5", "dlg-s1")
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, "sess-s5", "dlg-s1", true)
 	if err != nil || row == nil {
 		t.Fatalf("re-read session: row=%v err=%v", row, err)
 	}
@@ -958,7 +958,7 @@ func TestStreamChatbotTurn_ReasoningFieldForwardedAsStreamText(t *testing.T) {
 		t.Errorf("final frame answer = %q, want empty (deltas already streamed)", frames[4].Data)
 	}
 
-	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, "sess-s6", "dlg-s1")
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(t.Context(), dao.DB, "sess-s6", "dlg-s1", true)
 	if err != nil || row == nil {
 		t.Fatalf("re-read session: row=%v err=%v", row, err)
 	}
@@ -1009,7 +1009,7 @@ func TestStreamChatbotTurn_ContextCancellationUnblocksFullChannel(t *testing.T) 
 
 verified:
 	// The user question is preserved in history; failure/cancellation leaves it intact.
-	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(context.Background(), dao.DB, "sess-cancel-leak", "dlg-s1")
+	row, err := dao.NewAPI4ConversationDAO().GetBySessionID(context.Background(), dao.DB, "sess-cancel-leak", "dlg-s1", true)
 	if err != nil {
 		t.Fatalf("re-read session: %v", err)
 	}

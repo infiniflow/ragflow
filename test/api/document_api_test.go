@@ -151,8 +151,8 @@ func TestRESTDocumentUploadValidation(t *testing.T) {
 	}{
 		{"missing_file", nil, 101, "No file part!"},
 		{"empty_filename", []documentUpload{{Name: "", Content: []byte("x")}}, 101, "No file part!"},
-		{"overlong_filename", []documentUpload{{Name: strings.Repeat("a", 252) + ".txt"}}, 101, "255 bytes"},
-		{"multibyte_overlong_filename", []documentUpload{{Name: strings.Repeat("界", 84) + ".txt"}}, 101, "255 bytes"},
+		{"overlong_filename", []documentUpload{{Name: strings.Repeat("a", 252) + ".txt"}}, 101, "255 characters"},
+		{"multibyte_overlong_filename", []documentUpload{{Name: strings.Repeat("界", 252) + ".txt"}}, 101, "255 characters"},
 		{"unsupported_format", []documentUpload{{Name: "executable.exe", Content: []byte("not executable")}}, 500, "not been supported"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -205,7 +205,6 @@ func TestRESTDocumentListingFiltersPaginationAndReads(t *testing.T) {
 		{"unstarted", apiObject{"run": "UNSTART"}, ids, 3},
 		{"future_creation", apiObject{"create_time_from": "9999999999000"}, nil, 3},
 		{"past_creation", apiObject{"create_time_to": "1"}, nil, 3},
-		{"invalid_page_defaults", apiObject{"page": "invalid", "page_size": -1}, ids, 3},
 		{"unknown_query_ignored", apiObject{"unexpected": "ignored"}, ids, 3},
 	}
 	for _, tc := range cases {
@@ -238,6 +237,7 @@ func TestRESTDocumentListingFiltersPaginationAndReads(t *testing.T) {
 		query apiObject
 		code  int
 	}{
+		{apiObject{"page": "invalid", "page_size": -1}, 101},
 		{apiObject{"orderby": "name; DROP TABLE document"}, 101},
 		{apiObject{"metadata_condition": "{bad"}, 102},
 		{apiObject{"metadata_condition": "[]"}, 102},

@@ -18,7 +18,6 @@ package indexdoc
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"ragflow/internal/common"
@@ -376,7 +375,7 @@ func resolveTableColumnConfig(parserConfig map[string]interface{}) (mode string,
 		return mode, roles, rawNames
 	}
 	for cid, raw := range parserConfig {
-		if !strings.HasPrefix(cid, "Parser:") {
+		if !common.IsParserComponentID(cid) {
 			continue
 		}
 		comp, _ := raw.(map[string]interface{})

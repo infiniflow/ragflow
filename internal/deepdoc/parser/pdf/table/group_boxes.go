@@ -1,6 +1,7 @@
 package table
 
 import (
+	"math"
 	"sort"
 	"strings"
 
@@ -9,52 +10,113 @@ import (
 
 // rb is a row-box entry that holds cell data during grid construction.
 type rb struct {
-	row, col       int
 	txt            string
 	x0, y0, x1, y1 float64
 	label          string
 }
 
 // GroupBoxesByRC groups text boxes into a cell grid by R/C annotations.
-// Matches Python's construct_table: sort by R, sort by C within each row,
-// merge nearby columns by X proximity.
+// Rows split on R changes; missing-R boxes keep their Y position and also
+// split when Y advances, so a row missed by TSR is still assembled.
 func GroupBoxesByRC(boxes []pdf.TextBox) [][]pdf.TSRCell {
 	if len(boxes) == 0 {
 		return nil
 	}
-	// If no real R/C annotations (maxR <= 0), fall back to YX coordinate
-	// grouping — matching Python's construct_table when all R=-1.
-	maxR := 0
+	// Distinguish an annotated table from raw boxes. R/C zero values are the
+	// Go default, so R=0 alone is not evidence of annotation.
+	hasAnnotations := false
 	for _, b := range boxes {
-		if b.R > maxR {
-			maxR = b.R
+		if b.HasTableAnnotations || b.R > 0 || b.C > 0 || b.H > 0 || b.SP > 0 {
+			hasAnnotations = true
+			break
 		}
 	}
-	if maxR <= 0 {
+	if !hasAnnotations {
 		return GroupBoxesByYX(boxes)
 	}
-	// Sort by R index first (Python: sort_R_firstly), then Y, then X.
-	sort.Slice(boxes, func(i, j int) bool {
-		if boxes[i].R != boxes[j].R {
-			return boxes[i].R < boxes[j].R
+
+	sortRFirstly(boxes)
+
+	rowOf := assignRows(boxes)
+	compressed := rowOf[len(rowOf)-1]
+
+	cmap := collectBoxesPerRow(boxes, rowOf)
+	cCompressed, maxCol := compressColIndices(boxes, rowOf, compressed)
+
+	return buildGrid(cmap, cCompressed, maxCol, compressed)
+}
+
+// sortRFirstly mirrors Python's Recognizer.sort_R_firstly: sort by Y first
+// (with a fuzzy row-height threshold), then bubble boxes that carry an R label
+// into R order. Boxes without an R remain at their Y position and act as
+// barriers, so a missing-R row stays between the rows that surround it.
+func sortRFirstly(boxes []pdf.TextBox) {
+	rowh := 0.0
+	for _, b := range boxes {
+		if b.R >= 0 && b.RBott > b.RTop {
+			h := b.RBott - b.RTop
+			if rowh == 0 || h < rowh {
+				rowh = h
+			}
 		}
-		if boxes[i].Top != boxes[j].Top {
-			return boxes[i].Top < boxes[j].Top
+	}
+
+	sortYFirstlyTextBoxes(boxes, rowh/2)
+
+	for i := 0; i < len(boxes)-1; i++ {
+		for j := i; j >= 0; j-- {
+			a, b := boxes[j], boxes[j+1]
+			if a.R < 0 || b.R < 0 {
+				continue
+			}
+			if b.R < a.R || (b.R == a.R && b.X0 < a.X0) {
+				boxes[j], boxes[j+1] = b, a
+			}
 		}
-		return boxes[i].X0 < boxes[j].X0
+	}
+}
+
+// sortYFirstlyTextBoxes is Python's Recognizer.sort_Y_firstly for text boxes:
+// primary key is the top edge, with X as the tie-breaker when two boxes are
+// within threshold. Pages are ordered first because Go boxes carry page-local
+// Y coordinates, while Python's Y values are page-cumulative.
+func sortYFirstlyTextBoxes(boxes []pdf.TextBox, threshold float64) {
+	sort.SliceStable(boxes, func(i, j int) bool {
+		if boxes[i].PageNumber != boxes[j].PageNumber {
+			return boxes[i].PageNumber < boxes[j].PageNumber
+		}
+		diff := boxes[i].Top - boxes[j].Top
+		if math.Abs(diff) < threshold {
+			return boxes[i].X0 < boxes[j].X0
+		}
+		return diff < 0
 	})
+}
 
-	// Compress R indices: Python's sort_R_firstly grouping.
-	rowMap, compressed := compressRowIndices(boxes)
-
-	// Collect boxes per row.
-	cmap, _ := collectBoxesPerRow(boxes, rowMap)
-
-	// Compress C indices per row.
-	cCompressed, cMaxCol := compressColIndices(boxes, rowMap, compressed)
-
-	// Build grid.
-	return buildGrid(cmap, cCompressed, cMaxCol, compressed)
+// assignRows mirrors Python's construct_table row loop: a new row starts when
+// the R label changes. When R is missing, a box whose top has advanced past
+// the current row's running bottom also starts a new row (Python's -1/-2
+// sentinel comparison); same-R lines stay together so a multi-line cell is not
+// split. The running bottom is averaged across the row's boxes, matching
+// Python's `btm = (btm + b["bottom"]) / 2`.
+func assignRows(boxes []pdf.TextBox) []int {
+	rowOf := make([]int, len(boxes))
+	if len(boxes) == 0 {
+		return rowOf
+	}
+	btm := boxes[0].Bottom
+	for i := 1; i < len(boxes); i++ {
+		if boxes[i].PageNumber != boxes[i-1].PageNumber ||
+			boxes[i-1].R != boxes[i].R ||
+			(boxes[i].R < 0 && boxes[i].Top >= btm-3) {
+			rowOf[i] = rowOf[i-1] + 1
+			btm = boxes[i].Bottom
+			continue
+		}
+		rowOf[i] = rowOf[i-1]
+		btm = (btm + boxes[i].Bottom) / 2
+	}
+	return rowOf
 }
 
 // GroupBoxesByYX groups boxes into a cell grid by Y/X coordinates,
@@ -163,42 +225,20 @@ func GroupBoxesByYX(boxes []pdf.TextBox) [][]pdf.TSRCell {
 }
 
 // cellPosFromBox returns the position coordinates and label for a cell
-// derived from a text box.  Header cells use HLeft/HRight/HTop/HBott
-// for spanning-aware positions; regular cells use the box's own bounds.
+// derived from a text box. Header and span cells use the H* bounds copied
+// from the matched TSR cell; regular cells use the box's own bounds.
 func cellPosFromBox(b pdf.TextBox) (x0, y0, x1, y1 float64, label string) {
 	x0, y0, x1, y1 = b.X0, b.Top, b.X1, b.Bottom
-	if b.H > 0 {
-		label = "table header"
-		if b.HLeft != 0 || b.HRight != 0 {
-			if b.HLeft != 0 {
-				x0 = b.HLeft
-			}
-			if b.HRight != 0 {
-				x1 = b.HRight
-			}
+	// SP wins over H: CalSpans only spans cells labelled "table spanning
+	// cell", so a header cell that is also a span origin must keep that label.
+	if b.SP > 0 || b.H > 0 {
+		if b.SP > 0 {
+			label = "table spanning cell"
+		} else {
+			label = "table header"
 		}
-		if b.HTop != 0 {
-			y0 = b.HTop
-		}
-		if b.HBott != 0 {
-			y1 = b.HBott
-		}
-	} else if b.SP > 0 {
-		label = "table spanning cell"
-		// A pure-SP box (H==0) still carries the span's full extent in
-		// HLeft/HRight/HTop/HBott, copied together from the TSR spanning cell
-		// by AnnotateTableBoxes (PR #18707). Rebuild the cell from those bounds
-		// so CalSpans covers every column/row the span crosses — matching
-		// Python's _annotate_table_boxes. Without this, the span cell falls
-		// back to the box's own narrow text bounds, under-covers by one
-		// column, and the header row keeps an extra empty cell (real_pdfs/1.pdf
-		// row0 = 4 vs Python's 3; see known_diffs rule
-		// table-1pdf-colspan-assembly-loss, resolved).
-		//
-		// HLeft/HRight (and HTop/HBott) are set together, so treat an axis as
-		// propagated whenever either edge is set. This preserves a real edge at
-		// coordinate 0 (a nonzero check would mistake it for "unset" and fall
-		// back to the box's own bounds, dropping the span's left/top edge).
+		// Either edge being set means the axis carries the TSR extent; a
+		// real edge may be exactly 0.
 		if b.HLeft != 0 || b.HRight != 0 {
 			x0, x1 = b.HLeft, b.HRight
 		}
@@ -209,51 +249,19 @@ func cellPosFromBox(b pdf.TextBox) (x0, y0, x1, y1 float64, label string) {
 	return
 }
 
-// cellLabelFromBox returns the TSR label for a box based on H/SP annotations.
-// Used when merging multiple boxes into one cell — preserves the spanning label.
-func cellLabelFromBox(b pdf.TextBox) string {
-	if b.H > 0 {
-		return "table header"
-	}
-	if b.SP > 0 {
-		return "table spanning cell"
-	}
-	return ""
-}
-
-// compressRowIndices compresses R values into contiguous row indices.
-// Returns rowMap (original R → compressed index) and the maximum compressed index.
-// Boxes must already be sorted by R, Y, X.
-func compressRowIndices(boxes []pdf.TextBox) (map[int]int, int) {
-	rowMap := make(map[int]int) // original R → compressed row index
-	compressed := 0
-	rowMap[boxes[0].R] = 0
-	lastR := boxes[0].R
-	for i := 1; i < len(boxes); i++ {
-		if boxes[i].R != lastR {
-			compressed++
-			rowMap[boxes[i].R] = compressed
-			lastR = boxes[i].R
-		} else {
-			rowMap[boxes[i].R] = compressed
-		}
-	}
-	return rowMap, compressed
-}
-
 // collectBoxesPerRow collects boxes into row groups, merging boxes in the same cell.
-// Returns cmap (row → col → entry) and maxCols (max column index per row).
-func collectBoxesPerRow(boxes []pdf.TextBox, rowMap map[int]int) (map[int]map[int]*rb, map[int]int) {
+// rowOf holds the row index assigned to each box by assignRows.
+// Returns cmap (row → col → entry).
+func collectBoxesPerRow(boxes []pdf.TextBox, rowOf []int) map[int]map[int]*rb {
 	cmap := make(map[int]map[int]*rb) // row → col → entry
-	maxCols := make(map[int]int)
-	for _, b := range boxes {
+	for i, b := range boxes {
 		t := strings.TrimSpace(b.Text)
 		// Keep boxes with SP/H annotations even if text is empty —
 		// their coordinates are needed for colspan/rowspan calculation.
 		if t == "" && b.H <= 0 && b.SP <= 0 {
 			continue
 		}
-		r := rowMap[b.R]
+		r := rowOf[i]
 		c := b.C
 		if cmap[r] == nil {
 			cmap[r] = make(map[int]*rb)
@@ -263,9 +271,14 @@ func collectBoxesPerRow(boxes []pdf.TextBox, rowMap map[int]int) (map[int]map[in
 			if t != "" {
 				v.txt += " " + t
 			}
-			// Merge spanning coordinates (use widest extent).
+			// Keep the spanning label if any box in this cell is a span;
+			// CalSpans only spans cells labelled "table spanning cell".
+			if b.SP > 0 {
+				v.label = "table spanning cell"
+			} else if b.H > 0 && v.label != "table spanning cell" {
+				v.label = "table header"
+			}
 			if b.H > 0 || b.SP > 0 {
-				v.label = cellLabelFromBox(b)
 				if v.x0 > x0 {
 					v.x0 = x0
 				}
@@ -280,27 +293,16 @@ func collectBoxesPerRow(boxes []pdf.TextBox, rowMap map[int]int) (map[int]map[in
 				}
 			}
 		} else {
-			cmap[r][c] = &rb{r, c, t, x0, y0, x1, y1, label}
-		}
-		if c > maxCols[r] {
-			maxCols[r] = c
+			cmap[r][c] = &rb{txt: t, x0: x0, y0: y0, x1: x1, y1: y1, label: label}
 		}
 	}
-	return cmap, maxCols
+	return cmap
 }
 
-// compressColIndices assigns every box a column from a GLOBAL rank of the
-// table's distinct C labels, mirroring Python's construct_table which groups
-// boxes into columns by their per-char C assignment (each distinct C yields a
-// column, in C order; a box whose C is the previous box's C+1 always starts a
-// new column — Python never merges adjacent C values by X overlap).
-//
-// A table-wide mapping keeps the same C in the same column across ALL rows: a
-// per-row re-compression would misalign cell text (a C=4 box landing in
-// column 3 in one row and column 4 in another). Every row is sized to the
-// table-wide column count, matching Python's uniform-width construct_table
-// output (rows missing a C render empty cells).
-func compressColIndices(boxes []pdf.TextBox, rowMap map[int]int, compressed int) (map[int]map[int]int, map[int]int) {
+// compressColIndices maps the table's distinct C labels to contiguous column
+// indices. The mapping is table-wide so the same C always lands in the same
+// column across rows; rows without a C render as empty cells.
+func compressColIndices(boxes []pdf.TextBox, rowOf []int, compressed int) (map[int]map[int]int, int) {
 	distinctC := make(map[int]bool)
 	for _, b := range boxes {
 		if b.C >= 0 {
@@ -319,11 +321,10 @@ func compressColIndices(boxes []pdf.TextBox, rowMap map[int]int, compressed int)
 	maxCol := len(cs) - 1
 
 	cCompressed := make(map[int]map[int]int) // row → (original C → compressed col)
-	cMaxCol := make(map[int]int)             // every row spans the table-wide column count
 	for ri := 0; ri <= compressed; ri++ {
 		cMap := make(map[int]int)
-		for _, b := range boxes {
-			if rowMap[b.R] != ri {
+		for i, b := range boxes {
+			if rowOf[i] != ri {
 				continue
 			}
 			if strings.TrimSpace(b.Text) == "" && b.H <= 0 && b.SP <= 0 {
@@ -334,20 +335,18 @@ func compressColIndices(boxes []pdf.TextBox, rowMap map[int]int, compressed int)
 			}
 		}
 		cCompressed[ri] = cMap
-		cMaxCol[ri] = maxCol
 	}
-	return cCompressed, cMaxCol
+	return cCompressed, maxCol
 }
 
 // buildGrid builds the final cell grid from the collected and compressed data.
-func buildGrid(cmap map[int]map[int]*rb, cCompressed map[int]map[int]int, cMaxCol map[int]int, compressed int) [][]pdf.TSRCell {
+func buildGrid(cmap map[int]map[int]*rb, cCompressed map[int]map[int]int, maxCol, compressed int) [][]pdf.TSRCell {
 	rows := make([][]pdf.TSRCell, compressed+1)
 	for ri := 0; ri <= compressed; ri++ {
-		maxC := cMaxCol[ri]
-		rows[ri] = make([]pdf.TSRCell, maxC+1)
+		rows[ri] = make([]pdf.TSRCell, maxCol+1)
 		for ci, v := range cmap[ri] {
 			cci := cCompressed[ri][ci]
-			if cci <= maxC {
+			if cci <= maxCol {
 				if rows[ri][cci].Text == "" {
 					rows[ri][cci].Text = v.txt
 					rows[ri][cci].X0 = v.x0
@@ -380,18 +379,4 @@ func buildGrid(cmap map[int]map[int]*rb, cCompressed map[int]map[int]int, cMaxCo
 		}
 	}
 	return rows
-}
-
-func BoxesHaveAnnotations(boxes []pdf.TextBox) bool {
-	maxR, maxC := 0, 0
-	for _, b := range boxes {
-		if b.R > maxR {
-			maxR = b.R
-		}
-		if b.C > maxC {
-			maxC = b.C
-		}
-	}
-	// True if at least 2 rows or 2 cols (R/C are 0-based, so maxR>0 means ≥2 rows).
-	return maxR > 0 || maxC > 0
 }

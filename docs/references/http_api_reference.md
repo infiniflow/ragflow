@@ -14,6 +14,11 @@ In the standard response envelope, `message` is always a non-empty string. Succe
 `data` is optional. Operation acknowledgments omit it; check `code` for success
 and `message` for the result description. Result payloads use objects or arrays.
 
+Paginated endpoints require a positive integer `page` (default `1`) and a
+`page_size` between `1` and `100`, inclusive. Requests over the limit are rejected with
+an error envelope; values are never silently clamped. Zero and negative sizes
+cannot disable pagination. All paginated endpoints default to `30` items per page.
+
 ---
 
 ## ERROR CODES
@@ -1228,7 +1233,7 @@ curl --request PATCH \
     - `"delimiter"`: Defaults to `"\n"`.
     - `"task_page_size"`: Defaults to `12`. For PDF only.
 - `"enabled"`: (*Body parameter*), `integer`
-  Whether the document should be **available** in the knowledge base.
+  Whether the document should be **available** in the Dataset.
   - `1` → （available）
   - `0` → （unavailable）
 
@@ -3467,7 +3472,7 @@ curl --request GET \
 - `page`: (*Query parameter*), `integer`
   Specifies the page on which the sessions will be displayed. Defaults to `1`.
 - `page_size`: (*Query parameter*), `integer`
-  The number of sessions on each page. Defaults to `30`. If set to `0`, an empty list is returned.
+  The number of sessions on each page. Defaults to `30`. Must be between `1` and `100`.
 - `orderby`: (*Query parameter*), `string`
   The field by which sessions should be sorted. Available options:
   - `create_time` (default)
@@ -5075,7 +5080,7 @@ Failure:
 
 **POST** `/api/v1/chat/mindmap`
 
-Generates a mind map from a question and a set of knowledge base IDs.
+Generates a mind map from a question and a set of Dataset IDs.
 
 #### Request
 
@@ -5086,7 +5091,7 @@ Generates a mind map from a question and a set of knowledge base IDs.
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
 - Body:
   - `"question"`: `string` *(Required)* The central question or topic.
-  - `"kb_ids"`: `list[string]` *(Required)* Knowledge base IDs to search.
+  - `"kb_ids"`: `list[string]` *(Required)* Dataset IDs to search.
   - `"search_id"`: `string` *(Optional)* ID of a saved search configuration to merge additional `kb_ids` and settings.
 
 ##### Request example
@@ -5880,7 +5885,7 @@ curl --location 'http://{address}/api/v1/memories?keywords=&page_size=50&page=1&
 
 - `page_size`: `int`, *Optional*
 
-  The number of memories on each page. Defaults to `50`.
+  The number of memories on each page. Defaults to `30`.
 
 #### Response
 
@@ -6093,7 +6098,7 @@ curl --location 'http://{address}/api/v1/memories/6c8983badede11f083f184ba59bc53
 
 - `page_size`: (*Query parameter*), `int`, *Optional*
 
-  The number of messages on each page. Defaults to `50`.
+  The number of messages on each page. Defaults to `30`.
 
 #### Response
 
@@ -7037,7 +7042,7 @@ curl --request GET \
 - `page`: `integer`
   Specifies the page on which the files will be displayed. Defaults to `1`.
 - `page_size`: `integer`
-  The number of files on each page. Defaults to `15`.
+  The number of files on each page. Defaults to `30`.
 - `orderby`: `string`
   The field by which files should be sorted. Available options:
   - `create_time` (default)
@@ -7610,7 +7615,7 @@ Lists all commits for the specified folder with pagination. Also, available at:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Query:
   - `'page'`: `int` (optional, default: 1)
-  - `'page_size'`: `int` (optional, default: 15)
+  - `'page_size'`: `int` (optional, default: 30)
   - `'order_by'`: `string` (optional, default: `"create_time"`)
   - `'desc'`: `bool` (optional, default: `true`)
 
@@ -8095,7 +8100,7 @@ curl --request POST \
 ##### Body parameters
 
 - `"name"`: `string`, *Required*
-  The name of the search app. Must be unique and no longer than 255 characters.
+  The name of the search app. Must be unique and no longer than 128 characters.
 - `"description"`: `string`
   A brief description of the search app.
 
@@ -8151,7 +8156,7 @@ curl --request GET \
 - `page`: `integer`
   Specifies the page number. Defaults to `1`. Values less than `1` fall back to `1`.
 - `page_size`: `integer`
-  The number of items per page. Defaults to `30`. Values less than `1` fall back to `30`. The maximum value is `100`.
+  The number of items per page. Defaults to `30`. Must be between `1` and `100`.
 - `orderby`: `string`
   The field to sort by. Defaults to `create_time`.
 - `desc`: `boolean`

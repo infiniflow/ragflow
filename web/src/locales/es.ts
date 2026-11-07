@@ -177,9 +177,8 @@ export default {
         'La URL del endpoint de la API para el servicio PaddleOCR',
       paddleocrApiUrlPlaceholder: 'ej: https://servidor-paddleocr.com/api',
       paddleocrAccessToken: 'Token de acceso de AI Studio',
-      paddleocrAccessTokenTip:
-        'Token de acceso para la API de PaddleOCR (opcional)',
-      paddleocrAccessTokenPlaceholder: 'Su token de AI Studio (opcional)',
+      paddleocrAccessTokenTip: 'Token de acceso para la API de PaddleOCR',
+      paddleocrAccessTokenPlaceholder: 'Su token de AI Studio',
       paddleocrAlgorithm: 'Algoritmo de PaddleOCR',
       paddleocrAlgorithmTip:
         'Algoritmo a utilizar para el análisis de PaddleOCR',
@@ -421,7 +420,7 @@ export default {
         apiUrlPlaceholder:
           'Por ejemplo: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Token de acceso de AI Studio',
-        accessTokenPlaceholder: 'Su token de AI Studio (opcional)',
+        accessTokenPlaceholder: 'Su token de AI Studio',
         algorithm: 'Algoritmo de PaddleOCR',
         selectAlgorithm: 'Seleccionar algoritmo',
         modelNamePlaceholder: 'Por ejemplo: paddleocr-from-env-1',

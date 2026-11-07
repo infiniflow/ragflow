@@ -37,7 +37,30 @@ func StripCaptionFromCells(cells []pdf.TSRCell) {
 	// This pass is intentionally conservative — only clears clearly-non-data text.
 }
 
+// ConstructTable renders a table to HTML. The dispatch to the EE V/H
+// renderer (when item.RenderVH is set) is added by the enterprise build; the
+// OSS build always uses constructTableCore.
 func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, item *pdf.TableItem) string {
+	if item != nil && item.RenderVH {
+		// Route to the EE V/H renderer. It consumes item.Cells (the builder's
+		// assembled cells), matching the EE tree's prior eeConstructTable
+		// routing, not the page-global cells passed to the OSS core path.
+		return ConstructTableVH(item.Cells, boxes, caption)
+	}
+	return constructTableCore(cells, boxes, caption, item)
+}
+
+// constructTableCore produces an HTML table string from TSR cells and text boxes.
+// Both cells and boxes must be in the same coordinate space (crop pixel space).
+// Fills item.Rows so downstream consumers don't need to re-group cells.
+//
+// Python equivalent: TableStructureRecognizer.construct_table()
+// stripCaptionFromCells clears caption-like text from TSR cells.
+// This catches captions that fillCellTextFromBoxes missed (e.g. text
+// that doesn't match isCaptionBox patterns like "公司差旅费管理办法").
+// Only clears cells whose text matches caption patterns or that contain
+// only number+separator text (pure "1. ", "一、" etc. without data).
+func constructTableCore(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, item *pdf.TableItem) string {
 	// Strip caption-like text from cells (defense-in-depth: fillCellTextFromBoxes
 	// may include caption text that doesn't match isCaptionBox patterns).
 	StripCaptionFromCells(cells)
@@ -53,25 +76,10 @@ func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, it
 		rows = GroupTSRCellsToRows(cells)
 	}
 	if len(rows) > 0 && HasText(rows) {
-		// Clean up orphan columns then orphan rows (Python order: columns at
-		// construct_table:224-277, then rows at :279-333). Both passes mutate
-		// the same grid and may drop rows/columns, so item.Grid and item.Rows
-		// must be re-derived AFTER them (the old code set item.Rows before
-		// column cleanup, leaving it stale; item.Grid also went stale because
-		// CleanupOrphanRows returns a re-sliced header).
+		// Cleanup may drop rows/columns, so recompute item.Grid and item.Rows
+		// after both passes.
 		rows = CleanupOrphanColumns(rows)
-		// Drop all-empty rows. Python's construct_table groups boxes by their
-		// R annotation (tbl[i] is the boxes for row i; a TSR row with no
-		// overlapping box contributes no row). Its HTML emitter also skips
-		// rows whose rendered HTML stays at "<tr>" (no cell wrote anything).
-		// Go's grid is a TSR-row cross-product, so an extra "table row" that
-		// the model emits alongside a "table projected row header" (or any
-		// other TSR component with no OCR/text overlap) leaks through as a
-		// 5-cell row of empty strings, inflating item.Rows and the HTML. See
-		// 13_crosspage_table.pdf page 2: y0=885 "table row" sits on top of
-		// a "table projected row header" with no box overlap and survives
-		// every TSR cleanup pass. Drop it here so rows/Rows/HTML all match
-		// Python.
+		// TSR can emit an empty row component; drop it before orphan cleanup.
 		rows = DropAllEmptyRows(rows)
 		rows = CleanupOrphanRows(rows)
 		hdrs := HeaderSetWithBlockType(rows, boxes)
@@ -85,21 +93,10 @@ func ConstructTable(cells []pdf.TSRCell, boxes []pdf.TextBox, caption string, it
 		}
 		return tableutil.RenderTableHTML(ToTableData(rows, caption, hdrs, spanInfo, covered))
 	}
-	// Fallback: boxes with R/C annotations.
-	if len(boxes) > 0 && BoxesHaveAnnotations(boxes) {
+	// Fallback: rebuild from boxes. GroupBoxesByRC uses R/C when present and
+	// falls back to Y/X grouping otherwise.
+	if len(boxes) > 0 {
 		rows := GroupBoxesByRC(boxes)
-		if HasText(rows) {
-			if item != nil {
-				item.Rows = RowsToStrings(rows)
-			}
-			spanInfo, covered := CalSpans(rows)
-			return tableutil.RenderTableHTML(ToTableData(rows, caption, BoxHeaderSet(rows, boxes), spanInfo, covered))
-		}
-	}
-	// Test-only: Y/X coordinate grouping (matching Python construct_table).
-	// Used by table_parity_test.go to verify pipeline with Python boxes.
-	if len(boxes) > 0 && !BoxesHaveAnnotations(boxes) {
-		rows := GroupBoxesByYX(boxes)
 		if HasText(rows) {
 			if item != nil {
 				item.Rows = RowsToStrings(rows)
