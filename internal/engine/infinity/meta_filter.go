@@ -17,6 +17,7 @@
 package infinity
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
@@ -117,8 +118,7 @@ func (t *MetaFilterTranslator) translateNotEmpty(key string) string {
 func (t *MetaFilterTranslator) translateEqual(key string, value interface{}, flt map[string]interface{}) string {
 	coerced := coerceScalar(value, flt)
 	if s, ok := coerced.(string); ok {
-		escaped := escapeSQLString(s)
-		return fmt.Sprintf("JSON_CONTAINS(meta_fields, '$.%s', '\"%s\"')", key, escaped)
+		return fmt.Sprintf("JSON_CONTAINS(meta_fields, '$.%s', %s)", key, jsonStringSQLLiteral(s))
 	}
 	return fmt.Sprintf("JSON_CONTAINS(meta_fields, '$.%s', %v)", key, coerced)
 }
@@ -126,8 +126,7 @@ func (t *MetaFilterTranslator) translateEqual(key string, value interface{}, flt
 func (t *MetaFilterTranslator) translateNotEqual(key string, value interface{}, flt map[string]interface{}) string {
 	coerced := coerceScalar(value, flt)
 	if s, ok := coerced.(string); ok {
-		escaped := escapeSQLString(s)
-		return fmt.Sprintf("NOT JSON_CONTAINS(meta_fields, '$.%s', '\"%s\"')", key, escaped)
+		return fmt.Sprintf("NOT JSON_CONTAINS(meta_fields, '$.%s', %s)", key, jsonStringSQLLiteral(s))
 	}
 	return fmt.Sprintf("NOT JSON_CONTAINS(meta_fields, '$.%s', %v)", key, coerced)
 }
@@ -151,8 +150,7 @@ func (t *MetaFilterTranslator) translateIn(key string, value interface{}, flt ma
 		if num, ok := coerceToFloat(coerced); ok {
 			numParts = append(numParts, fmt.Sprintf("JSON_CONTAINS(meta_fields, '$.%s', %v)", key, num))
 		} else if s, ok := coerced.(string); ok {
-			escaped := escapeSQLString(s)
-			stringParts = append(stringParts, fmt.Sprintf("JSON_CONTAINS(meta_fields, '$.%s', '\"%s\"')", key, escaped))
+			stringParts = append(stringParts, fmt.Sprintf("JSON_CONTAINS(meta_fields, '$.%s', %s)", key, jsonStringSQLLiteral(s)))
 		}
 	}
 
@@ -176,8 +174,7 @@ func (t *MetaFilterTranslator) translateNotIn(key string, value interface{}, flt
 		if num, ok := coerceToFloat(coerced); ok {
 			numParts = append(numParts, fmt.Sprintf("NOT JSON_CONTAINS(meta_fields, '$.%s', %v)", key, num))
 		} else if s, ok := coerced.(string); ok {
-			escaped := escapeSQLString(s)
-			stringParts = append(stringParts, fmt.Sprintf("NOT JSON_CONTAINS(meta_fields, '$.%s', '\"%s\"')", key, escaped))
+			stringParts = append(stringParts, fmt.Sprintf("NOT JSON_CONTAINS(meta_fields, '$.%s', %s)", key, jsonStringSQLLiteral(s)))
 		}
 	}
 
@@ -208,14 +205,12 @@ func (t *MetaFilterTranslator) translateContains(key string, value interface{}, 
 	if num, ok := coerceToFloat(coerced); ok {
 		return fmt.Sprintf("JSON_CONTAINS(meta_fields, '$.%s', %v)", key, num), nil
 	}
-	escaped := escapeSQLString(fmt.Sprintf("%v", value))
-	return fmt.Sprintf("JSON_CONTAINS(meta_fields, '$.%s', '\"%s\"')", key, escaped), nil
+	return fmt.Sprintf("JSON_CONTAINS(meta_fields, '$.%s', %s)", key, jsonStringSQLLiteral(fmt.Sprintf("%v", value))), nil
 }
 
 func (t *MetaFilterTranslator) translateNotContains(key string, value interface{}, flt map[string]interface{}) string {
 	text := coerceString(value, flt)
-	escaped := escapeSQLString(text)
-	return fmt.Sprintf("NOT JSON_CONTAINS(meta_fields, '$.%s', '\"%s\"')", key, escaped)
+	return fmt.Sprintf("NOT JSON_CONTAINS(meta_fields, '$.%s', %s)", key, jsonStringSQLLiteral(text))
 }
 
 func (t *MetaFilterTranslator) translateStartWith(key string, value interface{}, flt map[string]interface{}) string {
@@ -416,6 +411,17 @@ func csvOrList(value interface{}, flt map[string]interface{}) []interface{} {
 	}
 
 	return result
+}
+
+// jsonStringSQLLiteral preserves a JSON string through the Infinity SDK SQL
+// parser. Its string-constant parser unescapes backslash-quoted quotes, but
+// leaves doubled SQL apostrophes intact. JSON Unicode escapes keep quotes and
+// backslashes out of that intermediate syntax while preserving the JSON value.
+func jsonStringSQLLiteral(value string) string {
+	encoded, _ := json.Marshal(value) // Marshaling a string cannot fail.
+	payload := string(encoded[1 : len(encoded)-1])
+	payload = strings.NewReplacer(`\\`, `\u005c`, `\"`, `\u0022`, "'", `\u0027`).Replace(payload)
+	return `'"` + payload + `"'`
 }
 
 // escapeSQLString escapes SQL string
