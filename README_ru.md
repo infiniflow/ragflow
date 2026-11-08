@@ -75,7 +75,7 @@
 
 Попробуйте облачную версию: [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
-Для локального развёртывания см. раздел [Локальное развёртывание](#-самостоятельное-развёртывание).
+Для локального развёртывания см. раздел [Локальное развёртывание](#-локальное-развёртывание).
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
