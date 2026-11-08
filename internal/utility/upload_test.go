@@ -159,3 +159,42 @@ func TestFetchRemoteFileSafelyCancelsDNS(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeUploadInfoContentPreservesMarkdown(t *testing.T) {
+	data := []byte("# HTML lesson\n\n```html\n<div class=\"lesson\">Hello &amp; welcome</div>\n```\n")
+	for _, tc := range []struct {
+		name        string
+		contentType string
+	}{
+		{"lesson.md", "text/markdown; charset=utf-8"},
+		{"lesson.MD", "text/plain; charset=utf-8"},
+		{"lesson.markdown", "application/octet-stream"},
+		{"lesson.md", ""},
+		{"lesson.mdx", "text/plain"},
+	} {
+		t.Run(tc.name+"/"+tc.contentType, func(t *testing.T) {
+			name, contentType, got := NormalizeUploadInfoContent(tc.name, tc.contentType, data)
+			if name != tc.name || contentType != "text/markdown" || !bytes.Equal(got, data) {
+				t.Fatalf("got (%q, %q, %q), want (%q, text/markdown, %q)", name, contentType, got, tc.name, data)
+			}
+		})
+	}
+}
+
+func TestNormalizeUploadInfoContentStillConvertsHTMLAndRecognizesPDF(t *testing.T) {
+	html := []byte("<html><body><p>Lesson</p></body></html>")
+	for _, contentType := range []string{"text/html; charset=utf-8", "application/octet-stream"} {
+		name, _, got := NormalizeUploadInfoContent("lesson.html", contentType, html)
+		if name != "lesson.html" || string(got) != "Lesson" {
+			t.Fatalf("got (%q, %q), want (lesson.html, Lesson)", name, got)
+		}
+	}
+	name, _, got := NormalizeUploadInfoContent("lesson.md", "text/html", html)
+	if name != "lesson.md" || string(got) != "Lesson" {
+		t.Fatalf("explicit HTML MIME was not honored: (%q, %q)", name, got)
+	}
+	name, contentType, got := NormalizeUploadInfoContent("lesson.md", "text/plain", []byte("%PDF-1.7"))
+	if name != "lesson.md.pdf" || contentType != "application/pdf" || string(got) != "%PDF-1.7" {
+		t.Fatalf("PDF magic was not preserved: (%q, %q, %q)", name, contentType, got)
+	}
+}

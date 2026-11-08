@@ -111,9 +111,14 @@ func FetchRemoteFileSafelyWithTimeout(ctx context.Context, rawURL string, maxSiz
 
 // NormalizeUploadInfoContent normalizes an uploaded file's filename, content
 // type, and content bytes: detects PDF by magic bytes, converts HTML to
-// readable Markdown, and fixes the filename extension.
+// readable Markdown, preserves Markdown source, and fixes the filename extension.
 func NormalizeUploadInfoContent(filename, contentType string, data []byte) (string, string, []byte) {
 	lowerCT := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	if GetFileType(filename) == FileTypeMarkdown &&
+		(lowerCT == "" || lowerCT == "text/plain" || lowerCT == "application/octet-stream" || lowerCT == "text/markdown") &&
+		!BytesLooksLikePDF(data) {
+		return filename, "text/markdown", data
+	}
 	if lowerCT == "" {
 		lowerCT = http.DetectContentType(data)
 	}
