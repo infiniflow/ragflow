@@ -93,15 +93,6 @@
 
 その他の更新については[リリースノート全文](https://ragflow.io/docs/dev/release_notes)を参照してください。
 
-
-## 🎉 続きを楽しみに
-
-⭐️ リポジトリをスター登録して、エキサイティングな新機能やアップデートを最新の状態に保ちましょう！すべての新しいリリースに関する即時通知を受け取れます！ 🌟
-
-<div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
-</div>
-
 ## 🌟 主な特徴
 
 ### 🍭 **"Quality in, quality out"**
@@ -187,7 +178,7 @@ Docker は迅速な評価、統合テスト、本番環境に、ソース起動�
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc3
+   git checkout v1.0.0
    docker compose -f docker-compose.yml up -d
    ```
 

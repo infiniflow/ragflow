@@ -42,10 +42,13 @@ func TestBoxToCropSpace(t *testing.T) {
 }
 
 func TestCopyBoxAnnotations(t *testing.T) {
-	src := &pdf.TextBox{R: 1, C: 2, RTop: 10, RBott: 20, H: 3, HTop: 30, HBott: 40,
+	src := &pdf.TextBox{HasTableAnnotations: true, R: 1, C: 2, RTop: 10, RBott: 20, H: 3, HTop: 30, HBott: 40,
 		HLeft: 50, HRight: 60, CLeft: 70, CRight: 80, SP: 4}
 	dst := &pdf.TextBox{}
 	CopyBoxAnnotations(dst, src)
+	if !dst.HasTableAnnotations {
+		t.Error("annotation flag not copied")
+	}
 	if dst.R != 1 || dst.C != 2 || dst.RTop != 10 || dst.RBott != 20 {
 		t.Error("R/C fields not copied")
 	}

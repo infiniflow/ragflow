@@ -57,6 +57,7 @@ import {
   type CitationKey,
 } from '@/utils/citation-utils';
 import { getDirAttribute } from '@/utils/text-direction';
+import * as HoverCardPrimitive from '@radix-ui/react-hover-card';
 
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import { useLoadingPause } from '@/hooks/use-loading-pause';
@@ -80,18 +81,19 @@ const getChunkKey = (match: string) => parseCitationIndex(match);
 const isArtifactUrl = (url?: string) =>
   Boolean(url && url.includes('/api/v1/documents/artifact/'));
 
-const fetchArtifactBlob = async (url: string): Promise<Blob> => {
-  const response = await request(url, {
+const fetchArtifactResponse = (url: string) =>
+  request(url, {
     method: 'GET',
     responseType: 'blob',
   });
 
-  return response.data as Blob;
-};
+const fetchArtifactBlob = async (url: string): Promise<Blob> =>
+  (await fetchArtifactResponse(url)).data as Blob;
 
 const getArtifactName = (url?: string, fallback?: string) =>
   fallback || url?.split('/').pop()?.split('?')[0] || 'artifact';
 
+/** Downloads attachment responses and previews other artifact blobs. */
 function ArtifactLink({
   href,
   className,
@@ -105,7 +107,19 @@ function ArtifactLink({
     async (e: React.MouseEvent<HTMLAnchorElement>) => {
       e.preventDefault();
       try {
-        const blob = await fetchArtifactBlob(href);
+        const response = await fetchArtifactResponse(href);
+        const blob = response.data as Blob;
+        const contentDisposition = response.response.headers.get(
+          'content-disposition',
+        );
+        if (
+          typeof contentDisposition === 'string' &&
+          /^\s*attachment(?:;|$)/i.test(contentDisposition)
+        ) {
+          downloadFileFromBlob(blob, getArtifactName(href));
+          return;
+        }
+
         const objectUrl = URL.createObjectURL(blob);
         window.open(objectUrl, '_blank', 'noopener,noreferrer');
         window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60 * 1000);
@@ -438,9 +452,11 @@ function MarkdownContent({
                 </bdi>
               </HoverCardTrigger>
               {chunkItem && (
-                <HoverCardContent className="max-w-3xl">
-                  {renderPopoverContent(chunkKey)}
-                </HoverCardContent>
+                <HoverCardPrimitive.Portal>
+                  <HoverCardContent className="max-w-3xl">
+                    {renderPopoverContent(chunkKey)}
+                  </HoverCardContent>
+                </HoverCardPrimitive.Portal>
               )}
             </HoverCard>
           );

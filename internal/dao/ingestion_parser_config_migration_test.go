@@ -379,7 +379,7 @@ func TestMigrateIngestionParserConfigsVersionAndEmptyRows(t *testing.T) {
 		skip    bool
 	}{
 		{"", false}, {"v0.27.2", false}, {"v1.0.0-rc1", false},
-		{"v1.0.0-rc2.dev2", false},
+		{"v1.0.0-rc2.dev2", true},
 		{ingestionParserConfigTargetVersion, true}, {"v1.0.0", true},
 	} {
 		t.Run(tc.version, func(t *testing.T) {

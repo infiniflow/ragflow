@@ -369,3 +369,115 @@ func TestMigrateIngestionTaskDocumentIDUnique_Integration(t *testing.T) {
 		}
 	})
 }
+
+// TestMigrateNameColumnWidths_Integration verifies that the legacy 32-character
+// pipeline_title and 100-character tenant.name columns are widened in place and
+// keep their existing values. It needs a throwaway database because it creates
+// and drops the real table names.
+func TestMigrateNameColumnWidths_Integration(t *testing.T) {
+	dsn := os.Getenv("RAGFLOW_TEST_MYSQL_DSN")
+	if dsn == "" {
+		t.Skip("RAGFLOW_TEST_MYSQL_DSN unset: this test needs a throwaway MySQL database")
+	}
+
+	db, err := gorm.Open(newMigrationAwareDialector(dsn), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to connect: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to get database connection pool: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := sqlDB.Close(); err != nil {
+			t.Errorf("failed to close database connection pool: %v", err)
+		}
+	})
+
+	if db.Migrator().HasTable("pipeline_operation_log") || db.Migrator().HasTable("tenant") {
+		t.Skip("test database already contains pipeline_operation_log or tenant; use a throwaway database")
+	}
+	t.Cleanup(func() {
+		db.Exec("DROP TABLE IF EXISTS pipeline_operation_log")
+		db.Exec("DROP TABLE IF EXISTS tenant")
+	})
+
+	ctx := context.Background()
+	if err := db.Exec(`CREATE TABLE pipeline_operation_log (
+		id varchar(32) PRIMARY KEY,
+		pipeline_title varchar(32) NULL,
+		KEY idx_pipeline_operation_log_pipeline_title (pipeline_title)
+	)`).Error; err != nil {
+		t.Fatalf("create pipeline_operation_log: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE tenant (
+		id varchar(32) PRIMARY KEY,
+		name varchar(100) NULL
+	)`).Error; err != nil {
+		t.Fatalf("create tenant: %v", err)
+	}
+
+	legacyTitle := strings.Repeat("a", 32)
+	legacyTenant := strings.Repeat("b", 100)
+	if err := db.Exec(`INSERT INTO pipeline_operation_log (id, pipeline_title) VALUES (?, ?)`, "log-1", legacyTitle).Error; err != nil {
+		t.Fatalf("seed pipeline_operation_log: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO tenant (id, name) VALUES (?, ?)`, "tenant-1", legacyTenant).Error; err != nil {
+		t.Fatalf("seed tenant: %v", err)
+	}
+
+	if err := migrateNameColumnWidths(ctx, db); err != nil {
+		t.Fatalf("migrateNameColumnWidths failed: %v", err)
+	}
+
+	if got := columnLength(t, db, &entity.PipelineOperationLog{}, "pipeline_title"); got != common.PipelineTitleLimit {
+		t.Fatalf("pipeline_title width = %d, want %d", got, common.PipelineTitleLimit)
+	}
+	if !db.Migrator().HasIndex(&entity.PipelineOperationLog{}, "idx_pipeline_operation_log_pipeline_title") {
+		t.Fatal("pipeline_title index was dropped by the width migration")
+	}
+	if got := columnLength(t, db, &entity.Tenant{}, "name"); got != common.TenantNameLimit {
+		t.Fatalf("tenant.name width = %d, want %d", got, common.TenantNameLimit)
+	}
+
+	var title string
+	if err := db.Raw(`SELECT pipeline_title FROM pipeline_operation_log WHERE id = ?`, "log-1").Scan(&title).Error; err != nil {
+		t.Fatalf("read pipeline_title: %v", err)
+	}
+	if title != legacyTitle {
+		t.Fatalf("pipeline_title = %q, want %q", title, legacyTitle)
+	}
+	var tenantName string
+	if err := db.Raw(`SELECT name FROM tenant WHERE id = ?`, "tenant-1").Scan(&tenantName).Error; err != nil {
+		t.Fatalf("read tenant.name: %v", err)
+	}
+	if tenantName != legacyTenant {
+		t.Fatalf("tenant.name = %q, want %q", tenantName, legacyTenant)
+	}
+
+	// The widened columns must accept values that previously failed with 1406.
+	longTitle := strings.Repeat("c", common.PipelineTitleLimit)
+	if err := db.Exec(`UPDATE pipeline_operation_log SET pipeline_title = ? WHERE id = ?`, longTitle, "log-1").Error; err != nil {
+		t.Fatalf("store widened pipeline_title: %v", err)
+	}
+}
+
+func columnLength(t *testing.T, db *gorm.DB, model any, column string) int64 {
+	t.Helper()
+	types, err := db.Migrator().ColumnTypes(model)
+	if err != nil {
+		t.Fatalf("read column types: %v", err)
+	}
+	for _, ct := range types {
+		if ct.Name() != column {
+			continue
+		}
+		length, ok := ct.Length()
+		if !ok {
+			t.Fatalf("column %s does not report a length", column)
+		}
+		return length
+	}
+	t.Fatalf("column %s not found", column)
+	return 0
+}

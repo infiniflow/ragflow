@@ -3,17 +3,19 @@ package models
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
 )
 
-// TestPaddleOCRUploadFilename checks content-derived image extensions and the
+// TestOCRUploadFilename checks content-derived image extensions and the
 // unchanged PDF default, including both TIFF byte orders.
-func TestPaddleOCRUploadFilename(t *testing.T) {
+func TestOCRUploadFilename(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		data []byte
@@ -30,7 +32,7 @@ func TestPaddleOCRUploadFilename(t *testing.T) {
 		{"unrecognized", []byte("unknown"), "document.pdf"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := paddleOCRUploadFilename(tc.data); got != tc.want {
+			if got := ocrUploadFilename(tc.data); got != tc.want {
 				t.Fatalf("filename=%q, want %q", got, tc.want)
 			}
 		})
@@ -279,6 +281,39 @@ func TestPaddleOCRResolvedAPIConfig(t *testing.T) {
 			t.Errorf("BaseURL = %q, want http://instance.test", got)
 		}
 	})
+}
+
+func TestPaddleOCRModelOCRFileRejectsInvalidEndpoint(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		fileURL *string
+	}{
+		{name: "multipart upload"},
+		{name: "file URL", fileURL: ptr("https://files.example/document.pdf")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			defer func() {
+				if panicValue := recover(); panicValue != nil {
+					t.Fatalf("OCRFile panicked for invalid endpoint: %v", panicValue)
+				}
+			}()
+
+			driver := NewPaddleOCRModel(nil, URLSuffix{OCR: "v2/ocr/jobs"})
+			baseURL := "https://ocr.example/%zz"
+			modelName := "PaddleOCR-VL-1.6"
+			response, err := driver.OCRFile(t.Context(), &modelName, []byte("%PDF-1.4"), tc.fileURL, &APIConfig{BaseURL: &baseURL}, nil, nil)
+			if response != nil {
+				t.Fatalf("OCRFile response = %+v, want nil", response)
+			}
+			if err == nil || !strings.Contains(err.Error(), "failed to create submit request") {
+				t.Fatalf("OCRFile error = %v, want submit request creation error", err)
+			}
+			var escapeErr url.EscapeError
+			if !errors.As(err, &escapeErr) {
+				t.Fatalf("OCRFile error = %v, want wrapped URL escape error", err)
+			}
+		})
+	}
 }
 
 // TestPaddleOCRModelOCRFileUnwrapsAPIKeyPayload pins the layering contract the

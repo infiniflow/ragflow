@@ -25,8 +25,7 @@ import (
 // TestUpdateDatasetDocument_PipelineChangeWithoutVersionRejected verifies the C5/G3
 // contract: switching a document to a different dataflow canvas WITHOUT supplying a
 // concrete pipeline_version_id is REJECTED (design section 3: empty version is no
-// longer silently backfilled to the canvas latest). The UI must surface the red
-// Missing badge and the "版本信息缺失" error instead.
+// longer silently backfilled to the canvas latest).
 func TestUpdateDatasetDocument_PipelineChangeWithoutVersionRejected(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -43,7 +42,7 @@ func TestUpdateDatasetDocument_PipelineChangeWithoutVersionRejected(t *testing.T
 
 	// Switch to canvasB, omitting pipeline_version_id entirely.
 	parseType := 2 // Pipeline mode
-	_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1",
+	_, code, err := testDocumentService(t).UpdateDatasetDocument(documentTestContext(t.Context()), "kb-1", "doc-1",
 		&UpdateDatasetDocumentRequest{ParseType: &parseType, PipelineID: sptr(canvasB)},
 		map[string]bool{"pipeline_id": true})
 	if err == nil || code == common.CodeSuccess {

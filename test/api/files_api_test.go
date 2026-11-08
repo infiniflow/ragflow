@@ -100,8 +100,8 @@ func TestFilesFolderCreateFallbackAndRenameDuplicate(t *testing.T) {
 		"src_file_ids": []string{secondID},
 		"new_name":     strings.ToUpper(stringField(t, second, "name")),
 	}, nil)
-	if restOK(t, caseOnly)["data"] != true {
-		t.Fatalf("case-only rename data = %v, want true", caseOnly.JSON["data"])
+	if data, exists := restOK(t, caseOnly)["data"]; exists {
+		t.Fatalf("case-only rename data must be omitted, got %v", data)
 	}
 }
 
@@ -206,8 +206,8 @@ func TestFilesLinkToDatasetsContract(t *testing.T) {
 			"file_ids": []string{fileID},
 			"kb_ids":   []string{},
 		}, nil)
-		if restOK(t, r)["data"] != true {
-			t.Fatalf("link data = %v, want true", r.JSON["data"])
+		if data, exists := restOK(t, r)["data"]; exists {
+			t.Fatalf("link data must be omitted, got %v", data)
 		}
 	})
 }

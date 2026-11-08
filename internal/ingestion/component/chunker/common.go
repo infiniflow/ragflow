@@ -125,21 +125,9 @@ func splitByDelim(text string, pattern *regexp.Regexp, keepDelim bool) []string 
 		return []string{text}
 	}
 	if !keepDelim {
-		// Drop mode: keep only the text between delimiters, skipping any
-		// delimiter that sits at the very start (no preceding text).
 		var out []string
-		cursor := 0
-		for _, idx := range idxs {
-			start, end := idx[0], idx[1]
-			if start == cursor {
-				cursor = end
-				continue
-			}
-			out = append(out, text[cursor:start])
-			cursor = end
-		}
-		if cursor < len(text) {
-			out = append(out, text[cursor:])
+		for _, part := range splitDroppedDelimiterRanges(len(text), idxs) {
+			out = append(out, text[part[0]:part[1]])
 		}
 		return out
 	}
@@ -157,6 +145,21 @@ func splitByDelim(text string, pattern *regexp.Regexp, keepDelim bool) []string 
 		out = append(out, tail)
 	}
 	return out
+}
+
+func splitDroppedDelimiterRanges(length int, matches [][]int) [][2]int {
+	var ranges [][2]int
+	cursor := 0
+	for _, match := range matches {
+		if match[0] > cursor {
+			ranges = append(ranges, [2]int{cursor, match[0]})
+		}
+		cursor = match[1]
+	}
+	if cursor < length {
+		ranges = append(ranges, [2]int{cursor, length})
+	}
+	return ranges
 }
 
 // foldWhitespaceSegments attaches blank runs to neighboring text without
@@ -353,40 +356,40 @@ func canonicalChunkText(ck schema.ChunkDoc) string {
 // keeps the source from colliding with ordinary chunk text.
 const mediaChunkIDPrefix = "\x00media:"
 
-// canonicalChunkID returns the deterministic chunk id: the single identity
-// used both as the MinIO object key and as ck["id"]. The id formula (ChunkID
-// over chunkIDSource) is centralized here, so the identity that feeds the
-// hash lives in exactly one place. The decorator in register.go re-derives
-// ck["id"] from the same already-finalized text as a fallback for chunks that
-// bypassed the streamed crop-upload path; the two routes cannot disagree
-// because a chunk is either stamped by crop-upload (and the decorator reuses
-// that id) or computed by the decorator fallback — never both. Position-only
-// title media instead reuses the coordinate-and-text id finalized after headings
-// are applied.
+// canonicalChunkID derives the crop/upload key from the canonical chunk source.
+// The decorator in register.go reuses stamped IDs or derives the same identity
+// from finalized text, media payloads and crop regions for chunks without a stamp.
+// Title-family media IDs also retain source identity when context or headings
+// give distinct captionless media the same text.
 func canonicalChunkID(docID string, ck schema.ChunkDoc) string {
-	// Title-family position-only media is stamped with both coordinates and
-	// finalized heading text. Keep that identity through crop uploads,
-	// including failed-upload retries.
-	if isMediaChunk(ck) && ck.ID != "" {
+	// A title-family captionless image can already carry a source/payload/body
+	// identity. Only the title crop bridge marks these finalized IDs; other
+	// chunkers may carry upstream IDs whose text they have since rewritten.
+	if ck.ID != "" && string(ck.Extra[titleMediaContextIDKey]) == "true" {
 		return ck.ID
 	}
 	return common.ChunkID(docID, chunkIDSource(ck))
 }
 
 // chunkIDSource returns the identity string hashed into a chunk id. For a
-// media chunk whose canonical text is empty — a captionless image — hashing
+// media chunk whose canonical text is empty - a captionless image - hashing
 // the text alone would give every such chunk in a document the same id
 // (ChunkID(docID, "")), silently overwriting images in MinIO and merging
-// index entries, so a stable per-image identity is folded in instead.
-// Non-empty media text also folds its region in: two figures can share a
-// caption ("Figure", "图"), and their previews must not collapse onto one id.
-// Text chunks hash their text unchanged.
+// index entries. Position-only figures use the crop region; otherwise a
+// stable per-image payload identity is folded in. Non-empty media text also
+// folds its region in: two figures can share a caption (for example "Figure"),
+// and their previews must not collapse onto one id. Text chunks hash their text
+// unchanged.
 func chunkIDSource(ck schema.ChunkDoc) string {
 	text := canonicalChunkText(ck)
+	matrix := mergePositionMatrix(ck.PDFPositions, ck.Positions)
 	if text == "" {
+		if isMediaChunk(ck) && len(matrix) > 0 {
+			return mediaTextIdentity(text, true, matrix)
+		}
 		return mediaChunkIdentity(ck.Image, ck.ImgID, ck.MediaRef)
 	}
-	return mediaTextIdentity(text, isMediaChunk(ck), mergePositionMatrix(ck.PDFPositions, ck.Positions))
+	return mediaTextIdentity(text, isMediaChunk(ck), matrix)
 }
 
 // mediaTextIdentity appends a region digest to a media chunk's text identity.
@@ -430,7 +433,8 @@ func chunkPositionMatrix(ck map[string]any) [][]any {
 // a digest of the image payload when present (identical images collapse onto
 // one id, which is harmless — they carry identical bytes), else the
 // content-addressed media reference, else the uploaded image id. Empty when
-// the chunk has none of them, leaving the id the plain empty-text hash.
+// the chunk has none of them; callers with PDF crop regions use
+// mediaTextIdentity instead.
 func mediaChunkIdentity(image, imgID string, ref *entity.MediaRef) string {
 	if image != "" {
 		sum := sha256.Sum256([]byte(image))

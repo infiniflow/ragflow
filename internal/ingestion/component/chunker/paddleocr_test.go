@@ -20,9 +20,7 @@ import (
 )
 
 func TestPaddleOCRHighlightsThroughPipeline(t *testing.T) {
-	previous := common.AllowAnyHostForTest
-	common.AllowAnyHostForTest = true
-	t.Cleanup(func() { common.AllowAnyHostForTest = previous })
+	t.Setenv(common.EnvAllowAnyHost, "true")
 	tokenizer.SetEngineType("infinity")
 	t.Cleanup(func() { tokenizer.SetEngineType("") })
 	body, err := os.ReadFile("../../../entity/models/testdata/paddleocr_layout.json")
@@ -44,7 +42,7 @@ func TestPaddleOCRHighlightsThroughPipeline(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result := parser.PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
+	result := parser.OCRPDFResult(t.Context(), "PaddleOCR", "sample.pdf", data, response)
 	if result.Err != nil {
 		t.Fatal(result.Err)
 	}
@@ -118,7 +116,7 @@ func TestPaddleOCRChunkersPreserveColumnReadingOrder(t *testing.T) {
 		{Text: "RightFirst", BBox: []float64{600, 10, 1000, 60}},
 		{Text: "RightSecond", BBox: []float64{600, 200, 1000, 260}},
 	}}}}
-	result := parser.PaddleOCRPDFResult(t.Context(), "columns.pdf", data, response)
+	result := parser.OCRPDFResult(t.Context(), "PaddleOCR", "columns.pdf", data, response)
 	if result.Err != nil {
 		t.Fatal(result.Err)
 	}
@@ -196,7 +194,7 @@ func TestPaddleOCRCaptionsRemainBodyInTitleChunking(t *testing.T) {
 		{Text: "Table caption", Label: "table_title"},
 		{Text: "Ordinary body.", Label: "text"},
 	}}}}
-	result := parser.PaddleOCRPDFResult(t.Context(), "captions.pdf", nil, response)
+	result := parser.OCRPDFResult(t.Context(), "PaddleOCR", "captions.pdf", nil, response)
 	if result.Err != nil {
 		t.Fatal(result.Err)
 	}

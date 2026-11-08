@@ -285,8 +285,15 @@ export const TreeSelect = forwardRef<HTMLButtonElement, TreeSelectProps>(
   ) {
     const [open, setOpen] = useState(false);
     const [searchTerm, setSearchTerm] = useState('');
+    // Mount with defaultExpandAll means expanded from the first paint: the
+    // render-phase adjustment below only fires on a data identity change, so
+    // a component mounting with data already in hand would otherwise stay
+    // collapsed until the next fetch.
     const [internalExpandedIds, setInternalExpandedIds] = useState<Set<string>>(
-      new Set(),
+      () =>
+        defaultExpandAll && controlledExpandedIds === undefined
+          ? collectBranchIds(data)
+          : new Set(),
     );
 
     const isExpansionControlled = controlledExpandedIds !== undefined;

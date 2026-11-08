@@ -98,7 +98,7 @@ import (
 	"ragflow/internal/tokenizer"
 )
 
-const ComponentNameTokenizer = "Tokenizer"
+const ComponentNameTokenizer = schema.ComponentNameTokenizer
 
 // titleExtRE strips a trailing file-extension (e.g. ".pdf") from the
 // upstream document name before tokenizing it. Mirrors the python
@@ -297,17 +297,32 @@ func newTokenizerComponent(params map[string]any, resolver EmbedderResolver) (ru
 			}
 		}
 		if v, ok := params["fields"]; ok {
+			// Replace (not append) so fields = ["summary"] does not
+			// silently embed the default "text" as well. Blank names
+			// are dropped: an empty selection keeps the default
+			// instead of selecting no text at all.
+			var fields []string
+			add := func(s string) {
+				if s = strings.TrimSpace(s); s != "" {
+					fields = append(fields, s)
+				}
+			}
 			switch t := v.(type) {
 			case string:
-				p.Fields = []string{t}
+				add(t)
 			case []any:
 				for _, x := range t {
 					if s, ok := x.(string); ok {
-						p.Fields = append(p.Fields, s)
+						add(s)
 					}
 				}
 			case []string:
-				p.Fields = append(p.Fields, t...)
+				for _, s := range t {
+					add(s)
+				}
+			}
+			if len(fields) > 0 {
+				p.Fields = fields
 			}
 		}
 	}
@@ -1166,18 +1181,6 @@ func getStringOr(m map[string]any, key, def string) string {
 		return v
 	}
 	return def
-}
-
-// firstNonEmpty returns the first non-empty value, or "" when all are empty.
-// Used to walk a settings precedence chain (global choice → legacy per-family
-// choice).
-func firstNonEmpty(values ...string) string {
-	for _, v := range values {
-		if v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 // cloneInputs returns a shallow copy of m with room for one extra key.

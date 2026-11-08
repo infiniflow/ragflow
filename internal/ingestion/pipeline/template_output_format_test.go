@@ -21,6 +21,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"ragflow/internal/common"
 )
 
 // parserSetupParamsKeys are the Parser params keys that are NOT per-family
@@ -108,7 +110,7 @@ func assertNoParserOutputFormatInGraph(t *testing.T, ref string, root map[string
 	for _, rawNode := range nodes {
 		node, _ := rawNode.(map[string]any)
 		id, _ := node["id"].(string)
-		if !IsParserComponentID(id) {
+		if !common.IsParserComponentID(id) {
 			continue
 		}
 		data, _ := node["data"].(map[string]any)

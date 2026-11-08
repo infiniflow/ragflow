@@ -88,7 +88,7 @@ class TestChatAssistantsDelete:
         chat = chat_factory()
         response = client.delete(f"/chats/{chat.id}", None).json()
         assert response["code"] == 0, response
-        assert response["data"] is True
+        assert "data" not in response, response
         assert client.list_chats(id=chat.id) == []
 
     @pytest.mark.p2
@@ -97,11 +97,11 @@ class TestChatAssistantsDelete:
         chats = [chat_factory() for _ in range(2)]
         ids = {chat.id for chat in chats}
         # The session preflight verifies an empty dedicated tenant; refuse deletion if it changed.
-        response = client.get("/chats", {"page_size": 0}).json()
+        response = client.get("/chats", {"page_size": 100}).json()
         assert response["code"] == 0, response
         assert response["data"]["total"] == len(ids)
         assert {chat["id"] for chat in response["data"]["chats"]} == ids
-        assert {chat.id for chat in client.list_chats(page_size=0)} == ids
+        assert {chat.id for chat in client.list_chats(page_size=100)} == ids
         if selection == "omitted":
             client.delete_chats(delete_all=True)
         elif selection == "none":

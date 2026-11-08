@@ -166,6 +166,226 @@ func TestAnnotateTableBoxes(t *testing.T) {
 	}
 }
 
+// TestAnnotateTableBoxes_NoRowMatchLeavesRMissing pins Python's missing-R
+// state: a box that overlaps no row line must stay unassigned (-1), not fall
+// back to Go's zero value (row 0). The old behavior silently folded a row the
+// TSR model missed into the header row.
+func TestAnnotateTableBoxes_NoRowMatchLeavesRMissing(t *testing.T) {
+	grid := [][]pdf.TSRCell{
+		{{X0: 0, Y0: 0, X1: 100, Y1: 20, Label: "table row"}},
+	}
+	boxes := []pdf.TextBox{
+		{X0: 0, X1: 100, Top: 100, Bottom: 120, Text: "成都公司", LayoutType: pdf.LayoutTypeTable},
+	}
+
+	AnnotateTableBoxes(boxes, grid)
+
+	if boxes[0].R != -1 {
+		t.Errorf("unmatched box R = %d, want -1 (missing); a zero value makes GroupBoxesByRC fold it into row 0", boxes[0].R)
+	}
+}
+
+// TestAnnotateTableBoxes_RawRowBandsOverrideSpanExtendedGrid pins that R is
+// matched against the raw TSR row lines, not the span-extended grid cells.
+// grid[0] covers both physical rows because a rowspan cell was extended over
+// them; a box in the second physical row must still get R=1.
+func TestAnnotateTableBoxes_RawRowBandsOverrideSpanExtendedGrid(t *testing.T) {
+	grid := [][]pdf.TSRCell{
+		// The first row's bbox was extended to y=100 by a rowspan cell, but
+		// the cell itself is not a span (so it must not pull R up by span
+		// origin relocation either).
+		{{X0: 0, Y0: 0, X1: 100, Y1: 100, Label: "table row"}},
+		{{X0: 0, Y0: 20, X1: 100, Y1: 40, Label: "table row"}},
+	}
+	rows := []pdf.TSRCell{
+		{X0: 0, Y0: 0, X1: 100, Y1: 20, Label: "table row"},
+		{X0: 0, Y0: 20, X1: 100, Y1: 40, Label: "table row"},
+	}
+	boxes := []pdf.TextBox{
+		{X0: 0, X1: 100, Top: 20, Bottom: 40, Text: "第二行", LayoutType: pdf.LayoutTypeTable},
+	}
+
+	AnnotateBoxesWithGridAndRows(boxes, grid, rows)
+
+	if boxes[0].R != 1 {
+		t.Errorf("second physical row R = %d, want 1; the span-extended grid row 0 must not swallow it", boxes[0].R)
+	}
+	if boxes[0].RTop != 20 || boxes[0].RBott != 40 {
+		t.Errorf("R band = (%v, %v), want (20, 40)", boxes[0].RTop, boxes[0].RBott)
+	}
+}
+
+// TestAnnotateTableBoxes_ColumnBoundsIgnoreSpanExtension pins that C is
+// matched against the real column boundaries, recovered from non-spanning
+// cells. Using grid[0] directly would let a wide spanning header cover every
+// column and assign all boxes under it to the span's origin column.
+func TestAnnotateTableBoxes_ColumnBoundsIgnoreSpanExtension(t *testing.T) {
+	grid := [][]pdf.TSRCell{
+		{
+			{X0: 0, Y0: 0, X1: 300, Y1: 40, Label: "table spanning cell"},
+			{X0: 100, Y0: 0, X1: 200, Y1: 20, Label: "table column header"},
+			{X0: 200, Y0: 0, X1: 300, Y1: 20, Label: "table column header"},
+		},
+		{
+			{X0: 0, Y0: 20, X1: 100, Y1: 40, Label: "table row"},
+			{X0: 100, Y0: 20, X1: 200, Y1: 40, Label: "table row"},
+			{X0: 200, Y0: 20, X1: 300, Y1: 40, Label: "table row"},
+		},
+	}
+	boxes := []pdf.TextBox{
+		{X0: 250, X1: 300, Top: 0, Bottom: 20, Text: "第三列", LayoutType: pdf.LayoutTypeTable},
+	}
+
+	AnnotateTableBoxes(boxes, grid)
+
+	if boxes[0].C != 2 {
+		t.Errorf("box in the third column got C=%d, want 2; a span-extended grid[0] column must not absorb it", boxes[0].C)
+	}
+}
+
+// TestAnnotateTableBoxes_MovesRowspanOriginToTopRow pins that a rowspan cell
+// whose text is vertically centred in the lower row is moved to the span's
+// top row, matching Python __cal_spans (tbl[minR][minC]).
+func TestAnnotateTableBoxes_MovesRowspanOriginToTopRow(t *testing.T) {
+	grid := [][]pdf.TSRCell{
+		{{X0: 0, Y0: 0, X1: 100, Y1: 40, Label: "table spanning cell"}},
+		{{X0: 0, Y0: 20, X1: 100, Y1: 40, Label: "table row"}},
+	}
+	rows := []pdf.TSRCell{
+		{X0: 0, Y0: 0, X1: 100, Y1: 20, Label: "table row"},
+		{X0: 0, Y0: 20, X1: 100, Y1: 40, Label: "table row"},
+	}
+	boxes := []pdf.TextBox{
+		// Text is centred in the lower row, but the span starts at row 0.
+		{X0: 0, X1: 100, Top: 25, Bottom: 35, Text: "单位名称", LayoutType: pdf.LayoutTypeTable},
+	}
+
+	AnnotateBoxesWithGridAndRows(boxes, grid, rows)
+
+	if boxes[0].R != 0 {
+		t.Errorf("rowspan origin R = %d, want 0 (top row of the span)", boxes[0].R)
+	}
+	if boxes[0].SP <= 0 {
+		t.Errorf("span not detected: SP=%d", boxes[0].SP)
+	}
+}
+
+func TestAnnotateBoxesWithGridAndRows_SpanUsesRowNotHeaderIndex(t *testing.T) {
+	rows := []pdf.TSRCell{
+		{X0: 0, Y0: 0, X1: 100, Y1: 100, Label: "table column header"}, // index 0
+		{X0: 0, Y0: 0, X1: 100, Y1: 40, Label: "table row"},            // index 1
+		{X0: 0, Y0: 40, X1: 100, Y1: 80, Label: "table row"},           // index 2
+	}
+	grid := [][]pdf.TSRCell{
+		{
+			{X0: 0, Y0: 0, X1: 50, Y1: 80, Label: "table spanning cell"},
+			{X0: 50, Y0: 0, X1: 100, Y1: 40, Label: "table row"},
+		},
+		{
+			{X0: 0, Y0: 40, X1: 50, Y1: 80, Label: "table row"},
+			{X0: 50, Y0: 40, X1: 100, Y1: 80, Label: "table row"},
+		},
+	}
+	boxes := []pdf.TextBox{
+		// Span text sits in the lower row but the span starts at row 1.
+		{X0: 10, X1: 40, Top: 45, Bottom: 55, Text: "span", LayoutType: pdf.LayoutTypeTable},
+		// Normal cell in the first header row.
+		{X0: 60, X1: 90, Top: 5, Bottom: 15, Text: "normal", LayoutType: pdf.LayoutTypeTable},
+	}
+
+	AnnotateBoxesWithGridAndRows(boxes, grid, rows)
+
+	if boxes[0].SP == 0 {
+		t.Fatal("span box was not annotated")
+	}
+	if boxes[0].R != 1 {
+		t.Errorf("span R = %d, want 1 (table row index); the header component is index 0", boxes[0].R)
+	}
+	if boxes[1].R != 1 {
+		t.Errorf("normal header cell R = %d, want 1", boxes[1].R)
+	}
+}
+
+func TestAnnotateBoxesWithGridAndRows_RealPDFSpanRIndex(t *testing.T) {
+	// 1.pdf header coordinates from TestGroupCellsInjectsSpanning:
+	// header band 110.9..231.0, row0 111.4..138.9, row1 138.3..231.4,
+	// rowspan span #18 135.3..229.7.
+	cells := []pdf.TSRCell{
+		{X0: 81.1, Y0: 110.4, X1: 212.6, Y1: 290.6, Label: "table column"},
+		{X0: 211.5, Y0: 110.4, X1: 249.5, Y1: 290.6, Label: "table column"},
+		{X0: 249.4, Y0: 110.4, X1: 286.1, Y1: 290.6, Label: "table column"},
+		{X0: 287.2, Y0: 110.4, X1: 331.3, Y1: 290.6, Label: "table column"},
+		{X0: 80.3, Y0: 111.4, X1: 503.0, Y1: 138.9, Label: "table row"},
+		{X0: 80.3, Y0: 138.3, X1: 502.2, Y1: 231.4, Label: "table row"},
+		{X0: 80.3, Y0: 230.3, X1: 501.8, Y1: 290.6, Label: "table row"},
+		{X0: 79.1, Y0: 110.9, X1: 503.6, Y1: 231.0, Label: "table column header"},
+		{X0: 210.3, Y0: 135.3, X1: 249.7, Y1: 229.7, Label: "table spanning cell"},
+	}
+
+	grid := (&DeepDocTableBuilder{}).GroupCells(cells)
+	if grid == nil {
+		t.Fatal("GroupCells returned nil")
+	}
+
+	boxes := []pdf.TextBox{
+		{X0: 90, X1: 200, Top: 112, Bottom: 138, Text: "h0c0", LayoutType: pdf.LayoutTypeTable},
+		{X0: 250, X1: 280, Top: 112, Bottom: 138, Text: "h0c2", LayoutType: pdf.LayoutTypeTable},
+		{X0: 290, X1: 325, Top: 112, Bottom: 138, Text: "h0c3", LayoutType: pdf.LayoutTypeTable},
+		{X0: 90, X1: 200, Top: 140, Bottom: 229, Text: "h1c0", LayoutType: pdf.LayoutTypeTable},
+		{X0: 250, X1: 280, Top: 140, Bottom: 229, Text: "h1c2", LayoutType: pdf.LayoutTypeTable},
+		{X0: 290, X1: 325, Top: 140, Bottom: 229, Text: "h1c3", LayoutType: pdf.LayoutTypeTable},
+		{X0: 220, X1: 240, Top: 160, Bottom: 180, Text: "名称", LayoutType: pdf.LayoutTypeTable},
+		{X0: 90, X1: 200, Top: 240, Bottom: 280, Text: "d0", LayoutType: pdf.LayoutTypeTable},
+		{X0: 250, X1: 280, Top: 240, Bottom: 280, Text: "d2", LayoutType: pdf.LayoutTypeTable},
+		{X0: 290, X1: 325, Top: 240, Bottom: 280, Text: "d3", LayoutType: pdf.LayoutTypeTable},
+	}
+
+	rowsBands := AnnotationRowBands(cells)
+	AnnotateBoxesWithGridAndRows(boxes, grid, rowsBands)
+
+	spanIdx, row1Idx := 6, 3
+	if boxes[spanIdx].SP == 0 {
+		t.Fatal("span box was not annotated with SP")
+	}
+	if got := spanTopRowIndex(rowsBands, cells[len(cells)-1]); got != boxes[row1Idx].R {
+		t.Errorf("span top row = %d, row1 R = %d; they must use the same annotation index", got, boxes[row1Idx].R)
+	}
+	if boxes[spanIdx].R != boxes[row1Idx].R {
+		t.Errorf("span R = %d, row1 cell R = %d; mixed R index spaces", boxes[spanIdx].R, boxes[row1Idx].R)
+	}
+
+	rows := GroupBoxesByRC(boxes)
+	if len(rows) != 3 {
+		t.Fatalf("expected 3 logical rows (2 header + 1 data), got %d: %v", len(rows), rowTexts(rows))
+	}
+	if len(rows[1]) != 4 || len(rows[2]) != 4 {
+		t.Errorf("header/data row widths = %d/%d, want 4/4", len(rows[1]), len(rows[2]))
+	}
+}
+
+func TestRowBandsSplitGridAndAnnotationSemantics(t *testing.T) {
+	cells := []pdf.TSRCell{
+		{X0: 0, Y0: 0, X1: 100, Y1: 100, Label: "table column header"},
+		{X0: 0, Y0: 0, X1: 100, Y1: 20, Label: "table row"},
+		{X0: 0, Y0: 0, X1: 10, Y1: 100, Label: "table column"},
+		{X0: 0, Y0: 20, X1: 100, Y1: 40, Label: "table row"},
+		{X0: 0, Y0: 40, X1: 100, Y1: 60, Label: "table projected row header"},
+	}
+
+	gridRows := GridRowBands(cells)
+	if len(gridRows) != 2 {
+		t.Fatalf("GridRowBands returned %d rows, want 2 (table row only): %+v", len(gridRows), gridRows)
+	}
+	if gridRows[0].Y0 != 0 || gridRows[1].Y0 != 20 {
+		t.Errorf("grid row bands = (%v, %v), want (0, 20)", gridRows[0].Y0, gridRows[1].Y0)
+	}
+
+	annotationRows := AnnotationRowBands(cells)
+	if len(annotationRows) != 4 {
+		t.Fatalf("AnnotationRowBands returned %d rows, want 4 (row + header): %+v", len(annotationRows), annotationRows)
+	}
+}
+
 // ── GroupTSRCellsToRows ─────────────────────────────────────────
 
 func TestGroupTSRCellsToRowsLabeled(t *testing.T) {

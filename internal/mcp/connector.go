@@ -25,23 +25,20 @@ import (
 // ServiceConnector implements the Connector interface using in-process
 // service layer calls, avoiding HTTP round-trips to self.
 type ServiceConnector struct {
-	userID       string
-	listDatasets func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
-	listChats    func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
-	retrieval    func(ctx context.Context, userID string, req RetrievalRequest) (string, error)
+	listDatasets func(ctx context.Context, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
+	listChats    func(ctx context.Context, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
+	retrieval    func(ctx context.Context, req RetrievalRequest) (string, error)
 }
 
 // NewServiceConnector creates a ServiceConnector.
 // The function arguments abstract the service dependencies so this package
 // does not import the service layer directly.
 func NewServiceConnector(
-	userID string,
-	listDatasetsFunc func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error),
-	listChatsFunc func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error),
-	retrievalFunc func(ctx context.Context, userID string, req RetrievalRequest) (string, error),
+	listDatasetsFunc func(ctx context.Context, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error),
+	listChatsFunc func(ctx context.Context, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error),
+	retrievalFunc func(ctx context.Context, req RetrievalRequest) (string, error),
 ) *ServiceConnector {
 	return &ServiceConnector{
-		userID:       userID,
 		listDatasets: listDatasetsFunc,
 		listChats:    listChatsFunc,
 		retrieval:    retrievalFunc,
@@ -53,7 +50,7 @@ func (c *ServiceConnector) ListDatasets(ctx context.Context, page, pageSize int,
 	var data []map[string]any
 	if pageSize == -1 {
 		for page = 1; ; page++ {
-			items, total, err := c.listDatasets(ctx, c.userID, page, 100, orderby, desc)
+			items, total, err := c.listDatasets(ctx, page, 100, orderby, desc)
 			if err != nil {
 				return "", err
 			}
@@ -67,7 +64,7 @@ func (c *ServiceConnector) ListDatasets(ctx context.Context, page, pageSize int,
 		}
 	} else {
 		var err error
-		data, _, err = c.listDatasets(ctx, c.userID, page, min(pageSize, 100), orderby, desc)
+		data, _, err = c.listDatasets(ctx, page, min(pageSize, 100), orderby, desc)
 		if err != nil {
 			return "", err
 		}
@@ -76,7 +73,7 @@ func (c *ServiceConnector) ListDatasets(ctx context.Context, page, pageSize int,
 }
 
 func (c *ServiceConnector) ListChats(ctx context.Context, page, pageSize int, orderby string, desc bool) (string, error) {
-	data, _, err := c.listChats(ctx, c.userID, page, pageSize, orderby, desc)
+	data, _, err := c.listChats(ctx, page, pageSize, orderby, desc)
 	if err != nil {
 		return "", err
 	}
@@ -101,5 +98,5 @@ func listText(data []map[string]any, chats bool) (string, error) {
 }
 
 func (c *ServiceConnector) Retrieval(ctx context.Context, req RetrievalRequest) (string, error) {
-	return c.retrieval(ctx, c.userID, req)
+	return c.retrieval(ctx, req)
 }

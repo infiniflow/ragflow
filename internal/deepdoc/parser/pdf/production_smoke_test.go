@@ -14,7 +14,7 @@ import (
 
 // TestProductionAssemblySmoke parses real PDFs through the PRODUCTION path —
 // real in-process DLA/TSR/OCR inference (MODEL_DIR; ONNX Runtime statically linked), no replay dump — and checks
-// the converged R/C grid assembly (AnnotateBoxesWithGrid + GroupBoxesByRC)
+// the converged R/C grid assembly (AnnotateBoxesWithGridAndRows + GroupBoxesByRC)
 // stays robust: parse does not crash, detected tables are not fully empty, and
 // every table has content rows. This is the non-replay sanity check for the
 // production assembly convergence.
