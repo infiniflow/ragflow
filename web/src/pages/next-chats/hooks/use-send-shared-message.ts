@@ -24,14 +24,15 @@ export const useSendButtonDisabled = (value: string) => {
 export const useGetSharedChatSearchParams = () => {
   const [searchParams] = useSearchParams();
   const data_prefix = 'data_';
+  const serializedData = JSON.stringify(
+    Array.from(searchParams.entries())
+      .filter(([key]) => key.startsWith(data_prefix))
+      .map(([key, value]) => [key.replace(data_prefix, ''), value])
+      .sort(([left], [right]) => left.localeCompare(right)),
+  );
   const data = useMemo(
-    () =>
-      Object.fromEntries(
-        Array.from(searchParams.entries())
-          .filter(([key]) => key.startsWith(data_prefix))
-          .map(([key, value]) => [key.replace(data_prefix, ''), value]),
-      ),
-    [searchParams],
+    () => Object.fromEntries(JSON.parse(serializedData)),
+    [serializedData],
   );
   return {
     from: searchParams.get('from') as SharedFrom,
@@ -60,6 +61,7 @@ export const useSendSharedMessage = () => {
     removeLatestMessage,
     addNewestAnswer,
     addNewestQuestion,
+    setDerivedMessages,
     virtualizer,
     messageContainerRef,
     removeAllMessages,
@@ -113,13 +115,14 @@ export const useSendSharedMessage = () => {
   );
 
   const fetchSessionId = useCallback(async () => {
+    setDerivedMessages([]);
     const payload = { question: '' };
     const ret = await send(completionUrl, { ...payload, ...data });
     if (isCompletionError(ret)) {
       message.error(ret?.data.message ?? 'Unknown error');
       setHasError(true);
     }
-  }, [send, completionUrl, data]);
+  }, [send, completionUrl, data, setDerivedMessages]);
 
   useEffect(() => {
     fetchSessionId();

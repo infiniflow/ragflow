@@ -16,7 +16,42 @@
 
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { MemoryRouter, useNavigate } from 'react-router';
-import { useGetSharedChatSearchParams } from './use-send-shared-message';
+import {
+  useGetSharedChatSearchParams,
+  useSendSharedMessage,
+} from './use-send-shared-message';
+
+const mockSend = jest.fn().mockResolvedValue(undefined);
+const mockSetDerivedMessages = jest.fn();
+
+jest.mock('@/hooks/logic-hooks', () => ({
+  useHandleMessageInputChange: () => ({
+    handleInputChange: jest.fn(),
+    setValue: jest.fn(),
+    value: '',
+  }),
+  useSelectDerivedMessages: () => ({
+    addNewestAnswer: jest.fn(),
+    addNewestQuestion: jest.fn(),
+    derivedMessages: [],
+    messageContainerRef: { current: null },
+    removeAllMessages: jest.fn(),
+    removeAllMessagesExceptFirst: jest.fn(),
+    removeLatestMessage: jest.fn(),
+    setDerivedMessages: mockSetDerivedMessages,
+    virtualizer: {},
+  }),
+  useSendMessageWithSse: () => ({
+    answer: {},
+    done: true,
+    send: mockSend,
+    stopOutputMessage: jest.fn(),
+  }),
+}));
+
+jest.mock('@/hooks/use-chat-request', () => ({
+  useFetchExternalChatInfo: () => ({ data: undefined }),
+}));
 
 const wrapper = ({ children }: { children: React.ReactNode }) => (
   <MemoryRouter
@@ -46,6 +81,15 @@ describe('useGetSharedChatSearchParams', () => {
 
     act(() => {
       result.current.navigate(
+        '/?from=chat&shared_id=conversation-1&theme=dark&data_tier=free&data_region=us',
+      );
+    });
+
+    await waitFor(() => expect(result.current.params.theme).toBe('dark'));
+    expect(result.current.params.data).toBe(initialData);
+
+    act(() => {
+      result.current.navigate(
         '/?from=chat&shared_id=conversation-1&data_region=eu&data_tier=pro',
       );
     });
@@ -54,5 +98,42 @@ describe('useGetSharedChatSearchParams', () => {
       expect(result.current.params.data).toEqual({ region: 'eu', tier: 'pro' }),
     );
     expect(result.current.params.data).not.toBe(initialData);
+  });
+});
+
+describe('useSendSharedMessage', () => {
+  beforeEach(() => {
+    mockSend.mockClear();
+    mockSetDerivedMessages.mockClear();
+  });
+
+  it('clears the previous session before initializing changed data', async () => {
+    const { result } = renderHook(
+      () => ({
+        navigate: useNavigate(),
+        sharedMessage: useSendSharedMessage(),
+      }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(mockSend).toHaveBeenCalledTimes(1));
+    mockSend.mockClear();
+    mockSetDerivedMessages.mockClear();
+
+    act(() => {
+      result.current.navigate(
+        '/?from=chat&shared_id=conversation-1&data_region=eu&data_tier=pro',
+      );
+    });
+
+    await waitFor(() => expect(mockSend).toHaveBeenCalledTimes(1));
+    expect(mockSetDerivedMessages).toHaveBeenCalledWith([]);
+    expect(mockSetDerivedMessages.mock.invocationCallOrder[0]).toBeLessThan(
+      mockSend.mock.invocationCallOrder[0],
+    );
+    expect(mockSend).toHaveBeenCalledWith(
+      '/api/v1/chatbots/conversation-1/completions',
+      { question: '', region: 'eu', tier: 'pro' },
+    );
   });
 });
