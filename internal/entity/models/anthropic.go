@@ -144,7 +144,14 @@ func anthropicMaxTokens(modelName string, chatModelConfig *ChatConfig) int {
 	}
 	if pm := GetProviderManager(); pm != nil {
 		if model := pm.GetModelByNameOrAlias(modelName); model != nil && model.MaxOutput != nil && *model.MaxOutput > 0 {
-			return *model.MaxOutput
+			// Several catalog aliases carry the context length in max_output
+			// (claude-sonnet-4-5: 1000000/1000000, claude-haiku-4-5:
+			// 200000/200000). A cap that leaves no room for the prompt is not
+			// a generation cap, and the Messages API rejects it as
+			// max_tokens, so such entries keep the fallback.
+			if model.ContextLength == nil || *model.MaxOutput < *model.ContextLength {
+				return *model.MaxOutput
+			}
 		}
 	}
 	return anthropicDefaultMaxTokens

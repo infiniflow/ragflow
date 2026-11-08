@@ -770,6 +770,7 @@ func TestAnthropicMaxTokensAndThinking(t *testing.T) {
 		{"caller max_tokens wins", "claude-sonnet-4-5-20250929", &ChatConfig{MaxTokens: &explicit}, explicit, ""},
 		{"catalog max_output when unset", "claude-sonnet-4-5-20250929", &ChatConfig{}, 64000, ""},
 		{"unknown model keeps fallback", "claude-haiku-5-5", nil, anthropicDefaultMaxTokens, ""},
+		{"catalog cap equal to context keeps fallback", "claude-haiku-4-5", nil, anthropicDefaultMaxTokens, ""},
 		{"thinking disabled is sent", "claude-sonnet-4-5-20250929", &ChatConfig{Thinking: &thinkingOff}, 64000, "disabled"},
 		{"thinking enabled stays model default", "claude-sonnet-4-5-20250929", &ChatConfig{Thinking: &thinkingOn}, 64000, ""},
 	} {
