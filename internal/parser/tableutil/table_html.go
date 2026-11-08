@@ -88,11 +88,11 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 		}
 		if isHTMLElement(n, "tr") {
 			var cells []CellInput
-			anyTh := false
+			hasColumnHeader := false
 			for c := n.FirstChild; c != nil; c = c.NextSibling {
 				if isHTMLElement(c, "td") || isHTMLElement(c, "th") {
-					if isHTMLElement(c, "th") {
-						anyTh = true
+					if isColumnHeaderCell(c) {
+						hasColumnHeader = true
 					}
 					cells = append(cells, CellInput{
 						Text:    cellText(c),
@@ -103,11 +103,11 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 			}
 			if inFoot {
 				footRows = append(footRows, cells)
-				footFlags = append(footFlags, anyTh)
+				footFlags = append(footFlags, hasColumnHeader)
 				return
 			}
 			rows = append(rows, cells)
-			headerFlags = append(headerFlags, anyTh)
+			headerFlags = append(headerFlags, hasColumnHeader)
 			// Do not recurse into the row's cells: a nested <table> inside a
 			// cell is folded into that cell's text by cellText, not parsed as
 			// a separate row.
@@ -370,6 +370,22 @@ const (
 	maxColSpan = 1000
 	maxRowSpan = 65534
 )
+
+// isColumnHeaderCell excludes th elements explicitly scoped to rows.
+func isColumnHeaderCell(n *html.Node) bool {
+	if !isHTMLElement(n, "th") {
+		return false
+	}
+	for _, attr := range n.Attr {
+		if attr.Key == "scope" {
+			switch strings.ToLower(strings.TrimSpace(attr.Val)) {
+			case "row", "rowgroup":
+				return false
+			}
+		}
+	}
+	return true
+}
 
 // attrInt reads a non-negative integer HTML attribute, clamping 0, negative,
 // non-numeric, and above-max values (to 1 and max respectively) so a

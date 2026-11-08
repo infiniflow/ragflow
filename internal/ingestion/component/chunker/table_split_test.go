@@ -421,3 +421,26 @@ func TestSplitLargeTableWarnsWhenHeaderExceedsBudget(t *testing.T) {
 		}
 	})
 }
+
+func TestSplitLargeHTMLTableKeepsScopedRowHeadersWithTheirData(t *testing.T) {
+	table, err := tableutil.ParseTableHTML(`<table>
+		<tr><th scope="col">Region</th><th scope="col">Orders</th></tr>
+		<tr><th scope="row">North</th><td>10</td></tr>
+		<tr><th scope="rowgroup">South</th><td>20</td></tr>
+	</table>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts, _, headerRows := splitLargeTable(table, 45, charTokens, "")
+	if headerRows != 1 || len(parts) != 2 {
+		t.Fatalf("split produced %d parts and %d header rows, want 2 parts and 1 header row (parsed header count: %d)", len(parts), headerRows, table.HeaderRows)
+	}
+	for i, want := range [][][]string{
+		{{"Region", "Orders"}, {"North", "10"}},
+		{{"Region", "Orders"}, {"South", "20"}},
+	} {
+		if got := parts[i].CellTexts(); !reflect.DeepEqual(got, want) {
+			t.Errorf("part %d = %v, want %v", i, got, want)
+		}
+	}
+}
