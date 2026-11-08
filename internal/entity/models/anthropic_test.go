@@ -81,7 +81,7 @@ func TestAnthropicToolOptionalFields(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body := make(map[string]any)
-			err := applyAnthropicChatConfig(body, &ChatConfig{Tools: []any{map[string]any{"type": "function", "function": tc.function}}})
+			err := applyAnthropicChatConfig(body, "claude-sonnet-4-5-20250929", &ChatConfig{Tools: []any{map[string]any{"type": "function", "function": tc.function}}})
 			if tc.wantErr {
 				if err == nil {
 					t.Fatal("expected invalid parameters to be rejected")
@@ -108,12 +108,19 @@ func TestAnthropicToolOptionalFields(t *testing.T) {
 
 func TestAnthropicChatHappyPath(t *testing.T) {
 	withSSRFBypass(t)
+	dir, restore := setupProviderTestDir(t, "anthropic.json")
+	defer restore()
+	if err := InitProviderManager(dir); err != nil {
+		t.Fatalf("InitProviderManager: %v", err)
+	}
 	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "claude-sonnet-4-5-20250929" {
 			t.Errorf("model=%v", body["model"])
 		}
-		if body["max_tokens"] != float64(1024) {
-			t.Errorf("max_tokens=%v want 1024", body["max_tokens"])
+		// The catalog declares 64000 for this model, and an unset max_tokens
+		// must use that instead of the driver's 1024 fallback.
+		if body["max_tokens"] != float64(64000) {
+			t.Errorf("max_tokens=%v want 64000", body["max_tokens"])
 		}
 		msgs, ok := body["messages"].([]interface{})
 		if !ok || len(msgs) != 1 {
@@ -736,5 +743,55 @@ func TestAnthropicUnsupportedMethods(t *testing.T) {
 	}
 	if _, err := m.ShowTask(ctx, "task-id", &APIConfig{ApiKey: &apiKey}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("ShowTask: got %v", err)
+	}
+}
+
+// The Messages API requires max_tokens, so an unset value must resolve to the
+// model's declared max_output instead of the legacy 1024 fallback. Thinking
+// must reach the wire when the caller disables it, because the API keeps a
+// model's server-side thinking on unless the request turns it off.
+func TestAnthropicMaxTokensAndThinking(t *testing.T) {
+	dir, restore := setupProviderTestDir(t, "anthropic.json")
+	defer restore()
+	if err := InitProviderManager(dir); err != nil {
+		t.Fatalf("InitProviderManager: %v", err)
+	}
+
+	explicit := 4096
+	thinkingOn := true
+	thinkingOff := false
+	for _, tc := range []struct {
+		name       string
+		model      string
+		config     *ChatConfig
+		wantTokens int
+		wantThink  string
+	}{
+		{"caller max_tokens wins", "claude-sonnet-4-5-20250929", &ChatConfig{MaxTokens: &explicit}, explicit, ""},
+		{"catalog max_output when unset", "claude-sonnet-4-5-20250929", &ChatConfig{}, 64000, ""},
+		{"unknown model keeps fallback", "claude-haiku-5-5", nil, anthropicDefaultMaxTokens, ""},
+		{"thinking disabled is sent", "claude-sonnet-4-5-20250929", &ChatConfig{Thinking: &thinkingOff}, 64000, "disabled"},
+		{"thinking enabled stays model default", "claude-sonnet-4-5-20250929", &ChatConfig{Thinking: &thinkingOn}, 64000, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := make(map[string]any)
+			if err := applyAnthropicChatConfig(body, tc.model, tc.config); err != nil {
+				t.Fatalf("applyAnthropicChatConfig: %v", err)
+			}
+			if got := body["max_tokens"]; got != tc.wantTokens {
+				t.Errorf("max_tokens=%v, want %d", got, tc.wantTokens)
+			}
+			got, present := body["thinking"]
+			if tc.wantThink == "" {
+				if present {
+					t.Errorf("thinking=%v, want it omitted", got)
+				}
+				return
+			}
+			thinking, ok := got.(map[string]any)
+			if !ok || thinking["type"] != tc.wantThink {
+				t.Errorf("thinking=%v, want type %q", got, tc.wantThink)
+			}
+		})
 	}
 }

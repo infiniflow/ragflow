@@ -32,6 +32,11 @@ import (
 
 const anthropicVersion = "2023-06-01"
 
+// anthropicDefaultMaxTokens is the generation budget the driver falls back to
+// when neither the caller nor the model catalog declares one. The Messages API
+// requires max_tokens, so the field can never be omitted.
+const anthropicDefaultMaxTokens = 1024
+
 // AnthropicModel implements ModelDriver for Claude models through the
 // Anthropic Messages API.
 type AnthropicModel struct {
@@ -97,7 +102,7 @@ func (a *AnthropicModel) ChatWithMessages(ctx context.Context, modelName string,
 	if systemPrompt != "" {
 		reqBody["system"] = systemPrompt
 	}
-	if err := applyAnthropicChatConfig(reqBody, withClaudeSamplingPolicy(modelName, chatModelConfig)); err != nil {
+	if err := applyAnthropicChatConfig(reqBody, modelName, withClaudeSamplingPolicy(modelName, chatModelConfig)); err != nil {
 		return nil, err
 	}
 
@@ -128,15 +133,34 @@ func (a *AnthropicModel) ChatWithMessages(ctx context.Context, modelName string,
 	return parseChatCompletionResponse(body, chatModelConfig, modelUsage, parseAnthropicChatResponse)
 }
 
-func applyAnthropicChatConfig(reqBody map[string]interface{}, chatModelConfig *ChatConfig) error {
-	reqBody["max_tokens"] = 1024
+// anthropicMaxTokens resolves the request's max_tokens. A caller-set value
+// wins; otherwise the model's declared max_output is sent instead of the
+// historical 1024, which is smaller than the replies compilation and agent
+// prompts ask for — a model that thinks before answering can spend the whole
+// budget on thinking blocks and return no text at all.
+func anthropicMaxTokens(modelName string, chatModelConfig *ChatConfig) int {
+	if chatModelConfig != nil && chatModelConfig.MaxTokens != nil {
+		return *chatModelConfig.MaxTokens
+	}
+	if pm := GetProviderManager(); pm != nil {
+		if model := pm.GetModelByNameOrAlias(modelName); model != nil && model.MaxOutput != nil && *model.MaxOutput > 0 {
+			return *model.MaxOutput
+		}
+	}
+	return anthropicDefaultMaxTokens
+}
+
+func applyAnthropicChatConfig(reqBody map[string]interface{}, modelName string, chatModelConfig *ChatConfig) error {
+	reqBody["max_tokens"] = anthropicMaxTokens(modelName, chatModelConfig)
 	if chatModelConfig == nil {
 		return nil
 	}
-	if chatModelConfig.MaxTokens != nil {
-		reqBody["max_tokens"] = *chatModelConfig.MaxTokens
-	} else {
-		reqBody["max_tokens"] = 1024 // default when not configured
+	// The Messages API keeps a model's server-side thinking on unless the
+	// request turns it off, so an explicit Thinking=false must reach the wire.
+	// Unset or true is left to the model default: manual thinking needs a
+	// budget_tokens value the caller has not supplied.
+	if chatModelConfig.Thinking != nil && !*chatModelConfig.Thinking {
+		reqBody["thinking"] = map[string]any{"type": "disabled"}
 	}
 	if chatModelConfig.Temperature != nil {
 		reqBody["temperature"] = *chatModelConfig.Temperature
@@ -653,7 +677,7 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	if systemPrompt != "" {
 		reqBody["system"] = systemPrompt
 	}
-	if err := applyAnthropicChatConfig(reqBody, withClaudeSamplingPolicy(modelName, modelConfig)); err != nil {
+	if err := applyAnthropicChatConfig(reqBody, modelName, withClaudeSamplingPolicy(modelName, modelConfig)); err != nil {
 		return err
 	}
 
