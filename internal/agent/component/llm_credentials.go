@@ -253,7 +253,14 @@ func resolveTenantCompositeModel(ctx context.Context, db *gorm.DB, modelRef, api
 		}
 		return unresolved()
 	}
-	provider, err := dao.NewTenantModelProviderDAO().GetByTenantIDAndProviderName(ctx, db, tid, providerName)
+	owner, err := dao.NewUserTenantDAO().GetOwnerByTenantID(ctx, db, tid)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return notFound()
+	}
+	if err != nil {
+		return "", "", apiKey, baseURL, 0, false, fmt.Errorf("resolve tenant owner %q: %w", tid, err)
+	}
+	provider, err := dao.NewTenantModelProviderDAO().GetByTenantIDAndUserIDAndProviderName(ctx, db, tid, owner.UserID, providerName)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return notFound()
 	}

@@ -144,7 +144,7 @@ func setupLegacyProviderModels(t *testing.T, modelType int, status string) *gorm
 	t.Helper()
 	db := setupComponentTestDB(t)
 	for _, row := range []any{
-		&entity.TenantModelProvider{ID: "zhipu-provider", TenantID: "tenant-1", ProviderName: "ZHIPU-AI"},
+		&entity.TenantModelProvider{ID: "zhipu-provider", UserID: "tenant-1", TenantID: "tenant-1", ProviderName: "ZHIPU-AI"},
 		&entity.TenantModelInstance{ID: "zhipu-instance", ProviderID: "zhipu-provider", InstanceName: "default", APIKey: "saved-key", Status: "active", Extra: `{"base_url":"https://saved.example/v1"}`},
 		&entity.TenantModel{ID: "zhipu-model", ProviderID: "zhipu-provider", InstanceID: "zhipu-instance", ModelName: "glm-4v", ModelType: modelType, Status: status},
 	} {
