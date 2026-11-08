@@ -10,7 +10,7 @@ import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
 import { Message } from '@/interfaces/database/chat';
 import { get } from 'lodash';
 import trim from 'lodash/trim';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { v4 as uuid } from 'uuid';
 
@@ -24,10 +24,14 @@ export const useSendButtonDisabled = (value: string) => {
 export const useGetSharedChatSearchParams = () => {
   const [searchParams] = useSearchParams();
   const data_prefix = 'data_';
-  const data = Object.fromEntries(
-    Array.from(searchParams.entries())
-      .filter(([key]) => key.startsWith(data_prefix))
-      .map(([key, value]) => [key.replace(data_prefix, ''), value]),
+  const data = useMemo(
+    () =>
+      Object.fromEntries(
+        Array.from(searchParams.entries())
+          .filter(([key]) => key.startsWith(data_prefix))
+          .map(([key, value]) => [key.replace(data_prefix, ''), value]),
+      ),
+    [searchParams],
   );
   return {
     from: searchParams.get('from') as SharedFrom,
@@ -45,7 +49,7 @@ export const useSendSharedMessage = () => {
   const {
     from,
     sharedId: conversationId,
-    data: data,
+    data,
   } = useGetSharedChatSearchParams();
   const { handleInputChange, value, setValue } = useHandleMessageInputChange();
   const completionUrl = `/api/v1/${from === SharedFrom.Agent ? 'agentbots' : 'chatbots'}/${conversationId}/completions`;
@@ -115,7 +119,7 @@ export const useSendSharedMessage = () => {
       message.error(ret?.data.message ?? 'Unknown error');
       setHasError(true);
     }
-  }, [send, completionUrl]);
+  }, [send, completionUrl, data]);
 
   useEffect(() => {
     fetchSessionId();
