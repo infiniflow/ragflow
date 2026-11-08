@@ -9,6 +9,21 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+# v1.0.0
+
+Released on Nov 6, 2026.
+
+After three release candidates, we’re thrilled to announce that RAGFlow 1.0 is now generally available and ready for production. We encourage all users to upgrade to RAGFlow 1.0 GA for improved stability and performance.
+
+Update
+- Fixed several critical bugs reported by the community.
+- Added and updated support for several models and model providers.
+
+Upgrading
+- From v1.0.0-rc3: Existing data is fully compatible. You can upgrade directly.
+- From v0.27.2: Data migration runs automatically when the RAGFlow Docker container starts.
+- From versions earlier than v0.27.2: Please follow the documentation to migrate your data.
+
 ## v1.0.0-rc3
 
 Released on Oct 30, 2026.
