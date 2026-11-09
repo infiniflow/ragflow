@@ -350,6 +350,44 @@ def test_extract_native_archive_replaces_cached_tree_when_platform_changes(tmp_p
     assert (target / "lib" / "libpdfium.a").read_bytes() == b"!<arch>\namd64-pdfium"
 
 
+def test_extract_native_archive_replaces_cached_tree_when_hash_changes(tmp_path):
+    """Updating archive content replaces a cached tree even when platform stays identical."""
+    def write_pdfium_tar(path, payload):
+        with tarfile.open(path, "w:gz") as tf:
+            for rel, data in [
+                ("lib/libpdfium.a", payload),
+                ("include/fpdfview.h", b"// header"),
+            ]:
+                info = tarfile.TarInfo(rel)
+                info.size = len(data)
+                tf.addfile(info, io.BytesIO(data))
+
+    archive_v1 = tmp_path / "pdfium-v1.tgz"
+    archive_v2 = tmp_path / "pdfium-v2.tgz"
+    write_pdfium_tar(archive_v1, b"!<arch>\npdfium-v1")
+    write_pdfium_tar(archive_v2, b"!<arch>\npdfium-v2")
+
+    target = tmp_path / "pdfium-static"
+    required = native.pdfium_required_files("darwin")
+    native._extract_native_archive(
+        str(archive_v1),
+        str(target),
+        required,
+        platform=("darwin", "arm64"),
+        archive_hash=native._sha256_of(str(archive_v1)),
+    )
+    assert (target / "lib" / "libpdfium.a").read_bytes() == b"!<arch>\npdfium-v1"
+
+    native._extract_native_archive(
+        str(archive_v2),
+        str(target),
+        required,
+        platform=("darwin", "arm64"),
+        archive_hash=native._sha256_of(str(archive_v2)),
+    )
+    assert (target / "lib" / "libpdfium.a").read_bytes() == b"!<arch>\npdfium-v2"
+
+
 @pytest.mark.parametrize("kind", ["traversal", "absolute", "symlink", "hardlink", "fifo", "device"])
 def test_native_archive_rejects_unsafe_members(tmp_path, kind):
     target = tmp_path / "native"

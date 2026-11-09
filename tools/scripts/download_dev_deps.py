@@ -355,7 +355,7 @@ def _valid_download(filename):
     return True
 
 
-def _extract_native_archive(archive_path, target, required_files, version=None, platform=None):
+def _extract_native_archive(archive_path, target, required_files, version=None, platform=None, archive_hash=None):
     """Extract ARCHIVE_PATH into TARGET, verifying REQUIRED_FILES (and, for .a
     files, an optional null-delimited VERSION stamp) before promoting the
     staged tree.
@@ -369,13 +369,18 @@ def _extract_native_archive(archive_path, target, required_files, version=None, 
 
     def complete(directory, check_platform=False):
         """Return True when directory holds all required_files, version stamps, and matching platform."""
-        if check_platform and platform_token is not None:
+        if check_platform and (platform_token is not None or archive_hash is not None):
             stamp_path = os.path.join(directory, ".ragflow_platform")
             if not os.path.isfile(stamp_path):
                 return False
             with open(stamp_path, encoding="utf-8") as stamp_file:
-                if stamp_file.read().strip() != platform_token:
-                    return False
+                lines = [line.strip() for line in stamp_file if line.strip()]
+            stamp_platform = lines[0] if lines else ""
+            stamp_hash = lines[1] if len(lines) > 1 else ""
+            if platform_token is not None and stamp_platform != platform_token:
+                return False
+            if archive_hash is not None and stamp_hash != archive_hash:
+                return False
         for name in required_files:
             path = os.path.join(directory, name)
             if not os.path.isfile(path) or os.path.getsize(path) == 0:
@@ -400,9 +405,14 @@ def _extract_native_archive(archive_path, target, required_files, version=None, 
             archive.extractall(staging, members=members)
         if not complete(staging):
             raise RuntimeError(f"{archive_path} is missing required native files or version {version}")
-        if platform_token is not None:
+        if platform_token is not None or archive_hash is not None:
             with open(os.path.join(staging, ".ragflow_platform"), "w", encoding="utf-8") as stamp_file:
-                stamp_file.write(f"{platform_token}\n")
+                if platform_token is not None:
+                    stamp_file.write(f"{platform_token}\n")
+                else:
+                    stamp_file.write("\n")
+                if archive_hash is not None:
+                    stamp_file.write(f"{archive_hash}\n")
         if os.path.isdir(target):
             shutil.rmtree(target)
         os.replace(staging, target)
@@ -762,8 +772,16 @@ def main():
             print(f"  Skipping extraction: {archive} not found")
             continue
         target = os.path.join(NATIVE_LIBS_DIR, subdir)
+        archive_hash = _sha256_of(archive_path) if subdir == "pdfium-static" else None
         try:
-            _extract_native_archive(archive_path, target, required_files, version, platform=(goos, goarch))
+            _extract_native_archive(
+                archive_path,
+                target,
+                required_files,
+                version,
+                platform=(goos, goarch) if subdir == "pdfium-static" else None,
+                archive_hash=archive_hash,
+            )
         except (tarfile.TarError, EOFError, RuntimeError):
             os.unlink(archive_path)
             raise

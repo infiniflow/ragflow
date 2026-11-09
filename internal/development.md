@@ -184,14 +184,25 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 > fi
 >
 > export CGO_CFLAGS="-I${RAGFLOW_DEPS}/office_oxide/include/office_oxide_c"
-> export CGO_LDFLAGS="\
->     ${RAGFLOW_DEPS}/office_oxide/lib/liboffice_oxide.a \
->     ${RAGFLOW_DEPS}/pdfium-static/lib/libpdfium.a \
->     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++.a \
->     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++abi.a \
->     ${RAGFLOW_DEPS}/pdf_oxide/lib/${PLATFORM}/libpdf_oxide.a \
->     ${ORT_LINK} \
->     ${SYS_LIBS}"
+> if [ "$TARGET_OS" = "darwin" ]; then
+>   # macOS (ld64): PDFium uses system libc++; bundled libc++.a / libc++abi.a
+>   # are not present in the macOS pdfium-static distribution.
+>   export CGO_LDFLAGS="\
+>       ${RAGFLOW_DEPS}/office_oxide/lib/liboffice_oxide.a \
+>       ${RAGFLOW_DEPS}/pdfium-static/lib/libpdfium.a \
+>       ${RAGFLOW_DEPS}/pdf_oxide/lib/${PLATFORM}/libpdf_oxide.a \
+>       ${ORT_LINK} \
+>       ${SYS_LIBS}"
+> else
+>   export CGO_LDFLAGS="\
+>       ${RAGFLOW_DEPS}/office_oxide/lib/liboffice_oxide.a \
+>       ${RAGFLOW_DEPS}/pdfium-static/lib/libpdfium.a \
+>       ${RAGFLOW_DEPS}/pdfium-static/lib/libc++.a \
+>       ${RAGFLOW_DEPS}/pdfium-static/lib/libc++abi.a \
+>       ${RAGFLOW_DEPS}/pdf_oxide/lib/${PLATFORM}/libpdf_oxide.a \
+>       ${ORT_LINK} \
+>       ${SYS_LIBS}"
+> fi
 > ```
 >
 > All four native libraries are statically linked — no `LD_LIBRARY_PATH` or `-Wl,-rpath` needed.
