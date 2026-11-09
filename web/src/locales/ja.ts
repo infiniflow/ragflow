@@ -2483,9 +2483,6 @@ export default {
       oneChunkTitle: '注記',
       oneChunkDescription:
         '解析されたすべてのセクションが順番に1つのチャンクにマージされます。',
-      flattenMediaToText: 'ビジョンモデルを無効化',
-      flattenMediaToTextTip:
-        '画像や表のセクションをプレーンテキストとして扱い、ビジョンによる拡張処理をスキップします。',
       enableChildrenDelimiters: '子チャンクを検索に使用する',
       merge: 'マージ',
       split: '分割',

@@ -2785,9 +2785,6 @@ Nümunə: Virtual host üslubu`,
       oneChunkTitle: 'Qeyd',
       oneChunkDescription:
         'Təhlil edilmiş bütün bölmələr ardıcıllıqla bir hissədə birləşdiriləcək.',
-      flattenMediaToText: 'Görmə modelini söndür',
-      flattenMediaToTextTip:
-        'Şəkil və cədvəl bölmələrini adi mətn kimi qəbul edir və görmə modeli ilə təkmilləşdirməni ötürür.',
       enableChildrenDelimiters: 'Alt hissələr axtarış üçün istifadə olunur',
       merge: 'Birləşdir',
       split: 'Böl',

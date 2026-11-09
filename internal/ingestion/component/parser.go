@@ -301,17 +301,15 @@ func imageSetupRunsOCR(setup schema.ParserSetup) bool {
 func defaultSetups() map[string]schema.ParserSetup {
 	s := map[string]schema.ParserSetup{
 		"pdf": {
-			"parse_method":          "deepdoc",
-			"flatten_media_to_text": false,
-			"remove_toc":            false,
-			"remove_header_footer":  false,
-			"suffix":                []string{"pdf"},
+			"parse_method":         "deepdoc",
+			"remove_toc":           false,
+			"remove_header_footer": false,
+			"suffix":               []string{"pdf"},
 		},
 		"spreadsheet": {
-			"parse_method":          "deepdoc",
-			"flatten_media_to_text": false,
-			"html4excel":            false,
-			"suffix":                []string{"xls", "xlsx", "csv"},
+			"parse_method": "deepdoc",
+			"html4excel":   false,
+			"suffix":       []string{"xls", "xlsx", "csv"},
 		},
 		"doc": {
 			"remove_toc":           false,
@@ -319,15 +317,13 @@ func defaultSetups() map[string]schema.ParserSetup {
 			"suffix":               []string{"doc"},
 		},
 		"docx": {
-			"flatten_media_to_text": false,
-			"remove_toc":            false,
-			"remove_header_footer":  false,
-			"suffix":                []string{"docx"},
+			"remove_toc":           false,
+			"remove_header_footer": false,
+			"suffix":               []string{"docx"},
 		},
 		"markdown": {
-			"flatten_media_to_text": false,
-			"suffix":                []string{"md", "markdown", "mdx"},
-			"remove_toc":            false,
+			"suffix":     []string{"md", "markdown", "mdx"},
+			"remove_toc": false,
 		},
 		"text&code": {
 			"suffix": []string{

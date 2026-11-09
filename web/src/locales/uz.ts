@@ -2685,9 +2685,6 @@ export default {
       oneChunkTitle: 'Eslatma',
       oneChunkDescription:
         'Tahlil qilingan barcha bo‘limlar tartib bilan bitta bo‘lakka birlashtiriladi.',
-      flattenMediaToText: 'Vizual modelni o‘chirish',
-      flattenMediaToTextTip:
-        'Rasm va jadval bo‘limlarini oddiy matn sifatida qarab, vizual yaxshilashni o‘tkazib yuboradi.',
       enableChildrenDelimiters: 'Qidiruv uchun bola bo‘laklar ishlatiladi',
       merge: 'Birlashtirish',
       split: 'Bo‘lish',

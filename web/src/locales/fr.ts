@@ -2551,9 +2551,6 @@ Idéal pour : les documents avec un contenu fluide et contextuellement lié — 
       oneChunkTitle: 'Note',
       oneChunkDescription:
         'Toutes les sections analysées seront fusionnées dans un seul bloc.',
-      flattenMediaToText: 'Désactiver le modèle de vision',
-      flattenMediaToTextTip:
-        "Traite les sections d'images et de tableaux comme du texte brut et ignore l'amélioration par vision.",
       enableChildrenDelimiters:
         'Les blocs enfants sont utilisés pour la récupération',
       merge: 'Fusionner',
