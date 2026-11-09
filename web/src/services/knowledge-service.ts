@@ -157,6 +157,7 @@ const mapChunkPayloadToRest = (payload: Record<string, any>) => ({
       ? undefined
       : payload.available_int === 1),
   image_base64: payload.image_base64,
+  image_update_mode: payload.image_update_mode,
 });
 
 const getAvailableParam = (available?: number) => {
@@ -257,8 +258,17 @@ const chunkService = {
     const datasetId = getDatasetId(payload);
     const documentId = getDocumentId(payload);
     const chunkId = payload.chunk_id || payload.id;
+    // Editing a chunk image replaces the picture the chunk already holds.
+    // The API defaults to append, which would stack the new image below the
+    // old one, so an upload without an explicit mode must ask for replace.
+    const imageUpdateMode =
+      payload.image_update_mode ??
+      (payload.image_base64 ? 'replace' : undefined);
     return request.patch(api.chunkDetail(datasetId, documentId, chunkId), {
-      data: mapChunkPayloadToRest(payload),
+      data: {
+        ...mapChunkPayloadToRest(payload),
+        image_update_mode: imageUpdateMode,
+      },
     });
   },
   getChunk: async (params: Record<string, any>) => {
