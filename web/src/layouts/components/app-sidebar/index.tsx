@@ -1,21 +1,33 @@
 import { Button } from '@/components/ui/button';
 import { EnterpriseHeaderUpgradeBadge } from '@/ee/layouts/components/header-enterprise';
+import { useDatasetSidebarCollapse } from '@/hooks/use-dataset-sidebar-collapse';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
-import { LucideChevronRight, LucidePanelLeftClose } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router';
-import { IntegrationsNavGroup, NavItemLink } from './nav-item';
-import { NavItems } from './navigation';
 import {
-  SidebarCollapseProvider,
-  useSidebarCollapse,
-} from './use-sidebar-collapse';
+  LucideChevronRight,
+  LucidePanelLeftClose,
+  LucidePanelLeftOpen,
+} from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { Link, useLocation } from 'react-router';
+import { IntegrationsNavGroup, NavItemLink } from './nav-item';
+import { matchesPath, NavItems } from './navigation';
+import { useSidebarCollapse } from './use-sidebar-collapse';
 import { UserFooter } from './user-footer';
 
 function AppSidebarContent() {
   const { t } = useTranslation();
   const { collapsed, toggleCollapsed } = useSidebarCollapse();
+  const {
+    collapsed: datasetSidebarCollapsed,
+    toggleCollapsed: toggleDatasetSidebar,
+  } = useDatasetSidebarCollapse();
+  const { pathname } = useLocation();
+
+  // While the dataset secondary sidebar is hidden, the logo slot becomes the
+  // expand entry for it (dataset routes only).
+  const showDatasetSidebarExpand =
+    datasetSidebarCollapsed && matchesPath(pathname, Routes.DatasetBase);
 
   return (
     <aside
@@ -30,13 +42,27 @@ function AppSidebarContent() {
           !collapsed && 'md:justify-start',
         )}
       >
-        <Link
-          to={Routes.Root}
-          aria-label="RAGFlow"
-          className="flex size-10 shrink-0 items-center justify-center"
-        >
-          <img src="/logo.svg" alt="RAGFlow logo" className="size-10" />
-        </Link>
+        {showDatasetSidebarExpand ? (
+          <div className="flex size-10 shrink-0 items-center justify-center">
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={t('sidebar.expandSidebar')}
+              title={t('sidebar.expandSidebar')}
+              onClick={toggleDatasetSidebar}
+            >
+              <LucidePanelLeftOpen className="size-4" />
+            </Button>
+          </div>
+        ) : (
+          <Link
+            to={Routes.Root}
+            aria-label="RAGFlow"
+            className="flex size-10 shrink-0 items-center justify-center"
+          >
+            <img src="/logo.svg" alt="RAGFlow logo" className="size-10" />
+          </Link>
+        )}
         {!collapsed && <EnterpriseHeaderUpgradeBadge />}
         {!collapsed && (
           <Button
@@ -85,9 +111,5 @@ function AppSidebarContent() {
 }
 
 export function AppSidebar() {
-  return (
-    <SidebarCollapseProvider>
-      <AppSidebarContent />
-    </SidebarCollapseProvider>
-  );
+  return <AppSidebarContent />;
 }

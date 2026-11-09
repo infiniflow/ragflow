@@ -449,7 +449,7 @@ const FileLogsTable: FC<FileLogsTableProps> = ({
             </TableRow>
           ))}
         </TableHeader>
-        <TableBody className="relative min-w-[1280px] overflow-auto">
+        <TableBody className="relative">
           {table.getRowModel().rows?.length ? (
             table.getRowModel().rows.map((row) => (
               <TableRow

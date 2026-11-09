@@ -11,6 +11,7 @@ const SidebarCollapsedStorageKey = 'ragflow-sidebar-collapsed';
 
 interface SidebarCollapseContextValue {
   collapsed: boolean;
+  setCollapsed: (collapsed: boolean) => void;
   toggleCollapsed: () => void;
 }
 
@@ -31,8 +32,8 @@ export function SidebarCollapseProvider({ children }: PropsWithChildren) {
   }, [setCollapsed]);
 
   const value = useMemo(
-    () => ({ collapsed, toggleCollapsed }),
-    [collapsed, toggleCollapsed],
+    () => ({ collapsed, setCollapsed, toggleCollapsed }),
+    [collapsed, setCollapsed, toggleCollapsed],
   );
 
   return (
