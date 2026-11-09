@@ -9,6 +9,7 @@ import (
 	"ragflow/internal/common"
 	"strings"
 	"testing"
+	"time"
 )
 
 func newAnthropicServer(t *testing.T, expectedPath string, handler func(t *testing.T, body map[string]interface{}, w http.ResponseWriter)) *httptest.Server {
@@ -801,5 +802,24 @@ func TestAnthropicMaxTokensAndThinking(t *testing.T) {
 				t.Errorf("thinking=%v, want type %q", got, tc.wantThink)
 			}
 		})
+	}
+}
+
+// A streaming request may now carry the catalog's full max_output. Anthropic
+// produces about 128k tokens per hour, so a 128k budget needs an hour even
+// when every event arrives on time; the fixed floor still bounds a stall.
+func TestAnthropicStreamTimeoutFollowsTheCatalogBudget(t *testing.T) {
+	for _, tc := range []struct {
+		maxTokens int
+		want      time.Duration
+	}{
+		{0, streamCallTimeout},
+		{1024, streamCallTimeout},
+		{64000, 30 * time.Minute},
+		{128000, time.Hour},
+	} {
+		if got := anthropicStreamTimeout(tc.maxTokens); got != tc.want {
+			t.Errorf("anthropicStreamTimeout(%d) = %v, want %v", tc.maxTokens, got, tc.want)
+		}
 	}
 }

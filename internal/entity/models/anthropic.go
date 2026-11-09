@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/common"
 	"strconv"
 	"strings"
+	"time"
 )
 
 const anthropicVersion = "2023-06-01"
@@ -45,6 +46,18 @@ const anthropicDefaultMaxTokens = 1024
 // cancels it, so it stops the derived budget at that bound; caller-set values
 // stay untouched, and the streaming path keeps the full catalog max_output.
 const anthropicNonStreamingMaxTokens = 21333
+
+// anthropicStreamTimeout bounds a streaming call by the generation budget it
+// carries. Anthropic expects a request to produce about 128k tokens per hour,
+// so the fixed streamCallTimeout cuts an active stream short once the catalog
+// budget reaches 128k; the floor still bounds a stalled request.
+func anthropicStreamTimeout(maxTokens int) time.Duration {
+	budget := time.Duration(maxTokens) * time.Hour / 128000
+	if budget < streamCallTimeout {
+		return streamCallTimeout
+	}
+	return budget
+}
 
 // AnthropicModel implements ModelDriver for Claude models through the
 // Anthropic Messages API.
@@ -706,7 +719,8 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
+	maxTokens, _ := reqBody["max_tokens"].(int)
+	ctx, cancel := context.WithTimeout(ctx, anthropicStreamTimeout(maxTokens))
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
