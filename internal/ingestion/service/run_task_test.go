@@ -33,9 +33,10 @@ func TestRunTask_ContextCancelledBeforeCheckpoint(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
-	terminal := ingestor.runTask(ctx, &entity.IngestionTask{
+	outcome := ingestor.runTask(ctx, &entity.IngestionTask{
 		ID: taskID, DocumentID: "doc-1", DatasetID: "kb-1", PipelineLogID: &runID,
 	})
+	terminal := outcome.terminal
 
 	if !terminal {
 		t.Fatal("expected true (terminal: durably recorded cancel) on cancelled ctx")
@@ -77,10 +78,11 @@ func TestRunTask_RunDocumentTaskFailureMarksFailed(t *testing.T) {
 	}
 
 	runID := "run-" + taskID
-	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
+	outcome := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 		PipelineLogID: &runID,
 	})
+	terminal := outcome.terminal
 
 	if !terminal {
 		t.Fatal("expected true (terminal: durably marked FAILED)")
@@ -123,9 +125,10 @@ func TestRunTask_PipelineCancelledMarksStopped(t *testing.T) {
 		return context.Canceled
 	}
 
-	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
+	outcome := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.STOPPING,
 	})
+	terminal := outcome.terminal
 
 	if !terminal {
 		t.Fatal("expected true (terminal: durably marked STOPPED)")
@@ -156,9 +159,10 @@ func TestRunTask_ComponentTimeoutMarksFailed(t *testing.T) {
 		return context.DeadlineExceeded
 	}
 
-	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
+	outcome := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 	})
+	terminal := outcome.terminal
 
 	if !terminal {
 		t.Fatal("expected true (terminal: durably marked FAILED)")
@@ -197,9 +201,10 @@ func TestRunTask_AlreadyCompletedAcksNotRedelivers(t *testing.T) {
 		return nil
 	}
 
-	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
+	outcome := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 	})
+	terminal := outcome.terminal
 
 	if !terminal {
 		t.Fatal("expected true (terminal: task already COMPLETED, Ack instead of redeliver)")
@@ -237,9 +242,10 @@ func TestRunTask_PipelineSucceedsConcurrentStopSettlesStopped(t *testing.T) {
 		return nil // pipeline still finishes successfully
 	}
 
-	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
+	outcome := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 	})
+	terminal := outcome.terminal
 
 	if !terminal {
 		t.Fatal("expected true (terminal: settled to STOPPED, Ack)")
@@ -268,9 +274,10 @@ func TestRunTask_SuccessfulCompletion(t *testing.T) {
 		return nil
 	}
 
-	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
+	outcome := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 	})
+	terminal := outcome.terminal
 
 	if !terminal {
 		t.Fatal("expected true (terminal: durably completed)")
@@ -302,13 +309,17 @@ func TestRunTask_EngineStartingLeavesTaskForRedelivery(t *testing.T) {
 	}
 
 	runID := "run-" + taskID
-	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
+	outcome := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
 		PipelineLogID: &runID,
 	})
+	terminal := outcome.terminal
 
 	if terminal {
 		t.Fatal("expected false (non-terminal: engine starting, leave for redelivery)")
+	}
+	if outcome.transientErr == nil {
+		t.Fatal("expected the transient cause to be reported to settleMessage")
 	}
 
 	ctx := t.Context()

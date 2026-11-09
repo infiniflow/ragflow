@@ -343,7 +343,7 @@ func (n *NatsEngine) ensureConsumer(ctx context.Context, tier common.Tier) (jets
 	consumerCfg := jetstream.ConsumerConfig{
 		Name:          spec.consumerName,
 		AckPolicy:     jetstream.AckExplicitPolicy,
-		MaxDeliver:    16,
+		MaxDeliver:    ingestionMaxDeliver,
 		MaxAckPending: 1024 * 128,
 		AckWait:       60 * time.Second,
 		BackOff:       []time.Duration{5 * time.Second, 15 * time.Second, 30 * time.Second, 60 * time.Second},
@@ -634,6 +634,12 @@ type NatsMessageHandle struct {
 	message jetstream.Msg
 }
 
+// ingestionMaxDeliver bounds how many times JetStream delivers one ingestion
+// task message. The task runner reads the same budget through
+// RedeliveryBudget so it settles a task instead of leaving it RUNNING once the
+// broker stops delivering.
+const ingestionMaxDeliver = 16
+
 func NewNatsMessageHandle(message jetstream.Msg) *NatsMessageHandle {
 	return &NatsMessageHandle{
 		message: message,
@@ -655,6 +661,23 @@ func (m *NatsMessageHandle) Ack() error {
 
 func (m *NatsMessageHandle) Nack() error {
 	return m.message.Nak()
+}
+
+// NackWithDelay asks the broker to redeliver after delay. A bare Nak is
+// redelivered immediately, so a retry that needs breathing room must use this.
+func (m *NatsMessageHandle) NackWithDelay(delay time.Duration) error {
+	return m.message.NakWithDelay(delay)
+}
+
+// RedeliveryBudget reports how many times this message was delivered and the
+// consumer's delivery limit. The boolean is false when the broker metadata is
+// unavailable, in which case the caller cannot reason about the budget.
+func (m *NatsMessageHandle) RedeliveryBudget() (delivered uint64, limit uint64, ok bool) {
+	meta, err := m.message.Metadata()
+	if err != nil {
+		return 0, 0, false
+	}
+	return meta.NumDelivered, ingestionMaxDeliver, true
 }
 
 func (m *NatsMessageHandle) InProgress() error {

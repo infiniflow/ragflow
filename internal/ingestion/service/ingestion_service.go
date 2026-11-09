@@ -814,7 +814,7 @@ func (e *Ingestor) executeTaskWithHeartbeat(ctx context.Context, taskCtx *taskpk
 		perTaskCancel()
 	}
 
-	e.settleMessage(ctx, taskCtx, hb, func(ctx context.Context) bool {
+	e.settleMessage(ctx, taskCtx, hb, func(ctx context.Context) taskOutcome {
 		return e.runTask(ctx, task)
 	})
 }
@@ -862,15 +862,42 @@ func (e *Ingestor) markFailed(ctx context.Context, taskID, reason string) bool {
 	return true
 }
 
+// taskOutcome is what runTask reports to settleMessage. A transient error
+// means the work did not finish but can succeed later, so the message must be
+// redelivered instead of Acked; the task stays RUNNING until then.
+type taskOutcome struct {
+	terminal     bool
+	transientErr error
+}
+
+// transientRedeliveryDelays mirrors the ingestion consumer BackOff. A bare Nak
+// is redelivered immediately (the consumer BackOff does not apply to it), so a
+// paused retry has to pass the delay explicitly.
+var transientRedeliveryDelays = []time.Duration{
+	5 * time.Second, 15 * time.Second, 30 * time.Second, 60 * time.Second,
+}
+
+func transientRedeliveryDelay(delivered uint64) time.Duration {
+	idx := 0
+	if delivered > 1 {
+		idx = int(delivered - 1)
+	}
+	if idx >= len(transientRedeliveryDelays) {
+		idx = len(transientRedeliveryDelays) - 1
+	}
+	return transientRedeliveryDelays[idx]
+}
+
 // runTask executes the task's business logic — document pipeline and
-// completion — behind the heartbeat. It returns whether the task reached a
-// durably-persisted terminal status.
-func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool {
+// completion — behind the heartbeat. It reports whether the task reached a
+// durably-persisted terminal status, or a transient failure that warrants a
+// redelivery.
+func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) taskOutcome {
 	select {
 	case <-ctx.Done():
 		if e.ctx.Err() != nil || e.dispatchCtx.Err() != nil {
 			common.Info(fmt.Sprintf("Task %s aborted due to ingestor shutdown, leaving for redelivery", task.ID))
-			return false
+			return taskOutcome{}
 		}
 		common.Info(fmt.Sprintf("Task %s cancelled", task.ID))
 		e.markTerminalProgress(task)
@@ -878,7 +905,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		if stopped {
 			e.recordTerminalPipelineLog(context.Background(), task, string(entity.TaskStatusCancel), "Task stopped by user.")
 		}
-		return stopped
+		return taskOutcome{terminal: stopped}
 	default:
 	}
 
@@ -901,7 +928,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		if errors.Is(err, context.Canceled) {
 			if e.ctx.Err() != nil || e.dispatchCtx.Err() != nil {
 				common.Info(fmt.Sprintf("Task %s pipeline interrupted by ingestor shutdown, leaving for redelivery", task.ID))
-				return false
+				return taskOutcome{}
 			}
 			common.Info(fmt.Sprintf("Task %s cancelled during pipeline", task.ID))
 			e.markTerminalProgress(task)
@@ -909,7 +936,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 			if stopped {
 				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusCancel), "Task stopped by user.")
 			}
-			return stopped
+			return taskOutcome{terminal: stopped}
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
 			common.Info(fmt.Sprintf("Task %s timed out during pipeline", task.ID))
@@ -918,33 +945,33 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 			if ok {
 				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), "Task timed out.")
 			}
-			return ok
+			return taskOutcome{terminal: ok}
 		}
 		// Infinity answers 2007/2008 until its log replay completes, a window
 		// that lasts minutes. Marking FAILED would Ack the message and kill a
-		// task a later delivery would complete, so leave it RUNNING: settleMessage
-		// then nacks it and the consumer BackOff (5s/15s/30s/60s) paces the retry.
+		// task a later delivery would complete, so leave it RUNNING and let
+		// settleMessage pace the redelivery.
 		if infinityengine.IsTransientUnavailable(err) {
 			common.Info(fmt.Sprintf("Task %s left for redelivery: document engine is still starting: %v", task.ID, err))
-			return false
+			return taskOutcome{transientErr: err}
 		}
 		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
 		ok := e.markFailed(ctx, task.ID, fmt.Sprintf("Task failed: %v", err))
 		if ok {
 			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task failed: %v", err))
 		}
-		return ok
+		return taskOutcome{terminal: ok}
 	}
 
 	if err := e.completeTask(ctx, task.ID); err != nil {
 		common.Error(fmt.Sprintf("Task %s update status failed", task.ID), err)
-		return false
+		return taskOutcome{}
 	}
 	e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusDone), "Task completed.")
 	e.publishPendingCompileEvent(ctx, task)
 
 	common.Info(fmt.Sprintf("Task %s completed", task.ID))
-	return true
+	return taskOutcome{terminal: true}
 }
 
 // markTerminalProgress preserves the numeric document state used by existing
@@ -1029,7 +1056,8 @@ func (e *Ingestor) settleToTerminal(ctx context.Context, taskID string) error {
 // Settlement queries the DB for the task's actual status: a terminal state
 // (COMPLETED/STOPPED/FAILED) means Ack; anything else means Nack. The body's
 // return value is advisory only — DB truth is authoritative (BP1).
-func (e *Ingestor) settleMessage(ctx context.Context, taskCtx *taskpkg.TaskContext, hb *Heartbeat, body func(context.Context) bool) (terminal bool) {
+func (e *Ingestor) settleMessage(ctx context.Context, taskCtx *taskpkg.TaskContext, hb *Heartbeat, body func(context.Context) taskOutcome) (terminal bool) {
+	outcome := taskOutcome{}
 	defer func() {
 		hb.Stop() // stop heartbeat (and wait) before ack/nack
 		if r := recover(); r != nil {
@@ -1072,10 +1100,72 @@ func (e *Ingestor) settleMessage(ctx context.Context, taskCtx *taskpkg.TaskConte
 		if dbTerminal, ok := e.safeGetTerminal(ctx, taskCtx.IngestionTask.ID); ok {
 			terminal = dbTerminal
 		}
+		if !terminal && outcome.transientErr != nil {
+			if e.deferTransientTask(ctx, taskCtx, outcome.transientErr) {
+				return
+			}
+			terminal = true
+		}
 		e.ackOrNack(taskCtx, terminal)
 	}()
-	terminal = body(taskCtx.Ctx)
+	outcome = body(taskCtx.Ctx)
+	terminal = outcome.terminal
 	return
+}
+
+// deferTransientTask settles a task whose run failed for a transient reason.
+// It asks the broker for a paced redelivery: a bare Nak is redelivered
+// immediately, so the delay is passed explicitly. Once the delivery budget is
+// spent the broker will not deliver the message again, and a RUNNING row would
+// be a dead end, so the task is marked FAILED instead. Returns true when the
+// message was settled here (Nack sent), false when the task reached a terminal
+// status and the caller should Ack.
+func (e *Ingestor) deferTransientTask(ctx context.Context, taskCtx *taskpkg.TaskContext, cause error) bool {
+	if taskCtx == nil || taskCtx.IngestionTask == nil {
+		return false
+	}
+	task := taskCtx.IngestionTask
+	var delivered, limit uint64
+	if counter, ok := taskCtx.Handle.(interface {
+		RedeliveryBudget() (uint64, uint64, bool)
+	}); ok {
+		if d, l, known := counter.RedeliveryBudget(); known {
+			delivered, limit = d, l
+		}
+	}
+	if limit > 0 && delivered >= limit {
+		reason := fmt.Sprintf("Task failed: document engine stayed unavailable: %v", cause)
+		common.Error(fmt.Sprintf("Task %s exhausted its redelivery budget", task.ID), cause)
+		if e.markFailed(ctx, task.ID, reason) {
+			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), reason)
+			return false
+		}
+		// The FAILED write did not land. Nack anyway: at the delivery limit the
+		// message stays in the stream for recovery, while an Ack would drop it.
+		e.nackTask(taskCtx, task.ID)
+		return true
+	}
+	delay := transientRedeliveryDelay(delivered)
+	if nacker, ok := taskCtx.Handle.(interface{ NackWithDelay(time.Duration) error }); ok {
+		if err := nacker.NackWithDelay(delay); err == nil {
+			return true
+		} else {
+			common.Warn(fmt.Sprintf("task %s: delayed nack failed, falling back to a plain nack: %v", task.ID, err))
+		}
+	}
+	e.nackTask(taskCtx, task.ID)
+	return true
+}
+
+// nackTask settles the message for redelivery. A nil handle (standalone/test
+// path) is a no-op.
+func (e *Ingestor) nackTask(taskCtx *taskpkg.TaskContext, taskID string) {
+	if taskCtx == nil || taskCtx.Handle == nil {
+		return
+	}
+	if err := taskCtx.Handle.Nack(); err != nil {
+		common.Error(fmt.Sprintf("nack task %s", taskID), err)
+	}
 }
 
 // safeGetTerminal queries the DB for the task's actual status and returns
