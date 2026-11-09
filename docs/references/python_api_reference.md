@@ -396,7 +396,7 @@ A dictionary representing the attributes to update, with the following keys:
 - `"pipeline_id"`: (*Body parameter*), `string`
   The ingestion pipeline ID. Required when `parse_type` is `2`.
 
-`chunk_method` is not supported by the RAGFlow 1.0 SDK; use `parse_type` together with `parser_id` or `pipeline_id`.
+`DataSet.update` does not support `chunk_method`; use `parse_type` together with `parser_id` or `pipeline_id`.
 
 #### Returns
 
@@ -476,11 +476,14 @@ Updates configurations for the current document.
 
 A dictionary representing the attributes to update, with the following keys:
 
-- `"display_name"`: `string` The name of the document to update.
+- `"name"`: `string` The revised name of the document.
 - `"meta_fields"`: `dict[str, Any]` The meta fields of the document.
-- `"parser_id"`: `string` The builtin parser ID to apply to the document. Available values include `"general"`, `"manual"`, `"qa"`, `"table"`, `"paper"`, `"book"`, `"laws"`, `"presentation"`, `"picture"`, `"one"`, `"audio"`, and `"email"`. `"chunk_method"` is accepted as a legacy alias for `"parser_id"`.
-- `"pipeline_id"`: `string` The ingestion pipeline ID. Use this instead of `"parser_id"` when the document runs a custom pipeline.
+- `"parse_type"`: `int` The parser mode: `1` for a builtin parser, `2` for an ingestion pipeline. Required whenever you set `"parser_id"` or `"pipeline_id"`.
+- `"parser_id"`: `string` The builtin parser ID. Required when `"parse_type"` is `1`; must be omitted when `"parse_type"` is `2`. Available values include `"general"`, `"manual"`, `"qa"`, `"table"`, `"paper"`, `"book"`, `"laws"`, `"presentation"`, `"picture"`, `"one"`, `"audio"`, and `"email"`.
+- `"pipeline_id"`: `string` The ingestion pipeline ID. Required when `"parse_type"` is `2`; must be omitted when `"parse_type"` is `1`.
+- `"pipeline_version_id"`: `string` The pipeline version to pin. Required when switching from one custom pipeline to another; the version must belong to `"pipeline_id"`. When switching from a builtin parser to a custom pipeline, it can be omitted to follow the pipeline's latest version.
 - `"parser_config"`: `dict[str, Any]` The parser configuration for the document. RAGFlow 1.0 stores parser settings per ingestion-pipeline component. Use component-scoped keys (keys containing `:`) as returned by the API; legacy flat keys are ignored. For example: `{"GeneralChunker:SixApplesFall": {"chunk_token_size": 128}}`.
+- `"chunk_method"`: `string` Legacy standalone selector accepted for backward compatibility when it is the only parser field sent. Do not combine it with `"parse_type"` or `"parser_id"`; use `"parse_type"` with `"parser_id"` for new code.
 
 #### Returns
 
@@ -498,12 +501,23 @@ dataset = dataset[0]
 doc = dataset.list_documents(id="wdfxb5t547d")
 doc = doc[0]
 doc.update({
+    "parse_type": 1,
     "parser_id": "general",
     "parser_config": {
         "GeneralChunker:SixApplesFall": {
             "chunk_token_size": 256,
         },
     },
+})
+```
+
+Switch the document to a custom pipeline and pin its version:
+
+```python
+doc.update({
+    "parse_type": 2,
+    "pipeline_id": "<YOUR_PIPELINE_ID>",
+    "pipeline_version_id": "<YOUR_PIPELINE_VERSION_ID>",
 })
 ```
 
@@ -612,7 +626,7 @@ A `Document` object contains the following attributes:
 - `name`: The document name. Defaults to `""`.
 - `thumbnail`: The thumbnail image of the document. Defaults to `None`.
 - `dataset_id`: The dataset ID associated with the document. Defaults to `None`.
-- `chunk_method`: The parser ID returned by the API. This is the SDK's legacy name for the API's `parser_id` field. Defaults to `"general"`.
+- `chunk_method`: The SDK's legacy name for the API's `parser_id` field. Defaults to `"naive"`. `list_documents` populates it from the API response; documents returned by `upload_documents` keep the default because the upload response carries only `parser_id`. `Document.update` does not refresh it because the update response also carries `parser_id` only.
 - `source_type`: The source type of the document. Defaults to `"local"`.
 - `type`: Type or category of the document. Defaults to `""`. Reserved for future use.
 - `created_by`: `string` The creator of the document. Defaults to `""`.
@@ -630,7 +644,7 @@ A `Document` object contains the following attributes:
   - `"DONE"`
   - `"FAIL"`
 - `status`: `string` Reserved for future use.
-- `parser_config`: `ParserConfig` Configuration object for the parser. RAGFlow 1.0 stores parser settings per ingestion-pipeline component. The returned map uses component-scoped keys (keys containing `:`); legacy flat keys are not used. For example: `{"GeneralChunker:SixApplesFall": {"chunk_token_size": 128}}`.
+- `parser_config`: The parser configuration. When the API returns a configuration dictionary, the SDK stores it as a `Base` object; call `doc.parser_config.to_json()` to get the dictionary, for example before passing it back to `doc.update()`. RAGFlow 1.0 stores parser settings per ingestion-pipeline component. The dictionary uses component-scoped keys (keys containing `:`); legacy flat keys are not used. For example: `{"GeneralChunker:SixApplesFall": {"chunk_token_size": 128}}`.
 
 #### Examples
 
