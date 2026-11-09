@@ -1144,7 +1144,20 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 				Score:      g.score,
 			})
 		}
-		batched, err = deduper.DecideBatch(ctx, batched)
+		llmCtx, finishLLMProgress := withKnowledgeCompileLLMProgress(ctx, func(progressCtx context.Context, component, message string) {
+			c.reportProgress(
+				progressCtx,
+				tenant,
+				kb,
+				token,
+				taskTypes,
+				0.82,
+				"llm_merge",
+				fmt.Sprintf("%s: %s", component, message),
+			)
+		})
+		batched, err = deduper.DecideBatch(llmCtx, batched)
+		finishLLMProgress()
 		if err != nil {
 			return err
 		}
