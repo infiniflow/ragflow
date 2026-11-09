@@ -122,11 +122,6 @@ func (h *Handler) Login(c *gin.Context) {
 
 	// Set Authorization header with access_token
 	c.Header("Authorization", authToken)
-	// Set CORS headers
-	c.Header("Access-Control-Allow-Origin", "*")
-	c.Header("Access-Control-Allow-Methods", "*")
-	c.Header("Access-Control-Allow-Headers", "*")
-	c.Header("Access-Control-Expose-Headers", "Authorization")
 
 	common.RespondSuccess(c, user, "Welcome back!")
 }
