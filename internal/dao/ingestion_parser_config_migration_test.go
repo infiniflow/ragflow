@@ -116,8 +116,8 @@ func TestMigrateParserChunkerTokenizerConfig(t *testing.T) {
 		{
 			name:   "an existing family map is merged, not replaced",
 			parser: "book",
-			input:  `{"layout_recognize":true,"Parser:HipSignsRhyme":{"pdf":{"preprocess":["main_content"],"remove_toc":false}}}`,
-			want:   `{"Parser:HipSignsRhyme":{"pdf":{"preprocess":["main_content"],"remove_toc":false,"parse_method":"deepdoc"}}}`,
+			input:  `{"layout_recognize":true,"Parser:HipSignsRhyme":{"pdf":{"remove_header_footer":true,"remove_toc":false}}}`,
+			want:   `{"Parser:HipSignsRhyme":{"pdf":{"remove_header_footer":true,"remove_toc":false,"parse_method":"deepdoc"}}}`,
 		},
 		{name: "retired settings are deleted", input: `{"html4excel":true,"task_page_size":256,"video_prompt":"x"}`, want: `{}`},
 		{name: "no owned keys", input: `{"chunk_method":"naive","topn_tags":5}`, want: `{"chunk_method":"naive","topn_tags":5}`},

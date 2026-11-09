@@ -85,6 +85,19 @@ describe('parser-form utils', () => {
         buildInitialParserValues({}).setups,
       );
     });
+
+    it('does not seed retired family keys', () => {
+      const values = buildInitialParserValues({});
+      for (const setup of values.setups) {
+        expect(setup).not.toHaveProperty('preprocess');
+        expect(setup).not.toHaveProperty('output_format');
+        // Audio's family vlm is the ASR model and stays; every other family
+        // uses the Parser's top-level vision block.
+        if ((setup as any).fileFormat !== FileType.Audio) {
+          expect(setup).not.toHaveProperty('vlm');
+        }
+      }
+    });
   });
 
   describe('normalizeParserFormValues', () => {
@@ -307,21 +320,27 @@ describe('parser-form utils', () => {
       expect(normalizeParserFormValues(once)).toEqual(once);
     });
 
-    it('drops the retired per-setup output_format from every family', () => {
-      // The Go Parser normalizes all setups to JSON, so a stored legacy value
-      // is dead config that must not survive a load/save round-trip.
+    it('drops the retired per-setup preprocess and output_format from every family', () => {
+      // The Parser derives preprocessing from the chunker and emits JSON only,
+      // so stored legacy values are dead config that must not survive a
+      // load/save round-trip.
       const normalized = normalizeParserFormValues({
         setups: [
-          { fileFormat: FileType.PDF, output_format: 'markdown' },
+          {
+            fileFormat: FileType.PDF,
+            preprocess: ['main_content'],
+            output_format: 'markdown',
+          },
           {
             fileFormat: FileType.Audio,
+            preprocess: ['main_content'],
             output_format: 'text',
             vlm: { llm_id: 'whisper@OpenAI' },
           },
         ],
       });
       expect(normalized.setups[0]).toEqual({ fileFormat: FileType.PDF });
-      // Audio keeps its per-setup ASR model; only output_format goes.
+      // Audio keeps its per-setup ASR model; only the retired keys go.
       expect(normalized.setups[1]).toEqual({
         fileFormat: FileType.Audio,
         vlm: { llm_id: 'whisper@OpenAI' },

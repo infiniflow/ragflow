@@ -1348,13 +1348,6 @@ export default {
       pleaseUploadAtLeastOneFile: 'يرجى تحميل ملف واحد على الأقل',
     },
     flow: {
-      preprocess: {
-        preprocess: 'المعالجة المسبقة',
-        mainContent: 'المحتوى الرئيسي',
-        abstract: 'خلاصة',
-        author: 'مؤلف',
-        sectionTitle: 'عنوان القسم',
-      },
       autoPlay: 'تشغيل الصوت تلقائيًا',
       downloadFileTypeTip: 'نوع الملف المراد تنزيله',
       downloadFileType: 'تنزيل نوع الملف',

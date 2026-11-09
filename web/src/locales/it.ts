@@ -1838,13 +1838,6 @@ Esempio: Virtual Hosted Style`,
       pleaseUploadAtLeastOneFile: 'Carica almeno un file',
     },
     flow: {
-      preprocess: {
-        preprocess: 'Pre-elaborazione',
-        mainContent: 'Contenuto principale',
-        abstract: 'Abstract',
-        author: 'Autore',
-        sectionTitle: 'Titolo sezione',
-      },
       editTags: 'Modifica tag',
       editTagsDescription:
         'Aggiungi tag per organizzare e filtrare i tuoi agenti. Premi Invio o virgola per aggiungere.',

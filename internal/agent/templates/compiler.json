@@ -61,16 +61,14 @@
               "remove_header_footer": false,
               "suffix": [
                 "doc"
-              ],
-              "vlm": {}
+              ]
             },
             "docx": {
               "order_index": 8,
               "remove_header_footer": false,
               "suffix": [
                 "docx"
-              ],
-              "vlm": {}
+              ]
             },
             "email": {
               "fields": [
@@ -113,8 +111,7 @@
                 "md",
                 "markdown",
                 "mdx"
-              ],
-              "vlm": {}
+              ]
             },
             "pdf": {
               "order_index": 0,
@@ -122,8 +119,7 @@
               "remove_header_footer": false,
               "suffix": [
                 "pdf"
-              ],
-              "vlm": {}
+              ]
             },
             "slides": {
               "order_index": 9,
@@ -140,8 +136,7 @@
                 "xls",
                 "xlsx",
                 "csv"
-              ],
-              "vlm": {}
+              ]
             },
             "text&code": {
               "order_index": 5,
@@ -270,13 +265,11 @@
               {
                 "fileFormat": "pdf",
                 "parse_method": "DeepDOC",
-                "remove_header_footer": false,
-                "vlm": {}
+                "remove_header_footer": false
               },
               {
                 "fileFormat": "spreadsheet",
-                "parse_method": "DeepDOC",
-                "vlm": {}
+                "parse_method": "DeepDOC"
               },
               {
                 "fileFormat": "image",
@@ -296,8 +289,7 @@
                 "fileFormat": "email"
               },
               {
-                "fileFormat": "markdown",
-                "vlm": {}
+                "fileFormat": "markdown"
               },
               {
                 "fileFormat": "text&code"
@@ -308,13 +300,11 @@
               },
               {
                 "fileFormat": "doc",
-                "remove_header_footer": false,
-                "vlm": {}
+                "remove_header_footer": false
               },
               {
                 "fileFormat": "docx",
-                "remove_header_footer": false,
-                "vlm": {}
+                "remove_header_footer": false
               },
               {
                 "fileFormat": "slides",

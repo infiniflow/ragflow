@@ -2740,13 +2740,6 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
     },
     flow: {
       exportCurrentPage: 'Geçerli sayfayı dışa aktar',
-      preprocess: {
-        preprocess: 'Ön işleme',
-        mainContent: 'Ana içerik',
-        abstract: 'Özet',
-        author: 'Yazar',
-        sectionTitle: 'Bölüm başlığı',
-      },
       includeHeadingContent: 'Üst başlık içeriğini ayır',
       includeHeadingContentTip:
         'Etkinleştirildiğinde parçalar yalnızca başlık yolunu ve içeriğini içerir; üst başlıktan hemen sonra gelen içerik ayrı bir parça olarak tutulur.',
