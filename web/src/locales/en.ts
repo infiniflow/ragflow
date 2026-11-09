@@ -153,6 +153,8 @@ export default {
       theme: 'Theme',
       language: 'Language',
       version: 'Version',
+      collapseSidebar: 'Collapse sidebar',
+      expandSidebar: 'Expand sidebar',
     },
     skills: {
       title: 'Skills',

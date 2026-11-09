@@ -133,6 +133,8 @@ export default {
       theme: '主题',
       language: '语言',
       version: '版本',
+      collapseSidebar: '收起侧边栏',
+      expandSidebar: '展开侧边栏',
     },
     skills: {
       title: 'Skills',

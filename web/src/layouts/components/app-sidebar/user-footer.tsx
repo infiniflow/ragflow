@@ -42,6 +42,7 @@ import { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
 import { BellButton } from '../bell-button';
+import { useSidebarCollapse } from './use-sidebar-collapse';
 
 const HelpUrl = 'https://ragflow.io/docs/dev/category/user-guides';
 const GitHubUrl = 'https://github.com/infiniflow/ragflow';
@@ -54,6 +55,7 @@ export function UserFooter() {
   const { logout } = useLogout();
   const { theme, setTheme } = useTheme();
   const isDark = useIsDarkTheme();
+  const { collapsed } = useSidebarCollapse();
 
   const {
     data: { language = 'en', avatar, nickname, email },
@@ -110,8 +112,18 @@ export function UserFooter() {
   const ThemeIcon = isDark ? LucideMoon : LucideSun;
 
   return (
-    <footer className="mt-auto flex shrink-0 flex-col gap-2 p-2 md:p-3">
-      <div className="flex items-center justify-center gap-1 md:justify-end">
+    <footer
+      className={cn(
+        'mt-auto flex shrink-0 flex-col gap-2 p-2',
+        !collapsed && 'md:p-3',
+      )}
+    >
+      <div
+        className={cn(
+          'flex items-center justify-center gap-1',
+          !collapsed && 'md:justify-end',
+        )}
+      >
         {hasNotification && <BellButton className="!size-8" />}
         <EnterpriseHeaderTicketsLink />
       </div>
@@ -122,7 +134,12 @@ export function UserFooter() {
             variant="ghost"
             aria-label={nickname || email}
             data-testid="settings-entrypoint"
-            className="h-auto justify-start gap-2.5 px-2 py-2 max-md:size-10 max-md:justify-center max-md:p-0"
+            className={cn(
+              'h-auto justify-start gap-2.5 px-2 py-2',
+              collapsed
+                ? 'size-10 justify-center p-0'
+                : 'max-md:size-10 max-md:justify-center max-md:p-0',
+            )}
           >
             <span className="relative shrink-0">
               <RAGFlowAvatar
@@ -133,7 +150,12 @@ export function UserFooter() {
               />
               <EnterpriseHeaderPlanBadge />
             </span>
-            <span className="hidden min-w-0 flex-1 truncate text-start text-sm md:inline">
+            <span
+              className={cn(
+                'hidden min-w-0 flex-1 truncate text-start text-sm',
+                !collapsed && 'md:inline',
+              )}
+            >
               {nickname || email}
             </span>
           </Button>
