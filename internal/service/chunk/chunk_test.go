@@ -2237,7 +2237,7 @@ func (e *parseTestDocEngine) GetHighlight([]map[string]interface{}, []string, st
 	return nil
 }
 
-func (e *parseTestDocEngine) RunSQL(context.Context, string, string, []string, string) ([]map[string]interface{}, error) {
+func (e *parseTestDocEngine) RunSQL(context.Context, string, string) ([]map[string]interface{}, error) {
 	return nil, nil
 }
 
@@ -2645,7 +2645,7 @@ func (m *switchChunksEngineMock) GetAggregation([]map[string]interface{}, string
 func (m *switchChunksEngineMock) GetHighlight([]map[string]interface{}, []string, string) map[string]string {
 	return nil
 }
-func (m *switchChunksEngineMock) RunSQL(context.Context, string, string, []string, string) ([]map[string]interface{}, error) {
+func (m *switchChunksEngineMock) RunSQL(context.Context, string, string) ([]map[string]interface{}, error) {
 	return nil, nil
 }
 func (m *switchChunksEngineMock) GetChunkIDs([]map[string]interface{}) []string { return nil }

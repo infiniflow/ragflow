@@ -348,7 +348,7 @@ func (s *ChatService) Create(ctx context.Context, req map[string]interface{}) (m
 	applyCreatePromptDefaults(req)
 	filterCreateChatPersistedFields(req)
 
-	name, err = common.UniqueName(name, 255, func(candidate string) (bool, error) {
+	name, err = common.UniqueName(name, common.NameLimit255, func(candidate string) (bool, error) {
 		return s.chatDAO.ExistsByNameTenantStatus(ctx, dao.DB, candidate, tenantID, string(entity.StatusValid))
 	})
 	if err != nil {
@@ -391,8 +391,8 @@ func validateCreateChatName(value interface{}) (string, error) {
 	if name == "" {
 		return "", errors.New("`name` is required")
 	}
-	if len([]byte(name)) > 255 {
-		return "", fmt.Errorf("chat name length is %d which is larger than 255", len([]byte(name)))
+	if err := common.ValidateNameRunes(name, common.NameLimit255); err != nil {
+		return "", err
 	}
 	return name, nil
 }
@@ -970,7 +970,9 @@ func (s *ChatService) updateChatREST(ctx context.Context, chatID string, req map
 		if err != nil {
 			return nil, err
 		}
-		if tenantRerankID != "" {
+		if tenantRerankID == "" {
+			req["tenant_rerank_id"] = nil
+		} else {
 			req["tenant_rerank_id"] = tenantRerankID
 		}
 	}
@@ -1139,8 +1141,8 @@ func validateRESTChatName(value interface{}, required bool) (string, bool, error
 		}
 		return "", false, errors.New("`name` cannot be empty")
 	}
-	if len([]byte(name)) > 255 {
-		return "", false, fmt.Errorf("chat name length is %d which is larger than 255", len([]byte(name)))
+	if err := common.ValidateNameRunes(name, common.NameLimit255); err != nil {
+		return "", false, err
 	}
 	return name, true, nil
 }

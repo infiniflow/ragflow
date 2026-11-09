@@ -31,6 +31,31 @@ func constructTableData(t *testing.T, cells []pdf.TSRCell, boxes []pdf.TextBox, 
 	return td
 }
 
+func TestConstructTable_ZeroValueBoxesFallback(t *testing.T) {
+	// R=0/C=0 is the Go zero value, not proof of annotation. ConstructTable
+	// must keep the Y/X fallback for raw boxes.
+	boxes := []pdf.TextBox{
+		{X0: 0, X1: 50, Top: 0, Bottom: 10, Text: "A"},
+		{X0: 60, X1: 110, Top: 0, Bottom: 10, Text: "B"},
+		{X0: 0, X1: 50, Top: 20, Bottom: 30, Text: "C"},
+		{X0: 60, X1: 110, Top: 20, Bottom: 30, Text: "D"},
+	}
+
+	td := constructTableData(t, nil, boxes, "", nil)
+	if td == nil {
+		t.Fatal("expected non-nil TableData")
+	}
+	if len(td.Grid) != 2 {
+		t.Fatalf("expected 2 rows, got %d: %v", len(td.Grid), td.Grid)
+	}
+	if cellTextAt(td, 0, 0) != "A" || cellTextAt(td, 0, 1) != "B" {
+		t.Errorf("row 0 = %q/%q, want A/B", cellTextAt(td, 0, 0), cellTextAt(td, 0, 1))
+	}
+	if cellTextAt(td, 1, 0) != "C" || cellTextAt(td, 1, 1) != "D" {
+		t.Errorf("row 1 = %q/%q, want C/D", cellTextAt(td, 1, 0), cellTextAt(td, 1, 1))
+	}
+}
+
 func TestCellTexts(t *testing.T) {
 	cells := []pdf.TSRCell{
 		{Text: "A"}, {Text: "B"}, {Text: "C"},

@@ -192,11 +192,8 @@ func modularMetadataConfig(parserConfig map[string]any) (bool, bool, []any, []an
 		builtIn := anyOrEmptyList(metaObj["built_in_metadata"])
 		return true, enabled, metadata, builtIn
 	}
-	for cpnID, raw := range parserConfig {
-		lower := strings.ToLower(cpnID)
-		if !strings.HasPrefix(lower, "extractor:") && !strings.HasPrefix(lower, "extractor_") {
-			continue
-		}
+	for _, cpnID := range common.SortedExtractorKeys(parserConfig) {
+		raw := parserConfig[cpnID]
 		params, ok := raw.(map[string]any)
 		if !ok {
 			continue

@@ -3,9 +3,9 @@ package document
 import (
 	"mime/multipart"
 	"reflect"
-	"strings"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
@@ -763,7 +763,7 @@ func parserFamilySetup(t *testing.T, doc map[string]interface{}, family string) 
 		t.Fatalf("%v parser_config = %T, want map", doc["name"], doc["parser_config"])
 	}
 	for cpnID, raw := range cfg {
-		if !strings.HasPrefix(cpnID, "Parser:") {
+		if !common.IsParserComponentID(cpnID) {
 			continue
 		}
 		params, _ := raw.(map[string]interface{})

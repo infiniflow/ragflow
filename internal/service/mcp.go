@@ -40,7 +40,6 @@ import (
 const (
 	mcpServerTypeSSE            = "sse"
 	mcpServerTypeStreamableHTTP = "streamable-http"
-	mcpServerNameLimit          = 255
 	mcpServerPreviewID          = "preview"
 	defaultMCPFetchTimeoutSec   = 10
 	mcpPermissionBatchSize      = 256
@@ -121,8 +120,8 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, req CreateMCPServerReq
 		return nil, common.CodeDataError, errors.New("unsupported MCP server type")
 	}
 
-	if req.Name == "" || len([]byte(req.Name)) > mcpServerNameLimit {
-		return nil, common.CodeDataError, fmt.Errorf("Invalid MCP name or length is %d which is large than 255.", len([]byte(req.Name)))
+	if err := common.ValidateNameRunes(req.Name, common.NameLimit255); err != nil {
+		return nil, common.CodeDataError, err
 	}
 	if req.URL == "" {
 		return nil, common.CodeDataError, errors.New("invalid url")
@@ -138,7 +137,7 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, req CreateMCPServerReq
 		return nil, code, normalized
 	}
 
-	name, err := common.UniqueName(req.Name, mcpServerNameLimit, func(candidate string) (bool, error) {
+	name, err := common.UniqueName(req.Name, common.NameLimit255, func(candidate string) (bool, error) {
 		return s.mcpServerDAO.ExistsByNameAndTenant(ctx, dao.DB, candidate, tenantID)
 	})
 	if err != nil {
@@ -433,8 +432,10 @@ func (s *MCPService) UpdateMCPServer(ctx context.Context, mcpID string, req Upda
 		serverName = value
 		serverNameProvided = true
 	}
-	if serverName != "" && len([]byte(serverName)) > mcpServerNameLimit {
-		return nil, common.CodeDataError, fmt.Errorf("Invalid MCP name or length is %d which is large than 255.", len([]byte(serverName)))
+	if serverName != "" {
+		if err := common.ValidateNameRunes(serverName, common.NameLimit255); err != nil {
+			return nil, common.CodeDataError, err
+		}
 	}
 	if serverNameProvided {
 		available, err := common.NameAvailable(server.Name, serverName, func(candidate string) (bool, error) {
@@ -759,8 +760,8 @@ func (s *MCPService) ImportServers(ctx context.Context, servers map[string]map[s
 			results = append(results, ImportResult{Server: serverName, Success: false, Message: "Missing required fields (type or url)"})
 			continue
 		}
-		if serverName == "" || len([]byte(serverName)) > mcpServerNameLimit {
-			results = append(results, ImportResult{Server: serverName, Success: false, Message: fmt.Sprintf("Invalid MCP name or length is %d which is large than 255.", len(serverName))})
+		if err := common.ValidateNameRunes(serverName, common.NameLimit255); err != nil {
+			results = append(results, ImportResult{Server: serverName, Success: false, Message: err.Error()})
 			continue
 		}
 		if !isValidMCPServerType(stype) {
@@ -864,7 +865,7 @@ func (s *MCPService) ImportServers(ctx context.Context, servers map[string]map[s
 }
 
 func (s *MCPService) nextAvailableMCPName(ctx context.Context, base, tenantID string) (string, error) {
-	return common.UniqueName(base, mcpServerNameLimit, func(candidate string) (bool, error) {
+	return common.UniqueName(base, common.NameLimit255, func(candidate string) (bool, error) {
 		return s.mcpServerDAO.ExistsByNameAndTenant(ctx, dao.DB, candidate, tenantID)
 	})
 }

@@ -39,8 +39,11 @@ func setupLangfuseServiceTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.TenantLangfuse{}, &entity.UserTenant{}); err != nil {
+	if err := db.AutoMigrate(&entity.TenantLangfuse{}, &entity.User{}, &entity.UserTenant{}); err != nil {
 		t.Fatalf("failed to migrate test schema: %v", err)
+	}
+	if err := db.Create(&entity.User{ID: "tenant-1", Email: "tenant-1@example.com", Nickname: "tenant-1"}).Error; err != nil {
+		t.Fatalf("create Tenant owner: %v", err)
 	}
 	active := string(entity.StatusValid)
 	if err := db.Create(&entity.UserTenant{

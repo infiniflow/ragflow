@@ -24,7 +24,6 @@ import (
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
-	"strconv"
 	"strings"
 	"time"
 
@@ -72,7 +71,7 @@ func NewFileHandler(fileService *file.FileService, userService *service.UserServ
 // @Param tenant_id query string false "tenant whose files are listed (defaults to the current user)"
 // @Param keywords query string false "search keywords (case-insensitive)"
 // @Param page query int false "page number (default: 1, min: 1)"
-// @Param page_size query int false "items per page (default: 15, min: 1, max: 100)"
+// @Param page_size query int false "items per page (default: 30, min: 1, max: 100)"
 // @Param orderby query string false "order by field (default: create_time)"
 // @Param sort query string false "ordered terms, column:direction separated by commas, such as name:asc,create_time:desc. Takes precedence over orderby and desc"
 // @Param desc query bool false "descending order (default: true)"
@@ -93,31 +92,10 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 	}
 	keywords := c.Query("keywords")
 
-	page := 1
-	if pageStr := c.Query("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p >= 1 {
-			page = p
-		} else if err != nil {
-			common.RespondError(c, common.CodeParamError, "Invalid page parameter: must be a positive integer")
-			return
-		}
-	}
-
-	pageSize := 15
-	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
-		if ps, err := strconv.Atoi(pageSizeStr); err == nil {
-			if ps < 1 {
-				common.RespondError(c, common.CodeParamError, "Invalid page_size parameter: must be at least 1")
-				return
-			}
-			if ps > 100 {
-				ps = 100
-			}
-			pageSize = ps
-		} else {
-			common.RespondError(c, common.CodeParamError, "Invalid page_size parameter: must be a positive integer")
-			return
-		}
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
+	if err != nil {
+		common.RespondError(c, common.CodeParamError, err.Error())
+		return
 	}
 
 	orderBy := c.DefaultQuery("orderby", "create_time")
@@ -422,7 +400,7 @@ func (h *FileHandler) DeleteFiles(c *gin.Context) {
 type MoveFileRequest struct {
 	SrcFileIDs []string `json:"src_file_ids" binding:"required,min=1"`
 	DestFileID string   `json:"dest_file_id"`
-	NewName    string   `json:"new_name" binding:"max=255"`
+	NewName    string   `json:"new_name"`
 }
 
 // MoveFiles moves and/or renames files

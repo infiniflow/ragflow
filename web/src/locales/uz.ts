@@ -707,9 +707,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         'masalan, https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio Access Token',
-      paddleocrAccessTokenTip: 'PaddleOCR API uchun access token (ixtiyoriy)',
-      paddleocrAccessTokenPlaceholder:
-        'Sizning AI Studio tokeningiz (ixtiyoriy)',
+      paddleocrAccessTokenTip: 'PaddleOCR API uchun access token',
+      paddleocrAccessTokenPlaceholder: 'Sizning AI Studio tokeningiz',
       paddleocrAlgorithm: 'PaddleOCR algoritmi',
       paddleocrAlgorithmTip: 'PaddleOCR tahlili uchun ishlatiladigan algoritm',
       paddleocrSelectAlgorithm: 'Algoritmni tanlash',
@@ -1264,7 +1263,7 @@ export default {
       dataSourceFieldTenantId: 'Tenant ID',
       dataSourceFieldClientId: 'Client ID',
       dataSourceFieldClientSecret: 'Client Secret',
-      dataSourceFieldFolderPathOptional: 'Papka yo‘li (ixtiyoriy)',
+      dataSourceFieldFolderPathOptional: 'Papka yo‘li',
       dataSourceFieldBatchSize: 'Partiya hajmi',
       dataSourceFieldFeishuAppId: 'Feishu app ID',
       dataSourceFieldFeishuAppSecret: 'Feishu app kaliti (secret)',
@@ -1278,8 +1277,7 @@ export default {
       dataSourceValidationFeishuBatchSize:
         'Partiya hajmi 1 dan 10 gacha bo‘lishi kerak',
       dataSourceFieldMailFolder: 'Pochta papkasi',
-      dataSourceFieldMailboxUserIds:
-        'Pochta qutilari foydalanuvchi ID’lari (ixtiyoriy)',
+      dataSourceFieldMailboxUserIds: 'Pochta qutilari foydalanuvchi ID’lari',
       dataSourceFieldInstanceUrl: 'Instansiya URL',
       dataSourceFieldObjects: 'Obyektlar',
       dataSourceFieldApiVersion: 'API versiyasi',
@@ -1290,7 +1288,7 @@ export default {
       dataSourceFieldContainerUrl: 'Konteyner URL',
       dataSourceFieldSasToken: 'SAS Token',
       dataSourceFieldContainerName: 'Konteyner nomi',
-      dataSourceFieldPrefixOptional: 'Prefiks (ixtiyoriy)',
+      dataSourceFieldPrefixOptional: 'Prefiks',
       dataSourceFieldFeedUrl: 'Feed URL',
       dataSourceFieldSitemapUrl: 'Sitemap URL',
       dataSourceFieldUrlFilter: 'URL filtri (regex)',
@@ -2049,10 +2047,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         'masalan, https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio Access Token',
-      paddleocrAccessTokenMessage:
-        'PaddleOCR API uchun access token (ixtiyoriy)',
-      paddleocrAccessTokenPlaceholder:
-        'Sizning AI Studio tokeningiz (ixtiyoriy)',
+      paddleocrAccessTokenMessage: 'PaddleOCR API uchun access token',
+      paddleocrAccessTokenPlaceholder: 'Sizning AI Studio tokeningiz',
       paddleocrAlgorithm: 'PaddleOCR algoritmi',
       paddleocrAlgorithmMessage: 'Iltimos, PaddleOCR algoritmini tanlang',
       paddleocrSelectAlgorithm: 'Algoritmni tanlash',
@@ -2134,7 +2130,7 @@ export default {
         apiUrlPlaceholder:
           'Misol uchun: https://paddleocr-server.com/layout-parsing',
         accessToken: 'AI Studio Access Token',
-        accessTokenPlaceholder: 'Sizning AI Studio tokeningiz (ixtiyoriy)',
+        accessTokenPlaceholder: 'Sizning AI Studio tokeningiz',
         algorithm: 'PaddleOCR algoritmi',
         selectAlgorithm: 'Algoritmni tanlash',
         modelNamePlaceholder: 'Misol uchun: paddleocr-from-env-1',
@@ -3239,9 +3235,9 @@ export default {
       jsonFormatTip:
         'Yuqoridagi komponent quyidagi formatda JSON satrini ta’minlashi kerak:',
       toEmailTip: 'to_email: Qabul qiluvchi pochtasi (Majburiy)',
-      ccEmailTip: 'cc_email: Nusxa pochtasi (Ixtiyoriy)',
-      subjectTip: 'subject: Email mavzusi (Ixtiyoriy)',
-      contentTip: 'content: Email kontenti (Ixtiyoriy)',
+      ccEmailTip: 'cc_email: Nusxa pochtasi',
+      subjectTip: 'subject: Email mavzusi',
+      contentTip: 'content: Email kontenti',
       jsonUploadTypeErrorMessage: 'Iltimos, json faylini yuklang',
       jsonUploadContentErrorMessage: 'json fayl xatosi',
       nameExists: 'Nom allaqachon mavjud',

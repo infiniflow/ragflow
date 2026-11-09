@@ -278,7 +278,7 @@ func (d *DocsGenerator) Invoke(ctx context.Context, db *gorm.DB, inputs map[stri
 		})
 		mime = "text/markdown; charset=utf-8"
 	case "html":
-		payload = iow.WriteHTML(param.Content, iow.HTMLOptions{
+		payload = iow.WriteHTML(markdownToHTML(param.Content), iow.HTMLOptions{
 			HeaderText:    param.HeaderText,
 			FooterText:    param.FooterText,
 			WatermarkText: param.WatermarkText,

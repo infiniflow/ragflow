@@ -48,6 +48,7 @@ import (
 	"ragflow/internal/entity"
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 
 	dslpkg "ragflow/internal/agent/dsl"
 )
@@ -97,6 +98,8 @@ func (s *AgentService) RunAgentWithWebhook(
 
 type agentSessionIDContextKey struct{}
 
+type agentChannelNameContextKey struct{}
+
 type openAICompatMessagesContextKey struct{}
 
 // WithAgentSessionID lets an HTTP boundary allocate the session identity while
@@ -112,6 +115,24 @@ func AgentSessionIDFromContext(ctx context.Context) string {
 	}
 	sessionID, _ := ctx.Value(agentSessionIDContextKey{}).(string)
 	return sessionID
+}
+
+// withAgentChannelName lets a chat-channel boundary record the channel name so
+// the session RunAgent creates carries it in its display name.
+func withAgentChannelName(ctx context.Context, channelName string) context.Context {
+	name := strings.TrimSpace(channelName)
+	if name == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, agentChannelNameContextKey{}, name)
+}
+
+func agentChannelNameFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	name, _ := ctx.Value(agentChannelNameContextKey{}).(string)
+	return name
 }
 
 // WithOpenAICompatMessages attaches the complete OpenAI messages list to an
@@ -1010,6 +1031,9 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 		return nil, common.CodeArgumentError, errors.New("no title in request")
 	}
 	title := strings.TrimSpace(*req.Title)
+	if err := common.ValidateNameRunes(title, common.NameLimit255); err != nil {
+		return nil, common.CodeArgumentError, fmt.Errorf("create agent: %w", err)
+	}
 	req.Title = &title
 
 	if req.Permission == "" {
@@ -1019,7 +1043,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 		req.CanvasCategory = "agent_canvas"
 	}
 
-	uniqueTitle, err := common.UniqueName(title, 255, func(candidate string) (bool, error) {
+	uniqueTitle, err := common.UniqueName(title, common.NameLimit255, func(candidate string) (bool, error) {
 		return s.canvasDAO.TitleExists(ctx, dao.DB, userID, req.CanvasCategory, candidate, "")
 	})
 	if err != nil {
@@ -1199,9 +1223,15 @@ func (s *AgentService) UpdateAgent(ctx context.Context, canvasID string, patch m
 	for _, key := range []string{"title", "avatar", "description", "permission", "canvas_type", "canvas_category"} {
 		if value, ok := patch[key]; ok && value != nil {
 			if key == "title" {
-				if title, ok := value.(string); ok {
-					value = strings.TrimSpace(title)
+				title, ok := value.(string)
+				if !ok {
+					return fmt.Errorf("update agent %s: title must be a string", canvasID)
 				}
+				title = strings.TrimSpace(title)
+				if err := common.ValidateNameRunes(title, common.NameLimit255); err != nil {
+					return fmt.Errorf("update agent %s: %w", canvasID, err)
+				}
+				value = title
 			}
 			if key == "permission" {
 				if permissionValue, ok := value.(string); ok {
@@ -1250,8 +1280,16 @@ func (s *AgentService) UpdateAgent(ctx context.Context, canvasID string, patch m
 	// Optional alias carried on a manual Save (design §4.4 carry-on path).
 	var aliasPtr *string
 	if value, ok := patch["alias"]; ok && value != nil {
-		if s, ok := value.(string); ok && strings.TrimSpace(s) != "" {
-			aliasPtr = &s
+		alias, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("update agent %s: alias must be a string", canvasID)
+		}
+		alias = strings.TrimSpace(alias)
+		if err := common.ValidateAliasRunes(alias, common.NameLimit255); err != nil {
+			return fmt.Errorf("update agent %s: %w", canvasID, err)
+		}
+		if alias != "" {
+			aliasPtr = &alias
 		}
 	}
 	// ApplyVersion restore path: restoring a version refreshes only the live
@@ -1436,13 +1474,25 @@ func (s *AgentService) PublishAgent(ctx context.Context, canvasID string, req *P
 		}
 		if req.Title != nil {
 			trimmed := strings.TrimSpace(*req.Title)
+			if err := common.ValidateNameRunes(trimmed, common.NameLimit255); err != nil {
+				return nil, fmt.Errorf("publish agent %s: %w", canvasID, err)
+			}
 			title = &trimmed
 		}
 		if req.Description != nil {
 			description = req.Description
 		}
 		if req.Alias != nil {
-			alias = req.Alias
+			aliasValue := strings.TrimSpace(*req.Alias)
+			if err := common.ValidateAliasRunes(aliasValue, common.NameLimit255); err != nil {
+				return nil, fmt.Errorf("publish agent %s: %w", canvasID, err)
+			}
+			alias = &aliasValue
+		}
+	}
+	if title != nil {
+		if err := common.ValidateNameRunes(*title, common.NameLimit255); err != nil {
+			return nil, fmt.Errorf("publish agent %s: %w", canvasID, err)
 		}
 	}
 
@@ -1502,7 +1552,10 @@ func buildVersionTitle(agentTitle string, ts time.Time) string {
 	if title == "" {
 		title = "agent"
 	}
-	return fmt.Sprintf("%s_%s", title, ts.Format("2006-01-02 15:04:05"))
+	// user_canvas_version.title is VARCHAR(255); reserve room for the timestamp
+	// suffix so a maximum-length canvas title cannot overflow the version row.
+	title = utility.TruncateRunes(title, common.VersionBaseTitleLimit)
+	return fmt.Sprintf("%s_%s", title, ts.Format(common.VersionTitleTimeLayout))
 }
 
 // ListVersions returns every version for a canvas the user can see,
@@ -1594,6 +1647,20 @@ func (s *AgentService) UpdateVersion(ctx context.Context, canvasID, versionID st
 	}
 	if row.UserCanvasID != canvasID {
 		return dao.ErrUserCanvasVersionNotFound
+	}
+	if patch.Alias != nil {
+		alias := strings.TrimSpace(*patch.Alias)
+		if err := common.ValidateAliasRunes(alias, common.NameLimit255); err != nil {
+			return err
+		}
+		patch.Alias = &alias
+	}
+	if patch.Title != nil {
+		title := strings.TrimSpace(*patch.Title)
+		if err := common.ValidateNameRunes(title, common.NameLimit255); err != nil {
+			return err
+		}
+		patch.Title = &title
 	}
 	return dao.DB.Transaction(func(tx *gorm.DB) error {
 		return s.versionDAO.UpdateTx(ctx, tx, versionID, patch)
@@ -1839,6 +1906,20 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 		versionRow *entity.UserCanvasVersion
 		dsl        map[string]any
 	)
+	channelRun, _ := ctx.Value(channelAgentRunContextKey{}).(bool)
+	refreshSessionDSL := channelRun && version == ""
+	paused := s.runner != nil && s.runner.Peek(canvasID, sessionID)
+	var resumeInterruptID string
+	if userInput != nil && s.runTracker != nil {
+		interruptID, ok, err := s.runTracker.GetInterruptID(ctx, runID)
+		if err != nil && refreshSessionDSL {
+			return nil, fmt.Errorf("RunAgent: load pending interrupt: %w: %w", err, ErrAgentStorageError)
+		}
+		if err == nil && ok {
+			resumeInterruptID = interruptID
+			paused = true
+		}
+	}
 	if version != "" {
 		row, err := s.versionDAO.GetByID(ctx, dao.DB, version)
 		if err != nil {
@@ -1875,7 +1956,12 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 		}
 		sessionFound = existingSession != nil
 		if existingSession != nil && len(existingSession.DSL) > 0 {
-			dsl = dslpkg.NormalizeForRun(existingSession.DSL)
+			if refreshSessionDSL && !paused {
+				dsl = refreshChannelAgentDSL(dsl, existingSession.DSL)
+			} else {
+				// A paused execution must resume the graph that wrote its checkpoint.
+				dsl = dslpkg.NormalizeForRun(existingSession.DSL)
+			}
 		}
 	}
 	if err := validateAgentChatModels(ctx, agentTenantID, dsl); err != nil {
@@ -1908,6 +1994,9 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 		"session_id":     sessionID,
 		"user_id":        userID,
 	}
+	if refreshSessionDSL && !paused {
+		root["__force_new_run__"] = true
+	}
 	// Drop failed first-touch sessions only when there was no user question.
 	if (!sessionFound || newSession) && stringifyAgentUserInput(agentRunQuery(userInput)) == "" {
 		root["__drop_session_on_failure__"] = true
@@ -1917,11 +2006,9 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 	// cancellation identity.
 	// Recover a pending UserFillUp interrupt from Redis when this request
 	// lands on a different process.
-	if userInput != nil && s.runTracker != nil {
-		if interruptID, ok, ierr := s.runTracker.GetInterruptID(ctx, runID); ierr == nil && ok {
-			root["__resume_interrupt_id__"] = interruptID
-			root["__resume_data__"] = userInput
-		}
+	if resumeInterruptID != "" {
+		root["__resume_interrupt_id__"] = resumeInterruptID
+		root["__resume_data__"] = userInput
 	}
 	if userInput != nil {
 		root["user_input"] = userInput
@@ -2402,6 +2489,10 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		if cpID != "" {
 			invokeOpts = []compose.Option{compose.WithCheckPointID(cpID)}
 		}
+		if forceNewRun, _ := root["__force_new_run__"].(bool); forceNewRun {
+			// Completed checkpoints retain node state from the previous graph.
+			invokeOpts = append(invokeOpts, compose.WithForceNewRun())
+		}
 		// On a resume, the user input is the resume payload for the
 		// previously-paused UserFillUp node — it does NOT represent
 		// a fresh sys.query. The 'BEGIN' node writes inputs["query"]
@@ -2597,6 +2688,9 @@ func (s *AgentService) createAgentRunSession(
 	}
 	source := "agent"
 	name := deriveAgentSessionName(userInput)
+	if channelName := agentChannelNameFromContext(ctx); channelName != "" {
+		name = channelSessionName(name, channelName)
+	}
 	session := &entity.API4Conversation{
 		ID:        sessionID,
 		Name:      &name,
@@ -2748,6 +2842,41 @@ func (s *AgentService) persistAgentRunSession(
 		updates["dsl"] = buildPersistedAgentDSL(runDSL, state)
 	}
 	return s.api4ConversationDAO.UpdateHistory(ctx, dao.DB, sessionID, agentID, userID, updates, history)
+}
+
+// refreshChannelAgentDSL keeps conversation data while replacing the workflow.
+func refreshChannelAgentDSL(dsl, previous map[string]any) map[string]any {
+	dsl = dslpkg.ResetForNewSession(dsl)
+	for _, key := range []string{"history", "memory"} {
+		if value, ok := previous[key]; ok {
+			dsl[key] = value
+		}
+	}
+	globals, _ := dsl["globals"].(map[string]any)
+	if globals == nil {
+		globals = map[string]any{}
+		dsl["globals"] = globals
+	}
+	oldGlobals, _ := previous["globals"].(map[string]any)
+	variables, _ := dsl["variables"].(map[string]any)
+	oldVariables, _ := previous["variables"].(map[string]any)
+	for key, value := range oldGlobals {
+		switch key {
+		case "sys.history", "sys.conversation_turns":
+			globals[key] = value
+		default:
+			if !strings.HasPrefix(key, "env.") {
+				continue
+			}
+			name := strings.TrimPrefix(key, "env.")
+			if current, ok := globals[key]; ok &&
+				reflect.TypeOf(current) == reflect.TypeOf(value) &&
+				reflect.DeepEqual(variables[name], oldVariables[name]) {
+				globals[key] = value
+			}
+		}
+	}
+	return dsl
 }
 
 func buildPersistedAgentDSL(runDSL map[string]any, state *canvas.CanvasState) entity.JSONMap {

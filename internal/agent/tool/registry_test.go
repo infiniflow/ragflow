@@ -181,6 +181,24 @@ func TestBuildByName_QueritContentsAliases(t *testing.T) {
 	}
 }
 
+func TestBuildByName_QueritContentsEmptyTimeoutUsesDefault(t *testing.T) {
+	for _, value := range []string{"", "  "} {
+		built, err := BuildByName("querit_contents", map[string]any{
+			"crawl_timeout": value,
+		})
+		if err != nil {
+			t.Fatalf("BuildByName with empty crawl_timeout %q: %v", value, err)
+		}
+		contents, ok := built.(*QueritContentsTool)
+		if !ok {
+			t.Fatalf("BuildByName returned %T, want *QueritContentsTool", built)
+		}
+		if contents.defaults.CrawlTimeout != 10 {
+			t.Fatalf("crawl timeout = %d, want default 10", contents.defaults.CrawlTimeout)
+		}
+	}
+}
+
 func TestBuildByName_YouComReadsCanvasParams(t *testing.T) {
 	// The canvas stores tool params under the lower-cased component name, and
 	// the node form also carries query/outputs keys the tool must ignore.

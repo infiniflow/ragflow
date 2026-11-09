@@ -104,12 +104,16 @@ func (h *SkillSearchHandler) UpdateConfig(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/skills/search [post]
 func (h *SkillSearchHandler) Search(c *gin.Context) {
-	var req service.SearchRequest
+	req := service.SearchRequest{Page: common.DefaultPage, PageSize: common.DefaultPageSize}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
+	if err := common.ValidatePagination(&req.Page, &req.PageSize, nil); err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
+	}
 	result, code, err := h.searchService.Search(c.Request.Context(), &req, h.docEngine)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
@@ -390,11 +394,11 @@ func (h *SkillSearchHandler) GetSpace(c *gin.Context) {
 
 // UpdateSpaceRequest represents the request to update a skill space
 type UpdateSpaceRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	EmbdID      string `json:"embd_id"`
-	RerankID    string `json:"rerank_id"`
-	TopK        int    `json:"top_k"`
+	Name        *string `json:"name"`
+	Description string  `json:"description"`
+	EmbdID      string  `json:"embd_id"`
+	RerankID    string  `json:"rerank_id"`
+	TopK        int     `json:"top_k"`
 }
 
 // UpdateSpace handles the update skill space request

@@ -666,6 +666,9 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 	if name == "" {
 		name = "session"
 	}
+	if err := common.ValidateNameRunes(name, common.NameLimit255); err != nil {
+		return nil, common.CodeDataError, err
+	}
 	var namePtr = &name
 	var sourcePtr *string
 	if req.Source != "" {

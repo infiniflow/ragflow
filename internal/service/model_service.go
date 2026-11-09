@@ -23,6 +23,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"os"
 
 	"ragflow/internal/common"
@@ -1718,6 +1721,11 @@ func verifyASRModel(ctx context.Context, driver modelModule.ModelDriver, modelNa
 // providers return an error or empty text for such a trivial image;
 // we accept any non-error response as a successful connectivity check.
 func verifyOCRModel(ctx context.Context, driver modelModule.ModelDriver, modelName string, apiConfig *modelModule.APIConfig) error {
+	if verifier, ok := driver.(interface {
+		VerifyOCRConnection(context.Context, *modelModule.APIConfig) error
+	}); ok {
+		return verifier.VerifyOCRConnection(ctx, apiConfig)
+	}
 	// Send a minimal 1×1 white PNG through the OCR pipeline to verify
 	// connectivity. Most OCRModel drivers only check server reachability
 	// rather than performing full document parsing.
@@ -1758,19 +1766,15 @@ func verifyDecisionModel(ctx context.Context, driver modelModule.ModelDriver, mo
 	return nil
 }
 
-// minimalPNG returns a 1×1 white PNG as a byte slice for OCR verification.
+// minimalPNG returns a 1×1 white PNG for OCR verification. OCR services decode
+// it before recognizing anything, so it has to be a well-formed image.
 func minimalPNG() []byte {
-	return []byte{
-		0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
-		0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
-		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
-		0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
-		0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41,
-		0x54, 0x08, 0xD7, 0x63, 0x60, 0x60, 0xF8, 0x0F,
-		0x00, 0x01, 0x01, 0x00, 0x05, 0x18, 0xD8, 0x32,
-		0x48, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
-		0x44, 0xAE, 0x42, 0x60, 0x82,
-	}
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.Set(0, 0, color.White)
+	var buf bytes.Buffer
+	// Encoding an in-memory image into a bytes.Buffer cannot fail.
+	_ = png.Encode(&buf, img)
+	return buf.Bytes()
 }
 
 func taskDriverConfig(provider *entity.TenantModelProvider, instance *entity.TenantModelInstance) (modelModule.ModelDriver, *modelModule.APIConfig, error) {
@@ -3105,10 +3109,16 @@ func (m *ModelProviderService) ListAllModels(pageIndex, pageSize int) ([]map[str
 	if err != nil {
 		return nil, err
 	}
-	if pageSize > 0 && pageIndex >= 0 && pageIndex*pageSize < len(models) {
-		return models[pageIndex*pageSize : (pageIndex+1)*pageSize], nil
+	if err := common.ValidatePagination(&pageIndex, &pageSize, nil); err != nil {
+		return nil, err
 	}
-	return models, nil
+	start := (pageIndex - 1) * pageSize
+	if start >= len(models) {
+		return []map[string]interface{}{}, nil
+	}
+	// Models are loaded from a file and kept in memory, so slice-based pagination is appropriate.
+	// If models are stored in a database, apply pagination in the query instead.
+	return models[start:min(start+pageSize, len(models))], nil
 }
 
 func (m *ModelProviderService) ShowModel(modelName string) (*modelModule.Model, error) {

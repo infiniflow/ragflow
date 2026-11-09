@@ -20,7 +20,7 @@ type eventSenderModelHandler[M MessageType] struct{}
 
 func (h *eventSenderModelHandler[M]) WrapModel(ctx context.Context, m Model[M], mc *TypedModelContext[M]) (Model[M], error) {
 	ec := getReActExecCtx[M](ctx)
-	if ec == nil {
+	if !ec.canSend() {
 		return m, nil
 	}
 	return wrapModelWithEventSender(m, ec), nil

@@ -368,7 +368,7 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	// Setup routes
 	r.Setup(ginEngine)
 
-	_, err := channels.Start(ctx)
+	_, err := channels.Start(ctx, agentService)
 	if err != nil {
 		return fmt.Errorf("start chat-channel: %w", err)
 	}

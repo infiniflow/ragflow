@@ -27,6 +27,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
@@ -181,7 +182,7 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 	}
 	if name, ok := req["name"]; ok {
 		nameStr, ok2 := name.(string)
-		if !ok2 || strings.TrimSpace(nameStr) == "" || len([]byte(nameStr)) > 128 {
+		if !ok2 || common.ValidateNameRunes(nameStr, common.NameLimit128) != nil {
 			return errors.New("invalid template name")
 		}
 	}

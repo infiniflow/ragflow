@@ -27,6 +27,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	"ragflow/internal/service/file"
+	"strings"
 	"sync"
 	"time"
 
@@ -90,11 +91,11 @@ type CreateSpaceRequest struct {
 
 // UpdateSpaceRequest represents the request to update a skills space
 type UpdateSpaceRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	EmbdID      string `json:"embd_id"`
-	RerankID    string `json:"rerank_id"`
-	TopK        int    `json:"top_k"`
+	Name        *string `json:"name"`
+	Description string  `json:"description"`
+	EmbdID      string  `json:"embd_id"`
+	RerankID    string  `json:"rerank_id"`
+	TopK        int     `json:"top_k"`
 }
 
 // getSkillsFolderID gets or creates the skills folder for a tenant
@@ -210,8 +211,8 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, req *CreateSpaceReq
 
 	// Fall back to a numbered name when an active space already uses the
 	// requested one, mirroring the dataset create rule.
-	// skill_space.name is a 128-byte column; keep generated names within it.
-	spaceName, err := common.UniqueName(req.Name, 128, func(candidate string) (bool, error) {
+	// skill_space.name is a 128-character column; keep generated names within it.
+	spaceName, err := common.UniqueName(req.Name, common.NameLimit128, func(candidate string) (bool, error) {
 		existing, lookupErr := s.spaceDAO.GetByTenantAndName(ctx, dao.DB, tenantID, candidate)
 		if lookupErr != nil {
 			if dao.IsNotFoundErr(lookupErr) {
@@ -396,10 +397,21 @@ func (s *SkillSpaceService) UpdateSpace(ctx context.Context, spaceID string, req
 	// Build updates
 	updates := make(map[string]interface{})
 
-	if req.Name != "" && req.Name != space.Name {
+	newName := ""
+	if req.Name != nil {
+		newName = strings.TrimSpace(*req.Name)
+		if newName == "" {
+			return nil, common.CodeDataError, errors.New("name cannot be empty or whitespace")
+		}
+		if err := common.ValidateNameRunes(newName, common.NameLimit128); err != nil {
+			return nil, common.CodeDataError, err
+		}
+	}
+
+	if newName != "" && newName != space.Name {
 		// Reject a rename onto another space's name; case-only changes are
 		// allowed, matching the dataset rename rule.
-		available, err := common.NameAvailable(space.Name, req.Name, func(candidate string) (bool, error) {
+		available, err := common.NameAvailable(space.Name, newName, func(candidate string) (bool, error) {
 			existing, lookupErr := s.spaceDAO.GetByTenantAndName(ctx, dao.DB, tenantID, candidate)
 			if lookupErr != nil {
 				if dao.IsNotFoundErr(lookupErr) {
@@ -413,11 +425,11 @@ func (s *SkillSpaceService) UpdateSpace(ctx context.Context, spaceID string, req
 			return nil, common.CodeOperatingError, err
 		}
 		if !available {
-			return nil, common.CodeDataError, fmt.Errorf("space with name '%s' already exists", req.Name)
+			return nil, common.CodeDataError, fmt.Errorf("space with name '%s' already exists", newName)
 		}
 
 		originalName := space.Name
-		updates["name"] = req.Name
+		updates["name"] = newName
 
 		// Update space first, then folder (atomic-like behavior with rollback on failure)
 		if err = s.spaceDAO.UpdateByID(ctx, dao.DB, spaceID, updates); err != nil {
@@ -425,7 +437,7 @@ func (s *SkillSpaceService) UpdateSpace(ctx context.Context, spaceID string, req
 		}
 
 		// Update folder name as well - if this fails, rollback space name
-		if err = s.fileDAO.UpdateByID(ctx, dao.DB, space.FolderID, map[string]interface{}{"name": req.Name}); err != nil {
+		if err = s.fileDAO.UpdateByID(ctx, dao.DB, space.FolderID, map[string]interface{}{"name": newName}); err != nil {
 			common.Error("Failed to update folder name, rolling back space name", err)
 			// Rollback space name
 			if rollbackErr := s.spaceDAO.UpdateByID(ctx, dao.DB, spaceID, map[string]interface{}{"name": originalName}); rollbackErr != nil {

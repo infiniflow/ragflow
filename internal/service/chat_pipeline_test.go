@@ -1207,11 +1207,8 @@ func TestBuildChunkFetchSQL(t *testing.T) {
 			wantFound: true,
 		},
 		{
-			// Python's regex is non-greedy, so WHERE-clause extraction
-			// stops at the first occurrence of ORDER BY / LIMIT / GROUP BY.
-			// Python's subsequent SQL string is then
-			// "select doc_id, ... from t where {where}", which DROPS
-			// the order by / limit suffixes. Go matches this behavior.
+			// The secondary fetch drops the aggregate query's trailing clauses
+			// and applies its own limit.
 			name:      "WHERE + ORDER BY + LIMIT 5 (suffixes dropped, no extra limit)",
 			sql:       "select * from t where x = 1 order by y limit 5",
 			multiKB:   false,
@@ -1248,7 +1245,7 @@ func TestBuildChunkFetchSQL(t *testing.T) {
 			if tc.name == "Infinity expectedCol is docnm (not _kwd)" {
 				expectedCol = "docnm"
 			}
-			gotSQL, gotFound := buildChunkFetchSQL(tc.sql, "t", expectedCol, tc.multiKB)
+			gotSQL, gotFound := buildChunkFetchSQL(tc.sql, "t", expectedCol, tc.multiKB, "elasticsearch")
 			if gotFound != tc.wantFound {
 				t.Errorf("found = %v, want %v", gotFound, tc.wantFound)
 			}
@@ -1335,13 +1332,13 @@ type sqlFakeEngine struct {
 	sqlCalls   *[]string
 	rowsBySQL  map[string][]map[string]interface{}
 	errBySQL   map[string]error
-	runSQL     func(ctx context.Context, table, sqlText string, kbIDs []string) ([]map[string]interface{}, error)
+	runSQL     func(ctx context.Context, sqlText string) ([]map[string]interface{}, error)
 }
 
 func (f *sqlFakeEngine) GetType() string { return f.engineType }
-func (f *sqlFakeEngine) RunSQL(ctx context.Context, table, sqlText string, kbIDs []string, format string) ([]map[string]interface{}, error) {
+func (f *sqlFakeEngine) RunSQL(ctx context.Context, sqlText string, format string) ([]map[string]interface{}, error) {
 	if f.runSQL != nil {
-		return f.runSQL(ctx, table, sqlText, kbIDs)
+		return f.runSQL(ctx, sqlText)
 	}
 	if f.sqlCalls != nil {
 		*f.sqlCalls = append(*f.sqlCalls, sqlText)
@@ -1378,7 +1375,7 @@ func TestFetchAggregateChunks_SkipsInfinityMultiKB(t *testing.T) {
 // TestFetchAggregateChunks_SingleKBSuccess verifies the secondary fetch
 // path populates chunks and doc_aggs correctly.
 func TestFetchAggregateChunks_SingleKBSuccess(t *testing.T) {
-	chunksSQL := "select doc_id, docnm_kwd from t where x = 1 limit 20"
+	chunksSQL := "select doc_id, docnm_kwd from t WHERE (x = 1) AND (kb_id = '" + scopeAllowedKB + "') limit 20"
 	sqlEngine := &sqlFakeEngine{
 		engineType: "elasticsearch",
 		rowsBySQL: map[string][]map[string]interface{}{
@@ -1393,7 +1390,7 @@ func TestFetchAggregateChunks_SingleKBSuccess(t *testing.T) {
 	chunks, docAggs := s.fetchAggregateChunks(
 		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
-		"docnm_kwd", []string{"kb_a"},
+		"docnm_kwd", []string{scopeAllowedKB},
 	)
 	if len(chunks) != 3 {
 		t.Fatalf("chunks len = %d, want 3", len(chunks))
@@ -1411,8 +1408,8 @@ func TestFetchAggregateChunks_SingleKBSuccess(t *testing.T) {
 	}
 	// Single-kb: each chunk gets kb_id from the dialog's kb list.
 	for i, c := range chunks {
-		if c["kb_id"] != "kb_a" {
-			t.Errorf("chunks[%d].kb_id = %v, want kb_a", i, c["kb_id"])
+		if c["kb_id"] != scopeAllowedKB {
+			t.Errorf("chunks[%d].kb_id = %v, want %s", i, c["kb_id"], scopeAllowedKB)
 		}
 	}
 }
@@ -1434,9 +1431,11 @@ func TestFetchAggregateChunks_NoWhereClause(t *testing.T) {
 
 // TestFetchAggregateChunks_RunSQLError verifies graceful failure.
 func TestFetchAggregateChunks_RunSQLError(t *testing.T) {
+	called := false
 	sqlEngine := &sqlFakeEngine{
 		engineType: "elasticsearch",
-		runSQL: func(ctx context.Context, table, sqlText string, kbIDs []string) ([]map[string]interface{}, error) {
+		runSQL: func(ctx context.Context, sqlText string) ([]map[string]interface{}, error) {
+			called = true
 			return nil, fmt.Errorf("engine boom")
 		},
 	}
@@ -1444,8 +1443,11 @@ func TestFetchAggregateChunks_RunSQLError(t *testing.T) {
 	chunks, docAggs := s.fetchAggregateChunks(
 		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
-		"docnm_kwd", []string{"kb_a"},
+		"docnm_kwd", []string{scopeAllowedKB},
 	)
+	if !called {
+		t.Fatal("expected the secondary query to execute")
+	}
 	if chunks != nil || docAggs != nil {
 		t.Errorf("expected nil on RunSQL error, got %v / %v", chunks, docAggs)
 	}
@@ -1523,7 +1525,7 @@ func TestBuildSQLReference_AggregateMissingSourceColumnsSecondaryFetch(t *testin
 	rows := []map[string]interface{}{
 		{"count": 42.0, "label": "total"},
 	}
-	chunksSQL := "select doc_id, docnm_kwd from t where x = 1 limit 20"
+	chunksSQL := "select doc_id, docnm_kwd from t WHERE (x = 1) AND (kb_id = '" + scopeAllowedKB + "') limit 20"
 	sqlEngine := &sqlFakeEngine{
 		engineType: "elasticsearch",
 		rowsBySQL: map[string][]map[string]interface{}{
@@ -1532,7 +1534,7 @@ func TestBuildSQLReference_AggregateMissingSourceColumnsSecondaryFetch(t *testin
 			},
 		},
 	}
-	kbs := []*entity.Knowledgebase{{ID: "kb_a"}}
+	kbs := []*entity.Knowledgebase{{ID: scopeAllowedKB}}
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
 		t.Context(), sqlEngine, "t",

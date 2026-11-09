@@ -96,7 +96,8 @@ import (
 )
 
 // ComponentNameParser is the canonical Parser component name; the value lives
-// in the schema package so the pipeline layer can reference the same identity.
+// in common and is re-exported by the schema package so both layers reference
+// the same identity.
 const ComponentNameParser = schema.ComponentNameParser
 
 // pageFormFeed is the byte that text-page mode treats as a
