@@ -477,8 +477,12 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, chatID string,
 			return
 		}
 
+		// The native pipeline keeps reasoning inside the answer between think
+		// markers. The OpenAI protocol carries it in reasoning_content instead,
+		// so the answer must drop that block or clients see it twice.
+		reasoning := ExtractReasoning(finalResult.Answer)
 		content := strings.TrimSpace(finalResult.Answer)
-		if finalResult.AnswerIsAuthoritative {
+		if finalResult.AnswerIsAuthoritative || reasoning != "" {
 			content = strings.TrimSpace(ExtractVisibleAnswer(finalResult.Answer))
 		}
 		completionTokens := tokenizer.NumTokensFromString(content)
@@ -510,10 +514,8 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, chatID string,
 			"role":    "assistant",
 			"content": resp.Content,
 		}
-		// The native pipeline keeps reasoning inside the answer between think
-		// markers. The OpenAI protocol carries it in reasoning_content instead,
-		// so clients can separate it from the answer.
-		if reasoning := ExtractReasoning(finalResult.Answer); reasoning != "" {
+		// Route the extracted block to the protocol field for it.
+		if reasoning != "" {
 			message["reasoning_content"] = reasoning
 		}
 		choices := []gin.H{{
