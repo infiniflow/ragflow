@@ -183,7 +183,9 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 	var linkedConnectors []*dao.ConnectorDatasetListItem
 	var scheduledTaskIDs []string
 	var pagerankUpdate *datasetPagerankUpdate
-	var embeddingChangedTo string
+	var chunkStoreEmbdID string
+	var previousEmbdID string
+	var previousTenantEmbdID *string
 	err = dao.DB.Transaction(func(tx *gorm.DB) error {
 		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(ctx, tx, datasetID)
 		if authErr != nil {
@@ -301,7 +303,14 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 			// column is added after the commit; with rows present the switch is
 			// rejected upstream because the old vectors cannot be reinterpreted.
 			if effectiveEmbdID != "" && effectiveEmbdID != lockedKB.EmbdID && lockedKB.ChunkNum == 0 {
-				embeddingChangedTo = effectiveEmbdID
+				chunkStoreEmbdID = effectiveEmbdID
+				previousEmbdID = lockedKB.EmbdID
+				if lockedKB.TenantEmbdID != nil {
+					tenantEmbdID := *lockedKB.TenantEmbdID
+					previousTenantEmbdID = &tenantEmbdID
+				} else {
+					previousTenantEmbdID = nil
+				}
 			}
 		}
 
@@ -516,8 +525,14 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 	}
 	publishDatasetSyncerTasks(scheduledTaskIDs)
 
-	if embeddingChangedTo != "" {
-		if err = d.ensureChunkStoreForEmbedding(ctx, updatedKB, embeddingChangedTo); err != nil {
+	if chunkStoreEmbdID != "" {
+		if err = d.ensureChunkStoreForEmbedding(ctx, updatedKB, chunkStoreEmbdID); err != nil {
+			// The update is already committed, so leaving the new model in place
+			// would strand the dataset on a store without its vector column: a
+			// retry sends the same model and skips the preparation entirely.
+			// Restore the previous binding instead, so the retry takes the
+			// change path and repairs the store.
+			d.restoreEmbeddingBinding(ctx, updatedKB.ID, chunkStoreEmbdID, previousEmbdID, previousTenantEmbdID)
 			return nil, common.CodeServerError, err
 		}
 	}
@@ -665,6 +680,25 @@ func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx 
 // existing store: Infinity adds the missing q_<n>_vec column, the SQL engines
 // add missing columns, and Elasticsearch leaves an existing chunk index
 // untouched.
+// restoreEmbeddingBinding reverts the model switch that the failed
+// post-commit preparation could not complete. The guard on the new model keeps
+// a concurrent switch from being overwritten.
+func (d *DatasetService) restoreEmbeddingBinding(ctx context.Context, datasetID, preparedEmbdID, previousEmbdID string, previousTenantEmbdID *string) {
+	updates := map[string]interface{}{"embd_id": previousEmbdID}
+	if previousTenantEmbdID != nil {
+		updates["tenant_embd_id"] = *previousTenantEmbdID
+	} else {
+		updates["tenant_embd_id"] = nil
+	}
+	err := dao.DB.WithContext(ctx).Model(&entity.Knowledgebase{}).
+		Where("id = ? AND embd_id = ?", datasetID, preparedEmbdID).
+		Updates(updates).Error
+	if err != nil {
+		common.Warn("failed to restore the embedding binding after chunk store preparation failed",
+			zap.String("dataset_id", datasetID), zap.Error(err))
+	}
+}
+
 func (d *DatasetService) ensureChunkStoreForEmbedding(ctx context.Context, kb *entity.Knowledgebase, embdID string) error {
 	if d.docEngine == nil || kb == nil {
 		return nil
