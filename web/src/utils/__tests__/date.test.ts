@@ -1,4 +1,25 @@
-import { formatSecondsToHumanReadable } from '../date';
+import { formatSecondsToHumanReadable, formatTime } from '../date';
+
+describe('formatTime', () => {
+  const OriginalTimezone = process.env.TZ;
+
+  beforeAll(() => {
+    process.env.TZ = 'Asia/Shanghai';
+  });
+
+  afterAll(() => {
+    if (OriginalTimezone === undefined) {
+      delete process.env.TZ;
+    } else {
+      process.env.TZ = OriginalTimezone;
+    }
+  });
+
+  test('formats timezone-aware timestamps in local time', () => {
+    expect(formatTime('2026-11-09T22:09:59+08:00')).toBe('22:09:59');
+    expect(formatTime('2026-11-09T14:09:59Z')).toBe('22:09:59');
+  });
+});
 
 describe('formatSecondsToHumanReadable', () => {
   test('formats sub-minute durations in seconds', () => {
