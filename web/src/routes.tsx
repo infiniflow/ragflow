@@ -68,11 +68,8 @@ export enum Routes {
   ProfileProfile = `${ProfileSetting}${Profile}`,
   DatasetTesting = '/retrieval',
   Chunk = '/chunk',
-  ChunkResult = `${Chunk}${Chunk}`,
   Parsed = '/parsed',
   ParsedResult = `${Chunk}${Parsed}`,
-  Result = '/result',
-  ResultView = `${Chunk}${Result}`,
   KnowledgeGraph = '/knowledge-graph',
   Compilation = '/compilation',
   AgentLogPage = '/agent-log-page',
@@ -221,11 +218,9 @@ const routeConfigOptions = [
       },
       {
         // The chunk page shows the (collapsed) primary sidebar like the
-        // dataset pages it is entered from, so it lives under the root layout
-        // rather than with the other chunk routes.
+        // dataset pages it is entered from, so it lives under the root layout.
         path: `${Routes.ParsedResult}/chunks`,
-        Component: () =>
-          import('@/pages/chunk/parsed-result/add-knowledge/components/knowledge-chunk'),
+        Component: () => import('@/pages/chunk'),
       },
       {
         Component: () => import('@/layouts/nav-group-layout'),
@@ -422,23 +417,6 @@ const routeConfigOptions = [
   {
     path: `${Routes.DataflowResult}`,
     Component: () => import('@/pages/dataflow-result'),
-  },
-  {
-    path: Routes.Chunk,
-    children: [
-      {
-        path: `${Routes.Chunk}`,
-        Component: () => import('@/pages/chunk'),
-      },
-      {
-        path: `${Routes.ChunkResult}/:id`,
-        Component: () => import('@/pages/chunk/chunk-result'),
-      },
-      {
-        path: `${Routes.ResultView}/:id`,
-        Component: () => import('@/pages/chunk/result-view'),
-      },
-    ],
   },
   {
     path: Routes.Admin,

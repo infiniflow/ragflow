@@ -19,7 +19,7 @@ import { AgentListItemType } from '@/interfaces/database/agent';
 import { NavigateToDataflowResultProps } from '@/pages/dataflow-result/interface';
 import { Routes } from '@/routes';
 import { useCallback } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router';
+import { useNavigate, useSearchParams } from 'react-router';
 
 export enum QueryStringMap {
   KnowledgeId = 'knowledgeId',
@@ -29,7 +29,6 @@ export enum QueryStringMap {
 export const useNavigatePage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { id } = useParams();
 
   const navigateToDatasetList = useCallback(
     ({ isCreate = false }: { isCreate?: boolean }) => {
@@ -229,15 +228,6 @@ export const useNavigatePage = () => {
     [searchParams],
   );
 
-  const navigateToChunk = useCallback(
-    (route: Routes) => {
-      navigate(
-        `${route}/${id}?${QueryStringMap.KnowledgeId}=${getQueryString(QueryStringMap.KnowledgeId)}`,
-      );
-    },
-    [getQueryString, id, navigate],
-  );
-
   const navigateToFiles = useCallback(
     (folderId?: string) => {
       navigate(`${Routes.Files}?folderId=${folderId}`);
@@ -288,7 +278,6 @@ export const useNavigatePage = () => {
     navigateToChat,
     navigateToChunkParsedResult,
     getQueryString,
-    navigateToChunk,
     navigateToAgents,
     navigateToAgent,
     navigateToAgentExplore,
