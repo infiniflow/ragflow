@@ -11,12 +11,9 @@ jest.mock('@/constants/agent', () => ({
     QueritSearch: 'QueritSearch',
     Search1APISearch: 'Search1APISearch',
     Search1APICrawl: 'Search1APICrawl',
-<<<<<<< HEAD
     Begin: 'Begin',
-=======
     SpecStreamSearch: 'SpecStreamSearch',
     SpecStreamExtract: 'SpecStreamExtract',
->>>>>>> 5b4297e (feat: add SpecStream web search provider and agent search and extract tools)
   },
   AgentDialogueMode: { Webhook: 'Webhook' },
 }));
