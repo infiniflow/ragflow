@@ -75,7 +75,6 @@ interface Parserconfig {
   from_page?: number;
   to_page?: number;
   graphrag: Graphrag;
-  html4excel: boolean;
   image_context_size: number;
   layout_recognize: string;
   llm_id: string;

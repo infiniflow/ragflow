@@ -52,7 +52,6 @@ export interface IDocumentInfo {
 
 export interface IParserConfig {
   delimiter?: string;
-  html4excel?: boolean;
   layout_recognize?: string;
   pages?: any[];
   chunk_token_num?: number;

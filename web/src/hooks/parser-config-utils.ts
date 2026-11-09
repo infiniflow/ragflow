@@ -68,7 +68,6 @@ export const normalizeParserConfig = (
     auto_questions,
     chunk_token_num,
     delimiter,
-    html4excel,
     layout_recognize,
     tag_kb_ids,
     topn_tags,

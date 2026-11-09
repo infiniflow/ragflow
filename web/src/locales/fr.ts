@@ -453,9 +453,6 @@ export default {
       delimiter: 'Délimiteur de texte',
       delimiterTip:
         'Un délimiteur peut être un ou plusieurs caractères spéciaux. Pour plusieurs caractères, encadrez-les de backticks (``). Ex : \\n`##`;',
-      html4excel: 'Excel vers HTML',
-      html4excelTip:
-        'Utilisé avec la méthode "générale". Si désactivé, les tableaux sont convertis en paires clé-valeur. Sinon, ils deviennent des tableaux HTML divisés toutes les 12 lignes.',
       autoKeywords: 'Mots-clés automatiques',
       autoKeywordsTip:
         'Extrait automatiquement N mots-clés par segment. Consomme des tokens. Voir la documentation : https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',

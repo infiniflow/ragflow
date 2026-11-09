@@ -1104,7 +1104,6 @@ Success:
             "parser_config": {
                 "chunk_token_num": 128,
                 "delimiter": "\\n",
-                "html4excel": false,
                 "layout_recognize": "DeepDOC"
             },
             "run": "UNSTART",
@@ -1229,7 +1228,6 @@ curl --request PATCH \
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
     - `"chunk_token_num"`: Defaults to `256`.
     - `"layout_recognize"`: Defaults to `"DeepDOC"`.
-    - `"html4excel"`: Indicates whether to convert Excel documents into HTML format. Defaults to `false`.
     - `"delimiter"`: Defaults to `"\n"`.
     - `"task_page_size"`: Defaults to `12`. For PDF only.
 - `"enabled"`: (*Body parameter*), `integer`
@@ -1287,7 +1285,6 @@ Success:
       "auto_questions": 0,
       "topn_tags": 3,
       "layout_recognize": "DeepDOC",
-      "html4excel": false,
       "image_context_size": 0,
       "table_context_size": 0
     },
@@ -1930,7 +1927,6 @@ Success:
             "parser_config": {
                 "chunk_token_num": 128,
                 "delimiter": "\\n",
-                "html4excel": false,
                 "layout_recognize": "DeepDOC"
             },
             "process_begin_at": "Thu, 24 Oct 2024 09:56:44 GMT",

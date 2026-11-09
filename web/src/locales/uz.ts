@@ -648,9 +648,6 @@ export default {
       delimiterPreviewEmpty:
         'Ajratgichlar yo‘q — matn faqat hajm bo‘yicha bo‘laklanadi.',
       delimiterPreviewCount: '({{count}})',
-      html4excel: 'Excel’dan HTML’ga',
-      html4excelTip:
-        'Umumiy bo‘laklash usuli bilan ishlatiladi. O‘chirilganda, to‘plamdagi elektron jadvallar (XLSX yoki XLS (Excel 97-2003)) kalit-qiymat juftliklariga tahlil qilinadi. Yoqilganda, ular HTML jadvallarga tahlil qilinadi va agar original jadval 12 qatordan ko‘p bo‘lsa, har 12 qatorda bo‘linadi. Tafsilotlar uchun https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration ga qarang.',
       autoKeywords: 'Ajratib olinadigan kalit so‘zlar soni',
       autoKeywordsTip:
         'Har bir bo‘lak uchun N ta kalit so‘zni avtomatik ajratib olib, ushbu kalit so‘zlarni o‘z ichiga olgan so‘rovlar uchun ularning reytingini oshiradi. ‘Sozlash’da belgilangan indekslash modeli tomonidan qo‘shimcha tokenlar sarflanishini yodda tuting. Bo‘lak uchun qo‘shilgan kalit so‘zlarni bo‘laklar ro‘yxatidan tekshirishingiz yoki yangilashingiz mumkin. Tafsilotlar uchun https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration ga qarang.',

@@ -66,7 +66,6 @@ func GetParserConfig(parserID string, parserConfig map[string]interface{}) map[s
 			"delimiter":        "\n",
 			"auto_keywords":    0,
 			"auto_questions":   0,
-			"html4excel":       false,
 			"topn_tags":        3,
 		},
 		"qa":           nil,

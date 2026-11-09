@@ -492,7 +492,7 @@ A dictionary representing the attributes to update, with the following keys:
   - `"email"`: Email
 - `"parser_config"`: `dict[str, Any]` The parsing configuration for the document. Its attributes vary based on the selected `"chunk_method"`:
   - `"chunk_method"`=`"naive"`:
-    `{"chunk_token_num":128,"delimiter":"\n","html4excel":False,"layout_recognize":"DeepDOC","raptor":{"use_raptor":False},"parent_child":{"use_parent_child":False,"children_delimiter":"\n"}}`.
+    `{"chunk_token_num":128,"delimiter":"\n","layout_recognize":"DeepDOC","raptor":{"use_raptor":False},"parent_child":{"use_parent_child":False,"children_delimiter":"\n"}}`.
   - `chunk_method`=`"qa"`:
     `{"raptor": {"use_raptor": False}}`
   - `chunk_method`=`"manual"`:
@@ -662,7 +662,7 @@ A `Document` object contains the following attributes:
 - `status`: `string` Reserved for future use.
 - `parser_config`: `ParserConfig` Configuration object for the parser. Its attributes vary based on the selected `chunk_method`:
   - `chunk_method`=`"naive"`:
-    `{"chunk_token_num":128,"delimiter":"\n","html4excel":False,"layout_recognize":"DeepDOC","raptor":{"use_raptor":False}}`.
+    `{"chunk_token_num":128,"delimiter":"\n","layout_recognize":"DeepDOC","raptor":{"use_raptor":False}}`.
   - `chunk_method`=`"qa"`:
     `{"raptor": {"use_raptor": False}}`
   - `chunk_method`=`"manual"`:

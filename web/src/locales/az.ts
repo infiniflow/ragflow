@@ -643,9 +643,6 @@ Nümunə: 1024 ölçülü vektor təsviri olan 1 KB-lıq mesaj ~9 KB yer tutur. 
       delimiterPreviewEmpty:
         'Ayırıcı yoxdur — mətn yalnız ölçüsünə görə hissələrə bölünəcək.',
       delimiterPreviewCount: '({{count}})',
-      html4excel: 'Excel-dən HTML-ə',
-      html4excelTip:
-        'Ümumi hissələrə bölmə üsulu ilə istifadə edin. Söndürüldükdə verilənlər dəstindəki elektron cədvəllər (XLSX və ya XLS(Excel 97-2003)) açar-dəyər cütlərinə çevriləcək. Aktivləşdirildikdə isə HTML cədvəllərinə çevriləcək və ilkin cədvəldə 12-dən çox sətir varsa, hər 12 sətirdən bir bölünəcək. Ətraflı məlumat üçün https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration ünvanına baxın.',
       autoKeywords: 'Çıxarılacaq açar sözlərin sayı',
       autoKeywordsTip:
         "Hər hissə üçün avtomatik olaraq N açar söz çıxarır ki, həmin sözləri ehtiva edən sorğularda hissələrin sıralamadakı yeri yüksəlsin. Nəzərə alın ki, 'Konfiqurasiya' bölməsində göstərilən indeksləşdirmə modeli əlavə tokenlər sərf edəcək. Hissəyə əlavə edilmiş açar sözləri hissələr siyahısından yoxlaya və ya yeniləyə bilərsiniz. Ətraflı məlumat üçün https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration ünvanına baxın.",

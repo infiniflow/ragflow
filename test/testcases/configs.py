@@ -51,7 +51,6 @@ DEFAULT_PARSER_CONFIG = {
     "delimiter": "\n",
     "auto_keywords": 0,
     "auto_questions": 0,
-    "html4excel": False,
     "image_context_size": 0,
     "table_context_size": 0,
     "topn_tags": 3,
