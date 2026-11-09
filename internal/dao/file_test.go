@@ -313,3 +313,125 @@ func TestFileDAO_GetByIDAndTenant(t *testing.T) {
 		t.Fatalf("unscoped GetByID should still see the row: %v", err)
 	}
 }
+
+func seedFolderAggregateTree(t *testing.T, db *gorm.DB, rows []entity.File) {
+	t.Helper()
+	for i := range rows {
+		if err := db.Create(&rows[i]).Error; err != nil {
+			t.Fatalf("failed to create file %s: %v", rows[i].ID, err)
+		}
+	}
+}
+
+func TestFileDAO_GetFolderAggregatesSumsNestedSizes(t *testing.T) {
+	db := setupFileTestDB(t)
+	seedFolderAggregateTree(t, db, []entity.File{
+		{ID: "root", ParentID: "root", TenantID: "t1", Name: "/", Type: "folder"},
+		{ID: "dirA", ParentID: "root", TenantID: "t1", Name: "dirA", Type: "folder"},
+		{ID: "subB", ParentID: "dirA", TenantID: "t1", Name: "subB", Type: "folder"},
+		{ID: "deep", ParentID: "subB", TenantID: "t1", Name: "deep.txt", Type: "doc", Size: 300},
+		{ID: "shallow", ParentID: "dirA", TenantID: "t1", Name: "shallow.txt", Type: "doc", Size: 200},
+		{ID: "empty", ParentID: "root", TenantID: "t1", Name: "empty", Type: "folder"},
+	})
+	d := NewFileDAO()
+	ctx := t.Context()
+
+	sizes, childFolders, err := d.GetFolderAggregates(ctx, db, []string{"dirA", "empty"})
+	if err != nil {
+		t.Fatalf("GetFolderAggregates failed: %v", err)
+	}
+	if got := sizes["dirA"]; got != 500 {
+		t.Fatalf("dirA size = %d, want 500", got)
+	}
+	if got := sizes["empty"]; got != 0 {
+		t.Fatalf("empty size = %d, want 0", got)
+	}
+	if !childFolders["dirA"] {
+		t.Fatal("dirA must report a child folder")
+	}
+	if childFolders["empty"] {
+		t.Fatal("empty must not report a child folder")
+	}
+}
+
+func TestFileDAO_GetFolderAggregatesHandlesNestedPageFolders(t *testing.T) {
+	db := setupFileTestDB(t)
+	seedFolderAggregateTree(t, db, []entity.File{
+		{ID: "root", ParentID: "root", TenantID: "t1", Name: "/", Type: "folder"},
+		{ID: "dirA", ParentID: "root", TenantID: "t1", Name: "dirA", Type: "folder"},
+		{ID: "subB", ParentID: "dirA", TenantID: "t1", Name: "subB", Type: "folder"},
+		{ID: "deep", ParentID: "subB", TenantID: "t1", Name: "deep.txt", Type: "doc", Size: 300},
+		{ID: "shallow", ParentID: "dirA", TenantID: "t1", Name: "shallow.txt", Type: "doc", Size: 200},
+	})
+	d := NewFileDAO()
+	ctx := t.Context()
+
+	// A keyword search can put a folder and its ancestor on the same page: both
+	// must report their own full subtree, so subB contributes to dirA and to itself.
+	sizes, _, err := d.GetFolderAggregates(ctx, db, []string{"dirA", "subB"})
+	if err != nil {
+		t.Fatalf("GetFolderAggregates failed: %v", err)
+	}
+	if got := sizes["dirA"]; got != 500 {
+		t.Fatalf("dirA size = %d, want 500", got)
+	}
+	if got := sizes["subB"]; got != 300 {
+		t.Fatalf("subB size = %d, want 300", got)
+	}
+}
+
+func TestFileDAO_GetFolderAggregatesSurvivesParentCycle(t *testing.T) {
+	db := setupFileTestDB(t)
+	seedFolderAggregateTree(t, db, []entity.File{
+		{ID: "a", ParentID: "b", TenantID: "t1", Name: "a", Type: "folder"},
+		{ID: "b", ParentID: "a", TenantID: "t1", Name: "b", Type: "folder"},
+		{ID: "leaf", ParentID: "a", TenantID: "t1", Name: "leaf.txt", Type: "doc", Size: 40},
+	})
+	d := NewFileDAO()
+	ctx := t.Context()
+
+	sizes, childFolders, err := d.GetFolderAggregates(ctx, db, []string{"a"})
+	if err != nil {
+		t.Fatalf("GetFolderAggregates failed: %v", err)
+	}
+	if got := sizes["a"]; got != 40 {
+		t.Fatalf("a size = %d, want 40", got)
+	}
+	if !childFolders["a"] {
+		t.Fatal("a must report a child folder")
+	}
+}
+
+func TestFileDAO_GetFolderAggregatesEmptyInput(t *testing.T) {
+	db := setupFileTestDB(t)
+	d := NewFileDAO()
+
+	sizes, childFolders, err := d.GetFolderAggregates(t.Context(), db, nil)
+	if err != nil {
+		t.Fatalf("GetFolderAggregates failed: %v", err)
+	}
+	if len(sizes) != 0 || len(childFolders) != 0 {
+		t.Fatalf("sizes = %v, childFolders = %v, want empty maps", sizes, childFolders)
+	}
+}
+
+func TestFileDAO_GetFolderAggregatesIgnoresSelfParentRow(t *testing.T) {
+	db := setupFileTestDB(t)
+	seedFolderAggregateTree(t, db, []entity.File{
+		{ID: "root", ParentID: "root", TenantID: "t1", Name: "/", Type: "folder"},
+	})
+	d := NewFileDAO()
+	ctx := t.Context()
+
+	// A root folder is its own parent, which must not count as a child folder.
+	sizes, childFolders, err := d.GetFolderAggregates(ctx, db, []string{"root"})
+	if err != nil {
+		t.Fatalf("GetFolderAggregates failed: %v", err)
+	}
+	if got := sizes["root"]; got != 0 {
+		t.Fatalf("root size = %d, want 0", got)
+	}
+	if childFolders["root"] {
+		t.Fatal("root must not report a child folder")
+	}
+}
