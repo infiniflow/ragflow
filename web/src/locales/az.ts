@@ -2659,13 +2659,6 @@ Nümunə: Virtual host üslubu`,
     },
     flow: {
       exportCurrentPage: 'Cari səhifəni ixrac et',
-      preprocess: {
-        preprocess: 'İlkin emal',
-        mainContent: 'Əsas məzmun',
-        abstract: 'Xülasə',
-        author: 'Müəllif',
-        sectionTitle: 'Bölmə başlığı',
-      },
       tags: 'Etiketlər',
       agentCategory: 'Kətan kateqoriyası',
       editTags: 'Etiketləri redaktə et',

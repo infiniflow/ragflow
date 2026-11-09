@@ -44,7 +44,6 @@ const GoMarkdown = "go_markdown"
 type MarkdownParser struct {
 	libType     string
 	ParseMethod string
-	VLM         map[string]any
 	// FetchRemoteImages controls whether HTTP(S) Markdown images are
 	// downloaded. NewMarkdownParser enables it for direct Markdown parsing;
 	// callers normalizing untrusted backend responses may disable it.
@@ -76,9 +75,6 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 	}
 	if v, ok := setup["parse_method"].(string); ok && v != "" {
 		p.ParseMethod = v
-	}
-	if v, ok := setup["vlm"].(map[string]any); ok {
-		p.VLM = v
 	}
 }
 

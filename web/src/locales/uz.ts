@@ -2558,13 +2558,6 @@ export default {
     },
     flow: {
       exportCurrentPage: 'Joriy sahifani eksport qilish',
-      preprocess: {
-        preprocess: 'Oldindan qayta ishlash',
-        mainContent: 'Asosiy kontent',
-        abstract: 'Annotatsiya',
-        author: 'Muallif',
-        sectionTitle: 'Bo‘lim sarlavhasi',
-      },
       tags: 'Teglar',
       agentCategory: 'Canvas toifasi',
       editTags: 'Teglarni tahrirlash',

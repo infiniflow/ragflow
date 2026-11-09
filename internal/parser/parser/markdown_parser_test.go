@@ -512,18 +512,9 @@ func TestMarkdownParser_ParseWithResult_InlineRawHTMLSurvives(t *testing.T) {
 
 func TestMarkdownParser_ConfigureFromSetup(t *testing.T) {
 	p, _ := NewMarkdownParser(GoMarkdown)
-	p.ConfigureFromSetup(map[string]any{
-		"parse_method": "deepdoc",
-		"vlm":          map[string]any{"llm_id": "gpt-4-vision"},
-	})
+	p.ConfigureFromSetup(map[string]any{"parse_method": "deepdoc"})
 	if p.ParseMethod != "deepdoc" {
 		t.Fatalf("ParseMethod = %q, want %q", p.ParseMethod, "deepdoc")
-	}
-	if p.VLM == nil {
-		t.Fatal("VLM is nil; want map")
-	}
-	if id, _ := p.VLM["llm_id"].(string); id != "gpt-4-vision" {
-		t.Fatalf("VLM[llm_id] = %q, want %q", id, "gpt-4-vision")
 	}
 }
 

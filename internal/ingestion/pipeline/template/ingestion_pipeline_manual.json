@@ -54,31 +54,20 @@
                             }
                         },
                         "doc": {
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "doc"
                             ]
                         },
                         "docx": {
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "docx"
-                            ],
-                            "vlm": {}
+                            ]
                         },
                         "pdf": {
                             "parse_method": "DeepDOC",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "pdf"
-                            ],
-                            "vlm": {}
+                            ]
                         }
                     }
                 },
@@ -453,22 +442,13 @@
                             "setups": [
                                 {
                                     "fileFormat": "pdf",
-                                    "parse_method": "DeepDOC",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "parse_method": "DeepDOC"
                                 },
                                 {
-                                    "fileFormat": "doc",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "fileFormat": "doc"
                                 },
                                 {
-                                    "fileFormat": "docx",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "fileFormat": "docx"
                                 }
                             ]
                         },

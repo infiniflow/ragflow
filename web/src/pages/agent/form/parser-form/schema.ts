@@ -5,7 +5,6 @@ import { z } from 'zod';
 export const SetupSchema = z
   .object({
     fileFormat: z.string().nullish(),
-    // preprocess: z.array(z.string()).optional(),
     parse_method: z.string().optional(),
     mineru_parse_method: z.string().optional(),
     mineru_lang: z.string().optional(),

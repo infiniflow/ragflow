@@ -1842,13 +1842,6 @@ export default {
       pleaseUploadAtLeastOneFile: '최소 하나의 파일을 업로드해 주세요',
     },
     flow: {
-      preprocess: {
-        preprocess: '전처리',
-        mainContent: '본문 내용',
-        abstract: '요약',
-        author: '저자',
-        sectionTitle: '섹션 제목',
-      },
       editTags: '태그 편집',
       editTagsDescription:
         '에이전트를 정리하고 필터링하기 위한 태그를 추가하세요. Enter 또는 쉼표를 눌러 추가합니다.',
