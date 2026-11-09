@@ -2,6 +2,7 @@ package dataset
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"ragflow/internal/common"
@@ -18,13 +19,14 @@ type recordingChunkStoreEngine struct {
 	vectorSize int
 	parserID   string
 	language   string
+	err        error
 }
 
 func (e *recordingChunkStoreEngine) CreateChunkStore(_ context.Context, baseName, datasetID string, vectorSize int, parserID, language string) error {
 	e.calls++
 	e.baseName, e.datasetID, e.vectorSize = baseName, datasetID, vectorSize
 	e.parserID, e.language = parserID, language
-	return nil
+	return e.err
 }
 
 // An embedding-model change on an empty dataset must prepare the chunk store for
@@ -125,6 +127,81 @@ func TestUpdateDatasetSkipsChunkStoreWhenModelUnchanged(t *testing.T) {
 	}
 	if eng.calls != 0 {
 		t.Fatalf("chunk store calls = %d, want 0", eng.calls)
+	}
+}
+
+// A failed post-commit preparation must not leave the dataset on a model whose
+// store was never prepared: the retry sends the same model, so the changed-model
+// condition would skip the repair. Restoring the previous binding lets the
+// retry take the change path again.
+func TestUpdateDatasetRestoresEmbeddingBindingWhenChunkStorePreparationFails(t *testing.T) {
+	cases := []struct {
+		name string
+		// failProbe fails the dimension probe instead of the store creation.
+		failProbe bool
+	}{
+		{name: "probe", failProbe: true},
+		{name: "create_store", failProbe: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupDatasetUpdateTestDB(t)
+			pushServiceDB(t, db)
+			insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+			eng := &recordingChunkStoreEngine{}
+			if !tc.failProbe {
+				eng.err = errors.New("engine unavailable")
+			}
+			svc := testDatasetUpdateService(t)
+			svc.docEngine = eng
+			var probeErr error
+			if tc.failProbe {
+				probeErr = errors.New("provider unavailable")
+			}
+			svc.embeddingDimension = func(context.Context, string, string) (int, error) {
+				return 1024, probeErr
+			}
+
+			model := "BAAI/bge-m3@Builtin"
+			ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+			if _, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model}); err == nil || code != common.CodeServerError {
+				t.Fatalf("UpdateDataset = (%d, %v), want a server error", code, err)
+			}
+
+			var kb entity.Knowledgebase
+			if err := dao.DB.Where("id = ?", "kb-1").Take(&kb).Error; err != nil {
+				t.Fatalf("reload dataset: %v", err)
+			}
+			if kb.EmbdID != "BAAI/bge-large-zh-v1.5@Builtin" {
+				t.Fatalf("embd_id after failed preparation = %q, want the previous model", kb.EmbdID)
+			}
+			if kb.TenantEmbdID != nil {
+				t.Fatalf("tenant_embd_id after failed preparation = %q, want nil", *kb.TenantEmbdID)
+			}
+
+			eng.err = nil
+			probeErr = nil
+			svc.embeddingDimension = func(context.Context, string, string) (int, error) {
+				return 1024, nil
+			}
+			if _, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model}); err != nil || code != common.CodeSuccess {
+				t.Fatalf("retry UpdateDataset = (%d, %v), want success", code, err)
+			}
+			if err := dao.DB.Where("id = ?", "kb-1").Take(&kb).Error; err != nil {
+				t.Fatalf("reload dataset: %v", err)
+			}
+			if kb.EmbdID != model {
+				t.Fatalf("embd_id after retry = %q, want %q", kb.EmbdID, model)
+			}
+			wantCalls := 2
+			if tc.failProbe {
+				wantCalls = 1
+			}
+			if eng.calls != wantCalls {
+				t.Fatalf("chunk store calls = %d, want %d", eng.calls, wantCalls)
+			}
+		})
 	}
 }
 
