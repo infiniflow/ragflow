@@ -25,6 +25,10 @@ import (
 
 const datasetPagerankUpdateTimeout = 30 * time.Second
 
+// restoreEmbeddingBindingTimeout bounds the compensating write that runs after
+// the request context may already be cancelled.
+const restoreEmbeddingBindingTimeout = 10 * time.Second
+
 type datasetPagerankUpdate struct {
 	value     int64
 	index     string
@@ -690,7 +694,12 @@ func (d *DatasetService) restoreEmbeddingBinding(ctx context.Context, datasetID,
 	} else {
 		updates["tenant_embd_id"] = nil
 	}
-	err := dao.DB.WithContext(ctx).Model(&entity.Knowledgebase{}).
+	// The probe usually fails because the provider hangs and the request is
+	// cancelled, so restoring the binding must not inherit that cancellation:
+	// this write is what lets the retry repair the store.
+	restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), restoreEmbeddingBindingTimeout)
+	defer cancel()
+	err := dao.DB.WithContext(restoreCtx).Model(&entity.Knowledgebase{}).
 		Where("id = ? AND embd_id = ?", datasetID, preparedEmbdID).
 		Updates(updates).Error
 	if err != nil {

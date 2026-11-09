@@ -211,3 +211,35 @@ func TestEnsureChunkStoreForEmbeddingWithoutEngine(t *testing.T) {
 		t.Fatalf("ensureChunkStoreForEmbedding without engine = %v, want nil", err)
 	}
 }
+
+// The request context is already cancelled when the provider hangs, which is
+// the common reason the preparation fails. The compensating write must still
+// run, otherwise the retry never repairs the store.
+func TestRestoreEmbeddingBindingIgnoresRequestCancellation(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Updates(map[string]interface{}{
+		"embd_id":        "BAAI/bge-m3@Builtin",
+		"tenant_embd_id": "BAAI/bge-m3@Builtin",
+	}).Error; err != nil {
+		t.Fatalf("switch model: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	svc := testDatasetUpdateService(t)
+	svc.restoreEmbeddingBinding(ctx, "kb-1", "BAAI/bge-m3@Builtin", "BAAI/bge-large-zh-v1.5@Builtin", nil)
+
+	var kb entity.Knowledgebase
+	if err := dao.DB.Where("id = ?", "kb-1").Take(&kb).Error; err != nil {
+		t.Fatalf("reload dataset: %v", err)
+	}
+	if kb.EmbdID != "BAAI/bge-large-zh-v1.5@Builtin" {
+		t.Fatalf("embd_id = %q, want the previous model despite a cancelled request", kb.EmbdID)
+	}
+	if kb.TenantEmbdID != nil {
+		t.Fatalf("tenant_embd_id = %q, want nil", *kb.TenantEmbdID)
+	}
+}
