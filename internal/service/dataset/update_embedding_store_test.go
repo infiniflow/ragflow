@@ -1,0 +1,136 @@
+package dataset
+
+import (
+	"context"
+	"testing"
+
+	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
+	"ragflow/internal/service"
+)
+
+type recordingChunkStoreEngine struct {
+	fakeChatDocEngine
+	calls      int
+	baseName   string
+	datasetID  string
+	vectorSize int
+	parserID   string
+	language   string
+}
+
+func (e *recordingChunkStoreEngine) CreateChunkStore(_ context.Context, baseName, datasetID string, vectorSize int, parserID, language string) error {
+	e.calls++
+	e.baseName, e.datasetID, e.vectorSize = baseName, datasetID, vectorSize
+	e.parserID, e.language = parserID, language
+	return nil
+}
+
+// An embedding-model change on an empty dataset must prepare the chunk store for
+// the new model. Infinity otherwise keeps only the previous model's
+// q_<n>_vec column, so both retrieval and the next parse fail on the new one.
+func TestUpdateDatasetPreparesChunkStoreForNewEmbeddingModel(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	eng := &recordingChunkStoreEngine{}
+	probes := 0
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = eng
+	svc.embeddingDimension = func(_ context.Context, tenantID, embdID string) (int, error) {
+		probes++
+		if tenantID != "tenant-1" {
+			t.Fatalf("probe tenant = %q, want tenant-1", tenantID)
+		}
+		if embdID != "BAAI/bge-m3@Builtin" {
+			t.Fatalf("probe model = %q, want BAAI/bge-m3@Builtin", embdID)
+		}
+		return 1024, nil
+	}
+
+	model := "BAAI/bge-m3@Builtin"
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	_, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model})
+	if err != nil {
+		t.Fatalf("UpdateDataset failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+	if probes != 1 || eng.calls != 1 {
+		t.Fatalf("probe calls = %d, chunk store calls = %d, want 1/1", probes, eng.calls)
+	}
+	if eng.baseName != "ragflow_tenant-1" {
+		t.Fatalf("base name = %q, want ragflow_tenant-1", eng.baseName)
+	}
+	if eng.datasetID != "kb-1" {
+		t.Fatalf("dataset id = %q, want kb-1", eng.datasetID)
+	}
+	if eng.vectorSize != 1024 {
+		t.Fatalf("vector size = %d, want 1024", eng.vectorSize)
+	}
+	if eng.parserID != string(entity.ParserTypeNaive) {
+		t.Fatalf("parser id = %q, want %q", eng.parserID, entity.ParserTypeNaive)
+	}
+}
+
+// A dataset that still holds chunks cannot reinterpret them with a new model, so
+// the store must be left alone.
+func TestUpdateDatasetKeepsChunkStoreWhenChunksExist(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("chunk_num", 3).Error; err != nil {
+		t.Fatalf("seed chunk_num: %v", err)
+	}
+
+	eng := &recordingChunkStoreEngine{}
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = eng
+	svc.embeddingDimension = func(context.Context, string, string) (int, error) {
+		t.Fatal("dimension must not be probed when the dataset still has chunks")
+		return 0, nil
+	}
+
+	model := "BAAI/bge-m3@Builtin"
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	if _, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model}); err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset = (%d, %v), want success", code, err)
+	}
+	if eng.calls != 0 {
+		t.Fatalf("chunk store calls = %d, want 0", eng.calls)
+	}
+}
+
+// Re-submitting the current model must not touch the store or the provider.
+func TestUpdateDatasetSkipsChunkStoreWhenModelUnchanged(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	eng := &recordingChunkStoreEngine{}
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = eng
+	svc.embeddingDimension = func(context.Context, string, string) (int, error) {
+		t.Fatal("dimension must not be probed when the model is unchanged")
+		return 0, nil
+	}
+
+	model := "BAAI/bge-large-zh-v1.5@Builtin"
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	if _, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model}); err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset = (%d, %v), want success", code, err)
+	}
+	if eng.calls != 0 {
+		t.Fatalf("chunk store calls = %d, want 0", eng.calls)
+	}
+}
+
+func TestEnsureChunkStoreForEmbeddingWithoutEngine(t *testing.T) {
+	svc := &DatasetService{}
+	if err := svc.ensureChunkStoreForEmbedding(t.Context(), &entity.Knowledgebase{ID: "kb-1"}, "BAAI/bge-m3@Builtin"); err != nil {
+		t.Fatalf("ensureChunkStoreForEmbedding without engine = %v, want nil", err)
+	}
+}

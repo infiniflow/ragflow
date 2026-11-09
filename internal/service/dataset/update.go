@@ -183,6 +183,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 	var linkedConnectors []*dao.ConnectorDatasetListItem
 	var scheduledTaskIDs []string
 	var pagerankUpdate *datasetPagerankUpdate
+	var embeddingChangedTo string
 	err = dao.DB.Transaction(func(tx *gorm.DB) error {
 		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(ctx, tx, datasetID)
 		if authErr != nil {
@@ -295,6 +296,13 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 			}
 			updates["embd_id"] = effectiveEmbdID
 			updates["tenant_embd_id"] = stringPtrIfNotEmpty(tenantEmbdID)
+			// An empty dataset can switch models, but its chunk store keeps the
+			// vector column of the previous model. Remember the change so the new
+			// column is added after the commit; with rows present the switch is
+			// rejected upstream because the old vectors cannot be reinterpreted.
+			if effectiveEmbdID != "" && effectiveEmbdID != lockedKB.EmbdID && lockedKB.ChunkNum == 0 {
+				embeddingChangedTo = effectiveEmbdID
+			}
 		}
 
 		// Design §5 fallback chains (v5.1/v5.2): when the request omits a field,
@@ -508,6 +516,12 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 	}
 	publishDatasetSyncerTasks(scheduledTaskIDs)
 
+	if embeddingChangedTo != "" {
+		if err = d.ensureChunkStoreForEmbedding(ctx, updatedKB, embeddingChangedTo); err != nil {
+			return nil, common.CodeServerError, err
+		}
+	}
+
 	if pagerankUpdate != nil {
 		if err = d.updateDatasetPagerankChunks(ctx, *pagerankUpdate); err != nil {
 			return nil, common.CodeServerError, err
@@ -644,4 +658,34 @@ func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx 
 	}
 
 	return &kb, common.CodeSuccess, nil
+}
+
+// ensureChunkStoreForEmbedding prepares the chunk store for a new embedding
+// model on an empty dataset. Every engine's CreateChunkStore is additive on an
+// existing store: Infinity adds the missing q_<n>_vec column, the SQL engines
+// add missing columns, and Elasticsearch leaves an existing chunk index
+// untouched.
+func (d *DatasetService) ensureChunkStoreForEmbedding(ctx context.Context, kb *entity.Knowledgebase, embdID string) error {
+	if d.docEngine == nil || kb == nil {
+		return nil
+	}
+	probe := d.embeddingDimension
+	if probe == nil {
+		factory := service.NewModelFactory()
+		probe = func(ctx context.Context, tenantID, embdID string) (int, error) {
+			return service.ProbeEmbeddingDimension(ctx, factory, tenantID, embdID)
+		}
+	}
+	dimension, err := probe(ctx, kb.TenantID, embdID)
+	if err != nil {
+		return fmt.Errorf("resolve embedding dimension for %s: %w", embdID, err)
+	}
+	language := ""
+	if kb.Language != nil {
+		language = *kb.Language
+	}
+	if err := d.docEngine.CreateChunkStore(ctx, fmt.Sprintf("ragflow_%s", kb.TenantID), kb.ID, dimension, kb.ParserID, language); err != nil {
+		return fmt.Errorf("prepare chunk store for embedding model %s: %w", embdID, err)
+	}
+	return nil
 }
