@@ -602,7 +602,7 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 		})
 
 		return kc.Deps{
-			Chat:            &kcChatInvoker{factory: modelFactory, tenantID: tenantID, llmID: llmID},
+			Chat:            &kcChatInvoker{factory: modelFactory, tenantID: tenantID, llmID: llmID, llmProgress: newKCLLMProgressReporter()},
 			Embed:           embedder,
 			WikiPages:       &kcWikiPageStore{docEngine: kcWiringDeps.Engine},
 			WikiMapVersions: mapStore,
@@ -616,10 +616,16 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 }
 
 // kcChatInvoker adapts a factory-created ChatModel to the knowledge compiler.
+type kcLLMProgressReporter interface {
+	begin(ctx context.Context) func()
+	report(ctx context.Context, message string)
+}
+
 type kcChatInvoker struct {
-	factory  *service.ModelFactory
-	tenantID string
-	llmID    string
+	factory     *service.ModelFactory
+	tenantID    string
+	llmID       string
+	llmProgress kcLLMProgressReporter
 }
 
 func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatResponse, error) {
@@ -629,6 +635,9 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	}
 	chatModel, err := c.factory.NewChatModel(permission.WithTenantID(ctx, c.tenantID), llmID)
 	if err != nil {
+		if !req.DisableRetry && c.llmProgress != nil {
+			c.llmProgress.report(ctx, "[ERROR] LLM call failed: "+kc.CompactError(err))
+		}
 		return nil, err
 	}
 	msgs := []models.Message{
@@ -685,7 +694,13 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 		// providers legitimately need several minutes to return a response.
 		attemptCtx, cancel := context.WithTimeout(ctx, kcChatAttemptTimeout)
 		defer cancel()
-		r, err := chatModel.ChatWithMessages(attemptCtx, msgs, config, nil)
+		r, err := func() (*models.ChatResponse, error) {
+			if c.llmProgress == nil {
+				return chatModel.ChatWithMessages(attemptCtx, msgs, config, nil)
+			}
+			defer c.llmProgress.begin(ctx)()
+			return chatModel.ChatWithMessages(attemptCtx, msgs, config, nil)
+		}()
 		if err != nil {
 			if !req.DisableRetry {
 				final := !appcommon.IsTransientError(err) || attempt > kcChatRetryMax
