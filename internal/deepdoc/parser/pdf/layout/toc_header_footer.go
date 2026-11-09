@@ -437,6 +437,22 @@ func (s pageShape) carriesProse() bool { return s.carriesLongProse() || s.body >
 // still passes carriesProse, so the body evidence keeps bounding removal.
 func (s pageShape) carriesLongProse() bool { return s.prose > tocMaxLongBoxes }
 
+// PageCarriesProseFromTexts reports whether aggregated page text reads as body
+// content using the same thresholds as RemoveTOCBoxes. Remote PDF finalize uses
+// this when deciding which bookmark TOC pages may be dropped from JSON items.
+func PageCarriesProseFromTexts(texts []string) bool {
+	if len(texts) == 0 {
+		return false
+	}
+	boxes := make([]pdf.TextBox, len(texts))
+	indices := make([]int, len(texts))
+	for i, text := range texts {
+		boxes[i] = pdf.TextBox{Text: text}
+		indices[i] = i
+	}
+	return shapeOfPage(boxes, indices).carriesProse()
+}
+
 // ---------------------------------------------------------------------------
 // Running header / footer removal.
 // ---------------------------------------------------------------------------

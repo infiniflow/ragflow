@@ -91,8 +91,11 @@ func maybeDispatchPDFVision(
 	// policies to already-normalized JSON and stays idempotent.
 	flatten, _ := setup["flatten_media_to_text"].(bool)
 	normalize := func(result parser.ParseResult) parser.ParseResult {
-		pdf := parser.PDFParser{FlattenMediaToText: flatten}
-		return parser.AttachPDFOutlines(pdf.NormalizeResult(ctx, filename, result), binary)
+		var pdf parser.PDFParser
+		pdf.FlattenMediaToText = flatten
+		pdf.ConfigureFromSetup(map[string]any(setup))
+		result = pdf.NormalizeResult(ctx, filename, result)
+		return pdf.FinalizePDFResult(binary, result)
 	}
 	if result, handled, err := maybeDispatchTenantPDFParser(ctx, db, filename, binary, tenantID, setup); handled {
 		if err != nil {
@@ -342,7 +345,7 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 	if err != nil {
 		return parser.ParseResult{}, err
 	}
-	sections, err := monkeyOCRv2ExtractSections(zipBytes)
+	sections, err := monkeyOCRv2ExtractSections(zipBytes, setupRemoveHeaderFooter(setup))
 	if err != nil {
 		return parser.ParseResult{}, err
 	}
@@ -428,7 +431,7 @@ func monkeyOCRv2RequestTimeout(setup schema.ParserSetup, apiConfig *modelModule.
 	return time.Duration(seconds) * time.Second
 }
 
-func monkeyOCRv2ExtractSections(zipBytes []byte) ([]string, error) {
+func monkeyOCRv2ExtractSections(zipBytes []byte, dropHeaderFooter bool) ([]string, error) {
 	reader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
 	if err != nil {
 		return nil, fmt.Errorf("MonkeyOCRv2 returned invalid ZIP: %w", err)
@@ -484,7 +487,7 @@ func monkeyOCRv2ExtractSections(zipBytes []byte) ([]string, error) {
 		if err = json.Unmarshal(data, &raw); err != nil {
 			return nil, fmt.Errorf("parse %s: %w", file.Name, err)
 		}
-		sections = append(sections, monkeyOCRv2Texts(raw, images)...)
+		sections = append(sections, monkeyOCRv2Texts(raw, images, dropHeaderFooter)...)
 	}
 	if len(sections) == 0 {
 		return nil, fmt.Errorf("MonkeyOCRv2 ZIP contains no textual layouts")
@@ -492,17 +495,22 @@ func monkeyOCRv2ExtractSections(zipBytes []byte) ([]string, error) {
 	return sections, nil
 }
 
-func monkeyOCRv2Texts(raw any, images map[string]*zip.File) []string {
+func monkeyOCRv2Texts(raw any, images map[string]*zip.File, dropHeaderFooter bool) []string {
 	if object, ok := raw.(map[string]any); ok {
 		for _, key := range []string{"layouts", "content_list", "results", "items"} {
 			if value, exists := object[key]; exists {
-				return monkeyOCRv2Texts(value, images)
+				return monkeyOCRv2Texts(value, images, dropHeaderFooter)
 			}
 		}
 		label := strings.ToLower(strings.ReplaceAll(getAnyString(object, "type", "label"), "_", "-"))
-		switch label {
-		case "page-header", "page-footer", "page-number", "discarded":
+		if label == "discarded" {
 			return nil
+		}
+		if dropHeaderFooter {
+			switch label {
+			case "page-header", "page-footer", "page-number":
+				return nil
+			}
 		}
 		if label == "picture" || label == "figure" || label == "image" {
 			return monkeyOCRv2EmbeddedImage(getAnyString(object, "text", "content", "markdown"), images)
@@ -520,7 +528,7 @@ func monkeyOCRv2Texts(raw any, images map[string]*zip.File) []string {
 	}
 	var result []string
 	for _, item := range items {
-		result = append(result, monkeyOCRv2Texts(item, images)...)
+		result = append(result, monkeyOCRv2Texts(item, images, dropHeaderFooter)...)
 	}
 	return result
 }
@@ -683,7 +691,7 @@ func dispatchMinerUPDF(
 	}
 
 	sizes, geometryErr := mineruPageSizes(ctx, binary)
-	items, mediaWarnings, err := mineruExtractJSONItems(zipBytes, sizes)
+	items, mediaWarnings, err := mineruExtractJSONItems(zipBytes, sizes, setupRemoveHeaderFooter(setup))
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", err)
 	}
@@ -706,7 +714,7 @@ func finishMinerURemoteResult(ctx context.Context, filename string, binary []byt
 	if len(zipBytes) > 0 {
 		sizes, geometryErr = mineruPageSizes(ctx, binary)
 	}
-	items, mediaWarnings, extractErr := mineruExtractJSONItems(zipBytes, sizes)
+	items, mediaWarnings, extractErr := mineruExtractJSONItems(zipBytes, sizes, setupRemoveHeaderFooter(setup))
 	if extractErr == nil && len(items) > 0 {
 		res := mineruJSONParseResult(filename, items)
 		appendMineruGeometryWarning(&res, geometryErr)
@@ -1178,6 +1186,12 @@ const (
 	mineruMaxMiddleBytes = 64 << 20
 )
 
+// setupRemoveHeaderFooter reads the parser setup flag that controls header/footer removal.
+func setupRemoveHeaderFooter(setup schema.ParserSetup) bool {
+	v, _ := setup["remove_header_footer"].(bool)
+	return v
+}
+
 // mineruContentBBoxScale is the divisor MinerU applies when writing
 // content_list bboxes: each edge is normalized to 0-1000 over the page box.
 const mineruContentBBoxScale = 1000.0
@@ -1188,7 +1202,7 @@ const mineruContentBBoxScale = 1000.0
 // works like DeepDoc. Zip figure bytes are not inlined here; the chunker crops
 // from the source PDF using positions. pdfPageSizes comes from the source PDF
 // (pdfium); middle.json in the zip fills any missing pages.
-func mineruExtractJSONItems(zipBytes []byte, pdfPageSizes map[int][2]float64) ([]map[string]any, []string, error) {
+func mineruExtractJSONItems(zipBytes []byte, pdfPageSizes map[int][2]float64, dropHeaderFooter bool) ([]map[string]any, []string, error) {
 	zipReader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
 	if err != nil {
 		return nil, nil, fmt.Errorf("open zip: %w", err)
@@ -1235,7 +1249,7 @@ func mineruExtractJSONItems(zipBytes []byte, pdfPageSizes map[int][2]float64) ([
 			return nil, nil, fmt.Errorf("parse content_list.json: %w", err)
 		}
 	case len(structured) > 0:
-		rawItems, err = mineruItemsFromStructuredContent(structured)
+		rawItems, err = mineruItemsFromStructuredContent(structured, dropHeaderFooter)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1247,7 +1261,7 @@ func mineruExtractJSONItems(zipBytes []byte, pdfPageSizes map[int][2]float64) ([
 	out := make([]map[string]any, 0, len(rawItems))
 	var zipOnlyOmitted int
 	for _, item := range rawItems {
-		converted := mineruContentItemToJSONBudget(item, images, pageSizes, budget)
+		converted := mineruContentItemToJSONBudget(item, images, pageSizes, budget, dropHeaderFooter)
 		if converted != nil {
 			out = append(out, converted)
 			continue
@@ -1354,7 +1368,7 @@ func mineruReadZipFile(f *zip.File) ([]byte, error) {
 	return body, nil
 }
 
-func mineruItemsFromStructuredContent(raw []byte) ([]map[string]any, error) {
+func mineruItemsFromStructuredContent(raw []byte, dropHeaderFooter bool) ([]map[string]any, error) {
 	var doc struct {
 		Pages []struct {
 			PageIdx int              `json:"page_idx"`
@@ -1367,7 +1381,7 @@ func mineruItemsFromStructuredContent(raw []byte) ([]map[string]any, error) {
 	items := make([]map[string]any, 0)
 	for _, page := range doc.Pages {
 		for _, block := range page.Blocks {
-			if item := mineruStructuredBlockToContentItem(page.PageIdx, block); item != nil {
+			if item := mineruStructuredBlockToContentItem(page.PageIdx, block, dropHeaderFooter); item != nil {
 				items = append(items, item)
 			}
 		}
@@ -1375,12 +1389,17 @@ func mineruItemsFromStructuredContent(raw []byte) ([]map[string]any, error) {
 	return items, nil
 }
 
-func mineruStructuredBlockToContentItem(pageIdx int, block map[string]any) map[string]any {
+func mineruStructuredBlockToContentItem(pageIdx int, block map[string]any, dropHeaderFooter bool) map[string]any {
 	typ, _ := block["type"].(string)
 	typ = strings.ToLower(strings.TrimSpace(typ))
-	switch typ {
-	case "header", "footer", "page_number", "page-header", "page-footer", "page_header", "page_footer", "aside_text", "discarded":
+	if typ == "discarded" {
 		return nil
+	}
+	if dropHeaderFooter {
+		switch typ {
+		case "header", "footer", "page_number", "page-header", "page-footer", "page_header", "page_footer":
+			return nil
+		}
 	}
 	content, _ := block["content"].(string)
 	captions := mineruAnnotationTexts(block["captions"])
@@ -1546,20 +1565,25 @@ func mergeMineruPageSizes(pdfSizes, middleSizes map[int][2]float64) map[int][2]f
 // mineruContentItemToJSON converts one MinerU content_list item without a
 // media budget. Tests and helpers that do not collect run warnings use this
 // wrapper; production extraction goes through mineruContentItemToJSONBudget.
-func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File, pageSizes map[int][2]float64) map[string]any {
-	return mineruContentItemToJSONBudget(item, images, pageSizes, nil)
+func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File, pageSizes map[int][2]float64, dropHeaderFooter bool) map[string]any {
+	return mineruContentItemToJSONBudget(item, images, pageSizes, nil, dropHeaderFooter)
 }
 
 // mineruContentItemToJSONBudget converts one content_list item. Figure bytes
 // from the MinerU zip are not inlined on this JSON path; when budget is set
 // (extract path) structured data-URI payloads are checked against the shared
 // media limits and omitted with warnings instead of being copied into items.
-func mineruContentItemToJSONBudget(item map[string]any, images map[string]*zip.File, pageSizes map[int][2]float64, budget *media.Budget) map[string]any {
+func mineruContentItemToJSONBudget(item map[string]any, images map[string]*zip.File, pageSizes map[int][2]float64, budget *media.Budget, dropHeaderFooter bool) map[string]any {
 	typ, _ := item["type"].(string)
 	typ = strings.ToLower(strings.TrimSpace(typ))
-	switch typ {
-	case "header", "footer", "page_number", "page-header", "page-footer", "discarded":
+	if typ == "discarded" {
 		return nil
+	}
+	if dropHeaderFooter {
+		switch typ {
+		case "header", "footer", "page_number", "page-header", "page-footer", "page_header", "page_footer":
+			return nil
+		}
 	}
 
 	text := mineruItemText(item, typ)

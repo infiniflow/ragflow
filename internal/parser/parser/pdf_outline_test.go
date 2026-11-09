@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
@@ -94,6 +95,73 @@ func TestParseWithResultAttachesOutline(t *testing.T) {
 	outline, ok := result.File["outline"].([]map[string]any)
 	if !ok || len(outline) != 1 || outline[0]["title"] != "Appendix" {
 		t.Fatalf("File[outline] = %#v, want the stubbed bookmark", result.File["outline"])
+	}
+}
+
+func TestFinalizePDFResultRemovesHeaderFooterLayouts(t *testing.T) {
+	stubPDFOutlines(t, nil)
+	p := &PDFParser{RemoveHeaderFooter: true}
+	result := pdfItemsToResult("doc.pdf", []map[string]any{
+		{"text": "body", "layout": "text", "page_number": 1},
+		{"text": "header text", "layout": "page-header", "page_number": 1},
+		{"text": "footer text", "layout": "footer", "page_number": 1},
+	}, 1)
+	result = p.FinalizePDFResult(nil, result)
+	if len(result.JSON) != 1 {
+		t.Fatalf("len(JSON)=%d, want 1 after header/footer removal", len(result.JSON))
+	}
+	if text := result.JSON[0].ToMap()["text"]; text != "body" {
+		t.Fatalf("remaining text = %#v", text)
+	}
+}
+
+func TestFinalizePDFResultRemoveTOCContentsHeading(t *testing.T) {
+	stubPDFOutlines(t, nil)
+	p := &PDFParser{RemoveTOC: true}
+	result := pdfItemsToResult("doc.pdf", []map[string]any{
+		{"text": "Contents", "layout": "title", "page_number": 1},
+		{"text": "Intro .......... 1", "layout": "text", "page_number": 1},
+		{"text": "Real body chapter.", "layout": "text", "page_number": 2},
+	}, 2)
+	result = p.FinalizePDFResult(nil, result)
+	for _, item := range result.JSON {
+		text := itemText(item.ToMap())
+		if strings.Contains(strings.ToLower(text), "contents") || strings.Contains(text, "..........") {
+			t.Fatalf("TOC-like text still present: %q in %#v", text, result.JSON)
+		}
+	}
+}
+
+func TestFinalizePDFResultKeepsProseOnTOCOutlinePage(t *testing.T) {
+	stubPDFOutlines(t, nil)
+	p := &PDFParser{RemoveTOC: true}
+	prose := []string{
+		"The way that can be told of is not the eternal way and the name that can be named is not the eternal name.",
+		"The named is the mother of ten thousand things and ever desireless one can see the mystery of it all here.",
+		"These two spring from the same source but differ in name and this appears as darkness within darkness.",
+	}
+	items := []map[string]any{
+		{"text": prose[0], "layout": "text", "page_number": 1},
+		{"text": prose[1], "layout": "text", "page_number": 1},
+		{"text": prose[2], "layout": "text", "page_number": 1},
+		{"text": "Contents", "layout": "title", "page_number": 1},
+		{"text": "Intro .......... 1", "layout": "text", "page_number": 1},
+		{"text": "Chapter body on page two.", "layout": "text", "page_number": 2},
+	}
+	result := pdfItemsToResult("doc.pdf", items, 2)
+	result.File["outline"] = []map[string]any{
+		{"title": "Contents", "level": 0, "page_number": 1},
+		{"title": "Chapter 1", "level": 0, "page_number": 2},
+	}
+	result = p.FinalizePDFResult(nil, result)
+	kept := false
+	for _, item := range result.JSON {
+		if strings.Contains(itemText(item.ToMap()), "eternal way") {
+			kept = true
+		}
+	}
+	if !kept {
+		t.Fatalf("prose on TOC outline page was dropped: %#v", result.JSON)
 	}
 }
 

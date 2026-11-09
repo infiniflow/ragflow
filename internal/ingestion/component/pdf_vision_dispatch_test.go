@@ -52,7 +52,7 @@ func TestMonkeyOCRv2ExtractSectionsUsesNativeJSON(t *testing.T) {
 	payload, _ := json.Marshal(map[string]any{"layouts": []map[string]any{{"label": "Page-header", "content": "ignored"}, {"label": "Title", "content": "Heading"}, {"label": "Formula", "content": "x^2"}}})
 	_, _ = file.Write(payload)
 	_ = writer.Close()
-	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes())
+	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes(), true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func TestMonkeyOCRv2ExtractSectionsEmbedsZIPImage(t *testing.T) {
 	_, _ = imageFile.Write([]byte("png-data"))
 	_ = writer.Close()
 
-	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes())
+	sections, err := monkeyOCRv2ExtractSections(buffer.Bytes(), true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +299,7 @@ func TestMinerUContentItemToJSONExplicitLayoutMapping(t *testing.T) {
 		{"table", map[string]any{"type": "table", "table_body": "<table></table>"}, "table", "table"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			got := mineruContentItemToJSON(tc.item, nil, nil)
+			got := mineruContentItemToJSON(tc.item, nil, nil, false)
 			if got == nil {
 				t.Fatal("item was dropped")
 			}
@@ -335,7 +335,7 @@ func TestMinerUExtractJSONItemsKeepsImageAndPositions(t *testing.T) {
 	}
 
 	sizes := map[int][2]float64{0: {612, 792}, 1: {612, 792}}
-	items, _, err := mineruExtractJSONItems(buf.Bytes(), sizes)
+	items, _, err := mineruExtractJSONItems(buf.Bytes(), sizes, true)
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
@@ -375,6 +375,57 @@ func TestMinerUExtractJSONItemsKeepsImageAndPositions(t *testing.T) {
 	}
 	if page, _ := imgPos[0][0].(int); page != 2 {
 		t.Fatalf("image page = %#v, want 1-based page 2", imgPos[0])
+	}
+}
+
+func TestMinerUExtractJSONItemsKeepsHeaderWhenNotRemoving(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	list, err := zw.Create("content_list.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = list.Write([]byte(`[
+		{"type":"text","text":"Hello","page_idx":0},
+		{"type":"header","text":"Running head","page_idx":0}
+	]`))
+	if err = zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	items, _, err := mineruExtractJSONItems(buf.Bytes(), nil, false)
+	if err != nil {
+		t.Fatalf("mineruExtractJSONItems: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("len(items)=%d, want 2 (header kept when remove_header_footer is off)", len(items))
+	}
+}
+
+func TestMinerUExtractJSONItemsStructuredKeepsHeaderWhenNotRemoving(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	structured, err := zw.Create("structured_content.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = structured.Write([]byte(`{
+		"pages": [{
+			"page_idx": 0,
+			"blocks": [
+				{"type":"text","content":"Hello"},
+				{"type":"header","content":"Running head"}
+			]
+		}]
+	}`))
+	if err = zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	items, _, err := mineruExtractJSONItems(buf.Bytes(), nil, false)
+	if err != nil {
+		t.Fatalf("mineruExtractJSONItems: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("len(items)=%d, want 2 (structured header kept when remove_header_footer is off)", len(items))
 	}
 }
 
@@ -458,7 +509,7 @@ func TestMinerUExtractJSONItemsScalesBBoxToPoints(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, _, err := mineruExtractJSONItems(buf.Bytes(), nil)
+	items, _, err := mineruExtractJSONItems(buf.Bytes(), nil, false)
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
@@ -494,7 +545,7 @@ func TestMinerUExtractJSONItemsWithoutGeometryKeepsText(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, _, err := mineruExtractJSONItems(buf.Bytes(), nil)
+	items, _, err := mineruExtractJSONItems(buf.Bytes(), nil, false)
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
@@ -578,7 +629,7 @@ func TestMinerURealContentListPositionsStayInPage(t *testing.T) {
 		pageWidth  = 595.0
 		pageHeight = 842.0
 	)
-	items, _, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {pageWidth, pageHeight}})
+	items, _, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {pageWidth, pageHeight}}, false)
 	if err != nil {
 		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
@@ -706,7 +757,7 @@ func TestMineruExtractJSONItemsStructuredContent(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	items, _, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {1000, 1000}})
+	items, _, err := mineruExtractJSONItems(buf.Bytes(), map[int][2]float64{0: {1000, 1000}}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -749,7 +800,7 @@ func TestFinishMinerURemoteResultPrefersStructuredZip(t *testing.T) {
 	res, err := finishMinerURemoteResult(t.Context(), "sample.pdf", []byte("%PDF-1.4"), &modelModule.MinerUV1Result{
 		Markdown: "# markdown only",
 		Zip:      buf.Bytes(),
-	}, nil)
+	}, schema.ParserSetup{"remove_header_footer": true})
 	if err != nil {
 		t.Fatal(err)
 	}
