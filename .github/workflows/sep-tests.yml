@@ -37,6 +37,12 @@ concurrency:
 # backend to build against github.com/infiniflow/onnxruntime_go.
 env:
   GOPRIVATE: github.com/infiniflow/onnxruntime_go
+  # Native static-lib cache location on infiniflow's self-hosted runners.
+  # build.sh resolves the libs from this dir (default ~/ragflow-native-libs);
+  # the offline-first contract keeps the version-keyed cache here so the
+  # fail-fast guard and the builder bind-mount both find it without an /opt
+  # pre-bake. Overridable per environment.
+  RAGFLOW_NATIVE_LIBS_DIR: /home/infiniflow/runners_work/runners_data/ragflow-native-libs
 
 jobs:
   ragflow_preflight:
