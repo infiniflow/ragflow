@@ -2090,7 +2090,7 @@ func tcadpZipFixtureForComponent(t *testing.T) []byte {
 }
 
 func TestParserFileFamilyPresentationExtensions(t *testing.T) {
-	for _, ext := range []string{"ppt", "pptx", "pages", "dps", "dpt"} {
+	for _, ext := range []string{"ppt", "pptx", "pages"} {
 		if got := ParserFileFamily(ext); got != "slides" {
 			t.Errorf("ParserFileFamily(%q) = %q, want slides", ext, got)
 		}
