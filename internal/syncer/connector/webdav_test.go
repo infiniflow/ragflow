@@ -168,6 +168,58 @@ func webDAVTestTree() map[string]webdavTestFile {
 	}
 }
 
+func withWebDAVBodyIdleTimeout(t *testing.T, timeout time.Duration) {
+	t.Helper()
+	original := webdavBodyIdleTimeout
+	webdavBodyIdleTimeout = timeout
+	t.Cleanup(func() { webdavBodyIdleTimeout = original })
+}
+
+func TestWebDAVDownloadCutsOffAStalledBody(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
+	withWebDAVBodyIdleTimeout(t, 100*time.Millisecond)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		time.Sleep(400 * time.Millisecond)
+		_, _ = io.WriteString(w, "late")
+	}))
+	defer server.Close()
+	client := &webdavClient{baseURL: server.URL, httpClient: &http.Client{}}
+
+	if _, err := client.download(context.Background(), server.URL+"/file", 1024); err == nil {
+		t.Fatal("download succeeded despite a body that stopped arriving past the idle timeout")
+	}
+}
+
+func TestWebDAVDownloadKeepsAProgressingBodyAlive(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
+	withWebDAVBodyIdleTimeout(t, 300*time.Millisecond)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		flusher, _ := w.(http.Flusher)
+		for i := 0; i < 5; i++ {
+			_, _ = io.WriteString(w, "ab")
+			if flusher != nil {
+				flusher.Flush()
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+	}))
+	defer server.Close()
+	client := &webdavClient{baseURL: server.URL, httpClient: &http.Client{}}
+
+	blob, err := client.download(context.Background(), server.URL+"/file", 1024)
+	if err != nil {
+		t.Fatalf("download failed on a progressing body: %v", err)
+	}
+	if string(blob) != "ababababab" {
+		t.Fatalf("blob = %q, want %q", string(blob), "ababababab")
+	}
+}
+
 func withWebDAVDownloadHeaderTimeout(t *testing.T, timeout time.Duration) {
 	t.Helper()
 	original := webdavDownloadHeaderTimeout

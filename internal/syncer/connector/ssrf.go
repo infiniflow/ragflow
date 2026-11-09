@@ -489,6 +489,17 @@ func newConnectorPinnedTransport(base *http.Client, hostname string, pinIP net.I
 			clone := t.Clone()
 			clone.DialContext = dial
 			clone.Proxy = proxy
+			// A supplied transport (custom CA or TLS settings) keeps its own
+			// header and handshake bounds; tighten them to this hop's timeout
+			// but never widen a shorter one the caller already chose.
+			if timeout > 0 {
+				if clone.ResponseHeaderTimeout <= 0 || clone.ResponseHeaderTimeout > timeout {
+					clone.ResponseHeaderTimeout = timeout
+				}
+				if clone.TLSHandshakeTimeout <= 0 || clone.TLSHandshakeTimeout > timeout {
+					clone.TLSHandshakeTimeout = timeout
+				}
+			}
 			if clone.TLSClientConfig == nil {
 				clone.TLSClientConfig = &tls.Config{ServerName: hostname, MinVersion: tls.VersionTLS12}
 			} else {

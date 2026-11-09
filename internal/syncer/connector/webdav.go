@@ -48,6 +48,11 @@ var (
 	// sync run's context: a file the threshold allows must be able to finish at
 	// the server's pace, and a stalled transfer still ends with the run.
 	webdavDownloadHeaderTimeout = webdavRequestTimeout
+	// webdavBodyIdleTimeout bounds how long a download may go without
+	// receiving body bytes. Every read resets it, so a large file that keeps
+	// arriving completes while a server that sends headers and then stalls is
+	// cut off instead of holding the sync run.
+	webdavBodyIdleTimeout = webdavRequestTimeout
 	webdavTextExtensions        = map[string]struct{}{
 		".txt": {}, ".md": {}, ".mdx": {}, ".conf": {}, ".log": {}, ".json": {},
 		".csv": {}, ".tsv": {}, ".xml": {}, ".yml": {}, ".yaml": {}, ".sql": {},
@@ -449,7 +454,9 @@ func (c *webdavClient) download(ctx context.Context, fileURL string, limit int64
 	if c.username != "" {
 		headers["Authorization"] = "Basic " + basicAuthHeader(c.username, c.password)
 	}
-	resp, err := connectorRequest(ctx, connectorRequestOptions{
+	downloadCtx, cancelDownload := context.WithCancel(ctx)
+	defer cancelDownload()
+	resp, err := connectorRequest(downloadCtx, connectorRequestOptions{
 		Method:        http.MethodGet,
 		RawURL:        fileURL,
 		Headers:       headers,
@@ -466,7 +473,9 @@ func (c *webdavClient) download(ctx context.Context, fileURL string, limit int64
 	if limit <= 0 {
 		limit = defaultWebDAVSizeThreshold
 	}
-	blob, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	body := newIdleTimeoutReader(resp.Body, webdavBodyIdleTimeout, cancelDownload)
+	defer body.Stop()
+	blob, err := io.ReadAll(io.LimitReader(body, limit+1))
 	if err != nil {
 		return nil, err
 	}
@@ -474,6 +483,32 @@ func (c *webdavClient) download(ctx context.Context, fileURL string, limit int64
 		return nil, fmt.Errorf("webdav response exceeds maximum size of %d bytes", limit)
 	}
 	return blob, nil
+}
+
+// idleTimeoutReader cancels its request when a read waits longer than idle, so
+// a body that stops arriving ends the transfer instead of parking the caller.
+// The deadline restarts on every completed read, which keeps a slow but
+// progressing download alive.
+type idleTimeoutReader struct {
+	body  io.Reader
+	timer *time.Timer
+	idle  time.Duration
+}
+
+func newIdleTimeoutReader(body io.Reader, idle time.Duration, expire func()) *idleTimeoutReader {
+	r := &idleTimeoutReader{body: body, idle: idle}
+	r.timer = time.AfterFunc(idle, expire)
+	return r
+}
+
+func (r *idleTimeoutReader) Read(p []byte) (int, error) {
+	n, err := r.body.Read(p)
+	r.timer.Reset(r.idle)
+	return n, err
+}
+
+func (r *idleTimeoutReader) Stop() {
+	r.timer.Stop()
 }
 
 // resolve joins a server-relative path or href onto the configured base URL.
