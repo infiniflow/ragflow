@@ -429,10 +429,6 @@ export default {
       layoutRecognize: 'Analyseur PDF',
       layoutRecognizeTip:
         "Utilise un modèle visuel pour détecter les titres, blocs de texte, images et tableaux dans les PDF. Si l'option naïve est choisie, seul le texte brut est extrait. Ne fonctionne que sur les fichiers PDF.",
-      taskPageSize: 'Taille de page par tâche',
-      taskPageSizeMessage: 'Veuillez saisir une taille de page pour la tâche !',
-      taskPageSizeTip:
-        'Pendant la reconnaissance, un fichier PDF est divisé en segments traités en parallèle. Une taille plus grande réduit les coupures de texte entre pages.',
       addPage: 'Ajouter une page',
       greaterThan: 'La valeur actuelle doit être supérieure à "à" !',
       greaterThanPrevious:

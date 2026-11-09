@@ -555,9 +555,6 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       layoutRecognize: 'Parser PDF',
       layoutRecognizeTip:
         "Usa un modello visivo per l'analisi del layout PDF per individuare efficacemente titoli, blocchi di testo, immagini e tabelle. Se viene scelta l'opzione naive, sarà recuperato solo il testo semplice nel PDF. Nota che questa opzione attualmente funziona SOLO per i documenti PDF.",
-      taskPageSize: 'Dimensione pagina attività',
-      taskPageSizeMessage: 'Inserisci la dimensione della pagina attività!',
-      taskPageSizeTip: `Durante il riconoscimento del layout, un file PDF viene suddiviso in chunk ed elaborato in parallelo per aumentare la velocità di elaborazione. Questo parametro imposta la dimensione di ogni chunk. Una dimensione chunk maggiore riduce la probabilità di dividere il testo continuo tra le pagine.`,
       addPage: 'Aggiungi pagina',
       greaterThan: 'Il valore attuale deve essere maggiore di!',
       greaterThanPrevious:

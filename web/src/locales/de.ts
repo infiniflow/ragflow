@@ -363,10 +363,6 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       layoutRecognize: 'Dokumentenparser',
       layoutRecognizeTip:
         'Verwendet ein visuelles Modell für die PDF-Layout-Analyse, um Dokumententitel, Textblöcke, Bilder und Tabellen effektiv zu lokalisieren. Wenn die einfache Option gewählt wird, wird nur der reine Text im PDF abgerufen. Bitte beachten Sie, dass diese Option derzeit NUR für PDF-Dokumente funktioniert. Weitere Informationen finden Sie unter https://ragflow.io/docs/dataset_configuration#document-parsing-configuration.',
-      taskPageSize: 'Aufgabenseitengröße',
-      taskPageSizeMessage: 'Bitte geben Sie die Größe der Aufgabenseite ein!',
-      taskPageSizeTip:
-        'Während der Layouterkennung wird eine PDF-Datei in Chunks aufgeteilt und parallel verarbeitet, um die Verarbeitungsgeschwindigkeit zu erhöhen. Dieser Parameter legt die Größe jedes Chunks fest. Eine größere Chunk-Größe verringert die Wahrscheinlichkeit, dass fortlaufender Text zwischen den Seiten aufgeteilt wird.',
       addPage: 'Seite hinzufügen',
       greaterThan: 'Der aktuelle Wert muss größer als "bis" sein!',
       greaterThanPrevious:

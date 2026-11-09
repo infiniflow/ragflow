@@ -1229,7 +1229,6 @@ curl --request PATCH \
     - `"chunk_token_num"`: Defaults to `256`.
     - `"layout_recognize"`: Defaults to `"DeepDOC"`.
     - `"delimiter"`: Defaults to `"\n"`.
-    - `"task_page_size"`: Defaults to `12`. For PDF only.
 - `"enabled"`: (*Body parameter*), `integer`
   Whether the document should be **available** in the Dataset.
   - `1` → （available）
@@ -1467,8 +1466,7 @@ Success:
                 "parser_config": {
                     "chunk_token_count": 128,
                     "delimiter": "\n",
-                    "layout_recognize": "DeepDOC",
-                    "task_page_size": 12
+                    "layout_recognize": "DeepDOC"
                 },
                 "chunk_method": "naive",
                 "process_begin_at": null,

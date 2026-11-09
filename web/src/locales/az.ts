@@ -608,10 +608,6 @@ Nümunə: 1024 ölçülü vektor təsviri olan 1 KB-lıq mesaj ~9 KB yer tutur. 
       layoutRecognize: 'PDF parseri',
       layoutRecognizeTip:
         'Sənəd başlıqlarının, mətn bloklarının, şəkillərin və cədvəllərin yerini səmərəli şəkildə müəyyən etmək üçün PDF tərtibatının təhlilində vizual modeldən istifadə edin. Sadə seçim seçilərsə, PDF-dən yalnız adi mətn çıxarılacaq. Nəzərə alın ki, bu seçim hazırda YALNIZ PDF sənədləri üçün işləyir.',
-      taskPageSize: 'Tapşırıq üzrə səhifə sayı',
-      taskPageSizeMessage: 'Tapşırıq üzrə səhifə sayını daxil edin!',
-      taskPageSizeTip:
-        'Tərtibatın tanınması zamanı emal sürətini artırmaq üçün PDF faylı fraqmentlərə bölünür və paralel emal olunur. Bu parametr hər fraqmentin ölçüsünü təyin edir. Daha böyük fraqment ölçüsü ardıcıl mətnin səhifələr arasında bölünməsi ehtimalını azaldır.',
       addPage: 'Səhifə əlavə et',
       greaterThan: 'Cari dəyər son dəyərdən böyük olmalıdır!',
       greaterThanPrevious: 'Cari dəyər əvvəlki son dəyərdən böyük olmalıdır!',

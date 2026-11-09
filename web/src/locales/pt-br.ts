@@ -151,10 +151,6 @@ export default {
       layoutRecognize: 'Reconhecimento de layout',
       layoutRecognizeTip:
         'Use modelos visuais para análise de layout para entender melhor a estrutura do documento e localizar efetivamente títulos, blocos de texto, imagens e tabelas. Se desativado, apenas o texto simples no PDF será recuperado. Para mais informações, acesse https://ragflow.io/docs/dataset_configuration#document-parsing-configuration.',
-      taskPageSize: 'Tamanho da página da tarefa',
-      taskPageSizeMessage: 'Por favor, insira o tamanho da página da tarefa!',
-      taskPageSizeTip:
-        'Durante o reconhecimento de layout, um arquivo PDF é dividido em fragmentos e processado em paralelo para aumentar a velocidade de processamento. Este parâmetro define o tamanho de cada fragmento. Um tamanho de fragmento maior reduz a probabilidade de dividir texto contínuo entre páginas.',
       addPage: 'Adicionar página',
       greaterThan: 'O valor atual deve ser maior que!',
       greaterThanPrevious: 'O valor atual deve ser maior que o anterior!',

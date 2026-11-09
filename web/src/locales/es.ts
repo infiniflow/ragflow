@@ -143,10 +143,6 @@ export default {
       layoutRecognize: 'Reconocimiento de disposición',
       layoutRecognizeTip:
         'Usa modelos visuales para el análisis de disposición y así identificar mejor la estructura del documento, encontrar dónde están los títulos, bloques de texto, imágenes y tablas. Sin esta función, solo se obtendrá el texto plano del PDF. Para más información, consulte https://ragflow.io/docs/dataset_configuration#document-parsing-configuration.',
-      taskPageSize: 'Tamaño de la tarea por página',
-      taskPageSizeMessage:
-        '¡Por favor ingresa el tamaño de la tarea por página',
-      taskPageSizeTip: `Si usas el reconocimiento de disposición, el archivo PDF se dividirá en grupos de páginas consecutivas. El análisis de disposición se realizará en paralelo entre los grupos para aumentar la velocidad de procesamiento. El 'Tamaño de tarea por página' determina el tamaño de los grupos. Cuanto mayor sea el tamaño de la página, menor será la posibilidad de dividir texto continuo entre páginas en diferentes fragmentos.`,
       addPage: 'Agregar página',
       greaterThan: 'El valor actual debe ser mayor que el valor final.',
       greaterThanPrevious: 'El valor actual debe ser mayor que el anterior.',

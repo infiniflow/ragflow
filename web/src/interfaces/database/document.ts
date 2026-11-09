@@ -57,7 +57,6 @@ export interface IParserConfig {
   chunk_token_num?: number;
   auto_keywords?: number;
   auto_questions?: number;
-  task_page_size?: number;
   raptor?: Raptor;
   graphrag?: GraphRag;
   image_context_window?: number;

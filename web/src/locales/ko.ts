@@ -544,9 +544,6 @@ export default {
       layoutRecognize: 'PDF 파서',
       layoutRecognizeTip:
         '비전 모델을 사용하여 PDF 레이아웃을 분석하고 문서 제목, 텍스트 블록, 이미지 및 표를 효과적으로 찾습니다. Naive 옵션을 선택하면 PDF의 일반 텍스트만 검색됩니다. 이 옵션은 현재 PDF 문서에만 적용됩니다.',
-      taskPageSize: '작업 페이지 크기',
-      taskPageSizeMessage: '작업 페이지 크기를 입력해 주세요',
-      taskPageSizeTip: `레이아웃 인식 중 PDF 파일은 처리 속도를 높이기 위해 chunk로 분할되어 병렬로 처리됩니다. 이 파라미터는 각 chunk의 크기를 설정합니다. chunk 크기가 클수록 페이지 간에 연속적인 텍스트가 분리될 가능성이 낮아집니다.`,
       addPage: '페이지 추가',
       greaterThan: '현재 값은 끝 값보다 커야 합니다',
       greaterThanPrevious: '현재 값은 이전 끝 값보다 커야 합니다',

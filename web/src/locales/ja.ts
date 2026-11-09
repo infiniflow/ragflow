@@ -224,9 +224,6 @@ export default {
       layoutRecognizeTip:
         'レイアウト分析のためにビジュアルモデルを使用し、文書の構造を理解しやすくします。詳細については、https://ragflow.io/docs/dataset_configuration#document-parsing-configuration をご覧ください。',
 
-      taskPageSize: 'タスクページサイズ',
-      taskPageSizeMessage: 'タスクページサイズを入力してください',
-      taskPageSizeTip: `レイアウト認識中、PDFファイルはチャンクに分割され、処理速度を向上させるために並列処理されます。`,
       addPage: 'ページを追加',
       greaterThan: '現在の値は終了ページより大きくなければなりません',
 

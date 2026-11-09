@@ -613,10 +613,6 @@ export default {
       layoutRecognize: 'PDF parseri',
       layoutRecognizeTip:
         'PDF maketini tahlil qilish uchun vizual modeldan foydalanib, hujjat sarlavhalari, matn bloklari, rasmlari va jadvallarini aniq joylashtiradi. Naive varianti tanlansa, PDFdan faqat oddiy matn olinadi. E’tibor bering, bu variant hozircha FAQAT PDF hujjatlari uchun ishlaydi.',
-      taskPageSize: 'Vazifa sahifa hajmi',
-      taskPageSizeMessage: 'Iltimos, vazifa sahifa hajmini kiriting!',
-      taskPageSizeTip:
-        'Maketni aniqlash paytida PDF fayli bo‘laklarga bo‘linadi va qayta ishlash tezligini oshirish uchun parallel qayta ishlanadi. Bu parametr har bir bo‘lak hajmini belgilaydi. Kattaroq bo‘lak hajmi sahifalar orasidagi uzluksiz matnni bo‘lib yuborish ehtimolini kamaytiradi.',
       addPage: 'Sahifa qo‘shish',
       greaterThan: 'Joriy qiymat "gacha" qiymatidan katta bo‘lishi kerak!',
       greaterThanPrevious:

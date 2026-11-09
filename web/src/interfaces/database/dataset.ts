@@ -122,7 +122,6 @@ export interface IKnowledgeFileParserConfig {
   chunk_token_num: number;
   layout_recognize: boolean;
   pages: number[][];
-  task_page_size: number;
 }
 
 export interface IKnowledgeFile {

@@ -148,9 +148,6 @@ export default {
       layoutRecognize: 'Pengenalan tata letak',
       layoutRecognizeTip:
         'Gunakan model visual untuk analisis tata letak untuk lebih mengidentifikasi struktur dokumen, menemukan di mana judul, blok teks, gambar, and tabel berada. Tanpa fitur ini, hanya teks biasa dari PDF yang dapat diperoleh. Untuk informasi lebih lanjut, lihat https://ragflow.io/docs/dataset_configuration#document-parsing-configuration.',
-      taskPageSize: 'Ukuran halaman tugas',
-      taskPageSizeMessage: 'Silakan masukkan ukuran halaman tugas Anda!',
-      taskPageSizeTip: `Jika menggunakan pengenalan tata letak, file PDF akan dibagi menjadi kelompok berturut-turut. Analisis tata letak akan dilakukan secara paralel antar kelompok untuk meningkatkan kecepatan pemrosesan. 'Ukuran halaman tugas' menentukan ukuran kelompok. Semakin besar ukuran halaman, semakin kecil kemungkinan teks berkelanjutan antara halaman dibagi menjadi potongan yang berbeda.`,
       addPage: 'Tambah halaman',
       greaterThan: 'Nilai saat ini harus lebih besar dari!',
       greaterThanPrevious: 'Nilai saat ini harus lebih besar dari sebelumnya!',

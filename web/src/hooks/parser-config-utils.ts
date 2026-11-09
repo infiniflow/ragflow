@@ -72,7 +72,6 @@ export const normalizeParserConfig = (
     tag_kb_ids,
     topn_tags,
     filename_embd_weight,
-    task_page_size,
     pages,
     children_delimiter,
     use_parent_child,

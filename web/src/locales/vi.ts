@@ -154,9 +154,6 @@ export default {
       layoutRecognize: 'Nhận dạng bố cục',
       layoutRecognizeTip:
         'Sử dụng các mô hình trực quan để phân tích bố cục nhằm xác định tốt hơn cấu trúc tài liệu, tìm vị trí của tiêu đề, khối văn bản, hình ảnh và bảng. Nếu không có tính năng này, chỉ có thể lấy được văn bản thuần của PDF. Để biết thêm thông tin, hãy xem https://ragflow.io/docs/dataset_configuration#document-parsing-configuration.',
-      taskPageSize: 'Kích thước trang tác vụ',
-      taskPageSizeMessage: 'Vui lòng nhập kích thước trang tác vụ của bạn!',
-      taskPageSizeTip: `Nếu sử dụng nhận dạng bố cục, tệp PDF sẽ được chia thành các nhóm trang liên tiếp. Phân tích bố cục sẽ được thực hiện song song giữa các nhóm để tăng tốc độ xử lý. 'Kích thước trang tác vụ' xác định kích thước của các nhóm. Kích thước trang càng lớn, khả năng chia tách văn bản liên tục giữa các trang thành các khối khác nhau càng thấp.`,
       addPage: 'Thêm trang',
       greaterThan: 'Giá trị hiện tại phải lớn hơn!',
       greaterThanPrevious: 'Giá trị hiện tại phải lớn hơn giá trị trước đó!',

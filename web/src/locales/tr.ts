@@ -636,9 +636,6 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       layoutRecognize: 'PDF ayrıştırıcı',
       layoutRecognizeTip:
         "PDF düzen analizi için görsel model kullanın. Belge başlıklarını, metin bloklarını, görüntüleri ve tabloları etkili bir şekilde konumlandırır. Naive seçeneği seçilirse yalnızca PDF'deki düz metin alınır. Bu seçeneğin şu anda YALNIZCA PDF belgeleri için çalıştığını lütfen unutmayın.",
-      taskPageSize: 'Görev sayfa boyutu',
-      taskPageSizeMessage: 'Lütfen görev sayfa boyutunu girin!',
-      taskPageSizeTip: `Düzen tanıma sırasında bir PDF dosyası parçalara bölünür ve işleme hızını artırmak için paralel olarak işlenir. Bu parametre her parçanın boyutunu ayarlar. Daha büyük parça boyutu, sayfalar arasındaki sürekli metni bölme olasılığını azaltır.`,
       addPage: 'Sayfa ekle',
       greaterThan: 'Geçerli değer bitiş değerinden büyük olmalıdır!',
       greaterThanPrevious:
