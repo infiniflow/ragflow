@@ -58,8 +58,9 @@ func TestIsTransientUnavailable(t *testing.T) {
 			err:  infinitysdk.NewInfinityException(int(infinitysdk.ErrorCodeTableNotExist), "Table not exist"),
 			want: false,
 		},
-		{name: "message only initing", err: errors.New("rpc error: Infinity is initing"), want: true},
-		{name: "message only starting", err: errors.New("Infinity is starting"), want: true},
+		{name: "rendered initing", err: errors.New("rpc error: InfinityException(2008, Infinity is initing)"), want: true},
+		{name: "rendered starting", err: errors.New("execute: InfinityException(2007, Infinity is starting)"), want: true},
+		{name: "quoted text", err: errors.New("document body says Infinity is initing"), want: false},
 		{name: "unrelated", err: errors.New("boom"), want: false},
 	}
 	for _, tc := range cases {
