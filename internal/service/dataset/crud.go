@@ -525,6 +525,20 @@ func (d *DatasetService) deleteDataset(ctx context.Context, kb *entity.Knowledge
 	}
 
 	if err := dao.DB.Transaction(func(tx *gorm.DB) error {
+		// Delete ingestion tasks (and their logs) belonging to this KB so they
+		// are not left orphaned. RUNNING/STOPPING tasks are kept: a worker still
+		// owns them and needs the row to be stopped and completed, the same
+		// rule document deletion applies (DeleteIfTerminal).
+		active := []string{common.RUNNING, common.STOPPING}
+		taskIDs := tx.Model(&entity.IngestionTask{}).Select("id").
+			Where("dataset_id = ? AND status NOT IN ?", kb.ID, active)
+		if err := tx.Where("task_id IN (?)", taskIDs).Delete(&entity.IngestionTaskLog{}).Error; err != nil {
+			return fmt.Errorf("delete dataset error for %s", kb.ID)
+		}
+		if err := tx.Where("dataset_id = ? AND status NOT IN ?", kb.ID, active).Delete(&entity.IngestionTask{}).Error; err != nil {
+			return fmt.Errorf("delete dataset error for %s", kb.ID)
+		}
+
 		// Delete index tasks referencing this KB.
 		if taskIDs := datasetIndexTaskIDs(kb); len(taskIDs) > 0 {
 			if err := tx.Where("id IN ?", taskIDs).Delete(&entity.Task{}).Error; err != nil {
