@@ -94,10 +94,8 @@ func trimCells(row []string) []string {
 // inside a merged block moves after the block, so every segment owns the
 // origins of its Covered slots.
 //
-// Segmentation is semantic only — sheet boundaries and image anchors, never a
-// size budget. The legacy html4excel path pre-cut a fixed 12 rows here, which
-// ignored the user's chunk size; that budget belongs to the chunker (see the
-// chunker's splitSpreadsheetTable).
+// Segmentation follows sheet boundaries and image anchors; the chunker applies
+// the configured size budget (see splitSpreadsheetTable).
 //
 // Every tuple is a spreadsheet position, [sheet, rowStart, rowEnd, colStart,
 // colEnd]. The same `positions` field carries PDF layout boxes
@@ -580,17 +578,6 @@ func deprecatedChunkRows(setup map[string]any, parserName string) {
 	}
 	common.Warn("spreadsheet parser ignored deprecated chunk_rows; configure row merging on the chunker",
 		zap.String("parser", parserName), zap.Int("chunk_rows", rows))
-}
-
-// deprecatedHTML4Excel reports the retired html4excel option. Both
-// spreadsheet builders collapsed into the segmented-HTML wire, so the flag
-// selects nothing anymore. Only an enabled flag warns: false is the default
-// every parser config carries, and warning there would be noise.
-func deprecatedHTML4Excel(setup map[string]any, parserName string) {
-	if enabled, ok := setup["html4excel"].(bool); ok && enabled {
-		common.Warn("spreadsheet parser ignored deprecated html4excel; spreadsheet tables are always emitted as segmented HTML",
-			zap.String("parser", parserName))
-	}
 }
 
 // extractXLSXImages returns the floating and in-cell images anchored to a

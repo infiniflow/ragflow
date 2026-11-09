@@ -2,11 +2,9 @@ export interface IChangeParserConfigRequestBody {
   pages?: number[][];
   chunk_token_num?: number;
   layout_recognize?: string;
-  task_page_size?: number;
   delimiter?: string;
   auto_keywords?: number;
   auto_questions?: number;
-  html4excel?: boolean;
   image_table_context_window?: number;
   image_context_size?: number;
   table_context_size?: number;

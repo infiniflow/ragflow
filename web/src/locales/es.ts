@@ -143,10 +143,6 @@ export default {
       layoutRecognize: 'Reconocimiento de disposición',
       layoutRecognizeTip:
         'Usa modelos visuales para el análisis de disposición y así identificar mejor la estructura del documento, encontrar dónde están los títulos, bloques de texto, imágenes y tablas. Sin esta función, solo se obtendrá el texto plano del PDF. Para más información, consulte https://ragflow.io/docs/dataset_configuration#document-parsing-configuration.',
-      taskPageSize: 'Tamaño de la tarea por página',
-      taskPageSizeMessage:
-        '¡Por favor ingresa el tamaño de la tarea por página',
-      taskPageSizeTip: `Si usas el reconocimiento de disposición, el archivo PDF se dividirá en grupos de páginas consecutivas. El análisis de disposición se realizará en paralelo entre los grupos para aumentar la velocidad de procesamiento. El 'Tamaño de tarea por página' determina el tamaño de los grupos. Cuanto mayor sea el tamaño de la página, menor será la posibilidad de dividir texto continuo entre páginas en diferentes fragmentos.`,
       addPage: 'Agregar página',
       greaterThan: 'El valor actual debe ser mayor que el valor final.',
       greaterThanPrevious: 'El valor actual debe ser mayor que el anterior.',
@@ -164,8 +160,6 @@ export default {
       topK: 'Top-K',
       topKTip: `Utilizado junto con el Rerank model, esta configuración define el número de fragmentos de texto que se enviarán al modelo reranking especificado.`,
       delimiter: `Delimitadores para segmentación de texto`,
-      html4excel: 'Excel a HTML',
-      html4excelTip: `Usar junto con el método de fragmentación General. Cuando está desactivado, los archivos de hoja de cálculo (XLSX, XLS (Excel 97-2003)) se analizan línea por línea como pares clave-valor. Cuando está activado, los archivos de hoja de cálculo se convierten en tablas HTML. Si la tabla original tiene más de 12 filas, el sistema la dividirá automáticamente en varias tablas HTML cada 12 filas. Para más información, consulte https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.`,
     },
 
     knowledgeConfiguration: {

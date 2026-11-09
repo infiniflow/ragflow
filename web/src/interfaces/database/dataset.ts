@@ -75,7 +75,6 @@ interface Parserconfig {
   from_page?: number;
   to_page?: number;
   graphrag: Graphrag;
-  html4excel: boolean;
   image_context_size: number;
   layout_recognize: string;
   llm_id: string;
@@ -123,7 +122,6 @@ export interface IKnowledgeFileParserConfig {
   chunk_token_num: number;
   layout_recognize: boolean;
   pages: number[][];
-  task_page_size: number;
 }
 
 export interface IKnowledgeFile {

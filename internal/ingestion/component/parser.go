@@ -308,7 +308,6 @@ func defaultSetups() map[string]schema.ParserSetup {
 		},
 		"spreadsheet": {
 			"parse_method": "deepdoc",
-			"html4excel":   false,
 			"suffix":       []string{"xls", "xlsx", "csv"},
 		},
 		"doc": {

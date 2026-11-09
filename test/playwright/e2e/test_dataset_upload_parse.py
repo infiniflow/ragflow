@@ -457,7 +457,6 @@ def step_04_set_dataset_settings(
         overlap_slider.press("ArrowRight")
         set_number_input(page, "ds-settings-parser-auto-keyword-input", 3)
         set_number_input(page, "ds-settings-parser-auto-question-input", 2)
-        set_switch_state(page, "ds-settings-parser-excel-to-html-switch", True)
 
     with step("fill graph and raptor settings"):
         page.get_by_test_id("ds-settings-graph-entity-types-add-btn").click()

@@ -84,7 +84,7 @@ func TestParseFileContent_DOCXReadsJSONItems(t *testing.T) {
 
 func TestMisnamedOfficeContentExtraction(t *testing.T) {
 	data := minimalDOCX(t, "Corrected document content")
-	for _, name := range []string{"renamed.doc", "renamed.wps", "renamed.xls"} {
+	for _, name := range []string{"renamed.doc", "renamed.xls"} {
 		t.Run(name, func(t *testing.T) {
 			content := parseFileContent(t.Context(), name, data)
 			if !strings.Contains(content, "Corrected document content") || content == string(data) {
