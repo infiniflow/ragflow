@@ -752,22 +752,6 @@ func (c *wecomChannel) requestJSON(ctx context.Context, method, endpoint string,
 	return nil
 }
 
-// redactURLError strips the query string from transport errors. WeCom carries
-// the access token / corp secret in the request URL query, and *url.Error keeps
-// the full URL in its message, so raw errors must not reach the log sinks.
-func redactURLError(err error) error {
-	var urlErr *url.Error
-	if !errors.As(err, &urlErr) {
-		return err
-	}
-	parsed, parseErr := url.Parse(urlErr.URL)
-	if parseErr != nil {
-		return urlErr
-	}
-	parsed.RawQuery = ""
-	return &url.Error{Op: urlErr.Op, URL: parsed.String(), Err: redactURLError(urlErr.Err)}
-}
-
 func (c *wecomChannel) handleTextMessage(ctx context.Context, chatID, senderID, messageID, text, chatType string, raw map[string]any) {
 	if strings.TrimSpace(text) == "" {
 		return
