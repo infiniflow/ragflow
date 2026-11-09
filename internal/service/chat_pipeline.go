@@ -1536,7 +1536,7 @@ func (s *ChatPipelineService) AsyncChat(
 		} else {
 			// Non-streaming: get the answer synchronously, with gp- group
 			// failover (flip + re-resolve + retry once on invocation error).
-			var answer string
+			var answer, reasoning string
 			err := dao.InvokeWithGroupFailover(ctx, dao.DB, chat.TenantID, entity.ModelTypeChat, chat.LLMID,
 				func(context.Context) (*modelModule.ChatModel, error) { return chatDriver, nil },
 				func(ctx context.Context) (*modelModule.ChatModel, error) {
@@ -1556,8 +1556,16 @@ func (s *ChatPipelineService) AsyncChat(
 					if callErr != nil {
 						return callErr
 					}
-					if resp != nil && resp.Answer != nil {
-						answer = *resp.Answer
+					if resp != nil {
+						// Drivers that separate the think block report it here and
+						// leave Answer clean, so the field has to travel with the
+						// result or the OpenAI encoder cannot fill reasoning_content.
+						if resp.Answer != nil {
+							answer = *resp.Answer
+						}
+						if resp.ReasonContent != nil {
+							reasoning = *resp.ReasonContent
+						}
 					}
 					return nil
 				},
@@ -1584,6 +1592,7 @@ func (s *ChatPipelineService) AsyncChat(
 			// Synthesize TTS for the full answer (non-stream, one-shot).
 			final := s.decorateAnswer(ctx, answer, kbinfos, prompt, questions, usedTokenCount, timer, embModel, chat.VectorSimilarityWeight, quote, ttsModel, langfuseTraceID, llmModelConfig, chat.TenantID, kbTenantIDStrings(kbs), len(knowledges) > 0)
 			final.Final = true
+			final.Reasoning = reasoning
 			sendResult(final)
 		}
 		common.Info("AsyncChat completed", zap.String("chat_id", chat.ID))
@@ -1970,8 +1979,12 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				return
 			}
 			answer := ""
+			reasoning := ""
 			if resp != nil && resp.Answer != nil {
 				answer = *resp.Answer
+			}
+			if resp.ReasonContent != nil {
+				reasoning = *resp.ReasonContent
 			}
 			// Debug log matching Python's dialog_service.py:335-336.
 			userContent := "[content not available]"
@@ -1985,6 +1998,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			// Raw answer with full TTS, no decorate_answer. Caller handles decoration.
 			sendResult(AsyncChatResult{
 				Answer:      answer,
+				Reasoning:   reasoning,
 				Reference:   map[string]interface{}{},
 				AudioBinary: s.synthesizeTTS(ctx, ttsModel, answer),
 				CreatedAt:   float64(time.Now().Unix()),
