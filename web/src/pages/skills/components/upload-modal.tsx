@@ -833,7 +833,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
                       {parsedMetadata.name && (
                         <div className="text-sm mt-1">
                           <span className="text-text-secondary">
-                            {t('skills.name') || 'Name'}:{' '}
+                            {t('skills.name', { defaultValue: 'Name' })}:{' '}
                           </span>
                           <span>{parsedMetadata.name}</span>
                         </div>
@@ -841,7 +841,10 @@ const UploadModal: React.FC<UploadModalProps> = ({
                       {parsedMetadata.description && (
                         <div className="text-sm mt-1">
                           <span className="text-text-secondary">
-                            {t('skills.description') || 'Description'}:{' '}
+                            {t('skills.description', {
+                              defaultValue: 'Description',
+                            })}
+                            :{' '}
                           </span>
                           <span>
                             {parsedMetadata.description.slice(0, 100)}
@@ -962,7 +965,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
             <Label htmlFor="git-token">
               {t('skills.accessToken') || 'Access Token'}
               <span className="text-text-secondary ml-1">
-                ({t('common.optional') || 'optional'})
+                ({t('common.optional', { defaultValue: 'optional' })})
               </span>
             </Label>
             <Input
