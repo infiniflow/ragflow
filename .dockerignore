@@ -38,9 +38,10 @@ target/
 # regardless of which resources are prepared for the dependency image.
 # The deps image is built from this directory with:
 #   cd deps && docker build -f Dockerfile -t infiniflow/ragflow_deps .
-# The native downloader tools/scripts/download_dev_deps.py is copied by the
-# main Dockerfile (not excluded here) so build.sh can read its ORT version pin
-# when running `./build.sh --go`.
+# tools/scripts is NOT excluded here: the main Dockerfile COPYs it so build.sh
+# can `source tools/scripts/native_lib_version.sh` (it does so at the top of the
+# script) and reference tools/scripts/download_dev_deps.py in its remediation
+# messages while building `./build.sh --go`.
 deps/*
 
 # ── IDE and editor config ──────────────────────────────────────────────────
