@@ -555,6 +555,14 @@ func (d *DatasetService) deleteDataset(ctx context.Context, kb *entity.Knowledge
 			}
 		}
 
+		// Delete connector links and sync logs referencing this KB.
+		if err := tx.Where("kb_id = ?", kb.ID).Delete(&entity.Connector2Kb{}).Error; err != nil {
+			return fmt.Errorf("delete dataset error for %s", kb.ID)
+		}
+		if err := tx.Where("kb_id = ?", kb.ID).Delete(&entity.SyncLogs{}).Error; err != nil {
+			return fmt.Errorf("delete dataset error for %s", kb.ID)
+		}
+
 		// Delete the KB folder file record.
 		if err := tx.Unscoped().
 			Where("source_type = ? AND type = ? AND name = ? AND tenant_id = ?",
