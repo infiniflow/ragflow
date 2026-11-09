@@ -4,6 +4,11 @@ package task
 
 import "context"
 
+type kcLLMProgressReporter interface {
+	begin(ctx context.Context) func()
+	report(ctx context.Context, message string)
+}
+
 type noopKCLLMProgressReporter struct{}
 
 func newKCLLMProgressReporter() kcLLMProgressReporter {

@@ -616,11 +616,6 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 }
 
 // kcChatInvoker adapts a factory-created ChatModel to the knowledge compiler.
-type kcLLMProgressReporter interface {
-	begin(ctx context.Context) func()
-	report(ctx context.Context, message string)
-}
-
 type kcChatInvoker struct {
 	factory     *service.ModelFactory
 	tenantID    string
