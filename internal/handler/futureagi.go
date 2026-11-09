@@ -88,5 +88,5 @@ func (h *FutureAGIHandler) DeleteAPIKey(c *gin.Context) {
 		common.RespondSuccess(c, nil, message)
 		return
 	}
-	common.RespondSuccess(c, ok, "success")
+	common.RespondSuccess(c, gin.H{"deleted": ok}, "success")
 }

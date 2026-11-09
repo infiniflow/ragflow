@@ -104,7 +104,8 @@ func TestFutureAGIHandler_GetAndDelete(t *testing.T) {
 		t.Fatalf("get payload=%v", got)
 	}
 	del := decode(t, serveLangfuse(http.MethodDelete, "/api/v1/futureagi/api-key", "", h.DeleteAPIKey))
-	if del["code"] != float64(common.CodeSuccess) || del["data"] != true {
+	deleted, _ := del["data"].(map[string]interface{})
+	if del["code"] != float64(common.CodeSuccess) || deleted["deleted"] != true {
 		t.Fatalf("delete payload=%v", del)
 	}
 }
