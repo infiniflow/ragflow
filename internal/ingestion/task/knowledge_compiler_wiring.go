@@ -622,7 +622,27 @@ type kcChatInvoker struct {
 	llmID    string
 }
 
-func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatResponse, error) {
+func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (response *kc.ChatResponse, resultErr error) {
+	callStartedAt := time.Now()
+	runtime.ReportProgressMessage(ctx, "Compiler", "[RUNNING] LLM request started; waiting for response")
+	terminalFailureReported := false
+	defer func() {
+		if resultErr != nil {
+			// GenJSON owns reporting when it disables this adapter's retry loop.
+			// Otherwise, report setup/cancellation errors that did not reach the
+			// provider retry reporter.
+			if !req.DisableRetry && !terminalFailureReported {
+				runtime.ReportProgressMessage(ctx, "Compiler", "[ERROR] LLM call failed: "+kc.CompactError(resultErr))
+			}
+			return
+		}
+		runtime.ReportProgressMessage(
+			ctx,
+			"Compiler",
+			fmt.Sprintf("[SUCCESS] LLM response received in %s", time.Since(callStartedAt).Round(time.Millisecond)),
+		)
+	}()
+
 	llmID := c.llmID
 	if req.LLMID != "" {
 		llmID = req.LLMID
@@ -695,6 +715,7 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 				}
 				if message, ok := failureReporter.FailureMessage(attempt, kcChatRetryMax+1, delay, err, final); ok {
 					runtime.ReportProgressMessage(ctx, "Compiler", message)
+					terminalFailureReported = final
 				}
 			}
 			return err

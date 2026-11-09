@@ -77,19 +77,23 @@ export const replaceText = (text: string) => {
   // Remove duplicate \n
   const nextText = text.replace(/(\n)\1+/g, '$1');
 
+  const statusClassNames: Record<string, string> = {
+    '[ERROR]': 'text-state-error',
+    '[WARN]': 'text-state-warning',
+    '[RUNNING]': 'text-accent-primary',
+    '[SUCCESS]': 'text-state-success',
+    '[INFO]': 'text-text-secondary',
+  };
+
   const replacedText = reactStringReplace(
     nextText,
-    /(\[(?:ERROR|WARN)\][^\r\n]*)/g,
+    /(\[(?:ERROR|WARN|RUNNING|SUCCESS|INFO)\][^\r\n]*)/g,
     (match, i) => {
+      const status = match.match(
+        /^\[(?:ERROR|WARN|RUNNING|SUCCESS|INFO)\]/,
+      )?.[0];
       return (
-        <span
-          key={i}
-          className={
-            match.startsWith('[WARN]')
-              ? 'text-state-warning'
-              : 'text-state-error'
-          }
-        >
+        <span key={i} className={status ? statusClassNames[status] : undefined}>
           {match}
         </span>
       );
