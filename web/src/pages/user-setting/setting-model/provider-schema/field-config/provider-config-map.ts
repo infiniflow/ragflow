@@ -25,14 +25,21 @@ const buildAzureApiKey = (values: Record<string, any>) =>
     : (values.api_key ?? '');
 
 const buildMineruApiKey = (values: Record<string, any>) => {
-  const cfg: Record<string, any> = { ...values };
-  delete cfg.instance_name;
-  cfg.mineru_delete_output = values.mineru_delete_output ? '1' : '0';
+  // Only persist MinerU provider fields. Edit-mode form values also carry
+  // instance metadata (credential_status, model_info, base_url, …); spreading
+  // those into api_key overflows tenant_model_instance.api_key (VARCHAR 512).
+  const cfg: Record<string, any> = {
+    mineru_apiserver: values.mineru_apiserver ?? '',
+    mineru_api_token: values.mineru_api_token ?? '',
+    mineru_output_dir: values.mineru_output_dir ?? '',
+    mineru_backend: values.mineru_backend ?? 'pipeline',
+    mineru_delete_output: values.mineru_delete_output ? '1' : '0',
+  };
   if (
-    values.mineru_backend !== 'vlm-http-client' &&
-    values.mineru_backend !== 'hybrid-http-client'
+    values.mineru_backend === 'vlm-http-client' ||
+    values.mineru_backend === 'hybrid-http-client'
   ) {
-    delete cfg.mineru_server_url;
+    cfg.mineru_server_url = values.mineru_server_url ?? '';
   }
   return cfg;
 };
