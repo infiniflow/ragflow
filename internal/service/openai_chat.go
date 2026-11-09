@@ -477,15 +477,18 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, chatID string,
 			return
 		}
 
-		// The native pipeline keeps reasoning inside the answer between think
-		// markers. The OpenAI protocol carries it in reasoning_content instead,
-		// so the answer must drop that block or clients see it twice.
-		reasoning := ExtractReasoning(finalResult.Answer)
+		// Drivers that separate the think block report it on Reasoning; the
+		// native no-tool path keeps it inline, so fall back to the markers.
+		reasoning := ReasoningOf(finalResult)
 		content := strings.TrimSpace(finalResult.Answer)
 		if finalResult.AnswerIsAuthoritative || reasoning != "" {
 			content = strings.TrimSpace(ExtractVisibleAnswer(finalResult.Answer))
 		}
-		completionTokens := tokenizer.NumTokensFromString(content)
+		reasoningTokens := 0
+		if reasoning != "" {
+			reasoningTokens = tokenizer.NumTokensFromString(reasoning)
+		}
+		completionTokens := tokenizer.NumTokensFromString(content) + reasoningTokens
 		resp := &OpenAICompletionResponse{
 			Model:            openaiReq.Model,
 			Content:          content,
@@ -501,13 +504,6 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, chatID string,
 				}
 			}
 			s.enrichChunksWithDocumentMetadata(ctx, resp.Reference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
-		}
-
-		contextUsed := 0
-		for _, m := range openaiReq.Messages {
-			if c, ok := m["content"].(string); ok {
-				contextUsed += tokenizer.NumTokensFromString(c)
-			}
 		}
 
 		message := gin.H{
@@ -538,7 +534,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, chatID string,
 				"completion_tokens": resp.CompletionTokens,
 				"total_tokens":      resp.PromptTokens + resp.CompletionTokens,
 				"completion_tokens_details": gin.H{
-					"reasoning_tokens":           contextUsed,
+					"reasoning_tokens":           reasoningTokens,
 					"accepted_prediction_tokens": resp.CompletionTokens,
 					"rejected_prediction_tokens": 0,
 				},

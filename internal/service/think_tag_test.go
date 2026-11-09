@@ -409,3 +409,21 @@ func TestExtractReasoning_UnclosedBlock(t *testing.T) {
 		t.Fatalf("ExtractReasoning = %q, want empty for an unclosed block", got)
 	}
 }
+
+// A driver that separates the think block reports it on Reasoning; the value
+// must win over any marker left in Answer.
+func TestReasoningOfPrefersDriverField(t *testing.T) {
+	got := ReasoningOf(AsyncChatResult{Reasoning: "from driver", Answer: "<think>from answer</think>answer"})
+	if got != "from driver" {
+		t.Fatalf("ReasoningOf = %q, want the driver field", got)
+	}
+}
+
+// The native no-tool path keeps reasoning inline, so the marker fallback has
+// to recover it when the driver field is empty.
+func TestReasoningOfFallsBackToMarkers(t *testing.T) {
+	got := ReasoningOf(AsyncChatResult{Answer: "<think>from answer</think>answer"})
+	if got != "from answer" {
+		t.Fatalf("ReasoningOf = %q, want the inline block", got)
+	}
+}

@@ -401,6 +401,16 @@ func ExtractReasoning(raw string) string {
 	return strings.TrimSpace(stripThinkTags(raw[start+len(thinkOpen) : end]))
 }
 
+// ReasoningOf returns the reasoning a result carries: the driver-reported
+// field when the driver separates the think block, otherwise the inline block
+// the native path leaves in Answer.
+func ReasoningOf(result AsyncChatResult) string {
+	if result.Reasoning != "" {
+		return result.Reasoning
+	}
+	return ExtractReasoning(result.Answer)
+}
+
 // BufferAnswerDelta processes an answer delta through the think-state lifecycle.
 // When closePending is true, it first flushes the deferred think buffer and </think>
 // marker, then processes pendingAfterClose + the new answer text.
