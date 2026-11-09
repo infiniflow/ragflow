@@ -1082,6 +1082,11 @@ class DocMetadataService:
 
         Returns:
             Sorted list of unique metadata field names
+
+        Raises:
+            Exception: Metadata store lookup failures are propagated so that callers
+                can tell "this dataset has no metadata keys" apart from "the metadata
+                store is unavailable".
         """
         if not kb_ids:
             return []
@@ -1100,7 +1105,7 @@ class DocMetadataService:
             return sorted(keys)
         except Exception as e:
             logging.error(f"Error getting metadata keys for KBs {kb_ids}: {e}")
-            return []
+            raise
 
     @classmethod
     def get_metadata_for_documents(cls, doc_ids: list[str] | None, kb_id: str) -> dict[str, dict]:
