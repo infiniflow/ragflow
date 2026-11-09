@@ -105,6 +105,8 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 	validator := utility.NewScheduledTask("Admin validator", globalConfig.GetHeartbeatInterval(), adminapi.CheckServicePeriodically)
 	validator.Start()
 	defer validator.Stop()
+	stopMetrics := startMetrics(ctx)
+	defer stopMetrics()
 
 	// Start HTTP server in a goroutine
 	go func() {
