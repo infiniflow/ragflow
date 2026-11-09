@@ -536,8 +536,13 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 			// retry sends the same model and skips the preparation entirely.
 			// Restore the previous binding instead, so the retry takes the
 			// change path and repairs the store.
-			d.restoreEmbeddingBinding(ctx, updatedKB.ID, chunkStoreEmbdID, previousEmbdID, previousTenantEmbdID)
-			return nil, common.CodeServerError, err
+			if restoreErr := d.restoreEmbeddingBinding(ctx, updatedKB.ID, chunkStoreEmbdID, previousEmbdID, previousTenantEmbdID); restoreErr != nil {
+				return nil, common.CodeServerError, fmt.Errorf(
+					"dataset settings were saved, but the chunk store preparation failed and the embedding binding could not be restored: %w",
+					errors.Join(err, restoreErr))
+			}
+			return nil, common.CodeServerError, fmt.Errorf(
+				"dataset settings were saved, but the chunk store preparation failed; the embedding binding was restored so a retry repairs it: %w", err)
 		}
 	}
 
@@ -687,7 +692,7 @@ func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx 
 // restoreEmbeddingBinding reverts the model switch that the failed
 // post-commit preparation could not complete. The guard on the new model keeps
 // a concurrent switch from being overwritten.
-func (d *DatasetService) restoreEmbeddingBinding(ctx context.Context, datasetID, preparedEmbdID, previousEmbdID string, previousTenantEmbdID *string) {
+func (d *DatasetService) restoreEmbeddingBinding(ctx context.Context, datasetID, preparedEmbdID, previousEmbdID string, previousTenantEmbdID *string) error {
 	updates := map[string]interface{}{"embd_id": previousEmbdID}
 	if previousTenantEmbdID != nil {
 		updates["tenant_embd_id"] = *previousTenantEmbdID
@@ -706,6 +711,7 @@ func (d *DatasetService) restoreEmbeddingBinding(ctx context.Context, datasetID,
 		common.Warn("failed to restore the embedding binding after chunk store preparation failed",
 			zap.String("dataset_id", datasetID), zap.Error(err))
 	}
+	return err
 }
 
 func (d *DatasetService) ensureChunkStoreForEmbedding(ctx context.Context, kb *entity.Knowledgebase, embdID string) error {
