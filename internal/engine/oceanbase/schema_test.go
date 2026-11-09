@@ -17,6 +17,9 @@
 package oceanbase
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -183,24 +186,86 @@ func TestTableCollationMatchesEngine(t *testing.T) {
 	}
 }
 
-// StartParseDocuments resolves knowledge-compilation routing metadata before any
-// row is written, so these fields must be served by real columns instead of the
-// extra JSON blob. A missing column in chunkExtraColumns would also keep
-// ChunkStoreExists false, which is what adds the column to existing tables.
-func TestKnowledgeCompileColumnsAreSelectableAndUpgraded(t *testing.T) {
-	for _, field := range []string{"compile_kwd", "compilation_template_kind_kwd", "type_kwd"} {
+// conf/infinity_mapping.json is the field list readers select by name. This
+// engine rejects an unknown name before any SQL is sent, so a mapping field the
+// engine has no column for fails at parse time once the tenant table exists.
+// Keep the two in step instead of discovering the gap in production.
+func TestChunkColumnsCoverInfinityMapping(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "conf", "infinity_mapping.json"))
+	if err != nil {
+		t.Fatalf("read conf/infinity_mapping.json: %v", err)
+	}
+	var mapping map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &mapping); err != nil {
+		t.Fatalf("parse conf/infinity_mapping.json: %v", err)
+	}
+	// Fields the mapping keeps as aliases of columns this engine already models,
+	// plus chunk_order_int, which mapChunkField folds onto _order_id.
+	aliases := map[string]bool{
+		"docnm": true, "important_keywords": true, "questions": true,
+		"content": true, "authors": true, "chunk_order_int": true,
+	}
+	selectable := validColumns("chunk")
+	for field := range mapping {
+		if aliases[field] {
+			continue
+		}
+		if !selectable[field] {
+			t.Errorf("field %q is declared in conf/infinity_mapping.json but is not a chunk column", field)
+		}
 		if _, _, err := buildSelectFields([]string{field}, "chunk"); err != nil {
 			t.Errorf("selecting %q from a chunk table: %v", field, err)
 		}
 	}
+}
 
+// A column added to chunkColumns is only written into an existing table by
+// CreateChunkStore, which walks chunkExtraColumns. Leaving a knowledge-compile
+// field out of that list keeps ChunkStoreExists false and the ALTER never runs.
+func TestKnowledgeCompileColumnsAreUpgraded(t *testing.T) {
 	upgraded := make(map[string]bool, len(chunkExtraColumns))
 	for _, column := range chunkExtraColumns {
 		upgraded[column.name] = true
 	}
-	for _, name := range []string{"compile_kwd", "compilation_template_kind_kwd"} {
+	// Fields the parse and knowledge-compilation readers select.
+	for _, name := range []string{
+		"compile_kwd", "compilation_template_kind_kwd", "plan_kwd", "scope_kwd",
+		"slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "plan_group_kwd",
+		"generation_kwd", "summary_with_weight", "name_kwd", "mention_count_int",
+		"entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "outlinks_int",
+		"depth_int", "source_chunk_ids", "source_doc_ids", "compilation_template_ids",
+	} {
 		if !upgraded[name] {
 			t.Errorf("%q is missing from chunkExtraColumns, so existing tables never gain the column", name)
+		}
+	}
+}
+
+// The value encoders are driven by their own name sets, so a column stored as
+// an array or JSON must be registered there or a read returns the raw string.
+func TestMappingListColumnsKeepTheirEncoding(t *testing.T) {
+	types := make(map[string]string, len(chunkColumns))
+	for _, column := range chunkColumns {
+		types[column.name] = column.typeSQL
+	}
+	for _, name := range []string{
+		"source_chunk_ids", "source_doc_ids", "compilation_template_ids",
+		"doc_ids_kwd", "entity_names_kwd", "entity_names", "outlinks_kwd",
+		"related_kb_pages_kwd", "page_ids", "rechunked_from_chunk_ids", "aliases",
+	} {
+		if !arrayColumns[name] {
+			t.Errorf("%q stores a list but is not registered in arrayColumns", name)
+		}
+		if !strings.Contains(types[name], "ARRAY(") {
+			t.Errorf("%q is not an ARRAY column: %q", name, types[name])
+		}
+	}
+	for _, name := range []string{"claims", "source_chunk_hashes"} {
+		if !jsonColumns[name] {
+			t.Errorf("%q stores an object payload but is not registered in jsonColumns", name)
+		}
+		if !strings.Contains(types[name], "JSON") {
+			t.Errorf("%q is not a JSON column: %q", name, types[name])
 		}
 	}
 }

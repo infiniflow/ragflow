@@ -42,10 +42,15 @@ var arrayColumns = map[string]bool{
 	"important_kwd": true, "question_kwd": true, "tag_kwd": true,
 	"position_int": true, "page_num_int": true, "top_int": true,
 	"source_id": true, "entities_kwd": true,
+	"source_chunk_ids": true, "source_doc_ids": true, "compilation_template_ids": true,
+	"doc_ids_kwd": true, "entity_names_kwd": true, "entity_names": true,
+	"outlinks_kwd": true, "related_kb_pages_kwd": true, "page_ids": true,
+	"rechunked_from_chunk_ids": true, "aliases": true,
 }
 
 var jsonColumns = map[string]bool{
 	"tag_feas": true, "chunk_data": true, "metadata": true, "extra": true, "meta_fields": true,
+	"claims": true, "source_chunk_hashes": true,
 }
 
 var knownChunkColumns = func() map[string]bool {
