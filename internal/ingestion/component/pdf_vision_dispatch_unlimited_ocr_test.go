@@ -450,6 +450,112 @@ func TestDispatchUnlimitedOCR2PDF_CrossPageTablePreserved(t *testing.T) {
 	}
 }
 
+func TestDispatchUnlimitedOCR2PDF_StackedTablesPreserved(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/file_parse":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    0,
+				"msg":     "Task accepted",
+				"task_id": "task_stacked",
+				"data": map[string]any{
+					"task_id": "task_stacked",
+				},
+			})
+		case "/tasks/task_stacked/result":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":  0,
+				"msg":   "success",
+				"state": "done",
+				"results": map[string]any{
+					"stacked.pdf": map[string]any{
+						"md_content": "# Summary\n\n| Item | Count |\n| --- | --- |\n| A | 1 |\n\n| Metric | Value |\n| --- | --- |\n| Speed | 100 |",
+						"content_list": []map[string]any{
+							{
+								"type":     "title",
+								"text":     "Summary",
+								"page_idx": 0,
+								"bbox":     []float64{100, 50, 800, 90},
+							},
+							{
+								"type":       "table",
+								"table_body": "<table><tr><th>Item</th><th>Count</th></tr><tr><td>A</td><td>1</td></tr></table>",
+								"page_idx":   0,
+								"bbox":       []float64{100, 100, 800, 300},
+							},
+							{
+								"type":       "table",
+								"table_body": "<table><tr><th>Metric</th><th>Value</th></tr><tr><td>Speed</td><td>100</td></tr></table>",
+								"page_idx":   0,
+								"bbox":       []float64{100, 350, 800, 550},
+							},
+						},
+					},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer mockServer.Close()
+
+	setup := schema.ParserSetup{
+		"unlimited_ocr_server_url": mockServer.URL,
+	}
+
+	pdfPath := filepath.Join("..", "..", "deepdoc", "parser", "pdf", "pdfium", "testdata", "page_sizes.pdf")
+	pdfBinary, err := os.ReadFile(pdfPath)
+	if err != nil {
+		pdfBinary = []byte("%PDF-1.4 test")
+	}
+
+	result, err := dispatchUnlimitedOCR2PDF(
+		context.Background(),
+		nil,
+		"stacked.pdf",
+		pdfBinary,
+		"",
+		setup,
+		"",
+	)
+	if err != nil {
+		t.Fatalf("dispatchUnlimitedOCR2PDF: %v", err)
+	}
+	if result.Err != nil {
+		t.Fatalf("result error: %v", result.Err)
+	}
+
+	var tables []map[string]any
+	for _, it := range result.JSON {
+		m := it.ToMap()
+		if m["doc_type_kwd"] == "table" || m["layout"] == "table" {
+			tables = append(tables, m)
+		}
+	}
+	if len(tables) != 2 {
+		t.Fatalf("expected 2 distinct table items for stacked tables, got %d", len(tables))
+	}
+
+	sizes, pageSizesErr := mineruPageSizes(context.Background(), pdfBinary)
+	if pageSizesErr == nil && len(sizes) > 0 {
+		pos1, ok1 := tables[0]["_pdf_positions"].([][]any)
+		pos2, ok2 := tables[1]["_pdf_positions"].([][]any)
+		if !ok1 || len(pos1) == 0 {
+			t.Fatalf("expected positions in table 1, got %#v", tables[0]["_pdf_positions"])
+		}
+		if !ok2 || len(pos2) == 0 {
+			t.Fatalf("expected positions in table 2, got %#v", tables[1]["_pdf_positions"])
+		}
+		top1, _ := pos1[0][3].(float64)
+		top2, _ := pos2[0][3].(float64)
+		if top1 == top2 {
+			t.Errorf("expected distinct vertical positions for stacked tables, got top1=%v top2=%v", top1, top2)
+		}
+	}
+}
+
 func TestDispatchUnlimitedOCR2PDF_TenantCredential_NoCallerOverride(t *testing.T) {
 	callerHit := false
 	callerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

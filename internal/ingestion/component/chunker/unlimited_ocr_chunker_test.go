@@ -160,3 +160,141 @@ func TestUnlimitedOCR_CrossPageTablePreservedInChunker(t *testing.T) {
 		t.Errorf("expected title chunk to preserve heading_level=1, chunks: %#v", chunks)
 	}
 }
+
+// TestUnlimitedOCR_StackedTablesPreservedWithDistinctPositionsInChunker asserts that
+// two consecutive stacked tables on the same page are not collapsed into a single group,
+// so that each table chunk in the chunker receives its own distinct visual grounding box.
+func TestUnlimitedOCR_StackedTablesPreservedWithDistinctPositionsInChunker(t *testing.T) {
+	mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/file_parse":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":    0,
+				"msg":     "Task accepted",
+				"task_id": "task_stacked_tables",
+				"data": map[string]any{
+					"task_id": "task_stacked_tables",
+				},
+			})
+		case "/tasks/task_stacked_tables/result":
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"code":  0,
+				"msg":   "success",
+				"state": "done",
+				"results": map[string]any{
+					"stacked.pdf": map[string]any{
+						"md_content": "# Stacked Tables\n\n| Item | Count |\n| --- | --- |\n| A | 1 |\n| B | 2 |\n\n| Metric | Value |\n| --- | --- |\n| Speed | 100 |\n| Memory | 200 |",
+						"content_list": []map[string]any{
+							{
+								"type":     "title",
+								"text":     "Stacked Tables",
+								"page_idx": 0,
+								"bbox":     []float64{100, 50, 800, 90},
+							},
+							{
+								"type":       "table",
+								"table_body": "<table><tr><th>Item</th><th>Count</th></tr><tr><td>A</td><td>1</td></tr><tr><td>B</td><td>2</td></tr></table>",
+								"page_idx":   0,
+								"bbox":       []float64{100, 100, 800, 300},
+							},
+							{
+								"type":       "table",
+								"table_body": "<table><tr><th>Metric</th><th>Value</th></tr><tr><td>Speed</td><td>100</td></tr><tr><td>Memory</td><td>200</td></tr></table>",
+								"page_idx":   0,
+								"bbox":       []float64{100, 350, 800, 550},
+							},
+						},
+					},
+				},
+			})
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer mockServer.Close()
+
+	setup := schema.ParserSetup{
+		"unlimited_ocr_server_url": mockServer.URL,
+	}
+
+	pdfPath := filepath.Join("..", "..", "..", "deepdoc", "parser", "pdf", "pdfium", "testdata", "page_sizes.pdf")
+	pdfBinary, err := os.ReadFile(pdfPath)
+	if err != nil {
+		pdfBinary = []byte("%PDF-1.4 test")
+	}
+
+	result, err := component.DispatchUnlimitedOCR2PDFForTest(
+		context.Background(),
+		nil,
+		"stacked.pdf",
+		pdfBinary,
+		"",
+		setup,
+		"",
+	)
+	if err != nil {
+		t.Fatalf("DispatchUnlimitedOCR2PDFForTest: %v", err)
+	}
+	if result.Err != nil {
+		t.Fatalf("result error: %v", result.Err)
+	}
+
+	// Verify parser output has 2 distinct table items with distinct positions
+	tableItems := []map[string]any{}
+	for _, it := range result.JSON {
+		m := it.ToMap()
+		if m["doc_type_kwd"] == "table" || m["layout"] == "table" {
+			tableItems = append(tableItems, m)
+		}
+	}
+	if len(tableItems) != 2 {
+		t.Fatalf("expected 2 table items in parser JSON, got %d", len(tableItems))
+	}
+
+	general, err := NewGeneralChunker(map[string]any{"chunk_token_size": 512, "table_context_size": 32})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+
+	parsedInput := map[string]any{
+		"name":          "stacked.pdf",
+		"file_type":     "pdf",
+		"output_format": "json",
+		"json":          parser.ItemsToMaps(result.JSON),
+		"file":          result.File,
+	}
+
+	chunked, err := general.Invoke(context.Background(), nil, parsedInput)
+	if err != nil {
+		t.Fatalf("general.Invoke: %v", err)
+	}
+
+	chunks, ok := schema.ChunkCarrierToMaps(chunked["chunks"])
+	if !ok || len(chunks) == 0 {
+		t.Fatalf("expected chunks in chunker output, got %#v", chunked["chunks"])
+	}
+
+	var tableChunks []map[string]any
+	for _, ck := range chunks {
+		if docType, _ := ck["doc_type_kwd"].(string); docType == "table" {
+			tableChunks = append(tableChunks, ck)
+		}
+	}
+
+	if len(tableChunks) != 2 {
+		t.Fatalf("expected 2 distinct table chunks for stacked tables, got %d", len(tableChunks))
+	}
+
+	// Under CGO (where page sizes can be resolved), verify each table chunk has its own distinct positions
+	pos1, ok1 := tableChunks[0]["_pdf_positions"].([][]any)
+	pos2, ok2 := tableChunks[1]["_pdf_positions"].([][]any)
+	if ok1 && ok2 && len(pos1) > 0 && len(pos2) > 0 {
+		top1, _ := pos1[0][3].(float64)
+		top2, _ := pos2[0][3].(float64)
+		if top1 == top2 {
+			t.Errorf("expected distinct vertical positions for stacked tables, got top1=%v top2=%v", top1, top2)
+		}
+	}
+}

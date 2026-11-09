@@ -701,7 +701,7 @@ func unlimitedOCRAttachPositions(res parser.ParseResult, contentList []map[strin
 
 		isTable := typ == "table" || typ == "cross_table" || typ == "append_table"
 		if isTable {
-			if curTableGroup == nil || (typ != "cross_table" && typ != "append_table" && curTableGroup.firstPage != 0 && pageNo < curTableGroup.firstPage) {
+			if curTableGroup == nil || typ == "table" {
 				tableGroups = append(tableGroups, unlimitedOCRTableGroup{firstPage: pageNo})
 				curTableGroup = &tableGroups[len(tableGroups)-1]
 			}
