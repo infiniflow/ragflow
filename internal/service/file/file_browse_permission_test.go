@@ -64,7 +64,7 @@ func TestTenantMemberSeesOnlyReadableFilesAndPaths(t *testing.T) {
 	if _, err := svc.GetAllParentFoldersForTenant(ctx, "owner", "private"); !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("resolve private file path error = %v, want permission denied", err)
 	}
-	if _, err := svc.GetFileContent(ctx, "reader", "private"); !errors.Is(err, permission.ErrPermissionDenied) {
+	if _, err := svc.GetFileContent(ctx, "private"); !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("read private file error = %v, want permission denied", err)
 	}
 	if err := svc.MoveFiles(ctx, []string{"private"}, "", "new-private.txt"); !errors.Is(err, permission.ErrPermissionDenied) {

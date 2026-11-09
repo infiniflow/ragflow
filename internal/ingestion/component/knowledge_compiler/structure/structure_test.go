@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"os"
 	"strings"
 	"testing"
 
@@ -490,7 +491,7 @@ func TestStructureRunGraphKind(t *testing.T) {
 	if betaProduct == nil {
 		t.Fatal("no Beta entity product")
 	}
-	ids := metaStrings(betaProduct.Meta, "source_chunk_ids")
+	ids := common.MetaStringSlice(betaProduct.Meta, "source_chunk_ids")
 	if len(ids) != 2 {
 		t.Fatalf("Beta provenance = %v, want {c1,c2} unioned through the merge", ids)
 	}
@@ -635,7 +636,7 @@ func TestLLMMergeDeciderContracts(t *testing.T) {
 	if got := entityName(parsePayload(merged.Content)); got != "Alpha" {
 		t.Errorf("merged canonical name = %q, want Alpha", got)
 	}
-	if ids := metaStrings(merged.Meta, "source_chunk_ids"); len(ids) != 2 {
+	if ids := common.MetaStringSlice(merged.Meta, "source_chunk_ids"); len(ids) != 2 {
 		t.Errorf("merged provenance = %v, want {c1,c2}", ids)
 	}
 	if aliases := d.Aliases(); aliases["Al"] != "Alpha" {
@@ -856,7 +857,7 @@ func TestGroupedDeduperMergesSameNameBeforeVectorSimilarity(t *testing.T) {
 	if payload["type"] != "component" {
 		t.Fatalf("specific type should replace other: %v", payload)
 	}
-	if ids := metaStrings(got[0].Meta, "source_chunk_ids"); len(ids) != 2 {
+	if ids := common.MetaStringSlice(got[0].Meta, "source_chunk_ids"); len(ids) != 2 {
 		t.Fatalf("source chunks were not merged: %v", ids)
 	}
 	if chat.mergeCalls != 0 {
@@ -888,7 +889,7 @@ func (similarityMergeDecider) Decide(_ context.Context, existing, incoming commo
 	for key, value := range existing.Meta {
 		replacement.Meta[key] = value
 	}
-	replacement.Meta["source_chunk_ids"] = unionOrdered(metaStrings(existing.Meta, "source_chunk_ids"), metaStrings(incoming.Meta, "source_chunk_ids"))
+	replacement.Meta["source_chunk_ids"] = unionOrdered(common.MetaStringSlice(existing.Meta, "source_chunk_ids"), common.MetaStringSlice(incoming.Meta, "source_chunk_ids"))
 	return DecisionMerge, replacement, nil
 }
 
@@ -908,7 +909,45 @@ func TestGroupedDeduperTracksNameAfterSemanticMerge(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("semantic alias must remain addressable by its own name: %+v", got)
 	}
-	if ids := metaStrings(got[0].Meta, "source_chunk_ids"); len(ids) != 3 {
+	if ids := common.MetaStringSlice(got[0].Meta, "source_chunk_ids"); len(ids) != 3 {
 		t.Fatalf("semantic and exact-name merges lost provenance: %v", ids)
+	}
+}
+
+// TestStructureBatchCap locks the STRUCT_MAX_CHUNKS_PER_BATCH env override:
+// invalid or non-positive values disable the cap (return 0), and a positive
+// value sets the cap.
+func TestStructureBatchCap(t *testing.T) {
+	const key = "STRUCT_MAX_CHUNKS_PER_BATCH"
+	cases := []struct {
+		name string
+		set  string // "" means unset
+		want int
+	}{
+		{"unset", "", 0},
+		{"zero", "0", 0},
+		{"negative", "-3", 0},
+		{"non-numeric", "abc", 0},
+		{"positive", "5", 5},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			orig, had := os.LookupEnv(key)
+			if c.set == "" {
+				os.Unsetenv(key)
+			} else {
+				os.Setenv(key, c.set)
+			}
+			t.Cleanup(func() {
+				if had {
+					os.Setenv(key, orig)
+				} else {
+					os.Unsetenv(key)
+				}
+			})
+			if got := structureBatchCap(); got != c.want {
+				t.Fatalf("structureBatchCap() = %d, want %d (env=%q)", got, c.want, c.set)
+			}
+		})
 	}
 }

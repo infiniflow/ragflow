@@ -86,14 +86,13 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 	if irJSON == "" {
 		return ParseResult{Err: fmt.Errorf("docx extract: empty IR, cannot build JSON output")}
 	}
-	// TEMPORARY Caption-styled-paragraph detection (office_oxide does
-	// not yet expose paragraph styles; yfedoseev/office_oxide#455).
-	// Remove once office_oxide is upgraded to emit them.
-	tableCaptions, capErr := extractDOCXTableCaptions(data)
-	if capErr != nil {
-		tableCaptions = nil
-	}
-	sections := buildDOCXJSONSectionsWithCaptions(irJSON, sink, tableCaptions)
+	// office_oxide 0.1.16 exposes the Word paragraph style name (e.g.
+	// "Caption") in the IR "style" field (yfedoseev/office_oxide#455); a
+	// Caption-styled paragraph is attached to the table that follows it and is
+	// not emitted as a standalone text section. This replaces the temporary
+	// word/document.xml re-parse that the Go parser used before the field
+	// existed.
+	sections := buildDOCXJSONSections(irJSON, sink)
 	if sink != nil && sink.err != nil {
 		return ParseResult{Err: sink.err}
 	}

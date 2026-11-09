@@ -292,9 +292,9 @@ func (w engineWriter) WriteMerged(ctx context.Context, tenant, kb string, produc
 			if len(chunks) > 0 {
 				common.Info("knowledge_compile: WriteMerged chunk sample",
 					zap.String("kb_id", kb),
-					zap.String("compile_kwd", metaString(chunks[0], "compile_kwd")),
+					zap.String("compile_kwd", kccommon.MetaString(chunks[0], "compile_kwd")),
 					zap.String("variant", string(batch[0].Variant)),
-					zap.String("id", metaString(chunks[0], "id")),
+					zap.String("id", kccommon.MetaString(chunks[0], "id")),
 				)
 			}
 			_, err := eng.InsertChunks(ctx, chunks, baseName, kb, "")
@@ -432,12 +432,12 @@ func (w engineWriter) recordWikiPageCommits(ctx context.Context, kb string, prod
 }
 
 func wikiPageCommitTargetForProduct(product kccommon.Product) (wikiPageCommitTarget, bool) {
-	if product.Variant != kccommon.VariantWiki || strings.ToLower(strings.TrimSpace(metaString(product.Meta, "kind"))) != "page" {
+	if product.Variant != kccommon.VariantWiki || strings.ToLower(strings.TrimSpace(kccommon.MetaString(product.Meta, "kind"))) != "page" {
 		return wikiPageCommitTarget{}, false
 	}
 	return wikiPageCommitTargetForRow(
-		metaString(product.Meta, "page_type"),
-		metaString(product.Meta, "slug"),
+		kccommon.MetaString(product.Meta, "page_type"),
+		kccommon.MetaString(product.Meta, "slug"),
 	)
 }
 
@@ -965,8 +965,8 @@ func f32ToF64Slice(v []float32) []float64 {
 // (input_hash_kwd), and now stamps both wall-clock audit fields. We deliberately
 // do not write the full PLAN JSON into the engine.
 func mergedChunkMap(tenant, kb, runID, inputHash string, now time.Time, p kccommon.Product) map[string]interface{} {
-	srcDocIDs := metaStringSlice(p.Meta, "source_doc_ids")
-	srcChunkIDs := metaStringSlice(p.Meta, "source_chunk_ids")
+	srcDocIDs := kccommon.MetaStringSlice(p.Meta, "source_doc_ids")
+	srcChunkIDs := kccommon.MetaStringSlice(p.Meta, "source_chunk_ids")
 	m := map[string]interface{}{
 		"id":            datasetLevelID(tenant, kb, p),
 		"doc_id":        kb,
@@ -987,7 +987,7 @@ func mergedChunkMap(tenant, kb, runID, inputHash string, now time.Time, p kccomm
 		"create_timestamp_flt": float64(now.Unix()),
 	}
 	if p.Variant == kccommon.VariantWiki {
-		m["type_kwd"] = "wiki_" + kccommon.FirstNonEmpty(metaString(p.Meta, "kind"), "page")
+		m["type_kwd"] = "wiki_" + kccommon.FirstNonEmpty(kccommon.MetaString(p.Meta, "kind"), "page")
 	}
 	// wiki_incremental port: preserve the original creation timestamp across a
 	// page merge. If the incoming merged product already carries
@@ -1005,8 +1005,8 @@ func mergedChunkMap(tenant, kb, runID, inputHash string, now time.Time, p kccomm
 	// slug_kwd follows the Python writer contract (api/db/db_models.py): it is
 	// stored as the full "<page_type>/<slug>" form so GetWikiPage's filter
 	// (page_type + "/" + slug) matches directly.
-	pageType := metaString(p.Meta, "page_type")
-	if slug := metaString(p.Meta, "slug"); slug != "" {
+	pageType := kccommon.MetaString(p.Meta, "page_type")
+	if slug := kccommon.MetaString(p.Meta, "slug"); slug != "" {
 		// Normalize to the full "<page_type>/<slug>" form (Python writer
 		// contract). Idempotent: slugs that already carry the prefix are kept.
 		fullSlug := slug
@@ -1015,31 +1015,31 @@ func mergedChunkMap(tenant, kb, runID, inputHash string, now time.Time, p kccomm
 		}
 		m["slug_kwd"] = fullSlug
 	}
-	if v := metaString(p.Meta, "title"); v != "" {
+	if v := kccommon.MetaString(p.Meta, "title"); v != "" {
 		m["title_kwd"] = v
 	}
 	if pageType != "" {
 		m["entity_type_kwd"] = pageType
 	}
-	if v := kccommon.NormalizeWikiTopicPath(metaString(p.Meta, "topic")); v != "" {
+	if v := kccommon.NormalizeWikiTopicPath(kccommon.MetaString(p.Meta, "topic")); v != "" {
 		m["topic_kwd"] = v
 	}
-	if v := metaString(p.Meta, "plan_group"); v != "" {
+	if v := kccommon.MetaString(p.Meta, "plan_group"); v != "" {
 		m["plan_group_kwd"] = v
 	}
-	if v := metaString(p.Meta, "generation"); v != "" {
+	if v := kccommon.MetaString(p.Meta, "generation"); v != "" {
 		m["generation_kwd"] = v
 	}
-	if v := metaString(p.Meta, "summary"); v != "" {
+	if v := kccommon.MetaString(p.Meta, "summary"); v != "" {
 		m["summary_with_weight"] = v
 	}
-	if v := metaStringSlice(p.Meta, "entity_names"); len(v) > 0 {
+	if v := kccommon.MetaStringSlice(p.Meta, "entity_names"); len(v) > 0 {
 		m["entity_names_kwd"] = v
 	}
-	if v := metaStringSlice(p.Meta, "related_kb_pages"); len(v) > 0 {
+	if v := kccommon.MetaStringSlice(p.Meta, "related_kb_pages"); len(v) > 0 {
 		m["related_kb_pages_kwd"] = v
 	}
-	if v := metaStringSlice(p.Meta, "outlinks"); len(v) > 0 {
+	if v := kccommon.MetaStringSlice(p.Meta, "outlinks"); len(v) > 0 {
 		m["outlinks_kwd"] = v
 	}
 	// Persist the merged product's embedding under the dimension-suffixed column
@@ -1123,7 +1123,7 @@ func (w engineWriter) StripMergedSources(ctx context.Context, tenant, kb string,
 			if id == "" {
 				continue
 			}
-			src := metaStringSlice(c, "source_doc_ids")
+			src := kccommon.MetaStringSlice(c, "source_doc_ids")
 			kept := make([]string, 0, len(src))
 			changed := false
 			for _, d := range src {
@@ -1204,7 +1204,7 @@ func mergedInputHash(products []kccommon.Product) string {
 	seen := make(map[string]struct{}, 16)
 	docs := make([]string, 0, 16)
 	for _, p := range products {
-		for _, d := range metaStringSlice(p.Meta, "source_doc_ids") {
+		for _, d := range kccommon.MetaStringSlice(p.Meta, "source_doc_ids") {
 			if _, ok := seen[d]; ok {
 				continue
 			}
@@ -1214,57 +1214,6 @@ func mergedInputHash(products []kccommon.Product) string {
 	}
 	sort.Strings(docs)
 	return hashStr(strings.Join(docs, "\n"))
-}
-
-// metaString extracts a string from a map value, tolerating a missing or
-// non-string entry.
-func metaString(m map[string]any, key string) string {
-	if v, ok := m[key].(string); ok {
-		return v
-	}
-	return ""
-}
-
-// firstStringSlice extracts a []string from an engine row value, tolerating both
-// []string and []any forms; it returns nil when the value is not a string slice.
-func firstStringSlice(v any) []string {
-	switch s := v.(type) {
-	case []string:
-		return s
-	case []any:
-		out := make([]string, 0, len(s))
-		for _, x := range s {
-			if str, ok := x.(string); ok {
-				out = append(out, str)
-			}
-		}
-		return out
-	}
-	return nil
-}
-
-func metaStringSlice(m map[string]any, key string) []string {
-	return firstStringSlice(m[key])
-}
-
-// metaInt extracts an integer from a map value that may be boxed as float64
-// (JSON number), int64, string, or a typed int — the engine/JSON round-trip does
-// not guarantee a single numeric type.
-func metaInt(m map[string]any, key string) (int64, bool) {
-	switch v := m[key].(type) {
-	case int64:
-		return v, true
-	case int:
-		return int64(v), true
-	case float64:
-		return int64(v), true
-	case string:
-		var n int64
-		if _, err := fmt.Sscanf(v, "%d", &n); err == nil {
-			return n, true
-		}
-	}
-	return 0, false
 }
 
 // metaFloat extracts a float64 from a map value that may be boxed as float64,
@@ -1286,6 +1235,24 @@ func metaFloat(m map[string]any, key string) (float64, bool) {
 		}
 	}
 	return 0, false
+}
+
+// firstStringSlice extracts a []string from an engine row value, tolerating both
+// []string and []any forms; it returns nil when the value is not a string slice.
+func firstStringSlice(v any) []string {
+	switch s := v.(type) {
+	case []string:
+		return s
+	case []any:
+		out := make([]string, 0, len(s))
+		for _, x := range s {
+			if str, ok := x.(string); ok {
+				out = append(out, str)
+			}
+		}
+		return out
+	}
+	return nil
 }
 
 // KwdToVariant maps a stored compilation kind to its execution variant.
@@ -1477,7 +1444,7 @@ func (w engineWriter) loadActiveDocumentWikiPages(ctx context.Context, tenant, k
 			break
 		}
 		for _, row := range result.Chunks {
-			slug := metaString(row, "slug_kwd")
+			slug := kccommon.MetaString(row, "slug_kwd")
 			if slug == "" {
 				continue
 			}
@@ -1485,13 +1452,13 @@ func (w engineWriter) loadActiveDocumentWikiPages(ctx context.Context, tenant, k
 			if page.Slug == "" {
 				page.Slug = slug
 				page.PageType = types.WikiPageCategory(row)
-				page.Title = metaString(row, "title_kwd")
-				page.Summary = metaString(row, "summary_with_weight")
+				page.Title = kccommon.MetaString(row, "title_kwd")
+				page.Summary = kccommon.MetaString(row, "summary_with_weight")
 			}
-			page.Aliases = unionStrs(page.Aliases, metaStringSlice(row, "entity_names_kwd"))
-			page.Outlinks = unionStrs(page.Outlinks, metaStringSlice(row, "outlinks_kwd"))
-			page.SourceDocIDs = unionStrs(page.SourceDocIDs, metaStringSlice(row, "source_doc_ids"))
-			page.SourceChunkIDs = unionStrs(page.SourceChunkIDs, metaStringSlice(row, "source_chunk_ids"))
+			page.Aliases = unionStrs(page.Aliases, kccommon.MetaStringSlice(row, "entity_names_kwd"))
+			page.Outlinks = unionStrs(page.Outlinks, kccommon.MetaStringSlice(row, "outlinks_kwd"))
+			page.SourceDocIDs = unionStrs(page.SourceDocIDs, kccommon.MetaStringSlice(row, "source_doc_ids"))
+			page.SourceChunkIDs = unionStrs(page.SourceChunkIDs, kccommon.MetaStringSlice(row, "source_chunk_ids"))
 			bySlug[slug] = page
 		}
 		if len(result.Chunks) < batchSize {
@@ -1673,21 +1640,21 @@ func (w engineWriter) loadMergedWikiPages(ctx context.Context, tenant, kb string
 		// Filter map is being ignored and wiki_entity rows leak into the page
 		// projection (which then has nothing under compile_kwd=wiki_page).
 		for _, c := range res.Chunks {
-			kwdSeen[metaString(c, "compile_kwd")]++
+			kwdSeen[kccommon.MetaString(c, "compile_kwd")]++
 		}
 		if len(res.Chunks) == 0 {
 			break
 		}
 		for _, c := range res.Chunks {
 			p := wikiPageProjection{
-				Slug:           metaString(c, "slug_kwd"),
+				Slug:           kccommon.MetaString(c, "slug_kwd"),
 				PageType:       types.WikiPageCategory(c),
-				Title:          metaString(c, "title_kwd"),
-				Aliases:        metaStringSlice(c, "entity_names_kwd"),
-				Summary:        metaString(c, "summary_with_weight"),
-				Outlinks:       metaStringSlice(c, "outlinks_kwd"),
-				SourceDocIDs:   metaStringSlice(c, "source_doc_ids"),
-				SourceChunkIDs: metaStringSlice(c, "source_chunk_ids"),
+				Title:          kccommon.MetaString(c, "title_kwd"),
+				Aliases:        kccommon.MetaStringSlice(c, "entity_names_kwd"),
+				Summary:        kccommon.MetaString(c, "summary_with_weight"),
+				Outlinks:       kccommon.MetaStringSlice(c, "outlinks_kwd"),
+				SourceDocIDs:   kccommon.MetaStringSlice(c, "source_doc_ids"),
+				SourceChunkIDs: kccommon.MetaStringSlice(c, "source_chunk_ids"),
 			}
 			out = append(out, p)
 		}

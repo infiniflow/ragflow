@@ -79,7 +79,7 @@ After migration, confirm that:
 
 - All expected containers are running and healthy.
 - Existing users can sign in.
-- Existing knowledge bases and files are visible.
+- Existing Datasets and files are visible.
 - Existing files can be opened and retrieved.
 - A new document can be uploaded, parsed, and retrieved.
 - Existing conversation history is available.

@@ -22,9 +22,11 @@ import (
 	"errors"
 	"fmt"
 	"math"
+
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 
 	"slices"
 	"sort"
@@ -39,13 +41,12 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/kvrocks"
 	enginetypes "ragflow/internal/engine/types"
-	"ragflow/internal/permission"
 	"ragflow/internal/service/nlp"
 )
 
 const (
-	// MemoryNameLimit is the maximum length allowed for memory names
-	MemoryNameLimit = 128
+	// MemoryNameLimit is the maximum length allowed for memory names.
+	MemoryNameLimit = common.NameLimit128
 	// MemorySizeLimit is the maximum memory size in bytes (5MB)
 	MemorySizeLimit = 5242880
 )
@@ -502,7 +503,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, req *CreateMemoryReque
 	if userID == "" {
 		return nil, permission.ErrUnauthenticated
 	}
-	tenantID, err := requireCurrentTenantID(ctx, userID)
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -514,7 +515,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, req *CreateMemoryReque
 	// tenant_model row) — we leave the tenant_*_id fields nil and proceed.
 	modelFactory := NewModelFactory()
 	if req.LLMID != "" && req.TenantLLMID == nil {
-		info, err := modelFactory.ResolveInfo(ctx, Identity{UserID: userID, TenantID: tenantID}, entity.ModelTypeChat, req.LLMID)
+		info, err := modelFactory.ResolveInfo(permission.WithTenantID(ctx, tenantID), entity.ModelTypeChat, req.LLMID)
 		if err != nil {
 			common.Warn("CreateMemory: failed to resolve tenant LLM id",
 				zap.String("tenant_id", tenantID), zap.String("llm_id", req.LLMID), zap.Error(err))
@@ -524,7 +525,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, req *CreateMemoryReque
 		}
 	}
 	if req.EmbdID != "" && req.TenantEmbdID == nil {
-		info, err := modelFactory.ResolveInfo(ctx, Identity{UserID: userID, TenantID: tenantID}, entity.ModelTypeEmbedding, req.EmbdID)
+		info, err := modelFactory.ResolveInfo(permission.WithTenantID(ctx, tenantID), entity.ModelTypeEmbedding, req.EmbdID)
 		if err != nil {
 			common.Warn("CreateMemory: failed to resolve tenant embedding id",
 				zap.String("tenant_id", tenantID), zap.String("embd_id", req.EmbdID), zap.Error(err))
@@ -534,7 +535,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, req *CreateMemoryReque
 		}
 	}
 
-	if err := common.ValidateName(req.Name); err != nil {
+	if err := common.ValidateNameRunes(req.Name, MemoryNameLimit); err != nil {
 		return nil, err
 	}
 
@@ -642,7 +643,7 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, memoryID string, req *
 
 	if req.Name != nil {
 		memoryName := strings.TrimSpace(*req.Name)
-		if err = common.ValidateName(memoryName); err != nil {
+		if err = common.ValidateNameRunes(memoryName, MemoryNameLimit); err != nil {
 			return nil, err
 		}
 		available, nameErr := common.NameAvailable(strings.TrimSpace(currentMemory.Name), memoryName, func(candidate string) (bool, error) {
@@ -684,7 +685,7 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, memoryID string, req *
 	if req.LLMID != nil {
 		updateDict["llm_id"] = *req.LLMID
 		if req.TenantLLMID == nil && *req.LLMID != "" {
-			info, err := modelFactory.ResolveInfo(ctx, Identity{TenantID: ownerTenantID}, entity.ModelTypeChat, *req.LLMID)
+			info, err := modelFactory.ResolveInfo(permission.WithTenantID(ctx, ownerTenantID), entity.ModelTypeChat, *req.LLMID)
 			if err != nil {
 				common.Warn("UpdateMemory: failed to resolve tenant LLM id",
 					zap.String("tenant_id", ownerTenantID), zap.String("llm_id", *req.LLMID), zap.Error(err))
@@ -697,7 +698,7 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, memoryID string, req *
 	if req.EmbdID != nil {
 		updateDict["embd_id"] = *req.EmbdID
 		if req.TenantEmbdID == nil && *req.EmbdID != "" {
-			info, err := modelFactory.ResolveInfo(ctx, Identity{TenantID: ownerTenantID}, entity.ModelTypeEmbedding, *req.EmbdID)
+			info, err := modelFactory.ResolveInfo(permission.WithTenantID(ctx, ownerTenantID), entity.ModelTypeEmbedding, *req.EmbdID)
 			if err != nil {
 				common.Warn("UpdateMemory: failed to resolve tenant embedding id",
 					zap.String("tenant_id", ownerTenantID), zap.String("embd_id", *req.EmbdID), zap.Error(err))
@@ -1553,7 +1554,7 @@ func memoryFusionWeights(keywordsSimilarityWeight float64) string {
 }
 
 func (s *MemoryService) memoryMessageDenseExpr(ctx context.Context, question string, memory *entity.Memory, topN int, similarityThreshold float64) (*enginetypes.MatchDenseExpr, error) {
-	embeddingModel, err := NewModelFactory().NewEmbeddingModel(ctx, Identity{TenantID: memory.TenantID}, memory.EmbdID)
+	embeddingModel, err := NewModelFactory().NewEmbeddingModel(permission.WithTenantID(ctx, memory.TenantID), memory.EmbdID)
 	if err != nil {
 		return nil, err
 	}
@@ -1898,10 +1899,10 @@ func (s *MemoryService) listMemoryMessages(ctx context.Context, memory *entity.M
 		return nil, errors.New("message store is not initialized")
 	}
 	if page <= 0 {
-		page = 1
+		page = common.DefaultPage
 	}
 	if pageSize <= 0 {
-		pageSize = defaultMessageLimit
+		pageSize = common.DefaultPageSize
 	} else if pageSize > maxMessageLimit {
 		pageSize = maxMessageLimit
 	}
@@ -1979,6 +1980,9 @@ func (s *MemoryService) listMemoryMessages(ctx context.Context, memory *entity.M
 				message := memoryMessageFromChunk(chunk, selectFields)
 				sourceID := memoryMessageKey(message["source_id"])
 				groupedExtracts[sourceID] = append(groupedExtracts[sourceID], message)
+			}
+			for _, extracts := range groupedExtracts {
+				sortMemoryExtractMessages(extracts)
 			}
 			for _, message := range rawMessages {
 				messageID := memoryMessageKey(message["message_id"])
@@ -2100,6 +2104,57 @@ func (s *MemoryService) memoryMessageTasks(memoryID string) (map[string]map[stri
 
 func memoryMessageKey(value interface{}) string {
 	return strings.TrimSpace(fmt.Sprint(value))
+}
+
+// sortMemoryExtractMessages orders the extracts grouped under one raw message
+// by the combined key (valid_at desc, message_id asc), porting the Python fix
+// in memory/services/messages.py (PR #21246). The engine query only sorts by
+// valid_at, so facts sharing a second-granularity valid_at — the common case,
+// since extraction stamps them with the conversation time — come back in
+// storage order, which reshuffles whenever a document is rewritten (e.g. an
+// enable/disable toggle). Two stable passes mirror the Python sort calls:
+// the tie-breaker ascending first, then the primary key descending.
+func sortMemoryExtractMessages(extracts []map[string]interface{}) {
+	sort.SliceStable(extracts, func(i, j int) bool {
+		return memoryMessageIDSortKey(extracts[i]["message_id"]) < memoryMessageIDSortKey(extracts[j]["message_id"])
+	})
+	sort.SliceStable(extracts, func(i, j int) bool {
+		return memoryValidAtSortKey(extracts[i]["valid_at"]) > memoryValidAtSortKey(extracts[j]["valid_at"])
+	})
+}
+
+// memoryMessageIDSortKey renders a message_id as a number for ordering.
+// Elasticsearch returns it as a JSON number and Infinity as a string, so a
+// plain string comparison would order "10" before "9". Missing or unparseable
+// values sort first, matching Python's _message_id_sort_key.
+func memoryMessageIDSortKey(value interface{}) int64 {
+	switch v := value.(type) {
+	case int64:
+		return v
+	case int:
+		return int64(v)
+	case float64:
+		return int64(v)
+	case string:
+		if id, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil {
+			return id
+		}
+	}
+	return -1
+}
+
+// memoryValidAtSortKey renders valid_at as a comparable string. Timestamps
+// are stored normalized as "YYYY-MM-DD HH:mm:ss", so lexicographic order is
+// chronological order. Missing values become "", sorting oldest, matching
+// Python's _valid_at_sort_key.
+func memoryValidAtSortKey(value interface{}) string {
+	if value == nil {
+		return ""
+	}
+	if s, ok := value.(string); ok {
+		return s
+	}
+	return fmt.Sprint(value)
 }
 
 // isList checks if a value is a list or array type

@@ -9,7 +9,7 @@ sidebar_custom_props:
 
 # Create a Search
 
-Search provides retrieval capabilities for knowledge bases, helping users quickly find relevant content in parsed knowledge bases. Users can enter natural-language questions and narrow the search scope by configuring document filters, the number of results, and other options.
+Search provides retrieval capabilities for Datasets, helping users quickly find relevant content in parsed Datasets. Users can enter natural-language questions and narrow the search scope by configuring document filters, the number of results, and other options.
 
 Search also supports features such as AI Summary, Related Search, and Query Mindmap. These features summarize search results, generate related questions, and present the topic structure of the current query as a mind map, helping users further understand and explore knowledge content.
 
@@ -19,4 +19,4 @@ The following sections describe how to create, configure, and use Search.
 2. Click **Create Search**.
 3. Enter a name for the Search and confirm.
 4. Open the newly created Search. If the **Search settings** panel is closed, click the settings button to open it.
-5. Under **Datasets**, select at least one knowledge base and click **Save** to save.
+5. Under **Datasets**, select at least one Dataset and click **Save** to save.

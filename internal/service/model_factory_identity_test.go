@@ -48,11 +48,10 @@ func TestModelFactoryIDAndNameShareValidation(t *testing.T) {
 			}
 			ctx := serviceTestContext(t, "user-1", "user-1")
 			factory := NewModelFactory()
-			access := Identity{UserID: "user-1", TenantID: "user-1"}
 			for _, ref := range []string{"model-1", "gpt-test@default@OpenAI"} {
-				info, infoErr := factory.ResolveInfo(ctx, access, entity.ModelTypeChat, ref)
-				types, typeErr := factory.ResolveModelType(ctx, access, ref)
-				_, runErr := factory.resolveConfig(ctx, access, entity.ModelTypeChat, ref)
+				info, infoErr := factory.ResolveInfo(ctx, entity.ModelTypeChat, ref)
+				types, typeErr := factory.ResolveModelType(ctx, ref)
+				_, runErr := factory.resolveConfig(ctx, entity.ModelTypeChat, ref)
 				for _, err := range []error{infoErr, typeErr, runErr} {
 					if test.table != "" {
 						if !errors.Is(err, errModelConfigUnavailable) {
@@ -86,20 +85,19 @@ func TestModelFactoryMetadataDoesNotBuildExecutionConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	factory := NewModelFactory()
-	access := Identity{UserID: "user-1", TenantID: "user-1"}
 	ctx := serviceTestContext(t, "user-1", "user-1")
 	for _, ref := range []string{"model-1", "gpt-test@default@OpenAI"} {
-		if _, err := factory.ResolveInfo(ctx, access, entity.ModelTypeChat, ref); err != nil {
+		if _, err := factory.ResolveInfo(ctx, entity.ModelTypeChat, ref); err != nil {
 			t.Fatalf("metadata %s: %v", ref, err)
 		}
-		if _, err := factory.ResolveModelType(ctx, access, ref); err != nil {
+		if _, err := factory.ResolveModelType(ctx, ref); err != nil {
 			t.Fatalf("types %s: %v", ref, err)
 		}
-		if _, err := factory.resolveConfig(ctx, access, entity.ModelTypeChat, ref); err == nil {
+		if _, err := factory.resolveConfig(ctx, entity.ModelTypeChat, ref); err == nil {
 			t.Fatalf("execution %s accepted malformed configuration", ref)
 		}
 	}
-	if _, err := factory.ResolveDefaultInfo(ctx, access, entity.ModelTypeChat); err != nil {
+	if _, err := factory.ResolveDefaultInfo(ctx, entity.ModelTypeChat); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -114,17 +112,16 @@ func TestModelFactoryCompositeSelectsRequestedType(t *testing.T) {
 		t.Fatal(err)
 	}
 	factory := NewModelFactory()
-	access := Identity{UserID: "user-1", TenantID: "user-1"}
 	ctx := serviceTestContext(t, "user-1", "user-1")
 	ref := "gpt-test@default@OpenAI"
-	types, err := factory.ResolveModelType(ctx, access, ref)
+	types, err := factory.ResolveModelType(ctx, ref)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(types, []entity.ModelType{entity.ModelTypeChat, entity.ModelTypeEmbedding}) {
 		t.Fatalf("types = %v", types)
 	}
-	info, err := factory.ResolveInfo(ctx, access, entity.ModelTypeEmbedding, ref)
+	info, err := factory.ResolveInfo(ctx, entity.ModelTypeEmbedding, ref)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +132,7 @@ func TestModelFactoryCompositeSelectsRequestedType(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, modelRef := range []string{"model-embedding", ref} {
-		if _, err := factory.ResolveInfo(ctx, access, entity.ModelTypeEmbedding, modelRef); !errors.Is(err, errModelConfigUnavailable) {
+		if _, err := factory.ResolveInfo(ctx, entity.ModelTypeEmbedding, modelRef); !errors.Is(err, errModelConfigUnavailable) {
 			t.Fatalf("%s: disabled model error = %v", modelRef, err)
 		}
 	}

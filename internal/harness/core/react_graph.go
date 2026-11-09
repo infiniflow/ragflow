@@ -154,7 +154,8 @@ func NewReActGraph(agent *ReActAgent[*schema.Message], cfg *ReActGraphConfig, al
 		// Clear tool cache at start of each iteration.
 		s.ToolExecutedCache = nil
 
-		model := BuildModelWrapperChain(agentCfg.Model, nil, agentCfg, allToolInfos)
+		ec := getReActExecCtx[*schema.Message](ctx)
+		model := BuildModelWrapperChain(ctx, agentCfg.Model, ec, agentCfg, allToolInfos)
 
 		agentState := NewReActAgentState(
 			messageSliceToAny(s.Messages),

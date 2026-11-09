@@ -638,14 +638,14 @@ func TestConnectorHandlerListSyncLogs(t *testing.T) {
 			query:        "",
 			wantCode:     common.CodeSuccess,
 			wantPage:     1,
-			wantPageSize: 15,
+			wantPageSize: 30,
 		},
 		{
 			name:         "page only defaults page_size",
 			query:        "?page=3",
 			wantCode:     common.CodeSuccess,
 			wantPage:     3,
-			wantPageSize: 15,
+			wantPageSize: 30,
 		},
 		{
 			name:         "page_size only defaults page",
@@ -709,5 +709,25 @@ func TestConnectorHandlerListSyncLogs(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestConnectorHandlerCreateConnectorRejectsEncryptedCredentials(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &ConnectorHandler{connectorService: fakeConnectorService{err: service.ErrConnectorEncryptedCredentials}}
+	resp := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(resp)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/connectors", strings.NewReader(`{"name":"n","source":"github","config":{"credentials":"enc:v1:abc"}}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "user-1"})
+
+	h.CreateConnector(c)
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if body["code"] != float64(common.CodeDataError) || body["message"] != service.ErrConnectorEncryptedCredentials.Error() {
+		t.Fatalf("body=%v, want CodeDataError and the encrypted credentials message", body)
 	}
 }

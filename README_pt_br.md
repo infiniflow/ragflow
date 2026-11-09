@@ -82,6 +82,7 @@ Experimente o nosso serviço na nuvem em [https://cloud.ragflow.io](https://clou
 
 ## 🔥 Últimas Atualizações
 
+- 2026-11-06 Lançamento do RAGFlow 1.0.0.
 - 2026-09-29 Lançamento do RAGFlow 1.0.0-rc1.
 
 - 2026-09-10 Adicionada a ingestão de conteúdo da Web por meio de sitemaps.
@@ -170,7 +171,7 @@ O Docker é indicado para avaliação rápida, testes de integração e produç�
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc3
+   git checkout v1.0.0
    docker compose -f docker-compose.yml up -d
    ```
 

@@ -75,7 +75,7 @@
 
 جرّب النسخة التجريبية على [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
-للنشر محليًا، راجع قسم [النشر المحلي](#-الاستضافة-الذاتية).
+للنشر محليًا، راجع قسم [النشر المحلي](#-النشر-المحلي).
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -84,6 +84,7 @@
 
 ## 🔥 آخر التحديثات
 
+- 2026-11-06 إصدار RAGFlow 1.0.0.
 - 2026-09-29 إصدار RAGFlow 1.0.0-rc1.
 
 - 2026-09-10 إضافة استيعاب محتوى الويب عبر خرائط المواقع.
@@ -168,7 +169,7 @@
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc3
+   git checkout v1.0.0
    docker compose -f docker-compose.yml up -d
    ```
 

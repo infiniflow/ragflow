@@ -160,9 +160,9 @@ func TestPipelineParity(t *testing.T) {
 			continue
 		}
 
-		// Production path now derives per-char R/C itself (AnnotateBoxesWithGrid
-		// + GroupBoxesByRC); the replay harness measures that production output
-		// directly against Python's golden.
+		// Production path now derives per-char R/C itself
+		// (AnnotateBoxesWithGridAndRows + GroupBoxesByRC); the replay harness
+		// measures that production output directly against Python's golden.
 
 		// Read Python sections
 		pyPath := filepath.Join(pyTextDir, name+".txt")

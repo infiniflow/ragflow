@@ -23,6 +23,8 @@ import (
 	"net/http"
 	"net/mail"
 	"net/smtp"
+
+	"ragflow/internal/permission"
 	"ragflow/internal/server"
 	"strings"
 	"time"
@@ -30,7 +32,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
-	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
 
@@ -71,12 +72,6 @@ type SetModelRequest struct {
 }
 
 func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
 	// Parse request body (same as Python get_request_json())
 	var req SetModelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -85,7 +80,7 @@ func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
 	}
 
 	ctx := c.Request.Context()
-	code, err := h.userTenantService.SetModelSettings(ctx, user.ID, &service.SetModelSettingsRequest{
+	code, err := h.userTenantService.SetModelSettings(ctx, &service.SetModelSettingsRequest{
 		DefaultModel: &service.DefaultModelSelection{
 			ModelProvider: req.ModelProvider,
 			ModelInstance: req.ModelInstance,
@@ -113,14 +108,9 @@ func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
 // models_api.py:84). The frontend hook `useFetchDefaultModels`
 // (web/src/hooks/use-llm-request.tsx:423) reads `data.data.models`.
 func (h *TenantHandler) GetDefaultModels(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 	ctx := c.Request.Context()
 
-	defaultModels, err := h.userTenantService.ListDefaultModels(ctx, user.ID)
+	defaultModels, err := h.userTenantService.ListDefaultModels(ctx)
 	if err != nil {
 		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
@@ -144,14 +134,9 @@ func (h *TenantHandler) GetDefaultModels(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /v1/user/tenant_info [get]
 func (h *TenantHandler) TenantInfo(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 	ctx := c.Request.Context()
 
-	tenantInfo, err := h.userTenantService.GetCurrentTenantInfo(ctx, user.ID)
+	tenantInfo, err := h.userTenantService.GetCurrentTenantInfo(ctx)
 	if err != nil {
 		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
@@ -173,14 +158,9 @@ func (h *TenantHandler) TenantInfo(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/tenants [get]
 func (h *TenantHandler) TenantList(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
 	ctx := c.Request.Context()
 
-	tenantList, err := h.tenantService.GetTenantList(ctx, user.ID)
+	tenantList, err := h.tenantService.GetTenantList(ctx)
 	if err != nil {
 		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
@@ -335,12 +315,6 @@ func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
 // @Param tenant_id path string true "Tenant ID"
 // @Router /api/v1/tenants/{tenant_id}/users [get]
 func (h *TenantHandler) ListTenantMembers(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
 	tenantID := c.Param("tenant_id")
 	if tenantID == "" {
 		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "tenant_id is required")
@@ -352,7 +326,7 @@ func (h *TenantHandler) ListTenantMembers(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	members, code, err := h.tenantService.ListMembers(ctx, user.ID, tenantID)
+	members, code, err := h.tenantService.ListMembers(ctx, tenantID)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
@@ -541,7 +515,7 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	resp, code, err := h.tenantService.AddMember(ctx, user.ID, tenantID, &req)
+	resp, code, err := h.tenantService.AddMember(ctx, tenantID, &req)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		operationLog.Code = int(code)
@@ -621,7 +595,7 @@ func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	code, err := h.tenantService.RemoveMember(ctx, user.ID, tenantID, body.UserID)
+	code, err := h.tenantService.RemoveMember(ctx, tenantID, body.UserID)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		operationLog.Code = int(code)
@@ -668,7 +642,7 @@ func (h *TenantHandler) AcceptTenantInvite(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	code, err := h.tenantService.AcceptInvite(ctx, user.ID, tenantID)
+	code, err := h.tenantService.AcceptInvite(ctx, tenantID)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		operationLog.Code = int(code)

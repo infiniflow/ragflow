@@ -70,7 +70,20 @@ func CreateReducerChannel(fieldName string, fieldType reflect.Type, reducer type
 	var channel Channel
 
 	switch fieldType.Kind() {
-	case reflect.Slice, reflect.Array:
+	case reflect.Slice:
+		operator := BinaryOperator(func(a, b interface{}) interface{} {
+			return reflect.AppendSlice(reflect.ValueOf(a), reflect.ValueOf(b)).Interface()
+		})
+		if fieldType == reflect.TypeFor[[]any]() {
+			operator = ListAppend
+		}
+		if reducer != nil {
+			operator = BinaryOperator(reducer)
+		}
+		channel = NewBinaryOperatorAggregate(reflect.Zero(fieldType).Interface(), operator)
+		channel.SetKey(fieldName)
+		return channel, nil
+	case reflect.Array:
 		// For slices, use BinaryOperatorAggregate with append operator
 		channel = NewBinaryOperatorAggregate(fieldType, ListAppend)
 	case reflect.Map:

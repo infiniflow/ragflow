@@ -23,6 +23,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
@@ -63,6 +64,23 @@ func TestSearchServiceCreateRejectsEmptyName(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "empty") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSearchServiceUpdateRejectsOverlongName(t *testing.T) {
+	setupSearchServiceTestDB(t)
+	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
+	created, err := NewSearchService().CreateSearch(ctx, "Search", nil)
+	if err != nil {
+		t.Fatalf("CreateSearch failed: %v", err)
+	}
+
+	_, err = NewSearchService().UpdateSearch(ctx, created.SearchID, &UpdateSearchRequest{
+		Name:         strings.Repeat("a", common.NameLimit128+1),
+		SearchConfig: map[string]interface{}{},
+	})
+	if err == nil || !strings.Contains(err.Error(), "larger than") {
+		t.Fatalf("UpdateSearch overlong name error = %v, want length error", err)
 	}
 }
 

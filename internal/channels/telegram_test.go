@@ -195,10 +195,26 @@ func TestTelegramSendUsesReplyParameters(t *testing.T) {
 	}
 }
 
-func TestTelegramSendIgnoresInvalidChatID(t *testing.T) {
+func TestTelegramSendRejectsInvalidChatID(t *testing.T) {
 	ch := newTelegramChannel(telegramAccount{AccountID: "account-1", Token: "token"})
-	if err := ch.Send(context.Background(), core.OutgoingMessage{ChatID: "invalid", Text: "answer"}); err != nil {
-		t.Fatalf("Send() error = %v, want nil", err)
+	if err := ch.Send(t.Context(), core.OutgoingMessage{ChatID: "invalid", Text: "answer"}); err == nil {
+		t.Fatal("Send() succeeded with an invalid chat ID")
+	}
+}
+
+func TestTelegramSendReturnsTransportError(t *testing.T) {
+	const token = "sensitive-bot-token"
+	transportErr := errors.New("connection refused")
+	ch := newTelegramChannel(telegramAccount{AccountID: "account-1", Token: token})
+	ch.client = &http.Client{Transport: telegramRoundTripperFunc(func(*http.Request) (*http.Response, error) {
+		return nil, transportErr
+	})}
+	err := ch.Send(t.Context(), core.OutgoingMessage{ChatID: "42", Text: "answer"})
+	if !errors.Is(err, transportErr) {
+		t.Fatalf("Send() error = %v, want transport failure", err)
+	}
+	if strings.Contains(err.Error(), token) {
+		t.Fatalf("Send() exposed token: %v", err)
 	}
 }
 

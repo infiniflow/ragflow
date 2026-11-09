@@ -4,7 +4,7 @@ slug: /what-is-rag
 ---
 # What Is Retrieval-Augmented Generation (RAG)?
 
-Since large language models (LLMs) became the focus of technology, their ability to handle general knowledge has been astonishing. However, when questions shift to internal corporate documents, proprietary knowledge bases, or real-time data, the limitations of LLMs become glaringly apparent: they cannot access private information outside their training data. Retrieval-Augmented Generation (RAG) was born precisely to address this core need. Before an LLM generates an answer, it first retrieves the most relevant context from an external knowledge base and inputs it as "reference material" to the LLM, thereby guiding it to produce accurate answers. In short, RAG elevates LLMs from "relying on memory" to "having evidence to rely on," significantly improving their accuracy and trustworthiness in specialized fields and real-time information queries.
+Since large language models (LLMs) became the focus of technology, their ability to handle general knowledge has been astonishing. However, when questions shift to internal corporate documents, proprietary Datasets, or real-time data, the limitations of LLMs become glaringly apparent: they cannot access private information outside their training data. Retrieval-Augmented Generation (RAG) was born precisely to address this core need. Before an LLM generates an answer, it first retrieves the most relevant context from an external Dataset and inputs it as "reference material" to the LLM, thereby guiding it to produce accurate answers. In short, RAG elevates LLMs from "relying on memory" to "having evidence to rely on," significantly improving their accuracy and trustworthiness in specialized fields and real-time information queries.
 
 ## Why Is RAG Important?
 
@@ -16,7 +16,7 @@ Although LLMs excel in language understanding and generation, they have inherent
 
 The introduction of RAG provides LLMs with real-time, credible "factual grounding." Its core mechanism is divided into two stages:
 
-- Retrieval Stage: Based on the user's question, quickly retrieve the most relevant documents or data fragments from an external knowledge base.
+- Retrieval Stage: Based on the user's question, quickly retrieve the most relevant documents or data fragments from an external Dataset.
 - Generation Stage: The LLM organizes and generates the final answer by incorporating the retrieved information as context, combined with its own linguistic capabilities.
 
 This upgrades LLMs from "speaking from memory" to "speaking with documentation," significantly enhancing reliability in professional and enterprise-level applications.

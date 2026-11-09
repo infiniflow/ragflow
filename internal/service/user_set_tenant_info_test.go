@@ -36,7 +36,7 @@ func TestSetModelSettingsRejectsInvalidSettingTypesBeforeDatabaseLookup(t *testi
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			code, err := (&UserTenantService{}).SetModelSettings(context.Background(), "user-1", &SetModelSettingsRequest{Raw: tt.raw})
+			code, err := (&UserTenantService{}).SetModelSettings(context.Background(), &SetModelSettingsRequest{Raw: tt.raw})
 			if code != common.CodeArgumentError || err == nil {
 				t.Fatalf("SetModelSettings() = (%v, %v), want argument error", code, err)
 			}

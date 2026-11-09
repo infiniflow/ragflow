@@ -93,7 +93,7 @@ Keep one application replica running and do not resume data-writing tasks until 
 
 At every checkpoint, confirm that:
 
-- Existing users can sign in and see their knowledge bases.
+- Existing users can sign in and see their Datasets.
 - Existing files can be listed and opened.
 - Retrieval returns content from previously parsed documents.
 - A new document can be uploaded, parsed, and retrieved.
@@ -109,7 +109,7 @@ These sections contain only the additional checks for each release. Use them tog
 
 ### 2.1. v0.22.1
 
-Use `v0.22.1` rather than `v0.22.0`. If a knowledge base used the embedding model from the former `full` image, select an available replacement model. If the compatibility check fails, use another compatible model or re-parse the existing chunks with the new model.
+Use `v0.22.1` rather than `v0.22.0`. If a Dataset used the embedding model from the former `full` image, select an available replacement model. If the compatibility check fails, use another compatible model or re-parse the existing chunks with the new model.
 
 ### 2.2. v0.25.6
 

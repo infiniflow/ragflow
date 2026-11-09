@@ -54,25 +54,17 @@
                             }
                         },
                         "spreadsheet": {
-                            "flatten_media_to_text": false,
                             "parse_method": "DeepDOC",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "xls",
                                 "xlsx",
                                 "csv"
                             ],
-                            "vlm": {},
                             "column_mode": "auto",
                             "column_roles": {},
                             "column_names": []
                         },
                         "text&code": {
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "txt"
                             ]
@@ -195,18 +187,10 @@
                             "setups": [
                                 {
                                     "fileFormat": "spreadsheet",
-                                    "flatten_media_to_text": false,
-                                    "parse_method": "DeepDOC",
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "vlm": {}
+                                    "parse_method": "DeepDOC"
                                 },
                                 {
-                                    "fileFormat": "text&code",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "fileFormat": "text&code"
                                 }
                             ]
                         },

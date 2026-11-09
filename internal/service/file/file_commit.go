@@ -30,11 +30,13 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	"ragflow/internal/storage"
+	"ragflow/internal/utility"
 	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -70,6 +72,11 @@ const maxCommitFolderDepth = 64
 // entry as processed, so later edits would never be reported.
 var ErrDeleteLiveFile = errors.New("cannot commit the deletion of a file that is still in the folder")
 
+// ErrInvalidRenameTarget rejects a rename change whose target is empty or
+// exceeds the stored name limit. The handler maps it to a client error instead
+// of a server fault.
+var ErrInvalidRenameTarget = errors.New("invalid file rename target")
+
 // fileTreeContains reports whether fileID, or one of its ancestors, is folderID.
 // It walks from the file upwards rather than scanning the folder, and treats an
 // unknown ID as outside: a deletion is only valid for a file that is already
@@ -95,8 +102,39 @@ func (s *FileCommitService) fileTreeContains(ctx context.Context, tx *gorm.DB, f
 	return false, nil
 }
 
+// normalizeCommitRenames trims and validates every rename target before the
+// transaction writes objects or rows. Object storage has no transaction, so a
+// later invalid rename would otherwise leave objects written by earlier
+// add/modify changes behind.
+func normalizeCommitRenames(changes []entity.FileChange) ([]entity.FileChange, error) {
+	normalized := make([]entity.FileChange, len(changes))
+	copy(normalized, changes)
+	for i := range normalized {
+		if normalized[i].Operation != "rename" {
+			continue
+		}
+		normalized[i].NewName = strings.TrimSpace(normalized[i].NewName)
+		if err := common.ValidateNameRunes(normalized[i].NewName, common.NameLimit255); err != nil {
+			return nil, fmt.Errorf("%w for file %s: %v", ErrInvalidRenameTarget, normalized[i].FileID, err)
+		}
+	}
+	return normalized, nil
+}
+
 // CreateCommit creates a new commit for a workspace folder
 func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return nil, errors.New("commit message is required")
+	}
+	if utf8.RuneCountInString(message) > 512 {
+		return nil, errors.New("commit message must be at most 512 characters")
+	}
+	normalizedChanges, err := normalizeCommitRenames(changes)
+	if err != nil {
+		return nil, err
+	}
+	changes = normalizedChanges
 	// 1. Get the latest commit for this folder
 	latestCommit, _ := s.commitDAO.GetLatestByFolderID(ctx, dao.DB, folderID)
 
@@ -250,20 +288,21 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 				}
 
 			case "rename":
+				newName := change.NewName
 				item.OldName = &change.OldName
-				item.NewName = &change.NewName
+				item.NewName = &newName
 
-				if err := tx.Model(&entity.File{}).Where("id = ?", change.FileID).Update("name", change.NewName).Error; err != nil {
+				if err := tx.Model(&entity.File{}).Where("id = ?", change.FileID).Update("name", newName).Error; err != nil {
 					return fmt.Errorf("failed to rename file: %w", err)
 				}
 
 				if entry, ok := treeState[change.FileID]; ok {
 					if entryMap, ok := entry.(map[string]interface{}); ok {
-						entryMap["name"] = change.NewName
+						entryMap["name"] = newName
 					}
 				} else {
 					treeState[change.FileID] = map[string]interface{}{
-						"name":   change.NewName,
+						"name":   newName,
 						"status": "1",
 					}
 				}
@@ -543,12 +582,13 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 		return nil, fmt.Errorf("failed to resolve page commit parent: %w", perr)
 	}
 
+	title := utility.TruncateRunes(strings.TrimSpace(in.Title), common.NameLimit255)
 	commit = &entity.FileCommit{
 		ID:        commitID,
 		FolderID:  in.DatasetID,
-		Message:   in.Title,
+		Message:   title,
 		AuthorID:  in.AuthorID,
-		Title:     &in.Title,
+		Title:     &title,
 		Comments:  &in.Comments,
 		FileCount: 1,
 	}

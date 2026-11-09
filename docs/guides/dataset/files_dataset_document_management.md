@@ -50,14 +50,14 @@ To import external content, link a configured data source to the target Dataset 
 1. Open the target **Dataset** and select **Configuration**.
 2. Find the **Data source** section and click **Link data source**.
 3. Select the configured data source connection and click **Confirm**.
-4. Review the linked source and its parsing settings. For synchronization and updates, follow [Add a Data Source to a Knowledge Base and Synchronization and Updates](../data_source/add_to_knowledge_base_and_sync.md).
+4. Review the linked source and its parsing settings. For synchronization and updates, follow [Add a Data Source to a Dataset and Synchronization and Updates](../data_source/add_to_knowledge_base_and_sync.md).
 5. Check synchronized documents and their parsing status on **Files**. Use **Logs > Data source** to inspect synchronization records.
 
 ### Add Documents from File
 
 Add documents from File Management
 
-Files that have already been uploaded to **File** can be added to a knowledge base by connecting them to the target knowledge base. Once connected, the files will be processed according to the configuration of the target knowledge base. For detailed instructions, see [**File > Connect to a knowledge base**](../file/link_dataset.md).
+Files that have already been uploaded to **File** can be added to a Dataset by connecting them to the target Dataset. Once connected, the files will be processed according to the configuration of the target Dataset. For detailed instructions, see [**File > Connect to a Dataset**](../file/link_dataset.md).
 
 ## Parse Documents
 
