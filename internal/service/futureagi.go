@@ -27,7 +27,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"os/user"
 	"regexp"
 	"strings"
 	"sync"
@@ -41,6 +40,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/service/graph"
+	"ragflow/internal/utility"
 )
 
 // Future AGI tenant export.
@@ -66,8 +66,8 @@ const (
 	futureAGIMaxDocuments  = 64
 	futureAGIMaxDocBytes   = 8 << 10
 	futureAGIMaxValueBytes = 64 << 10
-	futureAGIMaxErrorBytes = 512
 	futureAGIWarnInterval  = time.Minute
+	futureAGIFailedError   = "chat failed (error details omitted)"
 	futureAGIRedactedError = "chat failed (error text hidden: redact is on)"
 )
 
@@ -83,7 +83,6 @@ type FutureAGIClient struct {
 	SecretKey   string
 	ProjectName string
 	Redact      bool
-	HTTP        *http.Client
 
 	workerCtx context.Context
 	cancel    context.CancelFunc
@@ -107,7 +106,6 @@ func NewFutureAGIClient(endpoint, apiKey, secretKey, projectName string, redact 
 		SecretKey:   secretKey,
 		ProjectName: projectName,
 		Redact:      redact,
-		HTTP:        &http.Client{Timeout: futureAGIPostTimeout},
 		events:      make(chan []byte, futureAGIQueueSize),
 		stop:        make(chan struct{}),
 		stopped:     make(chan struct{}),
@@ -191,21 +189,26 @@ func (c *FutureAGIClient) send(body []byte) {
 	}
 }
 
-// post sends one OTLP body. The returned error never carries the keys.
+// post sends one OTLP body. Verification and every export enforce the shared
+// operator-controlled host policy, then dial the validated address directly.
+// The returned error never carries keys, destination details or response bodies.
 func (c *FutureAGIClient) post(ctx context.Context, body []byte) error {
+	ctx, cancel := context.WithTimeout(ctx, futureAGIPostTimeout)
+	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, collectorEndpoint(c.Endpoint), bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("invalid Future AGI endpoint")
 	}
+	host, ip, err := common.AssertURLSafeWithContext(ctx, req.URL.String())
+	if err != nil {
+		return fmt.Errorf("Future AGI endpoint is unavailable or disallowed by the operator's host policy")
+	}
+	client := utility.PinnedHTTPClient(host, ip, futureAGIPostTimeout)
+	defer client.CloseIdleConnections()
+	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Api-Key", c.APIKey)
 	req.Header.Set("X-Secret-Key", c.SecretKey)
-	httpClient := c.HTTP
-	if httpClient == nil {
-		httpClient = &http.Client{Timeout: futureAGIPostTimeout}
-	}
-	client := *httpClient
-	client.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	res, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("Future AGI collector unreachable")
@@ -649,10 +652,7 @@ func (t *futureAGITurn) llmEnd(output string, promptTokens, completionTokens int
 	}
 	errText := ""
 	if callErr != nil {
-		errText = callErr.Error()
-		if errText == "" {
-			errText = "chat model call failed"
-		}
+		errText = futureAGIFailedError
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -828,7 +828,7 @@ func (c *FutureAGIClient) payload(traceID string, spans []futureAGISpanData) map
 	for _, s := range spans {
 		status := map[string]any{"code": 1}
 		if s.errText != "" {
-			status = map[string]any{"code": 2, "message": futureAGIErrorText(s.errText, c.Redact)}
+			status = map[string]any{"code": 2, "message": futureAGIErrorText(c.Redact)}
 		}
 		span := map[string]any{
 			"traceId":           traceID,
@@ -871,37 +871,19 @@ func (c *FutureAGIClient) payload(traceID string, spans []futureAGISpanData) map
 // ---------------------------------------------------------------------------
 
 var (
-	futureAGIURLPattern   = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.\-]*://[^\s"'<>\x60]+`)
-	futureAGIEmailPattern = regexp.MustCompile(`[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}`)
-	futureAGIIPPattern    = regexp.MustCompile(`\b\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?\b`)
-	futureAGIPathPattern  = regexp.MustCompile(`(?:[A-Za-z]:\\|~/|/)(?:[\w.\-]+[/\\]){1,}[\w.\-]*`)
-	futureAGIDataURI      = regexp.MustCompile(`data:[\w/+.\-]{1,64};base64,[A-Za-z0-9+/=]+`)
-
-	futureAGIEnvOnce sync.Once
-	futureAGIHome    string
-	futureAGIUser    string
-	futureAGIHost    string
-)
-
-func futureAGIEnv() (home, username, host string) {
-	futureAGIEnvOnce.Do(func() {
+	futureAGIDataURI = regexp.MustCompile(`data:[\w/+.\-]{1,64};base64,[A-Za-z0-9+/=]+`)
+	futureAGIHome    = sync.OnceValue(func() string {
 		if h, err := os.UserHomeDir(); err == nil && len(h) > 1 {
-			futureAGIHome = strings.TrimRight(h, "/")
+			return strings.TrimRight(h, "/")
 		}
-		if u, err := user.Current(); err == nil && len(u.Username) >= 3 {
-			futureAGIUser = u.Username
-		}
-		if h, err := os.Hostname(); err == nil && len(h) >= 3 {
-			futureAGIHost = h
-		}
+		return ""
 	})
-	return futureAGIHome, futureAGIUser, futureAGIHost
-}
+)
 
 // futureAGIValue caps an exported string and masks the server's home
 // directory, which can show up in attachment or tool text.
 func futureAGIValue(s string, limit int) string {
-	if home, _, _ := futureAGIEnv(); home != "" {
+	if home := futureAGIHome(); home != "" {
 		s = strings.ReplaceAll(s, home, "~")
 	}
 	if len(s) > limit {
@@ -916,47 +898,22 @@ func futureAGIValue(s string, limit int) string {
 
 func utf8RuneStart(b byte) bool { return b&0xC0 != 0x80 }
 
-// futureAGIErrorText turns raw error text into a status message: with redact
-// on it is a fixed line; otherwise URLs, IPs, e-mail addresses, file paths and
-// the server's user and host names are masked and the text is capped.
-func futureAGIErrorText(raw string, redact bool) string {
+// futureAGIErrorText never includes provider error bodies, even with content
+// capture enabled. Providers can echo credentials in arbitrary formats, so
+// pattern-based scrubbing is not a safe boundary for diagnostic text.
+func futureAGIErrorText(redact bool) string {
 	if redact {
 		return futureAGIRedactedError
 	}
-	s := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(raw), "**ERROR**:"))
-	if s == "" {
-		s = "chat failed"
-	}
-	return futureAGIScrubError(s)
+	return futureAGIFailedError
 }
 
-func futureAGIScrubError(s string) string {
-	home, username, host := futureAGIEnv()
-	if home != "" {
-		s = strings.ReplaceAll(s, home, "~")
-	}
-	s = futureAGIURLPattern.ReplaceAllString(s, "<url>")
-	s = futureAGIEmailPattern.ReplaceAllString(s, "<email>")
-	s = futureAGIIPPattern.ReplaceAllString(s, "<ip>")
-	s = futureAGIPathPattern.ReplaceAllString(s, "<path>")
-	if host != "" {
-		s = strings.ReplaceAll(s, host, "<host>")
-	}
-	if username != "" {
-		s = regexp.MustCompile(`\b`+regexp.QuoteMeta(username)+`\b`).ReplaceAllString(s, "<user>")
-	}
-	if len(s) > futureAGIMaxErrorBytes {
-		s = futureAGIValue(s, futureAGIMaxErrorBytes)
-	}
-	return s
-}
-
-// futureAGIErrorOrValue scrubs the turn output when it is an error line.
+// futureAGIErrorOrValue replaces failed-turn output instead of exporting error bodies.
 func futureAGIErrorOrValue(answer, errText string) string {
 	if errText == "" {
 		return answer
 	}
-	return "**ERROR**: " + futureAGIErrorText(errText, false)
+	return "**ERROR**: " + futureAGIErrorText(false)
 }
 
 func futureAGIMessageContent(content interface{}) string {

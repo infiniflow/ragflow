@@ -106,6 +106,7 @@ func TestFutureAGISettingsRejectUnsafeURLParts(t *testing.T) {
 }
 
 func TestFutureAGICollectorDoesNotFollowRedirects(t *testing.T) {
+	t.Setenv(common.EnvAllowAnyHost, "true")
 	var followed atomic.Bool
 	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { followed.Store(true) }))
 	defer destination.Close()
@@ -113,7 +114,7 @@ func TestFutureAGICollectorDoesNotFollowRedirects(t *testing.T) {
 		http.Redirect(w, r, destination.URL, http.StatusTemporaryRedirect)
 	}))
 	defer source.Close()
-	client := &FutureAGIClient{Endpoint: source.URL, APIKey: "private-api", SecretKey: "private-secret", HTTP: source.Client()}
+	client := &FutureAGIClient{Endpoint: source.URL, APIKey: "private-api", SecretKey: "private-secret"}
 	err := client.post(t.Context(), []byte(`{"resourceSpans":[]}`))
 	if err == nil || followed.Load() || strings.Contains(err.Error(), "private") {
 		t.Fatalf("redirect behavior: followed=%v err=%v", followed.Load(), err)
@@ -124,6 +125,7 @@ func TestFutureAGICollectorDoesNotFollowRedirects(t *testing.T) {
 }
 
 func TestFutureAGIShutdownCancelsSlowDelivery(t *testing.T) {
+	t.Setenv(common.EnvAllowAnyHost, "true")
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { close(entered); <-release }))

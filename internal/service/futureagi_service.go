@@ -20,10 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
 	"gorm.io/gorm"
 
@@ -47,9 +45,7 @@ type defaultFutureAGIVerifier struct{}
 // Verify posts an empty OTLP export. The collector authenticates it like any
 // export and stores nothing.
 func (defaultFutureAGIVerifier) Verify(ctx context.Context, endpoint, apiKey, secretKey string) error {
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	client := &FutureAGIClient{Endpoint: endpoint, APIKey: apiKey, SecretKey: secretKey, HTTP: &http.Client{Timeout: 10 * time.Second}}
+	client := &FutureAGIClient{Endpoint: endpoint, APIKey: apiKey, SecretKey: secretKey}
 	err := client.post(ctx, []byte(`{"resourceSpans":[]}`))
 	if err == nil {
 		return nil

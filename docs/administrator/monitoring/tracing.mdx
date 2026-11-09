@@ -80,12 +80,12 @@ Send chat turns to [Future AGI Observe](https://docs.futureagi.com/docs/observe)
 4. Choose whether to enable **Redact content**, then click **Save**. RAGFlow verifies the credentials with an empty export before storing them.
 
 :::caution Content and credentials
-Content capture is on once you configure tracing: questions, model prompts and responses, retrieved chunk text, document names and web URLs can leave your RAGFlow deployment. Enable **Redact content** before sending sensitive requests to omit these fields and replace error text. IDs, retrieval scores, model names, token counts and timings remain visible.
+Content capture is on once you configure tracing: questions, model prompts and responses, retrieved chunk text, document names and web URLs can leave your RAGFlow deployment. Enable **Redact content** before sending sensitive requests to omit these fields. Error details are always replaced with a generic failure message, even when content capture is on, because provider errors can contain credentials. IDs, retrieval scores, model names, token counts and timings remain visible.
 
 Keys are stored in the RAGFlow database, so protect database access and backups. Settings reads return only masked keys. Leave the key fields blank when editing an existing configuration to retain them; changing the endpoint requires entering both keys again.
 :::
 
-Use only an endpoint you trust. The server sends credentials to the configured destination and rejects redirects. Custom HTTP(S) endpoints, including private-network collectors, are supported; endpoint validation is not a network allowlist. Restrict outbound access at the deployment boundary if your environment requires it, and use HTTPS outside a trusted local network. The exporter posts to `/tracer/v1/traces` beneath the endpoint, unless it already ends with that path.
+Use only an endpoint you trust. The server sends credentials to the configured destination and rejects redirects. Custom HTTP(S) collectors follow the deployment's host policy: private, loopback and link-local addresses are blocked by default. To use a private collector, the operator must explicitly enable `ALLOW_ANY_HOST` on the server. This is a deployment-wide setting that also affects other guarded outbound integrations; it is not a tenant setting or a collector-specific allowlist. Verification and every export validate the destination and connect to its resolved address without using environment HTTP proxies. Keep deployment-level egress restrictions appropriate to your environment, and use HTTPS outside a trusted local network. The exporter posts to `/tracer/v1/traces` beneath the endpoint, unless it already ends with that path.
 
 ### Find your first trace
 

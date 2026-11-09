@@ -52,6 +52,7 @@ type fakeCollector struct {
 
 func newFakeCollector(t *testing.T, status int) (*fakeCollector, *httptest.Server) {
 	t.Helper()
+	t.Setenv(common.EnvAllowAnyHost, "true")
 	c := &fakeCollector{status: status, received: make(chan struct{}, 64)}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)
@@ -324,38 +325,50 @@ func TestFutureAGIRedactKeepsShapeAndDropsContent(t *testing.T) {
 	}
 }
 
-func TestFutureAGIErrorTextIsScrubbed(t *testing.T) {
-	home, username, host := futureAGIEnv()
-	raw := "**ERROR**: Post \"http://10.1.2.3:8317/v1/chat/completions\": dial tcp 10.1.2.3:8317: connect: connection refused; key file /etc/ragflow/keys/model.pem; owner ops@example.com"
-	if home != "" {
-		raw += "; cache " + home + "/.cache/ragflow"
-	}
-	if host != "" {
-		raw += "; host " + host
-	}
-	if username != "" {
-		raw += "; user " + username
-	}
-	got := futureAGIErrorText(raw, false)
-	for _, leak := range []string{"10.1.2.3", "http://", "ops@example.com", "/etc/ragflow", "**ERROR**"} {
-		if strings.Contains(got, leak) {
-			t.Fatalf("scrubbed error still has %q: %s", leak, got)
-		}
-	}
-	if home != "" && strings.Contains(got, home) {
-		t.Fatalf("home dir left in %s", got)
-	}
-	if host != "" && strings.Contains(got, host) {
-		t.Fatalf("host name left in %s", got)
-	}
-	if !strings.Contains(got, "connection refused") {
-		t.Fatalf("scrubbing removed the useful part: %s", got)
-	}
-	if long := futureAGIErrorText(strings.Repeat("x", 4000), false); len(long) > futureAGIMaxErrorBytes+20 {
-		t.Fatalf("error text not capped: %d bytes", len(long))
-	}
-	if futureAGIErrorText(raw, true) != futureAGIRedactedError {
-		t.Fatal("redact must replace the error text")
+// Exercise both the explicit llmEnd hook and the streaming/solo fallback.
+// Scan the entire export, not just status.message: failed root output must not
+// carry a provider's echoed credential either. Content capture remains enabled.
+func TestFutureAGIProviderErrorBodyNeverExported(t *testing.T) {
+	const secret = "synthetic-provider-secret"
+	for _, fallback := range []bool{false, true} {
+		t.Run(strconv.FormatBool(fallback), func(t *testing.T) {
+			sink, srv := newFakeCollector(t, http.StatusOK)
+			client := NewFutureAGIClient(srv.URL, "key", "secret", "proj", false)
+			defer client.Shutdown(t.Context())
+			callErr := &modelModule.APIStatusError{Status: http.StatusUnauthorized, Body: "invalid api_key=" + secret}
+			turn := newTestTurn(client)
+			turn.llmStart("gpt-x", "OpenAI-API-Compatible", []modelModule.Message{{Role: "user", Content: "safe prompt"}})
+			if !fallback {
+				turn.llmEnd(callErr.Error(), 0, 0, callErr)
+			}
+			in := make(chan AsyncChatResult, 1)
+			in <- AsyncChatResult{Answer: "**ERROR**: " + callErr.Error(), Final: true}
+			close(in)
+			out, _ := turn.observe(t.Context(), in, nil)
+			for result := range out {
+				if !strings.Contains(result.Answer, secret) {
+					t.Fatal("tracing changed the user-visible result")
+				}
+			}
+			body := sink.wait(t, 1)[0]
+			if strings.Contains(body, secret) || strings.Contains(body, "invalid api_key") {
+				t.Fatal("provider error body reached the tracing destination")
+			}
+			_, spans := decodeExport(t, body)
+			root := spanByName(t, spans, "ragflow.chat")
+			llm := spanByName(t, spans, "ragflow.llm")
+			for _, span := range []otlpSpan{root, llm} {
+				if span.Status.Code != 2 || span.Status.Message != futureAGIFailedError {
+					t.Fatalf("missing safe failure status: %+v", span.Status)
+				}
+			}
+			if attrMap(llm.Attributes)["llm.input_messages.0.message.content"] != "safe prompt" {
+				t.Fatal("regression did not exercise content capture")
+			}
+			if attrMap(root.Attributes)["output.value"] != "**ERROR**: "+futureAGIFailedError || attrMap(llm.Attributes)["output.value"] != "" {
+				t.Fatal("failed-turn output was not replaced")
+			}
+		})
 	}
 }
 
@@ -372,7 +385,7 @@ func TestFutureAGIFailedTurnIsError(t *testing.T) {
 	if root.Status.Code != 2 || llm.Status.Code != 2 {
 		t.Fatalf("status root=%d llm=%d", root.Status.Code, llm.Status.Code)
 	}
-	if !strings.Contains(llm.Status.Message, "401 Unauthorized") || strings.Contains(llm.Status.Message, "127.0.0.1") {
+	if llm.Status.Message != futureAGIFailedError {
 		t.Fatalf("llm status message %q", llm.Status.Message)
 	}
 	if out := attrMap(llm.Attributes)["output.value"]; out != "" {
@@ -404,7 +417,7 @@ func TestFutureAGIQueueFullDropsWithoutBlocking(t *testing.T) {
 
 func TestFutureAGICollectorErrorsDoNotLeakKeys(t *testing.T) {
 	_, srv := newFakeCollector(t, http.StatusUnauthorized)
-	client := &FutureAGIClient{Endpoint: srv.URL, APIKey: "key-should-not-appear", SecretKey: "secret-should-not-appear", HTTP: srv.Client()}
+	client := &FutureAGIClient{Endpoint: srv.URL, APIKey: "key-should-not-appear", SecretKey: "secret-should-not-appear"}
 	err := client.post(t.Context(), []byte("{}"))
 	if err == nil || err.Error() != "Future AGI collector answered HTTP 401" {
 		t.Fatalf("err = %v", err)
@@ -422,7 +435,6 @@ func TestFutureAGIShutdownPostsQueuedTraces(t *testing.T) {
 		client := &FutureAGIClient{
 			Endpoint:    srv.URL,
 			ProjectName: "proj",
-			HTTP:        srv.Client(),
 			events:      make(chan []byte, 1),
 			stop:        make(chan struct{}),
 			stopped:     make(chan struct{}),
@@ -573,7 +585,7 @@ func TestObserveMarksErrorAnswers(t *testing.T) {
 	}
 	_, spans := decodeExport(t, sink.wait(t, 1)[0])
 	root := spanByName(t, spans, "ragflow.chat")
-	if root.Status.Code != 2 || root.Status.Message != "model gpt-x not found" {
+	if root.Status.Code != 2 || root.Status.Message != futureAGIFailedError {
 		t.Fatalf("root status %d %q", root.Status.Code, root.Status.Message)
 	}
 }
