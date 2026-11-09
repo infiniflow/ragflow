@@ -3,6 +3,7 @@ package dataset
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -165,8 +166,15 @@ func TestUpdateDatasetRestoresEmbeddingBindingWhenChunkStorePreparationFails(t *
 
 			model := "BAAI/bge-m3@Builtin"
 			ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
-			if _, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model}); err == nil || code != common.CodeServerError {
+			_, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model})
+			if err == nil || code != common.CodeServerError {
 				t.Fatalf("UpdateDataset = (%d, %v), want a server error", code, err)
+			}
+			// The settings commit before the store is prepared, so the error has
+			// to say that the rest of the update stuck and the binding was rolled
+			// back; otherwise the client cannot tell what a retry will repair.
+			if !strings.Contains(err.Error(), "dataset settings were saved") {
+				t.Fatalf("error %q does not report the saved settings", err)
 			}
 
 			var kb entity.Knowledgebase
@@ -230,7 +238,9 @@ func TestRestoreEmbeddingBindingIgnoresRequestCancellation(t *testing.T) {
 	cancel()
 
 	svc := testDatasetUpdateService(t)
-	svc.restoreEmbeddingBinding(ctx, "kb-1", "BAAI/bge-m3@Builtin", "BAAI/bge-large-zh-v1.5@Builtin", nil)
+	if err := svc.restoreEmbeddingBinding(ctx, "kb-1", "BAAI/bge-m3@Builtin", "BAAI/bge-large-zh-v1.5@Builtin", nil); err != nil {
+		t.Fatalf("restoreEmbeddingBinding = %v, want nil", err)
+	}
 
 	var kb entity.Knowledgebase
 	if err := dao.DB.Where("id = ?", "kb-1").Take(&kb).Error; err != nil {
