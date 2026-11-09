@@ -175,6 +175,16 @@ func buildQualifiedSelectFields(fields []string, kind, tableAlias string) (strin
 
 func buildSelectFieldsWithAlias(fields []string, kind, tableAlias string) (string, []string, error) {
 	if len(fields) == 0 || containsString(fields, "*") {
+		// Chunk columns grow additively on existing tables, so a static default
+		// list breaks a read that runs before CreateChunkStore. SELECT * follows
+		// the table's real schema.
+		if kind == "chunk" {
+			prefix := ""
+			if tableAlias != "" {
+				prefix = quoteIdentifier(tableAlias) + "."
+			}
+			return prefix + "*", []string{"*"}, nil
+		}
 		fields = defaultFields(kind)
 	}
 	if !containsString(fields, identifierField(kind)) {

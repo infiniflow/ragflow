@@ -311,3 +311,23 @@ func TestChunkStoreExistsDetectsMissingKnowledgeCompileColumn(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A chunk table gains columns only when CreateChunkStore runs, and reads can
+// run first. The default projection must therefore follow the table's real
+// schema instead of a static list that includes a column the table lacks.
+func TestChunkDefaultProjectionFollowsTheTableSchema(t *testing.T) {
+	fieldsSQL, _, err := buildSelectFields(nil, "chunk")
+	if err != nil {
+		t.Fatalf("buildSelectFields: %v", err)
+	}
+	if fieldsSQL != "*" {
+		t.Errorf("default chunk projection = %q, want %q", fieldsSQL, "*")
+	}
+	qualified, _, err := buildQualifiedSelectFields(nil, "chunk", "t")
+	if err != nil {
+		t.Fatalf("buildQualifiedSelectFields: %v", err)
+	}
+	if qualified != "`t`.*" {
+		t.Errorf("qualified default chunk projection = %q, want %q", qualified, "`t`.*")
+	}
+}
