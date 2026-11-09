@@ -422,6 +422,7 @@ func TestSplitLargeTableWarnsWhenHeaderExceedsBudget(t *testing.T) {
 	})
 }
 
+// TestSplitLargeHTMLTableKeepsScopedRowHeadersWithTheirData checks that only column headers repeat.
 func TestSplitLargeHTMLTableKeepsScopedRowHeadersWithTheirData(t *testing.T) {
 	table, err := tableutil.ParseTableHTML(`<table>
 		<tr><th scope="col">Region</th><th scope="col">Orders</th></tr>
@@ -439,6 +440,29 @@ func TestSplitLargeHTMLTableKeepsScopedRowHeadersWithTheirData(t *testing.T) {
 		{{"Region", "Orders"}, {"North", "10"}},
 		{{"Region", "Orders"}, {"South", "20"}},
 	} {
+		if got := parts[i].CellTexts(); !reflect.DeepEqual(got, want) {
+			t.Errorf("part %d = %v, want %v", i, got, want)
+		}
+	}
+}
+
+// TestSplitLargeHTMLTableWithOnlyRowHeaders verifies that no data row is repeated.
+func TestSplitLargeHTMLTableWithOnlyRowHeaders(t *testing.T) {
+	table, err := tableutil.ParseTableHTML(`<table>
+		<tr><th scope="row">North</th><td>10</td></tr>
+		<tr><th scope="row">South</th><td>20</td></tr>
+	</table>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts, ranges, headerRows := splitLargeTable(table, 45, charTokens, "")
+	if headerRows != 0 || len(parts) != 2 {
+		t.Fatalf("got %d parts and %d header rows, want 2 parts and 0 header rows", len(parts), headerRows)
+	}
+	if want := [][2]int{{0, 1}, {1, 2}}; !reflect.DeepEqual(ranges, want) {
+		t.Errorf("data ranges = %v, want %v", ranges, want)
+	}
+	for i, want := range [][][]string{{{"North", "10"}}, {{"South", "20"}}} {
 		if got := parts[i].CellTexts(); !reflect.DeepEqual(got, want) {
 			t.Errorf("part %d = %v, want %v", i, got, want)
 		}
