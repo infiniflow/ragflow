@@ -478,41 +478,9 @@ A dictionary representing the attributes to update, with the following keys:
 
 - `"display_name"`: `string` The name of the document to update.
 - `"meta_fields"`: `dict[str, Any]` The meta fields of the document.
-- `"chunk_method"`: `string` The parsing method to apply to the document.
-  - `"naive"`: General
-  - `"manual"`: Manual
-  - `"qa"`: Q&A
-  - `"table"`: Table
-  - `"paper"`: Paper
-  - `"book"`: Book
-  - `"laws"`: Laws
-  - `"presentation"`: Presentation
-  - `"picture"`: Picture
-  - `"one"`: One
-  - `"email"`: Email
-- `"parser_config"`: `dict[str, Any]` The parsing configuration for the document. Its attributes vary based on the selected `"chunk_method"`:
-  - `"chunk_method"`=`"naive"`:
-    `{"chunk_token_num":128,"delimiter":"\n","layout_recognize":"DeepDOC","raptor":{"use_raptor":False},"parent_child":{"use_parent_child":False,"children_delimiter":"\n"}}`.
-  - `chunk_method`=`"qa"`:
-    `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"manual"`:
-    `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"table"`:
-    `None`
-  - `chunk_method`=`"paper"`:
-    `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"book"`:
-    `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"laws"`:
-    `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"presentation"`:
-    `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"picture"`:
-    `None`
-  - `chunk_method`=`"one"`:
-    `None`
-  - `chunk_method`=`"email"`:
-    `None`
+- `"parser_id"`: `string` The builtin parser ID to apply to the document. Available values include `"general"`, `"manual"`, `"qa"`, `"table"`, `"paper"`, `"book"`, `"laws"`, `"presentation"`, `"picture"`, `"one"`, `"audio"`, and `"email"`. `"chunk_method"` is accepted as a legacy alias for `"parser_id"`.
+- `"pipeline_id"`: `string` The ingestion pipeline ID. Use this instead of `"parser_id"` when the document runs a custom pipeline.
+- `"parser_config"`: `dict[str, Any]` The parser configuration for the document. RAGFlow 1.0 stores parser settings per ingestion-pipeline component. Use component-scoped keys (keys containing `:`) as returned by the API; legacy flat keys are ignored. For example: `{"GeneralChunker:SixApplesFall": {"chunk_token_size": 128}}`.
 
 #### Returns
 
@@ -530,10 +498,12 @@ dataset = dataset[0]
 doc = dataset.list_documents(id="wdfxb5t547d")
 doc = doc[0]
 doc.update({
+    "parser_id": "general",
     "parser_config": {
-        "chunk_token_num": 256,
+        "GeneralChunker:SixApplesFall": {
+            "chunk_token_size": 256,
+        },
     },
-    "chunk_method": "manual",
 })
 ```
 
@@ -642,7 +612,7 @@ A `Document` object contains the following attributes:
 - `name`: The document name. Defaults to `""`.
 - `thumbnail`: The thumbnail image of the document. Defaults to `None`.
 - `dataset_id`: The dataset ID associated with the document. Defaults to `None`.
-- `chunk_method` The chunking method name. Defaults to `"naive"`.
+- `chunk_method`: The parser ID returned by the API. This is the SDK's legacy name for the API's `parser_id` field. Defaults to `"general"`.
 - `source_type`: The source type of the document. Defaults to `"local"`.
 - `type`: Type or category of the document. Defaults to `""`. Reserved for future use.
 - `created_by`: `string` The creator of the document. Defaults to `""`.
@@ -660,29 +630,7 @@ A `Document` object contains the following attributes:
   - `"DONE"`
   - `"FAIL"`
 - `status`: `string` Reserved for future use.
-- `parser_config`: `ParserConfig` Configuration object for the parser. Its attributes vary based on the selected `chunk_method`:
-  - `chunk_method`=`"naive"`:
-    `{"chunk_token_num":128,"delimiter":"\n","layout_recognize":"DeepDOC","raptor":{"use_raptor":False}}`.
-  - `chunk_method`=`"qa"`:
-    `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"manual"`:
-    `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"table"`:
-    `None`
-  - `chunk_method`=`"paper"`:
-    `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"book"`:
-    `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"laws"`:
-    `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"presentation"`:
-    `{"raptor": {"use_raptor": False}}`
-  - `chunk_method`=`"picture"`:
-    `None`
-  - `chunk_method`=`"one"`:
-    `None`
-  - `chunk_method`=`"email"`:
-    `None`
+- `parser_config`: `ParserConfig` Configuration object for the parser. RAGFlow 1.0 stores parser settings per ingestion-pipeline component. The returned map uses component-scoped keys (keys containing `:`); legacy flat keys are not used. For example: `{"GeneralChunker:SixApplesFall": {"chunk_token_size": 128}}`.
 
 #### Examples
 
