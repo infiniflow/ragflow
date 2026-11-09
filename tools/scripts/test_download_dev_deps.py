@@ -950,6 +950,93 @@ def test_stamp_onnxruntime_version_idempotent(tmp_path):
     assert before == after
 
 
+# ── _native_libs_present ORT gate must be version+platform aware ──────────────
+# build.sh's _native_libs_present decides whether the controlled auto-downloader
+# runs. Its ORT check historically matched ANY .a under the static_lib prefix
+# (find ... -name '*.a'), so a shared cache holding only an OLD version or a
+# DIFFERENT platform's ORT was reported "present" and the downloader was skipped
+# — the missing lib then failed only at link time. The gate must match the SAME
+# <platform-prefix><version> dir that check_onnxruntime_deps links
+# (*/${ort_dir_prefix}${ort_version}*/lib/*.a). ragflow_ort_present is that pure
+# decision so it is unit-testable in isolation.
+
+_ORT_PRESENT_SH = os.path.join(native.REPO_ROOT, "tools", "scripts", "ort_present.sh")
+
+
+def _present_eval(prefix, ort_dir_prefix, ort_version):
+    """Source the real ort_present.sh and call ragflow_ort_present."""
+    assert os.path.isfile(_ORT_PRESENT_SH), f"ort_present.sh not found at {_ORT_PRESENT_SH}"
+    cmd = f'source "{_ORT_PRESENT_SH}" && ragflow_ort_present "$@"'
+    return subprocess.run(
+        ["bash", "-c", cmd, "_", prefix, ort_dir_prefix, ort_version],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def _seed_ort(prefix, dir_name):
+    """Create a version-keyed ORT dir with a real libonnxruntime.a inside lib/."""
+    lib = prefix / dir_name / "lib"
+    lib.mkdir(parents=True)
+    (lib / "libonnxruntime.a").write_bytes(b"!<arch>\nort")
+    return prefix / dir_name
+
+
+def test_ort_present_happy_path_matches_version_and_platform(tmp_path):
+    prefix = tmp_path / "static_lib"
+    _seed_ort(prefix, "onnxruntime-linux-x64-static_lib-1.29.0-glibc2_28")
+    res = _present_eval(str(prefix), "onnxruntime-linux-x64-static_lib-", "1.29.0")
+    assert res.returncode == 0, res.stderr
+
+
+def test_ort_present_rejects_old_version(tmp_path):
+    # Adversarial: cache holds ONLY an older ORT version; required version differs.
+    # The old any-.a check wrongly returned present and skipped the downloader.
+    prefix = tmp_path / "static_lib"
+    _seed_ort(prefix, "onnxruntime-linux-x64-static_lib-1.23.2-glibc2_28")
+    res = _present_eval(str(prefix), "onnxruntime-linux-x64-static_lib-", "1.29.0")
+    assert res.returncode == 1, "old-version ORT must NOT satisfy the required version"
+    assert res.stderr == ""
+
+
+def test_ort_present_rejects_wrong_platform(tmp_path):
+    # Adversarial: cache holds ORT for aarch64 but the target is amd64.
+    prefix = tmp_path / "static_lib"
+    _seed_ort(prefix, "onnxruntime-linux-aarch64-static_lib-1.29.0-glibc2_28")
+    res = _present_eval(str(prefix), "onnxruntime-linux-x64-static_lib-", "1.29.0")
+    assert res.returncode == 1, "other-platform ORT must NOT satisfy the target platform"
+
+
+def test_ort_present_rejects_empty_cache(tmp_path):
+    prefix = tmp_path / "static_lib"
+    prefix.mkdir()
+    res = _present_eval(str(prefix), "onnxruntime-linux-x64-static_lib-", "1.29.0")
+    assert res.returncode == 1
+
+
+def test_ort_present_rejects_stray_top_level_archive(tmp_path):
+    # Adversarial: a .a sitting directly in the prefix root (not under a
+    # versioned .../lib/ dir) must NOT count as present.
+    prefix = tmp_path / "static_lib"
+    prefix.mkdir()
+    (prefix / "libonnxruntime.a").write_bytes(b"!<arch>\nort")
+    res = _present_eval(str(prefix), "onnxruntime-linux-x64-static_lib-", "1.29.0")
+    assert res.returncode == 1, "stray top-level .a must not satisfy the versioned gate"
+
+
+def test_ort_present_ignores_provider_specific_archives(tmp_path):
+    # Adversarial: a cuda provider archive inside the correct version dir must be
+    # excluded (it is not the base libonnxruntime.a), matching the link-time
+    # selection. Only the provider lib present => not present.
+    prefix = tmp_path / "static_lib"
+    lib = prefix / "onnxruntime-linux-x64-static_lib-1.29.0-glibc2_28" / "lib"
+    lib.mkdir(parents=True)
+    (lib / "libonnxruntime_providers_cuda.a").write_bytes(b"!<arch>\nort")
+    res = _present_eval(str(prefix), "onnxruntime-linux-x64-static_lib-", "1.29.0")
+    assert res.returncode == 1, "provider-specific archive must not satisfy the base lib gate"
+
+
 # ── Documentation contract: IDE CGO snippet uses the versioned layout ─────────
 # The native libs live under <lib>/v<version>/ (one mounted cache holds several
 # versions). The IDE CGO snippet must point there, or a developer following the

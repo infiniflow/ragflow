@@ -24,6 +24,10 @@ source "${SCRIPT_DIR}/tools/scripts/native_lib_version.sh"
 # ort_stamp.sh: pure helper that computes the relative, read-only-safe ORT
 # version-stamp symlink target (Fix #1/#2).
 source "${SCRIPT_DIR}/tools/scripts/ort_stamp.sh"
+# ort_present.sh: pure helper that decides whether the required ORT static lib
+# is already in the version+platform-keyed user cache (Fix: version/platform
+# aware presence gate).
+source "${SCRIPT_DIR}/tools/scripts/ort_present.sh"
 
 # Native static-lib user-cache root. Overridable via RAGFLOW_NATIVE_LIBS_DIR so
 # CI can mount the cache at a fixed host path (sep-tests.yml Slice 3); defaults
@@ -197,10 +201,22 @@ _native_libs_present() {
     [ -f "${OFFICE_OXIDE_PREFIX}/include/office_oxide_c/office_oxide.h" ] || return 1
     [ -f "${PDFIUM_STATIC_PREFIX}/lib/libpdfium.a" ] || return 1
     [ -f "${PDF_OXIDE_PREFIX}/lib/${TARGET_OS}_${TARGET_ARCH}/libpdf_oxide.a" ] || return 1
-    # ORT is version+platform keyed under static_lib; any real .a there is
-    # authoritative (the version-stamped symlink dir created later holds only
-    # symlinks, so -type f skips them and matches the real archives).
-    [ -n "$(find "$ONNXRUNTIME_STATIC_PREFIX" -type f -name '*.a' 2>/dev/null | head -1)" ] || return 1
+    # ORT must match the SAME version+platform-keyed dir that check_onnxruntime_deps
+    # links (*/${ort_dir_prefix}${ort_version}*/lib/*.a). A shared cache holding
+    # only an OLD version or a DIFFERENT platform's ORT must be reported missing so
+    # the controlled auto-downloader runs, instead of being silently treated as
+    # present and failing only at link time.
+    if [ -z "$_TARGET_PLATFORM_DETECTED" ]; then
+        detect_target_platform
+        _TARGET_PLATFORM_DETECTED=1
+    fi
+    local ort_version ort_dir_prefix
+    ort_version="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' \
+        "${PROJECT_ROOT}/internal/common/environments.go" \
+        | sed -E 's/.*"([^"]+)".*/\1/')"
+    [ -z "$ort_version" ] && return 1
+    ort_dir_prefix="$(ort_static_lib_prefix)"
+    ragflow_ort_present "$ONNXRUNTIME_STATIC_PREFIX" "$ort_dir_prefix" "$ort_version" || return 1
     return 0
 }
 
