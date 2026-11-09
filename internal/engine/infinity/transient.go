@@ -29,9 +29,10 @@ import (
 // same call succeeds once init completes — so callers must redeliver instead
 // of treating the failure as terminal.
 //
-// The error-code check covers errors from the SDK. The message check is the
-// fallback for an error that lost its type while crossing a layer that
-// stringifies it.
+// The error-code check covers errors from the SDK. The fallback matches the
+// SDK's rendered form ("InfinityException(2007, ...)") for an error that lost
+// its type across a layer; the code keeps it from matching unrelated text that
+// merely quotes the startup message.
 func IsTransientUnavailable(err error) bool {
 	if err == nil {
 		return false
@@ -42,7 +43,8 @@ func IsTransientUnavailable(err error) bool {
 		case infinity.ErrorCodeInfinityIsStarting, infinity.ErrorCodeInfinityIsIniting:
 			return true
 		}
+		return false
 	}
 	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "infinity is initing") || strings.Contains(msg, "infinity is starting")
+	return strings.Contains(msg, "infinityexception(2007") || strings.Contains(msg, "infinityexception(2008")
 }
