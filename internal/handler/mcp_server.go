@@ -23,7 +23,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/mcp"
 	"ragflow/internal/permission"
@@ -35,29 +34,29 @@ import (
 // MCPServerHandler handles MCP protocol requests (JSON-RPC over HTTP).
 // It exposes RAGFlow capabilities as MCP tools to external AI clients.
 type MCPServerHandler struct {
-	listDatasetsFunc func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
-	listChatsFunc    func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
-	retrievalFunc    func(ctx context.Context, userID string, req mcp.RetrievalRequest) (string, error)
+	listDatasetsFunc func(ctx context.Context, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
+	listChatsFunc    func(ctx context.Context, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error)
+	retrievalFunc    func(ctx context.Context, req mcp.RetrievalRequest) (string, error)
 }
 
 // NewMCPServerHandler shares the service callbacks between API and standalone transports.
 func NewMCPServerHandler(ds *dataset.DatasetService, chats *service.ChatService) *MCPServerHandler {
 	return &MCPServerHandler{
-		listDatasetsFunc: func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-			return mcpListDatasets(ctx, ds, userID, page, pageSize, orderby, desc)
+		listDatasetsFunc: func(ctx context.Context, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
+			return mcpListDatasets(ctx, ds, page, pageSize, orderby, desc)
 		},
-		listChatsFunc: func(ctx context.Context, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-			return mcpListChats(ctx, chats, userID, page, pageSize, orderby, desc)
+		listChatsFunc: func(ctx context.Context, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
+			return mcpListChats(ctx, chats, page, pageSize, orderby, desc)
 		},
-		retrievalFunc: func(ctx context.Context, userID string, req mcp.RetrievalRequest) (string, error) {
-			return mcpRetrieval(ctx, ds, userID, req)
+		retrievalFunc: func(ctx context.Context, req mcp.RetrievalRequest) (string, error) {
+			return mcpRetrieval(ctx, ds, req)
 		},
 	}
 }
 
 func (h *MCPServerHandler) newTransport(resolveUser func(context.Context, string) (string, error), opts mcp.Options) *mcp.Handler {
-	return mcp.NewHandler(resolveUser, func(userID string) mcp.Connector {
-		return mcp.NewServiceConnector(userID, h.listDatasetsFunc, h.listChatsFunc, h.retrievalFunc)
+	return mcp.NewHandler(resolveUser, func() mcp.Connector {
+		return mcp.NewServiceConnector(h.listDatasetsFunc, h.listChatsFunc, h.retrievalFunc)
 	}, opts)
 }
 
@@ -97,13 +96,13 @@ func (h *MCPServerHandler) NewStandalone(ctx context.Context, auth *AuthHandler,
 // @Produce json
 // @Router /api/v1/mcp [post]
 func (h *MCPServerHandler) HandleMCP(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.RespondError(c, errorCode, errorMessage)
-		return
-	}
-
-	hdl := h.newTransport(func(context.Context, string) (string, error) { return user.ID, nil }, mcp.Options{StreamableHTTP: true, JSONResponse: true})
+	hdl := h.newTransport(func(ctx context.Context, _ string) (string, error) {
+		userID := permission.UserIDFromContext(ctx)
+		if userID == "" {
+			return "", permission.ErrUnauthenticated
+		}
+		return userID, nil
+	}, mcp.Options{StreamableHTTP: true, JSONResponse: true})
 	defer hdl.Close()
 	request := c.Request.Clone(c.Request.Context())
 	request.URL.Path = "/mcp"
@@ -117,12 +116,9 @@ func (h *MCPServerHandler) HandleMCP(c *gin.Context) {
 
 // mcpListDatasets wraps DatasetService.ListDatasets for the MCP tool handler,
 // filling in default values for parameters that the MCP tool does not expose.
-func mcpListDatasets(ctx context.Context, ds *dataset.DatasetService, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-	contextUserID := permission.UserIDFromContext(ctx)
-	if contextUserID == "" {
-		ctx = permission.WithIdentity(ctx, userID, permission.TenantIDFromContext(ctx))
-	} else if contextUserID != userID {
-		return nil, 0, permission.ErrIdentityMismatch
+func mcpListDatasets(ctx context.Context, ds *dataset.DatasetService, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
+	if permission.UserIDFromContext(ctx) == "" {
+		return nil, 0, permission.ErrUnauthenticated
 	}
 	data, total, _, err := ds.ListDatasets(ctx,
 		"", "", page, pageSize, []dao.OrderTerm{{Column: orderby, Desc: desc}},
@@ -133,12 +129,9 @@ func mcpListDatasets(ctx context.Context, ds *dataset.DatasetService, userID str
 
 // mcpListChats wraps ChatService.ListChats for the MCP tool handler,
 // converting the typed response into a generic []map[string]interface{}.
-func mcpListChats(ctx context.Context, chatService *service.ChatService, userID string, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
-	contextUserID := permission.UserIDFromContext(ctx)
-	if contextUserID == "" {
-		ctx = permission.WithIdentity(ctx, userID, permission.TenantIDFromContext(ctx))
-	} else if contextUserID != userID {
-		return nil, 0, permission.ErrIdentityMismatch
+func mcpListChats(ctx context.Context, chatService *service.ChatService, page, pageSize int, orderby string, desc bool) ([]map[string]interface{}, int64, error) {
+	if permission.UserIDFromContext(ctx) == "" {
+		return nil, 0, permission.ErrUnauthenticated
 	}
 	resp, err := chatService.ListChats(ctx, "1", "", "", "", page, pageSize, []dao.OrderTerm{{Column: orderby, Desc: desc}}, nil)
 	if err != nil {

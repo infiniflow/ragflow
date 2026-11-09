@@ -31,14 +31,14 @@ import (
 
 func (h *SystemHandler) ListAPIKeys(c *gin.Context) {
 	ctx := c.Request.Context()
-	_, tenantID, code, err := currentAPIKeyOwner(c)
+	code, err := currentAPIKeyOwner(c)
 	if err != nil {
 		respondAPIKeyContextError(c, code, err)
 		return
 	}
 
 	// Get keys for the tenant
-	keys, err := h.systemService.ListAPIKeys(ctx, tenantID)
+	keys, err := h.systemService.ListAPIKeys(ctx)
 	if err != nil {
 		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to list keys")
 		return
@@ -49,7 +49,7 @@ func (h *SystemHandler) ListAPIKeys(c *gin.Context) {
 
 func (h *SystemHandler) CreateKey(c *gin.Context) {
 	ctx := c.Request.Context()
-	user, tenantID, code, err := currentAPIKeyOwner(c)
+	code, err := currentAPIKeyOwner(c)
 	if err != nil {
 		respondAPIKeyContextError(c, code, err)
 		return
@@ -64,7 +64,7 @@ func (h *SystemHandler) CreateKey(c *gin.Context) {
 	}
 
 	// Create key
-	key, err := h.systemService.CreateAPIKey(ctx, user.ID, tenantID, &req)
+	key, err := h.systemService.CreateAPIKey(ctx, &req)
 	if err != nil {
 		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to create key")
 		return
@@ -75,7 +75,7 @@ func (h *SystemHandler) CreateKey(c *gin.Context) {
 
 func (h *SystemHandler) DeleteKey(c *gin.Context) {
 	ctx := c.Request.Context()
-	_, tenantID, code, err := currentAPIKeyOwner(c)
+	code, err := currentAPIKeyOwner(c)
 	if err != nil {
 		respondAPIKeyContextError(c, code, err)
 		return
@@ -89,7 +89,7 @@ func (h *SystemHandler) DeleteKey(c *gin.Context) {
 	}
 
 	// Delete key
-	if err = h.systemService.DeleteAPIKey(ctx, tenantID, key); err != nil {
+	if err = h.systemService.DeleteAPIKey(ctx, key); err != nil {
 		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to delete key")
 		return
 	}
@@ -97,14 +97,14 @@ func (h *SystemHandler) DeleteKey(c *gin.Context) {
 	common.RespondSuccess(c, nil, "success")
 }
 
-func currentAPIKeyOwner(c *gin.Context) (*entity.User, string, common.ErrorCode, error) {
+func currentAPIKeyOwner(c *gin.Context) (common.ErrorCode, error) {
 	userValue, exists := c.Get("user")
 	if !exists {
-		return nil, "", common.CodeUnauthorized, errors.New("Unauthorized")
+		return common.CodeUnauthorized, errors.New("Unauthorized")
 	}
 	user, ok := userValue.(*entity.User)
 	if !ok {
-		return nil, "", common.CodeServerError, errors.New("Invalid user data")
+		return common.CodeServerError, errors.New("Invalid user data")
 	}
 
 	tenantID := c.GetString("tenant_id")
@@ -114,9 +114,9 @@ func currentAPIKeyOwner(c *gin.Context) (*entity.User, string, common.ErrorCode,
 	}
 	membership, err := dao.NewUserTenantDAO().FilterByUserIDAndTenantID(c.Request.Context(), dao.DB, user.ID, tenantID)
 	if err != nil || membership.Role != "owner" {
-		return nil, "", common.CodeForbidden, errors.New("Only the tenant owner can manage API keys")
+		return common.CodeForbidden, errors.New("Only the tenant owner can manage API keys")
 	}
-	return user, tenantID, common.CodeSuccess, nil
+	return common.CodeSuccess, nil
 }
 
 func respondAPIKeyContextError(c *gin.Context, code common.ErrorCode, err error) {

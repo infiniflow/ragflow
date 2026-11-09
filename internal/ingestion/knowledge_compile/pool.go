@@ -17,10 +17,9 @@ package knowledge_compile
 
 import (
 	"context"
-	"os"
 	"runtime"
-	"strconv"
 
+	"ragflow/internal/common"
 	"ragflow/internal/utility"
 )
 
@@ -50,14 +49,23 @@ var compilerPool = utility.NewWorkerPool[CompilerJob, struct{}](
 	func(_ context.Context, j CompilerJob) (struct{}, error) { return struct{}{}, j() },
 )
 
+// kcCompileConcurrencyOverride returns the optional KC_COMPILE_CONCURRENCY
+// override (0 means off). common.GetEnvInt falls back to 0 on an unset or
+// unparseable value, so the caller only needs to check v > 0.
+func kcCompileConcurrencyOverride() int {
+	v := common.GetEnvInt("KC_COMPILE_CONCURRENCY", 0)
+	if v <= 0 {
+		return 0
+	}
+	return v
+}
+
 // compilerConcurrency resolves the global pool size. It defaults to the host
 // vCPU count, overridable via KC_COMPILE_CONCURRENCY (mirroring the extractor
 // pool's EXTRACTOR_CONCURRENCY tuning knob).
 func compilerConcurrency() int {
-	if v := os.Getenv("KC_COMPILE_CONCURRENCY"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return n
-		}
+	if v := kcCompileConcurrencyOverride(); v > 0 {
+		return v
 	}
 	n := runtime.NumCPU()
 	if n <= 0 {

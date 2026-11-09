@@ -14,6 +14,8 @@ import (
 	"ragflow/internal/entity"
 	ingestionpipeline "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/observability"
+	"ragflow/internal/permission"
+	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -188,14 +190,22 @@ func (s *IngestionTaskService) emitLifecycleEvent(ctx context.Context, task *ent
 	s.eventEmitter.EmitIngestLog(ctx, observability.BuildIngestLog(task, doc, run, typ, status, errorInfo, "", ""))
 }
 
-func (s *IngestionTaskService) ListByUser(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
+func (s *IngestionTaskService) List(ctx context.Context, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
 	if datasetID == nil {
 		return s.ingestionTaskDAO.ListByUserID(ctx, dao.DB, userID, page, pageSize)
 	}
 	return s.ingestionTaskDAO.ListByUserIDAndDatasetID(ctx, dao.DB, userID, *datasetID, page, pageSize)
 }
 
-func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*ParseDocumentResponse, error) {
+func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID string, docIDs []string) ([]*ParseDocumentResponse, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
 	uniqueDocIDs := common.Deduplicate(docIDs)
 	if len(uniqueDocIDs) == 0 {
 		return nil, fmt.Errorf("no documents to parse")
@@ -1157,6 +1167,7 @@ func (s *IngestionTaskService) buildOpenLogInput(ctx context.Context, task *enti
 			}
 		}
 	}
+	input.PipelineTitle = utility.TruncateRunes(input.PipelineTitle, common.PipelineTitleLimit)
 	return input, nil
 }
 

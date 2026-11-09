@@ -211,18 +211,13 @@ export function isUrlInWhitelist(url: string): boolean {
 export function addTenantParams(data: any, url?: string): any {
   if (!data || typeof data !== 'object') return data;
 
-  // If URL is provided and not in whitelist, return original data
-  if (url && !isUrlInWhitelist(url)) {
-    return data;
-  }
-
   // Handle arrays
   if (Array.isArray(data)) {
+    if (url && !isUrlInWhitelist(url)) return data;
     return data.map((item) => addTenantParams(item, url));
   }
 
   const newData = { ...data };
-  const llmList = getCachedLlmList();
 
   // Clear the paired tenant ID when a model selection is explicitly cleared.
   for (const [paramName, tenantParamName] of Object.entries(modelParamMap)) {
@@ -234,6 +229,11 @@ export function addTenantParams(data: any, url?: string): any {
     }
   }
 
+  // Non-whitelisted endpoints can clear an explicit model selection, but
+  // tenant model IDs are only resolved and injected for whitelisted endpoints.
+  if (url && !isUrlInWhitelist(url)) return newData;
+
+  const llmList = getCachedLlmList();
   if (!llmList) return newData;
 
   for (const [paramName, tenantParamName] of Object.entries(modelParamMap)) {

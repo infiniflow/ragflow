@@ -27,6 +27,27 @@ import (
 	"ragflow/internal/entity"
 )
 
+func TestChatChannelAgentColumnMigration(t *testing.T) {
+	db := setupChatChannelTestDB(t)
+	if err := db.Migrator().DropColumn(&entity.ChatChannel{}, "AgentID"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Exec("INSERT INTO chat_channel (id, tenant_id, name, channel, config, chat_id, status) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		"existing", "owner", "old channel", "telegram", "{}", "chat", 1).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&entity.ChatChannel{}); err != nil {
+		t.Fatal(err)
+	}
+	row, err := NewChatChannel().GetByID(t.Context(), db, "existing")
+	if err != nil || row.ChatID == nil || *row.ChatID != "chat" || row.AgentID != nil {
+		t.Fatalf("existing record changed: %+v %v", row, err)
+	}
+	if err := db.Model(row).Update("agent_id", "agent").Error; err != nil {
+		t.Fatalf("new agent column unavailable: %v", err)
+	}
+}
+
 // setupChatChannelTestDB initializes an in-memory SQLite database for ChatChannel DAO tests.
 func setupChatChannelTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -39,7 +60,7 @@ func setupChatChannelTestDB(t *testing.T) *gorm.DB {
 	}
 
 	// Migrate chat_channel and dialog (entity.Chat) tables
-	if err = db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}); err != nil {
+	if err = db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.UserCanvas{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 

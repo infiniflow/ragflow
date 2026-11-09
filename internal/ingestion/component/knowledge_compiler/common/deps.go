@@ -21,26 +21,75 @@ type ChatRequest struct {
 	SystemPrompt string
 	UserPrompt   string
 	JSONMode     bool
-	// Temperature is optional; nil leaves the driver default. Python's
-	// knowledge compilation pins extraction at 0.1 and merge judging at 0.0,
-	// so variants set it per call site.
-	Temperature *float64
-	// MaxTokens is an optional per-call override. Normal knowledge-compilation
-	// calls use the selected model's configured max_output value.
-	MaxTokens *int
-	APIKey    string
-	BaseURL   string
-	// DisableThinking asks the driver to turn chain-of-thought OFF. Reasoning
-	// models (MiniMax-M1/M3, kimi, qwen) otherwise spend the completion budget
-	// (and minutes) on visible COT before returning the structured payload —
-	// the fastest way to slow knowledge compilation to a crawl. Providers that
-	// have no thinking control silently ignore it. Defaults to false, so only
-	// call sites that know the model reasons opt in.
+	// These fields are per-call defaults. Run-level ChatSettings override them
+	// when the caller explicitly enables a setting in the compiler node.
+	Temperature      *float64
+	TopP             *float64
+	PresencePenalty  *float64
+	FrequencyPenalty *float64
+	MaxTokens        *int
+	// Thinking explicitly controls reasoning when non-nil. DisableThinking is a
+	// call-site default retained for compiler steps that must avoid reasoning;
+	// an explicit Thinking setting takes precedence.
+	Thinking        *bool
 	DisableThinking bool
+	APIKey          string
+	BaseURL         string
 	// DisableRetry tells the production ChatInvoker that the caller owns
 	// transient-error retries (GenJSON is such a caller). It is internal
 	// plumbing and is not part of the user-facing model request.
 	DisableRetry bool
+}
+
+// ChatSettings are caller-provided LLM overrides for every request in one
+// knowledge-compilation run. Nil values leave each call site's defaults intact;
+// ThinkingSet distinguishes an explicit "default" choice from no setting.
+type ChatSettings struct {
+	Temperature      *float64
+	TopP             *float64
+	PresencePenalty  *float64
+	FrequencyPenalty *float64
+	MaxTokens        *int
+	Thinking         *bool
+	ThinkingSet      bool
+}
+
+type chatSettingsInvoker struct {
+	next     ChatInvoker
+	settings ChatSettings
+}
+
+// WithChatSettings applies explicit run-level settings over each compiler
+// call's defaults while preserving fields the caller did not configure.
+func WithChatSettings(next ChatInvoker, settings ChatSettings) ChatInvoker {
+	settingsEmpty := settings.Temperature == nil && settings.TopP == nil && settings.PresencePenalty == nil && settings.FrequencyPenalty == nil && settings.MaxTokens == nil && !settings.ThinkingSet
+	if next == nil || settingsEmpty {
+		return next
+	}
+	return chatSettingsInvoker{next: next, settings: settings}
+}
+
+func (c chatSettingsInvoker) Chat(ctx context.Context, req ChatRequest) (*ChatResponse, error) {
+	if c.settings.Temperature != nil {
+		req.Temperature = c.settings.Temperature
+	}
+	if c.settings.TopP != nil {
+		req.TopP = c.settings.TopP
+	}
+	if c.settings.PresencePenalty != nil {
+		req.PresencePenalty = c.settings.PresencePenalty
+	}
+	if c.settings.FrequencyPenalty != nil {
+		req.FrequencyPenalty = c.settings.FrequencyPenalty
+	}
+	if c.settings.MaxTokens != nil {
+		req.MaxTokens = c.settings.MaxTokens
+	}
+	if c.settings.ThinkingSet {
+		req.Thinking = c.settings.Thinking
+		req.DisableThinking = false
+	}
+	return c.next.Chat(ctx, req)
 }
 
 // ChatResponse holds the LLM's text answer.

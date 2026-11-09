@@ -61,9 +61,18 @@ export function CreateCompilationTemplateGroupDialog({
     onOpenChange(false);
   }, [onOpenChange]);
 
+  // Clicking the overlay must not dismiss the dialog: the editor holds a
+  // partially filled template and a stray click outside would discard it.
+  const handlePointerDownOutside = useCallback((event: Event) => {
+    event.preventDefault();
+  }, []);
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl h-[85vh] flex flex-col gap-0 p-0">
+      <DialogContent
+        className="max-w-5xl h-[85vh] flex flex-col gap-0 p-0"
+        onPointerDownOutside={handlePointerDownOutside}
+      >
         <DialogHeader className="mx-0 mt-0 shrink-0 px-5 py-4">
           <DialogTitle>
             {t('knowledgeCompilation.addTemplateGroup')}

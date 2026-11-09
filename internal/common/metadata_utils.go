@@ -18,7 +18,6 @@ package common
 
 import (
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -441,15 +440,7 @@ func ExtractorMetadataConfig(parserConfig map[string]any) (map[string]any, bool)
 	if parserConfig == nil {
 		return nil, false
 	}
-	var extractorKeys []string
-	for k := range parserConfig {
-		lower := strings.ToLower(k)
-		if strings.HasPrefix(lower, "extractor:") || strings.HasPrefix(lower, "extractor_") {
-			extractorKeys = append(extractorKeys, k)
-		}
-	}
-	sort.Strings(extractorKeys)
-	for _, k := range extractorKeys {
+	for _, k := range SortedExtractorKeys(parserConfig) {
 		node, ok := parserConfig[k].(map[string]any)
 		if !ok {
 			continue

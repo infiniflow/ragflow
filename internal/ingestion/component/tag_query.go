@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strings"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
@@ -87,20 +88,9 @@ func TagFileIDFromParserConfig(parserConfig map[string]any) string {
 	if v := tagFileIDFromTagsMap(parserConfig["tags"]); v != "" {
 		return v
 	}
-	// Several Extractor nodes can each declare their own tags block, so the
-	// winner has to be picked in a stable order: Go randomizes map iteration,
-	// and an unstable pick would let the dataset's tag source change between
-	// process restarts (different chunks tagged, different retrieval
-	// features). Sorting makes it deterministic; "Extractor" sorts before
-	// "Extractor:<name>" because it is a prefix, so the unscoped node wins.
-	keys := make([]string, 0, len(parserConfig))
-	for key := range parserConfig {
-		if key == "Extractor" || strings.HasPrefix(key, "Extractor:") {
-			keys = append(keys, key)
-		}
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
+	// Several Extractor nodes can each declare their own tags block. Pick the
+	// winner deterministically by sorted component ID.
+	for _, key := range common.SortedExtractorKeys(parserConfig) {
 		extractorMap, ok := asStringAnyMap(parserConfig[key])
 		if !ok {
 			continue

@@ -227,6 +227,9 @@ func TestDropUnscopedParserConfigKeys_NilAndEmpty(t *testing.T) {
 func TestDropUnscopedParserConfigKeys_DropsFlatKeys(t *testing.T) {
 	cfg := map[string]any{
 		"File":                         map[string]any{},
+		"Extractor":                    map[string]any{},
+		"extractor_0":                  map[string]any{},
+		"compiler_0":                   map[string]any{},
 		"chunk_token_num":              float64(128),
 		"delimiter":                    "\n",
 		"metadata":                     map[string]any{},
@@ -236,7 +239,7 @@ func TestDropUnscopedParserConfigKeys_DropsFlatKeys(t *testing.T) {
 	}
 	dropped := DropUnscopedParserConfigKeys(cfg)
 	sort.Strings(dropped)
-	want := []string{"File", "chunk_token_num", "delimiter", "metadata", "parent_child"}
+	want := []string{"Extractor", "File", "chunk_token_num", "compiler_0", "delimiter", "extractor_0", "metadata", "parent_child"}
 	if !reflect.DeepEqual(dropped, want) {
 		t.Fatalf("dropped = %#v, want %#v", dropped, want)
 	}
@@ -510,7 +513,9 @@ func TestPreserveDatasetParserConfigState_FallsBackWhenIncomingNotMap(t *testing
 					"metadata": incomingMetadata,
 				},
 			}
-			got := preserveDatasetParserConfigState(entity.JSONMap{}, existing, incoming)
+			got := preserveDatasetParserConfigState(entity.JSONMap{
+				"Extractor:AutoExtractDefault": map[string]any{},
+			}, existing, incoming)
 			meta, ok := got["metadata"].(map[string]any)
 			if !ok {
 				t.Fatalf("expected existing modular metadata preserved, got %#v", got["metadata"])
@@ -520,6 +525,38 @@ func TestPreserveDatasetParserConfigState_FallsBackWhenIncomingNotMap(t *testing
 				t.Fatalf("expected existing_field preserved, got %#v", meta["metadata"])
 			}
 		})
+	}
+}
+
+func TestPreserveDatasetParserConfigState_IgnoresStaleExtractor(t *testing.T) {
+	existing := entity.JSONMap{
+		"Extractor:AutoExtractDefault": map[string]any{
+			"metadata": map[string]any{
+				"enabled":           true,
+				"metadata":          []any{map[string]any{"key": "current_field", "type": "string"}},
+				"built_in_metadata": []any{},
+			},
+		},
+	}
+	incoming := map[string]interface{}{
+		"Extractor:Old": map[string]any{
+			"metadata": map[string]any{
+				"enabled":           true,
+				"metadata":          []any{map[string]any{"key": "stale_field", "type": "string"}},
+				"built_in_metadata": []any{},
+			},
+		},
+	}
+	got := preserveDatasetParserConfigState(entity.JSONMap{
+		"Extractor:AutoExtractDefault": map[string]any{},
+	}, existing, incoming)
+	meta, ok := got["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected current modular metadata, got %#v", got["metadata"])
+	}
+	fields, ok := meta["metadata"].([]any)
+	if !ok || len(fields) != 1 || fields[0].(map[string]any)["key"] != "current_field" {
+		t.Fatalf("expected current_field to win over stale Extractor, got %#v", meta["metadata"])
 	}
 }
 
@@ -542,7 +579,9 @@ func TestPreserveDatasetParserConfigState_UsesValidIncomingMap(t *testing.T) {
 			},
 		},
 	}
-	got := preserveDatasetParserConfigState(entity.JSONMap{}, existing, incoming)
+	got := preserveDatasetParserConfigState(entity.JSONMap{
+		"Extractor:AutoExtractDefault": map[string]any{},
+	}, existing, incoming)
 	meta, ok := got["metadata"].(map[string]any)
 	if !ok {
 		t.Fatalf("expected modular metadata map, got %#v", got["metadata"])

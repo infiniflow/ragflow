@@ -7,6 +7,8 @@ import (
 	"maps"
 	"math"
 	"path/filepath"
+
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"strconv"
 	"strings"
@@ -17,7 +19,6 @@ import (
 	"ragflow/internal/entity"
 	componentpkg "ragflow/internal/ingestion/component"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
-	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
@@ -292,7 +293,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, 
 			}
 			pipelinepkg.ApplyParentChildChunkerConfig(cleaned, parentChildOverrides)
 			llmID := ""
-			if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.Identity{TenantID: kb.TenantID}, entity.ModelTypeChat); modelErr == nil {
+			if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, kb.TenantID), entity.ModelTypeChat); modelErr == nil {
 				llmID = service.ModelReference(modelInfo)
 			}
 			cleaned = service.ApplyComponentScopedParserConfig(cleaned, llmID)
@@ -323,7 +324,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, 
 				zap.String("parserID", effParserID), zap.Error(cpErr))
 		} else {
 			llmID := ""
-			if modelInfo, llmErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.Identity{TenantID: kb.TenantID}, entity.ModelTypeChat); llmErr == nil {
+			if modelInfo, llmErr := service.NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, kb.TenantID), entity.ModelTypeChat); llmErr == nil {
 				llmID = service.ModelReference(modelInfo)
 			} else if !errors.Is(llmErr, service.ErrNoDefaultModel) {
 				common.Warn("document pipeline/version switch: failed to resolve default chat model, falling back to no llm binding",
@@ -501,8 +502,8 @@ func requestField[T any](value *T, present bool) *T {
 // validateDocumentName mirrors Python's validate_document_name: length check
 // (101), then extension check (101), then duplicate check (102).
 func (s *DocumentService) validateDocumentName(ctx context.Context, doc *entity.Document, newName string) (common.ErrorCode, error) {
-	if len([]byte(newName)) > 255 {
-		return common.CodeArgumentError, errors.New("File name must be 255 bytes or less.")
+	if err := common.ValidateNameRunes(newName, common.NameLimit255); err != nil {
+		return common.CodeArgumentError, err
 	}
 
 	oldName := ""
@@ -532,7 +533,7 @@ func isPresentationFile(name *string) bool {
 		return false
 	}
 	ext := strings.ToLower(filepath.Ext(*name))
-	return ext == ".ppt" || ext == ".pptx" || ext == ".pages" || ext == ".dps" || ext == ".dpt"
+	return ext == ".ppt" || ext == ".pptx" || ext == ".pages"
 }
 
 func validateMetaFields(meta map[string]any) error {

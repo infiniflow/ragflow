@@ -257,6 +257,7 @@ func TestMessage_MemorySave_Success(t *testing.T) {
 	c, _ := NewMessageComponent(map[string]any{"text": "hi"})
 	state := canvas.NewCanvasState("run-y", "session-y")
 	state.Sys["query"] = "what?"
+	state.Sys["user_id"] = "authenticated-user"
 	state.Sys["canvas_id"] = "canvas-y"
 	state.Sys["session_id"] = "session-y"
 	state.Sys["agent_id"] = "agent-y"
@@ -282,6 +283,9 @@ func TestMessage_MemorySave_Success(t *testing.T) {
 	}
 	if saved.UserInput != "what?" {
 		t.Errorf("UserInput: got %q, want what?", saved.UserInput)
+	}
+	if saved.UserID != "authenticated-user" {
+		t.Errorf("UserID fallback: got %q, want authenticated-user", saved.UserID)
 	}
 	if saved.AgentResponse != "hi" {
 		t.Errorf("AgentResponse: got %q, want hi", saved.AgentResponse)
@@ -376,6 +380,7 @@ func TestMessage_MemorySave_UserIDVariable(t *testing.T) {
 	})
 	state := canvas.NewCanvasState("run-uid", "task-uid")
 	state.Sys["query"] = "hello?"
+	state.Sys["user_id"] = "authenticated-user"
 	state.SetVar("begin", "user_id", "resolved-user-123")
 	ctx := withStateForTest(t.Context(), state)
 
@@ -410,6 +415,7 @@ func TestMessage_MemorySave_UserIDLiteral(t *testing.T) {
 	})
 	state := canvas.NewCanvasState("run-uid2", "task-uid2")
 	state.Sys["query"] = "hello?"
+	state.Sys["user_id"] = "authenticated-user"
 	ctx := withStateForTest(t.Context(), state)
 
 	_, err := c.Invoke(ctx, nil, map[string]any{

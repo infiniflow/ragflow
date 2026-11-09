@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pytest
 
-DOCUMENT_NAME_MAX_BYTES = 255
+DOCUMENT_NAME_MAX_CHARS = 255
 TEXT_FILE_CONTENT = "This is the content of a test TXT file."
 
 
@@ -128,7 +128,7 @@ class TestDocumentsUpload:
     @pytest.mark.p2
     def test_filename_max_length(self, add_dataset_func, tmp_path):
         dataset = add_dataset_func
-        fp = _create_text_file(tmp_path / f"{'a' * (DOCUMENT_NAME_MAX_BYTES - len('.txt'))}.txt")
+        fp = _create_text_file(tmp_path / f"{'a' * (DOCUMENT_NAME_MAX_CHARS - len('.txt'))}.txt")
 
         with fp.open("rb") as f:
             blob = f.read()
@@ -144,14 +144,22 @@ class TestDocumentsUpload:
         "display_name",
         [
             "a" * 252 + ".txt",
-            "界" * 84 + ".txt",
+            "界" * 252 + ".txt",
         ],
     )
     def test_filename_over_limit(self, add_dataset_func, display_name):
-        assert len(display_name.encode("utf-8")) == DOCUMENT_NAME_MAX_BYTES + 1
+        assert len(display_name) == DOCUMENT_NAME_MAX_CHARS + 1
 
-        with pytest.raises(Exception, match="File name must be 255 bytes or less\\."):
+        with pytest.raises(Exception, match="File name must be at most 255 characters\\."):
             add_dataset_func.upload_documents([{"display_name": display_name, "blob": b"content"}])
+
+    @pytest.mark.p2
+    def test_multibyte_filename_within_character_limit(self, add_dataset_func):
+        dataset = add_dataset_func
+        display_name = "界" * (DOCUMENT_NAME_MAX_CHARS - len(".txt")) + ".txt"
+        documents = dataset.upload_documents([{"display_name": display_name, "blob": b"content"}])
+        assert len(documents) == 1, str(documents)
+        assert documents[0].name == display_name, str(documents[0])
 
     @pytest.mark.p2
     def test_partial_upload_persists_successful_file(self, add_dataset_func):

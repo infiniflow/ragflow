@@ -118,7 +118,7 @@ func TestUpdateDatasetDocumentConfigPatchPreservesOmittedSettings(t *testing.T) 
 }
 
 func TestUpdateDatasetDocumentRejectsUnsupportedFileFamilyBeforeWrites(t *testing.T) {
-	for _, filename := range []string{"image.png", "deck.pptx", "deck.pages", "DECK.DPS", "deck.dpt"} {
+	for _, filename := range []string{"image.png", "deck.pptx", "deck.pages"} {
 		for _, selection := range []string{"chunk_method", "parser_id"} {
 			for _, withConfig := range []bool{false, true} {
 				t.Run(fmt.Sprintf("%s/%s/config=%t", filename, selection, withConfig), func(t *testing.T) {

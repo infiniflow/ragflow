@@ -68,6 +68,7 @@ func WriteHTML(content string, opts HTMLOptions) []byte {
 	b.WriteString("</title>\n")
 	b.WriteString("<style>\n")
 	fmt.Fprintf(&b, "body { font-family: %q; font-size: %dpt; line-height: 1.5; }\n", opts.FontFamily, opts.FontSize)
+	b.WriteString("table { border-collapse: collapse; }\nth, td { border: 1px solid #888; padding: 0.3em 0.6em; }\npre { overflow-x: auto; }\n")
 	if opts.WatermarkText != "" {
 		b.WriteString(".watermark { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-30deg); font-size: 96pt; color: rgba(0,0,0,0.06); pointer-events: none; z-index: -1; }\n")
 	}

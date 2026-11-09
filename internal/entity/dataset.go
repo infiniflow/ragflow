@@ -19,10 +19,12 @@ package entity
 import (
 	"strings"
 	"time"
+
+	"ragflow/internal/common"
 )
 
-// DatasetNameLimit is the maximum length for dataset name
-const DatasetNameLimit = 128
+// DatasetNameLimit is the maximum length for a dataset name.
+const DatasetNameLimit = common.NameLimit128
 
 // Status represents the status enum values
 type Status string

@@ -30,12 +30,7 @@ var (
 )
 
 // RunSQL executes the read-only SQL produced by the chat SQL-retrieval flow.
-func (e *Engine) RunSQL(ctx context.Context, tableName, sqlText string, kbIDs []string, format string) ([]map[string]interface{}, error) {
-	if tableName != "" {
-		if err := validateIdentifier(tableName); err != nil {
-			return nil, err
-		}
-	}
+func (e *Engine) RunSQL(ctx context.Context, sqlText string, format string) ([]map[string]interface{}, error) {
 	normalized := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(sqlText), ";"))
 	normalized = strings.ReplaceAll(normalized, "`", "")
 	normalized = jsonExtractStringPattern.ReplaceAllString(normalized, "JSON_UNQUOTE(JSON_EXTRACT($1, $2))")

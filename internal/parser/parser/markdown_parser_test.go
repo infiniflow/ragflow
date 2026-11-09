@@ -39,6 +39,32 @@ func TestMarkdownParser_ParseWithResult_Basic(t *testing.T) {
 	}
 }
 
+func TestMarkdownParser_BlockquoteKeepsItsBlocksApart(t *testing.T) {
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	for _, tc := range []struct {
+		md   string
+		want string
+	}{
+		{"> First quote\n>\n> Second quote\n", "First quote\nSecond quote"},
+		{"> One\n>\n> Two\n>\n> Three\n", "One\nTwo\nThree"},
+		{"> Intro\n>\n> - item one\n> - item two\n", "Intro\nitem one\nitem two"},
+	} {
+		res := p.ParseWithResult(t.Context(), "test.md", []byte(tc.md))
+		if res.Err != nil {
+			t.Fatalf("ParseWithResult(%q): %v", tc.md, res.Err)
+		}
+		if len(res.JSON) != 1 {
+			t.Fatalf("ParseWithResult(%q) returned %d items, want 1", tc.md, len(res.JSON))
+		}
+		if got, _ := res.JSON[0].ToMap()["text"].(string); got != tc.want {
+			t.Fatalf("ParseWithResult(%q) text = %q, want %q", tc.md, got, tc.want)
+		}
+	}
+}
+
 // A UTF-8 BOM in front of the first heading must not demote it to a paragraph.
 func TestMarkdownParser_ParseWithResult_UTF8BOM(t *testing.T) {
 	p, err := NewMarkdownParser(GoMarkdown)
@@ -486,19 +512,9 @@ func TestMarkdownParser_ParseWithResult_InlineRawHTMLSurvives(t *testing.T) {
 
 func TestMarkdownParser_ConfigureFromSetup(t *testing.T) {
 	p, _ := NewMarkdownParser(GoMarkdown)
-	p.ConfigureFromSetup(map[string]any{
-		"parse_method":          "deepdoc",
-		"vlm":                   map[string]any{"llm_id": "gpt-4-vision"},
-		"flatten_media_to_text": false,
-	})
+	p.ConfigureFromSetup(map[string]any{"parse_method": "deepdoc"})
 	if p.ParseMethod != "deepdoc" {
 		t.Fatalf("ParseMethod = %q, want %q", p.ParseMethod, "deepdoc")
-	}
-	if p.VLM == nil {
-		t.Fatal("VLM is nil; want map")
-	}
-	if id, _ := p.VLM["llm_id"].(string); id != "gpt-4-vision" {
-		t.Fatalf("VLM[llm_id] = %q, want %q", id, "gpt-4-vision")
 	}
 }
 
@@ -507,44 +523,6 @@ func TestMarkdownParser_ConfigureFromSetup_NilSafe(t *testing.T) {
 	p.ConfigureFromSetup(nil) // should not panic
 	if p.ParseMethod != "" {
 		t.Fatalf("ParseMethod should be empty after nil setup, got %q", p.ParseMethod)
-	}
-}
-
-// TestMarkdownParser_FlattenMediaToText verifies that when
-// flatten_media_to_text is true, image items are emitted with
-// doc_type_kwd="text" (mirroring Python parser.py:1034). When false,
-// image items keep doc_type_kwd="image".
-func TestMarkdownParser_FlattenMediaToText(t *testing.T) {
-	ctx := t.Context()
-	pixelB64 := base64.StdEncoding.EncodeToString([]byte("fake-png-data"))
-	md := "Some text with an image\n![test](data:image/png;base64," + pixelB64 + ")\n"
-
-	cases := []struct {
-		name        string
-		flatten     bool
-		wantDocType string
-	}{
-		{"flatten=false keeps image", false, "image"},
-		{"flatten=true forces text", true, "text"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			p, _ := NewMarkdownParser(GoMarkdown)
-			p.ConfigureFromSetup(map[string]any{"flatten_media_to_text": tc.flatten})
-			if p.FlattenMediaToText != tc.flatten {
-				t.Fatalf("FlattenMediaToText field = %v, want %v", p.FlattenMediaToText, tc.flatten)
-			}
-			res := p.ParseWithResult(ctx, "test.md", []byte(md))
-			if res.Err != nil {
-				t.Fatalf("ParseWithResult: %v", res.Err)
-			}
-			for _, item := range ItemsToMaps(res.JSON) {
-				if kd, _ := item["doc_type_kwd"].(string); kd != tc.wantDocType {
-					t.Errorf("doc_type_kwd = %q, want %q (item text=%q)",
-						kd, tc.wantDocType, item["text"])
-				}
-			}
-		})
 	}
 }
 
@@ -618,7 +596,7 @@ func TestMarkdownImageBudgetSkipsFetchAfterCountLimit(t *testing.T) {
 	doc := markdownNew().Parse([]byte(markdown))
 	budget := newLimitedMediaBudgetForTest(t, 4, 4, 2)
 	var items []map[string]any
-	if unresolved := walkMarkdownBlocksWithImages(t.Context(), doc, &items, false, true, &htmlWalkState{budget: budget}); unresolved != 0 {
+	if unresolved := walkMarkdownBlocksWithImages(t.Context(), doc, &items, true, &htmlWalkState{budget: budget}); unresolved != 0 {
 		t.Fatalf("unresolved images = %d, want 0", unresolved)
 	}
 	if got := fetches.Load(); got != 2 {

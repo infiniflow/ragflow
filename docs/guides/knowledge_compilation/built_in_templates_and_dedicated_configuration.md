@@ -423,7 +423,7 @@ When adding entities or relationships, make sure they can form clear association
 
 Wiki compiles document content into structured and associated knowledge pages. The system identifies entities, relationships, facts, and concepts in documents, then generates content similar to encyclopedia knowledge pages according to page organization rules.
 
-Wiki is suitable for enterprise knowledge accumulation, product documentation, domain knowledge bases, and similar scenarios. It helps users convert scattered document content into clearly structured knowledge pages that are easy to browse and retrieve.
+Wiki is suitable for enterprise knowledge accumulation, product documentation, domain Datasets, and similar scenarios. It helps users convert scattered document content into clearly structured knowledge pages that are easy to browse and retrieve.
 
 ### Global Rules
 
@@ -570,4 +570,4 @@ Claim is used to supplement factual information and is suitable for scenarios th
 
 Concept is suitable for professional domain knowledge organization and can help improve the association capability of Wiki pages.
 
-Blueprint controls the final page display effect. It is recommended to adjust it based on the purpose of the knowledge base.
+Blueprint controls the final page display effect. It is recommended to adjust it based on the purpose of the Dataset.

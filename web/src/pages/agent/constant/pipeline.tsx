@@ -80,22 +80,6 @@ export enum StringTransformDelimiter {
   Space = ' ',
 }
 
-export enum PreprocessValue {
-  main_content = 'main_content',
-  section_title = 'title',
-  abstract = 'abstract',
-  author = 'author',
-}
-
-export const MAIN_CONTENT_PREPROCESS_VALUE: PreprocessValue =
-  PreprocessValue.main_content;
-
-export const PreprocessLabelKeyMap: Record<PreprocessValue, string> = {
-  main_content: 'mainContent',
-  title: 'sectionTitle',
-  abstract: 'abstract',
-  author: 'author',
-};
 export const initialParserValues = {
   // The Go Parser component emits structured JSON items only; markdown/text/
   // html are internal backend representations, never public Parser outputs.
@@ -111,52 +95,42 @@ export const initialParserValues = {
     {
       fileFormat: FileType.PDF,
       parse_method: ParseDocumentType.DeepDOC,
-      preprocess: PreprocessValue.main_content,
       remove_header_footer: false,
       pages: [{ from: 1, to: 100000 }],
     },
     {
       fileFormat: FileType.Spreadsheet,
       parse_method: ParseDocumentType.DeepDOC,
-      preprocess: PreprocessValue.main_content,
     },
     {
       fileFormat: FileType.Image,
       ocr_enabled: true,
-      preprocess: PreprocessValue.main_content,
     },
     {
       fileFormat: FileType.Email,
       fields: Object.values(ParserFields),
-      preprocess: PreprocessValue.main_content,
     },
     {
       fileFormat: FileType.TextMarkdown,
-      preprocess: PreprocessValue.main_content,
     },
     {
       fileFormat: FileType.Code,
-      preprocess: PreprocessValue.main_content,
     },
     {
       fileFormat: FileType.Html,
-      preprocess: PreprocessValue.main_content,
       remove_header_footer: false,
     },
     {
       fileFormat: FileType.Doc,
-      preprocess: PreprocessValue.main_content,
       remove_header_footer: false,
     },
     {
       fileFormat: FileType.Docx,
-      preprocess: PreprocessValue.main_content,
       remove_header_footer: false,
     },
     {
       fileFormat: FileType.PowerPoint,
       parse_method: ParseDocumentType.DeepDOC,
-      preprocess: PreprocessValue.main_content,
     },
     // {
     //   fileFormat: FileType.Video,

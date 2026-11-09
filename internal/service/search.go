@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"gorm.io/gorm"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -146,21 +147,22 @@ type CreateSearchResponse struct {
 // Reference: api/apps/restful_apis/search_api.py::create
 // Python implementation steps:
 // 1. Get JSON request body with name (required) and description (optional)
-// 2. Validate name is string, non-empty, and max 255 bytes
+// 2. Validate name is a string, non-empty, and at most 128 characters
 // 3. Generate unique name using duplicate_name(SearchService.query, name, tenant_id)
 // 4. Generate UUID for search ID
 // 5. Set fields: id, name, description, tenant_id, created_by
 // 6. Save to database within DB.atomic() transaction
 // 7. Return {search_id: id} on success
 func (s *SearchService) CreateSearch(ctx context.Context, name string, description *string) (*CreateSearchResponse, error) {
-	identity, err := ResolveIdentity(ctx)
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+	tenantID, err := requireCurrentTenantID(ctx)
 	if err != nil {
 		return nil, err
 	}
 	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "search", permission.ActionWrite); err != nil {
 		return nil, err
 	}
-	if err := common.ValidateName(name); err != nil {
+	if err := common.ValidateNameRunes(name, common.NameLimit128); err != nil {
 		return nil, err
 	}
 
@@ -168,9 +170,9 @@ func (s *SearchService) CreateSearch(ctx context.Context, name string, descripti
 	searchID := common.GenerateUUID()
 
 	// Generate unique name (same as Python duplicate_name)
-	// search.name is a 128-byte column; keep generated names within it.
-	uniqueName, err := common.UniqueName(name, 128, func(candidate string) (bool, error) {
-		existing, err := s.searchDAO.GetByNameAndTenant(ctx, dao.DB, candidate, identity.TenantID)
+	// search.name is a 128-character column; keep generated names within it.
+	uniqueName, err := common.UniqueName(name, common.NameLimit128, func(candidate string) (bool, error) {
+		existing, err := s.searchDAO.GetByNameAndTenant(ctx, dao.DB, candidate, tenantID)
 		if err != nil {
 			return false, err
 		}
@@ -184,10 +186,10 @@ func (s *SearchService) CreateSearch(ctx context.Context, name string, descripti
 	// Create search entity
 	search := &entity.Search{
 		ID:           searchID,
-		UserID:       identity.UserID,
-		TenantID:     identity.TenantID,
+		UserID:       userID,
+		TenantID:     tenantID,
 		Name:         uniqueName,
-		CreatedBy:    identity.UserID,
+		CreatedBy:    userID,
 		SearchConfig: make(entity.JSONMap),
 	}
 
@@ -272,7 +274,7 @@ func (s *SearchService) DeleteSearch(ctx context.Context, searchID string) error
 }
 
 type SearchCompletionPlan struct {
-	Identity   Identity
+	TenantID   string
 	SearchID   string
 	Question   string
 	DatasetIDs []string
@@ -324,21 +326,21 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, searchID string, 
 			return nil, code, permissionErr
 		}
 	}
-	identity, err := ResolveIdentity(ctx)
-	if err != nil {
-		code, normalizedErr := permissionresponse.Normalize(err)
-		return nil, code, normalizedErr
+	tenantID, _ := searchDetail["tenant_id"].(string)
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return nil, common.CodeDataError, fmt.Errorf("search %s has no tenant", searchID)
 	}
 
 	modelID, _ := stringFromSearchConfig(searchConfig["chat_id"])
 	if modelID == "" {
-		if info, infoErr := NewModelFactory().ResolveDefaultInfo(ctx, identity, entity.ModelTypeChat); infoErr == nil {
+		if info, infoErr := NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, tenantID), entity.ModelTypeChat); infoErr == nil {
 			modelID = ModelReference(info)
 		}
 	}
 
 	return &SearchCompletionPlan{
-		Identity:   identity,
+		TenantID:   tenantID,
 		SearchID:   searchID,
 		Question:   question,
 		DatasetIDs: datasetIDs,
@@ -536,7 +538,10 @@ func (s *SearchService) UpdateSearch(ctx context.Context, searchID string, req *
 	}
 
 	// Check for duplicate names within the Search App's tenant.
-	trimmedName := req.Name
+	trimmedName := strings.TrimSpace(req.Name)
+	if err := common.ValidateNameRunes(trimmedName, common.NameLimit128); err != nil {
+		return nil, err
+	}
 	available, err := common.NameAvailable(search.Name, trimmedName, func(candidate string) (bool, error) {
 		existing, err := s.searchDAO.GetByNameAndTenant(ctx, dao.DB, candidate, search.TenantID)
 		if err != nil {

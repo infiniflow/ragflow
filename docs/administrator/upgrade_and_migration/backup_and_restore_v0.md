@@ -169,7 +169,7 @@ docker compose -p docker -f docker/docker-compose.yml ps
 Wait until the services report a running or healthy state. Then confirm that:
 
 - Existing users can sign in.
-- Knowledge bases and files are present.
+- Datasets and files are present.
 - Existing files can be opened.
 - Retrieval returns content from previously parsed documents.
 - A new document can be uploaded, parsed, and retrieved.

@@ -3,7 +3,9 @@ package dataset
 import (
 	"context"
 	"fmt"
+
 	"ragflow/internal/dao"
+	"ragflow/internal/permission"
 	"slices"
 
 	"go.uber.org/zap"
@@ -11,7 +13,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
-	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 	"ragflow/internal/service/nlp"
@@ -37,11 +38,11 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	userID := permission.UserIDFromContext(ctx)
 	common.Info("SearchDatasets started", zap.String("userID", userID), zap.Any("datasets", req.DatasetIDs), zap.String("question", req.Question))
 
-	page := 1
+	page := common.DefaultPage
 	if req.Page != nil {
 		page = *req.Page
 	}
-	pageSize := 30
+	pageSize := common.DefaultPageSize
 	if req.PageSize != nil {
 		pageSize = *req.PageSize
 	} else if req.Size != nil {
@@ -216,16 +217,16 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	if metadataFilter != nil {
 		method, _ := metadataFilter["method"].(string)
 		if method == "auto" || method == "semi_auto" {
-			access := service.Identity{TenantID: tenantIDs[0]}
+			modelCtx := permission.WithTenantID(ctx, tenantIDs[0])
 			if chatID != "" {
-				chatModelForFilter, err = modelFactory.NewChatModel(ctx, access, chatID)
+				chatModelForFilter, err = modelFactory.NewChatModel(modelCtx, chatID)
 				if err != nil {
 					common.Warn("Failed to get chat model config from search_config chat_id, using tenant default", zap.String("chatID", chatID), zap.Error(err))
 				}
 			}
 
 			if chatModelForFilter == nil {
-				chatModelForFilter, err = modelFactory.NewDefaultChatModel(ctx, access)
+				chatModelForFilter, err = modelFactory.NewDefaultChatModel(modelCtx)
 				if err != nil {
 					common.Warn("Failed to get tenant default chat model for meta_data_filter", zap.Error(err))
 				}
@@ -261,7 +262,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		}
 	}
 	if keyword {
-		chatModel, err := modelFactory.NewDefaultChatModel(ctx, service.Identity{TenantID: tenantIDs[0]})
+		chatModel, err := modelFactory.NewDefaultChatModel(permission.WithTenantID(ctx, tenantIDs[0]))
 		if err != nil {
 			common.Warn("Failed to get default chat model for LLM transformations", zap.Error(err))
 		} else {
@@ -281,7 +282,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	// Determine embedding model
 	var embeddingModel *modelModule.EmbeddingModel
 	if kbRecords[0].EmbdID != "" {
-		embeddingModel, err = modelFactory.NewEmbeddingModel(ctx, service.Identity{TenantID: tenantIDs[0]}, kbRecords[0].EmbdID)
+		embeddingModel, err = modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantIDs[0]), kbRecords[0].EmbdID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", err)
 		}
@@ -290,7 +291,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	// Get rerank model if rerankID is specified
 	var rerankModel *modelModule.RerankModel
 	if rerankID != "" {
-		rerankModel, err = modelFactory.NewRerankModel(ctx, service.Identity{TenantID: tenantIDs[0]}, rerankID)
+		rerankModel, err = modelFactory.NewRerankModel(permission.WithTenantID(ctx, tenantIDs[0]), rerankID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", err)
 		}

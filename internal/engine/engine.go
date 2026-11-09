@@ -77,7 +77,7 @@ type DocEngine interface {
 	GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string
 
 	// RunSQL runs a SQL query
-	RunSQL(ctx context.Context, tableName string, sqlText string, kbIDs []string, format string) ([]map[string]interface{}, error)
+	RunSQL(ctx context.Context, sqlText string, format string) ([]map[string]interface{}, error)
 
 	GetChunkIDs(chunks []map[string]interface{}) []string
 	KNNScores(ctx context.Context, chunks []map[string]interface{}, queryVector []float64, topK int) (map[string]interface{}, error)

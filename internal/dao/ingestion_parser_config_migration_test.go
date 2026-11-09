@@ -116,10 +116,10 @@ func TestMigrateParserChunkerTokenizerConfig(t *testing.T) {
 		{
 			name:   "an existing family map is merged, not replaced",
 			parser: "book",
-			input:  `{"layout_recognize":true,"Parser:HipSignsRhyme":{"pdf":{"preprocess":["main_content"],"remove_toc":false}}}`,
-			want:   `{"Parser:HipSignsRhyme":{"pdf":{"preprocess":["main_content"],"remove_toc":false,"parse_method":"deepdoc"}}}`,
+			input:  `{"layout_recognize":true,"Parser:HipSignsRhyme":{"pdf":{"remove_header_footer":true,"remove_toc":false}}}`,
+			want:   `{"Parser:HipSignsRhyme":{"pdf":{"remove_header_footer":true,"remove_toc":false,"parse_method":"deepdoc"}}}`,
 		},
-		{name: "retired settings are deleted", input: `{"html4excel":true,"task_page_size":256,"analyze_hyperlink":true,"hyperlink_urls":true,"video_prompt":"x"}`, want: `{}`},
+		{name: "retired settings are deleted", input: `{"html4excel":true,"task_page_size":256,"video_prompt":"x"}`, want: `{}`},
 		{name: "no owned keys", input: `{"chunk_method":"naive","topn_tags":5}`, want: `{"chunk_method":"naive","topn_tags":5}`},
 		{name: "empty config", input: `{}`, want: `{}`},
 		{name: "canvas rows are skipped", pipeline: ptrString("canvas-1"), input: `{"layout_recognize":true,"chunk_token_num":128}`, want: `{"layout_recognize":true,"chunk_token_num":128}`},
@@ -379,7 +379,7 @@ func TestMigrateIngestionParserConfigsVersionAndEmptyRows(t *testing.T) {
 		skip    bool
 	}{
 		{"", false}, {"v0.27.2", false}, {"v1.0.0-rc1", false},
-		{"v1.0.0-rc2.dev2", false},
+		{"v1.0.0-rc2.dev2", true},
 		{ingestionParserConfigTargetVersion, true}, {"v1.0.0", true},
 	} {
 		t.Run(tc.version, func(t *testing.T) {

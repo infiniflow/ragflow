@@ -1,0 +1,27 @@
+{
+  "name": "Nace",
+  "url": {
+    "default": "https://console.nace.ai/v1"
+  },
+  "url_suffix": {
+    "decision": "systemone",
+    "models": "models"
+  },
+  "class": "nace",
+  "models": [
+    {
+      "name": "drex-max",
+      "context_length": 262144,
+      "model_types": [
+        "decision"
+      ]
+    },
+    {
+      "name": "drex-v2.0",
+      "context_length": 262144,
+      "model_types": [
+        "decision"
+      ]
+    }
+  ]
+}

@@ -19,8 +19,9 @@ package handler
 import (
 	"context"
 	"net/http"
+
 	"ragflow/internal/common"
-	"strconv"
+	"ragflow/internal/permission"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -89,18 +90,10 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 	// Parse query parameters
 	keywords := c.Query("keywords")
 
-	page := 0
-	if pageStr := c.Query("page"); pageStr != "" {
-		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
-			page = p
-		}
-	}
-
-	pageSize := 0
-	if pageSizeStr := c.Query("page_size"); pageSizeStr != "" {
-		if ps, err := strconv.Atoi(pageSizeStr); err == nil && ps > 0 {
-			pageSize = ps
-		}
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
 	}
 
 	orderby := c.DefaultQuery("orderby", "create_time")
@@ -149,7 +142,7 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 // @Router /api/v1/searches [post]
 
 type CreateSearchRequest struct {
-	Name        string  `json:"name"`                  // required, validated via common.ValidateName (max 255 bytes)
+	Name        string  `json:"name"`                  // required, max 128 characters
 	Description *string `json:"description,omitempty"` // optional description
 }
 
@@ -170,7 +163,7 @@ func (h *SearchHandler) CreateSearch(c *gin.Context) {
 		return
 	}
 
-	if err = common.ValidateName(req.Name); err != nil {
+	if err = common.ValidateNameRunes(req.Name, common.NameLimit128); err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
@@ -294,7 +287,7 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 	}
 
 	// Validate name (same as Python validation)
-	if err := common.ValidateName(req.Name); err != nil {
+	if err := common.ValidateNameRunes(req.Name, common.NameLimit128); err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
@@ -395,10 +388,10 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 		return
 	}
 
-	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, Identity: plan.Identity, ModelID: plan.ModelID}
-
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
+	ctx = permission.WithTenantID(ctx, plan.TenantID)
+	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, ModelID: plan.ModelID}
 	c.Request = c.Request.WithContext(ctx)
 
 	hadError := false
