@@ -71,11 +71,15 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 
 	// Initialize tokenizer (rag_analyzer)
 	// tokenizer.Init handles DictPath fallback: env var → /usr/share/infinity/resource
-	err := tokenizer.Init(&tokenizer.PoolConfig{})
+	tokenizerCfg := &tokenizer.PoolConfig{}
+	err := tokenizer.Init(tokenizerCfg)
 	if err != nil {
 		common.Fatal("Failed to initialize tokenizer", zap.Error(err))
 	}
 	defer tokenizer.Close()
+	if err := nlp.InitQueryBuilderFromTokenizer(tokenizerCfg.DictPath); err != nil {
+		return fmt.Errorf("initialize query builder: %w", err)
+	}
 
 	// Fail fast if the cl100k_base BPE table is missing. NumTokensFromString /
 	// TrimContentToTokenLimit now panic rather than degrading silently, so this
@@ -141,7 +145,9 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 	// Memory extraction runs on the Ingestor's shared NATS consumer + worker
 	// pool (task_type="memory" dispatched by handleAndExecute -> executeMemoryTask),
 	// so there is no longer a dedicated Redis memory consumer to start.
-	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(service.NewMemoryService(dao.DB, engine.Get(), service.WithMemoryKvrocks(kvrocks.Get()), service.WithMemoryMQEngine(engine.GetMessageQueueEngine()))))
+	memoryService := service.NewMemoryService(dao.DB, engine.Get(), service.WithMemoryKvrocks(kvrocks.Get()), service.WithMemoryMQEngine(engine.GetMessageQueueEngine()))
+	ingestor.SetMemoryMessageService(service.NewMemoryMessageService(memoryService))
+	bootstrap.InitializeRetrievalServices(service.NewMetadataService(), memoryService, service.NewModelFactory())
 	// Bind the relational handle and document engine into the production
 	// embedder and knowledge-compiler resolvers. The task package is the
 	// composition root for ingestion runs; it reads these from the explicit
