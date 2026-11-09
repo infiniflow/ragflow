@@ -6,20 +6,31 @@ import (
 )
 
 // tocHeadingPattern matches TOC heading text — case-insensitive match against
-// contents/目录/目次/table of contents after stripping all spaces (ASCII + fullwidth).
-// Standalone front/back-matter headings such as 致谢/acknowledgements are excluded
-// so their content is not mistakenly dropped as a TOC.
+// contents/目录/目次/table of contents/致谢/acknowledge after stripping all
+// spaces (ASCII + fullwidth).
 // The heading is matched after whitespacePattern has removed its spaces, so a
 // multi-word heading is listed without them: "Table of Contents" reads "tableofcontents".
-var tocHeadingPattern = regexp.MustCompile(`(?i)^(contents|目录|目次|tableofcontents)$`)
+var tocHeadingPattern = regexp.MustCompile(`(?i)^(contents|目录|目次|tableofcontents|致谢|acknowledge)$`)
 
 // whitespacePattern matches ASCII spaces and fullwidth space (U+3000)
 // for normalization before heading match.
 var whitespacePattern = regexp.MustCompile("[ \t\u3000]+")
 
-// listMarkerPattern matches unordered list markers (*, -, +) or ordered list
-// markers (e.g. 1., 2), as emitted by markdownListMarker) at the start of a string.
-var listMarkerPattern = regexp.MustCompile(`^(?:[\*\-\+]|\d+[\.\)])\s+`)
+// tocRules carries the format-specific matching knobs for TOC removal. The
+// zero value matches plain-text items as emitted by HTML, DOC and DOCX parsers.
+type tocRules struct {
+	// clean strips format-specific markup before heading, prefix and entry
+	// matching. nil matches the item text as-is.
+	clean func(string) string
+	// heading overrides tocHeadingPattern when non-nil.
+	heading *regexp.Regexp
+	// asciiExtra lists characters the format adds to English body text
+	// (Markdown markup) so isEnglishItems classifies it as English.
+	asciiExtra string
+}
+
+// plainTOCRules keeps the plain-text contract that HTML, DOC and DOCX share.
+var plainTOCRules = tocRules{heading: tocHeadingPattern}
 
 // itemText extracts the text field from a parser item map. Falls
 // back to empty string when the field is missing or not a string.
@@ -30,26 +41,8 @@ func itemText(item map[string]any) string {
 	return ""
 }
 
-// cleanTOCItemText strips leading Markdown ATX heading markers (#), bullet markers
-// (*, -, +), ordered list markers (e.g. 1., 1)), and whitespace so TOC headings,
-// list items, and body headings can match on their core text. HTML and plain text
-// items without list markers are unchanged.
-func cleanTOCItemText(s string) string {
-	s = strings.TrimSpace(s)
-	s = strings.TrimLeft(s, "# \t")
-	for {
-		if loc := listMarkerPattern.FindStringIndex(s); loc != nil {
-			s = strings.TrimSpace(s[loc[1]:])
-		} else {
-			break
-		}
-	}
-	return s
-}
-
 // removeContentsTable drops the table-of-contents entries from a list
-// of parser items. Mirrors Python rag/nlp/__init__.py:937-965
-// (remove_contents_table).
+// of parser items.
 //
 // Algorithm:
 //  1. Scan for a TOC heading (contents/目录/目次/...).
@@ -59,14 +52,21 @@ func cleanTOCItemText(s string) string {
 //  4. Drop that entry, then drop up to 128 following entries that
 //     start with the prefix.
 //  5. Non-matching entries are kept.
-func removeContentsTable(items []map[string]any, eng bool) []map[string]any {
+func removeContentsTable(items []map[string]any, eng bool, rules tocRules) []map[string]any {
+	heading := rules.heading
+	if heading == nil {
+		heading = tocHeadingPattern
+	}
+	clean := rules.clean
+	if clean == nil {
+		clean = func(s string) string { return s }
+	}
 	i := 0
 	for i < len(items) {
 		text := itemText(items[i])
 		// Strip @@ suffix and whitespace before matching.
-		rawNoAt := strings.SplitN(text, "@@", 2)[0]
-		normalized := strings.TrimLeft(whitespacePattern.ReplaceAllString(rawNoAt, ""), "#")
-		if !tocHeadingPattern.MatchString(normalized) {
+		normalized := whitespacePattern.ReplaceAllString(clean(strings.SplitN(text, "@@", 2)[0]), "")
+		if !heading.MatchString(normalized) {
 			i++
 			continue
 		}
@@ -76,15 +76,13 @@ func removeContentsTable(items []map[string]any, eng bool) []map[string]any {
 			break
 		}
 		// Determine the prefix from the entry right after the heading.
-		cleanText := cleanTOCItemText(itemText(items[i]))
-		prefix := tocPrefix(cleanText, eng)
+		prefix := tocPrefix(clean(itemText(items[i])), eng)
 		for prefix == "" {
 			items = append(items[:i], items[i+1:]...)
 			if i >= len(items) {
 				break
 			}
-			cleanText = cleanTOCItemText(itemText(items[i]))
-			prefix = tocPrefix(cleanText, eng)
+			prefix = tocPrefix(clean(itemText(items[i])), eng)
 		}
 		if i >= len(items) || prefix == "" {
 			break
@@ -100,8 +98,7 @@ func removeContentsTable(items []map[string]any, eng bool) []map[string]any {
 			limit = len(items)
 		}
 		for j := i; j < limit; j++ {
-			cleanTarget := cleanTOCItemText(itemText(items[j]))
-			if !strings.HasPrefix(cleanTarget, prefix) {
+			if !strings.HasPrefix(clean(itemText(items[j])), prefix) {
 				continue
 			}
 			// Drop entries [i, j).
@@ -113,8 +110,7 @@ func removeContentsTable(items []map[string]any, eng bool) []map[string]any {
 }
 
 // tocPrefix returns the TOC-entry prefix: first 3 chars for CJK,
-// first 2 whitespace-separated words for English. Mirrors Python
-// remove_contents_table line 951.
+// first 2 whitespace-separated words for English.
 func tocPrefix(text string, eng bool) string {
 	if eng {
 		words := strings.Fields(text)
@@ -135,10 +131,12 @@ func tocPrefix(text string, eng bool) string {
 
 // isEnglishTexts reports whether the given texts read as English. It returns
 // true when more than 80% of the (up to 200) sampled non-empty segments consist
-// solely of ASCII letters/digits/punctuation. The result selects the TOC-entry
-// prefix strategy: a 2-word prefix for English content, otherwise a 3-character
-// prefix (used by removeContentsTable / tocPrefix).
-func isEnglishTexts(texts []string) bool {
+// solely of ASCII letters/digits/punctuation. asciiExtra lists characters a
+// format adds to its body text (Markdown markup) so they do not flip the
+// classification; the shared callers pass an empty string.
+// The result selects the TOC-entry prefix strategy: a 2-word prefix for English
+// content, otherwise a 3-character prefix (used by removeContentsTable / tocPrefix).
+func isEnglishTexts(texts []string, asciiExtra string) bool {
 	var sampled []string
 	for _, t := range texts {
 		if s := strings.TrimSpace(t); s != "" {
@@ -151,7 +149,7 @@ func isEnglishTexts(texts []string) bool {
 	if len(sampled) == 0 {
 		return false
 	}
-	pat := regexp.MustCompile("^[" + "`" + "a-zA-Z0-9\\s.,':;/\"?<>!()#*+_-]+$")
+	pat := regexp.MustCompile("^[" + "`" + "a-zA-Z0-9\\s.,':;/\"?<>!()" + asciiExtra + "\\-]+$")
 	eng := 0
 	for _, t := range sampled {
 		if pat.MatchString(t) {
@@ -164,12 +162,12 @@ func isEnglishTexts(texts []string) bool {
 // isEnglishItems reports whether the parser items read as English, classifying
 // each item's text with isEnglishTexts. It is passed to removeTOCWord /
 // removeContentsTable so English documents use the 2-word TOC prefix.
-func isEnglishItems(items []map[string]any) bool {
+func isEnglishItems(items []map[string]any, asciiExtra string) bool {
 	texts := make([]string, 0, len(items))
 	for _, it := range items {
 		if t := itemText(it); t != "" {
 			texts = append(texts, t)
 		}
 	}
-	return isEnglishTexts(texts)
+	return isEnglishTexts(texts, asciiExtra)
 }

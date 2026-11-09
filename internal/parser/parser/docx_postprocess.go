@@ -62,7 +62,7 @@ func extractDOCXOutlines(irJSON string) []docxOutline {
 //  3. Finally run removeContentsTable as a fallback sweep.
 func removeTOCWord(items []map[string]any, outlines []docxOutline, eng bool) []map[string]any {
 	if len(outlines) == 0 {
-		return removeContentsTable(items, eng)
+		return removeContentsTable(items, eng, plainTOCRules)
 	}
 
 	outlineTitles := make([]string, 0, len(outlines))
@@ -110,7 +110,7 @@ func removeTOCWord(items []map[string]any, outlines []docxOutline, eng bool) []m
 		}
 	}
 
-	return removeContentsTable(items, eng)
+	return removeContentsTable(items, eng, plainTOCRules)
 }
 
 // whitespaceCollapsePattern collapses runs of whitespace (spaces,

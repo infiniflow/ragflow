@@ -5,10 +5,9 @@ import (
 	"testing"
 )
 
-// TestRemoveContentsTable mirrors the Python remove_contents_table
-// (rag/nlp/__init__.py:937-965). It locates a TOC heading
-// (contents/目录/目次/...), drops it, then drops the following
-// entries that share a common prefix with the first TOC entry.
+// TestRemoveContentsTable covers the plain-text rules that HTML, DOC and DOCX
+// share. It locates a TOC heading (contents/目录/目次/...), drops it, then drops
+// the following entries that share a common prefix with the first TOC entry.
 func TestRemoveContentsTable(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -106,30 +105,6 @@ func TestRemoveContentsTable(t *testing.T) {
 			},
 		},
 		{
-			name: "致谢 heading is not treated as TOC → unchanged",
-			items: []map[string]any{
-				{"text": "致谢"},
-				{"text": "感谢各位的支持与帮助。"},
-			},
-			eng: false,
-			want: []map[string]any{
-				{"text": "致谢"},
-				{"text": "感谢各位的支持与帮助。"},
-			},
-		},
-		{
-			name: "acknowledgments heading is not treated as TOC → unchanged",
-			items: []map[string]any{
-				{"text": "Acknowledgments"},
-				{"text": "We thank all contributors."},
-			},
-			eng: true,
-			want: []map[string]any{
-				{"text": "Acknowledgments"},
-				{"text": "We thank all contributors."},
-			},
-		},
-		{
 			name:  "empty input → unchanged",
 			items: nil,
 			eng:   false,
@@ -139,7 +114,7 @@ func TestRemoveContentsTable(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := removeContentsTable(tc.items, tc.eng)
+			got := removeContentsTable(tc.items, tc.eng, plainTOCRules)
 			if !reflect.DeepEqual(got, tc.want) {
 				t.Errorf("got %v, want %v", got, tc.want)
 			}
@@ -147,7 +122,7 @@ func TestRemoveContentsTable(t *testing.T) {
 	}
 }
 
-func TestCleanTOCItemText(t *testing.T) {
+func TestMarkdownTOCText(t *testing.T) {
 	cases := []struct {
 		in   string
 		want string
@@ -165,8 +140,8 @@ func TestCleanTOCItemText(t *testing.T) {
 		{"  #  *  Spaced  ", "Spaced"},
 	}
 	for _, tc := range cases {
-		if got := cleanTOCItemText(tc.in); got != tc.want {
-			t.Errorf("cleanTOCItemText(%q) = %q, want %q", tc.in, got, tc.want)
+		if got := markdownTOCText(tc.in); got != tc.want {
+			t.Errorf("markdownTOCText(%q) = %q, want %q", tc.in, got, tc.want)
 		}
 	}
 }
@@ -196,7 +171,7 @@ func TestIsEnglishTexts(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := isEnglishTexts(tc.texts); got != tc.want {
+			if got := isEnglishTexts(tc.texts, ""); got != tc.want {
 				t.Errorf("isEnglishTexts(%v) = %v, want %v", tc.texts, got, tc.want)
 			}
 		})
@@ -214,10 +189,10 @@ func TestRemoveTOCWordEnglishDetection(t *testing.T) {
 		{"text": "Chapter 2 Method"},
 		{"text": "Body starts"},
 	}
-	if !isEnglishItems(items) {
+	if !isEnglishItems(items, "") {
 		t.Fatalf("expected isEnglishItems=true for English content")
 	}
-	got := removeContentsTable(items, isEnglishItems(items))
+	got := removeContentsTable(items, isEnglishItems(items, ""), plainTOCRules)
 	want := []map[string]any{
 		{"text": "Intro"},
 		{"text": "Chapter 2 Method"},
@@ -225,5 +200,93 @@ func TestRemoveTOCWordEnglishDetection(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("English TOC detection: got %v, want %v", got, want)
+	}
+}
+
+// TestMarkdownTOCRules pins the Markdown-specific matching: heading and list
+// markers are stripped before matching, while standalone front/back-matter
+// headings stay.
+func TestMarkdownTOCRules(t *testing.T) {
+	cases := []struct {
+		name  string
+		items []map[string]any
+		eng   bool
+		want  []map[string]any
+	}{
+		{
+			name: "heading and list markers stripped",
+			items: []map[string]any{
+				{"text": "# 目录"},
+				{"text": "* 第一章 概述"},
+				{"text": "* 第二章 架构"},
+				{"text": "# 第一章 概述"},
+				{"text": "正文"},
+			},
+			eng: false,
+			want: []map[string]any{
+				{"text": "# 第一章 概述"},
+				{"text": "正文"},
+			},
+		},
+		{
+			name: "acknowledgments heading stays",
+			items: []map[string]any{
+				{"text": "# 致谢"},
+				{"text": "感谢各位的支持与帮助。"},
+				{"text": "# Acknowledgments"},
+				{"text": "We thank all contributors."},
+			},
+			eng: false,
+			want: []map[string]any{
+				{"text": "# 致谢"},
+				{"text": "感谢各位的支持与帮助。"},
+				{"text": "# Acknowledgments"},
+				{"text": "We thank all contributors."},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := removeContentsTable(tc.items, tc.eng, markdownTOCRules)
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Errorf("got %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestPlainTOCRulesKeepMarkup pins that the HTML/DOC/DOCX contract is unchanged:
+// markup markers are part of the text there, so a marked heading is not a TOC.
+func TestPlainTOCRulesKeepMarkup(t *testing.T) {
+	items := []map[string]any{
+		{"text": "# 目录"},
+		{"text": "* 第一章 概述"},
+		{"text": "正文"},
+	}
+	got := removeContentsTable(items, false, plainTOCRules)
+	if !reflect.DeepEqual(got, items) {
+		t.Errorf("got %v, want unchanged %v", got, items)
+	}
+}
+
+// TestRemoveContentsTableKeepsEntriesWithoutAnchor pins the conservative
+// fallback: when no later item shares the first TOC entry's prefix, the
+// remaining entries are kept rather than deleting body text to reach one.
+func TestRemoveContentsTableKeepsEntriesWithoutAnchor(t *testing.T) {
+	items := []map[string]any{
+		{"text": "# Table of Contents"},
+		{"text": "* Chapter 1 Intro"},
+		{"text": "* Chapter 2 Deep Dive"},
+		{"text": "# Introduction"},
+		{"text": "Body."},
+	}
+	got := removeContentsTable(items, true, markdownTOCRules)
+	want := []map[string]any{
+		{"text": "* Chapter 2 Deep Dive"},
+		{"text": "# Introduction"},
+		{"text": "Body."},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
 	}
 }

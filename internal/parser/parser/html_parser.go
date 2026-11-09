@@ -121,7 +121,7 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 	// remove_toc: post-parse text heuristic (mirrors Python
 	// parser.py:1087-1088 remove_toc → remove_contents_table).
 	if p.RemoveTOC {
-		items = removeContentsTable(items, isEnglishItems(items))
+		items = removeContentsTable(items, isEnglishItems(items, ""), plainTOCRules)
 	}
 	if items == nil {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}

@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -40,6 +41,36 @@ const dataURIPrefix = "data:image/"
 
 // GoMarkdown is the lib_type identifier for the pure-Go Markdown backend.
 const GoMarkdown = "go_markdown"
+
+// markdownTOCHeadingPattern matches a Markdown TOC heading. Standalone
+// front/back-matter headings such as 致谢/Acknowledgments are sections, not
+// TOCs, so they stay out of the pattern even though plain-text items match them.
+var markdownTOCHeadingPattern = regexp.MustCompile(`(?i)^(contents|目录|目次|tableofcontents)$`)
+
+// markdownListMarkerPattern matches the unordered (*, -, +) or ordered (1., 1))
+// list markers a Markdown TOC entry carries.
+var markdownListMarkerPattern = regexp.MustCompile(`^(?:[\*\-\+]|\d+[\.\)])\s+`)
+
+// markdownTOCText strips ATX heading markers (#) and list markers so a Markdown
+// TOC heading, its entries and the body headings that end the TOC match on
+// their core text.
+func markdownTOCText(s string) string {
+	s = strings.TrimLeft(strings.TrimSpace(s), "# \t")
+	for {
+		loc := markdownListMarkerPattern.FindStringIndex(s)
+		if loc == nil {
+			return s
+		}
+		s = strings.TrimSpace(s[loc[1]:])
+	}
+}
+
+// markdownTOCRules adapts TOC removal to Markdown item text.
+var markdownTOCRules = tocRules{
+	clean:      markdownTOCText,
+	heading:    markdownTOCHeadingPattern,
+	asciiExtra: "#*+_",
+}
 
 type MarkdownParser struct {
 	libType     string
@@ -182,11 +213,8 @@ func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, da
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}
-	if items == nil {
-		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
-	}
 	if p.RemoveTOC {
-		items = removeContentsTable(items, isEnglishItems(items))
+		items = removeContentsTable(items, isEnglishItems(items, markdownTOCRules.asciiExtra), markdownTOCRules)
 	}
 	if len(items) == 0 {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}

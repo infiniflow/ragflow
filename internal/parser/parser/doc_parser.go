@@ -100,7 +100,7 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 			}
 			if p.RemoveTOC {
 				outlines := extractDOCXOutlines(irJSON)
-				sections = removeTOCWord(sections, outlines, isEnglishItems(sections))
+				sections = removeTOCWord(sections, outlines, isEnglishItems(sections, ""))
 			}
 			if len(sections) == 0 {
 				sections = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
@@ -124,7 +124,7 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 		for _, line := range lines {
 			items = append(items, map[string]any{"text": line, "doc_type_kwd": "text"})
 		}
-		items = removeContentsTable(items, isEnglishItems(items))
+		items = removeContentsTable(items, isEnglishItems(items, ""), plainTOCRules)
 		if len(items) == 0 {
 			return ParseResult{
 				File: map[string]any{"name": filename, "format": "doc"},
