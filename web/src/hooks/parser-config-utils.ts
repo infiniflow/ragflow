@@ -68,12 +68,10 @@ export const normalizeParserConfig = (
     auto_questions,
     chunk_token_num,
     delimiter,
-    html4excel,
     layout_recognize,
     tag_kb_ids,
     topn_tags,
     filename_embd_weight,
-    task_page_size,
     pages,
     children_delimiter,
     use_parent_child,
@@ -81,8 +79,6 @@ export const normalizeParserConfig = (
     metadata,
     ...additionalParserConfig
   } = parserConfig;
-  delete additionalParserConfig.graphrag;
-  delete additionalParserConfig.raptor;
   // Do not persist MinerU-only options when another layout recognizer is
   // selected; leftover mineru_* keys used to falsely trigger MinerU fallback.
   if (!isMinerULayoutRecognize(layout_recognize)) {

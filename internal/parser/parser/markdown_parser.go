@@ -42,10 +42,8 @@ const dataURIPrefix = "data:image/"
 const GoMarkdown = "go_markdown"
 
 type MarkdownParser struct {
-	libType            string
-	ParseMethod        string
-	VLM                map[string]any
-	FlattenMediaToText bool
+	libType     string
+	ParseMethod string
 	// FetchRemoteImages controls whether HTTP(S) Markdown images are
 	// downloaded. NewMarkdownParser enables it for direct Markdown parsing;
 	// callers normalizing untrusted backend responses may disable it.
@@ -77,12 +75,6 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 	}
 	if v, ok := setup["parse_method"].(string); ok && v != "" {
 		p.ParseMethod = v
-	}
-	if v, ok := setup["vlm"].(map[string]any); ok {
-		p.VLM = v
-	}
-	if v, ok := setup["flatten_media_to_text"].(bool); ok {
-		p.FlattenMediaToText = v
 	}
 }
 
@@ -179,7 +171,7 @@ func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, da
 		state.resolveMedia = markdownMediaResolver(state, walkCtx, p.FetchRemoteImages)
 		defer func() { state.resolveMedia = previousMediaResolver }()
 	}
-	unresolvedImages := walkMarkdownBlocksWithImages(walkCtx, doc, &items, p.FlattenMediaToText, p.FetchRemoteImages, state)
+	unresolvedImages := walkMarkdownBlocksWithImages(walkCtx, doc, &items, p.FetchRemoteImages, state)
 	if state.err != nil {
 		return ParseResult{Err: state.err}
 	}
@@ -463,22 +455,12 @@ func markdownTableCells(line string) []string {
 // findBlockImage (per-block AST walk) and the item carries
 // `doc_type_kwd: "image"` together with either a run-cache reference
 // (refOnly), the base64-encoded payload (inline mode), or nothing when the
-// source was skipped. When flatten is true, image items use doc_type_kwd="text".
+// source was skipped.
 //
 // Tables are emitted through the HTML walker as structured items in source
 // order, with embedded images linked to their parent table.
-func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[string]any, flatten, fetchRemoteImages bool, htmlState *htmlWalkState) int {
+func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[string]any, fetchRemoteImages bool, htmlState *htmlWalkState) int {
 	budget := htmlState.budget
-	start := len(*out)
-	defer func() {
-		if flatten {
-			for _, item := range (*out)[start:] {
-				if item["doc_type_kwd"] == "image" {
-					item["doc_type_kwd"] = "text"
-				}
-			}
-		}
-	}()
 	unresolvedImages := 0
 	previousResolver := htmlState.resolveImage
 	if !htmlState.refOnly && !htmlState.skipImages {
@@ -534,7 +516,7 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 			for i, entry := range n.GetChildren() {
 				if containsMarkdownTable(entry) {
 					start := len(*out)
-					unresolvedImages += walkMarkdownBlocksWithImages(ctx, entry, out, flatten, fetchRemoteImages, htmlState)
+					unresolvedImages += walkMarkdownBlocksWithImages(ctx, entry, out, fetchRemoteImages, htmlState)
 					for _, item := range (*out)[start:] {
 						if item["doc_type_kwd"] == "text" && item["layout"] == nil {
 							item["layout"] = "list"
@@ -554,7 +536,7 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 			continue
 		case *ast.BlockQuote:
 			if containsMarkdownTable(n) {
-				unresolvedImages += walkMarkdownBlocksWithImages(ctx, n, out, flatten, fetchRemoteImages, htmlState)
+				unresolvedImages += walkMarkdownBlocksWithImages(ctx, n, out, fetchRemoteImages, htmlState)
 				continue
 			}
 			txt = leafText(n)
@@ -591,9 +573,7 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 		// the image payload (and doc_type_kwd:"image") is attached to the
 		// single block that actually contains the ![alt](src) reference.
 		// Scanning the whole document (the old approach) wrongly tagged
-		// every block as an image whenever any image was present. When
-		// flatten is true, keep doc_type_kwd="text" (Python
-		// parser.py:1034: flatten_media_to_text overrides image).
+		// every block as an image whenever any image was present.
 		if !htmlState.skipImages {
 			if imgURL, ok := findBlockImage(child); ok {
 				if htmlState.refOnly {

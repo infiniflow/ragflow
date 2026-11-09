@@ -54,9 +54,6 @@
                             }
                         },
                         "audio": {
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "aac",
                                 "aiff",
@@ -231,10 +228,7 @@
                             },
                             "setups": [
                                 {
-                                    "fileFormat": "audio",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "fileFormat": "audio"
                                 }
                             ]
                         },

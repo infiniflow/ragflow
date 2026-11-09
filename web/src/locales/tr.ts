@@ -636,9 +636,6 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       layoutRecognize: 'PDF ayrıştırıcı',
       layoutRecognizeTip:
         "PDF düzen analizi için görsel model kullanın. Belge başlıklarını, metin bloklarını, görüntüleri ve tabloları etkili bir şekilde konumlandırır. Naive seçeneği seçilirse yalnızca PDF'deki düz metin alınır. Bu seçeneğin şu anda YALNIZCA PDF belgeleri için çalıştığını lütfen unutmayın.",
-      taskPageSize: 'Görev sayfa boyutu',
-      taskPageSizeMessage: 'Lütfen görev sayfa boyutunu girin!',
-      taskPageSizeTip: `Düzen tanıma sırasında bir PDF dosyası parçalara bölünür ve işleme hızını artırmak için paralel olarak işlenir. Bu parametre her parçanın boyutunu ayarlar. Daha büyük parça boyutu, sayfalar arasındaki sürekli metni bölme olasılığını azaltır.`,
       addPage: 'Sayfa ekle',
       greaterThan: 'Geçerli değer bitiş değerinden büyük olmalıdır!',
       greaterThanPrevious:
@@ -668,8 +665,6 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       delimiterPreviewEmpty:
         'Sınırlayıcı yok — metin yalnızca boyuta göre parçalanacak.',
       delimiterPreviewCount: '({{count}})',
-      html4excel: "Excel'i HTML'ye dönüştür",
-      html4excelTip: `Genel parçalama yöntemi ile kullanın. Devre dışı bırakıldığında, datasetteki elektronik tablolar (XLSX veya XLS(Excel 97-2003)) anahtar-değer çiftlerine ayrıştırılır. Etkinleştirildiğinde HTML tablolarına ayrıştırılır; orijinal tabloda 12'den fazla satır varsa her 12 satırda bölünür. Ayrıntılar için bkz. https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.`,
       autoKeywords: 'Otomatik anahtar kelime',
       autoKeywordsTip: `Her parça için otomatik olarak N anahtar kelime çıkarır ve o anahtar kelimeleri içeren sorgular için sıralamalarını artırır. 'Yapılandırma'da belirtilen indeksleme modeli tarafından ekstra tokenlar tüketileceğini unutmayın. Bir parçaya eklenen anahtar kelimeleri parça listesinden kontrol edebilir veya güncelleyebilirsiniz. Ayrıntılar için bkz. https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoQuestions: 'Otomatik soru',
@@ -2745,13 +2740,6 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
     },
     flow: {
       exportCurrentPage: 'Geçerli sayfayı dışa aktar',
-      preprocess: {
-        preprocess: 'Ön işleme',
-        mainContent: 'Ana içerik',
-        abstract: 'Özet',
-        author: 'Yazar',
-        sectionTitle: 'Bölüm başlığı',
-      },
       includeHeadingContent: 'Üst başlık içeriğini ayır',
       includeHeadingContentTip:
         'Etkinleştirildiğinde parçalar yalnızca başlık yolunu ve içeriğini içerir; üst başlıktan hemen sonra gelen içerik ayrı bir parça olarak tutulur.',
@@ -2876,9 +2864,6 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
         "Görüntüler için bir metin kaynağı gerekir: OCR'yi veya görsel geliştirmeyi açık tutun.",
       visionEnhancementPromptTip:
         'Görsel model için özel talimat. Yerleşik istemi kullanmak için boş bırakın.',
-      flattenMediaToText: 'Görsel modeli devre dışı bırak',
-      flattenMediaToTextTip:
-        'Görüntü ve tablo bölümlerini düz metin olarak ele alır ve görsel geliştirmeyi atlar.',
       enableChildrenDelimiters: 'Alt parçalar alım için kullanılır',
       merge: 'Birleştir',
       split: 'Böl',
@@ -2976,7 +2961,7 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       retrievalDescription: `Belirtilen datasets içinden bilgi alan bir bileşen.`,
       generateDescription: `LLM'yi yanıt üretmeye yönlendiren bir bileşen.`,
       categorizeDescription:
-        'Geçerli girdiyi önceden tanımlanmış kategorilerden birine sınıflandırmak ve iş akışını o kategoriye bağlı bileşene yönlendirmek için bir sohbet modeli (LLM) veya bir SystemOne karar modeli kullanır. Her kategori için bir ad, açıklama ve örnekler belirtin.',
+        'Geçerli girdiyi önceden tanımlanmış kategorilerden birine sınıflandırmak ve iş akışını o kategoriye bağlı bileşene yönlendirmek için bir sohbet modeli (LLM) veya bir SystemOne veya Nace karar modeli kullanır. Her kategori için bir ad, açıklama ve örnekler belirtin.',
       relevantDescription: `Yukarı akış çıktısının kullanıcının son sorgusuna uygun olup olmadığını değerlendirmek için LLM kullanan bir bileşen.`,
       rewriteQuestionDescription: `Önceki diyalogların bağlamına dayanarak Etkileşim bileşeninden bir kullanıcı sorgusunu yeniden yazan bir bileşen.`,
       messageDescription:

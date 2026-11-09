@@ -429,10 +429,6 @@ export default {
       layoutRecognize: 'Analyseur PDF',
       layoutRecognizeTip:
         "Utilise un modèle visuel pour détecter les titres, blocs de texte, images et tableaux dans les PDF. Si l'option naïve est choisie, seul le texte brut est extrait. Ne fonctionne que sur les fichiers PDF.",
-      taskPageSize: 'Taille de page par tâche',
-      taskPageSizeMessage: 'Veuillez saisir une taille de page pour la tâche !',
-      taskPageSizeTip:
-        'Pendant la reconnaissance, un fichier PDF est divisé en segments traités en parallèle. Une taille plus grande réduit les coupures de texte entre pages.',
       addPage: 'Ajouter une page',
       greaterThan: 'La valeur actuelle doit être supérieure à "à" !',
       greaterThanPrevious:
@@ -453,9 +449,6 @@ export default {
       delimiter: 'Délimiteur de texte',
       delimiterTip:
         'Un délimiteur peut être un ou plusieurs caractères spéciaux. Pour plusieurs caractères, encadrez-les de backticks (``). Ex : \\n`##`;',
-      html4excel: 'Excel vers HTML',
-      html4excelTip:
-        'Utilisé avec la méthode "générale". Si désactivé, les tableaux sont convertis en paires clé-valeur. Sinon, ils deviennent des tableaux HTML divisés toutes les 12 lignes.',
       autoKeywords: 'Mots-clés automatiques',
       autoKeywordsTip:
         'Extrait automatiquement N mots-clés par segment. Consomme des tokens. Voir la documentation : https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',
@@ -2469,13 +2462,6 @@ Exemple : Virtual Hosted Style`,
       seconds: 'Secondes',
       subject: 'Sujet',
       // --- clés manquantes ajoutées ---
-      preprocess: {
-        preprocess: 'Prétraitement',
-        mainContent: 'Contenu principal',
-        abstract: 'Résumé',
-        author: 'Auteur',
-        sectionTitle: 'Titre de section',
-      },
       editTags: 'Modifier les étiquettes',
       editTagsDescription:
         'Ajoutez des étiquettes pour organiser et filtrer vos agents. Appuyez sur Entrée ou virgule pour ajouter.',
@@ -2551,9 +2537,6 @@ Idéal pour : les documents avec un contenu fluide et contextuellement lié — 
       oneChunkTitle: 'Note',
       oneChunkDescription:
         'Toutes les sections analysées seront fusionnées dans un seul bloc.',
-      flattenMediaToText: 'Désactiver le modèle de vision',
-      flattenMediaToTextTip:
-        "Traite les sections d'images et de tableaux comme du texte brut et ignore l'amélioration par vision.",
       enableChildrenDelimiters:
         'Les blocs enfants sont utilisés pour la récupération',
       merge: 'Fusionner',

@@ -29,7 +29,7 @@ func deepCopyValue(value interface{}) interface{} {
 	}
 }
 
-// DeepMergeMaps applies override onto base while preserving nested defaults such as raptor/graphrag.
+// DeepMergeMaps applies override onto base while preserving nested defaults.
 func DeepMergeMaps(base, override map[string]interface{}) map[string]interface{} {
 	merged := deepCopyMap(base)
 	if merged == nil {
@@ -66,7 +66,6 @@ func GetParserConfig(parserID string, parserConfig map[string]interface{}) map[s
 			"delimiter":        "\n",
 			"auto_keywords":    0,
 			"auto_questions":   0,
-			"html4excel":       false,
 			"topn_tags":        3,
 		},
 		"qa":           nil,

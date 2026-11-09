@@ -577,9 +577,6 @@ export default {
       layoutRecognize: 'PDF解析器',
       layoutRecognizeTip:
         '使用视觉模型进行 PDF 布局分析，以更好地识别文档结构，找到标题、文本块、图像和表格的位置。 如果选择 Naive 选项，则只能获取 PDF 的纯文本。请注意该功能只适用于 PDF 文档，对其他文档不生效。欲了解更多信息，请参阅 https://ragflow.io/docs/dataset_configuration#document-parsing-configuration。',
-      taskPageSize: '任务页面大小',
-      taskPageSizeMessage: '请输入任务页面大小！',
-      taskPageSizeTip: `如果使用布局识别，PDF 文件将被分成连续的组。 布局分析将在组之间并行执行，以提高处理速度。 “任务页面大小”决定组的大小。 页面大小越大，将页面之间的连续文本分割成不同块的机会就越低。`,
       addPage: '新增页面',
       greaterThan: '当前值必须大于起始值！',
       greaterThanPrevious: '当前值必须大于之前的值！',
@@ -608,8 +605,6 @@ export default {
       delimiterPreviewEmpty: '没有分隔符——文本将仅按大小切分。',
       delimiterPreviewCount: '（{{count}}）',
 
-      html4excel: '表格转 HTML',
-      html4excelTip: `与 General 切片方法配合使用。未开启状态下，表格文件（XLSX、XLS（Excel 97-2003））会按行解析为键值对。开启后，表格文件会被解析为 HTML 表格。若原始表格超过 12 行，系统会自动按每 12 行拆分为多个 HTML 表格。欲了解更多详情，请参阅 https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration。`,
       autoKeywords: '自动关键词提取数',
       autoKeywordsTip: `自动为每个文本块中提取 N 个关键词，用以提升查询精度。请注意：该功能采用在“配置”中指定的索引模型提取关键词，因此也会产生更多 Token 消耗。另外，你也可以手动更新生成的关键词。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。`,
       autoQuestions: '自动问题提取数',
@@ -2703,13 +2698,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
     },
     flow: {
       exportCurrentPage: '导出当页',
-      preprocess: {
-        preprocess: '预处理',
-        mainContent: '主内容',
-        abstract: '摘要',
-        author: '作者',
-        sectionTitle: '章节标题',
-      },
       agentCategory: '智能体分类',
       created: '创建于',
       editTags: '编辑标签',
@@ -2974,7 +2962,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       answerDescription: `该组件用作机器人与人类之间的接口。它接收用户的输入并显示机器人的计算结果。`,
       retrievalDescription: `此组件用于从知识库中检索相关信息。选择知识库。如果没有检索到任何内容，将返回“空响应”。`,
       generateDescription: `此组件用于调用 LLM 生成文本，请注意提示的设置。`,
-      categorizeDescription: `使用聊天模型（LLM）或 SystemOne 决策模型，将当前输入归入一个预定义类别，并将工作流路由到该类别连接的下游组件。请为每个类别指定名称、描述和示例。`,
+      categorizeDescription: `使用聊天模型（LLM）或 SystemOne 或 Nace 决策模型，将当前输入归入一个预定义类别，并将工作流路由到该类别连接的下游组件。请为每个类别指定名称、描述和示例。`,
       relevantDescription: `该组件用来判断upstream的输出是否与用户最新的问题相关，‘是’代表相关，‘否’代表不相关。`,
       messageDescription:
         '该组件用来返回工作流最后产生的数据内容和原先设置的文本内容。',

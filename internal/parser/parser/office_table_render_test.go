@@ -57,38 +57,6 @@ func TestXLSXParserEmitsSegmentedHTMLTable(t *testing.T) {
 	}
 }
 
-// TestXLSXParserHTML4ExcelIsIgnored pins the retirement: html4excel is still
-// accepted at the entry (with a deprecation warning) but selects nothing —
-// the wire is identical to the default path.
-func TestXLSXParserHTML4ExcelIsIgnored(t *testing.T) {
-	data := newTestXLSX(t, func(f *excelize.File) {
-		mustSetCell(t, f, "Sheet1", "A1", "Question")
-		mustSetCell(t, f, "Sheet1", "B1", "Answer")
-		mustSetCell(t, f, "Sheet1", "A2", "Q1")
-		mustSetCell(t, f, "Sheet1", "B2", "A1")
-	})
-	plain, _ := NewXLSXParser("")
-	plainRes := plain.ParseWithResult(t.Context(), "qa.xlsx", data)
-	if plainRes.Err != nil {
-		t.Fatalf("ParseWithResult: %v", plainRes.Err)
-	}
-	p, _ := NewXLSXParser("")
-	p.ConfigureFromSetup(map[string]any{"html4excel": true})
-	res := p.ParseWithResult(t.Context(), "qa.xlsx", data)
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
-	}
-	if len(res.JSON) != 1 {
-		t.Fatalf("items = %d, want one atomic table item", len(res.JSON))
-	}
-	if res.JSON[0].ToMap()["doc_type_kwd"] != "table" || res.JSON[0].ToMap()["table"] == nil {
-		t.Fatalf("html4excel item = %#v", res.JSON[0])
-	}
-	if !reflect.DeepEqual(res.JSON, plainRes.JSON) {
-		t.Errorf("html4excel changed the wire: %v vs %v", res.JSON, plainRes.JSON)
-	}
-}
-
 func TestXLSXParserDoesNotPrechunkRows(t *testing.T) {
 	const dataRows = 257
 	data := newTestXLSX(t, func(f *excelize.File) {

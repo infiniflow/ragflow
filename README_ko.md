@@ -76,7 +76,7 @@
 
 [https://cloud.ragflow.io](https://cloud.ragflow.io)에서 저희 클라우드 서비스를 이용해 보세요.
 
-로컬 배포는 [자체 호스팅](#-자체-호스팅)을 참조하세요.
+로컬 배포는 [자체 호스팅](#-로컬-배포)을 참조하세요.
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>

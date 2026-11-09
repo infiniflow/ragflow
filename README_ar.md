@@ -75,7 +75,7 @@
 
 جرّب النسخة التجريبية على [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
-للنشر محليًا، راجع قسم [النشر المحلي](#-الاستضافة-الذاتية).
+للنشر محليًا، راجع قسم [النشر المحلي](#-النشر-المحلي).
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>

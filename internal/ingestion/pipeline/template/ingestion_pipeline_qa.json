@@ -54,55 +54,32 @@
                             }
                         },
                         "docx": {
-                            "flatten_media_to_text": false,
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "docx"
-                            ],
-                            "vlm": {}
+                            ]
                         },
                         "markdown": {
-                            "flatten_media_to_text": false,
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "md",
                                 "markdown",
                                 "mdx"
-                            ],
-                            "vlm": {}
+                            ]
                         },
                         "pdf": {
-                            "flatten_media_to_text": false,
                             "parse_method": "DeepDOC",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "pdf"
-                            ],
-                            "vlm": {}
+                            ]
                         },
                         "spreadsheet": {
-                            "flatten_media_to_text": false,
                             "parse_method": "DeepDOC",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "xls",
                                 "xlsx",
                                 "csv"
-                            ],
-                            "vlm": {}
+                            ]
                         },
                         "text&code": {
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "txt"
                             ]
@@ -225,43 +202,20 @@
                             "setups": [
                                 {
                                     "fileFormat": "pdf",
-                                    "flatten_media_to_text": false,
-                                    "parse_method": "DeepDOC",
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "vlm": {}
+                                    "parse_method": "DeepDOC"
                                 },
                                 {
                                     "fileFormat": "spreadsheet",
-                                    "flatten_media_to_text": false,
-                                    "parse_method": "DeepDOC",
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "vlm": {}
+                                    "parse_method": "DeepDOC"
                                 },
                                 {
-                                    "fileFormat": "markdown",
-                                    "flatten_media_to_text": false,
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "vlm": {}
+                                    "fileFormat": "markdown"
                                 },
                                 {
-                                    "fileFormat": "text&code",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "fileFormat": "text&code"
                                 },
                                 {
-                                    "fileFormat": "docx",
-                                    "flatten_media_to_text": false,
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "vlm": {}
+                                    "fileFormat": "docx"
                                 }
                             ]
                         },

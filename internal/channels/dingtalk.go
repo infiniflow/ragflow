@@ -237,7 +237,7 @@ func (c *dingTalkChannel) Send(ctx context.Context, msg core.OutgoingMessage) er
 			"text":  msg.Text,
 		},
 	}
-	return c.postWebhook(ctx, sessionWebhook, p)
+	return redactURLError(c.postWebhook(ctx, sessionWebhook, p))
 }
 
 // run keeps the DingTalk SDK stream client active until the channel stops.

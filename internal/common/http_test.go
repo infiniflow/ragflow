@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -291,11 +292,57 @@ func TestProviderSlowStreamReportsTimingsWithoutDebug(t *testing.T) {
 // from it behind for later tests.
 func resetSharedHTTPClients(t *testing.T) {
 	t.Helper()
-	previousSSRF, previousSchemeSafe := ssrfHttpClient, schemeSafeHttpClient
-	ssrfHttpClient, schemeSafeHttpClient = nil, nil
+	previousSSRF, previousSchemeSafe := ssrfHTTPClient, schemeSafeHTTPClient
+	ssrfHTTPClient = sync.OnceValue(newSSRFHTTPClient)
+	schemeSafeHTTPClient = sync.OnceValue(newSchemeSafeHTTPClient)
 	t.Cleanup(func() {
-		ssrfHttpClient, schemeSafeHttpClient = previousSSRF, previousSchemeSafe
+		ssrfHTTPClient, schemeSafeHTTPClient = previousSSRF, previousSchemeSafe
 	})
+}
+
+func TestSharedHTTPClientsConcurrentInitialization(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		get  func() *http.Client
+	}{
+		{name: "SSRF", get: GetSSRFHTTPClient},
+		{name: "SchemeSafe", get: GetSchemeSafeHTTPClient},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetSharedHTTPClients(t)
+			t.Setenv(EnvLLMHTTPResponseHeaderTimeout, "17s")
+			const workers = 64
+			clients := make([]*http.Client, workers)
+			start := make(chan struct{})
+			var wg sync.WaitGroup
+			for i := range clients {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					<-start
+					clients[i] = tc.get()
+				}()
+			}
+			close(start)
+			wg.Wait()
+
+			client := clients[0]
+			if client == nil {
+				t.Fatal("shared HTTP client is nil")
+			}
+			for i, got := range clients {
+				if got != client {
+					t.Errorf("worker %d got client %p, want %p", i, got, client)
+				}
+			}
+			if got := tc.get(); got != client {
+				t.Errorf("subsequent call got client %p, want %p", got, client)
+			}
+			if got := responseHeaderTimeoutOf(t, client); got != 17*time.Second {
+				t.Errorf("response header timeout = %v, want 17s", got)
+			}
+		})
+	}
 }
 
 func responseHeaderTimeoutOf(t *testing.T, client *http.Client) time.Duration {

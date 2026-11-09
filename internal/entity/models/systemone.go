@@ -155,7 +155,11 @@ func (m *SystemOneModel) Decide(ctx context.Context, modelName *string, request 
 			return nil, fmt.Errorf("systemone: invalid probability for question %q", id)
 		}
 	}
-	recordResponseUsage(modelUsage, response.ID, &TokenUsage{
+	requestID := response.ID
+	if requestID == "" {
+		requestID = response.RequestID
+	}
+	recordResponseUsage(modelUsage, requestID, &TokenUsage{
 		PromptTokens: response.Usage.InputTokens, CompletionTokens: response.Usage.OutputTokens,
 		TotalTokens: response.Usage.InputTokens + response.Usage.OutputTokens,
 	}, "decision")

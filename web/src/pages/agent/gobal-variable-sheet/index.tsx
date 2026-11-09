@@ -54,7 +54,7 @@ export const GlobalParamSheet = (props: IGlobalParamModalProps) => {
     const res = await saveGraph(undefined, {
       globalVariables: param,
     });
-    if (res.code === 0) {
+    if (res?.code === 0) {
       refetch();
     }
   };

@@ -238,9 +238,11 @@ type DecisionAnswer struct {
 }
 
 type DecideResponse struct {
-	ID      string                    `json:"id"`
-	Answers map[string]DecisionAnswer `json:"answers"`
-	Usage   struct {
+	ID string `json:"id"`
+	// RequestID is the same identifier under the name Nace uses for it.
+	RequestID string                    `json:"request_id,omitempty"`
+	Answers   map[string]DecisionAnswer `json:"answers"`
+	Usage     struct {
 		InputTokens  int `json:"input_tokens"`
 		OutputTokens int `json:"output_tokens"`
 	} `json:"usage"`

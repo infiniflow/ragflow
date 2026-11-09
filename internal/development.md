@@ -183,13 +183,40 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 >   SYS_LIBS="-fuse-ld=lld -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
 > fi
 >
-> export CGO_CFLAGS="-I${RAGFLOW_DEPS}/office_oxide/include/office_oxide_c"
+> # Native libs are version-keyed under <lib>/v<version>/ (one mounted cache can
+> # hold several versions at once), matching the layout download_dev_deps.py and
+> # build.sh resolve. Resolve each version from its single source of truth — NOT
+> # by glob + `head -1`, which silently pins the lexicographically-oldest version
+> # in the cache (e.g. v0.1.12 over the pinned v0.1.16, dropping PPT97 slide
+> # content). build.sh does exactly this in setup_cgo_env(); mirror it here.
+> # Run this snippet from the ragflow repo root (where go.mod lives).
+> source tools/scripts/native_lib_version.sh
+> REPO_ROOT="$(pwd)"
+> OFFICE_OXIDE_VERSION="$(go_module_version "github.com/yfedoseev/office_oxide/go" "$REPO_ROOT")"
+> PDFIUM_STATIC_VERSION="$(pdfium_static_version "$REPO_ROOT")"
+> PDF_OXIDE_VERSION="$(go_module_version "github.com/yfedoseev/pdf_oxide/go" "$REPO_ROOT")"
+>
+> OFFICE_OXIDE_PREFIX="${RAGFLOW_DEPS}/office_oxide/v${OFFICE_OXIDE_VERSION}"
+> PDFIUM_PREFIX="${RAGFLOW_DEPS}/pdfium-static/v${PDFIUM_STATIC_VERSION}"
+> PDF_OXIDE_PREFIX="${RAGFLOW_DEPS}/pdf_oxide/v${PDF_OXIDE_VERSION}"
+>
+> OFFICE_OXIDE_A="${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a"
+> PDFIUM_A="${PDFIUM_PREFIX}/lib/libpdfium.a"
+> PDFIUM_CXX_A="${PDFIUM_PREFIX}/lib/libc++.a"
+> PDFIUM_CXXABI_A="${PDFIUM_PREFIX}/lib/libc++abi.a"
+> PDF_OXIDE_A="${PDF_OXIDE_PREFIX}/lib/${PLATFORM}/libpdf_oxide.a"
+>
+> # Derive the include dir from the resolved office_oxide archive: the shell does
+> # not expand globs inside double quotes, so a literal
+> # ".../office_oxide/v*/include/..." passed to CGO_CFLAGS would never resolve and
+> # cgo would fail to find office_oxide.h on the first native compile.
+> export CGO_CFLAGS="-I$(dirname "$(dirname "$OFFICE_OXIDE_A")")/include/office_oxide_c"
 > export CGO_LDFLAGS="\
->     ${RAGFLOW_DEPS}/office_oxide/lib/liboffice_oxide.a \
->     ${RAGFLOW_DEPS}/pdfium-static/lib/libpdfium.a \
->     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++.a \
->     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++abi.a \
->     ${RAGFLOW_DEPS}/pdf_oxide/lib/${PLATFORM}/libpdf_oxide.a \
+>     ${OFFICE_OXIDE_A} \
+>     ${PDFIUM_A} \
+>     ${PDFIUM_CXX_A} \
+>     ${PDFIUM_CXXABI_A} \
+>     ${PDF_OXIDE_A} \
 >     ${ORT_LINK} \
 >     ${SYS_LIBS}"
 > ```
@@ -214,23 +241,27 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 > Since `build.sh` (`build_go`) now **fails fast** when ORT is absent from
 > `CGO_LDFLAGS`, this breakage surfaces at build time instead of at runtime. If
 > you see `Error: ONNX Runtime static libraries are not linked`, run
-> `uv run tools/scripts/download_dev_deps.py` (or pre-seed
-> `/opt/ragflow-native-libs/onnxruntime` as the CI runner image does). There is
-> no ORT-free production build path — if ORT is absent the binary fails at
-> startup, so the remedy is always to seed the static lib above, never to build
-> without it.
+> `uv run tools/scripts/download_dev_deps.py` (or pre-seed the versioned user
+> cache at `${RAGFLOW_NATIVE_LIBS_DIR:-$HOME/ragflow-native-libs}/onnxruntime/static_lib
+> `; CI mounts the host cache into the builder). There is no ORT-free
+> production build path — if ORT is absent the binary fails at startup, so the
+> remedy is always to seed the static lib above, never to build without it.
 
-> **Note**: The ONNX Runtime native version is pinned in a few places that must
-> stay in sync. Bumping it in one spot and not the others fails the build with
+> **Note**: The ONNX Runtime native version is pinned in two places that must
+> stay in sync. Bumping one and not the other fails the build with
 > `Error: ONNX Runtime version is inconsistent`:
 > - `internal/common/environments.go` — `DeepDocORTVersion`
 > - `Dockerfile` — `ARG ORT_VERSION`
-> - `tools/scripts/download_dev_deps.py` — `ORT_VERSION` (used by the dev downloader to fetch the matching release; build.sh does not grep it, but it must match what gets linked)
+>
+> `build.sh` and `tools/scripts/download_dev_deps.py` derive the ORT version at
+> build/download time from `DeepDocORTVersion` in `environments.go` (the Go const
+> is the single source of truth), so the downloader has no separate `ORT_VERSION`
+> pin to edit. To upgrade ORT, edit the two entries above to the same version,
+> then run the check.
 >
 > `build.sh` runs this consistency check automatically before the Go build
 > (through `check_go_deps`) and fails fast on any mismatch. Run it on demand
-> with `./build.sh --check-ort-version`. To upgrade ORT, edit every entry above
-> to the same version, then run the check. The Python pip `onnxruntime==` pin in
+> with `./build.sh --check-ort-version`. The Python pip `onnxruntime==` pin in
 > `pyproject.toml` is versioned independently and is intentionally not part of
 > this check.
 
@@ -243,9 +274,10 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 >   published `onnxruntime-v<ver>-<target>.zip.sha256` sidecar. A local ZIP
 >   mismatch only emits a warning with the expected/actual SHA-256 and the
 >   refresh command (`rm -f <zip>` + `uv run tools/scripts/download_dev_deps.py`);
->   the build continues checking and linking the extracted static libraries. CI seeds
->   ORT from `/opt` and has no local zip, so the check is skipped there (the bake
->   is authoritative). This matters because the `onnxruntime_go` binding reaches
+>   the build continues checking and linking the extracted static libraries. On CI
+>   the version-keyed cache is mounted from the build host and no local ZIP is
+>   present, so the sha256 check is skipped there and the mounted cache seed is
+>   treated as authoritative. This matters because the `onnxruntime_go` binding reaches
 >   ORT only through the OrtApi function-pointer table
 >   (`ort_api->SessionGetInitializer*`), so a `.a` lacking a custom slot links
 >   successfully and only crashes at runtime — not at link time.

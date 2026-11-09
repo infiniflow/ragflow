@@ -153,6 +153,7 @@ A quick test: if `n & (n-1) == 0`, the value is a power of 2 (binary). Otherwise
 | **Tencent (Hunyuan)** | Decimal (32K, 131K, 262K) | Decimal (8K, 64K) | [Tencent Cloud Docs](https://cloud.tencent.com/document/product/1759) |
 | **Xiaomi (MiMo)** | Binary (1M) | Binary (8K) | [MiMo Docs](https://huggingface.co/XiaomiMiMo) |
 | **HuggingFace** | Varies (hosted models) | Varies | [HuggingFace Model Cards](https://huggingface.co/docs/hub/model-cards) |
+| **Nace (Drex)** | Binary (262,144 = the state plus one question, per question; decision models only) | None — answers are probabilities, not generated tokens | [Nace Docs](https://console.nace.ai/docs/drex/reference/limits) |
 
 ### Key Takeaways
 

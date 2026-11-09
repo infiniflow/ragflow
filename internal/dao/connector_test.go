@@ -57,8 +57,8 @@ func TestListByDatasetIDTxCollapsesDuplicateLinks(t *testing.T) {
 	db := setupConnectorTestDB(t)
 
 	connectors := []entity.Connector{
-		{ID: "connector-a", TenantID: "tenant-1", Name: "A", Source: "s3", Status: "schedule", Config: entity.JSONMap{}},
-		{ID: "connector-b", TenantID: "tenant-1", Name: "B", Source: "oss", Status: "schedule", Config: entity.JSONMap{}},
+		{ID: "connector-a", TenantID: "tenant-1", Name: "A", Source: "s3", Status: "schedule", Config: entity.ConnectorConfig{}},
+		{ID: "connector-b", TenantID: "tenant-1", Name: "B", Source: "oss", Status: "schedule", Config: entity.ConnectorConfig{}},
 	}
 	if err := db.Create(&connectors).Error; err != nil {
 		t.Fatalf("create connectors: %v", err)
