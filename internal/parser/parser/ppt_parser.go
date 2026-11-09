@@ -24,7 +24,11 @@ type PPTParser struct {
 }
 
 func NewPPTParser() *PPTParser {
-	return &PPTParser{pptx: PPTXParser{format: "ppt"}}
+	return &PPTParser{pptx: PPTXParser{
+		format:                         "ppt",
+		TCADPTableResultType:           "1",
+		TCADPMarkdownImageResponseType: "1",
+	}}
 }
 
 func (p *PPTParser) String() string {
