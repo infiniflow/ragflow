@@ -343,6 +343,7 @@ const apiEndpoints = {
   removeSystemToken: `${restAPIv1}/system/keys`,
   getSystemConfig: `${restAPIv1}/system/config`,
   setLangfuseConfig: `${restAPIv1}/langfuse/api-key`,
+  setFutureAGIConfig: `${restAPIv1}/futureagi/api-key`,
 
   // flow
   listAgentTemplate: `${restAPIv1}/agents/templates`,

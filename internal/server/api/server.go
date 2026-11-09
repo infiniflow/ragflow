@@ -90,6 +90,11 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 }
 
 func startServer(ctx context.Context, serverName string, arguments *bootstrap.ServerArgs) error {
+	defer func() {
+		flushCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		service.ShutdownFutureAGIClients(flushCtx)
+	}()
 
 	globalConfig := server.GetConfig()
 	serverMode := globalConfig.GetMode()
@@ -438,11 +443,11 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 		}
 	}
 	if err = shutdownHTTPServer(shutdownCtx, "API", srv); err != nil {
-		return err
+		runErr = errors.Join(runErr, err)
 	}
 	if mcpSrv != nil {
 		if err = shutdownHTTPServer(shutdownCtx, "MCP", mcpSrv); err != nil {
-			return err
+			runErr = errors.Join(runErr, err)
 		}
 	}
 	return runErr

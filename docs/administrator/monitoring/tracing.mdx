@@ -7,7 +7,7 @@ sidebar_custom_props: {
 ---
 # Tracing
 
-Observability & Tracing with Langfuse.
+Record chat traces with Langfuse or Future AGI. Configure either integration independently, or use both.
 
 ---
 
@@ -65,3 +65,42 @@ Langfuse delivery runs asynchronously, so a tracing delivery failure does not st
 :::tip NOTE
 Use the recorded generation input, output, model name, and token usage to inspect a traced chat request.
 :::
+
+---
+
+## Trace chats with Future AGI
+
+Send chat turns to [Future AGI Observe](https://docs.futureagi.com/docs/observe) using the Go server's native OTLP/HTTP JSON exporter. No additional SDK or collector is required.
+
+### Configure tracing
+
+1. In Future AGI, create an Observe project and obtain an API key and secret key.
+2. In RAGFlow, open your avatar menu, select **API**, and scroll to **Future AGI**.
+3. Click **Configuration**, enter both keys and the **Observe project** name. Leave **Endpoint** blank to use `https://api.futureagi.com`.
+4. Choose whether to enable **Redact content**, then click **Save**. RAGFlow verifies the credentials with an empty export before storing them.
+
+:::caution Content and credentials
+Content capture is on once you configure tracing: questions, model prompts and responses, retrieved chunk text, document names and web URLs can leave your RAGFlow deployment. Enable **Redact content** before sending sensitive requests to omit these fields and replace error text. IDs, retrieval scores, model names, token counts and timings remain visible.
+
+Keys are stored in the RAGFlow database, so protect database access and backups. Settings reads return only masked keys. Leave the key fields blank when editing an existing configuration to retain them; changing the endpoint requires entering both keys again.
+:::
+
+Use only an endpoint you trust. The server sends credentials to the configured destination and rejects redirects. Custom HTTP(S) endpoints, including private-network collectors, are supported; endpoint validation is not a network allowlist. Restrict outbound access at the deployment boundary if your environment requires it, and use HTTPS outside a trusted local network. The exporter posts to `/tracer/v1/traces` beneath the endpoint, unless it already ends with that path.
+
+### Find your first trace
+
+1. Send a message to a Chat with a Dataset or web search enabled.
+2. Open the configured Observe project in Future AGI and find `ragflow.chat`.
+3. Expand its children to inspect retrieval and the answer-model call.
+
+Each recorded turn has a `ragflow.chat` root (`CHAIN`). The standard RAG pipeline adds `ragflow.retrieval` (`RETRIEVER`) with chunk IDs, scores and retrieval settings, and `ragflow.llm` (`LLM`) with the answer model and token counts. LLM-only chats omit the retrieval child. Counts are RAGFlow's local token estimates, not provider billing usage. Retrieved documents and content fields have size limits.
+
+The integration covers chat-session completions, the OpenAI-compatible chat endpoint and embedded chatbots that use the Go chat pipeline, including streaming. Agentic chat produces a turn-level trace; internal agent tools, individual reasoning calls, ingestion and standalone retrieval are not instrumented by this integration.
+
+### Manage delivery
+
+Settings are tenant-scoped. Tenants without a configuration export nothing. Delete the configuration to stop tracing new turns; already queued traces may still be delivered.
+
+Delivery is asynchronous and best-effort. Collector failures do not fail chat responses. The exporter limits queue size, total queued bytes, payload size and cached clients; overload drops traces rather than waiting for the collector. Shutdown attempts a bounded flush. If traces are missing, check the selected project and endpoint, outbound connectivity, and the rate-limited exporter warnings in the server logs.
+
+The authenticated `/api/v1/futureagi/api-key` endpoint also supports GET, POST/PUT and DELETE. Save accepts `api_key`, `secret_key`, `project_name`, optional `endpoint`, and `redact` (default `false`). GET and save responses mask both keys. This integration operates independently of Langfuse and does not enable enterprise observability collection.

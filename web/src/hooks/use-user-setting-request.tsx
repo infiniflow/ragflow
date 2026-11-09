@@ -19,14 +19,21 @@ import { TenantRole } from '@/ee/constants/team';
 import { ResponseGetType } from '@/interfaces/database/base';
 import { IToken } from '@/interfaces/database/chat';
 import { ITenantInfo } from '@/interfaces/database/dataset';
-import { ILangfuseConfig } from '@/interfaces/database/system';
+import {
+  IFutureAGIConfig,
+  ILangfuseConfig,
+} from '@/interfaces/database/system';
 import {
   ITenant,
   ITenantUser,
   IUserInfo,
 } from '@/interfaces/database/user-setting';
-import { ISetLangfuseConfigRequestBody } from '@/interfaces/request/system';
+import {
+  ISetFutureAGIConfigRequestBody,
+  ISetLangfuseConfigRequestBody,
+} from '@/interfaces/request/system';
 import { DEFAULT_LANGUAGE_CODE, supportedLanguages } from '@/locales/config';
+import futureAGIService from '@/services/futureagi-service';
 import kbService from '@/services/knowledge-service';
 import userService, {
   addTenantUser,
@@ -55,6 +62,9 @@ export const enum UserSettingApiAction {
   AgreeTenant = 'agreeTenant',
   SetLangfuseConfig = 'setLangfuseConfig',
   DeleteLangfuseConfig = 'deleteLangfuseConfig',
+  SetFutureAGIConfig = 'setFutureAGIConfig',
+  DeleteFutureAGIConfig = 'deleteFutureAGIConfig',
+  FetchFutureAGIConfig = 'fetchFutureAGIConfig',
   ListPipelines = 'listPipelines',
   FetchLangfuseConfig = 'fetchLangfuseConfig',
 }
@@ -510,4 +520,91 @@ export const useFetchLangfuseConfig = () => {
   });
 
   return { data, loading };
+};
+
+export const FutureAGIKeys = {
+  config: () => [UserSettingApiAction.FetchFutureAGIConfig] as const,
+  save: () => [UserSettingApiAction.SetFutureAGIConfig] as const,
+  remove: () => [UserSettingApiAction.DeleteFutureAGIConfig] as const,
+};
+
+export const useSetFutureAGIConfig = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: FutureAGIKeys.save(),
+    onSuccess: async (code) => {
+      if (code === 0) {
+        await queryClient.invalidateQueries({
+          queryKey: FutureAGIKeys.config(),
+        });
+      }
+    },
+    mutationFn: async (params: ISetFutureAGIConfigRequestBody) => {
+      const { data } = await futureAGIService.setConfig(params);
+      if (data.code === 0) {
+        message.success(t('message.operated'));
+      }
+      return data?.code;
+    },
+  });
+
+  return { data, loading, setFutureAGIConfig: mutateAsync };
+};
+
+export const useDeleteFutureAGIConfig = () => {
+  const queryClient = useQueryClient();
+  const { t } = useTranslation();
+  const {
+    data,
+    isPending: loading,
+    mutateAsync,
+  } = useMutation({
+    mutationKey: FutureAGIKeys.remove(),
+    onSuccess: async (code) => {
+      if (code === 0) {
+        await queryClient.invalidateQueries({
+          queryKey: FutureAGIKeys.config(),
+        });
+      }
+    },
+    mutationFn: async () => {
+      const { data } = await futureAGIService.deleteConfig();
+      if (data.code === 0) {
+        if (data.data) {
+          message.success(t('message.deleted'));
+        } else {
+          message.warning(t('message.noFutureAGIConfigToDelete'));
+        }
+      }
+      return data?.code;
+    },
+  });
+
+  return { data, loading, deleteFutureAGIConfig: mutateAsync };
+};
+
+export const useFetchFutureAGIConfig = () => {
+  const {
+    data,
+    isPending: loading,
+    isError,
+  } = useQuery<IFutureAGIConfig | null>({
+    queryKey: FutureAGIKeys.config(),
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await futureAGIService.getConfig({}, true);
+
+      if (data.code !== 0) {
+        throw new Error(data.message);
+      }
+      return data.data ?? null;
+    },
+  });
+
+  return { data, loading, isError };
 };
