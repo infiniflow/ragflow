@@ -75,7 +75,7 @@
 
 当社のクラウドサービスをぜひお試しください：[https://cloud.ragflow.io](https://cloud.ragflow.io)。
 
-ローカルにデプロイする場合は、[セルフホスティング](#-セルフホスティング)を参照してください。
+ローカルにデプロイする場合は、[セルフホスティング](#-ローカルデプロイ)を参照してください。
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
