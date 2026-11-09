@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -617,38 +618,24 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 
 // kcChatInvoker adapts a factory-created ChatModel to the knowledge compiler.
 type kcChatInvoker struct {
-	factory  *service.ModelFactory
-	tenantID string
-	llmID    string
+	factory                      *service.ModelFactory
+	tenantID                     string
+	llmID                        string
+	llmConcurrencyMu             sync.Mutex
+	activeLLMRequests            int
+	llmConcurrencyReporterCancel context.CancelFunc
 }
 
-func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (response *kc.ChatResponse, resultErr error) {
-	callStartedAt := time.Now()
-	runtime.ReportProgressMessage(ctx, "Compiler", "[RUNNING] LLM request started; waiting for response")
-	terminalFailureReported := false
-	defer func() {
-		if resultErr != nil {
-			// GenJSON owns reporting when it disables this adapter's retry loop.
-			// Otherwise, report setup/cancellation errors that did not reach the
-			// provider retry reporter.
-			if !req.DisableRetry && !terminalFailureReported {
-				runtime.ReportProgressMessage(ctx, "Compiler", "[ERROR] LLM call failed: "+kc.CompactError(resultErr))
-			}
-			return
-		}
-		runtime.ReportProgressMessage(
-			ctx,
-			"Compiler",
-			fmt.Sprintf("[SUCCESS] LLM response received in %s", time.Since(callStartedAt).Round(time.Millisecond)),
-		)
-	}()
-
+func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatResponse, error) {
 	llmID := c.llmID
 	if req.LLMID != "" {
 		llmID = req.LLMID
 	}
 	chatModel, err := c.factory.NewChatModel(permission.WithTenantID(ctx, c.tenantID), llmID)
 	if err != nil {
+		if !req.DisableRetry {
+			runtime.ReportProgressMessage(ctx, "Compiler", "[ERROR] LLM call failed: "+kc.CompactError(err))
+		}
 		return nil, err
 	}
 	msgs := []models.Message{
@@ -705,7 +692,10 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (response 
 		// providers legitimately need several minutes to return a response.
 		attemptCtx, cancel := context.WithTimeout(ctx, kcChatAttemptTimeout)
 		defer cancel()
-		r, err := chatModel.ChatWithMessages(attemptCtx, msgs, config, nil)
+		r, err := func() (*models.ChatResponse, error) {
+			defer c.beginLLMRequest(ctx)()
+			return chatModel.ChatWithMessages(attemptCtx, msgs, config, nil)
+		}()
 		if err != nil {
 			if !req.DisableRetry {
 				final := !appcommon.IsTransientError(err) || attempt > kcChatRetryMax
@@ -742,6 +732,57 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (response 
 	return &kc.ChatResponse{Content: content}, nil
 }
 
+func (c *kcChatInvoker) beginLLMRequest(ctx context.Context) func() {
+	c.llmConcurrencyMu.Lock()
+	c.activeLLMRequests++
+	if c.llmConcurrencyReporterCancel == nil {
+		runtime.ReportProgressMessage(
+			ctx,
+			"Compiler",
+			fmt.Sprintf("[RUNNING] Active LLM requests: %d", c.activeLLMRequests),
+		)
+		reporterCtx, cancel := context.WithCancel(ctx)
+		c.llmConcurrencyReporterCancel = cancel
+		go c.reportLLMConcurrency(reporterCtx, ctx)
+	}
+	c.llmConcurrencyMu.Unlock()
+
+	return func() {
+		c.llmConcurrencyMu.Lock()
+		c.activeLLMRequests--
+		c.llmConcurrencyMu.Unlock()
+	}
+}
+
+func (c *kcChatInvoker) reportLLMConcurrency(reporterCtx, progressCtx context.Context) {
+	ticker := time.NewTicker(kcLLMConcurrencyReportInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-reporterCtx.Done():
+			return
+		case <-ticker.C:
+			c.llmConcurrencyMu.Lock()
+			if c.activeLLMRequests > 0 {
+				runtime.ReportProgressMessage(
+					progressCtx,
+					"Compiler",
+					fmt.Sprintf("[RUNNING] Active LLM requests: %d", c.activeLLMRequests),
+				)
+				c.llmConcurrencyMu.Unlock()
+				continue
+			}
+			if c.llmConcurrencyReporterCancel != nil {
+				c.llmConcurrencyReporterCancel()
+				c.llmConcurrencyReporterCancel = nil
+			}
+			runtime.ReportProgressMessage(progressCtx, "Compiler", "[INFO] Active LLM requests: 0")
+			c.llmConcurrencyMu.Unlock()
+			return
+		}
+	}
+}
+
 // kcChatRetryMax bounds how many times a transient LLM transport failure is
 // retried. Each attempt may run up to the driver's HTTP timeout, so the count
 // stays small to avoid unbounded wall-clock latency inside one compile.
@@ -754,6 +795,8 @@ const kcChatAttemptTimeout = 20 * time.Minute
 
 // kcChatRetryDelay is the initial exponential-backoff delay between retries.
 const kcChatRetryDelay = 2 * time.Second
+
+const kcLLMConcurrencyReportInterval = 15 * time.Second
 
 // kcEmbedder adapts model resolution to the knowledge_compiler Embedder seam.
 // Vectors are returned as []float32 to match the component's product schema.

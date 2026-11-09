@@ -50,14 +50,26 @@ export function ProgressLogPanel({
                   ? 'bg-state-error'
                   : entry.isWarning
                     ? 'bg-state-warning'
-                    : 'bg-state-success',
+                    : entry.isRunning
+                      ? 'bg-accent-primary'
+                      : entry.isInfo
+                        ? 'bg-text-secondary'
+                        : 'bg-state-success',
               )}
             />
             <span
               className={cn('break-all text-sm', {
                 'text-state-error': entry.isError,
                 'text-state-warning': entry.isWarning && !entry.isError,
-                'text-text-primary': !entry.isError && !entry.isWarning,
+                'text-accent-primary':
+                  entry.isRunning && !entry.isError && !entry.isWarning,
+                'text-text-secondary':
+                  entry.isInfo && !entry.isError && !entry.isWarning,
+                'text-text-primary':
+                  !entry.isError &&
+                  !entry.isWarning &&
+                  !entry.isRunning &&
+                  !entry.isInfo,
               })}
             >
               {entry.text}

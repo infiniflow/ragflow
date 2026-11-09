@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	agentruntime "ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -1144,7 +1145,32 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 				Score:      g.score,
 			})
 		}
-		batched, err = deduper.DecideBatch(ctx, batched)
+		llmCtx, cancelLLM := context.WithCancel(ctx)
+		var llmMessageMu sync.Mutex
+		llmCtx = agentruntime.WithProgressMessageCallback(llmCtx, func(component, message string) {
+			llmMessageMu.Lock()
+			defer llmMessageMu.Unlock()
+			if llmCtx.Err() != nil {
+				return
+			}
+			c.reportProgress(
+				llmCtx,
+				tenant,
+				kb,
+				token,
+				taskTypes,
+				0.82,
+				"llm_merge",
+				fmt.Sprintf("%s: %s", component, message),
+			)
+		})
+		batched, err = deduper.DecideBatch(llmCtx, batched)
+		cancelLLM()
+		llmMessageMu.Lock()
+		llmMessageMu.Unlock()
+		if ctx.Err() == nil {
+			c.reportProgress(ctx, tenant, kb, token, taskTypes, 0.82, "llm_merge", "[INFO] Active LLM requests: 0")
+		}
 		if err != nil {
 			return err
 		}
