@@ -25,6 +25,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/observability"
 
 	"go.uber.org/zap"
 )
@@ -51,6 +52,7 @@ func RerankByModel(
 	rankFeature map[string]float64,
 	language string,
 ) (sim []float64, tsim []float64, vsim []float64, err error) {
+	defer observability.BeginRetrieval("retrieval_rerank")(&err)
 	if chunks == nil || len(chunks) == 0 {
 		return []float64{}, []float64{}, []float64{}, nil
 	}
