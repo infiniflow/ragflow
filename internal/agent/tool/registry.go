@@ -669,6 +669,27 @@ func buildTavilyTool(params map[string]any) (einotool.BaseTool, error) {
 		}
 		defaults.Days = days
 	}
+	if value, ok := params["topic"]; ok {
+		topic, valid := value.(string)
+		if !valid || (topic != "general" && topic != "news") {
+			return nil, fmt.Errorf("agent tool: tool %q has unsupported topic %v", "tavily", value)
+		}
+		defaults.Topic = topic
+	}
+	for _, key := range []string{"include_domains", "exclude_domains"} {
+		domains, present, err := stringSliceParam(params, key)
+		if err != nil {
+			return nil, fmt.Errorf("agent tool: tool %q requires string-list node-level param %s: %w", "tavily", key, err)
+		}
+		if !present {
+			continue
+		}
+		if key == "include_domains" {
+			defaults.IncludeDomains = domains
+		} else {
+			defaults.ExcludeDomains = domains
+		}
+	}
 	for _, key := range []string{"include_answer", "include_raw_content", "include_images", "include_image_descriptions"} {
 		value, ok := params[key]
 		if !ok {

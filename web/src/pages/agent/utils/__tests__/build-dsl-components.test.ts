@@ -91,3 +91,29 @@ describe('buildDslComponentsByGraph ManualChunker params', () => {
     });
   });
 });
+
+describe('buildDslComponentsByGraph DataOperations params', () => {
+  it('flattens form rows into the backend string-array shape', () => {
+    const node = {
+      id: 'DataOperations:TestId',
+      type: 'dataOperationsNode',
+      position: { x: 0, y: 0 },
+      data: {
+        label: Operator.DataOperations,
+        name: 'Data Operations',
+        form: {
+          query: [{ input: 'Begin:query' }, { input: 'Parser:result' }],
+          select_keys: [{ name: 'title' }, { name: 'content' }],
+          remove_keys: [{ name: 'secret' }],
+        },
+      },
+    } as any;
+
+    const components = buildDslComponentsByGraph([node], [], {}) as any;
+    const params = components['DataOperations:TestId'].obj.params;
+
+    expect(params.query).toEqual(['Begin:query', 'Parser:result']);
+    expect(params.select_keys).toEqual(['title', 'content']);
+    expect(params.remove_keys).toEqual(['secret']);
+  });
+});
