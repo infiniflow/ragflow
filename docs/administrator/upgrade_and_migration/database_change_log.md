@@ -331,7 +331,7 @@ the fields they display.
 | Resource table | Owner source |
 |----------------|--------------|
 | `chat_channel`, `compilation_template_group`, `compilation_template`, `connector`, `dialog`, `memory`, `mcp_server`, `skill_spaces` | `tenant_id` |
-| `file`, `knowledgebase`, `search`, `evaluation_datasets` | `created_by`; if empty, `tenant_id` |
+| `file`, `knowledgebase`, `search` | `created_by`; if empty, `tenant_id` |
 | `document` | `created_by` |
 
 Tables that do not exist are skipped. If a listed table exists but its `user_id` or owner-source column is missing after `AutoMigrate`, the migration stops with an error. When the source values are empty, the resulting `user_id` remains empty.
