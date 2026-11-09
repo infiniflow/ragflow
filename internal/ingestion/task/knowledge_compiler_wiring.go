@@ -705,7 +705,6 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 				}
 				if message, ok := failureReporter.FailureMessage(attempt, kcChatRetryMax+1, delay, err, final); ok {
 					runtime.ReportProgressMessage(ctx, "Compiler", message)
-					terminalFailureReported = final
 				}
 			}
 			return err
