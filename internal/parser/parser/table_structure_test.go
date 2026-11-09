@@ -98,7 +98,7 @@ func TestMarkdownTableImageTimeoutDoesNotConsumeBudget(t *testing.T) {
 	doc := markdownNew().Parse([]byte("| A | B |\n|---|---|\n| Logo | ![logo](http://127.0.0.1/logo.png) |\n"))
 	budget := newMediaBudgetForTest()
 	var items []map[string]any
-	unresolved := walkMarkdownBlocksWithImages(ctx, doc, &items, false, true, &htmlWalkState{budget: budget})
+	unresolved := walkMarkdownBlocksWithImages(ctx, doc, &items, true, &htmlWalkState{budget: budget})
 	if budget.Count() != 0 || unresolved != 0 {
 		t.Fatalf("timed out image consumed budget: attempts=%d unresolved=%d", budget.Count(), unresolved)
 	}

@@ -59,7 +59,6 @@ type PDFParser struct {
 	Model      string // DeepDoc@buildin@ragflow
 	LibType    string // pdf_oxide, used by DeepDoc
 
-	FlattenMediaToText bool
 	RemoveTOC          bool
 	RemoveHeaderFooter bool
 	EnableMultiColumn  bool
@@ -141,9 +140,6 @@ func (p *PDFParser) String() string {
 func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
-	}
-	if v, ok := setup["flatten_media_to_text"].(bool); ok {
-		p.FlattenMediaToText = v
 	}
 	if v, ok := setup["remove_toc"].(bool); ok {
 		p.RemoveTOC = v
@@ -404,10 +400,9 @@ func (p *PDFParser) parseWithResult(ctx context.Context, filename string, data [
 	cfg.RemoveHeaderFooter = p.RemoveHeaderFooter
 	cfg.OnPageDone = p.OnPageDone
 	res := parsePDFWithDeepDocOptions(ctx, filename, data, pdfPostProcessOptions{
-		zoom:               cfg.Zoom,
-		enableMultiColumn:  p.EnableMultiColumn,
-		flattenMediaToText: p.FlattenMediaToText,
-		parseMethod:        p.ParseMethod,
+		zoom:              cfg.Zoom,
+		enableMultiColumn: p.EnableMultiColumn,
+		parseMethod:       p.ParseMethod,
 	}, deepdocpdf.NewParser(cfg).Parse)
 	if res.Err != nil {
 		if errors.Is(res.Err, deepdocpdf.ErrNoPDFData) ||
@@ -555,8 +550,6 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 	if opts.enableMultiColumn && opts.pageWidth <= 0 {
 		opts.pageWidth = firstPDFPageWidth(processed.PageWidth)
 	}
-	// JSON media policy is applied once at the PDFParser result boundary.
-	opts.flattenMediaToText = false
 	applyPDFPostProcess(&processed, opts)
 	defer processed.Close()
 	// NOTE: PDF media (figure/table) is intentionally NOT cropped here under

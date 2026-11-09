@@ -54,7 +54,6 @@
                             }
                         },
                         "docx": {
-                            "flatten_media_to_text": false,
                             "preprocess": [
                                 "main_content"
                             ],
@@ -64,7 +63,6 @@
                             "vlm": {}
                         },
                         "markdown": {
-                            "flatten_media_to_text": false,
                             "preprocess": [
                                 "main_content"
                             ],
@@ -76,7 +74,6 @@
                             "vlm": {}
                         },
                         "pdf": {
-                            "flatten_media_to_text": false,
                             "parse_method": "DeepDOC",
                             "preprocess": [
                                 "main_content"
@@ -87,7 +84,6 @@
                             "vlm": {}
                         },
                         "spreadsheet": {
-                            "flatten_media_to_text": false,
                             "parse_method": "DeepDOC",
                             "preprocess": [
                                 "main_content"
@@ -225,7 +221,6 @@
                             "setups": [
                                 {
                                     "fileFormat": "pdf",
-                                    "flatten_media_to_text": false,
                                     "parse_method": "DeepDOC",
                                     "preprocess": [
                                         "main_content"
@@ -234,7 +229,6 @@
                                 },
                                 {
                                     "fileFormat": "spreadsheet",
-                                    "flatten_media_to_text": false,
                                     "parse_method": "DeepDOC",
                                     "preprocess": [
                                         "main_content"
@@ -243,7 +237,6 @@
                                 },
                                 {
                                     "fileFormat": "markdown",
-                                    "flatten_media_to_text": false,
                                     "preprocess": [
                                         "main_content"
                                     ],
@@ -257,7 +250,6 @@
                                 },
                                 {
                                     "fileFormat": "docx",
-                                    "flatten_media_to_text": false,
                                     "preprocess": [
                                         "main_content"
                                     ],

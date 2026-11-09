@@ -2876,9 +2876,6 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
         "Görüntüler için bir metin kaynağı gerekir: OCR'yi veya görsel geliştirmeyi açık tutun.",
       visionEnhancementPromptTip:
         'Görsel model için özel talimat. Yerleşik istemi kullanmak için boş bırakın.',
-      flattenMediaToText: 'Görsel modeli devre dışı bırak',
-      flattenMediaToTextTip:
-        'Görüntü ve tablo bölümlerini düz metin olarak ele alır ve görsel geliştirmeyi atlar.',
       enableChildrenDelimiters: 'Alt parçalar alım için kullanılır',
       merge: 'Birleştir',
       split: 'Böl',

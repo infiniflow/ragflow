@@ -93,7 +93,6 @@ describe('parser-form utils', () => {
         setups: [
           {
             fileFormat: FileType.PDF,
-            flatten_media_to_text: false,
             vlm: { llm_id: 'gpt-4o@OpenAI' },
           },
           { fileFormat: FileType.Audio, vlm: { llm_id: 'whisper@OpenAI' } },
@@ -115,10 +114,7 @@ describe('parser-form utils', () => {
 
     it('turns the enhancement off when no setup used the vision model', () => {
       const values = normalizeParserFormValues({
-        setups: [
-          { fileFormat: FileType.PDF, flatten_media_to_text: true },
-          { fileFormat: FileType.Docx, flatten_media_to_text: true },
-        ],
+        setups: [{ fileFormat: FileType.PDF }, { fileFormat: FileType.Docx }],
       });
 
       expect(values.enable_vision_enhancement).toBe(false);
@@ -147,7 +143,6 @@ describe('parser-form utils', () => {
         setups: [
           {
             fileFormat: FileType.PDF,
-            flatten_media_to_text: true,
             vlm: { llm_id: 'stale@Model' },
           },
           { fileFormat: FileType.Audio, vlm: { llm_id: 'whisper@OpenAI' } },

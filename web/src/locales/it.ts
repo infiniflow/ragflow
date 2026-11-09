@@ -1925,9 +1925,6 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       oneChunkTitle: 'Nota',
       oneChunkDescription:
         'Tutte le sezioni analizzate saranno unite in ordine in un singolo chunk.',
-      flattenMediaToText: 'Disabilita modello visivo',
-      flattenMediaToTextTip:
-        'Tratta le sezioni di immagini e tabelle come testo semplice e salta il miglioramento visivo.',
       enableChildrenDelimiters: 'I chunk figli sono usati per il recupero',
       merge: 'Unisci',
       split: 'Dividi',

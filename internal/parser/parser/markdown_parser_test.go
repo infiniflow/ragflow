@@ -513,9 +513,8 @@ func TestMarkdownParser_ParseWithResult_InlineRawHTMLSurvives(t *testing.T) {
 func TestMarkdownParser_ConfigureFromSetup(t *testing.T) {
 	p, _ := NewMarkdownParser(GoMarkdown)
 	p.ConfigureFromSetup(map[string]any{
-		"parse_method":          "deepdoc",
-		"vlm":                   map[string]any{"llm_id": "gpt-4-vision"},
-		"flatten_media_to_text": false,
+		"parse_method": "deepdoc",
+		"vlm":          map[string]any{"llm_id": "gpt-4-vision"},
 	})
 	if p.ParseMethod != "deepdoc" {
 		t.Fatalf("ParseMethod = %q, want %q", p.ParseMethod, "deepdoc")
@@ -533,44 +532,6 @@ func TestMarkdownParser_ConfigureFromSetup_NilSafe(t *testing.T) {
 	p.ConfigureFromSetup(nil) // should not panic
 	if p.ParseMethod != "" {
 		t.Fatalf("ParseMethod should be empty after nil setup, got %q", p.ParseMethod)
-	}
-}
-
-// TestMarkdownParser_FlattenMediaToText verifies that when
-// flatten_media_to_text is true, image items are emitted with
-// doc_type_kwd="text" (mirroring Python parser.py:1034). When false,
-// image items keep doc_type_kwd="image".
-func TestMarkdownParser_FlattenMediaToText(t *testing.T) {
-	ctx := t.Context()
-	pixelB64 := base64.StdEncoding.EncodeToString([]byte("fake-png-data"))
-	md := "Some text with an image\n![test](data:image/png;base64," + pixelB64 + ")\n"
-
-	cases := []struct {
-		name        string
-		flatten     bool
-		wantDocType string
-	}{
-		{"flatten=false keeps image", false, "image"},
-		{"flatten=true forces text", true, "text"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			p, _ := NewMarkdownParser(GoMarkdown)
-			p.ConfigureFromSetup(map[string]any{"flatten_media_to_text": tc.flatten})
-			if p.FlattenMediaToText != tc.flatten {
-				t.Fatalf("FlattenMediaToText field = %v, want %v", p.FlattenMediaToText, tc.flatten)
-			}
-			res := p.ParseWithResult(ctx, "test.md", []byte(md))
-			if res.Err != nil {
-				t.Fatalf("ParseWithResult: %v", res.Err)
-			}
-			for _, item := range ItemsToMaps(res.JSON) {
-				if kd, _ := item["doc_type_kwd"].(string); kd != tc.wantDocType {
-					t.Errorf("doc_type_kwd = %q, want %q (item text=%q)",
-						kd, tc.wantDocType, item["text"])
-				}
-			}
-		})
 	}
 }
 
@@ -644,7 +605,7 @@ func TestMarkdownImageBudgetSkipsFetchAfterCountLimit(t *testing.T) {
 	doc := markdownNew().Parse([]byte(markdown))
 	budget := newLimitedMediaBudgetForTest(t, 4, 4, 2)
 	var items []map[string]any
-	if unresolved := walkMarkdownBlocksWithImages(t.Context(), doc, &items, false, true, &htmlWalkState{budget: budget}); unresolved != 0 {
+	if unresolved := walkMarkdownBlocksWithImages(t.Context(), doc, &items, true, &htmlWalkState{budget: budget}); unresolved != 0 {
 		t.Fatalf("unresolved images = %d, want 0", unresolved)
 	}
 	if got := fetches.Load(); got != 2 {

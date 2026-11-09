@@ -1928,9 +1928,6 @@ export default {
       oneChunkTitle: '참고',
       oneChunkDescription:
         '파싱된 모든 섹션이 순서대로 단일 chunk로 병합됩니다.',
-      flattenMediaToText: '비전 모델 비활성화',
-      flattenMediaToTextTip:
-        '이미지 및 표 섹션을 일반 텍스트로 처리하고 비전 향상을 건너뜁니다.',
       enableChildrenDelimiters: '하위 chunk를 검색에 사용',
       merge: '병합',
       split: '분할',

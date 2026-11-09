@@ -24,8 +24,7 @@ export const VisionEnhancementFileTypes: FileType[] = [
   FileType.Video,
 ];
 
-// Lifts the legacy per-setup vision options (vlm.llm_id / flatten_media_to_text)
-// onto the top level and migrates the image family onto its own contract:
+// Lifts the per-setup vision model onto the top level and migrates the image family onto its own contract:
 // `ocr_enabled` replaces parse_method, and the prompt the image setup used to
 // own moves into the global vlm block. Idempotent, so every boundary (form
 // defaults, canvas save, dataset load) can apply it: values already carrying a
@@ -65,9 +64,7 @@ export function normalizeParserFormValues<T extends Record<string, any>>(
   const enableVisionEnhancement =
     typeof values?.enable_vision_enhancement === 'boolean'
       ? values.enable_vision_enhancement
-      : visionSetups.some(
-          (x) => x?.flatten_media_to_text === false || !isEmpty(x?.vlm?.llm_id),
-        );
+      : visionSetups.some((x) => !isEmpty(x?.vlm?.llm_id));
 
   const llmId =
     legacyImageModel ||
@@ -80,7 +77,7 @@ export function normalizeParserFormValues<T extends Record<string, any>>(
     // setups to JSON, so a stored value is dead config that must not survive
     // a load/save round-trip.
     if (x?.fileFormat === FileType.Audio) return omit(x, ['output_format']);
-    const stripped = omit(x, ['vlm', 'flatten_media_to_text', 'output_format']);
+    const stripped = omit(x, ['vlm', 'output_format']);
     if (x?.fileFormat !== FileType.Image) return stripped;
     const { parse_method, ...rest } = omit(stripped, ['lang', 'system_prompt']);
     // Materialize the switch either way. Absent or "ocr" both mean "run local
