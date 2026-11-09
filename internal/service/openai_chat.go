@@ -506,14 +506,21 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, chatID string,
 			}
 		}
 
+		message := gin.H{
+			"role":    "assistant",
+			"content": resp.Content,
+		}
+		// The native pipeline keeps reasoning inside the answer between think
+		// markers. The OpenAI protocol carries it in reasoning_content instead,
+		// so clients can separate it from the answer.
+		if reasoning := ExtractReasoning(finalResult.Answer); reasoning != "" {
+			message["reasoning_content"] = reasoning
+		}
 		choices := []gin.H{{
 			"index":         0,
 			"finish_reason": "stop",
 			"logprobs":      nil,
-			"message": gin.H{
-				"role":    "assistant",
-				"content": resp.Content,
-			},
+			"message":       message,
 		}}
 		if openaiReq.NeedReference {
 			choices[0]["message"].(gin.H)["reference"] = resp.Reference
