@@ -851,7 +851,10 @@ func (e *Engine) prepareNextTasksWithMode(
 
 	// AnyPredecessor (Pregel/BSP) mode: determine next nodes from the
 	// last completed node's outgoing edges.
-	nextNodes := e.getNextNodes(ctx, lastCompletedNode, currentState)
+	nextNodes, err := e.getNextNodes(ctx, lastCompletedNode, currentState)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	for nodeName := range nextNodes {
 		node := e.getNode(nodeName)
@@ -1507,7 +1510,7 @@ func (e *Engine) getNode(name string) *types.Node {
 	return node
 }
 
-func (e *Engine) getNextNodes(ctx context.Context, node string, state any) map[string]bool {
+func (e *Engine) getNextNodes(ctx context.Context, node string, state any) (map[string]bool, error) {
 	common.Debug("getNextNodes",
 		zap.String("node", node),
 		zap.Any("state", state))
@@ -1525,7 +1528,7 @@ func (e *Engine) getNextNodes(ctx context.Context, node string, state any) map[s
 		hasConditional = true
 		conditionResult, err := condEdge.Condition(ctx, state)
 		if err != nil {
-			common.Debug("conditional edge failed", zap.String("from", node), zap.Error(err))
+			return nil, fmt.Errorf("conditional edge from %q: %w", node, err)
 		}
 		conditionKey := fmt.Sprintf("%v", conditionResult)
 		targetNode, ok := condEdge.Mapping[conditionKey]
@@ -1533,7 +1536,7 @@ func (e *Engine) getNextNodes(ctx context.Context, node string, state any) map[s
 			continue
 		}
 		if targetNode == constants.End {
-			return nextNodes
+			return nextNodes, nil
 		}
 		nextNodes[targetNode] = true
 	}
@@ -1543,7 +1546,7 @@ func (e *Engine) getNextNodes(ctx context.Context, node string, state any) map[s
 		for _, edge := range e.graph.GetEdges() {
 			if edge.From == node {
 				if edge.To == constants.End {
-					return nextNodes
+					return nextNodes, nil
 				}
 				nextNodes[edge.To] = true
 			}
@@ -1581,7 +1584,7 @@ func (e *Engine) getNextNodes(ctx context.Context, node string, state any) map[s
 		if branch.From == node {
 			branchResult, err := branch.Condition(ctx, state)
 			if err != nil {
-				continue
+				return nil, fmt.Errorf("branch from %q: %w", node, err)
 			}
 			targets := branch.Then(branchResult)
 			for _, target := range targets {
@@ -1593,7 +1596,7 @@ func (e *Engine) getNextNodes(ctx context.Context, node string, state any) map[s
 		}
 	}
 
-	return nextNodes
+	return nextNodes, nil
 }
 
 func (e *Engine) getTriggers(node *types.Node) []string {

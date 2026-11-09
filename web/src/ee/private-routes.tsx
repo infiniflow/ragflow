@@ -8,8 +8,6 @@ import type { ComponentType, ReactNode } from 'react';
 export enum PrivateRoutes {
   Price = '/price',
   Billing = '/billing',
-  EvaluationDetail = '/evaluation-detail',
-  Evaluation = '/evaluation',
   Tickets = '/support',
   TicketCreate = '/support/create',
   TicketDetail = '/support/:id',

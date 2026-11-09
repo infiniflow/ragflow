@@ -69,9 +69,15 @@ func (c *CategorizeComponent) Name() string { return "Categorize" }
 func (c *CategorizeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	p := mergeCategorizeParam(c.param, inputs)
 	var err error
-	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveModelRef(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL, entity.ModelTypeChat|entity.ModelTypeDecision)
+	var modelType entity.ModelType
+	p.ModelID, p.Driver, p.APIKey, p.BaseURL, modelType, err = resolveModelRefWithType(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL, entity.ModelTypeChat|entity.ModelTypeDecision)
 	if err != nil {
 		return nil, err
+	}
+	if modelType == 0 && isDecisionOnlyDriver(p.Driver) {
+		// The type could not be resolved (an unregistered model name with an
+		// explicit driver); these drivers only serve decision models.
+		modelType = entity.ModelTypeDecision
 	}
 	if p.ModelID == "" {
 		return nil, &ParamError{Field: "model_id", Reason: "required"}
@@ -92,7 +98,7 @@ func (c *CategorizeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs ma
 	history := categorizeHistory(ctx, p.MessageHistoryWindowSize, query)
 	var chosen string
 	var score map[string]float64
-	if strings.EqualFold(p.Driver, "SystemOne") {
+	if modelType.Has(entity.ModelTypeDecision) {
 		chosen, err = categorizeWithDecision(ctx, p, query, history)
 		if err == nil {
 			score = make(map[string]float64, len(p.Categories))

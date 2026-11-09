@@ -62,9 +62,10 @@ func TestNormalizeRerankScores_InRange_Preserved(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
+			want := append([]float64(nil), tc.in...)
 			got := NormalizeRerankScores(tc.in)
-			if !floatsClose(got, tc.in, 1e-9) {
-				t.Errorf("got %v, want %v (must be preserved)", got, tc.in)
+			if !floatsClose(got, want, 1e-9) {
+				t.Errorf("got %v, want %v (must be preserved)", got, want)
 			}
 		})
 	}
@@ -75,8 +76,8 @@ func TestNormalizeRerankScores_InRange_Preserved(t *testing.T) {
 // on when sorting by rerank score.
 func TestNormalizeRerankScores_PreservesOrdering(t *testing.T) {
 	in := []float64{-5.0, 12.0, 3.0, -1.0}
-	got := NormalizeRerankScores(in)
 	wantOrder := argsortDesc(in)
+	got := NormalizeRerankScores(in)
 	gotOrder := argsortDesc(got)
 	if !intsEqual(wantOrder, gotOrder) {
 		t.Errorf("ordering changed: want %v, got %v", wantOrder, gotOrder)

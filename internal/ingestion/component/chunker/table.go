@@ -41,8 +41,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const ComponentNameTableChunker = "TableChunker"
-
 type tableChunkerParam struct{}
 
 func (p *tableChunkerParam) Update(conf map[string]any) {}

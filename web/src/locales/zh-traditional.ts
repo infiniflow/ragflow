@@ -155,9 +155,6 @@ export default {
       layoutRecognize: 'PDF解析器',
       layoutRecognizeTip:
         '使用視覺模型進行 PDF 布局分析，以更好地識別文檔結構，找到標題、文字塊、圖像和表格的位置。若選擇 Naive 選項，則只能取得 PDF 的純文字。請注意此功能僅適用於 PDF 文檔，對其他文檔不生效。如需更多資訊，請參閱 https://ragflow.io/docs/dataset_configuration#document-parsing-configuration。',
-      taskPageSize: '任務頁面大小',
-      taskPageSizeMessage: '請輸入您的任務頁面大小！',
-      taskPageSizeTip: `如果使用佈局識別，PDF 文件將被分成連續的組。佈局分析將在組之間並行執行，以提高處理速度。“任務頁面大小”決定組的大小。頁面大小越大，將頁面之間的連續文本分割成不同塊的機會就越低。`,
       addPage: '新增頁面',
       greaterThan: '當前值必須大於起始值！',
       greaterThanPrevious: '當前值必須大於之前的值！',
@@ -181,8 +178,6 @@ export default {
       childrenDelimiter: '文字分段標識符',
       childrenDelimiterTip:
         '支持多字符作為分隔符，多字符用兩個反引號 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系統將首先使用換行符、兩個#號以及分號先對文本進行分割，隨後再對分得的小文本塊按照「建議文字塊大小」設定的大小進行拼裝。在設定文字分段標識符前請確保理解上述文字分段切片機制。',
-      html4excel: '表格轉HTML',
-      html4excelTip: `與 General 切片方法配合使用。未開啟狀態下，表格檔案（XLSX、XLS（Excel 97-2003）會按行解析為鍵值對。開啟後，表格檔案會被解析為 HTML 表格。若原始表格超過 12 行，系統會自動按每 12 行拆分為多個 HTML 表格。欲了解更多資訊，請參閱 https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration。`,
       autoKeywords: '自動關鍵字擷取數',
       autoKeywordsTip: `自動為每個文字區塊中提取 N 個關鍵詞，以提升查詢精度。請注意：此功能採用「系統模型設定」中設定的預設聊天模型提取關鍵詞，因此也會產生更多 Token 消耗。此外，你也可以手動更新生成的關鍵詞。詳情請參見 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。`,
       autoQuestions: '自動問題擷取數',
@@ -399,8 +394,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         '例如：https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio 訪問令牌',
-      paddleocrAccessTokenTip: 'PaddleOCR API 的訪問令牌（可選）',
-      paddleocrAccessTokenPlaceholder: '您的 AI Studio 令牌（可選）',
+      paddleocrAccessTokenTip: 'PaddleOCR API 的訪問令牌',
+      paddleocrAccessTokenPlaceholder: '您的 AI Studio 令牌',
       paddleocrAlgorithm: 'PaddleOCR 算法',
       paddleocrAlgorithmTip: '用於 PaddleOCR 解析的算法',
       paddleocrSelectAlgorithm: '選擇算法',
@@ -735,7 +730,7 @@ export default {
         apiUrl: 'PaddleOCR API URL',
         apiUrlPlaceholder: '例如：https://paddleocr-server.com/layout-parsing',
         accessToken: 'AI Studio 存取權杖',
-        accessTokenPlaceholder: '您的 AI Studio 權杖（選填）',
+        accessTokenPlaceholder: '您的 AI Studio 權杖',
         algorithm: 'PaddleOCR 演算法',
         selectAlgorithm: '選擇演算法',
         modelNamePlaceholder: '例如：paddleocr-from-env-1',

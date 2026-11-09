@@ -273,12 +273,11 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 		common.RespondError(c, common.CodeDataError, "config is required")
 		return
 	}
-
 	ctx := c.Request.Context()
 
 	connector, err := h.connectorService.CreateConnector(ctx, &req)
 	if err != nil {
-		if errors.Is(err, service.ErrConnectorInvalidFreq) || errors.Is(err, service.ErrConnectorInvalidName) {
+		if errors.Is(err, service.ErrConnectorInvalidFreq) || errors.Is(err, service.ErrConnectorInvalidName) || errors.Is(err, service.ErrConnectorEncryptedCredentials) {
 			common.RespondError(c, common.CodeDataError, err.Error())
 			return
 		}

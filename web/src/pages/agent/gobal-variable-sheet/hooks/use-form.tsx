@@ -34,7 +34,7 @@ export const useHandleForm = () => {
         globalVariables: param,
       });
 
-      if (res.code === 0) {
+      if (res?.code === 0) {
         refetch();
       }
     },

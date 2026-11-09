@@ -41,9 +41,7 @@ func dedicatedDocumentParserID(filetype utility.FileType, filename string) strin
 	switch {
 	case strings.HasSuffix(name, ".ppt"),
 		strings.HasSuffix(name, ".pptx"),
-		strings.HasSuffix(name, ".pages"),
-		strings.HasSuffix(name, ".dps"),
-		strings.HasSuffix(name, ".dpt"):
+		strings.HasSuffix(name, ".pages"):
 		return "presentation"
 	case strings.HasSuffix(name, ".msg"),
 		strings.HasSuffix(name, ".eml"):
@@ -66,7 +64,7 @@ func parserParamsDeclaresFamily(params map[string]any, family string) bool {
 // config, or a malformed one): the config cannot answer then.
 func configDeclaredFamily(config entity.JSONMap, family string) (declared, found bool) {
 	for cpnID, raw := range config {
-		if !pipelinepkg.IsParserComponentID(cpnID) {
+		if !common.IsParserComponentID(cpnID) {
 			continue
 		}
 		params, ok := raw.(map[string]any)
@@ -94,7 +92,7 @@ func templateDeclaredFamily(ctx context.Context, parserID, family string) (decla
 		return false, false
 	}
 	for cpnID, params := range defaults {
-		if !pipelinepkg.IsParserComponentID(cpnID) {
+		if !common.IsParserComponentID(cpnID) {
 			continue
 		}
 		return parserParamsDeclaresFamily(params, family), true
@@ -146,7 +144,7 @@ func parserSelectionColumns(sel *service.ParserSelection) (string, *string) {
 // (picture / audio / presentation / email), and failing that to the catch-all
 // general pipeline, with the config reseeded from that template. A family the
 // pipeline vocabulary cannot name cannot be judged against a declaration: the
-// owning pipeline still takes the file, and with no owner (rtf, wps, ...) the
+// owning pipeline still takes the file, and with no owner (rtf, ...) the
 // dataset's choice is honored. The row then matches the pipeline that actually
 // runs it: document parser_config drives both the parser-gap validation and the
 // runtime override params, and a row left on a parser that cannot run its file

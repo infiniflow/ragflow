@@ -25,7 +25,7 @@ If Docker is not installed, see [Install Docker Engine](https://docs.docker.com/
 ## Start Up the Server {#start-up-the-server}
 
 :::note
-This guide deploys RAGFlow using Docker images and the Docker Compose configuration provided in the repository. Docker images are available for Linux x86-64 and ARM64 starting with v1.0.0-rc3. Docker automatically selects the image matching your host architecture when you use the release tag.
+This guide deploys RAGFlow using Docker images and the Docker Compose configuration provided in the repository. Docker images are available for Linux x86-64 and ARM64 starting with v1.0.0. Docker automatically selects the image matching your host architecture when you use the release tag.
 :::
 
 1. For the default Elasticsearch document engine, ensure `vm.max_map_count` is at least 262144 on the Docker host:
@@ -49,12 +49,12 @@ This guide deploys RAGFlow using Docker images and the Docker Compose configurat
    # Enter the Docker deployment directory.
    cd ragflow/docker
    # Check out the latest release tag; replace it with another version if needed.
-   git checkout v1.0.0-rc3
+   git checkout v1.0.0
    # Start the RAGFlow services and their dependencies in the background.
    docker compose -f docker-compose.yml up -d
    ```
 
-   To deploy another version, replace `v1.0.0-rc3` with a tag from the [Releases](https://github.com/infiniflow/ragflow/releases) page. Before starting the services, ensure `RAGFLOW_IMAGE` in `docker/.env` uses the matching image tag.
+   To deploy another version, replace `v1.0.0` with a tag from the [Releases](https://github.com/infiniflow/ragflow/releases) page. Before starting the services, ensure `RAGFLOW_IMAGE` in `docker/.env` uses the matching image tag.
 
    The `docker/.env` file controls `DOC_ENGINE`, service ports, and dependency credentials. Change the default passwords before deploying to a network-accessible host.
 

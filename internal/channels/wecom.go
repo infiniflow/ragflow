@@ -50,12 +50,17 @@ const (
 	weComReconnectDelay     = 3 * time.Second
 	weComHeartbeatInterval  = 25 * time.Second
 	weComTokenSafetyMargin  = 60 * time.Second
+	weComStreamTick         = 100 * time.Millisecond
+	weComStreamStep         = 5
 )
 
 var (
 	errWeComAuthentication = errors.New("WeCom websocket authentication failed")
 	errWeComDisconnected   = errors.New("WeCom websocket disconnected by server event")
-	weComRequestSequence   atomic.Uint64
+	// errWeComNothingStreamed reports that no text was available for a stream reply, so the
+	// caller still has to deliver the answer.
+	errWeComNothingStreamed = errors.New("wecom: no streamed text to display")
+	weComRequestSequence    atomic.Uint64
 )
 
 type wecomAccount struct {
@@ -71,6 +76,7 @@ type wecomAccount struct {
 	WebhookPort    int
 	APIBaseURL     string
 	WSURL          string
+	Stream         bool
 }
 
 type wecomChannel struct {
@@ -154,9 +160,9 @@ func newWeComChannelFromConfig(accountID string, cfg map[string]any) (*wecomChan
 		AccountID:      accountID,
 		ConnectionType: connectionType,
 		Secret:         firstString(cfg, "secret"),
-		WebhookHost:    firstString(cfg, "webhook_host"),
 		APIBaseURL:     firstString(cfg, "api_base_url"),
 		WSURL:          firstString(cfg, "ws_url"),
+		Stream:         cfg["stream"] == true,
 	}
 	if account.Secret == "" {
 		return nil, fmt.Errorf("wecom account %q missing required field: secret", accountID)
@@ -189,29 +195,36 @@ func newWeComChannelFromConfig(accountID string, cfg map[string]any) (*wecomChan
 	if len(account.AESKey) != 43 {
 		return nil, fmt.Errorf("wecom account %q aes_key (EncodingAESKey) must be 43 characters, got %d", accountID, len(account.AESKey))
 	}
+	if rawHost, ok := cfg["webhook_host"]; ok {
+		host, ok := rawHost.(string)
+		if !ok {
+			return nil, fmt.Errorf("wecom account %q webhook_host must be %q", accountID, defaultWeComWebhookHost)
+		}
+		host = strings.TrimSpace(host)
+		if host != "" && host != defaultWeComWebhookHost {
+			return nil, fmt.Errorf("wecom account %q webhook_host must use the shared address %q", accountID, defaultWeComWebhookHost)
+		}
+	}
 
 	agentID, err := parseWeComInt(cfg["agent_id"], "agent_id")
 	if err != nil {
 		return nil, fmt.Errorf("wecom account %q %w", accountID, err)
 	}
 	account.AgentID = agentID
-	var configuredWebhookPort *int
 	if raw, ok := cfg["webhook_port"]; ok {
 		port, err := parseWeComInt(raw, "webhook_port")
 		if err != nil {
 			return nil, fmt.Errorf("wecom account %q %w", accountID, err)
 		}
+		if port <= 0 || port > 65535 {
+			return nil, fmt.Errorf("wecom account %q webhook_port must be between 1 and 65535", accountID)
+		}
+		if port != defaultWeComWebhookPort {
+			return nil, fmt.Errorf("wecom account %q webhook_port must use the shared port %d", accountID, defaultWeComWebhookPort)
+		}
 		account.WebhookPort = int(port)
-		configuredWebhookPort = &account.WebhookPort
 	}
-	channel, err := newWeComChannel(account)
-	if err != nil {
-		return nil, err
-	}
-	if configuredWebhookPort != nil {
-		channel.account.WebhookPort = *configuredWebhookPort
-	}
-	return channel, nil
+	return newWeComChannel(account)
 }
 
 // ChannelID returns the platform identifier used by the chat-channel runtime.
@@ -501,6 +514,105 @@ func (c *wecomChannel) handleWebSocketMessage(ctx context.Context, raw map[strin
 	c.handleTextMessage(ctx, chatID, senderID, messageID, text, chatType, raw)
 }
 
+// StreamEnabled reports whether this account asked for streaming replies. Streaming needs
+// the smart-bot long connection, which only the WebSocket mode speaks.
+func (c *wecomChannel) StreamEnabled() bool {
+	return c.account.Stream && c.account.ConnectionType == "websocket"
+}
+
+// SendStream replies with a WeCom stream message: the first push creates it, later pushes
+// refresh it under the same stream id, and finish=true ends it. An error means no text
+// reached the user, so the caller still sends the complete answer through Send.
+func (c *wecomChannel) SendStream(ctx context.Context, msg core.OutgoingMessage, text <-chan string) error {
+	if strings.TrimSpace(msg.ChatID) == "" {
+		return errors.New("chat_id is required")
+	}
+	if strings.TrimSpace(msg.ReplyToMessageID) == "" {
+		return errors.New("WeCom stream reply requires the callback request id")
+	}
+
+	var first string
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case value, open := <-text:
+		if !open || strings.TrimSpace(value) == "" {
+			return errWeComNothingStreamed
+		}
+		first = value
+	}
+
+	streamID := "STREAM_" + common.GenerateToken()
+	push := func(value string, finish bool) error {
+		c.mu.Lock()
+		conn := c.ws
+		c.mu.Unlock()
+		if conn == nil {
+			return errors.New("WeCom websocket is not connected")
+		}
+		return c.writeWebSocketJSON(conn, map[string]any{
+			"cmd":     "aibot_respond_msg",
+			"headers": map[string]any{"req_id": msg.ReplyToMessageID},
+			"body": map[string]any{
+				"msgtype": "stream",
+				"stream": map[string]any{
+					"id":      streamID,
+					"finish":  finish,
+					"content": value,
+				},
+			},
+		})
+	}
+
+	latest, sent := first, ""
+	// finishStream closes the stream message best-effort. Without finish=true WeCom keeps
+	// rendering the message as in progress until the ten minute window ends, so every exit
+	// after the first push tries once, whatever the reason.
+	finishStream := func() {
+		if sent == "" {
+			return
+		}
+		if err := push(sent, true); err != nil {
+			common.Error("wecom: stream finish failed", err, zap.String("account_id", c.account.AccountID))
+		}
+	}
+
+	ticker := time.NewTicker(weComStreamTick)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			finishStream()
+			return ctx.Err()
+		case value, open := <-text:
+			if !open {
+				// A closed channel returns immediately forever, so stop selecting on it and
+				// let the ticker drain what is still unsent.
+				text = nil
+				continue
+			}
+			latest = value
+		case <-ticker.C:
+			if sent != latest {
+				next := nextStreamText(sent, latest, weComStreamStep)
+				if err := push(next, false); err != nil {
+					finishStream()
+					return err
+				}
+				sent = next
+				continue
+			}
+			if text == nil {
+				err := push(sent, true)
+				if err != nil {
+					finishStream()
+				}
+				return err
+			}
+		}
+	}
+}
+
 func (c *wecomChannel) sendWebSocketMessage(msg core.OutgoingMessage) error {
 	if msg.Text == "" {
 		return errors.New("WeCom websocket reply text is required")
@@ -638,22 +750,6 @@ func (c *wecomChannel) requestJSON(ctx context.Context, method, endpoint string,
 		return fmt.Errorf("WeCom API returned invalid JSON: %w", err)
 	}
 	return nil
-}
-
-// redactURLError strips the query string from transport errors. WeCom carries
-// the access token / corp secret in the request URL query, and *url.Error keeps
-// the full URL in its message, so raw errors must not reach the log sinks.
-func redactURLError(err error) error {
-	var urlErr *url.Error
-	if !errors.As(err, &urlErr) {
-		return err
-	}
-	parsed, parseErr := url.Parse(urlErr.URL)
-	if parseErr != nil {
-		return urlErr
-	}
-	parsed.RawQuery = ""
-	return &url.Error{Op: urlErr.Op, URL: parsed.String(), Err: redactURLError(urlErr.Err)}
 }
 
 func (c *wecomChannel) handleTextMessage(ctx context.Context, chatID, senderID, messageID, text, chatType string, raw map[string]any) {

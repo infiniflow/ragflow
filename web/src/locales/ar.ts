@@ -372,10 +372,6 @@ export default {
       layoutRecognize: 'محلل قوات الدفاع الشعبي',
       layoutRecognizeTip:
         'استخدم نموذجًا مرئيًا لتحليل تخطيط PDF لتحديد موقع عناوين المستندات وكتل النص والصور والجداول بشكل فعال. إذا تم اختيار الخيار البسيط، فسيتم استرداد النص العادي فقط في ملف PDF. يرجى ملاحظة أن هذا الخيار يعمل حاليًا فقط مع مستندات PDF.',
-      taskPageSize: 'حجم صفحة المهمة',
-      taskPageSizeMessage: 'الرجاء إدخال حجم صفحة المهمة الخاصة بك!',
-      taskPageSizeTip:
-        'أثناء التعرف على التخطيط، يتم تقسيم ملف PDF إلى أجزاء ومعالجته بالتوازي لزيادة سرعة المعالجة. تحدد هذه المعلمة حجم كل قطعة. يقلل حجم القطعة الأكبر من احتمالية تقسيم النص المستمر بين الصفحات.',
       addPage: 'إضافة صفحة',
       greaterThan: 'يجب أن تكون القيمة الحالية أكبر من!',
       greaterThanPrevious: 'يجب أن تكون القيمة الحالية أكبر من السابقة!',
@@ -402,9 +398,6 @@ export default {
       childrenDelimiter: 'محدد للنص',
       childrenDelimiterTip:
         'يمكن أن يتكون المحدد أو الفاصل من حرف خاص واحد أو عدة أحرف. إذا كانت هناك أحرف متعددة، فتأكد من أنها محاطة بعلامات التحديد الخلفية (``). على سبيل المثال، إذا قمت بتكوين المحددات الخاصة بك على النحو التالي: \\n`##`;، فسيتم فصل النصوص الخاصة بك عند فواصل الأسطر ورموز التجزئة المزدوجة (##) والفواصل المنقوطة.',
-      html4excel: 'إكسل إلى HTML',
-      html4excelTip:
-        'استخدم مع طريقة التقطيع العامة. عند التعطيل، سيتم تحليل جداول البيانات (XLSX أو XLS(Excel 97-2003)) الموجودة في قاعدة المعرفة إلى أزواج قيمة المفتاح. عند التمكين، سيتم تحليلها إلى جداول HTML، مع تقسيم كل 12 صفًا إذا كان الجدول الأصلي يحتوي على أكثر من 12 صفًا. راجع https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration للحصول على التفاصيل.',
       autoKeywords: 'الكلمة الرئيسية التلقائية',
       autoKeywordsTip:
         'قم باستخراج الكلمات الرئيسية N تلقائيًا لكل مجموعة لزيادة تصنيفها للاستعلامات التي تحتوي على تلك الكلمات الرئيسية. انتبه إلى أنه سيتم استهلاك الرموز المميزة الإضافية بواسطة نموذج الفهرسة المحدد في "التكوين". يمكنك التحقق من الكلمات الأساسية المضافة أو تحديثها لمقطع من قائمة المقاطع. للحصول على التفاصيل، راجع https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',
@@ -450,8 +443,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         'على سبيل المثال https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'رمز الوصول إلى استوديو الذكاء الاصطناعي',
-      paddleocrAccessTokenTip: 'رمز الوصول إلى PaddleOCR API (اختياري)',
-      paddleocrAccessTokenPlaceholder: 'رمز AI Studio الخاص بك (اختياري)',
+      paddleocrAccessTokenTip: 'رمز الوصول إلى PaddleOCR API',
+      paddleocrAccessTokenPlaceholder: 'رمز AI Studio الخاص بك',
       paddleocrAlgorithm: 'خوارزمية PaddleOCR',
       paddleocrAlgorithmTip: 'الخوارزمية المستخدمة لتحليل PaddleOCR',
       paddleocrSelectAlgorithm: 'حدد الخوارزمية',
@@ -1141,7 +1134,7 @@ export default {
         apiUrlPlaceholder:
           'على سبيل المثال: https://paddleocr-server.com/layout-parsing',
         accessToken: 'رمز الوصول إلى استوديو الذكاء الاصطناعي',
-        accessTokenPlaceholder: 'رمز AI Studio الخاص بك (اختياري)',
+        accessTokenPlaceholder: 'رمز AI Studio الخاص بك',
         algorithm: 'خوارزمية PaddleOCR',
         selectAlgorithm: 'حدد الخوارزمية',
         modelNamePlaceholder: 'على سبيل المثال: paddleocr-from-env-1',
@@ -1355,13 +1348,6 @@ export default {
       pleaseUploadAtLeastOneFile: 'يرجى تحميل ملف واحد على الأقل',
     },
     flow: {
-      preprocess: {
-        preprocess: 'المعالجة المسبقة',
-        mainContent: 'المحتوى الرئيسي',
-        abstract: 'خلاصة',
-        author: 'مؤلف',
-        sectionTitle: 'عنوان القسم',
-      },
       autoPlay: 'تشغيل الصوت تلقائيًا',
       downloadFileTypeTip: 'نوع الملف المراد تنزيله',
       downloadFileType: 'تنزيل نوع الملف',
@@ -1897,9 +1883,9 @@ export default {
       dynamicParameters: 'المعلمات الديناميكية',
       jsonFormatTip: 'يجب أن يوفر المكون الرئيسي سلسلة JSON بالتنسيق التالي:',
       toEmailTip: 'to_email: البريد الإلكتروني للمستلم (مطلوب)',
-      ccEmailTip: 'cc_email: البريد الإلكتروني CC (اختياري)',
-      subjectTip: 'الموضوع: موضوع البريد الإلكتروني (اختياري)',
-      contentTip: 'المحتوى: محتوى البريد الإلكتروني (اختياري)',
+      ccEmailTip: 'cc_email: البريد الإلكتروني CC',
+      subjectTip: 'الموضوع: موضوع البريد الإلكتروني',
+      contentTip: 'المحتوى: محتوى البريد الإلكتروني',
       jsonUploadTypeErrorMessage: 'يرجى تحميل ملف json',
       jsonUploadContentErrorMessage: 'خطأ في ملف json',
       iteration: 'التكرار',

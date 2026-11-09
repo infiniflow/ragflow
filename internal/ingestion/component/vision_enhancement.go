@@ -204,8 +204,7 @@ func maybeDispatchVisionEnhancement(
 	// (pdf_vision_dispatch.go), not an input here — see issue #20727.
 	language := resolveVisionLanguage(inputs)
 
-	// Collect visual resources, including Markdown images whose type is text
-	// because flatten_media_to_text is enabled. Items whose text already
+	// Collect visual resources. Items whose text already
 	// carries a backend-provided description (MinerU vlm_description) are
 	// skipped to avoid a duplicate second description and an extra VLM call.
 	var items []int

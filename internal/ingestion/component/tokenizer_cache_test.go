@@ -94,6 +94,16 @@ func (m *memCacheStore) Delete(_ context.Context, key string) bool {
 	return true
 }
 
+func (m *memCacheStore) DeleteMany(_ context.Context, keys ...string) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, k := range keys {
+		delete(m.data, k)
+		delete(m.sets, k)
+	}
+	return true
+}
+
 func (m *memCacheStore) Expire(_ context.Context, key string, _ time.Duration) bool {
 	return true
 }

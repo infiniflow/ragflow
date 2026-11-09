@@ -98,6 +98,8 @@ func (s *AgentService) RunAgentWithWebhook(
 
 type agentSessionIDContextKey struct{}
 
+type agentChannelNameContextKey struct{}
+
 type openAICompatMessagesContextKey struct{}
 
 // WithAgentSessionID lets an HTTP boundary allocate the session identity while
@@ -113,6 +115,24 @@ func AgentSessionIDFromContext(ctx context.Context) string {
 	}
 	sessionID, _ := ctx.Value(agentSessionIDContextKey{}).(string)
 	return sessionID
+}
+
+// withAgentChannelName lets a chat-channel boundary record the channel name so
+// the session RunAgent creates carries it in its display name.
+func withAgentChannelName(ctx context.Context, channelName string) context.Context {
+	name := strings.TrimSpace(channelName)
+	if name == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, agentChannelNameContextKey{}, name)
+}
+
+func agentChannelNameFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	name, _ := ctx.Value(agentChannelNameContextKey{}).(string)
+	return name
 }
 
 // WithOpenAICompatMessages attaches the complete OpenAI messages list to an
@@ -1886,6 +1906,20 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 		versionRow *entity.UserCanvasVersion
 		dsl        map[string]any
 	)
+	channelRun, _ := ctx.Value(channelAgentRunContextKey{}).(bool)
+	refreshSessionDSL := channelRun && version == ""
+	paused := s.runner != nil && s.runner.Peek(canvasID, sessionID)
+	var resumeInterruptID string
+	if userInput != nil && s.runTracker != nil {
+		interruptID, ok, err := s.runTracker.GetInterruptID(ctx, runID)
+		if err != nil && refreshSessionDSL {
+			return nil, fmt.Errorf("RunAgent: load pending interrupt: %w: %w", err, ErrAgentStorageError)
+		}
+		if err == nil && ok {
+			resumeInterruptID = interruptID
+			paused = true
+		}
+	}
 	if version != "" {
 		row, err := s.versionDAO.GetByID(ctx, dao.DB, version)
 		if err != nil {
@@ -1922,7 +1956,12 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 		}
 		sessionFound = existingSession != nil
 		if existingSession != nil && len(existingSession.DSL) > 0 {
-			dsl = dslpkg.NormalizeForRun(existingSession.DSL)
+			if refreshSessionDSL && !paused {
+				dsl = refreshChannelAgentDSL(dsl, existingSession.DSL)
+			} else {
+				// A paused execution must resume the graph that wrote its checkpoint.
+				dsl = dslpkg.NormalizeForRun(existingSession.DSL)
+			}
 		}
 	}
 	if err := validateAgentChatModels(ctx, agentTenantID, dsl); err != nil {
@@ -1955,6 +1994,9 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 		"session_id":     sessionID,
 		"user_id":        userID,
 	}
+	if refreshSessionDSL && !paused {
+		root["__force_new_run__"] = true
+	}
 	// Drop failed first-touch sessions only when there was no user question.
 	if (!sessionFound || newSession) && stringifyAgentUserInput(agentRunQuery(userInput)) == "" {
 		root["__drop_session_on_failure__"] = true
@@ -1964,11 +2006,9 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 	// cancellation identity.
 	// Recover a pending UserFillUp interrupt from Redis when this request
 	// lands on a different process.
-	if userInput != nil && s.runTracker != nil {
-		if interruptID, ok, ierr := s.runTracker.GetInterruptID(ctx, runID); ierr == nil && ok {
-			root["__resume_interrupt_id__"] = interruptID
-			root["__resume_data__"] = userInput
-		}
+	if resumeInterruptID != "" {
+		root["__resume_interrupt_id__"] = resumeInterruptID
+		root["__resume_data__"] = userInput
 	}
 	if userInput != nil {
 		root["user_input"] = userInput
@@ -2449,6 +2489,10 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		if cpID != "" {
 			invokeOpts = []compose.Option{compose.WithCheckPointID(cpID)}
 		}
+		if forceNewRun, _ := root["__force_new_run__"].(bool); forceNewRun {
+			// Completed checkpoints retain node state from the previous graph.
+			invokeOpts = append(invokeOpts, compose.WithForceNewRun())
+		}
 		// On a resume, the user input is the resume payload for the
 		// previously-paused UserFillUp node — it does NOT represent
 		// a fresh sys.query. The 'BEGIN' node writes inputs["query"]
@@ -2644,6 +2688,9 @@ func (s *AgentService) createAgentRunSession(
 	}
 	source := "agent"
 	name := deriveAgentSessionName(userInput)
+	if channelName := agentChannelNameFromContext(ctx); channelName != "" {
+		name = channelSessionName(name, channelName)
+	}
 	session := &entity.API4Conversation{
 		ID:        sessionID,
 		Name:      &name,
@@ -2795,6 +2842,41 @@ func (s *AgentService) persistAgentRunSession(
 		updates["dsl"] = buildPersistedAgentDSL(runDSL, state)
 	}
 	return s.api4ConversationDAO.UpdateHistory(ctx, dao.DB, sessionID, agentID, userID, updates, history)
+}
+
+// refreshChannelAgentDSL keeps conversation data while replacing the workflow.
+func refreshChannelAgentDSL(dsl, previous map[string]any) map[string]any {
+	dsl = dslpkg.ResetForNewSession(dsl)
+	for _, key := range []string{"history", "memory"} {
+		if value, ok := previous[key]; ok {
+			dsl[key] = value
+		}
+	}
+	globals, _ := dsl["globals"].(map[string]any)
+	if globals == nil {
+		globals = map[string]any{}
+		dsl["globals"] = globals
+	}
+	oldGlobals, _ := previous["globals"].(map[string]any)
+	variables, _ := dsl["variables"].(map[string]any)
+	oldVariables, _ := previous["variables"].(map[string]any)
+	for key, value := range oldGlobals {
+		switch key {
+		case "sys.history", "sys.conversation_turns":
+			globals[key] = value
+		default:
+			if !strings.HasPrefix(key, "env.") {
+				continue
+			}
+			name := strings.TrimPrefix(key, "env.")
+			if current, ok := globals[key]; ok &&
+				reflect.TypeOf(current) == reflect.TypeOf(value) &&
+				reflect.DeepEqual(variables[name], oldVariables[name]) {
+				globals[key] = value
+			}
+		}
+	}
+	return dsl
 }
 
 func buildPersistedAgentDSL(runDSL map[string]any, state *canvas.CanvasState) entity.JSONMap {

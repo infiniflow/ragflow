@@ -224,9 +224,6 @@ export default {
       layoutRecognizeTip:
         'レイアウト分析のためにビジュアルモデルを使用し、文書の構造を理解しやすくします。詳細については、https://ragflow.io/docs/dataset_configuration#document-parsing-configuration をご覧ください。',
 
-      taskPageSize: 'タスクページサイズ',
-      taskPageSizeMessage: 'タスクページサイズを入力してください',
-      taskPageSizeTip: `レイアウト認識中、PDFファイルはチャンクに分割され、処理速度を向上させるために並列処理されます。`,
       addPage: 'ページを追加',
       greaterThan: '現在の値は終了ページより大きくなければなりません',
 
@@ -253,8 +250,6 @@ export default {
       delimiterTip:
         'デリミタやセパレータは、一つまたは複数の特殊文字で構成できます。複数の文字の場合、バッククォート(``)で囲むようにしてください。たとえば、デリミタを次のように設定した場合: \\n ## ;、テキストは行末、ダブルハッシュ記号(##)、およびセミコロンで分割されます。デリミタを設定する前に、テキストのセグメンテーションとチャンキングのメカニズムを理解していることを確認してください。',
 
-      html4excel: 'ExcelをHTMLに変換',
-      html4excelTip: `General切片方法と併用してください。無効の場合、表計算ファイル（XLSX、XLS（Excel 97-2003））は行ごとにキーと値のペアとして解析されます。有効の場合、表計算ファイルはHTML表として解析されます。元の表が12行を超える場合、システムは自動的に12行ごとに複数のHTML表に分割します。詳細については、https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration をご覧ください。`,
       autoKeywords: '自動キーワード',
       autoKeywordsTip: `各チャンクに含まれるキーワードのランキングを向上させるために、自動的にN個のキーワードを抽出します。「システムモデル設定」で指定されたチャットモデルによって追加のトークンが消費されることに注意してください。チャンクリストから追加されたキーワードを確認または更新することができます。詳細は https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration をご覧ください。`,
       autoQuestions: '自動質問',
@@ -575,8 +570,8 @@ export default {
       paddleocrApiUrlTip: 'PaddleOCRサービスのAPIエンドポイントURL',
       paddleocrApiUrlPlaceholder: '例: https://paddleocr-server.com/api',
       paddleocrAccessToken: 'AI Studioアクセストークン',
-      paddleocrAccessTokenTip: 'PaddleOCR APIのアクセストークン（オプション）',
-      paddleocrAccessTokenPlaceholder: 'AI Studioトークン（オプション）',
+      paddleocrAccessTokenTip: 'PaddleOCR APIのアクセストークン',
+      paddleocrAccessTokenPlaceholder: 'AI Studioトークン',
       paddleocrAlgorithm: 'PaddleOCRアルゴリズム',
       paddleocrAlgorithmTip: 'PaddleOCR解析に使用するアルゴリズム',
       paddleocrSelectAlgorithm: 'アルゴリズムを選択',
@@ -1138,7 +1133,7 @@ export default {
         apiUrl: 'PaddleOCR API URL',
         apiUrlPlaceholder: '例：https://paddleocr-server.com/layout-parsing',
         accessToken: 'AI Studio アクセストークン',
-        accessTokenPlaceholder: 'AI Studio のトークン（任意）',
+        accessTokenPlaceholder: 'AI Studio のトークン',
         algorithm: 'PaddleOCR アルゴリズム',
         selectAlgorithm: 'アルゴリズムを選択',
         modelNamePlaceholder: '例：paddleocr-from-env-1',
@@ -1628,8 +1623,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         '例: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studioアクセストークン',
-      paddleocrAccessTokenMessage: 'PaddleOCR APIのアクセストークン (任意)',
-      paddleocrAccessTokenPlaceholder: 'AI Studioのトークン (任意)',
+      paddleocrAccessTokenMessage: 'PaddleOCR APIのアクセストークン',
+      paddleocrAccessTokenPlaceholder: 'AI Studioのトークン',
       paddleocrAlgorithm: 'PaddleOCRアルゴリズム',
       paddleocrAlgorithmMessage: 'PaddleOCRアルゴリズムを選択してください',
       mineruApiserver: 'MinerU APIサーバー',
@@ -2381,9 +2376,9 @@ export default {
         '上流コンポーネントは、次の形式のJSON文字列を提供する必要があります：',
 
       toEmailTip: 'to_email: 受信者のメール（必須）',
-      ccEmailTip: 'cc_email: CCメール（オプション）',
-      subjectTip: 'subject: メールの件名（オプション）',
-      contentTip: 'content: メールの内容（オプション）',
+      ccEmailTip: 'cc_email: CCメール',
+      subjectTip: 'subject: メールの件名',
+      contentTip: 'content: メールの内容',
       jsonUploadTypeErrorMessage: 'jsonファイルをアップロードしてください',
       jsonUploadContentErrorMessage: 'jsonファイルエラー',
       prompt: 'プロンプト',
@@ -2398,14 +2393,6 @@ export default {
       created: '作成日',
       id: 'ID',
       logTitle: 'タイトル',
-
-      preprocess: {
-        preprocess: '前処理',
-        mainContent: '本文',
-        abstract: '概要',
-        author: '著者',
-        sectionTitle: 'セクションタイトル',
-      },
 
       editTags: 'タグを編集',
       editTagsDescription:
@@ -2483,9 +2470,6 @@ export default {
       oneChunkTitle: '注記',
       oneChunkDescription:
         '解析されたすべてのセクションが順番に1つのチャンクにマージされます。',
-      flattenMediaToText: 'ビジョンモデルを無効化',
-      flattenMediaToTextTip:
-        '画像や表のセクションをプレーンテキストとして扱い、ビジョンによる拡張処理をスキップします。',
       enableChildrenDelimiters: '子チャンクを検索に使用する',
       merge: 'マージ',
       split: '分割',

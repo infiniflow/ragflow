@@ -134,6 +134,15 @@ func (f *cleanupFakeStore) Delete(_ context.Context, key string) bool {
 	return true
 }
 
+func (f *cleanupFakeStore) DeleteMany(_ context.Context, keys ...string) bool {
+	for _, k := range keys {
+		delete(f.kv, k)
+		delete(f.sets, k)
+		delete(f.bytes, k)
+	}
+	return true
+}
+
 func (f *cleanupFakeStore) Expire(_ context.Context, key string, exp time.Duration) bool {
 	f.ttl[key] = exp
 	return true

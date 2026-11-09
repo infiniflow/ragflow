@@ -3,9 +3,9 @@ package document
 import (
 	"mime/multipart"
 	"reflect"
-	"strings"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
@@ -28,9 +28,6 @@ func TestDedicatedDocumentParserID(t *testing.T) {
 		{"pptx routes to presentation", utility.FileTypeDOC, "deck.pptx", "presentation"},
 		{"legacy ppt routes to presentation", utility.FileTypeDOC, "deck.ppt", "presentation"},
 		{"pages routes to presentation", utility.FileTypeDOC, "deck.pages", "presentation"},
-		{"wps presentation dps routes to presentation", utility.FileTypePPT, "deck.dps", "presentation"},
-		{"wps presentation dpt routes to presentation", utility.FileTypePPT, "deck.dpt", "presentation"},
-		{"wps presentation dps is case-insensitive", utility.FileTypePPT, "DECK.DPS", "presentation"},
 		{"presentation extension is case-insensitive", utility.FileTypeDOC, "DECK.PPTX", "presentation"},
 		{"eml routes to email", utility.FileTypeDOC, "mail.eml", "email"},
 		{"msg routes to email", utility.FileTypeDOC, "mail.msg", "email"},
@@ -347,15 +344,6 @@ func TestResolveDocumentParser_Priority(t *testing.T) {
 			kbConfig:     generalParserConfig(),
 			filename:     "deck.pages",
 			filetype:     utility.FileTypeDOC,
-			wantParserID: "presentation",
-			wantFamilyIn: "slides",
-		},
-		{
-			name:         "wps presentation dps reaches its owner pipeline",
-			kbParser:     "general",
-			kbConfig:     generalParserConfig(),
-			filename:     "deck.dps",
-			filetype:     utility.FileTypePPT,
 			wantParserID: "presentation",
 			wantFamilyIn: "slides",
 		},
@@ -763,7 +751,7 @@ func parserFamilySetup(t *testing.T, doc map[string]interface{}, family string) 
 		t.Fatalf("%v parser_config = %T, want map", doc["name"], doc["parser_config"])
 	}
 	for cpnID, raw := range cfg {
-		if !strings.HasPrefix(cpnID, "Parser:") {
+		if !common.IsParserComponentID(cpnID) {
 			continue
 		}
 		params, _ := raw.(map[string]interface{})

@@ -636,9 +636,6 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       layoutRecognize: 'PDF ayrıştırıcı',
       layoutRecognizeTip:
         "PDF düzen analizi için görsel model kullanın. Belge başlıklarını, metin bloklarını, görüntüleri ve tabloları etkili bir şekilde konumlandırır. Naive seçeneği seçilirse yalnızca PDF'deki düz metin alınır. Bu seçeneğin şu anda YALNIZCA PDF belgeleri için çalıştığını lütfen unutmayın.",
-      taskPageSize: 'Görev sayfa boyutu',
-      taskPageSizeMessage: 'Lütfen görev sayfa boyutunu girin!',
-      taskPageSizeTip: `Düzen tanıma sırasında bir PDF dosyası parçalara bölünür ve işleme hızını artırmak için paralel olarak işlenir. Bu parametre her parçanın boyutunu ayarlar. Daha büyük parça boyutu, sayfalar arasındaki sürekli metni bölme olasılığını azaltır.`,
       addPage: 'Sayfa ekle',
       greaterThan: 'Geçerli değer bitiş değerinden büyük olmalıdır!',
       greaterThanPrevious:
@@ -668,8 +665,6 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       delimiterPreviewEmpty:
         'Sınırlayıcı yok — metin yalnızca boyuta göre parçalanacak.',
       delimiterPreviewCount: '({{count}})',
-      html4excel: "Excel'i HTML'ye dönüştür",
-      html4excelTip: `Genel parçalama yöntemi ile kullanın. Devre dışı bırakıldığında, datasetteki elektronik tablolar (XLSX veya XLS(Excel 97-2003)) anahtar-değer çiftlerine ayrıştırılır. Etkinleştirildiğinde HTML tablolarına ayrıştırılır; orijinal tabloda 12'den fazla satır varsa her 12 satırda bölünür. Ayrıntılar için bkz. https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.`,
       autoKeywords: 'Otomatik anahtar kelime',
       autoKeywordsTip: `Her parça için otomatik olarak N anahtar kelime çıkarır ve o anahtar kelimeleri içeren sorgular için sıralamalarını artırır. 'Yapılandırma'da belirtilen indeksleme modeli tarafından ekstra tokenlar tüketileceğini unutmayın. Bir parçaya eklenen anahtar kelimeleri parça listesinden kontrol edebilir veya güncelleyebilirsiniz. Ayrıntılar için bkz. https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoQuestions: 'Otomatik soru',
@@ -746,9 +741,8 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       paddleocrApiUrlPlaceholder:
         'örn. https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: "AI Studio Erişim Token'ı",
-      paddleocrAccessTokenTip:
-        "PaddleOCR API için erişim token'ı (isteğe bağlı)",
-      paddleocrAccessTokenPlaceholder: "AI Studio token'ınız (isteğe bağlı)",
+      paddleocrAccessTokenTip: "PaddleOCR API için erişim token'ı",
+      paddleocrAccessTokenPlaceholder: "AI Studio token'ınız",
       paddleocrAlgorithm: 'PaddleOCR Algoritması',
       paddleocrAlgorithmTip:
         'PaddleOCR ayrıştırması için kullanılacak algoritma',
@@ -1463,7 +1457,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldTenantId: 'Kiracı Kimliği',
       dataSourceFieldClientId: 'İstemci Kimliği',
       dataSourceFieldClientSecret: 'İstemci Gizli Anahtarı',
-      dataSourceFieldFolderPathOptional: 'Klasör Yolu (isteğe bağlı)',
+      dataSourceFieldFolderPathOptional: 'Klasör Yolu',
       dataSourceFieldBatchSize: 'Toplu İşlem Boyutu',
       dataSourceFieldFeishuAppId: 'Feishu uygulama kimliği',
       dataSourceFieldFeishuAppSecret: 'Feishu uygulama gizli anahtarı',
@@ -1477,8 +1471,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceValidationFeishuBatchSize:
         'Toplu işlem boyutu 1 ile 10 arasında olmalıdır',
       dataSourceFieldMailFolder: 'Posta Klasörü',
-      dataSourceFieldMailboxUserIds:
-        'Posta Kutusu Kullanıcı Kimlikleri (isteğe bağlı)',
+      dataSourceFieldMailboxUserIds: 'Posta Kutusu Kullanıcı Kimlikleri',
       dataSourceFieldInstanceUrl: "Örnek URL'si",
       dataSourceFieldObjects: 'Nesneler',
       dataSourceFieldApiVersion: 'API Sürümü',
@@ -1489,7 +1482,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldContainerUrl: "Konteyner URL'si",
       dataSourceFieldSasToken: "SAS Token'ı",
       dataSourceFieldContainerName: 'Konteyner Adı',
-      dataSourceFieldPrefixOptional: 'Ön ek (isteğe bağlı)',
+      dataSourceFieldPrefixOptional: 'Ön ek',
       dataSourceFieldFeedUrl: "Besleme URL'si",
       dataSourceFieldSitemapUrl: "Site haritası URL'si",
       dataSourceFieldUrlFilter: 'URL filtresi (regex)',
@@ -2223,9 +2216,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       paddleocrApiUrlPlaceholder:
         'örn. https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: "AI Studio Erişim Token'ı",
-      paddleocrAccessTokenMessage:
-        "PaddleOCR API için erişim token'ı (isteğe bağlı)",
-      paddleocrAccessTokenPlaceholder: "AI Studio token'ınız (isteğe bağlı)",
+      paddleocrAccessTokenMessage: "PaddleOCR API için erişim token'ı",
+      paddleocrAccessTokenPlaceholder: "AI Studio token'ınız",
       paddleocrAlgorithm: 'PaddleOCR Algoritması',
       paddleocrAlgorithmMessage: 'Lütfen bir PaddleOCR algoritması seçin',
       paddleocrSelectAlgorithm: 'Algoritma Seçin',
@@ -2233,8 +2225,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       mineruApiserverMessage: "Lütfen MinerU API Sunucusu URL'sini girin!",
       mineruApiserverPlaceholder: 'örn. http://host.docker.internal:9987',
       mineruApiToken: "MinerU API token'ı",
-      mineruApiTokenPlaceholder:
-        'mineru.net API yönetiminden alınan token (isteğe bağlı)',
+      mineruApiTokenPlaceholder: 'mineru.net API yönetiminden alınan token',
       mineruApiTokenTip:
         "Ayarlandığında RAGFlow resmi hassas API'yi (/api/v4, vlm dahil) kullanır. Oturum açma gerektirmeyen ajan API'sini kullanmak için boş bırakın. Kendi barındırdığınız MinerU sunucusu için gerekli değildir.",
       mineruOutputDir: 'MinerU Çıktı Dizini',
@@ -2312,7 +2303,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         apiUrl: "PaddleOCR API URL'si",
         apiUrlPlaceholder: 'Örnek: https://paddleocr-server.com/layout-parsing',
         accessToken: "AI Studio Erişim Token'ı",
-        accessTokenPlaceholder: "AI Studio token'ınız (isteğe bağlı)",
+        accessTokenPlaceholder: "AI Studio token'ınız",
         algorithm: 'PaddleOCR Algoritması',
         selectAlgorithm: 'Algoritma Seçin',
         modelNamePlaceholder: 'Örnek: paddleocr-from-env-1',
@@ -2749,13 +2740,6 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
     },
     flow: {
       exportCurrentPage: 'Geçerli sayfayı dışa aktar',
-      preprocess: {
-        preprocess: 'Ön işleme',
-        mainContent: 'Ana içerik',
-        abstract: 'Özet',
-        author: 'Yazar',
-        sectionTitle: 'Bölüm başlığı',
-      },
       includeHeadingContent: 'Üst başlık içeriğini ayır',
       includeHeadingContentTip:
         'Etkinleştirildiğinde parçalar yalnızca başlık yolunu ve içeriğini içerir; üst başlıktan hemen sonra gelen içerik ayrı bir parça olarak tutulur.',
@@ -2880,9 +2864,6 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
         "Görüntüler için bir metin kaynağı gerekir: OCR'yi veya görsel geliştirmeyi açık tutun.",
       visionEnhancementPromptTip:
         'Görsel model için özel talimat. Yerleşik istemi kullanmak için boş bırakın.',
-      flattenMediaToText: 'Görsel modeli devre dışı bırak',
-      flattenMediaToTextTip:
-        'Görüntü ve tablo bölümlerini düz metin olarak ele alır ve görsel geliştirmeyi atlar.',
       enableChildrenDelimiters: 'Alt parçalar alım için kullanılır',
       merge: 'Birleştir',
       split: 'Böl',
@@ -2980,7 +2961,7 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       retrievalDescription: `Belirtilen datasets içinden bilgi alan bir bileşen.`,
       generateDescription: `LLM'yi yanıt üretmeye yönlendiren bir bileşen.`,
       categorizeDescription:
-        'Geçerli girdiyi önceden tanımlanmış kategorilerden birine sınıflandırmak ve iş akışını o kategoriye bağlı bileşene yönlendirmek için bir sohbet modeli (LLM) veya bir SystemOne karar modeli kullanır. Her kategori için bir ad, açıklama ve örnekler belirtin.',
+        'Geçerli girdiyi önceden tanımlanmış kategorilerden birine sınıflandırmak ve iş akışını o kategoriye bağlı bileşene yönlendirmek için bir sohbet modeli (LLM) veya bir SystemOne veya Nace karar modeli kullanır. Her kategori için bir ad, açıklama ve örnekler belirtin.',
       relevantDescription: `Yukarı akış çıktısının kullanıcının son sorgusuna uygun olup olmadığını değerlendirmek için LLM kullanan bir bileşen.`,
       rewriteQuestionDescription: `Önceki diyalogların bağlamına dayanarak Etkileşim bileşeninden bir kullanıcı sorgusunu yeniden yazan bir bileşen.`,
       messageDescription:

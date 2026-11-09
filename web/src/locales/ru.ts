@@ -383,9 +383,6 @@ export default {
       layoutRecognize: 'PDF парсер',
       layoutRecognizeTip:
         'Используйте визуальную модель для анализа макета PDF для эффективного определения заголовков документов, текстовых блоков, изображений и таблиц. Если выбран наивный вариант, будет извлекаться только простой текст из PDF. Обратите внимание, что эта опция в настоящее время работает ТОЛЬКО для PDF-документов.',
-      taskPageSize: 'Размер страницы задачи',
-      taskPageSizeMessage: 'Пожалуйста, введите размер страницы задачи!',
-      taskPageSizeTip: `Во время распознавания макета PDF-файл разбивается на части и обрабатывается параллельно для увеличения скорости обработки. Этот параметр устанавливает размер каждой части. Больший размер части снижает вероятность разделения непрерывного текста между страницами.`,
       addPage: 'Добавить страницу',
       greaterThan: 'Текущее значение должно быть больше, чем "до"!',
       greaterThanPrevious:
@@ -412,8 +409,6 @@ export default {
       childrenDelimiterTip:
         'Разделитель может состоять из одного или нескольких специальных символов. Если это несколько символов, убедитесь, что они заключены в обратные кавычки (``). Например, если вы настроите разделители так: \\n`##`;, то ваш текст будет разделен по переводам строк, двойным символам решетки (##) и точкам с запятой.',
 
-      html4excel: 'Excel в HTML',
-      html4excelTip: `Используется с методом чанкинга General. Когда отключено, электронные таблицы (XLSX или XLS (Excel 97-2003)) в базе знаний будут разобраны в пары ключ-значение. Когда включено, они будут разобраны в HTML таблицы, разделяя каждые 12 строк, если исходная таблица имеет более 12 строк. Подробности см. на https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.`,
       autoKeywords: 'Авто-ключевые слова',
       autoKeywordsTip: `Автоматически извлекает N ключевых слов для каждого чанка, чтобы повысить их рейтинг для запросов, содержащих эти ключевые слова. Имейте в виду, что дополнительные токены будут потребляться чат-моделью, указанной в 'Системных настройках модели'. Вы можете проверить или обновить добавленные ключевые слова для чанка из списка чанков. Подробности см. на https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoQuestions: 'Авто-вопросы',
@@ -476,8 +471,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         'Например: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'Токен доступа AI Studio',
-      paddleocrAccessTokenTip: 'Токен доступа к API PaddleOCR (необязательно)',
-      paddleocrAccessTokenPlaceholder: 'Ваш токен AI Studio (необязательно)',
+      paddleocrAccessTokenTip: 'Токен доступа к API PaddleOCR',
+      paddleocrAccessTokenPlaceholder: 'Ваш токен AI Studio',
       paddleocrAlgorithm: 'Алгоритм PaddleOCR',
       paddleocrAlgorithmTip: 'Алгоритм, используемый для обработки PaddleOCR',
       paddleocrSelectAlgorithm: 'Выбрать алгоритм',
@@ -1322,7 +1317,7 @@ export default {
         apiUrlPlaceholder:
           'Например: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Токен доступа AI Studio',
-        accessTokenPlaceholder: 'Ваш токен AI Studio (необязательно)',
+        accessTokenPlaceholder: 'Ваш токен AI Studio',
         algorithm: 'Алгоритм PaddleOCR',
         selectAlgorithm: 'Выбрать алгоритм',
         modelNamePlaceholder: 'Например: paddleocr-from-env-1',
@@ -1542,13 +1537,6 @@ export default {
       pleaseUploadAtLeastOneFile: 'Пожалуйста, загрузите хотя бы один файл',
     },
     flow: {
-      preprocess: {
-        preprocess: 'Предобработка',
-        mainContent: 'Основное содержимое',
-        abstract: 'Аннотация',
-        author: 'Автор',
-        sectionTitle: 'Заголовок раздела',
-      },
       autoPlay: 'Автовоспроизведение аудио',
       downloadFileTypeTip: 'Тип файла для скачивания',
       downloadFileType: 'Тип скачиваемого файла',
@@ -2089,9 +2077,9 @@ export default {
       jsonFormatTip:
         'Вышестоящий компонент должен предоставить JSON строку в следующем формате:',
       toEmailTip: 'to_email: Email получателя (Обязательно)',
-      ccEmailTip: 'cc_email: Email копии (Опционально)',
-      subjectTip: 'subject: Тема email (Опционально)',
-      contentTip: 'content: Содержимое email (Опционально)',
+      ccEmailTip: 'cc_email: Email копии',
+      subjectTip: 'subject: Тема email',
+      contentTip: 'content: Содержимое email',
       jsonUploadTypeErrorMessage: 'Пожалуйста, загрузите json файл',
       jsonUploadContentErrorMessage: 'Ошибка json файла',
       iteration: 'Итерация',

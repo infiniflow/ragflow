@@ -36,54 +36,33 @@
                             "llm_id": ""
                         },
                         "doc": {
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "doc"
                             ]
                         },
                         "docx": {
-                            "flatten_media_to_text": false,
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "docx"
-                            ],
-                            "vlm": {}
+                            ]
                         },
                         "html": {
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "htm",
                                 "html"
                             ]
                         },
                         "markdown": {
-                            "flatten_media_to_text": false,
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "md",
                                 "markdown",
                                 "mdx"
-                            ],
-                            "vlm": {}
+                            ]
                         },
                         "pdf": {
-                            "flatten_media_to_text": false,
                             "parse_method": "DeepDOC",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "pdf"
                             ],
-                            "vlm": {},
                             "pages": [
                                 [
                                     1,
@@ -92,22 +71,14 @@
                             ]
                         },
                         "spreadsheet": {
-                            "flatten_media_to_text": false,
                             "parse_method": "DeepDOC",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "xls",
                                 "xlsx",
                                 "csv"
-                            ],
-                            "vlm": {}
+                            ]
                         },
                         "text&code": {
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "txt",
                                 "py",
@@ -127,9 +98,6 @@
                         },
                         "image": {
                             "ocr_enabled": true,
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "bmp",
                                 "gif",
@@ -152,9 +120,6 @@
                                 "subject",
                                 "body",
                                 "attachments"
-                            ],
-                            "preprocess": [
-                                "main_content"
                             ],
                             "suffix": [
                                 "eml",
@@ -315,62 +280,30 @@
                             "setups": [
                                 {
                                     "fileFormat": "pdf",
-                                    "flatten_media_to_text": false,
-                                    "parse_method": "DeepDOC",
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "vlm": {}
+                                    "parse_method": "DeepDOC"
                                 },
                                 {
                                     "fileFormat": "spreadsheet",
-                                    "flatten_media_to_text": false,
-                                    "parse_method": "DeepDOC",
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "vlm": {}
+                                    "parse_method": "DeepDOC"
                                 },
                                 {
-                                    "fileFormat": "markdown",
-                                    "flatten_media_to_text": false,
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "vlm": {}
+                                    "fileFormat": "markdown"
                                 },
                                 {
-                                    "fileFormat": "text&code",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "fileFormat": "text&code"
                                 },
                                 {
-                                    "fileFormat": "html",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "fileFormat": "html"
                                 },
                                 {
-                                    "fileFormat": "doc",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "fileFormat": "doc"
                                 },
                                 {
-                                    "fileFormat": "docx",
-                                    "flatten_media_to_text": false,
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "vlm": {}
+                                    "fileFormat": "docx"
                                 },
                                 {
                                     "fileFormat": "image",
-                                    "ocr_enabled": true,
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "ocr_enabled": true
                                 },
                                 {
                                     "fileFormat": "email",
@@ -383,9 +316,6 @@
                                         "subject",
                                         "body",
                                         "attachments"
-                                    ],
-                                    "preprocess": [
-                                        "main_content"
                                     ]
                                 }
                             ]

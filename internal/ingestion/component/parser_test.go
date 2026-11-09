@@ -198,16 +198,19 @@ func TestNewParserComponentSkipsNonFamilyParams(t *testing.T) {
 	}
 }
 
-// A canvas saved by the Python frontend stores the Parser params in the
-// nested shape {outputs, setups: {pdf: {...}}}; the Go component reads the
-// flat shape with file families as top-level keys. The nested group must be
-// lifted instead of being treated as a bogus "setups" file family.
+func TestSpreadsheetDefaultsDoNotExposeRetiredOption(t *testing.T) {
+	if _, ok := defaultSetups()["spreadsheet"]["html4excel"]; ok {
+		t.Fatal("spreadsheet defaults expose the retired option")
+	}
+}
+
+// A canvas can store Parser params as nested setups; lift the families before use.
 func TestNewParserComponentFlattensNestedSetups(t *testing.T) {
 	component, err := NewParserComponent(map[string]any{
 		"outputs": map[string]any{"html": map[string]any{"type": "string"}},
 		"setups": map[string]any{
 			"pdf":         map[string]any{"parse_method": "vision"},
-			"spreadsheet": map[string]any{"html4excel": true},
+			"spreadsheet": map[string]any{"parse_method": "tcadp"},
 		},
 	})
 	if err != nil {
@@ -221,8 +224,8 @@ func TestNewParserComponentFlattensNestedSetups(t *testing.T) {
 	if got := parserComponent.setups["pdf"]["parse_method"]; got != "vision" {
 		t.Errorf("pdf parse_method = %v, want vision (nested setups not flattened)", got)
 	}
-	if got := parserComponent.setups["spreadsheet"]["html4excel"]; got != true {
-		t.Errorf("spreadsheet html4excel = %v, want true (nested setups not flattened)", got)
+	if got := parserComponent.setups["spreadsheet"]["parse_method"]; got != "tcadp" {
+		t.Errorf("spreadsheet parse_method = %v, want tcadp (nested setups not flattened)", got)
 	}
 
 	// When both shapes carry the same family, the top-level (Go-native, flat)

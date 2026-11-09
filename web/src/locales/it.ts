@@ -555,9 +555,6 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       layoutRecognize: 'Parser PDF',
       layoutRecognizeTip:
         "Usa un modello visivo per l'analisi del layout PDF per individuare efficacemente titoli, blocchi di testo, immagini e tabelle. Se viene scelta l'opzione naive, sarà recuperato solo il testo semplice nel PDF. Nota che questa opzione attualmente funziona SOLO per i documenti PDF.",
-      taskPageSize: 'Dimensione pagina attività',
-      taskPageSizeMessage: 'Inserisci la dimensione della pagina attività!',
-      taskPageSizeTip: `Durante il riconoscimento del layout, un file PDF viene suddiviso in chunk ed elaborato in parallelo per aumentare la velocità di elaborazione. Questo parametro imposta la dimensione di ogni chunk. Una dimensione chunk maggiore riduce la probabilità di dividere il testo continuo tra le pagine.`,
       addPage: 'Aggiungi pagina',
       greaterThan: 'Il valore attuale deve essere maggiore di!',
       greaterThanPrevious:
@@ -584,8 +581,6 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       childrenDelimiterTip:
         'Un delimitatore può consistere in uno o più caratteri speciali. Se sono più caratteri, assicurati che siano racchiusi tra backtick (``). Ad esempio, se configuri i tuoi delimitatori così: \\n`##`;, i tuoi testi saranno separati a interruzioni di riga, doppio cancelletto (##) e punto e virgola.',
 
-      html4excel: 'Excel in HTML',
-      html4excelTip: `Usa con il metodo di chunking Generale. Quando disabilitato, i fogli di calcolo (XLSX o XLS (Excel 97-2003)) nel dataset saranno analizzati in coppie chiave-valore. Quando abilitato, saranno analizzati in tabelle HTML, dividendo ogni 12 righe se la tabella originale ha più di 12 righe. Vedi https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration per i dettagli.`,
       autoKeywords: 'Parole chiave automatiche',
       autoKeywordsTip: `Estrai automaticamente N parole chiave per ogni chunk per aumentare il loro ranking per le query contenenti quelle parole chiave. Tieni presente che saranno consumati token extra dal modello di indicizzazione specificato in 'Configurazione'. Puoi controllare o aggiornare le parole chiave aggiunte per un chunk dalla lista dei chunk. Per i dettagli, vedi https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoQuestions: 'Domande automatiche',
@@ -650,9 +645,8 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       paddleocrApiUrlPlaceholder:
         'es. https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'Token di accesso AI Studio',
-      paddleocrAccessTokenTip:
-        "Token di accesso per l'API PaddleOCR (opzionale)",
-      paddleocrAccessTokenPlaceholder: 'Il tuo token AI Studio (opzionale)',
+      paddleocrAccessTokenTip: "Token di accesso per l'API PaddleOCR",
+      paddleocrAccessTokenPlaceholder: 'Il tuo token AI Studio',
       paddleocrAlgorithm: 'Algoritmo PaddleOCR',
       paddleocrAlgorithmTip: "Algoritmo da usare per l'analisi PaddleOCR",
       paddleocrSelectAlgorithm: 'Seleziona algoritmo',
@@ -1625,7 +1619,7 @@ Esempio: Virtual Hosted Style`,
         apiUrlPlaceholder:
           'Ad esempio: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Token di accesso AI Studio',
-        accessTokenPlaceholder: 'Il tuo token AI Studio (opzionale)',
+        accessTokenPlaceholder: 'Il tuo token AI Studio',
         algorithm: 'Algoritmo PaddleOCR',
         selectAlgorithm: 'Seleziona algoritmo',
         modelNamePlaceholder: 'Ad esempio: paddleocr-from-env-1',
@@ -1844,13 +1838,6 @@ Esempio: Virtual Hosted Style`,
       pleaseUploadAtLeastOneFile: 'Carica almeno un file',
     },
     flow: {
-      preprocess: {
-        preprocess: 'Pre-elaborazione',
-        mainContent: 'Contenuto principale',
-        abstract: 'Abstract',
-        author: 'Autore',
-        sectionTitle: 'Titolo sezione',
-      },
       editTags: 'Modifica tag',
       editTagsDescription:
         'Aggiungi tag per organizzare e filtrare i tuoi agenti. Premi Invio o virgola per aggiungere.',
@@ -1926,9 +1913,6 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       oneChunkTitle: 'Nota',
       oneChunkDescription:
         'Tutte le sezioni analizzate saranno unite in ordine in un singolo chunk.',
-      flattenMediaToText: 'Disabilita modello visivo',
-      flattenMediaToTextTip:
-        'Tratta le sezioni di immagini e tabelle come testo semplice e salta il miglioramento visivo.',
       enableChildrenDelimiters: 'I chunk figli sono usati per il recupero',
       merge: 'Unisci',
       split: 'Dividi',
@@ -2418,9 +2402,9 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       jsonFormatTip:
         'Il componente a monte dovrebbe fornire una stringa JSON nel seguente formato:',
       toEmailTip: 'to_email: Email destinatario (Richiesto)',
-      ccEmailTip: 'cc_email: Email CC (Opzionale)',
-      subjectTip: 'subject: Oggetto email (Opzionale)',
-      contentTip: 'content: Contenuto email (Opzionale)',
+      ccEmailTip: 'cc_email: Email CC',
+      subjectTip: 'subject: Oggetto email',
+      contentTip: 'content: Contenuto email',
       jsonUploadTypeErrorMessage: 'Carica un file json',
       jsonUploadContentErrorMessage: 'errore file json',
       iteration: 'Iterazione',

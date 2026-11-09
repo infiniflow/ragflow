@@ -97,6 +97,16 @@ func (f *fakeCacheStore) Delete(_ context.Context, key string) bool {
 	return true
 }
 
+func (f *fakeCacheStore) DeleteMany(_ context.Context, keys ...string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, k := range keys {
+		delete(f.kv, k)
+		delete(f.sets, k)
+	}
+	return true
+}
+
 func (f *fakeCacheStore) Expire(_ context.Context, key string, exp time.Duration) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()

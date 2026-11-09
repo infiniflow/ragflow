@@ -89,9 +89,8 @@ func maybeDispatchPDFVision(
 	// fallback) are converted to JSON by NormalizeMarkdown before dispatch
 	// returns, so the NormalizeResult closure below only ever applies item
 	// policies to already-normalized JSON and stays idempotent.
-	flatten, _ := setup["flatten_media_to_text"].(bool)
 	normalize := func(result parser.ParseResult) parser.ParseResult {
-		pdf := parser.PDFParser{FlattenMediaToText: flatten}
+		pdf := parser.PDFParser{}
 		return parser.AttachPDFOutlines(pdf.NormalizeResult(ctx, filename, result), binary)
 	}
 	if result, handled, err := maybeDispatchTenantPDFParser(ctx, db, filename, binary, tenantID, setup); handled {
@@ -285,6 +284,15 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 	if !useVision {
 		return parser.ParseResult{}, false, nil
 	}
+	// A MiniCPM-OCR model is OCR-only and cannot serve the image2text VLM path
+	// below, so its selector goes to its own parser instead.
+	if isMiniCPMOCRModelSelector(ctx, db, tenantID, modelID) {
+		res, err := dispatchMiniCPMOCRPDF(ctx, db, filename, binary, tenantID, modelID)
+		if err != nil {
+			return parser.ParseResult{}, true, err
+		}
+		return res, true, nil
+	}
 	if tenantID == "" {
 		return parser.ParseResult{}, true, fmt.Errorf(
 			`parser: pdf parse_method %q requires tenant_id to resolve VLM model`, modelID)
@@ -338,7 +346,7 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 		return parser.ParseResult{}, err
 	}
 	md := strings.Join(sections, "\n\n")
-	return normalizePDFMarkdown(ctx, filename, md, setup), nil
+	return normalizePDFMarkdown(ctx, filename, md), nil
 }
 
 // normalizePDFMarkdown converts a PDF backend Markdown response (MonkeyOCRv2,
@@ -346,9 +354,8 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 // package's NormalizeMarkdown. This keeps the markdown→JSON boundary in the
 // parser package, matching the NormalizeResult path used for JSON backends, and
 // lets the downstream NormalizeResult closure stay idempotent for JSON.
-func normalizePDFMarkdown(ctx context.Context, filename, md string, setup schema.ParserSetup) parser.ParseResult {
-	flatten, _ := setup["flatten_media_to_text"].(bool)
-	return (&parser.PDFParser{FlattenMediaToText: flatten}).NormalizeMarkdown(ctx, filename, md)
+func normalizePDFMarkdown(ctx context.Context, filename, md string) parser.ParseResult {
+	return (&parser.PDFParser{}).NormalizeMarkdown(ctx, filename, md)
 }
 
 var isMonkeyOCRv2LayoutModelID = defaultIsMonkeyOCRv2LayoutModelID
@@ -643,7 +650,7 @@ func dispatchMinerUPDF(
 		if err != nil {
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU cloud: %w", err)
 		}
-		return finishMinerURemoteResult(ctx, filename, binary, result, setup)
+		return finishMinerURemoteResult(ctx, filename, binary, result)
 	}
 
 	v1, err := modelModule.MinerUSupportsV1(ctx, baseURL, apiKeyRaw)
@@ -664,7 +671,7 @@ func dispatchMinerUPDF(
 		if err != nil {
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU V1: %w", err)
 		}
-		return finishMinerURemoteResult(ctx, filename, binary, result, setup)
+		return finishMinerURemoteResult(ctx, filename, binary, result)
 	}
 
 	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
@@ -685,7 +692,7 @@ func dispatchMinerUPDF(
 	return res, nil
 }
 
-func finishMinerURemoteResult(ctx context.Context, filename string, binary []byte, result *modelModule.MinerUV1Result, setup schema.ParserSetup) (parser.ParseResult, error) {
+func finishMinerURemoteResult(ctx context.Context, filename string, binary []byte, result *modelModule.MinerUV1Result) (parser.ParseResult, error) {
 	markdown := ""
 	var zipBytes []byte
 	if result != nil {
@@ -705,7 +712,7 @@ func finishMinerURemoteResult(ctx context.Context, filename string, binary []byt
 		return res, nil
 	}
 	if markdown != "" {
-		return normalizePDFMarkdown(ctx, filename, result.Markdown, setup), nil
+		return normalizePDFMarkdown(ctx, filename, result.Markdown), nil
 	}
 	if extractErr != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", extractErr)
@@ -861,7 +868,7 @@ func dispatchMonkeyOCRPDF(
 		}
 	}
 	md := strings.Join(parts, "\n")
-	return normalizePDFMarkdown(ctx, filename, md, setup), nil
+	return normalizePDFMarkdown(ctx, filename, md), nil
 }
 
 // resolveMinerUModelForDispatch resolves the OCR model used by the MinerU PDF
@@ -946,7 +953,46 @@ func dispatchPaddleOCRPdf(
 		return parser.ParseResult{}, fmt.Errorf("parser: PaddleOCR OCRFile: %w", err)
 	}
 
-	result := parser.PaddleOCRPDFResult(ctx, filename, binary, resp)
+	result := parser.OCRPDFResult(ctx, "PaddleOCR", filename, binary, resp)
+	return result, result.Err
+}
+
+// isMiniCPMOCRModelSelector reports whether selector — a tenant model UUID or
+// a model@instance@provider composite — names a MiniCPM-OCR model. A UUID
+// carries no provider spelling, so it is resolved within the tenant.
+var isMiniCPMOCRModelSelector = defaultIsMiniCPMOCRModelSelector
+
+func defaultIsMiniCPMOCRModelSelector(ctx context.Context, db *gorm.DB, tenantID, selector string) bool {
+	selector = strings.TrimSpace(selector)
+	if strings.Contains(selector, "@") {
+		_, _, providerName, err := common.ParseCompositeModelName(selector)
+		return err == nil && strings.EqualFold(providerName, "MiniCPM-OCR")
+	}
+	if db == nil || tenantID == "" || selector == "" {
+		return false
+	}
+	resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, selector)
+	return err == nil && resolved.driver.Name() == "minicpm-ocr"
+}
+
+// dispatchMiniCPMOCRPDF parses the PDF with the selected MiniCPM-OCR model and
+// projects its page blocks onto the PDF pages.
+func dispatchMiniCPMOCRPDF(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID, selector string) (parser.ParseResult, error) {
+	if tenantID == "" {
+		return parser.ParseResult{}, fmt.Errorf("parser: MiniCPM-OCR requires tenant_id")
+	}
+	driver, modelName, apiConfig, _, err := resolveModelConfig(ctx, db, tenantID, entity.ModelTypeOCR, selector)
+	if err != nil {
+		return parser.ParseResult{}, fmt.Errorf("parser: MiniCPM-OCR model: %w", err)
+	}
+	if driver.Name() != "minicpm-ocr" {
+		return parser.ParseResult{}, fmt.Errorf("parser: MiniCPM-OCR requires a MiniCPM-OCR OCR model; found %q", driver.Name())
+	}
+	resp, err := driver.OCRFile(ctx, &modelName, binary, nil, apiConfig, nil, nil)
+	if err != nil {
+		return parser.ParseResult{}, fmt.Errorf("parser: MiniCPM-OCR OCRFile: %w", err)
+	}
+	result := parser.OCRPDFResult(ctx, "MiniCPM-OCR", filename, binary, resp)
 	return result, result.Err
 }
 

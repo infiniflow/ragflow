@@ -106,8 +106,7 @@ func NewKnowledgebaseDAO() *KnowledgebaseDAO {
 // a business rule answered by transaction.EmbeddingModelRef; what remains here
 // is the read itself, once per call, so callers resolving a batch of datasets
 // memoize through transaction.EmbeddingBaseNameResolver. An id that no longer
-// resolves falls back to the composite base name when embd_id holds one,
-// otherwise to the id itself so only exact matches group together.
+// resolves returns an empty name; the resolver applies the dataset fallback.
 func (dao *KnowledgebaseDAO) EmbeddingBaseName(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase) string {
 	id, raw := transaction.EmbeddingModelRef(kb)
 	if id == "" {
@@ -120,10 +119,7 @@ func (dao *KnowledgebaseDAO) EmbeddingBaseName(ctx context.Context, db *gorm.DB,
 			}
 		}
 	}
-	if raw != "" && raw != id {
-		return common.BaseModelName(raw)
-	}
-	return id
+	return ""
 }
 
 // Create creates a new knowledge base record

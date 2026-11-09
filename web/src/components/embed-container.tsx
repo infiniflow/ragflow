@@ -40,16 +40,21 @@ export function EmbedContainer({
     <section className="h-[100vh] flex justify-center items-center">
       <div className="w-full h-full md:w-[80vw] md:h-auto border-0 md:border rounded-none md:rounded-lg">
         <div className="flex justify-between items-center border-b p-3 relative">
-          <div className="flex gap-2 items-center absolute left-1/2 -translate-x-1/2 md:static md:left-auto md:translate-x-0">
+          <div className="flex gap-2 items-center min-w-0 max-w-[60%] md:max-w-none absolute left-1/2 -translate-x-1/2 md:static md:left-auto md:translate-x-0">
             <RAGFlowAvatar
               avatar={avatar}
               name={title}
               isPerson
-              className="size-5 md:size-10"
+              className="size-5 md:size-10 shrink-0"
             />
-            <div className="md:text-xl text-foreground">{title}</div>
+            <div
+              className="md:text-xl text-foreground min-w-0 truncate"
+              title={title}
+            >
+              {title}
+            </div>
           </div>
-          <div className="flex items-center gap-2 md:ml-auto md:mr-3">
+          <div className="flex items-center gap-2 md:ml-auto md:mr-3 shrink-0">
             <img src="/logo.svg" alt="" className="h-6 md:h-8" />
             <span className="hidden md:inline-block text-lg font-bold text-foreground">
               {appConf.appName}
