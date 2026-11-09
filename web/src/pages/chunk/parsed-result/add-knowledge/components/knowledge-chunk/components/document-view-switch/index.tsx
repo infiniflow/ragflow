@@ -1,12 +1,14 @@
 import DocumentPreview from '@/components/document-preview';
-import DocumentHeader from '@/components/document-preview/document-header';
-import { Segmented, type SegmentedValue } from '@/components/ui/segmented';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import Representation, {
   type ClaimsPanelState,
   type ClickableNode,
   type EvidencePanelState,
 } from '@/pages/chunk/representation';
-import { File, LayoutList } from 'lucide-react';
+import { RepresentationSelect } from '@/pages/chunk/representation/components/representation-select';
+import { useGraphEntitySearch } from '@/pages/chunk/representation/hooks/use-graph-entity-search';
+import { File } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { IHighlight } from 'react-pdf-highlighter';
@@ -16,12 +18,13 @@ enum ViewMode {
   Representations = 'representations',
 }
 
+// The two view pills reuse the outline button's hover styling while their
+// view is active. The select trigger carries `!bg-bg-input`, so the active
+// background needs the important modifier to win there.
+const ActivePillClass =
+  'text-text-primary !bg-border-button border-border-default';
+
 interface DocumentViewSwitchProps {
-  documentInfo?: {
-    size: number;
-    name: string;
-    create_date: string;
-  };
   fileType: string;
   highlights: IHighlight[];
   setWidthAndHeight: (width: number, height: number) => void;
@@ -35,7 +38,6 @@ interface DocumentViewSwitchProps {
 }
 
 export default function DocumentViewSwitch({
-  documentInfo,
   fileType,
   highlights,
   setWidthAndHeight,
@@ -55,53 +57,53 @@ export default function DocumentViewSwitch({
     [onChunkIdsChange],
   );
 
-  const handleViewModeChange = useCallback(
-    (value: SegmentedValue) => {
-      setViewMode(value as ViewMode);
-      if (value === ViewMode.Preview && viewMode !== ViewMode.Preview) {
-        onChunkIdsChange?.([]);
-      }
-    },
-    [onChunkIdsChange, viewMode],
-  );
+  // Owned here instead of inside the tree: the tab row's template dropdown
+  // needs the template list even while the preview view is showing.
+  const graphSearch = useGraphEntitySearch(handleNodeClick);
+  const { templates, selectedTemplateId, handleTemplateChange } = graphSearch;
 
-  const options = [
-    {
-      value: ViewMode.Preview,
-      label: (
-        <div className="flex items-center gap-1">
-          <File className="h-4 w-4" />
-          <span>{t('common.preview')}</span>
-        </div>
-      ),
+  const handlePreviewClick = useCallback(() => {
+    setViewMode(ViewMode.Preview);
+    if (viewMode !== ViewMode.Preview) {
+      onChunkIdsChange?.([]);
+    }
+  }, [onChunkIdsChange, viewMode]);
+
+  // The template dropdown doubles as the representations tab: picking a
+  // template switches the left column to that representation.
+  const handleTemplatePillChange = useCallback(
+    (templateId: string) => {
+      handleTemplateChange(templateId);
+      setViewMode(ViewMode.Representations);
     },
-    {
-      value: ViewMode.Representations,
-      label: (
-        <div className="flex items-center gap-1">
-          <LayoutList className="h-4 w-4" />
-          {/* Product term: kept as-is in every locale, like RAPTOR. */}
-          <span>Artifact</span>
-        </div>
-      ),
-    },
-  ];
+    [handleTemplateChange],
+  );
 
   return (
     <>
-      <DocumentHeader
-        className="flex-1 min-w-0"
-        wrapperClassName="flex items-center justify-between p-5 pb-0 gap-2"
-        size={documentInfo?.size ?? 0}
-        name={documentInfo?.name ?? ''}
-        create_date={documentInfo?.create_date ?? ''}
-      >
-        <Segmented
-          options={options}
-          value={viewMode}
-          onChange={handleViewModeChange}
-        />
-      </DocumentHeader>
+      {templates.length > 0 && (
+        <div className="flex items-center gap-2 p-5 pb-0">
+          <Button
+            variant="outline"
+            className={cn(
+              'w-fit',
+              viewMode === ViewMode.Preview && ActivePillClass,
+            )}
+            onClick={handlePreviewClick}
+          >
+            <File />
+            {t('common.preview')}
+          </Button>
+          <RepresentationSelect
+            templates={templates}
+            value={selectedTemplateId}
+            onChange={handleTemplatePillChange}
+            triggerClassName={cn(
+              viewMode === ViewMode.Representations && ActivePillClass,
+            )}
+          />
+        </div>
+      )}
 
       <div className="flex-1 h-0 min-h-0 overflow-hidden p-5 pt-2.5 [&>section]:h-full [&>section]:min-h-0">
         {viewMode === ViewMode.Preview ? (
@@ -115,7 +117,7 @@ export default function DocumentViewSwitch({
           />
         ) : (
           <Representation
-            onNodeClick={handleNodeClick}
+            graphSearch={graphSearch}
             onClaimsPanelChange={onClaimsPanelChange}
             onEvidencePanelChange={onEvidencePanelChange}
           />

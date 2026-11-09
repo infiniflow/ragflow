@@ -220,6 +220,14 @@ const routeConfigOptions = [
         ],
       },
       {
+        // The chunk page shows the (collapsed) primary sidebar like the
+        // dataset pages it is entered from, so it lives under the root layout
+        // rather than with the other chunk routes.
+        path: `${Routes.ParsedResult}/chunks`,
+        Component: () =>
+          import('@/pages/chunk/parsed-result/add-knowledge/components/knowledge-chunk'),
+      },
+      {
         Component: () => import('@/layouts/nav-group-layout'),
         children: [
           {
@@ -421,11 +429,6 @@ const routeConfigOptions = [
       {
         path: `${Routes.Chunk}`,
         Component: () => import('@/pages/chunk'),
-      },
-      {
-        path: `${Routes.ParsedResult}/chunks`,
-        Component: () =>
-          import('@/pages/chunk/parsed-result/add-knowledge/components/knowledge-chunk'),
       },
       {
         path: `${Routes.ChunkResult}/:id`,

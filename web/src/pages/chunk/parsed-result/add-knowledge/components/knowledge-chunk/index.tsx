@@ -21,7 +21,6 @@ import {
 import ChunkResultBar from './components/chunk-result-bar';
 import CheckboxSets from './components/chunk-result-bar/checkbox-sets';
 import DocumentViewSwitch from './components/document-view-switch';
-// import DocumentHeader from './components/document-preview/document-header';
 
 import {
   ClaimsPanel,
@@ -30,7 +29,8 @@ import {
   NodeDetailPanel,
 } from '@/pages/chunk/representation/components/claim-list';
 import { useGetDocumentUrl } from '@/components/document-preview/hooks';
-import { PageHeader } from '@/components/page-header';
+import FileIcon from '@/components/file-icon';
+import { TruncatedText } from '@/components/truncated-text';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import message from '@/components/ui/message';
@@ -46,9 +46,10 @@ import {
   useNavigatePage,
 } from '@/hooks/logic-hooks/navigate-hooks';
 import { useClearSelectionOnPageChange } from '@/hooks/logic-hooks/use-clear-selection-on-page-change';
+import { useSidebarCollapse } from '@/layouts/components/app-sidebar/use-sidebar-collapse';
 import { getExtension } from '@/utils/document-util';
 import { useMemoizedFn } from 'ahooks';
-import { LucideArrowBigLeft } from 'lucide-react';
+import { ArrowLeft } from 'lucide-react';
 
 function Chunk() {
   const [filterChunkIds, setFilterChunkIds] = useState<string[]>([]);
@@ -90,7 +91,18 @@ function Chunk() {
     documentId,
   } = useUpdateChunk();
   const { navigateToDataFile, getQueryString } = useNavigatePage();
+  const handleBack = navigateToDataFile(
+    getQueryString(QueryStringMap.id) as string,
+  );
   const fileUrl = useGetDocumentUrl(false);
+
+  // Entering the chunk page collapses the primary sidebar to the icon rail
+  // (same persisted preference the dataset pages write). The rail's expand
+  // button stays available for the user to override.
+  const { setCollapsed: setSidebarCollapsed } = useSidebarCollapse();
+  useEffect(() => {
+    setSidebarCollapsed(true);
+  }, [setSidebarCollapsed]);
 
   const clearSelectedChunkIds = useCallback(() => {
     setSelectedChunkIds([]);
@@ -158,6 +170,21 @@ function Chunk() {
     showSelectedChunkWarning,
     clearSelectedChunkIds,
   ]);
+
+  const handleRemoveChunkById = useCallback(
+    async (chunkId: string) => {
+      const resCode: number = await removeChunk([chunkId], documentId);
+      if (resCode === 0) {
+        setSelectedChunkIds((previousIds) =>
+          previousIds.filter((id) => id !== chunkId),
+        );
+        if (selectedChunkId === chunkId) {
+          handleChunkCardClick('');
+        }
+      }
+    },
+    [removeChunk, documentId, selectedChunkId, handleChunkCardClick],
+  );
 
   const handleSwitchChunk = useCallback(
     async (available?: number, chunkIds?: string[]) => {
@@ -233,21 +260,28 @@ function Chunk() {
   );
 
   return (
-    <main className="h-dvh flex flex-col">
-      <PageHeader>
-        <Button
-          variant="outline"
-          onClick={navigateToDataFile(
-            getQueryString(QueryStringMap.id) as string,
-          )}
-        >
-          <LucideArrowBigLeft />
-          {t('common.back')}
-        </Button>
-      </PageHeader>
-
-      <Card className="mx-5 mb-5 flex-1 h-0 p-0 bg-transparent shadow-none">
-        <CardContent className="p-0 h-full flex flex-row divide-x-0.5 rtl:divide-x-reverse">
+    <main className="h-full flex flex-col">
+      <Card className="m-5 flex-1 h-0 p-0 bg-transparent shadow-none flex flex-col">
+        <header className="flex shrink-0 items-center gap-2 p-5 border-b-0.5 border-b-border-button">
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={t('common.back')}
+            title={t('common.back')}
+            onClick={handleBack}
+          >
+            <ArrowLeft />
+          </Button>
+          <FileIcon name={documentInfo?.name ?? ''} id={documentId} />
+          <TruncatedText
+            as="h2"
+            className="min-w-0 flex-1 truncate text-lg font-semibold"
+            tooltip={documentInfo?.name}
+          >
+            {documentInfo?.name}
+          </TruncatedText>
+        </header>
+        <CardContent className="p-0 flex-1 min-h-0 flex flex-row">
           <ResizablePanelGroup direction="horizontal" className="flex-1">
             {/* id + order must be explicit: the middle column mounts after the
                 first render, and without them react-resizable-panels orders
@@ -261,7 +295,6 @@ function Chunk() {
             >
               <article className="h-full flex flex-col">
                 <DocumentViewSwitch
-                  documentInfo={documentInfo}
                   fileType={fileType}
                   highlights={highlights}
                   setWidthAndHeight={setWidthAndHeight}
@@ -318,13 +351,6 @@ function Chunk() {
               minSize={30}
             >
               <article className="h-full flex flex-col">
-                <header className="flex-0 p-5 pb-2.5 border-b-0.5 border-b-border-button">
-                  <h2 className="text-[24px]">{t('chunk.chunkResult')}</h2>
-                  <div className="text-[14px] text-text-secondary">
-                    {t('chunk.chunkResultTip')}
-                  </div>
-                </header>
-
                 <Spin spinning={loading} className="flex-1 h-0" size="large">
                   <div className="relative @container h-full px-5 pb-5 overflow-hidden flex flex-col">
                     <div
@@ -340,6 +366,8 @@ function Chunk() {
                         handleInputChange={handleInputChange}
                         searchString={searchString}
                         changeChunkTextMode={changeChunkTextMode}
+                        textMode={textMode}
+                        total={total}
                         createChunk={showChunkUpdatingModal}
                         available={available}
                         selectAllChunk={selectAllChunk}
@@ -363,6 +391,7 @@ function Chunk() {
                       selectedChunkIds={selectedChunkIds}
                       textMode={textMode}
                       editChunk={showChunkUpdatingModal}
+                      removeChunk={handleRemoveChunkById}
                       handleCheckboxClick={handleSingleCheckboxClick}
                       switchChunk={handleSwitchChunk}
                       clickChunkCard={handleChunkCardClick}
@@ -409,6 +438,7 @@ interface ChunkVirtualListProps {
   selectedChunkIds: string[];
   textMode: ChunkTextMode;
   editChunk: (chunkId: string) => void;
+  removeChunk: (chunkId: string) => void;
   handleCheckboxClick: (chunkId: string, checked: boolean) => void;
   switchChunk: (available?: number, chunkIds?: string[]) => void;
   clickChunkCard: (chunkId: string) => void;
@@ -425,6 +455,7 @@ function ChunkVirtualList({
   selectedChunkIds,
   textMode,
   editChunk,
+  removeChunk,
   handleCheckboxClick,
   switchChunk,
   clickChunkCard,
@@ -467,6 +498,7 @@ function ChunkVirtualList({
               <ChunkCard
                 item={item}
                 editChunk={editChunk}
+                removeChunk={removeChunk}
                 checked={selectedChunkIds.some((x) => x === item.chunk_id)}
                 handleCheckboxClick={handleCheckboxClick}
                 switchChunk={switchChunk}

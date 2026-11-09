@@ -1,4 +1,5 @@
 import Image from '@/components/image';
+import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
@@ -13,6 +14,7 @@ import { cn } from '@/lib/utils';
 import { sanitizeHtmlWithImagesAsText } from '@/utils/dom-util';
 import { CheckedState } from '@radix-ui/react-checkbox';
 import classNames from 'classnames';
+import { PenLine, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChunkTextMode } from '../../constant';
@@ -23,6 +25,7 @@ interface IProps {
   checked: boolean;
   switchChunk: (available?: number, chunkIds?: string[]) => void;
   editChunk: (chunkId: string) => void;
+  removeChunk: (chunkId: string) => void;
   handleCheckboxClick: (chunkId: string, checked: boolean) => void;
   selected: boolean;
   clickChunkCard: (chunkId: string) => void;
@@ -35,6 +38,7 @@ const ChunkCard = ({
   checked,
   handleCheckboxClick,
   editChunk,
+  removeChunk,
   switchChunk,
   selected,
   clickChunkCard,
@@ -56,8 +60,12 @@ const ChunkCard = ({
     handleCheckboxClick(item.chunk_id, e === 'indeterminate' ? false : e);
   };
 
-  const handleContentDoubleClick = () => {
+  const handleEditClick = () => {
     editChunk(item.chunk_id);
+  };
+
+  const handleDeleteClick = () => {
+    removeChunk(item.chunk_id);
   };
 
   const handleContentClick = () => {
@@ -76,7 +84,7 @@ const ChunkCard = ({
     <Card
       as="article"
       className={classNames(
-        'relative flex-none p-3 pt-6 shadow-none transition-colors',
+        'group relative flex-none p-3 pt-6 shadow-none transition-colors',
         selected && 'bg-text-primary/15',
       )}
     >
@@ -128,7 +136,6 @@ const ChunkCard = ({
 
         <section
           className={cn(styles.content, 'flex-1')}
-          onDoubleClick={handleContentDoubleClick}
           onClick={handleContentClick}
         >
           <div
@@ -142,7 +149,14 @@ const ChunkCard = ({
           />
         </section>
 
-        <div>
+        <span
+          className={cn(
+            'm-1.5 size-2 rounded-full group-hover:hidden group-focus-within:hidden',
+            enabled ? 'bg-state-success' : 'bg-text-disabled',
+          )}
+        />
+
+        <div className="hidden group-hover:flex group-focus-within:flex flex-col items-center gap-2">
           <Switch
             checked={enabled}
             onCheckedChange={onChange}
@@ -150,6 +164,26 @@ const ChunkCard = ({
             className="!m-0"
             disabled={datasetEditButtonDisabled}
           />
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label={t('common.edit')}
+            title={t('common.edit')}
+            onClick={handleEditClick}
+            disabled={datasetEditButtonDisabled}
+          >
+            <PenLine className="size-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label={t('common.delete')}
+            title={t('common.delete')}
+            onClick={handleDeleteClick}
+            disabled={datasetEditButtonDisabled}
+          >
+            <Trash2 className="size-4 text-state-error" />
+          </Button>
         </div>
       </div>
     </Card>

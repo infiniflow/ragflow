@@ -3,6 +3,7 @@ import {
   type SelectWithSearchFlagOptionType,
 } from '@/components/originui/select-with-search';
 import { type IStructureGraphTemplate } from '@/interfaces/database/document-structure';
+import { cn } from '@/lib/utils';
 import { formatKindLabel } from '@/utils/compilation-template-util';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -11,12 +12,14 @@ interface RepresentationSelectProps {
   templates: IStructureGraphTemplate[];
   value?: string;
   onChange?: (value: string) => void;
+  triggerClassName?: string;
 }
 
 export function RepresentationSelect({
   templates,
   value,
   onChange,
+  triggerClassName,
 }: RepresentationSelectProps) {
   const { t } = useTranslation();
   const options = useMemo<SelectWithSearchFlagOptionType[]>(() => {
@@ -39,7 +42,10 @@ export function RepresentationSelect({
       options={options}
       value={value}
       onChange={onChange}
-      triggerClassName="w-1/2"
+      // Compact header rows need w-fit: SelectWithSearch has no shrink-wrap
+      // layer, so the trigger sizes to its label. Cap the width — template
+      // names are server-returned text and truncate beyond the cap.
+      triggerClassName={cn('w-fit max-w-60', triggerClassName)}
     />
   );
 }

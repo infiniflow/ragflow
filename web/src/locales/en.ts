@@ -1080,6 +1080,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       size: 'Size',
       uploadedTime: 'Uploaded time',
       chunk: 'Chunk',
+      chunks: 'Chunks',
       createChunk: 'Create chunk',
       editChunk: 'Edit chunk',
       bulk: 'Bulk',
