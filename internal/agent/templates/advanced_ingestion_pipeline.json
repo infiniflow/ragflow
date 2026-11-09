@@ -127,17 +127,14 @@
                             }
                         },
                         "doc": {
-                            "preprocess": "main_content",
                             "suffix": [
                                 "doc"
                             ]
                         },
                         "docx": {
-                            "preprocess": "main_content",
                             "suffix": [
                                 "docx"
-                            ],
-                            "vlm": {}
+                            ]
                         },
                         "email": {
                             "fields": [
@@ -150,14 +147,12 @@
                                 "body",
                                 "attachments"
                             ],
-                            "preprocess": "main_content",
                             "suffix": [
                                 "eml",
                                 "msg"
                             ]
                         },
                         "html": {
-                            "preprocess": "main_content",
                             "suffix": [
                                 "htm",
                                 "html"
@@ -165,7 +160,6 @@
                         },
                         "image": {
                             "parse_method": "ocr",
-                            "preprocess": "main_content",
                             "suffix": [
                                 "jpg",
                                 "jpeg",
@@ -175,25 +169,20 @@
                             "system_prompt": ""
                         },
                         "markdown": {
-                            "preprocess": "main_content",
                             "suffix": [
                                 "md",
                                 "markdown",
                                 "mdx"
-                            ],
-                            "vlm": {}
+                            ]
                         },
                         "pdf": {
                             "parse_method": "DeepDOC",
-                            "preprocess": "main_content",
                             "suffix": [
                                 "pdf"
-                            ],
-                            "vlm": {}
+                            ]
                         },
                         "slides": {
                             "parse_method": "DeepDOC",
-                            "preprocess": "main_content",
                             "suffix": [
                                 "pptx",
                                 "ppt"
@@ -201,16 +190,13 @@
                         },
                         "spreadsheet": {
                             "parse_method": "DeepDOC",
-                            "preprocess": "main_content",
                             "suffix": [
                                 "xls",
                                 "xlsx",
                                 "csv"
-                            ],
-                            "vlm": {}
+                            ]
                         },
                         "text&code": {
-                            "preprocess": "main_content",
                             "suffix": [
                                 "txt",
                                 "py",
@@ -359,18 +345,15 @@
                             "setups": [
                                 {
                                     "fileFormat": "pdf",
-                                    "parse_method": "DeepDOC",
-                                    "preprocess": "main_content"
+                                    "parse_method": "DeepDOC"
                                 },
                                 {
                                     "fileFormat": "spreadsheet",
-                                    "parse_method": "DeepDOC",
-                                    "preprocess": "main_content"
+                                    "parse_method": "DeepDOC"
                                 },
                                 {
                                     "fileFormat": "image",
                                     "parse_method": "ocr",
-                                    "preprocess": "main_content",
                                     "system_prompt": ""
                                 },
                                 {
@@ -384,33 +367,26 @@
                                         "body",
                                         "attachments"
                                     ],
-                                    "fileFormat": "email",
-                                    "preprocess": "main_content"
+                                    "fileFormat": "email"
                                 },
                                 {
-                                    "fileFormat": "markdown",
-                                    "preprocess": "main_content"
+                                    "fileFormat": "markdown"
                                 },
                                 {
-                                    "fileFormat": "text&code",
-                                    "preprocess": "main_content"
+                                    "fileFormat": "text&code"
                                 },
                                 {
-                                    "fileFormat": "html",
-                                    "preprocess": "main_content"
+                                    "fileFormat": "html"
                                 },
                                 {
-                                    "fileFormat": "doc",
-                                    "preprocess": "main_content"
+                                    "fileFormat": "doc"
                                 },
                                 {
-                                    "fileFormat": "docx",
-                                    "preprocess": "main_content"
+                                    "fileFormat": "docx"
                                 },
                                 {
                                     "fileFormat": "slides",
-                                    "parse_method": "DeepDOC",
-                                    "preprocess": "main_content"
+                                    "parse_method": "DeepDOC"
                                 }
                             ]
                         },

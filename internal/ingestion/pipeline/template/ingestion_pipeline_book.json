@@ -54,26 +54,16 @@
                             }
                         },
                         "doc": {
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "doc"
                             ]
                         },
                         "docx": {
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "docx"
-                            ],
-                            "vlm": {}
+                            ]
                         },
                         "html": {
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "htm",
                                 "html"
@@ -81,19 +71,12 @@
                         },
                         "pdf": {
                             "parse_method": "DeepDOC",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "remove_toc": true,
                             "suffix": [
                                 "pdf"
-                            ],
-                            "vlm": {}
+                            ]
                         },
                         "text&code": {
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "txt"
                             ]
@@ -472,38 +455,21 @@
                                 {
                                     "fileFormat": "pdf",
                                     "parse_method": "DeepDOC",
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "remove_toc": true,
-                                    "vlm": {}
-                                },
-                                {
-                                    "fileFormat": "text&code",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
-                                },
-                                {
-                                    "fileFormat": "html",
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
                                     "remove_toc": true
                                 },
                                 {
-                                    "fileFormat": "doc",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "fileFormat": "text&code"
+                                },
+                                {
+                                    "fileFormat": "html",
+                                    "remove_toc": true
+                                },
+                                {
+                                    "fileFormat": "doc"
                                 },
                                 {
                                     "fileFormat": "docx",
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "remove_toc": true,
-                                    "vlm": {}
+                                    "remove_toc": true
                                 }
                             ]
                         },

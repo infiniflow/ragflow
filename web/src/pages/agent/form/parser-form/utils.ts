@@ -73,11 +73,15 @@ export function normalizeParserFormValues<T extends Record<string, any>>(
       '');
 
   const nextSetups = setups.map((x) => {
-    // output_format is retired on every family: the Go Parser normalizes all
-    // setups to JSON, so a stored value is dead config that must not survive
-    // a load/save round-trip.
-    if (x?.fileFormat === FileType.Audio) return omit(x, ['output_format']);
-    const stripped = omit(x, ['vlm', 'output_format']);
+    // preprocess and output_format are retired on every family: the Parser
+    // derives preprocessing from the chunker and emits JSON only, so a stored
+    // value is dead config that must not survive a load/save round-trip.
+    // Per-setup vlm is dead for every family except Audio, whose vlm holds the
+    // ASR model.
+    if (x?.fileFormat === FileType.Audio) {
+      return omit(x, ['output_format', 'preprocess']);
+    }
+    const stripped = omit(x, ['vlm', 'output_format', 'preprocess']);
     if (x?.fileFormat !== FileType.Image) return stripped;
     const { parse_method, ...rest } = omit(stripped, ['lang', 'system_prompt']);
     // Materialize the switch either way. Absent or "ocr" both mean "run local

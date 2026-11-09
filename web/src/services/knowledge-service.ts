@@ -305,8 +305,7 @@ const kbService = {
 export const getKbDetail = async (datasetId: string) => {
   const response = await request.get(api.getKbDetail(datasetId));
   // The /api/v1/datasets/<id> endpoint returns chunk_count/document_count,
-  // but legacy consumers (e.g. the GraphRAG/Raptor "magic wand" enable check
-  // in dataset/index.tsx) read chunk_num/doc_num. Normalize both shapes.
+  // but legacy consumers read chunk_num/doc_num. Normalize both shapes.
   if (response.data?.code === 0 && response.data.data) {
     const d = response.data.data;
     response.data.data = {

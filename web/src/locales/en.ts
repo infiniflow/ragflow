@@ -2767,13 +2767,6 @@ Example: Virtual Hosted Style`,
     },
     flow: {
       exportCurrentPage: 'Export current page',
-      preprocess: {
-        preprocess: 'Preprocess',
-        mainContent: 'Main content',
-        abstract: 'Abstract',
-        author: 'Author',
-        sectionTitle: 'Section title',
-      },
       tags: 'Tags',
       agentCategory: 'Agent category',
       editTags: 'Edit tags',

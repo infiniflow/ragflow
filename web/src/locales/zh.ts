@@ -2333,13 +2333,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
     },
     flow: {
       exportCurrentPage: '导出当页',
-      preprocess: {
-        preprocess: '预处理',
-        mainContent: '主内容',
-        abstract: '摘要',
-        author: '作者',
-        sectionTitle: '章节标题',
-      },
       agentCategory: '智能体分类',
       created: '创建于',
       editTags: '编辑标签',

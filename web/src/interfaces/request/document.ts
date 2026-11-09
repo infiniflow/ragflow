@@ -8,17 +8,6 @@ export interface IChangeParserConfigRequestBody {
   image_table_context_window?: number;
   image_context_size?: number;
   table_context_size?: number;
-  raptor?: {
-    use_raptor?: boolean;
-    prompt?: string;
-    max_token?: number;
-    threshold?: number;
-    max_cluster?: number;
-    random_seed?: number;
-    scope?: string;
-    clustering_method?: 'gmm' | 'ahc';
-    tree_builder?: 'raptor' | 'psi';
-  };
   compilation_template_group_id?: string[];
   // Metadata fields
   metadata?: Array<{

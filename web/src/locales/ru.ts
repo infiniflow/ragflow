@@ -1537,13 +1537,6 @@ export default {
       pleaseUploadAtLeastOneFile: 'Пожалуйста, загрузите хотя бы один файл',
     },
     flow: {
-      preprocess: {
-        preprocess: 'Предобработка',
-        mainContent: 'Основное содержимое',
-        abstract: 'Аннотация',
-        author: 'Автор',
-        sectionTitle: 'Заголовок раздела',
-      },
       autoPlay: 'Автовоспроизведение аудио',
       downloadFileTypeTip: 'Тип файла для скачивания',
       downloadFileType: 'Тип скачиваемого файла',
