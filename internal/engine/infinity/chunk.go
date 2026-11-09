@@ -1337,6 +1337,8 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 				extraOptions := map[string]string{
 					"threshold": threshold,
 					"filter":    denseFilterStr,
+					// Infinity defaults ef to topN, which limits HNSW recall for small result sets.
+					"ef": strconv.Itoa(max(vectorTopN, 200)),
 				}
 
 				common.Debug("MatchDense for hybrid search",
