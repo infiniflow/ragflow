@@ -121,10 +121,6 @@ func (h *UserHandler) Register(c *gin.Context) {
 
 	c.Header("Authorization", authToken)
 	setOAuthAuthCookie(c, authToken)
-	c.Header("Access-Control-Allow-Origin", "*")
-	c.Header("Access-Control-Allow-Methods", "*")
-	c.Header("Access-Control-Allow-Headers", "*")
-	c.Header("Access-Control-Expose-Headers", "Authorization")
 
 	profile := h.userService.GetUserProfile(ctx, user)
 	common.RespondSuccess(c, profile, fmt.Sprintf("%s, welcome aboard!", req.Nickname))
@@ -191,11 +187,6 @@ func (h *UserHandler) Login(c *gin.Context) {
 	// Set Authorization header with signed token
 	c.Header("Authorization", authToken)
 	setOAuthAuthCookie(c, authToken)
-	// Set CORS headers
-	c.Header("Access-Control-Allow-Origin", "*")
-	c.Header("Access-Control-Allow-Methods", "*")
-	c.Header("Access-Control-Allow-Headers", "*")
-	c.Header("Access-Control-Expose-Headers", "Authorization")
 
 	profile := h.userService.GetUserProfile(ctx, user)
 	common.RespondSuccess(c, profile, "Welcome back!")
@@ -274,10 +265,6 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 	}
 	setOAuthAuthCookie(c, authToken)
 	c.Header("Authorization", authToken)
-	c.Header("Access-Control-Allow-Origin", "*")
-	c.Header("Access-Control-Allow-Methods", "*")
-	c.Header("Access-Control-Allow-Headers", "*")
-	c.Header("Access-Control-Expose-Headers", "Authorization")
 
 	profile := h.userService.GetUserProfile(ctx, user)
 	common.RespondSuccess(c, profile, "Welcome back!")
