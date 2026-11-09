@@ -533,7 +533,7 @@ func isPresentationFile(name *string) bool {
 		return false
 	}
 	ext := strings.ToLower(filepath.Ext(*name))
-	return ext == ".ppt" || ext == ".pptx" || ext == ".pages" || ext == ".dps" || ext == ".dpt"
+	return ext == ".ppt" || ext == ".pptx" || ext == ".pages"
 }
 
 func validateMetaFields(meta map[string]any) error {

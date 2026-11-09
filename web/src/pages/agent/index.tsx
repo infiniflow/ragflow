@@ -120,12 +120,12 @@ export default function Agent() {
   const { saveGraph, loading } = useSaveGraph();
   // Manual Save is a draft save, same as auto-save: it refreshes the live
   // canvas without minting a user_canvas_version row. Publishing does that.
-  const handleSave = useCallback(() => {
-    saveGraph(undefined, undefined, undefined, true);
+  const handleSave = useCallback(async () => {
+    await saveGraph(undefined, undefined, undefined, true);
   }, [saveGraph]);
   const handlePublish = useCallback(
-    (alias?: string) => {
-      saveGraph(undefined, undefined, true, undefined, alias);
+    async (alias?: string) => {
+      await saveGraph(undefined, undefined, true, undefined, alias);
     },
     [saveGraph],
   );

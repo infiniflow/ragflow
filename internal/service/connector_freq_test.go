@@ -22,7 +22,7 @@ func setupFreqValidationConnector(t *testing.T) {
 		Name:        "conn-freq",
 		Source:      "rss",
 		InputType:   "poll",
-		Config:      entity.JSONMap{},
+		Config:      entity.ConnectorConfig{},
 		Status:      string(entity.TaskStatusCancel),
 		RefreshFreq: 5,
 		PruneFreq:   5,

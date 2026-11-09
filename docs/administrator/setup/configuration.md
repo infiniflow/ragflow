@@ -122,6 +122,8 @@ NATS JetStream provides the message queue used by the Go services.
   The public Nginx ports. Defaults to `80` and `443`.
 - `RAGFLOW_IMAGE`
   The Go RAGFlow image used by `docker-compose.yml`. Select the official Go image for the required release, or use the locally built `ragflow:go-local` image.
+- `RAGFLOW_CONNECTOR_KEY`
+  The key that encrypts the credentials of data source connectors in the database. Use 32 random bytes in standard base64, for example the output of `openssl rand -base64 32`. Not set by default, and then credentials are stored as plaintext. When the key is set, the database migration encrypts the credentials that are already stored. If the key is lost, stored credentials cannot be read: enter them again through the connector update API, or delete and re-create the connector.
 
 :::tip NOTE
 If you cannot download the RAGFlow Docker image, try the following mirrors.

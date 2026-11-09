@@ -84,6 +84,12 @@ func assertNoParserOutputFormatInParams(t *testing.T, ref string, root map[strin
 			continue
 		}
 		params, _ := obj["params"].(map[string]any)
+		// Canvas templates saved by the Python-era frontend nest the families
+		// under "setups" (compiler.json uses that shape); the runtime flattens
+		// it before merging, so check the families wherever they live.
+		if nested, ok := params["setups"].(map[string]any); ok {
+			params = nested
+		}
 		for family, rawSetup := range params {
 			if parserSetupParamsKeys[family] {
 				continue

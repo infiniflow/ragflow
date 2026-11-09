@@ -57,7 +57,9 @@ import hashlib
 import os
 import platform
 import re
+import shlex
 import shutil
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -66,11 +68,17 @@ import zipfile
 import requests
 
 # ── Dependency versions & URLs (edit here) ────────────────────────────────
-# This script's own copy of the native static-library versions and download URLs
-# it fetches. build.sh does NOT grep these (it pins PDFIUM/PDF_OXIDE itself and
-# reads ORT from internal/common/environments.go + the Dockerfile ARG, so it
-# stays tied to the checked-out source tree and the Docker build needs no COPY
-# of this script) — keep the two in sync when bumping a version.
+# The native-library VERSIONS are NOT hardcoded in this script. They are derived
+# from a single source of truth so build.sh and this downloader can never drift:
+#   - office_oxide / pdf_oxide  -> go.mod (go_module_version, below)
+#   - ORT                       -> internal/common/environments.go DeepDocORTVersion
+#                                  (deepdoc_ort_version, below)
+#   - pdfium                    -> tools/scripts/native_lib_version.sh
+#                                  pdfium_static_version (a shared const; pdfium
+#                                  is not a Go module so go.mod does not apply)
+# ORT_VERSION / PDFIUM_VERSION are bound to those derivations right after
+# REPO_ROOT is resolved (see the block following _repo_root()), so bumping a
+# version touches exactly one place upstream.
 
 # ONNX Runtime (statically linked into the Go in-process DeepDoc backend).
 #
@@ -83,7 +91,6 @@ import requests
 # patched content (e.g. the build that exports SessionGetInitializer*); the
 # downloader detects that via a `{asset}.sha256` sidecar and
 # re-downloads/re-extracts, so a stale local copy never silently lingers.
-ORT_VERSION = "1.29.0"
 
 # Release tag on infiniflow/ragflow-build. v1.29.0's Linux x86_64 minimal build
 # reduced operators to required_operators.config, which omitted Clip@13 — so
@@ -95,15 +102,15 @@ ORT_VERSION = "1.29.0"
 # build ships Clip@13).
 ORT_RELEASE_TAG = "onnxruntime-v1.29.0-patch2"
 
-# pdf_oxide go-ffi release. Bare module version (the "v" is added by
-# pdf_oxide_url); matches the value build.sh uses to validate the embedded
-# .a stamp.
-PDF_OXIDE_VERSION = "0.3.73"
+# pdf_oxide go-ffi release. The bare module version is derived from go.mod at
+# download/extract time (see pdf_oxide_url / the extraction block below) via
+# go_module_version(), so there is no second hardcoded copy to drift from what
+# the Go build actually links (mirrors office_oxide).
 
 # pdfium release, as the numeric build number after "chromium%2F" (the "v" and
-# the URL-encoded slash are added by pdfium_url). Matches build.sh's
-# PDFIUM_STATIC_VERSION.
-PDFIUM_VERSION = "7809"
+# the URL-encoded slash are added by pdfium_url). Its bare value is bound to
+# pdfium_static_version(REPO_ROOT) below (the single shared const, since pdfium
+# is not a Go module).
 
 
 def host_platform(target_os=None, target_arch=None):
@@ -185,6 +192,48 @@ def go_module_version(module: str, repo_root: str) -> str:
     return match.group(1)
 
 
+def deepdoc_ort_version(repo_root: str) -> str:
+    """Read the ONNX Runtime version the in-process (Go) DeepDoc backend links
+    from internal/common/environments.go's DeepDocORTVersion const.
+
+    ORT is the one native lib whose version is owned by Go source (not go.mod),
+    so both build.sh and this script parse the SAME const — no second hardcoded
+    copy to drift."""
+    path = os.path.join(repo_root, "internal", "common", "environments.go")
+    if not os.path.isfile(path):
+        raise RuntimeError(f"environments.go not found at {path}")
+    with open(path, encoding="utf-8") as file:
+        match = re.search(r'DeepDocORTVersion\s*=\s*"([^"]+)"', file.read())
+    if match is None:
+        raise RuntimeError(f"DeepDocORTVersion const not found in {path}")
+    return match.group(1)
+
+
+def pdfium_static_version(repo_root: str) -> str:
+    """Return the pinned pdfium build number from the single shared bash source
+    of truth tools/scripts/native_lib_version.sh.
+
+    pdfium (kognitos/pdfium-static) is not a Go module, so unlike
+    office_oxide / pdf_oxide it cannot be derived from go.mod; its bare numeric
+    build number is the one constant exported by pdfium_static_version() and
+    sourced by both this script and build.sh."""
+    script = os.path.join(repo_root, "tools", "scripts", "native_lib_version.sh")
+    if not os.path.isfile(script):
+        raise RuntimeError(f"native_lib_version.sh not found at {script}")
+    result = subprocess.run(
+        ["bash", "-c", f"source {shlex.quote(script)} >/dev/null 2>&1; pdfium_static_version"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"pdfium_static_version failed: {result.stderr.strip()}")
+    version = result.stdout.strip()
+    if not version:
+        raise RuntimeError("pdfium_static_version produced no output")
+    return version
+
+
 # ── URL builders ──────────────────────────────────────────────────────────
 # Every download URL is assembled from the constants above via one of these
 # helpers, so a version bump touches exactly one constant. Each takes the target
@@ -192,9 +241,12 @@ def go_module_version(module: str, repo_root: str) -> str:
 # maps above.
 
 
-def pdf_oxide_url(goos: str, goarch: str) -> str:
-    """pdf_oxide go-ffi tarball for the target platform."""
-    return f"{gh_proxy()}https://github.com/yfedoseev/pdf_oxide/releases/download/v{PDF_OXIDE_VERSION}/{PDF_OXIDE_ASSETS[(goos, goarch)]}"
+def pdf_oxide_url(repo_root: str, goos: str, goarch: str) -> str:
+    """pdf_oxide go-ffi tarball for the target platform. The version is derived
+    from go.mod so it always matches what the Go build actually links (no second
+    hardcoded copy to drift -- mirrors office_oxide_url)."""
+    version = go_module_version("github.com/yfedoseev/pdf_oxide/go", repo_root)
+    return f"{gh_proxy()}https://github.com/yfedoseev/pdf_oxide/releases/download/v{version}/{PDF_OXIDE_ASSETS[(goos, goarch)]}"
 
 
 def pdfium_url(goos: str, goarch: str) -> str:
@@ -269,11 +321,42 @@ def _repo_root() -> str:
 
 
 REPO_ROOT = _repo_root()
+
+# Bind the native-library versions to their single source of truth (see the
+# version block above). Keeping these as module-level constants means every
+# downstream URL/dir builder still references ORT_VERSION / PDFIUM_VERSION, but
+# the bare values now live in exactly one place upstream (environments.go and
+# native_lib_version.sh) — bumping a version needs no edit here.
+ORT_VERSION = deepdoc_ort_version(REPO_ROOT)
+PDFIUM_VERSION = pdfium_static_version(REPO_ROOT)
+
 # Downloaded archives are anchored under deps/ (ignored by .gitignore
 # via *.tgz / deps/*.zip) regardless of the caller's working directory,
 # so a move of this script does not scatter large files into tools/scripts/.
 RAGFLOW_DEPS_DIR = os.path.join(REPO_ROOT, "deps")
 NATIVE_LIBS_DIR = os.path.expanduser("~/ragflow-native-libs")
+
+
+def native_libs_dir():
+    """Resolve where native static libraries are written/read.
+
+    Honours RAGFLOW_NATIVE_LIBS_DIR so a CI builder can mount a pre-populated
+    user cache (e.g. ~/ragflow-native-libs) at a configurable path and the
+    downloader agrees with build.sh on that location. Falls back to the
+    in-home default when the variable is unset or empty.
+    """
+    return os.environ.get("RAGFLOW_NATIVE_LIBS_DIR") or NATIVE_LIBS_DIR
+
+
+def ensure_deps_dir():
+    """Make sure RAGFLOW_DEPS_DIR exists before any chdir into it.
+
+    In a product image build the go-builder stage does not carry a deps/
+    checkout, so a bare os.chdir(RAGFLOW_DEPS_DIR) would raise
+    FileNotFoundError before the auto-download fallback could run. Creating it
+    here lets the downloader proceed and fetch archives on demand.
+    """
+    os.makedirs(RAGFLOW_DEPS_DIR, exist_ok=True)
 
 
 def _sha256_of(path):
@@ -342,10 +425,30 @@ def _valid_download(filename):
     return True
 
 
-def _extract_native_archive(archive_path, target, required_files, version=None):
+def _stamp_present(data, version, stamp_format):
+    """True when the .a archive DATA carries VERSION as a known stamp form.
+
+    Different native libs embed their version stamp differently:
+      - office_oxide embeds a null-delimited token (b"\\x00"+version+b"\\x00");
+      - pdf_oxide embeds a plain-text token (b"pdf_oxide "+version).
+    Accepting both keeps the extractor library-agnostic while still rejecting a
+    .a that does not actually contain the expected version."""
+    needle = version.encode()
+    if stamp_format == "null":
+        return b"\x00" + needle + b"\x00" in data
+    if stamp_format == "text":
+        return (b"pdf_oxide " + needle in data) or (b"\x00" + needle + b"\x00" in data)
+    return needle in data
+
+
+def _extract_native_archive(archive_path, target, required_files, version=None, stamp_format="null"):
     """Extract ARCHIVE_PATH into TARGET, verifying REQUIRED_FILES (and, for .a
-    files, an optional null-delimited VERSION stamp) before promoting the
-    staged tree.
+    files, an optional VERSION stamp) before promoting the staged tree.
+
+    STAMP_FORMAT selects how the version is embedded in the .a:
+      - "null": office_oxide's b"\\x00"+version+b"\\x00" token;
+      - "text": pdf_oxide's plain b"pdf_oxide "+version token (also accepts a
+        null-delimited token, so a format switch does not silently break).
 
     Path-traversal / absolute / non-regular members are rejected before
     extraction, and an incomplete archive raises instead of replacing a
@@ -358,8 +461,9 @@ def _extract_native_archive(archive_path, target, required_files, version=None):
                 return False
             if version is not None and name.endswith(".a"):
                 with open(path, "rb") as file:
-                    if b"\x00" + version.encode() + b"\x00" not in file.read():
-                        return False
+                    data = file.read()
+                if not _stamp_present(data, version, stamp_format):
+                    return False
         return True
 
     if complete(target):
@@ -386,6 +490,37 @@ def _extract_native_archive(archive_path, target, required_files, version=None):
         if staging is not None:
             shutil.rmtree(staging, ignore_errors=True)
     print(f"  ✓ extracted {os.path.basename(archive_path)} to {target}")
+
+
+def extract_native_lib(archive_path, subdir, dir_version, required_files, stamp_version=None, stamp_format="null"):
+    """Extract a native static archive into the version-keyed cache dir
+    ~/ragflow-native-libs/<subdir>/<dir_version>/.
+
+    The version-keyed dir (e.g. v7809) — NOT a flat layout — is what lets a
+    single mounted user cache hold several native-lib versions at once, so PRs
+    pinned to different go.mod versions all build offline. Idempotent: when the
+    target dir already holds the required files (matching stamp_version for
+    office_oxide) the extraction is skipped, so re-running the downloader is a
+    no-op for an already-provisioned cache.
+
+    STAMP_FORMAT is forwarded to _extract_native_archive (see its docstring):
+    "null" for office_oxide, "text" for pdf_oxide. pdfium passes stamp_version
+    None and is not stamp-checked.
+
+    Returns True when extraction ran or was skipped-successfully (the dir is in
+    place afterwards), False when the archive is absent (caller must then
+    download it). Re-raises the underlying tar/validation error after purging a
+    corrupt archive."""
+    if not os.path.isfile(archive_path):
+        print(f"  Skipping extraction: {os.path.basename(archive_path)} not found")
+        return False
+    target = os.path.join(native_libs_dir(), subdir, dir_version)
+    try:
+        _extract_native_archive(archive_path, target, required_files, stamp_version, stamp_format)
+    except (tarfile.TarError, EOFError, RuntimeError):
+        os.unlink(archive_path)
+        raise
+    return True
 
 
 def prune_stale_onnxruntime(static_lib_dir, expected_dir):
@@ -428,6 +563,7 @@ def extract_onnxruntime(static_lib_dir, archive_path, expected_dir):
     expected_path = os.path.join(static_lib_dir, expected_dir)
     if os.path.isdir(expected_path) and has_static_archives(expected_path):
         print(f"  ✓ onnxruntime/static_lib ({expected_dir}) already extracted to {expected_path}")
+        stamp_onnxruntime_version(static_lib_dir, expected_dir, ORT_VERSION)
         return True
     os.makedirs(static_lib_dir, exist_ok=True)
     print(f"  Extracting {os.path.basename(archive_path)} → {static_lib_dir}")
@@ -445,7 +581,35 @@ def extract_onnxruntime(static_lib_dir, archive_path, expected_dir):
                 shutil.rmtree(normalized)
             print(f"  Renaming {os.path.basename(extracted)} → {os.path.basename(normalized)}")
             os.rename(extracted, normalized)
+    # Pre-create the version-stamp symlink (Fix #2) while the cache is still
+    # writable, so a read-only CI mount already has it and build.sh's stamp step
+    # is a no-op there.
+    stamp_onnxruntime_version(static_lib_dir, expected_dir, ORT_VERSION)
     return True
+
+
+def stamp_onnxruntime_version(static_lib_dir, normalized_dir, version):
+    """Pre-create the version-stamp ORT symlink inside the native cache.
+
+    build.sh keys its ORT link flag on onnxruntime/static_lib/v<version>-<sha16>/
+    (the sha16 disambiguates a re-issued archive of the same version). That dir
+    is created HERE, at population time when the cache is still writable, with a
+    RELATIVE symlink to the real libonnxruntime.a so it resolves under any mount
+    point. Idempotent: an existing correct symlink is left untouched, which keeps
+    a read-only CI mount a no-op (build.sh's stamp step then skips the write)."""
+    primary = os.path.join(static_lib_dir, normalized_dir, "lib", "libonnxruntime.a")
+    if not os.path.isfile(primary):
+        return
+    sha16 = _sha256_of(primary)[:16]
+    stamp_dir = os.path.join(static_lib_dir, f"v{version}-{sha16}")
+    stamp_link = os.path.join(stamp_dir, "libonnxruntime.a")
+    rel = os.path.relpath(primary, stamp_dir)
+    if os.path.islink(stamp_link) and os.path.realpath(stamp_link) == os.path.realpath(primary):
+        return
+    os.makedirs(stamp_dir, exist_ok=True)
+    if os.path.lexists(stamp_link):
+        os.unlink(stamp_link)
+    os.symlink(rel, stamp_link)
 
 
 def _fetch_ort_sidecar_sha(url):
@@ -495,7 +659,7 @@ def _download_ort_archive(archive_path, goos, goarch):
     if not _valid_download(archive_path):
         os.unlink(archive_path)
         raise RuntimeError(f"Invalid downloaded dependency: {os.path.basename(archive_path)}")
-    version_dir = os.path.join(NATIVE_LIBS_DIR, "onnxruntime", "static_lib", ort_normalized_dir(ORT_VERSION, goos, goarch))
+    version_dir = os.path.join(native_libs_dir(), "onnxruntime", "static_lib", ort_normalized_dir(ORT_VERSION, goos, goarch))
     if os.path.isdir(version_dir):
         print(f"  Removing stale extracted ONNX Runtime dir: {version_dir}")
         shutil.rmtree(version_dir)
@@ -701,13 +865,14 @@ def main():
 
     # Anchor the downloaded archives to deps/ regardless of the
     # caller's working directory (build.sh invokes this from the repo root).
+    ensure_deps_dir()
     os.chdir(RAGFLOW_DEPS_DIR)
 
     # ONNX Runtime archive (+ checksum sidecar), then the other native archives.
     _download_ort_archive(os.path.join(RAGFLOW_DEPS_DIR, ort_zip), goos, goarch)
     archives = [
         (pdfium_url(goos, goarch), PDFIUM_STATIC_ASSETS[(goos, goarch)]),
-        (pdf_oxide_url(goos, goarch), PDF_OXIDE_ASSETS[(goos, goarch)]),
+        (pdf_oxide_url(REPO_ROOT, goos, goarch), PDF_OXIDE_ASSETS[(goos, goarch)]),
         (office_oxide_url(REPO_ROOT, goos, goarch), OFFICE_OXIDE_ASSETS[(goos, goarch)]),
     ]
     for url, filename in archives:
@@ -721,28 +886,23 @@ def main():
             raise RuntimeError(f"Invalid downloaded dependency: {filename}")
 
     # Extract native static libraries to ~/ragflow-native-libs for the Go build.
-    # Ensures build.sh can find them without network access.
+    # Ensures build.sh can find them without network access. Each lands under a
+    # version-keyed subdir (v<version>/) so a mounted cache can hold several
+    # versions at once; see extract_native_lib().
     office_version = go_module_version("github.com/yfedoseev/office_oxide/go", REPO_ROOT)
+    pdf_oxide_version = go_module_version("github.com/yfedoseev/pdf_oxide/go", REPO_ROOT)
     extractions = [
-        (PDFIUM_STATIC_ASSETS[(goos, goarch)], "pdfium-static", ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"], None),
-        (PDF_OXIDE_ASSETS[(goos, goarch)], "pdf_oxide", [f"lib/{goos}_{goarch}/libpdf_oxide.a", "include/pdf_oxide.h"], None),
-        (OFFICE_OXIDE_ASSETS[(goos, goarch)], "office_oxide", ["lib/liboffice_oxide.a", "include/office_oxide_c/office_oxide.h"], office_version),
+        ("pdfium-static", PDFIUM_STATIC_ASSETS[(goos, goarch)], "v" + PDFIUM_VERSION, ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"], None, "null"),
+        ("pdf_oxide", PDF_OXIDE_ASSETS[(goos, goarch)], "v" + pdf_oxide_version, [f"lib/{goos}_{goarch}/libpdf_oxide.a", "include/pdf_oxide.h"], pdf_oxide_version, "text"),
+        ("office_oxide", OFFICE_OXIDE_ASSETS[(goos, goarch)], "v" + office_version, ["lib/liboffice_oxide.a", "include/office_oxide_c/office_oxide.h"], office_version, "null"),
     ]
 
-    for archive, subdir, required_files, version in extractions:
+    for subdir, archive, dir_version, required_files, stamp_version, stamp_format in extractions:
         archive_path = os.path.join(RAGFLOW_DEPS_DIR, archive)
-        if not os.path.isfile(archive_path):
-            print(f"  Skipping extraction: {archive} not found")
-            continue
-        target = os.path.join(NATIVE_LIBS_DIR, subdir)
-        try:
-            _extract_native_archive(archive_path, target, required_files, version)
-        except (tarfile.TarError, EOFError, RuntimeError):
-            os.unlink(archive_path)
-            raise
+        extract_native_lib(archive_path, subdir, dir_version, required_files, stamp_version, stamp_format)
 
     if not extract_onnxruntime(
-        os.path.join(NATIVE_LIBS_DIR, "onnxruntime", "static_lib"),
+        os.path.join(native_libs_dir(), "onnxruntime", "static_lib"),
         os.path.join(RAGFLOW_DEPS_DIR, ort_zip),
         ort_dir,
     ):
@@ -752,7 +912,7 @@ def main():
         # .a left here is exactly the "silent green" this split must prevent.
         print(
             f"  ERROR: ONNX Runtime static archives for {ort_dir} were not "
-            f"extracted to {os.path.join(NATIVE_LIBS_DIR, 'onnxruntime', 'static_lib')}. "
+            f"extracted to {os.path.join(native_libs_dir(), 'onnxruntime', 'static_lib')}. "
             f"Check the download above; build.sh will refuse to link without them.",
             file=sys.stderr,
         )
@@ -763,7 +923,7 @@ def main():
     # find the archives — the .a files live under
     # ~/ragflow-native-libs/onnxruntime/static_lib. The in-process backend
     # resolves OrtGetApiBase via dlopen(NULL); there is no dynamic .so fallback.
-    ort_static_dir = os.path.join(NATIVE_LIBS_DIR, "onnxruntime", "static_lib")
+    ort_static_dir = os.path.join(native_libs_dir(), "onnxruntime", "static_lib")
     ort_a_files = [os.path.join(root, f) for root, _, files in os.walk(ort_static_dir) for f in files if f.endswith(".a")]
     if ort_a_files:
         print(f"  ✓ onnxruntime static archives ready: {len(ort_a_files)} .a under {ort_static_dir}")
@@ -784,7 +944,7 @@ def main():
     download_tokenizer_assets(args.china_mirrors)
 
     print()
-    print(f"✓ Native build libraries ready under {NATIVE_LIBS_DIR}/")
+    print(f"✓ Native build libraries ready under {native_libs_dir()}/")
     print("  Run: bash build.sh (it will find them without network access).")
     print("  Runtime resources (cl100k / DeepDoc .ort / tokenizer) are also in place,")
     print("  so the local Go server is ready to build, run, parse and count tokens.")

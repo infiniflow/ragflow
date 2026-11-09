@@ -210,15 +210,10 @@ var (
 // They are deleted so the stored config stops advertising behaviour the Go
 // runtime does not implement; every drop is logged with table, row and field.
 var ingestionRetiredFlatKeys = []string{
-	// Spreadsheets are always rendered as segmented HTML; the flag only warns
-	// now (internal/parser/parser/office_table_render.go:deprecatedHTML4Excel).
 	"html4excel",
 	// Splits one parse into several ingestion jobs; it is not a page range and
 	// not a chunk size.
 	"task_page_size",
-	// Follows hyperlinks and indexes the linked content; unimplemented in Go.
-	"analyze_hyperlink",
-	"hyperlink_urls",
 	// Video parsing is rejected at dispatch
 	// (internal/ingestion/component/media_dispatch.go:maybeDispatchVideo).
 	"video_prompt",

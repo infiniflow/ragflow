@@ -89,9 +89,8 @@ func maybeDispatchPDFVision(
 	// fallback) are converted to JSON by NormalizeMarkdown before dispatch
 	// returns, so the NormalizeResult closure below only ever applies item
 	// policies to already-normalized JSON and stays idempotent.
-	flatten, _ := setup["flatten_media_to_text"].(bool)
 	normalize := func(result parser.ParseResult) parser.ParseResult {
-		pdf := parser.PDFParser{FlattenMediaToText: flatten}
+		pdf := parser.PDFParser{}
 		return parser.AttachPDFOutlines(pdf.NormalizeResult(ctx, filename, result), binary)
 	}
 	if result, handled, err := maybeDispatchTenantPDFParser(ctx, db, filename, binary, tenantID, setup); handled {
@@ -347,7 +346,7 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 		return parser.ParseResult{}, err
 	}
 	md := strings.Join(sections, "\n\n")
-	return normalizePDFMarkdown(ctx, filename, md, setup), nil
+	return normalizePDFMarkdown(ctx, filename, md), nil
 }
 
 // normalizePDFMarkdown converts a PDF backend Markdown response (MonkeyOCRv2,
@@ -355,9 +354,8 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 // package's NormalizeMarkdown. This keeps the markdown→JSON boundary in the
 // parser package, matching the NormalizeResult path used for JSON backends, and
 // lets the downstream NormalizeResult closure stay idempotent for JSON.
-func normalizePDFMarkdown(ctx context.Context, filename, md string, setup schema.ParserSetup) parser.ParseResult {
-	flatten, _ := setup["flatten_media_to_text"].(bool)
-	return (&parser.PDFParser{FlattenMediaToText: flatten}).NormalizeMarkdown(ctx, filename, md)
+func normalizePDFMarkdown(ctx context.Context, filename, md string) parser.ParseResult {
+	return (&parser.PDFParser{}).NormalizeMarkdown(ctx, filename, md)
 }
 
 var isMonkeyOCRv2LayoutModelID = defaultIsMonkeyOCRv2LayoutModelID
@@ -652,7 +650,7 @@ func dispatchMinerUPDF(
 		if err != nil {
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU cloud: %w", err)
 		}
-		return finishMinerURemoteResult(ctx, filename, binary, result, setup)
+		return finishMinerURemoteResult(ctx, filename, binary, result)
 	}
 
 	v1, err := modelModule.MinerUSupportsV1(ctx, baseURL, apiKeyRaw)
@@ -673,7 +671,7 @@ func dispatchMinerUPDF(
 		if err != nil {
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU V1: %w", err)
 		}
-		return finishMinerURemoteResult(ctx, filename, binary, result, setup)
+		return finishMinerURemoteResult(ctx, filename, binary, result)
 	}
 
 	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
@@ -694,7 +692,7 @@ func dispatchMinerUPDF(
 	return res, nil
 }
 
-func finishMinerURemoteResult(ctx context.Context, filename string, binary []byte, result *modelModule.MinerUV1Result, setup schema.ParserSetup) (parser.ParseResult, error) {
+func finishMinerURemoteResult(ctx context.Context, filename string, binary []byte, result *modelModule.MinerUV1Result) (parser.ParseResult, error) {
 	markdown := ""
 	var zipBytes []byte
 	if result != nil {
@@ -714,7 +712,7 @@ func finishMinerURemoteResult(ctx context.Context, filename string, binary []byt
 		return res, nil
 	}
 	if markdown != "" {
-		return normalizePDFMarkdown(ctx, filename, result.Markdown, setup), nil
+		return normalizePDFMarkdown(ctx, filename, result.Markdown), nil
 	}
 	if extractErr != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", extractErr)
@@ -870,7 +868,7 @@ func dispatchMonkeyOCRPDF(
 		}
 	}
 	md := strings.Join(parts, "\n")
-	return normalizePDFMarkdown(ctx, filename, md, setup), nil
+	return normalizePDFMarkdown(ctx, filename, md), nil
 }
 
 // resolveMinerUModelForDispatch resolves the OCR model used by the MinerU PDF
