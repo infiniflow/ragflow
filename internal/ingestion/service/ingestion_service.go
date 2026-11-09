@@ -28,6 +28,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	infinityengine "ragflow/internal/engine/infinity"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion"
 	"ragflow/internal/ingestion/knowledge_compile"
@@ -918,6 +919,14 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), "Task timed out.")
 			}
 			return ok
+		}
+		// Infinity answers 2007/2008 until its log replay completes, a window
+		// that lasts minutes. Marking FAILED would Ack the message and kill a
+		// task a later delivery would complete, so leave it RUNNING: settleMessage
+		// then nacks it and the consumer BackOff (5s/15s/30s/60s) paces the retry.
+		if infinityengine.IsTransientUnavailable(err) {
+			common.Info(fmt.Sprintf("Task %s left for redelivery: document engine is still starting: %v", task.ID, err))
+			return false
 		}
 		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
 		ok := e.markFailed(ctx, task.ID, fmt.Sprintf("Task failed: %v", err))

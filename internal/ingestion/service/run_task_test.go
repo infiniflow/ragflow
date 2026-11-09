@@ -3,12 +3,15 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/testutil"
+
+	infinitysdk "github.com/infiniflow/infinity-go-sdk"
 )
 
 // TestRunTask_ContextCancelledBeforePipeline makes a cancelled context settle
@@ -280,5 +283,47 @@ func TestRunTask_SuccessfulCompletion(t *testing.T) {
 	}
 	if task.Status != common.COMPLETED {
 		t.Fatalf("task status = %s, want COMPLETED", task.Status)
+	}
+}
+
+// TestRunTask_EngineStartingLeavesTaskForRedelivery: Infinity answers 2007/2008
+// while it replays its log. The failure is transient, so the task must stay
+// RUNNING (settleMessage then nacks it) instead of being Acked as FAILED.
+func TestRunTask_EngineStartingLeavesTaskForRedelivery(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	ingestor.runDocumentTask = func(context.Context, *entity.IngestionTask) error {
+		var engineErr error = infinitysdk.NewInfinityException(2008, "Infinity is initing")
+		return fmt.Errorf("execute pipeline: %w", engineErr)
+	}
+
+	runID := "run-" + taskID
+	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
+		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
+		PipelineLogID: &runID,
+	})
+
+	if terminal {
+		t.Fatal("expected false (non-terminal: engine starting, leave for redelivery)")
+	}
+
+	ctx := t.Context()
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if task.Status != common.RUNNING {
+		t.Fatalf("task status = %s, want RUNNING", task.Status)
+	}
+	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(ctx, db, runID)
+	if err != nil {
+		t.Fatalf("list terminal events: %v", err)
+	}
+	if len(logs) != 0 {
+		t.Fatalf("terminal events = %+v, want none for a redelivered task", logs)
 	}
 }
