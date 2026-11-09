@@ -68,6 +68,17 @@ func TestAimlapiName(t *testing.T) {
 	}
 }
 
+func TestAimlapiDecideUnsupported(t *testing.T) {
+	var driver ModelDriver = newAimlapiForTest("http://unused")
+	response, err := driver.Decide(t.Context(), nil, nil, nil, nil)
+	if response != nil {
+		t.Fatalf("Decide response=%v, want nil", response)
+	}
+	if err == nil || err.Error() != "aimlapi.com: no such method: Decide" {
+		t.Fatalf("Decide error=%v, want unsupported-method error", err)
+	}
+}
+
 func TestAimlapiFactoryRoute(t *testing.T) {
 	// The provider name is the factory name saved in tenant configs.
 	driver, err := NewModelFactory().CreateModelDriver("aimlapi.com", map[string]string{"default": "http://unused"}, URLSuffix{})

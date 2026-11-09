@@ -35,6 +35,8 @@ type AimlapiModel struct {
 	baseModel BaseModel
 }
 
+var _ ModelDriver = (*AimlapiModel)(nil)
+
 const (
 	// aimlapiAttributionHost is the only host partner attribution may reach,
 	// compared for equality on the request's hostname: a suffix or substring
@@ -394,4 +396,9 @@ func (a *AimlapiModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]L
 
 func (a *AimlapiModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", a.Name())
+}
+
+// Decide is not supported by the AI/ML API provider.
+func (a *AimlapiModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", a.Name())
 }
