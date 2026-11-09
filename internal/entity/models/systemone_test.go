@@ -8,6 +8,9 @@ import (
 	"net/http/httptest"
 	"testing"
 	"time"
+
+	"ragflow/internal/common"
+	"ragflow/internal/permission"
 )
 
 func newSystemOneForTest(baseURL string) *SystemOneModel {
@@ -225,4 +228,151 @@ func TestSystemOneDecideDeadline(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("Decide = %v; want deadline exceeded", err)
 	}
+}
+
+func TestSystemOneDecide_TenantAttribution(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"id": "decide-req-123",
+			"answers": {"q1": {"type": "noul", "noul": 0.85}},
+			"usage": {"input_tokens": 40, "output_tokens": 15}
+		}`))
+	}))
+	defer srv.Close()
+
+	key, name := "test-key", "decision-model-preview"
+
+	t.Run("nil modelUsage extracts tenant and user from context", func(t *testing.T) {
+		ctx := permission.WithTenantID(context.Background(), "tenant-decide-1")
+		ctx = permission.WithUserID(ctx, "user-decide-1")
+
+		resp, err := newSystemOneForTest(srv.URL+"/v1").Decide(ctx, &name, &DecideRequest{
+			State: map[string]string{"query": "test"},
+			Questions: map[string]Question{"q1": Noul{Instructions: "Relevance check"}},
+		}, &APIConfig{ApiKey: &key}, nil)
+		if err != nil {
+			t.Fatalf("Decide: %v", err)
+		}
+		if resp == nil || resp.ID != "decide-req-123" {
+			t.Fatalf("unexpected resp: %+v", resp)
+		}
+	})
+
+	t.Run("explicit modelUsage populated with tenant identity and model metadata", func(t *testing.T) {
+		ctx := permission.WithTenantID(context.Background(), "tenant-decide-2")
+		ctx = permission.WithUserID(ctx, "user-decide-2")
+
+		usage := &common.ModelUsage{
+			TenantID: "tenant-decide-2",
+			UserID:   "user-decide-2",
+			StartAt:  time.Now(),
+		}
+
+		resp, err := newSystemOneForTest(srv.URL+"/v1").Decide(ctx, &name, &DecideRequest{
+			State: map[string]string{"query": "test"},
+			Questions: map[string]Question{"q1": Noul{Instructions: "Relevance check"}},
+		}, &APIConfig{ApiKey: &key}, usage)
+		if err != nil {
+			t.Fatalf("Decide: %v", err)
+		}
+		if resp == nil {
+			t.Fatal("expected non-nil response")
+		}
+
+		if usage.TenantID != "tenant-decide-2" || usage.UserID != "user-decide-2" {
+			t.Errorf("tenant identity mismatch: tenant=%s, user=%s", usage.TenantID, usage.UserID)
+		}
+		if usage.ModelName != "decision-model-preview" || usage.ProviderName != "SystemOne" {
+			t.Errorf("model metadata mismatch: model=%s, provider=%s", usage.ModelName, usage.ProviderName)
+		}
+		if usage.Type != "decision" {
+			t.Errorf("type mismatch: type=%s", usage.Type)
+		}
+		if usage.InputTokens != 40 || usage.OutputTokens != 15 || usage.TotalTokens != 55 {
+			t.Errorf("token counts mismatch: input=%d, output=%d, total=%d",
+				usage.InputTokens, usage.OutputTokens, usage.TotalTokens)
+		}
+		if usage.RequestID != "decide-req-123" {
+			t.Errorf("request_id mismatch: %s", usage.RequestID)
+		}
+	})
+
+	t.Run("cross-tenant model owner takes precedence via ModelInfo", func(t *testing.T) {
+		ctx := permission.WithTenantID(context.Background(), "caller-tenant")
+		ctx = permission.WithUserID(ctx, "caller-user")
+		info := &ModelInfo{
+			TenantID:     "model-owner-tenant",
+			UserID:       "model-owner-user",
+			ProviderName: "SystemOne",
+			InstanceID:   "decide-inst-1",
+			Name:         name,
+			ProductType:  "decision",
+		}
+		ctx = WithModelInfo(ctx, info)
+
+		usage := &common.ModelUsage{
+			TenantID: "caller-tenant",
+			UserID:   "caller-user",
+			StartAt:  time.Now(),
+		}
+
+		resp, err := newSystemOneForTest(srv.URL+"/v1").Decide(ctx, &name, &DecideRequest{
+			State:     map[string]string{"query": "test"},
+			Questions: map[string]Question{"q1": Noul{Instructions: "Relevance check"}},
+		}, &APIConfig{ApiKey: &key}, usage)
+		if err != nil {
+			t.Fatalf("Decide: %v", err)
+		}
+		if resp == nil {
+			t.Fatal("expected non-nil response")
+		}
+
+		if usage.TenantID != "model-owner-tenant" {
+			t.Errorf("got TenantID %q, want model-owner-tenant", usage.TenantID)
+		}
+		if usage.UserID != "caller-user" {
+			t.Errorf("got UserID %q, want caller-user", usage.UserID)
+		}
+		if usage.InstanceID != "decide-inst-1" {
+			t.Errorf("got InstanceID %q, want decide-inst-1", usage.InstanceID)
+		}
+	})
+
+	t.Run("caller without user ID leaves UserID empty even if ModelInfo.UserID exists", func(t *testing.T) {
+		ctx := permission.WithTenantID(context.Background(), "caller-tenant")
+		info := &ModelInfo{
+			TenantID:      "model-owner-tenant",
+			UserID:        "provider-owner-not-caller",
+			ProviderName:  "SystemOne",
+			InstanceID:    "decide-inst-1",
+			Name:          name,
+			ProductType:   "decision",
+			IsSavedConfig: true,
+		}
+		ctx = WithModelInfo(ctx, info)
+
+		usage := &common.ModelUsage{
+			TenantID: "caller-tenant",
+			StartAt:  time.Now(),
+		}
+
+		resp, err := newSystemOneForTest(srv.URL+"/v1").Decide(ctx, &name, &DecideRequest{
+			State:     map[string]string{"query": "test"},
+			Questions: map[string]Question{"q1": Noul{Instructions: "Relevance check"}},
+		}, &APIConfig{ApiKey: &key}, usage)
+		if err != nil {
+			t.Fatalf("Decide: %v", err)
+		}
+		if resp == nil {
+			t.Fatal("expected non-nil response")
+		}
+
+		if usage.TenantID != "model-owner-tenant" {
+			t.Errorf("got TenantID %q, want model-owner-tenant", usage.TenantID)
+		}
+		if usage.UserID != "" {
+			t.Errorf("got UserID %q, want empty string when no clear caller exists", usage.UserID)
+		}
+	})
 }

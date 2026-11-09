@@ -46,7 +46,8 @@ import (
 )
 
 type embedder struct {
-	model *models.EmbeddingModel
+	model    *models.EmbeddingModel
+	tenantID string
 
 	// limiter is resolved once per embedder (one embedder is built per tokenizer
 	// invocation, i.e. per document) and binds the model's tokenizer, the
@@ -250,8 +251,16 @@ func (e *embedder) embedWithRetry(ctx context.Context, texts []string) ([]models
 		if cerr := waitOutCooldown(ctx, quota); cerr != nil {
 			return nil, 0, cerr
 		}
-		usage := &common.ModelUsage{}
-		embeds, err = e.model.Embed(ctx, req, config, usage)
+		encodeCtx := ctx
+		if e.tenantID != "" && permission.TenantIDFromContext(encodeCtx) == "" {
+			encodeCtx = permission.WithTenantID(encodeCtx, e.tenantID)
+		}
+		usage := &common.ModelUsage{
+			TenantID: e.tenantID,
+			Type:     "embedding",
+			StartAt:  time.Now(),
+		}
+		embeds, err = e.model.Embed(encodeCtx, req, config, usage)
 		if err == nil {
 			return embeds, usage.InputTokens, nil
 		}
@@ -665,7 +674,7 @@ func newEmbedderResolver(
 		if model == nil {
 			return nil, "", fmt.Errorf("embedder: resolved embedding model is nil for embd_id=%s", embdID)
 		}
-		return &embedder{model: model}, embdID, nil
+		return &embedder{model: model, tenantID: tenantID}, embdID, nil
 	}
 }
 

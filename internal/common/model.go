@@ -34,6 +34,7 @@ type ModelUsage struct {
 	SessionID      string    `json:"session_id"`
 	ProviderName   string    `json:"provider_name"`
 	InstanceID     string    `json:"instance_id"`
+	IsSavedConfig  bool      `json:"is_saved_config"`
 	APIKey         string    `json:"api_key"`
 	ModelName      string    `json:"model_name"`
 	Type           string    `json:"type"`

@@ -58,7 +58,7 @@ func HandleNonStreamingResponse(ctx context.Context, body []byte, modelUsage *co
 		// handler rather than in the agentic loop: the token count only exists
 		// here.
 		common.ChargeTokens(ctx, usage.TotalTokens)
-		recordResponseUsage(modelUsage, extractRequestID(result), usage, "chat")
+		recordResponseUsageWithContext(ctx, modelUsage, extractRequestID(result), usage, "chat")
 		if chatConfig != nil {
 			chatConfig.UsageResult = usage
 			model, _ := result["model"].(string)

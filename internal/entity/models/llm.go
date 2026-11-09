@@ -431,8 +431,13 @@ func (m *EinoChatModel) generateOnce(ctx context.Context, cm *ChatModel, msgs []
 	)
 	common.Debug("models: eino generate message skeleton",
 		zap.String("skeleton", describeInternalMessages(internal)))
-	captureModelInput(ctx, *cm.ModelName, internal)
-	resp, err := cm.ModelDriver.ChatWithMessages(ctx, *cm.ModelName, internal, cm.APIConfig, chatCfg, nil)
+	callCtx := ctx
+	if cm.info != nil {
+		callCtx = WithModelInfo(ctx, cm.info)
+	}
+	captureModelInput(callCtx, *cm.ModelName, internal)
+	usage := resolveModelUsage(callCtx, nil, cm.ModelName, cm.APIConfig, cm.info, cm.ProductModelType())
+	resp, err := cm.ModelDriver.ChatWithMessages(callCtx, *cm.ModelName, internal, cm.APIConfig, chatCfg, usage)
 	if err != nil {
 		// The chat paths surface this to the user as `**ERROR**: <err>`
 		// (errorAnswerText in agentic-rag/agentic_rag_graph.go, chat_pipeline.go),
@@ -922,8 +927,13 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 			}
 			attemptCfg.ToolCallsResult = nil
 			attemptCfg.UsageResult = nil
-			captureModelInput(ctx, *cm.ModelName, internalMessage)
-			err := cm.ModelDriver.ChatStreamlyWithSender(ctx, *cm.ModelName, internalMessage, cm.APIConfig, attemptCfg, nil, sender)
+			attemptCtx := ctx
+			if cm.info != nil {
+				attemptCtx = WithModelInfo(ctx, cm.info)
+			}
+			captureModelInput(attemptCtx, *cm.ModelName, internalMessage)
+			usage := resolveModelUsage(attemptCtx, nil, cm.ModelName, cm.APIConfig, cm.info, cm.ProductModelType())
+			err := cm.ModelDriver.ChatStreamlyWithSender(attemptCtx, *cm.ModelName, internalMessage, cm.APIConfig, attemptCfg, usage, sender)
 			if err != nil {
 				// Same user-visible shape as generateOnce's error: lead with the
 				// model name and keep the provider's own sentence. Tagging it HERE
@@ -939,7 +949,7 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 				// argument, so the run-level accumulator has to be fed from here —
 				// otherwise every streamed turn's tokens are missing from the total.
 				if attemptCfg.UsageResult != nil && attemptCfg.UsageResult.TotalTokens > 0 {
-					recordUsage(ctx, *cm.ModelName, attemptCfg.UsageResult)
+					recordUsage(attemptCtx, *cm.ModelName, attemptCfg.UsageResult)
 				}
 				if attemptCfg.ToolCallsResult != nil && len(*attemptCfg.ToolCallsResult) > 0 {
 					common.Debug("models: eino stream tool calls",

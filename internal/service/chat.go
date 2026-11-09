@@ -451,33 +451,86 @@ func validateChatDatasetAccess(ctx context.Context, kbIDs entity.JSONSlice) erro
 	return nil
 }
 
+func resolveChatModelTypeFromSetting(llmSetting map[string]interface{}) entity.ModelType {
+	if llmSetting == nil {
+		return entity.ModelTypeChat
+	}
+	for _, key := range []string{"product_model_type", "product_type"} {
+		if raw, ok := llmSetting[key]; ok {
+			s := strings.TrimSpace(fmt.Sprint(raw))
+			if strings.EqualFold(s, "image2text") || strings.EqualFold(s, "vision") {
+				return entity.ModelTypeImage2Text
+			}
+			if strings.EqualFold(s, "chat") {
+				return entity.ModelTypeChat
+			}
+		}
+	}
+	if raw, ok := llmSetting["model_type"]; ok {
+		switch t := raw.(type) {
+		case string:
+			s := strings.TrimSpace(t)
+			if strings.EqualFold(s, "image2text") || strings.EqualFold(s, "vision") {
+				return entity.ModelTypeImage2Text
+			}
+			if strings.EqualFold(s, "chat") {
+				return entity.ModelTypeChat
+			}
+		case []interface{}:
+			hasChat := false
+			hasVision := false
+			for _, item := range t {
+				s := strings.TrimSpace(fmt.Sprint(item))
+				if strings.EqualFold(s, "chat") {
+					hasChat = true
+				}
+				if strings.EqualFold(s, "vision") || strings.EqualFold(s, "image2text") {
+					hasVision = true
+				}
+			}
+			if hasChat {
+				return entity.ModelTypeChat
+			}
+			if hasVision {
+				return entity.ModelTypeImage2Text
+			}
+		case []string:
+			hasChat := false
+			hasVision := false
+			for _, item := range t {
+				s := strings.TrimSpace(item)
+				if strings.EqualFold(s, "chat") {
+					hasChat = true
+				}
+				if strings.EqualFold(s, "vision") || strings.EqualFold(s, "image2text") {
+					hasVision = true
+				}
+			}
+			if hasChat {
+				return entity.ModelTypeChat
+			}
+			if hasVision {
+				return entity.ModelTypeImage2Text
+			}
+		}
+	}
+	return entity.ModelTypeChat
+}
+
 func resolveCreateLLMID(ctx context.Context, llmID, tenantID string, llmSetting map[string]interface{}) (string, error) {
 	if llmID == "" {
 		return "", nil
 	}
-	modelType := entity.ModelTypeChat
-	switch confModelType := llmSetting["model_type"].(type) {
-	case string:
-		if confModelType == entity.ModelTypeImage2Text.String() {
-			modelType = entity.ModelTypeImage2Text
-		}
-	case []interface{}:
-		for _, item := range confModelType {
-			if item == entity.ModelTypeImage2Text.String() {
-				modelType = entity.ModelTypeImage2Text
-				break
-			}
-		}
-	case []string:
-		for _, item := range confModelType {
-			if item == entity.ModelTypeImage2Text.String() {
-				modelType = entity.ModelTypeImage2Text
-				break
-			}
-		}
-	}
+	modelType := resolveChatModelTypeFromSetting(llmSetting)
 	modelFactory := NewModelFactory()
 	target, err := modelFactory.ResolveInfo(permission.WithTenantID(ctx, tenantID), modelType, llmID)
+	if err != nil && modelType != entity.ModelTypeChat {
+		target, err = modelFactory.ResolveInfo(permission.WithTenantID(ctx, tenantID), entity.ModelTypeChat, llmID)
+		if err == nil && llmSetting != nil {
+			llmSetting["product_model_type"] = "chat"
+			llmSetting["model_type"] = "chat"
+		}
+	}
 	if err != nil {
 		return "", fmt.Errorf("`llm_id` %s doesn't exist", llmID)
 	}
@@ -1195,24 +1248,16 @@ func (s *ChatService) resolveRESTLLMID(ctx context.Context, llmID, tenantID stri
 	if llmID == "" {
 		return "", nil
 	}
-	modelType := entity.ModelTypeChat
-	if rawModelType, ok := llmSetting["model_type"]; ok {
-		switch typedModelType := rawModelType.(type) {
-		case string:
-			if typedModelType == entity.ModelTypeImage2Text.String() {
-				modelType = entity.ModelTypeImage2Text
-			}
-		case []interface{}:
-			for _, item := range typedModelType {
-				if fmt.Sprint(item) == entity.ModelTypeImage2Text.String() {
-					modelType = entity.ModelTypeImage2Text
-					break
-				}
-			}
-		}
-	}
+	modelType := resolveChatModelTypeFromSetting(llmSetting)
 	modelFactory := NewModelFactory()
 	target, err := modelFactory.ResolveInfo(permission.WithTenantID(ctx, tenantID), modelType, llmID)
+	if err != nil && modelType != entity.ModelTypeChat {
+		target, err = modelFactory.ResolveInfo(permission.WithTenantID(ctx, tenantID), entity.ModelTypeChat, llmID)
+		if err == nil && llmSetting != nil {
+			llmSetting["product_model_type"] = "chat"
+			llmSetting["model_type"] = "chat"
+		}
+	}
 	if err != nil {
 		return "", fmt.Errorf("`llm_id` %s doesn't exist", llmID)
 	}

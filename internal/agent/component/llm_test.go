@@ -23,6 +23,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 	"ragflow/internal/tokenizer"
 
 	"github.com/cloudwego/eino/schema"
@@ -650,9 +651,17 @@ func TestCleanFormattedAnswer(t *testing.T) {
 // models.DummyModel ("not implemented"), which the test never calls.
 type streamingStubDriver struct {
 	models.DummyModel
+	capturedUsage *common.ModelUsage
 }
 
-func (d *streamingStubDriver) ChatStreamlyWithSender(_ context.Context, _ string, _ []models.Message, _ *models.APIConfig, _ *models.ChatConfig, _ *common.ModelUsage, sender func(*string, *string) error) error {
+func (d *streamingStubDriver) ChatWithMessages(_ context.Context, _ string, _ []models.Message, _ *models.APIConfig, _ *models.ChatConfig, usage *common.ModelUsage) (*models.ChatResponse, error) {
+	d.capturedUsage = usage
+	ans := "the answer"
+	return &models.ChatResponse{Answer: &ans}, nil
+}
+
+func (d *streamingStubDriver) ChatStreamlyWithSender(_ context.Context, _ string, _ []models.Message, _ *models.APIConfig, _ *models.ChatConfig, usage *common.ModelUsage, sender func(*string, *string) error) error {
+	d.capturedUsage = usage
 	think, answer := "thinking…", "the answer"
 	if err := sender(nil, &think); err != nil {
 		return err
@@ -699,5 +708,148 @@ func TestResolvedModelInvokerStreams(t *testing.T) {
 	// The assembled reply matches what Invoke would have returned.
 	if resp.Content != "the answer" || resp.Thinking != "thinking…" {
 		t.Errorf("assembled reply = (%q, %q), want (the answer, thinking…)", resp.Content, resp.Thinking)
+	}
+}
+
+func TestEinoChatInvoker_Stream_Attribution(t *testing.T) {
+	origDriver := newChatModelDriver
+	mockDriver := &streamingStubDriver{}
+	newChatModelDriver = func(driver, override string) (models.ModelDriver, error) {
+		return mockDriver, nil
+	}
+	t.Cleanup(func() { newChatModelDriver = origDriver })
+
+	inv := &einoChatInvoker{}
+	modelInfo := &models.ModelInfo{
+		Name:          "gpt-4o",
+		ProviderName:  "openai",
+		InstanceID:    "inst-stream-saved",
+		TenantID:      "tenant-stream-owner",
+		IsSavedConfig: true,
+	}
+
+	ctx := permission.WithIdentity(t.Context(), "user-caller-1", "tenant-caller-1")
+	req := ChatInvokeRequest{
+		Driver:    "openai",
+		ModelName: "gpt-4o",
+		ModelInfo: modelInfo,
+		Messages:  []schema.Message{{Role: schema.User, Content: "stream question"}},
+	}
+
+	_, err := inv.Stream(ctx, nil, req, func(delta string, isThink bool) error { return nil })
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	if mockDriver.capturedUsage == nil {
+		t.Fatal("driver received nil ModelUsage during streaming")
+	}
+	u := mockDriver.capturedUsage
+	if u.TenantID != "tenant-stream-owner" {
+		t.Errorf("got TenantID %q, want %q (must use saved model config tenant, not caller context)", u.TenantID, "tenant-stream-owner")
+	}
+	if u.InstanceID != "inst-stream-saved" {
+		t.Errorf("got InstanceID %q, want %q", u.InstanceID, "inst-stream-saved")
+	}
+	if u.ProviderName != "openai" {
+		t.Errorf("got ProviderName %q, want %q", u.ProviderName, "openai")
+	}
+	if !u.IsSavedConfig {
+		t.Errorf("got IsSavedConfig false, want true")
+	}
+	if u.UserID != "user-caller-1" {
+		t.Errorf("got UserID %q, want %q (actual caller)", u.UserID, "user-caller-1")
+	}
+}
+
+func TestResolvedModelInvoker_Stream_Attribution(t *testing.T) {
+	driver := &streamingStubDriver{}
+	modelName := "claude-3-5-sonnet"
+	modelInfo := &models.ModelInfo{
+		Name:          modelName,
+		ProviderName:  "anthropic",
+		InstanceID:    "inst-resolved-stream",
+		TenantID:      "tenant-resolved-owner",
+		IsSavedConfig: true,
+	}
+	cm := models.NewChatModelWithInfo(driver, &modelName, &models.APIConfig{}, modelInfo)
+	invoker := NewResolvedInvoker(cm)
+	streamer := invoker.(chat.StreamingInvoker)
+
+	ctx := permission.WithIdentity(t.Context(), "user-caller-2", "tenant-caller-2")
+	req := ChatInvokeRequest{
+		ModelName: modelName,
+		Messages:  []schema.Message{{Role: schema.User, Content: "stream question"}},
+	}
+
+	_, err := streamer.Stream(ctx, nil, req, func(delta string, isThink bool) error { return nil })
+	if err != nil {
+		t.Fatalf("Stream failed: %v", err)
+	}
+
+	if driver.capturedUsage == nil {
+		t.Fatal("driver received nil ModelUsage during streaming")
+	}
+	u := driver.capturedUsage
+	if u.TenantID != "tenant-resolved-owner" {
+		t.Errorf("got TenantID %q, want %q", u.TenantID, "tenant-resolved-owner")
+	}
+	if u.InstanceID != "inst-resolved-stream" {
+		t.Errorf("got InstanceID %q, want %q", u.InstanceID, "inst-resolved-stream")
+	}
+	if u.ProviderName != "anthropic" {
+		t.Errorf("got ProviderName %q, want %q", u.ProviderName, "anthropic")
+	}
+	if !u.IsSavedConfig {
+		t.Errorf("got IsSavedConfig false, want true")
+	}
+	if u.UserID != "user-caller-2" {
+		t.Errorf("got UserID %q, want %q", u.UserID, "user-caller-2")
+	}
+}
+
+func TestResolvedModelInvoker_KeepsPinnedAttribution(t *testing.T) {
+	driver := &streamingStubDriver{}
+	modelName := "claude-3-5-sonnet"
+	pinnedInfo := &models.ModelInfo{
+		Name:          modelName,
+		ProviderName:  "anthropic",
+		InstanceID:    "inst-pinned",
+		TenantID:      "tenant-pinned-owner",
+		IsSavedConfig: true,
+	}
+	cm := models.NewChatModelWithInfo(driver, &modelName, &models.APIConfig{}, pinnedInfo)
+	invoker := NewResolvedInvoker(cm)
+
+	ctx := permission.WithIdentity(t.Context(), "user-caller", "tenant-caller")
+	spoofedInfo := &models.ModelInfo{
+		Name:          modelName,
+		ProviderName:  "openai",
+		InstanceID:    "inst-spoofed",
+		TenantID:      "tenant-spoofed-owner",
+		IsSavedConfig: true,
+	}
+	req := ChatInvokeRequest{
+		ModelName: modelName,
+		ModelInfo: spoofedInfo,
+		Messages:  []schema.Message{{Role: schema.User, Content: "test"}},
+	}
+
+	_, err := invoker.Invoke(ctx, nil, req)
+	if err != nil {
+		t.Fatalf("Invoke failed: %v", err)
+	}
+	if driver.capturedUsage == nil {
+		t.Fatal("driver received nil ModelUsage")
+	}
+	u := driver.capturedUsage
+	if u.TenantID != "tenant-pinned-owner" {
+		t.Errorf("got TenantID %q, want pinned %q", u.TenantID, "tenant-pinned-owner")
+	}
+	if u.InstanceID != "inst-pinned" {
+		t.Errorf("got InstanceID %q, want pinned %q", u.InstanceID, "inst-pinned")
+	}
+	if u.ProviderName != "anthropic" {
+		t.Errorf("got ProviderName %q, want pinned %q", u.ProviderName, "anthropic")
 	}
 }

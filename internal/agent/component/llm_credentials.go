@@ -20,49 +20,85 @@ import (
 // resolveTenantLLMConfig fills tenant-scoped API credentials for the supplied
 // driver/model pair when the canvas DSL omitted them. It resolves them through
 // tenant_model_provider + tenant_model_instance using the composite llm_id.
-func resolveTenantLLMConfig(ctx context.Context, db *gorm.DB, driver, modelID, apiKey, baseURL, originalModelID string) (string, string) {
-	if apiKey != "" || driver == "" || modelID == "" {
-		return apiKey, baseURL
+func resolveTenantLLMConfig(ctx context.Context, db *gorm.DB, driver, modelID, apiKey, baseURL, originalModelID string) (string, string, string, *models.ModelInfo) {
+	if apiKey != "" || originalModelID == "" || driver == "" || modelID == "" {
+		return apiKey, baseURL, "", nil
 	}
 	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		common.Debug("llm credentials: no canvas state in ctx")
-		return apiKey, baseURL
+		return apiKey, baseURL, "", nil
 	}
 	tid, _ := state.GetSysString("tenant_id")
 	if tid == "" {
 		common.Debug("llm credentials: state.Sys has no tenant_id")
-		return apiKey, baseURL
+		return apiKey, baseURL, "", nil
 	}
 
-	if originalModelID == "" {
-		return apiKey, baseURL
+	if resolvedKey, resolvedBaseURL, resolvedInst, info, ok := resolveTenantModelInstanceCredentials(ctx, db, tid, originalModelID, baseURL); ok {
+		if apiKey == "" {
+			apiKey = resolvedKey
+		}
+		if baseURL == "" {
+			baseURL = resolvedBaseURL
+		}
+		return apiKey, baseURL, resolvedInst, info
 	}
-	if resolvedKey, resolvedBaseURL, ok := resolveTenantModelInstanceCredentials(ctx, db, tid, originalModelID, baseURL); ok {
-		return resolvedKey, resolvedBaseURL
-	}
-	return apiKey, baseURL
+	return apiKey, baseURL, "", nil
+}
+
+type resolvedModelRef struct {
+	ModelName  string
+	Driver     string
+	APIKey     string
+	BaseURL    string
+	InstanceID string
+	ModelType  entity.ModelType
+	ModelInfo  *models.ModelInfo
 }
 
 func resolveChatModelRef(ctx context.Context, db *gorm.DB, modelID, driver, apiKey, baseURL string) (string, string, string, string, error) {
-	return resolveModelRef(ctx, db, modelID, driver, apiKey, baseURL, entity.ModelTypeChat)
+	ref, err := resolveModelRef(ctx, db, modelID, driver, apiKey, baseURL, entity.ModelTypeChat)
+	if err != nil {
+		return "", "", "", "", err
+	}
+	return ref.ModelName, ref.Driver, ref.APIKey, ref.BaseURL, nil
 }
 
-func resolveModelRef(ctx context.Context, db *gorm.DB, modelID, driver, apiKey, baseURL string, allowedTypes entity.ModelType) (string, string, string, string, error) {
-	modelID, driver, apiKey, baseURL, _, err := resolveModelRefWithType(ctx, db, modelID, driver, apiKey, baseURL, allowedTypes)
-	return modelID, driver, apiKey, baseURL, err
+func resolveChatModelRefWithInfo(ctx context.Context, db *gorm.DB, modelID, driver, apiKey, baseURL string) (string, string, string, string, *models.ModelInfo, error) {
+	ref, err := resolveModelRef(ctx, db, modelID, driver, apiKey, baseURL, entity.ModelTypeChat)
+	if err != nil {
+		return "", "", "", "", nil, err
+	}
+	return ref.ModelName, ref.Driver, ref.APIKey, ref.BaseURL, ref.ModelInfo, nil
 }
 
 func resolveModelRefWithType(ctx context.Context, db *gorm.DB, modelID, driver, apiKey, baseURL string, allowedTypes entity.ModelType) (string, string, string, string, entity.ModelType, error) {
+	ref, err := resolveModelRef(ctx, db, modelID, driver, apiKey, baseURL, allowedTypes)
+	if err != nil {
+		return "", "", "", "", 0, err
+	}
+	return ref.ModelName, ref.Driver, ref.APIKey, ref.BaseURL, ref.ModelType, nil
+}
+
+func resolveModelRefWithInstance(ctx context.Context, db *gorm.DB, modelID, driver, apiKey, baseURL string, allowedTypes entity.ModelType) (string, string, string, string, string, entity.ModelType, error) {
+	ref, err := resolveModelRef(ctx, db, modelID, driver, apiKey, baseURL, allowedTypes)
+	if err != nil {
+		return "", "", "", "", "", 0, err
+	}
+	return ref.ModelName, ref.Driver, ref.APIKey, ref.BaseURL, ref.InstanceID, ref.ModelType, nil
+}
+
+func resolveModelRef(ctx context.Context, db *gorm.DB, modelID, driver, apiKey, baseURL string, allowedTypes entity.ModelType) (*resolvedModelRef, error) {
 	originalModelID := modelID
-	var modelType entity.ModelType
+	var res *resolvedModelRef
 	if driver == "" && strings.Contains(modelID, "@") {
-		resolvedModelID, resolvedDriver, resolvedAPIKey, resolvedBaseURL, resolvedType, ok, err := resolveTenantCompositeModel(ctx, db, modelID, apiKey, baseURL, allowedTypes)
+		resolved, ok, err := resolveTenantCompositeModel(ctx, db, modelID, apiKey, baseURL, allowedTypes)
 		if err != nil {
-			return "", "", "", "", 0, err
+			return nil, err
 		}
 		if ok {
-			return resolvedModelID, resolvedDriver, resolvedAPIKey, resolvedBaseURL, resolvedType, nil
+			return resolved, nil
 		}
 	}
 	if driver == "" && modelID != "" {
@@ -72,21 +108,41 @@ func resolveModelRefWithType(ctx context.Context, db *gorm.DB, modelID, driver, 
 		}
 	}
 	if driver == "" && modelID != "" {
-		resolvedModelID, resolvedDriver, resolvedAPIKey, resolvedBaseURL, resolvedType, ok, err := resolveTenantModelByID(ctx, db, modelID, apiKey, baseURL, allowedTypes)
+		resolved, ok, err := resolveTenantModelByID(ctx, db, modelID, apiKey, baseURL, allowedTypes)
 		if err != nil {
-			return "", "", "", "", 0, err
+			return nil, err
 		}
 		if ok {
-			modelID, driver, apiKey, baseURL, modelType = resolvedModelID, resolvedDriver, resolvedAPIKey, resolvedBaseURL, resolvedType
+			res = resolved
+			modelID = res.ModelName
+			driver = res.Driver
+			apiKey = res.APIKey
+			baseURL = res.BaseURL
 		}
 	}
-	if modelType == 0 && driver != "" && modelID != "" {
+	if res == nil {
+		res = &resolvedModelRef{
+			ModelName: modelID,
+			Driver:    driver,
+			APIKey:    apiKey,
+			BaseURL:   baseURL,
+		}
+	}
+	if res.ModelType == 0 && driver != "" && modelID != "" {
 		if model, err := dao.GetModelProviderManager().GetModelByName(driver, modelID); err == nil {
-			modelType = entity.ModelTypeFromStrings(model.ModelTypes)
+			res.ModelType = entity.ModelTypeFromStrings(model.ModelTypes)
 		}
 	}
-	apiKey, baseURL = resolveTenantLLMConfig(ctx, db, driver, modelID, apiKey, baseURL, originalModelID)
-	return modelID, driver, apiKey, baseURL, modelType, nil
+	resolvedKey, resolvedBaseURL, resolvedInst, fallbackInfo := resolveTenantLLMConfig(ctx, db, driver, modelID, apiKey, baseURL, originalModelID)
+	res.APIKey = resolvedKey
+	res.BaseURL = resolvedBaseURL
+	if res.InstanceID == "" {
+		res.InstanceID = resolvedInst
+	}
+	if res.ModelInfo == nil {
+		res.ModelInfo = fallbackInfo
+	}
+	return res, nil
 }
 
 // modelImageCapability reports an explicitly known image capability. The
@@ -134,11 +190,11 @@ func rejectUnsupportedImageFiles(ctx context.Context, db *gorm.DB, images []stri
 // resolveTenantModelInstanceCredentials attempts to resolve llm credentials
 // through tenant_model_provider + tenant_model_instance using the original
 // composite llm_id (which still carries the instance name).
-func resolveTenantModelInstanceCredentials(ctx context.Context, db *gorm.DB, tid, compositeLLMID, baseURL string) (string, string, bool) {
+func resolveTenantModelInstanceCredentials(ctx context.Context, db *gorm.DB, tid, compositeLLMID, baseURL string) (string, string, string, *models.ModelInfo, bool) {
 	modelName, instanceName, providerName := parseLLMIDParts(compositeLLMID)
 	if instanceName == "" {
 		common.Debug("llm credentials: new-table fallback skipped: no instance name", zap.String("composite_llm_id", compositeLLMID))
-		return "", baseURL, false
+		return "", baseURL, "", nil, false
 	}
 
 	common.Debug("llm credentials: new-table fallback",
@@ -150,13 +206,13 @@ func resolveTenantModelInstanceCredentials(ctx context.Context, db *gorm.DB, tid
 	owner, ownerErr := dao.NewUserTenantDAO().GetOwnerByTenantID(ctx, db, tid)
 	if ownerErr != nil {
 		common.Debug("llm credentials: new-table fallback: tenant owner lookup failed", zap.String("tenant", tid), zap.Error(ownerErr))
-		return "", baseURL, false
+		return "", baseURL, "", nil, false
 	}
 	ownerUserID := owner.UserID
 	provider, err := dao.NewTenantModelProviderDAO().GetByTenantIDAndUserIDAndProviderName(ctx, db, tid, ownerUserID, providerName)
 	if err != nil || provider == nil {
 		common.Debug("llm credentials: new-table fallback: provider not found", zap.String("provider", providerName), zap.Error(err))
-		return "", baseURL, false
+		return "", baseURL, "", nil, false
 	}
 
 	instance, err := dao.NewTenantModelInstanceDAO().GetByProviderIDAndInstanceName(ctx, db, provider.ID, instanceName)
@@ -176,13 +232,13 @@ func resolveTenantModelInstanceCredentials(ctx context.Context, db *gorm.DB, tid
 			zap.String("instance", instanceName),
 			zap.String("provider", providerName),
 			zap.Error(err))
-		return "", baseURL, false
+		return "", baseURL, "", nil, false
 	}
 
 	apiKey := instance.APIKey
 	if !savedKeyMayGoTo(provider.ProviderName, instance, baseURL) {
 		common.Debug("llm credentials: saved key not used with a base_url override of another origin", zap.String("provider", providerName))
-		return "", baseURL, false
+		return "", baseURL, "", nil, false
 	}
 	if instance.Extra != "" && baseURL == "" {
 		var extra map[string]string
@@ -193,12 +249,21 @@ func resolveTenantModelInstanceCredentials(ctx context.Context, db *gorm.DB, tid
 		}
 	}
 
+	info := &models.ModelInfo{
+		Name:          modelName,
+		ProviderName:  provider.ProviderName,
+		InstanceID:    instance.ID,
+		InstanceName:  instance.InstanceName,
+		TenantID:      provider.TenantID,
+		IsSavedConfig: true,
+	}
+
 	common.Debug("llm credentials: new-table OK",
 		zap.String("provider", providerName),
 		zap.String("instance", instance.InstanceName),
 		zap.Bool("api_key_present", apiKey != ""),
 		zap.Bool("base_url_present", baseURL != ""))
-	return apiKey, baseURL, apiKey != ""
+	return apiKey, baseURL, instance.ID, info, true
 }
 
 func findSoleActiveProviderInstance(ctx context.Context, db *gorm.DB, providerID string) *entity.TenantModelInstance {
@@ -233,49 +298,47 @@ func isDecisionOnlyDriver(name string) bool {
 // caller accepts decision models and the reference names one; everything else
 // (chat, vision, disabled rows, unknown providers) returns ok=false so the
 // pre-existing resolution runs unchanged.
-func resolveTenantCompositeModel(ctx context.Context, db *gorm.DB, modelRef, apiKey, baseURL string, allowedTypes entity.ModelType) (string, string, string, string, entity.ModelType, bool, error) {
-	unresolved := func() (string, string, string, string, entity.ModelType, bool, error) {
-		return "", "", apiKey, baseURL, 0, false, nil
-	}
+func resolveTenantCompositeModel(ctx context.Context, db *gorm.DB, modelRef, apiKey, baseURL string, allowedTypes entity.ModelType) (*resolvedModelRef, bool, error) {
+	fallback := &resolvedModelRef{APIKey: apiKey, BaseURL: baseURL}
 	if db == nil || !allowedTypes.Has(entity.ModelTypeDecision) {
-		return unresolved()
+		return fallback, false, nil
 	}
 	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
-		return unresolved()
+		return fallback, false, nil
 	}
 	tid, _ := state.GetSysString("tenant_id")
 	modelName, instanceName, providerName := parseLLMIDParts(modelRef)
 	if tid == "" || instanceName == "" {
-		return unresolved()
+		return fallback, false, nil
 	}
 	explicitInstance := len(strings.Split(strings.TrimSpace(modelRef), "@")) >= 3
 	// A three-part reference to a decision-only provider names an instance
 	// explicitly. When it cannot be resolved, failing is safer than letting
 	// the legacy model@provider split drop the instance and its credentials.
-	notFound := func() (string, string, string, string, entity.ModelType, bool, error) {
+	notFound := func() (*resolvedModelRef, bool, error) {
 		if explicitInstance && isDecisionOnlyDriver(providerName) {
-			return "", "", apiKey, baseURL, 0, false, fmt.Errorf("tenant composite model %q not found", modelRef)
+			return nil, false, fmt.Errorf("tenant composite model %q not found", modelRef)
 		}
-		return unresolved()
+		return fallback, false, nil
 	}
 	owner, err := dao.NewUserTenantDAO().GetOwnerByTenantID(ctx, db, tid)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return notFound()
 	}
 	if err != nil {
-		return "", "", apiKey, baseURL, 0, false, fmt.Errorf("resolve tenant owner %q: %w", tid, err)
+		return nil, false, fmt.Errorf("resolve tenant owner %q: %w", tid, err)
 	}
 	provider, err := dao.NewTenantModelProviderDAO().GetByTenantIDAndUserIDAndProviderName(ctx, db, tid, owner.UserID, providerName)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return notFound()
 	}
 	if err != nil {
-		return "", "", apiKey, baseURL, 0, false, fmt.Errorf("resolve provider %q: %w", providerName, err)
+		return nil, false, fmt.Errorf("resolve provider %q: %w", providerName, err)
 	}
 	instance, err := dao.NewTenantModelInstanceDAO().GetByProviderIDAndInstanceName(ctx, db, provider.ID, instanceName)
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return "", "", apiKey, baseURL, 0, false, fmt.Errorf("resolve instance %q: %w", instanceName, err)
+		return nil, false, fmt.Errorf("resolve instance %q: %w", instanceName, err)
 	}
 	if errors.Is(err, gorm.ErrRecordNotFound) && instanceName == "default" {
 		instance = findSoleActiveProviderInstance(ctx, db, provider.ID)
@@ -285,16 +348,16 @@ func resolveTenantCompositeModel(ctx context.Context, db *gorm.DB, modelRef, api
 	}
 	rows, err := dao.NewTenantModelDAO().GetModelsByProviderIDAndInstanceIDAndModelName(ctx, db, provider.ID, instance.ID, modelName)
 	if err != nil {
-		return "", "", apiKey, baseURL, 0, false, err
+		return nil, false, err
 	}
 	if len(rows) == 0 {
 		// The model row is gone, but the caller falls back to the instance's
 		// credentials. An explicit reference to a decision-only provider must
 		// not reach an inactive instance through that fallback.
 		if explicitInstance && isDecisionOnlyDriver(provider.ProviderName) && !strings.EqualFold(strings.TrimSpace(instance.Status), "active") {
-			return "", "", apiKey, baseURL, 0, false, fmt.Errorf("tenant composite model %q: instance %q is not active", modelRef, instanceName)
+			return nil, false, fmt.Errorf("tenant composite model %q: instance %q is not active", modelRef, instanceName)
 		}
-		return unresolved()
+		return fallback, false, nil
 	}
 	var selected *entity.TenantModel
 	decisionRows := 0
@@ -307,108 +370,125 @@ func resolveTenantCompositeModel(ctx context.Context, db *gorm.DB, modelRef, api
 			continue
 		}
 		if selected != nil {
-			return "", "", apiKey, baseURL, 0, false, fmt.Errorf("model %q has multiple active decision entries; use tenant_model.id", modelRef)
+			return nil, false, fmt.Errorf("model %q has multiple active decision entries; use tenant_model.id", modelRef)
 		}
 		selected = row
 	}
 	if decisionRows == 0 {
-		return unresolved()
+		return fallback, false, nil
 	}
 	if selected == nil {
-		return "", "", apiKey, baseURL, 0, false, fmt.Errorf("model %q has no active decision entry", modelRef)
+		return nil, false, fmt.Errorf("model %q has no active decision entry", modelRef)
 	}
 	return resolveTenantModelByTenantModelID(ctx, db, tid, selected.ID, apiKey, baseURL, allowedTypes)
 }
 
-func resolveTenantModelByID(ctx context.Context, db *gorm.DB, modelRef, apiKey, baseURL string, allowedTypes entity.ModelType) (string, string, string, string, entity.ModelType, bool, error) {
+func resolveTenantModelByID(ctx context.Context, db *gorm.DB, modelRef, apiKey, baseURL string, allowedTypes entity.ModelType) (*resolvedModelRef, bool, error) {
 	if !isBareTenantModelID(modelRef) {
-		return "", "", apiKey, baseURL, 0, false, nil
+		return nil, false, nil
 	}
 	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
-		return "", "", apiKey, baseURL, 0, false, nil
+		return nil, false, nil
 	}
 	tid, _ := state.GetSysString("tenant_id")
 	if tid == "" {
-		return "", "", apiKey, baseURL, 0, false, nil
+		return nil, false, nil
 	}
 
-	modelName, provider, modelKey, modelBaseURL, modelType, ok, err := resolveTenantModelByTenantModelID(ctx, db, tid, modelRef, apiKey, baseURL, allowedTypes)
-	if err != nil {
-		return "", "", apiKey, baseURL, 0, false, err
-	}
-	if ok {
-		return modelName, provider, modelKey, modelBaseURL, modelType, true, nil
+	res, ok, err := resolveTenantModelByTenantModelID(ctx, db, tid, modelRef, apiKey, baseURL, allowedTypes)
+	if err != nil || ok {
+		return res, ok, err
 	}
 
-	modelName, provider, instanceKey, instanceBaseURL, modelType, ok, err := resolveTenantModelByInstanceID(ctx, db, tid, modelRef, apiKey, baseURL, allowedTypes)
-	if err != nil {
-		return "", "", apiKey, baseURL, 0, false, err
+	res, ok, err = resolveTenantModelByInstanceID(ctx, db, tid, modelRef, apiKey, baseURL, allowedTypes)
+	if err != nil || ok {
+		return res, ok, err
 	}
-	if ok {
-		return modelName, provider, instanceKey, instanceBaseURL, modelType, true, nil
-	}
-	return "", "", apiKey, baseURL, 0, false, fmt.Errorf("tenant %s model id %q not found", allowedTypes, modelRef)
+	return nil, false, fmt.Errorf("tenant %s model id %q not found", allowedTypes, modelRef)
 }
 
-func resolveTenantModelByTenantModelID(ctx context.Context, db *gorm.DB, tid, modelID, apiKey, baseURL string, allowedTypes entity.ModelType) (string, string, string, string, entity.ModelType, bool, error) {
+func resolveTenantModelByTenantModelID(ctx context.Context, db *gorm.DB, tid, modelID, apiKey, baseURL string, allowedTypes entity.ModelType) (*resolvedModelRef, bool, error) {
 	model, err := dao.NewTenantModelDAO().GetByID(ctx, db, modelID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", "", apiKey, baseURL, 0, false, nil
+			return nil, false, nil
 		}
-		return "", "", apiKey, baseURL, 0, false, fmt.Errorf("resolve tenant model id %q: %w", modelID, err)
+		return nil, false, fmt.Errorf("resolve tenant model id %q: %w", modelID, err)
 	}
 	if !strings.EqualFold(strings.TrimSpace(model.Status), "active") {
-		return "", "", apiKey, baseURL, 0, false, fmt.Errorf("tenant model id %s is disabled", modelID)
+		return nil, false, fmt.Errorf("tenant model id %s is disabled", modelID)
 	}
 	if !entity.ModelType(model.ModelType).Has(allowedTypes) {
-		return "", "", apiKey, baseURL, 0, false, fmt.Errorf("tenant model id %s cannot be used as %s model", modelID, allowedTypes)
+		return nil, false, fmt.Errorf("tenant model id %s cannot be used as %s model", modelID, allowedTypes)
 	}
 
 	provider, err := dao.NewTenantModelProviderDAO().GetByID(ctx, db, model.ProviderID)
 	if err != nil {
-		return "", "", apiKey, baseURL, 0, false, fmt.Errorf("resolve provider for tenant model id %q: %w", modelID, err)
+		return nil, false, fmt.Errorf("resolve provider for tenant model id %q: %w", modelID, err)
 	}
 	if provider.TenantID != tid {
-		return "", "", apiKey, baseURL, 0, false, fmt.Errorf("tenant %s has no access to model id %s", tid, modelID)
+		return nil, false, fmt.Errorf("tenant %s has no access to model id %s", tid, modelID)
 	}
 
 	instance, err := dao.NewTenantModelInstanceDAO().GetByID(ctx, db, model.InstanceID)
 	if err != nil {
-		return "", "", apiKey, baseURL, 0, false, fmt.Errorf("resolve instance for tenant model id %q: %w", modelID, err)
+		return nil, false, fmt.Errorf("resolve instance for tenant model id %q: %w", modelID, err)
 	}
 	if entity.ModelType(model.ModelType).Has(entity.ModelTypeDecision) && allowedTypes.Has(entity.ModelTypeDecision) {
 		if instance.ProviderID != provider.ID || !strings.EqualFold(strings.TrimSpace(instance.Status), "active") {
-			return "", "", apiKey, baseURL, 0, false, fmt.Errorf("tenant model id %s has an inactive or mismatched instance", modelID)
+			return nil, false, fmt.Errorf("tenant model id %s has an inactive or mismatched instance", modelID)
 		}
 	}
+	rawAPIKey := apiKey
 	apiKey, baseURL = fillInstanceCredentials(provider.ProviderName, instance, apiKey, baseURL)
-	return model.ModelName, provider.ProviderName, apiKey, baseURL, entity.ModelType(model.ModelType), true, nil
+	var info *models.ModelInfo
+	var resolvedInstanceID string
+	if rawAPIKey == "" || rawAPIKey == instance.APIKey {
+		info = &models.ModelInfo{
+			ID:            model.ID,
+			Name:          model.ModelName,
+			ProviderName:  provider.ProviderName,
+			InstanceID:    instance.ID,
+			InstanceName:  instance.InstanceName,
+			TenantID:      provider.TenantID,
+			IsSavedConfig: true,
+		}
+		resolvedInstanceID = instance.ID
+	}
+	return &resolvedModelRef{
+		ModelName:  model.ModelName,
+		Driver:     provider.ProviderName,
+		APIKey:     apiKey,
+		BaseURL:    baseURL,
+		InstanceID: resolvedInstanceID,
+		ModelType:  entity.ModelType(model.ModelType),
+		ModelInfo:  info,
+	}, true, nil
 }
 
-func resolveTenantModelByInstanceID(ctx context.Context, db *gorm.DB, tid, instanceID, apiKey, baseURL string, allowedTypes entity.ModelType) (string, string, string, string, entity.ModelType, bool, error) {
+func resolveTenantModelByInstanceID(ctx context.Context, db *gorm.DB, tid, instanceID, apiKey, baseURL string, allowedTypes entity.ModelType) (*resolvedModelRef, bool, error) {
 	instance, err := dao.NewTenantModelInstanceDAO().GetByID(ctx, db, instanceID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return "", "", apiKey, baseURL, 0, false, nil
+			return nil, false, nil
 		}
-		return "", "", apiKey, baseURL, 0, false, fmt.Errorf("resolve tenant model instance id %q: %w", instanceID, err)
+		return nil, false, fmt.Errorf("resolve tenant model instance id %q: %w", instanceID, err)
 	}
 	provider, err := dao.NewTenantModelProviderDAO().GetByID(ctx, db, instance.ProviderID)
 	if err != nil {
-		return "", "", apiKey, baseURL, 0, false, fmt.Errorf("resolve provider for tenant model instance id %q: %w", instanceID, err)
+		return nil, false, fmt.Errorf("resolve provider for tenant model instance id %q: %w", instanceID, err)
 	}
 	if provider.TenantID != tid {
-		return "", "", apiKey, baseURL, 0, false, fmt.Errorf("tenant %s has no access to model instance id %s", tid, instanceID)
+		return nil, false, fmt.Errorf("tenant %s has no access to model instance id %s", tid, instanceID)
 	}
 
-	models, err := dao.NewTenantModelDAO().GetModelsByInstanceID(ctx, db, instance.ID)
+	modelList, err := dao.NewTenantModelDAO().GetModelsByInstanceID(ctx, db, instance.ID)
 	if err != nil {
-		return "", "", apiKey, baseURL, 0, false, fmt.Errorf("resolve models for tenant model instance id %q: %w", instanceID, err)
+		return nil, false, fmt.Errorf("resolve models for tenant model instance id %q: %w", instanceID, err)
 	}
-	candidates := make([]*entity.TenantModel, 0, len(models))
-	for _, model := range models {
+	candidates := make([]*entity.TenantModel, 0, len(modelList))
+	for _, model := range modelList {
 		if model == nil || model.ProviderID != provider.ID {
 			continue
 		}
@@ -421,18 +501,41 @@ func resolveTenantModelByInstanceID(ctx context.Context, db *gorm.DB, tid, insta
 		candidates = append(candidates, model)
 	}
 	if len(candidates) == 0 {
-		return "", "", apiKey, baseURL, 0, false, fmt.Errorf("tenant model instance id %s has no active %s model", instanceID, allowedTypes)
+		return nil, false, fmt.Errorf("tenant model instance id %s has no active %s model", instanceID, allowedTypes)
 	}
 	if len(candidates) > 1 {
-		return "", "", apiKey, baseURL, 0, false, fmt.Errorf("tenant model instance id %s has %d active %s models; use tenant_model.id or model@instance@provider", instanceID, len(candidates), allowedTypes)
+		return nil, false, fmt.Errorf("tenant model instance id %s has %d active %s models; use tenant_model.id or model@instance@provider", instanceID, len(candidates), allowedTypes)
 	}
 	if entity.ModelType(candidates[0].ModelType).Has(entity.ModelTypeDecision) {
 		if !strings.EqualFold(strings.TrimSpace(instance.Status), "active") {
-			return "", "", apiKey, baseURL, 0, false, fmt.Errorf("decision model instance id %s requires an active instance", instanceID)
+			return nil, false, fmt.Errorf("decision model instance id %s requires an active instance", instanceID)
 		}
 	}
+	rawAPIKey := apiKey
 	apiKey, baseURL = fillInstanceCredentials(provider.ProviderName, instance, apiKey, baseURL)
-	return candidates[0].ModelName, provider.ProviderName, apiKey, baseURL, entity.ModelType(candidates[0].ModelType), true, nil
+	var info *models.ModelInfo
+	var resolvedInstanceID string
+	if rawAPIKey == "" || rawAPIKey == instance.APIKey {
+		info = &models.ModelInfo{
+			ID:            candidates[0].ID,
+			Name:          candidates[0].ModelName,
+			ProviderName:  provider.ProviderName,
+			InstanceID:    instance.ID,
+			InstanceName:  instance.InstanceName,
+			TenantID:      provider.TenantID,
+			IsSavedConfig: true,
+		}
+		resolvedInstanceID = instance.ID
+	}
+	return &resolvedModelRef{
+		ModelName:  candidates[0].ModelName,
+		Driver:     provider.ProviderName,
+		APIKey:     apiKey,
+		BaseURL:    baseURL,
+		InstanceID: resolvedInstanceID,
+		ModelType:  entity.ModelType(candidates[0].ModelType),
+		ModelInfo:  info,
+	}, true, nil
 }
 
 // naceDefaultOrigin is where a saved Nace instance points when it stores no

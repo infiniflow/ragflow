@@ -28,6 +28,8 @@ import (
 
 	"github.com/cloudwego/eino/schema"
 	"gorm.io/gorm"
+
+	"ragflow/internal/entity/models"
 )
 
 // Invoker abstracts a chat-model call so callers can inject a stub in tests and
@@ -89,6 +91,7 @@ type Request struct {
 	ModelName        string
 	APIKey           string
 	BaseURL          string
+	ModelInfo        *models.ModelInfo
 	Messages         []schema.Message
 	Temperature      *float64
 	TopP             *float64

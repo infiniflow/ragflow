@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/parser/media"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/parser/tableutil"
+	"ragflow/internal/permission"
 	"ragflow/internal/rag/prompts"
 	"ragflow/internal/utility"
 
@@ -1983,9 +1984,15 @@ func dispatchPDFVision(
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: pdf vision render: %w", err)
 	}
-	driver, resolvedModelName, apiConfig, err := pdfVisionModelResolver(ctx, db, tenantID, modelID)
+	if tenantID != "" && permission.TenantIDFromContext(ctx) == "" {
+		ctx = permission.WithTenantID(ctx, tenantID)
+	}
+	driver, resolvedModelName, apiConfig, info, err := resolvePDFVisionModel(ctx, db, tenantID, modelID)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: pdf vision model %q: %w", modelID, err)
+	}
+	if info != nil {
+		ctx = modelModule.WithModelInfo(ctx, info)
 	}
 	promptTemplate, err := pdfVisionPromptLoader("vision_llm_describe_prompt")
 	if err != nil {
@@ -2032,6 +2039,19 @@ func buildPDFVisionMessages(prompt string, imageURL string) []modelModule.Messag
 	}}
 }
 
+func resolvePDFVisionModel(ctx context.Context, db *gorm.DB, tenantID, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, *modelModule.ModelInfo, error) {
+	if isHooked(pdfVisionModelResolver, defaultPDFVisionModelResolver) {
+		drv, name, cfg, err := pdfVisionModelResolver(ctx, db, tenantID, modelID)
+		return drv, name, cfg, nil, err
+	}
+	if strings.TrimSpace(modelID) == "" {
+		drv, name, cfg, info, _, err := resolveTenantModelFull(ctx, db, tenantID, entity.ModelTypeImage2Text)
+		return drv, name, cfg, info, err
+	}
+	drv, name, cfg, info, _, err := resolveModelConfigFull(ctx, db, tenantID, entity.ModelTypeImage2Text, modelID)
+	return drv, name, cfg, info, err
+}
+
 func defaultPDFVisionModelResolver(
 	ctx context.Context,
 	db *gorm.DB,
@@ -2054,7 +2074,8 @@ func defaultPDFVisionChatInvoker(
 	apiConfig *modelModule.APIConfig,
 ) (*modelModule.ChatResponse, error) {
 	vision := true
-	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
+	info := modelModule.ModelInfoFromContext(ctx)
+	chatModel := modelModule.NewChatModelWithInfo(driver, &modelName, apiConfig, info)
 	finish := agentruntime.TrackIO(ctx, "Parser", "VLM", "media=pdf")
 	resp, err := chatModel.ChatWithMessages(ctx, messages, &modelModule.ChatConfig{Vision: &vision}, nil)
 	finish()

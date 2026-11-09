@@ -50,6 +50,7 @@ func setupChatPipelineVisionTestDB(t *testing.T) *gorm.DB {
 		// Combined chat+image2text enrollment (bitmask), as produced for
 		// catalog entries with model_types ["chat", "vision"] (e.g. glm-4.6v-Flash).
 		&entity.TenantModel{ID: "model-46v-combined", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4.6v-Flash", ModelType: int(entity.ModelTypeChat | entity.ModelTypeImage2Text), Status: "active"},
+		&entity.TenantModel{ID: "model-vision-only", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-vision-only", ModelType: int(entity.ModelTypeImage2Text), Status: "active"},
 	}
 	for _, row := range rows {
 		if err := db.Create(row).Error; err != nil {
@@ -165,5 +166,129 @@ func TestGetLLMModelConfig_TenantDefaultVisionResolvesImage2Text(t *testing.T) {
 	}
 	if got := cfg["model_type"]; got != "image2text" {
 		t.Fatalf("model_type = %v, want image2text for vision-capable tenant default", got)
+	}
+}
+
+// A vision-capable model chosen as a standard chat dialog keeps
+// product_model_type "chat" for billing/ledger accounting, while model_type
+// remains "image2text" so image attachments are not dropped.
+func TestGetLLMModelConfig_ProductTypeRetainsChatForVisionModel(t *testing.T) {
+	db := setupChatPipelineVisionTestDB(t)
+	seedChatPipelineVisionTenant(t, db, "glm-4v@ZHIPU-AI")
+
+	svc := NewChatPipelineService()
+	// Case 1: Standard chat without explicit VLM product type setting
+	cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{
+		TenantID: "tenant-1",
+		LLMID:    "glm-4v@ZHIPU-AI",
+	})
+	if err != nil {
+		t.Fatalf("getLLMModelConfig() error = %v", err)
+	}
+	if got := cfg["model_type"]; got != "image2text" {
+		t.Fatalf("model_type = %v, want image2text for vision capability", got)
+	}
+	if got := cfg["product_model_type"]; got != "chat" {
+		t.Fatalf("product_model_type = %v, want chat for product accounting", got)
+	}
+
+	// Case 2: Multimodal model with real frontend shape []interface{}{"chat", "vision"}
+	cfgWebUI, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{
+		TenantID:   "tenant-1",
+		LLMID:      "glm-4v@ZHIPU-AI",
+		LLMSetting: map[string]interface{}{"model_type": []interface{}{"chat", "vision"}},
+	})
+	if err != nil {
+		t.Fatalf("getLLMModelConfig() error = %v", err)
+	}
+	if got := cfgWebUI["model_type"]; got != "image2text" {
+		t.Fatalf("model_type = %v, want image2text for vision capability", got)
+	}
+	if got := cfgWebUI["product_model_type"]; got != "chat" {
+		t.Fatalf("product_model_type = %v, want chat for multimodal chat selection", got)
+	}
+
+	// Case 3: Multimodal model with []string{"chat", "vision"}
+	cfgStringSlice, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{
+		TenantID:   "tenant-1",
+		LLMID:      "glm-4v@ZHIPU-AI",
+		LLMSetting: map[string]interface{}{"model_type": []string{"chat", "vision"}},
+	})
+	if err != nil {
+		t.Fatalf("getLLMModelConfig() error = %v", err)
+	}
+	if got := cfgStringSlice["product_model_type"]; got != "chat" {
+		t.Fatalf("product_model_type = %v, want chat", got)
+	}
+
+	// Case 4: Vision-only model with real frontend shape []interface{}{"vision"}
+	cfgVisionOnly, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{
+		TenantID:   "tenant-1",
+		LLMID:      "glm-vision-only@ZHIPU-AI",
+		LLMSetting: map[string]interface{}{"model_type": []interface{}{"vision"}},
+	})
+	if err != nil {
+		t.Fatalf("getLLMModelConfig() error = %v", err)
+	}
+	if got := cfgVisionOnly["product_model_type"]; got != "image2text" {
+		t.Fatalf("product_model_type = %v, want image2text for vision-only model", got)
+	}
+
+	// Case 5: Vision-only model with string "vision"
+	cfgVisionStr, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{
+		TenantID:   "tenant-1",
+		LLMID:      "glm-vision-only@ZHIPU-AI",
+		LLMSetting: map[string]interface{}{"model_type": "vision"},
+	})
+	if err != nil {
+		t.Fatalf("getLLMModelConfig() error = %v", err)
+	}
+	if got := cfgVisionStr["product_model_type"]; got != "image2text" {
+		t.Fatalf("product_model_type = %v, want image2text for vision string", got)
+	}
+
+	// Case 6: Chat explicitly configured as image2text product
+	cfgExplicit, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{
+		TenantID:   "tenant-1",
+		LLMID:      "glm-4v@ZHIPU-AI",
+		LLMSetting: map[string]interface{}{"model_type": "image2text"},
+	})
+	if err != nil {
+		t.Fatalf("getLLMModelConfig() error = %v", err)
+	}
+	if got := cfgExplicit["product_model_type"]; got != "image2text" {
+		t.Fatalf("product_model_type = %v, want image2text when explicitly set", got)
+	}
+
+	// Case 7: Explicit product_model_type: "image2text" overrides chat capability
+	cfgExplicitVLM, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{
+		TenantID: "tenant-1",
+		LLMID:    "glm-4v@ZHIPU-AI",
+		LLMSetting: map[string]interface{}{
+			"product_model_type": "image2text",
+			"model_type":         []interface{}{"chat", "vision"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("getLLMModelConfig() error = %v", err)
+	}
+	if got := cfgExplicitVLM["product_model_type"]; got != "image2text" {
+		t.Fatalf("product_model_type = %v, want image2text when product_model_type explicitly set", got)
+	}
+
+	// Case 8: Explicit product_model_type: "chat" overrides vision-only model_type
+	cfgExplicitChat, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{
+		TenantID: "tenant-1",
+		LLMID:    "glm-4v@ZHIPU-AI",
+		LLMSetting: map[string]interface{}{
+			"product_model_type": "chat",
+			"model_type":         []interface{}{"vision"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("getLLMModelConfig() error = %v", err)
+	}
+	if got := cfgExplicitChat["product_model_type"]; got != "chat" {
+		t.Fatalf("product_model_type = %v, want chat when product_model_type explicitly set", got)
 	}
 }

@@ -25,6 +25,7 @@ import (
 	"errors"
 	"fmt"
 	"ragflow/internal/common"
+	"reflect"
 	"strings"
 
 	"ragflow/internal/dao"
@@ -42,11 +43,55 @@ type tenantModelExtra struct {
 }
 
 type resolvedModelConfig struct {
+	requestedType entity.ModelType
 	driver        modelModule.ModelDriver
 	model         *entity.TenantModel
 	instance      *entity.TenantModelInstance
+	provider      *entity.TenantModelProvider
 	apiConfig     *modelModule.APIConfig
 	contextLength int
+}
+
+func (r *resolvedModelConfig) toModelInfo() *modelModule.ModelInfo {
+	if r == nil {
+		return nil
+	}
+	var providerName, instanceID, instanceName, modelName, tenantID string
+	if r.provider != nil {
+		providerName = r.provider.ProviderName
+		tenantID = r.provider.TenantID
+	}
+	if r.instance != nil {
+		instanceID = r.instance.ID
+		instanceName = r.instance.InstanceName
+	}
+	if r.model != nil {
+		modelName = r.model.ModelName
+	}
+	var modelTypes []string
+	if r.model != nil && r.model.ModelType != 0 {
+		modelTypes = entity.ModelType(r.model.ModelType).HumanReadable()
+	}
+	if len(modelTypes) == 0 && r.requestedType != 0 {
+		modelTypes = r.requestedType.HumanReadable()
+	}
+	if len(modelTypes) == 0 {
+		modelTypes = []string{"chat"}
+	}
+	productType := ""
+	if hr := r.requestedType.HumanReadable(); len(hr) == 1 {
+		productType = r.requestedType.String()
+	}
+	return &modelModule.ModelInfo{
+		TenantID:      tenantID,
+		Name:          modelName,
+		ProviderName:  providerName,
+		InstanceID:    instanceID,
+		InstanceName:  instanceName,
+		ModelTypes:    modelTypes,
+		ProductType:   productType,
+		IsSavedConfig: true,
+	}
 }
 
 var resolveTenantModelByType = defaultResolveTenantModelByType
@@ -55,6 +100,30 @@ var resolveTenantModelByType = defaultResolveTenantModelByType
 // "name@instance@provider" composite) to a driver. Exposed as a package var so
 // per-call model-selection tests can inject a fake without a live MySQL.
 var resolveModelConfig = defaultResolveModelConfig
+
+func isHooked(fn, defaultFn any) bool {
+	return reflect.ValueOf(fn).Pointer() != reflect.ValueOf(defaultFn).Pointer()
+}
+
+// resolveTenantModelFull resolves a model with its metadata. When resolveTenantModelByType
+// is hooked by a test, it falls back to the hook.
+func resolveTenantModelFull(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, *modelModule.ModelInfo, int, error) {
+	if isHooked(resolveTenantModelByType, defaultResolveTenantModelByType) {
+		drv, name, cfg, clen, err := resolveTenantModelByType(ctx, db, tenantID, modelType)
+		return drv, name, cfg, nil, clen, err
+	}
+	return defaultResolveTenantModelByTypeFull(ctx, db, tenantID, modelType)
+}
+
+// resolveModelConfigFull resolves a model reference with its metadata. When resolveModelConfig
+// is hooked by a test, it falls back to the hook.
+func resolveModelConfigFull(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, *modelModule.ModelInfo, int, error) {
+	if isHooked(resolveModelConfig, defaultResolveModelConfig) {
+		drv, name, cfg, clen, err := resolveModelConfig(ctx, db, tenantID, modelType, modelRef)
+		return drv, name, cfg, nil, clen, err
+	}
+	return defaultResolveModelConfigFull(ctx, db, tenantID, modelType, modelRef)
+}
 
 // configuredAudioModelID reads the audio setup's ASR model reference.
 func configuredAudioModelID(setup schema.ParserSetup) string {
@@ -68,9 +137,14 @@ func configuredAudioModelID(setup schema.ParserSetup) string {
 
 // defaultResolveTenantModelByType resolves the current member's configured default.
 func defaultResolveTenantModelByType(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	driver, modelName, apiConfig, _, contextLength, err := defaultResolveTenantModelByTypeFull(ctx, db, tenantID, modelType)
+	return driver, modelName, apiConfig, contextLength, err
+}
+
+func defaultResolveTenantModelByTypeFull(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, *modelModule.ModelInfo, int, error) {
 	membership, err := resolveDefaultModelMembership(ctx, db, tenantID)
 	if err != nil {
-		return nil, "", nil, 0, fmt.Errorf("load default model settings for tenant %s: %w", tenantID, err)
+		return nil, "", nil, nil, 0, fmt.Errorf("load default model settings for tenant %s: %w", tenantID, err)
 	}
 	var modelID string
 	switch modelType {
@@ -89,18 +163,18 @@ func defaultResolveTenantModelByType(ctx context.Context, db *gorm.DB, tenantID 
 	case entity.ModelTypeOCR:
 		modelID = stringValue(membership.OCRID)
 	default:
-		return nil, "", nil, 0, fmt.Errorf("invalid model type: %s", modelType)
+		return nil, "", nil, nil, 0, fmt.Errorf("invalid model type: %s", modelType)
 	}
 	if modelID == "" {
-		return nil, "", nil, 0, fmt.Errorf("no default %s model is set", modelType)
+		return nil, "", nil, nil, 0, fmt.Errorf("no default %s model is set", modelType)
 	}
 	if tenantModelID := tenantModelIDByType(membership, modelType); tenantModelID != "" {
 		resolved, err := resolveModelConfigByID(ctx, db, tenantID, modelType, tenantModelID)
 		if err == nil {
-			return resolved.driver, resolved.model.ModelName, resolved.apiConfig, resolved.contextLength, nil
+			return resolved.driver, resolved.model.ModelName, resolved.apiConfig, resolved.toModelInfo(), resolved.contextLength, nil
 		}
 	}
-	return resolveModelConfig(ctx, db, tenantID, modelType, modelID)
+	return defaultResolveModelConfigFull(ctx, db, tenantID, modelType, modelID)
 }
 
 // resolveTenantOCRModelByProvider resolves the tenant's first active OCR
@@ -220,14 +294,19 @@ func stringValue(value *string) string {
 // model ID and a reference containing "@" as a provider-instance composite.
 // Failed ID lookups never fall through to composite or catalog resolution.
 func defaultResolveModelConfig(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	driver, modelName, apiConfig, _, contextLength, err := defaultResolveModelConfigFull(ctx, db, tenantID, modelType, modelRef)
+	return driver, modelName, apiConfig, contextLength, err
+}
+
+func defaultResolveModelConfigFull(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, *modelModule.ModelInfo, int, error) {
 	if !strings.Contains(modelRef, "@") {
 		resolved, err := resolveModelConfigByID(ctx, db, tenantID, modelType, modelRef)
 		if err != nil {
-			return nil, "", nil, 0, err
+			return nil, "", nil, nil, 0, err
 		}
-		return resolved.driver, resolved.model.ModelName, resolved.apiConfig, resolved.contextLength, nil
+		return resolved.driver, resolved.model.ModelName, resolved.apiConfig, resolved.toModelInfo(), resolved.contextLength, nil
 	}
-	return resolveModelConfigFromProviderInstance(ctx, db, tenantID, modelType, modelRef)
+	return resolveModelConfigFromProviderInstanceFull(ctx, db, tenantID, modelType, modelRef)
 }
 
 // resolveModelConfigByID resolves an enrolled model within tenantID before
@@ -317,15 +396,22 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 	}
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
 	return &resolvedModelConfig{
-		driver: driver, model: modelObj, instance: instance,
+		requestedType: modelType,
+		driver:        driver, model: modelObj, instance: instance,
+		provider: provider,
 		apiConfig: apiConfig, contextLength: contextLength,
 	}, nil
 }
 
 func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+	driver, name, apiConfig, _, contextLength, err := resolveModelConfigFromProviderInstanceFull(ctx, db, tenantID, modelType, modelName)
+	return driver, name, apiConfig, contextLength, err
+}
+
+func resolveModelConfigFromProviderInstanceFull(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, *modelModule.ModelInfo, int, error) {
 	pureModelName, instanceName, providerName, err := common.ParseCompositeModelName(modelName)
 	if err != nil {
-		return nil, "", nil, 0, err
+		return nil, "", nil, nil, 0, err
 	}
 	catalogName := modelModule.CatalogProviderName(providerName)
 
@@ -334,18 +420,18 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 
 	provider, err := getTenantModelProviderByName(ctx, db, tenantID, providerName)
 	if err != nil {
-		return nil, "", nil, 0, fmt.Errorf("provider %q lookup failed: %w", providerName, err)
+		return nil, "", nil, nil, 0, fmt.Errorf("provider %q lookup failed: %w", providerName, err)
 	}
 	instance, err := instanceDAO.GetByProviderIDAndInstanceName(ctx, db, provider.ID, instanceName)
 	if err != nil {
-		return nil, "", nil, 0, fmt.Errorf("instance %q lookup failed: %w", instanceName, err)
+		return nil, "", nil, nil, 0, fmt.Errorf("instance %q lookup failed: %w", instanceName, err)
 	}
 	// The instance named by the reference must be usable. A two-part
 	// "model@provider" reference names the "default" instance implicitly, so
 	// an inactive default fails here instead of being answered by another
 	// instance of the same provider.
 	if !strings.EqualFold(instance.Status, "active") {
-		return nil, "", nil, 0, fmt.Errorf("model instance %q is disabled", instanceName)
+		return nil, "", nil, nil, 0, fmt.Errorf("model instance %q is disabled", instanceName)
 	}
 
 	apiKey := instance.APIKey
@@ -360,15 +446,15 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 	switch {
 	case modelErr == nil:
 		if modelObj.Status == "inactive" {
-			return nil, "", nil, 0, fmt.Errorf("model %q is disabled", modelName)
+			return nil, "", nil, nil, 0, fmt.Errorf("model %q is disabled", modelName)
 		}
 		providerInfo := dao.GetModelProviderManager().FindProvider(catalogName)
 		if providerInfo == nil {
-			return nil, "", nil, 0, fmt.Errorf("provider %q driver not found", providerName)
+			return nil, "", nil, nil, 0, fmt.Errorf("provider %q driver not found", providerName)
 		}
 		driver, err := newModelDriverForBaseURLLocal(providerInfo.ModelDriver, providerName, region, baseURL)
 		if err != nil {
-			return nil, "", nil, 0, err
+			return nil, "", nil, nil, 0, err
 		}
 		contextLength := 0
 		if mi, _ := dao.GetModelProviderManager().GetModelByName(catalogName, pureModelName); mi != nil {
@@ -381,21 +467,36 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 		if modelObj != nil && strings.TrimSpace(modelObj.Extra) != "" {
 			var tenantExtra tenantModelExtra
 			if err := json.Unmarshal([]byte(modelObj.Extra), &tenantExtra); err != nil {
-				return nil, "", nil, 0, err
+				return nil, "", nil, nil, 0, err
 			}
 			if maxTokens := modelcontext.MaxTokensFromJSON(tenantExtra.MaxTokens); maxTokens > 0 {
 				contextLength = maxTokens
 			}
 		}
+		resolvedTypes := []string{"chat"}
+		if modelType != 0 {
+			if hr := modelType.HumanReadable(); len(hr) > 0 {
+				resolvedTypes = hr
+			}
+		}
 		apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
-		return driver, modelObj.ModelName, apiConfig, contextLength, nil
+		info := &modelModule.ModelInfo{
+			TenantID:      provider.TenantID,
+			Name:          modelObj.ModelName,
+			ProviderName:  provider.ProviderName,
+			InstanceID:    instance.ID,
+			InstanceName:  instance.InstanceName,
+			ModelTypes:    resolvedTypes,
+			IsSavedConfig: true,
+		}
+		return driver, modelObj.ModelName, apiConfig, info, contextLength, nil
 	case !errorsIsRecordNotFound(modelErr):
-		return nil, "", nil, 0, fmt.Errorf("model %q lookup failed: %w", modelName, modelErr)
+		return nil, "", nil, nil, 0, fmt.Errorf("model %q lookup failed: %w", modelName, modelErr)
 	}
 
 	targetProvider := dao.GetModelProviderManager().FindProvider(catalogName)
 	if targetProvider == nil {
-		return nil, "", nil, 0, fmt.Errorf("model provider config not found: %s", providerName)
+		return nil, "", nil, nil, 0, fmt.Errorf("model provider config not found: %s", providerName)
 	}
 	var llmInfo *modelModule.Model
 	for i := range targetProvider.Models {
@@ -405,11 +506,11 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 		}
 	}
 	if llmInfo == nil {
-		return nil, "", nil, 0, fmt.Errorf("model config not found: %s", modelName)
+		return nil, "", nil, nil, 0, fmt.Errorf("model config not found: %s", modelName)
 	}
 	driver, err := newModelDriverForBaseURLLocal(targetProvider.ModelDriver, providerName, region, baseURL)
 	if err != nil {
-		return nil, "", nil, 0, err
+		return nil, "", nil, nil, 0, err
 	}
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
 	contextLength := 0
@@ -418,7 +519,22 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 	} else if llmInfo.MaxTokens != nil {
 		contextLength = *llmInfo.MaxTokens
 	}
-	return driver, llmInfo.Name, apiConfig, contextLength, nil
+	resolvedTypes := []string{"chat"}
+	if modelType != 0 {
+		if hr := modelType.HumanReadable(); len(hr) > 0 {
+			resolvedTypes = hr
+		}
+	}
+	info := &modelModule.ModelInfo{
+		TenantID:      provider.TenantID,
+		Name:          llmInfo.Name,
+		ProviderName:  provider.ProviderName,
+		InstanceID:    instance.ID,
+		InstanceName:  instance.InstanceName,
+		ModelTypes:    resolvedTypes,
+		IsSavedConfig: true,
+	}
+	return driver, llmInfo.Name, apiConfig, info, contextLength, nil
 }
 
 func newModelDriverForBaseURLLocal(driver modelModule.ModelDriver, providerName, region, baseURL string) (modelModule.ModelDriver, error) {

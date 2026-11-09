@@ -159,9 +159,15 @@ func (m *SystemOneModel) Decide(ctx context.Context, modelName *string, request 
 	if requestID == "" {
 		requestID = response.RequestID
 	}
-	recordResponseUsage(modelUsage, requestID, &TokenUsage{
-		PromptTokens: response.Usage.InputTokens, CompletionTokens: response.Usage.OutputTokens,
-		TotalTokens: response.Usage.InputTokens + response.Usage.OutputTokens,
+	info := ModelInfoFromContext(ctx)
+	modelUsage = resolveModelUsage(ctx, modelUsage, modelName, apiConfig, info, "decision")
+	if modelUsage.ProviderName == "" {
+		modelUsage.ProviderName = m.Name()
+	}
+	recordResponseUsageWithContext(ctx, modelUsage, requestID, &TokenUsage{
+		PromptTokens:     response.Usage.InputTokens,
+		CompletionTokens: response.Usage.OutputTokens,
+		TotalTokens:      response.Usage.InputTokens + response.Usage.OutputTokens,
 	}, "decision")
 	return &response, nil
 }

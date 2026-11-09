@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"ragflow/internal/common"
+	"ragflow/internal/permission"
 	"ragflow/internal/tokenizer"
 )
 
@@ -596,6 +598,10 @@ func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, rerankC
 	if r == nil || r.ModelDriver == nil {
 		return nil, errors.New("rerank model: driver is nil")
 	}
+	if r.info != nil {
+		ctx = WithModelInfo(ctx, r.info)
+	}
+	modelUsage = resolveModelUsage(ctx, modelUsage, r.ModelName, r.APIConfig, r.info, "rerank")
 	maxTokens := r.MaxTokens
 	if maxTokens <= 0 {
 		maxTokens = defaultMaxRerankTokens
@@ -824,6 +830,26 @@ func (m *ChatModel) Info() *ModelInfo {
 	return cloneModelInfo(m.info)
 }
 
+// SetProductType sets the product classification type (e.g. "chat", "image2text").
+func (m *ChatModel) SetProductType(productType string) {
+	if m != nil && m.info != nil && productType != "" {
+		m.info.ProductType = productType
+	}
+}
+
+// ProductModelType reports the product configuration type of this chat model (e.g. "image2text" vs "chat").
+func (m *ChatModel) ProductModelType() string {
+	if m != nil && m.info != nil {
+		if m.info.ProductType != "" {
+			return m.info.ProductType
+		}
+		if (containsModelType(m.info.ModelTypes, "image2text") || containsModelType(m.info.ModelTypes, "vision")) && !containsModelType(m.info.ModelTypes, "chat") {
+			return "image2text"
+		}
+	}
+	return "chat"
+}
+
 // ChatWithMessages sends a non-streaming chat request through the model wrapper.
 func (m *ChatModel) ChatWithMessages(ctx context.Context, messages []Message, config *ChatConfig, usage *common.ModelUsage) (*ChatResponse, error) {
 	if m == nil || m.ModelDriver == nil {
@@ -833,6 +859,10 @@ func (m *ChatModel) ChatWithMessages(ctx context.Context, messages []Message, co
 	if err := m.validateMaxOutput(config); err != nil {
 		return nil, err
 	}
+	if m.info != nil {
+		ctx = WithModelInfo(ctx, m.info)
+	}
+	usage = resolveModelUsage(ctx, usage, m.ModelName, m.APIConfig, m.info, m.ProductModelType())
 	modelName := ""
 	if m.ModelName != nil {
 		modelName = *m.ModelName
@@ -849,6 +879,10 @@ func (m *ChatModel) ChatStreamlyWithSender(ctx context.Context, messages []Messa
 	if err := m.validateMaxOutput(config); err != nil {
 		return err
 	}
+	if m.info != nil {
+		ctx = WithModelInfo(ctx, m.info)
+	}
+	usage = resolveModelUsage(ctx, usage, m.ModelName, m.APIConfig, m.info, m.ProductModelType())
 	modelName := ""
 	if m.ModelName != nil {
 		modelName = *m.ModelName
@@ -932,12 +966,16 @@ type ModelInfo struct {
 	InstanceID    string
 	InstanceName  string
 	ModelTypes    []string
+	ProductType   string
 	ContextLength int
 	MaxOutput     int
 	SupportsTools bool
 	ModelClass    string
 	Thinking      *ModelThinking
 	Catalog       *Model
+	TenantID      string
+	UserID        string
+	IsSavedConfig bool
 }
 
 func cloneModelInfo(info *ModelInfo) *ModelInfo {
@@ -958,4 +996,94 @@ func cloneModelInfo(info *ModelInfo) *ModelInfo {
 		copy.Catalog = &catalog
 	}
 	return &copy
+}
+
+type modelInfoContextKey struct{}
+
+// WithModelInfo returns a copy of parent carrying info. When info is nil, it
+// clears any ModelInfo previously bound to the context.
+func WithModelInfo(parent context.Context, info *ModelInfo) context.Context {
+	if parent == nil {
+		parent = context.Background()
+	}
+	return context.WithValue(parent, modelInfoContextKey{}, info)
+}
+
+// ModelInfoFromContext extracts the ModelInfo stored in ctx, if any.
+func ModelInfoFromContext(ctx context.Context) *ModelInfo {
+	if ctx == nil {
+		return nil
+	}
+	if info, ok := ctx.Value(modelInfoContextKey{}).(*ModelInfo); ok {
+		return info
+	}
+	return nil
+}
+
+// resolveModelUsage ensures a non-nil ModelUsage populated with context identity
+// and model metadata. Missing attributes (TenantID, UserID, ModelName, ProviderName,
+// InstanceID, APIKey, StartAt, Type) are resolved from ctx, info and config.
+func resolveModelUsage(ctx context.Context, usage *common.ModelUsage, modelName *string, apiConfig *APIConfig, info *ModelInfo, modelType string) *common.ModelUsage {
+	if usage == nil {
+		usage = &common.ModelUsage{}
+	}
+	if info == nil {
+		if ctxInfo := ModelInfoFromContext(ctx); ctxInfo != nil {
+			// Do not adopt context info if the current call uses explicit credentials
+			// while ctxInfo represents a saved configuration, or if model names mismatch.
+			hasExplicitKey := apiConfig != nil && apiConfig.ApiKey != nil && *apiConfig.ApiKey != ""
+			modelMismatch := modelName != nil && *modelName != "" && ctxInfo.Name != "" && !strings.EqualFold(*modelName, ctxInfo.Name)
+			if !(hasExplicitKey && ctxInfo.IsSavedConfig) && !modelMismatch {
+				info = ctxInfo
+			}
+		}
+	}
+	if usage.Type == "" {
+		if info != nil && info.ProductType != "" {
+			usage.Type = info.ProductType
+		} else if info != nil && (containsModelType(info.ModelTypes, "image2text") || containsModelType(info.ModelTypes, "vision")) && !containsModelType(info.ModelTypes, "chat") {
+			usage.Type = "image2text"
+		} else {
+			usage.Type = modelType
+		}
+	}
+	if usage.StartAt.IsZero() {
+		usage.StartAt = time.Now()
+	}
+	// Model configuration and credentials owner takes precedence for billing attribution.
+	// For saved configurations, TenantID must come from the saved provider configuration.
+	// Do not silently fall back to caller context when saved configuration attribution is missing.
+	isSavedConfig := usage.IsSavedConfig || (info != nil && (info.IsSavedConfig || info.InstanceID != "" || info.ID != "")) || (usage.InstanceID != "")
+	usage.IsSavedConfig = isSavedConfig
+	if isSavedConfig {
+		if info != nil {
+			usage.TenantID = info.TenantID
+		} else {
+			usage.TenantID = ""
+		}
+	} else if usage.TenantID == "" {
+		usage.TenantID = permission.TenantIDFromContext(ctx)
+	}
+	if usage.UserID == "" {
+		usage.UserID = permission.UserIDFromContext(ctx)
+	}
+	if usage.ModelName == "" {
+		if modelName != nil && *modelName != "" {
+			usage.ModelName = *modelName
+		} else if info != nil && info.Name != "" {
+			usage.ModelName = info.Name
+		}
+	}
+	if info != nil {
+		if usage.ProviderName == "" || info.ProviderName != "" {
+			usage.ProviderName = info.ProviderName
+		}
+		if usage.InstanceID == "" || info.InstanceID != "" {
+			usage.InstanceID = info.InstanceID
+		}
+	}
+	if usage.APIKey == "" && apiConfig != nil && apiConfig.ApiKey != nil {
+		usage.APIKey = *apiConfig.ApiKey
+	}
+	return usage
 }

@@ -24,14 +24,28 @@ import (
 
 type remoteModelProbeDriver struct {
 	*modelModule.DummyModel
-	remoteModels []modelModule.ListModelResponse
-	listCalls    int
-	listConfig   *modelModule.APIConfig
-	baseURLs     map[string]string
-	embedCalls   int
-	checkCalls   int
-	checkErr     error
-	checkConfig  *modelModule.APIConfig
+	remoteModels  []modelModule.ListModelResponse
+	listCalls     int
+	listConfig    *modelModule.APIConfig
+	baseURLs      map[string]string
+	embedCalls    int
+	checkCalls    int
+	checkErr      error
+	checkConfig   *modelModule.APIConfig
+	lastChatUsage *common.ModelUsage
+}
+
+func (d *remoteModelProbeDriver) ChatWithMessages(
+	_ context.Context,
+	_ string,
+	_ []modelModule.Message,
+	_ *modelModule.APIConfig,
+	_ *modelModule.ChatConfig,
+	usage *common.ModelUsage,
+) (*modelModule.ChatResponse, error) {
+	d.lastChatUsage = usage
+	ans := "ok"
+	return &modelModule.ChatResponse{Answer: &ans}, nil
 }
 
 func (d *remoteModelProbeDriver) ListModels(_ context.Context, apiConfig *modelModule.APIConfig) ([]modelModule.ListModelResponse, error) {
@@ -1074,6 +1088,75 @@ func TestCheckConnectionUsesStoredCredentialsAndAllowsOwnerOverrides(t *testing.
 	}
 	if probe.checkConfig.BaseURL == nil || *probe.checkConfig.BaseURL != "https://owner-override.example" || probe.checkConfig.Region == nil || *probe.checkConfig.Region != "eu-west-1" {
 		t.Fatalf("owner-saved endpoint override = %+v, want supplied URL and region", probe.checkConfig)
+	}
+}
+
+func TestCheckConnectionSavedCredentialsAttribution(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedModelProviderServiceScope(t, db)
+	if err := db.Model(&entity.TenantModelProvider{}).Where("id = ?", "provider-1").Update("tenant_id", "tenant-1").Error; err != nil {
+		t.Fatalf("move provider into test tenant: %v", err)
+	}
+
+	provider := dao.GetModelProviderManager().FindProvider("OpenAI")
+	if provider == nil {
+		t.Fatal("OpenAI provider is not configured")
+	}
+	probe := &remoteModelProbeDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+	originalDriver := provider.ModelDriver
+	provider.ModelDriver = probe
+	t.Cleanup(func() { provider.ModelDriver = originalDriver })
+
+	service := NewModelProviderService()
+	ctx := serviceTestContext(t, "user-1", "tenant-1", "user-1")
+
+	// Case 1: UseSavedCredentials = true
+	modelInfo := []CheckConnectionModelInfo{{ModelName: "gpt-test", ModelTypes: []string{"chat"}}}
+	code, err := service.CheckConnection(ctx, "OpenAI", CheckConnectionRequest{
+		UseSavedCredentials: true,
+		InstanceID:          "instance-1",
+		ModelInfo:           modelInfo,
+	})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("CheckConnection(saved) = (%v, %v), want success", code, err)
+	}
+	if probe.lastChatUsage == nil {
+		t.Fatal("expected non-nil lastChatUsage")
+	}
+	if probe.lastChatUsage.TenantID != "tenant-1" {
+		t.Errorf("got TenantID=%q, want tenant-1 (saved provider tenant)", probe.lastChatUsage.TenantID)
+	}
+	if probe.lastChatUsage.InstanceID != "instance-1" {
+		t.Errorf("got InstanceID=%q, want instance-1", probe.lastChatUsage.InstanceID)
+	}
+	if !probe.lastChatUsage.IsSavedConfig {
+		t.Errorf("expected IsSavedConfig to be true for saved credentials verification")
+	}
+	if probe.lastChatUsage.UserID != "user-1" {
+		t.Errorf("got UserID=%q, want user-1", probe.lastChatUsage.UserID)
+	}
+
+	// Case 2: Direct credentials (UseSavedCredentials = false, direct API key)
+	probe.lastChatUsage = nil
+	code, err = service.CheckConnection(ctx, "OpenAI", CheckConnectionRequest{
+		APIKey:    json.RawMessage(`"direct-key"`),
+		ModelInfo: modelInfo,
+	})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("CheckConnection(direct) = (%v, %v), want success", code, err)
+	}
+	if probe.lastChatUsage == nil {
+		t.Fatal("expected non-nil lastChatUsage for direct verification")
+	}
+	if probe.lastChatUsage.IsSavedConfig {
+		t.Errorf("expected IsSavedConfig to be false for direct credentials verification")
+	}
+	if probe.lastChatUsage.InstanceID != "" {
+		t.Errorf("got InstanceID=%q, want empty for direct credentials", probe.lastChatUsage.InstanceID)
+	}
+	if probe.lastChatUsage.TenantID != "tenant-1" {
+		t.Errorf("got TenantID=%q, want tenant-1 for direct credentials", probe.lastChatUsage.TenantID)
 	}
 }
 
