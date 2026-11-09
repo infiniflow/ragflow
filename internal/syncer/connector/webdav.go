@@ -38,7 +38,7 @@ const (
 	defaultWebDAVBatchSize     = 2
 	defaultWebDAVSizeThreshold = 20 * 1024 * 1024
 	webdavRequestTimeout       = 60 * time.Second
-	maxWebDAVResponseSize      = 32 * 1024 * 1024
+	maxWebDAVListResponseSize  = 32 * 1024 * 1024
 	webdavPropfindBody         = `<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><allprop/></propfind>`
 )
 
@@ -96,7 +96,9 @@ func NewWebDAVConnector(config map[string]any) (*WebDAVConnector, error) {
 	connector.client.username = username
 	connector.client.password = password
 	connector.listFiles = connector.client.listRecursive
-	connector.downloadFile = connector.client.download
+	connector.downloadFile = func(ctx context.Context, fileURL string) ([]byte, error) {
+		return connector.client.download(ctx, fileURL, connector.sizeThreshold)
+	}
 	return connector, nil
 }
 
@@ -427,15 +429,17 @@ func (c *webdavClient) propfind(ctx context.Context, target string) ([]webdavFil
 	if resp.StatusCode != http.StatusMultiStatus {
 		return nil, &webdavStatusError{status: resp.StatusCode, url: resolved}
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxWebDAVResponseSize))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxWebDAVListResponseSize))
 	if err != nil {
 		return nil, err
 	}
 	return parseWebDAVMultistatus(data, c.baseURL)
 }
 
-// download fetches a file body over GET.
-func (c *webdavClient) download(ctx context.Context, fileURL string) ([]byte, error) {
+// download fetches a file body over GET, bounded by the connector's configured
+// size threshold. The listing filter already drops files above it; this bound
+// also covers a server that under-reports a file's size.
+func (c *webdavClient) download(ctx context.Context, fileURL string, limit int64) ([]byte, error) {
 	headers := map[string]string{}
 	if c.username != "" {
 		headers["Authorization"] = "Basic " + basicAuthHeader(c.username, c.password)
@@ -454,12 +458,15 @@ func (c *webdavClient) download(ctx context.Context, fileURL string) ([]byte, er
 	if resp.StatusCode != http.StatusOK {
 		return nil, &webdavStatusError{status: resp.StatusCode, url: fileURL}
 	}
-	blob, err := io.ReadAll(io.LimitReader(resp.Body, maxWebDAVResponseSize+1))
+	if limit <= 0 {
+		limit = defaultWebDAVSizeThreshold
+	}
+	blob, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(blob) > maxWebDAVResponseSize {
-		return nil, fmt.Errorf("webdav response exceeds maximum size of %d bytes", maxWebDAVResponseSize)
+	if int64(len(blob)) > limit {
+		return nil, fmt.Errorf("webdav response exceeds maximum size of %d bytes", limit)
 	}
 	return blob, nil
 }

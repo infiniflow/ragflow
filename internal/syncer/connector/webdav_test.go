@@ -523,9 +523,40 @@ func TestWebDAVConnectorOpenSyncIncludesSizedFileWithoutLastModified(t *testing.
 	}
 }
 
-func TestWebDAVConnectorOpenSyncRejectsOversizedResponse(t *testing.T) {
-	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", fmt.Sprintf("%d", maxWebDAVResponseSize+1))
-	content := strings.Repeat("x", maxWebDAVResponseSize+1)
+func TestWebDAVConnectorOpenSyncDownloadsAboveTheListResponseCap(t *testing.T) {
+	size := int64(maxWebDAVListResponseSize + 1)
+	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", fmt.Sprintf("%d", size))
+	content := strings.Repeat("x", int(size))
+	server, _, getRequests := newWebDAVTestServer(t, map[string]webdavTestFile{
+		"/":                {isDir: true},
+		"/notes/":          {isDir: true},
+		"/notes/large.txt": {content: content, size: size, hasSize: true, modified: "Fri, 02 Jan 2026 00:00:00 GMT"},
+	})
+	connector := webDAVTestConnector(t, server.URL, false, 10)
+
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-07T00:00:00Z")})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	defer session.Close()
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 1 {
+		t.Fatalf("batch len = %d, want 1", len(batch.Documents))
+	}
+	if int64(len(batch.Documents[0].Blob)) != size {
+		t.Fatalf("blob len = %d, want %d", len(batch.Documents[0].Blob), size)
+	}
+	if len(*getRequests) != 1 {
+		t.Fatalf("download requests = %d, want 1", len(*getRequests))
+	}
+}
+
+func TestWebDAVConnectorOpenSyncSkipsFileAboveSizeThreshold(t *testing.T) {
+	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "20")
+	content := strings.Repeat("x", 21)
 	server, _, getRequests := newWebDAVTestServer(t, map[string]webdavTestFile{
 		"/":                {isDir: true},
 		"/notes/":          {isDir: true},
@@ -541,8 +572,8 @@ func TestWebDAVConnectorOpenSyncRejectsOversizedResponse(t *testing.T) {
 	if _, err := session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
 		t.Fatalf("NextBatch = %v, want EOF", err)
 	}
-	if len(*getRequests) != 1 {
-		t.Fatalf("download requests = %d, want 1", len(*getRequests))
+	if len(*getRequests) != 0 {
+		t.Fatalf("download requests = %d, want 0", len(*getRequests))
 	}
 }
 
