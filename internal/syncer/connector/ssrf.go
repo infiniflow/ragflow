@@ -239,8 +239,14 @@ type connectorRequestOptions struct {
 	// a redirect crosses to a different origin. This covers auth schemes with
 	// tenant-configured header names.
 	SensitiveHeaders []string
-	Timeout          time.Duration
-	MaxRedirects     int
+	// Timeout bounds one complete request, body read included; zero leaves the
+	// request to the caller's context.
+	Timeout time.Duration
+	// HeaderTimeout bounds dial, TLS handshake and the wait for response
+	// headers. Zero falls back to Timeout, so a download can leave Timeout
+	// unset without losing the connect and header guard.
+	HeaderTimeout time.Duration
+	MaxRedirects  int
 	// Base, when non-nil, provides the starting transport so custom TLS/CA
 	// settings are preserved; otherwise a default pinned transport is used.
 	Base *http.Client
@@ -351,7 +357,11 @@ func connectorRequest(ctx context.Context, opts connectorRequestOptions) (*http.
 			// to the validated IP while the Host header retains the origin name.
 			req.URL.Opaque = "//" + pinnedHost + requestURI
 		}
-		transport := newConnectorPinnedTransport(opts.Base, hostname, pinIP, opts.Timeout, proxyURL)
+		headerTimeout := opts.HeaderTimeout
+		if headerTimeout <= 0 {
+			headerTimeout = opts.Timeout
+		}
+		transport := newConnectorPinnedTransport(opts.Base, hostname, pinIP, headerTimeout, proxyURL)
 		client := &http.Client{
 			Transport: transport,
 			Timeout:   opts.Timeout,

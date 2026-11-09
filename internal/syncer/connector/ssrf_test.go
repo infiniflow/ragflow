@@ -195,6 +195,53 @@ func TestConnectorRequestPinsRedirectHopAgainstDNSRebinding(t *testing.T) {
 	}
 }
 
+func TestConnectorRequestHeaderTimeoutLeavesTheBodyToTheCaller(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		if flusher, ok := w.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		time.Sleep(150 * time.Millisecond)
+		_, _ = io.WriteString(w, "slow body")
+	}))
+	defer server.Close()
+
+	resp, err := connectorRequest(context.Background(), connectorRequestOptions{
+		Method:        http.MethodGet,
+		RawURL:        server.URL,
+		HeaderTimeout: 50 * time.Millisecond,
+	})
+	if err != nil {
+		t.Fatalf("connectorRequest: %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if string(body) != "slow body" {
+		t.Fatalf("body = %q, want %q", string(body), "slow body")
+	}
+}
+
+func TestConnectorRequestBoundsTheResponseHeaderWait(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(200 * time.Millisecond)
+		_, _ = io.WriteString(w, "late")
+	}))
+	defer server.Close()
+
+	if _, err := connectorRequest(context.Background(), connectorRequestOptions{
+		Method:        http.MethodGet,
+		RawURL:        server.URL,
+		HeaderTimeout: 50 * time.Millisecond,
+	}); err == nil {
+		t.Fatal("connectorRequest succeeded despite a response header wait past the header timeout")
+	}
+}
+
 func TestConnectorRequestUsesProxyWithPinnedHTTPTarget(t *testing.T) {
 	withConnectorLoopbackTestHook(t)
 

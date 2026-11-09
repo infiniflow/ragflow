@@ -43,7 +43,12 @@ const (
 )
 
 var (
-	webdavTextExtensions = map[string]struct{}{
+	// webdavDownloadHeaderTimeout bounds dial, TLS handshake and the wait for
+	// response headers on a download. The body is deliberately left to the
+	// sync run's context: a file the threshold allows must be able to finish at
+	// the server's pace, and a stalled transfer still ends with the run.
+	webdavDownloadHeaderTimeout = webdavRequestTimeout
+	webdavTextExtensions        = map[string]struct{}{
 		".txt": {}, ".md": {}, ".mdx": {}, ".conf": {}, ".log": {}, ".json": {},
 		".csv": {}, ".tsv": {}, ".xml": {}, ".yml": {}, ".yaml": {}, ".sql": {},
 	}
@@ -445,11 +450,11 @@ func (c *webdavClient) download(ctx context.Context, fileURL string, limit int64
 		headers["Authorization"] = "Basic " + basicAuthHeader(c.username, c.password)
 	}
 	resp, err := connectorRequest(ctx, connectorRequestOptions{
-		Method:  http.MethodGet,
-		RawURL:  fileURL,
-		Headers: headers,
-		Timeout: webdavRequestTimeout,
-		Base:    c.httpClient,
+		Method:        http.MethodGet,
+		RawURL:        fileURL,
+		Headers:       headers,
+		HeaderTimeout: webdavDownloadHeaderTimeout,
+		Base:          c.httpClient,
 	})
 	if err != nil {
 		return nil, err

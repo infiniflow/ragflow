@@ -30,14 +30,17 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 type webdavTestFile struct {
-	content  string
-	size     int64
-	hasSize  bool
-	modified string
-	isDir    bool
+	content     string
+	size        int64
+	hasSize     bool
+	modified    string
+	isDir       bool
+	headerDelay time.Duration
+	bodyDelay   time.Duration
 }
 
 // newWebDAVTestServer serves a small static WebDAV tree.
@@ -103,6 +106,16 @@ func newWebDAVTestServerAtMount(t *testing.T, mountPath string, files map[string
 				return
 			}
 			getRequests = append(getRequests, r.URL.Path)
+			if entry.headerDelay > 0 {
+				time.Sleep(entry.headerDelay)
+			}
+			w.WriteHeader(http.StatusOK)
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			if entry.bodyDelay > 0 {
+				time.Sleep(entry.bodyDelay)
+			}
 			_, _ = io.WriteString(w, entry.content)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -152,6 +165,63 @@ func webDAVTestTree() map[string]webdavTestFile {
 		"/docs/":            {isDir: true},
 		"/docs/alpha.txt":   {content: "hello alpha docs", size: 15, hasSize: true, modified: "Fri, 02 Jan 2026 00:00:00 GMT"},
 		"/docs/gamma.pdf":   {content: "hello gamma", size: 11, hasSize: true, modified: "Tue, 06 Jan 2026 00:00:00 GMT"},
+	}
+}
+
+func withWebDAVDownloadHeaderTimeout(t *testing.T, timeout time.Duration) {
+	t.Helper()
+	original := webdavDownloadHeaderTimeout
+	webdavDownloadHeaderTimeout = timeout
+	t.Cleanup(func() { webdavDownloadHeaderTimeout = original })
+}
+
+func TestWebDAVConnectorOpenSyncWaitsForSlowDownloadBody(t *testing.T) {
+	withWebDAVDownloadHeaderTimeout(t, 100*time.Millisecond)
+	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "1024")
+	server, _, _ := newWebDAVTestServer(t, map[string]webdavTestFile{
+		"/":               {isDir: true},
+		"/notes/":         {isDir: true},
+		"/notes/slow.txt": {content: "slow body", size: 9, hasSize: true, modified: "Fri, 02 Jan 2026 00:00:00 GMT", bodyDelay: 300 * time.Millisecond},
+	})
+	connector := webDAVTestConnector(t, server.URL, false, 10)
+
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-07T00:00:00Z")})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	defer session.Close()
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 1 {
+		t.Fatalf("batch len = %d, want 1", len(batch.Documents))
+	}
+	if string(batch.Documents[0].Blob) != "slow body" {
+		t.Fatalf("blob = %q, want %q", string(batch.Documents[0].Blob), "slow body")
+	}
+}
+
+func TestWebDAVConnectorOpenSyncBoundsDownloadHeaderWait(t *testing.T) {
+	withWebDAVDownloadHeaderTimeout(t, 100*time.Millisecond)
+	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "1024")
+	server, _, getRequests := newWebDAVTestServer(t, map[string]webdavTestFile{
+		"/":                {isDir: true},
+		"/notes/":          {isDir: true},
+		"/notes/stuck.txt": {content: "stuck", size: 5, hasSize: true, modified: "Fri, 02 Jan 2026 00:00:00 GMT", headerDelay: 300 * time.Millisecond},
+	})
+	connector := webDAVTestConnector(t, server.URL, false, 10)
+
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-07T00:00:00Z")})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	defer session.Close()
+	if _, err := session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
+		t.Fatalf("NextBatch = %v, want EOF", err)
+	}
+	if len(*getRequests) != 1 {
+		t.Fatalf("download requests = %d, want 1", len(*getRequests))
 	}
 }
 
