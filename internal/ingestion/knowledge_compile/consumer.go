@@ -1929,26 +1929,10 @@ func appendBucket(b *StructureBucket, p kccommon.Product) {
 	// _struct_merge_graph_entities, which folds the entity description, not the
 	// whole payload). Fall back to Content only when it is not a JSON object.
 	desc := structureProductDescription(p.Content)
-	if desc == "" {
-		// Match Python's dataset merger fallback: mindmap entities only carry
-		// name/type, while their dataset row still needs searchable text.
-		// Relations likewise use the endpoint names and relation type when the
-		// source payload has no description.
-		from := kccommon.MetaString(p.Meta, "from")
-		to := kccommon.MetaString(p.Meta, "to")
-		if kind := kccommon.MetaString(p.Meta, "kind"); kind == "relation" || (from != "" && to != "") {
-			relType := kccommon.MetaString(p.Meta, "relation_type")
-			if relType == "" {
-				relType = kccommon.MetaString(p.Meta, "type")
-			}
-			if relType == "" {
-				relType = "related"
-			}
-			desc = strings.TrimSpace(strings.Join([]string{from, relType, to}, " "))
-		} else {
-			desc = strings.TrimSpace(kccommon.MetaString(p.Meta, "name"))
-		}
-	}
+	// Rows that state no description fold NOTHING: the searchable fallback is a
+	// bucket-level value filled once after the merge (see
+	// structureBucketFallbackDescription). Folding it per row is what used to
+	// repeat the same name once per contributing document.
 	if desc != "" {
 		if b.Description != "" {
 			b.Description += "\n"

@@ -232,7 +232,7 @@ func TestUpdateDatasetReindexesCompilationModelRefs(t *testing.T) {
 		t.Fatalf("seed refs: %v", err)
 	}
 
-	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(withDatasetTestContext(t.Context(), "tenant-1", "tenant-1"), "kb-1", service.UpdateDatasetRequest{
 		ParserConfig: map[string]interface{}{
 			"GeneralChunker:SixApplesFall": map[string]interface{}{"chunk_token_size": float64(256)},
 		},

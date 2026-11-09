@@ -90,7 +90,10 @@ export function OntologyQualityPanel({
   // What the template declares for each property, per side. This is what turns a
   // rejection into an instruction: the observed class that the declaration does
   // not admit is the class the declaration is missing.
-  const declaredSides = new Map<string, { domains: string[]; ranges: string[] }>();
+  const declaredSides = new Map<
+    string,
+    { domains: string[]; ranges: string[] }
+  >();
   // Declared edges only. An observed edge the template does not declare would
   // otherwise feed its own endpoint back in as if it were declared, which hides
   // exactly the gap these maps are read to find.
@@ -192,10 +195,12 @@ export function OntologyQualityPanel({
       // The compiler records which half of the declaration it blamed; only fall
       // back to comparing endpoints when the row predates that column.
       const domainMissed =
-        item.from_type !== undefined && !declared.domains.includes(item.from_type);
+        item.from_type !== undefined &&
+        !declared.domains.includes(item.from_type);
       const side: 'domain' | 'range' =
         item.side ?? (domainMissed ? 'domain' : 'range');
-      const observed = (side === 'domain' ? item.from_type : item.to_type) ?? '';
+      const observed =
+        (side === 'domain' ? item.from_type : item.to_type) ?? '';
       const key = `${item.property}|${side}|${observed}`;
       const group = groups.get(key) ?? {
         key,
@@ -594,9 +599,7 @@ export function OntologyQualityPanel({
                         <span className="text-text-secondary">
                           {action.example.from || '?'} →{' '}
                           {action.example.to || '?'}
-                          {action.count > 1
-                            ? ` +${action.count - 1}`
-                            : ''}
+                          {action.count > 1 ? ` +${action.count - 1}` : ''}
                           {action.example.doc_id
                             ? ` · ${action.example.doc_id}`
                             : ''}
@@ -639,16 +642,20 @@ export function OntologyQualityPanel({
                       <span>
                         {/* The subject is rendered, not interpolated: i18next
                             would stringify a node into "[object Object]". */}
-                        {t('knowledgeCompilation.ontologyQualityActionDeclare', {
-                          defaultValue: 'Declare',
-                        })}{' '}
+                        {t(
+                          'knowledgeCompilation.ontologyQualityActionDeclare',
+                          {
+                            defaultValue: 'Declare',
+                          },
+                        )}{' '}
                         {subject(item.type, item.source)}{' '}
                         {t(
                           'knowledgeCompilation.ontologyQualityActionDeclareAs',
                           {
                             domain: item.source || '?',
                             range: item.target || '?',
-                            defaultValue: '— observed as {{domain}} → {{range}}',
+                            defaultValue:
+                              '— observed as {{domain}} → {{range}}',
                           },
                         )}
                       </span>
@@ -690,31 +697,31 @@ export function OntologyQualityPanel({
                 ? endpointGaps.slice(0, listedLimit).map((gap) => (
                     <div key={gap.key} className="flex flex-col">
                       <span>
-                        {t(
-                          'knowledgeCompilation.ontologyQualityActionWiden',
-                          {
-                            class: gap.klass,
-                            property: gap.property,
-                            side: gap.side,
-                            declared:
-                              gap.declared.join('|') ||
-                              t(
-                                'knowledgeCompilation.ontologyQualityActionNothingDeclared',
-                                { defaultValue: 'nothing declared' },
-                              ),
-                            count: gap.count,
-                            defaultValue:
-                              'Add “{{class}}” to {{property}}’s {{side}} (declared: {{declared}})',
-                          },
-                        )}
+                        {t('knowledgeCompilation.ontologyQualityActionWiden', {
+                          class: gap.klass,
+                          property: gap.property,
+                          side: gap.side,
+                          declared:
+                            gap.declared.join('|') ||
+                            t(
+                              'knowledgeCompilation.ontologyQualityActionNothingDeclared',
+                              { defaultValue: 'nothing declared' },
+                            ),
+                          count: gap.count,
+                          defaultValue:
+                            'Add “{{class}}” to {{property}}’s {{side}} (declared: {{declared}})',
+                        })}
                       </span>
                       {!gap.widenable && (
                         <span className="text-text-secondary">
-                          {t('knowledgeCompilation.ontologyQualityActionClassUndeclared', {
-                            class: gap.klass,
-                            defaultValue:
-                              '{{class}} is not declared either, so declare the class first.',
-                          })}
+                          {t(
+                            'knowledgeCompilation.ontologyQualityActionClassUndeclared',
+                            {
+                              class: gap.klass,
+                              defaultValue:
+                                '{{class}} is not declared either, so declare the class first.',
+                            },
+                          )}
                         </span>
                       )}
                       {gap.widenable &&
@@ -752,7 +759,10 @@ export function OntologyQualityPanel({
                           {item.subjects.map((name, at) => (
                             <span key={`${name}-${at}`}>
                               {at > 0 ? ', ' : ''}
-                              {subject(name, classNames.has(name) ? name : undefined)}
+                              {subject(
+                                name,
+                                classNames.has(name) ? name : undefined,
+                              )}
                             </span>
                           ))}
                         </span>
@@ -797,11 +807,13 @@ export function OntologyQualityPanel({
                         {subject(item.type, item.type)}
                       </span>
                     )),
-                    ...uncoveredProperties.slice(0, listedLimit).map((item) => (
-                      <span key={`p-${item.type}`}>
-                        {subject(item.type, item.sources[0])}
-                      </span>
-                    )),
+                    ...uncoveredProperties
+                      .slice(0, listedLimit)
+                      .map((item) => (
+                        <span key={`p-${item.type}`}>
+                          {subject(item.type, item.sources[0])}
+                        </span>
+                      )),
                   ]
                 : empty,
             )}

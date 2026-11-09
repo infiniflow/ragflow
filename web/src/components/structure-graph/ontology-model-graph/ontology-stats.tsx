@@ -70,7 +70,8 @@ export function OntologyStats({ graph }: { graph?: IOntologyGraph }) {
       {graph.counts_truncated && (
         <span>
           {t('knowledgeCompilation.ontologyCountsTruncated', {
-            defaultValue: 'Counts stopped at the scan cap, so they are lower bounds.',
+            defaultValue:
+              'Counts stopped at the scan cap, so they are lower bounds.',
           })}
         </span>
       )}

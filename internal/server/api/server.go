@@ -26,6 +26,7 @@ import (
 
 	"ragflow/internal/agent/audio"
 	"ragflow/internal/agent/canvas"
+	"ragflow/internal/agentic_rag"
 	"ragflow/internal/channels"
 	"ragflow/internal/handler"
 	"ragflow/internal/router"

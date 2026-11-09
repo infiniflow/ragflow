@@ -1,8 +1,5 @@
 import type { IOntologyGraph } from '@/interfaces/database/document-structure';
-import {
-  buildOntologyGraphData,
-  computeOntologyLayout,
-} from './graph-data';
+import { buildOntologyGraphData, computeOntologyLayout } from './graph-data';
 
 const graphOf = (overrides: Partial<IOntologyGraph> = {}): IOntologyGraph => ({
   classes: [],
@@ -89,7 +86,12 @@ describe('computeOntologyLayout', () => {
       [1200, 800],
     ]) {
       const data = buildOntologyGraphData(graph, { width, height });
-      const layout = computeOntologyLayout(data.nodes, data.links, width, height);
+      const layout = computeOntologyLayout(
+        data.nodes,
+        data.links,
+        width,
+        height,
+      );
       const placed = data.nodes
         .map((node) => ({ node, point: layout.get(node.id) }))
         .filter((item) => item.point);
@@ -264,8 +266,12 @@ describe('buildOntologyGraphData', () => {
       inheritance: [{ source: 'agent', target: 'person' }],
     });
 
-    expect(buildOntologyGraphData(graph, { showInheritance: false }).links).toHaveLength(0);
-    expect(buildOntologyGraphData(graph, { showInheritance: true }).links).toHaveLength(1);
+    expect(
+      buildOntologyGraphData(graph, { showInheritance: false }).links,
+    ).toHaveLength(0);
+    expect(
+      buildOntologyGraphData(graph, { showInheritance: true }).links,
+    ).toHaveLength(1);
   });
 
   // An ontology declares several properties between the same two classes
@@ -433,9 +439,9 @@ describe('buildOntologyGraphData', () => {
     ).toEqual(['born_in']);
     // Inheritance is a template statement, so it is never "undeclared" and it
     // survives the filter.
-    expect(hidden.links.filter((link) => link.kind === 'inheritance')).toHaveLength(
-      1,
-    );
+    expect(
+      hidden.links.filter((link) => link.kind === 'inheritance'),
+    ).toHaveLength(1);
 
     const shown = buildOntologyGraphData(graph, { showUndeclared: true });
     expect(shown.nodes).toHaveLength(2);

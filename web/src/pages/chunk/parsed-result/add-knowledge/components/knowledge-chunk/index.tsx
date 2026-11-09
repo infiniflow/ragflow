@@ -352,79 +352,79 @@ function Chunk() {
                 adjacent to it in registration order, and a fragment would hide
                 these children from it. */}
             {!ontologyView && (
-            <ResizablePanel
-              id="chunk-list"
-              order={showArtifactDetail ? 3 : 2}
-              defaultSize={60}
-              minSize={30}
-            >
-              <article className="h-full flex flex-col">
-                <header className="flex-0 p-5 pb-2.5 border-b-0.5 border-b-border-button">
-                  <h2 className="text-[24px]">{t('chunk.chunkResult')}</h2>
-                  <div className="text-[14px] text-text-secondary">
-                    {t('chunk.chunkResultTip')}
-                  </div>
-                </header>
+              <ResizablePanel
+                id="chunk-list"
+                order={showArtifactDetail ? 3 : 2}
+                defaultSize={60}
+                minSize={30}
+              >
+                <article className="h-full flex flex-col">
+                  <header className="flex-0 p-5 pb-2.5 border-b-0.5 border-b-border-button">
+                    <h2 className="text-[24px]">{t('chunk.chunkResult')}</h2>
+                    <div className="text-[14px] text-text-secondary">
+                      {t('chunk.chunkResultTip')}
+                    </div>
+                  </header>
 
-                <Spin spinning={loading} className="flex-1 h-0" size="large">
-                  <div className="relative @container h-full px-5 pb-5 overflow-hidden flex flex-col">
-                    <div
-                      className="
+                  <Spin spinning={loading} className="flex-1 h-0" size="large">
+                    <div className="relative @container h-full px-5 pb-5 overflow-hidden flex flex-col">
+                      <div
+                        className="
                         sticky top-0 z-[1] bg-bg-base space-y-4 py-5
                         @4xl:flex @4xl:justify-between @4xl:items-center
                         @4xl:space-y-0 @4xl:gap-4
                       "
-                      role="toolbar"
-                    >
-                      <ChunkResultBar
-                        className="@4xl:order-2"
-                        handleInputChange={handleInputChange}
-                        searchString={searchString}
-                        changeChunkTextMode={changeChunkTextMode}
-                        createChunk={showChunkUpdatingModal}
-                        available={available}
-                        selectAllChunk={selectAllChunk}
-                        handleSetAvailable={handleSetAvailable}
-                      />
+                        role="toolbar"
+                      >
+                        <ChunkResultBar
+                          className="@4xl:order-2"
+                          handleInputChange={handleInputChange}
+                          searchString={searchString}
+                          changeChunkTextMode={changeChunkTextMode}
+                          createChunk={showChunkUpdatingModal}
+                          available={available}
+                          selectAllChunk={selectAllChunk}
+                          handleSetAvailable={handleSetAvailable}
+                        />
 
-                      <CheckboxSets
-                        className="h-8"
-                        selectAllChunk={selectAllChunk}
-                        switchChunk={handleSwitchChunk}
-                        removeChunk={handleRemoveChunk}
-                        checked={selectedChunkIds.length === data.length}
+                        <CheckboxSets
+                          className="h-8"
+                          selectAllChunk={selectAllChunk}
+                          switchChunk={handleSwitchChunk}
+                          removeChunk={handleRemoveChunk}
+                          checked={selectedChunkIds.length === data.length}
+                          selectedChunkIds={selectedChunkIds}
+                        />
+                      </div>
+
+                      <ChunkVirtualList
+                        key={listKey}
+                        items={chunkList}
+                        selectedChunkId={selectedChunkId}
                         selectedChunkIds={selectedChunkIds}
+                        textMode={textMode}
+                        editChunk={showChunkUpdatingModal}
+                        handleCheckboxClick={handleSingleCheckboxClick}
+                        switchChunk={handleSwitchChunk}
+                        clickChunkCard={handleChunkCardClick}
+                        // Changes on every refetch, so a chunk whose image was
+                        // replaced in place re-fetches it instead of reusing the
+                        // cached bytes.
+                        imageCacheKey={dataUpdatedAt}
                       />
+
+                      <footer className="mt-5">
+                        <RAGFlowPagination
+                          pageSize={pagination.pageSize}
+                          current={pagination.current}
+                          total={total}
+                          onChange={pagination.onChange}
+                        />
+                      </footer>
                     </div>
-
-                    <ChunkVirtualList
-                      key={listKey}
-                      items={chunkList}
-                      selectedChunkId={selectedChunkId}
-                      selectedChunkIds={selectedChunkIds}
-                      textMode={textMode}
-                      editChunk={showChunkUpdatingModal}
-                      handleCheckboxClick={handleSingleCheckboxClick}
-                      switchChunk={handleSwitchChunk}
-                      clickChunkCard={handleChunkCardClick}
-                      // Changes on every refetch, so a chunk whose image was
-                      // replaced in place re-fetches it instead of reusing the
-                      // cached bytes.
-                      imageCacheKey={dataUpdatedAt}
-                    />
-
-                    <footer className="mt-5">
-                      <RAGFlowPagination
-                        pageSize={pagination.pageSize}
-                        current={pagination.current}
-                        total={total}
-                        onChange={pagination.onChange}
-                      />
-                    </footer>
-                  </div>
-                </Spin>
-              </article>
-            </ResizablePanel>
+                  </Spin>
+                </article>
+              </ResizablePanel>
             )}
           </ResizablePanelGroup>
         </CardContent>

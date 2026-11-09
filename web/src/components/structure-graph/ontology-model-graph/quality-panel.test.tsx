@@ -42,8 +42,20 @@ const graphWith = (quality: any): any => ({
     { type: 'place', declared: true, entities: 3 },
   ],
   properties: [
-    { type: 'born_in', source: 'person', target: 'place', relations: 0, declared: true },
-    { type: 'invented', source: 'place', target: 'place', relations: 2, declared: false },
+    {
+      type: 'born_in',
+      source: 'person',
+      target: 'place',
+      relations: 0,
+      declared: true,
+    },
+    {
+      type: 'invented',
+      source: 'place',
+      target: 'place',
+      relations: 2,
+      declared: false,
+    },
   ],
   pitfalls: [],
   quality,
@@ -116,14 +128,21 @@ describe('OntologyQualityPanel', () => {
       to: 'You',
       from_type: 'event',
       to_type: 'work',
-      reason: 'dropped part_of: the template declares range place|event, the assertion used "work"',
+      reason:
+        'dropped part_of: the template declares range place|event, the assertion used "work"',
       doc_id: 'doc-1',
     }));
     const graph = graphWith(
       baseQuality({ dropped_relations: 5, dropped_samples: samples }),
     );
     graph.properties = [
-      { type: 'part_of', source: 'event', target: 'place', relations: 3, declared: true },
+      {
+        type: 'part_of',
+        source: 'event',
+        target: 'place',
+        relations: 3,
+        declared: true,
+      },
     ];
     renderExpanded(graph);
 
@@ -164,19 +183,35 @@ describe('OntologyQualityPanel', () => {
       }),
     );
     graph.properties = [
-      { type: 'part_of', source: 'event', target: 'place', relations: 3, declared: true },
-      { type: 'invented', source: 'place', target: 'place', relations: 2, declared: false },
+      {
+        type: 'part_of',
+        source: 'event',
+        target: 'place',
+        relations: 3,
+        declared: true,
+      },
+      {
+        type: 'invented',
+        source: 'place',
+        target: 'place',
+        relations: 2,
+        declared: false,
+      },
     ];
     renderExpanded(graph, { onApplyFixes });
 
     // Nothing selected yet: the batch button exists but cannot start a compile.
-    const batch = screen.getByTestId('ontology-quality-apply-batch') as HTMLButtonElement;
+    const batch = screen.getByTestId(
+      'ontology-quality-apply-batch',
+    ) as HTMLButtonElement;
     expect(batch.disabled).toBe(true);
 
     fireEvent.click(
       screen.getByTestId('ontology-quality-select-widen|part_of|range|work'),
     );
-    fireEvent.click(screen.getByTestId('ontology-quality-select-declare|invented'));
+    fireEvent.click(
+      screen.getByTestId('ontology-quality-select-declare|invented'),
+    );
     expect(batch.disabled).toBe(false);
 
     // One click applies: a confirm step that can be interrupted, or reset by a
@@ -207,7 +242,8 @@ describe('OntologyQualityPanel', () => {
       expect(screen.getByTestId('ontology-quality-apply-batch')).toBeTruthy(),
     );
     expect(
-      (screen.getByTestId('ontology-quality-apply-batch') as HTMLButtonElement).disabled,
+      (screen.getByTestId('ontology-quality-apply-batch') as HTMLButtonElement)
+        .disabled,
     ).toBe(true);
     // The reader is told the work started, not left with a batch that seems to
     // have done nothing.
@@ -229,7 +265,13 @@ describe('OntologyQualityPanel', () => {
       { type: 'season', declared: true, entities: 1 },
     ];
     graph.properties = [
-      { type: 'part_of', source: 'work', target: 'place', relations: 0, declared: true },
+      {
+        type: 'part_of',
+        source: 'work',
+        target: 'place',
+        relations: 0,
+        declared: true,
+      },
       {
         type: 'part_of',
         source: 'work',
@@ -242,12 +284,16 @@ describe('OntologyQualityPanel', () => {
     renderExpanded(graph, { onApplyFixes });
 
     // No declaration offered: the name is already declared.
-    expect(screen.queryByTestId('ontology-quality-select-declare|part_of')).toBeNull();
+    expect(
+      screen.queryByTestId('ontology-quality-select-declare|part_of'),
+    ).toBeNull();
     expect(screen.getByText(/Add “season” to part_of’s range/)).toBeTruthy();
     expect(screen.getByText(/declared: place/)).toBeTruthy();
 
     fireEvent.click(
-      screen.getByTestId('ontology-quality-select-widenpair|part_of|range|season'),
+      screen.getByTestId(
+        'ontology-quality-select-widenpair|part_of|range|season',
+      ),
     );
     fireEvent.click(screen.getByTestId('ontology-quality-apply-batch'));
     expect(onApplyFixes).toHaveBeenCalledWith([
@@ -271,7 +317,13 @@ describe('OntologyQualityPanel', () => {
       { type: 'organization', declared: true, entities: 16 },
     ];
     graph.properties = [
-      { type: 'created_by', source: 'artifact', target: 'organization', relations: 0, declared: true },
+      {
+        type: 'created_by',
+        source: 'artifact',
+        target: 'organization',
+        relations: 0,
+        declared: true,
+      },
     ];
     renderExpanded(graph);
 
@@ -285,24 +337,48 @@ describe('OntologyQualityPanel', () => {
   it('does not call the zeros empty when assertions were compiled', () => {
     const graph = graphWith(baseQuality());
     graph.properties = [
-      { type: 'created_by', source: 'artifact', target: 'organization', relations: 7, declared: true },
+      {
+        type: 'created_by',
+        source: 'artifact',
+        target: 'organization',
+        relations: 7,
+        declared: true,
+      },
     ];
     renderExpanded(graph);
 
-    expect(screen.queryByTestId('ontology-quality-nothing-measured')).toBeNull();
+    expect(
+      screen.queryByTestId('ontology-quality-nothing-measured'),
+    ).toBeNull();
   });
 
   // The reported bug: a property exercised on one of its declared pairs is not
   // "never exercised". `participant_in` carried 23 assertions and was still
   // listed, because fifteen of its sixteen declared pairs happened to be empty.
   it('lists a property only when none of its pairs was exercised', () => {
-    const graph = graphWith(
-      baseQuality({ properties_without_assertions: 15 }),
-    );
+    const graph = graphWith(baseQuality({ properties_without_assertions: 15 }));
     graph.properties = [
-      { type: 'participant_in', source: 'person', target: 'event', relations: 23, declared: true },
-      { type: 'participant_in', source: 'work', target: 'work', relations: 0, declared: true },
-      { type: 'led_by', source: 'organization', target: 'person', relations: 0, declared: true },
+      {
+        type: 'participant_in',
+        source: 'person',
+        target: 'event',
+        relations: 23,
+        declared: true,
+      },
+      {
+        type: 'participant_in',
+        source: 'work',
+        target: 'work',
+        relations: 0,
+        declared: true,
+      },
+      {
+        type: 'led_by',
+        source: 'organization',
+        target: 'person',
+        relations: 0,
+        declared: true,
+      },
     ];
     renderExpanded(graph);
 
@@ -339,10 +415,12 @@ describe('OntologyQualityPanel', () => {
     });
 
     expect(screen.queryByTestId('ontology-quality-pending')).toBeNull();
-    fireEvent.click(screen.getByTestId('ontology-quality-select-declare|invented'));
-    expect(screen.getByTestId('ontology-quality-pending').textContent).toContain(
-      '1',
+    fireEvent.click(
+      screen.getByTestId('ontology-quality-select-declare|invented'),
     );
+    expect(
+      screen.getByTestId('ontology-quality-pending').textContent,
+    ).toContain('1');
     fireEvent.click(screen.getByTestId('ontology-quality-clear-selection'));
     expect(screen.queryByTestId('ontology-quality-pending')).toBeNull();
   });
@@ -358,7 +436,13 @@ describe('OntologyQualityPanel', () => {
       { type: 'place', declared: true, entities: 1 },
     ];
     graph.properties = [
-      { type: 'part_of', source: 'work', target: 'place', relations: 0, declared: true },
+      {
+        type: 'part_of',
+        source: 'work',
+        target: 'place',
+        relations: 0,
+        declared: true,
+      },
       {
         type: 'part_of',
         source: 'work',
@@ -372,7 +456,9 @@ describe('OntologyQualityPanel', () => {
 
     expect(screen.getByText(/ghost is not declared either/)).toBeTruthy();
     expect(
-      screen.queryByTestId('ontology-quality-select-widenpair|part_of|range|ghost'),
+      screen.queryByTestId(
+        'ontology-quality-select-widenpair|part_of|range|ghost',
+      ),
     ).toBeNull();
   });
 
@@ -384,12 +470,15 @@ describe('OntologyQualityPanel', () => {
       onApplyFixes,
     });
 
-    const select = screen.getByTestId('ontology-quality-select-declare|invented') as HTMLInputElement;
+    const select = screen.getByTestId(
+      'ontology-quality-select-declare|invented',
+    ) as HTMLInputElement;
     fireEvent.click(select);
     expect(select.checked).toBe(true);
     fireEvent.click(screen.getByTestId('ontology-quality-clear-selection'));
     expect(
-      (screen.getByTestId('ontology-quality-apply-batch') as HTMLButtonElement).disabled,
+      (screen.getByTestId('ontology-quality-apply-batch') as HTMLButtonElement)
+        .disabled,
     ).toBe(true);
   });
 
@@ -401,7 +490,9 @@ describe('OntologyQualityPanel', () => {
         baseQuality({
           undeclared_properties: 1,
           dropped_relations: 1,
-          dropped_samples: [{ property: 'part_of', from_type: 'event', to_type: 'work' }],
+          dropped_samples: [
+            { property: 'part_of', from_type: 'event', to_type: 'work' },
+          ],
         }),
       ),
     );
@@ -414,9 +505,7 @@ describe('OntologyQualityPanel', () => {
   // The detail is a bounded surface of its own, so however long the lists get
   // they scroll inside it instead of growing the page header.
   it('bounds the details so they scroll instead of growing', () => {
-    renderExpanded(
-      graphWith(baseQuality({ undeclared_properties: 1 })),
-    );
+    renderExpanded(graphWith(baseQuality({ undeclared_properties: 1 })));
     const details = screen.getByTestId('ontology-quality-details');
     expect(details.className).toContain('max-h-[32vh]');
     expect(details.className).toContain('overflow-y-auto');
@@ -459,7 +548,9 @@ describe('OntologyQualityPanel', () => {
     expect(row.textContent).toContain('declared: person');
     expect(row.textContent).toContain('Ada');
     // The compiler's own sentence rides along as the tooltip.
-    const action = screen.getByTestId('ontology-quality-action-born_in|domain|place');
+    const action = screen.getByTestId(
+      'ontology-quality-action-born_in|domain|place',
+    );
     expect(action.getAttribute('title')).toContain(
       'the template declares domain person',
     );
@@ -501,9 +592,27 @@ describe('OntologyQualityPanel', () => {
       }),
     );
     graph.properties = [
-      { type: 'part_of', source: 'event', target: 'work', relations: 0, declared: true },
-      { type: 'part_of', source: 'season', target: 'work', relations: 0, declared: true },
-      { type: 'part_of', source: 'episode', target: 'work', relations: 0, declared: true },
+      {
+        type: 'part_of',
+        source: 'event',
+        target: 'work',
+        relations: 0,
+        declared: true,
+      },
+      {
+        type: 'part_of',
+        source: 'season',
+        target: 'work',
+        relations: 0,
+        declared: true,
+      },
+      {
+        type: 'part_of',
+        source: 'episode',
+        target: 'work',
+        relations: 0,
+        declared: true,
+      },
     ];
     renderExpanded(graph);
 
@@ -541,7 +650,9 @@ describe('OntologyQualityPanel', () => {
     });
 
     fireEvent.click(
-      screen.getByTestId('ontology-quality-undeclared').querySelector('button')!,
+      screen
+        .getByTestId('ontology-quality-undeclared')
+        .querySelector('button')!,
     );
     expect(onFocusClass).toHaveBeenCalledWith('place');
   });

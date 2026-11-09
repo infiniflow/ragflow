@@ -42,7 +42,6 @@ export const MaxEdgeWidth = 4;
  */
 const OppositeDirectionCurvature = 0.16;
 
-
 /**
  * Inheritance edges get a fixed, modest width: rdfs:subClassOf carries no count,
  * so there is nothing to scale it by.

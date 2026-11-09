@@ -192,7 +192,9 @@ function OntologyModelGraph({
   // Edges are first-class: hovering one names it, clicking one opens the panel
   // of the class that declares those properties (the domain), which is where its
   // assertions can be listed.
-  const [hoveredLink, setHoveredLink] = useState<OntologyGraphLink | null>(null);
+  const [hoveredLink, setHoveredLink] = useState<OntologyGraphLink | null>(
+    null,
+  );
   const [selectedLink, setSelectedLink] = useState<OntologyGraphLink | null>(
     null,
   );
@@ -328,34 +330,28 @@ function OntologyModelGraph({
     }
   }, []);
 
-  const handleNodeClick = useCallback(
-    (node: OntologyNodeObject) => {
-      setSelected(node.id);
-      // A class click means the next edge click is a fresh question.
-      setSelectedLink(null);
-    },
-    [],
-  );
+  const handleNodeClick = useCallback((node: OntologyNodeObject) => {
+    setSelected(node.id);
+    // A class click means the next edge click is a fresh question.
+    setSelectedLink(null);
+  }, []);
 
   const handleLinkHover = useCallback((link: OntologyGraphLink | null) => {
     setHoveredLink(link);
   }, []);
 
-  const handleLinkClick = useCallback(
-    (link: OntologyGraphLink) => {
-      // Inheritance is a schema statement with no instances behind it, so there
-      // is nothing to open.
-      if (link.kind !== 'property') return;
-      setSelectedLink(link);
-      // The panel is class-scoped, and a bundle's properties are declared by its
-      // SOURCE class (the domain) — so that is the class whose panel answers
-      // "what is this edge?": it lists each of the bundle's properties with its
-      // own count and its own drill-down.
-      const sourceId = linkEndpointId(link.source);
-      setSelected(sourceId);
-    },
-    [],
-  );
+  const handleLinkClick = useCallback((link: OntologyGraphLink) => {
+    // Inheritance is a schema statement with no instances behind it, so there
+    // is nothing to open.
+    if (link.kind !== 'property') return;
+    setSelectedLink(link);
+    // The panel is class-scoped, and a bundle's properties are declared by its
+    // SOURCE class (the domain) — so that is the class whose panel answers
+    // "what is this edge?": it lists each of the bundle's properties with its
+    // own count and its own drill-down.
+    const sourceId = linkEndpointId(link.source);
+    setSelected(sourceId);
+  }, []);
 
   const handleNodeHover = useCallback((node: OntologyNodeObject | null) => {
     setHovered(node ?? null);
@@ -520,7 +516,11 @@ function OntologyModelGraph({
       // Hiding, not dimming: a dimmed edge still draws, and on a dense template
       // the mesh itself is the problem, not its contrast. Inheritance is exempt —
       // it is what the reader navigates by.
-      if (focusedOnly && !emphasis?.links.has(link) && link.kind === 'property') {
+      if (
+        focusedOnly &&
+        !emphasis?.links.has(link) &&
+        link.kind === 'property'
+      ) {
         return;
       }
       const source = link.source as OntologyNodeObject;
@@ -618,7 +618,8 @@ function OntologyModelGraph({
           // A halo, because a name that crosses its own line is exactly the
           // case this whole pass exists for.
           ctx.lineWidth = 3 / globalScale;
-          ctx.strokeStyle = ctx.canvas.style.backgroundColor || 'rgba(0,0,0,0.55)';
+          ctx.strokeStyle =
+            ctx.canvas.style.backgroundColor || 'rgba(0,0,0,0.55)';
           ctx.strokeText(label.text, 0, 0);
           ctx.fillText(label.text, 0, 0);
           ctx.restore();
@@ -640,7 +641,12 @@ function OntologyModelGraph({
     (
       node: OntologyGraphNode,
       ctx: CanvasRenderingContext2D,
-      side: { x: number; y: number; align: CanvasTextAlign; baseline: CanvasTextBaseline },
+      side: {
+        x: number;
+        y: number;
+        align: CanvasTextAlign;
+        baseline: CanvasTextBaseline;
+      },
       text: string,
       count: string | null,
     ): NodeLabelPlacement => {
@@ -777,11 +783,7 @@ function OntologyModelGraph({
         if (placement.count) {
           ctx.font = '9px Sans-Serif';
           ctx.fillStyle = withAlpha(color, 0.75);
-          ctx.fillText(
-            placement.count,
-            placement.x,
-            placement.y + countOffset,
-          );
+          ctx.fillText(placement.count, placement.x, placement.y + countOffset);
         }
         ctx.restore();
       });
@@ -954,7 +956,6 @@ function OntologyModelGraph({
     templateId,
   ]);
 
-
   return (
     // The root stays a flex ROW even with a single child: the canvas container
     // below carries `flex-1`, which only resolves to a height inside a flex
@@ -1009,7 +1010,6 @@ function OntologyModelGraph({
             </div>
           )}
         </div>
-
 
         {hasDimensions && (
           <ForceGraph2D
@@ -1172,7 +1172,6 @@ function OntologyModelGraph({
           )}
         </div>
       </div>
-
     </div>
   );
 }

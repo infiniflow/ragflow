@@ -896,27 +896,21 @@ export function OntologyCanvasEditor({
               }),
             )}
 
-            {linkingFrom &&
-              linkPointer &&
-              byId.get(linkingFrom) && (
-                // The provisional edge: this is what makes the handle's click
-                // visible, and it points at whatever the reader is about to choose.
-                <line
-                  data-testid="ontology-linking-line"
-                  className="text-[#4CACFF]"
-                  x1={
-                    borderPoint(nodeBox(byId.get(linkingFrom)!), linkPointer).x
-                  }
-                  y1={
-                    borderPoint(nodeBox(byId.get(linkingFrom)!), linkPointer).y
-                  }
-                  x2={linkPointer.x}
-                  y2={linkPointer.y}
-                  stroke="currentColor"
-                  strokeDasharray="6 4"
-                  pointerEvents="none"
-                />
-              )}
+            {linkingFrom && linkPointer && byId.get(linkingFrom) && (
+              // The provisional edge: this is what makes the handle's click
+              // visible, and it points at whatever the reader is about to choose.
+              <line
+                data-testid="ontology-linking-line"
+                className="text-[#4CACFF]"
+                x1={borderPoint(nodeBox(byId.get(linkingFrom)!), linkPointer).x}
+                y1={borderPoint(nodeBox(byId.get(linkingFrom)!), linkPointer).y}
+                x2={linkPointer.x}
+                y2={linkPointer.y}
+                stroke="currentColor"
+                strokeDasharray="6 4"
+                pointerEvents="none"
+              />
+            )}
 
             {edges.map((edge) => {
               const selected =

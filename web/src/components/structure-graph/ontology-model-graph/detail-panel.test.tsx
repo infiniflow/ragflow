@@ -32,8 +32,9 @@ jest.mock('react-i18next', () => ({
     t: (key: string, options?: any) => {
       if (!options) return key;
       const template: string = options.defaultValue ?? key;
-      return template.replace(/{{\s*(\w+)\s*}}/g, (_match: string, name: string) =>
-        String(options[name] ?? ''),
+      return template.replace(
+        /{{\s*(\w+)\s*}}/g,
+        (_match: string, name: string) => String(options[name] ?? ''),
       );
     },
   }),
@@ -127,7 +128,9 @@ describe('OntologyDetailPanel drill-down', () => {
   it('explains itself instead of offering a dead button at zero instances', () => {
     renderPanel(classWithInstances({ entities: 0 }));
     expect(screen.queryByText('View instances')).toBeNull();
-    expect(screen.getByText(/No instance of this class was compiled/)).toBeTruthy();
+    expect(
+      screen.getByText(/No instance of this class was compiled/),
+    ).toBeTruthy();
     // And nothing is requested, because there is nothing to ask for.
     expect(mockClassEntities).not.toHaveBeenCalled();
   });

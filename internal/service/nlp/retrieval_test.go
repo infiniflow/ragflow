@@ -489,13 +489,14 @@ func TestRetrievalPreservesCompilationKindWhenPresent(t *testing.T) {
 // type_kwd/name_kwd/prop_kwd/attr/source_chunk_ids and reads them back to build
 // the digest; dropping them here emptied every assertion and every citation count.
 func TestRetrievalReturnsProjectedAssertionColumns(t *testing.T) {
+	newRetrievalTestDB(t, "doc-1")
 	oldQueryBuilder := globalQueryBuilder
 	globalQueryBuilder = NewQueryBuilder()
 	defer func() { globalQueryBuilder = oldQueryBuilder }()
 
 	docEngine := &retrievalCountEngine{rows: []map[string]interface{}{
 		{
-			"id": "assertion", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.9,
+			"id": "assertion", "doc_id": "doc-1", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.9,
 			"type_kwd": "entity", "name_kwd": "virginia woolf", "entity_type_kwd": "person",
 			"attr":               map[string]interface{}{"occupation": "writer"},
 			"source_chunk_ids":   []string{"chunk-1"},

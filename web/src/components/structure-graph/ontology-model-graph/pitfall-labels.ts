@@ -56,7 +56,8 @@ const PitfallFallback: Record<string, string> = {
   standard_vocabulary_property:
     'The name is already owned by RDF/OWL vocabulary',
   range_in_property_name: 'The property’s name repeats the class it points at',
-  domain_in_property_name: 'The property’s name repeats the class it starts from',
+  domain_in_property_name:
+    'The property’s name repeats the class it starts from',
   overly_generic_class:
     'The name is so general that an extraction model can file anything under it',
   class_property_name_collision: 'A class and a property share this name',
@@ -68,7 +69,8 @@ export const pitfallCategoryLabel = (
   category: string | undefined,
   translate: (key: string, options: { defaultValue: string }) => string,
 ): string => {
-  const known = category && CategoryFallback[category] ? category : 'structural';
+  const known =
+    category && CategoryFallback[category] ? category : 'structural';
   return translate(`knowledgeCompilation.ontologyPitfallCategory_${known}`, {
     defaultValue: CategoryFallback[known],
   });
