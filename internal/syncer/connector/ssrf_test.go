@@ -233,11 +233,15 @@ func TestConnectorRequestBoundsTheResponseHeaderWait(t *testing.T) {
 	}))
 	defer server.Close()
 
-	if _, err := connectorRequest(context.Background(), connectorRequestOptions{
+	resp, err := connectorRequest(context.Background(), connectorRequestOptions{
 		Method:        http.MethodGet,
 		RawURL:        server.URL,
 		HeaderTimeout: 50 * time.Millisecond,
-	}); err == nil {
+	})
+	if resp != nil {
+		resp.Body.Close()
+	}
+	if err == nil {
 		t.Fatal("connectorRequest succeeded despite a response header wait past the header timeout")
 	}
 }
@@ -253,12 +257,16 @@ func TestConnectorRequestAppliesHeaderTimeoutToAClonedTransport(t *testing.T) {
 	// A connector with custom TLS/CA settings supplies its own transport, the
 	// path taken when ca_cert_path is configured.
 	base := &http.Client{Transport: &http.Transport{}}
-	if _, err := connectorRequest(context.Background(), connectorRequestOptions{
+	resp, err := connectorRequest(context.Background(), connectorRequestOptions{
 		Method:        http.MethodGet,
 		RawURL:        server.URL,
 		HeaderTimeout: 50 * time.Millisecond,
 		Base:          base,
-	}); err == nil {
+	})
+	if resp != nil {
+		resp.Body.Close()
+	}
+	if err == nil {
 		t.Fatal("connectorRequest succeeded despite a response header wait past the header timeout on a cloned transport")
 	}
 }
@@ -272,12 +280,16 @@ func TestConnectorRequestKeepsAShorterClonedHeaderTimeout(t *testing.T) {
 	defer server.Close()
 
 	base := &http.Client{Transport: &http.Transport{ResponseHeaderTimeout: 20 * time.Millisecond}}
-	if _, err := connectorRequest(context.Background(), connectorRequestOptions{
+	resp, err := connectorRequest(context.Background(), connectorRequestOptions{
 		Method:        http.MethodGet,
 		RawURL:        server.URL,
 		HeaderTimeout: time.Second,
 		Base:          base,
-	}); err == nil {
+	})
+	if resp != nil {
+		resp.Body.Close()
+	}
+	if err == nil {
 		t.Fatal("connectorRequest widened the base transport's shorter response header timeout")
 	}
 }
