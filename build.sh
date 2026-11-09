@@ -211,10 +211,7 @@ _native_libs_present() {
         _TARGET_PLATFORM_DETECTED=1
     fi
     local ort_version ort_dir_prefix
-    ort_version="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' \
-        "${PROJECT_ROOT}/internal/common/environments.go" \
-        | sed -E 's/.*"([^"]+)".*/\1/')"
-    [ -z "$ort_version" ] && return 1
+    ort_version="$(deepdoc_ort_version "$PROJECT_ROOT")" || return 1
     ort_dir_prefix="$(ort_static_lib_prefix)"
     ragflow_ort_present "$ONNXRUNTIME_STATIC_PREFIX" "$ort_dir_prefix" "$ort_version" || return 1
     return 0
@@ -400,7 +397,7 @@ check_ort_version_consistency() {
     print_section "Checking ONNX Runtime version consistency"
 
     local env_go dockerfile
-    env_go="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/internal/common/environments.go" | sed -E 's/.*"([^"]+)".*/\1/')"
+    env_go="$(deepdoc_ort_version "${PROJECT_ROOT}")"
     dockerfile="$(grep -m1 -E 'ARG[[:space:]]+ORT_VERSION=' "${PROJECT_ROOT}/Dockerfile" | sed -E 's/.*ORT_VERSION=([0-9][^"[:space:]]*).*/\1/')"
 
     if [ -z "$env_go" ] || [ -z "$dockerfile" ]; then
@@ -448,9 +445,7 @@ check_onnxruntime_deps() {
     fi
 
     local ort_version
-    ort_version="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' \
-        "${PROJECT_ROOT}/internal/common/environments.go" \
-        | sed -E 's/.*"([^"]+)".*/\1/')"
+    ort_version="$(deepdoc_ort_version "${PROJECT_ROOT}")"
     if [ -z "$ort_version" ]; then
         echo -e "${RED}Error: cannot parse DeepDocORTVersion from internal/common/environments.go${NC}" >&2
         return 1
@@ -997,9 +992,7 @@ setup_cgo_env() {
     # linked binary. Stamp with the primary archive's sha256 so the flag string
     # changes when the content changes → automatic relink.
     local ort_version
-    ort_version="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' \
-        "${PROJECT_ROOT}/internal/common/environments.go" \
-        | sed -E 's/.*"([^"]+)".*/\1/')"
+    ort_version="$(deepdoc_ort_version "${PROJECT_ROOT}")"
     local ort_versioned_dir="${ONNXRUNTIME_STATIC_PREFIX}/v${ort_version}-${ORT_A_SHA256:0:16}"
     local ort_a_versioned=""
     local f stamp needs_write want_target

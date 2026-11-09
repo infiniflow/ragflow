@@ -6,8 +6,10 @@
 # Each native lib resolves its version from exactly one place:
 #   - office_oxide / pdf_oxide  -> go.mod       (go_module_version)
 #   - ORT                       -> internal/common/environments.go
-#                                   DeepDocORTVersion (read by both build.sh and
-#                                   download_dev_deps.py directly — it is Go-owned)
+#                                   DeepDocORTVersion (read by both build.sh via
+#                                   deepdoc_ort_version() below and
+#                                   download_dev_deps.deepdoc_ort_version() — it is
+#                                   Go-owned, so the const itself stays in Go)
 #   - pdfium                    -> pdfium_static_version (below; pdfium is not a
 #                                   Go module, so go.mod does not apply)
 #
@@ -55,4 +57,26 @@ go_module_version() {
 pdfium_static_version() {
     # Single source of truth for the pdfium static build number. Bump here only.
     printf '%s\n' "7809"
+}
+
+# deepdoc_ort_version <repo_root>
+# Reads the ONNX Runtime version the in-process (Go) DeepDoc backend links from
+# <repo_root>/internal/common/environments.go's DeepDocORTVersion const.
+#
+# ORT is the one native lib whose version is owned by Go source (not go.mod), so
+# build.sh and download_dev_deps.deepdoc_ort_version() both parse the SAME const
+# through this helper — no second hardcoded copy to drift. Echoes the bare
+# version and returns 0, or returns 1 with empty output when environments.go is
+# missing or the const is absent (so callers fail loud, mirroring the Python
+# RuntimeError). build.sh used to inline this grep at every call site; collapsing
+# it here keeps a single bash source of truth alongside the Python one.
+deepdoc_ort_version() {
+    local repo_root="$1"
+    local env_go="${repo_root}/internal/common/environments.go"
+    [ -f "$env_go" ] || return 1
+    local version
+    version="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' "$env_go" \
+        | sed -E 's/.*"([^"]+)".*/\1/')"
+    [ -n "$version" ] || return 1
+    printf '%s\n' "$version"
 }

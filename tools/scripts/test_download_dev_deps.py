@@ -738,6 +738,43 @@ def test_pdfium_static_version_against_real_repo():
     assert native.pdfium_static_version(native.REPO_ROOT) == "7809"
 
 
+# ── deepdoc_ort_version (bash) single source ───────────────────────────────
+# build.sh must read DeepDocORTVersion from environments.go through the SAME
+# native_lib_version.sh helper the Python downloader mirrors (deepdoc_ort_version
+# in download_dev_deps.py), not an inline grep repeated at every call site. These
+# tests pin the bash function contract so the 4 inline greps in build.sh can be
+# collapsed onto one source.
+
+
+def test_deepdoc_ort_version_bash_reads_environments_go(tmp_path):
+    # Fixture environments.go with a deliberately non-default version.
+    common = tmp_path / "internal" / "common"
+    common.mkdir(parents=True)
+    (common / "environments.go").write_text('package common\n\n// DeepDocORTVersion is ...\nconst DeepDocORTVersion = "9.9.9"\n')
+    res = _sh_eval(f"deepdoc_ort_version {tmp_path}", _env_with("/home/alice"))
+    assert res.returncode == 0, res.stderr
+    assert res.stdout.strip() == "9.9.9"
+
+
+def test_deepdoc_ort_version_bash_against_real_repo():
+    # Sanity: parses the checked-out repo's actual pin. Assert the shape (semver)
+    # rather than a hardcoded literal so the test tracks environments.go on bumps.
+    import re
+
+    res = _sh_eval(f"deepdoc_ort_version {native.REPO_ROOT}", _env_with("/home/alice"))
+    assert res.returncode == 0, res.stderr
+    assert re.match(r"^\d+\.\d+\.\d+", res.stdout.strip()), res.stdout
+
+
+def test_deepdoc_ort_version_bash_missing_file(tmp_path):
+    # Adversarial: an empty repo root with no environments.go must NOT echo a
+    # version and must signal failure (so callers fail loud, mirroring the
+    # Python RuntimeError), not silently return an empty string with rc 0.
+    res = _sh_eval(f"deepdoc_ort_version {tmp_path}", _env_with("/home/alice"))
+    assert res.returncode == 1, res.stdout
+    assert res.stdout.strip() == ""
+
+
 # ── Slice 3: CI mounts the native-lib user cache (RAGFLOW_NATIVE_LIBS_DIR) ──
 # build.sh resolves the native static libs from a single cache root
 # (default ~/ragflow-native-libs, overridable via RAGFLOW_NATIVE_LIBS_DIR so CI
