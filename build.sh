@@ -433,8 +433,9 @@ check_ort_version_consistency() {
 # that lacks those custom slots links successfully and only fails at runtime.
 # The check below catches that by comparing the local release ZIP against the
 # published {asset}.sha256 sidecar (same source of truth the download scripts
-# use). Devs who ran a download script have the zip under deps/; CI
-# seeds from /opt and has no zip, where the bake is authoritative.
+# use). Devs who ran a download script have the zip under deps/; on CI the
+# version-keyed cache is mounted from the build host and no zip is present, so
+# the sha256 check is skipped there and the mounted cache seed is authoritative.
 check_onnxruntime_deps() {
     # Ensure TARGET_OS/TARGET_ARCH are resolved. ort_static_lib_prefix below
     # depends on them; without this guard an early call (before any other path
