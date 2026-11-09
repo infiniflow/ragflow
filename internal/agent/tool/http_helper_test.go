@@ -277,8 +277,11 @@ func TestHTTPHelper_Timeout(t *testing.T) {
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("Do err = %v, want context.DeadlineExceeded (callers branch on errors.Is for this)", err)
 	}
-	if got := atomic.LoadInt32(&hits); got != 1 {
-		t.Errorf("server hits = %d, want 1 (context errors are not retryable — a regression to retry on ctx-deadline would show 2+)", got)
+	// 0 is allowed: under a loaded machine the 50ms deadline can expire during the
+	// dial, before the request reaches the handler. What this test really pins is
+	// that a ctx deadline is NOT retried (a regression would show 2+ attempts).
+	if got := atomic.LoadInt32(&hits); got > 1 {
+		t.Errorf("server hits = %d, want at most 1 (context errors are not retryable — a regression to retry on ctx-deadline would show 2+)", got)
 	}
 }
 
@@ -485,6 +488,50 @@ func TestHTTPHelper_DoPinnedRefusesMismatchedURLHost(t *testing.T) {
 	}
 	if got := err.Error(); !contains(got, "would break TLS SNI") {
 		t.Errorf("error %q does not mention TLS SNI breakage", got)
+	}
+}
+
+// TestHTTPHelper_DoPinnedAcceptsCaseInsensitiveHost locks in that the
+// DoPinned host guard is case-insensitive. DNS hostnames are
+// case-insensitive, so a URL host spelled with a different case than
+// originalHost (e.g. a user-typed "EXAMPLE.TEST" vs the resolver's
+// lowercased "example.test") must still be pinned and delivered, not
+// refused. A genuinely different host is still refused by
+// TestHTTPHelper_DoPinnedRefusesMismatchedURLHost.
+func TestHTTPHelper_DoPinnedAcceptsCaseInsensitiveHost(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "ok")
+	}))
+	defer srv.Close()
+
+	u, perr := neturl.Parse(srv.URL)
+	if perr != nil {
+		t.Fatalf("parse server URL %q: %v", srv.URL, perr)
+	}
+	serverHost, serverPort, sperr := net.SplitHostPort(u.Host)
+	if sperr != nil {
+		t.Fatalf("split server host:port from %q: %v", u.Host, sperr)
+	}
+	// URL host is UPPER-case; originalHost (as a resolver would record
+	// it) is lower-case — DNS-equivalent, so the pin must proceed.
+	targetURL := fmt.Sprintf("http://EXAMPLE.TEST:%s/", serverPort)
+	pinnedIP := net.ParseIP(serverHost)
+	if pinnedIP == nil {
+		t.Fatalf("server host %q is not an IP literal", serverHost)
+	}
+
+	h := NewHTTPHelper()
+	resp, err := h.DoPinned(ctx,
+		http.MethodGet, targetURL, "", "", nil, "example.test", pinnedIP)
+	if err != nil {
+		t.Fatalf("DoPinned rejected case-insensitive equivalent host: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
 	}
 }
 

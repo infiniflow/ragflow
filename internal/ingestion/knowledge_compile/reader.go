@@ -29,6 +29,8 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+
+	"gorm.io/gorm"
 )
 
 // Reader finds the compiled products needed for incremental dedup without
@@ -78,24 +80,29 @@ type documentWikiPageReader interface {
 //
 // The bool reports whether the database is configured. Offline/unit readers do
 // not have document status available and retain the previous engine-only behavior.
-func enabledDocumentIDs(ctx context.Context, datasetID string) ([]string, bool, error) {
-	if kcDB == nil {
+func enabledDocumentIDs(ctx context.Context, db *gorm.DB, datasetID string) ([]string, bool, error) {
+	if db == nil {
 		return nil, false, nil
 	}
 	var ids []string
-	err := kcDB.WithContext(ctx).
+	err := db.WithContext(ctx).
 		Model(&entity.Document{}).
 		Where("kb_id = ? AND (status IS NULL OR status <> ?)", datasetID, "0").
 		Pluck("id", &ids).Error
 	return ids, true, err
 }
 
-// engineReader loads the per-document compiled products through the global
-// DocEngine (§11.6 step 1, §11.7 incremental re-dedup). It depends on the
-// process-wide DocEngine obtained via engine.Get(); the engine abstraction owns
-// the storage schema, so this reader is not backend-specific.
+// engineReader loads the per-document compiled products through the injected
+// DocEngine (§11.6 step 1, §11.7 incremental re-dedup). The engine is wired by
+// the server assembly point (see WithDocEngine); the engine abstraction owns
+// the storage schema, so this reader is not backend-specific. A reader without
+// an engine fails fast instead of silently reporting "no products".
 type engineReader struct {
 	eng engine.DocEngine
+	// db is the injected MySQL handle backing enabledDocumentIDs. It is wired by
+	// WithStorage; a zero-value reader has a nil db and enabledDocumentIDs
+	// reports "status unavailable" (the previous engine-only behavior).
+	db *gorm.DB
 }
 
 // compiledSelectFields are the columns needed to reconstruct a Product. Every
@@ -103,7 +110,7 @@ type engineReader struct {
 // unknown column); payload = content_with_weight, kind = compile_kwd.
 var compiledSelectFields = []string{
 	"id", "doc_id", "compile_kwd",
-	"available_int", "extra",
+	"available_int",
 	"content_with_weight",
 	"source_chunk_ids", "source_doc_ids",
 	"name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd",
@@ -150,13 +157,10 @@ const loadDocProductsLimit = 5000
 // results are paged so a document with more than loadDocProductsLimit rows is
 // not silently truncated.
 func (r engineReader) LoadDocProducts(ctx context.Context, tenant, kb, docID string) ([]kccommon.Product, error) {
+	if r.eng == nil {
+		return nil, errEngineNotConfigured
+	}
 	eng := r.eng
-	if eng == nil {
-		eng = engine.Get()
-	}
-	if eng == nil {
-		return nil, nil
-	}
 	var out []kccommon.Product
 	offset := 0
 	for {
@@ -213,11 +217,11 @@ func (r engineReader) LoadDocProducts(ctx context.Context, tenant, kb, docID str
 }
 
 func (r engineReader) LoadMergedProduct(ctx context.Context, tenant, kb, id string) (kccommon.Product, error) {
-	eng := r.eng
-	if eng == nil {
-		eng = engine.Get()
+	if r.eng == nil {
+		return kccommon.Product{}, errEngineNotConfigured
 	}
-	if eng == nil || id == "" {
+	eng := r.eng
+	if id == "" {
 		return kccommon.Product{}, nil
 	}
 	filter := map[string]interface{}{"id": id, "available_int": 1, "scope_kwd": "dataset"}
@@ -240,13 +244,10 @@ func (r engineReader) LoadMergedProduct(ctx context.Context, tenant, kb, id stri
 }
 
 func (r engineReader) LoadMergedWikiPages(ctx context.Context, tenant, kb string) ([]kccommon.Product, error) {
+	if r.eng == nil {
+		return nil, errEngineNotConfigured
+	}
 	eng := r.eng
-	if eng == nil {
-		eng = engine.Get()
-	}
-	if eng == nil {
-		return nil, nil
-	}
 	filter := map[string]interface{}{"available_int": 1, "scope_kwd": "dataset", "type_kwd": compileKwdWikiPage}
 	var pages []kccommon.Product
 	for offset := 0; ; offset += loadDocProductsLimit {
@@ -264,7 +265,7 @@ func (r engineReader) LoadMergedWikiPages(ctx context.Context, tenant, kb string
 			break
 		}
 		for _, row := range res.Chunks {
-			if product, ok := productFromChunkMap(row, tenant, kccommon.VariantWiki); ok && metaString(product.Meta, "kind") == "page" {
+			if product, ok := productFromChunkMap(row, tenant, kccommon.VariantWiki); ok && kccommon.MetaString(product.Meta, "kind") == "page" {
 				pages = append(pages, product)
 			}
 		}
@@ -276,14 +277,14 @@ func (r engineReader) LoadMergedWikiPages(ctx context.Context, tenant, kb string
 }
 
 func (r engineReader) LoadDocumentWikiPagesBySlugs(ctx context.Context, tenant, kb string, slugs []string) ([]kccommon.Product, error) {
-	eng := r.eng
-	if eng == nil {
-		eng = engine.Get()
+	if r.eng == nil {
+		return nil, errEngineNotConfigured
 	}
-	if eng == nil || len(slugs) == 0 {
+	eng := r.eng
+	if len(slugs) == 0 {
 		return nil, nil
 	}
-	enabledIDs, statusAvailable, err := enabledDocumentIDs(ctx, kb)
+	enabledIDs, statusAvailable, err := enabledDocumentIDs(ctx, r.db, kb)
 	if err != nil {
 		return nil, fmt.Errorf("load enabled Wiki documents: %w", err)
 	}
@@ -314,7 +315,7 @@ func (r engineReader) LoadDocumentWikiPagesBySlugs(ctx context.Context, tenant, 
 			break
 		}
 		for _, row := range res.Chunks {
-			if product, ok := productFromChunkMap(row, tenant, kccommon.VariantWiki); ok && metaString(product.Meta, "kind") == "page" {
+			if product, ok := productFromChunkMap(row, tenant, kccommon.VariantWiki); ok && kccommon.MetaString(product.Meta, "kind") == "page" {
 				pages = append(pages, product)
 			}
 		}
@@ -367,20 +368,8 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 			payload = nil
 		}
 	}
-	if raw := asString(c["extra"]); raw != "" {
-		var extra map[string]any
-		if err := json.Unmarshal([]byte(raw), &extra); err != nil {
-			return kccommon.Product{}, false
-		}
-		if inferred, ok := extra["compile_type"].(string); ok {
-			meta["compile_type"] = inferred
-		}
-	}
 	if v := asString(c["compile_kwd"]); v != "" {
 		meta["compile_kwd"] = v
-		if _, ok := meta["compile_type"]; !ok && types.CanonicalCompilationKind(v) != v {
-			meta["compile_type"] = v
-		}
 	}
 	if v, ok := c["name_kwd"].(string); ok && v != "" {
 		name := v
@@ -406,12 +395,12 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 		meta["to"] = v
 		meta["kind"] = "relation"
 	}
-	if metaString(meta, "kind") == "relation" {
+	if kccommon.MetaString(meta, "kind") == "relation" {
 		if v, ok := payload["type"].(string); ok && v != "" {
 			meta["relation_type"] = v
 		}
 	}
-	if v, ok := metaInt(c, "mention_count_int"); ok {
+	if v, ok := kccommon.MetaInt(c, "mention_count_int"); ok {
 		meta["mention_count"] = v
 	}
 	if v, ok := c["slug_kwd"].(string); ok && v != "" {
@@ -433,20 +422,20 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 	if v, ok := c["summary_with_weight"].(string); ok && v != "" {
 		meta["summary"] = v
 	}
-	if v := metaStringSlice(c, "entity_names_kwd"); len(v) > 0 {
+	if v := kccommon.MetaStringSlice(c, "entity_names_kwd"); len(v) > 0 {
 		meta["entity_names"] = v
 	}
-	if v := metaStringSlice(c, "related_kb_pages_kwd"); len(v) > 0 {
+	if v := kccommon.MetaStringSlice(c, "related_kb_pages_kwd"); len(v) > 0 {
 		meta["related_kb_pages"] = v
 	}
-	if v := metaStringSlice(c, "outlinks_kwd"); len(v) > 0 {
+	if v := kccommon.MetaStringSlice(c, "outlinks_kwd"); len(v) > 0 {
 		meta["outlinks"] = v
 	}
 	// Section depth comes from depth_int. Only the wiki variant consumes
 	// Meta["section_level"] (applyVariantColumns); tree rows also stamp depth_int,
 	// but they keep their depth in raptor_layer_int.
 	if expect == kccommon.VariantWiki {
-		if v, ok := metaInt(c, "depth_int"); ok {
+		if v, ok := kccommon.MetaInt(c, "depth_int"); ok {
 			meta["section_level"] = v
 		}
 	}
@@ -489,10 +478,10 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 	if v, ok := c["create_time"].(string); ok && v != "" {
 		meta["created_at"] = v
 	}
-	if v := metaStringSlice(c, "source_chunk_ids"); len(v) > 0 {
+	if v := kccommon.MetaStringSlice(c, "source_chunk_ids"); len(v) > 0 {
 		meta["source_chunk_ids"] = v
 	}
-	if v := metaStringSlice(c, "source_doc_ids"); len(v) > 0 {
+	if v := kccommon.MetaStringSlice(c, "source_doc_ids"); len(v) > 0 {
 		meta["source_doc_ids"] = v
 	}
 
@@ -505,7 +494,7 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 	// more than one the first is used (multi-template rows are a config error
 	// surfaced elsewhere).
 	templateID := ""
-	if ids := metaStringSlice(c, "compilation_template_ids"); len(ids) > 0 {
+	if ids := kccommon.MetaStringSlice(c, "compilation_template_ids"); len(ids) > 0 {
 		templateID = ids[0]
 	}
 	return kccommon.Product{
@@ -525,13 +514,10 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 // SearchSimilar runs a dense KNN over the existing merged rows (available_int=1,
 // compile_kwd=variant) of the KB and returns the closest hit above minScore.
 func (r engineReader) SearchSimilar(ctx context.Context, tenant, kb string, variant kccommon.Variant, vector []float64, topN int, minScore float64) (kccommon.Product, float64, error) {
+	if r.eng == nil {
+		return kccommon.Product{}, 0, errEngineNotConfigured
+	}
 	eng := r.eng
-	if eng == nil {
-		eng = engine.Get()
-	}
-	if eng == nil {
-		return kccommon.Product{}, 0, nil
-	}
 	if topN <= 0 {
 		topN = 1
 	}

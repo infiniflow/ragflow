@@ -18,15 +18,20 @@ import {
   ChatVariableEnabledField,
   EmptyConversationId,
 } from '@/constants/chat';
-import { IMessage, Message } from '@/interfaces/database/chat';
+import {
+  IMessage,
+  IReference,
+  IReferenceObject,
+  Message,
+} from '@/interfaces/database/chat';
 import type { CompletionChunk } from '@/services/chat-completion-stream';
-import { omit } from 'lodash';
 import { v4 as uuid } from 'uuid';
 import {
   buildCitationDisplayMap,
   citationMarkerReg,
   normalizeCitationDigits,
   parseCitationIndex,
+  resolveCitationChunk,
 } from './citation-utils';
 
 export const isConversationIdExist = (conversationId: string) => {
@@ -43,11 +48,28 @@ export const buildMessageUuid = (message: Partial<Message | IMessage>) => {
 export const buildMessageListWithUuid = (messages?: Message[]) => {
   return (
     messages?.map((x: Message | IMessage) => ({
-      ...omit(x, 'reference'),
+      ...x,
       id: buildMessageUuid(x),
     })) ?? []
   );
 };
+
+export const buildReferenceObject = (
+  reference?: IReference,
+): IReferenceObject => ({
+  chunks: Object.fromEntries(
+    (reference?.chunks ?? []).map((chunk, index) => [
+      chunk.citation_id ?? String(index),
+      chunk,
+    ]),
+  ),
+  doc_aggs: Object.fromEntries(
+    Object.values(reference?.doc_aggs ?? {}).map((document) => [
+      document.doc_id,
+      document,
+    ]),
+  ),
+});
 
 export const generateConversationId = () => {
   return uuid().replace(/-/g, '');
@@ -256,7 +278,13 @@ export function setChatVariableEnabledFieldValuePage() {
 
 const oldReg = /(#{2}[0-9\u0660-\u0669\u06F0-\u06F9]+\${2})/g;
 export const currentReg = citationMarkerReg;
-export { buildCitationDisplayMap, normalizeCitationDigits, parseCitationIndex };
+export {
+  buildCitationDisplayMap,
+  normalizeCitationDigits,
+  parseCitationIndex,
+  resolveCitationChunk,
+};
+export type { CitationKey } from './citation-utils';
 
 // To be compatible with the old index matching mode
 export const replaceTextByOldReg = (text: string) => {

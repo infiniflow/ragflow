@@ -96,7 +96,7 @@ export default {
       webCrawl: 'Rastreo web',
       chunkNumber: 'Número de fragmentos',
       uploadDate: 'Fecha de carga',
-      chunkMethod: 'Método de fragmentación',
+      parsingMode: 'Modo de análisis',
       enabled: 'Habilitar',
       disabled: 'Deshabilitar',
       action: 'Acción',
@@ -143,10 +143,6 @@ export default {
       layoutRecognize: 'Reconocimiento de disposición',
       layoutRecognizeTip:
         'Usa modelos visuales para el análisis de disposición y así identificar mejor la estructura del documento, encontrar dónde están los títulos, bloques de texto, imágenes y tablas. Sin esta función, solo se obtendrá el texto plano del PDF. Para más información, consulte https://ragflow.io/docs/dataset_configuration#document-parsing-configuration.',
-      taskPageSize: 'Tamaño de la tarea por página',
-      taskPageSizeMessage:
-        '¡Por favor ingresa el tamaño de la tarea por página',
-      taskPageSizeTip: `Si usas el reconocimiento de disposición, el archivo PDF se dividirá en grupos de páginas consecutivas. El análisis de disposición se realizará en paralelo entre los grupos para aumentar la velocidad de procesamiento. El 'Tamaño de tarea por página' determina el tamaño de los grupos. Cuanto mayor sea el tamaño de la página, menor será la posibilidad de dividir texto continuo entre páginas en diferentes fragmentos.`,
       addPage: 'Agregar página',
       greaterThan: 'El valor actual debe ser mayor que el valor final.',
       greaterThanPrevious: 'El valor actual debe ser mayor que el anterior.',
@@ -164,11 +160,10 @@ export default {
       topK: 'Top-K',
       topKTip: `Utilizado junto con el Rerank model, esta configuración define el número de fragmentos de texto que se enviarán al modelo reranking especificado.`,
       delimiter: `Delimitadores para segmentación de texto`,
-      html4excel: 'Excel a HTML',
-      html4excelTip: `Usar junto con el método de fragmentación General. Cuando está desactivado, los archivos de hoja de cálculo (XLSX, XLS (Excel 97-2003)) se analizan línea por línea como pares clave-valor. Cuando está activado, los archivos de hoja de cálculo se convierten en tablas HTML. Si la tabla original tiene más de 12 filas, el sistema la dividirá automáticamente en varias tablas HTML cada 12 filas. Para más información, consulte https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.`,
     },
 
     knowledgeConfiguration: {
+      parsingMode: 'Modo de análisis',
       builtInSuffix: ' (built in)',
       paddleocrOptions: 'Opciones de PaddleOCR',
       paddleocrApiUrl: 'URL de API de PaddleOCR',
@@ -176,9 +171,8 @@ export default {
         'La URL del endpoint de la API para el servicio PaddleOCR',
       paddleocrApiUrlPlaceholder: 'ej: https://servidor-paddleocr.com/api',
       paddleocrAccessToken: 'Token de acceso de AI Studio',
-      paddleocrAccessTokenTip:
-        'Token de acceso para la API de PaddleOCR (opcional)',
-      paddleocrAccessTokenPlaceholder: 'Su token de AI Studio (opcional)',
+      paddleocrAccessTokenTip: 'Token de acceso para la API de PaddleOCR',
+      paddleocrAccessTokenPlaceholder: 'Su token de AI Studio',
       paddleocrAlgorithm: 'Algoritmo de PaddleOCR',
       paddleocrAlgorithmTip:
         'Algoritmo a utilizar para el análisis de PaddleOCR',
@@ -391,7 +385,7 @@ export default {
         'El modelo LLM de chat predeterminado que todas las nuevas bases de conocimiento utilizarán.',
       embeddingModel: 'Modelo de embeddings',
       embeddingModelTip:
-        'El modelo de incrustación predeterminado para cada nueva base de conocimiento creada. Si no puedes encontrar un modelo de incrustación en el menú desplegable, verifica si estás utilizando la edición slim de RAGFlow (que no incluye modelos de incrustación) o consulta la página Proveedores de modelos para comprobar si tu proveedor de modelos admite este modelo.',
+        'El modelo de incrustación predeterminado para cada nueva base de conocimiento creada. Si no puedes encontrar un modelo de incrustación en el menú desplegable, consulta la página Proveedores de modelos para comprobar si tu proveedor de modelos admite este modelo.',
       img2txtModel: 'Modelo de img2txt',
       img2txtModelTip:
         'El modelo predeterminado img2txt para cada base de conocimiento recién creada. Describe una imagen o video. Si no puedes encontrar un modelo en el menú desplegable, consulta la página Proveedores de modelos para ver si tu proveedor de modelos admite este modelo.',
@@ -420,7 +414,7 @@ export default {
         apiUrlPlaceholder:
           'Por ejemplo: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Token de acceso de AI Studio',
-        accessTokenPlaceholder: 'Su token de AI Studio (opcional)',
+        accessTokenPlaceholder: 'Su token de AI Studio',
         algorithm: 'Algoritmo de PaddleOCR',
         selectAlgorithm: 'Seleccionar algoritmo',
         modelNamePlaceholder: 'Por ejemplo: paddleocr-from-env-1',
@@ -944,7 +938,7 @@ export default {
       invalidUrl:
         'Debe ser una URL válida o una URL con marcadores de posición de variables en el formato {nombre_variable} o {componente@variable}',
       tags: 'Etiquetas',
-      canvasCategory: 'Categoría de canvas',
+      agentCategory: 'Categoría de canvas',
       created: 'Creado',
       id: 'ID',
       logTitle: 'Título',

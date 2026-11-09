@@ -55,19 +55,19 @@ func (f *FishAudioModel) Name() string {
 }
 
 func (f *FishAudioModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", f.Name())
+	return nil, fmt.Errorf("%s: no such method: ChatWithMessages", f.Name())
 }
 
 func (f *FishAudioModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", f.Name())
+	return fmt.Errorf("%s: no such method: ChatStreamlyWithSender", f.Name())
 }
 
 func (f *FishAudioModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Embed", f.Name())
 }
 
 func (f *FishAudioModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Rerank", f.Name())
 }
 
 // TranscribeAudio transcribe audio
@@ -177,7 +177,7 @@ func (f *FishAudioModel) TranscribeAudio(ctx context.Context, modelName *string,
 }
 
 func (f *FishAudioModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", f.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", f.Name())
 }
 
 // AudioSpeech convert text to audio
@@ -296,9 +296,11 @@ func (f *FishAudioModel) AudioSpeechWithSender(ctx context.Context, modelName *s
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		buf := make([]byte, 1024)
-		n, _ := resp.Body.Read(buf)
-		return fmt.Errorf("FishAudio stream API error: %d - %s", resp.StatusCode, string(buf[:n]))
+		body, err := readStreamTTSErrorBody(resp.Body)
+		if err != nil {
+			return fmt.Errorf("FishAudio stream API error: %d - %s: %w", resp.StatusCode, string(body), err)
+		}
+		return fmt.Errorf("FishAudio stream API error: %d - %s", resp.StatusCode, string(body))
 	}
 
 	if _, err := ParseSSEStream[struct {
@@ -325,12 +327,12 @@ func (f *FishAudioModel) AudioSpeechWithSender(ctx context.Context, modelName *s
 
 // OCRFile OCR file
 func (f *FishAudioModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", f.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", f.Name())
 }
 
 // ParseFile parse file
 func (f *FishAudioModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", f.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", f.Name())
 }
 
 func (f *FishAudioModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
@@ -445,9 +447,13 @@ func (f *FishAudioModel) CheckConnection(ctx context.Context, apiConfig *APIConf
 }
 
 func (f *FishAudioModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", f.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", f.Name())
 }
 
 func (f *FishAudioModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", f.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", f.Name())
+}
+
+func (f *FishAudioModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", f.Name())
 }

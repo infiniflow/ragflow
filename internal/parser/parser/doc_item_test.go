@@ -34,17 +34,9 @@ func TestTextItem_ToMap(t *testing.T) {
 		mustMap(t, map[string]any{"text": "", DocTypeKey: DocTypeText},
 			TextItem{}.ToMap())
 	})
-	t.Run("with text and no ck_type", func(t *testing.T) {
+	t.Run("with text", func(t *testing.T) {
 		mustMap(t, map[string]any{"text": "body", DocTypeKey: DocTypeText},
 			TextItem{Text: "body"}.ToMap())
-	})
-	t.Run("ck_type emitted only when non-empty", func(t *testing.T) {
-		mustMap(t, map[string]any{"text": "h", DocTypeKey: DocTypeText, "ck_type": "heading"},
-			TextItem{Text: "h", CKType: "heading"}.ToMap())
-		// empty CKType must NOT appear as a key.
-		if _, ok := (TextItem{Text: "h"}).ToMap()["ck_type"]; ok {
-			t.Error("ck_type present despite empty CKType")
-		}
 	})
 	t.Run("extra passthrough", func(t *testing.T) {
 		mustMap(t, map[string]any{
@@ -62,19 +54,16 @@ func TestTextItem_ToMap(t *testing.T) {
 func TestTextItem_ExtraDoesNotClobberCanonical(t *testing.T) {
 	// An attacker/stray Extra key must never shadow the typed fields.
 	got := TextItem{
-		Text:   "real",
-		CKType: "heading",
+		Text: "real",
 		Extra: map[string]any{
 			"text":     "evil",
 			DocTypeKey: "evil",
-			"ck_type":  "evil",
 			"layout":   "kept", // not a canonical key -> passes through
 		},
 	}.ToMap()
 	mustMap(t, map[string]any{
 		"text":     "real",
 		DocTypeKey: DocTypeText,
-		"ck_type":  "heading",
 		"layout":   "kept",
 	}, got)
 }
@@ -84,27 +73,17 @@ func TestTableItem_ToMap(t *testing.T) {
 		mustMap(t, map[string]any{
 			"table":    (*entity.TableData)(nil),
 			DocTypeKey: DocTypeTable,
-			"ck_type":  DocTypeTable,
 		}, TableItem{}.ToMap())
 	})
-	t.Run("ck_type falls back to table when empty", func(t *testing.T) {
-		mustMap(t, map[string]any{
-			"table":    (*entity.TableData)(nil),
-			DocTypeKey: DocTypeTable,
-			"ck_type":  DocTypeTable,
-		}, TableItem{CKType: ""}.ToMap())
-	})
-	t.Run("ck_type explicit wins", func(t *testing.T) {
+	t.Run("sheet and positions", func(t *testing.T) {
 		mustMap(t, map[string]any{
 			"table":     (*entity.TableData)(nil),
 			DocTypeKey:  DocTypeTable,
-			"ck_type":   "table",
 			"sheet":     "Sheet1",
 			"positions": [][]float64{{0, 1, 1, 2, 2}},
 		}, TableItem{
-			CKType:    "table",
 			Sheet:     "Sheet1",
-			Positions: [][]float64{{0, 1, 1, 2, 2}},
+			Positions: SpreadsheetPositions([][]float64{{0, 1, 1, 2, 2}}),
 		}.ToMap())
 	})
 	t.Run("empty sheet/positions omitted", func(t *testing.T) {
@@ -119,32 +98,27 @@ func TestTableItem_ToMap(t *testing.T) {
 }
 
 func TestImageItem_ToMap(t *testing.T) {
-	t.Run("docx-like: no ck_type, empty image", func(t *testing.T) {
-		// docx image items historically set doc_type_kwd:"image" with no
-		// ck_type and an empty image when over budget.
+	t.Run("docx-like: empty image", func(t *testing.T) {
+		// docx image items historically set doc_type_kwd:"image" with an empty
+		// image when over budget.
 		mustMap(t, map[string]any{
 			"text":     "",
 			"image":    "",
 			DocTypeKey: DocTypeImage,
 		}, ImageItem{}.ToMap())
-		if _, ok := (ImageItem{}).ToMap()["ck_type"]; ok {
-			t.Error("ck_type present despite empty CKType")
-		}
 	})
-	t.Run("xlsx-like: ck_type image + sheet + positions", func(t *testing.T) {
+	t.Run("xlsx-like: sheet + positions", func(t *testing.T) {
 		mustMap(t, map[string]any{
 			"text":      "alt",
 			"image":     "data:image/png;base64,xxx",
 			DocTypeKey:  DocTypeImage,
-			"ck_type":   "image",
 			"sheet":     "Sheet2",
 			"positions": [][]float64{{1, 0, 0, 3, 4}},
 		}, ImageItem{
 			Text:      "alt",
 			Image:     "data:image/png;base64,xxx",
-			CKType:    "image",
 			Sheet:     "Sheet2",
-			Positions: [][]float64{{1, 0, 0, 3, 4}},
+			Positions: SpreadsheetPositions([][]float64{{1, 0, 0, 3, 4}}),
 		}.ToMap())
 	})
 	t.Run("extra passthrough (media_order/parent_table_id)", func(t *testing.T) {
@@ -166,18 +140,12 @@ func TestRawItem_Passthrough(t *testing.T) {
 		in := map[string]any{
 			"text":      "hello",
 			DocTypeKey:  DocTypeText,
-			"ck_type":   "heading",
 			"layout":    "title",
 			"arbitrary": []int{1, 2, 3},
 			"nested":    map[string]any{"k": "v"},
 		}
 		got := RawItem{M: in}.ToMap()
 		mustMap(t, in, got)
-	})
-	t.Run("DocType is empty (lives in map)", func(t *testing.T) {
-		if (RawItem{M: map[string]any{DocTypeKey: DocTypeText}}).DocType() != "" {
-			t.Error("RawItem.DocType should be empty; discriminator is in the map")
-		}
 	})
 	t.Run("nil map does not panic", func(t *testing.T) {
 		var ri RawItem
@@ -222,13 +190,14 @@ func TestConstructorWireShapeRegression(t *testing.T) {
 	})
 	t.Run("NewTableDataJSONItem", func(t *testing.T) {
 		td := &entity.TableData{}
+		// Spreadsheet positions render as [][]float64 on the wire (the historical
+		// shape the ingestion indexer consumes); only PDF positions stay [][]any.
 		mustMap(t, map[string]any{
 			"table":     td,
 			DocTypeKey:  DocTypeTable,
-			"ck_type":   DocTypeTable,
 			"sheet":     "S",
 			"positions": [][]float64{{0, 0, 0, 1, 1}},
-		}, NewTableDataJSONItem(td, "S", [][]float64{{0, 0, 0, 1, 1}}).ToMap())
+		}, NewTableDataJSONItem(td, "S", SpreadsheetPositions([][]float64{{0, 0, 0, 1, 1}})).ToMap())
 	})
 }
 
@@ -256,7 +225,6 @@ func TestDocItemFromMap_WireShapePreserved(t *testing.T) {
 	textMap := map[string]any{
 		"text":        "hello",
 		DocTypeKey:    DocTypeText,
-		"ck_type":     "heading",
 		"layout":      "1",
 		"page_number": 3,
 	}
@@ -264,37 +232,44 @@ func TestDocItemFromMap_WireShapePreserved(t *testing.T) {
 		"text":        "alt",
 		"image":       "data:image/png;base64,xxx",
 		DocTypeKey:    DocTypeImage,
-		"ck_type":     "image",
 		"page_number": 2,
 	}
 	tableMap := map[string]any{
 		"table":       &entity.TableData{},
 		DocTypeKey:    DocTypeTable,
-		"ck_type":     DocTypeTable,
 		"sheet":       "s",
 		"positions":   [][]float64{{1, 2}},
 		"sheet_index": 0,
 	}
 	opaqueMap := map[string]any{"foo": "bar", "nested": map[string]any{"a": 1}}
 
-	// PDF crop positions arrive as [][]any (normalizePDFPositions), not
+	// PDF crop positions arrive as [][]any (normalizeDeepDocPositions), not
 	// [][]float64; the typed conversion must preserve them verbatim. Regression
 	// guard for the positions-dropping bug caught during review.
 	imageMapAny := map[string]any{
 		"text":      "alt",
 		"image":     "data:image/png;base64,xxx",
 		DocTypeKey:  DocTypeImage,
-		"ck_type":   "image",
 		"positions": [][]any{{1, 2, 3, 4}},
 	}
 	tableMapAny := map[string]any{
 		"table":     &entity.TableData{},
 		DocTypeKey:  DocTypeTable,
-		"ck_type":   DocTypeTable,
 		"positions": [][]any{{1, 2, 3, 4}},
 	}
+	// A table whose "table" value is a JSON-decoded map[string]any (not a typed
+	// *entity.TableData — the shape a component-boundary JSON payload produces)
+	// must NOT be silently coerced into a TableItem with a nil table, which would
+	// emit "table": null and drop the data. The failed type assertion must fall
+	// back to RawItem, preserving the map verbatim — the same round-trip guard
+	// the text/image branches uphold. Regression guard for the silent
+	// table-dropping path.
+	tableMapJSONDecoded := map[string]any{
+		"table":    map[string]any{"grid": []any{}, "header_rows": float64(1)},
+		DocTypeKey: DocTypeTable,
+	}
 
-	for _, m := range []map[string]any{textMap, imageMap, tableMap, opaqueMap, imageMapAny, tableMapAny} {
+	for _, m := range []map[string]any{textMap, imageMap, tableMap, opaqueMap, imageMapAny, tableMapAny, tableMapJSONDecoded} {
 		got := DocItemFromMap(m).ToMap()
 		if !reflect.DeepEqual(got, m) {
 			t.Fatalf("DocItemFromMap round-trip mismatch for %q\n got=%#v\nwant=%#v", m[DocTypeKey], got, m)
@@ -318,12 +293,12 @@ func TestDocItemFromMap_WireShapePreserved(t *testing.T) {
 
 // DocItemsFromMaps maps a []map[string]any to typed DocItems the same way
 // DocItemFromMap does, preserving order and skipping nothing.
-func TestDocItemsFromMaps_OrderAndType(t *testing.T) {
+func TestMapsToItems_OrderAndType(t *testing.T) {
 	maps := []map[string]any{
-		{"text": "a", DocTypeKey: DocTypeText, "ck_type": "text"},
+		{"text": "a", DocTypeKey: DocTypeText},
 		{"foo": "bar"},
 	}
-	items := DocItemsFromMaps(maps)
+	items := MapsToItems(maps)
 	if len(items) != 2 {
 		t.Fatalf("expected 2 items, got %d", len(items))
 	}

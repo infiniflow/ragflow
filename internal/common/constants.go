@@ -39,6 +39,37 @@ const (
 	STOPPING  = "STOPPING"
 )
 
+// UNSTART is the ingestion_status reported for a document that has no active
+// ingestion task (empty task status or no task row). It is a derived display
+// value, not a persisted task status.
+const UNSTART = "UNSTART"
+
+// ValidRunStatuses is the closed set of ingestion_status values accepted by
+// document list/stop filters. It covers every value produced by
+// buildDocumentListIngestionStatusExpression (dao/document.go) plus the raw
+// task statuses, so legitimate data states are never rejected.
+var ValidRunStatuses = map[string]struct{}{
+	UNSTART:   {},
+	CREATED:   {},
+	SCHEDULED: {},
+	RUNNING:   {},
+	STOPPING:  {},
+	COMPLETED: {},
+	STOPPED:   {},
+	FAILED:    {},
+}
+
+// IsValidRunStatus reports whether s is an accepted ingestion_status filter value.
+func IsValidRunStatus(s string) bool {
+	_, ok := ValidRunStatuses[s]
+	return ok
+}
+
+// DefaultCancelRunStatuses is the default scope for a one-click "cancel all in
+// queue" request: only the statuses that have an in-flight task which can be
+// stopped. UNSTART is excluded because it has no task to cancel.
+var DefaultCancelRunStatuses = []string{SCHEDULED, RUNNING}
+
 // ActiveTaskStatuses contains all in-flight, non-terminal task statuses.
 var ActiveTaskStatuses = []string{CREATED, SCHEDULED, RUNNING, STOPPING}
 

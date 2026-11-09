@@ -23,6 +23,8 @@ import (
 	"strconv"
 	"strings"
 
+	"ragflow/internal/agent/runtime"
+
 	einotool "github.com/cloudwego/eino/components/tool"
 )
 
@@ -42,7 +44,7 @@ var registry = map[string]Factory{
 	"vector_search":              noConfig("vector_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolVectorSearch) }),
 	"bm25_search":                noConfig("bm25_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolBM25Search) }),
 	"wiki_query":                 noConfig("wiki_query", func() einotool.BaseTool { return NewWikiQueryTool() }),
-	"deepl":                      noConfig("deepl", func() einotool.BaseTool { return NewDeepLTool() }),
+	"deepl":                      buildDeepLTool,
 	"duckduckgo":                 buildDuckDuckGoTool,
 	"email":                      buildEmailTool,
 	"execute_sql":                buildExeSQLTool,
@@ -54,7 +56,7 @@ var registry = map[string]Factory{
 	"jin10":                      noConfig("jin10", func() einotool.BaseTool { return NewJin10Tool() }),
 	"keenable":                   buildKeenableTool,
 	"pubmed":                     buildPubMedTool,
-	"qweather":                   noConfig("qweather", func() einotool.BaseTool { return NewQWeatherTool() }),
+	"qweather":                   buildQWeatherTool,
 	"querit":                     buildQueritTool,
 	"querit_contents":            buildQueritContentsTool,
 	"querit_search":              buildQueritTool,
@@ -67,12 +69,13 @@ var registry = map[string]Factory{
 	"sofya":                      buildSofyaTool,
 	"tavily":                     buildTavilyTool,
 	"tavily_extract":             buildTavilyExtractTool,
-	"tushare":                    noConfig("tushare", func() einotool.BaseTool { return NewTushareTool() }),
+	"tushare":                    buildTushareTool,
 	"wencai":                     buildWencaiTool,
 	"web_crawler":                noConfig("web_crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
 	"wikipedia":                  buildWikipediaTool,
 	"wikipedia_search":           buildWikipediaTool,
 	"yahoo_finance":              buildYahooFinanceTool,
+	"youcom":                     buildYouComTool,
 }
 
 // canvasToolNames maps lower-cased Canvas component names to the canonical
@@ -91,6 +94,7 @@ var canvasToolNames = map[string]string{
 	"tavilyextract":    "tavily_extract",
 	"tavilysearch":     "tavily",
 	"yahoofinance":     "yahoo_finance",
+	"youcomsearch":     "youcom",
 }
 
 func noConfig(name string, fn func() einotool.BaseTool) Factory {
@@ -102,6 +106,15 @@ func noConfig(name string, fn func() einotool.BaseTool) Factory {
 	}
 }
 
+// retrievalRegistryKeys lists every registry key whose factory is
+// buildRetrievalTool, so DSL metadata handling does not depend on which
+// alias the canvas used.
+var retrievalRegistryKeys = map[string]struct{}{
+	"retrieval":         {},
+	"search_my_dataset": {},
+	"search_my_dateset": {},
+}
+
 // BuildByName resolves a tool name into an Eino BaseTool.
 func BuildByName(name string, params map[string]any) (einotool.BaseTool, error) {
 	key := normalizeToolName(name)
@@ -109,13 +122,67 @@ func BuildByName(name string, params map[string]any) (einotool.BaseTool, error) 
 		return nil, fmt.Errorf("agent tool: empty tool name")
 	}
 	factory, ok := registry[key]
+
+	var componentKey string
+	if params != nil {
+		if componentName, _ := params["component_name"].(string); componentName != "" {
+			componentKey = normalizeToolName(componentName)
+		}
+	}
+
 	if !ok {
-		return nil, fmt.Errorf("agent tool: unsupported tool %q", name)
+		// Canvas DSLs often give each retrieval instance a unique
+		// function_name while keeping the component_name as "Retrieval".
+		// Fall back to the component_name when the agent-visible name is
+		// not itself a registered tool.
+		if componentKey != "" {
+			factory, ok = registry[componentKey]
+			key = componentKey
+		}
+		if !ok {
+			return nil, fmt.Errorf("agent tool: unsupported tool %q", name)
+		}
+	} else if componentKey != "" && componentKey != key {
+		// The agent-visible name matches a registered tool, but the DSL
+		// says this node is a different component (e.g., a Retrieval
+		// instance whose function_name collides with "wikipedia"). Trust
+		// the component_name so we build the intended tool, not the
+		// registered one the function_name happens to match.
+		if altFactory, altOk := registry[componentKey]; altOk {
+			factory = altFactory
+			key = componentKey
+		}
 	}
 	if factory == nil {
 		return nil, fmt.Errorf("agent tool: nil factory for %q", name)
 	}
-	return factory(params)
+	if err := ValidateSearchFilters(params, false); err != nil {
+		return nil, runtime.NewUserFacingError(fmt.Sprintf("agent tool %s: %s", name, err))
+	}
+	// component_name, function_name and description are DSL metadata, not
+	// constructor arguments for most tools. Strip them before handing the
+	// params to the factory; keep function_name/description only for
+	// retrieval so each instance can advertise its DSL-defined name. All
+	// registered retrieval aliases count — a DSL using function_name
+	// "search_my_dataset" resolves to that registry key, not "retrieval".
+	cleanParams := params
+	if cleanParams != nil {
+		cleanParams = cloneToolParams(cleanParams)
+		delete(cleanParams, "component_name")
+		if _, isRetrieval := retrievalRegistryKeys[key]; !isRetrieval {
+			delete(cleanParams, "function_name")
+			delete(cleanParams, "description")
+		}
+	}
+	return factory(cleanParams)
+}
+
+func cloneToolParams(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 // BuildAll resolves a list of tool names into Eino BaseTool instances.
@@ -404,12 +471,19 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 		switch key {
 		case "dataset_ids", "kb_ids", "top_n", "rerank_candidates_count", "top_k", "similarity_threshold",
 			"keywords_similarity_weight", "use_kg", "rerank_id", "empty_response",
-			"toc_enhance", "meta_data_filter", "retrieval_from", "memory_ids",
+			"meta_data_filter", "retrieval_from", "memory_ids",
 			"kb_vars", "cross_languages", "function_name", "description", "meta",
 			"inputs", "outputs", "user_id":
 		default:
 			return nil, fmt.Errorf("agent tool: retrieval tool does not accept node-level param %s", key)
 		}
+	}
+
+	if v, ok := stringParam(params, "function_name"); ok {
+		defaults.FunctionName = v
+	}
+	if v, ok := stringParam(params, "description"); ok {
+		defaults.Description = v
 	}
 
 	if ids, ok, err := stringSliceParam(params, "dataset_ids"); err != nil {
@@ -452,9 +526,6 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 	}
 	if v, ok := boolParam(params, "use_kg"); ok {
 		defaults.UseKG = v
-	}
-	if v, ok := boolParam(params, "toc_enhance"); ok {
-		defaults.TOCEnhance = v
 	}
 	if v, ok := floatParam(params, "similarity_threshold"); ok {
 		defaults.SimilarityThreshold = &v
@@ -598,6 +669,27 @@ func buildTavilyTool(params map[string]any) (einotool.BaseTool, error) {
 		}
 		defaults.Days = days
 	}
+	if value, ok := params["topic"]; ok {
+		topic, valid := value.(string)
+		if !valid || (topic != "general" && topic != "news") {
+			return nil, fmt.Errorf("agent tool: tool %q has unsupported topic %v", "tavily", value)
+		}
+		defaults.Topic = topic
+	}
+	for _, key := range []string{"include_domains", "exclude_domains"} {
+		domains, present, err := stringSliceParam(params, key)
+		if err != nil {
+			return nil, fmt.Errorf("agent tool: tool %q requires string-list node-level param %s: %w", "tavily", key, err)
+		}
+		if !present {
+			continue
+		}
+		if key == "include_domains" {
+			defaults.IncludeDomains = domains
+		} else {
+			defaults.ExcludeDomains = domains
+		}
+	}
 	for _, key := range []string{"include_answer", "include_raw_content", "include_images", "include_image_descriptions"} {
 		value, ok := params[key]
 		if !ok {
@@ -676,6 +768,7 @@ func buildQueritTool(params map[string]any) (einotool.BaseTool, error) {
 	return newQueritTool(nil, nil, defaults, nil), nil
 }
 
+// buildQueritContentsTool constructs the Querit Contents tool from canvas params.
 func buildQueritContentsTool(params map[string]any) (einotool.BaseTool, error) {
 	defaults := queritContentsParams{}
 	if value, exists := params["api_key"]; exists {
@@ -696,11 +789,15 @@ func buildQueritContentsTool(params map[string]any) (einotool.BaseTool, error) {
 		defaults.Format = format
 	}
 	if value, exists := params["crawl_timeout"]; exists {
-		crawlTimeout, valid := strictInt(value)
-		if !valid || crawlTimeout < 1 || crawlTimeout > 60 {
-			return nil, fmt.Errorf("agent tool: tool %q requires integer node-level param crawl_timeout within [1, 60]", queritContentsToolName)
+		// A cleared numeric form field may be stored as an empty string. Treat it
+		// as omitted so the tool constructor applies the documented default.
+		if empty, ok := value.(string); !ok || strings.TrimSpace(empty) != "" {
+			crawlTimeout, valid := strictInt(value)
+			if !valid || crawlTimeout < 1 || crawlTimeout > 60 {
+				return nil, fmt.Errorf("agent tool: tool %q requires integer node-level param crawl_timeout within [1, 60]", queritContentsToolName)
+			}
+			defaults.CrawlTimeout = crawlTimeout
 		}
-		defaults.CrawlTimeout = crawlTimeout
 	}
 	if value, exists := params["extras_meta"]; exists {
 		extrasMeta, valid := value.(bool)
@@ -747,6 +844,37 @@ func buildKeenableTool(params map[string]any) (einotool.BaseTool, error) {
 		return nil, fmt.Errorf("agent tool: tool %q requires api_key for realtime mode", "keenable")
 	}
 	return newKeenableTool(nil, nil, apiKey, defaults), nil
+}
+
+func buildYouComTool(params map[string]any) (einotool.BaseTool, error) {
+	defaults := youComDefaults{}
+	apiKey := ""
+	if value, ok := params["api_key"]; ok {
+		var valid bool
+		apiKey, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param api_key", "youcom")
+		}
+	}
+	if value, ok := params["freshness"]; ok {
+		freshness, valid := value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param freshness", "youcom")
+		}
+		normalized := strings.ToLower(strings.TrimSpace(freshness))
+		if !slices.Contains(youComFreshnessValues, normalized) {
+			return nil, fmt.Errorf("agent tool: tool %q has unsupported freshness %v", "youcom", value)
+		}
+		defaults.Freshness = normalized
+	}
+	if value, ok := params["top_n"]; ok {
+		topN, valid := strictInt(value)
+		if !valid || topN <= 0 {
+			return nil, fmt.Errorf("agent tool: tool %q requires positive integer node-level param top_n", "youcom")
+		}
+		defaults.TopN = min(topN, youComMaxResults)
+	}
+	return newYouComTool(nil, apiKey, defaults), nil
 }
 
 func buildSofyaTool(params map[string]any) (einotool.BaseTool, error) {
@@ -832,6 +960,33 @@ func buildSearch1APICrawlTool(params map[string]any) (einotool.BaseTool, error) 
 		}
 	}
 	return newSearch1APICrawlTool(nil, apiKey, defaultURL), nil
+}
+
+// buildDeepLTool and buildQWeatherTool take the node-level api_key without
+// type enforcement: an unusable value is left out, so the tool falls back to
+// DEEPL_API_KEY / QWEATHER_API_KEY and reports the missing credential itself.
+func buildDeepLTool(params map[string]any) (einotool.BaseTool, error) {
+	apiKey, _ := stringParam(params, "api_key")
+	return NewDeepLToolWith(nil, apiKey), nil
+}
+
+func buildQWeatherTool(params map[string]any) (einotool.BaseTool, error) {
+	apiKey, _ := stringParam(params, "api_key")
+	return NewQWeatherToolWith(nil, apiKey), nil
+}
+
+func buildTushareTool(params map[string]any) (einotool.BaseTool, error) {
+	var token string
+	if value, exists := params["token"]; exists {
+		var valid bool
+		token, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param token", tushareToolName)
+		}
+	}
+	// An empty token builds fine; InvokableRun reports it as a node
+	// configuration error, so the registry can still construct every tool.
+	return newTushareTool(nil, tushareParams{Token: strings.TrimSpace(token)}), nil
 }
 
 func buildWikipediaTool(params map[string]any) (einotool.BaseTool, error) {

@@ -28,30 +28,38 @@ import (
 var docExtract = deepdocoffice.OpenAndExtract
 
 type DOCParser struct {
-	OutputFormat string
+	textOnly           bool
+	RemoveTOC          bool
+	RemoveHeaderFooter bool
 }
 
 func NewDOCParser() *DOCParser {
-	return &DOCParser{
-		OutputFormat: "json",
-	}
+	return &DOCParser{}
+}
+
+func NewDOCTextParser() *DOCParser {
+	return &DOCParser{textOnly: true}
 }
 
 func (p *DOCParser) String() string {
 	return "DOCParser"
 }
 
+// ConfigureFromSetup implements parserSetupConfigurer, receiving the
+// DSL "doc" family setup map.
 func (p *DOCParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
 	}
-	if v, ok := setup["output_format"].(string); ok && v != "" {
-		p.OutputFormat = v
+	if v, ok := setup["remove_toc"].(bool); ok {
+		p.RemoveTOC = v
+	}
+	if v, ok := setup["remove_header_footer"].(bool); ok {
+		p.RemoveHeaderFooter = v
 	}
 }
 
-// ParseWithResult extracts text for the DOC family and converts it to the
-// requested output format (defaulting to "json" to match Python's default).
+// ParseWithResult extracts text for the DOC family as structured JSON items.
 func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	irJSON, mdText, plainText, _, err := docExtract(data, "doc")
 	if err != nil {
@@ -61,38 +69,83 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 		return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
 	}
 
-	text, mdPayload, err := extractDocText(irJSON, mdText, plainText)
+	text, _, err := extractDocText(irJSON, mdText, plainText)
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("doc extract: %w", err)}
 	}
 
-	outFmt := p.OutputFormat
-	if outFmt == "" {
-		outFmt = "json"
+	// Prefer the structured IR, which office_oxide recovers table
+	// (and list) structure for. Emitting structured sections lets the chunker
+	// render tables as HTML (#20918) instead of losing them to plain text — the
+	// legacy path flattened the whole document (tables included) into a single
+	// text item. Fall back to the flattened text only when the IR yields no
+	// usable sections, so a document whose IR is empty/unusable still keeps its
+	// content (PlainText / ToMarkdown) rather than silently producing 0 chunks.
+	if strings.TrimSpace(irJSON) != "" {
+		var sink *officeMediaSink
+		if !p.textOnly {
+			sink = newOfficeMediaSink(ctx, officeMediaFormatDOCX)
+		}
+		if sections := buildDOCXJSONSections(irJSON, sink); len(sections) > 0 {
+			if sink != nil && sink.err != nil {
+				return ParseResult{Err: sink.err}
+			}
+			if p.RemoveHeaderFooter {
+				// extractDOCXHeaderFooterTexts operates best-effort: for DOCX files
+				// misnamed with a .doc extension it extracts header/footer XML parts.
+				// For native OLE2 .doc binaries without a ZIP structure, it returns
+				// an empty map and preserves sections safely.
+				hfTexts := extractDOCXHeaderFooterTexts(data)
+				sections = removeDOCXHeaderFooterSections(sections, hfTexts)
+			}
+			if p.RemoveTOC {
+				outlines := extractDOCXOutlines(irJSON)
+				sections = removeTOCWord(sections, outlines, isEnglishItems(sections))
+			}
+			if len(sections) == 0 {
+				sections = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
+			}
+			return ParseResult{
+				File:     map[string]any{"name": filename, "format": "doc"},
+				JSON:     MapsToItems(sections),
+				Warnings: sink.warnings(),
+			}
+		}
+		if sink != nil && sink.err != nil {
+			return ParseResult{Err: sink.err}
+		}
 	}
-
-	markdownPayload := text
-	if strings.TrimSpace(mdPayload) != "" {
-		markdownPayload = mdPayload
+	if strings.TrimSpace(text) == "" {
+		return ParseResult{Err: fmt.Errorf("doc extract: no text content")}
 	}
-
-	res := ParseResult{
-		OutputFormat: outFmt,
-		File:         map[string]any{"name": filename, "format": "doc"},
-		Text:         text,
-		Markdown:     markdownPayload,
+	if p.RemoveTOC {
+		lines := strings.Split(text, "\n")
+		items := make([]map[string]any, 0, len(lines))
+		for _, line := range lines {
+			items = append(items, map[string]any{"text": line, "doc_type_kwd": "text"})
+		}
+		items = removeContentsTable(items, isEnglishItems(items))
+		if len(items) == 0 {
+			return ParseResult{
+				File: map[string]any{"name": filename, "format": "doc"},
+				JSON: []DocItem{NewTextJSONItem("")},
+			}
+		}
+		var sb strings.Builder
+		for i, it := range items {
+			if i > 0 {
+				sb.WriteString("\n")
+			}
+			if s, ok := it["text"].(string); ok {
+				sb.WriteString(s)
+			}
+		}
+		text = sb.String()
 	}
-
-	if strings.EqualFold(outFmt, "markdown") {
-		return res
+	return ParseResult{
+		File: map[string]any{"name": filename, "format": "doc"},
+		JSON: []DocItem{NewTextJSONItem(text)},
 	}
-	if strings.EqualFold(outFmt, "text") {
-		return res
-	}
-
-	res.OutputFormat = "json"
-	res.JSON = []DocItem{NewTextJSONItem(text)}
-	return res
 }
 
 // extractDocText returns the best-effort plain text for a legacy .doc

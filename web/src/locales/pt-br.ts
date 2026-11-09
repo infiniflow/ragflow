@@ -104,7 +104,7 @@ export default {
       webCrawl: 'Rastreamento na web',
       chunkNumber: 'Número de fragmentos',
       uploadDate: 'Data de upload',
-      chunkMethod: 'Método de fragmentação',
+      parsingMode: 'Modo de análise',
       enabled: 'Habilitar',
       disabled: 'Desabilitar',
       action: 'Ação',
@@ -151,10 +151,6 @@ export default {
       layoutRecognize: 'Reconhecimento de layout',
       layoutRecognizeTip:
         'Use modelos visuais para análise de layout para entender melhor a estrutura do documento e localizar efetivamente títulos, blocos de texto, imagens e tabelas. Se desativado, apenas o texto simples no PDF será recuperado. Para mais informações, acesse https://ragflow.io/docs/dataset_configuration#document-parsing-configuration.',
-      taskPageSize: 'Tamanho da página da tarefa',
-      taskPageSizeMessage: 'Por favor, insira o tamanho da página da tarefa!',
-      taskPageSizeTip:
-        'Durante o reconhecimento de layout, um arquivo PDF é dividido em fragmentos e processado em paralelo para aumentar a velocidade de processamento. Este parâmetro define o tamanho de cada fragmento. Um tamanho de fragmento maior reduz a probabilidade de dividir texto contínuo entre páginas.',
       addPage: 'Adicionar página',
       greaterThan: 'O valor atual deve ser maior que!',
       greaterThanPrevious: 'O valor atual deve ser maior que o anterior!',
@@ -177,9 +173,6 @@ export default {
       delimiter: 'Delimitadores para segmentação de texto',
       delimiterTip:
         'Um delimitador ou separador pode consistir em um ou vários caracteres especiais. Se for múltiplos caracteres, certifique-se de que estejam entre crases (``). Por exemplo, se você configurar seus delimitadores assim: \\n`##`;, seus textos serão separados em quebras de linha, símbolos de hash duplo (##) ou ponto e vírgula. Defina os delimitadores apenas após entender o mecanismo de segmentação e particionamento de texto.',
-      html4excel: 'Excel para HTML',
-      html4excelTip:
-        'Use em conjunto com o método de fragmentação General. Quando desativado, arquivos de planilhas (XLSX, XLS (Excel 97-2003)) serão analisados linha por linha como pares chave-valor. Quando ativado, os arquivos de planilhas serão convertidos em tabelas HTML. Se a tabela original tiver mais de 12 linhas, o sistema dividirá automaticamente em várias tabelas HTML a cada 12 linhas. Para mais informações, consulte https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.',
       autoKeywords: 'Palavras-chave automáticas',
       autoKeywordsTip:
         'Extraia automaticamente N palavras-chave de cada bloco para aumentar sua classificação em consultas que contenham essas palavras-chave. Esteja ciente de que o modelo de chat especificado nas "Configurações do modelo do sistema" consumirá tokens adicionais. Você pode verificar ou atualizar as palavras-chave adicionadas a um bloco na lista de blocos. Para mais detalhes, consulte https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',
@@ -210,6 +203,7 @@ export default {
       metaData: 'Metadados',
     },
     knowledgeConfiguration: {
+      parsingMode: 'Modo de análise',
       builtInSuffix: ' (built in)',
       imageTableContextWindow: 'Janela de contexto de imagem e tabela',
       imageTableContextWindowTip:
@@ -232,8 +226,6 @@ export default {
         "Se definido como 'Equipe', todos os membros da equipe poderão gerenciar a base de conhecimento.",
       chunkTokenNumberTip:
         'Define o limite de tokens para um fragmento. Um parágrafo com menos tokens que esse limite será combinado com o próximo parágrafo até que a contagem de tokens ultrapasse o limite, momento em que um fragmento será criado. Nenhum novo bloco será criado a menos que um delimitador seja encontrado, mesmo que esse limite seja excedido.',
-      chunkMethod: 'Método de fragmentação',
-      chunkMethodTip: 'Veja as dicas à direita.',
       upload: 'Enviar',
       english: 'Inglês',
       chinese: 'Chinês',
@@ -325,9 +317,8 @@ export default {
       paddleocrApiUrlTip: 'A URL do endpoint da API para o serviço PaddleOCR',
       paddleocrApiUrlPlaceholder: 'ex: https://servidor-paddleocr.com/api',
       paddleocrAccessToken: 'Token de Acesso do AI Studio',
-      paddleocrAccessTokenTip:
-        'Token de acesso para a API do PaddleOCR (opcional)',
-      paddleocrAccessTokenPlaceholder: 'Seu token do AI Studio (opcional)',
+      paddleocrAccessTokenTip: 'Token de acesso para a API do PaddleOCR',
+      paddleocrAccessTokenPlaceholder: 'Seu token do AI Studio',
       paddleocrAlgorithm: 'Algoritmo do PaddleOCR',
       paddleocrAlgorithmTip:
         'Algoritmo a ser usado para a análise do PaddleOCR',
@@ -558,7 +549,7 @@ export default {
         'O modelo LLM padrão que todos os novos bancos de conhecimento usarão.',
       embeddingModel: 'Modelo de incorporação',
       embeddingModelTip:
-        'O modelo de incorporação padrão para cada nova base de conhecimento criada. Se você não encontrar um modelo de incorporação na lista suspensa, verifique se está usando a edição slim do RAGFlow (que não inclui modelos de incorporação) ou consulte a página Provedores de modelos para verificar se o provedor do modelo suporta este modelo.',
+        'O modelo de incorporação padrão para cada nova base de conhecimento criada. Se você não encontrar um modelo de incorporação na lista suspensa, consulte a página Provedores de modelos para verificar se o provedor do modelo suporta este modelo.',
       img2txtModel: 'Modelo Img2Txt',
       img2txtModelTip:
         'O modelo padrão img2txt para cada base de conhecimento recém-criada. Ele descreve uma imagem ou vídeo. Se você não conseguir encontrar um modelo no menu suspenso, verifique a página Provedores de modelos para ver se seu provedor de modelo suporta este modelo.',
@@ -587,7 +578,7 @@ export default {
         apiUrlPlaceholder:
           'Por exemplo: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Token de acesso do AI Studio',
-        accessTokenPlaceholder: 'Seu token do AI Studio (opcional)',
+        accessTokenPlaceholder: 'Seu token do AI Studio',
         algorithm: 'Algoritmo do PaddleOCR',
         selectAlgorithm: 'Selecionar algoritmo',
         modelNamePlaceholder: 'Por exemplo: paddleocr-from-env-1',
@@ -1175,9 +1166,9 @@ export default {
       jsonFormatTip:
         'O componente anterior deve fornecer a string JSON no seguinte formato:',
       toEmailTip: 'to_email: Email do destinatário (Obrigatório)',
-      ccEmailTip: 'cc_email: Email CC (Opcional)',
-      subjectTip: 'subject: Assunto do email (Opcional)',
-      contentTip: 'content: Conteúdo do email (Opcional)',
+      ccEmailTip: 'cc_email: Email CC',
+      subjectTip: 'subject: Assunto do email',
+      contentTip: 'content: Conteúdo do email',
       jsonUploadTypeErrorMessage: 'Por favor, carregue um arquivo json',
       jsonUploadContentErrorMessage: 'Erro no arquivo json',
 
@@ -1208,7 +1199,7 @@ export default {
         'Use o prompt do sistema para descrever a tarefa para o LLM, especificar como ele deve responder e esboçar outros requisitos diversos. O prompt do sistema é frequentemente usado em conjunto com chaves (variáveis), que servem como várias entradas de dados para o LLM. Use uma barra `/` ou o botão (x) para mostrar as chaves a serem usadas.',
       promptMessage: 'O prompt é obrigatório',
       runningHintText: 'está rodando...🕞',
-      canvasCategory: 'Categoria de canvas',
+      agentCategory: 'Categoria de canvas',
       tags: 'Tags',
       created: 'Criado',
       id: 'ID',

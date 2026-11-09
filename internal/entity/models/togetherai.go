@@ -319,7 +319,7 @@ func (t *TogetherAIModel) Rerank(ctx context.Context, modelName *string, request
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -366,7 +366,7 @@ func (t *TogetherAIModel) Rerank(ctx context.Context, modelName *string, request
 }
 
 func (t *TogetherAIModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", t.Name())
 }
 
 func (t *TogetherAIModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
@@ -434,7 +434,7 @@ func (t *TogetherAIModel) TranscribeAudio(ctx context.Context, modelName *string
 	}
 
 	// request
-	req, err := http.NewRequest("POST", url, &body)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, &body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -472,7 +472,7 @@ func (t *TogetherAIModel) TranscribeAudio(ctx context.Context, modelName *string
 }
 
 func (t *TogetherAIModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", t.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", t.Name())
 }
 
 func (t *TogetherAIModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
@@ -508,7 +508,7 @@ func (t *TogetherAIModel) AudioSpeech(ctx context.Context, modelName *string, au
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -571,8 +571,17 @@ func (t *TogetherAIModel) AudioSpeechWithSender(ctx context.Context, modelName *
 		return fmt.Errorf("failed to marshal request: %w", err)
 	}
 
+	// The shared client sets no overall Timeout and the transport only
+	// interrupts a response-body read when the request ends, so a body that
+	// stalls mid-read would otherwise pin this call until the caller cancels.
+	// streamCallTimeout is the streaming ceiling, not a tight error-page bound:
+	// it ends the unbounded case, and the caller's context still ends it
+	// earlier. FishAudio's streaming TTS carries the same deadline.
+	ctx, cancel := context.WithTimeout(ctx, streamCallTimeout)
+	defer cancel()
+
 	// Build Request
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return fmt.Errorf("failed to create request: %w", err)
 	}
@@ -587,9 +596,11 @@ func (t *TogetherAIModel) AudioSpeechWithSender(ctx context.Context, modelName *
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		buf := make([]byte, 1024)
-		n, _ := resp.Body.Read(buf)
-		return fmt.Errorf("TogetherAI stream API error: %d - %s", resp.StatusCode, string(buf[:n]))
+		body, err := readStreamTTSErrorBody(resp.Body)
+		if err != nil {
+			return fmt.Errorf("TogetherAI stream API error: %d - %s: %w", resp.StatusCode, string(body), err)
+		}
+		return fmt.Errorf("TogetherAI stream API error: %d - %s", resp.StatusCode, string(body))
 	}
 
 	if _, err := ParseSSEStream[struct {
@@ -618,17 +629,21 @@ func (t *TogetherAIModel) AudioSpeechWithSender(ctx context.Context, modelName *
 }
 
 func (t *TogetherAIModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", t.Name())
 }
 
 func (t *TogetherAIModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", t.Name())
 }
 
 func (t *TogetherAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", t.Name())
 }
 
 func (t *TogetherAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", t.Name())
+}
+
+func (t *TogetherAIModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", t.Name())
 }

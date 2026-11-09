@@ -19,6 +19,51 @@
   "class": "glm",
   "models": [
     {
+      "name": "glm-5.3",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-5.3-flashx",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-5.3-flash",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
       "name": "glm-5.2",
       "context_length": 1000000,
       "max_output": 128000,
@@ -110,6 +155,21 @@
     },
     {
       "name": "glm-4.7-flashx",
+      "context_length": 200000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      },
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "glm-4.7-flash",
       "context_length": 200000,
       "max_output": 128000,
       "model_types": [

@@ -85,6 +85,19 @@ describe('parser-form utils', () => {
         buildInitialParserValues({}).setups,
       );
     });
+
+    it('does not seed retired family keys', () => {
+      const values = buildInitialParserValues({});
+      for (const setup of values.setups) {
+        expect(setup).not.toHaveProperty('preprocess');
+        expect(setup).not.toHaveProperty('output_format');
+        // Audio's family vlm is the ASR model and stays; every other family
+        // uses the Parser's top-level vision block.
+        if ((setup as any).fileFormat !== FileType.Audio) {
+          expect(setup).not.toHaveProperty('vlm');
+        }
+      }
+    });
   });
 
   describe('normalizeParserFormValues', () => {
@@ -93,7 +106,6 @@ describe('parser-form utils', () => {
         setups: [
           {
             fileFormat: FileType.PDF,
-            flatten_media_to_text: false,
             vlm: { llm_id: 'gpt-4o@OpenAI' },
           },
           { fileFormat: FileType.Audio, vlm: { llm_id: 'whisper@OpenAI' } },
@@ -115,10 +127,7 @@ describe('parser-form utils', () => {
 
     it('turns the enhancement off when no setup used the vision model', () => {
       const values = normalizeParserFormValues({
-        setups: [
-          { fileFormat: FileType.PDF, flatten_media_to_text: true },
-          { fileFormat: FileType.Docx, flatten_media_to_text: true },
-        ],
+        setups: [{ fileFormat: FileType.PDF }, { fileFormat: FileType.Docx }],
       });
 
       expect(values.enable_vision_enhancement).toBe(false);
@@ -147,7 +156,6 @@ describe('parser-form utils', () => {
         setups: [
           {
             fileFormat: FileType.PDF,
-            flatten_media_to_text: true,
             vlm: { llm_id: 'stale@Model' },
           },
           { fileFormat: FileType.Audio, vlm: { llm_id: 'whisper@OpenAI' } },
@@ -310,6 +318,33 @@ describe('parser-form utils', () => {
         setups: [{ fileFormat: FileType.Image, parse_method: 'ocr' }],
       });
       expect(normalizeParserFormValues(once)).toEqual(once);
+    });
+
+    it('drops the retired per-setup preprocess and output_format from every family', () => {
+      // The Parser derives preprocessing from the chunker and emits JSON only,
+      // so stored legacy values are dead config that must not survive a
+      // load/save round-trip.
+      const normalized = normalizeParserFormValues({
+        setups: [
+          {
+            fileFormat: FileType.PDF,
+            preprocess: ['main_content'],
+            output_format: 'markdown',
+          },
+          {
+            fileFormat: FileType.Audio,
+            preprocess: ['main_content'],
+            output_format: 'text',
+            vlm: { llm_id: 'whisper@OpenAI' },
+          },
+        ],
+      });
+      expect(normalized.setups[0]).toEqual({ fileFormat: FileType.PDF });
+      // Audio keeps its per-setup ASR model; only the retired keys go.
+      expect(normalized.setups[1]).toEqual({
+        fileFormat: FileType.Audio,
+        vlm: { llm_id: 'whisper@OpenAI' },
+      });
     });
   });
 });

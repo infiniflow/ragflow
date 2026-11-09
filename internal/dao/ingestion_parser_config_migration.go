@@ -184,6 +184,8 @@ var (
 		"layout_recognize",
 		"mineru_parse_method",
 		"mineru_lang",
+		"mineru_formula_enable",
+		"mineru_table_enable",
 		"pages",
 		"table_result_type",
 		"markdown_image_response_type",
@@ -208,21 +210,13 @@ var (
 // They are deleted so the stored config stops advertising behaviour the Go
 // runtime does not implement; every drop is logged with table, row and field.
 var ingestionRetiredFlatKeys = []string{
-	// Spreadsheets are always rendered as segmented HTML; the flag only warns
-	// now (internal/parser/parser/office_table_render.go:deprecatedHTML4Excel).
 	"html4excel",
 	// Splits one parse into several ingestion jobs; it is not a page range and
 	// not a chunk size.
 	"task_page_size",
-	// Follows hyperlinks and indexes the linked content; unimplemented in Go.
-	"analyze_hyperlink",
-	"hyperlink_urls",
 	// Video parsing is rejected at dispatch
 	// (internal/ingestion/component/media_dispatch.go:maybeDispatchVideo).
 	"video_prompt",
-	// These MinerU toggles have no Go reader; method and language are migrated.
-	"mineru_formula_enable",
-	"mineru_table_enable",
 }
 
 // ingestionOwnedFlatKeys is every flat key this step consumes or retires. A row
@@ -498,6 +492,19 @@ func convertIngestionParser(config map[string]any, target builtinIngestionTarget
 			}
 		}
 	}
+	for _, key := range []string{"mineru_formula_enable", "mineru_table_enable"} {
+		if raw, exists := config[key]; exists && raw != nil {
+			if !target.hasFamily("pdf") {
+				row.retire(key, "the targeted pipeline has no PDF file family")
+				continue
+			}
+			value, ok := raw.(bool)
+			if !ok {
+				return fmt.Errorf("%s must be a boolean, got %T", key, raw)
+			}
+			writes.setSetup(target.parserNode, "pdf", key, value)
+		}
+	}
 	if err := convertIngestionParserPages(config, target, writes, row); err != nil {
 		return err
 	}
@@ -590,10 +597,18 @@ func convertIngestionLayoutRecognize(raw any, config map[string]any, target buil
 				row.retire("layout_recognize", "the targeted pipeline has no PDF file family")
 				return nil
 			}
-			// These OCR selectors cannot be resolved by the Go ingestion dispatcher.
-			// Preserve them by stopping rather than sending them to generic VLM chat.
 			switch ingestionModelReferenceEngine(trimmed) {
-			case "mistral ocr", "somark", "opendataloader", "paddleocr":
+			case "paddleocr":
+				// The runtime PaddleOCR branch matches the provider spelling and
+				// resolves the tenant's PaddleOCR OCR model; the composite's model
+				// and instance segments are not dispatch selectors there. Store the
+				// engine name that branch reads instead of failing the migration.
+				writes.setSetup(target.parserNode, "pdf", "parse_method", "paddleocr")
+				return nil
+			case "mistral ocr", "somark", "opendataloader":
+				// These OCR selectors cannot be resolved by the Go ingestion
+				// dispatcher. Preserve them by stopping rather than sending them to
+				// generic VLM chat.
 				return fmt.Errorf("layout_recognize %q has no supported Go model-reference dispatch", trimmed)
 			}
 			// Keep supported OCR and VLM model references whole.
@@ -1144,12 +1159,9 @@ func migrateExtractorConfig(config map[string]any, parserID string, pipelineID *
 			targets = append(targets, newNode)
 		}
 	} else {
-		for id, raw := range config {
-			id = strings.ToLower(id)
-			if strings.HasPrefix(id, "extractor:") || strings.HasPrefix(id, "extractor_") {
-				if node, ok := raw.(map[string]any); ok {
-					targets = append(targets, node)
-				}
+		for _, id := range common.SortedExtractorKeys(config) {
+			if node, ok := config[id].(map[string]any); ok {
+				targets = append(targets, node)
 			}
 		}
 		if len(targets) == 0 {

@@ -30,12 +30,14 @@ import (
 var pptxExtract = deepdocoffice.OpenAndExtract
 
 // PPTXParser parses both .pptx (OOXML) and .ppt (OLE binary)
-// files via the office_oxide backend. The format field controls
-// the container format passed to OpenFromBytes — "pptx" for
-// ZIP-based OOXML presentations and "ppt" for the legacy binary
-// OLE format.
+// presentations. ParseWithResult dispatches TCADP-configured
+// presentations to parseWithTCADP and uses the office_oxide backend
+// for local extraction. The format field controls the container
+// format passed to OpenFromBytes ("pptx" for ZIP-based OOXML and
+// "ppt" for legacy binary OLE).
 type PPTXParser struct {
-	format string
+	format   string
+	textOnly bool
 
 	// TCADP cloud-parsing configuration
 	ParseMethod                    string
@@ -43,11 +45,14 @@ type PPTXParser struct {
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
 	TCADPMarkdownImageResponseType string
-	OutputFormat                   string
 }
 
 func NewPPTXParser() *PPTXParser {
-	return &PPTXParser{format: "pptx"}
+	return &PPTXParser{
+		format:                         "pptx",
+		TCADPTableResultType:           "1",
+		TCADPMarkdownImageResponseType: "1",
+	}
 }
 
 func (p *PPTXParser) String() string {
@@ -60,32 +65,36 @@ func (p *PPTXParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
 	}
-	if v, ok := setup["parse_method"].(string); ok {
+	if v, ok := setup["parse_method"].(string); ok && v != "" {
 		p.ParseMethod = v
 	}
-	if v, ok := setup["tcadp_apiserver"].(string); ok {
+	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
 	}
 	if v, ok := setup["tcadp_api_key"].(string); ok {
 		p.TCADPAPIKey = v
 	}
-	if v, ok := setup["table_result_type"].(string); ok {
+	if v, ok := setup["table_result_type"].(string); ok && v != "" {
 		p.TCADPTableResultType = v
 	}
-	if v, ok := setup["markdown_image_response_type"].(string); ok {
+	if v, ok := setup["markdown_image_response_type"].(string); ok && v != "" {
 		p.TCADPMarkdownImageResponseType = v
-	}
-	if v, ok := setup["output_format"].(string); ok {
-		p.OutputFormat = v
-	}
-	if p.OutputFormat == "" {
-		p.OutputFormat = "json"
 	}
 }
 
-// ParseWithResult emits one JSON item per slide with the slide's
-// plain text. Forces OutputFormat to "json" and emits one JSON item
-// per slide section.
+func normalizePresentationParseMethod(raw string) string {
+	method := strings.ToLower(strings.TrimSpace(raw))
+	if method == "tcadp parser" {
+		return "tcadp"
+	}
+	if method == "deepdoc" || method == "deepdoc parser" {
+		return ""
+	}
+	return method
+}
+
+// ParseWithResult emits one JSON item per slide with the slide's plain text,
+// tables and media_ref image items. A text-only parser skips images.
 func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
 	// p == nil guard: the struct is embedded by value in PPTParser and
 	// always created via NewPPTXParser or the "ppt"-format constructor in
@@ -95,20 +104,13 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 	if p == nil {
 		return ParseResult{Err: fmt.Errorf("PPTXParser is nil")}
 	}
-	method := strings.ToLower(strings.TrimSpace(p.ParseMethod))
+	method := normalizePresentationParseMethod(p.ParseMethod)
 	switch method {
 	case "tcadp":
-		// TCADP file_type is intentionally derived from the parser's
-		// configured family (p.format == "pptx" → "PPTX", "ppt" → "PPT"),
-		// not from magic-byte sniffing. The pipeline routes purely on
-		// extension → parser family, and TCADP reconstructs by family.
-		// The OLE fallback below therefore only applies to the local
-		// office_oxide path.
 		return parseWithTCADP(ctx,
 			filename, data, strings.ToUpper(p.format),
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
-			p.OutputFormat,
 		)
 	case "", "deepdoc":
 		// Continue with the local office_oxide parser.
@@ -117,27 +119,7 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 		// meaningless for PPTX; treat as default path.
 	}
 
-	// office_oxide's OpenFromBytes takes the container format as given
-	// and does no magic-byte detection, so a legacy .ppt uploaded with a
-	// .pptx extension would be parsed as ZIP/OOXML and fail. Sniff the
-	// real container and pass the matching format so mislabeled files
-	// still parse (mirrors the magic-byte correction office_oxide::Open
-	// performs on file paths).
-	// File["format"] in the success case reflects effFormat, i.e. the
-	// real container ("ppt" for OLE fallback, "pptx" for OOXML fallback),
-	// not just the extension.
-	effFormat := p.format
-	switch officeContainer(data) {
-	case "ole":
-		if effFormat == "pptx" {
-			effFormat = "ppt"
-		}
-	case "ooxml":
-		if effFormat == "ppt" {
-			effFormat = "pptx"
-		}
-	}
-	irJSON, _, plainText, _, err := pptxExtract(data, effFormat)
+	irJSON, _, plainText, _, err := pptxExtract(data, p.format)
 	if err != nil {
 		if errors.Is(err, deepdocoffice.ErrOfficeCGORequired) {
 			return ParseResult{Err: fmt.Errorf("%w: %s", ErrOfficeCGORequired, filename)}
@@ -156,15 +138,20 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 			return ParseResult{Err: fmt.Errorf("presentation ir-json: empty result")}
 		}
 		return ParseResult{
-			OutputFormat: "json",
-			File:         map[string]any{"name": filename, "format": effFormat},
-			JSON:         MapsToItems(itemsFromPlainText(plainText)),
+			File: map[string]any{"name": filename, "format": p.format},
+			JSON: MapsToItems(itemsFromPlainText(plainText)),
 		}
 	}
-	budget := newEmbeddedMediaBudget()
-	items, err := buildPPTXJSONSections(irJSON, budget)
+	var sink *officeMediaSink
+	if !p.textOnly {
+		sink = newOfficeMediaSink(ctx, officeMediaFormatPPTX)
+	}
+	items, err := buildPPTXJSONSections(irJSON, sink)
 	if err != nil {
 		return ParseResult{Err: err}
+	}
+	if sink != nil && sink.err != nil {
+		return ParseResult{Err: sink.err}
 	}
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
@@ -182,9 +169,8 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 	}
 
 	return ParseResult{
-		OutputFormat: "json",
-		File:         map[string]any{"name": filename, "format": effFormat},
-		JSON:         MapsToItems(items),
-		Warnings:     budget.warnings(),
+		File:     map[string]any{"name": filename, "format": p.format},
+		JSON:     MapsToItems(items),
+		Warnings: sink.warnings(),
 	}
 }

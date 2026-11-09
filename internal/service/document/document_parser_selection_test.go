@@ -3,11 +3,12 @@ package document
 import (
 	"mime/multipart"
 	"reflect"
-	"strings"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/storage"
 	syncerconnector "ragflow/internal/syncer/connector"
@@ -120,6 +121,8 @@ func generalParserConfig() entity.JSONMap {
 			"pdf":       map[string]any{"suffix": []any{"pdf"}},
 			"text&code": map[string]any{},
 			"docx":      map[string]any{},
+			"image":     map[string]any{"suffix": []any{"jpg"}},
+			"email":     map[string]any{"suffix": []any{"eml", "msg"}},
 		},
 	}
 }
@@ -142,6 +145,11 @@ func tableParserConfig() entity.JSONMap {
 	}
 }
 
+func seedDocumentParserTenant(t *testing.T, tenantID, ownerID string) {
+	t.Helper()
+	insertUserTenantForAccessCheck(t, ownerID, tenantID)
+}
+
 // TestResolveDocumentParser_Priority pins the resolution order: the dataset's
 // selection governs the families its config declares, an undeclared family goes
 // to the builtin pipeline that owns it, and failing that to general. Undetermined
@@ -151,8 +159,12 @@ func tableParserConfig() entity.JSONMap {
 func TestResolveDocumentParser_Priority(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
-	if err := dao.DB.Create(&entity.Tenant{ID: "tenant-1", LLMID: "llm-default"}).Error; err != nil {
+	if err := dao.DB.Create(&entity.Tenant{ID: "tenant-1"}).Error; err != nil {
 		t.Fatalf("insert tenant: %v", err)
+	}
+	joined := entity.TenantMembershipStatusJoined
+	if err := dao.DB.Create(&entity.UserTenant{ID: "ut-tenant1", UserID: "tenant-1", TenantID: "tenant-1", Role: "owner", Status: &joined, LLMID: "llm-default"}).Error; err != nil {
+		t.Fatalf("insert tenant owner membership: %v", err)
 	}
 
 	canvasID := "canvas-1"
@@ -243,6 +255,16 @@ func TestResolveDocumentParser_Priority(t *testing.T) {
 			wantFamilyOut: "",
 		},
 		{
+			name:          "legacy flat config still routes audio",
+			kbParser:      "naive",
+			kbConfig:      legacyConfig,
+			filename:      "talk.mp3",
+			filetype:      utility.FileTypeAURAL,
+			wantParserID:  "audio",
+			wantFamilyIn:  "audio",
+			wantFamilyOut: "",
+		},
+		{
 			name:          "legacy flat config still routes an owned family",
 			kbParser:      "naive",
 			kbConfig:      legacyConfig,
@@ -250,6 +272,16 @@ func TestResolveDocumentParser_Priority(t *testing.T) {
 			filetype:      utility.FileTypeDOC,
 			wantParserID:  "presentation",
 			wantFamilyIn:  "slides",
+			wantFamilyOut: "",
+		},
+		{
+			name:          "legacy flat config keeps an image in general",
+			kbParser:      "naive",
+			kbConfig:      legacyConfig,
+			filename:      "photo.jpg",
+			filetype:      utility.FileTypeVISUAL,
+			wantParserID:  "naive",
+			wantFamilyIn:  "",
 			wantFamilyOut: "",
 		},
 		{
@@ -307,7 +339,7 @@ func TestResolveDocumentParser_Priority(t *testing.T) {
 			wantFamilyIn: "text&code",
 		},
 		{
-			name:         "an unmappable extension still reaches its owner pipeline",
+			name:         "pages reaches its owner pipeline",
 			kbParser:     "general",
 			kbConfig:     generalParserConfig(),
 			filename:     "deck.pages",
@@ -401,10 +433,10 @@ func TestResolveDocumentParser_Priority(t *testing.T) {
 }
 
 // TestUploadLocalDocuments_RoutesFileTypesToDedicatedParsers pins the Python
-// FileService.get_parser parity: an uploaded image or presentation is re-pointed
-// at the pipeline that owns its file type and carries that pipeline's document
-// config (the config the parser-gap validation and the runtime read), while a
-// plain text upload keeps the dataset parser and config untouched.
+// FileService.get_parser parity: an uploaded presentation or audio file is
+// re-pointed at the pipeline that owns its file type and carries that
+// pipeline's document config, while image/email/text uploads stay on the
+// dataset parser now that the general template declares those families.
 func TestUploadLocalDocuments_RoutesFileTypesToDedicatedParsers(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -415,13 +447,15 @@ func TestUploadLocalDocuments_RoutesFileTypesToDedicatedParsers(t *testing.T) {
 	factory.SetStorage(mockStorage)
 	t.Cleanup(func() { factory.SetStorage(origStorage) })
 
-	if err := dao.DB.Create(&entity.Tenant{
-		ID: "tenant-1", LLMID: "llm-default", EmbdID: "embd-default", ASRID: "asr-default",
-	}).Error; err != nil {
-		t.Fatalf("insert tenant: %v", err)
-	}
+	seedDocumentParserTenant(t, "tenant-1", "user-1")
 
 	kbConfig := entity.JSONMap{
+		"Parser:HipSignsRhyme": map[string]any{
+			"pdf":       map[string]any{"suffix": []any{"pdf"}},
+			"text&code": map[string]any{},
+			"image":     map[string]any{"ocr_enabled": true, "suffix": []any{"jpg"}},
+			"email":     map[string]any{"suffix": []any{"eml", "msg"}},
+		},
 		"GeneralChunker:SixApplesFall": map[string]any{"chunk_token_size": 512},
 		"metadata": map[string]any{
 			"enabled":           true,
@@ -441,14 +475,16 @@ func TestUploadLocalDocuments_RoutesFileTypesToDedicatedParsers(t *testing.T) {
 		t.Fatalf("insert kb: %v", err)
 	}
 
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-1", "")
 	svc := testDocumentService(t)
 	files := []*multipart.FileHeader{
 		makeTestFileHeader(t, "file", "photo.jpg", []byte("jpeg-bytes")),
 		makeTestFileHeader(t, "file", "deck.pptx", []byte("pptx-bytes")),
+		makeTestFileHeader(t, "file", "note.eml", []byte("eml-bytes")),
+		makeTestFileHeader(t, "file", "talk.mp3", []byte("mp3-bytes")),
 		makeTestFileHeader(t, "file", "notes.txt", []byte("plain text")),
 	}
-	got, errs := svc.UploadLocalDocuments(ctx, kb, "user-1", files, "", nil)
+	got, errs := svc.UploadLocalDocuments(ctx, kb, files, "", nil)
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errs: %v", errs)
 	}
@@ -456,12 +492,12 @@ func TestUploadLocalDocuments_RoutesFileTypesToDedicatedParsers(t *testing.T) {
 		t.Fatalf("uploaded docs = %d, want %d", len(got), len(files))
 	}
 
-	if parserID, _ := got[0]["parser_id"].(string); parserID != "picture" {
-		t.Fatalf("jpg parser_id = %q, want picture", parserID)
+	if parserID, _ := got[0]["parser_id"].(string); parserID != "naive" {
+		t.Fatalf("jpg parser_id = %q, want the dataset parser naive", parserID)
 	}
 	imageSetup := parserFamilySetup(t, got[0], "image")
 	if imageSetup["ocr_enabled"] != true {
-		t.Fatalf("jpg image setup = %#v, want the picture pipeline defaults", imageSetup)
+		t.Fatalf("jpg image setup = %#v, want the general pipeline defaults", imageSetup)
 	}
 
 	if parserID, _ := got[1]["parser_id"].(string); parserID != "presentation" {
@@ -472,10 +508,19 @@ func TestUploadLocalDocuments_RoutesFileTypesToDedicatedParsers(t *testing.T) {
 		t.Fatalf("pptx slides setup = %#v, want the presentation pipeline defaults", slidesSetup)
 	}
 
-	// The rebuilt config goes through the same assembly as a parser switch, so
-	// the tenant LLM id and the dataset metadata group reach the target
+	if parserID, _ := got[2]["parser_id"].(string); parserID != "naive" {
+		t.Fatalf("eml parser_id = %q, want the dataset parser naive", parserID)
+	}
+	parserFamilySetup(t, got[2], "email")
+
+	if parserID, _ := got[3]["parser_id"].(string); parserID != "audio" {
+		t.Fatalf("mp3 parser_id = %q, want audio", parserID)
+	}
+
+	// The rebuilt configs go through the same assembly as a parser switch, so
+	// the tenant LLM id and the dataset metadata group reach each target
 	// pipeline's Extractor node.
-	for _, doc := range got[:2] {
+	for _, doc := range []map[string]interface{}{got[1], got[3]} {
 		cfg := doc["parser_config"].(map[string]interface{})
 		extractor, _ := cfg["Extractor:AutoExtractDefault"].(map[string]interface{})
 		if extractor["llm_id"] != "llm-default" {
@@ -487,10 +532,10 @@ func TestUploadLocalDocuments_RoutesFileTypesToDedicatedParsers(t *testing.T) {
 		}
 	}
 
-	if parserID, _ := got[2]["parser_id"].(string); parserID != "naive" {
+	if parserID, _ := got[4]["parser_id"].(string); parserID != "naive" {
 		t.Fatalf("txt parser_id = %q, want the dataset parser naive", parserID)
 	}
-	txtCfg, _ := got[2]["parser_config"].(map[string]interface{})
+	txtCfg, _ := got[4]["parser_config"].(map[string]interface{})
 	if _, ok := txtCfg["GeneralChunker:SixApplesFall"]; !ok {
 		t.Fatalf("txt parser_config = %#v, want the dataset config untouched", txtCfg)
 	}
@@ -511,13 +556,9 @@ func TestUploadLocalDocuments_FallsBackWhenSelectionLacksFamily(t *testing.T) {
 	factory.SetStorage(mockStorage)
 	t.Cleanup(func() { factory.SetStorage(origStorage) })
 
-	if err := dao.DB.Create(&entity.Tenant{
-		ID: "tenant-1", LLMID: "llm-default", EmbdID: "embd-default", ASRID: "asr-default",
-	}).Error; err != nil {
-		t.Fatalf("insert tenant: %v", err)
-	}
+	seedDocumentParserTenant(t, "tenant-1", "user-1")
 
-	ctx := t.Context()
+	ctx := permission.WithIdentity(t.Context(), "user-1", "")
 	svc := testDocumentService(t)
 
 	presentationKB := &entity.Knowledgebase{
@@ -531,7 +572,7 @@ func TestUploadLocalDocuments_FallsBackWhenSelectionLacksFamily(t *testing.T) {
 	if err := dao.DB.Create(presentationKB).Error; err != nil {
 		t.Fatalf("insert presentation kb: %v", err)
 	}
-	got, errs := svc.UploadLocalDocuments(ctx, presentationKB, "user-1", []*multipart.FileHeader{
+	got, errs := svc.UploadLocalDocuments(ctx, presentationKB, []*multipart.FileHeader{
 		makeTestFileHeader(t, "file", "laws.txt", []byte("plain text")),
 		makeTestFileHeader(t, "file", "deck.pptx", []byte("pptx-bytes")),
 	}, "", nil)
@@ -560,7 +601,7 @@ func TestUploadLocalDocuments_FallsBackWhenSelectionLacksFamily(t *testing.T) {
 	if err := dao.DB.Create(canvasKB).Error; err != nil {
 		t.Fatalf("insert canvas kb: %v", err)
 	}
-	got, errs = svc.UploadLocalDocuments(ctx, canvasKB, "user-1", []*multipart.FileHeader{
+	got, errs = svc.UploadLocalDocuments(ctx, canvasKB, []*multipart.FileHeader{
 		makeTestFileHeader(t, "file", "report.pdf", []byte("%PDF-1.4")),
 		makeTestFileHeader(t, "file", "laws.txt", []byte("plain text")),
 	}, "", nil)
@@ -587,6 +628,59 @@ func TestUploadLocalDocuments_FallsBackWhenSelectionLacksFamily(t *testing.T) {
 	parserFamilySetup(t, got[1], "text&code")
 }
 
+// TestUploadLocalDocuments_SwitchesVideoToPicture pins the upload policy:
+// video uploads are accepted (visual bucket) and switched to the picture
+// pipeline; parsing stays blocked later because no parser implements video
+// analysis.
+func TestUploadLocalDocuments_SwitchesVideoToPicture(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	mockStorage := newFakeUploadStorage()
+	factory := storage.GetStorageFactory()
+	origStorage := factory.GetStorage()
+	factory.SetStorage(mockStorage)
+	t.Cleanup(func() { factory.SetStorage(origStorage) })
+
+	seedDocumentParserTenant(t, "tenant-1", "user-1")
+
+	kb := &entity.Knowledgebase{
+		ID:           "kb-video-block",
+		TenantID:     "tenant-1",
+		Name:         "kb-video-block",
+		CreatedBy:    "user-1",
+		ParserID:     "naive",
+		ParserConfig: presentationParserConfig(),
+	}
+	if err := dao.DB.Create(kb).Error; err != nil {
+		t.Fatalf("insert kb: %v", err)
+	}
+
+	ctx := permission.WithIdentity(t.Context(), "user-1", "")
+	svc := testDocumentService(t)
+	got, errs := svc.UploadLocalDocuments(ctx, kb, []*multipart.FileHeader{
+		makeTestFileHeader(t, "file", "clip.mov", []byte("mov-bytes")),
+		makeTestFileHeader(t, "file", "movie.mp4", []byte("mp4-bytes")),
+		makeTestFileHeader(t, "file", "legacy.rmvb", []byte("rmvb-bytes")),
+		makeTestFileHeader(t, "file", "notes.txt", []byte("plain text")),
+	}, "", nil)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errs: %v", errs)
+	}
+	if len(got) != 4 {
+		t.Fatalf("uploaded docs = %d, want 4", len(got))
+	}
+	for _, doc := range got[:3] {
+		if parserID, _ := doc["parser_id"].(string); parserID != "picture" {
+			t.Fatalf("%v parser_id = %q, want picture", doc["name"], parserID)
+		}
+		if docType, _ := doc["type"].(string); docType != string(utility.FileTypeVISUAL) {
+			t.Fatalf("%v type = %q, want %q", doc["name"], docType, utility.FileTypeVISUAL)
+		}
+		parserFamilySetup(t, doc, "video")
+	}
+}
+
 // TestInsertSyncDocument_FallsBackWhenSelectionLacksFamily covers the connector
 // path: it shares resolveDocumentParser with the upload path, so a synced text
 // file lands on general too.
@@ -600,11 +694,7 @@ func TestInsertSyncDocument_FallsBackWhenSelectionLacksFamily(t *testing.T) {
 	factory.SetStorage(mockStorage)
 	t.Cleanup(func() { factory.SetStorage(origStorage) })
 
-	if err := dao.DB.Create(&entity.Tenant{
-		ID: "tenant-1", LLMID: "llm-default", EmbdID: "embd-default", ASRID: "asr-default",
-	}).Error; err != nil {
-		t.Fatalf("insert tenant: %v", err)
-	}
+	seedDocumentParserTenant(t, "tenant-1", "user-1")
 
 	kb := &entity.Knowledgebase{
 		ID:           "kb-sync",
@@ -625,7 +715,7 @@ func TestInsertSyncDocument_FallsBackWhenSelectionLacksFamily(t *testing.T) {
 		SourceDocument: syncerconnector.SourceDocument{Blob: []byte("plain text")},
 	}
 	svc := testDocumentService(t)
-	res, err := svc.insertSyncDocument(t.Context(), input, "laws.txt", "", "txt", "", "tenant-1")
+	res, err := svc.insertSyncDocument(documentTestContext(t.Context()), input, "laws.txt", "", "txt", "", "tenant-1")
 	if err != nil {
 		t.Fatalf("insertSyncDocument: %v", err)
 	}
@@ -661,7 +751,7 @@ func parserFamilySetup(t *testing.T, doc map[string]interface{}, family string) 
 		t.Fatalf("%v parser_config = %T, want map", doc["name"], doc["parser_config"])
 	}
 	for cpnID, raw := range cfg {
-		if !strings.HasPrefix(cpnID, "Parser:") {
+		if !common.IsParserComponentID(cpnID) {
 			continue
 		}
 		params, _ := raw.(map[string]interface{})

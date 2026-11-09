@@ -18,6 +18,7 @@ package dao
 
 import (
 	"context"
+	"fmt"
 	"ragflow/internal/entity"
 
 	"gorm.io/gorm"
@@ -35,38 +36,8 @@ func (dao *TenantModelDAO) Create(ctx context.Context, db *gorm.DB, instance *en
 	return db.WithContext(ctx).Create(instance).Error
 }
 
-func (dao *TenantModelDAO) CreateBatch(ctx context.Context, db *gorm.DB, models []*entity.TenantModel) error {
-	if len(models) == 0 {
-		return nil
-	}
-
-	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		for _, model := range models {
-			if err := tx.WithContext(ctx).Create(model).Error; err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
-func (dao *TenantModelDAO) DeleteByModelID(ctx context.Context, db *gorm.DB, modelID string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("id = ?", modelID).Delete(&entity.TenantModel{})
-	return result.RowsAffected, result.Error
-}
-
 func (dao *TenantModelDAO) DeleteByModelIDAndProviderIDAndInstanceID(ctx context.Context, db *gorm.DB, modelID, providerID, instanceID string) (int64, error) {
 	result := db.WithContext(ctx).Unscoped().Where("id = ? AND provider_id = ? AND instance_id = ?", modelID, providerID, instanceID).Delete(&entity.TenantModel{})
-	return result.RowsAffected, result.Error
-}
-
-func (dao *TenantModelDAO) DeleteByProviderIDAndInstanceID(ctx context.Context, db *gorm.DB, provideID, instanceID string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("provider_id = ? AND instance_id = ?", provideID, instanceID).Delete(&entity.TenantModel{})
-	return result.RowsAffected, result.Error
-}
-
-func (dao *TenantModelDAO) DeleteByProviderIDAndInstanceIDAndModelName(ctx context.Context, db *gorm.DB, provideID, instanceID, modelName string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("provider_id = ? AND instance_id = ? AND model_name = ?", provideID, instanceID, modelName).Delete(&entity.TenantModel{})
 	return result.RowsAffected, result.Error
 }
 
@@ -97,6 +68,24 @@ func (dao *TenantModelDAO) GetByIDs(ctx context.Context, db *gorm.DB, ids []stri
 		return nil, err
 	}
 	return models, nil
+}
+
+// ListByTenantIDAndModelType returns a tenant's authorized model records.
+// Zero-type rows are retained when filtering so the caller can derive their
+// type from the provider catalog before producing the response.
+func (dao *TenantModelDAO) ListByTenantIDAndModelType(ctx context.Context, db *gorm.DB, tenantID string, modelType int, authorize func(*gorm.DB) *gorm.DB) ([]*entity.TenantModel, error) {
+	if authorize == nil {
+		return nil, fmt.Errorf("model list requires an authorization scope")
+	}
+	var models []*entity.TenantModel
+	query := db.WithContext(ctx).Model(&entity.TenantModel{}).
+		Joins("JOIN tenant_model_provider ON tenant_model_provider.id = tenant_model.provider_id").
+		Where("tenant_model_provider.tenant_id = ?", tenantID)
+	if modelType != 0 {
+		query = query.Where("(tenant_model.model_type = 0 OR (tenant_model.model_type & ?) > 0)", modelType)
+	}
+	err := authorize(query).Find(&models).Error
+	return models, err
 }
 
 func (dao *TenantModelDAO) GetModelByProviderIDAndInstanceIDAndModelName(ctx context.Context, db *gorm.DB, providerID, instanceID, modelName string) (*entity.TenantModel, error) {
@@ -170,7 +159,7 @@ func (dao *TenantModelDAO) DeleteByInstanceIDs(ctx context.Context, db *gorm.DB,
 // used to fetch per-tenant enable/disable overrides in bulk during
 // /api/v1/models response assembly. The Go port never WRITES to
 // tenant_model, so callers must treat an empty result as "use factory
-// defaults" — see ModelProviderService.ListTenantAddedModels.
+// defaults" - see ModelProviderService.ListModelsForUserInTenant.
 func (dao *TenantModelDAO) GetModelsByProviderIDsAndInstanceIDs(ctx context.Context, db *gorm.DB, providerIDs, instanceIDs []string) ([]*entity.TenantModel, error) {
 	models := make([]*entity.TenantModel, 0)
 	if len(providerIDs) == 0 || len(instanceIDs) == 0 {

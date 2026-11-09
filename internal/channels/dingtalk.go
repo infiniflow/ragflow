@@ -32,8 +32,7 @@ import (
 	"time"
 
 	"github.com/open-dingtalk/dingtalk-stream-sdk-go/chatbot"
-	"github.com/open-dingtalk/dingtalk-stream-sdk-go/clientV2"
-	"github.com/open-dingtalk/dingtalk-stream-sdk-go/payload"
+	"github.com/open-dingtalk/dingtalk-stream-sdk-go/client"
 	"go.uber.org/zap"
 
 	"ragflow/internal/channels/core"
@@ -46,14 +45,33 @@ const (
 	dingTalkMessageTTL        = time.Hour
 	dingTalkQueueSize         = 64
 	dingTalkWorkerIdle        = 5 * time.Minute
+	dingTalkStreamTick        = 100 * time.Millisecond
+	dingTalkTokenMargin       = 60 * time.Second
+	dingTalkCardFailTimeout   = 10 * time.Second
+	dingTalkStreamAttempts    = 3
+	dingTalkStreamBackoff     = 300 * time.Millisecond
+	dingTalkStreamCallLimit   = 10 * time.Second
 )
 
+// errDingTalkNothingStreamed reports that no text was available for a streamed card, so
+// the caller still has to deliver the answer.
+var errDingTalkNothingStreamed = errors.New("dingtalk: no streamed text to display")
+
 type dingTalkAccount struct {
-	AccountID    string
-	ClientID     string
-	ClientSecret string
-	APIBaseURL   string
-	Timeout      time.Duration
+	AccountID        string
+	ClientID         string
+	ClientSecret     string
+	APIBaseURL       string
+	Timeout          time.Duration
+	Stream           bool
+	CardTemplateID   string
+	StreamContentKey string
+}
+
+// dingTalkPeer remembers where a conversation lives so an AI card can be delivered to it.
+type dingTalkPeer struct {
+	chatType      string
+	senderStaffID string
 }
 
 type dingTalkChannel struct {
@@ -64,11 +82,15 @@ type dingTalkChannel struct {
 	cancel          context.CancelFunc
 	handler         core.MessageHandler
 	client          *http.Client
-	stream          clientV2.OpenDingTalkClient
+	stream          *client.StreamClient
 	sessionWebhooks map[string]string
+	peers           map[string]dingTalkPeer
 	processed       map[string]time.Time
 	inflight        map[string]time.Time
 	workers         map[string]*dingTalkWorker
+	tokenMu         sync.Mutex
+	accessToken     string
+	tokenExpiry     time.Time
 }
 
 type dingTalkWorker struct {
@@ -81,26 +103,35 @@ type dingTalkQueuedMessage struct {
 }
 
 // newDingTalkChannel creates a DingTalk stream channel backed by the official SDK.
-func newDingTalkChannel(account dingTalkAccount) *dingTalkChannel {
+func newDingTalkChannel(account dingTalkAccount) (*dingTalkChannel, error) {
 	if account.APIBaseURL == "" {
 		account.APIBaseURL = defaultDingTalkAPIBaseURL
 	}
 	if account.Timeout <= 0 {
 		account.Timeout = defaultDingTalkTimeout
 	}
+	if account.StreamContentKey == "" {
+		account.StreamContentKey = "content"
+	}
+	proxyURL, err := dingTalkSafeProxyURL()
+	if err != nil {
+		return nil, err
+	}
 	ch := &dingTalkChannel{
 		account:         account,
-		client:          &http.Client{Timeout: account.Timeout},
+		client:          newSafeChannelHTTPClient(account.Timeout, channelURLPolicy{exactHosts: []string{"oapi.dingtalk.com", "api.dingtalk.com"}}),
 		sessionWebhooks: map[string]string{},
+		peers:           map[string]dingTalkPeer{},
 		processed:       map[string]time.Time{},
 		inflight:        map[string]time.Time{},
 		workers:         map[string]*dingTalkWorker{},
 	}
-	ch.stream = clientV2.NewBuilder().
-		Credential(&clientV2.AuthClientCredential{ClientId: account.ClientID, ClientSecret: account.ClientSecret}).
-		RegisterCallbackHandler(payload.BotMessageCallbackTopic, ch.handleBotCallback).
-		Build()
-	return ch
+	ch.stream = client.NewStreamClient(
+		client.WithAppCredential(client.NewAppCredentialConfig(account.ClientID, account.ClientSecret)),
+		client.WithProxy(proxyURL),
+	)
+	ch.stream.RegisterChatBotCallbackRouter(ch.handleBotCallback)
+	return ch, nil
 }
 
 // newDingTalkChannelFromConfig builds a DingTalk channel from chat_channel.config.credential.
@@ -119,12 +150,15 @@ func newDingTalkChannelFromConfig(accountID string, cfg map[string]any) (*dingTa
 	}
 
 	return newDingTalkChannel(dingTalkAccount{
-		AccountID:    accountID,
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
-		APIBaseURL:   firstString(cfg, "api_base_url", "api_url"),
-		Timeout:      timeout,
-	}), nil
+		AccountID:        accountID,
+		ClientID:         clientID,
+		ClientSecret:     clientSecret,
+		APIBaseURL:       firstString(cfg, "api_base_url", "api_url"),
+		Timeout:          timeout,
+		Stream:           cfg["stream"] == true,
+		CardTemplateID:   firstString(cfg, "card_template_id"),
+		StreamContentKey: firstString(cfg, "stream_content_key"),
+	})
 }
 
 // ChannelID returns the platform identifier used by the chat-channel runtime.
@@ -167,6 +201,7 @@ func (c *dingTalkChannel) Stop(ctx context.Context) error {
 	c.cancel = nil
 	c.ctx = nil
 	c.sessionWebhooks = map[string]string{}
+	c.peers = map[string]dingTalkPeer{}
 	c.processed = map[string]time.Time{}
 	c.inflight = map[string]time.Time{}
 	c.workers = map[string]*dingTalkWorker{}
@@ -202,7 +237,7 @@ func (c *dingTalkChannel) Send(ctx context.Context, msg core.OutgoingMessage) er
 			"text":  msg.Text,
 		},
 	}
-	return c.postWebhook(ctx, sessionWebhook, p)
+	return redactURLError(c.postWebhook(ctx, sessionWebhook, p))
 }
 
 // run keeps the DingTalk SDK stream client active until the channel stops.
@@ -235,25 +270,27 @@ func (c *dingTalkChannel) run(ctx context.Context) {
 }
 
 // handleBotCallback receives DingTalk bot messages from the official stream SDK.
-func (c *dingTalkChannel) handleBotCallback(data *chatbot.BotCallbackDataModel) (*chatbot.BotCallbackRespModel, error) {
+func (c *dingTalkChannel) handleBotCallback(ctx context.Context, data *chatbot.BotCallbackDataModel) ([]byte, error) {
 	c.mu.Lock()
-	ctx := c.ctx
+	runCtx := c.ctx
 	c.mu.Unlock()
-	if ctx == nil {
+	if runCtx != nil {
+		ctx = runCtx
+	} else if ctx == nil {
 		ctx = context.Background()
 	}
 	incoming, dedupKey, ok := c.normalizeBotMessage(data)
 	if !ok {
-		return &chatbot.BotCallbackRespModel{}, nil
+		return []byte(`{"response":{}}`), nil
 	}
 	if dedupKey != "" && !c.beginMessage(dedupKey) {
 		common.Info("dingtalk: skipping duplicate message", zap.String("account_id", c.account.AccountID), zap.String("dedup_key", dedupKey))
-		return &chatbot.BotCallbackRespModel{}, nil
+		return []byte(`{"response":{}}`), nil
 	}
 	if !c.enqueueIncoming(ctx, dingTalkQueuedMessage{incoming: incoming, dedupKey: dedupKey}) && dedupKey != "" {
 		c.cancelInflight(dedupKey)
 	}
-	return &chatbot.BotCallbackRespModel{}, nil
+	return []byte(`{"response":{}}`), nil
 }
 
 // normalizeBotMessage converts DingTalk SDK bot callback data to the chat-channel message model.
@@ -269,6 +306,9 @@ func (c *dingTalkChannel) normalizeBotMessage(data *chatbot.BotCallbackDataModel
 	}
 	if data.SessionWebhook != "" && chatID != "" {
 		c.saveSessionWebhook(chatID, data.SessionWebhook)
+	}
+	if chatID != "" {
+		c.savePeer(chatID, data.ConversationType, data.SenderStaffId)
 	}
 	if text == "" || chatID == "" || senderID == "" {
 		return core.IncomingMessage{}, "", false
@@ -440,6 +480,247 @@ func (c *dingTalkChannel) saveSessionWebhook(chatID, sessionWebhook string) {
 	c.sessionWebhooks[chatID] = sessionWebhook
 }
 
+// savePeer caches where a conversation lives so streamed cards can be delivered to it.
+func (c *dingTalkChannel) savePeer(chatID, chatType, senderStaffID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.peers[chatID] = dingTalkPeer{chatType: chatType, senderStaffID: senderStaffID}
+}
+
+// chatPeer returns the cached delivery target of one conversation.
+func (c *dingTalkChannel) chatPeer(chatID string) dingTalkPeer {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.peers[chatID]
+}
+
+// StreamEnabled reports whether this account asked for streamed card replies. Streaming
+// needs the AI card template that carries the streaming markdown variable.
+func (c *dingTalkChannel) StreamEnabled() bool {
+	return c.account.Stream && c.account.CardTemplateID != ""
+}
+
+// SendStream replies with an AI card: the card is created on the first text, the answer is
+// appended to its streaming variable, and the last update closes the card.
+func (c *dingTalkChannel) SendStream(ctx context.Context, msg core.OutgoingMessage, text <-chan string) error {
+	if strings.TrimSpace(msg.ChatID) == "" {
+		return errors.New("chat_id is required")
+	}
+
+	var first string
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case value, open := <-text:
+		if !open || strings.TrimSpace(value) == "" {
+			return errDingTalkNothingStreamed
+		}
+		first = value
+	}
+
+	outTrackID, err := c.createAICard(ctx, msg.ChatID)
+	if err != nil {
+		return err
+	}
+
+	latest, sent := first, ""
+	// The card is visible from here on, so a broken stream marks it as failed instead of
+	// leaving it in the processing state.
+	fail := func(err error) error {
+		c.markCardFailed(ctx, outTrackID, sent)
+		return err
+	}
+	ticker := time.NewTicker(dingTalkStreamTick)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return fail(ctx.Err())
+		case value, open := <-text:
+			if !open {
+				// A closed channel returns immediately forever, so stop selecting on it and
+				// let the ticker drain what is still unsent.
+				text = nil
+				continue
+			}
+			latest = value
+		case <-ticker.C:
+			if sent != latest {
+				delta, replace := dingTalkStreamDelta(sent, latest)
+				if err := c.pushCardDelta(ctx, outTrackID, delta, replace, false); err != nil {
+					return fail(err)
+				}
+				sent = latest
+				continue
+			}
+			if text == nil {
+				if err := c.pushCardDelta(ctx, outTrackID, "", false, true); err != nil {
+					return fail(err)
+				}
+				return nil
+			}
+		}
+	}
+}
+
+// markCardFailed switches the AI card to its failed state. The card keeps whatever it
+// already showed; only the flow status moves to failed, which the platform requires the
+// application to set.
+func (c *dingTalkChannel) markCardFailed(ctx context.Context, outTrackID, content string) {
+	failCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), dingTalkCardFailTimeout)
+	defer cancel()
+	token, err := c.openAPIToken(failCtx)
+	if err != nil {
+		common.Error("dingtalk: failed card could not get an access token", err, zap.String("account_id", c.account.AccountID), zap.String("card_id", outTrackID))
+		return
+	}
+	body := map[string]any{
+		"outTrackId": outTrackID,
+		"cardData": map[string]any{"cardParamMap": map[string]any{
+			"flowStatus":               "5",
+			c.account.StreamContentKey: content,
+		}},
+		"cardUpdateOptions": map[string]any{"updateCardDataByKey": true},
+	}
+	if err := c.doOpenAPI(failCtx, http.MethodPut, "/v1.0/card/instances", token, body, nil); err != nil {
+		common.Error("dingtalk: marking the card as failed failed", err, zap.String("account_id", c.account.AccountID), zap.String("card_id", outTrackID))
+	}
+}
+
+// dingTalkStreamDelta returns the text the card still needs and whether it replaces the
+// card content. A rewritten answer has to replace: the streaming API appends whenever
+// isFull is false, which would leave the stale answer in front of the new one.
+func dingTalkStreamDelta(shown, target string) (string, bool) {
+	if strings.HasPrefix(target, shown) {
+		return target[len(shown):], false
+	}
+	return target, true
+}
+
+// createAICard delivers an empty AI card to the conversation and returns its instance id.
+func (c *dingTalkChannel) createAICard(ctx context.Context, chatID string) (string, error) {
+	peer := c.chatPeer(chatID)
+	outTrackID := "ragflow_" + common.GenerateToken()
+	body := map[string]any{
+		"cardTemplateId": c.account.CardTemplateID,
+		"outTrackId":     outTrackID,
+		"cardData": map[string]any{"cardParamMap": map[string]any{
+			"flowStatus":               "1",
+			c.account.StreamContentKey: "",
+		}},
+		"callbackType":          "STREAM",
+		"imGroupOpenSpaceModel": map[string]any{"supportForward": true},
+		"imRobotOpenSpaceModel": map[string]any{"supportForward": true},
+	}
+	if peer.chatType == "2" {
+		body["openSpaceId"] = "dtv1.card//IM_GROUP." + chatID
+		body["imGroupOpenDeliverModel"] = map[string]any{"robotCode": c.account.ClientID}
+	} else {
+		if peer.senderStaffID == "" {
+			return "", errors.New("dingtalk stream card needs the sender staff id of a one-to-one chat")
+		}
+		body["openSpaceId"] = "dtv1.card//IM_ROBOT." + peer.senderStaffID
+		body["imRobotOpenDeliverModel"] = map[string]any{"spaceType": "IM_ROBOT"}
+	}
+	token, err := c.openAPIToken(ctx)
+	if err != nil {
+		return "", err
+	}
+	if err := c.doOpenAPI(ctx, http.MethodPost, "/v1.0/card/instances/createAndDeliver", token, body, nil); err != nil {
+		return "", err
+	}
+	return outTrackID, nil
+}
+
+// pushCardDelta writes content to the card's streaming variable: replace decides between a
+// full rewrite and an append, finalize closes the stream. Every push is one request, so a
+// transient failure is retried with the same idempotency id instead of failing the reply.
+func (c *dingTalkChannel) pushCardDelta(ctx context.Context, outTrackID, content string, replace, finalize bool) error {
+	guid := common.GenerateToken()
+	return retryChannelCall(ctx, dingTalkStreamAttempts, dingTalkStreamCallLimit, dingTalkStreamBackoff, func(callCtx context.Context) error {
+		token, err := c.openAPIToken(callCtx)
+		if err != nil {
+			return err
+		}
+		return c.doOpenAPI(callCtx, http.MethodPut, "/v1.0/card/streaming", token, map[string]any{
+			"outTrackId": outTrackID,
+			"guid":       guid,
+			"key":        c.account.StreamContentKey,
+			"content":    content,
+			"isFull":     replace,
+			"isFinalize": finalize,
+			"isError":    false,
+		}, nil)
+	})
+}
+
+// openAPIToken returns a cached DingTalk open API access token.
+func (c *dingTalkChannel) openAPIToken(ctx context.Context) (string, error) {
+	c.tokenMu.Lock()
+	defer c.tokenMu.Unlock()
+	if c.accessToken != "" && time.Now().Before(c.tokenExpiry) {
+		return c.accessToken, nil
+	}
+	var response struct {
+		AccessToken string `json:"accessToken"`
+		ExpireIn    int64  `json:"expireIn"`
+	}
+	if err := c.doOpenAPI(ctx, http.MethodPost, "/v1.0/oauth2/accessToken", "", map[string]any{
+		"appKey":    c.account.ClientID,
+		"appSecret": c.account.ClientSecret,
+	}, &response); err != nil {
+		return "", err
+	}
+	if response.AccessToken == "" {
+		return "", errors.New("dingtalk open api returned no access token")
+	}
+	expiry := time.Duration(response.ExpireIn) * time.Second
+	if expiry <= 0 {
+		expiry = time.Hour
+	}
+	c.accessToken = response.AccessToken
+	c.tokenExpiry = time.Now().Add(expiry - dingTalkTokenMargin)
+	return c.accessToken, nil
+}
+
+// doOpenAPI calls the DingTalk open API and reports the platform error payload.
+func (c *dingTalkChannel) doOpenAPI(ctx context.Context, method, path, token string, body map[string]any, out any) error {
+	payload, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.account.APIBaseURL, "/")+path, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("x-acs-dingtalk-access-token", token)
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
+	if resp.StatusCode >= 400 {
+		return fmt.Errorf("dingtalk open api %s status: %d, response: %s", path, resp.StatusCode, string(data))
+	}
+	var envelope struct {
+		Success *bool  `json:"success"`
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	}
+	_ = json.Unmarshal(data, &envelope)
+	if envelope.Success != nil && !*envelope.Success {
+		return fmt.Errorf("dingtalk open api %s failed: code=%s message=%s", path, envelope.Code, envelope.Message)
+	}
+	if out != nil {
+		return json.Unmarshal(data, out)
+	}
+	return nil
+}
+
 // postWebhook posts a Markdown reply payload to a DingTalk sessionWebhook.
 func (c *dingTalkChannel) postWebhook(ctx context.Context, sessionWebhook string, payload map[string]any) error {
 	body, _ := json.Marshal(payload)
@@ -462,8 +743,9 @@ func (c *dingTalkChannel) postWebhook(ctx context.Context, sessionWebhook string
 }
 
 // dingTalkExtractText extracts user text from DingTalk message payload variants.
-func dingTalkExtractText(data map[string]any) string {
-	text := data["text"]
+func dingTalkExtractText(data any) string {
+	dataMap := dingTalkMap(data)
+	text := dataMap["text"]
 	if textMap := dingTalkMap(text); len(textMap) > 0 {
 		if content := dingTalkString(textMap["content"]); content != "" {
 			return content
@@ -473,7 +755,7 @@ func dingTalkExtractText(data map[string]any) string {
 		return content
 	}
 
-	content := data["content"]
+	content := dataMap["content"]
 	if contentMap := dingTalkMap(content); len(contentMap) > 0 {
 		for _, key := range []string{"text", "content", "recognition"} {
 			if value := dingTalkString(contentMap[key]); strings.TrimSpace(value) != "" {

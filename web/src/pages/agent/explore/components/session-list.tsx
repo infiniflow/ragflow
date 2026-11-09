@@ -2,7 +2,7 @@ import { Button } from '@/components/ui/button';
 import { SearchInput } from '@/components/ui/input';
 import { useClientSearch } from '@/hooks/use-client-search';
 import { IAgentLogResponse } from '@/interfaces/database/agent';
-import { Plus } from 'lucide-react';
+import { Loader2, Plus } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useSelectDerivedSessionList } from '../hooks/use-select-derived-session-list';
 import { SessionCard } from './session-card';
@@ -18,8 +18,15 @@ export function SessionList({
 }: SessionListProps) {
   const { t } = useTranslation();
 
-  const { sessions, loading, addTemporarySession, removeTemporarySession } =
-    useSelectDerivedSessionList();
+  const {
+    sessions,
+    total,
+    loading,
+    loadingMore,
+    handleScroll,
+    addTemporarySession,
+    removeTemporarySession,
+  } = useSelectDerivedSessionList();
 
   const { filteredData, handleSearchChange, searchKeyword } =
     useClientSearch<IAgentLogResponse>({
@@ -32,9 +39,7 @@ export function SessionList({
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <h2 className="text-base font-bold">{t('explore.sessions')}</h2>
-          <span className="text-xs text-text-secondary">
-            {filteredData.length}
-          </span>
+          <span className="text-xs text-text-secondary">{total}</span>
         </div>
         <Button variant="ghost" size="icon" onClick={addTemporarySession}>
           <Plus className="h-4 w-4" />
@@ -47,7 +52,7 @@ export function SessionList({
           value={searchKeyword}
         />
       </div>
-      <div className="flex-1 overflow-auto space-y-3">
+      <div className="flex-1 overflow-auto space-y-3" onScroll={handleScroll}>
         {filteredData.map((session) => (
           <SessionCard
             key={session.id}
@@ -57,6 +62,13 @@ export function SessionList({
             removeTemporarySession={removeTemporarySession}
           />
         ))}
+        {loadingMore && (
+          <Loader2
+            className="mx-auto size-4 animate-spin"
+            role="status"
+            aria-label={t('common.loading')}
+          />
+        )}
         {!loading && filteredData.length === 0 && (
           <div className="text-center text-text-secondary py-8">
             {searchKeyword

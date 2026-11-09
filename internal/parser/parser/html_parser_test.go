@@ -28,6 +28,42 @@ func TestHTMLParser_ConfigureFromSetup_NilSafe(t *testing.T) {
 	}
 }
 
+// TestHTMLParser_BlockElementsStartANewLine checks that a block element's
+// text starts and ends a line of its own. Only p, li, headings, tr and
+// blockquote broke the line in front of them, and dl, figure, hr, nav and the
+// other block elements outside isBlockTag broke it on neither side, so the
+// text around them ran into theirs: "Name:Alice", "ATermDefinitionB".
+func TestHTMLParser_BlockElementsStartANewLine(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"text before a nested div", `<div>Name:<div>Alice</div></div>`, "Name:\nAlice"},
+		{"inline before a nested div", `<div><span>Total</span><div>42</div></div>`, "Total\n42"},
+		{"definition list", `<div>A<dl><dt>Term</dt><dd>Definition</dd></dl>B</div>`, "A\nTerm\nDefinition\nB"},
+		{"figure caption", `<div>See<figure><figcaption>Fig 1</figcaption></figure>below</div>`, "See\nFig 1\nbelow"},
+		{"horizontal rule", `<div>above<hr>below</div>`, "above\nbelow"},
+		{"nav inside an article", `<article>left<nav>Menu</nav>right</article>`, "left\nMenu\nright"},
+		{"inline elements stay on the line", `<div>Hello <b>bold</b> and <a href="x">link</a> text</div>`, "Hello bold and link text"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := NewHTMLParser().ParseWithResult(context.Background(), "page.html", []byte("<html><body>"+tt.body+"</body></html>"))
+			if res.Err != nil {
+				t.Fatalf("ParseWithResult: %v", res.Err)
+			}
+			items := ItemsToMaps(res.JSON)
+			if len(items) != 1 {
+				t.Fatalf("items = %v, want one text item", items)
+			}
+			if got := items[0]["text"]; got != tt.want {
+				t.Errorf("text = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestHTMLParser_RemoveHeaderFooter verifies that <header>/<footer>
 // tags and role="banner"/role="contentinfo" elements are stripped
 // before parsing (mirrors Python parser.py:1083-1084 pre-parse).
@@ -134,5 +170,46 @@ func TestHTMLParser_RemoveTOC(t *testing.T) {
 		if !found {
 			t.Errorf("expected %q to survive, but it was removed", text)
 		}
+	}
+}
+
+// TestHTMLParser_SkipsTemplateContent checks that markup inside a <template>
+// is not indexed. It is a pattern a script may clone (often with placeholders
+// such as {{name}}), never something the page shows, as the table parser's
+// inert-element list already treats it.
+func TestHTMLParser_SkipsTemplateContent(t *testing.T) {
+	const doc = `<html><body><p>Shown</p>Run <template>inline {{x}}</template>on` +
+		`<template><p>Hello {{name}}</p></template><p>Also shown</p></body></html>`
+	res := NewHTMLParser().ParseWithResult(context.Background(), "page.html", []byte(doc))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if got := itemsText(res); strings.Contains(got, "{{") {
+		t.Errorf("template content was indexed: %q", got)
+	}
+}
+
+// TestHTMLParser_BodyTextAndInlineElementsFormOneItem checks that a run of
+// text and inline elements directly under <body> is read as one item, the way
+// a browser lays it out. Each text node and each inline element was its own
+// item, so "Hello <b>world</b>, how are <a>you</a>?" came out as the five
+// items "Hello", "world", ", how are", "you" and "?". A comment or a script
+// inside the run does not end it; a block element does.
+func TestHTMLParser_BodyTextAndInlineElementsFormOneItem(t *testing.T) {
+	const doc = `<html><body>Hello <b>world</b>, how are <a href="x">you</a>?<br>` +
+		`Run <code>make</code><!-- note --><script>track()</script> now` +
+		`<p>A paragraph</p>tail <i>end</i></body></html>`
+	res := NewHTMLParser().ParseWithResult(context.Background(), "page.html", []byte(doc))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	var got []string
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		got = append(got, text)
+	}
+	want := []string{"Hello world, how are you?\nRun make now", "A paragraph", "tail end"}
+	if strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("items = %q, want %q", got, want)
 	}
 }

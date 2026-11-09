@@ -126,7 +126,6 @@ func setupUserDeletionDB(t *testing.T) *gorm.DB {
 		&entity.Search{}, &entity.Memory{}, &entity.MemoryTask{}, &entity.MCPServer{},
 		&entity.SkillSearchConfig{},
 		&entity.CompilationTemplate{}, &entity.CompilationTemplateGroup{},
-		&entity.EvaluationDataset{}, &entity.EvaluationCase{}, &entity.EvaluationRun{}, &entity.EvaluationResult{},
 		&entity.Connector{}, &entity.Connector2Kb{}, &entity.SyncLogs{},
 		&entity.KnowledgeCompileDataset{}, &entity.WikiDocumentDirty{}, &entity.PipelineOperationLog{},
 		&entity.IngestionTask{}, &entity.IngestionTaskLog{}, &entity.FileCommit{}, &entity.FileCommitItem{},
@@ -147,8 +146,8 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 	}
 	insert("INSERT INTO user (id, email, nickname, is_active, is_authenticated, is_anonymous) VALUES (?, ?, ?, ?, ?, ?)", "user-1", "user@example.com", "User", "0", "1", "0")
 	insert("INSERT INTO user (id, email, nickname, is_active, is_authenticated, is_anonymous) VALUES (?, ?, ?, ?, ?, ?)", "user-2", "other@example.com", "Other", "1", "1", "0")
-	insert("INSERT INTO tenant (id, llm_id, embd_id, asr_id, img2txt_id, rerank_id, parser_ids) VALUES (?, ?, ?, ?, ?, ?, ?)", "user-1", "llm", "embd", "asr", "img", "rerank", "general")
-	insert("INSERT INTO user_tenant (id, user_id, tenant_id, role, invited_by) VALUES (?, ?, ?, ?, ?)", "owner", "user-1", "user-1", "owner", "user-1")
+	insert("INSERT INTO tenant (id, parser_ids) VALUES (?, ?)", "user-1", "general")
+	insert("INSERT INTO user_tenant (id, user_id, tenant_id, role, invited_by, llm_id, embd_id, asr_id, img2txt_id, rerank_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", "owner", "user-1", "user-1", "owner", "user-1", "llm", "embd", "asr", "img", "rerank")
 	insert("INSERT INTO user_tenant (id, user_id, tenant_id, role, invited_by) VALUES (?, ?, ?, ?, ?)", "joined", "user-1", "team", "normal", "user-2")
 	insert("INSERT INTO knowledgebase (id, tenant_id, name, embd_id, permission, created_by, parser_id, doc_num, token_num, chunk_num) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", "own-kb", "user-1", "Own", "embd", "me", "user-1", "general", 1, 2, 3)
 	insert("INSERT INTO knowledgebase (id, tenant_id, name, embd_id, permission, created_by, parser_id, doc_num, token_num, chunk_num) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", "team-kb", "team", "Team", "embd", "team", "user-2", "general", 2, 5, 7)
@@ -190,6 +189,10 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 	insert("INSERT INTO file_commit (id, folder_id, message, author_id, file_count) VALUES (?, ?, ?, ?, ?)", "other-commit", "team-kb", "Other page edit", "user-2", 1)
 	insert("INSERT INTO file_commit_item (id, commit_id, file_id, operation) VALUES (?, ?, ?, ?)", "other-commit-item", "other-commit", "other-page", "add")
 
+	for _, table := range []string{"evaluation_datasets", "evaluation_cases", "evaluation_runs", "evaluation_results"} {
+		insert("CREATE TABLE " + table + " (id TEXT, tenant_id TEXT, created_by TEXT, dataset_id TEXT, run_id TEXT, case_id TEXT)")
+		insert("INSERT INTO " + table + " VALUES ('history', 'user-1', 'user-1', 'history', 'history', 'history')")
+	}
 	docEngine := &deletionEngine{}
 	store := &deletionStorage{}
 	core, logs := observer.New(zapcore.InfoLevel)
@@ -202,6 +205,15 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 	result, err := service.DeleteUser(t.Context(), "user@example.com")
 	if err != nil {
 		t.Fatalf("DeleteUser: %v", err)
+	}
+	for _, table := range []string{"evaluation_datasets", "evaluation_cases", "evaluation_runs", "evaluation_results"} {
+		var count int64
+		if err := db.Table(table).Count(&count).Error; err != nil {
+			t.Fatal(err)
+		}
+		if count != 1 {
+			t.Fatalf("%s history removed", table)
+		}
 	}
 	if result.UserCount != 1 || result.TenantCount != 1 {
 		t.Fatalf("unexpected deletion result: %+v", result)

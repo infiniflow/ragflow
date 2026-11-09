@@ -32,10 +32,6 @@ import (
 	"go.uber.org/zap"
 )
 
-// maxArtifactPageSize caps the page_size query parameter for artifact list
-// endpoints so a client cannot force an unbounded document-engine search.
-const maxArtifactPageSize = 100
-
 // DatasetArtifactHandler exposes the knowledge-compilation artifact REST APIs
 // backed by DatasetArtifactService.
 type DatasetArtifactHandler struct {
@@ -57,24 +53,24 @@ func NewDatasetArtifactHandler(svc *service.DatasetArtifactService, datasetSvc *
 func (h *DatasetArtifactHandler) datasetOwner(c *gin.Context, datasetID string) (*entity.User, string, string) {
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
-		common.ErrorWithCode(c, code, msg)
+		common.RespondError(c, code, msg)
 		return nil, "", ""
 	}
 	kb, err := h.datasetSvc.GetKnowledgebaseByID(c.Request.Context(), datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			common.ErrorWithCode(c, common.CodeNotFound, "dataset not found")
+			common.RespondError(c, common.CodeNotFound, "dataset not found")
 		} else {
-			common.ErrorWithCode(c, common.CodeServerError, "failed to resolve dataset")
+			common.RespondError(c, common.CodeServerError, "failed to resolve dataset")
 		}
 		return nil, "", ""
 	}
 	if kb == nil {
-		common.ErrorWithCode(c, common.CodeNotFound, "dataset not found")
+		common.RespondError(c, common.CodeNotFound, "dataset not found")
 		return nil, "", ""
 	}
-	if err := h.datasetSvc.CheckAccess(c.Request.Context(), permission.Subject{UserID: user.ID}, datasetID, permission.OperationRead); err != nil {
-		respondPermissionFailure(c, err, false)
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(c.Request.Context(), permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
+		respondPermissionError(c, err, false)
 		return nil, "", ""
 	}
 	return user, kb.TenantID, msg
@@ -88,7 +84,7 @@ func (h *DatasetArtifactHandler) AnyArtifact(c *gin.Context) {
 	}
 	has, err := h.svc.HasWiki(c.Request.Context(), tenantID, c.Param("dataset_id"))
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 	if has {
@@ -108,25 +104,20 @@ func (h *DatasetArtifactHandler) ListArtifacts(c *gin.Context) {
 	pageType := c.Query("page_type")
 	topic := c.Query("topic")
 	keywords := strings.TrimSpace(c.Query("keywords"))
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "30"))
-	if page < 1 {
-		page = 1
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
 	}
-	if pageSize < 1 {
-		pageSize = 30
-	}
-	if pageSize > maxArtifactPageSize {
-		pageSize = maxArtifactPageSize
-	}
+
 	items, total, err := h.svc.ListWikiPages(c.Request.Context(), tenantID, datasetID, pageType, topic, keywords, page, pageSize)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 	// Python's list_wiki_pages returns {total, items}; align the Go port so the
 	// shared frontend (which reads data.items) stays compatible.
-	common.SuccessWithData(c, gin.H{"total": total, "items": items}, "success")
+	common.RespondSuccess(c, gin.H{"total": total, "items": items}, "success")
 }
 
 // UpdateArtifact handles PUT /artifacts/<page_type>/<slug> — edit a wiki page.
@@ -146,7 +137,7 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 		Outlinks  []string `json:"outlinks"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
+		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
 
@@ -168,11 +159,11 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 
 	detail, err := h.svc.UpdateWikiPage(c.Request.Context(), tenantID, datasetID, pageType, slug, req.ContentMd, req.Title, req.Outlinks)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 	if detail == nil {
-		common.ErrorWithCode(c, common.CodeNotFound, "page not found")
+		common.RespondError(c, common.CodeNotFound, "page not found")
 		return
 	}
 
@@ -198,7 +189,7 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 		}
 	}
 
-	common.SuccessWithData(c, detail, "success")
+	common.RespondSuccess(c, detail, "success")
 }
 
 // GetArtifact handles GET /artifacts/<page_type>/<slug> — single wiki page.
@@ -213,14 +204,14 @@ func (h *DatasetArtifactHandler) GetArtifact(c *gin.Context) {
 	slug := strings.TrimPrefix(c.Param("slug"), "/")
 	detail, err := h.svc.GetWikiPage(c.Request.Context(), tenantID, datasetID, pageType, slug)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 	if detail == nil {
-		common.ErrorWithCode(c, common.CodeNotFound, "page not found")
+		common.RespondError(c, common.CodeNotFound, "page not found")
 		return
 	}
-	common.SuccessWithData(c, detail, "success")
+	common.RespondSuccess(c, detail, "success")
 }
 
 // ListArtifactTopics handles GET /artifacts/topics — list wiki topics.
@@ -233,12 +224,12 @@ func (h *DatasetArtifactHandler) ListArtifactTopics(c *gin.Context) {
 	keywords := strings.TrimSpace(c.Query("keywords"))
 	items, total, err := h.svc.ListWikiTopics(c.Request.Context(), tenantID, datasetID, keywords)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 	// Python's list_wiki_topics returns {total, items}; align the Go port so the
 	// shared frontend (which reads data.items) stays compatible.
-	common.SuccessWithData(c, gin.H{"total": total, "items": items}, "success")
+	common.RespondSuccess(c, gin.H{"total": total, "items": items}, "success")
 }
 
 // GetArtifactAlteration handles GET /artifacts/alteration — wiki alteration summary.
@@ -250,10 +241,10 @@ func (h *DatasetArtifactHandler) GetArtifactAlteration(c *gin.Context) {
 	datasetID := c.Param("dataset_id")
 	alt, err := h.svc.GetWikiAlteration(c.Request.Context(), tenantID, datasetID)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, alt, "success")
+	common.RespondSuccess(c, alt, "success")
 }
 
 // GetArtifactGraph handles GET /artifacts/graph — wiki entity/relation graph.
@@ -278,17 +269,17 @@ func (h *DatasetArtifactHandler) GetArtifactGraph(c *gin.Context) {
 		// budget the route never actually applied.
 		value, parseErr := strconv.Atoi(topNValue)
 		if parseErr != nil {
-			common.ErrorWithCode(c, common.CodeArgumentError, fmt.Sprintf("top_n must be an integer (got %q)", topNValue))
+			common.RespondError(c, common.CodeArgumentError, fmt.Sprintf("top_n must be an integer (got %q)", topNValue))
 			return
 		}
 		topN = &value
 	}
 	graph, err := h.svc.GetWikiGraph(c.Request.Context(), tenantID, datasetID, keywords, topN)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, graph, "success")
+	common.RespondSuccess(c, graph, "success")
 }
 
 // ListStructures handles GET /artifacts/structure?kind=<kind>&keywords=<query> —
@@ -304,7 +295,7 @@ func (h *DatasetArtifactHandler) ListStructures(c *gin.Context) {
 	datasetID := c.Param("dataset_id")
 	kind := c.Query("kind")
 	if kind == "" {
-		common.ErrorWithCode(c, common.CodeArgumentError, "kind is required")
+		common.RespondError(c, common.CodeArgumentError, "kind is required")
 		return
 	}
 	in := service.DatasetStructureGraphInput{
@@ -316,13 +307,13 @@ func (h *DatasetArtifactHandler) ListStructures(c *gin.Context) {
 	resp, err := h.svc.GetDatasetStructure(c.Request.Context(), in)
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidStructureKind) {
-			common.ErrorWithCode(c, common.CodeArgumentError, err.Error())
+			common.RespondError(c, common.CodeArgumentError, err.Error())
 		} else {
-			common.ErrorWithCode(c, common.CodeServerError, err.Error())
+			common.RespondError(c, common.CodeServerError, err.Error())
 		}
 		return
 	}
-	common.SuccessWithData(c, resp, "success")
+	common.RespondSuccess(c, resp, "success")
 }
 
 // AnySkill handles HEAD /skills — any skill artifact present?
@@ -333,7 +324,7 @@ func (h *DatasetArtifactHandler) AnySkill(c *gin.Context) {
 	}
 	has, err := h.svc.HasSkill(c.Request.Context(), tenantID, c.Param("dataset_id"))
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 	if has {
@@ -353,12 +344,12 @@ func (h *DatasetArtifactHandler) ListNavigation(c *gin.Context) {
 	keywords := strings.TrimSpace(c.Query("keywords"))
 	items, total, err := h.svc.ListNavClusters(c.Request.Context(), tenantID, c.Param("dataset_id"), keywords)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 	// Response key is "items" (not "nav") — the frontend DatasetNavList reads
 	// data.items and Python list_nav_clusters/_nav_search return {"total","items"}.
-	common.SuccessWithData(c, gin.H{"total": total, "items": items}, "success")
+	common.RespondSuccess(c, gin.H{"total": total, "items": items}, "success")
 }
 
 // ListNavigationChildren handles GET /navigation/<name>/children — list
@@ -371,12 +362,12 @@ func (h *DatasetArtifactHandler) ListNavigationChildren(c *gin.Context) {
 	keywords := strings.TrimSpace(c.Query("keywords"))
 	items, total, err := h.svc.ListNavChildren(c.Request.Context(), tenantID, c.Param("dataset_id"), c.Param("name"), keywords)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 	// Same contract as the top-level nav list: Python list_nav_children returns
 	// {"total","items"} and the frontend reads data.items for child expansion.
-	common.SuccessWithData(c, gin.H{"total": total, "items": items}, "success")
+	common.RespondSuccess(c, gin.H{"total": total, "items": items}, "success")
 }
 
 // GetSkillTree handles GET /skills — skill tree.
@@ -388,10 +379,10 @@ func (h *DatasetArtifactHandler) GetSkillTree(c *gin.Context) {
 	kwd := c.Query("kwd")
 	items, total, err := h.svc.GetSkillTree(c.Request.Context(), tenantID, c.Param("dataset_id"), kwd)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, gin.H{"total": total, "tree": items}, "success")
+	common.RespondSuccess(c, gin.H{"total": total, "tree": items}, "success")
 }
 
 // DeleteSkills handles DELETE /skills — delete all skills.
@@ -402,10 +393,10 @@ func (h *DatasetArtifactHandler) DeleteSkills(c *gin.Context) {
 	}
 	n, err := h.svc.DeleteSkills(c.Request.Context(), tenantID, c.Param("dataset_id"), "")
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, gin.H{"deleted": n}, "success")
+	common.RespondSuccess(c, gin.H{"deleted": n}, "success")
 }
 
 // GetSkillPage handles GET /skills/<skill_kwd> — single skill page.
@@ -416,14 +407,14 @@ func (h *DatasetArtifactHandler) GetSkillPage(c *gin.Context) {
 	}
 	detail, err := h.svc.GetSkillPage(c.Request.Context(), tenantID, c.Param("dataset_id"), c.Param("skill_kwd"))
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 	if detail == nil {
-		common.ErrorWithCode(c, common.CodeNotFound, "skill not found")
+		common.RespondError(c, common.CodeNotFound, "skill not found")
 		return
 	}
-	common.SuccessWithData(c, detail, "success")
+	common.RespondSuccess(c, detail, "success")
 }
 
 // DeleteSkill handles DELETE /skills/<skill_kwd> — delete a single skill.
@@ -434,10 +425,10 @@ func (h *DatasetArtifactHandler) DeleteSkill(c *gin.Context) {
 	}
 	n, err := h.svc.DeleteSkills(c.Request.Context(), tenantID, c.Param("dataset_id"), c.Param("skill_kwd"))
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, gin.H{"deleted": n}, "success")
+	common.RespondSuccess(c, gin.H{"deleted": n}, "success")
 }
 
 // GetDocumentGraph handles GET /documents/<document_id>/structure/graph — document structure graph.
@@ -455,13 +446,13 @@ func (h *DatasetArtifactHandler) GetDocumentGraph(c *gin.Context) {
 		Keywords:   c.Query("keywords"),
 	})
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 	if resp == nil {
 		resp = &service.DocumentStructureGraphResponse{Templates: []service.DocumentStructureGraphTemplate{}}
 	}
-	common.SuccessWithData(c, resp, "success")
+	common.RespondSuccess(c, resp, "success")
 }
 
 // GetDocumentClaims handles GET /documents/<document_id>/structure/claims —
@@ -501,10 +492,10 @@ func (h *DatasetArtifactHandler) GetDocumentClaims(c *gin.Context) {
 
 	claims, total, err := h.svc.ListDocumentStructureClaims(c.Request.Context(), tenantID, datasetID, documentID, templateID, chunkIDs, offset, limit)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeExceptionError, err.Error())
+		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, gin.H{"claims": claims, "total": total, "offset": offset, "limit": limit}, "success")
+	common.RespondSuccess(c, gin.H{"claims": claims, "total": total, "offset": offset, "limit": limit}, "success")
 }
 
 // DeleteDocumentGraph handles DELETE /documents/<document_id>/structure/graph — delete document structure graph.
@@ -517,8 +508,8 @@ func (h *DatasetArtifactHandler) DeleteDocumentGraph(c *gin.Context) {
 	documentID := c.Param("document_id")
 	n, err := h.svc.DeleteDocumentGraph(c.Request.Context(), tenantID, datasetID, documentID)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, gin.H{"deleted": n}, "success")
+	common.RespondSuccess(c, gin.H{"deleted": n}, "success")
 }

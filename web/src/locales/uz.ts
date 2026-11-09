@@ -9,7 +9,7 @@ export default {
       delete: 'O‘chirish',
       deleteModalTitle: 'Buni o‘chirishni xohlaysizmi ?',
       deleteThem: 'Bularni o‘chirishni xohlaysizmi ?',
-      removeModalTitle: 'Buni olib tashlashni xohlaysizmi ?',
+      removeIt: 'Buni olib tashlashni xohlaysizmi ?',
       ok: 'Ok',
       cancel: 'Bekor qilish',
       yes: 'Ha',
@@ -56,7 +56,6 @@ export default {
       viewLess: 'Kamroq ko‘rish',
       comingSoon: 'Tez orada',
       download: 'Yuklab olish',
-      figure: 'Rasm',
       close: 'Yopish',
       preview: 'Ko‘rish',
       move: 'Ko‘chirish',
@@ -558,7 +557,7 @@ export default {
       webCrawl: 'Veb-tarraqlash',
       chunkNumber: 'Bo‘laklar',
       uploadDate: 'Yuklash sanasi',
-      chunkMethod: 'Bo‘laklash usuli',
+      parsingMode: 'Tahlil rejimi',
       enabled: 'Yoqish',
       disabled: 'O‘chirish',
       action: 'Amal',
@@ -614,10 +613,6 @@ export default {
       layoutRecognize: 'PDF parseri',
       layoutRecognizeTip:
         'PDF maketini tahlil qilish uchun vizual modeldan foydalanib, hujjat sarlavhalari, matn bloklari, rasmlari va jadvallarini aniq joylashtiradi. Naive varianti tanlansa, PDFdan faqat oddiy matn olinadi. E’tibor bering, bu variant hozircha FAQAT PDF hujjatlari uchun ishlaydi.',
-      taskPageSize: 'Vazifa sahifa hajmi',
-      taskPageSizeMessage: 'Iltimos, vazifa sahifa hajmini kiriting!',
-      taskPageSizeTip:
-        'Maketni aniqlash paytida PDF fayli bo‘laklarga bo‘linadi va qayta ishlash tezligini oshirish uchun parallel qayta ishlanadi. Bu parametr har bir bo‘lak hajmini belgilaydi. Kattaroq bo‘lak hajmi sahifalar orasidagi uzluksiz matnni bo‘lib yuborish ehtimolini kamaytiradi.',
       addPage: 'Sahifa qo‘shish',
       greaterThan: 'Joriy qiymat "gacha" qiymatidan katta bo‘lishi kerak!',
       greaterThanPrevious:
@@ -649,9 +644,6 @@ export default {
       delimiterPreviewEmpty:
         'Ajratgichlar yo‘q — matn faqat hajm bo‘yicha bo‘laklanadi.',
       delimiterPreviewCount: '({{count}})',
-      html4excel: 'Excel’dan HTML’ga',
-      html4excelTip:
-        'Umumiy bo‘laklash usuli bilan ishlatiladi. O‘chirilganda, to‘plamdagi elektron jadvallar (XLSX yoki XLS (Excel 97-2003)) kalit-qiymat juftliklariga tahlil qilinadi. Yoqilganda, ular HTML jadvallarga tahlil qilinadi va agar original jadval 12 qatordan ko‘p bo‘lsa, har 12 qatorda bo‘linadi. Tafsilotlar uchun https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration ga qarang.',
       autoKeywords: 'Ajratib olinadigan kalit so‘zlar soni',
       autoKeywordsTip:
         'Har bir bo‘lak uchun N ta kalit so‘zni avtomatik ajratib olib, ushbu kalit so‘zlarni o‘z ichiga olgan so‘rovlar uchun ularning reytingini oshiradi. ‘Sozlash’da belgilangan indekslash modeli tomonidan qo‘shimcha tokenlar sarflanishini yodda tuting. Bo‘lak uchun qo‘shilgan kalit so‘zlarni bo‘laklar ro‘yxatidan tekshirishingiz yoki yangilashingiz mumkin. Tafsilotlar uchun https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration ga qarang.',
@@ -708,9 +700,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         'masalan, https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio Access Token',
-      paddleocrAccessTokenTip: 'PaddleOCR API uchun access token (ixtiyoriy)',
-      paddleocrAccessTokenPlaceholder:
-        'Sizning AI Studio tokeningiz (ixtiyoriy)',
+      paddleocrAccessTokenTip: 'PaddleOCR API uchun access token',
+      paddleocrAccessTokenPlaceholder: 'Sizning AI Studio tokeningiz',
       paddleocrAlgorithm: 'PaddleOCR algoritmi',
       paddleocrAlgorithmTip: 'PaddleOCR tahlili uchun ishlatiladigan algoritm',
       paddleocrSelectAlgorithm: 'Algoritmni tanlash',
@@ -750,7 +741,7 @@ export default {
       dataFlowPlaceholder: 'Iltimos, pipelineni tanlang.',
       buildItFromScratch: 'Noldan qurish',
       dataFlow: 'Pipeline',
-      parseType: 'Tahlil rejimi',
+      parsingMode: 'Tahlil rejimi',
       manualSetup: 'Maxsus ingestsiya pipeline',
       builtIn: 'Ichki tahlil shabloni',
       noConfigChunkerHint:
@@ -774,8 +765,6 @@ export default {
         '«Jamoa» qilib belgilansa, jamoangizning barcha a’zolari to‘plamni boshqarishi mumkin.',
       chunkTokenNumberTip:
         'Bu bo‘lak yaratish uchun token chegarasini belgilaydi. Bu chegaradan kam tokenli segment keyingi segmentlar bilan chegaradan oshmaguncha birlashtiriladi va aynan shu nuqtada bo‘lak yaratiladi. Chegara oshsa ham, ajratgich uchraguniga qadar yangi bo‘lak yaratilmaydi.',
-      chunkMethod: 'Bo‘laklash usuli',
-      chunkMethodTip: 'O‘ng tomondagi maslahatlarni ko‘ring.',
       upload: 'Yuklash',
       english: 'Ingliz tili',
       chinese: 'Xitoy tili',
@@ -1220,9 +1209,6 @@ export default {
       },
       cancel: 'Bekor qilish',
       chatSetting: 'Chat sozlashi',
-      tocEnhance: 'PageIndex',
-      tocEnhanceTip:
-        'Hujjatni tahlil qilish davomida mundarija ma’lumotlari generatsiya qilingan (Umumiy usuldagi ‘Mundarija ajratib olishni yoqish’ opsiyasini ko‘ring). Bu katta modelga foydalanuvchi so‘roviga tegishli mundarija elementlarini qaytarish imkonini beradi, shu orqali ushbu elementlardan tegishli bo‘laklarni olish va tartiblash jarayonida ularga vazn qo‘llash mumkin. Bu yondashuv kitoblardagi inson axborot izlash xatti-harakatiga taqlid qiladi.',
       batchDeleteSessions: 'Ommaviy o‘chirish',
       deleteSelectedConfirm: 'Tanlangan {{count}} sessiya(o‘chirilsinmi)?',
       showChunkMetadata: 'Bo‘lak metadatasini ko‘rsatish',
@@ -1270,7 +1256,7 @@ export default {
       dataSourceFieldTenantId: 'Tenant ID',
       dataSourceFieldClientId: 'Client ID',
       dataSourceFieldClientSecret: 'Client Secret',
-      dataSourceFieldFolderPathOptional: 'Papka yo‘li (ixtiyoriy)',
+      dataSourceFieldFolderPathOptional: 'Papka yo‘li',
       dataSourceFieldBatchSize: 'Partiya hajmi',
       dataSourceFieldFeishuAppId: 'Feishu app ID',
       dataSourceFieldFeishuAppSecret: 'Feishu app kaliti (secret)',
@@ -1284,8 +1270,7 @@ export default {
       dataSourceValidationFeishuBatchSize:
         'Partiya hajmi 1 dan 10 gacha bo‘lishi kerak',
       dataSourceFieldMailFolder: 'Pochta papkasi',
-      dataSourceFieldMailboxUserIds:
-        'Pochta qutilari foydalanuvchi ID’lari (ixtiyoriy)',
+      dataSourceFieldMailboxUserIds: 'Pochta qutilari foydalanuvchi ID’lari',
       dataSourceFieldInstanceUrl: 'Instansiya URL',
       dataSourceFieldObjects: 'Obyektlar',
       dataSourceFieldApiVersion: 'API versiyasi',
@@ -1296,7 +1281,7 @@ export default {
       dataSourceFieldContainerUrl: 'Konteyner URL',
       dataSourceFieldSasToken: 'SAS Token',
       dataSourceFieldContainerName: 'Konteyner nomi',
-      dataSourceFieldPrefixOptional: 'Prefiks (ixtiyoriy)',
+      dataSourceFieldPrefixOptional: 'Prefiks',
       dataSourceFieldFeedUrl: 'Feed URL',
       dataSourceFieldSitemapUrl: 'Sitemap URL',
       dataSourceFieldUrlFilter: 'URL filtri (regex)',
@@ -2047,10 +2032,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         'masalan, https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio Access Token',
-      paddleocrAccessTokenMessage:
-        'PaddleOCR API uchun access token (ixtiyoriy)',
-      paddleocrAccessTokenPlaceholder:
-        'Sizning AI Studio tokeningiz (ixtiyoriy)',
+      paddleocrAccessTokenMessage: 'PaddleOCR API uchun access token',
+      paddleocrAccessTokenPlaceholder: 'Sizning AI Studio tokeningiz',
       paddleocrAlgorithm: 'PaddleOCR algoritmi',
       paddleocrAlgorithmMessage: 'Iltimos, PaddleOCR algoritmini tanlang',
       paddleocrSelectAlgorithm: 'Algoritmni tanlash',
@@ -2088,7 +2071,7 @@ export default {
         'Har bir yangi yaratilgan ma’lumotlar to‘plami uchun standart LLM.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        'Har bir yangi yaratilgan ma’lumotlar to‘plami uchun standart embedding modeli. Ochiladigan ro‘yxatdan embedding modelini topa olmasangiz, RAGFlow slim nashrini ishlatayotganingizni (u embedding modellarini o‘z ichiga olmaydi) yoki model provayderingiz bu modelni qo‘llab-quvvatlashini “Model provayderlari” sahifasidan tekshiring.',
+        'Har bir yangi yaratilgan ma’lumotlar to‘plami uchun standart embedding modeli. Ochiladigan ro‘yxatdan embedding modelini topa olmasangiz, model provayderingiz bu modelni qo‘llab-quvvatlashini “Model provayderlari” sahifasidan tekshiring.',
       img2txtModel: 'VLM',
       img2txtModelTip:
         'Har bir yangi yaratilgan ma’lumotlar to‘plami uchun standart VLM. Rasm yoki videoni tasvirlaydi. Ochiladigan ro‘yxatdan modelni topa olmasangiz, “Model provayderlari” sahifasidan model provayderingiz bu modelni qo‘llab-quvvatlashini tekshiring.',
@@ -2132,7 +2115,7 @@ export default {
         apiUrlPlaceholder:
           'Misol uchun: https://paddleocr-server.com/layout-parsing',
         accessToken: 'AI Studio Access Token',
-        accessTokenPlaceholder: 'Sizning AI Studio tokeningiz (ixtiyoriy)',
+        accessTokenPlaceholder: 'Sizning AI Studio tokeningiz',
         algorithm: 'PaddleOCR algoritmi',
         selectAlgorithm: 'Algoritmni tanlash',
         modelNamePlaceholder: 'Misol uchun: paddleocr-from-env-1',
@@ -2321,6 +2304,7 @@ export default {
         image2text: 'VLM',
         ocr: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       showToc: 'Kontentni ko‘rsatish',
       hideToc: 'Kontentni yashirish',
@@ -2566,15 +2550,8 @@ export default {
     },
     flow: {
       exportCurrentPage: 'Joriy sahifani eksport qilish',
-      preprocess: {
-        preprocess: 'Oldindan qayta ishlash',
-        mainContent: 'Asosiy kontent',
-        abstract: 'Annotatsiya',
-        author: 'Muallif',
-        sectionTitle: 'Bo‘lim sarlavhasi',
-      },
       tags: 'Teglar',
-      canvasCategory: 'Canvas toifasi',
+      agentCategory: 'Canvas toifasi',
       editTags: 'Teglarni tahrirlash',
       editTagsDescription:
         'Agentlaringizni tartiblash va filtrlash uchun teglar qo‘shing. Qo‘shish uchun Enter yoki vergulni bosing.',
@@ -2686,9 +2663,6 @@ export default {
       oneChunkTitle: 'Eslatma',
       oneChunkDescription:
         'Tahlil qilingan barcha bo‘limlar tartib bilan bitta bo‘lakka birlashtiriladi.',
-      flattenMediaToText: 'Vizual modelni o‘chirish',
-      flattenMediaToTextTip:
-        'Rasm va jadval bo‘limlarini oddiy matn sifatida qarab, vizual yaxshilashni o‘tkazib yuboradi.',
       enableChildrenDelimiters: 'Qidiruv uchun bola bo‘laklar ishlatiladi',
       merge: 'Birlashtirish',
       split: 'Bo‘lish',
@@ -2715,20 +2689,6 @@ export default {
       toolTimeout: 'Vosita timeouti',
       toolTimeoutTip:
         'Bitta vosita chaqiruvi (MCP vositalari ham) uchun soniyadagi timeout. Uzoq ishlaydigan vositalar uchun oshiring.',
-      maxSteps: 'Maksimal qadamlar',
-      headless: 'Headless',
-      enableDefaultExtensions: 'Standart kengaytmalarni yoqish',
-      enableDefaultExtensionsTip:
-        'browser-use standart kengaytmalarini (uBlock, cookie ishlov berish, ClearURLs) yoqing. Ish vaqti kengaytma yuklanishlaridan qochish uchun o‘chiring.',
-      chromiumSandbox: 'Chromium sandbox',
-      chromiumSandboxTip:
-        'Chromium sandbox yoqilsinmi. Docker root muhitlarida odatda o‘chiriladi; oddiy hostlarda yoqish tavsiya etiladi.',
-      persistSession: 'Sessiyani saqlash',
-      persistSessionTip:
-        'Yoqilganda, bu Brauzer tuguni takroriy kirishlardan qochish uchun brauzer sessiyasini qayta ishlatadi.',
-      uploadSources: 'Manbalarni yuklash',
-      uploadSourcesTip:
-        'Fayl ID’lari, fayl URL’lari yoki o‘zgaruvchilar qo‘llab-quvvatlanadi. Bir nechta qiymatni vergul bilan ajratishingiz yoki JSON massiv formatidan foydalanishingiz mumkin (masalan ["id1","https://example.com/a.pdf"]).',
       advancedSettings: 'Qo‘shimcha sozlamalar',
       addTools: 'Vositalar qo‘shish',
       sysPromptDefaultValue:
@@ -2864,9 +2824,6 @@ export default {
       sofyaApiKeyTip: 'Talab qilinadi. sofya.co’da API Key yarating.',
       docGenerator: 'Doc Generator',
       docGeneratorDescription: 'Markdown kontentidan fayl generatsiya qilish.',
-      browser: 'Brauzer',
-      browserDescription:
-        'Brauzer vazifalarini avtomatlashtiring. Model sozlamasi va prompt asosidagi amallar qo‘llab-quvvatlanadi. Yuklash manbalari fayl ID’lari va URL’larni qo‘llaydi, yuklab olingan fayllar maqsadli papkaga saqlanishi mumkin.',
       subtitle: 'Subtitr',
       logoImage: 'Logo rasmi',
       logoPosition: 'Logo joylashuvi',
@@ -3253,9 +3210,9 @@ export default {
       jsonFormatTip:
         'Yuqoridagi komponent quyidagi formatda JSON satrini ta’minlashi kerak:',
       toEmailTip: 'to_email: Qabul qiluvchi pochtasi (Majburiy)',
-      ccEmailTip: 'cc_email: Nusxa pochtasi (Ixtiyoriy)',
-      subjectTip: 'subject: Email mavzusi (Ixtiyoriy)',
-      contentTip: 'content: Email kontenti (Ixtiyoriy)',
+      ccEmailTip: 'cc_email: Nusxa pochtasi',
+      subjectTip: 'subject: Email mavzusi',
+      contentTip: 'content: Email kontenti',
       jsonUploadTypeErrorMessage: 'Iltimos, json faylini yuklang',
       jsonUploadContentErrorMessage: 'json fayl xatosi',
       nameExists: 'Nom allaqachon mavjud',
@@ -3862,10 +3819,10 @@ export default {
         write: 'Yozish',
         share: 'Ulashish',
       },
-      serviceStatus: 'Xizmatlar holati',
-      userManagement: 'Foydalanuvchilarni boshqarish',
-      sandboxSettings: 'Sandbox sozlamalari',
-      registrationWhitelist: 'Ro‘yxatdan o‘tish uchun oq ro‘yxat',
+      serviceStatus: 'Xizmatlar',
+      userManagement: 'Foydalanuvchilar',
+      sandboxSettings: 'Qum qutisi',
+      registrationWhitelist: 'Oq ro‘yxat',
       roles: 'Rollar',
       monitoring: 'Monitoring',
       sandboxSettingsPage: {
@@ -3952,7 +3909,7 @@ export default {
       importWhitelist: 'Oq ro‘yxatni import qilish (Excel)',
       importSelectExcelFile: 'Excel fayli (.xlsx)',
       importOverwriteExistingEmails: 'Mavjud pochtalarni almashtirish',
-      importInvalidExcelFile: 'Iltimos, yaroqli Excel faylini tanlang',
+      importValidExcelFile: 'Iltimos, yaroqli Excel faylini tanlang',
       importFileRequired: 'Iltimos, import qilish uchun fayl tanlang',
       importFileTips:
         'Fayl <code>email</code> nomli bitta sarlavha ustunini o‘z ichiga olishi kerak.',
@@ -3964,7 +3921,6 @@ export default {
       updateDate: 'Yangilanish sanasi',
       permission: 'Ruxsat',
       agentTitle: 'Agent sarlavhasi',
-      canvasCategory: 'Canvas toifasi',
       newRole: 'Yangi rol',
       addNewRole: 'Yangi rol qo‘shish',
       roleName: 'Rol nomi',
@@ -3980,18 +3936,14 @@ export default {
     },
     explore: {
       title: 'Ishga tushirish',
-      canvasList: 'Canvas ro‘yxati',
       sessions: 'Sessiyalar',
       newSession: 'Yangi sessiya',
       newSessionLabel: 'Yangi suhbatni boshlash',
       deleteSession: 'Sessiyani o‘chirish',
-      searchCanvas: 'Canvas qidirish...',
       searchSessions: 'Sessiyalarni qidirish...',
-      noCanvasSelected: 'Iltimos, canvas tanlang',
       noSessionSelected: 'Iltimos, sessiya tanlang yoki yangi yarating',
       noSessionsFound: 'Sessiyalar topilmadi',
       createFirstSession: 'Birinchi sessiyangizni yarating',
-      noCanvasFound: 'Canvas topilmadi',
       deleteSelectedConfirm:
         'Haqiqatan ham {{count}} sessiyani o‘chirmoqchimisiz?',
       batchDeleteSessions: 'Sessiyalarni o‘chirish',

@@ -9,7 +9,8 @@ export default {
       delete: 'Delete',
       deleteModalTitle: 'Are you sure to delete it ?',
       deleteThem: 'Are you sure to delete them ?',
-      removeModalTitle: 'Are you sure to remove it ?',
+      removeIt: 'Are you sure to remove it ?',
+      removeThem: 'Are you sure to remove them ?',
       ok: 'Ok',
       cancel: 'Cancel',
       yes: 'Yes',
@@ -58,7 +59,6 @@ export default {
       viewLess: 'View less',
       comingSoon: 'Coming soon',
       download: 'Download',
-      figure: 'Fig.',
       close: 'Close',
       preview: 'Preview',
       move: 'Move',
@@ -155,12 +155,18 @@ export default {
       noSpaces: 'No skill space yet. Create your first one!',
       enterSpace: 'Enter',
       spaceCreated: 'Skill space created successfully',
+      spaceUpdated: 'Skill space renamed successfully',
       spaceDeleted: 'Skill space deleted successfully',
       fetchError: 'Failed to fetch skills',
       deleteSpaceTitle: 'Delete skill space',
       deleteSpaceDescription:
         'Are you sure you want to delete this skill space? This action cannot be undone and all skills in this space will be permanently deleted.',
       deleteSpaceName: 'Space name',
+      deleteSelectedTitle: 'Delete selected spaces',
+      deleteSelectedDescription:
+        'Are you sure you want to delete {{count}} selected spaces? This action cannot be undone.',
+      renameSpaceTitle: 'Rename skill space',
+      renameSpaceDescription: 'Enter a new name for this skill space.',
       uploadSuccess: 'Skill uploaded successfully',
       uploadError: 'Failed to upload skill',
       deleteSuccess: 'Skill deleted successfully',
@@ -175,17 +181,23 @@ export default {
       foldersCount: '{{count}} folders',
       pageInfo: 'Page {{current}} of {{total}}',
       totalSkills: '{{total}} skills total',
+      space: 'spaces',
+      sortAsc: 'Sort ascending',
+      sortDesc: 'Sort descending',
       backToSkills: 'Back to skills',
       selectFileToView: 'Select a file to view',
       skillName: 'Skill name',
       skillNamePlaceholder: 'e.g., my-awesome-skill',
       skillNameHelp: 'Only letters, numbers, hyphens and underscores allowed',
+      name: 'Name',
+      description: 'Description',
       source: 'Source',
       version: 'Version',
       skillVersion: 'Version',
       skillVersionPlaceholder: 'e.g., 1.0.0',
       versionFormatHelp: 'Version must be in semver format (e.g., 1.0.0)',
       versionRequired: 'Version is required',
+      versionExists: 'This version already exists',
       selectFilesOrFolder: 'Select files or folder',
       uploadDescription:
         'Upload skill files. You can drag and drop files or select a folder.',
@@ -285,6 +297,7 @@ export default {
       fieldContent: 'Content',
       fieldContentDesc: 'Skill content (e.g., README)',
       weight: 'Weight',
+      pureKeyword: 'Keyword only',
       pureVector: 'Vector Only',
       hybrid: 'Hybrid',
       keyword: 'Keyword',
@@ -295,6 +308,7 @@ export default {
       reindex: 'Reindex All',
       reindexing: 'Reindexing...',
       reindexSuccess: 'Reindexed successfully',
+      reindexError: 'Failed to reindex skills',
       pleaseSelectEmbeddingModel: 'Please select an embedding model',
       saveSuccess: 'Saved successfully',
       saveError: 'Failed to save',
@@ -402,6 +416,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     },
     knowledgeDetails: {
       continueUpload: 'Continue upload',
+      uploadPipelineDeletedTitle: 'Parsing pipeline unavailable',
+      uploadPipelineDeletedContent:
+        'The pipeline configured for this dataset has been deleted or has no published version, so uploaded files cannot be parsed automatically. Reconfigure a pipeline in the dataset settings, or upload now and configure parsing for each file individually.',
       reselectParser: 'Reselect parse method',
       goAddModel: 'Go add model',
       uploadMissingModelsTitle: 'Some files lack a required model',
@@ -416,6 +433,12 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         '{{name}} ({{fileType}}): not supported by the current parser configuration; it will automatically switch to the built-in {{parser}} configuration',
       fileTypeUnsupportedManualSwitch:
         '{{name}} ({{fileType}}): not supported by the current parser configuration; switch its parsing method manually after upload',
+      fileTypeVideoUnsupported:
+        '{{name}} ({{fileType}}): video files cannot be parsed yet',
+      videoUnsupportedAfterUploadHint:
+        'You can continue uploading, but video files cannot be parsed yet and will not be processed.',
+      videoUnsupportedParseHint:
+        'Video files cannot be parsed yet. Delete this file or convert it to a supported format.',
       reselectParserAfterUploadHint:
         'Continue uploading, then system will automatically switch these files to a supported built-in parsing configuration.',
       manualSwitchAfterUploadHint:
@@ -485,6 +508,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       applyAutoMetadataSettings: 'Apply global auto-metadata settings',
       parseFileTip: 'Are you sure to parse?',
       clearChunksReparseTip: 'Are you sure to clear chunks to re-parse?',
+      parserConfigReparseTip:
+        'Existing chunks were generated using the previous parser settings. Would you like to clear them and re-parse this document using the saved settings?',
       parseFile: 'Parse file',
       emptyMetadata: 'No metadata',
       metadataField: 'Metadata field',
@@ -556,7 +581,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       webCrawl: 'Web crawl',
       chunkNumber: 'Chunks',
       uploadDate: 'Upload date',
-      chunkMethod: 'Chunking method',
+      parsingMode: 'Parsing mode',
       enabled: 'Enable',
       disabled: 'Disable',
       action: 'Action',
@@ -595,6 +620,15 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       runningStatus3: 'Success',
       runningStatus4: 'Fail',
       runningStatusQueued: 'Queued',
+      cancelParsingTasks: 'Cancel parsing tasks',
+      filesParsing: '{{count}} files parsing',
+      filesPending: '{{count}} files pending',
+      cancelParsingConfirmTitle: 'Cancel parsing',
+      cancelParsingConfirm:
+        'Cancel parsing for the {{count}} files that are currently parsing?',
+      cancelPendingConfirm:
+        'Remove the {{count}} pending files from the parsing queue?',
+      cancelTasksSuccess: 'Canceled {{count}} parsing tasks',
       pageRanges: 'Page ranges',
       pageRangesTip:
         'Range of pages to be parsed; pages outside this range will not be processed.',
@@ -608,9 +642,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       layoutRecognize: 'PDF parser',
       layoutRecognizeTip:
         'Use a visual model for PDF layout analysis to effectively locate document titles, text blocks, images, and tables. If the naive option is chosen, only the plain text in the PDF will be retrieved. Please note that this option currently works ONLY for PDF documents.',
-      taskPageSize: 'Task page size',
-      taskPageSizeMessage: 'Please input your task page size!',
-      taskPageSizeTip: `During layout recognition, a PDF file is split into chunks and processed in parallel to increase processing speed. This parameter sets the size of each chunk. A larger chunk size reduces the likelihood of splitting continuous text between pages.`,
       addPage: 'Add page',
       greaterThan: 'The current value must be greater than to!',
       greaterThanPrevious:
@@ -641,8 +672,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'No delimiters — text will be chunked by size only.',
       delimiterPreviewCount: '({{count}})',
 
-      html4excel: 'Excel to HTML',
-      html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the dataset will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows. See https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration for details.`,
       autoKeywords: 'Number of keywords to extract',
       autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. You can check or update the added keywords for a chunk from the chunk list. For details, see https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoQuestions: 'Auto-question number',
@@ -682,6 +711,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       builtInPipelines: 'Built-in pipelines',
       parserSelectPlaceholder: 'Select a parser',
       parserOptionUnavailable: 'unavailable',
+      parserOptionUnavailableMessage:
+        'The selected parser or pipeline version is no longer available. Please select again.',
       randomSeedTip:
         'Seed is the starting point for a pseudo-random algorithm that ensures reproducibility of the same output across different runs.',
       datasetDescription: 'Describe your dataset',
@@ -707,17 +738,18 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'Method for parsing PDF: auto (automatic detection), txt (text extraction), ocr (optical character recognition)',
       mineruFormulaEnable: 'Formula recognition',
       mineruFormulaEnableTip:
-        'Enable formula recognition. Note: This may not work correctly for Cyrillic documents.',
+        'For /file_parse, enable formula recognition. Hybrid backends apply this switch to inline formulas only; block formulas remain enabled. V1 does not support disabling this option.',
       mineruTableEnable: 'Table recognition',
-      mineruTableEnableTip: 'Enable table recognition and extraction.',
+      mineruTableEnableTip:
+        'For /file_parse, enable table recognition and extraction. V1 does not support disabling this option.',
       paddleocrOptions: 'PaddleOCR Options',
       paddleocrApiUrl: 'PaddleOCR API URL',
       paddleocrApiUrlTip: 'The API endpoint URL for PaddleOCR service',
       paddleocrApiUrlPlaceholder:
         'e.g. https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio Access Token',
-      paddleocrAccessTokenTip: 'Access token for PaddleOCR API (optional)',
-      paddleocrAccessTokenPlaceholder: 'Your AI Studio token (optional)',
+      paddleocrAccessTokenTip: 'Access token for PaddleOCR API',
+      paddleocrAccessTokenPlaceholder: 'Your AI Studio token',
       paddleocrAlgorithm: 'PaddleOCR Algorithm',
       paddleocrAlgorithmTip: 'Algorithm to use for PaddleOCR parsing',
       paddleocrSelectAlgorithm: 'Select Algorithm',
@@ -760,9 +792,16 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       dataFlowPlaceholder: 'Please select a pipeline.',
       buildItFromScratch: 'Build it from scratch',
       dataFlow: 'Pipeline',
-      parseType: 'Parse mode',
+      parsingMode: 'Parsing mode',
       manualSetup: 'Custom ingestion pipeline',
       builtIn: 'Built-in parsing template',
+      applyParserSettingsTitle: 'Apply parser settings to existing files?',
+      parserSettingsChangeWarning:
+        'Updated parser settings apply only to newly uploaded files by default. Choose “Yes” to also apply them to all existing files in this dataset, replacing any file-specific parser settings. You’ll need to manually re-parse those files for the changes to affect their content. Choose “No” to keep existing files’ settings unchanged.',
+      parserSettingsApplied:
+        'Parser settings applied. Re-parse files manually to update their content.',
+      parserSettingsApplyFailed:
+        'Dataset settings saved, but existing files were not updated. Choose “Yes” to retry.',
       noConfigChunkerHint:
         'The built-in {{name}} parser handles chunking automatically, so no additional configuration is required.',
       titleDescription:
@@ -784,8 +823,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         "If it is set to 'Team', all your team members will be able to manage the dataset.",
       chunkTokenNumberTip:
         'It kind of sets the token threshold for a creating a chunk. A segment with fewer tokens than this threshold will be combined with the following segments until the token count exceeds the threshold, at which point a chunk is created. No new chunk is created unless a delimiter is encountered, even if the threshold is exceeded.',
-      chunkMethod: 'Chunking method',
-      chunkMethodTip: 'View the tips on the right.',
       upload: 'Upload',
       english: 'English',
       chinese: 'Chinese',
@@ -1066,7 +1103,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       messagePlaceholder: 'Type your message here...',
       exit: 'Exit',
       multipleModels: 'Multiple models',
-      applyModelConfigs: 'Apply model configs',
+      applyModelConfigs:
+        'Use this model and its settings in single-model Chat.',
       conversations: 'Conversations',
       chatApps: 'Chat apps',
       newConversation: 'New conversation',
@@ -1137,6 +1175,11 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       operation: 'Operation',
       model: 'Model',
       modelTip: 'Large language chat model',
+      tokensSpent: '{{total}} tokens ({{prompt}} input, {{completion}} output)',
+      turnElapsed: '{{seconds}}s',
+      decisionModel: 'Decision model',
+      decisionModelTip:
+        "Evaluates whether retrieved chunks are relevant to the user's query before passing them to the LLM. To enable this feature, configure a decision model under Settings → Model providers, then select it here. By default, no decision model is used.",
       modelMessage: 'Please select!',
       modelEnabledTools: 'Enabled tools',
       modelEnabledToolsTip:
@@ -1176,6 +1219,13 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       thinkingLevelNone: 'Naive',
       thinkingLevelAgentic: 'Agentic',
       thinkingLevelAgenticDescription: 'Self-directed corpus exploration',
+      naiveSettings: 'Naive',
+      agenticSettings: 'Agentic',
+      agenticTemplate: 'Agentic template',
+      agenticTemplateTip:
+        'The system template the agentic RAG agent runs with. Editing it overrides the shipped default for this chat; reset to restore it.',
+      agenticTemplateTooLong: 'Template must be at most 32768 characters',
+      resetToDefault: 'Reset to default',
       thinkingTip:
         'Only controls thinking mode for official Qwen, Kimi, and GLM model providers. System default disables Qwen thinking to avoid long-running tasks.',
       quote: 'Show citations',
@@ -1260,9 +1310,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       webSearchApiKeyRequired:
         'An API key is required for the selected provider — without one no Internet search happens and the switch never appears.',
       // The key field's label. {{provider}} is the provider's BRAND name, which is
-      // deliberately not translated, so this single template covers all nine.
+      // deliberately not translated, so this single template covers all providers.
       webSearchApiKeyLabel: '{{provider}} API Key',
       // One Tip/Message pair per provider, alphabetical by provider id.
+      anysearchApiKeyTip:
+        'Optional. AnySearch works without a key; add a key to use your account quota. Service limits apply.',
+      anysearchApiKeyMessage: 'Optional - leave blank for anonymous search',
       braveApiKeyTip:
         'When Brave Search is selected, its web results supplement dataset retrieval. Every Brave endpoint requires a key.',
       braveApiKeyMessage: 'Please enter your Brave Search API Key',
@@ -1284,6 +1337,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       search1apiApiKeyTip:
         'When Search1API is selected, its web search results supplement dataset retrieval.',
       search1apiApiKeyMessage: 'Please enter your Search1API API Key',
+      searchapiApiKeyTip:
+        'When SearchApi is selected, its Google web search results supplement dataset retrieval.',
+      searchapiApiKeyMessage: 'Please enter your SearchApi API Key',
       serplyApiKeyTip:
         'When Serply is selected, its web search results supplement dataset retrieval.',
       serplyApiKeyMessage: 'Please enter your Serply API Key',
@@ -1314,12 +1370,59 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       },
       cancel: 'Cancel',
       chatSetting: 'Chat setting',
-      tocEnhance: 'PageIndex',
-      tocEnhanceTip: `During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach mimics human information-searching behavior in books.`,
       batchDeleteSessions: 'Batch delete',
       deleteSelectedConfirm: 'Delete the selected {{count}} session(s)?',
     },
     setting: {
+      gpustack: {
+        serverUrl: 'GPUStack server URL',
+        serverUrlTip: 'Must be reachable from the RAGFlow container.',
+        loopbackWarning:
+          'localhost points to the RAGFlow container itself. Use the IP address or host.docker.internal instead.',
+        apiKey: 'API key',
+        apiKeyTip: 'Create one in GPUStack under Access Control > API Keys.',
+        apiKeyKeep: 'Leave blank to keep the saved key',
+        connect: 'Connect',
+        connecting: 'Connecting...',
+        connected: 'Connected. {{count}} running models found.',
+        connectedShort: '{{count}} running',
+        errorAuth:
+          'GPUStack rejected this API key. Check it under Access Control > API Keys.',
+        errorUnreachable:
+          'Cannot reach this server from RAGFlow. Check the URL and that the port is open to the RAGFlow container.',
+        errorOther: 'Could not list models: {{message}}',
+        emptyTitle: 'No running models found',
+        emptyBody:
+          'GPUStack only exposes models that are running and have a route. Deploy a model with "Enable model route" turned on, then refresh.',
+        emptyLink: 'Read the integration guide',
+        addModels: 'Add {{count}} models',
+        addSelected: 'Add {{count}} selected',
+        adding: 'Adding...',
+        refresh: 'Refresh',
+        editInstance: 'Edit instance',
+        saveInstance: 'Save instance',
+        cancel: 'Cancel',
+        availableTitle: 'Available in GPUStack',
+        addedTitle: 'Added models',
+        modelsLoadFailed:
+          "Could not load this instance's models. Reload the page and try again.",
+        notRunning: 'Not running',
+        notRunningTip:
+          'GPUStack is not serving this model right now, so calls to it will fail.',
+        tokens: '{{count}} tokens',
+        changeType: 'Model type for {{name}}',
+        select: 'Select {{name}}',
+        remove: 'Remove {{name}}',
+        noAdded: 'No models added yet.',
+        kind_chat: 'Chat',
+        kind_vision: 'Chat + Vision',
+        kind_embedding: 'Embedding',
+        kind_rerank: 'Rerank',
+        kind_asr: 'Speech to text',
+        kind_tts: 'Text to speech',
+        typeHint:
+          'Types come from GPUStack. GPUStack cannot tell whether a model accepts images, so choose Chat + Vision for those.',
+      },
       Verify: 'Verify',
       keyValid: 'Your API Key is valid.',
       keyInvalid: 'Your API Key is invalid.',
@@ -1357,7 +1460,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       dataSourceFieldTenantId: 'Tenant ID',
       dataSourceFieldClientId: 'Client ID',
       dataSourceFieldClientSecret: 'Client Secret',
-      dataSourceFieldFolderPathOptional: 'Folder Path (optional)',
+      dataSourceFieldFolderPathOptional: 'Folder Path',
       dataSourceFieldBatchSize: 'Batch Size',
       dataSourceFieldFeishuAppId: 'Feishu app ID',
       dataSourceFieldFeishuAppSecret: 'Feishu app secret',
@@ -1370,7 +1473,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       dataSourceValidationFeishuBatchSize:
         'Batch size must be between 1 and 10',
       dataSourceFieldMailFolder: 'Mail Folder',
-      dataSourceFieldMailboxUserIds: 'Mailbox User IDs (optional)',
+      dataSourceFieldMailboxUserIds: 'Mailbox User IDs',
       dataSourceFieldInstanceUrl: 'Instance URL',
       dataSourceFieldObjects: 'Objects',
       dataSourceFieldApiVersion: 'API Version',
@@ -1381,7 +1484,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       dataSourceFieldContainerUrl: 'Container URL',
       dataSourceFieldSasToken: 'SAS Token',
       dataSourceFieldContainerName: 'Container Name',
-      dataSourceFieldPrefixOptional: 'Prefix (optional)',
+      dataSourceFieldPrefixOptional: 'Prefix',
       dataSourceFieldFeedUrl: 'Feed URL',
       dataSourceFieldSitemapUrl: 'Sitemap URL',
       dataSourceFieldUrlFilter: 'URL filter (regex)',
@@ -2107,6 +2210,8 @@ Example: Virtual Hosted Style`,
       apiKey: 'API Key',
       apiKeyMessage: 'Please enter the API Key',
       apiKeyPlaceholder: 'Please enter the API Key',
+      credentialClearToRemove:
+        'Clear this field to remove the saved credential',
       apiKeyTip:
         'The API Key can be obtained by registering the corresponding LLM supplier.',
       aimlapiGetKey: 'Get API key',
@@ -2134,14 +2239,18 @@ Example: Virtual Hosted Style`,
       paddleocrApiUrlPlaceholder:
         'e.g. https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio Access Token',
-      paddleocrAccessTokenMessage: 'Access token for PaddleOCR API (optional)',
-      paddleocrAccessTokenPlaceholder: 'Your AI Studio token (optional)',
+      paddleocrAccessTokenMessage: 'Access token for PaddleOCR API',
+      paddleocrAccessTokenPlaceholder: 'Your AI Studio token',
       paddleocrAlgorithm: 'PaddleOCR Algorithm',
       paddleocrAlgorithmMessage: 'Please select a PaddleOCR algorithm',
       paddleocrSelectAlgorithm: 'Select Algorithm',
       mineruApiserver: 'MinerU API Server',
       mineruApiserverMessage: 'Please input the MinerU API Server URL!',
       mineruApiserverPlaceholder: 'e.g. http://host.docker.internal:9987',
+      mineruApiToken: 'MinerU API token',
+      mineruApiTokenPlaceholder: 'Token from mineru.net API management',
+      mineruApiTokenTip:
+        'When set, RAGFlow uses the official precise API (/api/v4, including vlm). Leave empty to use the no-login agent API. Not required for a self-hosted MinerU server.',
       mineruOutputDir: 'MinerU Output Directory',
       mineruOutputDirMessage: 'Please input the MinerU output directory!',
       mineruOutputDirPlaceholder: '/tmp/mineru',
@@ -2170,9 +2279,12 @@ Example: Virtual Hosted Style`,
       models: 'Models',
       chatModel: 'LLM',
       chatModelTip: 'The default LLM for each newly created dataset.',
+      decisionModel: 'Decision model',
+      decisionModelTip:
+        'The model that judges whether a retrieved passage is worth showing the LLM. Leave unset to keep the retrieved text unfiltered.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        'The default embedding model for each newly created dataset. If you cannot find an embedding model from the dropdown, check if you are using RAGFlow slim edition (which does not include embedding models) or check the Model providers page to see if your model provider supports this model.',
+        'The default embedding model for each newly created dataset. If you cannot find an embedding model from the dropdown, check the Model providers page to see if your model provider supports this model.',
       img2txtModel: 'VLM',
       img2txtModelTip:
         'The default VLM for each newly created dataset. It describes a picture or video. If you cannot find a model from the dropdown, check the Model providers page to see if your model provider supports this model.',
@@ -2215,7 +2327,7 @@ Example: Virtual Hosted Style`,
         apiUrlPlaceholder:
           'For example: https://paddleocr-server.com/layout-parsing',
         accessToken: 'AI Studio Access Token',
-        accessTokenPlaceholder: 'Your AI Studio token (optional)',
+        accessTokenPlaceholder: 'Your AI Studio token',
         algorithm: 'PaddleOCR Algorithm',
         selectAlgorithm: 'Select Algorithm',
         modelNamePlaceholder: 'For example: paddleocr-from-env-1',
@@ -2404,6 +2516,7 @@ Example: Virtual Hosted Style`,
         image2text: 'VLM',
         ocr: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       showToc: 'Show content',
       hideToc: 'Hide content',
@@ -2421,6 +2534,7 @@ Example: Virtual Hosted Style`,
       batchAddModels: 'Add all models',
       batchRemoveModels: 'Remove all models',
       batchVerifyModels: 'Verify all models',
+      moreActions: 'More actions',
       editCustomModelTitle: 'Edit model',
       modelMaxTokens: 'Max context length',
       modelFeatures: 'Model features',
@@ -2584,6 +2698,8 @@ Example: Virtual Hosted Style`,
       modified: 'Modified',
       created: 'Created',
       deleted: 'Deleted',
+      deleteIncomplete:
+        'Could not confirm complete deletion. Check the remaining documents before retrying.',
       noLangfuseConfigToDelete: 'No Langfuse configuration to delete',
       renamed: 'Renamed',
       operated: 'Operated',
@@ -2645,15 +2761,8 @@ Example: Virtual Hosted Style`,
     },
     flow: {
       exportCurrentPage: 'Export current page',
-      preprocess: {
-        preprocess: 'Preprocess',
-        mainContent: 'Main content',
-        abstract: 'Abstract',
-        author: 'Author',
-        sectionTitle: 'Section title',
-      },
       tags: 'Tags',
-      canvasCategory: 'Canvas category',
+      agentCategory: 'Agent category',
       editTags: 'Edit tags',
       editTagsDescription:
         'Add tags to organize and filter your agents. Press Enter or comma to add.',
@@ -2751,7 +2860,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       comma: 'Comma',
       semicolon: 'Semicolon',
       period: 'Period',
-      lineBreak: 'Line break',
+      linebreak: 'Line break',
       tab: 'Tab',
       space: 'Space',
       delimiters: 'Delimiters',
@@ -2768,7 +2877,19 @@ Best for: Documents with flowing, contextually connected content — such as boo
         'Use a vision model to parse image and table blocks; when off, they are treated as plain text.',
       imageOcr: 'OCR',
       imageOcrTip:
-        'Extract text from uploaded images locally. Vision enhancement adds descriptions independently of this switch.',
+        'Extract text from images. DeepDoc parses an image as a one-page document, so it includes layout analysis and table structure; an external OCR model returns text only. Vision enhancement adds descriptions independently of this switch.',
+      imageOcrParsingMethod: 'Parsing method',
+      imageOcrParsingMethodTip:
+        'DeepDoc runs locally and performs OCR, layout analysis, and table structure recognition. An external OCR model uses an added PaddleOCR model and returns text only. Turning OCR off keeps this choice but skips OCR; SVG text is read directly.',
+      imageOcrDeepDoc: 'DeepDoc',
+      imageOcrDeepDocDescription: 'OCR + layout analysis + table structure',
+      imageOcrExternal: 'External OCR model',
+      imageOcrExternalDescription: 'Text only; no table structure',
+      imageOcrModelPlaceholder: 'Select an OCR model',
+      imageOcrModelsError:
+        'Could not load OCR models. Your selection is unchanged. Try again later, or choose DeepDoc for local OCR.',
+      imageOcrNoModels:
+        'No PaddleOCR models added. Use DeepDoc for local OCR, or add a PaddleOCR model in model settings.',
       imageTextSourceRequired:
         'Images need a text source: keep OCR or vision enhancement on.',
       visionEnhancementPromptTip:
@@ -2799,20 +2920,6 @@ Best for: Documents with flowing, contextually connected content — such as boo
       toolTimeout: 'Tool timeout',
       toolTimeoutTip:
         'Timeout in seconds for a single tool call (including MCP tools). Increase it for long-running tools.',
-      maxSteps: 'Max steps',
-      headless: 'Headless',
-      enableDefaultExtensions: 'Enable default extensions',
-      enableDefaultExtensionsTip:
-        'Enable browser-use default extensions (uBlock, cookie handling, ClearURLs). Disable this to avoid runtime extension downloads.',
-      chromiumSandbox: 'Chromium sandbox',
-      chromiumSandboxTip:
-        'Whether to enable Chromium sandbox. In Docker root environments this is usually disabled; on regular hosts it is recommended to enable.',
-      persistSession: 'Persist session',
-      persistSessionTip:
-        'When enabled, this Browser node reuses its browser session to avoid repeated logins.',
-      uploadSources: 'Upload sources',
-      uploadSourcesTip:
-        'Supports file IDs, file URLs, or variables. You can separate multiple values with commas or use a JSON array format (for example ["id1","https://example.com/a.pdf"]).',
       advancedSettings: 'Advanced settings',
       addTools: 'Add tools',
       sysPromptDefaultValue: `
@@ -2854,6 +2961,12 @@ Best for: Documents with flowing, contextually connected content — such as boo
         'Output the variable content of the upstream component or the text entered by yourself.',
       messagePlaceholder: `Please enter your message content, use '/' to quickly insert variables.`,
       messageMsg: 'Message cannot be empty',
+      aggregationIncomplete: 'Complete every aggregation group and variable',
+      inputOptionsIncomplete: 'Dropdown options cannot contain empty entries',
+      dataOperationsEntriesIncomplete:
+        'Complete all data operation entries before running',
+      invokeVariablesIncomplete:
+        'Complete all variable mappings before running',
       addField: 'Add option',
       addMessage: 'Add message',
       loop: 'Loop',
@@ -2872,14 +2985,14 @@ Best for: Documents with flowing, contextually connected content — such as boo
       operation: 'operation',
       run: 'Run',
       save: 'Save',
+      saveDraft: 'Save draft',
       title: 'ID:',
       beginDescription: 'This is where the flow begins.',
       answerDescription: `A component that serves as the interface between human and bot, receiving user inputs and displaying the agent's responses.`,
       retrievalDescription: `A component that retrieves information from specified datasets (datasets). Ensure that the datasets you select use the same embedding model.`,
       generateDescription: `A component that prompts the LLM to generate responses. Ensure the prompt is set correctly.`,
-      categorizeDescription: `A component that uses the LLM to classify user inputs into predefined categories. Ensure you specify the name, description, and examples for each category, along with the corresponding next component.`,
+      categorizeDescription: `Uses a chat model (LLM) or a SystemOne or Nace decision model to classify the current input into one predefined category and route the workflow to its connected component. Specify a name, description, and examples for each category.`,
       relevantDescription: `A component that uses the LLM to assess whether the upstream output is relevant to the user's latest query. Ensure you specify the next component for each judge result.`,
-      rewriteQuestionDescription: `A component that rewrites a user query from the Interact component, based on the context of previous dialogues.`,
       messageDescription:
         'This component returns the final data output of the workflow along with predefined message content. ',
       keywordDescription: `A component that retrieves top N search results from user's input. Ensure the TopN value is set properly before use.`,
@@ -2894,8 +3007,6 @@ Best for: Documents with flowing, contextually connected content — such as boo
       generate: 'Generate',
       answer: 'Interact',
       categorize: 'Categorize',
-      rewriteQuestion: 'Rewrite',
-      rewrite: 'Rewrite',
       begin: 'Begin',
       message: 'Message',
       blank: 'Blank',
@@ -2960,9 +3071,6 @@ Best for: Documents with flowing, contextually connected content — such as boo
         'The absolute HTTP or HTTPS URL of the page to read. As an agent tool, the agent supplies the URL.',
       docGenerator: 'Doc Generator',
       docGeneratorDescription: `Generate a file from Markdown content.`,
-      browser: 'Browser',
-      browserDescription:
-        'Automate browser tasks. Supports model configuration and prompt-driven actions. Upload sources support file IDs and URLs, and downloaded files can be saved to a target folder.',
       subtitle: 'Subtitle',
       logoImage: 'Logo Image',
       logoPosition: 'Logo Position',
@@ -2992,7 +3100,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       news: 'News',
       messageHistoryWindowSize: 'Message window size',
       messageHistoryWindowSizeTip:
-        'The window size of conversation history visible to the LLM. Larger is better, but be mindful of the maximum token limit of LLM.',
+        'Controls how much recent conversation history is available to the selected model as context. Larger windows use more tokens and may include unrelated context.',
       wikipedia: 'Wikipedia',
       pubMed: 'PubMed',
       pubMedDescription:
@@ -3318,6 +3426,15 @@ Best for: Documents with flowing, contextually connected content — such as boo
       optional: 'Optional',
       pasteFileLink: 'Paste file link',
       testRun: 'Test run',
+      captureModelInputs: 'Capture model inputs',
+      captureModelInputsHint:
+        'Test runs execute the agent and its tools. Expanding or copying captured inputs does not run them again.',
+      modelInputs: 'Model inputs',
+      modelInputSummary:
+        'Recorded entries: {{count}} · Omitted calls: {{omittedCount}}',
+      noModelInputs: 'No model calls were captured in this run.',
+      modelInputsUnavailable: 'Model inputs are unavailable for this run.',
+      testRunError: 'Test run failed ({{code}}): {{message}}',
       debugRunLimits:
         'A debug run verifies that the flow executes without errors: PDF parses only the first 2 pages (other formats parse all pages); if a chunker node is present, only the first 3 chunks are previewed; if a knowledge-compiler node is present, it runs locally only and does not trigger a dataset rebuild or notification.',
       template: 'Template',
@@ -3346,11 +3463,13 @@ Best for: Documents with flowing, contextually connected content — such as boo
       jsonFormatTip:
         'Upstream component should provide JSON string in following format:',
       toEmailTip: 'to_email: Recipient email (Required)',
-      ccEmailTip: 'cc_email: CC email (Optional)',
-      subjectTip: 'subject: Email subject (Optional)',
-      contentTip: 'content: Email content (Optional)',
+      ccEmailTip: 'cc_email: CC email',
+      subjectTip: 'subject: Email subject',
+      contentTip: 'content: Email content',
       jsonUploadTypeErrorMessage: 'Please upload json file',
       jsonUploadContentErrorMessage: 'json file error',
+      jsonUploadCategoryMismatch:
+        'The JSON file type does not match the current tab. Please switch to the corresponding tab and import again.',
       nameExists: 'Name already exists',
       iteration: 'Iteration',
       iterationDescription: `A looping component that iterates over an input array and executes a defined logic for each item.`,
@@ -3371,7 +3490,7 @@ This delimiter is used to split the input text into several text pieces echo of 
       userPrompt: 'User prompt',
       tagFile: 'Tag file',
       tagFileTip:
-        'Automatically extracts up to N relevant tags for each chunk based on the selected tag file to improve retrieval accuracy. Tag extraction may invoke a model and consume additional tokens. If extraction fails, the original chunk will be preserved. For details, see https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',
+        'Automatically extracts up to N relevant tags per chunk to improve retrieval accuracy. Supports XLSX, XLS, CSV, and TXT files, with two columns for text and tags. Separate multiple tags with commas. No header required. Tag extraction may consume additional tokens. The original chunk is preserved if extraction fails. For details, see https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',
       addCategory: 'Add category',
       categoryName: 'Category name',
       nextStep: 'Next step',
@@ -3398,6 +3517,27 @@ This delimiter is used to split the input text into several text pieces echo of 
         loadFailed: 'Failed to load the version; it may have been deleted',
         version: 'Version',
         select: 'No version selected',
+        label: 'Pipeline version',
+        latest: 'Latest version',
+        noPublished: 'No published versions',
+        filterByAlias: 'Filter by alias',
+        alias: 'Alias',
+        addAlias: 'Add alias',
+        editAlias: 'Edit alias',
+        editAliasDescription:
+          'Give this version a memorable alias so you can find it quickly later.',
+        outdated:
+          'The configured pipeline version is not the latest and will not be updated automatically.',
+        delete: 'Delete version',
+        deleteConfirmTitle: 'Delete this version?',
+        deleteConfirmContent:
+          'Deleting a version that a dataset or file is bound to will make that file unparseable. This cannot be undone.',
+        deleteAgentConfirmContent:
+          'If this agent is embedded in a website or serving external traffic, deleting its latest published version will roll back or interrupt the live service. Your current canvas is not affected. This cannot be undone.',
+        restore: 'Restore as current draft',
+        restoreConfirmTitle: 'Restore this version as the current agent?',
+        restoreConfirmContent:
+          'The current agent DSL will be replaced by this version. Save again to create a new version.',
       },
       setting: 'Settings',
       settings: {
@@ -3527,30 +3667,25 @@ This process aggregates variables from multiple branches into a single variable 
         'Write your SQL query here. You can use variables, raw SQL, or mix both using variable syntax.',
       frameworkPrompts: 'Framework',
       release: 'Publish',
-      production: 'Production',
-      productionTooltip:
-        'This version is published to production. Access it via the API or the embedded page.',
       confirmPublish: 'Confirm publish',
       publishIngestionPipeline:
         'You are about to publish this Ingestion pipeline.',
       publishAgent: 'You are about to publish this agent',
-      linkedDataset: 'Linked dataset:',
       lastPublished: 'Last published',
       createFromBlank: 'Create from blank',
       createFromTemplate: 'Create from template',
       importJsonFile: 'Import JSON file',
-      duplicate: 'Duplicate',
       copyOfAgentName: '{{name}} (copy)',
       ceateAgent: 'Workflow',
       createPipeline: 'Ingestion pipeline',
       createIngestionPipeline: 'Create ingestion pipeline',
       createWorkflow: 'Create workflow',
+      createCompilationOperator: 'Create compilation operator',
       tabList: {
         ingestionPipeline: 'Ingestion pipeline',
         compilationOperator: 'Compilation operator',
         workflow: 'Workflow',
       },
-      chooseAgentType: 'Choose agent type',
       parser: 'Parser',
       parserDescription:
         'Extracts raw text and structure from files for downstream processing.',
@@ -3559,6 +3694,7 @@ This process aggregates variables from multiple branches into a single variable 
       nodeFormInvalid: 'Invalid settings, please fix them first',
       apiKeyRequired: 'Please enter the API Key',
       apiKeyMissing: 'No API key configured, please enter one first',
+      agentToolsMissing: 'Agent tools contain an empty entry',
       agentModelMissing: 'No model selected, please choose one first',
       extractorModelMissing: 'No model selected, please choose one first',
       extractorKeywordsTopNMissing:
@@ -3573,18 +3709,19 @@ This process aggregates variables from multiple branches into a single variable 
       retrievalMemoryMissing: 'No memories selected, please choose them first',
       checklist: 'Checklist',
       checklistEmpty: 'No issues found',
-      checklistTitle:
-        'Resolve the following issues before running or publishing',
-      checklistResolveBefore:
-        'Please resolve the issues in the checklist first',
+      checklistTitle: 'The following issues may affect running or publishing',
+      loopRowsIncomplete:
+        'Complete the loop variables and termination conditions',
+      iterationOutputsIncomplete:
+        'Complete the iteration output names and references',
       issueNotConnected: 'This step is not connected to anything',
       issueVariableInvalid: 'Invalid variable: {{variable}}',
       memoryUnavailable:
         'The selected memory is unavailable (deleted), please re-select',
       retrievalTemplateDatasetHint:
-        'This template contains {{num}} retrieval step(s) without a bound dataset. Pick one below and it will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
+        'This template contains {{num}} retrieval step(s) without a bound dataset. Pick one below and it will be applied to all of them; you can still adjust each retrieval on the agent after creation.',
       retrievalTemplateMemoryHint:
-        'This template contains {{num}} retrieval step(s) without bound memories. Pick memories below and they will be applied to all of them; you can still adjust each retrieval on the canvas after creation.',
+        'This template contains {{num}} retrieval step(s) without bound memories. Pick memories below and they will be applied to all of them; you can still adjust each retrieval on the agent after creation.',
       retrievalDatasetRequired: 'Please select a knowledge base first',
       retrievalMemoryRequired: 'Please select memories first',
       tokenizerDescription:
@@ -3770,6 +3907,20 @@ Important structured information may include: names, dates, locations, events, k
       variableAssignerParameterMissing: 'Parameter is required',
       webhook: {
         name: 'Webhook',
+        endpoint: 'Endpoint',
+        testEndpoint: 'Test endpoint',
+        personalUrl: 'Personal webhook URL',
+        credentialDescription:
+          'Anyone with this URL can run the agent as you. Keep it secret; creating a new URL invalidates the old one.',
+        createCredential: 'Create or rotate URL',
+        revokeCredential: 'Revoke my URL',
+        credentialCreated:
+          'Webhook URL created. Copy and store it now; it will not be shown again after you leave this page.',
+        credentialRevoked: 'Webhook URL revoked.',
+        credentialRequestFailed: 'Unable to update the webhook URL.',
+        revokeCredentialTitle: 'Revoke your webhook URL?',
+        revokeCredentialDescription:
+          'Requests using this URL will stop working. You can create a new URL at any time.',
         methods: 'Methods',
         contentTypes: 'Content types',
         security: 'Security',
@@ -4020,10 +4171,10 @@ Important structured information may include: names, dates, locations, events, k
         share: 'Share',
       },
 
-      serviceStatus: 'Service status',
-      userManagement: 'User management',
-      sandboxSettings: 'Sandbox settings',
-      registrationWhitelist: 'Registration whitelist',
+      serviceStatus: 'Services',
+      userManagement: 'Users',
+      sandboxSettings: 'Sandbox',
+      registrationWhitelist: 'Whitelist',
       roles: 'Roles',
       monitoring: 'Monitoring',
 
@@ -4127,7 +4278,7 @@ Important structured information may include: names, dates, locations, events, k
       importWhitelist: 'Import whitelist (Excel)',
       importSelectExcelFile: 'Excel file (.xlsx)',
       importOverwriteExistingEmails: 'Overwrite existing emails',
-      importInvalidExcelFile: 'Please select a valid Excel file',
+      importValidExcelFile: 'Please select a valid Excel file',
       importFileRequired: 'Please select a file to import',
       importFileTips:
         'File must contain a single header column named <code>email</code>.',
@@ -4141,7 +4292,6 @@ Important structured information may include: names, dates, locations, events, k
       permission: 'Permission',
 
       agentTitle: 'Agent title',
-      canvasCategory: 'Canvas category',
 
       newRole: 'New role',
       addNewRole: 'Add new role',
@@ -4160,18 +4310,14 @@ Important structured information may include: names, dates, locations, events, k
     },
     explore: {
       title: 'Launch',
-      canvasList: 'Canvas List',
       sessions: 'Sessions',
       newSession: 'New Session',
       newSessionLabel: 'Start a new conversation',
       deleteSession: 'Delete Session',
-      searchCanvas: 'Search canvas...',
       searchSessions: 'Search sessions...',
-      noCanvasSelected: 'Please select a canvas',
       noSessionSelected: 'Please select a session or create a new one',
       noSessionsFound: 'No sessions found',
       createFirstSession: 'Create your first session',
-      noCanvasFound: 'No canvas found',
       deleteSelectedConfirm:
         'Are you sure you want to delete {{count}} session(s)?',
       batchDeleteSessions: 'Delete Sessions',

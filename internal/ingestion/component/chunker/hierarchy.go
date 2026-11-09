@@ -51,8 +51,6 @@ import (
 	"ragflow/internal/ingestion/component/globals"
 )
 
-const ComponentNameHierarchyTitleChunker = "HierarchyTitleChunker"
-
 // chunkNode mirrors python `_ChunkNode` (hierarchy_chunker.py:22-32).
 type chunkNode struct {
 	level        int
@@ -141,7 +139,11 @@ func (n *chunkNode) getPaths(paths *[][]int, titles []int, depth int, includeHea
 
 // invokeHierarchy runs the HierarchyTitleChunker strategy.
 func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]any, p *titleChunkerParam) (map[string]any, error) {
-	records := extractLineRecords(inputs)
+	upstream, err := decodeChunkerFromUpstream(inputs)
+	if err != nil {
+		return inputErrorOutput(err), nil
+	}
+	records := extractLineRecords(upstream)
 	common.Debug("chunker stage",
 		zap.String("component", "Chunker"),
 		zap.String("variant", "hierarchy"),
@@ -150,7 +152,8 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 	if len(records) == 0 {
 		return emptyOutputs(), nil
 	}
-	ctx := newLevelContext(records, outlineFromInputs(inputs), p)
+	attachTitleMediaContext(records, p.TableContextSize, p.ImageContextSize)
+	ctx := newLevelContext(records, outlineFromUpstream(upstream), p)
 	levels := ctx.Levels()
 	// Count heading level distribution for debugging.
 	headingCounts := make(map[int]int)
@@ -266,7 +269,8 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 		zap.Int("record_groups", len(recordGroups)),
 	)
 
-	chunks, prefixes := buildChunksFromRecordGroups(recordGroups, groupPrefixes, p, isPlainTextFormat(inputs))
+	docID := globals.GlobalOrInput(parentCtx, nil, "doc_id", upstream.DocID)
+	chunks, prefixes := buildChunksFromRecordGroups(recordGroups, groupPrefixes, p, isPlainTextFormat(upstream), docID)
 	// Enforce the title-family token ceiling (chunk_token_cap) right after
 	// build_chunks and BEFORE the on-demand crop, mirroring Python's
 	// invoke() order (build -> cap -> set_chunks). prefixes re-attaches each
@@ -278,21 +282,19 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 		zap.String("component", "Chunker"),
 		zap.String("variant", "hierarchy"),
 		zap.Int("chunks", len(chunks)),
-		zap.Bool("plain_text", isPlainTextFormat(inputs)),
+		zap.Bool("plain_text", isPlainTextFormat(upstream)),
 	)
 
 	// On-demand PDF preview cropping for image/table/text chunks,
 	// mirroring the TokenChunker JSON path (token.go:513). Best-effort:
 	// a missing or unreadable PDF simply skips cropping.
-	if upstream, uErr := decodeChunkerFromUpstream(inputs); uErr == nil {
-		engine, eErr := newPDFEngineFromUpstream(parentCtx, db, upstream)
-		if eErr != nil {
-			common.Warn("HierarchyTitleChunker: could not open PDF for on-demand cropping", zap.Error(eErr))
-		}
-		if engine != nil {
-			defer engine.Close()
-			chunks = cropTitleChunks(parentCtx, engine, chunks)
-		}
+	engine, eErr := newPDFEngineFromUpstream(parentCtx, db, upstream)
+	if eErr != nil {
+		common.Warn("HierarchyTitleChunker: could not open PDF for on-demand cropping", zap.Error(eErr))
+	}
+	if engine != nil {
+		defer engine.Close()
+		chunks = cropTitleChunks(parentCtx, engine, chunks)
 	}
 
 	if len(chunks) == 0 {
@@ -319,7 +321,9 @@ func NewHierarchyTitleChunker(params map[string]any) (runtime.Component, error) 
 		conf[k] = v
 	}
 	p := defaultsTitle()
-	p.Update(conf)
+	if err := p.Update(conf); err != nil {
+		return nil, fmt.Errorf("HierarchyTitleChunker: %w", err)
+	}
 	if err := p.TitleChunkerParam.Validate(); err != nil {
 		return nil, fmt.Errorf("HierarchyTitleChunker: %w", err)
 	}

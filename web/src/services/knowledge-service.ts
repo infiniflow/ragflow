@@ -38,7 +38,6 @@ const {
   listTagByKnowledgeIds,
   listPipelines,
   getMeta,
-  getMetaKeys,
   retrievalTestShare,
 } = api;
 
@@ -69,10 +68,6 @@ const methods = {
   },
   getMeta: {
     url: getMeta,
-    method: 'get',
-  },
-  getMetaKeys: {
-    url: getMetaKeys,
     method: 'get',
   },
   retrievalTestShare: {
@@ -162,6 +157,7 @@ const mapChunkPayloadToRest = (payload: Record<string, any>) => ({
       ? undefined
       : payload.available_int === 1),
   image_base64: payload.image_base64,
+  image_update_mode: payload.image_update_mode,
 });
 
 const getAvailableParam = (available?: number) => {
@@ -204,7 +200,6 @@ const chunkService = {
       meta_data_filter: rest.meta_data_filter,
       chat_id: rest.chat_id,
       use_kg: rest.use_kg,
-      toc_enhance: rest.toc_enhance,
       include_knowledge_compilation: rest.include_knowledge_compilation,
     };
     const response = await request.post(api.retrievalTest, {
@@ -263,8 +258,17 @@ const chunkService = {
     const datasetId = getDatasetId(payload);
     const documentId = getDocumentId(payload);
     const chunkId = payload.chunk_id || payload.id;
+    // Editing a chunk image replaces the picture the chunk already holds.
+    // The API defaults to append, which would stack the new image below the
+    // old one, so an upload without an explicit mode must ask for replace.
+    const imageUpdateMode =
+      payload.image_update_mode ??
+      (payload.image_base64 ? 'replace' : undefined);
     return request.patch(api.chunkDetail(datasetId, documentId, chunkId), {
-      data: mapChunkPayloadToRest(payload),
+      data: {
+        ...mapChunkPayloadToRest(payload),
+        image_update_mode: imageUpdateMode,
+      },
     });
   },
   getChunk: async (params: Record<string, any>) => {
@@ -311,8 +315,7 @@ const kbService = {
 export const getKbDetail = async (datasetId: string) => {
   const response = await request.get(api.getKbDetail(datasetId));
   // The /api/v1/datasets/<id> endpoint returns chunk_count/document_count,
-  // but legacy consumers (e.g. the GraphRAG/Raptor "magic wand" enable check
-  // in dataset/index.tsx) read chunk_num/doc_num. Normalize both shapes.
+  // but legacy consumers read chunk_num/doc_num. Normalize both shapes.
   if (response.data?.code === 0 && response.data.data) {
     const d = response.data.data;
     response.data.data = {
@@ -391,6 +394,34 @@ const compilationStatusProxy = registerNextServer({
 export const getDatasetCompilationStatus = (datasetId: string, kind: string) =>
   compilationStatusProxy.getDatasetCompilationStatus(
     { datasetId, params: { kind } },
+    true,
+  );
+
+const datasetParserConfigProxy = registerNextServer({
+  applyDatasetParserConfig: {
+    url: ({ datasetId }: { datasetId: string }) =>
+      `/api/v1/datasets/${datasetId}/documents/apply-parser-config`,
+    method: 'post',
+  },
+});
+
+export const applyDatasetParserConfig = (datasetId: string) =>
+  datasetParserConfigProxy.applyDatasetParserConfig(
+    { datasetId, skipGlobalErrorNotification: true },
+    true,
+  );
+
+const stopAllDocumentsProxy = registerNextServer({
+  stopAllDocuments: {
+    url: ({ datasetId }: { datasetId: string }) =>
+      api.stopAllDocuments(datasetId),
+    method: 'post',
+  },
+});
+
+export const stopAllDocuments = (datasetId: string, runStatuses: string[]) =>
+  stopAllDocumentsProxy.stopAllDocuments(
+    { datasetId, data: { cancel_all: true, run_statuses: runStatuses } },
     true,
   );
 

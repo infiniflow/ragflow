@@ -123,8 +123,6 @@ func (c *CLI) ExecuteAdminCommand(commandCount int, cmd *Command) (ResponseIf, e
 		return c.AdminSetLogLevelCommand(commandCount, cmd)
 	case "admin_reset_role_default_model":
 		return c.AdminResetRoleDefaultModelsCommand(commandCount, cmd)
-	case "list_user_datasets":
-		return c.ListUserDatasets(commandCount, cmd)
 	case "admin_list_resources_command":
 		return c.AdminListResourcesCommand(commandCount, cmd)
 	case "admin_list_roles_command":
@@ -163,6 +161,10 @@ func (c *CLI) ExecuteAdminCommand(commandCount int, cmd *Command) (ResponseIf, e
 		return c.AdminShutdownIngestor(commandCount, cmd)
 	case "list_admin_ingestion_tasks":
 		return c.ListAdminIngestionTasks(commandCount, cmd)
+	case "admin_show_ingestion_log":
+		return c.AdminShowIngestionLogCommand(commandCount, cmd)
+	case "admin_show_ingestion_messages":
+		return c.AdminShowIngestionMessagesCommand(commandCount, cmd)
 	case "user_list_message_queue_command":
 		return c.UserListMessageQueueCommand(commandCount, cmd)
 	case "user_publish_message_command":
@@ -370,16 +372,18 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return c.APICreateSearchCommand(commandCount, cmd)
 	case "api_create_memory":
 		return c.APICreateMemoryCommand(commandCount, cmd)
+	case "api_create_model_group":
+		return c.APICreateModelGroupCommand(commandCount, cmd)
+	case "api_create_group":
+		return c.APICreateGroupCommand(commandCount, cmd)
+	case "api_add_group_model":
+		return c.APIAddGroupModelCommand(commandCount, cmd)
 	case "api_list_api_keys":
 		return c.APIListAPIKeysCommand(commandCount, cmd)
 	case "api_delete_api_key":
 		return c.APIDeleteAPIKeyCommand(commandCount, cmd)
 	case "api_set_api_key":
 		return c.APISetAPIKeyCommand(commandCount, cmd)
-	case "api_set_variable":
-		return c.APISetVariableCommand(commandCount, cmd)
-	case "api_show_variable":
-		return c.APIShowVariableCommand(commandCount, cmd)
 	case "api_unset_api_key":
 		return c.APIUnsetAPIKeyCommand(commandCount, cmd)
 	case "api_show_version":
@@ -418,8 +422,14 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return c.APIAddProviderCommand(commandCount, cmd)
 	case "api_list_providers":
 		return c.APIListProvidersCommand(commandCount, cmd)
+	case "api_list_groups":
+		return c.APIListGroupsCommand(commandCount, cmd)
 	case "api_delete_provider":
 		return c.APIDeleteProviderCommand(commandCount, cmd)
+	case "api_delete_model_group":
+		return c.APIDeleteModelGroupCommand(commandCount, cmd)
+	case "api_delete_group_model":
+		return c.APIDeleteGroupModelCommand(commandCount, cmd)
 	case "api_delete_provider_instance":
 		return c.APIDeleteProviderInstanceCommand(commandCount, cmd)
 	case "api_drop_dataset":
@@ -514,12 +524,20 @@ func (c *CLI) ExecuteUserCommand(commandCount int, cmd *Command) (ResponseIf, er
 		return c.APIShowMemoryCommand(commandCount, cmd)
 	case "api_show_concurrency":
 		return c.APIShowConcurrencyCommand(commandCount, cmd)
+	case "api_show_quota":
+		return c.APIShowQuotaCommand(commandCount, cmd)
+	case "api_show_model_stats":
+		return c.APIShowModelStatsCommand(commandCount, cmd)
+	case "api_show_group_stats":
+		return c.APIShowGroupStatsCommand(commandCount, cmd)
+	case "api_list_model_groups":
+		return c.APIListModelGroupCommand(commandCount, cmd)
+	case "api_show_model_group":
+		return c.APIShowModelGroupCommand(commandCount, cmd)
 	case "api_list_api_servers":
 		return c.CommonListAPIServersCommand(commandCount, cmd)
 	case "api_list_environments":
 		return c.APIListEnvironmentsCommand(commandCount, cmd)
-	case "api_list_variables":
-		return c.APIListVariablesCommand(commandCount, cmd)
 	case "api_add_api_server":
 		return c.AddAPIServerCommand(commandCount, cmd)
 	case "api_delete_api_server":

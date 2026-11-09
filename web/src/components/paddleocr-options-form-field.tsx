@@ -86,7 +86,7 @@ export function PaddleOCROptionsFormField({
         )}
         tooltip={t(
           'knowledgeConfiguration.paddleocrAccessTokenTip',
-          'Access token for PaddleOCR API (optional)',
+          'Access token for PaddleOCR API',
         )}
         horizontal={true}
       >

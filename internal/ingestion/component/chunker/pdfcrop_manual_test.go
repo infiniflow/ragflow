@@ -46,7 +46,7 @@ func TestHongLouMengCropPreview(t *testing.T) {
 	if result.Err != nil {
 		t.Fatal(result.Err)
 	}
-	inputs := map[string]any{"name": filepath.Base(input), "file_type": "pdf", "output_format": result.OutputFormat, "json": result.JSON, "file": result.File, "bucket": "crop-test", "path": "source.pdf"}
+	inputs := map[string]any{"name": filepath.Base(input), "file_type": "pdf", "output_format": "json", "json": result.JSON, "file": result.File, "bucket": "crop-test", "path": "source.pdf"}
 	encoded, err := json.Marshal(inputs)
 	if err != nil {
 		t.Fatal(err)

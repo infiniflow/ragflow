@@ -38,6 +38,28 @@ func TestMinerUProviderConfigFromAPIKey(t *testing.T) {
 		}
 	})
 
+	t.Run("provider JSON with UI mineru_api_token", func(t *testing.T) {
+		raw := `{"mineru_apiserver":"https://mineru.net","mineru_api_token":"sk-ui-token","mineru_backend":"vlm-engine"}`
+		cfg := MinerUProviderConfigFromAPIKey(raw)
+		if !cfg.IsProviderJSON {
+			t.Fatal("expected provider JSON")
+		}
+		if cfg.AccessToken != "sk-ui-token" {
+			t.Fatalf("AccessToken = %q, want sk-ui-token", cfg.AccessToken)
+		}
+		if cfg.Backend != "vlm-engine" {
+			t.Fatalf("Backend = %q", cfg.Backend)
+		}
+	})
+
+	t.Run("mineru_api_token wins over mineru_api_key", func(t *testing.T) {
+		raw := `{"mineru_api_token":"from-ui","mineru_api_key":"legacy"}`
+		cfg := MinerUProviderConfigFromAPIKey(raw)
+		if cfg.AccessToken != "from-ui" {
+			t.Fatalf("AccessToken = %q, want from-ui", cfg.AccessToken)
+		}
+	})
+
 	t.Run("access_token only JSON object", func(t *testing.T) {
 		raw := `{"access_token":"secret"}`
 		cfg := MinerUProviderConfigFromAPIKey(raw)

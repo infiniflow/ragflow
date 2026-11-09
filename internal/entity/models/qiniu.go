@@ -194,35 +194,35 @@ func (q *QiniuModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 }
 
 func (q *QiniuModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("%s, no such method", q.Name())
+	return nil, fmt.Errorf("%s: no such method: Embed", q.Name())
 }
 
 func (q *QiniuModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", q.Name())
+	return nil, fmt.Errorf("%s: no such method: Rerank", q.Name())
 }
 
 func (q *QiniuModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", q.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", q.Name())
 }
 
 func (q *QiniuModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", q.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", q.Name())
 }
 
 func (q *QiniuModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", q.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", q.Name())
 }
 
 func (q *QiniuModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", q.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", q.Name())
 }
 
 func (q *QiniuModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", q.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", q.Name())
 }
 
 func (q *QiniuModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", q.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", q.Name())
 }
 
 func (q *QiniuModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
@@ -273,7 +273,7 @@ func (q *QiniuModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Li
 }
 
 func (q *QiniuModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", q.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", q.Name())
 }
 
 func (q *QiniuModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
@@ -285,9 +285,13 @@ func (q *QiniuModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) 
 }
 
 func (q *QiniuModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", q.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", q.Name())
 }
 
 func (q *QiniuModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", q.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", q.Name())
+}
+
+func (q *QiniuModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", q.Name())
 }

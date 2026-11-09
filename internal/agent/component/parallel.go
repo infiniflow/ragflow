@@ -51,6 +51,8 @@ package component
 import (
 	"context"
 
+	"ragflow/internal/agent/runtime"
+
 	"gorm.io/gorm"
 )
 
@@ -179,6 +181,9 @@ func (c *ParallelComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[
 // by the parallel extension.
 func init() {
 	Register(componentNameParallel, func(params map[string]any) (Component, error) {
+		if err := validateDynamicParams(componentNameParallel, params, false); err != nil {
+			return nil, runtime.NewUserFacingError(err.Error())
+		}
 		var p ParallelParam
 		if err := p.Update(params); err != nil {
 			return nil, err

@@ -43,28 +43,23 @@ type ChatRecommendationRequest struct {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/chat/recommendation [post]
 func (h *ChatHandler) Recommendation(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
 
 	var req ChatRecommendationRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "question is required")
+		common.RespondError(c, common.CodeArgumentError, "question is required")
 		return
 	}
 	if strings.TrimSpace(req.Question) == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "question is required")
+		common.RespondError(c, common.CodeArgumentError, "question is required")
 		return
 	}
 	ctx := c.Request.Context()
-	questions, err := service.GenerateRelatedQuestions(ctx, user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.modelFactory)
+	questions, err := service.GenerateRelatedQuestions(ctx, req.Question, req.SearchID, h.searchSvc, h.modelFactory)
 	if err != nil {
 		common.Warn("chat recommendation failed", zap.String("error", err.Error()))
-		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
+		common.RespondError(c, common.CodeOperatingError, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, questions, "success")
+	common.RespondSuccessList(c, questions, "success")
 }

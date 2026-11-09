@@ -102,7 +102,7 @@ type MinerUProviderAPIKeyConfig struct {
 // MinerUProviderConfigFromAPIKey parses the tenant MinerU api_key payload the same way
 // the provider UI stores it: mineru_apiserver, mineru_backend, mineru_server_url, etc.
 // A non-JSON api_key is treated as a plain bearer token. JSON provider config does not
-// imply a bearer token unless mineru_api_key or access_token is present.
+// imply a bearer token unless mineru_api_token, mineru_api_key, or access_token is present.
 func MinerUProviderConfigFromAPIKey(apiKey string) MinerUProviderAPIKeyConfig {
 	trimmed := strings.TrimSpace(apiKey)
 	if trimmed == "" {
@@ -118,7 +118,11 @@ func MinerUProviderConfigFromAPIKey(apiKey string) MinerUProviderAPIKeyConfig {
 		}
 		return ""
 	}
-	token := get("mineru_api_key")
+	// UI field is mineru_api_token; keep mineru_api_key / access_token for older payloads.
+	token := get("mineru_api_token")
+	if token == "" {
+		token = get("mineru_api_key")
+	}
 	if token == "" {
 		token = get("access_token")
 	}

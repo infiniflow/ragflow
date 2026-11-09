@@ -37,10 +37,13 @@ import (
 	"gorm.io/gorm"
 )
 
-// kcDB is the package-level MySQL handle installed by Provision. It backs the
-// doc enumeration used by RebuildDataset; it is nil (and docLister returns no
-// docs) when the scheduler was provisioned without a DB.
-var kcDB *gorm.DB
+// errEngineNotConfigured is returned by the engine-backed reader, writer, and
+// contribution store when they were assembled without a doc engine. The
+// consumer's storage dependencies are injected by the server assembly point
+// (see WithDocEngine); an unconfigured consumer fails loudly on its first
+// storage access instead of silently reading zero products or acking writes
+// that never happened.
+var errEngineNotConfigured = errors.New("knowledge_compile: doc engine is not configured; wire ingestion.Deps.Engine at the server assembly point")
 
 // Consumer is the dataset-level post-processing worker (§11.5). Multiple
 // instances compete on the MySQL scheduling rows; each KB is processed by at
@@ -55,6 +58,13 @@ type Consumer struct {
 	factory       DeduperFactory
 	contributions wikiContributionStore
 
+	// storageConfigured is set by WithStorage and records that the consumer was
+	// assembled with an injected doc engine + db. An unconfigured consumer fails
+	// fast on its first storage access (errEngineNotConfigured); callers can
+	// assert this flag before relying on merges so a wiring regression is caught
+	// at assembly rather than as a silently-acked empty batch.
+	storageConfigured bool
+
 	ttl            time.Duration
 	heartbeat      time.Duration
 	pollInterval   time.Duration
@@ -66,6 +76,18 @@ type Consumer struct {
 
 	// rebuildPause suppresses local claims while this consumer rebuilds a dataset.
 	rebuildPause map[string]bool
+
+	// db is the injected MySQL handle (wired by WithStorage). It backs the doc
+	// enumeration used by RebuildDataset and the dataset compile log. A consumer
+	// assembled without WithStorage has a nil db and its storage paths no-op,
+	// which decouples the consumer from Provision's call ordering and from the
+	// package-level kcDB global.
+	db *gorm.DB
+
+	// docEngine is the injected doc engine (wired by WithStorage). It is kept on
+	// the Consumer (mirroring db) so the assembly point can assert the exact
+	// engine reached the reader/writer, not just that WithStorage ran.
+	docEngine engine.DocEngine
 
 	// docLister enumerates every doc id in a KB so a rewrite can republish them.
 	docLister func(ctx context.Context, tenant, kb string) ([]string, error)
@@ -81,13 +103,18 @@ type rewriteScheduler interface {
 
 // NewConsumer constructs a Consumer driven by the given Claimer. Tests pass a
 // FakeScheduler and override the Reader/Writer/Deduper via options.
+//
+// The default reader, writer, and contribution store are unconfigured: the
+// production assembly point passes WithDocEngine(ingestion.Deps.Engine). A
+// consumer that reaches storage without it fails fast (errEngineNotConfigured)
+// rather than silently processing an empty dataset.
 func NewConsumer(scheduler Claimer, opts ...Option) *Consumer {
 	c := &Consumer{
 		scheduler:      scheduler,
-		reader:         engineReader{eng: engine.Get()},
-		writer:         engineWriter{eng: engine.Get(), commitService: file.NewFileCommitService(), resolveLanguage: datasetLanguageByID},
+		reader:         engineReader{},
+		writer:         engineWriter{commitService: file.NewFileCommitService()},
 		factory:        defaultDeduperFactory,
-		contributions:  newWikiContributionStore(engine.Get()),
+		contributions:  newWikiContributionStore(nil),
 		ttl:            2 * time.Minute,
 		heartbeat:      20 * time.Second,
 		pollInterval:   2 * time.Second,
@@ -95,12 +122,39 @@ func NewConsumer(scheduler Claimer, opts ...Option) *Consumer {
 		mergeThreshold: 0.85,
 		tombs:          map[string]map[string]uint64{},
 		rebuildPause:   map[string]bool{},
-		docLister:      defaultDocLister,
+	}
+	// docLister reads the injected db at call time (see defaultDocLister), so it
+	// reflects whatever WithStorage configured after construction.
+	c.docLister = func(ctx context.Context, tenant, kb string) ([]string, error) {
+		return c.defaultDocLister(ctx, tenant, kb)
 	}
 	for _, o := range opts {
 		o(c)
 	}
 	return c
+}
+
+// IsStorageConfigured reports whether the consumer was assembled with a doc
+// engine + db via WithStorage. The production ingestor must build it that way;
+// an unconfigured consumer fails fast on storage access, so this flag lets the
+// assembly point assert wiring before any batch is processed.
+func (c *Consumer) IsStorageConfigured() bool {
+	return c.storageConfigured
+}
+
+// StorageEngine returns the doc engine injected via WithStorage. It is exposed
+// so the assembly point can assert the exact engine the ingestor threads
+// through (not a zero value) actually reached the reader/writer — IsStorageConfigured
+// alone only reports that WithStorage ran, not that the deps propagated.
+func (c *Consumer) StorageEngine() engine.DocEngine {
+	return c.docEngine
+}
+
+// StorageDB returns the database handle injected via WithStorage. See
+// StorageEngine for why the injected value (not just the configured flag) is
+// observable.
+func (c *Consumer) StorageDB() *gorm.DB {
+	return c.db
 }
 
 // Run is one owned worker loop (Option E §11.5/§11.7): it wakes on NATS notify
@@ -173,7 +227,7 @@ func (c *Consumer) processClaim(ctx context.Context, cr ClaimResult) {
 		return
 	}
 	logTaskTypes := taskTypesForEntries(cr.Entries)
-	if err := startDatasetCompileLog(ctx, cr.TenantID, datasetID, cr.Token, cr.Entries); err != nil {
+	if err := c.startDatasetCompileLog(ctx, cr.TenantID, datasetID, cr.Token, cr.Entries); err != nil {
 		common.Warn("knowledge_compile: failed to create dataset ingestion log",
 			zap.String("dataset_id", datasetID), zap.Error(err))
 	}
@@ -215,7 +269,7 @@ func (c *Consumer) processClaim(ctx context.Context, cr ClaimResult) {
 	case <-ctx.Done():
 		close(stopHb)
 		<-done
-		if err := finishDatasetCompileLog(context.WithoutCancel(ctx), cr.Token, logTaskTypes, common.STOPPED, "Knowledge compilation stopped during shutdown", -1); err != nil {
+		if err := c.finishDatasetCompileLog(context.WithoutCancel(ctx), cr.Token, logTaskTypes, common.STOPPED, "Knowledge compilation stopped during shutdown", -1); err != nil {
 			common.Warn("knowledge_compile: failed to finalize stopped dataset ingestion log",
 				zap.String("dataset_id", datasetID), zap.Error(err))
 		}
@@ -223,7 +277,7 @@ func (c *Consumer) processClaim(ctx context.Context, cr ClaimResult) {
 	case <-hbFailed:
 		close(stopHb)
 		<-done
-		if err := finishDatasetCompileLog(context.WithoutCancel(ctx), cr.Token, logTaskTypes, common.STOPPED, "Knowledge compilation lease was lost and will be retried", -1); err != nil {
+		if err := c.finishDatasetCompileLog(context.WithoutCancel(ctx), cr.Token, logTaskTypes, common.STOPPED, "Knowledge compilation lease was lost and will be retried", -1); err != nil {
 			common.Warn("knowledge_compile: failed to finalize stopped dataset ingestion log",
 				zap.String("dataset_id", datasetID), zap.Error(err))
 		}
@@ -247,7 +301,7 @@ func (c *Consumer) processClaim(ctx context.Context, cr ClaimResult) {
 			common.Warn("knowledge_compile: failed to record error_msg",
 				zap.String("dataset_id", datasetID), zap.Error(err))
 		}
-		if err := finishDatasetCompileLog(ctx, cr.Token, logTaskTypes, common.FAILED, batchErr.Error(), -1); err != nil {
+		if err := c.finishDatasetCompileLog(ctx, cr.Token, logTaskTypes, common.FAILED, batchErr.Error(), -1); err != nil {
 			common.Warn("knowledge_compile: failed to finalize dataset ingestion log",
 				zap.String("dataset_id", datasetID), zap.Error(err))
 		}
@@ -256,13 +310,13 @@ func (c *Consumer) processClaim(ctx context.Context, cr ClaimResult) {
 	if _, err := c.scheduler.Ack(ctx, datasetID, cr.Token, cr.Entries); err != nil {
 		common.Warn("knowledge_compile: ack failed",
 			zap.String("dataset_id", datasetID), zap.Error(err))
-		if logErr := finishDatasetCompileLog(ctx, cr.Token, logTaskTypes, common.FAILED, "Failed to acknowledge completed knowledge compilation: "+err.Error(), -1); logErr != nil {
+		if logErr := c.finishDatasetCompileLog(ctx, cr.Token, logTaskTypes, common.FAILED, "Failed to acknowledge completed knowledge compilation: "+err.Error(), -1); logErr != nil {
 			common.Warn("knowledge_compile: failed to finalize dataset ingestion log",
 				zap.String("dataset_id", datasetID), zap.Error(logErr))
 		}
 		return
 	}
-	if err := finishDatasetCompileLog(ctx, cr.Token, logTaskTypes, common.COMPLETED, "Knowledge compilation completed", 1); err != nil {
+	if err := c.finishDatasetCompileLog(ctx, cr.Token, logTaskTypes, common.COMPLETED, "Knowledge compilation completed", 1); err != nil {
 		common.Warn("knowledge_compile: failed to finalize dataset ingestion log",
 			zap.String("dataset_id", datasetID), zap.Error(err))
 	}
@@ -275,7 +329,7 @@ func (c *Consumer) reportProgress(ctx context.Context, tenant, datasetID, token 
 			zap.String("phase", phase),
 			zap.Error(err))
 	}
-	if err := updateDatasetCompileLog(ctx, token, taskTypes, progress, message); err != nil {
+	if err := c.updateDatasetCompileLog(ctx, token, taskTypes, progress, message); err != nil {
 		common.Warn("knowledge_compile: failed to update dataset ingestion log",
 			zap.String("dataset_id", datasetID), zap.String("phase", phase), zap.Error(err))
 	}
@@ -412,12 +466,13 @@ func (c *Consumer) RebuildDataset(ctx context.Context, tenant, kb, mode string) 
 }
 
 // defaultDocLister enumerates every doc id in a KB via the Document DAO. When
-// no DB was provisioned it returns no docs (a rewrite becomes a no-op clean).
-func defaultDocLister(ctx context.Context, tenant, kb string) ([]string, error) {
-	if kcDB == nil {
+// no DB was provisioned (nil c.db) it returns no docs (a rewrite becomes a
+// no-op clean). The handle comes from WithStorage, not the package global kcDB.
+func (c *Consumer) defaultDocLister(ctx context.Context, tenant, kb string) ([]string, error) {
+	if c.db == nil {
 		return nil, nil
 	}
-	return dao.NewDocumentDAO().ListIDsByKBIDWithOptions(ctx, kcDB, dao.DocumentListOptions{KbID: kb})
+	return dao.NewDocumentDAO().ListIDsByKBIDWithOptions(ctx, c.db, dao.DocumentListOptions{KbID: kb})
 }
 
 // recoverDocTypes reconstructs the compile-type and frontend task-type sets a
@@ -500,7 +555,7 @@ func filterWikiPageCandidates(candidates []kccommon.Product) []kccommon.Product 
 		if cand.Variant != kccommon.VariantWiki {
 			continue // tree/structure products never enter the wiki merge
 		}
-		if metaString(cand.Meta, "kind") != "page" {
+		if kccommon.MetaString(cand.Meta, "kind") != "page" {
 			continue
 		}
 		filtered = append(filtered, cand)
@@ -538,9 +593,9 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	// land in the same batch, and completions/deletions can also arrive out of
 	// order across batches. The LAST event for a doc (by backlog append order)
 	// decides its fate, so we must not delete a doc that was re-ingested after
-	// its deletion, nor merge a completion shadowed by a later deletion. No
-	// sequence number is needed: the backlog is an ordered log and the last
-	// write wins, which is exactly the re-parse (completed last) vs delete
+	// its deletion, nor merge a completion shadowed by a later deletion. Queue
+	// positions preserve the backlog's append order and the last write wins,
+	// which is exactly the re-parse (completed last) vs delete
 	// (deleted last) semantics we want.
 	type docState struct {
 		winEvent EventType
@@ -617,7 +672,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	for _, entry := range disabled {
 		retractedDocIDs = append(retractedDocIDs, entry.DocID)
 	}
-	retractedDocIDs = uniqueSortedStrings(retractedDocIDs)
+	retractedDocIDs = common.DeduplicateSorted(retractedDocIDs)
 	wikiDiff, err := c.prepareWikiContributionDiff(ctx, tenant, kb, completed, retractedDocIDs)
 	if err != nil {
 		return err
@@ -723,16 +778,14 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 		// A no-op deduper would silently disable dataset-level LLM merging: every
 		// candidate (including e.g. a "吕布" wiki_page) would be written as its own
 		// merged row and duplicates would accumulate across runs. That degradation
-		// is never acceptable here, so fail loudly instead of papering over it.
-		common.Fatal("knowledge_compile: dataset-level LLM deduper unavailable, refusing to continue with a no-op merge",
-			zap.String("kb_id", kb),
-			zap.String("tenant_id", tenant),
-			zap.String("factory_err", func() string {
-				if err != nil {
-					return err.Error()
-				}
-				return "deduper factory returned nil"
-			}()))
+		// is never acceptable here, so fail the batch instead of papering over it.
+		// Never call common.Fatal here: the ingestor is shared by every tenant, so
+		// one tenant's model misconfiguration must not terminate the process.
+		factoryErr := "deduper factory returned nil"
+		if err != nil {
+			factoryErr = err.Error()
+		}
+		return fmt.Errorf("knowledge_compile: dataset-level LLM deduper unavailable for kb %s (tenant %s): %s", kb, tenant, factoryErr)
 	}
 
 	// --- Completion merge ---
@@ -1091,7 +1144,20 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 				Score:      g.score,
 			})
 		}
-		batched, err = deduper.DecideBatch(ctx, batched)
+		llmCtx, finishLLMProgress := withKnowledgeCompileLLMProgress(ctx, func(progressCtx context.Context, component, message string) {
+			c.reportProgress(
+				progressCtx,
+				tenant,
+				kb,
+				token,
+				taskTypes,
+				0.82,
+				"llm_merge",
+				fmt.Sprintf("%s: %s", component, message),
+			)
+		})
+		batched, err = deduper.DecideBatch(llmCtx, batched)
+		finishLLMProgress()
 		if err != nil {
 			return err
 		}
@@ -1184,7 +1250,7 @@ func completedDocsWithoutNavInput(completed []BacklogEntry, inputs []nav.UpsertD
 			withoutNav = append(withoutNav, entry.DocID)
 		}
 	}
-	return uniqueSortedStrings(withoutNav)
+	return common.DeduplicateSorted(withoutNav)
 }
 
 func copyMeta(input map[string]any) map[string]any {
@@ -1203,7 +1269,7 @@ func (c *Consumer) mergeEntityModeCandidates(ctx context.Context, tenant, kb str
 	var entityCandidates []kccommon.Product
 	var topic []kccommon.Product
 	for _, candidate := range candidates {
-		pageType := strings.ToLower(strings.TrimSpace(metaString(candidate.Meta, "page_type")))
+		pageType := strings.ToLower(strings.TrimSpace(kccommon.MetaString(candidate.Meta, "page_type")))
 		if pageType != "entity" && pageType != "concept" {
 			topic = append(topic, candidate)
 			continue
@@ -1254,7 +1320,7 @@ func (c *Consumer) mergeWikiProductsBySlug(ctx context.Context, tenant, kb strin
 				exists = true
 				continue
 			}
-			if strings.EqualFold(strings.TrimSpace(metaString(current.Meta, "page_type")), "topic") {
+			if strings.EqualFold(strings.TrimSpace(kccommon.MetaString(current.Meta, "page_type")), "topic") {
 				current = mergeTopicPage(current, candidate)
 			} else {
 				current = wikiEntityMerge(current, candidate)
@@ -1305,11 +1371,11 @@ func rewriteMergedWikiPages(ctx context.Context, tenant string, pages []kccommon
 		jobs = append(jobs, func() error {
 			page := pages[idx]
 			prompt := fmt.Sprintf("PAGE TYPE: %s\nTITLE: %s\nTOPIC: %s\nENTITIES: %s\nSUMMARY: %s\n\nEVIDENCE MARKDOWN:\n%s",
-				metaString(page.Meta, "page_type"),
-				metaString(page.Meta, "title"),
-				metaString(page.Meta, "topic"),
-				strings.Join(metaStringSlice(page.Meta, "entity_names"), ", "),
-				metaString(page.Meta, "summary"),
+				kccommon.MetaString(page.Meta, "page_type"),
+				kccommon.MetaString(page.Meta, "title"),
+				kccommon.MetaString(page.Meta, "topic"),
+				strings.Join(kccommon.MetaStringSlice(page.Meta, "entity_names"), ", "),
+				kccommon.MetaString(page.Meta, "summary"),
 				page.Content)
 			response, err := deps.Chat.Chat(ctx, kccommon.ChatRequest{
 				LLMID:        defaultLLMID,
@@ -1318,14 +1384,14 @@ func rewriteMergedWikiPages(ctx context.Context, tenant string, pages []kccommon
 				Temperature:  floatPtr(0.1),
 			})
 			if err != nil {
-				return fmt.Errorf("rewrite Wiki page %q: %w", metaString(page.Meta, "slug"), err)
+				return fmt.Errorf("rewrite Wiki page %q: %w", kccommon.MetaString(page.Meta, "slug"), err)
 			}
 			if response == nil {
-				return fmt.Errorf("rewrite Wiki page %q returned no response", metaString(page.Meta, "slug"))
+				return fmt.Errorf("rewrite Wiki page %q returned no response", kccommon.MetaString(page.Meta, "slug"))
 			}
 			content := strings.TrimSpace(response.Content)
 			if content == "" {
-				return fmt.Errorf("rewrite Wiki page %q returned empty content", metaString(page.Meta, "slug"))
+				return fmt.Errorf("rewrite Wiki page %q returned empty content", kccommon.MetaString(page.Meta, "slug"))
 			}
 			pages[idx].Content = content
 			return nil
@@ -1337,11 +1403,11 @@ func rewriteMergedWikiPages(ctx context.Context, tenant string, pages []kccommon
 func floatPtr(value float64) *float64 { return &value }
 
 func wikiPageMergeKey(product kccommon.Product) string {
-	slug := strings.TrimSpace(metaString(product.Meta, "slug"))
+	slug := strings.TrimSpace(kccommon.MetaString(product.Meta, "slug"))
 	if slug == "" {
 		return ""
 	}
-	pageType := strings.ToLower(strings.TrimSpace(metaString(product.Meta, "page_type")))
+	pageType := strings.ToLower(strings.TrimSpace(kccommon.MetaString(product.Meta, "page_type")))
 	return pageType + "\x00" + strings.ToLower(strings.Join(strings.Fields(slug), " "))
 }
 
@@ -1590,14 +1656,14 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 		}
 		// Dataset rows retain the producing compilation kind. Extraction shape
 		// is separate metadata and does not determine the stored kind.
-		ckwd := enginetypes.CanonicalCompilationKind(kccommon.FirstNonEmpty(p.Kind, metaString(p.Meta, "compile_kwd")))
+		ckwd := enginetypes.CanonicalCompilationKind(kccommon.FirstNonEmpty(p.Kind, kccommon.MetaString(p.Meta, "compile_kwd")))
 		if ckwd == "" {
 			ckwd = compileKwdForVariant(p.Variant)
 		}
-		kind := metaString(p.Meta, "kind")
+		kind := kccommon.MetaString(p.Meta, "kind")
 		template := structureTemplateIdentity(p.TemplateID, p.Kind)
-		from := metaString(p.Meta, "from")
-		to := metaString(p.Meta, "to")
+		from := kccommon.MetaString(p.Meta, "from")
+		to := kccommon.MetaString(p.Meta, "to")
 		if kind == "relation" || (from != "" && to != "") {
 			from = strings.TrimSpace(from)
 			to = strings.TrimSpace(to)
@@ -1607,9 +1673,9 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 			if from == "" || to == "" {
 				continue
 			}
-			relType := metaString(p.Meta, "relation_type")
+			relType := kccommon.MetaString(p.Meta, "relation_type")
 			if relType == "" {
-				relType = metaString(p.Meta, "type")
+				relType = kccommon.MetaString(p.Meta, "type")
 			}
 			if relType == "" {
 				relType = "related"
@@ -1617,17 +1683,17 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 			k := rkey{template: template, from: normalizedStructureEntityName(from), typ: structureRelationType(relType), to: normalizedStructureEntityName(to), ckwd: ckwd}
 			b := relByKey[k]
 			if b == nil {
-				b = &StructureBucket{Name: from + " -> " + to, Type: "relation", FromEntity: from, ToEntity: to, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind, CompileType: metaString(p.Meta, "compile_type"), RelationType: relType}
+				b = &StructureBucket{Name: from + " -> " + to, Type: "relation", FromEntity: from, ToEntity: to, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind, RelationType: relType}
 				relByKey[k] = b
 			}
 			appendBucket(b, p)
 			continue
 		}
 		// entity bucket
-		name := metaString(p.Meta, "name")
-		typ := metaString(p.Meta, "entity_type")
+		name := kccommon.MetaString(p.Meta, "name")
+		typ := kccommon.MetaString(p.Meta, "entity_type")
 		if typ == "" {
-			typ = metaString(p.Meta, "type")
+			typ = kccommon.MetaString(p.Meta, "type")
 		}
 		if name == "" {
 			continue
@@ -1635,7 +1701,7 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 		k := ekey{template: template, name: normalizedStructureEntityName(name), ckwd: ckwd}
 		b := entByKey[k]
 		if b == nil {
-			b = &StructureBucket{Name: name, Type: typ, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind, CompileType: metaString(p.Meta, "compile_type")}
+			b = &StructureBucket{Name: name, Type: typ, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind}
 			entByKey[k] = b
 		} else {
 			b.Type = preferredStructureEntityType(b.Type, typ)
@@ -1720,19 +1786,19 @@ func appendBucket(b *StructureBucket, p kccommon.Product) {
 		// name/type, while their dataset row still needs searchable text.
 		// Relations likewise use the endpoint names and relation type when the
 		// source payload has no description.
-		from := metaString(p.Meta, "from")
-		to := metaString(p.Meta, "to")
-		if kind := metaString(p.Meta, "kind"); kind == "relation" || (from != "" && to != "") {
-			relType := metaString(p.Meta, "relation_type")
+		from := kccommon.MetaString(p.Meta, "from")
+		to := kccommon.MetaString(p.Meta, "to")
+		if kind := kccommon.MetaString(p.Meta, "kind"); kind == "relation" || (from != "" && to != "") {
+			relType := kccommon.MetaString(p.Meta, "relation_type")
 			if relType == "" {
-				relType = metaString(p.Meta, "type")
+				relType = kccommon.MetaString(p.Meta, "type")
 			}
 			if relType == "" {
 				relType = "related"
 			}
 			desc = strings.TrimSpace(strings.Join([]string{from, relType, to}, " "))
 		} else {
-			desc = strings.TrimSpace(metaString(p.Meta, "name"))
+			desc = strings.TrimSpace(kccommon.MetaString(p.Meta, "name"))
 		}
 	}
 	if desc != "" {
@@ -1741,14 +1807,14 @@ func appendBucket(b *StructureBucket, p kccommon.Product) {
 		}
 		b.Description += desc
 	}
-	b.SourceDocIDs = appendUnique(b.SourceDocIDs, []string{p.DocID})
-	b.SourceChunkIDs = appendUnique(b.SourceChunkIDs, metaStringSlice(p.Meta, "source_chunk_ids"))
+	b.SourceDocIDs = common.AppendUnique(b.SourceDocIDs, []string{p.DocID})
+	b.SourceChunkIDs = common.AppendUnique(b.SourceChunkIDs, kccommon.MetaStringSlice(p.Meta, "source_chunk_ids"))
 	// mention_count_int: sum the per-entity mention counts (Python
 	// _struct_merge_graph_entities sums mention_count across the merged entities).
 	// Each entity product carries mention_count ≥ 1 (structure compile.go L231);
 	// mindmap entities carry none, so they contribute a default of 0 and are
 	// simply not stamped (mention_count_int is omitted when 0).
-	if mc, ok := metaInt(p.Meta, "mention_count"); ok && mc > 0 {
+	if mc, ok := kccommon.MetaInt(p.Meta, "mention_count"); ok && mc > 0 {
 		b.MentionCount += int(mc)
 	}
 	if len(p.Vector) > 0 {
@@ -1793,22 +1859,6 @@ func structureProductDescription(content string) string {
 		}
 	}
 	return content
-}
-
-// appendUnique appends only values not already present, preserving order.
-func appendUnique(dst, values []string) []string {
-	seen := make(map[string]bool, len(dst)+len(values))
-	for _, v := range dst {
-		seen[v] = true
-	}
-	for _, v := range values {
-		if v == "" || seen[v] {
-			continue
-		}
-		seen[v] = true
-		dst = append(dst, v)
-	}
-	return dst
 }
 
 // upsertNavLocked places the batch's Tree/PageIndex summaries into the dataset

@@ -88,9 +88,9 @@ func TestMergeByTokenSizeFromJSON_OverlapStripsTags(t *testing.T) {
 	}
 	items := [][]schema.ChunkDoc{
 		{
-			{Text: aText, DocType: "text", CKType: "text", TKNums: intPtr(aN)},
-			{Text: bText, DocType: "text", CKType: "text", TKNums: intPtr(bN)},
-			{Text: cText, DocType: "text", CKType: "text", TKNums: intPtr(cN)},
+			{Text: aText, DocType: "text", TKNums: intPtr(aN)},
+			{Text: bText, DocType: "text", TKNums: intPtr(bN)},
+			{Text: cText, DocType: "text", TKNums: intPtr(cN)},
 		},
 	}
 	got := mergeByTokenSizeFromJSON(items, budget, 30.0)
@@ -150,11 +150,11 @@ func TestMergeByTokenSizeFromJSON_NonTextBoundaryResetsMergeRun(t *testing.T) {
 
 	items := [][]schema.ChunkDoc{
 		{
-			{Text: t1, DocType: "text", CKType: "text", TKNums: intPtr(t1N)},
-			{Text: t2, DocType: "text", CKType: "text", TKNums: intPtr(t2N)},
-			{Text: "[image]", DocType: "image", CKType: "image", TKNums: intPtr(1)},
-			{Text: t3, DocType: "text", CKType: "text", TKNums: intPtr(t3N)},
-			{Text: t4, DocType: "text", CKType: "text", TKNums: intPtr(t4N)},
+			{Text: t1, DocType: "text", TKNums: intPtr(t1N)},
+			{Text: t2, DocType: "text", TKNums: intPtr(t2N)},
+			{Text: "[image]", DocType: "image", TKNums: intPtr(1)},
+			{Text: t3, DocType: "text", TKNums: intPtr(t3N)},
+			{Text: t4, DocType: "text", TKNums: intPtr(t4N)},
 		},
 	}
 	got := mergeByTokenSizeFromJSON(items, budget, 0.0)
@@ -163,7 +163,7 @@ func TestMergeByTokenSizeFromJSON_NonTextBoundaryResetsMergeRun(t *testing.T) {
 	if len(merged) != 3 {
 		var texts []string
 		for _, c := range merged {
-			texts = append(texts, c.CKType+":"+c.Text)
+			texts = append(texts, itemDocType(c)+":"+c.Text)
 		}
 		t.Fatalf("want 3 chunks (merged + non-text + merged), got %d: %v", len(merged), texts)
 	}
@@ -174,8 +174,8 @@ func TestMergeByTokenSizeFromJSON_NonTextBoundaryResetsMergeRun(t *testing.T) {
 	if merged[0].Text != t1+t2 {
 		t.Errorf("chunk[0] should be the merged T1+T2 chunk: got %q", merged[0].Text)
 	}
-	if merged[1].CKType != "image" {
-		t.Errorf("chunk[1] should be the non-text image chunk, got CKType=%q text=%q", merged[1].CKType, merged[1].Text)
+	if itemDocType(merged[1]) != "image" {
+		t.Errorf("chunk[1] should be the non-text image chunk, got doc_type=%q text=%q", itemDocType(merged[1]), merged[1].Text)
 	}
 	wantMerged := t3 + t4
 	if merged[2].Text != wantMerged {
@@ -207,9 +207,9 @@ func TestMergeByTokenSizeFromJSON_UnderCapNoOverflow(t *testing.T) {
 	}
 	items := [][]schema.ChunkDoc{
 		{
-			{Text: aText, DocType: "text", CKType: "text", TKNums: intPtr(aN)},
-			{Text: bText, DocType: "text", CKType: "text", TKNums: intPtr(bN)},
-			{Text: cText, DocType: "text", CKType: "text", TKNums: intPtr(cN)},
+			{Text: aText, DocType: "text", TKNums: intPtr(aN)},
+			{Text: bText, DocType: "text", TKNums: intPtr(bN)},
+			{Text: cText, DocType: "text", TKNums: intPtr(cN)},
 		},
 	}
 	got := mergeByTokenSizeFromJSON(items, budget, 0.0)
@@ -247,8 +247,8 @@ func TestMergeByTokenSizeFromJSON_UnderCapNoOverflow(t *testing.T) {
 func clampOverlapFixture() [][]schema.ChunkDoc {
 	return [][]schema.ChunkDoc{
 		{
-			{Text: strings.Repeat("word ", 20), DocType: "text", CKType: "text", TKNums: intPtr(130)},
-			{Text: "body", DocType: "text", CKType: "text", TKNums: intPtr(5)},
+			{Text: strings.Repeat("word ", 20), DocType: "text", TKNums: intPtr(130)},
+			{Text: "body", DocType: "text", TKNums: intPtr(5)},
 		},
 	}
 }
@@ -289,8 +289,8 @@ func TestMergeByTokenSizeFromJSON_ClampsOverlappedPct(t *testing.T) {
 func TestMergeByTokenSizeFromJSON_EmptyPrevKeepsChunk(t *testing.T) {
 	items := [][]schema.ChunkDoc{
 		{
-			{Text: "", DocType: "text", CKType: "text", TKNums: intPtr(5)},
-			{Text: "keepme", DocType: "text", CKType: "text", TKNums: intPtr(5)},
+			{Text: "", DocType: "text", TKNums: intPtr(5)},
+			{Text: "keepme", DocType: "text", TKNums: intPtr(5)},
 		},
 	}
 	got := mergeByTokenSizeFromJSON(items, 128, 0)

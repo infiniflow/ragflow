@@ -643,7 +643,7 @@ func TestFeishuWikiRegistryRegistration(t *testing.T) {
 
 	// The task-context factory path must also resolve.
 	taskConnector, err := registry.Open(context.Background(), dao.SyncTaskContext{
-		Connector: entity.Connector{Source: "feishu_wiki", Config: entity.JSONMap(feishuWikiBaseConfig())},
+		Connector: entity.Connector{Source: "feishu_wiki", Config: entity.ConnectorConfig(feishuWikiBaseConfig())},
 	})
 	if err != nil {
 		t.Fatalf("Open feishu_wiki: %v", err)

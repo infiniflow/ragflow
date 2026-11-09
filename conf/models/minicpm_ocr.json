@@ -1,0 +1,19 @@
+{
+  "name": "MiniCPM-OCR",
+  "url": {
+    "default": "https://api.modelbest.cn/v1",
+    "global": "https://api.modelbest.ai/v1"
+  },
+  "url_suffix": {
+    "ocr": "document-parse/jobs"
+  },
+  "class": "minicpm-ocr",
+  "models": [
+    {
+      "name": "MiniCPM-OCR-1.0",
+      "model_types": [
+        "ocr"
+      ]
+    }
+  ]
+}

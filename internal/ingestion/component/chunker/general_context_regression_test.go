@@ -60,7 +60,7 @@ func TestGeneralChunkerMarkdownFoldedHeadingDropsPartialContext(t *testing.T) {
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name": "test.md", "file_type": "md", "output_format": "json",
 		"json": []map[string]any{
-			{"text": "# 标题。还有标题！", "doc_type_kwd": "text", "ck_type": "heading"},
+			{"text": "# 标题。还有标题！", "doc_type_kwd": "text", "layout": "heading"},
 			{"text": "<table>A</table>", "doc_type_kwd": "table"},
 		},
 	})
@@ -91,7 +91,7 @@ func TestGeneralChunkerMarkdownLongHeadingUsesSourceClassification(t *testing.T)
 			out, err := c.Invoke(t.Context(), nil, map[string]any{
 				"name": "test.md", "file_type": "md", "output_format": "json",
 				"json": []map[string]any{
-					{"text": heading, "doc_type_kwd": "text", "ck_type": "heading"},
+					{"text": heading, "doc_type_kwd": "text", "layout": "heading"},
 					{"text": "body", "doc_type_kwd": "text"},
 				},
 			})

@@ -264,7 +264,7 @@ func (u *UpstageModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 
 // Balance is not exposed by the Upstage API, so this returns "no such method".
 func (u *UpstageModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Balance", u.Name())
 }
 
 // CheckConnection runs a lightweight ListModels call to verify the API key.
@@ -279,41 +279,45 @@ func (u *UpstageModel) CheckConnection(ctx context.Context, apiConfig *APIConfig
 // Rerank calculates similarity scores between query and documents. Upstage
 // does not expose a public rerank API, so this returns "no such method".
 func (u *UpstageModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Rerank", u.Name())
 }
 
 // TranscribeAudio transcribe audio
 func (u *UpstageModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", u.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", u.Name())
 }
 
 func (u *UpstageModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", u.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", u.Name())
 }
 
 // AudioSpeech convert text to audio
 func (u *UpstageModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", u.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", u.Name())
 }
 
 func (u *UpstageModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", u.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", u.Name())
 }
 
 // OCRFile OCR file
 func (u *UpstageModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", u.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", u.Name())
 }
 
 // ParseFile parse file
 func (u *UpstageModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", u.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", u.Name())
 }
 
 func (u *UpstageModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", u.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", u.Name())
 }
 
 func (u *UpstageModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", u.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", u.Name())
+}
+
+func (u *UpstageModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", u.Name())
 }

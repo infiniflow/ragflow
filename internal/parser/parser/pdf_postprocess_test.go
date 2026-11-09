@@ -59,24 +59,6 @@ func TestApplyPDFPostProcess_AssignsDocTypeKeywords(t *testing.T) {
 	}
 }
 
-func TestApplyPDFPostProcess_FlattenMediaKeepsImagesButMarksText(t *testing.T) {
-	result := &deepdoctype.ParseResult{
-		Sections: []deepdoctype.Section{
-			{Text: "a", LayoutType: "figure", Image: "abc"},
-			{Text: "b", LayoutType: "table"},
-		},
-	}
-	applyPDFPostProcess(result, pdfPostProcessOptions{flattenMediaToText: true})
-	for i, s := range result.Sections {
-		if s.DocTypeKwd != "text" {
-			t.Fatalf("Sections[%d].DocTypeKwd = %q, want text", i, s.DocTypeKwd)
-		}
-	}
-	if got, want := result.Sections[0].Image, "abc"; got != want {
-		t.Fatalf("Sections[0].Image = %q, want %q", got, want)
-	}
-}
-
 func TestApplyPDFPostProcess_ReordersMultiColumnText(t *testing.T) {
 	cases := []struct {
 		name      string

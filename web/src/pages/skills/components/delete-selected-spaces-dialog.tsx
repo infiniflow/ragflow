@@ -43,11 +43,15 @@ export const DeleteSelectedSpacesDialog: React.FC<
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>
-            {t('skills.deleteSelectedTitle') || 'Delete Selected Spaces'}
+            {t('skills.deleteSelectedTitle', {
+              defaultValue: 'Delete Selected Spaces',
+            })}
           </DialogTitle>
           <DialogDescription>
-            {t('skills.deleteSelectedDescription', { count: selectedCount }) ||
-              `Are you sure you want to delete ${selectedCount} selected spaces? This action cannot be undone.`}
+            {t('skills.deleteSelectedDescription', {
+              count: selectedCount,
+              defaultValue: `Are you sure you want to delete ${selectedCount} selected spaces? This action cannot be undone.`,
+            })}
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>

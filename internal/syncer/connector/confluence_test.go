@@ -346,6 +346,31 @@ func TestConfluenceCQLQuoteEscapesBackslashes(t *testing.T) {
 	}
 }
 
+// TestConfluenceCQLUpperBoundCoversWholeMinute pins the exclusive upper bound for
+// pages and attachments. CQL cannot express the seconds of the window end, so an
+// inclusive `<=` on the truncated value drops the rest of that minute and the
+// next window's lower bound skips those pages and attachments forever.
+func TestConfluenceCQLUpperBoundCoversWholeMinute(t *testing.T) {
+	connector := newTestConfluenceConnector(t, "https://example.atlassian.net/wiki", map[string]any{
+		"index_mode": "page",
+		"page_id":    "123",
+	})
+	end := mustTime(t, "2026-01-04T00:00:30Z")
+
+	cases := map[string]string{
+		"page":       connector.pageCQL(nil, end, false),
+		"attachment": connector.attachmentCQL("123", nil, end, false),
+	}
+	for name, cql := range cases {
+		if !strings.Contains(cql, `lastmodified < '2026-01-04 00:01'`) {
+			t.Fatalf("%s CQL = %q, want an exclusive bound at the next minute tick", name, cql)
+		}
+		if strings.Contains(cql, `lastmodified <=`) {
+			t.Fatalf("%s CQL = %q, want no inclusive upper bound", name, cql)
+		}
+	}
+}
+
 func TestConfluenceSemanticIdentifierAlwaysUsesFullPath(t *testing.T) {
 	// Every identifier carries the full hierarchical path: space, ancestors, title.
 	got := confluenceSemanticIdentifier("Engineering", []string{"Root"}, "Page")
@@ -360,5 +385,25 @@ func TestConfluenceSemanticIdentifierAlwaysUsesFullPath(t *testing.T) {
 	}
 	if unnamed := confluenceSemanticIdentifier("Space", nil, ""); unnamed != "Space / Untitled" {
 		t.Fatalf("untitled identifier = %q, want Space / Untitled", unnamed)
+	}
+}
+
+func TestConfluenceWindowKeepsWhatTheCQLAlreadyReturned(t *testing.T) {
+	// CQL accepts minute precision only, so pageCQL asks for everything from the
+	// start of the waterline minute. The previous run's upper bound is the same
+	// minute, so a page updated just before the waterline is covered by neither
+	// run unless filtering accepts the same lower bound the query sent.
+	start := mustTime(t, "2026-10-27T10:05:30Z")
+	end := mustTime(t, "2026-10-27T10:06:00Z")
+	if got := confluenceCQLTime(start); got != "2026-10-27 10:05" {
+		t.Fatalf("confluenceCQLTime(%v) = %q, want minute precision", start, got)
+	}
+	inside := mustTime(t, "2026-10-27T10:05:10Z")
+	if !inConfluenceWindow(inside, &start, end) {
+		t.Fatalf("page updated at %v was dropped although the CQL lower bound covers it", inside)
+	}
+	before := mustTime(t, "2026-10-27T10:04:59Z")
+	if inConfluenceWindow(before, &start, end) {
+		t.Fatalf("page updated at %v belongs to the previous window", before)
 	}
 }

@@ -36,59 +36,33 @@
                             "llm_id": ""
                         },
                         "doc": {
-                            "output_format": "json",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "doc"
                             ]
                         },
                         "docx": {
-                            "flatten_media_to_text": false,
-                            "output_format": "json",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "docx"
-                            ],
-                            "vlm": {}
+                            ]
                         },
                         "html": {
-                            "output_format": "json",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "htm",
                                 "html"
                             ]
                         },
                         "markdown": {
-                            "flatten_media_to_text": false,
-                            "output_format": "json",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "md",
                                 "markdown",
                                 "mdx"
-                            ],
-                            "vlm": {}
+                            ]
                         },
                         "pdf": {
-                            "flatten_media_to_text": false,
-                            "output_format": "json",
                             "parse_method": "DeepDOC",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "pdf"
                             ],
-                            "vlm": {},
                             "pages": [
                                 [
                                     1,
@@ -97,24 +71,14 @@
                             ]
                         },
                         "spreadsheet": {
-                            "flatten_media_to_text": false,
-                            "output_format": "json",
                             "parse_method": "DeepDOC",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "xls",
                                 "xlsx",
                                 "csv"
-                            ],
-                            "vlm": {}
+                            ]
                         },
                         "text&code": {
-                            "output_format": "json",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "txt",
                                 "py",
@@ -130,6 +94,36 @@
                                 "cs",
                                 "kt",
                                 "sql"
+                            ]
+                        },
+                        "image": {
+                            "ocr_enabled": true,
+                            "suffix": [
+                                "bmp",
+                                "gif",
+                                "jpeg",
+                                "jpg",
+                                "png",
+                                "svg",
+                                "tif",
+                                "tiff",
+                                "webp"
+                            ]
+                        },
+                        "email": {
+                            "fields": [
+                                "from",
+                                "to",
+                                "cc",
+                                "bcc",
+                                "date",
+                                "subject",
+                                "body",
+                                "attachments"
+                            ],
+                            "suffix": [
+                                "eml",
+                                "msg"
                             ]
                         }
                     }
@@ -286,62 +280,43 @@
                             "setups": [
                                 {
                                     "fileFormat": "pdf",
-                                    "flatten_media_to_text": false,
-                                    "output_format": "json",
-                                    "parse_method": "DeepDOC",
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "vlm": {}
+                                    "parse_method": "DeepDOC"
                                 },
                                 {
                                     "fileFormat": "spreadsheet",
-                                    "flatten_media_to_text": false,
-                                    "output_format": "json",
-                                    "parse_method": "DeepDOC",
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "vlm": {}
+                                    "parse_method": "DeepDOC"
                                 },
                                 {
-                                    "fileFormat": "markdown",
-                                    "flatten_media_to_text": false,
-                                    "output_format": "json",
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "vlm": {}
+                                    "fileFormat": "markdown"
                                 },
                                 {
-                                    "fileFormat": "text&code",
-                                    "output_format": "json",
-                                    "preprocess": [
-                                        "main_content"
+                                    "fileFormat": "text&code"
+                                },
+                                {
+                                    "fileFormat": "html"
+                                },
+                                {
+                                    "fileFormat": "doc"
+                                },
+                                {
+                                    "fileFormat": "docx"
+                                },
+                                {
+                                    "fileFormat": "image",
+                                    "ocr_enabled": true
+                                },
+                                {
+                                    "fileFormat": "email",
+                                    "fields": [
+                                        "from",
+                                        "to",
+                                        "cc",
+                                        "bcc",
+                                        "date",
+                                        "subject",
+                                        "body",
+                                        "attachments"
                                     ]
-                                },
-                                {
-                                    "fileFormat": "html",
-                                    "output_format": "json",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
-                                },
-                                {
-                                    "fileFormat": "doc",
-                                    "output_format": "json",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
-                                },
-                                {
-                                    "fileFormat": "docx",
-                                    "flatten_media_to_text": false,
-                                    "output_format": "json",
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "vlm": {}
                                 }
                             ]
                         },

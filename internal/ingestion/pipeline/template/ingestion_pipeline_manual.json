@@ -54,36 +54,20 @@
                             }
                         },
                         "doc": {
-                            "output_format": "json",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "doc"
                             ]
                         },
                         "docx": {
-                            "flatten_media_to_text": false,
-                            "output_format": "json",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "docx"
-                            ],
-                            "vlm": {}
+                            ]
                         },
                         "pdf": {
-                            "flatten_media_to_text": false,
-                            "output_format": "json",
                             "parse_method": "DeepDOC",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "pdf"
-                            ],
-                            "vlm": {}
+                            ]
                         }
                     }
                 },
@@ -458,27 +442,13 @@
                             "setups": [
                                 {
                                     "fileFormat": "pdf",
-                                    "flatten_media_to_text": false,
-                                    "output_format": "json",
-                                    "parse_method": "DeepDOC",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "parse_method": "DeepDOC"
                                 },
                                 {
-                                    "fileFormat": "doc",
-                                    "output_format": "json",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "fileFormat": "doc"
                                 },
                                 {
-                                    "fileFormat": "docx",
-                                    "flatten_media_to_text": false,
-                                    "output_format": "json",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "fileFormat": "docx"
                                 }
                             ]
                         },

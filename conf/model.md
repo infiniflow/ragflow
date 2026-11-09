@@ -153,6 +153,7 @@ A quick test: if `n & (n-1) == 0`, the value is a power of 2 (binary). Otherwise
 | **Tencent (Hunyuan)** | Decimal (32K, 131K, 262K) | Decimal (8K, 64K) | [Tencent Cloud Docs](https://cloud.tencent.com/document/product/1759) |
 | **Xiaomi (MiMo)** | Binary (1M) | Binary (8K) | [MiMo Docs](https://huggingface.co/XiaomiMiMo) |
 | **HuggingFace** | Varies (hosted models) | Varies | [HuggingFace Model Cards](https://huggingface.co/docs/hub/model-cards) |
+| **Nace (Drex)** | Binary (262,144 = the state plus one question, per question; decision models only) | None — answers are probabilities, not generated tokens | [Nace Docs](https://console.nace.ai/docs/drex/reference/limits) |
 
 ### Key Takeaways
 
@@ -176,25 +177,36 @@ The following providers are **aggregators** — they host models from multiple u
 | **AstraFlow** | Multi-provider aggregator |
 | **Avian** | Multi-provider aggregator |
 | **Baidu (Qianwen)** | Ernie + third-party models |
+| **cheapaimodel** | OpenAI-compatible gateway for open-weight models (DeepSeek, GLM, Kimi) plus Grok |
+| **CloudGPU** | GPU cloud with an OpenAI-compatible inference API for open models |
 | **CometAPI** | Multi-provider aggregator |
 | **DeepInfra** | Open-source model hosting |
 | **Demon Route** | OpenAI-compatible router |
+| **EmpirioLabs AI** | AI inference provider |
 | **FuturMix** | Multi-provider aggregator |
 | **GiteeAI** | Chinese aggregator |
 | **GreenPT** | GLM-based models |
+| **Hostinger Router** | OpenAI-compatible router with EU/US regional model variants |
 | **Huawei Cloud** | Hosts GLM, Kimi, etc. |
 | **JieKouAI** | Multi-provider aggregator |
 | **LongCat** | Meituan's model platform |
 | **N1N** | Multi-provider aggregator |
 | **Novita** | Open-source model hosting |
+| **Obscurify.ai** | Privacy-focused OpenAI-compatible API, 200+ models |
 | **OpenRouter** | Multi-provider router |
 | **OrcaRouter** | Auto-routing layer |
 | **PPIO** | Edge AI platform |
 | **Qiniu** | Chinese cloud platform |
 | **Replicate** | Open-source model hosting |
+| **Runcrate** | GPU cloud with an OpenAI-compatible inference API for open models |
 | **SiliconFlow** | Chinese aggregator |
+| **Synap** | Linkrra's OpenAI-compatible router for open-weight models served on self-operated GPUs |
 | **TogetherAI** | Open-source model hosting |
 | **TokenHub** | Multi-provider aggregator |
+| **TrustedRouter** | OpenAI-compatible router |
+| **Wally** | OpenAI-compatible API for open-weight models |
+| **WorldRouter** | Multi-provider gateway with an OpenAI-compatible inference API |
+| **AI Stupid Level** | Benchmark-based router (routes each request to the best-scoring model, with your own provider keys) |
 | **TokenPony** | Multi-provider aggregator |
 | **Volcengine (Doubao)** | ByteDance's cloud (hosts Doubao + third-party) |
 

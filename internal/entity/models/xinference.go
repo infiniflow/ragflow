@@ -389,7 +389,7 @@ func (x *XinferenceModel) TranscribeAudio(ctx context.Context, modelName *string
 	}
 
 	// request
-	req, err := http.NewRequest("POST", url, &body)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, &body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -429,7 +429,7 @@ func (x *XinferenceModel) TranscribeAudio(ctx context.Context, modelName *string
 }
 
 func (x *XinferenceModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", x.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", x.Name())
 }
 
 func (x *XinferenceModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
@@ -465,7 +465,7 @@ func (x *XinferenceModel) AudioSpeech(ctx context.Context, modelName *string, au
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -494,15 +494,15 @@ func (x *XinferenceModel) AudioSpeech(ctx context.Context, modelName *string, au
 }
 
 func (x *XinferenceModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", x.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", x.Name())
 }
 
 func (x *XinferenceModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", x.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", x.Name())
 }
 
 func (x *XinferenceModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", x.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", x.Name())
 }
 
 // ListModels returns the model IDs exposed by Xinference's OpenAI-compatible
@@ -553,7 +553,7 @@ func (x *XinferenceModel) ListModels(ctx context.Context, apiConfig *APIConfig) 
 }
 
 func (x *XinferenceModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", x.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", x.Name())
 }
 
 func (x *XinferenceModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
@@ -562,9 +562,13 @@ func (x *XinferenceModel) CheckConnection(ctx context.Context, apiConfig *APICon
 }
 
 func (x *XinferenceModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", x.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", x.Name())
 }
 
 func (x *XinferenceModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", x.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", x.Name())
+}
+
+func (x *XinferenceModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", x.Name())
 }

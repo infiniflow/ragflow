@@ -55,16 +55,16 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
 # Copy the cl100k_base BPE table used by the Go tokenizer (tiktoken-go
 # cl100k_base). The deps image ships it at its root; the Go image previously
 # mounted only /huggingface.co and omitted this file, so NumTokensFromString
-# silently returned 0. localBpeLoader resolves it from <workdir>/ragflow_deps/,
+# silently returned 0. localBpeLoader resolves it from <workdir>/deps/,
 # so dropping it here makes the table load offline at startup (see
 # InitCL100KEncoder fail-fast guard).
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/cl100k_base.tiktoken,target=/tmp/cl100k_base.tiktoken \
-    mkdir -p /ragflow/ragflow_deps && \
-    cp /tmp/cl100k_base.tiktoken /ragflow/ragflow_deps/cl100k_base.tiktoken
+    mkdir -p /ragflow/deps && \
+    cp /tmp/cl100k_base.tiktoken /ragflow/deps/cl100k_base.tiktoken
 
 # Embedding tokenizer assets for the Go counters (internal/tokenizer). Same story as
 # the cl100k table above: the deps image carries them and the Go image has to put them
-# where the loaders search (<workdir>/ragflow_deps/huggingface.co/<repo>/<file>). A
+# where the loaders search (<workdir>/deps/huggingface.co/<repo>/<file>). A
 # missing asset FAILS THE BUILD here rather than shipping an image where every tagged
 # model silently counts with the calibrated cl100k estimate. The tokenizer.json files
 # that exist only as cross-check oracles are deliberately not shipped.
@@ -75,8 +75,8 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
         Qwen/Qwen3-Embedding-0.6B/tokenizer.json \
         intfloat/e5-mistral-7b-instruct/tokenizer.json ; do \
         if [ -f "/huggingface.co/$asset" ]; then \
-            mkdir -p "/ragflow/ragflow_deps/huggingface.co/$(dirname "$asset")" && \
-            cp "/huggingface.co/$asset" "/ragflow/ragflow_deps/huggingface.co/$asset" ; \
+            mkdir -p "/ragflow/deps/huggingface.co/$(dirname "$asset")" && \
+            cp "/huggingface.co/$asset" "/ragflow/deps/huggingface.co/$asset" ; \
         else \
             echo "ERROR: tokenizer asset $asset is missing from the infiniflow/ragflow_deps image; this image would count with the calibrated estimate instead of the model's own tokenizer" >&2 ; \
             exit 1 ; \
@@ -84,6 +84,14 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
     done
 
 ENV DEBIAN_FRONTEND=noninteractive
+
+# The Noto Sans CJK SC font is now pre-baked into infiniflow/ragflow_deps:latest
+# (downloaded + verified by deps/download_deps.py) instead of being curl'd from
+# GitHub at main-image build time. gopdf reads it at runtime from
+# /usr/local/share/fonts/truetype/noto/NotoSansCJKsc-VF.ttf (pdf_writer.go).
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/NotoSansCJKsc-VF.ttf,target=/tmp/NotoSansCJKsc-VF.ttf \
+    mkdir -p /usr/local/share/fonts/truetype/noto && \
+    cp /tmp/NotoSansCJKsc-VF.ttf /usr/local/share/fonts/truetype/noto/NotoSansCJKsc-VF.ttf
 
 # Setup apt
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
@@ -99,10 +107,6 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     chmod 1777 /tmp && \
     apt update && \
     apt --no-install-recommends install -y ca-certificates curl vim unzip iproute2 fonts-dejavu fontconfig && \
-    mkdir -p /usr/local/share/fonts/truetype/noto && \
-    curl --retry 5 --retry-delay 2 --retry-all-errors -fsSL \
-        -o /usr/local/share/fonts/truetype/noto/NotoSansCJKsc-VF.ttf \
-        https://github.com/notofonts/noto-cjk/raw/main/Sans/Variable/TTF/NotoSansCJKsc-VF.ttf && \
     fc-cache -f && \
     rm -rf /var/lib/apt/lists/* && apt-get clean
 
@@ -223,19 +227,21 @@ RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod,sharing=locked
 COPY internal internal
 COPY cmd cmd
 COPY build.sh ./
+COPY tools/scripts tools/scripts
 COPY Dockerfile ./
 
-# ONNX Runtime static archives: build.sh's _seed_from_system copies the ORT
-# static libs from the runner's pre-baked /opt/ragflow-native-libs/onnxruntime
-# (arch-correct per TARGETARCH) into the user-cache path ONNXRUNTIME_STATIC_PREFIX
-# before linking. These .a files are consumed at link time only and do NOT enter
-# the final image (only the compiled /ragflow/bin is COPY --from=go-builder).
-# The Dockerfile no longer pre-copies them here: pre-creating the user-cache dir
-# would make _seed_from_system treat it as "already cached" and skip the copy on
-# the non-matching architecture (e.g. the arm64 runner has no x64 dir), so we
-# rely on build.sh to seed ORT for both amd64 and arm64. ARG ORT_VERSION stays
-# because build.sh's check_ort_version_consistency greps it to cross-check the
-# pinned ORT release against internal/common/environments.go.
+# ONNX Runtime static archives are provisioned by build.sh from the versioned
+# user cache at ONNXRUNTIME_STATIC_PREFIX (${RAGFLOW_NATIVE_LIBS_DIR:-$HOME/
+# ragflow-native-libs}/onnxruntime/static_lib). There is NO /opt pre-bake: on CI
+# the host cache is mounted in at build time, and for the product image build
+# (where no host cache is mounted) build.sh falls back to _ensure_native_libs_installed,
+# which runs `uv run tools/scripts/download_dev_deps.py`. That downloader fetches
+# the native archives on demand and self-creates its deps/ workdir when absent
+# (see download_dev_deps.py::ensure_deps_dir), so it no longer crashes on a bare
+# go-builder checkout. These .a files are consumed at link time only and do NOT
+# enter the final image (only the compiled /ragflow/bin is COPY --from=go-builder).
+# ARG ORT_VERSION stays because build.sh's check_ort_version_consistency greps it
+# to cross-check the pinned ORT release against internal/common/environments.go.
 ARG ORT_VERSION=1.29.0
 
 RUN git config --global safe.directory "*" && \

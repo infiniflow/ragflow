@@ -9,7 +9,8 @@ export default {
       delete: 'Sil',
       deleteModalTitle: 'Silmek istediğinizden emin misiniz?',
       deleteThem: 'Bunları silmek istediğinizden emin misiniz?',
-      removeModalTitle: 'Kaldırmak istediğinizden emin misiniz?',
+      removeIt: 'Kaldırmak istediğinizden emin misiniz?',
+      removeThem: 'Bunları kaldırmak istediğinizden emin misiniz?',
       ok: 'Tamam',
       cancel: 'İptal',
       yes: 'Evet',
@@ -46,16 +47,18 @@ export default {
       arabic: 'Arapça',
       turkish: 'Türkçe',
       dutch: 'Felemenkçe',
+      slovak: 'Slovakça',
+      czech: 'Çekçe',
       language: 'Dil',
       languageMessage: 'Lütfen dilinizi girin!',
       languagePlaceholder: 'Dilinizi seçin',
       copy: 'Kopyala',
       copied: 'Kopyalandı',
+      readOnly: 'Salt okunur',
       viewMore: 'Daha fazla göster',
       viewLess: 'Daha az göster',
       comingSoon: 'Yakında',
       download: 'İndir',
-      figure: 'Şek.',
       close: 'Kapat',
       preview: 'Önizleme',
       move: 'Taşı',
@@ -402,6 +405,9 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
     },
     knowledgeDetails: {
       continueUpload: 'Yüklemeye devam et',
+      uploadPipelineDeletedTitle: 'Ayrıştırma hattı kullanılamıyor',
+      uploadPipelineDeletedContent:
+        'Bu dataset için yapılandırılan hat silinmiş veya yayınlanmış bir sürümü yok, bu nedenle yüklenen dosyalar otomatik olarak ayrıştırılamaz. Dataset ayarlarında yeniden bir hat yapılandırın veya şimdi yükleyip her dosya için ayrıştırmayı ayrı ayrı yapılandırın.',
       reselectParser: 'Ayrıştırma yöntemini yeniden seç',
       goAddModel: 'Model eklemeye git',
       uploadMissingModelsTitle: 'Bazı dosyalar için gerekli bir model eksik',
@@ -412,8 +418,22 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       uploadUnsupportedTypesTitle: 'Bazı dosya türleri ayrıştırılamıyor',
       fileTypeUnsupported:
         '{{name}} ({{fileType}}): mevcut ayrıştırıcı yapılandırması tarafından desteklenmiyor',
+      fileTypeUnsupportedAutoSwitch:
+        '{{name}} ({{fileType}}): mevcut ayrıştırıcı yapılandırması tarafından desteklenmiyor; otomatik olarak yerleşik {{parser}} yapılandırmasına geçilecek',
+      fileTypeUnsupportedManualSwitch:
+        '{{name}} ({{fileType}}): mevcut ayrıştırıcı yapılandırması tarafından desteklenmiyor; yüklemeden sonra ayrıştırma yöntemini elle değiştirin',
+      fileTypeVideoUnsupported:
+        '{{name}} ({{fileType}}): video dosyaları henüz ayrıştırılamıyor',
+      videoUnsupportedAfterUploadHint:
+        'Yüklemeye devam edebilirsiniz, ancak video dosyaları henüz ayrıştırılamıyor ve işlenmeyecek.',
+      videoUnsupportedParseHint:
+        'Video dosyaları henüz ayrıştırılamıyor. Bu dosyayı silin veya desteklenen bir formata dönüştürün.',
       reselectParserAfterUploadHint:
         'Yüklemeye devam edin; sistem bu dosyaları otomatik olarak desteklenen yerleşik bir ayrıştırma yapılandırmasına geçirecektir.',
+      manualSwitchAfterUploadHint:
+        'Yüklemeye devam edin, ardından bu dosyaların ayrıştırma yöntemini elle değiştirin.',
+      mixedSwitchAfterUploadHint:
+        'Yüklemeye devam edin. Bazı dosyalar otomatik olarak desteklenen yerleşik bir ayrıştırma yapılandırmasına geçecek; geri kalanını yüklemeden sonra elle değiştirin.',
       reselectParserToParseHint:
         'Etkilenen dosyalar için ayrıştırma yöntemini yeniden seçin, ardından yeniden ayrıştırın.',
       addModelAfterUploadHint:
@@ -475,6 +495,10 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       redoAll: 'Mevcut parçaları temizle',
       applyAutoMetadataSettings: 'Global otomatik meta veri ayarlarını uygula',
       parseFileTip: 'Ayrıştırmak istediğinizden emin misiniz?',
+      clearChunksReparseTip:
+        'Yeniden ayrıştırmak için parçaları temizlemek istediğinizden emin misiniz?',
+      parserConfigReparseTip:
+        'Mevcut parçalar önceki ayrıştırıcı ayarlarıyla oluşturuldu. Bunları temizleyip bu belgeyi kaydedilen ayarlarla yeniden ayrıştırmak ister misiniz?',
       parseFile: 'Dosyayı ayrıştır',
       emptyMetadata: 'Meta veri yok',
       metadataField: 'Meta veri alanı',
@@ -510,6 +534,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       source: 'Kaynak',
       fileName: 'Dosya adı',
       datasetLogs: 'Dataset',
+      datasourceLogs: 'Veri kaynağı',
       fileLogs: 'Dosya',
       overview: 'Günlükler',
       success: 'Başarılı',
@@ -546,7 +571,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       webCrawl: 'Web taraması',
       chunkNumber: 'Parçalar',
       uploadDate: 'Yükleme tarihi',
-      chunkMethod: 'Parçalama yöntemi',
+      parsingMode: 'Ayrıştırma modu',
       enabled: 'Etkinleştir',
       disabled: 'Devre dışı bırak',
       action: 'İşlem',
@@ -588,6 +613,15 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       runningStatus3: 'Başarılı',
       runningStatus4: 'Başarısız',
       runningStatusQueued: 'Kuyrukta',
+      cancelParsingTasks: 'Ayrıştırma görevlerini iptal et',
+      filesParsing: '{{count}} dosya ayrıştırılıyor',
+      filesPending: '{{count}} dosya bekliyor',
+      cancelParsingConfirmTitle: 'Ayrıştırmayı iptal et',
+      cancelParsingConfirm:
+        'Şu anda ayrıştırılan {{count}} dosyanın ayrıştırması iptal edilsin mi?',
+      cancelPendingConfirm:
+        'Bekleyen {{count}} dosya ayrıştırma kuyruğundan kaldırılsın mı?',
+      cancelTasksSuccess: '{{count}} ayrıştırma görevi iptal edildi',
       pageRanges: 'Sayfa aralıkları',
       pageRangesTip:
         'Ayrıştırılacak sayfa aralığı; bu aralığın dışındaki sayfalar işlenmeyecek.',
@@ -602,9 +636,6 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       layoutRecognize: 'PDF ayrıştırıcı',
       layoutRecognizeTip:
         "PDF düzen analizi için görsel model kullanın. Belge başlıklarını, metin bloklarını, görüntüleri ve tabloları etkili bir şekilde konumlandırır. Naive seçeneği seçilirse yalnızca PDF'deki düz metin alınır. Bu seçeneğin şu anda YALNIZCA PDF belgeleri için çalıştığını lütfen unutmayın.",
-      taskPageSize: 'Görev sayfa boyutu',
-      taskPageSizeMessage: 'Lütfen görev sayfa boyutunu girin!',
-      taskPageSizeTip: `Düzen tanıma sırasında bir PDF dosyası parçalara bölünür ve işleme hızını artırmak için paralel olarak işlenir. Bu parametre her parçanın boyutunu ayarlar. Daha büyük parça boyutu, sayfalar arasındaki sürekli metni bölme olasılığını azaltır.`,
       addPage: 'Sayfa ekle',
       greaterThan: 'Geçerli değer bitiş değerinden büyük olmalıdır!',
       greaterThanPrevious:
@@ -634,8 +665,6 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       delimiterPreviewEmpty:
         'Sınırlayıcı yok — metin yalnızca boyuta göre parçalanacak.',
       delimiterPreviewCount: '({{count}})',
-      html4excel: "Excel'i HTML'ye dönüştür",
-      html4excelTip: `Genel parçalama yöntemi ile kullanın. Devre dışı bırakıldığında, datasetteki elektronik tablolar (XLSX veya XLS(Excel 97-2003)) anahtar-değer çiftlerine ayrıştırılır. Etkinleştirildiğinde HTML tablolarına ayrıştırılır; orijinal tabloda 12'den fazla satır varsa her 12 satırda bölünür. Ayrıntılar için bkz. https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.`,
       autoKeywords: 'Otomatik anahtar kelime',
       autoKeywordsTip: `Her parça için otomatik olarak N anahtar kelime çıkarır ve o anahtar kelimeleri içeren sorgular için sıralamalarını artırır. 'Yapılandırma'da belirtilen indeksleme modeli tarafından ekstra tokenlar tüketileceğini unutmayın. Bir parçaya eklenen anahtar kelimeleri parça listesinden kontrol edebilir veya güncelleyebilirsiniz. Ayrıntılar için bkz. https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoQuestions: 'Otomatik soru',
@@ -670,7 +699,13 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       reRankModelWaring: 'Yeniden sıralama modeli çok zaman alır.',
     },
     knowledgeConfiguration: {
-      builtInSuffix: ' (built in)',
+      builtInSuffix: 'Yerleşik',
+      builtInBadge: 'Yerleşik',
+      builtInPipelines: 'Yerleşik hatlar',
+      parserSelectPlaceholder: 'Bir ayrıştırıcı seçin',
+      parserOptionUnavailable: 'kullanılamıyor',
+      parserOptionUnavailableMessage:
+        'Seçilen ayrıştırıcı veya hat sürümü artık kullanılamıyor. Lütfen yeniden seçin.',
       randomSeedTip:
         'Tohum, farklı çalıştırmalarda aynı çıktının yeniden üretilebilirliğini sağlayan sözde rastgele bir algoritmanın başlangıç noktasıdır.',
       datasetDescription: `Dataset'inizi açıklayın`,
@@ -696,18 +731,18 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
         'PDF ayrıştırma yöntemi: auto (otomatik algılama), txt (metin çıkarma), ocr (optik karakter tanıma)',
       mineruFormulaEnable: 'Formül tanıma',
       mineruFormulaEnableTip:
-        'Formül tanımayı etkinleştir. Not: Kiril alfabesi kullanan belgeler için doğru çalışmayabilir.',
+        '/file_parse için formül tanımayı etkinleştir. Hibrit arka uçlar bu ayarı yalnızca satır içi formüllere uygular; blok formüller etkin kalır. V1 bu seçeneğin kapatılmasını desteklemez.',
       mineruTableEnable: 'Tablo tanıma',
-      mineruTableEnableTip: 'Tablo tanıma ve çıkarmayı etkinleştir.',
+      mineruTableEnableTip:
+        '/file_parse için tablo tanıma ve çıkarmayı etkinleştir. V1 bu seçeneğin kapatılmasını desteklemez.',
       paddleocrOptions: 'PaddleOCR Seçenekleri',
       paddleocrApiUrl: "PaddleOCR API URL'si",
       paddleocrApiUrlTip: "PaddleOCR servisi için API uç nokta URL'si",
       paddleocrApiUrlPlaceholder:
         'örn. https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: "AI Studio Erişim Token'ı",
-      paddleocrAccessTokenTip:
-        "PaddleOCR API için erişim token'ı (isteğe bağlı)",
-      paddleocrAccessTokenPlaceholder: "AI Studio token'ınız (isteğe bağlı)",
+      paddleocrAccessTokenTip: "PaddleOCR API için erişim token'ı",
+      paddleocrAccessTokenPlaceholder: "AI Studio token'ınız",
       paddleocrAlgorithm: 'PaddleOCR Algoritması',
       paddleocrAlgorithmTip:
         'PaddleOCR ayrıştırması için kullanılacak algoritma',
@@ -751,9 +786,17 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       dataFlowPlaceholder: 'Lütfen bir hat seçin.',
       buildItFromScratch: 'Sıfırdan oluştur',
       dataFlow: 'Hat',
-      parseType: 'Ayrıştırma türü',
+      parsingMode: 'Ayrıştırma modu',
       manualSetup: 'Hat',
       builtIn: 'Yerleşik',
+      applyParserSettingsTitle:
+        'Ayrıştırıcı ayarları mevcut dosyalara uygulansın mı?',
+      parserSettingsChangeWarning:
+        "Güncellenen ayrıştırıcı ayarları varsayılan olarak yalnızca yeni yüklenen dosyalara uygulanır. Bunları bu dataset'teki tüm mevcut dosyalara da uygulamak için “Evet”i seçin; dosyaya özgü ayrıştırıcı ayarlarının yerini alır. Değişikliklerin içeriğe yansıması için bu dosyaları elle yeniden ayrıştırmanız gerekir. Mevcut dosyaların ayarlarını değiştirmemek için “Hayır”ı seçin.",
+      parserSettingsApplied:
+        'Ayrıştırıcı ayarları uygulandı. İçeriklerini güncellemek için dosyaları elle yeniden ayrıştırın.',
+      parserSettingsApplyFailed:
+        'Dataset ayarları kaydedildi, ancak mevcut dosyalar güncellenmedi. Yeniden denemek için “Evet”i seçin.',
       noConfigChunkerHint:
         'Yerleşik {{name}} ayrıştırıcısı parçalamayı otomatik yapar, bu nedenle ek yapılandırma gerekmez.',
       titleDescription:
@@ -773,8 +816,6 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       permissionsTip: `'Takım' olarak ayarlandığında, tüm takım üyeleri bu dataset'i yönetebilir.`,
       chunkTokenNumberTip:
         'Bir parça oluşturmak için token eşiğini belirler. Bu eşiğin altındaki tokenlı bir bölüm, token sayısı eşiği aşana kadar sonraki bölümlerle birleştirilir ve bu noktada bir parça oluşturulur. Eşik aşılsa bile bir sınırlayıcı ile karşılaşılmadıkça yeni parça oluşturulmaz.',
-      chunkMethod: 'Parçalama yöntemi',
-      chunkMethodTip: 'Sağdaki ipuçlarına bakın.',
       upload: 'Yükle',
       english: 'İngilizce',
       chinese: 'Çince',
@@ -1054,7 +1095,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       messagePlaceholder: 'Mesajınızı buraya yazın...',
       exit: 'Çıkış',
       multipleModels: 'Birden fazla model',
-      applyModelConfigs: 'Model yapılandırmalarını uygula',
+      applyModelConfigs:
+        "Bu modeli ve ayarlarını tek modelli Sohbet'te kullan.",
       conversations: 'Konuşmalar',
       chatApps: 'Sohbet uygulamaları',
       newConversation: 'Yeni konuşma',
@@ -1125,6 +1167,11 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       operation: 'İşlem',
       model: 'Model',
       modelTip: 'Büyük dil sohbet modeli',
+      tokensSpent: '{{total}} token ({{prompt}} giriş, {{completion}} çıkış)',
+      turnElapsed: '{{seconds}} sn',
+      decisionModel: 'Karar modeli',
+      decisionModelTip:
+        "Alınan parçaların kullanıcının sorgusuyla ilgili olup olmadığını LLM'ye iletmeden önce değerlendirir. Bu özelliği etkinleştirmek için Ayarlar → Model sağlayıcıları altında bir karar modeli yapılandırın, ardından burada seçin. Varsayılan olarak karar modeli kullanılmaz.",
       modelMessage: 'Lütfen seçin!',
       modelEnabledTools: 'Etkin araçlar',
       modelEnabledToolsTip:
@@ -1163,6 +1210,15 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       thinkingEnabled: 'Etkin',
       thinkingDisabled: 'Devre dışı',
       thinkingLevelNone: 'Yalın',
+      thinkingLevelAgentic: 'Agentic',
+      thinkingLevelAgenticDescription: 'Özerk derlem keşfi',
+      naiveSettings: 'Yalın',
+      agenticSettings: 'Agentic',
+      agenticTemplate: 'Agentic şablonu',
+      agenticTemplateTip:
+        'Agentic RAG ajanının çalıştığı sistem şablonu. Düzenlemek, bu sohbet için hazır gelen varsayılanı geçersiz kılar; geri yüklemek için sıfırlayın.',
+      agenticTemplateTooLong: 'Şablon en fazla 32768 karakter olmalıdır',
+      resetToDefault: 'Varsayılana sıfırla',
       thinkingTip:
         'Yalnızca resmi Qwen, Kimi ve GLM model sağlayıcıları için düşünme modunu denetler. Sistem varsayılanı, uzun süren görevlerden kaçınmak için Qwen düşünmesini devre dışı bırakır.',
       quote: 'Alıntı göster',
@@ -1248,6 +1304,9 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       // Anahtar alanının etiketi. {{provider}} sağlayıcının MARKA adıdır ve
       // bilinçli olarak çevrilmez; bu tek şablon dokuz sağlayıcıyı da kapsar.
       webSearchApiKeyLabel: '{{provider}} API Anahtarı',
+      anysearchApiKeyTip:
+        'İsteğe bağlı. AnySearch anahtarsız çalışır; hesap kotanızı kullanmak için bir anahtar ekleyin. Hizmet sınırları geçerlidir.',
+      anysearchApiKeyMessage: 'İsteğe bağlı - anonim arama için boş bırakın',
       // Her sağlayıcı için bir Tip/Mesaj çifti, sağlayıcı id'sine göre alfabetik.
       braveApiKeyTip:
         'Brave Search seçildiğinde, web arama sonuçları dataset alımını tamamlar. Tüm Brave uç noktaları anahtar gerektirir.',
@@ -1267,6 +1326,12 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       queritApiKeyTip:
         'Querit seçildiğinde, web arama sonuçları dataset alımını tamamlar.',
       queritApiKeyMessage: 'Lütfen Querit API Anahtarınızı girin',
+      search1apiApiKeyTip:
+        'Search1API seçildiğinde, web arama sonuçları dataset alımını tamamlar.',
+      search1apiApiKeyMessage: 'Lütfen Search1API API Anahtarınızı girin',
+      searchapiApiKeyTip:
+        'SearchApi seçildiğinde, Google web arama sonuçları dataset alımını tamamlar.',
+      searchapiApiKeyMessage: 'Lütfen SearchApi API Anahtarınızı girin',
       serplyApiKeyTip:
         'Serply seçildiğinde, web arama sonuçları dataset alımını tamamlar.',
       serplyApiKeyMessage: 'Lütfen Serply API Anahtarınızı girin',
@@ -1296,8 +1361,6 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       },
       cancel: 'İptal',
       chatSetting: 'Sohbet ayarı',
-      tocEnhance: 'SayfaDizini',
-      tocEnhanceTip: ` Belgenin ayrıştırılması sırasında içindekiler tablosu bilgisi oluşturuldu (Genel yöntemindeki 'İçindekiler Tablosu Çıkarmayı Etkinleştir' seçeneğine bakın). Bu, büyük modelin kullanıcının sorgusuyla ilgili içindekiler öğelerini döndürmesine olanak tanır, böylece bu öğeleri kullanarak ilgili parçaları alır ve sıralama işleminde bu parçalara ağırlık uygular. Bu yaklaşım, kitaplarda insan bilgi arama davranışını taklit eder.`,
       batchDeleteSessions: 'Toplu sil',
       deleteSelectedConfirm: 'Seçilen {{count}} oturum(lar) silinsin mi?',
       showChunkMetadata: 'Parça meta verilerini göster',
@@ -1308,6 +1371,56 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         'Her parçayla birlikte görüntülenecek meta veri alanlarını seçin',
     },
     setting: {
+      gpustack: {
+        serverUrl: "GPUStack sunucu URL'si",
+        serverUrlTip: 'RAGFlow konteynerinden erişilebilir olmalıdır.',
+        loopbackWarning:
+          'localhost, RAGFlow konteynerinin kendisini gösterir. Bunun yerine IP adresini veya host.docker.internal adresini kullanın.',
+        apiKey: 'API anahtarı',
+        apiKeyTip:
+          "GPUStack'te Erişim Kontrolü > API Anahtarları bölümünden bir anahtar oluşturun.",
+        apiKeyKeep: 'Kayıtlı anahtarı korumak için boş bırakın',
+        connect: 'Bağlan',
+        connecting: 'Bağlanıyor...',
+        connected: 'Bağlandı. Çalışan {{count}} model bulundu.',
+        connectedShort: '{{count}} çalışıyor',
+        errorAuth:
+          'GPUStack bu API anahtarını reddetti. Erişim Kontrolü > API Anahtarları bölümünden kontrol edin.',
+        errorUnreachable:
+          "Bu sunucuya RAGFlow'dan erişilemiyor. URL'yi ve portun RAGFlow konteynerine açık olduğunu kontrol edin.",
+        errorOther: 'Modeller listelenemedi: {{message}}',
+        emptyTitle: 'Çalışan model bulunamadı',
+        emptyBody:
+          'GPUStack yalnızca çalışan ve yönlendirmesi olan modelleri sunar. "Model Yönlendirmesini Etkinleştir" açık olarak bir model dağıtın, ardından yenileyin.',
+        emptyLink: 'Entegrasyon kılavuzunu okuyun',
+        addModels: '{{count}} model ekle',
+        addSelected: 'Seçilen {{count}} modeli ekle',
+        adding: 'Ekleniyor...',
+        refresh: 'Yenile',
+        editInstance: 'Örneği düzenle',
+        saveInstance: 'Örneği kaydet',
+        cancel: 'İptal',
+        availableTitle: "GPUStack'te kullanılabilir",
+        addedTitle: 'Eklenen modeller',
+        modelsLoadFailed:
+          'Bu örneğin modelleri yüklenemedi. Sayfayı yenileyip yeniden deneyin.',
+        notRunning: 'Çalışmıyor',
+        notRunningTip:
+          'GPUStack şu anda bu modeli sunmuyor, bu yüzden ona yapılan çağrılar başarısız olur.',
+        tokens: '{{count}} token',
+        changeType: '{{name}} için model türü',
+        select: '{{name}} modelini seç',
+        remove: '{{name}} modelini kaldır',
+        noAdded: 'Henüz model eklenmedi.',
+        kind_chat: 'Sohbet',
+        kind_vision: 'Sohbet + Vision',
+        kind_embedding: 'Embedding',
+        kind_rerank: 'Yeniden sıralama',
+        kind_asr: 'Konuşmadan metne',
+        kind_tts: 'Metinden konuşmaya',
+        typeHint:
+          "Türler GPUStack'ten gelir. GPUStack bir modelin görsel kabul edip etmediğini bilemez, bu yüzden bu modeller için Sohbet + Vision seçin.",
+      },
       Verify: 'Doğrula',
       keyValid: 'API anahtarınız geçerli.',
       keyInvalid: 'API anahtarınız geçersiz.',
@@ -1344,7 +1457,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldTenantId: 'Kiracı Kimliği',
       dataSourceFieldClientId: 'İstemci Kimliği',
       dataSourceFieldClientSecret: 'İstemci Gizli Anahtarı',
-      dataSourceFieldFolderPathOptional: 'Klasör Yolu (isteğe bağlı)',
+      dataSourceFieldFolderPathOptional: 'Klasör Yolu',
       dataSourceFieldBatchSize: 'Toplu İşlem Boyutu',
       dataSourceFieldFeishuAppId: 'Feishu uygulama kimliği',
       dataSourceFieldFeishuAppSecret: 'Feishu uygulama gizli anahtarı',
@@ -1358,8 +1471,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceValidationFeishuBatchSize:
         'Toplu işlem boyutu 1 ile 10 arasında olmalıdır',
       dataSourceFieldMailFolder: 'Posta Klasörü',
-      dataSourceFieldMailboxUserIds:
-        'Posta Kutusu Kullanıcı Kimlikleri (isteğe bağlı)',
+      dataSourceFieldMailboxUserIds: 'Posta Kutusu Kullanıcı Kimlikleri',
       dataSourceFieldInstanceUrl: "Örnek URL'si",
       dataSourceFieldObjects: 'Nesneler',
       dataSourceFieldApiVersion: 'API Sürümü',
@@ -1370,7 +1482,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldContainerUrl: "Konteyner URL'si",
       dataSourceFieldSasToken: "SAS Token'ı",
       dataSourceFieldContainerName: 'Konteyner Adı',
-      dataSourceFieldPrefixOptional: 'Ön ek (isteğe bağlı)',
+      dataSourceFieldPrefixOptional: 'Ön ek',
       dataSourceFieldFeedUrl: "Besleme URL'si",
       dataSourceFieldSitemapUrl: "Site haritası URL'si",
       dataSourceFieldUrlFilter: 'URL filtresi (regex)',
@@ -1670,7 +1782,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       zoteroWebdavPasswordRequired:
         'Ek dosya depolaması WebDAV olduğunda WebDAV şifresi gereklidir.',
       google_driveMyDriveEmailsTip:
-        'İçerikleri indekslenmesi gereken "My Drive" sahibi e-postaları (virgülle ayrılmış).',
+        'İsteğe bağlı. Aşağıdaki paylaşılan klasörlere ek olarak "My Drive" alanının tamamı dizinlenecek e-postalar (virgülle ayrılmış). Yalnızca bu klasörleri eşitlemek için boş bırakın.',
       google_driveSharedFoldersTip:
         'Taranacak Google Drive klasör bağlantıları (virgülle ayrılmış).',
       gmailPrimaryAdminTip:
@@ -2073,6 +2185,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       apiKey: 'API Anahtarı',
       apiKeyMessage: 'Lütfen API anahtarını girin',
       apiKeyPlaceholder: 'Lütfen API anahtarını girin',
+      credentialClearToRemove:
+        'Kayıtlı kimlik bilgisini kaldırmak için bu alanı temizleyin',
       apiKeyTip:
         'API anahtarı, ilgili LLM sağlayıcısına kaydolarak elde edilebilir.',
       aimlapiGetKey: 'API anahtarı al',
@@ -2096,15 +2210,18 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       paddleocrApiUrlPlaceholder:
         'örn. https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: "AI Studio Erişim Token'ı",
-      paddleocrAccessTokenMessage:
-        "PaddleOCR API için erişim token'ı (isteğe bağlı)",
-      paddleocrAccessTokenPlaceholder: "AI Studio token'ınız (isteğe bağlı)",
+      paddleocrAccessTokenMessage: "PaddleOCR API için erişim token'ı",
+      paddleocrAccessTokenPlaceholder: "AI Studio token'ınız",
       paddleocrAlgorithm: 'PaddleOCR Algoritması',
       paddleocrAlgorithmMessage: 'Lütfen bir PaddleOCR algoritması seçin',
       paddleocrSelectAlgorithm: 'Algoritma Seçin',
       mineruApiserver: 'MinerU API Sunucusu',
       mineruApiserverMessage: "Lütfen MinerU API Sunucusu URL'sini girin!",
       mineruApiserverPlaceholder: 'örn. http://host.docker.internal:9987',
+      mineruApiToken: "MinerU API token'ı",
+      mineruApiTokenPlaceholder: 'mineru.net API yönetiminden alınan token',
+      mineruApiTokenTip:
+        "Ayarlandığında RAGFlow resmi hassas API'yi (/api/v4, vlm dahil) kullanır. Oturum açma gerektirmeyen ajan API'sini kullanmak için boş bırakın. Kendi barındırdığınız MinerU sunucusu için gerekli değildir.",
       mineruOutputDir: 'MinerU Çıktı Dizini',
       mineruOutputDirMessage: 'Lütfen MinerU çıktı dizinini girin!',
       mineruOutputDirPlaceholder: '/tmp/mineru',
@@ -2133,9 +2250,12 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       models: 'Modeller',
       chatModel: 'LLM',
       chatModelTip: 'Her yeni oluşturulan dataset için varsayılan LLM.',
+      decisionModel: 'Karar modeli',
+      decisionModelTip:
+        "Alınan bir pasajın LLM'ye gösterilmeye değer olup olmadığına karar veren model. Alınan metni filtrelemeden bırakmak için boş bırakın.",
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        'Her yeni oluşturulan dataset için varsayılan embedding model. Açılır listede bir embedding model bulamıyorsanız, RAGFlow slim sürümünü (embedding modeller içermez) kullanıp kullanmadığınızı kontrol edin veya model sağlayıcınızın bu modeli destekleyip desteklemediğini görmek için “Model sağlayıcıları” sayfasına bakın.',
+        'Her yeni oluşturulan dataset için varsayılan embedding model. Açılır listede bir embedding model bulamıyorsanız, model sağlayıcınızın bu modeli destekleyip desteklemediğini görmek için “Model sağlayıcıları” sayfasına bakın.',
       img2txtModel: 'VLM',
       img2txtModelTip:
         'Her yeni oluşturulan dataset için varsayılan VLM. Bir resmi veya videoyu tanımlar. Açılır listede bir model bulamıyorsanız, model sağlayıcınızın bu modeli destekleyip desteklemediğini görmek için “Model sağlayıcıları” sayfasına bakın.',
@@ -2177,7 +2297,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         apiUrl: "PaddleOCR API URL'si",
         apiUrlPlaceholder: 'Örnek: https://paddleocr-server.com/layout-parsing',
         accessToken: "AI Studio Erişim Token'ı",
-        accessTokenPlaceholder: "AI Studio token'ınız (isteğe bağlı)",
+        accessTokenPlaceholder: "AI Studio token'ınız",
         algorithm: 'PaddleOCR Algoritması',
         selectAlgorithm: 'Algoritma Seçin',
         modelNamePlaceholder: 'Örnek: paddleocr-from-env-1',
@@ -2368,6 +2488,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         image2text: 'OCR',
         ocr: 'OCR',
         speech2text: 'ASR',
+        decision: 'Karar',
       },
       showToc: 'İçeriği göster',
       hideToc: 'İçeriği gizle',
@@ -2385,6 +2506,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       batchAddModels: 'Tüm modelleri ekle',
       batchRemoveModels: 'Tüm modelleri kaldır',
       batchVerifyModels: 'Tüm modelleri doğrula',
+      moreActions: 'Daha fazla işlem',
       editCustomModelTitle: 'Modeli düzenle',
       modelMaxTokens: 'Maksimum token',
       modelFeatures: 'Model özellikleri',
@@ -2529,7 +2651,7 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       navDeleteNodeDescription:
         'Bu düğümü ve alt düğümlerini silmek istediğinizden emin misiniz?',
       representationEmpty:
-        'Pipeline derleyicisi yapılandırılmadı veya artifact çıkarılmadı.',
+        'Hat derleyicisi yapılandırılmadı veya artifact çıkarılmadı.',
       representationUnsupported: 'Bu gösterim türü henüz desteklenmiyor.',
       claimsPanelTitle: 'İddia · {{name}}',
       claimsTotal: 'Toplam {{count}}',
@@ -2549,6 +2671,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       modified: 'Değiştirildi',
       created: 'Oluşturuldu',
       deleted: 'Silindi',
+      deleteIncomplete:
+        'Silme işleminin tamamlandığı doğrulanamadı. Yeniden denemeden önce kalan belgeleri kontrol edin.',
       noLangfuseConfigToDelete: 'Silinecek Langfuse yapılandırması yok',
       renamed: 'Yeniden adlandırıldı',
       operated: 'İşlendi',
@@ -2610,13 +2734,6 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
     },
     flow: {
       exportCurrentPage: 'Geçerli sayfayı dışa aktar',
-      preprocess: {
-        preprocess: 'Ön işleme',
-        mainContent: 'Ana içerik',
-        abstract: 'Özet',
-        author: 'Yazar',
-        sectionTitle: 'Bölüm başlığı',
-      },
       includeHeadingContent: 'Üst başlık içeriğini ayır',
       includeHeadingContentTip:
         'Etkinleştirildiğinde parçalar yalnızca başlık yolunu ve içeriğini içerir; üst başlıktan hemen sonra gelen içerik ayrı bir parça olarak tutulur.',
@@ -2710,6 +2827,7 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       comma: 'Virgül',
       semicolon: 'Noktalı virgül',
       period: 'Nokta',
+      linebreak: 'Satır sonu',
       lineBreak: 'Satır sonu',
       tab: 'Sekme',
       space: 'Boşluk',
@@ -2722,9 +2840,24 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       oneChunkTitle: 'Not',
       oneChunkDescription:
         'Ayrıştırılan tüm bölümler sırayla tek bir parçada birleştirilecektir.',
-      flattenMediaToText: 'Görsel modeli devre dışı bırak',
-      flattenMediaToTextTip:
-        'Görüntü ve tablo bölümlerini düz metin olarak ele alır ve görsel geliştirmeyi atlar.',
+      enableVisionEnhancement: 'Görsel geliştirmeyi etkinleştir',
+      enableVisionEnhancementTip:
+        'Görüntü ve tablo bloklarını ayrıştırmak için görsel model kullanın; kapalıyken bunlar düz metin olarak işlenir.',
+      imageOcr: 'OCR',
+      imageOcrTip:
+        'Yüklenen görüntülerdeki metni yerel OCR ile veya seçilen PaddleOCR modeliyle çıkarır. Görsel geliştirme, bu ayardan bağımsız olarak açıklama ekler.',
+      imageOcrModel: 'OCR modeli',
+      imageOcrLocal: 'DeepDoc',
+      imageOcrModelTip:
+        "Yerel OCR için DeepDoc'u ya da eklenmiş bir PaddleOCR veya PaddleOCR.local modelini seçin. OCR'yi kapatmak bu seçimi korur ancak OCR'yi atlar; SVG metni doğrudan okunur.",
+      imageOcrModelsError:
+        "OCR modelleri yüklenemedi. Seçiminiz değişmedi. Daha sonra tekrar deneyin veya yerel OCR için DeepDoc'u seçin.",
+      imageOcrNoModels:
+        "PaddleOCR modeli eklenmemiş. Yerel OCR için DeepDoc'u kullanın veya model ayarlarından bir PaddleOCR modeli ekleyin.",
+      imageTextSourceRequired:
+        "Görüntüler için bir metin kaynağı gerekir: OCR'yi veya görsel geliştirmeyi açık tutun.",
+      visionEnhancementPromptTip:
+        'Görsel model için özel talimat. Yerleşik istemi kullanmak için boş bırakın.',
       enableChildrenDelimiters: 'Alt parçalar alım için kullanılır',
       merge: 'Birleştir',
       split: 'Böl',
@@ -2749,20 +2882,6 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       toolTimeout: 'Araç zaman aşımı',
       toolTimeoutTip:
         'Tek bir araç çağrısı (MCP araçları dahil) için saniye cinsinden zaman aşımı. Uzun süren araçlar için artırın.',
-      maxSteps: 'Maksimum adım',
-      headless: 'Başsız',
-      enableDefaultExtensions: 'Varsayılan uzantıları etkinleştir',
-      enableDefaultExtensionsTip:
-        'browser-use varsayılan uzantılarını (uBlock, çerez işleme, ClearURLs) etkinleştirir. Çalışma anında uzantı indirmelerinden kaçınmak için devre dışı bırakın.',
-      chromiumSandbox: 'Chromium korumalı alanı',
-      chromiumSandboxTip:
-        'Chromium korumalı alanının etkinleştirilip etkinleştirilmeyeceği. Docker root ortamlarında genellikle devre dışı bırakılır; normal ana bilgisayarlarda etkinleştirilmesi önerilir.',
-      persistSession: 'Oturumu koru',
-      persistSessionTip:
-        'Etkinleştirildiğinde bu Tarayıcı düğümü, yinelenen oturum açmalardan kaçınmak için tarayıcı oturumunu yeniden kullanır.',
-      uploadSources: 'Kaynakları yükle',
-      uploadSourcesTip:
-        'Dosya kimliklerini, dosya URL\'lerini veya değişkenleri destekler. Birden fazla değeri virgülle ayırabilir ya da JSON dizisi biçimi kullanabilirsiniz (örneğin ["id1","https://example.com/a.pdf"]).',
       advancedSettings: 'Gelişmiş ayarlar',
       addTools: 'Araç ekle',
       sysPromptDefaultValue: `
@@ -2804,6 +2923,13 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
         'Yukarı akış bileşeninin değişken içeriğini veya kendiniz girdiğiniz metni çıktı olarak verir.',
       messagePlaceholder: `Lütfen mesaj içeriğinizi girin, değişkenleri hızlıca eklemek için '/' kullanın.`,
       messageMsg: 'Mesaj boş olamaz',
+      aggregationIncomplete:
+        'Tüm toplama gruplarını ve değişkenleri tamamlayın',
+      inputOptionsIncomplete: 'Açılır liste seçenekleri boş öğe içeremez',
+      dataOperationsEntriesIncomplete:
+        'Çalıştırmadan önce tüm veri işlemi girdilerini tamamlayın',
+      invokeVariablesIncomplete:
+        'Çalıştırmadan önce tüm değişken eşlemelerini tamamlayın',
       addField: 'Seçenek ekle',
       addMessage: 'Mesaj ekle',
       loop: 'Döngü',
@@ -2822,12 +2948,14 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       operation: 'işlem',
       run: 'Çalıştır',
       save: 'Kaydet',
+      saveDraft: 'Taslağı kaydet',
       title: 'Kimlik:',
       beginDescription: 'Akışın başladığı yer.',
       answerDescription: `İnsan ve bot arasındaki arayüz olarak hizmet eden bir bileşen.`,
       retrievalDescription: `Belirtilen datasets içinden bilgi alan bir bileşen.`,
       generateDescription: `LLM'yi yanıt üretmeye yönlendiren bir bileşen.`,
-      categorizeDescription: `Kullanıcı girişlerini önceden tanımlanmış kategorilere sınıflandırmak için LLM kullanan bir bileşen.`,
+      categorizeDescription:
+        'Geçerli girdiyi önceden tanımlanmış kategorilerden birine sınıflandırmak ve iş akışını o kategoriye bağlı bileşene yönlendirmek için bir sohbet modeli (LLM) veya bir SystemOne veya Nace karar modeli kullanır. Her kategori için bir ad, açıklama ve örnekler belirtin.',
       relevantDescription: `Yukarı akış çıktısının kullanıcının son sorgusuna uygun olup olmadığını değerlendirmek için LLM kullanan bir bileşen.`,
       rewriteQuestionDescription: `Önceki diyalogların bağlamına dayanarak Etkileşim bileşeninden bir kullanıcı sorgusunu yeniden yazan bir bileşen.`,
       messageDescription:
@@ -2892,11 +3020,26 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       sofyaSearchDepthSnippets: 'Yalnızca alıntılar',
       sofyaApiKeyTip:
         'Zorunludur. sofya.co adresinden bir API Anahtarı oluşturun.',
+      search1APISearch: 'Search1API',
+      search1APISearchDescription:
+        'Search1API ile çalışan bir web ve haber arama bileşeni. Google, Bing, Baidu, GitHub, arXiv, Reddit, YouTube, Hacker News ve Reuters gibi arama servislerini kapsar. Ajan aracı olarak kullanıldığında ajan, her çağrı için kanalı ve arama servisini seçebilir. API Anahtarı gereklidir.',
+      search1APIChannelTip:
+        "Web genel web'de, Haberler haber kaynaklarında arama yapar. Ajan aracı olarak kullanıldığında ajan, her çağrı için kanalı değiştirebilir.",
+      search1APIChannelGeneral: 'Web',
+      search1APIChannelNews: 'Haberler',
+      search1APIService: 'Arama servisi',
+      search1APIServiceTip:
+        'Seçilen kanal için varsayılan arama servisi. Ajan aracı olarak kullanıldığında ajan, her çağrı için kanalın desteklediği başka bir servisi seçebilir.',
+      search1APIApiKeyTip:
+        'Zorunludur. app.s1.dev adresinden bir API Anahtarı oluşturun.',
+      search1APICrawl: 'Search1API taraması',
+      search1APICrawlDescription:
+        'Bir web sayfasını Search1API ile okur ve başlığını ve tam içeriğini döndürür. API Anahtarı gereklidir.',
+      search1APICrawlUrl: 'URL',
+      search1APICrawlUrlTip:
+        "Okunacak sayfanın mutlak HTTP veya HTTPS URL'si. Ajan aracı olarak kullanıldığında URL'yi ajan sağlar.",
       docGenerator: 'Belge Oluşturucu',
       docGeneratorDescription: `Markdown içeriğinden bir dosya oluşturur.`,
-      browser: 'Tarayıcı',
-      browserDescription:
-        "Tarayıcı görevlerini otomatikleştirir. Model yapılandırmasını ve istem güdümlü eylemleri destekler. Yüklenen kaynaklar dosya kimliklerini ve URL'leri destekler, indirilen dosyalar bir hedef klasöre kaydedilebilir.",
       subtitle: 'Alt başlık',
       logoImage: 'Logo Görüntüsü',
       logoPosition: 'Logo Konumu',
@@ -2914,13 +3057,21 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       addPageNumbers: 'Sayfa Numarası Ekle',
       addTimestamp: 'Zaman Damgası Ekle',
       watermarkText: 'Filigran Metni',
+      headerText: 'Üst Bilgi Metni',
+      footerText: 'Alt Bilgi Metni',
+      includeDownloadInfoInContent: 'İndirme bilgisini içeriğe ekle',
+      contentPlaceholder: 'Markdown içeriği girin...',
+      filenamePlaceholder:
+        'document.ext (boş bırakılırsa otomatik oluşturulur)',
+      contentRequired: 'İçerik gereklidir',
+      fontSizeMin: 'Yazı tipi boyutu en az 12 olmalıdır',
       channel: 'Kanal',
       channelTip: `Bileşenin girdisi üzerinde metin araması veya haber araması yapın`,
       text: 'Metin',
       news: 'Haber',
       messageHistoryWindowSize: 'Mesaj penceresi boyutu',
       messageHistoryWindowSizeTip:
-        "LLM'ye görünür konuşma geçmişinin pencere boyutu.",
+        'Seçilen modelin bağlam olarak ne kadar yakın tarihli konuşma geçmişine erişebileceğini belirler. Daha büyük pencereler daha fazla token kullanır ve ilgisiz bağlam içerebilir.',
       wikipedia: 'Wikipedia',
       pubMed: 'PubMed',
       pubMedDescription:
@@ -2935,7 +3086,8 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       bgptDaysBackTip:
         'İsteğe bağlı güncellik filtresi (örneğin son bir yıl için 365).',
       email: 'E-posta',
-      emailTip: 'E-posta zorunlu bir alandır.',
+      emailTip:
+        'E-posta isteğe bağlıdır. Boş bırakılırsa PubMed istekleri için varsayılan bir e-posta adresi kullanılır.',
       arXiv: 'ArXiv',
       arXivDescription:
         'https://arxiv.org/ adresinden arama yapan bir bileşen.',
@@ -3246,6 +3398,16 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       optional: 'İsteğe bağlı',
       pasteFileLink: 'Dosya bağlantısını yapıştır',
       testRun: 'Test çalıştırması',
+      captureModelInputs: 'Model girdilerini yakala',
+      captureModelInputsHint:
+        'Test çalıştırmaları ajanı ve araçlarını yürütür. Yakalanan girdileri genişletmek veya kopyalamak onları yeniden çalıştırmaz.',
+      modelInputs: 'Model girdileri',
+      modelInputSummary:
+        'Kaydedilen girdi: {{count}} · Atlanan çağrı: {{omittedCount}}',
+      noModelInputs: 'Bu çalıştırmada model çağrısı yakalanmadı.',
+      modelInputsUnavailable:
+        'Bu çalıştırma için model girdileri kullanılamıyor.',
+      testRunError: 'Test çalıştırması başarısız oldu ({{code}}): {{message}}',
       debugRunLimits:
         'Hata ayıklama çalıştırması, akışın hatasız yürüdüğünü doğrular: PDF yalnızca ilk 2 sayfayı ayrıştırır (diğer biçimlerde tüm sayfalar ayrıştırılır); bir parçalayıcı düğüm varsa yalnızca ilk 3 parça önizlenir; bir bilgi derleyici düğümü varsa yalnızca yerel olarak çalışır, dataset yeniden oluşturma veya bildirim tetiklemez.',
       template: 'Şablon',
@@ -3279,6 +3441,8 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       contentTip: 'content: E-posta içeriği (İsteğe bağlı)',
       jsonUploadTypeErrorMessage: 'Lütfen json dosyası yükleyin',
       jsonUploadContentErrorMessage: 'json dosyası hatası',
+      jsonUploadCategoryMismatch:
+        'JSON dosya türü geçerli sekmeyle eşleşmiyor. Lütfen ilgili sekmeye geçip yeniden içe aktarın.',
       nameExists: 'Bu ad zaten var',
       iteration: 'Yineleme',
       iterationDescription: `Bir giriş dizisi üzerinde yineleme yapan ve her öğe için tanımlanmış mantığı yürüten bir döngü bileşeni.`,
@@ -3297,6 +3461,8 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       systemPrompt: 'Sistem istemi',
       userPrompt: 'Kullanıcı istemi',
       tagFile: 'Etiket dosyası',
+      tagFileTip:
+        'Alım doğruluğunu artırmak için her parçadan en fazla N ilgili etiketi otomatik olarak çıkarır. Metin ve etiketler için iki sütun içeren XLSX, XLS, CSV ve TXT dosyalarını destekler. Birden fazla etiketi virgülle ayırın. Başlık satırı gerekmez. Etiket çıkarma ek token tüketebilir. Çıkarma başarısız olursa orijinal parça korunur. Ayrıntılar için bkz. https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',
       tocDataSource: 'Veri kaynağı',
       addCategory: 'Kategori ekle',
       categoryName: 'Kategori adı',
@@ -3324,6 +3490,27 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
         loadFailed: 'Sürüm yüklenemedi; silinmiş olabilir',
         version: 'Sürüm',
         select: 'Sürüm seçilmedi',
+        label: 'Hat sürümü',
+        latest: 'En son sürüm',
+        noPublished: 'Yayınlanmış sürüm yok',
+        filterByAlias: 'Takma ada göre filtrele',
+        alias: 'Takma ad',
+        addAlias: 'Takma ad ekle',
+        editAlias: 'Takma adı düzenle',
+        editAliasDescription:
+          'Daha sonra hızlıca bulabilmek için bu sürüme akılda kalıcı bir takma ad verin.',
+        outdated:
+          'Yapılandırılan hat sürümü en son sürüm değil ve otomatik olarak güncellenmeyecek.',
+        delete: 'Sürümü sil',
+        deleteConfirmTitle: 'Bu sürüm silinsin mi?',
+        deleteConfirmContent:
+          "Bir dataset'in veya dosyanın bağlı olduğu sürümü silmek o dosyayı ayrıştırılamaz hâle getirir. Bu işlem geri alınamaz.",
+        deleteAgentConfirmContent:
+          'Bu ajan bir web sitesine gömülüyse veya dış trafiğe hizmet veriyorsa, en son yayınlanan sürümünü silmek canlı hizmeti geri alır veya kesintiye uğratır. Geçerli tuvaliniz etkilenmez. Bu işlem geri alınamaz.',
+        restore: 'Geçerli taslak olarak geri yükle',
+        restoreConfirmTitle: 'Bu sürüm geçerli ajan olarak geri yüklensin mi?',
+        restoreConfirmContent:
+          "Geçerli ajan DSL'i bu sürümle değiştirilecek. Yeni bir sürüm oluşturmak için yeniden kaydedin.",
       },
       setting: 'Ayarlar',
       settings: {
@@ -3469,6 +3656,7 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       createPipeline: 'Alım hattı',
       createIngestionPipeline: 'Alım işlem hattı oluştur',
       createWorkflow: 'İş akışı oluştur',
+      createCompilationOperator: 'Derleme operatörü oluştur',
       tabList: {
         ingestionPipeline: 'Alım hattı',
         compilationOperator: 'Derleme operatörü',
@@ -3481,8 +3669,20 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       tokenizer: 'İndeksleyici',
       tokenizerRequired: 'Lütfen önce İndeksleyici düğümü ekleyin',
       nodeFormInvalid: 'Geçersiz ayarlar, lütfen önce bunları düzeltin',
+      apiKeyRequired: 'Lütfen API Anahtarını girin',
+      apiKeyMissing:
+        'API anahtarı yapılandırılmamış, lütfen önce bir tane girin',
+      agentToolsMissing: 'Ajan araçları boş bir öğe içeriyor',
       agentModelMissing: 'Model seçilmedi, lütfen önce bir tane seçin',
       extractorModelMissing: 'Model seçilmedi, lütfen önce bir tane seçin',
+      extractorKeywordsTopNMissing:
+        'Otomatik anahtar kelime etkin, lütfen çıkarılacak anahtar kelime sayısını belirleyin (en az 1)',
+      extractorQuestionsTopNMissing:
+        'Otomatik soru etkin, lütfen oluşturulacak soru sayısını belirleyin (en az 1)',
+      extractorTagsTopNMissing:
+        'Otomatik etiketler etkin, lütfen etiket sayısını belirleyin (en az 1)',
+      extractorTagFileMissing:
+        'Otomatik etiketler etkin, lütfen önce bir etiket dosyası seçin',
       retrievalDatasetRequired: 'Lütfen en az bir veri kümesi seçin',
       retrievalDatasetMissing: 'Dataset seçilmedi, lütfen önce bir tane seçin',
       retrievalMemoryRequired: 'Lütfen en az bir bellek seçin',
@@ -3490,7 +3690,11 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       checklist: 'Kontrol listesi',
       checklistEmpty: 'Sorun bulunamadı',
       checklistTitle:
-        'Çalıştırmadan veya yayınlamadan önce aşağıdaki sorunları giderin',
+        'Aşağıdaki sorunlar çalıştırmayı veya yayınlamayı etkileyebilir',
+      loopRowsIncomplete:
+        'Döngü değişkenlerini ve sonlandırma koşullarını tamamlayın',
+      iterationOutputsIncomplete:
+        'Yineleme çıktı adlarını ve referanslarını tamamlayın',
       checklistResolveBefore:
         'Lütfen önce kontrol listesindeki sorunları giderin',
       issueNotConnected: 'Bu adım hiçbir şeye bağlı değil',
@@ -3498,9 +3702,9 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       memoryUnavailable:
         'Seçilen bellek kullanılamıyor (silinmiş), lütfen yeniden seçin',
       retrievalTemplateDatasetHint:
-        "Bu şablon, bağlı dataset'i olmayan {{num}} alım adımı içeriyor. Aşağıdan birini seçin, hepsine uygulanacaktır; oluşturduktan sonra her alımı tuval üzerinde yine de ayarlayabilirsiniz.",
+        "Bu şablon, bağlı dataset'i olmayan {{num}} alım adımı içeriyor. Aşağıdan birini seçin, hepsine uygulanacaktır; oluşturduktan sonra her alımı ajan üzerinde yine de ayarlayabilirsiniz.",
       retrievalTemplateMemoryHint:
-        'Bu şablon, bağlı belleği olmayan {{num}} alım adımı içeriyor. Aşağıdan bellekleri seçin, hepsine uygulanacaktır; oluşturduktan sonra her alımı tuval üzerinde yine de ayarlayabilirsiniz.',
+        'Bu şablon, bağlı belleği olmayan {{num}} alım adımı içeriyor. Aşağıdan bellekleri seçin, hepsine uygulanacaktır; oluşturduktan sonra her alımı ajan üzerinde yine de ayarlayabilirsiniz.',
       tokenizerDescription:
         'Metni seçilen arama yöntemine bağlı olarak gerekli veri yapısına dönüştürür.',
       generalChunkerDescription:
@@ -3672,8 +3876,25 @@ Temel Talimatlar:
         removeFirst: 'İlkini kaldır',
         removeLast: 'Sonuncuyu kaldır',
       },
+      variableAssignerVariableMissing: 'Değişken zorunludur',
+      variableAssignerOperatorMissing: 'Operatör zorunludur',
+      variableAssignerParameterMissing: 'Parametre zorunludur',
       webhook: {
         name: 'Webhook',
+        endpoint: 'Uç nokta',
+        testEndpoint: 'Test uç noktası',
+        personalUrl: "Kişisel webhook URL'si",
+        credentialDescription:
+          "Bu URL'ye sahip olan herkes ajanı sizin adınıza çalıştırabilir. Gizli tutun; yeni bir URL oluşturmak eskisini geçersiz kılar.",
+        createCredential: 'URL oluştur veya yenile',
+        revokeCredential: "URL'mi iptal et",
+        credentialCreated:
+          "Webhook URL'si oluşturuldu. Şimdi kopyalayıp saklayın; bu sayfadan ayrıldıktan sonra tekrar gösterilmeyecek.",
+        credentialRevoked: "Webhook URL'si iptal edildi.",
+        credentialRequestFailed: "Webhook URL'si güncellenemedi.",
+        revokeCredentialTitle: "Webhook URL'niz iptal edilsin mi?",
+        revokeCredentialDescription:
+          "Bu URL'yi kullanan istekler çalışmayı durduracak. İstediğiniz zaman yeni bir URL oluşturabilirsiniz.",
         methods: 'Yöntemler',
         contentTypes: 'İçerik türleri',
         security: 'Güvenlik',
@@ -3731,7 +3952,7 @@ Temel Talimatlar:
       user: 'Kullanıcı',
       assistant: 'Asistan',
       tags: 'Etiketler',
-      canvasCategory: 'Kanvas kategorisi',
+      agentCategory: 'Ajan kategorisi',
       editTags: 'Etiketleri düzenle',
       editTagsDescription:
         "Ajanlarınızı düzenlemek ve filtrelemek için etiket ekleyin. Eklemek için Enter'a veya virgüle basın.",
@@ -3813,6 +4034,8 @@ Temel Talimatlar:
       arabic: 'Arapça',
       turkish: 'Türkçe',
       dutch: 'Felemenkçe',
+      slovak: 'Slovakça',
+      czech: 'Çekçe',
     },
     pagination: {
       total: 'Toplam {{total}}',
@@ -3924,10 +4147,10 @@ Temel Talimatlar:
         write: 'Yaz',
         share: 'Paylaş',
       },
-      serviceStatus: 'Servis durumu',
-      userManagement: 'Kullanıcı yönetimi',
-      sandboxSettings: 'Sandbox ayarları',
-      registrationWhitelist: 'Kayıt beyaz listesi',
+      serviceStatus: 'Hizmetler',
+      userManagement: 'Kullanıcılar',
+      sandboxSettings: 'Sandbox',
+      registrationWhitelist: 'Beyaz liste',
       roles: 'Roller',
       monitoring: 'İzleme',
       sandboxSettingsPage: {
@@ -4013,7 +4236,7 @@ Temel Talimatlar:
       importWhitelist: 'Beyaz listeyi içe aktar (Excel)',
       importSelectExcelFile: 'Excel dosyası (.xlsx)',
       importOverwriteExistingEmails: 'Mevcut e-postaların üzerine yaz',
-      importInvalidExcelFile: 'Lütfen geçerli bir Excel dosyası seçin',
+      importValidExcelFile: 'Lütfen geçerli bir Excel dosyası seçin',
       importFileRequired: 'Lütfen içe aktarmak için bir dosya seçin',
       importFileTips:
         'Dosya, <code>email</code> adında tek bir başlık sütunu içermelidir.',
@@ -4025,7 +4248,6 @@ Temel Talimatlar:
       updateDate: 'Güncelleme tarihi',
       permission: 'İzin',
       agentTitle: 'Ajan başlığı',
-      canvasCategory: 'Kanvas kategorisi',
       newRole: 'Yeni rol',
       addNewRole: 'Yeni rol ekle',
       roleName: 'Rol adı',
@@ -4041,18 +4263,14 @@ Temel Talimatlar:
     },
     explore: {
       title: 'Başlat',
-      canvasList: 'Kanvas Listesi',
       sessions: 'Oturumlar',
       newSession: 'Yeni Oturum',
       newSessionLabel: 'Yeni bir konuşma başlat',
       deleteSession: 'Oturumu Sil',
-      searchCanvas: 'Kanvas ara...',
       searchSessions: 'Oturumları ara...',
-      noCanvasSelected: 'Lütfen bir kanvas seçin',
       noSessionSelected: 'Lütfen bir oturum seçin veya yeni bir tane oluşturun',
       noSessionsFound: 'Oturum bulunamadı',
       createFirstSession: 'İlk oturumunuzu oluşturun',
-      noCanvasFound: 'Kanvas bulunamadı',
       deleteSelectedConfirm: '{{count}} oturum(lar) silinsin mi?',
       batchDeleteSessions: 'Oturumları Sil',
     },

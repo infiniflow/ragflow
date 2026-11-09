@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"ragflow/internal/utility"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -100,6 +101,12 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 
 	// Set log level
 	bootstrap.SetLogger(serverName, args)
+
+	validator := utility.NewScheduledTask("Admin validator", globalConfig.GetHeartbeatInterval(), adminapi.CheckServicePeriodically)
+	validator.Start()
+	defer validator.Stop()
+	stopMetrics := startMetrics(ctx)
+	defer stopMetrics()
 
 	// Start HTTP server in a goroutine
 	go func() {

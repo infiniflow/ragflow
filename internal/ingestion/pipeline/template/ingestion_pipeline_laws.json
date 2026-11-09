@@ -54,66 +54,36 @@
                             }
                         },
                         "doc": {
-                            "output_format": "json",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "doc"
                             ]
                         },
                         "docx": {
-                            "flatten_media_to_text": false,
-                            "output_format": "json",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "docx"
-                            ],
-                            "vlm": {}
+                            ]
                         },
                         "html": {
-                            "output_format": "json",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "htm",
                                 "html"
                             ]
                         },
                         "markdown": {
-                            "flatten_media_to_text": false,
-                            "output_format": "json",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "md",
                                 "markdown",
                                 "mdx"
-                            ],
-                            "vlm": {}
+                            ]
                         },
                         "pdf": {
-                            "flatten_media_to_text": false,
-                            "output_format": "json",
                             "parse_method": "DeepDOC",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "remove_toc": true,
                             "suffix": [
                                 "pdf"
-                            ],
-                            "vlm": {}
+                            ]
                         },
                         "text&code": {
-                            "output_format": "json",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "txt"
                             ]
@@ -494,49 +464,22 @@
                             "setups": [
                                 {
                                     "fileFormat": "pdf",
-                                    "flatten_media_to_text": false,
-                                    "output_format": "json",
-                                    "parse_method": "DeepDOC",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "parse_method": "DeepDOC"
                                 },
                                 {
-                                    "fileFormat": "markdown",
-                                    "flatten_media_to_text": false,
-                                    "output_format": "json",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "fileFormat": "markdown"
                                 },
                                 {
-                                    "fileFormat": "text&code",
-                                    "output_format": "json",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "fileFormat": "text&code"
                                 },
                                 {
-                                    "fileFormat": "html",
-                                    "output_format": "json",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "fileFormat": "html"
                                 },
                                 {
-                                    "fileFormat": "doc",
-                                    "output_format": "json",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "fileFormat": "doc"
                                 },
                                 {
-                                    "fileFormat": "docx",
-                                    "flatten_media_to_text": false,
-                                    "output_format": "json",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "fileFormat": "docx"
                                 }
                             ]
                         },

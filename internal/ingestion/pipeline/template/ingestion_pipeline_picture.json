@@ -55,10 +55,6 @@
                         },
                         "image": {
                             "ocr_enabled": true,
-                            "output_format": "json",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "bmp",
                                 "gif",
@@ -72,10 +68,6 @@
                             ]
                         },
                         "video": {
-                            "output_format": "text",
-                            "preprocess": [
-                                "main_content"
-                            ],
                             "suffix": [
                                 "3gp",
                                 "3gpp",
@@ -247,18 +239,10 @@
                             "setups": [
                                 {
                                     "fileFormat": "image",
-                                    "ocr_enabled": true,
-                                    "output_format": "json",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "ocr_enabled": true
                                 },
                                 {
-                                    "fileFormat": "video",
-                                    "output_format": "text",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "fileFormat": "video"
                                 }
                             ]
                         },
