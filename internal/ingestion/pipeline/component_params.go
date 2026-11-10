@@ -63,7 +63,7 @@ func ExtractAllComponentParams(dslJSON []byte) ([]ComponentParamsSchema, error) 
 			}
 			params[k] = deepCopyValue(v)
 		}
-		// Canvases saved by the Python-era frontend nest the Parser's
+		// Canvases saved by the -era frontend nest the Parser's
 		// per-family setups under a "setups" key; lift them so the extracted
 		// defaults (and the parser_config built from them) stay flat.
 		if common.IsParserComponent(cpnID, comp.Obj.ComponentName) {

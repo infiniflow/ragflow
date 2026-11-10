@@ -58,7 +58,7 @@ type PipelineResult struct {
 	Duration         float64 // pipeline wall-clock seconds
 	// DocName, BuiltInMetadataConfig and AutoMetadataEnabled carry what the
 	// document-state finalizer needs to apply built-in metadata
-	// (update_time / file_name), mirroring Python apply_built_in_metadata.
+	// (update_time / file_name), mirroring apply_built_in_metadata
 	DocName               string
 	BuiltInMetadataConfig []any
 	AutoMetadataEnabled   bool
@@ -597,7 +597,7 @@ func countOriginalChunkIDs(chunks []map[string]any) int {
 // every wiki read path selects merged rows only.
 //
 // Tree / structure (page_index) / mindmap rows are the FINAL per-document
-// products — Python writes them visible at compile time
+// products — writes them visible at compile time
 // (_struct_to_doc_storage_doc sets no available_int, index default 1) and its
 // claim recall / hybrid retrieval filter on available_int=1, so they stay
 // searchable here too. Merged dataset-level products are written by the
@@ -723,7 +723,7 @@ func (s *PipelineExecutor) reconcileDocumentCompiledProducts(ctx context.Context
 // this, later parsing would still write searchable available_int=1 rows.
 // Wiki staging rows are already available_int=0 from markCompiledProductsHidden,
 // so the stamp is a no-op for them; tree / structure rows become hidden
-// together with their document, matching Python's doc_id-scoped availability
+// together with their document, matching doc_id-scoped availability
 // toggle.
 func applyDocumentAvailability(chunks []map[string]any, status *string) {
 	if status == nil || *status != "0" {
@@ -997,7 +997,7 @@ func recordPipelineLog(
 
 	// The task context contains the document snapshot loaded when the task
 	// started. Reload it here so the operation log reflects the final progress
-	// state written by the progress sink, matching the Python operation-log
+	// state written by the progress sink, matching the operation-log
 	// creation path.
 	doc := input.Document
 	if doc.ID == "" {
@@ -1028,7 +1028,7 @@ func recordPipelineLog(
 	// parser_id, reuses the document thumbnail as avatar, and leaves
 	// pipeline_id empty. The canvas lookup must not depend on the DSL: terminal
 	// failure/cancel logs are recorded without a DSL, and their pipeline title
-	// and avatar must still resolve from the canvas row (mirrors the Python
+	// and avatar must still resolve from the canvas row (mirrors the
 	// operation-log creation path).
 	pipelineTitle := doc.ParserID
 	pipelineAvatar := doc.Thumbnail
@@ -1258,7 +1258,7 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 		// injected in place below without a nil-map assignment panic.
 		parserConfig = map[string]interface{}{}
 	}
-	// Legacy parser_config rows saved by the Python-era frontend nest the
+	// Legacy parser_config rows saved by the -era frontend nest the
 	// Parser's setups under a "setups" key. Lift them BEFORE the runtime
 	// merges this map over the DSL-baked params (override-wins on top-level
 	// key): a nested entry merged as-is would lose to the DSL's flat families
@@ -1373,9 +1373,9 @@ func (s *PipelineExecutor) runPipelineWithDSL(ctx context.Context, dsl string) (
 //   - canvas-debug (dry-run) runs wire a DebugLogSink, which implements the
 //     optional ResultSink capability. buildLogDSL hands it the FULL result DSL
 //     (BuildDebugResultDSL(dsl, output, true)) so the front-end "View result"
-//     page renders parsed chunks from the Redis END marker
-//     (rag/flow/pipeline.py:98). This is the ONLY place business data leaves
-//     the executor, and it targets Redis — never pipeline_operation_log.
+//     page renders parsed chunks from the Redis END marker. This is the ONLY
+//     place business data leaves the executor, and it targets Redis — never
+//     pipeline_operation_log.
 //   - persist (dataset parse) runs use a DB-backed sink that is NOT a
 //     ResultSink, so the preview branch is skipped. The returned logDSL (DSL
 //     definition only) is what recordPipelineLog persists, matching the

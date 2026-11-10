@@ -134,7 +134,7 @@ type Ingestor struct {
 	// cancelCheck is polled periodically (pollCancelInterval) during task
 	// execution. When it returns true the task's context is cancelled, which
 	// causes the pipeline to stop at the next ctx.Err() check. Defaults to a
-	// Redis cancel-flag lookup that mirrors Python's has_canceled(), with a
+	// Redis cancel-flag lookup that mirrors has_canceled(), with a
 	// DB fallback when Redis is unavailable. Tests may override this to
 	// simulate cancel without Redis.
 	cancelCheck func(ctx context.Context, taskID string) bool
@@ -764,7 +764,7 @@ func (e *Ingestor) executeTaskWithHeartbeat(ctx context.Context, taskCtx *taskpk
 	defer e.releaseTask(task.ID)
 
 	// Derive a per-task cancelable context so that an external cancel
-	// signal (Redis cancel flag, mirrored from Python's {task_id}-cancel)
+	// signal (Redis cancel flag, mirrored from {task_id}-cancel)
 	// can stop only this task without affecting the whole Ingestor.
 	perTaskCtx, perTaskCancel := context.WithCancel(taskCtx.Ctx)
 	taskCtx.Ctx = perTaskCtx
@@ -1076,7 +1076,7 @@ func (e *Ingestor) ackOrNack(taskCtx *taskpkg.TaskContext, terminal bool) {
 	}
 }
 
-// defaultCancelCheck reads the Redis cancel flag that Python sets via
+// defaultCancelCheck reads the Redis cancel flag that sets via
 // REDIS_CONN.set(f"{task_id}-cancel", "x"). Falls back to checking the
 // task status in DB when Redis is unavailable — a STOPPING status
 // (set by RequestStop) is treated as a cancel signal.

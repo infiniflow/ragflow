@@ -208,7 +208,7 @@ func cleanComponentParams(schemas []ComponentParamsSchema, rawConfig map[string]
 		if componentNames[key] == schema.ComponentNameGeneralChunker {
 			params = normalizeGeneralComponentParams(params)
 		}
-		// Legacy parser_config rows (or canvases) saved by the Python-era
+		// Legacy parser_config rows (or canvases) saved by the -era
 		// frontend nest the Parser's setups under a "setups" key; lift them
 		// before filtering, otherwise the families are dropped as unknown
 		// params against the flat DSL schema keys.

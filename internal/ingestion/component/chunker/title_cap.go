@@ -15,7 +15,7 @@
 package chunker
 
 // Token-count cap for the title-chunker family (GroupTitle / HierarchyTitle),
-// mirroring Python title_chunker/common.py:_enforce_token_cap (#18455).
+// mirroring :_enforce_token_cap (#18455)
 //
 // A built chunk that exceeds `chunk_token_cap` tokens is re-split on sentence
 // boundaries into <= cap sub-chunks; a single boundary-less run that still
@@ -52,10 +52,10 @@ var (
 )
 
 // titleTokenCount counts tokens for text. tokenizer.NumTokensFromString now
-// PANICS when the encoder is unavailable (mirroring Python's raise), so a 0 here
+// PANICS when the encoder is unavailable (mirroring raise), so a 0 here
 // can only come from the counter itself (empty input, or the stubbed counter the
 // tests install); fall back to the rune count so the cap is still enforced
-// (mirrors Python #18455's character-count fallback).
+// (mirrors #18455's character-count fallback)
 func titleTokenCount(text string) int {
 	if text == "" {
 		return 0
@@ -70,7 +70,7 @@ func titleTokenCount(text string) int {
 // titleSentenceSplit splits text on sentence boundaries, keeping each
 // delimiter attached to the preceding sentence so the concatenation of the
 // returned pieces reproduces the original text exactly. It uses the shared
-// sentenceBoundaryRe (Python _sentence_boundary.py SENTENCE_BOUNDARY_RE),
+// sentenceBoundaryRe ( SENTENCE_BOUNDARY_RE)
 // which includes the English ". " boundary.
 func titleSentenceSplit(text string) []string {
 	if text == "" {
@@ -110,9 +110,9 @@ func runePrefix(s string, n int) string {
 }
 
 // hardSplitByTokens hard-splits text into pieces whose token count is <= cap.
-// It mirrors Python's _hard_split_by_tokens (token_utils.truncate prefix).
+// It mirrors _hard_split_by_tokens (token_utils.truncate prefix)
 // When the tokenizer is unavailable (numTokens returns 0) it degrades to a
-// rune-prefix of length cap, keeping the ceiling intact (Python #18455
+// rune-prefix of length cap, keeping the ceiling intact ( #18455
 // character-count fallback).
 func hardSplitByTokens(text string, cap int) []string {
 	if cap <= 0 {
@@ -148,7 +148,7 @@ func hardSplitByTokens(text string, cap int) []string {
 }
 
 // enforceTitleTokenCap applies the hard token ceiling to every text chunk
-// after build_chunks. Mirrors Python BaseTitleChunker._enforce_token_cap:
+// after build_chunks. Mirrors BaseTitleChunker._enforce_token_cap
 //   - cap <= 0 disables the ceiling (chunks returned unchanged);
 //   - non-text chunks (table/image) are atomic and skipped;
 //   - a text chunk already within cap is kept;
