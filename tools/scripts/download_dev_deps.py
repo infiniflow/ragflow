@@ -480,6 +480,26 @@ def _stamp_present(data, version, stamp_format):
     return needle in data
 
 
+def native_lib_provisioned(directory, required_files, version=None, stamp_format="null"):
+    """True when DIRECTORY already holds every file in REQUIRED_FILES (non-empty)
+    and, for .a files when VERSION is set, the expected version stamp.
+
+    This is the same check _extract_native_archive.complete() performs, lifted to
+    module scope so the download pass can skip fetching a lib whose version-keyed
+    cache dir is already populated (e.g. a CI builder's mounted pre-baked native
+    libs cache) instead of re-downloading it every run. pdfium passes VERSION
+    None (its .a carries no stamp), so only file presence is checked there."""
+    for name in required_files:
+        path = os.path.join(directory, name)
+        if not os.path.isfile(path) or os.path.getsize(path) == 0:
+            return False
+        if version is not None and name.endswith(".a"):
+            with open(path, "rb") as file:
+                if not _stamp_present(file.read(), version, stamp_format):
+                    return False
+    return True
+
+
 def _extract_native_archive(archive_path, target, required_files, version=None, stamp_format="null"):
     """Extract ARCHIVE_PATH into TARGET, verifying REQUIRED_FILES (and, for .a
     files, an optional VERSION stamp) before promoting the staged tree.
@@ -494,16 +514,7 @@ def _extract_native_archive(archive_path, target, required_files, version=None, 
     previously good directory."""
 
     def complete(directory):
-        for name in required_files:
-            path = os.path.join(directory, name)
-            if not os.path.isfile(path) or os.path.getsize(path) == 0:
-                return False
-            if version is not None and name.endswith(".a"):
-                with open(path, "rb") as file:
-                    data = file.read()
-                if not _stamp_present(data, version, stamp_format):
-                    return False
-        return True
+        return native_lib_provisioned(directory, required_files, version, stamp_format)
 
     if complete(target):
         print(f"  ✓ {os.path.basename(target)} already extracted to {target}")
@@ -792,12 +803,25 @@ def download_go_models(use_china_mirrors=False):
     if use_china_mirrors:
         os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
     target_dir = os.path.join(REPO_ROOT, "internal", "rag", "res", "deepdoc")
+    # CI bakes the exact DeepDoc weights into MODEL_DIR (the ragflow_deps
+    # image's /opt/ragflow-deepdoc-models, also the runtime server's MODEL_DIR).
+    # Reuse that tree instead of fetching ~100MB from Hugging Face every run —
+    # the download pass already skips re-fetching the native .a libs for the same
+    # reason, and these weights deserve the same treatment.
+    model_dir = os.environ.get("MODEL_DIR")
     missing = []
     for fname in HF_DEEPDOC_MODEL_FILES:
         dest = os.path.join(target_dir, fname)
         if os.path.isfile(dest) and os.path.getsize(dest) > 0:
             print(f"  ✓ {fname} already present")
             continue
+        if model_dir:
+            src = os.path.join(model_dir, fname)
+            if os.path.isfile(src) and os.path.getsize(src) > 0:
+                os.makedirs(target_dir, exist_ok=True)
+                shutil.copyfile(src, dest)
+                print(f"  ✓ {fname} reused from MODEL_DIR ({model_dir})")
+                continue
         print(f"Downloading deepdoc model {fname}...")
         try:
             _hf_download(repo_id=HF_DEEPDOC_REPO, filename=fname, local_dir=target_dir)
@@ -875,6 +899,65 @@ def download_tokenizer_assets(use_china_mirrors=False):
     print("  ✓ embedding tokenizer assets ready")
 
 
+def native_lib_specs(goos, goarch):
+    """Return (subdir, url, archive, dir_version, required_files, stamp_version,
+    stamp_format) tuples for the three native static libs, shared by the download
+    and extraction passes so both agree on the cache layout."""
+    office_version = go_module_version("github.com/yfedoseev/office_oxide/go", REPO_ROOT)
+    pdf_oxide_version = go_module_version("github.com/yfedoseev/pdf_oxide/go", REPO_ROOT)
+    return [
+        (
+            "pdfium-static",
+            pdfium_url(goos, goarch),
+            pdfium_local_asset_name(goos, goarch),
+            "v" + PDFIUM_VERSION,
+            ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"],
+            None,
+            "null",
+        ),
+        (
+            "pdf_oxide",
+            pdf_oxide_url(REPO_ROOT, goos, goarch),
+            PDF_OXIDE_ASSETS[(goos, goarch)],
+            "v" + pdf_oxide_version,
+            [f"lib/{goos}_{goarch}/libpdf_oxide.a", "include/pdf_oxide.h"],
+            pdf_oxide_version,
+            "text",
+        ),
+        (
+            "office_oxide",
+            office_oxide_url(REPO_ROOT, goos, goarch),
+            OFFICE_OXIDE_ASSETS[(goos, goarch)],
+            "v" + office_version,
+            ["lib/liboffice_oxide.a", "include/office_oxide_c/office_oxide.h"],
+            office_version,
+            "null",
+        ),
+    ]
+
+
+def download_native_archives(goos, goarch):
+    """Download the pdfium/pdf_oxide/office_oxide tarballs, but skip a lib whose
+    version-keyed cache dir (~/ragflow-native-libs/<lib>/v<ver>/) is already
+    provisioned (e.g. a CI builder's mounted pre-baked native-libs cache) — the
+    download pass consults that cache, not just the transient deps/ archive, so a
+    pre-baked lib is never re-fetched. Falls back to the deps/ archive check,
+    then network."""
+    for subdir, url, archive, dir_version, required_files, stamp_version, stamp_format in native_lib_specs(goos, goarch):
+        target = os.path.join(native_libs_dir(), subdir, dir_version)
+        if native_lib_provisioned(target, required_files, stamp_version, stamp_format):
+            print(f"  ✓ {subdir} {dir_version} already provisioned at {target}; skipping download")
+            continue
+        print(f"Downloading {archive} from {url}...")
+        if _valid_download(archive):
+            print(f"  ✓ {archive} already present")
+            continue
+        download_with_progress(url, archive)
+        if not _valid_download(archive):
+            os.unlink(archive)
+            raise RuntimeError(f"Invalid downloaded dependency: {archive}")
+
+
 def main():
     """Download the native static libraries the Go build links, then the runtime
     resources (cl100k BPE table, DeepDoc .ort weights, embedding tokenizer assets)
@@ -909,34 +992,19 @@ def main():
 
     # ONNX Runtime archive (+ checksum sidecar), then the other native archives.
     _download_ort_archive(os.path.join(RAGFLOW_DEPS_DIR, ort_zip), goos, goarch)
-    archives = [
-        (pdfium_url(goos, goarch), pdfium_local_asset_name(goos, goarch)),
-        (pdf_oxide_url(REPO_ROOT, goos, goarch), PDF_OXIDE_ASSETS[(goos, goarch)]),
-        (office_oxide_url(REPO_ROOT, goos, goarch), OFFICE_OXIDE_ASSETS[(goos, goarch)]),
-    ]
-    for url, filename in archives:
-        print(f"Downloading {filename} from {url}...")
-        if _valid_download(filename):
-            print(f"  ✓ {filename} already present")
-            continue
-        download_with_progress(url, filename)
-        if not _valid_download(filename):
-            os.unlink(filename)
-            raise RuntimeError(f"Invalid downloaded dependency: {filename}")
+    download_native_archives(goos, goarch)
 
     # Extract native static libraries to ~/ragflow-native-libs for the Go build.
     # Ensures build.sh can find them without network access. Each lands under a
     # version-keyed subdir (v<version>/) so a mounted cache can hold several
-    # versions at once; see extract_native_lib().
-    office_version = go_module_version("github.com/yfedoseev/office_oxide/go", REPO_ROOT)
-    pdf_oxide_version = go_module_version("github.com/yfedoseev/pdf_oxide/go", REPO_ROOT)
-    extractions = [
-        ("pdfium-static", pdfium_local_asset_name(goos, goarch), "v" + PDFIUM_VERSION, ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"], None, "null"),
-        ("pdf_oxide", PDF_OXIDE_ASSETS[(goos, goarch)], "v" + pdf_oxide_version, [f"lib/{goos}_{goarch}/libpdf_oxide.a", "include/pdf_oxide.h"], pdf_oxide_version, "text"),
-        ("office_oxide", OFFICE_OXIDE_ASSETS[(goos, goarch)], "v" + office_version, ["lib/liboffice_oxide.a", "include/office_oxide_c/office_oxide.h"], office_version, "null"),
-    ]
-
-    for subdir, archive, dir_version, required_files, stamp_version, stamp_format in extractions:
+    # versions at once; see extract_native_lib(). A lib whose cache dir is
+    # already provisioned is skipped entirely (download_native_archives already
+    # avoided re-fetching it), so a pre-baked native-libs cache is a no-op here.
+    for subdir, _url, archive, dir_version, required_files, stamp_version, stamp_format in native_lib_specs(goos, goarch):
+        target = os.path.join(native_libs_dir(), subdir, dir_version)
+        if native_lib_provisioned(target, required_files, stamp_version, stamp_format):
+            print(f"  ✓ {subdir} {dir_version} already provisioned at {target}; skipping extraction")
+            continue
         archive_path = os.path.join(RAGFLOW_DEPS_DIR, archive)
         extract_native_lib(archive_path, subdir, dir_version, required_files, stamp_version, stamp_format)
 
