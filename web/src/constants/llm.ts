@@ -127,6 +127,7 @@ export enum LLMFactory {
   HostingerRouter = 'Hostinger Router',
   Wally = 'Wally',
   Synap = 'Synap',
+  LiteLLM = 'LiteLLM',
 }
 
 // Please lowercase the file name
@@ -235,6 +236,7 @@ export const IconMap = {
   [LLMFactory.Cheapaimodel]: 'cheapaimodel',
   [LLMFactory.Wally]: 'wally',
   [LLMFactory.Synap]: 'synap',
+  [LLMFactory.LiteLLM]: 'litellm',
 };
 
 /**
@@ -381,4 +383,5 @@ export const APIMapUrl = {
   [LLMFactory.PaddleOCRLocal]: 'https://aistudio.baidu.com/paddleocr',
   [LLMFactory.RAGcon]: 'https://connect.ragcon.com',
   [LLMFactory.FunASR]: 'https://github.com/modelscope/FunASR',
+  [LLMFactory.LiteLLM]: 'https://docs.litellm.ai/docs/proxy/virtual_keys',
 };
