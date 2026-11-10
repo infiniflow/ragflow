@@ -81,6 +81,11 @@ type NatsEngine struct {
 	consumerMu sync.Mutex
 	consumers  map[common.Tier]jetstream.Consumer
 	consumer   jetstream.Consumer
+	// consumerMaxDeliver caches the delivery limit each lane's consumer was
+	// created with (or reattached to). The ingestion service settles a task
+	// whose budget is spent, so a stale local constant would either fail a
+	// task early or never fail it at all.
+	consumerMaxDeliver map[common.Tier]uint64
 
 	// dataset-level compile consumer (§11) state.
 	knowledgeCompileStream   jetstream.Stream
@@ -309,27 +314,30 @@ func (n *NatsEngine) InitConsumer(subject string) error {
 // their pending messages) instead of leaving orphans behind.
 func (n *NatsEngine) ensureConsumers(ctx context.Context) error {
 	consumers := make(map[common.Tier]jetstream.Consumer, len(tierOrder))
+	maxDelivers := make(map[common.Tier]uint64, len(tierOrder))
 	for _, tier := range tierOrder {
-		consumer, err := n.ensureConsumer(ctx, tier)
+		consumer, limit, err := n.ensureConsumer(ctx, tier)
 		if err != nil {
 			return err
 		}
 		consumers[tier] = consumer
+		maxDelivers[tier] = limit
 	}
 	n.consumerMu.Lock()
 	n.consumers = consumers
 	n.consumer = consumers[defaultTier()]
+	n.consumerMaxDeliver = maxDelivers
 	n.consumerMu.Unlock()
 	return nil
 }
 
 // ensureConsumer creates or updates a single lane's durable consumer.
-func (n *NatsEngine) ensureConsumer(ctx context.Context, tier common.Tier) (jetstream.Consumer, error) {
+func (n *NatsEngine) ensureConsumer(ctx context.Context, tier common.Tier) (jetstream.Consumer, uint64, error) {
 	n.streamMu.Lock()
 	stream := n.streams[tier]
 	n.streamMu.Unlock()
 	if stream == nil {
-		return nil, fmt.Errorf("NATS stream for tier %s is nil, engine not properly initialized", tier)
+		return nil, 0, fmt.Errorf("NATS stream for tier %s is nil, engine not properly initialized", tier)
 	}
 	spec := tierStreams[tier]
 
@@ -362,13 +370,24 @@ func (n *NatsEngine) ensureConsumer(ctx context.Context, tier common.Tier) (jets
 		if strings.Contains(err.Error(), "max waiting can not be updated") {
 			consumer, err = stream.Consumer(ctx, spec.consumerName)
 			if err != nil {
-				return nil, fmt.Errorf("failed to get existing consumer %s: %w", spec.consumerName, err)
+				return nil, 0, fmt.Errorf("failed to get existing consumer %s: %w", spec.consumerName, err)
 			}
 		} else {
-			return nil, fmt.Errorf("failed to create consumer %s: %w", spec.consumerName, err)
+			return nil, 0, fmt.Errorf("failed to create consumer %s: %w", spec.consumerName, err)
 		}
 	}
-	return consumer, nil
+	// The delivery limit is read back from the broker rather than assumed: the
+	// existing-consumer fallback above reattaches to a consumer created by an
+	// older release, whose MaxDeliver can differ from ingestionMaxDeliver. The
+	// ingestion service settles a task whose budget is spent, so a stale local
+	// constant would either fail a task early or never fail it at all.
+	limit := uint64(ingestionMaxDeliver)
+	if info, infoErr := consumer.Info(ctx); infoErr == nil && info.Config.MaxDeliver > 0 {
+		limit = uint64(info.Config.MaxDeliver)
+	} else if infoErr != nil {
+		common.Warn(fmt.Sprintf("failed to read consumer delivery limit, using %d: %v", ingestionMaxDeliver, infoErr))
+	}
+	return consumer, limit, nil
 }
 
 // consumerHandle returns one lane's consumer handle, or an error when the
@@ -383,6 +402,17 @@ func (n *NatsEngine) consumerHandle(tier common.Tier) (jetstream.Consumer, error
 	return consumer, nil
 }
 
+// deliveryLimit reports one lane's consumer delivery limit for message handles
+// to carry into their redelivery budget.
+func (n *NatsEngine) deliveryLimit(tier common.Tier) uint64 {
+	n.consumerMu.Lock()
+	defer n.consumerMu.Unlock()
+	if limit := n.consumerMaxDeliver[tier]; limit > 0 {
+		return limit
+	}
+	return ingestionMaxDeliver
+}
+
 // recreateConsumer rebuilds one lane's consumer and returns the fresh handle.
 // Consumer creation is a JetStream API round trip, so it gets its own timeout
 // rather than borrowing the (deliberately short) pull deadline. Only the lane
@@ -390,7 +420,7 @@ func (n *NatsEngine) consumerHandle(tier common.Tier) (jetstream.Consumer, error
 func (n *NatsEngine) recreateConsumer(ctx context.Context, tier common.Tier) (jetstream.Consumer, error) {
 	createCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer cancel()
-	consumer, err := n.ensureConsumer(createCtx, tier)
+	consumer, limit, err := n.ensureConsumer(createCtx, tier)
 	if err != nil {
 		return nil, err
 	}
@@ -399,6 +429,10 @@ func (n *NatsEngine) recreateConsumer(ctx context.Context, tier common.Tier) (je
 		n.consumers = make(map[common.Tier]jetstream.Consumer)
 	}
 	n.consumers[tier] = consumer
+	if n.consumerMaxDeliver == nil {
+		n.consumerMaxDeliver = make(map[common.Tier]uint64)
+	}
+	n.consumerMaxDeliver[tier] = limit
 	if tier == defaultTier() {
 		n.consumer = consumer
 	}
@@ -459,7 +493,7 @@ func (n *NatsEngine) pullLane(ctx context.Context, tier common.Tier, messageCoun
 	laneCtx, cancel := context.WithTimeout(ctx, tierFetchWindow)
 	defer cancel()
 
-	resultMessages, pullErr := n.fetchOnce(laneCtx, consumer, messageCount)
+	resultMessages, pullErr := n.fetchOnce(laneCtx, tier, consumer, messageCount)
 	if !isConsumerGoneErr(pullErr) {
 		if pullErr != nil {
 			return nil, fmt.Errorf("failed to fetch messages from tier %s: %w", tier, pullErr)
@@ -477,7 +511,7 @@ func (n *NatsEngine) pullLane(ctx context.Context, tier common.Tier, messageCoun
 	}
 	for attempt := 1; attempt <= consumerRepairPullAttempts; attempt++ {
 		retryCtx, retryCancel := context.WithTimeout(ctx, tierFetchWindow)
-		resultMessages, pullErr = n.fetchOnce(retryCtx, consumer, messageCount)
+		resultMessages, pullErr = n.fetchOnce(retryCtx, tier, consumer, messageCount)
 		retryCancel()
 		if !isConsumerGoneErr(pullErr) || attempt == consumerRepairPullAttempts {
 			break
@@ -571,7 +605,7 @@ func isExpiredFetchErr(err error, ctx context.Context) bool {
 // while any other batch failure nacks whatever did arrive so the messages stay
 // available. Cancellation is propagated. Errors can surface either from Fetch
 // itself or from the returned batch, so both paths are handled.
-func (n *NatsEngine) fetchOnce(ctx context.Context, consumer jetstream.Consumer, messageCount int) ([]common.TaskHandle, error) {
+func (n *NatsEngine) fetchOnce(ctx context.Context, tier common.Tier, consumer jetstream.Consumer, messageCount int) ([]common.TaskHandle, error) {
 	if err := ctx.Err(); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return nil, err
@@ -589,8 +623,9 @@ func (n *NatsEngine) fetchOnce(ctx context.Context, consumer jetstream.Consumer,
 		return nil, err
 	}
 	resultMessages := make([]common.TaskHandle, 0, messageCount)
+	limit := n.deliveryLimit(tier)
 	for message := range messages.Messages() {
-		resultMessages = append(resultMessages, NewNatsMessageHandle(message))
+		resultMessages = append(resultMessages, NewNatsMessageHandle(message, limit))
 	}
 	if batchErr := messages.Error(); batchErr != nil {
 		if errors.Is(batchErr, context.Canceled) {
@@ -631,18 +666,23 @@ func (n *NatsEngine) CheckStatus() string {
 }
 
 type NatsMessageHandle struct {
-	message jetstream.Msg
+	message    jetstream.Msg
+	maxDeliver uint64
 }
 
-// ingestionMaxDeliver bounds how many times JetStream delivers one ingestion
-// task message. The task runner reads the same budget through
-// RedeliveryBudget so it settles a task instead of leaving it RUNNING once the
-// broker stops delivering.
+// ingestionMaxDeliver is the delivery limit requested when the task consumer
+// is created. The runner reads the limit back from the active consumer through
+// RedeliveryBudget, so a pre-existing consumer with a different limit still
+// settles the task instead of leaving it RUNNING when the broker stops.
 const ingestionMaxDeliver = 16
 
-func NewNatsMessageHandle(message jetstream.Msg) *NatsMessageHandle {
+// NewNatsMessageHandle wraps a delivered message. maxDeliver is the owning
+// consumer's delivery limit, so the handle reports the limit the broker
+// actually enforces instead of a package default.
+func NewNatsMessageHandle(message jetstream.Msg, maxDeliver uint64) *NatsMessageHandle {
 	return &NatsMessageHandle{
-		message: message,
+		message:    message,
+		maxDeliver: maxDeliver,
 	}
 }
 
@@ -674,10 +714,10 @@ func (m *NatsMessageHandle) NackWithDelay(delay time.Duration) error {
 // unavailable, in which case the caller cannot reason about the budget.
 func (m *NatsMessageHandle) RedeliveryBudget() (delivered uint64, limit uint64, ok bool) {
 	meta, err := m.message.Metadata()
-	if err != nil {
+	if err != nil || m.maxDeliver == 0 {
 		return 0, 0, false
 	}
-	return meta.NumDelivered, ingestionMaxDeliver, true
+	return meta.NumDelivered, m.maxDeliver, true
 }
 
 func (m *NatsMessageHandle) InProgress() error {

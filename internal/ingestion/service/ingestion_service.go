@@ -1136,12 +1136,19 @@ func (e *Ingestor) deferTransientTask(ctx context.Context, taskCtx *taskpkg.Task
 	if limit > 0 && delivered >= limit {
 		reason := fmt.Sprintf("Task failed: document engine stayed unavailable: %v", cause)
 		common.Error(fmt.Sprintf("Task %s exhausted its redelivery budget", task.ID), cause)
-		if e.markFailed(ctx, task.ID, reason) {
+		// This is the last chance to move the task out of RUNNING: once the
+		// broker stops delivering, no later attempt exists. A transient DB
+		// error must not be taken as a final answer, so the write is retried.
+		written := retryTerminalWrite(ctx, func() bool {
+			return e.markFailed(ctx, task.ID, reason)
+		}, terminalWriteRetryDelays)
+		if written {
 			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), reason)
 			return false
 		}
 		// The FAILED write did not land. Nack anyway: at the delivery limit the
 		// message stays in the stream for recovery, while an Ack would drop it.
+		common.Error(fmt.Sprintf("Task %s stays RUNNING: FAILED write failed after retries", task.ID), cause)
 		e.nackTask(taskCtx, task.ID)
 		return true
 	}
@@ -1155,6 +1162,31 @@ func (e *Ingestor) deferTransientTask(ctx context.Context, taskCtx *taskpkg.Task
 	}
 	e.nackTask(taskCtx, task.ID)
 	return true
+}
+
+// terminalWriteRetryDelays paces the retries of the FAILED write that is only
+// attempted on the last delivery.
+var terminalWriteRetryDelays = []time.Duration{250 * time.Millisecond, time.Second, 2 * time.Second}
+
+// retryTerminalWrite runs write until it reports success, sleeping between
+// attempts. It stops early when ctx is done but still makes one final attempt:
+// the write itself deliberately ignores cancellation, so a shutting-down worker
+// can settle the task instead of leaving it RUNNING.
+func retryTerminalWrite(ctx context.Context, write func() bool, delays []time.Duration) bool {
+	if write() {
+		return true
+	}
+	for _, delay := range delays {
+		select {
+		case <-ctx.Done():
+			return write()
+		case <-time.After(delay):
+		}
+		if write() {
+			return true
+		}
+	}
+	return false
 }
 
 // nackTask settles the message for redelivery. A nil handle (standalone/test
