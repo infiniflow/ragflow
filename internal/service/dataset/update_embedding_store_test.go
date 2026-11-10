@@ -21,6 +21,8 @@ type recordingChunkStoreEngine struct {
 	parserID   string
 	language   string
 	err        error
+	// storeMissing makes ChunkStoreExists report an absent store.
+	storeMissing bool
 }
 
 func (e *recordingChunkStoreEngine) CreateChunkStore(_ context.Context, baseName, datasetID string, vectorSize int, parserID, language string) error {
@@ -28,6 +30,10 @@ func (e *recordingChunkStoreEngine) CreateChunkStore(_ context.Context, baseName
 	e.baseName, e.datasetID, e.vectorSize = baseName, datasetID, vectorSize
 	e.parserID, e.language = parserID, language
 	return e.err
+}
+
+func (e *recordingChunkStoreEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
+	return !e.storeMissing, nil
 }
 
 // An embedding-model change on an empty dataset must prepare the chunk store for
@@ -303,5 +309,100 @@ func TestUpdateDatasetPreparesChunkStoreWithUpdatedLanguage(t *testing.T) {
 	}
 	if kb.Language == nil || *kb.Language != language {
 		t.Fatalf("persisted language = %v, want %q", kb.Language, language)
+	}
+}
+
+// A store that was never created has to be created after the commit: creating
+// it earlier would bake the new analyzer and dimension into a store the row
+// keeps even when the update is rejected.
+func TestUpdateDatasetCreatesMissingChunkStoreAfterCommit(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	eng := &recordingChunkStoreEngine{storeMissing: true}
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = eng
+	svc.embeddingDimension = func(context.Context, string, string) (int, error) { return 1024, nil }
+
+	model := "BAAI/bge-m3@Builtin"
+	language := "Chinese"
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	if _, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model, Language: &language}); err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset = (%d, %v), want success", code, err)
+	}
+	if eng.calls != 1 {
+		t.Fatalf("chunk store calls = %d, want 1", eng.calls)
+	}
+	if eng.language != language {
+		t.Fatalf("chunk store language = %q, want %q", eng.language, language)
+	}
+}
+
+// A rejected update must leave an absent store absent, so a later request with
+// the original settings still sees a clean state.
+func TestUpdateDatasetDoesNotCreateChunkStoreWhenUpdateIsRejected(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	insertDatasetUpdateKB(t, "kb-2", "tenant-1", "Existing")
+
+	eng := &recordingChunkStoreEngine{storeMissing: true}
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = eng
+	svc.embeddingDimension = func(context.Context, string, string) (int, error) { return 1024, nil }
+
+	model := "BAAI/bge-m3@Builtin"
+	duplicate := "Existing"
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	_, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{Name: &duplicate, EmbeddingModel: &model})
+	if err == nil || code != common.CodeDataError {
+		t.Fatalf("UpdateDataset = (%d, %v), want a duplicate-name error", code, err)
+	}
+	if eng.calls != 0 {
+		t.Fatalf("chunk store calls = %d, want 0 for a rejected update", eng.calls)
+	}
+
+	var kb entity.Knowledgebase
+	if err := dao.DB.Where("id = ?", "kb-1").Take(&kb).Error; err != nil {
+		t.Fatalf("reload dataset: %v", err)
+	}
+	if kb.EmbdID != "BAAI/bge-large-zh-v1.5@Builtin" {
+		t.Fatalf("embd_id after a rejected update = %q, want the previous model", kb.EmbdID)
+	}
+
+	name := "Renamed"
+	if _, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{Name: &name, EmbeddingModel: &model}); err != nil || code != common.CodeSuccess {
+		t.Fatalf("retry UpdateDataset = (%d, %v), want success", code, err)
+	}
+	if eng.calls != 1 {
+		t.Fatalf("chunk store calls = %d, want 1 on the retry", eng.calls)
+	}
+}
+
+// The retry after a failed post-commit creation sends the same model. The store
+// is still missing, so the update must create it again instead of skipping the
+// preparation because the model did not change.
+func TestUpdateDatasetRepairsMissingChunkStoreOnSameModelUpdate(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	eng := &recordingChunkStoreEngine{storeMissing: true}
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = eng
+	svc.embeddingDimension = func(context.Context, string, string) (int, error) { return 1024, nil }
+
+	model := "BAAI/bge-large-zh-v1.5@Builtin"
+	name := "Renamed"
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	if _, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{Name: &name, EmbeddingModel: &model}); err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset = (%d, %v), want success", code, err)
+	}
+	if eng.calls != 1 {
+		t.Fatalf("chunk store calls = %d, want 1", eng.calls)
+	}
+	if eng.parserID != string(entity.ParserTypeNaive) {
+		t.Fatalf("chunk store parser = %q, want %q", eng.parserID, entity.ParserTypeNaive)
 	}
 }
