@@ -16,15 +16,18 @@ package ingestor
 
 import "testing"
 
-func resetExtraSupportedTypes() {
+// resetExtraSupportedTypes isolates the registry for a test, preserving any
+// edition registrations installed by init() and restoring them afterward.
+func resetExtraSupportedTypes() func() {
+	saved := extraSupportedTypes
 	extraSupportedTypes = map[string]struct{}{}
+	return func() { extraSupportedTypes = saved }
 }
 
 // EE editions register extra supported types; they must be merged into the
 // base list while the community types stay present.
 func TestDefaultSupportedTypesIncludesRegistered(t *testing.T) {
-	resetExtraSupportedTypes()
-	defer resetExtraSupportedTypes()
+	defer resetExtraSupportedTypes()()
 	RegisterSupportedType("cad")
 	ds := defaultSupportedTypes()
 	has := map[string]bool{}
@@ -40,8 +43,7 @@ func TestDefaultSupportedTypesIncludesRegistered(t *testing.T) {
 
 // With no registration the list is exactly the community base.
 func TestDefaultSupportedTypesBaseOnlyWhenUnregistered(t *testing.T) {
-	resetExtraSupportedTypes()
-	defer resetExtraSupportedTypes()
+	defer resetExtraSupportedTypes()()
 	ds := defaultSupportedTypes()
 	if len(ds) != 3 {
 		t.Fatalf("defaultSupportedTypes() len = %d, want 3 (base only)", len(ds))
@@ -50,8 +52,7 @@ func TestDefaultSupportedTypesBaseOnlyWhenUnregistered(t *testing.T) {
 
 // Duplicate registrations collapse to a single entry.
 func TestDefaultSupportedTypesDedup(t *testing.T) {
-	resetExtraSupportedTypes()
-	defer resetExtraSupportedTypes()
+	defer resetExtraSupportedTypes()()
 	RegisterSupportedType("cad")
 	RegisterSupportedType("cad")
 	ds := defaultSupportedTypes()
@@ -68,8 +69,7 @@ func TestDefaultSupportedTypesDedup(t *testing.T) {
 
 // Registration is case-insensitive and dedupes across cases.
 func TestDefaultSupportedTypesCaseInsensitiveDedup(t *testing.T) {
-	resetExtraSupportedTypes()
-	defer resetExtraSupportedTypes()
+	defer resetExtraSupportedTypes()()
 	RegisterSupportedType("CAD")
 	RegisterSupportedType("cad")
 	ds := defaultSupportedTypes()
@@ -86,8 +86,7 @@ func TestDefaultSupportedTypesCaseInsensitiveDedup(t *testing.T) {
 
 // An empty registration is a no-op.
 func TestDefaultSupportedTypesEmptyIgnored(t *testing.T) {
-	resetExtraSupportedTypes()
-	defer resetExtraSupportedTypes()
+	defer resetExtraSupportedTypes()()
 	RegisterSupportedType("")
 	ds := defaultSupportedTypes()
 	if len(ds) != 3 {

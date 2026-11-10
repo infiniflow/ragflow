@@ -169,10 +169,11 @@ var extensionFileTypes = map[string]FileType{}
 // Intended for enterprise editions to extend the community file-type set. The
 // suffix is matched case-insensitively by GetFileType and FilenameType.
 func RegisterExtensionFileType(suffix string, ft FileType) {
-	if suffix == "" {
+	normalized := strings.ToLower(strings.TrimPrefix(suffix, "."))
+	if normalized == "" {
 		return
 	}
-	extensionFileTypes[strings.ToLower(strings.TrimPrefix(suffix, "."))] = ft
+	extensionFileTypes[normalized] = ft
 }
 
 // FilenameType returns the upload category for a filename.
@@ -182,6 +183,16 @@ func FilenameType(filename string) FileType {
 	normalized, ok := normalizeFilename(filename)
 	if !ok {
 		return FileTypeOTHER
+	}
+
+	// Editions may register an extension→type mapping, including overriding a
+	// built-in extension. Honor it before the community upload-bucket logic so
+	// the upload is classified with the registered type, keeping FilenameType
+	// consistent with GetFileType (which also consults this map first).
+	if ext := strings.TrimPrefix(filepath.Ext(normalized), "."); ext != "" {
+		if ft, ok := extensionFileTypes[strings.ToLower(ext)]; ok {
+			return ft
+		}
 	}
 
 	// Video is admitted at upload in the legacy visual bucket and routed to the
@@ -225,12 +236,6 @@ func FilenameType(filename string) FileType {
 	for _, ext := range visualExtensions {
 		if strings.HasSuffix(normalized, "."+ext) {
 			return FileTypeVISUAL
-		}
-	}
-
-	if ext := strings.TrimPrefix(filepath.Ext(normalized), "."); ext != "" {
-		if ft, ok := extensionFileTypes[strings.ToLower(ext)]; ok {
-			return ft
 		}
 	}
 

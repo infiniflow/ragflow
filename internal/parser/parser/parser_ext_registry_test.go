@@ -27,15 +27,18 @@ func (f fakeExtParser) ParseWithResult(_ context.Context, _ string, _ []byte) Pa
 	return ParseResult{}
 }
 
-func resetParserFactories() {
+// resetParserFactories isolates the registry for a test, preserving any
+// edition registrations installed by init() and restoring them afterward.
+func resetParserFactories() func() {
+	saved := parserFactories
 	parserFactories = map[utility.FileType]func(textOnly bool) (ParseResultProducer, error){}
+	return func() { parserFactories = saved }
 }
 
 // EE editions register a parser factory for a FileType the community switch
 // does not handle. GetParser must return that parser.
 func TestGetParserReturnsRegisteredFactory(t *testing.T) {
-	resetParserFactories()
-	defer resetParserFactories()
+	defer resetParserFactories()()
 	const cad = utility.FileType("cad")
 	RegisterParserFactory(cad, func(textOnly bool) (ParseResultProducer, error) {
 		return fakeExtParser{textOnly: textOnly}, nil
@@ -54,8 +57,7 @@ func TestGetParserReturnsRegisteredFactory(t *testing.T) {
 
 // An unregistered community-unknown type still errors as unsupported.
 func TestGetParserUnregisteredTypeUnsupported(t *testing.T) {
-	resetParserFactories()
-	defer resetParserFactories()
+	defer resetParserFactories()()
 	_, _, err := GetParser(utility.FileType("dwg"), nil)
 	if err == nil {
 		t.Fatal("GetParser(unregistered dwg) err = nil, want unsupported error")
@@ -64,8 +66,7 @@ func TestGetParserUnregisteredTypeUnsupported(t *testing.T) {
 
 // Registering an extra factory must not disturb the builtin switch.
 func TestGetParserDoesNotAffectBuiltin(t *testing.T) {
-	resetParserFactories()
-	defer resetParserFactories()
+	defer resetParserFactories()()
 	p, eff, err := GetParser(utility.FileTypePDF, nil)
 	if err != nil {
 		t.Fatalf("GetParser(pdf) err = %v", err)
@@ -80,8 +81,7 @@ func TestGetParserDoesNotAffectBuiltin(t *testing.T) {
 
 // The textOnly flag must reach the registered factory.
 func TestGetTextOnlyParserPropagatesTextOnly(t *testing.T) {
-	resetParserFactories()
-	defer resetParserFactories()
+	defer resetParserFactories()()
 	var seenTextOnly bool
 	RegisterParserFactory(utility.FileType("cad"), func(textOnly bool) (ParseResultProducer, error) {
 		seenTextOnly = textOnly
