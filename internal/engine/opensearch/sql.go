@@ -152,9 +152,12 @@ func (e *Engine) runSQLOnce(ctx context.Context, sqlText string) ([]map[string]i
 		if next == "" {
 			return out, nil
 		}
+		if next == cursor {
+			return nil, fmt.Errorf("opensearch sql cursor did not advance after %d pages; refusing to loop", page+1)
+		}
 		cursor = next
 	}
-	return out, nil
+	return nil, fmt.Errorf("opensearch sql pagination exceeded %d pages; refusing to return partial results", osSQLMaxPages)
 }
 
 // runSQLPage executes one `/_plugins/_sql` round trip. The first page sends the

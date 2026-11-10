@@ -202,8 +202,12 @@ func TestOpenSearchChunkLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetChunk after update: %v", err)
 	}
-	if v, ok := after.(map[string]interface{})["title_tks"].(string); !ok || v != "updated title" {
-		t.Fatalf("updated title_tks = %#v", after.(map[string]interface{})["title_tks"])
+	afterMap, ok := after.(map[string]interface{})
+	if !ok {
+		t.Fatalf("GetChunk after update returned %T, want map[string]interface{}", after)
+	}
+	if v, ok := afterMap["title_tks"].(string); !ok || v != "updated title" {
+		t.Fatalf("updated title_tks = %#v", afterMap["title_tks"])
 	}
 
 	// Delete by kb_id

@@ -579,3 +579,28 @@ func TestIsTimeoutError_NonTimeoutNetError(t *testing.T) {
 		t.Errorf("isTimeoutError(connection-refused) = true, want false")
 	}
 }
+
+// TestRunSQL_ErrorsOnStuckCursor ensures a server that keeps returning the
+// same cursor surfaces an error instead of silently burning the page budget.
+func TestRunSQL_ErrorsOnStuckCursor(t *testing.T) {
+	var requests int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{
+			"schema": [{"name": "doc_id", "type": "text"}],
+			"datarows": [["d1"]],
+			"cursor": "same-cursor"
+		}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	e := newTestEngine(t, srv.URL)
+	if _, err := e.RunSQL(t.Context(), "SELECT doc_id FROM ragflow_t1", "json"); err == nil {
+		t.Fatal("RunSQL: got nil error for a cursor that never advances")
+	}
+	if requests > 2 {
+		t.Errorf("requests: got %d, want at most 2 before aborting", requests)
+	}
+}

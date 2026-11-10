@@ -219,6 +219,16 @@ func (e *Engine) UpdateMetadata(ctx context.Context, docID string, datasetID str
 		return fmt.Errorf("failed to execute update by query: %w", err)
 	}
 
+	// A 200 response can still report that work timed out or individual
+	// documents failed; do not fall back to an insert in that case, since the
+	// document may exist and be partially updated.
+	if timedOut, _ := updateResponse["timed_out"].(bool); timedOut {
+		return fmt.Errorf("opensearch update metadata by query timed out on %s", indexName)
+	}
+	if failures, ok := updateResponse["failures"].([]interface{}); ok && len(failures) > 0 {
+		return fmt.Errorf("opensearch update metadata by query reported %d failures on %s", len(failures), indexName)
+	}
+
 	if total, ok := updateResponse["total"].(float64); ok && total == 0 {
 		_, err := e.InsertMetadata(ctx, []map[string]interface{}{
 			{
