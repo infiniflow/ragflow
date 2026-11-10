@@ -551,3 +551,60 @@ func TestBuildDSNSSLMode(t *testing.T) {
 	enc := buildDSN(config.SereneDBConfig{Host: "h", User: "u", SSLMode: "require"})
 	mustContain(t, enc, "sslmode='require'")
 }
+
+// One tenant shares one chunk table, so a model with another dimension cannot
+// rely on CREATE TABLE IF NOT EXISTS to add its vector column. Preparation must
+// report that instead of succeeding for a store whose inserts will fail.
+func TestCreateChunkStoreRejectsMissingVectorDimension(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	mock.ExpectQuery(regexp.QuoteMeta(
+		"SELECT 1 FROM information_schema.tables WHERE table_name = $1 AND table_schema = current_schema() LIMIT 1")).
+		WithArgs("ragflow_t1").
+		WillReturnRows(sqlmock.NewRows([]string{"?column?"}).AddRow(1))
+	mock.ExpectQuery(regexp.QuoteMeta(
+		"SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND table_schema = current_schema() AND column_name = $2 LIMIT 1")).
+		WithArgs("ragflow_t1", "q_768_vec").
+		WillReturnRows(sqlmock.NewRows([]string{"?column?"}))
+
+	engine := &serenedbEngine{db: db}
+	err = engine.CreateChunkStore(context.Background(), "ragflow_t1", "kb-1", 768, "naive", "")
+	if err == nil || !strings.Contains(err.Error(), "q_768_vec") {
+		t.Fatalf("CreateChunkStore = %v, want a missing q_768_vec column error", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("SQL expectations: %v", err)
+	}
+}
+
+func TestCreateChunkStoreAcceptsExistingVectorDimension(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("sqlmock.New: %v", err)
+	}
+	defer db.Close()
+
+	mock.ExpectQuery(regexp.QuoteMeta(
+		"SELECT 1 FROM information_schema.tables WHERE table_name = $1 AND table_schema = current_schema() LIMIT 1")).
+		WithArgs("ragflow_t1").
+		WillReturnRows(sqlmock.NewRows([]string{"?column?"}).AddRow(1))
+	mock.ExpectQuery(regexp.QuoteMeta(
+		"SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND table_schema = current_schema() AND column_name = $2 LIMIT 1")).
+		WithArgs("ragflow_t1", "q_1024_vec").
+		WillReturnRows(sqlmock.NewRows([]string{"?column?"}).AddRow(1))
+	for _, stmt := range chunkTableDDL("ragflow_t1", 1024) {
+		mock.ExpectExec(regexp.QuoteMeta(stmt)).WillReturnResult(sqlmock.NewResult(0, 0))
+	}
+
+	engine := &serenedbEngine{db: db}
+	if err := engine.CreateChunkStore(context.Background(), "ragflow_t1", "kb-1", 1024, "naive", ""); err != nil {
+		t.Fatalf("CreateChunkStore = %v, want nil", err)
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatalf("SQL expectations: %v", err)
+	}
+}
