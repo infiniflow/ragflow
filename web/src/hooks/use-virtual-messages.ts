@@ -25,7 +25,7 @@ import { buildMessageUuidWithRole } from '@/utils/chat';
 const EstimatedMessageHeight = 160;
 
 // Losing the bottom by more than this means the user scrolled up on purpose.
-const FollowBottomThreshold = 60;
+const FollowBottomThreshold = 40;
 
 export type MessageVirtualizer = Virtualizer<HTMLDivElement, HTMLDivElement>;
 
@@ -78,6 +78,7 @@ export const useVirtualMessages = (
   // Drives the scroll-to-bottom button. Recomputed on scroll and on content
   // resize, since growth while pinned fires no scroll event of its own.
   const [isAtBottom, setIsAtBottom] = useState(true);
+  const totalSize = virtualizer.getTotalSize();
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -95,7 +96,7 @@ export const useVirtualMessages = (
       observer.disconnect();
       container.removeEventListener('scroll', update);
     };
-  }, [containerRef]);
+  }, [containerRef, totalSize]);
 
   return { virtualizer, scrollToBottom, isAtBottom };
 };
