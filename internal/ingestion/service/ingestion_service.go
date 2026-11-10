@@ -255,6 +255,7 @@ func (e *Ingestor) start() error {
 	// these off rather than blocking on the consume loop itself.
 	e.startWorkerPool()
 	e.startMemoryTaskReconciler()
+	e.startEvaluationTaskReconciler()
 	e.startDatasetKnowledgeCompile()
 
 	// Run the main tasks.RAGFLOW dispatcher off the caller's goroutine so Start
@@ -510,6 +511,10 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 		}
 		taskCtx := taskpkg.NewMemoryTaskContextForScheduling(e.ctx, taskMessage.TaskID, handle)
 		e.executeMemoryTaskWithHeartbeat(e.ctx, taskCtx, hb)
+		return
+	}
+
+	if e.handleEvaluationTask(handle, hb) {
 		return
 	}
 
