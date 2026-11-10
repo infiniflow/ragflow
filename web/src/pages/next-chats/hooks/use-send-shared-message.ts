@@ -8,14 +8,15 @@ import {
 } from '@/hooks/logic-hooks';
 import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
 import { Message } from '@/interfaces/database/chat';
-import { get } from 'lodash';
 import trim from 'lodash/trim';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { v4 as uuid } from 'uuid';
 
 const isCompletionError = (res: any) =>
-  res && (res?.response.status !== 200 || res?.data?.code !== 0);
+  res &&
+  (res?.response.status !== 200 ||
+    (res?.data?.code !== undefined && res.data.code !== 0));
 
 export const useSendButtonDisabled = (value: string) => {
   return trim(value) === '';
@@ -68,6 +69,10 @@ export const useSendSharedMessage = () => {
     removeAllMessagesExceptFirst,
   } = useSelectDerivedMessages();
   const [hasError, setHasError] = useState(false);
+  const [sessionId, setSessionId] = useState<string>();
+  const [isInitializing, setIsInitializing] = useState(true);
+  const initializationRequestIdRef = useRef<string>();
+  const initializationControllerRef = useRef<AbortController>();
 
   const sendMessage = useCallback(
     async (
@@ -76,11 +81,12 @@ export const useSendSharedMessage = () => {
       enableThinking?: string,
       enableInternet?: boolean,
     ) => {
+      if (!sessionId) return;
       const res = await send(completionUrl, {
         conversation_id: id ?? conversationId,
         quote: true,
         question: message.content,
-        session_id: get(derivedMessages, '0.session_id'),
+        session_id: sessionId,
         reasoning: Number(enableThinking),
         internet: enableInternet,
         ...(chatInfo?.llm_id ? { model_name: chatInfo.llm_id } : {}),
@@ -96,7 +102,7 @@ export const useSendSharedMessage = () => {
       send,
       completionUrl,
       conversationId,
-      derivedMessages,
+      sessionId,
       setValue,
       removeLatestMessage,
       chatInfo,
@@ -115,20 +121,53 @@ export const useSendSharedMessage = () => {
   );
 
   const fetchSessionId = useCallback(async () => {
+    initializationControllerRef.current?.abort();
+    stopOutputMessage();
+    const requestId = uuid();
+    const controller = new AbortController();
+    initializationRequestIdRef.current = requestId;
+    initializationControllerRef.current = controller;
+
+    setSessionId(undefined);
+    setIsInitializing(true);
+    setHasError(false);
     setDerivedMessages([]);
     const payload = { question: '' };
-    const ret = await send(completionUrl, { ...payload, ...data });
-    if (isCompletionError(ret)) {
-      message.error(ret?.data.message ?? 'Unknown error');
+    const ret = await send(
+      completionUrl,
+      { ...payload, ...data, chatBoxId: requestId },
+      controller,
+    );
+    if (initializationRequestIdRef.current !== requestId) return;
+    if (!ret || isCompletionError(ret)) {
+      message.error(ret?.data?.message ?? 'Unknown error');
       setHasError(true);
+      setIsInitializing(false);
     }
-  }, [send, completionUrl, data, setDerivedMessages]);
+  }, [send, completionUrl, data, setDerivedMessages, stopOutputMessage]);
 
   useEffect(() => {
     fetchSessionId();
+    return () => {
+      initializationRequestIdRef.current = undefined;
+      initializationControllerRef.current?.abort();
+    };
   }, [fetchSessionId]);
 
   useEffect(() => {
+    if (answer.chatBoxId) {
+      if (answer.chatBoxId !== initializationRequestIdRef.current) return;
+      const initializedSessionId = answer.session_id;
+      if (initializedSessionId) {
+        setSessionId(initializedSessionId);
+        setIsInitializing(false);
+        setHasError(false);
+      }
+      if (answer.answer) {
+        addNewestAnswer(answer);
+      }
+      return;
+    }
     if (answer.answer) {
       addNewestAnswer(answer);
     }
@@ -139,7 +178,7 @@ export const useSendSharedMessage = () => {
       enableThinking,
       enableInternet,
     }: NextMessageInputOnPressEnterParameter) => {
-      if (trim(value) === '' || !done) return;
+      if (trim(value) === '' || !done || !sessionId) return;
       const id = uuid();
       if (done) {
         setValue('');
@@ -160,17 +199,18 @@ export const useSendSharedMessage = () => {
         );
       }
     },
-    [addNewestQuestion, done, handleSendMessage, setValue, value],
+    [addNewestQuestion, done, handleSendMessage, sessionId, setValue, value],
   );
 
   return {
     handlePressEnter,
     handleInputChange,
     value,
-    sendLoading: !done,
+    sendLoading: isInitializing || !done,
     loading: false,
     derivedMessages,
     hasError,
+    retryInitialization: fetchSessionId,
     stopOutputMessage,
     virtualizer,
     messageContainerRef,

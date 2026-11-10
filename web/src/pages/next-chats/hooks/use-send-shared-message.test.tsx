@@ -21,18 +21,27 @@ import {
   useSendSharedMessage,
 } from './use-send-shared-message';
 
-const mockSend = jest.fn().mockResolvedValue(undefined);
+const successfulResponse = {
+  data: { code: 0 },
+  response: { status: 200 },
+};
+const mockSend = jest.fn().mockResolvedValue(successfulResponse);
 const mockSetDerivedMessages = jest.fn();
+const mockAddNewestAnswer = jest.fn();
+const mockAddNewestQuestion = jest.fn();
+const mockStopOutputMessage = jest.fn();
+let mockAnswer: Record<string, unknown> = {};
+let mockValue = '';
 
 jest.mock('@/hooks/logic-hooks', () => ({
   useHandleMessageInputChange: () => ({
     handleInputChange: jest.fn(),
     setValue: jest.fn(),
-    value: '',
+    value: mockValue,
   }),
   useSelectDerivedMessages: () => ({
-    addNewestAnswer: jest.fn(),
-    addNewestQuestion: jest.fn(),
+    addNewestAnswer: mockAddNewestAnswer,
+    addNewestQuestion: mockAddNewestQuestion,
     derivedMessages: [],
     messageContainerRef: { current: null },
     removeAllMessages: jest.fn(),
@@ -42,11 +51,16 @@ jest.mock('@/hooks/logic-hooks', () => ({
     virtualizer: {},
   }),
   useSendMessageWithSse: () => ({
-    answer: {},
+    answer: mockAnswer,
     done: true,
     send: mockSend,
-    stopOutputMessage: jest.fn(),
+    stopOutputMessage: mockStopOutputMessage,
   }),
+}));
+
+jest.mock('@/components/ui/message', () => ({
+  __esModule: true,
+  default: { error: jest.fn() },
 }));
 
 jest.mock('@/hooks/use-chat-request', () => ({
@@ -103,8 +117,13 @@ describe('useGetSharedChatSearchParams', () => {
 
 describe('useSendSharedMessage', () => {
   beforeEach(() => {
-    mockSend.mockClear();
+    mockAnswer = {};
+    mockValue = '';
+    mockSend.mockReset().mockResolvedValue(successfulResponse);
     mockSetDerivedMessages.mockClear();
+    mockAddNewestAnswer.mockClear();
+    mockAddNewestQuestion.mockClear();
+    mockStopOutputMessage.mockClear();
   });
 
   it('clears the previous session before initializing changed data', async () => {
@@ -133,7 +152,102 @@ describe('useSendSharedMessage', () => {
     );
     expect(mockSend).toHaveBeenCalledWith(
       '/api/v1/chatbots/conversation-1/completions',
-      { question: '', region: 'eu', tier: 'pro' },
+      expect.objectContaining({
+        chatBoxId: expect.any(String),
+        question: '',
+        region: 'eu',
+        tier: 'pro',
+      }),
+      expect.any(AbortController),
+    );
+  });
+
+  it('retains the initialized session when the prologue is empty', async () => {
+    const { result, rerender } = renderHook(() => useSendSharedMessage(), {
+      wrapper,
+    });
+
+    await waitFor(() => expect(mockSend).toHaveBeenCalledTimes(1));
+    const initializationBody = mockSend.mock.calls[0][1];
+
+    mockAnswer = {
+      answer: '',
+      chatBoxId: initializationBody.chatBoxId,
+      session_id: 'session-1',
+    };
+    rerender();
+
+    await waitFor(() => expect(result.current.sendLoading).toBe(false));
+    mockValue = 'hello';
+    rerender();
+
+    act(() => {
+      result.current.handlePressEnter({});
+    });
+
+    await waitFor(() => expect(mockSend).toHaveBeenCalledTimes(2));
+    expect(mockSend.mock.calls[1][1]).toEqual(
+      expect.objectContaining({ question: 'hello', session_id: 'session-1' }),
+    );
+  });
+
+  it('keeps sending disabled after failure and allows initialization retry', async () => {
+    mockSend.mockResolvedValueOnce(undefined);
+    const { result } = renderHook(() => useSendSharedMessage(), { wrapper });
+
+    await waitFor(() => expect(result.current.hasError).toBe(true));
+    expect(result.current.sendLoading).toBe(false);
+
+    act(() => {
+      result.current.retryInitialization();
+    });
+
+    await waitFor(() => expect(mockSend).toHaveBeenCalledTimes(2));
+    expect(result.current.hasError).toBe(false);
+    expect(result.current.sendLoading).toBe(true);
+  });
+
+  it('ignores a superseded initialization response', async () => {
+    const { result, rerender } = renderHook(
+      () => ({
+        navigate: useNavigate(),
+        sharedMessage: useSendSharedMessage(),
+      }),
+      { wrapper },
+    );
+
+    await waitFor(() => expect(mockSend).toHaveBeenCalledTimes(1));
+    const firstBody = mockSend.mock.calls[0][1];
+    const firstController = mockSend.mock.calls[0][2] as AbortController;
+
+    act(() => {
+      result.current.navigate(
+        '/?from=chat&shared_id=conversation-1&data_region=eu&data_tier=pro',
+      );
+    });
+
+    await waitFor(() => expect(mockSend).toHaveBeenCalledTimes(2));
+    expect(firstController.signal.aborted).toBe(true);
+    const secondBody = mockSend.mock.calls[1][1];
+
+    mockAnswer = {
+      answer: 'old',
+      chatBoxId: firstBody.chatBoxId,
+      session_id: 'old-session',
+    };
+    rerender();
+    expect(result.current.sharedMessage.sendLoading).toBe(true);
+    expect(mockAddNewestAnswer).not.toHaveBeenCalled();
+
+    mockAnswer = {
+      answer: '',
+      chatBoxId: secondBody.chatBoxId,
+      session_id: 'new-session',
+    };
+    rerender();
+
+    await waitFor(() =>
+      expect(result.current.sharedMessage.sendLoading).toBe(false),
     );
   });
 });

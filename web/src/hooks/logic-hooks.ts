@@ -342,12 +342,17 @@ export const useSendMessageWithSse = () => {
           signal: controller?.signal || sseRef.current?.signal,
         });
 
-        const res = response.clone().json();
+        const res = response.headers
+          .get('content-type')
+          ?.includes('text/event-stream')
+          ? Promise.resolve(undefined)
+          : response.clone().json();
 
         const reader = response?.body
           ?.pipeThrough(new TextDecoderStream())
           .pipeThrough(new EventSourceParserStream())
           .getReader();
+        let streamError: ResponseType | undefined;
 
         // oxlint-disable-next-line no-constant-condition
         while (true) {
@@ -362,11 +367,15 @@ export const useSendMessageWithSse = () => {
               try {
                 const val = JSON.parse(value?.data || '');
                 const d = val?.data;
+                if (typeof val?.code === 'number' && val.code !== 0) {
+                  streamError = val;
+                }
                 if (typeof d !== 'boolean') {
                   setAnswer((prev) => {
                     return {
                       ...d,
                       answer: mergeAnswerChunk(prev.answer || '', d),
+                      session_id: val?.session_id ?? d?.session_id,
                       conversationId: body?.session_id ?? body?.conversation_id,
                       chatBoxId: body.chatBoxId,
                     };
@@ -384,7 +393,16 @@ export const useSendMessageWithSse = () => {
         }
         setDoneValue(body, true);
         resetAnswer();
-        return { data: await res, response };
+        const successfulStreamResponse: ResponseType = {
+          code: 0,
+          data: undefined,
+          message: 'success',
+          status: response.status,
+        };
+        return {
+          data: (await res) ?? streamError ?? successfulStreamResponse,
+          response,
+        };
       } catch {
         setDoneValue(body, true);
 
