@@ -96,7 +96,7 @@ func TestDeferTransientTaskFailsAtDeliveryLimit(t *testing.T) {
 // single transient DB error must not be accepted as final.
 func TestRetryTerminalWriteRecoversAfterTransientFailure(t *testing.T) {
 	attempts := 0
-	ok := retryTerminalWrite(t.Context(), func() bool {
+	ok := retryTerminalWrite(t.Context(), nil, func() bool {
 		attempts++
 		return attempts == 2
 	}, []time.Duration{time.Millisecond})
@@ -105,14 +105,33 @@ func TestRetryTerminalWriteRecoversAfterTransientFailure(t *testing.T) {
 	}
 }
 
-func TestRetryTerminalWriteGivesUpAfterRetries(t *testing.T) {
+// The delivery limit leaves no later delivery, so the retry keeps going after
+// the delay schedule is exhausted instead of giving up on the task.
+func TestRetryTerminalWriteKeepsRetryingAfterTheSchedule(t *testing.T) {
 	attempts := 0
-	ok := retryTerminalWrite(t.Context(), func() bool {
+	ok := retryTerminalWrite(t.Context(), nil, func() bool {
 		attempts++
-		return false
+		return attempts == 5
 	}, []time.Duration{time.Millisecond, time.Millisecond})
-	if ok || attempts != 3 {
-		t.Fatalf("retryTerminalWrite = %v after %d attempts, want failure after the initial try plus two retries", ok, attempts)
+	if !ok || attempts != 5 {
+		t.Fatalf("retryTerminalWrite = %v after %d attempts, want success on the fifth", ok, attempts)
+	}
+}
+
+// Holding the last delivery means renewing its in-flight deadline; otherwise
+// the broker would take the message back while the write is still retrying.
+func TestRetryTerminalWriteRenewsTheDelivery(t *testing.T) {
+	handle := &fakeTaskHandle{}
+	attempts := 0
+	ok := retryTerminalWrite(t.Context(), handle, func() bool {
+		attempts++
+		return attempts == 3
+	}, []time.Duration{time.Millisecond})
+	if !ok {
+		t.Fatal("expected the write to succeed on the third attempt")
+	}
+	if got := handle.inProgress.Load(); got != 2 {
+		t.Fatalf("InProgress calls = %d, want one per retry", got)
 	}
 }
 
@@ -120,7 +139,7 @@ func TestRetryTerminalWriteStopsOnCancelledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	attempts := 0
-	ok := retryTerminalWrite(ctx, func() bool {
+	ok := retryTerminalWrite(ctx, nil, func() bool {
 		attempts++
 		return false
 	}, []time.Duration{time.Hour})
@@ -152,8 +171,8 @@ func TestDeferTransientTaskUnknownBudgetNacksWithDelay(t *testing.T) {
 	}
 }
 
-// An unwritable terminal state leaves the message in the stream rather than
-// Acking it away after the retries are spent.
+// An unwritable terminal state keeps the message in the stream instead of
+// Acking it away once the worker stops retrying.
 func TestDeferTransientTaskKeepsMessageWhenTerminalWriteNeverLands(t *testing.T) {
 	oldDelays := terminalWriteRetryDelays
 	terminalWriteRetryDelays = nil
@@ -163,13 +182,18 @@ func TestDeferTransientTaskKeepsMessageWhenTerminalWriteNeverLands(t *testing.T)
 
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	handle := &transientTaskHandle{delivered: 16, limit: 16, budgetKnown: true}
-	taskCtx := newTransientTaskCtx(t.Context(), "task-1", "doc-1", handle)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Millisecond)
+	defer cancel()
+	taskCtx := newTransientTaskCtx(ctx, "task-1", "doc-1", handle)
 
-	if handled := ingestor.deferTransientTask(t.Context(), taskCtx, errors.New("Infinity is initing")); !handled {
+	if handled := ingestor.deferTransientTask(ctx, taskCtx, errors.New("Infinity is initing")); !handled {
 		t.Fatal("expected the nack fallback when the FAILED write cannot land")
 	}
 	if handle.nacks.Load() != 1 || handle.acks.Load() != 0 {
 		t.Fatalf("expected 1 Nack / 0 Ack, got nacks=%d acks=%d", handle.nacks.Load(), handle.acks.Load())
+	}
+	if handle.inProgress.Load() == 0 {
+		t.Fatal("expected the delivery to be renewed while the write was retried")
 	}
 }
 
