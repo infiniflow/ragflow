@@ -1,0 +1,120 @@
+{
+  "name": "Standard Compute",
+  "url": {
+    "default": "https://api.stdcmpt.com/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models"
+  },
+  "class": "standardcompute",
+  "models": [
+    {
+      "name": "StandardCompute",
+      "context_length": 1000000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "anthropic/claude-sonnet-5.5",
+      "context_length": 1000000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "anthropic/claude-opus-5.5",
+      "context_length": 1000000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-6.1-sol",
+      "context_length": 1050000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "google/gemini-4-argon",
+      "context_length": 1048576,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4.1-flash",
+      "context_length": 1048576,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4-pro",
+      "context_length": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "z-ai/glm-5.3",
+      "context_length": 1048576,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "moonshotai/kimi-k3.1-pro",
+      "context_length": 1048576,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "qwen/qwen3.8-max-0902",
+      "context_length": 1000000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    }
+  ]
+}
