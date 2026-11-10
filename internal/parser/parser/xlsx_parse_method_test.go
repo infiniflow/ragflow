@@ -28,6 +28,9 @@ func TestNormalizeXLSXParseMethod(t *testing.T) {
 		{"DeepDOC Parser", ""},
 		{"tcadp parser", "tcadp"},
 		{"TCADP Parser", "tcadp"},
+		{"tcadp", "tcadp"},
+		{"TCADP", "tcadp"},
+		{"  tcadp  ", "tcadp"},
 		{"excelize", "excelize"},
 		{"csv", "csv"},
 		{"unknown", "unknown"}, // preserved so the switch rejects it
@@ -192,22 +195,33 @@ func TestCSVParser_DeepDocParseMethod(t *testing.T) {
 	}
 }
 
-// TestXLSParser_DeepDocParseMethod_NoUnsupportedError asserts the XLS
-// parser no longer rejects "deepdoc". A real .xls blob is hard to
-// synthesize in a unit test, so we only assert that the error is not the
-// "unsupported XLS parse method" rejection; an open/parse failure from
-// the fake blob is acceptable. The shared normalization is already
-// covered by TestNormalizeXLSXParseMethod.
-func TestXLSParser_DeepDocParseMethod_NoUnsupportedError(t *testing.T) {
-	p, err := NewXLSParser("")
+// TestXLSParser_ParseMethod_FallsThroughToBIFF8 asserts that every
+// non-TCADP parse_method continues with the local BIFF8 parser and
+// produces spreadsheet output from a valid .xls workbook.
+func TestXLSParser_ParseMethod_FallsThroughToBIFF8(t *testing.T) {
+	data, err := base64.StdEncoding.DecodeString(genuineBIFF8FixtureBase64)
 	if err != nil {
-		t.Fatalf("NewXLSParser: %v", err)
+		t.Fatalf("decode BIFF8 fixture: %v", err)
 	}
-	p.ConfigureFromSetup(map[string]any{"parse_method": "deepdoc"})
+	for _, method := range []string{"", "deepdoc", "DeepDOC", "excelize", "biff", "biff8", "PaddleOCR", "MinerU", "General"} {
+		t.Run(method, func(t *testing.T) {
+			p, err := NewXLSParser("")
+			if err != nil {
+				t.Fatalf("NewXLSParser: %v", err)
+			}
+			p.ConfigureFromSetup(map[string]any{"parse_method": method})
 
-	ctx := t.Context()
-	res := p.ParseWithResult(ctx, "test.xls", []byte("not a real xls"))
-	if res.Err != nil && strings.Contains(res.Err.Error(), "unsupported XLS parse method") {
-		t.Fatalf("deepdoc must not be rejected as unsupported: %v", res.Err)
+			ctx := t.Context()
+			res := p.ParseWithResult(ctx, "test.xls", data)
+			if res.Err != nil {
+				t.Fatalf("method %q: ParseWithResult: %v", method, res.Err)
+			}
+			if got := res.File["format"]; got != "xls" {
+				t.Fatalf("method %q: format = %v, want xls", method, got)
+			}
+			if len(res.JSON) == 0 {
+				t.Fatalf("method %q: JSON is empty, want BIFF8 sheet items", method)
+			}
+		})
 	}
 }
