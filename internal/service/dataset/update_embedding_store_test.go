@@ -253,3 +253,54 @@ func TestRestoreEmbeddingBindingIgnoresRequestCancellation(t *testing.T) {
 		t.Fatalf("tenant_embd_id = %q, want nil", *kb.TenantEmbdID)
 	}
 }
+
+// A client that disconnects after the commit must not leave the dataset on a
+// model whose store was never prepared: the restore runs on a detached
+// context, so the retry sent after the error still takes the change path and
+// repairs the store.
+func TestUpdateDatasetRepairsChunkStoreWhenRequestIsCancelledAfterCommit(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	eng := &recordingChunkStoreEngine{}
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = eng
+
+	requestCtx, cancelRequest := context.WithCancel(t.Context())
+	defer cancelRequest()
+	svc.embeddingDimension = func(context.Context, string, string) (int, error) {
+		// The commit has already happened when the provider probe starts.
+		cancelRequest()
+		return 0, context.Canceled
+	}
+
+	model := "BAAI/bge-m3@Builtin"
+	ctx := withDatasetTestContext(requestCtx, "tenant-1", "tenant-1")
+	if _, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model}); err == nil || code != common.CodeServerError {
+		t.Fatalf("UpdateDataset = (%d, %v), want a server error", code, err)
+	}
+
+	var kb entity.Knowledgebase
+	if err := dao.DB.Where("id = ?", "kb-1").Take(&kb).Error; err != nil {
+		t.Fatalf("reload dataset: %v", err)
+	}
+	if kb.EmbdID != "BAAI/bge-large-zh-v1.5@Builtin" {
+		t.Fatalf("embd_id after a cancelled request = %q, want the previous model", kb.EmbdID)
+	}
+
+	svc.embeddingDimension = func(context.Context, string, string) (int, error) { return 1024, nil }
+	retryCtx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	if _, code, err := svc.UpdateDataset(retryCtx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model}); err != nil || code != common.CodeSuccess {
+		t.Fatalf("retry UpdateDataset = (%d, %v), want success", code, err)
+	}
+	if eng.calls != 1 {
+		t.Fatalf("chunk store calls = %d, want 1 on the retry", eng.calls)
+	}
+	if err := dao.DB.Where("id = ?", "kb-1").Take(&kb).Error; err != nil {
+		t.Fatalf("reload dataset: %v", err)
+	}
+	if kb.EmbdID != model {
+		t.Fatalf("embd_id after retry = %q, want %q", kb.EmbdID, model)
+	}
+}

@@ -29,6 +29,13 @@ const datasetPagerankUpdateTimeout = 30 * time.Second
 // the request context may already be cancelled.
 const restoreEmbeddingBindingTimeout = 10 * time.Second
 
+// The compensating write is the only way back to a model whose store exists,
+// so a transient database failure must not be accepted on the first attempt.
+const (
+	restoreEmbeddingBindingAttempts = 3
+	restoreEmbeddingBindingRetry    = 250 * time.Millisecond
+)
+
 type datasetPagerankUpdate struct {
 	value     int64
 	index     string
@@ -538,7 +545,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 			// change path and repairs the store.
 			if restoreErr := d.restoreEmbeddingBinding(ctx, updatedKB.ID, chunkStoreEmbdID, previousEmbdID, previousTenantEmbdID); restoreErr != nil {
 				return nil, common.CodeServerError, fmt.Errorf(
-					"dataset settings were saved, but the chunk store preparation failed and the embedding binding could not be restored: %w",
+					"dataset settings were saved, but the chunk store preparation failed and the embedding binding could not be restored; select the embedding model again to repair the store: %w",
 					errors.Join(err, restoreErr))
 			}
 			return nil, common.CodeServerError, fmt.Errorf(
@@ -704,13 +711,24 @@ func (d *DatasetService) restoreEmbeddingBinding(ctx context.Context, datasetID,
 	// this write is what lets the retry repair the store.
 	restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), restoreEmbeddingBindingTimeout)
 	defer cancel()
-	err := dao.DB.WithContext(restoreCtx).Model(&entity.Knowledgebase{}).
-		Where("id = ? AND embd_id = ?", datasetID, preparedEmbdID).
-		Updates(updates).Error
-	if err != nil {
-		common.Warn("failed to restore the embedding binding after chunk store preparation failed",
-			zap.String("dataset_id", datasetID), zap.Error(err))
+	var err error
+	for attempt := 0; attempt < restoreEmbeddingBindingAttempts; attempt++ {
+		if attempt > 0 {
+			select {
+			case <-restoreCtx.Done():
+				return errors.Join(err, restoreCtx.Err())
+			case <-time.After(restoreEmbeddingBindingRetry):
+			}
+		}
+		err = dao.DB.WithContext(restoreCtx).Model(&entity.Knowledgebase{}).
+			Where("id = ? AND embd_id = ?", datasetID, preparedEmbdID).
+			Updates(updates).Error
+		if err == nil {
+			return nil
+		}
 	}
+	common.Warn("failed to restore the embedding binding after chunk store preparation failed",
+		zap.String("dataset_id", datasetID), zap.Error(err))
 	return err
 }
 
