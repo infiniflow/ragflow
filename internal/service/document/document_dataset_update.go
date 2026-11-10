@@ -55,7 +55,8 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, dataset
 			continue
 		}
 		if err := service.CheckDocumentAccess(ctx, doc.ID, datasetID, permission.OperationUpdate); err != nil {
-			result[docID] = map[string]string{"error": "Permission denied"}
+			_, normalizedErr := permissionresponse.Normalize(err)
+			result[docID] = map[string]string{"error": normalizedErr.Error()}
 			if permissionresponse.IsPermissionError(err) {
 				permissionDenied = err
 			} else {
@@ -72,7 +73,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, dataset
 				code, normalizedErr := permissionresponse.Normalize(permissionDenied)
 				return result, code, normalizedErr
 			}
-			return result, common.CodeServerError, fmt.Errorf("partial failure")
+			return result, common.CodeServerError, fmt.Errorf("partial failure: %v", result)
 		}
 		return result, common.CodeSuccess, nil
 	}
@@ -100,7 +101,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, dataset
 			previousStatus = *doc.Status
 		}
 		if err = s.documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{"status": status}); err != nil {
-			result[docID] = map[string]string{"error": "Database error (Document update)!"}
+			result[docID] = map[string]string{"error": "Database error (Document update): " + err.Error()}
 			hasError = true
 			continue
 		}
@@ -134,7 +135,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, dataset
 	}
 
 	if hasError {
-		return result, common.CodeServerError, fmt.Errorf("partial failure")
+		return result, common.CodeServerError, fmt.Errorf("partial failure: %v", result)
 	}
 	return result, common.CodeSuccess, nil
 }
@@ -379,7 +380,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, 
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, fmt.Errorf("can not get document by id:%s", doc.ID)
 		}
-		return nil, common.CodeDataError, errors.New("database operation failed")
+		return nil, common.CodeDataError, fmt.Errorf("database operation failed: %w", err)
 	}
 
 	metaFields := map[string]interface{}{}
@@ -566,7 +567,7 @@ func validateMetaFields(meta map[string]any) error {
 // fields with the dataset language, the way ingestion tokenized them.
 func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, newName string) error {
 	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"name": newName}); err != nil {
-		return errors.New("database error (Document rename)")
+		return fmt.Errorf("database error (Document rename): %w", err)
 	}
 
 	mappings, err := s.file2DocumentDAO.GetByDocumentID(ctx, dao.DB, doc.ID)

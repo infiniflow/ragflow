@@ -600,18 +600,17 @@ func (h *AgentHandler) runWebhookDetachedWithContext(
 		terminal := isWebhookTerminalEvent(ev)
 		if terminal {
 			if isTest {
-				event := sanitizeWebhookTraceEvent(ev)
 				if ctx.Err() != nil {
-					h.appendWebhookInterruptedTrace(ctx, cv.ID, startTs, sessionID, event)
+					h.appendWebhookInterruptedTrace(ctx, cv.ID, startTs, sessionID, ev)
 				} else {
-					h.appendWebhookRunTrace(ctx, cv.ID, startTs, event)
+					h.appendWebhookRunTrace(ctx, cv.ID, startTs, ev)
 					h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, false)
 				}
 			}
 			return
 		}
 		if isTest {
-			h.appendWebhookRunTrace(ctx, cv.ID, startTs, sanitizeWebhookTraceEvent(ev))
+			h.appendWebhookRunTrace(ctx, cv.ID, startTs, ev)
 		}
 	}
 	if err = ctx.Err(); err != nil {
@@ -668,11 +667,10 @@ func (h *AgentHandler) runWebhookSync(
 		}
 		if result, terminal := webhookTerminalResult(ev, sessionID); terminal {
 			if isTest {
-				event := sanitizeWebhookTraceEvent(ev)
 				if ctx.Err() != nil {
-					h.appendWebhookInterruptedTrace(ctx, cv.ID, startTs, sessionID, event)
+					h.appendWebhookInterruptedTrace(ctx, cv.ID, startTs, sessionID, ev)
 				} else {
-					h.appendWebhookRunTrace(ctx, cv.ID, startTs, event)
+					h.appendWebhookRunTrace(ctx, cv.ID, startTs, ev)
 					h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, false)
 				}
 			}
@@ -809,19 +807,6 @@ func webhookContextTerminalEvent(err error, sessionID string) canvas.RunEvent {
 		SessionID: sessionID,
 		Data:      mustJSON(canvas.ErrorEvent{Message: message}),
 	}
-}
-
-func sanitizeWebhookTraceEvent(ev canvas.RunEvent) canvas.RunEvent {
-	if ev.Type != "error" {
-		return ev
-	}
-	var payload canvas.ErrorEvent
-	if err := json.Unmarshal([]byte(ev.Data), &payload); err != nil || payload.Kind != canvas.RunErrorKindInternal {
-		return ev
-	}
-	payload.Message = canvas.InternalRunErrorMessage
-	ev.Data = mustJSON(payload)
-	return ev
 }
 
 func (h *AgentHandler) appendWebhookRunTrace(

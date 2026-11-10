@@ -243,14 +243,12 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 // Three classes:
 //   - service.ErrAgentNotOwner  -> "Only the owner..."        (DELETE only, 103)
 //   - dao.ErrUserCanvasNotFound -> "Make sure you have permission..."  (103)
-//   - service.ErrAgentStorageError -> "Internal storage error"  (500)
+//   - service.ErrAgentStorageError -> underlying storage error (500)
 //
 // The first two surface as OPERATING_ERROR(103) so the front-end
 // cannot use the response code to enumerate other users' canvases
 // (IDOR mitigation). ErrAgentStorageError maps to SERVER_ERROR(500)
-// with a sanitized message — the raw DAO / DB error string MUST
-// NOT reach the client (DSNs, table names, gorm stack frames would
-// otherwise leak). Everything else becomes CodeDataError so the
+// with the underlying error. Everything else becomes CodeDataError so the
 // front-end can surface the message verbatim.
 func mapAgentError(err error) (common.ErrorCode, string) {
 	if err == nil {
@@ -264,7 +262,7 @@ func mapAgentError(err error) (common.ErrorCode, string) {
 		return common.CodeOperatingError, "Make sure you have permission to access the agent."
 	}
 	if errors.Is(err, service.ErrAgentStorageError) {
-		return common.CodeServerError, "Internal storage error while accessing the agent."
+		return common.CodeServerError, err.Error()
 	}
 	return common.CodeDataError, err.Error()
 }

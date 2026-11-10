@@ -61,7 +61,7 @@ func (h *DatasetArtifactHandler) datasetOwner(c *gin.Context, datasetID string) 
 		if dao.IsNotFoundErr(err) {
 			common.RespondError(c, common.CodeNotFound, "dataset not found")
 		} else {
-			common.RespondError(c, common.CodeServerError, "failed to resolve dataset")
+			common.RespondError(c, common.CodeServerError, "failed to resolve dataset: "+err.Error())
 		}
 		return nil, "", ""
 	}

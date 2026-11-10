@@ -851,7 +851,7 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 	extra["base_url"] = baseURL
 	extraByte, err := json.Marshal(extra)
 	if err != nil {
-		return common.CodeServerError, errors.New("fail to marshal extra")
+		return common.CodeServerError, fmt.Errorf("fail to marshal extra: %w", err)
 	}
 	extraStr := string(extraByte)
 
@@ -3082,7 +3082,7 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 
 	extraBytes, err := json.Marshal(extraFields)
 	if err != nil {
-		return common.CodeServerError, errors.New("fail to marshal extra")
+		return common.CodeServerError, fmt.Errorf("fail to marshal extra: %w", err)
 	}
 
 	modelID := common.GenerateToken()

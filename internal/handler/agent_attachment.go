@@ -91,7 +91,7 @@ func (h *AgentHandler) streamAgentAttachment(c *gin.Context, attachmentID string
 			common.RespondError(c, common.CodeUnauthorized, err.Error())
 			return
 		}
-		common.RespondError(c, common.CodeDataError, "Attachment not found!")
+		common.RespondError(c, common.CodeDataError, "Attachment not found: "+err.Error())
 		return
 	}
 

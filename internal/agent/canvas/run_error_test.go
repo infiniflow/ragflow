@@ -25,8 +25,8 @@ import (
 	"ragflow/internal/agent/runtime"
 )
 
-func TestRunnerRedactsInternalRunError(t *testing.T) {
-	cause := errors.New("dial mysql.internal:3306 password=secret")
+func TestRunnerReturnsInternalRunError(t *testing.T) {
+	cause := errors.New("dial mysql: connection refused")
 	runErr := NewInternalRunError(fmt.Errorf("persist session: %w", cause))
 	if !errors.Is(runErr, cause) {
 		t.Fatal("NewInternalRunError must preserve the original cause")
@@ -51,11 +51,8 @@ func TestRunnerRedactsInternalRunError(t *testing.T) {
 	if payload.Kind != RunErrorKindInternal {
 		t.Errorf("error kind = %q, want %q", payload.Kind, RunErrorKindInternal)
 	}
-	if payload.Message != InternalRunErrorMessage {
-		t.Errorf("error message = %q, want %q", payload.Message, InternalRunErrorMessage)
-	}
-	if strings.Contains(ev.Data, "mysql.internal") || strings.Contains(ev.Data, "password=secret") {
-		t.Fatalf("error event leaked its internal cause: %s", ev.Data)
+	if payload.Message != runErr.Error() {
+		t.Errorf("error message = %q, want %q", payload.Message, runErr.Error())
 	}
 	if _, open := <-events; open {
 		t.Fatal("runner should close after the terminal error event")

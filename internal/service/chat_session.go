@@ -260,12 +260,12 @@ func (s *ChatSessionService) CreateSession(ctx context.Context, chatID string, r
 	}
 
 	if err = s.chatSessionDAO.Create(ctx, dao.DB, conv); err != nil {
-		return nil, common.CodeDataError, errors.New("fail to create a session")
+		return nil, common.CodeDataError, fmt.Errorf("fail to create a session: %w", err)
 	}
 
 	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, conv.ID, sessionHistoryOptions())
 	if err != nil {
-		return nil, common.CodeDataError, errors.New("fail to create a session")
+		return nil, common.CodeDataError, fmt.Errorf("fail to create a session: %w", err)
 	}
 	return s.buildSessionPayload(session, nil, false), common.CodeSuccess, nil
 }

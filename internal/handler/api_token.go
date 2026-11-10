@@ -40,7 +40,7 @@ func (h *SystemHandler) ListAPIKeys(c *gin.Context) {
 	// Get keys for the tenant
 	keys, err := h.systemService.ListAPIKeys(ctx)
 	if err != nil {
-		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to list keys")
+		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to list keys: "+err.Error())
 		return
 	}
 
@@ -59,14 +59,14 @@ func (h *SystemHandler) CreateKey(c *gin.Context) {
 	// ShouldBind reports io.EOF for it.
 	var req service.CreateAPIKeyRequest
 	if err = c.ShouldBind(&req); err != nil && !errors.Is(err, io.EOF) {
-		common.Respond(c, http.StatusBadRequest, 400, nil, "Invalid request")
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Invalid request: "+err.Error())
 		return
 	}
 
 	// Create key
 	key, err := h.systemService.CreateAPIKey(ctx, &req)
 	if err != nil {
-		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to create key")
+		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to create key: "+err.Error())
 		return
 	}
 
@@ -90,7 +90,7 @@ func (h *SystemHandler) DeleteKey(c *gin.Context) {
 
 	// Delete key
 	if err = h.systemService.DeleteAPIKey(ctx, key); err != nil {
-		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to delete key")
+		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to delete key: "+err.Error())
 		return
 	}
 

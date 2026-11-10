@@ -278,7 +278,7 @@ func TestSearchbotDetailRejectsUnauthorizedSearchAccess(t *testing.T) {
 	}
 }
 
-func TestSearchbotDetailDoesNotExposeInternalErrorText(t *testing.T) {
+func TestSearchbotDetailReturnsInternalErrorText(t *testing.T) {
 	setupSearchbotDetailHandlerDB(t)
 
 	status := "1"
@@ -335,8 +335,8 @@ func TestSearchbotDetailDoesNotExposeInternalErrorText(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	body := w.Body.String()
-	if strings.Contains(body, "no such table") {
-		t.Fatalf("response leaked internal error text: %s", body)
+	if !strings.Contains(body, "no such table") {
+		t.Fatalf("response missing underlying database error: %s", body)
 	}
 
 	var resp map[string]interface{}

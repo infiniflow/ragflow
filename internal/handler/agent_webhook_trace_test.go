@@ -464,23 +464,23 @@ func TestGetAgentWebhookLogsStopsAfterExpiry(t *testing.T) {
 	}
 }
 
-// TestGetAgentWebhookLogsRedactsRedisFailures covers corrupt data and backend errors.
-func TestGetAgentWebhookLogsRedactsRedisFailures(t *testing.T) {
+// TestGetAgentWebhookLogsReturnsRedisFailures covers corrupt data and backend errors.
+func TestGetAgentWebhookLogsReturnsRedisFailures(t *testing.T) {
 	h, rdb := newWebhookTraceTestHandler(t)
 	if err := rdb.Set(t.Context(), "webhook-trace-c1-logs", `{"webhooks":`, 0).Err(); err != nil {
 		t.Fatalf("seed corrupt trace: %v", err)
 	}
 
 	corrupt := requestWebhookTrace(t, h, "c1", "u1", url.Values{"since_ts": {"0"}})
-	if corrupt.Code != int(common.CodeServerError) || corrupt.Message != common.CodeServerError.Message() {
+	if corrupt.Code != int(common.CodeServerError) || !strings.Contains(corrupt.Message, "unexpected end of JSON input") {
 		t.Fatalf("corrupt response = %+v", corrupt)
 	}
 
 	h.WithRedisGetter(func(string) (string, error) {
-		return "", errors.New("redis password=secret")
+		return "", errors.New("redis: connection refused")
 	})
 	failed := requestWebhookTrace(t, h, "c1", "u1", url.Values{"since_ts": {"0"}})
-	if failed.Code != int(common.CodeServerError) || strings.Contains(failed.Message, "password=secret") {
+	if failed.Code != int(common.CodeServerError) || !strings.Contains(failed.Message, "redis: connection refused") {
 		t.Fatalf("redis failure response = %+v", failed)
 	}
 }

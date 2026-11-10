@@ -358,14 +358,18 @@ func parseJSONRequestObject(c *gin.Context) ([]byte, map[string]interface{}, err
 	}
 
 	body, err := c.GetRawData()
-	if err != nil || len(body) == 0 {
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, "Failed to read request body: "+err.Error())
+		return nil, nil, err
+	}
+	if len(body) == 0 {
 		common.RespondError(c, common.CodeArgumentError, "Malformed JSON syntax: Missing commas/brackets or invalid encoding")
 		return nil, nil, fmt.Errorf("malformed JSON syntax: Missing commas/brackets or invalid encoding")
 	}
 
 	var payload interface{}
 	if err = json.Unmarshal(body, &payload); err != nil {
-		common.RespondError(c, common.CodeArgumentError, "Malformed JSON syntax: Missing commas/brackets or invalid encoding")
+		common.RespondError(c, common.CodeArgumentError, "Malformed JSON syntax: "+err.Error())
 		return nil, nil, err
 	}
 	raw, isObject := payload.(map[string]interface{})

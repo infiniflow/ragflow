@@ -587,7 +587,6 @@ func addChunkStringListField(rawBody map[string]json.RawMessage, field, listMess
 func addChunkResponseMessage(code common.ErrorCode, err error) string {
 	if code == common.CodeServerError {
 		common.Warn("add chunk failed", zap.String("error", err.Error()))
-		return "Failed to add chunk"
 	}
 	return err.Error()
 }

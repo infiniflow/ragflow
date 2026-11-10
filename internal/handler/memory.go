@@ -429,7 +429,7 @@ func (h *MemoryHandler) GetMemoryMessages(c *gin.Context) {
 			common.RespondError(c, common.CodeNotFound, err.Error())
 			return
 		}
-		common.RespondError(c, common.CodeServerError, "Internal server error")
+		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
 
@@ -484,7 +484,7 @@ func (h *MemoryHandler) AddMessage(c *gin.Context) {
 
 	var reqBody AddMessageRequest
 	if err := c.ShouldBindJSON(&reqBody); err != nil {
-		common.RespondError(c, common.CodeArgumentError, "body arguments is required")
+		common.RespondError(c, common.CodeArgumentError, "body arguments is required: "+err.Error())
 		return
 	}
 	if len(reqBody.MemoryIDs) == 0 {

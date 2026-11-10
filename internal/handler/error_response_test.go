@@ -21,7 +21,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -29,14 +28,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestJSONInternalErrorRedactsRawError(t *testing.T) {
+func TestJSONInternalErrorReturnsOriginalError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/files?tenant_id=secret-tenant", nil)
 
-	jsonInternalError(c, errors.New("postgres password=secret host=10.0.0.1 table=tenant"))
+	cause := errors.New("postgres: connection refused")
+	jsonInternalError(c, cause)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status=%d, want %d", recorder.Code, http.StatusOK)
@@ -47,13 +47,10 @@ func TestJSONInternalErrorRedactsRawError(t *testing.T) {
 		t.Fatalf("decode response body: %v", err)
 	}
 
-	if got := body["message"]; got != common.CodeServerError.Message() {
-		t.Fatalf("message=%v, want %q", got, common.CodeServerError.Message())
+	if got := body["message"]; got != cause.Error() {
+		t.Fatalf("message=%v, want %q", got, cause.Error())
 	}
 	if got := body["code"]; got != float64(common.CodeServerError) {
 		t.Fatalf("code=%v, want %d", got, common.CodeServerError)
-	}
-	if strings.Contains(recorder.Body.String(), "password=secret") || strings.Contains(recorder.Body.String(), "10.0.0.1") {
-		t.Fatalf("response leaked raw error details: %s", recorder.Body.String())
 	}
 }

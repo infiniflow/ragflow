@@ -752,15 +752,8 @@ var _ = func() bool {
 // (api/apps/restful_apis/agent_api.py:74-100). ErrAgentNotOwner is the
 // owner-level sentinel used by DeleteAgent only.
 //
-// v3.5.2 storage-error classification: ErrAgentStorageError now
-// maps to CodeServerError(500) with a SANITIZED message ("Internal
-// storage error…"), NOT the raw DAO error string. Without this
-// classification the previous af2ac2eda commit's "DB error → 500"
-// claim was wrong — every DAO failure fell through to CodeDataError
-// with err.Error(), potentially leaking DSNs / table names / gorm
-// stack frames. The wrapped case below also pins that errors.Is
-// finds the sentinel through fmt.Errorf("...: %w: %w", err, sentinel)
-// (Go 1.20+ multi-wrap).
+// Storage failures map to CodeServerError (500) and preserve their cause,
+// including when the classification sentinel is wrapped with another error.
 func TestMapAgentError(t *testing.T) {
 	wrappedStorage := fmt.Errorf("RunAgent: load version %q: underlying db: %w: %w",
 		"v-bad", errors.New("connection refused"), service.ErrAgentStorageError)
@@ -769,15 +762,14 @@ func TestMapAgentError(t *testing.T) {
 		err        error
 		want       common.ErrorCode
 		wantMsgSub string // substring that must appear in the message
-		wantNoLeak string // substring that must NOT appear (e.g. raw DAO text)
 	}{
-		{"nil", nil, common.CodeSuccess, "", ""},
-		{"user_canvas_not_found", dao.ErrUserCanvasNotFound, common.CodeOperatingError, "permission", ""},
-		{"user_canvas_version_not_found", dao.ErrUserCanvasVersionNotFound, common.CodeOperatingError, "permission", ""},
-		{"agent_not_owner", service.ErrAgentNotOwner, common.CodeOperatingError, "owner", ""},
-		{"agent_storage_error", service.ErrAgentStorageError, common.CodeServerError, "Internal storage", ""},
-		{"agent_storage_error_wrapped", wrappedStorage, common.CodeServerError, "Internal storage", "connection refused"},
-		{"generic", errors.New("boom"), common.CodeDataError, "boom", ""},
+		{"nil", nil, common.CodeSuccess, ""},
+		{"user_canvas_not_found", dao.ErrUserCanvasNotFound, common.CodeOperatingError, "permission"},
+		{"user_canvas_version_not_found", dao.ErrUserCanvasVersionNotFound, common.CodeOperatingError, "permission"},
+		{"agent_not_owner", service.ErrAgentNotOwner, common.CodeOperatingError, "owner"},
+		{"agent_storage_error", service.ErrAgentStorageError, common.CodeServerError, "agent storage error"},
+		{"agent_storage_error_wrapped", wrappedStorage, common.CodeServerError, wrappedStorage.Error()},
+		{"generic", errors.New("boom"), common.CodeDataError, "boom"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -796,10 +788,6 @@ func TestMapAgentError(t *testing.T) {
 			}
 			if tc.wantMsgSub != "" && !strings.Contains(msg, tc.wantMsgSub) {
 				t.Errorf("mapAgentError(%v) = msg %q, want substring %q", tc.err, msg, tc.wantMsgSub)
-			}
-			if tc.wantNoLeak != "" && strings.Contains(msg, tc.wantNoLeak) {
-				t.Errorf("mapAgentError(%v) = msg %q, LEAKS raw DAO substring %q",
-					tc.err, msg, tc.wantNoLeak)
 			}
 		})
 	}
@@ -1446,7 +1434,7 @@ func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsRunnerError(t *testin
 	}
 }
 
-func TestAgentChatCompletions_OpenAICompat_NonStreamRedactsInternalRunnerError(t *testing.T) {
+func TestAgentChatCompletions_OpenAICompat_NonStreamReturnsInternalRunnerError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -1458,7 +1446,7 @@ func TestAgentChatCompletions_OpenAICompat_NonStreamRedactsInternalRunnerError(t
 
 	runner := &stubChatRunner{events: []canvas.RunEvent{{
 		Type: "error",
-		Data: `{"message":"dial mysql.internal:3306 password=secret","kind":"internal"}`,
+		Data: `{"message":"dial mysql: connection refused","kind":"internal"}`,
 	}}}
 	h := &AgentHandler{chatRunner: runner}
 	h.AgentChatCompletions(c)
@@ -1478,11 +1466,8 @@ func TestAgentChatCompletions_OpenAICompat_NonStreamRedactsInternalRunnerError(t
 	if response.Error.Type != "server_error" {
 		t.Errorf("error.type = %q, want server_error", response.Error.Type)
 	}
-	if response.Error.Message != canvas.InternalRunErrorMessage {
-		t.Errorf("error.message = %q, want %q", response.Error.Message, canvas.InternalRunErrorMessage)
-	}
-	if strings.Contains(w.Body.String(), "mysql.internal") || strings.Contains(w.Body.String(), "password=secret") {
-		t.Fatalf("response leaked internal error details: %s", w.Body.String())
+	if response.Error.Message != "dial mysql: connection refused" {
+		t.Errorf("error.message = %q, want original error", response.Error.Message)
 	}
 }
 
@@ -1737,7 +1722,7 @@ func TestAgentChatCompletions_OpenAICompat_StreamSurfacesRunnerError(t *testing.
 	}
 }
 
-func TestAgentChatCompletions_OpenAICompat_StreamRedactsInternalRunnerError(t *testing.T) {
+func TestAgentChatCompletions_OpenAICompat_StreamReturnsInternalRunnerError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -1749,7 +1734,7 @@ func TestAgentChatCompletions_OpenAICompat_StreamRedactsInternalRunnerError(t *t
 
 	runner := &stubChatRunner{events: []canvas.RunEvent{{
 		Type: "error",
-		Data: `{"message":"dial mysql.internal:3306 password=secret","kind":"internal"}`,
+		Data: `{"message":"dial mysql: connection refused","kind":"internal"}`,
 	}}}
 	h := &AgentHandler{chatRunner: runner}
 	h.AgentChatCompletions(c)
@@ -1766,15 +1751,12 @@ func TestAgentChatCompletions_OpenAICompat_StreamRedactsInternalRunnerError(t *t
 		t.Errorf("finish_reason = %v, want error", choice["finish_reason"])
 	}
 	delta := choice["delta"].(map[string]interface{})
-	if delta["content"] != "**ERROR**: "+canvas.InternalRunErrorMessage {
-		t.Errorf("error content = %v, want redacted error", delta["content"])
+	if delta["content"] != "**ERROR**: dial mysql: connection refused" {
+		t.Errorf("error content = %v, want original error", delta["content"])
 	}
 	errorPayload := delta["error"].(map[string]interface{})
-	if errorPayload["message"] != canvas.InternalRunErrorMessage {
-		t.Errorf("error payload = %v, want redacted message", errorPayload)
-	}
-	if strings.Contains(w.Body.String(), "mysql.internal") || strings.Contains(w.Body.String(), "password=secret") {
-		t.Fatalf("stream leaked internal error details: %s", w.Body.String())
+	if errorPayload["message"] != "dial mysql: connection refused" {
+		t.Errorf("error payload = %v, want original error", errorPayload)
 	}
 }
 
