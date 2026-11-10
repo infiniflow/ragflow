@@ -270,3 +270,38 @@ func TestUpdateDatasetRepairsChunkStoreWhenRequestIsCancelledDuringPreparation(t
 		t.Fatalf("embd_id after retry = %q, want %q", kb.EmbdID, model)
 	}
 }
+
+// The engine fixes the fulltext analyzer when it creates the store, so a model
+// switch that also changes the language must prepare with the language the same
+// update persists, not the one it replaces.
+func TestUpdateDatasetPreparesChunkStoreWithUpdatedLanguage(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	eng := &recordingChunkStoreEngine{}
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = eng
+	svc.embeddingDimension = func(context.Context, string, string) (int, error) { return 1024, nil }
+
+	model := "BAAI/bge-m3@Builtin"
+	language := "Chinese"
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	if _, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model, Language: &language}); err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset = (%d, %v), want success", code, err)
+	}
+	if eng.calls != 1 {
+		t.Fatalf("chunk store calls = %d, want 1", eng.calls)
+	}
+	if eng.language != language {
+		t.Fatalf("chunk store language = %q, want %q", eng.language, language)
+	}
+
+	var kb entity.Knowledgebase
+	if err := dao.DB.Where("id = ?", "kb-1").Take(&kb).Error; err != nil {
+		t.Fatalf("reload dataset: %v", err)
+	}
+	if kb.Language == nil || *kb.Language != language {
+		t.Fatalf("persisted language = %v, want %q", kb.Language, language)
+	}
+}
