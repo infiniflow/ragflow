@@ -30,6 +30,14 @@ func (r *recordingEmitter) last() common.IngestionLog {
 	return r.events[len(r.events)-1]
 }
 
+// count returns the number of recorded events under the lock, so assertions do
+// not read the slice directly.
+func (r *recordingEmitter) count() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.events)
+}
+
 // TestEmitLifecycleEventForwardsToEmitter verifies the service builds an
 // observability event from the task and forwards it to the configured emitter.
 func TestEmitLifecycleEventForwardsToEmitter(t *testing.T) {

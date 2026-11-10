@@ -50,7 +50,7 @@ func TestIngestionLogJSONContract(t *testing.T) {
 	}
 
 	// Optional fields must be omitted when empty (omitempty contract).
-	for _, key := range []string{"user_name", "tenant_name", "error_info", "operation"} {
+	for _, key := range []string{"user_name", "tenant_name", "error_info", "operation", "worker"} {
 		if _, ok := m[key]; ok {
 			t.Errorf("expected optional key %q omitted when empty, got %s", key, string(b))
 		}
@@ -64,6 +64,7 @@ func TestIngestionLogOptionalFieldsEmitted(t *testing.T) {
 		TaskID:     "task1",
 		UserName:   "alice",
 		TenantName: "acme",
+		Worker:     "worker-3",
 		ErrorInfo:  "boom",
 		Operation:  map[string]any{"step": "parse"},
 	}
@@ -75,7 +76,7 @@ func TestIngestionLogOptionalFieldsEmitted(t *testing.T) {
 	if err := json.Unmarshal(b, &m); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	for _, key := range []string{"user_name", "tenant_name", "error_info", "operation"} {
+	for _, key := range []string{"user_name", "tenant_name", "worker", "error_info", "operation"} {
 		if _, ok := m[key]; !ok {
 			t.Errorf("expected optional key %q emitted, got %s", key, string(b))
 		}
