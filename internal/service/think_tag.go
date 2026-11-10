@@ -371,31 +371,35 @@ func StreamThinkTagDelta(ctx context.Context, chunks <-chan string, minTokens in
 }
 
 // ExtractVisibleAnswer returns the visible answer text after the last </think>.
-// Stray <think>/</think> tags are stripped. If there is no </think>, all tags are stripped.
+// A trailing <think> without a matching </think> means the model was cut off
+// mid-reasoning: everything from that marker on is reasoning, not answer.
+// Stray <think>/</think> tags are stripped.
 func ExtractVisibleAnswer(raw string) string {
 	if raw == "" {
 		return ""
 	}
+	if open := strings.LastIndex(raw, thinkOpen); open > strings.LastIndex(raw, thinkClose) {
+		raw = raw[:open]
+	}
 	// Cut through the last </think> (common.StripThinkTrailing), then strip
-	// residual stray tags. With no </think> the cut is a no-op and all tags
-	// are stripped — same behaviour as before.
+	// residual stray tags.
 	return stripThinkTags(common.StripThinkTrailing(raw))
 }
 
 // ExtractReasoning returns the thinking text of the last <think> block. The
 // native pipeline keeps reasoning inside the answer between the markers while
-// the OpenAI protocol carries it in a separate field, so the non-streaming
-// encoder needs this split.
+// the OpenAI protocol carries it in a separate field. An unclosed last block
+// still counts as reasoning: a truncated stream must not surface it as answer.
 func ExtractReasoning(raw string) string {
 	if raw == "" {
 		return ""
 	}
 	end := strings.LastIndex(raw, thinkClose)
-	if end < 0 {
-		return ""
+	start := strings.LastIndex(raw, thinkOpen)
+	if start > end {
+		return strings.TrimSpace(stripThinkTags(raw[start+len(thinkOpen):]))
 	}
-	start := strings.LastIndex(raw[:end], thinkOpen)
-	if start < 0 {
+	if end < 0 || start < 0 {
 		return ""
 	}
 	return strings.TrimSpace(stripThinkTags(raw[start+len(thinkOpen) : end]))
