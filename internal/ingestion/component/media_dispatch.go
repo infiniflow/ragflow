@@ -242,7 +242,7 @@ func decodeDispatchImage(data []byte, decodeRaster bool) (image.Image, error) {
 	if config.Width <= 0 || config.Height <= 0 {
 		return nil, fmt.Errorf("parser: image has invalid dimensions %dx%d", config.Width, config.Height)
 	}
-	// Length/width are unbounded (mirrors Python's picture.py); the decoded
+	// Length/width are unbounded (mirrors ); the decoded
 	// raster byte ceiling is opt-in via RAGFLOW_IMAGE_RASTER_MAX_BYTES (0 =
 	// unlimited).
 	if err := parser.CheckImageRasterLimit(config.Width, config.Height); err != nil {
@@ -370,7 +370,7 @@ func describeImage(
 
 	prompt := defaultImageVisionPrompt(lang)
 	// The global enhancement prompt wins; the image family's legacy system_prompt
-	// (the key the Python parser's image branch used) stays readable for canvases
+	// (the key the parser's image branch used) stays readable for canvases
 	// saved before the move. Do NOT read setup["prompt"] here — that key is for
 	// the video family, not image.
 	if v := common.FirstNonEmpty(vision.systemPrompt, getStringOr(setup, "system_prompt", "")); v != "" {
@@ -400,7 +400,7 @@ func describeImage(
 }
 
 // Audio dispatch: SPEECH2TEXT transcription ---
-// Mirrors Python's rag/app/audio.py:chunk():
+// Mirrors chunk()
 //   - Writes the audio binary to a temp file (extension-preserving)
 //   - Calls the tenant's SPEECH2TEXT model via TranscribeAudio()
 //   - Returns the transcription as text

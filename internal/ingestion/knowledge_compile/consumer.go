@@ -950,7 +950,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	}
 
 	// Then dedup each candidate against the DocEngine via KNN top1 + LLM judge,
-	// mirroring Python _struct_doc_storage_dedup_batch. Candidates that KNN-hit
+	// mirroring _struct_doc_storage_dedup_batch. Candidates that KNN-hit
 	// the same existing merged row are grouped so the row is merged/updated once
 	// instead of being rewritten per candidate.
 	type mergeGroup struct {
@@ -1617,7 +1617,7 @@ func structureEntityNavLine(payloadJSON string) string {
 // mergeStructureDataset performs the dataset-level structure merge (G1/G4): it
 // groups the structure products of a batch by name, folds their
 // descriptions and source doc/chunk sets into one StructureBucket per group, and
-// writes scope_kwd="dataset" rows via WriteMergedStructure. This mirrors Python
+// writes scope_kwd="dataset" rows via WriteMergedStructure. This mirrors
 // dataset_structure_merger._merge_bucket but is a self-contained from-scratch
 // path (B3: the legacy unified merge never aggregated structure by name).
 func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string, products []kccommon.Product) error {
@@ -1634,10 +1634,10 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 	type rkey struct{ template, from, typ, to, ckwd string }
 	entByKey := make(map[ekey]*StructureBucket, 16)
 	relByKey := make(map[rkey]*StructureBucket, 16)
-	// The authoritative Python (dataset_structure_merger._do_build) merges EVERY
+	// The authoritative (dataset_structure_merger._do_build) merges EVERY
 	// structure-kind doc row unconditionally — dataset scope is driven by the
 	// task type (structure_graph/timeline/structure_mindmap), NOT by a template
-	// Config["dataset_merge"] flag (that was a stale runner.py concept). So
+	// Config["dataset_merge"] flag (that was a stale concept). So
 	// structure/mindmap entity/relation products always enter the dataset merge.
 	for _, p := range products {
 		if p.Variant != kccommon.VariantStructure && p.Variant != kccommon.VariantMindmap {
@@ -1766,12 +1766,12 @@ func appendBucket(b *StructureBucket, p kccommon.Product) {
 	// The product's Content is the doc row's full content_with_weight JSON
 	// (e.g. {"category":"Person","description":"…","name":"…","type":"entity"}),
 	// NOT the plain-text description. Extract the "description" field so the
-	// dataset row's description stays a plain-text string (mirror Python
+	// dataset row's description stays a plain-text string (mirror
 	// _struct_merge_graph_entities, which folds the entity description, not the
 	// whole payload). Fall back to Content only when it is not a JSON object.
 	desc := structureProductDescription(p.Content)
 	if desc == "" {
-		// Match Python's dataset merger fallback: mindmap entities only carry
+		// Match dataset merger fallback: mindmap entities only carry
 		// name/type, while their dataset row still needs searchable text.
 		// Relations likewise use the endpoint names and relation type when the
 		// source payload has no description.
@@ -1798,7 +1798,7 @@ func appendBucket(b *StructureBucket, p kccommon.Product) {
 	}
 	b.SourceDocIDs = common.AppendUnique(b.SourceDocIDs, []string{p.DocID})
 	b.SourceChunkIDs = common.AppendUnique(b.SourceChunkIDs, kccommon.MetaStringSlice(p.Meta, "source_chunk_ids"))
-	// mention_count_int: sum the per-entity mention counts (Python
+	// mention_count_int: sum the per-entity mention counts (
 	// _struct_merge_graph_entities sums mention_count across the merged entities).
 	// Each entity product carries mention_count ≥ 1 (structure compile.go L231);
 	// mindmap entities carry none, so they contribute a default of 0 and are
