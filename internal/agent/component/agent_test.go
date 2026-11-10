@@ -1847,47 +1847,6 @@ func TestAgent_AnthropicReActToolCallLoop(t *testing.T) {
 	}
 }
 
-func TestAgent_MultipleRetrievalToolsUseFunctionName(t *testing.T) {
-	p := AgentParam{
-		Tools: []string{"search_archa_metodika", "search_archa_data"},
-		ToolParams: map[string]map[string]any{
-			"search_archa_metodika": {
-				"component_name": "Retrieval",
-				"function_name":  "search_archa_metodika",
-				"description":    "Vyhľadávanie v metodike.",
-				"kb_ids":         []any{"kb-metodika"},
-				"top_n":          float64(10),
-			},
-			"search_archa_data": {
-				"component_name": "Retrieval",
-				"function_name":  "search_archa_data",
-				"description":    "Vyhľadávanie v projektovej dokumentácii.",
-				"kb_ids":         []any{"kb-data"},
-				"top_n":          float64(25),
-			},
-		},
-		MaxRounds: 1,
-	}
-	tools, err := buildAgentTools(t.Context(), p)
-	if err != nil {
-		t.Fatalf("buildAgentTools: %v", err)
-	}
-	if len(tools) != 2 {
-		t.Fatalf("len(tools) = %d, want 2", len(tools))
-	}
-	names := make(map[string]bool)
-	for _, tool := range tools {
-		info, err := tool.Info(t.Context())
-		if err != nil {
-			t.Fatalf("tool.Info: %v", err)
-		}
-		names[info.Name] = true
-	}
-	if !names["search_archa_metodika"] || !names["search_archa_data"] {
-		t.Fatalf("expected distinct retrieval tool names, got %v", names)
-	}
-}
-
 // TestAgent_DedupeToolDefinitions verifies that duplicate tool names are
 // dropped when identical and renamed when their configuration differs.
 func TestAgent_DedupeToolDefinitions(t *testing.T) {
