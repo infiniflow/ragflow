@@ -118,7 +118,7 @@ func TestResolveTierMissingKnowledgebaseReturnsError(t *testing.T) {
 	pushServiceDB(t, db)
 	// deliberately no insertTestKB
 	svc := NewIngestionTaskService()
-	if _, err := svc.resolveTier(t.Context(), "kb-does-not-exist"); err == nil {
+	if _, err := svc.resolveTier(t.Context(), "kb-does-not-exist", nil); err == nil {
 		t.Fatal("resolveTier must fail when the knowledgebase is missing")
 	}
 }

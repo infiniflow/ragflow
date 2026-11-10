@@ -126,6 +126,11 @@ type MemoryMessageService struct {
 	// process-wide engine.GetMessageQueueEngine() global, so the memory
 	// module's publish path carries no package-level global dependency.
 	mqEngine engine.MessageQueue
+	// memoryConfigFn resolves a memory's config (owner tenant, etc.) for the
+	// reconciler. Injected (defaults to s.memories.getMemoryConfig) so the
+	// reconciler can cache per-pass lookups and stay testable without a live
+	// MemoryService.
+	memoryConfigFn func(context.Context, string) (*CreateMemoryResponse, error)
 }
 
 // NewMemoryMessageService constructs a service bound to the
@@ -152,6 +157,12 @@ func NewMemoryMessageService(memories *MemoryService) *MemoryMessageService {
 		taskPublisher: NewMessageQueueTaskPublisherWithEngine(mq),
 		tierResolver:  defaultTierResolver,
 		kvrocksClient: kv,
+		memoryConfigFn: func(ctx context.Context, memoryID string) (*CreateMemoryResponse, error) {
+			if memories == nil {
+				return nil, errors.New("memory: nil MemoryService")
+			}
+			return memories.getMemoryConfig(ctx, memoryID)
+		},
 	}
 }
 
@@ -228,6 +239,27 @@ func (s *MemoryMessageService) queueSaveToMemoryTask(ctx context.Context, memory
 	return res, nil
 }
 
+// resolveMemoryTenant returns the owning tenant for a memory, caching the
+// outcome (including a missing-memory fallback) across a single reconcile pass
+// via the supplied map. A lookup failure never strands the wake-up: a missing
+// memory resolves to an empty tenant, which the caller routes to the primary
+// lane, and the failure is cached for the pass so lingering task rows for the
+// same deleted memory do not re-query the store or repeat the warning on every
+// task of every pass.
+func (s *MemoryMessageService) resolveMemoryTenant(ctx context.Context, memoryID string, cache map[string]string) (string, error) {
+	if tenantID, ok := cache[memoryID]; ok {
+		return tenantID, nil
+	}
+	tenantID := ""
+	if mem, memErr := s.memoryConfigFn(ctx, memoryID); memErr != nil {
+		common.Warn(fmt.Sprintf("memory: reconcile could not resolve tenant for memory %s (lookup failed: %v); publishing to primary lane", memoryID, memErr))
+	} else {
+		tenantID = mem.TenantID
+	}
+	cache[memoryID] = tenantID
+	return tenantID, nil
+}
+
 // ReconcileMemoryTasks publishes wake-ups for due, unleased durable memory
 // tasks. Publishing is idempotent because workers must claim the DB lease
 // before executing any stage.
@@ -250,20 +282,17 @@ func (s *MemoryMessageService) ReconcileMemoryTasks(ctx context.Context, limit i
 		return fmt.Errorf("memory: list due tasks: %w", err)
 	}
 	var reconcileErr error
+	// Per-pass cache so repeated tasks for the same memory look the config up
+	// once, not once per task.
+	tenantByMemory := make(map[string]string)
 	for _, task := range tasks {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return errors.Join(reconcileErr, ctxErr)
 		}
-		// Resolve the owning tenant so the wake-up lands on the same priority
-		// lane as that tenant's document ingestion. A missing memory row (e.g. a
-		// deleted memory whose task rows linger) must not strand the wake-up:
-		// fall back to the primary lane and let the worker surface a clear
-		// failure instead of leaving the task stuck in its due state.
-		tenantID := ""
-		if mem, memErr := s.memories.getMemoryConfig(ctx, task.MemoryID); memErr != nil {
-			common.Warn(fmt.Sprintf("memory: reconcile could not resolve tenant for memory %s (lookup failed: %v); publishing to primary lane", task.MemoryID, memErr))
-		} else {
-			tenantID = mem.TenantID
+		tenantID, err := s.resolveMemoryTenant(ctx, task.MemoryID, tenantByMemory)
+		if err != nil {
+			reconcileErr = errors.Join(reconcileErr, err)
+			continue
 		}
 		if err = publishMemoryTaskWakeup(ctx, s.taskPublisher, s.tierResolver, tenantID, task.TaskID); err != nil {
 			reconcileErr = errors.Join(reconcileErr, err)
@@ -441,8 +470,8 @@ func newUUIDString() string {
 }
 
 // publishMemoryTaskWakeup publishes only the durable task identity, routed to
-// the tenant's ingestion tier so free and paid memory wake-ups share the same
-// priority lanes as document ingestion. Workers load all execution input and
+// the tenant's ingestion tier so memory wake-ups share the same priority lanes
+// as that tenant's document ingestion. Workers load all execution input and
 // checkpoints from memory_task.
 func publishMemoryTaskWakeup(ctx context.Context, publisher TaskPublisher, resolver tierResolver, tenantID, taskID string) error {
 	if publisher == nil {
@@ -453,11 +482,10 @@ func publishMemoryTaskWakeup(ctx context.Context, publisher TaskPublisher, resol
 	}
 	tier, err := resolver(ctx, tenantID)
 	if err != nil {
-		// A billing lookup failure must not strand a memory task: fall back to
-		// the primary lane (medium in EE, the single community queue in OSS) so
-		// the reconciler can still retry it. A transient outage never downgrades
-		// a paid tenant — it only risks briefly elevating a free tenant's
-		// wake-up to the primary lane.
+		// A tier resolution failure must not strand a memory task: fall back to
+		// the primary lane so the reconciler can still retry it. A transient
+		// outage never downgrades a tenant's priority — it only risks briefly
+		// elevating a lower-priority wake-up to the primary lane.
 		common.Warn(fmt.Sprintf("memory: tier resolution for tenant %s failed (%v); using primary lane", tenantID, err))
 		tier = common.PrimaryTier()
 	}
