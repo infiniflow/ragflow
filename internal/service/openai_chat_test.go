@@ -925,3 +925,23 @@ func TestSplitFinalResponseUnclosedBlockStaysReasoning(t *testing.T) {
 		t.Fatalf("completion tokens = %d, want %d", tokens, want)
 	}
 }
+
+// A closing marker followed by an empty trailing block produces no reasoning,
+// but the earlier block must still be stripped from the answer.
+func TestSplitFinalResponseEmptyTrailingBlockStaysOutOfAnswer(t *testing.T) {
+	for _, answer := range []string{
+		"<think>private</think>answer<think>",
+		"<think>private</think>answer<think>   ",
+	} {
+		content, reasoning, tokens := splitFinalResponse(AsyncChatResult{Answer: answer}, "")
+		if content != "answer" {
+			t.Fatalf("answer %q: content = %q, want answer", answer, content)
+		}
+		if reasoning != "" {
+			t.Fatalf("answer %q: reasoning = %q, want none", answer, reasoning)
+		}
+		if want := tokenizer.NumTokensFromString("answer"); tokens != want {
+			t.Fatalf("answer %q: completion tokens = %d, want %d", answer, tokens, want)
+		}
+	}
+}
