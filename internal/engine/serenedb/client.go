@@ -226,3 +226,20 @@ func (e *serenedbEngine) tableExists(ctx context.Context, tableName string) (boo
 	defer rows.Close()
 	return rows.Next(), rows.Err()
 }
+
+// columnExists reports whether tableName has the named column. Like
+// tableExists, identifiers are validated because they cannot be parameterized;
+// a catalog failure is surfaced instead of being read as "absent".
+func (e *serenedbEngine) columnExists(ctx context.Context, tableName, column string) (bool, error) {
+	if !validIdentifier(tableName) || !validIdentifier(column) {
+		return false, fmt.Errorf("serenedb: invalid identifier table=%q column=%q", tableName, column)
+	}
+	rows, err := e.db.QueryContext(ctx,
+		"SELECT 1 FROM information_schema.columns WHERE table_name = $1 AND table_schema = current_schema() AND column_name = $2 LIMIT 1",
+		tableName, column)
+	if err != nil {
+		return false, err
+	}
+	defer rows.Close()
+	return rows.Next(), rows.Err()
+}

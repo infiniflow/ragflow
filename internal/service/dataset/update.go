@@ -179,7 +179,11 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 		return nil, common.CodeDataError, errors.New("no properties were modified")
 	}
 
-	preparedChunkStoreEmbdID, preflightCode, preflightErr := d.prepareChunkStoreForEmbeddingChange(ctx, currentKB, embdID, embdIDProvided, parserID, parserIDProvided)
+	preparedLanguage := ""
+	if language, ok := simpleUpdates["language"].(string); ok {
+		preparedLanguage = language
+	}
+	preparedChunkStoreEmbdID, preflightCode, preflightErr := d.prepareChunkStoreForEmbeddingChange(ctx, currentKB, embdID, embdIDProvided, parserID, parserIDProvided, preparedLanguage)
 	if preflightErr != nil {
 		return nil, preflightCode, preflightErr
 	}
@@ -669,8 +673,10 @@ func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx 
 // holds no vectors to reinterpret, so preparing ahead of the transaction is
 // safe: a preparation failure leaves the binding untouched and the retry takes
 // this same path, instead of stranding the dataset on a store that has no
-// column for its model.
-func (d *DatasetService) prepareChunkStoreForEmbeddingChange(ctx context.Context, kb *entity.Knowledgebase, embdID string, embdIDProvided bool, parserID string, parserIDProvided bool) (string, common.ErrorCode, error) {
+// column for its model. The caller passes the parser and language the same
+// update is about to persist, because the engine fixes both when it creates the
+// store.
+func (d *DatasetService) prepareChunkStoreForEmbeddingChange(ctx context.Context, kb *entity.Knowledgebase, embdID string, embdIDProvided bool, parserID string, parserIDProvided bool, language string) (string, common.ErrorCode, error) {
 	if !embdIDProvided || embdID == "" || kb == nil || embdID == kb.EmbdID || kb.ChunkNum != 0 {
 		return "", common.CodeSuccess, nil
 	}
@@ -686,6 +692,9 @@ func (d *DatasetService) prepareChunkStoreForEmbeddingChange(ctx context.Context
 	preparedKB := *kb
 	if parserIDProvided {
 		preparedKB.ParserID = parserID
+	}
+	if language != "" {
+		preparedKB.Language = &language
 	}
 	if err := d.ensureChunkStoreForEmbedding(ctx, &preparedKB, embdID); err != nil {
 		return "", common.CodeServerError, fmt.Errorf("prepare the chunk store for embedding model %s: %w", embdID, err)
