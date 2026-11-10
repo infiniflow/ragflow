@@ -457,6 +457,32 @@ def test_pdf_oxide_stamp_text_rejects_wrong_version(tmp_path, monkeypatch):
         )
 
 
+def test_valid_download_accepts_pdf_oxide_tarball_with_current_version(tmp_path):
+    # Regression for the stale-archive reuse bug: a pdf_oxide tarball whose
+    # embedded .a carries the version go.mod pins must be treated as a valid
+    # download, so main() skips re-downloading it (the "already present" fast
+    # path). _valid_download must read the SAME version go.mod pins, via the
+    # same go_module_version() the downloader URL builder uses.
+    version = native.go_module_version("github.com/yfedoseev/pdf_oxide/go", native.REPO_ROOT)
+    archive = tmp_path / "pdf_oxide-go-ffi-linux-amd64.tar.gz"
+    _make_stamped_archive(archive, "lib/linux_amd64/libpdf_oxide.a", f"pdf_oxide {version}".encode(), "include/pdf_oxide.h")
+    assert native._valid_download(str(archive)) is True
+
+
+def test_valid_download_rejects_pdf_oxide_tarball_with_stale_version(tmp_path):
+    # The exact failure the user hit: a pdf_oxide tarball left over from a prior
+    # version sitting in deps/ must NOT be reused. Before this fix _valid_download
+    # accepted ANY non-empty tarball and the version mismatch only surfaced later
+    # as a RuntimeError at extraction ("missing required native files or version
+    # <current>"). Rejecting it here makes the downloader re-fetch the correct
+    # release and keeps the error close to the cause.
+    current = native.go_module_version("github.com/yfedoseev/pdf_oxide/go", native.REPO_ROOT)
+    stale = "0.0.0" if current != "0.0.0" else "0.0.1"
+    archive = tmp_path / "pdf_oxide-go-ffi-linux-amd64.tar.gz"
+    _make_stamped_archive(archive, "lib/linux_amd64/libpdf_oxide.a", f"pdf_oxide {stale}".encode(), "include/pdf_oxide.h")
+    assert native._valid_download(str(archive)) is False
+
+
 def test_office_oxide_stamp_null_accepts_matching_version(tmp_path, monkeypatch):
     # Regression guard: office_oxide keeps its null-delimited stamp token; the
     # "text" vs "null" split must not break it.

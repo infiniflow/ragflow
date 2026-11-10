@@ -419,6 +419,29 @@ def _valid_download(filename):
                         return b"\x00" + version.encode() + b"\x00" in library.read()
                 except (KeyError, tarfile.TarError, EOFError):
                     return False
+        if os.path.basename(filename) in PDF_OXIDE_ASSETS.values():
+            # Mirror office_oxide: reject a tarball whose embedded .a does NOT
+            # carry the version go.mod pins. A stale same-named archive (e.g.
+            # left over from a prior pdf_oxide bump) is otherwise reused here and
+            # only fails later at extraction ("missing required native files or
+            # version <current>"), far from the cause. The .a lives under
+            # lib/<goos>_<goarch>/ (per PDF_OXIDE_ASSETS) and is stamped with a
+            # plain-text `pdf_oxide <version>` token (stamp_format="text").
+            version = go_module_version("github.com/yfedoseev/pdf_oxide/go", REPO_ROOT)
+            goos, goarch = next(k for k, v in PDF_OXIDE_ASSETS.items() if v == os.path.basename(filename))
+            member_name = f"lib/{goos}_{goarch}/libpdf_oxide.a"
+            with tarfile.open(filename) as archive:
+                try:
+                    member = next((m for m in archive.getmembers() if os.path.normpath(m.name) == member_name), None)
+                    if member is None:
+                        return False
+                    library = archive.extractfile(member)
+                    if library is None:
+                        return False
+                    with library:
+                        return _stamp_present(library.read(), version, "text")
+                except (KeyError, tarfile.TarError, EOFError):
+                    return False
         return True
     if filename.endswith(".zip"):
         return zipfile.is_zipfile(filename)
