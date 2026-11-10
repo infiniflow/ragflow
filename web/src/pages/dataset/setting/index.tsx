@@ -392,7 +392,6 @@ export default function DatasetSetting() {
                       fixedFileFormats
                     />
                   )}
-
                 </section>
               </div>
 
