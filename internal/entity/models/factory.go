@@ -224,6 +224,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewWallyModel(baseURL, urlSuffix), nil
 	case "synap":
 		return NewSynapModel(baseURL, urlSuffix), nil
+	case "wiro ai":
+		return NewWiroModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

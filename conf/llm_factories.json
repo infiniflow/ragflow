@@ -3520,6 +3520,14 @@
             "url": "https://pool.linkrra.com/v1"
         },
         {
+            "name": "Wiro AI",
+            "logo": "",
+            "tags": "LLM,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://llm.wiro.ai/v1"
+        },
+        {
             "name": "StepFun",
             "logo": "",
             "tags": "LLM,IMAGE2TEXT,SPEECH2TEXT,TTS",
