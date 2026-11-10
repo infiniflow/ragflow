@@ -320,21 +320,23 @@ describe('parser-form utils', () => {
       expect(normalizeParserFormValues(once)).toEqual(once);
     });
 
-    it('drops the retired per-setup preprocess and output_format from every family', () => {
-      // The Parser derives preprocessing from the chunker and emits JSON only,
-      // so stored legacy values are dead config that must not survive a
-      // load/save round-trip.
+    it('drops the retired per-setup preprocess, output_format and suffix from every family', () => {
+      // The Parser derives preprocessing from the chunker, emits JSON only and
+      // routes files by the document's own suffix, so stored legacy values are
+      // dead config that must not survive a load/save round-trip.
       const normalized = normalizeParserFormValues({
         setups: [
           {
             fileFormat: FileType.PDF,
             preprocess: ['main_content'],
             output_format: 'markdown',
+            suffix: ['pdf'],
           },
           {
             fileFormat: FileType.Audio,
             preprocess: ['main_content'],
             output_format: 'text',
+            suffix: ['mp3'],
             vlm: { llm_id: 'whisper@OpenAI' },
           },
         ],

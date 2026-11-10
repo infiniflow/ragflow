@@ -54,34 +54,9 @@
                             }
                         },
                         "image": {
-                            "ocr_enabled": true,
-                            "suffix": [
-                                "bmp",
-                                "gif",
-                                "jpeg",
-                                "jpg",
-                                "png",
-                                "svg",
-                                "tif",
-                                "tiff",
-                                "webp"
-                            ]
+                            "ocr_enabled": true
                         },
-                        "video": {
-                            "suffix": [
-                                "3gp",
-                                "3gpp",
-                                "avi",
-                                "flv",
-                                "mkv",
-                                "mov",
-                                "mp4",
-                                "mpeg",
-                                "mpg",
-                                "webm",
-                                "wmv"
-                            ]
-                        }
+                        "video": {}
                     }
                 },
                 "upstream": [

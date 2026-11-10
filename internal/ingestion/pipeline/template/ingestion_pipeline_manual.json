@@ -53,21 +53,10 @@
                                 "value": ""
                             }
                         },
-                        "doc": {
-                            "suffix": [
-                                "doc"
-                            ]
-                        },
-                        "docx": {
-                            "suffix": [
-                                "docx"
-                            ]
-                        },
+                        "doc": {},
+                        "docx": {},
                         "pdf": {
-                            "parse_method": "DeepDOC",
-                            "suffix": [
-                                "pdf"
-                            ]
+                            "parse_method": "DeepDOC"
                         }
                     }
                 },

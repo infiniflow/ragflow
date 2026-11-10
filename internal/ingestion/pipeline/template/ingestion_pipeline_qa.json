@@ -53,37 +53,15 @@
                                 "value": ""
                             }
                         },
-                        "docx": {
-                            "suffix": [
-                                "docx"
-                            ]
-                        },
-                        "markdown": {
-                            "suffix": [
-                                "md",
-                                "markdown",
-                                "mdx"
-                            ]
-                        },
+                        "docx": {},
+                        "markdown": {},
                         "pdf": {
-                            "parse_method": "DeepDOC",
-                            "suffix": [
-                                "pdf"
-                            ]
+                            "parse_method": "DeepDOC"
                         },
                         "spreadsheet": {
-                            "parse_method": "DeepDOC",
-                            "suffix": [
-                                "xls",
-                                "xlsx",
-                                "csv"
-                            ]
+                            "parse_method": "DeepDOC"
                         },
-                        "text&code": {
-                            "suffix": [
-                                "txt"
-                            ]
-                        }
+                        "text&code": {}
                     }
                 },
                 "upstream": [
