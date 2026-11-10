@@ -1,0 +1,82 @@
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+package utility
+
+import "testing"
+
+func resetExtensionFileTypes() {
+	extensionFileTypes = map[string]FileType{}
+}
+
+// EE editions register parser types the community build does not know about.
+// GetFileType must return the registered type for that extension.
+func TestGetFileTypeConsultsRegisteredExtension(t *testing.T) {
+	resetExtensionFileTypes()
+	defer resetExtensionFileTypes()
+	const cad FileType = "cad"
+	RegisterExtensionFileType("cad", cad)
+	if got := GetFileType("report.cad"); got != cad {
+		t.Fatalf("GetFileType(\"report.cad\") = %q, want %q", got, cad)
+	}
+}
+
+// Without a registration the community behaviour is unchanged.
+func TestGetFileTypeUnknownExtensionStillOther(t *testing.T) {
+	resetExtensionFileTypes()
+	defer resetExtensionFileTypes()
+	if got := GetFileType("report.cad"); got != FileTypeOTHER {
+		t.Fatalf("GetFileType(\"report.cad\") = %q, want FileTypeOTHER (unregistered)", got)
+	}
+}
+
+// Registering one extension must not leak into an unrelated unregistered one.
+func TestGetFileTypeRegisteredExtensionDoesNotAffectUnregistered(t *testing.T) {
+	resetExtensionFileTypes()
+	defer resetExtensionFileTypes()
+	RegisterExtensionFileType("cad", FileType("cad"))
+	if got := GetFileType("model.dwg"); got != FileTypeOTHER {
+		t.Fatalf("GetFileType(\"model.dwg\") = %q, want FileTypeOTHER", got)
+	}
+}
+
+// Extension registration is case-insensitive on the suffix.
+func TestGetFileTypeExtensionCaseInsensitive(t *testing.T) {
+	resetExtensionFileTypes()
+	defer resetExtensionFileTypes()
+	RegisterExtensionFileType("CAD", FileType("cad"))
+	if got := GetFileType("model.cad"); got != FileType("cad") {
+		t.Fatalf("GetFileType(\"model.cad\") with upper-registered suffix = %q, want %q", got, FileType("cad"))
+	}
+}
+
+// An empty suffix registration is a no-op and never panics.
+func TestGetFileTypeEmptySuffixIgnored(t *testing.T) {
+	resetExtensionFileTypes()
+	defer resetExtensionFileTypes()
+	RegisterExtensionFileType("", FileType("cad"))
+	if got := GetFileType("report.cad"); got != FileTypeOTHER {
+		t.Fatalf("RegisterExtensionFileType(\"\") should be ignored; GetFileType = %q, want FileTypeOTHER", got)
+	}
+}
+
+// The upload gate (FilenameType) must also admit registered extensions.
+func TestFilenameTypeConsultsRegisteredExtension(t *testing.T) {
+	resetExtensionFileTypes()
+	defer resetExtensionFileTypes()
+	RegisterExtensionFileType("cad", FileType("cad"))
+	if got := FilenameType("report.cad"); got != FileType("cad") {
+		t.Fatalf("FilenameType(\"report.cad\") = %q, want %q", got, FileType("cad"))
+	}
+}
