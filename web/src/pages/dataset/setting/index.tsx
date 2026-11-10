@@ -338,6 +338,14 @@ export default function DatasetSetting() {
                   <GeneralForm></GeneralForm>
 
                   <Divider />
+                  <LinkDataSource
+                    data={pipelineDataList}
+                    handleLinkOrEditSubmit={handleLinkOrEditSubmit}
+                    unbindFunc={unbindFunc}
+                    handleAutoParse={handleAutoParse}
+                  />
+
+                  <Divider />
                   <div className="text-base font-medium text-text-primary">
                     {t('knowledgeConfiguration.dataPipeline')}
                   </div>
@@ -385,13 +393,6 @@ export default function DatasetSetting() {
                     />
                   )}
 
-                  <Divider />
-                  <LinkDataSource
-                    data={pipelineDataList}
-                    handleLinkOrEditSubmit={handleLinkOrEditSubmit}
-                    unbindFunc={unbindFunc}
-                    handleAutoParse={handleAutoParse}
-                  />
                 </section>
               </div>
 
