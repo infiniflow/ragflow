@@ -84,7 +84,7 @@ const ChunkCard = ({
     <Card
       as="article"
       className={classNames(
-        'group relative flex-none p-3 pt-6 shadow-none transition-colors',
+        'group relative flex-none p-3 pt-6 shadow-none transition-colors hover:border-border-default',
         selected && 'bg-text-primary/15',
       )}
     >
