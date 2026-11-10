@@ -311,4 +311,3 @@ func TestPlainTOCRulesKeepMarkup(t *testing.T) {
 		t.Errorf("got %v, want unchanged %v", got, items)
 	}
 }
-
