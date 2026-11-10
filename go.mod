@@ -58,6 +58,7 @@ require (
 	github.com/nats-io/nats.go v1.52.0
 	github.com/nikolalohinski/gonja v1.5.3
 	github.com/open-dingtalk/dingtalk-stream-sdk-go v0.9.1
+	github.com/opensearch-project/opensearch-go/v4 v4.6.0
 	github.com/peterh/liner v1.2.2
 	github.com/pkg/errors v0.9.1
 	github.com/pkoukk/tiktoken-go v0.1.8
