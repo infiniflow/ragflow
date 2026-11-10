@@ -254,6 +254,22 @@ def pdfium_url(goos: str, goarch: str) -> str:
     return f"{gh_proxy()}https://github.com/kognitos/pdfium-static/releases/download/chromium%2F{PDFIUM_VERSION}/{PDFIUM_STATIC_ASSETS[(goos, goarch)]}"
 
 
+def pdfium_local_asset_name(goos: str, goarch: str) -> str:
+    """Local deps/ filename for the pdfium tarball, suffixed with the resolved
+    chromium build number so two pdfium versions never share a path.
+
+    Unlike office_oxide / pdf_oxide (whose release asset sits under a v{version}
+    tag) and onnxruntime (whose asset name embeds the version), pdfium's upstream
+    asset name is version-agnostic (pdfium-linux-x64-static.tgz) and its .a
+    carries no version stamp. The ONLY way to stop a stale same-named tarball
+    from being silently reused is to make the on-disk name encode the version.
+    The download URL is unchanged (still points at the upstream version-agnostic
+    asset); only the local name is versioned."""
+    base = PDFIUM_STATIC_ASSETS[(goos, goarch)]
+    root, ext = os.path.splitext(base)
+    return f"{root}-{PDFIUM_VERSION}{ext}"
+
+
 def office_oxide_url(repo_root: str, goos: str, goarch: str) -> str:
     """office_oxide native tarball for the target platform. The version is
     derived from go.mod so it always matches what the Go build actually links
@@ -894,7 +910,7 @@ def main():
     # ONNX Runtime archive (+ checksum sidecar), then the other native archives.
     _download_ort_archive(os.path.join(RAGFLOW_DEPS_DIR, ort_zip), goos, goarch)
     archives = [
-        (pdfium_url(goos, goarch), PDFIUM_STATIC_ASSETS[(goos, goarch)]),
+        (pdfium_url(goos, goarch), pdfium_local_asset_name(goos, goarch)),
         (pdf_oxide_url(REPO_ROOT, goos, goarch), PDF_OXIDE_ASSETS[(goos, goarch)]),
         (office_oxide_url(REPO_ROOT, goos, goarch), OFFICE_OXIDE_ASSETS[(goos, goarch)]),
     ]
@@ -915,7 +931,7 @@ def main():
     office_version = go_module_version("github.com/yfedoseev/office_oxide/go", REPO_ROOT)
     pdf_oxide_version = go_module_version("github.com/yfedoseev/pdf_oxide/go", REPO_ROOT)
     extractions = [
-        ("pdfium-static", PDFIUM_STATIC_ASSETS[(goos, goarch)], "v" + PDFIUM_VERSION, ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"], None, "null"),
+        ("pdfium-static", pdfium_local_asset_name(goos, goarch), "v" + PDFIUM_VERSION, ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"], None, "null"),
         ("pdf_oxide", PDF_OXIDE_ASSETS[(goos, goarch)], "v" + pdf_oxide_version, [f"lib/{goos}_{goarch}/libpdf_oxide.a", "include/pdf_oxide.h"], pdf_oxide_version, "text"),
         ("office_oxide", OFFICE_OXIDE_ASSETS[(goos, goarch)], "v" + office_version, ["lib/liboffice_oxide.a", "include/office_oxide_c/office_oxide.h"], office_version, "null"),
     ]

@@ -785,6 +785,51 @@ def test_pdfium_static_version_against_real_repo():
     assert native.pdfium_static_version(native.REPO_ROOT) == "7809"
 
 
+def test_pdfium_local_asset_name_carries_version_and_platform():
+    # The on-disk pdfium tarball name must encode the resolved chromium build
+    # number so two pdfium versions never share a deps/ path (the silent-reuse
+    # bug). It must NOT equal the version-agnostic upstream asset name, and must
+    # keep the platform token so the right arch is selected.
+    version = native.pdfium_static_version(native.REPO_ROOT)
+    name = native.pdfium_local_asset_name("linux", "amd64")
+    assert name == f"pdfium-linux-x64-static-{version}.tgz"
+    # Adversarial: if this were still the bare asset name, a stale tarball would
+    # be silently reused — the whole point is that the name differs.
+    assert name != native.PDFIUM_STATIC_ASSETS[("linux", "amd64")]
+    assert version in name
+    assert "linux-x64" in name
+
+
+def test_pdfium_local_asset_name_is_version_driven_not_hardcoded(monkeypatch):
+    # Guard against a wrong implementation that hardcodes "7809" or otherwise
+    # ignores PDFIUM_VERSION: when the bound version changes, the local name
+    # must change with it.
+    monkeypatch.setattr(native, "PDFIUM_VERSION", "9999")
+    assert native.pdfium_local_asset_name("linux", "amd64") == "pdfium-linux-x64-static-9999.tgz"
+    assert native.pdfium_local_asset_name("darwin", "arm64") == "pdfium-mac-arm64-static-9999.tgz"
+
+
+def test_pdfium_url_basename_stays_version_agnostic():
+    # The download URL must keep pointing at the upstream version-agnostic
+    # asset (.../chromium/7809/pdfium-linux-x64-static.tgz). Only the LOCAL name
+    # is versioned; versioning the URL instead would break the download, since
+    # the upstream release asset name does not contain the build number.
+    url = native.pdfium_url("linux", "amd64")
+    assert url.endswith("/" + native.PDFIUM_STATIC_ASSETS[("linux", "amd64")])
+    assert native.pdfium_local_asset_name("linux", "amd64") not in url
+
+
+def test_valid_download_accepts_versioned_pdfium_tarball(tmp_path):
+    # Regression: the renamed pdfium tarball is still a valid .tgz, so the
+    # downloader's "already present" fast path still fires for it (it is not in
+    # the OFFICE/PDF_OXIDE asset sets, so _valid_download returns True for any
+    # non-empty valid tarball).
+    version = native.pdfium_static_version(native.REPO_ROOT)
+    archive = tmp_path / f"pdfium-linux-x64-static-{version}.tgz"
+    _make_pdfium_archive(archive, ["lib/libpdfium.a"])
+    assert native._valid_download(str(archive)) is True
+
+
 # ── deepdoc_ort_version (bash) single source ───────────────────────────────
 # build.sh must read DeepDocORTVersion from environments.go through the SAME
 # native_lib_version.sh helper the Python downloader mirrors (deepdoc_ort_version
