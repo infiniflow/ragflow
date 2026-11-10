@@ -489,7 +489,6 @@ var providerAPIKeyConfigFields = map[string]struct{}{
 	"mineru_output_dir":        {},
 	"mineru_server_url":        {},
 	"opendataloader_apiserver": {},
-	"paddleocr_algorithm":      {},
 	"paddleocr_api_url":        {},
 	"provider_order":           {},
 }
@@ -508,7 +507,6 @@ var safeProviderAPIKeyConfigFields = map[string]struct{}{
 	"mineru_output_dir":        {},
 	"mineru_server_url":        {},
 	"opendataloader_apiserver": {},
-	"paddleocr_algorithm":      {},
 	"paddleocr_api_url":        {},
 	"provider_order":           {},
 }
@@ -2169,13 +2167,11 @@ var (
 		common.EnvPaddleOCRBaseUrl,
 		common.EnvPaddleOCRAPIURL,
 		common.EnvPaddleOCRAccessToken,
-		common.EnvPaddleOCRAlgorithm,
 	}
 	paddleOCRDefaultConfig = map[string]interface{}{
 		common.EnvPaddleOCRBaseUrl:     "",
 		common.EnvPaddleOCRAPIURL:      "",
 		common.EnvPaddleOCRAccessToken: nil,
-		common.EnvPaddleOCRAlgorithm:   "PaddleOCR-VL",
 	}
 	openDataLoaderEnvKeys = []string{
 		common.EnvOpenDataLoaderAPIServer,

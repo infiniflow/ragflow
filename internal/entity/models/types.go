@@ -355,7 +355,6 @@ type TTSConfig struct {
 }
 
 type OCRConfig struct {
-	Algorithm string
 	// Pages restricts OCR to these 1-indexed inclusive [from, to] ranges, the
 	// parser setup's "pages" shape. Empty means the whole document. Drivers
 	// whose backend cannot select pages ignore it.

@@ -943,7 +943,7 @@ func dispatchPaddleOCRPdf(
 	filename string,
 	binary []byte,
 	tenantID string,
-	setup schema.ParserSetup,
+	_ schema.ParserSetup,
 	modelID string,
 ) (parser.ParseResult, error) {
 	driver, modelName, apiConfig, err := resolvePaddleOCRModelForDispatch(ctx, db, tenantID, modelID)
@@ -955,9 +955,7 @@ func dispatchPaddleOCRPdf(
 			"parser: PaddleOCR requires a PaddleOCR OCR model; found %q. Please add a PaddleOCR OCR model to your tenant", driver.Name())
 	}
 
-	resp, err := driver.OCRFile(ctx, &modelName, binary, &filename, apiConfig, &modelModule.OCRConfig{
-		Algorithm: strings.TrimSpace(getStringOr(setup, "paddleocr_algorithm", "")),
-	}, nil)
+	resp, err := driver.OCRFile(ctx, &modelName, binary, &filename, apiConfig, nil, nil)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: PaddleOCR OCRFile: %w", err)
 	}
