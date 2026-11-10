@@ -40,6 +40,40 @@ func testDatasetCreateService(t *testing.T) *DatasetService {
 
 func iptr(i int) *int { return &i }
 
+func TestDatasetWritesRejectRetiredBuiltinParser(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "tenant-1")
+	insertDatasetUpdateKB(t, "existing-dataset", "tenant-1", "Existing dataset")
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+
+	t.Run("create", func(t *testing.T) {
+		_, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
+			Name: "unsupported-parser", ParserID: sptr("knowledge_graph"), ParseType: iptr(1),
+		})
+		if err == nil || code != common.CodeDataError {
+			t.Fatalf("CreateDataset() code=%v, err=%v; want parser validation error", code, err)
+		}
+		var count int64
+		if err := db.Model(&entity.Knowledgebase{}).Where("name = ?", "unsupported-parser").Count(&count).Error; err != nil || count != 0 {
+			t.Fatalf("unsupported dataset persisted: count=%d, err=%v", count, err)
+		}
+	})
+
+	t.Run("update", func(t *testing.T) {
+		_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "existing-dataset", service.UpdateDatasetRequest{
+			ParserID: sptr("knowledge_graph"), ParseType: iptr(1),
+		})
+		if err == nil || code != common.CodeDataError {
+			t.Fatalf("UpdateDataset() code=%v, err=%v; want parser validation error", code, err)
+		}
+		persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "existing-dataset")
+		if err != nil || persisted == nil || persisted.ParserID != string(entity.ParserTypeNaive) {
+			t.Fatalf("existing parser must remain unchanged: persisted=%v, err=%v", persisted, err)
+		}
+	})
+}
+
 func TestCreateDataset_NoComponentParams(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
