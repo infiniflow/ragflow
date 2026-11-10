@@ -112,6 +112,7 @@ export const initialParserValues = {
     },
     {
       fileFormat: FileType.TextMarkdown,
+      remove_toc: false,
     },
     {
       fileFormat: FileType.Code,
