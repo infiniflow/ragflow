@@ -151,6 +151,15 @@ describe('transformParserParams MinerU settings', () => {
   );
 });
 
+describe('transformParserParams markdown settings', () => {
+  it.each([true, false])('keeps the remove_toc switch %s', (removeToc) => {
+    const result: Record<string, any> = transformParserParams({
+      setups: [{ fileFormat: FileType.TextMarkdown, remove_toc: removeToc }],
+    } as any);
+    expect(result.markdown.remove_toc).toBe(removeToc);
+  });
+});
+
 describe('transformParserParams vision settings', () => {
   it.each(['model-b', ''])(
     'saves the explicit image OCR selection %j',
