@@ -889,7 +889,7 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 		ctx := c.Request.Context()
 		token := c.GetHeader("Authorization")
 		if token == "" {
-			common.Respond(c, http.StatusUnauthorized, common.CodeUnauthorized, nil, "Missing authorization header")
+			common.RespondError(c, common.CodeUnauthorized, "Missing authorization header")
 			c.Abort()
 			return
 		}

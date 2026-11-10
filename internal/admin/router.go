@@ -45,20 +45,17 @@ func (r *Router) Setup(engine *gin.Engine) {
 	admin := engine.Group("/api/v1/admin")
 	{
 		// Public routes
+		admin.GET("/ping", r.handler.Ping)
 		admin.POST("/login", r.handler.Login)
 
-		// Service heartbeats do not use user credentials.
 		admin.POST("/reports", r.handler.Reports)
-
-		// All remaining admin APIs require a superuser session.
-		admin.Use(r.handler.AuthMiddleware())
-		admin.GET("/ping", r.handler.Ping)
 
 		//admin.POST("/ingestion/tasks", r.handler.StartIngestionTask)
 		//admin.DELETE("/ingestion", r.handler.CancelIngestionTask) // cancel ingestion
 
 		// Protected routes
 		protected := admin.Group("")
+		protected.Use(r.handler.AuthMiddleware())
 		{
 			protected.POST("/logout", r.handler.Logout)
 			// Auth
