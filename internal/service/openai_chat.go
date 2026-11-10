@@ -547,11 +547,20 @@ func splitFinalResponse(final AsyncChatResult, reasoningFallback string) (conten
 		reasoning = strings.TrimSpace(reasoningFallback)
 	}
 	content = strings.TrimSpace(final.Answer)
-	if final.AnswerIsAuthoritative || reasoning != "" {
+	// A trailing block with no text yields no reasoning, but its markers still
+	// enclose an earlier block that must not reach the answer. Decide on the
+	// markup, not on whether extraction produced text.
+	if final.AnswerIsAuthoritative || reasoning != "" || hasThinkMarkup(final.Answer) {
 		content = strings.TrimSpace(ExtractVisibleAnswer(final.Answer))
 	}
 	completionTokens = tokenizer.NumTokensFromString(content) + tokenizer.NumTokensFromString(reasoning)
 	return content, reasoning, completionTokens
+}
+
+// hasThinkMarkup reports whether raw carries any think marker, including an
+// unclosed trailing block whose text is empty.
+func hasThinkMarkup(raw string) bool {
+	return strings.Contains(raw, thinkOpen) || strings.Contains(raw, thinkClose)
 }
 
 // MergeGenerationConfig merges request config into dialog.LLMSetting (mutating).
