@@ -215,7 +215,7 @@ func runSQLHasLimit(tokens []runSQLToken) bool {
 // RunSQL executes a text-to-SQL query directly against SereneDB and returns the
 // rows as maps. SereneDB speaks SQL natively, so unlike the Infinity engine no
 // psql subprocess or field-alias rewrite is needed.
-func (e *serenedbEngine) RunSQL(ctx context.Context, tableName string, sqlText string, kbIDs []string, format string) ([]map[string]interface{}, error) {
+func (e *serenedbEngine) RunSQL(ctx context.Context, sqlText string, format string) ([]map[string]interface{}, error) {
 	query, err := boundRunSQL(sqlText, runSQLDefaultLimit)
 	if err != nil {
 		return nil, fmt.Errorf("serenedb: run sql: %w", err)

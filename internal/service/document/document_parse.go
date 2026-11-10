@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"ragflow/internal/service"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -198,7 +197,7 @@ func (s *DocumentService) applyKnowledgebaseParserConfig(ctx context.Context, do
 	if metaOK {
 		merged["metadata"] = deepCopyValue(meta)
 	} else {
-		for _, cpnID := range sortedExtractorKeys(merged) {
+		for _, cpnID := range common.SortedExtractorKeys(map[string]any(merged)) {
 			params, ok := nodeParams(merged[cpnID])
 			if !ok {
 				continue
@@ -225,21 +224,6 @@ func (s *DocumentService) applyKnowledgebaseParserConfig(ctx context.Context, do
 	}
 	doc.ParserConfig = merged
 	return nil
-}
-
-// sortedExtractorKeys returns the component IDs in parserConfig that name
-// Extractor nodes, in sorted order so multi-Extractor configs resolve
-// deterministically instead of depending on Go map iteration order.
-func sortedExtractorKeys(parserConfig entity.JSONMap) []string {
-	var keys []string
-	for k := range parserConfig {
-		lower := strings.ToLower(k)
-		if strings.HasPrefix(lower, "extractor:") || strings.HasPrefix(lower, "extractor_") {
-			keys = append(keys, k)
-		}
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // nodeParams returns a writable view of a component node's params, accepting
@@ -281,7 +265,7 @@ func resolveDatasetModularMetadata(parserConfig entity.JSONMap) (map[string]any,
 	if mm, ok := parserConfig["metadata"].(entity.JSONMap); ok {
 		return map[string]any(mm), true, true
 	}
-	for _, cpnID := range sortedExtractorKeys(parserConfig) {
+	for _, cpnID := range common.SortedExtractorKeys(map[string]any(parserConfig)) {
 		params, ok := nodeParams(parserConfig[cpnID])
 		if !ok {
 			continue
@@ -301,7 +285,7 @@ func resolveDatasetLLMID(parserConfig entity.JSONMap) string {
 	if s, ok := parserConfig["llm_id"].(string); ok && strings.TrimSpace(s) != "" {
 		return s
 	}
-	for _, cpnID := range sortedExtractorKeys(parserConfig) {
+	for _, cpnID := range common.SortedExtractorKeys(map[string]any(parserConfig)) {
 		params, ok := nodeParams(parserConfig[cpnID])
 		if !ok {
 			continue

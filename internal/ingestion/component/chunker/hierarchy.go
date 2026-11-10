@@ -51,8 +51,6 @@ import (
 	"ragflow/internal/ingestion/component/globals"
 )
 
-const ComponentNameHierarchyTitleChunker = "HierarchyTitleChunker"
-
 // chunkNode mirrors python `_ChunkNode` (hierarchy_chunker.py:22-32).
 type chunkNode struct {
 	level        int

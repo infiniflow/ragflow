@@ -42,7 +42,8 @@ func EmbeddingModelRef(kb *entity.Knowledgebase) (id, raw string) {
 }
 
 // EmbeddingBaseNameRead resolves one dataset's embedding reference to a bare
-// model name through tenant_model. It is the read the resolver below memoizes.
+// model name through tenant_model, or empty if unresolved. The resolver memoizes
+// this result by ID and applies each dataset fallback separately.
 type EmbeddingBaseNameRead func(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase) string
 
 // EmbeddingBaseNameResolver answers "do these datasets share one embedding
@@ -75,10 +76,16 @@ func (r *EmbeddingBaseNameResolver) Resolve(ctx context.Context, db *gorm.DB, kb
 	if id == "" {
 		return common.BaseModelName(raw)
 	}
-	if cached, ok := r.names[id]; ok {
-		return cached
+	base, ok := r.names[id]
+	if !ok {
+		base = r.read(ctx, db, kb)
+		r.names[id] = base
 	}
-	base := r.read(ctx, db, kb)
-	r.names[id] = base
-	return base
+	if base != "" {
+		return base
+	}
+	if raw != "" && raw != id {
+		return common.BaseModelName(raw)
+	}
+	return id
 }

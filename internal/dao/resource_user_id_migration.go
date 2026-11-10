@@ -59,7 +59,6 @@ func migrateResourceUserIDs(ctx context.Context, db *gorm.DB) error {
 		{table: "mcp_server", model: &entity.MCPServer{}, ownerField: "TenantID", ownerColumn: "tenant_id"},
 		{table: "skill_spaces", model: &entity.SkillSpace{}, ownerField: "TenantID", ownerColumn: "tenant_id"},
 		{table: "document", model: &entity.Document{}, ownerField: "CreatedBy", ownerColumn: "created_by"},
-		{table: "evaluation_datasets", model: &entity.EvaluationDataset{}, ownerField: "CreatedBy", ownerColumn: "created_by", fallbackField: "TenantID", fallbackColumn: "tenant_id"},
 	}
 
 	scoped := db.WithContext(ctx)

@@ -57,6 +57,33 @@ func TestTagFileIDFromParserConfig(t *testing.T) {
 			want: "file-3",
 		},
 		{
+			name: "lowercase extractor form is not canonical",
+			parserConfig: map[string]any{
+				"extractor:AutoExtractDefault": map[string]any{
+					"tags": map[string]any{"tag_file_id": "file-5"},
+				},
+			},
+			want: "",
+		},
+		{
+			name: "bare extractor form is not scoped",
+			parserConfig: map[string]any{
+				"Extractor": map[string]any{
+					"tags": map[string]any{"tag_file_id": "file-6"},
+				},
+			},
+			want: "",
+		},
+		{
+			name: "underscore extractor form is not scoped",
+			parserConfig: map[string]any{
+				"extractor_0": map[string]any{
+					"tags": map[string]any{"tag_file_id": "file-7"},
+				},
+			},
+			want: "",
+		},
+		{
 			name: "entity.JSONMap nested value",
 			parserConfig: map[string]any{
 				"tags": entity.JSONMap{"tag_file_id": "file-4"},
@@ -85,29 +112,17 @@ func TestTagFileIDFromParserConfig(t *testing.T) {
 
 func TestTagFileIDFromParserConfigPicksStableExtractorNode(t *testing.T) {
 	// Several Extractor nodes can each declare their own tags block. Go
-	// randomizes map iteration, so an unsorted scan would return a different
-	// tag file - and thus tag the dataset from a different tag source - on
-	// every call and every process restart.
-	parserConfig := map[string]any{
-		"Extractor": map[string]any{"tags": map[string]any{"tag_file_id": "file-unscoped"}},
-	}
+	// randomizes map iteration, so the chosen tag source must not depend on
+	// iteration order.
+	parserConfig := map[string]any{}
 	for i := 0; i < 8; i++ {
 		parserConfig[fmt.Sprintf("Extractor:node-%d", i)] = map[string]any{
 			"tags": map[string]any{"tag_file_id": fmt.Sprintf("file-%d", i)},
 		}
 	}
-	// The unscoped "Extractor" node wins: it is a prefix of the scoped keys,
-	// so it sorts first.
-	for i := 0; i < 200; i++ {
-		if got := TagFileIDFromParserConfig(parserConfig); got != "file-unscoped" {
-			t.Fatalf("TagFileIDFromParserConfig with unscoped node = %q, want %q", got, "file-unscoped")
-		}
-	}
-	// Without it the lowest-sorting scoped node wins, still stably.
-	delete(parserConfig, "Extractor")
 	for i := 0; i < 200; i++ {
 		if got := TagFileIDFromParserConfig(parserConfig); got != "file-0" {
-			t.Fatalf("TagFileIDFromParserConfig across scoped nodes = %q, want %q", got, "file-0")
+			t.Fatalf("TagFileIDFromParserConfig = %q, want %q", got, "file-0")
 		}
 	}
 }

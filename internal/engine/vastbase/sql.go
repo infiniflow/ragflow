@@ -33,12 +33,7 @@ var sqlLimitPattern = regexp.MustCompile(`(?i)\blimit\b`)
 // (WITH d AS (DELETE FROM ... RETURNING *) SELECT * FROM d) also starts with
 // WITH, so the statement runs inside a READ ONLY transaction the engine
 // always rolls back — the server itself rejects writes on that path.
-func (e *Engine) RunSQL(ctx context.Context, tableName, sqlText string, kbIDs []string, format string) ([]map[string]interface{}, error) {
-	if tableName != "" {
-		if err := validateIdentifier(tableName); err != nil {
-			return nil, err
-		}
-	}
+func (e *Engine) RunSQL(ctx context.Context, sqlText string, format string) ([]map[string]interface{}, error) {
 	normalized := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(sqlText), ";"))
 	if strings.Contains(normalized, ";") {
 		return nil, fmt.Errorf("multiple statements are not allowed")

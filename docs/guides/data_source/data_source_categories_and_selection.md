@@ -12,7 +12,7 @@ sidebar_custom_props: {
 
 RAGFlow supports many data sources. It is recommended to first select a major category according to the content source, and then go to the corresponding data source configuration. The following categories help users quickly determine which connection method to choose.
 
-**Documents and collaboration platforms**: Used to synchronize team documents, wikis, cloud drive files, and collaborative documents. This category is suitable for building enterprise knowledge bases or project repositories. It includes Confluence, Notion, Feishu Wiki, Google Drive, OneDrive, SharePoint, Box, Dropbox, WebDAV, and SeaFile.
+**Documents and collaboration platforms**: Used to synchronize team documents, wikis, cloud drive files, and collaborative documents. This category is suitable for building enterprise Datasets or project repositories. It includes Confluence, Notion, Feishu Wiki, Google Drive, OneDrive, SharePoint, Box, Dropbox, WebDAV, and SeaFile.
 
 **Research libraries**: Use **Zotero** to synchronize PDF attachments from papers and references. Choose Zotero cloud or WebDAV according to where the attachments are stored.
 
@@ -24,7 +24,7 @@ RAGFlow supports many data sources. It is recommended to first select a major ca
 
 **Email, messages, and collaborative communication**: Used to synchronize emails, channel messages, and team discussion content. This category is suitable for customer service communication, business correspondence, and collaborative record queries. It includes Gmail, Outlook, IMAP, Microsoft Teams, Slack, and Discord.
 
-**Business systems and tables**: Used to synchronize CRM, tickets, online tables, courses, or operation records. This category is suitable for building business ledgers and service knowledge bases. It includes Salesforce, Airtable, Dingtalk AI Table, Zendesk, and Moodle.
+**Business systems and tables**: Used to synchronize CRM, tickets, online tables, courses, or operation records. This category is suitable for building business ledgers and service Datasets. It includes Salesforce, Airtable, Dingtalk AI Table, Zendesk, and Moodle.
 
 **General APIs and subscriptions**: Used to connect custom APIs, X search results, or public subscription feeds. This category is suitable for business systems without standard connectors and for collecting public content. It includes REST API, Xquik, RSS, and Sitemap.
 

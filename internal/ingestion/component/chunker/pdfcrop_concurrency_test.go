@@ -5,12 +5,15 @@ package chunker
 import (
 	"context"
 	"image"
+	"image/color"
+	"math"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
+	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component/schema"
 )
 
@@ -191,4 +194,46 @@ func TestCropImageChunks_ProcessWidePoolLimitsConcurrency(t *testing.T) {
 
 	release()
 	wg.Wait()
+}
+
+// unreadableImage is a page bitmap whose pixels cannot be read, so cropping
+// from it panics inside the crop task.
+type unreadableImage struct{ *image.RGBA }
+
+func (unreadableImage) At(int, int) color.Color { panic("unreadable page bitmap") }
+
+// TestCropChunkPreview_PanicReleasesPages runs a crop that panics through the
+// shared crop pool and checks that the pool reports the panic and that every
+// page the crop acquired is released, so the shared cache can still evict it.
+func TestCropChunkPreview_PanicReleasesPages(t *testing.T) {
+	resetCropWorkerPoolForTest(t, 1)
+	cache := newLRUPageCache(64, math.MaxInt64)
+	render := func(int) (image.Image, bool) {
+		return unreadableImage{image.NewRGBA(image.Rect(0, 0, 64, 64))}, true
+	}
+	positions := []deepdoctype.Position{{PageNumbers: []int{0, 1}, Left: 1, Right: 10, Top: 1, Bottom: 10}}
+
+	ctx := context.Background()
+	fut, err := cropWorkerPool().Submit(ctx, func(context.Context) {
+		cropChunkPreview(cache, render, "image", positions)
+	})
+	if err != nil {
+		t.Fatalf("submit crop job: %v", err)
+	}
+	res, err := fut.Wait(ctx)
+	if err != nil {
+		t.Fatalf("wait crop job: %v", err)
+	}
+	if res.Err == nil || !strings.Contains(res.Err.Error(), "panic") {
+		t.Fatalf("crop job error = %v, want the recovered panic", res.Err)
+	}
+	for _, pn := range []int{0, 1} {
+		el, ok := cache.items[pn]
+		if !ok {
+			t.Fatalf("page %d was never acquired", pn)
+		}
+		if ref := el.Value.(pageCacheEntry).ref; ref != 0 {
+			t.Errorf("page %d ref = %d after the crop panicked, want 0", pn, ref)
+		}
+	}
 }

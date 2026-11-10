@@ -1116,7 +1116,7 @@ func insertDatasetUpdateConnector(t *testing.T, id, tenantID string) {
 		Name:      "Test Connector",
 		Source:    "google_drive",
 		InputType: "oauth",
-		Config:    entity.JSONMap{"sync_deleted_files": false},
+		Config:    entity.ConnectorConfig{"sync_deleted_files": false},
 		Status:    string(entity.TaskStatusDone),
 	}
 	if err := dao.DB.Create(connector).Error; err != nil {
@@ -1356,8 +1356,7 @@ func TestUpdateDatasetUsesTenantModelIDForExtractorDefault(t *testing.T) {
 func extractorNodeMetadataInTest(t *testing.T, cfg map[string]interface{}) map[string]interface{} {
 	t.Helper()
 	for cpnID, raw := range cfg {
-		lower := strings.ToLower(cpnID)
-		if !strings.HasPrefix(lower, "extractor:") && !strings.HasPrefix(lower, "extractor_") {
+		if !common.IsExtractorComponentID(cpnID) {
 			continue
 		}
 		params, ok := raw.(map[string]interface{})

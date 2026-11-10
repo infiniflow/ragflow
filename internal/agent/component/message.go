@@ -329,15 +329,15 @@ func (m *MessageComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[s
 		memIDs = m.memoryIDs
 	}
 	if len(memIDs) > 0 {
-		userID := stringFromStateSys(state, "user_id")
-		if userID == "" {
-			userID = m.userID
-		}
+		userID := m.userID
 		// If userID is a canvas variable reference (e.g. "{cpn@user_id}"),
 		// resolve it against the current state. Mirrors Python's
 		// agent/component/message.py:569-571.
 		if userID != "" && runtime.VarRefPattern.MatchString(userID) {
 			userID = runtime.ResolveTemplateForDisplay(userID, state)
+		}
+		if userID == "" {
+			userID = stringFromStateSys(state, "user_id")
 		}
 		saver := GetMemorySaver()
 		saveErr := saver.Save(ctx, MemorySaveRequest{

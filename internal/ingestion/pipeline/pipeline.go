@@ -149,7 +149,7 @@ func ValidatePipeline(cnv *canvas.Canvas) error {
 	}
 	extractorCount := 0
 	for id, comp := range cnv.Components {
-		if isExtractorComponent(id, comp.Obj.ComponentName) {
+		if common.IsExtractorComponent(id, comp.Obj.ComponentName) {
 			extractorCount++
 		}
 	}

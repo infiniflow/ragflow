@@ -315,8 +315,8 @@ type fakePipeline struct {
 	messages   []map[string]interface{}
 }
 
-func (f *fakePipeline) AsyncChat(ctx context.Context, userID string, chat *entity.Chat, messages []map[string]interface{}, stream bool, kwargs map[string]interface{}) (<-chan AsyncChatResult, error) {
-	f.userID = userID
+func (f *fakePipeline) AsyncChat(ctx context.Context, chat *entity.Chat, messages []map[string]interface{}, stream bool, kwargs map[string]interface{}) (<-chan AsyncChatResult, error) {
+	f.userID = permission.UserIDFromContext(ctx)
 	f.messages = messages
 	return f.resultChan, f.err
 }
@@ -455,8 +455,8 @@ type fakeChatModelConfigResolver struct {
 	err      error
 }
 
-func (f *fakeChatModelConfigResolver) ResolveInfo(_ context.Context, access Identity, _ entity.ModelType, modelRef string) (*modelModule.ModelInfo, error) {
-	f.tenantID = access.TenantID
+func (f *fakeChatModelConfigResolver) ResolveInfo(ctx context.Context, _ entity.ModelType, modelRef string) (*modelModule.ModelInfo, error) {
+	f.tenantID = permission.TenantIDFromContext(ctx)
 	f.llmID = modelRef
 	if f.err != nil {
 		return nil, f.err
@@ -464,15 +464,15 @@ func (f *fakeChatModelConfigResolver) ResolveInfo(_ context.Context, access Iden
 	return &modelModule.ModelInfo{ID: "resolved-model-id", Name: "resolved-model"}, nil
 }
 
-func (f *fakeChatModelConfigResolver) ResolveDefaultInfo(_ context.Context, access Identity, _ entity.ModelType) (*modelModule.ModelInfo, error) {
-	f.tenantID = access.TenantID
+func (f *fakeChatModelConfigResolver) ResolveDefaultInfo(ctx context.Context, _ entity.ModelType) (*modelModule.ModelInfo, error) {
+	f.tenantID = permission.TenantIDFromContext(ctx)
 	if f.err != nil {
 		return nil, f.err
 	}
 	return &modelModule.ModelInfo{ID: "resolved-model-id", Name: "resolved-model"}, nil
 }
 
-func (f *fakeChatModelConfigResolver) ResolveModelType(ctx context.Context, access Identity, modelRef string) ([]entity.ModelType, error) {
+func (f *fakeChatModelConfigResolver) ResolveModelType(_ context.Context, modelRef string) ([]entity.ModelType, error) {
 	return []entity.ModelType{entity.ModelTypeChat}, nil
 }
 

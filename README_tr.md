@@ -75,7 +75,7 @@
 
 Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinden deneyin.
 
-Yerel dağıtım için [Kendi Sunucusunda Barındırma](#-kendi-sunucusunda-barındırma) bölümüne bakın.
+Yerel dağıtım için [Kendi Sunucusunda Barındırma](#-yerel-dağıtım) bölümüne bakın.
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -84,6 +84,7 @@ Yerel dağıtım için [Kendi Sunucusunda Barındırma](#-kendi-sunucusunda-bar�
 
 ## 🔥 Son Güncellemeler
 
+- 2026-11-06 RAGFlow 1.0.0 yayımlandı.
 - 2026-09-29 RAGFlow 1.0.0-rc1 yayımlandı.
 
 - 2026-09-10 Site haritaları üzerinden web içeriği alımı eklendi.
@@ -179,7 +180,7 @@ Docker hızlı değerlendirme, entegrasyon testi ve üretim; kaynak kod ise geli
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc3
+   git checkout v1.0.0
    docker compose -f docker-compose.yml up -d
    ```
 

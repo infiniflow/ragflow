@@ -24,10 +24,10 @@ func TestGetDownloadStatusAggregatesLinkedConnectorFiles(t *testing.T) {
 	pushServiceDB(t, db)
 
 	connectors := []entity.Connector{
-		{ID: "connector-checkpoint", TenantID: "tenant-1", Name: "checkpoint", Source: "rss", InputType: "poll", Config: entity.JSONMap{}, Status: dao.SyncStatusSchedule},
-		{ID: "connector-fallback", TenantID: "tenant-1", Name: "fallback", Source: "s3", InputType: "poll", Config: entity.JSONMap{}, Status: dao.SyncStatusSchedule},
-		{ID: "connector-source-fail", TenantID: "tenant-1", Name: "source-fail", Source: "notion", InputType: "poll", Config: entity.JSONMap{}, Status: dao.SyncStatusSchedule},
-		{ID: "connector-unlinked", TenantID: "tenant-1", Name: "unlinked", Source: "webdav", InputType: "poll", Config: entity.JSONMap{}, Status: dao.SyncStatusSchedule},
+		{ID: "connector-checkpoint", TenantID: "tenant-1", Name: "checkpoint", Source: "rss", InputType: "poll", Config: entity.ConnectorConfig{}, Status: dao.SyncStatusSchedule},
+		{ID: "connector-fallback", TenantID: "tenant-1", Name: "fallback", Source: "s3", InputType: "poll", Config: entity.ConnectorConfig{}, Status: dao.SyncStatusSchedule},
+		{ID: "connector-source-fail", TenantID: "tenant-1", Name: "source-fail", Source: "notion", InputType: "poll", Config: entity.ConnectorConfig{}, Status: dao.SyncStatusSchedule},
+		{ID: "connector-unlinked", TenantID: "tenant-1", Name: "unlinked", Source: "webdav", InputType: "poll", Config: entity.ConnectorConfig{}, Status: dao.SyncStatusSchedule},
 	}
 	if err := db.Create(&connectors).Error; err != nil {
 		t.Fatalf("create connectors: %v", err)

@@ -144,6 +144,35 @@ describe('Run preflight', () => {
     expect(message.error).not.toHaveBeenCalled();
   });
 
+  it('reports DSL build exceptions and resolves the save promise', async () => {
+    mockBuildDslData.mockImplementationOnce(() => {
+      throw new Error('Unable to build agent DSL');
+    });
+    const { result } = renderHook(() => useSaveGraph());
+    let saveResult: unknown;
+
+    await act(async () => {
+      saveResult = await result.current.saveGraph();
+    });
+
+    expect(saveResult).toBeUndefined();
+    expect(message.error).toHaveBeenCalledWith('Unable to build agent DSL');
+    expect(mockSaveAgent).not.toHaveBeenCalled();
+  });
+
+  it('reports rejected agent save requests and resolves the save promise', async () => {
+    mockSaveAgent.mockRejectedValueOnce(new Error('Unable to save agent'));
+    const { result } = renderHook(() => useSaveGraph());
+    let saveResult: unknown;
+
+    await act(async () => {
+      saveResult = await result.current.saveGraph();
+    });
+
+    expect(saveResult).toBeUndefined();
+    expect(message.error).toHaveBeenCalledWith('Unable to save agent');
+  });
+
   it('validates explicit nextNodes before opening chat', async () => {
     useGraphStore.setState({
       nodes: [node('Message', { content: ['hello'] })],

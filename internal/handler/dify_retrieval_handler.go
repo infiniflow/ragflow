@@ -21,7 +21,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+
 	"ragflow/internal/dao"
+	"ragflow/internal/permission"
 	"strconv"
 	"strings"
 
@@ -29,7 +31,6 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
-	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/service/graph"
 	"ragflow/internal/service/nlp"
@@ -49,8 +50,8 @@ type KBServiceIface interface {
 
 // ModelCreator supplies typed model instances to Dify retrieval.
 type ModelCreator interface {
-	NewEmbeddingModel(ctx context.Context, access service.Identity, modelRef string) (*modelModule.EmbeddingModel, error)
-	NewDefaultChatModel(ctx context.Context, access service.Identity) (*modelModule.ChatModel, error)
+	NewEmbeddingModel(ctx context.Context, modelRef string) (*modelModule.EmbeddingModel, error)
+	NewDefaultChatModel(ctx context.Context) (*modelModule.ChatModel, error)
 }
 
 // MetadataServiceIface abstracts MetadataService for the Dify handler.
@@ -169,7 +170,7 @@ func NewDifyRetrievalHandler(
 // Retrieval handles POST/GET /api/v1/dify/retrieval.
 // Matches Python: api/apps/restful_apis/dify_retrieval_api.py::retrieval()
 func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
-	user, errCode, errMsg := GetUser(c)
+	_, errCode, errMsg := GetUser(c)
 	if errCode != common.CodeSuccess {
 		common.Respond(c, http.StatusUnauthorized, errCode, nil, errMsg)
 		return
@@ -245,8 +246,8 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	}
 
 	// Get embedding model
-	access := service.Identity{UserID: user.ID, TenantID: kb.TenantID}
-	embModel, err := h.modelFactory.NewEmbeddingModel(ctx, access, kb.EmbdID)
+	ctx = permission.WithTenantID(ctx, kb.TenantID)
+	embModel, err := h.modelFactory.NewEmbeddingModel(ctx, kb.EmbdID)
 	if err != nil {
 		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprintf("failed to get embedding model: %v", err))
 		return
@@ -310,7 +311,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 
 	// KG retrieval (optional)
 	if req.UseKG {
-		chatModel, kgErr := h.modelFactory.NewDefaultChatModel(ctx, access)
+		chatModel, kgErr := h.modelFactory.NewDefaultChatModel(ctx)
 		if kgErr != nil {
 			common.Warn("KG retrieval: failed to get chat model", zap.String("kbID", req.KnowledgeID), zap.Error(kgErr))
 		} else if chatModel != nil {

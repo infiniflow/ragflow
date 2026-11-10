@@ -207,7 +207,12 @@ export const useFetchDocumentList = (loop = true) => {
     total: number;
     has_active_tasks?: boolean;
   }>({
-    queryKey: DocumentKeys.list(debouncedSearchString, pagination, filterValue),
+    queryKey: DocumentKeys.list(
+      knowledgeId || id,
+      debouncedSearchString,
+      pagination,
+      filterValue,
+    ),
     initialData: { docs: [], total: 0, has_active_tasks: false },
     refetchInterval: (query) => {
       if (!loop) return false;

@@ -8,6 +8,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	"ragflow/internal/storage"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -202,5 +203,30 @@ func TestCreateCommit_RejectsDeleteOfOutOfFolderFileAbsentFromTree(t *testing.T)
 	}
 	if commits != 0 {
 		t.Fatalf("expected no tombstone for alien file, found %d commit items", commits)
+	}
+}
+
+// A later invalid rename must not leave the objects written by earlier
+// add/modify changes behind, because object storage has no transaction.
+func TestCreateCommitRejectsInvalidRenameBeforeWritingObjects(t *testing.T) {
+	db := newCommitDeleteTestDB(t)
+	seedFolder(t, db, "folder-1", "")
+	seedLiveFile(t, db, "f1", "folder-1")
+
+	store := &fakeStorage{}
+	factory := storage.GetStorageFactory()
+	original := factory.GetStorage()
+	factory.SetStorage(store)
+	t.Cleanup(func() { factory.SetStorage(original) })
+
+	_, err := NewFileCommitService().CreateCommit(t.Context(), "folder-1", "u1", "rename", []entity.FileChange{
+		{FileID: "f1", FileName: "a.txt", Operation: "add", Content: "data"},
+		{FileID: "f1", Operation: "rename", NewName: "  "},
+	})
+	if !errors.Is(err, ErrInvalidRenameTarget) {
+		t.Fatalf("err = %v, want ErrInvalidRenameTarget", err)
+	}
+	if store.lastFnm != "" {
+		t.Fatalf("object %q was written before rename validation", store.lastFnm)
 	}
 }

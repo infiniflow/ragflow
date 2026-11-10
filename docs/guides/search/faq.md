@@ -11,15 +11,15 @@ sidebar_custom_props:
 
 **What are the main differences between Search and Chat?**
 
-Search is designed for knowledge retrieval. It retrieves and displays relevant content from selected knowledge bases based on the user's query, helping users quickly locate the information they need.
+Search is designed for knowledge retrieval. It retrieves and displays relevant content from selected Datasets based on the user's query, helping users quickly locate the information they need.
 
 Chat is designed for knowledge-based question answering. In addition to retrieving relevant knowledge, it uses an LLM to understand questions and generate answers. It also supports multi-turn conversations and capabilities such as Agentic Retrieval, making it suitable for scenarios that require information synthesis, reasoning, and natural-language responses.
 
-**Why can't I find content that already exists in the knowledge base?**
+**Why can't I find content that already exists in the Dataset?**
 
 The relevant chunks may not meet the **Similarity threshold**, or the query may differ significantly from the wording in the source content. Try lowering the similarity threshold, adjusting the **Keyword similarity weight**, or using more specific keywords.
 
-Also make sure that the target knowledge base has been added to the current Search and that the relevant documents have been successfully parsed and indexed.
+Also make sure that the target Dataset has been added to the current Search and that the relevant documents have been successfully parsed and indexed.
 
 **Why do my search results contain a lot of irrelevant content?**
 
@@ -43,4 +43,4 @@ If result ranking quality is more important, you can enable Rerank. If response 
 
 No. A higher threshold can reduce less relevant results, but it may also filter out useful content, resulting in fewer or even no search results.
 
-Adjust the threshold according to your knowledge base and actual search results to achieve a balance between retrieval coverage and result relevance.
+Adjust the threshold according to your Dataset and actual search results to achieve a balance between retrieval coverage and result relevance.

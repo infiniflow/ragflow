@@ -280,20 +280,16 @@ func TestPDFParseResultToJSON_DefaultKeepsHeaderFooterLikePython(t *testing.T) {
 func TestPDFParser_ConfigureFromSetup(t *testing.T) {
 	p := NewPDFParser()
 	p.ConfigureFromSetup(map[string]any{
-		"parse_method":          "deepdoc",
-		"enable_multi_column":   true,
-		"flatten_media_to_text": true,
-		"remove_toc":            true,
-		"remove_header_footer":  true,
+		"parse_method":         "deepdoc",
+		"enable_multi_column":  true,
+		"remove_toc":           true,
+		"remove_header_footer": true,
 	})
 	if !p.EnableMultiColumn {
 		t.Fatal("EnableMultiColumn = false, want true")
 	}
 	if got, want := p.ParseMethod, "deepdoc"; got != want {
 		t.Fatalf("ParseMethod = %q, want %q", got, want)
-	}
-	if !p.FlattenMediaToText {
-		t.Fatal("FlattenMediaToText = false, want true")
 	}
 	if !p.RemoveTOC {
 		t.Fatal("RemoveTOC = false, want true")

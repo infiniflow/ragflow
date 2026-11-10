@@ -265,7 +265,7 @@ func (r engineReader) LoadMergedWikiPages(ctx context.Context, tenant, kb string
 			break
 		}
 		for _, row := range res.Chunks {
-			if product, ok := productFromChunkMap(row, tenant, kccommon.VariantWiki); ok && metaString(product.Meta, "kind") == "page" {
+			if product, ok := productFromChunkMap(row, tenant, kccommon.VariantWiki); ok && kccommon.MetaString(product.Meta, "kind") == "page" {
 				pages = append(pages, product)
 			}
 		}
@@ -315,7 +315,7 @@ func (r engineReader) LoadDocumentWikiPagesBySlugs(ctx context.Context, tenant, 
 			break
 		}
 		for _, row := range res.Chunks {
-			if product, ok := productFromChunkMap(row, tenant, kccommon.VariantWiki); ok && metaString(product.Meta, "kind") == "page" {
+			if product, ok := productFromChunkMap(row, tenant, kccommon.VariantWiki); ok && kccommon.MetaString(product.Meta, "kind") == "page" {
 				pages = append(pages, product)
 			}
 		}
@@ -395,12 +395,12 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 		meta["to"] = v
 		meta["kind"] = "relation"
 	}
-	if metaString(meta, "kind") == "relation" {
+	if kccommon.MetaString(meta, "kind") == "relation" {
 		if v, ok := payload["type"].(string); ok && v != "" {
 			meta["relation_type"] = v
 		}
 	}
-	if v, ok := metaInt(c, "mention_count_int"); ok {
+	if v, ok := kccommon.MetaInt(c, "mention_count_int"); ok {
 		meta["mention_count"] = v
 	}
 	if v, ok := c["slug_kwd"].(string); ok && v != "" {
@@ -422,20 +422,20 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 	if v, ok := c["summary_with_weight"].(string); ok && v != "" {
 		meta["summary"] = v
 	}
-	if v := metaStringSlice(c, "entity_names_kwd"); len(v) > 0 {
+	if v := kccommon.MetaStringSlice(c, "entity_names_kwd"); len(v) > 0 {
 		meta["entity_names"] = v
 	}
-	if v := metaStringSlice(c, "related_kb_pages_kwd"); len(v) > 0 {
+	if v := kccommon.MetaStringSlice(c, "related_kb_pages_kwd"); len(v) > 0 {
 		meta["related_kb_pages"] = v
 	}
-	if v := metaStringSlice(c, "outlinks_kwd"); len(v) > 0 {
+	if v := kccommon.MetaStringSlice(c, "outlinks_kwd"); len(v) > 0 {
 		meta["outlinks"] = v
 	}
 	// Section depth comes from depth_int. Only the wiki variant consumes
 	// Meta["section_level"] (applyVariantColumns); tree rows also stamp depth_int,
 	// but they keep their depth in raptor_layer_int.
 	if expect == kccommon.VariantWiki {
-		if v, ok := metaInt(c, "depth_int"); ok {
+		if v, ok := kccommon.MetaInt(c, "depth_int"); ok {
 			meta["section_level"] = v
 		}
 	}
@@ -478,10 +478,10 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 	if v, ok := c["create_time"].(string); ok && v != "" {
 		meta["created_at"] = v
 	}
-	if v := metaStringSlice(c, "source_chunk_ids"); len(v) > 0 {
+	if v := kccommon.MetaStringSlice(c, "source_chunk_ids"); len(v) > 0 {
 		meta["source_chunk_ids"] = v
 	}
-	if v := metaStringSlice(c, "source_doc_ids"); len(v) > 0 {
+	if v := kccommon.MetaStringSlice(c, "source_doc_ids"); len(v) > 0 {
 		meta["source_doc_ids"] = v
 	}
 
@@ -494,7 +494,7 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 	// more than one the first is used (multi-template rows are a config error
 	// surfaced elsewhere).
 	templateID := ""
-	if ids := metaStringSlice(c, "compilation_template_ids"); len(ids) > 0 {
+	if ids := kccommon.MetaStringSlice(c, "compilation_template_ids"); len(ids) > 0 {
 		templateID = ids[0]
 	}
 	return kccommon.Product{

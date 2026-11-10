@@ -81,28 +81,6 @@ func (p *PDFParser) NormalizeResult(ctx context.Context, filename string, result
 				fields["doc_type_kwd"] = "text"
 			}
 		}
-		if p.FlattenMediaToText {
-			// Flattened output keeps one text carrier per item. Structured
-			// tables (MinerU content_list, projected HTML) carry cells in
-			// `table` and footnotes in `text`; rendering the table preserves
-			// cells, caption, and footnote in that order. The render
-			// normalizes markup (header inference, escaping, whitespace), so
-			// it is not byte-identical to the source HTML, but it is
-			// content-preserving. Items without a table keep their text verbatim.
-			if table, ok := fields["table"].(*entity.TableData); ok && table != nil {
-				text, _ := fields["text"].(string)
-				fields["text"] = strings.TrimSpace(tableutil.RenderTableHTML(table) + "\n" + text)
-				delete(fields, "table")
-			}
-			// Flattening moves an item's content into text. A crop-only media
-			// item has no content to move: rewriting it to text would hide the
-			// region from vision enhancement and leave an empty item the
-			// chunker drops, so it keeps its media type and stays available to
-			// the on-demand cropper.
-			if hasPDFTextCarrier(fields) || len(positions) == 0 {
-				fields["doc_type_kwd"] = "text"
-			}
-		}
 		items = appendPDFItem(items, fields)
 	}
 	if droppedPositions > 0 {
@@ -309,18 +287,6 @@ func pdfPositionHasRegion(values [5]float64) bool {
 		return false
 	}
 	return values[2] > values[1] && values[4] > values[3]
-}
-
-// hasPDFTextCarrier reports whether flattening an item has any content to move
-// into text: a body, an inline image payload, or a deferred media reference.
-func hasPDFTextCarrier(fields map[string]any) bool {
-	if text, _ := fields["text"].(string); strings.TrimSpace(text) != "" {
-		return true
-	}
-	if img, _ := fields["image"].(string); img != "" {
-		return true
-	}
-	return entity.MediaRefFromAny(fields["media_ref"]) != nil
 }
 
 // HasPDFCropRegion reports whether the item carries at least one PDF crop

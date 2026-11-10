@@ -177,6 +177,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewBedrockModel(baseURL, urlSuffix), nil
 	case "paddleocr.local":
 		return NewPaddleOCRLocalModel(baseURL, urlSuffix), nil
+	case "minicpm-ocr":
+		return NewMiniCPMOCRModel(baseURL, urlSuffix), nil
 	case "orcarouter":
 		return NewOrcaRouterModel(baseURL, urlSuffix), nil
 	case "huaweicloud":
@@ -203,6 +205,9 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewEmpirioLabsModel(baseURL, urlSuffix), nil
 	case "runcrate":
 		return NewRuncrateModel(baseURL, urlSuffix), nil
+	case "nace":
+		// System One protocol, like "systemone", with Nace's own model catalog.
+		return NewNaceModel(baseURL, urlSuffix), nil
 	case "worldrouter":
 		return NewWorldRouterModel(baseURL, urlSuffix), nil
 	case "cloudgpu":
