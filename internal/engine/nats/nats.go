@@ -366,28 +366,31 @@ func (n *NatsEngine) ensureConsumer(ctx context.Context, tier common.Tier) (jets
 		consumerCfg.FilterSubjects = spec.subjects
 	}
 	consumer, err := stream.CreateOrUpdateConsumer(ctx, consumerCfg)
+	confirmed := true
 	if err != nil {
 		if strings.Contains(err.Error(), "max waiting can not be updated") {
 			consumer, err = stream.Consumer(ctx, spec.consumerName)
 			if err != nil {
 				return nil, 0, fmt.Errorf("failed to get existing consumer %s: %w", spec.consumerName, err)
 			}
+			confirmed = false
 		} else {
 			return nil, 0, fmt.Errorf("failed to create consumer %s: %w", spec.consumerName, err)
 		}
 	}
 	// The delivery limit is read back from the broker rather than assumed: the
 	// existing-consumer fallback above reattaches to a consumer created by an
-	// older release, whose MaxDeliver can differ from ingestionMaxDeliver. The
-	// ingestion service settles a task whose budget is spent, so a stale local
-	// constant would either fail a task early or never fail it at all.
-	limit := uint64(ingestionMaxDeliver)
-	if info, infoErr := consumer.Info(ctx); infoErr == nil && info.Config.MaxDeliver > 0 {
-		limit = uint64(info.Config.MaxDeliver)
-	} else if infoErr != nil {
-		common.Warn(fmt.Sprintf("failed to read consumer delivery limit, using %d: %v", ingestionMaxDeliver, infoErr))
+	// older release, whose MaxDeliver can differ from ingestionMaxDeliver. When
+	// this call did configure the consumer, the requested limit applies even if
+	// the read-back fails. A reattached consumer's limit is only known from the
+	// read-back: guessing ingestionMaxDeliver could settle a task the broker
+	// would still redeliver, so the limit stays unknown (0) for that case.
+	var info *jetstream.ConsumerInfo
+	var infoErr error
+	if info, infoErr = consumer.Info(ctx); infoErr != nil {
+		common.Warn(fmt.Sprintf("failed to read consumer delivery limit: %v", infoErr))
 	}
-	return consumer, limit, nil
+	return consumer, resolveDeliveryLimit(confirmed, info), nil
 }
 
 // consumerHandle returns one lane's consumer handle, or an error when the
@@ -402,15 +405,29 @@ func (n *NatsEngine) consumerHandle(tier common.Tier) (jetstream.Consumer, error
 	return consumer, nil
 }
 
+// resolveDeliveryLimit picks the limit message handles report. A zero result
+// means unknown: the runner then never settles a task early on a guessed
+// budget. configured says this call created or updated the consumer, so the
+// requested limit holds even when the read-back failed.
+func resolveDeliveryLimit(configured bool, info *jetstream.ConsumerInfo) uint64 {
+	if info != nil && info.Config.MaxDeliver > 0 {
+		return uint64(info.Config.MaxDeliver)
+	}
+	if configured {
+		return ingestionMaxDeliver
+	}
+	common.Warn("consumer delivery limit unknown on a reattached consumer; leaving tasks for redelivery instead of guessing")
+	return 0
+}
+
 // deliveryLimit reports one lane's consumer delivery limit for message handles
-// to carry into their redelivery budget.
+// to carry into their redelivery budget. Zero means unknown and is passed
+// through: the handle then reports no budget, so the runner leaves the task for
+// redelivery instead of settling it on a guess.
 func (n *NatsEngine) deliveryLimit(tier common.Tier) uint64 {
 	n.consumerMu.Lock()
 	defer n.consumerMu.Unlock()
-	if limit := n.consumerMaxDeliver[tier]; limit > 0 {
-		return limit
-	}
-	return ingestionMaxDeliver
+	return n.consumerMaxDeliver[tier]
 }
 
 // recreateConsumer rebuilds one lane's consumer and returns the fresh handle.
