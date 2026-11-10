@@ -880,3 +880,48 @@ func TestStreamChatCompletionSSE_ChunkJSONShape(t *testing.T) {
 		t.Errorf("delta.content: got %v, want x", delta["content"])
 	}
 }
+
+// The streaming path must keep the reasoning text it already routed to the
+// reasoning channel: only the answer portion is replaced by the final text.
+func TestSplitFinalResponseKeepsStreamedReasoning(t *testing.T) {
+	content, reasoning, tokens := splitFinalResponse(AsyncChatResult{Answer: "answer", Final: true}, "step one step two")
+	if content != "answer" {
+		t.Fatalf("content = %q, want answer", content)
+	}
+	if reasoning != "step one step two" {
+		t.Fatalf("reasoning = %q, want the streamed deltas", reasoning)
+	}
+	want := tokenizer.NumTokensFromString("answer") + tokenizer.NumTokensFromString("step one step two")
+	if tokens != want {
+		t.Fatalf("completion tokens = %d, want %d (answer + reasoning)", tokens, want)
+	}
+}
+
+// A final result carrying the block itself wins over the streamed fallback, so
+// the streaming and non-streaming paths count the same text.
+func TestSplitFinalResponsePrefersFinalReasoning(t *testing.T) {
+	final := AsyncChatResult{Answer: "<think>plan</think>answer", Final: true}
+	content, reasoning, tokens := splitFinalResponse(final, "streamed")
+	if content != "answer" || reasoning != "plan" {
+		t.Fatalf("content = %q, reasoning = %q, want answer/plan", content, reasoning)
+	}
+	want := tokenizer.NumTokensFromString("answer") + tokenizer.NumTokensFromString("plan")
+	if tokens != want {
+		t.Fatalf("completion tokens = %d, want %d (answer + plan)", tokens, want)
+	}
+}
+
+// An unfinished block is reasoning, not answer: content stays empty and the
+// text is reported on the reasoning channel.
+func TestSplitFinalResponseUnclosedBlockStaysReasoning(t *testing.T) {
+	content, reasoning, tokens := splitFinalResponse(AsyncChatResult{Answer: "<think>still thinking", Final: true}, "")
+	if content != "" {
+		t.Fatalf("content = %q, want no visible answer", content)
+	}
+	if reasoning != "still thinking" {
+		t.Fatalf("reasoning = %q, want the truncated block", reasoning)
+	}
+	if want := tokenizer.NumTokensFromString("still thinking"); tokens != want {
+		t.Fatalf("completion tokens = %d, want %d", tokens, want)
+	}
+}

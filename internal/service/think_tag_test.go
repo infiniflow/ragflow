@@ -196,9 +196,14 @@ func TestExtractVisibleAnswer_NoTags(t *testing.T) {
 	}
 }
 
-func TestExtractVisibleAnswer_StrayTag(t *testing.T) {
-	if got := ExtractVisibleAnswer("<think>text"); got != "text" {
-		t.Errorf("got %q", got)
+// A <think> without a matching </think> is a reasoning block cut off mid-stream,
+// so none of its text is answer text.
+func TestExtractVisibleAnswer_UnclosedThink(t *testing.T) {
+	if got := ExtractVisibleAnswer("<think>text"); got != "" {
+		t.Errorf("got %q, want no visible answer for an unclosed block", got)
+	}
+	if got := ExtractVisibleAnswer("answer<think>text"); got != "answer" {
+		t.Errorf("got %q, want the text before the unclosed block", got)
 	}
 }
 
@@ -404,9 +409,15 @@ func TestExtractReasoning_NoTags(t *testing.T) {
 	}
 }
 
+// The model can be cut off before it closes the block; the text it produced is
+// still reasoning and must not be returned as the answer.
 func TestExtractReasoning_UnclosedBlock(t *testing.T) {
-	if got := ExtractReasoning("<think>plan"); got != "" {
-		t.Fatalf("ExtractReasoning = %q, want empty for an unclosed block", got)
+	if got := ExtractReasoning("<think>plan"); got != "plan" {
+		t.Fatalf("ExtractReasoning = %q, want the truncated reasoning text", got)
+	}
+	raw := "<think>first</think>answer<think>second"
+	if got := ExtractReasoning(raw); got != "second" {
+		t.Fatalf("ExtractReasoning(%q) = %q, want the last unclosed block", raw, got)
 	}
 }
 
