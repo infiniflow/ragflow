@@ -602,7 +602,7 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 		})
 
 		return kc.Deps{
-			Chat:            &kcChatInvoker{factory: modelFactory, tenantID: tenantID, llmID: llmID, llmProgress: newKCLLMProgressReporter()},
+			Chat:            &kcChatInvoker{factory: modelFactory, tenantID: tenantID, llmID: llmID},
 			Embed:           embedder,
 			WikiPages:       &kcWikiPageStore{docEngine: kcWiringDeps.Engine},
 			WikiMapVersions: mapStore,
@@ -617,10 +617,9 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 
 // kcChatInvoker adapts a factory-created ChatModel to the knowledge compiler.
 type kcChatInvoker struct {
-	factory     *service.ModelFactory
-	tenantID    string
-	llmID       string
-	llmProgress kcLLMProgressReporter
+	factory  *service.ModelFactory
+	tenantID string
+	llmID    string
 }
 
 func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatResponse, error) {
@@ -630,8 +629,8 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	}
 	chatModel, err := c.factory.NewChatModel(permission.WithTenantID(ctx, c.tenantID), llmID)
 	if err != nil {
-		if !req.DisableRetry && c.llmProgress != nil {
-			c.llmProgress.report(ctx, "[ERROR] LLM call failed: "+kc.CompactError(err))
+		if !req.DisableRetry {
+			runtime.ReportProgressMessage(ctx, "Compiler", "[ERROR] LLM call failed: "+kc.CompactError(err))
 		}
 		return nil, err
 	}
@@ -690,10 +689,8 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 		attemptCtx, cancel := context.WithTimeout(ctx, kcChatAttemptTimeout)
 		defer cancel()
 		r, err := func() (*models.ChatResponse, error) {
-			if c.llmProgress == nil {
-				return chatModel.ChatWithMessages(attemptCtx, msgs, config, nil)
-			}
-			defer c.llmProgress.begin(ctx)()
+			finishIO := runtime.TrackIO(ctx, "Compiler", "LLM call", "")
+			defer finishIO()
 			return chatModel.ChatWithMessages(attemptCtx, msgs, config, nil)
 		}()
 		if err != nil {
