@@ -84,11 +84,12 @@ type ChatbotSSEFrame struct {
 // WriteChatbotFrame emits one SSE frame and flushes the underlying
 // http.ResponseWriter. The frame is `data: <json>\n\n`.
 //
-// Error frames include the underlying error in the message and answer.
+// Error frames log the failure server-side and use a generic client message.
 func WriteChatbotFrame(w http.ResponseWriter, f ChatbotSSEFrame) error {
 	var payload map[string]any
 	if f.Err != nil {
-		clientErrMsg := f.Err.Error()
+		common.Error("Chatbot pipeline failed", f.Err)
+		const clientErrMsg = "an internal error occurred"
 		payload = map[string]any{
 			"code":    500,
 			"message": clientErrMsg,
@@ -209,7 +210,9 @@ func WriteChatbotRunEvent(w http.ResponseWriter, ev canvas.RunEvent) error {
 	if ev.Type == "error" {
 		msg := "an internal error occurred"
 		if m, ok := data.(map[string]any); ok {
-			if s, _ := m["message"].(string); s != "" {
+			if kind, _ := m["kind"].(string); kind == canvas.RunErrorKindInternal {
+				msg = canvas.InternalRunErrorMessage
+			} else if s, _ := m["message"].(string); s != "" {
 				msg = s
 			}
 		} else if s, ok := data.(string); ok && s != "" {

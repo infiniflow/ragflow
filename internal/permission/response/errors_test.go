@@ -20,7 +20,7 @@ func TestNormalize(t *testing.T) {
 		{name: "missing resource", err: permission.ErrResourceNotFound, code: common.CodeNotFound, message: "Resource not found"},
 		{name: "denied", err: permission.ErrPermissionDenied, code: common.CodeForbidden, message: "Permission denied"},
 		{name: "missing membership", err: permission.ErrMembershipNotFound, code: common.CodeForbidden, message: "Permission denied"},
-		{name: "internal permission failure", err: errors.New("database unavailable"), code: common.CodeServerError, message: "Permission check failed: database unavailable"},
+		{name: "internal permission failure", err: errors.New("database credentials must not leak"), code: common.CodeServerError, message: "Permission check failed"},
 	}
 
 	for _, test := range tests {
@@ -48,7 +48,7 @@ func TestNormalizeHidden(t *testing.T) {
 	}{
 		{name: "denied resource", err: permission.ErrPermissionDenied, code: common.CodeNotFound, message: "Resource not found"},
 		{name: "missing resource", err: permission.ErrResourceNotFound, code: common.CodeNotFound, message: "Resource not found"},
-		{name: "internal failure remains visible", err: errors.New("db error"), code: common.CodeServerError, message: "Permission check failed: db error"},
+		{name: "internal failure remains visible", err: errors.New("db error"), code: common.CodeServerError, message: "Permission check failed"},
 	}
 
 	for _, test := range tests {

@@ -48,7 +48,7 @@ func normalize(err error, hideResource bool) (common.ErrorCode, error) {
 	}
 
 	code := common.CodeServerError
-	message := "Permission check failed: " + err.Error()
+	message := "Permission check failed"
 	switch {
 	case errors.Is(err, permission.ErrUnauthenticated):
 		code = common.CodeUnauthorized

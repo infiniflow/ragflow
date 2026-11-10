@@ -1479,7 +1479,7 @@ func TestRunAgent_AllFixture_DataOps(t *testing.T) {
 
 // TestRunAgent_RealCanvas_CompileFails pins the asynchronous compile-failure
 // branch. Once streaming has started, Runner must emit a typed internal error
-// with the component factory failure.
+// with a stable public message rather than the raw component factory failure.
 func TestRunAgent_RealCanvas_CompileFails(t *testing.T) {
 	testDB := setupServiceTestDB(t)
 	if err := testDB.AutoMigrate(
@@ -1531,12 +1531,13 @@ func TestRunAgent_RealCanvas_CompileFails(t *testing.T) {
 	if len(errs) == 0 {
 		t.Fatal("expected error event from Compile of DSL with unknown component name")
 	}
-	// The event carries an explicit internal kind and the factory error.
+	// The raw factory error remains available to server logs, while the event
+	// carries an explicit internal kind and a stable public message.
 	if errs[0].Kind != canvas.RunErrorKindInternal {
 		t.Errorf("error kind = %q, want %q", errs[0].Kind, canvas.RunErrorKindInternal)
 	}
-	if !strings.Contains(errs[0].Message, "NonExistentComponent") {
-		t.Errorf("error message = %q, want component factory failure", errs[0].Message)
+	if errs[0].Message != canvas.InternalRunErrorMessage {
+		t.Errorf("error message = %q, want %q", errs[0].Message, canvas.InternalRunErrorMessage)
 	}
 }
 

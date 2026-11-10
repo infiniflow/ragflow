@@ -78,7 +78,9 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 	// Middleware
 	ginEngine.Use(common.GinLogger())
 	ginEngine.Use(gin.CustomRecovery(func(c *gin.Context, recovered interface{}) {
-		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprint(recovered))
+		if !c.Writer.Written() {
+			common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprint(recovered))
+		}
 		c.Abort()
 	}))
 

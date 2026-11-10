@@ -757,7 +757,7 @@ func TestWebhook_DefaultModePropagatesTerminalEvents(t *testing.T) {
 		event       canvas.RunEvent
 		wantStatus  int
 		wantMessage string
-		detail      string
+		forbidden   string
 	}{
 		{
 			name:        "public error",
@@ -767,10 +767,10 @@ func TestWebhook_DefaultModePropagatesTerminalEvents(t *testing.T) {
 		},
 		{
 			name:        "internal error",
-			event:       canvas.RunEvent{Type: "error", Data: `{"message":"postgres: connection refused","kind":"internal"}`},
+			event:       canvas.RunEvent{Type: "error", Data: `{"message":"postgres password=secret","kind":"internal"}`},
 			wantStatus:  http.StatusInternalServerError,
-			wantMessage: "postgres: connection refused",
-			detail:      "postgres: connection refused",
+			wantMessage: canvas.InternalRunErrorMessage,
+			forbidden:   "password=secret",
 		},
 		{
 			name:        "cancelled",
@@ -820,19 +820,26 @@ func TestWebhook_DefaultModePropagatesTerminalEvents(t *testing.T) {
 			if !strings.Contains(body.Message, tt.wantMessage) {
 				t.Errorf("message = %q, want contains %q", body.Message, tt.wantMessage)
 			}
-			if tt.detail != "" && (len(trace) == 0 || !strings.Contains(trace[0].Data, tt.detail)) {
-				t.Fatalf("trace missing underlying error: %+v", trace)
+			if tt.forbidden != "" && strings.Contains(w.Body.String(), tt.forbidden) {
+				t.Fatalf("response leaked internal error details: %s", w.Body.String())
+			}
+			if tt.forbidden != "" {
+				for _, ev := range trace {
+					if strings.Contains(ev.Data, tt.forbidden) {
+						t.Fatalf("trace leaked internal error details: %+v", trace)
+					}
+				}
 			}
 			assertWebhookFinishedTrace(t, trace, false)
 		})
 	}
 }
 
-func TestWebhook_DefaultModeReturnsStartError(t *testing.T) {
+func TestWebhook_DefaultModeRedactsStartError(t *testing.T) {
 	cv := makeWebhookCanvas("c1", "u-1", "Webhook", map[string]any{
 		"execution_mode": "Streaming",
 	})
-	startErr := errors.Join(errors.New("dial mysql: connection refused"), service.ErrAgentStorageError)
+	startErr := errors.Join(errors.New("dial mysql password=secret"), service.ErrAgentStorageError)
 	h := newWebhookTestAgentHandler(&fakeCanvasLoader{canvas: cv, runErr: startErr})
 	var trace []canvas.RunEvent
 	h.webhookTraceAppender = func(_ context.Context, _ string, _ time.Time, ev canvas.RunEvent) {
@@ -845,11 +852,14 @@ func TestWebhook_DefaultModeReturnsStartError(t *testing.T) {
 	if w.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d, want 500; body=%s", w.Code, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "dial mysql: connection refused") {
-		t.Errorf("body missing original error message: %s", w.Body.String())
+	if !strings.Contains(w.Body.String(), canvas.InternalRunErrorMessage) {
+		t.Errorf("body missing safe internal error message: %s", w.Body.String())
 	}
-	if len(trace) == 0 || !strings.Contains(trace[0].Data, "dial mysql: connection refused") {
-		t.Fatalf("trace missing original error: %+v", trace)
+	if strings.Contains(w.Body.String(), "password=secret") {
+		t.Fatalf("response leaked internal error details: %s", w.Body.String())
+	}
+	if len(trace) == 0 || strings.Contains(trace[0].Data, "password=secret") {
+		t.Fatalf("trace leaked internal error details: %+v", trace)
 	}
 	assertWebhookFinishedTrace(t, trace, false)
 }
@@ -860,7 +870,7 @@ func TestRunWebhookDetachedAppendsFinishedTrace(t *testing.T) {
 		events      []canvas.RunEvent
 		runErr      error
 		wantSuccess bool
-		detail      string
+		forbidden   string
 	}{
 		{
 			name: "success",
@@ -877,9 +887,9 @@ func TestRunWebhookDetachedAppendsFinishedTrace(t *testing.T) {
 		},
 		{
 			name:        "start error",
-			runErr:      errors.Join(errors.New("redis: connection refused"), service.ErrAgentStorageError),
+			runErr:      errors.Join(errors.New("redis password=secret"), service.ErrAgentStorageError),
 			wantSuccess: false,
-			detail:      "redis: connection refused",
+			forbidden:   "password=secret",
 		},
 	}
 
@@ -895,8 +905,12 @@ func TestRunWebhookDetachedAppendsFinishedTrace(t *testing.T) {
 			h.runWebhookDetached(t.Context(), cv, map[string]any{}, true, time.Now())
 
 			assertWebhookFinishedTrace(t, trace, tt.wantSuccess)
-			if tt.detail != "" && (len(trace) == 0 || !strings.Contains(trace[0].Data, tt.detail)) {
-				t.Fatalf("trace missing underlying error: %+v", trace)
+			if tt.forbidden != "" {
+				for _, ev := range trace {
+					if strings.Contains(ev.Data, tt.forbidden) {
+						t.Fatalf("trace leaked internal error details: %+v", trace)
+					}
+				}
 			}
 		})
 	}

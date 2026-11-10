@@ -89,6 +89,7 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 	return nil
 }
 
+// startServer owns the API listeners and background workers until ctx is canceled.
 func startServer(ctx context.Context, serverName string, arguments *bootstrap.ServerArgs) error {
 
 	globalConfig := server.GetConfig()
@@ -305,7 +306,9 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	// those registered by Setup itself). Registering it here would run
 	// it twice for those endpoints and double every access-log line.
 	ginEngine.Use(gin.CustomRecovery(func(c *gin.Context, recovered interface{}) {
-		common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprint(recovered))
+		if !c.Writer.Written() {
+			common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprint(recovered))
+		}
 		c.Abort()
 	}))
 

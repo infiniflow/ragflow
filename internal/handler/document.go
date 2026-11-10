@@ -204,6 +204,7 @@ func (h *DocumentHandler) GetDocumentImage(c *gin.Context) {
 	h.writeDocumentImage(c, data)
 }
 
+// GetDocumentImageForDocument serves image bytes only after checking the document's ownership of the image.
 func (h *DocumentHandler) GetDocumentImageForDocument(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -218,6 +219,7 @@ func (h *DocumentHandler) GetDocumentImageForDocument(c *gin.Context) {
 	h.writeDocumentImage(c, data)
 }
 
+// GetDocumentThumbnail resolves the thumbnail through authorized document metadata.
 func (h *DocumentHandler) GetDocumentThumbnail(c *gin.Context) {
 	data, err := h.documentService.GetDocumentThumbnail(c.Request.Context(), c.Param("id"))
 	if err != nil {
@@ -286,6 +288,8 @@ func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {
 	c.Data(http.StatusOK, artifact.ContentType, artifact.Data)
 }
 
+// GetDocumentPreview distinguishes missing and empty documents from backend failures
+// and forces downloads for content that cannot be safely previewed inline.
 func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 
 	docID := c.Param("id")
@@ -758,6 +762,7 @@ func parseDocumentListOptions(c *gin.Context, datasetID string) (dao.DocumentLis
 	return opts, ""
 }
 
+// applyDocumentMetadataFilter intersects metadata matches with the existing document scope.
 func (h *DocumentHandler) applyDocumentMetadataFilter(c *gin.Context, opts dao.DocumentListOptions) (dao.DocumentListOptions, string) {
 	// Mirror Python's metadata_condition query-param validation.
 	if raw := strings.TrimSpace(c.Query("metadata_condition")); raw != "" {
@@ -1175,6 +1180,8 @@ func isValidHTTPURL(raw string) bool {
 	return (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }
 
+// DownloadDocument checks dataset ownership and read access before fetching file bytes,
+// keeping inaccessible documents indistinguishable from missing ones.
 func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {

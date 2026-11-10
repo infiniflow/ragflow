@@ -571,6 +571,8 @@ func (h *AgentHandler) runWebhookDetached(
 	h.runWebhookDetachedWithContext(ctx, cv, payload, isTest, startTs, sessionID)
 }
 
+// runWebhookDetachedWithContext drains the run until completion or cancellation
+// and records a terminal trace for test runs.
 func (h *AgentHandler) runWebhookDetachedWithContext(
 	ctx context.Context, cv *entity.UserCanvas, payload map[string]any,
 	isTest bool, startTs time.Time, sessionID string,
@@ -625,15 +627,13 @@ func (h *AgentHandler) runWebhookDetachedWithContext(
 	}
 }
 
-// runWebhookSync drives the canvas in the non-Immediately (streaming)
-// mode. Returns the HTTP status + body to send. Mirrors
-// agent_api.py:2178-2247 with the python sse() coroutine flattened into
-// a synchronous loop.
 type webhookSyncResult struct {
 	status int
 	body   any
 }
 
+// runWebhookSync waits for the canvas result and maps terminal events to HTTP
+// failures while preserving the session ID in responses and test traces.
 func (h *AgentHandler) runWebhookSync(
 	ctx context.Context, cv *entity.UserCanvas, payload map[string]any,
 	isTest bool, startTs time.Time,
@@ -809,9 +809,17 @@ func webhookContextTerminalEvent(err error, sessionID string) canvas.RunEvent {
 	}
 }
 
+// appendWebhookRunTrace masks internal error messages before either trace writer receives them.
 func (h *AgentHandler) appendWebhookRunTrace(
 	ctx context.Context, agentID string, startTs time.Time, ev canvas.RunEvent,
 ) {
+	if ev.Type == "error" {
+		var payload canvas.ErrorEvent
+		if err := json.Unmarshal([]byte(ev.Data), &payload); err == nil && payload.Kind == canvas.RunErrorKindInternal {
+			payload.Message = canvas.InternalRunErrorMessage
+			ev.Data = mustJSON(payload)
+		}
+	}
 	if h.webhookTraceAppender != nil {
 		h.webhookTraceAppender(ctx, agentID, startTs, ev)
 		return

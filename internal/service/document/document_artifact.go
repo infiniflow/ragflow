@@ -35,6 +35,10 @@ func (s *DocumentService) GetDocumentImage(ctx context.Context, imageID string) 
 	}
 	docID, err := s.imageDocumentID(ctx, bucket, imageID, "")
 	if err != nil {
+		if !errors.Is(err, ErrDocumentImageNotFound) {
+			common.Error("Failed to find document image", err)
+			return nil, errors.New("Failed to find document image")
+		}
 		return nil, err
 	}
 	if docID == "" {

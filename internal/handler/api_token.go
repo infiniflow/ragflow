@@ -29,6 +29,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// ListAPIKeys resolves the caller's tenant scope before loading its API keys.
 func (h *SystemHandler) ListAPIKeys(c *gin.Context) {
 	ctx := c.Request.Context()
 	code, err := currentAPIKeyOwner(c)
@@ -47,6 +48,7 @@ func (h *SystemHandler) ListAPIKeys(c *gin.Context) {
 	common.RespondSuccessList(c, keys, "success")
 }
 
+// CreateKey accepts an empty request body and binds the new key to the caller's tenant.
 func (h *SystemHandler) CreateKey(c *gin.Context) {
 	ctx := c.Request.Context()
 	code, err := currentAPIKeyOwner(c)
@@ -73,6 +75,7 @@ func (h *SystemHandler) CreateKey(c *gin.Context) {
 	common.RespondSuccess(c, key, "success")
 }
 
+// DeleteKey requires a tenant identity before deleting the requested key.
 func (h *SystemHandler) DeleteKey(c *gin.Context) {
 	ctx := c.Request.Context()
 	code, err := currentAPIKeyOwner(c)

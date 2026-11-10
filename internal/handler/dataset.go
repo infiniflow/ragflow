@@ -328,6 +328,11 @@ func (h *DatasetsHandler) GetDataset(c *gin.Context) {
 	datasetID := c.Param("dataset_id")
 	result, code, err := h.datasetsService.GetDataset(ctx, datasetID)
 	if err != nil {
+		if code == common.CodeServerError {
+			common.Error("Failed to get dataset", err)
+			common.RespondError(c, code, common.CodeServerError.Message())
+			return
+		}
 		common.RespondError(c, code, err.Error())
 		return
 	}

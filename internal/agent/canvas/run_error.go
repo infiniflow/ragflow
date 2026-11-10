@@ -23,6 +23,9 @@ import (
 const (
 	// RunErrorKindInternal marks an internal Agent execution failure.
 	RunErrorKindInternal = "internal"
+
+	// InternalRunErrorMessage is the public message for internal Agent failures.
+	InternalRunErrorMessage = "Internal storage error while accessing the agent."
 )
 
 type internalRunError struct {
@@ -53,7 +56,7 @@ func runErrorEvent(err error) ErrorEvent {
 	var internalErr *internalRunError
 	if errors.As(err, &internalErr) {
 		return ErrorEvent{
-			Message: runtime.MarkdownSafeErrorText(err),
+			Message: InternalRunErrorMessage,
 			Kind:    RunErrorKindInternal,
 		}
 	}

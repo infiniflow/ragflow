@@ -584,6 +584,7 @@ func addChunkStringListField(rawBody map[string]json.RawMessage, field, listMess
 	return result, nil
 }
 
+// addChunkResponseMessage retains the service message and logs server-class failures.
 func addChunkResponseMessage(code common.ErrorCode, err error) string {
 	if code == common.CodeServerError {
 		common.Warn("add chunk failed", zap.String("error", err.Error()))

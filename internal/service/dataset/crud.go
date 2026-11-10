@@ -50,6 +50,7 @@ func resolvePipelineVersionID(ctx context.Context, db *gorm.DB, pipelineID *stri
 	return nil, nil
 }
 
+// CreateDataset validates the caller's tenant and parser settings before persisting a dataset.
 func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
 	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
 	tenantID := strings.TrimSpace(permission.TenantIDFromContext(ctx))
@@ -331,6 +332,7 @@ func (d *DatasetService) dedupeDatasetName(ctx context.Context, name, tenantID s
 	})
 }
 
+// GetDataset hides inaccessible datasets and enriches authorized results with size and connector data.
 func (d *DatasetService) GetDataset(ctx context.Context, datasetID string) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	if datasetID == "" {
@@ -383,6 +385,7 @@ func (d *DatasetService) GetDataset(ctx context.Context, datasetID string) (map[
 	return data, common.CodeSuccess, nil
 }
 
+// DeleteDatasets limits deletion to authorized resources; delete-all remains tenant-scoped and owner-only.
 func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, deleteAll bool) (map[string]interface{}, common.ErrorCode, error) {
 	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
 	tenantID := strings.TrimSpace(permission.TenantIDFromContext(ctx))
@@ -477,6 +480,7 @@ func (d *DatasetService) DeleteDatasets(ctx context.Context, ids []string, delet
 	}, common.CodeSuccess, nil
 }
 
+// deleteDataset cleans up storage and index data before committing metadata deletion.
 func (d *DatasetService) deleteDataset(ctx context.Context, kb *entity.Knowledgebase) error {
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
@@ -591,6 +595,7 @@ func datasetNameAndID(kb *entity.Knowledgebase) string {
 	return fmt.Sprintf("%s (%s)", kb.Name, kb.ID)
 }
 
+// ListDatasets applies resource permissions before pagination and optional canvas filtering.
 func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page, pageSize int, terms []dao.OrderTerm, keywords string, ownerIDs []string, parserID string, ids []string, canvasID string) ([]map[string]interface{}, int64, common.ErrorCode, error) {
 	id = strings.TrimSpace(id)
 	canvasID = strings.TrimSpace(canvasID)
@@ -754,6 +759,7 @@ func (d *DatasetService) ListDatasets(ctx context.Context, id, name string, page
 	return data, total, common.CodeSuccess, nil
 }
 
+// ListDatasetFilters restricts owner choices to datasets the caller may read or use from the given canvas.
 func (d *DatasetService) ListDatasetFilters(ctx context.Context, canvasID string) (map[string]interface{}, common.ErrorCode, error) {
 	owners := make([]*entity.DatasetOwnerFilter, 0)
 	err := dao.DB.Transaction(func(tx *gorm.DB) error {
