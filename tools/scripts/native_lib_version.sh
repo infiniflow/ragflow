@@ -80,6 +80,8 @@ pdfium_static_link_dir() (
         local staging staged_dir archive staged_hashes
         staging="$(mktemp -d "$cache_dir/.pdfium.XXXXXX")" || return 1
         trap 'rm -rf -- "$staging"' EXIT
+        trap 'rm -rf -- "$staging"; exit 130' INT
+        trap 'rm -rf -- "$staging"; exit 143' TERM
         staged_dir="$staging/$digest"
         mkdir "$staged_dir" || return 1
         for archive in "${archives[@]}"; do

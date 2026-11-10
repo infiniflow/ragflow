@@ -201,29 +201,32 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 > PDF_OXIDE_PREFIX="${RAGFLOW_DEPS}/pdf_oxide/v${PDF_OXIDE_VERSION}"
 > # Keep the Go link cache keyed to PDFium contents, even for a reissued archive
 > # with the same version. Resolve the same linker paths as build.sh.
-> PDFIUM_LINK_DIR="$(pdfium_static_link_dir "${PDFIUM_PREFIX}/lib" "$TARGET_OS" "${REPO_ROOT}/.cache/pdfium")" || exit 1
+> if PDFIUM_LINK_DIR="$(pdfium_static_link_dir "${PDFIUM_PREFIX}/lib" "$TARGET_OS" "${REPO_ROOT}/.cache/pdfium")"; then
+>   OFFICE_OXIDE_A="${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a"
+>   PDFIUM_A="${PDFIUM_LINK_DIR}/libpdfium.a"
+>   PDF_OXIDE_A="${PDF_OXIDE_PREFIX}/lib/${PLATFORM}/libpdf_oxide.a"
+>   # macOS PDFium uses the system libc++ provided by the flags above.
+>   PDFIUM_CXX_ARCHIVES=""
+>   if [ "$TARGET_OS" = "linux" ]; then
+>     PDFIUM_CXX_ARCHIVES="\"${PDFIUM_LINK_DIR}/libc++.a\" \"${PDFIUM_LINK_DIR}/libc++abi.a\""
+>   fi
 >
-> OFFICE_OXIDE_A="${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a"
-> PDFIUM_A="${PDFIUM_LINK_DIR}/libpdfium.a"
-> PDF_OXIDE_A="${PDF_OXIDE_PREFIX}/lib/${PLATFORM}/libpdf_oxide.a"
-> # macOS PDFium uses the system libc++ provided by the flags above.
-> PDFIUM_CXX_ARCHIVES=""
-> if [ "$TARGET_OS" = "linux" ]; then
->   PDFIUM_CXX_ARCHIVES="\"${PDFIUM_LINK_DIR}/libc++.a\" \"${PDFIUM_LINK_DIR}/libc++abi.a\""
+>   # Derive the include dir from the resolved office_oxide archive: the shell does
+>   # not expand globs inside double quotes, so a literal
+>   # ".../office_oxide/v*/include/..." passed to CGO_CFLAGS would never resolve and
+>   # cgo would fail to find office_oxide.h on the first native compile.
+>   export CGO_CFLAGS="-I$(dirname "$(dirname "$OFFICE_OXIDE_A")")/include/office_oxide_c"
+>   export CGO_LDFLAGS="\
+>       ${OFFICE_OXIDE_A} \
+>       \"${PDFIUM_A}\" \
+>       ${PDFIUM_CXX_ARCHIVES} \
+>       ${PDF_OXIDE_A} \
+>       ${ORT_LINK} \
+>       ${SYS_LIBS}"
+> else
+>   printf '%s\n' 'Could not prepare PDFium linker inputs. Run uv run tools/scripts/download_dev_deps.py.' >&2
+>   false
 > fi
->
-> # Derive the include dir from the resolved office_oxide archive: the shell does
-> # not expand globs inside double quotes, so a literal
-> # ".../office_oxide/v*/include/..." passed to CGO_CFLAGS would never resolve and
-> # cgo would fail to find office_oxide.h on the first native compile.
-> export CGO_CFLAGS="-I$(dirname "$(dirname "$OFFICE_OXIDE_A")")/include/office_oxide_c"
-> export CGO_LDFLAGS="\
->     ${OFFICE_OXIDE_A} \
->     \"${PDFIUM_A}\" \
->     ${PDFIUM_CXX_ARCHIVES} \
->     ${PDF_OXIDE_A} \
->     ${ORT_LINK} \
->     ${SYS_LIBS}"
 > ```
 >
 > All four native libraries are statically linked — no `LD_LIBRARY_PATH` or `-Wl,-rpath` needed.
