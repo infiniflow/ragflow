@@ -16,6 +16,10 @@
 
 package models
 
+import "context"
+
+const uberLLMProviderName = "UberLLM"
+
 // UberLLMModel drives UberLLM (https://api.uberllm.dev/v1), which serves
 // many model families through OpenAI-compatible chat and model-list endpoints,
 // so the embedded OpenAIAPICompatibleModel covers every call.
@@ -38,4 +42,28 @@ func (m *UberLLMModel) Name() string {
 // NewInstance returns a driver bound to the given base URL.
 func (m *UberLLMModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return NewUberLLMModel(baseURL, m.baseModel.URLSuffix)
+}
+
+// ListModels lists UberLLM's models. The OpenAI-compatible listing infers
+// types from model names, which reports vision models as chat-only, so models
+// in the UberLLM catalogue keep the catalogue's types.
+func (m *UberLLMModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
+	models, err := m.OpenAIAPICompatibleModel.ListModels(ctx, apiConfig)
+	if err != nil {
+		return nil, err
+	}
+	pm := GetProviderManager()
+	if pm == nil {
+		return models, nil
+	}
+	provider := pm.FindProvider(uberLLMProviderName)
+	if provider == nil {
+		return models, nil
+	}
+	for i := range models {
+		if entry := pm.FindModel(provider, models[i].Name); entry != nil && len(entry.ModelTypes) > 0 {
+			models[i].ModelTypes = append([]string(nil), entry.ModelTypes...)
+		}
+	}
+	return models, nil
 }
