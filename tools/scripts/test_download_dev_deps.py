@@ -236,6 +236,27 @@ def test_pdf_oxide_url_reads_its_own_module_line(tmp_path):
     assert "/v0.1.12/" not in pdf_url  # not coupled to office_oxide's line
 
 
+def test_pdf_oxide_current_go_mod_version_is_0_3_78():
+    # TDD contract for the pdf_oxide upgrade: the real repo go.mod must pin
+    # v0.3.78 (not the prior 0.3.73). build.sh and the downloader both read
+    # this single source, so the native-lib cache path and release URL must
+    # track 0.3.78 after the bump. Adversarial: explicitly NOT 0.3.73, so a
+    # forgotten / partial bump (go.mod left at the old pin) fails loudly.
+    version = native.go_module_version("github.com/yfedoseev/pdf_oxide/go", native.REPO_ROOT)
+    assert version == "0.3.78"
+    assert version != "0.3.73"
+
+
+def test_pdf_oxide_url_targets_0_3_78_release():
+    # The downloader's release URL must reference v0.3.78 (derived from go.mod);
+    # it must NOT still point at the prior 0.3.73 asset. Adversarial: the old
+    # version string must be absent, otherwise the versioned native-lib cache
+    # would be populated from the wrong release.
+    url = native.pdf_oxide_url(native.REPO_ROOT, "linux", "amd64")
+    assert "/v0.3.78/" in url
+    assert "/v0.3.73/" not in url
+
+
 def test_url_builders_honor_gh_proxy(monkeypatch):
     monkeypatch.setenv("GH_PROXY", "https://gh-proxy.com/")
     assert native.pdfium_url("linux", "amd64").startswith("https://gh-proxy.com/https://github.com/")
