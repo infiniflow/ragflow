@@ -97,8 +97,16 @@ func Close() error {
 	return nil
 }
 
+// GetMessageQueueEngine returns the global message-queue engine instance.
 func GetMessageQueueEngine() MessageQueue {
 	return messageQueueEngine
+}
+
+// SetDocEngine installs the global document engine. It exists primarily as a
+// test seam so service and handler tests can drive wiki-page flows without a
+// real Elasticsearch/Infinity; production code uses InitDocEngine.
+func SetDocEngine(e DocEngine) {
+	globalEngine = e
 }
 
 // SetMessageQueueEngine installs the global message-queue engine. It exists

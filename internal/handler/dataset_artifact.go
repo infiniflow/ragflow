@@ -170,12 +170,13 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 	// Record a wiki-page edit audit commit (git-style parent chain) when the
 	// content actually changed. Best-effort: a commit write failure must not
 	// roll back the page edit already persisted above.
+	var commitID string
 	if canRecordAudit && req.ContentMd != oldContent && h.fileCommitSvc != nil {
 		title := req.Title
 		if title == "" {
 			title = detail.Title
 		}
-		if _, cerr := h.fileCommitSvc.RecordPageEdit(c.Request.Context(), file.PageEditCommitInput{
+		commit, cerr := h.fileCommitSvc.RecordPageEdit(c.Request.Context(), file.PageEditCommitInput{
 			DatasetID:  datasetID,
 			Slug:       slug,
 			PageType:   pageType,
@@ -184,12 +185,18 @@ func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
 			AuthorID:   user.ID,
 			OldContent: oldContent,
 			NewContent: req.ContentMd,
-		}); cerr != nil {
+		})
+		if cerr != nil {
 			common.Warn("failed to record wiki page edit commit", zap.Error(cerr))
+		} else if commit != nil {
+			commitID = commit.ID
 		}
 	}
 
-	common.RespondSuccess(c, detail, "success")
+	common.RespondSuccess(c, struct {
+		service.WikiPageDetail
+		CommitID string `json:"commit_id"`
+	}{WikiPageDetail: *detail, CommitID: commitID}, "success")
 }
 
 // GetArtifact handles GET /artifacts/<page_type>/<slug> — single wiki page.
