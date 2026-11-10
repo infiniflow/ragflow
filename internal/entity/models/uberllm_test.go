@@ -151,3 +151,49 @@ func TestUberLLMListModelsAndCheckConnection(t *testing.T) {
 		t.Fatalf("CheckConnection: %v", err)
 	}
 }
+
+// TestUberLLMListModelsKeepsCatalogueTypes tests that listed models in the
+// UberLLM catalogue keep its types, so vision models are not reported as
+// chat-only, while other models keep name-inferred types.
+func TestUberLLMListModelsKeepsCatalogueTypes(t *testing.T) {
+	withSSRFBypass(t)
+	saved := GetProviderManager()
+	defer setProviderManager(saved)
+	dir, restore := setupProviderTestDir(t, "uberllm.json")
+	defer restore()
+	if err := InitProviderManager(dir); err != nil {
+		t.Fatalf("InitProviderManager: %v", err)
+	}
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{
+				{"id": "google/gemini-3.5-flash"},
+				{"id": "openai/gpt-5.4-mini"},
+				{"id": "z-ai/glm-5.2"},
+				{"id": "qwen/qwen3-max"},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	list, err := newUberLLMForTest(srv.URL).ListModels(t.Context(), &APIConfig{ApiKey: &testAPIKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	got := map[string][]string{}
+	for _, m := range list {
+		got[m.Name] = m.ModelTypes
+	}
+	for _, name := range []string{"google/gemini-3.5-flash", "openai/gpt-5.4-mini"} {
+		if !containsModelType(got[name], "vision") || !containsModelType(got[name], "chat") {
+			t.Errorf("%s types=%v, want chat and vision", name, got[name])
+		}
+	}
+	if containsModelType(got["z-ai/glm-5.2"], "vision") || !containsModelType(got["z-ai/glm-5.2"], "chat") {
+		t.Errorf("z-ai/glm-5.2 types=%v, want chat only", got["z-ai/glm-5.2"])
+	}
+	if !containsModelType(got["qwen/qwen3-max"], "chat") {
+		t.Errorf("qwen/qwen3-max types=%v, want name-inferred chat", got["qwen/qwen3-max"])
+	}
+}
