@@ -14,8 +14,6 @@
 //  limitations under the License.
 //
 
-//go:build ee
-
 package nats
 
 import (
@@ -74,7 +72,7 @@ func TestPublishTaskDeliversRepeatedTaskIDs(t *testing.T) {
 	if err := engine.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := engine.InitConsumer(common.TaskSubjectMedium); err != nil {
+	if err := engine.InitConsumer(common.PrimaryTierSubject()); err != nil {
 		t.Fatalf("InitConsumer: %v", err)
 	}
 
@@ -82,10 +80,10 @@ func TestPublishTaskDeliversRepeatedTaskIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if err = engine.PublishTask(common.TaskSubjectMedium, payload); err != nil {
+	if err = engine.PublishTask(common.PrimaryTierSubject(), payload); err != nil {
 		t.Fatalf("first PublishTask: %v", err)
 	}
-	if err = engine.PublishTask(common.TaskSubjectMedium, payload); err != nil {
+	if err = engine.PublishTask(common.PrimaryTierSubject(), payload); err != nil {
 		t.Fatalf("repeated PublishTask: %v", err)
 	}
 
@@ -100,18 +98,19 @@ func TestPublishTaskDeliversRepeatedTaskIDs(t *testing.T) {
 	}
 
 	// A payload without a decodable TaskMessage shape must not fail either.
-	if err = engine.PublishTask(common.TaskSubjectMedium, []byte("not-json")); err != nil {
+	if err = engine.PublishTask(common.PrimaryTierSubject(), []byte("not-json")); err != nil {
 		t.Fatalf("non-TaskMessage PublishTask: %v", err)
 	}
 }
 
-// TestInitMigratesLegacyStreamConfig: a tier stream created by an older
-// deployment (1MB MaxBytes, server-default Duplicates) must be migrated in
-// place by Init instead of being left stale behind an "already exists" error.
+// TestInitMigratesLegacyStreamConfig: the primary tier stream created by an
+// older deployment (1MB MaxBytes, server-default Duplicates) must be migrated
+// in place by Init instead of being left stale behind an "already exists" error.
 // The server-side config is the merge base: fields the wanted config does not
 // own (Subjects, Retention, Duplicates) must survive the update. This guards
 // the same migration contract as the pre-tiering single stream, now applied to
-// one of the three physically isolated lanes.
+// the primary lane (low in the community build, medium in the enterprise
+// build).
 func TestInitMigratesLegacyStreamConfig(t *testing.T) {
 	host, port := newEmbeddedNatsServer(t)
 
@@ -126,10 +125,10 @@ func TestInitMigratesLegacyStreamConfig(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	medium := tierStreams[common.TierMedium]
+	primary := tierStreams[primaryTier()]
 	legacy, err := js.CreateStream(ctx, jetstream.StreamConfig{
-		Name:      medium.streamName,
-		Subjects:  medium.subjects,
+		Name:      primary.streamName,
+		Subjects:  primary.subjects,
 		Retention: jetstream.WorkQueuePolicy,
 		Storage:   jetstream.FileStorage,
 		MaxMsgs:   1024 * 128,
@@ -157,7 +156,7 @@ func TestInitMigratesLegacyStreamConfig(t *testing.T) {
 		t.Fatalf("Init over legacy stream: %v", err)
 	}
 
-	info, err := engine.streams[common.TierMedium].Info(ctx)
+	info, err := engine.streams[primaryTier()].Info(ctx)
 	if err != nil {
 		t.Fatalf("stream info after migration: %v", err)
 	}
@@ -178,8 +177,8 @@ func TestInitMigratesLegacyStreamConfig(t *testing.T) {
 	if got := info.Config.Retention; got != jetstream.WorkQueuePolicy {
 		t.Fatalf("Retention after migration = %v, want WorkQueuePolicy (must not be reset)", got)
 	}
-	if len(info.Config.Subjects) != len(medium.subjects) || info.Config.Subjects[0] != medium.subjects[0] {
-		t.Fatalf("Subjects after migration = %v, want %v (must not be reset)", info.Config.Subjects, medium.subjects)
+	if len(info.Config.Subjects) != len(primary.subjects) || info.Config.Subjects[0] != primary.subjects[0] {
+		t.Fatalf("Subjects after migration = %v, want %v (must not be reset)", info.Config.Subjects, primary.subjects)
 	}
 }
 
@@ -192,7 +191,7 @@ func TestInitConsumerSetsAckWaitAndBackOff(t *testing.T) {
 	if err := engine.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := engine.InitConsumer(common.TaskSubjectMedium); err != nil {
+	if err := engine.InitConsumer(common.PrimaryTierSubject()); err != nil {
 		t.Fatalf("InitConsumer: %v", err)
 	}
 

@@ -14,8 +14,6 @@
 // limitations under the License.
 //
 
-//go:build ee
-
 package nats
 
 import (
@@ -38,7 +36,7 @@ func newTaskQueue(t *testing.T) *NatsEngine {
 	if err := queue.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := queue.InitConsumer(common.TaskSubjectMedium); err != nil {
+	if err := queue.InitConsumer(common.PrimaryTierSubject()); err != nil {
 		t.Fatalf("InitConsumer: %v", err)
 	}
 	return queue
@@ -58,7 +56,7 @@ func publishTask(t *testing.T, queue *NatsEngine, taskID string) {
 	if err != nil {
 		t.Fatalf("marshal task: %v", err)
 	}
-	if err := queue.PublishTask(common.TaskSubjectMedium, payload); err != nil {
+	if err := queue.PublishTask(common.PrimaryTierSubject(), payload); err != nil {
 		t.Fatalf("publish task: %v", err)
 	}
 }
@@ -127,24 +125,27 @@ func TestPullMessageReportsMaxWaiting(t *testing.T) {
 	queue := newTaskQueue(t)
 	ctx, cancel := taskPullContext(t)
 	defer cancel()
-	// PullMessage drains the high lane first, so a MaxWaiting-limited consumer
-	// must be installed there for the capacity rejection to be observable.
-	high := tierStreams[common.TierHigh]
-	highStream := queue.streams[common.TierHigh]
-	if err := highStream.DeleteConsumer(ctx, high.consumerName); err != nil {
+	// PullMessage must reach the lane that carries the published task. A
+	// MaxWaiting-limited consumer installed on that primary (task-bearing) lane
+	// makes the capacity rejection observable in both editions (community low,
+	// enterprise medium): the high lane, when present, is empty and skipped.
+	pt := primaryTier()
+	primary := tierStreams[pt]
+	primaryStream := queue.streams[pt]
+	if err := primaryStream.DeleteConsumer(ctx, primary.consumerName); err != nil {
 		t.Fatalf("delete default consumer: %v", err)
 	}
-	consumer, err := highStream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
-		Name:          high.consumerName,
+	consumer, err := primaryStream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
+		Name:          primary.consumerName,
 		AckPolicy:     jetstream.AckExplicitPolicy,
-		FilterSubject: high.subjects[0],
+		FilterSubject: primary.subjects[0],
 		MaxWaiting:    1,
 	})
 	if err != nil {
 		t.Fatalf("create limited consumer: %v", err)
 	}
 	queue.consumerMu.Lock()
-	queue.consumers[common.TierHigh] = consumer
+	queue.consumers[pt] = consumer
 	queue.consumerMu.Unlock()
 
 	firstCtx, cancelFirst := taskPullContext(t)
@@ -251,22 +252,23 @@ func TestPullMessagesReportsBatchError(t *testing.T) {
 	queue := newTaskQueue(t)
 	ctx, cancel := taskPullContext(t)
 	defer cancel()
-	high := tierStreams[common.TierHigh]
-	highStream := queue.streams[common.TierHigh]
-	if err := highStream.DeleteConsumer(ctx, high.consumerName); err != nil {
+	pt := primaryTier()
+	primary := tierStreams[pt]
+	primaryStream := queue.streams[pt]
+	if err := primaryStream.DeleteConsumer(ctx, primary.consumerName); err != nil {
 		t.Fatalf("delete default consumer: %v", err)
 	}
-	consumer, err := highStream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
-		Name:          high.consumerName,
+	consumer, err := primaryStream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
+		Name:          primary.consumerName,
 		AckPolicy:     jetstream.AckExplicitPolicy,
-		FilterSubject: high.subjects[0],
+		FilterSubject: primary.subjects[0],
 		MaxWaiting:    1,
 	})
 	if err != nil {
 		t.Fatalf("create limited consumer: %v", err)
 	}
 	queue.consumerMu.Lock()
-	queue.consumers[common.TierHigh] = consumer
+	queue.consumers[pt] = consumer
 	queue.consumerMu.Unlock()
 
 	occupiedCtx, cancelOccupied := taskPullContext(t)

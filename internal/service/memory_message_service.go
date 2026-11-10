@@ -257,11 +257,11 @@ func (s *MemoryMessageService) ReconcileMemoryTasks(ctx context.Context, limit i
 		// Resolve the owning tenant so the wake-up lands on the same priority
 		// lane as that tenant's document ingestion. A missing memory row (e.g. a
 		// deleted memory whose task rows linger) must not strand the wake-up:
-		// fall back to the medium lane and let the worker surface a clear failure
-		// instead of leaving the task stuck in its due state.
+		// fall back to the primary lane and let the worker surface a clear
+		// failure instead of leaving the task stuck in its due state.
 		tenantID := ""
 		if mem, memErr := s.memories.getMemoryConfig(ctx, task.MemoryID); memErr != nil {
-			common.Warn(fmt.Sprintf("memory: reconcile could not resolve tenant for memory %s (lookup failed: %v); publishing to default lane", task.MemoryID, memErr))
+			common.Warn(fmt.Sprintf("memory: reconcile could not resolve tenant for memory %s (lookup failed: %v); publishing to primary lane", task.MemoryID, memErr))
 		} else {
 			tenantID = mem.TenantID
 		}

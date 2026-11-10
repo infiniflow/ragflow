@@ -434,6 +434,19 @@ func isConsumerGoneErr(err error) bool {
 		strings.Contains(msg, "consumer deleted")
 }
 
+// nackAll returns every handle in the slice to its lane so they are redelivered
+// instead of hanging until AckWait/BackOff expires. It is used when PullMessages
+// bails out after a lane already yielded messages: those earlier handles must
+// not be stranded just because a later lane failed. Nack failures are logged
+// and swallowed — a single bad handle must not block the others.
+func nackAll(handles []common.TaskHandle) {
+	for _, h := range handles {
+		if err := h.Nack(); err != nil {
+			common.Warn(fmt.Sprintf("NATS: failed to nack a drained message: %v", err))
+		}
+	}
+}
+
 // pullLane fetches up to messageCount messages from one lane. Each lane owns a
 // short independent window derived from ctx, so an empty high lane cannot eat
 // the whole budget before medium/low get a turn. If the lane's consumer handle
@@ -501,6 +514,7 @@ func (n *NatsEngine) PullMessages(ctx context.Context, messageCount int) ([]comm
 	for _, tier := range tierOrder {
 		if err := ctx.Err(); err != nil {
 			if errors.Is(err, context.Canceled) {
+				nackAll(result)
 				return nil, err
 			}
 			break // DeadlineExceeded: budget spent, return what we have
@@ -509,11 +523,13 @@ func (n *NatsEngine) PullMessages(ctx context.Context, messageCount int) ([]comm
 		handles, err := n.pullLane(ctx, tier, remaining)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
+				nackAll(result)
 				return nil, err
 			}
 			if ctx.Err() != nil {
 				break
 			}
+			nackAll(result)
 			return nil, err
 		}
 		result = append(result, handles...)

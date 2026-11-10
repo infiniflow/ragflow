@@ -26,10 +26,11 @@ import (
 	"ragflow/internal/permission"
 )
 
-// These literals deliberately do NOT reference the (not-yet-written) tier
-// constants or SubjectForTier, so the first RED run compiles and fails on a
-// real assertion (the producer still hard-codes the legacy single subject)
-// rather than on an undefined symbol.
+// wantTierSubject is the subject the injected medium resolver must route to;
+// legacyTaskSubject is the pre-tiered single queue that new tasks must never
+// publish to. The resolver is forced to TierMedium by these tests so the
+// routing assertions stay edition-independent (the community low / ee medium
+// defaults are covered separately by the resolver tests).
 const (
 	wantTierSubject   = common.TaskSubjectMedium
 	legacyTaskSubject = "tasks.RAGFLOW"

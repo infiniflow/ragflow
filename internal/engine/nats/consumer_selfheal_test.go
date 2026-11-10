@@ -14,8 +14,6 @@
 // limitations under the License.
 //
 
-//go:build ee
-
 package nats
 
 import (
@@ -24,8 +22,6 @@ import (
 	"fmt"
 	"testing"
 	"time"
-
-	"ragflow/internal/common"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -90,11 +86,13 @@ func TestPullMessages_RecreatesConsumerWhenItDisappears(t *testing.T) {
 		t.Fatalf("ack: %v", ackErr)
 	}
 
-	// Delete the medium lane's consumer behind the engine's back; the stored
+	// Delete the primary lane's consumer behind the engine's back; the stored
 	// handle now addresses something that no longer exists. Publishers route to
-	// the tier subject, and the medium lane owns TaskSubjectMedium.
-	mediumSpec := tierStreams[common.TierMedium]
-	mediumStream := queue.streams[common.TierMedium]
+	// the primary tier subject (low in the community build, medium in the
+	// enterprise build), and the primary lane owns it.
+	pt := primaryTier()
+	mediumSpec := tierStreams[pt]
+	mediumStream := queue.streams[pt]
 	if err := mediumStream.DeleteConsumer(t.Context(), mediumSpec.consumerName); err != nil {
 		t.Fatalf("delete consumer: %v", err)
 	}
@@ -131,7 +129,7 @@ func TestPullMessages_RecreatesConsumerWhenItDisappears(t *testing.T) {
 // ordinary "nothing to deliver" outcome.
 func TestPullMessages_KeepsHandleWhenNothingToDeliver(t *testing.T) {
 	queue := newTaskQueue(t)
-	before, err := queue.consumerHandle(common.TierMedium)
+	before, err := queue.consumerHandle(primaryTier())
 	if err != nil {
 		t.Fatalf("consumerHandle: %v", err)
 	}
@@ -142,7 +140,7 @@ func TestPullMessages_KeepsHandleWhenNothingToDeliver(t *testing.T) {
 		t.Fatalf("PullMessage on an empty queue: %v", err)
 	}
 
-	after, err := queue.consumerHandle(common.TierMedium)
+	after, err := queue.consumerHandle(primaryTier())
 	if err != nil {
 		t.Fatalf("consumerHandle: %v", err)
 	}
