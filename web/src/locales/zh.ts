@@ -2209,6 +2209,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       processFlow: '流程视图',
       processFlowComingSoon: '流程视图预览即将到来',
       compilationTitleSuffix: '的知识库',
+      artifacts: 'Artifacts',
       llmWiki: 'Wiki',
       skills: 'To Skills',
       navTree: 'Tree/PageIndex',

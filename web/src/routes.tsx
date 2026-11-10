@@ -214,6 +214,10 @@ const routeConfigOptions = [
             path: `${Routes.DatasetBase}${Routes.DataSetSetting}/:id`,
             Component: () => import('@/pages/dataset/setting'),
           },
+          {
+            path: `${Routes.DatasetBase}${Routes.Compilation}/:id`,
+            Component: () => import('@/pages/dataset/compilation'),
+          },
         ],
       },
       {
@@ -387,10 +391,6 @@ const routeConfigOptions = [
   {
     path: `${Routes.SearchShare}`,
     Component: () => import('@/pages/next-search/share'),
-  },
-  {
-    path: `${Routes.DatasetBase}${Routes.Compilation}/:id`,
-    Component: () => import('@/pages/dataset/compilation'),
   },
   {
     path: Routes.Agent,

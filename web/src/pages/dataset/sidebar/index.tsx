@@ -22,9 +22,14 @@ import { useParams } from 'react-router';
 type PropType = {
   dataset: IDataset;
   onCollapse: () => void;
+  onMenuSelect: () => void;
 };
 
-export function SideBar({ dataset: data, onCollapse }: PropType) {
+export function SideBar({
+  dataset: data,
+  onCollapse,
+  onMenuSelect,
+}: PropType) {
   const pathName = useSecondPathName();
   const { id } = useParams();
   const { t } = useTranslation();
@@ -99,6 +104,7 @@ export function SideBar({ dataset: data, onCollapse }: PropType) {
                     active && 'bg-bg-card text-text-primary',
                   )}
                   to={`${Routes.DatasetBase}${item.key}/${id}`}
+                  onClick={onMenuSelect}
                 >
                   {item.icon}
                   <span>{item.label}</span>

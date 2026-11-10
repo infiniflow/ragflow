@@ -4,22 +4,37 @@ import { useSidebarCollapse } from '@/layouts/components/app-sidebar/use-sidebar
 import { cn } from '@/lib/utils';
 import { OwnerTenantIdContext } from '@/pages/agent/context';
 import { KnowledgeBaseProvider } from '@/pages/dataset/contexts/knowledge-base-context';
-import { useCallback } from 'react';
+import { Routes } from '@/routes';
+import { useCallback, useEffect } from 'react';
 
-import { Outlet } from 'react-router';
+import { Outlet, useMatch } from 'react-router';
 import { SideBar } from './sidebar';
 
 export default function DatasetWrapper() {
   const { data, loading } = useFetchKnowledgeBaseConfiguration();
   const { collapsed, setCollapsed } = useDatasetSidebarCollapse();
   const { setCollapsed: setPrimarySidebarCollapsed } = useSidebarCollapse();
+  const isCompilation = Boolean(
+    useMatch(`${Routes.DatasetBase}${Routes.Compilation}/:id`),
+  );
+
+  useEffect(() => {
+    if (isCompilation) {
+      setCollapsed(false);
+      setPrimarySidebarCollapsed(true);
+    }
+  }, [isCompilation, setCollapsed, setPrimarySidebarCollapsed]);
+
+  const collapsePrimarySidebar = useCallback(() => {
+    setPrimarySidebarCollapsed(true);
+  }, [setPrimarySidebarCollapsed]);
 
   // Hiding the dataset sidebar also collapses the primary sidebar. Expanding
   // it back (from the primary sidebar header) leaves the primary as-is.
   const collapseSidebars = useCallback(() => {
     setCollapsed(true);
-    setPrimarySidebarCollapsed(true);
-  }, [setCollapsed, setPrimarySidebarCollapsed]);
+    collapsePrimarySidebar();
+  }, [setCollapsed, collapsePrimarySidebar]);
 
   return (
     <OwnerTenantIdContext.Provider value={data?.tenant_id ?? ''}>
@@ -33,7 +48,11 @@ export default function DatasetWrapper() {
           )}
         >
           {!collapsed && (
-            <SideBar dataset={data} onCollapse={collapseSidebars} />
+            <SideBar
+              dataset={data}
+              onCollapse={collapseSidebars}
+              onMenuSelect={collapsePrimarySidebar}
+            />
           )}
 
           <Outlet />
