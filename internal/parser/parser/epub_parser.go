@@ -558,7 +558,9 @@ const epubTOCEntrySentenceEnd = "。！？；：.!?;:"
 
 // isEPUBTOCEntry reports whether item continues the TOC entry run identified
 // by token. An entry the run already dropped ends it: the body heading repeats
-// a chapter title, so the first replay is where the TOC stops.
+// a chapter title, so the first replay is where the TOC stops. A heading that
+// extends a dropped entry ("Introduction — Revised" after "Introduction") is
+// the same replay with a subtitle, not another contents line.
 func isEPUBTOCEntry(item map[string]any, token string, dropped map[string]bool) bool {
 	if item["doc_type_kwd"] != "text" {
 		return false
@@ -571,7 +573,12 @@ func isEPUBTOCEntry(item map[string]any, token string, dropped map[string]bool) 
 	if !strings.HasPrefix(text, token) {
 		return false
 	}
-	return !dropped[text]
+	for entry := range dropped {
+		if strings.HasPrefix(text, entry) {
+			return false
+		}
+	}
+	return true
 }
 
 // isEPUBTOCHeading reports whether text is a contents-table heading.

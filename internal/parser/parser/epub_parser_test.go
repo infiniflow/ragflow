@@ -1387,6 +1387,39 @@ func TestEPUBParser_RemoveTOCKeepsProseSharingEntryToken(t *testing.T) {
 	}
 }
 
+// A body heading that repeats a chapter title with a subtitle is still that
+// chapter's heading, so the run must stop there instead of deleting it.
+func TestEPUBParser_RemoveTOCKeepsHeadingExtendingAnEntry(t *testing.T) {
+	data := buildTestEPUBWithImages(t, []epubTestChapter{{
+		name: "ch1.xhtml",
+		content: epubTestHTML(`<h1>Contents</h1>
+<p>Introduction</p>
+<p>Installation</p>
+<h1>Introduction — Revised</h1>
+<p>Revised body.</p>`),
+	}}, nil)
+
+	p := NewEPUBParser()
+	p.ConfigureFromSetup(map[string]any{"remove_toc": true})
+	res := p.ParseWithResult(context.Background(), "book.epub", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	var texts []string
+	for _, it := range ItemsToMaps(res.JSON) {
+		texts = append(texts, stringValue(it["text"]))
+	}
+	full := strings.Join(texts, " ")
+	if strings.Contains(full, "Installation") {
+		t.Errorf("TOC entry survived: %q", full)
+	}
+	for _, want := range []string{"Introduction — Revised", "Revised body."} {
+		if !strings.Contains(full, want) {
+			t.Errorf("missing %q in %q", want, full)
+		}
+	}
+}
+
 // Numbered entries ("1. Chapter One") have to match an unnumbered body heading
 // ("Chapter One"); otherwise the removal stops after the first entry.
 func TestEPUBParser_RemoveTOCNumberedEntries(t *testing.T) {
