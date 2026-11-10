@@ -1,4 +1,4 @@
-import { FileType, FileTypeSuffixMap } from '@/constants/file';
+import { FileType } from '@/constants/file';
 import {
   DSL,
   DSLComponents,
@@ -228,15 +228,11 @@ export function transformParserParams(params: ParserFormSchemaType) {
     if (cur.fileFormat) {
       let filteredSetup: Partial<
         Omit<ParserFormSchemaType['setups'][0], 'pages'> & {
-          suffix: string[];
-        } & {
           two_column_check: boolean;
           enable_multi_column: boolean;
           pages: number[][];
         }
-      > = {
-        suffix: FileTypeSuffixMap[cur.fileFormat as FileType],
-      };
+      > = {};
 
       switch (cur.fileFormat) {
         case FileType.PDF:
@@ -313,6 +309,12 @@ export function transformParserParams(params: ParserFormSchemaType) {
           filteredSetup = {
             ...filteredSetup,
             remove_header_footer: cur.remove_header_footer || false,
+          };
+          break;
+        case FileType.TextMarkdown:
+          filteredSetup = {
+            ...filteredSetup,
+            remove_toc: cur.remove_toc || false,
           };
           break;
         case FileType.Audio:

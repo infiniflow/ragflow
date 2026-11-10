@@ -9,7 +9,7 @@ import (
 )
 
 // Chain-shape validation for ``list`` / ``timeline`` kinds, mirroring the
-// Python structure.py block (CHAIN_KINDS, _chain_detect_violations,
+// block (CHAIN_KINDS, _chain_detect_violations
 // validate_and_correct_chain). Both kinds model a strict linear chain of
 // entities (one predecessor, one successor, no cycles). The per-chunk
 // extractor is happy to emit branches / cycles when the source text supports
@@ -55,7 +55,7 @@ commentary):
 }
 `
 
-// chainCorrectionSystem is the system prompt of the correction call (Python
+// chainCorrectionSystem is the system prompt of the correction call (
 // passes it inline to gen_json).
 const chainCorrectionSystem = "You correct extracted graph relations to satisfy a strict-chain constraint."
 
@@ -91,7 +91,7 @@ func chainExtractEdge(row common.Product) (chainEdge, bool) {
 // chainDetectViolations mirrors _chain_detect_violations: it returns
 // {edge: [issue strings]} for every edge involved in a self-loop, fan-out,
 // fan-in, or a directed cycle (SCC size >= 2). Cycle detection uses iterative
-// Kosaraju — no recursion, so the pathologically-deep case Python guards with
+// Kosaraju — no recursion, so the pathologically-deep case guards with
 // RecursionError cannot occur here.
 func chainDetectViolations(edges []chainEdge) map[chainEdge][]string {
 	issues := map[chainEdge][]string{}
@@ -339,7 +339,7 @@ func validateAndCorrectChain(ctx context.Context, deps common.Deps, llmID string
 	}
 
 	// Correct in capped batches (sequential: deterministic, and in-run
-	// violation counts are small — Python parallelises under a semaphore).
+	// violation counts are small — parallelises under a semaphore)
 	keepSet := map[chainEdge]bool{}
 	for i := 0; i < len(badEdges); i += chainCorrectionMaxRelations {
 		end := i + chainCorrectionMaxRelations
@@ -412,7 +412,7 @@ func validateAndCorrectChain(ctx context.Context, deps common.Deps, llmID string
 // dropIsolatedTimelineEntities mirrors cleanup_timeline_isolated_entities:
 // for the timeline kind, entity rows not referenced by any relation endpoint
 // are dropped. The in-memory port runs it after all merges/rewrites (the
-// Python ES version schedules it after every flush for the same reason: a
+// ES version schedules it after every flush for the same reason: a
 // later relation can still reference the entity).
 func dropIsolatedTimelineEntities(rows []common.Product) []common.Product {
 	connected := map[string]bool{}

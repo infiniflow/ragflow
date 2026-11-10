@@ -20,7 +20,7 @@ import (
 // ids are opaque hex that tokenizes into garbage terms and drifts the vector,
 // and the count is a number every row shares. They must stay in lockstep with
 // _STRUCT_INDEX_EXCLUDED_KEYS in
-// rag/advanced_rag/knowlege_compile/structure.py, or the two runtimes index
+// , or the index
 // the same payload into different vectors.
 var IndexExcludedKeys = map[string]bool{
 	"evidence":         true,
@@ -29,8 +29,8 @@ var IndexExcludedKeys = map[string]bool{
 }
 
 // PayloadDescription is the single source of truth for the text a compiled row
-// is indexed by. It mirrors Python _struct_payload_description in
-// rag/advanced_rag/knowlege_compile/structure.py: the concatenated string
+// is indexed by. It mirrors _struct_payload_description in
+// the concatenated string
 // values of every payload field, with slices flattened.
 //
 // Go maps lose JSON insertion order, so keys are sorted to keep the embedding
@@ -42,7 +42,7 @@ var IndexExcludedKeys = map[string]bool{
 // separate BM25 trial remains possible.
 //
 // NOTE: the tree variant used to skip "description" here while claiming to
-// match Python; that dropped the primary semantic content from every tree row
+// match ; that dropped the primary semantic content from every tree row
 // vector and diverged from the structure variant. Both variants now share this
 // implementation.
 func PayloadDescription(payload map[string]any, excluded map[string]bool) string {

@@ -33,13 +33,13 @@ export const VisionEnhancementFileTypes: FileType[] = [
 // parse_method that is neither "ocr" nor empty is a VLM model reference: it
 // lifts onto vlm.llm_id — deliberately beating an already-set global model, so
 // the choice a saved canvas encodes is not lost — and the switch turns off.
-// The family language is dropped outright: nothing reads it for images any
-// more, and a stored value cannot be told apart from the hardcoded default that
-// used to write it (issue #20727).
+// The family language is dropped outright: it is not the description-language
+// override (that lives on the global vlm block), and a stored value cannot be
+// told apart from the hardcoded default that used to write it (issue #20727).
 export function normalizeParserFormValues<T extends Record<string, any>>(
   values: T,
 ): T & {
-  vlm: { llm_id: string; system_prompt: string };
+  vlm: { llm_id: string; system_prompt: string; lang?: string };
   enable_vision_enhancement: boolean;
 } {
   const setups = Array.isArray(values?.setups) ? values.setups : [];
@@ -73,15 +73,15 @@ export function normalizeParserFormValues<T extends Record<string, any>>(
       '');
 
   const nextSetups = setups.map((x) => {
-    // preprocess and output_format are retired on every family: the Parser
-    // derives preprocessing from the chunker and emits JSON only, so a stored
-    // value is dead config that must not survive a load/save round-trip.
-    // Per-setup vlm is dead for every family except Audio, whose vlm holds the
-    // ASR model.
+    // preprocess, output_format, and suffix are retired on every family: the
+    // Parser derives preprocessing from the chunker, emits JSON only, and
+    // routes files by the document's own suffix, so a stored value is dead
+    // config that must not survive a load/save round-trip. Per-setup vlm is
+    // dead for every family except Audio, whose vlm holds the ASR model.
     if (x?.fileFormat === FileType.Audio) {
-      return omit(x, ['output_format', 'preprocess']);
+      return omit(x, ['output_format', 'preprocess', 'suffix']);
     }
-    const stripped = omit(x, ['vlm', 'output_format', 'preprocess']);
+    const stripped = omit(x, ['vlm', 'output_format', 'preprocess', 'suffix']);
     if (x?.fileFormat !== FileType.Image) return stripped;
     const { parse_method, ...rest } = omit(stripped, ['lang', 'system_prompt']);
     // Materialize the switch either way. Absent or "ocr" both mean "run local
@@ -99,15 +99,15 @@ export function normalizeParserFormValues<T extends Record<string, any>>(
   return {
     ...values,
     vlm: {
-      // Drop any stored vlm.lang: the enhancement block no longer offers a
-      // language, so a stale one in the payload would resurrect a control that
-      // nothing renders any more.
-      ...omit(values?.vlm, ['lang']),
+      // Lang is an explicit user choice stored on the global vision block; an
+      // empty value follows the knowledge base language. It is preserved here
+      // so a saved choice survives the load/save round-trip.
+      ...values?.vlm,
       llm_id: llmId,
       // Only the prompt lifts: a stored family prompt can only have come from a
-      // person, because its default is empty. Language is never lifted — the
-      // family value stays where it is as a legacy fallback, and lifting it would
-      // turn a machine-written default into an explicit choice. See issue #20727.
+      // person, because its default is empty. The old family language is not
+      // lifted: its default was machine-written, so it cannot be told apart
+      // from an explicit choice. See issue #20727.
       system_prompt:
         values?.vlm?.system_prompt || imageSetup?.system_prompt || '',
     },
@@ -151,6 +151,7 @@ export function buildInitialParserValues(
     vlm: {
       llm_id: defaultModelDictionary[ModelTypeToField.vision] ?? '',
       system_prompt: '',
+      lang: '',
     },
     setups: initialParserValues.setups.map(
       (setup) =>
