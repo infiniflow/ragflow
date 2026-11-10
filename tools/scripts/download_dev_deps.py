@@ -254,6 +254,22 @@ def pdfium_url(goos: str, goarch: str) -> str:
     return f"{gh_proxy()}https://github.com/kognitos/pdfium-static/releases/download/chromium%2F{PDFIUM_VERSION}/{PDFIUM_STATIC_ASSETS[(goos, goarch)]}"
 
 
+def pdfium_local_asset_name(goos: str, goarch: str) -> str:
+    """Local deps/ filename for the pdfium tarball, suffixed with the resolved
+    chromium build number so two pdfium versions never share a path.
+
+    Unlike office_oxide / pdf_oxide (whose release asset sits under a v{version}
+    tag) and onnxruntime (whose asset name embeds the version), pdfium's upstream
+    asset name is version-agnostic (pdfium-linux-x64-static.tgz) and its .a
+    carries no version stamp. The ONLY way to stop a stale same-named tarball
+    from being silently reused is to make the on-disk name encode the version.
+    The download URL is unchanged (still points at the upstream version-agnostic
+    asset); only the local name is versioned."""
+    base = PDFIUM_STATIC_ASSETS[(goos, goarch)]
+    root, ext = os.path.splitext(base)
+    return f"{root}-{PDFIUM_VERSION}{ext}"
+
+
 def office_oxide_url(repo_root: str, goos: str, goarch: str) -> str:
     """office_oxide native tarball for the target platform. The version is
     derived from go.mod so it always matches what the Go build actually links
@@ -417,6 +433,29 @@ def _valid_download(filename):
                         return False
                     with library:
                         return b"\x00" + version.encode() + b"\x00" in library.read()
+                except (KeyError, tarfile.TarError, EOFError):
+                    return False
+        if os.path.basename(filename) in PDF_OXIDE_ASSETS.values():
+            # Mirror office_oxide: reject a tarball whose embedded .a does NOT
+            # carry the version go.mod pins. A stale same-named archive (e.g.
+            # left over from a prior pdf_oxide bump) is otherwise reused here and
+            # only fails later at extraction ("missing required native files or
+            # version <current>"), far from the cause. The .a lives under
+            # lib/<goos>_<goarch>/ (per PDF_OXIDE_ASSETS) and is stamped with a
+            # plain-text `pdf_oxide <version>` token (stamp_format="text").
+            version = go_module_version("github.com/yfedoseev/pdf_oxide/go", REPO_ROOT)
+            goos, goarch = next(k for k, v in PDF_OXIDE_ASSETS.items() if v == os.path.basename(filename))
+            member_name = f"lib/{goos}_{goarch}/libpdf_oxide.a"
+            with tarfile.open(filename) as archive:
+                try:
+                    member = next((m for m in archive.getmembers() if os.path.normpath(m.name) == member_name), None)
+                    if member is None:
+                        return False
+                    library = archive.extractfile(member)
+                    if library is None:
+                        return False
+                    with library:
+                        return _stamp_present(library.read(), version, "text")
                 except (KeyError, tarfile.TarError, EOFError):
                     return False
         return True
@@ -871,7 +910,7 @@ def main():
     # ONNX Runtime archive (+ checksum sidecar), then the other native archives.
     _download_ort_archive(os.path.join(RAGFLOW_DEPS_DIR, ort_zip), goos, goarch)
     archives = [
-        (pdfium_url(goos, goarch), PDFIUM_STATIC_ASSETS[(goos, goarch)]),
+        (pdfium_url(goos, goarch), pdfium_local_asset_name(goos, goarch)),
         (pdf_oxide_url(REPO_ROOT, goos, goarch), PDF_OXIDE_ASSETS[(goos, goarch)]),
         (office_oxide_url(REPO_ROOT, goos, goarch), OFFICE_OXIDE_ASSETS[(goos, goarch)]),
     ]
@@ -892,7 +931,7 @@ def main():
     office_version = go_module_version("github.com/yfedoseev/office_oxide/go", REPO_ROOT)
     pdf_oxide_version = go_module_version("github.com/yfedoseev/pdf_oxide/go", REPO_ROOT)
     extractions = [
-        ("pdfium-static", PDFIUM_STATIC_ASSETS[(goos, goarch)], "v" + PDFIUM_VERSION, ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"], None, "null"),
+        ("pdfium-static", pdfium_local_asset_name(goos, goarch), "v" + PDFIUM_VERSION, ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"], None, "null"),
         ("pdf_oxide", PDF_OXIDE_ASSETS[(goos, goarch)], "v" + pdf_oxide_version, [f"lib/{goos}_{goarch}/libpdf_oxide.a", "include/pdf_oxide.h"], pdf_oxide_version, "text"),
         ("office_oxide", OFFICE_OXIDE_ASSETS[(goos, goarch)], "v" + office_version, ["lib/liboffice_oxide.a", "include/office_oxide_c/office_oxide.h"], office_version, "null"),
     ]
