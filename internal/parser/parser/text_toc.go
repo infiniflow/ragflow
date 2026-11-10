@@ -27,6 +27,10 @@ type tocRules struct {
 	// asciiExtra lists characters the format adds to English body text
 	// (Markdown markup) so isEnglishItems classifies it as English.
 	asciiExtra string
+	// entry reports whether a raw item is a TOC entry. When set, the items
+	// directly after the heading are dropped instead of relying on a shared
+	// prefix, so body text is never part of the removal range.
+	entry func(string) bool
 }
 
 // plainTOCRules keeps the plain-text contract that HTML, DOC and DOCX share.
@@ -60,6 +64,9 @@ func removeContentsTable(items []map[string]any, eng bool, rules tocRules) []map
 	clean := rules.clean
 	if clean == nil {
 		clean = func(s string) string { return s }
+	}
+	if rules.entry != nil {
+		return removeTOCEntryList(items, heading, clean, rules.entry)
 	}
 	i := 0
 	for i < len(items) {
@@ -107,6 +114,37 @@ func removeContentsTable(items []map[string]any, eng bool, rules tocRules) []map
 		}
 	}
 	return items
+}
+
+// removeTOCEntryList drops a matched TOC heading and the entry items that
+// directly follow it. A format that marks entries structurally does not need
+// the shared prefix-gap heuristic, which leaves entries behind when the body
+// heading does not share the first entry's prefix and deletes body text that
+// does.
+func removeTOCEntryList(items []map[string]any, heading *regexp.Regexp, clean func(string) string, entry func(string) bool) []map[string]any {
+	result := make([]map[string]any, 0, len(items))
+	for i := 0; i < len(items); i++ {
+		normalized := whitespacePattern.ReplaceAllString(clean(strings.SplitN(itemText(items[i]), "@@", 2)[0]), "")
+		if !heading.MatchString(normalized) {
+			result = append(result, items[i])
+			continue
+		}
+		// Drop the heading, any blank separators and at most 128 entries.
+		dropped := 0
+		for i+1 < len(items) && dropped < 128 {
+			next := itemText(items[i+1])
+			if next == "" {
+				i++
+				continue
+			}
+			if !entry(next) {
+				break
+			}
+			i++
+			dropped++
+		}
+	}
+	return result
 }
 
 // tocPrefix returns the TOC-entry prefix: first 3 chars for CJK,

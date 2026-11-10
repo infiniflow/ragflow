@@ -65,11 +65,22 @@ func markdownTOCText(s string) string {
 	}
 }
 
+// markdownTOCEntry reports whether a Markdown item is a TOC entry: a list item
+// (*, -, +, 1., 1)) or a bare link line.
+func markdownTOCEntry(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	if markdownListMarkerPattern.MatchString(trimmed) {
+		return true
+	}
+	return strings.HasPrefix(trimmed, "[") && strings.Contains(trimmed, "](")
+}
+
 // markdownTOCRules adapts TOC removal to Markdown item text.
 var markdownTOCRules = tocRules{
 	clean:      markdownTOCText,
 	heading:    markdownTOCHeadingPattern,
 	asciiExtra: "#*+_",
+	entry:      markdownTOCEntry,
 }
 
 type MarkdownParser struct {

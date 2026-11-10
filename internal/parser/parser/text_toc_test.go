@@ -122,6 +122,49 @@ func TestRemoveContentsTable(t *testing.T) {
 	}
 }
 
+// Markdown entries carry their own markers, so removal does not depend on a
+// body heading sharing the first entry's prefix: every entry goes, while body
+// text that happens to share the prefix stays.
+func TestMarkdownTOCEntriesRemovedStructurally(t *testing.T) {
+	items := []map[string]any{
+		{"text": "# Table of Contents"},
+		{"text": "* Chapter 1 Getting Started"},
+		{"text": "* Chapter 2 Deep Dive"},
+		{"text": ""},
+		{"text": "# Getting Started"},
+		{"text": "Chapter 1 covers setup."},
+		{"text": "# Deep Dive"},
+	}
+	got := removeContentsTable(items, true, markdownTOCRules)
+	want := []map[string]any{
+		{"text": "# Getting Started"},
+		{"text": "Chapter 1 covers setup."},
+		{"text": "# Deep Dive"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
+// A link-only TOC has no list markers; those lines are entries too.
+func TestMarkdownTOCLinkEntriesRemoved(t *testing.T) {
+	items := []map[string]any{
+		{"text": "# 目录"},
+		{"text": "- [概述](#概述)"},
+		{"text": "- [安装](#安装)"},
+		{"text": "# 概述"},
+		{"text": "概述正文。"},
+	}
+	got := removeContentsTable(items, false, markdownTOCRules)
+	want := []map[string]any{
+		{"text": "# 概述"},
+		{"text": "概述正文。"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
+
 func TestMarkdownTOCText(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -269,24 +312,3 @@ func TestPlainTOCRulesKeepMarkup(t *testing.T) {
 	}
 }
 
-// TestRemoveContentsTableKeepsEntriesWithoutAnchor pins the conservative
-// fallback: when no later item shares the first TOC entry's prefix, the
-// remaining entries are kept rather than deleting body text to reach one.
-func TestRemoveContentsTableKeepsEntriesWithoutAnchor(t *testing.T) {
-	items := []map[string]any{
-		{"text": "# Table of Contents"},
-		{"text": "* Chapter 1 Intro"},
-		{"text": "* Chapter 2 Deep Dive"},
-		{"text": "# Introduction"},
-		{"text": "Body."},
-	}
-	got := removeContentsTable(items, true, markdownTOCRules)
-	want := []map[string]any{
-		{"text": "* Chapter 2 Deep Dive"},
-		{"text": "# Introduction"},
-		{"text": "Body."},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("got %v, want %v", got, want)
-	}
-}
