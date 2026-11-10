@@ -33,7 +33,7 @@ type IngestionLog struct {
 	TenantName     string         `json:"tenant_name,omitempty"`
 	IngestorName   string         `json:"ingestor_name,omitempty"`
 	NatsQueue      string         `json:"nats_queue,omitempty"`
-	Worker         string         `json:"worker"`
+	Worker         string         `json:"worker,omitempty"`
 	TaskID         string         `json:"task_id"`
 	EventType      string         `json:"event_type"`
 	Status         string         `json:"status"`

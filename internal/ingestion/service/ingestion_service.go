@@ -585,7 +585,16 @@ func (e *Ingestor) handleAndExecute(w *worker, handle common.TaskHandle) {
 		// Claim the task before applying document/log side effects. A duplicate
 		// delivery must only renew its broker lease; resetting the document here
 		// would race the owning worker and erase its in-flight progress.
-		e.ingestionTaskSvc.PrepareValidatedRun(e.ctx, task)
+		//
+		// The running lifecycle event emitted by PrepareValidatedRun must name
+		// the worker that claimed this task, so we carry the per-task worker
+		// identity on the context here (before the call) rather than only on the
+		// task-scheduling context used for terminal events below.
+		runCtx := e.ctx
+		if w != nil {
+			runCtx = observability.WithWorkerName(runCtx, fmt.Sprintf("worker-%d", w.id))
+		}
+		e.ingestionTaskSvc.PrepareValidatedRun(runCtx, task)
 	default:
 		common.Warn(fmt.Sprintf("task %s in unexpected status %s, ack-skip", taskMessage.TaskID, task.Status))
 		e.ackHandle(hb, handle, taskMessage.TaskID)
