@@ -1137,18 +1137,20 @@ func (e *Ingestor) deferTransientTask(ctx context.Context, taskCtx *taskpkg.Task
 		reason := fmt.Sprintf("Task failed: document engine stayed unavailable: %v", cause)
 		common.Error(fmt.Sprintf("Task %s exhausted its redelivery budget", task.ID), cause)
 		// This is the last chance to move the task out of RUNNING: once the
-		// broker stops delivering, no later attempt exists. A transient DB
-		// error must not be taken as a final answer, so the write is retried.
-		written := retryTerminalWrite(ctx, func() bool {
+		// broker stops delivering, no later attempt exists. The write is
+		// therefore retried for as long as the worker lives, renewing the
+		// delivery's in-flight deadline, so a database that recovers later
+		// still settles the task instead of stranding it.
+		written := retryTerminalWrite(ctx, taskCtx.Handle, func() bool {
 			return e.markFailed(ctx, task.ID, reason)
 		}, terminalWriteRetryDelays)
 		if written {
 			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), reason)
 			return false
 		}
-		// The FAILED write did not land. Nack anyway: at the delivery limit the
-		// message stays in the stream for recovery, while an Ack would drop it.
-		common.Error(fmt.Sprintf("Task %s stays RUNNING: FAILED write failed after retries", task.ID), cause)
+		// The worker is stopping and the FAILED write still did not land. Keep
+		// the message in the stream rather than Acking it away.
+		common.Error(fmt.Sprintf("Task %s stays RUNNING: FAILED write failed", task.ID), cause)
 		e.nackTask(taskCtx, task.ID)
 		return true
 	}
@@ -1164,29 +1166,43 @@ func (e *Ingestor) deferTransientTask(ctx context.Context, taskCtx *taskpkg.Task
 	return true
 }
 
-// terminalWriteRetryDelays paces the retries of the FAILED write that is only
-// attempted on the last delivery.
-var terminalWriteRetryDelays = []time.Duration{250 * time.Millisecond, time.Second, 2 * time.Second}
+// terminalWriteRetryDelays paces the FAILED write that is only attempted on the
+// last delivery. The last entry repeats once the schedule is exhausted.
+var terminalWriteRetryDelays = []time.Duration{250 * time.Millisecond, time.Second, 2 * time.Second, 15 * time.Second, 60 * time.Second}
 
-// retryTerminalWrite runs write until it reports success, sleeping between
-// attempts. It stops early when ctx is done but still makes one final attempt:
-// the write itself deliberately ignores cancellation, so a shutting-down worker
-// can settle the task instead of leaving it RUNNING.
-func retryTerminalWrite(ctx context.Context, write func() bool, delays []time.Duration) bool {
+// retryTerminalWrite keeps writing until it reports success or ctx is done.
+// The delivery limit leaves no later delivery, so giving up after a few
+// attempts would strand the task in RUNNING; between attempts it renews the
+// in-flight deadline through InProgress so the broker keeps the message with
+// this worker while the database is unavailable. The final attempt runs after
+// cancellation because the write deliberately ignores it, letting a stopping
+// worker settle the task instead of leaving it RUNNING.
+func retryTerminalWrite(ctx context.Context, handle common.TaskHandle, write func() bool, delays []time.Duration) bool {
 	if write() {
 		return true
 	}
-	for _, delay := range delays {
+	for attempt := 0; ; attempt++ {
+		delay := time.Duration(0)
+		if len(delays) > 0 {
+			delay = delays[len(delays)-1]
+			if attempt < len(delays)-1 {
+				delay = delays[attempt]
+			}
+		}
 		select {
 		case <-ctx.Done():
 			return write()
 		case <-time.After(delay):
 		}
+		if handle != nil {
+			if err := handle.InProgress(); err != nil {
+				common.Warn(fmt.Sprintf("renew delivery while retrying the terminal write: %v", err))
+			}
+		}
 		if write() {
 			return true
 		}
 	}
-	return false
 }
 
 // nackTask settles the message for redelivery. A nil handle (standalone/test
