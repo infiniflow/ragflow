@@ -131,11 +131,10 @@ func TestUpdateDatasetSkipsChunkStoreWhenModelUnchanged(t *testing.T) {
 	}
 }
 
-// A failed post-commit preparation must not leave the dataset on a model whose
-// store was never prepared: the retry sends the same model, so the changed-model
-// condition would skip the repair. Restoring the previous binding lets the
-// retry take the change path again.
-func TestUpdateDatasetRestoresEmbeddingBindingWhenChunkStorePreparationFails(t *testing.T) {
+// A preparation failure must leave the dataset untouched. The store is prepared
+// before the commit, so there is no committed model switch to roll back and no
+// state in which the retry would skip the repair.
+func TestUpdateDatasetLeavesBindingUntouchedWhenChunkStorePreparationFails(t *testing.T) {
 	cases := []struct {
 		name string
 		// failProbe fails the dimension probe instead of the store creation.
@@ -170,11 +169,11 @@ func TestUpdateDatasetRestoresEmbeddingBindingWhenChunkStorePreparationFails(t *
 			if err == nil || code != common.CodeServerError {
 				t.Fatalf("UpdateDataset = (%d, %v), want a server error", code, err)
 			}
-			// The settings commit before the store is prepared, so the error has
-			// to say that the rest of the update stuck and the binding was rolled
-			// back; otherwise the client cannot tell what a retry will repair.
-			if !strings.Contains(err.Error(), "dataset settings were saved") {
-				t.Fatalf("error %q does not report the saved settings", err)
+			if !strings.Contains(err.Error(), "prepare the chunk store") {
+				t.Fatalf("error %q does not name the chunk store preparation", err)
+			}
+			if strings.Contains(err.Error(), "dataset settings were saved") {
+				t.Fatalf("error %q reports saved settings for an update that changed nothing", err)
 			}
 
 			var kb entity.Knowledgebase
@@ -220,45 +219,11 @@ func TestEnsureChunkStoreForEmbeddingWithoutEngine(t *testing.T) {
 	}
 }
 
-// The request context is already cancelled when the provider hangs, which is
-// the common reason the preparation fails. The compensating write must still
-// run, otherwise the retry never repairs the store.
-func TestRestoreEmbeddingBindingIgnoresRequestCancellation(t *testing.T) {
-	db := setupDatasetUpdateTestDB(t)
-	pushServiceDB(t, db)
-	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
-	if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Updates(map[string]interface{}{
-		"embd_id":        "BAAI/bge-m3@Builtin",
-		"tenant_embd_id": "BAAI/bge-m3@Builtin",
-	}).Error; err != nil {
-		t.Fatalf("switch model: %v", err)
-	}
-
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-
-	svc := testDatasetUpdateService(t)
-	if err := svc.restoreEmbeddingBinding(ctx, "kb-1", "BAAI/bge-m3@Builtin", "BAAI/bge-large-zh-v1.5@Builtin", nil); err != nil {
-		t.Fatalf("restoreEmbeddingBinding = %v, want nil", err)
-	}
-
-	var kb entity.Knowledgebase
-	if err := dao.DB.Where("id = ?", "kb-1").Take(&kb).Error; err != nil {
-		t.Fatalf("reload dataset: %v", err)
-	}
-	if kb.EmbdID != "BAAI/bge-large-zh-v1.5@Builtin" {
-		t.Fatalf("embd_id = %q, want the previous model despite a cancelled request", kb.EmbdID)
-	}
-	if kb.TenantEmbdID != nil {
-		t.Fatalf("tenant_embd_id = %q, want nil", *kb.TenantEmbdID)
-	}
-}
-
-// A client that disconnects after the commit must not leave the dataset on a
-// model whose store was never prepared: the restore runs on a detached
-// context, so the retry sent after the error still takes the change path and
+// A client that disconnects while the store is being prepared must not leave
+// the dataset on a model whose store was never prepared: the preparation runs
+// before the commit, so the cancelled attempt changes nothing and the retry
 // repairs the store.
-func TestUpdateDatasetRepairsChunkStoreWhenRequestIsCancelledAfterCommit(t *testing.T) {
+func TestUpdateDatasetRepairsChunkStoreWhenRequestIsCancelledDuringPreparation(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
@@ -270,7 +235,8 @@ func TestUpdateDatasetRepairsChunkStoreWhenRequestIsCancelledAfterCommit(t *test
 	requestCtx, cancelRequest := context.WithCancel(t.Context())
 	defer cancelRequest()
 	svc.embeddingDimension = func(context.Context, string, string) (int, error) {
-		// The commit has already happened when the provider probe starts.
+		// The probe runs before the transaction, and the client goes away
+		// while it is in flight.
 		cancelRequest()
 		return 0, context.Canceled
 	}

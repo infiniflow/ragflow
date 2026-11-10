@@ -25,17 +25,6 @@ import (
 
 const datasetPagerankUpdateTimeout = 30 * time.Second
 
-// restoreEmbeddingBindingTimeout bounds the compensating write that runs after
-// the request context may already be cancelled.
-const restoreEmbeddingBindingTimeout = 10 * time.Second
-
-// The compensating write is the only way back to a model whose store exists,
-// so a transient database failure must not be accepted on the first attempt.
-const (
-	restoreEmbeddingBindingAttempts = 3
-	restoreEmbeddingBindingRetry    = 250 * time.Millisecond
-)
-
 type datasetPagerankUpdate struct {
 	value     int64
 	index     string
@@ -45,7 +34,8 @@ type datasetPagerankUpdate struct {
 func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, req service.UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
 	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
-	if _, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID); err != nil {
+	currentKB, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
+	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 			return nil, code, permissionErr
@@ -189,14 +179,17 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 		return nil, common.CodeDataError, errors.New("no properties were modified")
 	}
 
+	preparedChunkStoreEmbdID, preflightCode, preflightErr := d.prepareChunkStoreForEmbeddingChange(ctx, currentKB, embdID, embdIDProvided, parserID, parserIDProvided)
+	if preflightErr != nil {
+		return nil, preflightCode, preflightErr
+	}
+
 	txCode := common.CodeSuccess
 	var updatedKB *entity.Knowledgebase
 	var linkedConnectors []*dao.ConnectorDatasetListItem
 	var scheduledTaskIDs []string
 	var pagerankUpdate *datasetPagerankUpdate
 	var chunkStoreEmbdID string
-	var previousEmbdID string
-	var previousTenantEmbdID *string
 	err = dao.DB.Transaction(func(tx *gorm.DB) error {
 		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(ctx, tx, datasetID)
 		if authErr != nil {
@@ -310,19 +303,16 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 			updates["embd_id"] = effectiveEmbdID
 			updates["tenant_embd_id"] = stringPtrIfNotEmpty(tenantEmbdID)
 			// An empty dataset can switch models, but its chunk store keeps the
-			// vector column of the previous model. Remember the change so the new
-			// column is added after the commit; with rows present the switch is
-			// rejected upstream because the old vectors cannot be reinterpreted.
+			// vector column of the previous model. The preparation ran before
+			// this transaction, so only a state that moved in between is left to
+			// catch here; it needs a retry against the new state.
 			if effectiveEmbdID != "" && effectiveEmbdID != lockedKB.EmbdID && lockedKB.ChunkNum == 0 {
 				chunkStoreEmbdID = effectiveEmbdID
-				previousEmbdID = lockedKB.EmbdID
-				if lockedKB.TenantEmbdID != nil {
-					tenantEmbdID := *lockedKB.TenantEmbdID
-					previousTenantEmbdID = &tenantEmbdID
-				} else {
-					previousTenantEmbdID = nil
-				}
 			}
+		}
+		if chunkStoreEmbdID != "" && chunkStoreEmbdID != preparedChunkStoreEmbdID {
+			txCode = common.CodeServerError
+			return errors.New("dataset changed while the embedding model was being prepared; retry the request")
 		}
 
 		// Design §5 fallback chains (v5.1/v5.2): when the request omits a field,
@@ -536,23 +526,6 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 	}
 	publishDatasetSyncerTasks(scheduledTaskIDs)
 
-	if chunkStoreEmbdID != "" {
-		if err = d.ensureChunkStoreForEmbedding(ctx, updatedKB, chunkStoreEmbdID); err != nil {
-			// The update is already committed, so leaving the new model in place
-			// would strand the dataset on a store without its vector column: a
-			// retry sends the same model and skips the preparation entirely.
-			// Restore the previous binding instead, so the retry takes the
-			// change path and repairs the store.
-			if restoreErr := d.restoreEmbeddingBinding(ctx, updatedKB.ID, chunkStoreEmbdID, previousEmbdID, previousTenantEmbdID); restoreErr != nil {
-				return nil, common.CodeServerError, fmt.Errorf(
-					"dataset settings were saved, but the chunk store preparation failed and the embedding binding could not be restored; select the embedding model again to repair the store: %w",
-					errors.Join(err, restoreErr))
-			}
-			return nil, common.CodeServerError, fmt.Errorf(
-				"dataset settings were saved, but the chunk store preparation failed; the embedding binding was restored so a retry repairs it: %w", err)
-		}
-	}
-
 	if pagerankUpdate != nil {
 		if err = d.updateDatasetPagerankChunks(ctx, *pagerankUpdate); err != nil {
 			return nil, common.CodeServerError, err
@@ -691,47 +664,40 @@ func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx 
 	return &kb, common.CodeSuccess, nil
 }
 
+// prepareChunkStoreForEmbeddingChange adds the new model's vector column before
+// the binding is committed. The engine write is additive and an empty dataset
+// holds no vectors to reinterpret, so preparing ahead of the transaction is
+// safe: a preparation failure leaves the binding untouched and the retry takes
+// this same path, instead of stranding the dataset on a store that has no
+// column for its model.
+func (d *DatasetService) prepareChunkStoreForEmbeddingChange(ctx context.Context, kb *entity.Knowledgebase, embdID string, embdIDProvided bool, parserID string, parserIDProvided bool) (string, common.ErrorCode, error) {
+	if !embdIDProvided || embdID == "" || kb == nil || embdID == kb.EmbdID || kb.ChunkNum != 0 {
+		return "", common.CodeSuccess, nil
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID}, permission.OperationUpdate); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		return "", code, permissionErr
+	}
+	// Keep the unavailable-model contract of the transaction below: the probe
+	// fails first for an unknown model, and that is a client error.
+	if ok, message := d.verifyEmbeddingAvailability(ctx, embdID, kb.TenantID); !ok {
+		return "", common.CodeDataError, errors.New(message)
+	}
+	preparedKB := *kb
+	if parserIDProvided {
+		preparedKB.ParserID = parserID
+	}
+	if err := d.ensureChunkStoreForEmbedding(ctx, &preparedKB, embdID); err != nil {
+		return "", common.CodeServerError, fmt.Errorf("prepare the chunk store for embedding model %s: %w", embdID, err)
+	}
+	return embdID, common.CodeSuccess, nil
+}
+
 // ensureChunkStoreForEmbedding prepares the chunk store for a new embedding
 // model on an empty dataset. Every engine's CreateChunkStore is additive on an
 // existing store: Infinity adds the missing q_<n>_vec column, the SQL engines
 // add missing columns, and Elasticsearch leaves an existing chunk index
 // untouched.
-// restoreEmbeddingBinding reverts the model switch that the failed
-// post-commit preparation could not complete. The guard on the new model keeps
-// a concurrent switch from being overwritten.
-func (d *DatasetService) restoreEmbeddingBinding(ctx context.Context, datasetID, preparedEmbdID, previousEmbdID string, previousTenantEmbdID *string) error {
-	updates := map[string]interface{}{"embd_id": previousEmbdID}
-	if previousTenantEmbdID != nil {
-		updates["tenant_embd_id"] = *previousTenantEmbdID
-	} else {
-		updates["tenant_embd_id"] = nil
-	}
-	// The probe usually fails because the provider hangs and the request is
-	// cancelled, so restoring the binding must not inherit that cancellation:
-	// this write is what lets the retry repair the store.
-	restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), restoreEmbeddingBindingTimeout)
-	defer cancel()
-	var err error
-	for attempt := 0; attempt < restoreEmbeddingBindingAttempts; attempt++ {
-		if attempt > 0 {
-			select {
-			case <-restoreCtx.Done():
-				return errors.Join(err, restoreCtx.Err())
-			case <-time.After(restoreEmbeddingBindingRetry):
-			}
-		}
-		err = dao.DB.WithContext(restoreCtx).Model(&entity.Knowledgebase{}).
-			Where("id = ? AND embd_id = ?", datasetID, preparedEmbdID).
-			Updates(updates).Error
-		if err == nil {
-			return nil
-		}
-	}
-	common.Warn("failed to restore the embedding binding after chunk store preparation failed",
-		zap.String("dataset_id", datasetID), zap.Error(err))
-	return err
-}
-
 func (d *DatasetService) ensureChunkStoreForEmbedding(ctx context.Context, kb *entity.Knowledgebase, embdID string) error {
 	if d.docEngine == nil || kb == nil {
 		return nil
