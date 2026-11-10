@@ -200,10 +200,11 @@ func maybeDispatchVisionEnhancement(
 
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	family := resolveParserFamily(fileType)
-	// Captions follow the knowledge base language, which also drives
-	// tokenization. The family setup's lang is an OCR engine parameter
-	// (pdf_vision_dispatch.go), not an input here — see issue #20727.
-	language := resolveVisionLanguage(inputs)
+	// An explicit enhancement language wins; otherwise captions follow the
+	// knowledge base language, which also drives tokenization. The family
+	// setup's lang is an OCR engine parameter (pdf_vision_dispatch.go), not an
+	// input here — see issue #20727.
+	language := resolveVisionLanguage(inputs, vision.language)
 
 	// Collect visual resources. Items whose text already
 	// carries a backend-provided description (MinerU vlm_description) are
