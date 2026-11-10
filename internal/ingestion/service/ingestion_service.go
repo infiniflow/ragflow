@@ -33,6 +33,7 @@ import (
 	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	taskpkg "ragflow/internal/ingestion/task"
+	"ragflow/internal/observability"
 	servicepkg "ragflow/internal/service"
 	documentpkg "ragflow/internal/service/document"
 	"ragflow/internal/utility"
@@ -175,6 +176,16 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string, dep
 		deps = &ingestion.Deps{}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	// Carry process-level ingest identity on the ingestor's root context so that
+	// every lifecycle event emitted through this ingestor (including scheduled/
+	// created events raised outside a worker) attributes to this ingestor and the
+	// NATS subject it consumes. The per-worker name is added per task on the
+	// task context (see handleAndExecute). The EE build may layer additional,
+	// per-execution identity onto the context upstream of the emit.
+	ctx = observability.WithIngestIdentity(ctx, observability.IngestIdentity{
+		IngestorName: name,
+		NatsQueue:    common.TaskSubject,
+	})
 	dispatchCtx, dispatchCancel := context.WithCancel(context.Background())
 	id := common.GenerateUUID()
 	ingestor := &Ingestor{
@@ -475,7 +486,7 @@ func (e *Ingestor) compileLoop(id int32) {
 
 // handleAndExecute owns one handle from its hand-off to final settlement. It
 // runs only in the worker that received the handle through its private inbox.
-func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
+func (e *Ingestor) handleAndExecute(w *worker, handle common.TaskHandle) {
 	startTime := time.Now()
 	taskMessage := handle.GetMessage()
 	common.Info(fmt.Sprintf("Received task id: %s, type: %s", taskMessage.TaskID, taskMessage.TaskType),
@@ -583,6 +594,13 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 
 	taskCtx := taskpkg.NewTaskContextForScheduling(e.ctx, task)
 	taskCtx.Handle = handle
+	// The ingestor name and NATS subject already ride on the root context
+	// (set in NewIngestor); here we add the worker that claimed this task so the
+	// emitted lifecycle event names it. An absent worker (e.g. test callers that
+	// pass nil) simply yields an empty field.
+	if w != nil {
+		taskCtx.Ctx = observability.WithWorkerName(taskCtx.Ctx, fmt.Sprintf("worker-%d", w.id))
+	}
 	e.executeTaskWithHeartbeat(e.ctx, taskCtx, hb)
 }
 
@@ -683,7 +701,7 @@ func (e *Ingestor) workerLoop(w *worker) {
 
 		select {
 		case handle := <-w.inbox:
-			e.handleAndExecute(handle)
+			e.handleAndExecute(w, handle)
 		case <-e.dispatchCtx.Done():
 			return
 		}
