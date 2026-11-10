@@ -222,11 +222,8 @@ func (e *Engine) UpdateMetadata(ctx context.Context, docID string, datasetID str
 	// A 200 response can still report that work timed out or individual
 	// documents failed; do not fall back to an insert in that case, since the
 	// document may exist and be partially updated.
-	if timedOut, _ := updateResponse["timed_out"].(bool); timedOut {
-		return fmt.Errorf("opensearch update metadata by query timed out on %s", indexName)
-	}
-	if failures, ok := updateResponse["failures"].([]interface{}); ok && len(failures) > 0 {
-		return fmt.Errorf("opensearch update metadata by query reported %d failures on %s", len(failures), indexName)
+	if err := checkUpdateByQueryResult(updateResponse, indexName, "update metadata by query"); err != nil {
+		return err
 	}
 
 	if total, ok := updateResponse["total"].(float64); ok && total == 0 {
@@ -462,13 +459,32 @@ func (e *Engine) DeleteMetadataKeys(ctx context.Context, docID string, datasetID
 		return fmt.Errorf("failed to marshal update request: %w", err)
 	}
 
-	if _, err := e.doUpdateByQuery(ctx, []string{indexName}, bytes.NewReader(updateBytes)); err != nil {
+	updateResponse, err := e.doUpdateByQuery(ctx, []string{indexName}, bytes.NewReader(updateBytes))
+	if err != nil {
 		common.Error("Failed to execute update by query", err)
 		return fmt.Errorf("failed to execute update by query: %w", err)
+	}
+	// Returning success while the keys remain is worse than failing: the
+	// caller would believe the metadata was removed.
+	if err := checkUpdateByQueryResult(updateResponse, indexName, "delete metadata keys"); err != nil {
+		return err
 	}
 
 	common.Info("OpenSearchConnection.DeleteMetadataKeys completes", zap.String("index_name", indexName), zap.String("docID", docID))
 
+	return nil
+}
+
+// checkUpdateByQueryResult rejects a 200 update_by_query response that still
+// signals a timeout or per-document failures. Without this the caller sees
+// success while documents keep their previous values.
+func checkUpdateByQueryResult(result map[string]interface{}, indexName, operation string) error {
+	if timedOut, _ := result["timed_out"].(bool); timedOut {
+		return fmt.Errorf("opensearch %s timed out on %s", operation, indexName)
+	}
+	if failures, ok := result["failures"].([]interface{}); ok && len(failures) > 0 {
+		return fmt.Errorf("opensearch %s reported %d failures on %s", operation, len(failures), indexName)
+	}
 	return nil
 }
 
