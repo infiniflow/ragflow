@@ -1521,11 +1521,11 @@ func TestDetectHeaderRow_RecoveryRejectsHalfNumericRow(t *testing.T) {
 	}
 }
 
-// TestDetectHeaderRow_TitlePlusInvisibleFillHeader pins an intentional change:
-// cells carrying only excelize's default pattern fill (Fill.Type "pattern"
-// with no pattern or color) no longer count as styled. A title stub followed
-// by such an "unstyled-looking" header row therefore falls back to row 1
-// instead of promoting row 2 on a style artifact the user cannot see.
+// TestDetectHeaderRow_TitlePlusInvisibleFillHeader pins the title-stub
+// fallback: row 1 is a lone title cell and row 2 carries only excelize's
+// default pattern fill (Fill.Type "pattern" with no pattern or color), which
+// does not count as styled. The first text-majority row below the title is
+// still the header — a lone title cell is never a column header.
 func TestDetectHeaderRow_TitlePlusInvisibleFillHeader(t *testing.T) {
 	data := newTestXLSX(t, func(f *excelize.File) {
 		mustSetCell(t, f, "Sheet1", "A1", "Report Title")
@@ -1550,11 +1550,11 @@ func TestDetectHeaderRow_TitlePlusInvisibleFillHeader(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	text := spreadsheetText(res)
-	if !strings.Contains(text, "<th>Report Title</th>") {
-		t.Fatalf("invisible fill must not promote row 2; header stays row 1:\n%s", text)
+	if !strings.Contains(text, "<th>Name</th><th>Category</th>") {
+		t.Fatalf("title stub must yield to the first text-majority row:\n%s", text)
 	}
-	if strings.Contains(text, "<th>Name</th><th>Category</th>") {
-		t.Fatalf("invisible pattern fill must not mark a header:\n%s", text)
+	if strings.Contains(text, "<th>Report Title</th>") {
+		t.Fatalf("a lone title cell must not be treated as the header:\n%s", text)
 	}
 }
 
@@ -1638,5 +1638,74 @@ func TestXLSXParser_EmptySheet(t *testing.T) {
 	}
 	if len(res.JSON) != 0 {
 		t.Fatalf("empty sheet must yield empty JSON, got:\n%v", res.JSON)
+	}
+}
+
+// TestDetectHeaderRow_BlankRowBreaksRecovery pins the recovery gate: a blank
+// row inside a candidate metadata block ends the run, so a narrow styled row
+// above a blank row is the header — the scan must not continue past it and
+// promote the first body-width row.
+func TestDetectHeaderRow_BlankRowBreaksRecovery(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		bold := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+		for i, hdr := range []string{"Item", "Cat", "Bob"} {
+			mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), 1), hdr)
+		}
+		mustSetCellStyle(t, f, "Sheet1", "A1", "C1", bold)
+		// Row 2 intentionally left blank.
+		for r := 3; r <= 12; r++ {
+			for c, v := range []string{"item", "cat", "bob", "x", "y", "z"} {
+				mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), v)
+			}
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "blank-row.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<th>Item</th>") {
+		t.Fatalf("narrow row-1 header before a blank row must be kept:\n%s", text)
+	}
+	if strings.Contains(text, "<th>item</th>") {
+		t.Fatalf("first data row must not be promoted to header:\n%s", text)
+	}
+}
+
+// TestDetectHeaderRow_MergedHeaderBelowMetadata pins merge-aware recovery:
+// a narrow styled metadata row defers, and the merged header row directly
+// below it is still reachable — merge extents count toward the row width.
+func TestDetectHeaderRow_MergedHeaderBelowMetadata(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		bold := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+		mustSetCell(t, f, "Sheet1", "A1", "Stavba:")
+		mustSetCell(t, f, "Sheet1", "B1", "DSP MILLHAUS")
+		mustSetCellStyle(t, f, "Sheet1", "A1", "B1", bold)
+		for i, hdr := range []string{"Item", "Cat", "Bob", "x", "y", "z"} {
+			mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), 2), hdr)
+		}
+		for _, pair := range [][2]string{{"A2", "B2"}, {"C2", "D2"}, {"E2", "F2"}} {
+			if err := f.MergeCell("Sheet1", pair[0], pair[1]); err != nil {
+				t.Fatalf("merge: %v", err)
+			}
+		}
+		for r := 3; r <= 12; r++ {
+			for c, v := range []string{"item", "cat", "bob", "x", "y", "z"} {
+				mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), v)
+			}
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "merged-below-metadata.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<th colspan=\"2\">Item</th>") {
+		t.Fatalf("merged row-2 header below metadata must be recovered:\n%s", text)
+	}
+	if strings.Contains(text, "<th>item</th>") {
+		t.Fatalf("first data row must not be promoted to header:\n%s", text)
 	}
 }
