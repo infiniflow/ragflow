@@ -472,7 +472,7 @@ func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 
 // qaPairsFromRows builds the pairs of one table: the first two non-empty
 // cells of a row become the question and the answer. strictPairs is the CSV
-// contract ( ) and requires a row to have exactly two cells
+// contract and requires a row to have exactly two cells
 // instead of taking the first two.
 //
 // positions is the item's own positions payload, and spreadsheetPositions

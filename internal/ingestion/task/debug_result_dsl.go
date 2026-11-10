@@ -14,8 +14,7 @@
 //  limitations under the License.
 //
 //  This file builds the run-result DSL attached to the dataflow debug-log END
-// marker (, ) and persisted as the
-//  pipeline operation-log DSL; the front-end "View result" page reads
+//  marker and persisted as the pipeline operation-log DSL; the front-end "View result" page reads
 //  `dsl.components[<id>].obj` to render each component's parsed output.
 //  BuildDebugResultDSL combines the STATIC DSL structure (component_name /
 //  downstream / params / graph.nodes) with the RUN output map (state.go:284
@@ -55,9 +54,9 @@ var outputFormats = []string{"chunks", "json", "text", "html", "markdown"}
 // for components with no recognized payload format (e.g. File).
 var bookkeepingKeys = []string{"_elapsed_time", "_created_time"}
 
-// vectorKeys are dropped from payloads while copying. The front-end never
-// renders raw vectors and serialized component obj excludes them
-// stripping keeps the Redis-stored debug log at -scale size
+// vectorKeys are dropped from payloads while copying: the front-end never
+// renders raw vectors, and the serialized component obj excludes them, so
+// stripping keeps the Redis-stored debug log compact.
 var vectorKeys = map[string]struct{}{
 	"vector":    {},
 	"embedding": {},
@@ -111,7 +110,7 @@ func BuildDebugResultDSL(dsl string, output map[string]any, includeOutputs bool)
 			comp = map[string]any{}
 		}
 
-		// component_name: prefer the nested obj.component_name ( shape)
+		// component_name: prefer the nested obj.component_name (the per-component payload shape),
 		// fall back to a top-level component_name.
 		name := ""
 		var staticParams map[string]any
@@ -164,9 +163,8 @@ func BuildDebugResultDSL(dsl string, output map[string]any, includeOutputs bool)
 			// output (internal/agent/canvas/node_body.go). Carry them into the
 			// outputs wrapper as plain {value, type} entries so the front-end
 			// timeline renders per-node elapsed times — it reads exactly
-			// params.outputs._elapsed_time.value
-			// (web/src/pages/dataflow-result/hooks.ts;
-			// set_output's the same keys).
+			// params.outputs._elapsed_time.value, the same key shape the front-end
+			// hook (web/src/pages/dataflow-result/hooks.ts) and set_output use.
 			for _, k := range bookkeepingKeys {
 				if v, ok := runOut[k]; ok && v != nil {
 					outputsWrapper[k] = map[string]any{"value": v, "type": pythonTypeName(v)}
@@ -188,7 +186,7 @@ func BuildDebugResultDSL(dsl string, output map[string]any, includeOutputs bool)
 	}
 
 	// Carry every non-components top-level key (graph, path, task_id,
-	// canvas_type, ...) verbatim (contract: ). The
+	// canvas_type, ...) verbatim. The
 	// persisted log DSL round-trips through the front-end rerun flow, so a
 	// dropped key is lost to every consumer.
 	result := make(map[string]any, len(root)+1)

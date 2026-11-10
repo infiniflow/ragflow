@@ -3,10 +3,11 @@
 //
 // The ingestion tree was ported from an implementation that is being removed
 // (Go-only target). Any surviving reference — the word "python", a .py file
-// name, or a rag.(flow|nlp|app|deepdoc) module path — is, by definition, a
-// stale migration anchor. A genuine WHY (invariant, payload shape, algorithm)
-// must be rephrased to describe the Go behavior and must not contain any of
-// these.
+// name, a rag.(flow|nlp|app|deepdoc) module path, a stray smart-quote, or a
+// degenerate empty parenthesis group (a "(" closed with no content) — is, by
+// definition, a stale migration anchor. A genuine WHY (invariant, payload
+// shape, algorithm) must be rephrased to describe the Go behavior and must not
+// contain any of these.
 package migrationguard
 
 import (
@@ -36,6 +37,22 @@ import (
 // heuristic guard.
 var migrationRef = regexp.MustCompile(`(?i)(\bpython\b|\.py\b|legacy implementation|other runtime|two runtimes|rag\.(flow|nlp|app|deepdoc)\.[a-zA-Z_]+|rag/(flow|nlp|app|deepdoc)|“)`)
 
+// emptyRef matches a degenerate parenthesis group left behind by a half-finished
+// rephrase: a "(" with no content before its matching ")" (optionally with a
+// comma) is a placeholder the rephrase should have filled. It anchors
+// the opening "(" so a "(" that is part of a Go symbol reference such as
+// "splitSentencesLossless()" (the "(" is preceded by a word character) is NOT
+// flagged — only a "(" that follows whitespace or line start is, which is how a
+// true empty/placeholder group reads in a comment.
+//
+// This catches the bare-empty-parenthesis / empty-reference class of syntactic danglers
+// that migrationRef (a high-precision keyword match) cannot see. It deliberately
+// does NOT flag an unbalanced "(" that continues onto the next line (e.g.
+// "the correction call (") or a ")" that closes a multi-line parenthetical on
+// its own line: those are legitimate Go-doc prose and would produce false
+// positives. Those residual references are removed by hand during the rephrase.
+var emptyRef = regexp.MustCompile(`(^|[^[:alnum:]_])\(\s*(?:,\s*)?\)`)
+
 // scan returns every comment line under dir that still anchors on the deleted
 // earlier codebase.
 func scan(dir string) ([]string, error) {
@@ -64,7 +81,7 @@ func scan(dir string) ([]string, error) {
 		}
 		for _, cg := range file.Comments {
 			for _, c := range cg.List {
-				if migrationRef.MatchString(c.Text) {
+				if migrationRef.MatchString(c.Text) || emptyRef.MatchString(c.Text) {
 					pos := fset.Position(c.Pos())
 					hits = append(hits, filepath.ToSlash(path)+":"+strconv.Itoa(pos.Line)+": "+strings.TrimSpace(c.Text))
 				}
@@ -87,7 +104,7 @@ func Check(t *testing.T, dir string) {
 		t.Fatalf("migrationguard walk failed: %v", err)
 	}
 	if len(hits) > 0 {
-		t.Errorf("found %d migration-anchor references in comments; rephrase to describe the Go behavior (see AGENTS.md):\n%s",
+		t.Errorf("found %d migration-anchor / empty-parenthesis references in comments; rephrase to describe the Go behavior (see AGENTS.md):\n%s",
 			len(hits), strings.Join(hits, "\n"))
 	}
 }

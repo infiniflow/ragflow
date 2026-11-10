@@ -24,12 +24,16 @@ func TestScanCatchesMigrationAnchors(t *testing.T) {
 	writeGo(t, dir, "py_file.go", "// see tokenizer.py for details\npackage x\n")
 	writeGo(t, dir, "ragslash.go", "// mirrors rag/nlp.not_bullet behavior\npackage x\n")
 	writeGo(t, dir, "smartquote.go", "// port of “\npackage x\n")
+	writeGo(t, dir, "empty_paren.go", "// bulletsCategory mirrors bullets_category ()\npackage x\n")
+	writeGo(t, dir, "empty_paren_comma.go", "// marker (, ) and persisted as the DSL\npackage x\n")
 
 	// Comments that describe Go behavior and must be ignored.
 	writeGo(t, dir, "good_invariants.go", "// bulletsCategory buckets lines by bullet shape\npackage x\n")
 	writeGo(t, dir, "good_mirrors.go", "// chunkerOutputs mirrors schema.ExtractorOutputs\npackage x\n")
 	writeGo(t, dir, "good_possessive.go", "// the chunker's sliding-window crop keeps boxes stable\npackage x\n")
 	writeGo(t, dir, "good_colon.go", "// the payload uses data:image/png and a key: value pair\npackage x\n")
+	writeGo(t, dir, "good_func_call.go", "// splitSentencesLossless() returns one chunk per sentence\npackage x\n")
+	writeGo(t, dir, "good_nested_paren.go", "// the payload (a JSON list of chunks) is emitted as-is\npackage x\n")
 
 	hits, err := scan(dir)
 	if err != nil {
@@ -42,6 +46,8 @@ func TestScanCatchesMigrationAnchors(t *testing.T) {
 		"py_file.go",
 		"ragslash.go",
 		"smartquote.go",
+		"empty_paren.go",
+		"empty_paren_comma.go",
 	}
 	for _, w := range want {
 		if !strings.Contains(got, w) {
@@ -59,5 +65,11 @@ func TestScanCatchesMigrationAnchors(t *testing.T) {
 	}
 	if strings.Contains(got, "good_colon.go") {
 		t.Errorf("false positive: data:image / key: value was flagged.\nGot:\n%s", got)
+	}
+	if strings.Contains(got, "good_func_call.go") {
+		t.Errorf("false positive: Go func-call reference was flagged.\nGot:\n%s", got)
+	}
+	if strings.Contains(got, "good_nested_paren.go") {
+		t.Errorf("false positive: real parenthetical was flagged.\nGot:\n%s", got)
 	}
 }

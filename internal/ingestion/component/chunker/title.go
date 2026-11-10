@@ -35,10 +35,9 @@
 //	(2) Regex families (the user's `levels` param) with a layout-hint
 //	fallback (layout field matches section/title/head).
 //	The Go port ships strategy (2) IN FULL, including the
+//	match_layout_level fallback (Gap C closed).
 //
-// match_layout_level fallback ported from (Gap C closed)
-//
-//	a non-regex text record whose layout flags it as a
+//	A non-regex text record whose layout flags it as a
 //	section/title/head and whose text passes not_title is promoted to
 //	fallback_level = len(selected_group) + 1. Strategy (1) —
 //	PDF-outline detection — is also ported: newLevelContext
@@ -501,7 +500,7 @@ var bulletPatterns = [][]*regexp.Regexp{
 	},
 }
 
-// bulletsCategory mirrors bullets_category ()
+// bulletsCategory mirrors the upstream bullets_category over bulletPatterns.
 // Counts hits per bullet-pattern group across all text records,
 // excluding not-bullet lines. Returns the group index with the highest
 // hit count, or -1 if no group matched any line.

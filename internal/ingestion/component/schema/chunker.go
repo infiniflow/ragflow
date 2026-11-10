@@ -83,8 +83,7 @@ type ChunkerFromUpstream struct {
 	//   "chunks"   -> Chunks
 	OutputFormat PayloadFormat `json:"output_format,omitempty"`
 
-	// JSONResult is the upstream structured JSON list (alias "json" in
-	// ). Set when OutputFormat == "json"
+	// JSONResult is the upstream structured JSON list (alias "json"). Set when OutputFormat == "json"
 	JSONResult []ChunkDoc `json:"json,omitempty"`
 
 	// MarkdownResult is the upstream Markdown payload (alias "markdown").

@@ -27,7 +27,7 @@ import (
 //
 // CROSS-RUNTIME: stable_row_id
 // hashes ":"-joined parts with
-// xxhash64, so the mint DIFFERENT ids for the same logical row
+// xxhash64 to produce a deterministic, collision-resistant row id
 // This is deliberate rather than an oversight: this side keeps the 256-bit
 // digest (M10) and the length-prefixed encoding, which a part containing ":"
 // cannot forge. Ids are only ever compared within a runtime — cleanup is scoped
