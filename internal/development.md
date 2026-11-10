@@ -224,10 +224,13 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 >       ${ORT_LINK} \
 >       ${SYS_LIBS}"
 > else
+>   unset CGO_CFLAGS CGO_LDFLAGS
 >   printf '%s\n' 'Could not prepare PDFium linker inputs. Run uv run tools/scripts/download_dev_deps.py.' >&2
 >   false
 > fi
 > ```
+>
+> When sourcing this block from a build script, check its exit status before invoking Go.
 >
 > All four native libraries are statically linked — no `LD_LIBRARY_PATH` or `-Wl,-rpath` needed.
 >
