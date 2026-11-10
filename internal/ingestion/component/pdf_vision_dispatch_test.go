@@ -749,7 +749,7 @@ func TestFinishMinerURemoteResultPrefersStructuredZip(t *testing.T) {
 	res, err := finishMinerURemoteResult(t.Context(), "sample.pdf", []byte("%PDF-1.4"), &modelModule.MinerUV1Result{
 		Markdown: "# markdown only",
 		Zip:      buf.Bytes(),
-	}, nil)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}

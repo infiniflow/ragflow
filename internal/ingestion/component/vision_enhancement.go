@@ -35,6 +35,7 @@ import (
 
 	"go.uber.org/zap"
 
+	agentruntime "ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/entity"
@@ -204,8 +205,7 @@ func maybeDispatchVisionEnhancement(
 	// (pdf_vision_dispatch.go), not an input here — see issue #20727.
 	language := resolveVisionLanguage(inputs)
 
-	// Collect visual resources, including Markdown images whose type is text
-	// because flatten_media_to_text is enabled. Items whose text already
+	// Collect visual resources. Items whose text already
 	// carries a backend-provided description (MinerU vlm_description) are
 	// skipped to avoid a duplicate second description and an extra VLM call.
 	var items []int
@@ -553,5 +553,8 @@ func defaultVisionChatInvoker(
 		config.Thinking = &thinking
 	}
 	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
-	return chatModel.ChatWithMessages(chatCtx, messages, config, nil)
+	finish := agentruntime.TrackIO(chatCtx, "Parser", "VLM", "operation=vision_enhancement")
+	resp, err := chatModel.ChatWithMessages(chatCtx, messages, config, nil)
+	finish()
+	return resp, err
 }

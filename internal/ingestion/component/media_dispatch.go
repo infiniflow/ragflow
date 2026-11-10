@@ -32,6 +32,7 @@ import (
 
 	"go.uber.org/zap"
 
+	agentruntime "ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	imageparser "ragflow/internal/deepdoc/parser/image"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
@@ -139,7 +140,9 @@ func maybeDispatchImage(
 				var analyzer deepdoctype.DocAnalyzer
 				analyzer, ocrErr = parser.GetDocAnalyzer()
 				if ocrErr == nil {
+					finish := agentruntime.TrackIO(ctx, "DeepDOC", "image OCR", "media=image")
 					blocks, ocrErr = imageparser.Parse(ctx, img, analyzer)
+					finish()
 					if ocrErr == nil {
 						text = imageBlockText(blocks)
 					}
@@ -148,7 +151,9 @@ func maybeDispatchImage(
 				// Selected OCR uses original bytes, so media admission need not
 				// cover database resolution or remote inference.
 				release()
+				finish := agentruntime.TrackIO(ctx, "Parser", "OCR model", "media=image backend=selected")
 				text, ocrErr = extractSelectedImageOCR(ctx, db, getStringOr(inputs, "tenant_id", ""), ocrModelID, binary)
+				finish()
 			}
 		}
 	}
@@ -380,7 +385,9 @@ func describeImage(
 	}}
 	visionFlag := true
 	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
+	finish := agentruntime.TrackIO(ctx, "Parser", "VLM", "media=image")
 	resp, err := chatModel.ChatWithMessages(ctx, messages, &modelModule.ChatConfig{Vision: &visionFlag}, nil)
+	finish()
 	if err != nil {
 		return "", []string{fmt.Sprintf("image VLM enhancement failed: %v", err)}
 	}
@@ -448,7 +455,9 @@ func maybeDispatchAudio(
 	defer os.Remove(tmpFile)
 
 	asrModel := modelModule.NewASRModel(driver, &modelName, apiConfig)
+	finish := agentruntime.TrackIO(ctx, "Parser", "ASR", "media=audio")
 	resp, err := asrModel.Transcribe(ctx, &tmpFile, nil, nil)
+	finish()
 	if err != nil {
 		return parser.ParseResult{}, true,
 			fmt.Errorf("Parser: audio transcription: %w", err)

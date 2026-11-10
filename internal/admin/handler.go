@@ -1147,11 +1147,7 @@ func (h *Handler) Reports(c *gin.Context) {
 
 	// Handle the heartbeat
 	errCode, data, message := h.service.HandleHeartbeat(&req)
-	if errCode != common.CodeSuccess {
-		common.RespondError(c, errCode, message)
-		return
-	}
-	common.RespondSuccess(c, data, message)
+	common.Respond(c, http.StatusOK, errCode, data, message)
 }
 
 func (h *Handler) ListAllModels(c *gin.Context) {

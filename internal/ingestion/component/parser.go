@@ -301,48 +301,31 @@ func imageSetupRunsOCR(setup schema.ParserSetup) bool {
 func defaultSetups() map[string]schema.ParserSetup {
 	s := map[string]schema.ParserSetup{
 		"pdf": {
-			"parse_method":          "deepdoc",
-			"flatten_media_to_text": false,
-			"remove_toc":            false,
-			"remove_header_footer":  false,
-			"suffix":                []string{"pdf"},
+			"parse_method":         "deepdoc",
+			"remove_toc":           false,
+			"remove_header_footer": false,
 		},
 		"spreadsheet": {
-			"parse_method":          "deepdoc",
-			"flatten_media_to_text": false,
-			"html4excel":            false,
-			"suffix":                []string{"xls", "xlsx", "csv"},
+			"parse_method": "deepdoc",
 		},
 		"doc": {
 			"remove_toc":           false,
 			"remove_header_footer": false,
-			"suffix":               []string{"doc"},
 		},
 		"docx": {
-			"flatten_media_to_text": false,
-			"remove_toc":            false,
-			"remove_header_footer":  false,
-			"suffix":                []string{"docx"},
+			"remove_toc":           false,
+			"remove_header_footer": false,
 		},
 		"markdown": {
-			"flatten_media_to_text": false,
-			"suffix":                []string{"md", "markdown", "mdx"},
-			"remove_toc":            false,
+			"remove_toc": false,
 		},
-		"text&code": {
-			"suffix": []string{
-				"txt", "py", "js", "java", "c", "cpp", "h", "php",
-				"go", "ts", "sh", "cs", "kt", "sql",
-			},
-		},
+		"text&code": {},
 		"html": {
-			"suffix":               []string{"htm", "html"},
 			"remove_toc":           false,
 			"remove_header_footer": false,
 		},
 		"slides": {
 			"parse_method": "deepdoc",
-			"suffix":       []string{"pptx", "ppt"},
 		},
 		"image": {
 			// Default stays on the legacy parse_method shape. ocr_enabled is
@@ -353,32 +336,19 @@ func defaultSetups() map[string]schema.ParserSetup {
 			"parse_method":  "ocr",
 			"llm_id":        "",
 			"system_prompt": "",
-			"suffix":        []string{"jpg", "jpeg", "png", "gif", "bmp", "tif", "tiff", "webp"},
 		},
 		"email": {
-			"suffix": []string{"eml", "msg"},
 			"fields": []string{
 				"from", "to", "cc", "bcc", "date", "subject",
 				"body", "attachments", "metadata",
 			},
 		},
-		"audio": {
-			"suffix": []string{
-				"da", "wave", "wav", "mp3", "aac", "flac", "ogg",
-				"aiff", "au", "midi", "wma", "realaudio", "vqf",
-				"oggvorbis", "ape",
-			},
-		},
+		"audio": {},
 		"video": {
-			"suffix": []string{"mp4", "avi", "mkv"},
 			"prompt": "",
 		},
-		"epub": {
-			"suffix": []string{"epub"},
-		},
-		"json": {
-			"suffix": []string{"json", "jsonl", "ldjson"},
-		},
+		"epub": {},
+		"json": {},
 	}
 	return s
 }

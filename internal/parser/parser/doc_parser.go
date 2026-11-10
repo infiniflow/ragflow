@@ -28,15 +28,35 @@ import (
 var docExtract = deepdocoffice.OpenAndExtract
 
 type DOCParser struct {
-	textOnly bool
+	textOnly           bool
+	RemoveTOC          bool
+	RemoveHeaderFooter bool
 }
 
 func NewDOCParser() *DOCParser {
 	return &DOCParser{}
 }
 
+func NewDOCTextParser() *DOCParser {
+	return &DOCParser{textOnly: true}
+}
+
 func (p *DOCParser) String() string {
 	return "DOCParser"
+}
+
+// ConfigureFromSetup implements parserSetupConfigurer, receiving the
+// DSL "doc" family setup map.
+func (p *DOCParser) ConfigureFromSetup(setup map[string]any) {
+	if p == nil || setup == nil {
+		return
+	}
+	if v, ok := setup["remove_toc"].(bool); ok {
+		p.RemoveTOC = v
+	}
+	if v, ok := setup["remove_header_footer"].(bool); ok {
+		p.RemoveHeaderFooter = v
+	}
 }
 
 // ParseWithResult extracts text for the DOC family as structured JSON items.
@@ -70,6 +90,21 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 			if sink != nil && sink.err != nil {
 				return ParseResult{Err: sink.err}
 			}
+			if p.RemoveHeaderFooter {
+				// extractDOCXHeaderFooterTexts operates best-effort: for DOCX files
+				// misnamed with a .doc extension it extracts header/footer XML parts.
+				// For native OLE2 .doc binaries without a ZIP structure, it returns
+				// an empty map and preserves sections safely.
+				hfTexts := extractDOCXHeaderFooterTexts(data)
+				sections = removeDOCXHeaderFooterSections(sections, hfTexts)
+			}
+			if p.RemoveTOC {
+				outlines := extractDOCXOutlines(irJSON)
+				sections = removeTOCWord(sections, outlines, isEnglishItems(sections))
+			}
+			if len(sections) == 0 {
+				sections = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
+			}
 			return ParseResult{
 				File:     map[string]any{"name": filename, "format": "doc"},
 				JSON:     MapsToItems(sections),
@@ -82,6 +117,30 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 	}
 	if strings.TrimSpace(text) == "" {
 		return ParseResult{Err: fmt.Errorf("doc extract: no text content")}
+	}
+	if p.RemoveTOC {
+		lines := strings.Split(text, "\n")
+		items := make([]map[string]any, 0, len(lines))
+		for _, line := range lines {
+			items = append(items, map[string]any{"text": line, "doc_type_kwd": "text"})
+		}
+		items = removeContentsTable(items, isEnglishItems(items))
+		if len(items) == 0 {
+			return ParseResult{
+				File: map[string]any{"name": filename, "format": "doc"},
+				JSON: []DocItem{NewTextJSONItem("")},
+			}
+		}
+		var sb strings.Builder
+		for i, it := range items {
+			if i > 0 {
+				sb.WriteString("\n")
+			}
+			if s, ok := it["text"].(string); ok {
+				sb.WriteString(s)
+			}
+		}
+		text = sb.String()
 	}
 	return ParseResult{
 		File: map[string]any{"name": filename, "format": "doc"},

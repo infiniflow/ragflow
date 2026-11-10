@@ -126,20 +126,8 @@
                                 "value": ""
                             }
                         },
-                        "doc": {
-                            "preprocess": "main_content",
-                            "suffix": [
-                                "doc"
-                            ]
-                        },
-                        "docx": {
-                            "flatten_media_to_text": false,
-                            "preprocess": "main_content",
-                            "suffix": [
-                                "docx"
-                            ],
-                            "vlm": {}
-                        },
+                        "doc": {},
+                        "docx": {},
                         "email": {
                             "fields": [
                                 "from",
@@ -150,88 +138,24 @@
                                 "subject",
                                 "body",
                                 "attachments"
-                            ],
-                            "preprocess": "main_content",
-                            "suffix": [
-                                "eml",
-                                "msg"
                             ]
                         },
-                        "html": {
-                            "preprocess": "main_content",
-                            "suffix": [
-                                "htm",
-                                "html"
-                            ]
-                        },
+                        "html": {},
                         "image": {
                             "parse_method": "ocr",
-                            "preprocess": "main_content",
-                            "suffix": [
-                                "jpg",
-                                "jpeg",
-                                "png",
-                                "gif"
-                            ],
                             "system_prompt": ""
                         },
-                        "markdown": {
-                            "flatten_media_to_text": false,
-                            "preprocess": "main_content",
-                            "suffix": [
-                                "md",
-                                "markdown",
-                                "mdx"
-                            ],
-                            "vlm": {}
-                        },
+                        "markdown": {},
                         "pdf": {
-                            "flatten_media_to_text": false,
-                            "parse_method": "DeepDOC",
-                            "preprocess": "main_content",
-                            "suffix": [
-                                "pdf"
-                            ],
-                            "vlm": {}
+                            "parse_method": "DeepDOC"
                         },
                         "slides": {
-                            "parse_method": "DeepDOC",
-                            "preprocess": "main_content",
-                            "suffix": [
-                                "pptx",
-                                "ppt"
-                            ]
+                            "parse_method": "DeepDOC"
                         },
                         "spreadsheet": {
-                            "flatten_media_to_text": false,
-                            "parse_method": "DeepDOC",
-                            "preprocess": "main_content",
-                            "suffix": [
-                                "xls",
-                                "xlsx",
-                                "csv"
-                            ],
-                            "vlm": {}
+                            "parse_method": "DeepDOC"
                         },
-                        "text&code": {
-                            "preprocess": "main_content",
-                            "suffix": [
-                                "txt",
-                                "py",
-                                "js",
-                                "java",
-                                "c",
-                                "cpp",
-                                "h",
-                                "php",
-                                "go",
-                                "ts",
-                                "sh",
-                                "cs",
-                                "kt",
-                                "sql"
-                            ]
-                        }
+                        "text&code": {}
                     }
                 },
                 "upstream": [
@@ -363,20 +287,15 @@
                             "setups": [
                                 {
                                     "fileFormat": "pdf",
-                                    "flatten_media_to_text": false,
-                                    "parse_method": "DeepDOC",
-                                    "preprocess": "main_content"
+                                    "parse_method": "DeepDOC"
                                 },
                                 {
                                     "fileFormat": "spreadsheet",
-                                    "flatten_media_to_text": false,
-                                    "parse_method": "DeepDOC",
-                                    "preprocess": "main_content"
+                                    "parse_method": "DeepDOC"
                                 },
                                 {
                                     "fileFormat": "image",
                                     "parse_method": "ocr",
-                                    "preprocess": "main_content",
                                     "system_prompt": ""
                                 },
                                 {
@@ -390,35 +309,26 @@
                                         "body",
                                         "attachments"
                                     ],
-                                    "fileFormat": "email",
-                                    "preprocess": "main_content"
+                                    "fileFormat": "email"
                                 },
                                 {
-                                    "fileFormat": "markdown",
-                                    "flatten_media_to_text": false,
-                                    "preprocess": "main_content"
+                                    "fileFormat": "markdown"
                                 },
                                 {
-                                    "fileFormat": "text&code",
-                                    "preprocess": "main_content"
+                                    "fileFormat": "text&code"
                                 },
                                 {
-                                    "fileFormat": "html",
-                                    "preprocess": "main_content"
+                                    "fileFormat": "html"
                                 },
                                 {
-                                    "fileFormat": "doc",
-                                    "preprocess": "main_content"
+                                    "fileFormat": "doc"
                                 },
                                 {
-                                    "fileFormat": "docx",
-                                    "flatten_media_to_text": false,
-                                    "preprocess": "main_content"
+                                    "fileFormat": "docx"
                                 },
                                 {
                                     "fileFormat": "slides",
-                                    "parse_method": "DeepDOC",
-                                    "preprocess": "main_content"
+                                    "parse_method": "DeepDOC"
                                 }
                             ]
                         },

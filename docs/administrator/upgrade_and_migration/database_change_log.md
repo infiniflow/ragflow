@@ -16,7 +16,7 @@ A record of the schema and data changes the Go backend applies to a RAGFlow data
 
 - The marker is a row in `system_settings` with the key `mysql_migration.database.version`.
 - For version-gated steps, the marker prevents a migration step from running again after that step has completed successfully.
-- Go defines the versions as constants: `modelMigrationBaseVersion` and `modelMigrationTargetVersion` in [migration_version.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/migration_version.go), `conversationHistoryTargetVersion` in [conversation_history_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/conversation_history_migration.go), `knowledgebaseParserConfigTargetVersion` in [migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/migration.go), and `ingestionParserConfigTargetVersion` in [ingestion_parser_config_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/ingestion_parser_config_migration.go). The two parser-config constants share `v1.0.0-rc2`. The DSL multi-version backfill is gated by `dslVersionTargetVersion` (`v1.0.0-rc3.dev6`) in [dsl_version_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/dsl_version_migration.go).
+- Go defines the versions as constants: `modelMigrationBaseVersion` and `modelMigrationTargetVersion` in [migration_version.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/migration_version.go), `conversationHistoryTargetVersion` in [conversation_history_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/conversation_history_migration.go), `knowledgebaseParserConfigTargetVersion` in [migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/migration.go), and `ingestionParserConfigTargetVersion` in [ingestion_parser_config_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/ingestion_parser_config_migration.go). The two parser-config constants share `v1.0.0-rc2`. The DSL multi-version backfill is gated by `dslVersionTargetVersion` (`v1.0.0-rc3.dev6`) in [dsl_version_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/dsl_version_migration.go). Resource-owner IDs are backfilled through `resourceUserIDMigrationTargetVersion` (`v1.0.0.1`) in [resource_user_id_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/resource_user_id_migration.go).
 - The current permission migration targets `permissionMigrationTargetVersion` (`v1.0.0-rc3.dev4`) in [permission_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/permission_migration.go). Tenant default-model migration targets `tenantDefaultModelsTargetVersion` (`v1.0.0-rc3.dev5`) in [tenant_default_models_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/tenant_default_models_migration.go).
 - The compilation queue split records `knowledgeCompileQueueTargetVersion` (`v1.0.0-rc3.dev5`), defined in [knowledge_compile_queue_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/knowledge_compile_queue_migration.go), after both queues finish. Source-column presence controls the queue copy even when the marker already contains this or a newer version.
 - A version-gated step runs when the stored version is lower than the step's version. Versions are compared with Python PEP 440 semantics, where a `dev` prerelease sorts *before* the release it precedes (`v1.0.0-rc1.dev1` < `v1.0.0-rc1`). A missing or unparsable marker never skips a step.
@@ -37,6 +37,7 @@ Startup order in `InitDB` for `ragflow_server --migrate` ([database.go](https://
 11. `migrateKnowledgeCompileQueues` — copies the existing compilation queues and drops their source columns, then records `v1.0.0-rc3.dev5` if the marker is older. It runs after tenant default-model migration so the queue split cannot make that step skip its data changes. Queue copying remains gated on source-column presence even when the preceding step has already recorded `dev5`.
 12. `MigrateDSLVersionColumns` and `BackfillDSLVersionBindings` — add pipeline version columns and bind existing dataflow canvases, then record `v1.0.0-rc3.dev6`.
 13. `migrateConversationReferences` — move answer references into message rows and record `v1.0.0-rc3.dev7`.
+14. `migrateResourceUserIDs` — backfills resource `user_id` values from their owner columns and records `v1.0.0.1`. `AutoMigrate` creates the columns before this step runs.
 
 ## Version overview
 
@@ -54,6 +55,7 @@ Startup order in `InitDB` for `ragflow_server --migrate` ([database.go](https://
 | `v1.0.0-rc3.dev5` | Split compilation queues into `knowledge_compile_docs_backlog` and `knowledge_compile_docs_inflight`, then drop their source columns | `knowledgeCompileQueueTargetVersion`; source-column presence controls copying |
 | `v1.0.0-rc3.dev6` | Lock existing dataflow-canvas dataset/document bindings to the canvas latest version (the `pipeline_version_id` columns are added by the version-less step below) | `dslVersionTargetVersion` |
 | `v1.0.0-rc3.dev7` | Store conversation references in each assistant message | `conversationReferenceTargetVersion` |
+| `v1.0.0.1` | Backfill resource-owner `user_id` values from `created_by` or `tenant_id` | `resourceUserIDMigrationTargetVersion` |
 
 The two tenant model steps are cumulative: a database at `v0.26.0` still runs the `v1.0.0-rc1` step, and a database at or above `v1.0.0-rc1` runs neither.
 
@@ -320,6 +322,24 @@ the fields they display.
 
 ---
 
+## v1.0.0.1
+
+### Resource-owner user IDs
+
+`AutoMigrate` adds the `user_id` columns before `migrateResourceUserIDs` runs. The version-gated step fills missing or empty `user_id` values on resource rows so they can be scoped to their effective owner. Existing non-empty `user_id` values are preserved.
+
+| Resource table | Owner source |
+|----------------|--------------|
+| `chat_channel`, `compilation_template_group`, `compilation_template`, `connector`, `dialog`, `memory`, `mcp_server`, `skill_spaces` | `tenant_id` |
+| `file`, `knowledgebase`, `search` | `created_by`; if empty, `tenant_id` |
+| `document` | `created_by` |
+
+Tables that do not exist are skipped. If a listed table exists but its `user_id` or owner-source column is missing after `AutoMigrate`, the migration stops with an error. When the source values are empty, the resulting `user_id` remains empty.
+
+The step updates tables individually rather than in one transaction. If a later table fails, completed updates remain and the version marker is not advanced to `v1.0.0.1`; rerunning is safe because only missing or empty `user_id` values are filled. A database already marked `v1.0.0.1` or later skips this backfill.
+
+---
+
 ## Version-less steps
 
 These steps are not gated by the version marker. They use schema or data checks to make repeated execution safe. Steps in `RunMigrations` run during `ragflow_server --migrate`; ingestion helpers also run during server startup.
@@ -357,3 +377,4 @@ and confirm free disk space. The existing `pipeline_title` index is preserved.
 | Table                     | Change                                                                                                                                                                                                                                                                                                                                                         |
 |---------------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `knowledgebase`, `dialog` | `parser_config` entries stored under the legacy key `TokenChunker:SixApplesFall` are rewritten to `GeneralChunker:SixApplesFall`. Values already stored under the new key win; `TokenChunker`-only fields (`delimiter_mode`, `outputs`) are dropped, and a legacy `delimiter` becomes `delimiters`. `delimiter` is discarded when `delimiters` already exists. |
+| `connector` | When `RAGFLOW_CONNECTOR_KEY` is set, a plaintext `config["credentials"]` value is encrypted to an `enc:v1:` string (AES-256-GCM). Rows that are already encrypted and rows whose `config` is not valid JSON are left unchanged. Without the key, the step changes nothing. |

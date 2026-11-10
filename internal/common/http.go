@@ -88,8 +88,10 @@ func getMaxConfiguredBytes(envName, fallbackEnvName string, defaultBytes int64) 
 	return limit
 }
 
-var ssrfHttpClient *http.Client
-var schemeSafeHttpClient *http.Client
+var (
+	ssrfHTTPClient       = sync.OnceValue(newSSRFHTTPClient)
+	schemeSafeHTTPClient = sync.OnceValue(newSchemeSafeHTTPClient)
+)
 
 // llmHTTPResponseHeaderTimeout lets a deployment shorten the wait for response
 // headers, which is what a hung provider endpoint spends on every retry. Each
@@ -99,49 +101,51 @@ func llmHTTPResponseHeaderTimeout(def time.Duration) time.Duration {
 }
 
 func GetSSRFHTTPClient() *http.Client {
-	if ssrfHttpClient == nil {
-		var t *http.Transport
-		if dt, ok := http.DefaultTransport.(*http.Transport); ok {
-			t = dt.Clone()
-		} else {
-			t = &http.Transport{Proxy: http.ProxyFromEnvironment}
-		}
-		t.MaxIdleConns = 100
-		t.MaxIdleConnsPerHost = 10
-		t.IdleConnTimeout = 90 * time.Second
-		t.DisableCompression = false
-		t.ResponseHeaderTimeout = llmHTTPResponseHeaderTimeout(ssrfResponseHeaderTimeoutDefault)
-		t.TLSHandshakeTimeout = 30 * time.Second
+	return ssrfHTTPClient()
+}
 
-		var rt http.RoundTripper = t
-		rt = &strictSSRFTransport{base: rt}
-		rt = NewProviderLoggingTransport(rt)
-		ssrfHttpClient = &http.Client{Transport: rt}
+func newSSRFHTTPClient() *http.Client {
+	var t *http.Transport
+	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
+		t = dt.Clone()
+	} else {
+		t = &http.Transport{Proxy: http.ProxyFromEnvironment}
 	}
-	return ssrfHttpClient
+	t.MaxIdleConns = 100
+	t.MaxIdleConnsPerHost = 10
+	t.IdleConnTimeout = 90 * time.Second
+	t.DisableCompression = false
+	t.ResponseHeaderTimeout = llmHTTPResponseHeaderTimeout(ssrfResponseHeaderTimeoutDefault)
+	t.TLSHandshakeTimeout = 30 * time.Second
+
+	var rt http.RoundTripper = t
+	rt = &strictSSRFTransport{base: rt}
+	rt = NewProviderLoggingTransport(rt)
+	return &http.Client{Transport: rt}
 }
 
 func GetSchemeSafeHTTPClient() *http.Client {
-	if schemeSafeHttpClient == nil {
-		var t *http.Transport
-		if dt, ok := http.DefaultTransport.(*http.Transport); ok {
-			t = dt.Clone()
-		} else {
-			t = &http.Transport{Proxy: http.ProxyFromEnvironment}
-		}
-		t.MaxIdleConns = 5000
-		t.MaxIdleConnsPerHost = 500
-		t.IdleConnTimeout = 90 * time.Second
-		t.DisableCompression = false
-		t.ResponseHeaderTimeout = llmHTTPResponseHeaderTimeout(schemeSafeResponseHeaderTimeoutDefault)
-		t.TLSHandshakeTimeout = 30 * time.Second
+	return schemeSafeHTTPClient()
+}
 
-		var rt http.RoundTripper = t
-		rt = &schemeSafeTransport{base: rt}
-		rt = NewProviderLoggingTransport(rt)
-		schemeSafeHttpClient = &http.Client{Transport: rt}
+func newSchemeSafeHTTPClient() *http.Client {
+	var t *http.Transport
+	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
+		t = dt.Clone()
+	} else {
+		t = &http.Transport{Proxy: http.ProxyFromEnvironment}
 	}
-	return schemeSafeHttpClient
+	t.MaxIdleConns = 5000
+	t.MaxIdleConnsPerHost = 500
+	t.IdleConnTimeout = 90 * time.Second
+	t.DisableCompression = false
+	t.ResponseHeaderTimeout = llmHTTPResponseHeaderTimeout(schemeSafeResponseHeaderTimeoutDefault)
+	t.TLSHandshakeTimeout = 30 * time.Second
+
+	var rt http.RoundTripper = t
+	rt = &schemeSafeTransport{base: rt}
+	rt = NewProviderLoggingTransport(rt)
+	return &http.Client{Transport: rt}
 }
 
 // providerStreamLogThreshold / providerCallLogThreshold are the durations past

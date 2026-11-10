@@ -1144,7 +1144,9 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 				Score:      g.score,
 			})
 		}
-		batched, err = deduper.DecideBatch(ctx, batched)
+		llmCtx, finishLLMProgress := withKnowledgeCompileLLMProgress(ctx, tenant, kb)
+		batched, err = deduper.DecideBatch(llmCtx, batched)
+		finishLLMProgress()
 		if err != nil {
 			return err
 		}
@@ -1384,7 +1386,7 @@ func rewriteMergedWikiPages(ctx context.Context, tenant string, pages []kccommon
 			return nil
 		})
 	}
-	return SubmitCompilerJobs(ctx, jobs)
+	return SubmitCompilerLLMJobs(ctx, jobs)
 }
 
 func floatPtr(value float64) *float64 { return &value }

@@ -286,6 +286,9 @@ type ParserConfig struct {
 	// surface parse progress without the parser knowing about any progress
 	// sink; nil disables the callback at zero cost.
 	OnPageDone func(done, total int)
+	// OnModelCall wraps one DeepDOC model operation. It lets the caller report
+	// long-running inference without coupling the parser to a progress sink.
+	OnModelCall func(ctx context.Context, operation string) func()
 }
 
 // DefaultParserConfig returns a ParserConfig with sensible defaults.

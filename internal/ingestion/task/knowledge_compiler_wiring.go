@@ -629,6 +629,9 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	}
 	chatModel, err := c.factory.NewChatModel(permission.WithTenantID(ctx, c.tenantID), llmID)
 	if err != nil {
+		if !req.DisableRetry {
+			runtime.ReportProgressMessage(ctx, "Compiler", "[ERROR] LLM call failed: "+kc.CompactError(err))
+		}
 		return nil, err
 	}
 	msgs := []models.Message{
@@ -685,7 +688,11 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 		// providers legitimately need several minutes to return a response.
 		attemptCtx, cancel := context.WithTimeout(ctx, kcChatAttemptTimeout)
 		defer cancel()
-		r, err := chatModel.ChatWithMessages(attemptCtx, msgs, config, nil)
+		r, err := func() (*models.ChatResponse, error) {
+			finishIO := runtime.TrackIO(ctx, "Compiler", "LLM call", "")
+			defer finishIO()
+			return chatModel.ChatWithMessages(attemptCtx, msgs, config, nil)
+		}()
 		if err != nil {
 			if !req.DisableRetry {
 				final := !appcommon.IsTransientError(err) || attempt > kcChatRetryMax
