@@ -18,6 +18,7 @@ package oceanbase
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -136,7 +137,7 @@ func TestDecodeChunkExpandsDeclaredFieldsFromExtra(t *testing.T) {
 		"compile_kwd": "timeline",
 		"extra":       `{"compile_kwd":"wiki","token_num":12,"unknown_field":"x"}`,
 	}
-	decoded := decodeLogicalRow(row, "chunk")
+	decoded := decodeLogicalRow(row, "chunk", nil)
 	if decoded["compile_kwd"] != "timeline" {
 		t.Errorf("compile_kwd = %v, want the physical value", decoded["compile_kwd"])
 	}
@@ -145,5 +146,106 @@ func TestDecodeChunkExpandsDeclaredFieldsFromExtra(t *testing.T) {
 	}
 	if _, ok := decoded["unknown_field"]; ok {
 		t.Error("a key outside the declared schema was promoted onto the chunk")
+	}
+}
+
+// A physical column that is NULL still exists, so a stale value left in extra
+// must not resurface through it.
+func TestDecodeChunkPrefersNullPhysicalColumnOverExtra(t *testing.T) {
+	row := map[string]interface{}{
+		"id":          "chunk-1",
+		"compile_kwd": nil,
+		"extra":       `{"compile_kwd":"tree"}`,
+	}
+	decoded := decodeLogicalRow(row, "chunk", nil)
+	if value, ok := decoded["compile_kwd"]; ok {
+		t.Errorf("compile_kwd = %#v, want the cleared physical column", value)
+	}
+}
+
+// A projection of a column the table lacks reads the extra object once. The
+// lifted value keeps its stored JSON type, the caller's projection decides what
+// comes back, and extra itself does not leak into the row.
+func TestDecodeChunkLiftsRequestedExtraFieldsOnly(t *testing.T) {
+	row := map[string]interface{}{
+		"id":    "chunk-1",
+		"extra": `{"compile_kwd":"wiki","token_num":12,"doc_count_int":null,"children_kwd":["c1","c2"],"depth_int":3}`,
+	}
+	selection := &chunkExtraSelection{fields: map[string]bool{
+		"compile_kwd": true, "token_num": true, "doc_count_int": true, "children_kwd": true,
+	}}
+	decoded := decodeLogicalRow(row, "chunk", selection)
+	if decoded["compile_kwd"] != "wiki" {
+		t.Errorf("compile_kwd = %#v, want the stored string", decoded["compile_kwd"])
+	}
+	if decoded["token_num"] != float64(12) {
+		t.Errorf("token_num = %#v, want the stored number", decoded["token_num"])
+	}
+	if value, ok := decoded["doc_count_int"]; !ok || value != nil {
+		t.Errorf("doc_count_int = %#v, want a stored JSON null", value)
+	}
+	if !reflect.DeepEqual(decoded["children_kwd"], []interface{}{"c1", "c2"}) {
+		t.Errorf("children_kwd = %#v, want the stored list", decoded["children_kwd"])
+	}
+	if _, ok := decoded["depth_int"]; ok {
+		t.Error("a field outside the projection was lifted from extra")
+	}
+	if _, ok := decoded["extra"]; ok {
+		t.Error("extra was returned although the projection did not ask for it")
+	}
+}
+
+func TestDecodeChunkKeepsRequestedExtraObject(t *testing.T) {
+	row := map[string]interface{}{
+		"id":    "chunk-1",
+		"extra": `{"compile_kwd":"wiki"}`,
+	}
+	selection := &chunkExtraSelection{
+		fields:    map[string]bool{"compile_kwd": true},
+		keepExtra: true,
+	}
+	decoded := decodeLogicalRow(row, "chunk", selection)
+	if decoded["compile_kwd"] != "wiki" {
+		t.Errorf("compile_kwd = %#v, want the stored value", decoded["compile_kwd"])
+	}
+	if _, ok := decoded["extra"].(map[string]interface{}); !ok {
+		t.Errorf("extra = %#v, want the decoded object", decoded["extra"])
+	}
+}
+
+// The knowledge compiler writes children_kwd as a list. A new table has the
+// column, an existing one stores the list in extra; both must survive the write.
+func TestNormalizeChunkKeepsChildrenListOnNewAndExistingTables(t *testing.T) {
+	document := map[string]interface{}{
+		"id": "chunk-1", "kb_id": "kb-1", "children_kwd": []string{"c1", "c2"},
+	}
+
+	normalized, err := normalizeChunk(document, fullChunkSchema())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var children []string
+	if err := json.Unmarshal([]byte(normalized["children_kwd"].(string)), &children); err != nil {
+		t.Fatalf("children_kwd column value %#v: %v", normalized["children_kwd"], err)
+	}
+	if !reflect.DeepEqual(children, []string{"c1", "c2"}) {
+		t.Errorf("children_kwd = %#v, want the list in the column", children)
+	}
+
+	columns := fullChunkSchema()
+	delete(columns, "children_kwd")
+	normalized, err = normalizeChunk(document, columns)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := normalized["children_kwd"]; ok {
+		t.Fatal("children_kwd was written to a column the table does not have")
+	}
+	var extra map[string]interface{}
+	if err := json.Unmarshal([]byte(normalized["extra"].(string)), &extra); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(extra["children_kwd"], []interface{}{"c1", "c2"}) {
+		t.Errorf("extra.children_kwd = %#v, want the list", extra["children_kwd"])
 	}
 }

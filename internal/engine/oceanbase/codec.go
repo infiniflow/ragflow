@@ -45,7 +45,7 @@ var arrayColumns = map[string]bool{
 	"source_chunk_ids": true, "source_doc_ids": true, "compilation_template_ids": true,
 	"doc_ids_kwd": true, "entity_names_kwd": true, "entity_names": true,
 	"outlinks_kwd": true, "related_kb_pages_kwd": true, "page_ids": true,
-	"rechunked_from_chunk_ids": true, "aliases": true,
+	"rechunked_from_chunk_ids": true, "aliases": true, "children_kwd": true,
 }
 
 var jsonColumns = map[string]bool{

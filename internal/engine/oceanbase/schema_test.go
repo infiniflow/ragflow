@@ -230,6 +230,7 @@ func TestMappingListColumnsKeepTheirEncoding(t *testing.T) {
 		"source_chunk_ids", "source_doc_ids", "compilation_template_ids",
 		"doc_ids_kwd", "entity_names_kwd", "entity_names", "outlinks_kwd",
 		"related_kb_pages_kwd", "page_ids", "rechunked_from_chunk_ids", "aliases",
+		"children_kwd",
 	} {
 		if !arrayColumns[name] {
 			t.Errorf("%q stores a list but is not registered in arrayColumns", name)
@@ -279,7 +280,7 @@ func TestChunkExplicitProjectionReadsMissingColumnFromExtra(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := "`id`, JSON_UNQUOTE(JSON_EXTRACT(`extra`, '$.compile_kwd')) AS `compile_kwd`"
+	want := "`id`, `extra`"
 	if fieldsSQL != want {
 		t.Errorf("projection = %q, want %q", fieldsSQL, want)
 	}
@@ -288,7 +289,7 @@ func TestChunkExplicitProjectionReadsMissingColumnFromExtra(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantQualified := "`t`.`id`, JSON_UNQUOTE(JSON_EXTRACT(`t`.`extra`, '$.compile_kwd')) AS `compile_kwd`"
+	wantQualified := "`t`.`id`, `t`.`extra`"
 	if qualified != wantQualified {
 		t.Errorf("qualified projection = %q, want %q", qualified, wantQualified)
 	}

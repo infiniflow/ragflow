@@ -48,6 +48,10 @@ func (e *Engine) queryRows(ctx context.Context, query string, args ...interface{
 		row := make(map[string]interface{}, len(columns))
 		for i, column := range columns {
 			if values[i] == nil {
+				// Keep the column so decoding can tell a NULL column from one
+				// the table does not have. Decoding drops the key again, but
+				// the presence still blocks a stale value in extra.
+				row[column] = nil
 				continue
 			}
 			if raw, ok := values[i].([]byte); ok {
@@ -61,11 +65,12 @@ func (e *Engine) queryRows(ctx context.Context, query string, args ...interface{
 	return result, rows.Err()
 }
 
-func decodeLogicalRow(row map[string]interface{}, kind string) map[string]interface{} {
+func decodeLogicalRow(row map[string]interface{}, kind string, extra *chunkExtraSelection) map[string]interface{} {
 	result := make(map[string]interface{}, len(row))
 	if kind == "memory" {
 		result["forget_at"] = nil
 	}
+	nullColumns := make([]string, 0, len(row))
 	for rawColumn, value := range row {
 		column := rawColumn
 		if kind == "memory" {
@@ -96,6 +101,9 @@ func decodeLogicalRow(row map[string]interface{}, kind string) map[string]interf
 			}
 		}
 		storedColumn := rawColumn
+		if value == nil {
+			nullColumns = append(nullColumns, column)
+		}
 		if (kind == "chunk" && arrayColumns[storedColumn]) || jsonColumns[storedColumn] || vectorColumnPattern.MatchString(storedColumn) {
 			if text, ok := value.(string); ok {
 				var decoded interface{}
@@ -107,9 +115,58 @@ func decodeLogicalRow(row map[string]interface{}, kind string) map[string]interf
 		result[column] = value
 	}
 	if kind == "chunk" {
-		expandChunkExtra(result)
+		if extra == nil {
+			// SELECT * carries every physical column, so a field the row lacks
+			// is one this table stores in extra.
+			expandChunkExtra(result)
+		} else {
+			liftChunkExtra(result, extra.fields)
+			if !extra.keepExtra {
+				delete(result, "extra")
+			}
+		}
+	}
+	// A NULL column stays absent from the decoded row, as it always was, but it
+	// still counted as present for the extra expansion above.
+	for _, column := range nullColumns {
+		if kind == "memory" && column == "forget_at" {
+			continue
+		}
+		delete(result, column)
 	}
 	return result
+}
+
+// chunkExtraSelection describes a projection that reads chunk fields the table
+// stores in its extra JSON column. fields names the declared columns to lift;
+// keepExtra retains the extra object itself because the caller asked for it.
+type chunkExtraSelection struct {
+	fields    map[string]bool
+	keepExtra bool
+}
+
+// liftChunkExtra copies the requested fields out of the decoded extra object.
+// The projection reads extra as JSON rather than JSON_UNQUOTE(JSON_EXTRACT(...)),
+// so a stored integer stays a JSON number and a JSON null stays nil instead of
+// turning into the string "null".
+func liftChunkExtra(row map[string]interface{}, fields map[string]bool) {
+	if len(fields) == 0 {
+		return
+	}
+	extra, ok := row["extra"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	for field := range fields {
+		value, ok := extra[field]
+		if !ok {
+			continue
+		}
+		if _, present := row[field]; present {
+			continue
+		}
+		row[field] = value
+	}
 }
 
 // expandChunkExtra lifts declared fields that an existing chunk table stores
@@ -145,9 +202,8 @@ func scanCount(row *sql.Row) (int64, error) {
 }
 
 type selectField struct {
-	column    string
-	alias     string
-	fromExtra bool
+	column string
+	alias  string
 }
 
 func (field selectField) expression(tableAlias string) string {
@@ -156,12 +212,7 @@ func (field selectField) expression(tableAlias string) string {
 		prefix = quoteIdentifier(tableAlias) + "."
 	}
 	expression := prefix + quoteIdentifier(field.column)
-	if field.fromExtra {
-		// The value lives in the extra JSON object; JSON_UNQUOTE returns the
-		// scalar a column reader expects instead of a quoted JSON string.
-		expression = "JSON_UNQUOTE(JSON_EXTRACT(" + prefix + quoteIdentifier("extra") + ", '$." + field.column + "'))"
-	}
-	if field.alias != field.column || field.fromExtra {
+	if field.alias != field.column {
 		expression += " AS " + quoteIdentifier(field.alias)
 	}
 	return expression
@@ -185,9 +236,11 @@ func parseSelectField(field, kind string, tableColumns map[string]bool) (*select
 		return nil, nil
 	}
 	// Only columns the engine added after the first chunk schema can be absent
-	// from an existing table; those are read from extra instead.
+	// from an existing table; those are read from extra instead. The projection
+	// selects the extra object once and decoding lifts the requested fields, so
+	// the value keeps its stored JSON type.
 	if kind == "chunk" && optionalChunkColumns[column] && tableColumns != nil && !tableColumns[column] {
-		return &selectField{column: column, alias: field, fromExtra: true}, nil
+		return &selectField{column: "extra", alias: "extra"}, nil
 	}
 	if !vectorColumnPattern.MatchString(column) && !validColumns(kind)[column] {
 		return nil, fmt.Errorf("unknown %s field: %s", kind, field)
@@ -224,6 +277,22 @@ func chunkSelectionNeedsSchema(fields []string) bool {
 		}
 	}
 	return false
+}
+
+// chunkFieldsFromExtra names the requested chunk fields the table stores in
+// its extra JSON column: optional columns the live schema lacks.
+func chunkFieldsFromExtra(fields []string, tableColumns map[string]bool) map[string]bool {
+	lifted := make(map[string]bool)
+	for _, field := range fields {
+		if field == "" || field == "*" {
+			continue
+		}
+		column := mapChunkField(field)
+		if optionalChunkColumns[column] && !tableColumns[column] {
+			lifted[column] = true
+		}
+	}
+	return lifted
 }
 
 func buildSelectFieldsWithAlias(fields []string, kind, tableAlias string, tableColumns map[string]bool) (string, []string, error) {

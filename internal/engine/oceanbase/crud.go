@@ -189,7 +189,7 @@ func (e *Engine) GetChunk(ctx context.Context, baseName, chunkID string, dataset
 		}
 		return nil, nil
 	}
-	return decodeLogicalRow(rows[0], kind), nil
+	return decodeLogicalRow(rows[0], kind, nil), nil
 }
 
 // UpdateChunks updates rows while retaining the dataset-level scope used by

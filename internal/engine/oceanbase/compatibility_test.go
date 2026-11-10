@@ -77,7 +77,7 @@ func TestLegacyMemoryAliasesAndVectorEncoding(t *testing.T) {
 	decoded := decodeLogicalRow(map[string]interface{}{
 		"message_type_kwd": "raw", "status_int": int64(0), "content_ltks": "hello",
 		"q_2_vec": "[0.25,0.5]",
-	}, "memory")
+	}, "memory", nil)
 	if decoded["message_type"] != "raw" || decoded["status"] != false || !reflect.DeepEqual(decoded["content_embed"], []interface{}{0.25, 0.5}) {
 		t.Fatalf("memory read aliases changed: %#v", decoded)
 	}
@@ -87,7 +87,7 @@ func TestSkillRowsKeepStringStatusAndSkillRowID(t *testing.T) {
 	decoded := decodeLogicalRow(map[string]interface{}{
 		"skill_id": "skill-1",
 		"status":   "draft",
-	}, "skill")
+	}, "skill", nil)
 	if decoded["status"] != "draft" {
 		t.Fatalf("skill status = %#v, want draft", decoded["status"])
 	}

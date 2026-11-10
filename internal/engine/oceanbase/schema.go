@@ -127,7 +127,7 @@ var additiveChunkColumns = []columnDefinition{
 	{"summary_with_weight", "TEXT NULL"},
 	{"skill_with_weight", "TEXT NULL"},
 	{"skill_kwd", "VARCHAR(256) NULL"},
-	{"children_kwd", "VARCHAR(256) NULL"},
+	{"children_kwd", "ARRAY(VARCHAR(256)) NULL"},
 	{"doc_ids_kwd", "ARRAY(VARCHAR(256)) NULL"},
 	{"slug_kwd", "VARCHAR(256) NULL"},
 	{"title_kwd", "VARCHAR(256) NULL"},
