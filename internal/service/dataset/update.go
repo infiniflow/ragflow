@@ -25,6 +25,10 @@ import (
 
 const datasetPagerankUpdateTimeout = 30 * time.Second
 
+// chunkStoreCleanupTimeout bounds the removal of a store whose creation failed
+// after it was already partially written.
+const chunkStoreCleanupTimeout = 10 * time.Second
+
 type datasetPagerankUpdate struct {
 	value     int64
 	index     string
@@ -532,6 +536,11 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 
 	if storePlan.createEmbdID != "" && updatedKB != nil && updatedKB.ChunkNum == 0 && updatedKB.EmbdID == storePlan.createEmbdID {
 		if err = d.ensureChunkStoreForEmbedding(ctx, updatedKB, storePlan.createEmbdID); err != nil {
+			// An engine may have created the table before failing on its indexes
+			// (Infinity does). Remove the partial store on a context the failure
+			// cannot cancel, so the retry finds it missing and creates it again;
+			// the dataset is empty, so there is nothing to keep.
+			d.dropPartialChunkStore(ctx, updatedKB)
 			return nil, common.CodeServerError, fmt.Errorf(
 				"dataset settings were saved, but the chunk store for embedding model %s could not be created; retry the request to repair it: %w",
 				storePlan.createEmbdID, err)
@@ -735,6 +744,22 @@ func (d *DatasetService) planChunkStoreForEmbeddingChange(ctx context.Context, k
 	}
 	plan.preparedEmbdID = embdID
 	return plan, common.CodeSuccess, nil
+}
+
+// dropPartialChunkStore removes a store whose creation failed. Engines can
+// create the table before the indexes that make it usable, so a leftover store
+// would make the retry skip the preparation. The dataset is empty and had no
+// store before the attempt, so removing it restores the pre-attempt state.
+func (d *DatasetService) dropPartialChunkStore(ctx context.Context, kb *entity.Knowledgebase) {
+	if d.docEngine == nil || kb == nil {
+		return
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), chunkStoreCleanupTimeout)
+	defer cancel()
+	if err := d.docEngine.DropChunkStore(cleanupCtx, fmt.Sprintf("ragflow_%s", kb.TenantID), kb.ID); err != nil {
+		common.Warn("failed to remove a partially created chunk store",
+			zap.String("dataset_id", kb.ID), zap.Error(err))
+	}
 }
 
 // ensureChunkStoreForEmbedding prepares the chunk store for a new embedding
