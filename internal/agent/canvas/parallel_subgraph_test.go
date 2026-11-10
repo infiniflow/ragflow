@@ -2,6 +2,7 @@ package canvas
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 )
 
 func TestParallelResumePreservesProducerState(t *testing.T) {
+	const searchID = "11099848653006015581"
 	c := &Canvas{
 		Components: map[string]CanvasComponent{
 			"parallel": {Obj: CanvasComponentObj{ComponentName: "Parallel", Params: map[string]any{
@@ -20,7 +22,7 @@ func TestParallelResumePreservesProducerState(t *testing.T) {
 				"outputs":   map[string]any{"results": map[string]any{"ref": "consumer@result"}},
 			}}},
 			"producer": {Obj: CanvasComponentObj{ComponentName: "VariableAssigner", Params: map[string]any{
-				"variables": []any{map[string]any{"variable": "env.saved", "operator": "set", "parameter": "prepared"}},
+				"variables": []any{map[string]any{"variable": "env.saved", "operator": "set", "parameter": "search_0@id"}},
 			}}, Upstream: []string{"parallel"}, Downstream: []string{"input"}},
 			"input": {Obj: CanvasComponentObj{ComponentName: "UserFillUp", Params: map[string]any{
 				"inputs": map[string]any{"value": map[string]any{"type": "line"}},
@@ -44,6 +46,13 @@ func TestParallelResumePreservesProducerState(t *testing.T) {
 		return WithRunMeta(WithState(t.Context(), state), &RunMeta{Events: events})
 	}
 	ctx := newContext()
+	initial, err := GetStateFromContext(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Simulate the numeric search ID produced by Querit before this subgraph.
+	// Only the initial state has it; the resumed context starts empty.
+	initial.SetVar("search_0", "id", json.Number(searchID))
 	_, err = compiled.Workflow.Invoke(ctx, map[string]any{}, compose.WithCheckPointID(checkpoint))
 	if !IsInterruptError(err) {
 		t.Fatalf("first run: want UserFillUp interrupt, got %v", err)
@@ -63,8 +72,8 @@ func TestParallelResumePreservesProducerState(t *testing.T) {
 	}
 	parallel, _ := out["parallel"].(map[string]any)
 	result, _ := parallel["results"].([]any)
-	if len(result) != 1 || result[0] != "prepared:answer" {
-		t.Fatalf("results = %#v, want [prepared:answer]", out)
+	if len(result) != 1 || result[0] != searchID+":answer" {
+		t.Fatalf("results = %#v, want [%s:answer]", out, searchID)
 	}
 }
 
