@@ -28,19 +28,20 @@ type PipelineOperationLog struct {
 	DocumentID string `gorm:"column:document_id;size:32;index;uniqueIndex:idx_pipeline_operation_log_document_run,priority:1" json:"document_id"`
 	// RunCount is the monotonically allocated display number for a numbered
 	// ingestion run.
-	RunCount       *int       `gorm:"column:run_count;uniqueIndex:idx_pipeline_operation_log_document_run,priority:2" json:"run_count,omitempty"`
-	TenantID       string     `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
-	KbID           string     `gorm:"column:kb_id;size:32;not null;index" json:"kb_id"`
-	PipelineID     *string    `gorm:"column:pipeline_id;size:32;index" json:"pipeline_id,omitempty"`
-	PipelineTitle  *string    `gorm:"column:pipeline_title;size:32;index" json:"pipeline_title,omitempty"`
-	ParserID       string     `gorm:"column:parser_id;size:32;not null;index" json:"parser_id"`
-	DocumentName   string     `gorm:"column:document_name;size:255;not null" json:"document_name"`
-	DocumentSuffix string     `gorm:"column:document_suffix;size:255;not null" json:"document_suffix"`
-	DocumentType   string     `gorm:"column:document_type;size:255;not null" json:"document_type"`
-	SourceFrom     string     `gorm:"column:source_from;size:255;not null" json:"source_from"`
-	Progress       float64    `gorm:"column:progress;default:0;index" json:"progress"`
-	ProgressMsg    *string    `gorm:"column:progress_msg;type:longtext" json:"progress_msg,omitempty"`
-	ProcessBeginAt *time.Time `gorm:"column:process_begin_at;index" json:"process_begin_at,omitempty"`
+	RunCount          *int       `gorm:"column:run_count;uniqueIndex:idx_pipeline_operation_log_document_run,priority:2" json:"run_count,omitempty"`
+	TenantID          string     `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
+	KbID              string     `gorm:"column:kb_id;size:32;not null;index" json:"kb_id"`
+	PipelineID        *string    `gorm:"column:pipeline_id;size:32;index" json:"pipeline_id,omitempty"`
+	PipelineTitle     *string    `gorm:"column:pipeline_title;size:255;index" json:"pipeline_title,omitempty"`
+	PipelineVersionID *string    `gorm:"column:pipeline_version_id;size:32" json:"pipeline_version_id,omitempty"`
+	ParserID          string     `gorm:"column:parser_id;size:32;not null;index" json:"parser_id"`
+	DocumentName      string     `gorm:"column:document_name;size:255;not null" json:"document_name"`
+	DocumentSuffix    string     `gorm:"column:document_suffix;size:255;not null" json:"document_suffix"`
+	DocumentType      string     `gorm:"column:document_type;size:255;not null" json:"document_type"`
+	SourceFrom        string     `gorm:"column:source_from;size:255;not null" json:"source_from"`
+	Progress          float64    `gorm:"column:progress;default:0;index" json:"progress"`
+	ProgressMsg       *string    `gorm:"column:progress_msg;type:longtext" json:"progress_msg,omitempty"`
+	ProcessBeginAt    *time.Time `gorm:"column:process_begin_at;index" json:"process_begin_at,omitempty"`
 	// ProcessDuration is the persisted terminal run duration in seconds. The
 	// authoritative end time is recovered as ProcessBeginAt + ProcessDuration when
 	// needed, so no separate process_end_at column is required.

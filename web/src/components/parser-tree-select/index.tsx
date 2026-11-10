@@ -38,7 +38,7 @@ export interface ParserTreeSelectProps {
 }
 
 // ParserTreeSelect is the single dropdown that merges builtin parsers and
-// dataflow pipelines with their published versions: builtin parsers are
+// dataflow pipelines with their saved versions: builtin parsers are
 // selectable root-level leaves, pipelines are non-selectable branches (the
 // draft) whose version leaves are the only pipeline-side choices. It is a
 // controlled component: the parent owns the form fields and translates the
@@ -58,7 +58,6 @@ export function ParserTreeSelect({
     expandedIds,
     onExpandedChange,
     onSearchChange,
-    loadingIds,
     loading,
     selectedLeafExists,
   } = useParserTreeData({ value });
@@ -111,8 +110,8 @@ export function ParserTreeSelect({
   // the icon would submit the form, and stopPropagation alone cannot cancel
   // that native default action. type="button" removes it, while the click
   // handlers still swallow the event before it bubbles to the TreeSelect
-  // trigger, so the click neither toggles the dropdown nor triggers the lazy
-  // version fetches that follow. It is hidden while the value is already
+  // trigger, so the click neither toggles the dropdown nor changes branch
+  // expansion. It is hidden while the value is already
   // reported as missing — a deleted pin is the stronger signal.
   const stopHintClick = useCallback((e: React.SyntheticEvent) => {
     e.stopPropagation();
@@ -144,7 +143,6 @@ export function ParserTreeSelect({
       expandedIds={expandedIds}
       onExpandedChange={onExpandedChange}
       onSearchChange={onSearchChange}
-      loadingIds={loadingIds}
       loading={loading}
       renderSelected={renderSelected}
       renderMissingValue={renderMissingParser}

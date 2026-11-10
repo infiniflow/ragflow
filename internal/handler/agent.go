@@ -53,7 +53,7 @@ import (
 // the FileHandler (handler/file.go), not by any agent handler, so
 // the interface deliberately does NOT list it. (Code review CR1.)
 type agentFileService interface {
-	DownloadAgentFile(ctx context.Context, tenantID, location string) ([]byte, error)
+	DownloadAgentFile(ctx context.Context, location string) ([]byte, error)
 	// UploadInfos stores raw bytes in the per-user downloads bucket and
 	// returns lightweight descriptors.
 	UploadInfos(ctx context.Context, files []*multipart.FileHeader) ([]map[string]interface{}, error)
@@ -156,8 +156,8 @@ func (h *AgentHandler) WithNewExecutor(f func(taskCtx *task.TaskContext, canvasI
 // @Tags agents
 // @Produce json
 // @Param keywords query string false "Filter by title keyword"
-// @Param page query int false "Page number (0 = no pagination)"
-// @Param page_size query int false "Items per page (0 = no pagination)"
+// @Param page query int false "Page number (default: 1, min: 1)"
+// @Param page_size query int false "Items per page (default: 30, min: 1, max: 100)"
 // @Param orderby query string false "Order-by field (default: create_time)"
 // @Param sort query string false "Ordered terms, column:direction separated by commas, such as name:asc,create_time:desc. Takes precedence over orderby and desc"
 // @Param desc query bool false "Descending order (default: true)"
@@ -170,6 +170,12 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 	// Filter-aggregation mode: the agents page filter bar fetches
 	// GET /api/v1/agents?type=filter and expects
 	// {filter: {owner, canvas_category}, total} instead of a canvas list.
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+
 	if c.Query("type") == "filter" {
 		filters, code, err := h.agentService.ListAgentFilters(c.Request.Context(), strings.TrimSpace(c.Query("canvas_category")))
 		if err != nil {
@@ -183,20 +189,6 @@ func (h *AgentHandler) ListAgents(c *gin.Context) {
 	keywords := c.Query("keywords")
 	canvasCategory := c.Query("canvas_category")
 	canvasType := c.Query("canvas_type")
-
-	page := 0
-	if v := c.Query("page"); v != "" {
-		if p, err := strconv.Atoi(v); err == nil && p > 0 {
-			page = p
-		}
-	}
-
-	pageSize := 0
-	if v := c.Query("page_size"); v != "" {
-		if ps, err := strconv.Atoi(v); err == nil && ps > 0 {
-			pageSize = ps
-		}
-	}
 
 	orderby := c.Query("orderby")
 
@@ -610,7 +602,7 @@ func respondWithDebugResult(c *gin.Context, result *task.PipelineResult, err err
 // (id/name/created_by); the raw bytes are fetched from the per-user downloads
 // bucket via the file service. When no usable file is present it returns a
 // default name and a nil slice so the pipeline can still run file-less.
-func (h *AgentHandler) extractChatDebugFile(ctx context.Context, files []map[string]interface{}, user *entity.User) (string, []byte) {
+func (h *AgentHandler) extractChatDebugFile(ctx context.Context, files []map[string]interface{}) (string, []byte) {
 	if len(files) == 0 {
 		return "debug", nil
 	}
@@ -623,7 +615,7 @@ func (h *AgentHandler) extractChatDebugFile(ctx context.Context, files []map[str
 		}
 		return name, nil
 	}
-	data, err := h.fileService.DownloadAgentFile(ctx, user.ID, id)
+	data, err := h.fileService.DownloadAgentFile(ctx, id)
 	if err != nil || len(data) == 0 {
 		if name == "" {
 			return "debug", nil
@@ -897,8 +889,12 @@ func (h *AgentHandler) UpdateAgentTags(c *gin.Context) {
 // ListAgentSessions GET /api/v1/agents/:canvas_id/sessions
 func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 	canvasID := c.Param("canvas_id")
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "30"))
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
+	}
+
 	keywords := c.Query("keywords")
 	fromDate := c.Query("from_date")
 	toDate := c.Query("to_date")
@@ -941,11 +937,6 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 
 // CreateAgentSession POST /api/v1/agents/:canvas_id/sessions
 func (h *AgentHandler) CreateAgentSession(c *gin.Context) {
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		common.RespondError(c, code, msg)
-		return
-	}
 	canvasID := c.Param("canvas_id")
 	var body struct {
 		Name   string          `json:"name"`
@@ -958,7 +949,6 @@ func (h *AgentHandler) CreateAgentSession(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 	row, code, err := h.agentService.CreateAgentSession(ctx, &service.CreateAgentSessionRequest{
-		UserID:  user.ID,
 		AgentID: canvasID,
 		Name:    body.Name,
 		Source:  body.Source,
@@ -978,13 +968,18 @@ func (h *AgentHandler) CreateAgentSession(c *gin.Context) {
 func (h *AgentHandler) GetAgentSession(c *gin.Context) {
 	canvasID := c.Param("canvas_id")
 	sessionID := c.Param("session_id")
+	includeDSL, err := strconv.ParseBool(c.DefaultQuery("include_dsl", "false"))
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, "include_dsl must be a boolean")
+		return
+	}
 	ctx := c.Request.Context()
 	options, err := sessionHistoryQuery(c)
 	if err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
-	row, code, err := h.agentService.GetAgentSession(ctx, canvasID, sessionID, options)
+	row, code, err := h.agentService.GetAgentSession(ctx, canvasID, sessionID, includeDSL, options)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
@@ -1222,7 +1217,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	// runCanvasPipelineDebug).
 	if h.loader != nil {
 		if cv, lerr := h.loader.LoadCanvasByID(c.Request.Context(), req.AgentID); lerr == nil && cv.CanvasCategory == "dataflow_canvas" {
-			fileName, fileData := h.extractChatDebugFile(c.Request.Context(), req.Files, user)
+			fileName, fileData := h.extractChatDebugFile(c.Request.Context(), req.Files)
 			if len(fileData) == 0 {
 				common.RespondError(c, common.CodeDataError, "dataflow debug requires an uploaded file")
 				return

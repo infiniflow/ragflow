@@ -3,6 +3,7 @@ package service
 import (
 	"strings"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
 
@@ -33,9 +34,8 @@ func ApplyComponentScopedParserConfig(
 		if !ok {
 			continue
 		}
-		cpnLower := strings.ToLower(cpnID)
 		switch {
-		case strings.HasPrefix(cpnLower, "extractor:") || strings.HasPrefix(cpnLower, "extractor_"):
+		case common.IsExtractorComponentID(cpnID):
 			if value, _ := params["llm_id"].(string); strings.TrimSpace(value) == "" && strings.TrimSpace(llmID) != "" {
 				params["llm_id"] = llmID
 			}
@@ -54,7 +54,7 @@ func ApplyComponentScopedParserConfig(
 					"built_in_metadata": []any{},
 				}
 			}
-		case strings.HasPrefix(cpnLower, "compiler:") || strings.HasPrefix(cpnLower, "compiler_"):
+		case common.IsCompilerComponentID(cpnID):
 			if value, _ := params["llm_id"].(string); strings.TrimSpace(value) == "" && strings.TrimSpace(llmID) != "" {
 				params["llm_id"] = llmID
 			}

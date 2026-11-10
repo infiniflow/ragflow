@@ -107,7 +107,7 @@ func TestRunSQL_NoFilterAdded(t *testing.T) {
 	e := newTestEngine(t, srv.URL)
 	ctx := t.Context()
 
-	rows, err := e.RunSQL(ctx, "ragflow_t1", "SELECT doc_id FROM ragflow_t1", nil, "json")
+	rows, err := e.RunSQL(ctx, "SELECT doc_id FROM ragflow_t1", "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestRunSQL_WhitespaceNormalizedAndPercentStripped(t *testing.T) {
 	ctx := t.Context()
 
 	in := "SELECT   doc_id  FROM  `ragflow_t1`  WHERE  count  >  0  %"
-	_, err := e.RunSQL(ctx, "ragflow_t1", in, nil, "json")
+	_, err := e.RunSQL(ctx, in, "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
@@ -187,7 +187,7 @@ func TestRunSQL_PerAttemptTimeout(t *testing.T) {
 	done := make(chan result, 1)
 	go func() {
 		start := time.Now()
-		_, err := e.RunSQL(ctx, "ragflow_t1", "SELECT 1", nil, "json")
+		_, err := e.RunSQL(ctx, "SELECT 1", "json")
 		done <- result{elapsed: time.Since(start), err: err}
 	}()
 
@@ -239,7 +239,7 @@ func TestRunSQL_RetryOnTimeoutThenSucceed(t *testing.T) {
 
 	e := newTestEngine(t, srv.URL)
 	ctx := t.Context()
-	rows, err := e.RunSQL(ctx, "ragflow_t1", "SELECT 1", nil, "json")
+	rows, err := e.RunSQL(ctx, "SELECT 1", "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
@@ -273,7 +273,7 @@ func TestRunSQL_NonTimeoutErrorSurfacesImmediately(t *testing.T) {
 
 	e := newTestEngine(t, srv.URL)
 	ctx := t.Context()
-	_, err := e.RunSQL(ctx, "ragflow_t1", "SELECT bad", nil, "json")
+	_, err := e.RunSQL(ctx, "SELECT bad", "json")
 	if err == nil {
 		t.Fatalf("RunSQL: got nil error, want error")
 	}
@@ -298,7 +298,7 @@ func TestRunSQL_RequestBodyHasFetchSizeAndFormat(t *testing.T) {
 	e := newTestEngine(t, srv.URL)
 
 	ctx := t.Context()
-	if _, err := e.RunSQL(ctx, "ragflow_t1", "SELECT 1", nil, "json"); err != nil {
+	if _, err := e.RunSQL(ctx, "SELECT 1", "json"); err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
 	cap.mu.Lock()
@@ -332,7 +332,7 @@ func TestRunSQL_EmptyRowsReturnsNilNil(t *testing.T) {
 	e := newTestEngine(t, srv.URL)
 
 	ctx := t.Context()
-	rows, err := e.RunSQL(ctx, "ragflow_t1", "SELECT doc_id FROM ragflow_t1", nil, "json")
+	rows, err := e.RunSQL(ctx, "SELECT doc_id FROM ragflow_t1", "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
@@ -348,7 +348,7 @@ func TestRunSQL_PostsToSQLPath(t *testing.T) {
 	e := newTestEngine(t, srv.URL)
 
 	ctx := t.Context()
-	if _, err := e.RunSQL(ctx, "ragflow_t1", "SELECT 1", nil, "json"); err != nil {
+	if _, err := e.RunSQL(ctx, "SELECT 1", "json"); err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}
 	cap.mu.Lock()
@@ -392,7 +392,7 @@ func TestRunSQL_FollowsCursorPagination(t *testing.T) {
 	t.Cleanup(srv.Close)
 
 	e := newTestEngine(t, srv.URL)
-	rows, err := e.RunSQL(t.Context(), "ragflow_t1", "SELECT doc_id FROM ragflow_t1", nil, "json")
+	rows, err := e.RunSQL(t.Context(), "SELECT doc_id FROM ragflow_t1", "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}

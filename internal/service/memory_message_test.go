@@ -1002,3 +1002,69 @@ func TestMemorySearchRejectsInvalidSimilarityBeforeStorage(t *testing.T) {
 		}
 	}
 }
+
+// The engine query behind the extract list only sorts by valid_at, so facts
+// sharing a second-granularity valid_at — the common case, since extraction
+// stamps them with the conversation time — come back in storage order, which
+// reshuffles whenever a document is rewritten (e.g. an enable/disable toggle).
+// This pins the ported Python fix (PR #21246): each message's extracts are
+// re-ordered in place by the combined key (valid_at desc, message_id asc).
+func TestSortMemoryExtractMessagesOrdersByValidAtThenMessageID(t *testing.T) {
+	t.Run("newest valid_at first, ties broken by message_id ascending", func(t *testing.T) {
+		extracts := []map[string]interface{}{
+			{"id": "extract-1", "message_id": 12, "valid_at": "2026-08-12 10:00:00"},
+			{"id": "extract-2", "message_id": 13, "valid_at": "2026-08-13 09:00:00"},
+			{"id": "extract-3", "message_id": 11, "valid_at": "2026-08-12 10:00:00"},
+		}
+		sortMemoryExtractMessages(extracts)
+		want := []string{"extract-2", "extract-3", "extract-1"}
+		for i, id := range want {
+			if extracts[i]["id"] != id {
+				t.Fatalf("position %d = %v, want %s (full order: %v)", i, extracts[i]["id"], id, ids(extracts))
+			}
+		}
+	})
+
+	t.Run("string ids compare numerically and missing valid_at sorts oldest", func(t *testing.T) {
+		// Infinity returns message_id as a string; a lexicographic tie-break
+		// would order "10" before "9". valid_at can be missing entirely; its
+		// empty key must lose to every real timestamp.
+		extracts := []map[string]interface{}{
+			{"id": "a", "message_id": "10", "valid_at": "2026-08-12 10:00:00"},
+			{"id": "b", "message_id": "9", "valid_at": "2026-08-12 10:00:00"},
+			{"id": "c", "message_id": "11", "valid_at": "2026-08-12 10:00:00"},
+			{"id": "d", "message_id": "12"},
+		}
+		sortMemoryExtractMessages(extracts)
+		want := []string{"b", "a", "c", "d"}
+		for i, id := range want {
+			if extracts[i]["id"] != id {
+				t.Fatalf("position %d = %v, want %s (full order: %v)", i, extracts[i]["id"], id, ids(extracts))
+			}
+		}
+	})
+
+	t.Run("groups sort independently", func(t *testing.T) {
+		first := []map[string]interface{}{
+			{"id": "first-old", "message_id": 2, "valid_at": "2026-08-01 00:00:00"},
+			{"id": "first-new", "message_id": 3, "valid_at": "2026-08-02 00:00:00"},
+		}
+		second := []map[string]interface{}{
+			{"id": "second-old", "message_id": 5, "valid_at": "2026-08-05 00:00:00"},
+			{"id": "second-new", "message_id": 6, "valid_at": "2026-08-06 00:00:00"},
+		}
+		sortMemoryExtractMessages(first)
+		sortMemoryExtractMessages(second)
+		if ids(first)[0] != "first-new" || ids(second)[0] != "second-new" {
+			t.Fatalf("groups interfered: first=%v second=%v", ids(first), ids(second))
+		}
+	})
+}
+
+func ids(extracts []map[string]interface{}) []string {
+	out := make([]string, 0, len(extracts))
+	for _, extract := range extracts {
+		out = append(out, fmt.Sprint(extract["id"]))
+	}
+	return out
+}

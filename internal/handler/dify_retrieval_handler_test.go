@@ -65,12 +65,12 @@ func (m *mockKBService) CheckResource(ctx context.Context, resource permission.R
 
 type mockModelFactory struct{}
 
-func (mockModelFactory) NewEmbeddingModel(context.Context, service.Identity, string) (*modelModule.EmbeddingModel, error) {
+func (mockModelFactory) NewEmbeddingModel(context.Context, string) (*modelModule.EmbeddingModel, error) {
 	name := "test-model"
 	return modelModule.NewEmbeddingModel(&modelModule.DummyModel{}, &name, &modelModule.APIConfig{}, 0), nil
 }
 
-func (mockModelFactory) NewDefaultChatModel(context.Context, service.Identity) (*modelModule.ChatModel, error) {
+func (mockModelFactory) NewDefaultChatModel(context.Context) (*modelModule.ChatModel, error) {
 	name := "test-model"
 	return modelModule.NewChatModel(&modelModule.DummyModel{}, &name, &modelModule.APIConfig{}), nil
 }

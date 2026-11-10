@@ -1719,8 +1719,7 @@ func (f *fakeAgentRetrievalService) Search(ctx context.Context, db *gorm.DB, req
 }
 
 func TestAgent_AnthropicReActToolCallLoop(t *testing.T) {
-	common.AllowAnyHostForTest = true
-	defer func() { common.AllowAnyHostForTest = false }()
+	t.Setenv(common.EnvAllowAnyHost, "true")
 
 	fakeRetrieval := &fakeAgentRetrievalService{
 		chunks: []agenttool.RetrievalChunk{

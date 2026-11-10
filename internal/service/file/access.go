@@ -22,21 +22,6 @@ func checkFileAccess(ctx context.Context, file *entity.File, operation permissio
 	}, operation)
 }
 
-func fileRequestIdentity(ctx context.Context, identity string) (string, string, error) {
-	userID := permission.UserIDFromContext(ctx)
-	tenantID := permission.TenantIDFromContext(ctx)
-	if userID == "" && tenantID == "" {
-		return identity, identity, nil
-	}
-	if userID == "" || userID != identity {
-		return "", "", permission.ErrIdentityMismatch
-	}
-	if tenantID == "" {
-		tenantID = identity
-	}
-	return userID, tenantID, nil
-}
-
 func (s *FileService) checkFileTreeAccess(ctx context.Context, file *entity.File, operation permission.Operation) error {
 	if file == nil {
 		return permission.ErrResourceNotFound

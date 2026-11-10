@@ -337,8 +337,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         'Contoh: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'Token Akses AI Studio',
-      paddleocrAccessTokenTip: 'Token akses untuk API PaddleOCR (opsional)',
-      paddleocrAccessTokenPlaceholder: 'Token AI Studio Anda (opsional)',
+      paddleocrAccessTokenTip: 'Token akses untuk API PaddleOCR',
+      paddleocrAccessTokenPlaceholder: 'Token AI Studio Anda',
       paddleocrAlgorithm: 'Algoritma PaddleOCR',
       paddleocrAlgorithmTip:
         'Algoritma yang digunakan untuk pemrosesan PaddleOCR',
@@ -598,7 +598,7 @@ export default {
         apiUrlPlaceholder:
           'Contoh: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Token Akses AI Studio',
-        accessTokenPlaceholder: 'Token AI Studio Anda (opsional)',
+        accessTokenPlaceholder: 'Token AI Studio Anda',
         algorithm: 'Algoritma PaddleOCR',
         selectAlgorithm: 'Pilih algoritma',
         modelNamePlaceholder: 'Contoh: paddleocr-from-env-1',

@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -55,6 +56,7 @@ func TestAgentRoutesRegistered(t *testing.T) {
 		{http.MethodDelete, "/api/v1/agents/abc"},
 		{http.MethodPost, "/api/v1/agents/abc/run"},
 		{http.MethodPost, "/api/v1/agents/abc/publish"},
+		{http.MethodGet, "/api/v1/agents/versions?category=dataflow"},
 		{http.MethodGet, "/api/v1/agents/abc/versions"},
 		{http.MethodGet, "/api/v1/agents/abc/versions/v1"},
 		{http.MethodDelete, "/api/v1/agents/abc/versions/v1"},
@@ -63,8 +65,17 @@ func TestAgentRoutesRegistered(t *testing.T) {
 		{http.MethodPost, "/api/v1/agents/abc/webhook/credentials"},
 		{http.MethodDelete, "/api/v1/agents/abc/webhook/credentials"},
 	}
-	if len(cases) != 14 {
-		t.Fatalf("expected 14 routes, listed %d", len(cases))
+	foundCatalog := false
+	for _, route := range eng.Routes() {
+		if route.Method == http.MethodGet && route.Path == "/api/v1/agents/versions" && strings.HasSuffix(route.Handler, ".ListVersionCatalog-fm") {
+			foundCatalog = true
+		}
+	}
+	if !foundCatalog {
+		t.Fatal("static version catalog route missing")
+	}
+	if len(cases) != 15 {
+		t.Fatalf("expected 15 routes, listed %d", len(cases))
 	}
 	for _, c := range cases {
 		w := httptest.NewRecorder()

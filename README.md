@@ -188,10 +188,10 @@ Local deployment supports both Docker deployment and launching from source. Dock
    cd ragflow/docker
    ```
 
-   Check out the `v1.0.0-rc3` release tag.
+   Check out the `v1.0.0` release tag.
 
    ```bash
-   git checkout v1.0.0-rc3
+   git checkout v1.0.0
    ```
 
    Start the RAGFlow services and their dependencies.

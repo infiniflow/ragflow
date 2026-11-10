@@ -185,9 +185,10 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		// gather) is used ONLY to derive per-box R/C annotations.
 		annotGrid := tb.GroupCells(cells)
 		if len(annotGrid) > 0 {
-			// Derive R/C/H/SP with Python's _table_transformer_job semantics
-			// (whole-row/whole-column line matching), in crop space.
-			tbl.AnnotateBoxesWithGrid(boxInCrop, annotGrid)
+			// Derive R/C/H/SP in crop space. R uses the raw TSR row bands,
+			// not the span-extended grid rows, so a rowspan header does not
+			// pull the next physical row into its origin row.
+			tbl.AnnotateBoxesWithGridAndRows(boxInCrop, annotGrid, tbl.AnnotationRowBands(cells))
 			boxInCrop = dedupSameCellOCRBoxes(boxInCrop)
 			// Rebuild the grid from the derived per-char R/C, exactly like
 			// Python's construct_table groups boxes by their R/C labels —
@@ -200,6 +201,10 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 			}
 		}
 	}
+	// Let the active builder finalize the grid (e.g. fold in a deferred OCR
+	// overlay). The DeepDoc builder is the identity function, so OSS keeps its
+	// current behavior unchanged.
+	grid = tb.FinalizeGrid(grid, boxInCrop)
 	item := pdf.TableItem{
 		Cells: cells, Grid: grid, Positions: positions,
 		Scale: scale, CropOffX: cropOffX, CropOffY: cropOffY,
@@ -208,6 +213,10 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 		Page: pageNum,
 	}
 	tbl.WriteTableAnnotations(boxes, tm.BoxIdx, cells, scale, cropOffX, cropOffY, tb)
+	// Let the active builder attach builder-specific span geometry onto the
+	// assembled item. The DeepDoc builder is a no-op, so OSS keeps its current
+	// behavior unchanged.
+	tb.AttachSpanInfo(&item)
 	return item
 }
 

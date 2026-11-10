@@ -165,7 +165,7 @@ Le déploiement local prend en charge Docker et le lancement depuis les sources.
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc3
+   git checkout v1.0.0
    docker compose -f docker-compose.yml up -d
    ```
 

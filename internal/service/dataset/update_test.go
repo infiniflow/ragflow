@@ -1356,8 +1356,7 @@ func TestUpdateDatasetUsesTenantModelIDForExtractorDefault(t *testing.T) {
 func extractorNodeMetadataInTest(t *testing.T, cfg map[string]interface{}) map[string]interface{} {
 	t.Helper()
 	for cpnID, raw := range cfg {
-		lower := strings.ToLower(cpnID)
-		if !strings.HasPrefix(lower, "extractor:") && !strings.HasPrefix(lower, "extractor_") {
+		if !common.IsExtractorComponentID(cpnID) {
 			continue
 		}
 		params, ok := raw.(map[string]interface{})

@@ -2,6 +2,7 @@ package file
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"ragflow/internal/entity"
@@ -162,6 +163,30 @@ func TestCreateCommitAcceptsFilesInsideFolderTree(t *testing.T) {
 		if row.Location == nil || *row.Location == "" {
 			t.Fatalf("file %s location was not updated", id)
 		}
+	}
+}
+
+func TestCreateCommitRejectsInvalidRenameTarget(t *testing.T) {
+	f := newCommitAuthFixture(t)
+	svc := NewFileCommitService()
+
+	for _, name := range []string{"", "   ", strings.Repeat("a", 256)} {
+		t.Run(name, func(t *testing.T) {
+			_, err := svc.CreateCommit(context.Background(), "folder-a", "user-a", "rename", []entity.FileChange{
+				{FileID: "file-a", Operation: "rename", OldName: "a.txt", NewName: name},
+			})
+			if err == nil {
+				t.Fatal("expected CreateCommit to reject an invalid rename target")
+			}
+		})
+	}
+
+	var row entity.File
+	if err := f.db.Where("id = ?", "file-a").First(&row).Error; err != nil {
+		t.Fatalf("reload file-a: %v", err)
+	}
+	if row.Name != "a.txt" {
+		t.Fatalf("file-a name = %q, want a.txt", row.Name)
 	}
 }
 

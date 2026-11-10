@@ -196,6 +196,20 @@ func TestExtractAllComponentParams_MissingComponents(t *testing.T) {
 	}
 }
 
+func TestExtractAllComponentParams_RejectsUnscopedComponentIDs(t *testing.T) {
+	for _, id := range []string{"Extractor", "extractor_0", "parser_0"} {
+		dslJSON := []byte(`{"components":{"` + id + `":{"obj":{"component_name":"Extractor","params":{}}}}}`)
+		if _, err := ExtractAllComponentParams(dslJSON); err == nil {
+			t.Errorf("ExtractAllComponentParams(%q) expected error for unscoped component ID", id)
+		}
+	}
+	// File is the one bare component ID used by built-in ingestion templates.
+	dslJSON := []byte(`{"components":{"File":{"obj":{"component_name":"File","params":{}}}}}`)
+	if _, err := ExtractAllComponentParams(dslJSON); err != nil {
+		t.Fatalf("ExtractAllComponentParams(File): %v", err)
+	}
+}
+
 func componentIDs(schemas []ComponentParamsSchema) []string {
 	ids := make([]string, len(schemas))
 	for i, s := range schemas {

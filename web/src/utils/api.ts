@@ -347,6 +347,7 @@ const apiEndpoints = {
   // flow
   listAgentTemplate: `${restAPIv1}/agents/templates`,
   listAgents: `${restAPIv1}/agents`,
+  listAgentVersions: `${restAPIv1}/agents/versions`,
   listAgentTags: `${restAPIv1}/agents/tags`,
   updateAgentTags: (agentId: string) => `${restAPIv1}/agents/${agentId}/tags`,
   createAgent: `${restAPIv1}/agents`,

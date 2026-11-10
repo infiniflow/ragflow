@@ -257,7 +257,7 @@ func formatWikiChunkBatch(docID string, batch []common.Chunk) (string, []string)
 			id = fmt.Sprintf("chunk-%d", i+1)
 		}
 		ids = append(ids, id)
-		text := firstNonEmpty(c.Text, c.Content)
+		text := common.FirstNonEmpty(c.Text, c.Content)
 		if strings.TrimSpace(text) == "" {
 			continue
 		}

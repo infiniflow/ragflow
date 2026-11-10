@@ -747,6 +747,7 @@ func buildQueritTool(params map[string]any) (einotool.BaseTool, error) {
 	return newQueritTool(nil, nil, defaults, nil), nil
 }
 
+// buildQueritContentsTool constructs the Querit Contents tool from canvas params.
 func buildQueritContentsTool(params map[string]any) (einotool.BaseTool, error) {
 	defaults := queritContentsParams{}
 	if value, exists := params["api_key"]; exists {
@@ -767,11 +768,15 @@ func buildQueritContentsTool(params map[string]any) (einotool.BaseTool, error) {
 		defaults.Format = format
 	}
 	if value, exists := params["crawl_timeout"]; exists {
-		crawlTimeout, valid := strictInt(value)
-		if !valid || crawlTimeout < 1 || crawlTimeout > 60 {
-			return nil, fmt.Errorf("agent tool: tool %q requires integer node-level param crawl_timeout within [1, 60]", queritContentsToolName)
+		// A cleared numeric form field may be stored as an empty string. Treat it
+		// as omitted so the tool constructor applies the documented default.
+		if empty, ok := value.(string); !ok || strings.TrimSpace(empty) != "" {
+			crawlTimeout, valid := strictInt(value)
+			if !valid || crawlTimeout < 1 || crawlTimeout > 60 {
+				return nil, fmt.Errorf("agent tool: tool %q requires integer node-level param crawl_timeout within [1, 60]", queritContentsToolName)
+			}
+			defaults.CrawlTimeout = crawlTimeout
 		}
-		defaults.CrawlTimeout = crawlTimeout
 	}
 	if value, exists := params["extras_meta"]; exists {
 		extrasMeta, valid := value.(bool)

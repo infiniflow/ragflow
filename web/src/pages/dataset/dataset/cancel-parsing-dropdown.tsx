@@ -7,7 +7,6 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { RAGFlowTooltip } from '@/components/ui/tooltip';
 import { IngestionTaskStatus } from '@/constants/knowledge';
 import {
   useGetDocumentFilter,
@@ -124,16 +123,12 @@ export function CancelParsingDropdown() {
   return (
     <>
       <DropdownMenu>
-        <RAGFlowTooltip
-          asChild
-          tooltip={t('knowledgeDetails.cancelParsingTasks')}
-        >
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="icon">
-              <Pause />
-            </Button>
-          </DropdownMenuTrigger>
-        </RAGFlowTooltip>
+        <DropdownMenuTrigger asChild>
+          <Button variant="outline">
+            <Pause />
+            {t('knowledgeDetails.cancelParsingTasks')}
+          </Button>
+        </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-auto min-w-56">
           <CancelScopeItem
             scope={CancelScope.Parsing}

@@ -68,16 +68,15 @@ func chatStreamWithContext(ctx context.Context, chatModel *modelModule.ChatModel
 // TenantStreamAdapter adapts a factory-created chat model to AskService's
 // channel-based streaming interface.
 type TenantStreamAdapter struct {
-	Factory  *ModelFactory
-	Identity Identity
-	ModelID  string
+	Factory *ModelFactory
+	ModelID string
 }
 
 func (a *TenantStreamAdapter) ChatStream(ctx context.Context, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, <-chan error, error) {
 	if a.Factory == nil {
 		return nil, nil, fmt.Errorf("model factory not configured")
 	}
-	chatModel, err := a.Factory.NewChatModel(ctx, a.Identity, a.ModelID)
+	chatModel, err := a.Factory.NewChatModel(ctx, a.ModelID)
 	if err != nil {
 		return nil, nil, err
 	}

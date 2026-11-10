@@ -4,6 +4,8 @@ import (
 	"html"
 	"sort"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
@@ -47,8 +49,81 @@ func captionSep(text string) string {
 	return ""
 }
 
+// captionContinuationGap is the maximum vertical gap (PDF points) between a
+// caption line and its predecessor for the line to count as the same caption
+// block. Real continuation lines sit within a point or two; 4 tolerates
+// box-boundary jitter without bridging a paragraph break.
+const captionContinuationGap = 4.0
+
+// labelOnlyCaption reports whether a caption kind came only from the layout
+// label: the text carries no caption marker of its own.
+func labelOnlyCaption(s pdf.Section) bool {
+	return strings.Contains(s.LayoutType, "caption") &&
+		!captionMarkerPrefix(strings.TrimSpace(s.Text))
+}
+
+// startsLowerLetter reports whether text starts with a lowercase letter — the
+// shape of a sentence that continues the previous line or column.
+func startsLowerLetter(text string) bool {
+	r, _ := utf8.DecodeRuneInString(strings.TrimSpace(text))
+	return unicode.IsLower(r)
+}
+
+// continuesCaption reports whether s follows a caption MergeCaptions already
+// accepted, on the same page and vertically contiguous. Real multi-line
+// captions continue with lowercase lines ("ering, lateral gathering, ..."), so
+// a lowercase start alone does not make a labeled caption prose.
+func continuesCaption(sections []pdf.Section, accepted []bool, i int) bool {
+	if i == 0 || !accepted[i-1] {
+		return false
+	}
+	prev, cur := sections[i-1], sections[i]
+	if len(prev.Positions) == 0 || len(cur.Positions) == 0 {
+		return false
+	}
+	cp := cur.Positions[0]
+	shared, constrained := sharedPageNumbers(cp, prev.Positions)
+	if constrained && len(shared) == 0 {
+		return false
+	}
+	pp := prev.Positions[0]
+	return cp.Top <= pp.Bottom+captionContinuationGap
+}
+
+// unfinishedTextBefore reports whether the section immediately before i is body
+// text whose sentence is still open. A lowercase caption candidate at the top
+// of a column is a paragraph tail when the preceding column ends mid-sentence.
+// Requiring a text section (or an unannotated box, which defaults to text) also
+// keeps the check away from tables, figures and equations, whose serialized
+// text never ends in sentence punctuation.
+func unfinishedTextBefore(sections []pdf.Section, i int) bool {
+	if i == 0 {
+		return false
+	}
+	prev := sections[i-1]
+	if prev.LayoutType != pdf.LayoutTypeText && prev.LayoutType != "" {
+		return false
+	}
+	text := strings.TrimSpace(prev.Text)
+	if text == "" {
+		return false
+	}
+	last, _ := utf8.DecodeLastRuneInString(text)
+	return !strings.ContainsRune(".!?。！？:：;；", last)
+}
+
+// MergeCaptions folds caption sections into their nearest table or figure.
+// Table captions are injected as one <caption> element and move their boxes
+// into the target's Positions; figure captions keep the historical raw-text
+// append. Target sections are mutated in place. Sections must be in reading
+// order: the prose guard compares each candidate with the section immediately
+// before it.
 func MergeCaptions(sections []pdf.Section) []pdf.Section {
 	captions := make([]int, 0, 4)
+	// accepted marks the sections already classified as captions, so a
+	// lowercase continuation can tell a caption's next line from a paragraph
+	// tail that the layout detector mislabelled as a caption.
+	accepted := make([]bool, len(sections))
 	// Group caption texts by the target section index they attach to, so
 	// multiple caption boxes for the SAME table/figure collapse into a single
 	// <caption> element. HTML allows only one <caption> per <table>; injecting
@@ -73,6 +148,28 @@ func MergeCaptions(sections []pdf.Section) []pdf.Section {
 		if captionType == "" {
 			continue
 		}
+		// A DLA table-caption label over a lowercase line that continues an
+		// unfinished body sentence is a paragraph tail, not a caption (#21884).
+		// The detector labels body text directly above a table as "table
+		// caption" (the reported 27-page RAG paper, Table 1), while real
+		// multi-line captions also continue with lowercase lines ("ering,
+		// lateral gathering, ..."), so the label alone cannot decide. Keep the
+		// prose as body text: merging it would move the sentence into the
+		// table's <caption> and extend the table's highlight over an unrelated
+		// region.
+		//
+		// Uppercase-starting prose (a new sentence mislabeled the same way) is
+		// still merged: without part-of-speech information it is
+		// indistinguishable from a title-case caption.
+		if captionType == pdf.LayoutTypeTable &&
+			labelOnlyCaption(s) &&
+			startsLowerLetter(s.Text) &&
+			unfinishedTextBefore(sections, i) &&
+			!continuesCaption(sections, accepted, i) {
+			sections[i].LayoutType = pdf.LayoutTypeText
+			continue
+		}
+		accepted[i] = true
 		target := findNearestParent(s, sections, captionType)
 		if target >= 0 {
 			// Emit the caption inside the target table's HTML as a <caption>

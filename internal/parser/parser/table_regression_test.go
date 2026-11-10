@@ -26,9 +26,9 @@ func TestTableRegressionMarkdownMixedBackticksKeepTrailingCells(t *testing.T) {
 }
 
 func TestTableRegressionDOCXCaptionAfterNestedTable(t *testing.T) {
-	ir := `{"sections":[{"elements":[{"type":"text_box","content":[{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"Nested"}]}]}]}]}]},{"type":"paragraph","content":[{"type":"text","text":"Outer Caption"}]},{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"Outer"}]}]}]}]}]}]}`
+	ir := `{"sections":[{"elements":[{"type":"text_box","content":[{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"Nested"}]}]}]}]}]},{"type":"paragraph","style":"Caption","content":[{"type":"text","text":"Outer Caption"}]},{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"Outer"}]}]}]}]}]}]}`
 
-	after := buildDOCXJSONSectionsWithCaptions(ir, nil, []string{"Outer Caption"})
+	after := buildDOCXJSONSections(ir, nil)
 	if len(after) != 2 {
 		t.Fatalf("expected two tables without duplicate caption text: %#v", after)
 	}
@@ -37,7 +37,7 @@ func TestTableRegressionDOCXCaptionAfterNestedTable(t *testing.T) {
 			if tableRowsContain(td, "Nested") && td.Caption != "" {
 				t.Error("nested table stole the outer caption")
 			}
-			if tableRowsContain(td, "Outer") && td.Caption != "Outer Caption" {
+			if tableRowsContain(td, "Outer") && td.Caption != "Outer Caption" { // caption from preceding Caption-styled paragraph
 				t.Error("outer table lost its caption")
 			}
 		}

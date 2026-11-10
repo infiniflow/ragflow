@@ -86,16 +86,18 @@ func claimTime(doc *entity.Document, run *entity.PipelineOperationLog) *time.Tim
 // BuildIngestLog assembles a common.IngestionLog from the task, its document, and
 // the bound pipeline run. eventType is one of
 // created|scheduled|running|completed|failed|stopped.
-func BuildIngestLog(task *entity.IngestionTask, doc *entity.Document, run *entity.PipelineOperationLog, eventType, status, errorInfo string) common.IngestionLog {
+func BuildIngestLog(task *entity.IngestionTask, doc *entity.Document, run *entity.PipelineOperationLog, eventType, status, errorInfo, userName, tenantName string) common.IngestionLog {
 	ev := common.IngestionLog{
-		EventTime: time.Now().UTC(),
-		TaskID:    task.ID,
-		DocID:     task.DocumentID,
-		DatasetID: task.DatasetID,
-		UserID:    task.UserID,
-		EventType: eventType,
-		Status:    status,
-		ErrorInfo: errorInfo,
+		EventTime:  time.Now().UTC(),
+		TaskID:     task.ID,
+		DocID:      task.DocumentID,
+		DatasetID:  task.DatasetID,
+		UserID:     task.UserID,
+		UserName:   userName,
+		TenantName: tenantName,
+		EventType:  eventType,
+		Status:     status,
+		ErrorInfo:  errorInfo,
 	}
 	if doc != nil {
 		name := ""

@@ -41,6 +41,15 @@ func WithIdentity(ctx context.Context, userID, tenantID string) context.Context 
 	return context.WithValue(ctx, tenantIDContextKey{}, tenantID)
 }
 
+// WithTenantID sets the operation Tenant when ctx has no active Tenant. It
+// preserves an authenticated Tenant so resource scope cannot switch tenants.
+func WithTenantID(ctx context.Context, tenantID string) context.Context {
+	if TenantIDFromContext(ctx) != "" {
+		return ctx
+	}
+	return context.WithValue(ctx, tenantIDContextKey{}, tenantID)
+}
+
 // UserIDFromContext returns the authenticated user ID attached to ctx.
 func UserIDFromContext(ctx context.Context) string {
 	if ctx == nil {
@@ -50,7 +59,7 @@ func UserIDFromContext(ctx context.Context) string {
 	return userID
 }
 
-// TenantIDFromContext returns the active Tenant ID attached to ctx.
+// TenantIDFromContext returns the active Tenant or operation scope attached to ctx.
 func TenantIDFromContext(ctx context.Context) string {
 	if ctx == nil {
 		return ""

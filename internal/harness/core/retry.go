@@ -180,7 +180,7 @@ func (r *typedRetryModelWrapper[M]) generateWithShouldRetry(ctx context.Context,
 			if err != nil {
 				return zero, err
 			}
-			if execCtx != nil && execCtx.generator != nil && !isNilMessage(out) {
+			if execCtx != nil && execCtx.canSend() && !isNilMessage(out) {
 				execCtx.send(typedModelOutputEvent(out, nil))
 			}
 			return out, nil
@@ -195,7 +195,7 @@ func (r *typedRetryModelWrapper[M]) generateWithShouldRetry(ctx context.Context,
 		}
 
 		// Emit WillRetryError event before sleeping
-		if execCtx != nil && execCtx.generator != nil {
+		if execCtx != nil && execCtx.canSend() {
 			willRetry := &WillRetryError{ErrStr: lastErr.Error(), RetryAttempt: attempt + 1, rejectReason: decision.RejectReason, err: lastErr}
 			execCtx.send(&TypedAgentEvent[M]{Err: any(willRetry).(error)})
 		}
@@ -326,7 +326,7 @@ func (r *typedRetryModelWrapper[M]) streamWithShouldRetry(ctx context.Context, i
 			}
 			lastErr = err
 			if attempt < r.config.MaxRetries {
-				if execCtx != nil && execCtx.generator != nil {
+				if execCtx != nil && execCtx.canSend() {
 					execCtx.send(&TypedAgentEvent[M]{Err: &WillRetryError{ErrStr: lastErr.Error(), RetryAttempt: attempt + 1, rejectReason: decision.RejectReason, err: lastErr}})
 				}
 				applyRetryDecision(&currentInput, &currentOpts, decision)
@@ -364,7 +364,7 @@ func (r *typedRetryModelWrapper[M]) streamWithShouldRetry(ctx context.Context, i
 			default:
 			}
 			if attempt < r.config.MaxRetries {
-				if execCtx != nil && execCtx.generator != nil {
+				if execCtx != nil && execCtx.canSend() {
 					execCtx.send(&TypedAgentEvent[M]{Err: &WillRetryError{ErrStr: lastErr.Error(), RetryAttempt: attempt + 1, rejectReason: decision.RejectReason, err: lastErr}})
 				}
 				applyRetryDecision(&currentInput, &currentOpts, decision)
@@ -402,7 +402,7 @@ func (r *typedRetryModelWrapper[M]) streamWithShouldRetry(ctx context.Context, i
 				callerCh.Send(c, nil)
 			}
 			// Send output event with merged message
-			if execCtx != nil && execCtx.generator != nil && len(allChunks) > 0 {
+			if execCtx != nil && execCtx.canSend() && len(allChunks) > 0 {
 				if merged, err := mergeChunks(allChunks); err == nil {
 					execCtx.send(typedModelOutputEvent(merged, nil))
 				}

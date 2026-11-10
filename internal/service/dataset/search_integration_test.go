@@ -201,7 +201,7 @@ func newSearchIntegrationFixture(t *testing.T) *searchIntegrationFixture {
 		}
 		grantDatasetTestResource(t, owner, "kb", kb, owner, "owner")
 	}
-	model, err := service.NewModelFactory().NewEmbeddingModel(ctx, service.Identity{TenantID: owner}, info.ModelID+"@Builtin")
+	model, err := service.NewModelFactory().NewEmbeddingModel(permission.WithTenantID(ctx, owner), info.ModelID+"@Builtin")
 	if err != nil {
 		t.Fatal(err)
 	}

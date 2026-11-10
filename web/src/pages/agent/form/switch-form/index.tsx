@@ -112,7 +112,7 @@ function VariableWithPath({ name }: VariableWithPathProps) {
       <Input
         className="flex-[2] min-w-0 bg-transparent"
         placeholder={translate('flow.fieldPathPlaceholder', {
-          defaultValue: '.field.subfield (optional)',
+          defaultValue: '.field.subfield',
         })}
         value={suffix}
         disabled={!isDrillable}

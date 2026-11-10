@@ -83,14 +83,14 @@ var titleFamilyParamKeys = unionParamKeys(
 )
 
 var componentParamSchemaKeys = map[string]map[string]struct{}{
-	"titlechunker": titleFamilyParamKeys,
+	strings.ToLower(schema.ComponentNameTitleChunker): titleFamilyParamKeys,
 	// ManualChunker reuses TitleChunkerParam. It pins method=group and is exempt
 	// from the token cap, so method, chunk_token_cap and include_heading_content
 	// (hierarchy-only) are accepted here but ignored by the component — the
 	// operator form omits them for the same reason.
-	"manualchunker": titleFamilyParamKeys,
-	"tokenchunker":  extractJSONTags(schema.TokenChunkerParam{}),
-	"tokenizer":     extractJSONTags(schema.TokenizerParam{}),
+	strings.ToLower(schema.ComponentNameManualChunker): titleFamilyParamKeys,
+	strings.ToLower(schema.ComponentNameTokenChunker):  extractJSONTags(schema.TokenChunkerParam{}),
+	strings.ToLower(schema.ComponentNameTokenizer):     extractJSONTags(schema.TokenizerParam{}),
 }
 
 // extractJSONTags returns all top-level json tag names from a struct.
@@ -119,38 +119,6 @@ func extractJSONTags(v any) map[string]struct{} {
 	return tags
 }
 
-// isExtractorComponent returns true if the component name or component ID
-// indicates an Extractor component.
-func isExtractorComponent(cpnID, componentName string) bool {
-	lowerName := strings.ToLower(componentName)
-	lowerID := strings.ToLower(cpnID)
-	return lowerName == strings.ToLower(schema.ComponentNameExtractor) ||
-		strings.HasPrefix(lowerID, "extractor:") ||
-		strings.HasPrefix(lowerID, "extractor_")
-}
-
-// isCompilerComponent returns true if the component ID indicates a Compiler
-// component, whose LLM-backed runtime parameters follow the same surface as
-// the Extractor's.
-func isCompilerComponent(cpnID string) bool {
-	lowerID := strings.ToLower(cpnID)
-	return strings.HasPrefix(lowerID, "compiler:") ||
-		strings.HasPrefix(lowerID, "compiler_")
-}
-
-// IsParserComponentID reports whether a component ID names a Parser component.
-// A parser_config map is keyed by component ID, where the component name is not
-// available, so this is the config-side half of isParserComponent.
-func IsParserComponentID(cpnID string) bool {
-	return strings.HasPrefix(strings.ToLower(cpnID), "parser:")
-}
-
-// isParserComponent returns true if the component name or component ID
-// indicates a Parser component.
-func isParserComponent(cpnID, componentName string) bool {
-	return strings.EqualFold(componentName, schema.ComponentNameParser) || IsParserComponentID(cpnID)
-}
-
 // NormalizeParserConfigSetups lifts legacy nested Parser "setups" entries in
 // a parser_config-shaped map ({cpnID: params}) into the flat per-family
 // shape. The runtime merges such a map over the DSL-baked component params
@@ -163,7 +131,7 @@ func NormalizeParserConfigSetups(parserConfig map[string]any) map[string]any {
 		return nil
 	}
 	for cpnID, raw := range parserConfig {
-		if !isParserComponent(cpnID, "") {
+		if !common.IsParserComponentID(cpnID) {
 			continue
 		}
 		params, ok := raw.(map[string]any)
@@ -177,22 +145,19 @@ func NormalizeParserConfigSetups(parserConfig map[string]any) map[string]any {
 
 // getComponentParamWhitelist returns the dynamic parameter whitelist for a component type.
 func getComponentParamWhitelist(cpnID string) (map[string]struct{}, bool) {
-	if isExtractorComponent(cpnID, "") {
+	if common.IsExtractorComponentID(cpnID) {
 		return extractorValidParamKeys, true
 	}
-	if isCompilerComponent(cpnID) {
+	if common.IsCompilerComponentID(cpnID) {
 		return llmRuntimeParamKeys, true
 	}
 	return nil, false
 }
 
-// cleanComponentParams filters rawConfig against the extracted DSL schemas.
-// Keys containing ':' are treated as component IDs; they are kept only when both
-// the cpnID AND the param name exist in one of the accepted-key sources: the DSL
-// schema (the params the template bakes), the schema-derived per-component table
-// (componentParamSchemaKeys), or the component's dynamic parameter schema (e.g.
-// Extractor modular features). Keys without ':' (legacy flat fields) are dropped
-// with a warning.
+// cleanComponentParams keeps only component-scoped keys recognized by
+// common.IsComponentKey, and only params accepted by the DSL schema, the
+// per-component table, or the component's dynamic schema. Flat fields are
+// dropped with a warning.
 func cleanComponentParams(schemas []ComponentParamsSchema, rawConfig map[string]interface{}) map[string]interface{} {
 	validCPNs := make(map[string]map[string]struct{}, len(schemas))
 	componentNames := make(map[string]string, len(schemas))
@@ -201,10 +166,10 @@ func cleanComponentParams(schemas []ComponentParamsSchema, rawConfig map[string]
 		for k := range s.ParamsDefaults {
 			keys[k] = struct{}{}
 		}
-		if s.ComponentName == "GeneralChunker" {
+		if s.ComponentName == schema.ComponentNameGeneralChunker {
 			keys["delimiters"] = struct{}{}
 		}
-		if isParserComponent(s.CpnID, s.ComponentName) {
+		if common.IsParserComponent(s.CpnID, s.ComponentName) {
 			keys["enable_vision_enhancement"] = struct{}{}
 			keys["vlm"] = struct{}{}
 		}
@@ -225,7 +190,7 @@ func cleanComponentParams(schemas []ComponentParamsSchema, rawConfig map[string]
 
 	result := make(map[string]interface{}, len(rawConfig))
 	for key, val := range rawConfig {
-		if !strings.Contains(key, ":") {
+		if !common.IsComponentKey(key) {
 			common.Warn("cleanComponentParams: dropping legacy flat field",
 				zap.String("key", key))
 			continue
@@ -240,18 +205,18 @@ func cleanComponentParams(schemas []ComponentParamsSchema, rawConfig map[string]
 		if !ok {
 			continue
 		}
-		if componentNames[key] == "GeneralChunker" {
+		if componentNames[key] == schema.ComponentNameGeneralChunker {
 			params = normalizeGeneralComponentParams(params)
 		}
 		// Legacy parser_config rows (or canvases) saved by the Python-era
 		// frontend nest the Parser's setups under a "setups" key; lift them
 		// before filtering, otherwise the families are dropped as unknown
 		// params against the flat DSL schema keys.
-		if isParserComponent(key, componentNames[key]) {
+		if common.IsParserComponent(key, componentNames[key]) {
 			params = schema.FlattenLegacyParserSetups(params)
 		}
 		dynamicWhitelist, hasDynamic := getComponentParamWhitelist(key)
-		if isExtractorComponent(key, "") {
+		if common.IsExtractorComponentID(key) {
 			params = NormalizeExtractorParams(params)
 		}
 		cleaned := make(map[string]any, len(params))
@@ -430,5 +395,6 @@ func ApplyParentChildChunkerConfig(componentConfig entity.JSONMap, rawConfig map
 // chunks into children.
 func IsChunkerComponent(componentID string) bool {
 	lowerID := strings.ToLower(componentID)
-	return strings.HasPrefix(lowerID, "generalchunker:") || strings.HasPrefix(lowerID, "tokenchunker:")
+	return strings.HasPrefix(lowerID, strings.ToLower(schema.ComponentNameGeneralChunker)+":") ||
+		strings.HasPrefix(lowerID, strings.ToLower(schema.ComponentNameTokenChunker)+":")
 }

@@ -38,8 +38,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const ComponentNameOneChunker = "OneChunker"
-
 type oneChunkerParam struct{}
 
 func (p *oneChunkerParam) Update(conf map[string]any) {}

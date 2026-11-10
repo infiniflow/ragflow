@@ -88,7 +88,7 @@ func normalizeFilename(filename string) (string, bool) {
 	}
 	base := filepath.Base(filename)
 	base = strings.TrimSpace(base)
-	if base == "" || len(base) > filenameLenLimit {
+	if base == "" || utf8.RuneCountInString(base) > filenameLenLimit {
 		return "", false
 	}
 	return strings.ToLower(base), true
@@ -263,6 +263,44 @@ func TruncateFilename(name string, maxBytes int) string {
 		end--
 	}
 	return name[:end] + ext
+}
+
+// StorageKeyMaxBytes is the maximum size of one object-store path segment.
+// Filesystem-backed backends such as Silo and MinIO store each segment as a
+// file name and reject anything longer.
+const StorageKeyMaxBytes = 255
+
+// StorageObjectName returns a storage key segment for filename that fits
+// within maxBytes. Display names use Unicode code points, but object keys must
+// stay within the byte limit of the storage backend. attempt > 0 adds a
+// collision suffix before the extension without exceeding the budget.
+func StorageObjectName(filename string, attempt, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	suffix := ""
+	if attempt > 0 {
+		suffix = fmt.Sprintf("(%d)", attempt)
+	}
+	if len(suffix) >= maxBytes {
+		return suffix[:maxBytes]
+	}
+	ext := filepath.Ext(filename)
+	if len(ext)+len(suffix) >= maxBytes {
+		ext = ""
+	}
+	budget := maxBytes - len(ext) - len(suffix)
+	base := strings.TrimSuffix(filename, ext)
+	if budget <= 0 {
+		base = ""
+	} else if len(base) > budget {
+		end := budget
+		for end > 0 && !utf8.RuneStart(base[end]) {
+			end--
+		}
+		base = base[:end]
+	}
+	return base + suffix + ext
 }
 
 // CONTENT_TYPE_MAP maps file extensions to MIME content types

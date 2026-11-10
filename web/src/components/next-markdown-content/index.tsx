@@ -81,18 +81,19 @@ const getChunkKey = (match: string) => parseCitationIndex(match);
 const isArtifactUrl = (url?: string) =>
   Boolean(url && url.includes('/api/v1/documents/artifact/'));
 
-const fetchArtifactBlob = async (url: string): Promise<Blob> => {
-  const response = await request(url, {
+const fetchArtifactResponse = (url: string) =>
+  request(url, {
     method: 'GET',
     responseType: 'blob',
   });
 
-  return response.data as Blob;
-};
+const fetchArtifactBlob = async (url: string): Promise<Blob> =>
+  (await fetchArtifactResponse(url)).data as Blob;
 
 const getArtifactName = (url?: string, fallback?: string) =>
   fallback || url?.split('/').pop()?.split('?')[0] || 'artifact';
 
+/** Downloads attachment responses and previews other artifact blobs. */
 function ArtifactLink({
   href,
   className,
@@ -106,7 +107,19 @@ function ArtifactLink({
     async (e: React.MouseEvent<HTMLAnchorElement>) => {
       e.preventDefault();
       try {
-        const blob = await fetchArtifactBlob(href);
+        const response = await fetchArtifactResponse(href);
+        const blob = response.data as Blob;
+        const contentDisposition = response.response.headers.get(
+          'content-disposition',
+        );
+        if (
+          typeof contentDisposition === 'string' &&
+          /^\s*attachment(?:;|$)/i.test(contentDisposition)
+        ) {
+          downloadFileFromBlob(blob, getArtifactName(href));
+          return;
+        }
+
         const objectUrl = URL.createObjectURL(blob);
         window.open(objectUrl, '_blank', 'noopener,noreferrer');
         window.setTimeout(() => URL.revokeObjectURL(objectUrl), 60 * 1000);

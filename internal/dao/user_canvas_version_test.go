@@ -188,3 +188,38 @@ func TestUserCanvasVersionDAO_SaveOrReplaceLatestTxStoresAlias(t *testing.T) {
 }
 
 func ptrStr(v string) *string { return &v }
+
+func TestLoadCanvasVersionDSLReturnsResolvedVersionID(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.UserCanvasVersion{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	rows := []entity.UserCanvasVersion{
+		{
+			ID: "v-old", UserCanvasID: "canvas-1", DSL: entity.JSONMap{"version": "old"},
+			BaseModel: entity.BaseModel{CreateTime: int64Ptr(1000)},
+		},
+		{
+			ID: "v-new", UserCanvasID: "canvas-1", DSL: entity.JSONMap{"version": "new"},
+			BaseModel: entity.BaseModel{CreateTime: int64Ptr(2000)},
+		},
+	}
+	for i := range rows {
+		if err := db.Create(&rows[i]).Error; err != nil {
+			t.Fatalf("seed version %s: %v", rows[i].ID, err)
+		}
+	}
+
+	if _, resolved, err := LoadCanvasVersionDSL(t.Context(), db, "canvas-1", "v-old"); err != nil || resolved != "v-old" {
+		t.Fatalf("explicit pin resolved = %q, err = %v, want v-old", resolved, err)
+	}
+	if _, resolved, err := LoadCanvasVersionDSL(t.Context(), db, "canvas-1", ""); err != nil || resolved != "v-new" {
+		t.Fatalf("latest pin resolved = %q, err = %v, want v-new", resolved, err)
+	}
+	if _, resolved, err := LoadCanvasVersionDSL(t.Context(), db, "canvas-1", "missing"); err == nil || resolved != "" {
+		t.Fatalf("missing pin resolved = %q, err = %v, want empty + error", resolved, err)
+	}
+}

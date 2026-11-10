@@ -97,7 +97,7 @@ func Preprocess(sql string) string {
 // JDBC format (`schema`/`datarows`) and only paginates cursors in that format,
 // while the shared caller passes ES's "json". Sending it through would make
 // the plugin reject the request with "unknown response format: json".
-func (e *Engine) RunSQL(ctx context.Context, tableName string, sqlText string, kbIDs []string, _ string) ([]map[string]interface{}, error) {
+func (e *Engine) RunSQL(ctx context.Context, sqlText string, _ string) ([]map[string]interface{}, error) {
 	if e == nil || e.client == nil {
 		return nil, fmt.Errorf("OpenSearch RunSQL: client not initialized")
 	}

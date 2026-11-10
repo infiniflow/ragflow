@@ -32,37 +32,36 @@ import (
 )
 
 type fakeLangfuseService struct {
-	setFn    func(ctx context.Context, tenantID, secretKey, publicKey, host string) (*entity.TenantLangfuse, common.ErrorCode, error)
-	getFn    func(ctx context.Context, tenantID string) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error)
-	deleteFn func(ctx context.Context, tenantID string) (bool, common.ErrorCode, string, error)
+	setFn    func(ctx context.Context, secretKey, publicKey, host string) (*entity.TenantLangfuse, common.ErrorCode, error)
+	getFn    func(ctx context.Context) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error)
+	deleteFn func(ctx context.Context) (bool, common.ErrorCode, string, error)
 }
 
-func (f fakeLangfuseService) SetAPIKey(ctx context.Context, tenantID, secretKey, publicKey, host string) (*entity.TenantLangfuse, common.ErrorCode, error) {
+func (f fakeLangfuseService) SetAPIKey(ctx context.Context, secretKey, publicKey, host string) (*entity.TenantLangfuse, common.ErrorCode, error) {
 	if f.setFn == nil {
 		return nil, common.CodeServerError, errors.New("unexpected SetAPIKey call")
 	}
-	return f.setFn(ctx, tenantID, secretKey, publicKey, host)
+	return f.setFn(ctx, secretKey, publicKey, host)
 }
 
-func (f fakeLangfuseService) GetAPIKey(ctx context.Context, tenantID string) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error) {
+func (f fakeLangfuseService) GetAPIKey(ctx context.Context) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error) {
 	if f.getFn == nil {
 		return nil, common.CodeServerError, "", errors.New("unexpected GetAPIKey call")
 	}
-	return f.getFn(ctx, tenantID)
+	return f.getFn(ctx)
 }
 
-func (f fakeLangfuseService) DeleteAPIKey(ctx context.Context, tenantID string) (bool, common.ErrorCode, string, error) {
+func (f fakeLangfuseService) DeleteAPIKey(ctx context.Context) (bool, common.ErrorCode, string, error) {
 	if f.deleteFn == nil {
 		return false, common.CodeServerError, "", errors.New("unexpected DeleteAPIKey call")
 	}
-	return f.deleteFn(ctx, tenantID)
+	return f.deleteFn(ctx)
 }
 
 func serveLangfuse(method, target, body string, h func(c *gin.Context)) *httptest.ResponseRecorder {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.Handle(method, target, func(c *gin.Context) {
-		c.Set("user", &entity.User{ID: "tenant-1"})
 		h(c)
 	})
 
@@ -88,19 +87,19 @@ func decode(t *testing.T, resp *httptest.ResponseRecorder) map[string]interface{
 }
 
 func TestLangfuseHandler_SetAPIKey_Success(t *testing.T) {
-	var gotTenant, gotSecret, gotPublic, gotHost string
+	var gotSecret, gotPublic, gotHost string
 	h := &LangfuseHandler{langfuseService: fakeLangfuseService{
-		setFn: func(ctx context.Context, tenantID, secretKey, publicKey, host string) (*entity.TenantLangfuse, common.ErrorCode, error) {
-			gotTenant, gotSecret, gotPublic, gotHost = tenantID, secretKey, publicKey, host
-			return &entity.TenantLangfuse{TenantID: tenantID, SecretKey: secretKey, PublicKey: publicKey, Host: host}, common.CodeSuccess, nil
+		setFn: func(ctx context.Context, secretKey, publicKey, host string) (*entity.TenantLangfuse, common.ErrorCode, error) {
+			gotSecret, gotPublic, gotHost = secretKey, publicKey, host
+			return &entity.TenantLangfuse{TenantID: "tenant-1", SecretKey: secretKey, PublicKey: publicKey, Host: host}, common.CodeSuccess, nil
 		},
 	}}
 
 	body := `{"secret_key":"sk","public_key":"pk","host":"https://a.langfuse.com"}`
 	resp := serveLangfuse(http.MethodPost, "/api/v1/langfuse/api-key", body, h.SetAPIKey)
 
-	if gotTenant != "tenant-1" || gotSecret != "sk" || gotPublic != "pk" || gotHost != "https://a.langfuse.com" {
-		t.Fatalf("service args: tenant=%q secret=%q public=%q host=%q", gotTenant, gotSecret, gotPublic, gotHost)
+	if gotSecret != "sk" || gotPublic != "pk" || gotHost != "https://a.langfuse.com" {
+		t.Fatalf("service args: secret=%q public=%q host=%q", gotSecret, gotPublic, gotHost)
 	}
 	payload := decode(t, resp)
 	if payload["code"] != float64(common.CodeSuccess) {
@@ -117,7 +116,7 @@ func TestLangfuseHandler_SetAPIKey_Success(t *testing.T) {
 
 func TestLangfuseHandler_SetAPIKey_ServiceError(t *testing.T) {
 	h := &LangfuseHandler{langfuseService: fakeLangfuseService{
-		setFn: func(ctx context.Context, tenantID, secretKey, publicKey, host string) (*entity.TenantLangfuse, common.ErrorCode, error) {
+		setFn: func(ctx context.Context, secretKey, publicKey, host string) (*entity.TenantLangfuse, common.ErrorCode, error) {
 			return nil, common.CodeDataError, errors.New("Invalid Langfuse keys")
 		},
 	}}
@@ -137,7 +136,7 @@ func TestLangfuseHandler_SetAPIKey_ServiceError(t *testing.T) {
 func TestLangfuseHandler_SetAPIKey_BindFailureStopsEarly(t *testing.T) {
 	called := false
 	h := &LangfuseHandler{langfuseService: fakeLangfuseService{
-		setFn: func(ctx context.Context, tenantID, secretKey, publicKey, host string) (*entity.TenantLangfuse, common.ErrorCode, error) {
+		setFn: func(ctx context.Context, secretKey, publicKey, host string) (*entity.TenantLangfuse, common.ErrorCode, error) {
 			called = true
 			return nil, common.CodeSuccess, nil
 		},
@@ -156,9 +155,9 @@ func TestLangfuseHandler_SetAPIKey_BindFailureStopsEarly(t *testing.T) {
 
 func TestLangfuseHandler_GetAPIKey_Success(t *testing.T) {
 	h := &LangfuseHandler{langfuseService: fakeLangfuseService{
-		getFn: func(ctx context.Context, tenantID string) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error) {
+		getFn: func(ctx context.Context) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error) {
 			return &entity.LangfuseInfoResponse{
-				TenantID: tenantID, Host: "host", SecretKey: "sk", PublicKey: "pk",
+				TenantID: "tenant-1", Host: "host", SecretKey: "sk", PublicKey: "pk",
 				ProjectID: "proj-1", ProjectName: "My Project",
 			}, common.CodeSuccess, "success", nil
 		},
@@ -181,7 +180,7 @@ func TestLangfuseHandler_GetAPIKey_Success(t *testing.T) {
 
 func TestLangfuseHandler_GetAPIKey_NoRecord(t *testing.T) {
 	h := &LangfuseHandler{langfuseService: fakeLangfuseService{
-		getFn: func(ctx context.Context, tenantID string) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error) {
+		getFn: func(ctx context.Context) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error) {
 			return nil, common.CodeSuccess, "Have not record any Langfuse keys.", nil
 		},
 	}}
@@ -202,7 +201,7 @@ func TestLangfuseHandler_GetAPIKey_NoRecord(t *testing.T) {
 
 func TestLangfuseHandler_GetAPIKey_Unauthorized(t *testing.T) {
 	h := &LangfuseHandler{langfuseService: fakeLangfuseService{
-		getFn: func(ctx context.Context, tenantID string) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error) {
+		getFn: func(ctx context.Context) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error) {
 			return nil, common.CodeDataError, "Invalid Langfuse keys loaded", errors.New("unauthorized")
 		},
 	}}
@@ -219,19 +218,14 @@ func TestLangfuseHandler_GetAPIKey_Unauthorized(t *testing.T) {
 }
 
 func TestLangfuseHandler_DeleteAPIKey_Success(t *testing.T) {
-	var gotTenant string
 	h := &LangfuseHandler{langfuseService: fakeLangfuseService{
-		deleteFn: func(ctx context.Context, tenantID string) (bool, common.ErrorCode, string, error) {
-			gotTenant = tenantID
+		deleteFn: func(ctx context.Context) (bool, common.ErrorCode, string, error) {
 			return true, common.CodeSuccess, "", nil
 		},
 	}}
 
 	resp := serveLangfuse(http.MethodDelete, "/api/v1/langfuse/api-key", "", h.DeleteAPIKey)
 
-	if gotTenant != "tenant-1" {
-		t.Fatalf("tenant=%q", gotTenant)
-	}
 	payload := decode(t, resp)
 	if payload["code"] != float64(common.CodeSuccess) {
 		t.Fatalf("payload=%v", payload)
@@ -243,7 +237,7 @@ func TestLangfuseHandler_DeleteAPIKey_Success(t *testing.T) {
 
 func TestLangfuseHandler_DeleteAPIKey_NoRecord(t *testing.T) {
 	h := &LangfuseHandler{langfuseService: fakeLangfuseService{
-		deleteFn: func(ctx context.Context, tenantID string) (bool, common.ErrorCode, string, error) {
+		deleteFn: func(ctx context.Context) (bool, common.ErrorCode, string, error) {
 			return false, common.CodeSuccess, "Have not record any Langfuse keys.", nil
 		},
 	}}

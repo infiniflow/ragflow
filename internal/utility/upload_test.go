@@ -129,9 +129,7 @@ func TestFetchRemoteFileSafelyCancelsDNS(t *testing.T) {
 			}}
 			t.Cleanup(func() { net.DefaultResolver = previousResolver })
 			defer close(release)
-			previousAllow := common.AllowAnyHostForTest
-			common.AllowAnyHostForTest = true
-			t.Cleanup(func() { common.AllowAnyHostForTest = previousAllow })
+			t.Setenv(common.EnvAllowAnyHost, "true")
 			target := "http://blocked-dns.invalid/image.png"
 			if redirect {
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

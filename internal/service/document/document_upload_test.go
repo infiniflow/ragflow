@@ -51,14 +51,21 @@ func TestNormalizeWebDocumentName(t *testing.T) {
 		name, filename, ct string
 		blob               []byte
 		want               string
+		wantOK             bool
 	}{
-		{"pdf detected by blob", "report", "application/octet-stream", pdfBlob, "report.pdf"},
-		{"html detected by blob", "page", "application/octet-stream", htmlBlob, "page.html"},
-		{"dot stripped by utility, no type hint", "image.png", "application/octet-stream", []byte("plain"), "imagepng"},
-		{"no hint, no extension", "doc", "application/json", []byte("{}"), "doc"},
+		{"pdf detected by blob", "report", "application/octet-stream", pdfBlob, "report.pdf", true},
+		{"html detected by blob", "page", "application/octet-stream", htmlBlob, "page.html", true},
+		{"dot stripped by utility, no type hint", "image.png", "application/octet-stream", []byte("plain"), "imagepng", true},
+		{"no hint, no extension", "doc", "application/json", []byte("{}"), "doc", true},
+		{"cjk-only name with pdf content", "界界", "application/pdf", pdfBlob, "", false},
+		{"cjk-only name without type hint", "界界", "application/json", []byte("{}"), "", false},
 	}
 	for _, c := range cases {
-		if got := normalizeWebDocumentName(c.filename, c.ct, c.blob); got != c.want {
+		got, ok := normalizeWebDocumentName(c.filename, c.ct, c.blob)
+		if ok != c.wantOK {
+			t.Errorf("%s: normalizeWebDocumentName ok = %v, want %v", c.name, ok, c.wantOK)
+		}
+		if got != c.want {
 			t.Errorf("%s: normalizeWebDocumentName = %q, want %q", c.name, got, c.want)
 		}
 	}

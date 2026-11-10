@@ -199,9 +199,7 @@ func assertConnectorSchemeHTTPS(parsed *url.URL) error {
 // validateConnectorURL is the config-time SSRF check used by connector
 // Validate/New paths.
 func validateConnectorURL(rawURL string) error {
-	// localhost is never a legitimate connector base URL, even under the test
-	// hook (which only relaxes loopback IPs such as httptest's 127.0.0.1).
-	if parsed, err := url.Parse(strings.TrimSpace(rawURL)); err == nil {
+	if parsed, err := url.Parse(strings.TrimSpace(rawURL)); err == nil && !common.AllowConfiguredPrivateHost() {
 		host := strings.ToLower(parsed.Hostname())
 		if host == "localhost" || strings.HasSuffix(host, ".localhost") {
 			return &ConnectorValidationError{Message: fmt.Sprintf("URL hostname %q is not allowed (localhost is blocked).", parsed.Hostname())}

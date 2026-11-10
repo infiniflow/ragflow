@@ -233,7 +233,7 @@ func TestOpenSearchSQL(t *testing.T) {
 
 	// The shared caller always passes ES's "json" format; the engine must
 	// translate it to the JDBC format OpenSearch's SQL plugin decodes.
-	rows, err := eng.RunSQL(t.Context(), osTestIndex, "SELECT id, title_tks FROM "+osTestIndex, []string{osTestKBID}, "json")
+	rows, err := eng.RunSQL(t.Context(), "SELECT id, title_tks FROM "+osTestIndex, "json")
 	if err != nil {
 		t.Fatalf("RunSQL: %v", err)
 	}

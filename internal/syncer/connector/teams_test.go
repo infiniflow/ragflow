@@ -113,9 +113,7 @@ func TestTeamsConnectorValidateQueriesTeams(t *testing.T) {
 }
 
 func TestTeamsGetJSONReadsBodyBeforeCancel(t *testing.T) {
-	previousAllowAnyHost := common.AllowAnyHostForTest
-	common.AllowAnyHostForTest = true
-	t.Cleanup(func() { common.AllowAnyHostForTest = previousAllowAnyHost })
+	t.Setenv(common.EnvAllowAnyHost, "true")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")

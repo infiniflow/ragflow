@@ -650,9 +650,8 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       paddleocrApiUrlPlaceholder:
         'es. https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'Token di accesso AI Studio',
-      paddleocrAccessTokenTip:
-        "Token di accesso per l'API PaddleOCR (opzionale)",
-      paddleocrAccessTokenPlaceholder: 'Il tuo token AI Studio (opzionale)',
+      paddleocrAccessTokenTip: "Token di accesso per l'API PaddleOCR",
+      paddleocrAccessTokenPlaceholder: 'Il tuo token AI Studio',
       paddleocrAlgorithm: 'Algoritmo PaddleOCR',
       paddleocrAlgorithmTip: "Algoritmo da usare per l'analisi PaddleOCR",
       paddleocrSelectAlgorithm: 'Seleziona algoritmo',
@@ -1625,7 +1624,7 @@ Esempio: Virtual Hosted Style`,
         apiUrlPlaceholder:
           'Ad esempio: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Token di accesso AI Studio',
-        accessTokenPlaceholder: 'Il tuo token AI Studio (opzionale)',
+        accessTokenPlaceholder: 'Il tuo token AI Studio',
         algorithm: 'Algoritmo PaddleOCR',
         selectAlgorithm: 'Seleziona algoritmo',
         modelNamePlaceholder: 'Ad esempio: paddleocr-from-env-1',
@@ -2418,9 +2417,9 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       jsonFormatTip:
         'Il componente a monte dovrebbe fornire una stringa JSON nel seguente formato:',
       toEmailTip: 'to_email: Email destinatario (Richiesto)',
-      ccEmailTip: 'cc_email: Email CC (Opzionale)',
-      subjectTip: 'subject: Oggetto email (Opzionale)',
-      contentTip: 'content: Contenuto email (Opzionale)',
+      ccEmailTip: 'cc_email: Email CC',
+      subjectTip: 'subject: Oggetto email',
+      contentTip: 'content: Contenuto email',
       jsonUploadTypeErrorMessage: 'Carica un file json',
       jsonUploadContentErrorMessage: 'errore file json',
       iteration: 'Iterazione',

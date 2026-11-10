@@ -939,7 +939,8 @@ func (s *databaseSource) loadCanvases(ctx context.Context, ids []string) (map[st
 	if len(ids) == 0 {
 		return canvasesByID, nil
 	}
-	query := s.db.WithContext(ctx).Model(&entity.UserCanvas{}).Where("id IN ?", ids)
+	query := s.db.WithContext(ctx).Model(&entity.UserCanvas{}).
+		Select("id", "user_id", "tenant_id", "permission").Where("id IN ?", ids)
 	if s.lockRows {
 		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 	}

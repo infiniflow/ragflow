@@ -53,7 +53,7 @@ func TestBuildIngestLogPreClaimStoppedOmitsStaleClaimTime(t *testing.T) {
 	doc := &entity.Document{Name: ptrStr("r"), Suffix: ".pdf", Type: "pdf", Size: 10, ParserID: "pdf", ProcessBeginAt: ptrTime(staleClaim)}
 	run := &entity.PipelineOperationLog{RunCount: ptrInt(1), CreateDate: ptrTime(runOpen)}
 
-	ev := BuildIngestLog(task, doc, run, "stopped", "STOPPED", "stopped by user")
+	ev := BuildIngestLog(task, doc, run, "stopped", "STOPPED", "stopped by user", "", "")
 	if !ev.BeginTime.IsZero() {
 		t.Errorf("pre-claim stopped must omit stale BeginTime, got %v", ev.BeginTime)
 	}
@@ -75,7 +75,7 @@ func TestBuildIngestLogPreClaimFailedOmitsStaleClaimTime(t *testing.T) {
 	doc := &entity.Document{Name: ptrStr("r"), Suffix: ".pdf", Type: "pdf", Size: 10, ParserID: "pdf", ProcessBeginAt: ptrTime(staleClaim)}
 	run := &entity.PipelineOperationLog{RunCount: ptrInt(1), CreateDate: ptrTime(runOpen)}
 
-	ev := BuildIngestLog(task, doc, run, "failed", "FAILED", "publish failed")
+	ev := BuildIngestLog(task, doc, run, "failed", "FAILED", "publish failed", "", "")
 	if !ev.BeginTime.IsZero() {
 		t.Errorf("pre-claim failed must omit stale BeginTime, got %v", ev.BeginTime)
 	}
@@ -94,7 +94,7 @@ func TestBuildIngestLogRunningKeepsValidClaimTime(t *testing.T) {
 	doc := &entity.Document{Name: ptrStr("r"), Suffix: ".pdf", Type: "pdf", Size: 10, ParserID: "pdf", ProcessBeginAt: ptrTime(claim)}
 	run := &entity.PipelineOperationLog{RunCount: ptrInt(1), CreateDate: ptrTime(runOpen), ProcessBeginAt: ptrTime(runOpen), ProcessDuration: 1200}
 
-	ev := BuildIngestLog(task, doc, run, "running", "RUNNING", "")
+	ev := BuildIngestLog(task, doc, run, "running", "RUNNING", "", "", "")
 	if !ev.BeginTime.Equal(claim) {
 		t.Errorf("running BeginTime = %v, want %v", ev.BeginTime, claim)
 	}

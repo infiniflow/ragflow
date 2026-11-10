@@ -14,15 +14,11 @@ import (
 )
 
 func (s *DocumentService) ListIngestionTasks(ctx context.Context, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
-	return s.ingestionTaskSvc.ListByUser(ctx, permission.UserIDFromContext(ctx), datasetID, page, pageSize)
+	return s.ingestionTaskSvc.List(ctx, datasetID, page, pageSize)
 }
 
 func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
-	userID := permission.UserIDFromContext(ctx)
-	if userID == "" {
-		return nil, permission.ErrUnauthenticated
-	}
-	responses, err := s.ingestionTaskSvc.CreateForDocuments(ctx, datasetID, userID, docIDs)
+	responses, err := s.ingestionTaskSvc.CreateForDocuments(ctx, datasetID, docIDs)
 	if err != nil {
 		return nil, err
 	}

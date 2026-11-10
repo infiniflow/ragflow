@@ -173,3 +173,294 @@ func TestDingTalkEnqueueFailureCancelsInflight(t *testing.T) {
 		t.Fatal("inflight key remains after enqueue failure")
 	}
 }
+
+func TestDingTalkStreamEnabledNeedsSwitchAndTemplate(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		cfg  map[string]any
+		want bool
+	}{
+		{name: "switch and template", cfg: map[string]any{"stream": true, "card_template_id": "tpl-1"}, want: true},
+		{name: "switch without template", cfg: map[string]any{"stream": true}, want: false},
+		{name: "template without switch", cfg: map[string]any{"card_template_id": "tpl-1"}, want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := map[string]any{"client_id": "client-1", "client_secret": "secret-1"}
+			for key, value := range test.cfg {
+				cfg[key] = value
+			}
+			ch, err := newDingTalkChannelFromConfig("account-1", cfg)
+			if err != nil {
+				t.Fatalf("newDingTalkChannelFromConfig() error = %v", err)
+			}
+			if got := ch.StreamEnabled(); got != test.want {
+				t.Fatalf("StreamEnabled() = %t, want %t", got, test.want)
+			}
+			if ch.account.StreamContentKey != "content" {
+				t.Fatalf("stream content key = %q, want content", ch.account.StreamContentKey)
+			}
+		})
+	}
+}
+
+func TestDingTalkSendStreamCreatesAndFinishesCard(t *testing.T) {
+	type apiCall struct {
+		method string
+		path   string
+		body   map[string]any
+	}
+	var calls []apiCall
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := map[string]any{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+			return
+		}
+		calls = append(calls, apiCall{method: r.Method, path: r.URL.Path, body: body})
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1.0/oauth2/accessToken":
+			_, _ = w.Write([]byte(`{"accessToken":"token-1","expireIn":7200}`))
+		default:
+			_, _ = w.Write([]byte(`{"success":true,"result":{}}`))
+		}
+	}))
+	defer server.Close()
+	allowChannelURLForTest(t, server.URL)
+
+	ch, err := newDingTalkChannel(dingTalkAccount{
+		AccountID:      "account-1",
+		ClientID:       "client-1",
+		ClientSecret:   "secret-1",
+		APIBaseURL:     server.URL,
+		Stream:         true,
+		CardTemplateID: "tpl-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch.peers["chat-1"] = dingTalkPeer{chatType: "2"}
+
+	text := make(chan string, 2)
+	text <- "Hel"
+	text <- "Hello"
+	close(text)
+
+	if err := ch.SendStream(context.Background(), core.OutgoingMessage{ChatID: "chat-1"}, text); err != nil {
+		t.Fatalf("SendStream() error = %v", err)
+	}
+
+	var createBody map[string]any
+	var streamCalls []map[string]any
+	for _, call := range calls {
+		switch call.path {
+		case "/v1.0/card/instances/createAndDeliver":
+			createBody = call.body
+		case "/v1.0/card/streaming":
+			streamCalls = append(streamCalls, call.body)
+		}
+	}
+	if createBody == nil {
+		t.Fatalf("no card create call, calls = %+v", calls)
+	}
+	if createBody["cardTemplateId"] != "tpl-1" {
+		t.Fatalf("cardTemplateId = %v, want tpl-1", createBody["cardTemplateId"])
+	}
+	if createBody["openSpaceId"] != "dtv1.card//IM_GROUP.chat-1" {
+		t.Fatalf("openSpaceId = %v, want the group space", createBody["openSpaceId"])
+	}
+	cardParamMap := weComMapValue(createBody["cardData"])["cardParamMap"]
+	if weComMapValue(cardParamMap)["flowStatus"] != "1" {
+		t.Fatalf("cardParamMap = %+v, want flowStatus 1", cardParamMap)
+	}
+	if _, ok := weComMapValue(cardParamMap)["content"]; !ok {
+		t.Fatalf("cardParamMap = %+v, want the streaming content key", cardParamMap)
+	}
+
+	if len(streamCalls) == 0 {
+		t.Fatal("no streaming call was made")
+	}
+	outTrackID, _ := createBody["outTrackId"].(string)
+	var content string
+	for index, call := range streamCalls {
+		if call["outTrackId"] != outTrackID {
+			t.Fatalf("streaming call %d outTrackId = %v, want %q", index, call["outTrackId"], outTrackID)
+		}
+		if call["key"] != "content" {
+			t.Fatalf("streaming call %d key = %v, want content", index, call["key"])
+		}
+		if call["isFull"] != false {
+			t.Fatalf("streaming call %d isFull = %v, want an append", index, call["isFull"])
+		}
+		content += weComStringValue(call["content"])
+		wantFinal := index == len(streamCalls)-1
+		if call["isFinalize"] != wantFinal {
+			t.Fatalf("streaming call %d isFinalize = %v, want %t", index, call["isFinalize"], wantFinal)
+		}
+	}
+	if content != "Hello" {
+		t.Fatalf("streamed content = %q, want the complete answer", content)
+	}
+}
+
+func TestDingTalkSendStreamNeedsSenderForDirectChat(t *testing.T) {
+	ch, err := newDingTalkChannel(dingTalkAccount{
+		AccountID:      "account-1",
+		ClientID:       "client-1",
+		ClientSecret:   "secret-1",
+		Stream:         true,
+		CardTemplateID: "tpl-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch.peers["chat-1"] = dingTalkPeer{chatType: "1"}
+
+	text := make(chan string, 1)
+	text <- "Hello"
+	close(text)
+
+	if err := ch.SendStream(context.Background(), core.OutgoingMessage{ChatID: "chat-1"}, text); err == nil {
+		t.Fatal("SendStream succeeded without the sender staff id")
+	}
+}
+
+func TestDingTalkSendStreamMarksCardFailed(t *testing.T) {
+	type apiCall struct {
+		method string
+		path   string
+		body   map[string]any
+	}
+	var calls []apiCall
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := map[string]any{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+			return
+		}
+		calls = append(calls, apiCall{method: r.Method, path: r.URL.Path, body: body})
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1.0/oauth2/accessToken":
+			_, _ = w.Write([]byte(`{"accessToken":"token-1","expireIn":7200}`))
+		case "/v1.0/card/streaming":
+			_, _ = w.Write([]byte(`{"success":false,"code":"InvalidParameter","message":"rejected"}`))
+		default:
+			_, _ = w.Write([]byte(`{"success":true,"result":{}}`))
+		}
+	}))
+	defer server.Close()
+	allowChannelURLForTest(t, server.URL)
+
+	ch, err := newDingTalkChannel(dingTalkAccount{
+		AccountID:      "account-1",
+		ClientID:       "client-1",
+		ClientSecret:   "secret-1",
+		APIBaseURL:     server.URL,
+		Stream:         true,
+		CardTemplateID: "tpl-1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ch.peers["chat-1"] = dingTalkPeer{chatType: "2"}
+
+	text := make(chan string, 2)
+	text <- "Hello"
+	close(text)
+
+	if err := ch.SendStream(context.Background(), core.OutgoingMessage{ChatID: "chat-1"}, text); err == nil {
+		t.Fatal("SendStream succeeded although the card update was rejected")
+	}
+
+	var createBody, failBody map[string]any
+	for _, call := range calls {
+		switch call.path {
+		case "/v1.0/card/instances/createAndDeliver":
+			createBody = call.body
+		case "/v1.0/card/instances":
+			if call.method == http.MethodPut {
+				failBody = call.body
+			}
+		}
+	}
+	if createBody == nil {
+		t.Fatalf("no card create call, calls = %+v", calls)
+	}
+	if failBody == nil {
+		t.Fatalf("card was not marked failed, calls = %+v", calls)
+	}
+	if failBody["outTrackId"] != createBody["outTrackId"] {
+		t.Fatalf("failed card outTrackId = %v, want %v", failBody["outTrackId"], createBody["outTrackId"])
+	}
+	paramMap := weComMapValue(weComMapValue(failBody["cardData"])["cardParamMap"])
+	if paramMap["flowStatus"] != "5" {
+		t.Fatalf("cardParamMap = %+v, want flowStatus 5", paramMap)
+	}
+	// The first update was rejected, so the card never received text.
+	if paramMap["content"] != "" {
+		t.Fatalf("failed card content = %v, want the text that actually reached the card", paramMap["content"])
+	}
+}
+
+func TestDingTalkPushCardDeltaRetriesWithSameGuid(t *testing.T) {
+	var guids []string
+	failures := 1
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := map[string]any{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/v1.0/oauth2/accessToken":
+			_, _ = w.Write([]byte(`{"accessToken":"token-1","expireIn":7200}`))
+		case "/v1.0/card/streaming":
+			guid, _ := body["guid"].(string)
+			guids = append(guids, guid)
+			if failures > 0 {
+				failures--
+				_, _ = w.Write([]byte(`{"success":false,"code":"ServiceUnavailable","message":"try later"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"success":true,"result":{}}`))
+		default:
+			_, _ = w.Write([]byte(`{"success":true,"result":{}}`))
+		}
+	}))
+	defer server.Close()
+	allowChannelURLForTest(t, server.URL)
+
+	ch, err := newDingTalkChannel(dingTalkAccount{
+		AccountID:    "account-1",
+		ClientID:     "client-1",
+		ClientSecret: "secret-1",
+		APIBaseURL:   server.URL,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := ch.pushCardDelta(context.Background(), "track-1", "hello", false, false); err != nil {
+		t.Fatalf("pushCardDelta() error = %v", err)
+	}
+	if len(guids) != 2 {
+		t.Fatalf("push attempts = %d, want the failed attempt and the successful retry", len(guids))
+	}
+	if guids[0] == "" || guids[0] != guids[1] {
+		t.Fatalf("guids = %v, want the retry to reuse the idempotency id", guids)
+	}
+}
+
+func TestDingTalkStreamDeltaReplacesRewrittenAnswer(t *testing.T) {
+	delta, replace := dingTalkStreamDelta("Hello", "Hello world")
+	if delta != " world" || replace {
+		t.Fatalf("delta = %q replace = %t, want an append of the new tail", delta, replace)
+	}
+
+	delta, replace = dingTalkStreamDelta("Half an answer", "Please continue in RAGFlow.")
+	if delta != "Please continue in RAGFlow." || !replace {
+		t.Fatalf("delta = %q replace = %t, want the whole rewritten answer replacing the card", delta, replace)
+	}
+}

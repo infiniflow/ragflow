@@ -179,7 +179,7 @@ Docker hızlı değerlendirme, entegrasyon testi ve üretim; kaynak kod ise geli
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc3
+   git checkout v1.0.0
    docker compose -f docker-compose.yml up -d
    ```
 

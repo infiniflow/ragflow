@@ -213,18 +213,19 @@ func LoadPythonTableBoxes(jsonPath string) ([]pdf.TextBox, error) {
 	boxes := make([]pdf.TextBox, 0, len(dumped))
 	for _, b := range dumped {
 		boxes = append(boxes, pdf.TextBox{
-			X0:         b.X0,
-			X1:         b.X1,
-			Top:        b.Top,
-			Bottom:     b.Bottom,
-			Text:       b.Text,
-			R:          b.R,
-			C:          b.C,
-			H:          b.H,
-			SP:         b.SP,
-			PageNumber: b.PageNumber,
-			LayoutNo:   b.LayoutNo,
-			LayoutType: b.LayoutType,
+			X0:                  b.X0,
+			X1:                  b.X1,
+			Top:                 b.Top,
+			Bottom:              b.Bottom,
+			Text:                b.Text,
+			HasTableAnnotations: true,
+			R:                   b.R,
+			C:                   b.C,
+			H:                   b.H,
+			SP:                  b.SP,
+			PageNumber:          b.PageNumber,
+			LayoutNo:            b.LayoutNo,
+			LayoutType:          b.LayoutType,
 		})
 	}
 	return boxes, nil

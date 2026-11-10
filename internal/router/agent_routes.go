@@ -43,6 +43,7 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 	g.GET("/templates", h.ListAgentTemplates)
 	g.GET("/prompts", h.Prompts)
 	g.GET("/tags", h.ListAgentTags)
+	g.GET("/versions", h.ListVersionCatalog)
 
 	// Agent CRUD.
 	g.GET("", h.ListAgents)

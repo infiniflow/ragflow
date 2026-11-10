@@ -105,7 +105,7 @@ func ExtractPipelineDefaults(dsl map[string]interface{}) map[string]interface{} 
 			continue
 		}
 		name, _ := obj["component_name"].(string)
-		if name == "" || name == "File" {
+		if name == "" || name == ComponentNameFile {
 			continue
 		}
 		params, _ := obj["params"].(map[string]interface{})

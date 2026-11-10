@@ -971,6 +971,15 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 		deleted = int64(d)
 	}
 
+	// delete_by_query can answer 200 while only part of the work was done.
+	// Surface that instead of letting callers assume every chunk is gone.
+	if timedOut, _ := result["timed_out"].(bool); timedOut {
+		return deleted, fmt.Errorf("opensearch delete by query timed out after deleting %d chunks from %s", deleted, fullIndexName)
+	}
+	if failures, ok := result["failures"].([]interface{}); ok && len(failures) > 0 {
+		return deleted, fmt.Errorf("opensearch delete by query reported %d failures after deleting %d chunks from %s", len(failures), deleted, fullIndexName)
+	}
+
 	common.Info("Successfully deleted chunks", zap.String("index_name", fullIndexName), zap.Int64("deleted_count", deleted))
 	return deleted, nil
 }
@@ -2842,16 +2851,13 @@ func loadOSMapping() (map[string]interface{}, error) {
 
 // loadSkillMapping loads the skill index mapping from config file
 func loadSkillMapping() (map[string]interface{}, error) {
-	// Try multiple possible locations for the mapping file. The OpenSearch
-	// mapping (knn_vector + knn:true) takes precedence; skill_es_mapping.json
-	// uses dense_vector, which OpenSearch does not support.
+	// Try multiple possible locations for the mapping file. Only the OpenSearch
+	// mapping (knn_vector + knn:true) is usable here: skill_es_mapping.json uses
+	// dense_vector, which OpenSearch rejects, so it is never used as a fallback.
 	possiblePaths := []string{
 		"conf/skill_os_mapping.json",
 		"../conf/skill_os_mapping.json",
 		"/app/conf/skill_os_mapping.json",
-		"conf/skill_es_mapping.json",
-		"../conf/skill_es_mapping.json",
-		"/app/conf/skill_es_mapping.json",
 	}
 
 	var data []byte

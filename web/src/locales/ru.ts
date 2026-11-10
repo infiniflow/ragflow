@@ -476,8 +476,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         'Например: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'Токен доступа AI Studio',
-      paddleocrAccessTokenTip: 'Токен доступа к API PaddleOCR (необязательно)',
-      paddleocrAccessTokenPlaceholder: 'Ваш токен AI Studio (необязательно)',
+      paddleocrAccessTokenTip: 'Токен доступа к API PaddleOCR',
+      paddleocrAccessTokenPlaceholder: 'Ваш токен AI Studio',
       paddleocrAlgorithm: 'Алгоритм PaddleOCR',
       paddleocrAlgorithmTip: 'Алгоритм, используемый для обработки PaddleOCR',
       paddleocrSelectAlgorithm: 'Выбрать алгоритм',
@@ -1322,7 +1322,7 @@ export default {
         apiUrlPlaceholder:
           'Например: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Токен доступа AI Studio',
-        accessTokenPlaceholder: 'Ваш токен AI Studio (необязательно)',
+        accessTokenPlaceholder: 'Ваш токен AI Studio',
         algorithm: 'Алгоритм PaddleOCR',
         selectAlgorithm: 'Выбрать алгоритм',
         modelNamePlaceholder: 'Например: paddleocr-from-env-1',
@@ -2089,9 +2089,9 @@ export default {
       jsonFormatTip:
         'Вышестоящий компонент должен предоставить JSON строку в следующем формате:',
       toEmailTip: 'to_email: Email получателя (Обязательно)',
-      ccEmailTip: 'cc_email: Email копии (Опционально)',
-      subjectTip: 'subject: Тема email (Опционально)',
-      contentTip: 'content: Содержимое email (Опционально)',
+      ccEmailTip: 'cc_email: Email копии',
+      subjectTip: 'subject: Тема email',
+      contentTip: 'content: Содержимое email',
       jsonUploadTypeErrorMessage: 'Пожалуйста, загрузите json файл',
       jsonUploadContentErrorMessage: 'Ошибка json файла',
       iteration: 'Итерация',

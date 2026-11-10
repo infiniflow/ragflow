@@ -324,9 +324,8 @@ export default {
       paddleocrApiUrlTip: 'A URL do endpoint da API para o serviço PaddleOCR',
       paddleocrApiUrlPlaceholder: 'ex: https://servidor-paddleocr.com/api',
       paddleocrAccessToken: 'Token de Acesso do AI Studio',
-      paddleocrAccessTokenTip:
-        'Token de acesso para a API do PaddleOCR (opcional)',
-      paddleocrAccessTokenPlaceholder: 'Seu token do AI Studio (opcional)',
+      paddleocrAccessTokenTip: 'Token de acesso para a API do PaddleOCR',
+      paddleocrAccessTokenPlaceholder: 'Seu token do AI Studio',
       paddleocrAlgorithm: 'Algoritmo do PaddleOCR',
       paddleocrAlgorithmTip:
         'Algoritmo a ser usado para a análise do PaddleOCR',
@@ -586,7 +585,7 @@ export default {
         apiUrlPlaceholder:
           'Por exemplo: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Token de acesso do AI Studio',
-        accessTokenPlaceholder: 'Seu token do AI Studio (opcional)',
+        accessTokenPlaceholder: 'Seu token do AI Studio',
         algorithm: 'Algoritmo do PaddleOCR',
         selectAlgorithm: 'Selecionar algoritmo',
         modelNamePlaceholder: 'Por exemplo: paddleocr-from-env-1',
@@ -1174,9 +1173,9 @@ export default {
       jsonFormatTip:
         'O componente anterior deve fornecer a string JSON no seguinte formato:',
       toEmailTip: 'to_email: Email do destinatário (Obrigatório)',
-      ccEmailTip: 'cc_email: Email CC (Opcional)',
-      subjectTip: 'subject: Assunto do email (Opcional)',
-      contentTip: 'content: Conteúdo do email (Opcional)',
+      ccEmailTip: 'cc_email: Email CC',
+      subjectTip: 'subject: Assunto do email',
+      contentTip: 'content: Conteúdo do email',
       jsonUploadTypeErrorMessage: 'Por favor, carregue um arquivo json',
       jsonUploadContentErrorMessage: 'Erro no arquivo json',
 

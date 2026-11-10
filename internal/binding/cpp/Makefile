@@ -39,7 +39,7 @@ c_api_asan: $(ASAN_BUILD_DIR)
 
 test_string_utils:
 	mkdir -p $(BUILD_DIR)
-	$(CXX) $(CPPFLAGS) $(SIMDE_CPPFLAGS) $(CXXFLAGS) -std=c++20 -fsanitize=address -fno-omit-frame-pointer -g -I. string_utils_test.cpp -o $(BUILD_DIR)/string_utils_test
+	$(CXX) $(CPPFLAGS) $(SIMDE_CPPFLAGS) $(CXXFLAGS) -D_GLIBCXX_ASSERTIONS -std=c++20 -fsanitize=address -fno-omit-frame-pointer -g -I. string_utils_test.cpp -o $(BUILD_DIR)/string_utils_test
 	ASAN_OPTIONS=detect_leaks=0 ./$(BUILD_DIR)/string_utils_test
 
 # Build debug version of C API library with memory tracking

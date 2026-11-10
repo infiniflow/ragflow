@@ -384,7 +384,7 @@ func TestMigrateIngestionLogRunIdentity(t *testing.T) {
 		t.Fatalf("migrateIngestionLogRunIdentity: %v", err)
 	}
 	migrator := db.Migrator()
-	for _, column := range []string{"run_count"} {
+	for _, column := range []string{"run_count", "pipeline_version_id"} {
 		if !migrator.HasColumn(&entity.PipelineOperationLog{}, column) {
 			t.Fatalf("pipeline_operation_log missing %s", column)
 		}
@@ -407,6 +407,13 @@ func TestMigrateIngestionLogRunIdentity(t *testing.T) {
 	}
 	if legacyRunCount != nil {
 		t.Fatalf("legacy run_count = %d, want NULL", *legacyRunCount)
+	}
+	var legacyVersionID *string
+	if err := db.Raw(`SELECT pipeline_version_id FROM pipeline_operation_log WHERE id = 'legacy-log'`).Scan(&legacyVersionID).Error; err != nil {
+		t.Fatalf("read legacy pipeline version: %v", err)
+	}
+	if legacyVersionID != nil {
+		t.Fatalf("legacy pipeline_version_id = %q, want NULL", *legacyVersionID)
 	}
 	if err := db.Exec(`INSERT INTO pipeline_operation_log (id, document_id, run_count) VALUES ('run-1', 'doc-1', 1)`).Error; err != nil {
 		t.Fatalf("insert first numbered run: %v", err)
