@@ -63,7 +63,7 @@ pdfium_static_version() {
 # changes, even under the same version. Keep these copies in the project's
 # writable cache so a pre-provisioned native dependency cache can be read-only.
 pdfium_static_link_dir() (
-    local source_dir="$1" target_os="$2" cache_dir="$3"
+    local source_dir="$1" target_os="$2" cache_dir="$3/archives"
     local -a archives=(libpdfium.a) hash_command=(sha256sum)
     if [ "$target_os" = "linux" ]; then
         archives+=(libc++.a libc++abi.a)
@@ -73,24 +73,26 @@ pdfium_static_link_dir() (
     local hashes digest link_dir
     hashes="$(cd "$source_dir" && "${hash_command[@]}" "${archives[@]}")" || return 1
     digest="$(printf '%s\n' "$hashes" | "${hash_command[@]}")" || return 1
-    link_dir="$cache_dir/${digest%% *}"
+    digest="${digest%% *}"
+    link_dir="$cache_dir/$digest"
     if [ ! -d "$link_dir" ]; then
         mkdir -p "$cache_dir" || return 1
-        local staging archive staged_hashes
+        local staging staged_dir archive staged_hashes
         staging="$(mktemp -d "$cache_dir/.pdfium.XXXXXX")" || return 1
         trap 'rm -rf -- "$staging"' EXIT
+        staged_dir="$staging/$digest"
+        mkdir "$staged_dir" || return 1
         for archive in "${archives[@]}"; do
-            cp "$source_dir/$archive" "$staging/$archive" || return 1
+            cp "$source_dir/$archive" "$staged_dir/$archive" || return 1
         done
-        staged_hashes="$(cd "$staging" && "${hash_command[@]}" "${archives[@]}")" || return 1
+        staged_hashes="$(cd "$staged_dir" && "${hash_command[@]}" "${archives[@]}")" || return 1
         if [ "$staged_hashes" != "$hashes" ]; then
             echo "PDFium archives changed while preparing linker inputs. Retry the build." >&2
             return 1
         fi
-        # Publish all archives at once. A concurrent build may win this race.
-        if ln -sn "${staging##*/}" "$link_dir" 2>/dev/null; then
-            trap - EXIT
-        elif [ ! -d "$link_dir" ]; then
+        # Rename into the cache parent in one operation. The published directory
+        # is outside the attempt's cleanup, and another build may publish first.
+        if ! mv -f "$staged_dir" "$cache_dir/" 2>/dev/null && [ ! -d "$link_dir" ]; then
             echo "Could not publish the PDFium linker cache at $link_dir" >&2
             return 1
         fi
