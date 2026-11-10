@@ -29,8 +29,8 @@ func TestEmitLifecycleEventCarriesContextIdentity(t *testing.T) {
 	svc := &IngestionTaskService{eventEmitter: rec}
 	svc.emitLifecycleEvent(context.Background(), task, "completed", "COMPLETED", "")
 
-	if len(rec.events) != 1 {
-		t.Fatalf("expected exactly 1 emitted event, got %d", len(rec.events))
+	if rec.count() != 1 {
+		t.Fatalf("expected exactly 1 emitted event, got %d", rec.count())
 	}
 	got := rec.last()
 	if got.UserName != "" {
@@ -58,8 +58,8 @@ func TestEmitLifecycleEventCarriesContextIdentity(t *testing.T) {
 	})
 	svc2.emitLifecycleEvent(ctx, task, "running", "RUNNING", "")
 
-	if len(rec2.events) != 1 {
-		t.Fatalf("expected exactly 1 emitted event, got %d", len(rec2.events))
+	if rec2.count() != 1 {
+		t.Fatalf("expected exactly 1 emitted event, got %d", rec2.count())
 	}
 	got2 := rec2.last()
 	if got2.UserName != "alice" || got2.TenantName != "Acme" {
