@@ -462,7 +462,7 @@ export const useSelectDerivedMessages = (resetKey?: string) => {
 
   const messageContainerRef = useRef<HTMLDivElement>(null);
 
-  const { virtualizer, scrollToBottom } = useVirtualMessages(
+  const { virtualizer, scrollToBottom, isAtBottom } = useVirtualMessages(
     derivedMessages,
     messageContainerRef,
     { resetKey },
@@ -664,6 +664,7 @@ export const useSelectDerivedMessages = (resetKey?: string) => {
     removeMessagesAfterCurrentMessage,
     removeAllMessages,
     scrollToBottom,
+    isAtBottom,
     removeAllMessagesExceptFirst,
     addPrologue,
   };

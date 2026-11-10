@@ -7,7 +7,10 @@ import { MessageType } from '@/constants/chat';
 import { useFetchChat, useGetChatSearchParams } from '@/hooks/use-chat-request';
 import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IClientConversation } from '@/interfaces/database/chat';
-import { useEffect } from 'react';
+import { Button } from '@/components/ui/button';
+import { ArrowDown } from 'lucide-react';
+import { useCallback, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   useGetSendButtonDisabled,
   useSendButtonDisabled,
@@ -23,10 +26,13 @@ interface IProps {
 }
 
 export function SingleChatBox({ conversation }: IProps) {
+  const { t } = useTranslation();
   const {
     value,
     virtualizer,
     messageContainerRef,
+    scrollToBottom,
+    isAtBottom,
     sendLoading,
     messages,
     isUploading,
@@ -39,6 +45,10 @@ export function SingleChatBox({ conversation }: IProps) {
     hydrateFromServer,
     stopOutputMessage,
   } = useSendMessage();
+
+  const handleScrollToBottom = useCallback(() => {
+    scrollToBottom();
+  }, [scrollToBottom]);
   const { data: userInfo } = useFetchUserInfo();
   const { data: currentDialog } = useFetchChat();
   const { createConversationBeforeUploadDocument } =
@@ -78,36 +88,49 @@ export function SingleChatBox({ conversation }: IProps) {
 
   return (
     <section className="flex flex-col h-full gap-4">
-      <div
-        ref={messageContainerRef}
-        className="p-5 flex-1 overflow-auto min-h-0 scrollbar-auto"
-      >
-        <VirtualMessageList
-          className="w-full pr-5"
-          items={messages ?? []}
-          virtualizer={virtualizer}
-          renderItem={(message, i) => (
-            <MessageItem
-              loading={
-                message.role === MessageType.Assistant &&
-                sendLoading &&
-                (messages?.length ?? 0) - 1 === i
-              }
-              nickname={userInfo.nickname}
-              avatar={userInfo.avatar}
-              avatarDialog={currentDialog.icon}
-              item={message}
-              reference={messageReferences.get(message) ?? EmptyReference}
-              clickDocumentButton={clickDocumentButton}
-              index={i}
-              isLast={(messages?.length ?? 0) - 1 === i}
-              removeMessageById={removeMessageById}
-              deleteDisabled={message.awaitingServerId}
-              regenerateMessage={regenerateMessage}
-              sendLoading={sendLoading}
-            />
-          )}
-        />
+      <div className="relative flex-1 min-h-0">
+        <div
+          ref={messageContainerRef}
+          className="p-5 h-full overflow-auto scrollbar-auto"
+        >
+          <VirtualMessageList
+            className="w-full pr-5"
+            items={messages ?? []}
+            virtualizer={virtualizer}
+            renderItem={(message, i) => (
+              <MessageItem
+                loading={
+                  message.role === MessageType.Assistant &&
+                  sendLoading &&
+                  (messages?.length ?? 0) - 1 === i
+                }
+                nickname={userInfo.nickname}
+                avatar={userInfo.avatar}
+                avatarDialog={currentDialog.icon}
+                item={message}
+                reference={messageReferences.get(message) ?? EmptyReference}
+                clickDocumentButton={clickDocumentButton}
+                index={i}
+                isLast={(messages?.length ?? 0) - 1 === i}
+                removeMessageById={removeMessageById}
+                deleteDisabled={message.awaitingServerId}
+                regenerateMessage={regenerateMessage}
+                sendLoading={sendLoading}
+              />
+            )}
+          />
+        </div>
+        {!isAtBottom && (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="absolute bottom-4 right-4 z-10 gap-1 shadow-md"
+            onClick={handleScrollToBottom}
+          >
+            <ArrowDown className="h-4 w-4" />
+            {t('chat.scrollToBottom')}
+          </Button>
+        )}
       </div>
 
       <div className="p-5 pt-0">

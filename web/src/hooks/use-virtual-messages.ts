@@ -15,7 +15,7 @@
  */
 
 import { Virtualizer, useVirtualizer } from '@tanstack/react-virtual';
-import { RefObject, useCallback, useEffect } from 'react';
+import { RefObject, useCallback, useEffect, useState } from 'react';
 import { IMessage } from '@/interfaces/database/chat';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 
@@ -75,5 +75,27 @@ export const useVirtualMessages = (
     scrollToBottom();
   }, [resetKey, scrollToBottom]);
 
-  return { virtualizer, scrollToBottom };
+  // Drives the scroll-to-bottom button. Recomputed on scroll and on content
+  // resize, since growth while pinned fires no scroll event of its own.
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const update = () => {
+      setIsAtBottom(
+        container.scrollHeight - container.scrollTop - container.clientHeight <=
+          FollowBottomThreshold,
+      );
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(container);
+    container.addEventListener('scroll', update, { passive: true });
+    return () => {
+      observer.disconnect();
+      container.removeEventListener('scroll', update);
+    };
+  }, [containerRef]);
+
+  return { virtualizer, scrollToBottom, isAtBottom };
 };
