@@ -216,8 +216,6 @@ func (e *Ingestor) ID() string {
 // idle worker from making its own Pull request.
 const consumeErrorBackoff = 1 * time.Second
 
-const taskPullRequestTimeout = 1 * time.Second
-
 const (
 	defaultMemoryTaskReconcileInterval  = 10 * time.Second
 	defaultMemoryTaskReconcileBatchSize = 100
@@ -312,9 +310,10 @@ func (e *Ingestor) defaultReconcileMemoryTasks(ctx context.Context) error {
 	return e.memorySvc.ReconcileMemoryTasks(ctx, batchSize)
 }
 
-// consumeLoop is the worker dispatcher for tasks.RAGFLOW. It waits for an
-// available worker before synchronously pulling one task, preventing prefetch
-// and limiting this ingestor to one outstanding broker request.
+// consumeLoop is the worker dispatcher for the tiered task lanes. It waits for
+// an available worker before synchronously pulling one task, preventing prefetch
+// and limiting this ingestor to one outstanding broker request. Priority
+// (high -> medium -> low) is enforced inside PullMessage, not here.
 func (e *Ingestor) consumeLoop() {
 	defer e.dispatcherWg.Done()
 	msgQueueEngine := e.deps.MQ

@@ -42,7 +42,7 @@ func TestMessageQueueTaskPublisherUsesInjectedEngineNotGlobal(t *testing.T) {
 	injectedMQ := &recordingMessageQueue{}
 	pub := NewMessageQueueTaskPublisherWithEngine(injectedMQ)
 
-	if err := pub.PublishTaskMessage(common.TaskSubject, common.TaskMessage{
+	if err := pub.PublishTaskMessage(common.TaskSubjectMedium, common.TaskMessage{
 		TaskID:   "task-1",
 		TaskType: common.TaskTypeMemory,
 	}); err != nil {
@@ -72,7 +72,7 @@ func TestMemoryMessageServicePublishesViaInjectedEngine(t *testing.T) {
 	if svc.taskPublisher == nil {
 		t.Fatal("MemoryMessageService.taskPublisher is nil")
 	}
-	if err := publishMemoryTaskWakeup(svc.taskPublisher, "task-1"); err != nil {
+	if err := publishMemoryTaskWakeup(t.Context(), svc.taskPublisher, svc.tierResolver, "tenant-1", "task-1"); err != nil {
 		t.Fatalf("publishMemoryTaskWakeup: %v", err)
 	}
 	if len(injectedMQ.messages) != 1 {
@@ -93,7 +93,7 @@ func TestMessageQueueTaskPublisherNilEngineFallsBackToGlobal(t *testing.T) {
 	defer engine.SetMessageQueueEngine(nil)
 
 	pub := NewMessageQueueTaskPublisher()
-	if err := pub.PublishTaskMessage(common.TaskSubject, common.TaskMessage{
+	if err := pub.PublishTaskMessage(common.TaskSubjectMedium, common.TaskMessage{
 		TaskID:   "task-2",
 		TaskType: common.TaskTypeMemory,
 	}); err != nil {

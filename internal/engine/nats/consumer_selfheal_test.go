@@ -14,6 +14,8 @@
 // limitations under the License.
 //
 
+//go:build ee
+
 package nats
 
 import (
@@ -22,6 +24,8 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"ragflow/internal/common"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -86,9 +90,12 @@ func TestPullMessages_RecreatesConsumerWhenItDisappears(t *testing.T) {
 		t.Fatalf("ack: %v", ackErr)
 	}
 
-	// Delete the consumer behind the engine's back; the stored handle now
-	// addresses something that no longer exists.
-	if err := queue.stream.DeleteConsumer(t.Context(), "RAGFLOW_CONSUMER"); err != nil {
+	// Delete the medium lane's consumer behind the engine's back; the stored
+	// handle now addresses something that no longer exists. Publishers route to
+	// the tier subject, and the medium lane owns TaskSubjectMedium.
+	mediumSpec := tierStreams[common.TierMedium]
+	mediumStream := queue.streams[common.TierMedium]
+	if err := mediumStream.DeleteConsumer(t.Context(), mediumSpec.consumerName); err != nil {
 		t.Fatalf("delete consumer: %v", err)
 	}
 
@@ -102,7 +109,7 @@ func TestPullMessages_RecreatesConsumerWhenItDisappears(t *testing.T) {
 
 	// The consumer must exist again under the same durable name, so the next
 	// restart reattaches instead of orphaning a replacement.
-	if _, err := queue.stream.Consumer(t.Context(), "RAGFLOW_CONSUMER"); err != nil {
+	if _, err := mediumStream.Consumer(t.Context(), mediumSpec.consumerName); err != nil {
 		t.Fatalf("consumer was not recreated: %v", err)
 	}
 
@@ -124,7 +131,7 @@ func TestPullMessages_RecreatesConsumerWhenItDisappears(t *testing.T) {
 // ordinary "nothing to deliver" outcome.
 func TestPullMessages_KeepsHandleWhenNothingToDeliver(t *testing.T) {
 	queue := newTaskQueue(t)
-	before, err := queue.consumerHandle()
+	before, err := queue.consumerHandle(common.TierMedium)
 	if err != nil {
 		t.Fatalf("consumerHandle: %v", err)
 	}
@@ -135,7 +142,7 @@ func TestPullMessages_KeepsHandleWhenNothingToDeliver(t *testing.T) {
 		t.Fatalf("PullMessage on an empty queue: %v", err)
 	}
 
-	after, err := queue.consumerHandle()
+	after, err := queue.consumerHandle(common.TierMedium)
 	if err != nil {
 		t.Fatalf("consumerHandle: %v", err)
 	}

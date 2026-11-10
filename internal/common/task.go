@@ -16,12 +16,51 @@
 
 package common
 
+import "fmt"
+
+// Tier identifies the priority lane an ingestion task is published to. The
+// three lanes are physically separate JetStream streams so a full low-priority
+// lane can never reject a high-priority publish.
+type Tier string
+
 const (
-	// TaskSubject is the NATS subject on which ingestion and memory tasks are
-	// published and consumed. Producer and consumer must reference this single
-	// symbol so the routing contract cannot diverge (mirrors the RAGFLOW_TASKS
-	// JetStream subject in internal/engine/nats).
+	TierHigh   Tier = "high"
+	TierMedium Tier = "medium"
+	TierLow    Tier = "low"
+)
+
+const (
+	// TaskSubject is the canonical community/OSS ingestion subject. The
+	// open-source edition publishes here for its single (low-priority) lane,
+	// and the EE low tier lane reuses it so an OSS split needs no rename and
+	// OSS and EE can share one NATS server.
 	TaskSubject = "tasks.RAGFLOW"
+
+	// TaskSubjectHigh / TaskSubjectMedium / TaskSubjectLow are the three
+	// tier-specific subjects. Producers resolve a tenant's tier and publish to
+	// exactly one of these; the consumer drains them high -> medium -> low. The
+	// low subject equals TaskSubject: the low lane IS the community queue.
+	TaskSubjectHigh   = "tasks.RAGFLOW.high"
+	TaskSubjectMedium = "tasks.RAGFLOW.medium"
+	TaskSubjectLow    = TaskSubject
+)
+
+// SubjectForTier maps a tier to its JetStream subject. An unknown tier is an
+// error, never a silent fallback to a default lane.
+func SubjectForTier(tier Tier) (string, error) {
+	switch tier {
+	case TierHigh:
+		return TaskSubjectHigh, nil
+	case TierMedium:
+		return TaskSubjectMedium, nil
+	case TierLow:
+		return TaskSubject, nil
+	default:
+		return "", fmt.Errorf("unknown task tier %q", tier)
+	}
+}
+
+const (
 	// MaxManualPullMessages is the largest task batch the administrative queue
 	// pull endpoint accepts.
 	MaxManualPullMessages = 100
@@ -31,9 +70,10 @@ const (
 	// TaskTypeSyncer is the NATS wake-up message type for datasource sync_logs tasks.
 	TaskTypeSyncer = "syncer"
 	// TaskTypeMemory is the async memory-extraction task type. Memory tasks
-	// share the tasks.RAGFLOW subject and the Ingestor's consumer + worker
-	// pool with ingestion tasks; handleAndExecute dispatches them by TaskType.
-	// Their TaskMessage is only a wake-up; input lives in memory_task.
+	// share the tiered tasks.RAGFLOW.<tier> subjects and the Ingestor's
+	// consumer + worker pool with ingestion tasks; handleAndExecute dispatches
+	// them by TaskType. Their TaskMessage is only a wake-up; input lives in
+	// memory_task.
 	TaskTypeMemory = "memory"
 )
 

@@ -14,6 +14,8 @@
 //  limitations under the License.
 //
 
+//go:build ee
+
 package nats
 
 import (
@@ -72,7 +74,7 @@ func TestPublishTaskDeliversRepeatedTaskIDs(t *testing.T) {
 	if err := engine.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := engine.InitConsumer("tasks.>"); err != nil {
+	if err := engine.InitConsumer(common.TaskSubjectMedium); err != nil {
 		t.Fatalf("InitConsumer: %v", err)
 	}
 
@@ -80,10 +82,10 @@ func TestPublishTaskDeliversRepeatedTaskIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
-	if err = engine.PublishTask("tasks.RAGFLOW", payload); err != nil {
+	if err = engine.PublishTask(common.TaskSubjectMedium, payload); err != nil {
 		t.Fatalf("first PublishTask: %v", err)
 	}
-	if err = engine.PublishTask("tasks.RAGFLOW", payload); err != nil {
+	if err = engine.PublishTask(common.TaskSubjectMedium, payload); err != nil {
 		t.Fatalf("repeated PublishTask: %v", err)
 	}
 
@@ -98,20 +100,21 @@ func TestPublishTaskDeliversRepeatedTaskIDs(t *testing.T) {
 	}
 
 	// A payload without a decodable TaskMessage shape must not fail either.
-	if err = engine.PublishTask("tasks.RAGFLOW", []byte("not-json")); err != nil {
+	if err = engine.PublishTask(common.TaskSubjectMedium, []byte("not-json")); err != nil {
 		t.Fatalf("non-TaskMessage PublishTask: %v", err)
 	}
 }
 
-// TestInitMigratesLegacyStreamConfig: a stream created by an older deployment
-// (1MB MaxBytes, server-default Duplicates) must be migrated in place by Init
-// instead of being left stale behind an "already exists" error. The server-side
-// config is the merge base: fields the wanted config does not own (Subjects,
-// Retention, Duplicates) must survive the update.
+// TestInitMigratesLegacyStreamConfig: a tier stream created by an older
+// deployment (1MB MaxBytes, server-default Duplicates) must be migrated in
+// place by Init instead of being left stale behind an "already exists" error.
+// The server-side config is the merge base: fields the wanted config does not
+// own (Subjects, Retention, Duplicates) must survive the update. This guards
+// the same migration contract as the pre-tiering single stream, now applied to
+// one of the three physically isolated lanes.
 func TestInitMigratesLegacyStreamConfig(t *testing.T) {
 	host, port := newEmbeddedNatsServer(t)
 
-	// Pre-create the stream with the legacy (pre-migration) configuration.
 	nc, err := nats.Connect("nats://" + net.JoinHostPort(host, strconv.Itoa(port)))
 	if err != nil {
 		t.Fatalf("connect legacy stream creator: %v", err)
@@ -123,9 +126,10 @@ func TestInitMigratesLegacyStreamConfig(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	medium := tierStreams[common.TierMedium]
 	legacy, err := js.CreateStream(ctx, jetstream.StreamConfig{
-		Name:      "RAGFLOW_TASKS",
-		Subjects:  []string{"tasks.>"},
+		Name:      medium.streamName,
+		Subjects:  medium.subjects,
 		Retention: jetstream.WorkQueuePolicy,
 		Storage:   jetstream.FileStorage,
 		MaxMsgs:   1024 * 128,
@@ -153,17 +157,17 @@ func TestInitMigratesLegacyStreamConfig(t *testing.T) {
 		t.Fatalf("Init over legacy stream: %v", err)
 	}
 
-	info, err := engine.stream.Info(ctx)
+	info, err := engine.streams[common.TierMedium].Info(ctx)
 	if err != nil {
 		t.Fatalf("stream info after migration: %v", err)
 	}
 	if got := info.Config.MaxBytes; got != int64(1024*1024*1024) {
 		t.Fatalf("MaxBytes after migration = %d, want %d", got, int64(1024*1024*1024))
 	}
-	// Duplicates is deliberately NOT part of the wanted config (RAGFLOW_TASKS
-	// publishes without a MsgID, so its dedup window never applies), which makes it
-	// a non-owned field like Retention/Subjects below: migration must leave the
-	// legacy value exactly as it was.
+	// Duplicates is deliberately NOT part of the wanted config (task publishes
+	// carry no MsgID, so its dedup window never applies), which makes it a
+	// non-owned field like Retention/Subjects: migration must leave the legacy
+	// value exactly as it was.
 	if got := info.Config.Duplicates; got != legacyInfo.Config.Duplicates {
 		t.Fatalf("Duplicates after migration = %v, want the legacy %v (must not be reset)", got, legacyInfo.Config.Duplicates)
 	}
@@ -174,8 +178,8 @@ func TestInitMigratesLegacyStreamConfig(t *testing.T) {
 	if got := info.Config.Retention; got != jetstream.WorkQueuePolicy {
 		t.Fatalf("Retention after migration = %v, want WorkQueuePolicy (must not be reset)", got)
 	}
-	if len(info.Config.Subjects) != 1 || info.Config.Subjects[0] != "tasks.>" {
-		t.Fatalf("Subjects after migration = %v, want [tasks.>] (must not be reset)", info.Config.Subjects)
+	if len(info.Config.Subjects) != len(medium.subjects) || info.Config.Subjects[0] != medium.subjects[0] {
+		t.Fatalf("Subjects after migration = %v, want %v (must not be reset)", info.Config.Subjects, medium.subjects)
 	}
 }
 
@@ -188,7 +192,7 @@ func TestInitConsumerSetsAckWaitAndBackOff(t *testing.T) {
 	if err := engine.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := engine.InitConsumer("tasks.>"); err != nil {
+	if err := engine.InitConsumer(common.TaskSubjectMedium); err != nil {
 		t.Fatalf("InitConsumer: %v", err)
 	}
 

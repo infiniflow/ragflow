@@ -998,7 +998,7 @@ func (h *Handler) PublishMessageToQueue(c *gin.Context) {
 	}
 
 	msgQueueEngine := engine.GetMessageQueueEngine()
-	err = msgQueueEngine.PublishTask(common.TaskSubject, taskMessageStr)
+	err = msgQueueEngine.PublishTask(common.PrimaryTierSubject(), taskMessageStr)
 	if err != nil {
 		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
@@ -1024,7 +1024,7 @@ func (h *Handler) PullMessageFromQueue(c *gin.Context) {
 	}
 
 	msgQueueEngine := engine.GetMessageQueueEngine()
-	if err := msgQueueEngine.InitConsumer(common.TaskSubject); err != nil {
+	if err := msgQueueEngine.InitConsumer(common.PrimaryTierSubject()); err != nil {
 		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
 	}
