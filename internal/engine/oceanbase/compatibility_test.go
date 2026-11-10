@@ -37,7 +37,7 @@ func TestLegacyChunkEncodingContract(t *testing.T) {
 		"q_3_vec":       []float64{0.1, 0.2, 0.3},
 		"custom_field":  "preserved",
 	}
-	got, err := normalizeChunk(document)
+	got, err := normalizeChunk(document, fullChunkSchema())
 	if err != nil {
 		t.Fatal(err)
 	}

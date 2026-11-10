@@ -219,28 +219,6 @@ func TestChunkColumnsCoverInfinityMapping(t *testing.T) {
 	}
 }
 
-// A column added to chunkColumns is only written into an existing table by
-// CreateChunkStore, which walks chunkExtraColumns. Leaving a knowledge-compile
-// field out of that list keeps ChunkStoreExists false and the ALTER never runs.
-func TestKnowledgeCompileColumnsAreUpgraded(t *testing.T) {
-	upgraded := make(map[string]bool, len(chunkExtraColumns))
-	for _, column := range chunkExtraColumns {
-		upgraded[column.name] = true
-	}
-	// Fields the parse and knowledge-compilation readers select.
-	for _, name := range []string{
-		"compile_kwd", "compilation_template_kind_kwd", "plan_kwd", "scope_kwd",
-		"slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "plan_group_kwd",
-		"generation_kwd", "summary_with_weight", "name_kwd", "mention_count_int",
-		"entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "outlinks_int",
-		"depth_int", "source_chunk_ids", "source_doc_ids", "compilation_template_ids",
-	} {
-		if !upgraded[name] {
-			t.Errorf("%q is missing from chunkExtraColumns, so existing tables never gain the column", name)
-		}
-	}
-}
-
 // The value encoders are driven by their own name sets, so a column stored as
 // an array or JSON must be registered there or a read returns the raw string.
 func TestMappingListColumnsKeepTheirEncoding(t *testing.T) {
@@ -270,48 +248,6 @@ func TestMappingListColumnsKeepTheirEncoding(t *testing.T) {
 	}
 }
 
-// ChunkStoreExists is the gate that makes InsertChunks call CreateChunkStore,
-// which is the only place an existing table gains a new column. A table that
-// predates compile_kwd must therefore report not-ready, otherwise the additive
-// DDL never runs and selects of that column fail.
-func TestChunkStoreExistsDetectsMissingKnowledgeCompileColumn(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	engine := newEngineWithDB("seekdb", "legacy_doc", db)
-	engine.flags.enableFullTextSearch = false
-
-	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?")).
-		WithArgs("legacy_doc", "ragflow_tenant_1").
-		WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(1))
-	columnQuery := regexp.QuoteMeta("SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?")
-	for _, column := range chunkExtraColumns {
-		present := 1
-		if column.name == "compile_kwd" {
-			present = 0
-		}
-		mock.ExpectQuery(columnQuery).
-			WithArgs("legacy_doc", "ragflow_tenant_1", column.name).
-			WillReturnRows(sqlmock.NewRows([]string{"COUNT(*)"}).AddRow(present))
-		if present == 0 {
-			break // an absent column answers false immediately
-		}
-	}
-
-	ready, err := engine.ChunkStoreExists(t.Context(), "ragflow_tenant_1", "kb-1")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ready {
-		t.Fatal("a chunk table without compile_kwd reported ready, so the additive upgrade would never run")
-	}
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatal(err)
-	}
-}
-
 // A chunk table gains columns only when CreateChunkStore runs, and reads can
 // run first. The default projection must therefore follow the table's real
 // schema instead of a static list that includes a column the table lacks.
@@ -329,5 +265,61 @@ func TestChunkDefaultProjectionFollowsTheTableSchema(t *testing.T) {
 	}
 	if qualified != "`t`.*" {
 		t.Errorf("qualified default chunk projection = %q, want %q", qualified, "`t`.*")
+	}
+}
+
+// An explicit projection that names a column an existing table lacks must read
+// the value from extra instead of failing on the missing column, and a column
+// the table has keeps its plain form.
+func TestChunkExplicitProjectionReadsMissingColumnFromExtra(t *testing.T) {
+	schema := fullChunkSchema()
+	delete(schema, "compile_kwd")
+
+	fieldsSQL, _, err := buildSelectFieldsWithAlias([]string{"compile_kwd"}, "chunk", "", schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "`id`, JSON_UNQUOTE(JSON_EXTRACT(`extra`, '$.compile_kwd')) AS `compile_kwd`"
+	if fieldsSQL != want {
+		t.Errorf("projection = %q, want %q", fieldsSQL, want)
+	}
+
+	qualified, _, err := buildSelectFieldsWithAlias([]string{"compile_kwd"}, "chunk", "t", schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantQualified := "`t`.`id`, JSON_UNQUOTE(JSON_EXTRACT(`t`.`extra`, '$.compile_kwd')) AS `compile_kwd`"
+	if qualified != wantQualified {
+		t.Errorf("qualified projection = %q, want %q", qualified, wantQualified)
+	}
+
+	fieldsSQL, _, err = buildSelectFieldsWithAlias([]string{"compile_kwd"}, "chunk", "", fullChunkSchema())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fieldsSQL != "`id`, `compile_kwd`" {
+		t.Errorf("projection on a table that has the column = %q, want the physical column", fieldsSQL)
+	}
+
+	// Callers that did not read the schema keep the static form.
+	if fieldsSQL, _, _ = buildSelectFields([]string{"compile_kwd"}, "chunk"); fieldsSQL != "`id`, `compile_kwd`" {
+		t.Errorf("projection without a schema read = %q, want the physical column", fieldsSQL)
+	}
+}
+
+func TestChunkSelectionNeedsSchemaOnlyForOptionalColumns(t *testing.T) {
+	for _, tc := range []struct {
+		fields []string
+		want   bool
+	}{
+		{nil, false},
+		{[]string{"id", "content_with_weight"}, false},
+		{[]string{"compile_kwd"}, true},
+		{[]string{"chunk_order_int", "source_chunk_ids"}, true},
+		{[]string{"*"}, false},
+	} {
+		if got := chunkSelectionNeedsSchema(tc.fields); got != tc.want {
+			t.Errorf("chunkSelectionNeedsSchema(%v) = %v, want %v", tc.fields, got, tc.want)
+		}
 	}
 }

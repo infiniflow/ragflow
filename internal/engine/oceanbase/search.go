@@ -160,7 +160,15 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 }
 
 func (e *Engine) searchTableWithSQL(ctx context.Context, tableName, kind string, condition map[string]interface{}, req *types.SearchRequest, plan searchPlan) ([]map[string]interface{}, int64, error) {
-	fieldsSQL, _, err := buildSelectFields(req.SelectFields, kind)
+	var tableColumns map[string]bool
+	if kind == "chunk" && chunkSelectionNeedsSchema(req.SelectFields) {
+		var err error
+		tableColumns, err = e.tableColumns(ctx, tableName)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+	fieldsSQL, _, err := buildSelectFieldsWithAlias(req.SelectFields, kind, "", tableColumns)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -176,7 +184,7 @@ func (e *Engine) searchTableWithSQL(ctx context.Context, tableName, kind string,
 
 	switch {
 	case plan.text != nil && plan.dense != nil:
-		qualifiedFieldsSQL, _, err := buildQualifiedSelectFields(req.SelectFields, kind, "t")
+		qualifiedFieldsSQL, _, err := buildSelectFieldsWithAlias(req.SelectFields, kind, "t", tableColumns)
 		if err != nil {
 			return nil, 0, err
 		}

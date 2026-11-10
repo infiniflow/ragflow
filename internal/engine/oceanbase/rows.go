@@ -106,7 +106,34 @@ func decodeLogicalRow(row map[string]interface{}, kind string) map[string]interf
 		}
 		result[column] = value
 	}
+	if kind == "chunk" {
+		expandChunkExtra(result)
+	}
 	return result
+}
+
+// expandChunkExtra lifts declared fields that an existing chunk table stores
+// in its extra JSON column back onto the chunk document. A field the table has
+// as a column wins: the row then carries the physical value, which is the
+// current one.
+func expandChunkExtra(row map[string]interface{}) {
+	extra, ok := row["extra"].(map[string]interface{})
+	if !ok {
+		return
+	}
+	for column, value := range extra {
+		if !knownChunkColumns[column] {
+			continue
+		}
+		logical := column
+		if logical == "_order_id" {
+			logical = "chunk_order_int"
+		}
+		if _, present := row[logical]; present {
+			continue
+		}
+		row[logical] = value
+	}
 }
 
 func scanCount(row *sql.Row) (int64, error) {
@@ -118,8 +145,9 @@ func scanCount(row *sql.Row) (int64, error) {
 }
 
 type selectField struct {
-	column string
-	alias  string
+	column    string
+	alias     string
+	fromExtra bool
 }
 
 func (field selectField) expression(tableAlias string) string {
@@ -128,13 +156,18 @@ func (field selectField) expression(tableAlias string) string {
 		prefix = quoteIdentifier(tableAlias) + "."
 	}
 	expression := prefix + quoteIdentifier(field.column)
-	if field.alias != field.column {
+	if field.fromExtra {
+		// The value lives in the extra JSON object; JSON_UNQUOTE returns the
+		// scalar a column reader expects instead of a quoted JSON string.
+		expression = "JSON_UNQUOTE(JSON_EXTRACT(" + prefix + quoteIdentifier("extra") + ", '$." + field.column + "'))"
+	}
+	if field.alias != field.column || field.fromExtra {
 		expression += " AS " + quoteIdentifier(field.alias)
 	}
 	return expression
 }
 
-func parseSelectField(field, kind string) (*selectField, error) {
+func parseSelectField(field, kind string, tableColumns map[string]bool) (*selectField, error) {
 	if field == "_score" {
 		return nil, nil
 	}
@@ -151,6 +184,11 @@ func parseSelectField(field, kind string) (*selectField, error) {
 	if field == "content_embed" && kind == "memory" {
 		return nil, nil
 	}
+	// Only columns the engine added after the first chunk schema can be absent
+	// from an existing table; those are read from extra instead.
+	if kind == "chunk" && optionalChunkColumns[column] && tableColumns != nil && !tableColumns[column] {
+		return &selectField{column: column, alias: field, fromExtra: true}, nil
+	}
 	if !vectorColumnPattern.MatchString(column) && !validColumns(kind)[column] {
 		return nil, fmt.Errorf("unknown %s field: %s", kind, field)
 	}
@@ -158,7 +196,7 @@ func parseSelectField(field, kind string) (*selectField, error) {
 }
 
 func selectExpression(field, kind string) (string, string, error) {
-	parsed, err := parseSelectField(field, kind)
+	parsed, err := parseSelectField(field, kind, nil)
 	if err != nil || parsed == nil {
 		return "", "", err
 	}
@@ -166,14 +204,29 @@ func selectExpression(field, kind string) (string, string, error) {
 }
 
 func buildSelectFields(fields []string, kind string) (string, []string, error) {
-	return buildSelectFieldsWithAlias(fields, kind, "")
+	return buildSelectFieldsWithAlias(fields, kind, "", nil)
 }
 
 func buildQualifiedSelectFields(fields []string, kind, tableAlias string) (string, []string, error) {
-	return buildSelectFieldsWithAlias(fields, kind, tableAlias)
+	return buildSelectFieldsWithAlias(fields, kind, tableAlias, nil)
 }
 
-func buildSelectFieldsWithAlias(fields []string, kind, tableAlias string) (string, []string, error) {
+// chunkSelectionNeedsSchema reports whether an explicit chunk projection names
+// a column an existing table may lack. Only then is the table's column set
+// worth a metadata read; the default projection and base columns are not.
+func chunkSelectionNeedsSchema(fields []string) bool {
+	for _, field := range fields {
+		if field == "" || field == "*" {
+			continue
+		}
+		if optionalChunkColumns[mapChunkField(field)] {
+			return true
+		}
+	}
+	return false
+}
+
+func buildSelectFieldsWithAlias(fields []string, kind, tableAlias string, tableColumns map[string]bool) (string, []string, error) {
 	if len(fields) == 0 || containsString(fields, "*") {
 		// Chunk columns grow additively on existing tables, so a static default
 		// list breaks a read that runs before CreateChunkStore. SELECT * follows
@@ -194,7 +247,7 @@ func buildSelectFieldsWithAlias(fields []string, kind, tableAlias string) (strin
 	aliases := make([]string, 0, len(fields))
 	seen := make(map[string]bool)
 	for _, field := range fields {
-		parsed, err := parseSelectField(field, kind)
+		parsed, err := parseSelectField(field, kind, tableColumns)
 		if err != nil {
 			return "", nil, err
 		}

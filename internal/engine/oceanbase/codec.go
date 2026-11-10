@@ -73,9 +73,13 @@ var memoryColumnToField = map[string]string{
 	"content_ltks":     "content",
 }
 
-func normalizeChunk(document map[string]interface{}) (map[string]interface{}, error) {
+// normalizeChunk builds the row for a chunk table. tableColumns is the live
+// column set of the target table: a field the table has is written to its
+// column, anything else goes into the extra JSON column, which is where an
+// existing table keeps fields added to the schema after it was created.
+func normalizeChunk(document map[string]interface{}, tableColumns map[string]bool) (map[string]interface{}, error) {
 	document = normalizeImportantKeywordFields(document)
-	result := make(map[string]interface{}, len(chunkColumns)+1)
+	result := make(map[string]interface{}, len(tableColumns)+1)
 	extra := make(map[string]interface{})
 	if existing, ok := document["extra"].(map[string]interface{}); ok {
 		for key, value := range existing {
@@ -92,7 +96,7 @@ func normalizeChunk(document map[string]interface{}) (map[string]interface{}, er
 			result[key] = encoded
 			continue
 		}
-		if !knownChunkColumns[key] {
+		if !tableColumns[key] {
 			extra[key] = value
 			continue
 		}
@@ -116,6 +120,9 @@ func normalizeChunk(document map[string]interface{}) (map[string]interface{}, er
 		result[key] = encoded
 	}
 	for _, column := range chunkColumns {
+		if !tableColumns[column.name] {
+			continue
+		}
 		if _, ok := result[column.name]; ok {
 			continue
 		}

@@ -48,7 +48,7 @@ var (
 	ddlLocks           sync.Map
 )
 
-var chunkColumns = []columnDefinition{
+var baseChunkColumns = []columnDefinition{
 	{"id", "VARCHAR(256) NOT NULL PRIMARY KEY"},
 	{"kb_id", "VARCHAR(256) NOT NULL"},
 	{"doc_id", "VARCHAR(256) NULL"},
@@ -94,7 +94,12 @@ var chunkColumns = []columnDefinition{
 	{"_order_id", "INTEGER NULL"},
 	{"group_id", "VARCHAR(256) NULL"},
 	{"mom_id", "VARCHAR(256) NULL"},
+}
 
+// additiveChunkColumns are declared for tables created from now on. Existing
+// tables are not altered to gain them, so a chunk operation resolves them
+// against the live schema and falls back to the extra JSON column.
+var additiveChunkColumns = []columnDefinition{
 	// Fields conf/infinity_mapping.json declares that this engine had no column
 	// for. Readers select them by name, and an unknown name is rejected before
 	// any SQL is sent, so the list must follow the mapping. Scalars keep their
@@ -156,6 +161,16 @@ var chunkColumns = []columnDefinition{
 	{"aliases_flat_kwd", "VARCHAR(256) NULL"},
 }
 
+var chunkColumns = append(append([]columnDefinition{}, baseChunkColumns...), additiveChunkColumns...)
+
+var optionalChunkColumns = func() map[string]bool {
+	optional := make(map[string]bool, len(additiveChunkColumns))
+	for _, column := range additiveChunkColumns {
+		optional[column.name] = true
+	}
+	return optional
+}()
+
 var chunkExtraColumns = selectColumnDefinitions(chunkColumns,
 	"_order_id",
 	"group_id",
@@ -164,60 +179,6 @@ var chunkExtraColumns = selectColumnDefinitions(chunkColumns,
 	"raptor_kwd",
 	"raptor_layer_int",
 	"n_hop_with_weight",
-	"compile_kwd",
-	"compilation_template_kind_kwd",
-	"mom",
-	"name",
-	"name_kwd",
-	"important_kwd_empty_count",
-	"mention_count_int",
-	"rank_int",
-	"mom_with_weight",
-	"toc_kwd",
-	"deleted_doc_id",
-	"plan_kwd",
-	"scope_kwd",
-	"source_chunk_ids",
-	"source_doc_ids",
-	"compilation_template_ids",
-	"chunk_hash_kwd",
-	"input_hash_kwd",
-	"wiki_slug_kwd",
-	"summary_with_weight",
-	"skill_with_weight",
-	"skill_kwd",
-	"children_kwd",
-	"doc_ids_kwd",
-	"slug_kwd",
-	"title_kwd",
-	"topic_kwd",
-	"plan_group_kwd",
-	"generation_kwd",
-	"page_type_kwd",
-	"entity_names_kwd",
-	"entity_names",
-	"outlinks_kwd",
-	"related_kb_pages_kwd",
-	"page_version_int",
-	"synthesis_version_int",
-	"claims",
-	"page_ids",
-	"page_id",
-	"source_chunk_hashes",
-	"map_checksum",
-	"from_kwd",
-	"to_kwd",
-	"rechunk_kwd",
-	"rechunked_from_template_id",
-	"rechunked_from_chunk_ids",
-	"superseded_by_chunk_id",
-	"doc_count_int",
-	"depth_int",
-	"parent_kwd",
-	"outlinks_int",
-	"token_num",
-	"aliases",
-	"aliases_flat_kwd",
 )
 
 var memoryColumns = []columnDefinition{
@@ -518,6 +479,30 @@ func (e *Engine) columnExists(ctx context.Context, tableName, columnName string)
 		"SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ?",
 		e.dbName, tableName, columnName).Scan(&count)
 	return count > 0, err
+}
+
+// tableColumns reads a table's column set in one metadata query. Chunk schemas
+// grow additively, and an existing table is never altered to gain the added
+// columns, so a chunk operation resolves fields against this set and stores
+// what the table lacks in the extra JSON column. Callers read it once per
+// operation or batch rather than per row.
+func (e *Engine) tableColumns(ctx context.Context, tableName string) (map[string]bool, error) {
+	rows, err := e.db.QueryContext(ctx,
+		"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?",
+		e.dbName, tableName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	columns := make(map[string]bool)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		columns[name] = true
+	}
+	return columns, rows.Err()
 }
 
 func (e *Engine) indexExists(ctx context.Context, tableName, indexName string) (bool, error) {
