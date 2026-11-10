@@ -79,7 +79,7 @@ func NewLLMDeduper(chat kccommon.ChatInvoker, embed kccommon.Embedder, llmID str
 	// token-bounded sub-batches run concurrently with the rest of the pipeline
 	// (LLM-bounded), all under one concurrency limit.
 	decider.SetSubmitter(func(ctx context.Context, jobs []func() error) error {
-		return SubmitCompilerJobs(ctx, jobs)
+		return SubmitCompilerLLMJobs(ctx, jobs)
 	})
 	return &llmDeduper{group: structure.NewGroupedDeduper(decider), decider: decider, embed: embed}
 }

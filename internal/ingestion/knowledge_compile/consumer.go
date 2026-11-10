@@ -1144,18 +1144,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 				Score:      g.score,
 			})
 		}
-		llmCtx, finishLLMProgress := withKnowledgeCompileLLMProgress(ctx, func(progressCtx context.Context, component, message string) {
-			c.reportProgress(
-				progressCtx,
-				tenant,
-				kb,
-				token,
-				taskTypes,
-				0.82,
-				"llm_merge",
-				fmt.Sprintf("%s: %s", component, message),
-			)
-		})
+		llmCtx, finishLLMProgress := withKnowledgeCompileLLMProgress(ctx, tenant, kb)
 		batched, err = deduper.DecideBatch(llmCtx, batched)
 		finishLLMProgress()
 		if err != nil {
@@ -1397,7 +1386,7 @@ func rewriteMergedWikiPages(ctx context.Context, tenant string, pages []kccommon
 			return nil
 		})
 	}
-	return SubmitCompilerJobs(ctx, jobs)
+	return SubmitCompilerLLMJobs(ctx, jobs)
 }
 
 func floatPtr(value float64) *float64 { return &value }
