@@ -1,4 +1,4 @@
-import { decodeBlobText } from '../file-util';
+import { decodeBlobText, formatBytes } from '../file-util';
 
 // decodeBlobText routes a Blob through one of five decoder branches based on
 // the first up-to-3 bytes. The branches, in order:
@@ -97,5 +97,21 @@ describe('decodeBlobText', () => {
     // and did not leave a leading U+FEFF in the output.
     expect(got.length).toBe(1);
     expect(got.charCodeAt(0)).not.toBe(0xfeff);
+  });
+});
+
+describe('formatBytes', () => {
+  it('keeps values inside a unit', () => {
+    expect(formatBytes(0)).toBe('0 bytes');
+    expect(formatBytes(1023)).toBe('1023 bytes');
+    expect(formatBytes(1536)).toBe('1.5 KB');
+    expect(formatBytes(500 * 1024)).toBe('500 KB');
+  });
+
+  it('moves to the next unit when rounding reaches 1024', () => {
+    expect(formatBytes(1024 * 1024 - 1)).toBe('1.0 MB');
+    expect(formatBytes(1023.6 * 1024)).toBe('1.0 MB');
+    expect(formatBytes(1024 ** 3 - 1)).toBe('1.0 GB');
+    expect(formatBytes(1023.4 * 1024)).toBe('1023 KB');
   });
 });
