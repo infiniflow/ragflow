@@ -55,3 +55,26 @@ func TestDeliveryLimitFollowsExistingConsumer(t *testing.T) {
 		t.Fatalf("deliveryLimit = %d, want the existing consumer's 3", got)
 	}
 }
+
+// A configured consumer keeps the limit this call requested even when the
+// read-back fails, while a reattached consumer whose limit cannot be read
+// stays unknown (0) so the runner never settles a task on a guessed budget.
+func TestResolveDeliveryLimit(t *testing.T) {
+	cases := []struct {
+		name       string
+		configured bool
+		info       *jetstream.ConsumerInfo
+		want       uint64
+	}{
+		{name: "configured without read-back", configured: true, want: ingestionMaxDeliver},
+		{name: "reattached without read-back", configured: false, want: 0},
+		{name: "reattached unlimited", configured: false, info: &jetstream.ConsumerInfo{Config: jetstream.ConsumerConfig{MaxDeliver: -1}}, want: 0},
+		{name: "reattached known limit", configured: false, info: &jetstream.ConsumerInfo{Config: jetstream.ConsumerConfig{MaxDeliver: 3}}, want: 3},
+		{name: "configured known limit", configured: true, info: &jetstream.ConsumerInfo{Config: jetstream.ConsumerConfig{MaxDeliver: 7}}, want: 7},
+	}
+	for _, tc := range cases {
+		if got := resolveDeliveryLimit(tc.configured, tc.info); got != tc.want {
+			t.Errorf("%s: resolveDeliveryLimit = %d, want %d", tc.name, got, tc.want)
+		}
+	}
+}
