@@ -183,7 +183,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 	if language, ok := simpleUpdates["language"].(string); ok {
 		preparedLanguage = language
 	}
-	preparedChunkStoreEmbdID, preflightCode, preflightErr := d.prepareChunkStoreForEmbeddingChange(ctx, currentKB, embdID, embdIDProvided, parserID, parserIDProvided, preparedLanguage)
+	storePlan, preflightCode, preflightErr := d.planChunkStoreForEmbeddingChange(ctx, currentKB, embdID, embdIDProvided, parserID, parserIDProvided, preparedLanguage)
 	if preflightErr != nil {
 		return nil, preflightCode, preflightErr
 	}
@@ -307,14 +307,14 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 			updates["embd_id"] = effectiveEmbdID
 			updates["tenant_embd_id"] = stringPtrIfNotEmpty(tenantEmbdID)
 			// An empty dataset can switch models, but its chunk store keeps the
-			// vector column of the previous model. The preparation ran before
-			// this transaction, so only a state that moved in between is left to
-			// catch here; it needs a retry against the new state.
+			// vector column of the previous model. An existing store was extended
+			// before this transaction; a missing one is created after it commits,
+			// so a rejected update never leaves a store the row did not ask for.
 			if effectiveEmbdID != "" && effectiveEmbdID != lockedKB.EmbdID && lockedKB.ChunkNum == 0 {
 				chunkStoreEmbdID = effectiveEmbdID
 			}
 		}
-		if chunkStoreEmbdID != "" && chunkStoreEmbdID != preparedChunkStoreEmbdID {
+		if chunkStoreEmbdID != "" && storePlan.storeExists && chunkStoreEmbdID != storePlan.preparedEmbdID {
 			txCode = common.CodeServerError
 			return errors.New("dataset changed while the embedding model was being prepared; retry the request")
 		}
@@ -530,6 +530,14 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 	}
 	publishDatasetSyncerTasks(scheduledTaskIDs)
 
+	if storePlan.createEmbdID != "" && updatedKB != nil && updatedKB.ChunkNum == 0 && updatedKB.EmbdID == storePlan.createEmbdID {
+		if err = d.ensureChunkStoreForEmbedding(ctx, updatedKB, storePlan.createEmbdID); err != nil {
+			return nil, common.CodeServerError, fmt.Errorf(
+				"dataset settings were saved, but the chunk store for embedding model %s could not be created; retry the request to repair it: %w",
+				storePlan.createEmbdID, err)
+		}
+	}
+
 	if pagerankUpdate != nil {
 		if err = d.updateDatasetPagerankChunks(ctx, *pagerankUpdate); err != nil {
 			return nil, common.CodeServerError, err
@@ -668,26 +676,52 @@ func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx 
 	return &kb, common.CodeSuccess, nil
 }
 
-// prepareChunkStoreForEmbeddingChange adds the new model's vector column before
-// the binding is committed. The engine write is additive and an empty dataset
-// holds no vectors to reinterpret, so preparing ahead of the transaction is
-// safe: a preparation failure leaves the binding untouched and the retry takes
-// this same path, instead of stranding the dataset on a store that has no
-// column for its model. The caller passes the parser and language the same
-// update is about to persist, because the engine fixes both when it creates the
-// store.
-func (d *DatasetService) prepareChunkStoreForEmbeddingChange(ctx context.Context, kb *entity.Knowledgebase, embdID string, embdIDProvided bool, parserID string, parserIDProvided bool, language string) (string, common.ErrorCode, error) {
-	if !embdIDProvided || embdID == "" || kb == nil || embdID == kb.EmbdID || kb.ChunkNum != 0 {
-		return "", common.CodeSuccess, nil
+// chunkStorePlan is what the pre-transaction store check decided.
+type chunkStorePlan struct {
+	// storeExists reports whether the dataset's chunk store existed before the
+	// transaction.
+	storeExists bool
+	// preparedEmbdID is the model whose vector column was added to the existing
+	// store before the transaction. Additive writes are safe there: a rejected
+	// update leaves every column the row still needs.
+	preparedEmbdID string
+	// createEmbdID is the model whose store must be created after the commit.
+	// Creating a store fixes its analyzer and dimensions, so doing it before a
+	// transaction that can still roll back would leave a store the row never
+	// asked for. A failed creation is retried by the next update, which finds
+	// the store missing again.
+	createEmbdID string
+}
+
+// planChunkStoreForEmbeddingChange decides how an empty dataset's chunk store
+// is prepared for an embedding-model change. The caller passes the parser and
+// language the same update is about to persist, because engines fix both when
+// they create the store.
+func (d *DatasetService) planChunkStoreForEmbeddingChange(ctx context.Context, kb *entity.Knowledgebase, embdID string, embdIDProvided bool, parserID string, parserIDProvided bool, language string) (chunkStorePlan, common.ErrorCode, error) {
+	var plan chunkStorePlan
+	if d.docEngine == nil || kb == nil || !embdIDProvided || embdID == "" || kb.ChunkNum != 0 {
+		return plan, common.CodeSuccess, nil
+	}
+	exists, err := d.docEngine.ChunkStoreExists(ctx, fmt.Sprintf("ragflow_%s", kb.TenantID), kb.ID)
+	if err != nil {
+		return plan, common.CodeServerError, fmt.Errorf("check the chunk store for dataset %s: %w", kb.ID, err)
+	}
+	plan.storeExists = exists
+	if !exists {
+		plan.createEmbdID = embdID
+		return plan, common.CodeSuccess, nil
+	}
+	if embdID == kb.EmbdID {
+		return plan, common.CodeSuccess, nil
 	}
 	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID}, permission.OperationUpdate); err != nil {
 		code, permissionErr := permissionresponse.NormalizeHidden(err)
-		return "", code, permissionErr
+		return plan, code, permissionErr
 	}
 	// Keep the unavailable-model contract of the transaction below: the probe
 	// fails first for an unknown model, and that is a client error.
 	if ok, message := d.verifyEmbeddingAvailability(ctx, embdID, kb.TenantID); !ok {
-		return "", common.CodeDataError, errors.New(message)
+		return plan, common.CodeDataError, errors.New(message)
 	}
 	preparedKB := *kb
 	if parserIDProvided {
@@ -697,9 +731,10 @@ func (d *DatasetService) prepareChunkStoreForEmbeddingChange(ctx context.Context
 		preparedKB.Language = &language
 	}
 	if err := d.ensureChunkStoreForEmbedding(ctx, &preparedKB, embdID); err != nil {
-		return "", common.CodeServerError, fmt.Errorf("prepare the chunk store for embedding model %s: %w", embdID, err)
+		return plan, common.CodeServerError, fmt.Errorf("prepare the chunk store for embedding model %s: %w", embdID, err)
 	}
-	return embdID, common.CodeSuccess, nil
+	plan.preparedEmbdID = embdID
+	return plan, common.CodeSuccess, nil
 }
 
 // ensureChunkStoreForEmbedding prepares the chunk store for a new embedding
