@@ -35,6 +35,7 @@ import (
 
 	"go.uber.org/zap"
 
+	agentruntime "ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/entity"
@@ -552,5 +553,8 @@ func defaultVisionChatInvoker(
 		config.Thinking = &thinking
 	}
 	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
-	return chatModel.ChatWithMessages(chatCtx, messages, config, nil)
+	finish := agentruntime.TrackIO(chatCtx, "Parser", "VLM", "operation=vision_enhancement")
+	resp, err := chatModel.ChatWithMessages(chatCtx, messages, config, nil)
+	finish()
+	return resp, err
 }

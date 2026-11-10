@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"strings"
 
+	agentruntime "ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
@@ -91,6 +92,13 @@ func dispatchParse(ctx context.Context, p parser.ParseResultProducer, fileType u
 
 	configureParserFromSetups(p, fileType, setups)
 	attachPDFPageProgress(ctx, p, window)
+	var finishParserIO func()
+	if method := strings.ToLower(strings.TrimSpace(parseMethod)); method != "" && method != "deepdoc" && method != "plain_text" {
+		finishParserIO = agentruntime.TrackIO(ctx, "Parser", "remote parser", "backend="+method)
+	} else {
+		finishParserIO = func() {}
+	}
+	defer finishParserIO()
 
 	res := p.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
@@ -135,7 +143,13 @@ func pdfPageProgressSupported(fileType utility.FileType, setups map[string]schem
 // the fraction stays at zero.
 func attachPDFPageProgress(ctx context.Context, p parser.ParseResultProducer, window progress.Window) {
 	pdfParser, ok := p.(*parser.PDFParser)
-	if !ok || window.Span <= 0 {
+	if !ok {
+		return
+	}
+	pdfParser.OnModelCall = func(callCtx context.Context, operation string) func() {
+		return agentruntime.TrackIO(callCtx, "DeepDOC", operation, "file_type=pdf")
+	}
+	if window.Span <= 0 {
 		return
 	}
 	pdfParser.OnPageDone = func(done, total int) {

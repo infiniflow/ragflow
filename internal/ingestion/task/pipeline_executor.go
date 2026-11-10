@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	agentruntime "ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -229,6 +230,10 @@ func (s *PipelineExecutor) Doc() *entity.Document     { return &s.taskCtx.Doc }
 func (s *PipelineExecutor) Tenant() *entity.Tenant    { return &s.taskCtx.Tenant }
 
 func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error) {
+	ctx = s.withProgressMessageReporter(ctx)
+	ctx, finishIOProgress := agentruntime.WithIOProgress(ctx)
+	defer finishIOProgress()
+
 	start := time.Now()
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -277,6 +282,36 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	}
 
 	return result, nil
+}
+
+type pipelineMessageReporter interface {
+	OnComponentMessage(ctx context.Context, taskID, documentID, component, message string)
+}
+
+func (s *PipelineExecutor) withProgressMessageReporter(ctx context.Context) context.Context {
+	if s.taskCtx == nil {
+		return ctx
+	}
+	sink, hasSink := s.progressSink.(pipelineMessageReporter)
+	taskID := ""
+	if s.taskCtx.IngestionTask != nil {
+		taskID = s.taskCtx.IngestionTask.ID
+	}
+	documentID := s.taskCtx.Doc.ID
+	return agentruntime.WithProgressMessageCallback(ctx, func(component, message string) {
+		common.Info("component progress detail",
+			zap.String("component", component),
+			zap.String("task_id", taskID),
+			zap.String("document_id", documentID),
+			zap.String("message", message),
+		)
+		if !hasSink {
+			return
+		}
+		sinkCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		sink.OnComponentMessage(sinkCtx, taskID, documentID, component, message)
+	})
 }
 
 // collectDebugOutput builds a PipelineResult for a debug (dry-run) run.
@@ -360,11 +395,20 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	}
 	indexChunks := append(chunks, parentChunks...)
 	indexdoc.StampDatasetPagerank(indexChunks, s.taskCtx.KB.Pagerank)
-	if err := s.indexWriter.Write(ctx, indexChunks); err != nil {
+	indexWriteStart := time.Now()
+	finishIndexWrite := agentruntime.TrackIO(ctx, "Indexer", "Write chunks", fmt.Sprintf("count=%d", len(indexChunks)))
+	indexWriteErr := s.indexWriter.Write(ctx, indexChunks)
+	finishIndexWrite()
+	indexMessage := fmt.Sprintf("Write chunks | count=%d elapsed=%s", len(indexChunks), time.Since(indexWriteStart).Round(time.Millisecond))
+	if indexWriteErr != nil {
+		indexMessage += " error=" + kccommon.CompactError(indexWriteErr)
+	}
+	agentruntime.ReportIOProgress(ctx, "Indexer", indexMessage)
+	if indexWriteErr != nil {
 		if cleanupErr := s.compensateFailedIndexWrite(ctx, indexChunks); cleanupErr != nil {
-			return nil, fmt.Errorf("write chunks: %w; compensate partial index write: %v", err, cleanupErr)
+			return nil, fmt.Errorf("write chunks: %w; compensate partial index write: %v", indexWriteErr, cleanupErr)
 		}
-		return nil, fmt.Errorf("write chunks: %w", err)
+		return nil, fmt.Errorf("write chunks: %w", indexWriteErr)
 	}
 	if err := s.reconcileDocumentCompiledProducts(ctx, oldCompiledProductIDs, chunks); err != nil {
 		return nil, err
@@ -461,12 +505,20 @@ func (s *PipelineExecutor) compensateFailedIndexWrite(ctx context.Context, chunk
 	}
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
+	started := time.Now()
+	finish := agentruntime.TrackIO(ctx, "Indexer", "Delete partial write", fmt.Sprintf("count=%d", len(ids)))
 	_, err := s.deleteChunksFunc(
 		cleanupCtx,
 		map[string]any{"id": ids, "kb_id": s.taskCtx.Doc.KbID},
 		s.indexWriter.baseName,
 		s.taskCtx.Doc.KbID,
 	)
+	finish()
+	message := fmt.Sprintf("Delete partial write | count=%d elapsed=%s", len(ids), time.Since(started).Round(time.Millisecond))
+	if err != nil {
+		message += " error=" + kccommon.CompactError(err)
+	}
+	agentruntime.ReportIOProgress(ctx, "Indexer", message)
 	return err
 }
 
@@ -575,6 +627,8 @@ func (s *PipelineExecutor) loadDocumentCompiledState(ctx context.Context) ([]str
 	oldIDs := make([]string, 0)
 	oldProducts := make([]map[string]any, 0)
 	for offset := 0; ; offset += pageSize {
+		started := time.Now()
+		finish := agentruntime.TrackIO(ctx, "Indexer", "Search compiled products", fmt.Sprintf("offset=%d limit=%d", offset, pageSize))
 		result, err := docEngine.Search(ctx, &enginetypes.SearchRequest{
 			IndexNames:   []string{indexName},
 			KbIDs:        []string{s.taskCtx.Doc.KbID},
@@ -583,6 +637,16 @@ func (s *PipelineExecutor) loadDocumentCompiledState(ctx context.Context) ([]str
 			SelectFields: []string{"id", "compile_kwd", "compilation_template_kind_kwd", "type_kwd"},
 			Filter:       map[string]any{"doc_id": []string{s.taskCtx.Doc.ID}},
 		})
+		finish()
+		hits := 0
+		if result != nil {
+			hits = len(result.Chunks)
+		}
+		message := fmt.Sprintf("Search compiled products | offset=%d limit=%d hits=%d elapsed=%s", offset, pageSize, hits, time.Since(started).Round(time.Millisecond))
+		if err != nil {
+			message += " error=" + kccommon.CompactError(err)
+		}
+		agentruntime.ReportIOProgress(ctx, "Indexer", message)
 		if err != nil {
 			return nil, nil, nil, fmt.Errorf("load document compiler products: %w", err)
 		}
@@ -634,11 +698,20 @@ func (s *PipelineExecutor) reconcileDocumentCompiledProducts(ctx context.Context
 	indexName := fmt.Sprintf("ragflow_%s", s.taskCtx.Tenant.ID)
 	for start := 0; start < len(staleIDs); start += pageSize {
 		end := min(start+pageSize, len(staleIDs))
-		if _, err := docEngine.DeleteChunks(ctx, map[string]any{
+		started := time.Now()
+		finish := agentruntime.TrackIO(ctx, "Indexer", "Delete stale products", fmt.Sprintf("batch=%d/%d count=%d", start/pageSize+1, (len(staleIDs)+pageSize-1)/pageSize, end-start))
+		_, deleteErr := docEngine.DeleteChunks(ctx, map[string]any{
 			"id":    staleIDs[start:end],
 			"kb_id": s.taskCtx.Doc.KbID,
-		}, indexName, s.taskCtx.Doc.KbID); err != nil {
-			return fmt.Errorf("delete stale document compiler products: %w", err)
+		}, indexName, s.taskCtx.Doc.KbID)
+		finish()
+		message := fmt.Sprintf("Delete stale products | count=%d elapsed=%s", end-start, time.Since(started).Round(time.Millisecond))
+		if deleteErr != nil {
+			message += " error=" + kccommon.CompactError(deleteErr)
+		}
+		agentruntime.ReportIOProgress(ctx, "Indexer", message)
+		if deleteErr != nil {
+			return fmt.Errorf("delete stale document compiler products: %w", deleteErr)
 		}
 	}
 	return nil

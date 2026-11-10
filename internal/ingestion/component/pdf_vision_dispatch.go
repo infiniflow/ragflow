@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	agentruntime "ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -390,7 +391,9 @@ func monkeyOCRv2ParseRequest(ctx context.Context, apiURL, filename string, binar
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	client := *http.DefaultClient
 	client.Timeout = timeout
+	finish := agentruntime.TrackIO(ctx, "Parser", "remote parser", "backend=MonkeyOCRv2")
 	resp, err := client.Do(req)
+	finish()
 	if err != nil {
 		return nil, fmt.Errorf("MonkeyOCRv2 request: %w", err)
 	}
@@ -646,14 +649,18 @@ func dispatchMinerUPDF(
 		}
 		cloudCtx, cloudCancel := context.WithTimeout(ctx, timeout)
 		defer cloudCancel()
+		finish := agentruntime.TrackIO(cloudCtx, "Parser", "remote parser", "backend=MinerU")
 		result, err := modelModule.ParseMinerUCloud(cloudCtx, baseURL, apiKeyRaw, filename, binary, backend, parseMethod, mineruLang)
+		finish()
 		if err != nil {
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU cloud: %w", err)
 		}
 		return finishMinerURemoteResult(ctx, filename, binary, result)
 	}
 
+	finishProbe := agentruntime.TrackIO(ctx, "Parser", "remote parser", "backend=MinerU phase=probe")
 	v1, err := modelModule.MinerUSupportsV1(ctx, baseURL, apiKeyRaw)
+	finishProbe()
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU probe: %w", err)
 	}
@@ -667,7 +674,9 @@ func dispatchMinerUPDF(
 		if !extraction.formulaEnable || !extraction.tableEnable {
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU V1 does not support disabling formula or table extraction; use a /file_parse server to configure these switches")
 		}
+		finish := agentruntime.TrackIO(ctx, "Parser", "remote parser", "backend=MinerU")
 		result, err := modelModule.ParseMinerUV1(ctx, baseURL, apiKeyRaw, filename, binary, backend, parseMethod, timeout)
+		finish()
 		if err != nil {
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU V1: %w", err)
 		}
@@ -1145,7 +1154,9 @@ func mineruStreamParse(ctx context.Context, apiURL string, apiKey string, binary
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
+	finish := agentruntime.TrackIO(ctx, "Parser", "remote parser", "backend=MinerU")
 	resp, err := http.DefaultClient.Do(req)
+	finish()
 	if err != nil {
 		return nil, fmt.Errorf("send request: %w", err)
 	}
@@ -2044,7 +2055,10 @@ func defaultPDFVisionChatInvoker(
 ) (*modelModule.ChatResponse, error) {
 	vision := true
 	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
-	return chatModel.ChatWithMessages(ctx, messages, &modelModule.ChatConfig{Vision: &vision}, nil)
+	finish := agentruntime.TrackIO(ctx, "Parser", "VLM", "media=pdf")
+	resp, err := chatModel.ChatWithMessages(ctx, messages, &modelModule.ChatConfig{Vision: &vision}, nil)
+	finish()
+	return resp, err
 }
 
 // renderPDFVisionPrompt only renders page metadata. The full-page PDF vision

@@ -605,7 +605,9 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 		// tokenizer.py:95 which passes name verbatim to embedding. The
 		// empty-name guard above still uses TrimSpace, matching Python's
 		// `.strip()==""` check at tokenizer.py:200.
+		finish := runtime.TrackIO(ctx, "Tokenizer", "Embedding title", "chunks=1")
 		titleResults, err := embedder.Encode(ctx, []string{name})
+		finish()
 		if err != nil {
 			return nil, 0, fmt.Errorf("tokenizer: encode title: %w", err)
 		}
@@ -628,7 +630,11 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 		if end > len(texts) {
 			end = len(texts)
 		}
+		batch := start/batchSize + 1
+		batchTotal := (len(texts) + batchSize - 1) / batchSize
+		finish := runtime.TrackIO(ctx, "Tokenizer", "Embedding chunks", fmt.Sprintf("batch=%d/%d chunks=%d", batch, batchTotal, end-start))
 		batchResults, err := embedder.Encode(ctx, texts[start:end])
+		finish()
 		if err != nil {
 			return nil, 0, fmt.Errorf("tokenizer: encode: %w", err)
 		}
