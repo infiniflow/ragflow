@@ -45,6 +45,16 @@ func getOSTestConfig() config.OpenSearchConfig {
 	}
 }
 
+// requireOSTestCluster guards the OpenSearch integration suite. The cluster is
+// not part of the CI dependency stack, so the suite is opt-in through OS_TEST,
+// mirroring the env-var gating the other engine-specific suites use.
+func requireOSTestCluster(t *testing.T) {
+	t.Helper()
+	if os.Getenv("OS_TEST") != "1" {
+		t.Skip("set OS_TEST=1 (and optionally OS_HOST/OS_USERNAME/OS_PASSWORD) to run the OpenSearch integration tests")
+	}
+}
+
 func osTestVector(base float64) []float64 {
 	v := make([]float64, osTestDim)
 	for i := range v {
@@ -95,6 +105,7 @@ func osTestSearchReq(exprs []interface{}) *types.SearchRequest {
 // real cluster: index creation from os_mapping.json, bulk insert, text /
 // vector / hybrid search, KNN second-pass scores, update, delete and drop.
 func TestOpenSearchChunkLifecycle(t *testing.T) {
+	requireOSTestCluster(t)
 	eng, err := NewEngine(t.Context(), getOSTestConfig())
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
@@ -215,6 +226,7 @@ func TestOpenSearchChunkLifecycle(t *testing.T) {
 
 // TestOpenSearchSQL runs a plain SELECT against the real cluster's SQL plugin.
 func TestOpenSearchSQL(t *testing.T) {
+	requireOSTestCluster(t)
 	eng, err := NewEngine(t.Context(), getOSTestConfig())
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)

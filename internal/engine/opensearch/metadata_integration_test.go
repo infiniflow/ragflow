@@ -14,6 +14,7 @@ import (
 // "dynamic":"runtime" mapping into plain dynamic (OpenSearch rejects runtime),
 // then insert / search / update / delete are driven through the engine API.
 func TestOpenSearchMetadataLifecycle(t *testing.T) {
+	requireOSTestCluster(t)
 	eng, err := NewEngine(t.Context(), getOSTestConfig())
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)

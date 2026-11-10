@@ -186,6 +186,10 @@ func TestMCPConfigurationDoesNotLogKey(t *testing.T) {
 // TestGetAllConfigsOpenSearchDocEngine verifies the admin configuration export
 // supports the OpenSearch doc engine instead of rejecting it as unsupported.
 func TestGetAllConfigsOpenSearchDocEngine(t *testing.T) {
+	// GetAllConfigs switches on DOC_ENGINE, not on the config file, so the CI
+	// matrix (which exports DOC_ENGINE=infinity/elasticsearch) would otherwise
+	// select another engine and export no OpenSearch entry.
+	t.Setenv(common.EnvDocEngine, "opensearch")
 	dir := t.TempDir()
 	cfgPath := filepath.Join(dir, "service_conf.yaml")
 	content := `
