@@ -305,49 +305,17 @@ func NormalizeExtractorParams(raw map[string]any) map[string]any {
 		out[k] = v
 	}
 
-	// 1. Keywords
-	if kwRaw, ok := out["keywords"].(map[string]any); ok {
-		kw := make(map[string]any, len(kwRaw))
-		for k, v := range kwRaw {
-			kw[k] = v
+	// The five modular extractor sub-objects are cloned one level deep so the
+	// caller can mutate them without aliasing the request map. Any other value
+	// (scalars, unknown nested maps) is carried over by reference.
+	for _, key := range []string{"keywords", "questions", "tags", "summary", "metadata"} {
+		if sub, ok := out[key].(map[string]any); ok {
+			cp := make(map[string]any, len(sub))
+			for k, v := range sub {
+				cp[k] = v
+			}
+			out[key] = cp
 		}
-		out["keywords"] = kw
-	}
-
-	// 2. Questions
-	if qRaw, ok := out["questions"].(map[string]any); ok {
-		q := make(map[string]any, len(qRaw))
-		for k, v := range qRaw {
-			q[k] = v
-		}
-		out["questions"] = q
-	}
-
-	// 3. Tags
-	if tagRaw, ok := out["tags"].(map[string]any); ok {
-		tag := make(map[string]any, len(tagRaw))
-		for k, v := range tagRaw {
-			tag[k] = v
-		}
-		out["tags"] = tag
-	}
-
-	// 4. Summary
-	if sumRaw, ok := out["summary"].(map[string]any); ok {
-		sum := make(map[string]any, len(sumRaw))
-		for k, v := range sumRaw {
-			sum[k] = v
-		}
-		out["summary"] = sum
-	}
-
-	// 5. Metadata
-	if metaRaw, ok := out["metadata"].(map[string]any); ok {
-		meta := make(map[string]any, len(metaRaw))
-		for k, v := range metaRaw {
-			meta[k] = v
-		}
-		out["metadata"] = meta
 	}
 
 	return out
