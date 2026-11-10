@@ -559,8 +559,9 @@ const epubTOCEntrySentenceEnd = "。！？；：.!?;:"
 // isEPUBTOCEntry reports whether item continues the TOC entry run identified
 // by token. An entry the run already dropped ends it: the body heading repeats
 // a chapter title, so the first replay is where the TOC stops. A heading that
-// extends a dropped entry ("Introduction — Revised" after "Introduction") is
-// the same replay with a subtitle, not another contents line.
+// extends a dropped entry ("Introduction — Revised" after "Introduction") or
+// drops its page number ("Introduction" after "Introduction 3") is the same
+// replay, not another contents line.
 func isEPUBTOCEntry(item map[string]any, token string, dropped map[string]bool) bool {
 	if item["doc_type_kwd"] != "text" {
 		return false
@@ -575,6 +576,25 @@ func isEPUBTOCEntry(item map[string]any, token string, dropped map[string]bool) 
 	}
 	for entry := range dropped {
 		if strings.HasPrefix(text, entry) {
+			return false
+		}
+		if strings.HasPrefix(entry, text) && epubTOCEntryPageSuffix(entry[len(text):]) {
+			return false
+		}
+	}
+	return true
+}
+
+// epubTOCEntryPageSuffix reports whether rest is only the page number a
+// contents line carries after its title (" 12", " .... 12", ": 12"). The body
+// heading repeats the title without that number.
+func epubTOCEntryPageSuffix(rest string) bool {
+	rest = strings.TrimSpace(strings.Trim(rest, " .…·-–—:："))
+	if rest == "" {
+		return false
+	}
+	for _, r := range rest {
+		if !unicode.IsDigit(r) {
 			return false
 		}
 	}
