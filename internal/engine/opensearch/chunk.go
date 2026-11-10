@@ -850,6 +850,9 @@ func formatOrderedTagFeas(v any) (json.RawMessage, bool) {
 
 // DeleteChunks deletes chunks from a dataset index by condition
 func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
+	if datasetID == "" {
+		return 0, fmt.Errorf("dataset_id is required")
+	}
 	// For ES, index name is just indexName (e.g., "ragflow_{tenantID}"), not indexName_datasetID
 	fullIndexName := indexName
 	common.Info("Deleting chunks from OpenSearch index", zap.String("index_name", fullIndexName), zap.Any("condition", condition))
@@ -864,6 +867,17 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 		return 0, nil
 	}
 
+	// Scope the delete to the dataset the caller asked for. The tenant index is
+	// shared by every dataset, so without this a condition that omits kb_id
+	// deletes matching chunks in other datasets too.
+	condition = copyFields(condition)
+	if idVal, ok := condition["id"]; ok {
+		items, isList := conditionTermsList(idVal)
+		if idVal == nil || (isList && len(items) == 0) {
+			return 0, fmt.Errorf("opensearch delete aborted: empty id list on index %s", fullIndexName)
+		}
+	}
+	condition["kb_id"] = datasetID
 	condition = types.CompilationFilter(condition)
 	// Build bool query from condition
 	var mustClauses []map[string]interface{}
@@ -1178,10 +1192,18 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		}
 		if boolQuery != nil {
 			if boolMap, ok := boolQuery["bool"].(map[string]interface{}); ok {
+				// Carry the exclusions too: CompilationFilter emits must_not
+				// clauses (e.g. page_type_kwd), and dropping them here would let
+				// the vector leg return documents the text leg excludes.
+				knnBool := map[string]interface{}{}
 				if filter, ok := boolMap["filter"].([]interface{}); ok && len(filter) > 0 {
-					knnClause["filter"] = map[string]interface{}{
-						"bool": map[string]interface{}{"filter": filter},
-					}
+					knnBool["filter"] = filter
+				}
+				if mustNot, ok := boolMap["must_not"].([]interface{}); ok && len(mustNot) > 0 {
+					knnBool["must_not"] = mustNot
+				}
+				if len(knnBool) > 0 {
+					knnClause["filter"] = map[string]interface{}{"bool": knnBool}
 				}
 			}
 		}
@@ -3264,13 +3286,15 @@ func isASCIILetter(c byte) bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
 }
 
-// queryVectorField matches the serialized query vector: 1024 floats that say
-// nothing about why a search came back short, so they never reach the log.
-var queryVectorField = regexp.MustCompile(`"query_vector":\s*\[[^\]]*\]`)
+// queryVectorField matches the serialized query vector: the OpenSearch knn
+// clause stores it under "vector" (Elasticsearch uses "query_vector"), and
+// 1024 floats say nothing about why a search came back short, so they never
+// reach the log.
+var queryVectorField = regexp.MustCompile(`"vector":\s*\[[^\]]*\]`)
 
 // elideQueryVector drops that vector from a body before it is logged.
 func elideQueryVector(body []byte) string {
-	return queryVectorField.ReplaceAllString(string(body), `"query_vector":"<elided>"`)
+	return queryVectorField.ReplaceAllString(string(body), `"vector":"<elided>"`)
 }
 
 func convertESResponse(esResp *SearchResponse, vectorFieldName string) []map[string]interface{} {

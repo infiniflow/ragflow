@@ -153,6 +153,102 @@ func TestSearchUsesConfiguredKNNTopN(t *testing.T) {
 	}
 }
 
+func TestSearchKNNFilterCarriesMustNot(t *testing.T) {
+	var searchQuery map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&searchQuery); err != nil {
+			t.Errorf("decode search query: %v", err)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"hits":{"total":{"value":0},"hits":[]}}`))
+	}))
+	defer server.Close()
+
+	engine := newTestEngine(t, server.URL)
+	_, err := engine.Search(t.Context(), &types.SearchRequest{
+		IndexNames: []string{"ragflow_tenant"},
+		KbIDs:      []string{"kb-1"},
+		Limit:      10,
+		Filter: map[string]interface{}{
+			"doc_id":   []string{"doc-1"},
+			"must_not": map[string]interface{}{"doc_type_kwd": "excluded"},
+		},
+		MatchExprs: []interface{}{&types.MatchDenseExpr{
+			VectorColumnName: "q_2_vec",
+			EmbeddingData:    []float64{0.1, 0.2},
+			TopN:             32,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	knn, ok := searchQuery["query"].(map[string]interface{})["knn"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("KNN query missing from %#v", searchQuery)
+	}
+	filterJSON, err := json.Marshal(knn["q_2_vec"].(map[string]interface{})["filter"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	filter := string(filterJSON)
+	if !strings.Contains(filter, "must_not") || !strings.Contains(filter, "excluded") {
+		t.Fatalf("KNN filter %s lost the must_not exclusion, so the vector leg can return docs the text leg rejects", filter)
+	}
+}
+
+func TestDeleteChunksRequiresDatasetID(t *testing.T) {
+	engine := newTestEngine(t, "http://127.0.0.1:1")
+	if _, err := engine.DeleteChunks(t.Context(), map[string]interface{}{"id": []string{"a"}}, "ragflow_tenant", ""); err == nil {
+		t.Fatal("DeleteChunks with empty datasetID = nil error, want refusal: the tenant index is shared by every dataset")
+	}
+}
+
+func TestDeleteChunksScopesToDataset(t *testing.T) {
+	var deleteQuery map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodHead:
+			w.WriteHeader(http.StatusOK)
+		case http.MethodPost:
+			if err := json.NewDecoder(r.Body).Decode(&deleteQuery); err != nil {
+				t.Errorf("decode delete query: %v", err)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"deleted":1}`))
+		default:
+			t.Errorf("method=%s", r.Method)
+			http.Error(w, "unexpected method", http.StatusMethodNotAllowed)
+		}
+	}))
+	defer server.Close()
+	engine := newTestEngine(t, server.URL)
+	condition := map[string]interface{}{"source_doc_ids": []string{"doc-a"}}
+	if _, err := engine.DeleteChunks(t.Context(), condition, "ragflow_tenant", "kb-1"); err != nil {
+		t.Fatalf("DeleteChunks: %v", err)
+	}
+	if _, mutated := condition["kb_id"]; mutated {
+		t.Fatal("DeleteChunks mutated the caller's condition map")
+	}
+	body, err := json.Marshal(deleteQuery)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `"kb_id":"kb-1"`) {
+		t.Fatalf("delete body %s is not scoped to the dataset: a missing kb_id would hit every dataset", body)
+	}
+}
+
+func TestElideQueryVectorRedactsOpenSearchKNNBody(t *testing.T) {
+	body := []byte(`{"query":{"knn":{"q_2_vec":{"vector":[0.1,0.2],"k":3}}}}`)
+	elided := elideQueryVector(body)
+	if strings.Contains(elided, "0.1") {
+		t.Fatalf("elideQueryVector left the embedding in %s", elided)
+	}
+	if !strings.Contains(elided, `"vector":"<elided>"`) {
+		t.Fatalf("elideQueryVector = %s, want the vector replaced", elided)
+	}
+}
+
 func TestKNNScoresSearchesAllCandidateIndices(t *testing.T) {
 	searches := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
