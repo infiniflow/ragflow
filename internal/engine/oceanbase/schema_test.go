@@ -318,6 +318,9 @@ func TestChunkSelectionNeedsSchemaOnlyForOptionalColumns(t *testing.T) {
 		{[]string{"compile_kwd"}, true},
 		{[]string{"chunk_order_int", "source_chunk_ids"}, true},
 		{[]string{"*"}, false},
+		// A wildcard already carries every column; asking for an optional field
+		// next to it must not degrade the row to a partial extra projection.
+		{[]string{"*", "compile_kwd"}, false},
 	} {
 		if got := chunkSelectionNeedsSchema(tc.fields); got != tc.want {
 			t.Errorf("chunkSelectionNeedsSchema(%v) = %v, want %v", tc.fields, got, tc.want)

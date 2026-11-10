@@ -267,7 +267,13 @@ func buildQualifiedSelectFields(fields []string, kind, tableAlias string) (strin
 // chunkSelectionNeedsSchema reports whether an explicit chunk projection names
 // a column an existing table may lack. Only then is the table's column set
 // worth a metadata read; the default projection and base columns are not.
+// A wildcard projection already reads every physical column, and an extra
+// request next to it ("*", "compile_kwd") must not turn the row into a partial
+// projection that drops the rest of extra.
 func chunkSelectionNeedsSchema(fields []string) bool {
+	if containsString(fields, "*") {
+		return false
+	}
 	for _, field := range fields {
 		if field == "" || field == "*" {
 			continue
