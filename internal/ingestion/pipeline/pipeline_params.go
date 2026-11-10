@@ -212,7 +212,8 @@ func cleanComponentParams(schemas []ComponentParamsSchema, rawConfig map[string]
 		// frontend nest the Parser's setups under a "setups" key; lift them
 		// before filtering, otherwise the families are dropped as unknown
 		// params against the flat DSL schema keys.
-		if common.IsParserComponent(key, componentNames[key]) {
+		isParser := common.IsParserComponent(key, componentNames[key])
+		if isParser {
 			params = schema.FlattenLegacyParserSetups(params)
 		}
 		dynamicWhitelist, hasDynamic := getComponentParamWhitelist(key)
@@ -221,6 +222,9 @@ func cleanComponentParams(schemas []ComponentParamsSchema, rawConfig map[string]
 		}
 		cleaned := make(map[string]any, len(params))
 		for pk, pv := range params {
+			if isParser {
+				pv = stripParserFamilySuffix(pv)
+			}
 			if _, ok := validKeys[pk]; ok {
 				cleaned[pk] = pv
 				continue
@@ -240,6 +244,26 @@ func cleanComponentParams(schemas []ComponentParamsSchema, rawConfig map[string]
 		}
 	}
 	return result
+}
+
+// stripParserFamilySuffix returns a copy of a Parser family setup without the
+// retired suffix key. Family maps sit below the top-level param whitelist, so
+// an API caller could otherwise keep the dead key alive.
+func stripParserFamilySuffix(value any) any {
+	setup, ok := value.(map[string]any)
+	if !ok {
+		return value
+	}
+	if _, found := setup["suffix"]; !found {
+		return value
+	}
+	next := make(map[string]any, len(setup)-1)
+	for key, item := range setup {
+		if key != "suffix" {
+			next[key] = item
+		}
+	}
+	return next
 }
 
 func normalizeGeneralComponentParams(params map[string]any) map[string]any {

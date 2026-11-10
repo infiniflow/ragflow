@@ -26,10 +26,11 @@ import (
 )
 
 // parserSetupParamsKeys are the Parser params keys that are NOT per-family
-// setups: the wire-format declaration and the global vision settings. Every
+// setups: the wire-format declarations and the global vision settings. Every
 // other object-valued params key is a file family.
 var parserSetupParamsKeys = map[string]bool{
 	"outputs":                   true,
+	"allowed_output_format":     true,
 	"enable_vision_enhancement": true,
 	"vlm":                       true,
 }

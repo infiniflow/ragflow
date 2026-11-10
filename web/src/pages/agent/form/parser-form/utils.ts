@@ -73,15 +73,15 @@ export function normalizeParserFormValues<T extends Record<string, any>>(
       '');
 
   const nextSetups = setups.map((x) => {
-    // preprocess and output_format are retired on every family: the Parser
-    // derives preprocessing from the chunker and emits JSON only, so a stored
-    // value is dead config that must not survive a load/save round-trip.
-    // Per-setup vlm is dead for every family except Audio, whose vlm holds the
-    // ASR model.
+    // preprocess, output_format, and suffix are retired on every family: the
+    // Parser derives preprocessing from the chunker, emits JSON only, and
+    // routes files by the document's own suffix, so a stored value is dead
+    // config that must not survive a load/save round-trip. Per-setup vlm is
+    // dead for every family except Audio, whose vlm holds the ASR model.
     if (x?.fileFormat === FileType.Audio) {
-      return omit(x, ['output_format', 'preprocess']);
+      return omit(x, ['output_format', 'preprocess', 'suffix']);
     }
-    const stripped = omit(x, ['vlm', 'output_format', 'preprocess']);
+    const stripped = omit(x, ['vlm', 'output_format', 'preprocess', 'suffix']);
     if (x?.fileFormat !== FileType.Image) return stripped;
     const { parse_method, ...rest } = omit(stripped, ['lang', 'system_prompt']);
     // Materialize the switch either way. Absent or "ocr" both mean "run local
