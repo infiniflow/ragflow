@@ -862,6 +862,44 @@ func (e *Ingestor) markFailed(ctx context.Context, taskID, reason string) bool {
 	return true
 }
 
+// markFailedOrStopped persists FAILED, or STOPPED when a concurrent stop moved
+// the task to STOPPING first. MarkFailed only accepts RUNNING, so without this a
+// stop that lands after the run failed would keep the terminal-write retry loop
+// running until shutdown and leave the task in STOPPING. It reports whether a
+// terminal status is now persisted and whether this call wrote FAILED, so the
+// caller records the failure log only for a task that actually failed.
+func (e *Ingestor) markFailedOrStopped(ctx context.Context, taskID, reason string) (settled, failed bool) {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if err := e.ingestionTaskSvc.MarkFailed(ctx, taskID, reason); err != nil {
+		if !isTerminalTransitionError(err) {
+			common.Error(fmt.Sprintf("Failed to set task %s to FAILED", taskID), err)
+			return false, false
+		}
+		// The status moved on between the read and the CAS. Re-read it: STOPPING
+		// must settle STOPPED, and an already-terminal task needs no write.
+		task, getErr := e.ingestionTaskSvc.GetTask(ctx, taskID)
+		if getErr != nil {
+			common.Error(fmt.Sprintf("Failed to re-read task %s after a rejected FAILED transition", taskID), getErr)
+			return false, false
+		}
+		if task.Status == common.STOPPING {
+			if !e.markStopped(ctx, taskID) {
+				return false, false
+			}
+			return true, false
+		}
+		switch task.Status {
+		case common.COMPLETED, common.STOPPED, common.FAILED:
+			return true, false
+		default:
+			// RUNNING again means another transition raced us; retry.
+			return false, false
+		}
+	}
+	return true, true
+}
+
 // taskOutcome is what runTask reports to settleMessage. A transient error
 // means the work did not finish but can succeed later, so the message must be
 // redelivered instead of Acked; the task stays RUNNING until then.
@@ -1059,7 +1097,6 @@ func (e *Ingestor) settleToTerminal(ctx context.Context, taskID string) error {
 func (e *Ingestor) settleMessage(ctx context.Context, taskCtx *taskpkg.TaskContext, hb *Heartbeat, body func(context.Context) taskOutcome) (terminal bool) {
 	outcome := taskOutcome{}
 	defer func() {
-		hb.Stop() // stop heartbeat (and wait) before ack/nack
 		if r := recover(); r != nil {
 			// Recover the panic so the worker process survives. Mark the
 			// task FAILED so a redelivery does not re-run a poison message
@@ -1101,11 +1138,12 @@ func (e *Ingestor) settleMessage(ctx context.Context, taskCtx *taskpkg.TaskConte
 			terminal = dbTerminal
 		}
 		if !terminal && outcome.transientErr != nil {
-			if e.deferTransientTask(ctx, taskCtx, outcome.transientErr) {
+			if e.deferTransientTask(ctx, taskCtx, hb, outcome.transientErr) {
 				return
 			}
 			terminal = true
 		}
+		hb.Stop() // stop heartbeat (and wait) before ack/nack
 		e.ackOrNack(taskCtx, terminal)
 	}()
 	outcome = body(taskCtx.Ctx)
@@ -1119,8 +1157,10 @@ func (e *Ingestor) settleMessage(ctx context.Context, taskCtx *taskpkg.TaskConte
 // spent the broker will not deliver the message again, and a RUNNING row would
 // be a dead end, so the task is marked FAILED instead. Returns true when the
 // message was settled here (Nack sent), false when the task reached a terminal
-// status and the caller should Ack.
-func (e *Ingestor) deferTransientTask(ctx context.Context, taskCtx *taskpkg.TaskContext, cause error) bool {
+// status and the caller should Ack. The heartbeat keeps renewing the delivery
+// while a terminal write is retried, and is stopped just before this function
+// settles the message, so no InProgress races the Ack/Nack.
+func (e *Ingestor) deferTransientTask(ctx context.Context, taskCtx *taskpkg.TaskContext, hb *Heartbeat, cause error) bool {
 	if taskCtx == nil || taskCtx.IngestionTask == nil {
 		return false
 	}
@@ -1141,11 +1181,16 @@ func (e *Ingestor) deferTransientTask(ctx context.Context, taskCtx *taskpkg.Task
 		// therefore retried for as long as the worker lives, renewing the
 		// delivery's in-flight deadline, so a database that recovers later
 		// still settles the task instead of stranding it.
+		settled, failed := false, false
 		written := retryTerminalWrite(ctx, taskCtx.Handle, func() bool {
-			return e.markFailed(ctx, task.ID, reason)
+			settled, failed = e.markFailedOrStopped(ctx, task.ID, reason)
+			return settled
 		}, terminalWriteRetryDelays)
+		hb.Stop() // no InProgress may race the settlement below
 		if written {
-			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), reason)
+			if failed {
+				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), reason)
+			}
 			return false
 		}
 		// The worker is stopping and the FAILED write still did not land. Keep
@@ -1155,6 +1200,7 @@ func (e *Ingestor) deferTransientTask(ctx context.Context, taskCtx *taskpkg.Task
 		return true
 	}
 	delay := transientRedeliveryDelay(delivered)
+	hb.Stop() // no InProgress may race the nack below
 	if nacker, ok := taskCtx.Handle.(interface{ NackWithDelay(time.Duration) error }); ok {
 		if err := nacker.NackWithDelay(delay); err == nil {
 			return true

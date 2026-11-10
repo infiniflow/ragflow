@@ -53,7 +53,7 @@ func TestDeferTransientTaskNacksWithPacedDelay(t *testing.T) {
 	handle := &transientTaskHandle{delivered: 2, limit: 16, budgetKnown: true}
 	taskCtx := newTransientTaskCtx(t.Context(), taskID, docID, handle)
 
-	if handled := ingestor.deferTransientTask(t.Context(), taskCtx, errors.New("Infinity is initing")); !handled {
+	if handled := ingestor.deferTransientTask(t.Context(), taskCtx, nil, errors.New("Infinity is initing")); !handled {
 		t.Fatal("expected the transient failure to be settled with a nack")
 	}
 	if len(handle.delays) != 1 || handle.delays[0] != 15*time.Second {
@@ -76,7 +76,7 @@ func TestDeferTransientTaskFailsAtDeliveryLimit(t *testing.T) {
 	handle := &transientTaskHandle{delivered: 16, limit: 16, budgetKnown: true}
 	taskCtx := newTransientTaskCtx(t.Context(), taskID, docID, handle)
 
-	if handled := ingestor.deferTransientTask(t.Context(), taskCtx, errors.New("Infinity is initing")); handled {
+	if handled := ingestor.deferTransientTask(t.Context(), taskCtx, nil, errors.New("Infinity is initing")); handled {
 		t.Fatal("expected an exhausted budget to settle as terminal, not nack")
 	}
 	if handle.nacks.Load() != 0 || handle.acks.Load() != 0 {
@@ -160,7 +160,7 @@ func TestDeferTransientTaskUnknownBudgetNacksWithDelay(t *testing.T) {
 	handle := &transientTaskHandle{budgetKnown: false}
 	taskCtx := newTransientTaskCtx(t.Context(), taskID, docID, handle)
 
-	if handled := ingestor.deferTransientTask(t.Context(), taskCtx, errors.New("Infinity is initing")); !handled {
+	if handled := ingestor.deferTransientTask(t.Context(), taskCtx, nil, errors.New("Infinity is initing")); !handled {
 		t.Fatal("expected an unknown budget to settle with a nack")
 	}
 	if len(handle.delays) != 1 || handle.delays[0] != 5*time.Second {
@@ -186,7 +186,7 @@ func TestDeferTransientTaskKeepsMessageWhenTerminalWriteNeverLands(t *testing.T)
 	defer cancel()
 	taskCtx := newTransientTaskCtx(ctx, "task-1", "doc-1", handle)
 
-	if handled := ingestor.deferTransientTask(ctx, taskCtx, errors.New("Infinity is initing")); !handled {
+	if handled := ingestor.deferTransientTask(ctx, taskCtx, nil, errors.New("Infinity is initing")); !handled {
 		t.Fatal("expected the nack fallback when the FAILED write cannot land")
 	}
 	if handle.nacks.Load() != 1 || handle.acks.Load() != 0 {
@@ -210,5 +210,78 @@ func TestTransientRedeliveryDelay(t *testing.T) {
 		if got := transientRedeliveryDelay(delivered); got != want {
 			t.Fatalf("transientRedeliveryDelay(%d) = %v, want %v", delivered, got, want)
 		}
+	}
+}
+
+// A stop request that lands while the last delivery is failing must settle the
+// task STOPPED. MarkFailed only accepts RUNNING, so without the re-read the
+// retry loop would hold the worker until shutdown and leave the task STOPPING.
+func TestDeferTransientTaskSettlesStoppingTaskAsStopped(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.STOPPING).Error; err != nil {
+		t.Fatalf("set status STOPPING: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	handle := &transientTaskHandle{delivered: 16, limit: 16, budgetKnown: true}
+	taskCtx := newTransientTaskCtx(t.Context(), taskID, docID, handle)
+
+	if handled := ingestor.deferTransientTask(t.Context(), taskCtx, nil, errors.New("Infinity is initing")); handled {
+		t.Fatal("expected a stopped task to settle as terminal, not nack")
+	}
+	final, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, taskID)
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if final.Status != common.STOPPED {
+		t.Fatalf("task status = %s, want STOPPED", final.Status)
+	}
+	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
+		t.Fatalf("deferTransientTask must not settle the message, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+}
+
+// The last delivery has no successor, so retrying the terminal write must keep
+// renewing the message's in-flight deadline; otherwise the broker takes the
+// message back while the write is still running. The heartbeat stops only when
+// the message is settled.
+func TestSettleMessageRenewsDeliveryWhileTheTerminalWriteRetries(t *testing.T) {
+	// A wait longer than the test: the heartbeat is the only renewal that can
+	// fire while the retry sits in the delay, so a stopped heartbeat shows up
+	// as a missing InProgress below.
+	oldDelays := terminalWriteRetryDelays
+	terminalWriteRetryDelays = []time.Duration{time.Hour}
+	t.Cleanup(func() { terminalWriteRetryDelays = oldDelays })
+
+	defer testutil.ReplaceDBForTest(t, nil)()
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	handle := &transientTaskHandle{delivered: 16, limit: 16, budgetKnown: true}
+	taskCtx := newTransientTaskCtx(t.Context(), "task-1", "doc-1", handle)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 300*time.Millisecond)
+	defer cancel()
+	hb := NewHeartbeat("task-1", handle, 5*time.Millisecond)
+	hb.Start()
+
+	if terminal := ingestor.settleMessage(ctx, taskCtx, hb, func(context.Context) taskOutcome {
+		return taskOutcome{transientErr: errors.New("Infinity is initing")}
+	}); terminal {
+		t.Fatal("expected the unsettled delivery to stay non-terminal")
+	}
+	if renewed := handle.inProgress.Load(); renewed < 5 {
+		t.Fatalf("InProgress calls = %d, want the heartbeat to keep renewing during the retries", renewed)
+	}
+	after := handle.inProgress.Load()
+	time.Sleep(30 * time.Millisecond)
+	if got := handle.inProgress.Load(); got != after {
+		t.Fatalf("heartbeat kept renewing after settlement: %d -> %d", after, got)
+	}
+	if handle.nacks.Load() != 1 || handle.acks.Load() != 0 {
+		t.Fatalf("expected 1 Nack / 0 Ack, got nacks=%d acks=%d", handle.nacks.Load(), handle.acks.Load())
 	}
 }
