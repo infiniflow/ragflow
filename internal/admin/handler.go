@@ -1028,7 +1028,7 @@ func (h *Handler) PullMessageFromQueue(c *gin.Context) {
 		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
 	}
-	pullCtx, cancel := context.WithTimeout(c.Request.Context(), time.Second)
+	pullCtx, cancel := context.WithTimeout(c.Request.Context(), common.HandlerPullTimeout)
 	defer cancel()
 	messages, err := msgQueueEngine.PullMessages(pullCtx, req.MessageCount)
 	if err != nil {
