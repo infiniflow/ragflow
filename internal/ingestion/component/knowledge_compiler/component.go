@@ -227,6 +227,8 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 			o.Products[i].TemplateID = spec.ID
 			o.Products[i].Variant = variant
 		}
+		// Stamp `_compiler_embd_id` after Meta is guaranteed non-nil (#22134).
+		stampCompilerEmbdID(o.Products, variant, deps.EmbeddingModelID)
 		out.Products = append(out.Products, o.Products...)
 		out.AffectedPageSlugs = append(out.AffectedPageSlugs, o.AffectedPageSlugs...)
 		out.RemovedPageSlugs = append(out.RemovedPageSlugs, o.RemovedPageSlugs...)
@@ -389,6 +391,36 @@ func kindOrVariant(p common.Product) string {
 	return string(p.Variant)
 }
 
+// compilerContentEmbeddingVariant reports whether a variant's Embed call feeds
+// product.Content. Only those variants may attach `_compiler_embd_id` for
+// Tokenizer reuse (#22134): the Tokenizer embeds chunk.Text (= Content) when
+// fields are ["text"], so a mismatched embed source would serve a wrong vector.
+// Structure/tree graph rows embed a payload description that differs from
+// Content. Tree RAPTOR summaries also embed Content but share VariantTree with
+// those graph rows, so the whole tree variant is omitted (fail closed).
+func compilerContentEmbeddingVariant(v common.Variant) bool {
+	switch v {
+	case common.VariantMindmap, common.VariantWiki:
+		return true
+	default:
+		return false
+	}
+}
+
+// stampCompilerEmbdID attaches `_compiler_embd_id` to products whose vectors
+// came from embedding product.Content. Callers must ensure each product's Meta
+// map is non-nil. Other Meta keys are left untouched.
+func stampCompilerEmbdID(products []common.Product, variant common.Variant, embdID string) {
+	if !compilerContentEmbeddingVariant(variant) || embdID == "" {
+		return
+	}
+	for i := range products {
+		if len(products[i].Vector) > 0 {
+			products[i].Meta["_compiler_embd_id"] = embdID
+		}
+	}
+}
+
 // productsToChunkDocs converts the internal compiled Product rows into
 // schema.ChunkDoc values aligned to conf/infinity_mapping.json. Product.Meta is
 // not persisted: only engine columns are written, because Infinity rejects an
@@ -453,6 +485,13 @@ func productsToChunkDocs(products []common.Product, language string) ([]schema.C
 		if len(p.Vector) > 0 {
 			if err := doc.SetExtraValue(fmt.Sprintf("q_%d_vec", len(p.Vector)), p.Vector); err != nil {
 				return nil, err
+			}
+			// Carry the embedding model provenance marker so the downstream
+			// Tokenizer can verify the vector came from the same model (#22134).
+			if embdID, ok := p.Meta["_compiler_embd_id"].(string); ok && embdID != "" {
+				if err := doc.SetExtraValue("_compiler_embd_id", embdID); err != nil {
+					return nil, err
+				}
 			}
 		}
 		// Provenance columns shared by all compiled rows.

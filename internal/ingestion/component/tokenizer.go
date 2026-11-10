@@ -83,6 +83,7 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -428,7 +429,6 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 
 	out := map[string]any{
 		"output_format": "chunks",
-		"chunks":        schema.ChunkDocsToMaps(chunks),
 	}
 	copyPipelineControlValues(out, inputs)
 
@@ -438,16 +438,25 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	// so embedding is skipped there — debug only exercises parse+chunk and
 	// must stay side-effect free.
 	if shouldHaveEmbedding(c.param.SearchMethod, kbID) {
-		chunks, tokenCount, err := c.embedChunks(ctx, tenantID, kbID, name, chunks, chunkcache.Client())
+		var tokenCount int
+		var err error
+		chunks, tokenCount, err = c.embedChunks(ctx, tenantID, kbID, name, chunks, chunkcache.Client())
 		if err != nil {
 			return nil, err
 		}
 		out["embedding_token_consumption"] = tokenCount
-		out["chunks"] = schema.ChunkDocsToMaps(chunks)
+	}
+	// Always strip Compiler provenance before emitting chunks. embedChunks
+	// clears markers on the merge path, but full_text-only runs, empty kb_id,
+	// empty cleaned text, and early returns would otherwise leak
+	// `_compiler_embd_id` into out["chunks"] (#22134).
+	for i := range chunks {
+		clearCompilerProvenance(chunks[i])
 	}
 	if err := validateTokenizerOutputs(chunks, c.param.SearchMethod, c.param.Fields, kbID); err != nil {
 		return nil, err
 	}
+	out["chunks"] = schema.ChunkDocsToMaps(chunks)
 
 	common.Debug("tokenizer stage",
 		zap.String("component", "Tokenizer"),
@@ -507,6 +516,9 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 	// cacheHits counts the chunks served from the per-chunk embedding cache;
 	// they are already-resolved work, so the progress fraction starts from them.
 	cacheHits := 0
+	// compilerHits counts chunks whose content vector came from a Compiler
+	// component with matching embedding model provenance (#22134).
+	compilerHits := 0
 	// fieldsResolvedNoText counts chunks where the configured fields produced
 	// nothing at all, which is the signature of a `fields` value naming a chunk
 	// field this pipeline does not produce.
@@ -533,6 +545,7 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 			}
 			continue
 		}
+
 		// Per-chunk embedding cache: identical (dataset embd_id, chunk, embedded
 		// text) triples reuse the previous content vector, skipping the embed
 		// round-trip on resume. The key includes the text that is actually
@@ -556,6 +569,23 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 			emptyAfterTrim++
 			trunc = txt
 		}
+
+		// Reuse Compiler-produced content vectors only when the text that would
+		// be encoded here is byte-identical to the Compiler's Content (stored
+		// as ck.Text). Compiler embeds product.Content; Tokenizer embeds
+		// trimForEmbedding(cleanEmbedText(concatFields(...))). Equality of
+		// raw/txt/trunc with ck.Text proves no field remapping, table-tag
+		// strip, whitespace trim, or token truncation altered the input.
+		// canReuseCompilerVector still requires fields=["text"] and no
+		// context windows; embd_id must match (#22134).
+		if raw == ck.Text && txt == raw && trunc == txt && canReuseCompilerVector(c.param.Fields, ck) {
+			if vec, compilerEmbdID := extractCompilerVector(ck); vec != nil && compilerEmbdID == embdID {
+				resolved[i] = &resolvedVec{content: vec, isHit: true}
+				compilerHits++
+				continue
+			}
+		}
+
 		if chunkID, ok := ck.GetExtraString("id"); ok && embdID != "" && store != nil {
 			if cached, hit := chunkcache.Get(ctx, store, chunkcache.Key("emb", embdID, chunkID, trunc)); hit {
 				var vec []float64
@@ -584,11 +614,11 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 			zap.Int("chunks", emptyAfterTrim),
 			zap.Int("total_chunks", len(chunks)))
 	}
-	if len(texts) == 0 && cacheHits == 0 {
-		// Nothing to embed and nothing to serve from cache: return before the
-		// title encode, exactly like `if not texts: return` — an
-		// all-skipped batch must not burn a title embedding. (When the cache
-		// serves every chunk the flow continues so those vectors attach.)
+	if len(texts) == 0 && cacheHits == 0 && compilerHits == 0 {
+		// Nothing to embed and nothing to serve from cache/Compiler: return
+		// before the title encode — an all-skipped batch must not burn a
+		// title embedding. (When the cache or Compiler serves every chunk
+		// the flow continues so those vectors attach.)
 		return chunks, 0, nil
 	}
 
@@ -631,7 +661,9 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 	if batchSize <= 0 {
 		return nil, 0, fmt.Errorf("tokenizer: embedder reported non-positive batch size %d", batchSize)
 	}
-	embedTotal := cacheHits + len(texts)
+	// embedTotal counts all chunks that contribute to the embedding phase:
+	// cache hits, Compiler vector reuses, and fresh embeds.
+	embedTotal := cacheHits + compilerHits + len(texts)
 	for start := 0; start < len(texts); start += batchSize {
 		end := start + batchSize
 		if end > len(texts) {
@@ -652,7 +684,7 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 			tokenCount += result.TokenCount
 		}
 		contentResults = append(contentResults, batchResults...)
-		runtime.ReportComponentFraction(ctx, float64(cacheHits+end)/float64(embedTotal))
+		runtime.ReportComponentFraction(ctx, float64(cacheHits+compilerHits+end)/float64(embedTotal))
 	}
 	if len(texts) == 0 && embedTotal > 0 {
 		// With no cache misses the batch loop never runs, so the phase would
@@ -681,6 +713,10 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 		if err := chunks[i].SetExtraValue(fmt.Sprintf("q_%d_vec", len(merged)), merged); err != nil {
 			return nil, 0, fmt.Errorf("tokenizer: vector marshal: %w", err)
 		}
+		// Clear Compiler provenance marker after use. The merged vector is now
+		// title-weighted, so leaving the marker would let a subsequent Tokenizer
+		// pass reuse it as if it were an unweighted content vector (#22134).
+		clearCompilerProvenance(chunks[i])
 		// Backfill the per-chunk cache only for freshly embedded content; cache
 		// hits are left untouched. The key intentionally omits title weighting:
 		// the content vector is title-weight independent, so identical chunk
@@ -725,6 +761,98 @@ func truncateForEmbedding(text string, maxTokens int) string {
 	declared := tokenizer.ResolveEmbeddingMaxTokens(maxTokens, 0)
 	limit := tokenizer.EmbeddingTokenLimit(declared)
 	return tokenizer.TrimContentToTokenLimit(text, limit)
+}
+
+// clearCompilerProvenance removes the Compiler's internal provenance marker
+// (_compiler_embd_id) from a chunk. Called after the Tokenizer applies title
+// weighting, so a subsequent Tokenizer pass does not re-reuse an already-weighted
+// vector as if it were a fresh content embedding (#22134).
+func clearCompilerProvenance(ck schema.ChunkDoc) {
+	delete(ck.Extra, "_compiler_embd_id")
+}
+
+// canReuseCompilerVector returns true when the Tokenizer's field selection
+// would produce the same text the Compiler embedded. Compiler embeds
+// product.Content (stored as chunk.Text), so reuse is only safe when:
+// - Fields is exactly ["text"]
+// - The chunk has no ContextAbove/ContextBelow (Parser context windows)
+func canReuseCompilerVector(fields []string, ck schema.ChunkDoc) bool {
+	if len(fields) != 1 || fields[0] != "text" {
+		return false
+	}
+	if ck.ContextAbove != "" || ck.ContextBelow != "" {
+		return false
+	}
+	return true
+}
+
+// extractCompilerVector extracts a Compiler-produced content vector from a
+// chunk if one exists and has valid provenance. Returns (vector, embd_id) where
+// embd_id is the embedding model that produced the vector. Returns (nil, "") if
+// the chunk has no Compiler provenance, the vector is missing/invalid, or there
+// are multiple q_*_vec keys (ambiguous).
+//
+// The Compiler stores vectors as q_<dim>_vec alongside a _compiler_embd_id
+// marker. We only extract when both are present: the embd_id proves the vector
+// came from a Compiler run (not a previous Tokenizer pass) and identifies the
+// model, so the caller can verify it matches the current embedding model before
+// reusing. This prevents reusing vectors from mismatched models (#22134).
+func extractCompilerVector(ck schema.ChunkDoc) ([]float64, string) {
+	// Check for Compiler provenance marker.
+	compilerEmbdID, ok := ck.GetExtraString("_compiler_embd_id")
+	if !ok || compilerEmbdID == "" {
+		return nil, ""
+	}
+
+	// Look for q_<dim>_vec. The Compiler stores exactly one such key per chunk.
+	// We parse the dimension from the key name and verify the vector length
+	// matches, guarding against malformed data. If multiple valid q_*_vec keys
+	// exist, reject as ambiguous — fail closed rather than pick arbitrarily.
+	var vec []float64
+	var vecKey string
+	for key, rawVal := range ck.Extra {
+		if !strings.HasPrefix(key, "q_") || !strings.HasSuffix(key, "_vec") {
+			continue
+		}
+		dimStr := strings.TrimSuffix(strings.TrimPrefix(key, "q_"), "_vec")
+		dim, err := strconv.Atoi(dimStr)
+		if err != nil || dim <= 0 {
+			continue
+		}
+		// Unmarshal from json.RawMessage.
+		var floats []float64
+		if err := json.Unmarshal(rawVal, &floats); err != nil {
+			continue
+		}
+		if len(floats) != dim {
+			continue
+		}
+		// Reject ambiguity: multiple valid q_*_vec keys.
+		if vec != nil {
+			return nil, ""
+		}
+		vec = floats
+		vecKey = key
+	}
+	if vec == nil || vecKey == "" {
+		return nil, ""
+	}
+
+	// Reject all-zero vectors: they are not a useful embedding and may indicate
+	// a failed or placeholder encode. json.Unmarshal cannot produce NaN/Inf, so
+	// those checks are unnecessary here.
+	allZero := true
+	for _, v := range vec {
+		if v != 0 {
+			allZero = false
+			break
+		}
+	}
+	if allZero {
+		return nil, ""
+	}
+
+	return vec, compilerEmbdID
 }
 
 func mergeEmbeddingVectors(titleVec, contentVec []float64, titleWeight float64) ([]float64, error) {
