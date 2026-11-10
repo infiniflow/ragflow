@@ -42,6 +42,7 @@ const (
 	syncerDeliverGroup   = "RAGFLOW_SYNCER_WORKERS"
 	syncerSubjectPattern = "sync.tasks.>"
 	syncCheckpointTTL    = 7 * 24 * time.Hour
+	syncerMaxDeliver     = 16
 )
 
 // InitSyncerStream creates the datasource syncer task stream.
@@ -166,7 +167,7 @@ func syncerPushConsumerConfig() jetstream.ConsumerConfig {
 		Name:           syncerConsumerName,
 		Durable:        syncerConsumerName,
 		AckPolicy:      jetstream.AckExplicitPolicy,
-		MaxDeliver:     16,
+		MaxDeliver:     syncerMaxDeliver,
 		MaxAckPending:  1024,
 		FilterSubject:  syncerSubjectPattern,
 		DeliverSubject: syncerDeliverSubject,
@@ -261,7 +262,7 @@ func (n *NatsEngine) SubscribeSyncerTasks(ctx context.Context, handler func(comm
 	}
 
 	consumeCtx, err := consumer.Consume(func(msg jetstream.Msg) {
-		handler(NewNatsMessageHandle(msg))
+		handler(NewNatsMessageHandle(msg, syncerMaxDeliver))
 	})
 	if err != nil {
 		return err
