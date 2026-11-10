@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -655,7 +656,7 @@ func TestParseTagSourceByFilename(t *testing.T) {
 	}
 }
 
-// rag/app/tag.py's .csv path switches to TAB as soon as the file contains one,
+// A TAB separated .csv reads with TAB,
 // while the tags column stays comma-separated.
 func TestParseTagSourceByFilename_TabSeparatedCSV(t *testing.T) {
 	data := []byte("Document Title\tTag1,Tag2\nAnother Document\tTag3\n")
@@ -671,6 +672,77 @@ func TestParseTagSourceByFilename_TabSeparatedCSV(t *testing.T) {
 	}
 	if got[1].Content != "Another Document" || len(got[1].Tags) != 1 || got[1].Tags[0] != "Tag3" {
 		t.Errorf("csv[1] = %+v", got[1])
+	}
+}
+
+// A comma separated .csv stays comma separated when one field holds a TAB,
+// quoted, not quoted, or with a trailing empty column.
+func TestParseTagSourceByFilename_CommaCSVWithTabInField(t *testing.T) {
+	want := []schema.TagLabel{
+		{Content: "first line", Tags: []string{"alpha"}},
+		{Content: "press\tTab", Tags: []string{"keys"}},
+		{Content: "last line", Tags: []string{"omega"}},
+	}
+	for _, data := range []string{
+		"first line,alpha\n\"press\tTab\",keys\nlast line,omega",
+		"first line,alpha\npress\tTab,keys\nlast line,omega",
+		"first line,alpha,\n\"press\tTab\",keys,\nlast line,omega,",
+	} {
+		got, err := parseTagSourceByFilename([]byte(data), "tags.csv")
+		if err != nil || !reflect.DeepEqual(got, want) {
+			t.Errorf("%q: got %+v (err=%v), want %+v", data, got, err, want)
+		}
+	}
+}
+
+// The delimiter rule matches csv_pair_delimiter in rag/app/qa.py. It cannot
+// read these files correctly, and the Python rule gives the same delimiter for
+// each one. The test pins the current output, so a change to the rule shows here.
+func TestParseTagSourceByFilename_KnownDelimiterLimits(t *testing.T) {
+	for _, tc := range []struct {
+		data string
+		want []schema.TagLabel
+	}{
+		// A TAB file with two comma lines before the first record reads with comma.
+		{"Animal tags, part one\nMore tags, part two\ncontent\ttag1,tag2", []schema.TagLabel{
+			{Content: "Animal tags", Tags: []string{"part one"}},
+			{Content: "More tags", Tags: []string{"part two"}},
+			{Content: "content\ttag1", Tags: []string{"tag2"}},
+		}},
+		// One comma pair cannot outnumber the TAB row, so the file reads with TAB.
+		{"first line,alpha\npress\tTab,keys", []schema.TagLabel{
+			{Content: "first line,alpha\npress", Tags: []string{"Tab", "keys"}},
+		}},
+		// A TAB in the first row selects TAB, and the comma row is dropped.
+		{"press\tTab,keys\nlast,omega", []schema.TagLabel{
+			{Content: "press", Tags: []string{"Tab", "keys"}},
+		}},
+	} {
+		got, err := parseTagSourceByFilename([]byte(tc.data), "tags.csv")
+		if err != nil || !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("%q: got %+v (err=%v), want %+v", tc.data, got, err, tc.want)
+		}
+	}
+}
+
+func TestCSVTagSourceDelimiter(t *testing.T) {
+	for _, tc := range []struct {
+		data string
+		want rune
+	}{
+		{"RAGFlow guide\nfor beginners\nRAGFlow intro,RAG", ','},
+		{"first line,alpha\n,\n\"press\tTab\",keys\n,\nlast line,omega", ','},
+		{"the quick, brown fox\tanimal,fox", '\t'},
+		{"hello world\tgreeting,demo", '\t'},
+		{"hello world\tgreeting,demo\t", '\t'},
+		{"Animal tags\ncat on a mat\tanimal,cat\ndog in a park\tanimal,dog", '\t'},
+		{"Animal tags, part one\ncat on a mat\tanimal,cat", '\t'},
+		{"Animal tags, part one\nMore tags, part two\nthe quick, brown fox\tanimal,fox", '\t'},
+		{"the quick, brown fox\tanimal\nlazy, sleepy dog\nin the park, at noon\nunder a tree, in shade\nthe cat, the mat\tpet", '\t'},
+	} {
+		if got := csvTagSourceDelimiter([]byte(tc.data)); got != tc.want {
+			t.Errorf("%q: got %q, want %q", tc.data, got, tc.want)
+		}
 	}
 }
 
