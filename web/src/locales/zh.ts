@@ -2470,6 +2470,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       enableVisionEnhancement: '启用视觉增强',
       enableVisionEnhancementTip:
         '使用视觉模型解析图片和表格区块，关闭时按普通文本处理。',
+      descriptionLanguage: '描述语言',
+      descriptionLanguageTip:
+        '视觉模型生成图片和表格描述时使用的语言。留空则跟随知识库语言；分词和检索仍使用知识库语言。',
+      followKnowledgeBaseLanguage: '跟随知识库',
       enableChildrenDelimiters: '子块用于检索',
       merge: '合并',
       split: '拆分',

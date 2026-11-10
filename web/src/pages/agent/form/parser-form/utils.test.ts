@@ -65,6 +65,7 @@ describe('parser-form utils', () => {
       expect(values.vlm).toEqual({
         llm_id: 'gpt-4o@OpenAI',
         system_prompt: '',
+        lang: '',
       });
       expect(values.enable_vision_enhancement).toBe(false);
 
@@ -257,10 +258,9 @@ describe('parser-form utils', () => {
         llm_id: '',
         system_prompt: 'Describe the chart.',
       });
-      // Captions follow the knowledge base and the only engine that takes a
-      // language is MinerU on the pdf family, so an image language has no
-      // reader: drop it rather than let it masquerade as a user choice
-      // (issue #20727).
+      // The old image language was machine-defaulted, so it cannot be lifted
+      // into the explicit global vlm.lang: drop it rather than let it
+      // masquerade as a user choice (issue #20727).
       expect(normalized.setups[0]).toEqual({
         fileFormat: FileType.Image,
         ocr_enabled: true,
@@ -281,17 +281,23 @@ describe('parser-form utils', () => {
       });
     });
 
-    it('drops a stale vlm.lang left by an earlier draft of the contract', () => {
+    it('preserves the explicit global description language', () => {
       const normalized = normalizeParserFormValues({
         vlm: { llm_id: '', lang: 'German', system_prompt: '' },
         setups: [
           { fileFormat: FileType.Image, lang: 'French', system_prompt: 'old' },
         ],
       });
-      // Nothing renders that control any more, so it must not survive a save.
+      // The global language is an explicit user choice; the family language
+      // stays dropped because its old default was machine-written.
       expect(normalized.vlm).toEqual({
         llm_id: '',
+        lang: 'German',
         system_prompt: 'old',
+      });
+      expect(normalized.setups[0]).toEqual({
+        fileFormat: FileType.Image,
+        ocr_enabled: true,
       });
     });
 

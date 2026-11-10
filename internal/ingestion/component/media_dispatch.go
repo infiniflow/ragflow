@@ -335,12 +335,12 @@ func describeImage(
 	vision visionSettings,
 ) (string, []string) {
 	// --- Optional VLM description ---
-	// Captions follow the knowledge base language, which also drives
-	// tokenization, so indexed text and analysis can never disagree. The family
+	// An explicit enhancement language wins; otherwise captions follow the
+	// knowledge base language, which also drives tokenization. The family
 	// setup's lang is not consulted here: it is an OCR engine input (see
 	// pdf_vision_dispatch.go) and its old implicit default was the subject of
 	// issue #20727.
-	lang := resolveVisionLanguage(inputs)
+	lang := resolveVisionLanguage(inputs, vision.language)
 	if tenantID == "" {
 		return "", []string{"image VLM enhancement skipped: tenant ID is missing"}
 	}

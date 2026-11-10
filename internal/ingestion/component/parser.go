@@ -126,11 +126,12 @@ type ParserComponent struct {
 // visionSettings carries the global vision-enhancement choices. They sit at the
 // Parser params top level (vlm) instead of a per-family setup, so one model and
 // prompt serve the enhanced file types rather than each family repeating them.
-// Response language is deliberately absent: it belongs to the knowledge base,
-// which also drives tokenization, so the two can never disagree.
+// language is an optional override for the response language; empty follows the
+// knowledge base language, which also drives tokenization.
 type visionSettings struct {
 	modelID      string
 	systemPrompt string
+	language     string
 }
 
 // NewParserComponent constructs a Parser from a DSL param map.
@@ -143,7 +144,7 @@ type visionSettings struct {
 //
 //	{
 //	  "enable_vision_enhancement": bool,
-//	  "vlm":                  {"llm_id": string, "system_prompt": string},
+//	  "vlm":                  {"llm_id": string, "system_prompt": string, "lang": string},
 //	  "pdf":                  map[string]any,
 //	  "docx":                 map[string]any,
 //	  ...
@@ -183,6 +184,12 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 			vision.systemPrompt, ok = rawPrompt.(string)
 			if !ok {
 				return nil, errors.New("parser: vlm.system_prompt must be a string")
+			}
+		}
+		if rawLang, exists := vlm["lang"]; exists {
+			vision.language, ok = rawLang.(string)
+			if !ok {
+				return nil, errors.New("parser: vlm.lang must be a string")
 			}
 		}
 	}
@@ -338,7 +345,6 @@ func defaultSetups() map[string]schema.ParserSetup {
 			// merged setup proves the caller chose the switch shape. A default
 			// value would leak the flag onto legacy (parse_method-only) canvases.
 			"parse_method":  "ocr",
-			"llm_id":        "",
 			"system_prompt": "",
 		},
 		"email": {

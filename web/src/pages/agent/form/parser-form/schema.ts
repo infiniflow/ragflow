@@ -73,6 +73,9 @@ export const FormSchema = z
       .object({
         llm_id: z.string().optional(),
         system_prompt: z.string().optional(),
+        // Optional caption-language override. Empty follows the knowledge base
+        // language, which still drives tokenization.
+        lang: z.string().optional(),
       })
       .optional(),
     enable_vision_enhancement: z.boolean().optional(),
