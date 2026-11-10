@@ -1420,6 +1420,42 @@ func TestEPUBParser_RemoveTOCKeepsHeadingExtendingAnEntry(t *testing.T) {
 	}
 }
 
+// The body heading repeats the title without the page number the contents line
+// carries, so "Introduction" after "Introduction 3" must stop the run too;
+// otherwise the chapter heading is deleted.
+func TestEPUBParser_RemoveTOCKeepsHeadingWithoutPageNumber(t *testing.T) {
+	data := buildTestEPUBWithImages(t, []epubTestChapter{{
+		name: "ch1.xhtml",
+		content: epubTestHTML(`<h1>Contents</h1>
+<p>Introduction 3</p>
+<p>Installation 4</p>
+<h1>Introduction</h1>
+<p>Body text.</p>`),
+	}}, nil)
+
+	p := NewEPUBParser()
+	p.ConfigureFromSetup(map[string]any{"remove_toc": true})
+	res := p.ParseWithResult(context.Background(), "book.epub", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	var texts []string
+	for _, it := range ItemsToMaps(res.JSON) {
+		texts = append(texts, stringValue(it["text"]))
+	}
+	full := strings.Join(texts, " ")
+	for _, gone := range []string{"Contents", "Introduction 3", "Installation 4"} {
+		if strings.Contains(full, gone) {
+			t.Errorf("TOC entry survived: %q", full)
+		}
+	}
+	for _, want := range []string{"Introduction", "Body text."} {
+		if !strings.Contains(full, want) {
+			t.Errorf("missing %q in %q", want, full)
+		}
+	}
+}
+
 // Numbered entries ("1. Chapter One") have to match an unnumbered body heading
 // ("Chapter One"); otherwise the removal stops after the first entry.
 func TestEPUBParser_RemoveTOCNumberedEntries(t *testing.T) {

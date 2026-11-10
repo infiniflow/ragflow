@@ -2218,6 +2218,8 @@ func TestDispatchUsesRegisteredPDFMethod(t *testing.T) {
 		t.Fatal(err)
 	}
 	requireJSONText(t, out, "registered parser, language: German")
+}
+
 func TestConfigureParserFromSetups_EPUB(t *testing.T) {
 	setups := defaultSetups()
 
