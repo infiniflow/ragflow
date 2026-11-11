@@ -568,9 +568,10 @@ func isExpiredFetchErr(err error, ctx context.Context) bool {
 // fetchOnce performs a single pull and folds the batch error into the returned
 // error. A spent deadline means "nothing (or only a partial batch) was
 // delivered" and is not an error - the caller's priority loop relies on that -
-// while any other batch failure nacks whatever did arrive so the messages stay
-// available. Cancellation is propagated. Errors can surface either from Fetch
-// itself or from the returned batch, so both paths are handled.
+// while a failed batch (cancellation included) nacks whatever did arrive so
+// the messages stay available; cancellation is still propagated to the caller.
+// Errors can surface either from Fetch itself or from the returned batch, so
+// both paths are handled.
 func (n *NatsEngine) fetchOnce(ctx context.Context, consumer jetstream.Consumer, messageCount int) ([]common.TaskHandle, error) {
 	if err := ctx.Err(); err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -594,7 +595,15 @@ func (n *NatsEngine) fetchOnce(ctx context.Context, consumer jetstream.Consumer,
 	}
 	if batchErr := messages.Error(); batchErr != nil {
 		if errors.Is(batchErr, context.Canceled) {
-			return resultMessages, batchErr
+			// The caller drops the handles on cancellation, so nack whatever
+			// did arrive — leaving them in AckPending would strand them until
+			// the server's redelivery backoff expires.
+			for _, message := range resultMessages {
+				if nackErr := message.Nack(); nackErr != nil {
+					common.Error("nack message after failed pull", nackErr)
+				}
+			}
+			return nil, batchErr
 		}
 		if isExpiredFetchErr(batchErr, ctx) {
 			return resultMessages, nil // keep the partial batch, no spurious error
