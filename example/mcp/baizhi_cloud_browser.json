@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "baizhi-cloud-browser": {
+      "type": "streamable-http",
+      "url": "https://capybrowser.app.baizhi.cloud/mcp",
+      "headers": {
+        "Authorization": "Bearer REPLACE_WITH_YOUR_CAPY_API_KEY"
+      }
+    }
+  }
+}
