@@ -1136,8 +1136,11 @@ func (e *Ingestor) settleMessage(ctx context.Context, taskCtx *taskpkg.TaskConte
 					}
 				}()
 				common.Error(fmt.Sprintf("task %s panicked: %v", taskID, r), fmt.Errorf("%v", r))
-				e.markFailed(ctx, taskID, fmt.Sprintf("Task panicked: %v", r))
-				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task panicked: %v", r))
+				if _, changed := e.markFailed(ctx, taskID, fmt.Sprintf("Task panicked: %v", r)); changed {
+					// A concurrent settle already logged its own terminal
+					// outcome; do not overwrite it with a FAILED entry.
+					e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task panicked: %v", r))
+				}
 			}()
 			terminal = false
 		}
