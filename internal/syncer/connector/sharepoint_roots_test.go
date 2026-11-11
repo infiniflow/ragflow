@@ -6,6 +6,7 @@ package connector
 import (
 	"encoding/json"
 	"reflect"
+	"sort"
 	"sync/atomic"
 	"testing"
 )
@@ -82,6 +83,48 @@ func TestSharePointMultipleRoots(t *testing.T) {
 					t.Fatalf("unexpected document: %+v", doc)
 				}
 				delete(tc.wantPaths, id)
+			}
+			if fixtures.childrenCalls.Load() != tc.listings || fixtures.contentCalls.Load() != 0 {
+				t.Fatalf("unexpected listing/download counts: %d / %d", fixtures.childrenCalls.Load(), fixtures.contentCalls.Load())
+			}
+		})
+	}
+}
+
+func TestSharePointSelectedRootExclusions(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		roots    []string
+		filters  map[string]any
+		wantIDs  []string
+		listings int64
+	}{
+		{"excluded root", []string{"z-parent"}, map[string]any{"excluded_folder_names": []string{"Archive"}}, nil, 0},
+		{"other root remains", []string{"z-parent", "second"}, map[string]any{"excluded_folder_names": []string{"Archive"}}, []string{"drive:second-file"}, 1},
+		{"nested root cannot bypass", []string{"a-child", "z-parent"}, map[string]any{"excluded_folder_names": []string{"Archive"}}, nil, 0},
+		{"name is case sensitive", []string{"z-parent"}, map[string]any{"excluded_folder_names": []string{"archive"}}, []string{"drive:child-file", "drive:parent-file"}, 3},
+		{"paths are relative to root", []string{"z-parent"}, map[string]any{"excluded_folder_paths": []string{"Archive"}}, []string{"drive:child-file", "drive:parent-file"}, 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fixtures := multiRootFixtures()
+			fixtures.itemsByKey["drive:z-parent"] = folderWithParent("z-parent", "Archive", "top")
+			server := newTestSharePointServer(t, fixtures)
+			config := map[string]any{"drive_id": "drive", "root_folder_ids": tc.roots}
+			for key, value := range tc.filters {
+				config[key] = value
+			}
+			c := mustSharePointConnector(t, server.URL, config)
+			session, err := c.OpenSync(t.Context(), SyncRequest{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var ids []string
+			for _, doc := range drainSharePointSync(t, session) {
+				ids = append(ids, doc.SourceID)
+			}
+			sort.Strings(ids)
+			if !reflect.DeepEqual(ids, tc.wantIDs) {
+				t.Fatalf("documents = %v, want %v", ids, tc.wantIDs)
 			}
 			if fixtures.childrenCalls.Load() != tc.listings || fixtures.contentCalls.Load() != 0 {
 				t.Fatalf("unexpected listing/download counts: %d / %d", fixtures.childrenCalls.Load(), fixtures.contentCalls.Load())

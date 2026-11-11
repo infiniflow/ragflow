@@ -339,6 +339,15 @@ func (c *SharePointConnector) walkDriveFiles(ctx context.Context, driveID string
 }
 
 func (c *SharePointConnector) walkFiles(ctx context.Context, driveID, rootID string, filters fileFilters) ([]sharePointItem, error) {
+	if rootID != "" && len(filters.folderNames) > 0 {
+		root, err := c.getItem(ctx, driveID, rootID)
+		if err != nil {
+			return nil, err
+		}
+		if filters.folderNames[root.Name] {
+			return nil, nil
+		}
+	}
 	var files []sharePointItem
 	stack := []sharePointItem{{ID: rootID}}
 	for len(stack) > 0 {
