@@ -16,7 +16,7 @@ A record of the schema and data changes the Go backend applies to a RAGFlow data
 
 - The marker is a row in `system_settings` with the key `mysql_migration.database.version`.
 - For version-gated steps, the marker prevents a migration step from running again after that step has completed successfully.
-- Go defines the versions as constants: `modelMigrationBaseVersion` and `modelMigrationTargetVersion` in [migration_version.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/migration_version.go), `conversationHistoryTargetVersion` in [conversation_history_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/conversation_history_migration.go), `knowledgebaseParserConfigTargetVersion` in [migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/migration.go), and `ingestionParserConfigTargetVersion` in [ingestion_parser_config_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/ingestion_parser_config_migration.go). The two parser-config constants share `v1.0.0-rc2`. The DSL multi-version backfill is gated by `dslVersionTargetVersion` (`v1.0.0-rc3.dev6`) in [dsl_version_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/dsl_version_migration.go). Resource-owner IDs are backfilled through `resourceUserIDMigrationTargetVersion` (`v1.0.0.1`) in [resource_user_id_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/resource_user_id_migration.go).
+- Go defines the versions as constants: `modelMigrationBaseVersion` and `modelMigrationTargetVersion` in [migration_version.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/migration_version.go), `conversationHistoryTargetVersion` in [conversation_history_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/conversation_history_migration.go), `knowledgebaseParserConfigTargetVersion` in [migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/migration.go), and `ingestionParserConfigTargetVersion` in [ingestion_parser_config_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/ingestion_parser_config_migration.go). The two parser-config constants share `v1.0.0-rc2`. The DSL multi-version backfill is gated by `dslVersionTargetVersion` (`v1.0.0-rc3.dev6`) in [dsl_version_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/dsl_version_migration.go). Resource-owner IDs are backfilled through `resourceUserIDMigrationTargetVersion` (`v1.0.0.1`) in [resource_user_id_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/resource_user_id_migration.go). Legacy ingestion component params are normalized through `ingestionLegacyConfigTargetVersion` (`v1.0.0.2`) in [ingestion_legacy_config_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/ingestion_legacy_config_migration.go).
 - The current permission migration targets `permissionMigrationTargetVersion` (`v1.0.0-rc3.dev4`) in [permission_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/permission_migration.go). Tenant default-model migration targets `tenantDefaultModelsTargetVersion` (`v1.0.0-rc3.dev5`) in [tenant_default_models_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/tenant_default_models_migration.go).
 - The compilation queue split records `knowledgeCompileQueueTargetVersion` (`v1.0.0-rc3.dev5`), defined in [knowledge_compile_queue_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/knowledge_compile_queue_migration.go), after both queues finish. Source-column presence controls the queue copy even when the marker already contains this or a newer version.
 - A version-gated step runs when the stored version is lower than the step's version. Versions are compared with Python PEP 440 semantics, where a `dev` prerelease sorts *before* the release it precedes (`v1.0.0-rc1.dev1` < `v1.0.0-rc1`). A missing or unparsable marker never skips a step.
@@ -38,6 +38,7 @@ Startup order in `InitDB` for `ragflow_server --migrate` ([database.go](https://
 12. `MigrateDSLVersionColumns` and `BackfillDSLVersionBindings` — add pipeline version columns and bind existing dataflow canvases, then record `v1.0.0-rc3.dev6`.
 13. `migrateConversationReferences` — move answer references into message rows and record `v1.0.0-rc3.dev7`.
 14. `migrateResourceUserIDs` — backfills resource `user_id` values from their owner columns and records `v1.0.0.1`. `AutoMigrate` creates the columns before this step runs.
+15. `migrateIngestionLegacyConfigs` — normalizes top-level flat and component-node legacy ingestion params in datasets, documents, and custom canvas DSLs, then records `v1.0.0.2`. It runs last because its target version sorts above every earlier gated step.
 
 ## Version overview
 
@@ -56,6 +57,7 @@ Startup order in `InitDB` for `ragflow_server --migrate` ([database.go](https://
 | `v1.0.0-rc3.dev6` | Lock existing dataflow-canvas dataset/document bindings to the canvas latest version (the `pipeline_version_id` columns are added by the version-less step below) | `dslVersionTargetVersion` |
 | `v1.0.0-rc3.dev7` | Store conversation references in each assistant message | `conversationReferenceTargetVersion` |
 | `v1.0.0.1` | Backfill resource-owner `user_id` values from `created_by` or `tenant_id` | `resourceUserIDMigrationTargetVersion` |
+| `v1.0.0.2` | Normalize legacy Extractor / TitleChunker / TokenChunker params in `knowledgebase`, `document`, `user_canvas`, and `user_canvas_version` | `ingestionLegacyConfigTargetVersion` |
 
 The two tenant model steps are cumulative: a database at `v0.26.0` still runs the `v1.0.0-rc1` step, and a database at or above `v1.0.0-rc1` runs neither.
 
@@ -157,7 +159,7 @@ Converts saved Python v0.27.2 ingestion settings into the component-scoped confi
 | `knowledgebase`, `document` | Move supported top-level Parser, Chunker, Tokenizer and Extractor settings onto the corresponding pipeline component nodes. |
 | `knowledgebase` | The existing cleanup deletes top-level `raptor` and `graphrag` sections, preserving other settings. |
 
-The conversion covers parser engines and model references, PDF pages, MinerU method/language, TCADP options, spreadsheet column configuration, supported chunk sizes and delimiters, overlap, media context, parent/child settings, filename embedding weight, keywords, questions and metadata. Fields are converted only where the selected component supports them. Settings without a Go consumer are dropped with table/row/field warnings; tags and early Go node formats are left untouched.
+The conversion covers parser engines and model references, PDF pages, MinerU method/language, TCADP options, spreadsheet column configuration, supported chunk sizes and delimiters, overlap, media context, parent/child settings, filename embedding weight, keywords, questions and metadata. Fields are converted only where the selected component supports them. Settings without a Go consumer are dropped with table/row/field warnings; tags are left untouched, and early Go node formats are normalized by the later `v1.0.0.2` step.
 
 Execution details:
 
@@ -167,7 +169,7 @@ Execution details:
 - SQL `NULL`, empty strings and JSON `null` are left untouched. Invalid JSON, unsupported metadata schemas and unsupported engine selections stop migration with table/row context. A failed batch rolls back; earlier committed batches can be rerun safely. See [Parser-config conversion failures](./upgrade_from_v1_to_later_releases.md#parser-config-conversion-failures) for recovery instructions.
 - The marker advances only after both table conversions and the existing dataset cleanup succeed. If neither table exists, the marker is left unchanged.
 
-On success the migration records `v1.0.0-rc2`. Databases already marked `v1.0.0-rc2` or later skip conversion. This includes databases marked by the earlier cleanup-only implementation: that marker does not prove their ingestion settings were converted.
+On success the migration records `v1.0.0-rc2`. Databases already marked `v1.0.0-rc2` or later skip conversion. This includes databases marked by the earlier cleanup-only implementation: that marker does not prove their ingestion settings were converted. The later `v1.0.0.2` step re-runs the flat-key conversion and normalizes the node-level shapes for those databases.
 
 ---
 
@@ -337,6 +339,62 @@ the fields they display.
 Tables that do not exist are skipped. If a listed table exists but its `user_id` or owner-source column is missing after `AutoMigrate`, the migration stops with an error. When the source values are empty, the resulting `user_id` remains empty.
 
 The step updates tables individually rather than in one transaction. If a later table fails, completed updates remain and the version marker is not advanced to `v1.0.0.1`; rerunning is safe because only missing or empty `user_id` values are filled. A database already marked `v1.0.0.1` or later skips this backfill.
+
+---
+
+## v1.0.0.2
+
+### Legacy ingestion component parameters
+
+This step closes the compatibility gap left by `v1.0.0-rc2`: it rewrites both the top-level flat keys and the pre-modular keys stored inside component nodes. It also re-runs the flat-key conversion so a database whose marker was written by the earlier cleanup-only implementation is converted even though its marker is already `v1.0.0-rc2.dev1`.
+
+| Table | Change |
+|-------|--------|
+| `knowledgebase`, `document` | Normalize legacy Extractor keys (`auto_keywords`, `keywords_sys_prompt`, `auto_questions`, `questions_sys_prompt`, `auto_tags`, `tag_file_id`, `enable_summary`, `sys_prompt`, `field_name`, `metadata_config`, `fields`, and the existing metadata transport keys) into the modular `keywords` / `questions` / `tags` / `summary` / `metadata` groups. Normalize TitleChunker `rules` to `levels` and TokenChunker `delimiter_mode: token_size` to `delimiter`. |
+| `user_canvas`, `user_canvas_version` | Apply the same normalization to `dsl.components[*].obj.params` and `dsl.graph.nodes[*].data.form`, because custom canvas DSLs are the source of truth for custom pipelines. |
+
+Conversion rules:
+
+- Within a component node, existing modular group fields win over flat values. A top-level `metadata` transport object is authoritative and replaces the node's metadata group; a node `metadata` group wins over `metadata_config`, which wins over the flat `enable_metadata` + field-list form. `metadata` field lists win over `fields`.
+- A node's `sys_prompt` follows its `field_name`: `summary`, `keywords`, and `questions` keep the prompt in the matching group; `metadata`, `toc`, and other values have no prompt target and are dropped with a warning.
+- An explicit `enable_summary: false` wins over `field_name: summary`; `field_name` values other than `summary`, `keywords`, and `questions` have no target in the current Extractor and are dropped with a warning.
+- `delimiter_mode: one` is not changed: it is a separate legacy alias that dispatches TokenChunker to OneChunker.
+- Custom canvas rows are updated in both the runtime params and the operator form; unrelated components keep their values.
+
+Execution details:
+
+- Rows are read in id-ordered batches of 256, each batch in its own transaction. Only rows whose params actually change are rewritten.
+- `knowledgebase` and `document` rows fail closed: invalid JSON or a malformed supported value stops the step with table/row context. A failed batch rolls back; earlier committed batches can be rerun safely.
+- `user_canvas` and `user_canvas_version` rows are user-authored and are not schema-validated on save, so a row whose DSL is not valid JSON or cannot be normalized is logged and skipped instead of blocking the upgrade. The skipped row keeps its legacy shape, which the frontend fallback still reads and re-saves in the modular format; a database write failure still stops the step.
+- The step runs after `migrateResourceUserIDs` because its target sorts above `v1.0.0.1`. The marker advances after every table has been processed; a skipped canvas row does not block it. A database already marked `v1.0.0.2` or later skips this step.
+
+On success the migration records `v1.0.0.2`.
+
+#### Skipped canvas rows
+
+A skipped canvas row is left unchanged and the upgrade still completes, so the service starts normally. The row is not retried on later startups because the marker has already advanced. Search the migration log for either message:
+
+```text
+Skipping canvas DSL that is not valid JSON
+Skipping canvas DSL the migration cannot normalize
+```
+
+Both carry `table`, `row_id`, and the underlying `error`.
+
+To convert a skipped row:
+
+1. Open the canvas in the UI and save it. The frontend fallback still reads the legacy keys and writes the modular shape on save.
+2. If the canvas cannot be opened, correct the value named in the warning in `user_canvas.dsl` / `user_canvas_version.dsl`, or remove the offending component, then either re-save the canvas or follow step 3 to re-run the step.
+3. To make this step retry the row immediately, reset the shared marker to the version before this step and run `ragflow_server --migrate` again:
+
+   ```sql
+   UPDATE system_settings SET value = 'v1.0.0.1'
+   WHERE name = 'mysql_migration.database.version';
+   ```
+
+   The step is idempotent, so rows it already converted are not changed again.
+
+A skipped `user_canvas_version` row is a historical snapshot; the live `user_canvas` row is what the runtime and UI use. Until the row is re-saved or converted, the Go ingestion runtime ignores its legacy flat keys, so the old extractor/chunker settings do not take effect; the frontend fallback still displays them. The skipped row does not block startup.
 
 ---
 
