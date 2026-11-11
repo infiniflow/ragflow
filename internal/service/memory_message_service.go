@@ -242,10 +242,13 @@ func (s *MemoryMessageService) queueSaveToMemoryTask(ctx context.Context, memory
 // resolveMemoryTenant returns the owning tenant for a memory, caching the
 // outcome (including a missing-memory fallback) across a single reconcile pass
 // via the supplied map. A lookup failure never strands the wake-up: a missing
-// memory resolves to an empty tenant, which the caller routes to the primary
-// lane, and the failure is cached for the pass so lingering task rows for the
-// same deleted memory do not re-query the store or repeat the warning on every
-// task of every pass.
+// or unresolvable memory resolves to an empty tenant, which the caller routes
+// to the primary lane, and the failure is cached for the pass so lingering
+// task rows for the same memory do not re-query the store or repeat the warning
+// on every task of every pass. Because the underlying DAO wraps a not-found
+// result into the same error as a genuine store failure, a lookup error is
+// intentionally not surfaced as a reconcile error — it is a benign fallback to
+// the primary lane, not an anomaly the caller must act on.
 func (s *MemoryMessageService) resolveMemoryTenant(ctx context.Context, memoryID string, cache map[string]string) (string, error) {
 	if tenantID, ok := cache[memoryID]; ok {
 		return tenantID, nil
@@ -253,7 +256,7 @@ func (s *MemoryMessageService) resolveMemoryTenant(ctx context.Context, memoryID
 	tenantID := ""
 	if mem, memErr := s.memoryConfigFn(ctx, memoryID); memErr != nil {
 		common.Warn(fmt.Sprintf("memory: reconcile could not resolve tenant for memory %s (lookup failed: %v); publishing to primary lane", memoryID, memErr))
-	} else {
+	} else if mem != nil {
 		tenantID = mem.TenantID
 	}
 	cache[memoryID] = tenantID
@@ -289,11 +292,12 @@ func (s *MemoryMessageService) ReconcileMemoryTasks(ctx context.Context, limit i
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return errors.Join(reconcileErr, ctxErr)
 		}
-		tenantID, err := s.resolveMemoryTenant(ctx, task.MemoryID, tenantByMemory)
-		if err != nil {
-			reconcileErr = errors.Join(reconcileErr, err)
-			continue
-		}
+		// resolveMemoryTenant never returns a non-nil error: a missing or
+		// unresolvable memory is an expected fallback to the primary lane, not
+		// an anomaly. The previous `if err != nil { continue }` was dead code
+		// (it could never fire) and, worse, would have stranded the wake-up
+		// had the seam ever errored — so it is removed outright.
+		tenantID, _ := s.resolveMemoryTenant(ctx, task.MemoryID, tenantByMemory)
 		if err = publishMemoryTaskWakeup(ctx, s.taskPublisher, s.tierResolver, tenantID, task.TaskID); err != nil {
 			reconcileErr = errors.Join(reconcileErr, err)
 		}
