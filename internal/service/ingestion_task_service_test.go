@@ -651,8 +651,12 @@ func TestIngestionTaskServiceMarkFailedUpdatesTaskStatus(t *testing.T) {
 	ctx := t.Context()
 
 	svc := NewIngestionTaskService()
-	if err := svc.MarkFailed(ctx, "task-1", ""); err != nil {
+	changed, err := svc.MarkFailed(ctx, "task-1", "")
+	if err != nil {
 		t.Fatalf("MarkFailed failed: %v", err)
+	}
+	if !changed {
+		t.Fatal("MarkFailed on a RUNNING task should report a transition")
 	}
 	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
 	if err != nil {
@@ -1885,8 +1889,12 @@ func TestIngestionTaskServiceMarkFailedIdempotentOnAlreadyTerminal(t *testing.T)
 
 	svc := NewIngestionTaskService()
 	ctx := t.Context()
-	if err := svc.MarkFailed(ctx, "task-1", ""); err != nil {
+	changed, err := svc.MarkFailed(ctx, "task-1", "")
+	if err != nil {
 		t.Fatalf("MarkFailed on already COMPLETED task should be idempotent, got: %v", err)
+	}
+	if changed {
+		t.Fatal("MarkFailed on an already-terminal task must not report a transition")
 	}
 }
 
@@ -2195,6 +2203,50 @@ func TestIngestionTaskServiceRetryAllocatesNextRunCount(t *testing.T) {
 	}
 	if secondLog.RunCount == nil || *secondLog.RunCount != 2 {
 		t.Fatalf("second run_count = %v, want 2", secondLog.RunCount)
+	}
+}
+
+// A task another worker already settled must not get a FAILED run entry from
+// settlePublishFailure: markFailed is an idempotent no-op then, and writing
+// the terminal log would overwrite that status with one this worker never
+// observed.
+func TestIngestionTaskServiceSettlePublishFailureSkipsAlreadyTerminalTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = &recordingTaskPublisher{}
+	task, err := svc.CreateAndEnqueue(t.Context(), &entity.IngestionTask{
+		DocumentID: "doc-1", UserID: "user-1", DatasetID: "kb-1", Status: common.CREATED,
+	})
+	if err != nil {
+		t.Fatalf("create run: %v", err)
+	}
+	if task.PipelineLogID == nil {
+		t.Fatal("run has no pipeline log id")
+	}
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", task.ID).
+		Update("status", common.STOPPED).Error; err != nil {
+		t.Fatalf("set status STOPPED: %v", err)
+	}
+
+	svc.settlePublishFailure(t.Context(), task)
+
+	var updated entity.IngestionTask
+	if err := db.First(&updated, "id = ?", task.ID).Error; err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if updated.Status != common.STOPPED {
+		t.Fatalf("task status = %s, want the pre-existing STOPPED", updated.Status)
+	}
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", *task.PipelineLogID).Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if run.ProcessDuration != 0 {
+		t.Fatalf("process_duration = %v, want 0 (no terminal log write)", run.ProcessDuration)
 	}
 }
 
@@ -2616,8 +2668,12 @@ func TestIngestionTaskServiceMarkFailedCarriesReason(t *testing.T) {
 	svc := NewIngestionTaskService()
 	svc.SetEventEmitter(emitter)
 	const reason = "boom: nil deref"
-	if err := svc.MarkFailed(ctx, "task-1", reason); err != nil {
+	changed, err := svc.MarkFailed(ctx, "task-1", reason)
+	if err != nil {
 		t.Fatalf("MarkFailed failed: %v", err)
+	}
+	if !changed {
+		t.Fatal("MarkFailed on a RUNNING task should report a transition")
 	}
 	// The emit is fire-and-forget: it runs on a detached goroutine, so wait for
 	// it to actually land before asserting on the recorded log.
