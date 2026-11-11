@@ -326,7 +326,14 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 				chunkStoreEmbdID = effectiveEmbdID
 			}
 		}
-		if chunkStoreEmbdID != "" && storePlan.storeExists && chunkStoreEmbdID != storePlan.preparedEmbdID {
+		// The plan is decided before this transaction from a row that can still
+		// change: a last chunk deleted in between brings the update here on the
+		// empty-dataset path although no store was prepared for the new model.
+		// Committing that switch would outlive the request, because a retry
+		// resubmits the same model and an unchanged model is never prepared.
+		// Without a document engine there is no store to prepare, and the plan
+		// stays empty for that reason alone.
+		if chunkStoreEmbdID != "" && d.docEngine != nil && !storePlan.covers(chunkStoreEmbdID) {
 			txCode = common.CodeServerError
 			return errors.New("dataset changed while the embedding model was being prepared; retry the request")
 		}
@@ -557,10 +564,15 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 	}
 	// Publish connector tasks only after the chunk store is ready: a task the
 	// syncer picks up earlier would run against a store whose vector column for
-	// the new model does not exist yet. The task rows are already committed, so
-	// the syncer's startup reconciliation still runs a publish an error return
-	// skipped here.
-	publishDatasetSyncerTasks(scheduledTaskIDs)
+	// the new model does not exist yet. A request that repairs the store of an
+	// earlier failed attempt has no task IDs of its own, because the links it
+	// re-submits already existed, so the rows that attempt committed still need
+	// their publish.
+	publishIDs := scheduledTaskIDs
+	if pendingEmbdID != "" {
+		publishIDs = append(publishIDs, pendingDatasetSyncTaskIDs(ctx, updatedKB)...)
+	}
+	publishDatasetSyncerTasks(publishIDs)
 
 	if pagerankUpdate != nil {
 		if err = d.updateDatasetPagerankChunks(ctx, *pagerankUpdate); err != nil {
@@ -664,14 +676,37 @@ func publishDatasetSyncerTasks(taskIDs []string) {
 		common.Warn("syncer task publisher is not configured")
 		return
 	}
+	published := make(map[string]struct{}, len(taskIDs))
 	for _, taskID := range taskIDs {
 		if taskID == "" {
 			continue
 		}
+		if _, dup := published[taskID]; dup {
+			continue
+		}
+		published[taskID] = struct{}{}
 		if err := publisher.PublishSyncerTask(taskID); err != nil {
 			common.Warn("syncer task publish failed", zap.String("task_id", taskID), zap.Error(err))
 		}
 	}
+}
+
+// pendingDatasetSyncTaskIDs returns the dataset's still-scheduled connector
+// tasks, which are the ones a failed attempt committed without publishing.
+func pendingDatasetSyncTaskIDs(ctx context.Context, kb *entity.Knowledgebase) []string {
+	if ctx == nil || kb == nil {
+		return nil
+	}
+	var ids []string
+	err := dao.DB.WithContext(ctx).Model(&entity.SyncLogs{}).
+		Where("kb_id = ? AND status = ?", kb.ID, dao.SyncStatusSchedule).
+		Pluck("id", &ids).Error
+	if err != nil {
+		common.Warn("pending syncer tasks could not be read",
+			zap.String("dataset_id", kb.ID), zap.Error(err))
+		return nil
+	}
+	return ids
 }
 
 func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx *gorm.DB, datasetID string) (*entity.Knowledgebase, common.ErrorCode, error) {
@@ -715,6 +750,12 @@ type chunkStorePlan struct {
 	// asked for. A failed creation restores the previous binding, so the retry
 	// takes the preparation path again.
 	createEmbdID string
+}
+
+// covers reports whether this plan prepared the store for model. The transaction
+// uses it to reject a switch whose preparation the plan decided not to run.
+func (p chunkStorePlan) covers(model string) bool {
+	return model != "" && (p.preparedEmbdID == model || p.createEmbdID == model)
 }
 
 // planChunkStoreForEmbeddingChange decides how an empty dataset's chunk store
