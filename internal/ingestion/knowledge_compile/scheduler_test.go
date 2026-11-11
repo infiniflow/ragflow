@@ -1,6 +1,7 @@
 package knowledge_compile
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -143,7 +144,7 @@ func TestWithWriteLockRejectsSupersededClaim(t *testing.T) {
 		t.Fatalf("cancel inflight: %v", err)
 	}
 	writes := 0
-	err = c.withWriteLock(t.Context(), "kb1", claim.Token, func() error {
+	err = c.withWriteLock(t.Context(), "kb1", claim.Token, func(context.Context) error {
 		writes++
 		return nil
 	})

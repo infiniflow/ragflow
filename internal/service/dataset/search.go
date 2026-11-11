@@ -117,6 +117,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	// Access check for all datasets
 	var tenantIDs []string
 	var kbRecords []*entity.Knowledgebase
+	var searchableDatasetIDs []string
 	seenTenants := make(map[string]bool)
 	for _, datasetID := range datasetIDs {
 		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUse); err != nil {
@@ -130,12 +131,25 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			common.Warn("SearchDatasets dataset not found", zap.String("datasetID", datasetID))
 			return nil, fmt.Errorf("dataset %s not found", datasetID)
 		}
+		if kb.EmbeddingModelReference() == "" {
+			if err := service.CheckDatasetEmbeddingIndexEmpty(ctx, d.docEngine, kb); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		searchableDatasetIDs = append(searchableDatasetIDs, kb.ID)
 		if !seenTenants[kb.TenantID] {
 			seenTenants[kb.TenantID] = true
 			tenantIDs = append(tenantIDs, kb.TenantID)
 		}
 		kbRecords = append(kbRecords, kb)
 	}
+
+	if len(kbRecords) == 0 {
+		labels := map[string]float64{}
+		return &service.SearchDatasetsResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Labels: &labels}, nil
+	}
+	datasetIDs = searchableDatasetIDs
 
 	// Check if all kbs have the same embedding model
 	if err := service.ValidateDatasetEmbeddingModels(ctx, dao.DB, kbRecords); err != nil {
@@ -281,8 +295,9 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 
 	// Determine embedding model
 	var embeddingModel *modelModule.EmbeddingModel
-	if kbRecords[0].EmbdID != "" {
-		embeddingModel, err = modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantIDs[0]), kbRecords[0].EmbdID)
+	embeddingRef := kbRecords[0].EmbeddingModelReference()
+	if embeddingRef != "" {
+		embeddingModel, err = modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantIDs[0]), embeddingRef)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", err)
 		}
@@ -321,22 +336,25 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		retrievalReq.DocIDs = append(slices.Clone(docIDs), datasetIDs...)
 	}
 
-	retrievalResult, err := nlp.NewRetrievalService(d.docEngine, d.documentDAO).Retrieval(ctx, retrievalReq)
+	var retrievalResult *nlp.RetrievalResult
+	var filteredChunks []map[string]interface{}
+	err = dao.WithStableDatasetEmbeddingBindings(ctx, dao.DB, kbRecords, func(ctx context.Context) error {
+		var searchErr error
+		retrievalResult, searchErr = nlp.NewRetrievalService(d.docEngine, d.documentDAO).Retrieval(ctx, retrievalReq)
+		if searchErr != nil {
+			return fmt.Errorf("retrieval search failed: %w", searchErr)
+		}
+		filteredChunks = nlp.RetrievalByChildren(retrievalResult.Chunks, tenantIDs, d.docEngine, ctx)
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("retrieval search failed: %w", err)
+		return nil, err
 	}
-
-	filteredChunks := retrievalResult.Chunks
-
 	if useKG {
 		common.Warn("use_kg is not yet implemented in Go - skipping KG retrieval")
 	}
-
-	filteredChunks = nlp.RetrievalByChildren(filteredChunks, tenantIDs, d.docEngine, ctx)
 	formatDatasetSearchChunks(filteredChunks, req.IncludeCompiledChunks)
-
 	common.Info("SearchDatasets completed", zap.String("userID", userID), zap.Any("kbID", datasetIDs), zap.String("question", question), zap.Int64("chunkCount", int64(len(filteredChunks))))
-
 	pyChunks := common.ConvertFloatsToPyFormat(filteredChunks).([]map[string]interface{})
 
 	return &service.SearchDatasetsResponse{

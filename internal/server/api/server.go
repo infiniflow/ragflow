@@ -134,7 +134,7 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	// embedder resolver would read a nil db and fail at run time when the API
 	// process runs ingestion runs (e.g. in a combined --api --ingestor deploy
 	// where the ingestor bindings do not apply).
-	task.InitEmbedderResolver(dao.DB)
+	task.InitEmbedderResolver(dao.DB, engine.Get())
 	task.InitKnowledgeCompilerDeps(dao.DB, engine.Get())
 
 	// Initialize doc engine for skill search

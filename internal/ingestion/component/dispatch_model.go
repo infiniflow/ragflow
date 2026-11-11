@@ -91,13 +91,23 @@ func defaultResolveTenantModelByType(ctx context.Context, db *gorm.DB, tenantID 
 	default:
 		return nil, "", nil, 0, fmt.Errorf("invalid model type: %s", modelType)
 	}
-	if modelID == "" {
-		return nil, "", nil, 0, fmt.Errorf("no default %s model is set", modelType)
-	}
 	if tenantModelID := tenantModelIDByType(membership, modelType); tenantModelID != "" {
-		resolved, err := resolveModelConfigByID(ctx, db, tenantID, modelType, tenantModelID)
-		if err == nil {
-			return resolved.driver, resolved.model.ModelName, resolved.apiConfig, resolved.contextLength, nil
+		return resolveModelConfig(ctx, db, tenantID, modelType, tenantModelID)
+	}
+	if strings.TrimSpace(modelID) == "" {
+		settingType := modelType.String()
+		switch modelType {
+		case entity.ModelTypeSpeech2Text:
+			settingType = "asr"
+		case entity.ModelTypeImage2Text:
+			settingType = "vision"
+		}
+		modelID, err = (dao.PlatformModelSettings{}).Default(ctx, db, settingType)
+		if err != nil {
+			return nil, "", nil, 0, err
+		}
+		if strings.TrimSpace(modelID) == "" {
+			return nil, "", nil, 0, fmt.Errorf("no default %s model is set", modelType)
 		}
 	}
 	return resolveModelConfig(ctx, db, tenantID, modelType, modelID)
@@ -247,7 +257,7 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 		return nil, fmt.Errorf("resolve tenant owner for model lookup: %w", err)
 	}
 	providers := db.Session(&gorm.Session{}).Model(&entity.TenantModelProvider{}).
-		Select("id").Where("tenant_id = ? AND user_id = ?", tenantID, owner.UserID)
+		Select("id").Where("(tenant_id = ? AND user_id = ?) OR tenant_id = ?", tenantID, owner.UserID, entity.PlatformTenantID)
 	scopedDB := db.Session(&gorm.Session{}).Where("provider_id IN (?)", providers)
 	modelObj, err := modelDAO.GetByID(ctx, scopedDB, modelID)
 	if err != nil {
@@ -263,7 +273,11 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 		}
 		return nil, err
 	}
-	if provider.TenantID != tenantID {
+	if provider.TenantID == entity.PlatformTenantID {
+		if err := permission.CheckPlatformModelAccess(ctx, db, tenantID); err != nil {
+			return nil, errors.New("model not found or inaccessible")
+		}
+	} else if provider.TenantID != tenantID {
 		return nil, errors.New("model not found or inaccessible")
 	}
 	if modelObj.Status != "active" {
@@ -279,6 +293,9 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 	// A disabled instance must not be used: its credentials are no longer
 	// accepted by the provider, and running against it would hide that the
 	// selected deployment is unavailable. Mirrors the service-layer check.
+	if instance.ProviderID != provider.ID {
+		return nil, errors.New("model instance provider mismatch")
+	}
 	if !strings.EqualFold(instance.Status, "active") {
 		return nil, fmt.Errorf("model instance %q is disabled", instance.InstanceName)
 	}

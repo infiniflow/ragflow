@@ -103,19 +103,16 @@ func withWikiContributionStore(store wikiContributionStore) Option {
 	return func(c *Consumer) { c.contributions = store }
 }
 
-// defaultLLMID / defaultEmbedding are the model ids used when resolving LLM
-// deps for the dataset-level deduper. Set via SetModelConfig (typically from the
-// server bootstrap). Empty strings make the factory fall back to the noop
-// deduper until production wiring supplies real values.
-var (
-	defaultLLMID     string
-	defaultEmbedding string
-)
+// defaultLLMID is the chat model id used when resolving LLM deps for the
+// dataset-level deduper. Set via SetModelConfig (typically from the server
+// bootstrap); an empty value selects the tenant's default chat model. The
+// embedding model always comes from the dataset binding, so vectors written
+// here match the dataset's existing vectors.
+var defaultLLMID string
 
-// SetModelConfig records the model ids used to build the LLM deduper.
-func SetModelConfig(llmID, embedding string) {
+// SetModelConfig records the chat model id used to build the LLM deduper.
+func SetModelConfig(llmID string) {
 	defaultLLMID = llmID
-	defaultEmbedding = embedding
 }
 
 // InitializePublisher installs the process-wide publisher used by document
@@ -133,7 +130,7 @@ func InitializePublisher(db *gorm.DB, mq engine.MessageQueue) {
 // the batch: a noop deduper would silently disable cross-document LLM merging
 // and let duplicate merged products accumulate.
 func defaultDeduperFactory(ctx context.Context, tenant string) (Deduper, error) {
-	deps, err := kccommon.ResolveDeps(ctx, tenant, defaultLLMID, defaultEmbedding)
+	deps, err := kccommon.ResolveDeps(ctx, tenant, defaultLLMID, "")
 	if err != nil {
 		return nil, err
 	}

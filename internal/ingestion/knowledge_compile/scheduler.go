@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 
@@ -332,20 +333,20 @@ func (s *mysqlScheduler) publishEntry(ctx context.Context, tenantID, datasetID s
 // and the error is propagated unchanged (any DB write performed inside fn is
 // rolled back, so no partial side effect persists on an aborted write).
 func (s *mysqlScheduler) WithDatasetLock(ctx context.Context, datasetID string, fn func(claimToken string) error) error {
+	return s.WithDatasetLockContext(ctx, datasetID, func(_ context.Context, token string) error { return fn(token) })
+}
+
+// WithDatasetLockContext shares the claim lock transaction with nested writes.
+func (s *mysqlScheduler) WithDatasetLockContext(ctx context.Context, datasetID string, fn func(context.Context, string) error) error {
 	if s.db == nil {
-		// No DB (test/no-op scheduler): nothing to serialize against.
-		return fn("")
+		return fn(ctx, "")
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		row := entity.KnowledgeCompileDataset{
-			DatasetID: datasetID,
-		}
-		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("dataset_id = ?", datasetID).
-			FirstOrCreate(&row).Error; err != nil {
+		row := entity.KnowledgeCompileDataset{DatasetID: datasetID}
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("dataset_id = ?", datasetID).FirstOrCreate(&row).Error; err != nil {
 			return err
 		}
-		return fn(row.ClaimToken)
+		return fn(dao.WithScopedDB(ctx, tx), row.ClaimToken)
 	})
 }
 

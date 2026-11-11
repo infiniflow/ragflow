@@ -171,6 +171,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 
 	var tenantIDs []string
 	var kbRecords []*entity.Knowledgebase
+	var datasetIDs []string
 	for _, datasetID := range req.Datasets {
 		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{
 			Kind: permission.ResourceKindDataset,
@@ -186,6 +187,13 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		if kb == nil {
 			return nil, fmt.Errorf("dataset %s not found", datasetID)
 		}
+		if kb.EmbeddingModelReference() == "" {
+			if err := service.CheckDatasetEmbeddingIndexEmpty(ctx, s.docEngine, kb); err != nil {
+				return nil, err
+			}
+			continue
+		}
+		datasetIDs = append(datasetIDs, kb.ID)
 		common.Debug("Found knowledge base in database",
 			zap.String("datasetID", datasetID),
 			zap.String("tenantID", kb.TenantID),
@@ -195,15 +203,13 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		kbRecords = append(kbRecords, kb)
 	}
 
-	// Check if all kbs resolve to the same base embedding model
-	if len(kbRecords) > 1 {
-		embdNames := transaction.NewEmbeddingBaseNameResolver(dao.NewKnowledgebaseDAO().EmbeddingBaseName)
-		firstEmbeddingKey := knowledgebaseEmbeddingKey(ctx, dao.DB, kbRecords[0], tenantIDs[0], embdNames)
-		for i := 1; i < len(kbRecords); i++ {
-			if knowledgebaseEmbeddingKey(ctx, dao.DB, kbRecords[i], tenantIDs[i], embdNames) != firstEmbeddingKey {
-				return nil, fmt.Errorf("cannot retrieve across datasets with different embedding models")
-			}
-		}
+	if len(kbRecords) == 0 {
+		labels := map[string]float64{}
+		return &service.RetrievalTestResponse{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Labels: &labels}, nil
+	}
+
+	if err := service.ValidateDatasetEmbeddingModels(ctx, dao.DB, kbRecords); err != nil {
+		return nil, err
 	}
 
 	// Determine meta_data_filter
@@ -288,14 +294,14 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	if filter != nil {
 		// Get flattened metadata
 		metadataSvc := service.NewMetadataService()
-		flattedMeta, err := metadataSvc.GetFlattedMetaByKBs(ctx, []string(req.Datasets))
+		flattedMeta, err := metadataSvc.GetFlattedMetaByKBs(ctx, datasetIDs)
 		if err != nil {
 			common.Warn("Failed to get flatted metadata", zap.Error(err))
 		} else {
 			common.Info("metadata filter conditions", zap.Any("filter", filter))
 			// nil means no metadata narrowing: search the caller's scope
 			// unfiltered rather than scoping to nothing.
-			if filteredDocIDs := service.ApplyMetaDataFilter(ctx, filter, flattedMeta, req.Question, chatModelForFilter, req.DocIDs, []string(req.Datasets)); filteredDocIDs != nil {
+			if filteredDocIDs := service.ApplyMetaDataFilter(ctx, filter, flattedMeta, req.Question, chatModelForFilter, req.DocIDs, datasetIDs); filteredDocIDs != nil {
 				docIDs = filteredDocIDs
 			}
 			common.Info("ApplyMetaDataFilter result", zap.Strings("docIDs", docIDs))
@@ -371,11 +377,6 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		if getErr != nil {
 			return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", getErr)
 		}
-	} else {
-		embeddingModel, getErr = modelFactory.NewDefaultEmbeddingModel(modelCtx)
-		if getErr != nil {
-			return nil, fmt.Errorf("failed to get tenant default embedding model: %w", getErr)
-		}
 	}
 
 	if embeddingModel == nil {
@@ -410,7 +411,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	retrievalReq := &nlp.RetrievalRequest{
 		TenantIDs:              tenantIDs,
 		Question:               modifiedQuestion,
-		KbIDs:                  []string(req.Datasets),
+		KbIDs:                  datasetIDs,
 		DocIDs:                 docIDs,
 		Page:                   common.CoalesceInt(req.Page, common.DefaultPage),
 		PageSize:               common.CoalesceInt(req.Size, common.DefaultPageSize),
@@ -425,27 +426,24 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		Language:               entity.KnowledgebasesLanguage(kbRecords),
 	}
 
-	// Call RetrievalService to perform retrieval
-	retrievalResult, err := nlp.NewRetrievalService(s.docEngine, s.documentDAO).Retrieval(ctx, retrievalReq)
+	var retrievalResult *nlp.RetrievalResult
+	var filteredChunks []map[string]interface{}
+	err := dao.WithStableDatasetEmbeddingBindings(ctx, dao.DB, kbRecords, func(ctx context.Context) error {
+		var searchErr error
+		retrievalResult, searchErr = nlp.NewRetrievalService(s.docEngine, s.documentDAO).Retrieval(ctx, retrievalReq)
+		if searchErr != nil {
+			return fmt.Errorf("retrieval search failed: %w", searchErr)
+		}
+		filteredChunks = nlp.RetrievalByChildren(retrievalResult.Chunks, tenantIDs, s.docEngine, ctx)
+		hydrateChunkVectors(ctx, s.docEngine, filteredChunks, datasetIDs, tenantIDs)
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("retrieval search failed: %w", err)
+		return nil, err
 	}
-
-	filteredChunks := retrievalResult.Chunks
-
-	// Handle knowledge graph retrieval
-	// TODO: KG retrieval requires GraphRAG infrastructure which is not yet implemented in Go
 	if req.UseKG != nil && *req.UseKG {
 		common.Warn("use_kg is not yet implemented in Go - skipping KG retrieval")
 	}
-
-	// Apply retrieval_by_children - aggregate child chunks into parent chunks
-	filteredChunks = nlp.RetrievalByChildren(filteredChunks, tenantIDs, s.docEngine, ctx)
-
-	// Hydrate: ES returns zero vectors; replace with real vectors from FetchChunkVectors.
-	// Infinity/OceanBase chunks already carry real vectors and are left unchanged.
-	hydrateChunkVectors(ctx, s.docEngine, filteredChunks, req.Datasets, tenantIDs)
-
 	common.Info("RetrievalTest completed", zap.String("userID", permission.UserIDFromContext(ctx)), zap.Any("kbID", req.Datasets), zap.String("question", req.Question), zap.Int64("chunkCount", int64(len(filteredChunks))))
 
 	return &service.RetrievalTestResponse{
@@ -1505,7 +1503,14 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 		chunkData["doc_type_kwd"] = "image"
 	}
 
-	embeddingModel, err := s.getEmbeddingModel(ctx, kb.TenantID, kb.EmbdID)
+	embeddingRef := kb.EmbeddingModelReference()
+	if embeddingRef == "" {
+		embeddingRef, err = service.BindDatasetEmbedding(ctx, dao.DB, s.docEngine, kb.ID, kb.TenantID)
+		if err != nil {
+			return nil, addChunkError{code: common.CodeServerError, message: err.Error()}
+		}
+	}
+	embeddingModel, err := s.getEmbeddingModel(ctx, kb.TenantID, embeddingRef)
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("get embedding model: %v", err)}
 	}
@@ -1530,7 +1535,11 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 
 	ctx, cancel := context.WithTimeout(ctx, 600*time.Second)
 	defer cancel()
-	if _, err = s.docEngine.InsertChunks(ctx, []map[string]interface{}{chunkData}, indexName, req.DatasetID, datasetLanguageOf(kb)); err != nil {
+	err = service.WithStableDatasetEmbedding(ctx, dao.DB, kb.ID, kb.TenantID, embeddingRef, func() error {
+		_, err := s.docEngine.InsertChunks(ctx, []map[string]interface{}{chunkData}, indexName, req.DatasetID, datasetLanguageOf(kb))
+		return err
+	})
+	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("insert chunk: %v", err)}
 	}
 

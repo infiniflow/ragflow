@@ -34,6 +34,7 @@ import (
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	taskpkg "ragflow/internal/ingestion/task"
 	"ragflow/internal/observability"
+	"ragflow/internal/permission"
 	servicepkg "ragflow/internal/service"
 	documentpkg "ragflow/internal/service/document"
 	"ragflow/internal/utility"
@@ -110,7 +111,6 @@ type Ingestor struct {
 	// running as a separate service goroutine.
 	knowledgeCompile *knowledge_compile.Consumer
 	kcLLMID          string
-	kcEmbedding      string
 	kcConcurrency    int32 // number of parallel dataset-level compile workers
 
 	compileWg         sync.WaitGroup
@@ -406,11 +406,11 @@ func (e *Ingestor) SetMemoryMessageService(memorySvc *servicepkg.MemoryMessageSe
 	e.memorySvc = memorySvc
 }
 
-// SetKnowledgeCompileModelConfig supplies the default LLM/embedding model ids
-// used by the dataset-level compile consumer's deduper. Call it before Start.
-func (e *Ingestor) SetKnowledgeCompileModelConfig(llmID, embedding string) {
+// SetKnowledgeCompileModelConfig supplies the default chat model id used by
+// the dataset-level compile consumer's deduper. Its embedding model follows the
+// dataset binding. Call it before Start.
+func (e *Ingestor) SetKnowledgeCompileModelConfig(llmID string) {
 	e.kcLLMID = llmID
-	e.kcEmbedding = embedding
 }
 
 // SetKnowledgeCompileConcurrency sets the number of parallel dataset-level
@@ -437,7 +437,7 @@ func (e *Ingestor) startDatasetKnowledgeCompile() {
 		common.Warn("message queue not initialized; dataset-level compile consumer disabled")
 		return
 	}
-	knowledge_compile.SetModelConfig(e.kcLLMID, e.kcEmbedding)
+	knowledge_compile.SetModelConfig(e.kcLLMID)
 	if err := knowledge_compile.Provision(e.ctx, mq, e.deps.DB); err != nil {
 		common.Warn(fmt.Sprintf("dataset-level compile consumer unavailable; compiled chunks will not be merged: %v", err))
 		return
@@ -1246,7 +1246,7 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 		pipelineID = parserID // builtin: parser_id acts as the logical pipeline identifier
 	}
 
-	docTaskCtx.Ctx = ctx
+	docTaskCtx.Ctx = permission.WithTrustedModelDataset(ctx, docTaskCtx.Tenant.ID, docTaskCtx.KB.ID)
 	// The sink owns all document/ingestion_task_log/ingestion_task.component_total
 	// writes for this run; inject it into the executor so the pipeline reports
 	// progress to the service layer instead of touching the DAO directly.

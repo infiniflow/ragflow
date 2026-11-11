@@ -100,7 +100,18 @@ const (
 	FileSourceS3            FileSource = "s3"
 )
 
-// Knowledgebase represents the knowledge base model
+// EmbeddingModelReference returns the persisted model ID when available.
+func (kb *Knowledgebase) EmbeddingModelReference() string {
+	if kb == nil {
+		return ""
+	}
+	if kb.TenantEmbdID != nil && strings.TrimSpace(*kb.TenantEmbdID) != "" {
+		return strings.TrimSpace(*kb.TenantEmbdID)
+	}
+	return strings.TrimSpace(kb.EmbdID)
+}
+
+// Knowledgebase represents the knowledge base model.
 type Knowledgebase struct {
 	ID                     string     `gorm:"column:id;primaryKey;size:32" json:"id"`
 	Avatar                 *string    `gorm:"column:avatar;type:longtext" json:"avatar,omitempty"`

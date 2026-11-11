@@ -1098,6 +1098,17 @@ func (s *Service) SetVariable(ctx context.Context, varName, varValue string) err
 }
 
 func (s *Service) setVariable(ctx context.Context, db *gorm.DB, varName, varValue string) error {
+	// System setting names are identifiers. Restricting them to ASCII also
+	// prevents accent-insensitive database collations from aliasing reserved keys.
+	for _, r := range varName {
+		if r > 127 {
+			return fmt.Errorf("system setting name must be ASCII")
+		}
+	}
+	normalizedName := strings.ToLower(strings.TrimSpace(varName))
+	if strings.HasPrefix(normalizedName, entity.PlatformModelDefaultPrefix) || normalizedName == entity.PlatformProviderLockSetting {
+		return fmt.Errorf("reserved system setting: %s", varName)
+	}
 	settings, err := s.systemSettingsDAO.GetByName(ctx, db, varName)
 	if err != nil {
 		return err

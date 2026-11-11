@@ -36,6 +36,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity/models"
 	componentpkg "ragflow/internal/ingestion/component"
 	"ragflow/internal/permission"
@@ -665,6 +666,9 @@ func newEmbedderResolver(
 		if model == nil {
 			return nil, "", fmt.Errorf("embedder: resolved embedding model is nil for embd_id=%s", embdID)
 		}
+		if err := recordEmbeddingBinding(ctx, embdID); err != nil {
+			return nil, "", err
+		}
 		return &embedder{model: model}, embdID, nil
 	}
 }
@@ -677,14 +681,16 @@ func newEmbedderResolver(
 // composition root for ingestion runs) no longer reaches the global directly
 // (arch_test.go guards that rule).
 var embedderResolverDB *gorm.DB
+var embedderResolverEngine engine.DocEngine
 
 // InitEmbedderResolver binds the relational handle used by the production
 // embedder resolver. The task package is the composition root for ingestion
 // runs; the server assembly point passes the process-wide db here rather than
 // letting the resolver read dao.DB. Call it once during server startup, before
 // any ingestion run.
-func InitEmbedderResolver(db *gorm.DB) {
+func InitEmbedderResolver(db *gorm.DB, docEngine engine.DocEngine) {
 	embedderResolverDB = db
+	embedderResolverEngine = docEngine
 }
 
 // init wires the production embedder resolver into the component package. The
@@ -696,7 +702,7 @@ func init() {
 	componentpkg.DefaultEmbedderResolver = newEmbedderResolver(
 		func(ctx context.Context, kbID string) (string, error) {
 			if embedderResolverDB == nil {
-				return "", fmt.Errorf("embedder: resolver not initialized; call task.InitEmbedderResolver(dao.DB) at server startup")
+				return "", fmt.Errorf("embedder: resolver not initialized; call task.InitEmbedderResolver at server startup")
 			}
 			kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, embedderResolverDB, kbID)
 			if err != nil {
@@ -705,7 +711,11 @@ func init() {
 			if kb == nil {
 				return "", nil
 			}
-			return kb.EmbdID, nil
+			ref := kb.EmbeddingModelReference()
+			if ref == "" {
+				return service.BindDatasetEmbedding(ctx, embedderResolverDB, embedderResolverEngine, kbID, kb.TenantID)
+			}
+			return ref, nil
 		},
 		func(ctx context.Context, tenantID, embdID string) (*models.EmbeddingModel, error) {
 			embeddingModel, err := modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embdID)

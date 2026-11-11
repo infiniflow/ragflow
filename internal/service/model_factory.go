@@ -546,6 +546,20 @@ func (f *ModelFactory) defaultModelReference(ctx context.Context, modelType enti
 		return modelID, nil
 	}
 	if strings.TrimSpace(modelName) == "" {
+		settingType := modelType.String()
+		switch modelType {
+		case entity.ModelTypeSpeech2Text:
+			settingType = "asr"
+		case entity.ModelTypeImage2Text:
+			settingType = "vision"
+		}
+		platformID, lookupErr := (dao.PlatformModelSettings{}).Default(ctx, dao.DB, settingType)
+		if lookupErr != nil {
+			return "", fmt.Errorf("failed to get platform default %s model: %w", modelType, lookupErr)
+		}
+		if strings.TrimSpace(platformID) != "" {
+			return platformID, nil
+		}
 		return "", fmt.Errorf("no default %s model is set: %w", modelType, ErrNoDefaultModel)
 	}
 	return modelName, nil
@@ -737,7 +751,12 @@ func (s *ModelFactory) resolveModelIdentity(ctx context.Context, requestedType e
 		}
 	}
 	provider, instance := identity.providerEntity, identity.instanceEntity
-	if provider.TenantID != tenantID || provider.UserID != owner.UserID {
+	isPlatform := provider.TenantID == entity.PlatformTenantID
+	if isPlatform {
+		if err := permission.CheckPlatformModelAccess(ctx, dao.DB, tenantID); err != nil {
+			return nil, fmt.Errorf("%w: platform model access: %w", errModelConfigUnavailable, err)
+		}
+	} else if provider.TenantID != tenantID || provider.UserID != owner.UserID {
 		return nil, fmt.Errorf("%w: tenant %s can use only its owner's model configuration", errModelConfigUnavailable, tenantID)
 	}
 	if instance.ProviderID != provider.ID {
@@ -749,7 +768,7 @@ func (s *ModelFactory) resolveModelIdentity(ctx context.Context, requestedType e
 	if identity.modelEntity != nil && !strings.EqualFold(identity.modelEntity.Status, "active") {
 		return nil, fmt.Errorf("%w: tenant model %q is disabled", errModelConfigUnavailable, modelRef)
 	}
-	if userID != "" {
+	if userID != "" && !isPlatform {
 		checker := permission.NewDatabaseChecker(dao.DB)
 		if err := checker.CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindModelProvider, ID: provider.ID}, permission.OperationRead); err != nil {
 			return nil, fmt.Errorf("%w: user %s cannot read model provider %q: %w", errModelConfigUnavailable, userID, provider.ProviderName, err)

@@ -81,3 +81,62 @@ func TestInsertChunksNoRefreshOmitsRefreshParam(t *testing.T) {
 		t.Fatalf("refresh param = %q, want it omitted so the index decides", refresh[0])
 	}
 }
+
+func TestRefreshChunkStore(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		status    int
+		body      string
+		wantError bool
+	}{
+		{name: "success", status: http.StatusOK, body: `{"_shards":{"failed":0}}`},
+		{name: "failed shard", status: http.StatusOK, body: `{"_shards":{"failed":1}}`, wantError: true},
+		{name: "missing shard result", status: http.StatusOK, body: `{}`, wantError: true},
+		{name: "unavailable", status: http.StatusServiceUnavailable, body: `{}`, wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost || r.URL.Path != "/ragflow_tenant/_refresh" {
+					t.Errorf("request = %s %s", r.Method, r.URL.Path)
+				}
+				w.Header().Set("X-Elastic-Product", "Elasticsearch")
+				w.WriteHeader(tc.status)
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			t.Cleanup(server.Close)
+			client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}, DisableRetry: true})
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = (&Engine{client: client}).RefreshChunkStore(t.Context(), "ragflow_tenant", "kb-1")
+			if (err != nil) != tc.wantError {
+				t.Fatalf("error = %v, want error %v", err, tc.wantError)
+			}
+		})
+	}
+}
+
+func TestSearchOneIndexRequireComplete(t *testing.T) {
+	for _, tc := range []struct{ name, body string }{
+		{name: "timeout", body: `{"timed_out":true,"_shards":{"failed":0},"hits":{"total":{"value":0},"hits":[]}}`},
+		{name: "shard failure", body: `{"timed_out":false,"_shards":{"failed":1},"hits":{"total":{"value":0},"hits":[]}}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("X-Elastic-Product", "Elasticsearch")
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			t.Cleanup(server.Close)
+			client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := (&Engine{client: client}).searchOneIndex(t.Context(), "ragflow_tenant", []byte(`{}`), true); err == nil {
+				t.Fatal("incomplete result accepted as a complete search")
+			}
+			if _, _, err := (&Engine{client: client}).searchOneIndex(t.Context(), "ragflow_tenant", []byte(`{}`), false); err != nil {
+				t.Fatalf("ordinary search rejected partial results: %v", err)
+			}
+		})
+	}
+}

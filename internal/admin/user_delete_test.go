@@ -182,6 +182,9 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 	insert("INSERT INTO chat_channel (id, tenant_id, name, channel, config) VALUES (?, ?, ?, ?, ?)", "channel", "user-1", "Channel", "telegram", "{}")
 	insert("INSERT INTO memory (id, tenant_id, name, embd_id, llm_id, permissions, forgetting_policy) VALUES (?, ?, ?, ?, ?, ?, ?)", "memory", "user-1", "Memory", "embd", "llm", "me", "FIFO")
 	insert("INSERT INTO tenant_model_provider (id, provider_name, tenant_id) VALUES (?, ?, ?)", "provider", "custom", "user-1")
+	insert("INSERT INTO tenant_model_provider (id, provider_name, tenant_id, user_id) VALUES (?, ?, ?, ?)", "platform-provider", "custom", entity.PlatformTenantID, "user-1")
+	insert("INSERT INTO tenant_model_instance (id, instance_name, provider_id, api_key) VALUES (?, ?, ?, ?)", "platform-instance", "custom", "platform-provider", "secret")
+	insert("INSERT INTO tenant_model (id, model_name, provider_id, instance_id, model_type) VALUES (?, ?, ?, ?, ?)", "platform-model", "model", "platform-provider", "platform-instance", 1)
 	insert("INSERT INTO tenant_model_instance (id, instance_name, provider_id, api_key) VALUES (?, ?, ?, ?)", "instance", "custom", "provider", "secret")
 	insert("INSERT INTO tenant_model (id, model_name, provider_id, instance_id, model_type) VALUES (?, ?, ?, ?, ?)", "model", "model", "provider", "instance", 1)
 	insert("INSERT INTO file_commit (id, folder_id, message, author_id, file_count) VALUES (?, ?, ?, ?, ?)", "own-commit", "own-kb", "Own page edit", "user-2", 1)
@@ -245,7 +248,7 @@ func TestDeleteUserRemovesOwnedDataAndJoinedDocuments(t *testing.T) {
 			t.Fatalf("dependent rows remain in %s: count=%d, err=%v", table, count, err)
 		}
 	}
-	for _, tableID := range [][2]string{{"document", "other-doc"}, {"file", "other-file"}, {"search", "other-search"}, {"knowledgebase", "team-kb"}, {"dialog", "team-chat"}, {"conversation", "other-conversation"}, {"file_commit", "other-commit"}, {"file_commit_item", "other-commit-item"}} {
+	for _, tableID := range [][2]string{{"tenant_model_provider", "platform-provider"}, {"tenant_model_instance", "platform-instance"}, {"tenant_model", "platform-model"}, {"document", "other-doc"}, {"file", "other-file"}, {"search", "other-search"}, {"knowledgebase", "team-kb"}, {"dialog", "team-chat"}, {"conversation", "other-conversation"}, {"file_commit", "other-commit"}, {"file_commit_item", "other-commit-item"}} {
 		var count int64
 		if err := db.Table(tableID[0]).Where("id = ?", tableID[1]).Count(&count).Error; err != nil || count != 1 {
 			t.Fatalf("shared resource %s/%s missing: count=%d, err=%v", tableID[0], tableID[1], count, err)

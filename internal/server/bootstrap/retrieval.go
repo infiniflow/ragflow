@@ -27,6 +27,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
@@ -47,6 +48,9 @@ func InitializeRetrievalServices(metadataService *service.MetadataService, memor
 		docEngine,
 		documentDAO,
 		agenttool.RetrievalModelConstructors{
+			CheckEmptyEmbedding: func(ctx context.Context, kb *entity.Knowledgebase) error {
+				return service.CheckDatasetEmbeddingIndexEmpty(ctx, docEngine, kb)
+			},
 			Embedding: func(ctx context.Context, tenantID, modelRef string) (*modelModule.EmbeddingModel, error) {
 				if strings.TrimSpace(modelRef) == "" {
 					return modelFactory.NewDefaultEmbeddingModel(permission.WithTenantID(ctx, tenantID))

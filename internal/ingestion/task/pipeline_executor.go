@@ -40,6 +40,7 @@ import (
 	"ragflow/internal/ingestion/mediacache"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
+	servicepkg "ragflow/internal/service"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -233,6 +234,14 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	ctx = s.withProgressMessageReporter(ctx)
 	ctx, finishIOProgress := agentruntime.WithIOProgress(ctx)
 	defer finishIOProgress()
+	ctx = withEmbeddingBinding(ctx)
+	// Precomputed vectors historically inherit the dataset binding. Capture it
+	// before the pipeline runs and verify it again before any vector write.
+	if ref := s.taskCtx.KB.EmbeddingModelReference(); ref != "" {
+		if err := recordEmbeddingBinding(ctx, ref); err != nil {
+			return nil, err
+		}
+	}
 
 	start := time.Now()
 	if err := ctx.Err(); err != nil {
@@ -395,20 +404,31 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	}
 	indexChunks := append(chunks, parentChunks...)
 	indexdoc.StampDatasetPagerank(indexChunks, s.taskCtx.KB.Pagerank)
-	indexWriteStart := time.Now()
-	finishIndexWrite := agentruntime.TrackIO(ctx, "Indexer", "Write chunks", fmt.Sprintf("count=%d", len(indexChunks)))
-	indexWriteErr := s.indexWriter.Write(ctx, indexChunks)
-	finishIndexWrite()
-	indexMessage := fmt.Sprintf("Write chunks | count=%d elapsed=%s", len(indexChunks), time.Since(indexWriteStart).Round(time.Millisecond))
-	if indexWriteErr != nil {
-		indexMessage += " error=" + kccommon.CompactError(indexWriteErr)
-	}
-	agentruntime.ReportIOProgress(ctx, "Indexer", indexMessage)
-	if indexWriteErr != nil {
-		if cleanupErr := s.compensateFailedIndexWrite(ctx, indexChunks); cleanupErr != nil {
-			return nil, fmt.Errorf("write chunks: %w; compensate partial index write: %v", indexWriteErr, cleanupErr)
+	writeChunks := func() error {
+		indexWriteStart := time.Now()
+		finishIndexWrite := agentruntime.TrackIO(ctx, "Indexer", "Write chunks", fmt.Sprintf("count=%d", len(indexChunks)))
+		indexWriteErr := s.indexWriter.Write(ctx, indexChunks)
+		finishIndexWrite()
+		indexMessage := fmt.Sprintf("Write chunks | count=%d elapsed=%s", len(indexChunks), time.Since(indexWriteStart).Round(time.Millisecond))
+		if indexWriteErr != nil {
+			indexMessage += " error=" + kccommon.CompactError(indexWriteErr)
 		}
-		return nil, fmt.Errorf("write chunks: %w", indexWriteErr)
+		agentruntime.ReportIOProgress(ctx, "Indexer", indexMessage)
+		if indexWriteErr != nil {
+			if cleanupErr := s.compensateFailedIndexWrite(ctx, indexChunks); cleanupErr != nil {
+				return fmt.Errorf("write chunks: %w; compensate partial index write: %v", indexWriteErr, cleanupErr)
+			}
+			return fmt.Errorf("write chunks: %w", indexWriteErr)
+		}
+		return nil
+	}
+	if chunksHaveEmbeddings(indexChunks) {
+		ref := embeddingBindingFromContext(ctx)
+		if err := servicepkg.WithStableDatasetEmbedding(ctx, s.deps.DB, s.taskCtx.KB.ID, s.taskCtx.Tenant.ID, ref, writeChunks); err != nil {
+			return nil, err
+		}
+	} else if err := writeChunks(); err != nil {
+		return nil, err
 	}
 	if err := s.reconcileDocumentCompiledProducts(ctx, oldCompiledProductIDs, chunks); err != nil {
 		return nil, err

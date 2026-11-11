@@ -23,6 +23,8 @@ import (
 
 type userIDContextKey struct{}
 type tenantIDContextKey struct{}
+type trustedModelTenantContextKey struct{}
+type trustedModelDatasetContextKey struct{}
 
 var (
 	ErrUnauthenticated    = errors.New("permission: user is required")
@@ -33,6 +35,35 @@ var (
 	ErrInvalidPermission  = errors.New("permission: invalid permission request")
 	ErrSourceUnavailable  = errors.New("permission: source is not configured")
 )
+
+// WithTrustedModelTenant marks a tenant loaded from a validated internal task.
+// HTTP handlers must not create this context from request-supplied identifiers.
+func WithTrustedModelTenant(ctx context.Context, tenantID string) context.Context {
+	return context.WithValue(ctx, trustedModelTenantContextKey{}, tenantID)
+}
+
+// WithTrustedModelDataset binds a dataset loaded by an internal task.
+func WithTrustedModelDataset(ctx context.Context, tenantID, datasetID string) context.Context {
+	return context.WithValue(WithTrustedModelTenant(ctx, tenantID), trustedModelDatasetContextKey{}, datasetID)
+}
+
+// TrustedModelDataset reports the dataset bound to an internal task.
+func TrustedModelDataset(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	datasetID, _ := ctx.Value(trustedModelDatasetContextKey{}).(string)
+	return datasetID
+}
+
+// TrustedModelTenant reports the tenant bound to an internal task.
+func TrustedModelTenant(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	tenantID, _ := ctx.Value(trustedModelTenantContextKey{}).(string)
+	return tenantID
+}
 
 // WithIdentity attaches the authenticated user and active Tenant to a request
 // context as separate values.

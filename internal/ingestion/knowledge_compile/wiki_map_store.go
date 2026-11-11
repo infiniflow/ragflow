@@ -157,7 +157,7 @@ func datasetLanguageByID(ctx context.Context, db *gorm.DB, datasetID string) (st
 	if db == nil {
 		return "", nil
 	}
-	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, datasetID)
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, dao.ScopedDB(ctx, db), datasetID)
 	if err != nil {
 		return "", err
 	}

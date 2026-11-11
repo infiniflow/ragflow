@@ -427,7 +427,8 @@ func (s *MemoryMessageService) extractMemoryTask(ctx context.Context, task *enti
 		return []extractedMemory{}, nil
 	}
 
-	extracted, err := s.extractByLLM(ctx, mem, extractTypes, msg, task.TaskID)
+	taskCtx := permission.WithTrustedModelTenant(ctx, mem.TenantID)
+	extracted, err := s.extractByLLM(taskCtx, mem, extractTypes, msg, task.TaskID)
 	if err != nil {
 		if !errors.Is(err, errMemoryChatCall) {
 			return nil, err
@@ -462,7 +463,8 @@ func (s *MemoryMessageService) storeMemoryTaskExtraction(ctx context.Context, ta
 	for _, item := range extracted {
 		messages = append(messages, buildExtractedMessage(task.SourceID, task.MemoryID, msg, item))
 	}
-	if err = s.embedAndSaveMessages(ctx, mem, messages); err != nil {
+	taskCtx := permission.WithTrustedModelTenant(ctx, mem.TenantID)
+	if err = s.embedAndSaveMessages(taskCtx, mem, messages); err != nil {
 		return classifyMemoryTaskDependencyError(err)
 	}
 	return nil

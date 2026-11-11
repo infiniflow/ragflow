@@ -1199,6 +1199,10 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 
 // SearchResponse Elasticsearch search response
 type SearchResponse struct {
+	TimedOut bool `json:"timed_out"`
+	Shards   struct {
+		Failed int `json:"failed"`
+	} `json:"_shards"`
 	Hits struct {
 		Total struct {
 			Value int64 `json:"value"`
@@ -1500,7 +1504,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		// each iteration a fresh bytes.NewReader.
 		payload := append([]byte(nil), buf.Bytes()...)
 		for _, indexName := range req.IndexNames {
-			searchChunks, indexTotal, esErr := e.searchOneIndex(ctx, indexName, payload)
+			searchChunks, indexTotal, esErr := e.searchOneIndex(ctx, indexName, payload, req.RequireComplete)
 			if esErr != nil {
 				return nil, fmt.Errorf("elasticsearch: search index %q: %w", indexName, esErr)
 			}
@@ -1756,7 +1760,7 @@ func sortByFields(chunks []map[string]interface{}, expr *types.OrderByExpr) []ma
 
 // searchOneIndex sends an ordinary search with a fresh request body. A valid
 // missing-index response is empty; other request and response failures propagate.
-func (e *Engine) searchOneIndex(ctx context.Context, indexName string, payload []byte) ([]map[string]interface{}, int64, error) {
+func (e *Engine) searchOneIndex(ctx context.Context, indexName string, payload []byte, requireComplete bool) ([]map[string]interface{}, int64, error) {
 	res, err := e.client.Search(
 		e.client.Search.WithContext(ctx),
 		e.client.Search.WithIndex(indexName),
@@ -1797,6 +1801,11 @@ func (e *Engine) searchOneIndex(ctx context.Context, indexName string, payload [
 		return nil, 0, err
 	}
 
+	// Ordinary searches keep the hits a degraded cluster returns; a caller
+	// that must rule out data, such as an emptiness check, opts out.
+	if requireComplete && (esResp.TimedOut || esResp.Shards.Failed > 0) {
+		return nil, 0, fmt.Errorf("elasticsearch search incomplete: timed_out=%t failed_shards=%d", esResp.TimedOut, esResp.Shards.Failed)
+	}
 	return convertESResponse(&esResp, ""), esResp.Hits.Total.Value, nil
 }
 
@@ -2934,6 +2943,34 @@ func (e *Engine) DropChunkStore(ctx context.Context, baseName, datasetID string)
 // ChunkStoreExists checks if a chunk index exists
 func (e *Engine) ChunkStoreExists(ctx context.Context, baseName, datasetID string) (bool, error) {
 	return e.indexExists(ctx, baseName)
+}
+
+// RefreshChunkStore makes completed unrefreshed ingestion batches visible to
+// a subsequent safety check. It does not coordinate with concurrent writers.
+func (e *Engine) RefreshChunkStore(ctx context.Context, baseName, datasetID string) error {
+	res, err := (esapi.IndicesRefreshRequest{Index: []string{baseName}}).Do(ctx, e.client)
+	if err != nil {
+		return fmt.Errorf("refresh chunk index: %w", err)
+	}
+	defer res.Body.Close()
+	if res.IsError() {
+		return fmt.Errorf("refresh chunk index: %s", res.Status())
+	}
+	var body struct {
+		Shards *struct {
+			Failed *int `json:"failed"`
+		} `json:"_shards"`
+	}
+	if err := json.NewDecoder(res.Body).Decode(&body); err != nil {
+		return fmt.Errorf("decode chunk index refresh: %w", err)
+	}
+	if body.Shards == nil || body.Shards.Failed == nil {
+		return fmt.Errorf("refresh chunk index: missing shard result")
+	}
+	if *body.Shards.Failed != 0 {
+		return fmt.Errorf("refresh chunk index: %d shards failed", *body.Shards.Failed)
+	}
+	return nil
 }
 
 // KNNScores performs a second-pass KNN search to get clean cosine similarities for ES.

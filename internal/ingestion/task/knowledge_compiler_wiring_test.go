@@ -19,6 +19,7 @@ package task
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"ragflow/internal/agent/runtime"
@@ -26,6 +27,9 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	kc "ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/ingestion/knowledge_compile"
+	"ragflow/internal/ingestion/testutil"
+	"ragflow/internal/service"
 )
 
 // TestKnowledgeCompilerRegisteredByWiring locks the composition-root contract:
@@ -177,5 +181,47 @@ func TestDatasetEmbeddingIDBindsTheDatasetModel(t *testing.T) {
 				t.Fatalf("datasetEmbeddingID() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestKnowledgeCompilerRejectsEmbeddingOutsideDatasetBinding(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	restoreDB := testutil.ReplaceDBForTest(t, db)
+	defer restoreDB()
+	oldDB := kcWiringDeps.DB
+	kcWiringDeps.DB = db
+	t.Cleanup(func() { kcWiringDeps.DB = oldDB })
+	status := "1"
+	for _, kb := range []*entity.Knowledgebase{
+		{ID: "bound", TenantID: "tenant", Name: "bound", Status: &status, EmbdID: "model-a"},
+		{ID: "unbound", TenantID: "tenant", Name: "unbound", Status: &status},
+	} {
+		if err := db.Create(kb).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, tc := range []struct{ id, want string }{
+		{"bound", "differs from dataset binding"},
+		{"unbound", "must be bound"},
+	} {
+		e := &kcEmbedder{factory: service.NewModelFactory(), tenantID: "tenant", datasetID: tc.id, embdID: "model-b"}
+		if _, err := e.resolveModel(t.Context()); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Fatalf("dataset %s: got %v, want %q", tc.id, err, tc.want)
+		}
+	}
+}
+
+func TestDirtyWikiCompilerRejectsMismatchedDatasetTenant(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	oldDB := kcWiringDeps.DB
+	kcWiringDeps.DB = db
+	t.Cleanup(func() { kcWiringDeps.DB = oldDB })
+	status := "1"
+	if err := db.Create(&entity.Knowledgebase{ID: "kb", TenantID: "owner", Name: "kb", Status: &status}).Error; err != nil {
+		t.Fatal(err)
+	}
+	err := compileDirtyWikiDocument(t.Context(), knowledge_compile.WikiDirtyRequest{TenantID: "other", DatasetID: "kb", DocumentID: "doc"})
+	if err == nil || !strings.Contains(err.Error(), "load dataset") {
+		t.Fatalf("mismatched tenant accepted: %v", err)
 	}
 }

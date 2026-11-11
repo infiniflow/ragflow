@@ -139,19 +139,21 @@ func ResolveComponentParamsDefaults(ctx context.Context, parserID string, pipeli
 
 // ValidateDatasetEmbeddingModels checks that all knowledge bases in the list
 // either have an embedding model or none do, and that they all resolve to the
-// same base embedding model name (e.g. "BAAI/bge-m3"). Embedding references
-// are resolved through tenant_model first, so datasets storing a raw
-// tenant_model id and datasets storing a legacy "model@instance@provider"
-// composite compare equal when they point at the same model.
+// same compatible embedding model. Legacy tenant references retain their
+// existing base-name matching; platform references are distinguished by ID.
 func ValidateDatasetEmbeddingModels(ctx context.Context, db *gorm.DB, kbs []*entity.Knowledgebase) error {
 	embdNames := make(map[string]struct{})
 	hasEmbd := false
 	noEmbd := false
 	names := transaction.NewEmbeddingBaseNameResolver(dao.NewKnowledgebaseDAO().EmbeddingBaseName)
 	for _, kb := range kbs {
-		if kb.EmbdID != "" {
+		if kb.EmbeddingModelReference() != "" {
 			hasEmbd = true
-			embdNames[names.Resolve(ctx, db, kb)] = struct{}{}
+			key, err := dao.EmbeddingCompatibilityKey(ctx, db, kb, names)
+			if err != nil {
+				return fmt.Errorf("resolve dataset embedding compatibility: %w", err)
+			}
+			embdNames[key] = struct{}{}
 		} else {
 			noEmbd = true
 		}
@@ -168,7 +170,7 @@ func ValidateDatasetEmbeddingModels(ctx context.Context, db *gorm.DB, kbs []*ent
 func getEmbdIDs(kbs []*entity.Knowledgebase) []string {
 	ids := make([]string, len(kbs))
 	for i, kb := range kbs {
-		ids[i] = kb.EmbdID
+		ids[i] = kb.EmbeddingModelReference()
 	}
 	return ids
 }

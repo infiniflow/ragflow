@@ -2055,7 +2055,7 @@ func insertChunkTestKB(t *testing.T, id, tenantID string) {
 		ID:           id,
 		TenantID:     tenantID,
 		Name:         id,
-		EmbdID:       "embedding-model",
+		EmbdID:       "embed-1",
 		Permission:   string(entity.TenantPermissionTeam),
 		CreatedBy:    tenantID,
 		ParserConfig: entity.JSONMap{},

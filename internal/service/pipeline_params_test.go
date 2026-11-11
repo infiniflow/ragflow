@@ -18,7 +18,7 @@ func setupValidateEmbeddingTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.TenantModel{}); err != nil {
+	if err := db.AutoMigrate(&entity.TenantModel{}, &entity.TenantModelProvider{}); err != nil {
 		t.Fatalf("failed to migrate test schema: %v", err)
 	}
 	return db
@@ -186,5 +186,38 @@ func TestValidateDatasetEmbeddingModelsSharedReferenceFallback(t *testing.T) {
 	}
 	if err := ValidateDatasetEmbeddingModels(t.Context(), db, kbs); err != nil {
 		t.Fatalf("valid shared reference: %v", err)
+	}
+}
+
+func TestValidateDatasetEmbeddingModelsDistinguishesPlatformModels(t *testing.T) {
+	db := setupValidateEmbeddingTestDB(t)
+	providers := []entity.TenantModelProvider{
+		{ID: "platform-provider", TenantID: entity.PlatformTenantID, UserID: "admin", ProviderName: "platform"},
+		{ID: "tenant-provider", TenantID: "tenant", UserID: "owner", ProviderName: "tenant"},
+	}
+	for _, provider := range providers {
+		if err := db.Create(&provider).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	models := []entity.TenantModel{
+		{ID: "platform-a", ProviderID: "platform-provider", ModelName: "same"},
+		{ID: "platform-b", ProviderID: "platform-provider", ModelName: "same"},
+		{ID: "tenant-a", ProviderID: "tenant-provider", ModelName: "same"},
+	}
+	for _, model := range models {
+		if err := db.Create(&model).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, pair := range [][2]string{{"platform-a", "tenant-a"}, {"platform-a", "platform-b"}} {
+		kbs := []*entity.Knowledgebase{{EmbdID: pair[0]}, {EmbdID: pair[1]}}
+		if err := ValidateDatasetEmbeddingModels(t.Context(), db, kbs); err == nil {
+			t.Fatalf("different models %v treated as compatible", pair)
+		}
+	}
+	kbs := []*entity.Knowledgebase{{EmbdID: "platform-a"}, {EmbdID: "platform-a"}}
+	if err := ValidateDatasetEmbeddingModels(t.Context(), db, kbs); err != nil {
+		t.Fatalf("same platform model rejected: %v", err)
 	}
 }

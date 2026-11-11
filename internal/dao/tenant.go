@@ -18,7 +18,9 @@ package dao
 
 import (
 	"context"
+	"fmt"
 	"ragflow/internal/entity"
+	"strings"
 
 	"gorm.io/gorm"
 )
@@ -63,6 +65,9 @@ func (dao *TenantDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*ent
 
 // Create creates a new tenant
 func (dao *TenantDAO) Create(ctx context.Context, db *gorm.DB, tenant *entity.Tenant) error {
+	if strings.EqualFold(tenant.ID, entity.PlatformTenantID) {
+		return fmt.Errorf("reserved tenant ID")
+	}
 	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := initializeTenantDefaultRoleEE(ctx, tx, tenant); err != nil {
 			return err

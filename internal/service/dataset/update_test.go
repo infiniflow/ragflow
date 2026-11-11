@@ -17,6 +17,7 @@
 package dataset
 
 import (
+	"context"
 	"encoding/json"
 	"reflect"
 	"strings"
@@ -1060,6 +1061,12 @@ func migrateDatasetUpdateTestTables(t *testing.T, db *gorm.DB) {
 	}
 }
 
+type emptyDatasetIndexEngine struct{ fakeChatDocEngine }
+
+func (emptyDatasetIndexEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
+	return false, nil
+}
+
 func testDatasetUpdateService(t *testing.T) *DatasetService {
 	t.Helper()
 
@@ -1067,6 +1074,7 @@ func testDatasetUpdateService(t *testing.T) *DatasetService {
 		kbDAO:        dao.NewKnowledgebaseDAO(),
 		documentDAO:  dao.NewDocumentDAO(),
 		connectorDAO: dao.NewConnectorDAO(),
+		docEngine:    emptyDatasetIndexEngine{},
 	}
 }
 
@@ -1621,5 +1629,38 @@ func TestUpdateDatasetPagerankUnchangedIsANoOpOnInfinity(t *testing.T) {
 	}
 	if persisted.Pagerank != 0 {
 		t.Fatalf("pagerank = %d, want the rejected update rolled back", persisted.Pagerank)
+	}
+}
+
+func TestDatasetEmbeddingChangeRejectsVectorsAndActiveTasks(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		active bool
+	}{{name: "existing vectors"}, {name: "active ingestion", active: true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupDatasetUpdateTestDB(t)
+			pushServiceDB(t, db)
+			insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+			insertDatasetUpdateModelProvider(t, "provider-1", "tenant-1", "ZHIPU-AI")
+			insertDatasetUpdateModelInstance(t, "instance-1", "provider-1", "test")
+			insertDatasetUpdateTenantModel(t, "model-1", "provider-1", "instance-1", "embedding-2", int(entity.ModelTypeEmbedding))
+			if tc.active {
+				if err := db.Create(&entity.IngestionTask{ID: "task-1", DocumentID: "doc-1", DatasetID: "kb-1", Status: common.RUNNING}).Error; err != nil {
+					t.Fatal(err)
+				}
+			} else if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("chunk_num", 1).Error; err != nil {
+				t.Fatal(err)
+			}
+			model := "embedding-2@test@ZHIPU-AI"
+			ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+			_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model})
+			if err == nil || code != common.CodeDataError {
+				t.Fatalf("change = %v, code %d; want rejection", err, code)
+			}
+			kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+			if err != nil || kb.EmbdID != "BAAI/bge-large-zh-v1.5@Builtin" {
+				t.Fatalf("dataset changed: %+v, %v", kb, err)
+			}
+		})
 	}
 }

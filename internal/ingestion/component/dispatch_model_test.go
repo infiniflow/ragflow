@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/permission"
 )
 
 func TestConfiguredAudioModelID(t *testing.T) {
@@ -262,12 +263,12 @@ func TestResolveModelConfigByIDScopedQuerySQL(t *testing.T) {
 		t.Fatalf("model queries=%d, want one scoped lookup: %+v", len(queries), queries)
 	}
 	query := queries[0]
-	const wantSQL = "SELECT * FROM `tenant_model` WHERE provider_id IN (SELECT `id` FROM `tenant_model_provider` WHERE tenant_id = ? AND user_id = ?) AND id = ? LIMIT 1"
+	const wantSQL = "SELECT * FROM `tenant_model` WHERE provider_id IN (SELECT `id` FROM `tenant_model_provider` WHERE (tenant_id = ? AND user_id = ?) OR tenant_id = ?) AND id = ? LIMIT 1"
 	if query.sql != wantSQL {
 		t.Errorf("scoped SQL=%q, want %q", query.sql, wantSQL)
 	}
-	if len(query.vars) != 3 || query.vars[0] != tenantID || query.vars[2] != modelID {
-		t.Errorf("bound vars=%#v, want tenant ID, owner user ID, then model ID", query.vars)
+	if len(query.vars) != 4 || query.vars[0] != tenantID || query.vars[2] != entity.PlatformTenantID || query.vars[3] != modelID {
+		t.Errorf("bound vars=%#v, want tenant ID, owner user ID, platform ID, then model ID", query.vars)
 	}
 	if strings.Contains(query.sql, tenantID) || strings.Contains(query.sql, modelID) {
 		t.Errorf("an ID was interpolated into SQL: %q", query.sql)
@@ -443,5 +444,42 @@ func TestResolveModelConfig_MaxTokensOverrideSetsContextWindowOnly(t *testing.T)
 	}
 	if catalogModel.MaxOutput != nil && *catalogModel.MaxOutput == contextLength {
 		t.Fatalf("resolved context length %d equals the catalog max_output; the context window and the output cap are indistinguishable", contextLength)
+	}
+}
+
+func TestResolvePlatformModelRequiresTrustedTenant(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&entity.Tenant{}, &entity.UserTenant{}, &entity.SystemSettings{}, &entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+		t.Fatal(err)
+	}
+	active := "1"
+	rows := []any{
+		&entity.SystemSettings{Name: entity.PlatformProviderLockSetting, Source: "system", DataType: "string", Value: "ready"},
+		&entity.Tenant{ID: "tenant", Status: &active},
+		&entity.UserTenant{ID: "owner", TenantID: "tenant", UserID: "owner", Role: "owner", Status: &active},
+		&entity.TenantModelProvider{ID: "platform", TenantID: entity.PlatformTenantID, UserID: "admin", ProviderName: "Mistral OCR"},
+		&entity.TenantModelInstance{ID: "instance", ProviderID: "platform", InstanceName: "default", APIKey: "secret", Status: "active", Extra: "{}"},
+		&entity.TenantModel{ID: "model", ProviderID: "platform", InstanceID: "instance", ModelName: "mistral-ocr-latest", ModelType: int(entity.ModelTypeOCR), Status: "active"},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, _, _, err := defaultResolveModelConfig(t.Context(), db, "tenant", entity.ModelTypeOCR, "model"); err == nil {
+		t.Fatal("untrusted task used platform model")
+	}
+	ctx := permission.WithTrustedModelTenant(t.Context(), "tenant")
+	if _, _, _, _, err := defaultResolveModelConfig(ctx, db, "tenant", entity.ModelTypeOCR, "model"); err != nil {
+		t.Fatal(err)
+	}
+	if err := (dao.PlatformModelSettings{}).SetDefault(ctx, db, "ocr", "model"); err != nil {
+		t.Fatal(err)
+	}
+	if _, name, _, _, err := defaultResolveTenantModelByType(ctx, db, "tenant", entity.ModelTypeOCR); err != nil || name != "mistral-ocr-latest" {
+		t.Fatalf("default model = %q, %v", name, err)
 	}
 }

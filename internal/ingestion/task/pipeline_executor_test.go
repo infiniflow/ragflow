@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -19,6 +20,7 @@ import (
 	"ragflow/internal/ingestion"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
+	"ragflow/internal/ingestion/testutil"
 )
 
 // =============================================================================
@@ -982,7 +984,7 @@ func TestPipelineExecutorBoundsCompensationCleanup(t *testing.T) {
 	}
 }
 
-func TestRunPipeline_AlreadyHasVectors(t *testing.T) {
+func TestRunPipeline_RejectsVectorsWithoutModelBinding(t *testing.T) {
 	svc := mustNewPipelineExecutor(t, makeTaskCtx(), "flow-1", 0).
 		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 			return nil, nil
@@ -995,8 +997,34 @@ func TestRunPipeline_AlreadyHasVectors(t *testing.T) {
 	}
 	ctx := t.Context()
 	_, err := svc.processOutput(ctx, output, time.Now())
+	if err == nil || !strings.Contains(err.Error(), "embedding binding is unavailable") {
+		t.Errorf("expected missing binding error, got %v", err)
+	}
+}
+
+func TestRunPipeline_PrecomputedVectorsUsePersistedBinding(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	status := "1"
+	kb := makeTaskCtx().KB
+	kb.Name, kb.Status = "dataset", &status
+	if err := db.Create(&kb).Error; err != nil {
+		t.Fatal(err)
+	}
+	wrote := false
+	svc, err := NewPipelineExecutor(makeTaskCtx(), "flow-1", 0, &ingestion.Deps{DB: db})
 	if err != nil {
-		t.Errorf("unexpected error: %v", err)
+		t.Fatal(err)
+	}
+	svc.WithLoadDSLFunc(func(context.Context, string) (string, string, error) { return "{}", "", nil })
+	svc.WithRunPipelineFunc(func(context.Context, string) (map[string]any, string, error) {
+		return map[string]any{"chunks": []map[string]any{{"text": "hello", "q_2_vec": []float64{1, 2}}}}, "", nil
+	})
+	svc.WithInsertFunc(func(context.Context, []map[string]any, string, string) ([]string, error) {
+		wrote = true
+		return nil, nil
+	})
+	if _, err := svc.Execute(t.Context()); err != nil || !wrote {
+		t.Fatalf("execute: err=%v wrote=%v", err, wrote)
 	}
 }
 

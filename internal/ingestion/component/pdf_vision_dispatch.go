@@ -907,29 +907,14 @@ func defaultResolveMinerUModelForDispatch(ctx context.Context, db *gorm.DB, tena
 }
 
 // resolvePaddleOCRModelForDispatch resolves the OCR model used by the
-// PaddleOCR PDF dispatch. modelID is the raw layout_recognizer value: a bare
-// tenant model UUID (no "@") selects that exact model regardless of provider
-// spelling ("PaddleOCR" or "PaddleOCR.local"); a composite name or empty value
-// falls back to the tenant's first PaddleOCR OCR model, mirroring
-// by_paddleocr which uses get_first_provider_model_name(tenant, "PaddleOCR").
-//
-// Known limitation: composite names such as "some-model@instance@PaddleOCR.local"
-// (an explicit local selection) are not recognized here. Any value containing
-// "@" falls through to resolveTenantOCRModelByProvider("PaddleOCR"), which
-// returns the tenant's first active PaddleOCR OCR model - potentially the
-// local one - when both the local ("PaddleOCR.local") and the cloud
-// ("PaddleOCR") providers are configured. The path behaves the same
-// way; if exact selection is required, pass the model's tenant-model UUID
-// instead.
+// PaddleOCR PDF dispatch. An explicit ID or composite selects that exact model;
+// an empty value selects the tenant's first PaddleOCR OCR model.
 var resolvePaddleOCRModelForDispatch = defaultResolvePaddleOCRModelForDispatch
 
 func defaultResolvePaddleOCRModelForDispatch(ctx context.Context, db *gorm.DB, tenantID, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
-	if strings.TrimSpace(modelID) != "" && !strings.Contains(modelID, "@") {
-		resolved, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
-		if err != nil {
-			return nil, "", nil, err
-		}
-		return resolved.driver, resolved.model.ModelName, resolved.apiConfig, nil
+	if strings.TrimSpace(modelID) != "" {
+		driver, name, config, _, err := resolveModelConfig(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+		return driver, name, config, err
 	}
 	driver, modelName, apiConfig, _, err := resolveTenantOCRModelByProvider(ctx, db, tenantID, "PaddleOCR")
 	return driver, modelName, apiConfig, err

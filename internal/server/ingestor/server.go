@@ -148,10 +148,7 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 		return fmt.Errorf("ingestor dependencies invalid: %w", err)
 	}
 	ingestor := ingestion.NewIngestor(*args.Name, int32(workers), defaultSupportedTypes(), ingestorDeps)
-	ingestor.SetKnowledgeCompileModelConfig(
-		globalConfig.GetDefaultChatModel().Name,
-		globalConfig.GetDefaultEmbeddingModel().Name,
-	)
+	ingestor.SetKnowledgeCompileModelConfig(globalConfig.GetDefaultChatModel().Name)
 	// The dataset-level knowledge-compile consumer (tree/structure products) upserts
 	// into the dataset-nav tree, so the Ingestor must install the same ES-backed
 	// NavService the API server installs. Without this, nav.GetNavService() returns
@@ -178,7 +175,7 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 	// embedder and knowledge-compiler resolvers. The task package is the
 	// composition root for ingestion runs; it reads these from the explicit
 	// bindings rather than the package globals.
-	task.InitEmbedderResolver(dao.DB)
+	task.InitEmbedderResolver(dao.DB, engine.Get())
 	task.InitKnowledgeCompilerDeps(dao.DB, engine.Get())
 
 	// Start returns immediately (it launches the owned consume/compile

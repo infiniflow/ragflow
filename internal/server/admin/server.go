@@ -31,6 +31,7 @@ import (
 
 	adminapi "ragflow/internal/admin"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/server"
 	"ragflow/internal/server/bootstrap"
 )
@@ -46,6 +47,10 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 		gin.SetMode(gin.DebugMode)
 	} else {
 		gin.SetMode(gin.ReleaseMode)
+	}
+
+	if err := (dao.PlatformModelSettings{}).Initialize(ctx, dao.DB); err != nil {
+		return fmt.Errorf("initialize platform model settings: %w", err)
 	}
 
 	adminService := adminapi.NewService()

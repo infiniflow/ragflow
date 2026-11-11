@@ -766,3 +766,38 @@ func TestResolveRankFeature_ReturnsDetachedCopy(t *testing.T) {
 		t.Fatalf("caller map gained a key through the result: %v", requested)
 	}
 }
+
+func TestNLPRetrievalEmptyDatasetDoesNotBindModel(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
+		t.Fatal(err)
+	}
+	status := string(entity.StatusValid)
+	dataset := &entity.Knowledgebase{ID: "kb", TenantID: "tenant", Name: "kb", CreatedBy: "owner", Permission: string(entity.TenantPermissionMe), Status: &status}
+	if err := db.Create(dataset).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.UserTenant{ID: "membership", UserID: "owner", TenantID: "tenant", Role: string(permission.RoleOwner), InvitedBy: "owner", Status: &status}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant", "owner"); err != nil {
+		t.Fatal(err)
+	}
+	checked := false
+	adapter := &NLPRetrievalAdapter{svc: &nlp.RetrievalService{}, kbDAO: fakeKnowledgebaseLookup{kbs: []*entity.Knowledgebase{dataset}}, modelConstructors: RetrievalModelConstructors{CheckEmptyEmbedding: func(_ context.Context, kb *entity.Knowledgebase) error { checked = kb.ID == dataset.ID; return nil }}}
+	ctx := permission.WithIdentity(t.Context(), "owner", "tenant")
+	chunks, err := adapter.Search(ctx, db, RetrievalRequest{Query: "hello", DatasetIDs: []string{"kb"}})
+	if err != nil || !checked || len(chunks) != 0 {
+		t.Fatalf("search: chunks=%v checked=%v err=%v", chunks, checked, err)
+	}
+	var saved entity.Knowledgebase
+	if err := db.Take(&saved, "id = ?", "kb").Error; err != nil {
+		t.Fatal(err)
+	}
+	if saved.EmbeddingModelReference() != "" {
+		t.Fatalf("search changed dataset binding: %q", saved.EmbeddingModelReference())
+	}
+}

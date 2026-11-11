@@ -99,9 +99,10 @@ type NLPRetrievalAdapter struct {
 // RetrievalModelConstructors constructs typed models for retrieval without
 // exposing provider drivers or API credentials to the agent-tool package.
 type RetrievalModelConstructors struct {
-	Embedding func(ctx context.Context, tenantID, modelRef string) (*modelModule.EmbeddingModel, error)
-	Chat      func(ctx context.Context, tenantID, modelRef string) (*modelModule.ChatModel, error)
-	Rerank    func(ctx context.Context, tenantID, modelRef string) (*modelModule.RerankModel, error)
+	CheckEmptyEmbedding func(ctx context.Context, kb *entity.Knowledgebase) error
+	Embedding           func(ctx context.Context, tenantID, modelRef string) (*modelModule.EmbeddingModel, error)
+	Chat                func(ctx context.Context, tenantID, modelRef string) (*modelModule.ChatModel, error)
+	Rerank              func(ctx context.Context, tenantID, modelRef string) (*modelModule.RerankModel, error)
 }
 
 type knowledgebaseLookup interface {
@@ -236,6 +237,25 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 			return nil, permissionErr
 		}
 	}
+	activeKBs := make([]*entity.Knowledgebase, 0, len(datasets.kbs))
+	activeIDs := make([]string, 0, len(datasets.kbIDs))
+	for _, kb := range datasets.kbs {
+		if kb.EmbeddingModelReference() == "" {
+			if a.modelConstructors.CheckEmptyEmbedding == nil {
+				return nil, fmt.Errorf("retrieval: dataset embedding check is unavailable")
+			}
+			if err := a.modelConstructors.CheckEmptyEmbedding(ctx, kb); err != nil {
+				return nil, fmt.Errorf("retrieval: check dataset embedding: %w", err)
+			}
+			continue
+		}
+		activeKBs = append(activeKBs, kb)
+		activeIDs = append(activeIDs, kb.ID)
+	}
+	if len(activeKBs) == 0 {
+		return []RetrievalChunk{}, nil
+	}
+	datasets.kbs, datasets.kbIDs = activeKBs, activeIDs
 	if err := validateEmbeddingModels(ctx, db, datasets.kbs); err != nil {
 		return nil, err
 	}
@@ -290,21 +310,30 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	nlpReq.RerankModel = rerankModel
 	nlpReq.RankFeature = &rankFeature
 
-	res, err := a.svc.Retrieval(ctx, nlpReq)
+	var out []RetrievalChunk
+	err = dao.WithStableDatasetEmbeddingBindings(ctx, db, datasets.kbs, func(ctx context.Context) error {
+		res, searchErr := a.svc.Retrieval(ctx, nlpReq)
+		if searchErr != nil {
+			return searchErr
+		}
+		out = make([]RetrievalChunk, 0)
+		if res == nil || len(res.Chunks) == 0 {
+			return nil
+		}
+		rawChunks := res.Chunks
+		if a.enhancer != nil {
+			rawChunks = a.enhancer.RetrieveByChildren(ctx, rawChunks, datasets.tenantIDs)
+		}
+		out = make([]RetrievalChunk, 0, len(rawChunks))
+		for _, raw := range rawChunks {
+			out = append(out, translateChunk(raw))
+		}
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
-	if res == nil || len(res.Chunks) == 0 {
-		return []RetrievalChunk{}, nil
-	}
-	rawChunks := res.Chunks
-	if a.enhancer != nil {
-		rawChunks = a.enhancer.RetrieveByChildren(ctx, rawChunks, datasets.tenantIDs)
-	}
-	out := make([]RetrievalChunk, 0, len(rawChunks))
-	for _, raw := range rawChunks {
-		out = append(out, translateChunk(raw))
-	}
+
 	return out, nil
 }
 
@@ -495,25 +524,20 @@ func validateEmbeddingModels(ctx context.Context, db *gorm.DB, kbs []*entity.Kno
 		}
 	}
 	embdNames := transaction.NewEmbeddingBaseNameResolver(dao.NewKnowledgebaseDAO().EmbeddingBaseName)
-	firstKey := knowledgebaseEmbeddingKey(ctx, db, kbs[0], embdNames)
+	firstKey, err := dao.EmbeddingCompatibilityKey(ctx, db, kbs[0], embdNames)
+	if err != nil {
+		return err
+	}
 	for _, kb := range kbs[1:] {
-		if knowledgebaseEmbeddingKey(ctx, db, kb, embdNames) != firstKey {
+		key, err := dao.EmbeddingCompatibilityKey(ctx, db, kb, embdNames)
+		if err != nil {
+			return err
+		}
+		if key != firstKey {
 			return fmt.Errorf("retrieval: datasets use different embedding models")
 		}
 	}
 	return nil
-}
-
-// knowledgebaseEmbeddingKey groups datasets by their resolved base embedding
-// model name (e.g. "BAAI/bge-m3"), matching the chat/dataset-search
-// validation, so datasets pointing at the same model through different
-// provider instances or storage forms (tenant_model id vs legacy composite
-// name) retrieve together.
-func knowledgebaseEmbeddingKey(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase, names *transaction.EmbeddingBaseNameResolver) string {
-	if strings.TrimSpace(kb.EmbdID) == "" && (kb.TenantEmbdID == nil || strings.TrimSpace(*kb.TenantEmbdID) == "") {
-		return "default:" + strings.TrimSpace(kb.TenantID)
-	}
-	return "embedding:" + names.Resolve(ctx, db, kb)
 }
 
 func (a *NLPRetrievalAdapter) resolveEmbeddingModel(

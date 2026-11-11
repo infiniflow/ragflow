@@ -577,7 +577,7 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 
 	// Read the parent inside the lock, on the shared connection, so it always
 	// reflects the previously committed edit for this page.
-	parentID, perr := s.commitItemDAO.GetLatestCommitIDByFileID(ctx, dao.DB, fileID)
+	parentID, perr := s.commitItemDAO.GetLatestCommitIDByFileID(ctx, dao.ScopedDB(ctx, dao.DB), fileID)
 	if perr != nil {
 		return nil, fmt.Errorf("failed to resolve page commit parent: %w", perr)
 	}
@@ -596,7 +596,7 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 		commit.ParentID = &parentID
 	}
 
-	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := dao.ScopedDB(ctx, dao.DB).WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if cerr := tx.Create(commit).Error; cerr != nil {
 			return fmt.Errorf("failed to create page commit: %w", cerr)
 		}

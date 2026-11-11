@@ -82,6 +82,7 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 		&entity.User{},
 		&entity.Tenant{},
 		&entity.UserTenant{},
+		&entity.SystemSettings{},
 		&entity.API4Conversation{},
 		&entity.API4ConversationMessage{},
 		&entity.API4ConversationReference{},

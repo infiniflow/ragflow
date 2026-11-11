@@ -77,6 +77,15 @@ func newMigrationAwareDialector(dsn string) gorm.Dialector {
 	return base
 }
 
+// useShareModeLocks writes shared row locks as LOCK IN SHARE MODE. OceanBase
+// accepts that form, but may report an 8.x version, for which GORM would emit
+// FOR SHARE.
+func useShareModeLocks(d gorm.Dialector) {
+	if dialector, ok := d.(migrationAwareDialector); ok {
+		dialector.Config.DontSupportForShareClause = true
+	}
+}
+
 func (d migrationAwareDialector) Migrator(db *gorm.DB) gorm.Migrator {
 	migrator, ok := d.Dialector.Migrator(db).(mysql.Migrator)
 	if !ok {
@@ -329,6 +338,9 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 			databaseConfig.Charset,
 		)
 		dialector = newMigrationAwareDialector(dsn)
+		if strings.EqualFold(globalConfig.DatabaseType(), "oceanbase") {
+			useShareModeLocks(dialector)
+		}
 		maxConnections = databaseConfig.MaxConnections
 		staleTimeout = databaseConfig.StaleTimeout
 	}

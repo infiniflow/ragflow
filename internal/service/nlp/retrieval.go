@@ -1264,7 +1264,7 @@ func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *Retri
 	}
 
 	// Get existing document IDs
-	docs, err := s.documentDAO.GetByIDs(ctx, dao.DB, uniqueDocIDs)
+	docs, err := s.documentDAO.GetByIDs(ctx, dao.ScopedDB(ctx, dao.DB), uniqueDocIDs)
 	if err != nil {
 		return nil, fmt.Errorf("GetByIDs failed: %w", err)
 	}

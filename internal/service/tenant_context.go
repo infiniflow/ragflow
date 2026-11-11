@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 )
 
@@ -29,6 +30,9 @@ func requireCurrentTenantID(ctx context.Context) (string, error) {
 		return "", permission.ErrUnauthenticated
 	}
 	if tenantID := strings.TrimSpace(permission.TenantIDFromContext(ctx)); tenantID != "" {
+		if strings.EqualFold(tenantID, entity.PlatformTenantID) {
+			return "", permission.ErrPermissionDenied
+		}
 		if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, tenantID, permission.TenantMember); err != nil {
 			return "", err
 		}
@@ -39,7 +43,13 @@ func requireCurrentTenantID(ctx context.Context) (string, error) {
 		return "", err
 	}
 	if handled {
+		if strings.EqualFold(strings.TrimSpace(tenantID), entity.PlatformTenantID) {
+			return "", permission.ErrPermissionDenied
+		}
 		return tenantID, nil
+	}
+	if strings.EqualFold(userID, entity.PlatformTenantID) {
+		return "", permission.ErrPermissionDenied
 	}
 	return strings.TrimSpace(userID), nil
 }

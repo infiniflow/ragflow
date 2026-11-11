@@ -29,7 +29,10 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
+	"ragflow/internal/entity"
+	"ragflow/internal/ingestion"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/permission"
 	"ragflow/internal/service/file"
 	"ragflow/internal/service/nav"
 
@@ -348,13 +351,37 @@ var errClaimSuperseded = errors.New("knowledge_compile: claim superseded by rewr
 // immediately before fn. This closes the TOCTOU gap between cancellation and a
 // writer side effect: a cancelled worker cannot write after the rebuild clears
 // storage, and a rebuild cannot interleave while fn runs.
-func (c *Consumer) withWriteLock(ctx context.Context, kb, token string, fn func() error) error {
+func (c *Consumer) withWriteLock(ctx context.Context, kb, token string, fn func(context.Context) error) error {
+	if scheduler, ok := c.scheduler.(interface {
+		WithDatasetLockContext(context.Context, string, func(context.Context, string) error) error
+	}); ok {
+		return scheduler.WithDatasetLockContext(ctx, kb, func(lockedCtx context.Context, currentToken string) error {
+			if currentToken != token {
+				return errClaimSuperseded
+			}
+			return fn(lockedCtx)
+		})
+	}
 	return c.scheduler.WithDatasetLock(ctx, kb, func(currentToken string) error {
 		if currentToken != token {
 			return errClaimSuperseded
 		}
-		return fn()
+		return fn(ctx)
 	})
+}
+
+// withStableVectorWrite keeps the model stable from the final check through
+// persistence; products without vectors do not depend on an embedding binding.
+func (c *Consumer) withStableVectorWrite(ctx context.Context, tenant, kb string, products []kccommon.Product, write func() error) error {
+	if c.db == nil {
+		return write()
+	}
+	for _, product := range products {
+		if len(product.Vector) != 0 {
+			return dao.WithStableDatasetEmbedding(ctx, c.db, kb, tenant, ingestion.EmbeddingBindingFromContext(ctx), write)
+		}
+	}
+	return write()
 }
 
 // RebuildDataset performs a full incremental rewrite of a KB's dataset-level
@@ -568,6 +595,34 @@ func filterWikiPageCandidates(candidates []kccommon.Product) []kccommon.Product 
 // returns an error if any reader/dedup/writer step fails so the caller can
 // leave the batch for reclamation instead of acking dropped work.
 func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, entries []BacklogEntry, taskTypes []string) error {
+	ctx = ingestion.WithEmbeddingBinding(ctx)
+	if c.db != nil {
+		dataset, err := dao.NewKnowledgebaseDAO().GetByID(ctx, c.db, kb)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// GetByID also misses a dataset with an invalid status, which keeps
+			// its retry. Only a removed row leaves nothing to compile.
+			var rows int64
+			if countErr := c.db.WithContext(ctx).Model(&entity.Knowledgebase{}).Where("id = ?", kb).Count(&rows).Error; countErr != nil {
+				return fmt.Errorf("knowledge_compile: load dataset: %w", countErr)
+			}
+			if rows == 0 {
+				common.Info("knowledge_compile: dataset was deleted, dropping its batch", zap.String("dataset_id", kb))
+				return nil
+			}
+		}
+		if err != nil {
+			return fmt.Errorf("knowledge_compile: load dataset: %w", err)
+		}
+		if dataset == nil || dataset.TenantID != tenant {
+			return fmt.Errorf("knowledge_compile: dataset tenant mismatch")
+		}
+		ctx = permission.WithTrustedModelDataset(ctx, tenant, kb)
+		if ref := dataset.EmbeddingModelReference(); ref != "" {
+			if err := ingestion.RecordEmbeddingBinding(ctx, ref); err != nil {
+				return err
+			}
+		}
+	}
 	if len(taskTypes) == 0 {
 		taskTypes = taskTypesForEntries(entries)
 	}
@@ -720,7 +775,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 		// closes the TOCTOU window where a worker past its fence could repopulate
 		// storage the rebuild just cleared.
 		if len(deleted) > 0 {
-			if err := c.withWriteLock(ctx, kb, token, func() error {
+			if err := c.withWriteLock(ctx, kb, token, func(ctx context.Context) error {
 				return c.writer.DeleteDocLevelForDocs(ctx, tenant, kb, deleted)
 			}); err != nil {
 				if errors.Is(err, errClaimSuperseded) {
@@ -733,7 +788,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 		// The second destructive call is its own locked section: a rewrite can
 		// land between the two, in which case the stale batch must not apply its
 		// second side effect under the new generation.
-		if err := c.withWriteLock(ctx, kb, token, func() error {
+		if err := c.withWriteLock(ctx, kb, token, func(ctx context.Context) error {
 			return c.writer.StripMergedSources(ctx, tenant, kb, delIDs)
 		}); err != nil {
 			if errors.Is(err, errClaimSuperseded) {
@@ -744,7 +799,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 		}
 		// G3: structure ghost cleanup — remove structure dataset rows whose only
 		// source docs were just deleted. Also a locked destructive write.
-		if err := c.withWriteLock(ctx, kb, token, func() error {
+		if err := c.withWriteLock(ctx, kb, token, func(ctx context.Context) error {
 			return c.writer.DeleteStructureForDocs(ctx, tenant, kb, delIDs)
 		}); err != nil {
 			if errors.Is(err, errClaimSuperseded) {
@@ -852,8 +907,10 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	// claim-fenced write lock (B7 applies to structure writes too): a worker
 	// invalidated by CancelInflight must not write structure rows after a rebuild
 	// has cleared them.
-	if err := c.withWriteLock(ctx, kb, token, func() error {
-		return c.mergeStructureDataset(ctx, tenant, kb, incoming)
+	if err := c.withWriteLock(ctx, kb, token, func(ctx context.Context) error {
+		return c.withStableVectorWrite(ctx, tenant, kb, incoming, func() error {
+			return c.mergeStructureDataset(ctx, tenant, kb, incoming)
+		})
 	}); err != nil {
 		if errors.Is(err, errClaimSuperseded) {
 			common.Info("knowledge_compile: batch stale before structure merge, aborting (rewrite barrier)",
@@ -1167,8 +1224,10 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	mergedFinal, staleTopicIDs := mergeTopicProducts(tenant, kb, mergedFinal)
 	mergedFinal = refreshWikiProductVectors(ctx, tenant, mergedFinal)
 	c.reportProgress(ctx, tenant, kb, token, taskTypes, 0.90, "writing_products", fmt.Sprintf("Writing %d merged products", len(mergedFinal)))
-	if err := c.withWriteLock(ctx, kb, token, func() error {
-		if err := c.writer.WriteMerged(ctx, tenant, kb, mergedFinal); err != nil {
+	if err := c.withWriteLock(ctx, kb, token, func(ctx context.Context) error {
+		if err := c.withStableVectorWrite(ctx, tenant, kb, mergedFinal, func() error {
+			return c.writer.WriteMerged(ctx, tenant, kb, mergedFinal)
+		}); err != nil {
 			return err
 		}
 		if len(staleTopicIDs) == 0 {
@@ -1198,7 +1257,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	// cost of an occasional no-op reprojection is accepted. It is also a locked
 	// destructive side effect for the same TOCTOU reasons as WriteMerged.
 	c.reportProgress(ctx, tenant, kb, token, taskTypes, 0.97, "projecting_graph", "Projecting the knowledge graph")
-	if err := c.withWriteLock(ctx, kb, token, func() error {
+	if err := c.withWriteLock(ctx, kb, token, func(ctx context.Context) error {
 		return c.writer.ProjectWikiGraph(ctx, tenant, kb)
 	}); err != nil {
 		if errors.Is(err, errClaimSuperseded) {
@@ -1347,7 +1406,7 @@ func rewriteMergedWikiPages(ctx context.Context, tenant string, pages []kccommon
 	if len(indexes) == 0 {
 		return nil
 	}
-	deps, err := kccommon.ResolveDeps(ctx, tenant, defaultLLMID, defaultEmbedding)
+	deps, err := kccommon.ResolveDeps(ctx, tenant, defaultLLMID, "")
 	if err != nil {
 		return fmt.Errorf("resolve Wiki page rewrite dependencies: %w", err)
 	}
@@ -1433,7 +1492,7 @@ func (c *Consumer) deleteMissingScopedWikiPages(ctx context.Context, tenant, kb,
 	if len(ids) == 0 {
 		return nil
 	}
-	return c.withWriteLock(ctx, kb, token, func() error {
+	return c.withWriteLock(ctx, kb, token, func(ctx context.Context) error {
 		return deleter.DeleteMergedWikiPages(ctx, tenant, kb, ids)
 	})
 }
@@ -1442,7 +1501,7 @@ func refreshWikiProductVectors(ctx context.Context, tenant string, products []kc
 	if len(products) == 0 {
 		return products
 	}
-	deps, err := kccommon.ResolveDeps(ctx, tenant, defaultLLMID, defaultEmbedding)
+	deps, err := kccommon.ResolveDeps(ctx, tenant, defaultLLMID, "")
 	if err != nil || deps.Embed == nil {
 		return products
 	}
@@ -1855,7 +1914,7 @@ func structureProductDescription(content string) string {
 // check inside the lock (B7: nav writes are claim-fenced like any other
 // destructive write so a stale worker cannot repopulate a rebuilt tree).
 func (c *Consumer) upsertNavLocked(ctx context.Context, tenant, kb, token string, ns nav.NavService, inputs []nav.UpsertDocInput) error {
-	return c.withWriteLock(ctx, kb, token, func() error {
+	return c.withWriteLock(ctx, kb, token, func(ctx context.Context) error {
 		for i := range inputs {
 			// The minimal-loop NavService.UpsertDoc is idempotent by summary; a
 			// failure here aborts the batch so the claim is not acked and the
@@ -1880,7 +1939,7 @@ func (c *Consumer) removeNavLocked(ctx context.Context, tenant, kb, token string
 	if ns == nil {
 		return fmt.Errorf("knowledge_compile: nav service unavailable while removing documents")
 	}
-	return c.withWriteLock(ctx, kb, token, func() error {
+	return c.withWriteLock(ctx, kb, token, func(ctx context.Context) error {
 		for _, docID := range docIDs {
 			if err := ns.RemoveDoc(ctx, tenant, kb, docID); err != nil {
 				return fmt.Errorf("knowledge_compile: nav remove %s: %w", docID, err)

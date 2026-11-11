@@ -482,3 +482,32 @@ func (dao *KnowledgebaseDAO) GetKBIDsByTenantIDSimple(ctx context.Context, db *g
 		Pluck("id", &kbIDs).Error
 	return kbIDs, err
 }
+
+// EmbeddingCompatibilityKey preserves legacy tenant model matching while
+// distinguishing platform model instances, whose names may be shared by
+// unrelated providers or tenant configurations.
+func EmbeddingCompatibilityKey(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase, names *transaction.EmbeddingBaseNameResolver) (string, error) {
+	if kb == nil {
+		return "", errors.New("dataset is nil")
+	}
+	ref := kb.EmbeddingModelReference()
+	if ref == "" {
+		return "default:" + strings.TrimSpace(kb.TenantID), nil
+	}
+	if db != nil && !strings.Contains(ref, "@") {
+		model, err := NewTenantModelDAO().GetByID(ctx, db, ref)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return "", err
+		}
+		if model != nil && model.ProviderID != "" {
+			provider, err := NewTenantModelProviderDAO().GetByID(ctx, db, model.ProviderID)
+			if err != nil {
+				return "", err
+			}
+			if provider.TenantID == entity.PlatformTenantID {
+				return "platform:" + model.ID, nil
+			}
+		}
+	}
+	return "embedding:" + names.Resolve(ctx, db, kb), nil
+}

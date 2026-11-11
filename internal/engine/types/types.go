@@ -46,6 +46,7 @@ type SearchRequest struct {
 	// Filtering
 	Filter             map[string]interface{} // Filters for search
 	IncludeUnavailable bool                   // Do not add the retrieval-only available_int=1 default
+	RequireComplete    bool                   // Fail instead of returning hits from a timed-out or partly failed search
 
 	// Match expressions
 	MatchExprs []interface{} // List of match expressions: [matchText, matchDense, fusionExpr]

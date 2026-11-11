@@ -84,6 +84,19 @@ func init() {
 }
 
 func compileDirtyWikiDocument(ctx context.Context, request knowledge_compile.WikiDirtyRequest) error {
+	if kcWiringDeps.DB == nil {
+		return fmt.Errorf("Wiki dirty compile: database is unavailable")
+	}
+	kb, err := dao.NewKnowledgebaseDAO().GetByIDAndTenantID(ctx, kcWiringDeps.DB, request.DatasetID, request.TenantID)
+	if err != nil {
+		return fmt.Errorf("Wiki dirty compile: load dataset: %w", err)
+	}
+	ctx = withEmbeddingBinding(permission.WithTrustedModelDataset(ctx, request.TenantID, request.DatasetID))
+	if ref := kb.EmbeddingModelReference(); ref != "" {
+		if err := recordEmbeddingBinding(ctx, ref); err != nil {
+			return err
+		}
+	}
 	doc, err := dao.NewDocumentDAO().GetByID(ctx, kcWiringDeps.DB, request.DocumentID)
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
@@ -330,7 +343,15 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 		}
 	}
 	if len(rows) > 0 {
-		if _, err := docEngine.InsertChunks(ctx, rows, indexName, request.DatasetID, ""); err != nil {
+		write := func() error {
+			_, err := docEngine.InsertChunks(ctx, rows, indexName, request.DatasetID, "")
+			return err
+		}
+		if chunksHaveEmbeddings(rows) {
+			if err := dao.WithStableDatasetEmbedding(ctx, kcWiringDeps.DB, request.DatasetID, request.TenantID, embeddingBindingFromContext(ctx), write); err != nil {
+				return err
+			}
+		} else if err := write(); err != nil {
 			return err
 		}
 	}
@@ -457,14 +478,14 @@ func wikiMapVectorSizeResolver(tenantID, datasetID string) func(context.Context)
 		if err != nil {
 			return 0, fmt.Errorf("Wiki MAP chunk store: load dataset %s: %w", datasetID, err)
 		}
-		embedder := &kcEmbedder{factory: modelFactory, tenantID: tenantID, embdID: datasetEmbeddingID(kb)}
+		embedder := &kcEmbedder{factory: modelFactory, tenantID: tenantID, embdID: datasetEmbeddingID(kb), datasetID: datasetID}
 		return embedderVectorSize(ctx, embedder)
 	}
 }
 
-// datasetEmbeddingID mirrors embedding binding for a compile task
+// datasetEmbeddingID mirrors embedding binding for a compile task:
 // kb.tenant_embd_id wins, else kb.embd_id, and an empty id leaves the embedder to
-// its tenant-default fallback.
+// bind the selected default before vector operations.
 func datasetEmbeddingID(kb *entity.Knowledgebase) string {
 	if kb == nil {
 		return ""
@@ -596,7 +617,7 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 			llmMaxOutput = modelInfo.MaxOutput
 		}
 
-		embedder := &kcEmbedder{factory: modelFactory, tenantID: tenantID, embdID: embeddingModel}
+		embedder := &kcEmbedder{factory: modelFactory, tenantID: tenantID, embdID: embeddingModel, datasetID: permission.TrustedModelDataset(ctx)}
 		mapStore := knowledge_compile.NewWikiMapVersionStoreWithVectorSizeResolver(kcWiringDeps.DB, kcWiringDeps.Engine, func(ctx context.Context) (int, error) {
 			return embedderVectorSize(ctx, embedder)
 		})
@@ -744,10 +765,11 @@ const kcChatRetryDelay = 2 * time.Second
 // kcEmbedder adapts model resolution to the knowledge_compiler Embedder seam.
 // Vectors are returned as []float32 to match the component's product schema.
 type kcEmbedder struct {
-	factory  *service.ModelFactory
-	tenantID string
-	embdID   string
-	dim      atomic.Int64
+	factory   *service.ModelFactory
+	tenantID  string
+	embdID    string
+	datasetID string
+	dim       atomic.Int64
 }
 
 func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, error) {
@@ -817,29 +839,55 @@ func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, e
 	return out, nil
 }
 
-// resolveModel returns the embedding model to embed with. It prefers the
-// explicitly configured embedding_model; when the caller left it unset, it falls
-// back to the tenant's default embedding model (mirrors , which uses the
-// KB/tenant's configured embedding model for wiki compilation). A clear error is
-// returned only when neither is available, so a KB with no embedding model fails
-// loudly instead of silently producing empty vectors.
+// resolveModel uses the configured embedding model or atomically binds the
+// dataset's selected default before creating vectors.
 func (e *kcEmbedder) resolveModel(ctx context.Context) (*models.EmbeddingModel, error) {
-	if embdID := strings.TrimSpace(e.embdID); embdID != "" {
-		embeddingModel, err := e.factory.NewEmbeddingModel(permission.WithTenantID(ctx, e.tenantID), embdID)
+	modelCtx := permission.WithTenantID(ctx, e.tenantID)
+	ref := strings.TrimSpace(e.embdID)
+	if e.datasetID != "" && ref != "" {
+		if kcWiringDeps.DB == nil {
+			return nil, fmt.Errorf("knowledge_compiler: dataset database is unavailable")
+		}
+		kb, err := dao.NewKnowledgebaseDAO().GetByIDAndTenantID(modelCtx, kcWiringDeps.DB, e.datasetID, e.tenantID)
 		if err != nil {
-			return nil, fmt.Errorf("knowledge_compiler: resolve embedding model: %w", err)
+			return nil, fmt.Errorf("knowledge_compiler: load dataset embedding binding: %w", err)
 		}
-		if embeddingModel == nil {
-			return nil, fmt.Errorf("knowledge_compiler: embedding model %q is unavailable", embdID)
+		bound := kb.EmbeddingModelReference()
+		if bound == "" {
+			return nil, fmt.Errorf("knowledge_compiler: dataset embedding model must be bound before using a configured model")
 		}
-		return embeddingModel, nil
+		if bound != ref {
+			boundInfo, boundErr := e.factory.ResolveInfo(modelCtx, entity.ModelTypeEmbedding, bound)
+			configuredInfo, configuredErr := e.factory.ResolveInfo(modelCtx, entity.ModelTypeEmbedding, ref)
+			boundID := service.ModelReference(boundInfo)
+			if boundErr != nil || configuredErr != nil || boundID == "" || boundID != service.ModelReference(configuredInfo) {
+				return nil, fmt.Errorf("knowledge_compiler: configured embedding model differs from dataset binding")
+			}
+		}
+		ref = bound
 	}
-	embeddingModel, err := e.factory.NewDefaultEmbeddingModel(permission.WithTenantID(ctx, e.tenantID))
+	if ref == "" {
+		if e.datasetID == "" {
+			return nil, fmt.Errorf("knowledge_compiler: dataset identity required for default embedding model")
+		}
+		var err error
+		ref, err = service.BindDatasetEmbedding(modelCtx, kcWiringDeps.DB, kcWiringDeps.Engine, e.datasetID, e.tenantID)
+		if err != nil {
+			return nil, fmt.Errorf("knowledge_compiler: bind dataset embedding model: %w", err)
+		}
+		if ref == "" {
+			return nil, fmt.Errorf("knowledge_compiler: dataset embedding model is not configured")
+		}
+	}
+	if err := recordEmbeddingBinding(ctx, ref); err != nil {
+		return nil, err
+	}
+	embeddingModel, err := e.factory.NewEmbeddingModel(modelCtx, ref)
 	if err != nil {
-		return nil, fmt.Errorf("knowledge_compiler: embedding_model is required and no tenant default embedding model is set: %w", err)
+		return nil, fmt.Errorf("knowledge_compiler: resolve embedding model: %w", err)
 	}
 	if embeddingModel == nil {
-		return nil, fmt.Errorf("knowledge_compiler: embedding_model is required (tenant default embedding model unavailable)")
+		return nil, fmt.Errorf("knowledge_compiler: embedding model %q is unavailable", ref)
 	}
 	return embeddingModel, nil
 }

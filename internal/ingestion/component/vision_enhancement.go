@@ -197,7 +197,6 @@ func maybeDispatchVisionEnhancement(
 	}
 
 	tenantID := getStringOr(inputs, "tenant_id", "")
-	family := resolveParserFamily(fileType)
 	// An explicit enhancement language wins; otherwise captions follow the
 	// knowledge base language, which also drives tokenization. The family
 	// setup's lang is an OCR engine parameter (pdf_vision_dispatch.go), not an
@@ -246,9 +245,11 @@ func maybeDispatchVisionEnhancement(
 		if vision.modelID != "" {
 			driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, vision.modelID)
 			if err != nil {
-				common.Warn("vision enhancement: per-call VLM resolve failed, falling back to tenant default",
-					zap.String("family", family), zap.String("modelRef", vision.modelID), zap.String("tenant", tenantID), zap.Error(err))
-				driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+				// Like image files, the document keeps its parse result; the
+				// selected model is reported, never replaced.
+				dispatched.Warnings = append(dispatched.Warnings,
+					fmt.Sprintf("vision enhancement skipped: selected model %q is unavailable: %v", vision.modelID, err))
+				return stripBackendDescribedResult(dispatched), false, nil
 			}
 		} else {
 			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)

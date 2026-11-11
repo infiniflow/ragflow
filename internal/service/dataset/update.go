@@ -293,6 +293,33 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 					tenantEmbdID = target.ID
 				}
 			}
+			oldRef := lockedKB.EmbeddingModelReference()
+			newRef := tenantEmbdID
+			if newRef == "" {
+				newRef = effectiveEmbdID
+			}
+			if oldRef != "" && newRef != oldRef {
+				// Legacy composite names and IDs may identify the same model.
+				oldInfo, oldErr := service.NewModelFactory().ResolveInfo(modelCtx, entity.ModelTypeEmbedding, oldRef)
+				newInfo, newErr := service.NewModelFactory().ResolveInfo(modelCtx, entity.ModelTypeEmbedding, newRef)
+				oldModelRef := service.ModelReference(oldInfo)
+				same := oldErr == nil && newErr == nil && oldModelRef != "" && oldModelRef == service.ModelReference(newInfo)
+				if !same {
+					active, countErr := dao.NewIngestionTaskDAO().CountActiveByDatasetID(ctx, tx, lockedKB.ID)
+					if countErr != nil {
+						txCode = common.CodeServerError
+						return errors.New("failed to check active dataset tasks")
+					}
+					if active > 0 {
+						txCode = common.CodeDataError
+						return errors.New("cannot change embedding model while dataset tasks are active")
+					}
+					if checkErr := service.CheckDatasetEmbeddingIndexEmpty(ctx, d.docEngine, lockedKB); checkErr != nil {
+						txCode = common.CodeDataError
+						return checkErr
+					}
+				}
+			}
 			updates["embd_id"] = effectiveEmbdID
 			updates["tenant_embd_id"] = stringPtrIfNotEmpty(tenantEmbdID)
 		}
