@@ -874,15 +874,17 @@ func TestOpenSearchSessionIDContainsFiltersOnSessionID(t *testing.T) {
 	}
 	assertEqual(t, string(raw), `{"bool":{"filter":[{"wildcard":{"session_id":"*ready\\*set\\?*"}}]}}`)
 
-	if query = buildBoolQueryFromConditionRaw(map[string]interface{}{
+	query = buildBoolQueryFromConditionRaw(map[string]interface{}{
 		"session_id": "sess-42",
-	}, nil, false, true); query != nil {
-		raw, err = json.Marshal(query)
-		if err != nil {
-			t.Fatal(err)
-		}
-		assertEqual(t, string(raw), `{"bool":{"filter":[{"wildcard":{"session_id":"*sess-42*"}}]}}`)
+	}, nil, false, true)
+	if query == nil {
+		t.Fatal("buildBoolQueryFromConditionRaw returned nil for session_id")
 	}
+	raw, err = json.Marshal(query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEqual(t, string(raw), `{"bool":{"filter":[{"wildcard":{"session_id":"*sess-42*"}}]}}`)
 
 	// A non-string contains value has no wildcard form; it must be dropped
 	// rather than turned into a term on the unmapped key.
