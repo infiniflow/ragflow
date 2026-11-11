@@ -1261,6 +1261,9 @@ func TestAgentModelValidationUsesCanvasTenant(t *testing.T) {
 	const creatorID = "creator-user"
 	const tenantOwnerID = "tenant-owner"
 	valid := string(entity.StatusValid)
+	if err := dao.DB.Create(&entity.Tenant{ID: tenantID, ParserIDs: ""}).Error; err != nil {
+		t.Fatalf("create Tenant: %v", err)
+	}
 	if err := dao.DB.Exec("INSERT INTO user (id, email, nickname) VALUES (?, ?, ?)", tenantOwnerID, "owner@example.test", "Tenant owner").Error; err != nil {
 		t.Fatalf("create tenant owner: %v", err)
 	}
@@ -2112,6 +2115,9 @@ func TestCreateAgentDedupesDuplicateTitle(t *testing.T) {
 func seedAgentServiceCreateContext(t *testing.T) context.Context {
 	t.Helper()
 	active := string(entity.StatusValid)
+	if err := dao.DB.Create(&entity.Tenant{ID: "tenant-agent", ParserIDs: ""}).Error; err != nil {
+		t.Fatalf("create agent Tenant: %v", err)
+	}
 	if err := dao.DB.Create(&entity.User{ID: "user-1", Email: "user-1@example.test", Nickname: "user-1"}).Error; err != nil {
 		t.Fatalf("create agent owner: %v", err)
 	}
