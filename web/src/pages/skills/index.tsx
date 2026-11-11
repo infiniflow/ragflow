@@ -394,14 +394,14 @@ const SkillsPage: React.FC = () => {
       );
       if (success) {
         setSearchResults((prev) => prev.filter((s) => s.id !== skillId));
-        // Refresh the current page and totals without issuing a competing
-        // default-page fetch from deleteSkill.
-        if (!hasSearched) {
-          await loadSkills();
-        }
+        // Refresh the authoritative list and totals after every deletion,
+        // including while a search is active: clearing the search otherwise
+        // falls back to stale skills that still contain the deleted item.
+        // deleteSkill no longer fetches, so this is the only post-delete refresh.
+        await loadSkills();
       }
     },
-    [deleteSkill, selectedSpaceId, selectedSpaceName, hasSearched, loadSkills],
+    [deleteSkill, selectedSpaceId, selectedSpaceName, loadSkills],
   );
 
   const handleCreateHub = useCallback(async () => {
