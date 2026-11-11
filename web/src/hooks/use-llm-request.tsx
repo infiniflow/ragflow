@@ -187,10 +187,15 @@ export function useFindLlmByUuid() {
   const { data: models } = useFetchAllAddedModels();
 
   return (uuid: string) => {
+    const modelById = uuid
+      ? models.find((model) => model.model_id === uuid)
+      : undefined;
+    if (modelById) return modelById;
     const parsed = parseModelValue(uuid);
     if (parsed) {
       return models.find(
         (m) =>
+          m.source !== 'platform' &&
           m.name === parsed.model_name &&
           m.instance_name === parsed.model_instance &&
           m.provider_name === parsed.model_provider,
@@ -683,25 +688,57 @@ export const useUpdateProviderInstance = () => {
   return { loading, updateProviderInstance: mutateAsync };
 };
 
+class DefaultModelsError extends Error {}
+
+const DefaultModelsStaleTime = 5 * 60 * 1000;
+
 export const useFetchDefaultModels = () => {
-  const { data, isFetching: loading } = useQuery<IDefaultModel[]>({
+  const {
+    data,
+    isFetching: loading,
+    isFetched,
+    isError,
+    refetch,
+    dataUpdatedAt,
+  } = useQuery<IDefaultModel[]>({
     queryKey: LlmKeys.defaultModels(),
     // Tenant default models change rarely, and every mutation that can change
     // them invalidates this key explicitly, so hold the result for a while
     // instead of refetching per observer — there is one per dataset row.
-    staleTime: 5 * 60 * 1000,
+    staleTime: DefaultModelsStaleTime,
     initialData: [],
     // `initialData` alone would be timestamped as of now and so counted fresh
     // for the whole stale window, meaning the seeded empty list would never be
     // replaced by a real fetch. Backdate it so the first mount still fetches.
     initialDataUpdatedAt: 0,
+    // A failed read is reported once per stale window, like a successful
+    // one, not again by every reader that mounts; the default model settings
+    // page refetches itself and offers Retry.
+    refetchOnMount: (query) =>
+      query.state.status !== 'error' ||
+      Date.now() - query.state.errorUpdatedAt > DefaultModelsStaleTime,
+    // An error the server answered with is final and already reported, so
+    // only transport failures are retried, as for other queries.
+    retry: (count, error) =>
+      !(error instanceof DefaultModelsError) && count < 2,
     queryFn: async () => {
       const { data } = await llmService.listDefaultModels({}, true);
+      // A failed read must not look like a tenant without defaults; the
+      // query keeps its last data, so other readers are unaffected.
+      if (data?.code !== 0) throw new DefaultModelsError(data?.message);
       return data?.data?.models ?? [];
     },
   });
 
-  return { data, loading };
+  // The seeded empty list is dated 0, so a later time means a real load.
+  return {
+    data,
+    loading,
+    isFetched,
+    isError,
+    refetch,
+    everLoaded: dataUpdatedAt > 0,
+  };
 };
 
 export const useFetchDefaultModelDictionary = (showEmptyModelWarn = false) => {
@@ -741,7 +778,9 @@ export const useSetDefaultModel = () => {
       const { data } = await llmService.setDefaultModel(params);
       if (data.code === 0) {
         message.success(t('message.modified'));
-        queryClient.invalidateQueries({
+        // Wait for the new defaults, so a caller showing a saving state does
+        // not show the old value in between.
+        await queryClient.invalidateQueries({
           queryKey: LlmKeys.defaultModels(),
         });
       }

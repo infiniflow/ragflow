@@ -51,7 +51,8 @@ function TreeSelectValueDisplay({
       </span>
     );
   } else if (renderSelected) {
-    content = renderSelected(selectedNode);
+    content =
+      renderSelected(selectedNode) ?? placeholder ?? t('common.pleaseSelect');
   } else {
     content = selectedNode?.title || placeholder || t('common.pleaseSelect');
   }

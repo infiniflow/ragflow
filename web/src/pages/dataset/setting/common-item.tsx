@@ -85,7 +85,7 @@ export const LLMSelect = ({
   disabled?: boolean;
   ownerTenantId?: string;
 }) => {
-  const { t } = useTranslate('knowledgeConfiguration');
+  const { t: tSetting } = useTranslate('setting');
   return (
     <ModelTreeSelect
       modelTypes={ModelTypeMap.llm_id}
@@ -94,7 +94,7 @@ export const LLMSelect = ({
       }}
       disabled={disabled && !isEdit}
       value={field.value}
-      placeholder={t('embeddingModelPlaceholder')}
+      placeholder={tSetting('selectModelPlaceholder')}
       ownerTenantId={ownerTenantId}
     />
   );

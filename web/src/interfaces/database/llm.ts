@@ -94,6 +94,8 @@ export interface IAddedModel {
   instance_name: string;
   tenant_id?: string;
   tenant_name?: string;
+  /** `platform` models are shared by the platform and read-only here. */
+  source?: 'tenant' | 'platform' | 'builtin';
 }
 
 export interface IInstanceModel {
@@ -127,9 +129,14 @@ export interface IInstanceModel {
 
 export interface IDefaultModel {
   model_id: string;
+  /** False when the saved model can no longer be used. */
   enable: boolean;
   model_instance: string;
   model_name: string;
   model_provider: string;
   model_type: string;
+  /** `user` is the user's own choice; `platform` is the inherited default. */
+  source?: 'user' | 'platform';
+  /** Saved reference of an unavailable name-based selection. */
+  model_ref?: string;
 }

@@ -1,6 +1,7 @@
 import {
   addTenantParams,
   buildModelValue,
+  buildValidModelIds,
   getEmbeddingBaseName,
   parseModelUuid,
   parseModelValue,
@@ -185,5 +186,45 @@ describe('addTenantParams — clearing model selections', () => {
         '/api/v1/chats/chat-id',
       ),
     ).toEqual({ tenant_rerank_id: 'existing-tenant-model-id' });
+  });
+});
+
+describe('buildValidModelIds', () => {
+  const base = {
+    model_type: ['chat'],
+    provider_id: 'p',
+    instance_id: 'i',
+    instance_name: 'default',
+    provider_name: 'OpenAI',
+    name: 'gpt',
+  };
+  test('legacy composite names match only tenant models', () => {
+    const ids = buildValidModelIds(
+      [{ ...base, model_id: 'platform-id', source: 'platform' }] as never,
+      ['chat'],
+    );
+    expect(ids.has('platform-id')).toBe(true);
+    expect(ids.has('gpt@default@OpenAI')).toBe(false);
+    const tenantIds = buildValidModelIds(
+      [{ ...base, model_id: 'tenant-id', source: 'tenant' }] as never,
+      ['chat'],
+    );
+    expect(tenantIds.has('gpt@default@OpenAI')).toBe(true);
+  });
+  test('two-part names match the default instance of tenant models', () => {
+    const ids = buildValidModelIds(
+      [
+        { ...base, model_id: 'tenant-id', source: 'tenant' },
+        {
+          ...base,
+          model_id: 'platform-id',
+          source: 'platform',
+          provider_name: 'Shared',
+        },
+      ] as never,
+      ['chat'],
+    );
+    expect(ids.has('gpt@OpenAI')).toBe(true);
+    expect(ids.has('gpt@Shared')).toBe(false);
   });
 });

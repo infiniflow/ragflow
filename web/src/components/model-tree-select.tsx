@@ -14,7 +14,10 @@
  *  limitations under the License.
  */
 
-import LLMLabel, { MissingModelLabel } from '@/components/llm-select/llm-label';
+import LLMLabel, {
+  MissingModelLabel,
+  PlatformModelBadge,
+} from '@/components/llm-select/llm-label';
 import { LlmIcon } from '@/components/svg-icon';
 import {
   FormControl,
@@ -26,7 +29,11 @@ import {
 import { ModelTypeProviderMap } from '@/constants/llm';
 import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
 import { IAddedModel } from '@/interfaces/database/llm';
-import { buildModelValue, getRealModelName } from '@/utils/llm-util';
+import {
+  buildModelValue,
+  getRealModelName,
+  parseModelValue,
+} from '@/utils/llm-util';
 import { forwardRef, useCallback, useEffect, useMemo } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -43,7 +50,14 @@ export const ModelTypeMap: Record<string, string[]> = {
   tts_id: ['tts'],
 };
 
-/** The type/provider predicate shared by buildModelTree and useModelTree. */
+/** Lets "platform" in the search box find shared platform providers. */
+const PlatformSearchKeyword = 'platform';
+
+/**
+ * The predicate shared by buildModelTree and useModelTree. A disabled
+ * platform model cannot be enabled by the tenant, so it is not offered; a
+ * saved reference to it shows as unavailable.
+ */
 function filterAddedModels(
   allModels: IAddedModel[],
   modelTypes: string[],
@@ -52,7 +66,9 @@ function filterAddedModels(
   return allModels.filter(
     (m) =>
       m.model_type?.some((t) => modelTypes.includes(t)) &&
-      (!providers?.length || providers.includes(m.provider_name)),
+      (!providers?.length || providers.includes(m.provider_name)) &&
+      (m.source !== 'platform' ||
+        (m.status !== 'inactive' && m.instance_status !== 'inactive')),
   );
 }
 
@@ -64,17 +80,24 @@ export function buildModelTree(
     model: IAddedModel,
   ) => React.ReactNode,
   providers?: string[],
+  platformLabel?: string,
 ): TreeSelectNode[] {
   const filtered = filterAddedModels(allModels, modelTypes, providers);
 
   const seenLeafIds = new Set<string>();
+  // Platform models are grouped apart from the tenant's own provider of the
+  // same name, so identical names stay distinguishable by source.
   const providerMap = new Map<string, Map<string, IAddedModel[]>>();
+  const groupKey = (model: IAddedModel) =>
+    model.source === 'platform'
+      ? `platform:${model.provider_name}`
+      : model.provider_name;
 
   for (const model of filtered) {
-    let instances = providerMap.get(model.provider_name);
+    let instances = providerMap.get(groupKey(model));
     if (!instances) {
       instances = new Map();
-      providerMap.set(model.provider_name, instances);
+      providerMap.set(groupKey(model), instances);
     }
     let modelList = instances.get(model.instance_name);
     if (!modelList) {
@@ -84,11 +107,32 @@ export function buildModelTree(
     modelList.push(model);
   }
 
-  return Array.from(providerMap.entries()).map(([provider, instances]) => ({
-    id: provider,
-    title: provider,
-    children: Array.from(instances.entries()).map(([instance, models]) => ({
-      id: `${provider}||${instance}`,
+  return Array.from(providerMap.entries()).map(([key, instances]) => {
+    const first = instances.values().next().value?.[0];
+    const provider = first?.provider_name ?? key;
+    const platform = first?.source === 'platform';
+    return {
+      id: key,
+      title: provider,
+      label: platform ? (
+        <span className="flex items-center gap-1.5 min-w-0">
+          <span className="truncate">{provider}</span>
+          <PlatformModelBadge />
+        </span>
+      ) : undefined,
+      searchKeywords: platform
+        ? [PlatformSearchKeyword, ...(platformLabel ? [platformLabel] : [])]
+        : undefined,
+      children: buildInstanceNodes(key, instances),
+    };
+  });
+
+  function buildInstanceNodes(
+    key: string,
+    instances: Map<string, IAddedModel[]>,
+  ): TreeSelectNode[] {
+    return Array.from(instances.entries()).map(([instance, models]) => ({
+      id: `${key}||${instance}`,
       title: instance,
       children: models.reduce<TreeSelectNode[]>((acc, m) => {
         const modelName = getRealModelName(m.name);
@@ -120,6 +164,7 @@ export function buildModelTree(
             provider_name: m.provider_name,
             instance_name: m.instance_name,
             model_name: modelName,
+            source: m.source,
           },
         };
         if (renderLeafLabel) {
@@ -128,8 +173,31 @@ export function buildModelTree(
         acc.push(leafNode);
         return acc;
       }, []),
-    })),
-  }));
+    }));
+  }
+}
+
+/**
+ * Selected-value display for pickers that render a model tree directly:
+ * shows the leaf label and marks a platform model, so a platform model and a
+ * same-named tenant model look different once selected.
+ */
+export function renderSelectedModelNode(node: TreeSelectNode | undefined) {
+  if (!node) return null;
+  const content = node.label ?? node.title;
+  // Options that are not models (DeepDOC, plain text) show as listed.
+  if (!node.data?.model_name) return content;
+  const fullName = [node.data.model_name, node.data.instance_name]
+    .filter(Boolean)
+    .join(' ');
+  return (
+    <span className="flex items-center gap-1.5 min-w-0">
+      <span className="min-w-0 truncate" title={fullName}>
+        {content}
+      </span>
+      {node.data.source === 'platform' && <PlatformModelBadge />}
+    </span>
+  );
 }
 
 export interface UseModelTreeOptions {
@@ -161,6 +229,8 @@ export function useModelTree({
   renderLeafLabel,
   ownerTenantId,
 }: UseModelTreeOptions = {}) {
+  const { t } = useTranslation();
+  const platformLabel = t('setting.platformProvided');
   const {
     data: allAddedModels,
     isFetched,
@@ -174,8 +244,14 @@ export function useModelTree({
 
   const treeData = useMemo(
     () =>
-      buildModelTree(allAddedModels, modelTypes, renderLeafLabel, providers),
-    [allAddedModels, modelTypes, renderLeafLabel, providers],
+      buildModelTree(
+        allAddedModels,
+        modelTypes,
+        renderLeafLabel,
+        providers,
+        platformLabel,
+      ),
+    [allAddedModels, modelTypes, renderLeafLabel, providers, platformLabel],
   );
 
   return { treeData, models, allAddedModels, isFetched, isError };
@@ -199,6 +275,8 @@ export interface ModelTreeSelectProps {
   renderSelected?: (node: TreeSelectNode | undefined) => React.ReactNode;
   testId?: string;
   ownerTenantId?: string;
+  /** Name shown for a saved value that matches no available model. */
+  missingValueLabel?: string;
 }
 
 export const ModelTreeSelect = forwardRef<
@@ -218,9 +296,11 @@ export const ModelTreeSelect = forwardRef<
     renderSelected,
     testId,
     ownerTenantId,
+    missingValueLabel,
   },
   ref,
 ) {
+  const { t } = useTranslation();
   // An explicit prop wins; otherwise inherit the restriction declared for the
   // type, so the default-model page and the chat settings agree without each
   // call site having to remember.
@@ -252,7 +332,8 @@ export const ModelTreeSelect = forwardRef<
       for (const node of nodes) {
         if (node.children?.length) {
           walk(node.children);
-        } else if (node.data) {
+        } else if (node.data && node.data.source !== 'platform') {
+          // Saved composite names refer to the tenant's own models only.
           const legacyId = buildModelValue({
             model_name: node.data.model_name,
             model_instance: node.data.instance_name,
@@ -268,12 +349,19 @@ export const ModelTreeSelect = forwardRef<
 
   const normalizedValue = useMemo(() => {
     if (!value) return value;
-    return legacyIdMap.get(value) ?? value;
+    // A two-part "model@provider" name refers to the default instance.
+    const parsed = parseModelValue(value);
+    const canonical = parsed ? buildModelValue(parsed) : value;
+    return legacyIdMap.get(value) ?? legacyIdMap.get(canonical) ?? value;
   }, [value, legacyIdMap]);
 
   const defaultRenderSelected = useCallback(
     (node: TreeSelectNode | undefined) => {
-      if (!node?.data) return null;
+      // Without a value, show the placeholder so the trigger is named. A
+      // saved value whose model list is still loading shows nothing yet.
+      if (!node?.data) {
+        return value ? '' : (placeholder ?? t('common.pleaseSelect'));
+      }
       return (
         <LLMLabel
           value={buildModelValue({
@@ -281,10 +369,11 @@ export const ModelTreeSelect = forwardRef<
             model_instance: node.data.instance_name,
             model_provider: node.data.provider_name,
           })}
+          platform={node.data.source === 'platform'}
         />
       );
     },
-    [],
+    [placeholder, value, t],
   );
 
   // The persisted model no longer matches any added model (e.g. it was
@@ -293,9 +382,13 @@ export const ModelTreeSelect = forwardRef<
   // the raw composite id.
   const renderMissingModel = useCallback(
     (missingValue: string) => (
-      <MissingModelLabel value={missingValue} ownerTenantId={ownerTenantId} />
+      <MissingModelLabel
+        value={missingValue}
+        ownerTenantId={ownerTenantId}
+        label={missingValueLabel}
+      />
     ),
-    [ownerTenantId],
+    [ownerTenantId, missingValueLabel],
   );
 
   return (

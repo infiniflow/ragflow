@@ -1,5 +1,8 @@
 import { MissingModelLabel } from '@/components/llm-select/llm-label';
-import { useModelTree } from '@/components/model-tree-select';
+import {
+  renderSelectedModelNode,
+  useModelTree,
+} from '@/components/model-tree-select';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { TreeSelect } from '@/components/tree-select';
 import message from '@/components/ui/message';
@@ -218,6 +221,7 @@ function ImageOcrEngineFields({ prefix }: CommonProps) {
                 placeholder={t('flow.imageOcrModelPlaceholder')}
                 loading={!isFetched}
                 renderMissingValue={renderMissingModel}
+                renderSelected={renderSelectedModelNode}
                 showSearch
                 defaultExpandAll
                 testId="image-ocr-model"

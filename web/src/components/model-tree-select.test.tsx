@@ -121,4 +121,54 @@ describe('buildModelTree', () => {
       'ProviderB',
     ]);
   });
+
+  // A platform model may share its provider, instance and model name with a
+  // tenant model; both must stay selectable and keep their own ids.
+  it('keeps same-named tenant and platform models apart', () => {
+    const models = [
+      addedModel({
+        model_id: 'platform-id',
+        name: 'gpt',
+        provider_name: 'OpenAI',
+        source: 'platform',
+      }),
+      addedModel({
+        model_id: 'tenant-id',
+        name: 'gpt',
+        provider_name: 'OpenAI',
+        source: 'tenant',
+      }),
+    ];
+    for (const ordered of [models, [...models].reverse()]) {
+      const tree = build(ordered, ['chat']);
+      expect(tree).toHaveLength(2);
+      expect(leaves(tree).sort()).toEqual(['platform-id', 'tenant-id']);
+      const platformGroup = tree.find((node) =>
+        node.id.startsWith('platform:'),
+      );
+      expect(platformGroup?.title).toBe('OpenAI');
+      expect(platformGroup?.searchKeywords).toEqual(['platform']);
+    }
+  });
+
+  it('hides disabled platform models but keeps disabled tenant models', () => {
+    const models = [
+      addedModel({
+        model_id: 'off-platform',
+        source: 'platform',
+        status: 'inactive',
+      }),
+      addedModel({
+        model_id: 'off-instance',
+        source: 'platform',
+        instance_status: 'inactive',
+      }),
+      addedModel({
+        model_id: 'off-tenant',
+        source: 'tenant',
+        status: 'inactive',
+      }),
+    ];
+    expect(leaves(build(models, ['chat']))).toEqual(['off-tenant']);
+  });
 });

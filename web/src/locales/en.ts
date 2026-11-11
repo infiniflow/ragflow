@@ -1451,6 +1451,34 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'Drag the selection area to choose the cropping position of the image, and scroll to zoom in/out',
       cropImage: 'Crop image',
       selectModelPlaceholder: 'Select model',
+      platformProvided: 'Platform',
+      defaultModelSourceUser: 'Your choice.',
+      defaultModelSourcePlatform:
+        'Platform default. Choosing a model here replaces it for you.',
+      defaultModelUnavailable:
+        'The selected model is no longer available. Choose another model or reset.',
+      defaultModelUnset: 'Not set.',
+      defaultModelRequired: 'required',
+      defaultModelsLoadFailed: 'Failed to load the default models.',
+      defaultModelPlatformMissingName: 'Platform default model',
+      defaultModelsReloadFailed:
+        'Failed to refresh the default models. The values shown may be out of date.',
+      defaultModelsRetry: 'Retry',
+      defaultModelsLoading: 'Loading…',
+      defaultModelSaving: 'Saving…',
+      defaultModelRequiredUnset:
+        'Not set. New chats and datasets will have no default model.',
+      resetRequiredDefaultModelDescription:
+        'Your choice will be removed. The platform default chat model is used if one is set; otherwise new chats and datasets will have no default model.',
+      defaultModelPlatformUnavailable:
+        'The platform default model is unavailable. Choose a model.',
+      resetDefaultModel: 'Reset',
+      resetDefaultModelFor: 'Reset the default model for {{type}}',
+      resetDefaultModelTitle: 'Reset default model',
+      resetDefaultModelDescription:
+        'Your choice will be removed. The platform default of this type is used if one is set; otherwise no default model is set.',
+      resetEmbeddingDefaultModelDescription:
+        'Your choice will be removed. The platform default embedding model is used if one is set; otherwise no default model is set. Existing datasets keep their embedding model.',
       configureModelTitle: 'Configure model',
       connectorNameTip: 'A descriptive name for the connector',
       syncDeletedFiles: 'Sync deleted files',

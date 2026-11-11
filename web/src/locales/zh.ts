@@ -1313,6 +1313,30 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       cropTip: '拖动选区可以选择要图片的裁剪位置，滚动可以放大/缩小选区',
       cropImage: '剪裁图片',
       selectModelPlaceholder: '请选择模型',
+      platformProvided: '平台提供',
+      defaultModelSourceUser: '个人选择。',
+      defaultModelSourcePlatform:
+        '平台默认。在此选择模型会替换为你的个人选择。',
+      defaultModelUnavailable: '已选模型不可用，请重新选择或重置。',
+      defaultModelUnset: '未设置。',
+      defaultModelRequired: '必填',
+      defaultModelsLoadFailed: '默认模型加载失败。',
+      defaultModelPlatformMissingName: '平台默认模型',
+      defaultModelsReloadFailed: '默认模型刷新失败，当前显示的可能不是最新值。',
+      defaultModelsRetry: '重试',
+      defaultModelsLoading: '加载中…',
+      defaultModelSaving: '保存中…',
+      defaultModelRequiredUnset: '未设置。新建聊天和知识库将没有默认模型。',
+      resetRequiredDefaultModelDescription:
+        '将移除你的选择。若平台设置了默认聊天模型则使用平台默认，否则新建聊天和知识库将没有默认模型。',
+      defaultModelPlatformUnavailable: '平台默认模型不可用，请选择模型。',
+      resetDefaultModel: '重置',
+      resetDefaultModelFor: '重置 {{type}} 的默认模型',
+      resetDefaultModelTitle: '重置默认模型',
+      resetDefaultModelDescription:
+        '将移除你的选择。若平台设置了该类型的默认模型则使用平台默认，否则不再有默认模型。',
+      resetEmbeddingDefaultModelDescription:
+        '将移除你的选择。若平台设置了默认 embedding 模型则使用平台默认，否则不再有默认模型。已有知识库的 embedding 模型不变。',
       configureModelTitle: '配置模型',
       confluenceIsCloudTip:
         '检查这是否是 Confluence Cloud 实例，如果是 Confluence 服务/数据中心，则取消选中。',

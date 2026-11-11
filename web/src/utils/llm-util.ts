@@ -94,7 +94,14 @@ export function buildValidModelIds(
       model_provider: m.provider_name,
     });
     ids.add(m.model_id || legacyId);
-    ids.add(legacyId);
+    // Saved composite names refer to the tenant's own models only. A
+    // two-part "model@provider" name refers to the default instance.
+    if (m.source !== 'platform') {
+      ids.add(legacyId);
+      if (m.instance_name === 'default') {
+        ids.add(`${getRealModelName(m.name)}@${m.provider_name}`);
+      }
+    }
   }
   return ids;
 }

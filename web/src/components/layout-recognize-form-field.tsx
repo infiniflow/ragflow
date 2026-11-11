@@ -19,10 +19,11 @@ import { LLMFactory } from '@/constants/llm';
 import { cn } from '@/lib/utils';
 import { parseModelValue } from '@/utils/llm-util';
 import { camelCase } from 'lodash';
-import { ReactNode, useMemo } from 'react';
+import { ReactNode, useCallback, useMemo } from 'react';
 import { useFormContext } from 'react-hook-form';
+import { MissingModelLabel } from './llm-select/llm-label';
 import { MinerUOptionsFormField } from './mineru-options-form-field';
-import { useModelTree } from './model-tree-select';
+import { renderSelectedModelNode, useModelTree } from './model-tree-select';
 import { PaddleOCROptionsFormField } from './paddleocr-options-form-field';
 import { TreeSelect, TreeSelectNode } from './tree-select';
 import {
@@ -89,6 +90,15 @@ export function LayoutRecognizeFormField({
     renderLeafLabel: renderExperimentalLeaf,
     ownerTenantId,
   });
+
+  // A saved model that is no longer listed (deleted, or a disabled platform
+  // model) keeps its name with a warning, as in the other model pickers.
+  const renderMissingModel = useCallback(
+    (value: string) => (
+      <MissingModelLabel value={value} ownerTenantId={ownerTenantId} />
+    ),
+    [ownerTenantId],
+  );
 
   const treeData = useMemo(() => {
     const list = optionsWithoutLLM
@@ -158,10 +168,8 @@ export function LayoutRecognizeFormField({
                       showSearch
                       defaultExpandAll
                       loading={!modelsFetched || modelsError}
-                      renderSelected={(node) => {
-                        if (!node) return null;
-                        return node.label ?? node.title;
-                      }}
+                      renderSelected={renderSelectedModelNode}
+                      renderMissingValue={renderMissingModel}
                     />
                   </FormControl>
                 </div>
