@@ -857,3 +857,63 @@ func TestMapMemoryMessageESUpdateFieldsRefreshesTokens(t *testing.T) {
 	}
 	assertEqual(t, doc["status_int"], 0)
 }
+
+// A memory keyword search publishes "session_id_contains"; the filter must
+// land on the mapped "session_id" keyword field with query metacharacters
+// escaped, never on the unmapped "session_id_contains" key.
+func TestOpenSearchSessionIDContainsFiltersOnSessionID(t *testing.T) {
+	query := buildBoolQueryFromConditionRaw(map[string]interface{}{
+		"session_id_contains": `ready*set?`,
+	}, nil, false, true)
+	if query == nil {
+		t.Fatal("buildBoolQueryFromConditionRaw returned nil for session_id_contains")
+	}
+	raw, err := json.Marshal(query)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertEqual(t, string(raw), `{"bool":{"filter":[{"wildcard":{"session_id":"*ready\\*set\\?*"}}]}}`)
+
+	if query = buildBoolQueryFromConditionRaw(map[string]interface{}{
+		"session_id": "sess-42",
+	}, nil, false, true); query != nil {
+		raw, err = json.Marshal(query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		assertEqual(t, string(raw), `{"bool":{"filter":[{"wildcard":{"session_id":"*sess-42*"}}]}}`)
+	}
+
+	// A non-string contains value has no wildcard form; it must be dropped
+	// rather than turned into a term on the unmapped key.
+	if query = buildBoolQueryFromConditionRaw(map[string]interface{}{
+		"session_id_contains": 42,
+	}, nil, false, true); query != nil {
+		t.Fatalf("non-string session_id_contains produced %#v, want nil", query)
+	}
+}
+
+// rank_features values arrive as nested objects; the projection must keep
+// them parseable as the JSON string the reranker reads.
+func TestOpenSearchGetFieldsMarshalsRankFeatures(t *testing.T) {
+	engine := &Engine{}
+	tags := map[string]interface{}{"ml": float64(3), "kb": float64(1)}
+	got := engine.GetFields([]map[string]interface{}{
+		{"id": "chunk-1", "tag_feas": tags},
+	}, []string{"id", "tag_feas"})
+
+	fieldMap, ok := got["chunk-1"]
+	if !ok {
+		t.Fatalf("GetFields keys=%v, want chunk-1", got)
+	}
+	raw, ok := fieldMap["tag_feas"].(string)
+	if !ok {
+		t.Fatalf("tag_feas = %#v (%T), want JSON string", fieldMap["tag_feas"], fieldMap["tag_feas"])
+	}
+	var parsed map[string]float64
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		t.Fatalf("tag_feas %q is not the JSON form the reranker parses: %v", raw, err)
+	}
+	assertEqual(t, parsed["ml"], float64(3))
+	assertEqual(t, parsed["kb"], float64(1))
+}
