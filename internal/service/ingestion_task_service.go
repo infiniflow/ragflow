@@ -120,6 +120,13 @@ func (e *TaskStatusConflictError) Error() string {
 	return fmt.Sprintf("task %s status conflict: expected %s -> %s, actual current %s", e.TaskID, e.ExpectedFrom, e.AttemptedTo, e.ActualCurrent)
 }
 
+// tierResolver resolves the ingestion queue tier for a tenant. It is an
+// injected seam so tests can drive paid/free/error outcomes without a live
+// billing service. A nil field falls back to defaultTierResolver, whose
+// implementation is edition-specific (ee uses billing; community is single
+// tier).
+type tierResolver func(ctx context.Context, tenantID string) (common.Tier, error)
+
 type IngestionTaskService struct {
 	documentDAO      *dao.DocumentDAO
 	ingestionTaskDAO *dao.IngestionTaskDAO
@@ -132,6 +139,7 @@ type IngestionTaskService struct {
 	// purgeTaskState removes the deleted task's run-scoped chunk and media
 	// cache state. Nil resolves to the process-wide implementation.
 	purgeTaskState func(context.Context, string) error
+	tierResolver   tierResolver
 }
 
 func NewIngestionTaskService() *IngestionTaskService {
@@ -152,6 +160,17 @@ func (s *IngestionTaskService) SetTaskPublisher(taskPublisher TaskPublisher) {
 		return
 	}
 	s.taskPublisher = taskPublisher
+}
+
+// SetTierResolver swaps the tenant->tier resolver. A nil argument is ignored so
+// callers cannot accidentally drop back to the edition-specific default.
+// Tests inject a deterministic resolver to keep routing assertions
+// edition-independent.
+func (s *IngestionTaskService) SetTierResolver(resolver tierResolver) {
+	if resolver == nil {
+		return
+	}
+	s.tierResolver = resolver
 }
 
 // SetEventEmitter swaps the lifecycle event sink. A nil argument is ignored so
@@ -800,7 +819,7 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 				return nil, fmt.Errorf("ensure run identity for task %s: %w", existing.ID, err)
 			}
 			s.emitLifecycleEvent(ctx, existing, "created", common.CREATED, "")
-			if err = s.enqueueTask(existing.ID); err != nil {
+			if err = s.enqueueTask(ctx, existing, kbCache); err != nil {
 				s.settlePublishFailure(ctx, existing)
 				return nil, err
 			}
@@ -827,7 +846,7 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 				return nil, fmt.Errorf("ensure run identity for task %s: %w", existing.ID, err)
 			}
 			s.emitLifecycleEvent(ctx, existing, "created", common.CREATED, "")
-			if err = s.enqueueTask(existing.ID); err != nil {
+			if err = s.enqueueTask(ctx, existing, kbCache); err != nil {
 				s.settlePublishFailure(ctx, existing)
 				return nil, err
 			}
@@ -848,7 +867,7 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 		return nil, fmt.Errorf("ensure run identity for task %s: %w", created.ID, err)
 	}
 	s.emitLifecycleEvent(ctx, created, "created", common.CREATED, "")
-	if err = s.enqueueTask(created.ID); err != nil {
+	if err = s.enqueueTask(ctx, created, kbCache); err != nil {
 		s.settlePublishFailure(ctx, created)
 		return nil, err
 	}
@@ -917,12 +936,15 @@ func (s *IngestionTaskService) ScheduleCreatedTasks(ctx context.Context) error {
 		return err
 	}
 	var recoveryErr error
+	// Shared across the loop so repeated tasks for the same dataset resolve the
+	// KB once rather than once per task.
+	kbCache := make(map[string]*entity.Knowledgebase)
 	for _, task := range tasks {
 		if err := s.ensureRunIdentity(ctx, task, nil); err != nil {
 			recoveryErr = errors.Join(recoveryErr, fmt.Errorf("ensure run identity for created task %s: %w", task.ID, err))
 			continue
 		}
-		if err := s.enqueueTask(task.ID); err != nil {
+		if err := s.enqueueTask(ctx, task, kbCache); err != nil {
 			s.settlePublishFailure(ctx, task)
 			recoveryErr = errors.Join(recoveryErr, fmt.Errorf("schedule created task %s: %w", task.ID, err))
 			continue
@@ -959,12 +981,52 @@ func clearCancelFlag(ctx context.Context, taskID string) {
 	}
 }
 
-func (s *IngestionTaskService) enqueueTask(taskID string) error {
+// resolveTier determines the priority lane for a task by resolving the tenant
+// that owns its dataset. A resolver error (knowledgebase lookup failure,
+// unknown tier) propagates so the caller settles the task as FAILED instead of
+// silently dropping it onto a default lane.
+//
+// kbCache is an optional per-batch map of datasetID -> knowledgebase. Callers
+// that enqueue many tasks for the same dataset (CreateForDocuments, the
+// ScheduleCreatedTasks recovery loop) supply one so the KB lookup is done once
+// per dataset, not once per task. A nil cache always queries the DAO; a cache
+// miss falls back to the DAO and fills the (non-nil) cache on success.
+func (s *IngestionTaskService) resolveTier(ctx context.Context, datasetID string, kbCache map[string]*entity.Knowledgebase) (common.Tier, error) {
+	kb := kbCache[datasetID]
+	if kb == nil {
+		var err error
+		kb, err = s.kbDAO.GetByID(ctx, dao.DB, datasetID)
+		if err != nil {
+			return "", fmt.Errorf("resolve tier: load knowledgebase %s: %w", datasetID, err)
+		}
+		if kb == nil {
+			return "", fmt.Errorf("resolve tier: knowledgebase %s not found", datasetID)
+		}
+		if kbCache != nil {
+			kbCache[datasetID] = kb
+		}
+	}
+	resolver := s.tierResolver
+	if resolver == nil {
+		resolver = defaultTierResolver
+	}
+	return resolver(ctx, kb.TenantID)
+}
+
+func (s *IngestionTaskService) enqueueTask(ctx context.Context, task *entity.IngestionTask, kbCache map[string]*entity.Knowledgebase) error {
+	tier, err := s.resolveTier(ctx, task.DatasetID, kbCache)
+	if err != nil {
+		return err
+	}
+	subject, err := common.SubjectForTier(tier)
+	if err != nil {
+		return err
+	}
 	taskMessage := common.TaskMessage{
-		TaskID:   taskID,
+		TaskID:   task.ID,
 		TaskType: common.TaskTypeIngestionTask,
 	}
-	return s.taskPublisher.PublishTaskMessage(common.TaskSubject, taskMessage)
+	return s.taskPublisher.PublishTaskMessage(subject, taskMessage)
 }
 
 // logFromUnstart and logFromUnstartOrScheduled are the operation_status values

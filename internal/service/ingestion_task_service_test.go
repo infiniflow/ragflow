@@ -81,6 +81,7 @@ func TestIngestionTaskServiceCreateForDocumentsPublishesTaskMessages(t *testing.
 	publisher := &recordingTaskPublisher{}
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
+	svc.tierResolver = (&fakeTierResolver{tier: common.TierDefault}).resolve
 
 	ctx := t.Context()
 	resp, err := svc.CreateForDocuments(permission.WithIdentity(ctx, "user-1", ""), "kb-1", []string{"doc-1"})
@@ -90,8 +91,8 @@ func TestIngestionTaskServiceCreateForDocumentsPublishesTaskMessages(t *testing.
 	if len(resp) != 1 {
 		t.Fatalf("expected 1 response, got %d", len(resp))
 	}
-	if publisher.subject != "tasks.RAGFLOW" {
-		t.Fatalf("subject = %q, want %q", publisher.subject, "tasks.RAGFLOW")
+	if publisher.subject != common.TaskSubject {
+		t.Fatalf("subject = %q, want %q", publisher.subject, common.TaskSubject)
 	}
 	if len(publisher.messages) != 1 {
 		t.Fatalf("expected 1 published message, got %d", len(publisher.messages))
