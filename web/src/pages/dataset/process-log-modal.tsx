@@ -13,7 +13,7 @@ import { useTranslation } from 'react-i18next';
 import reactStringReplace from 'react-string-replace';
 import { RunningStatus } from './dataset/constant';
 import { IngestionEventItem } from '@/interfaces/database/ingestion';
-import { formatTime } from '@/utils/date';
+import { formatTimeToLocal } from '@/utils/date';
 export interface ILogInfo {
   fileType?: string;
   uploadedBy?: string;
@@ -188,7 +188,7 @@ const ProcessLogModal: React.FC<ProcessLogModalProps> = ({
                           </div>
                         )}
                         {logInfo.events?.map((event) => {
-                          const time = formatTime(event.ts);
+                          const time = formatTimeToLocal(event.ts);
                           return (
                             <div
                               className={

@@ -46,6 +46,13 @@ export function formatTime(date: ConfigType) {
   return parseDate(date).format('HH:mm:ss');
 }
 
+export function formatTimeToLocal(date: ConfigType) {
+  if (!date) {
+    return '';
+  }
+  return dayjs(date).format('HH:mm:ss');
+}
+
 export function today() {
   return formatDate(dayjs());
 }
