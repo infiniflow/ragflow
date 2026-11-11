@@ -10,6 +10,7 @@ import (
 
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/ingestion/component/knowledge_compiler/structure"
 )
 
 // TestValidateTemplatePayload_AcceptsJSONMapConfig covers the create-from-UI
@@ -74,7 +75,7 @@ func TestValidateTemplatePayload_AcceptsJSONMapConfig(t *testing.T) {
 	}
 }
 
-// A class `parent` may name several superclasses, `|`-separated. The
+// A entity `parent` may name several superclasses, `|`-separated. The
 // unknown-parent check and the cyclic-chain check both have to walk every one of
 // them: a cycle that closes through a NON-first parent must still be rejected,
 // and a diamond (one ancestor reached through two parents) must not be.
@@ -121,7 +122,7 @@ func TestValidateOntologyTemplateMultiParent(t *testing.T) {
 //
 // The alias rules exist because an alias is resolved back to its term during
 // compilation: two terms claiming one string would put the same row in whichever
-// class the map happened to yield, so the model graph would change between
+// entity the map happened to yield, so the model graph would change between
 // restarts.
 func TestValidateOntologyTemplateAliasesAndAcceptanceRules(t *testing.T) {
 	build := func(entity, relation []interface{}) map[string]interface{} {
@@ -131,7 +132,7 @@ func TestValidateOntologyTemplateAliasesAndAcceptanceRules(t *testing.T) {
 			"relation": map[string]interface{}{"fields": relation},
 		}
 	}
-	classes := func(extra map[string]interface{}) []interface{} {
+	entities := func(extra map[string]interface{}) []interface{} {
 		organization := map[string]interface{}{"type": "organization"}
 		for k, v := range extra {
 			organization[k] = v
@@ -150,30 +151,30 @@ func TestValidateOntologyTemplateAliasesAndAcceptanceRules(t *testing.T) {
 	}
 
 	if err := validateOntologyTemplate(build(
-		classes(map[string]interface{}{"aliases": []interface{}{"company", "firm"}}),
+		entities(map[string]interface{}{"aliases": []interface{}{"company", "firm"}}),
 		property("object", map[string]interface{}{"aliases": []interface{}{"employed_by"}}),
 	)); err != nil {
 		t.Fatalf("declared aliases rejected: %v", err)
 	}
 	if err := validateOntologyTemplate(build(
-		classes(nil),
+		entities(nil),
 		property("datatype", map[string]interface{}{"enum": "novel|poem", "required": true}),
 	)); err != nil {
 		t.Fatalf("declared enum/required rejected: %v", err)
 	}
 
-	// An alias that names another class would resolve that name to two terms.
+	// An alias that names another entity would resolve that name to two terms.
 	err := validateOntologyTemplate(build(
-		classes(map[string]interface{}{"aliases": []interface{}{"person"}}),
+		entities(map[string]interface{}{"aliases": []interface{}{"person"}}),
 		property("object", nil),
 	))
-	if err == nil || !strings.Contains(err.Error(), "already names class") {
-		t.Fatalf("alias colliding with a class name not rejected: err = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "already names entity") {
+		t.Fatalf("alias colliding with a entity name not rejected: err = %v", err)
 	}
 
 	// A term aliasing itself reads as a pasted duplicate and maps to a no-op.
 	err = validateOntologyTemplate(build(
-		classes(map[string]interface{}{"aliases": []interface{}{"ORGANIZATION"}}),
+		entities(map[string]interface{}{"aliases": []interface{}{"ORGANIZATION"}}),
 		property("object", nil),
 	))
 	if err == nil || !strings.Contains(err.Error(), "lists itself as an alias") {
@@ -182,7 +183,7 @@ func TestValidateOntologyTemplateAliasesAndAcceptanceRules(t *testing.T) {
 
 	// Property aliases are checked in the property namespace.
 	err = validateOntologyTemplate(build(
-		classes(nil),
+		entities(nil),
 		append(property("object", map[string]interface{}{"aliases": []interface{}{"works_for"}}),
 			map[string]interface{}{"type": "genre", "kind": "datatype", "domain": "person", "datatype": "string"}),
 	))
@@ -193,11 +194,11 @@ func TestValidateOntologyTemplateAliasesAndAcceptanceRules(t *testing.T) {
 	// A closed value set and a mandatory value are both datatype-property ideas.
 	// On an object property the compiler would ignore them silently, which is
 	// worse than refusing them.
-	err = validateOntologyTemplate(build(classes(nil), property("object", map[string]interface{}{"enum": []interface{}{"a"}})))
+	err = validateOntologyTemplate(build(entities(nil), property("object", map[string]interface{}{"enum": []interface{}{"a"}})))
 	if err == nil || !strings.Contains(err.Error(), "only applies to datatype") {
 		t.Fatalf("enum on an object property not rejected: err = %v", err)
 	}
-	err = validateOntologyTemplate(build(classes(nil), property("object", map[string]interface{}{"required": true})))
+	err = validateOntologyTemplate(build(entities(nil), property("object", map[string]interface{}{"required": true})))
 	if err == nil || !strings.Contains(err.Error(), "only applies to datatype") {
 		t.Fatalf("required on an object property not rejected: err = %v", err)
 	}
@@ -207,13 +208,13 @@ func TestValidateOntologyTemplateAliasesAndAcceptanceRules(t *testing.T) {
 	for i := 0; i <= maxOntologyEnumValues; i++ {
 		many = append(many, fmt.Sprintf("value-%d", i))
 	}
-	err = validateOntologyTemplate(build(classes(nil), property("datatype", map[string]interface{}{"enum": many})))
+	err = validateOntologyTemplate(build(entities(nil), property("datatype", map[string]interface{}{"enum": many})))
 	if err == nil || !strings.Contains(err.Error(), "at most") {
 		t.Fatalf("oversized enum not rejected: err = %v", err)
 	}
 }
 
-// An action class narrows the contract output to the fields this model's actions
+// An action entity narrows the contract output to the fields this model's actions
 // actually need. The compiler filters the declaration against the fixed six and
 // drops what it does not recognise, so an unrecognised name is only survivable
 // if it is refused at save time: a silently narrowed contract asks the model for
@@ -247,7 +248,7 @@ func TestValidateOntologyTemplateContractDeclaration(t *testing.T) {
 	if err := validateOntologyTemplate(build(map[string]interface{}{
 		"type": " Action ", "contract": "authorization",
 	})); err != nil {
-		t.Fatalf("padded/cased action class rejected: %v", err)
+		t.Fatalf("padded/cased action entity rejected: %v", err)
 	}
 
 	err := validateOntologyTemplate(build(map[string]interface{}{
@@ -270,7 +271,7 @@ func TestValidateOntologyTemplateContractDeclaration(t *testing.T) {
 		t.Fatalf("declaration without authorization not rejected: err = %v", err)
 	}
 
-	// The contract is read off the action class alone; declaring it elsewhere
+	// The contract is read off the action entity alone; declaring it elsewhere
 	// would be silently ignored at compile time.
 	err = validateOntologyTemplate(map[string]interface{}{
 		"kind": "ontology",
@@ -279,8 +280,8 @@ func TestValidateOntologyTemplateContractDeclaration(t *testing.T) {
 		}},
 		"relation": map[string]interface{}{"fields": []interface{}{}},
 	})
-	if err == nil || !strings.Contains(err.Error(), `only the "action" class`) {
-		t.Fatalf("contract on a non-action class not rejected: err = %v", err)
+	if err == nil || !strings.Contains(err.Error(), `only the "action" entity`) {
+		t.Fatalf("contract on a non-action entity not rejected: err = %v", err)
 	}
 }
 
@@ -424,4 +425,112 @@ func TestLoadBuiltinTemplates_AllYAMLDefinitions(t *testing.T) {
 	for id := range wantIDs {
 		t.Errorf("builtin YAML %q was not loaded", id)
 	}
+}
+
+// The default ontology reference declares the one entity that is not a thing: an
+// `action` is a step, and it carries the execution contract a reader needs in
+// order to decide whether the step may run. The declaration is what asks the
+// extractor for those fields, so it has to be visible in the prompt — and
+// narrowing it has to narrow the prompt, which is the whole reason it lives on
+// the entity instead of being hard-coded for every template.
+func TestOntologyReferenceDeclaresTheActionContract(t *testing.T) {
+	origWd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err = os.Chdir("../.."); err != nil {
+		t.Fatalf("chdir to repo root: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(origWd) })
+
+	templates, err := loadBuiltinTemplates()
+	if err != nil {
+		t.Fatalf("loadBuiltinTemplates: %v", err)
+	}
+	var reference *BuiltinTemplate
+	for _, template := range templates {
+		if template.ID == "ontology" {
+			reference = template
+		}
+	}
+	if reference == nil {
+		t.Fatal("the ontology builtin (the default reference) is missing")
+	}
+
+	// The two response keys exist only because the action entity declares them,
+	// and the skeleton is rendered from the declaration's field list.
+	prompt, _ := structure.HypergraphPrompts(map[string]any(reference.Config), "English")
+	for _, want := range []string{
+		`"contract"`, `"contract_quotes"`, "<verbatim sentence>",
+		`"authorization": "<string>"`, `"preconditions": "<string>"`,
+		`"atomic_effects": ["<string>"]`, `"follow_ups": ["<string>"]`,
+		`"failure_policy": "<string>"`, `"audit_required": "<true|false>"`,
+	} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("the default reference does not ask for the action contract: %s is missing", want)
+		}
+	}
+
+	// Narrowing is edited on the entity in the template editor; the form then saves
+	// the config this test builds, verbatim.
+	config := deepCopyConfig(t, reference.Config)
+	action := actionClassField(t, config)
+	action["contract"] = "authorization|failure_policy"
+
+	payload := map[string]interface{}{
+		"name":   "narrowed model",
+		"kind":   reference.Kind,
+		"config": map[string]interface{}(config),
+	}
+	if err = ValidateTemplatePayload(payload, true); err != nil {
+		t.Fatalf("a narrowed contract was rejected on save: %v", err)
+	}
+
+	narrowed, _ := structure.HypergraphPrompts(map[string]any(config), "English")
+	for _, want := range []string{
+		`"authorization": "<string>"`, `"failure_policy": "<string>"`,
+	} {
+		if !strings.Contains(narrowed, want) {
+			t.Errorf("the narrowed declaration does not reach the prompt: %s is missing", want)
+		}
+	}
+	for _, unwanted := range []string{
+		`"preconditions": "<string>"`, `"atomic_effects": ["<string>"]`,
+		`"follow_ups": ["<string>"]`, `"audit_required": "<true|false>"`,
+	} {
+		if strings.Contains(narrowed, unwanted) {
+			t.Errorf("the prompt asks for a contract field the entity does not declare: %s", unwanted)
+		}
+	}
+}
+
+// actionClassField returns the entity field the reference declares as `action`,
+// so a test can edit it the way the template editor does.
+func actionClassField(t *testing.T, config map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	entity, _ := config["entity"].(map[string]interface{})
+	fields, _ := entity["fields"].([]interface{})
+	for _, raw := range fields {
+		field, _ := raw.(map[string]interface{})
+		if strings.EqualFold(strings.TrimSpace(yamlStr(field["type"])), "action") {
+			return field
+		}
+	}
+	t.Fatal("the default reference declares no action entity")
+	return nil
+}
+
+// deepCopyConfig round-trips a template config through JSON, which is the same
+// shape the editor sends, so a test can edit it without touching the builtin.
+func deepCopyConfig(t *testing.T, config entity.JSONMap) map[string]interface{} {
+	t.Helper()
+	raw, err := json.Marshal(config)
+	if err != nil {
+		t.Fatalf("marshal builtin config: %v", err)
+	}
+	var out map[string]interface{}
+	if err = json.Unmarshal(raw, &out); err != nil {
+		t.Fatalf("unmarshal builtin config: %v", err)
+	}
+	return out
 }

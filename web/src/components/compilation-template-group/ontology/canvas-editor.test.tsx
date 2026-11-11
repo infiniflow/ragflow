@@ -18,7 +18,7 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { useForm } from 'react-hook-form';
 
 import { OntologyCanvasEditor } from './canvas-editor';
-import { OntologyClassKeys, OntologyPropertyKeys } from './model';
+import { OntologyEntityKeys, OntologyPropertyKeys } from './model';
 
 // The canvas measures the box it was given with a ResizeObserver, which jsdom does
 // not provide. The mock reports a fixed box: the panel's resize limits are computed
@@ -159,7 +159,7 @@ const fieldsOf = (form: any, section: 'entity' | 'relation') =>
   form.current.getValues(`templates.0.config.${section}`);
 
 describe('OntologyCanvasEditor', () => {
-  it('draws the declared classes and their object properties', () => {
+  it('draws the declared entities and their object properties', () => {
     renderEditor();
     expect(screen.getByTestId('ontology-node-agent')).toBeTruthy();
     expect(screen.getByTestId('ontology-node-person')).toBeTruthy();
@@ -169,12 +169,244 @@ describe('OntologyCanvasEditor', () => {
     ).toBeTruthy();
   });
 
+  // A property that declares several endpoints cannot be one edge. Taking the
+  // first of each list used to draw `part_of` (place|event -> place|event) as an
+  // arrow from `place` to itself — a relation the template never declared, and
+  // the one thing on the canvas nobody could read.
+  it('does not invent a self-loop out of a multi-endpoint relation', () => {
+    renderEditorWith((values) => {
+      values.templates[0].config.entity.fields.push({
+        type: 'place',
+        label: 'Place',
+        description: 'A location.',
+        parent: '',
+        rule: '',
+      });
+      values.templates[0].config.relation.fields.push({
+        type: 'part_of',
+        kind: 'object',
+        domain: 'place|agent',
+        range: 'place|agent',
+        datatype: '',
+        label: 'part of',
+        description: 'A component of a larger whole.',
+        rule: '',
+      });
+    });
+
+    expect(screen.queryByTestId('ontology-edge-part_of')).toBeNull();
+    // The `t` mock returns the raw defaultValue, so the count is not interpolated.
+    expect(
+      screen.getByTestId('ontology-polymorphic-notice').textContent,
+    ).toContain('relation(s) span several entities');
+
+    // It is not lost: the Relations tab lists it with both endpoint lists.
+    fireEvent.click(screen.getByTestId('ontology-rail-tab-relations'));
+    const row = screen.getByTestId('ontology-relation-list-item-part_of');
+    expect(row.textContent).toContain('place | agent → place | agent');
+    expect(row.textContent).toContain('not drawn: several endpoints');
+  });
+
+  // A real self-loop — one domain, one range, the same entity — is a declaration
+  // the reader asked for, so it is still drawn.
+  it('draws a declared self-relation', () => {
+    renderEditorWith((values) => {
+      values.templates[0].config.relation.fields = [
+        {
+          type: 'part_of',
+          kind: 'object',
+          domain: 'agent',
+          range: 'agent',
+          datatype: '',
+          label: 'part of',
+          description: '',
+          rule: '',
+        },
+      ];
+    });
+
+    expect(screen.getByTestId('ontology-edge-part_of')).toBeTruthy();
+    expect(screen.queryByTestId('ontology-polymorphic-notice')).toBeNull();
+  });
+
+  // A 1px stroke is a 1px click target: the edge could be seen but not selected,
+  // which left the property panel behind it unreachable. The first path is the
+  // invisible 12px target, the second the stroke that is drawn.
+  it('gives an edge a click target wider than its stroke', () => {
+    renderEditorWith((values) => {
+      values.templates[0].config.relation.fields = [
+        {
+          type: 'employed_by',
+          kind: 'object',
+          domain: 'agent',
+          range: 'person',
+          datatype: '',
+          label: 'employed by',
+          description: '',
+          rule: '',
+        },
+      ];
+    });
+
+    const edge = screen.getByTestId('ontology-edge-employed_by');
+    const [hit, stroke] = [...edge.querySelectorAll('path')];
+    expect(hit.getAttribute('stroke')).toBe('transparent');
+    expect(hit.getAttribute('stroke-width')).toBe('12');
+    expect(stroke.getAttribute('stroke')).toBe('currentColor');
+
+    fireEvent.click(edge);
+    expect(screen.getByTestId('ontology-property-owner').textContent).toContain(
+      'agent',
+    );
+  });
+
+  // The arrowhead IS the range end, so it has to be draggable. Editing the range
+  // meant finding the right dropdown in the panel; the gesture a reader reaches
+  // for is to drag the arrow.
+  it('makes a relation point at itself by dropping its arrowhead on its own entity', () => {
+    const form = renderEditorWith((values) => {
+      values.templates[0].config.relation.fields = [
+        {
+          type: 'employed_by',
+          kind: 'object',
+          domain: 'agent',
+          range: 'person',
+          datatype: '',
+          label: 'employed by',
+          description: '',
+          rule: '',
+        },
+      ];
+    });
+
+    // No grip until the edge is selected: a dot on every edge is noise, not an
+    // affordance.
+    expect(screen.queryByTestId('ontology-edge-grip-employed_by')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('ontology-edge-employed_by'));
+    fireEvent.pointerDown(
+      screen.getByTestId('ontology-edge-grip-employed_by'),
+      { clientX: 400, clientY: 100 },
+    );
+    // The provisional edge is what shows the drag is live.
+    expect(screen.getByTestId('ontology-rewiring-line')).toBeTruthy();
+
+    fireEvent.pointerUp(screen.getByTestId('ontology-node-agent'), {
+      clientX: 320,
+      clientY: 60,
+    });
+
+    const fields = fieldsOf(form, 'relation').fields;
+    expect(fields[0].domain).toBe('agent');
+    expect(fields[0].range).toBe('agent');
+    expect(screen.queryByTestId('ontology-rewiring-line')).toBeNull();
+    // The declaration is redrawn as the self-loop it now says.
+    expect(screen.getByTestId('ontology-edge-employed_by')).toBeTruthy();
+  });
+
+  // The same grip also takes a self-relation back out to another entity: the
+  // arrowhead is one endpoint, and it moves in both directions.
+  it('rewrites the range when the arrowhead is dropped on another entity', () => {
+    const form = renderEditorWith((values) => {
+      values.templates[0].config.relation.fields = [
+        {
+          type: 'employed_by',
+          kind: 'object',
+          domain: 'agent',
+          range: 'agent',
+          datatype: '',
+          label: 'employed by',
+          description: '',
+          rule: '',
+        },
+      ];
+    });
+
+    fireEvent.click(screen.getByTestId('ontology-edge-employed_by'));
+    fireEvent.pointerDown(
+      screen.getByTestId('ontology-edge-grip-employed_by'),
+      { clientX: 320, clientY: 40 },
+    );
+    fireEvent.pointerUp(screen.getByTestId('ontology-node-person'), {
+      clientX: 500,
+      clientY: 220,
+    });
+
+    const fields = fieldsOf(form, 'relation').fields;
+    expect(fields[0].domain).toBe('agent');
+    expect(fields[0].range).toBe('person');
+  });
+
+  // Released over empty canvas the arrowhead keeps pointing where it did: a miss
+  // must not silently move a relation somewhere the reader never aimed at.
+  it('leaves the range alone when the arrowhead is dropped on empty canvas', () => {
+    const form = renderEditorWith((values) => {
+      values.templates[0].config.relation.fields = [
+        {
+          type: 'employed_by',
+          kind: 'object',
+          domain: 'agent',
+          range: 'person',
+          datatype: '',
+          label: 'employed by',
+          description: '',
+          rule: '',
+        },
+      ];
+    });
+
+    fireEvent.click(screen.getByTestId('ontology-edge-employed_by'));
+    fireEvent.pointerDown(
+      screen.getByTestId('ontology-edge-grip-employed_by'),
+      { clientX: 400, clientY: 100 },
+    );
+    fireEvent.pointerUp(screen.getByRole('img'));
+
+    expect(fieldsOf(form, 'relation').fields[0].range).toBe('person');
+    expect(screen.queryByTestId('ontology-rewiring-line')).toBeNull();
+  });
+
+  // The click that follows a drop belongs to the drag, but only that one: a later
+  // click on an entity must still select it, or one drop would leave the canvas
+  // unresponsive until the next re-render.
+  it('still selects an entity after an arrowhead drop', async () => {
+    renderEditorWith((values) => {
+      values.templates[0].config.relation.fields = [
+        {
+          type: 'employed_by',
+          kind: 'object',
+          domain: 'agent',
+          range: 'person',
+          datatype: '',
+          label: 'employed by',
+          description: '',
+          rule: '',
+        },
+      ];
+    });
+
+    fireEvent.click(screen.getByTestId('ontology-edge-employed_by'));
+    fireEvent.pointerDown(
+      screen.getByTestId('ontology-edge-grip-employed_by'),
+      { clientX: 400, clientY: 100 },
+    );
+    fireEvent.pointerUp(screen.getByTestId('ontology-node-agent'), {
+      clientX: 320,
+      clientY: 60,
+    });
+    // The drop leaves the property selected, not the entity it landed on.
+    expect(screen.getByTestId('ontology-property-type')).toBeTruthy();
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    fireEvent.click(screen.getByTestId('ontology-node-agent'));
+    expect(screen.getByTestId('ontology-entity-type')).toBeTruthy();
+  });
+
   // A node is drawn as an HTML card inside a foreignObject, not as hand-placed
   // SVG <text>: the card carries the title, the identifier and one row per
-  // attribute, and each of those has to be real text a reader can select. The
-  // link handle stays in SVG and outside the card, because its position is what
-  // the connectors are routed against.
-  it('draws each class as an HTML card with its attributes', () => {
+  // attribute, and each of those has to be real text a reader can select.
+  it('draws each entity as an HTML card with its attributes', () => {
     renderEditor();
 
     const person = screen.getByTestId('ontology-node-person');
@@ -183,28 +415,53 @@ describe('OntologyCanvasEditor', () => {
     // Title and identifier are both in the card, so the node is readable without
     // hovering anything.
     expect(card?.textContent).toContain('person');
+  });
 
-    const handle = screen.getByTestId('ontology-link-handle-person');
-    expect(handle.tagName.toLowerCase()).toBe('circle');
-    expect(card?.contains(handle)).toBe(false);
+  // Two line styles, two meanings: a solid edge is a declared relation, a dashed
+  // one is `parent` (rdfs:subClassOf). Nothing on the canvas said which.
+  it('labels the two edge styles', () => {
+    renderEditor();
+
+    expect(screen.getByText('Relation')).toBeTruthy();
+    expect(screen.getByText('Inheritance (parent)')).toBeTruthy();
+  });
+
+  // The canvas is a surface of its own: on the same white as the panels around it
+  // the graph read as part of the form.
+  it('paints the canvas on its own surface', () => {
+    renderEditor();
+
+    expect(document.querySelector('.bg-bg-canvas')).toBeTruthy();
+  });
+
+  // The title used to sit on the same background as the attribute rows, so the
+  // entity name was the row least distinguishable from its own contents. The band
+  // is a separate element with its own tint precisely so it can stay that way.
+  it('separates the entity name from its attribute rows', () => {
+    renderEditor();
+
+    const title = screen.getByTestId('ontology-node-title-person');
+    expect(title.textContent).toContain('Person');
+    expect(title.className).toContain('bg-accent-primary/10');
+    expect(title.className).toContain('border-b');
   });
 
   // The one thing the canvas must never get wrong: what it writes is the
   // template's own field shape, in the template's own key order.
-  it('writes an added class in the template field shape', () => {
+  it('writes an added entity in the template field shape', () => {
     const form = renderEditor();
     const before = fieldsOf(form, 'entity').fields.length;
-    fireEvent.click(screen.getByText('+ Class'));
+    fireEvent.click(screen.getByText('+ Entity'));
 
     const fields = fieldsOf(form, 'entity').fields;
     expect(fields).toHaveLength(before + 1);
-    expect(Object.keys(fields[before])).toEqual([...OntologyClassKeys]);
+    expect(Object.keys(fields[before])).toEqual([...OntologyEntityKeys]);
   });
 
-  // An attribute is created FROM a class, so its domain is never empty. A
+  // An attribute is created FROM an entity, so its domain is never empty. A
   // property with no domain draws nothing on the canvas and belonged to nobody —
   // which is exactly the confusion the two toolbar buttons caused.
-  it('creates an attribute anchored to the selected class', () => {
+  it('creates an attribute anchored to the selected entity', () => {
     const form = renderEditor();
     fireEvent.click(screen.getByTestId('ontology-node-agent'));
     fireEvent.click(screen.getByTestId('ontology-add-own-attribute'));
@@ -217,9 +474,9 @@ describe('OntologyCanvasEditor', () => {
     expect(added.domain).toBe('agent');
   });
 
-  // "Which entity does this property belong to" has to be answerable on the class
+  // "Which entity does this property belong to" has to be answerable on the entity
   // itself, not by opening each property in turn.
-  it('lists the properties of the selected class', () => {
+  it('lists the properties of the selected entity', () => {
     renderEditor();
     fireEvent.click(screen.getByTestId('ontology-node-person'));
 
@@ -248,12 +505,13 @@ describe('OntologyCanvasEditor', () => {
         },
       ];
     });
-    // It draws no edge, so the issue list is the only way in — which is why the
-    // issues are clickable.
+    // It draws no edge, so the Rules tab is the only way in — which is why a
+    // finding is clickable.
+    fireEvent.click(screen.getByTestId('ontology-rail-tab-rules'));
     fireEvent.click(screen.getByTestId('ontology-issue-missing_domain'));
 
     expect(screen.getByTestId('ontology-property-owner').textContent).toContain(
-      'no class yet',
+      'no entity yet',
     );
   });
 
@@ -261,7 +519,7 @@ describe('OntologyCanvasEditor', () => {
   // of the builtin ontology template, and the canvas rewrites whole sections.
   it('carries through keys the canvas does not own', () => {
     const form = renderEditor();
-    fireEvent.click(screen.getByText('+ Class'));
+    fireEvent.click(screen.getByText('+ Entity'));
 
     const entity = fieldsOf(form, 'entity');
     expect(entity.output_fields).toEqual([
@@ -269,13 +527,63 @@ describe('OntologyCanvasEditor', () => {
     ]);
   });
 
-  // Two clicks on the canvas, one relationship: the handle is how an object
-  // property is created visually, and the endpoints have to land in the
-  // template's own keys with the template's own order.
-  it('creates an object property from a link handle and a target class', () => {
+  // The rail lists what a model is made of. A relation used to be reachable only
+  // by clicking its label on the canvas, which left an object property with no
+  // domain impossible to find at all.
+  it('lists object properties in the Relations tab', () => {
+    renderEditorWith((values) => {
+      values.templates[0].config.relation.fields.push({
+        type: 'employed_by',
+        kind: 'object',
+        domain: 'agent',
+        range: 'person',
+        datatype: '',
+        label: 'employed by',
+        description: '',
+        rule: '',
+      });
+    });
+
+    fireEvent.click(screen.getByTestId('ontology-rail-tab-relations'));
+
+    const item = screen.getByTestId('ontology-relation-list-item-employed_by');
+    // The two ends are printed on the row: a relation whose ends are only in the
+    // form is a name with no meaning.
+    expect(item.textContent).toContain('agent → person');
+
+    fireEvent.click(item);
+    expect(screen.getByTestId('ontology-property-owner').textContent).toContain(
+      'agent',
+    );
+  });
+
+  // A datatype property is not a relation: it draws no edge and belongs to the
+  // entity that owns it, so the Relations tab must not offer it.
+  it('keeps datatype properties out of the Relations tab', () => {
+    renderEditor();
+    fireEvent.click(screen.getByTestId('ontology-rail-tab-relations'));
+
+    expect(screen.queryByTestId('ontology-relation-list-item-birth_date')).toBe(
+      null,
+    );
+    expect(screen.getByText('No relations yet.')).toBeTruthy();
+  });
+
+  // The canvas has to be able to connect two entities, which is the one gesture a
+  // graph editor owes a reader: drag from the dot on an entity's edge to the other
+  // entity, and the declaration is written with those two ends.
+  it('declares a relation by dragging from an anchor to another entity', () => {
     const form = renderEditor();
-    fireEvent.click(screen.getByTestId('ontology-link-handle-agent'));
-    fireEvent.click(screen.getByTestId('ontology-node-person'));
+
+    const anchor = screen.getByTestId('ontology-link-anchor-agent');
+    fireEvent.pointerDown(anchor, { clientX: 300, clientY: 120 });
+    // The provisional edge is what shows the drag is live.
+    expect(screen.getByTestId('ontology-linking-line')).toBeTruthy();
+
+    fireEvent.pointerUp(screen.getByTestId('ontology-node-person'), {
+      clientX: 500,
+      clientY: 220,
+    });
 
     const fields = fieldsOf(form, 'relation').fields;
     const added = fields[fields.length - 1];
@@ -283,42 +591,42 @@ describe('OntologyCanvasEditor', () => {
     expect(added.domain).toBe('agent');
     expect(added.range).toBe('person');
     expect(Object.keys(added)).toEqual([...OntologyPropertyKeys]);
+    expect(screen.queryByTestId('ontology-linking-line')).toBeNull();
   });
 
-  // The handle used to only change a faint circle's opacity, so clicking it read
-  // as broken. Two things make it legible: a banner that says what the next click
-  // means, and Escape to back out.
-  it('announces the linking mode and cancels it on Escape', () => {
-    renderEditor();
-    expect(screen.queryByTestId('ontology-linking-banner')).toBeNull();
-
-    fireEvent.click(screen.getByTestId('ontology-link-handle-agent'));
-    expect(screen.getByTestId('ontology-linking-banner')).toBeTruthy();
-
-    fireEvent.keyDown(window, { key: 'Escape' });
-    expect(screen.queryByTestId('ontology-linking-banner')).toBeNull();
-  });
-
-  // Clicking empty canvas while linking is the reading a "+" invites: a new class
-  // appears where the reader clicked, already joined to the source.
-  it('adds a class joined to the source when empty canvas is clicked', () => {
+  // Released over empty canvas, the drag is abandoned: landing a relation on
+  // whichever entity comes first would be worse than doing nothing.
+  it('cancels a drag released over empty canvas', () => {
     const form = renderEditor();
-    fireEvent.click(screen.getByTestId('ontology-link-handle-agent'));
-    fireEvent.click(screen.getByRole('img'));
+    const before = fieldsOf(form, 'relation').fields.length;
 
-    const classes = fieldsOf(form, 'entity').fields;
-    const properties = fieldsOf(form, 'relation').fields;
-    const created = classes[classes.length - 1];
-    const added = properties[properties.length - 1];
+    fireEvent.pointerDown(screen.getByTestId('ontology-link-anchor-agent'), {
+      clientX: 300,
+      clientY: 120,
+    });
+    fireEvent.pointerUp(screen.getByRole('img'));
 
-    expect(classes).toHaveLength(3);
-    expect(Object.keys(created)).toEqual([...OntologyClassKeys]);
+    expect(fieldsOf(form, 'relation').fields).toHaveLength(before);
+    expect(screen.queryByTestId('ontology-linking-line')).toBeNull();
+  });
+
+  // Creating a relation is now a decision made in a list: both ends are chosen
+  // before anything exists, and the endpoints land in the template's own keys
+  // with the template's own order.
+  it('creates an object property from the Relations tab', () => {
+    const form = renderEditor();
+
+    fireEvent.click(screen.getByTestId('ontology-rail-tab-relations'));
+    fireEvent.click(screen.getByTestId('ontology-add-relation'));
+
+    const fields = fieldsOf(form, 'relation').fields;
+    const added = fields[fields.length - 1];
     expect(added.kind).toBe('object');
+    // The first two entities are the ends, so the new relation is on the canvas
+    // immediately and is never an orphan.
     expect(added.domain).toBe('agent');
-    expect(added.range).toBe(created.type);
-    // Creating the class ends the linking mode: the next click has to mean
-    // whatever the canvas normally means, not "connect to agent again".
-    expect(screen.queryByTestId('ontology-linking-banner')).toBeNull();
+    expect(added.range).toBe('person');
+    expect(Object.keys(added)).toEqual([...OntologyPropertyKeys]);
   });
 
   // Several properties between the same pair are drawn as ONE edge. N curves with
@@ -352,12 +660,15 @@ describe('OntologyCanvasEditor', () => {
 
     // One element, not two — the whole point.
     const bundle = screen.getByTestId('ontology-edge-bundle-agent|person');
-    expect(bundle.textContent).toContain('×2');
+    // The edge is named by the first property and counts the rest: "×2" said how
+    // many without saying what.
+    expect(bundle.textContent).toContain('employed by +1');
     // The fixture declares one property in each direction, so the bundle must
     // mark BOTH ends: a single arrowhead would misstate half of what it holds.
-    expect(bundle.querySelector('path')?.getAttribute('marker-start')).toBe(
-      'url(#ontology-arrow)',
-    );
+    // The last path is the visible stroke; the first is the 12px hit target.
+    expect(
+      bundle.querySelectorAll('path')[1]?.getAttribute('marker-start'),
+    ).toBe('url(#ontology-arrow)');
     expect(screen.queryByTestId('ontology-edge-employed_by')).toBeNull();
     expect(screen.queryByTestId('ontology-edge-manages')).toBeNull();
 
@@ -410,7 +721,7 @@ describe('OntologyCanvasEditor', () => {
     expect(points.length).toBeGreaterThan(2);
   });
 
-  // The arrow has to POINT AT the class, which means both ends sit on a border. A
+  // The arrow has to POINT AT the entity, which means both ends sit on a border. A
   // connector drawn between centres runs under the box and buries the arrowhead
   // inside it.
   it('anchors both ends of a connector on the box borders', () => {
@@ -448,10 +759,10 @@ describe('OntologyCanvasEditor', () => {
     expect(Number(label.getAttribute('y'))).toBeLessThan(56);
   });
 
-  // A connector must not run over a class that stands between its ends. The detour
+  // A connector must not run over an entity that stands between its ends. The detour
   // is a polyline, because a bend deviates by its offset exactly while a curve only
   // deviates half as far.
-  it('routes a connector around a class that stands in the way', () => {
+  it('routes a connector around an entity that stands in the way', () => {
     renderEditorWith((values) => {
       values.templates[0].config.entity.fields = [
         {
@@ -505,8 +816,8 @@ describe('OntologyCanvasEditor', () => {
 
   // One detour has to clear ALL of them: routing around only the nearest obstacle
   // leaves the next one crossing the line — which is what a row (or column) of
-  // classes between two endpoints produces.
-  it('clears every class between the ends, not just the first', () => {
+  // entities between two endpoints produces.
+  it('clears every entity between the ends, not just the first', () => {
     renderEditorWith((values) => {
       values.templates[0].config.entity.fields = [
         {
@@ -564,7 +875,7 @@ describe('OntologyCanvasEditor', () => {
     const points = pointsOf(path);
     expectOrthogonal(points);
 
-    // Four classes to a row: first (40) .. second (300) .. third (560) .. fourth
+    // Four entities to a row: first (40) .. second (300) .. third (560) .. fourth
     // (820), each 200 wide and 52 tall. The run goes out of first's right edge,
     // drops into the empty lane under the row, and comes back into fourth.
     expect(points[0]).toEqual({ x: 240, y: 66 });
@@ -665,10 +976,10 @@ describe('OntologyCanvasEditor', () => {
     expect(panel.style.width).toBe('880px');
   });
 
-  it('edits the selected class through the panel', () => {
+  it('edits the selected entity through the panel', () => {
     const form = renderEditor();
     fireEvent.click(screen.getByTestId('ontology-node-person'));
-    fireEvent.change(screen.getByTestId('ontology-class-description'), {
+    fireEvent.change(screen.getByTestId('ontology-entity-description'), {
       target: { value: 'A person.' },
     });
 
@@ -678,12 +989,12 @@ describe('OntologyCanvasEditor', () => {
     expect(person.description).toBe('A person.');
   });
 
-  // Renaming a class has to rewrite every reference to it, or the template
+  // Renaming an entity has to rewrite every reference to it, or the template
   // silently loses the edges that pointed at the old name.
-  it('rewrites references when a class is renamed', () => {
+  it('rewrites references when an entity is renamed', () => {
     const form = renderEditor();
     fireEvent.click(screen.getByTestId('ontology-node-person'));
-    fireEvent.change(screen.getByTestId('ontology-class-type'), {
+    fireEvent.change(screen.getByTestId('ontology-entity-type'), {
       target: { value: 'human' },
     });
 
@@ -693,9 +1004,9 @@ describe('OntologyCanvasEditor', () => {
 
   // The declaration is the only thing that narrows what the model is asked for,
   // so the panel has to write it in the form the service reads: a "|"-separated
-  // list on the action class. Nothing ticked reads as "all six", which is why the
+  // list on the action entity. Nothing ticked reads as "all six", which is why the
   // first untick materialises that default before removing an entry.
-  it('narrows the action class contract through the panel', () => {
+  it('narrows the action entity contract through the panel', () => {
     const form = renderEditorWith((values) => {
       values.templates[0].config.entity.fields.push({
         type: 'action',
@@ -711,12 +1022,12 @@ describe('OntologyCanvasEditor', () => {
         (field: any) => field.type === 'action',
       ).contract;
 
-    // The contract belongs to the action class alone; no other class offers it.
+    // The contract belongs to the action entity alone; no other entity offers it.
     fireEvent.click(screen.getByTestId('ontology-node-person'));
-    expect(screen.queryByTestId('ontology-class-contract')).toBeNull();
+    expect(screen.queryByTestId('ontology-entity-contract')).toBeNull();
 
     fireEvent.click(screen.getByTestId('ontology-node-action'));
-    expect(screen.getByTestId('ontology-class-contract')).toBeTruthy();
+    expect(screen.getByTestId('ontology-entity-contract')).toBeTruthy();
 
     // Authorization is not narrowable: it decides whether the action may run, and
     // a field the extractor was never asked for cannot be stated by the document.
@@ -754,14 +1065,14 @@ describe('OntologyCanvasEditor', () => {
   it('reports what the backend would reject', () => {
     const form = renderEditor();
     fireEvent.click(screen.getByTestId('ontology-node-person'));
-    fireEvent.change(screen.getByTestId('ontology-class-description'), {
+    fireEvent.change(screen.getByTestId('ontology-entity-description'), {
       target: { value: '' },
     });
 
     // Listed twice on purpose: the summary lists every issue, the side panel
     // repeats the ones about what is selected.
     expect(
-      screen.getAllByText('Class person needs a description.').length,
+      screen.getAllByText('Entity person needs a description.').length,
     ).toBeGreaterThan(0);
     void form;
   });

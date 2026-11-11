@@ -193,7 +193,7 @@ const (
 )
 
 // validateOntologyTemplate checks the cross-references a standard ontology
-// template carries: rdfs:subClassOf (class `parent`), and a property's
+// template carries: rdfs:subClassOf (entity `parent`), and a property's
 // `domain` / `range` / `datatype`. Every one of them is a reference from one
 // field to another, so none can be checked inside the per-field loop.
 //
@@ -213,7 +213,7 @@ func validateOntologyTemplate(configMap map[string]interface{}) error {
 		return out
 	}
 
-	classes := map[string]bool{}
+	entities := map[string]bool{}
 	parentOf := map[string][]string{}
 	terms := make([]declaredTerm, 0, 8)
 	for _, f := range fieldsOf("entity") {
@@ -221,12 +221,12 @@ func validateOntologyTemplate(configMap map[string]interface{}) error {
 		if name == "" {
 			continue
 		}
-		classes[name] = true
-		if err := validateClassContractDeclaration(name, f["contract"]); err != nil {
+		entities[name] = true
+		if err := validateEntityContractDeclaration(name, f["contract"]); err != nil {
 			return err
 		}
 		terms = append(terms, declaredTerm{
-			kind:    "class",
+			kind:    "entity",
 			name:    name,
 			aliases: splitTemplateValues(f["aliases"]),
 		})
@@ -234,21 +234,21 @@ func validateOntologyTemplate(configMap map[string]interface{}) error {
 			parentOf[name] = parents
 		}
 	}
-	if len(classes) == 0 {
-		return errors.New("ontology template must declare at least one class")
+	if len(entities) == 0 {
+		return errors.New("ontology template must declare at least one entity")
 	}
 
-	// A class may declare several superclasses (`|`-separated), so both checks
+	// A entity may declare several superclasses (`|`-separated), so both checks
 	// below walk the whole parent set rather than one chain.
 	for child, parents := range parentOf {
 		for _, p := range parents {
-			if !classes[p] {
-				return fmt.Errorf("class %q declares unknown parent %q", child, p)
+			if !entities[p] {
+				return fmt.Errorf("entity %q declares unknown parent %q", child, p)
 			}
 		}
 	}
 	// A cyclic parent chain would make the inherited-attribute walk used by the
-	// ontology queries (class -> all its attributes) never terminate.
+	// ontology queries (entity -> all its attributes) never terminate.
 	for child := range parentOf {
 		seen := map[string]bool{}
 		queue := append([]string{}, parentOf[child]...)
@@ -259,7 +259,7 @@ func validateOntologyTemplate(configMap map[string]interface{}) error {
 				continue
 			}
 			if cur == child {
-				return fmt.Errorf("class %q has a cyclic parent chain", child)
+				return fmt.Errorf("entity %q has a cyclic parent chain", child)
 			}
 			seen[cur] = true
 			queue = append(queue, parentOf[cur]...)
@@ -284,11 +284,11 @@ func validateOntologyTemplate(configMap map[string]interface{}) error {
 		})
 
 		if kind == "" {
-			// Infer from the declaration: a range naming a declared class is an
+			// Infer from the declaration: a range naming a declared entity is an
 			// object property, anything else a datatype property.
 			kind = "datatype"
 			for _, r := range splitTypeList(rangeRaw) {
-				if classes[r] {
+				if entities[r] {
 					kind = "object"
 					break
 				}
@@ -304,13 +304,13 @@ func validateOntologyTemplate(configMap map[string]interface{}) error {
 				return fmt.Errorf("object property %q declares no range", name)
 			}
 			for _, d := range splitTypeList(domain) {
-				if !classes[d] {
-					return fmt.Errorf("property %q declares unknown domain class %q", name, d)
+				if !entities[d] {
+					return fmt.Errorf("property %q declares unknown domain entity %q", name, d)
 				}
 			}
 			for _, r := range splitTypeList(rangeRaw) {
-				if !classes[r] {
-					return fmt.Errorf("property %q declares unknown range class %q", name, r)
+				if !entities[r] {
+					return fmt.Errorf("property %q declares unknown range entity %q", name, r)
 				}
 			}
 			// A closed value set and a mandatory value are both datatype-property
@@ -329,8 +329,8 @@ func validateOntologyTemplate(configMap map[string]interface{}) error {
 				return fmt.Errorf("datatype property %q declares no domain", name)
 			}
 			for _, d := range splitTypeList(domain) {
-				if !classes[d] {
-					return fmt.Errorf("property %q declares unknown domain class %q", name, d)
+				if !entities[d] {
+					return fmt.Errorf("property %q declares unknown domain entity %q", name, d)
 				}
 			}
 			if datatype != "" && !ontologyDatatypeKinds[datatype] {
@@ -351,7 +351,7 @@ func validateOntologyTemplate(configMap map[string]interface{}) error {
 	return validateDeclaredAliases(terms)
 }
 
-// validateClassContractDeclaration checks the contract narrowing an action class
+// validateEntityContractDeclaration checks the contract narrowing an action entity
 // declares.
 //
 // The declaration is what narrows the contract output skeleton (see the
@@ -359,13 +359,13 @@ func validateOntologyTemplate(configMap map[string]interface{}) error {
 // dropped there, so a typo saved silently would ask the model for fewer fields
 // than the author intended — and a field the model was never asked for reads
 // downstream exactly like a field the document did not state. Only the action
-// class may declare one, because the contract is read off that class alone.
-func validateClassContractDeclaration(className string, raw interface{}) error {
+// entity may declare one, because the contract is read off that entity alone.
+func validateEntityContractDeclaration(entityName string, raw interface{}) error {
 	declared := splitTemplateValues(raw)
-	if !strings.EqualFold(className, contract.ActionClassType) {
+	if !strings.EqualFold(entityName, contract.ActionEntityType) {
 		if len(declared) > 0 {
-			return fmt.Errorf("class %q declares contract fields, which only the %q class may declare",
-				className, contract.ActionClassType)
+			return fmt.Errorf("entity %q declares contract fields, which only the %q entity may declare",
+				entityName, contract.ActionEntityType)
 		}
 		return nil
 	}
@@ -376,8 +376,8 @@ func validateClassContractDeclaration(className string, raw interface{}) error {
 	hasAuthorization := false
 	for _, name := range declared {
 		if !allowed[name] {
-			return fmt.Errorf("class %q declares unknown contract field %q (want one of %s)",
-				className, name, strings.Join(contract.ActionContractFields(), ", "))
+			return fmt.Errorf("entity %q declares unknown contract field %q (want one of %s)",
+				entityName, name, strings.Join(contract.ActionContractFields(), ", "))
 		}
 		if name == contract.AuthorizationField {
 			hasAuthorization = true
@@ -388,13 +388,13 @@ func validateClassContractDeclaration(className string, raw interface{}) error {
 	// asked for cannot be stated — so dropping it would pin every action of this
 	// model at `manual` instead of letting the document say "no approval required".
 	if len(declared) > 0 && !hasAuthorization {
-		return fmt.Errorf("class %q declares contract fields without %q, which is always asked: it decides whether the action may run",
-			className, contract.AuthorizationField)
+		return fmt.Errorf("entity %q declares contract fields without %q, which is always asked: it decides whether the action may run",
+			entityName, contract.AuthorizationField)
 	}
 	return nil
 }
 
-// declaredTerm is one class or property plus the alternative names it declares.
+// declaredTerm is one entity or property plus the alternative names it declares.
 // Aliases are resolved back to their term at compile time, so two terms claiming
 // the same string would resolve to whichever the map happened to hold.
 type declaredTerm struct {
@@ -408,16 +408,16 @@ type declaredTerm struct {
 //
 // The collision is not cosmetic: the compiler maps every alias back to its
 // canonical name (ontologyTermIndex), so two claimants would put the same row in
-// different classes depending on map order — a model graph that changes between
+// different entities depending on map order — a model graph that changes between
 // restarts. A term aliasing itself is refused for the same reason: it reads as a
 // pasted duplicate and its mapping is a no-op.
 //
-// Class and property namespaces are checked separately on purpose. A class and a
+// Class and property namespaces are checked separately on purpose. A entity and a
 // property sharing a name is a warning-level finding the model graph already
 // reports (class_property_name_collision), not an error, and the two alias maps
 // are separate so the ambiguity cannot leak across kinds.
 func validateDeclaredAliases(terms []declaredTerm) error {
-	for _, kind := range []string{"class", "property"} {
+	for _, kind := range []string{"entity", "property"} {
 		owner := map[string]string{}
 		for _, t := range terms {
 			if t.kind == kind {
@@ -566,7 +566,7 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 			}
 		}
 		// Ontology templates additionally carry cross-references between fields
-		// (class parent, property domain / range / datatype), which the per-field
+		// (entity parent, property domain / range / datatype), which the per-field
 		// loop above cannot see.
 		if kccommon.IsOntologyKind(yamlStr(configMap["kind"])) || kccommon.IsOntologyKind(yamlStr(req["kind"])) {
 			if err := validateOntologyTemplate(configMap); err != nil {

@@ -82,7 +82,7 @@ export const loadEvidenceChunks = async (
 /**
  * Shows the text an instance or an assertion was extracted from.
  *
- * This is the point of the panel it opens from: a class list says what the model
+ * This is the point of the panel it opens from: an entity list says what the model
  * believes, and the source text is the only thing that lets a reader decide
  * whether the belief is right.
  *

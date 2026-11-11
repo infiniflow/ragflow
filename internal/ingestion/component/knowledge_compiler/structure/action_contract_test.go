@@ -8,9 +8,9 @@ import (
 )
 
 // actionClassFields builds the entity field list of a template that declares an
-// action class, with the contract narrowed to `declared` (nil = no narrowing).
+// action entity, with the contract narrowed to `declared` (nil = no narrowing).
 func actionClassFields(declared any) []any {
-	action := map[string]any{"type": contract.ActionClassType}
+	action := map[string]any{"type": contract.ActionEntityType}
 	if declared != nil {
 		action["contract"] = declared
 	}
@@ -46,25 +46,25 @@ func TestDeclaredContractFieldsNarrowing(t *testing.T) {
 }
 
 func TestActionClassContractFieldsOnlyForActionClass(t *testing.T) {
-	declared, isAction := actionClassContractFields(actionClassFields("authorization"))
+	declared, isAction := actionEntityContractFields(actionClassFields("authorization"))
 	if !isAction {
-		t.Fatal("a declared action class must be recognised")
+		t.Fatal("a declared action entity must be recognised")
 	}
 	if len(declared) != 1 || declared[0] != "authorization" {
 		t.Fatalf("declared = %v, want [authorization]", declared)
 	}
 
 	// Case and surrounding space on `type` are not part of the declaration.
-	_, isAction = actionClassContractFields([]any{map[string]any{"type": " Action "}})
+	_, isAction = actionEntityContractFields([]any{map[string]any{"type": " Action "}})
 	if !isAction {
 		t.Fatal("type matching must ignore case and padding")
 	}
 
-	if _, isAction := actionClassContractFields([]any{map[string]any{"type": "title"}}); isAction {
+	if _, isAction := actionEntityContractFields([]any{map[string]any{"type": "title"}}); isAction {
 		t.Fatal("a non-action template must not be treated as declaring an action")
 	}
-	if _, isAction := actionClassContractFields(nil); isAction {
-		t.Fatal("no class fields must not be treated as declaring an action")
+	if _, isAction := actionEntityContractFields(nil); isAction {
+		t.Fatal("no entity fields must not be treated as declaring an action")
 	}
 }
 
@@ -151,7 +151,7 @@ func TestEntityPromptCarriesTheNarrowContractSkeleton(t *testing.T) {
 	nodePrompt, _ := HypergraphPrompts(parserConfig, "English")
 
 	if !strings.Contains(nodePrompt, `"contract"`) || !strings.Contains(nodePrompt, `"contract_quotes"`) {
-		t.Fatalf("action class did not reach the response skeleton:\n%s", nodePrompt)
+		t.Fatalf("action entity did not reach the response skeleton:\n%s", nodePrompt)
 	}
 	if !strings.Contains(nodePrompt, `<verbatim sentence>`) {
 		t.Fatalf("contract_quotes shape missing from the skeleton:\n%s", nodePrompt)

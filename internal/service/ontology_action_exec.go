@@ -54,7 +54,7 @@ func LoadCompiledAction(ctx context.Context, db *gorm.DB, tenantID, templateID s
 			"name_kwd":                 []string{actionName},
 			"compilation_template_ids": []string{templateID},
 			"knowledge_graph_kwd":      []string{"entity"},
-			"entity_type_kwd":          []string{contract.ActionClassType},
+			"entity_type_kwd":          []string{contract.ActionEntityType},
 		}, nil, 0, 1)
 	if err != nil {
 		return nil, err
@@ -67,7 +67,7 @@ func LoadCompiledAction(ctx context.Context, db *gorm.DB, tenantID, templateID s
 	action := &compiledAction{
 		ID:             firstStringValue(row["id"]),
 		Name:           firstStringValue(row["name_kwd"]),
-		Type:           contract.ActionClassType,
+		Type:           contract.ActionEntityType,
 		DatasetID:      firstStringValue(row["kb_id"]),
 		Contract:       contract.ParseActionContract(row["contract"]),
 		Attributes:     ontologyAttributesOf(row["attr"]),
@@ -132,7 +132,7 @@ func (s *ActionBindingService) ListModelActions(ctx context.Context, db *gorm.DB
 		map[string]interface{}{
 			"compilation_template_ids": []string{templateID},
 			"knowledge_graph_kwd":      []string{"entity"},
-			"entity_type_kwd":          []string{contract.ActionClassType},
+			"entity_type_kwd":          []string{contract.ActionEntityType},
 		}, nil, 0, 500)
 	if err != nil {
 		return nil, err
@@ -612,7 +612,7 @@ func (s *ActionBindingService) BackfillActionContracts(ctx context.Context, db *
 		map[string]interface{}{
 			"compilation_template_ids": []string{templateID},
 			"knowledge_graph_kwd":      []string{"entity"},
-			"entity_type_kwd":          []string{contract.ActionClassType},
+			"entity_type_kwd":          []string{contract.ActionEntityType},
 		}, nil, 0, 1000)
 	if err != nil {
 		return 0, err

@@ -14,6 +14,14 @@ description: >-
   (a closed value set) and `required` (every instance is expected to carry it).
   `aliases` and `enum` are stated to the model; `required` is only judged on the
   stored rows, because a model told an attribute is mandatory invents a value.
+
+  One class is not a thing but a step: `action` carries an execution `contract`
+  — the fields a reviewer needs to decide whether the step may run (who may
+  approve it, what must hold first, what changes, what follows, what happens on
+  failure, whether it is audited). The class declares which of those fields the
+  extractor is asked for, and every value is quoted from the sentence that
+  states it; a field the source never states stays empty rather than reading as
+  "no restriction".
 config:
   kind: ontology
   base_uri: http://example.org/ontology#
@@ -30,12 +38,16 @@ config:
       the whole vocabulary: your task is to find the class instances the
       articles support, state their attribute values, and connect them along
       the declared object properties. Never invent a class, an attribute or a
-      property.
+      property. An article that describes how work is done also states steps:
+      those are `action` entities, and their execution contract is filled from
+      the sentence that states each field.
     rules_for_entities: |
       - `type` MUST be one of the classes below. Never invent a class, and never merge two classes into one entity.
       - `name` MUST be the wording the article uses. Merge spelling and alias variants of the same entity into one name.
       - Emit an entity only when the source states something about it; do not emit bare mentions.
       - Keep the entity's own language; do not translate names.
+      - Emit an `action` only for work the source says is performed. A capability ("can export files"), a purpose statement or a definition is not an action.
+      - One action per step. Do not split a step into its separate state changes: they belong in that action's contract, not in a second action.
     rules_for_relations: |
       - Each object property is emitted as a relation. `type` MUST be one of the object properties below; never invent one.
       - An object property may only run from its declared `domain` to its declared `range`. If either endpoint's class does not match the declaration, do NOT emit the relation.
@@ -155,6 +167,25 @@ config:
         rule: |
           - Use this class when the source describes a physical object; a published standard or a piece of software is a `work`.
           - Do not emit an artifact for a generic category ("a bridge") with no identified instance.
+      # The one class that carries an execution contract. A step is not a
+      # description of a thing: it is something someone is permitted or required
+      # to do, and the fields below are what a reviewer needs to decide whether it
+      # may run. `contract` names the fields this model asks the extractor for —
+      # the template editor shows them as a checklist on this class, and the
+      # extractor quotes the sentence that states each one. Narrow the list when a
+      # model's steps are pure lookups, but never drop `authorization`: a step
+      # whose approver was never asked for reads exactly like a step anyone may
+      # run unattended.
+      - type: action
+        label: Action
+        description: A step someone performs — an operation, procedure step, approval or decision that changes state, together with the execution contract the source states for it.
+        parent: ''
+        aliases: [step, operation]
+        rule: |
+          - Use the source's wording for the step; drop numbering prefixes and honorifics.
+          - A decision point ("if the amount exceeds 500,000") is one action with a stated branch, not two actions.
+          - Do not emit an action for a heading, a section title or a schedule.
+        contract: authorization|preconditions|atomic_effects|follow_ups|failure_policy|audit_required
   relation:
     description: >-
       The ontology properties. `kind: object` entries join two individuals and
@@ -329,10 +360,40 @@ config:
         rule: |
           - Direction: narrower -> broader. This is a classification edge, not a name relation.
           - Do not emit is_a between two entities of the same name.
+      # Action edges. An action that hangs under no entity cannot be placed: it
+      # is a step of nothing, so the two edges below are the ones a procedure
+      # document is expected to state for every step it describes.
+      - type: performed_by
+        kind: object
+        domain: action
+        range: person|organization
+        label: performed_by
+        description: The person or organization that carries the step out or approves it.
+        rule: |
+          - Direction: action -> who performs or approves it.
+          - An approver named for the step belongs here, even when a different party executes it.
+      - type: acts_on
+        kind: object
+        domain: action
+        range: work|artifact|concept|place|event
+        label: acts_on
+        description: The thing the step operates on — the record, device, place or event it changes.
+        rule: |
+          - Direction: action -> the thing it acts on.
+          - Use the class the source names ("the application", "the account"), not a generic "the record".
+      - type: requires
+        kind: object
+        domain: action
+        range: work|artifact|concept
+        label: requires
+        description: An artifact, document or condition the step depends on and that the source names elsewhere.
+        rule: |
+          - Direction: action -> the thing it needs to exist first.
+          - A one-step requirement stated in the step's own sentence belongs in that action's contract, not in a second edge.
       # ---------------- Datatype properties: individual -> literal ----------------
       - type: alias
         kind: datatype
-        domain: agent|place|work|event|concept|taxon|artifact
+        domain: agent|place|work|event|concept|taxon|artifact|action
         datatype: list
         label: alias
         description: Alternative names, spellings or vernacular names of an entity.
@@ -488,4 +549,13 @@ config:
         datatype: string
         label: purpose
         description: The stated purpose or function of the artifact.
+      - type: action_type
+        kind: datatype
+        domain: action
+        datatype: string
+        enum: [operation, decision, validation, interaction]
+        label: action_type
+        description: What kind of step this is — an operation that changes state, a decision that branches, a validation that only checks, or an interaction with a person.
+        rule: |
+          - Omit the attribute rather than inventing a kind the source does not support.
   global_rules: ''

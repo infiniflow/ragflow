@@ -46,11 +46,11 @@ import (
 // column or migrating data.
 const ActionContractVersion = 1
 
-// ActionClassType is the ontology class an action is declared under. An action is
+// ActionEntityType is the ontology entity an action is declared under. An action is
 // an ordinary ABox instance that additionally carries a contract — not a separate
 // layer, so the review queue, the version stamp and the retrieval filters all
 // apply to it unchanged.
-const ActionClassType = "action"
+const ActionEntityType = "action"
 
 // AuthorizationField is the only field that can be explicitly absent from the
 // document ("no approval required"). It decides whether an action may ever be
@@ -200,7 +200,7 @@ type ActionContractField struct {
 type ActionContract struct {
 	fields map[string]ActionContractField
 	// required is the declaration this contract was extracted under (the action
-	// class's `contract` narrowing, see NormalizeDeclared). It travels with the
+	// entity's `contract` narrowing, see NormalizeDeclared). It travels with the
 	// contract — serialised as `_d` — because everything that judges a row later
 	// (the review queue, the action workbench, the agent tool) reads the row, not
 	// the template, and would otherwise call a field the extractor was never asked
@@ -329,7 +329,7 @@ func (c ActionContract) Clone() ActionContract {
 
 // SetDeclared records the declaration this contract is judged against.
 //
-// It is written by the compiler from the action class's `contract` narrowing, so
+// It is written by the compiler from the action entity's `contract` narrowing, so
 // every later reader can judge the row without loading the template.
 func (c *ActionContract) SetDeclared(names []string) {
 	c.required = NormalizeDeclared(names)

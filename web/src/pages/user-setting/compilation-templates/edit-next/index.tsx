@@ -52,7 +52,7 @@ export default function EditNextCompilationTemplate() {
     ({
       isOntology,
       templateId,
-      ontologyClasses,
+      ontologyEntities,
       ontologyProperties,
     }: CompilationTemplateGroupEditorState) => (
       <header className="shrink-0 px-5 py-4 border-b border-border-button flex gap-3 items-center">
@@ -66,7 +66,7 @@ export default function EditNextCompilationTemplate() {
           {isOntology && (
             <OntologyInspectSheet
               templateId={templateId}
-              classes={ontologyClasses}
+              entities={ontologyEntities}
               properties={ontologyProperties}
             />
           )}

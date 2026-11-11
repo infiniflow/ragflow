@@ -41,7 +41,7 @@ const SelectedTemplateIndex = 0;
 export type CompilationTemplateGroupEditorState = {
   isOntology: boolean;
   templateId?: string;
-  ontologyClasses: string[];
+  ontologyEntities: string[];
   ontologyProperties: string[];
 };
 
@@ -103,8 +103,8 @@ export function CompilationTemplateGroupEditor({
   );
 
   // What the model declares, which is what the compiled-output panel can be
-  // asked about: an instance list is per class, an assertion list per property.
-  const ontologyClasses = useMemo(
+  // asked about: an instance list is per entity, an assertion list per property.
+  const ontologyEntities = useMemo(
     () =>
       (entitySection?.fields ?? [])
         .map((field) => String(field.type ?? ''))
@@ -137,7 +137,7 @@ export function CompilationTemplateGroupEditor({
       {renderHeader?.({
         isOntology,
         templateId,
-        ontologyClasses,
+        ontologyEntities,
         ontologyProperties,
       })}
       <Form {...form}>

@@ -125,13 +125,13 @@ func renderFields(fields []any, lang string) (string, string) {
 // type's "rule" text but absent from the skeleton is silently dropped by the
 // model — so these keys must be rendered into the skeleton here.
 // attrIndex is optional and only used for the entity stage: it carries the
-// datatype attributes each class owns (inheritance included), so the prompt can
+// datatype attributes each entity owns (inheritance included), so the prompt can
 // tell the model both which attributes to fill and under which key. It is
 // variadic so the relation stage — and the existing tests — can omit it.
 func renderTypeFields(fields []any, lang, kind string, extraFields []any, attrIndex ...map[string][]ontologyAttributeSpec) (string, string) {
-	var attrsByClass map[string][]ontologyAttributeSpec
+	var attrsByEntity map[string][]ontologyAttributeSpec
 	if len(attrIndex) > 0 {
-		attrsByClass = attrIndex[0]
+		attrsByEntity = attrIndex[0]
 	}
 	var lines []string
 	var typeValues []string
@@ -150,7 +150,7 @@ func renderTypeFields(fields []any, lang, kind string, extraFields []any, attrIn
 			lines = append(lines, "  description: "+desc)
 		}
 		// The declared alternatives for this term. They are stated so the model
-		// recognises a document's own wording as this class or property instead
+		// recognises a document's own wording as this entity or property instead
 		// of proposing a new one; the projection maps an alias back to the
 		// declaration, so answering with one costs no accuracy.
 		if aliases := splitValueList(f["aliases"]); len(aliases) > 0 {
@@ -179,10 +179,10 @@ func renderTypeFields(fields []any, lang, kind string, extraFields []any, attrIn
 			lines = append(lines, "  parent: "+parent)
 		}
 		// domain / range carry the ontology's typing as structure rather than
-		// prose: for a relation field they name the class the property runs from
+		// prose: for a relation field they name the entity the property runs from
 		// and to. They are rendered on their own lines so the model reads the
 		// constraint directly instead of having it restated inside `rule`, and so
-		// the same declarations can be read back to draw the class-level model
+		// the same declarations can be read back to draw the entity-level model
 		// graph without parsing rule text.
 		if dom := strings.TrimSpace(firstStringOf(f["domain"])); dom != "" {
 			lines = append(lines, "  domain: "+dom)
@@ -193,12 +193,12 @@ func renderTypeFields(fields []any, lang, kind string, extraFields []any, attrIn
 		if rule := common.Localize(f["rule"], lang); rule != "" {
 			lines = append(lines, "  rule: "+rule)
 		}
-		// The class's own + inherited datatype attributes. This list is what
+		// The entity's own + inherited datatype attributes. This list is what
 		// makes the model emit them at all, and what the projection uses to
 		// decide which values reach the row's `attr` json column (ontology.md
 		// §4.6) — so it must not be left implicit in `rule` prose.
-		if kind == "entity" && len(attrsByClass) > 0 {
-			if attrs := attrsByClass[typ]; len(attrs) > 0 {
+		if kind == "entity" && len(attrsByEntity) > 0 {
+			if attrs := attrsByEntity[typ]; len(attrs) > 0 {
 				parts := make([]string, 0, len(attrs))
 				for _, a := range attrs {
 					entry := a.name
@@ -319,7 +319,7 @@ func HypergraphPrompts(parserConfig map[string]any, lang string) (nodePrompt, ed
 	var entFieldsText, entSkel, relFieldsText, relSkel string
 	if usesTemplateShape {
 		// The action contract reaches the prompt only through a template that
-		// declares the action class: the six fields are system-fixed, so a model
+		// declares the action entity: the six fields are system-fixed, so a model
 		// without actions must not be told about them (it would invent actions).
 		entityOutputFields := withActionContractFields(configOutputFields(entitiesCfg), entFields)
 		entFieldsText, entSkel = renderTypeFields(entFields, lang, "entity", entityOutputFields, ontologyAttributeSpecs(parserConfig))

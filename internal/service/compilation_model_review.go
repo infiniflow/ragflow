@@ -617,7 +617,7 @@ func reviewActionCount(ctx context.Context, tenantID, templateID string, dataset
 	filter := map[string]interface{}{
 		"compilation_template_ids": []string{templateID},
 		"knowledge_graph_kwd":      []string{"entity"},
-		"entity_type_kwd":          []string{contract.ActionClassType},
+		"entity_type_kwd":          []string{contract.ActionEntityType},
 	}
 	applyReviewStatusFilter(filter, status)
 	if field != "" {

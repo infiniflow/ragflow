@@ -69,8 +69,8 @@ interface OntologyReviewSheetProps {
   onOpenChange?: (open: boolean) => void;
   /** Rendered inside the sheet's trigger, so the sheet owns its own opener. */
   trigger?: ReactNode;
-  /** Declared classes / properties, so the filters can offer what is not on screen. */
-  classes?: string[];
+  /** Declared entities / properties, so the filters can offer what is not on screen. */
+  entities?: string[];
   properties?: string[];
 }
 
@@ -150,14 +150,14 @@ export function OntologyReviewSheet({
   open,
   onOpenChange,
   trigger,
-  classes,
+  entities,
   properties,
 }: OntologyReviewSheetProps) {
   const { t } = useTranslation();
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
   const [status, setStatus] =
     useState<AssertionReviewStatus>(DefaultReviewStatus);
-  const [classType, setClassType] = useState('');
+  const [entityType, setClassType] = useState('');
   const [property, setProperty] = useState('');
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [activeKey, setActiveKey] = useState('');
@@ -178,11 +178,11 @@ export function OntologyReviewSheet({
   const params = useMemo<IAssertionReviewRequestParams>(
     () => ({
       status,
-      class: classType || undefined,
+      class: entityType || undefined,
       property: property || undefined,
       limit: ReviewPageSize,
     }),
-    [status, classType, property],
+    [status, entityType, property],
   );
 
   const { queue, loading } = useFetchAssertionReview(
@@ -217,22 +217,22 @@ export function OntologyReviewSheet({
   );
 
   /**
-   * The model's declared classes and properties, plus whatever this page shows.
+   * The model's declared entities and properties, plus whatever this page shows.
    *
-   * The declared list is what a filter is for — finding a class that is not on
+   * The declared list is what a filter is for — finding an entity that is not on
    * the current page — while the page's own values keep the filter usable when
    * the sheet was opened without the declaration.
    */
   const classOptions = useMemo(
     () =>
       uniqueValues([
-        ...(classes ?? []),
+        ...(entities ?? []),
         ...items
           .filter((item) => item.kind === 'entity')
           .map((item) => item.type ?? '')
           .filter(Boolean),
       ]).map((name) => ({ label: name, value: name })),
-    [classes, items],
+    [entities, items],
   );
 
   const propertyOptions = useMemo(
@@ -600,7 +600,7 @@ export function OntologyReviewSheet({
               onChange={handleStatusChange}
             />
             <SelectWithSearch
-              value={classType}
+              value={entityType}
               options={[{ label: '—', value: '' }, ...classOptions]}
               onChange={handleClassChange}
               allowClear
@@ -642,7 +642,7 @@ export function OntologyReviewSheet({
             <div className="rounded border border-border-button p-2 text-text-secondary">
               {t('knowledgeCompilation.ontologyInspect.truncated', {
                 defaultValue:
-                  'Showing a capped window, not everything in scope. Narrow the datasets or the class to see the rest.',
+                  'Showing a capped window, not everything in scope. Narrow the datasets or the entity to see the rest.',
               })}
               {(queue.skipped_dataset_ids ?? []).length > 0 && (
                 <div className="mt-1 break-all">

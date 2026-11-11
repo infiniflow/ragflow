@@ -215,7 +215,7 @@ export function OntologyActionWorkbenchSheet({
               <span className="text-text-secondary">
                 {t('knowledgeCompilation.ontologyInspect.actionsEmpty', {
                   defaultValue:
-                    'This model compiled no actions. An action is an instance of the `action` class.',
+                    'This model compiled no actions. An action is an instance of the `action` entity.',
                 })}
               </span>
             )}

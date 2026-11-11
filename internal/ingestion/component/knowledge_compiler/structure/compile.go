@@ -253,11 +253,11 @@ func buildRows(ctx context.Context, deps common.Deps, cfg CompileConfig, nodes, 
 	}
 
 	// Alias resolution is an ontology idea: the other kinds' `type` values are not a
-	// declared class vocabulary, so mapping them would be inventing a rule. An
+	// declared entity vocabulary, so mapping them would be inventing a rule. An
 	// empty index leaves every observed name exactly as it came.
-	classAlias, propAlias := map[string]string{}, map[string]string{}
+	entityAlias, propAlias := map[string]string{}, map[string]string{}
 	if common.IsOntologyKind(stringOf(cfg.ParserConfig["kind"])) {
-		classAlias, propAlias = ontologyTermIndex(cfg.ParserConfig)
+		entityAlias, propAlias = ontologyTermIndex(cfg.ParserConfig)
 	}
 	droppedValues := 0
 	rows := make([]common.Product, 0, len(specs))
@@ -281,11 +281,11 @@ func buildRows(ctx context.Context, deps common.Deps, cfg CompileConfig, nodes, 
 			// entity_type_kwd is only stamped when the payload has a type —
 			// omits the column entirely for an untyped entity rather
 			// than writing a synthesized "other".
-			// A declared alias answers for the class it names, so the row is
-			// stamped with the canonical class rather than the spelling the model
+			// A declared alias answers for the entity it names, so the row is
+			// stamped with the canonical entity rather than the spelling the model
 			// happened to pick. An undeclared name passes through: drift stays
 			// visible (see ontologyTermIndex).
-			typ := resolveDeclaredType(classAlias, stringOf(s.payload["type"]))
+			typ := resolveDeclaredType(entityAlias, stringOf(s.payload["type"]))
 			if typ != "" {
 				meta["entity_type"] = typ
 			}
@@ -358,7 +358,7 @@ func isSelfLoopRelation(payload map[string]any, sourceField, targetField string)
 	return isSelfLoop(from, to)
 }
 
-// entityTypeKey normalizes an entity name for the name → class map. Only case
+// entityTypeKey normalizes an entity name for the name → entity map. Only case
 // and surrounding whitespace are folded: the edge stage is told to reuse the
 // entity list verbatim, so any other difference means a different entity
 // rather than a variant spelling of the same one.
@@ -366,7 +366,7 @@ func entityTypeKey(name string) string {
 	return strings.ToLower(strings.TrimSpace(name))
 }
 
-// stampRelationEndpointTypes writes each relation's endpoint classes into its
+// stampRelationEndpointTypes writes each relation's endpoint entities into its
 // from_type / to_type meta, resolved from the entity rows of the same compile.
 //
 // These two keys are what the ontology model graph is drawn and counted from,
@@ -415,7 +415,7 @@ func stampRelationEndpointTypes(prods []common.Product) {
 // An ontology template declares one entry per property in its relation section:
 // `type` is the property name, `kind` says whether it joins two individuals
 // ("object") or gives one a literal ("datatype"), and `domain` / `range` name
-// the classes it runs between. `domain` and `range` take a "|"-separated list
+// the entities it runs between. `domain` and `range` take a "|"-separated list
 // when a property is legitimately polymorphic.
 
 // ontologyProperty is one declared property, keyed by its `type`.
@@ -468,7 +468,7 @@ func dedupeValues(raw []string) []string {
 	return out
 }
 
-// splitPipeList splits a "|"-separated class list, trimming and deduplicating.
+// splitPipeList splits a "|"-separated entity list, trimming and deduplicating.
 func splitPipeList(raw string) []string {
 	parts := strings.Split(raw, "|")
 	out := make([]string, 0, len(parts))
@@ -483,19 +483,19 @@ func splitPipeList(raw string) []string {
 	return out
 }
 
-// declaredOntology reads the classes and properties a template declares. A
+// declaredOntology reads the entities and properties a template declares. A
 // property's kind is inferred from its range when the template omits `kind` — a
-// range that names a declared class means an object property — mirroring
+// range that names a declared entity means an object property — mirroring
 // validateOntologyTemplate in the template service.
 func declaredOntology(parserConfig map[string]any) (map[string]bool, map[string]ontologyProperty) {
-	classes := map[string]bool{}
+	entities := map[string]bool{}
 	for _, raw := range configFields(common.GetMap(parserConfig, "entity")) {
 		f, ok := raw.(map[string]any)
 		if !ok {
 			continue
 		}
 		if name := strings.TrimSpace(stringOf(f["type"])); name != "" {
-			classes[name] = true
+			entities[name] = true
 		}
 	}
 	props := map[string]ontologyProperty{}
@@ -519,7 +519,7 @@ func declaredOntology(parserConfig map[string]any) (map[string]bool, map[string]
 		if p.kind == "" {
 			p.kind = "datatype"
 			for _, r := range p.ranges {
-				if classes[r] {
+				if entities[r] {
 					p.kind = "object"
 					break
 				}
@@ -527,7 +527,7 @@ func declaredOntology(parserConfig map[string]any) (map[string]bool, map[string]
 		}
 		props[name] = p
 	}
-	return classes, props
+	return entities, props
 }
 
 // boolValue reads a declared boolean. The template editor writes a YAML bool, a
@@ -557,8 +557,8 @@ func boolValue(v any) bool {
 //
 // Only aliases the template declares are mapped: an undeclared name passes
 // through untouched, because hiding drift is worse than reporting it.
-func ontologyTermIndex(parserConfig map[string]any) (classes, properties map[string]string) {
-	classes = map[string]string{}
+func ontologyTermIndex(parserConfig map[string]any) (entities, properties map[string]string) {
+	entities = map[string]string{}
 	properties = map[string]string{}
 	add := func(into map[string]string, canonical string, raw any) {
 		into[strings.ToLower(canonical)] = canonical
@@ -574,7 +574,7 @@ func ontologyTermIndex(parserConfig map[string]any) (classes, properties map[str
 			continue
 		}
 		if name := strings.TrimSpace(stringOf(f["type"])); name != "" {
-			add(classes, name, f["aliases"])
+			add(entities, name, f["aliases"])
 		}
 	}
 	for _, raw := range configFields(common.GetMap(parserConfig, "relation")) {
@@ -586,7 +586,7 @@ func ontologyTermIndex(parserConfig map[string]any) (classes, properties map[str
 			add(properties, name, f["aliases"])
 		}
 	}
-	return classes, properties
+	return entities, properties
 }
 
 // resolveDeclaredType maps an observed type name to its canonical declared name,
@@ -603,16 +603,16 @@ func resolveDeclaredType(index map[string]string, observed string) string {
 }
 
 // filterOutOfOntologyRelations drops object-property assertions whose endpoint
-// classes contradict the template's declaration.
+// entities contradict the template's declaration.
 //
 // This is the ONLY place the declared domain / range is enforced. The prompt
 // states it in prose, and the relation stage never even receives the entities'
-// classes (the "## Known Entities" list is names only), so the model can and
+// entities (the "## Known Entities" list is names only), so the model can and
 // does violate it — see ontology.md §8. Enforcing it here costs no extra model
 // call.
 //
 // Two deliberate NON-drops:
-//   - an endpoint whose class is unknown (left unstamped because that entity was
+//   - an endpoint whose entity is unknown (left unstamped because that entity was
 //     not compiled in this batch) is kept: the declaration is not contradicted,
 //     and dropping would lose data on partial batches — the ontology model graph
 //     reports it as an unattributed relation instead;
@@ -625,18 +625,18 @@ func resolveDeclaredType(index map[string]string, observed string) string {
 //
 // This is the ONLY place the declared domain / range is enforced. The prompt
 // states it in prose, and the relation stage never even receives the entities'
-// classes (the "## Known Entities" list is names only), so the model can and
+// entities (the "## Known Entities" list is names only), so the model can and
 // does violate it — see ontology.md §8. Enforcing it here costs no extra model
 // call.
 //
 // Three deliberate NON-drops:
-//   - an endpoint whose class is unknown (left unstamped because that entity was
+//   - an endpoint whose entity is unknown (left unstamped because that entity was
 //     not compiled in this batch) is kept: the declaration is not contradicted,
 //     and dropping would lose data on partial batches — the ontology model graph
 //     reports it as an unattributed relation instead;
 //   - an assertion whose property the template does not declare at all is kept:
 //     vocabulary drift must be visible, not hidden;
-//   - an endpoint class that is a DECLARED DESCENDANT of the declared one is
+//   - an endpoint entity that is a DECLARED DESCENDANT of the declared one is
 //     kept: rdfs:subClassOf is transitive, so a person satisfies a property
 //     declared on agent (ontology.md §8 (20) — the model graph expands
 //     inheritance with ancestorChain, and a writer that did not would silently
@@ -646,11 +646,11 @@ func resolveDeclaredType(index map[string]string, observed string) string {
 // write them down: ontology.md §2.7's feedback loop cannot start from evidence
 // that was never recorded (§8 (18)).
 func filterOutOfOntologyRelations(prods []common.Product, parserConfig map[string]any) (kept, rejected []common.Product) {
-	classes, props := declaredOntology(parserConfig)
-	if len(classes) == 0 || len(props) == 0 {
+	entities, props := declaredOntology(parserConfig)
+	if len(entities) == 0 || len(props) == 0 {
 		return prods, nil
 	}
-	ancestors := ontologyClassAncestors(parserConfig)
+	ancestors := ontologyEntityAncestors(parserConfig)
 	inList := func(list []string, want string) bool {
 		for _, v := range list {
 			if v == want {
@@ -659,8 +659,8 @@ func filterOutOfOntologyRelations(prods []common.Product, parserConfig map[strin
 		}
 		return false
 	}
-	// satisfies reports whether an observed endpoint class is admissible: either
-	// the declaration names it, or it is a declared descendant of a named class.
+	// satisfies reports whether an observed endpoint entity is admissible: either
+	// the declaration names it, or it is a declared descendant of a named entity.
 	satisfies := func(observed string, declared []string) bool {
 		if observed == "" || len(declared) == 0 {
 			return true
@@ -724,12 +724,12 @@ func droppedRelation(p common.Product, side, prop, observed string, declared []s
 	return out
 }
 
-// ontologyClassAncestors maps each declared class to its declared ancestors,
+// ontologyEntityAncestors maps each declared entity to its declared ancestors,
 // nearest first (breadth-first over `parent`, `|`-separated), with cycles cut.
 // It is the writer-side twin of the model graph's ancestorChain: without it the
 // declared domain / range would reject subclass instances that standard
 // semantics admit (ontology.md §8 (20)).
-func ontologyClassAncestors(parserConfig map[string]any) map[string][]string {
+func ontologyEntityAncestors(parserConfig map[string]any) map[string][]string {
 	parents := map[string][]string{}
 	for _, raw := range configFields(common.GetMap(parserConfig, "entity")) {
 		f, ok := raw.(map[string]any)
@@ -773,16 +773,16 @@ type ontologyAttributeSpec struct {
 	enum     []string
 }
 
-// ontologyAttributeSpecs maps each declared class to the datatype attributes it
+// ontologyAttributeSpecs maps each declared entity to the datatype attributes it
 // carries — its own plus the ones it inherits.
 //
 // Inheritance matters: rdfs:subClassOf says a subclass has every attribute its
 // parent has, so an attribute declared on `agent` belongs to `person` and
-// `organization` too. A class may declare several parents (`|`-separated), so
+// `organization` too. A entity may declare several parents (`|`-separated), so
 // the walk is breadth-first over the whole parent set, nearest first — the same
-// order ontologyClassAncestors returns. Own attributes come first, then
+// order ontologyEntityAncestors returns. Own attributes come first, then
 // inherited ones, so a subclass overrides its parent for the same name, and a
-// class closer to the subclass overrides a farther ancestor. Order follows
+// entity closer to the subclass overrides a farther ancestor. Order follows
 // declaration order in the template, keeping the prompt text and stored keys
 // deterministic.
 func ontologyAttributeSpecs(parserConfig map[string]any) map[string][]ontologyAttributeSpec {
@@ -825,11 +825,11 @@ func ontologyAttributeSpecs(parserConfig map[string]any) map[string][]ontologyAt
 	}
 
 	out := make(map[string][]ontologyAttributeSpec, len(order))
-	for _, class := range order {
+	for _, entity := range order {
 		seenName := map[string]bool{}
-		seenClass := map[string]bool{class: true}
+		seenClass := map[string]bool{entity: true}
 		attrs := []ontologyAttributeSpec{}
-		queue := []string{class}
+		queue := []string{entity}
 		for len(queue) > 0 {
 			cur := queue[0]
 			queue = queue[1:]
@@ -850,22 +850,22 @@ func ontologyAttributeSpecs(parserConfig map[string]any) map[string][]ontologyAt
 			}
 		}
 		if len(attrs) > 0 {
-			out[class] = attrs
+			out[entity] = attrs
 		}
 	}
 	return out
 }
 
-// datatypePropertiesByClass is ontologyAttributeSpecs reduced to the attribute
+// datatypePropertiesByEntity is ontologyAttributeSpecs reduced to the attribute
 // names, which is all the projection needs.
-func datatypePropertiesByClass(parserConfig map[string]any) map[string][]string {
+func datatypePropertiesByEntity(parserConfig map[string]any) map[string][]string {
 	out := map[string][]string{}
-	for class, specs := range ontologyAttributeSpecs(parserConfig) {
+	for entity, specs := range ontologyAttributeSpecs(parserConfig) {
 		names := make([]string, 0, len(specs))
 		for _, s := range specs {
 			names = append(names, s.name)
 		}
-		out[class] = names
+		out[entity] = names
 	}
 	return out
 }
@@ -880,7 +880,7 @@ func datatypePropertiesByClass(parserConfig map[string]any) map[string][]string 
 //     entity `output_fields[]` scalars would produce);
 //   - a nested object under one of the entity section's declared
 //     `output_fields[].name` values — the `shape` mechanism, which is the
-//     practical choice when each class carries a different attribute set.
+//     practical choice when each entity carries a different attribute set.
 //
 // Only DECLARED attributes survive, so a model that invents one cannot smuggle
 // it into the filterable `attr` column.

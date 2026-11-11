@@ -15,7 +15,7 @@ import (
 // The design names one new output field, `contract_quotes` (the verbatim sentence
 // per contract field). A value needs a companion: `contract` carries the six
 // values, `contract_quotes` carries where each one was read. Both are requested
-// only when the template declares an `action` class, so a model that has no
+// only when the template declares an `action` entity, so a model that has no
 // actions pays nothing for this (see withActionContractFields).
 //
 // Everything the extraction produces is a proposal. Whether a field ends up
@@ -28,13 +28,13 @@ import (
 var actionContractFieldNames = contract.ActionContractFields()
 
 // withActionContractFields appends the two contract output fields to the entity
-// stage when (and only when) the template declares an action class.
+// stage when (and only when) the template declares an action entity.
 //
 // The prompt is the only place the model learns that these keys exist: a key
-// described inside a class's `rule` prose but missing from the response skeleton
+// described inside a entity's `rule` prose but missing from the response skeleton
 // is silently dropped (see renderTypeFields), so the skeleton must carry them.
-func withActionContractFields(extra []any, classFields []any) []any {
-	declared, isAction := actionClassContractFields(classFields)
+func withActionContractFields(extra []any, entityFields []any) []any {
+	declared, isAction := actionEntityContractFields(entityFields)
 	if !isAction {
 		return extra
 	}
@@ -56,25 +56,25 @@ func withActionContractFields(extra []any, classFields []any) []any {
 	return out
 }
 
-// actionClassContractFields returns which contract fields this model asks for,
-// and whether it declares an action class at all.
+// actionEntityContractFields returns which contract fields this model asks for,
+// and whether it declares an action entity at all.
 //
 // A template can narrow the contract: a model whose actions are pure lookups
 // should not be paying prompt tokens for `failure_policy`, and a model that
 // declares nothing gets all six — the safe reading, because "this action needs
 // no fields" is the one interpretation that lets something run unchecked.
 //
-// The declaration lives on the class as a "|"-separated string (the same shape
+// The declaration lives on the entity as a "|"-separated string (the same shape
 // `aliases` uses); the service accepts a list too, because a template written by
 // hand may carry either.
-func actionClassContractFields(classFields []any) ([]string, bool) {
-	for _, raw := range classFields {
+func actionEntityContractFields(entityFields []any) ([]string, bool) {
+	for _, raw := range entityFields {
 		field, ok := raw.(map[string]any)
 		if !ok {
 			continue
 		}
 		typ, _ := field["type"].(string)
-		if !strings.EqualFold(strings.TrimSpace(typ), contract.ActionClassType) {
+		if !strings.EqualFold(strings.TrimSpace(typ), contract.ActionEntityType) {
 			continue
 		}
 		return declaredContractFields(field["contract"]), true
@@ -82,7 +82,7 @@ func actionClassContractFields(classFields []any) ([]string, bool) {
 	return nil, false
 }
 
-// declaredContractFields normalises a class's declaration against the fixed six.
+// declaredContractFields normalises a entity's declaration against the fixed six.
 //
 // The normalisation itself lives in contract.NormalizeDeclared, because the same
 // list is what the stored contract is later judged against: two normalisations
@@ -104,10 +104,10 @@ func declaredContractFields(raw any) []string {
 	return contract.NormalizeDeclared(candidates)
 }
 
-// actionDeclaredFields returns the contract fields a template's action class asks
-// for, or nil when the template declares no action class.
+// actionDeclaredFields returns the contract fields a template's action entity asks
+// for, or nil when the template declares no action entity.
 func actionDeclaredFields(parserConfig map[string]any) []string {
-	declared, isAction := actionClassContractFields(configFields(common.GetMap(parserConfig, "entity")))
+	declared, isAction := actionEntityContractFields(configFields(common.GetMap(parserConfig, "entity")))
 	if !isAction {
 		return nil
 	}

@@ -15,15 +15,15 @@
  */
 
 import {
-  OntologyClassKeys,
+  OntologyEntityKeys,
   OntologyPropertyKeys,
-  addClass,
+  addEntity,
   addProperty,
   draftFromSections,
   effectiveKind,
-  removeClass,
+  removeEntity,
   removeProperty,
-  renameClass,
+  renameEntity,
   sectionsFromDraft,
   splitTypeList,
   validateDraft,
@@ -89,13 +89,13 @@ describe('ontology editor model', () => {
   // The one guarantee that matters: whatever the canvas does, the two sections it
   // saves carry the template's key sets, in the template's order.
   it('writes fields with the canonical key order', () => {
-    let d = addClass(draft());
+    let d = addEntity(draft());
     d = addProperty(d, 'object');
     d = addProperty(d, 'datatype');
     const sections = sectionsFromDraft(d);
 
     expect(Object.keys(sections.entity.fields![3])).toEqual([
-      ...OntologyClassKeys,
+      ...OntologyEntityKeys,
     ]);
     expect(Object.keys(sections.relation.fields![2])).toEqual([
       ...OntologyPropertyKeys,
@@ -103,6 +103,17 @@ describe('ontology editor model', () => {
     expect(Object.keys(sections.relation.fields![3])).toEqual([
       ...OntologyPropertyKeys,
     ]);
+  });
+
+  // The name a new node starts with is what the reader sees on the canvas, so it
+  // has to say what the thing is: a template declares entities, not classes.
+  it('names a new entity after the declared vocabulary', () => {
+    let d = addEntity({ entities: [], properties: [] });
+    expect(d.entities[0].type).toBe('new_entity');
+    expect(d.entities[0].label).toBe('New entity');
+
+    d = addEntity(d);
+    expect(d.entities[1].type).toBe('new_entity_2');
   });
 
   it('fills a missing key with an empty string instead of dropping it', () => {
@@ -141,11 +152,11 @@ describe('ontology editor model', () => {
   it('mirrors the service: names, references and datatypes', () => {
     expect(validateDraft(draft())).toEqual([]);
 
-    // A parent that is not a declared class.
+    // A parent that is not a declared entity.
     let d = draft();
     d = {
       ...d,
-      classes: d.classes.map((c) =>
+      entities: d.entities.map((c) =>
         c.type === 'person' ? { ...c, parent: 'nobody' } : c,
       ),
     };
@@ -155,14 +166,14 @@ describe('ontology editor model', () => {
     d = draft();
     d = {
       ...d,
-      classes: d.classes.map((c) => ({
+      entities: d.entities.map((c) => ({
         ...c,
         parent: c.type === 'agent' ? 'person' : c.parent,
       })),
     };
     expect(codes(d)).toContain('cyclic_parent');
 
-    // A range that is not a class.
+    // A range that is not an entity.
     d = draft();
     d = {
       ...d,
@@ -184,52 +195,54 @@ describe('ontology editor model', () => {
 
     // Duplicate names and missing descriptions.
     d = draft();
-    d = { ...d, classes: [...d.classes, { ...d.classes[1] }] };
-    expect(codes(d)).toContain('duplicate_class');
+    d = { ...d, entities: [...d.entities, { ...d.entities[1] }] };
+    expect(codes(d)).toContain('duplicate_entity');
 
     d = draft();
     d = {
       ...d,
-      classes: d.classes.map((c) =>
+      entities: d.entities.map((c) =>
         c.type === 'place' ? { ...c, description: '' } : c,
       ),
     };
-    expect(codes(d)).toContain('class_without_description');
+    expect(codes(d)).toContain('entity_without_description');
   });
 
   // The service infers the kind when `kind` is empty; the editor has to agree,
   // or it would show one thing and save another.
   it('infers the kind the way the service does', () => {
-    const classes = new Set(['person', 'place']);
-    expect(effectiveKind({ kind: '', range: 'place' }, classes)).toBe('object');
+    const entities = new Set(['person', 'place']);
+    expect(effectiveKind({ kind: '', range: 'place' }, entities)).toBe(
+      'object',
+    );
     expect(
-      effectiveKind({ kind: '', range: '', datatype: 'date' }, classes),
+      effectiveKind({ kind: '', range: '', datatype: 'date' }, entities),
     ).toBe('datatype');
-    expect(effectiveKind({ kind: 'OBJECT', range: '' }, classes)).toBe(
+    expect(effectiveKind({ kind: 'OBJECT', range: '' }, entities)).toBe(
       'object',
     );
   });
 
-  it('clears references when a class is deleted instead of dropping properties', () => {
-    const d = removeClass(draft(), 2); // 'place'
+  it('clears references when an entity is deleted instead of dropping properties', () => {
+    const d = removeEntity(draft(), 2); // 'place'
     const bornIn = d.properties.find((p) => p.type === 'born_in');
     expect(bornIn?.range).toBe('');
     // The property is still there, and now reports what has to be decided.
     expect(codes(d)).toContain('missing_range');
   });
 
-  it('rewrites references when a class is renamed', () => {
-    const d = renameClass(draft(), 2, 'location'); // 'place' -> 'location'
+  it('rewrites references when an entity is renamed', () => {
+    const d = renameEntity(draft(), 2, 'location'); // 'place' -> 'location'
     expect(d.properties.find((p) => p.type === 'born_in')?.range).toBe(
       'location',
     );
     expect(validateDraft(d)).toEqual([]);
   });
 
-  it('deletes a property without touching the classes', () => {
+  it('deletes a property without touching the entities', () => {
     const d = removeProperty(draft(), 0);
     expect(d.properties).toHaveLength(1);
-    expect(d.classes).toHaveLength(3);
+    expect(d.entities).toHaveLength(3);
   });
 
   it('splits "|"-separated lists exactly like the service', () => {

@@ -49,7 +49,7 @@ import { OntologyReviewSheet } from './review-sheet';
 interface OntologyInspectSheetProps {
   /** The saved template's id. A model that was never saved has no output. */
   templateId?: string;
-  classes: string[];
+  entities: string[];
   properties: string[];
 }
 
@@ -80,7 +80,7 @@ const InspectPageSize = 50;
  */
 export function OntologyInspectSheet({
   templateId,
-  classes,
+  entities,
   properties,
 }: OntologyInspectSheetProps) {
   const { t } = useTranslation();
@@ -92,8 +92,8 @@ export function OntologyInspectSheet({
   const [tab, setTab] = useState<'instances' | 'assertions'>('instances');
   // Nothing is picked to begin with, on purpose: the first question about a
   // model is what it produced at all, and a panel that opens narrowed to
-  // whichever class happens to be declared first answers a question nobody
-  // asked. Empty means "every class" / "every property", not "none".
+  // whichever entity happens to be declared first answers a question nobody
+  // asked. Empty means "every entity" / "every property", not "none".
   const [classType, setClassType] = useState('');
   const [property, setProperty] = useState('');
   const [sourceType, setSourceType] = useState('');
@@ -124,7 +124,7 @@ export function OntologyInspectSheet({
       tab === 'instances'
         ? {
             kind: 'entity',
-            class: classType || undefined,
+            entity: classType || undefined,
             scope,
             dataset_ids: datasets,
             limit: InspectPageSize,
@@ -152,20 +152,20 @@ export function OntologyInspectSheet({
       : (inspect?.relations ?? []);
   const modelVersion = inspect?.model_version ?? 0;
   // "All" is a value of its own rather than the absence of one: the panel opens
-  // on it, and a reader who narrowed to one class has to be able to widen back.
+  // on it, and a reader who narrowed to one entity has to be able to widen back.
   // It is also what the trigger shows while the whole-model read is on screen —
   // a placeholder there would leave the current filter unreadable.
-  const classOptions = useMemo(
+  const entityOptions = useMemo(
     () => [
       {
         label: t('knowledgeCompilation.ontologyInspect.allClasses', {
-          defaultValue: 'All classes',
+          defaultValue: 'All entities',
         }),
         value: '',
       },
-      ...classes.map((name) => ({ label: name, value: name })),
+      ...entities.map((name) => ({ label: name, value: name })),
     ],
-    [classes, t],
+    [entities, t],
   );
   const propertyOptions = useMemo(
     () => [
@@ -254,7 +254,7 @@ export function OntologyInspectSheet({
               </SheetTitle>
               <OntologyReviewSheet
                 templateId={templateId}
-                classes={classes}
+                entities={entities}
                 properties={properties}
                 trigger={
                   <Button
@@ -378,7 +378,7 @@ export function OntologyInspectSheet({
               {tab === 'instances' ? (
                 <SelectWithSearch
                   value={classType}
-                  options={classOptions}
+                  options={entityOptions}
                   onChange={setClassType}
                 />
               ) : (
@@ -390,12 +390,12 @@ export function OntologyInspectSheet({
                   />
                   <SelectWithSearch
                     value={sourceType}
-                    options={[{ label: '—', value: '' }, ...classOptions]}
+                    options={[{ label: '—', value: '' }, ...entityOptions]}
                     onChange={setSourceType}
                   />
                   <SelectWithSearch
                     value={targetType}
-                    options={[{ label: '—', value: '' }, ...classOptions]}
+                    options={[{ label: '—', value: '' }, ...entityOptions]}
                     onChange={setTargetType}
                   />
                 </div>
@@ -418,7 +418,7 @@ export function OntologyInspectSheet({
               <div className="rounded border border-border-button p-2 text-text-secondary">
                 {t('knowledgeCompilation.ontologyInspect.truncated', {
                   defaultValue:
-                    'Showing a capped window, not everything in scope. Narrow the datasets or pick one class or property to see the rest.',
+                    'Showing a capped window, not everything in scope. Narrow the datasets or pick one entity or property to see the rest.',
                 })}
                 {(inspect.skipped_dataset_ids ?? []).length > 0 && (
                   <div className="mt-1 break-all">

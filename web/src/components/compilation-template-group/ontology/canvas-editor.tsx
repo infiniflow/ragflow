@@ -34,14 +34,14 @@ import { FormSchemaType } from '../schema';
 import {
   OntologyDatatypeKinds,
   OntologyKind,
-  addClass,
+  addEntity,
   addProperty,
   canonicalProperties,
   draftFromSections,
   effectiveKind,
-  removeClass,
+  removeEntity,
   removeProperty,
-  renameClass,
+  renameEntity,
   sectionsFromDraft,
   valueListText,
   valueListTruthy,
@@ -109,7 +109,7 @@ type NodeBox = {
 };
 
 /**
- * The rectangle a class occupies. Its height grows with its attribute rows, so the
+ * The rectangle an entity occupies. Its height grows with its attribute rows, so the
  * router and the drawn `rect` read the same number — a box the router thinks is
  * smaller than it is puts connectors through its rows.
  */
@@ -132,7 +132,7 @@ const nodeBox = (node: {
 /**
  * Where a line leaving the box's centre toward `target` crosses its edge. A
  * connector drawn to the centre pokes into the box and puts the arrowhead inside
- * it; anchoring on the border is what makes the arrow point AT the class.
+ * it; anchoring on the border is what makes the arrow point AT the entity.
  */
 const borderPoint = (box: NodeBox, target: { x: number; y: number }) => {
   const dx = target.x - box.cx;
@@ -292,7 +292,25 @@ const routeEdge = (from: NodeBox, to: NodeBox, obstacles: NodeBox[]) => {
 };
 
 /**
- * Placed on a grid, in declaration order: adding a class never moves the others.
+ * Where the draggable arrowhead sits: a little back along the incoming segment, so
+ * the grip does not cover the arrowhead it is dragging, and so it stays clickable
+ * when the edge is one pixel wide.
+ */
+const endpointHandle = (
+  points: { x: number; y: number }[],
+  back = 10,
+): { x: number; y: number } => {
+  const last = points[points.length - 1] ?? { x: 0, y: 0 };
+  const prev = points[points.length - 2] ?? last;
+  const dx = last.x - prev.x;
+  const dy = last.y - prev.y;
+  const length = Math.hypot(dx, dy);
+  if (length === 0) return last;
+  return { x: last.x - (dx / length) * back, y: last.y - (dy / length) * back };
+};
+
+/**
+ * Placed on a grid, in declaration order: adding an entity never moves the others.
  */
 export const nodePosition = (index: number, columns: number) => ({
   x: CanvasPadding + (index % columns) * CellWidth,
@@ -358,9 +376,9 @@ interface OntologyCanvasEditorProps {
 }
 
 type Selection =
-  | { kind: 'class'; index: number }
+  | { kind: 'entity'; index: number }
   | { kind: 'property'; index: number }
-  // A pair of classes can carry several properties. They are drawn as ONE edge:
+  // A pair of entities can carry several properties. They are drawn as ONE edge:
   // N curves with N labels between two boxes is a thicket, and on a short edge the
   // labels cannot be kept apart — the midpoint of a Bézier only moves half as far
   // as its control point, so a 40px fan leaves 20px between two 11px labels.
@@ -372,8 +390,8 @@ type Selection =
 /**
  * OntologyCanvasEditor edits an ontology template as a graph.
  *
- * It is the ontology counterpart of the card grid: classes are nodes, object
- * properties are the arrows between them, and a class's datatype properties are
+ * It is the ontology counterpart of the card grid: entities are nodes, object
+ * properties are the arrows between them, and an entity's datatype properties are
  * listed on the node — the same picture the read-only model graph draws, with
  * every element now creatable, renamable, bindable and deletable.
  *
@@ -414,17 +432,48 @@ export function OntologyCanvasEditor({
     Record<string, { x: number; y: number }>
   >({});
   const dragging = useRef<{ id: string; x: number; y: number } | null>(null);
-  // Click the handle, then click the target class: linking by two clicks instead
-  // of a drag is the same two decisions with no pointer capture to get wrong, and
-  // it leaves the canvas usable on a trackpad.
-  const [linkingFrom, setLinkingFrom] = useState<string | null>(null);
-  // A provisional line follows the pointer and Esc cancels. Without either, a
-  // click on the handle only changes one faint circle's opacity and reads as
-  // broken — which is exactly how it was reported.
-  const [linkPointer, setLinkPointer] = useState<{
+  // What the left rail is listing. A model is made of entities, relations and the
+  // rules they must satisfy, and one flat entity list made the other two invisible:
+  // a relation could only be reached by clicking its label on the canvas, and a
+  // declared problem could not be reached at all.
+  const [railTab, setRailTab] = useState<'entities' | 'relations' | 'rules'>(
+    'entities',
+  );
+  // Dragging from an entity's edge anchor to another entity creates the relation.
+  // The anchor only appears on hover, so the canvas stays quiet, and the drag is
+  // the one gesture a reader already expects from a graph editor — the "+" chip
+  // that used to sit on every node was reported as an unexplained button.
+  const [linking, setLinking] = useState<{
+    from: string;
     x: number;
     y: number;
   } | null>(null);
+  // Dragging the arrowhead itself: `from` is the domain end, which stays where it
+  // is, and the pointer says where the range end lands. Separate from `linking`
+  // because the gesture rewrites an existing declaration instead of adding one.
+  const [rewiring, setRewiring] = useState<{
+    propertyIndex: number;
+    from: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  // The pointerup that finishes a link is followed by a click on the same node,
+  // which would otherwise move the selection off the relation just created.
+  const justLinked = useRef(false);
+  // The same is true of an arrowhead dropped on a node: the click belongs to the
+  // drag, not to the entity that happened to receive it.
+  const justRewired = useRef(false);
+
+  useEffect(() => {
+    if (!linking && !rewiring) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      setLinking(null);
+      setRewiring(null);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [linking, rewiring]);
   const [panelWidth, setPanelWidth] = useState(DefaultPanelWidth);
   const resizing = useRef<{ x: number; width: number; limit: number } | null>(
     null,
@@ -466,26 +515,14 @@ export function OntologyCanvasEditor({
   const nudgePanel = (delta: number) =>
     setPanelWidth((current) => Math.max(MinPanelWidth, current + delta));
 
-  useEffect(() => {
-    if (!linkingFrom) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        setLinkingFrom(null);
-        setLinkPointer(null);
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [linkingFrom]);
-
   const properties = useMemo(
     () => canonicalProperties(draft.properties),
     [draft],
   );
-  const classSet = useMemo(
+  const entitySet = useMemo(
     () =>
       new Set(
-        draft.classes
+        draft.entities
           .map((item) => String(item.type ?? '').trim())
           .filter(Boolean),
       ),
@@ -512,10 +549,10 @@ export function OntologyCanvasEditor({
       // A rename has to rewrite the references, so it goes through the model
       // instead of patching the field in place.
       if (patch.type !== undefined) {
-        write(renameClass(draft, index, patch.type));
+        write(renameEntity(draft, index, patch.type));
         return;
       }
-      write({ ...draft, classes: updateField(draft.classes, index, patch) });
+      write({ ...draft, entities: updateField(draft.entities, index, patch) });
     },
     [draft, write],
   );
@@ -530,20 +567,20 @@ export function OntologyCanvasEditor({
     [draft, write],
   );
 
-  const columns = gridColumns(draft.classes.length);
-  const nodes = draft.classes.map((field, index) => {
+  const columns = gridColumns(draft.entities.length);
+  const nodes = draft.entities.map((field, index) => {
     const id = String(field.type ?? '').trim();
     const at = positions[id] ?? nodePosition(index, columns);
     return {
       id,
       label: String(field.label ?? '').trim() || id,
       parents: splitTypeList(field.parent).filter((parent) =>
-        classSet.has(parent),
+        entitySet.has(parent),
       ),
       attributes: properties
         .filter(
           (property) =>
-            effectiveKind(property, classSet) === OntologyKind.Datatype &&
+            effectiveKind(property, entitySet) === OntologyKind.Datatype &&
             splitTypeList(property.domain).includes(id),
         )
         .map((property) => ({
@@ -569,14 +606,22 @@ export function OntologyCanvasEditor({
       }
     >();
     properties.forEach((property, index) => {
-      if (effectiveKind(property, classSet) !== OntologyKind.Object) return;
-      const fromId = splitTypeList(property.domain)[0];
-      const toId = splitTypeList(property.range)[0];
+      if (effectiveKind(property, entitySet) !== OntologyKind.Object) return;
+      const domains = splitTypeList(property.domain);
+      const ranges = splitTypeList(property.range);
+      // A property that declares several endpoints has no single edge to draw:
+      // taking the first of each list invented a self-loop out of `domain:
+      // agent|place` + `range: agent|place`, which is not what the declaration
+      // says. It is listed in the Relations tab with its full endpoint lists
+      // instead, and the toolbar says how many were left off.
+      if (domains.length !== 1 || ranges.length !== 1) return;
+      const fromId = domains[0];
+      const toId = ranges[0];
       const from = byId.get(fromId);
       const to = byId.get(toId);
       if (!from || !to) return;
       // Keyed by the UNORDERED pair: `a -> b` and `b -> a` between the same two
-      // classes are one visual edge. Drawing them as two opposing curves is part
+      // entities are one visual edge. Drawing them as two opposing curves is part
       // of what made the picture unreadable.
       const key = [fromId, toId].sort().join('|');
       const entry = grouped.get(key) ?? {
@@ -621,55 +666,57 @@ export function OntologyCanvasEditor({
         entry.items.length === 1
           ? String(properties[entry.items[0].index]?.type ?? '').trim()
           : `bundle-${entry.key}`,
+      // A bare "×3" says a number, not a relation. The first property names the
+      // edge and the count says how many more share it; the title lists them.
       text:
         entry.items.length === 1
           ? entry.items[0].label
-          : `×${entry.items.length}`,
+          : `${entry.items[0].label} +${entry.items.length - 1}`,
       mixed:
         entry.items.some((item) => item.forward) &&
         entry.items.some((item) => !item.forward),
     }));
   })();
 
-  const rows = Math.ceil(Math.max(draft.classes.length, 1) / columns);
+  const rows = Math.ceil(Math.max(draft.entities.length, 1) / columns);
   const contentWidth = CanvasPadding * 2 + Math.max(columns, 1) * CellWidth;
   const contentHeight = CanvasPadding * 2 + rows * CellHeight;
 
   // The canvas is as big as the space it was given, and no smaller than its
-  // content: the grid still decides where the classes ARE (positions come from
+  // content: the grid still decides where the entities ARE (positions come from
   // `nodePosition`, not from this box), so measurement only ever adds empty
-  // room to drag into — it can never move a class.
+  // room to drag into — it can never move an entity.
   const canvasBoxRef = useRef<HTMLDivElement>(null);
   const canvasBox = useContainerDimensions(canvasBoxRef);
   const canvasWidth = Math.max(contentWidth, canvasBox.width);
   const canvasHeight = Math.max(contentHeight, canvasBox.height);
 
-  const classIndex = selection?.kind === 'class' ? selection.index : -1;
+  const entityIndex = selection?.kind === 'entity' ? selection.index : -1;
   const propertyIndex = selection?.kind === 'property' ? selection.index : -1;
-  const selectedClass = draft.classes[classIndex];
+  const selectedEntity = draft.entities[entityIndex];
   const selectedProperty = properties[propertyIndex];
   const selectedKind =
     selectedProperty === undefined
       ? ''
       : String(selectedProperty.kind ?? '').trim() ||
-        effectiveKind(selectedProperty, classSet);
+        effectiveKind(selectedProperty, entitySet);
   const selectedIssues = issues.filter(
     (issue) =>
       issue.subject !== '' &&
       issue.subject ===
-        String((selectedClass ?? selectedProperty)?.type ?? '').trim(),
+        String((selectedEntity ?? selectedProperty)?.type ?? '').trim(),
   );
 
-  // Which properties belong to the selected class. A property created with no
+  // Which properties belong to the selected entity. A property created with no
   // domain was findable nowhere — this list is one of the two answers to "which
   // entity does this belong to"; the attribute rows drawn on the node are the
   // other, and both come from the same declaration.
-  const selectedClassType = String(selectedClass?.type ?? '').trim();
-  const ownProperties = selectedClass
+  const selectedEntityType = String(selectedEntity?.type ?? '').trim();
+  const ownProperties = selectedEntity
     ? properties
         .map((property, index) => ({ property, index }))
         .filter(({ property }) =>
-          splitTypeList(property.domain).includes(selectedClassType),
+          splitTypeList(property.domain).includes(selectedEntityType),
         )
         .map(({ property, index }) => ({
           index,
@@ -677,21 +724,21 @@ export function OntologyCanvasEditor({
             String(property.label ?? '').trim() ||
             String(property.type ?? '').trim(),
           target:
-            effectiveKind(property, classSet) === OntologyKind.Datatype
+            effectiveKind(property, entitySet) === OntologyKind.Datatype
               ? ''
               : (splitTypeList(property.range)[0] ?? ''),
         }))
     : [];
 
-  // A finding names a class or a property, so it can take the reader there. This is
+  // A finding names an entity or a property, so it can take the reader there. This is
   // the ONLY way to reach a property with no domain: it draws no edge, so it cannot
-  // be clicked on the canvas, and it is in no class's list either.
+  // be clicked on the canvas, and it is in no entity's list either.
   const selectBySubject = (subject: string) => {
-    const classAt = draft.classes.findIndex(
+    const classAt = draft.entities.findIndex(
       (item) => String(item.type ?? '').trim() === subject,
     );
     if (classAt >= 0) {
-      setSelection({ kind: 'class', index: classAt });
+      setSelection({ kind: 'entity', index: classAt });
       return;
     }
     const propertyAt = properties.findIndex(
@@ -709,7 +756,7 @@ export function OntologyCanvasEditor({
     splitTypeList(selectedProperty?.domain)[0] ?? '';
   const selectedPropertyRange = splitTypeList(selectedProperty?.range)[0] ?? '';
 
-  // Anchored on creation: the domain is the class the reader is looking at, so the
+  // Anchored on creation: the domain is the entity the reader is looking at, so the
   // new attribute shows up on that node immediately and can never be an orphan.
   // That is also the state the reference implementation's form enforces — its
   // domain and range are both `required`.
@@ -719,33 +766,171 @@ export function OntologyCanvasEditor({
     write({
       ...next,
       properties: updateField(next.properties, created, {
-        domain: selectedClassType,
+        domain: selectedEntityType,
       }),
     });
     setSelection({ kind: 'property', index: created });
   };
 
-  const classOptions = [...classSet]
+  // What the Relations tab lists: every object property, with the two ends it
+  // declares. An object property with no domain draws no edge and is reachable
+  // nowhere else, which is exactly why it belongs in a list of its own.
+  const objectProperties = properties
+    .map((property, index) => {
+      const domains = splitTypeList(property.domain);
+      const ranges = splitTypeList(property.range);
+      return {
+        index,
+        name: String(property.type ?? '').trim(),
+        // Both lists in full: the canvas can only draw a single pair, and a row
+        // that printed the first of each would disagree with the declaration.
+        domain: domains.join(' | '),
+        range: ranges.join(' | '),
+        kind: effectiveKind(property, entitySet),
+        polymorphic: domains.length !== 1 || ranges.length !== 1,
+      };
+    })
+    .filter(
+      (property) =>
+        property.name !== '' && property.kind !== OntologyKind.Datatype,
+    );
+
+  // Every relation the canvas cannot draw as one edge: several declared
+  // domains or ranges, or an endpoint that is not a declared entity. They are
+  // reachable in the Relations tab, which prints both lists in full.
+  const polymorphicProperties = properties.filter((property) => {
+    if (effectiveKind(property, entitySet) !== OntologyKind.Object)
+      return false;
+    const domains = splitTypeList(property.domain);
+    const ranges = splitTypeList(property.range);
+    if (domains.length === 1 && ranges.length === 1) {
+      return !entitySet.has(domains[0]) || !entitySet.has(ranges[0]);
+    }
+    return true;
+  });
+
+  const svgPoint = (event: {
+    clientX: number;
+    clientY: number;
+    currentTarget: EventTarget | null;
+  }) => {
+    const target = event.currentTarget as (SVGElement & Element) | null;
+    const svg = target?.ownerSVGElement ?? target?.closest?.('svg') ?? null;
+    const rect = svg?.getBoundingClientRect();
+    return {
+      x: event.clientX - (rect?.left ?? 0),
+      y: event.clientY - (rect?.top ?? 0),
+    };
+  };
+
+  const startLink = (
+    from: string,
+    event: {
+      clientX: number;
+      clientY: number;
+      currentTarget: EventTarget | null;
+      stopPropagation: () => void;
+    },
+  ) => {
+    // Without this the pointerdown also starts dragging the node.
+    event.stopPropagation();
+    const point = svgPoint(event);
+    setLinking({ from, x: point.x, y: point.y });
+  };
+
+  // The declaration the drag writes: one object property, domain = where the drag
+  // started, range = where it ended. Same shape the Relations tab writes, so both
+  // entry points produce a template the service accepts.
+  const finishLink = (to: string) => {
+    const from = linking?.from;
+    setLinking(null);
+    if (!from) return;
+    const next = addProperty(draft, OntologyKind.Object);
+    const created = next.properties.length - 1;
+    write({
+      ...next,
+      properties: updateField(next.properties, created, {
+        type: uniquePropertyName(next, `${from}_${to}`),
+        domain: from,
+        range: to,
+      }),
+    });
+    justLinked.current = true;
+    setSelection({ kind: 'property', index: created });
+  };
+
+  const startRewire = (
+    propertyIndex: number,
+    from: string,
+    event: {
+      clientX: number;
+      clientY: number;
+      currentTarget: EventTarget | null;
+      stopPropagation: () => void;
+    },
+  ) => {
+    // Without this the pointerdown also drags the node the grip sits on.
+    event.stopPropagation();
+    const point = svgPoint(event);
+    setRewiring({ propertyIndex, from, x: point.x, y: point.y });
+  };
+
+  // Dropping the arrowhead on an entity rewrites the property's range — including
+  // the entity the property already starts from, which is how a relation is made
+  // to point at itself. The domain end never moves: a self-loop drags one end onto
+  // the other, it does not swap them.
+  const finishRewire = (to: string) => {
+    const active = rewiring;
+    setRewiring(null);
+    if (!active) return;
+    editProperty(active.propertyIndex, { range: to });
+    justRewired.current = true;
+    // The click after the drop belongs to the drag. It may arrive on the entity
+    // (and would move the selection off the property) or on the canvas, so the
+    // flag is cleared on the next task instead of waiting for a click that might
+    // never come — otherwise the NEXT click on an entity would be swallowed.
+    window.setTimeout(() => {
+      justRewired.current = false;
+    }, 0);
+    setSelection({ kind: 'property', index: active.propertyIndex });
+  };
+
+  const handleAddEntity = () => {
+    const next = addEntity(draft);
+    write(next);
+    setSelection({ kind: 'entity', index: next.entities.length - 1 });
+  };
+
+  // Relations start from the list, not from a handle on the node: the handle was
+  // reported as an unexplained "+", and a list states both ends before anything
+  // exists. The first two entities are used as the ends so the new relation is
+  // visible on the canvas immediately and is never an orphan.
+  const handleAddRelation = () => {
+    const next = addProperty(draft, OntologyKind.Object);
+    const created = next.properties.length - 1;
+    const source = String(next.entities[0]?.type ?? '').trim();
+    const target = String(next.entities[1]?.type ?? '').trim() || source;
+    write({
+      ...next,
+      properties: updateField(next.properties, created, {
+        type: uniquePropertyName(
+          next,
+          source && target ? `${source}_${target}` : 'relation',
+        ),
+        domain: source,
+        range: target,
+      }),
+    });
+    setSelection({ kind: 'property', index: created });
+  };
+
+  const entityOptions = [...entitySet]
     .sort()
     .map((name) => ({ label: name, value: name }));
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            const next = addClass(draft);
-            write(next);
-            setSelection({ kind: 'class', index: next.classes.length - 1 });
-          }}
-        >
-          {t('knowledgeCompilation.ontologyAddClass', {
-            defaultValue: '+ Class',
-          })}
-        </Button>
         <Button
           type="button"
           variant="ghost"
@@ -756,42 +941,61 @@ export function OntologyCanvasEditor({
             defaultValue: 'Auto arrange',
           })}
         </Button>
-        {linkingFrom && (
-          <div
-            data-testid="ontology-linking-banner"
-            className="rounded border border-[#4CACFF] bg-bg-card px-3 py-1 text-xs text-text-primary"
+        {polymorphicProperties.length > 0 && (
+          <span
+            className="text-xs text-text-disabled"
+            data-testid="ontology-polymorphic-notice"
           >
-            {t('knowledgeCompilation.ontologyLinkingHint', {
-              from: linkingFrom,
+            {t('knowledgeCompilation.ontologyPolymorphicHidden', {
+              count: polymorphicProperties.length,
               defaultValue:
-                'Click a class to connect it to {{from}}, or click empty canvas to add a new class joined to it (Esc cancels).',
+                '{{count}} relation(s) span several entities, so they are listed in Relations instead of drawn here.',
             })}
-          </div>
+          </span>
         )}
         <span className="text-xs text-text-secondary">
           {t('knowledgeCompilation.ontologyDragHint', {
             defaultValue:
-              'Drag a class to move it. Positions are not stored in the template.',
+              'Drag an entity to move it; drag its edge dot onto another entity to connect them. Positions are not stored in the template.',
           })}
         </span>
+        {/* Two line styles, two meanings. Without this the dashed parent edge
+            reads as a second kind of relation. */}
+        <span className="ml-auto flex items-center gap-3 text-xs text-text-secondary">
+          <span className="flex items-center gap-1">
+            <svg width="22" height="8" aria-hidden="true">
+              <line
+                x1="0"
+                y1="4"
+                x2="22"
+                y2="4"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                markerEnd="url(#ontology-arrow)"
+              />
+            </svg>
+            {t('knowledgeCompilation.ontologyLegendRelation', {
+              defaultValue: 'Relation',
+            })}
+          </span>
+          <span className="flex items-center gap-1">
+            <svg width="22" height="8" aria-hidden="true">
+              <line
+                x1="0"
+                y1="4"
+                x2="22"
+                y2="4"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeDasharray="4 3"
+              />
+            </svg>
+            {t('knowledgeCompilation.ontologyLegendInheritance', {
+              defaultValue: 'Inheritance (parent)',
+            })}
+          </span>
+        </span>
       </div>
-
-      {issues.length > 0 && (
-        <ul className="rounded border border-[#F0A020] px-3 py-2 text-xs text-[#F0A020]">
-          {issues.map((issue, at) => (
-            <li key={`${issue.code}-${issue.subject}-${at}`}>
-              <button
-                type="button"
-                data-testid={`ontology-issue-${issue.code}`}
-                className="text-left hover:underline"
-                onClick={() => selectBySubject(issue.subject)}
-              >
-                {issueLabel(issue, t)}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
 
       <div className="flex min-h-0 flex-1 gap-3">
         {/* Three columns: what exists (260), what it looks like (flex), what the
@@ -799,44 +1003,197 @@ export function OntologyCanvasEditor({
             column folds away — the canvas is the workspace here, and a list that
             squeezes it earns less than the scroll it saves. */}
         <aside
-          data-testid="ontology-class-list"
-          className="hidden w-[260px] shrink-0 flex-col gap-0.5 overflow-auto rounded border border-border-button bg-bg-component p-2 min-[1180px]:flex"
+          data-testid="ontology-entity-list"
+          className="hidden w-[260px] shrink-0 flex-col gap-2 overflow-auto rounded border border-border-button bg-bg-component p-2 min-[1180px]:flex"
         >
-          <span className="px-1 pb-1 text-xs font-medium text-text-secondary">
-            {t('knowledgeCompilation.ontologyClassList', {
-              count: nodes.length,
-              defaultValue: 'Classes ({{count}})',
-            })}
-          </span>
-          {nodes.map((node, index) => {
-            const isSelected =
-              selection?.kind === 'class' && selection.index === index;
-            return (
+          {/* Entities / Relations / Rules: the three things a model is made of.
+              One flat list made entities the only visible noun, so a relation had
+              no home outside a canvas label and a declared problem had none at
+              all. */}
+          <div className="flex shrink-0 items-center gap-1" role="tablist">
+            {(
+              [
+                {
+                  key: 'entities',
+                  label: t('knowledgeCompilation.ontologyRailEntities', {
+                    defaultValue: 'Entities',
+                  }),
+                },
+                {
+                  key: 'relations',
+                  label: t('knowledgeCompilation.ontologyRailRelations', {
+                    defaultValue: 'Relations',
+                  }),
+                },
+                {
+                  key: 'rules',
+                  label: t('knowledgeCompilation.ontologyRailRules', {
+                    defaultValue: 'Rules',
+                  }),
+                },
+              ] as const
+            ).map((item) => (
               <button
-                key={`class-list-${node.id}`}
+                key={item.key}
                 type="button"
-                data-testid={`ontology-class-list-item-${node.id}`}
-                onClick={() => setSelection({ kind: 'class', index })}
+                role="tab"
+                aria-selected={railTab === item.key}
+                data-testid={`ontology-rail-tab-${item.key}`}
+                onClick={() => setRailTab(item.key)}
                 className={cn(
-                  'flex items-center gap-2 rounded px-2 py-1 text-start text-xs',
-                  isSelected
-                    ? 'bg-bg-card text-text-primary'
+                  'flex-1 rounded px-1 py-1 text-xs',
+                  railTab === item.key
+                    ? 'bg-bg-card font-medium text-text-primary'
                     : 'text-text-secondary hover:bg-bg-card',
                 )}
               >
-                <span className="min-w-0 flex-1 truncate">{node.label}</span>
-                {node.attributes.length > 0 && (
-                  <span className="shrink-0 text-text-disabled">
-                    {node.attributes.length}
-                  </span>
-                )}
+                {item.label}
+                {item.key === 'rules' && issues.length > 0
+                  ? ` (${issues.length})`
+                  : ''}
               </button>
-            );
-          })}
+            ))}
+          </div>
+
+          {railTab === 'entities' && (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                data-testid="ontology-add-entity"
+                onClick={handleAddEntity}
+              >
+                {t('knowledgeCompilation.ontologyAddEntity', {
+                  defaultValue: '+ Entity',
+                })}
+              </Button>
+              <span className="px-1 text-xs text-text-secondary">
+                {t('knowledgeCompilation.ontologyEntityList', {
+                  count: nodes.length,
+                  defaultValue: 'Entities ({{count}})',
+                })}
+              </span>
+              {nodes.map((node, index) => {
+                const isSelected =
+                  selection?.kind === 'entity' && selection.index === index;
+                return (
+                  <button
+                    key={`entity-list-${node.id}`}
+                    type="button"
+                    data-testid={`ontology-entity-list-item-${node.id}`}
+                    onClick={() => setSelection({ kind: 'entity', index })}
+                    className={cn(
+                      'flex items-center gap-2 rounded px-2 py-1 text-start text-xs',
+                      isSelected
+                        ? 'bg-bg-card text-text-primary'
+                        : 'text-text-secondary hover:bg-bg-card',
+                    )}
+                  >
+                    <span className="min-w-0 flex-1 truncate">
+                      {node.label}
+                    </span>
+                    {node.attributes.length > 0 && (
+                      <span className="shrink-0 text-text-disabled">
+                        {node.attributes.length}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </>
+          )}
+
+          {railTab === 'relations' && (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                data-testid="ontology-add-relation"
+                onClick={handleAddRelation}
+              >
+                {t('knowledgeCompilation.ontologyAddRelation', {
+                  defaultValue: '+ Relation',
+                })}
+              </Button>
+              {objectProperties.length === 0 ? (
+                <span className="px-1 text-xs text-text-disabled">
+                  {t('knowledgeCompilation.ontologyNoRelations', {
+                    defaultValue: 'No relations yet.',
+                  })}
+                </span>
+              ) : (
+                objectProperties.map((property) => {
+                  const isSelected =
+                    selection?.kind === 'property' &&
+                    selection.index === property.index;
+                  return (
+                    <button
+                      key={`relation-list-${property.index}`}
+                      type="button"
+                      data-testid={`ontology-relation-list-item-${property.name}`}
+                      onClick={() =>
+                        setSelection({
+                          kind: 'property',
+                          index: property.index,
+                        })
+                      }
+                      className={cn(
+                        'flex flex-col rounded px-2 py-1 text-start text-xs',
+                        isSelected
+                          ? 'bg-bg-card text-text-primary'
+                          : 'text-text-secondary hover:bg-bg-card',
+                      )}
+                    >
+                      <span className="w-full truncate">{property.name}</span>
+                      <span className="w-full truncate text-text-disabled">
+                        {`${property.domain || '?'} → ${property.range || '?'}`}
+                      </span>
+                      {property.polymorphic && (
+                        <span className="w-full truncate text-text-disabled">
+                          {t('knowledgeCompilation.ontologyPolymorphicRow', {
+                            defaultValue: 'not drawn: several endpoints',
+                          })}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })
+              )}
+            </>
+          )}
+
+          {railTab === 'rules' && (
+            <>
+              {issues.length === 0 ? (
+                <span className="px-1 text-xs text-text-disabled">
+                  {t('knowledgeCompilation.ontologyNoRules', {
+                    defaultValue: 'No problems found.',
+                  })}
+                </span>
+              ) : (
+                <ul className="flex flex-col gap-1 px-1 text-xs text-[#F0A020]">
+                  {issues.map((issue, at) => (
+                    <li key={`${issue.code}-${issue.subject}-${at}`}>
+                      <button
+                        type="button"
+                        data-testid={`ontology-issue-${issue.code}`}
+                        className="text-left hover:underline"
+                        onClick={() => selectBySubject(issue.subject)}
+                      >
+                        {issueLabel(issue, t)}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </>
+          )}
         </aside>
         <div
           ref={canvasBoxRef}
-          className="min-h-0 min-w-0 flex-1 overflow-auto rounded border border-border-button bg-bg-base"
+          className="min-h-0 min-w-0 flex-1 overflow-auto rounded border border-border-button bg-bg-canvas"
           // The dot grid is the canvas's own texture, drawn from the lightest
           // border token so it exists in both themes instead of being a light-mode
           // artifact that turns into grey noise on black.
@@ -855,14 +1212,14 @@ export function OntologyCanvasEditor({
             })}
             className="text-text-primary"
             onPointerMove={(event) => {
-              if (linkingFrom) {
-                // Client coordinates are viewport-relative, so this stays right
-                // however the canvas box is scrolled.
-                const rect = event.currentTarget.getBoundingClientRect();
-                setLinkPointer({
-                  x: event.clientX - rect.left,
-                  y: event.clientY - rect.top,
-                });
+              if (rewiring) {
+                const point = svgPoint(event);
+                setRewiring({ ...rewiring, x: point.x, y: point.y });
+                return;
+              }
+              if (linking) {
+                const point = svgPoint(event);
+                setLinking({ ...linking, x: point.x, y: point.y });
                 return;
               }
               const active = dragging.current;
@@ -884,42 +1241,16 @@ export function OntologyCanvasEditor({
             }}
             onPointerLeave={() => {
               dragging.current = null;
-            }}
-            onClick={(event) => {
-              if (!linkingFrom) return;
-              // Empty canvas means "grow the graph from here": a new class lands
-              // where the reader clicked, joined to the source by a property. That
-              // is the reading the "+" invites, and it saves the
-              // create-a-class-then-connect-it round trip. A click on a NODE stops
-              // propagation, so the two outcomes never both fire.
-              const rect = event.currentTarget.getBoundingClientRect();
-              const next = addProperty(addClass(draft), OntologyKind.Object);
-              const createdIndex = next.classes.length - 1;
-              const createdProperty = next.properties.length - 1;
-              const created = String(
-                next.classes[createdIndex]?.type ?? '',
-              ).trim();
-              write({
-                ...next,
-                properties: updateField(next.properties, createdProperty, {
-                  type: uniquePropertyName(next, `${linkingFrom}_${created}`),
-                  domain: linkingFrom,
-                  range: created,
-                }),
-              });
-              setPositions((current) => ({
-                ...current,
-                [created]: {
-                  x: event.clientX - rect.left - NodeWidth / 2,
-                  y: event.clientY - rect.top - NodeHeaderHeight / 2,
-                },
-              }));
-              setLinkingFrom(null);
-              setLinkPointer(null);
-              setSelection({ kind: 'class', index: createdIndex });
+              setLinking(null);
+              setRewiring(null);
             }}
             onPointerUp={() => {
               dragging.current = null;
+              // Released over empty canvas: the drag is abandoned rather than
+              // landing a relation on whichever entity happens to be first. An
+              // arrowhead released there keeps pointing where it already did.
+              setLinking(null);
+              setRewiring(null);
             }}
           >
             <defs>
@@ -968,21 +1299,45 @@ export function OntologyCanvasEditor({
               }),
             )}
 
-            {linkingFrom && linkPointer && byId.get(linkingFrom) && (
-              // The provisional edge: this is what makes the handle's click
-              // visible, and it points at whatever the reader is about to choose.
-              <line
-                data-testid="ontology-linking-line"
-                className="text-[#4CACFF]"
-                x1={borderPoint(nodeBox(byId.get(linkingFrom)!), linkPointer).x}
-                y1={borderPoint(nodeBox(byId.get(linkingFrom)!), linkPointer).y}
-                x2={linkPointer.x}
-                y2={linkPointer.y}
-                stroke="currentColor"
-                strokeDasharray="6 4"
-                pointerEvents="none"
-              />
-            )}
+            {linking &&
+              byId.get(linking.from) &&
+              (() => {
+                const box = nodeBox(byId.get(linking.from)!);
+                return (
+                  <line
+                    data-testid="ontology-linking-line"
+                    className="text-accent-primary"
+                    x1={box.right}
+                    y1={box.cy}
+                    x2={linking.x}
+                    y2={linking.y}
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                    strokeDasharray="6 4"
+                    pointerEvents="none"
+                  />
+                );
+              })()}
+
+            {rewiring &&
+              byId.get(rewiring.from) &&
+              (() => {
+                const box = nodeBox(byId.get(rewiring.from)!);
+                return (
+                  <line
+                    data-testid="ontology-rewiring-line"
+                    className="text-accent-primary"
+                    x1={box.right}
+                    y1={box.cy}
+                    x2={rewiring.x}
+                    y2={rewiring.y}
+                    stroke="currentColor"
+                    strokeWidth={1.5}
+                    strokeDasharray="6 4"
+                    pointerEvents="none"
+                  />
+                );
+              })()}
 
             {edges.map((edge) => {
               const selected =
@@ -998,14 +1353,19 @@ export function OntologyCanvasEditor({
               // empty — no rows, no handle.
               const loopHalf = 14;
               const loopTop = edge.fromBox.top - LoopBulge;
-              const path = edge.route
-                ? toPath(edge.route.points)
-                : toPath([
+              const points = edge.route
+                ? edge.route.points
+                : [
                     { x: edge.fromBox.cx - loopHalf, y: edge.fromBox.top },
                     { x: edge.fromBox.cx - loopHalf, y: loopTop },
                     { x: edge.fromBox.cx + loopHalf, y: loopTop },
                     { x: edge.fromBox.cx + loopHalf, y: edge.fromBox.top },
-                  ]);
+                  ];
+              const path = toPath(points);
+              // One arrowhead is one declaration. A bundle of several properties
+              // has no single range to drag, so it keeps the panel as its editor.
+              const grip =
+                edge.items.length === 1 ? endpointHandle(points) : null;
               // Beside the loop, level with its middle. `labelY` is the position
               // BEFORE the shared lift is applied, so it has to add that back.
               const labelX = edge.route
@@ -1039,6 +1399,17 @@ export function OntologyCanvasEditor({
                       {edge.items.map((item) => item.label).join(', ')}
                     </title>
                   )}
+                  {/* An invisible wide stroke, because a 1px line is a 1px click
+                      target: the edge could be seen but not selected, so the panel
+                      behind it was unreachable. 12px each side matches what the
+                      reference canvas uses. */}
+                  <path
+                    d={path}
+                    fill="none"
+                    stroke="transparent"
+                    strokeWidth={12}
+                    pointerEvents="stroke"
+                  />
                   <path
                     d={path}
                     fill="none"
@@ -1074,56 +1445,73 @@ export function OntologyCanvasEditor({
                   >
                     {edge.text}
                   </text>
+                  {/* The arrowhead is a handle: drag it onto another entity and
+                      the property's range follows. It only exists while the edge
+                      is selected — a grip on every edge would turn the canvas
+                      into a row of dots. */}
+                  {selected && grip && (
+                    <circle
+                      data-testid={`ontology-edge-grip-${edge.id}`}
+                      className="cursor-crosshair text-accent-primary"
+                      cx={grip.x}
+                      cy={grip.y}
+                      r={6}
+                      fill="var(--bg-base)"
+                      stroke="currentColor"
+                      strokeWidth={2}
+                      onPointerDown={(event) =>
+                        startRewire(edge.items[0].index, edge.from.id, event)
+                      }
+                    >
+                      <title>
+                        {t('knowledgeCompilation.ontologyEdgeGrip', {
+                          defaultValue:
+                            'Drag the arrowhead to the entity this relation points at. Drop it on the same entity to make it point at itself.',
+                        })}
+                      </title>
+                    </circle>
+                  )}
                 </g>
               );
             })}
 
             {nodes.map((node, index) => {
-              const selected = classIndex === index;
+              const selected = entityIndex === index;
               return (
                 <g
                   key={`node-${node.id}`}
                   data-testid={`ontology-node-${node.id}`}
-                  className="cursor-move"
+                  className="group cursor-move"
                   onPointerDown={(event) => {
+                    if (linking || rewiring) return;
                     dragging.current = {
                       id: node.id,
                       x: event.clientX,
                       y: event.clientY,
                     };
                   }}
-                  onClick={(event) => {
-                    if (linkingFrom === node.id) {
+                  onPointerUp={(event) => {
+                    // The arrowhead wins over a new relation: a drag that started
+                    // on a grip is not a drag that started on a node anchor.
+                    if (rewiring) {
                       event.stopPropagation();
-                      setLinkingFrom(null);
-                      setLinkPointer(null);
+                      finishRewire(node.id);
                       return;
                     }
-                    if (linkingFrom) {
-                      event.stopPropagation();
-                      // Two clicks, one property: the domain is the class the
-                      // handle was taken from, the range the one clicked. The
-                      // declaration is written straight into the template's own
-                      // field shape by the model layer.
-                      const next = addProperty(draft, OntologyKind.Object);
-                      const created = next.properties.length - 1;
-                      write({
-                        ...next,
-                        properties: updateField(next.properties, created, {
-                          type: uniquePropertyName(
-                            draft,
-                            `${linkingFrom}_${node.id}`,
-                          ),
-                          domain: linkingFrom,
-                          range: node.id,
-                        }),
-                      });
-                      setLinkingFrom(null);
-                      setLinkPointer(null);
-                      setSelection({ kind: 'property', index: created });
+                    if (!linking) return;
+                    event.stopPropagation();
+                    finishLink(node.id);
+                  }}
+                  onClick={() => {
+                    if (justRewired.current) {
+                      justRewired.current = false;
                       return;
                     }
-                    setSelection({ kind: 'class', index });
+                    if (justLinked.current) {
+                      justLinked.current = false;
+                      return;
+                    }
+                    setSelection({ kind: 'entity', index });
                   }}
                 >
                   {/* An HTML card, not positioned <text>: a node is a small
@@ -1144,20 +1532,35 @@ export function OntologyCanvasEditor({
                     <div
                       {...{ xmlns: 'http://www.w3.org/1999/xhtml' }}
                       className={cn(
-                        'flex h-full flex-col overflow-hidden rounded-lg border bg-bg-component px-2 py-1 shadow-card',
+                        'flex h-full flex-col overflow-hidden rounded-lg border bg-bg-component shadow-card',
                         selected
                           ? 'border-text-accent ring-1 ring-text-accent'
                           : 'border-border-button',
                       )}
                     >
-                      <span className="truncate text-[13px] font-semibold leading-4 text-text-primary">
-                        {node.label}
-                      </span>
-                      <span className="truncate text-[10px] leading-3 text-text-disabled">
-                        {node.id}
-                      </span>
+                      {/* The title band is tinted and ruled off from the rows
+                          below it: on one background the entity name reads as just
+                          another line of the card, and the name is the one row a
+                          reader scans for. 44px + the rows' 8px padding is the
+                          52px the edge geometry expects above the first row. */}
+                      <div
+                        data-testid={`ontology-node-title-${node.id}`}
+                        className={cn(
+                          'flex h-11 shrink-0 flex-col justify-center border-b bg-accent-primary/10 px-2 dark:bg-accent-primary/15',
+                          selected
+                            ? 'border-text-accent'
+                            : 'border-border-button',
+                        )}
+                      >
+                        <span className="truncate text-[13px] font-semibold leading-4 text-text-primary">
+                          {node.label}
+                        </span>
+                        <span className="truncate text-[10px] leading-3 text-text-secondary">
+                          {node.id}
+                        </span>
+                      </div>
                       {node.attributes.length > 0 && (
-                        <div className="mt-1 flex min-h-0 flex-col gap-0.5 overflow-hidden border-t border-border-button pt-1">
+                        <div className="flex min-h-0 flex-1 flex-col gap-0.5 overflow-hidden px-2 py-1">
                           {node.attributes.map((attribute) => (
                             <span
                               key={`${node.id}-${attribute.name}`}
@@ -1173,42 +1576,35 @@ export function OntologyCanvasEditor({
                       )}
                     </div>
                   </foreignObject>
-                  {/* The link handle: the one gesture that makes this a canvas
-                      rather than a form. It stays SVG and sits outside the card,
-                      so its position is unchanged by the card's own layout. */}
-                  <circle
-                    data-testid={`ontology-link-handle-${node.id}`}
-                    cx={node.x + NodeWidth + 10}
-                    cy={node.y + NodeHeaderHeight / 2}
-                    r={10}
-                    fill="currentColor"
-                    fillOpacity={linkingFrom === node.id ? 0.3 : 0.08}
-                    stroke="currentColor"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      setLinkPointer(null);
-                      setLinkingFrom((current) =>
-                        current === node.id ? null : node.id,
-                      );
-                    }}
+                  {/* The link anchor: a dot on the node's right edge that appears
+                      on hover. Dragging from it to another entity declares the
+                      relation — the gesture the canvas was missing. */}
+                  <g
+                    data-testid={`ontology-link-anchor-${node.id}`}
+                    className="text-accent-primary opacity-40 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                    onPointerDown={(event) => startLink(node.id, event)}
                   >
                     <title>
-                      {t('knowledgeCompilation.ontologyLinkHandle', {
+                      {t('knowledgeCompilation.ontologyLinkAnchor', {
                         defaultValue:
-                          'Link: click, then click a class — or click empty canvas to add a new class joined to this one.',
+                          'Drag to another entity to declare a relation.',
                       })}
                     </title>
-                  </circle>
-                  <text
-                    x={node.x + NodeWidth + 10}
-                    y={node.y + NodeHeaderHeight / 2 + 3}
-                    fontSize={10}
-                    textAnchor="middle"
-                    fill="currentColor"
-                    pointerEvents="none"
-                  >
-                    +
-                  </text>
+                    <circle
+                      cx={node.x + NodeWidth}
+                      cy={node.y + NodeHeaderHeight / 2}
+                      r={12}
+                      fill="transparent"
+                    />
+                    <circle
+                      cx={node.x + NodeWidth}
+                      cy={node.y + NodeHeaderHeight / 2}
+                      r={5}
+                      fill="currentColor"
+                      stroke="var(--bg-canvas)"
+                      strokeWidth={2}
+                    />
+                  </g>
                 </g>
               );
             })}
@@ -1261,34 +1657,34 @@ export function OntologyCanvasEditor({
           {!selection && (
             <p className="text-text-secondary">
               {t('knowledgeCompilation.ontologySelectHint', {
-                defaultValue: 'Select a class or a property on the canvas.',
+                defaultValue: 'Select an entity or a property on the canvas.',
               })}
             </p>
           )}
 
-          {selectedClass && (
+          {selectedEntity && (
             <>
               <strong>
                 {t('knowledgeCompilation.ontologyClass', {
-                  defaultValue: 'Class',
+                  defaultValue: 'Entity',
                 })}
               </strong>
               <label className="flex flex-col gap-1">
                 {t('knowledgeCompilation.fieldType')}
                 <Input
-                  value={String(selectedClass.type ?? '')}
-                  data-testid="ontology-class-type"
+                  value={String(selectedEntity.type ?? '')}
+                  data-testid="ontology-entity-type"
                   onChange={(event) =>
-                    editClass(classIndex, { type: event.target.value })
+                    editClass(entityIndex, { type: event.target.value })
                   }
                 />
               </label>
               <label className="flex flex-col gap-1">
                 {t('knowledgeCompilation.fieldLabel')}
                 <Input
-                  value={String(selectedClass.label ?? '')}
+                  value={String(selectedEntity.label ?? '')}
                   onChange={(event) =>
-                    editClass(classIndex, { label: event.target.value })
+                    editClass(entityIndex, { label: event.target.value })
                   }
                 />
               </label>
@@ -1296,34 +1692,36 @@ export function OntologyCanvasEditor({
                 {t('knowledgeCompilation.description')}
                 <Textarea
                   rows={2}
-                  value={String(selectedClass.description ?? '')}
-                  data-testid="ontology-class-description"
+                  value={String(selectedEntity.description ?? '')}
+                  data-testid="ontology-entity-description"
                   onChange={(event) =>
-                    editClass(classIndex, { description: event.target.value })
+                    editClass(entityIndex, { description: event.target.value })
                   }
                 />
               </label>
               <label className="flex flex-col gap-1">
                 {t('knowledgeCompilation.fieldParent')}
                 <SelectWithSearch
-                  value={splitTypeList(selectedClass.parent)[0] ?? ''}
-                  options={[{ label: '—', value: '' }, ...classOptions]}
-                  onChange={(value) => editClass(classIndex, { parent: value })}
+                  value={splitTypeList(selectedEntity.parent)[0] ?? ''}
+                  options={[{ label: '—', value: '' }, ...entityOptions]}
+                  onChange={(value) =>
+                    editClass(entityIndex, { parent: value })
+                  }
                 />
               </label>
-              {/* The other names this class is known by. They reach the prompt as
+              {/* The other names this entity is known by. They reach the prompt as
                   a hint and are resolved back to `type` on the way in, so a model
                   answering "company" for a declared `organization` does not create
-                  a second spelling of the same class. */}
+                  a second spelling of the same entity. */}
               <label className="flex flex-col gap-1">
                 {t('knowledgeCompilation.fieldAliases', {
                   defaultValue: 'Aliases (| separated)',
                 })}
                 <Input
-                  value={valueListText(selectedClass.aliases)}
-                  data-testid="ontology-class-aliases"
+                  value={valueListText(selectedEntity.aliases)}
+                  data-testid="ontology-entity-aliases"
                   onChange={(event) =>
-                    editClass(classIndex, { aliases: event.target.value })
+                    editClass(entityIndex, { aliases: event.target.value })
                   }
                 />
               </label>
@@ -1331,9 +1729,9 @@ export function OntologyCanvasEditor({
                 {t('knowledgeCompilation.fieldRule')}
                 <Textarea
                   rows={3}
-                  value={String(selectedClass.rule ?? '')}
+                  value={String(selectedEntity.rule ?? '')}
                   onChange={(event) =>
-                    editClass(classIndex, { rule: event.target.value })
+                    editClass(entityIndex, { rule: event.target.value })
                   }
                 />
               </label>
@@ -1341,10 +1739,10 @@ export function OntologyCanvasEditor({
                   here rather than on an instance: which of the six fields this
                   model requires is a property of the model, while the values
                   belong to each action row. */}
-              {String(selectedClass.type ?? '').trim() === 'action' && (
+              {String(selectedEntity.type ?? '').trim() === 'action' && (
                 <div
                   className="flex flex-col gap-1 rounded border border-border-button p-2"
-                  data-testid="ontology-class-contract"
+                  data-testid="ontology-entity-contract"
                 >
                   <span className="font-medium">
                     {t('knowledgeCompilation.ontologyContractFields', {
@@ -1356,7 +1754,7 @@ export function OntologyCanvasEditor({
                     // server uses, so the boxes cannot show a field as dropped
                     // that the extractor is still asked for.
                     const declared = declaredContractFields(
-                      selectedClass.contract,
+                      selectedEntity.contract,
                     );
                     const checked = declared.includes(name);
                     // Authorization decides whether the action may ever run
@@ -1371,13 +1769,13 @@ export function OntologyCanvasEditor({
                           data-testid={`ontology-contract-field-${name}`}
                           onCheckedChange={(next) => {
                             const current = declaredContractFields(
-                              selectedClass.contract,
+                              selectedEntity.contract,
                             );
                             const nextList =
                               next === true
                                 ? [...new Set([...current, name])]
                                 : current.filter((item) => item !== name);
-                            editClass(classIndex, {
+                            editClass(entityIndex, {
                               contract: nextList.join('|'),
                             });
                           }}
@@ -1389,12 +1787,12 @@ export function OntologyCanvasEditor({
                   <p className="text-text-disabled">
                     {t('knowledgeCompilation.ontologyContractFieldsHint', {
                       defaultValue:
-                        'Nothing ticked means no requirement, which reads as all six. Authorization is always asked: it decides whether the action may run. The class rule should also state that an action needs an actor and an object.',
+                        'Nothing ticked means no requirement, which reads as all six. Authorization is always asked: it decides whether the action may run. The entity rule should also state that an action needs an actor and an object.',
                     })}
                   </p>
                 </div>
               )}
-              {/* The class's own properties, listed where the reader already is.
+              {/* The entity's own properties, listed where the reader already is.
                   A property with no domain was findable nowhere, which is why
                   "which entity does this belong to" had no answer. */}
               <div
@@ -1403,7 +1801,7 @@ export function OntologyCanvasEditor({
               >
                 <span className="text-text-secondary">
                   {t('knowledgeCompilation.ontologyOwnProperties', {
-                    defaultValue: 'Properties of this class',
+                    defaultValue: 'Properties of this entity',
                   })}
                 </span>
                 {ownProperties.length === 0 ? (
@@ -1446,9 +1844,9 @@ export function OntologyCanvasEditor({
                   })}
                 </Button>
                 <span className="text-text-secondary">
-                  {t('knowledgeCompilation.ontologyRelationsViaHandle', {
+                  {t('knowledgeCompilation.ontologyRelationsViaRail', {
                     defaultValue:
-                      'Relations start at the + handle on the node.',
+                      'Drag from an entity’s edge dot to another entity, or add one in the Relations tab.',
                   })}
                 </span>
               </div>
@@ -1457,12 +1855,12 @@ export function OntologyCanvasEditor({
                 variant="outline"
                 size="sm"
                 onClick={() => {
-                  write(removeClass(draft, classIndex));
+                  write(removeEntity(draft, entityIndex));
                   setSelection(null);
                 }}
               >
                 {t('knowledgeCompilation.ontologyDeleteClass', {
-                  defaultValue: 'Delete class',
+                  defaultValue: 'Delete entity',
                 })}
               </Button>
             </>
@@ -1524,7 +1922,7 @@ export function OntologyCanvasEditor({
                   <span className="text-[#F0A020]">
                     {t('knowledgeCompilation.ontologyNoDomain', {
                       defaultValue:
-                        'no class yet — the canvas draws nothing for it',
+                        'no entity yet — the canvas draws nothing for it',
                     })}
                   </span>
                 )}
@@ -1571,7 +1969,7 @@ export function OntologyCanvasEditor({
                 {t('knowledgeCompilation.fieldDomain')}
                 <SelectWithSearch
                   value={splitTypeList(selectedProperty.domain)[0] ?? ''}
-                  options={[{ label: '—', value: '' }, ...classOptions]}
+                  options={[{ label: '—', value: '' }, ...entityOptions]}
                   onChange={(value) =>
                     editProperty(propertyIndex, { domain: value })
                   }
@@ -1582,7 +1980,7 @@ export function OntologyCanvasEditor({
                   {t('knowledgeCompilation.fieldRange')}
                   <SelectWithSearch
                     value={splitTypeList(selectedProperty.range)[0] ?? ''}
-                    options={[{ label: '—', value: '' }, ...classOptions]}
+                    options={[{ label: '—', value: '' }, ...entityOptions]}
                     onChange={(value) =>
                       editProperty(propertyIndex, { range: value })
                     }
@@ -1624,7 +2022,7 @@ export function OntologyCanvasEditor({
                   {/* Acceptance only: this is never rendered into the prompt,
                       because a model told an attribute is mandatory supplies one
                       instead of leaving a gap. It is judged on the stored rows and
-                      reported as `missing` on the class's attribute list. */}
+                      reported as `missing` on the entity's attribute list. */}
                   <label className="flex flex-col gap-1">
                     {t('knowledgeCompilation.fieldRequired', {
                       defaultValue: 'Required on every instance',

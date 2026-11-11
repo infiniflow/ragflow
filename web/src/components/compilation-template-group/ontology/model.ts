@@ -19,7 +19,7 @@
  *
  * The canvas is a VIEW of the template's `config.entity.fields` /
  * `config.relation.fields`; everything that changes those arrays — adding a
- * class, binding a property's domain, renaming, deleting, validating — happens
+ * entity, binding a property's domain, renaming, deleting, validating — happens
  * here, on plain objects, so the one thing that must never break (the saved
  * shape) can be tested without a browser.
  *
@@ -29,16 +29,16 @@
  * template, which lists them in this order).
  */
 
-/** A class field, in the order the builtin ontology template lists it. */
-export const OntologyClassKeys = [
+/** An entity field, in the order the builtin ontology template lists it. */
+export const OntologyEntityKeys = [
   'type',
   'label',
   'description',
   'parent',
   'aliases',
   'rule',
-  // Which contract fields an action class requires. A "|"-separated list, like
-  // `aliases`: every value in a class field is a string, and the service reads
+  // Which contract fields an action entity requires. A "|"-separated list, like
+  // `aliases`: every value in an entity field is a string, and the service reads
   // the same form the input edits.
   'contract',
 ] as const;
@@ -48,10 +48,10 @@ export const OntologyClassKeys = [
  *
  * `enum` and `required` are the acceptance half of a declaration: `enum` closes a
  * datatype property's value set (stated to the model, enforced on the stored
- * value), `required` says every instance of the domain class should carry the
+ * value), `required` says every instance of the domain entity should carry the
  * attribute. `required` is deliberately not stated to the model — a model told an
  * attribute is mandatory invents a value — so it only shows up as a `missing`
- * count on the class's attribute list.
+ * count on the entity's attribute list.
  */
 export const OntologyPropertyKeys = [
   'type',
@@ -94,14 +94,14 @@ export interface OntologySection {
 }
 
 export interface OntologyDraft {
-  classes: OntologyField[];
+  entities: OntologyField[];
   properties: OntologyField[];
 }
 
 export interface OntologyIssue {
   code: string;
   message: string;
-  /** The class or property the issue is about. */
+  /** The entity or property the issue is about. */
   subject: string;
 }
 
@@ -135,8 +135,8 @@ export const canonicalField = (
   return out;
 };
 
-export const canonicalClasses = (fields?: OntologyField[]): OntologyField[] =>
-  (fields ?? []).map((field) => canonicalField(field, OntologyClassKeys));
+export const canonicalEntities = (fields?: OntologyField[]): OntologyField[] =>
+  (fields ?? []).map((field) => canonicalField(field, OntologyEntityKeys));
 
 export const canonicalProperties = (
   fields?: OntologyField[],
@@ -166,7 +166,7 @@ export const draftFromSections = (
   entity?: OntologySection,
   relation?: OntologySection,
 ): OntologyDraft => ({
-  classes: canonicalClasses(entity?.fields),
+  entities: canonicalEntities(entity?.fields),
   properties: canonicalProperties(relation?.fields),
 });
 
@@ -192,7 +192,7 @@ export const sectionsFromDraft = (
 ): { entity: OntologySectionDraft; relation: OntologySectionDraft } => ({
   entity: {
     ...(current?.entity ?? {}),
-    fields: canonicalClasses(draft.classes),
+    fields: canonicalEntities(draft.entities),
   },
   relation: {
     ...(current?.relation ?? {}),
@@ -200,9 +200,9 @@ export const sectionsFromDraft = (
   },
 });
 
-export const classNames = (draft: OntologyDraft): Set<string> => {
+export const entityNames = (draft: OntologyDraft): Set<string> => {
   const names = new Set<string>();
-  draft.classes.forEach((item) => {
+  draft.entities.forEach((item) => {
     const name = String(item.type ?? '').trim();
     if (name) names.add(name);
   });
@@ -211,19 +211,19 @@ export const classNames = (draft: OntologyDraft): Set<string> => {
 
 /**
  * effectiveKind is how the SERVICE reads a property's kind, including its
- * inference when `kind` is empty (a range naming a declared class means an
+ * inference when `kind` is empty (a range naming a declared entity means an
  * object property, anything else a datatype property). Mirroring it here means
  * the editor never disagrees with what the backend will conclude on save.
  */
 export const effectiveKind = (
   field: OntologyField,
-  classes: Set<string>,
+  entities: Set<string>,
 ): string => {
   const declared = String(field.kind ?? '')
     .trim()
     .toLowerCase();
   if (declared) return declared;
-  return splitTypeList(field.range).some((item) => classes.has(item))
+  return splitTypeList(field.range).some((item) => entities.has(item))
     ? OntologyKind.Object
     : OntologyKind.Datatype;
 };
@@ -238,17 +238,17 @@ const uniqueName = (base: string, taken: Set<string>): string => {
 const emptyField = (keys: readonly string[]): OntologyField =>
   Object.fromEntries(keys.map((key) => [key, '']));
 
-/** Adds a class with a free name, ready to be renamed in the panel. */
-export const addClass = (draft: OntologyDraft): OntologyDraft => {
-  const taken = classNames(draft);
+/** Adds an entity with a free name, ready to be renamed in the panel. */
+export const addEntity = (draft: OntologyDraft): OntologyDraft => {
+  const taken = entityNames(draft);
   return {
     ...draft,
-    classes: [
-      ...draft.classes,
+    entities: [
+      ...draft.entities,
       {
-        ...emptyField(OntologyClassKeys),
-        type: uniqueName('new_class', taken),
-        label: uniqueName('New class', taken),
+        ...emptyField(OntologyEntityKeys),
+        type: uniqueName('new_entity', taken),
+        label: uniqueName('New entity', taken),
       },
     ],
   };
@@ -286,15 +286,15 @@ export const updateField = (
 ): OntologyField[] =>
   list.map((field, at) => (at === index ? { ...field, ...patch } : field));
 
-/** Renames a class and rewrites every reference to the old name. */
-export const renameClass = (
+/** Renames an entity and rewrites every reference to the old name. */
+export const renameEntity = (
   draft: OntologyDraft,
   index: number,
   name: string,
 ): OntologyDraft => {
-  const previous = String(draft.classes[index]?.type ?? '').trim();
-  const classes = updateField(draft.classes, index, { type: name });
-  if (!previous || previous === name) return { ...draft, classes };
+  const previous = String(draft.entities[index]?.type ?? '').trim();
+  const entities = updateField(draft.entities, index, { type: name });
+  if (!previous || previous === name) return { ...draft, entities };
   const swap = (value: string | undefined) =>
     splitTypeList(value)
       .map((item) => (item === previous ? name : item))
@@ -304,23 +304,23 @@ export const renameClass = (
     domain: swap(field.domain),
     range: swap(field.range),
   }));
-  return { classes, properties };
+  return { entities, properties };
 };
 
 /**
- * Deletes a class and CLEARS every reference to it (a parent, a domain, a
+ * Deletes an entity and CLEARS every reference to it (a parent, a domain, a
  * range) instead of deleting the properties that used it: the reader asked to
- * remove one class, not to silently lose the properties that mentioned it. The
+ * remove one entity, not to silently lose the properties that mentioned it. The
  * references it clears then show up in the issue list, which is where the
  * decision about those properties belongs.
  */
-export const removeClass = (
+export const removeEntity = (
   draft: OntologyDraft,
   index: number,
 ): OntologyDraft => {
-  const removed = String(draft.classes[index]?.type ?? '').trim();
-  const classes = draft.classes.filter((_, at) => at !== index);
-  if (!removed) return { ...draft, classes };
+  const removed = String(draft.entities[index]?.type ?? '').trim();
+  const entities = draft.entities.filter((_, at) => at !== index);
+  if (!removed) return { ...draft, entities };
   const drop = (value: string | undefined) =>
     splitTypeList(value)
       .filter((item) => item !== removed)
@@ -330,7 +330,7 @@ export const removeClass = (
     domain: drop(field.domain),
     range: drop(field.range),
   }));
-  return { classes, properties };
+  return { entities, properties };
 };
 
 export const removeProperty = (
@@ -344,52 +344,52 @@ export const removeProperty = (
 /** Mirrors `ValidateTemplatePayload`'s rules for the ontology kind. */
 export const validateDraft = (draft: OntologyDraft): OntologyIssue[] => {
   const issues: OntologyIssue[] = [];
-  const classes = new Set<string>();
+  const entities = new Set<string>();
 
-  draft.classes.forEach((field) => {
+  draft.entities.forEach((field) => {
     const name = String(field.type ?? '').trim();
     if (!name) {
       issues.push({
-        code: 'class_without_type',
-        message: 'A class needs a name (type).',
+        code: 'entity_without_type',
+        message: 'An entity needs a name (type).',
         subject: '',
       });
       return;
     }
-    if (classes.has(name)) {
+    if (entities.has(name)) {
       issues.push({
-        code: 'duplicate_class',
-        message: `Two classes are both named ${name}.`,
+        code: 'duplicate_entity',
+        message: `Two entities are both named ${name}.`,
         subject: name,
       });
       return;
     }
-    classes.add(name);
+    entities.add(name);
   });
 
-  if (classes.size === 0) {
+  if (entities.size === 0) {
     issues.push({
-      code: 'no_class',
-      message: 'An ontology template must declare at least one class.',
+      code: 'no_entity',
+      message: 'An ontology template must declare at least one entity.',
       subject: '',
     });
   }
 
-  draft.classes.forEach((field) => {
+  draft.entities.forEach((field) => {
     const name = String(field.type ?? '').trim();
     if (!name) return;
     if (!String(field.description ?? '').trim()) {
       issues.push({
-        code: 'class_without_description',
-        message: `Class ${name} needs a description.`,
+        code: 'entity_without_description',
+        message: `Entity ${name} needs a description.`,
         subject: name,
       });
     }
     splitTypeList(field.parent).forEach((parent) => {
-      if (!classes.has(parent)) {
+      if (!entities.has(parent)) {
         issues.push({
           code: 'unknown_parent',
-          message: `Class ${name} declares unknown parent ${parent}.`,
+          message: `Entity ${name} declares unknown parent ${parent}.`,
           subject: name,
         });
       }
@@ -398,7 +398,7 @@ export const validateDraft = (draft: OntologyDraft): OntologyIssue[] => {
 
   // A cyclic chain would make the inherited-attribute walk never terminate.
   const parentOf = new Map<string, string>();
-  draft.classes.forEach((field) => {
+  draft.entities.forEach((field) => {
     const name = String(field.type ?? '').trim();
     const parent = splitTypeList(field.parent)[0];
     if (name && parent) parentOf.set(name, parent);
@@ -410,7 +410,7 @@ export const validateDraft = (draft: OntologyDraft): OntologyIssue[] => {
       if (seen.has(cursor)) {
         issues.push({
           code: 'cyclic_parent',
-          message: `Class ${child} has a cyclic parent chain.`,
+          message: `Entity ${child} has a cyclic parent chain.`,
           subject: child,
         });
         return;
@@ -449,7 +449,7 @@ export const validateDraft = (draft: OntologyDraft): OntologyIssue[] => {
       });
     }
 
-    const kind = effectiveKind(field, classes);
+    const kind = effectiveKind(field, entities);
     const domains = splitTypeList(field.domain);
     const ranges = splitTypeList(field.range);
     const datatype = String(field.datatype ?? '')
@@ -473,10 +473,10 @@ export const validateDraft = (draft: OntologyDraft): OntologyIssue[] => {
       });
     }
     domains.forEach((domain) => {
-      if (!classes.has(domain)) {
+      if (!entities.has(domain)) {
         issues.push({
           code: 'unknown_domain',
-          message: `Property ${name} declares unknown domain class ${domain}.`,
+          message: `Property ${name} declares unknown domain entity ${domain}.`,
           subject: name,
         });
       }
@@ -508,10 +508,10 @@ export const validateDraft = (draft: OntologyDraft): OntologyIssue[] => {
         });
       }
       ranges.forEach((range) => {
-        if (!classes.has(range)) {
+        if (!entities.has(range)) {
           issues.push({
             code: 'unknown_range',
-            message: `Property ${name} declares unknown range class ${range}.`,
+            message: `Property ${name} declares unknown range entity ${range}.`,
             subject: name,
           });
         }

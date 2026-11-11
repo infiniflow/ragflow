@@ -1065,7 +1065,7 @@ func TestFilterOutOfOntologyRelationsLeavesPlainGraphAlone(t *testing.T) {
 // subclass overrides its parent for the same name (the dedup keeps the first
 // occurrence).
 func TestDatatypePropertiesByClassInherits(t *testing.T) {
-	byClass := datatypePropertiesByClass(ontologyParserConfig())
+	byClass := datatypePropertiesByEntity(ontologyParserConfig())
 	want := map[string][]string{
 		"agent":  {"alias"},
 		"person": {"birth_date", "alias"},
@@ -1106,7 +1106,7 @@ func TestDatatypePropertiesByClassInheritsFromEveryParent(t *testing.T) {
 			map[string]any{"type": "employee_id", "kind": "datatype", "domain": "employee", "datatype": "string"},
 		}},
 	}
-	byClass := datatypePropertiesByClass(cfg)
+	byClass := datatypePropertiesByEntity(cfg)
 	want := map[string][]string{
 		"employee":     {"employee_id", "birth_date", "founded_on", "alias"},
 		"person":       {"birth_date", "alias"},
