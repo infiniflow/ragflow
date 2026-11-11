@@ -767,3 +767,81 @@ func (e *readyTrackingChunkStoreEngine) CreateChunkStore(ctx context.Context, ba
 	}
 	return err
 }
+
+// A failed post-commit step leaves the connector links and the task rows they
+// scheduled committed. The retry re-submits the same links, so it gets no task
+// IDs of its own and has to publish the rows the failed attempt left behind.
+func TestUpdateDatasetPublishesTasksCommittedByFailedAttempt(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	insertDatasetUpdateConnector(t, "connector-1", "tenant-1")
+
+	// The create path retries once, so both attempts of the first request have
+	// to fail for the update to report the error.
+	eng := &recordingChunkStoreEngine{
+		storeMissing: true,
+		err:          errors.New("index creation failed"),
+		failCalls:    2,
+	}
+	publisher := &recordingSyncTaskPublisher{}
+	previous := engine.GetMessageQueueEngine()
+	engine.SetMessageQueueEngine(publisher)
+	t.Cleanup(func() { engine.SetMessageQueueEngine(previous) })
+
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = eng
+	svc.embeddingDimension = func(context.Context, string, string) (int, error) { return 1024, nil }
+
+	model := "BAAI/bge-m3@Builtin"
+	req := service.UpdateDatasetRequest{
+		EmbeddingModel: &model,
+		Connectors:     &[]service.DatasetConnectorRequest{{ID: "connector-1"}},
+	}
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	if _, code, err := svc.UpdateDataset(ctx, "kb-1", req); err == nil || code != common.CodeServerError {
+		t.Fatalf("first UpdateDataset = (%d, %v), want a server error", code, err)
+	}
+	if len(publisher.published) != 0 {
+		t.Fatalf("published tasks = %v before the store was ready, want none", publisher.published)
+	}
+
+	var taskIDs []string
+	if err := dao.DB.Model(&entity.SyncLogs{}).Where("kb_id = ?", "kb-1").Pluck("id", &taskIDs).Error; err != nil {
+		t.Fatalf("read committed tasks: %v", err)
+	}
+	if len(taskIDs) != 1 {
+		t.Fatalf("committed tasks = %v, want the single task the failed attempt scheduled", taskIDs)
+	}
+
+	if _, code, err := svc.UpdateDataset(ctx, "kb-1", req); err != nil || code != common.CodeSuccess {
+		t.Fatalf("retry UpdateDataset = (%d, %v), want success", code, err)
+	}
+	if len(publisher.published) != 1 || publisher.published[0] != taskIDs[0] {
+		t.Fatalf("published tasks = %v, want the retry to publish %v", publisher.published, taskIDs)
+	}
+}
+
+// The transaction accepts the switch only when the plan prepared that model. A
+// plan that ran while the dataset still had chunks prepared nothing, so the
+// switch it would commit has no vector column behind it.
+func TestChunkStorePlanCoversOnlyTheModelItPrepared(t *testing.T) {
+	model := "BAAI/bge-m3@Builtin"
+	cases := []struct {
+		name string
+		plan chunkStorePlan
+		want bool
+	}{
+		{name: "nothing_prepared"},
+		{name: "existing_store_extended", plan: chunkStorePlan{storeExists: true, preparedEmbdID: model}, want: true},
+		{name: "missing_store_scheduled", plan: chunkStorePlan{createEmbdID: model}, want: true},
+		{name: "another_model_prepared", plan: chunkStorePlan{storeExists: true, preparedEmbdID: "other@Builtin"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.plan.covers(model); got != tc.want {
+				t.Fatalf("covers(%q) = %v, want %v", model, got, tc.want)
+			}
+		})
+	}
+}
