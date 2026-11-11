@@ -269,6 +269,7 @@ func autoMigrateModels() []interface{} {
 		&entity.LLMFactories{},
 		&entity.LLM{},
 		&entity.TenantLangfuse{},
+		&entity.TenantFutureAGI{},
 		&entity.SystemSettings{},
 		&entity.Connector{},
 		&entity.Connector2Kb{},

@@ -17,6 +17,7 @@
 import { useIsDarkTheme } from '@/components/theme-provider';
 import { Button } from '@/components/ui/button';
 import { useSetModalState, useTranslate } from '@/hooks/common-hooks';
+import { FutureAGICard } from '@/components/futureagi';
 import { LangfuseCard } from '@/pages/user-setting/setting-model/langfuse';
 import apiDoc from '@parent/docs/references/http_api_reference.md?raw';
 import { Loader2 } from 'lucide-react';
@@ -117,6 +118,7 @@ const ApiContent = ({ id, idKey }: { id?: string; idKey: string }) => {
         )}
       </section>
       <LangfuseCard></LangfuseCard>
+      <FutureAGICard></FutureAGICard>
       {apiKeyVisible && (
         <ChatApiKeyModal
           hideModal={hideApiKeyModal}

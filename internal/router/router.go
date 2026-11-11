@@ -35,6 +35,7 @@ type Router struct {
 	chatHandler          *handler.ChatHandler
 	chatChannelHandler   *handler.ChatChannelHandler
 	langfuseHandler      *handler.LangfuseHandler
+	futureAGIHandler     *handler.FutureAGIHandler
 	openaiChatHandler    *handler.OpenAIChatHandler
 	chatSessionHandler   *handler.ChatSessionHandler
 	connectorHandler     *handler.ConnectorHandler
@@ -710,6 +711,18 @@ func (r *Router) Setup(engine *gin.Engine) {
 				langfuse.PUT("/api-key", r.langfuseHandler.SetAPIKey)
 				langfuse.GET("/api-key", r.langfuseHandler.GetAPIKey)
 				langfuse.DELETE("/api-key", r.langfuseHandler.DeleteAPIKey)
+			}
+
+			// Future AGI trace export keys
+			if r.futureAGIHandler == nil {
+				r.futureAGIHandler = handler.NewFutureAGI()
+			}
+			futureAGI := v1.Group("/futureagi")
+			{
+				futureAGI.POST("/api-key", r.futureAGIHandler.SetAPIKey)
+				futureAGI.PUT("/api-key", r.futureAGIHandler.SetAPIKey)
+				futureAGI.GET("/api-key", r.futureAGIHandler.GetAPIKey)
+				futureAGI.DELETE("/api-key", r.futureAGIHandler.DeleteAPIKey)
 			}
 
 			// Dify retrieval routes

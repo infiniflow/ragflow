@@ -29,6 +29,10 @@ jest.mock('@/services/user-service', () => ({
   deleteTenantUser: (...args: unknown[]) => mockDeleteTenantUser(...args),
   agreeTenant: (...args: unknown[]) => mockAgreeTenant(...args),
 }));
+jest.mock('@/services/futureagi-service', () => ({
+  __esModule: true,
+  default: {},
+}));
 jest.mock('@/services/knowledge-service', () => ({
   __esModule: true,
   default: {},

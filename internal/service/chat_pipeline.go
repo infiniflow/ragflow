@@ -221,7 +221,7 @@ type ThinkEvent struct {
 //   - messages: saved user/assistant history, or the full payload for non-storing model tests.
 //   - stream: if true, yields content deltas as they arrive.
 //   - kwargs: extra parameters (doc_ids, knowledge, quote, etc.).
-func (s *ChatPipelineService) AsyncChat(
+func (s *ChatPipelineService) asyncChat(
 	ctx context.Context,
 	chat *entity.Chat,
 	messages []map[string]interface{},
@@ -864,6 +864,7 @@ func (s *ChatPipelineService) AsyncChat(
 			s.enrichChunksWithMetadata(ctx, kbinfos, chat.TenantID, metadataFields)
 		}
 		timer.Exit(common.PhaseRetrieval)
+		futureAGITurnFrom(ctx).retrieved(strings.Join(questions, " "), kbinfos, hasKnowledgeParam, timer.Phase(common.PhaseRetrieval), chat)
 
 		// === Phase 10: Build LLM Request ===
 		// Sub-steps: empty_response check → formatPrompt → citationPrompt →
@@ -1094,6 +1095,7 @@ func (s *ChatPipelineService) AsyncChat(
 			return
 		}
 		chatMessages := s.buildChatMessages(prompt+prompt4citation, llmMessages[1:])
+		futureAGITurnFrom(ctx).llmStart(llmModelName(llmModelConfig), llmFactoryName(llmModelConfig), chatMessages)
 
 		// Langfuse generation start observation.
 		var langfuseGenerationID string
@@ -1316,6 +1318,7 @@ func (s *ChatPipelineService) AsyncChat(
 				)
 			}
 			if driverErr != nil {
+				futureAGITurnFrom(ctx).llmEnd("", 0, 0, driverErr)
 				if ctx.Err() != nil {
 					return
 				}
@@ -1402,6 +1405,7 @@ func (s *ChatPipelineService) AsyncChat(
 			timer.Exit(common.PhaseGenerateAnswer)
 
 			if err != nil {
+				futureAGITurnFrom(ctx).llmEnd("", 0, 0, err)
 				sendResult(AsyncChatResult{
 					Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
 					Final:  true,
@@ -1626,6 +1630,8 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			chatMessages = append(chatMessages, modelMessageFromMap(m))
 		}
 
+		futureAGITurnFrom(ctx).llmStart(llmModelName(llmModelConfig), llmFactoryName(llmModelConfig), chatMessages)
+
 		// 7. Drive the LLM: stream (per-delta with think markers) or non-stream (one-shot).
 		if stream {
 			var fullAnswer string
@@ -1712,6 +1718,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				},
 			)
 			if driverErr != nil {
+				futureAGITurnFrom(ctx).llmEnd("", 0, 0, driverErr)
 				if ctx.Err() != nil {
 					return
 				}
@@ -1784,6 +1791,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			resp, err := chatModel.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
 			timer.Exit(common.PhaseGenerateAnswer)
 			if err != nil {
+				futureAGITurnFrom(ctx).llmEnd("", 0, 0, err)
 				sendResult(AsyncChatResult{
 					Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
 					Final:  true,
@@ -3201,6 +3209,8 @@ func (s *ChatPipelineService) decorateAnswer(
 			})
 		}
 	}
+
+	futureAGITurnFrom(ctx).llmEnd(think+ans, usedTokenCount, tkNum, nil)
 
 	return AsyncChatResult{
 		Answer:      think + ans,
