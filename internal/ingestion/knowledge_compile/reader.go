@@ -40,7 +40,7 @@ import (
 // rows lives in external storage (DocEngine): the consumer only keeps the
 // in-flight batch in memory and asks the engine for nearest matches via KNN.
 // It never scans every compiled chunk of the KB, which would OOM on a large
-// knowledge base — this mirrors Python's _struct_doc_storage_dedup_batch, which
+// knowledge base — this mirrors _struct_doc_storage_dedup_batch, which
 // takes only the just-compiled docs and KNN-queries the store per doc.
 type Reader interface {
 	// LoadDocProducts returns the per-document compiled rows for a single
@@ -51,7 +51,7 @@ type Reader interface {
 	// SearchSimilar runs a dense (KNN) search over the existing merged rows of
 	// the given variant and returns the single most-similar row whose score is
 	// at least minScore, plus that score. It returns a zero Product when nothing
-	// clears the threshold. This mirrors Python's _struct_doc_storage_knn_candidate
+	// clears the threshold. This mirrors _struct_doc_storage_knn_candidate
 	// (topn=1, similarity_threshold): find the dot product above the threshold
 	// and maximum, then decide duplication with the LLM.
 	SearchSimilar(ctx context.Context, tenant, kb string, variant kccommon.Variant, vector []float64, topN int, minScore float64) (kccommon.Product, float64, error)
@@ -123,7 +123,7 @@ var compiledSelectFields = []string{
 	// and the dataset-nav dispatch would skip structure/tree products (B2).
 	"type_kwd", "knowledge_graph_kwd", "raptor_kwd",
 	// mention_count_int round-trips the entity mention count for reprojection.
-	// (relation type lives in the content_with_weight payload, matching Python —
+	// (relation type lives in the content_with_weight payload, matching
 	// there is NO relation_type_kwd column.)
 	"mention_count_int",
 }
@@ -404,7 +404,7 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 		meta["mention_count"] = v
 	}
 	if v, ok := c["slug_kwd"].(string); ok && v != "" {
-		// slug_kwd is the full "<page_type>/<slug>" form (Python writer
+		// slug_kwd is the full "<page_type>/<slug>" form ( writer
 		// contract); reconstruct it verbatim so the round-trip stays full-form.
 		meta["slug"] = v
 	}

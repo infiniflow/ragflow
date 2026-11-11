@@ -33,6 +33,7 @@ import (
 	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	taskpkg "ragflow/internal/ingestion/task"
+	"ragflow/internal/observability"
 	servicepkg "ragflow/internal/service"
 	documentpkg "ragflow/internal/service/document"
 	"ragflow/internal/utility"
@@ -134,7 +135,7 @@ type Ingestor struct {
 	// cancelCheck is polled periodically (pollCancelInterval) during task
 	// execution. When it returns true the task's context is cancelled, which
 	// causes the pipeline to stop at the next ctx.Err() check. Defaults to a
-	// Redis cancel-flag lookup that mirrors Python's has_canceled(), with a
+	// Redis cancel-flag lookup that mirrors has_canceled(), with a
 	// DB fallback when Redis is unavailable. Tests may override this to
 	// simulate cancel without Redis.
 	cancelCheck func(ctx context.Context, taskID string) bool
@@ -175,6 +176,16 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string, dep
 		deps = &ingestion.Deps{}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	// Carry process-level ingest identity on the ingestor's root context so that
+	// every lifecycle event emitted through this ingestor (including scheduled/
+	// created events raised outside a worker) attributes to this ingestor and the
+	// NATS subject it consumes. The per-worker name is added per task on the
+	// task context (see handleAndExecute). The EE build may layer additional,
+	// per-execution identity onto the context upstream of the emit.
+	ctx = observability.WithIngestIdentity(ctx, observability.IngestIdentity{
+		IngestorName: name,
+		NatsQueue:    common.TaskSubject,
+	})
 	dispatchCtx, dispatchCancel := context.WithCancel(context.Background())
 	id := common.GenerateUUID()
 	ingestor := &Ingestor{
@@ -475,7 +486,7 @@ func (e *Ingestor) compileLoop(id int32) {
 
 // handleAndExecute owns one handle from its hand-off to final settlement. It
 // runs only in the worker that received the handle through its private inbox.
-func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
+func (e *Ingestor) handleAndExecute(w *worker, handle common.TaskHandle) {
 	startTime := time.Now()
 	taskMessage := handle.GetMessage()
 	common.Info(fmt.Sprintf("Received task id: %s, type: %s", taskMessage.TaskID, taskMessage.TaskType),
@@ -574,7 +585,16 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 		// Claim the task before applying document/log side effects. A duplicate
 		// delivery must only renew its broker lease; resetting the document here
 		// would race the owning worker and erase its in-flight progress.
-		e.ingestionTaskSvc.PrepareValidatedRun(e.ctx, task)
+		//
+		// The running lifecycle event emitted by PrepareValidatedRun must name
+		// the worker that claimed this task, so we carry the per-task worker
+		// identity on the context here (before the call) rather than only on the
+		// task-scheduling context used for terminal events below.
+		runCtx := e.ctx
+		if w != nil {
+			runCtx = observability.WithWorkerName(runCtx, fmt.Sprintf("worker-%d", w.id))
+		}
+		e.ingestionTaskSvc.PrepareValidatedRun(runCtx, task)
 	default:
 		common.Warn(fmt.Sprintf("task %s in unexpected status %s, ack-skip", taskMessage.TaskID, task.Status))
 		e.ackHandle(hb, handle, taskMessage.TaskID)
@@ -583,6 +603,13 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 
 	taskCtx := taskpkg.NewTaskContextForScheduling(e.ctx, task)
 	taskCtx.Handle = handle
+	// The ingestor name and NATS subject already ride on the root context
+	// (set in NewIngestor); here we add the worker that claimed this task so the
+	// emitted lifecycle event names it. An absent worker (e.g. test callers that
+	// pass nil) simply yields an empty field.
+	if w != nil {
+		taskCtx.Ctx = observability.WithWorkerName(taskCtx.Ctx, fmt.Sprintf("worker-%d", w.id))
+	}
 	e.executeTaskWithHeartbeat(e.ctx, taskCtx, hb)
 }
 
@@ -683,7 +710,7 @@ func (e *Ingestor) workerLoop(w *worker) {
 
 		select {
 		case handle := <-w.inbox:
-			e.handleAndExecute(handle)
+			e.handleAndExecute(w, handle)
 		case <-e.dispatchCtx.Done():
 			return
 		}
@@ -764,7 +791,7 @@ func (e *Ingestor) executeTaskWithHeartbeat(ctx context.Context, taskCtx *taskpk
 	defer e.releaseTask(task.ID)
 
 	// Derive a per-task cancelable context so that an external cancel
-	// signal (Redis cancel flag, mirrored from Python's {task_id}-cancel)
+	// signal (Redis cancel flag, mirrored from {task_id}-cancel)
 	// can stop only this task without affecting the whole Ingestor.
 	perTaskCtx, perTaskCancel := context.WithCancel(taskCtx.Ctx)
 	taskCtx.Ctx = perTaskCtx
@@ -1076,7 +1103,7 @@ func (e *Ingestor) ackOrNack(taskCtx *taskpkg.TaskContext, terminal bool) {
 	}
 }
 
-// defaultCancelCheck reads the Redis cancel flag that Python sets via
+// defaultCancelCheck reads the Redis cancel flag that sets via
 // REDIS_CONN.set(f"{task_id}-cancel", "x"). Falls back to checking the
 // task status in DB when Redis is unavailable — a STOPPING status
 // (set by RequestStop) is treated as a cancel signal.

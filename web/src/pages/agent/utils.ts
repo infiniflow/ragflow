@@ -311,6 +311,12 @@ export function transformParserParams(params: ParserFormSchemaType) {
             remove_header_footer: cur.remove_header_footer || false,
           };
           break;
+        case FileType.TextMarkdown:
+          filteredSetup = {
+            ...filteredSetup,
+            remove_toc: cur.remove_toc || false,
+          };
+          break;
         case FileType.Audio:
           // Audio keeps its own per-setup model: it is an ASR model, not the
           // shared vision one.

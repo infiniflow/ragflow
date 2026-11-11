@@ -62,8 +62,7 @@ func (u *docStateUpdater) apply(ctx context.Context, r *taskpkg.PipelineResult) 
 		}
 	}
 	// Built-in metadata (update_time / file_name) is applied on top of the
-	// LLM-extracted metadata, mirroring Python apply_built_in_metadata
-	// (task_executor_refactor/chunk_post_processor.py): it runs when
+	// LLM-extracted metadata, mirroring applyBuiltInMetadata: it runs when
 	// auto-metadata is enabled and built-in fields are configured, and its
 	// values overwrite whatever is already stored.
 	if r.AutoMetadataEnabled && len(r.BuiltInMetadataConfig) > 0 {
@@ -97,8 +96,7 @@ func mergeDocMetadata(ctx context.Context, svc docStateSvc, docID string, metada
 }
 
 // applyBuiltInMetadata writes the configured built-in metadata fields into the
-// document's metadata, overwriting existing values. Mirrors Python
-// apply_built_in_metadata (task_executor_refactor/chunk_post_processor.py):
+// document's metadata, overwriting existing values. The fields are:
 //   - update_time -> current timestamp "2006-01-02 15:04:05"
 //   - file_name   -> the document name
 func applyBuiltInMetadata(ctx context.Context, svc docStateSvc, docID, docName string, config []any) error {

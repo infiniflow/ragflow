@@ -1,7 +1,7 @@
 package common
 
 // PackBatches groups chunks into LLM-context-window-sized batches using greedy
-// bin-packing by token budget. It mirrors Python's split_chunks / build_chunk_batches:
+// bin-packing by token budget. It mirrors split_chunks / build_chunk_batches
 // a single chunk is NEVER split, even when it exceeds maxTokens — in that case it
 // is placed alone in its own batch. Returns nil when there are no chunks.
 func PackBatches(chunks []Chunk, maxTokens int, tok Tokenizer) [][]Chunk {

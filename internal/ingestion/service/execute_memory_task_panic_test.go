@@ -84,10 +84,10 @@ func TestHandleAndExecute_SurvivesMemoryPanicAndKeepsServing(t *testing.T) {
 		TaskType: common.TaskTypeMemory,
 	}}
 
-	ingestor.handleAndExecute(memHandle)
+	ingestor.handleAndExecute(nil, memHandle)
 
 	docHandle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeIngestionTask}}
-	ingestor.handleAndExecute(docHandle)
+	ingestor.handleAndExecute(nil, docHandle)
 
 	if memHandle.nacks.Load() != 0 || memHandle.acks.Load() != 0 {
 		t.Fatalf("poison memory task: expected unsettled handle, got acks=%d nacks=%d", memHandle.acks.Load(), memHandle.nacks.Load())

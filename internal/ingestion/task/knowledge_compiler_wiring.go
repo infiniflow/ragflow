@@ -462,9 +462,9 @@ func wikiMapVectorSizeResolver(tenantID, datasetID string) func(context.Context)
 	}
 }
 
-// datasetEmbeddingID mirrors Python's embedding binding for a compile task:
+// datasetEmbeddingID mirrors embedding binding for a compile task
 // kb.tenant_embd_id wins, else kb.embd_id, and an empty id leaves the embedder to
-// its tenant-default fallback (rag/svr/task_executor.py:1454-1487).
+// its tenant-default fallback.
 func datasetEmbeddingID(kb *entity.Knowledgebase) string {
 	if kb == nil {
 		return ""
@@ -477,7 +477,7 @@ func datasetEmbeddingID(kb *entity.Knowledgebase) string {
 
 // embedderVectorSize reports the vector size a missing Infinity chunk table must
 // be created with: an unset dimension is measured with a one-input probe (the
-// signal Python sizes the table with in create_idx, task_executor.py:737-740).
+// signal sizes the table with in create_idx, )
 func embedderVectorSize(ctx context.Context, embed kc.Embedder) (int, error) {
 	if dimension := embed.Dimensions(); dimension > 0 {
 		return dimension, nil
@@ -576,7 +576,7 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 			// both explicit and default model refs share one context-window path.
 		}
 		// Resolve the chat model's context window so RAPTOR can truncate each
-		// cluster's texts to fit the LLM context (mirrors Python self._llm_model.max_length).
+		// cluster's texts to fit the LLM context (mirrors self._llm_model.max_length)
 		// ContextLength is the total context window; MaxTokens is only the
 		// generation cap and must not be used as the input budget.
 		llmMax := kc.DefaultLLMContextLength
@@ -638,7 +638,7 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 		{Role: "system", Content: req.SystemPrompt},
 		{Role: "user", Content: req.UserPrompt},
 	}
-	// Python's knowledge compilation pins per-call-site temperatures
+	// knowledge compilation pins per-call-site temperatures
 	// (extraction 0.1, merge judging 0.0); nil leaves the driver default.
 	var config *models.ChatConfig
 	// Build a provider config only for per-call overrides. In particular, do not
@@ -819,7 +819,7 @@ func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, e
 
 // resolveModel returns the embedding model to embed with. It prefers the
 // explicitly configured embedding_model; when the caller left it unset, it falls
-// back to the tenant's default embedding model (mirrors Python, which uses the
+// back to the tenant's default embedding model (mirrors , which uses the
 // KB/tenant's configured embedding model for wiki compilation). A clear error is
 // returned only when neither is available, so a KB with no embedding model fails
 // loudly instead of silently producing empty vectors.

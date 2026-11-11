@@ -236,6 +236,27 @@ def test_pdf_oxide_url_reads_its_own_module_line(tmp_path):
     assert "/v0.1.12/" not in pdf_url  # not coupled to office_oxide's line
 
 
+def test_pdf_oxide_current_go_mod_version_is_0_3_78():
+    # TDD contract for the pdf_oxide upgrade: the real repo go.mod must pin
+    # v0.3.78 (not the prior 0.3.73). build.sh and the downloader both read
+    # this single source, so the native-lib cache path and release URL must
+    # track 0.3.78 after the bump. Adversarial: explicitly NOT 0.3.73, so a
+    # forgotten / partial bump (go.mod left at the old pin) fails loudly.
+    version = native.go_module_version("github.com/yfedoseev/pdf_oxide/go", native.REPO_ROOT)
+    assert version == "0.3.78"
+    assert version != "0.3.73"
+
+
+def test_pdf_oxide_url_targets_0_3_78_release():
+    # The downloader's release URL must reference v0.3.78 (derived from go.mod);
+    # it must NOT still point at the prior 0.3.73 asset. Adversarial: the old
+    # version string must be absent, otherwise the versioned native-lib cache
+    # would be populated from the wrong release.
+    url = native.pdf_oxide_url(native.REPO_ROOT, "linux", "amd64")
+    assert "/v0.3.78/" in url
+    assert "/v0.3.73/" not in url
+
+
 def test_url_builders_honor_gh_proxy(monkeypatch):
     monkeypatch.setenv("GH_PROXY", "https://gh-proxy.com/")
     assert native.pdfium_url("linux", "amd64").startswith("https://gh-proxy.com/https://github.com/")
@@ -434,6 +455,32 @@ def test_pdf_oxide_stamp_text_rejects_wrong_version(tmp_path, monkeypatch):
             version,
             "text",
         )
+
+
+def test_valid_download_accepts_pdf_oxide_tarball_with_current_version(tmp_path):
+    # Regression for the stale-archive reuse bug: a pdf_oxide tarball whose
+    # embedded .a carries the version go.mod pins must be treated as a valid
+    # download, so main() skips re-downloading it (the "already present" fast
+    # path). _valid_download must read the SAME version go.mod pins, via the
+    # same go_module_version() the downloader URL builder uses.
+    version = native.go_module_version("github.com/yfedoseev/pdf_oxide/go", native.REPO_ROOT)
+    archive = tmp_path / "pdf_oxide-go-ffi-linux-amd64.tar.gz"
+    _make_stamped_archive(archive, "lib/linux_amd64/libpdf_oxide.a", f"pdf_oxide {version}".encode(), "include/pdf_oxide.h")
+    assert native._valid_download(str(archive)) is True
+
+
+def test_valid_download_rejects_pdf_oxide_tarball_with_stale_version(tmp_path):
+    # The exact failure the user hit: a pdf_oxide tarball left over from a prior
+    # version sitting in deps/ must NOT be reused. Before this fix _valid_download
+    # accepted ANY non-empty tarball and the version mismatch only surfaced later
+    # as a RuntimeError at extraction ("missing required native files or version
+    # <current>"). Rejecting it here makes the downloader re-fetch the correct
+    # release and keeps the error close to the cause.
+    current = native.go_module_version("github.com/yfedoseev/pdf_oxide/go", native.REPO_ROOT)
+    stale = "0.0.0" if current != "0.0.0" else "0.0.1"
+    archive = tmp_path / "pdf_oxide-go-ffi-linux-amd64.tar.gz"
+    _make_stamped_archive(archive, "lib/linux_amd64/libpdf_oxide.a", f"pdf_oxide {stale}".encode(), "include/pdf_oxide.h")
+    assert native._valid_download(str(archive)) is False
 
 
 def test_office_oxide_stamp_null_accepts_matching_version(tmp_path, monkeypatch):
@@ -736,6 +783,51 @@ def test_pdfium_static_version_reads_single_source(tmp_path):
 def test_pdfium_static_version_against_real_repo():
     # Sanity: the shared const on the checked-out repo.
     assert native.pdfium_static_version(native.REPO_ROOT) == "7809"
+
+
+def test_pdfium_local_asset_name_carries_version_and_platform():
+    # The on-disk pdfium tarball name must encode the resolved chromium build
+    # number so two pdfium versions never share a deps/ path (the silent-reuse
+    # bug). It must NOT equal the version-agnostic upstream asset name, and must
+    # keep the platform token so the right arch is selected.
+    version = native.pdfium_static_version(native.REPO_ROOT)
+    name = native.pdfium_local_asset_name("linux", "amd64")
+    assert name == f"pdfium-linux-x64-static-{version}.tgz"
+    # Adversarial: if this were still the bare asset name, a stale tarball would
+    # be silently reused — the whole point is that the name differs.
+    assert name != native.PDFIUM_STATIC_ASSETS[("linux", "amd64")]
+    assert version in name
+    assert "linux-x64" in name
+
+
+def test_pdfium_local_asset_name_is_version_driven_not_hardcoded(monkeypatch):
+    # Guard against a wrong implementation that hardcodes "7809" or otherwise
+    # ignores PDFIUM_VERSION: when the bound version changes, the local name
+    # must change with it.
+    monkeypatch.setattr(native, "PDFIUM_VERSION", "9999")
+    assert native.pdfium_local_asset_name("linux", "amd64") == "pdfium-linux-x64-static-9999.tgz"
+    assert native.pdfium_local_asset_name("darwin", "arm64") == "pdfium-mac-arm64-static-9999.tgz"
+
+
+def test_pdfium_url_basename_stays_version_agnostic():
+    # The download URL must keep pointing at the upstream version-agnostic
+    # asset (.../chromium/7809/pdfium-linux-x64-static.tgz). Only the LOCAL name
+    # is versioned; versioning the URL instead would break the download, since
+    # the upstream release asset name does not contain the build number.
+    url = native.pdfium_url("linux", "amd64")
+    assert url.endswith("/" + native.PDFIUM_STATIC_ASSETS[("linux", "amd64")])
+    assert native.pdfium_local_asset_name("linux", "amd64") not in url
+
+
+def test_valid_download_accepts_versioned_pdfium_tarball(tmp_path):
+    # Regression: the renamed pdfium tarball is still a valid .tgz, so the
+    # downloader's "already present" fast path still fires for it (it is not in
+    # the OFFICE/PDF_OXIDE asset sets, so _valid_download returns True for any
+    # non-empty valid tarball).
+    version = native.pdfium_static_version(native.REPO_ROOT)
+    archive = tmp_path / f"pdfium-linux-x64-static-{version}.tgz"
+    _make_pdfium_archive(archive, ["lib/libpdfium.a"])
+    assert native._valid_download(str(archive)) is True
 
 
 # ── deepdoc_ort_version (bash) single source ───────────────────────────────
