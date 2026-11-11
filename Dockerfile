@@ -260,16 +260,23 @@ ARG NATIVE_LIBS_REQUIRED=0
 RUN git config --global safe.directory "*" && \
     cd /ragflow && ./build.sh --cpp
 
+# type=bind is read-only by default, but a partial cache is fine: build.sh fills
+# any missing version-keyed archive via its controlled auto-download into
+# RAGFLOW_NATIVE_LIBS_DIR. rw lets that downloader complete the cache inside
+# this RUN. Writes are discarded when the RUN finishes and never enter the image
+# layer; the named context is a copy of the host dir, so the runner's cache is
+# unaffected. Only /ragflow/bin is copied into the production stage.
 RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod,sharing=locked \
     --mount=type=cache,id=ragflow_gobuild,target=/root/.cache/gobuild \
-    --mount=type=bind,from=native-libs,target=/ragflow/.native-libs \
+    --mount=type=bind,from=native-libs,target=/ragflow/.native-libs,rw \
     set -euo pipefail; \
     export GOMODCACHE=/root/.cache/gomod GOCACHE=/root/.cache/gobuild; \
     git config --global safe.directory "*"; \
-    if [ -d /ragflow/.native-libs/office_oxide ] && \
-       [ -d /ragflow/.native-libs/pdfium-static ] && \
-       [ -d /ragflow/.native-libs/pdf_oxide ] && \
-       [ -d /ragflow/.native-libs/onnxruntime ]; then \
+    NATIVE_LIBS_CONTEXT_PASSED=1; \
+    for lib in office_oxide pdfium-static pdf_oxide onnxruntime; do \
+      [ -d "/ragflow/.native-libs/${lib}" ] || NATIVE_LIBS_CONTEXT_PASSED=0; \
+    done; \
+    if [ "${NATIVE_LIBS_CONTEXT_PASSED}" = "1" ]; then \
       export RAGFLOW_NATIVE_LIBS_DIR=/ragflow/.native-libs; \
     elif [ "${NATIVE_LIBS_REQUIRED:-0}" = "1" ]; then \
       echo "ERROR: --build-context native-libs=<host cache dir> was not passed." >&2; \
