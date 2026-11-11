@@ -51,13 +51,18 @@ export const OntologyActionKeys = {
    */
   all: (id?: string) => [OntologyActionApiAction.FetchActions, id] as const,
   actions: (id?: string) => [OntologyActionApiAction.FetchActions, id] as const,
-  bindings: (id?: string) => [OntologyActionApiAction.FetchBindings, id] as const,
+  bindings: (id?: string) =>
+    [OntologyActionApiAction.FetchBindings, id] as const,
   executions: (id?: string, page?: number) =>
     [OntologyActionApiAction.FetchExecutions, id, page] as const,
 };
 
 export const useFetchModelActions = (id?: string, enabled = true) => {
-  const { data, isFetching: loading, error } = useQuery<IModelAction[]>({
+  const {
+    data,
+    isFetching: loading,
+    error,
+  } = useQuery<IModelAction[]>({
     queryKey: OntologyActionKeys.actions(id),
     enabled: !!id && enabled,
     queryFn: async () => {
@@ -93,7 +98,12 @@ export const useFetchActionBindings = (id?: string, enabled = true) => {
     },
   });
 
-  return { bindings: data?.bindings, execEnabled: data?.exec_enabled, loading, error };
+  return {
+    bindings: data?.bindings,
+    execEnabled: data?.exec_enabled,
+    loading,
+    error,
+  };
 };
 
 export const useFetchActionExecutions = (
@@ -114,7 +124,10 @@ export const useFetchActionExecutions = (
         page,
         page_size: 20,
       });
-      return (data?.data ?? { executions: [], total: 0 }) as IActionExecutionList;
+      return (data?.data ?? {
+        executions: [],
+        total: 0,
+      }) as IActionExecutionList;
     },
   });
 
@@ -193,7 +206,13 @@ export const useDeleteActionBinding = () => {
   const queryClient = useQueryClient();
   const { mutateAsync, isPending: loading } = useMutation({
     mutationKey: [OntologyActionApiAction.DeleteBinding],
-    mutationFn: async ({ id, actionName }: { id: string; actionName: string }) => {
+    mutationFn: async ({
+      id,
+      actionName,
+    }: {
+      id: string;
+      actionName: string;
+    }) => {
       const { data } = await deleteActionBinding(id, actionName);
       return data;
     },

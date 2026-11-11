@@ -73,7 +73,9 @@ export default function EditNextCompilationTemplate() {
           {/* What the model says it may do, next to what it says: an action the
               model declares but nobody has wired to a tool cannot run, and that
               gap is invisible from the assertion preview alone. */}
-          {isOntology && <OntologyActionWorkbenchSheet templateId={templateId} />}
+          {isOntology && (
+            <OntologyActionWorkbenchSheet templateId={templateId} />
+          )}
           <CompilationModelsSheet templateId={templateId} />
         </div>
       </header>

@@ -38,7 +38,10 @@ import { ReactNode, useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 /** Reads a field's current value into the editor's string form. */
-function fieldToText(action: IModelAction, name: ActionContractFieldName): string {
+function fieldToText(
+  action: IModelAction,
+  name: ActionContractFieldName,
+): string {
   const field = action.contract?.fields?.[name];
   if (!field || field.status === 'missing') {
     return '';
