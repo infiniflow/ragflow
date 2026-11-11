@@ -260,6 +260,10 @@ func familyToExt(family string) utility.FileType {
 // family identifier used by ParserComponent setups
 // Returns "" when the hint is unknown.
 func pythonFamilyName(raw string) string {
+	// Resolve registered extension aliases before selecting a parser setup.
+	if fileType := utility.GetFileType("file." + raw); fileType != utility.FileTypeOTHER {
+		raw = string(fileType)
+	}
 	if utility.IsVideoExtension(raw) || raw == "video" {
 		return "video"
 	}
