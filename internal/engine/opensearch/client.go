@@ -44,7 +44,6 @@ type Engine struct {
 	apiClient           *opensearchapi.Client
 	config              *config.OpenSearchConfig
 	hybridSearchEnabled bool
-	hybridPipelineName  string
 }
 
 func NewEngine(ctx context.Context, osConfig config.OpenSearchConfig) (*Engine, error) {
@@ -92,21 +91,26 @@ func NewEngine(ctx context.Context, osConfig config.OpenSearchConfig) (*Engine, 
 	}
 
 	engine := &Engine{
-		client:             client,
-		apiClient:          apiClient,
-		config:             &osConfig,
-		hybridPipelineName: "ragflow_hybrid_pipeline",
+		client:    client,
+		apiClient: apiClient,
+		config:    &osConfig,
 	}
 
-	if err = engine.initHybridSearch(newCtx, infoResp.Version.Number); err != nil {
-		common.Warn("OpenSearch hybrid search is disabled",
-			zap.String("version", infoResp.Version.Number), zap.Error(err))
-	} else {
+	if supportsHybridSearch(infoResp.Version.Number) {
 		engine.hybridSearchEnabled = true
+	} else {
+		common.Warn("OpenSearch hybrid search is disabled (requires OpenSearch >= 2.10)",
+			zap.String("version", infoResp.Version.Number))
 	}
 
+	// Create two index templates for different index types
+	// Template for chunk indices (ragflow_*) - priority 1
 	if err = engine.CreateIndexTemplate(newCtx, "ragflow_mapping", "ragflow_*", "os_mapping.json", 1); err != nil {
 		return nil, fmt.Errorf("failed to create chunk index template: %w", err)
+	}
+	// Template for doc_meta indices (ragflow_doc_meta_*) - priority 2 (higher than ragflow_*)
+	if err = engine.CreateIndexTemplate(newCtx, "ragflow_doc_meta_mapping", "ragflow_doc_meta_*", "doc_meta_es_mapping.json", 2); err != nil {
+		return nil, fmt.Errorf("failed to create doc_meta index template: %w", err)
 	}
 
 	return engine, nil
@@ -132,62 +136,44 @@ func (e *Engine) Close() error {
 	return nil
 }
 
-func (e *Engine) initHybridSearch(ctx context.Context, version string) error {
+// supportsHybridSearch reports whether the OpenSearch cluster version supports
+// phase results processors (normalization-processor) in search pipelines (>= 2.10).
+func supportsHybridSearch(version string) bool {
 	parts := strings.Split(version, ".")
 	if len(parts) < 2 {
-		return fmt.Errorf("cannot parse OpenSearch version %q", version)
+		return false
 	}
 	major, err := strconv.Atoi(parts[0])
 	if err != nil {
-		return fmt.Errorf("cannot parse OpenSearch major version %q: %w", parts[0], err)
+		return false
 	}
 	minor, err := strconv.Atoi(parts[1])
 	if err != nil {
-		return fmt.Errorf("cannot parse OpenSearch minor version %q: %w", parts[1], err)
+		return false
 	}
-	if major < 2 || (major == 2 && minor < 10) {
-		return fmt.Errorf("hybrid search requires OpenSearch >= 2.10, got %s", version)
+	// Guard against Elasticsearch 7.10.2 compatibility mode where major is reported as 7.
+	if major == 7 {
+		return false
 	}
+	if major > 2 {
+		return true
+	}
+	if major == 2 && minor >= 10 {
+		return true
+	}
+	return false
+}
 
-	weights := []float64{0.5, 0.5}
-	pipelineBody := map[string]interface{}{
-		"description": "RAGFlow hybrid search normalization pipeline (BM25 + KNN).",
-		"phase_results_processors": []interface{}{
-			map[string]interface{}{
-				"normalization-processor": map[string]interface{}{
-					"normalization": map[string]interface{}{"technique": "min_max"},
-					"combination": map[string]interface{}{
-						"technique":  "arithmetic_mean",
-						"parameters": map[string]interface{}{"weights": weights},
-					},
-				},
-			},
-		},
+// normalizeDynamicMapping rewrites ES-only "dynamic": "runtime" to true so
+// OpenSearch accepts metadata mappings and index templates.
+func normalizeDynamicMapping(mapping map[string]interface{}) {
+	mappings, ok := mapping["mappings"].(map[string]interface{})
+	if !ok {
+		return
 	}
-
-	bodyBytes, err := json.Marshal(pipelineBody)
-	if err != nil {
-		return fmt.Errorf("failed to marshal pipeline body: %w", err)
+	if dyn, ok := mappings["dynamic"].(string); ok && dyn == "runtime" {
+		mappings["dynamic"] = true
 	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, "/_search/pipeline/"+e.hybridPipelineName, bytes.NewReader(bodyBytes))
-	if err != nil {
-		return fmt.Errorf("failed to create pipeline request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := e.client.Perform(req)
-	if err != nil {
-		return fmt.Errorf("failed to create search pipeline: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode >= 400 {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to create search pipeline (status %d): %s", resp.StatusCode, string(respBody))
-	}
-
-	return nil
 }
 
 func (e *Engine) CreateIndexTemplate(ctx context.Context, templateName, indexPattern, mappingFileName string, priority ...int) error {
@@ -218,6 +204,8 @@ func (e *Engine) CreateIndexTemplate(ctx context.Context, templateName, indexPat
 	if err = json.Unmarshal(data, &mapping); err != nil {
 		return fmt.Errorf("failed to parse mapping file %q: %w", *mappingPath, err)
 	}
+
+	normalizeDynamicMapping(mapping)
 
 	templateBody := map[string]interface{}{
 		"index_patterns": []string{indexPattern},

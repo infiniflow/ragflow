@@ -24,6 +24,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"reflect"
 	"slices"
@@ -884,6 +885,63 @@ func mapToSearchResponse(m map[string]interface{}) (SearchResponse, error) {
 	return resp, err
 }
 
+// jsonDouble serializes as a JSON floating-point literal with an explicit
+// decimal point so schema-less OpenSearch XContent maps (such as inline
+// search_pipeline parameters) always decode it as java.lang.Double rather
+// than java.lang.Integer.
+type jsonDouble float64
+
+func (d jsonDouble) MarshalJSON() ([]byte, error) {
+	v := float64(d)
+	if math.IsNaN(v) || math.IsInf(v, 0) {
+		return nil, fmt.Errorf("cannot encode non-finite float %v as JSON double", v)
+	}
+	if v == 0 {
+		v = 0
+	}
+	s := strconv.FormatFloat(v, 'f', -1, 64)
+	if !strings.ContainsRune(s, '.') {
+		s += ".0"
+	}
+	return []byte(s), nil
+}
+
+// parseHybridWeights parses a "textWeight,vectorWeight" pair and projects it
+// onto the 2-simplex [0.0, 1.0]^2 summing to 1.0. Any malformed, non-finite, or
+// non-positive-sum input falls back to equal weights [0.5, 0.5].
+func parseHybridWeights(weights string) [2]jsonDouble {
+	defaultWeights := [2]jsonDouble{0.5, 0.5}
+	parts := strings.Split(weights, ",")
+	if len(parts) != 2 {
+		return defaultWeights
+	}
+	textW, err0 := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	vecW, err1 := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
+	if err0 != nil || err1 != nil ||
+		math.IsNaN(textW) || math.IsInf(textW, 0) ||
+		math.IsNaN(vecW) || math.IsInf(vecW, 0) {
+		return defaultWeights
+	}
+	if textW < 0 {
+		textW = 0
+	}
+	if vecW < 0 {
+		vecW = 0
+	}
+	total := textW + vecW
+	if total <= 0 {
+		return defaultWeights
+	}
+	if vecW == 0 {
+		return [2]jsonDouble{1.0, 0.0}
+	}
+	if textW == 0 {
+		return [2]jsonDouble{0.0, 1.0}
+	}
+	bm25W := textW / total
+	return [2]jsonDouble{jsonDouble(bm25W), jsonDouble(1.0 - bm25W)}
+}
+
 // Search executes a unified search across the requested indices. Ordinary
 // searches fail when any index request fails, without returning partial results.
 func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
@@ -915,10 +973,10 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	// Build bool query from condition
 	boolQuery := buildBoolQueryFromCondition(req.Filter, req.KbIDs, isSkillIndex, isMemoryIndex)
 
-	// Extract vector_similarity_weight from FusionExpr
+	// Extract weights from FusionExpr
 	var matchText *types.MatchTextExpr
 	var matchDense *types.MatchDenseExpr
-	vectorSimilarityWeight := 0.5
+	hybridWeights := [2]jsonDouble{0.5, 0.5}
 	for _, expr := range req.MatchExprs {
 		if expr == nil {
 			continue
@@ -940,12 +998,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 					if _, ok := req.MatchExprs[2].(*types.FusionExpr); !ok {
 						return nil, fmt.Errorf("match_expressions[2] must be FusionExpr")
 					}
-					parts := strings.Split(weights, ",")
-					if len(parts) == 2 {
-						if w, err := strconv.ParseFloat(parts[1], 64); err == nil {
-							vectorSimilarityWeight = w
-						}
-					}
+					hybridWeights = parseHybridWeights(weights)
 				}
 			}
 		case *types.MatchTextExpr:
@@ -973,13 +1026,6 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 					boolMap["must"] = must
 				} else {
 					boolMap["must"] = []interface{}{textQuery}
-				}
-				// Weighted-sum fusion scales the text leg by (1 - w) against the
-				// knn leg's w; a text-only query has no such pairing, so the
-				// boolean filter wrapper must not apply the constant boost —
-				// otherwise every BM25 score is silently multiplied by 0.5.
-				if hasVectorMatch {
-					boolMap["boost"] = 1.0 - vectorSimilarityWeight
 				}
 			}
 		} else {
@@ -1070,12 +1116,27 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 
 	switch {
 	case hybrid:
-		// Both legs + a pipeline available: send a real hybrid query so the
-		// keyword (BM25) and vector (knn) legs are scored separately and
-		// merged by the pipeline.
+		// Both legs + pipeline available: send a real hybrid query with an inline
+		// temporary search pipeline so keyword (BM25) and vector (knn) legs are scored
+		// separately and merged by the normalization-processor with dynamic weights.
 		queryBody["query"] = map[string]interface{}{
 			"hybrid": map[string]interface{}{
 				"queries": []interface{}{keywordQuery, map[string]interface{}{"knn": knnQuery}},
+			},
+		}
+		queryBody["search_pipeline"] = map[string]interface{}{
+			"phase_results_processors": []interface{}{
+				map[string]interface{}{
+					"normalization-processor": map[string]interface{}{
+						"normalization": map[string]interface{}{"technique": "min_max"},
+						"combination": map[string]interface{}{
+							"technique": "arithmetic_mean",
+							"parameters": map[string]interface{}{
+								"weights": hybridWeights,
+							},
+						},
+					},
+				},
 			},
 		}
 	case hasVectorMatch:
@@ -1091,7 +1152,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 
 	// Add sorting if order_by specified
 	if req.OrderBy != nil && len(req.OrderBy.Fields) > 0 {
-		sort := esoscommon.ParseOrderByExpr(req.OrderBy)
+		sort := parseOrderByExpr(req.OrderBy)
 		if len(sort) > 0 {
 			queryBody["sort"] = sort
 		}
@@ -1104,13 +1165,18 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	// For those requests we must drop `from` and walk the result set with
 	// `search_after` instead. The preconditions mirror the Python reference
 	// (rag/utils/es_conn.py):
-	//   - explicit OrderBy is required (search_after needs a stable cursor,
-	//     and _score / KNN-similarity sorts are not unique enough to be safe)
+	//   - explicit OrderBy is preferred; if absent, a fallback sort is synthesized
+	//     (search_after needs a stable cursor, and _score / KNN-similarity sorts are not unique enough)
 	//   - no dense/KNN match (knn queries do not honour `search_after` in the
 	//     same way and the Python path explicitly disallows them here)
+	hasTextMatch := matchText != nil
 	hasDense := hasVectorMatch
-	hasExplicitSort := req.OrderBy != nil && len(req.OrderBy.Fields) > 0
-	useSearchAfter := limit > 0 && (offset+limit > common.MAX_RESULT_WINDOW) && hasExplicitSort && !hasDense
+	hasRelevance := hasTextMatch || (len(req.RankFeature) > 0 && !isSkillIndex && !isMemoryIndex)
+	useSearchAfter := limit > 0 && (offset+limit > common.MAX_RESULT_WINDOW) && !hasDense
+	if useSearchAfter {
+		existingSort, _ := queryBody["sort"].([]map[string]interface{})
+		queryBody["sort"] = resolveSearchAfterSort(existingSort, hasRelevance, isSkillIndex, len(req.IndexNames) > 1)
+	}
 
 	// Apply offset/limit pagination. When useSearchAfter is true, the
 	// caller is going to drive pagination via searchAfterCursor()
@@ -1130,7 +1196,6 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	}
 
 	// Set _source and fields for vector fields
-	hasTextMatch := matchText != nil
 	selectFields := req.SelectFields
 	if isMemoryIndex {
 		selectFields = esoscommon.MapMemoryMessageESFields(req.SelectFields, false)
@@ -1186,7 +1251,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		// each iteration a fresh bytes.NewReader.
 		payload := append([]byte(nil), buf.Bytes()...)
 		for _, indexName := range req.IndexNames {
-			searchChunks, indexTotal, esErr := e.searchOneIndex(ctx, indexName, payload, hybrid)
+			searchChunks, indexTotal, esErr := e.searchOneIndex(ctx, indexName, payload)
 			if esErr != nil {
 				return nil, fmt.Errorf("opensearch: search index %q: %w", indexName, esErr)
 			}
@@ -1319,7 +1384,7 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 	// When an explicit sort is requested (e.g. a document's reading order), push
 	// it down so the capped first page is deterministic.
 	if req.Sort != nil && len(req.Sort.Fields) > 0 {
-		if sortClause := esoscommon.ParseOrderByExpr(req.Sort); len(sortClause) > 0 {
+		if sortClause := parseOrderByExpr(req.Sort); len(sortClause) > 0 {
 			queryBody["sort"] = sortClause
 		}
 	}
@@ -1372,16 +1437,8 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 
 // searchOneIndex sends an ordinary search with a fresh request body. A valid
 // missing-index response is empty; other request and response failures propagate.
-func (e *Engine) searchOneIndex(ctx context.Context, indexName string, payload []byte, useHybrid bool) ([]map[string]interface{}, int64, error) {
-	var (
-		searchResult map[string]interface{}
-		err          error
-	)
-	if useHybrid {
-		searchResult, err = e.doSearch(ctx, []string{indexName}, bytes.NewReader(payload), map[string]string{"search_pipeline": e.hybridPipelineName})
-	} else {
-		searchResult, err = e.doPlainSearch(ctx, []string{indexName}, bytes.NewReader(payload), nil)
-	}
+func (e *Engine) searchOneIndex(ctx context.Context, indexName string, payload []byte) ([]map[string]interface{}, int64, error) {
+	searchResult, err := e.doSearch(ctx, []string{indexName}, bytes.NewReader(payload), nil)
 	if err != nil {
 		var nf *indexNotFoundError
 		if errors.As(err, &nf) {
@@ -2262,7 +2319,7 @@ func (e *Engine) KNNScores(ctx context.Context, chunks []map[string]interface{},
 	// Partial results would silently drop cosine scores for candidates whose
 	// shard failed, so require a complete answer (mirrors the Elasticsearch
 	// engine's AllowPartialSearchResults(false)).
-	searchResult, err := e.doPlainSearch(ctx, indexNames, bytes.NewReader(body), map[string]string{
+	searchResult, err := e.doSearch(ctx, indexNames, bytes.NewReader(body), map[string]string{
 		"allow_partial_search_results": "false",
 	})
 	if err != nil {
@@ -2501,11 +2558,6 @@ func (e *Engine) ensureMemoryMessageSearchVectorMappings(ctx context.Context, in
 	return nil
 }
 
-// getDefaultSkillMapping returns the default skill index mapping
-
-// convertESResponse converts ES SearchResponse to unified chunks format
-// recognises as operators in upper case.
-
 // lowerCaseQueryText folds the terms of a query_string expression but keeps its
 // upper-case boolean operators. The *_tks/*_ltks fields are whitespace-analyzed
 // and so case-sensitive, while Lucene only reads AND/OR/NOT in upper case:
@@ -2539,12 +2591,104 @@ func convertESResponse(esResp *SearchResponse, vectorFieldName string) []map[str
 	return chunks
 }
 
-// parseOrderByExpr parses the OrderBy expression into ES sort format
+func hasSortField(sortList []map[string]interface{}, target string) bool {
+	for _, entry := range sortList {
+		if _, ok := entry[target]; ok {
+			return true
+		}
+	}
+	return false
+}
 
-// calculateScores calculates _score for chunks
+// resolveSearchAfterSort builds a deterministic, fielddata-free sort order
+// for deep pagination:
+//   - when no explicit OrderBy was supplied on a relevance-scored query, lead
+//     with _score desc so deep text results keep relevance order and non-zero
+//     hit scores;
+//   - finish with the index's mapped keyword primary-key field ("skill_id" for
+//     skill indices, "id" otherwise) rather than _id so search_after relies on
+//     doc_values instead of heap fielddata / indices.id_field_data.enabled;
+//   - when spanning multiple indices in one request, add _index as final
+//     tiebreaker so identical document IDs across indices remain strictly ordered.
+func resolveSearchAfterSort(
+	existing []map[string]interface{},
+	hasRelevance bool,
+	isSkillIndex bool,
+	multiIndex bool,
+) []map[string]interface{} {
+	sortList := slices.Clone(existing)
+	if len(sortList) == 0 && hasRelevance {
+		sortList = append(sortList, map[string]interface{}{
+			"_score": map[string]interface{}{"order": "desc"},
+		})
+	}
+	tieField := "id"
+	if isSkillIndex {
+		tieField = "skill_id"
+	}
+	if !hasSortField(sortList, tieField) {
+		sortList = append(sortList, map[string]interface{}{
+			tieField: map[string]interface{}{
+				"order":         "asc",
+				"unmapped_type": "keyword",
+			},
+		})
+	}
+	if multiIndex && !hasSortField(sortList, "_index") {
+		sortList = append(sortList, map[string]interface{}{
+			"_index": map[string]interface{}{"order": "asc"},
+		})
+	}
+	return sortList
+}
 
-// toFloat64 converts a value to float64
+// parseOrderByExpr parses the OrderBy expression into OpenSearch sort format.
+// Unlike Elasticsearch, OpenSearch documents map "id" with doc_values enabled,
+// so sorting by "id" is fully supported.
+func parseOrderByExpr(orderBy *types.OrderByExpr) []map[string]interface{} {
+	if orderBy == nil || len(orderBy.Fields) == 0 {
+		return nil
+	}
 
-// sortByScore sorts chunks by _score descending and limits
+	var result []map[string]interface{}
+	for _, field := range orderBy.Fields {
+		direction := "asc"
+		if field.Type == types.SortDesc {
+			direction = "desc"
+		}
 
-// getChunkScore extracts the score from a chunk
+		// Special handling for page_num_int and top_int
+		if field.Field == "page_num_int" || field.Field == "top_int" {
+			result = append(result, map[string]interface{}{
+				field.Field: map[string]interface{}{
+					"order":         direction,
+					"unmapped_type": "float",
+					"mode":          "avg",
+					"numeric_type":  "double",
+				},
+			})
+		} else if strings.HasSuffix(field.Field, "_int") || strings.HasSuffix(field.Field, "_flt") {
+			// Fields ending with _int or _flt
+			result = append(result, map[string]interface{}{
+				field.Field: map[string]interface{}{
+					"order":         direction,
+					"unmapped_type": "float",
+				},
+			})
+		} else if field.Field == "_score" || field.Field == "score" {
+			result = append(result, map[string]interface{}{
+				"_score": direction,
+			})
+		} else {
+			// Default: unmapped_type = keyword
+			result = append(result, map[string]interface{}{
+				field.Field: map[string]interface{}{
+					"order":         direction,
+					"unmapped_type": "keyword",
+				},
+			})
+		}
+	}
+
+	return result
+}
