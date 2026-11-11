@@ -5809,13 +5809,19 @@ func TestDownloadEmptyDocumentAndMissingBlob(t *testing.T) {
 
 type renameStoreEngine struct {
 	fakeChatDocEngine
-	exists   bool
-	storeErr error
-	err      error
-	updates  int
+	engineType string
+	exists     bool
+	storeErr   error
+	err        error
+	updates    int
 }
 
-func (e *renameStoreEngine) GetType() string { return "elasticsearch" }
+func (e *renameStoreEngine) GetType() string {
+	if e.engineType != "" {
+		return e.engineType
+	}
+	return "elasticsearch"
+}
 func (e *renameStoreEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
 	return e.exists, e.storeErr
 }
@@ -5824,39 +5830,43 @@ func (e *renameStoreEngine) UpdateChunks(context.Context, map[string]interface{}
 	return e.err
 }
 func TestRenameDocumentChunkStore(t *testing.T) {
-	for _, tc := range []struct {
-		chunks   int64
-		exists   bool
-		storeErr error
-		name     string
-		err      error
-		updates  int
-	}{
-		{name: "unparsed"}, {name: "zero count indexed", exists: true, updates: 1}, {name: "store error", storeErr: errors.New("store unavailable")}, {name: "parsed", chunks: 1, updates: 1}, {name: "engine error", chunks: 1, err: errors.New("unavailable"), updates: 1},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			db := setupServiceTestDB(t)
-			pushServiceDB(t, db)
-			insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
-			insertNamedTestDoc(t, "doc-1", "kb-1", "old.txt", 0, tc.chunks)
-			svc := testDocumentService(t)
-			engine := &renameStoreEngine{err: tc.err, exists: tc.exists, storeErr: tc.storeErr}
-			svc.docEngine = engine
-			doc, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1")
-			if err != nil {
-				t.Fatal(err)
-			}
-			kb, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
-			if err != nil {
-				t.Fatal(err)
-			}
-			err = svc.updateDocumentNameOnly(t.Context(), doc, kb, "new.txt")
-			wantErr := tc.err
-			if tc.storeErr != nil {
-				wantErr = tc.storeErr
-			}
-			if !errors.Is(err, wantErr) || engine.updates != tc.updates {
-				t.Fatalf("rename error=%v updates=%d", err, engine.updates)
+	for _, engineType := range []string{"elasticsearch", "opensearch"} {
+		t.Run(engineType, func(t *testing.T) {
+			for _, tc := range []struct {
+				chunks   int64
+				exists   bool
+				storeErr error
+				name     string
+				err      error
+				updates  int
+			}{
+				{name: "unparsed"}, {name: "zero count indexed", exists: true, updates: 1}, {name: "store error", storeErr: errors.New("store unavailable")}, {name: "parsed", chunks: 1, updates: 1}, {name: "engine error", chunks: 1, err: errors.New("unavailable"), updates: 1},
+			} {
+				t.Run(tc.name, func(t *testing.T) {
+					db := setupServiceTestDB(t)
+					pushServiceDB(t, db)
+					insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+					insertNamedTestDoc(t, "doc-1", "kb-1", "old.txt", 0, tc.chunks)
+					svc := testDocumentService(t)
+					engine := &renameStoreEngine{engineType: engineType, err: tc.err, exists: tc.exists, storeErr: tc.storeErr}
+					svc.docEngine = engine
+					doc, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1")
+					if err != nil {
+						t.Fatal(err)
+					}
+					kb, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+					if err != nil {
+						t.Fatal(err)
+					}
+					err = svc.updateDocumentNameOnly(t.Context(), doc, kb, "new.txt")
+					wantErr := tc.err
+					if tc.storeErr != nil {
+						wantErr = tc.storeErr
+					}
+					if !errors.Is(err, wantErr) || engine.updates != tc.updates {
+						t.Fatalf("rename error=%v updates=%d", err, engine.updates)
+					}
+				})
 			}
 		})
 	}
