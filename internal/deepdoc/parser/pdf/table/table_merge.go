@@ -70,6 +70,7 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 
 		anchorPg := it.pg
 		anchorBtm := anchor.Positions[0].Bottom
+		anchorHeader, anchorHeaderOK := tableHeaderOf(&anchor)
 
 		// Look for consecutive-page continuations.
 		for _, jt := range items {
@@ -143,7 +144,8 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 					}
 				}
 			}
-			if !canMergeTableHeader(&anchor, &tables[jt.idx]) {
+			candidateHeader, candidateHeaderOK := tableHeaderOf(&tables[jt.idx])
+			if !canMergeTableHeader(anchorHeader, anchorHeaderOK, candidateHeader, candidateHeaderOK) {
 				continue
 			}
 			// Merge: combine cells and positions. A continuation page that
@@ -151,11 +153,9 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 			// block to the merged grid.
 			cells := tables[jt.idx].Cells
 			grid := tables[jt.idx].Grid
-			if anchorHeader, anchorOK := tableHeaderOf(&anchor); anchorOK {
-				if candidateHeader, candidateOK := tableHeaderOf(&tables[jt.idx]); candidateOK &&
-					candidateHeader.rows > 0 && candidateHeader.text != "" && candidateHeader.text == anchorHeader.text {
-					cells, grid = dropTableHeaderRows(tables[jt.idx], candidateHeader.rows)
-				}
+			if anchorHeaderOK && candidateHeaderOK &&
+				candidateHeader.text != "" && candidateHeader.text == anchorHeader.text {
+				cells, grid = dropTableHeaderRows(tables[jt.idx], candidateHeader.rows)
 			}
 			anchor.Cells = append(anchor.Cells, cells...)
 			anchor.Positions = append(anchor.Positions, tables[jt.idx].Positions...)
@@ -358,19 +358,17 @@ func tableHeaderOf(item *pdf.TableItem) (tableHeaderSignature, bool) {
 // canMergeTableHeader rejects a geometry-only cross-page candidate when both
 // tables expose a header and those headers disagree. When one side has no
 // usable header text, the column count must still match.
-func canMergeTableHeader(anchor, candidate *pdf.TableItem) bool {
-	anchorHeader, anchorOK := tableHeaderOf(anchor)
-	candidateHeader, candidateOK := tableHeaderOf(candidate)
+func canMergeTableHeader(anchor tableHeaderSignature, anchorOK bool, candidate tableHeaderSignature, candidateOK bool) bool {
 	if !anchorOK || !candidateOK {
 		return true
 	}
-	if anchorHeader.columns == 0 || candidateHeader.columns == 0 {
+	if anchor.columns == 0 || candidate.columns == 0 {
 		return true
 	}
-	if anchorHeader.text != "" && candidateHeader.text != "" {
-		return anchorHeader.text == candidateHeader.text
+	if anchor.text != "" && candidate.text != "" {
+		return anchor.text == candidate.text
 	}
-	return anchorHeader.columns == candidateHeader.columns
+	return anchor.columns == candidate.columns
 }
 
 func normalizeTableHeaderCell(text string) string {
@@ -382,8 +380,11 @@ func normalizeTableHeaderCell(text string) string {
 // anchor. Cells are filtered by their Y band, matching the grid's crop-space
 // coordinates.
 func dropTableHeaderRows(item pdf.TableItem, rows int) ([]pdf.TSRCell, [][]pdf.TSRCell) {
-	if rows <= 0 || rows >= len(item.Grid) {
+	if rows <= 0 {
 		return item.Cells, item.Grid
+	}
+	if rows >= len(item.Grid) {
+		return nil, nil
 	}
 	top, bottom := gridYExtent(item.Grid[:rows])
 	cells := make([]pdf.TSRCell, 0, len(item.Cells))

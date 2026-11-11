@@ -143,7 +143,8 @@ func joinPageContinuation(previous *pdf.Section, next pdf.Section) {
 }
 
 func normalizeContinuationText(text string) string {
-	return strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	return strings.ReplaceAll(text, "\r", "\n")
 }
 
 func lastContinuationRune(text string) rune {
