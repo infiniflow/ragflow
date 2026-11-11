@@ -154,6 +154,23 @@ func TestCreateChunkStoreRejectsIncompatibleVectorMapping(t *testing.T) {
 	}
 }
 
+// The top-level knn option searches an indexed field only, and index:false
+// cannot be turned back on through a mapping update.
+func TestCreateChunkStoreRejectsUnindexedVectorMapping(t *testing.T) {
+	server, putBody := vectorMappingServer(t, true, map[string]interface{}{
+		"q_64_vec": map[string]interface{}{"type": "dense_vector", "dims": 64, "index": false},
+	})
+	engine := newVectorMappingEngine(t, server)
+
+	err := engine.CreateChunkStore(t.Context(), "ragflow_tenant", "kb-1", 64, "naive", "English")
+	if err == nil || !strings.Contains(err.Error(), "index: false") {
+		t.Fatalf("CreateChunkStore = %v, want an unindexed-mapping error", err)
+	}
+	if len(*putBody) != 0 {
+		t.Fatalf("unexpected mapping update: %#v", *putBody)
+	}
+}
+
 // A new index is created from a mapping without vector fields, so the first
 // model's dimension must be mapped as well.
 func TestCreateChunkStoreMapsVectorFieldOnNewIndex(t *testing.T) {

@@ -2705,10 +2705,11 @@ func (e *Engine) vectorFieldProperty(ctx context.Context, indexName, fieldName s
 }
 
 // ensureVectorFieldMapping maps q_<size>_vec as a dense_vector field. A field
-// the index already holds is accepted only as a dense_vector of the same
-// dimension: Elasticsearch cannot change a mapped field, and a plain numeric
+// the index already holds is accepted only as an indexed dense_vector of the
+// same dimension: Elasticsearch cannot change a mapped field, a plain numeric
 // field (what a float array under 128 values becomes under dynamic mapping)
-// would reject every kNN search on it.
+// would reject every kNN search on it, and index:false is not searchable at
+// all.
 func (e *Engine) ensureVectorFieldMapping(ctx context.Context, indexName string, vectorSize int) error {
 	if vectorSize <= 0 {
 		return fmt.Errorf("vector size must be positive, got %d", vectorSize)
@@ -2728,6 +2729,12 @@ func (e *Engine) ensureVectorFieldMapping(ctx context.Context, indexName string,
 		if dims, ok := common.GetInt(property["dims"]); ok && dims != vectorSize {
 			return fmt.Errorf("elasticsearch index %s maps %s with %d dimensions, not %d",
 				indexName, fieldName, dims, vectorSize)
+		}
+		// The top-level knn option searches an indexed field only, and an
+		// explicit index:false cannot be changed on an existing mapping.
+		if indexed, ok := property["index"].(bool); ok && !indexed {
+			return fmt.Errorf("elasticsearch index %s maps %s with index: false; kNN search needs an indexed field, reindex it before switching models",
+				indexName, fieldName)
 		}
 		return nil
 	}
