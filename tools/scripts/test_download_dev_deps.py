@@ -501,6 +501,111 @@ def test_office_oxide_stamp_null_accepts_matching_version(tmp_path, monkeypatch)
     assert (tmp_path / "native-libs" / "office_oxide" / f"v{version}" / "lib" / "liboffice_oxide.a").is_file()
 
 
+# ── Cache-aware download: the download pass must skip re-fetching a native lib
+# whose version-keyed cache dir (~/ragflow-native-libs/<lib>/v<ver>/) is already
+# provisioned (e.g. a CI builder's mounted pre-baked native-libs cache), not
+# just the transient deps/ archive. native_lib_provisioned is the shared check
+# _extract_native_archive.complete() also uses, lifted to module scope. ──────
+
+
+def test_native_lib_provisioned_true_when_files_present(tmp_path):
+    d = tmp_path / "pdfium-static" / "v7809"
+    for name in ["lib/libpdfium.a", "lib/libc++.a", "include/fpdfview.h"]:
+        p = d / name
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_bytes(b"pdfium-payload")
+    assert native.native_lib_provisioned(str(d), ["lib/libpdfium.a", "lib/libc++.a", "include/fpdfview.h"], None, "null") is True
+
+
+def test_native_lib_provisioned_false_when_required_file_missing(tmp_path):
+    d = tmp_path / "pdfium-static" / "v7809"
+    d.mkdir(parents=True)
+    (d / "lib").mkdir()
+    (d / "lib" / "libpdfium.a").write_bytes(b"x")
+    # libc++.a and the header are absent -> not provisioned.
+    assert native.native_lib_provisioned(str(d), ["lib/libpdfium.a", "lib/libc++.a", "include/fpdfview.h"], None, "null") is False
+
+
+def test_native_lib_provisioned_rejects_empty_file(tmp_path):
+    d = tmp_path / "pdfium-static" / "v7809"
+    d.mkdir(parents=True)
+    (d / "lib").mkdir()
+    (d / "lib" / "libpdfium.a").write_bytes(b"")  # zero bytes -> unusable
+    assert native.native_lib_provisioned(str(d), ["lib/libpdfium.a"], None, "null") is False
+
+
+def test_native_lib_provisioned_pdf_oxide_true_on_correct_stamp(tmp_path):
+    version = native.go_module_version("github.com/yfedoseev/pdf_oxide/go", native.REPO_ROOT)
+    d = tmp_path / "pdf_oxide" / f"v{version}"
+    (d / "lib" / "linux_amd64").mkdir(parents=True)
+    (d / "lib" / "linux_amd64" / "libpdf_oxide.a").write_bytes(b"!<arch>\n" + f"pdf_oxide {version}".encode())
+    (d / "include").mkdir()
+    (d / "include" / "pdf_oxide.h").write_bytes(b"// header")
+    assert native.native_lib_provisioned(str(d), ["lib/linux_amd64/libpdf_oxide.a", "include/pdf_oxide.h"], version, "text") is True
+
+
+def test_native_lib_provisioned_pdf_oxide_false_on_stamp_mismatch(tmp_path):
+    version = native.go_module_version("github.com/yfedoseev/pdf_oxide/go", native.REPO_ROOT)
+    d = tmp_path / "pdf_oxide" / f"v{version}"
+    d.mkdir(parents=True)
+    (d / "lib" / "linux_amd64").mkdir(parents=True)
+    # Stamped with a different version -> must be rejected, else a wrong native
+    # build would be silently treated as provisioned.
+    (d / "lib" / "linux_amd64" / "libpdf_oxide.a").write_bytes(b"!<arch>\n" + b"pdf_oxide 0.9.9")
+    (d / "include").mkdir()
+    (d / "include" / "pdf_oxide.h").write_bytes(b"// header")
+    assert native.native_lib_provisioned(str(d), ["lib/linux_amd64/libpdf_oxide.a", "include/pdf_oxide.h"], version, "text") is False
+
+
+def test_native_lib_provisioned_office_oxide_true_on_null_stamp(tmp_path):
+    version = native.go_module_version("github.com/yfedoseev/office_oxide/go", native.REPO_ROOT)
+    d = tmp_path / "office_oxide" / f"v{version}"
+    (d / "lib").mkdir(parents=True)
+    (d / "lib" / "liboffice_oxide.a").write_bytes(b"!<arch>\n" + f"\x00{version}\x00".encode())
+    (d / "include" / "office_oxide_c").mkdir(parents=True)
+    (d / "include" / "office_oxide_c" / "office_oxide.h").write_bytes(b"// header")
+    assert native.native_lib_provisioned(str(d), ["lib/liboffice_oxide.a", "include/office_oxide_c/office_oxide.h"], version, "null") is True
+
+
+def test_native_lib_provisioned_office_oxide_false_on_null_stamp_mismatch(tmp_path):
+    version = native.go_module_version("github.com/yfedoseev/office_oxide/go", native.REPO_ROOT)
+    d = tmp_path / "office_oxide" / f"v{version}"
+    d.mkdir(parents=True)
+    (d / "lib").mkdir()
+    (d / "lib" / "liboffice_oxide.a").write_bytes(b"!<arch>\n" + b"\x00" + b"0.0.0" + b"\x00")
+    (d / "include" / "office_oxide_c").mkdir(parents=True)
+    (d / "include" / "office_oxide_c" / "office_oxide.h").write_bytes(b"// header")
+    assert native.native_lib_provisioned(str(d), ["lib/liboffice_oxide.a", "include/office_oxide_c/office_oxide.h"], version, "null") is False
+
+
+def test_download_native_archives_skips_when_provisioned(tmp_path, monkeypatch):
+    monkeypatch.setenv("RAGFLOW_NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
+    monkeypatch.setattr(native, "native_lib_provisioned", lambda *a, **k: True)
+    spy = mock.MagicMock()
+    monkeypatch.setattr(native, "download_with_progress", spy)
+    native.download_native_archives("linux", "amd64")
+    assert spy.call_count == 0
+
+
+def test_download_native_archives_downloads_when_not_provisioned(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("RAGFLOW_NATIVE_LIBS_DIR", str(tmp_path / "native-libs"))
+    monkeypatch.setattr(native, "native_lib_provisioned", lambda *a, **k: False)
+    # Treat any on-disk file as a valid (already-present) deps/ archive so the
+    # post-download validation passes without a real tarball.
+    monkeypatch.setattr(native, "_valid_download", lambda f: os.path.isfile(f) and os.path.getsize(f) > 0)
+
+    def _spy(url, filename):
+        with open(filename, "wb") as fh:
+            fh.write(b"archive")
+
+    spy = mock.MagicMock(side_effect=_spy)
+    monkeypatch.setattr(native, "download_with_progress", spy)
+    native.download_native_archives("linux", "amd64")
+    # pdfium, pdf_oxide, office_oxide — all fetched when the cache is empty.
+    assert spy.call_count == 3
+
+
 # ── Local-dev one-stop: the dev downloader must also fetch the runtime
 # resources (cl100k / DeepDoc .ort / tokenizer assets) so a developer runs THIS
 # script ONCE and the Go server is ready to build, run, parse and count. ─────
@@ -577,6 +682,58 @@ def test_download_go_models_fails_loud(native_dirs, monkeypatch):
     with pytest.raises(SystemExit) as exc:
         native.download_go_models()
     assert exc.value.code == 1
+
+
+def test_download_go_models_reuses_model_dir_when_missing(native_dirs, tmp_path, monkeypatch):
+    # CI bakes the DeepDoc weights into MODEL_DIR (the ragflow_deps image's
+    # /opt/ragflow-deepdoc-models). When the repo tree copy is absent, reuse
+    # from there instead of fetching ~100MB from Hugging Face.
+    _, root = native_dirs
+    baked = tmp_path / "baked"
+    baked.mkdir()
+    for fname in native.HF_DEEPDOC_MODEL_FILES:
+        (baked / fname).write_bytes(b"baked weights")
+    monkeypatch.setenv("MODEL_DIR", str(baked))
+    fake = mock.MagicMock(side_effect=_fake_hf)
+    monkeypatch.setattr(native, "_hf_download", fake)
+    native.download_go_models()
+    assert fake.call_count == 0  # no Hugging Face fetch
+    deepdoc_dir = root / "internal" / "rag" / "res" / "deepdoc"
+    for fname in native.HF_DEEPDOC_MODEL_FILES:
+        assert (deepdoc_dir / fname).read_bytes() == b"baked weights"
+
+
+def test_download_go_models_falls_back_to_hf_when_model_dir_empty(native_dirs, tmp_path, monkeypatch):
+    _, _ = native_dirs
+    baked = tmp_path / "baked"  # set but contains no weights
+    baked.mkdir()
+    monkeypatch.setenv("MODEL_DIR", str(baked))
+    fake = mock.MagicMock(side_effect=_fake_hf)
+    monkeypatch.setattr(native, "_hf_download", fake)
+    native.download_go_models()
+    assert fake.call_count == len(native.HF_DEEPDOC_MODEL_FILES)
+
+
+def test_download_go_models_falls_back_to_hf_when_model_dir_unset(native_dirs, tmp_path, monkeypatch):
+    _, _ = native_dirs
+    monkeypatch.delenv("MODEL_DIR", raising=False)
+    fake = mock.MagicMock(side_effect=_fake_hf)
+    monkeypatch.setattr(native, "_hf_download", fake)
+    native.download_go_models()
+    assert fake.call_count == len(native.HF_DEEPDOC_MODEL_FILES)
+
+
+def test_download_go_models_falls_back_to_hf_when_model_dir_file_empty(native_dirs, tmp_path, monkeypatch):
+    _, _ = native_dirs
+    baked = tmp_path / "baked"
+    baked.mkdir()
+    for fname in native.HF_DEEPDOC_MODEL_FILES:
+        (baked / fname).write_bytes(b"")  # zero bytes -> not a usable copy
+    monkeypatch.setenv("MODEL_DIR", str(baked))
+    fake = mock.MagicMock(side_effect=_fake_hf)
+    monkeypatch.setattr(native, "_hf_download", fake)
+    native.download_go_models()
+    assert fake.call_count == len(native.HF_DEEPDOC_MODEL_FILES)
 
 
 def _seed_tokenizer_targets(deps, present):
