@@ -2209,7 +2209,8 @@ func TestIngestionTaskServiceRetryAllocatesNextRunCount(t *testing.T) {
 // A task another worker already settled must not get a FAILED run entry from
 // settlePublishFailure: markFailed is an idempotent no-op then, and writing
 // the terminal log would overwrite that status with one this worker never
-// observed.
+// observed. Assert both ledger surfaces stay untouched: the operation_status
+// row and the terminal event count.
 func TestIngestionTaskServiceSettlePublishFailureSkipsAlreadyTerminalTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -2231,6 +2232,16 @@ func TestIngestionTaskServiceSettlePublishFailureSkipsAlreadyTerminalTask(t *tes
 		Update("status", common.STOPPED).Error; err != nil {
 		t.Fatalf("set status STOPPED: %v", err)
 	}
+	var before entity.PipelineOperationLog
+	if err := db.First(&before, "id = ?", *task.PipelineLogID).Error; err != nil {
+		t.Fatalf("load run before settle: %v", err)
+	}
+	var beforeTerminalEvents int64
+	if err := db.Model(&entity.IngestionTaskLog{}).
+		Where("pipeline_log_id = ? AND event_type = ?", *task.PipelineLogID, dao.EventTypeTerminal).
+		Count(&beforeTerminalEvents).Error; err != nil {
+		t.Fatalf("count terminal events before settle: %v", err)
+	}
 
 	svc.settlePublishFailure(t.Context(), task)
 
@@ -2245,8 +2256,20 @@ func TestIngestionTaskServiceSettlePublishFailureSkipsAlreadyTerminalTask(t *tes
 	if err := db.First(&run, "id = ?", *task.PipelineLogID).Error; err != nil {
 		t.Fatalf("load pipeline log: %v", err)
 	}
+	if run.OperationStatus != before.OperationStatus {
+		t.Fatalf("operation_status = %s, want the pre-existing %s", run.OperationStatus, before.OperationStatus)
+	}
 	if run.ProcessDuration != 0 {
 		t.Fatalf("process_duration = %v, want 0 (no terminal log write)", run.ProcessDuration)
+	}
+	var afterTerminalEvents int64
+	if err := db.Model(&entity.IngestionTaskLog{}).
+		Where("pipeline_log_id = ? AND event_type = ?", *task.PipelineLogID, dao.EventTypeTerminal).
+		Count(&afterTerminalEvents).Error; err != nil {
+		t.Fatalf("count terminal events after settle: %v", err)
+	}
+	if afterTerminalEvents != beforeTerminalEvents {
+		t.Fatalf("terminal events = %d, want %d (no terminal event write)", afterTerminalEvents, beforeTerminalEvents)
 	}
 }
 
