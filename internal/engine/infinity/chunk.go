@@ -68,6 +68,161 @@ func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID strin
 	return e.createChunkStoreWithDB(db, baseName, datasetID, vectorSize, parserID, language)
 }
 
+// EnsureChunkStoreLanguage adds full-text indexes for a dataset language while
+// preserving existing indexes and rows. Queries select the matching index by
+// language, so an interrupted update can safely retry this operation.
+func (e *Engine) EnsureChunkStoreLanguage(ctx context.Context, baseName, datasetID, language string) error {
+	db, release, err := e.client.checkoutDatabase(ctx, "chunk.go")
+	if err != nil {
+		return fmt.Errorf("failed to get database: %w", err)
+	}
+	defer release()
+
+	tableName := buildChunkTableName(baseName, datasetID)
+	exists, err := e.tableExistsWithDB(db, tableName)
+	if err != nil {
+		return fmt.Errorf("failed to check if table exists: %w", err)
+	}
+	if !exists {
+		return nil
+	}
+	table, err := db.GetTable(tableName)
+	if err != nil {
+		return fmt.Errorf("failed to open chunk table %s: %w", tableName, err)
+	}
+
+	mappingFile := chunkMappingFileName(baseName, datasetID, e.mappingFileName)
+	schema, err := readChunkSchema(mappingFile)
+	if err != nil {
+		return err
+	}
+	return createFullTextIndexes(table, schema, language)
+}
+
+func readChunkSchema(mappingFile string) (orderedFields, error) {
+	fpMapping, err := utility.FindConfFileInProject(mappingFile)
+	if err != nil {
+		return orderedFields{}, err
+	}
+	schemaData, err := os.ReadFile(*fpMapping)
+	if err != nil {
+		return orderedFields{}, fmt.Errorf("failed to read mapping file %s: %w", mappingFile, err)
+	}
+	var schema orderedFields
+	if err := json.Unmarshal(schemaData, &schema); err != nil {
+		return orderedFields{}, fmt.Errorf("failed to parse mapping file %s: %w", mappingFile, err)
+	}
+	return schema, nil
+}
+
+type fullTextIndexSpec struct {
+	field    string
+	name     string
+	analyzer string
+}
+
+func fullTextIndexSpecs(schema orderedFields, language string) []fullTextIndexSpec {
+	var specs []fullTextIndexSpec
+	seen := make(map[string]struct{})
+	for _, fieldName := range schema.Keys {
+		fieldInfo := schema.Fields[fieldName]
+		if fieldInfo.Type != "varchar" || fieldInfo.Analyzer == nil {
+			continue
+		}
+
+		var analyzers []string
+		switch a := fieldInfo.Analyzer.(type) {
+		case string:
+			analyzers = []string{a}
+		case []interface{}:
+			for _, v := range a {
+				if analyzer, ok := v.(string); ok {
+					analyzers = append(analyzers, analyzer)
+				}
+			}
+		}
+
+		for _, analyzer := range analyzers {
+			localizedAnalyzer := analyzerForLanguage(analyzer, language)
+			indexSpecs := []fullTextIndexSpec{{
+				field: fieldName, name: fulltextIndexName(fieldName, localizedAnalyzer), analyzer: localizedAnalyzer,
+			}}
+			if localizedAnalyzer != analyzer {
+				// Mixed-language searches use the default analyzer name because a
+				// single query cannot select one language for every dataset.
+				indexSpecs = append(indexSpecs, fullTextIndexSpec{
+					field: fieldName, name: fulltextIndexName(fieldName, analyzer), analyzer: analyzer,
+				})
+			}
+			for _, spec := range indexSpecs {
+				if _, exists := seen[spec.name]; exists {
+					continue
+				}
+				seen[spec.name] = struct{}{}
+				specs = append(specs, spec)
+			}
+		}
+	}
+	return specs
+}
+
+func createFullTextIndexes(table *infinity.Table, schema orderedFields, language string) error {
+	for _, spec := range fullTextIndexSpecs(schema, language) {
+		_, err := table.CreateIndex(
+			spec.name,
+			infinity.NewIndexInfo(spec.field, infinity.IndexTypeFullText, map[string]string{"ANALYZER": spec.analyzer}),
+			infinity.ConflictTypeIgnore,
+			"",
+		)
+		if err != nil {
+			return fmt.Errorf("failed to create fulltext index %s: %w", spec.name, err)
+		}
+	}
+	return nil
+}
+
+func (e *Engine) ensureSearchLanguageIndexes(table *infinity.Table, tableName, language string) error {
+	if analyzerForLanguage("rag-coarse", language) == "rag-coarse" {
+		return nil
+	}
+	cacheKey := tableName + "\x00" + strings.ToLower(strings.TrimSpace(language))
+	if _, ok := e.languageIndexes.Load(cacheKey); ok {
+		return nil
+	}
+
+	resp, err := table.ListIndexes()
+	if err != nil {
+		return fmt.Errorf("failed to list indexes for %s: %w", tableName, err)
+	}
+	indexLister, ok := resp.(interface{ GetIndexNames() []string })
+	if !ok {
+		return fmt.Errorf("unexpected index list response for %s: %T", tableName, resp)
+	}
+	existing := make(map[string]struct{}, len(indexLister.GetIndexNames()))
+	for _, name := range indexLister.GetIndexNames() {
+		existing[name] = struct{}{}
+	}
+
+	schema, err := readChunkSchema(e.mappingFileName)
+	if err != nil {
+		return err
+	}
+	missing := false
+	for _, spec := range fullTextIndexSpecs(schema, language) {
+		if _, ok := existing[spec.name]; !ok {
+			missing = true
+			break
+		}
+	}
+	if missing {
+		if err := createFullTextIndexes(table, schema, language); err != nil {
+			return fmt.Errorf("ensure full-text indexes for %s: %w", tableName, err)
+		}
+	}
+	e.languageIndexes.Store(cacheKey, struct{}{})
+	return nil
+}
+
 // memoryIndexPrefix marks per-memory message indexes (MemoryIndexName).
 const memoryIndexPrefix = "memory_"
 
@@ -230,39 +385,9 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 	}
 	common.Info("Created vector index", zap.String("indexName", vectorIndexName), zap.String("column", vectorColName))
 
-	// Create full-text indexes for varchar fields with analyzers. CreateTable
-	// above is ConflictTypeIgnore, so this may be an existing table: its indexes
-	// are kept as they are, and with them the analyzer it was created with.
-	for _, fieldName := range schema.Keys {
-		fieldInfo := schema.Fields[fieldName]
-		if fieldInfo.Type != "varchar" || fieldInfo.Analyzer == nil {
-			continue
-		}
-
-		analyzers := []string{}
-		switch a := fieldInfo.Analyzer.(type) {
-		case string:
-			analyzers = []string{a}
-		case []interface{}:
-			for _, v := range a {
-				if s, ok := v.(string); ok {
-					analyzers = append(analyzers, s)
-				}
-			}
-		}
-
-		for _, analyzer := range analyzers {
-			indexNameFt := fulltextIndexName(fieldName, analyzer)
-			_, err = table.CreateIndex(
-				indexNameFt,
-				infinity.NewIndexInfo(fieldName, infinity.IndexTypeFullText, map[string]string{"ANALYZER": analyzerForLanguage(analyzer, language)}),
-				infinity.ConflictTypeIgnore,
-				"",
-			)
-			if err != nil {
-				return fmt.Errorf("failed to create fulltext index %s: %w", indexNameFt, err)
-			}
-		}
+	// Create language-specific full-text indexes for analyzed varchar fields.
+	if err := createFullTextIndexes(table, schema, language); err != nil {
+		return err
 	}
 
 	// Create secondary indexes for fields with index_type
@@ -1178,6 +1303,16 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 				}
 				continue
 			}
+			if hasTextMatch && !isSkillIndex && !isMemoryIndex && !strings.HasPrefix(indexName, "ragflow_doc_meta_") {
+				if err := e.ensureSearchLanguageIndexes(tbl, tableName, req.Language); err != nil {
+					common.Warn("Failed to ensure language-specific Infinity indexes",
+						zap.String("tableName", tableName), zap.String("language", req.Language), zap.Error(err))
+					if queryErr == nil {
+						queryErr = err
+					}
+					continue
+				}
+			}
 			// Resolve partial-wildcard projections ("q_*_vec") against this table's
 			// real columns: Infinity parses "q_*_vec" as the arithmetic expression
 			// "q_" * "_vec" and fails to bind it (3013), while Elasticsearch expands
@@ -1208,7 +1343,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			}
 			tableFilterParts := append([]string(nil), filterParts...)
 			if len(filterCopy) > 0 {
-				if condition := equivalentConditionToStr(filterCopy, tableColumns, isMemoryIndex); condition != "" {
+				if condition := equivalentConditionToStrForLanguage(filterCopy, tableColumns, []bool{isMemoryIndex}, req.Language); condition != "" {
 					tableFilterParts = append(tableFilterParts, condition)
 				}
 			}
@@ -1240,7 +1375,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			// Convert field names for Infinity
 			var convertedFields []string
 			for _, f := range textFields {
-				cf := convertMatchingField(f)
+				cf := convertMatchingFieldForLanguage(f, req.Language)
 				convertedFields = append(convertedFields, cf)
 			}
 			fields := strings.Join(convertedFields, ",")
@@ -3034,6 +3169,33 @@ func convertMatchingField(fieldWeightStr string) string {
 	return strings.Join(parts, "^")
 }
 
+func convertMatchingFieldForLanguage(fieldWeightStr, language string) string {
+	parts := strings.SplitN(fieldWeightStr, "^", 2)
+	converted := convertMatchingField(parts[0])
+	ref := strings.SplitN(converted, "@", 2)
+	if len(ref) != 2 {
+		return converted
+	}
+
+	analyzer := ""
+	switch {
+	case strings.HasSuffix(ref[1], "_rag_coarse"):
+		analyzer = "rag-coarse"
+	case strings.HasSuffix(ref[1], "_rag_fine"):
+		analyzer = "rag-fine"
+	default:
+		return converted
+	}
+	if localized := analyzerForLanguage(analyzer, language); localized != analyzer {
+		ref[1] = fulltextIndexName(ref[0], localized)
+		converted = strings.Join(ref, "@")
+	}
+	if len(parts) == 2 {
+		return converted + "^" + parts[1]
+	}
+	return converted
+}
+
 // escapeFilterValue escapes single quotes for filter values
 func escapeFilterValue(s string) string {
 	return strings.ReplaceAll(s, "'", "''")
@@ -3144,13 +3306,27 @@ func equivalentConditionToStr(condition map[string]interface{}, tableColumns map
 	Type    string
 	Default interface{}
 }, memoryIndex ...bool) string {
-	return equivalentConditionToStrRaw(types.CompilationFilter(condition), tableColumns, memoryIndex...)
+	return equivalentConditionToStrForLanguage(condition, tableColumns, memoryIndex, "")
+}
+
+func equivalentConditionToStrForLanguage(condition map[string]interface{}, tableColumns map[string]struct {
+	Type    string
+	Default interface{}
+}, memoryIndex []bool, language string) string {
+	return equivalentConditionToStrRawForLanguage(types.CompilationFilter(condition), tableColumns, memoryIndex, language)
 }
 
 func equivalentConditionToStrRaw(condition map[string]interface{}, tableColumns map[string]struct {
 	Type    string
 	Default interface{}
 }, memoryIndex ...bool) string {
+	return equivalentConditionToStrRawForLanguage(condition, tableColumns, memoryIndex, "")
+}
+
+func equivalentConditionToStrRawForLanguage(condition map[string]interface{}, tableColumns map[string]struct {
+	Type    string
+	Default interface{}
+}, memoryIndex []bool, language string) string {
 	if len(condition) == 0 {
 		return ""
 	}
@@ -3166,7 +3342,7 @@ func equivalentConditionToStrRaw(condition map[string]interface{}, tableColumns 
 		if k == "and" || k == "or" {
 			var children []string
 			for _, child := range types.FilterClauses(v) {
-				if expr := equivalentConditionToStrRaw(child, tableColumns, memIndex); expr != "" {
+				if expr := equivalentConditionToStrRawForLanguage(child, tableColumns, []bool{memIndex}, language); expr != "" {
 					children = append(children, "("+expr+")")
 				}
 			}
@@ -3193,7 +3369,7 @@ func equivalentConditionToStrRaw(condition map[string]interface{}, tableColumns 
 		// Handle must_not specially
 		if k == "must_not" {
 			if m, ok := v.(map[string]interface{}); ok {
-				if expr := equivalentConditionToStrRaw(m, tableColumns, memIndex); expr != "" {
+				if expr := equivalentConditionToStrRawForLanguage(m, tableColumns, []bool{memIndex}, language); expr != "" {
 					cond = append(cond, "NOT ("+expr+")")
 				}
 			}
@@ -3218,7 +3394,7 @@ func equivalentConditionToStrRaw(condition map[string]interface{}, tableColumns 
 		// JSON-list fields use member containment. Legacy varchar columns keep
 		// the old full-text behavior.
 		if fieldJSONList(k) && tableColumns != nil {
-			if jsonConditions := jsonListFilterConditions(k, v, tableColumns); len(jsonConditions) > 0 {
+			if jsonConditions := jsonListFilterConditions(k, v, tableColumns, language); len(jsonConditions) > 0 {
 				cond = append(cond, joinBalanced(jsonConditions, " OR "))
 			}
 			continue
@@ -3244,7 +3420,7 @@ func equivalentConditionToStrRaw(condition map[string]interface{}, tableColumns 
 				if strings.TrimSpace(raw) == "" {
 					return
 				}
-				inCond = append(inCond, keywordFilterCondition(k, raw))
+				inCond = append(inCond, keywordFilterConditionForLanguage(k, raw, language))
 			}
 			switch val := v.(type) {
 			case []string:

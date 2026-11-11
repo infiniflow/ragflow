@@ -101,6 +101,13 @@ type DocEngine interface {
 	FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB, kbIDs []string, conditions []map[string]interface{}, logic string) []string
 }
 
+// ChunkStoreLanguageEnsurer is implemented by engines whose full-text index
+// analyzer depends on dataset language. It adds the indexes for a language
+// without replacing existing indexes or chunk data.
+type ChunkStoreLanguageEnsurer interface {
+	EnsureChunkStoreLanguage(ctx context.Context, baseName, datasetID, language string) error
+}
+
 // Type returns the engine type (helper method for runtime type checking)
 // This is a workaround since we can't import elasticsearch or infinity packages directly
 func Type(docEngine DocEngine) EngineType {

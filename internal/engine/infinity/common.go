@@ -178,9 +178,13 @@ func fieldKeyword(fieldName string) bool {
 // the membership match ES gets from its keyword array, so a multi-token value is
 // matched as a quoted phrase through it.
 func keywordFilterCondition(field string, value string) string {
+	return keywordFilterConditionForLanguage(field, value, "")
+}
+
+func keywordFilterConditionForLanguage(field string, value, language string) string {
 	escaped := escapeFilterValue(value)
 	multiToken := strings.ContainsFunc(value, unicode.IsSpace)
-	indexRef := convertMatchingField(field)
+	indexRef := convertMatchingFieldForLanguage(field, language)
 
 	if indexRef == field {
 		if multiToken {
@@ -274,7 +278,11 @@ func joinBalanced(parts []string, op string) string {
 func jsonListFilterConditions(fieldName string, value interface{}, tableColumns map[string]struct {
 	Type    string
 	Default interface{}
-}) []string {
+}, languages ...string) []string {
+	language := ""
+	if len(languages) > 0 {
+		language = languages[0]
+	}
 	values := []interface{}{value}
 	switch typed := value.(type) {
 	case []string:
@@ -308,7 +316,7 @@ func jsonListFilterConditions(fieldName string, value interface{}, tableColumns 
 				continue
 			}
 			conditions = append(conditions, fmt.Sprintf("filter_fulltext('%s', '%s')",
-				convertMatchingField(fieldName), strings.ReplaceAll(text, "'", "''")))
+				convertMatchingFieldForLanguage(fieldName, language), strings.ReplaceAll(text, "'", "''")))
 		}
 	}
 	if len(conditions) == 0 {
@@ -630,9 +638,8 @@ func analyzerForLanguage(analyzer, language string) string {
 var indexNamePartRe = regexp.MustCompile(`[^a-zA-Z0-9]`)
 
 // fulltextIndexName is the name of the fulltext index on fieldName for the
-// configured analyzer. Queries and filters name the index explicitly (see
-// convertMatchingField), so the name is the same in every language; the
-// dataset language only changes the analyzer behind it.
+// configured analyzer. Language-specific analyzers therefore have distinct
+// names, allowing a new index to be added without dropping the old one.
 func fulltextIndexName(fieldName, analyzer string) string {
 	return fmt.Sprintf("ft_%s_%s", indexNamePartRe.ReplaceAllString(fieldName, "_"), indexNamePartRe.ReplaceAllString(analyzer, "_"))
 }

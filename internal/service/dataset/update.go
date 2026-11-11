@@ -460,6 +460,20 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 		}
 
 		if len(updates) > 0 {
+			if language, ok := updates["language"].(string); ok {
+				currentLanguage := ""
+				if lockedKB.Language != nil {
+					currentLanguage = *lockedKB.Language
+				}
+				if language != currentLanguage {
+					if ensurer, supported := d.docEngine.(engine.ChunkStoreLanguageEnsurer); supported {
+						if err := ensurer.EnsureChunkStoreLanguage(ctx, fmt.Sprintf("ragflow_%s", lockedKB.TenantID), lockedKB.ID, language); err != nil {
+							txCode = common.CodeServerError
+							return fmt.Errorf("prepare full-text indexes for language %q: %w", language, err)
+						}
+					}
+				}
+			}
 			if err = tx.Model(&entity.Knowledgebase{}).Where("id = ?", lockedKB.ID).Updates(updates).Error; err != nil {
 				if dao.IsDuplicateKeyErr(err) {
 					if nameValue, ok := updates["name"].(string); ok {

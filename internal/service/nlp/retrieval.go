@@ -775,6 +775,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 	searchRequest := &types.SearchRequest{
 		IndexNames:   buildIndexNames(req.TenantIDs),
 		KbIDs:        req.KbIDs,
+		Language:     req.Language,
 		Offset:       pg * pageSize,
 		Limit:        limit,
 		Filter:       filters,
