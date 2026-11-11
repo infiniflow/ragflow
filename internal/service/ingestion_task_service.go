@@ -187,7 +187,35 @@ func (s *IngestionTaskService) emitLifecycleEvent(ctx context.Context, task *ent
 	if logID != nil && *logID != "" && s.pipelineLogDAO != nil {
 		run, _ = s.pipelineLogDAO.GetByID(ctx, dao.DB, *logID)
 	}
+	ctx = s.enrichIngestIdentity(ctx, task, doc)
 	s.eventEmitter.EmitIngestLog(ctx, observability.BuildIngestLog(ctx, task, doc, run, typ, status, errorInfo))
+}
+
+// enrichIngestIdentity attaches the owning user and tenant display names to the
+// context from which observability.BuildIngestLog reads them. The ingestor name,
+// NATS subject and worker are injected upstream on the ingestor's own context;
+// this completes the user/tenant half, which is only knowable from the task's
+// owner id and its document's knowledgebase. Resolution is best-effort: a missing
+// dao handle, an unresolvable id, or an empty name leaves the field empty so the
+// sink omits it rather than disrupting the parse pipeline.
+func (s *IngestionTaskService) enrichIngestIdentity(ctx context.Context, task *entity.IngestionTask, doc *entity.Document) context.Context {
+	if dao.DB == nil {
+		return ctx
+	}
+	if task != nil && task.UserID != "" {
+		if nick, err := dao.NewUserDAO().GetNicknameByID(ctx, dao.DB, task.UserID); err == nil && nick != "" {
+			ctx = observability.WithUserName(ctx, nick)
+		}
+	}
+	if doc != nil && doc.KbID != "" {
+		tenantID, err := dao.GetTenantIDByKBID(ctx, dao.DB, doc.KbID)
+		if err == nil && tenantID != "" {
+			if t, err := dao.NewTenantDAO().GetByID(ctx, dao.DB, tenantID); err == nil && t != nil && t.Name != nil && *t.Name != "" {
+				ctx = observability.WithTenantName(ctx, *t.Name)
+			}
+		}
+	}
+	return ctx
 }
 
 func (s *IngestionTaskService) List(ctx context.Context, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
