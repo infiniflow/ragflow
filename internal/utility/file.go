@@ -106,6 +106,10 @@ func GetFileType(filename string) FileType {
 		suffix = strings.ToLower(ext)
 	}
 
+	if ft, ok := extensionFileTypes[suffix]; ok {
+		return ft
+	}
+
 	if IsVideoExtension(suffix) {
 		return FileTypeVIDEO
 	}
@@ -154,6 +158,24 @@ func GetFileType(filename string) FileType {
 	}
 }
 
+// extensionFileTypes holds extra extension→FileType mappings registered by
+// editions (e.g. enterprise) that the community build does not know about.
+// Lookups consult this map before the built-in switch, so an edition can add
+// brand-new types or redirect an existing extension without the community
+// switch changing.
+var extensionFileTypes = map[string]FileType{}
+
+// RegisterExtensionFileType registers an additional extension→FileType mapping.
+// Intended for enterprise editions to extend the community file-type set. The
+// suffix is matched case-insensitively by GetFileType and FilenameType.
+func RegisterExtensionFileType(suffix string, ft FileType) {
+	normalized := strings.ToLower(strings.TrimPrefix(suffix, "."))
+	if normalized == "" {
+		return
+	}
+	extensionFileTypes[normalized] = ft
+}
+
 // FilenameType returns the upload category for a filename.
 // It classifies supported extensions and returns FileTypeOTHER for invalid
 // filenames or unsupported extensions.
@@ -161,6 +183,16 @@ func FilenameType(filename string) FileType {
 	normalized, ok := normalizeFilename(filename)
 	if !ok {
 		return FileTypeOTHER
+	}
+
+	// Editions may register an extension→type mapping, including overriding a
+	// built-in extension. Honor it before the community upload-bucket logic so
+	// the upload is classified with the registered type, keeping FilenameType
+	// consistent with GetFileType (which also consults this map first).
+	if ext := strings.TrimPrefix(filepath.Ext(normalized), "."); ext != "" {
+		if ft, ok := extensionFileTypes[strings.ToLower(ext)]; ok {
+			return ft
+		}
 	}
 
 	// Video is admitted at upload in the legacy visual bucket and routed to the

@@ -435,6 +435,9 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 		}
 		return nil
 	}
+	if err := deleteEvaluationsEE(ctx, tx, userID, data.ownedTenantID, result); err != nil {
+		return err
+	}
 	owner := data.ownedTenantID
 	var chatIDs, canvasIDs, conversationIDs, apiConversationIDs []string
 	var connectorIDs, providerIDs, instanceIDs, modelIDs []string

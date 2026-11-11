@@ -12,7 +12,7 @@ import (
 
 // DefaultLLMContextLength is the fallback chat-model context window (tokens)
 // used for per-cluster text truncation when the model's real max length is
-// unknown (e.g. in tests). Mirrors Python's default llm_model.max_length.
+// unknown (e.g. in tests). Mirrors default llm_model.max_length
 const DefaultLLMContextLength = 8192
 
 // ChatRequest is the minimal surface a variant needs to dispatch one LLM call.
@@ -239,7 +239,7 @@ type Deps struct {
 	// pairs into a single call, so the caller must cap the batch by both the
 	// input window (ModelContextLen) and this output cap; otherwise a large
 	// candidate set can overflow the model's max_output and it returns a
-	// truncated/non-JSON reply. Mirrors Python's max_tokens generation config.
+	// truncated/non-JSON reply. Mirrors max_tokens generation config
 	ModelMaxOutput int
 }
 

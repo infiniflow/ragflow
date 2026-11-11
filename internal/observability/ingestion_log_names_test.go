@@ -1,6 +1,7 @@
 package observability
 
 import (
+	"context"
 	"testing"
 
 	"ragflow/internal/entity"
@@ -9,13 +10,15 @@ import (
 // TestBuildIngestLogPropagatesUserAndTenantName asserts the caller-supplied
 // display names are carried onto the event verbatim. This keeps the OSS
 // IngestionLog / BuildIngestLog contract aligned with the EE build, which
-// resolves the names from the user/tenant DAOs before emitting.
+// resolves the names from the user/tenant DAOs before emitting. The names ride
+// on the context, not positional params.
 func TestBuildIngestLogPropagatesUserAndTenantName(t *testing.T) {
 	task := &entity.IngestionTask{ID: "t", DocumentID: "d", DatasetID: "kb", UserID: "u1"}
 	doc := &entity.Document{Name: ptrStr("r"), Suffix: ".pdf", Type: "pdf", Size: 10, ParserID: "pdf"}
 	run := &entity.PipelineOperationLog{RunCount: ptrInt(1), TenantID: "tenant-1"}
 
-	ev := BuildIngestLog(task, doc, run, "completed", "COMPLETED", "", "alice", "Acme Corp")
+	ctx := WithIngestIdentity(context.Background(), IngestIdentity{UserName: "alice", TenantName: "Acme Corp"})
+	ev := BuildIngestLog(ctx, task, doc, run, "completed", "COMPLETED", "")
 
 	if ev.UserName != "alice" {
 		t.Errorf("UserName = %q, want %q", ev.UserName, "alice")
@@ -38,7 +41,7 @@ func TestBuildIngestLogEmptyNamesStaysEmpty(t *testing.T) {
 	doc := &entity.Document{Name: ptrStr("r"), Suffix: ".pdf", Type: "pdf", Size: 10, ParserID: "pdf"}
 	run := &entity.PipelineOperationLog{RunCount: ptrInt(1), TenantID: "tenant-1"}
 
-	ev := BuildIngestLog(task, doc, run, "running", "RUNNING", "", "", "")
+	ev := BuildIngestLog(context.Background(), task, doc, run, "running", "RUNNING", "")
 
 	if ev.UserName != "" {
 		t.Errorf("UserName = %q, want empty", ev.UserName)

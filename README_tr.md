@@ -84,6 +84,7 @@ Yerel dağıtım için [Kendi Sunucusunda Barındırma](#-yerel-dağıtım) böl
 
 ## 🔥 Son Güncellemeler
 
+- 2026-11-06 RAGFlow 1.0.0 yayımlandı.
 - 2026-09-29 RAGFlow 1.0.0-rc1 yayımlandı.
 
 - 2026-09-10 Site haritaları üzerinden web içeriği alımı eklendi.

@@ -212,7 +212,10 @@ func fieldJSON(fieldName string) bool {
 		// Ontology structure rows: a hypernode's hyperedge membership is an
 		// array and an entity's attributes are a map, both stored in json
 		// columns (Infinity answers 3058 when handed a raw Go slice).
-		"hyperedge_ids", "attr":
+		"hyperedge_ids", "attr",
+		// The action contract is a map of judged fields, and the parallel
+		// missing-column is an array; both are json columns.
+		"contract", "contract_missing_kwd":
 		return true
 	default:
 		return false
@@ -229,7 +232,9 @@ func fieldJSONList(fieldName string) bool {
 		"rechunked_from_chunk_ids", "aliases",
 		// An array a node belongs to: membership, not whole-document equality.
 		// (`attr` is a map, so it is encoded above but not a list.)
-		"hyperedge_ids":
+		"hyperedge_ids",
+		// The review queue counts rows by which required field they are missing.
+		"contract_missing_kwd":
 		return true
 	default:
 		return false

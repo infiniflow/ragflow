@@ -25,17 +25,17 @@
 //     runs across 2 goroutines, then results are merged in DFS
 //     traversal order (deterministic, plan §8 R8).
 //
-//   - MIRRORS python `_ChunkNode.build_tree` (hierarchy_chunker.py:38-52):
-//     a stack-tracked descent into a tree where each node has a
+//   - buildTree performs a stack-tracked descent into a tree where each node has a
 //     level, title indexes (only headings), body indexes (only the
 //     body lines that fall under that heading), and child nodes.
 //
-//   - DFS path emission (hierarchy_chunker.py:55-83) honours
-//     `include_heading_content` and the python leaf-only rule: when
-//     include_heading_content is false, only leaf nodes emit.
+// - DFS path emission honours
+// `include_heading_content` and the leaf-only rule: when
 //
-//   - No PDF-position / deepdoc awareness; structured chunk inputs
-//     use the same dfs over text records.
+//	  include_heading_content is false, only leaf nodes emit.
+//
+//	- No PDF-position / deepdoc awareness; structured chunk inputs
+//	  use the same dfs over text records.
 package chunker
 
 import (
@@ -51,7 +51,7 @@ import (
 	"ragflow/internal/ingestion/component/globals"
 )
 
-// chunkNode mirrors python `_ChunkNode` (hierarchy_chunker.py:22-32).
+// chunkNode is the tree node:
 type chunkNode struct {
 	level        int
 	titleIndexes []int
@@ -67,8 +67,7 @@ func (n *chunkNode) addChild(c *chunkNode) {
 	n.children = append(n.children, c)
 }
 
-// buildTree mirrors `_ChunkNode.build_tree` (hierarchy_chunker.py:38-52):
-// descend into nested headings via a stack. Lines whose level exceeds
+// buildTree descends into nested headings via a stack. Lines whose level exceeds
 // `depth` are body lines on the topmost stack frame.
 func buildTree(indexedLines []indexedLine, depth int) *chunkNode {
 	root := &chunkNode{level: 0}
@@ -95,8 +94,7 @@ type indexedLine struct {
 	index int
 }
 
-// getPaths mirrors `_ChunkNode._dfs` (hierarchy_chunker.py:61-83).
-// Returns one index-list per chunk, in DFS order. `path_titles` is
+// getPaths returns one index-list per chunk, in DFS order. `path_titles` is
 // updated as the recursion descends and used as the leading slice
 // for each chunk path.
 func (n *chunkNode) getPaths(paths *[][]int, titles []int, depth int, includeHeading bool) []int {
@@ -174,7 +172,7 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 		zap.Any("heading_levels", headingCounts),
 	)
 
-	// Mirror python HierarchyTitleChunker.build_chunks: accumulate
+	// Mirror HierarchyTitleChunker.build_chunks: accumulate
 	// contiguous text records into a run; on each non-text record flush
 	// the run (build the heading tree + emit its paths) and emit the
 	// non-text record as its own single-record group. A final flush
@@ -182,7 +180,7 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 	//
 	// The target level is resolved per run via
 	// resolve_target_level(text_levels, hierarchy) — the exact call
-	// python makes inside flush_text_records (Gap H: the hierarchy
+	// makes inside flush_text_records (Gap H: the hierarchy
 	// pointer is dereferenced defensively so a nil never panics).
 	// recordGroups and groupPrefixes stay aligned: groupPrefixes[i] is the
 	// leading segment (up to and including the last title, each line + "\n")
@@ -206,7 +204,7 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 		if targetLevel == 0 {
 			// resolve_target_level returned None (no heading levels in
 			// the run): emit the whole run as a single group, exactly
-			// like python's `record_groups.append(text_records.copy())`.
+			// like `record_groups.append(text_records.copy())`
 			runCopy := make([]lineRecord, len(textRun))
 			copy(runCopy, textRun)
 			recordGroups = append(recordGroups, runCopy)
@@ -272,7 +270,7 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 	docID := globals.GlobalOrInput(parentCtx, nil, "doc_id", upstream.DocID)
 	chunks, prefixes := buildChunksFromRecordGroups(recordGroups, groupPrefixes, p, isPlainTextFormat(upstream), docID)
 	// Enforce the title-family token ceiling (chunk_token_cap) right after
-	// build_chunks and BEFORE the on-demand crop, mirroring Python's
+	// build_chunks and BEFORE the on-demand crop, mirroring
 	// invoke() order (build -> cap -> set_chunks). prefixes re-attaches each
 	// chunk's ancestor heading chain to every piece the cap splits off.
 	if p.ChunkTokenCap > 0 {
