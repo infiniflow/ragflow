@@ -74,6 +74,18 @@
         "analyzer": "whitespace",
         "store": true
       },
+      "q_4096_vec": {
+        "type": "knn_vector",
+        "dimension": 4096,
+        "index": true,
+        "space_type": "cosinesimil"
+      },
+      "q_3584_vec": {
+        "type": "knn_vector",
+        "dimension": 3584,
+        "index": true,
+        "space_type": "cosinesimil"
+      },
       "q_3072_vec": {
         "type": "knn_vector",
         "dimension": 3072,
@@ -83,6 +95,12 @@
       "q_2560_vec": {
         "type": "knn_vector",
         "dimension": 2560,
+        "index": true,
+        "space_type": "cosinesimil"
+      },
+      "q_2048_vec": {
+        "type": "knn_vector",
+        "dimension": 2048,
         "index": true,
         "space_type": "cosinesimil"
       },
@@ -107,6 +125,12 @@
       "q_512_vec": {
         "type": "knn_vector",
         "dimension": 512,
+        "index": true,
+        "space_type": "cosinesimil"
+      },
+      "q_384_vec": {
+        "type": "knn_vector",
+        "dimension": 384,
         "index": true,
         "space_type": "cosinesimil"
       },
