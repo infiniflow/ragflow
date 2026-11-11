@@ -205,12 +205,17 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 	// overlay). The DeepDoc builder is the identity function, so OSS keeps its
 	// current behavior unchanged.
 	grid = tb.FinalizeGrid(grid, boxInCrop)
+	headerRows := 0
+	if len(grid) > 0 {
+		headerRows = leadingHeaderRows(tbl.HeaderSetWithBlockType(grid, boxInCrop))
+	}
 	item := pdf.TableItem{
 		Cells: cells, Grid: grid, Positions: positions,
 		Scale: scale, CropOffX: cropOffX, CropOffY: cropOffY,
 		RegionLeft: tm.Region.X0 / scale, RegionRight: tm.Region.X1 / scale,
 		RegionTop: tm.Region.Y0 / scale, RegionBottom: tm.Region.Y1 / scale,
-		Page: pageNum,
+		HeaderRows: headerRows,
+		Page:       pageNum,
 	}
 	tbl.WriteTableAnnotations(boxes, tm.BoxIdx, cells, scale, cropOffX, cropOffY, tb)
 	// Let the active builder attach builder-specific span geometry onto the
@@ -285,4 +290,15 @@ func dedupSameCellOCRBoxes(boxes []pdf.TextBox) []pdf.TextBox {
 		}
 	}
 	return out
+}
+
+// leadingHeaderRows counts the leading consecutive rows flagged as headers.
+// HeaderSetWithBlockType may flag a non-leading row; only the leading run is
+// the table's header block, matching ToTableData's semantics.
+func leadingHeaderRows(headers map[int]bool) int {
+	rows := 0
+	for headers[rows] {
+		rows++
+	}
+	return rows
 }

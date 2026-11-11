@@ -3,13 +3,17 @@ package table
 import (
 	"math"
 	"sort"
+	"strings"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
 // MergeTablesAcrossPages merges TableItems on consecutive pages with
 // overlapping X and close Y proximity.  Matches Python's
-// _extract_table_figure table merge (pdf_parser.py:1061-1080).
+// _extract_table_figure table merge (pdf_parser.py:1061-1080), with an
+// additional header guard: geometry only supplies candidates, and tables whose
+// detected headers disagree are kept separate. A repeated continuation header
+// is dropped before the grids are stacked.
 //
 // pageHeights maps each 0-based page number to its PDF-point page height. It
 // is required to measure the cross-page Y gap in a page-absolute frame: the
@@ -139,11 +143,24 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 					}
 				}
 			}
-			// Merge: combine cells and positions.
-			anchor.Cells = append(anchor.Cells, tables[jt.idx].Cells...)
+			if !canMergeTableHeader(&anchor, &tables[jt.idx]) {
+				continue
+			}
+			// Merge: combine cells and positions. A continuation page that
+			// repeats the anchor's header must not contribute a second header
+			// block to the merged grid.
+			cells := tables[jt.idx].Cells
+			grid := tables[jt.idx].Grid
+			if anchorHeader, anchorOK := tableHeaderOf(&anchor); anchorOK {
+				if candidateHeader, candidateOK := tableHeaderOf(&tables[jt.idx]); candidateOK &&
+					candidateHeader.rows > 0 && candidateHeader.text != "" && candidateHeader.text == anchorHeader.text {
+					cells, grid = dropTableHeaderRows(tables[jt.idx], candidateHeader.rows)
+				}
+			}
+			anchor.Cells = append(anchor.Cells, cells...)
 			anchor.Positions = append(anchor.Positions, tables[jt.idx].Positions...)
 			anchor.RegionPositions = append(anchor.RegionPositions, tableRegionPositions(tables[jt.idx])...)
-			contGrids = append(contGrids, tables[jt.idx].Grid)
+			contGrids = append(contGrids, grid)
 			if tables[jt.idx].Caption != "" {
 				if anchor.Caption != "" {
 					anchor.Caption += " "
@@ -297,6 +314,87 @@ func maxBottomOnPage(positions []pdf.Position, pg int) float64 {
 		}
 	}
 	return mb
+}
+
+// tableHeaderSignature is the normalized header block used by the cross-page
+// merge guard. rows is the leading header-row count used to produce text.
+type tableHeaderSignature struct {
+	rows    int
+	columns int
+	text    string
+}
+
+// tableHeaderOf derives a comparable header signature from a table's grid.
+// It returns false when the table carries no header metadata (HeaderRows is
+// zero), so callers can fall back to the legacy geometry-only behavior for
+// headerless tables and fixtures that do not populate the field.
+func tableHeaderOf(item *pdf.TableItem) (tableHeaderSignature, bool) {
+	if item == nil || len(item.Grid) == 0 || item.HeaderRows <= 0 || item.HeaderRows > len(item.Grid) {
+		return tableHeaderSignature{}, false
+	}
+	rows := item.HeaderRows
+	columns := 0
+	values := make([]string, 0, rows*4)
+	for _, row := range item.Grid[:rows] {
+		if len(row) > columns {
+			columns = len(row)
+		}
+		for _, cell := range row {
+			if strings.Contains(cell.Label, "covered") {
+				continue
+			}
+			if value := normalizeTableHeaderCell(cell.Text); value != "" {
+				values = append(values, value)
+			}
+		}
+	}
+	return tableHeaderSignature{
+		rows:    rows,
+		columns: columns,
+		text:    strings.Join(values, "\x1f"),
+	}, true
+}
+
+// canMergeTableHeader rejects a geometry-only cross-page candidate when both
+// tables expose a header and those headers disagree. When one side has no
+// usable header text, the column count must still match.
+func canMergeTableHeader(anchor, candidate *pdf.TableItem) bool {
+	anchorHeader, anchorOK := tableHeaderOf(anchor)
+	candidateHeader, candidateOK := tableHeaderOf(candidate)
+	if !anchorOK || !candidateOK {
+		return true
+	}
+	if anchorHeader.columns == 0 || candidateHeader.columns == 0 {
+		return true
+	}
+	if anchorHeader.text != "" && candidateHeader.text != "" {
+		return anchorHeader.text == candidateHeader.text
+	}
+	return anchorHeader.columns == candidateHeader.columns
+}
+
+func normalizeTableHeaderCell(text string) string {
+	return strings.Join(strings.Fields(strings.ToLower(text)), " ")
+}
+
+// dropTableHeaderRows removes the continuation table's repeated header rows
+// from both the grid and the flat TSR cells before they are stacked onto the
+// anchor. Cells are filtered by their Y band, matching the grid's crop-space
+// coordinates.
+func dropTableHeaderRows(item pdf.TableItem, rows int) ([]pdf.TSRCell, [][]pdf.TSRCell) {
+	if rows <= 0 || rows >= len(item.Grid) {
+		return item.Cells, item.Grid
+	}
+	top, bottom := gridYExtent(item.Grid[:rows])
+	cells := make([]pdf.TSRCell, 0, len(item.Cells))
+	for _, cell := range item.Cells {
+		center := (cell.Y0 + cell.Y1) / 2
+		if center >= top && center <= bottom {
+			continue
+		}
+		cells = append(cells, cell)
+	}
+	return cells, item.Grid[rows:]
 }
 
 // stackGrids concatenates per-page grids (each already built correctly by
