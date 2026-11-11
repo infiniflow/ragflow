@@ -8,6 +8,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
@@ -27,6 +28,9 @@ type recordingChunkStoreEngine struct {
 	onCreate func()
 	// storeMissing makes ChunkStoreExists report an absent store.
 	storeMissing bool
+	// probeCalls counts ChunkStoreExists calls; the permission gate must run
+	// before the first one.
+	probeCalls int
 }
 
 func (e *recordingChunkStoreEngine) CreateChunkStore(_ context.Context, baseName, datasetID string, vectorSize int, parserID, language string) error {
@@ -37,6 +41,9 @@ func (e *recordingChunkStoreEngine) CreateChunkStore(_ context.Context, baseName
 		e.onCreate()
 	}
 	if e.err != nil && (e.failCalls == 0 || e.calls <= e.failCalls) {
+		// The engines write the table before their indexes, so a failed creation
+		// leaves a store that ChunkStoreExists already reports as present.
+		e.storeMissing = false
 		return e.err
 	}
 	e.storeMissing = false
@@ -44,6 +51,7 @@ func (e *recordingChunkStoreEngine) CreateChunkStore(_ context.Context, baseName
 }
 
 func (e *recordingChunkStoreEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
+	e.probeCalls++
 	return !e.storeMissing, nil
 }
 
@@ -420,11 +428,10 @@ func TestUpdateDatasetSkipsMissingChunkStoreWhenModelUnchanged(t *testing.T) {
 	}
 }
 
-// A creation can fail after the engine already wrote part of the store. The
-// committed row cannot be left naming a model its store cannot serve, so the
-// previous binding goes back and the retry of the same request takes the
-// preparation path again, which completes the store in place.
-func TestUpdateDatasetRestoresEmbeddingBindingWhenCreationFails(t *testing.T) {
+// The switch is committed only after the store is ready. When the creation
+// fails, the row still names the previous model, so retrying the same request
+// prepares the store again and completes the table the failed attempt left.
+func TestUpdateDatasetKeepsPreviousBindingWhenCreationFails(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
@@ -443,8 +450,8 @@ func TestUpdateDatasetRestoresEmbeddingBindingWhenCreationFails(t *testing.T) {
 	if err == nil || code != common.CodeServerError {
 		t.Fatalf("UpdateDataset = (%d, %v), want a server error", code, err)
 	}
-	if !strings.Contains(err.Error(), "the previous embedding model was restored") {
-		t.Fatalf("error %q does not report the restored binding", err)
+	if !strings.Contains(err.Error(), "the previous embedding model was kept") {
+		t.Fatalf("error %q does not say the binding was kept", err)
 	}
 	if eng.calls != 2 {
 		t.Fatalf("chunk store calls = %d, want two attempts", eng.calls)
@@ -454,9 +461,11 @@ func TestUpdateDatasetRestoresEmbeddingBindingWhenCreationFails(t *testing.T) {
 		t.Fatalf("reload dataset: %v", err)
 	}
 	if kb.EmbdID != "BAAI/bge-large-zh-v1.5@Builtin" {
-		t.Fatalf("embd_id = %q, want the previous model restored", kb.EmbdID)
+		t.Fatalf("embd_id = %q, want the previous model kept", kb.EmbdID)
 	}
 
+	// The failed attempt left the table behind. The retry finds the store and
+	// repairs it in place instead of creating a fresh one.
 	eng.err = nil
 	if _, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model}); err != nil || code != common.CodeSuccess {
 		t.Fatalf("retry UpdateDataset = (%d, %v), want success", code, err)
@@ -467,11 +476,17 @@ func TestUpdateDatasetRestoresEmbeddingBindingWhenCreationFails(t *testing.T) {
 	if eng.storeMissing {
 		t.Fatal("store still missing after the retry")
 	}
+	if err := dao.DB.Where("id = ?", "kb-1").Take(&kb).Error; err != nil {
+		t.Fatalf("reload dataset: %v", err)
+	}
+	if kb.EmbdID != model {
+		t.Fatalf("embd_id = %q, want the committed model %q", kb.EmbdID, model)
+	}
 }
 
 // A transient failure must not reach the client: the second attempt completes
-// the store in place and the committed model stays.
-func TestUpdateDatasetRetriesCreationBeforeRestoring(t *testing.T) {
+// the store in place and the switch is committed.
+func TestUpdateDatasetRetriesCreationBeforeSwitching(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
@@ -505,19 +520,15 @@ func TestUpdateDatasetRetriesCreationBeforeRestoring(t *testing.T) {
 	}
 }
 
-// A chunk can land with the new model between the commit and the failed
-// creation. Rolling the binding back then would leave live vectors attached to
-// a model the row no longer names, so the committed binding stays and the
-// failure is reported instead.
-func TestUpdateDatasetKeepsCommittedBindingWhenChunksAppearDuringCreation(t *testing.T) {
+// A chunk can land between the store creation and the binding switch. The
+// conditional switch then leaves the row on the previous model, which is the
+// model those chunks were encoded with.
+func TestUpdateDatasetKeepsPreviousBindingWhenChunksAppearBeforeSwitch(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 
-	eng := &recordingChunkStoreEngine{
-		storeMissing: true,
-		err:          errors.New("index creation failed"),
-	}
+	eng := &recordingChunkStoreEngine{storeMissing: true}
 	eng.onCreate = func() {
 		if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("chunk_num", 2).Error; err != nil {
 			t.Errorf("seed concurrent chunk_num: %v", err)
@@ -533,25 +544,25 @@ func TestUpdateDatasetKeepsCommittedBindingWhenChunksAppearDuringCreation(t *tes
 	if err == nil || code != common.CodeServerError {
 		t.Fatalf("UpdateDataset = (%d, %v), want a server error", code, err)
 	}
-	if !strings.Contains(err.Error(), "the dataset changed while it was being created") {
+	if !strings.Contains(err.Error(), "the dataset changed while its embedding model was being switched") {
 		t.Fatalf("error %q does not report the kept binding", err)
 	}
 	var kb entity.Knowledgebase
 	if err := dao.DB.Where("id = ?", "kb-1").Take(&kb).Error; err != nil {
 		t.Fatalf("reload dataset: %v", err)
 	}
-	if kb.EmbdID != model {
-		t.Fatalf("embd_id = %q, want the committed model %q", kb.EmbdID, model)
+	if kb.EmbdID != "BAAI/bge-large-zh-v1.5@Builtin" {
+		t.Fatalf("embd_id = %q, want the previous model kept", kb.EmbdID)
 	}
 	if kb.ChunkNum != 2 {
 		t.Fatalf("chunk_num = %d, want the concurrently inserted count 2", kb.ChunkNum)
 	}
 }
 
-// A failed embedding probe never reaches CreateChunkStore. Nothing was created,
-// but the row still committed the new model, so the previous binding goes back
-// and the retry takes the preparation path again.
-func TestUpdateDatasetRestoresBindingWhenEmbeddingProbeFails(t *testing.T) {
+// A failed embedding probe never reaches CreateChunkStore. The binding was not
+// committed either, so a retry after the provider recovers prepares the store
+// and switches the model.
+func TestUpdateDatasetKeepsPreviousBindingWhenProbeFails(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
@@ -559,8 +570,9 @@ func TestUpdateDatasetRestoresBindingWhenEmbeddingProbeFails(t *testing.T) {
 	eng := &recordingChunkStoreEngine{storeMissing: true}
 	svc := testDatasetUpdateService(t)
 	svc.docEngine = eng
+	probeErr := errors.New("model unavailable")
 	svc.embeddingDimension = func(context.Context, string, string) (int, error) {
-		return 0, errors.New("model unavailable")
+		return 0, probeErr
 	}
 
 	model := "BAAI/bge-m3@Builtin"
@@ -569,8 +581,8 @@ func TestUpdateDatasetRestoresBindingWhenEmbeddingProbeFails(t *testing.T) {
 	if err == nil || code != common.CodeServerError {
 		t.Fatalf("UpdateDataset = (%d, %v), want a server error", code, err)
 	}
-	if !strings.Contains(err.Error(), "the previous embedding model was restored") {
-		t.Fatalf("error %q does not report the restored binding", err)
+	if !strings.Contains(err.Error(), "the previous embedding model was kept") {
+		t.Fatalf("error %q does not say the binding was kept", err)
 	}
 	if eng.calls != 0 || !eng.storeMissing {
 		t.Fatalf("create calls = %d, store missing = %v, want the store untouched", eng.calls, eng.storeMissing)
@@ -580,22 +592,33 @@ func TestUpdateDatasetRestoresBindingWhenEmbeddingProbeFails(t *testing.T) {
 		t.Fatalf("reload dataset: %v", err)
 	}
 	if kb.EmbdID != "BAAI/bge-large-zh-v1.5@Builtin" {
-		t.Fatalf("embd_id = %q, want the previous model restored", kb.EmbdID)
+		t.Fatalf("embd_id = %q, want the previous model kept", kb.EmbdID)
+	}
+
+	probeErr = nil
+	if _, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model}); err != nil || code != common.CodeSuccess {
+		t.Fatalf("retry UpdateDataset = (%d, %v), want success", code, err)
+	}
+	if eng.calls != 1 {
+		t.Fatalf("chunk store calls = %d, want 1 on the retry", eng.calls)
+	}
+	if err := dao.DB.Where("id = ?", "kb-1").Take(&kb).Error; err != nil {
+		t.Fatalf("reload dataset: %v", err)
+	}
+	if kb.EmbdID != model {
+		t.Fatalf("embd_id = %q, want the committed model %q", kb.EmbdID, model)
 	}
 }
 
 // A concurrent settings write can name another model while the store is being
-// created. The restore is conditional on the committed model, so it must not
-// overwrite that newer binding.
-func TestUpdateDatasetKeepsConcurrentBindingWhenCreationFails(t *testing.T) {
+// created. The conditional switch is guarded on the previous binding, so it
+// must not overwrite that newer selection.
+func TestUpdateDatasetKeepsConcurrentBindingWhenSwitchFails(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 
-	eng := &recordingChunkStoreEngine{
-		storeMissing: true,
-		err:          errors.New("index creation failed"),
-	}
+	eng := &recordingChunkStoreEngine{storeMissing: true}
 	eng.onCreate = func() {
 		if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("embd_id", "concurrent-model").Error; err != nil {
 			t.Errorf("seed concurrent binding: %v", err)
@@ -611,7 +634,7 @@ func TestUpdateDatasetKeepsConcurrentBindingWhenCreationFails(t *testing.T) {
 	if err == nil || code != common.CodeServerError {
 		t.Fatalf("UpdateDataset = (%d, %v), want a server error", code, err)
 	}
-	if !strings.Contains(err.Error(), "the dataset changed while it was being created") {
+	if !strings.Contains(err.Error(), "the dataset changed while its embedding model was being switched") {
 		t.Fatalf("error %q does not report the kept binding", err)
 	}
 	var kb entity.Knowledgebase
@@ -623,38 +646,124 @@ func TestUpdateDatasetKeepsConcurrentBindingWhenCreationFails(t *testing.T) {
 	}
 }
 
-// A restore that cannot be written must be reported: the row would otherwise
-// keep a model whose store creation failed with no signal to the caller.
-func TestUpdateDatasetReportsRestoreFailure(t *testing.T) {
+// A caller without the update permission reaches the store probes only through
+// this embedding-change preflight, so the permission check must run before the
+// first probe: otherwise anyone who can read a dataset could tell whether it
+// has a chunk store from the response.
+func TestUpdateDatasetDeniedCallerCannotProbeChunkStore(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	insertDatasetUpdateTeamMember(t, "member-1", "tenant-1")
 
-	eng := &recordingChunkStoreEngine{
-		storeMissing: true,
-		err:          errors.New("index creation failed"),
-	}
-	dropped := false
-	eng.onCreate = func() {
-		if dropped {
-			return
-		}
-		dropped = true
-		if err := dao.DB.Exec("DROP TABLE knowledgebase").Error; err != nil {
-			t.Errorf("drop knowledgebase: %v", err)
-		}
-	}
+	eng := &recordingChunkStoreEngine{}
 	svc := testDatasetUpdateService(t)
 	svc.docEngine = eng
-	svc.embeddingDimension = func(context.Context, string, string) (int, error) { return 1024, nil }
+	svc.embeddingDimension = func(context.Context, string, string) (int, error) {
+		t.Fatal("dimension must not be probed for an unauthorized caller")
+		return 0, nil
+	}
 
 	model := "BAAI/bge-m3@Builtin"
-	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	ctx := withDatasetTestContext(t.Context(), "member-1", "tenant-1")
 	_, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model})
-	if err == nil || code != common.CodeServerError {
-		t.Fatalf("UpdateDataset = (%d, %v), want a server error", code, err)
+	// NormalizeHidden reports a dataset the caller cannot update as missing.
+	if err == nil || code != common.CodeNotFound {
+		t.Fatalf("UpdateDataset = (%d, %v), want a hidden not-found error", code, err)
 	}
-	if !strings.Contains(err.Error(), "could not be restored") {
-		t.Fatalf("error %q does not report the restore failure", err)
+	if eng.probeCalls != 0 {
+		t.Fatalf("chunk store probes = %d, want 0 for an unauthorized caller", eng.probeCalls)
 	}
+}
+
+// The syncer wake-ups for newly linked connectors must go out only after the
+// chunk store is ready: a task picked up earlier would run against a store
+// without the new model's vector column. A failed creation publishes nothing;
+// the task rows stay scheduled and the syncer's startup reconciliation runs
+// them later.
+type recordingSyncTaskPublisher struct {
+	engine.MessageQueue
+	published    []string
+	publishedEar bool
+	ready        func() bool
+}
+
+func (p *recordingSyncTaskPublisher) PublishSyncerTask(taskID string) error {
+	if p.ready != nil && !p.ready() {
+		p.publishedEar = true
+	}
+	p.published = append(p.published, taskID)
+	return nil
+}
+
+func TestUpdateDatasetPublishesConnectorTasksAfterStoreReady(t *testing.T) {
+	cases := []struct {
+		name        string
+		failCreate  bool
+		wantPublish int
+	}{
+		{name: "creation_fails", failCreate: true, wantPublish: 0},
+		{name: "creation_succeeds", failCreate: false, wantPublish: 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupDatasetUpdateTestDB(t)
+			pushServiceDB(t, db)
+			insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+			insertDatasetUpdateConnector(t, "connector-1", "tenant-1")
+
+			ready := false
+			eng := &readyTrackingChunkStoreEngine{
+				recordingChunkStoreEngine: recordingChunkStoreEngine{storeMissing: true},
+				onReady:                   func() { ready = true },
+			}
+			if tc.failCreate {
+				eng.err = errors.New("index creation failed")
+			}
+			publisher := &recordingSyncTaskPublisher{ready: func() bool { return ready }}
+			previous := engine.GetMessageQueueEngine()
+			engine.SetMessageQueueEngine(publisher)
+			t.Cleanup(func() { engine.SetMessageQueueEngine(previous) })
+
+			svc := testDatasetUpdateService(t)
+			svc.docEngine = eng
+			svc.embeddingDimension = func(context.Context, string, string) (int, error) { return 1024, nil }
+
+			model := "BAAI/bge-m3@Builtin"
+			ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+			_, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{
+				EmbeddingModel: &model,
+				Connectors:     &[]service.DatasetConnectorRequest{{ID: "connector-1"}},
+			})
+			if tc.failCreate {
+				if err == nil || code != common.CodeServerError {
+					t.Fatalf("UpdateDataset = (%d, %v), want a server error", code, err)
+				}
+			} else if err != nil || code != common.CodeSuccess {
+				t.Fatalf("UpdateDataset = (%d, %v), want success", code, err)
+			}
+			if len(publisher.published) != tc.wantPublish {
+				t.Fatalf("published tasks = %v, want %d", publisher.published, tc.wantPublish)
+			}
+			if publisher.publishedEar {
+				t.Fatal("a connector task was published before the chunk store was ready")
+			}
+		})
+	}
+}
+
+// readyTrackingChunkStoreEngine marks the store ready only after a creation
+// call actually succeeded, which is the point from which syncer wake-ups are
+// safe to publish.
+type readyTrackingChunkStoreEngine struct {
+	recordingChunkStoreEngine
+	onReady func()
+}
+
+func (e *readyTrackingChunkStoreEngine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID, language string) error {
+	err := e.recordingChunkStoreEngine.CreateChunkStore(ctx, baseName, datasetID, vectorSize, parserID, language)
+	if err == nil && e.onReady != nil {
+		e.onReady()
+	}
+	return err
 }

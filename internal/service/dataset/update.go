@@ -25,11 +25,6 @@ import (
 
 const datasetPagerankUpdateTimeout = 30 * time.Second
 
-// restoreEmbeddingBindingTimeout bounds the compensating write that runs after
-// the request context may already be cancelled. It is what lets the retry of a
-// failed store creation take the preparation path again.
-const restoreEmbeddingBindingTimeout = 10 * time.Second
-
 type datasetPagerankUpdate struct {
 	value     int64
 	index     string
@@ -200,6 +195,10 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 	var scheduledTaskIDs []string
 	var pagerankUpdate *datasetPagerankUpdate
 	var chunkStoreEmbdID string
+	// pendingEmbdID is the model of an empty dataset's switch, committed only
+	// after its store is ready. pendingTenantEmbdID is its tenant binding.
+	var pendingEmbdID string
+	var pendingTenantEmbdID *string
 	err = dao.DB.Transaction(func(tx *gorm.DB) error {
 		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(ctx, tx, datasetID)
 		if authErr != nil {
@@ -311,13 +310,19 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 					tenantEmbdID = target.ID
 				}
 			}
-			updates["embd_id"] = effectiveEmbdID
-			updates["tenant_embd_id"] = stringPtrIfNotEmpty(tenantEmbdID)
-			// An empty dataset can switch models, but its chunk store keeps the
-			// vector column of the previous model. An existing store was extended
-			// before this transaction; a missing one is created after it commits,
-			// so a rejected update never leaves a store the row did not ask for.
-			if effectiveEmbdID != "" && effectiveEmbdID != lockedKB.EmbdID && lockedKB.ChunkNum == 0 {
+			if effectiveEmbdID == lockedKB.EmbdID || lockedKB.ChunkNum != 0 {
+				// Nothing can fail after this transaction that would need the binding
+				// to move, so it is updated like every other field.
+				updates["embd_id"] = effectiveEmbdID
+				updates["tenant_embd_id"] = stringPtrIfNotEmpty(tenantEmbdID)
+			} else {
+				// An empty dataset keeps the previous binding here. An existing store
+				// was extended before this transaction; a missing one is created
+				// afterwards, and only a successful creation commits the switch. A
+				// failed one therefore leaves a row whose retry still prepares the
+				// store instead of skipping it as an unchanged model.
+				pendingEmbdID = effectiveEmbdID
+				pendingTenantEmbdID = stringPtrIfNotEmpty(tenantEmbdID)
 				chunkStoreEmbdID = effectiveEmbdID
 			}
 		}
@@ -535,30 +540,27 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 		}
 		return nil, txCode, err
 	}
-	publishDatasetSyncerTasks(scheduledTaskIDs)
-
-	if storePlan.createEmbdID != "" && updatedKB != nil && updatedKB.ChunkNum == 0 && updatedKB.EmbdID == storePlan.createEmbdID {
-		if createErr := d.ensureChunkStoreForEmbedding(ctx, updatedKB, storePlan.createEmbdID); createErr != nil {
-			// The row now names a model its store cannot serve. Put the previous
-			// binding back so the retry takes the preparation path again, which
-			// completes the store the failed creation may have left half built.
-			restored, restoreErr := d.restoreEmbeddingBinding(ctx, previousKB, storePlan.createEmbdID)
-			switch {
-			case restoreErr != nil:
+	if pendingEmbdID != "" {
+		if storePlan.createEmbdID != "" && updatedKB != nil && updatedKB.ChunkNum == 0 {
+			if createErr := d.ensureChunkStoreForEmbedding(ctx, updatedKB, storePlan.createEmbdID); createErr != nil {
+				// The binding was not part of the transaction above, so the row still
+				// names the previous model and a retry prepares the store again.
 				return nil, common.CodeServerError, fmt.Errorf(
-					"dataset settings were saved, but the chunk store for embedding model %s could not be created and the previous embedding model could not be restored (%v); retry the request after the database recovers: %w",
-					storePlan.createEmbdID, restoreErr, createErr)
-			case !restored:
-				return nil, common.CodeServerError, fmt.Errorf(
-					"dataset settings were saved, but the chunk store for embedding model %s could not be created; the dataset changed while it was being created, so the binding stays on %s: %w",
-					storePlan.createEmbdID, storePlan.createEmbdID, createErr)
-			default:
-				return nil, common.CodeServerError, fmt.Errorf(
-					"dataset settings were saved, but the chunk store for embedding model %s could not be created; the previous embedding model was restored, retry the request to switch again: %w",
+					"dataset settings were saved, but the chunk store for embedding model %s could not be created, so the previous embedding model was kept; retry the request to switch: %w",
 					storePlan.createEmbdID, createErr)
 			}
 		}
+		if bindErr := d.commitEmbeddingBinding(ctx, previousKB, updatedKB, pendingEmbdID, pendingTenantEmbdID); bindErr != nil {
+			return nil, common.CodeServerError, fmt.Errorf(
+				"dataset settings were saved, but the embedding model could not be switched: %w", bindErr)
+		}
 	}
+	// Publish connector tasks only after the chunk store is ready: a task the
+	// syncer picks up earlier would run against a store whose vector column for
+	// the new model does not exist yet. The task rows are already committed, so
+	// the syncer's startup reconciliation still runs a publish an error return
+	// skipped here.
+	publishDatasetSyncerTasks(scheduledTaskIDs)
 
 	if pagerankUpdate != nil {
 		if err = d.updateDatasetPagerankChunks(ctx, *pagerankUpdate); err != nil {
@@ -732,6 +734,15 @@ func (d *DatasetService) planChunkStoreForEmbeddingChange(ctx context.Context, k
 	if embdID == kb.EmbdID {
 		return plan, common.CodeSuccess, nil
 	}
+	// Gate the store probes behind the update permission: reaching this point
+	// only required reading the row, and a caller without update access must
+	// not be able to tell whether a dataset has a chunk store from the error
+	// or timing of the probes below. The transaction re-checks under the row
+	// lock, which stays authoritative against a permission change in between.
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID}, permission.OperationUpdate); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		return plan, code, permissionErr
+	}
 	exists, err := d.docEngine.ChunkStoreExists(ctx, fmt.Sprintf("ragflow_%s", kb.TenantID), kb.ID)
 	if err != nil {
 		return plan, common.CodeServerError, fmt.Errorf("check the chunk store for dataset %s: %w", kb.ID, err)
@@ -740,10 +751,6 @@ func (d *DatasetService) planChunkStoreForEmbeddingChange(ctx context.Context, k
 	if !exists {
 		plan.createEmbdID = embdID
 		return plan, common.CodeSuccess, nil
-	}
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID}, permission.OperationUpdate); err != nil {
-		code, permissionErr := permissionresponse.NormalizeHidden(err)
-		return plan, code, permissionErr
 	}
 	// Keep the unavailable-model contract of the transaction below: the probe
 	// fails first for an unknown model, and that is a client error.
@@ -764,42 +771,45 @@ func (d *DatasetService) planChunkStoreForEmbeddingChange(ctx context.Context, k
 	return plan, common.CodeSuccess, nil
 }
 
-// restoreEmbeddingBinding puts the model the row had before the update back
-// after the committed row could not get a store for the new one. The write is
-// conditional: a chunk inserted with the new model or a concurrent settings
-// write both mean rolling back would publish a model the store no longer
-// matches, so those cases keep the committed binding and report it instead.
-//
-// The context is detached because the failure this compensates for is usually a
-// cancelled request, and this write is what lets a later retry repair the store.
-func (d *DatasetService) restoreEmbeddingBinding(ctx context.Context, previous *entity.Knowledgebase, newEmbdID string) (bool, error) {
-	if previous == nil {
-		return false, errors.New("the dataset row locked by the update is not available")
+// commitEmbeddingBinding switches an empty dataset to the model whose store was
+// prepared. The previous binding is the guard: a chunk that landed first, or a
+// concurrent settings write, leaves the row on the model its chunks actually
+// used, and the caller reports the failure instead of claiming a switch that
+// did not happen.
+func (d *DatasetService) commitEmbeddingBinding(ctx context.Context, previous, kb *entity.Knowledgebase, embdID string, tenantEmbdID *string) error {
+	if previous == nil || kb == nil {
+		return errors.New("the dataset row locked by the update is not available")
 	}
-	restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), restoreEmbeddingBindingTimeout)
-	defer cancel()
-	updates := map[string]interface{}{
-		"embd_id": previous.EmbdID,
-	}
-	if previous.TenantEmbdID == nil {
+	updates := map[string]interface{}{"embd_id": embdID}
+	if tenantEmbdID == nil {
 		updates["tenant_embd_id"] = nil
 	} else {
-		updates["tenant_embd_id"] = *previous.TenantEmbdID
+		updates["tenant_embd_id"] = *tenantEmbdID
 	}
-	result := dao.DB.WithContext(restoreCtx).Model(&entity.Knowledgebase{}).
-		Where("id = ? AND embd_id = ? AND chunk_num = 0", previous.ID, newEmbdID).
+	result := dao.DB.WithContext(ctx).Model(&entity.Knowledgebase{}).
+		Where("id = ? AND embd_id = ? AND chunk_num = 0", kb.ID, previous.EmbdID).
 		Updates(updates)
 	if result.Error != nil {
-		common.Warn("failed to restore the embedding binding after a failed chunk store creation",
-			zap.String("dataset_id", previous.ID), zap.String("embedding_model", newEmbdID), zap.Error(result.Error))
-		return false, result.Error
+		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		common.Info("kept the committed embedding binding: the dataset changed while its chunk store was being created",
-			zap.String("dataset_id", previous.ID), zap.String("embedding_model", newEmbdID))
-		return false, nil
+		// A concurrent request may have made the same switch already; a new chunk
+		// or a different model must be reported instead of overwritten.
+		fresh, err := d.kbDAO.GetByID(ctx, dao.DB, kb.ID)
+		if err != nil {
+			return err
+		}
+		if fresh.EmbdID != embdID || fresh.ChunkNum != 0 {
+			return fmt.Errorf("the dataset changed while its embedding model was being switched (model %s, %d chunks); retry the request",
+				fresh.EmbdID, fresh.ChunkNum)
+		}
+		kb.TenantEmbdID = fresh.TenantEmbdID
 	}
-	return true, nil
+	kb.EmbdID = embdID
+	if tenantEmbdID != nil {
+		kb.TenantEmbdID = tenantEmbdID
+	}
+	return nil
 }
 
 // ensureChunkStoreForEmbedding prepares the chunk store for a new embedding
