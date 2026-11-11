@@ -41,6 +41,8 @@ const ingestionLegacyConfigTargetVersion = "v1.0.0.2"
 // keys inside Extractor / TitleChunker / TokenChunker nodes. Custom canvas DSLs
 // are normalized in user_canvas and user_canvas_version because those rows, not
 // the parser_config snapshot, are the source of truth for custom pipelines.
+// parser_config rows fail closed; a canvas row that cannot be parsed or
+// normalized is logged and skipped instead.
 func migrateIngestionLegacyConfigs(ctx context.Context, db *gorm.DB) error {
 	version, err := GetDatabaseMigrationVersion(ctx, db)
 	if err != nil {
@@ -102,6 +104,11 @@ type canvasDSLMigrationRow struct {
 	DSL *string `gorm:"column:dsl"`
 }
 
+// migrateCanvasDSLRows normalizes one canvas table. A row whose DSL is not
+// valid JSON or that the normalizer cannot convert is logged and skipped:
+// canvas DSLs are user-authored and are not schema-validated on save, so one
+// bad row must not block the upgrade for every tenant. The row keeps its
+// legacy shape, which the frontend and runtime still read.
 func migrateCanvasDSLRows(ctx context.Context, db *gorm.DB, model any, table string) (int, error) {
 	count := 0
 	var rows []canvasDSLMigrationRow
@@ -115,14 +122,22 @@ func migrateCanvasDSLRows(ctx context.Context, db *gorm.DB, model any, table str
 					}
 					var dsl map[string]any
 					if err := json.Unmarshal([]byte(*row.DSL), &dsl); err != nil {
-						return fmt.Errorf("row %s: invalid dsl JSON: %w", row.ID, err)
+						common.Warn("Skipping canvas DSL that is not valid JSON",
+							zap.String("table", table),
+							zap.String("row_id", row.ID),
+							zap.Error(err))
+						continue
 					}
 					if dsl == nil {
 						continue
 					}
 					changed, err := normalizeCanvasDSL(dsl, ingestionConfigRow{table: table, rowID: row.ID})
 					if err != nil {
-						return fmt.Errorf("row %s: %w", row.ID, err)
+						common.Warn("Skipping canvas DSL the migration cannot normalize",
+							zap.String("table", table),
+							zap.String("row_id", row.ID),
+							zap.Error(err))
+						continue
 					}
 					if !changed {
 						continue

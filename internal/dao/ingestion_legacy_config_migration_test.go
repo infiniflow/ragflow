@@ -569,13 +569,6 @@ func TestMigrateIngestionLegacyConfigsRejectsMalformed(t *testing.T) {
 			},
 			want: "rules",
 		},
-		{
-			name: "canvas dsl",
-			setup: func(t *testing.T, db *gorm.DB) {
-				insertCanvasDSL(t, db, "user_canvas", "canvas", "not-json")
-			},
-			want: "invalid dsl JSON",
-		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := openIngestionMigrationDB(t)
@@ -589,6 +582,56 @@ func TestMigrateIngestionLegacyConfigsRejectsMalformed(t *testing.T) {
 				t.Fatalf("failed migration advanced version to %q", got)
 			}
 		})
+	}
+}
+
+func TestMigrateIngestionLegacyConfigsSkipsMalformedCanvas(t *testing.T) {
+	db := openIngestionMigrationDB(t)
+	writeDatabaseVersion(t, db, "v1.0.0.1")
+	insertCanvasDSL(t, db, "user_canvas", "good", `{
+		"components": {"Extractor:X": {"obj": {"component_name": "Extractor", "params": {"auto_keywords": 3}}}}
+	}`)
+	insertCanvasDSL(t, db, "user_canvas", "bad-json", "not-json")
+	insertCanvasDSL(t, db, "user_canvas", "bad-param", `{
+		"components": {"Extractor:X": {"obj": {"component_name": "Extractor", "params": {"auto_keywords": "many"}}}}
+	}`)
+	insertCanvasDSL(t, db, "user_canvas", "bad-form", `{
+		"graph": {"nodes": [{"id": "TitleChunker:X", "data": {"label": "TitleChunker", "form": {"rules": "bad"}}}]}
+	}`)
+
+	if err := migrateIngestionLegacyConfigs(t.Context(), db); err != nil {
+		t.Fatalf("migration must skip bad canvas rows, got %v", err)
+	}
+	if got := databaseVersion(t, db); got != ingestionLegacyConfigTargetVersion {
+		t.Fatalf("version = %q; want %q", got, ingestionLegacyConfigTargetVersion)
+	}
+
+	good := readCanvasDSL(t, db, "user_canvas", "good")
+	params := good["components"].(map[string]any)["Extractor:X"].(map[string]any)["obj"].(map[string]any)["params"].(map[string]any)
+	if params["keywords"] == nil {
+		t.Fatalf("good canvas was not migrated: %#v", params)
+	}
+
+	var rawDSL struct {
+		DSL *string `gorm:"column:dsl"`
+	}
+	if err := db.Table("user_canvas").Select("dsl").Where("id = ?", "bad-json").Take(&rawDSL).Error; err != nil {
+		t.Fatal(err)
+	}
+	if rawDSL.DSL == nil || *rawDSL.DSL != "not-json" {
+		t.Fatalf("bad-json row = %v; want unchanged", rawDSL.DSL)
+	}
+
+	badParam := readCanvasDSL(t, db, "user_canvas", "bad-param")
+	badParams := badParam["components"].(map[string]any)["Extractor:X"].(map[string]any)["obj"].(map[string]any)["params"].(map[string]any)
+	if badParams["auto_keywords"] != "many" {
+		t.Fatalf("bad-param row was modified: %#v", badParams)
+	}
+
+	badForm := readCanvasDSL(t, db, "user_canvas", "bad-form")
+	form := badForm["graph"].(map[string]any)["nodes"].([]any)[0].(map[string]any)["data"].(map[string]any)["form"].(map[string]any)
+	if form["rules"] != "bad" {
+		t.Fatalf("bad-form row was modified: %#v", form)
 	}
 }
 

@@ -356,14 +356,16 @@ This step closes the compatibility gap left by `v1.0.0-rc2`: it rewrites both th
 Conversion rules:
 
 - Within a component node, existing modular group fields win over flat values. A top-level `metadata` transport object is authoritative and replaces the node's metadata group; a node `metadata` group wins over `metadata_config`, which wins over the flat `enable_metadata` + field-list form. `metadata` field lists win over `fields`.
-- An explicit `enable_summary: false` wins over `field_name: summary`; `field_name` values other than `summary` have no target in the current Extractor and are dropped with a warning.
+- A node's `sys_prompt` follows its `field_name`: `summary`, `keywords`, and `questions` keep the prompt in the matching group; `metadata`, `toc`, and other values have no prompt target and are dropped with a warning.
+- An explicit `enable_summary: false` wins over `field_name: summary`; `field_name` values other than `summary`, `keywords`, and `questions` have no target in the current Extractor and are dropped with a warning.
 - `delimiter_mode: one` is not changed: it is a separate legacy alias that dispatches TokenChunker to OneChunker.
 - Custom canvas rows are updated in both the runtime params and the operator form; unrelated components keep their values.
 
 Execution details:
 
 - Rows are read in id-ordered batches of 256, each batch in its own transaction. Only rows whose params actually change are rewritten.
-- Invalid JSON, malformed supported values, or an unreadable canvas DSL stop the step with table/row context. A failed batch rolls back; earlier committed batches can be rerun safely.
+- `knowledgebase` and `document` rows fail closed: invalid JSON or a malformed supported value stops the step with table/row context. A failed batch rolls back; earlier committed batches can be rerun safely.
+- `user_canvas` and `user_canvas_version` rows are user-authored and are not schema-validated on save, so a row whose DSL is not valid JSON or cannot be normalized is logged and skipped instead of blocking the upgrade. The skipped row keeps its legacy shape, which the frontend and runtime still read; a database write failure still stops the step.
 - The step runs after `migrateResourceUserIDs` because its target sorts above `v1.0.0.1`. The marker advances only after every table conversion succeeds. A database already marked `v1.0.0.2` or later skips this step.
 
 On success the migration records `v1.0.0.2`.

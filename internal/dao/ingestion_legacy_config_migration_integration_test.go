@@ -109,6 +109,21 @@ func TestMigrateIngestionLegacyConfigs_Integration(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("seed canvas version: %v", err)
 	}
+	if err := db.WithContext(ctx).Create(&entity.UserCanvas{
+		ID: "canvas-bad", CanvasCategory: "dataflow_canvas", Title: strPtr("bad"),
+		DSL: entity.JSONMap{
+			"components": map[string]any{
+				"Extractor:Bad": map[string]any{
+					"obj": map[string]any{
+						"component_name": "Extractor",
+						"params":         map[string]any{"auto_keywords": "many"},
+					},
+				},
+			},
+		},
+	}).Error; err != nil {
+		t.Fatalf("seed bad canvas: %v", err)
+	}
 
 	if err := migrateIngestionLegacyConfigs(ctx, db); err != nil {
 		t.Fatalf("migrate: %v", err)
@@ -165,6 +180,12 @@ func TestMigrateIngestionLegacyConfigs_Integration(t *testing.T) {
 	}
 	if _, remains := metadata["summary"]; remains {
 		t.Fatalf("metadata node gained a summary group: %#v", metadata)
+	}
+
+	badCanvas := readCanvasDSL(t, db, "user_canvas", "canvas-bad")
+	badParams := badCanvas["components"].(map[string]any)["Extractor:Bad"].(map[string]any)["obj"].(map[string]any)["params"].(map[string]any)
+	if badParams["auto_keywords"] != "many" {
+		t.Fatalf("bad canvas was modified: %#v", badParams)
 	}
 
 	// The marker makes the second run a no-op; clearing it proves the
