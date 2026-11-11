@@ -404,6 +404,27 @@ jobs:
         run: |
           set -euo pipefail
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
+          # --build-context needs a BuildKit-enabled docker build with named
+          # context support (Docker 23+ / Buildx 0.8+). Check the CLI up front so
+          # an old runner fails with an actionable message instead of an
+          # "unknown flag" error after the build slot is acquired.
+          DOCKER_BUILD_HELP="$(sudo docker build --help 2>&1 || true)"
+          if [[ "${DOCKER_BUILD_HELP}" != *"--build-context"* ]]; then
+            echo "ERROR: docker build lacks --build-context (need Docker 23+ / Buildx 0.8+)." >&2
+            echo "       Upgrade Docker Engine or install the buildx plugin on this runner." >&2
+            exit 1
+          fi
+          # Same fail-fast guard as the Go unit-test step. Without the host cache
+          # the image build would silently fall back to downloading the native
+          # archives from GitHub; NATIVE_LIBS_REQUIRED=1 catches that inside the
+          # build instead of letting it go unnoticed.
+          NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
+          for lib in office_oxide pdfium-static pdf_oxide onnxruntime; do
+            if [ ! -d "${NATIVE_LIBS_DIR}/${lib}" ]; then
+              echo "ERROR: ${NATIVE_LIBS_DIR}/${lib} missing — native-lib cache not mounted on this runner." >&2
+              exit 1
+            fi
+          done
           # Build-slot lock. MUST live on HOST-LOCAL storage shared by every runner
           # container on the SAME host. NOTE: ${RUNNER_WORKSPACE_PREFIX} is a host
           # bind mount (local), but its 'artifacts/' subdir is NFS — a flock on NFS
@@ -427,7 +448,14 @@ jobs:
             flock -w 4200 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
             echo "Acquired Docker build slot for ${DOC_ENGINE}"
             ##sudo docker pull ubuntu:24.04
-            timeout 1800 sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --build-arg GITEE_TOKEN=${GITEE_TOKEN} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+            timeout 1800 sudo DOCKER_BUILDKIT=1 docker build \
+              --build-arg NEED_MIRROR=1 \
+              --build-arg HTTPS_PROXY=${HTTPS_PROXY} \
+              --build-arg HTTP_PROXY=${HTTP_PROXY} \
+              --build-arg GITEE_TOKEN=${GITEE_TOKEN} \
+              --build-arg NATIVE_LIBS_REQUIRED=1 \
+              --build-context "native-libs=${NATIVE_LIBS_DIR}" \
+              -f Dockerfile -t ${RAGFLOW_IMAGE} .
           ) 9>"${BUILD_LOCK_FILE}"
 
       - name: Prepare Python test environment
@@ -1005,6 +1033,27 @@ jobs:
         run: |
           set -euo pipefail
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
+          # --build-context needs a BuildKit-enabled docker build with named
+          # context support (Docker 23+ / Buildx 0.8+). Check the CLI up front so
+          # an old runner fails with an actionable message instead of an
+          # "unknown flag" error after the build slot is acquired.
+          DOCKER_BUILD_HELP="$(sudo docker build --help 2>&1 || true)"
+          if [[ "${DOCKER_BUILD_HELP}" != *"--build-context"* ]]; then
+            echo "ERROR: docker build lacks --build-context (need Docker 23+ / Buildx 0.8+)." >&2
+            echo "       Upgrade Docker Engine or install the buildx plugin on this runner." >&2
+            exit 1
+          fi
+          # Same fail-fast guard as the Go unit-test step. Without the host cache
+          # the image build would silently fall back to downloading the native
+          # archives from GitHub; NATIVE_LIBS_REQUIRED=1 catches that inside the
+          # build instead of letting it go unnoticed.
+          NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
+          for lib in office_oxide pdfium-static pdf_oxide onnxruntime; do
+            if [ ! -d "${NATIVE_LIBS_DIR}/${lib}" ]; then
+              echo "ERROR: ${NATIVE_LIBS_DIR}/${lib} missing — native-lib cache not mounted on this runner." >&2
+              exit 1
+            fi
+          done
           # Build-slot lock. MUST live on HOST-LOCAL storage shared by every runner
           # container on the SAME host. NOTE: ${RUNNER_WORKSPACE_PREFIX} is a host
           # bind mount (local), but its 'artifacts/' subdir is NFS — a flock on NFS
@@ -1028,7 +1077,14 @@ jobs:
             flock -w 4200 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
             echo "Acquired Docker build slot for ${DOC_ENGINE}"
             ##sudo docker pull ubuntu:24.04
-            timeout 1800 sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --build-arg GITEE_TOKEN=${GITEE_TOKEN} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+            timeout 1800 sudo DOCKER_BUILDKIT=1 docker build \
+              --build-arg NEED_MIRROR=1 \
+              --build-arg HTTPS_PROXY=${HTTPS_PROXY} \
+              --build-arg HTTP_PROXY=${HTTP_PROXY} \
+              --build-arg GITEE_TOKEN=${GITEE_TOKEN} \
+              --build-arg NATIVE_LIBS_REQUIRED=1 \
+              --build-context "native-libs=${NATIVE_LIBS_DIR}" \
+              -f Dockerfile -t ${RAGFLOW_IMAGE} .
           ) 9>"${BUILD_LOCK_FILE}"
 
       - name: Prepare Python test environment
