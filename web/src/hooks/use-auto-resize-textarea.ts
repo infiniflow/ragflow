@@ -44,6 +44,7 @@ export function useAutoResizeTextarea(
     const el = ref.current;
     if (!el) return;
 
+    /** Fit the rendered box to its content and borders within maxHeight. */
     const measure = () => {
       el.style.height = 'auto';
       // scrollHeight excludes borders while height is border-box, so the
@@ -51,11 +52,17 @@ export function useAutoResizeTextarea(
       // would show a scrollbar even for a single line. Hide it until the
       // content actually exceeds the max height.
       const scrollHeight = el.scrollHeight;
-      const overflowing = scrollHeight > maxHeight;
-      el.style.overflowY = overflowing ? 'auto' : 'hidden';
-      el.style.height = `${Math.min(scrollHeight, maxHeight)}px`;
-
       const style = getComputedStyle(el);
+      const borderHeight =
+        style.boxSizing === 'border-box'
+          ? (parseFloat(style.borderTopWidth) || 0) +
+            (parseFloat(style.borderBottomWidth) || 0)
+          : 0;
+      const requiredHeight = scrollHeight + borderHeight;
+      const overflowing = requiredHeight > maxHeight;
+      el.style.overflowY = overflowing ? 'auto' : 'hidden';
+      el.style.height = `${Math.min(requiredHeight, maxHeight)}px`;
+
       const lineHeight =
         parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.2;
       const verticalPadding =
