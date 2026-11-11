@@ -58,7 +58,7 @@ type SharePointConnector struct {
 	siteURL       string
 	batchSize     int
 	driveID       string
-	rootFolderID  string
+	rootFolderIDs []string
 	excludeVideos bool
 	filters       fileFilters
 
@@ -207,7 +207,10 @@ type sharePointItem struct {
 	File                 *sharePointFileFacet   `json:"file,omitempty"`
 	CTag                 string                 `json:"cTag"`
 	ETag                 string                 `json:"eTag"`
-	relativePath         string
+	ParentReference      struct {
+		ID string `json:"id"`
+	} `json:"parentReference"`
+	relativePath string
 }
 
 type sharePointFolderFacet struct {
@@ -724,7 +727,7 @@ func (s *sharePointSyncSession) maxUpdatedAt(documents []SourceDocument) time.Ti
 // driveDocuments lists metadata only. The runner compares fingerprints before
 // fetching individual bodies, so a whole library is never buffered as blobs.
 func (s *sharePointSyncSession) driveDocuments(ctx context.Context, drive sharePointDrive) ([]SourceDocument, error) {
-	files, err := s.connector.walkFiles(ctx, drive.ID, s.connector.rootFolderID, s.connector.filters)
+	files, err := s.connector.walkSelectedRoots(ctx, drive.ID)
 	if err != nil {
 		return nil, err
 	}

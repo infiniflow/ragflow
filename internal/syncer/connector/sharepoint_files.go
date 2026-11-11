@@ -33,9 +33,12 @@ func (c *SharePointConnector) configureFileSelection(config map[string]any) erro
 	}
 	c.filters = filters
 	c.driveID = strings.TrimSpace(stringConfig(config["drive_id"]))
-	c.rootFolderID = strings.TrimSpace(stringConfig(config["root_folder_id"]))
-	if c.rootFolderID != "" && c.driveID == "" {
-		return &ConnectorValidationError{Message: "drive_id is required when root_folder_id is set"}
+	c.rootFolderIDs, err = sharePointRootIDs(config)
+	if err != nil {
+		return &ConnectorValidationError{Message: err.Error()}
+	}
+	if len(c.rootFolderIDs) > 0 && c.driveID == "" {
+		return &ConnectorValidationError{Message: "drive_id is required when root_folder_ids is set"}
 	}
 	value, ok := config["exclude_videos"].(bool)
 	if config["exclude_videos"] != nil && !ok {
@@ -76,15 +79,14 @@ func (c *SharePointConnector) validateScope(ctx context.Context, siteID string) 
 	if _, err := c.syncDrives(ctx, siteID); err != nil {
 		return err
 	}
-	if c.rootFolderID == "" {
-		return nil
-	}
-	folder, err := c.getItem(ctx, c.driveID, c.rootFolderID)
-	if err != nil {
-		return err
-	}
-	if folder.Folder == nil {
-		return &ConnectorValidationError{Message: "root_folder_id must identify a folder in drive_id"}
+	for _, rootID := range c.rootFolderIDs {
+		folder, err := c.getItem(ctx, c.driveID, rootID)
+		if err != nil {
+			return err
+		}
+		if folder.Folder == nil {
+			return &ConnectorValidationError{Message: "root_folder_ids must identify folders in drive_id"}
+		}
 	}
 	return nil
 }

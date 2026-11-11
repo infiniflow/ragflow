@@ -28,6 +28,41 @@ import {
 const translate = ((key: string) => key) as TFunction;
 
 describe('SharePoint file selection', () => {
+  it('edits multiple roots as tags and loads a saved single root', () => {
+    const fields = getDataSourceFieldsWithExtras(
+      translate,
+      DataSourceKey.SHAREPOINT,
+    );
+    expect(
+      fields.find((field) => field.name === 'config.root_folder_ids'),
+    ).toMatchObject({ type: FormFieldType.Tag });
+    const values = mergeDataSourceFormValues(
+      DataSourceFormDefaultValues[DataSourceKey.SHAREPOINT],
+      {
+        source: DataSourceKey.SHAREPOINT,
+        config: { root_folder_id: ' old-root ' },
+      },
+    );
+    expect(values.config.root_folder_ids).toEqual(['old-root']);
+    expect(values.config).not.toHaveProperty('root_folder_id');
+    const edited = mergeDataSourceFormValues(values, {
+      config: { root_folder_ids: ['a', 'b', 'c'] },
+    });
+    expect(edited.config.root_folder_ids).toEqual(['a', 'b', 'c']);
+  });
+
+  it('keeps an explicitly cleared root list empty', () => {
+    const values = mergeDataSourceFormValues(
+      DataSourceFormDefaultValues[DataSourceKey.SHAREPOINT],
+      {
+        source: DataSourceKey.SHAREPOINT,
+        config: { root_folder_id: 'old-root', root_folder_ids: [] },
+      },
+    );
+    expect(values.config.root_folder_ids).toEqual([]);
+    expect(values.config).not.toHaveProperty('root_folder_id');
+  });
+
   it('offers optional scope and exclusion settings without enabling deletion', () => {
     const fields = getDataSourceFieldsWithExtras(
       translate,
@@ -35,7 +70,7 @@ describe('SharePoint file selection', () => {
     );
     for (const name of [
       'drive_id',
-      'root_folder_id',
+      'root_folder_ids',
       'excluded_extensions',
       'excluded_folder_names',
       'excluded_folder_paths',

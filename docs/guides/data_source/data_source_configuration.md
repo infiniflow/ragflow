@@ -99,13 +99,15 @@ The SharePoint data source is used to synchronize SharePoint site document libra
 ### Select files and folders
 
 - **Document library ID** (`drive_id`): optional Microsoft Graph drive ID within the configured site. Empty means all accessible libraries.
-- **Root folder ID** (`root_folder_id`): optional Graph folder item ID within that library. Requires `drive_id`. Empty means the library root. Use Graph IDs, not a sharing URL.
+- **Root folder IDs** (`root_folder_ids`): optional list of Graph folder item IDs within that library. Requires `drive_id`. Add IDs individually with **+**, or separate them with semicolons. Empty means the library root. Use Graph IDs, not sharing URLs. Saved single-folder settings are displayed as one list entry.
 - **Excluded file extensions** (`excluded_extensions`): a list such as `["mp4", ".zip"]`. Matching ignores case and accepts an optional leading dot.
 - **Excluded folder names** (`excluded_folder_names`): exact, case-sensitive names at any depth, such as `["Archive"]`.
-- **Excluded folder paths** (`excluded_folder_paths`): exact, case-sensitive paths relative to the selected root, such as `["Projects/Archive"]`. Use `/` separators without a leading or trailing slash. Paths cannot contain `.` or `..` segments or wildcards.
+- **Excluded folder paths** (`excluded_folder_paths`): exact, case-sensitive paths relative to each independent selected root, such as `["Projects/Archive"]`. Use `/` separators without a leading or trailing slash. Paths cannot contain `.` or `..` segments or wildcards.
 - **Exclude video files** (`exclude_videos`): skip video MIME types and recognized video extensions. Enabled for new connections created in the form. Existing configurations without this field retain their previous video selection behavior.
 
 Each excluded folder is skipped together with its entire subtree, before listing its children. Missing exclusion lists mean no exclusions. These rules use a shared filter implementation; SharePoint is the first connector that exposes these settings. Other connectors do not yet support them.
+
+Repeated root IDs are collapsed. When both an ancestor and its descendant are selected, only the ancestor is traversed, regardless of input order. Its exclusions still apply: adding an excluded descendant as another root does not bypass them. Independent roots are combined by drive/item ID, so equal filenames in different folders remain separate documents. Overlap detection reads ancestor metadata; a failed lookup fails the run instead of silently widening its scope. All roots must belong to one library; use separate connections for different libraries.
 
 SharePoint scans metadata on every run, including older files that become eligible after a filter or root change. It compares `cTag` (falling back to `eTag`), size, filename, and path with the stored fingerprint before downloading. Files without either tag are downloaded because their revision cannot be determined reliably. Changed files are fetched individually, with a revision check after download. A file changed during download fails that item and is reconsidered on the next run. Existing documents may require one download when first adopting version fingerprints.
 

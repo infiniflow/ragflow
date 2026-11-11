@@ -1812,9 +1812,9 @@ Example: Virtual Hosted Style`,
       sharepointDriveId: 'Document library ID',
       sharepointDriveIdTip:
         'Optional Microsoft Graph drive ID belonging to this site. Leave empty to sync all libraries.',
-      sharepointRootFolderId: 'Root folder ID',
+      sharepointRootFolderId: 'Root folder IDs',
       sharepointRootFolderIdTip:
-        'Optional Graph folder item ID. Requires a document library ID. Leave empty to sync the entire library.',
+        'Add each Graph folder item ID with +, or separate IDs with semicolons. All roots must belong to the selected library. Empty means the entire library. Nested roots are covered by their selected ancestor; its exclusions still apply.',
       excludedExtensions: 'Excluded file extensions',
       excludedExtensionsTip:
         'Enter each extension separately, such as mp4 or .zip. Matching ignores case. Exclusions preserve previously indexed documents.',
@@ -1823,7 +1823,7 @@ Example: Virtual Hosted Style`,
         'Exact, case-sensitive folder names at any depth. Each excluded folder and all its descendants are skipped.',
       excludedFolderPaths: 'Excluded folder paths',
       excludedFolderPathsTip:
-        'Exact, case-sensitive paths relative to the selected root, such as Projects/Archive. Use / without a leading or trailing slash. Entire subtrees are skipped; wildcards are not supported.',
+        'Exact, case-sensitive paths relative to each independent selected root, such as Projects/Archive. Use / without a leading or trailing slash. Entire subtrees are skipped; wildcards are not supported.',
       excludeVideos: 'Exclude video files',
       excludeVideosTip:
         'Skip files identified as video by their MIME type or a recognized video extension.',

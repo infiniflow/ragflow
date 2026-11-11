@@ -441,6 +441,22 @@ export const useDataSourceInfo = () => {
 const isPlainObject = (value: unknown): value is DataSourceFormValues =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
+const normalizeSharePointRoots = (values: DataSourceFormValues) => {
+  if (
+    values.source !== DataSourceKey.SHAREPOINT ||
+    !isPlainObject(values.config)
+  ) {
+    return values;
+  }
+  const { root_folder_id, ...config } = values.config;
+  if (!Object.hasOwn(config, 'root_folder_ids')) {
+    const root =
+      typeof root_folder_id === 'string' ? root_folder_id.trim() : '';
+    config.root_folder_ids = root ? [root] : [];
+  }
+  return { ...values, config };
+};
+
 export const mergeDataSourceFormValues = (
   ...values: Array<DataSourceFormValues | undefined>
 ): DataSourceFormValues =>
@@ -448,6 +464,7 @@ export const mergeDataSourceFormValues = (
     if (!current) {
       return result;
     }
+    current = normalizeSharePointRoots(current);
 
     const next = { ...result };
 
@@ -1210,8 +1227,8 @@ const generateDataSourceFormFields = (t: TFunction) => ({
     },
     {
       label: t('setting.sharepointRootFolderId'),
-      name: 'config.root_folder_id',
-      type: FormFieldType.Text,
+      name: 'config.root_folder_ids',
+      type: FormFieldType.Tag,
       required: false,
       tooltip: t('setting.sharepointRootFolderIdTip'),
     },
@@ -2442,7 +2459,7 @@ export const DataSourceFormDefaultValues = {
     source: DataSourceKey.SHAREPOINT,
     config: {
       drive_id: '',
-      root_folder_id: '',
+      root_folder_ids: [],
       excluded_extensions: [],
       excluded_folder_names: [],
       excluded_folder_paths: [],
