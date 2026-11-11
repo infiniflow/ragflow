@@ -9,8 +9,7 @@ import {
 } from '@/components/ui/form';
 import { useTranslate } from '@/hooks/common-hooks';
 import { zodResolver } from '@hookform/resolvers/zod';
-import i18n from '@/locales/config';
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { initialSpecStreamExtractValues } from '../../constant';
@@ -25,13 +24,16 @@ import { PromptEditor } from '../components/prompt-editor';
 
 const outputList = buildOutputList(initialSpecStreamExtractValues.outputs);
 
-const FormSchema = z.object({
-  api_key: z.string().min(1, i18n.t('flow.apiKeyRequired')),
-  url: z.string().min(1),
-});
-
 function SpecStreamExtractForm({ node }: INextOperatorForm) {
   const { t } = useTranslate('flow');
+  const FormSchema = useMemo(
+    () =>
+      z.object({
+        api_key: z.string().min(1, t('apiKeyRequired')),
+        url: z.string().min(1),
+      }),
+    [t],
+  );
   const values = useFormValues(initialSpecStreamExtractValues, node);
   const form = useForm<z.infer<typeof FormSchema>>({
     defaultValues: values,
