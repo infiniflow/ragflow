@@ -93,6 +93,10 @@ func TestMigrateIngestionLegacyConfigsNodeLevel(t *testing.T) {
 		},
 		"TokenChunker:OneChunk": {
 			"delimiter_mode": "one"
+		},
+		"TokenChunker:NullMode": {
+			"delimiter_mode": null,
+			"chunk_token_size": 128
 		}
 	}`
 	for _, table := range []string{"knowledgebase", "document"} {
@@ -144,6 +148,10 @@ func TestMigrateIngestionLegacyConfigsNodeLevel(t *testing.T) {
 		},
 		"TokenChunker:OneChunk": {
 			"delimiter_mode": "one"
+		},
+		"TokenChunker:NullMode": {
+			"delimiter_mode": null,
+			"chunk_token_size": 128
 		}
 	}`)
 	for _, table := range []string{"knowledgebase", "document"} {
@@ -265,6 +273,38 @@ func TestMigrateIngestionLegacyConfigsPrecedence(t *testing.T) {
 	}`)
 	if got := readLegacyParserConfig(t, db, "knowledgebase", "kb"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("config = %#v; want %#v", got, want)
+	}
+}
+
+func TestMigrateIngestionLegacyConfigsMetadataPrecedence(t *testing.T) {
+	db := openIngestionMigrationDB(t)
+	insertIngestionConfig(t, db, "knowledgebase", "group", "general", `{
+		"metadata": {"enabled": true, "metadata": [{"key": "top"}], "built_in_metadata": []},
+		"Extractor:AutoExtractDefault": {
+			"metadata_config": {"enabled": false, "metadata": [{"key": "node"}], "built_in_metadata": []}
+		}
+	}`)
+	insertIngestionConfig(t, db, "knowledgebase", "flat-list", "general", `{
+		"metadata": [{"key": "flat-list"}],
+		"Extractor:AutoExtractDefault": {
+			"metadata_config": {"enabled": true, "metadata": [{"key": "node"}], "built_in_metadata": []}
+		}
+	}`)
+
+	if err := migrateIngestionLegacyConfigs(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		id   string
+		want string
+	}{
+		{"group", `{"Extractor:AutoExtractDefault": {"metadata": {"enabled": true, "metadata": [{"key": "top"}], "built_in_metadata": []}}}`},
+		{"flat-list", `{"Extractor:AutoExtractDefault": {"metadata": {"enabled": true, "metadata": [{"key": "node"}], "built_in_metadata": []}}}`},
+	} {
+		if got := readLegacyParserConfig(t, db, "knowledgebase", tc.id); !reflect.DeepEqual(got, decodeIngestionConfig(t, tc.want)) {
+			t.Fatalf("%s config = %#v; want %s", tc.id, got, tc.want)
+		}
 	}
 }
 
@@ -493,6 +533,34 @@ func TestMigrateIngestionLegacyConfigsRejectsMalformed(t *testing.T) {
 				insertIngestionConfig(t, db, "knowledgebase", "kb", "general", `{"Extractor:AutoExtractDefault":{"auto_keywords":"many"}}`)
 			},
 			want: "auto_keywords",
+		},
+		{
+			name: "extractor metadata_config",
+			setup: func(t *testing.T, db *gorm.DB) {
+				insertIngestionConfig(t, db, "knowledgebase", "kb", "general", `{"Extractor:AutoExtractDefault":{"metadata_config":"bad"}}`)
+			},
+			want: "metadata_config",
+		},
+		{
+			name: "extractor fields",
+			setup: func(t *testing.T, db *gorm.DB) {
+				insertIngestionConfig(t, db, "knowledgebase", "kb", "general", `{"Extractor:AutoExtractDefault":{"fields":"bad"}}`)
+			},
+			want: "metadata",
+		},
+		{
+			name: "extractor field_name",
+			setup: func(t *testing.T, db *gorm.DB) {
+				insertIngestionConfig(t, db, "knowledgebase", "kb", "general", `{"Extractor:AutoExtractDefault":{"field_name":5}}`)
+			},
+			want: "field_name",
+		},
+		{
+			name: "extractor sys_prompt",
+			setup: func(t *testing.T, db *gorm.DB) {
+				insertIngestionConfig(t, db, "knowledgebase", "kb", "general", `{"Extractor:AutoExtractDefault":{"sys_prompt":5}}`)
+			},
+			want: "sys_prompt",
 		},
 		{
 			name: "title rules",
