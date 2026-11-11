@@ -6,11 +6,11 @@ import { Form, FormControl, FormItem, FormLabel } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Textarea } from '@/components/ui/textarea';
-import { useTranslate } from '@/hooks/common-hooks';
 import { useFetchAgent } from '@/hooks/use-agent-request';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 
 const formSchema = z.object({
   title: z.string().min(1, {}),
@@ -28,7 +28,7 @@ type SettingFormProps = {
 };
 
 export function SettingForm({ submit }: SettingFormProps) {
-  const { t } = useTranslate('flow.settings');
+  const { t } = useTranslation('translation', { keyPrefix: 'flow.settings' });
   const { data } = useFetchAgent();
 
   const form = useForm<SettingFormSchemaType>({

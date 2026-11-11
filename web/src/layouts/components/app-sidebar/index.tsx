@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { EnterpriseHeaderUpgradeBadge } from '@/ee/layouts/components/header-enterprise';
+import { useAgentSidebarCollapse } from '@/hooks/use-agent-sidebar-collapse';
 import { useDatasetSidebarCollapse } from '@/hooks/use-dataset-sidebar-collapse';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
@@ -22,12 +23,21 @@ function AppSidebarContent() {
     collapsed: datasetSidebarCollapsed,
     toggleCollapsed: toggleDatasetSidebar,
   } = useDatasetSidebarCollapse();
+  const {
+    collapsed: agentSidebarCollapsed,
+    toggleCollapsed: toggleAgentSidebar,
+  } = useAgentSidebarCollapse();
   const { pathname } = useLocation();
 
-  // While the dataset secondary sidebar is hidden, the logo slot becomes the
-  // expand entry for it (dataset routes only).
   const showDatasetSidebarExpand =
     datasetSidebarCollapsed && matchesPath(pathname, Routes.DatasetBase);
+  const showAgentSidebarExpand =
+    agentSidebarCollapsed && matchesPath(pathname, Routes.Agent);
+  const showSecondarySidebarExpand =
+    showDatasetSidebarExpand || showAgentSidebarExpand;
+  const toggleSecondarySidebar = showAgentSidebarExpand
+    ? toggleAgentSidebar
+    : toggleDatasetSidebar;
 
   return (
     <aside
@@ -43,14 +53,14 @@ function AppSidebarContent() {
           !collapsed && 'md:justify-start',
         )}
       >
-        {showDatasetSidebarExpand ? (
+        {showSecondarySidebarExpand ? (
           <div className="flex size-10 shrink-0 items-center justify-center">
             <Button
               variant="ghost"
               size="icon-sm"
               aria-label={t('sidebar.expandSidebar')}
               title={t('sidebar.expandSidebar')}
-              onClick={toggleDatasetSidebar}
+              onClick={toggleSecondarySidebar}
             >
               <LucidePanelLeftOpen className="size-4" />
             </Button>

@@ -3096,6 +3096,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       mergePath: '合并路径',
       mergePathTip:
         '开启后，紧跟在变量后面的点号后缀会合并为路径查询，例如 {node@result.name}。',
+      canvas: '画布',
       setting: '设置',
       settings: {
         agentSetting: 'Agent设置',
@@ -3794,7 +3795,7 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
     },
 
     explore: {
-      title: '探索',
+      title: '启动',
       sessions: '会话列表',
       newSession: '新建会话',
       newSessionLabel: '开始新对话',

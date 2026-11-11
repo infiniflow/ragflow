@@ -22,9 +22,15 @@ jest.mock('./use-copy-builtin-pipeline', () => ({
 // curried (id) => navigate, so the inner mock is what a card click invokes.
 const mockNavigate = jest.fn();
 const mockNavigateToBuiltinPipeline = jest.fn(() => mockNavigate);
+const mockSetPrimarySidebarCollapsed = jest.fn();
 jest.mock('@/hooks/logic-hooks/navigate-hooks', () => ({
   useNavigatePage: () => ({
     navigateToBuiltinPipeline: mockNavigateToBuiltinPipeline,
+  }),
+}));
+jest.mock('@/layouts/components/app-sidebar/use-sidebar-collapse', () => ({
+  useSidebarCollapse: () => ({
+    setCollapsed: mockSetPrimarySidebarCollapsed,
   }),
 }));
 
@@ -42,6 +48,7 @@ beforeEach(() => {
   mockCopy.mockClear();
   mockNavigate.mockClear();
   mockNavigateToBuiltinPipeline.mockClear();
+  mockSetPrimarySidebarCollapsed.mockClear();
   copyState.copying = false;
 });
 
@@ -89,6 +96,10 @@ describe('BuiltinPipelineCard', () => {
     fireEvent.click(screen.getByTestId('builtin-pipeline-card'));
     expect(mockNavigateToBuiltinPipeline).toHaveBeenCalledWith('general');
     expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(mockSetPrimarySidebarCollapsed).toHaveBeenCalledWith(true);
+    expect(
+      mockSetPrimarySidebarCollapsed.mock.invocationCallOrder[0],
+    ).toBeLessThan(mockNavigate.mock.invocationCallOrder[0]);
     expect(mockCopy).not.toHaveBeenCalled();
   });
 
@@ -101,6 +112,7 @@ describe('BuiltinPipelineCard', () => {
     fireEvent.click(screen.getByTestId('copy-builtin-pipeline'));
     expect(mockCopy).toHaveBeenCalledWith({ id: 'general', title: 'General' });
     expect(mockNavigate).not.toHaveBeenCalled();
+    expect(mockSetPrimarySidebarCollapsed).not.toHaveBeenCalled();
   });
 
   it('disables the Copy button while copying', () => {

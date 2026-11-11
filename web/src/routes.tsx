@@ -35,6 +35,7 @@ export enum Routes {
   Pipeline = '/pipeline',
   Explore = '/explore',
   AgentExplore = `${Routes.Agent}/:id/explore`,
+  AgentSetting = `${Routes.Agent}/:id/setting`,
   Memories = '/memories',
   Memory = '/memory',
   MemoryMessage = '/memory-message',
@@ -393,22 +394,38 @@ const routeConfigOptions = [
     Component: () => import('@/pages/next-search/share'),
   },
   {
-    path: Routes.Agent,
+    path: Routes.Root,
+    Component: () => import('@/layouts/root-layout'),
     children: [
       {
-        path: `${Routes.Agent}/:id`,
-        Component: () => import('@/pages/agent'),
+        path: Routes.Agent,
+        children: [
+          {
+            path: `${Routes.Agent}/:id`,
+            Component: () => import('@/pages/agent/layout'),
+            children: [
+              {
+                index: true,
+                Component: () => import('@/pages/agent'),
+              },
+              {
+                path: Routes.AgentExplore,
+                Component: () => import('@/pages/agent/explore'),
+                errorElement: <FallbackComponent />,
+              },
+              {
+                path: Routes.AgentSetting,
+                Component: () => import('@/pages/agent/setting'),
+              },
+            ],
+          },
+        ],
       },
       {
-        path: Routes.AgentExplore,
-        Component: () => import('@/pages/agent/explore'),
-        errorElement: <FallbackComponent />,
+        path: `${Routes.Pipeline}/:id`,
+        Component: () => import('@/pages/builtin-pipeline'),
       },
     ],
-  },
-  {
-    path: `${Routes.Pipeline}/:id`,
-    Component: () => import('@/pages/builtin-pipeline'),
   },
   {
     path: `${Routes.AgentLogPage}/:id`,

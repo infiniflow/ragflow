@@ -3568,7 +3568,8 @@ This delimiter is used to split the input text into several text pieces echo of 
         restoreConfirmContent:
           'The current agent DSL will be replaced by this version. Save again to create a new version.',
       },
-      setting: 'Settings',
+      canvas: 'Canvas',
+      setting: 'Setting',
       settings: {
         agentSetting: 'Agent settings',
         title: 'title',
