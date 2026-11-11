@@ -284,14 +284,20 @@ type TenantMemberResponse struct {
 	DeltaSeconds    float64 `json:"delta_seconds"`
 }
 
-// ListMembers returns all non-owner members of tenantID.
+// ListMembers returns tenant members visible to the current caller.
 func (s *TenantService) ListMembers(ctx context.Context, tenantID string) ([]*TenantMemberResponse, common.ErrorCode, error) {
-	if _, _, err := tenantMemberPermission(ctx, dao.DB.WithContext(ctx), tenantID, entity.TenantPermissionManageMembers); err != nil {
-		return nil, tenantRoleErrorCode(err), err
-	}
-	rows, err := s.userTenantDAO.GetMembersByTenantID(ctx, dao.DB, tenantID)
+	rows, code, handled, err := s.listTenantMembersEE(ctx, tenantID)
 	if err != nil {
-		return nil, common.CodeServerError, err
+		return nil, code, err
+	}
+	if !handled {
+		if _, _, err := tenantMemberPermission(ctx, dao.DB.WithContext(ctx), tenantID, entity.TenantPermissionManageMembers); err != nil {
+			return nil, tenantRoleErrorCode(err), err
+		}
+		rows, err = s.userTenantDAO.GetMembersByTenantID(ctx, dao.DB, tenantID)
+		if err != nil {
+			return nil, common.CodeServerError, err
+		}
 	}
 	result := make([]*TenantMemberResponse, 0, len(rows))
 	for _, r := range rows {
@@ -519,7 +525,7 @@ func (s *TenantService) AcceptInvite(ctx context.Context, tenantID string) (comm
 		before := map[string]interface{}{"user_id": userID, "role": membership.Role, "status": tenantMembershipStatus(membership.Status)}
 		after := map[string]interface{}{"user_id": userID, "role": role.value, "status": status}
 		if role.roleID != nil {
-			after["role_id"] = *role.roleID
+			after["default_role_id"] = *role.roleID
 		}
 		if role.roleName != "" {
 			after["role_name"] = role.roleName

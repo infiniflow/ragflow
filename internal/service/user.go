@@ -250,10 +250,6 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 		if err = tx.Create(user).Error; err != nil {
 			return fmt.Errorf("failed to create user: %w", err)
 		}
-		if err = dao.ApplyDefaultTenantInviteEnabled(ctx, tx, tenant); err != nil {
-			return fmt.Errorf("failed to initialize tenant invitation setting: %w", err)
-		}
-
 		if err = tenantDAO.Create(ctx, tx, tenant); err != nil {
 			return fmt.Errorf("failed to create tenant: %w", err)
 		}
@@ -293,6 +289,9 @@ func (s *UserService) Login(ctx context.Context, req *LoginRequest) (*entity.Use
 
 	if user.Status == nil || *user.Status != "1" {
 		return nil, common.CodeForbidden, fmt.Errorf("user is disabled")
+	}
+	if code, err := validateLoginTenant(ctx, user); err != nil {
+		return nil, code, err
 	}
 
 	// Generate new access token
@@ -334,6 +333,9 @@ func (s *UserService) LoginByEmail(ctx context.Context, req *EmailLoginRequest) 
 	if user.IsActive == "0" {
 		return nil, common.CodeForbidden, fmt.Errorf("this account has been disabled, please contact the administrator")
 	}
+	if code, err := validateLoginTenant(ctx, user); err != nil {
+		return nil, code, err
+	}
 
 	// Generate new access token
 	token := common.GenerateToken()
@@ -349,6 +351,17 @@ func (s *UserService) LoginByEmail(ctx context.Context, req *EmailLoginRequest) 
 	}
 
 	return user, common.CodeSuccess, nil
+}
+
+func validateLoginTenant(ctx context.Context, user *entity.User) (common.ErrorCode, error) {
+	if _, err := ResolveLoginTenantID(ctx, user); err != nil {
+		var coded *common.CodedError
+		if errors.As(err, &coded) {
+			return coded.Code, err
+		}
+		return common.CodeServerError, err
+	}
+	return common.CodeSuccess, nil
 }
 
 // GetUserByID get user by ID (a 32-char hex UUID string).

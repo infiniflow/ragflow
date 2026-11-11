@@ -158,7 +158,6 @@ func (h *Handler) ListUsers(c *gin.Context) {
 
 	name := c.DefaultQuery("keyword", "")
 	status := c.DefaultQuery("status", "")
-	role := c.DefaultQuery("role", "")
 	sort := c.DefaultQuery("sort", "")     // asc or desc
 	orderBy := c.DefaultQuery("order", "") // order by field
 	// The admin UI and existing admin clients request the user list without
@@ -220,7 +219,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	case common.OpenSourceVersion:
 		users, total, err = h.service.ListUsers(ctx, pageInt, pageSizeInt, name, status, sort, orderBy)
 	case common.EnterpriseEdition:
-		users, total, err = h.service.ListUsersEE(ctx, pageInt, pageSizeInt, name, status, role, sort, orderBy, plan, topInt, daysInt, quotaPtr)
+		users, total, err = h.service.ListUsersEE(ctx, pageInt, pageSizeInt, name, status, sort, orderBy, plan, topInt, daysInt, quotaPtr)
 	default:
 		common.RespondError(c, common.CodeBadRequest, "Invalid RAGFlow type")
 		return
