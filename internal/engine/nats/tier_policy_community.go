@@ -22,20 +22,20 @@ import "ragflow/internal/common"
 
 // tierOrder for the open-source / community build is a single lane: the bare
 // community subject "tasks.RAGFLOW". The enterprise build (see
-// tier_policy_ee.go) adds high/medium lanes on top. Keeping the lane set in a
+// tier_policy_ee.go) defines its own lane set. Keeping the lane set in a
 // build-tagged file means the OSS split receives exactly one queue and no
 // enterprise tier names, while the shared nats.go methods stay identical across
 // both editions.
-var tierOrder = []common.Tier{common.TierLow}
+var tierOrder = []common.Tier{common.TierDefault}
 
 // tierStreams for the community build is exactly the legacy single queue:
-// RAGFLOW_TASKS / tasks.RAGFLOW / RAGFLOW_CONSUMER. The high/medium lanes are
+// RAGFLOW_TASKS / tasks.RAGFLOW / RAGFLOW_CONSUMER. Additional lanes are
 // enterprise-only and never compiled into this build.
 var tierStreams = map[common.Tier]tierStreamSpec{
-	common.TierLow: {"RAGFLOW_TASKS", []string{common.TaskSubject}, "RAGFLOW_CONSUMER"},
+	common.TierDefault: {"RAGFLOW_TASKS", []string{common.TaskSubject}, "RAGFLOW_CONSUMER"},
 }
 
-// primaryTier for the community build is the single low lane, which is also the
-// legacy community queue. The enterprise build (tier_policy_ee.go) uses the
-// medium lane as primary.
-func primaryTier() common.Tier { return common.TierLow }
+// primaryTier for the community build is the single default lane, which is also
+// the legacy community queue. The enterprise build (tier_policy_ee.go) designates
+// its own default lane.
+func primaryTier() common.Tier { return common.TierDefault }

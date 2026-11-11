@@ -47,11 +47,11 @@ func TestReconcileMemoryTasksPublishesDueWakeups(t *testing.T) {
 	publisher := &recordingTaskPublisher{}
 	svc := NewMemoryMessageService(NewMemoryService(db, nil))
 	svc.taskPublisher = publisher
-	svc.tierResolver = (&fakeTierResolver{tier: common.TierMedium}).resolve
+	svc.tierResolver = (&fakeTierResolver{tier: common.TierDefault}).resolve
 	if err := svc.ReconcileMemoryTasks(t.Context(), 100); err != nil {
 		t.Fatalf("ReconcileMemoryTasks: %v", err)
 	}
-	if publisher.subject != common.TaskSubjectMedium || len(publisher.messages) != 1 {
+	if publisher.subject != common.TaskSubject || len(publisher.messages) != 1 {
 		t.Fatalf("published subject/messages = %q/%d", publisher.subject, len(publisher.messages))
 	}
 	message := publisher.messages[0]

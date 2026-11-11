@@ -42,7 +42,7 @@ func TestMessageQueueTaskPublisherUsesInjectedEngineNotGlobal(t *testing.T) {
 	injectedMQ := &recordingMessageQueue{}
 	pub := NewMessageQueueTaskPublisherWithEngine(injectedMQ)
 
-	if err := pub.PublishTaskMessage(common.TaskSubjectMedium, common.TaskMessage{
+	if err := pub.PublishTaskMessage(common.TaskSubject, common.TaskMessage{
 		TaskID:   "task-1",
 		TaskType: common.TaskTypeMemory,
 	}); err != nil {
@@ -93,7 +93,7 @@ func TestMessageQueueTaskPublisherNilEngineFallsBackToGlobal(t *testing.T) {
 	defer engine.SetMessageQueueEngine(nil)
 
 	pub := NewMessageQueueTaskPublisher()
-	if err := pub.PublishTaskMessage(common.TaskSubjectMedium, common.TaskMessage{
+	if err := pub.PublishTaskMessage(common.TaskSubject, common.TaskMessage{
 		TaskID:   "task-2",
 		TaskType: common.TaskTypeMemory,
 	}); err != nil {

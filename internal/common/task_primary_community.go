@@ -18,19 +18,19 @@
 
 package common
 
-// PrimaryTier is the ingestion lane the shared admin / memory-wake-up paths
-// treat as primary. The community build uses the single low lane, which reuses
-// the bare community queue name (TaskSubject) so an OSS split needs no rename
-// and OSS/EE can share one NATS server. The enterprise build (task_primary_ee.go)
-// uses the medium lane.
-func PrimaryTier() Tier {
-	return TierLow
+// DefaultTier is the ingestion lane the shared admin / memory-wake-up paths
+// treat as the default. The community build uses the single default lane, which
+// reuses the bare community queue name (TaskSubject) so an OSS split needs no
+// rename and OSS/EE can share one NATS server. The enterprise build
+// (task_primary_ee.go) designates its own default lane.
+func DefaultTier() Tier {
+	return TierDefault
 }
 
-// PrimaryTierSubject is the JetStream subject of PrimaryTier. The community
+// DefaultTierSubject is the JetStream subject of DefaultTier. The community
 // build has a single lane whose subject equals the bare community queue name
 // (TaskSubject), so the admin pull endpoint and the memory wake-up fallback
 // publish to TaskSubject without any edition branching at the call site.
-func PrimaryTierSubject() string {
+func DefaultTierSubject() string {
 	return TaskSubject
 }

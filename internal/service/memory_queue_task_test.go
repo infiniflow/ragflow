@@ -11,27 +11,24 @@ import (
 	natsengine "ragflow/internal/engine/nats"
 )
 
-// mediumResolver is a fixed resolver used by tests that only care that a wake-up
+// defaultResolver is a fixed resolver used by tests that only care that a wake-up
 // is published, isolating them from the global billing service state.
-var mediumResolver tierResolver = func(context.Context, string) (common.Tier, error) {
-	return common.TierMedium, nil
+var defaultResolver tierResolver = func(context.Context, string) (common.Tier, error) {
+	return common.TierDefault, nil
 }
 
-// TestPublishMemoryTaskWakeupRoutesByTier verifies the wake-up subject is derived
-// from the tenant's resolved tier: paid tenants (medium) and free tenants (low)
-// land on distinct lanes, and a resolver error degrades to the primary lane
-// (medium in EE, the single community queue in OSS) instead of silently dropping
-// the wake-up.
-func TestPublishMemoryTaskWakeupRoutesByTier(t *testing.T) {
+// TestPublishMemoryTaskWakeupRoutesToDefaultLane verifies the wake-up subject is
+// the single community queue. A resolved tenant and a resolver error both land on
+// the default subject (the single community queue in OSS) instead of silently
+// dropping the wake-up.
+func TestPublishMemoryTaskWakeupRoutesToDefaultLane(t *testing.T) {
 	cases := []struct {
 		name     string
 		resolver tierResolver
 		want     string
 	}{
-		{"paid -> medium", func(context.Context, string) (common.Tier, error) { return common.TierMedium, nil }, common.TaskSubjectMedium},
-		{"free -> low", func(context.Context, string) (common.Tier, error) { return common.TierLow, nil }, common.TaskSubjectLow},
-		{"expedited -> high", func(context.Context, string) (common.Tier, error) { return common.TierHigh, nil }, common.TaskSubjectHigh},
-		{"resolver error -> primary fallback", func(context.Context, string) (common.Tier, error) { return "", errors.New("billing down") }, common.PrimaryTierSubject()},
+		{"resolved tier", defaultResolver, common.TaskSubject},
+		{"resolver error -> default fallback", func(context.Context, string) (common.Tier, error) { return "", errors.New("billing down") }, common.DefaultTierSubject()},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -53,12 +50,12 @@ func TestPublishMemoryTaskWakeupRoutesByTier(t *testing.T) {
 // no execution input that can diverge from the database record.
 func TestPublishMemoryTaskWakeupContainsOnlyDurableIdentity(t *testing.T) {
 	publisher := &recordingTaskPublisher{}
-	if err := publishMemoryTaskWakeup(t.Context(), publisher, mediumResolver, "tenant-1", "task-1"); err != nil {
+	if err := publishMemoryTaskWakeup(t.Context(), publisher, defaultResolver, "tenant-1", "task-1"); err != nil {
 		t.Fatalf("publishMemoryTaskWakeup: %v", err)
 	}
-	// The medium resolver selects the medium lane, so the wake-up is published to
-	// TaskSubjectMedium.
-	if publisher.subject != common.TaskSubjectMedium || len(publisher.messages) != 1 {
+	// The default resolver selects the default lane, so the wake-up is published
+	// to the single community subject.
+	if publisher.subject != common.TaskSubject || len(publisher.messages) != 1 {
 		t.Fatalf("published subject/messages = %q/%d", publisher.subject, len(publisher.messages))
 	}
 	message := publisher.messages[0]

@@ -107,9 +107,9 @@ func (s *UserService) GetLoginChannels() ([]*LoginChannel, common.ErrorCode, err
 }
 
 // defaultTierResolver keeps the community build on a single tier. All tenants
-// share the low lane, which reuses the OSS community queue (TaskSubject), so an
-// OSS split needs no rename and OSS and EE can share one NATS server. Tiering
+// share the default lane, which reuses the OSS community queue (TaskSubject), so
+// an OSS split needs no rename and OSS and EE can share one NATS server. Tiering
 // does not otherwise change community behavior.
 func defaultTierResolver(_ context.Context, _ string) (common.Tier, error) {
-	return common.TierLow, nil
+	return common.TierDefault, nil
 }

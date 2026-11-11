@@ -36,7 +36,7 @@ func newTaskQueue(t *testing.T) *NatsEngine {
 	if err := queue.Init(); err != nil {
 		t.Fatalf("Init: %v", err)
 	}
-	if err := queue.InitConsumer(common.PrimaryTierSubject()); err != nil {
+	if err := queue.InitConsumer(common.DefaultTierSubject()); err != nil {
 		t.Fatalf("InitConsumer: %v", err)
 	}
 	return queue
@@ -56,7 +56,7 @@ func publishTask(t *testing.T, queue *NatsEngine, taskID string) {
 	if err != nil {
 		t.Fatalf("marshal task: %v", err)
 	}
-	if err := queue.PublishTask(common.PrimaryTierSubject(), payload); err != nil {
+	if err := queue.PublishTask(common.DefaultTierSubject(), payload); err != nil {
 		t.Fatalf("publish task: %v", err)
 	}
 }
@@ -126,9 +126,8 @@ func TestPullMessageReportsMaxWaiting(t *testing.T) {
 	ctx, cancel := taskPullContext(t)
 	defer cancel()
 	// PullMessage must reach the lane that carries the published task. A
-	// MaxWaiting-limited consumer installed on that primary (task-bearing) lane
-	// makes the capacity rejection observable in both editions (community low,
-	// enterprise medium): the high lane, when present, is empty and skipped.
+	// MaxWaiting-limited consumer installed on that default (task-bearing) lane
+	// makes the capacity rejection observable in both editions.
 	pt := primaryTier()
 	primary := tierStreams[pt]
 	primaryStream := queue.streams[pt]

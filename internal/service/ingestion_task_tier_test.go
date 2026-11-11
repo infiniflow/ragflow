@@ -26,19 +26,13 @@ import (
 	"ragflow/internal/permission"
 )
 
-// wantTierSubject is the subject the injected medium resolver must route to;
-// legacyTaskSubject is the pre-tiered single queue that new tasks must never
-// publish to. The resolver is forced to TierMedium by these tests so the
-// routing assertions stay edition-independent (the community low / ee medium
-// defaults are covered separately by the resolver tests).
-const (
-	wantTierSubject   = common.TaskSubjectMedium
-	legacyTaskSubject = "tasks.RAGFLOW"
-)
+// wantTierSubject is the subject the injected default resolver must route to:
+// the single community queue.
+const wantTierSubject = common.TaskSubject
 
 // TestCreateForDocumentsPublishesTieredSubject is the core happy-path RED:
-// a freshly created ingestion task must be published onto a tier-specific
-// subject, not the legacy shared one.
+// a freshly created ingestion task must be published onto the tier subject
+// (the default lane), not left unrouted.
 func TestCreateForDocumentsPublishesTieredSubject(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -48,10 +42,10 @@ func TestCreateForDocumentsPublishesTieredSubject(t *testing.T) {
 	publisher := &recordingTaskPublisher{}
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
-	// Inject a deterministic medium resolver so the routing assertions are
-	// edition-independent; the community (!ee) default -> low and the ee default
-	// -> medium are covered separately by the resolver tests.
-	svc.tierResolver = (&fakeTierResolver{tier: common.TierMedium}).resolve
+	// Inject a deterministic default resolver so the routing assertion is
+	// edition-independent; the community (!ee) and ee default lanes are covered
+	// separately by the resolver tests.
+	svc.tierResolver = (&fakeTierResolver{tier: common.TierDefault}).resolve
 
 	resp, err := svc.CreateForDocuments(permission.WithIdentity(t.Context(), "user-1", ""), "kb-1", []string{"doc-1"})
 	if err != nil {
@@ -65,10 +59,10 @@ func TestCreateForDocumentsPublishesTieredSubject(t *testing.T) {
 	}
 }
 
-// TestCreateForDocumentsNeverPublishesLegacySubject is the adversarial twin of
-// the happy path: an implementation that publishes to BOTH the legacy subject
-// and the tier subject (or silently falls back) must not pass.
-func TestCreateForDocumentsNeverPublishesLegacySubject(t *testing.T) {
+// TestCreateForDocumentsPublishesToDefaultSubject is the adversarial twin of the
+// happy path: the created task must be published to the single community subject
+// and never left empty.
+func TestCreateForDocumentsPublishesToDefaultSubject(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
@@ -77,16 +71,16 @@ func TestCreateForDocumentsNeverPublishesLegacySubject(t *testing.T) {
 	publisher := &recordingTaskPublisher{}
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
-	// Inject a deterministic medium resolver so the routing assertions are
-	// edition-independent; the community (!ee) default -> low and the ee default
-	// -> medium are covered separately by the resolver tests.
-	svc.tierResolver = (&fakeTierResolver{tier: common.TierMedium}).resolve
+	// Inject a deterministic default resolver so the routing assertion is
+	// edition-independent; the community (!ee) and ee default lanes are covered
+	// separately by the resolver tests.
+	svc.tierResolver = (&fakeTierResolver{tier: common.TierDefault}).resolve
 
 	if _, err := svc.CreateForDocuments(permission.WithIdentity(t.Context(), "user-1", ""), "kb-1", []string{"doc-1"}); err != nil {
 		t.Fatalf("CreateForDocuments failed: %v", err)
 	}
-	if publisher.subject == legacyTaskSubject || publisher.subject == "" {
-		t.Fatalf("published subject = %q must be a tier subject, never the legacy/empty one", publisher.subject)
+	if publisher.subject != common.TaskSubject || publisher.subject == "" {
+		t.Fatalf("published subject = %q must be the single community subject, never empty", publisher.subject)
 	}
 }
 
@@ -103,10 +97,10 @@ func TestCreateForDocumentsMultipleDocsAllTiered(t *testing.T) {
 	publisher := &recordingTaskPublisher{}
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
-	// Inject a deterministic medium resolver so the routing assertions are
-	// edition-independent; the community (!ee) default -> low and the ee default
-	// -> medium are covered separately by the resolver tests.
-	svc.tierResolver = (&fakeTierResolver{tier: common.TierMedium}).resolve
+	// Inject a deterministic default resolver so the routing assertions are
+	// edition-independent; the community (!ee) and ee default lanes are covered
+	// separately by the resolver tests.
+	svc.tierResolver = (&fakeTierResolver{tier: common.TierDefault}).resolve
 
 	resp, err := svc.CreateForDocuments(permission.WithIdentity(t.Context(), "user-1", ""), "kb-1", []string{"doc-1", "doc-2"})
 	if err != nil {
@@ -135,10 +129,10 @@ func TestCreateForDocumentsTieringKeepsTaskMessage(t *testing.T) {
 	publisher := &recordingTaskPublisher{}
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
-	// Inject a deterministic medium resolver so the routing assertions are
-	// edition-independent; the community (!ee) default -> low and the ee default
-	// -> medium are covered separately by the resolver tests.
-	svc.tierResolver = (&fakeTierResolver{tier: common.TierMedium}).resolve
+	// Inject a deterministic default resolver so the routing assertions are
+	// edition-independent; the community (!ee) and ee default lanes are covered
+	// separately by the resolver tests.
+	svc.tierResolver = (&fakeTierResolver{tier: common.TierDefault}).resolve
 
 	if _, err := svc.CreateForDocuments(permission.WithIdentity(t.Context(), "user-1", ""), "kb-1", []string{"doc-1"}); err != nil {
 		t.Fatalf("CreateForDocuments failed: %v", err)
@@ -168,10 +162,10 @@ func TestCreateForDocumentsPublishFailureStillFailsTask(t *testing.T) {
 	publisher := &recordingTaskPublisher{err: errors.New("broker unavailable")}
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
-	// Inject a deterministic medium resolver so the routing assertions are
-	// edition-independent; the community (!ee) default -> low and the ee default
-	// -> medium are covered separately by the resolver tests.
-	svc.tierResolver = (&fakeTierResolver{tier: common.TierMedium}).resolve
+	// Inject a deterministic default resolver so the routing assertions are
+	// edition-independent; the community (!ee) and ee default lanes are covered
+	// separately by the resolver tests.
+	svc.tierResolver = (&fakeTierResolver{tier: common.TierDefault}).resolve
 
 	ctx := t.Context()
 	// CreateForDocuments collects per-document failures into responses[].Result

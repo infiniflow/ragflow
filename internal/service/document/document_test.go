@@ -2320,11 +2320,11 @@ func TestStartParseDocuments_EnqueuesIngestionTask(t *testing.T) {
 	publisher := &recordingTaskPublisher{}
 	svc := testDocumentService(t)
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
-	// Inject a deterministic medium resolver so the routing assertion is
-	// edition-independent (community !ee resolves to low, ee to medium; the
-	// defaults are covered by the resolver tests).
+	// Inject a deterministic default-lane resolver so the routing assertion is
+	// edition-independent (the community !ee default and the ee default are both
+	// covered by the resolver tests).
 	svc.ingestionTaskSvc.SetTierResolver(func(context.Context, string) (common.Tier, error) {
-		return common.TierMedium, nil
+		return common.TierDefault, nil
 	})
 	ctx := documentTestContext(t.Context())
 
@@ -2341,8 +2341,8 @@ func TestStartParseDocuments_EnqueuesIngestionTask(t *testing.T) {
 		t.Fatalf("StartParseDocuments: %v", err)
 	}
 
-	if publisher.subject != common.TaskSubjectMedium {
-		t.Fatalf("subject = %q, want %q", publisher.subject, common.TaskSubjectMedium)
+	if publisher.subject != common.TaskSubject {
+		t.Fatalf("subject = %q, want %q", publisher.subject, common.TaskSubject)
 	}
 	if len(publisher.messages) != 1 {
 		t.Fatalf("expected 1 published message, got %d", len(publisher.messages))

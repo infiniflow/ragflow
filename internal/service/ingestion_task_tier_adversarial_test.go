@@ -26,8 +26,8 @@ import (
 	"ragflow/internal/permission"
 )
 
-// tierResolver injection seam: tests replace the resolver to drive paid/free/
-// error outcomes deterministically without a live billing service.
+// tierResolver injection seam: tests replace the resolver to drive error
+// outcomes deterministically without a live billing service.
 type fakeTierResolver struct {
 	tier      common.Tier
 	err       error
@@ -57,31 +57,21 @@ func newTierTestSvc(t *testing.T, resolver *fakeTierResolver, publisher *recordi
 
 // --- SubjectForTier: mapping + adversarial unknown-tier ---
 
-func TestSubjectForTierMapsAllThreeTiers(t *testing.T) {
-	cases := []struct {
-		tier common.Tier
-		want string
-	}{
-		{common.TierHigh, "tasks.RAGFLOW.high"},
-		{common.TierMedium, "tasks.RAGFLOW.medium"},
-		{common.TierLow, "tasks.RAGFLOW"},
+func TestSubjectForTierMapsDefaultTier(t *testing.T) {
+	got, err := common.SubjectForTier(common.TierDefault)
+	if err != nil {
+		t.Fatalf("SubjectForTier(%q) returned error: %v", common.TierDefault, err)
 	}
-	for _, c := range cases {
-		got, err := common.SubjectForTier(c.tier)
-		if err != nil {
-			t.Fatalf("SubjectForTier(%q) returned error: %v", c.tier, err)
-		}
-		if got != c.want {
-			t.Fatalf("SubjectForTier(%q) = %q, want %q", c.tier, got, c.want)
-		}
+	if got != "tasks.RAGFLOW" {
+		t.Fatalf("SubjectForTier(%q) = %q, want %q", common.TierDefault, got, "tasks.RAGFLOW")
 	}
 }
 
 // Adversarial: an unknown/empty/case-mangled tier must return an error and an
 // empty subject, never silently fall back to a default lane. A wrong impl that
-// defaults to medium would pass the happy-path test but fail here.
+// defaults to a tier would pass the happy-path test but fail here.
 func TestSubjectForTierRejectsUnknownTier(t *testing.T) {
-	for _, bad := range []common.Tier{"", "HIGH", "high ", "urgent", "medium\n", common.Tier("\x00")} {
+	for _, bad := range []common.Tier{"", "DEFAULT", "default ", "urgent", "default\n", common.Tier("\x00")} {
 		got, err := common.SubjectForTier(bad)
 		if err == nil {
 			t.Fatalf("SubjectForTier(%q) must error, got subject %q", bad, got)
@@ -97,7 +87,7 @@ func TestSubjectForTierRejectsUnknownTier(t *testing.T) {
 // Adversarial: the resolver must receive the dataset's owning tenant, not the
 // acting user, the dataset id, or an empty string.
 func TestResolveTierPassesDatasetTenantToResolver(t *testing.T) {
-	fake := &fakeTierResolver{tier: common.TierMedium}
+	fake := &fakeTierResolver{tier: common.TierDefault}
 	svc := newTierTestSvc(t, fake, &recordingTaskPublisher{})
 	ctx := t.Context()
 	if _, err := svc.CreateForDocuments(permission.WithIdentity(ctx, "user-1", ""), "kb-1", []string{"doc-1"}); err != nil {
@@ -123,19 +113,19 @@ func TestResolveTierMissingKnowledgebaseReturnsError(t *testing.T) {
 	}
 }
 
-// --- enqueueTask: paid/free/error/unknown-tier routing ---
+// --- enqueueTask: default routing + resolver/unknown-tier error handling ---
 
-// Adversarial twin of the default medium happy path: a free (Trial) tenant
-// resolved to low must be published to the low subject, not medium.
-func TestEnqueueFreeTenantPublishesLowTier(t *testing.T) {
-	fake := &fakeTierResolver{tier: common.TierLow}
+// Adversarial twin of the default happy path: a tenant resolved to the default
+// tier must be published to the default subject, not a legacy bare queue.
+func TestEnqueueTenantPublishesDefaultSubject(t *testing.T) {
+	fake := &fakeTierResolver{tier: common.TierDefault}
 	publisher := &recordingTaskPublisher{}
 	svc := newTierTestSvc(t, fake, publisher)
 	if _, err := svc.CreateForDocuments(permission.WithIdentity(t.Context(), "user-1", ""), "kb-1", []string{"doc-1"}); err != nil {
 		t.Fatalf("CreateForDocuments: %v", err)
 	}
 	if publisher.subject != "tasks.RAGFLOW" {
-		t.Fatalf("free tenant published to %q, want tasks.RAGFLOW (community/low lane)", publisher.subject)
+		t.Fatalf("default tenant published to %q, want tasks.RAGFLOW (community default lane)", publisher.subject)
 	}
 }
 
@@ -189,19 +179,5 @@ func TestEnqueueUnknownTierFailsTaskAndPublishesNothing(t *testing.T) {
 	}
 	if task.Status != common.FAILED {
 		t.Fatalf("status = %q, want %q", task.Status, common.FAILED)
-	}
-}
-
-// Adversarial: high tier is reserved for the expedite path; if a resolver ever
-// returns high it must still map to the high subject (no silent downgrade).
-func TestEnqueueHighTierPublishesHighSubject(t *testing.T) {
-	fake := &fakeTierResolver{tier: common.TierHigh}
-	publisher := &recordingTaskPublisher{}
-	svc := newTierTestSvc(t, fake, publisher)
-	if _, err := svc.CreateForDocuments(permission.WithIdentity(t.Context(), "user-1", ""), "kb-1", []string{"doc-1"}); err != nil {
-		t.Fatalf("CreateForDocuments: %v", err)
-	}
-	if publisher.subject != "tasks.RAGFLOW.high" {
-		t.Fatalf("high tier published to %q, want tasks.RAGFLOW.high", publisher.subject)
 	}
 }

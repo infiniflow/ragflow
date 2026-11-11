@@ -195,9 +195,9 @@ func (n *NatsEngine) ShowMessageQueue() (map[string]string, error) {
 	result["consumer_count"] = strconv.Itoa(accountInfo.Consumers)
 	result["memory"] = strconv.FormatUint(accountInfo.Memory, 10)
 
-	// Aggregate the edition-specific physically isolated lanes (high/medium/low
-	// in EE, a single lane in OSS), and also expose per-tier counts so an
-	// operator can see where back-pressure is building up.
+	// Aggregate the edition-specific physically isolated lanes (the enterprise
+	// build defines multiple lanes, OSS uses a single lane), and also expose
+	// per-tier counts so an operator can see where back-pressure is building up.
 	var totalMsgs uint64
 	var totalPending uint64
 	var totalWaiting, totalAckPending, totalRedelivered int
@@ -448,9 +448,9 @@ func nackAll(handles []common.TaskHandle) {
 }
 
 // pullLane fetches up to messageCount messages from one lane. Each lane owns a
-// short independent window derived from ctx, so an empty high lane cannot eat
-// the whole budget before medium/low get a turn. If the lane's consumer handle
-// has gone stale, only that lane is rebuilt and retried.
+// short independent window derived from ctx, so an empty lane cannot eat the
+// whole budget before the others get a turn. If the lane's consumer handle has
+// gone stale, only that lane is rebuilt and retried.
 func (n *NatsEngine) pullLane(ctx context.Context, tier common.Tier, messageCount int) ([]common.TaskHandle, error) {
 	consumer, err := n.consumerHandle(tier)
 	if err != nil {
@@ -494,8 +494,8 @@ func (n *NatsEngine) pullLane(ctx context.Context, tier common.Tier, messageCoun
 	return resultMessages, nil
 }
 
-// PullMessages fetches up to messageCount messages, draining lanes in strict
-// high -> medium -> low priority order. It stops as soon as the batch is full.
+// PullMessages fetches up to messageCount messages, draining lanes in the
+// edition's configured priority order. It stops as soon as the batch is full.
 func (n *NatsEngine) PullMessages(ctx context.Context, messageCount int) ([]common.TaskHandle, error) {
 	if messageCount < 1 || messageCount > common.MaxManualPullMessages {
 		return nil, fmt.Errorf("message count must be between 1 and %d", common.MaxManualPullMessages)

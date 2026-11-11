@@ -20,9 +20,9 @@ package common
 import "time"
 
 // HandlerPullTimeout bounds the admin manual-pull (PullMessageFromQueue)
-// context. The community build drains a single low lane whose per-lane
+// context. The community build drains a single default lane whose per-lane
 // tierFetchWindow is 1s, so a 1s budget covers it with no starvation. The
 // enterprise edition overrides this in task_pull_timeout_ee.go with a budget
-// that spans its three lanes (high -> medium -> low), so this value must stay
-// in an edition-tagged file: the shared handler.go only references the symbol.
+// that spans its own lane set, so this value must stay in an edition-tagged
+// file: the shared handler.go only references the symbol.
 const HandlerPullTimeout = 1 * time.Second

@@ -130,8 +130,8 @@ type MessageQueue interface {
 	Type() string
 	// InitConsumer creates the durable task consumers. The subject argument is
 	// retained from the single-lane contract but ignored: the engine creates one
-	// durable consumer per edition-specific priority lane — high/medium/low in
-	// the enterprise build, a single lane in the community build.
+	// durable consumer per edition-specific priority lane — the enterprise build
+	// defines its own lane set, while the community build uses a single lane.
 	InitConsumer(subject string) error
 	PublishTask(subject string, payload []byte) error
 	PullMessages(ctx context.Context, messageCount int) ([]common.TaskHandle, error)

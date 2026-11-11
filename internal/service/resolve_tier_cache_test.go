@@ -33,8 +33,8 @@ func TestResolveTierReusesKBCache(t *testing.T) {
 
 	svc := NewIngestionTaskService()
 	resolver := &tenantToTierResolver{byTenant: map[string]common.Tier{
-		"tenant-cache": common.TierHigh,
-		"tenant-db":    common.TierLow,
+		"tenant-cache": common.TierDefault,
+		"tenant-db":    common.Tier("alt"),
 	}}
 	svc.tierResolver = resolver.resolve
 
@@ -46,8 +46,8 @@ func TestResolveTierReusesKBCache(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveTier with cached KB returned error: %v", err)
 	}
-	if tier != common.TierHigh {
-		t.Fatalf("resolveTier used DB tenant, want cached tenant tier %q, got %q", common.TierHigh, tier)
+	if tier != common.TierDefault {
+		t.Fatalf("resolveTier used DB tenant, want cached tenant tier %q, got %q", common.TierDefault, tier)
 	}
 	if resolver.got != "tenant-cache" {
 		t.Fatalf("resolver received tenant %q, want %q (cache not used)", resolver.got, "tenant-cache")
@@ -64,7 +64,7 @@ func TestResolveTierFallsBackToDAOOnCacheMiss(t *testing.T) {
 
 	svc := NewIngestionTaskService()
 	resolver := &tenantToTierResolver{byTenant: map[string]common.Tier{
-		"tenant-db": common.TierLow,
+		"tenant-db": common.Tier("alt"),
 	}}
 	svc.tierResolver = resolver.resolve
 
@@ -73,8 +73,8 @@ func TestResolveTierFallsBackToDAOOnCacheMiss(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveTier on cache miss returned error: %v", err)
 	}
-	if tier != common.TierLow {
-		t.Fatalf("resolveTier miss path: want %q, got %q", common.TierLow, tier)
+	if tier != common.Tier("alt") {
+		t.Fatalf("resolveTier miss path: want %q, got %q", common.Tier("alt"), tier)
 	}
 	if resolver.got != "tenant-db" {
 		t.Fatalf("resolver received tenant %q, want %q", resolver.got, "tenant-db")
@@ -89,7 +89,7 @@ func TestResolveTierFallsBackToDAOOnCacheMiss(t *testing.T) {
 	// no error); here we only assert the cache-hit path returns a valid tier.
 	if tier2, err := svc.resolveTier(t.Context(), "kb-real", cache); err != nil {
 		t.Fatalf("resolveTier second call returned error: %v", err)
-	} else if tier2 != common.TierLow {
-		t.Fatalf("resolveTier cache-hit tier = %q, want %q", tier2, common.TierLow)
+	} else if tier2 != common.Tier("alt") {
+		t.Fatalf("resolveTier cache-hit tier = %q, want %q", tier2, common.Tier("alt"))
 	}
 }

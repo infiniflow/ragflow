@@ -165,7 +165,7 @@ func (s *IngestionTaskService) SetTaskPublisher(taskPublisher TaskPublisher) {
 // SetTierResolver swaps the tenant->tier resolver. A nil argument is ignored so
 // callers cannot accidentally drop back to the edition-specific default.
 // Tests inject a deterministic resolver to keep routing assertions
-// edition-independent (community resolves to the low lane, ee to medium).
+// edition-independent.
 func (s *IngestionTaskService) SetTierResolver(resolver tierResolver) {
 	if resolver == nil {
 		return

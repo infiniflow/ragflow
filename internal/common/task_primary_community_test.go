@@ -20,23 +20,23 @@ package common
 
 import "testing"
 
-// TestPrimaryTier pins the community primary ingestion lane. The community
+// TestDefaultTier pins the community default ingestion lane. The community
 // build has a single lane (the bare TaskSubject queue), so the admin pull
-// endpoint and the memory wake-up fallback must resolve PrimaryTier() to the
-// low lane, whose subject equals TaskSubject.
-func TestPrimaryTier(t *testing.T) {
-	const want = TierLow
-	if got := PrimaryTier(); got != want {
-		t.Fatalf("PrimaryTier() = %q, want %q", got, want)
+// endpoint and the memory wake-up fallback must resolve DefaultTier() to the
+// default lane, whose subject equals TaskSubject.
+func TestDefaultTier(t *testing.T) {
+	const want = TierDefault
+	if got := DefaultTier(); got != want {
+		t.Fatalf("DefaultTier() = %q, want %q", got, want)
 	}
-	subject, err := SubjectForTier(PrimaryTier())
+	subject, err := SubjectForTier(DefaultTier())
 	if err != nil {
-		t.Fatalf("SubjectForTier(PrimaryTier()) returned error: %v", err)
+		t.Fatalf("SubjectForTier(DefaultTier()) returned error: %v", err)
 	}
 	if subject == "" {
-		t.Fatalf("SubjectForTier(PrimaryTier()) returned empty subject")
+		t.Fatalf("SubjectForTier(DefaultTier()) returned empty subject")
 	}
 	if subject != TaskSubject {
-		t.Fatalf("PrimaryTier() subject = %q, want %q", subject, TaskSubject)
+		t.Fatalf("DefaultTier() subject = %q, want %q", subject, TaskSubject)
 	}
 }

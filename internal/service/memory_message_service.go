@@ -487,16 +487,16 @@ func publishMemoryTaskWakeup(ctx context.Context, publisher TaskPublisher, resol
 	tier, err := resolver(ctx, tenantID)
 	if err != nil {
 		// A tier resolution failure must not strand a memory task: fall back to
-		// the primary lane so the reconciler can still retry it. A transient
+		// the default lane so the reconciler can still retry it. A transient
 		// outage never downgrades a tenant's priority — it only risks briefly
-		// elevating a lower-priority wake-up to the primary lane.
-		common.Warn(fmt.Sprintf("memory: tier resolution for tenant %s failed (%v); using primary lane", tenantID, err))
-		tier = common.PrimaryTier()
+		// elevating a lower-priority wake-up to the default lane.
+		common.Warn(fmt.Sprintf("memory: tier resolution for tenant %s failed (%v); using default lane", tenantID, err))
+		tier = common.DefaultTier()
 	}
 	subject, err := common.SubjectForTier(tier)
 	if err != nil {
-		common.Warn(fmt.Sprintf("memory: invalid tier %q for tenant %s; using primary subject", tier, tenantID))
-		subject = common.PrimaryTierSubject()
+		common.Warn(fmt.Sprintf("memory: invalid tier %q for tenant %s; using default subject", tier, tenantID))
+		subject = common.DefaultTierSubject()
 	}
 	taskMessage := common.TaskMessage{
 		TaskID:   taskID,

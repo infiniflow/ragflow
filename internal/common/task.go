@@ -18,42 +18,32 @@ package common
 
 import "fmt"
 
-// Tier identifies the priority lane an ingestion task is published to. The
-// three lanes are physically separate JetStream streams so a full low-priority
-// lane can never reject a high-priority publish.
+// Tier identifies the ingestion lane an ingestion task is published to. The
+// open-source build uses a single default lane; the enterprise build defines
+// its own lane set in a build-tagged file so the OSS tree carries no other
+// lane names.
 type Tier string
 
 const (
-	TierHigh   Tier = "high"
-	TierMedium Tier = "medium"
-	TierLow    Tier = "low"
+	// TierDefault is the single community/OSS ingestion lane. The enterprise
+	// build introduces additional lanes and designates its own "primary" lane
+	// in a build-tagged policy file.
+	TierDefault Tier = "default"
 )
 
 const (
 	// TaskSubject is the canonical community/OSS ingestion subject. The
-	// open-source edition publishes here for its single (low-priority) lane,
-	// and the EE low tier lane reuses it so an OSS split needs no rename and
-	// OSS and EE can share one NATS server.
+	// open-source edition publishes here for its single default lane, and the
+	// enterprise build reuses it for its lowest-priority lane so an OSS split
+	// needs no rename and OSS and EE can share one NATS server.
 	TaskSubject = "tasks.RAGFLOW"
-
-	// TaskSubjectHigh / TaskSubjectMedium / TaskSubjectLow are the three
-	// tier-specific subjects. Producers resolve a tenant's tier and publish to
-	// exactly one of these; the consumer drains them high -> medium -> low. The
-	// low subject equals TaskSubject: the low lane IS the community queue.
-	TaskSubjectHigh   = "tasks.RAGFLOW.high"
-	TaskSubjectMedium = "tasks.RAGFLOW.medium"
-	TaskSubjectLow    = TaskSubject
 )
 
 // SubjectForTier maps a tier to its JetStream subject. An unknown tier is an
-// error, never a silent fallback to a default lane.
+// error, never a silent fallback to the default lane.
 func SubjectForTier(tier Tier) (string, error) {
 	switch tier {
-	case TierHigh:
-		return TaskSubjectHigh, nil
-	case TierMedium:
-		return TaskSubjectMedium, nil
-	case TierLow:
+	case TierDefault:
 		return TaskSubject, nil
 	default:
 		return "", fmt.Errorf("unknown task tier %q", tier)

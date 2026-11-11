@@ -88,12 +88,11 @@ func TestPullMessages_RecreatesConsumerWhenItDisappears(t *testing.T) {
 
 	// Delete the primary lane's consumer behind the engine's back; the stored
 	// handle now addresses something that no longer exists. Publishers route to
-	// the primary tier subject (low in the community build, medium in the
-	// enterprise build), and the primary lane owns it.
+	// the default tier subject, and the default lane owns it.
 	pt := primaryTier()
-	mediumSpec := tierStreams[pt]
-	mediumStream := queue.streams[pt]
-	if err := mediumStream.DeleteConsumer(t.Context(), mediumSpec.consumerName); err != nil {
+	primarySpec := tierStreams[pt]
+	primaryStream := queue.streams[pt]
+	if err := primaryStream.DeleteConsumer(t.Context(), primarySpec.consumerName); err != nil {
 		t.Fatalf("delete consumer: %v", err)
 	}
 
@@ -107,7 +106,7 @@ func TestPullMessages_RecreatesConsumerWhenItDisappears(t *testing.T) {
 
 	// The consumer must exist again under the same durable name, so the next
 	// restart reattaches instead of orphaning a replacement.
-	if _, err := mediumStream.Consumer(t.Context(), mediumSpec.consumerName); err != nil {
+	if _, err := primaryStream.Consumer(t.Context(), primarySpec.consumerName); err != nil {
 		t.Fatalf("consumer was not recreated: %v", err)
 	}
 

@@ -26,26 +26,25 @@ import (
 
 // TestCommunityTierPolicyIsSingleQueue pins the open-source / community build to
 // exactly one ingestion lane: the bare community subject "tasks.RAGFLOW". The
-// enterprise build adds high/medium lanes on top; the community build must NOT
-// create RAGFLOW_TASKS_HIGH / RAGFLOW_TASKS_MEDIUM streams (that would waste a
-// 1s x 2 probe on every pull and orphan two unused streams). This is the
-// guarantee that lets the OSS split reuse this engine unchanged: a single queue,
-// no enterprise tier names.
+// community build must NOT create any additional streams (that would waste probe
+// time on every pull and orphan unused streams). This is the guarantee that lets
+// the OSS split reuse this engine unchanged: a single queue, no enterprise tier
+// names.
 func TestCommunityTierPolicyIsSingleQueue(t *testing.T) {
 	if len(tierStreams) != 1 {
 		t.Fatalf("community tierStreams has %d entries, want exactly 1 (single queue); got %v", len(tierStreams), tierStreams)
 	}
-	spec, ok := tierStreams[common.TierLow]
+	spec, ok := tierStreams[common.TierDefault]
 	if !ok {
-		t.Fatalf("community tierStreams missing TierLow entry: %v", tierStreams)
+		t.Fatalf("community tierStreams missing TierDefault entry: %v", tierStreams)
 	}
 	if spec.streamName != "RAGFLOW_TASKS" {
-		t.Fatalf("community low stream = %q, want RAGFLOW_TASKS (community queue name)", spec.streamName)
+		t.Fatalf("community default stream = %q, want RAGFLOW_TASKS (community queue name)", spec.streamName)
 	}
 	if len(spec.subjects) != 1 || spec.subjects[0] != "tasks.RAGFLOW" {
-		t.Fatalf("community low subjects = %v, want [tasks.RAGFLOW]", spec.subjects)
+		t.Fatalf("community default subjects = %v, want [tasks.RAGFLOW]", spec.subjects)
 	}
 	if spec.consumerName != "RAGFLOW_CONSUMER" {
-		t.Fatalf("community low consumer = %q, want RAGFLOW_CONSUMER", spec.consumerName)
+		t.Fatalf("community default consumer = %q, want RAGFLOW_CONSUMER", spec.consumerName)
 	}
 }
