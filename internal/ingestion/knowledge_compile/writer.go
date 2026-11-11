@@ -675,8 +675,16 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 				"compile_kwd":         compileKinds,
 				"knowledge_graph_kwd": []string{"entity", "relation"},
 			},
-			Offset: offset,
-			Limit:  pageSize,
+			// Stable sort on the unique keyword `id`: without an explicit
+			// OrderBy this scan pages with from/size, which Elasticsearch
+			// rejects once from+size passes max_result_window, and the
+			// resulting error aborts the structure merge through its caller.
+			// On legacy indices whose mapping still types `id` as `text`
+			// (with an `id.keyword` sub-field) the engine resolves the
+			// sortable form and sorts on `id.keyword` instead.
+			OrderBy: (&types.OrderByExpr{}).Asc("id"),
+			Offset:  offset,
+			Limit:   pageSize,
 		})
 		if err != nil {
 			return nil, fmt.Errorf("structure merge load existing rows: %w", err)
@@ -854,8 +862,17 @@ func (w engineWriter) DeleteStructureForDocs(ctx context.Context, tenant, kb str
 				"scope_kwd":           "dataset",
 				"knowledge_graph_kwd": []string{"entity", "relation"},
 			},
-			Offset: offset,
-			Limit:  pageSize,
+			// Stable sort on the unique keyword `id`: this scan reads the same
+			// row set as mergeExistingStructureBuckets, so without an explicit
+			// OrderBy it pages with from/size, which Elasticsearch rejects once
+			// from+size passes max_result_window — a dataset past that window
+			// could never finish deleting its ghost rows. On legacy indices
+			// whose mapping still types `id` as `text` (with an `id.keyword`
+			// sub-field) the engine resolves the sortable form and sorts on
+			// `id.keyword` instead.
+			OrderBy: (&types.OrderByExpr{}).Asc("id"),
+			Offset:  offset,
+			Limit:   pageSize,
 		})
 		if err != nil {
 			return fmt.Errorf("structure ghost scan: %w", err)
@@ -1109,8 +1126,16 @@ func (w engineWriter) StripMergedSources(ctx context.Context, tenant, kb string,
 				"source_doc_ids": deletedDocIDs,
 			},
 			SelectFields: []string{"id", "source_doc_ids"},
-			Limit:        batchSize,
-			Offset:       offset,
+			// Stable sort on the unique keyword `id`: without an explicit
+			// OrderBy this scan pages with from/size, which Elasticsearch
+			// rejects once from+size passes max_result_window, so stripping
+			// merged sources on a dataset past that window would fail. On
+			// legacy indices whose mapping still types `id` as `text` (with
+			// an `id.keyword` sub-field) the engine resolves the sortable
+			// form and sorts on `id.keyword` instead.
+			OrderBy: (&types.OrderByExpr{}).Asc("id"),
+			Limit:   batchSize,
+			Offset:  offset,
 		})
 		if err != nil {
 			return err
