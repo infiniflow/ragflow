@@ -16,8 +16,6 @@
 
 package common
 
-import "fmt"
-
 // Tier identifies the ingestion lane an ingestion task is published to. The
 // open-source build uses a single default lane; the enterprise build defines
 // its own lane set in a build-tagged file so the OSS tree carries no other
@@ -39,15 +37,14 @@ const (
 	TaskSubject = "tasks.RAGFLOW"
 )
 
-// SubjectForTier maps a tier to its JetStream subject. An unknown tier is an
-// error, never a silent fallback to the default lane.
+// SubjectForTier maps a tier to its JetStream subject. The mapping is
+// edition-specific: the community build resolves only the default lane, while
+// the enterprise build resolves its full lane set. Both delegate to the
+// build-tagged subjectForTier so the shared signature never hard-codes an
+// edition's lane names, and an unknown tier is an error rather than a silent
+// fallback to the default lane.
 func SubjectForTier(tier Tier) (string, error) {
-	switch tier {
-	case TierDefault:
-		return TaskSubject, nil
-	default:
-		return "", fmt.Errorf("unknown task tier %q", tier)
-	}
+	return subjectForTier(tier)
 }
 
 const (

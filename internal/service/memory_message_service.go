@@ -243,19 +243,19 @@ func (s *MemoryMessageService) queueSaveToMemoryTask(ctx context.Context, memory
 // outcome (including a missing-memory fallback) across a single reconcile pass
 // via the supplied map. A lookup failure never strands the wake-up: a missing
 // or unresolvable memory resolves to an empty tenant, which the caller routes
-// to the primary lane, and the failure is cached for the pass so lingering
+// to the default lane, and the failure is cached for the pass so lingering
 // task rows for the same memory do not re-query the store or repeat the warning
 // on every task of every pass. Because the underlying DAO wraps a not-found
 // result into the same error as a genuine store failure, a lookup error is
 // intentionally not surfaced as a reconcile error — it is a benign fallback to
-// the primary lane, not an anomaly the caller must act on.
+// the default lane, not an anomaly the caller must act on.
 func (s *MemoryMessageService) resolveMemoryTenant(ctx context.Context, memoryID string, cache map[string]string) (string, error) {
 	if tenantID, ok := cache[memoryID]; ok {
 		return tenantID, nil
 	}
 	tenantID := ""
 	if mem, memErr := s.memoryConfigFn(ctx, memoryID); memErr != nil {
-		common.Warn(fmt.Sprintf("memory: reconcile could not resolve tenant for memory %s (lookup failed: %v); publishing to primary lane", memoryID, memErr))
+		common.Warn(fmt.Sprintf("memory: reconcile could not resolve tenant for memory %s (lookup failed: %v); publishing to default lane", memoryID, memErr))
 	} else if mem != nil {
 		tenantID = mem.TenantID
 	}
@@ -293,7 +293,7 @@ func (s *MemoryMessageService) ReconcileMemoryTasks(ctx context.Context, limit i
 			return errors.Join(reconcileErr, ctxErr)
 		}
 		// resolveMemoryTenant never returns a non-nil error: a missing or
-		// unresolvable memory is an expected fallback to the primary lane, not
+		// unresolvable memory is an expected fallback to the default lane, not
 		// an anomaly. The previous `if err != nil { continue }` was dead code
 		// (it could never fire) and, worse, would have stranded the wake-up
 		// had the seam ever errored — so it is removed outright.
