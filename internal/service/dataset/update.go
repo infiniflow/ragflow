@@ -537,11 +537,10 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 	if storePlan.createEmbdID != "" && updatedKB != nil && updatedKB.ChunkNum == 0 && updatedKB.EmbdID == storePlan.createEmbdID {
 		created, createErr := d.ensureChunkStoreForEmbedding(ctx, updatedKB, storePlan.createEmbdID)
 		if createErr != nil {
-			// An engine may have created the table before failing on its indexes
-			// (Infinity does). Remove that partial store on a context the failure
-			// cannot cancel, so the retry finds it missing and creates it again.
-			// A probe failure never reaches the engine, so there is nothing to
-			// remove then.
+			// The creation was already retried in place. If both attempts failed,
+			// Infinity may still hold the table it wrote before its indexes; drop
+			// it so the retry creates it again. A probe failure never reaches the
+			// engine, so there is nothing to remove then.
 			if created {
 				d.dropPartialChunkStore(ctx, updatedKB)
 			}
@@ -750,24 +749,39 @@ func (d *DatasetService) planChunkStoreForEmbeddingChange(ctx context.Context, k
 	return plan, common.CodeSuccess, nil
 }
 
-// dropPartialChunkStore removes a store whose creation failed. Engines that
-// create the table before the indexes that make it usable need this: a leftover
-// store would make the retry skip the preparation. The dataset is empty and had
-// no store before the attempt, so removing it restores the pre-attempt state.
+// dropPartialChunkStore removes the table Infinity may have left half built.
+// Infinity keeps one table per dataset and writes it before its indexes, so a
+// failure can leave a table the same-model retry accepts as ready. The dataset
+// is empty and had no store before the attempt, so removing the table restores
+// the pre-attempt state and the retry creates it again.
 //
-// Elasticsearch is exempt: a tenant keeps every dataset in one index, so
-// dropping it would delete rows this update never touched. Its creation is a
-// single request as well, so a retry finds the index either present or absent
-// and repairs itself without help.
+// The shared-store engines are exempt. Elasticsearch and the SQL engines keep
+// every dataset of a tenant in one store whose DropChunkStore only deletes
+// rows, which neither repairs a missing column nor an index, and a request that
+// ran concurrently may have written those rows. Their creation is a single
+// request or idempotent DDL, so their retry re-runs it without help.
 func (d *DatasetService) dropPartialChunkStore(ctx context.Context, kb *entity.Knowledgebase) {
-	if d.docEngine == nil || kb == nil {
-		return
-	}
-	if engine.Type(d.docEngine) == engine.EngineElasticsearch {
+	if d.docEngine == nil || kb == nil || engine.Type(d.docEngine) != engine.EngineInfinity {
 		return
 	}
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), chunkStoreCleanupTimeout)
 	defer cancel()
+	// A concurrent request may have populated the table while this one was
+	// failing to create it. Removing the table then would delete its chunks, so
+	// only drop it while the dataset is still empty. An unreadable row leaves
+	// the store in place: a leftover empty table is harmless, live chunks are
+	// not.
+	fresh, err := d.kbDAO.GetByID(cleanupCtx, dao.DB, kb.ID)
+	if err != nil {
+		common.Warn("kept a partially created chunk store: dataset unreadable",
+			zap.String("dataset_id", kb.ID), zap.Error(err))
+		return
+	}
+	if fresh.ChunkNum != 0 {
+		common.Info("kept a partially created chunk store: the dataset gained chunks",
+			zap.String("dataset_id", kb.ID), zap.Int64("chunk_num", fresh.ChunkNum))
+		return
+	}
 	if err := d.docEngine.DropChunkStore(cleanupCtx, fmt.Sprintf("ragflow_%s", kb.TenantID), kb.ID); err != nil {
 		common.Warn("failed to remove a partially created chunk store",
 			zap.String("dataset_id", kb.ID), zap.Error(err))
@@ -795,12 +809,22 @@ func (d *DatasetService) ensureChunkStoreForEmbedding(ctx context.Context, kb *e
 	if err != nil {
 		return false, fmt.Errorf("resolve embedding dimension for %s: %w", embdID, err)
 	}
+	if err := d.createChunkStore(ctx, kb, dimension); err != nil {
+		// Creation is additive on every engine, and the engines that write a
+		// table before its indexes can complete a half-built store by running
+		// the same request again. Retrying here keeps a transient failure from
+		// leaving a store a later same-model request would accept as ready.
+		if retryErr := d.createChunkStore(ctx, kb, dimension); retryErr != nil {
+			return true, fmt.Errorf("prepare chunk store for embedding model %s: %w", embdID, retryErr)
+		}
+	}
+	return true, nil
+}
+
+func (d *DatasetService) createChunkStore(ctx context.Context, kb *entity.Knowledgebase, dimension int) error {
 	language := ""
 	if kb.Language != nil {
 		language = *kb.Language
 	}
-	if err := d.docEngine.CreateChunkStore(ctx, fmt.Sprintf("ragflow_%s", kb.TenantID), kb.ID, dimension, kb.ParserID, language); err != nil {
-		return true, fmt.Errorf("prepare chunk store for embedding model %s: %w", embdID, err)
-	}
-	return true, nil
+	return d.docEngine.CreateChunkStore(ctx, fmt.Sprintf("ragflow_%s", kb.TenantID), kb.ID, dimension, kb.ParserID, language)
 }

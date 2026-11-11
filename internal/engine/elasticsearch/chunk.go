@@ -58,13 +58,20 @@ func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID strin
 	}
 	if exists {
 		if strings.HasPrefix(baseName, "memory_") {
-			if err := e.ensureMemoryMessageVectorMapping(ctx, baseName, vectorSize); err != nil {
+			if err := e.ensureVectorFieldMapping(ctx, baseName, vectorSize); err != nil {
 				return fmt.Errorf("failed to ensure memory vector mapping: %w", err)
 			}
 			common.Info("Memory index already exists, ensured vector mapping", zap.String("index_name", baseName), zap.Int("vector_size", vectorSize))
 			return nil
 		}
-		common.Info("Index already exists, skipping creation", zap.String("index_name", baseName))
+		// A tenant index outlives the model it was created for. Map the new
+		// dimension explicitly: Elasticsearch infers dense_vector only for float
+		// arrays of 128 values or more, so a smaller model would be stored as a
+		// plain numeric field and every kNN search on it would fail.
+		if err := e.ensureVectorFieldMapping(ctx, baseName, vectorSize); err != nil {
+			return fmt.Errorf("failed to ensure vector mapping: %w", err)
+		}
+		common.Info("Index already exists, ensured vector mapping", zap.String("index_name", baseName), zap.Int("vector_size", vectorSize))
 		return nil
 	}
 
@@ -143,6 +150,13 @@ func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID strin
 	}
 
 	common.Info("Successfully created Elasticsearch index", zap.String("index_name", baseName))
+	if strings.HasPrefix(baseName, "memory_") {
+		// getMemoryMessageMapping already declares the vector field.
+		return nil
+	}
+	if err := e.ensureVectorFieldMapping(ctx, baseName, vectorSize); err != nil {
+		return fmt.Errorf("failed to ensure vector mapping: %w", err)
+	}
 	return nil
 }
 
@@ -2645,60 +2659,76 @@ func (e *Engine) GetScores(knnResult map[string]interface{}) map[string]float64 
 
 // loadSkillMapping loads the skill index mapping from config file
 
-func (e *Engine) memoryMessageVectorMappingExists(ctx context.Context, indexName, fieldName string) (bool, error) {
+// vectorFieldProperty returns the mapping the index holds for fieldName, or
+// nil when the field is not mapped.
+func (e *Engine) vectorFieldProperty(ctx context.Context, indexName, fieldName string) (map[string]interface{}, error) {
 	req := esapi.IndicesGetMappingRequest{
 		Index: []string{indexName},
 	}
 	res, err := req.Do(ctx, e.client)
 	defer closeESBody(res)
 	if err != nil {
-		return false, fmt.Errorf("failed to get memory vector mapping: %w", err)
+		return nil, fmt.Errorf("failed to get vector mapping: %w", err)
 	}
 
 	if res.StatusCode == http.StatusNotFound {
-		return false, nil
+		return nil, nil
 	}
 	if res.IsError() {
 		bodyBytes, _ := io.ReadAll(res.Body)
 		reason := extractErrorReason(bodyBytes)
 		if reason != "" {
-			return false, fmt.Errorf("elasticsearch error getting memory vector mapping %s.%s: %s", indexName, fieldName, reason)
+			return nil, fmt.Errorf("elasticsearch error getting vector mapping %s.%s: %s", indexName, fieldName, reason)
 		}
-		return false, fmt.Errorf("elasticsearch returned error getting memory vector mapping %s.%s: %s, body: %s", indexName, fieldName, res.Status(), string(bodyBytes))
+		return nil, fmt.Errorf("elasticsearch returned error getting vector mapping %s.%s: %s, body: %s", indexName, fieldName, res.Status(), string(bodyBytes))
 	}
 
 	var mappings map[string]interface{}
 	if err := json.NewDecoder(res.Body).Decode(&mappings); err != nil {
-		return false, fmt.Errorf("failed to decode memory vector mapping: %w", err)
+		return nil, fmt.Errorf("failed to decode vector mapping: %w", err)
 	}
 
 	indexMapping, ok := mappings[indexName].(map[string]interface{})
 	if !ok {
-		return false, nil
+		return nil, nil
 	}
 	mapping, ok := indexMapping["mappings"].(map[string]interface{})
 	if !ok {
-		return false, nil
+		return nil, nil
 	}
 	properties, ok := mapping["properties"].(map[string]interface{})
 	if !ok {
-		return false, nil
+		return nil, nil
 	}
-	_, ok = properties[fieldName]
-	return ok, nil
+	property, _ := properties[fieldName].(map[string]interface{})
+	return property, nil
 }
 
-func (e *Engine) ensureMemoryMessageVectorMapping(ctx context.Context, indexName string, vectorSize int) error {
+// ensureVectorFieldMapping maps q_<size>_vec as a dense_vector field. A field
+// the index already holds is accepted only as a dense_vector of the same
+// dimension: Elasticsearch cannot change a mapped field, and a plain numeric
+// field (what a float array under 128 values becomes under dynamic mapping)
+// would reject every kNN search on it.
+func (e *Engine) ensureVectorFieldMapping(ctx context.Context, indexName string, vectorSize int) error {
 	if vectorSize <= 0 {
-		return fmt.Errorf("memory vector size must be positive, got %d", vectorSize)
+		return fmt.Errorf("vector size must be positive, got %d", vectorSize)
 	}
 
 	fieldName := esoscommon.MemoryMessageVectorField(vectorSize)
-	exists, err := e.memoryMessageVectorMappingExists(ctx, indexName, fieldName)
+	property, err := e.vectorFieldProperty(ctx, indexName, fieldName)
 	if err != nil {
 		return err
 	}
-	if exists {
+	if property != nil {
+		mappedType, _ := property["type"].(string)
+		if mappedType != "dense_vector" {
+			return fmt.Errorf("elasticsearch index %s maps %s as %q, not a %d-dimension dense_vector; reindex it before switching models",
+				indexName, fieldName, mappedType, vectorSize)
+		}
+		if dims, ok := common.GetInt(property["dims"]); ok && dims != vectorSize {
+			return fmt.Errorf("elasticsearch index %s maps %s with %d dimensions, not %d",
+				indexName, fieldName, dims, vectorSize)
+		}
 		return nil
 	}
 
@@ -2709,7 +2739,7 @@ func (e *Engine) ensureMemoryMessageVectorMapping(ctx context.Context, indexName
 	}
 	data, err := json.Marshal(body)
 	if err != nil {
-		return fmt.Errorf("failed to marshal memory vector mapping: %w", err)
+		return fmt.Errorf("failed to marshal vector mapping: %w", err)
 	}
 
 	req := esapi.IndicesPutMappingRequest{
@@ -2719,16 +2749,16 @@ func (e *Engine) ensureMemoryMessageVectorMapping(ctx context.Context, indexName
 	res, err := req.Do(ctx, e.client)
 	defer closeESBody(res)
 	if err != nil {
-		return fmt.Errorf("failed to update memory vector mapping: %w", err)
+		return fmt.Errorf("failed to update vector mapping: %w", err)
 	}
 
 	if res.IsError() {
 		bodyBytes, _ := io.ReadAll(res.Body)
 		reason := extractErrorReason(bodyBytes)
 		if reason != "" {
-			return fmt.Errorf("elasticsearch error updating memory vector mapping %s.%s: %s", indexName, fieldName, reason)
+			return fmt.Errorf("elasticsearch error updating vector mapping %s.%s: %s", indexName, fieldName, reason)
 		}
-		return fmt.Errorf("elasticsearch returned error updating memory vector mapping %s.%s: %s, body: %s", indexName, fieldName, res.Status(), string(bodyBytes))
+		return fmt.Errorf("elasticsearch returned error updating vector mapping %s.%s: %s, body: %s", indexName, fieldName, res.Status(), string(bodyBytes))
 	}
 
 	return nil
@@ -2745,7 +2775,7 @@ func (e *Engine) ensureMemoryMessageVectorMappingsForDocs(ctx context.Context, i
 			if _, ok := seen[vectorSize]; ok {
 				continue
 			}
-			if err := e.ensureMemoryMessageVectorMapping(ctx, indexName, vectorSize); err != nil {
+			if err := e.ensureVectorFieldMapping(ctx, indexName, vectorSize); err != nil {
 				return err
 			}
 			seen[vectorSize] = struct{}{}
@@ -2774,7 +2804,7 @@ func (e *Engine) ensureMemoryMessageSearchVectorMappings(ctx context.Context, in
 		if !exists {
 			continue
 		}
-		if err = e.ensureMemoryMessageVectorMapping(ctx, indexName, vectorSize); err != nil {
+		if err = e.ensureVectorFieldMapping(ctx, indexName, vectorSize); err != nil {
 			return err
 		}
 	}

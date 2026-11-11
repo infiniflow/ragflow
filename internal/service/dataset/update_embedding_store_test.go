@@ -22,6 +22,10 @@ type recordingChunkStoreEngine struct {
 	parserID   string
 	language   string
 	err        error
+	// failCalls limits err to the first N creations; 0 makes it permanent.
+	failCalls int
+	// onCreate runs at the start of every CreateChunkStore call.
+	onCreate func()
 	// kind overrides the engine type reported by GetType.
 	kind string
 	// storeMissing makes ChunkStoreExists report an absent store.
@@ -41,10 +45,14 @@ func (e *recordingChunkStoreEngine) CreateChunkStore(_ context.Context, baseName
 	e.calls++
 	e.baseName, e.datasetID, e.vectorSize = baseName, datasetID, vectorSize
 	e.parserID, e.language = parserID, language
-	if e.err == nil {
-		e.storeMissing = false
+	if e.onCreate != nil {
+		e.onCreate()
 	}
-	return e.err
+	if e.err != nil && (e.failCalls == 0 || e.calls <= e.failCalls) {
+		return e.err
+	}
+	e.storeMissing = false
+	return nil
 }
 
 func (e *recordingChunkStoreEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
@@ -229,7 +237,7 @@ func TestUpdateDatasetLeavesBindingUntouchedWhenChunkStorePreparationFails(t *te
 			if kb.EmbdID != model {
 				t.Fatalf("embd_id after retry = %q, want %q", kb.EmbdID, model)
 			}
-			wantCalls := 2
+			wantCalls := 3
 			if tc.failProbe {
 				wantCalls = 1
 			}
@@ -430,15 +438,20 @@ func TestUpdateDatasetRepairsMissingChunkStoreOnSameModelUpdate(t *testing.T) {
 	}
 }
 
-// A creation can fail after the engine already wrote the table. Removing that
-// partial store makes the retry see it missing again; otherwise the same-model
-// retry would skip the preparation and return success without the indexes.
+// A creation can fail after the engine already wrote the table. Infinity is
+// the engine whose store belongs to this dataset alone, so removing the table
+// makes the retry see it missing again; otherwise the same-model retry would
+// skip the preparation and return success without the indexes.
 func TestUpdateDatasetRemovesPartialStoreWhenCreationFails(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 
-	eng := &recordingChunkStoreEngine{storeMissing: true, err: errors.New("index creation failed")}
+	eng := &recordingChunkStoreEngine{
+		storeMissing: true,
+		err:          errors.New("index creation failed"),
+		kind:         string(engine.EngineInfinity),
+	}
 	svc := testDatasetUpdateService(t)
 	svc.docEngine = eng
 	svc.embeddingDimension = func(context.Context, string, string) (int, error) { return 1024, nil }
@@ -452,19 +465,90 @@ func TestUpdateDatasetRemovesPartialStoreWhenCreationFails(t *testing.T) {
 	if !strings.Contains(err.Error(), "retry the request to repair it") {
 		t.Fatalf("error %q does not ask for a retry", err)
 	}
-	if eng.dropCalls != 1 || !eng.storeMissing {
-		t.Fatalf("drop calls = %d, store missing = %v, want the partial store removed", eng.dropCalls, eng.storeMissing)
+	// The creation is attempted twice before the partial table is removed.
+	if eng.calls != 2 || eng.dropCalls != 1 || !eng.storeMissing {
+		t.Fatalf("create calls = %d, drop calls = %d, store missing = %v, want 2/1/true",
+			eng.calls, eng.dropCalls, eng.storeMissing)
 	}
 
 	eng.err = nil
 	if _, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model}); err != nil || code != common.CodeSuccess {
 		t.Fatalf("retry UpdateDataset = (%d, %v), want success", code, err)
 	}
-	if eng.calls != 2 || eng.dropCalls != 1 {
-		t.Fatalf("chunk store calls = %d, drop calls = %d, want 2/1", eng.calls, eng.dropCalls)
+	if eng.calls != 3 || eng.dropCalls != 1 {
+		t.Fatalf("chunk store calls = %d, drop calls = %d, want 3/1", eng.calls, eng.dropCalls)
 	}
 	if eng.storeMissing {
 		t.Fatal("store still missing after the retry")
+	}
+}
+
+// A transient failure must not remove the store: the second creation attempt
+// completes it in place, and the update succeeds without a client retry.
+func TestUpdateDatasetRetriesCreationBeforeCleaningUp(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	eng := &recordingChunkStoreEngine{
+		storeMissing: true,
+		err:          errors.New("connection reset"),
+		failCalls:    1,
+		kind:         string(engine.EngineInfinity),
+	}
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = eng
+	svc.embeddingDimension = func(context.Context, string, string) (int, error) { return 1024, nil }
+
+	model := "BAAI/bge-m3@Builtin"
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	if _, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model}); err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDataset = (%d, %v), want success", code, err)
+	}
+	if eng.calls != 2 || eng.dropCalls != 0 {
+		t.Fatalf("create calls = %d, drop calls = %d, want 2/0", eng.calls, eng.dropCalls)
+	}
+	if eng.storeMissing {
+		t.Fatal("store still missing after the repair attempt")
+	}
+}
+
+// A concurrent request can populate the table between the failed creation and
+// the cleanup; deleting it then would destroy live chunks.
+func TestUpdateDatasetKeepsPartialStoreWhenDatasetGainedChunks(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	eng := &recordingChunkStoreEngine{
+		storeMissing: true,
+		err:          errors.New("index creation failed"),
+		kind:         string(engine.EngineInfinity),
+	}
+	eng.onCreate = func() {
+		if err := dao.DB.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").Update("chunk_num", 2).Error; err != nil {
+			t.Errorf("seed concurrent chunk_num: %v", err)
+		}
+	}
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = eng
+	svc.embeddingDimension = func(context.Context, string, string) (int, error) { return 1024, nil }
+
+	model := "BAAI/bge-m3@Builtin"
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	_, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model})
+	if err == nil || code != common.CodeServerError {
+		t.Fatalf("UpdateDataset = (%d, %v), want a server error", code, err)
+	}
+	if eng.dropCalls != 0 {
+		t.Fatalf("drop calls = %d, want 0 for a dataset that gained chunks", eng.dropCalls)
+	}
+	var kb entity.Knowledgebase
+	if err := dao.DB.Where("id = ?", "kb-1").Take(&kb).Error; err != nil {
+		t.Fatalf("reload dataset: %v", err)
+	}
+	if kb.EmbdID != model {
+		t.Fatalf("embd_id = %q, want the committed model %q", kb.EmbdID, model)
 	}
 }
 
@@ -494,31 +578,41 @@ func TestUpdateDatasetKeepsMissingStoreWhenEmbeddingProbeFails(t *testing.T) {
 	}
 }
 
-// Elasticsearch keeps every dataset of a tenant in one index, so dropping a
-// store whose creation failed would delete another dataset's rows. Its creation
-// is a single request, so the retry repairs itself without the removal.
+// Elasticsearch and the SQL engines keep every dataset of a tenant in one
+// store, where dropping only deletes rows a concurrent request may have
+// written. Their creation is a single request or idempotent DDL, so the retry
+// repairs itself without the removal.
 func TestUpdateDatasetKeepsSharedStoreWhenCreationFails(t *testing.T) {
-	db := setupDatasetUpdateTestDB(t)
-	pushServiceDB(t, db)
-	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	for _, kind := range []engine.EngineType{
+		engine.EngineElasticsearch,
+		engine.EngineSereneDB,
+		engine.EngineOceanBase,
+		engine.EngineVastbase,
+	} {
+		t.Run(string(kind), func(t *testing.T) {
+			db := setupDatasetUpdateTestDB(t)
+			pushServiceDB(t, db)
+			insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
 
-	eng := &recordingChunkStoreEngine{
-		storeMissing: true,
-		err:          errors.New("index creation failed"),
-		kind:         string(engine.EngineElasticsearch),
-	}
-	svc := testDatasetUpdateService(t)
-	svc.docEngine = eng
-	svc.embeddingDimension = func(context.Context, string, string) (int, error) { return 1024, nil }
+			eng := &recordingChunkStoreEngine{
+				storeMissing: true,
+				err:          errors.New("index creation failed"),
+				kind:         string(kind),
+			}
+			svc := testDatasetUpdateService(t)
+			svc.docEngine = eng
+			svc.embeddingDimension = func(context.Context, string, string) (int, error) { return 1024, nil }
 
-	model := "BAAI/bge-m3@Builtin"
-	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
-	_, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model})
-	if err == nil || code != common.CodeServerError {
-		t.Fatalf("UpdateDataset = (%d, %v), want a server error", code, err)
-	}
-	if eng.calls != 1 || eng.dropCalls != 0 {
-		t.Fatalf("create calls = %d, drop calls = %d, want a single creation and no drop",
-			eng.calls, eng.dropCalls)
+			model := "BAAI/bge-m3@Builtin"
+			ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+			_, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model})
+			if err == nil || code != common.CodeServerError {
+				t.Fatalf("UpdateDataset = (%d, %v), want a server error", code, err)
+			}
+			if eng.calls != 2 || eng.dropCalls != 0 {
+				t.Fatalf("create calls = %d, drop calls = %d, want two attempts and no drop",
+					eng.calls, eng.dropCalls)
+			}
+		})
 	}
 }
