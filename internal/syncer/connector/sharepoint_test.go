@@ -72,6 +72,7 @@ type sharePointTestFixtures struct {
 
 	contentByKey map[string]string
 	contentCalls *atomic.Int64
+	itemsByKey   map[string]string
 
 	tokenCalls *atomic.Int64
 }
@@ -151,6 +152,15 @@ func newTestSharePointServer(t *testing.T, fixtures *sharePointTestFixtures) *ht
 				}
 				w.Write([]byte(fixtures.childrenByKey[key]))
 			case "items":
+				if len(parts) == 4 {
+					item, ok := fixtures.itemsByKey[driveID+":"+parts[3]]
+					if !ok {
+						http.NotFound(w, r)
+						return
+					}
+					w.Write([]byte(item))
+					return
+				}
 				if len(parts) != 5 {
 					http.NotFound(w, r)
 					return
@@ -333,7 +343,7 @@ func TestSharePointSiteAPIPath(t *testing.T) {
 	}
 }
 
-func TestSharePointOpenSyncWalksLibrariesAndDownloads(t *testing.T) {
+func TestSharePointOpenSyncWalksLibrariesAndFetchesLazily(t *testing.T) {
 	fixtures := &sharePointTestFixtures{
 		drivesBody: `{"value":[
 			{"id":"drv-A","name":"Documents","driveType":"documentLibrary"},
@@ -380,8 +390,12 @@ func TestSharePointOpenSyncWalksLibrariesAndDownloads(t *testing.T) {
 	}
 
 	first := byID["drv-A:f1"]
-	if string(first.Blob) != "hello sharepoint" {
-		t.Fatalf("f1 blob = %q", first.Blob)
+	if len(first.Blob) != 0 || first.FetchRef == nil || fixtures.contentCalls.Load() != 0 {
+		t.Fatal("listing must not download file content")
+	}
+	blob, err := session.(Fetcher).Fetch(t.Context(), *first.FetchRef)
+	if err != nil || string(blob) != "hello sharepoint" {
+		t.Fatalf("Fetch = %q, %v", blob, err)
 	}
 	if first.SemanticIdentifier != "readme.txt" {
 		t.Fatalf("f1 semantic = %q", first.SemanticIdentifier)
@@ -405,8 +419,8 @@ func TestSharePointOpenSyncWalksLibrariesAndDownloads(t *testing.T) {
 	if byID["drv-A:f2"].Extension != ".md" {
 		t.Fatalf("f2 extension = %q", byID["drv-A:f2"].Extension)
 	}
-	if fixtures.contentCalls.Load() != 3 {
-		t.Fatalf("content calls = %d, want 3", fixtures.contentCalls.Load())
+	if fixtures.contentCalls.Load() != 1 {
+		t.Fatalf("content calls = %d, want 1", fixtures.contentCalls.Load())
 	}
 }
 
@@ -437,14 +451,14 @@ func TestSharePointWindowFilter(t *testing.T) {
 		t.Fatalf("OpenSync: %v", err)
 	}
 	documents := drainSharePointSync(t, session)
-	if len(documents) != 2 {
-		t.Fatalf("incremental documents = %d, want 2 (f2, f3)", len(documents))
+	if len(documents) != 3 {
+		t.Fatalf("metadata documents = %d, want 3 including files older than the waterline", len(documents))
 	}
 	ids := map[string]bool{}
 	for _, document := range documents {
 		ids[document.SourceID] = true
 	}
-	if !ids["drv-A:f2"] || !ids["drv-A:f3"] || ids["drv-A:f1"] {
+	if !ids["drv-A:f2"] || !ids["drv-A:f3"] || !ids["drv-A:f1"] {
 		t.Fatalf("incremental ids = %v", ids)
 	}
 
@@ -504,8 +518,8 @@ func TestSharePointResumeSkipsSyncedDrives(t *testing.T) {
 	if checkpoints[0].Cursor != "sharepoint_drive_drv-B" || checkpoints[1].Cursor != "sharepoint_drive_drv-C" {
 		t.Fatalf("checkpoint cursors = %q, %q", checkpoints[0].Cursor, checkpoints[1].Cursor)
 	}
-	if fixtures.contentCalls.Load() != 2 {
-		t.Fatalf("content calls = %d, want 2 (drv-A skipped)", fixtures.contentCalls.Load())
+	if fixtures.contentCalls.Load() != 0 {
+		t.Fatalf("content calls = %d, want 0 during metadata listing", fixtures.contentCalls.Load())
 	}
 }
 
@@ -694,7 +708,12 @@ func TestSharePointFileSizeCap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenSync: %v", err)
 	}
-	if _, err := session.NextBatch(context.Background()); err == nil || !strings.Contains(err.Error(), "exceeds maximum size") {
-		t.Fatalf("NextBatch err = %v, want size limit error", err)
+	batch, err := session.NextBatch(context.Background())
+	if err != nil || len(batch.Documents) != 1 || batch.Documents[0].SkipReason != "file exceeds maximum size" {
+		t.Fatalf("NextBatch = %+v, %v; want a skipped oversized file", batch, err)
+	}
+	// Also enforce the byte limit when listing metadata understates the size.
+	if _, err := session.(Fetcher).Fetch(t.Context(), *batch.Documents[0].FetchRef); err == nil || !strings.Contains(err.Error(), "exceeds maximum size") {
+		t.Fatalf("Fetch err = %v, want size limit error", err)
 	}
 }

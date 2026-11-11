@@ -15,6 +15,7 @@
  */
 
 import { FormFieldType } from '@/components/dynamic-form';
+import { getFileFilterFields } from './file-filters';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { TFunction } from 'i18next';
@@ -1199,6 +1200,28 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       name: 'config.credentials.client_secret',
       type: FormFieldType.Password,
       required: true,
+    },
+    {
+      label: t('setting.sharepointDriveId'),
+      name: 'config.drive_id',
+      type: FormFieldType.Text,
+      required: false,
+      tooltip: t('setting.sharepointDriveIdTip'),
+    },
+    {
+      label: t('setting.sharepointRootFolderId'),
+      name: 'config.root_folder_id',
+      type: FormFieldType.Text,
+      required: false,
+      tooltip: t('setting.sharepointRootFolderIdTip'),
+    },
+    ...getFileFilterFields(t),
+    {
+      label: t('setting.excludeVideos'),
+      name: 'config.exclude_videos',
+      type: FormFieldType.Checkbox,
+      required: false,
+      tooltip: t('setting.excludeVideosTip'),
     },
   ],
   [DataSourceKey.JIRA]: jiraConstant(t),
@@ -2418,6 +2441,12 @@ export const DataSourceFormDefaultValues = {
     name: '',
     source: DataSourceKey.SHAREPOINT,
     config: {
+      drive_id: '',
+      root_folder_id: '',
+      excluded_extensions: [],
+      excluded_folder_names: [],
+      excluded_folder_paths: [],
+      exclude_videos: true,
       credentials: {
         site_url: '',
         tenant_id: '',

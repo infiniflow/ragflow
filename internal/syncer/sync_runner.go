@@ -402,6 +402,11 @@ func (r *SyncRunner) processDocumentWithRetry(ctx context.Context, taskContext d
 
 // processDocument resolves IDs, skips unchanged fingerprints, fetches blobs, and upserts.
 func (r *SyncRunner) processDocument(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, sourceDocument syncerconnector.SourceDocument) (service.DocumentUpsertResult, error) {
+	if sourceDocument.SkipReason != "" {
+		common.Info("sync document skipped", zap.String("task_id", taskContext.Task.ID),
+			zap.String("source_id", sourceDocument.SourceID), zap.String("reason", sourceDocument.SkipReason))
+		return service.DocumentUpsertResult{Action: service.DocumentActionSkipped}, nil
+	}
 	resolved, err := r.idResolver.Resolve(ctx, taskContext.Knowledgebase.ID, taskContext.Connector.ID, sourceType, sourceDocument.SourceID)
 	if err != nil {
 		return service.DocumentUpsertResult{}, err

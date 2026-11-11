@@ -1000,6 +1000,24 @@ export default {
       configureModelTitle: 'Настроить модель',
       connectorNameTip: 'Укажите понятное имя для коннектора',
       syncDeletedFiles: 'Синхронизировать удалённые файлы',
+      sharepointDriveId: 'ID библиотеки документов',
+      sharepointDriveIdTip:
+        'Необязательный ID диска Microsoft Graph на выбранном сайте. Пустое поле — все библиотеки.',
+      sharepointRootFolderId: 'ID корневой папки',
+      sharepointRootFolderIdTip:
+        'Необязательный ID папки Graph. Требует ID библиотеки документов. Пустое поле — вся библиотека.',
+      excludedExtensions: 'Исключённые расширения файлов',
+      excludedExtensionsTip:
+        'Введите расширения по одному, например mp4 или .zip. Регистр не учитывается. Уже загруженные документы сохраняются.',
+      excludedFolderNames: 'Исключённые имена папок',
+      excludedFolderNamesTip:
+        'Точные имена папок на любой глубине, с учётом регистра. Папка исключается вместе со всем содержимым.',
+      excludedFolderPaths: 'Исключённые пути папок',
+      excludedFolderPathsTip:
+        'Точные пути от выбранного корня, например Проекты/Архив. Регистр учитывается. Разделитель /, без слеша в начале и конце. Исключается вся ветка. Маски не поддерживаются.',
+      excludeVideos: 'Исключать видеофайлы',
+      excludeVideosTip:
+        'Пропускать видео по MIME-типу или известному расширению видеофайла.',
       confluenceIsCloudTip:
         'Отметьте, если это экземпляр Confluence Cloud, снимите для Confluence Server/Data Center',
       confluenceWikiBaseUrlTip:
