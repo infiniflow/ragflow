@@ -23,9 +23,20 @@ import {
   getDataSourceFieldsWithExtras,
   getCommonExtraDefaultValues,
   mergeDataSourceFormValues,
+  normalizeSharePointRoots,
 } from './index';
 
 const translate = ((key: string) => key) as TFunction;
+
+describe('Data source form merging', () => {
+  it('merges values without interpreting connector-specific fields', () => {
+    const values = {
+      source: DataSourceKey.SHAREPOINT,
+      config: { root_folder_id: 'saved-root' },
+    };
+    expect(mergeDataSourceFormValues({}, values)).toEqual(values);
+  });
+});
 
 describe('SharePoint file selection', () => {
   it('edits multiple roots as tags and loads a saved single root', () => {
@@ -38,10 +49,10 @@ describe('SharePoint file selection', () => {
     ).toMatchObject({ type: FormFieldType.Tag });
     const values = mergeDataSourceFormValues(
       DataSourceFormDefaultValues[DataSourceKey.SHAREPOINT],
-      {
+      normalizeSharePointRoots({
         source: DataSourceKey.SHAREPOINT,
         config: { root_folder_id: ' old-root ' },
-      },
+      }),
     );
     expect(values.config.root_folder_ids).toEqual(['old-root']);
     expect(values.config).not.toHaveProperty('root_folder_id');
@@ -54,10 +65,10 @@ describe('SharePoint file selection', () => {
   it('keeps an explicitly cleared root list empty', () => {
     const values = mergeDataSourceFormValues(
       DataSourceFormDefaultValues[DataSourceKey.SHAREPOINT],
-      {
+      normalizeSharePointRoots({
         source: DataSourceKey.SHAREPOINT,
         config: { root_folder_id: 'old-root', root_folder_ids: [] },
-      },
+      }),
     );
     expect(values.config.root_folder_ids).toEqual([]);
     expect(values.config).not.toHaveProperty('root_folder_id');

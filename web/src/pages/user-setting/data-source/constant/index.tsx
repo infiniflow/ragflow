@@ -441,7 +441,7 @@ export const useDataSourceInfo = () => {
 const isPlainObject = (value: unknown): value is DataSourceFormValues =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 
-const normalizeSharePointRoots = (values: DataSourceFormValues) => {
+export const normalizeSharePointRoots = (values: DataSourceFormValues) => {
   if (
     values.source !== DataSourceKey.SHAREPOINT ||
     !isPlainObject(values.config)
@@ -464,7 +464,6 @@ export const mergeDataSourceFormValues = (
     if (!current) {
       return result;
     }
-    current = normalizeSharePointRoots(current);
 
     const next = { ...result };
 

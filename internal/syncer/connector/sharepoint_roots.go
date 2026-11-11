@@ -83,9 +83,6 @@ func (c *SharePointConnector) hasSelectedAncestor(ctx context.Context, driveID, 
 			parent = item.ParentReference.ID
 			parents[id] = parent
 		}
-		if seen[parent] {
-			return false, fmt.Errorf("SharePoint folder ancestry contains a cycle")
-		}
 		nested = nested || selected[parent]
 		id = parent
 	}
