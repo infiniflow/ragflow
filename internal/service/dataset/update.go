@@ -535,15 +535,19 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 	publishDatasetSyncerTasks(scheduledTaskIDs)
 
 	if storePlan.createEmbdID != "" && updatedKB != nil && updatedKB.ChunkNum == 0 && updatedKB.EmbdID == storePlan.createEmbdID {
-		if err = d.ensureChunkStoreForEmbedding(ctx, updatedKB, storePlan.createEmbdID); err != nil {
+		created, createErr := d.ensureChunkStoreForEmbedding(ctx, updatedKB, storePlan.createEmbdID)
+		if createErr != nil {
 			// An engine may have created the table before failing on its indexes
-			// (Infinity does). Remove the partial store on a context the failure
-			// cannot cancel, so the retry finds it missing and creates it again;
-			// the dataset is empty, so there is nothing to keep.
-			d.dropPartialChunkStore(ctx, updatedKB)
+			// (Infinity does). Remove that partial store on a context the failure
+			// cannot cancel, so the retry finds it missing and creates it again.
+			// A probe failure never reaches the engine, so there is nothing to
+			// remove then.
+			if created {
+				d.dropPartialChunkStore(ctx, updatedKB)
+			}
 			return nil, common.CodeServerError, fmt.Errorf(
 				"dataset settings were saved, but the chunk store for embedding model %s could not be created; retry the request to repair it: %w",
-				storePlan.createEmbdID, err)
+				storePlan.createEmbdID, createErr)
 		}
 	}
 
@@ -739,19 +743,27 @@ func (d *DatasetService) planChunkStoreForEmbeddingChange(ctx context.Context, k
 	if language != "" {
 		preparedKB.Language = &language
 	}
-	if err := d.ensureChunkStoreForEmbedding(ctx, &preparedKB, embdID); err != nil {
+	if _, err := d.ensureChunkStoreForEmbedding(ctx, &preparedKB, embdID); err != nil {
 		return plan, common.CodeServerError, fmt.Errorf("prepare the chunk store for embedding model %s: %w", embdID, err)
 	}
 	plan.preparedEmbdID = embdID
 	return plan, common.CodeSuccess, nil
 }
 
-// dropPartialChunkStore removes a store whose creation failed. Engines can
-// create the table before the indexes that make it usable, so a leftover store
-// would make the retry skip the preparation. The dataset is empty and had no
-// store before the attempt, so removing it restores the pre-attempt state.
+// dropPartialChunkStore removes a store whose creation failed. Engines that
+// create the table before the indexes that make it usable need this: a leftover
+// store would make the retry skip the preparation. The dataset is empty and had
+// no store before the attempt, so removing it restores the pre-attempt state.
+//
+// Elasticsearch is exempt: a tenant keeps every dataset in one index, so
+// dropping it would delete rows this update never touched. Its creation is a
+// single request as well, so a retry finds the index either present or absent
+// and repairs itself without help.
 func (d *DatasetService) dropPartialChunkStore(ctx context.Context, kb *entity.Knowledgebase) {
 	if d.docEngine == nil || kb == nil {
+		return
+	}
+	if engine.Type(d.docEngine) == engine.EngineElasticsearch {
 		return
 	}
 	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), chunkStoreCleanupTimeout)
@@ -766,10 +778,11 @@ func (d *DatasetService) dropPartialChunkStore(ctx context.Context, kb *entity.K
 // model on an empty dataset. Every engine's CreateChunkStore is additive on an
 // existing store: Infinity adds the missing q_<n>_vec column, the SQL engines
 // add missing columns, and Elasticsearch leaves an existing chunk index
-// untouched.
-func (d *DatasetService) ensureChunkStoreForEmbedding(ctx context.Context, kb *entity.Knowledgebase, embdID string) error {
+// untouched. created reports whether the engine was asked to create the store,
+// so a caller can tell a failed probe from a failed creation.
+func (d *DatasetService) ensureChunkStoreForEmbedding(ctx context.Context, kb *entity.Knowledgebase, embdID string) (bool, error) {
 	if d.docEngine == nil || kb == nil {
-		return nil
+		return false, nil
 	}
 	probe := d.embeddingDimension
 	if probe == nil {
@@ -780,14 +793,14 @@ func (d *DatasetService) ensureChunkStoreForEmbedding(ctx context.Context, kb *e
 	}
 	dimension, err := probe(ctx, kb.TenantID, embdID)
 	if err != nil {
-		return fmt.Errorf("resolve embedding dimension for %s: %w", embdID, err)
+		return false, fmt.Errorf("resolve embedding dimension for %s: %w", embdID, err)
 	}
 	language := ""
 	if kb.Language != nil {
 		language = *kb.Language
 	}
 	if err := d.docEngine.CreateChunkStore(ctx, fmt.Sprintf("ragflow_%s", kb.TenantID), kb.ID, dimension, kb.ParserID, language); err != nil {
-		return fmt.Errorf("prepare chunk store for embedding model %s: %w", embdID, err)
+		return true, fmt.Errorf("prepare chunk store for embedding model %s: %w", embdID, err)
 	}
-	return nil
+	return true, nil
 }

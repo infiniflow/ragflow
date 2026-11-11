@@ -8,6 +8,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
 )
@@ -21,10 +22,19 @@ type recordingChunkStoreEngine struct {
 	parserID   string
 	language   string
 	err        error
+	// kind overrides the engine type reported by GetType.
+	kind string
 	// storeMissing makes ChunkStoreExists report an absent store.
 	storeMissing bool
 	// dropCalls counts DropChunkStore invocations.
 	dropCalls int
+}
+
+func (e *recordingChunkStoreEngine) GetType() string {
+	if e.kind != "" {
+		return e.kind
+	}
+	return e.fakeChatDocEngine.GetType()
 }
 
 func (e *recordingChunkStoreEngine) CreateChunkStore(_ context.Context, baseName, datasetID string, vectorSize int, parserID, language string) error {
@@ -232,8 +242,9 @@ func TestUpdateDatasetLeavesBindingUntouchedWhenChunkStorePreparationFails(t *te
 
 func TestEnsureChunkStoreForEmbeddingWithoutEngine(t *testing.T) {
 	svc := &DatasetService{}
-	if err := svc.ensureChunkStoreForEmbedding(t.Context(), &entity.Knowledgebase{ID: "kb-1"}, "BAAI/bge-m3@Builtin"); err != nil {
-		t.Fatalf("ensureChunkStoreForEmbedding without engine = %v, want nil", err)
+	created, err := svc.ensureChunkStoreForEmbedding(t.Context(), &entity.Knowledgebase{ID: "kb-1"}, "BAAI/bge-m3@Builtin")
+	if created || err != nil {
+		t.Fatalf("ensureChunkStoreForEmbedding without engine = (%v, %v), want (false, nil)", created, err)
 	}
 }
 
@@ -454,5 +465,60 @@ func TestUpdateDatasetRemovesPartialStoreWhenCreationFails(t *testing.T) {
 	}
 	if eng.storeMissing {
 		t.Fatal("store still missing after the retry")
+	}
+}
+
+// A failed embedding probe never reaches CreateChunkStore. Nothing was created,
+// so removing the store would only risk deleting data this update never wrote.
+func TestUpdateDatasetKeepsMissingStoreWhenEmbeddingProbeFails(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	eng := &recordingChunkStoreEngine{storeMissing: true}
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = eng
+	svc.embeddingDimension = func(context.Context, string, string) (int, error) {
+		return 0, errors.New("model unavailable")
+	}
+
+	model := "BAAI/bge-m3@Builtin"
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	_, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model})
+	if err == nil || code != common.CodeServerError {
+		t.Fatalf("UpdateDataset = (%d, %v), want a server error", code, err)
+	}
+	if eng.calls != 0 || eng.dropCalls != 0 || !eng.storeMissing {
+		t.Fatalf("create calls = %d, drop calls = %d, store missing = %v, want the store untouched",
+			eng.calls, eng.dropCalls, eng.storeMissing)
+	}
+}
+
+// Elasticsearch keeps every dataset of a tenant in one index, so dropping a
+// store whose creation failed would delete another dataset's rows. Its creation
+// is a single request, so the retry repairs itself without the removal.
+func TestUpdateDatasetKeepsSharedStoreWhenCreationFails(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	eng := &recordingChunkStoreEngine{
+		storeMissing: true,
+		err:          errors.New("index creation failed"),
+		kind:         string(engine.EngineElasticsearch),
+	}
+	svc := testDatasetUpdateService(t)
+	svc.docEngine = eng
+	svc.embeddingDimension = func(context.Context, string, string) (int, error) { return 1024, nil }
+
+	model := "BAAI/bge-m3@Builtin"
+	ctx := withDatasetTestContext(t.Context(), "tenant-1", "tenant-1")
+	_, code, err := svc.UpdateDataset(ctx, "kb-1", service.UpdateDatasetRequest{EmbeddingModel: &model})
+	if err == nil || code != common.CodeServerError {
+		t.Fatalf("UpdateDataset = (%d, %v), want a server error", code, err)
+	}
+	if eng.calls != 1 || eng.dropCalls != 0 {
+		t.Fatalf("create calls = %d, drop calls = %d, want a single creation and no drop",
+			eng.calls, eng.dropCalls)
 	}
 }
