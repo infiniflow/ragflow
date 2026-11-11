@@ -1,11 +1,15 @@
 package common
 
 // DeepCopyMap returns a deep copy of a string-keyed map. Nested maps and slices
-// are copied recursively; every other value (primitives, []byte, structs,
-// pointers) is returned by reference. This matches the legacy per-package
-// deepCopyMap copies used by the parser config, DSL reset, graph scratchpad,
-// and graph checkpoint packages, whose values are JSON-native (decoded from or
-// destined for JSON), so sharing non-collection values by reference is safe.
+// are copied recursively; every other value (primitives, structs,
+// pointers) is returned by reference, except []byte which is copied
+// defensively so a caller that mutates the copy cannot corrupt the original.
+// This matches the legacy per-package deepCopyMap copies used by the parser
+// config, DSL reset, graph scratchpad, and DSL normalize packages, whose
+// values are JSON-native (decoded from or destined for JSON), so sharing
+// non-collection values by reference is safe. The graph checkpoint package
+// keeps its own deep-copy helper that JSON-round-trips values (int -> float64),
+// a deliberately different contract, and is not consolidated here.
 //
 // A nil input returns nil.
 func DeepCopyMap(src map[string]any) map[string]any {
