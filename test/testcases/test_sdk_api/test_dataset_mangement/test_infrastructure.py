@@ -93,7 +93,7 @@ def sdk_fixtures(monkeypatch):
     return conftest
 
 
-@pytest.mark.parametrize("engine", ["infinity", "elasticsearch"])
+@pytest.mark.parametrize("engine", ["infinity", "elasticsearch", "opensearch"])
 @pytest.mark.p2
 def test_ci_provisions_owned_tenants_models_and_pipeline(monkeypatch, sdk_fixtures, engine):
 
