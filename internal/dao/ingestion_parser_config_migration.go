@@ -1215,7 +1215,7 @@ func migrateExtractorConfig(config map[string]any, parserID string, pipelineID *
 	// Convert a target node's own pre-modular keys before applying the
 	// top-level flat values, so the node's explicit values keep precedence.
 	for _, node := range targets {
-		if fieldName, _ := node["field_name"].(string); fieldName != "" && fieldName != "summary" {
+		if fieldName, _ := node["field_name"].(string); fieldName != "" && extractorSysPromptGroup(fieldName) == "" {
 			common.Warn("Extractor field_name has no Go consumer; dropping",
 				zap.String("component", extractorNode),
 				zap.String("field_name", fieldName))
@@ -1224,7 +1224,7 @@ func migrateExtractorConfig(config map[string]any, parserID string, pipelineID *
 			return false, err
 		}
 	}
-	groups, replaceMetadata, err := convertPythonExtractorGroups(config)
+	groups, replaceMetadata, err := convertPythonExtractorGroups(config, extractorSysPromptGroup(fieldName))
 	if err != nil {
 		return false, err
 	}
@@ -1298,7 +1298,22 @@ func applyExtractorGroups(params map[string]any, groups map[string]map[string]an
 	return changed, nil
 }
 
-func convertPythonExtractorGroups(config map[string]any) (map[string]map[string]any, bool, error) {
+// extractorSysPromptGroup returns the modular group a legacy sys_prompt belongs
+// to. The pre-modular Extractor stored one field per node, so a node's
+// sys_prompt is that field's prompt; an unknown field has no prompt target.
+// An empty field_name is the transitional flat mirror of the summary prompt.
+func extractorSysPromptGroup(fieldName string) string {
+	switch fieldName {
+	case "", "summary":
+		return "summary"
+	case "keywords", "questions":
+		return fieldName
+	default:
+		return ""
+	}
+}
+
+func convertPythonExtractorGroups(config map[string]any, sysPromptGroup string) (map[string]map[string]any, bool, error) {
 	groups := map[string]map[string]any{}
 	for _, field := range []struct{ key, group string }{
 		{"auto_keywords", "keywords"},
@@ -1316,7 +1331,6 @@ func convertPythonExtractorGroups(config map[string]any) (map[string]map[string]
 	for _, field := range []struct{ key, group string }{
 		{"keywords_sys_prompt", "keywords"},
 		{"questions_sys_prompt", "questions"},
-		{"sys_prompt", "summary"},
 	} {
 		if raw, exists := config[field.key]; exists {
 			value, err := extractorString(field.key, raw)
@@ -1328,6 +1342,16 @@ func convertPythonExtractorGroups(config map[string]any) (map[string]map[string]
 			}
 			groups[field.group]["system_prompt"] = value
 		}
+	}
+	if raw, exists := config["sys_prompt"]; exists && sysPromptGroup != "" {
+		value, err := extractorString("sys_prompt", raw)
+		if err != nil {
+			return nil, false, err
+		}
+		if groups[sysPromptGroup] == nil {
+			groups[sysPromptGroup] = map[string]any{}
+		}
+		groups[sysPromptGroup]["system_prompt"] = value
 	}
 	if raw, exists := config["tag_file_id"]; exists {
 		value, err := extractorString("tag_file_id", raw)

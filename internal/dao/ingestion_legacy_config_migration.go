@@ -167,8 +167,12 @@ func normalizeLegacyComponentParams(id, componentName string, params map[string]
 	}
 	switch kind {
 	case common.ComponentNameExtractor:
-		if fieldName, _ := params["field_name"].(string); fieldName != "" && fieldName != "summary" {
+		fieldName, _ := params["field_name"].(string)
+		if fieldName != "" && extractorSysPromptGroup(fieldName) == "" {
 			row.retire("field_name", fmt.Sprintf("component %s: field_name %q has no Go consumer", id, fieldName))
+			if raw, exists := params["sys_prompt"]; exists && raw != nil {
+				row.retire("sys_prompt", fmt.Sprintf("component %s: field_name %q has no prompt target", id, fieldName))
+			}
 		}
 		return normalizeLegacyExtractorNode(params)
 	case common.ComponentNameTitleChunker,
@@ -205,7 +209,8 @@ func normalizeLegacyExtractorNode(params map[string]any) (bool, error) {
 	if !hasLegacyExtractorNodeFlatKey(params) {
 		return changed, nil
 	}
-	groups, _, err := convertPythonExtractorGroups(params)
+	fieldName, _ := params["field_name"].(string)
+	groups, _, err := convertPythonExtractorGroups(params, extractorSysPromptGroup(fieldName))
 	if err != nil {
 		return false, err
 	}
@@ -265,8 +270,11 @@ func normalizeLegacyTitleChunkerNode(params map[string]any) (bool, error) {
 func validTitleLevels(raw any) bool {
 	switch levels := raw.(type) {
 	case [][]string:
-		return true
+		return len(levels) > 0
 	case []any:
+		if len(levels) == 0 {
+			return false
+		}
 		for _, group := range levels {
 			if _, ok := group.([]any); !ok {
 				return false

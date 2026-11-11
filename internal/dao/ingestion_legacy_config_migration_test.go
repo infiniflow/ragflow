@@ -82,6 +82,11 @@ func TestMigrateIngestionLegacyConfigsNodeLevel(t *testing.T) {
 			"levels": ["not-a-group"],
 			"rules": [{"levels": [{"expression": "^####"}]}]
 		},
+		"TitleChunker:EmptyLevels": {
+			"method": "group",
+			"levels": [],
+			"rules": [{"levels": [{"expression": "^#####"}]}]
+		},
 		"TokenChunker:WarmBreadSmells": {
 			"delimiter_mode": "token_size",
 			"chunk_token_size": 512
@@ -129,6 +134,10 @@ func TestMigrateIngestionLegacyConfigsNodeLevel(t *testing.T) {
 			"method": "group",
 			"levels": [["^####"]]
 		},
+		"TitleChunker:EmptyLevels": {
+			"method": "group",
+			"levels": [["^#####"]]
+		},
 		"TokenChunker:WarmBreadSmells": {
 			"delimiter_mode": "delimiter",
 			"chunk_token_size": 512
@@ -152,6 +161,74 @@ func TestMigrateIngestionLegacyConfigsNodeLevel(t *testing.T) {
 	}
 	if got := databaseVersion(t, db); got != ingestionLegacyConfigTargetVersion {
 		t.Fatalf("version = %q; want %q", got, ingestionLegacyConfigTargetVersion)
+	}
+}
+
+// TestMigrateIngestionLegacyConfigsFieldNameRouting keeps the prompt of a
+// pre-modular one-field-per-node Extractor with the group that node extracted.
+// The same node shape appears in parser_config snapshots and canvas DSLs.
+func TestMigrateIngestionLegacyConfigsFieldNameRouting(t *testing.T) {
+	db := openIngestionMigrationDB(t)
+	const nodes = `{
+		"Extractor:Summary": {"field_name": "summary", "sys_prompt": "summary prompt"},
+		"Extractor:Keywords": {"field_name": "keywords", "sys_prompt": "keywords prompt"},
+		"Extractor:Questions": {"field_name": "questions", "sys_prompt": "questions prompt"},
+		"Extractor:Metadata": {
+			"field_name": "metadata",
+			"sys_prompt": "metadata prompt",
+			"metadata_config": {"enabled": true, "metadata": [{"key": "author"}], "built_in_metadata": []}
+		},
+		"Extractor:Unnamed": {"sys_prompt": "plain prompt"}
+	}`
+	insertIngestionConfig(t, db, "document", "row", "naive", nodes)
+	insertCanvasDSL(t, db, "user_canvas", "canvas", `{
+		"components": {
+			"Extractor:Summary": {"obj": {"component_name": "Extractor", "params": {"field_name": "summary", "sys_prompt": "summary prompt"}}},
+			"Extractor:Keywords": {"obj": {"component_name": "Extractor", "params": {"field_name": "keywords", "sys_prompt": "keywords prompt"}}},
+			"Extractor:Metadata": {"obj": {"component_name": "Extractor", "params": {"field_name": "metadata", "sys_prompt": "metadata prompt", "metadata_config": {"enabled": true, "metadata": [{"key": "author"}], "built_in_metadata": []}}}}
+		},
+		"graph": {"nodes": [
+			{"id": "Extractor:Summary", "data": {"label": "Extractor", "form": {"field_name": "summary", "sys_prompt": "summary prompt"}}},
+			{"id": "Extractor:Keywords", "data": {"label": "Extractor", "form": {"field_name": "keywords", "sys_prompt": "keywords prompt"}}},
+			{"id": "Extractor:Metadata", "data": {"label": "Extractor", "form": {"field_name": "metadata", "sys_prompt": "metadata prompt", "metadata_config": {"enabled": true, "metadata": [{"key": "author"}], "built_in_metadata": []}}}}
+		]}
+	}`)
+
+	if err := migrateIngestionLegacyConfigs(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+
+	want := decodeIngestionConfig(t, `{
+		"Extractor:Summary": {"summary": {"enabled": true, "system_prompt": "summary prompt"}},
+		"Extractor:Keywords": {"keywords": {"system_prompt": "keywords prompt"}},
+		"Extractor:Questions": {"questions": {"system_prompt": "questions prompt"}},
+		"Extractor:Metadata": {"metadata": {"enabled": true, "metadata": [{"key": "author"}], "built_in_metadata": []}},
+		"Extractor:Unnamed": {"summary": {"system_prompt": "plain prompt"}}
+	}`)
+	if got := readLegacyParserConfig(t, db, "document", "row"); !reflect.DeepEqual(got, want) {
+		t.Fatalf("document config = %#v; want %#v", got, want)
+	}
+
+	dsl := readCanvasDSL(t, db, "user_canvas", "canvas")
+	wantCanvas := decodeIngestionConfig(t, `{
+		"Extractor:Summary": {"summary": {"enabled": true, "system_prompt": "summary prompt"}},
+		"Extractor:Keywords": {"keywords": {"system_prompt": "keywords prompt"}},
+		"Extractor:Metadata": {"metadata": {"enabled": true, "metadata": [{"key": "author"}], "built_in_metadata": []}}
+	}`)
+	components := dsl["components"].(map[string]any)
+	for id, wantParams := range wantCanvas {
+		params := components[id].(map[string]any)["obj"].(map[string]any)["params"].(map[string]any)
+		if !reflect.DeepEqual(params, wantParams) {
+			t.Fatalf("%s params = %#v; want %#v", id, params, wantParams)
+		}
+	}
+	for _, raw := range dsl["graph"].(map[string]any)["nodes"].([]any) {
+		node := raw.(map[string]any)
+		id := node["id"].(string)
+		form := node["data"].(map[string]any)["form"].(map[string]any)
+		if !reflect.DeepEqual(form, wantCanvas[id]) {
+			t.Fatalf("%s form = %#v; want %#v", id, form, wantCanvas[id])
+		}
 	}
 }
 
