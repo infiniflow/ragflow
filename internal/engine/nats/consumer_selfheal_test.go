@@ -89,7 +89,7 @@ func TestPullMessages_RecreatesConsumerWhenItDisappears(t *testing.T) {
 	// Delete the primary lane's consumer behind the engine's back; the stored
 	// handle now addresses something that no longer exists. Publishers route to
 	// the default tier subject, and the default lane owns it.
-	pt := primaryTier()
+	pt := defaultTier()
 	primarySpec := tierStreams[pt]
 	primaryStream := queue.streams[pt]
 	if err := primaryStream.DeleteConsumer(t.Context(), primarySpec.consumerName); err != nil {
@@ -128,7 +128,7 @@ func TestPullMessages_RecreatesConsumerWhenItDisappears(t *testing.T) {
 // ordinary "nothing to deliver" outcome.
 func TestPullMessages_KeepsHandleWhenNothingToDeliver(t *testing.T) {
 	queue := newTaskQueue(t)
-	before, err := queue.consumerHandle(primaryTier())
+	before, err := queue.consumerHandle(defaultTier())
 	if err != nil {
 		t.Fatalf("consumerHandle: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestPullMessages_KeepsHandleWhenNothingToDeliver(t *testing.T) {
 		t.Fatalf("PullMessage on an empty queue: %v", err)
 	}
 
-	after, err := queue.consumerHandle(primaryTier())
+	after, err := queue.consumerHandle(defaultTier())
 	if err != nil {
 		t.Fatalf("consumerHandle: %v", err)
 	}

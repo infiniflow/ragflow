@@ -46,8 +46,8 @@ func isStreamExistsErr(err error) bool {
 }
 
 // tierStreamSpec describes one ingestion lane's stream, subjects and durable
-// consumer. The set of lanes (tierOrder / tierStreams) and the "primary" lane
-// (primaryTier) are edition-specific and live in build-tagged files
+// consumer. The set of lanes (tierOrder / tierStreams) and the "default" lane
+// (defaultTier) are edition-specific and live in build-tagged files
 // (tier_policy_ee.go / tier_policy_community.go) so the open-source split
 // receives exactly one queue and no enterprise tier names, while the methods
 // below stay identical across both editions.
@@ -70,12 +70,12 @@ type NatsEngine struct {
 
 	streamMu sync.Mutex
 	streams  map[common.Tier]jetstream.Stream
-	// stream is the primary stream handle (the lane returned by primaryTier).
+	// stream is the default stream handle (the lane returned by defaultTier).
 	// Admin inspection endpoints read this.
 	stream jetstream.Stream
 
-	// consumer is the primary consumer handle (the lane returned by
-	// primaryTier), guarded by consumerMu. consumers holds every lane; the pull
+	// consumer is the default consumer handle (the lane returned by
+	// defaultTier), guarded by consumerMu. consumers holds every lane; the pull
 	// loop replaces a lane's handle when that lane's consumer is found to have
 	// gone missing.
 	consumerMu sync.Mutex
@@ -143,7 +143,7 @@ func (n *NatsEngine) Init() error {
 
 	n.streamMu.Lock()
 	n.streams = streams
-	n.stream = streams[primaryTier()]
+	n.stream = streams[defaultTier()]
 	n.streamMu.Unlock()
 
 	return nil
@@ -318,7 +318,7 @@ func (n *NatsEngine) ensureConsumers(ctx context.Context) error {
 	}
 	n.consumerMu.Lock()
 	n.consumers = consumers
-	n.consumer = consumers[primaryTier()]
+	n.consumer = consumers[defaultTier()]
 	n.consumerMu.Unlock()
 	return nil
 }
@@ -399,7 +399,7 @@ func (n *NatsEngine) recreateConsumer(ctx context.Context, tier common.Tier) (je
 		n.consumers = make(map[common.Tier]jetstream.Consumer)
 	}
 	n.consumers[tier] = consumer
-	if tier == primaryTier() {
+	if tier == defaultTier() {
 		n.consumer = consumer
 	}
 	n.consumerMu.Unlock()
@@ -503,7 +503,7 @@ func (n *NatsEngine) PullMessages(ctx context.Context, messageCount int) ([]comm
 	// Fail fast on a half-initialized engine before the deadline requirement,
 	// so an uninitialized engine always reports "not properly initialized"
 	// regardless of the caller's context (mirrors PublishTask/ShowMessageQueue).
-	if _, err := n.consumerHandle(primaryTier()); err != nil {
+	if _, err := n.consumerHandle(defaultTier()); err != nil {
 		return nil, err
 	}
 	if _, ok := ctx.Deadline(); !ok {

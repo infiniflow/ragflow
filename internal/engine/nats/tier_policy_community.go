@@ -35,7 +35,7 @@ var tierStreams = map[common.Tier]tierStreamSpec{
 	common.TierDefault: {"RAGFLOW_TASKS", []string{common.TaskSubject}, "RAGFLOW_CONSUMER"},
 }
 
-// primaryTier for the community build is the single default lane, which is also
+// defaultTier for the community build is the single default lane, which is also
 // the legacy community queue. The enterprise build (tier_policy_ee.go) designates
 // its own default lane.
-func primaryTier() common.Tier { return common.TierDefault }
+func defaultTier() common.Tier { return common.TierDefault }

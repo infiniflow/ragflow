@@ -124,7 +124,7 @@ func TestInitMigratesLegacyStreamConfig(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	primary := tierStreams[primaryTier()]
+	primary := tierStreams[defaultTier()]
 	legacy, err := js.CreateStream(ctx, jetstream.StreamConfig{
 		Name:      primary.streamName,
 		Subjects:  primary.subjects,
@@ -155,7 +155,7 @@ func TestInitMigratesLegacyStreamConfig(t *testing.T) {
 		t.Fatalf("Init over legacy stream: %v", err)
 	}
 
-	info, err := engine.streams[primaryTier()].Info(ctx)
+	info, err := engine.streams[defaultTier()].Info(ctx)
 	if err != nil {
 		t.Fatalf("stream info after migration: %v", err)
 	}

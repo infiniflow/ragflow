@@ -128,7 +128,7 @@ func TestPullMessageReportsMaxWaiting(t *testing.T) {
 	// PullMessage must reach the lane that carries the published task. A
 	// MaxWaiting-limited consumer installed on that default (task-bearing) lane
 	// makes the capacity rejection observable in both editions.
-	pt := primaryTier()
+	pt := defaultTier()
 	primary := tierStreams[pt]
 	primaryStream := queue.streams[pt]
 	if err := primaryStream.DeleteConsumer(ctx, primary.consumerName); err != nil {
@@ -251,7 +251,7 @@ func TestPullMessagesReportsBatchError(t *testing.T) {
 	queue := newTaskQueue(t)
 	ctx, cancel := taskPullContext(t)
 	defer cancel()
-	pt := primaryTier()
+	pt := defaultTier()
 	primary := tierStreams[pt]
 	primaryStream := queue.streams[pt]
 	if err := primaryStream.DeleteConsumer(ctx, primary.consumerName); err != nil {
