@@ -1117,6 +1117,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       replyInstantly: 'We typically reply instantly',
       typeYourMessage: 'Type your message...',
       messagePlaceholder: 'Type your message here...',
+      addPhotosAndFiles: 'Add photos and files',
       exit: 'Exit',
       multipleModels: 'Multiple models',
       settings: 'Settings',

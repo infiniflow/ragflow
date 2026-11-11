@@ -1010,6 +1010,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       replyInstantly: '我们通常会即时回复',
       typeYourMessage: '输入消息...',
       messagePlaceholder: '请输入消息...',
+      addPhotosAndFiles: '添加照片和文件',
       exit: '退出',
       multipleModels: '多模型',
       settings: '设置',
