@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -47,21 +48,49 @@ type Engine struct {
 }
 
 func NewEngine(ctx context.Context, osConfig config.OpenSearchConfig) (*Engine, error) {
+	tlsConfig := &tls.Config{
+		MinVersion:         tls.VersionTLS12,
+		InsecureSkipVerify: osConfig.InsecureSkipVerify,
+	}
+
+	if osConfig.CACertPath != "" {
+		caData, err := os.ReadFile(osConfig.CACertPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read OpenSearch CA certificate %q: %w", osConfig.CACertPath, err)
+		}
+		pool, err := x509.SystemCertPool()
+		if err != nil || pool == nil {
+			pool = x509.NewCertPool()
+		}
+		if !pool.AppendCertsFromPEM(caData) {
+			return nil, fmt.Errorf("failed to append OpenSearch CA certificate from %q", osConfig.CACertPath)
+		}
+		tlsConfig.RootCAs = pool
+	}
+
+	if osConfig.ClientCertPath != "" || osConfig.ClientKeyPath != "" {
+		if osConfig.ClientCertPath == "" || osConfig.ClientKeyPath == "" {
+			return nil, fmt.Errorf("both client_cert_path and client_key_path must be provided for OpenSearch mTLS")
+		}
+		cert, err := tls.LoadX509KeyPair(osConfig.ClientCertPath, osConfig.ClientKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load OpenSearch client certificate key pair: %w", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	}
+
 	transport := &http.Transport{
 		MaxIdleConns:          1000,
 		MaxIdleConnsPerHost:   300,
 		MaxConnsPerHost:       500,
 		IdleConnTimeout:       60 * time.Second,
 		ResponseHeaderTimeout: 30 * time.Second,
-		TLSClientConfig: &tls.Config{
-			MinVersion:         tls.VersionTLS12,
-			InsecureSkipVerify: osConfig.InsecureSkipVerify,
-		},
-		ForceAttemptHTTP2: true,
+		TLSClientConfig:       tlsConfig,
+		ForceAttemptHTTP2:     true,
 	}
 
 	osCfg := opensearch.Config{
-		Addresses: []string{osConfig.Hosts},
+		Addresses: parseAddresses(osConfig.Hosts),
 		Username:  osConfig.Username,
 		Password:  osConfig.Password,
 		Transport: transport,
@@ -134,6 +163,21 @@ func (e *Engine) Ping(ctx context.Context) error {
 
 func (e *Engine) Close() error {
 	return nil
+}
+
+// parseAddresses splits comma-separated OpenSearch host URLs and trims whitespace.
+func parseAddresses(hosts string) []string {
+	var addrs []string
+	for _, h := range strings.Split(hosts, ",") {
+		h = strings.TrimSpace(h)
+		if h != "" {
+			addrs = append(addrs, h)
+		}
+	}
+	if len(addrs) == 0 {
+		addrs = []string{"http://localhost:1201"}
+	}
+	return addrs
 }
 
 // supportsHybridSearch reports whether the OpenSearch cluster version supports
