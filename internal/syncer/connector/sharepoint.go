@@ -39,7 +39,7 @@ const (
 	sharepointDefaultBatchSize    = 2
 	sharepointRequestTimeout      = 60 * time.Second
 	sharepointRetryCount          = 4
-	sharepointRetryBaseDelay      = 200 * time.Millisecond
+	sharepointRetryBaseDelay      = time.Second
 	sharepointTokenExpiryMargin   = 5 * time.Minute
 	sharepointMaxJSONResponseSize = 16 * 1024 * 1024
 	sharepointDefaultMaxFileSize  = 256 * 1024 * 1024
@@ -404,7 +404,9 @@ func (c *SharePointConnector) doGraphRequest(ctx context.Context, apiURL string,
 
 	var lastErr error
 	retriedUnauthorized := false
+	retryDelay := sharepointRetryBaseDelay
 	for attempt := 1; attempt <= sharepointRetryCount; attempt++ {
+		var retryAfter string
 		requestCtx, cancel := context.WithTimeout(ctx, sharepointRequestTimeout)
 		req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, apiURL, nil)
 		if err != nil {
@@ -418,6 +420,7 @@ func (c *SharePointConnector) doGraphRequest(ctx context.Context, apiURL string,
 			cancel()
 			lastErr = err
 		} else {
+			retryAfter = resp.Header.Get("Retry-After")
 			body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
 			resp.Body.Close()
 			cancel()
@@ -447,7 +450,8 @@ func (c *SharePointConnector) doGraphRequest(ctx context.Context, apiURL string,
 		if attempt == sharepointRetryCount {
 			break
 		}
-		delay := time.Duration(attempt) * sharepointRetryBaseDelay
+		delay := sharePointRetryDelay(retryAfter, retryDelay, time.Now())
+		retryDelay = min(retryDelay*2, 30*time.Second)
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
