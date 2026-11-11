@@ -852,19 +852,16 @@ func (d *DatasetService) deleteDatasetEngineData(ctx context.Context, kb *entity
 }
 
 // extractUniqueFileIDs returns deduplicated, non-empty file IDs from
-// file2document mappings.
+// file2document mappings. The extraction loop skips nil/empty FileIDs; the
+// deduplication is delegated to the canonical common.Deduplicate, which preserves
+// first-occurrence order and returns a non-nil empty slice for an all-skip input.
 func extractUniqueFileIDs(mappings []entity.File2Document) []string {
 	ids := make([]string, 0, len(mappings))
-	seen := make(map[string]struct{}, len(mappings))
 	for _, m := range mappings {
 		if m.FileID == nil || *m.FileID == "" {
 			continue
 		}
-		if _, exists := seen[*m.FileID]; exists {
-			continue
-		}
-		seen[*m.FileID] = struct{}{}
 		ids = append(ids, *m.FileID)
 	}
-	return ids
+	return common.Deduplicate(ids)
 }
