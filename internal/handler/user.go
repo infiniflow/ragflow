@@ -111,7 +111,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 		operationLog.Error = err
 		return
 	}
-	authToken, err := issueUserAccessToken(user, secretKey)
+	authToken, err := issueUserAccessToken(ctx, user, secretKey)
 	if err != nil {
 		common.RespondError(c, common.CodeServerError, "Failed to generate auth token")
 		operationLog.Code = int(common.CodeBadRequest)
@@ -180,7 +180,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 		operationLog.Error = errMessage
 		return
 	}
-	authToken, err := issueUserAccessToken(user, secretKey)
+	authToken, err := issueUserAccessToken(ctx, user, secretKey)
 	if err != nil {
 		common.RespondError(c, common.CodeServerError, "Failed to generate auth token")
 		operationLog.Code = int(common.CodeServerError)
@@ -265,7 +265,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 		operationLog.Error = errorMessage
 		return
 	}
-	authToken, err := issueUserAccessToken(user, secretKey)
+	authToken, err := issueUserAccessToken(ctx, user, secretKey)
 	if err != nil {
 		common.RespondError(c, common.CodeServerError, "Failed to generate auth token")
 		operationLog.Code = int(common.CodeServerError)

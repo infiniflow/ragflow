@@ -22,6 +22,7 @@ import (
 	"context"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 
@@ -61,6 +62,10 @@ func tenantMemberPermissionEE(ctx context.Context, db *gorm.DB, tenantID string,
 	return nil, 0, false, nil
 }
 
+func (*TenantService) listTenantMembersEE(context.Context, string) ([]*dao.TenantMemberItem, common.ErrorCode, bool, error) {
+	return nil, common.CodeSuccess, false, nil
+}
+
 // recordTenantPermissionChangeEE records nothing: the community edition has no
 // permission audit trail.
 func recordTenantPermissionChangeEE(ctx context.Context, tx *gorm.DB, tenantID, eventType, targetType, targetID, resourceType, resourceID, actionType string, beforePermission, afterPermission int32, beforeData, afterData interface{}) error {
@@ -72,8 +77,8 @@ func resolveTenantInviteRoleEE(*gorm.DB, string) (tenantInviteRole, bool, error)
 	return tenantInviteRole{}, false, nil
 }
 
-// checkTenantInviteEnabledEE leaves the invite switch to the community
-// default.
+// checkTenantInviteEnabledEE leaves tenant invitation permission unrestricted
+// in Community Edition, which does not configure Tenant system-role gates.
 func (*TenantService) checkTenantInviteEnabledEE(context.Context, string) (common.ErrorCode, bool, error) {
 	return common.CodeSuccess, false, nil
 }
@@ -90,6 +95,11 @@ func resolveDefaultTenantIDEE(context.Context) (string, bool, error) {
 
 // resolveUserAuthTenant discards tenant context because community credentials identify only a user.
 func resolveUserAuthTenant(_ context.Context, _ *entity.User, _ string) (string, error) {
+	return "", nil
+}
+
+// ResolveLoginTenantID leaves tenant selection to the community login path.
+func ResolveLoginTenantID(_ context.Context, _ *entity.User) (string, error) {
 	return "", nil
 }
 
