@@ -365,10 +365,36 @@ Execution details:
 
 - Rows are read in id-ordered batches of 256, each batch in its own transaction. Only rows whose params actually change are rewritten.
 - `knowledgebase` and `document` rows fail closed: invalid JSON or a malformed supported value stops the step with table/row context. A failed batch rolls back; earlier committed batches can be rerun safely.
-- `user_canvas` and `user_canvas_version` rows are user-authored and are not schema-validated on save, so a row whose DSL is not valid JSON or cannot be normalized is logged and skipped instead of blocking the upgrade. The skipped row keeps its legacy shape, which the frontend and runtime still read; a database write failure still stops the step.
-- The step runs after `migrateResourceUserIDs` because its target sorts above `v1.0.0.1`. The marker advances only after every table conversion succeeds. A database already marked `v1.0.0.2` or later skips this step.
+- `user_canvas` and `user_canvas_version` rows are user-authored and are not schema-validated on save, so a row whose DSL is not valid JSON or cannot be normalized is logged and skipped instead of blocking the upgrade. The skipped row keeps its legacy shape, which the frontend fallback still reads and re-saves in the modular format; a database write failure still stops the step.
+- The step runs after `migrateResourceUserIDs` because its target sorts above `v1.0.0.1`. The marker advances after every table has been processed; a skipped canvas row does not block it. A database already marked `v1.0.0.2` or later skips this step.
 
 On success the migration records `v1.0.0.2`.
+
+#### Skipped canvas rows
+
+A skipped canvas row is left unchanged and the upgrade still completes, so the service starts normally. The row is not retried on later startups because the marker has already advanced. Search the migration log for either message:
+
+```text
+Skipping canvas DSL that is not valid JSON
+Skipping canvas DSL the migration cannot normalize
+```
+
+Both carry `table`, `row_id`, and the underlying `error`.
+
+To convert a skipped row:
+
+1. Open the canvas in the UI and save it. The frontend fallback still reads the legacy keys and writes the modular shape on save.
+2. If the canvas cannot be opened, correct the value named in the warning in `user_canvas.dsl` / `user_canvas_version.dsl`, or remove the offending component, then either re-save the canvas or follow step 3 to re-run the step.
+3. To make this step retry the row immediately, reset the shared marker to the version before this step and run `ragflow_server --migrate` again:
+
+   ```sql
+   UPDATE system_settings SET value = 'v1.0.0.1'
+   WHERE name = 'mysql_migration.database.version';
+   ```
+
+   The step is idempotent, so rows it already converted are not changed again.
+
+A skipped `user_canvas_version` row is a historical snapshot; the live `user_canvas` row is what the runtime and UI use. Until the row is re-saved or converted, the Go ingestion runtime ignores its legacy flat keys, so the old extractor/chunker settings do not take effect; the frontend fallback still displays them. The skipped row does not block startup.
 
 ---
 
