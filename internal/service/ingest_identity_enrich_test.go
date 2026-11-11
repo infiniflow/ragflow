@@ -49,6 +49,9 @@ func TestEmitLifecycleEventResolvesUserAndTenantName(t *testing.T) {
 
 	svc.emitLifecycleEvent(context.Background(), task, "completed", "COMPLETED", "")
 
+	if !waitForEmitCount(rec.count, 1) {
+		t.Fatalf("event not emitted (async) within timeout")
+	}
 	if rec.count() != 1 {
 		t.Fatalf("expected 1 emitted event, got %d", rec.count())
 	}
@@ -96,6 +99,9 @@ func TestEmitLifecycleEventMissingTenantStillResolvesUser(t *testing.T) {
 
 	svc.emitLifecycleEvent(context.Background(), task, "completed", "COMPLETED", "")
 
+	if !waitForEmitCount(rec.count, 1) {
+		t.Fatalf("event not emitted (async) within timeout")
+	}
 	if rec.count() != 1 {
 		t.Fatalf("expected 1 emitted event, got %d", rec.count())
 	}
@@ -119,6 +125,9 @@ func TestEmitLifecycleEventMissingIdentityIsNoop(t *testing.T) {
 
 	svc.emitLifecycleEvent(context.Background(), task, "completed", "COMPLETED", "")
 
+	if !waitForEmitCount(rec.count, 1) {
+		t.Fatalf("event not emitted (async) within timeout")
+	}
 	if rec.count() != 1 {
 		t.Fatalf("expected 1 emitted event, got %d", rec.count())
 	}
