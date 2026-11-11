@@ -31,6 +31,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/ontology/contract"
 	"ragflow/internal/permission"
 	"ragflow/internal/utility"
 
@@ -221,6 +222,9 @@ func validateOntologyTemplate(configMap map[string]interface{}) error {
 			continue
 		}
 		classes[name] = true
+		if err := validateClassContractDeclaration(name, f["contract"]); err != nil {
+			return err
+		}
 		terms = append(terms, declaredTerm{
 			kind:    "class",
 			name:    name,
@@ -345,6 +349,49 @@ func validateOntologyTemplate(configMap map[string]interface{}) error {
 		}
 	}
 	return validateDeclaredAliases(terms)
+}
+
+// validateClassContractDeclaration checks the contract narrowing an action class
+// declares.
+//
+// The declaration is what narrows the contract output skeleton (see the
+// knowledge compiler's action_contract.go): a name it does not recognise is
+// dropped there, so a typo saved silently would ask the model for fewer fields
+// than the author intended — and a field the model was never asked for reads
+// downstream exactly like a field the document did not state. Only the action
+// class may declare one, because the contract is read off that class alone.
+func validateClassContractDeclaration(className string, raw interface{}) error {
+	declared := splitTemplateValues(raw)
+	if !strings.EqualFold(className, contract.ActionClassType) {
+		if len(declared) > 0 {
+			return fmt.Errorf("class %q declares contract fields, which only the %q class may declare",
+				className, contract.ActionClassType)
+		}
+		return nil
+	}
+	allowed := map[string]bool{}
+	for _, name := range contract.ActionContractFields() {
+		allowed[name] = true
+	}
+	hasAuthorization := false
+	for _, name := range declared {
+		if !allowed[name] {
+			return fmt.Errorf("class %q declares unknown contract field %q (want one of %s)",
+				className, name, strings.Join(contract.ActionContractFields(), ", "))
+		}
+		if name == contract.AuthorizationField {
+			hasAuthorization = true
+		}
+	}
+	// Authorization is not narrowable. It is the only field whose presence decides
+	// whether an action may ever run unattended, and a field the extractor was never
+	// asked for cannot be stated — so dropping it would pin every action of this
+	// model at `manual` instead of letting the document say "no approval required".
+	if len(declared) > 0 && !hasAuthorization {
+		return fmt.Errorf("class %q declares contract fields without %q, which is always asked: it decides whether the action may run",
+			className, contract.AuthorizationField)
+	}
+	return nil
 }
 
 // declaredTerm is one class or property plus the alternative names it declares.

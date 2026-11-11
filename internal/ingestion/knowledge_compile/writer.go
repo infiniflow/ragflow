@@ -34,6 +34,7 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/ontology/contract"
 	"ragflow/internal/service/file"
 	"ragflow/internal/tokenizer"
 )
@@ -108,7 +109,13 @@ type StructureBucket struct {
 	// scope — the default scope of the instance views — must still see the
 	// values the doc rows hold; without the fold the dataset row carries no
 	// attributes at all and the class panel shows an empty attribute set.
-	Attr       map[string]any
+	Attr map[string]any
+	// Contract is the folded execution contract of an action bucket; the zero
+	// value (all fields missing) for every other bucket. It is a column of its
+	// own rather than an attribute because the two need opposite merge rules:
+	// attributes let the newest extraction win, while a contract value is only
+	// overwritten when the new extraction brought a quote for it.
+	Contract   contract.ActionContract
 	FromEntity string // relation only
 	ToEntity   string // relation only
 	// FromType / ToType are the endpoint classes of a relation (from_type_kwd /
@@ -628,6 +635,15 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 			if len(b.Attr) > 0 {
 				row["attr"] = b.Attr
 			}
+			// An action's execution contract, plus the parallel array that makes
+			// "which actions still lack authorization" one query. Both are
+			// written from the same value so they cannot disagree; the reader
+			// still treats an empty {"_v":1} as "all missing", because rows
+			// compiled before the column existed have an empty array too.
+			if !b.Contract.IsEmpty() {
+				row["contract"] = b.Contract
+				row["contract_missing_kwd"] = contract.ContractMissingFields(b.Contract)
+			}
 		}
 		if len(b.Vector) > 0 {
 			row["q_"+fmt.Sprintf("%d", len(b.Vector))+"_vec"] = f32ToF64Slice(b.Vector)
@@ -729,6 +745,9 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 				// recompiles one document still has to keep the attribute values
 				// the other documents contributed to the same instance.
 				"attr",
+				// Same reason for the contract, with a stricter rule: the stored
+				// value wins unless this batch quotes the field again.
+				"contract",
 			},
 			Filter: map[string]interface{}{
 				"kb_id":               kb,
@@ -768,6 +787,11 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 			bucket.SourceDocIDs = common.AppendUnique(bucket.SourceDocIDs, firstStringSlice(row["source_doc_ids"]))
 			bucket.SourceChunkIDs = common.AppendUnique(bucket.SourceChunkIDs, firstStringSlice(row["source_chunk_ids"]))
 			bucket.Attr = mergeBucketAttrs(bucket.Attr, chunkJSONObject(row["attr"]))
+			// The contract folds the other way round: the stored row is the base
+			// and this batch may only overwrite the fields it quotes. That is the
+			// whole protection an operator's edit needs — no origin column, no
+			// manual-fields mask, no override table.
+			bucket.Contract = contract.ParseActionContract(row["contract"]).MergeExtracted(bucket.Contract)
 			payload := structureRowPayload(row)
 			if bucket.FromEntity == "" && bucket.ToEntity == "" {
 				existingType := structureString(row["entity_type_kwd"])

@@ -196,7 +196,41 @@ func ontologyToolsFor(ctx context.Context, tools []tool.BaseTool, mode ontologyM
 		// look up, never walk, answers strictly less than the layer holds.
 		out = append(out, NewTraverseOntologyTool())
 	}
+	out = appendActionTools(ctx, out)
 	return out
+}
+
+// appendActionTools adds the action tools once each.
+//
+// get_action_contract is always offered while a knowledge layer is bound: reading
+// a contract costs one row and prevents the single worst answer this system can
+// give ("no approval is required" inferred from silence).
+//
+// invoke_action is offered only when the deployment switched execution on. A tool
+// that can only ever answer "refused" is not a capability, it is an invitation:
+// the model would spend turns discovering it, and one of those turns might report
+// a refusal as a completion.
+func appendActionTools(ctx context.Context, tools []tool.BaseTool) []tool.BaseTool {
+	hasContract, hasInvoke := false, false
+	for _, t := range tools {
+		info, err := t.Info(ctx)
+		if err != nil || info == nil {
+			continue
+		}
+		switch info.Name {
+		case actionContractToolName:
+			hasContract = true
+		case invokeActionToolName:
+			hasInvoke = true
+		}
+	}
+	if !hasContract {
+		tools = append(tools, NewActionContractTool())
+	}
+	if !hasInvoke && ActionExecEnabledForTools() {
+		tools = append(tools, NewInvokeActionTool())
+	}
+	return tools
 }
 
 // ontologyPrefetch runs the knowledge-layer lookup for this turn.
@@ -259,7 +293,46 @@ func ontologyInstruction(base string, mode ontologyMode, digest *OntologyDigest,
 	b.WriteString(base)
 	b.WriteString("\n\n")
 	b.WriteString(ontologyDigestBlock(mode, digest, reg))
+	// The action rules ride with the digest, and only when the digest actually
+	// contains an action. A model that declares no actions pays nothing, and a
+	// model that does gets the four rules at the moment they first apply.
+	if digestHasAction(digest) {
+		b.WriteString("\n\n")
+		b.WriteString(actionContractInstructionBlock())
+	}
 	return b.String()
+}
+
+// digestHasAction reports whether the digest carries an action assertion.
+func digestHasAction(digest *OntologyDigest) bool {
+	if digest == nil {
+		return false
+	}
+	for _, assertion := range digest.Assertions {
+		if strings.EqualFold(strings.TrimSpace(assertion.Type), "action") {
+			return true
+		}
+	}
+	return false
+}
+
+// actionContractInstructionBlock states the four rules that a reader of a
+// document would not infer, and that an action makes consequential.
+//
+// They live in the instruction rather than in a tool description because a tool
+// description is read once, when the model decides to call; these are rules about
+// how to *word an answer*, which apply whether or not any tool was called. The
+// first one is the one that gets people hurt: an executor named in the document
+// is not the person who may approve it, and the two are written in the same
+// sentence.
+func actionContractInstructionBlock() string {
+	return `<action_rules>
+The knowledge layer declares actions and their execution contract. When you answer about an action:
+1. The executor is not the approver. If a sentence says who carries an action out, that names the performer, not the permission holder. Never present one as the other, and never conclude "no approval needed" from it.
+2. "missing" means the document does not state that field. It is silence, not permission. Only a field marked explicit_none may be reported as "no approval required".
+3. A value with provenance="manual" was entered by a person, not read from a document. It is authoritative for execution, but do not quote it or attach a citation to it.
+4. Never say an action ran unless a tool result says it executed. A refusal is a fact about the model or the binding — report it, and do not work around it.
+</action_rules>`
 }
 
 // ontologyDigestMaxAssertions bounds how much of the digest reaches the

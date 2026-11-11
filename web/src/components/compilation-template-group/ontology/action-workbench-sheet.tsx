@@ -1,0 +1,880 @@
+/*
+ *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
+'use client';
+
+import { ActionContractBlock } from '@/components/action-contract-block';
+import { ActionStatusBadge } from '@/components/action-status-badge';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import message from '@/components/ui/message';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
+import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
+import { backfillActionContracts } from '@/services/compilation-model-service';
+import {
+  useDeleteActionBinding,
+  useDryRunAction,
+  useExecuteAction,
+  useFetchActionExecutions,
+  useFetchActionBindings,
+  useFetchModelActions,
+  useSaveActionBinding,
+} from '@/hooks/use-ontology-action-request';
+import {
+  ActionVerdict,
+  IActionCallResult,
+  IActionExecution,
+  IModelAction,
+} from '@/interfaces/database/compilation-model';
+import { cn } from '@/lib/utils';
+import { ReactNode, useCallback, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+
+import { ActionContractEditor } from './action-contract-editor';
+
+/** A verdict's colour. `confirm` is not a soft `allow`, so it gets its own tone. */
+function verdictClass(verdict: ActionVerdict | string) {
+  switch (verdict) {
+    case 'allow':
+      return 'text-state-success border-state-success';
+    case 'confirm':
+      return 'text-state-warning border-state-warning';
+    case 'refuse':
+      return 'text-state-error border-state-error';
+    default:
+      return 'text-text-secondary border-border-button';
+  }
+}
+
+/**
+ * Actions and bindings: what an action is allowed to do, which tool would do it,
+ * and what happened when it was tried.
+ *
+ * The panel exists because the two halves have different owners and different
+ * lifetimes. A contract comes from a document and changes when it is recompiled;
+ * a binding comes from an operator wiring a tool and must survive that
+ * recompile. Showing them together is what lets someone answer "why can't this
+ * run" in one place — the contract may be complete and the binding switched off,
+ * or the reverse.
+ */
+export function OntologyActionWorkbenchSheet({
+  templateId,
+  trigger,
+}: {
+  templateId?: string;
+  trigger?: ReactNode;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const [activeName, setActiveName] = useState<string>();
+  // Two views of the same resource: what the actions are, and what has been
+  // attempted. They share a sheet because a question about one always ends up
+  // being a question about the other ("can it run" / "did it run").
+  const [tab, setTab] = useState<'actions' | 'audit'>('actions');
+  const [backfilling, setBackfilling] = useState(false);
+  const { actions, loading } = useFetchModelActions(templateId, open);
+  const { execEnabled } = useFetchActionBindings(templateId, open);
+  const [page, setPage] = useState(1);
+  const { executions, total } = useFetchActionExecutions(
+    templateId,
+    page,
+    open,
+  );
+
+  const active = useMemo(() => {
+    if (!actions?.length) {
+      return undefined;
+    }
+    return actions.find((item) => item.name === activeName) ?? actions[0];
+  }, [actions, activeName]);
+
+  return (
+    <Sheet open={open} onOpenChange={setOpen} modal={false}>
+      <SheetTrigger asChild>
+        {trigger ?? (
+          <Button variant="outline" size="sm">
+            {t('knowledgeCompilation.ontologyInspect.actionsTitle', {
+              defaultValue: 'Actions & bindings',
+            })}
+          </Button>
+        )}
+      </SheetTrigger>
+      <SheetContent className="w-[80%] max-w-[1100px] flex flex-col">
+        <SheetHeader>
+          <SheetTitle className="flex flex-wrap items-center gap-2">
+            {t('knowledgeCompilation.ontologyInspect.actionsTitle', {
+              defaultValue: 'Actions & bindings',
+            })}
+            {execEnabled === false && (
+              <Badge variant="secondary" className="text-state-warning">
+                {t('knowledgeCompilation.ontologyInspect.actionsExecOff', {
+                  defaultValue: 'execution is off for this deployment',
+                })}
+              </Badge>
+            )}
+          </SheetTitle>
+        </SheetHeader>
+
+        <div className="mt-2 flex shrink-0 items-center gap-2 text-xs">
+          <Button
+            variant={tab === 'actions' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setTab('actions')}
+          >
+            {t('knowledgeCompilation.ontologyInspect.actionsTabActions', {
+              defaultValue: 'Actions',
+            })}
+          </Button>
+          <Button
+            variant={tab === 'audit' ? 'default' : 'outline'}
+            size="sm"
+            onClick={() => setTab('audit')}
+          >
+            {t('knowledgeCompilation.ontologyInspect.actionsTabAudit', {
+              count: total ?? 0,
+              defaultValue: 'Attempts ({{count}})',
+            })}
+          </Button>
+          {/* Rows compiled before the contract columns existed read as "nothing
+              extracted". The backfill stamps them so they can be reviewed; it is
+              idempotent, so pressing it twice is harmless. */}
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto"
+            loading={backfilling}
+            onClick={async () => {
+              if (!templateId) {
+                return;
+              }
+              setBackfilling(true);
+              try {
+                const { data } = await backfillActionContracts(templateId);
+                message.success(
+                  t('knowledgeCompilation.ontologyInspect.actionBackfillDone', {
+                    count: data?.data?.updated ?? 0,
+                    defaultValue: 'Stamped {{count}} row(s).',
+                  }),
+                );
+              } catch (error) {
+                message.error((error as Error)?.message);
+              } finally {
+                setBackfilling(false);
+              }
+            }}
+          >
+            {t('knowledgeCompilation.ontologyInspect.actionBackfill', {
+              defaultValue: 'Backfill old rows',
+            })}
+          </Button>
+        </div>
+
+        {tab === 'audit' && (
+          <ActionAuditTable
+            executions={executions ?? []}
+            total={total ?? 0}
+            page={page}
+            onPage={setPage}
+          />
+        )}
+
+        <div
+          className={cn(
+            'mt-2 flex-1 min-h-0 grid grid-cols-[minmax(240px,32%)_1fr] gap-3 text-xs',
+            tab === 'audit' && 'hidden',
+          )}
+        >
+          <div className="min-h-0 overflow-auto rounded border border-border-button p-2 flex flex-col gap-2">
+            {loading && !actions && (
+              <span className="text-text-secondary">{t('common.loading')}</span>
+            )}
+            {!loading && (actions?.length ?? 0) === 0 && (
+              <span className="text-text-secondary">
+                {t('knowledgeCompilation.ontologyInspect.actionsEmpty', {
+                  defaultValue:
+                    'This model compiled no actions. An action is an instance of the `action` class.',
+                })}
+              </span>
+            )}
+            {actions?.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => setActiveName(item.name)}
+                className={cn(
+                  'rounded border p-2 text-start flex flex-col gap-1',
+                  active?.id === item.id
+                    ? 'border-text-accent'
+                    : 'border-border-button',
+                )}
+              >
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium">{item.name}</span>
+                  {/* The six-state badge, not the raw verdict: what a reader needs
+                      first is whether this row is even reviewable, and "allow"
+                      says nothing about that. */}
+                  <ActionStatusBadge action={item} />
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-text-secondary">
+                  {/* The denominator is what this model asked for: a narrowed
+                      contract that filled both fields is complete, not 2/6. */}
+                  <span>{`${item.contract?.declared ?? 0}/${item.contract?.required?.length ?? 6}`}</span>
+                  <span>
+                    {item.binding
+                      ? `${item.binding.mcp_server} · ${item.binding.mcp_tool}`
+                      : t(
+                          'knowledgeCompilation.ontologyInspect.actionUnbound',
+                          {
+                            defaultValue: 'not bound',
+                          },
+                        )}
+                  </span>
+                  {item.binding && !item.binding.tool_available && (
+                    <span className="text-state-error">
+                      {t(
+                        'knowledgeCompilation.ontologyInspect.actionToolMissing',
+                        {
+                          defaultValue: 'tool missing',
+                        },
+                      )}
+                    </span>
+                  )}
+                </div>
+              </button>
+            ))}
+          </div>
+
+          <div className="min-h-0 overflow-auto flex flex-col gap-3">
+            {active ? (
+              <ActionDetail
+                templateId={templateId!}
+                action={active}
+                execEnabled={execEnabled !== false}
+                executions={(executions ?? []).filter(
+                  (row) => row.action_name === active.name,
+                )}
+              />
+            ) : (
+              <span className="text-text-secondary">
+                {t('knowledgeCompilation.ontologyInspect.actionsPickOne', {
+                  defaultValue: 'Select an action.',
+                })}
+              </span>
+            )}
+          </div>
+        </div>
+      </SheetContent>
+    </Sheet>
+  );
+}
+
+/** One action: contract, binding, rehearsal, and its own recent attempts. */
+function ActionDetail({
+  templateId,
+  action,
+  execEnabled,
+  executions,
+}: {
+  templateId: string;
+  action: IModelAction;
+  execEnabled: boolean;
+  executions: {
+    id: string;
+    status: string;
+    verdict: string;
+    create_time?: number;
+  }[];
+}) {
+  const { t } = useTranslation();
+  const [dryRunResult, setDryRunResult] = useState<IActionCallResult>();
+  const [execResult, setExecResult] = useState<IActionCallResult>();
+  const [reason, setReason] = useState('');
+  const { loading: dryRunLoading, dryRun } = useDryRunAction();
+  const { loading: execLoading, execute } = useExecuteAction();
+
+  const handleDryRun = useCallback(async () => {
+    try {
+      setDryRunResult(
+        await dryRun({ id: templateId, actionName: action.name }),
+      );
+    } catch (error) {
+      message.error((error as Error)?.message);
+    }
+  }, [dryRun, templateId, action.name]);
+
+  const handleExecute = useCallback(async () => {
+    if (!reason.trim()) {
+      message.error(
+        t('knowledgeCompilation.ontologyInspect.actionReasonRequired', {
+          defaultValue: 'State why this action is being run.',
+        }),
+      );
+      return;
+    }
+    try {
+      setExecResult(
+        await execute({
+          id: templateId,
+          actionName: action.name,
+          reason: reason.trim(),
+        }),
+      );
+    } catch (error) {
+      // A refusal answers with its verdict, not an error; a genuine failure is
+      // worth showing verbatim too.
+      message.error((error as Error)?.message);
+    }
+  }, [execute, reason, templateId, action.name, t]);
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-medium text-sm">{action.name}</span>
+        <Badge variant="secondary" className={verdictClass(action.verdict)}>
+          {action.verdict}
+        </Badge>
+        {action.dataset_id && (
+          <span className="text-text-secondary">{action.dataset_id}</span>
+        )}
+      </div>
+
+      {action.description && (
+        <p className="text-text-secondary">{action.description}</p>
+      )}
+
+      {(action.verdict_reasons?.length ?? 0) > 0 && (
+        <p className="text-text-secondary break-all">
+          {action.verdict_reasons?.join(' · ')}
+        </p>
+      )}
+
+      <div className="flex items-center gap-2">
+        <span className="font-medium">
+          {t('knowledgeCompilation.ontologyInspect.actionContractTitle', {
+            defaultValue: 'Execution contract',
+          })}
+        </span>
+        <ActionContractEditor
+          templateId={templateId}
+          action={action}
+          trigger={
+            <Button variant="ghost" size="sm">
+              {t('common.edit')}
+            </Button>
+          }
+        />
+      </div>
+      <ActionContractBlock
+        fields={action.contract?.fields}
+        missing={action.contract?.missing}
+        declared={action.contract?.declared}
+        required={action.contract?.required}
+      />
+
+      <BindingForm templateId={templateId} action={action} />
+
+      <div className="flex flex-col gap-2 rounded border border-border-button p-2">
+        <span className="font-medium">
+          {t('knowledgeCompilation.ontologyInspect.actionTrialTitle', {
+            defaultValue: 'Rehearse and run',
+          })}
+        </span>
+        <p className="text-text-disabled">
+          {t('knowledgeCompilation.ontologyInspect.actionTrialIntro', {
+            defaultValue:
+              'A rehearsal calls nothing: it reports the verdict and the exact arguments the mapping produces. Running is audited either way, refusals included.',
+          })}
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            loading={dryRunLoading}
+            onClick={handleDryRun}
+          >
+            {t('knowledgeCompilation.ontologyInspect.actionDryRun', {
+              defaultValue: 'Rehearse',
+            })}
+          </Button>
+          <Input
+            value={reason}
+            placeholder={t(
+              'knowledgeCompilation.ontologyInspect.actionReason',
+              { defaultValue: 'Reason for running (required)' },
+            )}
+            onChange={(e) => setReason(e.target.value)}
+            className="h-8 max-w-[320px] text-xs"
+          />
+          <Button
+            size="sm"
+            loading={execLoading}
+            disabled={!execEnabled}
+            onClick={handleExecute}
+          >
+            {t('knowledgeCompilation.ontologyInspect.actionExecute', {
+              defaultValue: 'Run',
+            })}
+          </Button>
+        </div>
+        {dryRunResult && (
+          <CallResult
+            title={t(
+              'knowledgeCompilation.ontologyInspect.actionDryRunResult',
+              {
+                defaultValue: 'Rehearsal',
+              },
+            )}
+            result={dryRunResult}
+          />
+        )}
+        {execResult && (
+          <CallResult
+            title={t('knowledgeCompilation.ontologyInspect.actionExecResult', {
+              defaultValue: 'Result',
+            })}
+            result={execResult}
+          />
+        )}
+      </div>
+
+      <div className="flex flex-col gap-1 rounded border border-border-button p-2">
+        <span className="font-medium">
+          {t('knowledgeCompilation.ontologyInspect.actionAudit', {
+            defaultValue: 'Recent attempts',
+          })}
+        </span>
+        {executions.length === 0 ? (
+          <span className="text-text-disabled">
+            {t('knowledgeCompilation.ontologyInspect.actionAuditEmpty', {
+              defaultValue: 'Nobody has tried to run this action.',
+            })}
+          </span>
+        ) : (
+          executions.map((row) => (
+            <div key={row.id} className="flex flex-wrap items-center gap-2">
+              <span className="text-text-secondary">{row.status}</span>
+              <span className="text-text-disabled">{row.verdict}</span>
+            </div>
+          ))
+        )}
+      </div>
+    </>
+  );
+}
+
+/** The binding form: which tool, how arguments map, and the three switches. */
+function BindingForm({
+  templateId,
+  action,
+}: {
+  templateId: string;
+  action: IModelAction;
+}) {
+  const { t } = useTranslation();
+  const binding = action.binding;
+  const [server, setServer] = useState(binding?.mcp_server ?? '');
+  const [tool, setTool] = useState(binding?.mcp_tool ?? '');
+  const [mapping, setMapping] = useState(
+    JSON.stringify(binding?.arg_mapping ?? {}, null, 2),
+  );
+  // Defaults sit on the safe side: an unbound action is not declared writable
+  // until someone says so. The two risky switches stay disabled until the
+  // acknowledgement below is ticked, in the form and on the server both.
+  const [readOnly, setReadOnly] = useState(binding?.read_only ?? true);
+  const [enabled, setEnabled] = useState(binding?.enabled ?? true);
+  const [qaCallable, setQaCallable] = useState(binding?.qa_callable ?? false);
+  const [riskAck, setRiskAck] = useState(false);
+  const { loading, saveBinding } = useSaveActionBinding();
+  const { loading: deleting, deleteBinding } = useDeleteActionBinding();
+
+  // The row changed under the form (another save, a refetch): the fields must
+  // show the binding that exists, not the one that was typed before it.
+  const bindingKey = binding?.id ?? 'none';
+  const [shownKey, setShownKey] = useState(bindingKey);
+  if (shownKey !== bindingKey) {
+    setShownKey(bindingKey);
+    setServer(binding?.mcp_server ?? '');
+    setTool(binding?.mcp_tool ?? '');
+    setMapping(JSON.stringify(binding?.arg_mapping ?? {}, null, 2));
+    setReadOnly(binding?.read_only ?? true);
+    setEnabled(binding?.enabled ?? true);
+    setQaCallable(binding?.qa_callable ?? false);
+    setRiskAck(false);
+  }
+
+  const handleSave = useCallback(async () => {
+    let parsed: Record<string, string>;
+    try {
+      parsed = JSON.parse(mapping || '{}');
+    } catch {
+      message.error(
+        t('knowledgeCompilation.ontologyInspect.actionMappingInvalid', {
+          defaultValue: 'The argument mapping is not valid JSON.',
+        }),
+      );
+      return;
+    }
+    try {
+      await saveBinding({
+        id: templateId,
+        actionName: action.name,
+        payload: {
+          mcp_server: server.trim(),
+          mcp_tool: tool.trim(),
+          arg_mapping: parsed,
+          read_only: readOnly,
+          enabled,
+          qa_callable: qaCallable,
+          risk_ack: riskAck,
+          dataset_id: action.dataset_id,
+        },
+      });
+      message.success(t('common.save'));
+    } catch (error) {
+      message.error((error as Error)?.message);
+    }
+  }, [
+    mapping,
+    saveBinding,
+    templateId,
+    action,
+    server,
+    tool,
+    readOnly,
+    enabled,
+    qaCallable,
+    t,
+  ]);
+
+  return (
+    <div className="flex flex-col gap-2 rounded border border-border-button p-2">
+      <span className="font-medium">
+        {t('knowledgeCompilation.ontologyInspect.actionBindingTitle', {
+          defaultValue: 'Binding',
+        })}
+      </span>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs">
+            {t('knowledgeCompilation.ontologyInspect.actionBindingServer', {
+              defaultValue: 'MCP server',
+            })}
+          </Label>
+          <Input
+            value={server}
+            onChange={(e) => setServer(e.target.value)}
+            className="h-8 text-xs"
+          />
+        </div>
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs">
+            {t('knowledgeCompilation.ontologyInspect.actionBindingTool', {
+              defaultValue: 'Tool',
+            })}
+          </Label>
+          <Input
+            value={tool}
+            onChange={(e) => setTool(e.target.value)}
+            className="h-8 text-xs"
+          />
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <Label className="text-xs">
+          {t('knowledgeCompilation.ontologyInspect.actionBindingMapping', {
+            defaultValue: 'Argument mapping (JSON: tool argument → source)',
+          })}
+        </Label>
+        <Textarea
+          value={mapping}
+          rows={4}
+          className="text-xs font-mono"
+          onChange={(e) => setMapping(e.target.value)}
+        />
+        <span className="text-text-disabled">
+          {t('knowledgeCompilation.ontologyInspect.actionBindingMappingHint', {
+            defaultValue:
+              'Sources: contract.<field>, action.name|description|type, attr.<name>, literal:<json>.',
+          })}
+        </span>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-4">
+        <SwitchRow
+          label={t(
+            'knowledgeCompilation.ontologyInspect.actionBindingEnabled',
+            {
+              defaultValue: 'Enabled',
+            },
+          )}
+          checked={enabled}
+          onChange={setEnabled}
+        />
+        <SwitchRow
+          label={t(
+            'knowledgeCompilation.ontologyInspect.actionBindingReadOnly',
+            {
+              defaultValue: 'Read-only',
+            },
+          )}
+          checked={readOnly}
+          disabled={!riskAck}
+          onChange={setReadOnly}
+        />
+        <SwitchRow
+          label={t(
+            'knowledgeCompilation.ontologyInspect.actionBindingQaCallable',
+            {
+              defaultValue: 'Agent may call it',
+            },
+          )}
+          checked={qaCallable}
+          disabled={!riskAck}
+          onChange={setQaCallable}
+        />
+      </div>
+
+      <label className="flex items-start gap-2 rounded border border-border-button p-2">
+        <Checkbox
+          className="mt-0.5 shrink-0"
+          checked={riskAck}
+          onCheckedChange={(next) => setRiskAck(next === true)}
+        />
+        <span className="text-text-secondary">
+          {t('knowledgeCompilation.ontologyInspect.actionBindingRiskAck', {
+            defaultValue:
+              'I understand: letting an agent call this action, or declaring it writable, means it can change a system outside RAGFlow without a person in the loop.',
+          })}
+        </span>
+      </label>
+
+      {binding && !binding.tool_available && (
+        <p className="text-state-error break-all">
+          {binding.tool_check_error ??
+            t('knowledgeCompilation.ontologyInspect.actionToolMissing', {
+              defaultValue: 'tool missing',
+            })}
+        </p>
+      )}
+      {(binding?.missing_required_args?.length ?? 0) > 0 && (
+        <p className="text-state-warning break-all">
+          {t('knowledgeCompilation.ontologyInspect.actionArgsUnmapped', {
+            defaultValue: 'Unmapped required arguments: {{args}}',
+            args: binding?.missing_required_args?.join(', '),
+          })}
+        </p>
+      )}
+
+      <div className="flex items-center gap-2">
+        <Button size="sm" loading={loading} onClick={handleSave}>
+          {t('common.save')}
+        </Button>
+        {binding && (
+          <Button
+            variant="ghost"
+            size="sm"
+            loading={deleting}
+            onClick={() =>
+              deleteBinding({ id: templateId, actionName: action.name })
+            }
+          >
+            {t('common.delete')}
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SwitchRow({
+  label,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center gap-2">
+      <Switch
+        checked={checked}
+        disabled={disabled}
+        onCheckedChange={onChange}
+      />
+      <span className={disabled ? 'text-text-disabled' : 'text-text-secondary'}>
+        {label}
+      </span>
+    </label>
+  );
+}
+
+function CallResult({
+  title,
+  result,
+}: {
+  title: string;
+  result: IActionCallResult;
+}) {
+  return (
+    <div className="rounded border border-border-button p-2 flex flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-text-secondary">{title}</span>
+        <Badge variant="secondary" className={verdictClass(result.verdict)}>
+          {result.verdict}
+        </Badge>
+        <span className="text-text-disabled">{result.status}</span>
+        {typeof result.duration_ms === 'number' && (
+          <span className="text-text-disabled">{`${result.duration_ms} ms`}</span>
+        )}
+      </div>
+      {result.arguments && (
+        <pre className="text-text-secondary whitespace-pre-wrap break-all">
+          {JSON.stringify(result.arguments, null, 2)}
+        </pre>
+      )}
+      {result.error && <p className="text-state-error">{result.error}</p>}
+      {result.output && (
+        <pre className="text-text-primary whitespace-pre-wrap break-all">
+          {result.output}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Every attempt at every action of this model, refused ones included.
+ *
+ * The argument column shows *names only*: the server already stores keys without
+ * values, and this table must not become the place someone widens that. What was
+ * sent is an audit question; what it contained is a disclosure.
+ */
+function ActionAuditTable({
+  executions,
+  total,
+  page,
+  onPage,
+}: {
+  executions: IActionExecution[];
+  total: number;
+  page: number;
+  onPage: (next: number) => void;
+}) {
+  const { t } = useTranslation();
+  const pageSize = 20;
+  const pages = Math.max(1, Math.ceil(total / pageSize));
+
+  return (
+    <div className="mt-2 flex min-h-0 flex-1 flex-col gap-2 overflow-auto text-xs">
+      <div className="flex items-center gap-2">
+        <span className="text-text-secondary">
+          {t('knowledgeCompilation.ontologyInspect.actionAuditIntro', {
+            defaultValue:
+              'Every attempt, including the ones the gates refused. A refusal is a fact about the model or the binding.',
+          })}
+        </span>
+        <span className="ml-auto flex items-center gap-2 text-text-secondary">
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={page <= 1}
+            onClick={() => onPage(page - 1)}
+          >
+            {t('common.prev')}
+          </Button>
+          <span>{`${page} / ${pages}`}</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={page >= pages}
+            onClick={() => onPage(page + 1)}
+          >
+            {t('common.next')}
+          </Button>
+        </span>
+      </div>
+
+      {executions.length === 0 ? (
+        <span className="text-text-disabled">
+          {t('knowledgeCompilation.ontologyInspect.actionAuditEmptyAll', {
+            defaultValue: 'No attempt has been made on this model yet.',
+          })}
+        </span>
+      ) : (
+        executions.map((row) => (
+          <details
+            key={row.id}
+            className="rounded border border-border-button p-2"
+          >
+            <summary className="flex flex-wrap items-center gap-2 cursor-pointer">
+              <span className="text-text-primary">{row.action_name}</span>
+              <span className="text-text-secondary">{row.mode}</span>
+              <span className={verdictClass(row.verdict)}>{row.verdict}</span>
+              <span className="text-text-secondary">{row.status}</span>
+              <span className="text-text-disabled">{row.mcp_tool}</span>
+              {row.create_time ? (
+                <span className="ml-auto text-text-disabled">
+                  {new Date(row.create_time).toLocaleString()}
+                </span>
+              ) : null}
+            </summary>
+
+            <div className="mt-1 flex flex-col gap-1">
+              <span className="text-text-disabled">
+                {t('knowledgeCompilation.ontologyInspect.actionAuditArgs', {
+                  args: Object.keys(row.request_arg ?? {}).join(', ') || '—',
+                  defaultValue: 'Arguments (names only): {{args}}',
+                })}
+              </span>
+              {row.confirmed_by && (
+                <span className="text-text-secondary">
+                  {t(
+                    'knowledgeCompilation.ontologyInspect.actionAuditConfirmed',
+                    {
+                      by: row.confirmed_by,
+                      defaultValue: 'Confirmed by {{by}}',
+                    },
+                  )}
+                </span>
+              )}
+              {row.error && <p className="text-state-error">{row.error}</p>}
+              {row.response_excerpt && (
+                <pre className="whitespace-pre-wrap break-all text-text-secondary">
+                  {row.response_excerpt}
+                </pre>
+              )}
+            </div>
+          </details>
+        ))
+      )}
+    </div>
+  );
+}

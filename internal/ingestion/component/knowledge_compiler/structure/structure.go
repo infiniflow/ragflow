@@ -202,6 +202,15 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 			textByID := batchTextByID(batch)
 			var nodeEvidence, edgeEvidence EvidenceGateStats
 			nodes, nodeEvidence = GateEvidence(nodes, textByID, gateMode)
+			// D15 runs after the gate because it needs the field's verbatim quote,
+			// and the gate is what proves that quote exists in the source. It has
+			// to run before the row is built: a value that names the executor must
+			// never reach a row where a reader could mistake it for a permission.
+			if cleared := ClearPerformerAuthorizations(nodes, textByID); cleared > 0 {
+				runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
+					"%s-template: batch %d/%d d15 cleared %d authorization value(s) that named the performer",
+					compileType, i+1, len(batches), cleared))
+			}
 			if len(edges) > 0 {
 				if RelationExpectsEvidence(parserConfig) {
 					edges, edgeEvidence = GateEvidence(edges, textByID, gateMode)

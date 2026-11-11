@@ -37,6 +37,10 @@ export const OntologyClassKeys = [
   'parent',
   'aliases',
   'rule',
+  // Which contract fields an action class requires. A "|"-separated list, like
+  // `aliases`: every value in a class field is a string, and the service reads
+  // the same form the input edits.
+  'contract',
 ] as const;
 
 /**
@@ -526,17 +530,3 @@ export const validateDraft = (draft: OntologyDraft): OntologyIssue[] => {
 
   return issues;
 };
-
-/** The property fields that mention a class as domain — what an edge means. */
-export const propertiesBetween = (
-  draft: OntologyDraft,
-  source: string,
-  target: string,
-): OntologyField[] =>
-  draft.properties.filter(
-    (field) =>
-      splitTypeList(field.domain).includes(source) &&
-      (effectiveKind(field, classNames(draft)) === OntologyKind.Object
-        ? splitTypeList(field.range).includes(target)
-        : false),
-  );

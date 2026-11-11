@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/ontology/contract"
 
 	"gorm.io/gorm"
 )
@@ -132,6 +133,7 @@ var compiledSelectFields = []string{
 	// attributes at all — the doc rows keep them and the dataset rows, which is
 	// what the instance views read by default, lose every value.
 	"attr",
+	"contract",
 	"create_timestamp_flt", "create_time",
 	"compilation_template_kind_kwd", "compilation_template_ids",
 	// The product kind discriminator for structure/tree: the component stores it
@@ -409,6 +411,12 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 	}
 	if attrs := chunkJSONObject(c["attr"]); len(attrs) > 0 {
 		meta["attr"] = attrs
+	}
+	// The contract survives the doc→dataset round-trip for the same reason the
+	// attributes do: the folded dataset row is the instance, and a reader at
+	// dataset scope must see the same six fields as the doc row.
+	if action := contract.ParseActionContract(c["contract"]); !action.IsEmpty() {
+		meta["contract"] = action
 	}
 	if v, ok := c["from_entity_kwd"].(string); ok && v != "" {
 		meta["from"] = v

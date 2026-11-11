@@ -306,6 +306,12 @@ func autoMigrateModels() []interface{} {
 		// library answers "what breaks if I change this" from this table, so it
 		// is created here and backfilled once from parser_config.
 		&entity.DatasetModelRef{},
+		// Action execution: the tool mapping and the audit trail. Kept out of the
+		// engine because neither is derived from the corpus — a recompile must not
+		// be able to rewrite which tool runs an action, and an audit row must
+		// outlive the row it talks about.
+		&entity.OntologyActionBinding{},
+		&entity.OntologyActionExecution{},
 	}
 	dataModels = append(dataModels, permissionDataModelsEE()...)
 	dataModels = append(dataModels, billingDataModelsEE()...)
@@ -607,6 +613,11 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 		&entity.CompilationTemplateGroup{},
 		&entity.CompilationTemplateVersion{},
 		&entity.KnowledgeCompileDataset{},
+		// A binding is written by the operator API and read by the agent at call
+		// time; an execution row is written on every attempt including refusals.
+		// Both are queried by a server started without --migrate.
+		&entity.OntologyActionBinding{},
+		&entity.OntologyActionExecution{},
 	}
 	for _, m := range goRuntimeModels {
 		if err := autoMigrateSafely(ctx, db, m); err != nil {

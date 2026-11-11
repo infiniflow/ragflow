@@ -213,6 +213,77 @@ func TestValidateOntologyTemplateAliasesAndAcceptanceRules(t *testing.T) {
 	}
 }
 
+// An action class narrows the contract output to the fields this model's actions
+// actually need. The compiler filters the declaration against the fixed six and
+// drops what it does not recognise, so an unrecognised name is only survivable
+// if it is refused at save time: a silently narrowed contract asks the model for
+// less, and "never asked" is indistinguishable from "not stated in the source".
+func TestValidateOntologyTemplateContractDeclaration(t *testing.T) {
+	build := func(action map[string]interface{}) map[string]interface{} {
+		return map[string]interface{}{
+			"kind": "ontology",
+			"entity": map[string]interface{}{"fields": []interface{}{
+				map[string]interface{}{"type": "person"},
+				action,
+			}},
+			"relation": map[string]interface{}{"fields": []interface{}{}},
+		}
+	}
+
+	for _, declared := range []interface{}{
+		"authorization|audit_required",
+		[]interface{}{"authorization", "follow_ups"},
+		"authorization|authorization", // duplicate collapses to one declaration
+		"",                            // nothing declared reads as all six
+	} {
+		if err := validateOntologyTemplate(build(map[string]interface{}{
+			"type": "action", "contract": declared,
+		})); err != nil {
+			t.Fatalf("declaration %#v rejected: %v", declared, err)
+		}
+	}
+
+	// `type` matching is case-insensitive everywhere else, so it is here too.
+	if err := validateOntologyTemplate(build(map[string]interface{}{
+		"type": " Action ", "contract": "authorization",
+	})); err != nil {
+		t.Fatalf("padded/cased action class rejected: %v", err)
+	}
+
+	err := validateOntologyTemplate(build(map[string]interface{}{
+		"type": "action", "contract": "authorization|authorisation",
+	}))
+	if err == nil || !strings.Contains(err.Error(), `"authorisation"`) {
+		t.Fatalf("unknown contract field not rejected: err = %v", err)
+	}
+	if err != nil && !strings.Contains(err.Error(), "authorization, preconditions") {
+		t.Fatalf("error should list the allowed fields: %v", err)
+	}
+
+	// Authorization is not narrowable: without it the action can never be allowed,
+	// so a declaration that drops it is refused rather than silently widened. The
+	// canvas keeps the box ticked, so this only reaches hand-written templates.
+	err = validateOntologyTemplate(build(map[string]interface{}{
+		"type": "action", "contract": "audit_required|follow_ups",
+	}))
+	if err == nil || !strings.Contains(err.Error(), "which is always asked") {
+		t.Fatalf("declaration without authorization not rejected: err = %v", err)
+	}
+
+	// The contract is read off the action class alone; declaring it elsewhere
+	// would be silently ignored at compile time.
+	err = validateOntologyTemplate(map[string]interface{}{
+		"kind": "ontology",
+		"entity": map[string]interface{}{"fields": []interface{}{
+			map[string]interface{}{"type": "person", "contract": "authorization"},
+		}},
+		"relation": map[string]interface{}{"fields": []interface{}{}},
+	})
+	if err == nil || !strings.Contains(err.Error(), `only the "action" class`) {
+		t.Fatalf("contract on a non-action class not rejected: err = %v", err)
+	}
+}
+
 func TestValidateTemplatePayloadCountsTextLimitsByRune(t *testing.T) {
 	valid := map[string]interface{}{
 		"name":        "模板",

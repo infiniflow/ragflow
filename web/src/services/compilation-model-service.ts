@@ -96,3 +96,86 @@ export const reviewAssertions = (
   id: string,
   data: IAssertionReviewRequestBody,
 ) => request.post(api.assertionReview(id), data);
+
+/**
+ * The model's compiled actions with contract, binding and verdict.
+ *
+ * One request for the three, because the workbench shows them in one row and
+ * fetching them apart would let the row's cells disagree on screen.
+ */
+export const listModelActions = (id: string) =>
+  request.get(api.compilationModelActions(id));
+
+/**
+ * Edits one action's contract.
+ *
+ * `reason` is required by the server: a contract edit changes what the system may
+ * do, so the audit trail records why, not only what.
+ */
+export const updateActionContract = (
+  id: string,
+  actionId: string,
+  data: {
+    contract?: Record<string, unknown>;
+    description?: string;
+    reason: string;
+  },
+  params?: { dataset_id?: string },
+) => request.patch(api.compilationModelAction(id, actionId), data, { params });
+
+export const listActionBindings = (id: string) =>
+  request.get(api.compilationModelActionBindings(id));
+
+export const saveActionBinding = (
+  id: string,
+  actionName: string,
+  data: {
+    mcp_server: string;
+    mcp_tool: string;
+    arg_mapping?: Record<string, string>;
+    read_only?: boolean;
+    enabled?: boolean;
+    qa_callable?: boolean;
+    /** Required when the binding becomes agent-callable or is declared writable. */
+    risk_ack?: boolean;
+    note?: string;
+    dataset_id?: string;
+  },
+) => request.put(api.compilationModelActionBinding(id, actionName), data);
+
+export const deleteActionBinding = (id: string, actionName: string) =>
+  request.delete(api.compilationModelActionBinding(id, actionName));
+
+/** Reports the verdict and the exact arguments without calling anything. */
+export const dryRunAction = (
+  id: string,
+  actionName: string,
+  data: { arguments?: Record<string, unknown> } = {},
+) => request.post(api.compilationModelActionDryRun(id, actionName), data);
+
+/**
+ * Runs one action.
+ *
+ * The server decides: this call may come back with `executed: false` and the
+ * reasons, which is a normal answer rather than an error to retry.
+ */
+export const executeAction = (
+  id: string,
+  actionName: string,
+  data: { arguments?: Record<string, unknown>; reason: string },
+) => request.post(api.compilationModelActionExecute(id, actionName), data);
+
+export const listActionExecutions = (
+  id: string,
+  params?: { page?: number; page_size?: number },
+) => request.get(api.compilationModelActionExecutions(id), { params });
+
+/**
+ * Stamps the contract columns on action rows compiled before they existed.
+ *
+ * Idempotent by design, which is why it is a button and not a one-off script:
+ * running it twice does nothing, and running it once is not a migration someone
+ * has to remember to apply to a database by hand.
+ */
+export const backfillActionContracts = (id: string) =>
+  request.post(api.compilationModelActionBackfill(id), {});

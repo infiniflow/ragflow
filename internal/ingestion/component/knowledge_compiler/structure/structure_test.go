@@ -13,6 +13,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/ontology/contract"
 )
 
 // ---- mocks ----
@@ -1792,5 +1793,77 @@ func TestStructureBatchCap(t *testing.T) {
 				t.Fatalf("structureBatchCap() = %d, want %d (env=%q)", got, c.want, c.set)
 			}
 		})
+	}
+}
+
+// The declaration a template makes is recorded on the row it compiles. It has to
+// be: everything that judges the row later (review queue, workbench, agent tool)
+// reads the row, not the template, and would otherwise call a field the extractor
+// was never asked for "missing".
+func TestBuildRowsRecordsTheContractDeclaration(t *testing.T) {
+	cfg := ontologyParserConfig()
+	cfg["entity"].(map[string]any)["fields"] = append(
+		cfg["entity"].(map[string]any)["fields"].([]any),
+		map[string]any{"type": "action", "contract": "authorization|audit_required"},
+	)
+
+	rows, err := buildRows(context.Background(), common.Deps{Embed: hashEmbedder{dim: 4}}, CompileConfig{
+		TenantID:     "t1",
+		DocID:        "d1",
+		Type:         TypeHypergraph,
+		ParserConfig: cfg,
+	},
+		[]map[string]any{{
+			"type": "action",
+			"name": "freeze account",
+			"contract_quotes": map[string]any{
+				"authorization": "Compliance must approve the freeze.",
+			},
+			"contract": map[string]any{
+				"authorization": map[string]any{
+					"v": "the compliance officer",
+					"q": "Compliance must approve the freeze.",
+				},
+			},
+		}},
+		nil,
+		[]string{"c1"},
+	)
+	if err != nil {
+		t.Fatalf("buildRows: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+	action, ok := rows[0].Meta["contract"].(contract.ActionContract)
+	if !ok {
+		t.Fatalf("contract not recorded: %v", rows[0].Meta["contract"])
+	}
+	if got := strings.Join(action.RequiredFields(), ","); got != "authorization,audit_required" {
+		t.Fatalf("required = %q, want the declared pair", got)
+	}
+	// Only the declared field can be missing: the other four were never asked for.
+	if missing := contract.ContractMissingFields(action); len(missing) != 1 || missing[0] != "audit_required" {
+		t.Fatalf("missing = %v, want [audit_required]", missing)
+	}
+
+	// A template with no action class records no declaration, and the row is judged
+	// against all six — the safe reading.
+	plain := ontologyParserConfig()
+	rows, err = buildRows(context.Background(), common.Deps{Embed: hashEmbedder{dim: 4}}, CompileConfig{
+		TenantID:     "t1",
+		DocID:        "d1",
+		Type:         TypeHypergraph,
+		ParserConfig: plain,
+	},
+		[]map[string]any{{"type": "person", "name": "Ada"}},
+		nil,
+		[]string{"c1"},
+	)
+	if err != nil {
+		t.Fatalf("buildRows: %v", err)
+	}
+	if _, ok := rows[0].Meta["contract"]; ok {
+		t.Fatalf("a non-action entity gained a contract: %v", rows[0].Meta["contract"])
 	}
 }

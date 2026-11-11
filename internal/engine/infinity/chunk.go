@@ -374,6 +374,36 @@ func (e *Engine) ensureReviewColumns(table *infinity.Table) error {
 	return nil
 }
 
+// ensureContractColumns adds the action-contract columns to a table created
+// before they existed (see ensureChunkDataColumn for why an existing table needs
+// this at all). They are one unit: the json column carries the values and the
+// keyword array is a projection of it, so a table with only the json would make
+// "which actions lack authorization" a full scan and a table with only the array
+// would have nothing to show.
+func (e *Engine) ensureContractColumns(table *infinity.Table) error {
+	wanted := []struct{ name, dataType, def string }{
+		{"contract", "json", "{}"},
+		{"contract_missing_kwd", "json", "[]"},
+	}
+	var schema infinity.TableSchema
+	for _, col := range wanted {
+		exists, err := e.columnExists(table, col.name)
+		if err != nil {
+			return fmt.Errorf("failed to check %s column: %w", col.name, err)
+		}
+		if !exists {
+			schema = append(schema, &infinity.ColumnDefinition{Name: col.name, DataType: col.dataType, Default: col.def})
+		}
+	}
+	if len(schema) == 0 {
+		return nil
+	}
+	if _, err := table.AddColumns(schema); err != nil {
+		return fmt.Errorf("failed to add contract columns: %w", err)
+	}
+	return nil
+}
+
 // InsertChunks inserts documents into a dataset table;
 // Table name format: {baseName}_{datasetID}
 // Auto-create the table if it doesn't exist
@@ -483,6 +513,14 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 	if !columns["review_status_kwd"] {
 		if err := e.ensureReviewColumns(table); err != nil {
 			common.Warn("Failed to add review columns", zap.Error(err))
+		}
+	}
+
+	// Same reconciliation for the action contract: a table created before the
+	// column existed rejects the insert of any action row.
+	if !columns["contract"] {
+		if err := e.ensureContractColumns(table); err != nil {
+			common.Warn("Failed to add contract columns", zap.Error(err))
 		}
 	}
 
@@ -713,6 +751,12 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition map[string]interfac
 	if _, ok := clmns["review_status_kwd"]; !ok {
 		if err := e.ensureReviewColumns(table); err != nil {
 			common.Warn("Failed to add review columns", zap.Error(err))
+		}
+	}
+	// A manual contract edit is an update, so the column has to exist here too.
+	if _, ok := clmns["contract"]; !ok {
+		if err := e.ensureContractColumns(table); err != nil {
+			common.Warn("Failed to add contract columns", zap.Error(err))
 		}
 	}
 

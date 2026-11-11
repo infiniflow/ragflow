@@ -291,6 +291,151 @@ export interface IAssertionReviewCounts {
   unreviewed: number;
   accepted: number;
   rejected: number;
+  /**
+   * Contract coverage over actions only. An action with no authorization is the
+   * row that decides whether the action can ever be automated, so it is counted
+   * apart from the generic unreviewed number.
+   */
+  contract_missing_authorization?: number;
+  contract_missing_precondition?: number;
+  /** Unreviewed actions that DO carry an authorization: a bulk accept must skip them. */
+  contract_unreviewed_critical?: number;
+}
+
+/** The three-state judgement of one contract field. */
+export type ActionContractFieldStatus = 'present' | 'missing' | 'explicit_none';
+
+/**
+ * Where a field's value came from.
+ *
+ * `manual` may not be quoted or cited: an operator entered it, no document says
+ * it. The UI has to show the difference, because a value that looks the same on
+ * screen means something different in an answer.
+ */
+export type ActionContractFieldProvenance = 'document' | 'manual' | 'absent';
+
+export type ActionContractFieldName =
+  | 'authorization'
+  | 'preconditions'
+  | 'atomic_effects'
+  | 'follow_ups'
+  | 'failure_policy'
+  | 'audit_required';
+
+export interface IActionContractField {
+  status: ActionContractFieldStatus;
+  value?: unknown;
+  /** The verbatim sentence the value was read from. */
+  quote?: string;
+  provenance: ActionContractFieldProvenance;
+}
+
+export interface IActionContractView {
+  fields: Record<ActionContractFieldName, IActionContractField>;
+  missing: ActionContractFieldName[];
+  /**
+   * The declaration this contract is judged against.
+   *
+   * A template may narrow the contract to the fields its actions actually need,
+   * so this is the denominator of `declared`: a contract asked for two fields and
+   * filled both is complete, not "2/6". `fields` still carries all six — a value
+   * stored before the template narrowed is real and must stay editable.
+   */
+  required: ActionContractFieldName[];
+  declared: number;
+}
+
+/** Contract field order, matching the server. */
+export const ACTION_CONTRACT_FIELD_ORDER: ActionContractFieldName[] = [
+  'authorization',
+  'preconditions',
+  'atomic_effects',
+  'follow_ups',
+  'failure_policy',
+  'audit_required',
+];
+
+/**
+ * The four verdicts, in the order they escalate.
+ *
+ * `confirm` is not a weaker `allow`: it means a human must approve, which is why
+ * the UI renders it as its own state instead of as a soft warning.
+ */
+export type ActionVerdict = 'allow' | 'confirm' | 'manual' | 'refuse';
+
+/** One action with its contract, binding and the verdict computed from both. */
+export interface IModelAction {
+  id: string;
+  name: string;
+  dataset_id: string;
+  description?: string;
+  contract: IActionContractView;
+  verdict: ActionVerdict;
+  /** Why the verdict is what it is. Empty for allow. */
+  verdict_reasons?: string[];
+  binding?: IActionBinding;
+  review_status?: string;
+}
+
+/**
+ * An action's link to the MCP tool that executes it.
+ *
+ * `tool_available` is computed server-side on every read: a tool can disappear
+ * from its server without any write here, so this cannot be a stored flag.
+ */
+export interface IActionBinding {
+  id: string;
+  action_name: string;
+  dataset_id?: string;
+  mcp_server: string;
+  mcp_tool: string;
+  arg_mapping?: Record<string, string>;
+  /** Declared, not assumed: an action is not read-only until someone says so. */
+  read_only: boolean;
+  enabled: boolean;
+  /** Whether an agent turn may call it unattended. */
+  qa_callable: boolean;
+  note?: string;
+  tool_available: boolean;
+  tool_check_error?: string;
+  missing_required_args?: string[];
+  verdict: ActionVerdict;
+  verdict_reasons?: string[];
+}
+
+/** The outcome of a dry run or an execution. */
+export interface IActionCallResult {
+  action_name: string;
+  verdict: ActionVerdict;
+  reasons?: string[];
+  status: string;
+  output?: string;
+  error?: string;
+  duration_ms?: number;
+  /** The exact arguments the mapping produced — what makes a dry run worth reading. */
+  arguments?: Record<string, unknown>;
+}
+
+/** One attempt, including the ones that were refused. */
+export interface IActionExecution {
+  id: string;
+  action_name: string;
+  mode: 'query' | 'manual' | string;
+  mcp_tool: string;
+  verdict: string;
+  status: string;
+  request_arg?: Record<string, unknown>;
+  response_excerpt?: string;
+  error?: string;
+  duration_ms: number;
+  operator_id?: string;
+  confirmed_by?: string;
+  create_time?: number;
+}
+
+export interface IActionExecutionList {
+  executions: IActionExecution[];
+  total: number;
 }
 
 /**
@@ -326,6 +471,17 @@ export interface IAssertionReviewItem {
   review_at?: number;
   review_note?: string;
   conflict?: boolean;
+  /**
+   * The judged six-field contract, present only for actions. It is the server's
+   * judgement (status + provenance), not the raw column: "what counts as filled"
+   * is a safety decision, and a second implementation here would be a second
+   * answer to it.
+   */
+  contract_fields?: Record<string, IActionContractField>;
+  /** The required fields without a value, judged against `contract_required`. */
+  contract_missing?: string[];
+  /** The declaration the contract was judged against: the fields actually owed. */
+  contract_required?: ActionContractFieldName[];
   /** The rows this one disagrees with, by name. */
   conflict_targets?: string[];
   /** What the disagreement is about, e.g. a class admitted by one side only. */

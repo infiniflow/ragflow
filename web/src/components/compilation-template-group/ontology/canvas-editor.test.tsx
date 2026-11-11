@@ -169,6 +169,26 @@ describe('OntologyCanvasEditor', () => {
     ).toBeTruthy();
   });
 
+  // A node is drawn as an HTML card inside a foreignObject, not as hand-placed
+  // SVG <text>: the card carries the title, the identifier and one row per
+  // attribute, and each of those has to be real text a reader can select. The
+  // link handle stays in SVG and outside the card, because its position is what
+  // the connectors are routed against.
+  it('draws each class as an HTML card with its attributes', () => {
+    renderEditor();
+
+    const person = screen.getByTestId('ontology-node-person');
+    const card = person.querySelector('foreignObject');
+    expect(card).toBeTruthy();
+    // Title and identifier are both in the card, so the node is readable without
+    // hovering anything.
+    expect(card?.textContent).toContain('person');
+
+    const handle = screen.getByTestId('ontology-link-handle-person');
+    expect(handle.tagName.toLowerCase()).toBe('circle');
+    expect(card?.contains(handle)).toBe(false);
+  });
+
   // The one thing the canvas must never get wrong: what it writes is the
   // template's own field shape, in the template's own key order.
   it('writes an added class in the template field shape', () => {
@@ -595,13 +615,14 @@ describe('OntologyCanvasEditor', () => {
     expect(Number(label.getAttribute('y'))).toBeLessThan(40);
   });
 
-  // The panel is a form, not a legend: it starts 50% wider than the old sidebar and
-  // the reader can trade canvas for it. The divider is a control, so it also works
-  // from the keyboard and resets on a double click.
+  // The panel is a form, not a legend: it starts at the third column's width in the
+  // visual spec (260 / 1fr / 320) and the reader can trade canvas for it. The
+  // divider is a control, so it also works from the keyboard and resets on a
+  // double click.
   it('resizes the panel from the divider', () => {
     renderEditor();
     const panel = screen.getByTestId('ontology-detail-panel');
-    expect(panel.style.width).toBe('432px');
+    expect(panel.style.width).toBe('320px');
 
     const divider = screen.getByTestId('ontology-panel-resizer');
     // Mouse events, not pointer events: jsdom has no `PointerEvent` constructor, so
@@ -611,20 +632,20 @@ describe('OntologyCanvasEditor', () => {
     fireEvent.mouseMove(divider, { clientX: 940 });
     fireEvent.mouseUp(divider);
     // Dragging the divider left widens the panel.
-    expect(panel.style.width).toBe('492px');
+    expect(panel.style.width).toBe('380px');
 
     fireEvent.keyDown(divider, { key: 'ArrowRight' });
-    expect(panel.style.width).toBe('476px');
+    expect(panel.style.width).toBe('364px');
     fireEvent.keyDown(divider, { key: 'ArrowLeft' });
-    expect(panel.style.width).toBe('492px');
+    expect(panel.style.width).toBe('380px');
 
     fireEvent.doubleClick(divider);
-    expect(panel.style.width).toBe('432px');
+    expect(panel.style.width).toBe('320px');
   });
 
   // Neither end can be squeezed away: the panel keeps its minimum, and the canvas
   // keeps `MinCanvasWidth`. The mock reports a 900px canvas, so the ceiling is
-  // 432 + 900 - 280 = 1052.
+  // 320 + 900 - 280 = 940.
   it('keeps both the panel and the canvas usable', () => {
     renderEditor();
     const panel = screen.getByTestId('ontology-detail-panel');
@@ -668,6 +689,66 @@ describe('OntologyCanvasEditor', () => {
 
     const sections = fieldsOf(form, 'relation');
     expect(sections.fields[0].domain).toBe('human');
+  });
+
+  // The declaration is the only thing that narrows what the model is asked for,
+  // so the panel has to write it in the form the service reads: a "|"-separated
+  // list on the action class. Nothing ticked reads as "all six", which is why the
+  // first untick materialises that default before removing an entry.
+  it('narrows the action class contract through the panel', () => {
+    const form = renderEditorWith((values) => {
+      values.templates[0].config.entity.fields.push({
+        type: 'action',
+        label: 'Action',
+        description: 'Something that may be executed.',
+        parent: '',
+        rule: '',
+        contract: '',
+      });
+    });
+    const contractOf = () =>
+      fieldsOf(form, 'entity').fields.find(
+        (field: any) => field.type === 'action',
+      ).contract;
+
+    // The contract belongs to the action class alone; no other class offers it.
+    fireEvent.click(screen.getByTestId('ontology-node-person'));
+    expect(screen.queryByTestId('ontology-class-contract')).toBeNull();
+
+    fireEvent.click(screen.getByTestId('ontology-node-action'));
+    expect(screen.getByTestId('ontology-class-contract')).toBeTruthy();
+
+    // Authorization is not narrowable: it decides whether the action may run, and
+    // a field the extractor was never asked for cannot be stated by the document.
+    expect(
+      (
+        screen.getByTestId(
+          'ontology-contract-field-authorization',
+        ) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+
+    fireEvent.click(
+      screen.getByTestId('ontology-contract-field-audit_required'),
+    );
+    expect(contractOf()).toBe(
+      'authorization|preconditions|atomic_effects|follow_ups|failure_policy',
+    );
+
+    fireEvent.click(
+      screen.getByTestId('ontology-contract-field-preconditions'),
+    );
+    expect(contractOf()).toBe(
+      'authorization|atomic_effects|follow_ups|failure_policy',
+    );
+
+    // Ticking one back appends it, so the declaration stays a plain list.
+    fireEvent.click(
+      screen.getByTestId('ontology-contract-field-audit_required'),
+    );
+    expect(contractOf()).toBe(
+      'authorization|atomic_effects|follow_ups|failure_policy|audit_required',
+    );
   });
 
   it('reports what the backend would reject', () => {

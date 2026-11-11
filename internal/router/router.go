@@ -654,6 +654,23 @@ func (r *Router) Setup(engine *gin.Engine) {
 			v1.GET("/compilation-models/:template_id/assertions/review", r.compilationModelHandler.AssertionReviewQueue)
 			v1.POST("/compilation-models/:template_id/assertions/review", r.compilationModelHandler.DecideAssertions)
 
+			// Actions: the contract an action must state, the tool that executes
+			// it, and the audit of every attempt. Reads are member-level because
+			// an analyst has to be able to see why an action is not runnable;
+			// every write is admin-level, since a contract decides what the
+			// system may do and a binding decides which system does it.
+			v1.GET("/compilation-models/:template_id/actions", r.compilationModelHandler.ListActions)
+			v1.PATCH("/compilation-models/:template_id/actions/:action_id", r.compilationModelHandler.UpdateAction)
+			v1.POST("/compilation-models/:template_id/actions/:action_name/dry-run", r.compilationModelHandler.DryRunAction)
+			v1.POST("/compilation-models/:template_id/actions/:action_name/execute", r.compilationModelHandler.ExecuteAction)
+			v1.GET("/compilation-models/:template_id/action-bindings", r.compilationModelHandler.ListBindings)
+			v1.PUT("/compilation-models/:template_id/action-bindings/:action_name", r.compilationModelHandler.SaveBinding)
+			v1.DELETE("/compilation-models/:template_id/action-bindings/:action_name", r.compilationModelHandler.DeleteBinding)
+			v1.GET("/compilation-models/:template_id/action-executions", r.compilationModelHandler.ListExecutions)
+			// Stamps the contract columns on rows compiled before they existed.
+			// Idempotent, so it is a button rather than a script.
+			v1.POST("/compilation-models/:template_id/actions/backfill", r.compilationModelHandler.BackfillActions)
+
 			connectors := v1.Group("/connectors")
 			{
 				connectors.GET("", r.connectorHandler.ListConnectors)

@@ -39,11 +39,16 @@ import (
 // the half that has to survive an edit.
 type CompilationModelHandler struct {
 	governance *service.CompilationTemplateGovernanceService
+	// actions serves the action half of the same model: its contract, its tool
+	// binding and its audit trail. It lives on this handler because everything it
+	// answers is scoped to one model's :template_id, and splitting it would mean
+	// two handlers resolving the same tenant for the same resource.
+	actions *service.ActionBindingService
 }
 
 // NewCompilationModelHandler creates a CompilationModelHandler.
 func NewCompilationModelHandler(svc *service.CompilationTemplateGovernanceService) *CompilationModelHandler {
-	return &CompilationModelHandler{governance: svc}
+	return &CompilationModelHandler{governance: svc, actions: service.NewActionBindingService()}
 }
 
 // List returns the tenant's models with their published version, lifecycle

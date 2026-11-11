@@ -11,6 +11,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	"ragflow/internal/ontology/contract"
 
 	"gorm.io/gorm"
 )
@@ -87,6 +88,15 @@ type ModelAssertionReviewCounts struct {
 	Unreviewed int `json:"unreviewed"`
 	Accepted   int `json:"accepted"`
 	Rejected   int `json:"rejected"`
+	// Contract coverage, counted over actions only. Authorization decides whether
+	// an action can ever run unattended, so "how many actions have no
+	// authorization" is the number a reviewer acts on first — it is the queue's
+	// default order for that reason.
+	ContractMissingAuthorization int `json:"contract_missing_authorization"`
+	ContractMissingPrecondition  int `json:"contract_missing_precondition"`
+	// ContractUnreviewedCritical counts actions that are still unreviewed AND
+	// carry an authorization statement: the rows a bulk accept must not touch.
+	ContractUnreviewedCritical int `json:"contract_unreviewed_critical"`
 }
 
 // ModelAssertionReviewItem is one compiled assertion as the queue reports it.
@@ -120,6 +130,30 @@ type ModelAssertionReviewItem struct {
 	Conflict        bool                     `json:"conflict,omitempty"`
 	ConflictTargets []string                 `json:"conflict_targets,omitempty"`
 	ConflictTypes   []string                 `json:"conflict_types,omitempty"`
+	// ContractFields is the six-field contract of an action row, judged
+	// (present/missing/explicit_none) with its provenance. Nil for every row that
+	// is not an action, which is what lets the card show the contract block only
+	// where it means something.
+	//
+	// The queue reports the *judged* view rather than the raw column so the UI
+	// never has to decide what "missing" means: that judgement is the whole point
+	// of the contract layer, and a second implementation of it in TypeScript
+	// would be a second answer to a safety question.
+	ContractFields map[string]ModelAssertionContractField `json:"contract_fields,omitempty"`
+	// ContractMissing lists the required fields without a value, and
+	// ContractRequired is the declaration they were judged against: a model that
+	// narrowed its contract owes fewer fields, and the card must not report the
+	// rest as missing.
+	ContractMissing  []string `json:"contract_missing,omitempty"`
+	ContractRequired []string `json:"contract_required,omitempty"`
+}
+
+// ModelAssertionContractField is one contract field in a review item.
+type ModelAssertionContractField struct {
+	Status     string `json:"status"`
+	Value      any    `json:"value,omitempty"`
+	Quote      string `json:"quote,omitempty"`
+	Provenance string `json:"provenance"`
 }
 
 // ModelAssertionReviewQueue is the review worklist of one model.
@@ -400,10 +434,13 @@ func (s *CompilationTemplateGovernanceService) DecideAssertions(ctx context.Cont
 		return keys[i].note < keys[j].note
 	})
 
+	// "Bulk" is a property of the request, not of one update group: two actions in
+	// two datasets are still two decisions made in one click.
+	bulk := len(in.Items) > 1
 	for _, key := range keys {
 		ids := updates[key]
 		templateIDs := []string{template.ID}
-		found, _, err := reviewSearch(ctx, in.TenantID, []string{key.datasetID}, []string{"id"},
+		found, _, err := reviewSearch(ctx, in.TenantID, []string{key.datasetID}, []string{"id", "contract"},
 			map[string]interface{}{
 				"id":                       ids,
 				"compilation_template_ids": templateIDs,
@@ -413,14 +450,33 @@ func (s *CompilationTemplateGovernanceService) DecideAssertions(ctx context.Cont
 			return nil, err
 		}
 		verified := map[string]bool{}
+		needsIndividualReview := map[string]bool{}
 		for _, row := range found {
-			verified[strings.TrimSpace(firstStringValue(row["id"]))] = true
+			rowID := strings.TrimSpace(firstStringValue(row["id"]))
+			verified[rowID] = true
+			if key.action != AssertionReviewAccepted {
+				continue
+			}
+			// A bulk accept must not decide an authorization on the reviewer's
+			// behalf: "is this who may approve, or who merely carries the step
+			// out" is the judgement only a human can make, and it is exactly the
+			// judgement a batch skips. Single-row accepts still go through, which
+			// is the whole point — the reviewer has to look at that one row.
+			if action := contract.ParseActionContract(row["contract"]); action.Provenance(contract.AuthorizationField) == contract.ContractProvenanceDocument {
+				needsIndividualReview[rowID] = true
+			}
 		}
 		applicable := make([]string, 0, len(ids))
 		for _, id := range ids {
 			if !verified[id] {
 				result.Failed = append(result.Failed, ModelAssertionReviewFailure{
 					ID: id, Reason: "row is not a compiled assertion of this model",
+				})
+				continue
+			}
+			if bulk && needsIndividualReview[id] {
+				result.Failed = append(result.Failed, ModelAssertionReviewFailure{
+					ID: id, Reason: "authorization requires individual review: read the quoted sentence before accepting",
 				})
 				continue
 			}
@@ -519,7 +575,59 @@ func reviewCounts(ctx context.Context, tenantID, templateID string, datasetIDs [
 		}
 		*bucket.into = int(total)
 	}
+
+	// Contract coverage, counted over actions only. The "missing" counts ride on
+	// contract_missing_kwd, which is why that projection column exists: the
+	// alternative is loading every action row and parsing its json.
+	//
+	// Rows written before the column existed carry neither column and are
+	// therefore not counted here. They also cannot be executed (an empty contract
+	// reads as all-missing), so the error only understates how much backfill is
+	// owed — it never overstates coverage.
+	missingAuthorization, err := reviewActionCount(ctx, tenantID, templateID, datasetIDs, AssertionReviewAll, contract.AuthorizationField)
+	if err != nil {
+		return counts, err
+	}
+	counts.ContractMissingAuthorization = missingAuthorization
+	if counts.ContractMissingPrecondition, err = reviewActionCount(ctx, tenantID, templateID, datasetIDs, AssertionReviewAll, "preconditions"); err != nil {
+		return counts, err
+	}
+	unreviewedActions, err := reviewActionCount(ctx, tenantID, templateID, datasetIDs, AssertionReviewUnreviewed, "")
+	if err != nil {
+		return counts, err
+	}
+	unreviewedMissingAuthorization, err := reviewActionCount(ctx, tenantID, templateID, datasetIDs, AssertionReviewUnreviewed, contract.AuthorizationField)
+	if err != nil {
+		return counts, err
+	}
+	counts.ContractUnreviewedCritical = unreviewedActions - unreviewedMissingAuthorization
+	if counts.ContractUnreviewedCritical < 0 {
+		counts.ContractUnreviewedCritical = 0
+	}
 	return counts, nil
+}
+
+// reviewActionCount counts action rows in one review bucket, optionally narrowed
+// to the rows whose contract lacks field.
+//
+// field == "" means "every action", which is how the critical count avoids a
+// filter that would need to express "has a contract column at all" — an
+// expression the two engines spell differently.
+func reviewActionCount(ctx context.Context, tenantID, templateID string, datasetIDs []string, status AssertionReviewStatus, field string) (int, error) {
+	filter := map[string]interface{}{
+		"compilation_template_ids": []string{templateID},
+		"knowledge_graph_kwd":      []string{"entity"},
+		"entity_type_kwd":          []string{contract.ActionClassType},
+	}
+	applyReviewStatusFilter(filter, status)
+	if field != "" {
+		filter["contract_missing_kwd"] = []string{field}
+	}
+	_, total, err := reviewSearch(ctx, tenantID, datasetIDs, []string{"id"}, filter, nil, 0, 1)
+	if err != nil {
+		return 0, err
+	}
+	return int(total), nil
 }
 
 // applyReviewStatusFilter narrows a filter to one review bucket.
@@ -623,7 +731,31 @@ func reviewItemFromEntity(node StructureGraphNode) ModelAssertionReviewItem {
 	}
 	item.Conflict, _ = node["conflict"].(bool)
 	item.ConflictTypes = stringSliceValue(node["conflict_types"])
+	item.ContractFields, item.ContractMissing, item.ContractRequired = reviewContractView(node)
 	return item
+}
+
+// reviewContractView projects an action's contract for the review card.
+//
+// Nil for rows that are not actions: the card renders the contract block only
+// where a contract exists, so an ordinary entity is not buried under six
+// "document does not specify it" lines that do not apply to it.
+func reviewContractView(node map[string]interface{}) (map[string]ModelAssertionContractField, []string, []string) {
+	action, ok := node["contract"].(contract.ActionContract)
+	if !ok || action.IsEmpty() {
+		return nil, nil, nil
+	}
+	view := action.View()
+	out := make(map[string]ModelAssertionContractField, len(view.Fields))
+	for name, field := range view.Fields {
+		out[name] = ModelAssertionContractField{
+			Status:     string(field.Status),
+			Value:      field.Value,
+			Quote:      field.Quote,
+			Provenance: string(field.Provenance),
+		}
+	}
+	return out, view.Missing, view.Required
 }
 
 func reviewItemFromRelation(node StructureGraphRelation) ModelAssertionReviewItem {
@@ -661,6 +793,13 @@ func reviewItemFromRelation(node StructureGraphRelation) ModelAssertionReviewIte
 func sortReviewItems(items []ModelAssertionReviewItem) {
 	sort.SliceStable(items, func(i, j int) bool {
 		a, b := items[i], items[j]
+		// Contract urgency comes first. Review capacity is the scarce resource, and
+		// an action with no authorization is the row that decides whether that
+		// action can ever be automated, so it outranks everything else on the page.
+		leftRank, rightRank := reviewContractRank(a), reviewContractRank(b)
+		if leftRank != rightRank {
+			return leftRank < rightRank
+		}
 		if a.Conflict != b.Conflict {
 			return a.Conflict
 		}
@@ -676,6 +815,21 @@ func sortReviewItems(items []ModelAssertionReviewItem) {
 		}
 		return a.ID < b.ID
 	})
+}
+
+// reviewContractRank orders the queue by what an action's contract still lacks:
+// 0 no authorization, 1 no preconditions, 2 everything else.
+func reviewContractRank(item ModelAssertionReviewItem) int {
+	if item.ContractFields == nil {
+		return 2
+	}
+	if field, ok := item.ContractFields[contract.AuthorizationField]; ok && field.Status == string(contract.ContractStatusMissing) {
+		return 0
+	}
+	if field, ok := item.ContractFields["preconditions"]; ok && field.Status == string(contract.ContractStatusMissing) {
+		return 1
+	}
+	return 2
 }
 
 func reviewItemSortKey(item ModelAssertionReviewItem) string {

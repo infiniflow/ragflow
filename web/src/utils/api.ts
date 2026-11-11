@@ -462,6 +462,25 @@ const apiEndpoints = {
   // write to the rows the read just listed, not a separate resource.
   assertionReview: (id: string) =>
     `${restAPIv1}/compilation-models/${id}/assertions/review`,
+  // Actions: the compiled actions of a model, their tool bindings, and the
+  // audit of every attempt. The contract edit is a PATCH on one action row
+  // because it changes that row and nothing else.
+  compilationModelActions: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/actions`,
+  compilationModelAction: (id: string, actionId: string) =>
+    `${restAPIv1}/compilation-models/${id}/actions/${actionId}`,
+  compilationModelActionDryRun: (id: string, actionName: string) =>
+    `${restAPIv1}/compilation-models/${id}/actions/${actionName}/dry-run`,
+  compilationModelActionExecute: (id: string, actionName: string) =>
+    `${restAPIv1}/compilation-models/${id}/actions/${actionName}/execute`,
+  compilationModelActionBindings: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/action-bindings`,
+  compilationModelActionBinding: (id: string, actionName: string) =>
+    `${restAPIv1}/compilation-models/${id}/action-bindings/${actionName}`,
+  compilationModelActionBackfill: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/actions/backfill`,
+  compilationModelActionExecutions: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/action-executions`,
   // One confirmed edit from the compile-quality ledger (ontology.md §2.7).
   compilationTemplateOntologyFix: (id: string) =>
     `${restAPIv1}/compilation-templates/${id}/ontology-fix`,

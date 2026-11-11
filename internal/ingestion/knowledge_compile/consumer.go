@@ -30,6 +30,7 @@ import (
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/ontology/contract"
 	"ragflow/internal/service/file"
 	"ragflow/internal/service/nav"
 
@@ -1944,6 +1945,15 @@ func appendBucket(b *StructureBucket, p kccommon.Product) {
 	// stated. Only the DECLARED attributes reach `attr` (the projection filters
 	// them), so this cannot smuggle model-invented keys into a filterable column.
 	b.Attr = mergeBucketAttrs(b.Attr, chunkJSONObject(p.Meta["attr"]))
+	// A folded action keeps its contract: the dataset row IS the instance, so a
+	// reader at dataset scope must see the same six fields the doc row carried.
+	// Each contributing doc proposes values, and the same quote-only rule decides
+	// which proposal wins.
+	if raw, ok := p.Meta["contract"]; ok {
+		if action, isContract := raw.(contract.ActionContract); isContract {
+			b.Contract = b.Contract.MergeExtracted(action)
+		}
+	}
 	b.SourceDocIDs = common.AppendUnique(b.SourceDocIDs, []string{p.DocID})
 	b.SourceChunkIDs = common.AppendUnique(b.SourceChunkIDs, kccommon.MetaStringSlice(p.Meta, "source_chunk_ids"))
 	// A bucket can fold rows compiled by different model versions (a publish

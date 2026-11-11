@@ -154,6 +154,10 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	// searches narrowed by the same structure under the same model version.
 	ontologyABoxRetrieval := service.NewOntologyABoxRetrievalService(docEngine, documentDAO)
 	agentic_rag.SetOntologyService(service.NewOntologyAdapter(ontologyABoxRetrieval))
+	// The action layer's boundary. The agent reads a contract and asks for
+	// execution; every judgement (contract state, binding switches, the process
+	// switch) happens behind this interface, never in the prompt.
+	agentic_rag.SetActionService(service.NewOntologyActionAdapter(nil))
 	ontologyABoxRetrievalHandler := handler.NewOntologyABoxRetrievalHandler(ontologyABoxRetrieval)
 	systemHandler := handler.NewSystemHandler(systemService)
 	statsHandler := handler.NewStatsHandler(statsService)

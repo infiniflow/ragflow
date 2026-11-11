@@ -318,7 +318,11 @@ func HypergraphPrompts(parserConfig map[string]any, lang string) (nodePrompt, ed
 
 	var entFieldsText, entSkel, relFieldsText, relSkel string
 	if usesTemplateShape {
-		entFieldsText, entSkel = renderTypeFields(entFields, lang, "entity", configOutputFields(entitiesCfg), ontologyAttributeSpecs(parserConfig))
+		// The action contract reaches the prompt only through a template that
+		// declares the action class: the six fields are system-fixed, so a model
+		// without actions must not be told about them (it would invent actions).
+		entityOutputFields := withActionContractFields(configOutputFields(entitiesCfg), entFields)
+		entFieldsText, entSkel = renderTypeFields(entFields, lang, "entity", entityOutputFields, ontologyAttributeSpecs(parserConfig))
 		relFieldsText, relSkel = renderTypeFields(relFields, lang, "relation", configOutputFields(relationsCfg))
 	} else {
 		entFieldsText, entSkel = renderFields(entFields, lang)

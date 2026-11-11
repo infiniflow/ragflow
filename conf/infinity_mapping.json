@@ -64,6 +64,8 @@
 	"review_by_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"review_at_flt": {"type": "float", "default": 0.0},
 	"review_note": {"type": "varchar", "default": ""},
+	"contract": {"type": "json", "default": "{}"},
+	"contract_missing_kwd": {"type": "json", "default": "[]", "index_type": {"type": "secondary", "cardinality": "low"}},
 	"compilation_template_kind_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#", "deprecated": "superseded by compile_kwd; retained only so pre-refactor rows stay readable"},
 	"chunk_hash_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},
 	"input_hash_kwd": {"type": "varchar", "default": "", "analyzer": "whitespace-#"},

@@ -23,6 +23,7 @@ import (
 	"ragflow/internal/ingestion/component/knowledge_compiler/wiki"
 	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/ontology/contract"
 	"ragflow/internal/tokenizer"
 
 	"go.uber.org/zap"
@@ -722,6 +723,21 @@ func applyStructureGraphColumns(doc *schema.ChunkDoc, p common.Product, kind str
 		if v := common.MetaString(p.Meta, "entity_type"); v != "" {
 			if err := doc.SetExtraValue("entity_type_kwd", v); err != nil {
 				return err
+			}
+		}
+		// The execution contract of an action. It is a json column plus a
+		// projection of it: the json holds the six values with their quotes, the
+		// keyword array lists which are unfilled so "which actions lack
+		// authorization" is a filter instead of a scan. They are written together
+		// or not at all — the two are the same data seen twice.
+		if raw, ok := p.Meta["contract"]; ok {
+			if action, isContract := raw.(contract.ActionContract); isContract && !action.IsEmpty() {
+				if err := doc.SetExtraValue("contract", action); err != nil {
+					return err
+				}
+				if err := doc.SetExtraValue("contract_missing_kwd", contract.ContractMissingFields(action)); err != nil {
+					return err
+				}
 			}
 		}
 	}

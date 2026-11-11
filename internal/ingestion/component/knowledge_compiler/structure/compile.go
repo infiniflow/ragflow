@@ -301,6 +301,22 @@ func buildRows(ctx context.Context, deps common.Deps, cfg CompileConfig, nodes, 
 			if desc := strings.TrimSpace(stringOf(s.payload["description"])); desc != "" {
 				meta["description"] = desc
 			}
+			// An action carries the six-field execution contract on top of being
+			// an ordinary entity. It is read here rather than in the row writer
+			// because this is the only place that still has the payload: after
+			// this point a row is JSON content plus resolved columns, and the
+			// contract's per-field quotes would be lost.
+			//
+			// The template's declaration is recorded on the contract here, for the
+			// same reason: after this point nothing knows which fields this model
+			// asked for, and a reader without that answer has to assume all six —
+			// which is how a deliberately narrow contract would read as incomplete.
+			if action, ok := ActionContractFromPayload(s.payload); ok {
+				if declared := actionDeclaredFields(cfg.ParserConfig); len(declared) > 0 {
+					action.SetDeclared(declared)
+				}
+				meta["contract"] = action
+			}
 		} else {
 			from := relationEndpoint(s.payload, srcField, "source", "src", "from")
 			to := relationEndpoint(s.payload, tgtField, "target", "tgt", "to")

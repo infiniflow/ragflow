@@ -22,6 +22,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/ontology/contract"
 )
 
 // Structure-graph query constants.
@@ -36,7 +37,7 @@ const (
 // attribute names, and without the column the ontology's data itself would be
 // unreachable from the UI. Non-ontology rows have no such column, so the cost is
 // paid only where the value exists.
-var graphEntityFields = []string{"id", "content_with_weight", "name_kwd", "entity_type_kwd", "mention_count_int", "source_chunk_ids", "doc_id", "doc_ids_kwd", "source_doc_ids", "attr", "compilation_template_version_int", "scope_kwd", "review_status_kwd", "review_by_kwd", "review_at_flt", "review_note"}
+var graphEntityFields = []string{"id", "content_with_weight", "name_kwd", "entity_type_kwd", "mention_count_int", "source_chunk_ids", "doc_id", "doc_ids_kwd", "source_doc_ids", "attr", "contract", "compilation_template_version_int", "scope_kwd", "review_status_kwd", "review_by_kwd", "review_at_flt", "review_note"}
 var graphRelationFields = []string{"id", "content_with_weight", "from_entity_kwd", "to_entity_kwd", "prop_kwd", "from_type_kwd", "to_type_kwd", "doc_id", "doc_ids_kwd", "source_doc_ids", "source_chunk_ids", "compilation_template_version_int", "scope_kwd", "review_status_kwd", "review_by_kwd", "review_at_flt", "review_note"}
 var graphAllFields = []string{
 	"id", "content_with_weight", "name_kwd", "mention_count_int", "source_chunk_ids",
@@ -221,6 +222,14 @@ func projectEntity(row map[string]interface{}) StructureGraphNode {
 	// value.
 	if attrs := attrValues(row); len(attrs) > 0 {
 		node["attributes"] = attrs
+	}
+	// An action's execution contract. Non-action rows have no such column, and a
+	// row compiled before the column existed reads as "all six missing", which is
+	// the honest answer: nobody extracted one. It stays a typed value here so the
+	// review queue and the instance panel judge it through contract.Status rather
+	// than each re-implementing "what counts as filled".
+	if action := contract.ParseActionContract(row["contract"]); !action.IsEmpty() {
+		node["contract"] = action
 	}
 	return node
 }
@@ -1746,26 +1755,6 @@ func rowTemplateID(row map[string]interface{}) string {
 		}
 	}
 	return ""
-}
-
-func toNodeSlice(in []interface{}) []StructureGraphNode {
-	var out []StructureGraphNode
-	for _, e := range in {
-		if m, ok := e.(map[string]interface{}); ok {
-			out = append(out, StructureGraphNode(m))
-		}
-	}
-	return out
-}
-
-func toRelationSlice(in []interface{}) []StructureGraphRelation {
-	var out []StructureGraphRelation
-	for _, e := range in {
-		if m, ok := e.(map[string]interface{}); ok {
-			out = append(out, StructureGraphRelation(m))
-		}
-	}
-	return out
 }
 
 var graphTextQueryRE = regexp.MustCompile(`[ :|\r\n\t,，。？?/\x60!！&^%()\[\]{}<>*~'"\\=]+`)

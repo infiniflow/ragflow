@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+import { ActionContractBlock } from '@/components/action-contract-block';
 import {
   BulkOperateBar,
   BulkOperateItemType,
@@ -522,6 +523,16 @@ export function OntologyReviewSheet({
               </p>
             )}
 
+            {/* An action's contract is shown on the card, not behind a second
+                click: what a reviewer is accepting is the declared fields, and a
+                missing authorization is the one row that decides whether the
+                action can ever run unattended. */}
+            <ActionContractBlock
+              fields={item.contract_fields}
+              missing={item.contract_missing}
+              required={item.contract_required}
+            />
+
             {failure && <p className="text-state-error">{failure}</p>}
           </button>
 
@@ -611,6 +622,18 @@ export function OntologyReviewSheet({
                   defaultValue:
                     '{{unreviewed}} unreviewed · {{conflicts}} conflict(s) on this page',
                 })}
+                {(queue.counts.contract_missing_authorization ?? 0) > 0 && (
+                  <span className="ml-2 text-state-warning">
+                    {t(
+                      'knowledgeCompilation.ontologyInspect.actionContractMissingAuth',
+                      {
+                        count: queue.counts.contract_missing_authorization,
+                        defaultValue:
+                          '{{count}} action(s) without authorization',
+                      },
+                    )}
+                  </span>
+                )}
               </span>
             )}
           </div>

@@ -17,9 +17,15 @@
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { useContainerDimensions } from '@/components/artifact-force-graph/use-container-dimensions';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import {
+  ACTION_CONTRACT_FIELD_ORDER,
+  ActionContractFieldName,
+} from '@/interfaces/database/compilation-model';
 import { cn } from '@/lib/utils';
+import { declaredContractFields } from '@/utils/action-contract';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { UseFormReturn, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -65,7 +71,7 @@ const RouteMargin = 18;
 const EdgeLabelLift = 14;
 /** The detail panel starts wider than a sidebar: it is a form, not a legend, and
  *  the canvas used to carry the whole width by default. */
-const DefaultPanelWidth = 432;
+const DefaultPanelWidth = 320;
 const MinPanelWidth = 260;
 const MinCanvasWidth = 280;
 /** One arrow-key press. */
@@ -327,6 +333,24 @@ const issueLabel = (
   translate(`knowledgeCompilation.ontologyIssue_${issue.code}`, {
     defaultValue: issue.message,
   });
+
+/**
+ * contractFieldLabel names one of the six contract fields.
+ *
+ * The same keys the review card uses: the declaration edited here and the values
+ * judged there are the same six things, and two sets of labels would let them
+ * drift apart in the UI while matching in the data.
+ */
+const contractFieldLabel = (
+  name: ActionContractFieldName,
+  translate: (key: string, options: Record<string, unknown>) => string,
+): string =>
+  translate(
+    `knowledgeCompilation.ontologyInspect.actionContractField.${name}`,
+    {
+      defaultValue: name,
+    },
+  );
 
 interface OntologyCanvasEditorProps {
   form: UseFormReturn<FormSchemaType>;
@@ -770,9 +794,57 @@ export function OntologyCanvasEditor({
       )}
 
       <div className="flex min-h-0 flex-1 gap-3">
+        {/* Three columns: what exists (260), what it looks like (flex), what the
+            selected thing says (320, resizable). On a narrow window the left
+            column folds away — the canvas is the workspace here, and a list that
+            squeezes it earns less than the scroll it saves. */}
+        <aside
+          data-testid="ontology-class-list"
+          className="hidden w-[260px] shrink-0 flex-col gap-0.5 overflow-auto rounded border border-border-button bg-bg-component p-2 min-[1180px]:flex"
+        >
+          <span className="px-1 pb-1 text-xs font-medium text-text-secondary">
+            {t('knowledgeCompilation.ontologyClassList', {
+              count: nodes.length,
+              defaultValue: 'Classes ({{count}})',
+            })}
+          </span>
+          {nodes.map((node, index) => {
+            const isSelected =
+              selection?.kind === 'class' && selection.index === index;
+            return (
+              <button
+                key={`class-list-${node.id}`}
+                type="button"
+                data-testid={`ontology-class-list-item-${node.id}`}
+                onClick={() => setSelection({ kind: 'class', index })}
+                className={cn(
+                  'flex items-center gap-2 rounded px-2 py-1 text-start text-xs',
+                  isSelected
+                    ? 'bg-bg-card text-text-primary'
+                    : 'text-text-secondary hover:bg-bg-card',
+                )}
+              >
+                <span className="min-w-0 flex-1 truncate">{node.label}</span>
+                {node.attributes.length > 0 && (
+                  <span className="shrink-0 text-text-disabled">
+                    {node.attributes.length}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </aside>
         <div
           ref={canvasBoxRef}
           className="min-h-0 min-w-0 flex-1 overflow-auto rounded border border-border-button bg-bg-base"
+          // The dot grid is the canvas's own texture, drawn from the lightest
+          // border token so it exists in both themes instead of being a light-mode
+          // artifact that turns into grey noise on black.
+          style={{
+            backgroundImage:
+              'radial-gradient(circle, var(--border-button) 1px, transparent 1px)',
+            backgroundSize: '16px 16px',
+          }}
         >
           <svg
             width={canvasWidth}
@@ -984,12 +1056,21 @@ export function OntologyCanvasEditor({
                       edge.mixed ? 'url(#ontology-arrow)' : undefined
                     }
                   />
+                  {/* The label carries a halo of the canvas colour instead of a
+                      background rectangle: a rect would need the text measured,
+                      and a measured width drifts with the font. paintOrder draws
+                      the stroke first, so dense graphs still read and the halo
+                      follows the theme on its own. */}
                   <text
                     x={labelX}
                     y={labelY - EdgeLabelLift}
                     fontSize={11}
                     textAnchor={labelAnchor}
                     fill="currentColor"
+                    stroke="var(--bg-base)"
+                    strokeWidth={3.5}
+                    strokeLinejoin="round"
+                    paintOrder="stroke"
                   >
                     {edge.text}
                   </text>
@@ -1045,7 +1126,13 @@ export function OntologyCanvasEditor({
                     setSelection({ kind: 'class', index });
                   }}
                 >
-                  <rect
+                  {/* An HTML card, not positioned <text>: a node is a small
+                      document (title, identifier, one row per attribute) and
+                      rendering that with <text> meant hand-placing a baseline
+                      per row. foreignObject keeps the SVG coordinate system, so
+                      the connectors, the drag maths and the hit areas are
+                      untouched — only what the node looks like changes. */}
+                  <foreignObject
                     x={node.x}
                     y={node.y}
                     width={NodeWidth}
@@ -1053,32 +1140,42 @@ export function OntologyCanvasEditor({
                       NodeHeaderHeight +
                       node.attributes.length * AttributeRowHeight
                     }
-                    rx={8}
-                    fill="currentColor"
-                    fillOpacity={selected ? 0.08 : 0.02}
-                    stroke="currentColor"
-                    strokeWidth={selected ? 2 : 1}
-                  />
-                  <text
-                    x={node.x + 10}
-                    y={node.y + 20}
-                    fontSize={13}
-                    fontWeight={600}
-                    fill="currentColor"
                   >
-                    {node.label}
-                  </text>
-                  <text
-                    x={node.x + 10}
-                    y={node.y + 36}
-                    fontSize={10}
-                    fill="currentColor"
-                    opacity={0.7}
-                  >
-                    {node.id}
-                  </text>
+                    <div
+                      {...{ xmlns: 'http://www.w3.org/1999/xhtml' }}
+                      className={cn(
+                        'flex h-full flex-col overflow-hidden rounded-lg border bg-bg-component px-2 py-1 shadow-card',
+                        selected
+                          ? 'border-text-accent ring-1 ring-text-accent'
+                          : 'border-border-button',
+                      )}
+                    >
+                      <span className="truncate text-[13px] font-semibold leading-4 text-text-primary">
+                        {node.label}
+                      </span>
+                      <span className="truncate text-[10px] leading-3 text-text-disabled">
+                        {node.id}
+                      </span>
+                      {node.attributes.length > 0 && (
+                        <div className="mt-1 flex min-h-0 flex-col gap-0.5 overflow-hidden border-t border-border-button pt-1">
+                          {node.attributes.map((attribute) => (
+                            <span
+                              key={`${node.id}-${attribute.name}`}
+                              className="truncate text-[10px] leading-3 text-text-secondary"
+                            >
+                              {attribute.name}
+                              {attribute.datatype
+                                ? `: ${attribute.datatype}`
+                                : ''}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </foreignObject>
                   {/* The link handle: the one gesture that makes this a canvas
-                      rather than a form. */}
+                      rather than a form. It stays SVG and sits outside the card,
+                      so its position is unchanged by the card's own layout. */}
                   <circle
                     data-testid={`ontology-link-handle-${node.id}`}
                     cx={node.x + NodeWidth + 10}
@@ -1112,19 +1209,6 @@ export function OntologyCanvasEditor({
                   >
                     +
                   </text>
-                  {node.attributes.map((attribute, at) => (
-                    <text
-                      key={`${node.id}-${attribute.name}`}
-                      x={node.x + 12}
-                      y={node.y + 56 + at * AttributeRowHeight}
-                      fontSize={10}
-                      fill="currentColor"
-                      opacity={0.85}
-                    >
-                      {attribute.name}
-                      {attribute.datatype ? `: ${attribute.datatype}` : ''}
-                    </text>
-                  ))}
                 </g>
               );
             })}
@@ -1253,6 +1337,63 @@ export function OntologyCanvasEditor({
                   }
                 />
               </label>
+              {/* An action's contract is part of its declaration, so it is edited
+                  here rather than on an instance: which of the six fields this
+                  model requires is a property of the model, while the values
+                  belong to each action row. */}
+              {String(selectedClass.type ?? '').trim() === 'action' && (
+                <div
+                  className="flex flex-col gap-1 rounded border border-border-button p-2"
+                  data-testid="ontology-class-contract"
+                >
+                  <span className="font-medium">
+                    {t('knowledgeCompilation.ontologyContractFields', {
+                      defaultValue: 'Required contract fields',
+                    })}
+                  </span>
+                  {ACTION_CONTRACT_FIELD_ORDER.map((name) => {
+                    // The declaration is read through the same normalisation the
+                    // server uses, so the boxes cannot show a field as dropped
+                    // that the extractor is still asked for.
+                    const declared = declaredContractFields(
+                      selectedClass.contract,
+                    );
+                    const checked = declared.includes(name);
+                    // Authorization decides whether the action may ever run
+                    // unattended, and a field the extractor was never asked for
+                    // cannot be stated — so it is not narrowable away.
+                    const locked = name === 'authorization';
+                    return (
+                      <label key={name} className="flex items-center gap-2">
+                        <Checkbox
+                          checked={checked}
+                          disabled={locked}
+                          data-testid={`ontology-contract-field-${name}`}
+                          onCheckedChange={(next) => {
+                            const current = declaredContractFields(
+                              selectedClass.contract,
+                            );
+                            const nextList =
+                              next === true
+                                ? [...new Set([...current, name])]
+                                : current.filter((item) => item !== name);
+                            editClass(classIndex, {
+                              contract: nextList.join('|'),
+                            });
+                          }}
+                        />
+                        <span>{contractFieldLabel(name, t)}</span>
+                      </label>
+                    );
+                  })}
+                  <p className="text-text-disabled">
+                    {t('knowledgeCompilation.ontologyContractFieldsHint', {
+                      defaultValue:
+                        'Nothing ticked means no requirement, which reads as all six. Authorization is always asked: it decides whether the action may run. The class rule should also state that an action needs an actor and an object.',
+                    })}
+                  </p>
+                </div>
+              )}
               {/* The class's own properties, listed where the reader already is.
                   A property with no domain was findable nowhere, which is why
                   "which entity does this belong to" had no answer. */}

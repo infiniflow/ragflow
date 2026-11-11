@@ -20,6 +20,7 @@ import {
   CompilationTemplateGroupEditor,
   CompilationTemplateGroupEditorState,
 } from '@/components/compilation-template-group';
+import { OntologyActionWorkbenchSheet } from '@/components/compilation-template-group/ontology/action-workbench-sheet';
 import { OntologyInspectSheet } from '@/components/compilation-template-group/ontology/inspect-sheet';
 import { useFetchCompilationTemplateGroup } from '@/hooks/use-compilation-template-group-request';
 import { isCreateCompilationTemplateGroup } from '@/utils/compilation-template-util';
@@ -69,6 +70,10 @@ export default function EditNextCompilationTemplate() {
               properties={ontologyProperties}
             />
           )}
+          {/* What the model says it may do, next to what it says: an action the
+              model declares but nobody has wired to a tool cannot run, and that
+              gap is invisible from the assertion preview alone. */}
+          {isOntology && <OntologyActionWorkbenchSheet templateId={templateId} />}
           <CompilationModelsSheet templateId={templateId} />
         </div>
       </header>
