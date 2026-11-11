@@ -25,9 +25,10 @@ import (
 
 const datasetPagerankUpdateTimeout = 30 * time.Second
 
-// chunkStoreCleanupTimeout bounds the removal of a store whose creation failed
-// after it was already partially written.
-const chunkStoreCleanupTimeout = 10 * time.Second
+// restoreEmbeddingBindingTimeout bounds the compensating write that runs after
+// the request context may already be cancelled. It is what lets the retry of a
+// failed store creation take the preparation path again.
+const restoreEmbeddingBindingTimeout = 10 * time.Second
 
 type datasetPagerankUpdate struct {
 	value     int64
@@ -193,6 +194,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 	}
 
 	txCode := common.CodeSuccess
+	var previousKB *entity.Knowledgebase
 	var updatedKB *entity.Knowledgebase
 	var linkedConnectors []*dao.ConnectorDatasetListItem
 	var scheduledTaskIDs []string
@@ -204,6 +206,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 			txCode = code
 			return authErr
 		}
+		previousKB = lockedKB
 		if sel != nil || pipelineID != nil || req.ParserConfig != nil || req.ParserConfigProvided {
 			current := service.CurrentSelection(lockedKB.ParserID, lockedKB.PipelineID)
 			effective, resolveErr := service.Resolve(current, sel)
@@ -535,18 +538,25 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, re
 	publishDatasetSyncerTasks(scheduledTaskIDs)
 
 	if storePlan.createEmbdID != "" && updatedKB != nil && updatedKB.ChunkNum == 0 && updatedKB.EmbdID == storePlan.createEmbdID {
-		created, createErr := d.ensureChunkStoreForEmbedding(ctx, updatedKB, storePlan.createEmbdID)
-		if createErr != nil {
-			// The creation was already retried in place. If both attempts failed,
-			// Infinity may still hold the table it wrote before its indexes; drop
-			// it so the retry creates it again. A probe failure never reaches the
-			// engine, so there is nothing to remove then.
-			if created {
-				d.dropPartialChunkStore(ctx, updatedKB)
+		if createErr := d.ensureChunkStoreForEmbedding(ctx, updatedKB, storePlan.createEmbdID); createErr != nil {
+			// The row now names a model its store cannot serve. Put the previous
+			// binding back so the retry takes the preparation path again, which
+			// completes the store the failed creation may have left half built.
+			restored, restoreErr := d.restoreEmbeddingBinding(ctx, previousKB, storePlan.createEmbdID)
+			switch {
+			case restoreErr != nil:
+				return nil, common.CodeServerError, fmt.Errorf(
+					"dataset settings were saved, but the chunk store for embedding model %s could not be created and the previous embedding model could not be restored (%v); retry the request after the database recovers: %w",
+					storePlan.createEmbdID, restoreErr, createErr)
+			case !restored:
+				return nil, common.CodeServerError, fmt.Errorf(
+					"dataset settings were saved, but the chunk store for embedding model %s could not be created; the dataset changed while it was being created, so the binding stays on %s: %w",
+					storePlan.createEmbdID, storePlan.createEmbdID, createErr)
+			default:
+				return nil, common.CodeServerError, fmt.Errorf(
+					"dataset settings were saved, but the chunk store for embedding model %s could not be created; the previous embedding model was restored, retry the request to switch again: %w",
+					storePlan.createEmbdID, createErr)
 			}
-			return nil, common.CodeServerError, fmt.Errorf(
-				"dataset settings were saved, but the chunk store for embedding model %s could not be created; retry the request to repair it: %w",
-				storePlan.createEmbdID, createErr)
 		}
 	}
 
@@ -700,8 +710,8 @@ type chunkStorePlan struct {
 	// createEmbdID is the model whose store must be created after the commit.
 	// Creating a store fixes its analyzer and dimensions, so doing it before a
 	// transaction that can still roll back would leave a store the row never
-	// asked for. A failed creation is retried by the next update, which finds
-	// the store missing again.
+	// asked for. A failed creation restores the previous binding, so the retry
+	// takes the preparation path again.
 	createEmbdID string
 }
 
@@ -714,6 +724,14 @@ func (d *DatasetService) planChunkStoreForEmbeddingChange(ctx context.Context, k
 	if d.docEngine == nil || kb == nil || !embdIDProvided || embdID == "" || kb.ChunkNum != 0 {
 		return plan, common.CodeSuccess, nil
 	}
+	// Re-submitting the current model is not a model change. Probing the
+	// provider here would make a rename fail while the provider is down, and a
+	// store missing in that state is not something this update can have left
+	// behind: a failed creation restores the previous binding first, so the
+	// retry of that request still sees a model change.
+	if embdID == kb.EmbdID {
+		return plan, common.CodeSuccess, nil
+	}
 	exists, err := d.docEngine.ChunkStoreExists(ctx, fmt.Sprintf("ragflow_%s", kb.TenantID), kb.ID)
 	if err != nil {
 		return plan, common.CodeServerError, fmt.Errorf("check the chunk store for dataset %s: %w", kb.ID, err)
@@ -721,9 +739,6 @@ func (d *DatasetService) planChunkStoreForEmbeddingChange(ctx context.Context, k
 	plan.storeExists = exists
 	if !exists {
 		plan.createEmbdID = embdID
-		return plan, common.CodeSuccess, nil
-	}
-	if embdID == kb.EmbdID {
 		return plan, common.CodeSuccess, nil
 	}
 	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID}, permission.OperationUpdate); err != nil {
@@ -742,61 +757,59 @@ func (d *DatasetService) planChunkStoreForEmbeddingChange(ctx context.Context, k
 	if language != "" {
 		preparedKB.Language = &language
 	}
-	if _, err := d.ensureChunkStoreForEmbedding(ctx, &preparedKB, embdID); err != nil {
+	if err := d.ensureChunkStoreForEmbedding(ctx, &preparedKB, embdID); err != nil {
 		return plan, common.CodeServerError, fmt.Errorf("prepare the chunk store for embedding model %s: %w", embdID, err)
 	}
 	plan.preparedEmbdID = embdID
 	return plan, common.CodeSuccess, nil
 }
 
-// dropPartialChunkStore removes the table Infinity may have left half built.
-// Infinity keeps one table per dataset and writes it before its indexes, so a
-// failure can leave a table the same-model retry accepts as ready. The dataset
-// is empty and had no store before the attempt, so removing the table restores
-// the pre-attempt state and the retry creates it again.
+// restoreEmbeddingBinding puts the model the row had before the update back
+// after the committed row could not get a store for the new one. The write is
+// conditional: a chunk inserted with the new model or a concurrent settings
+// write both mean rolling back would publish a model the store no longer
+// matches, so those cases keep the committed binding and report it instead.
 //
-// The shared-store engines are exempt. Elasticsearch and the SQL engines keep
-// every dataset of a tenant in one store whose DropChunkStore only deletes
-// rows, which neither repairs a missing column nor an index, and a request that
-// ran concurrently may have written those rows. Their creation is a single
-// request or idempotent DDL, so their retry re-runs it without help.
-func (d *DatasetService) dropPartialChunkStore(ctx context.Context, kb *entity.Knowledgebase) {
-	if d.docEngine == nil || kb == nil || engine.Type(d.docEngine) != engine.EngineInfinity {
-		return
+// The context is detached because the failure this compensates for is usually a
+// cancelled request, and this write is what lets a later retry repair the store.
+func (d *DatasetService) restoreEmbeddingBinding(ctx context.Context, previous *entity.Knowledgebase, newEmbdID string) (bool, error) {
+	if previous == nil {
+		return false, errors.New("the dataset row locked by the update is not available")
 	}
-	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), chunkStoreCleanupTimeout)
+	restoreCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), restoreEmbeddingBindingTimeout)
 	defer cancel()
-	// A concurrent request may have populated the table while this one was
-	// failing to create it. Removing the table then would delete its chunks, so
-	// only drop it while the dataset is still empty. An unreadable row leaves
-	// the store in place: a leftover empty table is harmless, live chunks are
-	// not.
-	fresh, err := d.kbDAO.GetByID(cleanupCtx, dao.DB, kb.ID)
-	if err != nil {
-		common.Warn("kept a partially created chunk store: dataset unreadable",
-			zap.String("dataset_id", kb.ID), zap.Error(err))
-		return
+	updates := map[string]interface{}{
+		"embd_id": previous.EmbdID,
 	}
-	if fresh.ChunkNum != 0 {
-		common.Info("kept a partially created chunk store: the dataset gained chunks",
-			zap.String("dataset_id", kb.ID), zap.Int64("chunk_num", fresh.ChunkNum))
-		return
+	if previous.TenantEmbdID == nil {
+		updates["tenant_embd_id"] = nil
+	} else {
+		updates["tenant_embd_id"] = *previous.TenantEmbdID
 	}
-	if err := d.docEngine.DropChunkStore(cleanupCtx, fmt.Sprintf("ragflow_%s", kb.TenantID), kb.ID); err != nil {
-		common.Warn("failed to remove a partially created chunk store",
-			zap.String("dataset_id", kb.ID), zap.Error(err))
+	result := dao.DB.WithContext(restoreCtx).Model(&entity.Knowledgebase{}).
+		Where("id = ? AND embd_id = ? AND chunk_num = 0", previous.ID, newEmbdID).
+		Updates(updates)
+	if result.Error != nil {
+		common.Warn("failed to restore the embedding binding after a failed chunk store creation",
+			zap.String("dataset_id", previous.ID), zap.String("embedding_model", newEmbdID), zap.Error(result.Error))
+		return false, result.Error
 	}
+	if result.RowsAffected == 0 {
+		common.Info("kept the committed embedding binding: the dataset changed while its chunk store was being created",
+			zap.String("dataset_id", previous.ID), zap.String("embedding_model", newEmbdID))
+		return false, nil
+	}
+	return true, nil
 }
 
 // ensureChunkStoreForEmbedding prepares the chunk store for a new embedding
 // model on an empty dataset. Every engine's CreateChunkStore is additive on an
 // existing store: Infinity adds the missing q_<n>_vec column, the SQL engines
 // add missing columns, and Elasticsearch leaves an existing chunk index
-// untouched. created reports whether the engine was asked to create the store,
-// so a caller can tell a failed probe from a failed creation.
-func (d *DatasetService) ensureChunkStoreForEmbedding(ctx context.Context, kb *entity.Knowledgebase, embdID string) (bool, error) {
+// untouched.
+func (d *DatasetService) ensureChunkStoreForEmbedding(ctx context.Context, kb *entity.Knowledgebase, embdID string) error {
 	if d.docEngine == nil || kb == nil {
-		return false, nil
+		return nil
 	}
 	probe := d.embeddingDimension
 	if probe == nil {
@@ -807,18 +820,18 @@ func (d *DatasetService) ensureChunkStoreForEmbedding(ctx context.Context, kb *e
 	}
 	dimension, err := probe(ctx, kb.TenantID, embdID)
 	if err != nil {
-		return false, fmt.Errorf("resolve embedding dimension for %s: %w", embdID, err)
+		return fmt.Errorf("resolve embedding dimension for %s: %w", embdID, err)
 	}
 	if err := d.createChunkStore(ctx, kb, dimension); err != nil {
 		// Creation is additive on every engine, and the engines that write a
 		// table before its indexes can complete a half-built store by running
 		// the same request again. Retrying here keeps a transient failure from
-		// leaving a store a later same-model request would accept as ready.
+		// leaving a store a later request would accept as ready.
 		if retryErr := d.createChunkStore(ctx, kb, dimension); retryErr != nil {
-			return true, fmt.Errorf("prepare chunk store for embedding model %s: %w", embdID, retryErr)
+			return fmt.Errorf("prepare chunk store for embedding model %s: %w", embdID, retryErr)
 		}
 	}
-	return true, nil
+	return nil
 }
 
 func (d *DatasetService) createChunkStore(ctx context.Context, kb *entity.Knowledgebase, dimension int) error {
