@@ -590,7 +590,9 @@ func (n *NatsEngine) fetchOnce(ctx context.Context, consumer jetstream.Consumer,
 		return nil, err
 	}
 	resultMessages := make([]common.TaskHandle, 0, messageCount)
+	delivered := make([]jetstream.Msg, 0, messageCount)
 	for message := range messages.Messages() {
+		delivered = append(delivered, message)
 		resultMessages = append(resultMessages, NewNatsMessageHandle(message))
 	}
 	if batchErr := messages.Error(); batchErr != nil {
@@ -598,24 +600,31 @@ func (n *NatsEngine) fetchOnce(ctx context.Context, consumer jetstream.Consumer,
 			// The caller drops the handles on cancellation, so nack whatever
 			// did arrive — leaving them in AckPending would strand them until
 			// the server's redelivery backoff expires.
-			for _, message := range resultMessages {
-				if nackErr := message.Nack(); nackErr != nil {
-					common.Error("nack message after failed pull", nackErr)
-				}
-			}
+			nackAbandoned(delivered)
 			return nil, batchErr
 		}
 		if isExpiredFetchErr(batchErr, ctx) {
 			return resultMessages, nil // keep the partial batch, no spurious error
 		}
-		for _, message := range resultMessages {
-			if nackErr := message.Nack(); nackErr != nil {
-				common.Error("nack message after failed pull", nackErr)
-			}
-		}
+		nackAbandoned(delivered)
 		return nil, batchErr
 	}
 	return resultMessages, nil
+}
+
+// abandonedNackDelay gives nats.go time to deliver the UNSUB for a fetch's
+// inbox, which it queues only after closing the batch channel. A NAK the
+// server processes before that UNSUB can be redelivered straight into the
+// dead inbox, where the message sits unacked until AckWait plus a backoff and
+// burns a delivery attempt; delaying the redelivery aims it at a later pull.
+const abandonedNackDelay = 500 * time.Millisecond
+
+func nackAbandoned(messages []jetstream.Msg) {
+	for _, message := range messages {
+		if nackErr := message.NakWithDelay(abandonedNackDelay); nackErr != nil {
+			common.Error("nack message after failed pull", nackErr)
+		}
+	}
 }
 
 // PullMessage returns one task handle from PullMessages. A nil handle

@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	natslib "github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -28,6 +29,7 @@ import (
 type fakeJetStreamMsg struct {
 	jetstream.Msg
 	nakCalled bool
+	nakDelay  time.Duration
 }
 
 func (f *fakeJetStreamMsg) Data() []byte            { return []byte("{}") }
@@ -35,6 +37,12 @@ func (f *fakeJetStreamMsg) Headers() natslib.Header { return nil }
 func (f *fakeJetStreamMsg) Subject() string         { return "tasks.RAGFLOW" }
 func (f *fakeJetStreamMsg) Reply() string           { return "" }
 func (f *fakeJetStreamMsg) Nak() error              { f.nakCalled = true; return nil }
+
+func (f *fakeJetStreamMsg) NakWithDelay(delay time.Duration) error {
+	f.nakCalled = true
+	f.nakDelay = delay
+	return nil
+}
 
 func (f *fakeJetStreamMsg) Metadata() (*jetstream.MsgMetadata, error) {
 	return &jetstream.MsgMetadata{}, nil
@@ -68,7 +76,9 @@ func (c *fakePullConsumer) Fetch(int, ...jetstream.FetchOpt) (jetstream.MessageB
 // A fetch canceled mid-batch still delivers messages. pullLane drops the
 // handles on the error, so fetchOnce must nack them: leaving them in
 // AckPending would hold each one until the server's redelivery backoff
-// (5s..60s) expires instead of making it available right away.
+// (5s..60s) expires instead of making it available right away. The NAK is
+// delayed so the server cannot redeliver it into the fetch's inbox before
+// that inbox's unsubscribe lands.
 func TestFetchOnceNacksDeliveredMessagesOnCanceledBatch(t *testing.T) {
 	msg := &fakeJetStreamMsg{}
 	engine := &NatsEngine{}
@@ -87,6 +97,9 @@ func TestFetchOnceNacksDeliveredMessagesOnCanceledBatch(t *testing.T) {
 	if !msg.nakCalled {
 		t.Fatal("delivered message was not nacked; it would strand in AckPending until the redelivery backoff expires")
 	}
+	if msg.nakDelay <= 0 {
+		t.Fatal("nack was not delayed; a redelivery can land in the fetch's dead inbox before its unsubscribe and burn a delivery attempt")
+	}
 }
 
 func TestFetchOnceStillNacksOnOtherBatchErrors(t *testing.T) {
@@ -102,5 +115,8 @@ func TestFetchOnceStillNacksOnOtherBatchErrors(t *testing.T) {
 	}
 	if !msg.nakCalled {
 		t.Fatal("delivered message was not nacked on a plain batch failure")
+	}
+	if msg.nakDelay <= 0 {
+		t.Fatal("nack was not delayed; a redelivery can land in the fetch's dead inbox before its unsubscribe and burn a delivery attempt")
 	}
 }
