@@ -304,6 +304,44 @@ func TestWiroListModelsAndCheckConnection(t *testing.T) {
 	}
 }
 
+// Every call needs the API key. A missing or blank key fails before a
+// request is sent, for chat, streaming, the model list and the connection
+// check.
+func TestWiroRequiresAPIKey(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("request sent without an API key: %s %s", r.Method, r.URL.Path)
+	}))
+	defer srv.Close()
+
+	blank := "  "
+	configs := map[string]*APIConfig{
+		"nil config": nil,
+		"nil key":    {},
+		"blank key":  {ApiKey: &blank},
+	}
+	model := newWiroForTest(srv.URL)
+	messages := []Message{{Role: "user", Content: "ping"}}
+	for name, apiConfig := range configs {
+		t.Run(name, func(t *testing.T) {
+			_, chatErr := model.ChatWithMessages(t.Context(), "openai/gpt-5-4-nano", messages, apiConfig, nil, nil)
+			streamErr := model.ChatStreamlyWithSender(t.Context(), "openai/gpt-5-4-nano", messages, apiConfig, nil, nil, func(*string, *string) error { return nil })
+			_, listErr := model.ListModels(t.Context(), apiConfig)
+			checkErr := model.CheckConnection(t.Context(), apiConfig)
+			for call, err := range map[string]error{
+				"ChatWithMessages":       chatErr,
+				"ChatStreamlyWithSender": streamErr,
+				"ListModels":             listErr,
+				"CheckConnection":        checkErr,
+			} {
+				if err == nil || !strings.Contains(err.Error(), "api key is required") {
+					t.Errorf("%s: err=%v, want api key is required", call, err)
+				}
+			}
+		})
+	}
+}
+
 // Listed models take their limits and image input from the gateway's
 // metadata: context_length is the context window, max_tokens the output
 // limit, and "image" in capabilities.input_modalities marks a vision model.

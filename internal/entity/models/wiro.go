@@ -39,11 +39,13 @@ type WiroModel struct {
 	*OpenAIAPICompatibleModel
 }
 
-// NewWiroModel creates a Wiro AI driver.
+// NewWiroModel creates a Wiro AI driver. The gateway authenticates every
+// call, so the driver does not keep the embedded driver's allowance for an
+// empty API key.
 func NewWiroModel(baseURL map[string]string, urlSuffix URLSuffix) *WiroModel {
-	return &WiroModel{
-		OpenAIAPICompatibleModel: NewOpenAIAPICompatibleModel(baseURL, urlSuffix),
-	}
+	model := NewOpenAIAPICompatibleModel(baseURL, urlSuffix)
+	model.baseModel.AllowEmptyAPIKey = false
+	return &WiroModel{OpenAIAPICompatibleModel: model}
 }
 
 // Name returns the driver name.
