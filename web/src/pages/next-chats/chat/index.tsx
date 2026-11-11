@@ -1,17 +1,20 @@
+import EmbedDialog from '@/components/embed-dialog';
+import { useShowEmbedModal } from '@/components/embed-dialog/use-show-embed-dialog';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { SharedFrom } from '@/constants/chat';
+import { useSetModalState } from '@/hooks/common-hooks';
 import {
-  useFetchSessionList,
   useFetchSessionManually,
   useGetChatSearchParams,
 } from '@/hooks/use-chat-request';
 import { IClientConversation } from '@/interfaces/database/chat';
 import { RootLayoutContainer } from '@/layouts/root-layout';
-import { cn } from '@/lib/utils';
 import { isEmpty } from 'lodash';
-import { LucideArrowBigLeft, LucideArrowUpRight } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { LucideSend } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
 import { ChatSettings } from './app-settings/chat-settings';
 import { MultipleChatBox } from './chat-box/next-multiple-chat-box';
@@ -30,20 +33,33 @@ export default function Chat() {
   const { handleConversationCardClick, controller, stopOutputMessage } =
     useHandleClickConversationCard();
 
-  const { isDebugMode, switchDebugMode } = useSwitchDebugMode();
-  const { removeChatBox, addChatBox, chatBoxIds, hasSingleChatBox } =
-    useAddChatBox(isDebugMode);
+  const { isDebugMode, enterDebugMode, exitDebugMode } = useSwitchDebugMode();
+  const { removeChatBox, addChatBox, chatBoxIds } = useAddChatBox(isDebugMode);
+  const {
+    visible: settingsVisible,
+    showModal: showSettings,
+    hideModal: hideSettings,
+  } = useSetModalState();
 
   const { conversationId, isNew } = useGetChatSearchParams();
+  const { id } = useParams();
+  const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
+    useShowEmbedModal();
 
-  const { data: dialogList } = useFetchSessionList();
+  const handleOpenSettings = useCallback(() => {
+    exitDebugMode();
+    showSettings();
+  }, [exitDebugMode, showSettings]);
 
-  const currentConversationName = useMemo(() => {
-    return (
-      dialogList.find((x) => x.id === conversationId)?.name ||
-      t('chat.newConversation')
-    );
-  }, [conversationId, dialogList, t]);
+  const handleOpenMultipleModels = useCallback(() => {
+    hideSettings();
+    enterDebugMode();
+  }, [enterDebugMode, hideSettings]);
+
+  const handleShowSingleChat = useCallback(() => {
+    hideSettings();
+    exitDebugMode();
+  }, [exitDebugMode, hideSettings]);
 
   // The URL is the single source of truth for which conversation is open:
   // card clicks, "+" and the temp→real id swap after the first send all land
@@ -66,80 +82,74 @@ export default function Chat() {
     };
   }, [conversationId, isNew, fetchSessionManually]);
 
-  if (isDebugMode) {
-    return (
-      <section
-        className="pt-5 pb-14 h-[100vh] flex flex-col"
-        data-testid="chat-detail-multimodel-root"
-      >
-        <header className="px-10 pb-5">
-          <div className="mb-5">
-            <Button
-              variant="outline"
-              onClick={switchDebugMode}
-              data-testid="chat-detail-multimodel-back"
-            >
-              <LucideArrowBigLeft />
-              <span>{t('common.back')}</span>
-            </Button>
-          </div>
-
-          <span className="text-2xl">
-            {t('chat.multipleModels')} ({chatBoxIds.length}/3)
-          </span>
-        </header>
-
-        <MultipleChatBox
-          chatBoxIds={chatBoxIds}
-          controller={controller}
-          removeChatBox={removeChatBox}
-          addChatBox={addChatBox}
-          stopOutputMessage={stopOutputMessage}
-          conversation={currentConversation}
-        ></MultipleChatBox>
-      </section>
-    );
-  }
-
   return (
     <RootLayoutContainer>
       <section className="h-full flex flex-col" data-testid="chat-detail">
         <article className="flex flex-1 min-h-0 pb-9">
           <Sessions
             handleConversationCardClick={handleConversationCardClick}
+            settingsActive={settingsVisible}
+            multipleModelsActive={isDebugMode}
+            onOpenSettings={handleOpenSettings}
+            onOpenMultipleModels={handleOpenMultipleModels}
+            onShowSingleChat={handleShowSingleChat}
           ></Sessions>
 
-          <Card className="flex-1 min-w-0 bg-transparent border-none shadow-none h-full">
-            <CardContent className="flex p-0 h-full">
-              <Card className="flex flex-col flex-1 bg-transparent min-w-0 overflow-hidden">
-                <CardHeader
-                  className={cn('p-5', {
-                    'border-b-0.5 border-border-button': hasSingleChatBox,
-                  })}
+          <section className="flex-1 min-w-0 min-h-0 flex flex-col">
+            <header className="p-5 flex justify-end">
+              <Button
+                variant="ghost"
+                onClick={showEmbedModal}
+                data-testid="chat-detail-embed-open"
+              >
+                <LucideSend />
+                {t('common.embedIntoSite')}
+              </Button>
+            </header>
+
+            <Card
+              className="flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden bg-transparent mr-4"
+              data-testid="chat-detail-content-frame"
+            >
+              {isDebugMode ? (
+                <section
+                  className="pt-5 pb-14 h-full flex flex-col"
+                  data-testid="chat-detail-multimodel-root"
                 >
-                  <CardTitle className="flex justify-between items-center text-base gap-2">
-                    <div className="truncate">{currentConversationName}</div>
-                    <div className="flex gap-4 items-center">
-                      <Button
-                        variant="ghost"
-                        onClick={switchDebugMode}
-                        data-testid="chat-detail-multimodel-toggle"
-                      >
-                        <LucideArrowUpRight />
-                        {t('chat.multipleModels')}
-                      </Button>
-                    </div>
-                  </CardTitle>
-                </CardHeader>
+                  <header className="px-10 pb-5">
+                    <span className="text-2xl">
+                      {t('chat.multipleModels')} ({chatBoxIds.length}/3)
+                    </span>
+                  </header>
+
+                  <MultipleChatBox
+                    chatBoxIds={chatBoxIds}
+                    controller={controller}
+                    removeChatBox={removeChatBox}
+                    addChatBox={addChatBox}
+                    stopOutputMessage={stopOutputMessage}
+                    conversation={currentConversation}
+                  ></MultipleChatBox>
+                </section>
+              ) : settingsVisible ? (
+                <ChatSettings />
+              ) : (
                 <CardContent className="flex-1 p-0 min-h-0">
                   <SingleChatBox conversation={currentConversation} />
                 </CardContent>
-              </Card>
-
-              <ChatSettings hasSingleChatBox={hasSingleChatBox}></ChatSettings>
-            </CardContent>
-          </Card>
+              )}
+            </Card>
+          </section>
         </article>
+
+        <EmbedDialog
+          visible={embedVisible}
+          hideModal={hideEmbedModal}
+          token={id!}
+          from={SharedFrom.Chat}
+          beta={beta}
+          isAgent={false}
+        />
       </section>
     </RootLayoutContainer>
   );

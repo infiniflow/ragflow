@@ -34,6 +34,7 @@ function AppSidebarContent() {
       className={cn(
         'flex h-full w-16 shrink-0 flex-col overflow-hidden bg-bg-base transition-[width]',
         !collapsed && 'md:w-60',
+        collapsed && 'border-r border-border-button',
       )}
     >
       <div

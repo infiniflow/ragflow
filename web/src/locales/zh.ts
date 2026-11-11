@@ -1012,6 +1012,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       messagePlaceholder: '请输入消息...',
       exit: '退出',
       multipleModels: '多模型',
+      settings: '设置',
       applyModelConfigs: '在单模型对话中使用此模型及其设置',
       conversations: '会话',
       chatApps: '聊天',

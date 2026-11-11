@@ -199,24 +199,26 @@ const ChatCard = forwardRef(function ChatCard(
 
   return (
     <Card
-      className="bg-transparent border flex-1 flex flex-col"
+      className="bg-transparent border flex-1 min-w-0 flex flex-col"
       data-testid="chat-detail-multimodel-card"
       data-card-index={idx}
       data-card-key={id}
     >
       <CardHeader className="border-b-0.5 px-5 py-3">
-        <CardTitle className="flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <span className="text-base">{idx + 1}</span>
-            <Form {...form}>
-              <LargeModelFormFieldWithoutFilter
-                triggerTestId="chat-detail-multimodel-card-model-select"
-                optionTestIdPrefix="chat-detail-llm-option-"
-                ownerTenantId={currentDialog?.tenant_id}
-              ></LargeModelFormFieldWithoutFilter>
-            </Form>
+        <CardTitle className="flex min-w-0 justify-between items-center gap-2">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <span className="shrink-0 text-base">{idx + 1}</span>
+            <div className="min-w-0 flex-1">
+              <Form {...form}>
+                <LargeModelFormFieldWithoutFilter
+                  triggerTestId="chat-detail-multimodel-card-model-select"
+                  optionTestIdPrefix="chat-detail-llm-option-"
+                  ownerTenantId={currentDialog?.tenant_id}
+                ></LargeModelFormFieldWithoutFilter>
+              </Form>
+            </div>
           </div>
-          <div className="space-x-2">
+          <div className="flex shrink-0 items-center gap-1">
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -354,9 +356,9 @@ export function MultipleChatBox({
   );
 
   return (
-    <section className="flex flex-1 min-h-0 flex-col px-5">
+    <section className="flex flex-1 min-w-0 min-h-0 flex-col px-5">
       <div
-        className="flex gap-4 flex-1 px-5 pb-14 min-h-0"
+        className="flex gap-4 flex-1 min-w-0 px-5 pb-14 min-h-0"
         data-testid="chat-detail-multimodel-grid"
       >
         {chatBoxIds.map((id, idx) => (

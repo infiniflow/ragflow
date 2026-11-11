@@ -1,48 +1,54 @@
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
-import EmbedDialog from '@/components/embed-dialog';
-import { useShowEmbedModal } from '@/components/embed-dialog/use-show-embed-dialog';
 import { MoreButton } from '@/components/more-button';
-import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { SearchInput } from '@/components/ui/input';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/tooltip';
-import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
 import {
   useFetchChat,
   useGetChatSearchParams,
   useRemoveSessions,
 } from '@/hooks/use-chat-request';
+import { cn } from '@/lib/utils';
 import {
+  LucideActivity,
   LucideCopyX,
   LucideListChecks,
   LucideLoader2,
   LucidePanelLeftClose,
+  LucidePanelLeftOpen,
   LucidePlus,
-  LucideSend,
+  LucideSettings,
   LucideTrash2,
   LucideUndo2,
 } from 'lucide-react';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'react-router';
 import { useChatStreamStore } from '../chat-stream/store';
 import { useChatUrlParams } from '../hooks/use-chat-url';
 import { useHandleClickConversationCard } from '../hooks/use-click-card';
 import { useSelectDerivedConversationList } from '../hooks/use-select-conversation-list';
 import { ConversationDropdown } from './conversation-dropdown';
-import { cn } from '@/lib/utils';
 
 type SessionProps = Pick<
   ReturnType<typeof useHandleClickConversationCard>,
   'handleConversationCardClick'
->;
-export function Sessions({ handleConversationCardClick }: SessionProps) {
+> & {
+  settingsActive: boolean;
+  multipleModelsActive: boolean;
+  onOpenSettings: () => void;
+  onOpenMultipleModels: () => void;
+  onShowSingleChat: () => void;
+};
+
+export function Sessions({
+  handleConversationCardClick,
+  settingsActive,
+  multipleModelsActive,
+  onOpenSettings,
+  onOpenMultipleModels,
+  onShowSingleChat,
+}: SessionProps) {
   const { t } = useTranslation();
   const {
     list: conversationList,
@@ -172,9 +178,18 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
 
   const selectedCount = visibleSelectedIds.length;
 
-  const { id } = useParams();
-  const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
-    useShowEmbedModal();
+  const handleNewConversation = useCallback(() => {
+    addTemporaryConversation();
+    onShowSingleChat();
+  }, [addTemporaryConversation, onShowSingleChat]);
+
+  const handleConversationClick = useCallback(
+    (selectedConversationId: string, isNew: boolean) => {
+      handleConversationCardClick(selectedConversationId, isNew);
+      onShowSingleChat();
+    },
+    [handleConversationCardClick, onShowSingleChat],
+  );
 
   if (!visible) {
     return (
@@ -186,11 +201,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
           onClick={switchVisible}
           data-testid="chat-detail-sessions-open"
         >
-          <RAGFlowAvatar
-            avatar={data.icon}
-            name={data.name}
-            className="size-8 cursor-pointer"
-          />
+          <LucidePanelLeftOpen />
         </Button>
       </div>
     );
@@ -202,38 +213,8 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
       role="complementary"
       data-testid="chat-detail-sessions"
     >
-      <header className="flex items-center text-base justify-between gap-4">
-        <div className="flex gap-3 items-center min-w-0">
-          <RAGFlowAvatar
-            avatar={data.icon}
-            name={data.name}
-            className="size-8"
-          />
-
-          <span className="flex-1 truncate">{data.name}</span>
-        </div>
-
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              onClick={showEmbedModal}
-              size="icon-xs"
-              data-testid="chat-detail-embed-open"
-            >
-              <LucideSend />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{t('common.embedIntoSite')}</TooltipContent>
-        </Tooltip>
-
-        <EmbedDialog
-          visible={embedVisible}
-          hideModal={hideEmbedModal}
-          token={id!}
-          from={SharedFrom.Chat}
-          beta={beta}
-          isAgent={false}
-        />
+      <header className="flex h-8 items-center text-base justify-between gap-4">
+        <span className="flex-1 truncate">{data.name}</span>
 
         <Button
           variant="transparent"
@@ -246,17 +227,55 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
         </Button>
       </header>
 
-      <div className="flex justify-between items-center mb-4 pt-10">
+      <nav className="flex flex-col gap-2 pt-5" aria-label={data.name}>
+        <Button
+          variant="outline"
+          size="lg"
+          block
+          onClick={handleNewConversation}
+          data-testid="chat-detail-session-new"
+        >
+          <LucidePlus />
+          {t('chat.newConversation')}
+        </Button>
+
+        <Button
+          variant={settingsActive ? 'secondary' : 'ghost'}
+          size="lg"
+          block
+          className="justify-start"
+          onClick={onOpenSettings}
+          aria-pressed={settingsActive}
+          data-testid="chat-settings"
+        >
+          <LucideSettings />
+          {t('chat.settings')}
+        </Button>
+
+        <Button
+          variant={multipleModelsActive ? 'secondary' : 'ghost'}
+          size="lg"
+          block
+          className="justify-start"
+          onClick={onOpenMultipleModels}
+          aria-pressed={multipleModelsActive}
+          data-testid="chat-detail-multimodel-toggle"
+        >
+          <LucideActivity />
+          {t('chat.multipleModels')}
+        </Button>
+      </nav>
+
+      <div className="flex justify-between items-center mb-4 pt-8">
         <div className="flex items-center gap-3">
-          <span className="text-base font-bold">{t('chat.conversations')}</span>
+          <span className="text-base">{t('chat.conversations')}</span>
           <data className="text-text-secondary text-xs" value={total}>
             {total}
           </data>
         </div>
 
         <div className="flex items-center gap-2">
-          {selectionMode ? (
-            // Exit selection mode
+          {selectionMode && (
             <Button
               variant="ghost"
               size="icon-xs"
@@ -264,16 +283,6 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
               data-testid="chat-detail-session-selection-exit"
             >
               <LucideUndo2 size={16} />
-            </Button>
-          ) : (
-            // New conversation
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={addTemporaryConversation}
-              data-testid="chat-detail-session-new"
-            >
-              <LucidePlus className="h-4 w-4" />
             </Button>
           )}
 
@@ -363,7 +372,7 @@ export function Sessions({ handleConversationCardClick }: SessionProps) {
                   <button
                     type="button"
                     className="focus-visible:outline-none px-3 py-2 text-left flex-1 truncate"
-                    onClick={() => handleConversationCardClick(x.id, x.is_new)}
+                    onClick={() => handleConversationClick(x.id, x.is_new)}
                     data-testid="chat-detail-session-item"
                     data-session-id={x.id}
                   >
