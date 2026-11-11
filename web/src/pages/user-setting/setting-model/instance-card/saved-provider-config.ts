@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { hasProviderCredentialInput } from '../provider-schema/field-config/utils';
+import { hasProviderCredentialInput } from '@/components/model-provider-schema/field-config/utils';
 import { SAVED_CREDENTIAL_MASK } from './saved-credential-input';
 
 export const SavedProviderConfigFields = [

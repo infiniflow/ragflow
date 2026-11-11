@@ -4184,6 +4184,85 @@ Important structured information may include: names, dates, locations, events, k
       serviceStatus: 'Services',
       userManagement: 'Users',
       sandboxSettings: 'Sandbox',
+      platformModels: 'Platform models',
+      platformModelsPage: {
+        parserNeedsOcr:
+          'Select OCR when using document parsing with this provider.',
+        description:
+          'Configure model providers shared by every tenant. Tenants can use these models but cannot see their credentials or change them.',
+        addProvider: 'Add provider',
+        addProviderDescription:
+          'Choose a provider from the catalog. You can add instances and models after it is created.',
+        selectProvider: 'Select a provider',
+        providersTitle: 'Providers',
+        providersDescription:
+          'Changes apply to every tenant that uses these models.',
+        noProviders: 'No platform providers yet.',
+        noInstances: 'No instances yet. Add an instance to configure models.',
+        addInstance: 'Add instance',
+        addInstanceTo: 'Add instance to {{name}}',
+        editInstance: 'Edit instance {{name}}',
+        toggleInstance: 'Show or hide models of {{name}}',
+        modelsOf: 'Models of {{name}}',
+        statusActive: 'Active',
+        statusInactive: 'Inactive',
+        enable: 'Enable',
+        disable: 'Disable',
+        enableInstance: 'Enable instance {{name}}',
+        disableInstance: 'Disable instance {{name}}',
+        instanceDescription:
+          'Credentials are stored on the server and are never shown again after saving.',
+        credentialKeepHint:
+          'Saved credentials are not shown. Leave a credential blank to keep it, or enter a new value to replace it.',
+        credentialKeepPlaceholder: 'Configured. Leave blank to keep it',
+        baseUrlKeepPlaceholder: 'Configured. Leave blank to keep it',
+        testConnection: 'Test connection',
+        connectionSucceeded: 'Connection succeeded.',
+        connectionFailed:
+          'Connection failed. Check the credentials and endpoint.',
+        addModel: 'Add model',
+        addModelTo: 'Add model to {{name}}',
+        editModel: 'Edit model {{name}}',
+        enableModel: 'Enable model {{name}}',
+        disableModel: 'Disable model {{name}}',
+        modelDescription:
+          'Model types decide where tenants can select this model.',
+        docParse: 'Document parsing',
+        toolCalling: 'Tool calling',
+        toolCallingHint:
+          'Lets tenants use this model in agents that call tools.',
+        toolCallingFromCatalog:
+          'Not set. The built-in model catalog decides until you change it.',
+        noDiscoveredModels:
+          'The provider listed no models. Enter the model name instead.',
+        disableInstanceTitle: 'Disable instance',
+        disableModelTitle: 'Disable model',
+        disableDescription:
+          'Every tenant loses access to it. Defaults and resources that reference it show as unavailable instead of switching to another model.',
+        defaultsTitle: 'Platform default models',
+        defaultsDescription:
+          'Used only when a user has not chosen a default model of that type. Existing selections and knowledge base embeddings do not change.',
+        noDefault: 'Not set',
+        noModelsOfType: 'No active platform model of this type',
+        defaultUnavailable: '{{name}} (unavailable)',
+        defaultMissing: 'Unavailable model',
+        clearDefault: 'Clear',
+        clearDefaultFor: 'Clear the {{type}} default',
+        clearDefaultTitle: 'Clear platform default',
+        clearDefaultDescription:
+          'Users without their own default of this type will have no default model.',
+        loadFailed: 'Failed to load platform models.',
+        catalogLoadFailed: 'Failed to load the provider catalog.',
+        defaultsLoadFailed: 'Failed to load the platform default models.',
+        retry: 'Retry',
+        noActiveModelToTest:
+          'Enable or add a model of this instance before testing the connection.',
+        maxTokensMin: 'Enter a whole number of at least 1.',
+        enterAllCredentials:
+          'To test new credentials, fill in every credential field and any hidden endpoint. Saving keeps the fields you leave blank.',
+        instanceDisabledHint:
+          'This instance is disabled, so none of its models are available to tenants.',
+      },
       registrationWhitelist: 'Whitelist',
       roles: 'Roles',
       monitoring: 'Monitoring',

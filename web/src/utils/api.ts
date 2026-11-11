@@ -536,6 +536,28 @@ const apiEndpoints = {
   adminSetSandboxConfig: `${restAPIv1}/admin/sandbox/config`,
   adminTestSandboxConnection: `${restAPIv1}/admin/sandbox/test`,
 
+  // Platform model providers
+  adminListPlatformProviders: `${restAPIv1}/admin/providers`,
+  adminCreatePlatformProvider: `${restAPIv1}/admin/providers`,
+  adminListPlatformProviderCatalog: `${restAPIv1}/admin/providers/catalog`,
+  adminCheckPlatformConnection: (providerId: string) =>
+    `${restAPIv1}/admin/providers/${providerId}/connection`,
+  adminDiscoverPlatformModels: (providerId: string) =>
+    `${restAPIv1}/admin/providers/${providerId}/models/discover`,
+  adminPlatformInstances: (providerId: string) =>
+    `${restAPIv1}/admin/providers/${providerId}/instances`,
+  adminPlatformInstance: (providerId: string, instanceId: string) =>
+    `${restAPIv1}/admin/providers/${providerId}/instances/${instanceId}`,
+  adminPlatformModels: (providerId: string, instanceId: string) =>
+    `${restAPIv1}/admin/providers/${providerId}/instances/${instanceId}/models`,
+  adminPlatformModel: (
+    providerId: string,
+    instanceId: string,
+    modelId: string,
+  ) =>
+    `${restAPIv1}/admin/providers/${providerId}/instances/${instanceId}/models/${modelId}`,
+  adminPlatformDefaultModels: `${restAPIv1}/admin/models/default`,
+
   // Skill spaces
   skillSpaces: `${restAPIv1}/skills/spaces`,
   skillSpace: (spaceId: string) => `${restAPIv1}/skills/spaces/${spaceId}`,

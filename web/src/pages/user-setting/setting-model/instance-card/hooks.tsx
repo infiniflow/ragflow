@@ -35,9 +35,9 @@ import {
   useRef,
   useState,
 } from 'react';
-import { getProviderConfig } from '../provider-schema/field-config';
-import { useProviderFields } from '../provider-schema/hooks';
-import { SelectOption } from '../provider-schema/types';
+import { getProviderConfig } from '@/components/model-provider-schema/field-config';
+import { useProviderFields } from '@/components/model-provider-schema/hooks';
+import { SelectOption } from '@/components/model-provider-schema/types';
 import type { ControllerRenderProps } from 'react-hook-form';
 import {
   API_KEY_NESTED_FIELDS,

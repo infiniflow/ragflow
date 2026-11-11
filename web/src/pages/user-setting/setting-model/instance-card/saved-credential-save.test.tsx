@@ -2,8 +2,8 @@ import { renderHook } from '@testing-library/react';
 import { useRef } from 'react';
 
 import { LLMFactory } from '@/constants/llm';
-import { LocalLlmConfigs } from '../provider-schema/field-config/local-llm-configs';
-import { ProviderConfigMap } from '../provider-schema/field-config/provider-config-map';
+import { LocalLlmConfigs } from '@/components/model-provider-schema/field-config/local-llm-configs';
+import { ProviderConfigMap } from '@/components/model-provider-schema/field-config/provider-config-map';
 import { SAVED_CREDENTIAL_MASK, useInstanceSaveState } from './hooks';
 
 jest.mock('@/components/dynamic-form', () => ({
@@ -14,7 +14,9 @@ jest.mock('@/hooks/use-llm-request', () => ({}));
 jest.mock('@/hooks/common-hooks', () => ({
   useTranslate: () => ({ t: (key: string) => key }),
 }));
-jest.mock('../provider-schema/hooks', () => ({ useProviderFields: jest.fn() }));
+jest.mock('@/components/model-provider-schema/hooks', () => ({
+  useProviderFields: jest.fn(),
+}));
 
 describe('saved provider credential updates', () => {
   it('does not treat an unchanged transformed instance as dirty', () => {

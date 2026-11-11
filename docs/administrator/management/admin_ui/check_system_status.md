@@ -8,7 +8,7 @@ title: Check System Status
 
 ## Check Whether Services Are Running Normally
 
-The Admin UI sidebar contains **Services**, **Users**, and **Sandbox**. Open **Services** to view the status reported by the Go services and their configured dependencies. Each row displays the service `Name`, `Service type`, `Host`, `Port`, and `Status`. The table does not display an ID column. Hover over a row to show its **Actions**: use the sliders icon for **Extra information**, or the clipboard icon to open service details.
+The Admin UI sidebar contains **Services**, **Users**, **Sandbox**, and **Platform models**. Open **Services** to view the status reported by the Go services and their configured dependencies. Each row displays the service `Name`, `Service type`, `Host`, `Port`, and `Status`. The table does not display an ID column. Hover over a row to show its **Actions**: use the sliders icon for **Extra information**, or the clipboard icon to open service details.
 
 ![Check Whether Services Are Normal](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/check_whether_services_are_normal.jpg)
 

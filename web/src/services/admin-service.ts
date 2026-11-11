@@ -160,6 +160,11 @@ const {
   adminGetSandboxConfig,
   adminSetSandboxConfig,
   adminTestSandboxConnection,
+
+  adminListPlatformProviders,
+  adminCreatePlatformProvider,
+  adminListPlatformProviderCatalog,
+  adminPlatformDefaultModels,
 } = api;
 
 type ResponseData<D = NonNullable<unknown>> = {
@@ -340,4 +345,108 @@ export const testSandboxConnection = (params: {
   >(adminTestSandboxConnection, {
     provider_type: params.providerType,
     config: params.config,
+  });
+
+// Platform model provider APIs
+export const listPlatformProviders = () =>
+  request.get<ResponseData<AdminService.PlatformProvider[]>>(
+    adminListPlatformProviders,
+  );
+
+export const createPlatformProvider = (providerName: string) =>
+  request.put<ResponseData<AdminService.PlatformProvider>>(
+    adminCreatePlatformProvider,
+    { provider_name: providerName },
+  );
+
+export const listPlatformProviderCatalog = () =>
+  request.get<ResponseData<AdminService.PlatformProviderCatalogItem[]>>(
+    adminListPlatformProviderCatalog,
+  );
+
+export const listPlatformInstances = (providerId: string) =>
+  request.get<ResponseData<AdminService.PlatformInstance[]>>(
+    api.adminPlatformInstances(providerId),
+  );
+
+export const createPlatformInstance = (
+  providerId: string,
+  params: AdminService.PlatformInstanceInput,
+) =>
+  request.post<ResponseData<{ id: string; instance_name: string }>>(
+    api.adminPlatformInstances(providerId),
+    { ...params, model_info: [] },
+  );
+
+export const getPlatformInstance = (providerId: string, instanceId: string) =>
+  request.get<ResponseData<AdminService.PlatformInstanceDetail>>(
+    api.adminPlatformInstance(providerId, instanceId),
+  );
+
+export const updatePlatformInstance = (
+  providerId: string,
+  instanceId: string,
+  params: Partial<AdminService.PlatformInstanceInput>,
+) =>
+  request.put<ResponseData<null>>(
+    api.adminPlatformInstance(providerId, instanceId),
+    { ...params, model_info: [] },
+  );
+
+export const listPlatformModels = (providerId: string, instanceId: string) =>
+  request.get<ResponseData<AdminService.PlatformModel[]>>(
+    api.adminPlatformModels(providerId, instanceId),
+  );
+
+export const addPlatformModel = (
+  providerId: string,
+  instanceId: string,
+  params: AdminService.PlatformModelInput,
+) =>
+  request.post<ResponseData<{ model_id: string }>>(
+    api.adminPlatformModels(providerId, instanceId),
+    params,
+  );
+
+export const updatePlatformModel = (
+  providerId: string,
+  instanceId: string,
+  modelId: string,
+  params: AdminService.PlatformModelUpdate,
+) =>
+  request.patch<ResponseData<null>>(
+    api.adminPlatformModel(providerId, instanceId, modelId),
+    params,
+  );
+
+export const checkPlatformConnection = (
+  providerId: string,
+  params: AdminService.PlatformConnectionInput,
+) =>
+  request.post<ResponseData<null>>(
+    api.adminCheckPlatformConnection(providerId),
+    params,
+  );
+
+export const discoverPlatformModels = (
+  providerId: string,
+  params: AdminService.PlatformConnectionInput,
+) =>
+  request.post<ResponseData<AdminService.PlatformDiscoveredModel[]>>(
+    api.adminDiscoverPlatformModels(providerId),
+    params,
+  );
+
+export const listPlatformDefaultModels = () =>
+  request.get<ResponseData<{ models: AdminService.PlatformDefaultModel[] }>>(
+    adminPlatformDefaultModels,
+  );
+
+export const setPlatformDefaultModel = (
+  modelType: string,
+  modelId: string | null,
+) =>
+  request.patch<ResponseData<null>>(adminPlatformDefaultModels, {
+    model_type: modelType,
+    model_id: modelId,
   });

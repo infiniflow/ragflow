@@ -27,12 +27,8 @@ import {
   IModelInfo,
 } from '@/interfaces/request/llm';
 import { useCallback, useMemo, useState } from 'react';
+import { VerifyResult } from '@/components/model-provider-schema/types';
 import { splitProviderPayload } from './payload-utils';
-
-export type VerifyResult = {
-  isValid: boolean | null;
-  logs: string;
-};
 
 /**
  * Unified Provider instance submission hook

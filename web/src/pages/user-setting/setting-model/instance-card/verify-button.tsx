@@ -22,7 +22,7 @@ import { ApiKeyPostBody } from '@/pages/user-setting/interface';
 import { RefreshCcw } from 'lucide-react';
 import { memo, useCallback, useState } from 'react';
 import { useFormContext } from 'react-hook-form';
-import { VerifyResult } from '../hooks';
+import { VerifyResult } from '@/components/model-provider-schema/types';
 
 interface IVerifyButton {
   onVerify: (params: any) => Promise<VerifyResult>;

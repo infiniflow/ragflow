@@ -68,6 +68,11 @@ export function parseApiKeyAsObject(
 const credentialFieldPattern =
   /(api[_-]?key|secret|token|password|credential|private|access[_-]?key|role[_-]?arn|_(ak|sk|sid|key)$)/i;
 
+/** Whether a provider form or configuration field holds a credential. */
+export function isProviderCredentialField(name: string): boolean {
+  return credentialFieldPattern.test(name);
+}
+
 function hasCredentialValue(value: unknown): boolean {
   if (typeof value === 'string') return value.trim() !== '';
   if (Array.isArray(value)) return value.some(hasCredentialValue);

@@ -51,6 +51,12 @@ export type SelectOption = {
   regionKey?: string;
 };
 
+/** Result of a provider connection check shown by the verify button. */
+export type VerifyResult = {
+  isValid: boolean | null;
+  logs: string;
+};
+
 /**
  * Resolver for a text value that may differ by factory (provider).
  * Use when a shared FieldConfig entry needs different i18n keys per provider

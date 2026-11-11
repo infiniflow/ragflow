@@ -10,7 +10,7 @@ title: Before You Begin
 
 System administrators can access the RAGFlow Admin UI in a browser. The current Admin UI entry point is `/admin`, for example `http://192.168.1.5/admin`.
 
-After entering the Admin UI, administrators can check service status, manage user accounts, and configure the code execution sandbox. The Admin UI should be exposed only to trusted administrators.
+After entering the Admin UI, administrators can check service status, manage user accounts, configure the code execution sandbox, and manage platform models shared by all tenants. The Admin UI should be exposed only to trusted administrators.
 
 ![Enter The Admin Console](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/enter_the_admin_console.jpg)
 

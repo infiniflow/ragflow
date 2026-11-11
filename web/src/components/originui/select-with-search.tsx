@@ -54,6 +54,8 @@ export type SelectWithSearchFlagProps = {
   value?: string;
   onChange?(value: string): void;
   triggerClassName?: string;
+  /** Extra classes for the dropdown panel, e.g. to cap its width. */
+  contentClassName?: string;
   allowClear?: boolean;
   disabled?: boolean;
   placeholder?: string;
@@ -74,6 +76,9 @@ export type SelectWithSearchFlagProps = {
   loading?: boolean;
   testId?: string;
   optionTestIdPrefix?: string;
+  // Accessible name of the trigger when no visible label is associated.
+  ariaLabel?: string;
+  ariaLabelledBy?: string;
 };
 
 function filterFn(value: string, search: string, keywords?: string[]) {
@@ -139,6 +144,7 @@ export const SelectWithSearch = forwardRef<
       onChange,
       options = [],
       triggerClassName,
+      contentClassName,
       allowClear = false,
       disabled = false,
       placeholder,
@@ -152,6 +158,8 @@ export const SelectWithSearch = forwardRef<
       loading = false,
       testId,
       optionTestIdPrefix,
+      ariaLabel,
+      ariaLabelledBy,
     },
     ref,
   ) => {
@@ -272,6 +280,8 @@ export const SelectWithSearch = forwardRef<
             variant="outline"
             role="combobox"
             aria-expanded={open}
+            aria-label={ariaLabel}
+            aria-labelledby={ariaLabelledBy}
             ref={ref}
             disabled={disabled}
             data-testid={testId}
@@ -315,7 +325,10 @@ export const SelectWithSearch = forwardRef<
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          className="border-border-button w-full min-w-[var(--radix-popper-anchor-width)] p-0"
+          className={cn(
+            'border-border-button w-full min-w-[var(--radix-popper-anchor-width)] p-0',
+            contentClassName,
+          )}
           align="start"
         >
           <Command className="p-5" filter={filterFn}>

@@ -18,7 +18,7 @@ import { LlmIcon } from '@/components/svg-icon';
 import { APIMapUrl } from '@/constants/llm';
 import { useTranslate } from '@/hooks/common-hooks';
 import { ArrowUpRight } from 'lucide-react';
-import { getProviderConfig } from '../provider-schema/field-config';
+import { getProviderConfig } from '@/components/model-provider-schema/field-config';
 
 interface ProviderHeaderBarProps {
   providerName: string;

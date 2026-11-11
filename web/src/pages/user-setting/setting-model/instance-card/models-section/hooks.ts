@@ -29,8 +29,8 @@ import { IInstanceModel, IProviderInstance } from '@/interfaces/database/llm';
 import { IModelInfo, IProviderModelItem } from '@/interfaces/request/llm';
 import llmService from '@/services/llm-service';
 import { modelNameKey } from '@/utils/llm-util';
-import { hasProviderCredentialInput } from '../../provider-schema/field-config/utils';
-import { getProviderConfig } from '../../provider-schema/field-config/get-provider-config';
+import { hasProviderCredentialInput } from '@/components/model-provider-schema/field-config/utils';
+import { getProviderConfig } from '@/components/model-provider-schema/field-config/get-provider-config';
 import {
   applySavedCredentialEdits,
   buildApiKeyValue,

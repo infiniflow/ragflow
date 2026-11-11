@@ -18,7 +18,7 @@ import { DynamicFormRef } from '@/components/dynamic-form';
 import message from '@/components/ui/message';
 import { IModelInfo } from '@/interfaces/request/llm';
 import { useTranslation } from 'react-i18next';
-import { LIST_MODEL_PROVIDERS } from '../provider-schema/constants';
+import { LIST_MODEL_PROVIDERS } from '@/components/model-provider-schema/constants';
 import {
   forwardRef,
   useCallback,
@@ -29,7 +29,7 @@ import {
   useState,
 } from 'react';
 import { useFetchInstanceNameSet, useHideWhenInstanceExists } from '../hooks';
-import { getProviderConfig } from '../provider-schema/field-config';
+import { getProviderConfig } from '@/components/model-provider-schema/field-config';
 import { BedrockInstanceCard } from './bedrock-instance-card';
 import { GPUStackInstanceCard } from './gpustack-instance-card';
 import { DraftModeCard } from './components/draft-mode-card';

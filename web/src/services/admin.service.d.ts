@@ -234,4 +234,92 @@ declare namespace AdminService {
     provider_type: string;
     config: Record<string, unknown>;
   };
+  export type PlatformStatus = 'active' | 'inactive';
+
+  export type PlatformProvider = {
+    id: string;
+    name: string;
+  };
+
+  export type PlatformProviderCatalogItem = {
+    name: string;
+    rank: number;
+    url?: Record<string, string | undefined>;
+    url_hint?: string;
+    model_types: string[];
+  };
+
+  export type PlatformInstance = {
+    id: string;
+    provider_id: string;
+    instance_name: string;
+    status: PlatformStatus;
+  };
+
+  /** Instance form metadata. Stored credentials are never returned. */
+  export type PlatformInstanceDetail = PlatformInstance & {
+    base_url: string;
+    base_url_configured: boolean;
+    region?: string;
+    api_key_configured: boolean;
+    api_key_config: Record<string, unknown>;
+    /** Keys of `api_key_config` whose saved address is withheld. */
+    api_key_config_hidden?: string[];
+    credential_status: Record<string, boolean>;
+  };
+
+  export type PlatformModel = {
+    model_id: string;
+    model_name: string;
+    model_type: string[];
+    status: PlatformStatus;
+    max_tokens: number;
+    extra: Record<string, unknown>;
+  };
+
+  export type PlatformDiscoveredModel = {
+    name: string;
+    model_types?: string[];
+    max_tokens?: number;
+    features?: string[];
+    /** `supported` when the built-in catalog lists tool support. */
+    tools?: string;
+  };
+
+  export type PlatformDefaultModel = {
+    model_type: string;
+    model_id: string;
+  };
+
+  export type PlatformInstanceInput = {
+    instance_name: string;
+    api_key?: string | Record<string, unknown>;
+    base_url?: string;
+    region?: string;
+    status?: PlatformStatus;
+  };
+
+  export type PlatformModelInput = {
+    model_name: string;
+    model_type: string[];
+    max_tokens?: number;
+    extra?: Record<string, unknown>;
+  };
+
+  export type PlatformModelUpdate = {
+    status?: PlatformStatus;
+    model_type?: string[];
+    max_tokens?: number;
+    extra?: Record<string, unknown>;
+  };
+
+  export type PlatformConnectionInput = {
+    instance_id?: string;
+    use_saved_credentials?: boolean;
+    api_key?: string | Record<string, unknown>;
+    api_key_config?: Record<string, unknown>;
+    base_url?: string;
+    region?: string;
+    model_info?: PlatformModelInput[];
+  };
 }

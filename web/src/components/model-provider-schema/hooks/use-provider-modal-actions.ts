@@ -18,10 +18,10 @@ import { DynamicFormRef } from '@/components/dynamic-form';
 import message from '@/components/ui/message';
 import { useTranslate } from '@/hooks/common-hooks';
 import { IModelInfo } from '@/interfaces/request/llm';
-import { VerifyResult } from '@/pages/user-setting/setting-model/hooks';
 import { RefObject, useCallback } from 'react';
 import { FieldValues } from 'react-hook-form';
 import type {
+  VerifyResult,
   IViewModeOkPayload,
   ProviderConfig,
   ProviderModalProps,

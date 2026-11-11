@@ -64,7 +64,7 @@ jest.mock('@/components/dynamic-form', () => ({
   FormFieldType: new Proxy({}, { get: (_t, key) => String(key) }),
 }));
 
-jest.mock('../../provider-schema/hooks', () => ({
+jest.mock('@/components/model-provider-schema/hooks', () => ({
   useProviderFields: jest.fn(),
 }));
 

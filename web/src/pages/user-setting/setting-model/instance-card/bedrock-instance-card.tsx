@@ -53,7 +53,8 @@ import { useForm, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { BedrockRegionList } from '../constants';
-import { useFetchInstanceNameSet, VerifyResult } from '../hooks';
+import { VerifyResult } from '@/components/model-provider-schema/types';
+import { useFetchInstanceNameSet } from '../hooks';
 import { splitProviderPayload } from '../payload-utils';
 import {
   InstanceSavePayload,

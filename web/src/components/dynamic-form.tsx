@@ -417,8 +417,18 @@ export const RenderField = ({
                 },
               }
             : fieldProps;
+          // A custom control cannot take the label's id, so the wrapper
+          // names it for screen readers.
           return (
-            <div className="w-full">{field.render?.(finalFieldProps)}</div>
+            <div
+              className="w-full"
+              role="group"
+              aria-label={
+                typeof field.label === 'string' ? field.label : undefined
+              }
+            >
+              {field.render?.(finalFieldProps)}
+            </div>
           );
         }}
       </RAGFlowFormItem>
@@ -505,6 +515,9 @@ export const RenderField = ({
               <SelectWithSearch
                 triggerClassName="!shrink"
                 {...finalFieldProps}
+                ariaLabel={
+                  typeof field.label === 'string' ? field.label : undefined
+                }
                 options={field.options}
                 allowCustomValue={field.allowCustomValue}
                 disabled={field.disabled}
@@ -599,6 +612,10 @@ export const RenderField = ({
                 checked={finalFieldProps.value as boolean}
                 onCheckedChange={(checked) => finalFieldProps.onChange(checked)}
                 disabled={field.disabled}
+                // The switch keeps its own id, so the label cannot name it.
+                aria-label={
+                  typeof field.label === 'string' ? field.label : undefined
+                }
               />
             );
           }}
@@ -650,16 +667,15 @@ export const RenderField = ({
                   },
                 }
               : fieldProps;
+            // The input takes the form item's id, so its label names it.
             return (
-              <div className="w-full">
-                <Input
-                  {...finalFieldProps}
-                  type={field.type}
-                  placeholder={field.placeholder}
-                  disabled={field.disabled}
-                  autoComplete={field.autoComplete}
-                />
-              </div>
+              <Input
+                {...finalFieldProps}
+                type={field.type}
+                placeholder={field.placeholder}
+                disabled={field.disabled}
+                autoComplete={field.autoComplete}
+              />
             );
           }}
         </RAGFlowFormItem>
