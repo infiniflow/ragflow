@@ -275,7 +275,10 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 	}
 	if provider.TenantID == entity.PlatformTenantID {
 		if err := permission.CheckPlatformModelAccess(ctx, db, tenantID); err != nil {
-			return nil, errors.New("model not found or inaccessible")
+			if permission.IsPlatformModelAccessDenied(err) {
+				return nil, errors.New("model not found or inaccessible")
+			}
+			return nil, fmt.Errorf("check platform model access: %w", err)
 		}
 	} else if provider.TenantID != tenantID {
 		return nil, errors.New("model not found or inaccessible")
@@ -314,6 +317,9 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 	driver, err := newModelDriverForBaseURLLocal(providerInfo.ModelDriver, provider.ProviderName, region, baseURL)
 	if err != nil {
 		return nil, err
+	}
+	if provider.TenantID == entity.PlatformTenantID {
+		driver = modelModule.NewPlatformSafeDriver(driver)
 	}
 	contextLength := 0
 	if mi, _ := dao.GetModelProviderManager().GetModelByName(catalogName, modelObj.ModelName); mi != nil {

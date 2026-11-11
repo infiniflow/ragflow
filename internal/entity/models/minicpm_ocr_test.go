@@ -20,9 +20,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"ragflow/internal/common"
 	"reflect"
 	"strings"
 	"sync/atomic"
@@ -420,5 +424,35 @@ func TestMiniCPMOCRFileRequiresAPIKeyAndInput(t *testing.T) {
 	}
 	if _, err := driver.OCRFile(t.Context(), &model, nil, nil, &APIConfig{ApiKey: &key}, nil, nil); err == nil || !strings.Contains(err.Error(), "file url or content is required") {
 		t.Fatalf("missing input err=%v", err)
+	}
+}
+
+func TestMiniCPMOCRDoesNotLogUpstreamErrors(t *testing.T) {
+	withSSRFBypass(t)
+	withFastMiniCPMOCRPolling(t)
+	original := common.Logger
+	core, entries := observer.New(zap.WarnLevel)
+	common.Logger = zap.New(core)
+	defer func() { common.Logger = original }()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			_, _ = w.Write([]byte(`{"id":"ocr_1","status":"Running"}`))
+		case http.MethodGet:
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(r.Header.Get("Authorization")))
+		case http.MethodDelete:
+			w.WriteHeader(http.StatusNoContent)
+		}
+	}))
+	defer server.Close()
+	_, err := miniCPMOCRCall(t, newMiniCPMOCRForTest(server.URL), []byte("pdf"), nil)
+	if err == nil || entries.Len() == 0 {
+		t.Fatalf("expected failure and warning: %v", err)
+	}
+	for _, entry := range entries.All() {
+		if strings.Contains(entry.Message, "test-key") || strings.Contains(fmt.Sprint(entry.ContextMap()), "test-key") {
+			t.Fatal("secret in log")
+		}
 	}
 }

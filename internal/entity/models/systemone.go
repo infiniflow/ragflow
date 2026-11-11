@@ -61,9 +61,18 @@ func NewSystemOneModel(baseURL map[string]string, urlSuffix URLSuffix) *SystemOn
 	if urlSuffix.Models == "" {
 		urlSuffix.Models = systemOneDefaultModelsSuffix
 	}
-	return &SystemOneModel{
+	model := &SystemOneModel{
 		OpenAIAPICompatibleModel: NewOpenAIAPICompatibleModel(baseURL, urlSuffix),
 	}
+	model.RestrictCredentialRedirects()
+	return model
+}
+
+// RestrictCredentialRedirects prevents forwarding shared credentials across origins.
+func (m *SystemOneModel) RestrictCredentialRedirects() {
+	client := *m.baseModel.httpClient
+	client.CheckRedirect = refuseCrossOriginRedirect
+	m.baseModel.httpClient = &client
 }
 
 // Name returns the provider identifier.

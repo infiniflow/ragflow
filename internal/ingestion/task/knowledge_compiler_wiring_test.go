@@ -177,8 +177,8 @@ func TestDatasetEmbeddingIDBindsTheDatasetModel(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := datasetEmbeddingID(tc.kb); got != tc.want {
-				t.Fatalf("datasetEmbeddingID() = %q, want %q", got, tc.want)
+			if got := tc.kb.EmbeddingModelReference(); got != tc.want {
+				t.Fatalf("EmbeddingModelReference() = %q, want %q", got, tc.want)
 			}
 		})
 	}

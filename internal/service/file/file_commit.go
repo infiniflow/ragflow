@@ -570,8 +570,8 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 	// chain. This is backend-agnostic (works identically on MySQL and SQLite)
 	// and cheaper than row-level DB locks.
 	mu := pageCommitLock(fileID)
-	mu.Lock()
-	defer mu.Unlock()
+	release := dao.HoldScopedLock(ctx, fileID, mu)
+	defer release()
 
 	item.Seq = uint(pageCommitSeq.Add(1))
 

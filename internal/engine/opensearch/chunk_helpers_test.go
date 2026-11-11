@@ -27,6 +27,44 @@ import (
 	"ragflow/internal/engine/types"
 )
 
+func TestSearchRequireComplete(t *testing.T) {
+	for _, body := range []string{`{"timed_out":true,"hits":{"total":{"value":0},"hits":[]}}`, `{"_shards":{"failed":1},"hits":{"total":{"value":0},"hits":[]}}`} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(body))
+		}))
+		eng := newTestEngine(t, server.URL)
+		for _, strict := range []bool{false, true} {
+			_, err := eng.Search(t.Context(), &types.SearchRequest{IndexNames: []string{"ragflow_tenant"}, Limit: 1, RequireComplete: strict})
+			if (err != nil) != strict {
+				t.Errorf("body=%s strict=%v err=%v", body, strict, err)
+			}
+		}
+		server.Close()
+	}
+}
+
+func TestRefreshChunkStoreChecksShardFailures(t *testing.T) {
+	for _, tc := range []struct {
+		body    string
+		wantErr bool
+	}{
+		{`{"_shards":{"failed":0}}`, false}, {`{"_shards":{"failed":1}}`, true}, {`{}`, true},
+	} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/ragflow_tenant/_refresh" {
+				t.Errorf("path = %s", r.URL.Path)
+			}
+			_, _ = w.Write([]byte(tc.body))
+		}))
+		err := newTestEngine(t, server.URL).RefreshChunkStore(t.Context(), "ragflow_tenant", "kb")
+		if (err != nil) != tc.wantErr {
+			t.Errorf("body=%s err=%v", tc.body, err)
+		}
+		server.Close()
+	}
+}
+
 func TestBuildQueryStringQueryMapsSkillFieldsToTokenFields(t *testing.T) {
 	query := buildQueryStringQuery(&types.MatchTextExpr{
 		MatchingText: "test",

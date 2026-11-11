@@ -40,6 +40,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"ragflow/internal/common"
 )
 
 // Counter is one model tokenizer. Implementations must be exact for their own
@@ -620,7 +622,7 @@ func IsOverLimitError(err error) bool {
 	if err == nil {
 		return false
 	}
-	msg := strings.ToLower(err.Error())
+	msg := strings.ToLower(common.ErrorText(err))
 	if !overLimitStatus.MatchString(msg) {
 		if !serverOverLimitStatus.MatchString(statusField(msg)) {
 			return false

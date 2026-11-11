@@ -119,8 +119,8 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 	// The dataset-level post-processing consumer cluster (§11) is owned and run by
 	// the Ingestor: it is started inside ingestor.Start() and joined inside
 	// ingestor.Stop(), so its lifecycle matches the ingestor. The configured
-	// default LLM/embedding ids are passed so the LLM deduper is used (instead
-	// of the noop fallback that still emits merged products). Best-effort: a
+	// default LLM is passed for the deduper; embedding models are resolved from
+	// each dataset's binding. Best-effort: a
 	// provisioning error is logged by the Ingestor and the pipeline still
 	// writes available_int=0 compiled chunks; they just won't be merged until
 	// the consumer is available.

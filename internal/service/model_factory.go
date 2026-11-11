@@ -356,7 +356,7 @@ type tenantModelExtra struct {
 	Thinking     *bool           `json:"thinking"`
 }
 
-func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.TenantModel) (*modelModule.Model, error) {
+func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.TenantModel, platform bool) (*modelModule.Model, error) {
 	if modelEntity == nil {
 		return modelInfo, nil
 	}
@@ -407,6 +407,28 @@ func modelInfoWithTenantExtra(modelInfo *modelModule.Model, modelEntity *entity.
 		}
 		if documentParseSupported {
 			model.ModelTypeMap["doc_parse"] = true
+		}
+	}
+	if modelEntity.ModelType != 0 {
+		for _, kind := range extra.ModelTypes {
+			if kind == "doc_parse" {
+				if model.ModelTypeMap == nil {
+					model.ModelTypeMap = map[string]bool{}
+				}
+				model.ModelTypeMap["doc_parse"] = true
+			}
+		}
+	}
+	if platform && len(extra.ModelTypes) > 0 {
+		hasDocParse := false
+		for _, kind := range extra.ModelTypes {
+			if kind == "doc_parse" {
+				hasDocParse = true
+				break
+			}
+		}
+		if !hasDocParse {
+			delete(model.ModelTypeMap, "doc_parse")
 		}
 	}
 	if extra.MaxDimension != nil && *extra.MaxDimension > 0 {
@@ -754,7 +776,11 @@ func (s *ModelFactory) resolveModelIdentity(ctx context.Context, requestedType e
 	isPlatform := provider.TenantID == entity.PlatformTenantID
 	if isPlatform {
 		if err := permission.CheckPlatformModelAccess(ctx, dao.DB, tenantID); err != nil {
-			return nil, fmt.Errorf("%w: platform model access: %w", errModelConfigUnavailable, err)
+			if permission.IsPlatformModelAccessDenied(err) {
+				return nil, fmt.Errorf("%w: platform model access: %w", errModelConfigUnavailable, err)
+			}
+			// A failure to decide is not "unavailable".
+			return nil, fmt.Errorf("platform model access: %w", err)
 		}
 	} else if provider.TenantID != tenantID || provider.UserID != owner.UserID {
 		return nil, fmt.Errorf("%w: tenant %s can use only its owner's model configuration", errModelConfigUnavailable, tenantID)
@@ -858,6 +884,9 @@ func (s *ModelFactory) resolveTenantModel(ctx context.Context, modelType entity.
 		return nil, fmt.Errorf("%w: create model driver: %v", errModelConfigUnavailable, err)
 	}
 
+	if providerEntity.TenantID == entity.PlatformTenantID {
+		driver = modelModule.NewPlatformSafeDriver(driver)
+	}
 	target.Driver = driver
 	target.APIConfig = &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
 	return target, nil
@@ -867,7 +896,7 @@ func modelTargetFromIdentity(identity *modelIdentity, modelType entity.ModelType
 	modelEntity, providerEntity, instanceEntity := identity.modelEntity, identity.providerEntity, identity.instanceEntity
 	catalogName := modelModule.CatalogProviderName(providerEntity.ProviderName)
 	modelInfo, _ := dao.GetModelProviderManager().GetModelByName(catalogName, identity.modelName)
-	modelInfo, err := modelInfoWithTenantExtra(modelInfo, modelEntity)
+	modelInfo, err := modelInfoWithTenantExtra(modelInfo, modelEntity, providerEntity.TenantID == entity.PlatformTenantID)
 	if err != nil {
 		return nil, fmt.Errorf("%w: read model metadata: %v", errModelConfigUnavailable, err)
 	}
@@ -877,6 +906,7 @@ func modelTargetFromIdentity(identity *modelIdentity, modelType entity.ModelType
 		setModelInfoTypes(modelInfo, identity.modelType)
 		if documentParseSupported {
 			modelInfo.ModelTypeMap["doc_parse"] = true
+			modelInfo.ModelTypes = append(modelInfo.ModelTypes, "doc_parse")
 		}
 	}
 

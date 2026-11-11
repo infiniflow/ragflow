@@ -100,7 +100,7 @@ func soMarkSubmit(ctx context.Context, baseURL, filename string, data []byte, pa
 		return "", fmt.Errorf("parser: SoMark request: %w", err)
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	resp, err := common.GetSSRFHTTPClient().Do(req)
+	resp, err := common.GetCredentialSafeHTTPClient().Do(req)
 	if err != nil {
 		return "", fmt.Errorf("parser: SoMark submit: %w", err)
 	}
@@ -143,7 +143,7 @@ func soMarkPoll(ctx context.Context, baseURL, taskID, apiKey string) (map[string
 			return nil, fmt.Errorf("parser: SoMark poll request: %w", err)
 		}
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		resp, err := common.GetSSRFHTTPClient().Do(req)
+		resp, err := common.GetCredentialSafeHTTPClient().Do(req)
 		if err != nil {
 			if pollCtx.Err() != nil {
 				return nil, fmt.Errorf("parser: timed out waiting for SoMark task %s: %w", taskID, pollCtx.Err())

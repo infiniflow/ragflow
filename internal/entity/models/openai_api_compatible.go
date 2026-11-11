@@ -39,6 +39,14 @@ type OpenAIAPICompatibleModel struct {
 	*VllmModel
 }
 
+func (m *OpenAIAPICompatibleModel) platformRestrictedClone() ModelDriver {
+	clone := *m
+	base := *m.VllmModel
+	base.RestrictCredentialRedirects()
+	clone.VllmModel = &base
+	return &clone
+}
+
 // NewOpenAIAPICompatibleModel creates a new OpenAI-API-Compatible model instance
 func NewOpenAIAPICompatibleModel(baseURL map[string]string, urlSuffix URLSuffix) *OpenAIAPICompatibleModel {
 	return &OpenAIAPICompatibleModel{

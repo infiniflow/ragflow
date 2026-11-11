@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/dao"
 
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/permission"
@@ -43,7 +44,7 @@ func NewNavEmbedder(modelFactory *ModelFactory, embdModelName string) *NavEmbedd
 
 // Encode embeds texts as DOCUMENTS for the tenant and returns float32 vectors.
 func (e *NavEmbedder) Encode(ctx context.Context, tenantID string, texts []string) ([][]float32, error) {
-	return e.encode(ctx, tenantID, texts, false)
+	return e.encode(ctx, tenantID, "", texts, false)
 }
 
 // EncodeQueries is the query-side counterpart of Encode (Python
@@ -52,14 +53,29 @@ func (e *NavEmbedder) Encode(ctx context.Context, tenantID string, texts []strin
 // NVIDIA query — only apply their query encoding when this method is used, so
 // every caller embedding a SEARCH QUERY must prefer it over Encode.
 func (e *NavEmbedder) EncodeQueries(ctx context.Context, tenantID string, texts []string) ([][]float32, error) {
-	return e.encode(ctx, tenantID, texts, true)
+	return e.encode(ctx, tenantID, "", texts, true)
 }
 
-func (e *NavEmbedder) encode(ctx context.Context, tenantID string, texts []string, query bool) ([][]float32, error) {
+// EncodeDataset uses the dataset's binding for both navigation writes and reads.
+func (e *NavEmbedder) EncodeDataset(ctx context.Context, tenantID, kbID string, texts []string, query bool) ([][]float32, error) {
+	kb, err := dao.NewKnowledgebaseDAO().GetByIDAndTenantID(ctx, dao.ScopedDB(ctx, dao.GetDB()), kbID, tenantID)
+	if err != nil {
+		return nil, fmt.Errorf("datasetnav: resolve dataset: %w", err)
+	}
+	name := kb.EmbeddingModelReference()
+	if name == "" {
+		return nil, fmt.Errorf("datasetnav: dataset %s has no embedding binding", kbID)
+	}
+	return e.encode(ctx, tenantID, name, texts, query)
+}
+
+func (e *NavEmbedder) encode(ctx context.Context, tenantID, name string, texts []string, query bool) ([][]float32, error) {
 	if e.modelFactory == nil {
 		return nil, fmt.Errorf("datasetnav: model factory not initialized")
 	}
-	name := e.embdModelName
+	if name == "" {
+		name = e.embdModelName
+	}
 	var model *modelModule.EmbeddingModel
 	var err error
 	if name == "" {

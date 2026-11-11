@@ -27,6 +27,7 @@ import (
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/permission"
 
 	"gorm.io/gorm"
 )
@@ -115,7 +116,23 @@ func maybeDispatchTenantPDFParser(ctx context.Context, db *gorm.DB, filename str
 	if err != nil {
 		return parser.ParseResult{}, true, fmt.Errorf("parser: tenant PDF model lookup: %w", err)
 	}
-	if tenantID == "" || provider.TenantID != tenantID || instance.ProviderID != provider.ID {
+	// A platform model, selectable only by ID, is shared with every tenant
+	// and is authorized for the operation tenant instead of by ownership.
+	platform := !composite && provider.TenantID == entity.PlatformTenantID
+	if platform {
+		if tenantID == "" {
+			return parser.ParseResult{}, true, fmt.Errorf("parser: selected PDF model does not belong to this tenant/provider")
+		}
+		if err := permission.CheckPlatformModelAccess(ctx, db, tenantID); err != nil {
+			if permission.IsPlatformModelAccessDenied(err) {
+				return parser.ParseResult{}, true, fmt.Errorf("parser: selected PDF model does not belong to this tenant/provider")
+			}
+			return parser.ParseResult{}, true, fmt.Errorf("parser: platform PDF model access: %w", err)
+		}
+	} else if tenantID == "" || provider.TenantID != tenantID {
+		return parser.ParseResult{}, true, fmt.Errorf("parser: selected PDF model does not belong to this tenant/provider")
+	}
+	if instance.ProviderID != provider.ID {
 		return parser.ParseResult{}, true, fmt.Errorf("parser: selected PDF model does not belong to this tenant/provider")
 	}
 	if model.Status != "active" || instance.Status != "active" || !entity.ModelType(model.ModelType).Has(entity.ModelTypeOCR) {
@@ -165,6 +182,10 @@ func maybeDispatchTenantPDFParser(ctx context.Context, db *gorm.DB, filename str
 	}
 	result := pdf.ParseWithResult(ctx, filename, binary)
 	if result.Err != nil {
+		if platform {
+			err := hidePlatformParseError(true, "parser: "+engine, result.Err)
+			return parser.ParseResult{}, true, err
+		}
 		return result, true, result.Err
 	}
 	if result.File == nil {

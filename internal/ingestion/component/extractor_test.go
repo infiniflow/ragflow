@@ -34,6 +34,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
@@ -945,8 +946,9 @@ func TestIsBareTenantModelID(t *testing.T) {
 // TestResolveExtractorChatTarget_AtSplitFallback verifies the @ split fallback.
 func TestResolveExtractorChatTarget_AtSplitFallback(t *testing.T) {
 	ctx := t.Context()
-	driver, modelName, apiKey, baseURL, err := resolveExtractorChatTarget(
+	target, err := resolveExtractorChatTarget(
 		ctx, dao.DB, "gpt-4o-mini@openai")
+	driver, modelName, apiKey, baseURL := target.driver, target.modelName, target.apiKey, target.baseURL
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -964,8 +966,9 @@ func TestResolveExtractorChatTarget_AtSplitFallback(t *testing.T) {
 // TestResolveExtractorChatTarget_NoDriver verifies a non-@ plain string returns no driver.
 func TestResolveExtractorChatTarget_NoDriver(t *testing.T) {
 	ctx := t.Context()
-	driver, modelName, _, _, err := resolveExtractorChatTarget(
+	target, err := resolveExtractorChatTarget(
 		ctx, dao.DB, "plain-name")
+	driver, modelName := target.driver, target.modelName
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1215,7 +1218,8 @@ func TestExtractorComponent_Invoke_ConcurrentKeywordsAndQuestions(t *testing.T) 
 // TestResolveExtractorChatTarget_EmptyLLMID verifies default fallback when llmID is empty.
 func TestResolveExtractorChatTarget_EmptyLLMID(t *testing.T) {
 	ctx := t.Context()
-	driver, modelName, _, _, err := resolveExtractorChatTarget(ctx, dao.DB, "")
+	target, err := resolveExtractorChatTarget(ctx, dao.DB, "")
+	driver, modelName := target.driver, target.modelName
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -2323,5 +2327,37 @@ func TestExtractor_CallTextCached_NoRedis_FailOpen(t *testing.T) {
 	ck := chunks[0]
 	if sum, ok := ck["summary"].(string); !ok || sum != "This is a summary without Redis." {
 		t.Errorf("got summary %v, want 'This is a summary without Redis.'", ck["summary"])
+	}
+}
+
+// TestExtractorChatHidesOnlyPlatformErrors keeps tenant model errors intact,
+// since retry classification reads them, while platform errors are replaced.
+func TestExtractorChatHidesOnlyPlatformErrors(t *testing.T) {
+	inv := &einoExtractorChatInvoker{}
+	req := extractorChatRequest{Driver: "dummy", ModelName: "m", Messages: []eschema.Message{{Role: eschema.User, Content: "hi"}}}
+	_, err := inv.Chat(t.Context(), req)
+	if err == nil || !strings.Contains(err.Error(), "not implemented") {
+		t.Fatalf("tenant error changed: %v", err)
+	}
+	req.Platform = true
+	_, err = inv.Chat(t.Context(), req)
+	if err == nil || strings.Contains(err.Error(), "not implemented") || !strings.Contains(err.Error(), "platform model request failed") {
+		t.Fatalf("platform error not hidden: %v", err)
+	}
+	target := newExtractorChatConfig(modelModule.NewPlatformSafeDriver(modelModule.NewDummyModel(nil, modelModule.URLSuffix{})), "m", nil)
+	if !target.request(nil).Platform {
+		t.Fatal("platform marker lost while resolving the target")
+	}
+}
+
+func TestFitExtractorUsesResolvedDefaultContextWindow(t *testing.T) {
+	original := strings.Repeat("word ", 500)
+	msgs := []eschema.Message{{Role: eschema.User, Content: original}}
+	fitted, err := fitExtractorTargetMessages(t.Context(), nil, "", extractorResolvedTarget{contextLength: 32}, msgs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fitted) != 1 || len(fitted[0].Content) >= len(original) {
+		t.Fatalf("default model context window not applied: %q", fitted[0].Content)
 	}
 }

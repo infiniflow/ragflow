@@ -42,6 +42,26 @@ import (
 	"gorm.io/gorm"
 )
 
+func TestPaddleOCRDispatchPreservesExplicitSelector(t *testing.T) {
+	previous := resolvePaddleOCRModelForDispatch
+	t.Cleanup(func() { resolvePaddleOCRModelForDispatch = previous })
+	var selected string
+	resolvePaddleOCRModelForDispatch = func(_ context.Context, _ *gorm.DB, _ string, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+		selected = modelID
+		return nil, "", nil, errors.New("model unavailable")
+	}
+	for _, tc := range []struct{ selector, want string }{
+		{"model@instance-b@PaddleOCR", "model@instance-b@PaddleOCR"},
+		{"paddleocr", ""},
+	} {
+		selected = "not-called"
+		_, handled, err := dispatchPDFBackend(t.Context(), nil, "file.pdf", nil, "tenant", schema.ParserSetup{"layout_recognizer": tc.selector})
+		if !handled || err == nil || selected != tc.want {
+			t.Fatalf("selector %q: handled=%v err=%v model=%q", tc.selector, handled, err, selected)
+		}
+	}
+}
+
 func TestMonkeyOCRv2ExtractSectionsUsesNativeJSON(t *testing.T) {
 	var buffer bytes.Buffer
 	writer := zip.NewWriter(&buffer)

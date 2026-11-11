@@ -31,6 +31,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/permission"
 	"ragflow/internal/utility"
 
 	"github.com/glebarez/sqlite"
@@ -627,5 +628,183 @@ func TestTenantPDFParserFailureDoesNotFallback(t *testing.T) {
 				t.Fatalf("selected backend failure fell back: handled=%v err=%v", handled, err)
 			}
 		})
+	}
+}
+
+func TestPlatformSoMarkUsesConfiguredEndpoint(t *testing.T) {
+	withSSRFBypass(t)
+	var selected, fallback atomic.Int64
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		selected.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"message":"platform-secret"}`))
+	}))
+	defer target.Close()
+	decoy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fallback.Add(1) }))
+	defer decoy.Close()
+	original := resolveSoMarkModelForDispatch
+	defer func() { resolveSoMarkModelForDispatch = original }()
+	key := "platform-secret"
+	resolveSoMarkModelForDispatch = func(context.Context, *gorm.DB, string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+		driver := modelModule.NewSoMarkModel(map[string]string{"default": target.URL}, modelModule.URLSuffix{})
+		return modelModule.NewPlatformSafeDriver(driver), "model", &modelModule.APIConfig{ApiKey: &key}, nil
+	}
+	_, handled, err := dispatchSoMarkPDF(t.Context(), nil, "file.pdf", []byte("pdf"), "tenant", schema.ParserSetup{"somark_base_url": decoy.URL}, "model")
+	if !handled || err == nil || strings.Contains(err.Error(), key) || selected.Load() != 1 || fallback.Load() != 0 {
+		t.Fatalf("handled=%v err=%v selected=%d fallback=%d", handled, err, selected.Load(), fallback.Load())
+	}
+}
+
+func TestPlatformMinerUHidesBackendErrors(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/health" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte(`{"detail":"upstream echoed platform-secret"}`))
+	}))
+	defer server.Close()
+	original := resolveMinerUModelForDispatch
+	defer func() { resolveMinerUModelForDispatch = original }()
+	key := "platform-secret"
+	baseURL := server.URL + "/?token=" + key
+	for _, platform := range []bool{true, false} {
+		resolveMinerUModelForDispatch = func(context.Context, *gorm.DB, string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+			var driver modelModule.ModelDriver = modelModule.NewMinerUModel(map[string]string{"default": baseURL}, modelModule.URLSuffix{})
+			if platform {
+				driver = modelModule.NewPlatformSafeDriver(driver)
+			}
+			return driver, "model", &modelModule.APIConfig{ApiKey: &key, BaseURL: &baseURL}, nil
+		}
+		_, err := dispatchMinerUPDF(t.Context(), nil, "file.pdf", []byte("pdf"), "tenant", schema.ParserSetup{}, "model")
+		if err == nil {
+			t.Fatalf("platform=%v: expected an error", platform)
+		}
+		if platform && strings.Contains(err.Error(), key) {
+			t.Fatalf("platform error leaked the credential: %v", err)
+		}
+		if !platform && !strings.Contains(err.Error(), "platform-secret") {
+			t.Fatalf("tenant error lost detail: %v", err)
+		}
+	}
+}
+
+// TestPlatformMinerUIgnoresSetupServer keeps a tenant's parser setup from
+// choosing the backend or VLM server of a shared MinerU service.
+func TestPlatformMinerUIgnoresSetupServer(t *testing.T) {
+	withSSRFBypass(t)
+	t.Setenv(common.EnvMineruBackend, "")
+	t.Setenv(common.EnvMineruServerURL, "")
+	for _, platform := range []bool{true, false} {
+		var backend, serverURL string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/v1/health" {
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
+			backend, serverURL = r.FormValue("backend"), r.FormValue("server_url")
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		key := `{"mineru_backend":"vlm-http-client","mineru_server_url":"http://admin-vlm:30000"}`
+		baseURL := server.URL
+		original := resolveMinerUModelForDispatch
+		resolveMinerUModelForDispatch = func(context.Context, *gorm.DB, string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+			var driver modelModule.ModelDriver = modelModule.NewMinerUModel(map[string]string{"default": baseURL}, modelModule.URLSuffix{})
+			if platform {
+				driver = modelModule.NewPlatformSafeDriver(driver)
+			}
+			return driver, "model", &modelModule.APIConfig{ApiKey: &key, BaseURL: &baseURL}, nil
+		}
+		setup := schema.ParserSetup{"mineru_backend": "vlm-http-client", "mineru_server_url": "http://tenant-host:9000"}
+		_, _ = dispatchMinerUPDF(t.Context(), nil, "file.pdf", []byte("pdf"), "tenant", setup, "model")
+		resolveMinerUModelForDispatch = original
+		server.Close()
+		want := "http://tenant-host:9000"
+		if platform {
+			want = "http://admin-vlm:30000"
+		}
+		if backend != "vlm-http-client" || serverURL != want {
+			t.Fatalf("platform=%v: backend=%q server_url=%q, want server_url %q", platform, backend, serverURL, want)
+		}
+	}
+}
+
+func TestPlatformMonkeyOCRIgnoresTenantBackendAndServer(t *testing.T) {
+	withSSRFBypass(t)
+	t.Setenv(common.EnvMonkeyOCRBackend, "")
+	t.Setenv(common.EnvMonkeyOCRServerURL, "")
+	for _, platform := range []bool{true, false} {
+		var backend, serverURL string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			backend, serverURL = r.FormValue("backend"), r.FormValue("server_url")
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		key := `{"monkeyocr_backend":"vlm-http-client"}`
+		baseURL := server.URL
+		original := resolveMonkeyOCRModelForDispatch
+		resolveMonkeyOCRModelForDispatch = func(context.Context, *gorm.DB, string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+			var driver modelModule.ModelDriver = modelModule.NewMonkeyOCRModel(map[string]string{"default": baseURL}, modelModule.URLSuffix{})
+			if platform {
+				driver = modelModule.NewPlatformSafeDriver(driver)
+			}
+			return driver, "model", &modelModule.APIConfig{ApiKey: &key, BaseURL: &baseURL}, nil
+		}
+		_, _ = dispatchMonkeyOCRPDF(t.Context(), nil, "file.pdf", []byte("pdf"), "tenant", schema.ParserSetup{"monkeyocr_backend": "vlm-http-client", "monkeyocr_server_url": "http://tenant-host:9000"}, "model")
+		resolveMonkeyOCRModelForDispatch = original
+		server.Close()
+		if platform {
+			if backend != "" || serverURL != "" {
+				t.Fatalf("platform sent tenant server: backend=%q server=%q", backend, serverURL)
+			}
+		} else if backend != "vlm-http-client" || serverURL != "http://tenant-host:9000" {
+			t.Fatalf("tenant backend=%q server=%q", backend, serverURL)
+		}
+	}
+}
+
+// TestPlatformPDFParserModelByID lets a tenant parse with a platform SoMark or
+// OpenDataLoader model selected by ID once the platform authorizes the tenant.
+func TestPlatformPDFParserModelByID(t *testing.T) {
+	for _, provider := range []string{"SoMark", "OpenDataLoader"} {
+		t.Run(provider, func(t *testing.T) {
+			db, _, requests := tenantPDFParserFixture(t, provider)
+			if err := db.Model(&entity.TenantModelProvider{}).Where("id = ?", "provider").Update("tenant_id", entity.PlatformTenantID).Error; err != nil {
+				t.Fatal(err)
+			}
+			setup := schema.ParserSetup{"parse_method": "model-b"}
+			if err := db.AutoMigrate(&entity.Tenant{}, &entity.SystemSettings{}); err != nil {
+				t.Fatal(err)
+			}
+			active := "1"
+			for _, row := range []any{
+				&entity.Tenant{ID: "tenant-1", Status: &active},
+				&entity.SystemSettings{Name: entity.PlatformProviderLockSetting, Source: "system", DataType: "string", Value: "ready"},
+			} {
+				if err := db.Create(row).Error; err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, handled, err := maybeDispatchTenantPDFParser(t.Context(), db, "sample.pdf", []byte("pdf"), "tenant-1", setup); !handled || err == nil || len(requests) != 0 {
+				t.Fatalf("unauthorized platform model: handled=%v err=%v", handled, err)
+			}
+			ctx := permission.WithTrustedModelTenant(t.Context(), "tenant-1")
+			res, handled, err := maybeDispatchTenantPDFParser(ctx, db, "sample.pdf", []byte("pdf"), "tenant-1", setup)
+			if !handled || err != nil || res.Err != nil || len(requests) == 0 {
+				t.Fatalf("platform model: handled=%v err=%v res=%v", handled, err, res.Err)
+			}
+		})
+	}
+}
+
+func TestExplicitPDFModelRequiresDatabase(t *testing.T) {
+	_, _, _, err := defaultPDFVisionModelResolver(t.Context(), nil, "tenant", "model-id")
+	if err == nil {
+		t.Fatal("model lookup succeeded without a database")
+	}
+	_, handled, err := maybeDispatchTenantPDFParser(t.Context(), nil, "sample.pdf", nil, "tenant", nil)
+	if handled || err != nil {
+		t.Fatalf("empty selector: handled=%v err=%v", handled, err)
 	}
 }

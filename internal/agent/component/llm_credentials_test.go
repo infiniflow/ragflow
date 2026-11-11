@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 
 	"gorm.io/gorm"
 )
@@ -32,7 +34,7 @@ func TestCompositeModelPropagatesLookupErrors(t *testing.T) {
 				t.Fatal(err)
 			}
 			ref := fmt.Sprintf("decision-model-preview@%s@SystemOne", tc.instance)
-			_, _, _, _, _, err := resolveModelRefWithType(stateWithTenant("tenant-1"), db, ref, "", "", "", entity.ModelTypeDecision)
+			_, _, _, _, _, _, err := resolveModelRefWithType(stateWithTenant("tenant-1"), db, ref, "", "", "", entity.ModelTypeDecision)
 			if !errors.Is(err, lookupErr) {
 				t.Fatalf("resolveModelRefWithType error = %v, want %v", err, lookupErr)
 			}
@@ -63,7 +65,7 @@ func TestCompositeModelRejectsUnresolvedInstanceReference(t *testing.T) {
 	} {
 		t.Run(ref, func(t *testing.T) {
 			db := setupCategorizeDecisionModel(t, "https://example.invalid/v1")
-			_, _, _, _, _, err := resolveModelRefWithType(stateWithTenant("tenant-1"), db, ref, "", "override-key", "https://example.invalid/override", entity.ModelTypeDecision)
+			_, _, _, _, _, _, err := resolveModelRefWithType(stateWithTenant("tenant-1"), db, ref, "", "override-key", "https://example.invalid/override", entity.ModelTypeDecision)
 			if err == nil {
 				t.Fatal("unresolved three-part reference must not fall back to the legacy split")
 			}
@@ -86,13 +88,13 @@ func TestCompositeModelMissingModelRowChecksInstanceStatus(t *testing.T) {
 	ref := "gone-model@default@SystemOne"
 	db := setupCategorizeDecisionModel(t, "https://example.invalid/v1")
 	// Active instance: the fallback to the instance credentials is kept.
-	if _, _, _, _, _, err := resolveModelRefWithType(stateWithTenant("tenant-1"), db, ref, "", "", "", entity.ModelTypeDecision); err != nil {
+	if _, _, _, _, _, _, err := resolveModelRefWithType(stateWithTenant("tenant-1"), db, ref, "", "", "", entity.ModelTypeDecision); err != nil {
 		t.Fatalf("active instance, missing model row: %v", err)
 	}
 	if err := db.Model(&entity.TenantModelInstance{}).Where("id = ?", "decision-instance").Update("status", "inactive").Error; err != nil {
 		t.Fatal(err)
 	}
-	if _, _, key, _, _, err := resolveModelRefWithType(stateWithTenant("tenant-1"), db, ref, "", "", "", entity.ModelTypeDecision); err == nil {
+	if _, _, key, _, _, _, err := resolveModelRefWithType(stateWithTenant("tenant-1"), db, ref, "", "", "", entity.ModelTypeDecision); err == nil {
 		t.Fatalf("inactive instance with a missing model row resolved (key %q)", key)
 	}
 }
@@ -177,7 +179,7 @@ func TestCompositeModelLeavesNonDecisionReferencesUntouched(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			db := setupLegacyProviderModels(t, tc.modelType, tc.status)
-			model, driver, key, baseURL, err := resolveChatModelRef(stateWithTenant("tenant-1"), db, tc.ref, "", tc.apiKey, tc.baseURL)
+			model, driver, key, baseURL, _, err := resolveChatModelRef(stateWithTenant("tenant-1"), db, tc.ref, "", tc.apiKey, tc.baseURL)
 			if err != nil {
 				t.Fatalf("resolveChatModelRef: %v", err)
 			}
@@ -189,5 +191,93 @@ func TestCompositeModelLeavesNonDecisionReferencesUntouched(t *testing.T) {
 				t.Fatalf("got %q %q key=%q base=%q; want glm-4v %s key=%q base=%q", model, driver, key, baseURL, wantDriver, tc.wantKey, tc.wantBase)
 			}
 		})
+	}
+}
+
+func setupPlatformAgentModel(t *testing.T) *gorm.DB {
+	t.Helper()
+	db := setupComponentTestDB(t)
+	if err := db.AutoMigrate(&entity.Tenant{}, &entity.SystemSettings{}); err != nil {
+		t.Fatal(err)
+	}
+	active := "1"
+	joined := entity.TenantMembershipStatusJoined
+	for _, row := range []any{
+		&entity.SystemSettings{Name: entity.PlatformProviderLockSetting, Source: "system", DataType: "string", Value: "ready"},
+		&entity.Tenant{ID: "tenant-1", Status: &active},
+		&entity.UserTenant{ID: "member-1", UserID: "user-1", TenantID: "tenant-1", Role: "normal", Status: &joined},
+		&entity.TenantModelProvider{ID: "platform-provider", TenantID: entity.PlatformTenantID, UserID: "admin", ProviderName: "OpenAI"},
+		&entity.TenantModelInstance{ID: "platform-instance", ProviderID: "platform-provider", InstanceName: "shared", APIKey: "platform-secret", Status: "active", Extra: `{"base_url":"https://platform.example/v1"}`},
+		&entity.TenantModel{ID: "0123456789abcdef0123456789abcdef", ProviderID: "platform-provider", InstanceID: "platform-instance", ModelName: "gpt-shared", ModelType: int(entity.ModelTypeChat), Status: "active"},
+	} {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	return db
+}
+
+func TestAgentResolvesPlatformModel(t *testing.T) {
+	db := setupPlatformAgentModel(t)
+	pushComponentDB(t, db)
+	const ref = "0123456789abcdef0123456789abcdef"
+	if _, _, _, _, _, err := resolveChatModelRef(stateWithTenant("tenant-1"), db, ref, "", "", ""); err == nil {
+		t.Fatal("platform model used without a caller identity")
+	}
+	ctx := permission.WithIdentity(stateWithTenant("tenant-1"), "user-1", "tenant-1")
+	model, driver, key, baseURL, platform, err := resolveChatModelRef(ctx, db, ref, "", "workflow-key", "https://attacker.example")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if model != "gpt-shared" || driver != "OpenAI" || !platform {
+		t.Fatalf("resolved %q %q platform=%v", model, driver, platform)
+	}
+	if key != "platform-secret" || baseURL != "https://platform.example/v1" {
+		t.Fatalf("workflow overrides were combined with platform credentials: %q %q", key, baseURL)
+	}
+	model, driver, key, baseURL, platform, err = resolveChatModelRef(ctx, db, ref, "OpenAI", "workflow-key", "https://attacker.example")
+	if err != nil || model != "gpt-shared" || driver != "OpenAI" || key != "platform-secret" || baseURL != "https://platform.example/v1" || !platform {
+		t.Fatalf("explicit driver changed platform resolution: model=%q driver=%q platform=%v err=%v", model, driver, platform, err)
+	}
+	outsider := permission.WithIdentity(stateWithTenant("tenant-1"), "user-2", "tenant-1")
+	if _, _, _, _, _, err := resolveChatModelRef(outsider, db, ref, "", "", ""); err == nil {
+		t.Fatal("non-member used a platform model")
+	}
+	if err := db.Model(&entity.TenantModelInstance{}).Where("id = ?", "platform-instance").Update("status", "inactive").Error; err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, _, _, err := resolveChatModelRef(ctx, db, ref, "", "", ""); err == nil {
+		t.Fatal("inactive platform instance was used")
+	}
+}
+
+func TestPlatformChatDriverHidesErrors(t *testing.T) {
+	tenant, err := newChatModelDriver("dummy", "", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, platform := models.PlatformDriverBase(tenant); platform {
+		t.Fatal("tenant driver was wrapped")
+	}
+	shared, err := newChatModelDriver("dummy", "", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, platform := models.PlatformDriverBase(shared); !platform {
+		t.Fatal("platform driver was not wrapped")
+	}
+}
+
+func TestAgentPlatformModelHidesStatusFromNonMembers(t *testing.T) {
+	db := setupPlatformAgentModel(t)
+	pushComponentDB(t, db)
+	const ref = "0123456789abcdef0123456789abcdef"
+	if err := db.Model(&entity.TenantModel{}).Where("id = ?", ref).Update("status", "inactive").Error; err != nil {
+		t.Fatal(err)
+	}
+	outsider := permission.WithIdentity(stateWithTenant("tenant-1"), "user-2", "tenant-1")
+	_, _, _, _, _, err := resolveChatModelRef(outsider, db, ref, "", "", "")
+	if err == nil || strings.Contains(err.Error(), "disabled") {
+		t.Fatalf("non-member learned the model status: %v", err)
 	}
 }

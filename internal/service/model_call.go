@@ -287,6 +287,11 @@ func (s *ModelCallService) ParseFile(ctx context.Context, modelRef string, conte
 	if target.ModelInfo == nil || !target.ModelInfo.ModelTypeMap["doc_parse"] {
 		return nil, common.CodeNotFound, fmt.Errorf("model %q is not a document parser", modelRef)
 	}
+	// The result is fetched later through the tenant's own instance, which a
+	// platform model does not have; platform parsers serve ingestion only.
+	if _, platform := modelModule.PlatformDriverBase(target.Driver); platform {
+		return nil, common.CodeNotFound, fmt.Errorf("model %q is not a document parser available to this API", modelRef)
+	}
 	if config == nil {
 		config = &modelModule.ParseFileConfig{}
 	}

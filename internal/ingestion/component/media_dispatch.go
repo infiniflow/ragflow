@@ -30,8 +30,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"go.uber.org/zap"
-
 	agentruntime "ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	imageparser "ragflow/internal/deepdoc/parser/image"
@@ -352,11 +350,11 @@ func describeImage(
 	var apiConfig *modelModule.APIConfig
 	var err error
 	if modelRef != "" {
+		// An explicit choice that cannot be used is reported, never replaced
+		// by the default model.
 		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, modelRef)
 		if err != nil {
-			common.Warn("media dispatch image: per-call VLM resolve failed, falling back to tenant default",
-				zap.String("modelRef", modelRef), zap.String("tenant", tenantID), zap.Error(err))
-			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+			return "", []string{fmt.Sprintf("image VLM enhancement skipped: selected model %q is unavailable: %v", modelRef, err)}
 		}
 	} else {
 		driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
@@ -433,11 +431,12 @@ func maybeDispatchAudio(
 	var apiConfig *modelModule.APIConfig
 	var err error
 	if modelRef != "" {
+		// An explicit choice that cannot be used fails the parse; it is never
+		// replaced by the default model.
 		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeSpeech2Text, modelRef)
 		if err != nil {
-			common.Warn("media dispatch audio: per-call VLM resolve failed, falling back to tenant default",
-				zap.String("modelRef", modelRef), zap.String("tenant", tenantID), zap.Error(err))
-			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeSpeech2Text)
+			return parser.ParseResult{}, true,
+				fmt.Errorf("parser: audio speech2text model %q: %w", modelRef, err)
 		}
 	} else {
 		driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeSpeech2Text)

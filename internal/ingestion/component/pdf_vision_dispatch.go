@@ -215,10 +215,8 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 		strings.Contains(layoutLower, "@paddleocr")
 	// The UUID may be placed in either parse_method or layout_recognizer;
 	// probe the non-empty one (layout takes precedence, then parse_method).
-	// The selector is used only for the UUID probe: a string-matched
-	// "paddleocr"/"@paddleocr" selector is a method name, not a model UUID,
-	// so it must never reach the model resolver. Named parse methods (e.g.
-	// "deepdoc") are likewise never probed as model UUIDs.
+	// Composite selectors identify a specific model; method-only names retain
+	// the provider fallback. Named parse methods are not probed as UUIDs.
 	paddleOCRSelector := layout
 	if strings.TrimSpace(paddleOCRSelector) == "" {
 		paddleOCRSelector = method
@@ -233,11 +231,8 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 			return parser.ParseResult{}, true,
 				fmt.Errorf("parser: PaddleOCR requires tenant_id")
 		}
-		// Only a resolved UUID may be passed to the model resolver; a string
-		// match keeps the empty modelID so the tenant's PaddleOCR model is
-		// resolved by provider instead.
 		dispatchModelID := ""
-		if isPaddleOCRByUUID {
+		if isPaddleOCRByUUID || strings.Index(strings.TrimSpace(paddleOCRSelector), "@") > 0 {
 			dispatchModelID = paddleOCRSelector
 		}
 		res, err := dispatchPaddleOCRPdf(ctx, db, filename, binary, tenantID, setup, dispatchModelID)
@@ -312,6 +307,7 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, binary []byte, tenantID string, setup schema.ParserSetup, modelRef string) (parser.ParseResult, error) {
 	baseURL := strings.TrimRight(getStringOr(setup, "monkeyocrv2_server_url", os.Getenv(common.EnvMonkeyOCRv2ServerURL)), "/")
 	timeout := monkeyOCRv2RequestTimeout(setup, nil)
+	platform := false
 	if tenantID != "" {
 		var driver modelModule.ModelDriver
 		var apiConfig *modelModule.APIConfig
@@ -322,6 +318,7 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 			driver, _, apiConfig, _, err = resolveTenantOCRModelByProvider(ctx, db, tenantID, "MonkeyOCRv2")
 		}
 		if err == nil {
+			_, platform = modelModule.PlatformDriverBase(driver)
 			if !strings.EqualFold(driver.Name(), "monkeyocrv2") {
 				return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCRv2 requires a MonkeyOCRv2 OCR model; found %q", driver.Name())
 			}
@@ -331,7 +328,7 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 				baseURL = strings.TrimRight(configuredURL, "/")
 			}
 			timeout = monkeyOCRv2RequestTimeout(setup, apiConfig)
-		} else if baseURL == "" {
+		} else if modelRef != "" || baseURL == "" {
 			return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCRv2 model: %w", err)
 		}
 	}
@@ -340,10 +337,16 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 	}
 	zipBytes, err := monkeyOCRv2ParseRequest(ctx, baseURL+"/parse", filename, binary, timeout)
 	if err != nil {
+		if platform {
+			return parser.ParseResult{}, hidePlatformParseError(true, "parser: MonkeyOCRv2", err)
+		}
 		return parser.ParseResult{}, err
 	}
 	sections, err := monkeyOCRv2ExtractSections(zipBytes)
 	if err != nil {
+		if platform {
+			return parser.ParseResult{}, hidePlatformParseError(true, "parser: MonkeyOCRv2 extract", err)
+		}
 		return parser.ParseResult{}, err
 	}
 	md := strings.Join(sections, "\n\n")
@@ -611,6 +614,7 @@ func dispatchMinerUPDF(
 		return parser.ParseResult{}, fmt.Errorf(
 			"parser: MinerU requires a MinerU OCR model; found %q. Please add a MinerU OCR model to your tenant", driver.Name())
 	}
+	_, platform := modelModule.PlatformDriverBase(driver)
 
 	apiKeyRaw := ""
 	if apiConfig.ApiKey != nil {
@@ -636,8 +640,15 @@ func dispatchMinerUPDF(
 		lang = minerUDefaultLanguage
 	}
 	mineruLang := mineruLangCode(lang)
-	backend := modelModule.ResolveMinerUBackend(getStringOr(setup, "mineru_backend", ""), apiKeyRaw)
-	serverURL := modelModule.ResolveMinerUServerURL(getStringOr(setup, "mineru_server_url", ""), apiKeyRaw)
+	setupBackend := getStringOr(setup, "mineru_backend", "")
+	setupServerURL := getStringOr(setup, "mineru_server_url", "")
+	if platform {
+		// A shared MinerU service uses the administrator's backend and VLM
+		// server; a tenant setup must not point it at another endpoint.
+		setupBackend, setupServerURL = "", ""
+	}
+	backend := modelModule.ResolveMinerUBackend(setupBackend, apiKeyRaw)
+	serverURL := modelModule.ResolveMinerUServerURL(setupServerURL, apiKeyRaw)
 	timeout := mineruRequestTimeout(setup, apiConfig)
 
 	if modelModule.IsMinerUCloudBase(baseURL) {
@@ -645,7 +656,7 @@ func dispatchMinerUPDF(
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU cloud does not support disabling formula or table extraction")
 		}
 		if err := modelModule.ValidateMinerUConfigForAPI(backend, serverURL, true); err != nil {
-			return parser.ParseResult{}, err
+			return parser.ParseResult{}, hidePlatformConfigError(platform, "parser: MinerU", err)
 		}
 		cloudCtx, cloudCancel := context.WithTimeout(ctx, timeout)
 		defer cloudCancel()
@@ -653,19 +664,21 @@ func dispatchMinerUPDF(
 		result, err := modelModule.ParseMinerUCloud(cloudCtx, baseURL, apiKeyRaw, filename, binary, backend, parseMethod, mineruLang)
 		finish()
 		if err != nil {
-			return parser.ParseResult{}, fmt.Errorf("parser: MinerU cloud: %w", err)
+			return parser.ParseResult{}, hidePlatformParseError(platform, "parser: MinerU cloud", err)
 		}
-		return finishMinerURemoteResult(ctx, filename, binary, result)
+		res, err := finishMinerURemoteResult(ctx, filename, binary, result)
+		// Archive entry names come from the provider.
+		return res, hidePlatformConfigError(platform, "parser: MinerU", err)
 	}
 
 	finishProbe := agentruntime.TrackIO(ctx, "Parser", "remote parser", "backend=MinerU phase=probe")
 	v1, err := modelModule.MinerUSupportsV1(ctx, baseURL, apiKeyRaw)
 	finishProbe()
 	if err != nil {
-		return parser.ParseResult{}, fmt.Errorf("parser: MinerU probe: %w", err)
+		return parser.ParseResult{}, hidePlatformParseError(platform, "parser: MinerU probe", err)
 	}
 	if err := modelModule.ValidateMinerUConfigForAPI(backend, serverURL, v1); err != nil {
-		return parser.ParseResult{}, err
+		return parser.ParseResult{}, hidePlatformConfigError(platform, "parser: MinerU", err)
 	}
 
 	if v1 {
@@ -678,21 +691,22 @@ func dispatchMinerUPDF(
 		result, err := modelModule.ParseMinerUV1(ctx, baseURL, apiKeyRaw, filename, binary, backend, parseMethod, timeout)
 		finish()
 		if err != nil {
-			return parser.ParseResult{}, fmt.Errorf("parser: MinerU V1: %w", err)
+			return parser.ParseResult{}, hidePlatformParseError(platform, "parser: MinerU V1", err)
 		}
-		return finishMinerURemoteResult(ctx, filename, binary, result)
+		res, err := finishMinerURemoteResult(ctx, filename, binary, result)
+		return res, hidePlatformConfigError(platform, "parser: MinerU", err)
 	}
 
 	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
 	zipBytes, err := mineruStreamParse(ctx, apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL, extraction, timeout)
 	if err != nil {
-		return parser.ParseResult{}, fmt.Errorf("parser: MinerU stream: %w", err)
+		return parser.ParseResult{}, hidePlatformParseError(platform, "parser: MinerU stream", err)
 	}
 
 	sizes, geometryErr := mineruPageSizes(ctx, binary)
 	items, mediaWarnings, err := mineruExtractJSONItems(zipBytes, sizes)
 	if err != nil {
-		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", err)
+		return parser.ParseResult{}, hidePlatformParseError(platform, "parser: MinerU extract", err)
 	}
 
 	res := mineruJSONParseResult(filename, items)
@@ -816,6 +830,7 @@ func dispatchMonkeyOCRPDF(
 		return parser.ParseResult{}, fmt.Errorf(
 			"parser: MonkeyOCR requires a MonkeyOCR OCR model; found %q", driver.Name())
 	}
+	_, platform := modelModule.PlatformDriverBase(driver)
 
 	apiKeyRaw := ""
 	if apiConfig != nil && apiConfig.ApiKey != nil {
@@ -844,16 +859,21 @@ func dispatchMonkeyOCRPDF(
 		lang = getStringOr(setup, "monkeyocr_lang", "Chinese")
 	}
 	mineruLang := mineruLangCode(lang)
-	backend := modelModule.ResolveMinerUBackend(getStringOr(setup, "monkeyocr_backend", "vlm-engine"), apiKeyRaw)
+	setupBackend := getStringOr(setup, "monkeyocr_backend", "vlm-engine")
+	setupServerURL := getStringOr(setup, "monkeyocr_server_url", "")
+	if platform {
+		setupBackend, setupServerURL = "", ""
+	}
+	backend := modelModule.ResolveMinerUBackend(setupBackend, apiKeyRaw)
 	if configured := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "monkeyocr_backend", common.EnvMonkeyOCRBackend); configured != "" {
 		backend = modelModule.ResolveMinerUBackend(configured, apiKeyRaw)
 	}
-	serverURL := modelModule.ResolveMinerUServerURL(getStringOr(setup, "monkeyocr_server_url", ""), apiKeyRaw)
+	serverURL := modelModule.ResolveMinerUServerURL(setupServerURL, apiKeyRaw)
 	if configured := modelModule.ProviderJSONConfigValueFromAPIConfig(apiConfig, "monkeyocr_server_url", common.EnvMonkeyOCRServerURL); configured != "" {
 		serverURL = modelModule.ResolveMinerUServerURL(configured, apiKeyRaw)
 	}
 	if err := modelModule.ValidateMinerUConfig(backend, serverURL); err != nil {
-		return parser.ParseResult{}, err
+		return parser.ParseResult{}, hidePlatformConfigError(platform, "parser: MonkeyOCR", err)
 	}
 
 	// The MonkeyOCR adapter fronts the same MinerU-compatible /file_parse API,
@@ -863,11 +883,11 @@ func dispatchMonkeyOCRPDF(
 	extraction := mineruExtractionOptions{formulaEnable: true, tableEnable: true}
 	zipBytes, err := mineruStreamParse(ctx, apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL, extraction, timeout)
 	if err != nil {
-		return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCR stream: %w", err)
+		return parser.ParseResult{}, hidePlatformParseError(platform, "parser: MonkeyOCR stream", err)
 	}
 	sections, err := mineruExtractSections(zipBytes)
 	if err != nil {
-		return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCR extract: %w", err)
+		return parser.ParseResult{}, hidePlatformParseError(platform, "parser: MonkeyOCR extract", err)
 	}
 
 	var parts []string
@@ -991,11 +1011,32 @@ func dispatchMiniCPMOCRPDF(ctx context.Context, db *gorm.DB, filename string, bi
 }
 
 // resolveMinerUBaseURL extracts the resolved base URL from a model driver.
+// hidePlatformParseError reports a document-parsing backend failure. Parsers
+// that call the backend directly bypass the platform driver wrapper, so their
+// errors, which can include the configured endpoint and response body, are
+// replaced here for platform models; tenant models keep the full message.
+func hidePlatformParseError(platform bool, prefix string, err error) error {
+	if platform {
+		err = modelModule.PlatformDriverError(err)
+	}
+	return fmt.Errorf("%s: %w", prefix, err)
+}
+
+// hidePlatformConfigError hides an error that may quote platform settings or
+// provider text, and leaves a tenant model's error as it is.
+func hidePlatformConfigError(platform bool, prefix string, err error) error {
+	if err == nil || !platform {
+		return err
+	}
+	return hidePlatformParseError(true, prefix, err)
+}
+
 func resolveMinerUBaseURL(driver modelModule.ModelDriver, apiConfig *modelModule.APIConfig) (string, error) {
 	type baseURLGetter interface {
 		GetBaseURL(*modelModule.APIConfig) (string, error)
 	}
-	if g, ok := driver.(baseURLGetter); ok {
+	baseDriver, _ := modelModule.PlatformDriverBase(driver)
+	if g, ok := baseDriver.(baseURLGetter); ok {
 		return g.GetBaseURL(apiConfig)
 	}
 	return "", fmt.Errorf("driver %q does not expose GetBaseURL", driver.Name())
@@ -2023,6 +2064,9 @@ func defaultPDFVisionModelResolver(
 	tenantID string,
 	modelID string,
 ) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+	if db == nil {
+		return nil, "", nil, fmt.Errorf("parser: vision model resolution requires a database")
+	}
 	if strings.TrimSpace(modelID) == "" {
 		driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 		return driver, modelName, apiConfig, err
@@ -2203,12 +2247,19 @@ func dispatchSoMarkPDF(
 	p := parser.NewPDFParser()
 	p.ConfigureFromSetup(setup)
 	p.ParseMethod = "somark"
-	if somarkDriver, ok := driver.(interface {
+	baseDriver, isPlatform := modelModule.PlatformDriverBase(driver)
+	if somarkDriver, ok := baseDriver.(interface {
 		GetBaseURL(*modelModule.APIConfig) (string, error)
 	}); ok {
-		if baseURL, err := somarkDriver.GetBaseURL(apiConfig); err == nil && strings.TrimSpace(baseURL) != "" {
+		baseURL, err := somarkDriver.GetBaseURL(apiConfig)
+		if isPlatform && (err != nil || strings.TrimSpace(baseURL) == "") {
+			return parser.ParseResult{}, true, fmt.Errorf("parser: platform SoMark base URL is unavailable")
+		}
+		if err == nil && strings.TrimSpace(baseURL) != "" {
 			p.SoMarkBaseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 		}
+	} else if isPlatform {
+		return parser.ParseResult{}, true, fmt.Errorf("parser: platform SoMark base URL is unavailable")
 	}
 	if apiConfig != nil {
 		if apiConfig.ApiKey != nil && strings.TrimSpace(*apiConfig.ApiKey) != "" {
@@ -2217,6 +2268,9 @@ func dispatchSoMarkPDF(
 	}
 	res := p.ParseWithResult(ctx, filename, binary)
 	if res.Err != nil {
+		if isPlatform {
+			return parser.ParseResult{}, true, hidePlatformParseError(true, "parser: SoMark", res.Err)
+		}
 		return parser.ParseResult{}, true, res.Err
 	}
 	return res, true, nil

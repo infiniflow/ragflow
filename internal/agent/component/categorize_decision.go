@@ -36,7 +36,7 @@ func categorizeDecisionBudget(driver string, categories int) time.Duration {
 }
 
 func categorizeWithDecision(ctx context.Context, p CategorizeParam, query string, history []categorizeHistoryMessage) (string, error) {
-	driver, err := models.GetPreconfiguredDriver(p.Driver, p.BaseURL)
+	driver, err := newChatModelDriver(p.Driver, p.BaseURL, p.Platform)
 	if err != nil {
 		return "", err
 	}

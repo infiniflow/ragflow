@@ -16,6 +16,7 @@ package permission
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"gorm.io/gorm"
@@ -33,7 +34,10 @@ func CheckPlatformModelAccess(ctx context.Context, db *gorm.DB, tenantID string)
 	}
 	var marker entity.SystemSettings
 	if err := db.WithContext(ctx).Take(&marker, "name = ? AND source = ? AND value = ?", entity.PlatformProviderLockSetting, "system", "ready").Error; err != nil {
-		return ErrPermissionDenied
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return ErrPermissionDenied
+		}
+		return err
 	}
 	var tenant entity.Tenant
 	if err := db.WithContext(ctx).Take(&tenant, "id = ? AND status = ?", tenantID, "1").Error; err != nil {
@@ -46,4 +50,13 @@ func CheckPlatformModelAccess(ctx context.Context, db *gorm.DB, tenantID string)
 		return nil
 	}
 	return NewDatabaseChecker(db).CheckTenant(ctx, tenantID, TenantMember)
+}
+
+// IsPlatformModelAccessDenied reports whether a CheckPlatformModelAccess error
+// means "no access" rather than a failure to decide, such as a database error,
+// which callers must report as it is.
+func IsPlatformModelAccessDenied(err error) bool {
+	return errors.Is(err, ErrPermissionDenied) || errors.Is(err, ErrMembershipNotFound) ||
+		errors.Is(err, ErrIdentityMismatch) || errors.Is(err, ErrUnauthenticated) ||
+		errors.Is(err, gorm.ErrRecordNotFound)
 }

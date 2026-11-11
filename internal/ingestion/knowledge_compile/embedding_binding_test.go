@@ -16,6 +16,7 @@ package knowledge_compile
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -26,6 +27,16 @@ import (
 	"ragflow/internal/ingestion"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
+
+type bindingTestEmbedder struct{ err error }
+
+func (e bindingTestEmbedder) Encode(context.Context, []string) ([][]float32, error) {
+	if e.err != nil {
+		return nil, e.err
+	}
+	return [][]float32{{1, 2}}, nil
+}
+func (bindingTestEmbedder) Dimensions() int { return 2 }
 
 func TestStableVectorWriteRejectsChangedBinding(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -93,14 +104,36 @@ func TestDatasetCompileEmbedsWithDatasetBinding(t *testing.T) {
 	SetModelConfig("chat")
 	t.Cleanup(func() { SetModelConfig(""); kccommon.SetDepsResolver(nil) })
 	var embeddingRefs []string
-	kccommon.SetDepsResolver(func(_ context.Context, _, llmID, embeddingModel string) (kccommon.Deps, error) {
+	var bindings []string
+	kccommon.SetDepsResolver(func(ctx context.Context, _, llmID, embeddingModel string) (kccommon.Deps, error) {
 		embeddingRefs = append(embeddingRefs, embeddingModel)
-		return kccommon.Deps{}, nil
+		bindings = append(bindings, ingestion.EmbeddingBindingFromContext(ctx))
+		return kccommon.Deps{Embed: bindingTestEmbedder{}}, nil
 	})
-	_, _ = defaultDeduperFactory(t.Context(), "tenant")
-	refreshWikiProductVectors(t.Context(), "tenant", []kccommon.Product{{Content: "page"}})
+	ctx := ingestion.WithEmbeddingBinding(t.Context())
+	if err := ingestion.RecordEmbeddingBinding(ctx, "bound-model"); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = defaultDeduperFactory(ctx, "tenant")
+	products, err := refreshWikiProductVectors(ctx, "tenant", []kccommon.Product{{Content: "page"}})
+	if err != nil || len(products) != 1 || len(products[0].Vector) != 2 || products[0].Vector[0] != 1 {
+		t.Fatalf("vectors = %v, err = %v", products, err)
+	}
 	if len(embeddingRefs) != 2 || embeddingRefs[0] != "" || embeddingRefs[1] != "" {
 		t.Fatalf("embedding refs = %q, want the dataset binding (empty) for every call", embeddingRefs)
+	}
+	if len(bindings) != 2 || bindings[0] != "bound-model" || bindings[1] != "bound-model" {
+		t.Fatalf("bindings = %q", bindings)
+	}
+}
+
+func TestWikiVectorRefreshFailureIsReturned(t *testing.T) {
+	kccommon.SetDepsResolver(func(context.Context, string, string, string) (kccommon.Deps, error) {
+		return kccommon.Deps{Embed: bindingTestEmbedder{err: errors.New("embedding failed")}}, nil
+	})
+	t.Cleanup(func() { kccommon.SetDepsResolver(nil) })
+	if _, err := refreshWikiProductVectors(t.Context(), "tenant", []kccommon.Product{{Content: "page"}}); err == nil {
+		t.Fatal("embedding failure was ignored")
 	}
 }
 

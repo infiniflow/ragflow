@@ -100,7 +100,8 @@ func llmErrorMessage(err error) string {
 		return "LLM call failed"
 	}
 	msg := err.Error()
-	if strings.Contains(msg, "invalid key") || strings.Contains(msg, "invalid api") {
+	// Decide from the original text, which a platform model error withholds.
+	if text := common.ErrorText(err); strings.Contains(text, "invalid key") || strings.Contains(text, "invalid api") {
 		return msg + " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
 	}
 	return msg

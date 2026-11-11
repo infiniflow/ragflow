@@ -45,7 +45,6 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/dao"
-	"ragflow/internal/dao/transaction"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/ingestion/knowledge_compile"
@@ -426,21 +425,15 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		Language:               entity.KnowledgebasesLanguage(kbRecords),
 	}
 
-	var retrievalResult *nlp.RetrievalResult
-	var filteredChunks []map[string]interface{}
-	err := dao.WithStableDatasetEmbeddingBindings(ctx, dao.DB, kbRecords, func(ctx context.Context) error {
-		var searchErr error
-		retrievalResult, searchErr = nlp.NewRetrievalService(s.docEngine, s.documentDAO).Retrieval(ctx, retrievalReq)
-		if searchErr != nil {
-			return fmt.Errorf("retrieval search failed: %w", searchErr)
-		}
-		filteredChunks = nlp.RetrievalByChildren(retrievalResult.Chunks, tenantIDs, s.docEngine, ctx)
-		hydrateChunkVectors(ctx, s.docEngine, filteredChunks, datasetIDs, tenantIDs)
-		return nil
-	})
-	if err != nil {
-		return nil, err
+	retrievalReq.SearchGuard = func(readCtx context.Context, read func(context.Context) error) error {
+		return dao.WithStableDatasetEmbeddingBindings(readCtx, dao.DB, kbRecords, read)
 	}
+	retrievalResult, err := nlp.NewRetrievalService(s.docEngine, s.documentDAO).Retrieval(ctx, retrievalReq)
+	if err != nil {
+		return nil, fmt.Errorf("retrieval search failed: %w", err)
+	}
+	filteredChunks := nlp.RetrievalByChildren(retrievalResult.Chunks, tenantIDs, s.docEngine, ctx)
+	hydrateChunkVectors(ctx, s.docEngine, filteredChunks, datasetIDs, tenantIDs)
 	if req.UseKG != nil && *req.UseKG {
 		common.Warn("use_kg is not yet implemented in Go - skipping KG retrieval")
 	}
@@ -495,17 +488,6 @@ func resolveSearchbotRetrievalParams(req *service.RetrievalTestRequest, searchCo
 		topK = configured
 	}
 	return similarityThreshold, vectorSimilarityWeight, topK
-}
-
-// knowledgebaseEmbeddingKey groups datasets by their resolved base embedding
-// model name (e.g. "BAAI/bge-m3") so datasets pointing at the same model
-// through different provider instances or storage forms (tenant_model id vs
-// legacy composite name) retrieve together.
-func knowledgebaseEmbeddingKey(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase, tenantID string, names *transaction.EmbeddingBaseNameResolver) string {
-	if strings.TrimSpace(kb.EmbdID) == "" && (kb.TenantEmbdID == nil || strings.TrimSpace(*kb.TenantEmbdID) == "") {
-		return fmt.Sprintf("default:%s", tenantID)
-	}
-	return "embd:" + names.Resolve(ctx, db, kb)
 }
 
 // hydrateChunkVectors replaces zero (placeholder) vectors in chunks with real

@@ -580,6 +580,9 @@ func maskProviderCredentialValue(value interface{}) string {
 	return string(characters[:4]) + strings.Repeat("*", len(characters)-8) + string(characters[len(characters)-4:])
 }
 
+// IsProviderCredentialField identifies fields that hold provider credentials.
+func IsProviderCredentialField(name string) bool { return isProviderCredentialField(name) }
+
 func isProviderCredentialField(name string) bool {
 	name = strings.ToLower(strings.ReplaceAll(strings.ReplaceAll(name, "-", "_"), ".", "_"))
 	for _, marker := range []string{"api_key", "apikey", "secret", "token", "password", "credential", "private", "access_key"} {
@@ -991,6 +994,9 @@ func (m *ModelProviderService) addModelToInstance(ctx context.Context, db *gorm.
 			extraFields[k] = v
 		}
 	}
+	if provider.TenantID == entity.PlatformTenantID && len(model.ModelTypes) > 0 {
+		extraFields["model_types"] = model.ModelTypes
+	}
 	if err = m.createModelRecord(ctx, db, provider.ID, instance.ID, model.ModelName, combinedType, "active", extraFields); err != nil {
 		return fmt.Errorf("fail to create model '%s': %w", model.ModelName, err)
 	}
@@ -1251,7 +1257,7 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 		if provider == nil {
 			return common.CodeNotFound, errors.New("model provider not found")
 		}
-		if !strings.EqualFold(provider.ProviderName, providerName) {
+		if provider.TenantID == entity.PlatformTenantID || !strings.EqualFold(provider.ProviderName, providerName) {
 			return common.CodeNotFound, errors.New("model instance not found")
 		}
 		if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
@@ -1389,7 +1395,7 @@ func (m *ModelProviderService) updateModelVerifyResults(ctx context.Context, pro
 	if err != nil {
 		return fmt.Errorf("provider for instance %s not found: %w", instanceID, err)
 	}
-	if !strings.EqualFold(provider.ProviderName, providerName) {
+	if provider.TenantID == entity.PlatformTenantID || !strings.EqualFold(provider.ProviderName, providerName) {
 		return permission.ErrResourceNotFound
 	}
 	if err = permission.NewDatabaseChecker(dao.DB).CheckResource(
@@ -1500,9 +1506,7 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 				})
 			}
 		} else {
-			zap.L().Warn("failed to list remote models from provider",
-				zap.Error(listErr),
-			)
+			zap.L().Warn("failed to list remote models from provider")
 			return modelVerifyResult, fmt.Errorf("failed to list models from provider: %w", listErr)
 		}
 
@@ -1522,10 +1526,12 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 
 		for _, modelType := range model.ModelTypes {
 			mtLower := strings.ToLower(modelType)
-
-			// If a model type we've already verified successfully, skip.
-			if passedTypes[mtLower] {
-				continue
+			// Stored type names (entity.ModelType.String) use the long aliases.
+			switch mtLower {
+			case "speech2text":
+				mtLower = "asr"
+			case "image2text":
+				mtLower = "vision"
 			}
 
 			var err error
@@ -1898,8 +1904,20 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, re
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
-	if len(providers) == 0 {
-		return []map[string]interface{}{}, common.CodeSuccess, nil
+	var platformProviders []*entity.TenantModelProvider
+	if err := dao.DB.WithContext(ctx).Where("tenant_id = ?", entity.PlatformTenantID).Find(&platformProviders).Error; err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if len(platformProviders) > 0 {
+		if err := permission.CheckPlatformModelAccess(ctx, dao.DB, tenantID); err != nil {
+			if errors.Is(err, permission.ErrIdentityMismatch) {
+				platformProviders = nil
+			} else {
+				code, normalizedErr := permissionresponse.NormalizeHidden(err)
+				return nil, code, normalizedErr
+			}
+		}
+		providers = append(providers, platformProviders...)
 	}
 
 	providerIDs := make([]string, 0, len(providers))
@@ -1913,10 +1931,6 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, re
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
-	if len(instances) == 0 {
-		return []map[string]interface{}{}, common.CodeSuccess, nil
-	}
-
 	instanceInfoByID := make(map[string]*dao.TenantModelInstanceSummary, len(instances))
 	for _, inst := range instances {
 		instanceInfoByID[inst.ID] = inst
@@ -1938,6 +1952,21 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, re
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
+	if len(platformProviders) > 0 {
+		ids := make([]string, 0, len(platformProviders))
+		for _, provider := range platformProviders {
+			ids = append(ids, provider.ID)
+		}
+		var platformModels []*entity.TenantModel
+		query := dao.DB.WithContext(ctx).Where("provider_id IN ?", ids)
+		if modelTypeFilterBin != 0 {
+			query = query.Where("model_type = 0 OR (model_type & ?) > 0", int(modelTypeFilterBin))
+		}
+		if err := query.Find(&platformModels).Error; err != nil {
+			return nil, common.CodeServerError, err
+		}
+		modelRecords = append(modelRecords, platformModels...)
+	}
 
 	// Derive model types for legacy zero-type rows in this response. Before the
 	// ModelTypeFromString fix added "asr" support, models using the canonical
@@ -1946,6 +1975,13 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, re
 	providerManager := dao.GetModelProviderManager()
 	for _, rec := range modelRecords {
 		if rec.ModelType != 0 {
+			continue
+		}
+		var savedTypes struct {
+			ModelTypes []string `json:"model_types"`
+		}
+		if json.Unmarshal([]byte(rec.Extra), &savedTypes) == nil && len(savedTypes.ModelTypes) > 0 {
+			rec.ModelType = int(entity.ModelTypeFromStrings(savedTypes.ModelTypes))
 			continue
 		}
 		provInfo := providerInfoByID[rec.ProviderID]
@@ -1965,8 +2001,44 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, re
 		}
 	}
 
+	modelTypesForRecord := func(rec *entity.TenantModel) []string {
+		types := entity.ModelType(rec.ModelType).HumanReadable()
+		var extra struct {
+			ModelTypes []string `json:"model_types"`
+		}
+		_ = json.Unmarshal([]byte(rec.Extra), &extra)
+		docParse := false
+		for _, kind := range extra.ModelTypes {
+			if kind == "doc_parse" {
+				docParse = true
+			}
+		}
+		if provider := providerInfoByID[rec.ProviderID]; provider != nil && (provider.TenantID != entity.PlatformTenantID || len(extra.ModelTypes) == 0) {
+			catalog, _ := providerManager.GetModelByName(provider.ProviderName, rec.ModelName)
+			if catalog != nil {
+				for _, kind := range catalog.ModelTypes {
+					if kind == "doc_parse" {
+						docParse = true
+					}
+				}
+			}
+		}
+		if docParse {
+			types = append(types, "doc_parse")
+		}
+		return types
+	}
 	var targetRecords []*entity.TenantModel
-	if modelTypeFilterBin != 0 {
+	if modelTypeFilter == "doc_parse" {
+		for _, rec := range modelRecords {
+			for _, kind := range modelTypesForRecord(rec) {
+				if kind == "doc_parse" {
+					targetRecords = append(targetRecords, rec)
+					break
+				}
+			}
+		}
+	} else if modelTypeFilterBin != 0 {
 		for _, rec := range modelRecords {
 			if entity.ModelType(rec.ModelType)&modelTypeFilterBin != 0 {
 				targetRecords = append(targetRecords, rec)
@@ -1994,20 +2066,29 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, re
 	for _, modelRecord := range targetRecords {
 		provInfo, provOK := providerInfoByID[modelRecord.ProviderID]
 		instInfo, instOK := instanceInfoByID[modelRecord.InstanceID]
-		if !provOK || !instOK {
+		if !provOK || !instOK || instInfo.ProviderID != provInfo.ID {
 			continue
 		}
 		rank := modelRankMap[provInfo.ProviderName+"@"+modelRecord.ModelName]
 		if rank == 0 {
 			rank = 500
 		}
+		source := "tenant"
+		modelTenantName := tenantName
+		if provInfo.TenantID == entity.PlatformTenantID {
+			source = "platform"
+			modelTenantName = ""
+		} else if strings.EqualFold(provInfo.ProviderName, "Builtin") {
+			source = "builtin"
+		}
 		added = append(added, map[string]interface{}{
+			"source":          source,
 			"model_id":        modelRecord.ID,
 			"status":          modelRecord.Status,
 			"instance_status": instInfo.Status,
 			"tenant_id":       provInfo.TenantID,
-			"tenant_name":     tenantName,
-			"model_type":      entity.ModelType(modelRecord.ModelType).HumanReadable(),
+			"tenant_name":     modelTenantName,
+			"model_type":      modelTypesForRecord(modelRecord),
 			"name":            modelRecord.ModelName,
 			"provider_id":     modelRecord.ProviderID,
 			"provider_name":   provInfo.ProviderName,
@@ -2037,6 +2118,7 @@ func (m *ModelProviderService) ListModelsForUserInTenant(ctx context.Context, re
 					rank = 500
 				}
 				added = append(added, map[string]interface{}{
+					"source":        "builtin",
 					"model_id":      "",
 					"tenant_id":     tenant.ID,
 					"tenant_name":   tenantName,

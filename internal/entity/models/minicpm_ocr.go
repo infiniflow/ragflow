@@ -219,7 +219,7 @@ func (m *MiniCPMOCRModel) wait(ctx context.Context, jobURL string, job *miniCPMO
 		if err != nil {
 			if ctx.Err() == nil && miniCPMOCRTransient(err) && failures < miniCPMOCRMaxPollFailures {
 				failures++
-				common.Warn("MiniCPM-OCR: job poll failed, retrying", zap.String("job_id", job.ID), zap.Error(err))
+				common.Warn("MiniCPM-OCR: job poll failed, retrying", zap.String("job_id", job.ID))
 				continue
 			}
 			m.cancel(ctx, jobURL, apiConfig)
@@ -260,7 +260,7 @@ func (m *MiniCPMOCRModel) cancel(ctx context.Context, jobURL string, apiConfig *
 		}
 	}
 	if err != nil {
-		common.Warn("MiniCPM-OCR: failed to cancel job", zap.String("job_url", jobURL), zap.Error(err))
+		common.Warn("MiniCPM-OCR: failed to cancel job")
 	}
 }
 

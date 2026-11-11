@@ -65,6 +65,9 @@ func (dao *TenantDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*ent
 
 // Create creates a new tenant
 func (dao *TenantDAO) Create(ctx context.Context, db *gorm.DB, tenant *entity.Tenant) error {
+	if tenant == nil {
+		return fmt.Errorf("tenant is required")
+	}
 	if strings.EqualFold(tenant.ID, entity.PlatformTenantID) {
 		return fmt.Errorf("reserved tenant ID")
 	}

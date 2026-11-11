@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"ragflow/internal/common"
 	"strings"
 	"testing"
 )
@@ -763,5 +766,90 @@ func TestPaddleOCRRejectsRepeatedOrDecreasingSourcePages(t *testing.T) {
 	response, err := parsePaddleOCRResultBody([]byte(body))
 	if err != nil || len(response.Pages) != 2 || response.Pages[0].Index != 2 || response.Pages[1].Index != 4 {
 		t.Fatalf("valid source-page gaps rejected: response=%+v err=%v", response, err)
+	}
+}
+
+func TestPaddleOCRLocalDoesNotLogResponseCredentials(t *testing.T) {
+	original := common.Logger
+	if err := common.InitLogger("error", common.FileOutput{}, "test"); err != nil {
+		t.Fatal(err)
+	}
+	core, entries := observer.New(zap.ErrorLevel)
+	common.Logger = zap.New(core)
+	defer func() { common.Logger = original }()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(r.Header.Get("Authorization")))
+	}))
+	defer server.Close()
+	secret, name := "platform-secret", "test"
+	driver := NewPaddleOCRLocalModel(map[string]string{"default": server.URL}, URLSuffix{OCR: "ocr"})
+	_, err := driver.OCRFile(context.Background(), &name, []byte("content"), nil, &APIConfig{ApiKey: &secret}, nil, nil)
+	if err == nil || entries.Len() == 0 {
+		t.Fatal("expected upstream error and log")
+	}
+	for _, entry := range entries.All() {
+		if strings.Contains(entry.Message, secret) || strings.Contains(fmt.Sprint(entry.ContextMap()), secret) {
+			t.Fatal("secret in log")
+		}
+	}
+}
+
+func TestPaddleOCRDoesNotLogSignedResultURL(t *testing.T) {
+	withSSRFBypass(t)
+	original := common.Logger
+	if err := common.InitLogger("info", common.FileOutput{}, "test"); err != nil {
+		t.Fatal(err)
+	}
+	core, entries := observer.New(zap.InfoLevel)
+	common.Logger = zap.New(core)
+	defer func() { common.Logger = original }()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v2/ocr/jobs":
+			_, _ = w.Write([]byte(`{"data":{"jobId":"job-1"}}`))
+		case "/api/v2/ocr/jobs/job-1":
+			fmt.Fprintf(w, `{"data":{"state":"done","resultUrl":{"jsonUrl":%q}}}`, "http://"+r.Host+"/result?signature=platform-secret")
+		case "/result":
+			_, _ = w.Write([]byte(`[{"logId":"l1","errorCode":0,"result":{"layoutParsingResults":[{"markdown":{"text":"ok"}}]}}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	driver := NewPaddleOCRModel(nil, URLSuffix{OCR: "v2/ocr/jobs"})
+	apiKey := fmt.Sprintf(`{"paddleocr_api_url":%q,"paddleocr_access_token":"tok"}`, server.URL+"/api")
+	empty, name := "", "test"
+	_, err := driver.OCRFile(context.Background(), &name, []byte("%PDF-1.4"), nil, &APIConfig{ApiKey: &apiKey, BaseURL: &empty}, nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries.All() {
+		if strings.Contains(entry.Message, "platform-secret") || strings.Contains(fmt.Sprint(entry.ContextMap()), "platform-secret") {
+			t.Fatal("signed URL in log")
+		}
+	}
+}
+
+func TestPaddleOCRLocalDoesNotLogConfiguredURL(t *testing.T) {
+	original := common.Logger
+	if err := common.InitLogger("info", common.FileOutput{}, "test"); err != nil {
+		t.Fatal(err)
+	}
+	core, entries := observer.New(zap.InfoLevel)
+	common.Logger = zap.New(core)
+	defer func() { common.Logger = original }()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusUnauthorized) }))
+	defer server.Close()
+	name, key := "test", "key"
+	driver := NewPaddleOCRLocalModel(map[string]string{"default": server.URL + "?token=platform-secret"}, URLSuffix{OCR: "ocr"})
+	_, _ = driver.OCRFile(context.Background(), &name, []byte("content"), nil, &APIConfig{ApiKey: &key}, nil, nil)
+	if entries.Len() == 0 {
+		t.Fatal("expected log")
+	}
+	for _, entry := range entries.All() {
+		if strings.Contains(entry.Message, "platform-secret") || strings.Contains(fmt.Sprint(entry.ContextMap()), "platform-secret") {
+			t.Fatal("configured URL leaked in log")
+		}
 	}
 }

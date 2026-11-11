@@ -22,9 +22,44 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 
 	"github.com/opensearch-project/opensearch-go/v4/opensearchapi"
 )
+
+// RefreshChunkStore makes unrefreshed writes visible before safety checks.
+func (e *Engine) RefreshChunkStore(ctx context.Context, baseName, datasetID string) error {
+	if baseName == "" {
+		return fmt.Errorf("chunk index name is empty")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "/"+url.PathEscape(baseName)+"/_refresh", nil)
+	if err != nil {
+		return err
+	}
+	resp, err := e.client.Perform(req)
+	if err != nil {
+		return fmt.Errorf("refresh chunk index: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("refresh chunk index: %s", resp.Status)
+	}
+	var body struct {
+		Shards *struct {
+			Failed *int `json:"failed"`
+		} `json:"_shards"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return fmt.Errorf("decode chunk index refresh: %w", err)
+	}
+	if body.Shards == nil || body.Shards.Failed == nil {
+		return fmt.Errorf("refresh chunk index: missing shard result")
+	}
+	if *body.Shards.Failed != 0 {
+		return fmt.Errorf("refresh chunk index: %d shards failed", *body.Shards.Failed)
+	}
+	return nil
+}
 
 // indexNotFoundError marks a search against a physical index that does not
 // exist yet (a tenant with no indexed documents). Callers that treat a

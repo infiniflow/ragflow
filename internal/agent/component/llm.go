@@ -91,6 +91,9 @@ type LLMParam struct {
 	// driver's built-in default URL.
 	BaseURL string
 
+	// Platform is set when ModelID resolved to a shared platform model.
+	Platform bool
+
 	// MaxRetries caps the retry loop in retryInvoker. Zero = default
 	// (3). Negative = disable retries entirely (single attempt). The
 	// retry loop honours ctx.Done() so a request cancel aborts on
@@ -211,7 +214,7 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvok
 	if driver == "" {
 		driver = "dummy"
 	}
-	d, err := newChatModelDriver(driver, req.BaseURL)
+	d, err := newChatModelDriver(driver, req.BaseURL, req.Platform)
 	if err != nil {
 		return nil, fmt.Errorf("component: LLM: resolve driver %q: %w", driver, err)
 	}
@@ -384,7 +387,7 @@ func (e *einoChatInvoker) Stream(ctx context.Context, _ *gorm.DB, req ChatInvoke
 	if driver == "" {
 		driver = "dummy"
 	}
-	d, err := newChatModelDriver(driver, req.BaseURL)
+	d, err := newChatModelDriver(driver, req.BaseURL, req.Platform)
 	if err != nil {
 		return nil, fmt.Errorf("component: LLM: resolve driver %q: %w", driver, err)
 	}
@@ -669,9 +672,14 @@ func toEinoMessages(msgs []schema.Message) []*schema.Message {
 
 // newChatModelDriver returns the provider-configured driver used by regular
 // chat. Provider-specific endpoint suffixes remain owned by conf/models/*.json;
-// a tenant base_url override replaces only the endpoint root.
-func newChatModelDriver(driver, override string) (models.ModelDriver, error) {
-	return models.GetPreconfiguredDriver(driver, override)
+// a tenant base_url override replaces only the endpoint root. A platform model
+// driver hides provider errors, which can carry the shared credentials.
+func newChatModelDriver(driver, override string, platform bool) (models.ModelDriver, error) {
+	d, err := models.GetPreconfiguredDriver(driver, override)
+	if err != nil || !platform {
+		return d, err
+	}
+	return models.NewPlatformSafeDriver(d), nil
 }
 
 // NewLLMComponent builds an LLMComponent from raw params.
@@ -800,7 +808,7 @@ func (c *LLMComponent) prepareChatRequest(
 	// driver, causing 400s for custom-added models.
 	var err error
 	originalModelID := p.ModelID
-	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
+	p.ModelID, p.Driver, p.APIKey, p.BaseURL, p.Platform, err = resolveChatModelRef(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
 	if err != nil {
 		return nil, ChatInvokeRequest{}, p, nil, fmt.Errorf("component: LLM.Invoke: resolve model: %w", err)
 	}
@@ -973,6 +981,7 @@ func (c *LLMComponent) prepareChatRequest(
 		ModelName:        p.ModelID,
 		APIKey:           p.APIKey,
 		BaseURL:          p.BaseURL,
+		Platform:         p.Platform,
 		Messages:         msgs,
 		Temperature:      p.Temperature,
 		TopP:             p.TopP,
@@ -1031,6 +1040,7 @@ func (c *LLMComponent) postProcessResponse(
 				ModelName:        p.ModelID,
 				APIKey:           p.APIKey,
 				BaseURL:          p.BaseURL,
+				Platform:         p.Platform,
 				Messages:         buildStructuredRetryMessages(p.SystemPrompt, p.UserPrompt, p.VisualFiles, p.Cite, p.OutputStructure, resp.Content),
 				Temperature:      p.Temperature,
 				TopP:             p.TopP,

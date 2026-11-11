@@ -237,31 +237,35 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 			return nil, permissionErr
 		}
 	}
-	activeKBs := make([]*entity.Knowledgebase, 0, len(datasets.kbs))
-	activeIDs := make([]string, 0, len(datasets.kbIDs))
-	for _, kb := range datasets.kbs {
-		if kb.EmbeddingModelReference() == "" {
-			if a.modelConstructors.CheckEmptyEmbedding == nil {
-				return nil, fmt.Errorf("retrieval: dataset embedding check is unavailable")
+	keywordOnly := req.KeywordsSimilarityWeight != nil && *req.KeywordsSimilarityWeight > 0.99
+	var embeddingModel *modelModule.EmbeddingModel
+	if !keywordOnly {
+		activeKBs := make([]*entity.Knowledgebase, 0, len(datasets.kbs))
+		activeIDs := make([]string, 0, len(datasets.kbIDs))
+		for _, kb := range datasets.kbs {
+			if kb.EmbeddingModelReference() == "" {
+				if a.modelConstructors.CheckEmptyEmbedding == nil {
+					return nil, fmt.Errorf("retrieval: dataset embedding check is unavailable")
+				}
+				if err := a.modelConstructors.CheckEmptyEmbedding(ctx, kb); err != nil {
+					return nil, fmt.Errorf("retrieval: check dataset embedding: %w", err)
+				}
+				continue
 			}
-			if err := a.modelConstructors.CheckEmptyEmbedding(ctx, kb); err != nil {
-				return nil, fmt.Errorf("retrieval: check dataset embedding: %w", err)
-			}
-			continue
+			activeKBs = append(activeKBs, kb)
+			activeIDs = append(activeIDs, kb.ID)
 		}
-		activeKBs = append(activeKBs, kb)
-		activeIDs = append(activeIDs, kb.ID)
-	}
-	if len(activeKBs) == 0 {
-		return []RetrievalChunk{}, nil
-	}
-	datasets.kbs, datasets.kbIDs = activeKBs, activeIDs
-	if err := validateEmbeddingModels(ctx, db, datasets.kbs); err != nil {
-		return nil, err
-	}
-	embeddingModel, err := a.resolveEmbeddingModel(ctx, datasets.kbs[0])
-	if err != nil {
-		return nil, err
+		if len(activeKBs) == 0 {
+			return []RetrievalChunk{}, nil
+		}
+		datasets.kbs, datasets.kbIDs = activeKBs, activeIDs
+		if err := validateEmbeddingModels(ctx, db, datasets.kbs); err != nil {
+			return nil, err
+		}
+		embeddingModel, err = a.resolveEmbeddingModel(ctx, datasets.kbs[0])
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	chatModel, err := a.resolveChatModel(ctx, req, datasets.kbs[0].TenantID)
@@ -310,28 +314,25 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	nlpReq.RerankModel = rerankModel
 	nlpReq.RankFeature = &rankFeature
 
-	var out []RetrievalChunk
-	err = dao.WithStableDatasetEmbeddingBindings(ctx, db, datasets.kbs, func(ctx context.Context) error {
-		res, searchErr := a.svc.Retrieval(ctx, nlpReq)
-		if searchErr != nil {
-			return searchErr
+	if !keywordOnly {
+		nlpReq.SearchGuard = func(readCtx context.Context, read func(context.Context) error) error {
+			return dao.WithStableDatasetEmbeddingBindings(readCtx, db, datasets.kbs, read)
 		}
-		out = make([]RetrievalChunk, 0)
-		if res == nil || len(res.Chunks) == 0 {
-			return nil
-		}
-		rawChunks := res.Chunks
-		if a.enhancer != nil {
-			rawChunks = a.enhancer.RetrieveByChildren(ctx, rawChunks, datasets.tenantIDs)
-		}
-		out = make([]RetrievalChunk, 0, len(rawChunks))
-		for _, raw := range rawChunks {
-			out = append(out, translateChunk(raw))
-		}
-		return nil
-	})
+	}
+	res, err := a.svc.Retrieval(ctx, nlpReq)
 	if err != nil {
 		return nil, err
+	}
+	out := make([]RetrievalChunk, 0)
+	if res == nil || len(res.Chunks) == 0 {
+		return out, nil
+	}
+	rawChunks := res.Chunks
+	if a.enhancer != nil {
+		rawChunks = a.enhancer.RetrieveByChildren(ctx, rawChunks, datasets.tenantIDs)
+	}
+	for _, raw := range rawChunks {
+		out = append(out, translateChunk(raw))
 	}
 
 	return out, nil
@@ -547,10 +548,7 @@ func (a *NLPRetrievalAdapter) resolveEmbeddingModel(
 	if a == nil || a.modelConstructors.Embedding == nil {
 		return nil, fmt.Errorf("retrieval: embedding model constructor is not configured")
 	}
-	modelRef := kb.EmbdID
-	if kb.TenantEmbdID != nil && strings.TrimSpace(*kb.TenantEmbdID) != "" {
-		modelRef = *kb.TenantEmbdID
-	}
+	modelRef := kb.EmbeddingModelReference()
 	model, err := a.modelConstructors.Embedding(ctx, kb.TenantID, modelRef)
 	if err != nil {
 		return nil, fmt.Errorf("retrieval: resolve embedding model for dataset %s: %w", kb.ID, err)

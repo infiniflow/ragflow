@@ -234,11 +234,11 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	ctx = s.withProgressMessageReporter(ctx)
 	ctx, finishIOProgress := agentruntime.WithIOProgress(ctx)
 	defer finishIOProgress()
-	ctx = withEmbeddingBinding(ctx)
+	ctx = ingestion.WithEmbeddingBinding(ctx)
 	// Precomputed vectors historically inherit the dataset binding. Capture it
 	// before the pipeline runs and verify it again before any vector write.
 	if ref := s.taskCtx.KB.EmbeddingModelReference(); ref != "" {
-		if err := recordEmbeddingBinding(ctx, ref); err != nil {
+		if err := ingestion.RecordEmbeddingBinding(ctx, ref); err != nil {
 			return nil, err
 		}
 	}
@@ -423,7 +423,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		return nil
 	}
 	if chunksHaveEmbeddings(indexChunks) {
-		ref := embeddingBindingFromContext(ctx)
+		ref := ingestion.EmbeddingBindingFromContext(ctx)
 		if err := servicepkg.WithStableDatasetEmbedding(ctx, s.deps.DB, s.taskCtx.KB.ID, s.taskCtx.Tenant.ID, ref, writeChunks); err != nil {
 			return nil, err
 		}

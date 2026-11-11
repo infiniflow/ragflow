@@ -96,6 +96,9 @@ type Request struct {
 	FrequencyPenalty *float64
 	MaxTokens        *int
 	Thinking         string // "enabled" | "disabled" | ""
+	// Platform marks a shared platform model; its provider errors must not
+	// reach the tenant.
+	Platform bool
 	// Tools, when non-nil, switches the call from prompt-based tool parsing to
 	// native provider tool calling. ToolChoice constrains the provider's use of
 	// them (see ToolChoice). Nil means no tools are declared.

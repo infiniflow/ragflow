@@ -10,6 +10,25 @@ import (
 	"testing"
 )
 
+func TestSoMarkDoesNotReplayFormCredentialsAcrossOrigins(t *testing.T) {
+	withSSRFBypass(t)
+	var received bool
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { received = true }))
+	defer target.Close()
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}))
+	defer origin.Close()
+	key := "secret"
+	driver := NewSoMarkModel(map[string]string{"default": origin.URL}, URLSuffix{})
+	if err := driver.VerifyOCRConnection(t.Context(), &APIConfig{ApiKey: &key}); err == nil {
+		t.Fatal("cross-origin redirect succeeded")
+	}
+	if received {
+		t.Fatal("form credentials reached another origin")
+	}
+}
+
 func TestSoMarkVerifyOCRConnectionStopsAfterTaskAccepted(t *testing.T) {
 	withSSRFBypass(t)
 	var submitCalls, pollCalls int

@@ -24,7 +24,7 @@ func TestNewChatModelDriverPreservesProviderChatSuffix(t *testing.T) {
 	}))
 	defer server.Close()
 
-	driver, err := newChatModelDriver("Tongyi-Qianwen", server.URL)
+	driver, err := newChatModelDriver("Tongyi-Qianwen", server.URL, false)
 	if err != nil {
 		t.Fatalf("newChatModelDriver: %v", err)
 	}

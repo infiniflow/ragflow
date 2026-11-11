@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 // The judge used to be a process-wide singleton built from the environment.
@@ -115,6 +116,21 @@ func resolveDecisionBackend(ctx context.Context) *decisionBackend {
 	entry := decisionConfigCache[cacheKey]
 	decisionConfigMu.Unlock()
 	if entry != nil && time.Now().Before(entry.expiresAt) {
+		if entry.backend.platform {
+			accessCtx := ctx
+			if permission.UserIDFromContext(ctx) == "" && scope.userID != "" {
+				accessCtx = permission.WithIdentity(ctx, scope.userID, scope.tenantID)
+			}
+			if err := permission.CheckPlatformModelAccess(accessCtx, dao.DB, scope.tenantID); err != nil {
+				return decisionBackendFromEnv()
+			}
+			var count int64
+			if err := dao.DB.WithContext(ctx).Model(&entity.TenantModel{}).
+				Joins("JOIN tenant_model_instance ON tenant_model_instance.id = tenant_model.instance_id AND tenant_model_instance.provider_id = tenant_model.provider_id").
+				Where("tenant_model.id = ? AND tenant_model.status = ? AND tenant_model_instance.status = ?", modelID, "active", "active").Count(&count).Error; err != nil || count != 1 {
+				return decisionBackendFromEnv()
+			}
+		}
 		return entry.backend
 	}
 
@@ -133,7 +149,8 @@ func resolveDecisionBackend(ctx context.Context) *decisionBackend {
 }
 
 // decisionModelIDFor resolves the configured model id: the chat's own override
-// first, then the tenant default.
+// first, then the tenant default, then the platform default when neither is
+// set.
 func decisionModelIDFor(ctx context.Context, scope decisionScope) string {
 	if dao.DB == nil {
 		// No database at all (CLI, unit tests): there is no configuration to
@@ -162,6 +179,9 @@ func decisionModelIDFor(ctx context.Context, scope decisionScope) string {
 			if id := resolvedDecisionID(membership.TenantDecisionID, membership.DecisionID); id != "" {
 				return id
 			}
+		}
+		if id, err := (dao.PlatformModelSettings{}).Default(ctx, dao.DB, "decision"); err == nil {
+			return strings.TrimSpace(id)
 		}
 	}
 	return ""
@@ -211,6 +231,7 @@ func buildDecisionBackendFromModel(ctx context.Context, scope decisionScope, mod
 		return nil
 	}
 
+	platform := false
 	var instance entity.TenantModelInstance
 	if err := dao.DB.Where("id = ?", model.InstanceID).First(&instance).Error; err != nil {
 		common.WarnCtx(ctx, "agentic_rag: decision model instance not found, falling back to the env backend",
@@ -223,7 +244,26 @@ func buildDecisionBackendFromModel(ctx context.Context, scope decisionScope, mod
 	// a CLI or test run has no tenant to match and must not lose its judge.
 	if scope.tenantID != "" {
 		var provider entity.TenantModelProvider
-		if err := dao.DB.Where("id = ?", instance.ProviderID).First(&provider).Error; err != nil || provider.TenantID != scope.tenantID {
+		if err := dao.DB.Where("id = ?", instance.ProviderID).First(&provider).Error; err != nil {
+			common.WarnCtx(ctx, "agentic_rag: decision model provider not found, falling back to the env backend",
+				zap.String("model_id", modelID), zap.Error(err))
+			return nil
+		}
+		platform = provider.TenantID == entity.PlatformTenantID
+		if platform {
+			// A platform model is shared: the run's tenant and user are
+			// checked as for any other platform model use; a run without a
+			// user needs the trusted task marker.
+			accessCtx := ctx
+			if permission.UserIDFromContext(ctx) == "" && scope.userID != "" {
+				accessCtx = permission.WithIdentity(ctx, scope.userID, scope.tenantID)
+			}
+			if err := permission.CheckPlatformModelAccess(accessCtx, dao.DB, scope.tenantID); err != nil || !strings.EqualFold(instance.Status, "active") {
+				common.WarnCtx(ctx, "agentic_rag: platform decision model is not available to this tenant, falling back to the env backend",
+					zap.String("model_id", modelID), zap.String("tenant_id", scope.tenantID))
+				return nil
+			}
+		} else if provider.TenantID != scope.tenantID {
 			common.WarnCtx(ctx, "agentic_rag: decision model belongs to another tenant, falling back to the env backend",
 				zap.String("model_id", modelID), zap.String("tenant_id", scope.tenantID))
 			return nil
@@ -254,6 +294,8 @@ func buildDecisionBackendFromModel(ctx context.Context, scope decisionScope, mod
 	}
 
 	backend := newDecisionBackend(joinDecisionURL(baseURL, defaultDecisionURL), key, model.ModelName)
+	// A platform judge's failures are logged without the provider's text.
+	backend.platform = platform
 	common.InfoCtx(ctx, "agentic_rag: decision model resolved from configuration",
 		zap.String("model_id", modelID),
 		zap.String("model_name", model.ModelName),

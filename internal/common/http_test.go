@@ -406,3 +406,94 @@ func TestProviderHTTPClientResponseHeaderTimeoutIgnoresInvalidValues(t *testing.
 		})
 	}
 }
+
+func TestProviderLoggingOmitsFormCredentials(t *testing.T) {
+	for _, contentType := range []string{"application/x-www-form-urlencoded", "multipart/form-data; boundary=boundary"} {
+		t.Run(contentType, func(t *testing.T) {
+			core, logs := observer.New(zapcore.InfoLevel)
+			previous := Logger
+			Logger = zap.New(core)
+			t.Cleanup(func() { Logger = previous })
+			original := "api_key=platform-secret"
+			transport := &providerLoggingTransport{debug: true, now: time.Now, base: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				body, err := io.ReadAll(req.Body)
+				if err != nil || string(body) != original {
+					t.Fatalf("provider received %q: %v", body, err)
+				}
+				return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader("echo platform-secret")), Request: req}, nil
+			})}
+			req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, "https://provider.example/parse", strings.NewReader(original))
+			if err != nil {
+				t.Fatal(err)
+			}
+			req.Header.Set("Content-Type", contentType)
+			resp, err := transport.RoundTrip(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _ = io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+			if logs.Len() != 1 || strings.Contains(logs.All()[0].Message, "platform-secret") {
+				t.Fatalf("unsafe logs: %v", logs.All())
+			}
+		})
+	}
+}
+
+func TestProviderLoggingOmitsErrorBodiesAndSignedURLCredentials(t *testing.T) {
+	core, logs := observer.New(zapcore.InfoLevel)
+	previous := Logger
+	Logger = zap.New(core)
+	t.Cleanup(func() { Logger = previous })
+	transport := &providerLoggingTransport{debug: true, now: time.Now, base: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 403, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"error":{"message":"rejected platform-secret"}}`)), Request: req}, nil
+	})}
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://provider.example/result?signature=signed-secret&X-Amz-Signature=other-secret", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if logs.Len() != 1 {
+		t.Fatalf("logs = %v", logs.All())
+	}
+	for _, secret := range []string{"platform-secret", "signed-secret", "other-secret"} {
+		if strings.Contains(logs.All()[0].Message, secret) {
+			t.Fatalf("secret in logs: %v", logs.All())
+		}
+	}
+}
+
+func TestProviderLoggingRedactsSignedURLsInSuccessfulJSON(t *testing.T) {
+	core, logs := observer.New(zapcore.InfoLevel)
+	previous := Logger
+	Logger = zap.New(core)
+	t.Cleanup(func() { Logger = previous })
+	transport := &providerLoggingTransport{debug: true, now: time.Now, base: roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: 200, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"data":{"resultUrl":{"jsonUrl":"https://files.example/a?signature=secret"},"urls":["https://files.example/b?X-Amz-Signature=secret2","https://files.example/c?sig=secret3"]}}`)), Request: req}, nil
+	})}
+	req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://provider.example/poll", nil)
+	resp, err := transport.RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if logs.Len() != 1 || strings.Contains(logs.All()[0].Message, "secret") {
+		t.Fatalf("unsafe logs: %v", logs.All())
+	}
+}
+
+func TestCredentialSafeClientRejectsCrossOriginFormRedirects(t *testing.T) {
+	client := GetCredentialSafeHTTPClient()
+	start, _ := http.NewRequest(http.MethodPost, "https://provider.example/submit", nil)
+	same, _ := http.NewRequest(http.MethodPost, "https://provider.example:443/next", nil)
+	other, _ := http.NewRequest(http.MethodPost, "https://other.example/next", nil)
+	if client.CheckRedirect(same, []*http.Request{start}) != nil || client.CheckRedirect(other, []*http.Request{start}) == nil {
+		t.Fatal("form credential redirect policy is unsafe")
+	}
+}

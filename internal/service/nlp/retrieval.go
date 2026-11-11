@@ -64,10 +64,12 @@ type RetrievalRequest struct {
 	RankFeature            *map[string]float64
 	RerankModel            *models.RerankModel
 	EmbeddingModel         *models.EmbeddingModel
-	Aggs                   *bool
-	Highlight              *bool
-	AllowDenseFallback     *bool
-	Filter                 map[string]interface{}
+	// SearchGuard protects index reads after embedding is computed and before reranking.
+	SearchGuard        func(context.Context, func(context.Context) error) error
+	Aggs               *bool
+	Highlight          *bool
+	AllowDenseFallback *bool
+	Filter             map[string]interface{}
 	// VectorOnly, when true, runs the dense leg alone: no text match expression
 	// and no fusion expression reach the engine, so the search is a pure kNN
 	// whose filter is the scope conditions only. Set by callers that need to
@@ -207,7 +209,36 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		Filter:                 req.Filter,
 		Language:               req.Language,
 	}
-	searchResult, err := s.Search(ctx, searchReq)
+	// Provider embedding calls can be slow. Compute the query vector before
+	// acquiring the dataset binding locks used to protect the index read.
+	if req.SearchGuard != nil && req.EmbeddingModel != nil {
+		similarity := *req.SimilarityThreshold
+		if similarity <= 0 {
+			similarity = 0.1
+		}
+		topK, candidates := *req.KNNTopK, *req.KNNNumCandidates
+		if topK <= 0 {
+			topK = 1024
+		}
+		if candidates <= 0 {
+			candidates = 2048
+		}
+		searchReq.PreparedDense, err = s.GetVector(ctx, req.Question, req.EmbeddingModel, topK, candidates, similarity)
+		if err != nil {
+			return nil, fmt.Errorf("search failed: GetVector failed: %w", err)
+		}
+	}
+	var searchResult *RetrievalSearchResult
+	runSearch := func(readCtx context.Context) error {
+		var searchErr error
+		searchResult, searchErr = s.Search(readCtx, searchReq)
+		return searchErr
+	}
+	if req.SearchGuard != nil {
+		err = req.SearchGuard(ctx, runSearch)
+	} else {
+		err = runSearch(ctx)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
@@ -589,7 +620,19 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 		return sim, make([]float64, len(sim)), rawSim, nil
 	}
 
-	knnResult, err := s.docEngine.KNNScores(ctx, searchResult.Chunks, searchResult.QueryVector, len(searchResult.IDs))
+	var knnResult map[string]interface{}
+	var err error
+	readScores := func(readCtx context.Context) error {
+		knnResult, err = s.docEngine.KNNScores(readCtx, searchResult.Chunks, searchResult.QueryVector, len(searchResult.IDs))
+		return err
+	}
+	if req.SearchGuard != nil {
+		if guardErr := req.SearchGuard(ctx, readScores); guardErr != nil && err == nil {
+			return nil, nil, nil, guardErr
+		}
+	} else {
+		_ = readScores(ctx)
+	}
 	if err != nil {
 		common.Warn("KNNScores failed for ES, falling back to local computation", zap.Error(err))
 		sim, tsim, vsim := RerankStandard(
@@ -644,6 +687,7 @@ type RetrievalSearchRequest struct {
 	RankFeature            map[string]float64
 	Filter                 map[string]interface{}
 	EmbeddingModel         *models.EmbeddingModel
+	PreparedDense          *types.MatchDenseExpr
 	VectorSimilarityWeight *float64
 	AllowDenseFallback     *bool
 	// Language is the dataset language ("" = English).
@@ -824,9 +868,12 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			if similarityForGetVector <= 0 {
 				similarityForGetVector = 0.1
 			}
-			matchDense, err := s.GetVector(ctx, req.Question, req.EmbeddingModel, knnTopK, numCandidates, similarityForGetVector)
-			if err != nil {
-				return nil, fmt.Errorf("GetVector failed: %w", err)
+			matchDense := req.PreparedDense
+			if matchDense == nil {
+				matchDense, err = s.GetVector(ctx, req.Question, req.EmbeddingModel, knnTopK, numCandidates, similarityForGetVector)
+				if err != nil {
+					return nil, fmt.Errorf("GetVector failed: %w", err)
+				}
 			}
 			denseTemplate := cloneDenseExpr(matchDense)
 

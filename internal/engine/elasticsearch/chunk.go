@@ -2033,6 +2033,9 @@ func (e *Engine) executeSearchRequest(
 	if err := json.NewDecoder(res.Body).Decode(&esResp); err != nil {
 		return SearchResponse{}, fmt.Errorf("elasticsearch failed to parse response: %w", err)
 	}
+	if req.RequireComplete && (esResp.TimedOut || esResp.Shards.Failed > 0) {
+		return SearchResponse{}, fmt.Errorf("elasticsearch search incomplete: timed_out=%t failed_shards=%d", esResp.TimedOut, esResp.Shards.Failed)
+	}
 	return esResp, nil
 }
 

@@ -430,11 +430,11 @@ func (c *ExtractorComponent) runLLMTags(ctx context.Context, db *gorm.DB, in ext
 	if len(chunks) == 0 {
 		return nil
 	}
-	driver, model, apiKey, baseURL, err := resolveExtractorChatTarget(ctx, db, in.llmID)
+	target, err := resolveExtractorChatTarget(ctx, db, in.llmID)
 	if err != nil {
 		common.Warn("extractor tag: resolve model failed, skipping LLM tagging", zap.Error(err))
 	}
-	if driver == "" || model == "" {
+	if target.driver == "" || target.modelName == "" {
 		return nil
 	}
 	inv := getExtractorChatInvoker()
@@ -442,7 +442,7 @@ func (c *ExtractorComponent) runLLMTags(ctx context.Context, db *gorm.DB, in ext
 	futs := make([]utility.WorkerPoolFuture[extractorJob, struct{}], 0, len(chunks))
 	for _, chunk := range chunks {
 		f, err := extractorPool.Submit(ctx, func() error {
-			llmTagChunk(ctx, db, inv, chunk, indexed.allTags, examples, in.cache, in.llmID, in.modelID, driver, model, apiKey, baseURL, topN, indexed)
+			llmTagChunk(ctx, db, inv, chunk, indexed.allTags, examples, in.cache, in.llmID, in.modelID, target, topN, indexed)
 			return nil
 		})
 		if err != nil {
@@ -650,7 +650,8 @@ func llmTagChunk(
 	allTags map[string]float64,
 	examples []schema.TaggedChunk,
 	cache chunkcache.Store,
-	llmID, modelID, driver, model, apiKey, baseURL string,
+	llmID, modelID string,
+	target extractorResolvedTarget,
 	topN int,
 	idx *MemoryTagIndex,
 ) {
@@ -709,7 +710,7 @@ func llmTagChunk(
 	// to two full examples, so oversized chunks or tag files would
 	// otherwise be rejected by the provider (context length exceeded).
 	// Mirrors message_fit_in in content_tagging.
-	fitted, fitErr := fitExtractorMessages(ctx, db, llmID, msgs)
+	fitted, fitErr := fitExtractorTargetMessages(ctx, db, llmID, target, msgs)
 	if fitErr != nil {
 		common.Warn("extractor tags: skipping LLM tagging, message fitting failed", zap.Error(fitErr))
 		return
@@ -719,14 +720,9 @@ func llmTagChunk(
 	temperature := 0.5
 	var result OrderedTagWeights
 	timeoutErr := runtime.WithTimeout(ctx, taggerTimeout, func(timeoutCtx context.Context) error {
-		resp, err := inv.Chat(timeoutCtx, extractorChatRequest{
-			Driver:      driver,
-			ModelName:   model,
-			APIKey:      apiKey,
-			BaseURL:     baseURL,
-			Messages:    msgs,
-			Temperature: &temperature,
-		})
+		req := target.request(msgs)
+		req.Temperature = &temperature
+		resp, err := inv.Chat(timeoutCtx, req)
 		if err != nil {
 			common.Error("extractor tags: LLM call failed", err)
 			return nil

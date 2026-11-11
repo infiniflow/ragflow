@@ -16,26 +16,27 @@ package task
 
 import (
 	"context"
+	"ragflow/internal/ingestion"
 	"testing"
 )
 
 func TestEmbeddingBindingPropagatesAndRejectsMixedModels(t *testing.T) {
-	ctx := withEmbeddingBinding(t.Context())
+	ctx := ingestion.WithEmbeddingBinding(t.Context())
 	child, cancel := context.WithCancel(ctx)
 	defer cancel()
-	if err := recordEmbeddingBinding(child, "model-a"); err != nil {
+	if err := ingestion.RecordEmbeddingBinding(child, "model-a"); err != nil {
 		t.Fatal(err)
 	}
-	if got := embeddingBindingFromContext(ctx); got != "model-a" {
+	if got := ingestion.EmbeddingBindingFromContext(ctx); got != "model-a" {
 		t.Fatalf("binding = %q", got)
 	}
-	if err := recordEmbeddingBinding(child, "model-a"); err != nil {
+	if err := ingestion.RecordEmbeddingBinding(child, "model-a"); err != nil {
 		t.Fatal(err)
 	}
-	if err := recordEmbeddingBinding(child, "model-b"); err == nil {
+	if err := ingestion.RecordEmbeddingBinding(child, "model-b"); err == nil {
 		t.Fatal("mixed model references accepted")
 	}
-	if got := embeddingBindingFromContext(ctx); got != "model-a" {
+	if got := ingestion.EmbeddingBindingFromContext(ctx); got != "model-a" {
 		t.Fatalf("binding changed = %q", got)
 	}
 }

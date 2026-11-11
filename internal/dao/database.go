@@ -20,6 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
@@ -313,6 +315,16 @@ func autoMigrateModels() []interface{} {
 	return dataModels
 }
 
+// sqlLogger keeps SQL parameters, including provider credentials, out of logs.
+func sqlLogger(writer gormLogger.Writer, level gormLogger.LogLevel) gormLogger.Interface {
+	return gormLogger.New(writer, gormLogger.Config{
+		SlowThreshold:        200 * time.Millisecond,
+		LogLevel:             level,
+		Colorful:             true,
+		ParameterizedQueries: true,
+	})
+}
+
 // InitDB initialize database connection
 func InitDB(ctx context.Context, migrateDB bool) error {
 	globalConfig := server.GetConfig()
@@ -356,7 +368,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 	// Connect to database
 	var err error
 	DB, err = gorm.Open(dialector, &gorm.Config{
-		Logger: gormLogger.Default.LogMode(gormLogLevel),
+		Logger: sqlLogger(log.New(os.Stdout, "\r\n", log.LstdFlags), gormLogLevel),
 		NowFunc: func() time.Time {
 			return time.Now().Local()
 		},

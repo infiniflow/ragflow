@@ -9,6 +9,22 @@ import (
 	"time"
 )
 
+type withheldTestError struct{ safe, original string }
+
+func (e withheldTestError) Error() string              { return e.safe }
+func (e withheldTestError) ClassificationText() string { return e.original }
+
+func TestJoinedWithheldErrorsPreservePermanentClassification(t *testing.T) {
+	err := errors.Join(withheldTestError{"hidden-a", "status 503"}, withheldTestError{"hidden-b", "status 498"})
+	text := ErrorText(err)
+	if !strings.Contains(text, "status 503") || !strings.Contains(text, "status 498") {
+		t.Fatalf("classification text: %s", text)
+	}
+	if IsTransientError(err) {
+		t.Fatal("permanent joined failure was treated as transient")
+	}
+}
+
 func TestRetryWithBackoff_SuccessOnFirstAttempt(t *testing.T) {
 	var calls atomic.Int32
 	err := RetryWithBackoff(t.Context(), 3, time.Millisecond, func() error {

@@ -55,6 +55,19 @@ func NewOpenAIModel(baseURL map[string]string, urlSuffix URLSuffix) *OpenAIModel
 	}
 }
 
+// RestrictCredentialRedirects confines authenticated platform calls to their origin.
+func (o *OpenAIModel) RestrictCredentialRedirects() {
+	client := *o.baseModel.httpClient
+	client.CheckRedirect = refuseCrossOriginRedirect
+	o.baseModel.httpClient = &client
+}
+
+func (o *OpenAIModel) platformRestrictedClone() ModelDriver {
+	clone := *o
+	clone.RestrictCredentialRedirects()
+	return &clone
+}
+
 func (o *OpenAIModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return NewOpenAIModel(baseURL, o.baseModel.URLSuffix)
 }

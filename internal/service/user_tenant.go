@@ -21,6 +21,8 @@ import (
 	"fmt"
 	"strings"
 
+	"gorm.io/gorm"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -299,6 +301,8 @@ type ModelItem struct {
 	ModelID       string  `json:"model_id"`
 	ModelType     string  `json:"model_type"`
 	Enable        bool    `json:"enable"`
+	Source        string  `json:"source"`
+	ModelRef      string  `json:"model_ref"`
 }
 
 func defaultModelFields(modelType string) (string, string, entity.ModelType, error) {
@@ -342,6 +346,9 @@ func (s *UserTenantService) ListDefaultModels(ctx context.Context) ([]ModelItem,
 	if err != nil {
 		return nil, err
 	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, tenantID, permission.TenantMember); err != nil {
+		return nil, err
+	}
 	type defaultModel struct {
 		modelType string
 		modelName string
@@ -360,33 +367,78 @@ func (s *UserTenantService) ListDefaultModels(ctx context.Context) ([]ModelItem,
 	factory := NewModelFactory()
 	result := make([]ModelItem, 0, len(models))
 	for _, model := range models {
-		modelRef := ptrStringValue(model.modelID)
+		modelRef := strings.TrimSpace(ptrStringValue(model.modelID))
+		source := "user"
 		if modelRef == "" {
-			modelRef = model.modelName
+			modelRef = strings.TrimSpace(model.modelName)
+		}
+		if modelRef == "" {
+			var err error
+			modelRef, err = (dao.PlatformModelSettings{}).Default(ctx, dao.DB, model.modelType)
+			if err != nil {
+				return nil, err
+			}
+			source = "platform"
 		}
 		if strings.TrimSpace(modelRef) == "" {
 			continue
 		}
 		_, _, modelType, err := defaultModelFields(model.modelType)
 		if err != nil {
-			continue
+			return nil, err
+		}
+		item := ModelItem{ModelType: model.modelType, Source: source, ModelID: strings.TrimSpace(ptrStringValue(model.modelID)), ModelRef: strings.TrimSpace(model.modelName)}
+		if source == "platform" {
+			item.ModelID = modelRef
+			item.ModelRef = ""
 		}
 		info, err := factory.ResolveInfo(permission.WithTenantID(ctx, tenantID), modelType, modelRef)
-		if err != nil || info == nil {
+		if err != nil {
+			if !unavailableDefaultModelError(err) {
+				return nil, err
+			}
+			if item.ModelID == "" {
+				name, instance, provider, parseErr := common.ParseCompositeModelName(modelRef)
+				if parseErr != nil {
+					name = modelRef
+				}
+				item.ModelName = &name
+				if parseErr == nil {
+					item.ModelInstance, item.ModelProvider = &instance, &provider
+				}
+			}
+			result = append(result, item)
 			continue
 		}
-		modelID := info.ID
-		if modelID == "" {
-			modelID = ptrStringValue(model.modelID)
+		if info == nil {
+			return nil, errors.New("model resolution returned no metadata")
 		}
-		result = append(result, ModelItem{
-			ModelProvider: &info.ProviderName,
-			ModelInstance: &info.InstanceName,
-			ModelName:     &info.Name,
-			ModelID:       modelID,
-			ModelType:     model.modelType,
-			Enable:        true,
-		})
+		item.ModelProvider, item.ModelInstance, item.ModelName = &info.ProviderName, &info.InstanceName, &info.Name
+		if info.ID != "" {
+			item.ModelID = info.ID
+		}
+		item.Enable = true
+		result = append(result, item)
 	}
 	return result, nil
+}
+
+// unavailableDefaultModelError distinguishes a stale model selection from
+// database or infrastructure failures, including joined wrapped errors.
+func unavailableDefaultModelError(err error) bool {
+	if err == nil {
+		return true
+	}
+	if many, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, child := range many.Unwrap() {
+			if !unavailableDefaultModelError(child) {
+				return false
+			}
+		}
+		return true
+	}
+	if child := errors.Unwrap(err); child != nil {
+		return unavailableDefaultModelError(child)
+	}
+	return err == errModelConfigUnavailable || err == gorm.ErrRecordNotFound || err == permission.ErrPermissionDenied || err == permission.ErrResourceNotFound
 }

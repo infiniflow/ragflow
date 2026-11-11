@@ -19,6 +19,7 @@ package nlp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -31,6 +32,8 @@ import (
 
 	"go.uber.org/zap"
 )
+
+var errNavMergeEmbedding = errors.New("datasetnav: cluster embedding unavailable")
 
 // Dataset-nav constants. These mirror Python's dataset_nav.py: nav rows live in
 // the document index with type_kwd nav_doc/nav_cluster and available_int=0
@@ -79,6 +82,20 @@ type NavEmbedder interface {
 // Encode when it is absent.
 type NavQueryEmbedder interface {
 	EncodeQueries(ctx context.Context, tenantID string, texts []string) ([][]float32, error)
+}
+
+type datasetNavEmbedder interface {
+	EncodeDataset(ctx context.Context, tenantID, kbID string, texts []string, query bool) ([][]float32, error)
+}
+
+func encodeNavDataset(ctx context.Context, emb NavEmbedder, tenantID, kbID string, texts []string, query bool) ([][]float32, error) {
+	if scoped, ok := emb.(datasetNavEmbedder); ok {
+		return scoped.EncodeDataset(ctx, tenantID, kbID, texts, query)
+	}
+	if query {
+		return encodeNavQuery(ctx, emb, tenantID, texts)
+	}
+	return emb.Encode(ctx, tenantID, texts)
 }
 
 // encodeNavQuery embeds a search query, using the asymmetric query encoding
@@ -497,7 +514,7 @@ func (s *NavService) Search(ctx context.Context, tenantID, kbID, query string, e
 		if s.embed == nil {
 			return nil, fmt.Errorf("datasetnav: no embedding available for Search")
 		}
-		embeddings, err := encodeNavQuery(ctx, s.embed, tenantID, []string{query})
+		embeddings, err := encodeNavDataset(ctx, s.embed, tenantID, kbID, []string{query}, true)
 		if err != nil {
 			return nil, err
 		}
@@ -741,7 +758,7 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 	}
 	vec := in.Embedd
 	if len(vec) == 0 {
-		embeddings, err := s.embed.Encode(ctx, in.TenantID, []string{in.Summary})
+		embeddings, err := encodeNavDataset(ctx, s.embed, in.TenantID, in.KbID, []string{in.Summary}, false)
 		if err != nil {
 			return err
 		}
@@ -765,7 +782,7 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 			"type_kwd": []string{nav.TypeNavDoc},
 			"doc_id":   []string{in.DocID},
 		}),
-		[]string{"content_with_weight", "content_ltks", "content_sm_ltks", "title_kwd", "docnm_kwd", "compile_kwd", "scope_kwd"}, 0, 1, nil)
+		[]string{"content_with_weight", "content_ltks", "content_sm_ltks", "title_kwd", "docnm_kwd", "compile_kwd", "scope_kwd", "parent_kwd"}, 0, 1, nil)
 	if err != nil {
 		return err
 	}
@@ -785,10 +802,24 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 			var m map[string]interface{}
 			if err := json.Unmarshal([]byte(payload), &m); err == nil {
 				if d, _ := m["description"].(string); d == in.Summary {
-					if !titleStale && !ltksStale && !kindStale && !scopeStale {
+					pending, _ := m["merge_pending"].(bool)
+					if pending {
+						parent := firstStringValue(existing[0]["parent_kwd"])
+						if parent == "" || parent == navRootParent {
+							return fmt.Errorf("datasetnav: pending merge has no cluster")
+						}
+						if err := s.mergeClusterDescription(ctx, de, in.TenantID, in.KbID, parent, in.Summary); err != nil {
+							return err
+						}
+						delete(m, "merge_pending")
+					}
+					if !titleStale && !ltksStale && !kindStale && !scopeStale && !pending {
 						return nil // unchanged
 					}
 					updates := map[string]interface{}{}
+					if pending {
+						updates["content_with_weight"] = payloadJSONNav(m)
+					}
 					if scopeStale {
 						updates["scope_kwd"] = "doc"
 					}
@@ -837,13 +868,18 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 
 	if bestName != "" && sim >= navMergeThreshold {
 		parent := bestName
+		var mergeErr error
 		// Fuse this document's summary into the cluster description and re-embed
 		// the cluster with the merged text (Python upsert_dataset_nav_doc's merge
 		// branch), so the cluster keeps describing every document it holds and the
 		// next placement scores against the merged topic instead of the first
 		// document's summary alone.
 		if err := s.mergeClusterDescription(ctx, de, in.TenantID, in.KbID, bestName, in.Summary); err != nil {
-			return err
+			if !errors.Is(err, errNavMergeEmbedding) {
+				return err
+			}
+			mergeErr = err
+			common.Warn("datasetnav: cluster merge embedding failed; keeping previous description and vector", zap.Error(err))
 		}
 		if err := s.appendDocToCluster(ctx, de, in.TenantID, in.KbID, bestName, in.DocID,
 			fmt.Sprintf("q_%d_vec", len(vec)), in.CompileKind); err != nil {
@@ -853,6 +889,10 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		// deterministic id (hash of the "dataset_nav:doc:{doc_id}" key) so
 		// RemoveDoc / cascade cleanup can locate and delete it precisely,
 		// instead of relying on a doc_id + type filter alone.
+		payload := map[string]interface{}{"type": "nav_doc", "description": in.Summary}
+		if mergeErr != nil {
+			payload["merge_pending"] = true
+		}
 		row := map[string]interface{}{
 			"id":            navDocID(in.TenantID, in.KbID, in.DocID),
 			"compile_kwd":   in.CompileKind,
@@ -871,13 +911,13 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 			"depth_int":           bestDepth + 1,
 			"doc_id":              in.DocID,
 			"doc_count_int":       1,
-			"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_doc", "description": in.Summary}),
+			"content_with_weight": payloadJSONNav(payload),
 			"content_ltks":        contentLtks,
 			"content_sm_ltks":     contentSmLtks,
 			"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
 		}
 		_, err = de.InsertChunks(ctx, []map[string]interface{}{row}, idx, in.KbID, "")
-		return err
+		return errors.Join(err, mergeErr)
 	}
 
 	// A similar-but-not-mergeable document opens its own cluster (Python
@@ -1441,9 +1481,14 @@ func (s *NavService) mergeClusterDescription(ctx context.Context, de engine.DocE
 		}
 	}
 	if s.embed != nil {
-		if vecs, err := s.embed.Encode(ctx, tenantID, []string{merged}); err == nil && len(vecs) > 0 && len(vecs[0]) > 0 {
-			updates[fmt.Sprintf("q_%d_vec", len(vecs[0]))] = f32ToF64Slice(vecs[0])
+		vecs, err := encodeNavDataset(ctx, s.embed, tenantID, kbID, []string{merged}, false)
+		if err != nil {
+			return fmt.Errorf("%w: %w", errNavMergeEmbedding, err)
 		}
+		if len(vecs) == 0 || len(vecs[0]) == 0 {
+			return fmt.Errorf("%w: empty vector", errNavMergeEmbedding)
+		}
+		updates[fmt.Sprintf("q_%d_vec", len(vecs[0]))] = f32ToF64Slice(vecs[0])
 	}
 	return de.UpdateChunks(ctx,
 		navClusterCondition(tenantID, kbID, clusterName), updates, s.navIndexName(tenantID), kbID)

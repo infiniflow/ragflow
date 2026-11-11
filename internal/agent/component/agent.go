@@ -107,6 +107,8 @@ type AgentParam struct {
 	Driver  string
 	APIKey  string
 	BaseURL string
+	// Platform is set when ModelID resolved to a shared platform model.
+	Platform bool
 
 	// MaxTokensDisabled, TopPDisabled and TemperatureDisabled record a DSL
 	// *Enabled switch set to false, so runtime inputs that carry the value
@@ -621,6 +623,7 @@ func addToolCallMemory(ctx context.Context, db *gorm.DB, p AgentParam, msg *sche
 		ModelName: p.ModelID,
 		APIKey:    p.APIKey,
 		BaseURL:   p.BaseURL,
+		Platform:  p.Platform,
 		Messages: []schema.Message{
 			{Role: schema.System, Content: system},
 			{Role: schema.User, Content: user},
@@ -679,6 +682,7 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 		ModelName: p.ModelID,
 		APIKey:    p.APIKey,
 		BaseURL:   p.BaseURL,
+		Platform:  p.Platform,
 		Messages: []schema.Message{
 			{Role: schema.System, Content: systemPrompt},
 			{Role: schema.User, Content: content},
@@ -911,6 +915,7 @@ func optimizeMultiTurnQuestion(ctx context.Context, db *gorm.DB, p AgentParam, h
 		ModelName: p.ModelID,
 		APIKey:    p.APIKey,
 		BaseURL:   p.BaseURL,
+		Platform:  p.Platform,
 		Messages: []schema.Message{
 			{Role: schema.System, Content: system},
 			{Role: schema.User, Content: user},
@@ -1147,7 +1152,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	}
 
 	var err error
-	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
+	p.ModelID, p.Driver, p.APIKey, p.BaseURL, p.Platform, err = resolveChatModelRef(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -1421,7 +1426,7 @@ func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatMod
 	if driver == "" {
 		driver = "dummy"
 	}
-	d, err := newChatModelDriver(driver, p.BaseURL)
+	d, err := newChatModelDriver(driver, p.BaseURL, p.Platform)
 	if err != nil {
 		return nil, fmt.Errorf("resolve driver %q: %w", driver, err)
 	}

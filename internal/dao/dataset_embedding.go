@@ -19,6 +19,7 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"sync"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -76,6 +77,39 @@ func WithStableDatasetEmbeddingBindings(ctx context.Context, db *gorm.DB, datase
 
 // scopedDBKey carries a transaction for nested database operations.
 type scopedDBKey struct{}
+
+type scopedLocksKey struct{}
+type scopedLocks struct {
+	mu   sync.Mutex
+	held map[string]*sync.Mutex
+}
+
+// WithScopedLocks holds per-resource locks until the surrounding transaction ends.
+func WithScopedLocks(ctx context.Context) (context.Context, func()) {
+	locks := &scopedLocks{held: make(map[string]*sync.Mutex)}
+	return context.WithValue(ctx, scopedLocksKey{}, locks), func() {
+		for _, mu := range locks.held {
+			mu.Unlock()
+		}
+	}
+}
+
+// HoldScopedLock returns an unlock function for ordinary calls. In a scoped
+// transaction it retains the lock until the transaction commits or rolls back.
+func HoldScopedLock(ctx context.Context, key string, mu *sync.Mutex) func() {
+	locks, ok := ctx.Value(scopedLocksKey{}).(*scopedLocks)
+	if !ok {
+		mu.Lock()
+		return mu.Unlock
+	}
+	locks.mu.Lock()
+	defer locks.mu.Unlock()
+	if _, ok := locks.held[key]; !ok {
+		mu.Lock()
+		locks.held[key] = mu
+	}
+	return func() {}
+}
 
 // ScopedDB returns the transaction carried by ctx or the fallback database.
 func ScopedDB(ctx context.Context, fallback *gorm.DB) *gorm.DB {

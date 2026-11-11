@@ -54,7 +54,7 @@ func NewSoMarkModel(baseURL map[string]string, urlSuffix URLSuffix) *SoMarkModel
 			BaseURL:          baseURL,
 			URLSuffix:        urlSuffix,
 			AllowEmptyAPIKey: true,
-			httpClient:       common.GetSSRFHTTPClient(),
+			httpClient:       common.GetCredentialSafeHTTPClient(),
 		},
 	}
 }
@@ -444,7 +444,7 @@ func (s *SoMarkModel) OCRFile(ctx context.Context, modelName *string, content []
 
 	taskID, err := s.soMarkSubmit(ctx, submitURL, content, apiKey)
 	if err != nil {
-		common.Error("somark submit: request failed", err, zap.String("driver", s.Name()))
+		common.Error("somark submit: request failed", fmt.Errorf("request failed"), zap.String("driver", s.Name()))
 		return nil, err
 	}
 	common.Info("somark submit: ok",
@@ -453,7 +453,7 @@ func (s *SoMarkModel) OCRFile(ctx context.Context, modelName *string, content []
 
 	result, err := s.soMarkPoll(ctx, pollURL, taskID, apiKey)
 	if err != nil {
-		common.Error("somark poll: failed", err, zap.String("task_id", taskID))
+		common.Error("somark poll: failed", fmt.Errorf("request failed"), zap.String("task_id", taskID))
 		return nil, err
 	}
 

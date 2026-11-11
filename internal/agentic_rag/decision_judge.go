@@ -119,6 +119,9 @@ type decisionBackend struct {
 	minProb  float64
 	maxChars int
 	driver   *models.SystemOneModel
+	// platform marks a judge built from a platform model, whose provider text
+	// must not reach logs.
+	platform bool
 	// breaker switches the gate off when the endpoint stops answering: past a
 	// few consecutive failures the verdicts are all "keep" anyway, so the only
 	// thing still being paid for is the timeout, per passage.
@@ -410,6 +413,9 @@ func (b *decisionBackend) askBatch(ctx context.Context, question, intent string,
 		State: map[string]string{"passage": ""}, Questions: questions,
 	}, &models.APIConfig{ApiKey: &b.key}, nil)
 	if err != nil {
+		if b.platform {
+			err = models.PlatformDriverError(err)
+		}
 		return res, err
 	}
 	sums := make([]float64, len(passages))

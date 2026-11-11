@@ -226,7 +226,7 @@ func agentModelRetryConfig() *adk.ModelRetryConfig {
 // alternative - treating the string as terminal - is what made concurrent runs
 // report "quota exhausted" while the plan still had headroom.
 func transientLLMError(err error) bool {
-	msg := err.Error()
+	msg := common.ErrorText(err)
 	for _, marker := range []string{
 		"529", "overloaded_error", "429", "rate limit", "status 5",
 		// MiniMax's plan limits arrive as Chinese prose with no status code.

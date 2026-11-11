@@ -15,21 +15,8 @@
 package task
 
 import (
-	"context"
 	"strings"
-
-	"ragflow/internal/ingestion"
 )
-
-func withEmbeddingBinding(ctx context.Context) context.Context {
-	return ingestion.WithEmbeddingBinding(ctx)
-}
-func recordEmbeddingBinding(ctx context.Context, ref string) error {
-	return ingestion.RecordEmbeddingBinding(ctx, ref)
-}
-func embeddingBindingFromContext(ctx context.Context) string {
-	return ingestion.EmbeddingBindingFromContext(ctx)
-}
 
 func chunksHaveEmbeddings(chunks []map[string]any) bool {
 	for _, chunk := range chunks {

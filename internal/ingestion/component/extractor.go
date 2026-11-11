@@ -402,6 +402,9 @@ type extractorChatRequest struct {
 	BaseURL     string
 	Messages    []eschema.Message
 	Temperature *float64
+	// Platform marks a shared platform model, whose provider errors must not
+	// reach the tenant.
+	Platform bool
 }
 
 // extractorChatResponse holds the LLM's text answer. Token /
@@ -449,11 +452,25 @@ func getExtractorChatTargetResolverOverride() func(llmID string) (driver, modelN
 	return extractorChatTargetResolverOverride
 }
 
-// extractorResolvedTarget is the memoized result of a successful chat-target
-// resolution. Only successful resolutions are cached (see target), so the
-// stored entry never carries an error.
+// extractorResolvedTarget is a resolved chat target. Only successful
+// resolutions are cached (see target), so the stored entry never carries an
+// error.
 type extractorResolvedTarget struct {
 	driver, modelName, apiKey, baseURL string
+	platform                           bool
+	contextLength                      int
+}
+
+// request builds the chat request for this target.
+func (t extractorResolvedTarget) request(msgs []eschema.Message) extractorChatRequest {
+	return extractorChatRequest{
+		Driver:    t.driver,
+		ModelName: t.modelName,
+		APIKey:    t.apiKey,
+		BaseURL:   t.baseURL,
+		Messages:  msgs,
+		Platform:  t.platform,
+	}
 }
 
 // extractorModelCache memoizes per-run chat-model resolution. Within a single
@@ -471,7 +488,7 @@ type extractorModelCache struct {
 	// resolveTarget / resolveCtxLen are the underlying resolvers, wired to the
 	// uncached implementations by newExtractorModelCache. Tests may replace
 	// them to avoid a database.
-	resolveTarget func(ctx context.Context, db *gorm.DB, llmID string) (string, string, string, string, error)
+	resolveTarget func(ctx context.Context, db *gorm.DB, llmID string) (extractorResolvedTarget, error)
 	resolveCtxLen func(ctx context.Context, db *gorm.DB, llmID string) int
 }
 
@@ -488,21 +505,21 @@ func newExtractorModelCache() *extractorModelCache {
 // on first use. Only successful resolutions are cached; a failed resolution is
 // not memoized so a transient error is re-attempted and the run still fails
 // fast on the first chunk instead of reusing a stale error.
-func (m *extractorModelCache) target(ctx context.Context, db *gorm.DB, llmID string) (driver, modelName, apiKey, baseURL string, err error) {
+func (m *extractorModelCache) target(ctx context.Context, db *gorm.DB, llmID string) (extractorResolvedTarget, error) {
 	m.mu.Lock()
 	if r, ok := m.targets[llmID]; ok {
 		m.mu.Unlock()
-		return r.driver, r.modelName, r.apiKey, r.baseURL, nil
+		return r, nil
 	}
 	m.mu.Unlock()
 
-	driver, modelName, apiKey, baseURL, err = m.resolveTarget(ctx, db, llmID)
+	target, err := m.resolveTarget(ctx, db, llmID)
 	if err == nil {
 		m.mu.Lock()
-		m.targets[llmID] = extractorResolvedTarget{driver, modelName, apiKey, baseURL}
+		m.targets[llmID] = target
 		m.mu.Unlock()
 	}
-	return driver, modelName, apiKey, baseURL, err
+	return target, err
 }
 
 // ctxLen returns the resolved context length for llmID, computing and caching
@@ -575,10 +592,13 @@ func (e *einoExtractorChatInvoker) Chat(ctx context.Context, req extractorChatRe
 	if driver == "" {
 		return nil, fmt.Errorf("extractor: chat: no driver resolved for model %q", modelName)
 	}
-	common.Info(fmt.Sprintf("extractor: chat: driver=%s modelName=%s baseUrl=%s", driver, modelName, req.BaseURL))
+	common.Info(fmt.Sprintf("extractor: chat: driver=%s modelName=%s", driver, modelName))
 	d, err := models.GetPreconfiguredDriver(driver, req.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("extractor: resolve driver %q: %w", driver, err)
+	}
+	if req.Platform {
+		d = models.NewPlatformSafeDriver(d)
 	}
 	apiKey := req.APIKey
 	cfg := &models.APIConfig{ApiKey: &apiKey}
@@ -852,11 +872,11 @@ func extractorCacheModelID(ctx context.Context, db *gorm.DB, llmID string) strin
 	if llmID != "" {
 		return llmID
 	}
-	driver, modelName, _, _, err := resolveExtractorChatTarget(ctx, db, "")
-	if err != nil || (driver == "" && modelName == "") {
+	target, err := resolveExtractorChatTarget(ctx, db, "")
+	if err != nil || (target.driver == "" && target.modelName == "") {
 		return ""
 	}
-	return driver + "/" + modelName
+	return target.driver + "/" + target.modelName
 }
 
 // callTextCached wraps callText with the per-chunk result cache.
@@ -1377,24 +1397,18 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 	if strings.TrimSpace(chunkText) == "" {
 		return nil, fmt.Errorf("extractor: chunk text is empty")
 	}
-	driver, modelName, apiKey, baseURL, err := resolveExtractorChatTarget(ctx, db, in.llmID)
+	target, err := resolveExtractorChatTarget(ctx, db, in.llmID)
 	if err != nil {
 		return nil, err
 	}
 	msgs := buildExtractorMessages(systemPrompt, chunkText)
-	fitted, fitErr := fitExtractorMessages(ctx, db, in.llmID, msgs)
+	fitted, fitErr := fitExtractorTargetMessages(ctx, db, in.llmID, target, msgs)
 	if fitErr != nil {
 		return nil, fitErr
 	}
 	msgs = fitted
 	inv := getExtractorChatInvoker()
-	req := extractorChatRequest{
-		Driver:    driver,
-		ModelName: modelName,
-		APIKey:    apiKey,
-		BaseURL:   baseURL,
-		Messages:  msgs,
-	}
+	req := target.request(msgs)
 	// Only override the temperature when the caller set one. A nil
 	// Temperature lets the model / chat-model default decide, matching
 	// generic Extractor path; keyword/question helpers set
@@ -1509,7 +1523,7 @@ func isRetryableLLMError(err error) bool {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		return false
 	}
-	msg := strings.ToLower(err.Error())
+	msg := strings.ToLower(common.ErrorText(err))
 	for _, s := range []string{
 		"unauthorized", "authentication", "api key",
 		"bad request", "not found", "model not found", "content filter",
@@ -1566,7 +1580,7 @@ func (c *ExtractorComponent) callStructured(ctx context.Context, db *gorm.DB, in
 // per-run cache attached to ctx when present. Without the cache it behaves
 // exactly as resolveExtractorChatTargetUncached (the historical per-call path),
 // so callers and tests that do not inject a cache are unchanged.
-func resolveExtractorChatTarget(ctx context.Context, db *gorm.DB, llmID string) (driver, modelName, apiKey, baseURL string, err error) {
+func resolveExtractorChatTarget(ctx context.Context, db *gorm.DB, llmID string) (extractorResolvedTarget, error) {
 	if c := extractorModelCacheFromCtx(ctx); c != nil {
 		return c.target(ctx, db, llmID)
 	}
@@ -1577,10 +1591,10 @@ func resolveExtractorChatTarget(ctx context.Context, db *gorm.DB, llmID string) 
 // api_key / base_url without any per-run cache. The llm_id may be a bare
 // tenant_model UUID or a composite "model@provider" string. Errors from DAO
 // resolution are propagated so the caller sees the real failure reason.
-func resolveExtractorChatTargetUncached(ctx context.Context, db *gorm.DB, llmID string) (driver, modelName, apiKey, baseURL string, err error) {
+func resolveExtractorChatTargetUncached(ctx context.Context, db *gorm.DB, llmID string) (extractorResolvedTarget, error) {
 	if override := getExtractorChatTargetResolverOverride(); override != nil {
 		if driver, modelName, apiKey, baseURL, ok := override(llmID); ok {
-			return driver, modelName, apiKey, baseURL, nil
+			return extractorResolvedTarget{driver: driver, modelName: modelName, apiKey: apiKey, baseURL: baseURL}, nil
 		}
 	}
 
@@ -1588,35 +1602,27 @@ func resolveExtractorChatTargetUncached(ctx context.Context, db *gorm.DB, llmID 
 	// (mirrors fallback)
 	if llmID == "" {
 		if cfg := resolveExtractorChatDefaultConfig(ctx, db); cfg.driver != "" {
-			return cfg.driver, cfg.modelName, cfg.apiKey, cfg.baseURL, nil
+			return cfg, nil
 		}
 	}
 
 	cfg, cfgErr := resolveExtractorChatConfig(ctx, db, llmID)
 	if cfgErr != nil {
-		return "", "", "", "", cfgErr
+		return extractorResolvedTarget{}, cfgErr
 	}
 	if cfg.driver != "" {
-		return cfg.driver, cfg.modelName, cfg.apiKey, cfg.baseURL, nil
+		return cfg, nil
 	}
 
 	// Fallback: when tenant credentials are not available
 	// (no canvas state / no DB), fall back to the basic @ split
 	// so callers can still use model@provider format in tests.
 	if bare, provider, ok := splitExtractorLLIDPair(llmID); ok {
-		return strings.ToLower(provider), bare, "", "", nil
+		return extractorResolvedTarget{driver: strings.ToLower(provider), modelName: bare}, nil
 	}
 	// Nothing left to try — let Chat() surface a clear error when
 	// the driver ends up empty.
-	return "", llmID, "", "", nil
-}
-
-// extractorChatConfig holds the resolved chat model configuration.
-type extractorChatConfig struct {
-	driver    string // llm_factory
-	modelName string // llm_name
-	apiKey    string
-	baseURL   string // api_base
+	return extractorResolvedTarget{modelName: llmID}, nil
 }
 
 // resolveExtractorChatConfig resolves tenant-scoped credentials for
@@ -1627,15 +1633,15 @@ type extractorChatConfig struct {
 //
 // Returns nil error when there is no canvas state (unit tests) —
 // the caller's @ split fallback handles that case.
-func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID string) (extractorChatConfig, error) {
+func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID string) (extractorResolvedTarget, error) {
 	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
-		return extractorChatConfig{}, nil
+		return extractorResolvedTarget{}, nil
 	}
 	tidVal, _ := state.GetGlobal("tenant_id")
 	tid, _ := tidVal.(string)
 	if tid == "" {
-		return extractorChatConfig{}, nil
+		return extractorResolvedTarget{}, nil
 	}
 
 	var driver models.ModelDriver
@@ -1645,25 +1651,26 @@ func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID
 		// Resolve the exact tenant model without a separate existence check.
 		resolved, err := resolveModelConfigByID(ctx, db, tid, entity.ModelTypeChat, compositeLLMID)
 		if err != nil {
-			return extractorChatConfig{}, fmt.Errorf("extractor: tenant model %q not found or not usable: %w", compositeLLMID, err)
+			return extractorResolvedTarget{}, fmt.Errorf("extractor: tenant model %q not found or not usable: %w", compositeLLMID, err)
 		}
 		driver, modelName, apiConfig = resolved.driver, resolved.model.ModelName, resolved.apiConfig
 	} else {
 		// Composite "model@provider" path: delegate to the shared dispatcher.
 		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tid, entity.ModelTypeChat, compositeLLMID)
 		if err != nil {
-			return extractorChatConfig{}, fmt.Errorf("extractor: resolve model %q: %w", compositeLLMID, err)
+			return extractorResolvedTarget{}, fmt.Errorf("extractor: resolve model %q: %w", compositeLLMID, err)
 		}
 	}
 
 	return newExtractorChatConfig(driver, modelName, apiConfig), nil
 }
 
-// newExtractorChatConfig builds the chat config from a resolved driver and its
+// newExtractorChatConfig builds the chat target from a resolved driver and its
 // API settings: the driver name lowercased as the llm_factory, with the
 // credentials dereferenced defensively (a nil apiConfig or nil fields mean
-// "not configured", not a panic).
-func newExtractorChatConfig(driver models.ModelDriver, modelName string, apiConfig *models.APIConfig) extractorChatConfig {
+// "not configured", not a panic). A platform driver keeps its marker so the
+// re-created driver hides provider errors too.
+func newExtractorChatConfig(driver models.ModelDriver, modelName string, apiConfig *models.APIConfig) extractorResolvedTarget {
 	apiKey := ""
 	baseURL := ""
 	if apiConfig != nil {
@@ -1674,34 +1681,38 @@ func newExtractorChatConfig(driver models.ModelDriver, modelName string, apiConf
 			baseURL = *apiConfig.BaseURL
 		}
 	}
-	return extractorChatConfig{
+	_, platform := models.PlatformDriverBase(driver)
+	return extractorResolvedTarget{
 		driver:    strings.ToLower(driver.Name()),
 		modelName: modelName,
 		apiKey:    apiKey,
 		baseURL:   baseURL,
+		platform:  platform,
 	}
 }
 
 // resolveExtractorChatDefaultConfig resolves the tenant's default chat
 // model when no explicit llm_id is provided. Returns empty config when
 // no canvas state or tenant_id is available (unit-test context).
-func resolveExtractorChatDefaultConfig(ctx context.Context, db *gorm.DB) extractorChatConfig {
+func resolveExtractorChatDefaultConfig(ctx context.Context, db *gorm.DB) extractorResolvedTarget {
 	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
-		return extractorChatConfig{}
+		return extractorResolvedTarget{}
 	}
 	tidVal, _ := state.GetGlobal("tenant_id")
 	tid, _ := tidVal.(string)
 	if tid == "" {
-		return extractorChatConfig{}
+		return extractorResolvedTarget{}
 	}
 
-	driver, modelName, apiConfig, _, err := resolveTenantModelByType(ctx, db, tid, entity.ModelTypeChat)
+	driver, modelName, apiConfig, contextLength, err := resolveTenantModelByType(ctx, db, tid, entity.ModelTypeChat)
 	if err != nil || driver == nil {
-		return extractorChatConfig{}
+		return extractorResolvedTarget{}
 	}
 
-	return newExtractorChatConfig(driver, modelName, apiConfig)
+	target := newExtractorChatConfig(driver, modelName, apiConfig)
+	target.contextLength = contextLength
+	return target
 }
 
 // isBareTenantModelID reports whether s is a 32-character hex string
@@ -1828,7 +1839,18 @@ func extractorContextFitBudget(ctxLen int) int {
 // context budget, and providers reject empty user turns with an obscure error
 // after retries.
 func fitExtractorMessages(ctx context.Context, db *gorm.DB, llmID string, msgs []eschema.Message) ([]eschema.Message, error) {
-	ctxLen := extractorContextLength(ctx, db, llmID)
+	return fitExtractorMessagesWithLength(msgs, extractorContextLength(ctx, db, llmID))
+}
+
+// fitExtractorTargetMessages uses the context window of the actual resolved default.
+func fitExtractorTargetMessages(ctx context.Context, db *gorm.DB, llmID string, target extractorResolvedTarget, msgs []eschema.Message) ([]eschema.Message, error) {
+	if llmID == "" && target.contextLength > 0 && getExtractorContextLengthOverride() == nil {
+		return fitExtractorMessagesWithLength(msgs, target.contextLength)
+	}
+	return fitExtractorMessages(ctx, db, llmID, msgs)
+}
+
+func fitExtractorMessagesWithLength(msgs []eschema.Message, ctxLen int) ([]eschema.Message, error) {
 	if ctxLen <= 0 {
 		return msgs, nil
 	}

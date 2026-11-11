@@ -336,20 +336,14 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		retrievalReq.DocIDs = append(slices.Clone(docIDs), datasetIDs...)
 	}
 
-	var retrievalResult *nlp.RetrievalResult
-	var filteredChunks []map[string]interface{}
-	err = dao.WithStableDatasetEmbeddingBindings(ctx, dao.DB, kbRecords, func(ctx context.Context) error {
-		var searchErr error
-		retrievalResult, searchErr = nlp.NewRetrievalService(d.docEngine, d.documentDAO).Retrieval(ctx, retrievalReq)
-		if searchErr != nil {
-			return fmt.Errorf("retrieval search failed: %w", searchErr)
-		}
-		filteredChunks = nlp.RetrievalByChildren(retrievalResult.Chunks, tenantIDs, d.docEngine, ctx)
-		return nil
-	})
-	if err != nil {
-		return nil, err
+	retrievalReq.SearchGuard = func(readCtx context.Context, read func(context.Context) error) error {
+		return dao.WithStableDatasetEmbeddingBindings(readCtx, dao.DB, kbRecords, read)
 	}
+	retrievalResult, err := nlp.NewRetrievalService(d.docEngine, d.documentDAO).Retrieval(ctx, retrievalReq)
+	if err != nil {
+		return nil, fmt.Errorf("retrieval search failed: %w", err)
+	}
+	filteredChunks := nlp.RetrievalByChildren(retrievalResult.Chunks, tenantIDs, d.docEngine, ctx)
 	if useKG {
 		common.Warn("use_kg is not yet implemented in Go - skipping KG retrieval")
 	}

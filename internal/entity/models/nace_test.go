@@ -349,3 +349,24 @@ func TestNaceClientValueFor(t *testing.T) {
 		}
 	}
 }
+
+func TestSystemOneRestrictedRedirectsProtectCredentials(t *testing.T) {
+	withSSRFBypass(t)
+	var leaked bool
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked = r.Header.Get("Authorization") != ""
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer other.Close()
+	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/v1/models", http.StatusTemporaryRedirect)
+	}))
+	defer origin.Close()
+	model := NewSystemOneModel(map[string]string{"default": origin.URL + "/v1"}, URLSuffix{Models: "models"})
+	if _, err := model.ListModels(t.Context(), &APIConfig{ApiKey: &testAPIKey}); err == nil {
+		t.Fatal("cross-origin redirect succeeded")
+	}
+	if leaked {
+		t.Fatal("credential reached redirect target")
+	}
+}

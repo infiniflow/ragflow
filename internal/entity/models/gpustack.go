@@ -235,7 +235,7 @@ func (g *GPUStackModel) fetchModelCategories(ctx context.Context, url string, ap
 	for _, category := range queried {
 		matched, err := g.fetchModels(ctx, url+"?categories="+category, apiConfig)
 		if err != nil {
-			common.Warn("gpustack: failed to list models by category", zap.String("category", category), zap.Error(err))
+			common.Warn("gpustack: failed to list models by category", zap.String("category", category))
 			return nil
 		}
 		// One full listing is a cluster serving only that category. Two mean
@@ -533,7 +533,7 @@ func (g *GPUStackModel) withDefaultVoice(ctx context.Context, modelName *string,
 	}
 	items, err := g.fetchModels(ctx, url+"?with_meta=true", apiConfig)
 	if err != nil {
-		common.Warn("gpustack: failed to look up model voices", zap.String("model", *modelName), zap.Error(err))
+		common.Warn("gpustack: failed to look up model voices", zap.String("model", *modelName))
 		return ttsConfig
 	}
 	for _, item := range items {

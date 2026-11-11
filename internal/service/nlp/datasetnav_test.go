@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -285,6 +286,32 @@ func strconvItoa(n int) string {
 
 // stubNavEmbedder returns a fixed deterministic vector per distinct text.
 type stubNavEmbedder struct{}
+
+type scopedNavProbe struct {
+	stubNavEmbedder
+	calls []string
+}
+
+func (e *scopedNavProbe) EncodeDataset(ctx context.Context, tenantID, kbID string, texts []string, query bool) ([][]float32, error) {
+	e.calls = append(e.calls, fmt.Sprintf("%s/%s/%v", tenantID, kbID, query))
+	return e.stubNavEmbedder.Encode(ctx, tenantID, texts)
+}
+
+func TestNavUsesDatasetScopedEmbedding(t *testing.T) {
+	eng := newMemNavEngine()
+	emb := &scopedNavProbe{}
+	ns := NewNavService(emb)
+	ns.engine = eng
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("tenant", "kb", "doc", "summary")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ns.Search(t.Context(), "tenant", "kb", "query", nil, nil, 5); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(emb.calls, []string{"tenant/kb/false", "tenant/kb/true"}) {
+		t.Fatalf("embedding calls: %v", emb.calls)
+	}
+}
 
 func (stubNavEmbedder) Encode(_ context.Context, _ string, texts []string) ([][]float32, error) {
 	out := make([][]float32, len(texts))
@@ -1607,6 +1634,72 @@ func (s *stubNavMergeLLM) Merge(_ context.Context, _ string, texts []string) (st
 // rewritten cluster description was re-embedded.
 type recordingNavEmbedder struct {
 	texts []string
+}
+
+type failingNavEmbedder struct{ stubNavEmbedder }
+
+func (failingNavEmbedder) EncodeDataset(context.Context, string, string, []string, bool) ([][]float32, error) {
+	return nil, fmt.Errorf("model unavailable")
+}
+
+func TestNavMergeDoesNotWriteDescriptionWhenEmbeddingFails(t *testing.T) {
+	eng := newMemNavEngine()
+	ns := newTestNav(eng)
+	ns.SetNavMergeLLM(&stubNavMergeLLM{name: "topic", summary: "original description", merged: "changed description"})
+	if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", "d1", "aaa one")); err != nil {
+		t.Fatal(err)
+	}
+	before := navRowDescription(t, navClusterRow(t, eng))
+	name, _ := navClusterRow(t, eng)["title_kwd"].(string)
+	if name == "" {
+		t.Fatal("missing cluster name")
+	}
+	ns.embed = failingNavEmbedder{}
+	if err := ns.mergeClusterDescription(t.Context(), eng, "t1", "kb1", name, "aaa two"); err == nil {
+		t.Fatal("expected embedding failure")
+	}
+	if got := navRowDescription(t, navClusterRow(t, eng)); got != before {
+		t.Fatalf("description changed: %q -> %q", before, got)
+	}
+}
+
+func TestNavUpdateKeepsDocumentWhenMergeEmbeddingFails(t *testing.T) {
+	eng := newMemNavEngine()
+	ns := newTestNav(eng)
+	ns.SetNavMergeLLM(&stubNavMergeLLM{name: "topic", summary: "original description", merged: "changed description"})
+	for _, id := range []string{"d1", "d2"} {
+		if err := ns.UpsertDoc(t.Context(), navUpsertInput("t1", "kb1", id, "aaa "+id)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := navRowDescription(t, navClusterRow(t, eng))
+	ns.SetNavMergeLLM(&stubNavMergeLLM{name: "topic", summary: "original description", merged: "new description"})
+	ns.embed = failingNavEmbedder{}
+	vecs, _ := (stubNavEmbedder{}).Encode(t.Context(), "t1", []string{"aaa changed"})
+	input := navUpsertInput("t1", "kb1", "d1", "aaa changed")
+	input.Embedd = vecs[0]
+	if err := ns.UpsertDoc(t.Context(), input); err == nil {
+		t.Fatal("expected embedding failure")
+	}
+	if got := navRowDescription(t, navClusterRow(t, eng)); got != before {
+		t.Fatalf("cluster description changed: %q -> %q", before, got)
+	}
+	found := false
+	for _, row := range eng.rows {
+		if row["type_kwd"] == "nav_doc" && row["doc_id"] == "d1" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("updated document disappeared from navigation")
+	}
+	ns.embed = stubNavEmbedder{}
+	if err := ns.UpsertDoc(t.Context(), input); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if got := navRowDescription(t, navClusterRow(t, eng)); got != "new description" {
+		t.Fatalf("merge was not retried: %q", got)
+	}
 }
 
 func (e *recordingNavEmbedder) Encode(ctx context.Context, tenantID string, texts []string) ([][]float32, error) {

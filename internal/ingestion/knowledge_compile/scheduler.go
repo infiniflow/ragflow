@@ -341,6 +341,8 @@ func (s *mysqlScheduler) WithDatasetLockContext(ctx context.Context, datasetID s
 	if s.db == nil {
 		return fn(ctx, "")
 	}
+	ctx, releaseLocks := dao.WithScopedLocks(ctx)
+	defer releaseLocks()
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		row := entity.KnowledgeCompileDataset{DatasetID: datasetID}
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("dataset_id = ?", datasetID).FirstOrCreate(&row).Error; err != nil {

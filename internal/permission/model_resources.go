@@ -29,7 +29,10 @@ func (s *databaseSource) loadModelProviders(ctx context.Context, ids []string) (
 	if len(ids) == 0 {
 		return providersByID, nil
 	}
-	query := s.db.WithContext(ctx).Model(&entity.TenantModelProvider{}).Where("id IN ?", uniqueStringValues(ids))
+	// Platform providers are not tenant resources: their creator gains no
+	// owner rights through tenant endpoints, and their use is authorized by
+	// CheckPlatformModelAccess instead.
+	query := s.db.WithContext(ctx).Model(&entity.TenantModelProvider{}).Where("id IN ? AND tenant_id <> ?", uniqueStringValues(ids), entity.PlatformTenantID)
 	if s.lockRows {
 		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
 	}

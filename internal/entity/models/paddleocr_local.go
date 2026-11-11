@@ -137,7 +137,6 @@ func (p *PaddleOCRLocalModel) OCRFile(ctx context.Context, modelName *string, co
 
 	common.Info("paddleocr local submit: sending",
 		zap.String("driver", p.Name()),
-		zap.String("url", url),
 		zap.String("model", *modelName),
 		zap.String("algorithm", algorithm),
 		zap.Int("content_bytes", len(content)))
@@ -145,9 +144,8 @@ func (p *PaddleOCRLocalModel) OCRFile(ctx context.Context, modelName *string, co
 	resp, err := p.baseModel.httpClient.Do(req)
 	if err != nil {
 		common.Error("paddleocr local submit: request failed",
-			err,
-			zap.String("driver", p.Name()),
-			zap.String("url", url))
+			fmt.Errorf("request failed"),
+			zap.String("driver", p.Name()))
 		return nil, fmt.Errorf("failed to send request to local PaddleOCR: %w", err)
 	}
 	defer resp.Body.Close()
@@ -157,9 +155,7 @@ func (p *PaddleOCRLocalModel) OCRFile(ctx context.Context, modelName *string, co
 		common.Error("paddleocr local submit: non-200",
 			fmt.Errorf("status %d", resp.StatusCode),
 			zap.String("driver", p.Name()),
-			zap.String("url", url),
-			zap.Int("status", resp.StatusCode),
-			zap.String("body", errBody))
+			zap.Int("status", resp.StatusCode))
 		return nil, fmt.Errorf("local PaddleOCR failed with status %d: %s", resp.StatusCode, errBody)
 	}
 
@@ -170,15 +166,15 @@ func (p *PaddleOCRLocalModel) OCRFile(ctx context.Context, modelName *string, co
 
 	response, err := parsePaddleOCRResultBody(respBody)
 	if err != nil {
-		common.Error("paddleocr local result: parse failed", err,
-			zap.String("driver", p.Name()), zap.String("url", url),
+		common.Error("paddleocr local result: parse failed", fmt.Errorf("invalid OCR response"),
+			zap.String("driver", p.Name()),
 			zap.Int("body_bytes", len(respBody)))
 		return nil, fmt.Errorf("local PaddleOCR result: %w", err)
 	}
 	if len(response.Warnings) > 0 {
-		common.Warn("paddleocr local result: partial failure", zap.String("driver", p.Name()), zap.Strings("warnings", response.Warnings))
+		common.Warn("paddleocr local result: partial failure", zap.String("driver", p.Name()), zap.Int("warning_count", len(response.Warnings)))
 	}
-	common.Info("paddleocr local submit: ok", zap.String("driver", p.Name()), zap.String("url", url), zap.Int("status", resp.StatusCode))
+	common.Info("paddleocr local submit: ok", zap.String("driver", p.Name()), zap.Int("status", resp.StatusCode))
 	return response, nil
 }
 

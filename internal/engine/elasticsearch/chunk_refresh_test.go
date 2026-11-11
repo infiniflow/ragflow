@@ -19,6 +19,7 @@ package elasticsearch
 import (
 	"net/http"
 	"net/http/httptest"
+	"ragflow/internal/engine/types"
 	"testing"
 
 	"github.com/elastic/go-elasticsearch/v8"
@@ -138,5 +139,26 @@ func TestSearchOneIndexRequireComplete(t *testing.T) {
 				t.Fatalf("ordinary search rejected partial results: %v", err)
 			}
 		})
+	}
+}
+
+func TestSearchAfterRequiresComplete(t *testing.T) {
+	for _, body := range []string{`{"timed_out":true,"hits":{"total":{"value":0},"hits":[]}}`, `{"_shards":{"failed":1},"hits":{"total":{"value":0},"hits":[]}}`} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("X-Elastic-Product", "Elasticsearch")
+			_, _ = w.Write([]byte(body))
+		}))
+		client, err := elasticsearch.NewClient(elasticsearch.Config{Addresses: []string{server.URL}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		e := &Engine{client: client}
+		for _, strict := range []bool{false, true} {
+			_, err := e.executeSearchRequest(t.Context(), &types.SearchRequest{IndexNames: []string{"index"}, RequireComplete: strict}, map[string]interface{}{}, 1, nil, true)
+			if (err != nil) != strict {
+				t.Errorf("body=%s strict=%v err=%v", body, strict, err)
+			}
+		}
+		server.Close()
 	}
 }

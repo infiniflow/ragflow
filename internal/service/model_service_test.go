@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image/png"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +14,8 @@ import (
 	"testing"
 
 	"github.com/glebarez/sqlite"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
@@ -24,6 +27,7 @@ import (
 
 type remoteModelProbeDriver struct {
 	*modelModule.DummyModel
+	listErr      error
 	remoteModels []modelModule.ListModelResponse
 	listCalls    int
 	listConfig   *modelModule.APIConfig
@@ -37,7 +41,7 @@ type remoteModelProbeDriver struct {
 func (d *remoteModelProbeDriver) ListModels(_ context.Context, apiConfig *modelModule.APIConfig) ([]modelModule.ListModelResponse, error) {
 	d.listCalls++
 	d.listConfig = apiConfig
-	return d.remoteModels, nil
+	return d.remoteModels, d.listErr
 }
 
 func (d *remoteModelProbeDriver) NewInstance(baseURLs map[string]string) modelModule.ModelDriver {
@@ -318,6 +322,15 @@ func TestVerifyProviderModelVerifiesDecisionModels(t *testing.T) {
 	}
 }
 
+func TestVerifyProviderModelChecksEachModel(t *testing.T) {
+	driver := &decisionProbeDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+	result, err := verifyProviderModel(serviceTestContext(t, "user-1", "tenant-1"), driver,
+		[]*modelModule.Model{{Name: "first", ModelTypes: []string{"decision"}}, {Name: "second", ModelTypes: []string{"decision"}}}, &modelModule.APIConfig{}, nil)
+	if err != nil || driver.decideCalls != 2 || result["first"] != entity.ModelVerifySuccess || result["second"] != entity.ModelVerifySuccess {
+		t.Fatalf("verification = %v, calls = %d, err = %v", result, driver.decideCalls, err)
+	}
+}
+
 // A type falling through the switch collects no error, so the failure must name
 // it: joining no errors returns nil, which %w renders as "%!w(<nil>)" — the
 // message that hid this very case while decision had no verifier.
@@ -443,7 +456,7 @@ func TestModelInfoWithTenantExtraAppliesEmbeddingConstraints(t *testing.T) {
 		Extra: `{"max_tokens":4096,"max_dimension":768,"max_batch_size":16,"dimensions":[384,768],"model_types":["embedding"]}`,
 	}
 
-	merged, err := modelInfoWithTenantExtra(modelInfo, modelEntity)
+	merged, err := modelInfoWithTenantExtra(modelInfo, modelEntity, false)
 	if err != nil {
 		t.Fatalf("modelInfoWithTenantExtra() error = %v", err)
 	}
@@ -1852,5 +1865,90 @@ func TestCreateProviderInstanceUsesActiveTenantProvider(t *testing.T) {
 	}
 	if created.ProviderID != "provider-2" {
 		t.Fatalf("created instance provider_id = %q, want provider-2", created.ProviderID)
+	}
+}
+
+func TestVerifyProviderModelDoesNotLogRemoteError(t *testing.T) {
+	const secret = "platform-test-secret"
+	core, logs := observer.New(zap.WarnLevel)
+	restore := zap.ReplaceGlobals(zap.New(core))
+	defer restore()
+	driver := &remoteModelProbeDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{}), listErr: errors.New(secret)}
+	_, err := verifyProviderModel(t.Context(), driver, nil, &modelModule.APIConfig{}, nil)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	for _, entry := range logs.All() {
+		if strings.Contains(entry.Message, secret) || strings.Contains(fmt.Sprint(entry.ContextMap()), secret) {
+			t.Fatal("secret exposed in log")
+		}
+	}
+}
+
+type aliasVerificationProbe struct {
+	*modelModule.DummyModel
+	called string
+}
+
+func (d *aliasVerificationProbe) ChatWithMessages(context.Context, string, []modelModule.Message, *modelModule.APIConfig, *modelModule.ChatConfig, *common.ModelUsage) (*modelModule.ChatResponse, error) {
+	d.called = "vision"
+	return nil, errors.New("vision probe")
+}
+
+func (d *aliasVerificationProbe) TranscribeAudio(context.Context, *string, *string, *modelModule.APIConfig, *modelModule.ASRConfig, *common.ModelUsage) (*modelModule.ASRResponse, error) {
+	d.called = "asr"
+	return nil, errors.New("asr probe")
+}
+
+func TestVerifyProviderModelAttemptsTypeAliases(t *testing.T) {
+	for _, modelType := range []string{"speech2text", "image2text"} {
+		t.Run(modelType, func(t *testing.T) {
+			driver := &aliasVerificationProbe{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+			_, err := verifyProviderModel(t.Context(), driver, nil, &modelModule.APIConfig{}, []CheckConnectionModelInfo{{ModelName: "test", ModelTypes: []string{modelType}}})
+			want := "vision"
+			if modelType == "speech2text" {
+				want = "asr"
+			}
+			if driver.called != want || err == nil || !strings.Contains(err.Error(), want+" probe") {
+				t.Fatalf("%s was not attempted: %v", modelType, err)
+			}
+		})
+	}
+}
+
+func TestPlatformDriverHidesProviderErrors(t *testing.T) {
+	probe := &remoteModelProbeDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{}), listErr: errors.New("upstream echoed platform-secret")}
+	driver := modelModule.NewPlatformSafeDriver(probe)
+	_, err := driver.ListModels(t.Context(), &modelModule.APIConfig{})
+	if err == nil || strings.Contains(err.Error(), "platform-secret") {
+		t.Fatalf("unsafe error: %v", err)
+	}
+	var status *modelModule.APIStatusError
+	if safe := modelModule.PlatformDriverError(&modelModule.APIStatusError{Status: 503, Body: "platform-secret"}); !errors.As(safe, &status) || status.Status != 503 || strings.Contains(safe.Error(), "platform-secret") {
+		t.Fatalf("unsafe status: %v", safe)
+	}
+	if !errors.Is(modelModule.PlatformDriverError(context.Canceled), context.Canceled) {
+		t.Fatal("lost cancellation")
+	}
+}
+
+type platformJinaStreamProbe struct{ *modelModule.DummyModel }
+
+func (d platformJinaStreamProbe) Name() string { return "jina" }
+func (d platformJinaStreamProbe) ChatStreamlyWithSender(_ context.Context, _ string, _ []modelModule.Message, _ *modelModule.APIConfig, _ *modelModule.ChatConfig, _ *common.ModelUsage, sender func(*string, *string) error) error {
+	value := "**ERROR**: upstream echoed platform-secret"
+	return sender(&value, nil)
+}
+func TestPlatformDriverHidesStreamErrors(t *testing.T) {
+	driver := modelModule.NewPlatformSafeDriver(platformJinaStreamProbe{modelModule.NewDummyModel(nil, modelModule.URLSuffix{})})
+	var output string
+	err := driver.ChatStreamlyWithSender(t.Context(), "model", nil, nil, nil, nil, func(value, _ *string) error {
+		if value != nil {
+			output += *value
+		}
+		return nil
+	})
+	if err != nil || strings.Contains(output, "platform-secret") || !strings.Contains(output, "ERROR") {
+		t.Fatalf("stream: %q, %v", output, err)
 	}
 }

@@ -320,7 +320,7 @@ func (m *MistralModel) mistralOCRUpload(ctx context.Context, baseURL string, aut
 			_, err = m.mistralOCRSend(req, maxModelResponseBodyBytes)
 		}
 		if err != nil {
-			common.Warn("Mistral OCR: failed to delete uploaded document", zap.String("file_id", uploaded.ID), zap.Error(err))
+			common.Warn("Mistral OCR: failed to delete uploaded document", zap.String("file_id", uploaded.ID))
 		}
 	}
 

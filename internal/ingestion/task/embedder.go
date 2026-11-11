@@ -24,6 +24,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"ragflow/internal/ingestion"
 	"regexp"
 	"slices"
 	"strconv"
@@ -519,7 +520,7 @@ func retryAfterFromError(err error) (time.Duration, bool) {
 	if err == nil {
 		return 0, false
 	}
-	m := retryAfterPattern.FindStringSubmatch(err.Error())
+	m := retryAfterPattern.FindStringSubmatch(common.ErrorText(err))
 	if m == nil {
 		return 0, false
 	}
@@ -589,7 +590,7 @@ func isRetryableErr(err error) bool {
 	if errors.As(err, &netErr) {
 		return isRetryableNetErr(err, netErr)
 	}
-	msg := strings.ToLower(err.Error())
+	msg := strings.ToLower(common.ErrorText(err))
 	// net/http's HTTP/2 transport uses an internal error type for a graceful
 	// connection retirement, so errors.As cannot identify it here. Embedding is
 	// safe to repeat, and the transport will put the retry on a fresh connection.
@@ -666,7 +667,7 @@ func newEmbedderResolver(
 		if model == nil {
 			return nil, "", fmt.Errorf("embedder: resolved embedding model is nil for embd_id=%s", embdID)
 		}
-		if err := recordEmbeddingBinding(ctx, embdID); err != nil {
+		if err := ingestion.RecordEmbeddingBinding(ctx, embdID); err != nil {
 			return nil, "", err
 		}
 		return &embedder{model: model}, embdID, nil

@@ -104,6 +104,34 @@ func GetSSRFHTTPClient() *http.Client {
 	return ssrfHTTPClient()
 }
 
+// GetCredentialSafeHTTPClient prevents redirects from replaying form credentials
+// to a different origin while leaving the shared client unchanged.
+func GetCredentialSafeHTTPClient() *http.Client {
+	client := *GetSSRFHTTPClient()
+	client.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 10 {
+			return fmt.Errorf("stopped after 10 redirects")
+		}
+		port := func(u *url.URL) string {
+			if p := u.Port(); p != "" {
+				return p
+			}
+			if strings.EqualFold(u.Scheme, "https") {
+				return "443"
+			}
+			if strings.EqualFold(u.Scheme, "http") {
+				return "80"
+			}
+			return ""
+		}
+		if len(via) > 0 && (!strings.EqualFold(req.URL.Scheme, via[0].URL.Scheme) || !strings.EqualFold(req.URL.Hostname(), via[0].URL.Hostname()) || port(req.URL) != port(via[0].URL)) {
+			return fmt.Errorf("refusing cross-origin redirect")
+		}
+		return nil
+	}
+	return &client
+}
+
 func newSSRFHTTPClient() *http.Client {
 	var t *http.Transport
 	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
@@ -176,19 +204,30 @@ type providerLoggingTransport struct {
 func (t *providerLoggingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	providerURL := redactProviderURL(req.URL)
 	logPayload := ""
+	contentType := strings.ToLower(req.Header.Get("Content-Type"))
+	privateForm := strings.HasPrefix(contentType, "multipart/") || strings.HasPrefix(contentType, "application/x-www-form-urlencoded")
 	if t.debug {
-		payload, err := readAndRestoreRequestBody(req)
-		if err != nil {
-			return nil, err
+		if privateForm {
+			// Form fields can contain credentials and arbitrary binary files.
+			logPayload = "[form body omitted]"
+		} else {
+			payload, err := readAndRestoreRequestBody(req)
+			if err != nil {
+				return nil, err
+			}
+			logPayload = redactProviderBody(payload)
 		}
-		logPayload = redactProviderBody(payload)
 	}
 
 	startedAt := t.now()
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {
 		if t.debug {
-			logProviderCall(providerURL, logPayload, 0, "", t.now().Sub(startedAt), 0, err)
+			logErr := err
+			if privateForm {
+				logErr = fmt.Errorf("provider request failed")
+			}
+			logProviderCall(providerURL, logPayload, 0, "", t.now().Sub(startedAt), 0, logErr)
 		}
 		return nil, err
 	}
@@ -208,10 +247,16 @@ func (t *providerLoggingTransport) RoundTrip(req *http.Request) (*http.Response,
 		ReadCloser: resp.Body,
 		startedAt:  startedAt,
 		now:        t.now,
-		capture:    t.debug,
+		capture:    t.debug && !privateForm && resp.StatusCode >= 200 && resp.StatusCode < 300,
 		log: func(body []byte, took, firstToken time.Duration) {
 			if t.debug {
-				logProviderCall(providerURL, logPayload, resp.StatusCode, redactProviderBody(body), took, firstToken, nil)
+				response := "[form response omitted]"
+				if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+					response = "[error response omitted]"
+				} else if !privateForm {
+					response = redactProviderBody(body)
+				}
+				logProviderCall(providerURL, logPayload, resp.StatusCode, response, took, firstToken, nil)
 				return
 			}
 			summary.report(took, firstToken)
@@ -372,10 +417,20 @@ func redactProviderValue(value any) {
 				child = truncateLoggedVectors(child)
 				value[key] = child
 			}
+			if raw, ok := child.(string); ok {
+				if parsed, err := url.Parse(raw); err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != "" {
+					value[key] = redactProviderURL(parsed)
+				}
+			}
 			redactProviderValue(child)
 		}
 	case []any:
-		for _, child := range value {
+		for i, child := range value {
+			if raw, ok := child.(string); ok {
+				if parsed, err := url.Parse(raw); err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") && parsed.Host != "" {
+					value[i] = redactProviderURL(parsed)
+				}
+			}
 			redactProviderValue(child)
 		}
 	}
@@ -425,7 +480,7 @@ func isNumericVector(value []any) bool {
 func isSensitiveLogKey(key string) bool {
 	normalized := strings.NewReplacer("-", "", "_", "", ".", "").Replace(strings.ToLower(key))
 	switch normalized {
-	case "apikey", "authorization", "accesstoken", "refreshtoken", "password", "secret", "token", "key":
+	case "apikey", "authorization", "accesstoken", "refreshtoken", "password", "secret", "token", "key", "sig", "signature", "xamzsignature", "xgoogsignature", "xamzcredential", "xgoogcredential", "xamzsecuritytoken":
 		return true
 	default:
 		return false

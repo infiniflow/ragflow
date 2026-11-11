@@ -1222,7 +1222,10 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 	mergedFinal = append(mergedFinal, newMerged...)
 	mergedFinal = append(mergedFinal, unmatched...)
 	mergedFinal, staleTopicIDs := mergeTopicProducts(tenant, kb, mergedFinal)
-	mergedFinal = refreshWikiProductVectors(ctx, tenant, mergedFinal)
+	mergedFinal, err = refreshWikiProductVectors(ctx, tenant, mergedFinal)
+	if err != nil {
+		return err
+	}
 	c.reportProgress(ctx, tenant, kb, token, taskTypes, 0.90, "writing_products", fmt.Sprintf("Writing %d merged products", len(mergedFinal)))
 	if err := c.withWriteLock(ctx, kb, token, func(ctx context.Context) error {
 		if err := c.withStableVectorWrite(ctx, tenant, kb, mergedFinal, func() error {
@@ -1497,22 +1500,28 @@ func (c *Consumer) deleteMissingScopedWikiPages(ctx context.Context, tenant, kb,
 	})
 }
 
-func refreshWikiProductVectors(ctx context.Context, tenant string, products []kccommon.Product) []kccommon.Product {
+func refreshWikiProductVectors(ctx context.Context, tenant string, products []kccommon.Product) ([]kccommon.Product, error) {
 	if len(products) == 0 {
-		return products
+		return products, nil
 	}
 	deps, err := kccommon.ResolveDeps(ctx, tenant, defaultLLMID, "")
-	if err != nil || deps.Embed == nil {
-		return products
+	if err != nil {
+		return nil, fmt.Errorf("knowledge_compile: resolve Wiki embedder: %w", err)
+	}
+	if deps.Embed == nil {
+		return nil, fmt.Errorf("knowledge_compile: Wiki embedder unavailable")
 	}
 	vectors, err := deps.Embed.Encode(ctx, productContentsForEmbedding(products))
-	if err != nil || len(vectors) != len(products) {
-		return products
+	if err != nil {
+		return nil, fmt.Errorf("knowledge_compile: refresh Wiki vectors: %w", err)
+	}
+	if len(vectors) != len(products) {
+		return nil, fmt.Errorf("knowledge_compile: expected %d Wiki vectors, got %d", len(products), len(vectors))
 	}
 	for i := range products {
 		products[i].Vector = vectors[i]
 	}
-	return products
+	return products, nil
 }
 
 func productContentsForEmbedding(products []kccommon.Product) []string {
@@ -1915,15 +1924,21 @@ func structureProductDescription(content string) string {
 // destructive write so a stale worker cannot repopulate a rebuilt tree).
 func (c *Consumer) upsertNavLocked(ctx context.Context, tenant, kb, token string, ns nav.NavService, inputs []nav.UpsertDocInput) error {
 	return c.withWriteLock(ctx, kb, token, func(ctx context.Context) error {
-		for i := range inputs {
-			// The minimal-loop NavService.UpsertDoc is idempotent by summary; a
-			// failure here aborts the batch so the claim is not acked and the
-			// batch is retried.
-			if err := ns.UpsertDoc(ctx, inputs[i]); err != nil {
-				return fmt.Errorf("knowledge_compile: nav upsert %s: %w", inputs[i].DocID, err)
+		write := func() error {
+			for i := range inputs {
+				// The minimal-loop NavService.UpsertDoc is idempotent by summary; a
+				// failure here aborts the batch so the claim is not acked and the
+				// batch is retried.
+				if err := ns.UpsertDoc(ctx, inputs[i]); err != nil {
+					return fmt.Errorf("knowledge_compile: nav upsert %s: %w", inputs[i].DocID, err)
+				}
 			}
+			return nil
 		}
-		return nil
+		if c.db == nil {
+			return write()
+		}
+		return dao.WithStableDatasetEmbedding(ctx, c.db, kb, tenant, ingestion.EmbeddingBindingFromContext(ctx), write)
 	})
 }
 

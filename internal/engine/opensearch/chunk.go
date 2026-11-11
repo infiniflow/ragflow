@@ -1333,7 +1333,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		// each iteration a fresh bytes.NewReader.
 		payload := append([]byte(nil), buf.Bytes()...)
 		for _, indexName := range req.IndexNames {
-			searchChunks, indexTotal, esErr := e.searchOneIndex(ctx, indexName, payload, hybrid)
+			searchChunks, indexTotal, esErr := e.searchOneIndex(ctx, indexName, payload, hybrid, req.RequireComplete)
 			if esErr != nil {
 				return nil, fmt.Errorf("opensearch: search index %q: %w", indexName, esErr)
 			}
@@ -1579,7 +1579,7 @@ func sortByFields(chunks []map[string]interface{}, expr *types.OrderByExpr) []ma
 
 // searchOneIndex sends an ordinary search with a fresh request body. A valid
 // missing-index response is empty; other request and response failures propagate.
-func (e *Engine) searchOneIndex(ctx context.Context, indexName string, payload []byte, useHybrid bool) ([]map[string]interface{}, int64, error) {
+func (e *Engine) searchOneIndex(ctx context.Context, indexName string, payload []byte, useHybrid, requireComplete bool) ([]map[string]interface{}, int64, error) {
 	var (
 		searchResult map[string]interface{}
 		err          error
@@ -1599,6 +1599,9 @@ func (e *Engine) searchOneIndex(ctx context.Context, indexName string, payload [
 		}
 		return nil, 0, fmt.Errorf("search failed: %w", err)
 	}
+	if err := checkCompleteSearch(searchResult, requireComplete); err != nil {
+		return nil, 0, err
+	}
 	esResp, err := mapToSearchResponse(searchResult)
 	if err != nil {
 		common.Warn("OpenSearch failed to parse response", zap.String("index", indexName), zap.Error(err))
@@ -1606,6 +1609,21 @@ func (e *Engine) searchOneIndex(ctx context.Context, indexName string, payload [
 	}
 
 	return convertESResponse(&esResp, ""), esResp.Hits.Total.Value, nil
+}
+
+func checkCompleteSearch(result map[string]interface{}, required bool) error {
+	if !required {
+		return nil
+	}
+	if timedOut, _ := result["timed_out"].(bool); timedOut {
+		return fmt.Errorf("opensearch: search timed out")
+	}
+	if shards, ok := result["_shards"].(map[string]interface{}); ok {
+		if failed, ok := shards["failed"].(float64); ok && failed > 0 {
+			return fmt.Errorf("opensearch: search failed on %v shards", failed)
+		}
+	}
+	return nil
 }
 
 // searchAfterFetcher issues one ES search request with the given batch
@@ -1818,6 +1836,9 @@ func (e *Engine) executeSearchRequest(
 	searchResult, err := e.doSearch(ctx, req.IndexNames, &buf, nil)
 	if err != nil {
 		return SearchResponse{}, fmt.Errorf("search failed: %w", err)
+	}
+	if err := checkCompleteSearch(searchResult, req.RequireComplete); err != nil {
+		return SearchResponse{}, err
 	}
 	esResp, err := mapToSearchResponse(searchResult)
 	if err != nil {

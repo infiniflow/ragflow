@@ -1,7 +1,11 @@
 package models
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -952,5 +956,34 @@ func TestGPUStackUnsupportedMethods(t *testing.T) {
 
 	if _, err := m.OCRFile(ctx, &model, nil, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: %v", err)
+	}
+}
+
+func TestGPUStackModelDiscoveryDoesNotLogUpstreamResponse(t *testing.T) {
+	core, entries := observer.New(zap.WarnLevel)
+	original := common.Logger
+	common.Logger = zap.New(core)
+	defer func() { common.Logger = original }()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Has("with_meta") {
+			_, _ = io.WriteString(w, `{"data":[{"id":"test"}]}`)
+			return
+		}
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(w, r.Header.Get("Authorization"))
+	}))
+	defer server.Close()
+	secret := "platform-secret"
+	_, err := newGPUStackForTest(server.URL).ListModels(context.Background(), &APIConfig{ApiKey: &secret})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if entries.Len() == 0 {
+		t.Fatal("expected category warning")
+	}
+	for _, entry := range entries.All() {
+		if strings.Contains(entry.Message, secret) || strings.Contains(fmt.Sprint(entry.ContextMap()), secret) {
+			t.Fatal("secret in log")
+		}
 	}
 }

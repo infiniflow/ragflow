@@ -41,6 +41,8 @@ type CategorizeParam struct {
 	Driver                   string
 	APIKey                   string
 	BaseURL                  string
+	// Platform is set when ModelID resolved to a shared platform model.
+	Platform bool
 }
 
 // CategorizeOutput mirrors the outputs map (per plan §2.11.3 row 6):
@@ -70,7 +72,7 @@ func (c *CategorizeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs ma
 	p := mergeCategorizeParam(c.param, inputs)
 	var err error
 	var modelType entity.ModelType
-	p.ModelID, p.Driver, p.APIKey, p.BaseURL, modelType, err = resolveModelRefWithType(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL, entity.ModelTypeChat|entity.ModelTypeDecision)
+	p.ModelID, p.Driver, p.APIKey, p.BaseURL, modelType, p.Platform, err = resolveModelRefWithType(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL, entity.ModelTypeChat|entity.ModelTypeDecision)
 	if err != nil {
 		return nil, err
 	}
@@ -113,7 +115,7 @@ func (c *CategorizeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs ma
 			sysPrompt = buildCategorizeSystemPrompt(p)
 		}
 		resp, invokeErr := getDefaultChatInvoker().Invoke(ctx, db, ChatInvokeRequest{
-			Driver: p.Driver, ModelName: p.ModelID, APIKey: p.APIKey, BaseURL: p.BaseURL,
+			Driver: p.Driver, ModelName: p.ModelID, APIKey: p.APIKey, BaseURL: p.BaseURL, Platform: p.Platform,
 			Messages: []schema.Message{
 				{Role: schema.System, Content: sysPrompt},
 				{Role: schema.User, Content: buildCategorizePrompt(history)},

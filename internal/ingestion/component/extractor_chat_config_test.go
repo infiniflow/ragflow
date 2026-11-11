@@ -135,7 +135,7 @@ func TestResolveExtractorChatConfig_NoTenantOrStateYieldsEmptyConfig(t *testing.
 			if err != nil {
 				t.Fatalf("resolveExtractorChatConfig: %v", err)
 			}
-			if got != (extractorChatConfig{}) {
+			if got != (extractorResolvedTarget{}) {
 				t.Fatalf("config = %+v, want the empty config", got)
 			}
 		})
@@ -167,7 +167,7 @@ func TestResolveExtractorChatDefaultConfig_FailuresYieldEmptyConfig(t *testing.T
 		swapModelResolvers(t, nil, func(_ context.Context, _ *gorm.DB, _ string, _ entity.ModelType, _ string) (models.ModelDriver, string, *models.APIConfig, int, error) {
 			return nil, "", nil, 0, errors.New("no default model")
 		})
-		if got := resolveExtractorChatDefaultConfig(extractorStateCtx(t, "tenant-1"), nil); got != (extractorChatConfig{}) {
+		if got := resolveExtractorChatDefaultConfig(extractorStateCtx(t, "tenant-1"), nil); got != (extractorResolvedTarget{}) {
 			t.Fatalf("config = %+v, want the empty config on resolver error", got)
 		}
 	})
@@ -176,7 +176,7 @@ func TestResolveExtractorChatDefaultConfig_FailuresYieldEmptyConfig(t *testing.T
 		swapModelResolvers(t, nil, func(_ context.Context, _ *gorm.DB, _ string, _ entity.ModelType, _ string) (models.ModelDriver, string, *models.APIConfig, int, error) {
 			return nil, "bge-m3", nil, 0, nil
 		})
-		if got := resolveExtractorChatDefaultConfig(extractorStateCtx(t, "tenant-1"), nil); got != (extractorChatConfig{}) {
+		if got := resolveExtractorChatDefaultConfig(extractorStateCtx(t, "tenant-1"), nil); got != (extractorResolvedTarget{}) {
 			t.Fatalf("config = %+v, want the empty config on a nil driver", got)
 		}
 	})
@@ -186,7 +186,7 @@ func TestResolveExtractorChatDefaultConfig_FailuresYieldEmptyConfig(t *testing.T
 			t.Error("resolver must not run without a tenant_id")
 			return nil, "", nil, 0, nil
 		})
-		if got := resolveExtractorChatDefaultConfig(t.Context(), nil); got != (extractorChatConfig{}) {
+		if got := resolveExtractorChatDefaultConfig(t.Context(), nil); got != (extractorResolvedTarget{}) {
 			t.Fatalf("config = %+v, want the empty config without canvas state", got)
 		}
 	})

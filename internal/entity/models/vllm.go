@@ -44,6 +44,19 @@ func NewVllmModel(baseURL map[string]string, urlSuffix URLSuffix) *VllmModel {
 	}
 }
 
+// RestrictCredentialRedirects confines authenticated platform calls to their origin.
+func (v *VllmModel) RestrictCredentialRedirects() {
+	client := *v.baseModel.httpClient
+	client.CheckRedirect = refuseCrossOriginRedirect
+	v.baseModel.httpClient = &client
+}
+
+func (v *VllmModel) platformRestrictedClone() ModelDriver {
+	clone := *v
+	clone.RestrictCredentialRedirects()
+	return &clone
+}
+
 func (v *VllmModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return NewVllmModel(baseURL, v.baseModel.URLSuffix)
 }

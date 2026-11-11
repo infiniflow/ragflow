@@ -119,6 +119,21 @@ func (r *Router) Setup(engine *gin.Engine) {
 			protected.POST("/sandbox/config", r.handler.SetSandboxConfig)
 			protected.POST("/sandbox/test", r.handler.TestSandboxConnection)
 
+			protected.GET("/providers", r.handler.ListPlatformProviders)
+			protected.PUT("/providers", r.handler.CreatePlatformProvider)
+			protected.GET("/providers/catalog", r.handler.ListPlatformProviderCatalog)
+			protected.POST("/providers/:provider_id/connection", r.handler.CheckPlatformConnection)
+			protected.POST("/providers/:provider_id/models/discover", r.handler.DiscoverPlatformModels)
+			protected.GET("/providers/:provider_id/instances", r.handler.ListPlatformInstances)
+			protected.POST("/providers/:provider_id/instances", r.handler.CreatePlatformInstance)
+			protected.GET("/providers/:provider_id/instances/:instance_id", r.handler.ShowPlatformInstance)
+			protected.PUT("/providers/:provider_id/instances/:instance_id", r.handler.UpdatePlatformInstance)
+			protected.GET("/providers/:provider_id/instances/:instance_id/models", r.handler.ListPlatformModels)
+			protected.POST("/providers/:provider_id/instances/:instance_id/models", r.handler.AddPlatformModel)
+			protected.PATCH("/providers/:provider_id/instances/:instance_id/models/:model_id", r.handler.UpdatePlatformModel)
+			protected.GET("/models/default", r.handler.ListPlatformDefaults)
+			protected.PATCH("/models/default", r.handler.SetPlatformDefault)
+
 			protected.GET("/all-models", r.handler.ListAllModels)
 			protected.GET("/all-models/:model_name", r.handler.ShowModel)
 

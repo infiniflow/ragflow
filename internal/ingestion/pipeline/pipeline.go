@@ -423,7 +423,7 @@ func formatComponentFailure(componentName string, err error) string {
 	if err == nil {
 		return componentName + " Error"
 	}
-	if errors.Is(err, context.DeadlineExceeded) || strings.Contains(strings.ToLower(err.Error()), context.DeadlineExceeded.Error()) {
+	if errors.Is(err, context.DeadlineExceeded) || strings.Contains(strings.ToLower(common.ErrorText(err)), context.DeadlineExceeded.Error()) {
 		switch componentName {
 		case schema.ComponentNameExtractor:
 			return "Extractor: Document extraction timed out while waiting for the configured LLM. Check that the model service is reachable, then retry."
