@@ -634,31 +634,30 @@ func (s *IngestionTaskService) MarkCompleted(ctx context.Context, taskID string)
 }
 
 // MarkFailed transitions a task to FAILED and emits a lifecycle event carrying
-// the terminal reason. This is the public entry point used by the ingestor,
-// which has the failure reason (timeout/panic/run-identity error) available at
-// the call site; passing it here is what populates the event's ErrorInfo.
-func (s *IngestionTaskService) MarkFailed(ctx context.Context, taskID, reason string) error {
+// the terminal reason. It reports whether this call performed the transition:
+// a task another worker already settled (any terminal status) returns
+// (false, nil), so callers neither retry nor record a failure log for a
+// no-op. This is the public entry point used by the ingestor, which has the
+// failure reason (timeout/panic/run-identity error) available at the call
+// site; passing it here is what populates the event's ErrorInfo.
+func (s *IngestionTaskService) MarkFailed(ctx context.Context, taskID, reason string) (bool, error) {
 	return s.markFailed(ctx, taskID, reason)
 }
 
-// markFailed transitions a task to FAILED and emits a lifecycle event carrying
-// the terminal reason. The public MarkFailed forwards the reason supplied by
-// the ingestor (timeout/panic/run-identity error); internal paths such as
-// settlePublishFailure pass an explicit reason too.
-func (s *IngestionTaskService) markFailed(ctx context.Context, taskID, reason string) error {
+func (s *IngestionTaskService) markFailed(ctx context.Context, taskID, reason string) (bool, error) {
 	task, err := s.GetTask(ctx, taskID)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if task.Status == common.FAILED || task.Status == common.COMPLETED || task.Status == common.STOPPED {
-		return nil // already terminal, idempotent — mirrors MarkStopped
+		return false, nil // already terminal, idempotent — mirrors MarkStopped
 	}
 	updated, err := s.transition(ctx, taskID, common.FAILED)
 	if err != nil {
-		return err
+		return false, err
 	}
 	s.emitLifecycleEvent(ctx, updated, "failed", common.FAILED, reason)
-	return nil
+	return true, nil
 }
 
 // MarkStopped transitions the task from STOPPING to STOPPED (terminal).
@@ -1064,8 +1063,15 @@ func (s *IngestionTaskService) settlePublishFailure(ctx context.Context, task *e
 	if task == nil {
 		return
 	}
-	if err := s.markFailed(ctx, task.ID, "Task publish failed."); err != nil {
+	changed, err := s.markFailed(ctx, task.ID, "Task publish failed.")
+	if err != nil {
 		common.Error(fmt.Sprintf("mark task %s failed after publish failure", task.ID), err)
+		return
+	}
+	if !changed {
+		// Another worker already settled the task (STOPPED/COMPLETED/FAILED);
+		// writing a FAILED terminal entry into the still-open run log would
+		// overwrite that status with one this worker never observed.
 		return
 	}
 	task.Status = common.FAILED

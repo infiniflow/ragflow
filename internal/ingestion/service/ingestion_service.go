@@ -563,8 +563,13 @@ func (e *Ingestor) handleAndExecute(w *worker, handle common.TaskHandle) {
 			var identityErr *servicepkg.InvalidRunIdentityError
 			if errors.As(validateErr, &identityErr) {
 				common.Error(fmt.Sprintf("task %s has permanent run identity error: %s", task.ID, identityErr.Reason), validateErr)
-				if e.markFailed(e.ctx, task.ID, fmt.Sprintf("Task rejected: invalid run identity (%s).", identityErr.Reason)) {
-					e.recordTerminalPipelineLog(e.ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task rejected: invalid run identity (%s).", identityErr.Reason))
+				reason := fmt.Sprintf("Task rejected: invalid run identity (%s).", identityErr.Reason)
+				if written, changed := e.markFailed(e.ctx, task.ID, reason); written {
+					if changed {
+						// A concurrent settle (STOPPED/COMPLETED/FAILED) already
+						// logged its own terminal outcome; do not overwrite it.
+						e.recordTerminalPipelineLog(e.ctx, task, string(entity.TaskStatusFail), reason)
+					}
 					e.ackHandle(hb, handle, taskMessage.TaskID)
 				} else {
 					e.nackHandle(hb, handle, taskMessage.TaskID)
@@ -852,26 +857,32 @@ func (e *Ingestor) markStopped(ctx context.Context, taskID string) bool {
 // The caller's context is detached before touching the DB (see markStopped):
 // failure paths usually carry an already-cancelled context, and losing the
 // FAILED write would turn a settled task into a redelivery loop.
-func (e *Ingestor) markFailed(ctx context.Context, taskID, reason string) bool {
+func (e *Ingestor) markFailed(ctx context.Context, taskID, reason string) (written, changed bool) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	if uErr := e.ingestionTaskSvc.MarkFailed(ctx, taskID, reason); uErr != nil {
+	transitioned, uErr := e.ingestionTaskSvc.MarkFailed(ctx, taskID, reason)
+	if uErr != nil {
 		common.Error(fmt.Sprintf("Failed to set task %s to FAILED", taskID), uErr)
-		return false
+		return false, false
 	}
-	return true
+	// written=true even on the idempotent no-op: the task is terminal, so a
+	// retry cannot improve on it. changed distinguishes that no-op from a
+	// FAILED write performed here, and only the latter earns a failure log.
+	return true, transitioned
 }
 
 // markFailedOrStopped persists FAILED, or STOPPED when a concurrent stop moved
 // the task to STOPPING first. MarkFailed only accepts RUNNING, so without this a
 // stop that lands after the run failed would keep the terminal-write retry loop
 // running until shutdown and leave the task in STOPPING. It reports whether a
-// terminal status is now persisted and whether this call wrote FAILED, so the
-// caller records the failure log only for a task that actually failed.
+// terminal status is now persisted and whether this call wrote FAILED — the
+// service returns (false, nil) when another worker already settled the task,
+// and that no-op must not surface as a failure here.
 func (e *Ingestor) markFailedOrStopped(ctx context.Context, taskID, reason string) (settled, failed bool) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	if err := e.ingestionTaskSvc.MarkFailed(ctx, taskID, reason); err != nil {
+	changed, err := e.ingestionTaskSvc.MarkFailed(ctx, taskID, reason)
+	if err != nil {
 		if !isTerminalTransitionError(err) {
 			common.Error(fmt.Sprintf("Failed to set task %s to FAILED", taskID), err)
 			return false, false
@@ -897,7 +908,7 @@ func (e *Ingestor) markFailedOrStopped(ctx context.Context, taskID, reason strin
 			return false, false
 		}
 	}
-	return true, true
+	return true, changed
 }
 
 // taskOutcome is what runTask reports to settleMessage. A transient error
@@ -979,11 +990,11 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) task
 		if errors.Is(err, context.DeadlineExceeded) {
 			common.Info(fmt.Sprintf("Task %s timed out during pipeline", task.ID))
 			e.markTerminalProgress(task)
-			ok := e.markFailed(ctx, task.ID, "Task timed out.")
-			if ok {
+			written, changed := e.markFailed(ctx, task.ID, "Task timed out.")
+			if changed {
 				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), "Task timed out.")
 			}
-			return taskOutcome{terminal: ok}
+			return taskOutcome{terminal: written}
 		}
 		// Infinity answers 2007/2008 until its log replay completes, a window
 		// that lasts minutes. Marking FAILED would Ack the message and kill a
@@ -994,11 +1005,12 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) task
 			return taskOutcome{transientErr: err}
 		}
 		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
-		ok := e.markFailed(ctx, task.ID, fmt.Sprintf("Task failed: %v", err))
-		if ok {
-			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task failed: %v", err))
+		reason := fmt.Sprintf("Task failed: %v", err)
+		written, changed := e.markFailed(ctx, task.ID, reason)
+		if changed {
+			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), reason)
 		}
-		return taskOutcome{terminal: ok}
+		return taskOutcome{terminal: written}
 	}
 
 	if err := e.completeTask(ctx, task.ID); err != nil {

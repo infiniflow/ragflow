@@ -245,6 +245,37 @@ func TestDeferTransientTaskSettlesStoppingTaskAsStopped(t *testing.T) {
 	}
 }
 
+// A task another worker already settled (any terminal status) must settle the
+// message without a failure record: the service's idempotent MarkFailed no-op
+// reports changed=false, and surfacing that as a new failure would write a
+// FAILED terminal entry over a status this worker never observed.
+func TestMarkFailedOrStoppedSkipsFailureLogOnAlreadyTerminalTask(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.COMPLETED).Error; err != nil {
+		t.Fatalf("set status COMPLETED: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
+	settled, failed := ingestor.markFailedOrStopped(t.Context(), taskID, "Task failed: timeout")
+	if !settled {
+		t.Fatal("an already-terminal task should settle without a retry")
+	}
+	if failed {
+		t.Fatal("an idempotent MarkFailed no-op must not be reported as a new failure")
+	}
+	final, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, taskID)
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	if final.Status != common.COMPLETED {
+		t.Fatalf("task status = %s, want the pre-existing COMPLETED", final.Status)
+	}
+}
+
 // The last delivery has no successor, so retrying the terminal write must keep
 // renewing the message's in-flight deadline; otherwise the broker takes the
 // message back while the write is still running. The heartbeat stops only when
