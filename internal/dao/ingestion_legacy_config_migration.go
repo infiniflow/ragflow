@@ -108,7 +108,8 @@ type canvasDSLMigrationRow struct {
 // valid JSON or that the normalizer cannot convert is logged and skipped:
 // canvas DSLs are user-authored and are not schema-validated on save, so one
 // bad row must not block the upgrade for every tenant. The row keeps its
-// legacy shape, which the frontend and runtime still read.
+// legacy shape, which the frontend fallback still reads and re-saves in the
+// modular format.
 func migrateCanvasDSLRows(ctx context.Context, db *gorm.DB, model any, table string) (int, error) {
 	count := 0
 	var rows []canvasDSLMigrationRow
