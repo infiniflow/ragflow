@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -640,5 +641,502 @@ func TestBuildQueryStringQueryMinimumShouldMatchHalfUp(t *testing.T) {
 		if got != tc.want {
 			t.Errorf("buildQueryStringQuery minimum_should_match for %g = %q, want %q", tc.fraction, got, tc.want)
 		}
+	}
+}
+
+// TestParseOrderByExprEmitsIDSort verifies that sorting on the `id` field
+// produces a real ES sort entry. RAGFlow's index mappings declare `id` as
+// `keyword` (see conf/mapping.json's dynamic `kwd` template and the explicit
+// `conf/doc_meta_es_mapping.json`), so the legacy "skip id" guard silently
+// dropped the only sort key the knowledge_compile Reader uses for
+// search_after pagination — and paged scans past index.max_result_window
+// silently returned empty results (#19649).
+func TestParseOrderByExprEmitsIDSort(t *testing.T) {
+	sort := parseOrderByExpr((&types.OrderByExpr{}).Asc("id"))
+	if len(sort) != 1 {
+		t.Fatalf("Asc(\"id\") produced %d sort entries, want 1: %#v", len(sort), sort)
+	}
+	entry, ok := sort[0]["id"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Asc(\"id\") entry missing `id` key: %#v", sort[0])
+	}
+	if entry["order"] != "asc" {
+		t.Errorf("Asc(\"id\") entry order = %v, want \"asc\"", entry["order"])
+	}
+	if entry["unmapped_type"] != "keyword" {
+		t.Errorf("Asc(\"id\") entry unmapped_type = %v, want \"keyword\" (id is keyword per conf/mapping.json)", entry["unmapped_type"])
+	}
+}
+
+// TestParseOrderByExprDescID confirms Desc("id") round-trips with the
+// right direction and is no longer dropped.
+func TestParseOrderByExprDescID(t *testing.T) {
+	sort := parseOrderByExpr((&types.OrderByExpr{}).Desc("id"))
+	if len(sort) != 1 {
+		t.Fatalf("Desc(\"id\") produced %d sort entries, want 1: %#v", len(sort), sort)
+	}
+	entry := sort[0]["id"].(map[string]interface{})
+	if entry["order"] != "desc" {
+		t.Errorf("Desc(\"id\") entry order = %v, want \"desc\"", entry["order"])
+	}
+}
+
+// TestParseOrderByExprMixedIDAndKeyword makes sure the guard removal doesn't
+// change how other keyword fields are emitted when `id` is part of the chain.
+func TestParseOrderByExprMixedIDAndKeyword(t *testing.T) {
+	sort := parseOrderByExpr((&types.OrderByExpr{}).Asc("slug_kwd").Asc("id").Asc("doc_id"))
+	if len(sort) != 3 {
+		t.Fatalf("3-field order produced %d entries, want 3: %#v", len(sort), sort)
+	}
+	if _, ok := sort[0]["slug_kwd"]; !ok {
+		t.Errorf("first entry missing slug_kwd: %#v", sort[0])
+	}
+	if _, ok := sort[1]["id"]; !ok {
+		t.Errorf("second entry missing id: %#v", sort[1])
+	}
+	if _, ok := sort[2]["doc_id"]; !ok {
+		t.Errorf("third entry missing doc_id: %#v", sort[2])
+	}
+}
+
+// TestParseOrderByExprNilAndEmpty guards the trivial "no order" paths so
+// removing the id guard cannot regress them.
+func TestParseOrderByExprNilAndEmpty(t *testing.T) {
+	if got := parseOrderByExpr(nil); got != nil {
+		t.Errorf("nil OrderByExpr produced %#v, want nil", got)
+	}
+	if got := parseOrderByExpr(&types.OrderByExpr{}); got != nil {
+		t.Errorf("empty OrderByExpr produced %#v, want nil", got)
+	}
+}
+
+// TestSearchAfterPaginateSkipErrorsWithoutSortCursor pins the loud-failure
+// half of #19649: when the skip phase still has rows to skip and a hit
+// carries no sort values (the request's sort was dropped, or the field is
+// missing from the documents), pagination must error instead of silently
+// restarting the take phase from row 0 and returning a wrong page.
+func TestSearchAfterPaginateSkipErrorsWithoutSortCursor(t *testing.T) {
+	// Full batch of hits, none with a Sort cursor. The old code broke out of
+	// the skip phase and the take phase fetched from a nil cursor — i.e. page 0.
+	noCursor := makeResponse(1000, 0, 5000)
+	for i := range noCursor.Hits.Hits {
+		noCursor.Hits.Hits[i].Sort = nil
+	}
+	m := &mockFetcher{scripted: []SearchResponse{noCursor}, scriptedTotal: 5000}
+	_, _, err := searchAfterPaginate(t.Context(), map[string]interface{}{}, 500, 10, m.fetch)
+	if err == nil {
+		t.Fatalf("expected an error when the skip phase cannot advance, got nil (silent page-0 restart)")
+	}
+	if !strings.Contains(err.Error(), "cannot advance past offset") {
+		t.Errorf("error does not mention the stuck offset: %v", err)
+	}
+}
+
+// TestSearchPagesPastResultWindowSortedByID covers the dataset structure
+// scans end to end: they page a sorted-by-id result set with offset/limit,
+// and past index.max_result_window the engine walks it with search_after,
+// which only advances when the request carries the sort. With the legacy
+// "skip id" guard the request went out without a sort, the take phase
+// restarted at row 0, and the caller silently got the wrong page (#19649).
+// Adapted from the field report on PR #20408.
+func TestSearchPagesPastResultWindowSortedByID(t *testing.T) {
+	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
+		t.Fatalf("init logger: %v", err)
+	}
+	const total = common.MAX_RESULT_WINDOW + 2
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		w.Header().Set("Content-Type", "application/json")
+		// The id-sort mapping resolution reads the index mapping before the
+		// first sorted search; this index maps `id` as keyword (current
+		// mappings), so the sort stays on the direct field.
+		if strings.HasSuffix(r.URL.Path, "/_mapping") {
+			_, _ = w.Write([]byte(`{"ragflow_tenant":{"mappings":{"properties":{"id":{"type":"keyword"}}}}}`))
+			return
+		}
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode search query: %v", err)
+		}
+		_, sorted := body["sort"]
+		start := 0
+		if after, ok := body["search_after"].([]interface{}); ok && len(after) == 1 {
+			start = int(after[0].(float64)) + 1
+		}
+		size := int(body["size"].(float64))
+		hits := []map[string]interface{}{}
+		for i := start; i < total && i < start+size; i++ {
+			hit := map[string]interface{}{"_id": fmt.Sprintf("row-%05d", i), "_source": map[string]interface{}{}}
+			if sorted {
+				hit["sort"] = []int{i}
+			}
+			hits = append(hits, hit)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"hits": map[string]interface{}{"total": map[string]int{"value": total}, "hits": hits}})
+	}))
+	defer server.Close()
+
+	engine := newTestEngine(t, server.URL)
+	res, err := engine.Search(t.Context(), &types.SearchRequest{
+		IndexNames: []string{"ragflow_tenant"},
+		KbIDs:      []string{"kb-1"},
+		Offset:     common.MAX_RESULT_WINDOW,
+		Limit:      5000,
+		OrderBy:    (&types.OrderByExpr{}).Asc("id"),
+	})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(res.Chunks) != 2 {
+		t.Fatalf("got %d rows past the result window, want 2", len(res.Chunks))
+	}
+}
+
+// TestIDSortFieldFromMapping pins the mapping rules for the sortable form of
+// `id`: current mappings type it as keyword (direct sort); indices created
+// before the keyword dynamic template covered `id` type it as text with an
+// `id.keyword` sub-field, which must sort on the sub-field; anything else
+// falls back to the direct field.
+func TestIDSortFieldFromMapping(t *testing.T) {
+	cases := []struct {
+		name       string
+		properties map[string]interface{}
+		want       string
+	}{
+		{
+			name:       "keyword mapping sorts directly",
+			properties: map[string]interface{}{"id": map[string]interface{}{"type": "keyword"}},
+			want:       "id",
+		},
+		{
+			name: "legacy text mapping with keyword sub-field sorts on the sub-field",
+			properties: map[string]interface{}{
+				"id": map[string]interface{}{
+					"type":   "text",
+					"fields": map[string]interface{}{"keyword": map[string]interface{}{"type": "keyword"}},
+				},
+			},
+			want: "id.keyword",
+		},
+		{
+			name:       "text mapping without keyword sub-field falls back to direct",
+			properties: map[string]interface{}{"id": map[string]interface{}{"type": "text"}},
+			want:       "id",
+		},
+		{
+			name:       "text mapping with non-keyword sub-field falls back to direct",
+			properties: map[string]interface{}{"id": map[string]interface{}{"type": "text", "fields": map[string]interface{}{"keyword": map[string]interface{}{"type": "text"}}}},
+			want:       "id",
+		},
+		{
+			name:       "missing id property falls back to direct",
+			properties: map[string]interface{}{},
+			want:       "id",
+		},
+		{
+			name:       "nil properties fall back to direct",
+			properties: nil,
+			want:       "id",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := idSortFieldFromMapping(tc.properties); got != tc.want {
+				t.Errorf("idSortFieldFromMapping = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRewriteIDSortEntries verifies the sort-clause rewrite: `id` entries are
+// retargeted to the resolved field with their order spec intact, other fields
+// pass through, and "id" (or empty) is a no-op.
+func TestRewriteIDSortEntries(t *testing.T) {
+	build := func() []map[string]interface{} {
+		return []map[string]interface{}{
+			{"id": map[string]interface{}{"order": "asc", "unmapped_type": "keyword"}},
+			{"slug_kwd": map[string]interface{}{"order": "desc", "unmapped_type": "keyword"}},
+		}
+	}
+
+	rewritten := rewriteIDSortEntries(build(), "id.keyword")
+	if got, ok := rewritten[0]["id.keyword"].(map[string]interface{}); !ok || got["order"] != "asc" {
+		t.Errorf("rewritten first entry = %#v, want the id spec under id.keyword", rewritten[0])
+	}
+	if _, ok := rewritten[0]["id"]; ok {
+		t.Errorf("rewritten first entry still targets id: %#v", rewritten[0])
+	}
+	if _, ok := rewritten[1]["slug_kwd"]; !ok {
+		t.Errorf("non-id entry was altered: %#v", rewritten[1])
+	}
+
+	direct := rewriteIDSortEntries(build(), "id")
+	if _, ok := direct[0]["id"]; !ok {
+		t.Errorf("direct rewrite dropped the id entry: %#v", direct[0])
+	}
+
+	empty := rewriteIDSortEntries(build(), "")
+	if _, ok := empty[0]["id"]; !ok {
+		t.Errorf("empty sortField must be a no-op, got: %#v", empty[0])
+	}
+}
+
+// TestSearchRewritesIDSortForLegacyMapping drives Search end to end against a
+// stub cluster whose index still maps `id` as text with an `id.keyword`
+// sub-field: the emitted sort must target `id.keyword` (a direct `id` sort
+// fails there with a fielddata error), while a keyword-mapped index keeps the
+// direct field. Uses per-test index names because the resolved form is cached
+// process-wide.
+func TestSearchRewritesIDSortForLegacyMapping(t *testing.T) {
+	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
+		t.Fatalf("init logger: %v", err)
+	}
+
+	for _, tc := range []struct {
+		name        string
+		index       string
+		mapping     string
+		wantSortKey string
+	}{
+		{
+			name:        "legacy index sorts on id.keyword",
+			index:       "ragflow_legacy_id_sort_a",
+			mapping:     `{"mappings":{"properties":{"id":{"type":"text","fields":{"keyword":{"type":"keyword","ignore_above":256}}}}}}`,
+			wantSortKey: "id.keyword",
+		},
+		{
+			name:        "keyword index keeps direct id",
+			index:       "ragflow_legacy_id_sort_b",
+			mapping:     `{"mappings":{"properties":{"id":{"type":"keyword"}}}}`,
+			wantSortKey: "id",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Cleanup(func() { idSortFieldCache.Delete(tc.index) })
+			var sortBodies []map[string]interface{}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("X-Elastic-Product", "Elasticsearch")
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case strings.HasSuffix(r.URL.Path, "/_mapping"):
+					index := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/"), "/_mapping")
+					_, _ = w.Write([]byte(`{"` + index + `":` + tc.mapping + "}"))
+				case strings.HasSuffix(r.URL.Path, "/_search"):
+					var body map[string]interface{}
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						t.Errorf("decode search body: %v", err)
+					}
+					sortBodies = append(sortBodies, body)
+					_ = json.NewEncoder(w).Encode(map[string]interface{}{
+						"hits": map[string]interface{}{"total": map[string]int{"value": 0}, "hits": []interface{}{}},
+					})
+				default:
+					t.Errorf("unexpected request path %s", r.URL.Path)
+				}
+			}))
+			defer server.Close()
+
+			engine := newTestEngine(t, server.URL)
+			for range 2 { // second pass must hit the cache, same sort field
+				res, err := engine.Search(t.Context(), &types.SearchRequest{
+					IndexNames: []string{tc.index},
+					KbIDs:      []string{"kb-1"},
+					Offset:     0,
+					Limit:      10,
+					OrderBy:    (&types.OrderByExpr{}).Asc("id"),
+				})
+				if err != nil {
+					t.Fatalf("Search: %v", err)
+				}
+				if len(res.Chunks) != 0 {
+					t.Fatalf("got %d rows from an empty index, want 0", len(res.Chunks))
+				}
+			}
+			if len(sortBodies) != 2 {
+				t.Fatalf("captured %d search bodies, want 2", len(sortBodies))
+			}
+			for i, body := range sortBodies {
+				sort, ok := body["sort"].([]interface{})
+				if !ok || len(sort) != 1 {
+					t.Fatalf("search %d carried sort %#v, want one entry", i, body["sort"])
+				}
+				entry, ok := sort[0].(map[string]interface{})
+				if !ok {
+					t.Fatalf("search %d sort entry has wrong shape: %#v", i, sort[0])
+				}
+				spec, ok := entry[tc.wantSortKey].(map[string]interface{})
+				if !ok {
+					t.Fatalf("search %d sorted by %v, want %q", i, entry, tc.wantSortKey)
+				}
+				if spec["order"] != "asc" {
+					t.Errorf("search %d sort order = %v, want asc", i, spec["order"])
+				}
+			}
+		})
+	}
+}
+
+// TestSearchMissingIndexKeepsDirectIDSort pins the failure path: when the
+// mapping lookup finds no physical index (404) the sort stays on the direct
+// `id` field and nothing is cached, so a post-creation request resolves
+// normally.
+func TestSearchMissingIndexKeepsDirectIDSort(t *testing.T) {
+	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
+		t.Fatalf("init logger: %v", err)
+	}
+	const index = "ragflow_legacy_id_sort_missing"
+	t.Cleanup(func() { idSortFieldCache.Delete(index) })
+
+	var sawMappingLookup bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasSuffix(r.URL.Path, "/_mapping") {
+			sawMappingLookup = true
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":{"type":"index_not_found_exception"},"status":404}`))
+			return
+		}
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode search body: %v", err)
+		}
+		sort, ok := body["sort"].([]interface{})
+		if !ok || len(sort) != 1 {
+			t.Fatalf("sort = %#v, want one entry", body["sort"])
+		}
+		entry := sort[0].(map[string]interface{})
+		if _, ok := entry["id"]; !ok {
+			t.Errorf("sort targeted %v, want the direct id field", entry)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"hits": map[string]interface{}{"total": map[string]int{"value": 0}, "hits": []interface{}{}},
+		})
+	}))
+	defer server.Close()
+
+	engine := newTestEngine(t, server.URL)
+	if _, err := engine.Search(t.Context(), &types.SearchRequest{
+		IndexNames: []string{index},
+		KbIDs:      []string{"kb-1"},
+		Offset:     0,
+		Limit:      10,
+		OrderBy:    (&types.OrderByExpr{}).Asc("id"),
+	}); err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if !sawMappingLookup {
+		t.Fatal("the engine never consulted the index mapping")
+	}
+	if _, cached := idSortFieldCache.Load(index); cached {
+		t.Error("a failed mapping lookup must not be cached")
+	}
+}
+
+// TestDropIndexClearsIDSortFieldCache pins that dropping an index drops the
+// memoized sort field with it: the cache is keyed by index name, so a later
+// index reusing the name can map `id` differently and a stale entry would
+// sort on a field the new index does not have.
+func TestDropIndexClearsIDSortFieldCache(t *testing.T) {
+	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
+		t.Fatalf("init logger: %v", err)
+	}
+	const index = "ragflow_legacy_id_sort_dropped"
+	t.Cleanup(func() { idSortFieldCache.Delete(index) })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodHead:
+			w.WriteHeader(http.StatusOK)
+		case http.MethodDelete:
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"acknowledged":true}`))
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+
+	// A legacy index resolved to the keyword sub-field.
+	idSortFieldCache.Store(index, idSortSubField)
+
+	engine := newTestEngine(t, server.URL)
+	if err := engine.dropIndex(t.Context(), index); err != nil {
+		t.Fatalf("dropIndex: %v", err)
+	}
+	if _, cached := idSortFieldCache.Load(index); cached {
+		t.Error("dropping an index must drop its memoized id sort field")
+	}
+}
+
+// TestDropIndexKeepsIDSortFieldCacheOnFailure pins that a failed delete keeps
+// the memoized sort field: the index is still there, so its mapping has not
+// changed either.
+func TestDropIndexKeepsIDSortFieldCacheOnFailure(t *testing.T) {
+	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
+		t.Fatalf("init logger: %v", err)
+	}
+	const index = "ragflow_legacy_id_sort_drop_failed"
+	t.Cleanup(func() { idSortFieldCache.Delete(index) })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodHead:
+			w.WriteHeader(http.StatusOK)
+		case http.MethodDelete:
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":{"type":"illegal_state_exception","reason":"boom"},"status":500}`))
+		default:
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	defer server.Close()
+
+	idSortFieldCache.Store(index, idSortSubField)
+
+	engine := newTestEngine(t, server.URL)
+	if err := engine.dropIndex(t.Context(), index); err == nil {
+		t.Fatal("a failed delete must report the error")
+	}
+	if _, cached := idSortFieldCache.Load(index); !cached {
+		t.Error("a failed delete must keep the memoized id sort field")
+	}
+}
+
+// TestDropIndexClearsIDSortFieldCacheWhenIndexIsGone pins that an index
+// dropped elsewhere still drops the memoized sort field: the cache is keyed
+// by index name, so an entry left behind would outlive the index it was
+// resolved for.
+func TestDropIndexClearsIDSortFieldCacheWhenIndexIsGone(t *testing.T) {
+	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
+		t.Fatalf("init logger: %v", err)
+	}
+	const index = "ragflow_legacy_id_sort_already_gone"
+	t.Cleanup(func() { idSortFieldCache.Delete(index) })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodHead {
+			t.Errorf("unexpected %s %s", r.Method, r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	idSortFieldCache.Store(index, idSortSubField)
+
+	engine := newTestEngine(t, server.URL)
+	if err := engine.dropIndex(t.Context(), index); err != nil {
+		t.Fatalf("dropIndex: %v", err)
+	}
+	if _, cached := idSortFieldCache.Load(index); cached {
+		t.Error("an index that is already gone must not keep its memoized id sort field")
 	}
 }

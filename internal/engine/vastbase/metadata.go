@@ -293,7 +293,7 @@ func (e *Engine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRe
 		return nil, err
 	}
 	query := fmt.Sprintf("SELECT %s FROM %s WHERE %s%s LIMIT %d OFFSET %d",
-		selectFieldsSQL(output), quoteIdent(tableName), whereSQL, orderSQL, max(req.Offset, 0), positiveOr(req.Limit, 30))
+		selectFieldsSQL(output), quoteIdent(tableName), whereSQL, orderSQL, positiveOr(req.Limit, 30), max(req.Offset, 0))
 	rows, err := e.queryRows(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("vastbase: search metadata %s: %w", tableName, err)
