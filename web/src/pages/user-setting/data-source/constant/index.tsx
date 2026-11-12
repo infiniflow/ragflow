@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+import sitemapSvg from '@/assets/svg/data-source/sitemap.svg?raw';
 import { FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
@@ -223,7 +224,12 @@ export const generateDataSourceInfo = (t: TFunction) => {
     [DataSourceKey.SITEMAP]: {
       name: 'Sitemap',
       description: t(`setting.${DataSourceKey.SITEMAP}Description`),
-      icon: <SvgIcon name={'data-source/sitemap'} width={38} />,
+      icon: (
+        <span
+          className="flex w-[22px] text-text-primary [&>svg]:h-auto [&>svg]:w-full"
+          dangerouslySetInnerHTML={{ __html: sitemapSvg }}
+        />
+      ),
     },
     [DataSourceKey.GOOGLE_CLOUD_STORAGE]: {
       name: 'Google Cloud Storage',
@@ -275,7 +281,7 @@ export const generateDataSourceInfo = (t: TFunction) => {
     [DataSourceKey.FEISHU_WIKI]: {
       name: 'Feishu Wiki',
       description: t(`setting.${DataSourceKey.FEISHU_WIKI}Description`),
-      icon: <SvgIcon name={'data-source/feishu-wiki'} width={38} />,
+      icon: <SvgIcon name={'chat-channel/feishu'} width={38} />,
     },
     [DataSourceKey.GMAIL]: {
       name: 'Gmail',
