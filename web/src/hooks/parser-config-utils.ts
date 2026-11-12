@@ -79,8 +79,6 @@ export const normalizeParserConfig = (
     metadata,
     ...additionalParserConfig
   } = parserConfig;
-  delete additionalParserConfig.graphrag;
-  delete additionalParserConfig.raptor;
   // Do not persist MinerU-only options when another layout recognizer is
   // selected; leftover mineru_* keys used to falsely trigger MinerU fallback.
   if (!isMinerULayoutRecognize(layout_recognize)) {

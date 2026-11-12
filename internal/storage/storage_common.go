@@ -18,12 +18,27 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"ragflow/internal/common"
 
+	gcs "cloud.google.com/go/storage"
+	"github.com/minio/minio-go/v7"
 	"go.uber.org/zap"
 )
+
+// IsNotFound reports whether an object or bucket is missing from storage.
+func IsNotFound(err error) bool {
+	if errors.Is(err, ErrMemoryNotFound) || errors.Is(err, gcs.ErrObjectNotExist) || errors.Is(err, gcs.ErrBucketNotExist) || isS3NotFound(err) {
+		return true
+	}
+	var minioErr minio.ErrorResponse
+	if errors.As(err, &minioErr) {
+		return minioErr.Code == "NoSuchKey" || minioErr.Code == "NoSuchBucket" || minioErr.Code == "NotFound"
+	}
+	return false
+}
 
 // retryObjectOp runs op up to attempts times, sleeping one second between
 // attempts and invoking onRetry (e.g. a client reconnect) before each sleep.

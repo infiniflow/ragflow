@@ -2767,13 +2767,6 @@ Example: Virtual Hosted Style`,
     },
     flow: {
       exportCurrentPage: 'Export current page',
-      preprocess: {
-        preprocess: 'Preprocess',
-        mainContent: 'Main content',
-        abstract: 'Abstract',
-        author: 'Author',
-        sectionTitle: 'Section title',
-      },
       tags: 'Tags',
       agentCategory: 'Agent category',
       editTags: 'Edit tags',
@@ -2888,6 +2881,10 @@ Best for: Documents with flowing, contextually connected content — such as boo
       enableVisionEnhancement: 'Enable vision enhancement',
       enableVisionEnhancementTip:
         'Use a vision model to parse image and table blocks; when off, they are treated as plain text.',
+      descriptionLanguage: 'Description language',
+      descriptionLanguageTip:
+        'Language used for model-generated image and table descriptions. Leave it empty to follow the knowledge base language; tokenization and retrieval still use the knowledge base language.',
+      followKnowledgeBaseLanguage: 'Follow knowledge base',
       imageOcr: 'OCR',
       imageOcrTip:
         'Extract text from images. DeepDoc parses an image as a one-page document, so it includes layout analysis and table structure; an external OCR model returns text only. Vision enhancement adds descriptions independently of this switch.',

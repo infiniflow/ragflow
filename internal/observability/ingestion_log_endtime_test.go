@@ -1,6 +1,7 @@
 package observability
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -23,7 +24,7 @@ func TestBuildIngestLogDerivesEndTimeFromBeginAndDuration(t *testing.T) {
 	task := &entity.IngestionTask{ID: "task-1"}
 	doc := &entity.Document{Name: ptrStr("d"), CreateDate: ptrTime(base)}
 
-	ev := BuildIngestLog(task, doc, run, "completed", "COMPLETED", "", "", "")
+	ev := BuildIngestLog(context.Background(), task, doc, run, "completed", "COMPLETED", "")
 	want := begin.Add(time.Duration(duration * float64(time.Second)))
 	if !ev.EndTime.Equal(want) {
 		t.Fatalf("EndTime = %v, want %v (ProcessBeginAt + ProcessDuration)", ev.EndTime, want)
@@ -46,7 +47,7 @@ func TestBuildIngestLogZeroDurationFallsBackToEventTime(t *testing.T) {
 	task := &entity.IngestionTask{ID: "task-1"}
 	doc := &entity.Document{Name: ptrStr("d"), CreateDate: ptrTime(base), ProcessBeginAt: ptrTime(begin)}
 
-	ev := BuildIngestLog(task, doc, run, "completed", "COMPLETED", "", "", "")
+	ev := BuildIngestLog(context.Background(), task, doc, run, "completed", "COMPLETED", "")
 	if !ev.EndTime.Equal(ev.EventTime) {
 		t.Fatalf("EndTime = %v, want EventTime %v (duration 0 fallback)", ev.EndTime, ev.EventTime)
 	}

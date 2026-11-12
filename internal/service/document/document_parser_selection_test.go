@@ -49,7 +49,7 @@ func TestDedicatedDocumentParserID(t *testing.T) {
 func TestConfigDeclaredFamily(t *testing.T) {
 	flat := entity.JSONMap{
 		"Parser:HipSignsRhyme": map[string]any{
-			"pdf":                       map[string]any{"suffix": []any{"pdf"}},
+			"pdf":                       map[string]any{},
 			"text&code":                 map[string]any{},
 			"vlm":                       map[string]any{},
 			"enable_vision_enhancement": false,
@@ -109,8 +109,8 @@ func TestSelectionGovernsFamilyMissesAnUndeclaredFamily(t *testing.T) {
 func presentationParserConfig() entity.JSONMap {
 	return entity.JSONMap{
 		"Parser:HipSignsRhyme": map[string]any{
-			"pdf":    map[string]any{"suffix": []any{"pdf"}},
-			"slides": map[string]any{"suffix": []any{"pptx", "ppt"}},
+			"pdf":    map[string]any{},
+			"slides": map[string]any{},
 		},
 	}
 }
@@ -118,11 +118,11 @@ func presentationParserConfig() entity.JSONMap {
 func generalParserConfig() entity.JSONMap {
 	return entity.JSONMap{
 		"Parser:HipSignsRhyme": map[string]any{
-			"pdf":       map[string]any{"suffix": []any{"pdf"}},
+			"pdf":       map[string]any{},
 			"text&code": map[string]any{},
 			"docx":      map[string]any{},
-			"image":     map[string]any{"suffix": []any{"jpg"}},
-			"email":     map[string]any{"suffix": []any{"eml", "msg"}},
+			"image":     map[string]any{},
+			"email":     map[string]any{},
 		},
 	}
 }
@@ -130,8 +130,8 @@ func generalParserConfig() entity.JSONMap {
 func pictureParserConfig() entity.JSONMap {
 	return entity.JSONMap{
 		"Parser:ViewsCaptureLight": map[string]any{
-			"image": map[string]any{"suffix": []any{"jpg"}},
-			"video": map[string]any{"suffix": []any{"mp4"}},
+			"image": map[string]any{},
+			"video": map[string]any{},
 		},
 	}
 }
@@ -139,7 +139,7 @@ func pictureParserConfig() entity.JSONMap {
 func tableParserConfig() entity.JSONMap {
 	return entity.JSONMap{
 		"Parser:TableRoundStone": map[string]any{
-			"spreadsheet": map[string]any{"suffix": []any{"xlsx"}},
+			"spreadsheet": map[string]any{},
 			"text&code":   map[string]any{},
 		},
 	}
@@ -451,10 +451,10 @@ func TestUploadLocalDocuments_RoutesFileTypesToDedicatedParsers(t *testing.T) {
 
 	kbConfig := entity.JSONMap{
 		"Parser:HipSignsRhyme": map[string]any{
-			"pdf":       map[string]any{"suffix": []any{"pdf"}},
+			"pdf":       map[string]any{},
 			"text&code": map[string]any{},
-			"image":     map[string]any{"ocr_enabled": true, "suffix": []any{"jpg"}},
-			"email":     map[string]any{"suffix": []any{"eml", "msg"}},
+			"image":     map[string]any{"ocr_enabled": true},
+			"email":     map[string]any{},
 		},
 		"GeneralChunker:SixApplesFall": map[string]any{"chunk_token_size": 512},
 		"metadata": map[string]any{
@@ -504,7 +504,7 @@ func TestUploadLocalDocuments_RoutesFileTypesToDedicatedParsers(t *testing.T) {
 		t.Fatalf("pptx parser_id = %q, want presentation", parserID)
 	}
 	slidesSetup := parserFamilySetup(t, got[1], "slides")
-	if _, ok := slidesSetup["suffix"]; !ok {
+	if slidesSetup["parse_method"] != "DeepDOC" {
 		t.Fatalf("pptx slides setup = %#v, want the presentation pipeline defaults", slidesSetup)
 	}
 

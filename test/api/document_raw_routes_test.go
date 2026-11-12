@@ -174,7 +174,7 @@ func TestRESTPrivateDocumentRawRoutes(t *testing.T) {
 			}
 			result := rawRESTCall(t, TestConfig, http.MethodGet, path, nil, "")
 			restCode(t, result, http.StatusOK, 102)
-			if result.JSON["message"] != "Image not found." {
+			if result.JSON["message"] != "Image not found: document image not found" {
 				t.Fatalf("missing image message=%v", result.JSON["message"])
 			}
 		})
@@ -195,7 +195,7 @@ func TestRESTDocumentRawImagesRequireIndexedOwnership(t *testing.T) {
 	} {
 		result := rawRESTCall(t, TestConfig, http.MethodGet, path, nil, "")
 		restCode(t, result, http.StatusOK, 102)
-		if result.JSON["message"] != "Image not found." {
+		if result.JSON["message"] != "Image not found: document image not found" {
 			t.Fatalf("unindexed image message=%v", result.JSON["message"])
 		}
 	}
@@ -234,7 +234,7 @@ func TestRESTDocumentIndexedImageIntegrity(t *testing.T) {
 			break
 		}
 		restCode(t, result, http.StatusOK, 102)
-		if result.JSON["message"] != "Image not found." {
+		if result.JSON["message"] != "Image not found: document image not found" {
 			t.Fatalf("unexpected image response=%v", result.JSON)
 		}
 		select {
@@ -264,7 +264,7 @@ func TestRESTDocumentIndexedImageIntegrity(t *testing.T) {
 	}
 	result := rawRESTCall(t, TestConfig, http.MethodGet, "/documents/"+otherID+"/images/"+imageID, nil, "")
 	restCode(t, result, http.StatusOK, 102)
-	if result.JSON["message"] != "Image not found." {
+	if result.JSON["message"] != "Image not found: document image not found" {
 		t.Fatalf("foreign document image response=%v", result.JSON)
 	}
 }

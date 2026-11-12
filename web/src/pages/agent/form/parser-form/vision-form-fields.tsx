@@ -1,7 +1,9 @@
+import { useCrossLanguageOptions } from '@/components/cross-language-form-field';
 import {
   ModelTreeSelectFormField,
   ModelTypeMap,
 } from '@/components/model-tree-select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import message from '@/components/ui/message';
 import { Switch } from '@/components/ui/switch';
@@ -60,14 +62,16 @@ function VisionEnhancementSwitch({
   return <Switch checked={!!enabled} onCheckedChange={handleCheckedChange} />;
 }
 
-// Global vision enhancement: one switch + img2txt model + description prompt.
-// The fields live at the form's top level (`enable_vision_enhancement` and
-// `vlm.{llm_id, system_prompt}`) alongside `setups`, matching the backend Parser
-// component's params contract. Response language is not offered here on purpose:
-// it belongs to the knowledge base, which also drives tokenization.
+// Global vision enhancement: one switch + img2txt model + description language
+// and prompt. The fields live at the form's top level
+// (`enable_vision_enhancement` and `vlm.{llm_id, system_prompt, lang}`)
+// alongside `setups`, matching the backend Parser component's params contract.
+// The description language is optional: leaving it empty follows the knowledge
+// base language, which still drives tokenization and retrieval.
 export function VisionEnhancementFormFields() {
   const { t } = useTranslation();
   const ownerTenantId = useOwnerTenantId();
+  const crossLanguageOptions = useCrossLanguageOptions();
   const enabled = useWatch({ name: 'enable_vision_enhancement' });
 
   return (
@@ -95,6 +99,23 @@ export function VisionEnhancementFormFields() {
           allowClear
           ownerTenantId={ownerTenantId}
         />
+      )}
+      {enabled && (
+        <RAGFlowFormItem
+          name="vlm.lang"
+          label={t('flow.descriptionLanguage')}
+          tooltip={t('flow.descriptionLanguageTip')}
+        >
+          {(field) => (
+            <SelectWithSearch
+              options={crossLanguageOptions}
+              value={field.value}
+              onChange={field.onChange}
+              allowClear
+              placeholder={t('flow.followKnowledgeBaseLanguage')}
+            />
+          )}
+        </RAGFlowFormItem>
       )}
       {enabled && (
         <RAGFlowFormItem

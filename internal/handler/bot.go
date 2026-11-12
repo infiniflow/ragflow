@@ -112,6 +112,8 @@ func (h *BotHandler) AgentbotInputs(c *gin.Context) {
 
 // AgentbotCompletion POST /api/v1/agentbots/<agent_id>/completions
 //
+// AgentbotCompletion POST /api/v1/agentbots/<agent_id>/completions
+//
 // Mirrors python bot_api.py:157 (canvas_service.completion wrapper).
 // The URL-bound agent_id is authoritative — the body must NOT
 // override it.
@@ -125,6 +127,9 @@ func (h *BotHandler) AgentbotInputs(c *gin.Context) {
 // python canvas_service.completion output (which yields every
 // canvas event, including node_* telemetry used by the "Thinking"
 // log panel).
+//
+// The server write deadline is cleared before the first frame so an agent run
+// longer than http.Server.WriteTimeout is not cut off mid-stream (issue #21649).
 func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 	agentID := c.Param("agent_id")
 	if agentID == "" {
@@ -160,6 +165,7 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 		common.RespondError(c, ec, err.Error())
 		return
 	}
+	clearResponseWriteDeadline(c)
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
@@ -182,6 +188,10 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 // Mirrors python bot_api.py:55 (async_iframe_completion). Streams
 // SSE frames in the Python envelope shape. The streaming helper
 // lives in service/bot_completion.go.
+//
+// Like AgentbotCompletion it clears the server write deadline first: the
+// http.Server.WriteTimeout covers the whole response, so a slow answer would be
+// truncated without it (issue #21649).
 func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 	dialogID := c.Param("dialog_id")
 	if dialogID == "" {
@@ -210,6 +220,7 @@ func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 		common.RespondError(c, ec, err.Error())
 		return
 	}
+	clearResponseWriteDeadline(c)
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")

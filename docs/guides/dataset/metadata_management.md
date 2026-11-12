@@ -4,7 +4,7 @@ title: "Metadata: Metadata Management"
 sidebar_label: "Metadata: Metadata Management"
 slug: /metadata_management
 sidebar_custom_props:
-  categoryIcon: LucideDatabaseZap
+  categoryIcon: LucideTags
 ---
 
 # Metadata: Metadata Management

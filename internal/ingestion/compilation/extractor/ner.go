@@ -18,7 +18,7 @@
 // pipeline. It wraps the C++ ThincNER engine via cgo and supplements it with
 // pure-Go regex-based relation extraction.
 //
-// The architecture mirrors the Python rag/graphrag/ner package so that both
+// The architecture mirrors the rag/graphrag/ner package so that both
 // code paths produce identical output (verified by test).
 //go:build cgo_thincner
 
@@ -297,7 +297,7 @@ func (e *Extractor) ExtractEntities(text string) ([]Entity, error) {
 		return nil, fmt.Errorf("failed to parse NER result: %w", err)
 	}
 
-	// Dedup by (text.lower(), start_char) — matching Python NERExtractor
+	// Dedup by (text.lower(), start_char) — matching NERExtractor
 	// For CJK, strip spaces from entity text (BILUO decoder joins tokens with spaces)
 	isCJK := e.Lang == "zh" || e.Lang == "ja"
 	seen := make(map[string]bool)

@@ -111,9 +111,9 @@ func (h *UserHandler) Register(c *gin.Context) {
 		operationLog.Error = err
 		return
 	}
-	authToken, err := issueUserAccessToken(user, secretKey)
+	authToken, err := issueUserAccessToken(ctx, user, secretKey)
 	if err != nil {
-		common.RespondError(c, common.CodeServerError, "Failed to generate auth token")
+		common.RespondError(c, common.CodeServerError, "Failed to generate auth token: "+err.Error())
 		operationLog.Code = int(common.CodeBadRequest)
 		operationLog.Error = err
 		return
@@ -121,10 +121,6 @@ func (h *UserHandler) Register(c *gin.Context) {
 
 	c.Header("Authorization", authToken)
 	setOAuthAuthCookie(c, authToken)
-	c.Header("Access-Control-Allow-Origin", "*")
-	c.Header("Access-Control-Allow-Methods", "*")
-	c.Header("Access-Control-Allow-Headers", "*")
-	c.Header("Access-Control-Expose-Headers", "Authorization")
 
 	profile := h.userService.GetUserProfile(ctx, user)
 	common.RespondSuccess(c, profile, fmt.Sprintf("%s, welcome aboard!", req.Nickname))
@@ -180,9 +176,9 @@ func (h *UserHandler) Login(c *gin.Context) {
 		operationLog.Error = errMessage
 		return
 	}
-	authToken, err := issueUserAccessToken(user, secretKey)
+	authToken, err := issueUserAccessToken(ctx, user, secretKey)
 	if err != nil {
-		common.RespondError(c, common.CodeServerError, "Failed to generate auth token")
+		common.RespondError(c, common.CodeServerError, "Failed to generate auth token: "+err.Error())
 		operationLog.Code = int(common.CodeServerError)
 		operationLog.Error = err
 		return
@@ -191,11 +187,6 @@ func (h *UserHandler) Login(c *gin.Context) {
 	// Set Authorization header with signed token
 	c.Header("Authorization", authToken)
 	setOAuthAuthCookie(c, authToken)
-	// Set CORS headers
-	c.Header("Access-Control-Allow-Origin", "*")
-	c.Header("Access-Control-Allow-Methods", "*")
-	c.Header("Access-Control-Allow-Headers", "*")
-	c.Header("Access-Control-Expose-Headers", "Authorization")
 
 	profile := h.userService.GetUserProfile(ctx, user)
 	common.RespondSuccess(c, profile, "Welcome back!")
@@ -265,19 +256,15 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 		operationLog.Error = errorMessage
 		return
 	}
-	authToken, err := issueUserAccessToken(user, secretKey)
+	authToken, err := issueUserAccessToken(ctx, user, secretKey)
 	if err != nil {
-		common.RespondError(c, common.CodeServerError, "Failed to generate auth token")
+		common.RespondError(c, common.CodeServerError, "Failed to generate auth token: "+err.Error())
 		operationLog.Code = int(common.CodeServerError)
 		operationLog.Error = err
 		return
 	}
 	setOAuthAuthCookie(c, authToken)
 	c.Header("Authorization", authToken)
-	c.Header("Access-Control-Allow-Origin", "*")
-	c.Header("Access-Control-Allow-Methods", "*")
-	c.Header("Access-Control-Allow-Headers", "*")
-	c.Header("Access-Control-Expose-Headers", "Authorization")
 
 	profile := h.userService.GetUserProfile(ctx, user)
 	common.RespondSuccess(c, profile, "Welcome back!")

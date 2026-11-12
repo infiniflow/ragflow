@@ -50,6 +50,15 @@ func TestResponseHelpers(t *testing.T) {
 		{"pointer to nil map", func(c *gin.Context) { RespondSuccess(c, &nilMap, "") }, 200, `{"code":0,"message":"success"}`},
 		{"pointer to nil list", func(c *gin.Context) { RespondSuccess(c, &nilSlice, "") }, 200, `{"code":0,"message":"success"}`},
 		{"business error", func(c *gin.Context) { RespondError(c, CodeBadRequest, "") }, 200, `{"code":400,"message":"Bad request"}`},
+		{"heartbeat entitlement data", func(c *gin.Context) {
+			Respond(c, http.StatusOK, CodeLicenseValid, map[string]any{"features": []string{"retrieval"}, "quota": 100}, "entitlements updated")
+		}, 200, `{"code":320,"message":"entitlements updated","data":{"features":["retrieval"],"quota":100}}`},
+		{"ordinary success", func(c *gin.Context) {
+			Respond(c, http.StatusOK, CodeSuccess, map[string]any{"ok": true}, "reported")
+		}, 200, `{"code":0,"message":"reported","data":{"ok":true}}`},
+		{"ordinary error", func(c *gin.Context) {
+			Respond(c, http.StatusOK, CodeErrorServerStatus, nil, "unknown server type")
+		}, 200, `{"code":330,"message":"unknown server type"}`},
 		{"zero HTTP status", func(c *gin.Context) { Respond(c, 0, CodeSuccess, nil, "") }, 200, `{"code":0,"message":"success"}`},
 		{"HTTP error", func(c *gin.Context) {
 			Respond(c, http.StatusBadRequest, CodeArgumentError, nil, "Missing name")

@@ -4,7 +4,7 @@ title: Understand the Workflow Canvas
 sidebar_label: Understand the Workflow Canvas
 slug: /understand_the_canvas
 sidebar_custom_props: {
-  categoryIcon: RagAiAgent
+  categoryIcon: LucidePanelsTopLeft
 }
 ---
 

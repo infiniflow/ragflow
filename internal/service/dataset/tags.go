@@ -79,7 +79,7 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string)
 			if dao.IsNotFoundErr(err) {
 				return nil, common.CodeDataError, fmt.Errorf("Invalid Dataset ID '%s'", datasetID)
 			}
-			return nil, common.CodeServerError, errors.New("Database operation failed")
+			return nil, common.CodeServerError, fmt.Errorf("Database operation failed: %w", err)
 		}
 		authorized = append(authorized, authorizedDataset{
 			id:     datasetID,
@@ -89,7 +89,7 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string)
 
 	docConfigs, err := d.documentDAO.ListParserConfigsByKBIDs(ctx, dao.DB, orderedIDs)
 	if err != nil {
-		return nil, common.CodeServerError, errors.New("Database operation failed")
+		return nil, common.CodeServerError, fmt.Errorf("Database operation failed: %w", err)
 	}
 
 	// Every source below comes from a document — that is the copy the extractor

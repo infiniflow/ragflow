@@ -131,7 +131,11 @@ func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
 	ctx := c.Request.Context()
 	doc, err := h.documentService.GetDocumentByID(ctx, id)
 	if err != nil {
-		common.RespondError(c, common.CodeNotFound, "document not found")
+		if dao.IsNotFoundErr(err) {
+			common.RespondError(c, common.CodeNotFound, "document not found")
+		} else {
+			jsonInternalError(c, err)
+		}
 		return
 	}
 
@@ -198,12 +202,13 @@ func (h *DocumentHandler) GetDocumentImage(c *gin.Context) {
 	ctx := c.Request.Context()
 	data, err := h.documentService.GetDocumentImage(ctx, imageID)
 	if err != nil {
-		common.RespondError(c, common.CodeDataError, "Image not found.")
+		common.RespondError(c, common.CodeDataError, "Image not found: "+err.Error())
 		return
 	}
 	h.writeDocumentImage(c, data)
 }
 
+// GetDocumentImageForDocument serves image bytes only after checking the document's ownership of the image.
 func (h *DocumentHandler) GetDocumentImageForDocument(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -212,16 +217,17 @@ func (h *DocumentHandler) GetDocumentImageForDocument(c *gin.Context) {
 	}
 	data, err := h.documentService.GetDocumentImageForDocument(c.Request.Context(), c.Param("id"), c.Param("image_id"))
 	if err != nil {
-		common.RespondError(c, common.CodeDataError, "Image not found.")
+		common.RespondError(c, common.CodeDataError, "Image not found: "+err.Error())
 		return
 	}
 	h.writeDocumentImage(c, data)
 }
 
+// GetDocumentThumbnail resolves the thumbnail through authorized document metadata.
 func (h *DocumentHandler) GetDocumentThumbnail(c *gin.Context) {
 	data, err := h.documentService.GetDocumentThumbnail(c.Request.Context(), c.Param("id"))
 	if err != nil {
-		common.RespondError(c, common.CodeDataError, "Image not found.")
+		common.RespondError(c, common.CodeDataError, "Image not found: "+err.Error())
 		return
 	}
 	h.writeDocumentImage(c, data)
@@ -286,6 +292,8 @@ func (h *DocumentHandler) GetDocumentArtifact(c *gin.Context) {
 	c.Data(http.StatusOK, artifact.ContentType, artifact.Data)
 }
 
+// GetDocumentPreview distinguishes missing and empty documents from backend failures
+// and forces downloads for content that cannot be safely previewed inline.
 func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 
 	docID := c.Param("id")
@@ -304,14 +312,10 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 		case errors.Is(err, document.ErrPreviewFileEmpty):
 			common.RespondError(c, common.CodeDataError, "This file is empty.")
 		default:
-			// Surface the failure as a distinct server error (storage
-			// unreachable, missing object, bad address) instead of masking
-			// it as a missing document, while keeping the raw detail --
-			// which names the object-store bucket/key -- in the server
-			// log only.
+			// Surface storage failures as server errors with their cause.
 			common.Error("GetDocumentPreview failed", err,
 				zap.String("doc_id", docID), zap.String("user_id", permission.UserIDFromContext(ctx)))
-			common.RespondError(c, common.CodeServerError, "Failed to load document preview")
+			common.RespondError(c, common.CodeServerError, "Failed to load document preview: "+err.Error())
 		}
 		return
 	}
@@ -350,7 +354,11 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 	ctx := c.Request.Context()
 	doc, err := h.documentService.GetDocumentByID(ctx, id)
 	if err != nil {
-		common.Respond(c, http.StatusBadRequest, 1, nil, "document not found!")
+		if dao.IsNotFoundErr(err) {
+			common.Respond(c, http.StatusBadRequest, 1, nil, "document not found!")
+		} else {
+			jsonInternalError(c, err)
+		}
 		return
 	}
 	if err := service.CheckDocumentAccess(ctx, doc.ID, doc.KbID, permission.OperationUpdate); err != nil {
@@ -400,7 +408,11 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 	ctx := c.Request.Context()
 	doc, err := h.documentService.GetDocumentByID(ctx, id)
 	if err != nil {
-		common.Respond(c, http.StatusBadRequest, 1, nil, "document not found!")
+		if dao.IsNotFoundErr(err) {
+			common.Respond(c, http.StatusBadRequest, 1, nil, "document not found!")
+		} else {
+			jsonInternalError(c, err)
+		}
 		return
 	}
 	if err := service.CheckDocumentAccess(ctx, doc.ID, doc.KbID, permission.OperationDeleteContent); err != nil {
@@ -587,11 +599,7 @@ func (h *DocumentHandler) BatchUpdateDocumentStatus(c *gin.Context) {
 
 	result, code, err := h.documentService.BatchUpdateDocumentStatus(ctx, datasetID, status, documentIDs)
 	if err != nil {
-		message := err.Error()
-		if code == common.CodeServerError {
-			message = "Partial failure"
-		}
-		common.RespondError(c, code, message)
+		common.RespondError(c, code, err.Error())
 		return
 	}
 
@@ -637,7 +645,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	if c.Query("type") == "filter" {
 		filters, total, err := h.documentService.GetDocumentFiltersByDatasetID(ctx, opts)
 		if err != nil {
-			common.RespondError(c, common.CodeExceptionError, "failed to get document filters")
+			common.RespondError(c, common.CodeExceptionError, "failed to get document filters: "+err.Error())
 			return
 		}
 		common.RespondSuccess(c, gin.H{"total": total, "filter": filters}, "success")
@@ -649,7 +657,7 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	// so that total reflects the unfiltered count, matching the Python API contract.
 	documents, total, err := h.documentService.ListDocumentsByDatasetIDWithOptions(ctx, opts, page, pageSize)
 	if err != nil {
-		common.RespondError(c, 1, "failed to get documents")
+		common.RespondError(c, 1, "failed to get documents: "+err.Error())
 		return
 	}
 
@@ -766,6 +774,7 @@ func parseDocumentListOptions(c *gin.Context, datasetID string) (dao.DocumentLis
 	return opts, ""
 }
 
+// applyDocumentMetadataFilter intersects metadata matches with the existing document scope.
 func (h *DocumentHandler) applyDocumentMetadataFilter(c *gin.Context, opts dao.DocumentListOptions) (dao.DocumentListOptions, string) {
 	// Mirror Python's metadata_condition query-param validation.
 	if raw := strings.TrimSpace(c.Query("metadata_condition")); raw != "" {
@@ -791,7 +800,7 @@ func (h *DocumentHandler) applyDocumentMetadataFilter(c *gin.Context, opts dao.D
 
 	candidateIDs, err := h.documentService.ListDocumentIDsByDatasetIDWithOptions(ctx, opts)
 	if err != nil {
-		return opts, "failed to get documents"
+		return opts, "failed to get documents: " + err.Error()
 	}
 	candidateSet := stringSet(candidateIDs)
 
@@ -1183,6 +1192,8 @@ func isValidHTTPURL(raw string) bool {
 	return (u.Scheme == "http" || u.Scheme == "https") && u.Host != ""
 }
 
+// DownloadDocument checks dataset ownership and read access before fetching file bytes,
+// keeping inaccessible documents indistinguishable from missing ones.
 func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -1232,7 +1243,7 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 		}
 		common.Error("DownloadDocument failed", err,
 			zap.String("dataset_id", datasetID), zap.String("document_id", docID), zap.String("user_id", user.ID))
-		common.RespondError(c, common.CodeServerError, "Failed to download document")
+		common.RespondError(c, common.CodeServerError, "Failed to download document: "+err.Error())
 		return
 	}
 
