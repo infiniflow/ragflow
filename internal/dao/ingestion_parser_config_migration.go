@@ -19,6 +19,7 @@ import (
 	"context"
 	"fmt"
 	"maps"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -277,6 +278,12 @@ func migrateIngestionParserConfigs(ctx context.Context, db *gorm.DB) error {
 }
 
 func migrateIngestionConfigRows(ctx context.Context, db *gorm.DB, model any, table string) (int, error) {
+	return migrateIngestionParserConfigRows(ctx, db, model, table, false)
+}
+
+// migrateIngestionParserConfigRows runs the flat-key converters and optionally
+// the component-node normalizer over one parser_config table.
+func migrateIngestionParserConfigRows(ctx context.Context, db *gorm.DB, model any, table string, normalizeNodes bool) (int, error) {
 	count := 0
 	var rows []ingestionConfigMigrationRow
 	result := db.WithContext(ctx).Model(model).
@@ -294,15 +301,25 @@ func migrateIngestionConfigRows(ctx context.Context, db *gorm.DB, model any, tab
 						}
 						return fmt.Errorf("row %s: invalid parser_config JSON", row.ID)
 					}
+					changed := false
 					extractorChanged, err := migrateExtractorConfig(config, row.ParserID, row.PipelineID)
 					if err != nil {
 						return fmt.Errorf("row %s: %w", row.ID, err)
 					}
+					changed = changed || extractorChanged
 					ingestionChanged, err := migrateParserChunkerTokenizerConfig(config, row.ParserID, row.PipelineID, table, row.ID)
 					if err != nil {
 						return fmt.Errorf("row %s: %w", row.ID, err)
 					}
-					if !extractorChanged && !ingestionChanged {
+					changed = changed || ingestionChanged
+					if normalizeNodes {
+						nodeChanged, err := normalizeLegacyIngestionNodes(config, ingestionConfigRow{table: table, rowID: row.ID})
+						if err != nil {
+							return fmt.Errorf("row %s: %w", row.ID, err)
+						}
+						changed = changed || nodeChanged
+					}
+					if !changed {
 						continue
 					}
 					if err := tx.Model(model).Where("id = ?", row.ID).
@@ -1122,23 +1139,50 @@ func convertIngestionTokenizer(config map[string]any, target builtinIngestionTar
 	return nil
 }
 
-var extractorFlatKeys = []string{"auto_keywords", "auto_questions", "enable_metadata", "metadata", "built_in_metadata"}
+// extractorLegacyNodeFlatKeys are the Extractor node keys rewritten into the
+// modular groups. "metadata" is deliberately absent: on a node it is the target
+// group, while at the parser_config root it is the flat transport key.
+var extractorLegacyNodeFlatKeys = []string{
+	"auto_keywords", "keywords_sys_prompt",
+	"auto_questions", "questions_sys_prompt",
+	"auto_tags", "tag_file_id",
+	"enable_summary", "sys_prompt", "field_name",
+	"enable_metadata", "metadata_config", "built_in_metadata", "fields",
+}
 
-// migrateExtractorConfig rewrites only Python's top-level extraction settings.
+var extractorFlatKeys = append(append([]string{}, extractorLegacyNodeFlatKeys...), "metadata")
+
+func hasExtractorFlatKey(config map[string]any) bool {
+	for _, key := range extractorFlatKeys {
+		if _, ok := config[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// hasLegacyExtractorNodeFlatKey reports whether an Extractor node still carries
+// a flat key or a pre-modular metadata value. A node's modular "metadata" group
+// is the target shape and is not legacy.
+func hasLegacyExtractorNodeFlatKey(params map[string]any) bool {
+	for _, key := range extractorLegacyNodeFlatKeys {
+		if _, ok := params[key]; ok {
+			return true
+		}
+	}
+	raw, ok := params["metadata"]
+	return ok && !isExtractorMetadataGroupValue(raw)
+}
+
+// migrateExtractorConfig rewrites Python's top-level extraction settings.
 // Existing node fields win over flat Python values. A modular metadata transport
 // object replaces node metadata, matching ApplyComponentScopedParserConfig.
 // Unsupported inputs return an error before the config is mutated.
 func migrateExtractorConfig(config map[string]any, parserID string, pipelineID *string) (bool, error) {
-	present := false
-	for _, key := range extractorFlatKeys {
-		if _, ok := config[key]; ok {
-			present = true
-			break
-		}
-	}
-	if !present {
+	if !hasExtractorFlatKey(config) {
 		return false, nil
 	}
+	fieldName, _ := config["field_name"].(string)
 	var targets []map[string]any
 	var newNode map[string]any
 	var extractorNode string
@@ -1168,100 +1212,342 @@ func migrateExtractorConfig(config map[string]any, parserID string, pipelineID *
 			return false, nil
 		}
 	}
-	groups, replaceMetadata, err := convertPythonExtractorGroups(config)
+	// Convert a target node's own pre-modular keys before applying the
+	// top-level flat values, so the node's explicit values keep precedence.
+	for _, node := range targets {
+		if fieldName, _ := node["field_name"].(string); fieldName != "" && extractorSysPromptGroup(fieldName) == "" {
+			common.Warn("Extractor field_name has no Go consumer; dropping",
+				zap.String("component", extractorNode),
+				zap.String("field_name", fieldName))
+		}
+		if _, err := normalizeLegacyExtractorNode(node); err != nil {
+			return false, err
+		}
+	}
+	groups, replaceMetadata, err := convertPythonExtractorGroups(config, extractorSysPromptGroup(fieldName))
 	if err != nil {
 		return false, err
 	}
 	for _, node := range targets {
-		for name := range groups {
-			if raw, exists := node[name]; exists && !(name == "metadata" && replaceMetadata) {
-				if _, ok := raw.(map[string]any); !ok {
-					return false, fmt.Errorf("%s group is not an object", name)
-				}
-			}
+		if _, err := applyExtractorGroups(node, groups, replaceMetadata); err != nil {
+			return false, err
 		}
 	}
-	for _, node := range targets {
-		for name, defaults := range groups {
-			group, ok := node[name].(map[string]any)
-			if !ok || (name == "metadata" && replaceMetadata) {
-				node[name] = maps.Clone(defaults)
-				continue
-			}
-			for key, value := range defaults {
-				if _, exists := group[key]; !exists {
-					group[key] = value
-				}
-			}
-		}
-	}
-	if newNode != nil {
+	if newNode != nil && len(groups) > 0 {
 		config[extractorNode] = newNode
 	}
 	for _, key := range extractorFlatKeys {
 		delete(config, key)
 	}
+	if fieldName != "" && fieldName != "summary" {
+		common.Warn("Extractor field_name has no Go consumer; dropping",
+			zap.String("field_name", fieldName),
+			zap.String("parser_id", parserID))
+	}
 	return true, nil
 }
 
-func convertPythonExtractorGroups(config map[string]any) (map[string]map[string]any, bool, error) {
-	groups := map[string]map[string]any{}
-	for _, field := range []struct{ key, group string }{{"auto_keywords", "keywords"}, {"auto_questions", "questions"}} {
-		if raw, exists := config[field.key]; exists {
-			value, ok := raw.(float64)
-			if raw == nil {
-				value, ok = 0, true
-			}
-			if !ok || value < 0 || value != float64(int(value)) {
-				return nil, false, fmt.Errorf("%s must be a non-negative integer", field.key)
-			}
-			groups[field.group] = map[string]any{"top_n": int(value)}
-		}
-	}
-	source := config
-	replaceMetadata := false
-	_, hasToggle := config["enable_metadata"]
-	_, hasFields := config["metadata"]
-	_, hasBuiltIn := config["built_in_metadata"]
-	if obj, ok := config["metadata"].(map[string]any); ok {
-		if len(obj) == 0 && !hasToggle && !hasBuiltIn {
-			source, replaceMetadata = obj, true
-		}
-		for _, key := range []string{"enabled", "metadata", "built_in_metadata"} {
-			if _, exists := obj[key]; exists {
-				source = obj
-				replaceMetadata = true
-				break
-			}
-		}
-	}
-	if hasToggle || hasFields || hasBuiltIn {
-		flag := source["enable_metadata"]
-		if replaceMetadata {
-			flag = source["enabled"]
-		}
-		if flag != nil {
-			switch value := flag.(type) {
-			case bool:
-			case float64:
-				if value != 0 && value != 1 {
-					return nil, false, fmt.Errorf("metadata enabled must be bool or 0/1")
+// applyExtractorGroups merges the converted groups into one Extractor node.
+// Existing node fields win per field; a dataset-level metadata transport object
+// replaces the node's metadata group. Legacy flat keys are removed afterwards.
+func applyExtractorGroups(params map[string]any, groups map[string]map[string]any, replaceMetadata bool) (bool, error) {
+	changed := false
+	for name := range groups {
+		if name == "metadata" {
+			if raw, exists := params[name]; exists && !replaceMetadata && isExtractorMetadataGroupValue(raw) {
+				if _, ok := raw.(map[string]any); !ok {
+					return false, fmt.Errorf("%s group is not an object", name)
 				}
-			default:
-				return nil, false, fmt.Errorf("metadata enabled must be bool or 0/1")
+			}
+			continue
+		}
+		if raw, exists := params[name]; exists {
+			if _, ok := raw.(map[string]any); !ok {
+				return false, fmt.Errorf("%s group is not an object", name)
 			}
 		}
-		fields, err := convertExtractorMetadataFields(source["metadata"])
-		if err != nil {
-			return nil, false, fmt.Errorf("metadata: %w", err)
+	}
+	for name, defaults := range groups {
+		if name == "metadata" {
+			existing, exists := params[name]
+			if !exists || replaceMetadata || !isExtractorMetadataGroupValue(existing) {
+				params[name] = maps.Clone(defaults)
+				changed = true
+				continue
+			}
 		}
-		builtIn, err := convertExtractorMetadataFields(source["built_in_metadata"])
-		if err != nil {
-			return nil, false, fmt.Errorf("built_in_metadata: %w", err)
+		group, ok := params[name].(map[string]any)
+		if !ok {
+			params[name] = maps.Clone(defaults)
+			changed = true
+			continue
 		}
-		groups["metadata"] = map[string]any{"enabled": common.ParserConfigBool(flag), "metadata": fields, "built_in_metadata": builtIn}
+		for key, value := range defaults {
+			if _, exists := group[key]; !exists {
+				group[key] = value
+				changed = true
+			}
+		}
+	}
+	for _, key := range extractorLegacyNodeFlatKeys {
+		if _, exists := params[key]; exists {
+			delete(params, key)
+			changed = true
+		}
+	}
+	return changed, nil
+}
+
+// extractorSysPromptGroup returns the modular group a legacy sys_prompt belongs
+// to. The pre-modular Extractor stored one field per node, so a node's
+// sys_prompt is that field's prompt; an unknown field has no prompt target.
+// An empty field_name is the transitional flat mirror of the summary prompt.
+func extractorSysPromptGroup(fieldName string) string {
+	switch fieldName {
+	case "", "summary":
+		return "summary"
+	case "keywords", "questions":
+		return fieldName
+	default:
+		return ""
+	}
+}
+
+func convertPythonExtractorGroups(config map[string]any, sysPromptGroup string) (map[string]map[string]any, bool, error) {
+	groups := map[string]map[string]any{}
+	for _, field := range []struct{ key, group string }{
+		{"auto_keywords", "keywords"},
+		{"auto_questions", "questions"},
+		{"auto_tags", "tags"},
+	} {
+		if raw, exists := config[field.key]; exists {
+			value, err := extractorTopN(field.key, raw)
+			if err != nil {
+				return nil, false, err
+			}
+			groups[field.group] = map[string]any{"top_n": value}
+		}
+	}
+	for _, field := range []struct{ key, group string }{
+		{"keywords_sys_prompt", "keywords"},
+		{"questions_sys_prompt", "questions"},
+	} {
+		if raw, exists := config[field.key]; exists {
+			value, err := extractorString(field.key, raw)
+			if err != nil {
+				return nil, false, err
+			}
+			if groups[field.group] == nil {
+				groups[field.group] = map[string]any{}
+			}
+			groups[field.group]["system_prompt"] = value
+		}
+	}
+	if raw, exists := config["sys_prompt"]; exists && sysPromptGroup != "" {
+		value, err := extractorString("sys_prompt", raw)
+		if err != nil {
+			return nil, false, err
+		}
+		if groups[sysPromptGroup] == nil {
+			groups[sysPromptGroup] = map[string]any{}
+		}
+		groups[sysPromptGroup]["system_prompt"] = value
+	}
+	if raw, exists := config["tag_file_id"]; exists {
+		value, err := extractorString("tag_file_id", raw)
+		if err != nil {
+			return nil, false, err
+		}
+		if groups["tags"] == nil {
+			groups["tags"] = map[string]any{}
+		}
+		groups["tags"]["tag_file_id"] = value
+	}
+	if raw, exists := config["field_name"]; exists && raw != nil {
+		if _, ok := raw.(string); !ok {
+			return nil, false, fmt.Errorf("field_name must be a string")
+		}
+	}
+	summary := groups["summary"]
+	if raw, exists := config["enable_summary"]; exists {
+		value, err := extractorBool("enable_summary", raw)
+		if err != nil {
+			return nil, false, err
+		}
+		if summary == nil {
+			summary = map[string]any{}
+			groups["summary"] = summary
+		}
+		summary["enabled"] = value
+	} else if field, _ := config["field_name"].(string); field == "summary" {
+		if summary == nil {
+			summary = map[string]any{}
+			groups["summary"] = summary
+		}
+		summary["enabled"] = true
+	}
+	metadata, replaceMetadata, err := convertExtractorMetadataGroups(config)
+	if err != nil {
+		return nil, false, err
+	}
+	if metadata != nil {
+		groups["metadata"] = metadata
 	}
 	return groups, replaceMetadata, nil
+}
+
+func extractorTopN(field string, raw any) (int, error) {
+	if raw == nil {
+		return 0, nil
+	}
+	var value float64
+	switch typed := raw.(type) {
+	case float64:
+		value = typed
+	case float32:
+		value = float64(typed)
+	case int:
+		value = float64(typed)
+	case int32:
+		value = float64(typed)
+	case int64:
+		value = float64(typed)
+	default:
+		return 0, fmt.Errorf("%s must be a non-negative integer", field)
+	}
+	if math.IsNaN(value) || math.IsInf(value, 0) || value < 0 || math.Trunc(value) != value {
+		return 0, fmt.Errorf("%s must be a non-negative integer", field)
+	}
+	return int(value), nil
+}
+
+func extractorString(field string, raw any) (string, error) {
+	if raw == nil {
+		return "", nil
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return "", fmt.Errorf("%s must be a string", field)
+	}
+	return value, nil
+}
+
+func extractorBool(field string, raw any) (bool, error) {
+	switch value := raw.(type) {
+	case nil:
+		return false, nil
+	case bool:
+		return value, nil
+	case float64:
+		if value == 0 || value == 1 {
+			return value == 1, nil
+		}
+	case float32:
+		if value == 0 || value == 1 {
+			return value == 1, nil
+		}
+	case int:
+		if value == 0 || value == 1 {
+			return value == 1, nil
+		}
+	case int32:
+		if value == 0 || value == 1 {
+			return value == 1, nil
+		}
+	case int64:
+		if value == 0 || value == 1 {
+			return value == 1, nil
+		}
+	}
+	return false, fmt.Errorf("%s must be bool or 0/1", field)
+}
+
+// isExtractorMetadataGroupValue distinguishes the modular metadata group from
+// the legacy flat field list / JSON Schema that share the "metadata" key.
+func isExtractorMetadataGroupValue(raw any) bool {
+	obj, ok := raw.(map[string]any)
+	if !ok {
+		return false
+	}
+	if len(obj) == 0 {
+		return true
+	}
+	for _, key := range []string{"enabled", "metadata", "built_in_metadata"} {
+		if _, exists := obj[key]; exists {
+			return true
+		}
+	}
+	return false
+}
+
+func convertExtractorMetadataGroups(config map[string]any) (map[string]any, bool, error) {
+	rawMetadata, hasMetadata := config["metadata"]
+	group := map[string]any(nil)
+	replaceMetadata := false
+	if obj, ok := rawMetadata.(map[string]any); ok && isExtractorMetadataGroupValue(obj) {
+		group = maps.Clone(obj)
+		replaceMetadata = true
+	}
+	if group == nil {
+		if raw, exists := config["metadata_config"]; exists && raw != nil {
+			obj, ok := raw.(map[string]any)
+			if !ok {
+				return nil, false, fmt.Errorf("metadata_config must be an object")
+			}
+			group = maps.Clone(obj)
+		}
+	}
+	_, hasToggle := config["enable_metadata"]
+	_, hasBuiltIn := config["built_in_metadata"]
+	_, hasFields := config["fields"]
+	if group == nil && !hasMetadata && !hasToggle && !hasBuiltIn && !hasFields {
+		return nil, false, nil
+	}
+	if group == nil {
+		group = map[string]any{}
+	}
+	if raw, exists := group["enabled"]; exists {
+		value, err := extractorBool("metadata.enabled", raw)
+		if err != nil {
+			return nil, false, err
+		}
+		group["enabled"] = value
+	} else if raw, exists := config["enable_metadata"]; exists {
+		value, err := extractorBool("enable_metadata", raw)
+		if err != nil {
+			return nil, false, err
+		}
+		group["enabled"] = value
+	} else {
+		group["enabled"] = false
+	}
+
+	var rawFields any
+	if value, exists := group["metadata"]; exists {
+		rawFields = value
+	} else if hasMetadata && !isExtractorMetadataGroupValue(rawMetadata) {
+		rawFields = rawMetadata
+	} else if hasFields {
+		rawFields = config["fields"]
+	}
+	fields, err := convertExtractorMetadataFields(rawFields)
+	if err != nil {
+		return nil, false, fmt.Errorf("metadata: %w", err)
+	}
+	group["metadata"] = fields
+
+	var rawBuiltIn any
+	if value, exists := group["built_in_metadata"]; exists {
+		rawBuiltIn = value
+	} else if hasBuiltIn {
+		rawBuiltIn = config["built_in_metadata"]
+	}
+	builtIn, err := convertExtractorMetadataFields(rawBuiltIn)
+	if err != nil {
+		return nil, false, fmt.Errorf("built_in_metadata: %w", err)
+	}
+	group["built_in_metadata"] = builtIn
+	return group, replaceMetadata, nil
 }
 
 // convertExtractorMetadataFields accepts field lists and flat JSON Schemas that
@@ -1269,6 +1555,16 @@ func convertPythonExtractorGroups(config map[string]any) (map[string]map[string]
 func convertExtractorMetadataFields(raw any) ([]common.MetadataFieldDef, error) {
 	if raw == nil {
 		return []common.MetadataFieldDef{}, nil
+	}
+	if defs, ok := raw.([]common.MetadataFieldDef); ok {
+		return defs, nil
+	}
+	if list, ok := raw.([]map[string]any); ok {
+		items := make([]any, len(list))
+		for index, item := range list {
+			items[index] = item
+		}
+		raw = items
 	}
 	if schema, ok := raw.(map[string]any); ok {
 		if len(schema) == 0 {

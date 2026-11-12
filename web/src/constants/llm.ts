@@ -127,6 +127,7 @@ export enum LLMFactory {
   HostingerRouter = 'Hostinger Router',
   Wally = 'Wally',
   Synap = 'Synap',
+  Wiro = 'Wiro AI',
 }
 
 // Please lowercase the file name
@@ -235,6 +236,7 @@ export const IconMap = {
   [LLMFactory.Cheapaimodel]: 'cheapaimodel',
   [LLMFactory.Wally]: 'wally',
   [LLMFactory.Synap]: 'synap',
+  [LLMFactory.Wiro]: 'wiro',
 };
 
 /**
@@ -293,6 +295,7 @@ export const APIMapUrl = {
     'https://console.cheapaimodel.ai/keys?utm_source=ragflow',
   [LLMFactory.Wally]: 'https://console.runanywhere.ai',
   [LLMFactory.Synap]: 'https://synap.linkrra.com/pricing',
+  [LLMFactory.Wiro]: 'https://wiro.ai/panel/project/new',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',

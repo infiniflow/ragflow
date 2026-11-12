@@ -19,6 +19,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -54,7 +55,7 @@ func isOAuthLoginNoRoute(c *gin.Context) bool {
 
 // issueUserAccessToken mints the access token returned after a successful
 // login.
-func issueUserAccessToken(user *entity.User, secretKey string) (string, error) {
+func issueUserAccessToken(_ context.Context, user *entity.User, secretKey string) (string, error) {
 	if user == nil || user.AccessToken == nil {
 		return "", errors.New("user access token is missing")
 	}

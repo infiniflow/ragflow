@@ -547,6 +547,22 @@ func (r *runningEventRecorder) findRunning() (common.IngestionLog, bool) {
 	return common.IngestionLog{}, false
 }
 
+// waitForRunning blocks until a "running" lifecycle event is emitted or the
+// timeout elapses. emitLifecycleEvent is fire-and-forget, so the event arrives
+// on a background goroutine after handleAndExecute returns; assertions must wait
+// for it rather than reading the recorder synchronously, otherwise the check
+// races the emit and fails intermittently.
+func (r *runningEventRecorder) waitForRunning(timeout time.Duration) (common.IngestionLog, bool) {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if ev, ok := r.findRunning(); ok {
+			return ev, true
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	return common.IngestionLog{}, false
+}
+
 // TestHandleAndExecute_RunningEventCarriesWorkerName pins that the running
 // lifecycle event emitted by PrepareValidatedRun names the worker that claimed
 // the task. The worker name is injected per-task onto the context, and it must
@@ -579,7 +595,9 @@ func TestHandleAndExecute_RunningEventCarriesWorkerName(t *testing.T) {
 
 	ingestor.handleAndExecute(&worker{id: 3, inbox: make(chan common.TaskHandle)}, handle)
 
-	ev, ok := rec.findRunning()
+	// emitLifecycleEvent is fire-and-forget: the running event lands on a
+	// background goroutine after handleAndExecute returns, so wait for it.
+	ev, ok := rec.waitForRunning(2 * time.Second)
 	if !ok {
 		t.Fatal("expected a running lifecycle event to be emitted")
 	}

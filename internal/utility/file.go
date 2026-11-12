@@ -186,11 +186,15 @@ func FilenameType(filename string) FileType {
 	}
 
 	// Editions may register an extension→type mapping, including overriding a
-	// built-in extension. Honor it before the community upload-bucket logic so
-	// the upload is classified with the registered type, keeping FilenameType
-	// consistent with GetFileType (which also consults this map first).
+	// built-in extension. Honor it before the community upload-bucket logic;
+	// registered Office types still share the document upload bucket.
 	if ext := strings.TrimPrefix(filepath.Ext(normalized), "."); ext != "" {
 		if ft, ok := extensionFileTypes[strings.ToLower(ext)]; ok {
+			// Office parsers use distinct types, but uploads share the document bucket.
+			switch ft {
+			case FileTypeDOC, FileTypeDOCX, FileTypeXLS, FileTypeXLSX, FileTypePPT, FileTypePPTX:
+				return FileTypeDOC
+			}
 			return ft
 		}
 	}

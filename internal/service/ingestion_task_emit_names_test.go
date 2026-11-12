@@ -29,6 +29,9 @@ func TestEmitLifecycleEventCarriesContextIdentity(t *testing.T) {
 	svc := &IngestionTaskService{eventEmitter: rec}
 	svc.emitLifecycleEvent(context.Background(), task, "completed", "COMPLETED", "")
 
+	if !waitForEmitCount(rec.count, 1) {
+		t.Fatalf("event not emitted (async) within timeout")
+	}
 	if rec.count() != 1 {
 		t.Fatalf("expected exactly 1 emitted event, got %d", rec.count())
 	}
@@ -58,6 +61,9 @@ func TestEmitLifecycleEventCarriesContextIdentity(t *testing.T) {
 	})
 	svc2.emitLifecycleEvent(ctx, task, "running", "RUNNING", "")
 
+	if !waitForEmitCount(rec2.count, 1) {
+		t.Fatalf("event not emitted (async) within timeout")
+	}
 	if rec2.count() != 1 {
 		t.Fatalf("expected exactly 1 emitted event, got %d", rec2.count())
 	}

@@ -158,7 +158,6 @@ func (h *Handler) ListUsers(c *gin.Context) {
 
 	name := c.DefaultQuery("keyword", "")
 	status := c.DefaultQuery("status", "")
-	role := c.DefaultQuery("role", "")
 	sort := c.DefaultQuery("sort", "")     // asc or desc
 	orderBy := c.DefaultQuery("order", "") // order by field
 	// The admin UI and existing admin clients request the user list without
@@ -220,7 +219,7 @@ func (h *Handler) ListUsers(c *gin.Context) {
 	case common.OpenSourceVersion:
 		users, total, err = h.service.ListUsers(ctx, pageInt, pageSizeInt, name, status, sort, orderBy)
 	case common.EnterpriseEdition:
-		users, total, err = h.service.ListUsersEE(ctx, pageInt, pageSizeInt, name, status, role, sort, orderBy, plan, topInt, daysInt, quotaPtr)
+		users, total, err = h.service.ListUsersEE(ctx, pageInt, pageSizeInt, name, status, sort, orderBy, plan, topInt, daysInt, quotaPtr)
 	default:
 		common.RespondError(c, common.CodeBadRequest, "Invalid RAGFlow type")
 		return
@@ -998,7 +997,7 @@ func (h *Handler) PublishMessageToQueue(c *gin.Context) {
 	}
 
 	msgQueueEngine := engine.GetMessageQueueEngine()
-	err = msgQueueEngine.PublishTask(common.TaskSubject, taskMessageStr)
+	err = msgQueueEngine.PublishTask(common.DefaultTierSubject(), taskMessageStr)
 	if err != nil {
 		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
@@ -1024,11 +1023,11 @@ func (h *Handler) PullMessageFromQueue(c *gin.Context) {
 	}
 
 	msgQueueEngine := engine.GetMessageQueueEngine()
-	if err := msgQueueEngine.InitConsumer(common.TaskSubject); err != nil {
+	if err := msgQueueEngine.InitConsumer(common.DefaultTierSubject()); err != nil {
 		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
 	}
-	pullCtx, cancel := context.WithTimeout(c.Request.Context(), time.Second)
+	pullCtx, cancel := context.WithTimeout(c.Request.Context(), common.HandlerPullTimeout)
 	defer cancel()
 	messages, err := msgQueueEngine.PullMessages(pullCtx, req.MessageCount)
 	if err != nil {

@@ -517,7 +517,14 @@ func (f *failingDeleteMetadataEngine) UpdateMetadata(ctx context.Context, docID 
 // setupServiceTestDB initializes an in-memory SQLite database for service tests.
 func setupServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	return setupServiceTestDBWithDSN(t, ":memory:")
+	// Use a cache=shared in-memory database keyed by the test name (same scheme
+	// as setupConcurrentServiceTestDB). An ordinary ":memory:" SQLite database is a
+	// separate database per connection, so the fire-and-forget ingest-log goroutine
+	// opens a second connection that sees an empty schema and fails with "no such
+	// table". cache=shared lets every connection reuse the migrated schema while
+	// still isolating each test by name.
+	dsn := "file:" + strings.ReplaceAll(t.Name(), "/", "_") + "?mode=memory&cache=shared"
+	return setupServiceTestDBWithDSN(t, dsn)
 }
 
 func setupConcurrentServiceTestDB(t *testing.T) *gorm.DB {
@@ -2320,6 +2327,12 @@ func TestStartParseDocuments_EnqueuesIngestionTask(t *testing.T) {
 	publisher := &recordingTaskPublisher{}
 	svc := testDocumentService(t)
 	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
+	// Inject a deterministic default-lane resolver so the routing assertion is
+	// edition-independent (the community !ee default and the ee default are both
+	// covered by the resolver tests).
+	svc.ingestionTaskSvc.SetTierResolver(func(context.Context, string) (common.Tier, error) {
+		return common.TierDefault, nil
+	})
 	ctx := documentTestContext(t.Context())
 
 	kb, err := svc.kbDAO.GetByID(ctx, db, "kb-1")
@@ -2335,8 +2348,8 @@ func TestStartParseDocuments_EnqueuesIngestionTask(t *testing.T) {
 		t.Fatalf("StartParseDocuments: %v", err)
 	}
 
-	if publisher.subject != "tasks.RAGFLOW" {
-		t.Fatalf("subject = %q, want %q", publisher.subject, "tasks.RAGFLOW")
+	if publisher.subject != common.TaskSubject {
+		t.Fatalf("subject = %q, want %q", publisher.subject, common.TaskSubject)
 	}
 	if len(publisher.messages) != 1 {
 		t.Fatalf("expected 1 published message, got %d", len(publisher.messages))

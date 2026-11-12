@@ -22,6 +22,7 @@ import (
 	"context"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 
@@ -61,6 +62,10 @@ func tenantMemberPermissionEE(ctx context.Context, db *gorm.DB, tenantID string,
 	return nil, 0, false, nil
 }
 
+func (*TenantService) listTenantMembersEE(context.Context, string) ([]*dao.TenantMemberItem, common.ErrorCode, bool, error) {
+	return nil, common.CodeSuccess, false, nil
+}
+
 // recordTenantPermissionChangeEE records nothing: the community edition has no
 // permission audit trail.
 func recordTenantPermissionChangeEE(ctx context.Context, tx *gorm.DB, tenantID, eventType, targetType, targetID, resourceType, resourceID, actionType string, beforePermission, afterPermission int32, beforeData, afterData interface{}) error {
@@ -72,8 +77,8 @@ func resolveTenantInviteRoleEE(*gorm.DB, string) (tenantInviteRole, bool, error)
 	return tenantInviteRole{}, false, nil
 }
 
-// checkTenantInviteEnabledEE leaves the invite switch to the community
-// default.
+// checkTenantInviteEnabledEE leaves tenant invitation permission unrestricted
+// in Community Edition, which does not configure Tenant system-role gates.
 func (*TenantService) checkTenantInviteEnabledEE(context.Context, string) (common.ErrorCode, bool, error) {
 	return common.CodeSuccess, false, nil
 }
@@ -93,6 +98,11 @@ func resolveUserAuthTenant(_ context.Context, _ *entity.User, _ string) (string,
 	return "", nil
 }
 
+// ResolveLoginTenantID leaves tenant selection to the community login path.
+func ResolveLoginTenantID(_ context.Context, _ *entity.User) (string, error) {
+	return "", nil
+}
+
 // LoginChannel is one authentication channel advertised to the login page.
 type LoginChannel struct {
 	Channel     string `json:"channel"`
@@ -104,4 +114,12 @@ type LoginChannel struct {
 // password login.
 func (s *UserService) GetLoginChannels() ([]*LoginChannel, common.ErrorCode, error) {
 	return make([]*LoginChannel, 0), common.CodeSuccess, nil
+}
+
+// defaultTierResolver keeps the community build on a single tier. All tenants
+// share the default lane, which reuses the OSS community queue (TaskSubject), so
+// an OSS split needs no rename and OSS and EE can share one NATS server. Tiering
+// does not otherwise change community behavior.
+func defaultTierResolver(_ context.Context, _ string) (common.Tier, error) {
+	return common.TierDefault, nil
 }
