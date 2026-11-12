@@ -3,7 +3,7 @@ import { useConnectToKnowledge, useRenameFile } from '@/hooks/use-file-request';
 import { TableRowSelection } from '@/interfaces/antd-compat';
 import { IFile } from '@/interfaces/database/file-manager';
 import { ConnectFileToKnowledgeMode } from '@/interfaces/request/file-manager';
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 import { isFolderType } from './util';
 
@@ -86,6 +86,7 @@ export const useHandleConnectToKnowledge = () => {
   const [record, setRecord] = useState<IFile>({} as IFile);
   const [documentIds, setDocumentIds] = useState<string[]>([]);
   const [mode, setMode] = useState<ConnectFileToKnowledgeMode>('replace');
+  const dialogGenerationRef = useRef(0);
 
   const initialValue = useMemo(() => {
     return Array.isArray(record?.kbs_info)
@@ -95,6 +96,7 @@ export const useHandleConnectToKnowledge = () => {
 
   const onConnectToKnowledgeOk = useCallback(
     async (kbsInfo: { kb_id: string; kb_name: string }[]) => {
+      const generation = dialogGenerationRef.current;
       const ret = await connectToKnowledge({
         fileIds: documentIds,
         kbIds: kbsInfo.map((kb) => kb.kb_id),
@@ -102,7 +104,7 @@ export const useHandleConnectToKnowledge = () => {
         kbsInfo,
       });
 
-      if (ret === 0) {
+      if (ret === 0 && dialogGenerationRef.current === generation) {
         hideConnectToKnowledgeModal();
       }
       return ret;
@@ -127,12 +129,20 @@ export const useHandleConnectToKnowledge = () => {
     [showConnectToKnowledgeModal],
   );
 
+  const dismissConnectToKnowledge = useCallback(() => {
+    dialogGenerationRef.current += 1;
+    setDocumentIds([]);
+    setRecord({} as IFile);
+    hideConnectToKnowledgeModal();
+  }, [hideConnectToKnowledgeModal]);
+
   return {
     initialConnectedIds: initialValue,
     connectToKnowledgeLoading: loading,
     onConnectToKnowledgeOk,
     connectToKnowledgeVisible,
     hideConnectToKnowledgeModal,
+    dismissConnectToKnowledge,
     showConnectToKnowledgeModal: handleShowConnectToKnowledgeModal,
   };
 };
