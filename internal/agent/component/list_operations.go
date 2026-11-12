@@ -644,6 +644,9 @@ func toFloat64OK(v any) (float64, bool) {
 		return 0, false
 	}
 	switch x := v.(type) {
+	case json.Number:
+		number, err := toFloat64(x)
+		return number, err == nil
 	case int:
 		return float64(x), true
 	case int64:

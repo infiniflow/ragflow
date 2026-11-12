@@ -39,6 +39,7 @@ package component
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -262,7 +263,7 @@ func operate(state *runtime.CanvasState, oldVal any, op string, param any) (any,
 			return map[string]any{}, ""
 		case bool:
 			return false, ""
-		case int, int64, float64, float32:
+		case int, int64, float64, float32, json.Number:
 			return 0, ""
 		}
 		return nil, ""
@@ -359,36 +360,31 @@ func operate(state *runtime.CanvasState, oldVal any, op string, param any) (any,
 		}
 		return lst[:len(lst)-1], ""
 
-	case "+=":
+	case "+=", "-=", "*=", "/=":
 		pv := resolveParamValue(state, param)
 		if !isNumberish(oldVal) || !isNumberish(pv) {
 			return nil, "ERROR:VARIABLE_NOT_NUMBER or PARAMETER_NOT_NUMBER"
 		}
-		return toFloat64(oldVal) + toFloat64(pv), ""
-
-	case "-=":
-		pv := resolveParamValue(state, param)
-		if !isNumberish(oldVal) || !isNumberish(pv) {
+		oldNumber, oldErr := toFloat64(oldVal)
+		parameterNumber, parameterErr := toFloat64(pv)
+		if oldErr != nil || parameterErr != nil {
 			return nil, "ERROR:VARIABLE_NOT_NUMBER or PARAMETER_NOT_NUMBER"
 		}
-		return toFloat64(oldVal) - toFloat64(pv), ""
-
-	case "*=":
-		pv := resolveParamValue(state, param)
-		if !isNumberish(oldVal) || !isNumberish(pv) {
-			return nil, "ERROR:VARIABLE_NOT_NUMBER or PARAMETER_NOT_NUMBER"
+		// Arithmetic retains its existing float64 semantics. The exact JSON
+		// representation is preserved only when values are stored or moved.
+		switch op {
+		case "+=":
+			return oldNumber + parameterNumber, ""
+		case "-=":
+			return oldNumber - parameterNumber, ""
+		case "*=":
+			return oldNumber * parameterNumber, ""
+		case "/=":
+			if parameterNumber == 0 {
+				return nil, "ERROR:DIVIDE_BY_ZERO"
+			}
+			return oldNumber / parameterNumber, ""
 		}
-		return toFloat64(oldVal) * toFloat64(pv), ""
-
-	case "/=":
-		pv := resolveParamValue(state, param)
-		if !isNumberish(oldVal) || !isNumberish(pv) {
-			return nil, "ERROR:VARIABLE_NOT_NUMBER or PARAMETER_NOT_NUMBER"
-		}
-		if toFloat64(pv) == 0 {
-			return nil, "ERROR:DIVIDE_BY_ZERO"
-		}
-		return toFloat64(oldVal) / toFloat64(pv), ""
 	}
 	return nil, "ERROR:UNKNOWN_OPERATOR"
 }
@@ -481,7 +477,7 @@ func goKind(v any) string {
 	switch v.(type) {
 	case int, int64, int32:
 		return "int"
-	case float64, float32:
+	case float64, float32, json.Number:
 		return "float"
 	case string:
 		return "string"
@@ -505,28 +501,33 @@ func isNumberish(v any) bool {
 		return false
 	}
 	switch v.(type) {
-	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64:
+	case int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64, float32, float64, json.Number:
 		return true
 	}
 	return false
 }
 
-// toFloat64 converts any numeric value to float64. Callers must guard
-// with isNumberish first.
-func toFloat64(v any) float64 {
+// toFloat64 converts numeric operands using the existing float64 arithmetic
+// contract. Callers guard with isNumberish and handle JSON conversion errors.
+func toFloat64(v any) (float64, error) {
 	switch x := v.(type) {
+	case json.Number:
+		if !json.Valid([]byte(x)) {
+			return 0, fmt.Errorf("invalid JSON number %q", x)
+		}
+		return x.Float64()
 	case int:
-		return float64(x)
+		return float64(x), nil
 	case int64:
-		return float64(x)
+		return float64(x), nil
 	case int32:
-		return float64(x)
+		return float64(x), nil
 	case float64:
-		return x
+		return x, nil
 	case float32:
-		return float64(x)
+		return float64(x), nil
 	}
-	return 0
+	return 0, nil
 }
 
 func init() {

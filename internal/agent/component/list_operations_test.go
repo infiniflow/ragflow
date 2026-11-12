@@ -17,6 +17,7 @@
 package component
 
 import (
+	"encoding/json"
 	"reflect"
 	"sort"
 	"strings"
@@ -599,5 +600,33 @@ func TestListOperations_NonListInputStillErrors(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "input is not a list") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+// TestListOperations_RestoredNumericSort keeps numeric order after checkpoints.
+func TestListOperations_RestoredNumericSort(t *testing.T) {
+	const id = json.Number("11099848653006015581")
+	for _, desc := range []bool{false, true} {
+		var state canvas.CanvasState
+		if err := json.Unmarshal([]byte(`{"outputs":{"source":{"xs":[2,11099848653006015581]}}}`), &state); err != nil {
+			t.Fatal(err)
+		}
+		order := "asc"
+		want := []any{float64(2), id}
+		if desc {
+			order = "desc"
+			want = []any{id, float64(2)}
+		}
+		c, err := NewListOperationsComponent(map[string]any{"query": "source@xs", "operations": "sort", "sort_method": order})
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, err := c.Invoke(canvas.WithState(t.Context(), &state), nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(out["result"], want) {
+			t.Fatalf("%s sorted=%#v, want %#v", order, out["result"], want)
+		}
 	}
 }
