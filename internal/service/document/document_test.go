@@ -517,7 +517,14 @@ func (f *failingDeleteMetadataEngine) UpdateMetadata(ctx context.Context, docID 
 // setupServiceTestDB initializes an in-memory SQLite database for service tests.
 func setupServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	return setupServiceTestDBWithDSN(t, ":memory:")
+	// Use a cache=shared in-memory database keyed by the test name (same scheme
+	// as setupConcurrentServiceTestDB). An ordinary ":memory:" SQLite database is a
+	// separate database per connection, so the fire-and-forget ingest-log goroutine
+	// opens a second connection that sees an empty schema and fails with "no such
+	// table". cache=shared lets every connection reuse the migrated schema while
+	// still isolating each test by name.
+	dsn := "file:" + strings.ReplaceAll(t.Name(), "/", "_") + "?mode=memory&cache=shared"
+	return setupServiceTestDBWithDSN(t, dsn)
 }
 
 func setupConcurrentServiceTestDB(t *testing.T) *gorm.DB {

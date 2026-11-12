@@ -2594,6 +2594,12 @@ func (e *recordingIngestLogEmitter) last() common.IngestionLog {
 	return e.logs[len(e.logs)-1]
 }
 
+func (e *recordingIngestLogEmitter) count() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return len(e.logs)
+}
+
 // TestIngestionTaskServiceMarkFailedCarriesReason verifies that the failure
 // reason supplied by the ingestor reaches the emitted lifecycle event's
 // ErrorInfo, instead of being dropped (the previous gap: the run ledger got the
@@ -2612,6 +2618,11 @@ func TestIngestionTaskServiceMarkFailedCarriesReason(t *testing.T) {
 	const reason = "boom: nil deref"
 	if err := svc.MarkFailed(ctx, "task-1", reason); err != nil {
 		t.Fatalf("MarkFailed failed: %v", err)
+	}
+	// The emit is fire-and-forget: it runs on a detached goroutine, so wait for
+	// it to actually land before asserting on the recorded log.
+	if !waitForEmitCount(emitter.count, 1) {
+		t.Fatalf("ingest log not emitted by background goroutine within timeout")
 	}
 	got := emitter.last()
 	if got.ErrorInfo != reason {
@@ -2668,6 +2679,12 @@ func TestPrepareValidatedRunEmitsRunningEventWithFreshClaimTime(t *testing.T) {
 		t.Fatalf("load task: %v", err)
 	}
 	svc.PrepareValidatedRun(ctx, task)
+
+	// The emit is fire-and-forget: it runs on a detached goroutine, so wait for
+	// it to actually land before scanning the recorded logs.
+	if !waitForEmitCount(emitter.count, 1) {
+		t.Fatalf("ingest log not emitted by background goroutine within timeout")
+	}
 
 	var running common.IngestionLog
 	found := false
