@@ -1580,6 +1580,26 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       dataSourceFieldInitialCursor: '初始游标',
       dataSourceFieldMaxPages: '最大页数',
       dataSourceFieldRequestDelay: '请求延迟（秒）',
+      restApiWindowEnabled: '启用动态时间窗口',
+      restApiWindowStartParam: '起始时间参数名',
+      restApiWindowEndParam: '截止时间参数名',
+      restApiWindowInitialStart: '首次同步或补扫起点',
+      restApiWindowInitialStartTip:
+        '填写带时区的 RFC3339 时间。修改起点或查询范围后，保存会从该起点补扫并按记录 ID 去重。',
+      restApiWindowRequestTimeFormat: '请求时间格式',
+      restApiWindowResponseTimeFormat: '记录时间格式',
+      restApiWindowMaxSeconds: '最长窗口（秒）',
+      restApiWindowMaxSecondsTip:
+        '按上游允许的最大查询跨度分段，留空时使用完整时间范围。',
+      restApiWindowPositiveInteger: '请填写正整数。',
+      restApiWindowPageParam: '页码参数名',
+      restApiWindowPageSizeParam: '每页大小参数名',
+      restApiWindowHasNextPage: '是否有下一页的字段',
+      restApiWindowHasNextPageTip:
+        '可填写响应顶层的布尔字段，例如 hasNext。留空时使用分页默认规则。',
+      restApiWindowIdRequired: '启用动态时间窗口时，请填写稳定的记录 ID 字段。',
+      restApiWindowTimestampRequired:
+        '启用动态时间窗口时，请填写与查询口径一致的记录时间字段。',
       dataSourceFieldPollTimestampField: '轮询时间戳字段',
       dataSourceFieldRequestBody: '请求体（POST）JSON',
       dataSourceFieldConfluenceUsername: 'Confluence 用户名',
