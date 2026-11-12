@@ -43,7 +43,7 @@ export function formatTime(date: ConfigType) {
   if (!date) {
     return '';
   }
-  return parseDate(date).format('HH:mm:ss');
+  return dayjs(date).format('HH:mm:ss');
 }
 
 export function today() {
