@@ -2,6 +2,9 @@
 sidebar_position: 8
 title: Improve Agent Response Time
 slug: /accelerate_agent_question_answering
+sidebar_custom_props: {
+  categoryIcon: LucideGauge
+}
 ---
 
 # Improve Agent Response Time
