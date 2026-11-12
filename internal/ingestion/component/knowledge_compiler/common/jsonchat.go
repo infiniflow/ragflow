@@ -132,17 +132,20 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 		if message, ok := failureReporter.FailureMessage(attempt+1, maxRetries+1, delay, lastErr, false); ok {
 			runtime.ReportProgressMessage(ctx, "Compiler", message)
 		}
+		// Compute the capped, jittered delay for the current attempt
+		// (1-indexed: attempt 0 -> baseDelay) before sleeping, so the first
+		// retry is also clamped to the 1-minute ceiling.
+		d := appcommon.ExponentialBackoff(baseDelay, time.Minute, attempt+1)
 		appcommon.Info("knowledge_compiler: GenJSON attempt failed, retrying",
-			zap.Int("attempt", attempt), zap.Duration("delay", delay),
+			zap.Int("attempt", attempt), zap.Duration("delay", d),
 			zap.Error(lastErr))
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(delay + time.Duration(rand.Int63n(int64(delay/2)+1))):
+		case <-time.After(d + time.Duration(rand.Int63n(int64(d/2)+1))):
 			// Jittered backoff so concurrent GenJSON jobs (parallel wiki/plan
 			// batches) do not back off in lockstep and pile up on the provider.
 		}
-		delay = appcommon.ExponentialBackoff(baseDelay, time.Minute, attempt+2)
 	}
 	return nil, lastErr
 }
