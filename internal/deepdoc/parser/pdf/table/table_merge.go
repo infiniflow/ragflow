@@ -153,8 +153,8 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 			// block to the merged grid.
 			cells := tables[jt.idx].Cells
 			grid := tables[jt.idx].Grid
-			if anchorHeaderOK && candidateHeaderOK &&
-				candidateHeader.text != "" && candidateHeader.text == anchorHeader.text {
+			if anchorHeaderOK && candidateHeaderOK && candidateHeader.hasText &&
+				candidateHeader.text == anchorHeader.text {
 				cells, grid = dropTableHeaderRows(tables[jt.idx], candidateHeader.rows)
 			}
 			anchor.Cells = append(anchor.Cells, cells...)
@@ -317,11 +317,14 @@ func maxBottomOnPage(positions []pdf.Position, pg int) float64 {
 }
 
 // tableHeaderSignature is the normalized header block used by the cross-page
-// merge guard. rows is the leading header-row count used to produce text.
+// merge guard. rows and columns preserve the block's shape; text includes empty
+// cells and row boundaries so two headers with the same visible labels but
+// different layouts are not treated as repeats.
 type tableHeaderSignature struct {
 	rows    int
 	columns int
 	text    string
+	hasText bool
 }
 
 // tableHeaderOf derives a comparable header signature from a table's grid.
@@ -334,41 +337,51 @@ func tableHeaderOf(item *pdf.TableItem) (tableHeaderSignature, bool) {
 	}
 	rows := item.HeaderRows
 	columns := 0
-	values := make([]string, 0, rows*4)
+	hasText := false
+	headerRows := make([]string, 0, rows)
 	for _, row := range item.Grid[:rows] {
 		if len(row) > columns {
 			columns = len(row)
 		}
-		for _, cell := range row {
+		cells := make([]string, len(row))
+		for i, cell := range row {
 			if strings.Contains(cell.Label, "covered") {
 				continue
 			}
-			if value := normalizeTableHeaderCell(cell.Text); value != "" {
-				values = append(values, value)
+			value := normalizeTableHeaderCell(cell.Text)
+			if value != "" {
+				hasText = true
 			}
+			cells[i] = value
 		}
+		headerRows = append(headerRows, strings.Join(cells, "\x1f"))
 	}
 	return tableHeaderSignature{
 		rows:    rows,
 		columns: columns,
-		text:    strings.Join(values, "\x1f"),
+		text:    strings.Join(headerRows, "\x1e"),
+		hasText: hasText,
 	}, true
 }
 
 // canMergeTableHeader rejects a geometry-only cross-page candidate when both
-// tables expose a header and those headers disagree. When one side has no
-// usable header text, the column count must still match.
+// tables expose a header and their shape or normalized content disagree. Empty
+// cells and row boundaries are part of the signature, so a header with an
+// inserted empty column is not accepted as a repeated header.
 func canMergeTableHeader(anchor tableHeaderSignature, anchorOK bool, candidate tableHeaderSignature, candidateOK bool) bool {
 	if !anchorOK || !candidateOK {
 		return true
 	}
-	if anchor.columns == 0 || candidate.columns == 0 {
+	if anchor.rows != candidate.rows || anchor.columns != candidate.columns {
+		return false
+	}
+	if anchor.hasText != candidate.hasText {
+		return false
+	}
+	if !anchor.hasText {
 		return true
 	}
-	if anchor.text != "" && candidate.text != "" {
-		return anchor.text == candidate.text
-	}
-	return anchor.columns == candidate.columns
+	return anchor.text == candidate.text
 }
 
 func normalizeTableHeaderCell(text string) string {

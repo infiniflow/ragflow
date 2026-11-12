@@ -205,6 +205,10 @@ func (p *Parser) processOneTable(ctx context.Context, pageImg image.Image, boxes
 	// overlay). The DeepDoc builder is the identity function, so OSS keeps its
 	// current behavior unchanged.
 	grid = tb.FinalizeGrid(grid, boxInCrop)
+	// An empty leading row must not hide the real header row from the merge
+	// guard. ConstructTable applies the same cleanup before rendering, so
+	// normalizing here also keeps HeaderRows aligned with the rendered grid.
+	grid = tbl.DropAllEmptyRows(grid)
 	headerRows := 0
 	if len(grid) > 0 {
 		headerRows = leadingHeaderRows(tbl.HeaderSetWithBlockType(grid, boxInCrop))

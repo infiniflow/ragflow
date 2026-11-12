@@ -62,6 +62,28 @@ func TestMergeTablesAcrossPagesHeaderlessFallsBackToGeometry(t *testing.T) {
 	}
 }
 
+func TestMergeTablesAcrossPagesRejectsEqualHeaderTextWithDifferentColumnLayout(t *testing.T) {
+	anchor := headerTable([]string{"A", "B"}, []string{"1", "2"})
+	candidate := headerTable([]string{"A", "", "B"}, []string{"3", "", "4"})
+	candidate.Positions[0].PageNumbers = []int{1}
+
+	merged := MergeTablesAcrossPages([]pdf.TableItem{anchor, candidate}, nil, map[int]float64{0: 70})
+	if len(merged) != 2 {
+		t.Fatalf("equal header text with different columns must not merge, got %d tables", len(merged))
+	}
+}
+
+func TestMergeTablesAcrossPagesRejectsDifferentEmptyHeaderCellLayout(t *testing.T) {
+	anchor := headerTable([]string{"A", "B", ""}, []string{"1", "2", ""})
+	candidate := headerTable([]string{"A", "", "B"}, []string{"3", "", "4"})
+	candidate.Positions[0].PageNumbers = []int{1}
+
+	merged := MergeTablesAcrossPages([]pdf.TableItem{anchor, candidate}, nil, map[int]float64{0: 70})
+	if len(merged) != 2 {
+		t.Fatalf("different empty-cell layout must not merge, got %d tables", len(merged))
+	}
+}
+
 func TestMergeTablesAcrossPagesRejectsHeaderColumnMismatch(t *testing.T) {
 	anchor := headerTable([]string{"", ""}, []string{"1", "2"})
 	candidate := headerTable([]string{"", ""}, []string{"3", "4"})
