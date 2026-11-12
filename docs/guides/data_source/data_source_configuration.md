@@ -4,7 +4,7 @@ title: Data Source Configuration
 sidebar_label: Configuration
 slug: /add_data_source/data_source_configuration
 sidebar_custom_props: {
-  categoryIcon: LucideServer
+  categoryIcon: LucideCog
 }
 ---
 
