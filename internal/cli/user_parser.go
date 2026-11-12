@@ -1248,14 +1248,14 @@ func (p *Parser) parseAPIDeleteGroupModel() (*Command, error) {
 		p.nextToken()
 	}
 
-	cmd := NewCommand("api_delete_group_model")
-	if common.IsCompositeModelName(modelNameOrID) {
-		cmd.Params["composite_model_name"] = modelNameOrID
-	} else if common.IsUUID(modelNameOrID) {
-		cmd.Params["model_id"] = modelNameOrID
-	} else {
-		return nil, fmt.Errorf("invalid format of model name or ID: %s", modelNameOrID)
+	// Removal is scoped by group and model, so a bare model ID (which cannot be
+	// resolved without a provider/instance) is rejected at parse time.
+	if !common.IsCompositeModelName(modelNameOrID) {
+		return nil, fmt.Errorf("invalid format of model name, expected 'model@instance@provider': %s", modelNameOrID)
 	}
+
+	cmd := NewCommand("api_delete_group_model")
+	cmd.Params["composite_model_name"] = modelNameOrID
 	cmd.Params["group_name"] = groupName
 	return cmd, nil
 }

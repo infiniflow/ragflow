@@ -98,6 +98,7 @@ func (h *UserHandler) GetLoginChannelsDeprecated(c *gin.Context) {
 	common.RespondSuccessList(c, channels, "success")
 }
 func (h *ProviderHandler) CreateModelGroup(c *gin.Context) { eeNotImplemented(c, "CreateModelGroup") }
+func (h *ProviderHandler) ListModelGroups(c *gin.Context)  { eeNotImplemented(c, "ListModelGroups") }
 func (h *ProviderHandler) DeleteModelGroup(c *gin.Context) { eeNotImplemented(c, "DeleteModelGroup") }
 func (h *ProviderHandler) ShowModelGroup(c *gin.Context)   { eeNotImplemented(c, "ShowModelGroup") }
 func (h *ProviderHandler) AddModelToGroup(c *gin.Context)  { eeNotImplemented(c, "AddModelToGroup") }

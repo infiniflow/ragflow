@@ -660,9 +660,24 @@ func (s *ModelFactory) resolveModelIdentity(ctx context.Context, requestedType e
 	if tenantID == "" {
 		return nil, fmt.Errorf("%w: tenant id is required", errModelConfigUnavailable)
 	}
-	model, err := s.modelDAO.GetByID(ctx, dao.DB, modelRef)
-	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
+	var model *entity.TenantModel
+	var err error
+	if groupID, ok := common.ParseGroupModelRef(modelRef); ok {
+		// A gp-<group_id> reference resolves through the group's failover
+		// picker instead of a single saved row. Enterprise-only; the community
+		// stub rejects the reference.
+		model, err = s.pickGroupModel(ctx, tenantID, groupID, requestedType)
+		if err != nil {
+			return nil, err
+		}
+		if model == nil {
+			return nil, fmt.Errorf("%w: model group %q has no available model", errModelConfigUnavailable, modelRef)
+		}
+	} else {
+		model, err = s.modelDAO.GetByID(ctx, dao.DB, modelRef)
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, err
+		}
 	}
 	owner, err := s.tenantOwnerMembership(ctx, tenantID)
 	if err != nil {

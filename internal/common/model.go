@@ -51,6 +51,27 @@ func (m *ModelUsage) String() string {
 	return fmt.Sprintf("%#v", m)
 }
 
+// GroupModelRefPrefix marks a model reference that points at a model group
+// instead of a single model: gp-<group_id>. Stored in the tenant_*id model
+// configuration columns (widened to 35 chars to fit the prefix), it makes a
+// model slot resolve through the group's failover picker at call time.
+const GroupModelRefPrefix = "gp-"
+
+// ParseGroupModelRef recognizes a group reference in model-ref position and
+// returns the embedded group id. A gp- ref whose remainder is not a group id
+// is not a group reference; it fails resolution downstream as an invalid
+// model ref.
+func ParseGroupModelRef(modelRef string) (string, bool) {
+	if !strings.HasPrefix(modelRef, GroupModelRefPrefix) {
+		return "", false
+	}
+	groupID := strings.TrimPrefix(modelRef, GroupModelRefPrefix)
+	if !IsUUID(groupID) {
+		return "", false
+	}
+	return groupID, true
+}
+
 func ParseCompositeModelName(compositeName string) (modelName, instanceName, providerName string, err error) {
 	parts := strings.Split(compositeName, "@")
 	switch len(parts) {
