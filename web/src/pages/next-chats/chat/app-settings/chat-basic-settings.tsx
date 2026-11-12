@@ -51,6 +51,7 @@ export default function ChatBasicSetting({
       )}
       <LlmSettingFieldItems
         prefix={llmSettingPrefix}
+        enabledPrefix={prefix}
         llmId={prefixName(prefix, 'llm_id')}
         showCollapse
         collapseOpen={collapseOpen}
