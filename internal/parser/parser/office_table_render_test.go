@@ -1460,29 +1460,38 @@ func TestDetectHeaderRow_MergedHeaderOverWideBody(t *testing.T) {
 // header row is narrower than the body, and the recovery scan must not
 // promote the first data row.
 func TestDetectHeaderRow_NarrowPlainHeaderOverWideBody(t *testing.T) {
-	data := newTestXLSX(t, func(f *excelize.File) {
-		bold := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
-		for i, hdr := range []string{"Item", "Cat", "Bob"} {
-			mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), 1), hdr)
-		}
-		mustSetCellStyle(t, f, "Sheet1", "A1", "C1", bold)
-		for r := 2; r <= 10; r++ {
-			for c, v := range []string{"item", "cat", "bob", "x", "y", "z"} {
-				mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), v)
+	for _, merge := range [][2]string{{}, {"A2", "A3"}, {"B2", "C2"}} {
+		t.Run(merge[0]+merge[1], func(t *testing.T) {
+			data := newTestXLSX(t, func(f *excelize.File) {
+				bold := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+				for i, hdr := range []string{"Item", "Cat", "Bob"} {
+					mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), 1), hdr)
+				}
+				mustSetCellStyle(t, f, "Sheet1", "A1", "C1", bold)
+				for r := 2; r <= 10; r++ {
+					for c, v := range []string{"item", "cat", "bob", "x", "y", "z"} {
+						mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), v)
+					}
+				}
+				if merge[0] != "" {
+					if err := f.MergeCell("Sheet1", merge[0], merge[1]); err != nil {
+						t.Fatal(err)
+					}
+				}
+			})
+			p, _ := NewXLSXParser("")
+			res := p.ParseWithResult(t.Context(), "narrow-header.xlsx", data)
+			if res.Err != nil {
+				t.Fatalf("ParseWithResult: %v", res.Err)
 			}
-		}
-	})
-	p, _ := NewXLSXParser("")
-	res := p.ParseWithResult(t.Context(), "narrow-header.xlsx", data)
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
-	}
-	text := spreadsheetText(res)
-	if !strings.Contains(text, "<th>Item</th>") {
-		t.Fatalf("narrow row-1 header must be kept:\n%s", text)
-	}
-	if strings.Contains(text, "<th>item</th>") {
-		t.Fatalf("first data row must not be promoted to header:\n%s", text)
+			text := spreadsheetText(res)
+			if !strings.Contains(text, "<th>Item</th>") {
+				t.Fatalf("narrow row-1 header must be kept:\n%s", text)
+			}
+			if strings.Contains(text, "<th>item</th>") {
+				t.Fatalf("first data row must not be promoted to header:\n%s", text)
+			}
+		})
 	}
 }
 
@@ -1674,38 +1683,49 @@ func TestDetectHeaderRow_BlankRowBreaksRecovery(t *testing.T) {
 }
 
 // TestDetectHeaderRow_MergedHeaderBelowMetadata pins merge-aware recovery:
-// a narrow styled metadata row defers, and the merged header row directly
-// below it is still reachable — merge extents count toward the row width.
+// a single metadata row is ambiguous, while two narrow metadata rows allow
+// recovery of a merged header — merge extents count toward the row width.
 func TestDetectHeaderRow_MergedHeaderBelowMetadata(t *testing.T) {
-	data := newTestXLSX(t, func(f *excelize.File) {
-		bold := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
-		mustSetCell(t, f, "Sheet1", "A1", "Stavba:")
-		mustSetCell(t, f, "Sheet1", "B1", "DSP MILLHAUS")
-		mustSetCellStyle(t, f, "Sheet1", "A1", "B1", bold)
-		for i, hdr := range []string{"Item", "Cat", "Bob", "x", "y", "z"} {
-			mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), 2), hdr)
-		}
-		for _, pair := range [][2]string{{"A2", "B2"}, {"C2", "D2"}, {"E2", "F2"}} {
-			if err := f.MergeCell("Sheet1", pair[0], pair[1]); err != nil {
-				t.Fatalf("merge: %v", err)
+	for _, metadataRows := range []int{1, 2} {
+		t.Run([]string{"", "single", "block"}[metadataRows], func(t *testing.T) {
+			data := newTestXLSX(t, func(f *excelize.File) {
+				bold := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+				for r := 1; r <= metadataRows; r++ {
+					mustSetCell(t, f, "Sheet1", cellRef('A', r), "Stavba:")
+					mustSetCell(t, f, "Sheet1", cellRef('B', r), "DSP MILLHAUS")
+					mustSetCellStyle(t, f, "Sheet1", cellRef('A', r), cellRef('B', r), bold)
+				}
+				headerRow := metadataRows + 1
+				for i, hdr := range []string{"Item", "Cat", "Bob", "x", "y", "z"} {
+					mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), headerRow), hdr)
+				}
+				for _, pair := range [][2]rune{{'A', 'B'}, {'C', 'D'}, {'E', 'F'}} {
+					if err := f.MergeCell("Sheet1", cellRef(pair[0], headerRow), cellRef(pair[1], headerRow)); err != nil {
+						t.Fatalf("merge: %v", err)
+					}
+				}
+				for r := headerRow + 1; r <= 12; r++ {
+					for c, v := range []string{"item", "cat", "bob", "x", "y", "z"} {
+						mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), v)
+					}
+				}
+			})
+			p, _ := NewXLSXParser("")
+			res := p.ParseWithResult(t.Context(), "merged-below-metadata.xlsx", data)
+			if res.Err != nil {
+				t.Fatalf("ParseWithResult: %v", res.Err)
 			}
-		}
-		for r := 3; r <= 12; r++ {
-			for c, v := range []string{"item", "cat", "bob", "x", "y", "z"} {
-				mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), v)
+			text := spreadsheetText(res)
+			if metadataRows == 1 {
+				if !strings.Contains(text, "<th>Stavba:</th>") || strings.Contains(text, "<th colspan=\"2\">Item</th>") {
+					t.Fatalf("single metadata row must retain the conservative fallback:\n%s", text)
+				}
+			} else if !strings.Contains(text, "<th colspan=\"2\">Item</th>") {
+				t.Fatalf("merged header below a metadata block must be recovered:\n%s", text)
 			}
-		}
-	})
-	p, _ := NewXLSXParser("")
-	res := p.ParseWithResult(t.Context(), "merged-below-metadata.xlsx", data)
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
-	}
-	text := spreadsheetText(res)
-	if !strings.Contains(text, "<th colspan=\"2\">Item</th>") {
-		t.Fatalf("merged row-2 header below metadata must be recovered:\n%s", text)
-	}
-	if strings.Contains(text, "<th>item</th>") {
-		t.Fatalf("first data row must not be promoted to header:\n%s", text)
+			if strings.Contains(text, "<th>item</th>") {
+				t.Fatalf("first data row must not be promoted to header:\n%s", text)
+			}
+		})
 	}
 }

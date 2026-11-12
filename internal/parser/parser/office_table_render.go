@@ -1098,7 +1098,7 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 		// count only their merge masters), not a metadata preamble. Recovery
 		// therefore needs at least one more narrow row between the candidate
 		// and the recovered row — a metadata block is a run of narrow rows.
-		for k := bestCandidate; k < wideScan; k++ {
+		for k := bestCandidate + 1; k < wideScan; k++ {
 			row := records[k]
 			ne := width(k)
 			// Accept rows within ±2 of the median data width, but reject rows
@@ -1107,22 +1107,10 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 			if ne < medWidth-2 || ne > medWidth+2 || rowIsNarrow(ne, medWidth) {
 				continue
 			}
-			// The row directly below the deferred candidate is only a header
-			// when it carries merges — a merge is a structural header signal.
-			// Without one it is the first data row and the narrow candidate
-			// is the real header (a plain narrow header over a wide body).
-			if k == bestCandidate {
-				merged := false
-				for _, m := range ranges {
-					if m.sr == k+1 {
-						merged = true
-						break
-					}
-				}
-				if !merged {
-					continue
-				}
-			}
+			// The row directly below the deferred candidate is not enough
+			// to distinguish a header from the first data row, even with merges.
+			// Recovery requires another narrow metadata row before this row;
+			// otherwise the narrow candidate remains the real header.
 			// The recovered row must close a contiguous narrow metadata block:
 			// a blank or body-width row between the deferred candidate and
 			// here ends the run, making this row part of a later block (a
