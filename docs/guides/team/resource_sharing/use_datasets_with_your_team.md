@@ -2,6 +2,9 @@
 sidebar_position: 2
 sidebar_label: Use Datasets with Your Team
 title: Use Datasets with Your Team
+sidebar_custom_props: {
+  categoryIcon: LucideDatabaseZap
+}
 ---
 
 # Use Datasets with Your Team

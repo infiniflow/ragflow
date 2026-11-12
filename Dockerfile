@@ -180,6 +180,14 @@ RUN --mount=type=bind,source=.git,target=/ragflow/.git \
 
 
 
+# Native static-lib cache supplied by CI as a named build context
+# (--build-context native-libs=<host cache dir>). Named contexts take priority
+# over stages, so the host cache wins when passed. With no context this empty
+# stage keeps go-builder's bind mount valid and build.sh falls back to its
+# auto-download path — local builds and the GitHub-hosted release builds have
+# no mounted cache.
+FROM scratch AS native-libs
+
 # ── go-builder stage ──
 FROM runner-${TARGETARCH} AS go-builder
 USER root
@@ -232,25 +240,51 @@ COPY Dockerfile ./
 
 # ONNX Runtime static archives are provisioned by build.sh from the versioned
 # user cache at ONNXRUNTIME_STATIC_PREFIX (${RAGFLOW_NATIVE_LIBS_DIR:-$HOME/
-# ragflow-native-libs}/onnxruntime/static_lib). There is NO /opt pre-bake: on CI
-# the host cache is mounted in at build time, and for the product image build
-# (where no host cache is mounted) build.sh falls back to _ensure_native_libs_installed,
-# which runs `uv run tools/scripts/download_dev_deps.py`. That downloader fetches
-# the native archives on demand and self-creates its deps/ workdir when absent
-# (see download_dev_deps.py::ensure_deps_dir), so it no longer crashes on a bare
+# ragflow-native-libs}/onnxruntime/static_lib). There is NO /opt pre-bake: CI
+# supplies the host cache as a named build context (--build-context
+# native-libs=<dir>), and builds without a host cache let build.sh fall back to
+# _ensure_native_libs_installed, which runs `uv run
+# tools/scripts/download_dev_deps.py`. That downloader fetches the native
+# archives on demand and self-creates its deps/ workdir when absent (see
+# download_dev_deps.py::ensure_deps_dir), so it no longer crashes on a bare
 # go-builder checkout. These .a files are consumed at link time only and do NOT
 # enter the final image (only the compiled /ragflow/bin is COPY --from=go-builder).
 # ARG ORT_VERSION stays because build.sh's check_ort_version_consistency greps it
 # to cross-check the pinned ORT release against internal/common/environments.go.
 ARG ORT_VERSION=1.29.0
 
+# CI sets this to 1 so a missing --build-context fails instead of silently
+# falling back to downloading the native archives from GitHub.
+ARG NATIVE_LIBS_REQUIRED=0
+
 RUN git config --global safe.directory "*" && \
     cd /ragflow && ./build.sh --cpp
 
+# type=bind is read-only by default, but a partial cache is fine: build.sh fills
+# any missing version-keyed archive via its controlled auto-download into
+# RAGFLOW_NATIVE_LIBS_DIR. rw lets that downloader complete the cache inside
+# this RUN. Writes are discarded when the RUN finishes and never enter the image
+# layer; the named context is a copy of the host dir, so the runner's cache is
+# unaffected. Only /ragflow/bin is copied into the production stage.
 RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod,sharing=locked \
     --mount=type=cache,id=ragflow_gobuild,target=/root/.cache/gobuild \
-    GOMODCACHE=/root/.cache/gomod GOCACHE=/root/.cache/gobuild \
-    git config --global safe.directory "*" && \
+    --mount=type=bind,from=native-libs,target=/ragflow/.native-libs,rw \
+    set -euo pipefail; \
+    export GOMODCACHE=/root/.cache/gomod GOCACHE=/root/.cache/gobuild; \
+    git config --global safe.directory "*"; \
+    NATIVE_LIBS_CONTEXT_PASSED=1; \
+    for lib in office_oxide pdfium-static pdf_oxide onnxruntime; do \
+      [ -d "/ragflow/.native-libs/${lib}" ] || NATIVE_LIBS_CONTEXT_PASSED=0; \
+    done; \
+    if [ "${NATIVE_LIBS_CONTEXT_PASSED}" = "1" ]; then \
+      export RAGFLOW_NATIVE_LIBS_DIR=/ragflow/.native-libs; \
+    elif [ "${NATIVE_LIBS_REQUIRED:-0}" = "1" ]; then \
+      echo "ERROR: --build-context native-libs=<host cache dir> was not passed." >&2; \
+      echo "       Re-run with the native static-lib cache from the build host." >&2; \
+      exit 1; \
+    else \
+      export RAGFLOW_NATIVE_LIBS_DIR=/root/ragflow-native-libs; \
+    fi; \
     ./build.sh --go
 
 

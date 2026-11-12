@@ -55,10 +55,7 @@
                         },
                         "pdf": {
                             "enable_multi_column": true,
-                            "parse_method": "DeepDOC",
-                            "suffix": [
-                                "pdf"
-                            ]
+                            "parse_method": "DeepDOC"
                         }
                     }
                 },

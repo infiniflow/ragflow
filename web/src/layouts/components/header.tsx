@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   EnterpriseHeaderPlanBadge,
+  EnterpriseHeaderTenantSwitcher,
   EnterpriseHeaderTicketsLink,
   EnterpriseHeaderUpgradeBadge,
 } from '@/ee/layouts/components/header-enterprise';
@@ -87,6 +88,7 @@ export function Header({
             >
               <img src={'/logo.svg'} alt="RAGFlow logo" className="size-10" />
             </Link>
+            <EnterpriseHeaderTenantSwitcher isCompact={isCompact} />
             <EnterpriseHeaderUpgradeBadge />
           </div>
         </div>

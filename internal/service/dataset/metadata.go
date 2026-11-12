@@ -27,7 +27,7 @@ func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, datas
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, fmt.Errorf("document %s not found in dataset %s", documentID, datasetID)
 		}
-		return nil, common.CodeServerError, errors.New("database operation failed")
+		return nil, common.CodeServerError, fmt.Errorf("database operation failed: %w", err)
 	}
 
 	metadata, ok := req["metadata"]
@@ -42,13 +42,13 @@ func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, datas
 	parserConfig["metadata"] = metadata
 	kb, kbErr := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if kbErr != nil {
-		return nil, common.CodeServerError, errors.New("database operation failed")
+		return nil, common.CodeServerError, fmt.Errorf("database operation failed: %w", kbErr)
 	}
 	if kb == nil {
-		return nil, common.CodeServerError, errors.New("database operation failed")
+		return nil, common.CodeServerError, errors.New("dataset not found")
 	}
 	if _, tenantErr := d.tenantDAO.GetByID(ctx, dao.DB, kb.TenantID); tenantErr != nil {
-		return nil, common.CodeServerError, errors.New("database operation failed")
+		return nil, common.CodeServerError, fmt.Errorf("database operation failed: %w", tenantErr)
 	}
 	llmID := ""
 	if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, kb.TenantID), entity.ModelTypeChat); modelErr == nil {
@@ -57,12 +57,12 @@ func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, datas
 	parserConfig = service.ApplyComponentScopedParserConfig(parserConfig, llmID)
 
 	if err = d.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {
-		return nil, common.CodeServerError, errors.New("database operation failed")
+		return nil, common.CodeServerError, fmt.Errorf("database operation failed: %w", err)
 	}
 
 	doc, err = d.documentDAO.GetByID(ctx, dao.DB, doc.ID)
 	if err != nil {
-		return nil, common.CodeServerError, errors.New("database operation failed")
+		return nil, common.CodeServerError, fmt.Errorf("database operation failed: %w", err)
 	}
 	return doc, common.CodeSuccess, nil
 }
@@ -81,7 +81,7 @@ func (d *DatasetService) GetMetadataConfig(ctx context.Context, datasetID string
 			code, permissionErr := permissionresponse.Normalize(permission.ErrResourceNotFound)
 			return nil, code, permissionErr
 		}
-		return nil, common.CodeServerError, errors.New("database operation failed")
+		return nil, common.CodeServerError, fmt.Errorf("database operation failed: %w", err)
 	}
 	if kb == nil {
 		code, permissionErr := permissionresponse.Normalize(permission.ErrResourceNotFound)
@@ -112,14 +112,14 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID str
 			code, permissionErr := permissionresponse.Normalize(permission.ErrResourceNotFound)
 			return nil, code, permissionErr
 		}
-		return nil, common.CodeServerError, errors.New("database operation failed")
+		return nil, common.CodeServerError, fmt.Errorf("database operation failed: %w", err)
 	}
 	if kb == nil {
 		code, permissionErr := permissionresponse.Normalize(permission.ErrResourceNotFound)
 		return nil, code, permissionErr
 	}
 	if _, tenantErr := d.tenantDAO.GetByID(ctx, dao.DB, kb.TenantID); tenantErr != nil {
-		return nil, common.CodeServerError, errors.New("database operation failed")
+		return nil, common.CodeServerError, fmt.Errorf("database operation failed: %w", tenantErr)
 	}
 
 	if req == nil {
@@ -166,7 +166,7 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID str
 	parserConfig = service.ApplyComponentScopedParserConfig(parserConfig, llmID)
 
 	if err = d.kbDAO.UpdateByID(ctx, dao.DB, kb.ID, map[string]interface{}{"parser_config": parserConfig}); err != nil {
-		return nil, common.CodeServerError, errors.New("update auto-metadata error.(Database error)")
+		return nil, common.CodeServerError, fmt.Errorf("update auto-metadata error.(Database error): %w", err)
 	}
 
 	return map[string]interface{}{

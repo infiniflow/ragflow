@@ -421,8 +421,13 @@ func ErrorCtx(ctx context.Context, msg string, err error, fields ...zap.Field) {
 	Logger.Error(detail, append(sessionFields(ctx), fields...)...)
 }
 
-// IsDebugEnabled returns true if debug logging is enabled.
+// IsDebugEnabled returns true if debug logging is enabled. It is safe to call
+// before InitLogger (e.g. in unit tests): an uninitialized level reports false,
+// matching the production default of info-level logging.
 func IsDebugEnabled() bool {
+	if Logger == nil {
+		return false
+	}
 	return atomicLevel.Enabled(zapcore.DebugLevel)
 }
 

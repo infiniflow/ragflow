@@ -205,6 +205,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **TokenHub** | Multi-provider aggregator |
 | **TrustedRouter** | OpenAI-compatible router |
 | **Wally** | OpenAI-compatible API for open-weight models |
+| **Wiro AI** | Multi-provider LLM gateway with an OpenAI-compatible API |
 | **WorldRouter** | Multi-provider gateway with an OpenAI-compatible inference API |
 | **AI Stupid Level** | Benchmark-based router (routes each request to the best-scoring model, with your own provider keys) |
 | **TokenPony** | Multi-provider aggregator |

@@ -2,6 +2,9 @@
 sidebar_position: 4
 sidebar_label: Use Memories with Your Team
 title: Use Memories with Your Team
+sidebar_custom_props: {
+  categoryIcon: LucideBrain
+}
 ---
 
 # Use Memories with Your Team

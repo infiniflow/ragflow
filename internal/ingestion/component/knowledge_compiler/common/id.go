@@ -25,17 +25,15 @@ import (
 // changes after GA, a backfill/migration of existing compiled rows is
 // required before rollout.
 //
-// CROSS-RUNTIME: Python's stable_row_id
-// (rag/advanced_rag/knowlege_compile/_common.py) hashes ":"-joined parts with
-// xxhash64, so the two runtimes mint DIFFERENT ids for the same logical row.
-// This is deliberate rather than an oversight: this side keeps the 256-bit
-// digest (M10) and the length-prefixed encoding, which a part containing ":"
-// cannot forge. Ids are only ever compared within a runtime — cleanup is scoped
-// by doc/template columns, never by id — so a document later recompiled by the
-// other runtime rewrites its rows instead of leaving duplicates behind.
-// Unifying the algorithms would mean giving up one of those two properties for
-// no functional gain; revisit only if rows ever need to be addressable across
-// runtimes.
+// ID FORMAT: the digest is a 256-bit SHA-256 over the length-prefixed parts
+// above, so every id is exactly 64 hex characters. A 64-bit hash of ":"-joined
+// parts would be cheaper, but a part containing ":" could forge another row's
+// id; the length-prefixed encoding above is what closes that forgery gap (M10),
+// and the 256-bit digest keeps distinct products from colliding.
+//
+// Ids are only ever compared within a runtime — cleanup is scoped by
+// doc/template columns, never by id — so a document recompiled under a
+// different row-id scheme has its rows rewritten instead of duplicated.
 func StableRowID(parts ...string) string {
 	h := sha256.New()
 	var lenBuf [4]byte

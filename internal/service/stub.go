@@ -20,16 +20,35 @@ package service
 
 import (
 	"context"
+	"fmt"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 
 	"gorm.io/gorm"
 )
 
+// configExtras is empty in the community edition.
+type configExtras struct{}
+
+// loadConfigExtras returns no additional settings in the community edition.
+func loadConfigExtras(context.Context) (configExtras, error) { return configExtras{}, nil }
+
+// consumeRegistrationProof is a no-op in the community edition.
+func consumeRegistrationProof(context.Context, string) (common.ErrorCode, error) {
+	return common.CodeSuccess, nil
+}
+
 // InitHTTPClientEE is a no-op in the community edition.
 func (h *AdminClient) InitHTTPClientEE() error { return nil }
+
+// pickGroupModel is unsupported in the community edition: model groups are an
+// enterprise feature, so every gp- model reference fails resolution.
+func (s *ModelFactory) pickGroupModel(_ context.Context, _, _ string, _ entity.ModelType) (*entity.TenantModel, error) {
+	return nil, fmt.Errorf("%w: model group references are not supported", errModelConfigUnavailable)
+}
 
 // EnrichMessage leaves the heartbeat unchanged in the community edition.
 func (h *AdminClient) EnrichMessage(message *common.BaseMessage) (*common.BaseMessage, error) {
@@ -50,6 +69,10 @@ func tenantMemberPermissionEE(ctx context.Context, db *gorm.DB, tenantID string,
 	return nil, 0, false, nil
 }
 
+func (*TenantService) listTenantMembersEE(context.Context, string) ([]*dao.TenantMemberItem, common.ErrorCode, bool, error) {
+	return nil, common.CodeSuccess, false, nil
+}
+
 // recordTenantPermissionChangeEE records nothing: the community edition has no
 // permission audit trail.
 func recordTenantPermissionChangeEE(ctx context.Context, tx *gorm.DB, tenantID, eventType, targetType, targetID, resourceType, resourceID, actionType string, beforePermission, afterPermission int32, beforeData, afterData interface{}) error {
@@ -61,8 +84,8 @@ func resolveTenantInviteRoleEE(*gorm.DB, string) (tenantInviteRole, bool, error)
 	return tenantInviteRole{}, false, nil
 }
 
-// checkTenantInviteEnabledEE leaves the invite switch to the community
-// default.
+// checkTenantInviteEnabledEE leaves tenant invitation permission unrestricted
+// in Community Edition, which does not configure Tenant system-role gates.
 func (*TenantService) checkTenantInviteEnabledEE(context.Context, string) (common.ErrorCode, bool, error) {
 	return common.CodeSuccess, false, nil
 }
@@ -82,15 +105,15 @@ func resolveUserAuthTenant(_ context.Context, _ *entity.User, _ string) (string,
 	return "", nil
 }
 
-// LoginChannel is one authentication channel advertised to the login page.
-type LoginChannel struct {
-	Channel     string `json:"channel"`
-	DisplayName string `json:"display_name"`
-	Icon        string `json:"icon"`
+// ResolveLoginTenantID leaves tenant selection to the community login path.
+func ResolveLoginTenantID(_ context.Context, _ *entity.User) (string, error) {
+	return "", nil
 }
 
-// GetLoginChannels returns no channel: the community edition only offers
-// password login.
-func (s *UserService) GetLoginChannels() ([]*LoginChannel, common.ErrorCode, error) {
-	return make([]*LoginChannel, 0), common.CodeSuccess, nil
+// defaultTierResolver keeps the community build on a single tier. All tenants
+// share the default lane, which reuses the OSS community queue (TaskSubject), so
+// an OSS split needs no rename and OSS and EE can share one NATS server. Tiering
+// does not otherwise change community behavior.
+func defaultTierResolver(_ context.Context, _ string) (common.Tier, error) {
+	return common.TierDefault, nil
 }

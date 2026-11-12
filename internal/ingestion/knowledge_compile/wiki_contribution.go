@@ -305,18 +305,28 @@ func (c *Consumer) prepareWikiContributionDiff(ctx context.Context, tenantID, da
 		affectedSlugs: map[string]struct{}{},
 	}
 	completedByDoc := make(map[string]BacklogEntry, len(completed))
+	completedDocIDs := make([]string, 0, len(completed))
+	seenDoc := make(map[string]struct{})
 	for _, entry := range completed {
-		completedByDoc[entry.DocID] = entry
-		products, err := c.reader.LoadDocProducts(ctx, tenantID, datasetID, entry.DocID)
-		if err != nil {
-			return wikiContributionDiffResult{}, err
+		completedByDoc[entry.DocID] = entry // last entry per doc wins, as before
+		if _, ok := seenDoc[entry.DocID]; !ok {
+			seenDoc[entry.DocID] = struct{}{}
+			completedDocIDs = append(completedDocIDs, entry.DocID)
 		}
-		result.productsByDoc[entry.DocID] = products
+	}
+	// One query for every completed document instead of one query per document.
+	productsByDocAll, err := c.reader.LoadDocProductsByDocs(ctx, tenantID, datasetID, completedDocIDs)
+	if err != nil {
+		return wikiContributionDiffResult{}, err
+	}
+	for docID, entry := range completedByDoc {
+		products := productsByDocAll[docID]
+		result.productsByDoc[docID] = products
 		wikiProducts := products
 		if len(entry.Variants) > 0 && !variantsContain(entry.Variants, "wiki") {
 			wikiProducts = nil
 		}
-		result.currentByDoc[entry.DocID] = buildWikiDocumentContribution(entry.DocID, wikiProducts)
+		result.currentByDoc[docID] = buildWikiDocumentContribution(docID, wikiProducts)
 	}
 
 	allDocIDs := make([]string, 0, len(completed)+len(deleted))

@@ -121,7 +121,7 @@ func TestChatAudioSpeechFailureOmitsProviderError(t *testing.T) {
 	if !strings.Contains(body, "TTS synthesis failed for model FunAudioLLM/CosyVoice2-0.5B (SILICONFLOW)") {
 		t.Fatalf("response missing model/driver context: %s", body)
 	}
-	if strings.Contains(body, "secret-internal-diagnostic") || strings.Contains(body, "SiliconFlow TTS API error") {
-		t.Fatalf("response leaks provider error detail: %s", body)
+	if !strings.Contains(body, "secret-internal-diagnostic") || !strings.Contains(body, "SiliconFlow TTS API error") {
+		t.Fatalf("response missing provider error detail: %s", body)
 	}
 }

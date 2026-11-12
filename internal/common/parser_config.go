@@ -1,37 +1,8 @@
 package common
 
-// deepCopyMap duplicates a JSON-like map so later merges do not mutate shared defaults.
-func deepCopyMap(source map[string]interface{}) map[string]interface{} {
-	if source == nil {
-		return nil
-	}
-
-	cloned := make(map[string]interface{}, len(source))
-	for key, value := range source {
-		cloned[key] = deepCopyValue(value)
-	}
-	return cloned
-}
-
-// deepCopyValue recursively copies nested maps and slices inside parser_config values.
-func deepCopyValue(value interface{}) interface{} {
-	switch typedValue := value.(type) {
-	case map[string]interface{}:
-		return deepCopyMap(typedValue)
-	case []interface{}:
-		cloned := make([]interface{}, len(typedValue))
-		for idx, item := range typedValue {
-			cloned[idx] = deepCopyValue(item)
-		}
-		return cloned
-	default:
-		return typedValue
-	}
-}
-
 // DeepMergeMaps applies override onto base while preserving nested defaults.
 func DeepMergeMaps(base, override map[string]interface{}) map[string]interface{} {
-	merged := deepCopyMap(base)
+	merged := DeepCopyMap(base)
 	if merged == nil {
 		merged = make(map[string]interface{})
 	}
@@ -111,7 +82,7 @@ func ExtractPipelineDefaults(dsl map[string]interface{}) map[string]interface{} 
 		if params == nil {
 			continue
 		}
-		copy_ := deepCopyMap(params)
+		copy_ := DeepCopyMap(params)
 		delete(copy_, "outputs")
 		result[cid] = copy_
 		hasAny = true

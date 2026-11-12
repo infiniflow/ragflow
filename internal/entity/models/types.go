@@ -251,6 +251,8 @@ type DecideResponse struct {
 type ModelListItem struct {
 	ID            string `json:"id"`
 	ContextLength *int   `json:"context_length"`
+	ContextWindow *int   `json:"context_window"`
+	MaxTokens     *int   `json:"max_tokens"`
 	Object        string `json:"object"`
 	OwnedBy       string `json:"owned_by"`
 }
@@ -355,7 +357,6 @@ type TTSConfig struct {
 }
 
 type OCRConfig struct {
-	Algorithm string
 	// Pages restricts OCR to these 1-indexed inclusive [from, to] ranges, the
 	// parser setup's "pages" shape. Empty means the whole document. Drivers
 	// whose backend cannot select pages ignore it.

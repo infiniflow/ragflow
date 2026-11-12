@@ -55,6 +55,7 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 		anchor := tables[it.idx]
 		merged[it.idx] = true
 		var contGrids [][][]pdf.TSRCell
+		anchor.RegionPositions = tableRegionPositions(anchor)
 
 		// Python nomerge_lout_no: tables whose box is followed by a
 		// caption/title/reference should not be merged cross-page.
@@ -141,6 +142,7 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 			// Merge: combine cells and positions.
 			anchor.Cells = append(anchor.Cells, tables[jt.idx].Cells...)
 			anchor.Positions = append(anchor.Positions, tables[jt.idx].Positions...)
+			anchor.RegionPositions = append(anchor.RegionPositions, tableRegionPositions(tables[jt.idx])...)
 			contGrids = append(contGrids, tables[jt.idx].Grid)
 			if tables[jt.idx].Caption != "" {
 				if anchor.Caption != "" {
@@ -230,6 +232,46 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 		}
 	}
 	return result
+}
+
+func tableRegionPositions(item pdf.TableItem) []pdf.Position {
+	if len(item.RegionPositions) > 0 {
+		return append([]pdf.Position(nil), item.RegionPositions...)
+	}
+	pages := mergedTablePages(&item)
+	positions := make([]pdf.Position, 0, len(pages))
+	for i, page := range pages {
+		pos := pdf.Position{PageNumbers: []int{page}}
+		found := false
+		for _, p := range item.Positions {
+			onPage := len(p.PageNumbers) == 0
+			for _, pn := range p.PageNumbers {
+				onPage = onPage || pn == page
+			}
+			if !onPage {
+				continue
+			}
+			if !found {
+				pos.Left, pos.Right, pos.Top, pos.Bottom = p.Left, p.Right, p.Top, p.Bottom
+				found = true
+			} else {
+				pos.Left, pos.Right = math.Min(pos.Left, p.Left), math.Max(pos.Right, p.Right)
+				pos.Top, pos.Bottom = math.Min(pos.Top, p.Top), math.Max(pos.Bottom, p.Bottom)
+			}
+		}
+		if i == 0 && item.RegionRight > item.RegionLeft && item.RegionBottom > item.RegionTop {
+			pos.Left, pos.Right, pos.Top, pos.Bottom = item.RegionLeft, item.RegionRight, item.RegionTop, item.RegionBottom
+			found = true
+		}
+		if !found {
+			// A page with no matching position must not reach the crop plan:
+			// an empty rectangle renders as a 1x1 placeholder plus a stitch
+			// gap, injecting a blank band into the preview.
+			continue
+		}
+		positions = append(positions, pos)
+	}
+	return positions
 }
 
 // maxBottomOnPage returns the largest Bottom among the table's positions that

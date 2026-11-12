@@ -4,7 +4,7 @@ title: Understand the Core Ingestion Pipeline Components
 sidebar_label: Understand the Core Ingestion Pipeline Components
 slug: /understand_core_ingestion_pipeline_components
 sidebar_custom_props: {
-  categoryIcon: RagAiAgent
+  categoryIcon: LucideLayers
 }
 ---
 

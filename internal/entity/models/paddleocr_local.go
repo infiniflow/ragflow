@@ -24,7 +24,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"ragflow/internal/common"
 
@@ -90,7 +89,6 @@ func (p *PaddleOCRLocalModel) OCRFile(ctx context.Context, modelName *string, co
 		return nil, fmt.Errorf("local PaddleOCR requires file content, but content is empty")
 	}
 
-	algorithm := paddleOCRAlgorithm(ocrConfig, apiConfig)
 	apiConfig = paddleOCRResolvedAPIConfig(apiConfig)
 
 	url, err := p.baseModel.EndpointURL(apiConfig, p.baseModel.URLSuffix.OCR)
@@ -99,20 +97,11 @@ func (p *PaddleOCRLocalModel) OCRFile(ctx context.Context, modelName *string, co
 	}
 
 	base64Str := base64.StdEncoding.EncodeToString(content)
-
-	fileType := 1
-	if fileURL != nil && *fileURL != "" {
-		if strings.HasSuffix(strings.ToLower(*fileURL), ".pdf") {
-			fileType = 0
-		}
-	} else if len(content) > 4 && string(content[:4]) == "%PDF" {
-		fileType = 0
-	}
+	fileType := paddleOCRDetectFileType(content, fileURL)
 
 	reqData := map[string]interface{}{
 		"file":                      base64Str,
 		"fileType":                  fileType,
-		"algorithm":                 algorithm,
 		"useDocOrientationClassify": false,
 		"useDocUnwarping":           false,
 	}
@@ -135,11 +124,14 @@ func (p *PaddleOCRLocalModel) OCRFile(ctx context.Context, modelName *string, co
 		req.Header.Set("Authorization", auth)
 	}
 
+	model := ""
+	if modelName != nil {
+		model = *modelName
+	}
 	common.Info("paddleocr local submit: sending",
 		zap.String("driver", p.Name()),
 		zap.String("url", url),
-		zap.String("model", *modelName),
-		zap.String("algorithm", algorithm),
+		zap.String("model", model),
 		zap.Int("content_bytes", len(content)))
 
 	resp, err := p.baseModel.httpClient.Do(req)

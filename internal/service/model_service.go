@@ -489,7 +489,6 @@ var providerAPIKeyConfigFields = map[string]struct{}{
 	"mineru_output_dir":        {},
 	"mineru_server_url":        {},
 	"opendataloader_apiserver": {},
-	"paddleocr_algorithm":      {},
 	"paddleocr_api_url":        {},
 	"provider_order":           {},
 }
@@ -508,7 +507,6 @@ var safeProviderAPIKeyConfigFields = map[string]struct{}{
 	"mineru_output_dir":        {},
 	"mineru_server_url":        {},
 	"opendataloader_apiserver": {},
-	"paddleocr_algorithm":      {},
 	"paddleocr_api_url":        {},
 	"provider_order":           {},
 }
@@ -851,7 +849,7 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 	extra["base_url"] = baseURL
 	extraByte, err := json.Marshal(extra)
 	if err != nil {
-		return common.CodeServerError, errors.New("fail to marshal extra")
+		return common.CodeServerError, fmt.Errorf("fail to marshal extra: %w", err)
 	}
 	extraStr := string(extraByte)
 
@@ -2169,13 +2167,11 @@ var (
 		common.EnvPaddleOCRBaseUrl,
 		common.EnvPaddleOCRAPIURL,
 		common.EnvPaddleOCRAccessToken,
-		common.EnvPaddleOCRAlgorithm,
 	}
 	paddleOCRDefaultConfig = map[string]interface{}{
 		common.EnvPaddleOCRBaseUrl:     "",
 		common.EnvPaddleOCRAPIURL:      "",
 		common.EnvPaddleOCRAccessToken: nil,
-		common.EnvPaddleOCRAlgorithm:   "PaddleOCR-VL",
 	}
 	openDataLoaderEnvKeys = []string{
 		common.EnvOpenDataLoaderAPIServer,
@@ -3082,7 +3078,7 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 
 	extraBytes, err := json.Marshal(extraFields)
 	if err != nil {
-		return common.CodeServerError, errors.New("fail to marshal extra")
+		return common.CodeServerError, fmt.Errorf("fail to marshal extra: %w", err)
 	}
 
 	modelID := common.GenerateToken()

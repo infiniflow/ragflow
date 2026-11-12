@@ -1,0 +1,72 @@
+{
+  "name": "Wiro AI",
+  "url": {
+    "default": "https://llm.wiro.ai/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models"
+  },
+  "class": "wiro",
+  "models": [
+    {
+      "name": "openai/gpt-5-4-nano",
+      "context_length": 400000,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-5-4-mini",
+      "context_length": 400000,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "claude/sonnet-5",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "google/gemini-3-pro",
+      "context_length": 1048576,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/v4-flash",
+      "context_length": 1048576,
+      "max_output": 384000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    }
+  ]
+}
