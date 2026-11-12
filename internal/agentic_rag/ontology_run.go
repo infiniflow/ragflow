@@ -82,6 +82,24 @@ func (c *OntologyRunConfig) Enabled() bool {
 	return c != nil && strings.TrimSpace(c.ModelID) != "" && len(c.KnowledgeDatasetIDs) > 0
 }
 
+// TemplateOntologyFor resolves a template's declared knowledge-layer binding.
+//
+// It returns nil when the template declares none, which is the default: an
+// unconfigured deployment must not acquire a knowledge scope by accident. The
+// template's declaration is a deployment default, so a request or an assistant
+// setting that names its own binding wins over it.
+func TemplateOntologyFor(templateID string) *OntologyRunConfig {
+	tmpl, err := resolveTemplateFor(templateID)
+	if err != nil || tmpl.Ontology == nil {
+		return nil
+	}
+	return &OntologyRunConfig{
+		ModelID:             strings.TrimSpace(tmpl.Ontology.ModelID),
+		ModelVersion:        tmpl.Ontology.ModelVersion,
+		KnowledgeDatasetIDs: tmpl.Ontology.KnowledgeDatasetIDs,
+	}
+}
+
 // ontologyBinding is the resolved run context a knowledge-layer call needs:
 // who is asking, under which model and scope, and which documents the caller
 // may read (for counting resolvable citations).

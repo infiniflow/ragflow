@@ -322,6 +322,27 @@ const routeConfigOptions = [
     Component: () =>
       import('@/pages/user-setting/compilation-templates/edit-next'),
   },
+  // The three workspaces that outgrew the editor's header. Instances and actions
+  // are separate routes because they answer different questions for different
+  // roles, and the audit is read-only by design.
+  {
+    path: `${Routes.CompilationTemplatesEditNext}/:id/instances`,
+    layout: false,
+    Component: () =>
+      import('@/pages/user-setting/compilation-templates/instances'),
+  },
+  {
+    path: `${Routes.CompilationTemplatesEditNext}/:id/actions`,
+    layout: false,
+    Component: () =>
+      import('@/pages/user-setting/compilation-templates/actions'),
+  },
+  {
+    path: `${Routes.CompilationTemplatesEditNext}/:id/action-audit`,
+    layout: false,
+    Component: () =>
+      import('@/pages/user-setting/compilation-templates/action-audit'),
+  },
   {
     path: `${Routes.SearchShare}`,
     Component: () => import('@/pages/next-search/share'),

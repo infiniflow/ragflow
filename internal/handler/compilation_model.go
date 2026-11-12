@@ -392,6 +392,7 @@ func (h *CompilationModelHandler) Instances(c *gin.Context) {
 //	@Param property query string false "relation property"
 //	@Param source_type query string false "property domain class"
 //	@Param target_type query string false "property range class"
+//	@Param missing query string false "comma-separated contract fields the row is missing any of"
 //	@Param dataset_ids query string false "comma-separated datasets to read"
 //	@Param limit query int false "page size (default 30, max 200)"
 //	@Param offset query int false "page offset"
@@ -414,6 +415,7 @@ func (h *CompilationModelHandler) AssertionReviewQueue(c *gin.Context) {
 		Property:   c.Query("property"),
 		SourceType: c.Query("source_type"),
 		TargetType: c.Query("target_type"),
+		Missing:    splitCSV(c.Query("missing")),
 		DatasetIDs: splitCSV(c.Query("dataset_ids")),
 		Limit:      limit,
 		Offset:     offset,

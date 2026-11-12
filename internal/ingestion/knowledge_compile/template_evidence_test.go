@@ -1,8 +1,10 @@
 package knowledge_compile
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -76,5 +78,63 @@ func TestBuiltinOntologyTemplateAsksForEvidence(t *testing.T) {
 	// so the declaration is what decides whether their quotes are ever checked.
 	if !structure.RelationExpectsEvidence(cfg) {
 		t.Fatal("relation.output_fields must declare evidence, otherwise the gate never validates relation quotes")
+	}
+}
+
+var shapePlaceholderRE = regexp.MustCompile(`<[^<>]*>`)
+
+// templateShapeText returns a declared `shape` in either spelling (plain string
+// or per-language map), with the en text as the fallback the prompt uses.
+func templateShapeText(raw any) string {
+	switch v := raw.(type) {
+	case string:
+		return strings.TrimSpace(v)
+	case map[string]any:
+		if s, ok := v["en"].(string); ok {
+			return strings.TrimSpace(s)
+		}
+	}
+	return ""
+}
+
+// A `shape` is pasted verbatim into the Response Format skeleton the model is
+// told to fill, so a shape that is not itself valid JSON teaches the model to
+// emit invalid JSON — and an elided member renders as an object key, which no
+// repair pass can recover: the whole extraction is discarded as unparseable.
+func TestBuiltinTemplateShapesAreValidJSON(t *testing.T) {
+	entries, err := os.ReadDir("templates")
+	if err != nil {
+		t.Fatalf("read templates: %v", err)
+	}
+	checked := 0
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
+			continue
+		}
+		template := entry.Name()
+		cfg := builtinTemplateConfig(t, template)
+		for _, section := range []string{"entity", "relation"} {
+			fields, _ := cfg[section].(map[string]any)
+			raw, _ := fields["output_fields"].([]any)
+			for _, fieldEntry := range raw {
+				field, ok := fieldEntry.(map[string]any)
+				if !ok {
+					continue
+				}
+				shape := templateShapeText(field["shape"])
+				if shape == "" {
+					continue
+				}
+				checked++
+				name, _ := field["name"].(string)
+				if !json.Valid([]byte(shapePlaceholderRE.ReplaceAllString(shape, "x"))) {
+					t.Errorf("%s: %s.output_fields %q renders a skeleton that is not valid JSON: %s",
+						template, section, name, shape)
+				}
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no declared shapes found; the assertion would pass without checking anything")
 	}
 }

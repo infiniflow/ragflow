@@ -76,6 +76,12 @@ type ModelAssertionReviewInput struct {
 	Property   string
 	SourceType string
 	TargetType string
+	// Missing narrows the queue to rows whose contract lacks any of the named
+	// fields. It is how the review UI's "missing contract fields" view asks for
+	// exactly the actions it must show, instead of fetching a page and filtering
+	// what happens to be on it. Relation rows never carry a contract, so a
+	// missing filter also (correctly) drops them.
+	Missing    []string
 	DatasetIDs []string
 	Limit      int
 	Offset     int
@@ -283,6 +289,9 @@ func (s *CompilationTemplateGovernanceService) ReviewAssertionQueue(ctx context.
 	}
 	if tgt := strings.TrimSpace(in.TargetType); tgt != "" {
 		baseFilter["to_type_kwd"] = []string{tgt}
+	}
+	if missing := trimmedNonEmpty(in.Missing); len(missing) > 0 {
+		baseFilter["contract_missing_kwd"] = missing
 	}
 
 	entityFilter := reviewKindFilter(baseFilter, "entity")
@@ -628,6 +637,18 @@ func reviewActionCount(ctx context.Context, tenantID, templateID string, dataset
 		return 0, err
 	}
 	return int(total), nil
+}
+
+// trimmedNonEmpty drops blank entries, so a stray comma in a query parameter
+// never becomes a filter for the empty field name.
+func trimmedNonEmpty(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 // applyReviewStatusFilter narrows a filter to one review bucket.

@@ -573,6 +573,8 @@ export function OntologyCanvasEditor({
     const at = positions[id] ?? nodePosition(index, columns);
     return {
       id,
+      /** The row it came from: the left rail groups without reordering the form. */
+      index,
       label: String(field.label ?? '').trim() || id,
       parents: splitTypeList(field.parent).filter((parent) =>
         entitySet.has(parent),
@@ -593,6 +595,39 @@ export function OntologyCanvasEditor({
     };
   });
   const byId = new Map(nodes.map((node) => [node.id, node]));
+
+  // `action` is the class the execution contract is declared on (the server calls
+  // it contract.ActionEntityType). Grouping by it keeps actions findable in a
+  // model that also declares forty other classes.
+  const ActionEntityType = 'action';
+  const actionNodes = nodes.filter((node) => node.id === ActionEntityType);
+  const entityNodes = nodes.filter((node) => node.id !== ActionEntityType);
+
+  const renderEntityRow = (node: (typeof nodes)[number]) => {
+    const isSelected =
+      selection?.kind === 'entity' && selection.index === node.index;
+    return (
+      <button
+        key={`entity-list-${node.id}`}
+        type="button"
+        data-testid={`ontology-entity-list-item-${node.id}`}
+        onClick={() => setSelection({ kind: 'entity', index: node.index })}
+        className={cn(
+          'flex items-center gap-2 rounded px-2 py-1 text-start text-xs',
+          isSelected
+            ? 'bg-bg-card text-text-primary'
+            : 'text-text-secondary hover:bg-bg-card',
+        )}
+      >
+        <span className="min-w-0 flex-1 truncate">{node.label}</span>
+        {node.attributes.length > 0 && (
+          <span className="shrink-0 text-text-disabled">
+            {node.attributes.length}
+          </span>
+        )}
+      </button>
+    );
+  };
 
   const edges = (() => {
     const grouped = new Map<
@@ -1070,37 +1105,25 @@ export function OntologyCanvasEditor({
               </Button>
               <span className="px-1 text-xs text-text-secondary">
                 {t('knowledgeCompilation.ontologyEntityList', {
-                  count: nodes.length,
+                  count: entityNodes.length,
                   defaultValue: 'Entities ({{count}})',
                 })}
               </span>
-              {nodes.map((node, index) => {
-                const isSelected =
-                  selection?.kind === 'entity' && selection.index === index;
-                return (
-                  <button
-                    key={`entity-list-${node.id}`}
-                    type="button"
-                    data-testid={`ontology-entity-list-item-${node.id}`}
-                    onClick={() => setSelection({ kind: 'entity', index })}
-                    className={cn(
-                      'flex items-center gap-2 rounded px-2 py-1 text-start text-xs',
-                      isSelected
-                        ? 'bg-bg-card text-text-primary'
-                        : 'text-text-secondary hover:bg-bg-card',
-                    )}
-                  >
-                    <span className="min-w-0 flex-1 truncate">
-                      {node.label}
-                    </span>
-                    {node.attributes.length > 0 && (
-                      <span className="shrink-0 text-text-disabled">
-                        {node.attributes.length}
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
+              {entityNodes.map(renderEntityRow)}
+              {/* Actions are instances of the ontology too, but they are read and
+                  operated differently from everything else — their own group keeps
+                  them from being lost among the forty other classes. */}
+              {actionNodes.length > 0 && (
+                <>
+                  <span className="mt-2 px-1 text-xs text-text-secondary">
+                    {t('knowledgeCompilation.ontologyActionList', {
+                      count: actionNodes.length,
+                      defaultValue: 'Actions ({{count}})',
+                    })}
+                  </span>
+                  {actionNodes.map(renderEntityRow)}
+                </>
+              )}
             </>
           )}
 
@@ -1989,19 +2012,31 @@ export function OntologyCanvasEditor({
               )}
               {selectedKind === OntologyKind.Datatype && (
                 <>
-                  <label className="flex flex-col gap-1">
-                    {t('knowledgeCompilation.fieldDatatype')}
-                    <SelectWithSearch
-                      value={String(selectedProperty.datatype ?? '')}
-                      options={OntologyDatatypeKinds.map((kind) => ({
-                        label: kind,
-                        value: kind,
-                      }))}
-                      onChange={(value) =>
-                        editProperty(propertyIndex, { datatype: value })
-                      }
-                    />
-                  </label>
+                  <div className="flex flex-col gap-1">
+                    <span>{t('knowledgeCompilation.fieldDatatype')}</span>
+                    {/* Two columns rather than a dropdown: the seven kinds fit, and
+                        one click beats open-then-pick on the field people change
+                        most often when adding a data property. */}
+                    <div className="grid grid-cols-2 gap-1">
+                      {OntologyDatatypeKinds.map((kind) => (
+                        <Button
+                          key={kind}
+                          type="button"
+                          size="sm"
+                          variant={
+                            String(selectedProperty.datatype ?? '') === kind
+                              ? 'default'
+                              : 'outline'
+                          }
+                          onClick={() =>
+                            editProperty(propertyIndex, { datatype: kind })
+                          }
+                        >
+                          {kind}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
                   {/* A closed value set: stated to the model so it cannot invent a
                       category, and enforced on the stored value so a stray one
                       never reaches a filter. */}

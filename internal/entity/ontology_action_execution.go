@@ -17,11 +17,15 @@ type OntologyActionExecution struct {
 	BindingID  string `gorm:"column:binding_id;size:32;not null;default:''" json:"binding_id"`
 	// Mode is "query" (the agent called it during a turn) or "manual" (an operator
 	// pressed run). The two have different verdict rules, so the row must say which.
-	Mode       string   `gorm:"column:mode;size:16;not null;default:''" json:"mode"`
-	MCPTool    string   `gorm:"column:mcp_tool;size:255;not null;default:''" json:"mcp_tool"`
-	Verdict    string   `gorm:"column:verdict;size:16;not null;default:''" json:"verdict"`
-	Status     string   `gorm:"column:status;size:16;not null;default:''" json:"status"`
-	RequestArg *JSONMap `gorm:"column:request_arg;type:json" json:"request_arg,omitempty"`
+	Mode    string `gorm:"column:mode;size:16;not null;default:''" json:"mode"`
+	MCPTool string `gorm:"column:mcp_tool;size:255;not null;default:''" json:"mcp_tool"`
+	Verdict string `gorm:"column:verdict;size:16;not null;default:''" json:"verdict"`
+	// VerdictReasons records which gates decided the outcome. The verdict alone
+	// says "refused"; the reasons say which rule refused it, which is what an
+	// audit is read for.
+	VerdictReasons JSONSlice `gorm:"column:verdict_reasons;type:json" json:"verdict_reasons,omitempty"`
+	Status         string    `gorm:"column:status;size:16;not null;default:''" json:"status"`
+	RequestArg     *JSONMap  `gorm:"column:request_arg;type:json" json:"request_arg,omitempty"`
 	// ResponseExcerpt is truncated: the audit needs to show what came back, not to
 	// become a second copy of the upstream system's data.
 	ResponseExcerpt string `gorm:"column:response_excerpt;type:text" json:"response_excerpt"`

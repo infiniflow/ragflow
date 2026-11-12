@@ -423,6 +423,8 @@ export interface IActionExecution {
   mode: 'query' | 'manual' | string;
   mcp_tool: string;
   verdict: string;
+  /** Which gates decided it. Empty on a clean allow. */
+  verdict_reasons?: string[];
   status: string;
   request_arg?: Record<string, unknown>;
   response_excerpt?: string;

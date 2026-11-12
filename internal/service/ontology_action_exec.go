@@ -323,6 +323,7 @@ func (s *ActionBindingService) RunAction(ctx context.Context, db *gorm.DB, in Ac
 	result.Verdict = string(verdict.Verdict)
 	result.Reasons = verdict.Reasons
 	audit.Verdict = result.Verdict
+	audit.VerdictReasons = reasonsToJSONSlice(verdict.Reasons)
 	if binding != nil {
 		audit.BindingID = binding.ID
 		audit.MCPTool = binding.MCPTool
@@ -496,6 +497,20 @@ func resolveArgExpression(expression string, action *compiledAction) (any, error
 // key in this schema (the dashes of a canonical UUID do not fit).
 func newOntologyUUID() string {
 	return strings.ReplaceAll(uuid.NewString(), "-", "")
+}
+
+// reasonsToJSONSlice keeps the gate reasons in the audit row. Empty stays nil so
+// the column is absent on rows that were allowed without a caveat, instead of
+// carrying an empty array that reads as "no reason recorded".
+func reasonsToJSONSlice(reasons []string) entity.JSONSlice {
+	if len(reasons) == 0 {
+		return nil
+	}
+	out := make(entity.JSONSlice, 0, len(reasons))
+	for _, reason := range reasons {
+		out = append(out, reason)
+	}
+	return out
 }
 
 func mapKeys(values map[string]any) []string {

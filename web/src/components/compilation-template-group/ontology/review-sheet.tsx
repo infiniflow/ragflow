@@ -55,6 +55,7 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -75,10 +76,43 @@ interface OntologyReviewSheetProps {
 }
 
 /**
- * Which rows the queue should hold. Not the same as what a row carries:
- * "unreviewed" is a filter, never a verdict.
+ * The three views the queue offers.
+ *
+ * They are not three status values: "missing contract fields" is a filter over
+ * the corpus, and the server has to apply it — narrowing the page that happens to
+ * be loaded would answer a question about the window instead of the corpus.
  */
-const DefaultReviewStatus: AssertionReviewStatus = 'unreviewed';
+type ReviewView = 'all' | 'missing' | 'reviewed';
+
+const ReviewViews: ReviewView[] = ['all', 'missing', 'reviewed'];
+
+/**
+ * The six contract fields, in the order the contract declares them.
+ *
+ * "Missing" means missing ANY of them, which is what the server's terms filter
+ * does with an array column — so one request expresses the whole view.
+ */
+const ContractFieldNames = [
+  'authorization',
+  'preconditions',
+  'atomic_effects',
+  'follow_ups',
+  'failure_policy',
+  'audit_required',
+];
+
+/**
+ * The review state a view asks for.
+ *
+ * "Reviewed" is the closest the queue can get to "my decisions": rows record
+ * their verdict but not who made it, so the view is everything already judged.
+ * Telling the reader that is better than a tab that quietly claims more.
+ */
+const viewStatus = (view: ReviewView): AssertionReviewStatus =>
+  view === 'reviewed' ? 'accepted' : 'all';
+
+const viewMissing = (view: ReviewView) =>
+  view === 'missing' ? ContractFieldNames.join(',') : undefined;
 
 const ReviewPageSize = 50;
 
@@ -155,10 +189,11 @@ export function OntologyReviewSheet({
 }: OntologyReviewSheetProps) {
   const { t } = useTranslation();
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
-  const [status, setStatus] =
-    useState<AssertionReviewStatus>(DefaultReviewStatus);
+  const [view, setView] = useState<ReviewView>('all');
   const [entityType, setClassType] = useState('');
   const [property, setProperty] = useState('');
+  /** Where `R` sends the reader when a rejection has no reason yet. */
+  const noteRef = useRef<HTMLTextAreaElement>(null);
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [activeKey, setActiveKey] = useState('');
   const [note, setNote] = useState('');
@@ -177,12 +212,13 @@ export function OntologyReviewSheet({
 
   const params = useMemo<IAssertionReviewRequestParams>(
     () => ({
-      status,
+      status: viewStatus(view),
+      missing: viewMissing(view),
       class: entityType || undefined,
       property: property || undefined,
       limit: ReviewPageSize,
     }),
-    [status, entityType, property],
+    [view, entityType, property],
   );
 
   const { queue, loading } = useFetchAssertionReview(
@@ -247,35 +283,75 @@ export function OntologyReviewSheet({
     [properties, items],
   );
 
-  const statusOptions = useMemo(
-    () => [
+  const viewOptions = useMemo(
+    () =>
+      ReviewViews.map((value) => ({
+        value,
+        label: t(`knowledgeCompilation.ontologyInspect.reviewView_${value}`, {
+          defaultValue:
+            value === 'all'
+              ? 'All'
+              : value === 'missing'
+                ? 'Missing contract fields'
+                : 'Reviewed',
+        }),
+      })),
+    [t],
+  );
+
+  /**
+   * The headline numbers, as five separate figures.
+   *
+   * They are shown apart rather than as one sentence because "how many actions
+   * have no authorization" is the number that decides whether a reviewer has to
+   * read the corpus at all — it must not be buried mid-sentence.
+   */
+  const stats = useMemo(() => {
+    if (!queue) return [];
+    const { counts } = queue;
+    return [
       {
+        key: 'total',
+        label: t('knowledgeCompilation.ontologyInspect.reviewStatTotal', {
+          defaultValue: 'Total',
+        }),
+        value: counts.unreviewed + counts.accepted + counts.rejected,
+        className: 'text-text-secondary',
+      },
+      {
+        key: 'unreviewed',
         label: t('knowledgeCompilation.ontologyInspect.reviewUnreviewed', {
           defaultValue: 'Unreviewed',
         }),
-        value: 'unreviewed',
+        value: counts.unreviewed,
+        className: 'text-text-secondary',
       },
       {
+        key: 'accepted',
         label: t('knowledgeCompilation.ontologyInspect.reviewAccepted', {
           defaultValue: 'Accepted',
         }),
-        value: 'accepted',
+        value: counts.accepted,
+        className: 'text-text-secondary',
       },
       {
+        key: 'rejected',
         label: t('knowledgeCompilation.ontologyInspect.reviewRejected', {
           defaultValue: 'Rejected',
         }),
-        value: 'rejected',
+        value: counts.rejected,
+        className: 'text-text-secondary',
       },
       {
-        label: t('knowledgeCompilation.ontologyInspect.reviewAll', {
-          defaultValue: 'All',
+        key: 'missingAuthorization',
+        label: t('knowledgeCompilation.ontologyInspect.reviewStatMissingAuth', {
+          defaultValue: 'Without authorization',
         }),
-        value: 'all',
+        value: counts.contract_missing_authorization ?? 0,
+        className: 'text-state-warning',
       },
-    ],
-    [t],
-  );
+    ];
+  }, [queue, t]);
 
   const groups = useMemo(() => groupItems(items), [items]);
 
@@ -349,8 +425,8 @@ export function OntologyReviewSheet({
     [templateId, submitReview, note, t],
   );
 
-  const handleStatusChange = useCallback(
-    (value: string) => setStatus(value as AssertionReviewStatus),
+  const handleViewChange = useCallback(
+    (value: string) => setView(value as ReviewView),
     [],
   );
   const handleClassChange = useCallback(
@@ -388,6 +464,79 @@ export function OntologyReviewSheet({
     [submit],
   );
 
+  /**
+   * A rejection needs a reason, so the button is disabled until there is one.
+   *
+   * The reason travels with the verdict; a rejection recorded without one leaves
+   * the next reader with a row that is wrong for no stated reason, which is
+   * indistinguishable from a mistake.
+   */
+  const rejectBlocked = !note.trim();
+
+  // J/K walk the queue, A/R/U judge the row in front of the reader. Typing the
+  // note must not re-judge anything, so form fields are left alone.
+  const activeRowKey = activeItem ? rowKey(activeItem) : '';
+  useEffect(() => {
+    if (!sheetOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+
+      const key = event.key.toLowerCase();
+      const index = items.findIndex((item) => rowKey(item) === activeRowKey);
+
+      if (key === 'j' || key === 'k') {
+        if (items.length === 0) return;
+        event.preventDefault();
+        const nextIndex =
+          key === 'j'
+            ? Math.min(index < 0 ? 0 : index + 1, items.length - 1)
+            : Math.max(index < 0 ? 0 : index - 1, 0);
+        setActiveKey(rowKey(items[nextIndex]));
+        return;
+      }
+
+      if (key !== 'a' && key !== 'r' && key !== 'u') return;
+      if (!activeItem) return;
+      event.preventDefault();
+      if (key === 'a') {
+        void submit('accept', [activeItem]);
+        return;
+      }
+      if (key === 'u') {
+        void submit('reset', [activeItem]);
+        return;
+      }
+      if (rejectBlocked) {
+        // Point at the field instead of silently doing nothing: the rule is the
+        // reason, and the reason is what the reader is about to write.
+        noteRef.current?.focus();
+        return;
+      }
+      void submit('reject', [activeItem]);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [sheetOpen, items, activeRowKey, activeItem, rejectBlocked, submit]);
+
+  /**
+   * A selected row that states an authorization must be read line by line: a bulk
+   * accept would record a verdict nobody made. The server refuses this too — the
+   * UI says so first instead of letting a batch fail after the fact.
+   */
+  const bulkAcceptBlocked = selectedItems.some(
+    (item) => item.contract_fields?.authorization?.status === 'present',
+  );
+
   const allSelected = items.length > 0 && selectedItems.length === items.length;
   const handleSelectAll = useCallback(
     (checked: boolean | 'indeterminate') => {
@@ -415,6 +564,13 @@ export function OntologyReviewSheet({
         }),
         icon: <Check className="size-4" />,
         onClick: handleBulkAccept,
+        disabled: bulkAcceptBlocked,
+        title: bulkAcceptBlocked
+          ? t('knowledgeCompilation.ontologyInspect.bulkAcceptBlocked', {
+              defaultValue:
+                'Authorization must be read line by line — accept these one at a time.',
+            })
+          : undefined,
       },
       {
         id: 'reject',
@@ -423,6 +579,12 @@ export function OntologyReviewSheet({
         }),
         icon: <X className="size-4" />,
         onClick: handleBulkReject,
+        disabled: rejectBlocked,
+        title: rejectBlocked
+          ? t('knowledgeCompilation.ontologyInspect.rejectNeedsNote', {
+              defaultValue: 'Write the reason before rejecting.',
+            })
+          : undefined,
       },
       {
         id: 'reset',
@@ -433,7 +595,14 @@ export function OntologyReviewSheet({
         onClick: handleBulkReset,
       },
     ],
-    [t, handleBulkAccept, handleBulkReject, handleBulkReset],
+    [
+      t,
+      handleBulkAccept,
+      handleBulkReject,
+      handleBulkReset,
+      bulkAcceptBlocked,
+      rejectBlocked,
+    ],
   );
 
   const renderRow = (item: IAssertionReviewItem) => {
@@ -551,7 +720,14 @@ export function OntologyReviewSheet({
             <Button
               variant="ghost"
               size="sm"
-              disabled={submitting}
+              disabled={submitting || rejectBlocked}
+              title={
+                rejectBlocked
+                  ? t('knowledgeCompilation.ontologyInspect.rejectNeedsNote', {
+                      defaultValue: 'Write the reason before rejecting.',
+                    })
+                  : undefined
+              }
               onClick={handleRowAction(item, 'reject')}
             >
               <X className="size-4" />
@@ -594,11 +770,29 @@ export function OntologyReviewSheet({
           </p>
 
           <div className="flex flex-wrap items-center gap-2">
-            <SelectWithSearch
-              value={status}
-              options={statusOptions}
-              onChange={handleStatusChange}
-            />
+            <div
+              className="flex items-center gap-1"
+              role="tablist"
+              aria-label={t(
+                'knowledgeCompilation.ontologyInspect.reviewViews',
+                {
+                  defaultValue: 'Queue view',
+                },
+              )}
+            >
+              {viewOptions.map((option) => (
+                <Button
+                  key={option.value}
+                  role="tab"
+                  aria-selected={view === option.value}
+                  variant={view === option.value ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => handleViewChange(option.value)}
+                >
+                  {option.label}
+                </Button>
+              ))}
+            </div>
             <SelectWithSearch
               value={entityType}
               options={[{ label: '—', value: '' }, ...classOptions]}
@@ -613,28 +807,28 @@ export function OntologyReviewSheet({
             />
 
             {queue && (
-              <span className="ml-auto text-text-secondary">
-                {t('knowledgeCompilation.ontologyInspect.reviewProgress', {
-                  unreviewed: queue.counts.unreviewed,
-                  accepted: queue.counts.accepted,
-                  rejected: queue.counts.rejected,
-                  conflicts: queue.conflicts,
-                  defaultValue:
-                    '{{unreviewed}} unreviewed · {{conflicts}} conflict(s) on this page',
-                })}
-                {(queue.counts.contract_missing_authorization ?? 0) > 0 && (
-                  <span className="ml-2 text-state-warning">
-                    {t(
-                      'knowledgeCompilation.ontologyInspect.actionContractMissingAuth',
-                      {
-                        count: queue.counts.contract_missing_authorization,
-                        defaultValue:
-                          '{{count}} action(s) without authorization',
-                      },
-                    )}
+              <div
+                className="ml-auto flex flex-wrap items-center gap-3"
+                data-testid="ontology-review-stats"
+              >
+                {stats.map((stat) => (
+                  <span
+                    key={stat.key}
+                    className={cn('flex items-baseline gap-1', stat.className)}
+                  >
+                    <span className="text-sm font-medium">{stat.value}</span>
+                    <span className="text-xs">{stat.label}</span>
+                  </span>
+                ))}
+                {queue.conflicts > 0 && (
+                  <span className="text-xs text-state-warning">
+                    {t('knowledgeCompilation.ontologyInspect.reviewConflicts', {
+                      count: queue.conflicts,
+                      defaultValue: '{{count}} conflict(s) on this page',
+                    })}
                   </span>
                 )}
-              </span>
+              </div>
             )}
           </div>
 
@@ -830,6 +1024,7 @@ export function OntologyReviewSheet({
               })}
             </span>
             <Textarea
+              ref={noteRef}
               className="min-h-9 text-xs"
               value={note}
               onChange={handleNoteChange}

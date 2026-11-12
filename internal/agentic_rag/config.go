@@ -263,24 +263,6 @@ func TemplateTemperature(templateID string) *float64 {
 	return &t
 }
 
-// TemplateOntologyFor resolves a template's declared knowledge-layer binding.
-//
-// It returns nil when the template declares none, which is the default: an
-// unconfigured deployment must not acquire a knowledge scope by accident. The
-// template's declaration is a deployment default, so a request or an assistant
-// setting that names its own binding wins over it.
-func TemplateOntologyFor(templateID string) *OntologyRunConfig {
-	tmpl, err := resolveTemplateFor(templateID)
-	if err != nil || tmpl.Ontology == nil {
-		return nil
-	}
-	return &OntologyRunConfig{
-		ModelID:             strings.TrimSpace(tmpl.Ontology.ModelID),
-		ModelVersion:        tmpl.Ontology.ModelVersion,
-		KnowledgeDatasetIDs: tmpl.Ontology.KnowledgeDatasetIDs,
-	}
-}
-
 // toolsFor uses explicit tools or builds them from the template, falling back
 // to the full default set when the template lists none. Unknown names are
 // skipped with a warning. The conversation's web capability is added here so

@@ -18,6 +18,7 @@
 
 import { ActionContractBlock } from '@/components/action-contract-block';
 import { ActionStatusBadge } from '@/components/action-status-badge';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -80,6 +81,211 @@ function verdictClass(verdict: ActionVerdict | string) {
  * run" in one place — the contract may be complete and the binding switched off,
  * or the reverse.
  */
+/**
+ * Actions and bindings, without the sheet around them.
+ *
+ * The page (`/compilation-templates/:id/actions`) and the editor's sheet render
+ * this same body: the two differ in where the panel sits, not in what it does,
+ * and a second implementation would let them disagree about a verdict.
+ */
+export function ActionWorkbench({
+  templateId,
+  enabled = true,
+}: {
+  templateId?: string;
+  /** False while the sheet is closed: an unopened panel must not fetch. */
+  enabled?: boolean;
+}) {
+  const { t } = useTranslation();
+  const [activeName, setActiveName] = useState<string>();
+  // Two views of the same resource: what the actions are, and what has been
+  // attempted. They share a view because a question about one always ends up
+  // being a question about the other ("can it run" / "did it run").
+  const [tab, setTab] = useState<'actions' | 'audit'>('actions');
+  const [backfilling, setBackfilling] = useState(false);
+  const { actions, loading } = useFetchModelActions(templateId, enabled);
+  const { execEnabled } = useFetchActionBindings(templateId, enabled);
+  const [page, setPage] = useState(1);
+  const { executions, total } = useFetchActionExecutions(
+    templateId,
+    page,
+    enabled,
+  );
+
+  const active = useMemo(() => {
+    if (!actions?.length) {
+      return undefined;
+    }
+    return actions.find((item) => item.name === activeName) ?? actions[0];
+  }, [actions, activeName]);
+
+  return (
+    <div className="flex-1 min-h-0 flex flex-col">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-sm font-medium">
+          {t('knowledgeCompilation.ontologyInspect.actionsTitle', {
+            defaultValue: 'Actions & bindings',
+          })}
+        </span>
+        {execEnabled === false && (
+          <Badge variant="secondary" className="text-state-warning">
+            {t('knowledgeCompilation.ontologyInspect.actionsExecOff', {
+              defaultValue: 'execution is off for this deployment',
+            })}
+          </Badge>
+        )}
+      </div>
+
+      <div className="mt-2 flex shrink-0 items-center gap-2 text-xs">
+        <Button
+          variant={tab === 'actions' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setTab('actions')}
+        >
+          {t('knowledgeCompilation.ontologyInspect.actionsTabActions', {
+            defaultValue: 'Actions',
+          })}
+        </Button>
+        <Button
+          variant={tab === 'audit' ? 'default' : 'outline'}
+          size="sm"
+          onClick={() => setTab('audit')}
+        >
+          {t('knowledgeCompilation.ontologyInspect.actionsTabAudit', {
+            count: total ?? 0,
+            defaultValue: 'Attempts ({{count}})',
+          })}
+        </Button>
+        {/* Rows compiled before the contract columns existed read as "nothing
+            extracted". The backfill stamps them so they can be reviewed; it is
+            idempotent, so pressing it twice is harmless. */}
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto"
+          loading={backfilling}
+          onClick={async () => {
+            if (!templateId) {
+              return;
+            }
+            setBackfilling(true);
+            try {
+              const { data } = await backfillActionContracts(templateId);
+              message.success(
+                t('knowledgeCompilation.ontologyInspect.actionBackfillDone', {
+                  count: data?.data?.updated ?? 0,
+                  defaultValue: 'Stamped {{count}} row(s).',
+                }),
+              );
+            } catch (error) {
+              message.error((error as Error)?.message);
+            } finally {
+              setBackfilling(false);
+            }
+          }}
+        >
+          {t('knowledgeCompilation.ontologyInspect.actionBackfill', {
+            defaultValue: 'Backfill old rows',
+          })}
+        </Button>
+      </div>
+
+      {tab === 'audit' && (
+        <ActionAuditTable
+          executions={executions ?? []}
+          total={total ?? 0}
+          page={page}
+          onPage={setPage}
+        />
+      )}
+
+      <div
+        className={cn(
+          'mt-2 flex-1 min-h-0 grid grid-cols-[minmax(240px,32%)_1fr] gap-3 text-xs',
+          tab === 'audit' && 'hidden',
+        )}
+      >
+        <div className="min-h-0 overflow-auto rounded border border-border-button p-2 flex flex-col gap-2">
+          {loading && !actions && (
+            <span className="text-text-secondary">{t('common.loading')}</span>
+          )}
+          {!loading && (actions?.length ?? 0) === 0 && (
+            <span className="text-text-secondary">
+              {t('knowledgeCompilation.ontologyInspect.actionsEmpty', {
+                defaultValue:
+                  'This model compiled no actions. An action is an instance of the `action` entity.',
+              })}
+            </span>
+          )}
+          {actions?.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => setActiveName(item.name)}
+              className={cn(
+                'rounded border p-2 text-start flex flex-col gap-1',
+                active?.id === item.id
+                  ? 'border-text-accent'
+                  : 'border-border-button',
+              )}
+            >
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium">{item.name}</span>
+                {/* The six-state badge, not the raw verdict: what a reader needs
+                    first is whether this row is even reviewable, and "allow"
+                    says nothing about that. */}
+                <ActionStatusBadge action={item} />
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-text-secondary">
+                {/* The denominator is what this model asked for: a narrowed
+                    contract that filled both fields is complete, not 2/6. */}
+                <span>{`${item.contract?.declared ?? 0}/${item.contract?.required?.length ?? 6}`}</span>
+                <span>
+                  {item.binding
+                    ? `${item.binding.mcp_server} · ${item.binding.mcp_tool}`
+                    : t('knowledgeCompilation.ontologyInspect.actionUnbound', {
+                        defaultValue: 'not bound',
+                      })}
+                </span>
+                {item.binding && !item.binding.tool_available && (
+                  <span className="text-state-error">
+                    {t(
+                      'knowledgeCompilation.ontologyInspect.actionToolMissing',
+                      {
+                        defaultValue: 'tool missing',
+                      },
+                    )}
+                  </span>
+                )}
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <div className="min-h-0 overflow-auto flex flex-col gap-3">
+          {active ? (
+            <ActionDetail
+              templateId={templateId!}
+              action={active}
+              execEnabled={execEnabled !== false}
+              executions={(executions ?? []).filter(
+                (row) => row.action_name === active.name,
+              )}
+            />
+          ) : (
+            <span className="text-text-secondary">
+              {t('knowledgeCompilation.ontologyInspect.actionsPickOne', {
+                defaultValue: 'Select an action.',
+              })}
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** The same workbench as a sheet, for the model editor's header. */
 export function OntologyActionWorkbenchSheet({
   templateId,
   trigger,
@@ -89,27 +295,6 @@ export function OntologyActionWorkbenchSheet({
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
-  const [activeName, setActiveName] = useState<string>();
-  // Two views of the same resource: what the actions are, and what has been
-  // attempted. They share a sheet because a question about one always ends up
-  // being a question about the other ("can it run" / "did it run").
-  const [tab, setTab] = useState<'actions' | 'audit'>('actions');
-  const [backfilling, setBackfilling] = useState(false);
-  const { actions, loading } = useFetchModelActions(templateId, open);
-  const { execEnabled } = useFetchActionBindings(templateId, open);
-  const [page, setPage] = useState(1);
-  const { executions, total } = useFetchActionExecutions(
-    templateId,
-    page,
-    open,
-  );
-
-  const active = useMemo(() => {
-    if (!actions?.length) {
-      return undefined;
-    }
-    return actions.find((item) => item.name === activeName) ?? actions[0];
-  }, [actions, activeName]);
 
   return (
     <Sheet open={open} onOpenChange={setOpen} modal={false}>
@@ -124,168 +309,13 @@ export function OntologyActionWorkbenchSheet({
       </SheetTrigger>
       <SheetContent className="w-[80%] max-w-[1100px] flex flex-col">
         <SheetHeader>
-          <SheetTitle className="flex flex-wrap items-center gap-2">
+          <SheetTitle className="sr-only">
             {t('knowledgeCompilation.ontologyInspect.actionsTitle', {
               defaultValue: 'Actions & bindings',
             })}
-            {execEnabled === false && (
-              <Badge variant="secondary" className="text-state-warning">
-                {t('knowledgeCompilation.ontologyInspect.actionsExecOff', {
-                  defaultValue: 'execution is off for this deployment',
-                })}
-              </Badge>
-            )}
           </SheetTitle>
         </SheetHeader>
-
-        <div className="mt-2 flex shrink-0 items-center gap-2 text-xs">
-          <Button
-            variant={tab === 'actions' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setTab('actions')}
-          >
-            {t('knowledgeCompilation.ontologyInspect.actionsTabActions', {
-              defaultValue: 'Actions',
-            })}
-          </Button>
-          <Button
-            variant={tab === 'audit' ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setTab('audit')}
-          >
-            {t('knowledgeCompilation.ontologyInspect.actionsTabAudit', {
-              count: total ?? 0,
-              defaultValue: 'Attempts ({{count}})',
-            })}
-          </Button>
-          {/* Rows compiled before the contract columns existed read as "nothing
-              extracted". The backfill stamps them so they can be reviewed; it is
-              idempotent, so pressing it twice is harmless. */}
-          <Button
-            variant="ghost"
-            size="sm"
-            className="ml-auto"
-            loading={backfilling}
-            onClick={async () => {
-              if (!templateId) {
-                return;
-              }
-              setBackfilling(true);
-              try {
-                const { data } = await backfillActionContracts(templateId);
-                message.success(
-                  t('knowledgeCompilation.ontologyInspect.actionBackfillDone', {
-                    count: data?.data?.updated ?? 0,
-                    defaultValue: 'Stamped {{count}} row(s).',
-                  }),
-                );
-              } catch (error) {
-                message.error((error as Error)?.message);
-              } finally {
-                setBackfilling(false);
-              }
-            }}
-          >
-            {t('knowledgeCompilation.ontologyInspect.actionBackfill', {
-              defaultValue: 'Backfill old rows',
-            })}
-          </Button>
-        </div>
-
-        {tab === 'audit' && (
-          <ActionAuditTable
-            executions={executions ?? []}
-            total={total ?? 0}
-            page={page}
-            onPage={setPage}
-          />
-        )}
-
-        <div
-          className={cn(
-            'mt-2 flex-1 min-h-0 grid grid-cols-[minmax(240px,32%)_1fr] gap-3 text-xs',
-            tab === 'audit' && 'hidden',
-          )}
-        >
-          <div className="min-h-0 overflow-auto rounded border border-border-button p-2 flex flex-col gap-2">
-            {loading && !actions && (
-              <span className="text-text-secondary">{t('common.loading')}</span>
-            )}
-            {!loading && (actions?.length ?? 0) === 0 && (
-              <span className="text-text-secondary">
-                {t('knowledgeCompilation.ontologyInspect.actionsEmpty', {
-                  defaultValue:
-                    'This model compiled no actions. An action is an instance of the `action` entity.',
-                })}
-              </span>
-            )}
-            {actions?.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setActiveName(item.name)}
-                className={cn(
-                  'rounded border p-2 text-start flex flex-col gap-1',
-                  active?.id === item.id
-                    ? 'border-text-accent'
-                    : 'border-border-button',
-                )}
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium">{item.name}</span>
-                  {/* The six-state badge, not the raw verdict: what a reader needs
-                      first is whether this row is even reviewable, and "allow"
-                      says nothing about that. */}
-                  <ActionStatusBadge action={item} />
-                </div>
-                <div className="flex flex-wrap items-center gap-2 text-text-secondary">
-                  {/* The denominator is what this model asked for: a narrowed
-                      contract that filled both fields is complete, not 2/6. */}
-                  <span>{`${item.contract?.declared ?? 0}/${item.contract?.required?.length ?? 6}`}</span>
-                  <span>
-                    {item.binding
-                      ? `${item.binding.mcp_server} · ${item.binding.mcp_tool}`
-                      : t(
-                          'knowledgeCompilation.ontologyInspect.actionUnbound',
-                          {
-                            defaultValue: 'not bound',
-                          },
-                        )}
-                  </span>
-                  {item.binding && !item.binding.tool_available && (
-                    <span className="text-state-error">
-                      {t(
-                        'knowledgeCompilation.ontologyInspect.actionToolMissing',
-                        {
-                          defaultValue: 'tool missing',
-                        },
-                      )}
-                    </span>
-                  )}
-                </div>
-              </button>
-            ))}
-          </div>
-
-          <div className="min-h-0 overflow-auto flex flex-col gap-3">
-            {active ? (
-              <ActionDetail
-                templateId={templateId!}
-                action={active}
-                execEnabled={execEnabled !== false}
-                executions={(executions ?? []).filter(
-                  (row) => row.action_name === active.name,
-                )}
-              />
-            ) : (
-              <span className="text-text-secondary">
-                {t('knowledgeCompilation.ontologyInspect.actionsPickOne', {
-                  defaultValue: 'Select an action.',
-                })}
-              </span>
-            )}
-          </div>
-        </div>
+        <ActionWorkbench templateId={templateId} enabled={open} />
       </SheetContent>
     </Sheet>
   );
@@ -510,6 +540,30 @@ function BindingForm({
   const { loading, saveBinding } = useSaveActionBinding();
   const { loading: deleting, deleteBinding } = useDeleteActionBinding();
 
+  /**
+   * The two states that make agent invocation impossible.
+   *
+   * Both are already enforced server-side (the verdict comes back `manual`), but
+   * saying it here is the difference between a rule and an error message: the
+   * switch is where the operator is about to make the decision, so that is where
+   * the reason belongs.
+   */
+  const authorizationMissing =
+    action.contract?.fields?.authorization?.status === 'missing';
+  const writableTool = !readOnly;
+  const qaCallableBlocked = authorizationMissing || writableTool;
+  const qaCallableBlockedReason = authorizationMissing
+    ? t('knowledgeCompilation.ontologyInspect.actionQaBlockedAuth', {
+        defaultValue:
+          'The source does not state an authorization, so this action can only be run by a person.',
+      })
+    : writableTool
+      ? t('knowledgeCompilation.ontologyInspect.actionQaBlockedWritable', {
+          defaultValue:
+            'A writable tool cannot be called automatically — mark it read-only first.',
+        })
+      : undefined;
+
   // The row changed under the form (another save, a refetch): the fields must
   // show the binding that exists, not the one that was typed before it.
   const bindingKey = binding?.id ?? 'none';
@@ -524,6 +578,18 @@ function BindingForm({
     setQaCallable(binding?.qa_callable ?? false);
     setRiskAck(false);
   }
+
+  /**
+   * Making the tool writable withdraws the standing permission to call it
+   * unattended: that permission was given for a read-only tool, and a switch left
+   * on would be a decision nobody re-made.
+   */
+  const handleReadOnlyChange = useCallback((next: boolean) => {
+    setReadOnly(next);
+    if (!next) {
+      setQaCallable(false);
+    }
+  }, []);
 
   const handleSave = useCallback(async () => {
     let parsed: Record<string, string>;
@@ -547,7 +613,10 @@ function BindingForm({
           arg_mapping: parsed,
           read_only: readOnly,
           enabled,
-          qa_callable: qaCallable,
+          // A blocked switch cannot be saved as on: the operator may have turned
+          // it on before making the tool writable, and leaving the stored value
+          // true would contradict what the form shows.
+          qa_callable: qaCallableBlocked ? false : qaCallable,
           risk_ack: riskAck,
           dataset_id: action.dataset_id,
         },
@@ -566,6 +635,8 @@ function BindingForm({
     readOnly,
     enabled,
     qaCallable,
+    qaCallableBlocked,
+    riskAck,
     t,
   ]);
 
@@ -644,7 +715,7 @@ function BindingForm({
           )}
           checked={readOnly}
           disabled={!riskAck}
-          onChange={setReadOnly}
+          onChange={handleReadOnlyChange}
         />
         <SwitchRow
           label={t(
@@ -653,11 +724,16 @@ function BindingForm({
               defaultValue: 'Agent may call it',
             },
           )}
-          checked={qaCallable}
-          disabled={!riskAck}
+          checked={qaCallable && !qaCallableBlocked}
+          disabled={!riskAck || qaCallableBlocked}
+          title={qaCallableBlockedReason}
           onChange={setQaCallable}
         />
       </div>
+
+      {qaCallableBlocked && (
+        <p className="text-state-warning">{qaCallableBlockedReason}</p>
+      )}
 
       <label className="flex items-start gap-2 rounded border border-border-button p-2">
         <Checkbox
@@ -715,15 +791,18 @@ function SwitchRow({
   label,
   checked,
   disabled,
+  title,
   onChange,
 }: {
   label: string;
   checked: boolean;
   disabled?: boolean;
+  /** Why the switch is disabled — a greyed switch with no reason reads as a bug. */
+  title?: string;
   onChange: (next: boolean) => void;
 }) {
   return (
-    <label className="flex items-center gap-2">
+    <label className="flex items-center gap-2" title={title}>
       <Switch
         checked={checked}
         disabled={disabled}
@@ -777,24 +856,96 @@ function CallResult({
  * values, and this table must not become the place someone widens that. What was
  * sent is an audit question; what it contained is a disclosure.
  */
-function ActionAuditTable({
+export function ActionAuditTable({
   executions,
   total,
   page,
   onPage,
+  /**
+   * Whether the table offers its own filters. The standalone page does; the
+   * workbench tab already narrows to one action, and two filters over the same
+   * list would disagree on which one wins.
+   */
+  filterable = false,
 }: {
   executions: IActionExecution[];
   total: number;
   page: number;
   onPage: (next: number) => void;
+  filterable?: boolean;
 }) {
   const { t } = useTranslation();
+  const [actionFilter, setActionFilter] = useState('');
+  const [verdictFilter, setVerdictFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
   const pageSize = 20;
   const pages = Math.max(1, Math.ceil(total / pageSize));
 
+  const actionOptions = useMemo(
+    () => [
+      {
+        label: t('knowledgeCompilation.ontologyInspect.actionAuditAllActions', {
+          defaultValue: 'All actions',
+        }),
+        value: '',
+      },
+      ...Array.from(new Set(executions.map((row) => row.action_name)))
+        .sort()
+        .map((name) => ({ label: name, value: name })),
+    ],
+    [executions, t],
+  );
+  const verdictOptions = useMemo(
+    () => [
+      {
+        label: t(
+          'knowledgeCompilation.ontologyInspect.actionAuditAllVerdicts',
+          {
+            defaultValue: 'All verdicts',
+          },
+        ),
+        value: '',
+      },
+      ...['allow', 'confirm', 'manual', 'refuse'].map((value) => ({
+        label: value,
+        value,
+      })),
+    ],
+    [t],
+  );
+  const statusOptions = useMemo(
+    () => [
+      {
+        label: t(
+          'knowledgeCompilation.ontologyInspect.actionAuditAllStatuses',
+          {
+            defaultValue: 'All statuses',
+          },
+        ),
+        value: '',
+      },
+      ...['succeeded', 'refused', 'failed', 'timeout'].map((value) => ({
+        label: value,
+        value,
+      })),
+    ],
+    [t],
+  );
+
+  const rows = useMemo(
+    () =>
+      executions.filter(
+        (row) =>
+          (!actionFilter || row.action_name === actionFilter) &&
+          (!verdictFilter || row.verdict === verdictFilter) &&
+          (!statusFilter || row.status === statusFilter),
+      ),
+    [executions, actionFilter, verdictFilter, statusFilter],
+  );
+
   return (
     <div className="mt-2 flex min-h-0 flex-1 flex-col gap-2 overflow-auto text-xs">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <span className="text-text-secondary">
           {t('knowledgeCompilation.ontologyInspect.actionAuditIntro', {
             defaultValue:
@@ -822,14 +973,43 @@ function ActionAuditTable({
         </span>
       </div>
 
+      {filterable && (
+        <div className="flex flex-wrap items-center gap-2">
+          <SelectWithSearch
+            value={actionFilter}
+            options={actionOptions}
+            onChange={setActionFilter}
+            allowClear
+          />
+          <SelectWithSearch
+            value={verdictFilter}
+            options={verdictOptions}
+            onChange={setVerdictFilter}
+            allowClear
+          />
+          <SelectWithSearch
+            value={statusFilter}
+            options={statusOptions}
+            onChange={setStatusFilter}
+            allowClear
+          />
+        </div>
+      )}
+
       {executions.length === 0 ? (
         <span className="text-text-disabled">
           {t('knowledgeCompilation.ontologyInspect.actionAuditEmptyAll', {
             defaultValue: 'No attempt has been made on this model yet.',
           })}
         </span>
+      ) : rows.length === 0 ? (
+        <span className="text-text-disabled">
+          {t('knowledgeCompilation.ontologyInspect.actionAuditEmptyFiltered', {
+            defaultValue: 'No attempt on this page matches the filters.',
+          })}
+        </span>
       ) : (
-        executions.map((row) => (
+        rows.map((row) => (
           <details
             key={row.id}
             className="rounded border border-border-button p-2"
@@ -848,6 +1028,19 @@ function ActionAuditTable({
             </summary>
 
             <div className="mt-1 flex flex-col gap-1">
+              {/* The reason chain: which gate decided it. A refusal without this
+                  is a verdict the reader cannot act on. */}
+              {(row.verdict_reasons ?? []).length > 0 && (
+                <span className="break-all text-state-warning">
+                  {t(
+                    'knowledgeCompilation.ontologyInspect.actionAuditReasons',
+                    {
+                      reasons: (row.verdict_reasons ?? []).join(' · '),
+                      defaultValue: 'Decided by: {{reasons}}',
+                    },
+                  )}
+                </span>
+              )}
               <span className="text-text-disabled">
                 {t('knowledgeCompilation.ontologyInspect.actionAuditArgs', {
                   args: Object.keys(row.request_arg ?? {}).join(', ') || '—',

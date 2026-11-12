@@ -16,6 +16,14 @@ export interface IAssertionReviewRequestParams {
   property?: string;
   source_type?: string;
   target_type?: string;
+  /**
+   * Contract fields the row must be missing at least one of, comma-joined.
+   *
+   * Server-side on purpose: "missing a contract field" is a filter, not a sort —
+   * filtering the page that happens to be loaded would answer a question about
+   * the corpus with an answer about the window.
+   */
+  missing?: string;
   dataset_ids?: string;
   limit?: number;
   offset?: number;

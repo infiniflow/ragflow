@@ -17,7 +17,15 @@
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { CompilationTemplateKind } from '@/constants/compilation';
-import { FormEvent, ReactNode, useCallback, useMemo } from 'react';
+import {
+  FormEvent,
+  ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
@@ -43,6 +51,17 @@ export type CompilationTemplateGroupEditorState = {
   templateId?: string;
   ontologyEntities: string[];
   ontologyProperties: string[];
+  /**
+   * Canvas history. The header owns the buttons because it is where the design
+   * puts them, but the stack belongs to the form, so the editor hands both the
+   * state and the two callbacks up.
+   */
+  canUndo: boolean;
+  canRedo: boolean;
+  onUndo: () => void;
+  onRedo: () => void;
+  /** Whether the form differs from what is stored, for the save badge. */
+  isDirty: boolean;
 };
 
 type CompilationTemplateGroupEditorProps = {
@@ -119,6 +138,89 @@ export function CompilationTemplateGroupEditor({
     [relationSection],
   );
 
+  /**
+   * Undo/redo over the two ontology sections.
+   *
+   * A snapshot stack keyed on the section value is enough because the canvas has
+   * exactly two fields: a per-field history would have to know each field's merge
+   * semantics, which promises more than "undo the last canvas edit". Artifacts
+   * have their own editors and no history here, so the stack stays empty for them.
+   */
+  const historyRef = useRef<string[]>([]);
+  const [historyCursor, setHistoryCursor] = useState(-1);
+  const applyingHistory = useRef(false);
+
+  const sectionsKey = useMemo(
+    () => JSON.stringify({ entity: entitySection, relation: relationSection }),
+    [entitySection, relationSection],
+  );
+
+  useEffect(() => {
+    if (!isOntology) {
+      historyRef.current = [];
+      setHistoryCursor(-1);
+      return;
+    }
+    if (applyingHistory.current) {
+      // The change came from undo/redo itself; the stack already points at it.
+      applyingHistory.current = false;
+      return;
+    }
+    const stack = historyRef.current;
+    if (stack.length === 0) {
+      stack.push(sectionsKey);
+      setHistoryCursor(0);
+      return;
+    }
+    if (stack[stack.length - 1] === sectionsKey) return;
+    // A new edit after an undo drops the branch that is no longer reachable.
+    if (historyCursor < stack.length - 1) {
+      stack.length = historyCursor + 1;
+    }
+    stack.push(sectionsKey);
+    setHistoryCursor(stack.length - 1);
+  }, [sectionsKey, isOntology, historyCursor]);
+
+  const applySnapshot = useCallback(
+    (index: number) => {
+      const raw = historyRef.current[index];
+      if (!raw) return;
+      const snapshot = JSON.parse(raw) as {
+        entity?: OntologySection;
+        relation?: OntologySection;
+      };
+      applyingHistory.current = true;
+      // The form's config is a discriminated union of every template kind, so a
+      // concrete section is narrower than the field's type; the watched sections
+      // are already asserted to OntologySection for the same reason.
+      form.setValue(
+        `templates.${SelectedTemplateIndex}.config.entity`,
+        snapshot.entity as never,
+        { shouldDirty: true },
+      );
+      form.setValue(
+        `templates.${SelectedTemplateIndex}.config.relation`,
+        snapshot.relation as never,
+        { shouldDirty: true },
+      );
+      setHistoryCursor(index);
+    },
+    [form],
+  );
+
+  const handleUndo = useCallback(
+    () => applySnapshot(historyCursor - 1),
+    [applySnapshot, historyCursor],
+  );
+  const handleRedo = useCallback(
+    () => applySnapshot(historyCursor + 1),
+    [applySnapshot, historyCursor],
+  );
+
+  // Reading `isDirty` subscribes the editor to the form's dirty state; the badge
+  // has to appear the moment a field changes, not on the next unrelated render.
+  const isDirty = form.formState.isDirty;
+
   const handleSave = useMemo(
     () => form.handleSubmit(onSubmit),
     [form, onSubmit],
@@ -139,6 +241,14 @@ export function CompilationTemplateGroupEditor({
         templateId,
         ontologyEntities,
         ontologyProperties,
+        canUndo: isOntology && historyCursor > 0,
+        canRedo:
+          isOntology &&
+          historyCursor >= 0 &&
+          historyCursor < historyRef.current.length - 1,
+        onUndo: handleUndo,
+        onRedo: handleRedo,
+        isDirty,
       })}
       <Form {...form}>
         <form className="flex-1 min-h-0 flex flex-col" onSubmit={handleSubmit}>
@@ -174,8 +284,19 @@ export function CompilationTemplateGroupEditor({
               type="submit"
               loading={isLoading}
               disabled={ontologyIssues.length > 0}
+              className="relative"
             >
               {t('common.save')}
+              {/* A save button with no state is indistinguishable from one that is
+                  already done — the badge is the difference. */}
+              {isDirty && (
+                <span
+                  className="absolute -top-1 -right-1 size-2 rounded-full bg-state-warning"
+                  title={t('knowledgeCompilation.unsavedChanges', {
+                    defaultValue: 'Unsaved changes',
+                  })}
+                />
+              )}
             </Button>
           </footer>
         </form>
