@@ -18,6 +18,7 @@ package knowledge_compile
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -242,6 +243,13 @@ const docProductsBatchSize = 500
 // documents in one query (doc_id IN [...]) instead of one query per document.
 // Results are grouped by doc_id; documents with no compiled rows map to an empty
 // (non-nil) slice so callers can distinguish "no products" from "missing".
+//
+// Each doc_id IN sub-batch is read with a single bounded query. Because plain
+// from/size cannot page past the engine result window (MAX_RESULT_WINDOW), a
+// sub-batch whose aggregated compiled rows would force a page beyond the window
+// falls back to one bounded per-document read per document (the pre-PR behavior)
+// instead of erroring — a product-dense large KB must not lose or mis-read
+// merged state during a rebuild.
 func (r engineReader) LoadDocProductsByDocs(ctx context.Context, tenant, kb string, docIDs []string) (map[string][]kccommon.Product, error) {
 	if r.eng == nil {
 		return nil, errEngineNotConfigured
@@ -259,42 +267,90 @@ func (r engineReader) LoadDocProductsByDocs(ctx context.Context, tenant, kb stri
 		if end > len(docIDs) {
 			end = len(docIDs)
 		}
-		// Bound the query to compiled rows only. A document compiles many
-		// ordinary source chunks (one per passage), so the doc_id IN filter
-		// alone would also pull every source chunk back, inflating the result
-		// set and overflowing the engine's result window on a large KB — and
-		// defeating the point of batching. Compiled products are the only rows
-		// this reader consumes, and they all carry compile_kwd, so an exists
-		// clause keeps the read bounded to what we actually need.
-		req := &types.SearchRequest{
-			IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenant)},
-			KbIDs:        []string{kb},
-			Filter:       map[string]interface{}{"doc_id": docIDInterfaceSlice(docIDs[start:end]), "exists": "compile_kwd"},
-			SelectFields: fields,
-			Limit:        loadDocProductsLimit,
-		}
-		if err := pageThrough(ctx, r.eng, req, loadDocProductsLimit, func(chunks []map[string]interface{}) error {
-			for _, c := range chunks {
-				// Only compiled products carry compile_kwd; skip ordinary source chunks.
-				if _, ok := c["compile_kwd"]; !ok || types.IsNavigationRow(c) {
-					continue
-				}
-				rowVariant, verr := KwdToVariant(asString(c["compile_kwd"]))
-				if verr != nil {
-					continue
-				}
-				if p, ok := productFromChunkMap(c, tenant, rowVariant); ok {
-					if docID, _ := c["doc_id"].(string); docID != "" {
-						out[docID] = append(out[docID], p)
-					}
-				}
-			}
-			return nil
-		}); err != nil {
+		batch := docIDs[start:end]
+		local, overflow, err := r.loadDocProductsBatch(ctx, tenant, kb, batch, fields)
+		if err != nil {
 			return nil, err
+		}
+		if overflow {
+			// The sub-batch's compiled rows exceed the engine result window, so a
+			// single doc_id IN read cannot page past it without erroring. Fall
+			// back to one bounded per-document read per document: each document
+			// is bounded to itself and never aggregates to the window, so the
+			// read stays correct for product-dense batches.
+			for _, docID := range batch {
+				ps, perr := r.LoadDocProducts(ctx, tenant, kb, docID)
+				if perr != nil {
+					return nil, perr
+				}
+				out[docID] = ps
+			}
+			continue
+		}
+		for docID, ps := range local {
+			out[docID] = ps
 		}
 	}
 	return out, nil
+}
+
+// errBatchOverflow is returned by loadDocProductsBatch's paging visitor to signal
+// that the next page would exceed the engine result window; the caller falls
+// back to per-document reads instead of letting the engine reject the query.
+var errBatchOverflow = errors.New("knowledge_compile: batch read reached result window")
+
+// loadDocProductsBatch reads the compiled products for a slice of doc_ids with a
+// single doc_id IN query, paging with plain from/size. It returns the products
+// grouped by doc_id. If the aggregate result set is large enough that the next
+// page would require offset+limit > MAX_RESULT_WINDOW (which the engine rejects
+// for plain from/size), it stops paging early and reports overflow=true so the
+// caller can fall back to per-document reads rather than erroring.
+func (r engineReader) loadDocProductsBatch(ctx context.Context, tenant, kb string, batch []string, fields []string) (map[string][]kccommon.Product, bool, error) {
+	local := make(map[string][]kccommon.Product, len(batch))
+	req := &types.SearchRequest{
+		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenant)},
+		KbIDs:        []string{kb},
+		Filter:       map[string]interface{}{"doc_id": docIDInterfaceSlice(batch), "exists": "compile_kwd"},
+		SelectFields: fields,
+		Limit:        loadDocProductsLimit,
+	}
+	overflow := false
+	err := pageThrough(ctx, r.eng, req, loadDocProductsLimit, func(chunks []map[string]interface{}) error {
+		// The next page would land at offset+limit, and that fetch needs
+		// (offset+limit)+limit <= MAX_RESULT_WINDOW. If it would not, stop now
+		// and let the caller fall back to per-document reads for this batch.
+		// A next page (offset+limit) is only fetched when this page is full, and
+		// only then could a deep page exceed the engine result window. Signal
+		// overflow only in that case, so a short final page never triggers the
+		// per-document fallback.
+		if len(chunks) == loadDocProductsLimit && req.Offset+2*loadDocProductsLimit > common.MAX_RESULT_WINDOW {
+			overflow = true
+			return errBatchOverflow
+		}
+		for _, c := range chunks {
+			// Only compiled products carry compile_kwd; skip ordinary source chunks.
+			if _, ok := c["compile_kwd"]; !ok || types.IsNavigationRow(c) {
+				continue
+			}
+			rowVariant, verr := KwdToVariant(asString(c["compile_kwd"]))
+			if verr != nil {
+				continue
+			}
+			if p, ok := productFromChunkMap(c, tenant, rowVariant); ok {
+				if docID, _ := c["doc_id"].(string); docID != "" {
+					local[docID] = append(local[docID], p)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, errBatchOverflow) {
+			return local, true, nil
+		}
+		return nil, false, err
+	}
+	return local, overflow, nil
 }
 
 // docIDInterfaceSlice converts a string doc_id list into the []interface{} form
