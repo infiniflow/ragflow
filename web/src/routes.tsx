@@ -250,6 +250,16 @@ const routeConfigOptions = [
         Component: () => import('@/pages/agents'),
       },
       {
+        path: Routes.CompilationTemplatesEditNext,
+        Component: () =>
+          import('@/pages/user-setting/compilation-templates/edit-next'),
+      },
+      {
+        path: `${Routes.CompilationTemplatesEditNext}/:id`,
+        Component: () =>
+          import('@/pages/user-setting/compilation-templates/edit-next'),
+      },
+      {
         path: Routes.AgentTemplates,
         layout: false,
         Component: () => import('@/pages/agents/agent-templates'),
@@ -376,18 +386,6 @@ const routeConfigOptions = [
         ),
       },
     ],
-  },
-  {
-    path: Routes.CompilationTemplatesEditNext,
-    layout: false,
-    Component: () =>
-      import('@/pages/user-setting/compilation-templates/edit-next'),
-  },
-  {
-    path: `${Routes.CompilationTemplatesEditNext}/:id`,
-    layout: false,
-    Component: () =>
-      import('@/pages/user-setting/compilation-templates/edit-next'),
   },
   {
     path: `${Routes.SearchShare}`,

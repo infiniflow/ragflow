@@ -14,11 +14,10 @@
  *  limitations under the License.
  */
 
-import BackButton from '@/components/back-button';
 import { CompilationTemplateGroupEditor } from '@/components/compilation-template-group';
-import { useFetchCompilationTemplateGroup } from '@/hooks/use-compilation-template-group-request';
-import { isCreateCompilationTemplateGroup } from '@/utils/compilation-template-util';
-import { useCallback } from 'react';
+import { useCompilationTemplateSidebarCollapse } from '@/hooks/use-compilation-template-sidebar-collapse';
+import { useSidebarCollapse } from '@/layouts/components/app-sidebar/use-sidebar-collapse';
+import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 
@@ -30,30 +29,31 @@ export default function EditNextCompilationTemplate() {
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
   const agentsUrl = resolveAgentsUrl(searchParams.get('source'));
+  const { collapsed, setCollapsed } = useCompilationTemplateSidebarCollapse();
+  const { setCollapsed: setPrimarySidebarCollapsed } = useSidebarCollapse();
+
+  useEffect(() => {
+    setPrimarySidebarCollapsed(true);
+  }, [setPrimarySidebarCollapsed]);
 
   const navigateToAgents = useCallback(() => {
     navigate(agentsUrl);
   }, [navigate, agentsUrl]);
 
-  const isCreate = isCreateCompilationTemplateGroup(id);
-  const { data: group } = useFetchCompilationTemplateGroup(id);
+  const collapseSidebars = useCallback(() => {
+    setCollapsed(true);
+    setPrimarySidebarCollapsed(true);
+  }, [setCollapsed, setPrimarySidebarCollapsed]);
 
   return (
     <section className="h-full flex flex-col bg-bg-base">
-      <header className="shrink-0 px-5 py-4 border-b border-border-button flex gap-3 items-center">
-        <BackButton to={agentsUrl} />
-        <h2 className="font-medium text-text-secondary">
-          {isCreate
-            ? t('knowledgeCompilation.addTemplateGroup')
-            : group?.name || t('knowledgeCompilation.editTemplateGroup')}
-        </h2>
-      </header>
-
       <CompilationTemplateGroupEditor
         id={id}
         onSuccess={navigateToAgents}
         onCancel={navigateToAgents}
         cancelText={t('common.back')}
+        sidebarCollapsed={collapsed}
+        onSidebarCollapse={collapseSidebars}
       />
     </section>
   );

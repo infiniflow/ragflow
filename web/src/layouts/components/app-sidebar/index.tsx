@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { EnterpriseHeaderUpgradeBadge } from '@/ee/layouts/components/header-enterprise';
 import { useAgentSidebarCollapse } from '@/hooks/use-agent-sidebar-collapse';
+import { useCompilationTemplateSidebarCollapse } from '@/hooks/use-compilation-template-sidebar-collapse';
 import { useDatasetSidebarCollapse } from '@/hooks/use-dataset-sidebar-collapse';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
@@ -27,17 +28,28 @@ function AppSidebarContent() {
     collapsed: agentSidebarCollapsed,
     toggleCollapsed: toggleAgentSidebar,
   } = useAgentSidebarCollapse();
+  const {
+    collapsed: compilationTemplateSidebarCollapsed,
+    toggleCollapsed: toggleCompilationTemplateSidebar,
+  } = useCompilationTemplateSidebarCollapse();
   const { pathname } = useLocation();
 
   const showDatasetSidebarExpand =
     datasetSidebarCollapsed && matchesPath(pathname, Routes.DatasetBase);
   const showAgentSidebarExpand =
     agentSidebarCollapsed && matchesPath(pathname, Routes.Agent);
+  const showCompilationTemplateSidebarExpand =
+    compilationTemplateSidebarCollapsed &&
+    matchesPath(pathname, Routes.CompilationTemplatesEditNext);
   const showSecondarySidebarExpand =
-    showDatasetSidebarExpand || showAgentSidebarExpand;
+    showDatasetSidebarExpand ||
+    showAgentSidebarExpand ||
+    showCompilationTemplateSidebarExpand;
   const toggleSecondarySidebar = showAgentSidebarExpand
     ? toggleAgentSidebar
-    : toggleDatasetSidebar;
+    : showCompilationTemplateSidebarExpand
+      ? toggleCompilationTemplateSidebar
+      : toggleDatasetSidebar;
 
   return (
     <aside

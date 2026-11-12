@@ -2202,9 +2202,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       rechunkRules: '重分片规则',
       rechunkRulesPlaceholder:
         '描述此知识编译任务下，LLM 应如何合并和划分源 Chunk。',
+      configuration: '配置',
       jsonPreview: 'JSON 预览',
-      processFlow: '流程视图',
-      processFlowComingSoon: '流程视图预览即将到来',
       compilationTitleSuffix: '的知识库',
       artifacts: 'Artifacts',
       llmWiki: 'Wiki',

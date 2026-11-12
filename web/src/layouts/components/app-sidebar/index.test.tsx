@@ -4,8 +4,10 @@ import { AppSidebar } from './index';
 
 const mockToggleDatasetSidebar = jest.fn();
 const mockToggleAgentSidebar = jest.fn();
+const mockToggleCompilationTemplateSidebar = jest.fn();
 let mockDatasetSidebarCollapsed = false;
 let mockAgentSidebarCollapsed = false;
+let mockCompilationTemplateSidebarCollapsed = false;
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -26,6 +28,13 @@ jest.mock('@/hooks/use-agent-sidebar-collapse', () => ({
   useAgentSidebarCollapse: () => ({
     collapsed: mockAgentSidebarCollapsed,
     toggleCollapsed: mockToggleAgentSidebar,
+  }),
+}));
+
+jest.mock('@/hooks/use-compilation-template-sidebar-collapse', () => ({
+  useCompilationTemplateSidebarCollapse: () => ({
+    collapsed: mockCompilationTemplateSidebarCollapsed,
+    toggleCollapsed: mockToggleCompilationTemplateSidebar,
   }),
 }));
 
@@ -58,6 +67,7 @@ describe('AppSidebar secondary sidebar expansion', () => {
     jest.clearAllMocks();
     mockDatasetSidebarCollapsed = false;
     mockAgentSidebarCollapsed = false;
+    mockCompilationTemplateSidebarCollapsed = false;
   });
 
   it('expands the agent secondary sidebar on agent detail routes', () => {
@@ -81,6 +91,19 @@ describe('AppSidebar secondary sidebar expansion', () => {
       screen.queryByRole('button', { name: 'sidebar.expandSidebar' }),
     ).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'RAGFlow' })).toBeInTheDocument();
+  });
+
+  it('expands the compilation template secondary sidebar on its editor routes', () => {
+    mockCompilationTemplateSidebarCollapsed = true;
+    renderAppSidebar('/compilation-templates/edit-next/group-1');
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'sidebar.expandSidebar' }),
+    );
+
+    expect(mockToggleCompilationTemplateSidebar).toHaveBeenCalledTimes(1);
+    expect(mockToggleAgentSidebar).not.toHaveBeenCalled();
+    expect(mockToggleDatasetSidebar).not.toHaveBeenCalled();
   });
 
   it('keeps the dataset expansion behavior on dataset routes', () => {
