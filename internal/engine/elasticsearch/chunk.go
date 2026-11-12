@@ -3575,7 +3575,12 @@ func parseOrderByExpr(orderBy *types.OrderByExpr) []map[string]interface{} {
 			direction = "desc"
 		}
 
-		// Skip id field (cannot order by text field)
+		// Skip id field (cannot order by text field). The logical "id" column is
+		// shimmed from the ES _id in the response path, but ordering on _id
+		// requires indices.id_field_data, which is disabled by default on the
+		// bundled Elasticsearch 8.x deployment and would make every id-ordered
+		// query fail at runtime. Callers that need deep pagination must supply a
+		// real stored, sortable field instead of relying on the logical id.
 		if field.Field == "id" {
 			continue
 		}
