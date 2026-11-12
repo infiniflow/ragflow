@@ -1,13 +1,11 @@
-import { useLocalStorageState } from 'ahooks';
 import {
   createContext,
   useCallback,
   useContext,
   useMemo,
+  useState,
   type PropsWithChildren,
 } from 'react';
-
-const AgentSidebarCollapsedStorageKey = 'ragflow-agent-sidebar-collapsed';
 
 interface AgentSidebarCollapseContextValue {
   collapsed: boolean;
@@ -21,10 +19,7 @@ const AgentSidebarCollapseContext =
 // Shared by the agent detail pages and the primary AppSidebar, which hosts
 // the expand entry while the secondary sidebar is hidden.
 export function AgentSidebarCollapseProvider({ children }: PropsWithChildren) {
-  const [collapsed, setCollapsed] = useLocalStorageState<boolean>(
-    AgentSidebarCollapsedStorageKey,
-    { defaultValue: false },
-  );
+  const [collapsed, setCollapsed] = useState(false);
 
   const toggleCollapsed = useCallback(() => {
     setCollapsed((prev) => !prev);

@@ -14,17 +14,14 @@
  *  limitations under the License.
  */
 
-import { useLocalStorageState } from 'ahooks';
 import {
   createContext,
   useCallback,
   useContext,
   useMemo,
+  useState,
   type PropsWithChildren,
 } from 'react';
-
-const CompilationTemplateSidebarCollapsedStorageKey =
-  'ragflow-compilation-template-sidebar-collapsed';
 
 interface CompilationTemplateSidebarCollapseContextValue {
   collapsed: boolean;
@@ -40,10 +37,7 @@ const CompilationTemplateSidebarCollapseContext =
 export function CompilationTemplateSidebarCollapseProvider({
   children,
 }: PropsWithChildren) {
-  const [collapsed, setCollapsed] = useLocalStorageState<boolean>(
-    CompilationTemplateSidebarCollapsedStorageKey,
-    { defaultValue: false },
-  );
+  const [collapsed, setCollapsed] = useState(false);
 
   const toggleCollapsed = useCallback(() => {
     setCollapsed((prev) => !prev);

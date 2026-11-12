@@ -1,7 +1,7 @@
 import { useAgentSidebarCollapse } from '@/hooks/use-agent-sidebar-collapse';
 import { useSidebarCollapse } from '@/layouts/components/app-sidebar/use-sidebar-collapse';
 import { cn } from '@/lib/utils';
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { Outlet } from 'react-router';
 import { useFetchDataOnMount } from './hooks/use-fetch-data';
 import { AgentSidebar } from './sidebar';
@@ -10,6 +10,10 @@ export default function AgentLayout() {
   const { flowDetail } = useFetchDataOnMount();
   const { collapsed, setCollapsed } = useAgentSidebarCollapse();
   const { setCollapsed: setPrimarySidebarCollapsed } = useSidebarCollapse();
+
+  useEffect(() => {
+    setCollapsed(false);
+  }, [setCollapsed]);
 
   const collapsePrimarySidebar = useCallback(() => {
     setPrimarySidebarCollapsed(true);
@@ -23,7 +27,7 @@ export default function AgentLayout() {
   return (
     <article
       className={cn(
-        'grid size-full grid-rows-1 pt-3',
+        'grid size-full grid-rows-1',
         collapsed
           ? 'grid-cols-[minmax(0,1fr)]'
           : 'grid-cols-[auto_minmax(0,1fr)]',
@@ -36,7 +40,9 @@ export default function AgentLayout() {
           onMenuSelect={collapsePrimarySidebar}
         />
       )}
-      <Outlet />
+      <div className="min-h-0 min-w-0 pt-3">
+        <Outlet />
+      </div>
     </article>
   );
 }

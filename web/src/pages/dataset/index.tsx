@@ -19,11 +19,14 @@ export default function DatasetWrapper() {
   );
 
   useEffect(() => {
+    setCollapsed(false);
+  }, [setCollapsed]);
+
+  useEffect(() => {
     if (isCompilation) {
-      setCollapsed(false);
       setPrimarySidebarCollapsed(true);
     }
-  }, [isCompilation, setCollapsed, setPrimarySidebarCollapsed]);
+  }, [isCompilation, setPrimarySidebarCollapsed]);
 
   const collapsePrimarySidebar = useCallback(() => {
     setPrimarySidebarCollapsed(true);
@@ -41,7 +44,7 @@ export default function DatasetWrapper() {
       <KnowledgeBaseProvider knowledgeBase={data} loading={loading}>
         <article
           className={cn(
-            'pt-3 size-full grid grid-rows-1',
+            'grid size-full grid-rows-1',
             collapsed
               ? 'grid-cols-[minmax(0,1fr)]'
               : 'grid-cols-[auto_minmax(0,1fr)]',
@@ -55,7 +58,9 @@ export default function DatasetWrapper() {
             />
           )}
 
-          <Outlet />
+          <div className="min-h-0 min-w-0 pt-3">
+            <Outlet />
+          </div>
         </article>
       </KnowledgeBaseProvider>
     </OwnerTenantIdContext.Provider>

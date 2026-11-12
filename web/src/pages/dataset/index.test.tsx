@@ -63,15 +63,16 @@ describe('DatasetWrapper', () => {
     expect(mockSetPrimarySidebarCollapsed).toHaveBeenCalledWith(true);
   });
 
-  it('does not change sidebar states on other dataset routes', () => {
+  it('expands the secondary sidebar on entry without changing the primary sidebar', () => {
     renderDatasetRoute('/dataset/files/dataset-1');
 
-    expect(mockSetDatasetSidebarCollapsed).not.toHaveBeenCalled();
+    expect(mockSetDatasetSidebarCollapsed).toHaveBeenCalledWith(false);
     expect(mockSetPrimarySidebarCollapsed).not.toHaveBeenCalled();
   });
 
   it('collapses only the primary sidebar when a menu item is selected', () => {
     renderDatasetRoute('/dataset/files/dataset-1');
+    mockSetDatasetSidebarCollapsed.mockClear();
 
     fireEvent.click(screen.getByTestId('dataset-menu-item'));
 

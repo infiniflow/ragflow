@@ -30,6 +30,7 @@ import { supportedLanguages } from '@/locales/config';
 import { TenantMembershipStatus } from '@/pages/user-setting/constants';
 import { Routes } from '@/routes';
 import {
+  LucideChevronLeft,
   LucideCircleHelp,
   LucideLanguages,
   LucideLogOut,
@@ -55,7 +56,7 @@ export function UserFooter() {
   const { logout } = useLogout();
   const { theme, setTheme } = useTheme();
   const isDark = useIsDarkTheme();
-  const { collapsed } = useSidebarCollapse();
+  const { collapsed, toggleCollapsed } = useSidebarCollapse();
 
   const {
     data: { language = 'en', avatar, nickname, email },
@@ -128,108 +129,125 @@ export function UserFooter() {
         <EnterpriseHeaderTicketsLink />
       </div>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            aria-label={nickname || email}
-            data-testid="settings-entrypoint"
-            className={cn(
-              'h-auto justify-start gap-2.5 px-2 py-2',
-              collapsed
-                ? 'size-10 justify-center p-0'
-                : 'max-md:size-10 max-md:justify-center max-md:p-0',
-            )}
-          >
-            <span className="relative shrink-0">
-              <RAGFlowAvatar
-                name={nickname}
-                avatar={avatar}
-                isPerson
-                className="size-8"
-              />
-              <EnterpriseHeaderPlanBadge />
-            </span>
-            <span
+      <div className="flex items-center gap-1">
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              aria-label={nickname || email}
+              data-testid="settings-entrypoint"
               className={cn(
-                'hidden min-w-0 flex-1 truncate text-start text-sm',
-                !collapsed && 'md:inline',
+                'h-auto justify-start gap-2.5 px-2 py-2',
+                !collapsed && 'md:min-w-0 md:flex-1',
+                collapsed
+                  ? 'size-10 justify-center p-0'
+                  : 'max-md:size-10 max-md:justify-center max-md:p-0',
               )}
             >
-              {nickname || email}
-            </span>
-          </Button>
-        </DropdownMenuTrigger>
+              <span className="relative shrink-0">
+                <RAGFlowAvatar
+                  name={nickname}
+                  avatar={avatar}
+                  isPerson
+                  className="size-8"
+                />
+                <EnterpriseHeaderPlanBadge />
+              </span>
+              <span
+                className={cn(
+                  'hidden min-w-0 flex-1 truncate text-start text-sm',
+                  !collapsed && 'md:inline',
+                )}
+              >
+                {nickname || email}
+              </span>
+            </Button>
+          </DropdownMenuTrigger>
 
-        <DropdownMenuContent side="top" align="start" className="w-56">
-          <DropdownMenuLabel className="truncate font-normal text-text-secondary">
-            {email}
-          </DropdownMenuLabel>
-          <DropdownMenuSeparator />
-
-          <DropdownMenuItem onClick={navigateToProfile}>
-            <LucideUser />
-            {t('setting.profile')}
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={navigateToApi}>
-            <LucideUnplug />
-            {t('setting.api')}
-          </DropdownMenuItem>
-
-          <DropdownMenuSeparator />
-
-          <DropdownMenuItem onClick={toggleTheme}>
-            <ThemeIcon />
-            {t('sidebar.theme')}
-          </DropdownMenuItem>
-
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>
-              <LucideLanguages />
-              {t('sidebar.language')}
-            </DropdownMenuSubTrigger>
-            <DropdownMenuSubContent>
-              {supportedLanguages.map((x) => (
-                <DropdownMenuItem
-                  key={x.code}
-                  onClick={handleLanguageChange(x.code)}
-                >
-                  <span className={cn(x.code === language && 'font-semibold')}>
-                    {x.displayName}
-                  </span>
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
-
-          <DropdownMenuSeparator />
-
-          <DropdownMenuItem onClick={openHelp}>
-            <LucideCircleHelp />
-            {t('header.help')}
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={openGitHub}>
-            <IconFontFill name="GitHub" />
-            {t('header.github')}
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={openDiscord}>
-            <IconFontFill name="a-DiscordIconSVGVectorIcon" />
-            {t('header.discord')}
-          </DropdownMenuItem>
-
-          <DropdownMenuSeparator />
-
-          {version && (
-            <DropdownMenuLabel className="text-xs font-normal text-accent-primary">
-              {version}
+          <DropdownMenuContent side="top" align="start" className="w-56">
+            <DropdownMenuLabel className="truncate font-normal text-text-secondary">
+              {email}
             </DropdownMenuLabel>
-          )}
-          <DropdownMenuItem onClick={handleLogout}>
-            <LucideLogOut />
-            {t('setting.logout')}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+            <DropdownMenuSeparator />
+
+            <DropdownMenuItem onClick={navigateToProfile}>
+              <LucideUser />
+              {t('setting.profile')}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={navigateToApi}>
+              <LucideUnplug />
+              {t('setting.api')}
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
+
+            <DropdownMenuItem onClick={toggleTheme}>
+              <ThemeIcon />
+              {t('sidebar.theme')}
+            </DropdownMenuItem>
+
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <LucideLanguages />
+                {t('sidebar.language')}
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                {supportedLanguages.map((x) => (
+                  <DropdownMenuItem
+                    key={x.code}
+                    onClick={handleLanguageChange(x.code)}
+                  >
+                    <span
+                      className={cn(x.code === language && 'font-semibold')}
+                    >
+                      {x.displayName}
+                    </span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+
+            <DropdownMenuSeparator />
+
+            <DropdownMenuItem onClick={openHelp}>
+              <LucideCircleHelp />
+              {t('header.help')}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={openGitHub}>
+              <IconFontFill name="GitHub" />
+              {t('header.github')}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={openDiscord}>
+              <IconFontFill name="a-DiscordIconSVGVectorIcon" />
+              {t('header.discord')}
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
+
+            {version && (
+              <DropdownMenuLabel className="text-xs font-normal text-accent-primary">
+                {version}
+              </DropdownMenuLabel>
+            )}
+            <DropdownMenuItem onClick={handleLogout}>
+              <LucideLogOut />
+              {t('setting.logout')}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {!collapsed && (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t('sidebar.collapseSidebar')}
+            title={t('sidebar.collapseSidebar')}
+            onClick={toggleCollapsed}
+            className="shrink-0 max-md:hidden"
+          >
+            <LucideChevronLeft className="size-4" />
+          </Button>
+        )}
+      </div>
     </footer>
   );
 }

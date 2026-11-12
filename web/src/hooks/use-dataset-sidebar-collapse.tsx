@@ -1,13 +1,11 @@
-import { useLocalStorageState } from 'ahooks';
 import {
   createContext,
   useCallback,
   useContext,
   useMemo,
+  useState,
   type PropsWithChildren,
 } from 'react';
-
-const DatasetSidebarCollapsedStorageKey = 'ragflow-dataset-sidebar-collapsed';
 
 interface DatasetSidebarCollapseContextValue {
   collapsed: boolean;
@@ -24,10 +22,7 @@ const DatasetSidebarCollapseContext =
 export function DatasetSidebarCollapseProvider({
   children,
 }: PropsWithChildren) {
-  const [collapsed, setCollapsed] = useLocalStorageState<boolean>(
-    DatasetSidebarCollapsedStorageKey,
-    { defaultValue: false },
-  );
+  const [collapsed, setCollapsed] = useState(false);
 
   const toggleCollapsed = useCallback(() => {
     setCollapsed((prev) => !prev);

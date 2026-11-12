@@ -1,12 +1,16 @@
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { MemoryRouter } from 'react-router';
 import { AppSidebar } from './index';
 
 const mockToggleDatasetSidebar = jest.fn();
 const mockToggleAgentSidebar = jest.fn();
+const mockToggleChatSidebar = jest.fn();
 const mockToggleCompilationTemplateSidebar = jest.fn();
+const mockTogglePrimarySidebar = jest.fn();
+let mockPrimarySidebarCollapsed = false;
 let mockDatasetSidebarCollapsed = false;
 let mockAgentSidebarCollapsed = false;
+let mockChatSidebarCollapsed = false;
 let mockCompilationTemplateSidebarCollapsed = false;
 
 jest.mock('react-i18next', () => ({
@@ -31,6 +35,13 @@ jest.mock('@/hooks/use-agent-sidebar-collapse', () => ({
   }),
 }));
 
+jest.mock('@/hooks/use-chat-sidebar-collapse', () => ({
+  useChatSidebarCollapse: () => ({
+    collapsed: mockChatSidebarCollapsed,
+    toggleCollapsed: mockToggleChatSidebar,
+  }),
+}));
+
 jest.mock('@/hooks/use-compilation-template-sidebar-collapse', () => ({
   useCompilationTemplateSidebarCollapse: () => ({
     collapsed: mockCompilationTemplateSidebarCollapsed,
@@ -40,8 +51,8 @@ jest.mock('@/hooks/use-compilation-template-sidebar-collapse', () => ({
 
 jest.mock('./use-sidebar-collapse', () => ({
   useSidebarCollapse: () => ({
-    collapsed: false,
-    toggleCollapsed: jest.fn(),
+    collapsed: mockPrimarySidebarCollapsed,
+    toggleCollapsed: mockTogglePrimarySidebar,
   }),
 }));
 
@@ -65,8 +76,10 @@ function renderAppSidebar(path: string) {
 describe('AppSidebar secondary sidebar expansion', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockPrimarySidebarCollapsed = false;
     mockDatasetSidebarCollapsed = false;
     mockAgentSidebarCollapsed = false;
+    mockChatSidebarCollapsed = false;
     mockCompilationTemplateSidebarCollapsed = false;
   });
 
@@ -75,11 +88,46 @@ describe('AppSidebar secondary sidebar expansion', () => {
     mockDatasetSidebarCollapsed = true;
     renderAppSidebar('/agent/agent-1/setting');
 
+    const expandButton = screen.getByRole('button', {
+      name: 'sidebar.expandSidebar',
+    });
+
+    expect(screen.getByRole('link', { name: 'RAGFlow' })).toBeInTheDocument();
+    expect(expandButton.parentElement).toHaveClass('md:ml-auto');
+    fireEvent.click(expandButton);
+
+    expect(mockToggleAgentSidebar).toHaveBeenCalledTimes(1);
+    expect(mockToggleDatasetSidebar).not.toHaveBeenCalled();
+    expect(mockTogglePrimarySidebar).not.toHaveBeenCalled();
+  });
+
+  it('uses the header control only for the secondary sidebar when the primary sidebar is collapsed', () => {
+    mockPrimarySidebarCollapsed = true;
+    mockAgentSidebarCollapsed = true;
+    const { container } = renderAppSidebar('/agent/agent-1/setting');
+    const header = container.querySelector('header');
+
+    expect(header).not.toBeNull();
+    fireEvent.click(
+      within(header as HTMLElement).getByRole('button', {
+        name: 'sidebar.expandSidebar',
+      }),
+    );
+
+    expect(mockToggleAgentSidebar).toHaveBeenCalledTimes(1);
+    expect(mockTogglePrimarySidebar).not.toHaveBeenCalled();
+  });
+
+  it('expands the chat secondary sidebar on chat detail routes', () => {
+    mockChatSidebarCollapsed = true;
+    mockDatasetSidebarCollapsed = true;
+    renderAppSidebar('/chat/chat-1');
+
     fireEvent.click(
       screen.getByRole('button', { name: 'sidebar.expandSidebar' }),
     );
 
-    expect(mockToggleAgentSidebar).toHaveBeenCalledTimes(1);
+    expect(mockToggleChatSidebar).toHaveBeenCalledTimes(1);
     expect(mockToggleDatasetSidebar).not.toHaveBeenCalled();
   });
 
@@ -124,6 +172,9 @@ describe('AppSidebar secondary sidebar expansion', () => {
 
     expect(
       screen.queryByRole('button', { name: 'sidebar.expandSidebar' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'sidebar.collapseSidebar' }),
     ).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'RAGFlow' })).toBeInTheDocument();
   });

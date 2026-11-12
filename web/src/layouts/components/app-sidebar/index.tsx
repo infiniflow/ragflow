@@ -1,15 +1,13 @@
+import { SidebarHeader } from '@/components/sidebar-header';
 import { Button } from '@/components/ui/button';
 import { EnterpriseHeaderUpgradeBadge } from '@/ee/layouts/components/header-enterprise';
 import { useAgentSidebarCollapse } from '@/hooks/use-agent-sidebar-collapse';
+import { useChatSidebarCollapse } from '@/hooks/use-chat-sidebar-collapse';
 import { useCompilationTemplateSidebarCollapse } from '@/hooks/use-compilation-template-sidebar-collapse';
 import { useDatasetSidebarCollapse } from '@/hooks/use-dataset-sidebar-collapse';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
-import {
-  LucideChevronRight,
-  LucidePanelLeftClose,
-  LucidePanelLeftOpen,
-} from 'lucide-react';
+import { LucideChevronRight, LucidePanelLeftOpen } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { Link, useLocation } from 'react-router';
 import { IntegrationsNavGroup, NavItemLink } from './nav-item';
@@ -29,27 +27,39 @@ function AppSidebarContent() {
     toggleCollapsed: toggleAgentSidebar,
   } = useAgentSidebarCollapse();
   const {
+    collapsed: chatSidebarCollapsed,
+    toggleCollapsed: toggleChatSidebar,
+  } = useChatSidebarCollapse();
+  const {
     collapsed: compilationTemplateSidebarCollapsed,
     toggleCollapsed: toggleCompilationTemplateSidebar,
   } = useCompilationTemplateSidebarCollapse();
   const { pathname } = useLocation();
 
-  const showDatasetSidebarExpand =
-    datasetSidebarCollapsed && matchesPath(pathname, Routes.DatasetBase);
-  const showAgentSidebarExpand =
-    agentSidebarCollapsed && matchesPath(pathname, Routes.Agent);
-  const showCompilationTemplateSidebarExpand =
-    compilationTemplateSidebarCollapsed &&
-    matchesPath(pathname, Routes.CompilationTemplatesEditNext);
-  const showSecondarySidebarExpand =
-    showDatasetSidebarExpand ||
-    showAgentSidebarExpand ||
-    showCompilationTemplateSidebarExpand;
-  const toggleSecondarySidebar = showAgentSidebarExpand
-    ? toggleAgentSidebar
-    : showCompilationTemplateSidebarExpand
-      ? toggleCompilationTemplateSidebar
-      : toggleDatasetSidebar;
+  const collapsedSecondarySidebar = [
+    {
+      route: Routes.DatasetBase,
+      collapsed: datasetSidebarCollapsed,
+      onExpand: toggleDatasetSidebar,
+    },
+    {
+      route: Routes.Agent,
+      collapsed: agentSidebarCollapsed,
+      onExpand: toggleAgentSidebar,
+    },
+    {
+      route: Routes.Chat,
+      collapsed: chatSidebarCollapsed,
+      onExpand: toggleChatSidebar,
+    },
+    {
+      route: Routes.CompilationTemplatesEditNext,
+      collapsed: compilationTemplateSidebarCollapsed,
+      onExpand: toggleCompilationTemplateSidebar,
+    },
+  ].find(
+    (sidebar) => sidebar.collapsed && matchesPath(pathname, sidebar.route),
+  );
 
   return (
     <aside
@@ -59,47 +69,48 @@ function AppSidebarContent() {
         collapsed && 'border-r border-border-button',
       )}
     >
-      <div
+      <SidebarHeader
         className={cn(
-          'flex shrink-0 items-center justify-center gap-2 px-3 py-4',
-          !collapsed && 'md:justify-start',
+          'justify-center px-4',
+          !collapsed && 'md:justify-start pl-4',
         )}
       >
-        {showSecondarySidebarExpand ? (
-          <div className="flex size-10 shrink-0 items-center justify-center">
+        {!(collapsed && collapsedSecondarySidebar) && (
+          <Link
+            to={Routes.Root}
+            aria-label="RAGFlow"
+            className={cn(
+              'flex size-10 shrink-0 items-center justify-center',
+              collapsedSecondarySidebar && 'max-md:hidden',
+            )}
+          >
+            <img
+              src="/logo.svg"
+              alt="RAGFlow logo"
+              className={cn('size-8', { 'size-5': collapsed })}
+            />
+          </Link>
+        )}
+        {!collapsed && <EnterpriseHeaderUpgradeBadge />}
+        {collapsedSecondarySidebar && (
+          <div
+            className={cn(
+              'flex size-10 shrink-0 items-center justify-center',
+              !collapsed && 'md:ml-auto',
+            )}
+          >
             <Button
               variant="ghost"
               size="icon-sm"
               aria-label={t('sidebar.expandSidebar')}
               title={t('sidebar.expandSidebar')}
-              onClick={toggleSecondarySidebar}
+              onClick={collapsedSecondarySidebar.onExpand}
             >
               <LucidePanelLeftOpen className="size-4" />
             </Button>
           </div>
-        ) : (
-          <Link
-            to={Routes.Root}
-            aria-label="RAGFlow"
-            className="flex size-10 shrink-0 items-center justify-center"
-          >
-            <img src="/logo.svg" alt="RAGFlow logo" className="size-10" />
-          </Link>
         )}
-        {!collapsed && <EnterpriseHeaderUpgradeBadge />}
-        {!collapsed && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={t('sidebar.collapseSidebar')}
-            title={t('sidebar.collapseSidebar')}
-            onClick={toggleCollapsed}
-            className="ml-auto max-md:hidden"
-          >
-            <LucidePanelLeftClose className="size-4" />
-          </Button>
-        )}
-      </div>
+      </SidebarHeader>
 
       <nav className="min-h-0 flex-1 overflow-y-auto px-2 py-3 md:px-3">
         <ul className="flex flex-col gap-1">

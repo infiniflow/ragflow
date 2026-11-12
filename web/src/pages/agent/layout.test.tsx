@@ -87,6 +87,13 @@ describe('AgentLayout', () => {
     );
   });
 
+  it('expands the secondary sidebar on entry', () => {
+    mockAgentSidebarCollapsed = true;
+    renderAgentLayout();
+
+    expect(mockSetAgentSidebarCollapsed).toHaveBeenCalledWith(false);
+  });
+
   it('hides the secondary sidebar when collapsed', () => {
     mockAgentSidebarCollapsed = true;
     renderAgentLayout();
@@ -97,6 +104,7 @@ describe('AgentLayout', () => {
 
   it('collapses only the primary sidebar after menu selection', () => {
     renderAgentLayout();
+    mockSetAgentSidebarCollapsed.mockClear();
 
     fireEvent.click(screen.getByTestId('agent-menu-item'));
 

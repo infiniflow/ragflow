@@ -94,10 +94,10 @@ describe('EditNextCompilationTemplate', () => {
     expect(mockSetPrimarySidebarCollapsed).toHaveBeenCalledWith(true);
   });
 
-  it('passes the persisted secondary sidebar state to the editor', () => {
+  it('expands the secondary sidebar on entry', () => {
     mockSecondarySidebarCollapsed = true;
     renderPage();
 
-    expect(lastEditorProps().sidebarCollapsed).toBe(true);
+    expect(mockSetSecondarySidebarCollapsed).toHaveBeenCalledWith(false);
   });
 });

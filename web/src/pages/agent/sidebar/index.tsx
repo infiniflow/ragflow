@@ -1,4 +1,4 @@
-import { TruncatedText } from '@/components/truncated-text';
+import { SecondarySidebarHeader } from '@/components/sidebar-header';
 import { Button } from '@/components/ui/button';
 import { AgentQuery } from '@/constants/agent';
 import { cn } from '@/lib/utils';
@@ -6,7 +6,6 @@ import { Routes } from '@/routes';
 import {
   LucideFrame,
   LucideMessageSquareMore,
-  LucidePanelLeftClose,
   LucideSettings,
 } from 'lucide-react';
 import { useMemo } from 'react';
@@ -82,24 +81,7 @@ export function AgentSidebar({
 
   return (
     <aside className="flex w-64 flex-col">
-      <header className="flex items-center gap-2 px-5 pb-4">
-        <TruncatedText
-          as="h3"
-          className="min-w-0 flex-1 truncate text-lg font-semibold text-text-primary"
-          tooltip={title}
-        >
-          {title}
-        </TruncatedText>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={t('sidebar.collapseSidebar')}
-          title={t('sidebar.collapseSidebar')}
-          onClick={onCollapse}
-        >
-          <LucidePanelLeftClose className="size-4" />
-        </Button>
-      </header>
+      <SecondarySidebarHeader title={title} onCollapse={onCollapse} />
 
       <nav className="overflow-y-auto px-5 pb-5 pt-1">
         <ul className="space-y-2">

@@ -5,12 +5,11 @@ import {
   LucideBookText,
   LucideFolderOpen,
   LucideLogs,
-  LucidePanelLeftClose,
   LucideSettings,
   LucideTextSearch,
 } from 'lucide-react';
 
-import { TruncatedText } from '@/components/truncated-text';
+import { SecondarySidebarHeader } from '@/components/sidebar-header';
 import { Button } from '@/components/ui/button';
 import { useSecondPathName } from '@/hooks/route-hook';
 import { cn } from '@/lib/utils';
@@ -25,11 +24,7 @@ type PropType = {
   onMenuSelect: () => void;
 };
 
-export function SideBar({
-  dataset: data,
-  onCollapse,
-  onMenuSelect,
-}: PropType) {
+export function SideBar({ dataset: data, onCollapse, onMenuSelect }: PropType) {
   const pathName = useSecondPathName();
   const { id } = useParams();
   const { t } = useTranslation();
@@ -68,25 +63,7 @@ export function SideBar({
 
   return (
     <aside className="flex flex-col w-64 relative">
-      <header className="flex items-center gap-2 px-5 pb-4">
-        <TruncatedText
-          as="h3"
-          className="min-w-0 flex-1 truncate text-lg font-semibold text-text-primary"
-          tooltip={data.name}
-        >
-          {data.name}
-        </TruncatedText>
-
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label={t('sidebar.collapseSidebar')}
-          title={t('sidebar.collapseSidebar')}
-          onClick={onCollapse}
-        >
-          <LucidePanelLeftClose className="size-4" />
-        </Button>
-      </header>
+      <SecondarySidebarHeader title={data.name} onCollapse={onCollapse} />
 
       <nav className="px-5 pt-1 pb-5 overflow-y-auto">
         <ul className="space-y-5">

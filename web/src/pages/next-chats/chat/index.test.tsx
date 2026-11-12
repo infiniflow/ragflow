@@ -1,3 +1,4 @@
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { fireEvent, render, screen } from '@testing-library/react';
 import Chat from './index';
 
@@ -10,6 +11,9 @@ const mockRemoveStreamSessions = jest.fn();
 const mockFetchSessionManually = jest.fn();
 const mockShowEmbedModal = jest.fn();
 const mockHideEmbedModal = jest.fn();
+const mockSetChatSidebarCollapsed = jest.fn();
+const mockSetPrimarySidebarCollapsed = jest.fn();
+let mockChatSidebarCollapsed = false;
 
 function MockRootLayout({ children }: { children: React.ReactNode }) {
   return <div>{children}</div>;
@@ -36,6 +40,17 @@ jest.mock('react-i18next', () => ({
 }));
 jest.mock('react-router', () => ({
   useParams: () => ({ id: 'chat-1' }),
+}));
+jest.mock('@/hooks/use-chat-sidebar-collapse', () => ({
+  useChatSidebarCollapse: () => ({
+    collapsed: mockChatSidebarCollapsed,
+    setCollapsed: mockSetChatSidebarCollapsed,
+  }),
+}));
+jest.mock('@/layouts/components/app-sidebar/use-sidebar-collapse', () => ({
+  useSidebarCollapse: () => ({
+    setCollapsed: mockSetPrimarySidebarCollapsed,
+  }),
 }));
 jest.mock('@/layouts/root-layout', () => ({
   RootLayoutContainer: MockRootLayout,
@@ -105,13 +120,22 @@ jest.mock('./conversation-dropdown', () => ({
   ConversationDropdown: MockConversationDropdown,
 }));
 
+function renderChat() {
+  return render(
+    <TooltipProvider>
+      <Chat />
+    </TooltipProvider>,
+  );
+}
+
 describe('Chat layout navigation', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockChatSidebarCollapsed = false;
   });
 
   it('opens settings as the full right-hand view and exits through session navigation', () => {
-    render(<Chat />);
+    renderChat();
 
     expect(screen.getByText('Chat app')).toBeInTheDocument();
     expect(screen.getByTestId('mock-single-chat-box')).toBeInTheDocument();
@@ -151,7 +175,7 @@ describe('Chat layout navigation', () => {
   });
 
   it('keeps the shared header and frame mounted in multiple models', () => {
-    render(<Chat />);
+    renderChat();
 
     const embedButton = screen.getByTestId('chat-detail-embed-open');
     const contentFrame = screen.getByTestId('chat-detail-content-frame');
@@ -174,7 +198,7 @@ describe('Chat layout navigation', () => {
   });
 
   it('returns to a single conversation when creating or selecting a session', () => {
-    render(<Chat />);
+    renderChat();
 
     fireEvent.click(screen.getByTestId('chat-detail-multimodel-toggle'));
     fireEvent.click(screen.getByTestId('chat-detail-session-new'));
@@ -193,7 +217,7 @@ describe('Chat layout navigation', () => {
   });
 
   it('replaces multiple models with settings without replacing the shared layout', () => {
-    render(<Chat />);
+    renderChat();
 
     const embedButton = screen.getByTestId('chat-detail-embed-open');
     const contentFrame = screen.getByTestId('chat-detail-content-frame');
@@ -212,11 +236,32 @@ describe('Chat layout navigation', () => {
   });
 
   it('uses the existing Embed into webpage dialog entry', () => {
-    render(<Chat />);
+    renderChat();
 
     expect(screen.getByText('common.embedIntoSite')).toBeInTheDocument();
     fireEvent.click(screen.getByTestId('chat-detail-embed-open'));
 
     expect(mockShowEmbedModal).toHaveBeenCalledTimes(1);
+  });
+
+  it('collapses both sidebars from the secondary sidebar header', () => {
+    renderChat();
+
+    fireEvent.click(
+      screen.getByRole('button', { name: 'sidebar.collapseSidebar' }),
+    );
+
+    expect(mockSetChatSidebarCollapsed).toHaveBeenCalledWith(true);
+    expect(mockSetPrimarySidebarCollapsed).toHaveBeenCalledWith(true);
+  });
+
+  it('hides the secondary sidebar without unmounting the chat content', () => {
+    mockChatSidebarCollapsed = true;
+    renderChat();
+
+    expect(
+      screen.queryByTestId('chat-detail-sessions'),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId('mock-single-chat-box')).toBeInTheDocument();
   });
 });

@@ -14,10 +14,10 @@
  *  limitations under the License.
  */
 
-import { TruncatedText } from '@/components/truncated-text';
+import { SecondarySidebarHeader } from '@/components/sidebar-header';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
-import { Braces, LucidePanelLeftClose, LucideSettings } from 'lucide-react';
+import { Braces, LucideSettings } from 'lucide-react';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -49,24 +49,10 @@ export function CompilationTemplateEditorSidebar({
   return (
     <aside className="flex w-64 shrink-0 flex-col border-r border-border-button">
       {onCollapse && (
-        <header className="flex shrink-0 items-center gap-2 px-5 pb-4 pt-4">
-          <TruncatedText
-            as="h2"
-            className="min-w-0 flex-1 truncate text-lg font-medium text-text-primary"
-            tooltip={templateName || t('common.name')}
-          >
-            {templateName || t('common.name')}
-          </TruncatedText>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={t('sidebar.collapseSidebar')}
-            title={t('sidebar.collapseSidebar')}
-            onClick={onCollapse}
-          >
-            <LucidePanelLeftClose className="size-4" />
-          </Button>
-        </header>
+        <SecondarySidebarHeader
+          title={templateName || t('common.name')}
+          onCollapse={onCollapse}
+        />
       )}
 
       <nav

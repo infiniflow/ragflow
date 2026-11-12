@@ -33,8 +33,9 @@ export default function EditNextCompilationTemplate() {
   const { setCollapsed: setPrimarySidebarCollapsed } = useSidebarCollapse();
 
   useEffect(() => {
+    setCollapsed(false);
     setPrimarySidebarCollapsed(true);
-  }, [setPrimarySidebarCollapsed]);
+  }, [setCollapsed, setPrimarySidebarCollapsed]);
 
   const navigateToAgents = useCallback(() => {
     navigate(agentsUrl);
