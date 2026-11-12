@@ -721,6 +721,45 @@ check_pdf_oxide_deps() {
     return 1
 }
 
+# Go 1.27+ scans every linker input named in #cgo LDFLAGS and rejects an ELF
+# archive whose members carry LLVM's SHT_LLVM_LINKER_OPTIONS section
+# (".linker-options", type 0x6fff4c01):
+#   "disallowed ELF embedded linker options section in #cgo LDFLAGS: ..."
+# clang-20 emits that section into every object of librag_tokenizer_c_api.a
+# (along with .llvm_addrsig, which Go permits), so strip it before any Go
+# build/test links the archive. Removing the section drops no code or symbols;
+# the dependencies it advertises are already listed explicitly in #cgo LDFLAGS
+# (-lstdc++ -lm -lpthread -lpcre2-8).
+# Idempotent: a no-op when the section is absent (gcc-built archives, or an
+# archive already stripped). Linux/ELF only; macOS objects are Mach-O.
+strip_tokenizer_linker_options() {
+    [ "$(uname -s)" = "Linux" ] || return 0
+    local tok_a="$BUILD_DIR/librag_tokenizer_c_api.a"
+    [ -f "$tok_a" ] || return 0
+
+    # Detect before writing so a clean archive stays byte-for-byte untouched,
+    # and a missing objcopy is only fatal when the section is actually present.
+    # Without readelf, fall through to the strip: objcopy treats a section that
+    # is not there as a no-op, so a gcc-built archive stays valid.
+    if command -v readelf >/dev/null 2>&1; then
+        if ! readelf -S "$tok_a" 2>/dev/null | grep -q '\.linker-options'; then
+            return 0
+        fi
+    fi
+
+    local objcopy_bin=""
+    if command -v objcopy >/dev/null 2>&1; then
+        objcopy_bin=objcopy
+    elif command -v llvm-objcopy >/dev/null 2>&1; then
+        objcopy_bin=llvm-objcopy
+    else
+        echo -e "${RED}Error: librag_tokenizer_c_api.a contains .linker-options sections that Go 1.27+ rejects, but neither objcopy nor llvm-objcopy is installed.${NC}" >&2
+        return 1
+    fi
+    "$objcopy_bin" --remove-section=.linker-options "$tok_a"
+    echo -e "${GREEN}✓ Removed LLVM .linker-options sections from librag_tokenizer_c_api.a${NC}"
+}
+
 # Build C++ static library
 build_cpp() {
     print_section "Building C++ static library"
@@ -740,6 +779,8 @@ build_cpp() {
         echo -e "${RED}Error: Failed to build C++ static library${NC}"
         exit 1
     fi
+
+    strip_tokenizer_linker_options
 
     # Rename the tokenizer's bundled re2 symbols into a private namespace so they
     # never collide with onnxruntime's copy of re2 at final link time.
@@ -893,6 +934,12 @@ build_go() {
 # All three are statically linked — no LD_LIBRARY_PATH or -Wl,-rpath needed.
 setup_cgo_env() {
     detect_target_platform
+
+    # --test/--go reuse the existing librag_tokenizer_c_api.a without rebuilding
+    # the C++ library. --cpp strips the clang-20 .linker-options section right
+    # after make, but a stale archive from an earlier build would still trip
+    # Go 1.27+'s cgo LDFLAGS check, so sanitize it on every path that links it.
+    strip_tokenizer_linker_options
 
     # Controlled auto-download: fill any missing version-keyed native lib from
     # the user cache before resolving individual libs. On an already-provisioned
