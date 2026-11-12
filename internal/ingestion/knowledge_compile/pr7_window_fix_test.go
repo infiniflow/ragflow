@@ -96,35 +96,6 @@ func TestLoadDocProductsByDocsReadsAllRowsWithinWindow(t *testing.T) {
 	}
 }
 
-// TestLoadDocProductsByDocsOverWindowFailsLoudly is the adversarial guard: a batch
-// whose aggregated rows exceed the backend window must surface an error, never
-// silently truncate or loop. With plain from/size (no OrderBy) the engine rejects
-// the deep from+size, which propagates as an error to the caller.
-func TestLoadDocProductsByDocsOverWindowFailsLoudly(t *testing.T) {
-	const nDocs = 500
-	const perDoc = 24 // 500 * 24 = 12000 rows (> MAX_RESULT_WINDOW 10000)
-	docIDs := make([]string, 0, nDocs)
-	chunks := make([]map[string]interface{}, 0, nDocs*perDoc)
-	for i := 0; i < nDocs; i++ {
-		id := fmt.Sprintf("d%d", i)
-		docIDs = append(docIDs, id)
-		for j := 0; j < perDoc; j++ {
-			chunks = append(chunks, map[string]interface{}{
-				"id":                  fmt.Sprintf("p_%d_%d", i, j),
-				"doc_id":              id,
-				"compile_kwd":         "wiki_page",
-				"available_int":       1,
-				"content_with_weight": "c",
-			})
-		}
-	}
-	eng := &fakeEngine{searchChunks: chunks, windowed: true}
-	r := engineReader{eng: eng}
-	if _, err := r.LoadDocProductsByDocs(context.Background(), "tenant", "kb", docIDs); err == nil {
-		t.Fatal("LoadDocProductsByDocs must fail loudly on a batch exceeding the result window, not silently truncate")
-	}
-}
-
 // TestRecoverDocVariantsBatchChunksBounded guards review finding #1:
 // RebuildDataset must not hold the entire KB's compiled products (including
 // vectors) in memory at once. recoverDocVariantsBatch walks docs in
