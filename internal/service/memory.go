@@ -104,10 +104,6 @@ func (e *ResourceNotFoundError) Error() string {
 	return fmt.Sprintf("%s '%s' not found.", e.Resource, e.ID)
 }
 
-//
-// Note: CalculateMemoryType and GetMemoryTypeHuman functions have been moved to dao package
-// Use dao.CalculateMemoryType() and dao.GetMemoryTypeHuman() instead
-
 // PromptAssembler handles the assembly of system prompts for memory extraction
 type PromptAssembler struct{}
 
