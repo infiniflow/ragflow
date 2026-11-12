@@ -3611,6 +3611,14 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       addNow: '立即添加',
     },
 
+    adminEnhancements: {
+      security: '个人安全',
+      currentPassword: '当前密码',
+      currentPasswordRequired: '请输入当前密码',
+      passwordEncryptionFailed: '密码加密失败，请缩短密码后重试。',
+      passwordMaxLength: '密码最多为 128 个字符',
+      passwordChangeHint: '修改成功后需要使用新密码重新登录。',
+    },
     admin: {
       confirm: '确认',
       close: '关闭',

@@ -481,6 +481,7 @@ const apiEndpoints = {
   adminLogin: `${restAPIv1}/admin/login`,
   adminLogout: `${restAPIv1}/admin/logout`,
   adminListUsers: `${restAPIv1}/admin/users`,
+  adminChangeOwnPassword: `${restAPIv1}/admin/me/password`,
   adminCreateUser: `${restAPIv1}/admin/users`,
   adminSetSuperuser: (username: string) =>
     `${restAPIv1}/admin/users/${username}/admin`,

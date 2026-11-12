@@ -174,6 +174,23 @@ export const logout = () => request.post<ResponseData<void>>(adminLogout);
 export const listUsers = () =>
   request.get<ResponseData<AdminService.ListUsersItem[]>>(adminListUsers, {});
 
+export async function changeOwnPassword(
+  oldPassword: string,
+  newPassword: string,
+) {
+  const response = await request.put<ResponseData<void>>(
+    api.adminChangeOwnPassword,
+    {
+      old_password: oldPassword,
+      new_password: newPassword,
+    },
+  );
+  if (response.data.code !== 0) {
+    throw new Error(response.data.message);
+  }
+  return response;
+}
+
 export const createUser = (email: string, password: string) =>
   request.post<ResponseData<Record<string, unknown>>>(adminCreateUser, {
     username: email,

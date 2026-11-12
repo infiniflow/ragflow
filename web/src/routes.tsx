@@ -82,6 +82,7 @@ export enum Routes {
   DataSetSetting = '/configuration',
   DataflowResult = '/dataflow-result',
   Admin = '/admin',
+  AdminSecurity = `${Admin}/security`,
   AdminServices = `${Admin}/services`,
   AdminUserManagement = `${Admin}/users`,
   AdminSandboxSettings = `${Admin}/sandbox-settings`,
@@ -404,6 +405,10 @@ const routeConfigOptions = [
               {
                 path: Routes.AdminUserManagement,
                 Component: () => import('@/pages/admin/users'),
+              },
+              {
+                path: Routes.AdminSecurity,
+                Component: () => import('@/pages/admin/security'),
               },
               {
                 path: Routes.AdminSandboxSettings,
