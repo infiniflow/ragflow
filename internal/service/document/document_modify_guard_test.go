@@ -21,8 +21,56 @@ import (
 	"testing"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 )
+
+func TestBatchUpdateDocumentStatusChecksEachTask(t *testing.T) {
+	for _, taskStatus := range []string{common.CREATED, common.SCHEDULED, common.RUNNING, common.STOPPING} {
+		for _, status := range []string{"0", "1"} {
+			t.Run(taskStatus+"/"+status, func(t *testing.T) {
+				db := setupServiceTestDB(t)
+				pushServiceDB(t, db)
+				insertTestKB(t, "kb-1", "tenant-1", 5, 0, 0)
+				ids := []string{"active", "idle", "completed", "stopped", "failed"}
+				for _, id := range ids {
+					insertTestDoc(t, id, "kb-1", 0, 0)
+				}
+				for id, state := range map[string]string{"active": taskStatus, "completed": common.COMPLETED, "stopped": common.STOPPED, "failed": common.FAILED} {
+					insertTestIngestionTaskWithStatus(t, "task-"+id, "user-1", id, "kb-1", state)
+				}
+				active, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "active")
+				if err != nil {
+					t.Fatal(err)
+				}
+				svc := testDocumentService(t)
+				result, code, err := svc.BatchUpdateDocumentStatus(documentTestContext(t.Context()), "kb-1", status, ids)
+				if err == nil || code != common.CodeServerError {
+					t.Fatalf("expected partial failure, got code=%v err=%v", code, err)
+				}
+				failure, ok := result["active"].(map[string]string)
+				if !ok || !strings.Contains(failure["error"], "cannot be modified") {
+					t.Fatalf("active document was not rejected: %#v", result["active"])
+				}
+				for _, id := range ids {
+					doc, err := dao.NewDocumentDAO().GetByID(t.Context(), db, id)
+					if err != nil {
+						t.Fatal(err)
+					}
+					want := status
+					if id == "active" {
+						want = *active.Status
+					} else if got := result[id].(map[string]string)["status"]; got != status {
+						t.Fatalf("%s result=%q, want %q", id, got, status)
+					}
+					if doc.Status == nil || *doc.Status != want {
+						t.Fatalf("%s status=%v, want %s", id, doc.Status, want)
+					}
+				}
+			})
+		}
+	}
+}
 
 // TestValidateDocumentModifiable_TaskStatuses pins the allowed/disallowed task
 // statuses for editing a document via UpdateDatasetDocument.
