@@ -18,7 +18,7 @@ import { FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { TFunction } from 'i18next';
-import { BookOpen, Globe, Mail, Rss, Search } from 'lucide-react';
+import { Mail, Rss, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
@@ -223,7 +223,7 @@ export const generateDataSourceInfo = (t: TFunction) => {
     [DataSourceKey.SITEMAP]: {
       name: 'Sitemap',
       description: t(`setting.${DataSourceKey.SITEMAP}Description`),
-      icon: <Globe className="text-text-primary" size={22} />,
+      icon: <SvgIcon name={'data-source/sitemap'} width={38} />,
     },
     [DataSourceKey.GOOGLE_CLOUD_STORAGE]: {
       name: 'Google Cloud Storage',
@@ -275,7 +275,7 @@ export const generateDataSourceInfo = (t: TFunction) => {
     [DataSourceKey.FEISHU_WIKI]: {
       name: 'Feishu Wiki',
       description: t(`setting.${DataSourceKey.FEISHU_WIKI}Description`),
-      icon: <BookOpen className="text-text-primary" size={22} />,
+      icon: <SvgIcon name={'data-source/feishu-wiki'} width={38} />,
     },
     [DataSourceKey.GMAIL]: {
       name: 'Gmail',
@@ -381,7 +381,7 @@ export const generateDataSourceInfo = (t: TFunction) => {
     [DataSourceKey.ZOTERO]: {
       name: 'Zotero',
       description: t(`setting.${DataSourceKey.ZOTERO}Description`),
-      icon: <BookOpen className="text-text-primary" size={22} />,
+      icon: <SvgIcon name={'data-source/zotero'} width={38} />,
     },
     [DataSourceKey.SEAFILE]: {
       name: 'SeaFile',
@@ -411,7 +411,7 @@ export const generateDataSourceInfo = (t: TFunction) => {
     [DataSourceKey.OUTLOOK]: {
       name: 'Outlook',
       description: t(`setting.${DataSourceKey.OUTLOOK}Description`),
-      icon: <Mail className="text-text-primary" size={22} />,
+      icon: <SvgIcon name={'data-source/outlook'} width={38} />,
     },
     [DataSourceKey.SALESFORCE]: {
       name: 'Salesforce',
