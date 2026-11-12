@@ -84,8 +84,11 @@ type AgentParam struct {
 	SubAgents                []SubAgentTool
 	MCP                      any // Saved MCP selections, decoded and validated when tools are built.
 	ToolTimeout              time.Duration
+	MaxRetries               int           // retry attempts after a failed model call
+	DelayAfterError          time.Duration // initial retry backoff
 	MaxRounds                int
-	MessageHistoryWindowSize int // number of prior conversation turns to include; zero disables history
+	MessageHistoryWindowSize int    // number of prior conversation turns to include; zero disables history
+	VisualFilesVar           string // canvas-state ref containing image data URIs for the model
 	OptimizeMultiTurn        bool
 	OptimizeHistoryWindow    int
 	// Meta is the OpenAI-style function-call schema the Agent exposes
@@ -117,6 +120,7 @@ type AgentParam struct {
 	// outputs.structured; when set, Invoke populates outputs["structured"]
 	// so downstream Message templates like {Agent:X@structured} resolve.
 	OutputStructure map[string]any
+	visualFiles     []string // image URIs resolved from VisualFilesVar for this invocation
 }
 
 // SubAgentTool is a child Agent exposed to a parent Agent as an Eino tool.
@@ -195,7 +199,12 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	}
 
 	agent, err := react.NewAgent(ctx, &react.AgentConfig{
-		ToolCallingModel: &roundLimitedChatModel{ToolCallingChatModel: chatModel, remaining: maxSteps / 2},
+		ToolCallingModel: &roundLimitedChatModel{
+			ToolCallingChatModel: chatModel,
+			remaining:            maxSteps / 2,
+			maxRetries:           p.MaxRetries,
+			initialDelay:         p.DelayAfterError,
+		},
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools: tools,
 		},
@@ -277,7 +286,9 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 // The reserved final model step must answer rather than schedule more tools.
 type roundLimitedChatModel struct {
 	model.ToolCallingChatModel
-	remaining int
+	remaining    int
+	maxRetries   int
+	initialDelay time.Duration
 }
 
 func (m *roundLimitedChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
@@ -285,7 +296,12 @@ func (m *roundLimitedChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolC
 	if err != nil {
 		return nil, err
 	}
-	return &roundLimitedChatModel{ToolCallingChatModel: bound, remaining: m.remaining}, nil
+	return &roundLimitedChatModel{
+		ToolCallingChatModel: bound,
+		remaining:            m.remaining,
+		maxRetries:           m.maxRetries,
+		initialDelay:         m.initialDelay,
+	}, nil
 }
 
 func (m *roundLimitedChatModel) roundOptions(opts []model.Option) []model.Option {
@@ -298,12 +314,69 @@ func (m *roundLimitedChatModel) roundOptions(opts []model.Option) []model.Option
 
 func (m *roundLimitedChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
 	input = m.roundInput(input)
-	return m.ToolCallingChatModel.Generate(ctx, input, m.roundOptions(opts)...)
+	opts = m.roundOptions(opts)
+	var response *schema.Message
+	err := common.RetryWithBackoff(ctx, m.maxRetries, m.initialDelay, func() error {
+		var err error
+		response, err = m.ToolCallingChatModel.Generate(ctx, input, opts...)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return response, nil
 }
 
 func (m *roundLimitedChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
 	input = m.roundInput(input)
-	return m.ToolCallingChatModel.Stream(ctx, input, m.roundOptions(opts)...)
+	opts = m.roundOptions(opts)
+	return retryChatModelStream(ctx, m.ToolCallingChatModel, input, opts, m.maxRetries, m.initialDelay)
+}
+
+// retryChatModelStream retries only before the first message reaches the
+// caller, so a failed partial response is never replayed as duplicate output.
+func retryChatModelStream(ctx context.Context, inner model.ToolCallingChatModel, input []*schema.Message, opts []model.Option, maxRetries int, initialDelay time.Duration) (*schema.StreamReader[*schema.Message], error) {
+	if maxRetries <= 0 {
+		return inner.Stream(ctx, input, opts...)
+	}
+
+	reader, writer := schema.Pipe[*schema.Message](1)
+	go func() {
+		defer writer.Close()
+		emitted := false
+		readerClosed := false
+		err := common.RetryWithBackoff(ctx, maxRetries, initialDelay, func() error {
+			emitted = false
+			stream, err := inner.Stream(ctx, input, opts...)
+			if err != nil {
+				return err
+			}
+			defer stream.Close()
+			for {
+				message, err := stream.Recv()
+				if errors.Is(err, io.EOF) {
+					return nil
+				}
+				if err != nil {
+					return err
+				}
+				if message == nil {
+					continue
+				}
+				emitted = true
+				if writer.Send(message, nil) {
+					readerClosed = true
+					return context.Canceled
+				}
+			}
+		}, func(error) bool {
+			return !emitted && !readerClosed
+		})
+		if err != nil {
+			writer.Send(nil, err)
+		}
+	}()
+	return reader, nil
 }
 
 func (m *roundLimitedChatModel) roundInput(input []*schema.Message) []*schema.Message {
@@ -389,6 +462,7 @@ func buildAgentInputMessages(ctx context.Context, p AgentParam) []*schema.Messag
 			}
 		}
 	}
+	images = dedupStrings(append(images, p.visualFiles...))
 	current := schema.Message{Role: schema.User, Content: userText}
 	if len(images) > 0 {
 		current = userMessageWithImages(userText, images)
@@ -412,6 +486,42 @@ func buildAgentInputMessages(ctx context.Context, p AgentParam) []*schema.Messag
 		input[i] = &messages[i]
 	}
 	return input
+}
+
+func resolveAgentVisualFiles(state *runtime.CanvasState, variable string) ([]string, error) {
+	variable = strings.TrimSpace(variable)
+	if variable == "" {
+		return nil, nil
+	}
+	if state == nil {
+		return nil, fmt.Errorf("canvas state is required for %q", variable)
+	}
+	value, err := state.GetVar(variable)
+	if err != nil {
+		return nil, err
+	}
+	if value == nil {
+		return nil, nil
+	}
+	var files []string
+	switch v := value.(type) {
+	case string:
+		files = []string{v}
+	case []string:
+		files = v
+	case []any:
+		files = make([]string, 0, len(v))
+		for _, item := range v {
+			file, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("%q must resolve to a string or string array", variable)
+			}
+			files = append(files, file)
+		}
+	default:
+		return nil, fmt.Errorf("%q must resolve to a string or string array, got %T", variable, value)
+	}
+	return extractDataImages(files), nil
 }
 
 func emitAgentModelStreams(ctx context.Context, future react.MessageFuture, cite bool, holdContent bool) <-chan error {
@@ -1059,10 +1169,17 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 			p.UserPrompt = resolved
 		}
 	}
+	p.visualFiles, err = resolveAgentVisualFiles(state, p.VisualFilesVar)
+	if err != nil {
+		return nil, fmt.Errorf("Agent: resolve visual_files_var: %w", err)
+	}
+	var imageFiles []string
 	if state != nil {
-		if err := rejectUnsupportedImages(ctx, db, state, originalModelID, p.ModelID); err != nil {
-			return nil, err
-		}
+		_, imageFiles = collectSysFiles(state)
+	}
+	imageFiles = append(imageFiles, p.visualFiles...)
+	if err := rejectUnsupportedImageFiles(ctx, db, imageFiles, originalModelID, p.ModelID); err != nil {
+		return nil, err
 	}
 	if hasRuntimeUserPrompt {
 		p.UserPrompt = formatAgentRuntimePrompt(inputs, p.UserPrompt)
@@ -1726,6 +1843,15 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	}
 	if v, ok := intFrom(inputs, "tool_timeout"); ok {
 		p.ToolTimeout = time.Duration(v) * time.Second
+	}
+	if v, ok := intFrom(inputs, "max_retries"); ok {
+		p.MaxRetries = v
+	}
+	if v, ok := floatFrom(inputs, "delay_after_error"); ok {
+		p.DelayAfterError = time.Duration(v * float64(time.Second))
+	}
+	if v, ok := stringFrom(inputs, "visual_files_var"); ok {
+		p.VisualFilesVar = v
 	}
 	if tools, params, subAgents, ok := agentToolsFrom(inputs, "tools"); ok {
 		p.Tools = tools

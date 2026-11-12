@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -41,11 +42,51 @@ const dataURIPrefix = "data:image/"
 // GoMarkdown is the lib_type identifier for the pure-Go Markdown backend.
 const GoMarkdown = "go_markdown"
 
+// markdownTOCHeadingPattern matches a Markdown TOC heading. Standalone
+// front/back-matter headings such as 致谢/Acknowledgments are sections, not
+// TOCs, so they stay out of the pattern even though plain-text items match them.
+var markdownTOCHeadingPattern = regexp.MustCompile(`(?i)^(contents|目录|目次|tableofcontents)$`)
+
+// markdownListMarkerPattern matches the unordered (*, -, +) or ordered (1., 1))
+// list markers a Markdown TOC entry carries.
+var markdownListMarkerPattern = regexp.MustCompile(`^(?:[\*\-\+]|\d+[\.\)])\s+`)
+
+// markdownTOCText strips ATX heading markers (#) and list markers so a Markdown
+// TOC heading, its entries and the body headings that end the TOC match on
+// their core text.
+func markdownTOCText(s string) string {
+	s = strings.TrimLeft(strings.TrimSpace(s), "# \t")
+	for {
+		loc := markdownListMarkerPattern.FindStringIndex(s)
+		if loc == nil {
+			return s
+		}
+		s = strings.TrimSpace(s[loc[1]:])
+	}
+}
+
+// markdownTOCEntry reports whether a Markdown item is a TOC entry: a list item
+// (*, -, +, 1., 1)) or a bare link line.
+func markdownTOCEntry(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	if markdownListMarkerPattern.MatchString(trimmed) {
+		return true
+	}
+	return strings.HasPrefix(trimmed, "[") && strings.Contains(trimmed, "](")
+}
+
+// markdownTOCRules adapts TOC removal to Markdown item text.
+var markdownTOCRules = tocRules{
+	clean:      markdownTOCText,
+	heading:    markdownTOCHeadingPattern,
+	asciiExtra: "#*+_",
+	entry:      markdownTOCEntry,
+}
+
 type MarkdownParser struct {
-	libType            string
-	ParseMethod        string
-	VLM                map[string]any
-	FlattenMediaToText bool
+	libType     string
+	ParseMethod string
+	RemoveTOC   bool
 	// FetchRemoteImages controls whether HTTP(S) Markdown images are
 	// downloaded. NewMarkdownParser enables it for direct Markdown parsing;
 	// callers normalizing untrusted backend responses may disable it.
@@ -78,15 +119,12 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["parse_method"].(string); ok && v != "" {
 		p.ParseMethod = v
 	}
-	if v, ok := setup["vlm"].(map[string]any); ok {
-		p.VLM = v
-	}
-	if v, ok := setup["flatten_media_to_text"].(bool); ok {
-		p.FlattenMediaToText = v
+	if v, ok := setup["remove_toc"].(bool); ok {
+		p.RemoveTOC = v
 	}
 }
 
-// ParseWithResult implements ParseResultProducer (plan §6.5) and
+// ParseWithResult implements ParseResultProducer and
 // returns a structured JSON payload. Each top-level block
 // emits one item with `text` + `doc_type_kwd: "text"`. When the
 // block contains a Markdown image reference (![alt](src)), the image
@@ -179,14 +217,17 @@ func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, da
 		state.resolveMedia = markdownMediaResolver(state, walkCtx, p.FetchRemoteImages)
 		defer func() { state.resolveMedia = previousMediaResolver }()
 	}
-	unresolvedImages := walkMarkdownBlocksWithImages(walkCtx, doc, &items, p.FlattenMediaToText, p.FetchRemoteImages, state)
+	unresolvedImages := walkMarkdownBlocksWithImages(walkCtx, doc, &items, p.FetchRemoteImages, state)
 	if state.err != nil {
 		return ParseResult{Err: state.err}
 	}
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}
-	if items == nil {
+	if p.RemoveTOC {
+		items = removeContentsTable(items, isEnglishItems(items, markdownTOCRules.asciiExtra), markdownTOCRules)
+	}
+	if len(items) == 0 {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
 	var warnings []string
@@ -463,22 +504,12 @@ func markdownTableCells(line string) []string {
 // findBlockImage (per-block AST walk) and the item carries
 // `doc_type_kwd: "image"` together with either a run-cache reference
 // (refOnly), the base64-encoded payload (inline mode), or nothing when the
-// source was skipped. When flatten is true, image items use doc_type_kwd="text".
+// source was skipped.
 //
 // Tables are emitted through the HTML walker as structured items in source
 // order, with embedded images linked to their parent table.
-func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[string]any, flatten, fetchRemoteImages bool, htmlState *htmlWalkState) int {
+func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[string]any, fetchRemoteImages bool, htmlState *htmlWalkState) int {
 	budget := htmlState.budget
-	start := len(*out)
-	defer func() {
-		if flatten {
-			for _, item := range (*out)[start:] {
-				if item["doc_type_kwd"] == "image" {
-					item["doc_type_kwd"] = "text"
-				}
-			}
-		}
-	}()
 	unresolvedImages := 0
 	previousResolver := htmlState.resolveImage
 	if !htmlState.refOnly && !htmlState.skipImages {
@@ -534,7 +565,7 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 			for i, entry := range n.GetChildren() {
 				if containsMarkdownTable(entry) {
 					start := len(*out)
-					unresolvedImages += walkMarkdownBlocksWithImages(ctx, entry, out, flatten, fetchRemoteImages, htmlState)
+					unresolvedImages += walkMarkdownBlocksWithImages(ctx, entry, out, fetchRemoteImages, htmlState)
 					for _, item := range (*out)[start:] {
 						if item["doc_type_kwd"] == "text" && item["layout"] == nil {
 							item["layout"] = "list"
@@ -554,7 +585,7 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 			continue
 		case *ast.BlockQuote:
 			if containsMarkdownTable(n) {
-				unresolvedImages += walkMarkdownBlocksWithImages(ctx, n, out, flatten, fetchRemoteImages, htmlState)
+				unresolvedImages += walkMarkdownBlocksWithImages(ctx, n, out, fetchRemoteImages, htmlState)
 				continue
 			}
 			txt = leafText(n)
@@ -591,9 +622,7 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 		// the image payload (and doc_type_kwd:"image") is attached to the
 		// single block that actually contains the ![alt](src) reference.
 		// Scanning the whole document (the old approach) wrongly tagged
-		// every block as an image whenever any image was present. When
-		// flatten is true, keep doc_type_kwd="text" (Python
-		// parser.py:1034: flatten_media_to_text overrides image).
+		// every block as an image whenever any image was present.
 		if !htmlState.skipImages {
 			if imgURL, ok := findBlockImage(child); ok {
 				if htmlState.refOnly {

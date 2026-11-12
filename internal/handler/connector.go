@@ -273,12 +273,11 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 		common.RespondError(c, common.CodeDataError, "config is required")
 		return
 	}
-
 	ctx := c.Request.Context()
 
 	connector, err := h.connectorService.CreateConnector(ctx, &req)
 	if err != nil {
-		if errors.Is(err, service.ErrConnectorInvalidFreq) || errors.Is(err, service.ErrConnectorInvalidName) {
+		if errors.Is(err, service.ErrConnectorInvalidFreq) || errors.Is(err, service.ErrConnectorInvalidName) || errors.Is(err, service.ErrConnectorEncryptedCredentials) {
 			common.RespondError(c, common.CodeDataError, err.Error())
 			return
 		}
@@ -393,7 +392,7 @@ func (h *ConnectorHandler) RebuildConnector(c *gin.Context) {
 		KbID string `json:"kb_id" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeDataError, "required argument is missing: kb_id")
+		common.RespondError(c, common.CodeDataError, "required argument is missing: kb_id: "+err.Error())
 		return
 	}
 
@@ -424,7 +423,7 @@ func (h *ConnectorHandler) ResumeFailedSync(c *gin.Context) {
 
 	var req service.ResumeFailedSyncRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeDataError, "required argument is missing: kb_id or task_id")
+		common.RespondError(c, common.CodeDataError, "required argument is missing: kb_id or task_id: "+err.Error())
 		return
 	}
 

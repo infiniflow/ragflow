@@ -199,12 +199,17 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewAnonRouterModel(baseURL, urlSuffix), nil
 	case "api-route":
 		return NewApiRouteModel(baseURL, urlSuffix), nil
+	case "shengsuanyun":
+		return NewShengsuanyunModel(baseURL, urlSuffix), nil
 	case "opper":
 		return NewOpperModel(baseURL, urlSuffix), nil
 	case "empiriolabs ai":
 		return NewEmpirioLabsModel(baseURL, urlSuffix), nil
 	case "runcrate":
 		return NewRuncrateModel(baseURL, urlSuffix), nil
+	case "nace":
+		// System One protocol, like "systemone", with Nace's own model catalog.
+		return NewNaceModel(baseURL, urlSuffix), nil
 	case "worldrouter":
 		return NewWorldRouterModel(baseURL, urlSuffix), nil
 	case "cloudgpu":
@@ -221,6 +226,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewWallyModel(baseURL, urlSuffix), nil
 	case "synap":
 		return NewSynapModel(baseURL, urlSuffix), nil
+	case "wiro ai":
+		return NewWiroModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

@@ -123,13 +123,16 @@ const svgIcons = [
   LLMFactory.EmpirioLabs,
   LLMFactory.AIStupidLevel,
   LLMFactory.Runcrate,
+  LLMFactory.Nace,
   LLMFactory.WorldRouter,
   LLMFactory.CloudGPU,
   LLMFactory.Obscurify,
   LLMFactory.HostingerRouter,
   LLMFactory.Cheapaimodel,
   LLMFactory.Wally,
+  LLMFactory.Shengsuanyun,
   LLMFactory.Synap,
+  LLMFactory.Wiro,
 ];
 
 export const LlmIcon = ({

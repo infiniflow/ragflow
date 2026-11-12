@@ -23,30 +23,46 @@ import (
 
 func TestResolveVisionLanguage(t *testing.T) {
 	tests := []struct {
-		name   string
-		inputs map[string]any
-		want   string
+		name     string
+		inputs   map[string]any
+		override string
+		want     string
 	}{
 		{
-			name:   "dataset language wins and is trimmed",
-			inputs: map[string]any{"lang": " Japanese "},
-			want:   "Japanese",
+			name:     "explicit enhancement language wins",
+			inputs:   map[string]any{"lang": "Japanese"},
+			override: "French",
+			want:     "French",
 		},
 		{
-			name:   "empty values default to English",
-			inputs: map[string]any{"lang": ""},
-			want:   defaultVisionLanguage,
+			name:     "explicit enhancement language is trimmed",
+			inputs:   map[string]any{"lang": "Japanese"},
+			override: " French ",
+			want:     "French",
 		},
 		{
-			name:   "absent language defaults to English",
-			inputs: nil,
-			want:   defaultVisionLanguage,
+			name:     "empty override falls back to the dataset language",
+			inputs:   map[string]any{"lang": " Japanese "},
+			override: "",
+			want:     "Japanese",
+		},
+		{
+			name:     "empty values default to English",
+			inputs:   map[string]any{"lang": ""},
+			override: "",
+			want:     defaultVisionLanguage,
+		},
+		{
+			name:     "absent language defaults to English",
+			inputs:   nil,
+			override: "",
+			want:     defaultVisionLanguage,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := resolveVisionLanguage(tt.inputs); got != tt.want {
+			if got := resolveVisionLanguage(tt.inputs, tt.override); got != tt.want {
 				t.Fatalf("resolveVisionLanguage() = %q, want %q", got, tt.want)
 			}
 		})

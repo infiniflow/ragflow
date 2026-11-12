@@ -52,9 +52,6 @@ var (
 		"time":   {},
 		"number": {},
 	}
-	validIndexTypes        = []string{"graph", "raptor", "mindmap"}
-	indexTypeToTaskType    = map[string]string{"graph": "graphrag", "raptor": "raptor", "mindmap": "mindmap"}
-	indexTypeToDisplayName = map[string]string{"graph": "Graph", "raptor": "RAPTOR", "mindmap": "Mindmap"}
 )
 
 const (

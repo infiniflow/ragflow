@@ -10,7 +10,7 @@ import (
 )
 
 // Evidence-gate mode: what happens to a payload whose evidence quotes all
-// failed to locate. Mirrors Python _EVIDENCE_GATE_MODES /
+// failed to locate. Mirrors _EVIDENCE_GATE_MODES /
 // _struct_evidence_gate_mode.
 const (
 	EvidenceGateSoft = "soft"
@@ -21,7 +21,7 @@ const (
 
 // EvidenceGateMode maps the template config's evidence_gate_mode onto the
 // supported modes, defaulting to soft for anything unrecognised (mirrors
-// Python _struct_evidence_gate_mode).
+// _struct_evidence_gate_mode)
 func EvidenceGateMode(parserConfig map[string]any) string {
 	if parserConfig == nil {
 		return evidenceGateDefault
@@ -35,9 +35,8 @@ func EvidenceGateMode(parserConfig map[string]any) string {
 }
 
 // RelationExpectsEvidence reports whether the template asks relation payloads
-// for evidence ("relation.output_fields" contains "evidence"). Mirrors Python
-// _struct_relation_expects_evidence: gating relations unconditionally would
-// strip the field from templates that never asked for it.
+// for evidence ("relation.output_fields" contains "evidence"). Gating relations
+// unconditionally would strip the field from templates that never asked for it.
 func RelationExpectsEvidence(parserConfig map[string]any) bool {
 	if parserConfig == nil {
 		return false
@@ -76,7 +75,7 @@ func batchTextByID(batch []common.Chunk) map[string]string {
 // locateEvidence finds quote in text using whitespace-normalized matching and
 // returns offsets against the ORIGINAL text so the span can be sliced back
 // out. The offset map is byte-aligned (mirrors tree/claims.go LocateEvidence
-// and Python _struct_locate_evidence): a rune-indexed map misaligned every
+// and _struct_locate_evidence): a rune-indexed map misaligned every
 // lookup past the first multi-byte rune, so CJK quotes resolved to the wrong
 // span.
 func locateEvidence(quote, text string) (int, int, bool) {
@@ -142,7 +141,7 @@ func normalizeEvidenceText(text string) (string, []int) {
 }
 
 // ValidatePayloadEvidence locates every evidence quote in the chunk it cites
-// and drops the ones that cannot be found, mirroring Python
+// and drops the ones that cannot be found, mirroring
 // _struct_apply_evidence_gate. mode decides whether a payload left with no
 // verified evidence survives (soft: evidence dropped, payload kept) or is
 // dropped (hard).

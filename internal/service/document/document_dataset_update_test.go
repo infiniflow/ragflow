@@ -118,7 +118,7 @@ func TestUpdateDatasetDocumentConfigPatchPreservesOmittedSettings(t *testing.T) 
 }
 
 func TestUpdateDatasetDocumentRejectsUnsupportedFileFamilyBeforeWrites(t *testing.T) {
-	for _, filename := range []string{"image.png", "deck.pptx", "deck.pages", "DECK.DPS", "deck.dpt"} {
+	for _, filename := range []string{"image.png", "deck.pptx", "deck.pages"} {
 		for _, selection := range []string{"chunk_method", "parser_id"} {
 			for _, withConfig := range []bool{false, true} {
 				t.Run(fmt.Sprintf("%s/%s/config=%t", filename, selection, withConfig), func(t *testing.T) {
@@ -534,7 +534,7 @@ func TestBatchUpdateDocumentStatusRetainsPartialFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a partial failure")
 	}
-	if code != common.CodeServerError || err.Error() != "partial failure" {
+	if code != common.CodeServerError || !strings.Contains(err.Error(), "partial failure:") || !strings.Contains(err.Error(), "owner-doc") || !strings.Contains(err.Error(), "Permission denied") {
 		t.Fatalf("result code/error = %d/%v, want partial failure", code, err)
 	}
 }

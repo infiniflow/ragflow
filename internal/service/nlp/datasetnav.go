@@ -1240,7 +1240,7 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 		if typ == "nav_doc" {
 			childDocIDs = append(childDocIDs, firstStringValue(child["doc_id"]))
 		}
-		acc.ids = appendUnique(acc.ids, childDocIDs)
+		acc.ids = common.AppendUnique(acc.ids, childDocIDs)
 		childCond := navChildRehomeCondition(child, kbID)
 		if childCond == nil {
 			// Unreachable after the pre-pass above; kept so a future caller
@@ -1291,10 +1291,10 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 		// parity so no tracked document is lost (review Major).
 		for i, d := range origIDs {
 			if i%2 == 0 && spl.name == splitA {
-				spl.ids = appendUnique(spl.ids, []string{d})
+				spl.ids = common.AppendUnique(spl.ids, []string{d})
 				spl.count++
 			} else if i%2 == 1 && spl.name == splitB {
-				spl.ids = appendUnique(spl.ids, []string{d})
+				spl.ids = common.AppendUnique(spl.ids, []string{d})
 				spl.count++
 			}
 		}
@@ -1828,22 +1828,6 @@ func firstStringSlice(v interface{}) []string {
 		return out
 	}
 	return nil
-}
-
-// appendUnique appends only values not already present, preserving order.
-func appendUnique(dst, values []string) []string {
-	seen := make(map[string]bool, len(dst)+len(values))
-	for _, v := range dst {
-		seen[v] = true
-	}
-	for _, v := range values {
-		if v == "" || seen[v] {
-			continue
-		}
-		seen[v] = true
-		dst = append(dst, v)
-	}
-	return dst
 }
 
 func intValue(v interface{}) int {

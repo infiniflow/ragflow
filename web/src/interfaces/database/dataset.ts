@@ -74,8 +74,6 @@ interface Parserconfig {
   delimiter: string;
   from_page?: number;
   to_page?: number;
-  graphrag: Graphrag;
-  html4excel: boolean;
   image_context_size: number;
   layout_recognize: string;
   llm_id: string;
@@ -83,33 +81,14 @@ interface Parserconfig {
   built_in_metadata?: Array<{ key: string; type: string }>;
   enable_metadata?: boolean;
   parent_child: Parentchild;
-  raptor: Raptor;
   table_context_size: number;
   tag_kb_ids?: string[];
   topn_tags: number;
 }
 
-interface Raptor {
-  clustering_method?: 'gmm' | 'ahc';
-  max_cluster: number;
-  max_token: number;
-  prompt: string;
-  random_seed: number;
-  threshold: number;
-  tree_builder?: 'raptor' | 'psi';
-  use_raptor: boolean;
-}
-
 interface Parentchild {
   children_delimiter: string;
   use_parent_child: boolean;
-}
-
-interface Graphrag {
-  batch_chunk_token_size?: number;
-  entity_types: string[];
-  method: string;
-  use_graphrag: boolean;
 }
 
 export interface IDatasetListResult {
@@ -123,7 +102,6 @@ export interface IKnowledgeFileParserConfig {
   chunk_token_num: number;
   layout_recognize: boolean;
   pages: number[][];
-  task_page_size: number;
 }
 
 export interface IKnowledgeFile {

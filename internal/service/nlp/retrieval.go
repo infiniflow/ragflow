@@ -31,6 +31,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/observability"
 	"ragflow/internal/tokenizer"
 
 	"go.uber.org/zap"
@@ -107,7 +108,8 @@ const (
 // - Calculate pagination to extract actual page returned from reranked results
 // - Build chunks
 // - Build document aggregation if specified
-func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest) (*RetrievalResult, error) {
+func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest) (result *RetrievalResult, err error) {
+	defer observability.BeginRetrieval("retrieval")(&err)
 	common.InfoCtx(ctx, "Retrieval START", zap.String("question", req.Question), zap.Int("page", req.Page), zap.Int("pageSize", req.PageSize))
 	if req.Question == "" {
 		return &RetrievalResult{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Total: 0}, nil
@@ -843,7 +845,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			searchSrc := make([]string, len(searchRequest.SelectFields))
 			copy(searchSrc, searchRequest.SelectFields)
 			driverType := s.docEngine.GetType()
-			if driverType == string(engine.EngineElasticsearch) || engine.IsOceanBaseFamily(driverType) || engine.IsVastbase(driverType) {
+			if driverType == string(engine.EngineElasticsearch) || driverType == string(engine.EngineOpenSearch) || engine.IsOceanBaseFamily(driverType) || engine.IsVastbase(driverType) {
 				searchSrc = append(searchSrc, matchDense.VectorColumnName)
 			}
 
@@ -1020,7 +1022,8 @@ func cloneDenseExpr(source *types.MatchDenseExpr) *types.MatchDenseExpr {
 }
 
 // GetVector computes query vector and returns MatchDenseExpr for hybrid search
-func (s *RetrievalService) GetVector(ctx context.Context, txt string, embModel *models.EmbeddingModel, knnTopK, numCandidates int, similarity float64) (*types.MatchDenseExpr, error) {
+func (s *RetrievalService) GetVector(ctx context.Context, txt string, embModel *models.EmbeddingModel, knnTopK, numCandidates int, similarity float64) (result *types.MatchDenseExpr, err error) {
+	defer observability.BeginRetrieval("retrieval_embedding")(&err)
 	embeddingConfig := &models.EmbeddingConfig{
 		Dimension: 0,
 	}

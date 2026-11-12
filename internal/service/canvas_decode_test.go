@@ -22,10 +22,8 @@
 //   - non-empty DSL with multiple components → all preserved
 //
 // All failures MUST carry ErrAgentStorageError so the handler-side
-// mapAgentError classifies them as CodeServerError (500) with the
-// sanitized message (no raw decoder-string leak). This is the
-// regression pin that closes the v3.5.2 review's "raw decode error
-// leak" concern at the Compile/Invoke boundary.
+// mapAgentError classifies them as CodeServerError (500) while retaining
+// the decoder error.
 package service
 
 import (

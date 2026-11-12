@@ -123,9 +123,12 @@ export enum LLMFactory {
   Obscurify = 'Obscurify.ai',
   Cheapaimodel = 'cheapaimodel',
   SystemOne = 'SystemOne',
+  Nace = 'Nace',
   HostingerRouter = 'Hostinger Router',
   Wally = 'Wally',
+  Shengsuanyun = 'Shengsuanyun',
   Synap = 'Synap',
+  Wiro = 'Wiro AI',
 }
 
 // Please lowercase the file name
@@ -226,13 +229,16 @@ export const IconMap = {
   [LLMFactory.EmpirioLabs]: 'empiriolabs',
   [LLMFactory.AIStupidLevel]: 'aistupidlevel',
   [LLMFactory.Runcrate]: 'runcrate',
+  [LLMFactory.Nace]: 'nace',
   [LLMFactory.WorldRouter]: 'worldrouter',
   [LLMFactory.CloudGPU]: 'cloudgpu',
   [LLMFactory.Obscurify]: 'obscurify',
   [LLMFactory.HostingerRouter]: 'hostinger-router',
   [LLMFactory.Cheapaimodel]: 'cheapaimodel',
   [LLMFactory.Wally]: 'wally',
+  [LLMFactory.Shengsuanyun]: 'shengsuanyun',
   [LLMFactory.Synap]: 'synap',
+  [LLMFactory.Wiro]: 'wiro',
 };
 
 /**
@@ -281,6 +287,7 @@ export const APIMapUrl = {
   [LLMFactory.AIStupidLevel]: 'https://aistupidlevel.info/router/keys',
   [LLMFactory.Runcrate]:
     'https://www.runcrate.ai/dashboard/api-keys?utm_source=ragflow&utm_medium=directory&utm_campaign=gpu_pricing',
+  [LLMFactory.Nace]: 'https://console.nace.ai/dashboard/api-keys',
   [LLMFactory.WorldRouter]:
     'https://worldrouter.ai/dashboard/api-keys?utm_source=ragflow&utm_medium=provider&utm_campaign=integration',
   [LLMFactory.CloudGPU]: 'https://cloudgpu.app/api/console',
@@ -290,6 +297,7 @@ export const APIMapUrl = {
     'https://console.cheapaimodel.ai/keys?utm_source=ragflow',
   [LLMFactory.Wally]: 'https://console.runanywhere.ai',
   [LLMFactory.Synap]: 'https://synap.linkrra.com/pricing',
+  [LLMFactory.Wiro]: 'https://wiro.ai/panel/project/new',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
@@ -378,4 +386,5 @@ export const APIMapUrl = {
   [LLMFactory.PaddleOCRLocal]: 'https://aistudio.baidu.com/paddleocr',
   [LLMFactory.RAGcon]: 'https://connect.ragcon.com',
   [LLMFactory.FunASR]: 'https://github.com/modelscope/FunASR',
+  [LLMFactory.Shengsuanyun]: 'https://www.shengsuanyun.com/zh/?from=ragflow',
 };

@@ -642,9 +642,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       layoutRecognize: 'PDF parser',
       layoutRecognizeTip:
         'Use a visual model for PDF layout analysis to effectively locate document titles, text blocks, images, and tables. If the naive option is chosen, only the plain text in the PDF will be retrieved. Please note that this option currently works ONLY for PDF documents.',
-      taskPageSize: 'Task page size',
-      taskPageSizeMessage: 'Please input your task page size!',
-      taskPageSizeTip: `During layout recognition, a PDF file is split into chunks and processed in parallel to increase processing speed. This parameter sets the size of each chunk. A larger chunk size reduces the likelihood of splitting continuous text between pages.`,
       addPage: 'Add page',
       greaterThan: 'The current value must be greater than to!',
       greaterThanPrevious:
@@ -675,8 +672,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
         'No delimiters — text will be chunked by size only.',
       delimiterPreviewCount: '({{count}})',
 
-      html4excel: 'Excel to HTML',
-      html4excelTip: `Use with the General chunking method. When disabled, spreadsheets (XLSX or XLS(Excel 97-2003)) in the dataset will be parsed into key-value pairs. When enabled, they will be parsed into HTML tables, splitting every 12 rows if the original table has more than 12 rows. See https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration for details.`,
       autoKeywords: 'Number of keywords to extract',
       autoKeywordsTip: `Automatically extract N keywords for each chunk to increase their ranking for queries containing those keywords. Be aware that extra tokens will be consumed by the indexing model specified in 'Configuration'. You can check or update the added keywords for a chunk from the chunk list. For details, see https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoQuestions: 'Auto-question number',
@@ -2772,13 +2767,6 @@ Example: Virtual Hosted Style`,
     },
     flow: {
       exportCurrentPage: 'Export current page',
-      preprocess: {
-        preprocess: 'Preprocess',
-        mainContent: 'Main content',
-        abstract: 'Abstract',
-        author: 'Author',
-        sectionTitle: 'Section title',
-      },
       tags: 'Tags',
       agentCategory: 'Agent category',
       editTags: 'Edit tags',
@@ -2893,6 +2881,10 @@ Best for: Documents with flowing, contextually connected content — such as boo
       enableVisionEnhancement: 'Enable vision enhancement',
       enableVisionEnhancementTip:
         'Use a vision model to parse image and table blocks; when off, they are treated as plain text.',
+      descriptionLanguage: 'Description language',
+      descriptionLanguageTip:
+        'Language used for model-generated image and table descriptions. Leave it empty to follow the knowledge base language; tokenization and retrieval still use the knowledge base language.',
+      followKnowledgeBaseLanguage: 'Follow knowledge base',
       imageOcr: 'OCR',
       imageOcrTip:
         'Extract text from images. DeepDoc parses an image as a one-page document, so it includes layout analysis and table structure; an external OCR model returns text only. Vision enhancement adds descriptions independently of this switch.',
@@ -3009,7 +3001,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       answerDescription: `A component that serves as the interface between human and bot, receiving user inputs and displaying the agent's responses.`,
       retrievalDescription: `A component that retrieves information from specified datasets (datasets). Ensure that the datasets you select use the same embedding model.`,
       generateDescription: `A component that prompts the LLM to generate responses. Ensure the prompt is set correctly.`,
-      categorizeDescription: `Uses a chat model (LLM) or a SystemOne decision model to classify the current input into one predefined category and route the workflow to its connected component. Specify a name, description, and examples for each category.`,
+      categorizeDescription: `Uses a chat model (LLM) or a SystemOne or Nace decision model to classify the current input into one predefined category and route the workflow to its connected component. Specify a name, description, and examples for each category.`,
       relevantDescription: `A component that uses the LLM to assess whether the upstream output is relevant to the user's latest query. Ensure you specify the next component for each judge result.`,
       messageDescription:
         'This component returns the final data output of the workflow along with predefined message content. ',

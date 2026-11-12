@@ -17,12 +17,12 @@
 package schema
 
 // ParserSetup is a per-filetype parser configuration block. The keys are heterogeneous (e.g.,
-// `parse_method`, `lang`, `suffix`, `fields`, `vlm`),
-// so a free-form map best mirrors the Python dict literal.
+// `parse_method`, `lang`, `fields`, `vlm`),
+// so a free-form map best mirrors the dict literal
 type ParserSetup map[string]any
 
 // FlattenLegacyParserSetups normalizes a Parser param map saved by the
-// Python-era frontend. That shape nests the per-family setups under a
+// -era frontend. That shape nests the per-family setups under a
 // "setups" key ({outputs, setups: {pdf: {...}}}), while the Go backend —
 // the component runtime and the parser_config storage alike — uses the flat
 // shape with file families as top-level keys. The nested families are

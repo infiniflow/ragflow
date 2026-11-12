@@ -132,6 +132,11 @@ func (c *Config) GetEnvironments() error {
 		c.environments.SecretKey = envVal
 	}
 
+	// Fail at startup, not on the first connector write.
+	if _, err := common.ConnectorKey(); err != nil {
+		return err
+	}
+
 	if envVal := common.GetEnv(common.EnvEnableRegister); envVal != "" {
 		if c.environments.EnableRegister == nil {
 			c.environments.EnableRegister = new(bool)
@@ -160,10 +165,8 @@ func (c *Config) GetEnvironments() error {
 	docEngine := common.GetEnvSmall(common.EnvDocEngine)
 	if docEngine != "" {
 		switch docEngine {
-		case "infinity", "elasticsearch", "oceanbase", "seekdb", "vastbase":
+		case "infinity", "elasticsearch", "oceanbase", "opensearch", "seekdb", "vastbase":
 			c.environments.DocumentEngineType = docEngine
-		case "opensearch":
-			return fmt.Errorf("not implemented: %s", docEngine)
 		default:
 			return fmt.Errorf("invalid doc engine: %s", docEngine)
 		}

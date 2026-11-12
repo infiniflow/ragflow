@@ -174,7 +174,7 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 	}
 	if !headerWritten {
 		if firstSynthErr != nil {
-			common.RespondError(c, common.CodeServerError, fmt.Sprintf("TTS synthesis failed for model %s (%s)", modelName, providerName))
+			common.RespondError(c, common.CodeServerError, fmt.Sprintf("TTS synthesis failed for model %s (%s): %v", modelName, providerName, firstSynthErr))
 			return
 		}
 		common.RespondError(c, common.CodeServerError, fmt.Sprintf("TTS synthesis produced no audio for model %s (%s)", modelName, providerName))
@@ -240,7 +240,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
-		common.RespondError(c, common.CodeArgumentError, "Missing 'file' in multipart form-data")
+		common.RespondError(c, common.CodeArgumentError, "Missing 'file' in multipart form-data: "+err.Error())
 		return
 	}
 

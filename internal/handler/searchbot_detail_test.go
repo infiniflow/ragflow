@@ -44,7 +44,7 @@ func setupSearchbotDetailHandlerDB(t *testing.T) {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(&entity.User{}, &entity.UserTenant{}, &entity.Search{}, &entity.APIToken{}); err != nil {
+	if err := db.AutoMigrate(&entity.User{}, &entity.Tenant{}, &entity.UserTenant{}, &entity.Search{}, &entity.APIToken{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -278,7 +278,7 @@ func TestSearchbotDetailRejectsUnauthorizedSearchAccess(t *testing.T) {
 	}
 }
 
-func TestSearchbotDetailDoesNotExposeInternalErrorText(t *testing.T) {
+func TestSearchbotDetailRedactsInternalErrorText(t *testing.T) {
 	setupSearchbotDetailHandlerDB(t)
 
 	status := "1"
@@ -296,6 +296,13 @@ func TestSearchbotDetailDoesNotExposeInternalErrorText(t *testing.T) {
 		Status:          &status,
 	}).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
+	}
+	if err := dao.DB.Create(&entity.Tenant{
+		ID:        "tenant-1",
+		ParserIDs: "",
+		Status:    &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to create tenant: %v", err)
 	}
 	if err := dao.DB.Create(&entity.UserTenant{
 		ID:       "ut-1",
@@ -336,7 +343,7 @@ func TestSearchbotDetailDoesNotExposeInternalErrorText(t *testing.T) {
 
 	body := w.Body.String()
 	if strings.Contains(body, "no such table") {
-		t.Fatalf("response leaked internal error text: %s", body)
+		t.Fatalf("response exposed underlying database error: %s", body)
 	}
 
 	var resp map[string]interface{}
@@ -345,5 +352,8 @@ func TestSearchbotDetailDoesNotExposeInternalErrorText(t *testing.T) {
 	}
 	if resp["code"] != float64(common.CodeServerError) {
 		t.Fatalf("code = %v, want %v", resp["code"], common.CodeServerError)
+	}
+	if resp["message"] != common.CodeServerError.Message() {
+		t.Fatalf("message = %v, want %q", resp["message"], common.CodeServerError.Message())
 	}
 }
