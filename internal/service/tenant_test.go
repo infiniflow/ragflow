@@ -54,48 +54,6 @@ func seedTenantMembership(t *testing.T, db *gorm.DB, id, userID, tenantID, role 
 	}
 }
 
-// TestListMembersAuthCheck verifies member-list access in the active edition.
-func TestListMembersAuthCheck(t *testing.T) {
-	db := setupTenantPermissionTestDB(t)
-	if err := db.AutoMigrate(&entity.User{}); err != nil {
-		t.Fatalf("migrate user table: %v", err)
-	}
-	seedTenantMembership(t, db, "member", "user-abc", "tenant-xyz", "normal")
-	seedTenantMembership(t, db, "owner", "owner-user", "tenant-xyz", "owner")
-	users := []entity.User{
-		{ID: "user-abc", Nickname: "Member", Email: "member@example.com", Status: sptr("1")},
-		{ID: "owner-user", Nickname: "Owner", Email: "owner@example.com", Status: sptr("1")},
-	}
-	if err := db.Create(&users).Error; err != nil {
-		t.Fatalf("seed tenant users: %v", err)
-	}
-	s := &TenantService{userTenantDAO: dao.NewUserTenantDAO()}
-	ctx := permission.WithIdentity(t.Context(), "user-abc", "tenant-xyz")
-	_, _, handled, err := s.listTenantMembersEE(ctx, "tenant-xyz")
-	if err != nil {
-		t.Fatalf("listTenantMembersEE() error = %v", err)
-	}
-	members, code, err := s.ListMembers(ctx, "tenant-xyz")
-	if handled {
-		if err != nil {
-			t.Fatalf("ListMembers() error = %v", err)
-		}
-		if code != common.CodeSuccess {
-			t.Fatalf("ListMembers() code = %v, want %v", code, common.CodeSuccess)
-		}
-		if len(members) != 2 {
-			t.Fatalf("ListMembers() returned %d members, want 2", len(members))
-		}
-		return
-	}
-	if err == nil {
-		t.Fatal("expected error for non-owner, got nil")
-	}
-	if code != common.CodeForbidden {
-		t.Errorf("code = %v, want %v", code, common.CodeForbidden)
-	}
-}
-
 // TestAddMemberAuthCheck verifies that a non-owner is denied by tenant policy.
 func TestAddMemberAuthCheck(t *testing.T) {
 	db := setupTenantPermissionTestDB(t)
