@@ -155,3 +155,48 @@ func TestRetryWithBackoff_NilPredicateRetriesAll(t *testing.T) {
 		t.Errorf("calls = %d, want 3 (all retries attempted)", calls.Load())
 	}
 }
+
+// TestExponentialBackoff locks the shared capped exponential backoff primitive
+// used by the retry loops (tool_invoke, jsonchat, http_helper). The contract:
+//   - result is base * 2^(attempt-1), 1-indexed, so attempt 1 == base;
+//   - result never exceeds max, even at very large attempt counts (this is the
+//     property that fixes the tool_invoke unbounded-backoff bug);
+//   - attempt < 1 is clamped to 1;
+//   - when base already exceeds max, the result is max;
+//   - max == 0 (or base == 0) yields 0 rather than a negative/garbage value.
+func TestExponentialBackoff(t *testing.T) {
+	const base = 100 * time.Millisecond
+	const max = time.Minute
+
+	cases := []struct {
+		name    string
+		base    time.Duration
+		max     time.Duration
+		attempt int
+		want    time.Duration
+	}{
+		{"attempt1", base, max, 1, 100 * time.Millisecond},
+		{"attempt2", base, max, 2, 200 * time.Millisecond},
+		{"attempt3", base, max, 3, 400 * time.Millisecond},
+		{"attempt4", base, max, 4, 800 * time.Millisecond},
+		{"attempt10", base, max, 10, 100 * time.Millisecond * 512}, // 51.2s, still under cap
+		{"cappedJustAboveMax", base, max, 11, max},                 // 102.4s -> 1min
+		{"largeAttemptStaysCapped", base, max, 100, max},           // never grows past cap
+		{"attemptZeroClampsTo1", base, max, 0, base},
+		{"attemptNegativeClampsTo1", base, max, -5, base},
+		{"baseGreaterThanMax", 2 * time.Minute, max, 1, max},
+		{"maxZero", base, 0, 5, 0},
+		{"baseZero", 0, max, 3, 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := ExponentialBackoff(c.base, c.max, c.attempt)
+			if got != c.want {
+				t.Errorf("ExponentialBackoff(%v, %v, %d) = %v, want %v", c.base, c.max, c.attempt, got, c.want)
+			}
+			if got > c.max {
+				t.Errorf("ExponentialBackoff returned %v > max %v (uncapped backoff bug)", got, c.max)
+			}
+		})
+	}
+}

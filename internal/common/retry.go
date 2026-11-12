@@ -120,3 +120,26 @@ func IsTransientError(err error) bool {
 	// No recognizable permanent marker: treat as transient (network, timeout).
 	return true
 }
+
+// ExponentialBackoff returns the capped exponential backoff duration for a
+// 1-indexed attempt: base * 2^(attempt-1), clamped to max. It never returns a
+// value larger than max, so callers cannot accidentally let the delay grow
+// without bound under a high attempt count (the bug previously present in the
+// agent tool-invoke retry loop). attempt < 1 is treated as 1 (so the first
+// attempt uses base). A base or max of 0 yields 0.
+func ExponentialBackoff(base, max time.Duration, attempt int) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
+	d := base
+	for i := 1; i < attempt; i++ {
+		d *= 2
+		if d > max {
+			return max
+		}
+	}
+	if d > max {
+		return max
+	}
+	return d
+}

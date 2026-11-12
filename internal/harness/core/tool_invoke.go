@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/harness/core/schema"
 )
 
@@ -48,6 +49,21 @@ type InvokeTool func(ctx context.Context, ictx *ToolInvocationContext) (*schema.
 // ToolInvokeMiddleware wraps a tool invocation with cross-cutting behavior.
 // It receives the next handler in the chain and the invocation context.
 type ToolInvokeMiddleware func(next InvokeTool) InvokeTool
+
+// toolRetrySleep waits for d, returning early if ctx is canceled. It is a
+// package-level seam so tests can capture (and skip) the backoff delay without
+// real timers.
+var toolRetrySleep = func(ctx context.Context, d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+	case <-t.C:
+	}
+}
 
 // ---- ToolWrapper: timeout + retry + fallback ----
 
@@ -96,12 +112,11 @@ func NewRetryToolMiddleware(cfg *ToolRetryConfig) ToolInvokeMiddleware {
 					return nil, err
 				}
 				if attempt < rc.MaxAttempts {
-					select {
-					case <-ctx.Done():
+					toolRetrySleep(ctx, backoff)
+					if ctx.Err() != nil {
 						return nil, ctx.Err()
-					case <-time.After(backoff):
 					}
-					backoff *= 2
+					backoff = common.ExponentialBackoff(rc.Backoff, time.Minute, attempt+2)
 				}
 			}
 			return nil, fmt.Errorf("tool retry exhausted after %d attempts: %w", rc.MaxAttempts, lastErr)
