@@ -17,9 +17,12 @@
 package syncer
 
 import (
+	"errors"
+	"io"
 	"ragflow/internal/dao"
 	"ragflow/internal/service"
 	"ragflow/internal/syncer/connector"
+	"strings"
 	"testing"
 )
 
@@ -30,5 +33,23 @@ func TestSkippedDocumentDoesNotResolveFetchOrUpsert(t *testing.T) {
 		connector.SourceDocument{SourceID: "drive:file", SkipReason: "unsupported file type", FetchRef: &connector.FetchReference{Key: "unused"}})
 	if err != nil || result.Action != service.DocumentActionSkipped {
 		t.Fatalf("skip result = %+v, %v", result, err)
+	}
+}
+
+func TestSyncFileFailureIncludesIdentity(t *testing.T) {
+	db := setupSyncerDB(t)
+	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
+	taskDAO := dao.NewSyncTaskDAO(db)
+	task, err := taskDAO.GetTaskContext(t.Context(), "task-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	runner := NewSyncRunner(SyncRunnerConfig{ItemRetryCount: 1}, taskDAO, nil,
+		&fakeSink{errBySourceID: map[string]error{"drive:file": io.ErrUnexpectedEOF}},
+		service.NewDocumentIDResolver(fakeStore{}), nil, nil)
+	_, err = runner.processDocuments(t.Context(), task, "sharepoint", nil,
+		[]connector.SourceDocument{{SourceID: "drive:file", SemanticIdentifier: "Проект.docx", Blob: []byte("file")}})
+	if !errors.Is(err, io.ErrUnexpectedEOF) || !strings.Contains(err.Error(), "Проект.docx") || !strings.Contains(err.Error(), "drive:file") {
+		t.Fatalf("missing file identity or original error: %v", err)
 	}
 }

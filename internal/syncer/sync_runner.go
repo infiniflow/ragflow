@@ -352,6 +352,9 @@ func (r *SyncRunner) processDocuments(ctx context.Context, taskContext dao.SyncT
 		}
 		result, err := r.processDocumentWithRetry(ctx, taskContext, sourceType, session, sourceDocument)
 		if err != nil {
+			err = fmt.Errorf("sync file %q (source_id=%q): %w", sourceDocument.SemanticIdentifier, sourceDocument.SourceID, err)
+			common.Warn("sync file failed", zap.String("task_id", taskContext.Task.ID),
+				zap.String("kb_id", taskContext.Knowledgebase.ID), zap.Error(err))
 			if firstErr == nil {
 				firstErr = err
 			}

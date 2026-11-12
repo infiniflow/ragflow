@@ -67,6 +67,7 @@ type SharePointConnector struct {
 	tokenExpiry time.Time
 	httpClient  *http.Client
 	now         func() time.Time
+	limiter     *sharePointLimiter
 
 	tokenURL     string
 	graphBaseURL string
@@ -94,6 +95,7 @@ func NewSharePointConnector(config map[string]any) (*SharePointConnector, error)
 	if err := c.configureFileSelection(config); err != nil {
 		return nil, err
 	}
+	c.limiter = sharedSharePointLimiter(c.tenantID, c.clientID)
 	return c, nil
 }
 
@@ -393,7 +395,8 @@ func (c *SharePointConnector) getBytes(ctx context.Context, apiURL string) ([]by
 
 // doGraphRequest issues one authorized Graph GET, retrying transient failures
 // and refreshing an expired access token once on 401.
-func (c *SharePointConnector) doGraphRequest(ctx context.Context, apiURL string, maxBody int64) ([]byte, error) {
+func (c *SharePointConnector) doGraphRequest(ctx context.Context, apiURL string, maxBody int64) (data []byte, err error) {
+	defer func() { err = sharePointRequestError(apiURL, err) }()
 	if err := c.validateGraphURL(apiURL); err != nil {
 		return nil, err
 	}
@@ -401,62 +404,35 @@ func (c *SharePointConnector) doGraphRequest(ctx context.Context, apiURL string,
 	if err != nil {
 		return nil, err
 	}
-
 	var lastErr error
-	retriedUnauthorized := false
-	retryDelay := sharepointRetryBaseDelay
+	refreshed := false
+	delay := sharepointRetryBaseDelay
 	for attempt := 1; attempt <= sharepointRetryCount; attempt++ {
-		var retryAfter string
-		requestCtx, cancel := context.WithTimeout(ctx, sharepointRequestTimeout)
-		req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, apiURL, nil)
-		if err != nil {
-			cancel()
-			return nil, err
-		}
-		req.Header.Set("Authorization", "Bearer "+token)
-
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			cancel()
-			lastErr = err
-		} else {
-			retryAfter = resp.Header.Get("Retry-After")
-			body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
-			resp.Body.Close()
-			cancel()
-			if resp.StatusCode >= 400 {
-				lastErr = sharePointGraphError(resp.StatusCode, body)
-				if resp.StatusCode == http.StatusUnauthorized && !retriedUnauthorized {
-					c.invalidateToken(token)
-					token, err = c.token(ctx)
-					if err != nil {
-						return nil, err
-					}
-					retriedUnauthorized = true
-					attempt--
-					continue
-				}
-				if !sharePointRetryable(resp.StatusCode) {
-					return nil, lastErr
-				}
-			} else if readErr != nil {
-				return nil, readErr
-			} else if int64(len(body)) > maxBody {
-				return nil, fmt.Errorf("SharePoint API response from %s exceeds maximum size of %d bytes", apiURL, maxBody)
-			} else {
-				return body, nil
+		body, status, retryAfter, requestErr := c.graphRequestAttempt(ctx, apiURL, token, maxBody, delay)
+		lastErr = requestErr
+		if status == http.StatusUnauthorized && !refreshed {
+			c.invalidateToken(token)
+			token, err = c.token(ctx)
+			if err != nil {
+				return nil, err
 			}
+			refreshed = true
+			attempt--
+			continue
+		}
+		if requestErr == nil {
+			return body, nil
+		}
+		if errors.Is(requestErr, errSharePointResponseTooLarge) || (status >= 400 && !sharePointRetryable(status)) {
+			return nil, requestErr
 		}
 		if attempt == sharepointRetryCount {
 			break
 		}
-		delay := sharePointRetryDelay(retryAfter, retryDelay, time.Now())
-		retryDelay = min(retryDelay*2, 30*time.Second)
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(delay):
+		if err := waitSharePointRetry(ctx, sharePointRetryDelay(retryAfter, delay, time.Now())); err != nil {
+			return nil, err
 		}
+		delay = min(delay*2, 30*time.Second)
 	}
 	return nil, lastErr
 }

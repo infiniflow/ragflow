@@ -51,6 +51,7 @@ func mustSharePointConnector(t *testing.T, serverURL string, extra map[string]an
 		connector.tokenURL = serverURL + "/oauth2/v2.0/token"
 		connector.graphBaseURL = serverURL + "/v1.0"
 	}
+	connector.limiter = newSharePointLimiter(0)
 	return connector
 }
 
