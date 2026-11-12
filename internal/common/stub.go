@@ -18,6 +18,7 @@
 package common
 
 import (
+	"context"
 	"time"
 
 	"go.uber.org/zap"
@@ -77,3 +78,8 @@ func SyncIngestLog() {
 // LogIngest is the OSS no-op implementation of the shared upstream seam. The EE
 // build provides the real sink.
 func LogIngest(log *IngestionLog, fields ...zap.Field) {}
+
+// AuditWithContext preserves the community audit behavior.
+func AuditWithContext(_ context.Context, operationLog *OperationLog) {
+	Audit(operationLog)
+}

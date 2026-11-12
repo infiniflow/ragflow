@@ -601,7 +601,7 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 	}
 	defer func() {
 		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		common.Audit(operationLog)
+		common.AuditWithContext(c.Request.Context(), operationLog)
 	}()
 
 	user, errorCode, errorMessage := GetUser(c)

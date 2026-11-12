@@ -21,6 +21,13 @@ type response struct {
 	Detail  any       `json:"detail,omitempty"`
 }
 
+const responseObserverKey = "ragflow.responseObserver"
+
+// ObserveResponse observes the response envelope for this request without changing its encoding.
+func ObserveResponse(c *gin.Context, observe func(ErrorCode, any)) {
+	c.Set(responseObserverKey, observe)
+}
+
 // RespondSuccessList writes a successful response with list data and an optional total.
 // Supply at most one total; omitting it leaves total out of the response.
 func RespondSuccessList[T any](c *gin.Context, data []T, message string, total ...int64) {
@@ -81,4 +88,9 @@ func Respond(c *gin.Context, httpStatus int, code ErrorCode, data any, message s
 		}
 	}
 	c.JSON(httpStatus, body)
+	if value, exists := c.Get(responseObserverKey); exists {
+		if observe, ok := value.(func(ErrorCode, any)); ok && observe != nil {
+			observe(body.Code, body.Data)
+		}
+	}
 }

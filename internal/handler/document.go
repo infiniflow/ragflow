@@ -444,7 +444,7 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 	}
 	defer func() {
 		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		common.Audit(operationLog)
+		common.AuditWithContext(c.Request.Context(), operationLog)
 	}()
 
 	user, errorCode, errorMessage := GetUser(c)
@@ -1420,7 +1420,7 @@ func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 	}
 	defer func() {
 		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		common.Audit(operationLog)
+		common.AuditWithContext(c.Request.Context(), operationLog)
 	}()
 
 	datasetID := c.Param("dataset_id")

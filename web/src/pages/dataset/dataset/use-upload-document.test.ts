@@ -122,6 +122,7 @@ it('auto-parses a document the backend switched to a dedicated parser', async ()
   expect(mockRun).toHaveBeenCalledWith({
     documentIds: ['doc-deck'],
     run: 1,
+    actionOrigin: 'automatic-upload-parse',
   });
 });
 
@@ -180,6 +181,7 @@ it('auto-parses only the runnable documents of a mixed batch', async () => {
   expect(mockRun).toHaveBeenCalledWith({
     documentIds: ['doc-pdf'],
     run: 1,
+    actionOrigin: 'automatic-upload-parse',
   });
 });
 
@@ -238,6 +240,7 @@ it('auto-parses every document on the no-gap path without a warning modal', asyn
   expect(mockRun).toHaveBeenCalledWith({
     documentIds: ['doc-a', 'doc-b'],
     run: 1,
+    actionOrigin: 'automatic-upload-parse',
   });
 });
 

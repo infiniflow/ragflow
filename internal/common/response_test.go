@@ -122,3 +122,20 @@ func TestResponseHelpers(t *testing.T) {
 		})
 	}
 }
+
+func TestObserveResponsePreservesEnvelopeAndTypedData(t *testing.T) {
+	data := map[string]any{"id": "dataset-one"}
+	writer := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(writer)
+	calls := 0
+	ObserveResponse(c, func(code ErrorCode, observed any) {
+		calls++
+		if code != CodeSuccess || !reflect.DeepEqual(observed, data) {
+			t.Fatalf("observed code=%v data=%v", code, observed)
+		}
+	})
+	RespondSuccess(c, data, "")
+	if calls != 1 || writer.Body.String() != `{"code":0,"message":"success","data":{"id":"dataset-one"}}` {
+		t.Fatalf("calls=%d response=%s", calls, writer.Body.String())
+	}
+}
