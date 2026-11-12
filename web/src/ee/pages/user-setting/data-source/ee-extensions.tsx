@@ -30,5 +30,7 @@ export const generateEeDataSourceInfo = (
 export const eeDataSourceFormFields: Record<string, any[]> = {};
 
 /** Default connection values used to seed the add-source form. */
-export const eeDataSourceDefaultValues: Record<string, Record<string, any>> =
-  {};
+export const eeDataSourceDefaultValues: Record<
+  string,
+  Record<string, any>
+> = {};

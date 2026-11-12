@@ -279,7 +279,10 @@ function UploadForm({
 }
 
 type FileUploadDialogProps = IModalProps<UploadFormSchemaType> &
-  Pick<UploadFormProps, 'showParseOnCreation' | 'isTableParser' | 'description'>;
+  Pick<
+    UploadFormProps,
+    'showParseOnCreation' | 'isTableParser' | 'description'
+  >;
 export function FileUploadDialog({
   hideModal,
   onOk,
