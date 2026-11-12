@@ -434,37 +434,20 @@ func (s *Service) ChangePassword(ctx context.Context, username, newPassword stri
 // Returns:
 //   - error: error message
 func (s *Service) UpdateUserActivateStatus(ctx context.Context, username string, isActive bool) error {
-	userList, err := s.userDAO.ListByEmail(ctx, dao.DB, username)
-	if err != nil || len(userList) == 0 {
-		return fmt.Errorf("user '%s' not found", username)
-	}
-
-	if len(userList) > 1 {
-		return fmt.Errorf("exist more than 1 user: %s", username)
-	}
-
-	user := userList[0]
-
-	targetStatus := "0"
+	action, targetStatus := "disable", "0"
 	if isActive {
-		targetStatus = "1"
+		action, targetStatus = "enable", "1"
 	}
-
-	if user.IsActive == targetStatus {
-		return nil
-	}
-
-	user.IsActive = targetStatus
-	if !isActive {
-		invalidToken := "INVALID_" + common.GenerateToken()
-		user.AccessToken = &invalidToken
-	}
-
-	if err = s.userDAO.Update(ctx, dao.DB, user); err != nil {
-		return fmt.Errorf("failed to update user: %w", err)
-	}
-
-	return nil
+	return s.updateAccount(ctx, username, action, func(tx *gorm.DB, user *entity.User) error {
+		if user.IsActive == targetStatus {
+			return nil
+		}
+		updates := map[string]interface{}{"is_active": targetStatus}
+		if !isActive {
+			updates["access_token"] = "INVALID_" + common.GenerateToken()
+		}
+		return tx.Model(user).Updates(updates).Error
+	})
 }
 
 // GrantAdmin grant admin privileges
@@ -506,29 +489,12 @@ func (s *Service) GrantAdmin(ctx context.Context, username string) error {
 // Returns:
 //   - error: error message
 func (s *Service) RevokeAdmin(ctx context.Context, username string) error {
-	userList, err := s.userDAO.ListByEmail(ctx, dao.DB, username)
-	if err != nil || len(userList) == 0 {
-		return fmt.Errorf("user '%s' not found", username)
-	}
-
-	if len(userList) > 1 {
-		return fmt.Errorf("exist more than 1 user: %s", username)
-	}
-
-	user := userList[0]
-
-	if user.IsSuperuser == nil || !*user.IsSuperuser {
-		return nil
-	}
-
-	isSuperuser := false
-	user.IsSuperuser = &isSuperuser
-
-	if err = s.userDAO.Update(ctx, dao.DB, user); err != nil {
-		return fmt.Errorf("failed to update user: %w", err)
-	}
-
-	return nil
+	return s.updateAccount(ctx, username, "revoke_admin", func(tx *gorm.DB, user *entity.User) error {
+		if user.IsSuperuser == nil || !*user.IsSuperuser {
+			return nil
+		}
+		return tx.Model(user).Update("is_superuser", false).Error
+	})
 }
 
 // API Key methods
