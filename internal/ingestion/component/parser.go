@@ -336,7 +336,8 @@ func defaultSetups() map[string]schema.ParserSetup {
 			"remove_header_footer": false,
 		},
 		"slides": {
-			"parse_method": "deepdoc",
+			"parse_method":          "deepdoc",
+			"flatten_media_to_text": false,
 		},
 		"image": {
 			// Default stays on the legacy parse_method shape. ocr_enabled is

@@ -307,6 +307,13 @@ func TestConfigureParserFromSetups_UsesPythonFamilySetup(t *testing.T) {
 	}
 }
 
+func TestDefaultSetupsPresentationMediaFlatteningDisabled(t *testing.T) {
+	value, ok := defaultSetups()["slides"]["flatten_media_to_text"].(bool)
+	if !ok || value {
+		t.Fatalf("slides flatten_media_to_text = %v, want false", defaultSetups()["slides"]["flatten_media_to_text"])
+	}
+}
+
 func TestDispatch_PDFLegacyMarkdownConfigurationEmitsJSON(t *testing.T) {
 	useMockDocAnalyzer(t)
 

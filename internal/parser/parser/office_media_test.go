@@ -435,6 +435,61 @@ func TestPPTXTextParserSkipsImagesWithoutCache(t *testing.T) {
 	}
 }
 
+func TestPresentationParserFlattensMediaToText(t *testing.T) {
+	orig := pptxExtract
+	t.Cleanup(func() { pptxExtract = orig })
+	irJSON := `{"sections":[{"elements":[
+		{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"H1"}]}]}]}]},
+		{"type":"image","data":"` + officeTestImageB64(t, 15) + `"}
+	]}]}`
+	pptxExtract = func([]byte, string) (string, string, string, error, error) {
+		return irJSON, "", "", nil, nil
+	}
+
+	type presentationParser interface {
+		ConfigureFromSetup(map[string]any)
+		ParseWithResult(context.Context, string, []byte) ParseResult
+	}
+	for _, tc := range []struct {
+		name      string
+		filename  string
+		newParser func() presentationParser
+	}{
+		{name: "pptx", filename: "deck.pptx", newParser: func() presentationParser { return NewPPTXParser() }},
+		{name: "ppt", filename: "deck.ppt", newParser: func() presentationParser { return NewPPTParser() }},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := tc.newParser()
+			p.ConfigureFromSetup(map[string]any{"flatten_media_to_text": true})
+			ctx, _ := officeMediaTestContext()
+			res := p.ParseWithResult(ctx, tc.filename, []byte("presentation"))
+			if res.Err != nil {
+				t.Fatalf("ParseWithResult: %v", res.Err)
+			}
+			items := ItemsToMaps(res.JSON)
+			if len(items) != 2 {
+				t.Fatalf("items = %#v, want table and image", items)
+			}
+			table := items[0]
+			if table["doc_type_kwd"] != "text" {
+				t.Fatalf("table doc_type_kwd = %v, want text", table["doc_type_kwd"])
+			}
+			if _, ok := table["table"]; ok {
+				t.Fatalf("structured table retained: %#v", table)
+			}
+			text, _ := table["text"].(string)
+			if !strings.Contains(text, "<table>") || !strings.Contains(text, "H1") {
+				t.Fatalf("table text = %q, want rendered HTML", text)
+			}
+			image := items[1]
+			if image["doc_type_kwd"] != "text" {
+				t.Fatalf("image doc_type_kwd = %v, want text", image["doc_type_kwd"])
+			}
+			requireOfficeMediaRef(t, image)
+		})
+	}
+}
+
 // SVG sniffing must inspect a bounded prefix without copying a large payload.
 func TestOfficeSVGSniffDoesNotCopyPayload(t *testing.T) {
 	data := append([]byte(`<?xml version="1.0"?><SVG xmlns="http://www.w3.org/2000/svg">`), bytes.Repeat([]byte("X"), 1<<20)...)

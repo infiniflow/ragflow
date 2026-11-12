@@ -37,7 +37,7 @@ func (p *PPTParser) String() string {
 
 // ConfigureFromSetup forwards the slides-family setup map to the
 // underlying PPTXParser so both .ppt and .pptx containers share
-// the same TCADP configuration
+// the same configuration
 func (p *PPTParser) ConfigureFromSetup(setup map[string]any) {
 	p.pptx.ConfigureFromSetup(setup)
 }

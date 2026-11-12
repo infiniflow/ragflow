@@ -22,6 +22,8 @@ import (
 	"strings"
 
 	deepdocoffice "ragflow/internal/deepdoc/parser/office"
+	"ragflow/internal/entity"
+	"ragflow/internal/parser/tableutil"
 )
 
 // pptxExtract is a test seam for the native office_oxide extraction. It
@@ -36,8 +38,9 @@ var pptxExtract = deepdocoffice.OpenAndExtract
 // format passed to OpenFromBytes ("pptx" for ZIP-based OOXML and
 // "ppt" for legacy binary OLE).
 type PPTXParser struct {
-	format   string
-	textOnly bool
+	format             string
+	textOnly           bool
+	FlattenMediaToText bool
 
 	// TCADP cloud-parsing configuration
 	ParseMethod                    string
@@ -67,6 +70,9 @@ func (p *PPTXParser) ConfigureFromSetup(setup map[string]any) {
 	}
 	if v, ok := setup["parse_method"].(string); ok && v != "" {
 		p.ParseMethod = v
+	}
+	if v, ok := setup["flatten_media_to_text"].(bool); ok {
+		p.FlattenMediaToText = v
 	}
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
@@ -155,6 +161,18 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 	}
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
+	}
+	if p.FlattenMediaToText {
+		for _, item := range items {
+			if table, ok := item["table"].(*entity.TableData); ok && table != nil {
+				item["text"] = tableutil.RenderTableHTML(table)
+				delete(item, "table")
+				item["doc_type_kwd"] = "text"
+			}
+			if item["doc_type_kwd"] == "image" {
+				item["doc_type_kwd"] = "text"
+			}
+		}
 	}
 	if len(items) == 0 || itemsAllEmpty(items) {
 		// A deck whose IR carries no sections at all, or whose sections
