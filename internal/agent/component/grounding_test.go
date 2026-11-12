@@ -29,11 +29,13 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/cloudwego/eino/schema"
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/canvas"
+	"ragflow/internal/agent/component/prompts"
 	"ragflow/internal/agent/runtime"
 )
 
@@ -85,6 +87,36 @@ func (g *groundingStreamingInvoker) Stream(ctx context.Context, db *gorm.DB, req
 		}
 	}
 	return resp, nil
+}
+
+func TestCitationBatchesIncludesAnswerAndPrompt(t *testing.T) {
+	answer := strings.Repeat("a", 5000)
+	chunks := []prompts.CitationSource{
+		{ID: "0", Content: strings.Repeat("x", 19000)},
+		{ID: "1", Content: strings.Repeat("y", 19000)},
+	}
+	batches := citationBatches(chunks, answer, citationGroundingBatchChars)
+	if len(batches) != 2 {
+		t.Fatalf("batches=%d, want 2", len(batches))
+	}
+	for _, batch := range batches {
+		prompt, _ := prompts.CitationPlusPrompt(batch)
+		if size := utf8.RuneCountInString(prompt + citationKeepExistingPrompt + answer); size > citationGroundingBatchChars {
+			t.Fatalf("request size=%d exceeds budget", size)
+		}
+	}
+}
+
+func TestCitationGroundingRejectsOversizedRequest(t *testing.T) {
+	inv := &groundingTestInvoker{}
+	prev := getDefaultChatInvoker()
+	SetDefaultChatInvoker(inv)
+	defer SetDefaultChatInvoker(prev)
+	answer := strings.Repeat("x", citationGroundingBatchChars)
+	got, err := citationGroundingCall(t.Context(), nil, AgentParam{}, answer, nil, nil, true)
+	if err == nil || got != answer || inv.calls != 0 {
+		t.Fatalf("got=%d characters err=%v calls=%d", len(got), err, inv.calls)
+	}
 }
 
 func (g *groundingTestInvoker) Invoke(_ context.Context, _ *gorm.DB, req ChatInvokeRequest) (*ChatInvokeResponse, error) {

@@ -2551,6 +2551,10 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		messageContentEmitted := runtime.AgentMessageContentEmittedRun(ctx2)
 		messageEventsSuppressed := runtime.AgentMessageEventsSuppressedRun(ctx2)
 		shouldEmitMessage := messageContentEmitted || !messageEventsSuppressed
+		failureThinking := thinking
+		if runtime.AgentMessageEventsEmittedRun(ctx2) {
+			failureThinking = ""
+		}
 
 		if err != nil {
 			common.Debug("RunAgent invoke err",
@@ -2589,7 +2593,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			if failureText := deferredAgentStreamFailureText(err); failureText != "" {
 				visibleAnswer := answer
 				if visibleAnswer == "" && !messageContentEmitted && shouldEmitMessage {
-					emitAgentMessageEvents(emit, failureText, thinking, referencePayload)
+					emitAgentMessageEvents(emit, failureText, failureThinking, referencePayload)
 					visibleAnswer = failureText
 				}
 				if persistErr := s.persistAgentRunSession(ctx, canvasID, sessionID, messageID, userInput, visibleAnswer, thinking, referencePayload, dsl, state, visibleAnswer != ""); persistErr != nil {
@@ -2618,7 +2622,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			// errors keep their run-level error event.
 			if answer == "" && shouldEmitMessage {
 				if failureText, ok := agentRunFailureText(err); ok {
-					emitAgentMessageEvents(emit, failureText, thinking, referencePayload)
+					emitAgentMessageEvents(emit, failureText, failureThinking, referencePayload)
 					if persistErr := s.persistAgentRunSession(ctx, canvasID, sessionID, messageID, userInput, failureText, thinking, referencePayload, dsl, state, true); persistErr != nil {
 						s.markAgentSessionFailed(ctx2, canvasID, sessionID, "persist session: "+persistErr.Error())
 						s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
@@ -3261,7 +3265,7 @@ func agentRunFailureText(err error) (string, bool) {
 		if strings.Contains(msg, "tool") {
 			return "**ERROR**: A tool the agent called did not respond in time. Please try again.", true
 		}
-		return "**ERROR**: The model endpoint did not respond in time. Please try again.", true
+		return "**ERROR**: The agent run timed out before producing an answer. Please try again.", true
 	case strings.Contains(msg, "no choices in response"):
 		return "**ERROR**: The model endpoint returned an empty response. Please try again.", true
 	case strings.Contains(msg, "context canceled"):

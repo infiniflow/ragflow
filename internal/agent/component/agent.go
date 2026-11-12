@@ -719,7 +719,7 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 		}
 	}
 	chunks = truncated
-	batches := citationBatches(chunks, citationGroundingBatchChars)
+	batches := citationBatches(chunks, content, citationGroundingBatchChars)
 	if len(batches) > citationGroundingMaxBatches {
 		batches = batches[:citationGroundingMaxBatches]
 	}
@@ -749,23 +749,25 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 
 // citationBatches packs chunks into batches whose combined content
 // stays under budget characters.
-func citationBatches(chunks []prompts.CitationSource, budget int) [][]prompts.CitationSource {
+func citationBatches(chunks []prompts.CitationSource, content string, budget int) [][]prompts.CitationSource {
 	var batches [][]prompts.CitationSource
 	var cur []prompts.CitationSource
-	size := 0
 	for _, c := range chunks {
-		if len(cur) > 0 && size+len(c.Content) > budget {
+		candidate := append(cur, c)
+		prompt, _ := prompts.CitationPlusPrompt(candidate)
+		if len(cur) > 0 && utf8.RuneCountInString(prompt)+utf8.RuneCountInString(content)+utf8.RuneCountInString(citationKeepExistingPrompt) > budget {
 			batches = append(batches, cur)
-			cur, size = nil, 0
+			cur = nil
 		}
 		cur = append(cur, c)
-		size += len(c.Content)
 	}
 	if len(cur) > 0 {
 		batches = append(batches, cur)
 	}
 	return batches
 }
+
+const citationKeepExistingPrompt = "\nThe text already contains [ID:<ID>] citation tags; keep every existing tag unchanged.\n"
 
 // citationGroundingCall makes one grounding invocation over a single
 // batch of chunks.
@@ -777,7 +779,10 @@ func citationGroundingCall(ctx context.Context, db *gorm.DB, p AgentParam, conte
 	if keepExisting {
 		// Later batches see text already tagged by earlier ones; without
 		// this instruction models tend to strip prior [ID:] citations.
-		systemPrompt += "\nThe text already contains [ID:<ID>] citation tags; keep every existing tag unchanged.\n"
+		systemPrompt += citationKeepExistingPrompt
+	}
+	if utf8.RuneCountInString(systemPrompt)+utf8.RuneCountInString(content) > citationGroundingBatchChars {
+		return content, fmt.Errorf("citation grounding request exceeds %d characters", citationGroundingBatchChars)
 	}
 	inv := getDefaultChatInvoker()
 	req := ChatInvokeRequest{
