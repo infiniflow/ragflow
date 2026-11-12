@@ -110,19 +110,6 @@ func ResolveLoginTenantID(_ context.Context, _ *entity.User) (string, error) {
 	return "", nil
 }
 
-// LoginChannel is one authentication channel advertised to the login page.
-type LoginChannel struct {
-	Channel     string `json:"channel"`
-	DisplayName string `json:"display_name"`
-	Icon        string `json:"icon"`
-}
-
-// GetLoginChannels returns no channel: the community edition only offers
-// password login.
-func (s *UserService) GetLoginChannels() ([]*LoginChannel, common.ErrorCode, error) {
-	return make([]*LoginChannel, 0), common.CodeSuccess, nil
-}
-
 // defaultTierResolver keeps the community build on a single tier. All tenants
 // share the default lane, which reuses the OSS community queue (TaskSubject), so
 // an OSS split needs no rename and OSS and EE can share one NATS server. Tiering
