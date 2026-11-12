@@ -187,6 +187,12 @@ func TestExponentialBackoff(t *testing.T) {
 		{"baseGreaterThanMax", 2 * time.Minute, max, 1, max},
 		{"maxZero", base, 0, 5, 0},
 		{"baseZero", 0, max, 3, 0},
+		// Overflow guards: a base near the int64 ceiling must clamp to max
+		// instead of wrapping to a negative duration. The doubled value can
+		// overflow time.Duration (int64 nanoseconds) before the >max check
+		// would ever fire, so the primitive must saturate on overflow.
+		{"hugeBaseOverflow", 1 << 62, time.Minute, 2, time.Minute},
+		{"hugeBaseHugeMax", 1 << 61, 1 << 62, 3, 1 << 62},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

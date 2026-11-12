@@ -69,10 +69,11 @@ func RetryWithBackoff(ctx context.Context, maxRetries int, initialDelay time.Dur
 			return ctx.Err()
 		case <-time.After(delay):
 		}
-		delay *= 2
-		if delay > time.Minute {
-			delay = time.Minute
-		}
+		// Recompute the next delay from the normalized initial delay through the
+		// shared capped primitive, replacing the previous inline doubling so all
+		// retry loops converge on one backoff implementation. The curve matches
+		// the prior delay *= 2 clamped at 1 minute.
+		delay = ExponentialBackoff(initialDelay, time.Minute, attempt+2)
 	}
 	return fmt.Errorf("failed after %d retries: %w", maxRetries, lastErr)
 }
@@ -127,14 +128,22 @@ func IsTransientError(err error) bool {
 // without bound under a high attempt count (the bug previously present in the
 // agent tool-invoke retry loop). attempt < 1 is treated as 1 (so the first
 // attempt uses base). A base or max of 0 yields 0.
+//
+// The result is saturated rather than allowed to overflow: doubling a duration
+// near the int64 nanosecond ceiling wraps to a negative value, which would also
+// defeat the >max check. When that happens (or when base already exceeds max)
+// the function returns max instead.
 func ExponentialBackoff(base, max time.Duration, attempt int) time.Duration {
 	if attempt < 1 {
 		attempt = 1
 	}
+	if base > max {
+		return max
+	}
 	d := base
 	for i := 1; i < attempt; i++ {
 		d *= 2
-		if d > max {
+		if d < 0 || d > max {
 			return max
 		}
 	}
