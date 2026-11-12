@@ -9,23 +9,16 @@ import { PptPreviewer } from '@/components/document-preview/ppt-preview';
 import { TxtPreviewer } from '@/components/document-preview/txt-preview';
 import { Images } from '@/constants/common';
 import { restAPIv1 } from '@/utils/api';
-import { downloadFileFromBlob } from '@/utils/file-util';
-import { previewHtmlFile } from '@/utils/file-util';
+import {
+  downloadFileFromBlob,
+  parseContentDispositionFilename,
+  previewHtmlFile,
+} from '@/utils/file-util';
 import request from '@/utils/request';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'react-router';
 import CSVFileViewer from '@/components/document-preview/csv-preview';
-
-// Extract the filename from a Content-Disposition header value, or return
-// undefined when the header is missing/malformed.
-const parseContentDispositionFilename = (
-  header?: string,
-): string | undefined => {
-  if (!header) return undefined;
-  const match = /filename[^;=\n]*=(["']?)([^"';\n]*)\1/.exec(header);
-  return match?.[2]?.trim();
-};
 
 const DocumentViewer = () => {
   const { t } = useTranslation();

@@ -1,4 +1,37 @@
-import { decodeBlobText } from '../file-util';
+import { decodeBlobText, parseContentDispositionFilename } from '../file-util';
+
+describe('parseContentDispositionFilename', () => {
+  it.each([
+    [undefined, undefined],
+    ['', undefined],
+    ['attachment', undefined],
+    ['attachment; filename="report final.msg"', 'report final.msg'],
+    ['attachment; filename=report.msg', 'report.msg'],
+    ['attachment; filename="report; final.msg"', 'report; final.msg'],
+    ["attachment; filename*=UTF-8''report%20final.msg", 'report final.msg'],
+    ["attachment; filename*=UTF-8'sk'rozpo%C4%8Det.msg", 'rozpočet.msg'],
+    [
+      "attachment; filename=plain.msg; filename*=UTF-8''encoded%20name.msg",
+      'encoded name.msg',
+    ],
+    [
+      "attachment; filename*=UTF-8''bad%ZZ.msg; filename=plain.msg",
+      'plain.msg',
+    ],
+    [
+      "attachment; filename*=UTF-8''bad%C3.msg; filename=plain.msg",
+      'plain.msg',
+    ],
+    ["attachment; filename*=UTF-8''bad%ZZ.msg", undefined],
+    [
+      "attachment; filename*=unsupported''name.msg; filename=plain.msg",
+      'plain.msg',
+    ],
+    ['attachment; notfilename=wrong.msg', undefined],
+  ])('parses %s as %s', (header, expected) => {
+    expect(parseContentDispositionFilename(header)).toBe(expected);
+  });
+});
 
 // decodeBlobText routes a Blob through one of five decoder branches based on
 // the first up-to-3 bytes. The branches, in order:
