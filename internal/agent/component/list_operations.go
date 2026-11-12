@@ -37,6 +37,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"ragflow/internal/common"
 	"reflect"
 	"sort"
@@ -630,6 +631,14 @@ func lessKey(a, b any) bool {
 // lessScalar compares two scalar (or non-tuple) values. Numbers are
 // compared numerically; everything else via fmt.Sprintf.
 func lessScalar(a, b any) bool {
+	_, aExact := a.(json.Number)
+	_, bExact := b.(json.Number)
+	if aExact || bExact {
+		ar, br := exactSortNumber(a), exactSortNumber(b)
+		if ar != nil && br != nil {
+			return ar.Cmp(br) < 0
+		}
+	}
 	af, aok := toFloat64OK(a)
 	bf, bok := toFloat64OK(b)
 	if aok && bok {
@@ -638,15 +647,32 @@ func lessScalar(a, b any) bool {
 	return fmt.Sprintf("%v", a) < fmt.Sprintf("%v", b)
 }
 
+// exactSortNumber keeps preserved IDs distinct while comparing them with
+// ordinary numeric values. It does not rewrite the list elements.
+func exactSortNumber(value any) *big.Rat {
+	switch number := value.(type) {
+	case json.Number:
+		if !json.Valid([]byte(number)) {
+			return nil
+		}
+		result, _ := new(big.Rat).SetString(number.String())
+		return result
+	}
+	// Match the existing ordinary-number comparator, including native ints,
+	// so mixing a precise number with ordinary pairs keeps a consistent order.
+	number, ok := toFloat64OK(value)
+	if !ok {
+		return nil
+	}
+	return new(big.Rat).SetFloat64(number)
+}
+
 // toFloat64OK is a number-without-bool helper.
 func toFloat64OK(v any) (float64, bool) {
 	if _, isBool := v.(bool); isBool {
 		return 0, false
 	}
 	switch x := v.(type) {
-	case json.Number:
-		number, err := toFloat64(x)
-		return number, err == nil
 	case int:
 		return float64(x), true
 	case int64:
