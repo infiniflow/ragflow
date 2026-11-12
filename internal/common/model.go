@@ -57,6 +57,11 @@ func (m *ModelUsage) String() string {
 // model slot resolve through the group's failover picker at call time.
 const GroupModelRefPrefix = "gp-"
 
+// GroupModelRefWidth is the storage width of a tenant_*id model-reference
+// column: the gp- prefix plus a 32-char group id. len() of a string constant
+// is not a compile-time constant in Go, so the value is spelled out.
+const GroupModelRefWidth int64 = 35
+
 // ParseGroupModelRef recognizes a group reference in model-ref position and
 // returns the embedded group id. A gp- ref whose remainder is not a group id
 // is not a group reference; it fails resolution downstream as an invalid
