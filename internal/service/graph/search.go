@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"encoding/json"
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	modelModule "ragflow/internal/entity/models"
@@ -110,7 +111,7 @@ func buildDenseExpr(ctx context.Context, embModel *modelModule.EmbeddingModel, q
 	}
 	vector := embeddings[0].Embedding
 	return &types.MatchDenseExpr{
-		VectorColumnName:  fmt.Sprintf("q_%d_vec", len(vector)),
+		VectorColumnName:  common.VectorColumnName(len(vector)),
 		EmbeddingData:     vector,
 		EmbeddingDataType: "float",
 		DistanceType:      "cosine",

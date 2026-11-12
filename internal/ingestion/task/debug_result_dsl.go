@@ -29,8 +29,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"strings"
 
+	"ragflow/internal/common"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 )
 
@@ -77,7 +77,7 @@ func IsVectorKey(k string) bool {
 	if _, ok := vectorKeys[k]; ok {
 		return true
 	}
-	return strings.HasPrefix(k, "q_") && strings.HasSuffix(k, "_vec")
+	return common.IsVectorColumn(k)
 }
 
 // BuildDebugResultDSL builds the `dsl` object the debug-log END marker carries

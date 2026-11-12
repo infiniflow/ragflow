@@ -563,7 +563,7 @@ func (s *NavService) navScan(ctx context.Context, tenantID, kbID string, filter 
 		filter,
 		[]string{"type_kwd", "title_kwd", "docnm_kwd", "doc_id", "doc_ids_kwd", "_score"}, 0, limit,
 		[]interface{}{&types.MatchDenseExpr{
-			VectorColumnName:  fmt.Sprintf("q_%d_vec", len(f64)),
+			VectorColumnName:  common.VectorColumnName(len(f64)),
 			EmbeddingData:     f64,
 			EmbeddingDataType: "float",
 			DistanceType:      "cosine",
@@ -846,7 +846,7 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 			return err
 		}
 		if err := s.appendDocToCluster(ctx, de, in.TenantID, in.KbID, bestName, in.DocID,
-			fmt.Sprintf("q_%d_vec", len(vec)), in.CompileKind); err != nil {
+			common.VectorColumnName(len(vec)), in.CompileKind); err != nil {
 			return err
 		}
 		// Explicit stable id (A5): the nav_doc row is addressable by a
@@ -1087,7 +1087,7 @@ func (s *NavService) findBestCluster(ctx context.Context, tenantID, kbID string,
 			}),
 			[]string{"title_kwd", "docnm_kwd", "_score"}, 0, 1,
 			[]interface{}{&types.MatchDenseExpr{
-				VectorColumnName:  fmt.Sprintf("q_%d_vec", len(f64)),
+				VectorColumnName:  common.VectorColumnName(len(f64)),
 				EmbeddingData:     f64,
 				EmbeddingDataType: "float",
 				DistanceType:      "cosine",
@@ -1442,7 +1442,7 @@ func (s *NavService) mergeClusterDescription(ctx context.Context, de engine.DocE
 	}
 	if s.embed != nil {
 		if vecs, err := s.embed.Encode(ctx, tenantID, []string{merged}); err == nil && len(vecs) > 0 && len(vecs[0]) > 0 {
-			updates[fmt.Sprintf("q_%d_vec", len(vecs[0]))] = f32ToF64Slice(vecs[0])
+			updates[common.VectorColumnName(len(vecs[0]))] = f32ToF64Slice(vecs[0])
 		}
 	}
 	return de.UpdateChunks(ctx,
