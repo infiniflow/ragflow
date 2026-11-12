@@ -20,6 +20,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -42,6 +43,12 @@ func consumeRegistrationProof(context.Context, string) (common.ErrorCode, error)
 
 // InitHTTPClientEE is a no-op in the community edition.
 func (h *AdminClient) InitHTTPClientEE() error { return nil }
+
+// pickGroupModel is unsupported in the community edition: model groups are an
+// enterprise feature, so every gp- model reference fails resolution.
+func (s *ModelFactory) pickGroupModel(_ context.Context, _, _ string, _ entity.ModelType) (*entity.TenantModel, error) {
+	return nil, fmt.Errorf("%w: model group references are not supported", errModelConfigUnavailable)
+}
 
 // EnrichMessage leaves the heartbeat unchanged in the community edition.
 func (h *AdminClient) EnrichMessage(message *common.BaseMessage) (*common.BaseMessage, error) {
