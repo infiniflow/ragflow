@@ -64,10 +64,19 @@ func BoxesToSections(boxes []pdf.TextBox, pageHeights map[int]float64) []pdf.Sec
 		var bottom float64
 		positions := b.Positions
 		if len(positions) > 0 {
+			// Per-page positions carry the full geometry; the tag is only the
+			// legacy single-box summary of it. A one-page section must keep the
+			// @@N form: @@N-N round-trips through ExtractPositions as two
+			// identical page numbers.
 			first, last := positions[0], positions[len(positions)-1]
 			if len(first.PageNumbers) > 0 && len(last.PageNumbers) > 0 {
-				posTag = util.FormatPositionTagRange(first.PageNumbers[0], last.PageNumbers[len(last.PageNumbers)-1],
-					first.Left, last.Right, first.Top, last.Bottom)
+				fromPage := first.PageNumbers[0]
+				toPage := last.PageNumbers[len(last.PageNumbers)-1]
+				if fromPage == toPage {
+					posTag = util.FormatPositionTag(fromPage, first.Left, last.Right, first.Top, last.Bottom)
+				} else {
+					posTag = util.FormatPositionTagRange(fromPage, toPage, first.Left, last.Right, first.Top, last.Bottom)
+				}
 			}
 		} else if len(b.Pages) > 0 {
 			// Box carries an explicit page span (e.g. a cross-page merged

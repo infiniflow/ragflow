@@ -261,6 +261,13 @@ func tableRegionPositions(item pdf.TableItem) []pdf.Position {
 		}
 		if i == 0 && item.RegionRight > item.RegionLeft && item.RegionBottom > item.RegionTop {
 			pos.Left, pos.Right, pos.Top, pos.Bottom = item.RegionLeft, item.RegionRight, item.RegionTop, item.RegionBottom
+			found = true
+		}
+		if !found {
+			// A page with no matching position must not reach the crop plan:
+			// an empty rectangle renders as a 1x1 placeholder plus a stitch
+			// gap, injecting a blank band into the preview.
+			continue
 		}
 		positions = append(positions, pos)
 	}

@@ -115,7 +115,10 @@ type TextBox struct {
 	// cross-page merged table records every page it occupies (not just the
 	// anchor page).
 	Pages []int
-	// Positions retains each page's own rectangle for a merged region.
+	// Positions retains each page's own rectangle for a box that spans pages
+	// (a cross-page merged table). BoxesToSections prefers them over Pages so
+	// every page is cropped with its own page-local geometry instead of one
+	// page's rectangle being applied to the whole span.
 	Positions  []Position
 	LayoutType string
 	LayoutNo   string
@@ -195,6 +198,9 @@ type TableItem struct {
 	Caption   string
 
 	// RegionPositions preserves the table crop rectangle on each merged page.
+	// It is a cache derived from Positions (one union rectangle per page,
+	// with the anchor page overridden by Region*); extend it whenever
+	// Positions grows.
 	RegionPositions                                  []Position
 	RegionLeft, RegionRight, RegionTop, RegionBottom float64
 	NoMerge                                          bool

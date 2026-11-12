@@ -636,7 +636,11 @@ func CropMediaSectionPositions(positions []pdf.Position, decodedImages map[int]i
 		}
 	}
 	plan.segments = body
-	// Captions are appended to source metadata after the primary region.
+	// Captions are appended to source metadata after the primary region, so
+	// stitch in page and reading order. The parser canonicalizes section
+	// positions, but serialized _pdf_positions can come from any parser
+	// backend: the renderer enforces the order it stitches in instead of
+	// trusting the caller.
 	sort.SliceStable(plan.segments, func(i, j int) bool {
 		a, b := plan.segments[i], plan.segments[j]
 		if a.page != b.page {
