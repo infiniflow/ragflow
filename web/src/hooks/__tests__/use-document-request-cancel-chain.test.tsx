@@ -199,28 +199,6 @@ describe('document cancel chain (list polling + stop-loss retry)', () => {
       expect(result.current.filter.statusCounts).toEqual({ SCHEDULED: 1 }),
     );
     expect(mockFilter).toHaveBeenCalledTimes(2);
-    expect(mockIngest).toHaveBeenCalledWith(
-      { doc_ids: ['doc-start'], run: 1, delete: true },
-      undefined,
-    );
-  });
-
-  it('marks upload-triggered parsing as automatic', async () => {
-    mockIngest.mockResolvedValue({ data: { code: 0 } } as never);
-    const { result } = renderHook(useRunDocument, { wrapper: makeWrapper() });
-
-    await act(async () => {
-      await result.current.runDocumentByIds({
-        documentIds: ['doc-upload'],
-        run: 1,
-        actionOrigin: 'automatic-upload-parse',
-      });
-    });
-
-    expect(mockIngest).toHaveBeenCalledWith(
-      { doc_ids: ['doc-upload'], run: 1, delete: true },
-      { headers: { 'X-RAGFlow-Action-Origin': 'automatic-upload-parse' } },
-    );
   });
 
   it('keeps polling fast after the click and re-sends the cancel once it is overdue', async () => {
@@ -257,10 +235,7 @@ describe('document cancel chain (list polling + stop-loss retry)', () => {
       ),
     );
     await waitFor(() => expect(mockIngest).toHaveBeenCalledTimes(1));
-    expect(mockIngest).toHaveBeenCalledWith(
-      { doc_ids: [docId], run: 2 },
-      undefined,
-    );
+    expect(mockIngest).toHaveBeenCalledWith({ doc_ids: [docId], run: 2 });
 
     await advanceSeconds(35);
 
@@ -270,10 +245,7 @@ describe('document cancel chain (list polling + stop-loss retry)', () => {
     // not depend on the list data changing between polls.
     expect(mockList.mock.calls.length).toBeGreaterThanOrEqual(55);
     expect(mockIngest).toHaveBeenCalledTimes(2);
-    expect(mockIngest).toHaveBeenLastCalledWith(
-      { doc_ids: [docId], run: 2 },
-      { headers: { 'X-RAGFlow-Action-Origin': 'automatic-stop-retry' } },
-    );
+    expect(mockIngest).toHaveBeenLastCalledWith({ doc_ids: [docId], run: 2 });
 
     // The retry is latched: the overdue window must not produce a request
     // storm, and the poll falls back to the slow cadence.

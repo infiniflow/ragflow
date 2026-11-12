@@ -54,6 +54,10 @@ const methods = {
     url: kbList,
     method: 'get',
   },
+  documentIngest: {
+    url: documentIngest,
+    method: 'post',
+  },
   documentThumbnails: {
     url: documentThumbnails,
     method: 'get',
@@ -306,10 +310,6 @@ const chunkService = {
 const kbService = {
   ...baseKbService,
   ...chunkService,
-  documentIngest: (
-    data: Record<string, unknown>,
-    options?: { headers: Record<string, string> },
-  ) => request.post(documentIngest, { data, ...options }),
 };
 
 export const getKbDetail = async (datasetId: string) => {

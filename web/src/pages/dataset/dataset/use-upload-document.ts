@@ -92,7 +92,6 @@ export const useHandleUploadDocument = (pipelineId?: string) => {
           runDocumentByIds({
             documentIds: runnableDocuments.map((x) => x.id),
             run: 1,
-            actionOrigin: 'automatic-upload-parse',
           });
         }
       }

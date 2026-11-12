@@ -307,7 +307,6 @@ export const useFetchDocumentList = (loop = true) => {
       () =>
         kbService.documentIngest(
           buildDocumentIngestPayload({ documentIds: overdueIds, run: 2 }),
-          { headers: { 'X-RAGFlow-Action-Origin': 'automatic-stop-retry' } },
         ),
       { force: true },
     ).then(
@@ -471,12 +470,10 @@ export const useRunDocument = () => {
       documentIds,
       run,
       option,
-      actionOrigin,
     }: {
       documentIds: string[];
       run: number;
       option?: { delete: boolean; apply_kb: boolean };
-      actionOrigin?: 'automatic-upload-parse';
     }) => {
       // Optimistically move started documents into an active state so the
       // 5s list polling starts immediately and the row leaves its idle
@@ -550,9 +547,6 @@ export const useRunDocument = () => {
       }
       const ret = await kbService.documentIngest(
         buildDocumentIngestPayload({ documentIds, run, option }),
-        actionOrigin
-          ? { headers: { 'X-RAGFlow-Action-Origin': actionOrigin } }
-          : undefined,
       );
       const code = get(ret, 'data.code');
       if (code === 0) {
@@ -592,7 +586,6 @@ export const useRunDocument = () => {
       documentIds: string[];
       run: number;
       option?: { delete: boolean; apply_kb: boolean };
-      actionOrigin?: 'automatic-upload-parse';
     }) => sendDocumentIngest(params, () => mutateAsync(params)),
     [mutateAsync],
   );
