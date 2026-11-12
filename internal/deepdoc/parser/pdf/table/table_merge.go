@@ -367,7 +367,9 @@ func tableHeaderOf(item *pdf.TableItem) (tableHeaderSignature, bool) {
 // canMergeTableHeader rejects a geometry-only cross-page candidate when both
 // tables expose a header and their shape or normalized content disagree. Empty
 // cells and row boundaries are part of the signature, so a header with an
-// inserted empty column is not accepted as a repeated header.
+// inserted empty column is not accepted as a repeated header. When only one
+// side has usable header text, matching shape is sufficient: the other page's
+// header may simply have been missed by TSR.
 func canMergeTableHeader(anchor tableHeaderSignature, anchorOK bool, candidate tableHeaderSignature, candidateOK bool) bool {
 	if !anchorOK || !candidateOK {
 		return true
@@ -375,13 +377,10 @@ func canMergeTableHeader(anchor tableHeaderSignature, anchorOK bool, candidate t
 	if anchor.rows != candidate.rows || anchor.columns != candidate.columns {
 		return false
 	}
-	if anchor.hasText != candidate.hasText {
-		return false
+	if anchor.hasText && candidate.hasText {
+		return anchor.text == candidate.text
 	}
-	if !anchor.hasText {
-		return true
-	}
-	return anchor.text == candidate.text
+	return true
 }
 
 func normalizeTableHeaderCell(text string) string {
