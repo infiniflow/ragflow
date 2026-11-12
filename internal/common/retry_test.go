@@ -187,6 +187,13 @@ func TestExponentialBackoff(t *testing.T) {
 		{"baseGreaterThanMax", 2 * time.Minute, max, 1, max},
 		{"maxZero", base, 0, 5, 0},
 		{"baseZero", 0, max, 3, 0},
+		// Negative base must behave like a zero base (no delay), not saturate
+		// to max. The shared primitive otherwise conflated an overflowing
+		// multiply with a negative base and returned the cap, which broke the
+		// RetryWithBackoff "initialDelay <= 0 => no delay" contract.
+		{"negativeBase", -1 * time.Second, max, 2, 0},
+		{"negativeBaseAttempt1", -1 * time.Second, max, 1, 0},
+		{"negativeBaseLargeMax", -1 * time.Second, 2 * time.Minute, 5, 0},
 		// Overflow guards: a base near the int64 ceiling must clamp to max
 		// instead of wrapping to a negative duration. The doubled value can
 		// overflow time.Duration (int64 nanoseconds) before the >max check
@@ -204,5 +211,35 @@ func TestExponentialBackoff(t *testing.T) {
 				t.Errorf("ExponentialBackoff returned %v > max %v (uncapped backoff bug)", got, c.max)
 			}
 		})
+	}
+}
+
+// TestRetryWithBackoff_NegativeDelayNoDelay guards the documented contract
+// that a non-positive initialDelay yields no delay between retries. A negative
+// DelayAfterError from the agent DSL must keep retrying immediately, never
+// stall a full minute per retry (the regression introduced when RetryWithBackoff
+// was routed through the shared ExponentialBackoff primitive without
+// normalizing the base).
+func TestRetryWithBackoff_NegativeDelayNoDelay(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	var calls atomic.Int32
+	start := time.Now()
+	err := RetryWithBackoff(ctx, 3, -1*time.Second, func() error {
+		calls.Add(1)
+		return errors.New("always fail")
+	})
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if calls.Load() != 4 { // 1 initial attempt + 3 retries
+		t.Errorf("calls = %d, want 4", calls.Load())
+	}
+	// With a negative initialDelay there should be essentially no delay; a
+	// regression made every retry after the first sleep a full minute, which
+	// this guards against.
+	if elapsed > 1*time.Second {
+		t.Errorf("negative initialDelay caused %v of delay, want near-zero (no-delay contract)", elapsed)
 	}
 }

@@ -50,6 +50,9 @@ func RetryWithBackoff(ctx context.Context, maxRetries int, initialDelay time.Dur
 		}
 		return shouldRetry[0](err)
 	}
+	if initialDelay < 0 {
+		initialDelay = 0
+	}
 	delay := initialDelay
 	var lastErr error
 	for attempt := 0; attempt <= maxRetries; attempt++ {
@@ -127,13 +130,16 @@ func IsTransientError(err error) bool {
 // value larger than max, so callers cannot accidentally let the delay grow
 // without bound under a high attempt count (the bug previously present in the
 // agent tool-invoke retry loop). attempt < 1 is treated as 1 (so the first
-// attempt uses base). A base or max of 0 yields 0.
+// attempt uses base). A base <= 0 or a max of 0 yields 0.
 //
 // The result is saturated rather than allowed to overflow: doubling a duration
 // near the int64 nanosecond ceiling wraps to a negative value, which would also
 // defeat the >max check. When that happens (or when base already exceeds max)
 // the function returns max instead.
 func ExponentialBackoff(base, max time.Duration, attempt int) time.Duration {
+	if base <= 0 {
+		return 0
+	}
 	if attempt < 1 {
 		attempt = 1
 	}
