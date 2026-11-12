@@ -125,8 +125,8 @@ export enum LLMFactory {
   SystemOne = 'SystemOne',
   HostingerRouter = 'Hostinger Router',
   Wally = 'Wally',
-  Synap = 'Synap',
   Shengsuanyun = 'Shengsuanyun',
+  Synap = 'Synap',
 }
 
 // Please lowercase the file name
@@ -233,8 +233,8 @@ export const IconMap = {
   [LLMFactory.HostingerRouter]: 'hostinger-router',
   [LLMFactory.Cheapaimodel]: 'cheapaimodel',
   [LLMFactory.Wally]: 'wally',
-  [LLMFactory.Synap]: 'synap',
   [LLMFactory.Shengsuanyun]: 'shengsuanyun',
+  [LLMFactory.Synap]: 'synap',
 };
 
 /**

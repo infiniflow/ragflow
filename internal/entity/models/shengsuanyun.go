@@ -16,7 +16,12 @@
 
 package models
 
-import "net/http"
+import (
+	"context"
+	"net/http"
+
+	"ragflow/internal/common"
+)
 
 // ShengsuanyunModel adapts Shengsuanyun's OpenAI-compatible API and tags its
 // outbound requests for provider attribution.
@@ -40,6 +45,12 @@ func (m *ShengsuanyunModel) Name() string {
 // Shengsuanyun attribution header.
 func (m *ShengsuanyunModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return NewShengsuanyunModel(baseURL, m.VllmModel.baseModel.URLSuffix)
+}
+
+// Embed sends embeddings through Shengsuanyun's OpenAI-compatible
+// /embeddings endpoint using the URL suffix configured for this provider.
+func (m *ShengsuanyunModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
+	return m.OpenAIAPICompatibleModel.Embed(ctx, modelName, request, apiConfig, embeddingConfig, modelUsage)
 }
 
 func withShengsuanyunTitle(client *http.Client) *http.Client {

@@ -10,5 +10,22 @@
     "embedding": "embeddings"
   },
   "class": "shengsuanyun",
-  "models": []
+  "models": [
+    {
+      "name": "openai/text-embedding-3-small",
+      "max_tokens": 8191,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 2048
+    },
+    {
+      "name": "openai/text-embedding-3-large",
+      "max_tokens": 8191,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 2048
+    }
+  ]
 }
