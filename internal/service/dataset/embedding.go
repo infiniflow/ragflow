@@ -11,6 +11,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
@@ -22,16 +23,11 @@ import (
 // embedding availability check.
 type embeddingCheckSample struct {
 	ChunkID           string
-	KbID              string
 	DocID             string
 	DocName           string
 	VectorField       string
 	Vector            []float64
-	PageNum           interface{}
-	Position          interface{}
-	Top               interface{}
 	ContentWithWeight string
-	QuestionKeywords  []string
 }
 
 // CheckEmbedding verifies that a candidate embedding model is compatible with a
@@ -94,20 +90,14 @@ func (d *DatasetService) CheckEmbedding(ctx context.Context, datasetID string, r
 			continue
 		}
 
-		rawChunk, err := d.docEngine.GetChunk(ctx, fmt.Sprintf("ragflow_%s", kb.TenantID), sample.ChunkID, []string{datasetID})
-		if err != nil {
-			return nil, common.CodeServerError, fmt.Errorf("failed to get sampled chunk %s: %w", sample.ChunkID, err)
-		}
-		chunkMap := datasetMap(rawChunk)
-		if len(chunkMap) == 0 {
-			return nil, common.CodeServerError, fmt.Errorf("sampled chunk %s was not found", sample.ChunkID)
-		}
-
-		title := datasetString(chunkMap["title_tks"])
-		content := datasetString(chunkMap["content_ltks"])
+		// Re-encode the original text and title. The *_tks fields contain
+		// lexical search tokens and are not the input used by the tokenizer's
+		// standard embedding path.
+		title := sample.DocName
+		content := component.CleanEmbeddingText(sample.ContentWithWeight)
 
 		var titleVector [][]float64
-		if title != "" {
+		if strings.TrimSpace(title) != "" {
 			titleVector, err = datasetEncodeEmbedding(ctx, embeddingModel, []string{title})
 			if err != nil {
 				return nil, common.CodeServerError, err
@@ -262,16 +252,11 @@ func (d *DatasetService) sampleRandomChunksWithVectors(ctx context.Context, tena
 		vector := datasetAsFloatVec(chunkMap[vectorField])
 		samples = append(samples, embeddingCheckSample{
 			ChunkID:           chunkID,
-			KbID:              datasetID,
 			DocID:             datasetString(chunkMap["doc_id"]),
 			DocName:           datasetString(chunkMap["docnm_kwd"]),
 			VectorField:       vectorField,
 			Vector:            vector,
-			PageNum:           chunkMap["page_num_int"],
-			Position:          chunkMap["position_int"],
-			Top:               chunkMap["top_int"],
 			ContentWithWeight: datasetString(chunkMap["content_with_weight"]),
-			QuestionKeywords:  datasetStringSlice(chunkMap["question_kwd"]),
 		})
 	}
 
