@@ -246,6 +246,7 @@ func buildVastbaseMetaDSN(cfg config.VastbaseMetaConfig) string {
 func autoMigrateModels() []interface{} {
 	dataModels := []interface{}{
 		&entity.User{},
+		&entity.AdminOperationLog{},
 		&entity.Tenant{},
 		&entity.UserTenant{},
 		&entity.File{},

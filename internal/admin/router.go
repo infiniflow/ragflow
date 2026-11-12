@@ -57,19 +57,20 @@ func (r *Router) Setup(engine *gin.Engine) {
 		protected := admin.Group("")
 		protected.Use(r.handler.AuthMiddleware())
 		{
-			protected.POST("/logout", r.handler.Logout)
+			protected.POST("/logout", r.handler.auditMiddleware(), r.handler.Logout)
 			// Auth
 			protected.GET("/auth", r.handler.AuthCheck)
+			protected.GET("/operation-logs", r.handler.ListOperationLogs)
 
 			// User management
 			protected.GET("/users", r.handler.ListUsers)
-			protected.POST("/users", r.handler.CreateUser)
+			protected.POST("/users", r.handler.auditMiddleware(), r.handler.CreateUser)
 			protected.GET("/users/:username", r.handler.GetUser)
-			protected.DELETE("/users/:username", r.handler.DeleteUser)
-			protected.PUT("/users/:username/password", r.handler.ChangePassword)
-			protected.PUT("/users/:username/activate", r.handler.UpdateUserActivateStatus)
-			protected.PUT("/users/:username/admin", r.handler.GrantAdmin)
-			protected.DELETE("/users/:username/admin", r.handler.RevokeAdmin)
+			protected.DELETE("/users/:username", r.handler.auditMiddleware(), r.handler.DeleteUser)
+			protected.PUT("/users/:username/password", r.handler.auditMiddleware(), r.handler.ChangePassword)
+			protected.PUT("/users/:username/activate", r.handler.auditMiddleware(), r.handler.UpdateUserActivateStatus)
+			protected.PUT("/users/:username/admin", r.handler.auditMiddleware(), r.handler.GrantAdmin)
+			protected.DELETE("/users/:username/admin", r.handler.auditMiddleware(), r.handler.RevokeAdmin)
 
 			// Service management
 			protected.GET("/services", r.handler.GetServices)
