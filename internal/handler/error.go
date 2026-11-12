@@ -28,14 +28,14 @@ import (
 	"go.uber.org/zap"
 )
 
-// jsonInternalError logs the original error and includes it in the API response.
+// jsonInternalError logs the original error without exposing internal details.
 func jsonInternalError(c *gin.Context, err error) {
 	common.Warn("handler internal error",
 		zap.Error(err),
 		zap.String("method", c.Request.Method),
 		zap.String("path", c.Request.URL.Path),
 	)
-	common.RespondError(c, common.CodeServerError, err.Error())
+	common.RespondError(c, common.CodeServerError, common.CodeServerError.Message())
 }
 
 // HandleNoRoute handles requests to undefined routes

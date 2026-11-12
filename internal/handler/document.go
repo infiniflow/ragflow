@@ -131,7 +131,11 @@ func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
 	ctx := c.Request.Context()
 	doc, err := h.documentService.GetDocumentByID(ctx, id)
 	if err != nil {
-		common.RespondError(c, common.CodeNotFound, "document not found: "+err.Error())
+		if dao.IsNotFoundErr(err) {
+			common.RespondError(c, common.CodeNotFound, "document not found")
+		} else {
+			jsonInternalError(c, err)
+		}
 		return
 	}
 
@@ -350,7 +354,11 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 	ctx := c.Request.Context()
 	doc, err := h.documentService.GetDocumentByID(ctx, id)
 	if err != nil {
-		common.Respond(c, http.StatusBadRequest, 1, nil, "document not found: "+err.Error())
+		if dao.IsNotFoundErr(err) {
+			common.Respond(c, http.StatusBadRequest, 1, nil, "document not found!")
+		} else {
+			jsonInternalError(c, err)
+		}
 		return
 	}
 	if err := service.CheckDocumentAccess(ctx, doc.ID, doc.KbID, permission.OperationUpdate); err != nil {
@@ -400,7 +408,11 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 	ctx := c.Request.Context()
 	doc, err := h.documentService.GetDocumentByID(ctx, id)
 	if err != nil {
-		common.Respond(c, http.StatusBadRequest, 1, nil, "document not found: "+err.Error())
+		if dao.IsNotFoundErr(err) {
+			common.Respond(c, http.StatusBadRequest, 1, nil, "document not found!")
+		} else {
+			jsonInternalError(c, err)
+		}
 		return
 	}
 	if err := service.CheckDocumentAccess(ctx, doc.ID, doc.KbID, permission.OperationDeleteContent); err != nil {
@@ -1211,7 +1223,7 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 		}
 		common.Error("DownloadDocument failed to load document", err,
 			zap.String("dataset_id", datasetID), zap.String("document_id", docID), zap.String("user_id", user.ID))
-		common.RespondError(c, common.CodeServerError, "Failed to download document: "+err.Error())
+		common.RespondError(c, common.CodeServerError, "Failed to download document")
 		return
 	}
 	if doc == nil || doc.KbID != datasetID {

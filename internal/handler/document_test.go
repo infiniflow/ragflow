@@ -2284,7 +2284,7 @@ func TestDownloadDocument_LookupErrorReturnsServerError(t *testing.T) {
 	if resp["code"] != float64(common.CodeServerError) {
 		t.Fatalf("expected code %d, got %v", common.CodeServerError, resp["code"])
 	}
-	if resp["message"] != "Failed to download document: database connection failed" {
+	if resp["message"] != "Failed to download document" {
 		t.Fatalf("unexpected client-visible error: %v", resp["message"])
 	}
 }

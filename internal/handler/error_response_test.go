@@ -21,6 +21,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -28,7 +29,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestJSONInternalErrorReturnsOriginalError(t *testing.T) {
+func TestJSONInternalErrorRedactsOriginalError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	recorder := httptest.NewRecorder()
@@ -47,10 +48,13 @@ func TestJSONInternalErrorReturnsOriginalError(t *testing.T) {
 		t.Fatalf("decode response body: %v", err)
 	}
 
-	if got := body["message"]; got != cause.Error() {
-		t.Fatalf("message=%v, want %q", got, cause.Error())
+	if got := body["message"]; got != common.CodeServerError.Message() {
+		t.Fatalf("message=%v, want %q", got, common.CodeServerError.Message())
 	}
 	if got := body["code"]; got != float64(common.CodeServerError) {
 		t.Fatalf("code=%v, want %d", got, common.CodeServerError)
+	}
+	if strings.Contains(recorder.Body.String(), cause.Error()) {
+		t.Fatalf("response exposed original error: %s", recorder.Body.String())
 	}
 }

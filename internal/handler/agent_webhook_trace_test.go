@@ -20,7 +20,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -464,15 +463,15 @@ func TestGetAgentWebhookLogsStopsAfterExpiry(t *testing.T) {
 	}
 }
 
-// TestGetAgentWebhookLogsReturnsRedisFailures covers corrupt data and backend errors.
-func TestGetAgentWebhookLogsReturnsRedisFailures(t *testing.T) {
+// TestGetAgentWebhookLogsRedactsRedisFailures covers corrupt data and backend errors.
+func TestGetAgentWebhookLogsRedactsRedisFailures(t *testing.T) {
 	h, rdb := newWebhookTraceTestHandler(t)
 	if err := rdb.Set(t.Context(), "webhook-trace-c1-logs", `{"webhooks":`, 0).Err(); err != nil {
 		t.Fatalf("seed corrupt trace: %v", err)
 	}
 
 	corrupt := requestWebhookTrace(t, h, "c1", "u1", url.Values{"since_ts": {"0"}})
-	if corrupt.Code != int(common.CodeServerError) || !strings.Contains(corrupt.Message, "unexpected end of JSON input") {
+	if corrupt.Code != int(common.CodeServerError) || corrupt.Message != common.CodeServerError.Message() {
 		t.Fatalf("corrupt response = %+v", corrupt)
 	}
 
@@ -480,7 +479,7 @@ func TestGetAgentWebhookLogsReturnsRedisFailures(t *testing.T) {
 		return "", errors.New("redis: connection refused")
 	})
 	failed := requestWebhookTrace(t, h, "c1", "u1", url.Values{"since_ts": {"0"}})
-	if failed.Code != int(common.CodeServerError) || !strings.Contains(failed.Message, "redis: connection refused") {
+	if failed.Code != int(common.CodeServerError) || failed.Message != common.CodeServerError.Message() {
 		t.Fatalf("redis failure response = %+v", failed)
 	}
 }
