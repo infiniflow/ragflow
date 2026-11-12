@@ -591,6 +591,9 @@ func (h *FileHandler) Download(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/files/link-to-datasets [post]
 func (h *FileHandler) LinkToDatasets(c *gin.Context) {
+	common.StartOperationLog(c, "link_files_to_datasets")
+	defer common.FinishOperationLog(c)
+
 	startAt := time.Now()
 	operationLog := &common.OperationLog{
 		EventTime:  startAt,
@@ -601,7 +604,7 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 	}
 	defer func() {
 		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		common.AuditWithContext(c.Request.Context(), operationLog)
+		common.AuditRequest(c, operationLog)
 	}()
 
 	user, errorCode, errorMessage := GetUser(c)
@@ -619,6 +622,8 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 	// arguments — matching Python's @validate_request behavior and code.
 	_ = c.ShouldBindJSON(&req)
 
+	common.SetOperationResource(c, "file_ids", req.FileIDs)
+	common.SetOperationResource(c, "dataset_ids", req.KbIDs)
 	// Mirror Python @validate_request("file_ids", "kb_ids"): a key absent from
 	// the body returns ARGUMENT_ERROR (101) without data and with the aggregated
 	// message. Python's check is key-presence based, so an explicit empty list

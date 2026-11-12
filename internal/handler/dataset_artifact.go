@@ -124,6 +124,9 @@ func (h *DatasetArtifactHandler) ListArtifacts(c *gin.Context) {
 // UpdateArtifact handles PUT /artifacts/<page_type>/<slug> — edit a wiki page.
 // The slug may contain nested path segments, such as location/长社.
 func (h *DatasetArtifactHandler) UpdateArtifact(c *gin.Context) {
+	common.StartOperationLog(c, "update_dataset_artifact")
+	defer common.FinishOperationLog(c)
+
 	user, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
 		return
@@ -388,6 +391,9 @@ func (h *DatasetArtifactHandler) GetSkillTree(c *gin.Context) {
 
 // DeleteSkills handles DELETE /skills — delete all skills.
 func (h *DatasetArtifactHandler) DeleteSkills(c *gin.Context) {
+	common.StartOperationLog(c, "delete_dataset_skills")
+	defer common.FinishOperationLog(c)
+
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
 		return
@@ -420,6 +426,9 @@ func (h *DatasetArtifactHandler) GetSkillPage(c *gin.Context) {
 
 // DeleteSkill handles DELETE /skills/<skill_kwd> — delete a single skill.
 func (h *DatasetArtifactHandler) DeleteSkill(c *gin.Context) {
+	common.StartOperationLog(c, "delete_dataset_skill")
+	defer common.FinishOperationLog(c)
+
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
 		return
@@ -501,6 +510,9 @@ func (h *DatasetArtifactHandler) GetDocumentClaims(c *gin.Context) {
 
 // DeleteDocumentGraph handles DELETE /documents/<document_id>/structure/graph — delete document structure graph.
 func (h *DatasetArtifactHandler) DeleteDocumentGraph(c *gin.Context) {
+	common.StartOperationLog(c, "delete_dataset_document_graph")
+	defer common.FinishOperationLog(c)
+
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
 		return

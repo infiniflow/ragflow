@@ -18,8 +18,9 @@
 package common
 
 import (
-	"context"
 	"time"
+
+	"github.com/gin-gonic/gin"
 
 	"go.uber.org/zap"
 )
@@ -79,7 +80,18 @@ func SyncIngestLog() {
 // build provides the real sink.
 func LogIngest(log *IngestionLog, fields ...zap.Field) {}
 
-// AuditWithContext preserves the community audit behavior.
-func AuditWithContext(_ context.Context, operationLog *OperationLog) {
+// StartOperationLog leaves community request handling unchanged.
+func StartOperationLog(_ *gin.Context, _ string) {}
+
+// SetOperationResource leaves community request handling unchanged.
+func SetOperationResource(_ *gin.Context, _ string, _ any) {}
+
+// FinishOperationLog leaves community request handling unchanged.
+func FinishOperationLog(_ *gin.Context) {}
+
+func auditResponse(_ *gin.Context, _ ErrorCode) {}
+
+// AuditRequest preserves the community audit behavior.
+func AuditRequest(_ *gin.Context, operationLog *OperationLog) {
 	Audit(operationLog)
 }

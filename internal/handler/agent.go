@@ -277,6 +277,9 @@ func mapAgentError(err error) (common.ErrorCode, string) {
 // @Success 200 {object} entity.UserCanvas
 // @Router /api/v1/agents [post]
 func (h *AgentHandler) CreateAgent(c *gin.Context) {
+	common.StartOperationLog(c, "create_agent")
+	defer common.FinishOperationLog(c)
+
 	user, errorCode, err := billingQuotaUser(c)
 	if err != nil {
 		common.RespondError(c, errorCode, err.Error())
@@ -295,6 +298,9 @@ func (h *AgentHandler) CreateAgent(c *gin.Context) {
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
+	}
+	if row != nil {
+		common.SetOperationResource(c, "agent_id", row.ID)
 	}
 	common.RespondSuccess(c, row, "success")
 }
@@ -363,6 +369,9 @@ func decodeJSONWithNumber(body io.Reader, target any) error {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/agents/{canvas_id} [put]
 func (h *AgentHandler) UpdateAgent(c *gin.Context) {
+	common.StartOperationLog(c, "update_agent")
+	defer common.FinishOperationLog(c)
+
 	canvasID := c.Param("canvas_id")
 	var req map[string]interface{}
 	if err := decodeJSONWithNumber(c.Request.Body, &req); err != nil && !errors.Is(err, io.EOF) {
@@ -372,6 +381,16 @@ func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 	if req == nil {
 		req = map[string]interface{}{}
 	}
+	release, _ := req["release"].(bool)
+	if value, ok := req["release"].(string); ok {
+		release = value != ""
+	}
+	common.SetOperationResource(c, "release_requested", release)
+	autosave, _ := req["autosave"].(bool)
+	if value, ok := req["autosave"].(string); ok {
+		autosave = value != "" && value != "false"
+	}
+	common.SetOperationResource(c, "autosave", autosave)
 	if err := h.agentService.UpdateAgent(c.Request.Context(), canvasID, req); err != nil {
 		ec, em := mapAgentError(err)
 		common.RespondError(c, ec, em)
@@ -395,6 +414,9 @@ func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/agents/{canvas_id} [delete]
 func (h *AgentHandler) DeleteAgent(c *gin.Context) {
+	common.StartOperationLog(c, "delete_agent")
+	defer common.FinishOperationLog(c)
+
 	canvasID := c.Param("canvas_id")
 	if err := h.agentService.DeleteAgent(c.Request.Context(), canvasID); err != nil {
 		ec, em := mapAgentError(err)
@@ -438,6 +460,9 @@ func (h *AgentHandler) ListTemplates(c *gin.Context) {
 // @Success 200 {string} string "SSE: data: {...}\\n\\n"
 // @Router /api/v1/agents/{canvas_id}/run [post]
 func (h *AgentHandler) RunAgent(c *gin.Context) {
+	common.StartOperationLog(c, "request_agent_run")
+	defer common.FinishOperationLog(c)
+
 	canvasID := c.Param("canvas_id")
 	version := c.Query("version")
 	sessionID := c.Query("session_id")
@@ -447,6 +472,8 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 		sessionID = common.GenerateToken()
 		c.Request = c.Request.WithContext(service.WithAgentSessionID(c.Request.Context(), sessionID))
 	}
+	common.SetOperationResource(c, "session_id", sessionID)
+	common.SetOperationResource(c, "version_id", version)
 	userInput, err := readUserInput(c)
 	if err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
@@ -465,6 +492,7 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
+	common.FinishOperationLog(c)
 	doneSent := false
 	for ev := range events {
 		if ev.Type == "done" {
@@ -636,6 +664,9 @@ func (h *AgentHandler) extractChatDebugFile(ctx context.Context, files []map[str
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/tasks/{session_id}/cancel [post]
 func (h *AgentHandler) CancelSessionRun(c *gin.Context) {
+	common.StartOperationLog(c, "request_agent_run_cancel")
+	defer common.FinishOperationLog(c)
+
 	if h.agentService == nil {
 		common.RespondError(c, common.CodeServerError, "agent service unavailable")
 		return
@@ -666,6 +697,9 @@ type publishAgentRequest struct {
 // @Success 200 {object} entity.UserCanvasVersion
 // @Router /api/v1/agents/{canvas_id}/publish [post]
 func (h *AgentHandler) PublishAgent(c *gin.Context) {
+	common.StartOperationLog(c, "publish_agent")
+	defer common.FinishOperationLog(c)
+
 	canvasID := c.Param("canvas_id")
 	var req publishAgentRequest
 	if err := decodeJSONWithNumber(c.Request.Body, &req); err != nil && !errors.Is(err, io.EOF) {
@@ -684,6 +718,7 @@ func (h *AgentHandler) PublishAgent(c *gin.Context) {
 		return
 	}
 	if row != nil {
+		common.SetOperationResource(c, "version_id", row.ID)
 		row.DSL = dslpkg.NormalizeForCanvas(row.DSL)
 	}
 	common.RespondSuccess(c, row, "success")
@@ -756,6 +791,9 @@ func (h *AgentHandler) GetVersion(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/agents/{canvas_id}/versions/{version_id} [delete]
 func (h *AgentHandler) DeleteVersion(c *gin.Context) {
+	common.StartOperationLog(c, "delete_agent_version")
+	defer common.FinishOperationLog(c)
+
 	if _, code, msg := GetUser(c); code != common.CodeSuccess {
 		common.RespondError(c, code, msg)
 		return
@@ -783,6 +821,9 @@ func (h *AgentHandler) DeleteVersion(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/agents/{canvas_id}/versions/{version_id} [patch]
 func (h *AgentHandler) PatchVersion(c *gin.Context) {
+	common.StartOperationLog(c, "update_agent_version")
+	defer common.FinishOperationLog(c)
+
 	if _, code, msg := GetUser(c); code != common.CodeSuccess {
 		common.RespondError(c, code, msg)
 		return
@@ -816,6 +857,9 @@ func (h *AgentHandler) PatchVersion(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/agents/{canvas_id}/versions/{version_id}/apply [post]
 func (h *AgentHandler) ApplyVersion(c *gin.Context) {
+	common.StartOperationLog(c, "apply_agent_version")
+	defer common.FinishOperationLog(c)
+
 	if _, code, msg := GetUser(c); code != common.CodeSuccess {
 		common.RespondError(c, code, msg)
 		return
@@ -869,6 +913,9 @@ func (h *AgentHandler) ListAgentTags(c *gin.Context) {
 
 // UpdateAgentTags PUT /api/v1/agents/:canvas_id/tags
 func (h *AgentHandler) UpdateAgentTags(c *gin.Context) {
+	common.StartOperationLog(c, "update_agent_tags")
+	defer common.FinishOperationLog(c)
+
 	canvasID := c.Param("canvas_id")
 	var body struct {
 		Tags interface{} `json:"tags"`
@@ -937,6 +984,9 @@ func (h *AgentHandler) ListAgentSessions(c *gin.Context) {
 
 // CreateAgentSession POST /api/v1/agents/:canvas_id/sessions
 func (h *AgentHandler) CreateAgentSession(c *gin.Context) {
+	common.StartOperationLog(c, "create_agent_session")
+	defer common.FinishOperationLog(c)
+
 	canvasID := c.Param("canvas_id")
 	var body struct {
 		Name   string          `json:"name"`
@@ -958,6 +1008,7 @@ func (h *AgentHandler) CreateAgentSession(c *gin.Context) {
 		common.RespondError(c, code, err.Error())
 		return
 	}
+	common.SetOperationResource(c, "session_id", row.ID)
 	common.RespondSuccess(c, struct {
 		*entity.API4Conversation
 		AgentID string `json:"agent_id"`
@@ -993,6 +1044,12 @@ func (h *AgentHandler) GetAgentSession(c *gin.Context) {
 //   - /sessions/:session_id   -> single item delete
 //   - /sessions              -> JSON ids/delete_all, or query parameters without a body
 func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
+	operation := "delete_agent_sessions"
+	if c.Param("session_id") != "" {
+		operation = "delete_agent_session"
+	}
+	common.StartOperationLog(c, operation)
+	defer common.FinishOperationLog(c)
 	ctx := c.Request.Context()
 	canvasID := c.Param("canvas_id")
 	sessionID := c.Param("session_id")
@@ -1025,6 +1082,8 @@ func (h *AgentHandler) DeleteAgentSession(c *gin.Context) {
 		common.RespondError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
 		return
 	}
+	common.SetOperationResource(c, "session_ids", ids)
+	common.SetOperationResource(c, "delete_all", deleteAll)
 	result, code, err := h.agentService.DeleteAgentSessions(ctx, canvasID, ids, deleteAll)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
@@ -1164,6 +1223,9 @@ func userInputMeta(userInput any) []zap.Field {
 // the whole response rather than idle time, so a long agent run would otherwise
 // be cut off mid-stream (issue #21649).
 func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
+	common.StartOperationLog(c, "request_agent_chat_completion")
+	defer common.FinishOperationLog(c)
+
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
 		common.RespondError(c, code, msg)
@@ -1174,6 +1236,8 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		common.RespondError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
 		return
 	}
+	common.SetOperationResource(c, "agent_id", req.AgentID)
+	common.SetOperationResource(c, "session_id", req.SessionID)
 	question, err := service.ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
 	if err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
@@ -1258,6 +1322,8 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		c.Request = c.Request.WithContext(service.WithAgentSessionID(c.Request.Context(), req.SessionID))
 	}
 
+	common.SetOperationResource(c, "session_id", req.SessionID)
+
 	// req.Files is already normalized to the 1D file list by the
 	// agentFiles unmarshaler. A nil/empty list reaches RunAgent as-is so
 	// its `len(files) > 0` guard sees a file-less run.
@@ -1279,6 +1345,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	}
 
 	if req.Stream {
+		common.FinishOperationLog(c)
 		// SSE streaming: one `data: {...}\n\n` frame per canvas RunEvent,
 		// terminated by `data:[DONE]\n\n`. We do NOT emit an SSE `event:`
 		// line — the front-end's use-send-message.ts parser feeds each
@@ -1471,6 +1538,9 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 
 // TestDBConnection POST /api/v1/agents/test-db-connection
 func (h *AgentHandler) TestDBConnection(c *gin.Context) {
+	common.StartOperationLog(c, "test_agent_db_connection")
+	defer common.FinishOperationLog(c)
+
 	var req service.TestDBConnectionRequest
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
 		common.RespondError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
@@ -1689,6 +1759,9 @@ func (h *AgentHandler) checkCanvasAccessForHandler(c *gin.Context, canvasID stri
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/agents/{canvas_id}/reset [post]
 func (h *AgentHandler) ResetAgent(c *gin.Context) {
+	common.StartOperationLog(c, "reset_agent")
+	defer common.FinishOperationLog(c)
+
 	canvasID := c.Param("canvas_id")
 	dsl, err := h.agentService.ResetAgent(c.Request.Context(), canvasID)
 	if err != nil {

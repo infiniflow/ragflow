@@ -211,6 +211,9 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 
 // CreateDataset handles POST /api/v1/datasets.
 func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
+	common.StartOperationLog(c, "create_dataset")
+	defer common.FinishOperationLog(c)
+
 	startAt := time.Now()
 	operationLog := &common.OperationLog{
 		EventTime:  startAt,
@@ -221,7 +224,7 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 	}
 	defer func() {
 		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		common.AuditWithContext(c.Request.Context(), operationLog)
+		common.AuditRequest(c, operationLog)
 	}()
 
 	user, errorCode, errorMessage := GetUser(c)
@@ -312,6 +315,9 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 		return
 	}
 
+	if id, ok := result["id"].(string); ok {
+		common.SetOperationResource(c, "dataset_id", id)
+	}
 	common.RespondSuccess(c, result, "success")
 }
 
@@ -443,6 +449,9 @@ var updateDatasetAllowedFields = map[string]bool{
 }
 
 func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
+	common.StartOperationLog(c, "update_dataset")
+	defer common.FinishOperationLog(c)
+
 	startAt := time.Now()
 	operationLog := &common.OperationLog{
 		EventTime:  startAt,
@@ -453,7 +462,7 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 	}
 	defer func() {
 		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		common.AuditWithContext(c.Request.Context(), operationLog)
+		common.AuditRequest(c, operationLog)
 	}()
 
 	user, errorCode, errorMessage := GetUser(c)
@@ -569,6 +578,9 @@ func (h *DatasetsHandler) GetMetadataConfig(c *gin.Context) {
 }
 
 func (h *DatasetsHandler) UpdateMetadataConfig(c *gin.Context) {
+	common.StartOperationLog(c, "update_dataset_metadata_config")
+	defer common.FinishOperationLog(c)
+
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
@@ -734,6 +746,9 @@ func ingestionEventCursor(c *gin.Context, name string) (*int, bool) {
 
 // DeleteDatasets handles DELETE /api/v1/datasets.
 func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
+	common.StartOperationLog(c, "delete_dataset")
+	defer common.FinishOperationLog(c)
+
 	startAt := time.Now()
 	operationLog := &common.OperationLog{
 		EventTime:  startAt,
@@ -744,7 +759,7 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 	}
 	defer func() {
 		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		common.AuditWithContext(c.Request.Context(), operationLog)
+		common.AuditRequest(c, operationLog)
 	}()
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -786,7 +801,10 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 	}
 
 	// Mirror DeleteReq duplicate detection.
+	common.SetOperationResource(c, "delete_all", req.DeleteAll)
 	if req.IDs != nil {
+		common.SetOperationResource(c, "ids", *req.IDs)
+
 		seen := make(map[string]int, len(*req.IDs))
 		duplicates := make([]string, 0)
 		for _, id := range *req.IDs {
@@ -1116,6 +1134,9 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 }
 
 func (h *DatasetsHandler) UpdateDocumentMetadataConfig(c *gin.Context) {
+	common.StartOperationLog(c, "update_dataset_document_metadata_config")
+	defer common.FinishOperationLog(c)
+
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
@@ -1166,6 +1187,12 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
+	}
+
+	if req.SearchID != nil && strings.TrimSpace(*req.SearchID) != "" {
+		common.StartOperationLog(c, "request_search_query")
+		defer common.FinishOperationLog(c)
+		common.SetOperationResource(c, "search_id", *req.SearchID)
 	}
 
 	if req.Page == nil {
@@ -1257,6 +1284,13 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
+	if req.SearchID != nil && strings.TrimSpace(*req.SearchID) != "" {
+		common.StartOperationLog(c, "request_search_query")
+		defer common.FinishOperationLog(c)
+		common.SetOperationResource(c, "search_id", *req.SearchID)
+		common.SetOperationResource(c, "dataset_id", datasetID)
+	}
+
 	req.Question = strings.TrimSpace(req.Question)
 	if req.Question == "" {
 		common.RespondError(c, common.CodeArgumentError, "question is required")

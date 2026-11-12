@@ -342,7 +342,10 @@ func (h *DocumentHandler) GetDocumentPreview(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [put]
 func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
+	common.StartOperationLog(c, "update_dataset_document")
+	defer common.FinishOperationLog(c)
 
+	common.SetOperationResource(c, "document_id", c.Param("id"))
 	id := c.Param("id")
 	if id == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -396,7 +399,10 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [delete]
 func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
+	common.StartOperationLog(c, "delete_dataset_document")
+	defer common.FinishOperationLog(c)
 
+	common.SetOperationResource(c, "document_id", c.Param("id"))
 	id := c.Param("id")
 	if id == "" {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -434,6 +440,9 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 
 // DeleteDocuments handles DELETE /api/v1/datasets/:dataset_id/documents
 func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
+	common.StartOperationLog(c, "delete_dataset_documents")
+	defer common.FinishOperationLog(c)
+
 	startAt := time.Now()
 	operationLog := &common.OperationLog{
 		EventTime:  startAt,
@@ -444,7 +453,7 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 	}
 	defer func() {
 		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		common.AuditWithContext(c.Request.Context(), operationLog)
+		common.AuditRequest(c, operationLog)
 	}()
 
 	user, errorCode, errorMessage := GetUser(c)
@@ -483,7 +492,10 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 	}
 
 	// Mirror pydantic's DeleteDocumentReq duplicate detection.
+	common.SetOperationResource(c, "delete_all", req.DeleteAll)
 	if req.IDs != nil {
+		common.SetOperationResource(c, "ids", *req.IDs)
+
 		seen := make(map[string]int, len(*req.IDs))
 		duplicates := make([]string, 0)
 		for _, id := range *req.IDs {
@@ -547,6 +559,9 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 
 // BatchUpdateDocumentStatus Batch update status of documents within a dataset.
 func (h *DocumentHandler) BatchUpdateDocumentStatus(c *gin.Context) {
+	common.StartOperationLog(c, "update_dataset_document_status")
+	defer common.FinishOperationLog(c)
+
 	_, code, errorMessage := GetUser(c)
 	if code != common.CodeSuccess {
 		common.RespondError(c, code, errorMessage)
@@ -588,6 +603,7 @@ func (h *DocumentHandler) BatchUpdateDocumentStatus(c *gin.Context) {
 		documentIDs = append(documentIDs, docID)
 	}
 
+	common.SetOperationResource(c, "doc_ids", documentIDs)
 	status := "-1"
 	if req.Status != nil {
 		status = fmt.Sprint(req.Status)
@@ -999,6 +1015,9 @@ func invalidRunStatuses(statuses []string) []string {
 }
 
 func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
+	common.StartOperationLog(c, "upload_dataset_documents")
+	defer common.FinishOperationLog(c)
+
 	ctx := c.Request.Context()
 	userID := permission.UserIDFromContext(ctx)
 	if userID == "" {
@@ -1091,6 +1110,13 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 		return
 	}
 
+	ids := make([]string, 0, len(data))
+	for _, record := range data {
+		if id, ok := record["id"].(string); ok {
+			ids = append(ids, id)
+		}
+	}
+	common.SetOperationResource(c, "result_ids", ids)
 	if strings.ToLower(c.DefaultQuery("return_raw_files", "false")) == "true" {
 		common.RespondSuccessList(c, data, "success")
 		return
@@ -1128,6 +1154,9 @@ func (h *DocumentHandler) uploadEmptyDocument(c *gin.Context, kb *entity.Knowled
 		common.RespondError(c, code, err.Error())
 		return
 	}
+	if id, ok := data["id"].(string); ok {
+		common.SetOperationResource(c, "document_id", id)
+	}
 	common.RespondSuccess(c, mapDocKeysWithRunStatus(data), "success")
 }
 
@@ -1155,6 +1184,9 @@ func (h *DocumentHandler) uploadWebDocument(c *gin.Context, kb *entity.Knowledge
 	if err != nil {
 		common.RespondError(c, code, err.Error())
 		return
+	}
+	if id, ok := data["id"].(string); ok {
+		common.SetOperationResource(c, "document_id", id)
 	}
 	common.RespondSuccess(c, mapDocKeysWithRunStatus(data), "success")
 }
@@ -1351,6 +1383,9 @@ func stringValue(value *string) string {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/ingest [post]
 func (h *DocumentHandler) Ingest(c *gin.Context) {
+	common.StartOperationLog(c, "request_dataset_ingestion")
+	defer common.FinishOperationLog(c)
+
 	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
@@ -1367,6 +1402,18 @@ func (h *DocumentHandler) Ingest(c *gin.Context) {
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
+	}
+	common.SetOperationResource(c, "doc_ids", req.DocIDs)
+	common.SetOperationResource(c, "delete", req.Delete)
+	switch run := req.Run.(type) {
+	case string:
+		if run == "1" || run == "2" {
+			common.SetOperationResource(c, "run", run)
+		}
+	case float64:
+		if run == 1 || run == 2 {
+			common.SetOperationResource(c, "run", fmt.Sprint(run))
+		}
 	}
 	if code, err := h.documentService.Ingest(ctx, &req); err != nil {
 		common.RespondError(c, code, err.Error())
@@ -1410,6 +1457,9 @@ type StartParseDocumentsRequest struct {
 }
 
 func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
+	common.StartOperationLog(c, "start_ingestion_task")
+	defer common.FinishOperationLog(c)
+
 	startAt := time.Now()
 	operationLog := &common.OperationLog{
 		EventTime:  startAt,
@@ -1420,7 +1470,7 @@ func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 	}
 	defer func() {
 		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		common.AuditWithContext(c.Request.Context(), operationLog)
+		common.AuditRequest(c, operationLog)
 	}()
 
 	datasetID := c.Param("dataset_id")
@@ -1430,6 +1480,7 @@ func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 		common.RespondError(c, common.CodeDataError, "`document_ids` is required")
 		return
 	}
+	common.SetOperationResource(c, "document_ids", req.DocumentIDs)
 	// Gin's `required` accepts an empty non-nil slice; reject it explicitly.
 	if len(req.DocumentIDs) == 0 {
 		common.RespondError(c, common.CodeDataError, "`document_ids` is required")
@@ -1474,12 +1525,16 @@ type StopIngestionsRequest struct {
 }
 
 func (h *DocumentHandler) StopIngestionTasks(c *gin.Context) {
+	common.StartOperationLog(c, "stop_dataset_ingestion_tasks")
+	defer common.FinishOperationLog(c)
+
 	var req StopIngestionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
 	}
 
+	common.SetOperationResource(c, "task_ids", req.Tasks)
 	ctx := c.Request.Context()
 	parseResult, err := h.documentService.StopIngestionTasks(ctx, req.Tasks)
 	if err != nil {
@@ -1494,6 +1549,9 @@ type RemoveIngestionsRequest struct {
 }
 
 func (h *DocumentHandler) RemoveIngestionTasks(c *gin.Context) {
+	common.StartOperationLog(c, "remove_dataset_ingestion_tasks")
+	defer common.FinishOperationLog(c)
+
 	var req RemoveIngestionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.RespondError(c, common.CodeBadRequest, err.Error())
@@ -1505,6 +1563,7 @@ func (h *DocumentHandler) RemoveIngestionTasks(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "task_ids", req.Tasks)
 	ctx := c.Request.Context()
 
 	deletedTasks, err := h.documentService.RemoveIngestionTasks(ctx, req.Tasks)
@@ -1549,6 +1608,9 @@ type StopParseDocumentRequest struct {
 }
 
 func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
+	common.StartOperationLog(c, "stop_dataset_parsing")
+	defer common.FinishOperationLog(c)
+
 	datasetID := c.Param("dataset_id")
 
 	var req StopParseDocumentRequest
@@ -1557,6 +1619,8 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "document_ids", req.DocumentIDs)
+	common.SetOperationResource(c, "cancel_all", req.CancelAll)
 	if !req.CancelAll && len(req.DocumentIDs) == 0 {
 		common.RespondError(c, common.CodeDataError, "`document_ids` is required")
 		return
@@ -1643,6 +1707,9 @@ func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
 }
 
 func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
+	common.StartOperationLog(c, "update_dataset_document")
+	defer common.FinishOperationLog(c)
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
@@ -1724,6 +1791,9 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 }
 
 func (h *DocumentHandler) UploadInfo(c *gin.Context) {
+	common.StartOperationLog(c, "upload_dataset_document_files")
+	defer common.FinishOperationLog(c)
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
@@ -1785,6 +1855,9 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 			common.RespondError(c, code, err.Error())
 			return
 		}
+		if id, ok := data["id"].(string); ok {
+			common.SetOperationResource(c, "result_ids", []string{id})
+		}
 		common.RespondSuccess(c, data, "success")
 		return
 	}
@@ -1795,6 +1868,13 @@ func (h *DocumentHandler) UploadInfo(c *gin.Context) {
 		return
 	}
 
+	ids := make([]string, 0, len(data))
+	for _, record := range data {
+		if id, ok := record["id"].(string); ok {
+			ids = append(ids, id)
+		}
+	}
+	common.SetOperationResource(c, "result_ids", ids)
 	var payload interface{}
 	if len(data) == 1 {
 		payload = data[0]
@@ -1811,10 +1891,16 @@ type documentMetadataBatchRequest struct {
 }
 
 func (h *DocumentHandler) MetadataBatchUpdate(c *gin.Context) {
+	common.StartOperationLog(c, "update_dataset_document_metadata")
+	defer common.FinishOperationLog(c)
+
 	h.handleBatchUpdateDocumentMetadatas(c)
 }
 
 func (h *DocumentHandler) UpdateDocumentMetadatas(c *gin.Context) {
+	common.StartOperationLog(c, "update_dataset_document_metadata")
+	defer common.FinishOperationLog(c)
+
 	h.handleBatchUpdateDocumentMetadatas(c)
 }
 
@@ -1841,6 +1927,9 @@ func (h *DocumentHandler) handleBatchUpdateDocumentMetadatas(c *gin.Context) {
 	if errMsg != "" {
 		common.RespondError(c, common.CodeDataError, errMsg)
 		return
+	}
+	if selector != nil {
+		common.SetOperationResource(c, "selector_document_ids", selector.DocumentIDs)
 	}
 	updates, errMsg := parseMetadataUpdates(rawBody["updates"])
 	if errMsg != "" {
