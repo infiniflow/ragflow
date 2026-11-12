@@ -197,3 +197,44 @@ func TestUberLLMListModelsKeepsCatalogueTypes(t *testing.T) {
 		t.Errorf("qwen/qwen3-max types=%v, want name-inferred chat", got["qwen/qwen3-max"])
 	}
 }
+
+// TestUberLLMListModelsReadsListedCapabilities tests that models outside the
+// catalogue take their types from the listed endpoints and input modalities,
+// and their limits from context_length and max_output_tokens.
+func TestUberLLMListModelsReadsListedCapabilities(t *testing.T) {
+	withSSRFBypass(t)
+	chatEndpoints := []string{"/v1/chat/completions", "/v1/messages", "/v1/responses"}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"data": []map[string]any{
+				{"id": "anthropic/claude-opus-4.6", "endpoints": chatEndpoints, "input_modalities": []string{"text", "image"}, "context_length": 1000000, "max_output_tokens": 128000},
+				{"id": "deepseek/deepseek-v4-pro", "endpoints": chatEndpoints, "input_modalities": []string{"text"}},
+				{"id": "acme/image-model", "endpoints": []string{"/v1/images/generations"}, "input_modalities": []string{"text"}},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	list, err := newUberLLMForTest(srv.URL).ListModels(t.Context(), &APIConfig{ApiKey: &testAPIKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	got := map[string]ListModelResponse{}
+	for _, m := range list {
+		got[m.Name] = m
+	}
+	opus, ok := got["anthropic/claude-opus-4.6"]
+	if !ok || !containsModelType(opus.ModelTypes, "vision") || !containsModelType(opus.ModelTypes, "chat") {
+		t.Errorf("claude-opus-4.6 types=%v, want chat and vision", opus.ModelTypes)
+	}
+	if opus.ContextLength == nil || *opus.ContextLength != 1000000 || opus.MaxOutput == nil || *opus.MaxOutput != 128000 {
+		t.Errorf("claude-opus-4.6 limits=%v/%v, want 1000000/128000", opus.ContextLength, opus.MaxOutput)
+	}
+	ds := got["deepseek/deepseek-v4-pro"]
+	if containsModelType(ds.ModelTypes, "vision") || !containsModelType(ds.ModelTypes, "chat") {
+		t.Errorf("deepseek-v4-pro types=%v, want chat only", ds.ModelTypes)
+	}
+	if _, ok := got["acme/image-model"]; ok {
+		t.Errorf("acme/image-model has no chat endpoint and must not be listed")
+	}
+}
