@@ -1,20 +1,20 @@
 #!/usr/bin/env bash
 # Single source of truth for the native static-library versions build.sh and
-# tools/scripts/download_dev_deps.py agree on. Source this file from build.sh;
+# cmd/ragflow-deps agree on. Source this file from build.sh;
 # it defines only functions (no top-level side effects) so it is safe to source.
 #
 # Each native lib resolves its version from exactly one place:
 #   - office_oxide / pdf_oxide  -> go.mod       (go_module_version)
 #   - ORT                       -> internal/common/environments.go
-#                                   DeepDocORTVersion (read by both build.sh via
-#                                   deepdoc_ort_version() below and
-#                                   download_dev_deps.deepdoc_ort_version() — it is
-#                                   Go-owned, so the const itself stays in Go)
+#                                   DeepDocORTVersion (read by build.sh via
+#                                   deepdoc_ort_version() below and by
+#                                   cmd/ragflow-deps — it is Go-owned, so the
+#                                   const itself stays in Go)
 #   - pdfium                    -> pdfium_static_version (below; pdfium is not a
 #                                   Go module, so go.mod does not apply)
 #
 # There is NO /opt pre-bake and NO flat (version-less) cache layout any more: the
-# libs land under ~/ragflow-native-libs/<lib>/v<version>/ (see download_dev_deps.py
+# libs land under ~/ragflow-native-libs/<lib>/v<version>/ (see cmd/ragflow-deps
 # and build.sh), so a single mounted cache carries several versions at once.
 
 # ragflow_native_libs_dir
@@ -31,7 +31,7 @@ ragflow_native_libs_dir() {
 
 # go_module_version <module> <repo_root>
 # Reads the pinned version (the "vX.Y.Z" after the require line) of a Go module
-# from <repo_root>/go.mod so build.sh and tools/scripts/download_dev_deps.py agree
+# from <repo_root>/go.mod so build.sh and cmd/ragflow-deps agree
 # on the version (single source of truth). The module may appear either as a bare
 # require line (`\t<module> vX.Y.Z`) inside a require block or on a single-line
 # `require <module> vX.Y.Z`; an optional leading `require` keyword is allowed.
@@ -51,7 +51,7 @@ go_module_version() {
 # pdfium_static_version
 # pdfium (kognitos/pdfium-static) is NOT a Go module, so unlike office_oxide /
 # pdf_oxide its version cannot be derived from go.mod. It is pinned here as the
-# single shared constant; download_dev_deps.py and build.sh both source this
+# single shared constant; cmd/ragflow-deps and build.sh both source this
 # function so the bare numeric build number lives in exactly one place. Echoes
 # the constant and returns 0.
 pdfium_static_version() {
@@ -64,12 +64,10 @@ pdfium_static_version() {
 # <repo_root>/internal/common/environments.go's DeepDocORTVersion const.
 #
 # ORT is the one native lib whose version is owned by Go source (not go.mod), so
-# build.sh and download_dev_deps.deepdoc_ort_version() both parse the SAME const
-# through this helper — no second hardcoded copy to drift. Echoes the bare
+# build.sh (through this helper) and cmd/ragflow-deps both parse the SAME
+# const — no second hardcoded copy to drift. Echoes the bare
 # version and returns 0, or returns 1 with empty output when environments.go is
-# missing or the const is absent (so callers fail loud, mirroring the Python
-# RuntimeError). build.sh used to inline this grep at every call site; collapsing
-# it here keeps a single bash source of truth alongside the Python one.
+# missing or the const is absent, so callers fail loud.
 deepdoc_ort_version() {
     local repo_root="$1"
     local env_go="${repo_root}/internal/common/environments.go"

@@ -25,7 +25,7 @@ ARG GITEE_TOKEN
 
 WORKDIR /ragflow
 
-# copy models downloaded via download_deps.py
+# copy models downloaded via `go run ./cmd/ragflow-deps --image`
 # layout.laws/manual/paper.onnx are byte-identical to layout.onnx, so we
 # exclude them from the tar extract and symlink them to layout.onnx instead,
 # saving ~219MB in the image.
@@ -86,7 +86,7 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
 ENV DEBIAN_FRONTEND=noninteractive
 
 # The Noto Sans CJK SC font is now pre-baked into infiniflow/ragflow_deps:latest
-# (downloaded + verified by deps/download_deps.py) instead of being curl'd from
+# (downloaded + verified by `go run ./cmd/ragflow-deps --image`) instead of being curl'd from
 # GitHub at main-image build time. gopdf reads it at runtime from
 # /usr/local/share/fonts/truetype/noto/NotoSansCJKsc-VF.ttf (pdf_writer.go).
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/NotoSansCJKsc-VF.ttf,target=/tmp/NotoSansCJKsc-VF.ttf \
@@ -243,11 +243,9 @@ COPY Dockerfile ./
 # ragflow-native-libs}/onnxruntime/static_lib). There is NO /opt pre-bake: CI
 # supplies the host cache as a named build context (--build-context
 # native-libs=<dir>), and builds without a host cache let build.sh fall back to
-# _ensure_native_libs_installed, which runs `uv run
-# tools/scripts/download_dev_deps.py`. That downloader fetches the native
-# archives on demand and self-creates its deps/ workdir when absent (see
-# download_dev_deps.py::ensure_deps_dir), so it no longer crashes on a bare
-# go-builder checkout. These .a files are consumed at link time only and do NOT
+# _ensure_native_libs_installed, which runs `go run ./cmd/ragflow-deps` (copied
+# in with cmd/ above). That downloader fetches the native archives on demand
+# and creates its deps/ workdir when absent. These .a files are consumed at link time only and do NOT
 # enter the final image (only the compiled /ragflow/bin is COPY --from=go-builder).
 # ARG ORT_VERSION stays because build.sh's check_ort_version_consistency greps it
 # to cross-check the pinned ORT release against internal/common/environments.go.

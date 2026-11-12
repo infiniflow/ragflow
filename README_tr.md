@@ -212,14 +212,13 @@ Ayrıntılar için [hızlı başlangıç kılavuzuna](./docs/quickstart.mdx) bak
    cd ragflow
    ```
 
-2. Go derlemesinin bağladığı yerel statik kitaplıkları (`download_dev_deps.py`) ve backend'in çalışma zamanında yüklediği model / tokenizer kaynaklarını (`download_deps.py`) hazırlamak için bağımlılık indirme betiklerini çalıştırın:
+2. Go derlemesinin bağladığı yerel statik kitaplıkları ve backend'in çalışma zamanında yüklediği model / tokenizer kaynaklarını hazırlamak için bağımlılık indiricisini çalıştırın:
 
    ```bash
-   uv run tools/scripts/download_dev_deps.py
-   uv run deps/download_deps.py
+   go run ./cmd/ragflow-deps
    ```
 
-   `download_dev_deps.py`, pdfium, pdf_oxide, office_oxide ve onnxruntime'ı `~/ragflow-native-libs` altına indirir ve açar; `download_deps.py`, cl100k sözlüğünü, DeepDoc modellerini ve gömme tokenizer varlıklarını `deps/` altına indirir. İkisi de Python betiğidir; `uv run`, bildirilen bağımlılıkları (`requests` ve model ile tokenizer indirmeleri için `huggingface-hub`) otomatik olarak kurar. Aynı kaynakları başka şekilde hazırladıysanız bu adımı atlayın. Depo kökünden başlatıldığında Go hizmetleri `internal/rag/res/deepdoc` dizinini otomatik bulur; başka bir dizinden başlatmak için `DEEPDOC_MODEL_DIR` değişkenini o dizinin mutlak yoluna ayarlayın.
+   `cmd/ragflow-deps`, pdfium, pdf_oxide, office_oxide ve onnxruntime'ı `~/ragflow-native-libs` altına indirip açar; cl100k sözlüğünü, DeepDoc modellerini ve gömme tokenizer varlıklarını `deps/` altına indirir. Yalnızca Go gerektirir; mevcut dosyalar yeniden çalıştırmada atlanır. GFW arkasında `--china-mirrors` ekleyin. Aynı kaynakları başka şekilde hazırladıysanız bu adımı atlayın. Depo kökünden başlatıldığında Go hizmetleri `internal/rag/res/deepdoc` dizinini otomatik bulur; başka bir dizinden başlatmak için `DEEPDOC_MODEL_DIR` değişkenini o dizinin mutlak yoluna ayarlayın.
 
 3. Hizmetleri derleyin:
 
@@ -274,7 +273,7 @@ Ayrıntılar için [hızlı başlangıç kılavuzuna](./docs/quickstart.mdx) bak
 
 Ayrıntılar için [Kaynaktan Başlatma](./docs/develop/launch_ragflow_from_source.md) belgesine bakın.
 
-> **İşletim notları:** Elasticsearch ayarını kalıcı yapmak için `/etc/sysctl.conf` dosyasına `vm.max_map_count=262144` ekleyin. Varsayılan MySQL yapılandırmasında Docker giriş noktası Admin, Syncer, Ingestor ve API'den önce geçişi çalıştırır. Açık kaynak 1.0'da DeepDoc düzen, OCR ve tablo tanıma için CPU kullanır. Docker değişikliklerinden sonra hizmetleri yeniden başlatın ve verileri korumak veya kaldırmak için [Docker kılavuzunu](./docker/README.md) izleyin. `download_dev_deps.py` yerel kitaplıkları, `download_deps.py` modelleri ve tokenizer kaynaklarını hazırlar; ikisi de `uv run` ile çalıştırılır. `--migrate` geçişi çalıştırıp çıkar; `--admin` yönetim hizmetini, `--ingestor` veri alma hizmetini, `--syncer` harici veri kaynağı eşitleme hizmetini ve `--api` Web UI ile SDK'lara yönelik API hizmetini başlatır. HTTP 200 API'nin hazır olduğunu gösterir.
+> **İşletim notları:** Elasticsearch ayarını kalıcı yapmak için `/etc/sysctl.conf` dosyasına `vm.max_map_count=262144` ekleyin. Varsayılan MySQL yapılandırmasında Docker giriş noktası Admin, Syncer, Ingestor ve API'den önce geçişi çalıştırır. Açık kaynak 1.0'da DeepDoc düzen, OCR ve tablo tanıma için CPU kullanır. Docker değişikliklerinden sonra hizmetleri yeniden başlatın ve verileri korumak veya kaldırmak için [Docker kılavuzunu](./docker/README.md) izleyin. `go run ./cmd/ragflow-deps` yerel kitaplıkları, modelleri ve tokenizer kaynaklarını hazırlar. `--migrate` geçişi çalıştırıp çıkar; `--admin` yönetim hizmetini, `--ingestor` veri alma hizmetini, `--syncer` harici veri kaynağı eşitleme hizmetini ve `--api` Web UI ile SDK'lara yönelik API hizmetini başlatır. HTTP 200 API'nin hazır olduğunu gösterir.
 
 ## 📚 Dokümantasyon
 

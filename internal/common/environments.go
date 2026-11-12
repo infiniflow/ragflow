@@ -553,9 +553,9 @@ const EnvLLMHTTPResponseHeaderTimeout = "LLM_HTTP_RESPONSE_HEADER_TIMEOUT"
 // do set-membership checks); keep it stable so logs and diffs stay readable.
 //
 // External consumers that re-list these names must stay in sync:
-//   - deps/download_deps.py re-lists them as DEEPDOC_MODEL_FILES
-//     (it fetches the files one by one, so it MUST be edited by hand when this
-//     slice changes);
+//   - cmd/ragflow-deps re-lists them as deepdocModelFiles (it cannot import
+//     this cgo package); TestDeepDocModelFilesMatchCommon fails when the two
+//     lists differ;
 var DeepDocModelFiles = []string{
 	"det.ort",
 	"layout.ort",
@@ -595,11 +595,9 @@ func HasModelFiles(dir string) bool {
 //   - DeepDocORTVersion (here, Go)
 //   - ARG ORT_VERSION in Dockerfile
 //
-// The dev downloader tools/scripts/download_dev_deps.py carries its own copy of
-// ORT_VERSION used only to fetch the matching infiniflow/ragflow-build release;
-// build.sh no longer greps it, so the Docker build needs no extra COPY of the
-// script. Keep all three (this, Dockerfile ARG, the downloader) on the same
-// version when bumping.
+// The downloader cmd/ragflow-deps reads this const to fetch the matching
+// infiniflow/ragflow-build release, so it holds no copy of the version; only
+// its ortReleaseTag changes when that release is rebuilt under a new tag.
 //
 // Separately, keep these on the same ORT minor line but version them
 // independently of the Go native lib (see pyproject.toml / development.md):

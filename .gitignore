@@ -38,9 +38,8 @@ docker/ragflow-logs/
 /flask_session
 /logs
 internal/rag/res/deepdoc/
-# DeepDoc model weights and the HuggingFace download cache, fetched by
-# deps/download_deps.py. Same artifacts as internal/rag/res/deepdoc/,
-# under the legacy Python resource path.
+# DeepDoc model weights and the HuggingFace download cache under the legacy
+# Python resource path. Same artifacts as internal/rag/res/deepdoc/.
 rag/res/
 
 # Exclude sdk generated files
@@ -285,8 +284,10 @@ internal/ingestion/task/tool/generate_dataflow_golden.py
 internal/ingestion/task/tool/README.md
 internal/cpp/cmake-build-release
 
-# downloaded native static-lib artifacts (fetched by deps/download_deps.py)
+# native static-lib archives and the CJK font fetched by cmd/ragflow-deps
 deps/*.zip
+deps/*.tar.gz
+deps/NotoSansCJKsc-VF.ttf*
 
 # external DeepDoc testdata, fetched on demand via scripts/fetch_deepdoc_testdata.sh
 # (symlinked into place from ~/.cache/ragflow-testdata; never committed)

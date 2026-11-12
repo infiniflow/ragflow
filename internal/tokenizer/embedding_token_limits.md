@@ -180,7 +180,7 @@ that declares an unavailable counter fails instead of being calibrated silently.
 
 | id | family / models | asset (SHA-1 pinned) | implementation |
 |---|---|---|---|
-| `cl100k_base` | OpenAI `text-embedding-3-*`, `ada-002` | `deps/cl100k_base.tiktoken` (`download_deps.py`) | tiktoken-go + offline loader (`bpe_loader.go`) |
+| `cl100k_base` | OpenAI `text-embedding-3-*`, `ada-002` | `deps/cl100k_base.tiktoken` (`cmd/ragflow-deps`) | tiktoken-go + offline loader (`bpe_loader.go`) |
 | `xlmr-spm` | `bge-m3`, `multilingual-e5-*`, `m3e`, `gte-multilingual`, `jina-embeddings-v3` | `…/BAAI/bge-m3/sentencepiece.bpe.model` `7e88c49f…` | `spm.go`: Unigram Viterbi, byte fallback, NFKC + whitespace + charmap-lite |
 | `bert-wordpiece` | `bge-{large,base,small}-en-v1.5`, `bge-en-icl`, `e5-{base,large}-v2`, `gte-{base,large}`, `jina-embeddings-v2-*` | `…/BAAI/bge-large-en-v1.5/vocab.txt` `c3b41053…` | `wordpiece.go`: BertNormalizer + BertPreTokenizer + `##` longest-match |
 | `qwen-bpe` | `Qwen3-Embedding-*` | `…/Qwen/Qwen3-Embedding-0.6B/tokenizer.json` `e6592f4d…` | `bpe.go`: hand-written Split scanner, GPT-2 byte alphabet, BPE |
@@ -347,8 +347,8 @@ an unrelated `vocab.txt` there silently replaces the verified artifact; and audi
 1. **Identify the architecture** from the model's own artifact (`tokenizer.json`, or
    `vocab.txt` / `sentencepiece.bpe.model`). If the vocabulary is byte-identical to a
    family fixture, only step 4 is needed; if it differs, the model needs its own fixture.
-2. **Add the artifact** to the `TOKENIZER_ASSETS` list inlined in
-   `deps/download_deps.py` (the downloader fetches individual files from) -
+2. **Add the artifact** to the `tokenizerAssets` list in
+   `cmd/ragflow-deps/resources.go` (the downloader fetches individual files from) -
    individual files, not `snapshot_download` of a multi-GB repo - pin its SHA-1 in the
    loader map so a mismatch fails at load instead of counting with the wrong table, and add
    it to the copy loop in `Dockerfile` / `Dockerfile_base` so every runtime image ships it
@@ -389,8 +389,8 @@ property tier green, `gofmt` clean.
 
 ## Assets and the oracle
 
-Assets are fetched, never committed: the `TOKENIZER_ASSETS` list inlined in
-`deps/download_deps.py` is the source the downloader reads to download
+Assets are fetched, never committed: the `tokenizerAssets` list in
+`cmd/ragflow-deps/resources.go` is the source the downloader reads to download
 **individual files** (not `snapshot_download` of a repo that also carries multi-GB
 weights) from, into
 `deps/huggingface.co/<repo>/<file>`, which
@@ -401,7 +401,7 @@ runtime image does not build without it (the copy loop below exits non-zero), an
 model declares a tokenizer it cannot load refuses to count rather than substituting the
 calibrated estimate, and the cl100k table fetched from the OpenAI blob has always been a startup panic when missing.
 
-**The whole chain, because a gap in it is invisible**: `download_deps.py` writes
+**The whole chain, because a gap in it is invisible**: `cmd/ragflow-deps` writes
 `deps/huggingface.co/…`; the published `deps` image contains those
 files under `/huggingface.co`; the root
 `Dockerfile` and `Dockerfile_base` bind-mount that image and copy the four *runtime*
@@ -415,11 +415,12 @@ embedder whose model declares a tokenizer it cannot load **fails the ingest** wi
 `embedding tokenizer "<id>" is declared for <model> but its asset is unavailable …:
 refusing to count with the calibrated estimate`, instead of counting differently.
 
-The three places are held together by the inlined `TOKENIZER_ASSETS` list (read by
-`download_deps.py` and `download_dev_deps.py`) and the Dockerfile copy loops plus
-the Go loader SHA-1 pins, which must stay in sync: a `"runtime"` asset must be copied
+The three places are held together by the `tokenizerAssets` list in
+`cmd/ragflow-deps` and the Dockerfile copy loops plus
+the Go loader SHA-1 pins, which must stay in sync: a runtime asset must be copied
 into both `Dockerfile` and `Dockerfile_base` and pinned with a 40-hex SHA-1 in
-`internal/tokenizer/*.go`, while an `"oracle"` asset must never be shipped. The first
+`internal/tokenizer/*.go`, while an oracle-only asset must never be shipped.
+`TestDockerfilesShipRuntimeTokenizerAssets` fails when the copy loops and the list disagree. The first
 version of this chain silently
 skipped step three: the counters loaded fine in a developer checkout and quietly
 degraded to the calibrated path in the image.
@@ -455,7 +456,7 @@ Two things make the state of the assets observable:
 - each counter reports the file it loaded (`SourcePath`), so logs and failures can name it;
 - the ingestor logs an **availability report once at startup** -
   `embedding tokenizer counters {available: [...]}` plus, when something is missing, a
-  warning naming the unavailable ones and pointing at `deps/download_deps.py` /
+  warning naming the unavailable ones and pointing at `go run ./cmd/ragflow-deps` /
   `MODEL_ASSETS_DIR`. The report is diagnostics rather than the guard: startup is not fatal
   (untagged models count with the calibrated estimate by design, and they keep working), but
   ingesting a model that declares a missing asset fails outright - so this report is what
@@ -677,7 +678,7 @@ means "what the model does":
    against the model is not tagged in the catalog; it falls back to the calibrated
    path. Guessing a tag is the unsafe direction.
 2. **Nothing is hand-typed.** Fixtures and expected counts come from the model's
-   tokenizer; model tokenizer assets and the cl100k table come from `download_deps.py`
+   tokenizer; model tokenizer assets and the cl100k table come from `cmd/ragflow-deps`
    with a SHA-1 pin.
 3. **Equality, not resemblance** (see above), and the dangerous direction
    (under-count) is the one the tests are shaped around.

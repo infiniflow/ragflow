@@ -249,15 +249,13 @@ For document-engine changes, configuration updates, restarting services, and ret
    cd ragflow
    ```
 
-2. Run the dependency download script once to prepare everything the local Go server needs to build, run, parse documents and count tokens (`download_dev_deps.py` fetches the native static libraries and the runtime resources — cl100k vocabulary, DeepDoc `.ort` weights, embedding tokenizer assets):
+2. Run the dependency downloader once to prepare everything the local Go server needs to build, run, parse documents and count tokens (it fetches the native static libraries and the runtime resources — cl100k vocabulary, DeepDoc `.ort` weights, embedding tokenizer assets):
 
    ```bash
-   uv run tools/scripts/download_dev_deps.py
+   go run ./cmd/ragflow-deps
    ```
 
-   This is the local-dev one-stop: after one run the environment is ready, and already-present files are skipped so re-running never re-downloads. The image-facing counterpart `deps/download_deps.py` fetches the same runtime resources and skips the native `.a` files — run it only when building the dependency image or in CI, not for local development.
-
-   `download_dev_deps.py` pulls and unpacks pdfium, pdf_oxide, office_oxide, and onnxruntime under `~/ragflow-native-libs`, and writes the cl100k vocabulary, DeepDoc models, and embedding tokenizer assets under `deps/`. It is a Python script; `uv run` installs its declared dependencies (`requests` and `huggingface-hub`) automatically. Skip this step if you have prepared the same resources by other means. When started from the repository root, Go services automatically find `internal/rag/res/deepdoc`; to start from another directory, set `DEEPDOC_MODEL_DIR` to its absolute path.
+   After one run the environment is ready, and already-present files are skipped so re-running never re-downloads. `cmd/ragflow-deps` needs only Go: it pulls and unpacks pdfium, pdf_oxide, office_oxide, and onnxruntime under `~/ragflow-native-libs`, and writes the cl100k vocabulary, DeepDoc models, and embedding tokenizer assets under `deps/`. Behind the GFW, add `--china-mirrors`. Skip this step if you have prepared the same resources by other means. When started from the repository root, Go services automatically find `internal/rag/res/deepdoc`; to start from another directory, set `DEEPDOC_MODEL_DIR` to its absolute path.
 
 3. Build the services:
 

@@ -19,7 +19,7 @@ package tokenizer
 // Offline BPE table loading for tiktoken.
 //
 // RAGFlow ships the cl100k_base table on disk (Dockerfile drops it into the
-// working directory under its sha1 name; download_deps.py writes it to
+// working directory under its sha1 name; cmd/ragflow-deps writes it to
 // deps/). tiktoken-go's stock loader instead downloads it over HTTP and
 // relies on TIKTOKEN_CACHE_DIR, which the Go server never inherits, so a
 // missing table degrades every token count to 0. This loader resolves the
@@ -56,7 +56,7 @@ func init() {
 // (223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7 for
 // cl100k_base); that value identifies the path, while the value below verifies
 // the bytes we actually load. Compute it from the table shipped by
-// deps/download_deps.py: `sha1sum cl100k_base.tiktoken`.
+// cmd/ragflow-deps: `sha1sum deps/cl100k_base.tiktoken`.
 var expectedBpeHashes = map[string]string{
 	"https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken": "6494e42d5aad2bbb441ea9793af9e7db335c8d9c",
 }
@@ -122,7 +122,7 @@ func (localBpeLoader) LoadTiktokenBpe(bpeURL string) (map[string]int, error) {
 	}
 
 	err := fmt.Errorf(
-		"no local BPE table for %s; run `uv run deps/download_deps.py` or set TIKTOKEN_CACHE_DIR to the directory holding the table; tried: %s",
+		"no local BPE table for %s; run `go run ./cmd/ragflow-deps` or set TIKTOKEN_CACHE_DIR to the directory holding the table; tried: %s",
 		bpeURL, strings.Join(candidates, ", "))
 	// Logged as well as returned: tiktoken-go propagates this to GetEncoding,
 	// whose error NumTokensFromString discards to keep returning 0.
@@ -139,7 +139,7 @@ func (localBpeLoader) LoadTiktokenBpe(bpeURL string) (map[string]int, error) {
 // installation root, while `go test` runs from a package subdirectory.
 func bpeCandidatePaths(bpeURL string) []string {
 	cacheName := fmt.Sprintf("%x", sha1.Sum([]byte(bpeURL)))
-	// download_deps.py stores the table under the URL's own basename.
+	// cmd/ragflow-deps stores the table under the URL's own basename.
 	bundledName := path.Base(bpeURL)
 
 	var paths []string
@@ -170,7 +170,7 @@ func bpeCandidatePaths(bpeURL string) []string {
 		// Same layout the Dockerfile creates: the table sits in the
 		// installation root under its sha1 name.
 		add(filepath.Join(root, cacheName))
-		// download_deps.py writes the table into deps/ under its
+		// cmd/ragflow-deps writes the table into deps/ under its
 		// download name; a developer checkout that has run it but never
 		// started the Python side only has this copy.
 		add(filepath.Join(root, "deps", bundledName))

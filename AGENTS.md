@@ -16,7 +16,7 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 - The Go module contains the server, ingestion, parsing, agent runtime, CLI, and supporting services.
 - Runtime services commonly include MySQL/PostgreSQL, Kvrocks, NATS JetStream, MinIO, ClickHouse, and Elasticsearch/Infinity/OpenSearch depending on configuration.
 ## Go-only target
-- Remove all Python code and Python-specific dependencies, scripts, containers, CI jobs, documentation, SDKs, and tests from the repository. Do not add new Python code while this removal is in progress. Replace Python-based preparation of Go native libraries, DeepDoc models, and the BPE table before removing the existing download scripts.
+- Remove all Python code and Python-specific dependencies, scripts, containers, CI jobs, documentation, SDKs, and tests from the repository. Do not add new Python code while this removal is in progress.
 - Move any still-required behavior and test coverage into the Go backend or the frontend before deleting the old implementation. Do not preserve a Python server, compatibility layer, fallback, or dual-backend path.
 - Before deleting `rag/`, move the Go DeepDoc `.ort` models and `ocr.res` out of `internal/rag/res/deepdoc/`, then update model discovery, dependency preparation, Docker packaging, and tests together.
 - Remove the frontend's Go/Python backend variants and update `web/CLAUDE.md` when the frontend no longer needs them. Until then, treat its dual-backend instructions as migration-only guidance; new frontend work should target the Go API.
@@ -26,6 +26,7 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 ## Code Layout to Expect
 - `cmd/ragflow_server.go`: Go entrypoint for the API, admin, ingestor, and syncer modes (`--api`, `--admin`, `--ingestor`, `--syncer`).
 - `cmd/ragflow-cli/`: Go CLI entrypoint.
+- `cmd/ragflow-deps/`: Go dependency downloader (standard library only, `CGO_ENABLED=0`). The default mode pulls the native static libraries `build.sh` links (pdfium, pdf_oxide, office_oxide, onnxruntime) into `~/ragflow-native-libs/<lib>/v<version>/` plus the runtime resources (cl100k BPE table, DeepDoc models, embedding tokenizer assets); `--image` prepares the dependency image resources instead. Native versions come from `go.mod`, `DeepDocORTVersion`, and `tools/scripts/native_lib_version.sh`; asset names, URLs, and `tokenizerAssets` live in the package.
 - `api/`, `rag/`, `deepdoc/`, and `agent/`: legacy Python implementation pending deletion. Do not add features or extend dependencies there.
 - `internal/`: main Go application code. Important subtrees:
 - `internal/agent/`: Go agent runtime, canvas execution, components, tool bindings, workflow helpers.
@@ -53,7 +54,6 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 - `web/`: frontend application.
 - `docker/`: local and production compose files.
 - `sdk/python/`: legacy Python client SDK pending deletion.
-- `tools/scripts/download_dev_deps.py` and `deps/download_deps.py`: Python downloaders for the Go build's dependencies. `download_dev_deps.py` pulls the native static libraries (pdfium, pdf_oxide, office_oxide, onnxruntime) that `build.sh` links; `download_deps.py` pulls the runtime resources (cl100k BPE table, DeepDoc models, embedding tokenizer assets). Versions and URLs are defined inline in each downloader (`tools/scripts/download_dev_deps.py` for native static libraries, `deps/download_deps.py` for runtime resources); the tokenizer assets are inlined as `TOKENIZER_ASSETS` in each downloader. Replace these with non-Python preparation before removing Python dependencies.
 - `test/`: contains Python tests, including tests that import the legacy Python implementation directly. Migrate needed coverage to Go tests or frontend tests, then remove the Python tests; keep only tests for supported code.
 
 ## Go-Specific Rules
@@ -142,7 +142,7 @@ bash build.sh --test-manual                 # local opt-in only
 bash build.sh --test-all                    # integration + e2e; excludes manual
 ```
 
-Native libraries, Go DeepDoc models, tokenizer assets, and `deps/cl100k_base.tiktoken` come from `tools/scripts/download_dev_deps.py` (native static libs) and `deps/download_deps.py` (models, cl100k, tokenizer assets); run them with `uv run`. Build the Go resource image with `cd deps && docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .` after downloading the resources.
+Native libraries, Go DeepDoc models, tokenizer assets, and `deps/cl100k_base.tiktoken` come from `go run ./cmd/ragflow-deps`; `build.sh` runs it automatically when a native library is missing. Build the Go resource image with `go run ./cmd/ragflow-deps --image && cd deps && docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .`.
 
 ### Frontend
 ```bash

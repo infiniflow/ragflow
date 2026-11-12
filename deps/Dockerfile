@@ -1,4 +1,4 @@
-# Build from deps/ after running download_deps.py:
+# Build from deps/ after running `go run ./cmd/ragflow-deps --image` from the repository root:
 # docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .
 FROM scratch
 

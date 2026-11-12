@@ -9,7 +9,7 @@ ARG GITEE_TOKEN=""
 
 WORKDIR /ragflow
 
-# copy models downloaded via download_deps.py
+# copy models downloaded via `go run ./cmd/ragflow-deps --image`
 RUN mkdir -p /ragflow/internal/rag/res/deepdoc /root/.ragflow
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
     tar --exclude='.*' -cf - \
@@ -28,7 +28,7 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps 
 # counters load them from deps/huggingface.co/<repo>/<file>; an image without them
 # counts every tagged model with the calibrated cl100k estimate, the less precise path
 # these counters exist to replace - so a missing asset FAILS THE BUILD instead of shipping
-# a degraded counter nobody notices. The tokenizer.json files that download_deps.py
+# a degraded counter nobody notices. The tokenizer.json files that cmd/ragflow-deps
 # fetches as cross-check oracles are test-only and not shipped here.
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
     for asset in \

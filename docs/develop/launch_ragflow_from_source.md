@@ -27,7 +27,6 @@ All long-running RAGFlow processes started below use `bin/ragflow_server`.
 - Go 1.27 or later, as declared in `go.mod` (check `go version`).
 - CMake 4.0 or later, Clang 20, LLD 20, and PCRE2 development headers.
 - Node.js 18.20.4 or later and npm for the frontend.
-- Python 3.10 or later for `tools/scripts/download_dev_deps.py` and `deps/download_deps.py`, which download the native libraries and model resources required by the Go build.
 
 See the [Docker installation guide](https://docs.docker.com/engine/install/) if Docker is not installed. Use the Go version declared in `go.mod` and the compiler versions listed above when preparing the build environment.
 
@@ -42,11 +41,11 @@ clang++ --version
 ld.lld --version
 ```
 
-Install Go 1.27 or later if needed; make sure the Go executable selected by your shell meets the requirement in `go.mod`. Install `uv` as well; the dependency downloaders run through it. On Ubuntu, install the compiler, linker, PCRE2 headers, Python 3, and command-line tools used by the build with:
+Install Go 1.27 or later if needed; make sure the Go executable selected by your shell meets the requirement in `go.mod`. On Ubuntu, install the compiler, linker, PCRE2 headers, and command-line tools used by the build with:
 
 ```bash
 sudo apt update
-sudo apt install -y clang-20 lld-20 libpcre2-dev python3-venv \
+sudo apt install -y clang-20 lld-20 libpcre2-dev \
   build-essential binutils pkg-config curl ca-certificates
 ```
 
@@ -54,15 +53,15 @@ Ubuntu's enabled repositories may not provide `clang-20` and `lld-20`. If APT ca
 
 Make `clang++` resolve to Clang 20 and `ld.lld` to LLD 20 before building. Installing `lld-20` alone does not necessarily replace an older system default `ld.lld`. Check both versions above: an older LLD can produce a binary that builds successfully but fails before the Go server starts. Install CMake 4.0 or later separately if your distribution package is older; the Go development guide includes the Ubuntu 24.04 Kitware repository setup. The `binutils` package supplies `objcopy` and `nm`; do not ignore a missing-`objcopy` warning because skipping the RE2 symbol-renaming step can cause a runtime crash.
 
-Download the native static libraries and the runtime model / tokenizer resources with the two dependency downloaders (`uv run` installs each script's declared Python dependencies):
+Download the native static libraries and the runtime model / tokenizer resources with the Go dependency downloader:
 
 ```bash
-uv run tools/scripts/download_dev_deps.py   # local-dev one-stop: native .a + cl100k, DeepDoc .ort, tokenizer assets
+go run ./cmd/ragflow-deps   # local-dev one-stop: native .a + cl100k, DeepDoc .ort, tokenizer assets
 ```
 
-`download_dev_deps.py` is the local-dev one-stop: it fetches the static libraries needed by `build.sh` (pdfium / pdf_oxide / office_oxide / onnxruntime → `~/ragflow-native-libs`) AND the runtime resources the backend loads at runtime — `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, `ocr.res` into `internal/rag/res/deepdoc/` (required by the in-process Go DeepDoc backend) and `deps/cl100k_base.tiktoken` and the embedding tokenizer assets under `deps/huggingface.co/`. Run it once and the local environment is ready; already-present files are skipped on re-run. The image-facing `deps/download_deps.py` fetches the same runtime resources and skips the native `.a`; run it only when building the dependency image or in CI. Native archives support Linux x86_64. Keep the server's working directory at the repository root so it can find the DeepDoc models automatically; if you launch it elsewhere, set `DEEPDOC_MODEL_DIR` to the absolute path of `internal/rag/res/deepdoc`.
+`cmd/ragflow-deps` needs only Go (it builds with `CGO_ENABLED=0`). It is the local-dev one-stop: it fetches the static libraries needed by `build.sh` (pdfium / pdf_oxide / office_oxide / onnxruntime → `~/ragflow-native-libs`) AND the runtime resources the backend loads at runtime — `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, `ocr.res` into `internal/rag/res/deepdoc/` (required by the in-process Go DeepDoc backend) and `deps/cl100k_base.tiktoken` and the embedding tokenizer assets under `deps/huggingface.co/`. Run it once and the local environment is ready; already-present files are skipped on re-run, and `build.sh` runs it automatically when a native library is missing. Native archives are published for Linux and macOS on x86_64 and arm64; behind the GFW, add `--china-mirrors`. Keep the server's working directory at the repository root so it can find the DeepDoc models automatically; if you launch it elsewhere, set `DEEPDOC_MODEL_DIR` to the absolute path of `internal/rag/res/deepdoc`.
 
-Skip either script if you have prepared the same resources by other means.
+Skip this step if you have prepared the same resources by other means.
 
 Build the C++ bindings and Go binaries:
 
@@ -86,9 +85,10 @@ It should print API usage information and may exit with status 1. This command o
 
 The Go/C++ build requires LLD 20. Confirm that `ld.lld --version` reports LLD 20 before building; merely installing `lld-20` is insufficient when an older `ld.lld` remains the system default. If the binary builds successfully but exits or crashes before reaching Go `main`, verify the selected linker and rebuild with LLD 20.
 
-To prepare the resource image used by the Go Dockerfile, first run `uv run deps/download_deps.py` (above) to populate `deps/`, then build from `deps/`:
+To prepare the resource image used by the Go Dockerfile, populate `deps/` with the image resources (the native `.a` are skipped and the Noto Sans CJK font is added), then build from `deps/`:
 
 ```bash
+go run ./cmd/ragflow-deps --image
 cd deps
 docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .
 cd ..

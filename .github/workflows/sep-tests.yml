@@ -273,7 +273,7 @@ jobs:
           # ~/ragflow-native-libs); this pins the same root for the container and
           # bind-mounts it read-only so the cgo link finds the versioned
           # v<version>/ dirs without an /opt pre-bake. CI mounts the cache from
-          # the build host (populated by download_dev_deps.py); a missing mount is
+          # the build host (populated by cmd/ragflow-deps); a missing mount is
           # caught by the assert below, not by a cryptic cgo link error.
           export RAGFLOW_NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
           sudo docker run --privileged -d --name "${BUILDER_CONTAINER}" \
@@ -888,7 +888,7 @@ jobs:
           # ~/ragflow-native-libs); this pins the same root for the container and
           # bind-mounts it read-only so the cgo link finds the versioned
           # v<version>/ dirs without an /opt pre-bake. CI mounts the cache from
-          # the build host (populated by download_dev_deps.py); a missing mount is
+          # the build host (populated by cmd/ragflow-deps); a missing mount is
           # caught by the assert below, not by a cryptic cgo link error.
           export RAGFLOW_NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
           sudo docker run --privileged -d --name "${BUILDER_CONTAINER}" \
@@ -1014,20 +1014,6 @@ jobs:
           else
             ./build.sh --test -- $PKGS
           fi
-
-      - name: Run deps regression guards
-        # Local, needs no API keys or model downloads; guards (a) the native
-        # archive / ONNX Runtime extraction logic the in-process (Go) DeepDoc
-        # backend build depends on (notably the version-bump path), and (b) the
-        # tokenizer-asset chain: the downloader's manifest, the three runtime
-        # Dockerfiles' copy loops and the loaders' SHA-1 pins have to agree, or the
-        # Go counters silently degrade to the calibrated cl100k estimate. Run the
-        # pytest in isolation so the test/testcases conftest (which requires
-        # SILICONFLOW_API_KEY) cannot fail the collection.
-        run: |
-          set -euo pipefail
-          uv sync --python 3.13 --group test --frozen
-          uv run pytest tools/scripts/test_download_dev_deps.py -q --durations=100
 
       - name: Build ragflow:nightly
         run: |
@@ -1512,7 +1498,7 @@ jobs:
           # ~/ragflow-native-libs); this pins the same root for the container and
           # bind-mounts it read-only so the cgo link finds the versioned
           # v<version>/ dirs without an /opt pre-bake. CI mounts the cache from
-          # the build host (populated by download_dev_deps.py); a missing mount is
+          # the build host (populated by cmd/ragflow-deps); a missing mount is
           # caught by the assert below, not by a cryptic cgo link error.
           export RAGFLOW_NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
           sudo docker run --privileged -d --name "${BUILDER_CONTAINER}" \
@@ -1631,7 +1617,7 @@ jobs:
           # ~/ragflow-native-libs); this pins the same root for the container and
           # bind-mounts it read-only so the cgo link finds the versioned
           # v<version>/ dirs without an /opt pre-bake. CI mounts the cache from
-          # the build host (populated by download_dev_deps.py); a missing mount is
+          # the build host (populated by cmd/ragflow-deps); a missing mount is
           # caught by the assert below, not by a cryptic cgo link error.
           export RAGFLOW_NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
           sudo docker run --privileged -d --name "${BUILDER_CONTAINER}" \

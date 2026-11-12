@@ -104,16 +104,15 @@ go version
 ### 1.4 Install dependent library
 ```shell
 sudo apt install libpcre2-dev
-uv run tools/scripts/download_dev_deps.py   # local-dev one-stop: native .a + cl100k, DeepDoc .ort, tokenizer assets
+go run ./cmd/ragflow-deps   # local-dev one-stop: native .a + cl100k, DeepDoc .ort, tokenizer assets
 ```
 
-Install `uv` before running the downloaders; it installs each script's declared Python dependencies.
+`cmd/ragflow-deps` needs only Go: it uses the standard library and builds with `CGO_ENABLED=0`, so it runs before the native libraries it provisions exist. It provisions the Go native libraries under `~/ragflow-native-libs` AND the `.ort` weights, embedding tokenizer assets, and `cl100k_base.tiktoken` into `internal/rag/res/deepdoc/` and `deps/huggingface.co/`. Run it once and the local environment is ready; already-present files are skipped on re-run, and `build.sh` runs it automatically when a native library is missing. Native archives are fetched per target platform (linux/darwin on amd64/arm64; override with `--target-os` / `--target-arch` or `RAGFLOW_TARGET_OS` / `RAGFLOW_TARGET_ARCH`). Behind the GFW, add `--china-mirrors` to route GitHub through gh-proxy.com and Hugging Face through hf-mirror.com.
 
-`download_dev_deps.py` is the local-dev one-stop: it provisions the Go native libraries under `~/ragflow-native-libs` AND the `.ort` weights, embedding tokenizer assets, and `cl100k_base.tiktoken` into `internal/rag/res/deepdoc/` and `deps/huggingface.co/`. Run it once and the local environment is ready. The image-facing `deps/download_deps.py` provisions the same runtime resources and skips the native `.a`; run it only when building the dependency image or in CI. Native archives are fetched per target platform (linux/darwin on amd64/arm64; override with `RAGFLOW_TARGET_OS` / `RAGFLOW_TARGET_ARCH`).
-
-Build the Go resource image from `deps/` after preparing these files:
+To build the Go resource image, prepare its resources with `--image` (it skips the native `.a`, which the build stage links into the server binary, and adds the Noto Sans CJK font), then build from `deps/`:
 
 ```shell
+go run ./cmd/ragflow-deps --image
 cd deps
 docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .
 cd ..
@@ -123,8 +122,8 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 > **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, set these CGO environment variables:
 >
 > ```bash
-> RAGFLOW_DEPS="${HOME}/ragflow-native-libs"  # created by download_dev_deps.py
-> # Native libs are fetched for the *host* platform by download_dev_deps.py
+> RAGFLOW_DEPS="${HOME}/ragflow-native-libs"  # created by cmd/ragflow-deps
+> # Native libs are fetched for the *host* platform by cmd/ragflow-deps
 > # (override with RAGFLOW_TARGET_OS / RAGFLOW_TARGET_ARCH). ONNX Runtime static
 > # libs are published for linux-x86_64, linux-aarch64, osx-arm64 and
 > # osx-universal (Intel Macs use the universal archive — there is no osx-x86_64),
@@ -184,7 +183,7 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 > fi
 >
 > # Native libs are version-keyed under <lib>/v<version>/ (one mounted cache can
-> # hold several versions at once), matching the layout download_dev_deps.py and
+> # hold several versions at once), matching the layout cmd/ragflow-deps and
 > # build.sh resolve. Resolve each version from its single source of truth — NOT
 > # by glob + `head -1`, which silently pins the lexicographically-oldest version
 > # in the cache (e.g. v0.1.12 over the pinned v0.1.16, dropping PPT97 slide
@@ -241,7 +240,7 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 > Since `build.sh` (`build_go`) now **fails fast** when ORT is absent from
 > `CGO_LDFLAGS`, this breakage surfaces at build time instead of at runtime. If
 > you see `Error: ONNX Runtime static libraries are not linked`, run
-> `uv run tools/scripts/download_dev_deps.py` (or pre-seed the versioned user
+> `go run ./cmd/ragflow-deps` (or pre-seed the versioned user
 > cache at `${RAGFLOW_NATIVE_LIBS_DIR:-$HOME/ragflow-native-libs}/onnxruntime/static_lib
 > `; CI mounts the host cache into the builder). There is no ORT-free
 > production build path — if ORT is absent the binary fails at startup, so the
@@ -253,7 +252,7 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 > - `internal/common/environments.go` — `DeepDocORTVersion`
 > - `Dockerfile` — `ARG ORT_VERSION`
 >
-> `build.sh` and `tools/scripts/download_dev_deps.py` derive the ORT version at
+> `build.sh` and `cmd/ragflow-deps` derive the ORT version at
 > build/download time from `DeepDocORTVersion` in `environments.go` (the Go const
 > is the single source of truth), so the downloader has no separate `ORT_VERSION`
 > pin to edit. To upgrade ORT, edit the two entries above to the same version,
@@ -273,7 +272,7 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 >   `build.sh`, without a network request. The downloader separately checks the
 >   published `onnxruntime-v<ver>-<target>.zip.sha256` sidecar. A local ZIP
 >   mismatch only emits a warning with the expected/actual SHA-256 and the
->   refresh command (`rm -f <zip>` + `uv run tools/scripts/download_dev_deps.py`);
+>   refresh command (`rm -f <zip>` + `go run ./cmd/ragflow-deps`);
 >   the build continues checking and linking the extracted static libraries. On CI
 >   the version-keyed cache is mounted from the build host and no local ZIP is
 >   present, so the sha256 check is skipped there and the mounted cache seed is
@@ -288,7 +287,7 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 >   would otherwise silently reuse a stale linked binary. Stamping the path with
 >   the archive's sha256 changes the flag string whenever the content changes →
 >   automatic relink. If you ever see a stale-`.a` crash after an ORT re-issue,
->   re-run `uv run tools/scripts/download_dev_deps.py`
+>   re-run `go run ./cmd/ragflow-deps`
 >   so the stamp moves; a plain `go clean -cache` also forces it.
 
 ### 1.5 Build RAGFlow
@@ -323,7 +322,7 @@ supersedes the other, so do not delete one to "clean up".
 | Format | `.ort`                                                   | `.onnx`                                                      |
 | Files  | `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, `ocr.res` | `det.onnx`, `layout.onnx`, `tsr.onnx`, `rec.onnx`, `ocr.res` |
 
-`download_deps.py` (§1.4) fetches the five required files — four `.ort` plus
+`go run ./cmd/ragflow-deps` (§1.4) fetches the five required files — four `.ort` plus
 `ocr.res` — into `internal/rag/res/deepdoc/`. Python `.onnx` weights require separate provisioning.
 The resource image packages these files under
 `/huggingface.co/InfiniFlow/deepdoc/` for the Go runtime image.
@@ -341,14 +340,14 @@ missing from the model directory.
 
 > **Note**: A `internal/rag/res/deepdoc/` populated before the `.ort` switch holds only
 > `.onnx` and will NOT serve the Go backend, even though the directory looks
-> fully populated. Re-run `download_deps.py` after updating.
+> fully populated. Re-run `go run ./cmd/ragflow-deps` after updating.
 
 - **Confirm it is serving** — the server logs, at startup:
   `in-process DeepDoc backend registered (production backend)`
   If you instead see a fatal `no in-process DeepDoc backend serving`, it has
   two possible causes: ORT was not linked into the binary, or the model
   directory is missing one of the five required files listed above. Check the
-  weights first, then re-run `uv run deps/download_deps.py` and rebuild
+  weights first, then re-run `go run ./cmd/ragflow-deps` and rebuild
   (§1.4 explains the ORT link failure; `build.sh` fails fast with
   `Error: ONNX Runtime static libraries are not linked` before that happens).
 

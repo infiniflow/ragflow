@@ -140,7 +140,7 @@ func ortVersionNote(t *testing.T) string {
 }
 
 // TestDevelopmentDocOrtPinsAreNotMisleading guards P1 sub-finding 3a: the note
-// used to list tools/scripts/download_dev_deps.py's ORT_VERSION as a THIRD pin
+// used to list the downloader's ORT_VERSION as a THIRD pin
 // to edit when bumping ORT. That constant is derived at runtime from
 // DeepDocORTVersion (environments.go) — check_ort_version_consistency compares
 // only environments.go and the Dockerfile — so telling developers to edit the
@@ -149,12 +149,12 @@ func ortVersionNote(t *testing.T) string {
 func TestDevelopmentDocOrtPinsAreNotMisleading(t *testing.T) {
 	note := ortVersionNote(t)
 	// (a) No bullet that presents the downloader's ORT_VERSION as a pin to edit.
-	if strings.Contains(note, "- `tools/scripts/download_dev_deps.py`") {
-		t.Error("development.md still lists download_dev_deps.py ORT_VERSION as a pin to edit; it is derived from DeepDocORTVersion, not a pin")
+	if strings.Contains(note, "- `cmd/ragflow-deps`") {
+		t.Error("development.md lists cmd/ragflow-deps as an ORT pin to edit; it derives the version from DeepDocORTVersion")
 	}
 	// (a) The downloader derives its version from the Go const — no second copy.
 	if !strings.Contains(note, "derive") || !strings.Contains(note, "DeepDocORTVersion") {
-		t.Error("development.md should explain that build.sh and download_dev_deps.py derive ORT_VERSION from DeepDocORTVersion, so there is no third pin to edit")
+		t.Error("development.md should explain that build.sh and cmd/ragflow-deps derive ORT_VERSION from DeepDocORTVersion, so there is no third pin to edit")
 	}
 	// (b) The two real pin locations must remain documented.
 	if !strings.Contains(note, "internal/common/environments.go") || !strings.Contains(note, "Dockerfile") {
