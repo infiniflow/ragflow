@@ -879,7 +879,9 @@ func cellIsStyled(f *excelize.File, sheet string, row, col int) bool {
 	if st.Font != nil && st.Font.Bold {
 		return true
 	}
-	if st.Fill.Type != "" || len(st.Fill.Color) > 0 {
+	// excelize reports Fill.Type "pattern" even for the default no-fill style;
+	// only a non-zero pattern or an explicit color marks a real fill.
+	if st.Fill.Pattern > 0 || len(st.Fill.Color) > 0 {
 		return true
 	}
 	return false
@@ -898,7 +900,16 @@ func cellIsStyled(f *excelize.File, sheet string, row, col int) bool {
 //     candidate that looks like a data row (majority numeric) is skipped. The
 //     override only applies when the anchor is not already row 1, so the common
 //     header-on-row-1 sheet is left unchanged.
-func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables []excelize.Table) int {
+//  3. Width-based recovery: when step 2 finds a styled/contrast row that is much
+//     narrower than the typical data row (likely a metadata label in a form-
+//     style sheet), remember it as a fallback and search a wider window for the
+//     first text-majority row whose width matches the data body. Recovery only
+//     fires when at least one more narrow row follows the deferred candidate —
+//     a lone narrow row is a narrow header (merged header cells count only
+//     their merge masters), not a metadata preamble. The scan never runs when
+//     no fallback candidate exists, so plain sheets without any styled
+//     metadata keep row 1 as the default.
+func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables []excelize.Table, ranges []mergeRange) int {
 	n := len(records)
 	if n == 0 {
 		return 1
@@ -937,6 +948,27 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 	// budget files where rows 1–5 are labels and the real column header
 	// starts at row 6).
 	medWidth := medianRowWidth(records)
+
+	// width counts the distinct columns a row covers: filled cells plus the
+	// columns spanned by merges starting on that row, so a merged header row
+	// is not mistaken for a narrow metadata row.
+	width := func(k int) int {
+		covered := make(map[int]struct{})
+		for c, v := range records[k] {
+			if v != "" {
+				covered[c] = struct{}{}
+			}
+		}
+		row1 := k + 1
+		for _, m := range ranges {
+			if m.sr == row1 {
+				for c := m.sc; c <= m.ec; c++ {
+					covered[c-1] = struct{}{}
+				}
+			}
+		}
+		return len(covered)
+	}
 
 	bestCandidate := 0
 	for k := 0; k < maxScan; k++ {
@@ -990,6 +1022,13 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 
 		if styled*2 >= nc || contrast >= 2 {
 			if k == 0 {
+				// Row 1 is subject to the same width validation as any other
+				// candidate: a narrow styled row at the top of a form sheet is
+				// a metadata label, not the column header.
+				if rowIsNarrow(width(k), medWidth) {
+					bestCandidate = 1
+					continue
+				}
 				return 1 // row 1 is already the header
 			}
 			below := records[k+1]
@@ -1005,7 +1044,7 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 				// cells than the typical data row, it is probably a metadata
 				// title (e.g. "Stavba: DSP MILLHAUS") and not the real
 				// column header. Remember it as fallback and keep scanning.
-				if medWidth >= 4 && nonEmpty*2 < medWidth {
+				if rowIsNarrow(width(k), medWidth) {
 					if bestCandidate == 0 {
 						bestCandidate = k + 1
 					}
@@ -1016,36 +1055,87 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 		}
 	}
 
-	// 3) Width-based scan: if the styled/contrast scan skipped a narrow
+	// 3) Title-stub fallback: when row 1 is a lone title cell and no styled or
+	// contrast anchor was found, prefer the first text-majority row below it.
+	// A title followed by an unstyled header has no other signal to pick from.
+	if bestCandidate == 0 && rowNonEmpty(records[0]) <= 1 {
+		stubScan := 12
+		if stubScan > n-1 {
+			stubScan = n - 1
+		}
+		for k := 1; k < stubScan; k++ {
+			row := records[k]
+			ne := rowNonEmpty(row)
+			if ne < 2 {
+				continue
+			}
+			numCells := 0
+			for _, v := range row {
+				if isNumericCell(v) {
+					numCells++
+				}
+			}
+			if numCells*2 >= ne {
+				continue
+			}
+			return k + 1
+		}
+	}
+
+	// 4) Width-based scan: if the styled/contrast scan skipped a narrow
 	// candidate, search a wider window for the first text-majority row
-	// whose width is close to the data-row median.
-	if medWidth >= 4 {
+	// whose width is close to the data-row median. Only run when there is
+	// a fallback candidate; otherwise plain sheets with no styled metadata
+	// keep row 1 as the default.
+	if bestCandidate > 0 && medWidth >= 4 {
 		wideScan := 12
 		if wideScan > n-1 {
 			wideScan = n - 1
 		}
-		for k := 0; k < wideScan; k++ {
+		// bestCandidate is a 1-based row number, so index bestCandidate is the
+		// row directly after it. That row must stay narrow too: a lone narrow
+		// row in front of a wide body is a narrow header (merged header cells
+		// count only their merge masters), not a metadata preamble. Recovery
+		// therefore needs at least one more narrow row between the candidate
+		// and the recovered row — a metadata block is a run of narrow rows.
+		for k := bestCandidate + 1; k < wideScan; k++ {
 			row := records[k]
-			ne := rowNonEmpty(row)
-			// Accept rows within ±2 of the median data width.
-			if ne < medWidth-2 || ne > medWidth+2 {
+			ne := width(k)
+			// Accept rows within ±2 of the median data width, but reject rows
+			// that are half as wide (or narrower) — they are still metadata
+			// labels, not the real column header.
+			if ne < medWidth-2 || ne > medWidth+2 || rowIsNarrow(ne, medWidth) {
 				continue
 			}
-			// Reject numeric-majority rows (data, not a header).
-			numCells := 0
-			textCells := 0
-			for _, v := range row {
-				v = strings.TrimSpace(v)
-				if v == "" {
-					continue
-				}
-				if isNumericCell(v) {
-					numCells++
-				} else {
-					textCells++
+			// The row directly below the deferred candidate is not enough
+			// to distinguish a header from the first data row, even with merges.
+			// Recovery requires another narrow metadata row before this row;
+			// otherwise the narrow candidate remains the real header.
+			// The recovered row must close a contiguous narrow metadata block:
+			// a blank or body-width row between the deferred candidate and
+			// here ends the run, making this row part of a later block (a
+			// repeated header or a section title mid-sheet), and the first
+			// candidate was the real header all along.
+			contiguous := true
+			for j := bestCandidate; j < k; j++ {
+				w := width(j)
+				if w == 0 || !rowIsNarrow(w, medWidth) {
+					contiguous = false
+					break
 				}
 			}
-			if textCells < numCells {
+			if !contiguous {
+				break
+			}
+			// Reject data rows the same way step 2 does: a row whose
+			// non-empty cells are majority numbers is data, not a header.
+			numCells := 0
+			for _, v := range row {
+				if isNumericCell(v) {
+					numCells++
+				}
+			}
+			if ne > 0 && numCells*2 >= ne {
 				continue
 			}
 			return k + 1
@@ -1056,6 +1146,14 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 		return bestCandidate
 	}
 	return 1
+}
+
+// rowIsNarrow reports whether a row with ne non-empty cells is much narrower
+// than the typical data row (at most half the median width). Width checks only
+// run when a usable median exists (medWidth >= 4); below that a "narrow" row
+// cannot be told apart from a small header.
+func rowIsNarrow(ne, medWidth int) bool {
+	return medWidth >= 4 && ne*2 <= medWidth
 }
 
 // rowNonEmpty counts the non-empty cells in a row.
@@ -1069,28 +1167,27 @@ func rowNonEmpty(row []string) int {
 	return n
 }
 
-// medianRowWidth samples 3–4 non-adjacent rows from the middle of the sheet
-// and returns the median of their non-empty cell counts. This gives a
-// representative "data row width" without scanning every row.
+// medianRowWidth samples rows from the bottom half of the sheet and returns
+// the median of their non-empty cell counts. Sampling the bottom half keeps
+// top-of-sheet metadata/title blocks out of the estimate; a middle-half window
+// can land entirely inside a long metadata block on short form sheets.
 func medianRowWidth(records [][]string) int {
 	n := len(records)
 	if n < 4 {
 		return 0
 	}
-	// Sample from the middle half: [n/4 .. 3n/4), stepping so picks are
-	// non-adjacent. At least 3, at most 4 samples.
-	start := n / 4
-	end := 3 * n / 4
+	start := n / 2
+	end := n
 	span := end - start
 	if span < 3 {
 		return 0
 	}
-	step := span / 4
-	if step < 2 {
-		step = 2
+	step := span / 5
+	if step < 1 {
+		step = 1
 	}
 	var widths []int
-	for i := start; i < end && len(widths) < 4; i += step {
+	for i := start; i < end && len(widths) < 5; i += step {
 		w := rowNonEmpty(records[i])
 		if w > 0 {
 			widths = append(widths, w)
@@ -1223,14 +1320,35 @@ func renderFormSheetKV(sheet string, rows [][]string) string {
 		limit = formSheetPrefixLen
 	}
 	for _, row := range rows[:limit] {
-		// Wide rows are part of a mixed table, not the sparse form prefix.
-		// Skip them but keep scanning later rows that may return to the form.
-		if rowNonEmpty(row) > 3 {
-			continue
+		// Wide rows usually belong to a mixed table, not the sparse form.
+		// Preserve explicit alternating label/value pairs without mixing labels.
+		var cells []string
+		for _, cell := range row {
+			if v := strings.TrimSpace(cell); v != "" {
+				cells = append(cells, v)
+			}
+		}
+		if len(cells) > 3 {
+			paired := len(cells)%2 == 0
+			for i := 0; paired && i < len(cells); i += 2 {
+				paired = !isNumericCell(cells[i]) && isNumericCell(cells[i+1])
+			}
+			if !paired {
+				continue
+			}
 		}
 		var labels []string
 		var numbers []string
-		for _, cell := range row {
+		flush := func() {
+			if len(labels) > 0 && len(numbers) > 0 {
+				b.WriteString(strings.TrimSuffix(strings.Join(labels, " "), ":"))
+				b.WriteString(": ")
+				b.WriteString(strings.Join(numbers, ", "))
+				b.WriteByte('\n')
+			}
+			labels, numbers = nil, nil
+		}
+		for _, cell := range cells {
 			v := strings.TrimSpace(cell)
 			if v == "" {
 				continue
@@ -1238,19 +1356,14 @@ func renderFormSheetKV(sheet string, rows [][]string) string {
 			if isNumericCell(v) {
 				numbers = append(numbers, v)
 			} else {
+				if len(numbers) > 0 {
+					flush()
+				}
 				labels = append(labels, v)
 			}
 		}
-		if len(labels) == 0 && len(numbers) == 0 {
-			continue
-		}
-		if len(labels) > 0 && len(numbers) > 0 {
-			label := strings.Join(labels, " ")
-			label = strings.TrimSuffix(label, ":")
-			b.WriteString(label)
-			b.WriteString(": ")
-			b.WriteString(strings.Join(numbers, ", "))
-			b.WriteByte('\n')
+		if len(numbers) > 0 {
+			flush()
 		} else if len(labels) > 0 {
 			joined := strings.Join(labels, " ")
 			// Skip GUID-like and internal markers.
@@ -1263,15 +1376,16 @@ func renderFormSheetKV(sheet string, rows [][]string) string {
 	return b.String()
 }
 
-func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, []int, int, []mergeRange, []string, error) {
+func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, [][]string, []int, int, []mergeRange, []string, error) {
 	rows, err := f.GetRows(sheet)
 	if err != nil {
-		return nil, nil, 0, nil, nil, fmt.Errorf("read XLSX sheet %q rows: %w", sheet, err)
+		return nil, nil, nil, 0, nil, nil, fmt.Errorf("read XLSX sheet %q rows: %w", sheet, err)
 	}
 	if len(rows) == 0 {
-		return nil, nil, 0, nil, nil, nil
+		return nil, nil, nil, 0, nil, nil, nil
 	}
 	rows = cleanIllegalControlChars(rows)
+	rawRows := append([][]string(nil), rows...)
 
 	var warnings []string
 	ranges, err := mergeRanges(f, sheet)
@@ -1282,7 +1396,7 @@ func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, []int, 
 	if err != nil {
 		warnings = append(warnings, fmt.Sprintf("read XLSX sheet %q table metadata: %v", sheet, err))
 	}
-	headerRow := detectHeaderRow(f, sheet, rows, tables)
+	headerRow := detectHeaderRow(f, sheet, rows, tables, ranges)
 
 	// Pad the header row to the furthest merged column when a merge touches
 	// the header. excelize's GetRows truncates each row at its last valued
@@ -1308,5 +1422,5 @@ func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, []int, 
 	}
 	records = trimTrailingEmptyColumns(records)
 
-	return records, absDataRows, headerRow, ranges, warnings, nil
+	return records, rawRows, absDataRows, headerRow, ranges, warnings, nil
 }
