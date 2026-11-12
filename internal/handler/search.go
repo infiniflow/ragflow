@@ -335,11 +335,12 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 	common.RespondSuccess(c, result, "success")
 }
 
+// Completion authorizes and prepares the search before committing an SSE response.
 func (h *SearchHandler) Completion(c *gin.Context) {
 
 	var req service.SearchCompletionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeArgumentError, "question is required")
+		common.RespondError(c, common.CodeArgumentError, "question is required: "+err.Error())
 		return
 	}
 

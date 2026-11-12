@@ -110,6 +110,11 @@ type MemoryMessageService struct {
 	memoryTaskDAO *dao.MemoryTaskDAO
 	taskPublisher TaskPublisher
 	resumeTask    func(context.Context, *entity.MemoryTask, string) error
+	// tierResolver maps a tenant to its ingestion queue tier so memory
+	// wake-ups land on the same priority lane as document ingestion for that
+	// tenant. Injected (defaults to defaultTierResolver) rather than read from
+	// a package global, keeping the memory module free of global state.
+	tierResolver tierResolver
 	// kvrocksClient mints raw-message ids via Redis auto-increment. It is
 	// injected at construction (inherited from the owning MemoryService) rather
 	// than read from a package global, so the memory module holds no mutable
@@ -121,6 +126,11 @@ type MemoryMessageService struct {
 	// process-wide engine.GetMessageQueueEngine() global, so the memory
 	// module's publish path carries no package-level global dependency.
 	mqEngine engine.MessageQueue
+	// memoryConfigFn resolves a memory's config (owner tenant, etc.) for the
+	// reconciler. Injected (defaults to s.memories.getMemoryConfig) so the
+	// reconciler can cache per-pass lookups and stay testable without a live
+	// MemoryService.
+	memoryConfigFn func(context.Context, string) (*CreateMemoryResponse, error)
 }
 
 // NewMemoryMessageService constructs a service bound to the
@@ -145,7 +155,14 @@ func NewMemoryMessageService(memories *MemoryService) *MemoryMessageService {
 		taskDAO:       dao.NewTaskDAO(),
 		memoryTaskDAO: dao.NewMemoryTaskDAO(),
 		taskPublisher: NewMessageQueueTaskPublisherWithEngine(mq),
+		tierResolver:  defaultTierResolver,
 		kvrocksClient: kv,
+		memoryConfigFn: func(ctx context.Context, memoryID string) (*CreateMemoryResponse, error) {
+			if memories == nil {
+				return nil, errors.New("memory: nil MemoryService")
+			}
+			return memories.getMemoryConfig(ctx, memoryID)
+		},
 	}
 }
 
@@ -215,11 +232,35 @@ func (s *MemoryMessageService) queueSaveToMemoryTask(ctx context.Context, memory
 			continue
 		}
 
-		if err = publishMemoryTaskWakeup(s.taskPublisher, task.ID); err != nil {
+		if err = publishMemoryTaskWakeup(ctx, s.taskPublisher, s.tierResolver, mem.TenantID, task.ID); err != nil {
 			common.Warn(fmt.Sprintf("memory: initial task wake-up failed; reconciler will retry: %v", err))
 		}
 	}
 	return res, nil
+}
+
+// resolveMemoryTenant returns the owning tenant for a memory, caching the
+// outcome (including a missing-memory fallback) across a single reconcile pass
+// via the supplied map. A lookup failure never strands the wake-up: a missing
+// or unresolvable memory resolves to an empty tenant, which the caller routes
+// to the default lane, and the failure is cached for the pass so lingering
+// task rows for the same memory do not re-query the store or repeat the warning
+// on every task of every pass. Because the underlying DAO wraps a not-found
+// result into the same error as a genuine store failure, a lookup error is
+// intentionally not surfaced as a reconcile error — it is a benign fallback to
+// the default lane, not an anomaly the caller must act on.
+func (s *MemoryMessageService) resolveMemoryTenant(ctx context.Context, memoryID string, cache map[string]string) (string, error) {
+	if tenantID, ok := cache[memoryID]; ok {
+		return tenantID, nil
+	}
+	tenantID := ""
+	if mem, memErr := s.memoryConfigFn(ctx, memoryID); memErr != nil {
+		common.Warn(fmt.Sprintf("memory: reconcile could not resolve tenant for memory %s (lookup failed: %v); publishing to default lane", memoryID, memErr))
+	} else if mem != nil {
+		tenantID = mem.TenantID
+	}
+	cache[memoryID] = tenantID
+	return tenantID, nil
 }
 
 // ReconcileMemoryTasks publishes wake-ups for due, unleased durable memory
@@ -244,11 +285,20 @@ func (s *MemoryMessageService) ReconcileMemoryTasks(ctx context.Context, limit i
 		return fmt.Errorf("memory: list due tasks: %w", err)
 	}
 	var reconcileErr error
+	// Per-pass cache so repeated tasks for the same memory look the config up
+	// once, not once per task.
+	tenantByMemory := make(map[string]string)
 	for _, task := range tasks {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return errors.Join(reconcileErr, ctxErr)
 		}
-		if err = publishMemoryTaskWakeup(s.taskPublisher, task.TaskID); err != nil {
+		// resolveMemoryTenant never returns a non-nil error: a missing or
+		// unresolvable memory is an expected fallback to the default lane, not
+		// an anomaly. The previous `if err != nil { continue }` was dead code
+		// (it could never fire) and, worse, would have stranded the wake-up
+		// had the seam ever errored — so it is removed outright.
+		tenantID, _ := s.resolveMemoryTenant(ctx, task.MemoryID, tenantByMemory)
+		if err = publishMemoryTaskWakeup(ctx, s.taskPublisher, s.tierResolver, tenantID, task.TaskID); err != nil {
 			reconcileErr = errors.Join(reconcileErr, err)
 		}
 	}
@@ -423,17 +473,36 @@ func newUUIDString() string {
 	return common.GenerateUUID()
 }
 
-// publishMemoryTaskWakeup publishes only the durable task identity. Workers
-// load all execution input and checkpoints from memory_task.
-func publishMemoryTaskWakeup(publisher TaskPublisher, taskID string) error {
+// publishMemoryTaskWakeup publishes only the durable task identity, routed to
+// the tenant's ingestion tier so memory wake-ups share the same priority lanes
+// as that tenant's document ingestion. Workers load all execution input and
+// checkpoints from memory_task.
+func publishMemoryTaskWakeup(ctx context.Context, publisher TaskPublisher, resolver tierResolver, tenantID, taskID string) error {
 	if publisher == nil {
 		return errors.New("memory task publisher is not initialized")
+	}
+	if resolver == nil {
+		resolver = defaultTierResolver
+	}
+	tier, err := resolver(ctx, tenantID)
+	if err != nil {
+		// A tier resolution failure must not strand a memory task: fall back to
+		// the default lane so the reconciler can still retry it. A transient
+		// outage never downgrades a tenant's priority — it only risks briefly
+		// elevating a lower-priority wake-up to the default lane.
+		common.Warn(fmt.Sprintf("memory: tier resolution for tenant %s failed (%v); using default lane", tenantID, err))
+		tier = common.DefaultTier()
+	}
+	subject, err := common.SubjectForTier(tier)
+	if err != nil {
+		common.Warn(fmt.Sprintf("memory: invalid tier %q for tenant %s; using default subject", tier, tenantID))
+		subject = common.DefaultTierSubject()
 	}
 	taskMessage := common.TaskMessage{
 		TaskID:   taskID,
 		TaskType: common.TaskTypeMemory,
 	}
-	if err := publisher.PublishTaskMessage(common.TaskSubject, taskMessage); err != nil {
+	if err := publisher.PublishTaskMessage(subject, taskMessage); err != nil {
 		return fmt.Errorf("publish memory task %s: %w", taskID, err)
 	}
 	return nil

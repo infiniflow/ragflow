@@ -28,10 +28,13 @@ func normalizeVisionLanguage(language string) string {
 	return language
 }
 
-// resolveVisionLanguage picks the language a caption answers in. The knowledge
-// base value is the only input, and it is also what the tokenizer analyses
-// with, so caption text and indexed tokens can never disagree.
-func resolveVisionLanguage(inputs map[string]any) string {
+// resolveVisionLanguage picks the language a caption answers in. An explicit
+// enhancement override wins; otherwise the knowledge base value applies, and
+// it is also what the tokenizer analyses with.
+func resolveVisionLanguage(inputs map[string]any, override string) string {
+	if language := strings.TrimSpace(override); language != "" {
+		return language
+	}
 	if language := strings.TrimSpace(getStringOr(inputs, "lang", "")); language != "" {
 		return language
 	}

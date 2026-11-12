@@ -513,8 +513,6 @@ const apiEndpoints = {
   adminUpdateRoleDescription: (roleName: string) =>
     `${restAPIv1}/admin/roles/${roleName}`,
 
-  adminUpdateUserRole: (username: string) =>
-    `${restAPIv1}/admin/users/${username}/role`,
   adminGetUserPermissions: (username: string) =>
     `${restAPIv1}/admin/users/${username}/permissions`,
 

@@ -370,11 +370,11 @@ func TestMigrateIngestionTaskDocumentIDUnique_Integration(t *testing.T) {
 	})
 }
 
-// TestMigrateNameColumnWidths_Integration verifies that the legacy 32-character
-// pipeline_title and 100-character tenant.name columns are widened in place and
-// keep their existing values. It needs a throwaway database because it creates
-// and drops the real table names.
-func TestMigrateNameColumnWidths_Integration(t *testing.T) {
+// TestMigrateColumnWidths_Integration verifies that the legacy 32-character
+// pipeline_title, 100-character tenant.name, and 32-character model-reference
+// columns are widened in place and keep their existing values. It needs a
+// throwaway database because it creates and drops the real table names.
+func TestMigrateColumnWidths_Integration(t *testing.T) {
 	dsn := os.Getenv("RAGFLOW_TEST_MYSQL_DSN")
 	if dsn == "" {
 		t.Skip("RAGFLOW_TEST_MYSQL_DSN unset: this test needs a throwaway MySQL database")
@@ -394,12 +394,13 @@ func TestMigrateNameColumnWidths_Integration(t *testing.T) {
 		}
 	})
 
-	if db.Migrator().HasTable("pipeline_operation_log") || db.Migrator().HasTable("tenant") {
-		t.Skip("test database already contains pipeline_operation_log or tenant; use a throwaway database")
+	if db.Migrator().HasTable("pipeline_operation_log") || db.Migrator().HasTable("tenant") || db.Migrator().HasTable("user_tenant") {
+		t.Skip("test database already contains pipeline_operation_log, tenant, or user_tenant; use a throwaway database")
 	}
 	t.Cleanup(func() {
 		db.Exec("DROP TABLE IF EXISTS pipeline_operation_log")
 		db.Exec("DROP TABLE IF EXISTS tenant")
+		db.Exec("DROP TABLE IF EXISTS user_tenant")
 	})
 
 	ctx := context.Background()
@@ -416,6 +417,14 @@ func TestMigrateNameColumnWidths_Integration(t *testing.T) {
 	)`).Error; err != nil {
 		t.Fatalf("create tenant: %v", err)
 	}
+	if err := db.Exec(`CREATE TABLE user_tenant (
+		id varchar(32) PRIMARY KEY,
+		user_id varchar(32) NULL,
+		tenant_id varchar(32) NULL,
+		tenant_llm_id varchar(32) NULL
+	)`).Error; err != nil {
+		t.Fatalf("create user_tenant: %v", err)
+	}
 
 	legacyTitle := strings.Repeat("a", 32)
 	legacyTenant := strings.Repeat("b", 100)
@@ -425,9 +434,13 @@ func TestMigrateNameColumnWidths_Integration(t *testing.T) {
 	if err := db.Exec(`INSERT INTO tenant (id, name) VALUES (?, ?)`, "tenant-1", legacyTenant).Error; err != nil {
 		t.Fatalf("seed tenant: %v", err)
 	}
+	legacyRef := strings.Repeat("c", 32)
+	if err := db.Exec(`INSERT INTO user_tenant (id, user_id, tenant_id, tenant_llm_id) VALUES (?, ?, ?, ?)`, "ut-1", "user-1", "tenant-1", legacyRef).Error; err != nil {
+		t.Fatalf("seed user_tenant: %v", err)
+	}
 
-	if err := migrateNameColumnWidths(ctx, db); err != nil {
-		t.Fatalf("migrateNameColumnWidths failed: %v", err)
+	if err := migrateColumnWidths(ctx, db); err != nil {
+		t.Fatalf("migrateColumnWidths failed: %v", err)
 	}
 
 	if got := columnLength(t, db, &entity.PipelineOperationLog{}, "pipeline_title"); got != common.PipelineTitleLimit {
@@ -438,6 +451,9 @@ func TestMigrateNameColumnWidths_Integration(t *testing.T) {
 	}
 	if got := columnLength(t, db, &entity.Tenant{}, "name"); got != common.TenantNameLimit {
 		t.Fatalf("tenant.name width = %d, want %d", got, common.TenantNameLimit)
+	}
+	if got := columnLength(t, db, &entity.UserTenant{}, "TenantLLMID"); got != common.GroupModelRefWidth {
+		t.Fatalf("user_tenant.tenant_llm_id width = %d, want %d", got, common.GroupModelRefWidth)
 	}
 
 	var title string

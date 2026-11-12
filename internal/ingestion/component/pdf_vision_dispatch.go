@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	agentruntime "ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -206,7 +207,7 @@ func dispatchPDFBackend(ctx context.Context, db *gorm.DB, filename string, binar
 	// provider/selectors name PaddleOCR, or a bare tenant model UUID (in
 	// either parse_method or layout_recognizer) that resolves to a PaddleOCR
 	// OCR model. A bare UUID carries no provider spelling in the string, so it
-	// is resolved first - mirroring Python's get_composite_model_name_by_id +
+	// is resolved first - mirroring get_composite_model_name_by_id +
 	// normalize_layout_recognizer chain, which converts the raw model UUID
 	// into model@instance@provider before choosing the dispatch path.
 	isPaddleOCRMatch := strings.EqualFold(strings.TrimSpace(method), "paddleocr") ||
@@ -390,7 +391,9 @@ func monkeyOCRv2ParseRequest(ctx context.Context, apiURL, filename string, binar
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	client := *http.DefaultClient
 	client.Timeout = timeout
+	finish := agentruntime.TrackIO(ctx, "Parser", "remote parser", "backend=MonkeyOCRv2")
 	resp, err := client.Do(req)
+	finish()
 	if err != nil {
 		return nil, fmt.Errorf("MonkeyOCRv2 request: %w", err)
 	}
@@ -586,7 +589,7 @@ func readMinerUExtractionOptions(setup schema.ParserSetup) (mineruExtractionOpti
 
 // dispatchMinerUPDF submits a PDF to the selected MinerU OCR model.
 // MinerU 4.0 uses the V1 upload/job API; 3.x still POSTs /file_parse with
-// stream=True and returns a zip body (Python mineru_parser.py:parse_PDF).
+// stream=True and returns a zip body.
 func dispatchMinerUPDF(
 	ctx context.Context,
 	db *gorm.DB,
@@ -646,14 +649,18 @@ func dispatchMinerUPDF(
 		}
 		cloudCtx, cloudCancel := context.WithTimeout(ctx, timeout)
 		defer cloudCancel()
+		finish := agentruntime.TrackIO(cloudCtx, "Parser", "remote parser", "backend=MinerU")
 		result, err := modelModule.ParseMinerUCloud(cloudCtx, baseURL, apiKeyRaw, filename, binary, backend, parseMethod, mineruLang)
+		finish()
 		if err != nil {
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU cloud: %w", err)
 		}
 		return finishMinerURemoteResult(ctx, filename, binary, result)
 	}
 
+	finishProbe := agentruntime.TrackIO(ctx, "Parser", "remote parser", "backend=MinerU phase=probe")
 	v1, err := modelModule.MinerUSupportsV1(ctx, baseURL, apiKeyRaw)
+	finishProbe()
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU probe: %w", err)
 	}
@@ -667,7 +674,9 @@ func dispatchMinerUPDF(
 		if !extraction.formulaEnable || !extraction.tableEnable {
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU V1 does not support disabling formula or table extraction; use a /file_parse server to configure these switches")
 		}
+		finish := agentruntime.TrackIO(ctx, "Parser", "remote parser", "backend=MinerU")
 		result, err := modelModule.ParseMinerUV1(ctx, baseURL, apiKeyRaw, filename, binary, backend, parseMethod, timeout)
+		finish()
 		if err != nil {
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU V1: %w", err)
 		}
@@ -875,7 +884,7 @@ func dispatchMonkeyOCRPDF(
 // dispatch. modelID is the raw selector value: a bare tenant model UUID (no
 // "@") selects that exact model, a composite model@instance@provider name
 // resolves through the provider-instance chain, and an empty value falls back
-// to the tenant's first MinerU OCR model - mirroring Python's by_mineru,
+// to the tenant's first MinerU OCR model - mirroring by_mineru
 // which falls back to get_first_provider_model_name(tenant_id, "MinerU",
 // LLMType.OCR) for the named "mineru" selector.
 var resolveMinerUModelForDispatch = defaultResolveMinerUModelForDispatch
@@ -901,7 +910,7 @@ func defaultResolveMinerUModelForDispatch(ctx context.Context, db *gorm.DB, tena
 // PaddleOCR PDF dispatch. modelID is the raw layout_recognizer value: a bare
 // tenant model UUID (no "@") selects that exact model regardless of provider
 // spelling ("PaddleOCR" or "PaddleOCR.local"); a composite name or empty value
-// falls back to the tenant's first PaddleOCR OCR model, mirroring Python's
+// falls back to the tenant's first PaddleOCR OCR model, mirroring
 // by_paddleocr which uses get_first_provider_model_name(tenant, "PaddleOCR").
 //
 // Known limitation: composite names such as "some-model@instance@PaddleOCR.local"
@@ -909,7 +918,7 @@ func defaultResolveMinerUModelForDispatch(ctx context.Context, db *gorm.DB, tena
 // "@" falls through to resolveTenantOCRModelByProvider("PaddleOCR"), which
 // returns the tenant's first active PaddleOCR OCR model - potentially the
 // local one - when both the local ("PaddleOCR.local") and the cloud
-// ("PaddleOCR") providers are configured. The Python path behaves the same
+// ("PaddleOCR") providers are configured. The path behaves the same
 // way; if exact selection is required, pass the model's tenant-model UUID
 // instead.
 var resolvePaddleOCRModelForDispatch = defaultResolvePaddleOCRModelForDispatch
@@ -934,7 +943,7 @@ func dispatchPaddleOCRPdf(
 	filename string,
 	binary []byte,
 	tenantID string,
-	setup schema.ParserSetup,
+	_ schema.ParserSetup,
 	modelID string,
 ) (parser.ParseResult, error) {
 	driver, modelName, apiConfig, err := resolvePaddleOCRModelForDispatch(ctx, db, tenantID, modelID)
@@ -946,9 +955,7 @@ func dispatchPaddleOCRPdf(
 			"parser: PaddleOCR requires a PaddleOCR OCR model; found %q. Please add a PaddleOCR OCR model to your tenant", driver.Name())
 	}
 
-	resp, err := driver.OCRFile(ctx, &modelName, binary, &filename, apiConfig, &modelModule.OCRConfig{
-		Algorithm: strings.TrimSpace(getStringOr(setup, "paddleocr_algorithm", "")),
-	}, nil)
+	resp, err := driver.OCRFile(ctx, &modelName, binary, &filename, apiConfig, nil, nil)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: PaddleOCR OCRFile: %w", err)
 	}
@@ -1008,7 +1015,7 @@ func resolveMinerUBaseURL(driver modelModule.ModelDriver, apiConfig *modelModule
 }
 
 // mineruLangCode maps a human-readable language name to a MinerU lang code,
-// mirroring Python's LANGUAGE_TO_MINERU_MAP in mineru_parser.py.
+// mirroring the upstream LANGUAGE_TO_MINERU_MAP mapping.
 func mineruLangCode(lang string) string {
 	switch strings.ToLower(lang) {
 	case "english":
@@ -1029,7 +1036,7 @@ func mineruLangCode(lang string) string {
 }
 
 // mineruAPIParseMethod constrains the /file_parse form field to the values
-// the MinerU API accepts (auto, txt, ocr), mirroring Python's
+// the MinerU API accepts (auto, txt, ocr), mirroring
 // MinerUParseMethod. The value comes from the parser setup's dedicated
 // mineru_parse_method option; the setup's parse_method is a dispatch
 // selector ("mineru", a composite selector, or a tenant model UUID), never
@@ -1096,7 +1103,7 @@ func mineruRequestTimeout(setup schema.ParserSetup, apiConfig *modelModule.APICo
 
 // mineruStreamParse POSTs the PDF binary to the MinerU /file_parse
 // endpoint with streaming and returns the zip response body.
-// Mirrors Python's mineru_parser.py._run_mineru_api with stream=True.
+// Mirrors ._run_mineru_api with stream=True
 func mineruStreamParse(ctx context.Context, apiURL string, apiKey string, binary []byte, parseMethod, lang, backend, serverURL string, extraction mineruExtractionOptions, timeout time.Duration) ([]byte, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -1145,7 +1152,9 @@ func mineruStreamParse(ctx context.Context, apiURL string, apiKey string, binary
 		req.Header.Set("Authorization", "Bearer "+token)
 	}
 
+	finish := agentruntime.TrackIO(ctx, "Parser", "remote parser", "backend=MinerU")
 	resp, err := http.DefaultClient.Do(req)
+	finish()
 	if err != nil {
 		return nil, fmt.Errorf("send request: %w", err)
 	}
@@ -1268,7 +1277,7 @@ func mineruExtractJSONItems(zipBytes []byte, pdfPageSizes map[int][2]float64) ([
 }
 
 // mineruExtractSections reads MinerU content_list.json from a zip archive
-// and extracts plain text blocks, mirroring Python's _transfer_to_sections.
+// and extracts plain text blocks, mirroring _transfer_to_sections
 // Used by MonkeyOCR v1 /file_parse dispatch when returning markdown sections.
 func mineruExtractSections(zipBytes []byte) ([]string, error) {
 	zipReader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
@@ -2044,7 +2053,10 @@ func defaultPDFVisionChatInvoker(
 ) (*modelModule.ChatResponse, error) {
 	vision := true
 	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
-	return chatModel.ChatWithMessages(ctx, messages, &modelModule.ChatConfig{Vision: &vision}, nil)
+	finish := agentruntime.TrackIO(ctx, "Parser", "VLM", "media=pdf")
+	resp, err := chatModel.ChatWithMessages(ctx, messages, &modelModule.ChatConfig{Vision: &vision}, nil)
+	finish()
+	return resp, err
 }
 
 // renderPDFVisionPrompt only renders page metadata. The full-page PDF vision
@@ -2105,7 +2117,7 @@ func isPaddleOCRDriver(driver modelModule.ModelDriver) bool {
 // OCR model driven by a PaddleOCR provider (cloud "PaddleOCR" or local
 // "PaddleOCR.local"). The web UI stores the tenant model UUID directly in
 // layout_recognizer, so the raw value carries no provider spelling; this
-// mirrors Python's get_composite_model_name_by_id resolution of the same
+// mirrors get_composite_model_name_by_id resolution of the same
 // UUID before the PaddleOCR path is chosen.
 var isPaddleOCRLayoutModelID = defaultIsPaddleOCRLayoutModelID
 

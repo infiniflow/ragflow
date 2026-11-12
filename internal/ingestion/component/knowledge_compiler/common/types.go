@@ -302,7 +302,7 @@ func (p Param) PlanEnabled() bool {
 
 // KindToVariant maps a compilation_template.kind to the Go compiler Variant.
 //
-// The Python model uses richer kind values (mind_map, page_index,
+// The model uses richer kind values (mind_map, page_index
 // session_essence, session_graph, timeline, knowledge_graph, tree, wiki); the
 // Go port collapses them onto its variants. Per the agreed mapping:
 //
@@ -318,7 +318,7 @@ func (p Param) PlanEnabled() bool {
 // turns that into a hard failure rather than silently emitting uncompiled rows.
 //
 // Note: "datasetnav"/"dataset_nav" intentionally has NO mapping here — dataset
-// navigation is not an independent compile kind in Python; it is a by-product
+// navigation is not an independent compile kind in ; it is a by-product
 // written after tree/page_index compilation via internal/service datasetnav
 // (see tasks/agentic_search_port_plan.md).
 func KindToVariant(kind string) (Variant, error) {

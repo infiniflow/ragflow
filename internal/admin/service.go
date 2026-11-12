@@ -250,10 +250,6 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 		Credit:    512,
 		Status:    &tenantStatus,
 	}
-	if err = dao.ApplyDefaultTenantInviteEnabled(ctx, tx, tenant); err != nil {
-		rollbackTx()
-		return nil, fmt.Errorf("failed to initialize tenant invitation setting: %w", err)
-	}
 	if err = dao.NewTenantDAO().Create(ctx, tx, tenant); err != nil {
 		rollbackTx()
 		return nil, fmt.Errorf("failed to create tenant: %w", err)
@@ -714,6 +710,8 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 		docHost, docPort = serviceEndpoint(globalConfig.GetInfinityConfig().URI, 0)
 	} else if docEngineImpl.GetType() == "elasticsearch" {
 		docHost, docPort = serviceEndpoint(globalConfig.GetElasticsearchConfig().Hosts, 0)
+	} else if docEngineImpl.GetType() == "opensearch" {
+		docHost, docPort = serviceEndpoint(globalConfig.GetOpenSearchConfig().Hosts, 0)
 	}
 	err := docEngineImpl.Ping(ctx)
 	if err == nil {
@@ -1556,10 +1554,6 @@ func (s *Service) addTenantForAdmin(userID, nickname string) error {
 		ID:   userID,
 		Name: &tenantName,
 	}
-	if err := dao.ApplyDefaultTenantInviteEnabled(context.Background(), dao.DB, tenant); err != nil {
-		return fmt.Errorf("failed to initialize tenant invitation setting: %w", err)
-	}
-
 	if err := dao.NewTenantDAO().Create(context.Background(), dao.DB, tenant); err != nil {
 		return err
 	}

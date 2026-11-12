@@ -4,7 +4,7 @@ title: Configure the Indexer Component
 sidebar_label: Configure the Indexer Component
 slug: /configure_indexer_component
 sidebar_custom_props: {
-  categoryIcon: RagAiAgent
+  categoryIcon: LucideListPlus
 }
 ---
 

@@ -2394,14 +2394,6 @@ export default {
       id: 'ID',
       logTitle: 'タイトル',
 
-      preprocess: {
-        preprocess: '前処理',
-        mainContent: '本文',
-        abstract: '概要',
-        author: '著者',
-        sectionTitle: 'セクションタイトル',
-      },
-
       editTags: 'タグを編集',
       editTagsDescription:
         'タグを追加してエージェントを整理・絞り込みできます。Enterキーまたはカンマで追加します。',

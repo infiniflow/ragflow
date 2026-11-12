@@ -20,7 +20,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -477,10 +476,10 @@ func TestGetAgentWebhookLogsRedactsRedisFailures(t *testing.T) {
 	}
 
 	h.WithRedisGetter(func(string) (string, error) {
-		return "", errors.New("redis password=secret")
+		return "", errors.New("redis: connection refused")
 	})
 	failed := requestWebhookTrace(t, h, "c1", "u1", url.Values{"since_ts": {"0"}})
-	if failed.Code != int(common.CodeServerError) || strings.Contains(failed.Message, "password=secret") {
+	if failed.Code != int(common.CodeServerError) || failed.Message != common.CodeServerError.Message() {
 		t.Fatalf("redis failure response = %+v", failed)
 	}
 }

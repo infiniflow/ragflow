@@ -19,6 +19,7 @@
 package handler
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -54,7 +55,7 @@ func isOAuthLoginNoRoute(c *gin.Context) bool {
 
 // issueUserAccessToken mints the access token returned after a successful
 // login.
-func issueUserAccessToken(user *entity.User, secretKey string) (string, error) {
+func issueUserAccessToken(_ context.Context, user *entity.User, secretKey string) (string, error) {
 	if user == nil || user.AccessToken == nil {
 		return "", errors.New("user access token is missing")
 	}
@@ -80,23 +81,8 @@ func (h *SystemHandler) GetQuota(c *gin.Context)       { eeNotImplemented(c, "Ge
 func (h *UserHandler) IsAdmin(c *gin.Context) { eeNotImplemented(c, "IsAdmin") }
 func (h *UserHandler) GetMeta(c *gin.Context) { eeNotImplemented(c, "GetMeta") }
 
-// GetLoginChannelsDeprecated lists the OAuth authentication channels. The
-// community edition offers password login only, so the list is empty.
-// @Summary Get Login Channels
-// @Description Get all supported OAuth authentication channels
-// @Tags users
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/user/login/channels [get]
-func (h *UserHandler) GetLoginChannelsDeprecated(c *gin.Context) {
-	channels, code, err := h.userService.GetLoginChannels()
-	if err != nil {
-		common.RespondError(c, code, "Load channels failure, error: "+err.Error())
-		return
-	}
-
-	common.RespondSuccessList(c, channels, "success")
-}
 func (h *ProviderHandler) CreateModelGroup(c *gin.Context) { eeNotImplemented(c, "CreateModelGroup") }
+func (h *ProviderHandler) ListModelGroups(c *gin.Context)  { eeNotImplemented(c, "ListModelGroups") }
 func (h *ProviderHandler) DeleteModelGroup(c *gin.Context) { eeNotImplemented(c, "DeleteModelGroup") }
 func (h *ProviderHandler) ShowModelGroup(c *gin.Context)   { eeNotImplemented(c, "ShowModelGroup") }
 func (h *ProviderHandler) AddModelToGroup(c *gin.Context)  { eeNotImplemented(c, "AddModelToGroup") }

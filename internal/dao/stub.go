@@ -47,11 +47,6 @@ func initializeTenantDefaultRoleEE(ctx context.Context, db *gorm.DB, tenant *ent
 	return nil
 }
 
-// ApplyDefaultTenantInviteEnabled is a no-op in the community edition.
-func ApplyDefaultTenantInviteEnabled(ctx context.Context, db *gorm.DB, tenant *entity.Tenant) error {
-	return nil
-}
-
 // TenantModelGroupDAO owns the enterprise model groups. The community edition
 // has none.
 type TenantModelGroupDAO struct{}

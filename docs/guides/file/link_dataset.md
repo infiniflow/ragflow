@@ -4,7 +4,7 @@ slug: /file_management/link_knowledge_base
 sidebar_label: Link Dataset
 title: Link Dataset
 sidebar_custom_props: {
-  categoryIcon: LucideFolderDot
+  categoryIcon: LucideLink2
 }
 ---
 

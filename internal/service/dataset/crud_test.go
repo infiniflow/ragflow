@@ -61,6 +61,19 @@ func TestExtractUniqueFileIDs(t *testing.T) {
 			},
 			want: nil,
 		},
+		{
+			// Adversarial: duplicates interleaved across the slice must be
+			// collapsed while preserving the order of first occurrence, not
+			// sorted or last-wins.
+			name: "preserves first-occurrence order on interleaved duplicates",
+			mappings: []entity.File2Document{
+				{FileID: &f2},
+				{FileID: &f1},
+				{FileID: &f2},
+				{FileID: &f1},
+			},
+			want: []string{"f2", "f1"},
+		},
 	}
 
 	for _, tt := range tests {
@@ -75,6 +88,26 @@ func TestExtractUniqueFileIDs(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestExtractUniqueFileIDs_AllSkippedNonNil guards the contract that an all-skip
+// (or nil) input yields a non-nil empty slice, not nil. Downstream callers key
+// off len(), but the non-nil guarantee documents intent and prevents a future
+// regression to returning nil when the dedup path is delegated to a canonical
+// helper that may return nil for a nil argument.
+func TestExtractUniqueFileIDs_AllSkippedNonNil(t *testing.T) {
+	empty := ""
+	cases := [][]entity.File2Document{
+		nil,
+		{{FileID: nil}},
+		{{FileID: &empty}},
+	}
+	for i, m := range cases {
+		got := extractUniqueFileIDs(m)
+		if got == nil {
+			t.Errorf("case %d: extractUniqueFileIDs returned nil, want non-nil empty slice", i)
+		}
 	}
 }
 

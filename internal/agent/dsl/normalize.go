@@ -64,6 +64,8 @@ package dsl
 import (
 	"regexp"
 	"sort"
+
+	"ragflow/internal/common"
 )
 
 // componentNameIteration / componentNameIterationItem are the legacy
@@ -427,36 +429,12 @@ func toStringSlice(v any) []string {
 
 // deepCopyDSL returns a recursive copy so normalization never mutates the
 // caller's nested JSON values. Runtime alias rewrites walk every string in
-// the DSL, not only graph and component entries.
+// the DSL, not only graph and component entries. It delegates to the canonical
+// common.DeepCopyMap, which deep-copies nested maps/slices and copies []byte
+// defensively (primitives are shared by reference, which is safe for the
+// JSON-native DSL values this package handles).
 func deepCopyDSL(dsl map[string]any) map[string]any {
-	out := make(map[string]any, len(dsl)+1)
-	for k, v := range dsl {
-		out[k] = deepCopyAny(v)
-	}
-	return out
-}
-
-// deepCopyAny returns a recursive deep copy of v. Maps and slices
-// are duplicated recursively; primitives and nil are passed through.
-// This ensures mutations to nested fields (e.g. data.label, data.name)
-// never alias into the caller's original input.
-func deepCopyAny(v any) any {
-	switch x := v.(type) {
-	case map[string]any:
-		out := make(map[string]any, len(x))
-		for k, val := range x {
-			out[k] = deepCopyAny(val)
-		}
-		return out
-	case []any:
-		out := make([]any, len(x))
-		for i, val := range x {
-			out[i] = deepCopyAny(val)
-		}
-		return out
-	default:
-		return v
-	}
+	return common.DeepCopyMap(dsl)
 }
 
 // copyMapStringAny returns a shallow copy of m. The new map

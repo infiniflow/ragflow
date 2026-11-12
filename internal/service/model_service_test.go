@@ -123,6 +123,37 @@ func TestMonkeyOCRv2EnvConfig(t *testing.T) {
 	}
 }
 
+func TestPaddleOCREnvConfig(t *testing.T) {
+	t.Run("ignores deprecated PADDLEOCR_ALGORITHM when set alone", func(t *testing.T) {
+		t.Setenv(common.EnvPaddleOCRBaseUrl, "")
+		t.Setenv(common.EnvPaddleOCRAPIURL, "")
+		t.Setenv(common.EnvPaddleOCRAccessToken, "")
+		t.Setenv("PADDLEOCR_ALGORITHM", "PaddleOCR-VL")
+		if config := collectEnvConfig(paddleOCREnvKeys, paddleOCRDefaultConfig); config != nil {
+			t.Fatalf("collectEnvConfig = %#v, want nil", config)
+		}
+	})
+
+	t.Run("collects API URL and token without PADDLEOCR_ALGORITHM", func(t *testing.T) {
+		t.Setenv(common.EnvPaddleOCRAPIURL, "https://paddleocr.aistudio-app.com/api")
+		t.Setenv(common.EnvPaddleOCRAccessToken, "tok-123")
+
+		config := collectEnvConfig(paddleOCREnvKeys, paddleOCRDefaultConfig)
+		if config == nil {
+			t.Fatal("collectEnvConfig returned nil")
+		}
+		if config[common.EnvPaddleOCRAPIURL] != "https://paddleocr.aistudio-app.com/api" {
+			t.Fatalf("API URL = %#v", config[common.EnvPaddleOCRAPIURL])
+		}
+		if config[common.EnvPaddleOCRAccessToken] != "tok-123" {
+			t.Fatalf("access token = %#v", config[common.EnvPaddleOCRAccessToken])
+		}
+		if _, hasAlgo := config["PADDLEOCR_ALGORITHM"]; hasAlgo {
+			t.Fatalf("unexpected PADDLEOCR_ALGORITHM in config: %#v", config["PADDLEOCR_ALGORITHM"])
+		}
+	})
+}
+
 func TestValidateEmbeddingModel(t *testing.T) {
 	maxDimension := 2048
 	maxBatchSize := 128

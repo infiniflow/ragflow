@@ -2462,13 +2462,6 @@ Exemple : Virtual Hosted Style`,
       seconds: 'Secondes',
       subject: 'Sujet',
       // --- clés manquantes ajoutées ---
-      preprocess: {
-        preprocess: 'Prétraitement',
-        mainContent: 'Contenu principal',
-        abstract: 'Résumé',
-        author: 'Auteur',
-        sectionTitle: 'Titre de section',
-      },
       editTags: 'Modifier les étiquettes',
       editTagsDescription:
         'Ajoutez des étiquettes pour organiser et filtrer vos agents. Appuyez sur Entrée ou virgule pour ajouter.',

@@ -128,55 +128,6 @@ def select_combobox_option(
     return selected_text
 
 
-def select_ragflow_option(
-    page,
-    trigger_test_id: str,
-    preferred_text: str | None = None,
-) -> str:
-    trigger = page.get_by_test_id(trigger_test_id).first
-    expect(trigger).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-    trigger.scroll_into_view_if_needed()
-    current_text = ""
-    try:
-        current_text = trigger.inner_text().strip()
-    except Exception:
-        current_text = ""
-    trigger.click()
-
-    options = page.locator("[role='option']")
-    expect(options.first).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-
-    if preferred_text:
-        preferred_option = options.filter(has_text=re.compile(rf"^{re.escape(preferred_text)}$", re.I))
-        if preferred_option.count() > 0:
-            preferred_option.first.click()
-            return preferred_text
-
-    selected_text = ""
-    option_count = options.count()
-    for idx in range(option_count):
-        option = options.nth(idx)
-        try:
-            if not option.is_visible():
-                continue
-        except Exception:
-            continue
-        text = option.inner_text().strip()
-        if not text:
-            continue
-        if current_text and text.lower() == current_text.lower() and option_count > 1:
-            continue
-        option.click()
-        selected_text = text
-        break
-
-    if not selected_text:
-        fallback = options.first
-        selected_text = fallback.inner_text().strip()
-        fallback.click()
-    return selected_text
-
-
 def get_request_json_payload(response) -> dict:
     payload = None
     request = response.request
@@ -457,36 +408,6 @@ def step_04_set_dataset_settings(
         overlap_slider.press("ArrowRight")
         set_number_input(page, "ds-settings-parser-auto-keyword-input", 3)
         set_number_input(page, "ds-settings-parser-auto-question-input", 2)
-
-    with step("fill graph and raptor settings"):
-        page.get_by_test_id("ds-settings-graph-entity-types-add-btn").click()
-        entity_input = page.get_by_test_id("ds-settings-graph-entity-types-input").first
-        expect(entity_input).to_be_visible(timeout=RESULT_TIMEOUT_MS)
-        entity_input.fill("playwright_entity")
-        entity_input.press("Enter")
-        select_ragflow_option(page, "ds-settings-graph-method-select", preferred_text="General")
-        set_switch_state(page, "ds-settings-graph-entity-resolution-switch", True)
-        set_switch_state(page, "ds-settings-graph-community-reports-switch", True)
-
-        raptor_scope_dataset = page.get_by_role("radio", name=re.compile(r"^Dataset$", re.I)).first
-        raptor_scope_dataset.check(force=True)
-        expect(raptor_scope_dataset).to_be_checked(timeout=RESULT_TIMEOUT_MS)
-        page.get_by_test_id("ds-settings-raptor-prompt-textarea").fill("Playwright prompt for dataset settings")
-        set_number_input(page, "ds-settings-raptor-max-token-input", 300)
-        set_number_input(page, "ds-settings-raptor-threshold-input", 0.3)
-        set_number_input(page, "ds-settings-raptor-max-cluster-input", 128)
-        set_number_input(page, "ds-settings-raptor-seed-input", 1234)
-        seed_input = page.get_by_test_id("ds-settings-raptor-seed-input").first
-        seed_before_randomize = seed_input.input_value()
-        page.get_by_test_id("ds-settings-raptor-seed-randomize-btn").click()
-        page.wait_for_function(
-            """([testId, previous]) => {
-              const node = document.querySelector(`[data-testid="${testId}"]`);
-              return !!node && String(node.value) !== String(previous);
-            }""",
-            arg=["ds-settings-raptor-seed-input", seed_before_randomize],
-            timeout=RESULT_TIMEOUT_MS,
-        )
 
     with step("save dataset settings and assert update payload"):
         try:
