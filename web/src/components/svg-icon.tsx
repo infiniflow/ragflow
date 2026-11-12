@@ -133,6 +133,7 @@ const svgIcons = [
   LLMFactory.Shengsuanyun,
   LLMFactory.Synap,
   LLMFactory.Wiro,
+  LLMFactory.Crusoe,
 ];
 
 export const LlmIcon = ({
