@@ -171,8 +171,20 @@ type ResponseData<D = NonNullable<unknown>> = {
 export const login = (params: { email: string; password: string }) =>
   request.post<ResponseData<AdminService.LoginData>>(adminLogin, params);
 export const logout = () => request.post<ResponseData<void>>(adminLogout);
-export const listUsers = () =>
-  request.get<ResponseData<AdminService.ListUsersItem[]>>(adminListUsers, {});
+export type AdminUserListParams = {
+  page: number;
+  page_size: number;
+  keyword?: string;
+  status?: string;
+  order?: 'create_time' | 'last_login_time';
+  sort?: 'asc' | 'desc';
+};
+
+export const listUsers = (params?: AdminUserListParams) =>
+  request.get<ResponseData<AdminService.ListUsersItem[]> & { total: number }>(
+    adminListUsers,
+    { params },
+  );
 
 export const createUser = (email: string, password: string) =>
   request.post<ResponseData<Record<string, unknown>>>(adminCreateUser, {
