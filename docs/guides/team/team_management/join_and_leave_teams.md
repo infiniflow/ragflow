@@ -2,6 +2,9 @@
 sidebar_position: 2
 sidebar_label: Join and Leave Teams
 title: Join and Leave Teams
+sidebar_custom_props: {
+  categoryIcon: LucideLogOut
+}
 ---
 
 # Join and Leave Teams

@@ -4,7 +4,7 @@ title: Link and Sync a Data Source
 sidebar_label: Add and Sync
 slug: /add_data_source/add_to_knowledge_base_and_sync
 sidebar_custom_props: {
-  categoryIcon: LucideServer
+  categoryIcon: LucideRefreshCw
 }
 ---
 
