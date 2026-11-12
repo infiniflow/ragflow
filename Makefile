@@ -14,6 +14,7 @@ frontend:
 		--build-arg API_UPSTREAM=api.ragflow.svc \
 		--build-arg RAGFLOW_VERSION=${RAGFLOW_VERSION} \
 		.
+	@${docker} tag $(PREFIX)/ragflow-fe:$(TAG) ragflow-fe:latest
 	@echo "push image command: ${docker} push $(PREFIX)/ragflow-fe:$(TAG)"
 
 
@@ -24,6 +25,7 @@ ragflow:
 		--build-arg NEED_MIRROR=1 \
 		--build-arg GITEE_TOKEN= \
 		.
+	@${docker} tag $(PREFIX)/ragflow:$(TAG) ragflow:latest
 	@echo "push image command: ${docker} push $(PREFIX)/ragflow:$(TAG)"
 
 all: frontend ragflow
