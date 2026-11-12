@@ -22,10 +22,12 @@ export function useGetAgentToolNames() {
 export function useGetAgentMCPIds() {
   const node = useContext(AgentFormContext);
 
-  const mcpIds = useMemo(() => {
-    const ids: IAgentForm['mcp'] = get(node, 'data.form.mcp', []);
-    return ids.map((x) => x.mcp_id);
-  }, [node]);
+  const mcp = useMemo(
+    () => get(node, 'data.form.mcp', []) as IAgentForm['mcp'],
+    [node],
+  );
 
-  return { mcpIds };
+  const mcpIds = useMemo(() => mcp.map((x) => x.mcp_id), [mcp]);
+
+  return { mcpIds, mcpList: mcp };
 }
