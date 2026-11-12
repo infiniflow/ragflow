@@ -84,6 +84,29 @@ func TestMergeTablesAcrossPagesRejectsDifferentEmptyHeaderCellLayout(t *testing.
 	}
 }
 
+func TestMergeTablesAcrossPagesSkipsHeaderOnlyContinuationGrid(t *testing.T) {
+	anchor := headerTable([]string{"A", "B"}, []string{"1", "2"})
+	dataPage := headerTable([]string{"A", "B"}, []string{"3", "4"})
+	headerOnlyPage := headerTable([]string{"A", "B"})
+	dataPage.Positions[0].PageNumbers = []int{1}
+	headerOnlyPage.Positions[0].PageNumbers = []int{2}
+
+	merged := MergeTablesAcrossPages(
+		[]pdf.TableItem{anchor, dataPage, headerOnlyPage},
+		nil,
+		map[int]float64{0: 70, 1: 70},
+	)
+	if len(merged) != 1 {
+		t.Fatalf("tables = %d, want 1", len(merged))
+	}
+	if got, want := len(merged[0].Grid), 3; got != want {
+		t.Fatalf("merged grid rows = %d, want %d (header + two data rows)", got, want)
+	}
+	if got := merged[0].Grid[2][0].Text; got != "3" {
+		t.Fatalf("continuation data cell = %q, want 3", got)
+	}
+}
+
 func TestMergeTablesAcrossPagesRejectsHeaderColumnMismatch(t *testing.T) {
 	anchor := headerTable([]string{"", ""}, []string{"1", "2"})
 	candidate := headerTable([]string{"", ""}, []string{"3", "4"})
