@@ -47,6 +47,10 @@ type Reader interface {
 	// document (doc_id == source_doc). Bounded by one document, never the whole
 	// KB.
 	LoadDocProducts(ctx context.Context, tenant, kb, docID string) ([]kccommon.Product, error)
+	// LoadDocProductsByDocs returns the per-document compiled rows for many
+	// documents in one query, grouped by doc_id. It is the batch form of
+	// LoadDocProducts used to avoid one query per document.
+	LoadDocProductsByDocs(ctx context.Context, tenant, kb string, docIDs []string) (map[string][]kccommon.Product, error)
 
 	// SearchSimilar runs a dense (KNN) search over the existing merged rows of
 	// the given variant and returns the single most-similar row whose score is
@@ -198,22 +202,89 @@ func (r engineReader) LoadDocProducts(ctx context.Context, tenant, kb, docID str
 	// Diagnostics: count how many loaded per-doc products carry an embedding
 	// and report the (deduped) vector dimensions. If this shows 0/empty while
 	// per-doc rows in ES do have q_<dim>_vec, VectorFromChunkMap is failing to
-	// restore the vector and the merged rows will end up embedding-less.
-	vecCount := 0
-	dims := map[int]int{}
-	for _, p := range out {
-		if dim := len(p.Vector); dim > 0 {
-			vecCount++
-			dims[dim]++
+	// restore the vector and the merged rows will end up embedding-less. Gated to
+	// debug: the map construction below allocates even in quiet production.
+	if common.IsDebugEnabled() {
+		vecCount, dims := computeDocProductsVectorAudit(out)
+		common.Info("knowledge_compile: LoadDocProducts vector audit",
+			zap.String("kb_id", kb),
+			zap.String("doc_id", docID),
+			zap.Int("products", len(out)),
+			zap.Int("with_vector", vecCount),
+			zap.Any("vector_dims", dims))
+	}
+	return out, nil
+}
+
+// docProductsBatchSize bounds how many doc_ids are sent in a single IN filter so a
+// batch read over a large KB does not build an unbounded query.
+const docProductsBatchSize = 500
+
+// LoadDocProductsByDocs returns the per-document compiled products for many
+// documents in one query (doc_id IN [...]) instead of one query per document.
+// Results are grouped by doc_id; documents with no compiled rows map to an empty
+// (non-nil) slice so callers can distinguish "no products" from "missing".
+func (r engineReader) LoadDocProductsByDocs(ctx context.Context, tenant, kb string, docIDs []string) (map[string][]kccommon.Product, error) {
+	if r.eng == nil {
+		return nil, errEngineNotConfigured
+	}
+	if len(docIDs) == 0 {
+		return map[string][]kccommon.Product{}, nil
+	}
+	out := make(map[string][]kccommon.Product, len(docIDs))
+	for _, docID := range docIDs {
+		out[docID] = nil // ensure every requested doc has an entry
+	}
+	fields := append(append([]string(nil), compiledSelectFields...), wikiSelectFields...)
+	for start := 0; start < len(docIDs); start += docProductsBatchSize {
+		end := start + docProductsBatchSize
+		if end > len(docIDs) {
+			end = len(docIDs)
+		}
+		filter := map[string]interface{}{"doc_id": docIDInterfaceSlice(docIDs[start:end])}
+		for offset := 0; ; offset += loadDocProductsLimit {
+			res, err := r.eng.Search(ctx, &types.SearchRequest{
+				IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenant)},
+				KbIDs:        []string{kb},
+				Filter:       filter,
+				SelectFields: fields,
+				Limit:        loadDocProductsLimit,
+				Offset:       offset,
+			})
+			if err != nil {
+				return nil, err
+			}
+			for _, c := range res.Chunks {
+				// Only compiled products carry compile_kwd; skip ordinary source chunks.
+				if _, ok := c["compile_kwd"]; !ok || types.IsNavigationRow(c) {
+					continue
+				}
+				rowVariant, verr := KwdToVariant(asString(c["compile_kwd"]))
+				if verr != nil {
+					continue
+				}
+				if p, ok := productFromChunkMap(c, tenant, rowVariant); ok {
+					if docID, _ := c["doc_id"].(string); docID != "" {
+						out[docID] = append(out[docID], p)
+					}
+				}
+			}
+			if len(res.Chunks) < loadDocProductsLimit {
+				break
+			}
 		}
 	}
-	common.Info("knowledge_compile: LoadDocProducts vector audit",
-		zap.String("kb_id", kb),
-		zap.String("doc_id", docID),
-		zap.Int("products", len(out)),
-		zap.Int("with_vector", vecCount),
-		zap.Any("vector_dims", dims))
 	return out, nil
+}
+
+// docIDInterfaceSlice converts a string doc_id list into the []interface{} form
+// the engine's IN filter expects.
+func docIDInterfaceSlice(docIDs []string) []interface{} {
+	out := make([]interface{}, len(docIDs))
+	for i, d := range docIDs {
+		out[i] = d
+	}
+	return out
 }
 
 func (r engineReader) LoadMergedProduct(ctx context.Context, tenant, kb, id string) (kccommon.Product, error) {
@@ -254,7 +325,6 @@ func (r engineReader) LoadMergedWikiPages(ctx context.Context, tenant, kb string
 		res, err := eng.Search(ctx, &types.SearchRequest{
 			IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)}, KbIDs: []string{kb},
 			Limit: loadDocProductsLimit, Offset: offset,
-			OrderBy:      (&types.OrderByExpr{}).Asc("id"),
 			SelectFields: append(append([]string(nil), compiledSelectFields...), wikiSelectFields...),
 			Filter:       filter,
 		})
@@ -304,7 +374,6 @@ func (r engineReader) LoadDocumentWikiPagesBySlugs(ctx context.Context, tenant, 
 		res, err := eng.Search(ctx, &types.SearchRequest{
 			IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)}, KbIDs: []string{kb},
 			Limit: loadDocProductsLimit, Offset: offset,
-			OrderBy:      (&types.OrderByExpr{}).Asc("id"),
 			SelectFields: append(append([]string(nil), compiledSelectFields...), wikiSelectFields...),
 			Filter:       filter,
 		})

@@ -17,7 +17,9 @@ package knowledge_compile
 
 import (
 	"context"
+	"fmt"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 
 	"gorm.io/gorm"
@@ -35,6 +37,16 @@ type fakeEngine struct {
 	searchChunks []map[string]interface{}
 	// lastSearchReq captures the most recent SearchRequest for assertions.
 	lastSearchReq *types.SearchRequest
+	// searchReqs accumulates every SearchRequest in call order, so tests can
+	// assert on multi-search paths (e.g. chunked batch reads).
+	searchReqs []*types.SearchRequest
+	// searchCalls counts Search invocations.
+	searchCalls int
+	// windowed emulates the backend max_result_window: a request with no
+	// OrderBy whose from+size exceeds common.MAX_RESULT_WINDOW is rejected, the
+	// way Elasticsearch rejects from+size beyond index.max_result_window. With a
+	// stable OrderBy set, deep pagination routes to search_after and is allowed.
+	windowed bool
 	// lastDeleteCond captures the most recent DeleteChunks condition.
 	lastDeleteCond map[string]interface{}
 	// deleteConds accumulates every DeleteChunks condition in call order, so a
@@ -48,6 +60,29 @@ type fakeEngine struct {
 
 func (f *fakeEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	f.lastSearchReq = req
+	f.searchReqs = append(f.searchReqs, req)
+	f.searchCalls++
+	if f.windowed {
+		// Faithfully emulate the Elasticsearch/OpenSearch index.max_result_window:
+		// a request whose from+size exceeds the window is rejected. The real
+		// engines only relax this via a stable Sort + search_after; our batch
+		// reader deliberately avoids that path, so a pathological batch simply
+		// fails loudly instead of silently truncating or looping. The rejection
+		// does NOT depend on OrderBy being present, because the engine would
+		// reject the deep from+size regardless once search_after is unavailable.
+		if req.Offset+req.Limit > common.MAX_RESULT_WINDOW {
+			return nil, fmt.Errorf("Result window is too large, from + size must be <= %d", common.MAX_RESULT_WINDOW)
+		}
+		start := req.Offset
+		if start > len(f.searchChunks) {
+			start = len(f.searchChunks)
+		}
+		end := start + req.Limit
+		if end > len(f.searchChunks) {
+			end = len(f.searchChunks)
+		}
+		return &types.SearchResult{Chunks: f.searchChunks[start:end]}, nil
+	}
 	return &types.SearchResult{Chunks: f.searchChunks}, nil
 }
 
