@@ -190,7 +190,7 @@ export const useDeleteCompilationTemplateGroup = () => {
         });
         markListItemsDeleted(ListDeletionKey.AgentList);
       }
-      return data?.data ?? true;
+      return data?.code;
     },
   });
 

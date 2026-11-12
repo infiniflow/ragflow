@@ -1,11 +1,11 @@
 {
   "label": "Team Management",
-  "position": 2,
+  "position": 1,
   "link": {
     "type": "generated-index",
-    "description": "Team management."
+    "description": "Guides on managing team members and joining or leaving teams."
   },
   "customProps": {
-    "categoryIcon": "LucideLogOut"
+    "categoryIcon": "LucideUserCog"
   }
 }

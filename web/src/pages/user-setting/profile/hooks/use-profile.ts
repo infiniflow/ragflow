@@ -32,6 +32,7 @@ interface ProfileData {
   avatar: string;
   email: string;
   confirmPasswd?: string;
+  loginChannel?: string;
 }
 
 export const EditType = {
@@ -82,6 +83,7 @@ export const useProfile = () => {
       avatar: userInfo.avatar || '',
       email: userInfo.email,
       currPasswd: userInfo.password,
+      loginChannel: userInfo.login_channel,
     };
     setProfile(profile);
   }, [userInfo, setProfile]);

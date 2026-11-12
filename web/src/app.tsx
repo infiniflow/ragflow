@@ -31,10 +31,11 @@ import weekYear from 'dayjs/plugin/weekYear';
 import weekday from 'dayjs/plugin/weekday';
 import React from 'react';
 import { RouterProvider } from 'react-router';
+import StarModal from '@/ee/components/star-modal';
+import { routers } from '@/ee/merge-routes';
 import { ThemeProvider } from './components/theme-provider';
 import { TooltipProvider } from './components/ui/tooltip';
 import { ThemeEnum } from './constants/common';
-import { routers } from './routes';
 
 import 'react-photo-view/dist/react-photo-view.css';
 
@@ -86,6 +87,7 @@ function Root({ children }: React.PropsWithChildren) {
       <Sonner position="top-right" expand richColors closeButton />
 
       <Toaster />
+      <StarModal></StarModal>
     </>
   );
 }

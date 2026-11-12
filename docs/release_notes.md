@@ -9,6 +9,21 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+# v1.0.0
+
+Released on Nov 6, 2026.
+
+After three release candidates, we’re thrilled to announce that RAGFlow 1.0 is now generally available and ready for production. We encourage all users to upgrade to RAGFlow 1.0 GA for improved stability and performance.
+
+Update
+- Fixed several critical bugs reported by the community.
+- Added and updated support for several models and model providers.
+
+Upgrading
+- From v1.0.0-rc3: Existing data is fully compatible. You can upgrade directly.
+- From v0.27.2: Data migration runs automatically when the RAGFlow Docker container starts.
+- From versions earlier than v0.27.2: Please follow the documentation to migrate your data.
+
 ## v1.0.0-rc3
 
 Released on Oct 30, 2026.
@@ -117,7 +132,7 @@ Released on Aug 28, 2026.
 - Retrieval API exposes rerank_candidates_count, knn top_k, and num_candidates ([#18768](https://github.com/infiniflow/ragflow/pull/18768), [#18737](https://github.com/infiniflow/ragflow/pull/18737))
 - Metadata filters pushed down to the metadata index for faster retrieval ([#18219](https://github.com/infiniflow/ragflow/pull/18219))
 - Chat settings form auto-scrolls to the error location on save ([#18811](https://github.com/infiniflow/ragflow/pull/18811))
-- Search page validates deleted knowledge bases ([#18522](https://github.com/infiniflow/ragflow/pull/18522))
+- Search page validates deleted Datasets ([#18522](https://github.com/infiniflow/ragflow/pull/18522))
 
 ### Bug fixes
 - Fixed PDF parsing failure in chat ([#18860](https://github.com/infiniflow/ragflow/pull/18860))
@@ -909,8 +924,8 @@ Released on August 8, 2025.
 ### New agent templates (both workflow and agentic)
 
 - Text-to-SQL data expert Workflow: Empowers non-technical teams (e.g., operations, product) to independently query business data.
-- Choose Your Knowledge Base Workflow: Lets users select a dataset to query during conversations. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
-- Choose Your Knowledge Base Agent: Delivers higher-quality responses with extended reasoning time, suited for complex queries. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
+- Choose Your Dataset Workflow: Lets users select a dataset to query during conversations. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
+- Choose Your Dataset Agent: Delivers higher-quality responses with extended reasoning time, suited for complex queries. [#9325](https://github.com/infiniflow/ragflow/pull/9325)
 
 ### Fixed Issues
 
@@ -1298,7 +1313,7 @@ Ensure that you [upgrade **both** your code **and** Docker image to this release
 #### Added documents
 
 - [Configurations](https://ragflow.io/docs/dev/configurations)
-- [Manage team members](./guides/team/team_management/index.md)
+- [Manage team members](guides/team/team_management/manage_team_members.md)
 - Run health check on RAGFlow's dependencies
 
 ## v0.13.0

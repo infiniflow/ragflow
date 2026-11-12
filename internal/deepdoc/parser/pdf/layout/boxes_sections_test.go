@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"ragflow/internal/deepdoc/parser/pdf/util"
 )
 
 func TestBoxesToSections_CrossPagePositionTag(t *testing.T) {
@@ -56,6 +57,32 @@ func TestBoxesToSections_SinglePageUnchanged(t *testing.T) {
 	}
 	if len(sections[0].Positions[0].PageNumbers) != 1 {
 		t.Errorf("single-page PageNumbers: got %v, want [0]", sections[0].Positions[0].PageNumbers)
+	}
+}
+
+// TestBoxesToSections_SinglePageTableWithPositions locks the legacy tag form
+// for a box that carries per-page Positions: a one-page section must emit
+// @@N, not the degenerate @@N-N that ExtractPositions reads as two pages.
+func TestBoxesToSections_SinglePageTableWithPositions(t *testing.T) {
+	box := pdf.TextBox{
+		X0: 10, X1: 300, Top: 40, Bottom: 90,
+		PageNumber: 1, HasPageNumber: true, Pages: []int{1},
+		Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 10, Right: 300, Top: 40, Bottom: 90}},
+		Text:      "<table><tr><td>x</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+	}
+	sections := BoxesToSections([]pdf.TextBox{box}, map[int]float64{1: 800})
+	if len(sections) != 1 {
+		t.Fatalf("expected 1 section, got %d", len(sections))
+	}
+	if got, want := sections[0].PositionTag, "@@2\t10.0\t300.0\t40.0\t90.0##"; got != want {
+		t.Errorf("PositionTag: got %q, want %q", got, want)
+	}
+	parsed := util.ExtractPositions(sections[0].PositionTag)
+	if len(parsed) != 1 || len(parsed[0].PageNumbers) != 1 || parsed[0].PageNumbers[0] != 1 {
+		t.Errorf("tag must round-trip to one page: %+v", parsed)
+	}
+	if len(sections[0].Positions) != 1 {
+		t.Errorf("per-page positions must pass through: %+v", sections[0].Positions)
 	}
 }
 

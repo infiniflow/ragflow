@@ -373,7 +373,7 @@ func TestDOCXTextParserSkipsImagesWithoutCache(t *testing.T) {
 		return irJSON, "", "", nil, nil
 	}
 
-	p, err := GetTextOnlyParser(utility.FileTypeDOCX)
+	p, _, err := GetTextOnlyParser(utility.FileTypeDOCX, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -418,7 +418,7 @@ func TestPPTXTextParserSkipsImagesWithoutCache(t *testing.T) {
 		return irJSON, "", "", nil, nil
 	}
 
-	p, err := GetTextOnlyParser(utility.FileTypePPTX)
+	p, _, err := GetTextOnlyParser(utility.FileTypePPTX, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -20,6 +20,7 @@ package entity
 type Search struct {
 	ID                 string  `gorm:"column:id;primaryKey;size:32" json:"id"`
 	Avatar             *string `gorm:"column:avatar;type:longtext" json:"avatar,omitempty"`
+	UserID             string  `gorm:"column:user_id;size:32;not null;default:'';index" json:"user_id"`
 	TenantID           string  `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
 	Name               string  `gorm:"column:name;size:128;not null;index" json:"name"`
 	Description        *string `gorm:"column:description;type:longtext" json:"description,omitempty"`

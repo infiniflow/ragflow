@@ -134,7 +134,7 @@ func TestDeleteFilesAuthorizesEveryDescendantBeforeDeleting(t *testing.T) {
 		}
 	}
 
-	err := testFileService().DeleteFiles(fileTestContext(t, "user-1", "user-1"), "user-1", []string{"folder"})
+	err := testFileService().DeleteFiles(fileTestContext(t, "user-1", "user-1"), []string{"folder"})
 	if !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("DeleteFiles error = %v, want permission denied", err)
 	}
@@ -164,7 +164,7 @@ func TestFileService_CheckFileTreeAccessBatchesWideSubtrees(t *testing.T) {
 	}
 
 	root := &entity.File{ID: "tree-root", ParentID: "tree-root", TenantID: "tenant-1", CreatedBy: "owner", Name: "/", Type: FileTypeFolder}
-	if err := testFileService().checkFileTreeAccess(fileTestContext(t, "owner", "tenant-1"), "owner", root, permission.OperationDelete); err != nil {
+	if err := testFileService().checkFileTreeAccess(fileTestContext(t, "owner", "tenant-1"), root, permission.OperationDelete); err != nil {
 		t.Fatalf("check permissions for wide subtree: %v", err)
 	}
 }

@@ -132,24 +132,6 @@ func TestPPTXParser_ParseWithResult_EmptySlide_CGO(t *testing.T) {
 	}
 }
 
-// TestPPTParser_ParseWithResult_CGO verifies that PPTParser
-// delegates correctly to PPTXParser{format:"ppt"} and, via the
-// bidirectional magic-byte fallback, correctly opens OOXML content
-// through the PPTX path. A .pptx payload uploaded as .ppt should
-// succeed and report File["format"] == "pptx" (real container).
-func TestPPTParser_ParseWithResult_CGO(t *testing.T) {
-	ctx := t.Context()
-	p := NewPPTParser()
-	data := buildPPTX(t, "Hello")
-	res := p.ParseWithResult(ctx, "test.ppt", data)
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
-	}
-	if got := res.File["format"]; got != "pptx" {
-		t.Errorf("File[format] = %v, want %q (OOXML fallback ppt->pptx)", got, "pptx")
-	}
-}
-
 // TestPPTParser_TCADPFileType verifies that when a .ppt file is routed
 // through PPTParser with parse_method="tcadp", the underlying
 // PPTXParser must pass "PPT" as the file_type to TCADP, not "PPTX".

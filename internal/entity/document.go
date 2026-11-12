@@ -23,6 +23,7 @@ type Document struct {
 	ID                string     `gorm:"column:id;primaryKey;size:32" json:"id"`
 	Thumbnail         *string    `gorm:"column:thumbnail;type:longtext" json:"thumbnail,omitempty"`
 	KbID              string     `gorm:"column:kb_id;size:256;not null;index" json:"kb_id"`
+	UserID            string     `gorm:"column:user_id;size:32;not null;default:'';index" json:"user_id"`
 	ParserID          string     `gorm:"column:parser_id;size:32;not null;index" json:"parser_id"`
 	PipelineID        *string    `gorm:"column:pipeline_id;size:32;index" json:"pipeline_id,omitempty"`
 	PipelineVersionID *string    `gorm:"column:pipeline_version_id;size:32;index" json:"pipeline_version_id,omitempty"`

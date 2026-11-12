@@ -20,7 +20,6 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -104,9 +103,9 @@ func requestWebhookTrace(t *testing.T, h *AgentHandler, canvasID, userID string,
 	if err := testsupport.PrepareEnterprisePermissionFixture(dao.DB, "u1", userID, "u1"); err != nil {
 		t.Fatalf("prepare webhook trace caller permission: %v", err)
 	}
-	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{
-		UserID: userID, TenantID: "u1",
-	}))
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(),
+		userID, "u1",
+	))
 	c.Set("user", &entity.User{ID: userID})
 	c.Set("user_id", userID)
 	c.Params = gin.Params{{Key: "canvas_id", Value: canvasID}}
@@ -477,10 +476,10 @@ func TestGetAgentWebhookLogsRedactsRedisFailures(t *testing.T) {
 	}
 
 	h.WithRedisGetter(func(string) (string, error) {
-		return "", errors.New("redis password=secret")
+		return "", errors.New("redis: connection refused")
 	})
 	failed := requestWebhookTrace(t, h, "c1", "u1", url.Values{"since_ts": {"0"}})
-	if failed.Code != int(common.CodeServerError) || strings.Contains(failed.Message, "password=secret") {
+	if failed.Code != int(common.CodeServerError) || failed.Message != common.CodeServerError.Message() {
 		t.Fatalf("redis failure response = %+v", failed)
 	}
 }

@@ -88,7 +88,7 @@ func normalizeFilename(filename string) (string, bool) {
 	}
 	base := filepath.Base(filename)
 	base = strings.TrimSpace(base)
-	if base == "" || len(base) > filenameLenLimit {
+	if base == "" || utf8.RuneCountInString(base) > filenameLenLimit {
 		return "", false
 	}
 	return strings.ToLower(base), true
@@ -106,6 +106,10 @@ func GetFileType(filename string) FileType {
 		suffix = strings.ToLower(ext)
 	}
 
+	if ft, ok := extensionFileTypes[suffix]; ok {
+		return ft
+	}
+
 	if IsVideoExtension(suffix) {
 		return FileTypeVIDEO
 	}
@@ -113,17 +117,17 @@ func GetFileType(filename string) FileType {
 	switch suffix {
 	case "pdf":
 		return FileTypePDF
-	case "xls", "et", "ett":
+	case "xls":
 		return FileTypeXLS
 	case "xlsx":
 		return FileTypeXLSX
 	case "csv":
 		return FileTypeCSV
-	case "doc", "wps", "wpt":
+	case "doc":
 		return FileTypeDOC
 	case "docx":
 		return FileTypeDOCX
-	case "ppt", "dps", "dpt":
+	case "ppt":
 		return FileTypePPT
 	case "pptx":
 		return FileTypePPTX
@@ -154,6 +158,24 @@ func GetFileType(filename string) FileType {
 	}
 }
 
+// extensionFileTypes holds extra extension→FileType mappings registered by
+// editions (e.g. enterprise) that the community build does not know about.
+// Lookups consult this map before the built-in switch, so an edition can add
+// brand-new types or redirect an existing extension without the community
+// switch changing.
+var extensionFileTypes = map[string]FileType{}
+
+// RegisterExtensionFileType registers an additional extension→FileType mapping.
+// Intended for enterprise editions to extend the community file-type set. The
+// suffix is matched case-insensitively by GetFileType and FilenameType.
+func RegisterExtensionFileType(suffix string, ft FileType) {
+	normalized := strings.ToLower(strings.TrimPrefix(suffix, "."))
+	if normalized == "" {
+		return
+	}
+	extensionFileTypes[normalized] = ft
+}
+
 // FilenameType returns the upload category for a filename.
 // It classifies supported extensions and returns FileTypeOTHER for invalid
 // filenames or unsupported extensions.
@@ -161,6 +183,20 @@ func FilenameType(filename string) FileType {
 	normalized, ok := normalizeFilename(filename)
 	if !ok {
 		return FileTypeOTHER
+	}
+
+	// Editions may register an extension→type mapping, including overriding a
+	// built-in extension. Honor it before the community upload-bucket logic;
+	// registered Office types still share the document upload bucket.
+	if ext := strings.TrimPrefix(filepath.Ext(normalized), "."); ext != "" {
+		if ft, ok := extensionFileTypes[strings.ToLower(ext)]; ok {
+			// Office parsers use distinct types, but uploads share the document bucket.
+			switch ft {
+			case FileTypeDOC, FileTypeDOCX, FileTypeXLS, FileTypeXLSX, FileTypePPT, FileTypePPTX:
+				return FileTypeDOC
+			}
+			return ft
+		}
 	}
 
 	// Video is admitted at upload in the legacy visual bucket and routed to the
@@ -178,7 +214,7 @@ func FilenameType(filename string) FileType {
 
 	docExtensions := []string{
 		"msg", "eml", "doc", "docx", "ppt", "pptx", "yml", "xml", "htm", "json", "jsonl", "ldjson",
-		"csv", "txt", "ini", "xls", "xlsx", "wps", "wpt", "et", "ett", "dps", "dpt", "rtf", "hlp", "pages", "numbers", "key",
+		"csv", "txt", "ini", "xls", "xlsx", "rtf", "hlp", "pages", "numbers", "key",
 		"md", "markdown", "mdx", "py", "js", "java", "c", "cpp", "h", "php", "go", "ts", "sh", "cs", "kt",
 		"html", "sql", "epub",
 	}
@@ -263,6 +299,44 @@ func TruncateFilename(name string, maxBytes int) string {
 		end--
 	}
 	return name[:end] + ext
+}
+
+// StorageKeyMaxBytes is the maximum size of one object-store path segment.
+// Filesystem-backed backends such as Silo and MinIO store each segment as a
+// file name and reject anything longer.
+const StorageKeyMaxBytes = 255
+
+// StorageObjectName returns a storage key segment for filename that fits
+// within maxBytes. Display names use Unicode code points, but object keys must
+// stay within the byte limit of the storage backend. attempt > 0 adds a
+// collision suffix before the extension without exceeding the budget.
+func StorageObjectName(filename string, attempt, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	suffix := ""
+	if attempt > 0 {
+		suffix = fmt.Sprintf("(%d)", attempt)
+	}
+	if len(suffix) >= maxBytes {
+		return suffix[:maxBytes]
+	}
+	ext := filepath.Ext(filename)
+	if len(ext)+len(suffix) >= maxBytes {
+		ext = ""
+	}
+	budget := maxBytes - len(ext) - len(suffix)
+	base := strings.TrimSuffix(filename, ext)
+	if budget <= 0 {
+		base = ""
+	} else if len(base) > budget {
+		end := budget
+		for end > 0 && !utf8.RuneStart(base[end]) {
+			end--
+		}
+		base = base[:end]
+	}
+	return base + suffix + ext
 }
 
 // CONTENT_TYPE_MAP maps file extensions to MIME content types

@@ -37,7 +37,7 @@ jest.mock('@/components/ui/message', () => ({
 }));
 jest.mock('./form-schema', () => {
   const { z } = require('zod');
-  return { formSchema: z.object({}).passthrough() };
+  return { buildFormSchema: () => z.object({}).passthrough() };
 });
 jest.mock('./hooks', () => ({
   useFetchDatasetSettingOnMount: (form: {
@@ -74,9 +74,11 @@ jest.mock('./general-form', () => ({
     );
   },
 }));
-jest.mock('@/components/parser-select', () => ({ ParserSelect: () => null }));
-jest.mock('@/components/pipeline-version-select', () => ({
-  PipelineVersionSelect: () => null,
+jest.mock('@/components/parser-tree-select', () => ({
+  ParserTreeSelect: () => null,
+}));
+jest.mock('@/components/parser-tree-select/use-parser-tree-data', () => ({
+  useParserTreeData: () => ({ selectedLeafExists: true, loading: false }),
 }));
 jest.mock('@/components/pipeline-operator-tabs', () => ({
   __esModule: true,
@@ -107,8 +109,8 @@ jest.mock('@/utils/pipeline-operator', () => ({
 jest.mock('./parser-config', () => ({
   normalizeParserConfigForComparison: (config: unknown) => config,
 }));
-jest.mock('@/hooks/use-agent-request', () => ({
-  useFetchCanvasVersionList: () => ({ data: [] }),
+jest.mock('@/hooks/use-pipeline-version-request', () => ({
+  useFetchPipelineVersionList: () => ({ data: [] }),
 }));
 jest.mock('./use-reveal-submit-errors', () => ({
   useRevealSubmitErrors: () => ({}),

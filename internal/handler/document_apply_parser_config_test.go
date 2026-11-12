@@ -10,12 +10,13 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service/document"
 
 	"github.com/gin-gonic/gin"
 )
 
-func (f *fakeDocumentService) ApplyDatasetParserConfig(ctx context.Context, userID, datasetID string) (*document.ApplyDatasetParserConfigResponse, common.ErrorCode, error) {
+func (f *fakeDocumentService) ApplyDatasetParserConfig(ctx context.Context, datasetID string) (*document.ApplyDatasetParserConfigResponse, common.ErrorCode, error) {
 	return &document.ApplyDatasetParserConfigResponse{DatasetID: datasetID}, common.CodeSuccess, nil
 }
 
@@ -27,10 +28,10 @@ type applyParserConfigService struct {
 	ctx    context.Context
 }
 
-func (s *applyParserConfigService) ApplyDatasetParserConfig(ctx context.Context, userID, datasetID string) (*document.ApplyDatasetParserConfigResponse, common.ErrorCode, error) {
+func (s *applyParserConfigService) ApplyDatasetParserConfig(ctx context.Context, datasetID string) (*document.ApplyDatasetParserConfigResponse, common.ErrorCode, error) {
 	s.called = true
 	s.ctx = ctx
-	if userID != "user-1" || datasetID != "kb-1" {
+	if permission.UserIDFromContext(ctx) != "user-1" || datasetID != "kb-1" {
 		return nil, common.CodeArgumentError, errors.New("wrong user or dataset")
 	}
 	return &document.ApplyDatasetParserConfigResponse{DatasetID: datasetID, TotalDocuments: 3, UpdatedDocuments: 2, UnchangedDocuments: 1}, s.code, s.err
@@ -55,6 +56,7 @@ func TestApplyDatasetParserConfigHandler(t *testing.T) {
 			r.POST("/api/v1/datasets/:dataset_id/documents/apply-parser-config", func(c *gin.Context) {
 				if tc.auth {
 					c.Set("user", &entity.User{ID: "user-1"})
+					c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user-1", ""))
 				}
 				h.ApplyDatasetParserConfig(c)
 			})
@@ -77,8 +79,8 @@ func TestApplyDatasetParserConfigHandler(t *testing.T) {
 				}
 				return
 			}
-			if body.Code != tc.code || svc.ctx != req.Context() {
-				t.Fatalf("response=%s context propagated=%t", rec.Body.String(), svc.ctx == req.Context())
+			if body.Code != tc.code || permission.UserIDFromContext(svc.ctx) != "user-1" {
+				t.Fatalf("response=%s context identity=%q", rec.Body.String(), permission.UserIDFromContext(svc.ctx))
 			}
 			if tc.err == nil && (body.Data == nil || body.Data.UpdatedDocuments != 2 || body.Data.UnchangedDocuments != 1) {
 				t.Fatalf("response=%s", rec.Body.String())

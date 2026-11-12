@@ -38,7 +38,7 @@ func TestUpdateVersion_PatchesAliasWithoutNewVersion(t *testing.T) {
 	ctx := serviceTestContext(t, userID, userID)
 	svc := NewAgentService()
 	patch := dao.UserCanvasVersionPatch{Alias: &alias}
-	if err := svc.UpdateVersion(ctx, userID, canvasID, versionID, patch); err != nil {
+	if err := svc.UpdateVersion(ctx, canvasID, versionID, patch); err != nil {
 		t.Fatalf("UpdateVersion alias: %v", err)
 	}
 
@@ -85,7 +85,7 @@ func TestUpdateVersion_CrossCanvasRejected(t *testing.T) {
 	ctx := serviceTestContext(t, userID, userID)
 	svc := NewAgentService()
 	patch := dao.UserCanvasVersionPatch{Alias: &alias}
-	err := svc.UpdateVersion(ctx, userID, otherCanvasID, versionID, patch)
+	err := svc.UpdateVersion(ctx, otherCanvasID, versionID, patch)
 	if !errors.Is(err, dao.ErrUserCanvasVersionNotFound) {
 		t.Fatalf("expected ErrUserCanvasVersionNotFound, got %v", err)
 	}

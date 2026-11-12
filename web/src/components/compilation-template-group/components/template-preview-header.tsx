@@ -36,11 +36,17 @@ export function TemplatePreviewHeader({
   const { t } = useTranslation();
 
   return (
-    <section className="shrink-0 flex justify-between items-center px-5 py-4 border-b border-border-button">
-      <span className="text-lg font-medium text-text-primary">
+    <section className="shrink-0 flex justify-between items-center gap-4 px-5 py-4 border-b border-border-button">
+      {/* The preview title mirrors the template name as the user types it;
+          keep a very long name inside the header instead of letting it
+          overlap the actions on the right. */}
+      <span
+        className="min-w-0 flex-1 truncate text-lg font-medium text-text-primary"
+        title={templateName || undefined}
+      >
         {templateName || t('common.name')}
       </span>
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-2">
         <JsonPreviewSheet
           open={jsonSheetOpen}
           onOpenChange={onJsonSheetOpenChange}

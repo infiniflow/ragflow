@@ -73,56 +73,103 @@ func (s *SoMarkModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
 }
 
 func (s *SoMarkModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: ChatWithMessages", s.Name())
 }
 
 func (s *SoMarkModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", s.Name())
+	return fmt.Errorf("%s: no such method: ChatStreamlyWithSender", s.Name())
 }
 
 func (s *SoMarkModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: Embed", s.Name())
 }
 
 func (s *SoMarkModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: Rerank", s.Name())
 }
 
 func (s *SoMarkModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: Decide", s.Name())
 }
 
 func (s *SoMarkModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", s.Name())
 }
 
 func (s *SoMarkModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", s.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", s.Name())
 }
 
 func (s *SoMarkModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", s.Name())
 }
 
 func (s *SoMarkModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", s.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", s.Name())
 }
 
 type soMarkSubmitResponse struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-	Data    struct {
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Data    json.RawMessage `json:"data"`
+}
+
+func (r soMarkSubmitResponse) taskID() string {
+	var data struct {
 		TaskID string `json:"task_id"`
-	} `json:"data"`
+	}
+	if json.Unmarshal(r.Data, &data) == nil && strings.TrimSpace(data.TaskID) != "" {
+		return strings.TrimSpace(data.TaskID)
+	}
+	var taskID string
+	if json.Unmarshal(r.Data, &taskID) == nil {
+		return strings.TrimSpace(taskID)
+	}
+	return ""
 }
 
 type soMarkPollResponse struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 	Data    struct {
-		Status string         `json:"status"`
-		Result map[string]any `json:"result"`
+		Status       string         `json:"status"`
+		Message      string         `json:"message"`
+		Error        string         `json:"error"`
+		ErrorMessage string         `json:"error_message"`
+		Detail       string         `json:"detail"`
+		Reason       string         `json:"reason"`
+		Result       map[string]any `json:"result"`
 	} `json:"data"`
+}
+
+func (r soMarkPollResponse) taskFailureMessage() string {
+	for _, message := range []string{
+		r.Data.ErrorMessage,
+		r.Data.Error,
+		r.Data.Detail,
+		r.Data.Reason,
+		r.Data.Message,
+		r.Message,
+	} {
+		message = strings.TrimSpace(message)
+		if message != "" && !isSoMarkQueryStatusMessage(message) {
+			return message
+		}
+	}
+	return ""
+}
+
+func isSoMarkQueryStatusMessage(message string) bool {
+	switch strings.ToLower(strings.TrimSpace(message)) {
+	case "查询成功", "查询成功！", "query success", "query successful":
+		return true
+	default:
+		return false
+	}
+}
+
+func soMarkBusinessError(code int) error {
+	return fmt.Errorf("API request rejected (provider error code=%d)", code)
 }
 
 // soMarkFormFileName picks the multipart filename the SoMark API uses for
@@ -201,12 +248,13 @@ func (s *SoMarkModel) soMarkSubmit(ctx context.Context, submitURL string, conten
 		return "", fmt.Errorf("SoMark decode submit: %w", err)
 	}
 	if payload.Code != 0 {
-		return "", fmt.Errorf("SoMark submit business error code=%d message=%s", payload.Code, payload.Message)
+		return "", soMarkBusinessError(payload.Code)
 	}
-	if payload.Data.TaskID == "" {
+	taskID := payload.taskID()
+	if taskID == "" {
 		return "", fmt.Errorf("SoMark submit returned no task_id")
 	}
-	return payload.Data.TaskID, nil
+	return taskID, nil
 }
 
 // soMarkPoll polls the async task until it reaches SUCCESS and returns the
@@ -244,7 +292,7 @@ func (s *SoMarkModel) soMarkPoll(ctx context.Context, pollURL, taskID, apiKey st
 			return nil, fmt.Errorf("SoMark decode poll: %w", err)
 		}
 		if payload.Code != 0 {
-			return nil, fmt.Errorf("SoMark poll business error code=%d message=%s", payload.Code, payload.Message)
+			return nil, soMarkBusinessError(payload.Code)
 		}
 		switch strings.ToUpper(strings.TrimSpace(payload.Data.Status)) {
 		case "SUCCESS":
@@ -253,7 +301,10 @@ func (s *SoMarkModel) soMarkPoll(ctx context.Context, pollURL, taskID, apiKey st
 			}
 			return payload.Data.Result, nil
 		case "FAILED", "ERROR":
-			return nil, fmt.Errorf("SoMark task %s failed with status=%s message=%s", taskID, payload.Data.Status, payload.Message)
+			if message := payload.taskFailureMessage(); message != "" {
+				return nil, fmt.Errorf("SoMark task %s failed with status=%s: %s", taskID, payload.Data.Status, message)
+			}
+			return nil, fmt.Errorf("SoMark task %s failed with status=%s; no task error details were returned", taskID, payload.Data.Status)
 		}
 
 		common.Debug("somark poll: in progress",
@@ -418,25 +469,60 @@ func (s *SoMarkModel) OCRFile(ctx context.Context, modelName *string, content []
 }
 
 func (s *SoMarkModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", s.Name())
 }
 
 func (s *SoMarkModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: ListModels", s.Name())
 }
 
 func (s *SoMarkModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", s.Name())
 }
 
 func (s *SoMarkModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
-	return fmt.Errorf("%s, no such method", s.Name())
+	return s.VerifyOCRConnection(ctx, apiConfig)
+}
+
+// VerifyOCRConnection checks SoMark credentials and endpoint reachability by
+// submitting the same tiny probe image used by generic OCR verification. The
+// async service may reject parsing a 1x1 image after accepting the request, so
+// verification intentionally stops after a task is accepted instead of
+// waiting for that probe task to finish.
+func (s *SoMarkModel) VerifyOCRConnection(ctx context.Context, apiConfig *APIConfig) error {
+	if err := s.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+	submitURL, err := s.baseModel.EndpointURL(apiConfig, s.baseModel.URLSuffix.OCR)
+	if err != nil {
+		return err
+	}
+	apiKey := ""
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		apiKey = *apiConfig.ApiKey
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	_, err = s.soMarkSubmit(ctx, submitURL, soMarkVerificationPNG, apiKey)
+	return err
+}
+
+var soMarkVerificationPNG = []byte{
+	0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+	0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+	0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+	0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53,
+	0xDE, 0x00, 0x00, 0x00, 0x0C, 0x49, 0x44, 0x41,
+	0x54, 0x78, 0xDA, 0x63, 0xF8, 0xFF, 0xFF, 0x3F,
+	0x00, 0x05, 0xFE, 0x02, 0xFE, 0x33, 0x12, 0x95,
+	0x14, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4E,
+	0x44, 0xAE, 0x42, 0x60, 0x82,
 }
 
 func (s *SoMarkModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", s.Name())
 }
 
 func (s *SoMarkModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", s.Name())
 }

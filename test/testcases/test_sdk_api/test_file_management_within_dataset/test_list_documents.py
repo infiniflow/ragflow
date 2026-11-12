@@ -42,32 +42,40 @@ class TestDocumentsList:
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
-        "params, expected_page_ids",
+        "params, expected_page_ids, expected_message",
         [
-            ({"page": 1, "page_size": 2, "orderby": "name", "desc": False}, slice(0, 2)),
-            ({"page": 2, "page_size": 2, "orderby": "name", "desc": False}, slice(2, 4)),
-            ({"page": 3, "page_size": 2, "orderby": "name", "desc": False}, slice(4, 6)),
-            ({"page": -1, "page_size": 2, "orderby": "name", "desc": False}, slice(0, 2)),
+            ({"page": 1, "page_size": 2, "orderby": "name", "desc": False}, slice(0, 2), ""),
+            ({"page": 2, "page_size": 2, "orderby": "name", "desc": False}, slice(2, 4), ""),
+            ({"page": 3, "page_size": 2, "orderby": "name", "desc": False}, slice(4, 6), ""),
+            ({"page": -1, "page_size": 2, "orderby": "name", "desc": False}, None, "page must be a positive integer"),
         ],
     )
-    def test_page(self, add_documents, params, expected_page_ids):
+    def test_page(self, add_documents, params, expected_page_ids, expected_message):
         dataset, fixture_documents = add_documents
+        if expected_message:
+            with pytest.raises(Exception, match=expected_message):
+                dataset.list_documents(**params)
+            return
         expected = sorted(fixture_documents, key=lambda document: document.name)
         documents = dataset.list_documents(**params)
         assert [document.id for document in documents] == [document.id for document in expected[expected_page_ids]]
 
     @pytest.mark.p1
     @pytest.mark.parametrize(
-        "params, expected_size",
+        "params, expected_size, expected_message",
         [
-            ({"page_size": 2, "orderby": "name", "desc": False}, 2),
-            ({"page_size": 1, "orderby": "name", "desc": False}, 1),
-            ({"page_size": 6, "orderby": "name", "desc": False}, 5),
-            ({"page_size": -1, "orderby": "name", "desc": False}, 5),
+            ({"page_size": 2, "orderby": "name", "desc": False}, 2, ""),
+            ({"page_size": 1, "orderby": "name", "desc": False}, 1, ""),
+            ({"page_size": 6, "orderby": "name", "desc": False}, 5, ""),
+            ({"page_size": -1, "orderby": "name", "desc": False}, None, "page_size must be between 1 and 100"),
         ],
     )
-    def test_page_size(self, add_documents, params, expected_size):
+    def test_page_size(self, add_documents, params, expected_size, expected_message):
         dataset, fixture_documents = add_documents
+        if expected_message:
+            with pytest.raises(Exception, match=expected_message):
+                dataset.list_documents(**params)
+            return
         expected = sorted(fixture_documents, key=lambda document: document.name)
         documents = dataset.list_documents(**params)
         assert [document.id for document in documents] == [document.id for document in expected[:expected_size]]

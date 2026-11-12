@@ -212,6 +212,31 @@ func TestStability_CheckpointCorruption(t *testing.T) {
 		t.Logf("checkpoint roundtrip: info=%v", info)
 	})
 
+	t.Run("checkpoint_restores_resume_state", func(t *testing.T) {
+		store := newCancelTestStore()
+		cid := "resume-state"
+		wantState := "waiting-for-approval"
+		signal := &InterruptSignal{
+			Address: Address{{Type: AddressSegmentAgent, ID: "agent"}},
+			State:   wantState,
+		}
+		if err := saveCheckpoint(store, t.Context(), cid, false, &InterruptInfo{Data: "approve"}, signal); err != nil {
+			t.Fatalf("saveCheckpoint: %v", err)
+		}
+
+		_, _, info, err := loadCheckpoint(store, t.Context(), cid)
+		if err != nil {
+			t.Fatalf("loadCheckpoint: %v", err)
+		}
+		if !info.WasInterrupted {
+			t.Fatal("WasInterrupted = false, want true")
+		}
+		gotState, ok := info.InterruptState.(string)
+		if !ok || gotState != wantState {
+			t.Fatalf("InterruptState = %#v, want %#v", info.InterruptState, wantState)
+		}
+	})
+
 	t.Run("partial_checkpoint_after_cancel", func(t *testing.T) {
 		m := newCancelTestChatModel(nil)
 		m.addResp("cancel response")
@@ -258,6 +283,58 @@ func TestStability_CheckpointCorruption(t *testing.T) {
 			t.Logf("partial checkpoint resume: %d outputs", outputs)
 		}
 	})
+}
+
+type checkpointResumeTestAgent struct {
+	resumeInfo *ResumeInfo
+}
+
+func (a *checkpointResumeTestAgent) Name(context.Context) string { return "checkpoint_resume" }
+func (a *checkpointResumeTestAgent) Description(context.Context) string {
+	return "checkpoint resume test agent"
+}
+
+func (a *checkpointResumeTestAgent) Run(ctx context.Context, _ *AgentInput, _ ...RunOption) *AsyncIterator[*AgentEvent] {
+	iter, gen := NewAsyncIteratorPair[*AgentEvent]()
+	go func() {
+		defer gen.Close()
+		gen.Send(StatefulInterrupt(ctx, "approval required", "saved-state"))
+	}()
+	return iter
+}
+
+func (a *checkpointResumeTestAgent) Resume(_ context.Context, info *ResumeInfo, _ ...RunOption) *AsyncIterator[*AgentEvent] {
+	a.resumeInfo = info
+	iter, gen := NewAsyncIteratorPair[*AgentEvent]()
+	gen.Send(EventFromMessage(schema.AssistantMessage("resumed"), nil, schema.RoleAssistant, ""))
+	gen.Close()
+	return iter
+}
+
+func TestRunner_ResumeRestoresInterruptState(t *testing.T) {
+	agent := &checkpointResumeTestAgent{}
+	store := newCancelTestStore()
+	runner := NewRunner(t.Context(), RunnerConfig[*schema.Message]{
+		Agent:           agent,
+		CheckPointStore: store,
+	})
+	cid := "resume-stateful-agent"
+	initial := drainAgentEvents(t, runner.Run(t.Context(), []*schema.Message{schema.UserMessage("start")}, WithCheckPointID(cid)))
+	if len(initial) == 0 || initial[0].Action == nil || initial[0].Action.Interrupted == nil {
+		t.Fatal("initial run did not emit an interrupt")
+	}
+
+	resumed, err := runner.Resume(t.Context(), cid)
+	if err != nil {
+		t.Fatalf("Resume: %v", err)
+	}
+	resumedEvents := drainAgentEvents(t, resumed)
+	if len(resumedEvents) == 0 || resumedEvents[0].Err != nil {
+		t.Fatalf("resume events = %#v", resumedEvents)
+	}
+	if agent.resumeInfo == nil || !agent.resumeInfo.WasInterrupted || agent.resumeInfo.InterruptState != "saved-state" {
+		t.Fatalf("resume info = %#v, want interrupted with saved state", agent.resumeInfo)
+	}
 }
 
 // ============================================================

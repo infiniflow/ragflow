@@ -84,9 +84,7 @@ const AgentLogPage: React.FC = () => {
       dataIndex: 'title',
       key: 'title',
       render: (_text: string, record: IAgentLogResponse) => (
-        <span>
-          {record?.message?.length ? record?.message[0]?.content : ''}
-        </span>
+        <span>{record.name}</span>
       ),
     },
     {

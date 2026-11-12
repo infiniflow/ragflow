@@ -276,7 +276,7 @@ func TestRetrieval_LegacyQueryStringNormalized(t *testing.T) {
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["user_id"] = "user-1"
 	state.Sys["tenant_id"] = "tenant-1"
-	ctx := permission.WithSubject(runtime.WithState(t.Context(), state), permission.Subject{UserID: "user-1", TenantID: "tenant-1"})
+	ctx := permission.WithIdentity(runtime.WithState(t.Context(), state), "user-1", "tenant-1")
 	normalizeLegacyRetrievalInputs(ctx, db, merged)
 
 	if got, _ := merged["query"].(string); got != "diamond necklace" {
@@ -347,7 +347,7 @@ func TestRetrieval_StructuredUserFillInputNormalized(t *testing.T) {
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["user_id"] = "user-1"
 	state.Sys["tenant_id"] = "tenant-1"
-	ctx := permission.WithSubject(runtime.WithState(t.Context(), state), permission.Subject{UserID: "user-1", TenantID: "tenant-1"})
+	ctx := permission.WithIdentity(runtime.WithState(t.Context(), state), "user-1", "tenant-1")
 	normalizeLegacyRetrievalInputs(ctx, db, merged)
 
 	if got, _ := merged["query"].(string); got != "合同" {
@@ -391,7 +391,7 @@ func TestRetrieval_ResolveDatasetIDByTenantName(t *testing.T) {
 	state := runtime.NewCanvasState("run-1", "task-1")
 	state.Sys["user_id"] = "tenant-1"
 	state.Sys["tenant_id"] = "tenant-1"
-	ctx := permission.WithSubject(runtime.WithState(t.Context(), state), permission.Subject{UserID: "tenant-1", TenantID: "tenant-1"})
+	ctx := permission.WithIdentity(runtime.WithState(t.Context(), state), "tenant-1", "tenant-1")
 	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "tenant-1"); err != nil {
 		t.Fatalf("prepare permission fixture: %v", err)
 	}
@@ -447,7 +447,7 @@ func TestRetrieval_ResolveDatasetIDByUserPermission(t *testing.T) {
 
 			state := runtime.NewCanvasState("run-1", "task-1")
 			state.Sys["user_id"] = "member"
-			ctx := permission.WithSubject(runtime.WithState(t.Context(), state), permission.Subject{UserID: "member", TenantID: "tenant-1"})
+			ctx := permission.WithIdentity(runtime.WithState(t.Context(), state), "member", "tenant-1")
 			if got := resolveRetrievalDatasetID(ctx, db, "named-dataset"); got != tc.wantID {
 				t.Fatalf("resolveRetrievalDatasetID = %q, want %q", got, tc.wantID)
 			}

@@ -28,7 +28,7 @@ func (s *permissionTestSource) GetResources(_ context.Context, refs []ResourceRe
 	return resources, nil
 }
 
-func (s *permissionTestSource) ListResourceRefs(_ context.Context, _ Subject, kind ResourceKind, parent ResourceRef) ([]ResourceRef, error) {
+func (s *permissionTestSource) ListResourceRefs(_ context.Context, kind ResourceKind, parent ResourceRef) ([]ResourceRef, error) {
 	refs := make([]ResourceRef, 0, len(s.candidates))
 	for _, ref := range s.candidates {
 		if ref.Kind == kind {
@@ -54,7 +54,7 @@ func TestCommunityPolicyResolvesResourceTenant(t *testing.T) {
 		},
 	}
 
-	access, err := NewChecker(source).ResolveAccess(context.Background(), Subject{UserID: "user-1"}, resourceRef)
+	access, err := NewChecker(source).ResolveAccess(WithIdentity(context.Background(), "user-1", ""), resourceRef)
 	if err != nil {
 		t.Fatalf("ResolveAccess() error = %v", err)
 	}
@@ -69,7 +69,7 @@ func TestCommunityPolicyResolvesResourceTenant(t *testing.T) {
 	}
 }
 
-func TestCommunityPolicyUsesResourceTenantInsteadOfSubjectTenant(t *testing.T) {
+func TestCommunityPolicyUsesResourceTenantInsteadOfActiveTenant(t *testing.T) {
 	resourceRef := ResourceRef{Kind: "dataset", ID: "dataset-1"}
 	source := &permissionTestSource{
 		memberships: map[string]*Membership{
@@ -85,7 +85,7 @@ func TestCommunityPolicyUsesResourceTenantInsteadOfSubjectTenant(t *testing.T) {
 		},
 	}
 
-	access, err := NewChecker(source).ResolveAccess(context.Background(), Subject{UserID: "user-1", TenantID: "another-tenant"}, resourceRef)
+	access, err := NewChecker(source).ResolveAccess(WithIdentity(context.Background(), "user-1", "another-tenant"), resourceRef)
 	if err != nil {
 		t.Fatalf("ResolveAccess() error = %v", err)
 	}
@@ -93,13 +93,13 @@ func TestCommunityPolicyUsesResourceTenantInsteadOfSubjectTenant(t *testing.T) {
 		t.Fatalf("ResolveAccess() tenant = %q, want resource tenant", access.TenantID)
 	}
 
-	_, err = NewChecker(source).ResolveAccess(context.Background(), Subject{UserID: "unrelated-user", TenantID: "tenant-resource"}, resourceRef)
+	_, err = NewChecker(source).ResolveAccess(WithIdentity(context.Background(), "unrelated-user", "tenant-resource"), resourceRef)
 	if !errors.Is(err, ErrPermissionDenied) {
 		t.Fatalf("ResolveAccess() error = %v, want %v for a non-member", err, ErrPermissionDenied)
 	}
 }
 
-func TestCommunityPolicySharedResourceNeedsNoSubjectTenant(t *testing.T) {
+func TestCommunityPolicySharedResourceNeedsNoActiveTenant(t *testing.T) {
 	resourceRef := ResourceRef{Kind: "agent", ID: "agent-1"}
 	source := &permissionTestSource{
 		memberships: map[string]*Membership{
@@ -116,14 +116,14 @@ func TestCommunityPolicySharedResourceNeedsNoSubjectTenant(t *testing.T) {
 		},
 	}
 
-	access, err := NewChecker(source).ResolveAccess(context.Background(), Subject{UserID: "user-1"}, resourceRef)
+	access, err := NewChecker(source).ResolveAccess(WithIdentity(context.Background(), "user-1", ""), resourceRef)
 	if err != nil {
 		t.Fatalf("ResolveAccess() error = %v", err)
 	}
 	if access.Source != AccessSourceShared || !access.Allows(OperationRun) {
 		t.Fatalf("ResolveAccess() = %#v, want shared run access", access)
 	}
-	if err := NewChecker(source).CheckResource(context.Background(), Subject{UserID: "user-1"}, resourceRef, OperationShare); !errors.Is(err, ErrPermissionDenied) {
+	if err := NewChecker(source).CheckResource(WithIdentity(context.Background(), "user-1", ""), resourceRef, OperationShare); !errors.Is(err, ErrPermissionDenied) {
 		t.Fatalf("CheckResource(share) error = %v, want %v for a shared resource", err, ErrPermissionDenied)
 	}
 }
@@ -146,9 +146,7 @@ func TestCommunityPolicyChecksDependencyForBothUserAndEntryOwner(t *testing.T) {
 		},
 	}
 
-	err := NewChecker(source).CheckDependency(
-		context.Background(), Subject{UserID: "caller"}, entryRef, dependencyRef, OperationRun, OperationRead,
-	)
+	err := NewChecker(source).CheckDependency(WithIdentity(context.Background(), "caller", ""), entryRef, dependencyRef, OperationRun, OperationRead)
 	if !errors.Is(err, ErrPermissionDenied) {
 		t.Fatalf("CheckDependency() error = %v, want %v", err, ErrPermissionDenied)
 	}
@@ -156,9 +154,7 @@ func TestCommunityPolicyChecksDependencyForBothUserAndEntryOwner(t *testing.T) {
 	dependency := source.resources[dependencyRef]
 	dependency.SharedWithUserIDs = []string{"caller", "entry-owner"}
 	source.resources[dependencyRef] = dependency
-	err = NewChecker(source).CheckDependency(
-		context.Background(), Subject{UserID: "caller"}, entryRef, dependencyRef, OperationRun, OperationRead,
-	)
+	err = NewChecker(source).CheckDependency(WithIdentity(context.Background(), "caller", ""), entryRef, dependencyRef, OperationRun, OperationRead)
 	if err != nil {
 		t.Fatalf("CheckDependency() error = %v, want nil when both caller and entry owner can read dependency", err)
 	}
@@ -166,7 +162,7 @@ func TestCommunityPolicyChecksDependencyForBothUserAndEntryOwner(t *testing.T) {
 
 func TestCommunityPolicyFeatureDoesNotRequireTenantContext(t *testing.T) {
 	checker := NewChecker(&permissionTestSource{})
-	if err := checker.CheckFeature(context.Background(), Subject{UserID: "user-1"}, "dataset", ActionRead); err != nil {
+	if err := checker.CheckFeature(WithIdentity(context.Background(), "user-1", ""), "dataset", ActionRead); err != nil {
 		t.Fatalf("CheckFeature() error = %v", err)
 	}
 }
@@ -193,7 +189,7 @@ func TestCommunityPolicyScopeUsesParentResourceTenant(t *testing.T) {
 		candidates: []ResourceRef{childRef},
 	}
 
-	scope, err := NewChecker(source).Scope(context.Background(), Subject{UserID: "user-1"}, ScopeQuery{
+	scope, err := NewChecker(source).Scope(WithIdentity(context.Background(), "user-1", ""), ScopeQuery{
 		Kind: "document", Parent: parentRef, Operation: OperationRead,
 	})
 	if err != nil {
@@ -209,7 +205,7 @@ func TestCommunityPolicyScopeUsesParentResourceTenant(t *testing.T) {
 
 func TestCommunityPolicyRequiresUserIdentity(t *testing.T) {
 	resourceRef := ResourceRef{Kind: "dataset", ID: "dataset-1"}
-	_, err := NewChecker(&permissionTestSource{}).ResolveAccess(context.Background(), Subject{}, resourceRef)
+	_, err := NewChecker(&permissionTestSource{}).ResolveAccess(context.Background(), resourceRef)
 	if !errors.Is(err, ErrUnauthenticated) {
 		t.Fatalf("ResolveAccess() error = %v, want %v", err, ErrUnauthenticated)
 	}

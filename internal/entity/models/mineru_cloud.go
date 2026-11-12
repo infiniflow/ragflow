@@ -87,9 +87,11 @@ func ParseMinerUCloud(ctx context.Context, baseURL, apiKey, filename string, con
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	var cancel context.CancelFunc
-	ctx, cancel = context.WithTimeout(ctx, DefaultMinerUV1ParseTimeout)
-	defer cancel()
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, DefaultMinerUV1ParseTimeout)
+		defer cancel()
+	}
 
 	token := minerUBearerFromAPIKey(apiKey)
 	client := minerUHTTPClient()

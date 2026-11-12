@@ -9,6 +9,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -127,6 +128,7 @@ func TestChatSessionHandlerChatCompletionsRejectsNonStringUserContent(t *testing
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/chat/completions", strings.NewReader(`{"stream":false,"store_history_messages":false,"messages":[{"role":"user","content":{"type":"text","text":"probe"}}]}`))
 	ctx.Request.Header.Set("Content-Type", "application/json")
 	ctx.Set("user", &entity.User{ID: "user-1"})
+	ctx.Request = ctx.Request.WithContext(permission.WithIdentity(ctx.Request.Context(), "user-1", ""))
 
 	handler := NewChatSessionHandler(service.NewChatSessionService(), nil)
 	handler.ChatCompletions(ctx)

@@ -233,23 +233,25 @@ const ProfilePage: FC = () => {
         </div>
 
         {/* Password */}
-        <div className="flex items-start gap-4">
-          <label className="w-[190px] text-sm font-medium">
-            {t('password')}
-          </label>
-          <div className="flex-1 flex items-center gap-4">
-            <div className="text-sm text-text-primary border border-border-button flex-1 rounded-md py-1.5 px-2">
-              <span className="inline-block translate-y-0.5">********</span>
+        {(!profile.loginChannel || profile.loginChannel === 'password') && (
+          <div className="flex items-start gap-4">
+            <label className="w-[190px] text-sm font-medium">
+              {t('password')}
+            </label>
+            <div className="flex-1 flex items-center gap-4">
+              <div className="text-sm text-text-primary border border-border-button flex-1 rounded-md py-1.5 px-2">
+                <span className="inline-block translate-y-0.5">********</span>
+              </div>
+              <Button
+                variant="outline"
+                type="button"
+                onClick={() => handleEditClick(EditType.editPassword)}
+              >
+                <PenLine size={12} /> {t('edit')}
+              </Button>
             </div>
-            <Button
-              variant="outline"
-              type="button"
-              onClick={() => handleEditClick(EditType.editPassword)}
-            >
-              <PenLine size={12} /> {t('edit')}
-            </Button>
           </div>
-        </div>
+        )}
       </div>
 
       {editType && (

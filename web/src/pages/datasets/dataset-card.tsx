@@ -4,19 +4,29 @@ import { SharedBadge } from '@/components/shared-badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IDataset } from '@/interfaces/database/dataset';
-import { t } from 'i18next';
 import { ChevronRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+
 import { DatasetDropdown } from './dataset-dropdown';
+import useDuplicateDataset from '@/ee/pages/datasets/use-duplicate-dataset';
 import { useRenameDataset } from './use-rename-dataset';
 
 export type DatasetCardProps = {
   dataset: IDataset;
-} & Pick<ReturnType<typeof useRenameDataset>, 'showDatasetRenameModal'>;
+  showPrivilegeModal(): void;
+} & Pick<ReturnType<typeof useRenameDataset>, 'showDatasetRenameModal'> & {
+    showDatasetDuplicateModal: ReturnType<
+      typeof useDuplicateDataset
+    >['showModal'];
+  };
 
 export function DatasetCard({
   dataset,
   showDatasetRenameModal,
+  showDatasetDuplicateModal,
+  showPrivilegeModal,
 }: DatasetCardProps) {
+  const { t } = useTranslation();
   const { navigateToDataset } = useNavigatePage();
 
   return (
@@ -28,6 +38,8 @@ export function DatasetCard({
       moreDropdown={
         <DatasetDropdown
           showDatasetRenameModal={showDatasetRenameModal}
+          showDatasetDuplicateModal={showDatasetDuplicateModal}
+          showPrivilegeModal={showPrivilegeModal}
           dataset={dataset}
         >
           <MoreButton></MoreButton>
@@ -35,12 +47,13 @@ export function DatasetCard({
       }
       sharedBadge={<SharedBadge>{dataset.nickname}</SharedBadge>}
       onClick={navigateToDataset(dataset.id)}
-    />
+    ></HomeCard>
   );
 }
 
 export function SeeAllCard() {
   const { navigateToDatasetList } = useNavigatePage();
+  const { t } = useTranslation();
 
   return (
     <Card

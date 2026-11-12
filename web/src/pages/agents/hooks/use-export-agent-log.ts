@@ -50,7 +50,7 @@ export const useExportAgentLogToCSV = () => {
     const rows = data.map((item) => [
       item.id,
       item.user_id,
-      item.message?.length ? item.message[0]?.content : '',
+      item.name,
       formatConversation(item),
       item.errors ? t('flow.failed') : t('flow.success'),
       item.round,

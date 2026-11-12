@@ -68,6 +68,9 @@ import useImportExcelForm, {
   ImportExcelFormData,
 } from './forms/import-excel-form';
 
+import NotFound from '@/ee/pages/admin/404';
+import useAdminVariables from '@/ee/pages/admin/hooks/useAdminVariables';
+
 const columnHelper = createColumnHelper<AdminService.ListWhitelistItem>();
 const globalFilterFn = createFuzzySearchFn<AdminService.ListWhitelistItem>([
   'email',
@@ -541,4 +544,16 @@ function AdminWhitelist() {
   );
 }
 
-export default AdminWhitelist;
+function AdminWhitelistGuard() {
+  const { variables } = useAdminVariables();
+
+  const isWhitelistEnabled = !!variables.enable_whitelist?.value;
+
+  if (!isWhitelistEnabled) {
+    return <NotFound />;
+  }
+
+  return <AdminWhitelist />;
+}
+
+export default AdminWhitelistGuard;

@@ -166,8 +166,8 @@ func buildWikiPageProducts(tenantID, docID string, pages []wikiPageResult) []com
 			content = page.ContentRaw
 		}
 		summary := summarizeMarkdown(content, title)
-		sourceChunkIDs := uniqueStrings(page.SourceChunkIDs)
-		sourceDocIDs := uniqueStrings(page.SourceDocIDs)
+		sourceChunkIDs := appcommon.DeduplicateTrimmed(page.SourceChunkIDs)
+		sourceDocIDs := appcommon.DeduplicateTrimmed(page.SourceDocIDs)
 		if len(sourceDocIDs) == 0 && docID != "" {
 			sourceDocIDs = []string{docID}
 		}
@@ -186,9 +186,9 @@ func buildWikiPageProducts(tenantID, docID string, pages []wikiPageResult) []com
 				"page_type":        pageType,
 				"topic":            common.NormalizeWikiTopicPath(page.Topic),
 				"summary":          summary,
-				"entity_names":     uniqueStrings(page.EntityNames),
-				"related_kb_pages": uniqueStrings(page.RelatedKBPages),
-				"outlinks":         uniqueStrings(page.Outlinks),
+				"entity_names":     appcommon.DeduplicateTrimmed(page.EntityNames),
+				"related_kb_pages": appcommon.DeduplicateTrimmed(page.RelatedKBPages),
+				"outlinks":         appcommon.DeduplicateTrimmed(page.Outlinks),
 				"source_chunk_ids": sourceChunkIDs,
 				"source_doc_ids":   sourceDocIDs,
 				"content_md_raw":   page.ContentRaw,

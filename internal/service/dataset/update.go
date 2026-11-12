@@ -31,15 +31,15 @@ type datasetPagerankUpdate struct {
 	datasetID string
 }
 
-func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID string, req service.UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID string, req service.UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
-	userID = strings.TrimSpace(userID)
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
 	if _, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID); err != nil {
 		if dao.IsNotFoundErr(err) {
 			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 			return nil, code, permissionErr
 		}
-		return nil, common.CodeServerError, errors.New("database operation failed")
+		return nil, common.CodeServerError, fmt.Errorf("database operation failed: %w", err)
 	}
 
 	connectorsProvided := req.Connectors != nil
@@ -69,8 +69,8 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 		if name == "" {
 			return nil, common.CodeDataError, errors.New("String should have at least 1 character")
 		}
-		if utf8.RuneCountInString(name) > 128 {
-			return nil, common.CodeDataError, errors.New("String should have at most 128 characters")
+		if utf8.RuneCountInString(name) > entity.DatasetNameLimit {
+			return nil, common.CodeDataError, fmt.Errorf("String should have at most %d characters", entity.DatasetNameLimit)
 		}
 		simpleUpdates["name"] = name
 	}
@@ -184,7 +184,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 	var scheduledTaskIDs []string
 	var pagerankUpdate *datasetPagerankUpdate
 	err = dao.DB.Transaction(func(tx *gorm.DB) error {
-		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(ctx, tx, datasetID, userID)
+		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(ctx, tx, datasetID)
 		if authErr != nil {
 			txCode = code
 			return authErr
@@ -200,7 +200,6 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			if isPipeline && effectivePipelineID != nil && strings.TrimSpace(*effectivePipelineID) != "" {
 				accessErr := permission.NewLockingDatabaseChecker(tx).CheckDependency(
 					ctx,
-					permission.Subject{UserID: userID, TenantID: lockedKB.TenantID},
 					permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: lockedKB.ID},
 					permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: strings.TrimSpace(*effectivePipelineID)},
 					permission.OperationUpdate,
@@ -221,7 +220,6 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			if permissionValue != lockedKB.Permission {
 				accessErr := permission.NewLockingDatabaseChecker(tx).CheckResource(
 					ctx,
-					permission.Subject{UserID: userID},
 					permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID},
 					permission.OperationShare,
 				)
@@ -249,11 +247,23 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			})
 			if nameErr != nil {
 				txCode = common.CodeServerError
-				return errors.New("database operation failed")
+				return fmt.Errorf("database operation failed: %w", nameErr)
 			}
 			if !available {
 				txCode = common.CodeDataError
 				return fmt.Errorf("Dataset name '%s' already exists", nameValue)
+			}
+			if nameValue != lockedKB.Name {
+				code, renameErr := renameDatasetFolder(ctx, tx, lockedKB, nameValue)
+				if renameErr != nil {
+					txCode = code
+					if code == common.CodeServerError {
+						common.Warn("dataset folder rename failed",
+							zap.String("dataset_id", lockedKB.ID), zap.Error(renameErr))
+						return fmt.Errorf("database operation failed: %w", renameErr)
+					}
+					return renameErr
+				}
 			}
 		}
 
@@ -271,14 +281,14 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			} else {
 				tenantEmbdID = ""
 			}
-			identity := service.Identity{UserID: userID, TenantID: lockedKB.TenantID}
-			ok, message := d.verifyEmbeddingAvailability(ctx, effectiveEmbdID, identity)
+			modelCtx := permission.WithTenantID(ctx, lockedKB.TenantID)
+			ok, message := d.verifyEmbeddingAvailability(modelCtx, effectiveEmbdID, lockedKB.TenantID)
 			if !ok {
 				txCode = common.CodeDataError
 				return errors.New(message)
 			}
 			if effectiveEmbdID != "" && tenantEmbdID == "" {
-				target, err := service.NewModelFactory().ResolveInfo(ctx, identity, entity.ModelTypeEmbedding, effectiveEmbdID)
+				target, err := service.NewModelFactory().ResolveInfo(modelCtx, entity.ModelTypeEmbedding, effectiveEmbdID)
 				if err == nil {
 					tenantEmbdID = target.ID
 				}
@@ -460,7 +470,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 					return errors.New("dataset name already exists")
 				}
 				txCode = common.CodeServerError
-				return errors.New("dataset update error. (database error)")
+				return fmt.Errorf("dataset update error. (database error): %w", err)
 			}
 		}
 
@@ -472,20 +482,20 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 					return err
 				}
 				txCode = common.CodeServerError
-				return errors.New("database operation failed")
+				return fmt.Errorf("database operation failed: %w", err)
 			}
 		}
 
 		updatedKB = &entity.Knowledgebase{}
 		if err = tx.Where("id = ? AND status = ?", lockedKB.ID, string(entity.StatusValid)).First(updatedKB).Error; err != nil {
 			txCode = common.CodeDataError
-			return errors.New("dataset updated failed")
+			return fmt.Errorf("dataset updated failed: %w", err)
 		}
 
 		linkedConnectors, err = d.connectorDAO.ListByDatasetIDTx(ctx, tx, lockedKB.ID)
 		if err != nil {
 			txCode = common.CodeServerError
-			return errors.New("database operation failed")
+			return fmt.Errorf("database operation failed: %w", err)
 		}
 
 		return nil
@@ -507,6 +517,67 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 	data := datasetToMap(ctx, updatedKB)
 	data["connectors"] = datasetConnectorsOrEmpty(linkedConnectors)
 	return data, common.CodeSuccess, nil
+}
+
+// renameDatasetFolder updates an existing dataset folder in the caller's
+// transaction. Datasets without a folder do not create one during a rename.
+func renameDatasetFolder(ctx context.Context, tx *gorm.DB, kb *entity.Knowledgebase, newName string) (common.ErrorCode, error) {
+	var root entity.File
+	err := tx.WithContext(ctx).
+		Where("tenant_id = ? AND parent_id = id AND type = ?", kb.TenantID, "folder").
+		Take(&root).Error
+	if dao.IsNotFoundErr(err) {
+		return common.CodeSuccess, nil
+	}
+	if err != nil {
+		return common.CodeServerError, err
+	}
+
+	var kbRoot entity.File
+	err = tx.WithContext(ctx).
+		Where("tenant_id = ? AND parent_id = ? AND name = ?",
+			kb.TenantID, root.ID, dao.DatasetFolderName).
+		Take(&kbRoot).Error
+	if dao.IsNotFoundErr(err) {
+		return common.CodeSuccess, nil
+	}
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	if kbRoot.Type != "folder" {
+		return common.CodeDataError, errors.New("Knowledgebase root is not a folder")
+	}
+	fileDAO := dao.NewFileDAO()
+
+	entries := func() *gorm.DB {
+		return tx.WithContext(ctx).Model(&entity.File{}).
+			Where("tenant_id = ? AND parent_id = ?", kb.TenantID, kbRoot.ID)
+	}
+	var original entity.File
+	// Uploads reuse entries by tenant, parent and name, regardless of source.
+	err = entries().Where("name = ?", kb.Name).
+		Take(&original).Error
+	if err != nil && !dao.IsNotFoundErr(err) {
+		return common.CodeServerError, err
+	}
+	if original.ID != "" && original.Type != "folder" {
+		return common.CodeDataError, errors.New("Dataset path is not a folder")
+	}
+
+	exists, err := fileDAO.NameExists(ctx, tx, newName, kbRoot.ID, kb.TenantID, original.ID)
+	if err != nil {
+		return common.CodeServerError, err
+	}
+	if exists {
+		return common.CodeDataError, fmt.Errorf("Dataset folder name '%s' already exists", newName)
+	}
+	if original.ID == "" {
+		return common.CodeSuccess, nil
+	}
+	if err = entries().Where("id = ? AND type = ?", original.ID, "folder").Update("name", newName).Error; err != nil {
+		return common.CodeServerError, err
+	}
+	return common.CodeSuccess, nil
 }
 
 func (d *DatasetService) updateDatasetPagerankChunks(ctx context.Context, update datasetPagerankUpdate) error {
@@ -549,7 +620,7 @@ func publishDatasetSyncerTasks(taskIDs []string) {
 	}
 }
 
-func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx *gorm.DB, datasetID, userID string) (*entity.Knowledgebase, common.ErrorCode, error) {
+func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx *gorm.DB, datasetID string) (*entity.Knowledgebase, common.ErrorCode, error) {
 	var kb entity.Knowledgebase
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("id = ? AND status = ?", datasetID, string(entity.StatusValid)).
@@ -559,12 +630,11 @@ func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx 
 			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
 			return nil, code, permissionErr
 		}
-		return nil, common.CodeServerError, errors.New("database operation failed")
+		return nil, common.CodeServerError, fmt.Errorf("database operation failed: %w", err)
 	}
 
 	err = permission.NewLockingDatabaseChecker(tx).CheckResource(
 		ctx,
-		permission.Subject{UserID: userID},
 		permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID},
 		permission.OperationUpdate,
 	)

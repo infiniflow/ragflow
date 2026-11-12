@@ -115,7 +115,7 @@ func open(cfg Config) (*judge, error) {
 // degradation on every chunk.
 func openScorer(cfg Config, modelPath string) (scorer, error) {
 	if cfg.URL == "" {
-		return OpenSession(modelPath)
+		return openInProcess(modelPath)
 	}
 	remote := newRemoteScorer(cfg.URL)
 	ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
@@ -129,9 +129,7 @@ func openScorer(cfg Config, modelPath string) (scorer, error) {
 // Close releases the checkpoint's ONNX session. It is what tests and a
 // deliberate teardown use; a server holds the shared judge for its lifetime.
 func (j *judge) Close() {
-	if session, ok := j.model.(*Session); ok {
-		session.Close()
-	}
+	closeInProcess(j.model)
 }
 
 var (

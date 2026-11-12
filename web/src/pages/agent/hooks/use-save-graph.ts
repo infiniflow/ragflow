@@ -7,11 +7,13 @@ import {
   useResetAgent,
   useSaveAgent,
 } from '@/hooks/use-agent-request';
+import { useFetchCanvasPresence } from '@/ee/hooks/use-agent-presence';
 import {
   GlobalVariableType,
   RAGFlowNodeType,
 } from '@/interfaces/database/agent';
 import { formatDate } from '@/utils/date';
+import { canEditAgent } from '@/ee/pages/agent/can-edit-agent';
 import i18n from '@/locales/config';
 import { useDebounceEffect } from 'ahooks';
 import { useCallback, useEffect, useState } from 'react';
@@ -44,27 +46,40 @@ export const useSaveGraph = (
         return;
       }
 
-      const params: Record<string, any> = {
-        id,
-        title: data.title,
-        dsl: buildDslData(currentNodes, otherParam),
-      };
+      try {
+        const params: Record<string, any> = {
+          id,
+          title: data.title,
+          dsl: buildDslData(currentNodes, otherParam),
+        };
 
-      if (release) {
-        params.release = 'true';
-      }
-      // Both the debounced auto-save and the explicit Save button pass
-      // autosave:true so the backend refreshes only the live draft and never
-      // mints a new version. Only publishing (release) writes a version row,
-      // optionally carrying an alias into user_canvas_version.
-      if (autosave) {
-        params.autosave = true;
-      }
-      if (alias) {
-        params.alias = alias;
-      }
+        if (release) {
+          params.release = 'true';
+        }
+        // Both the debounced auto-save and the explicit Save button pass
+        // autosave:true so the backend refreshes only the live draft and never
+        // mints a new version. Only publishing (release) writes a version row,
+        // optionally carrying an alias into user_canvas_version.
+        if (autosave) {
+          params.autosave = true;
+        }
+        if (alias) {
+          params.alias = alias;
+        }
 
-      return saveAgent(params);
+        const result = await saveAgent(params);
+        if (result?.code !== undefined && result.code !== 0) {
+          message.error(result.message || i18n.t('message.requestError'));
+        }
+        return result;
+      } catch (error) {
+        message.error(
+          error instanceof Error && error.message
+            ? error.message
+            : i18n.t('message.requestError'),
+        );
+        return undefined;
+      }
     },
     [id, data.title, buildDslData, saveAgent],
   );
@@ -161,6 +176,7 @@ export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
   const edges = useGraphStore((state) => state.edges);
   const { saveGraph } = useSaveGraph(false, true);
   const { data: flowDetail } = useFetchAgent();
+  const { data: presence } = useFetchCanvasPresence();
 
   const setSaveTime = useCallback((updateTime: number) => {
     setTime(formatDate(updateTime));
@@ -178,7 +194,8 @@ export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
         agentLoaded: Boolean(flowDetail?.id),
         nodeCount: nodes.length,
         edgeCount: edges.length,
-      })
+      }) ||
+      !canEditAgent(presence.operator_permission ?? 0)
     ) {
       return;
     }
@@ -194,6 +211,7 @@ export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
     nodes.length,
     saveGraph,
     setSaveTime,
+    presence.operator_permission,
   ]);
 
   useDebounceEffect(

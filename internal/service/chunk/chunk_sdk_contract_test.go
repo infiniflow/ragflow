@@ -32,7 +32,7 @@ func TestSDKChunkListSchemaAndEmptyDeletion(t *testing.T) {
 	engine.chunks = append(engine.chunks, map[string]interface{}{"id": "chunk-2", "content_with_weight": "plain"})
 	svc := &ChunkService{docEngine: engine, kbDAO: dao.NewKnowledgebaseDAO()}
 	ctx := chunkTestContext(t, "user-1", "tenant-1")
-	resp, err := svc.List(ctx, &service.ListChunksRequest{DatasetID: "kb-1", DocID: "doc-1"}, "user-1")
+	resp, err := svc.List(ctx, &service.ListChunksRequest{DatasetID: "kb-1", DocID: "doc-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestSDKChunkListSchemaAndEmptyDeletion(t *testing.T) {
 		}
 	}
 	for _, ids := range [][]string{nil, {}} {
-		n, err := svc.RemoveChunks(ctx, &service.RemoveChunksRequest{DatasetID: "kb-1", DocID: "doc-1", ChunkIDs: ids}, "user-1")
+		n, err := svc.RemoveChunks(ctx, &service.RemoveChunksRequest{DatasetID: "kb-1", DocID: "doc-1", ChunkIDs: ids})
 		if err != nil || n != 0 {
 			t.Errorf("empty selection: count=%d err=%v", n, err)
 		}

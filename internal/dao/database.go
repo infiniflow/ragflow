@@ -278,12 +278,9 @@ func autoMigrateModels() []interface{} {
 		&entity.MemoryTask{},
 		&entity.Search{},
 		&entity.PipelineOperationLog{},
-		&entity.EvaluationDataset{},
-		&entity.EvaluationCase{},
-		&entity.EvaluationRun{},
-		&entity.EvaluationResult{},
 		&entity.TimeRecord{},
 		&entity.License{},
+		&entity.SkillSpace{},
 		&entity.SkillSearchConfig{},
 		&entity.TenantModelInstance{},
 		&entity.TenantModel{},
@@ -439,6 +436,16 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateConversationReferences(ctx, DB); err != nil {
 			return fmt.Errorf("failed to move references into messages: %w", err)
 		}
+		if err = migrateResourceUserIDs(ctx, DB); err != nil {
+			return fmt.Errorf("failed to backfill resource user IDs: %w", err)
+		}
+		// Normalize the Python / early-Go ingestion shapes that the earlier
+		// parser-config step deliberately left in component nodes and custom
+		// canvas DSLs. It runs last because its target version sorts above every
+		// other version-gated step.
+		if err = migrateIngestionLegacyConfigs(ctx, DB); err != nil {
+			return fmt.Errorf("failed to normalize legacy ingestion configs: %w", err)
+		}
 		common.Info("Database schema migrated successfully")
 	} else {
 		for _, column := range []string{"backlog_doc_ids", "inflight_doc_ids"} {
@@ -456,8 +463,8 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 			return fmt.Errorf("failed to auto-migrate runtime models: %w", err)
 		}
 	}
-	if err = initializeSystemSettingsEE(ctx, DB); err != nil {
-		return fmt.Errorf("failed to initialize enterprise system settings: %w", err)
+	if err = SeedSystemSettings(ctx, DB); err != nil {
+		return fmt.Errorf("failed to seed system settings: %w", err)
 	}
 	// Conversation lists filter by dialog and usually order by update time.
 	for _, table := range []string{"conversation", "api_4_conversation"} {

@@ -49,14 +49,7 @@ type ParseResult struct {
 	// Nil when the backend does not produce metadata. It is not an augmented
 	// copy of the upstream file descriptor.
 	//
-	// For the office family (docx/doc, pptx/ppt), File["format"]
-	// reflects the real container format detected via magic-byte
-	// sniffing (officeContainer), not just the file extension.
-	// E.g. a legacy OLE .doc uploaded as .docx yields
-	// File["format"] == "doc" so downstream consumers see the
-	// effective format. This is an intentional contract change
-	// from the pre-fallback behaviour where File["format"] always
-	// echoed the requested extension.
+	// Office parsers report their selected format in File["format"].
 	File map[string]any
 
 	// JSON is the structured payload when available, as typed DocItems.

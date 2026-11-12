@@ -29,9 +29,9 @@ import (
 type ImageUploader func(ctx context.Context, kbID, chunkID string, data []byte) (imgID string, err error)
 
 // DefaultImageUploader stores image bytes at (bucket=kbID, key=chunkID) and
-// returns img_id "<kb_id>-<chunk_id>". Mirrors Python image2id's storage_put +
-// f"{bucket}-{objname}" (rag/utils/base64_image.py:80-82), minus re-encoding:
-// the bytes are stored in whatever format the chunker produced.
+// returns img_id "<kb_id>-<chunk_id>". Mirrors image2id's storage_put +
+// f"{bucket}-{objname}", minus re-encoding: the bytes are stored in whatever
+// format the chunker produced.
 func DefaultImageUploader(ctx context.Context, kbID, chunkID string, data []byte) (string, error) {
 	storageImpl := resolveStorage()
 	if storageImpl == nil {

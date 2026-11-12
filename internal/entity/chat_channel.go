@@ -19,11 +19,13 @@ package entity
 // ChatChannel chat channel model
 type ChatChannel struct {
 	ID       string  `gorm:"column:id;primaryKey;size:32" json:"id"`
+	UserID   string  `gorm:"column:user_id;size:32;not null;default:'';index" json:"user_id"`
 	TenantID string  `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
 	Name     string  `gorm:"column:name;size:128;not null" json:"name"`
 	Channel  string  `gorm:"column:channel;size:128;not null;index" json:"channel"`
 	Config   JSONMap `gorm:"column:config;type:longtext;not null" json:"config"`
 	ChatID   *string `gorm:"column:chat_id;size:32;index" json:"chat_id,omitempty"`
+	AgentID  *string `gorm:"column:agent_id;size:32;index" json:"agent_id,omitempty"`
 	Status   int     `gorm:"column:status;index;default:1" json:"status,omitempty"`
 	BaseModel
 }
@@ -38,6 +40,8 @@ type ChatChannelListResponse struct {
 	Name       string  `json:"name"`
 	Channel    string  `json:"channel"`
 	ChatID     *string `json:"chat_id"`
+	AgentID    *string `json:"agent_id"`
+	AgentName  *string `json:"agent_name"`
 	Status     int     `json:"status"`
 	DialogName *string `json:"dialog_name"` // Dialog.name.alias("dialog_name")
 }

@@ -506,6 +506,11 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 
 		if model.ContextLength != nil && *model.ContextLength > 0 {
 			modelResponse.ContextLength = model.ContextLength
+		} else if model.ContextWindow != nil && *model.ContextWindow > 0 {
+			modelResponse.ContextLength = model.ContextWindow
+		}
+		if model.MaxTokens != nil && *model.MaxTokens > 0 {
+			modelResponse.MaxOutput = model.MaxTokens
 		}
 
 		// The provider-list merge treats remote entries as authoritative
@@ -584,6 +589,8 @@ func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, str
 		setOpt(reqBody, "temperature", cfg.Temperature)
 		setOpt(reqBody, "do_sample", cfg.DoSample)
 		setOpt(reqBody, "top_p", cfg.TopP)
+		setOpt(reqBody, "presence_penalty", cfg.PresencePenalty)
+		setOpt(reqBody, "frequency_penalty", cfg.FrequencyPenalty)
 		setOpt(reqBody, "max_tokens", cfg.MaxTokens)
 		setOpt(reqBody, "stop", cfg.Stop)
 

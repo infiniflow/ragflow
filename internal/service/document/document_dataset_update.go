@@ -7,6 +7,8 @@ import (
 	"maps"
 	"math"
 	"path/filepath"
+
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"strconv"
 	"strings"
@@ -17,7 +19,6 @@ import (
 	"ragflow/internal/entity"
 	componentpkg "ragflow/internal/ingestion/component"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
-	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
@@ -25,7 +26,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
+func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
 	statusInt, convErr := strconv.Atoi(status)
 	if convErr != nil {
 		return nil, common.CodeArgumentError, fmt.Errorf("invalid status: %s", status)
@@ -53,8 +54,9 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 			hasError = true
 			continue
 		}
-		if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, doc.ID, datasetID, permission.OperationUpdate); err != nil {
-			result[docID] = map[string]string{"error": "Permission denied"}
+		if err := service.CheckDocumentAccess(ctx, doc.ID, datasetID, permission.OperationUpdate); err != nil {
+			_, normalizedErr := permissionresponse.Normalize(err)
+			result[docID] = map[string]string{"error": normalizedErr.Error()}
 			if permissionresponse.IsPermissionError(err) {
 				permissionDenied = err
 			} else {
@@ -71,7 +73,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 				code, normalizedErr := permissionresponse.Normalize(permissionDenied)
 				return result, code, normalizedErr
 			}
-			return result, common.CodeServerError, fmt.Errorf("partial failure")
+			return result, common.CodeServerError, fmt.Errorf("partial failure: %v", result)
 		}
 		return result, common.CodeSuccess, nil
 	}
@@ -99,7 +101,7 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 			previousStatus = *doc.Status
 		}
 		if err = s.documentDAO.UpdateByID(ctx, dao.DB, docID, map[string]interface{}{"status": status}); err != nil {
-			result[docID] = map[string]string{"error": "Database error (Document update)!"}
+			result[docID] = map[string]string{"error": "Database error (Document update): " + err.Error()}
 			hasError = true
 			continue
 		}
@@ -133,13 +135,13 @@ func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID,
 	}
 
 	if hasError {
-		return result, common.CodeServerError, fmt.Errorf("partial failure")
+		return result, common.CodeServerError, fmt.Errorf("partial failure: %v", result)
 	}
 	return result, common.CodeSuccess, nil
 }
 
-func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (*UpdateDatasetDocumentResponse, common.ErrorCode, error) {
-	if err := service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, documentID, datasetID, permission.OperationUpdate); err != nil {
+func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, datasetID, documentID string, req *UpdateDatasetDocumentRequest, present map[string]bool) (*UpdateDatasetDocumentResponse, common.ErrorCode, error) {
+	if err := service.CheckDocumentAccess(ctx, documentID, datasetID, permission.OperationUpdate); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
@@ -159,7 +161,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		}
 		return nil, common.CodeServerError, err
 	}
-	if code, err := s.validateDatasetDocumentUpdate(ctx, datasetID, documentID, userID, doc, req, present); err != nil {
+	if code, err := s.validateDatasetDocumentUpdate(ctx, datasetID, documentID, doc, req, present); err != nil {
 		return nil, code, err
 	}
 
@@ -246,7 +248,6 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 	if (sel != nil || present["parser_config"]) && isPipeline && effPipelineID != nil && strings.TrimSpace(*effPipelineID) != "" {
 		accessErr := permission.NewDatabaseChecker(dao.DB).CheckDependency(
 			ctx,
-			permission.Subject{UserID: userID, TenantID: kb.TenantID},
 			permission.ResourceRef{Kind: permission.ResourceKindDocument, ID: doc.ID},
 			permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: strings.TrimSpace(*effPipelineID)},
 			permission.OperationUpdate,
@@ -293,7 +294,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 			}
 			pipelinepkg.ApplyParentChildChunkerConfig(cleaned, parentChildOverrides)
 			llmID := ""
-			if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.Identity{UserID: userID, TenantID: kb.TenantID}, entity.ModelTypeChat); modelErr == nil {
+			if modelInfo, modelErr := service.NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, kb.TenantID), entity.ModelTypeChat); modelErr == nil {
 				llmID = service.ModelReference(modelInfo)
 			}
 			cleaned = service.ApplyComponentScopedParserConfig(cleaned, llmID)
@@ -324,7 +325,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 				zap.String("parserID", effParserID), zap.Error(cpErr))
 		} else {
 			llmID := ""
-			if modelInfo, llmErr := service.NewModelFactory().ResolveDefaultInfo(ctx, service.Identity{UserID: userID, TenantID: kb.TenantID}, entity.ModelTypeChat); llmErr == nil {
+			if modelInfo, llmErr := service.NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, kb.TenantID), entity.ModelTypeChat); llmErr == nil {
 				llmID = service.ModelReference(modelInfo)
 			} else if !errors.Is(llmErr, service.ErrNoDefaultModel) {
 				common.Warn("document pipeline/version switch: failed to resolve default chat model, falling back to no llm binding",
@@ -379,7 +380,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, fmt.Errorf("can not get document by id:%s", doc.ID)
 		}
-		return nil, common.CodeDataError, errors.New("database operation failed")
+		return nil, common.CodeDataError, fmt.Errorf("database operation failed: %w", err)
 	}
 
 	metaFields := map[string]interface{}{}
@@ -421,7 +422,7 @@ func (s *DocumentService) validateDocumentModifiable(ctx context.Context, doc *e
 	}
 }
 
-func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, datasetID, documentID, userID string, doc *entity.Document, req *UpdateDatasetDocumentRequest, present map[string]bool) (common.ErrorCode, error) {
+func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, datasetID, documentID string, doc *entity.Document, req *UpdateDatasetDocumentRequest, present map[string]bool) (common.ErrorCode, error) {
 	if req == nil {
 		return common.CodeDataError, errors.New("invalid request payload")
 	}
@@ -502,8 +503,8 @@ func requestField[T any](value *T, present bool) *T {
 // validateDocumentName mirrors Python's validate_document_name: length check
 // (101), then extension check (101), then duplicate check (102).
 func (s *DocumentService) validateDocumentName(ctx context.Context, doc *entity.Document, newName string) (common.ErrorCode, error) {
-	if len([]byte(newName)) > 255 {
-		return common.CodeArgumentError, errors.New("File name must be 255 bytes or less.")
+	if err := common.ValidateNameRunes(newName, common.NameLimit255); err != nil {
+		return common.CodeArgumentError, err
 	}
 
 	oldName := ""
@@ -533,7 +534,7 @@ func isPresentationFile(name *string) bool {
 		return false
 	}
 	ext := strings.ToLower(filepath.Ext(*name))
-	return ext == ".ppt" || ext == ".pptx" || ext == ".pages" || ext == ".dps" || ext == ".dpt"
+	return ext == ".ppt" || ext == ".pptx" || ext == ".pages"
 }
 
 func validateMetaFields(meta map[string]any) error {
@@ -566,7 +567,7 @@ func validateMetaFields(meta map[string]any) error {
 // fields with the dataset language, the way ingestion tokenized them.
 func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, newName string) error {
 	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"name": newName}); err != nil {
-		return errors.New("database error (Document rename)")
+		return fmt.Errorf("database error (Document rename): %w", err)
 	}
 
 	mappings, err := s.file2DocumentDAO.GetByDocumentID(ctx, dao.DB, doc.ID)

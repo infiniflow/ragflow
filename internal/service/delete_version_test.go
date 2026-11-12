@@ -81,7 +81,7 @@ func TestDeleteVersion_ReferencedVersionStillDeleted(t *testing.T) {
 
 	ctx := serviceTestContext(t, userID, userID)
 	svc := NewAgentService()
-	if err := svc.DeleteVersion(ctx, userID, canvasID, versionID); err != nil {
+	if err := svc.DeleteVersion(ctx, canvasID, versionID); err != nil {
 		t.Fatalf("DeleteVersion referenced version: %v", err)
 	}
 
@@ -129,7 +129,7 @@ func TestDeleteVersion_UnreferencedVersionDeleted(t *testing.T) {
 
 	ctx := serviceTestContext(t, userID, userID)
 	svc := NewAgentService()
-	if err := svc.DeleteVersion(ctx, userID, canvasID, versionID); err != nil {
+	if err := svc.DeleteVersion(ctx, canvasID, versionID); err != nil {
 		t.Fatalf("DeleteVersion unreferenced version: %v", err)
 	}
 	if _, err := dao.NewUserCanvasVersionDAO().GetByID(ctx, dao.DB, versionID); !errors.Is(err, dao.ErrUserCanvasVersionNotFound) {

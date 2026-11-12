@@ -1,5 +1,6 @@
 import { act, render } from '@testing-library/react';
 import { ParserTreeSelect } from './index';
+import { filterTreeNodes } from '../tree-select-utils';
 
 const mockTreeProps: any = {};
 jest.mock('@/components/tree-select', () => ({
@@ -17,38 +18,29 @@ jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (k: string) => k }),
 }));
 
-const VersionList = [
-  { id: 'v1', title: 'v1 title', created_at: '', alias: 'jin' },
-];
-
-// Index-aligned with the sorted canvas ids the hook requests: pipe-1 is the
-// selected pipeline and always fetched; pipe-2 appears once its branch is
-// expanded in a test.
-let mockVersionQueries: any[] = [];
+const VersionList = [{ id: 'v1', name: 'v1 title', alias: 'jin' }];
+let mockCatalog: any[] = [];
+let mockCatalogLoading = false;
 jest.mock('@/hooks/use-agent-request', () => ({
   useFetchBuiltinPipelines: () => ({
     options: [{ label: 'General', value: 'general' }],
     loading: false,
   }),
-  useFetchAgentList: () => ({
-    data: {
-      canvas: [
-        { id: 'pipe-1', title: 'My Flow', type: 'pipeline' },
-        { id: 'pipe-2', title: 'Empty Flow', type: 'pipeline' },
-        // AgentListItemType.CompilationTemplateGroup — referenced as a literal
-        // because the jest.mock factory cannot capture an imported enum.
-        { id: 'grp-1', title: 'Group', type: 'compilation_template_group' },
-      ],
-      total: 2,
-    },
-    loading: false,
+}));
+jest.mock('@/hooks/use-pipeline-version-request', () => ({
+  useFetchPipelineVersionCatalog: () => ({
+    data: mockCatalog,
+    loading: mockCatalogLoading,
   }),
-  useFetchCanvasVersions: () => mockVersionQueries,
 }));
 
 beforeEach(() => {
   for (const key of Object.keys(mockTreeProps)) delete mockTreeProps[key];
-  mockVersionQueries = [{ isSuccess: true, data: VersionList }];
+  mockCatalog = [
+    { id: 'pipe-1', name: 'My Flow', versions: VersionList },
+    { id: 'pipe-2', name: 'Empty Flow', versions: [] },
+  ];
+  mockCatalogLoading = false;
 });
 
 describe('ParserTreeSelect', () => {
@@ -67,7 +59,7 @@ describe('ParserTreeSelect', () => {
     expect(builtin.children).toBeUndefined();
   });
 
-  it('excludes compilation template groups from the pipeline branches', () => {
+  it('builds branches directly from the dataflow catalog', () => {
     render(
       <ParserTreeSelect value="pipeline:pipe-1:v1" onChange={jest.fn()} />,
     );
@@ -123,77 +115,39 @@ describe('ParserTreeSelect', () => {
     expect([...mockTreeProps.expandedIds]).toEqual(['pipeline:pipe-1']);
   });
 
-  it('keeps an unrequested branch non-selectable via a loading placeholder', () => {
+  it('searches a version alias in an unexpanded pipeline locally', () => {
+    render(<ParserTreeSelect value={undefined} onChange={jest.fn()} />);
+    expect([...mockTreeProps.expandedIds]).toEqual([]);
+    const matches = filterTreeNodes(mockTreeProps.data, 'JIN');
+    expect(matches.map((node) => node.id)).toEqual(['pipeline:pipe-1']);
+    expect(matches[0].children?.[0].id).toBe('pipeline:pipe-1:v1');
+    act(() => mockTreeProps.onSearchChange('JIN'));
+    expect([...mockTreeProps.expandedIds]).toEqual(['pipeline:pipe-1']);
+  });
+
+  it('searches pipeline names and version names locally', () => {
+    render(<ParserTreeSelect value={undefined} onChange={jest.fn()} />);
+    for (const term of ['MY FLOW', 'V1 TITLE']) {
+      const matches = filterTreeNodes(mockTreeProps.data, term);
+      expect(matches.map((node) => node.id)).toEqual(['pipeline:pipe-1']);
+      expect(matches[0].children?.[0].id).toBe('pipeline:pipe-1:v1');
+    }
+    expect(filterTreeNodes(mockTreeProps.data, 'unknown')).toEqual([]);
+  });
+
+  it('keeps version metadata when a branch is collapsed', () => {
     render(
       <ParserTreeSelect value="pipeline:pipe-1:v1" onChange={jest.fn()} />,
     );
-    const emptyFlow = mockTreeProps.data[1];
+    act(() => mockTreeProps.onExpandedChange(new Set()));
+    expect([...mockTreeProps.expandedIds]).toEqual([]);
+    expect(mockTreeProps.data[0].children[0].id).toBe('pipeline:pipe-1:v1');
+  });
 
-    // pipe-2's versions were never requested, so it must not collapse into a
-    // selectable leaf — a disabled placeholder child keeps it a branch.
+  it('keeps a pipeline with no versions non-selectable', () => {
+    render(<ParserTreeSelect value={undefined} onChange={jest.fn()} />);
+    const emptyFlow = mockTreeProps.data[1];
     expect(emptyFlow.children).toHaveLength(1);
-    expect(emptyFlow.children[0].id).toBe('pipeline:pipe-2:loading');
-    expect(emptyFlow.children[0].disabled).toBe(true);
-  });
-
-  it('lazily fetches versions for a freshly expanded branch', () => {
-    mockVersionQueries = [
-      { isSuccess: true, data: VersionList },
-      { isSuccess: false, data: undefined },
-    ];
-    render(
-      <ParserTreeSelect value="pipeline:pipe-1:v1" onChange={jest.fn()} />,
-    );
-    act(() => {
-      mockTreeProps.onExpandedChange(
-        new Set(['pipeline:pipe-1', 'pipeline:pipe-2']),
-      );
-    });
-
-    const emptyFlow = mockTreeProps.data[1];
-    expect(emptyFlow.children[0].id).toBe('pipeline:pipe-2:loading');
-    expect([...mockTreeProps.loadingIds]).toContain('pipeline:pipe-2');
-  });
-
-  it("keeps a collapsed branch's versions instead of reverting to the loading placeholder", () => {
-    mockVersionQueries = [
-      { isSuccess: true, data: VersionList },
-      { isSuccess: true, data: [{ id: 'v2', title: 'v2 title' }] },
-    ];
-    render(
-      <ParserTreeSelect value="pipeline:pipe-1:v1" onChange={jest.fn()} />,
-    );
-    act(() => {
-      mockTreeProps.onExpandedChange(
-        new Set(['pipeline:pipe-1', 'pipeline:pipe-2']),
-      );
-    });
-    // Collapse pipe-2: its versions must stay in the tree. Reverting to the
-    // empty-titled loading placeholder would make the search filter drop the
-    // whole branch while a search term is active.
-    act(() => {
-      mockTreeProps.onExpandedChange(new Set(['pipeline:pipe-1']));
-    });
-
-    const collapsed = mockTreeProps.data[1];
-    expect(collapsed.children[0].id).toBe('pipeline:pipe-2:v2');
-  });
-
-  it('shows a disabled empty row for a branch with no published versions', () => {
-    mockVersionQueries = [
-      { isSuccess: true, data: VersionList },
-      { isSuccess: true, data: [] },
-    ];
-    render(
-      <ParserTreeSelect value="pipeline:pipe-1:v1" onChange={jest.fn()} />,
-    );
-    act(() => {
-      mockTreeProps.onExpandedChange(
-        new Set(['pipeline:pipe-1', 'pipeline:pipe-2']),
-      );
-    });
-
-    const emptyFlow = mockTreeProps.data[1];
     expect(emptyFlow.children[0].id).toBe('pipeline:pipe-2:empty');
     expect(emptyFlow.children[0].disabled).toBe(true);
   });
@@ -220,7 +174,7 @@ describe('ParserTreeSelect', () => {
   });
 
   it('marks the select as loading while the selected versions arrive', () => {
-    mockVersionQueries = [{ isSuccess: false, data: undefined }];
+    mockCatalogLoading = true;
     render(
       <ParserTreeSelect value="pipeline:pipe-1:v1" onChange={jest.fn()} />,
     );

@@ -107,9 +107,9 @@ func newProviderHandlerRequest(t *testing.T, body map[string]interface{}, params
 	ctx.Request = req
 	ctx.Params = params
 	ctx.Set("user_id", "user-1")
-	ctx.Request = ctx.Request.WithContext(permission.WithSubject(ctx.Request.Context(), permission.Subject{
-		UserID: "user-1", TenantID: "tenant-1",
-	}))
+	ctx.Request = ctx.Request.WithContext(permission.WithIdentity(ctx.Request.Context(),
+		"user-1", "tenant-1",
+	))
 	return ctx, recorder
 }
 
@@ -244,7 +244,8 @@ func TestValidateInstanceName(t *testing.T) {
 		{name: "-my-instance-1", valid: true},
 		{name: "", valid: false},
 		{name: "my instance", valid: false},
-		{name: "实例", valid: false},
+		{name: "实例", valid: true},
+		{name: "实例_name123", valid: true},
 		{name: "instância", valid: false},
 		{name: "instance!", valid: false},
 	}
@@ -339,9 +340,9 @@ func TestListModelsSavedCredentialsUsesProviderCatalogMerge(t *testing.T) {
 	ctx.Request = httptest.NewRequest(http.MethodGet, "/providers/OpenAI/models?use_saved_credentials=true&instance_name=default", nil)
 	ctx.Params = gin.Params{{Key: "provider_id_or_name", Value: "OpenAI"}}
 	ctx.Set("user_id", "user-1")
-	ctx.Request = ctx.Request.WithContext(permission.WithSubject(ctx.Request.Context(), permission.Subject{
-		UserID: "user-1", TenantID: "tenant-1",
-	}))
+	ctx.Request = ctx.Request.WithContext(permission.WithIdentity(ctx.Request.Context(),
+		"user-1", "tenant-1",
+	))
 
 	NewProviderHandler(nil, service.NewModelProviderService(), service.NewModelCallService()).ListModels(ctx)
 	body := decodeProviderHandlerResponse(t, recorder)

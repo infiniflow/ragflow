@@ -21,12 +21,33 @@ import '../tailwind.css';
 import App from './app';
 import './global.less';
 import { initLanguage } from './locales/config';
+import { fetchBillingStatus } from '@/ee/services/billingStatus';
 
-initLanguage().then(() => {
-  ReactDOM.createRoot(document.getElementById('root')!).render(
-    <React.StrictMode>
-      <Inspector keys={['alt', 'c']} />
-      <App />
-    </React.StrictMode>,
-  );
+// Vite dispatches `vite:preloadError` when a lazily imported chunk fails to
+// load, typically because a stale tab still references hashed files that a
+// newer deployment removed. Reload once to pick up the fresh index.html; if
+// the failure repeats within ReloadGuardWindowMs, let the error reach the
+// error boundary instead of reloading in a loop.
+const ChunkReloadFlagKey = 'ragflow-chunk-reload-at';
+const ReloadGuardWindowMs = 60_000;
+
+window.addEventListener('vite:preloadError', (event) => {
+  const lastReloadAt = Number(sessionStorage.getItem(ChunkReloadFlagKey) ?? 0);
+  if (Date.now() - lastReloadAt < ReloadGuardWindowMs) {
+    return;
+  }
+  sessionStorage.setItem(ChunkReloadFlagKey, String(Date.now()));
+  event.preventDefault();
+  window.location.reload();
 });
+
+initLanguage()
+  .then(() => fetchBillingStatus())
+  .then(() => {
+    ReactDOM.createRoot(document.getElementById('root')!).render(
+      <React.StrictMode>
+        <Inspector keys={['alt', 'c']} />
+        <App />
+      </React.StrictMode>,
+    );
+  });

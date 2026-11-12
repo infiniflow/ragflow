@@ -71,30 +71,30 @@ func (d *DummyModel) Rerank(ctx context.Context, modelName *string, request Rera
 
 // TranscribeAudio transcribe audio
 func (d *DummyModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", d.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", d.Name())
 }
 
 func (d *DummyModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", d.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", d.Name())
 }
 
 // AudioSpeech convert text to audio
 func (d *DummyModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", d.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", d.Name())
 }
 
 func (d *DummyModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", d.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", d.Name())
 }
 
 // OCRFile OCR file
 func (d *DummyModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", d.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", d.Name())
 }
 
 // ParseFile parse file
 func (d *DummyModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", d.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", d.Name())
 }
 
 func (d *DummyModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
@@ -102,21 +102,21 @@ func (d *DummyModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Li
 }
 
 func (d *DummyModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Balance", d.Name())
 }
 
 func (d *DummyModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
-	return fmt.Errorf("no such method")
+	return fmt.Errorf("%s: no such method: CheckConnection", d.Name())
 }
 
 func (d *DummyModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", d.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", d.Name())
 }
 
 func (d *DummyModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", d.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", d.Name())
 }
 
 func (d *DummyModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", d.Name())
+	return nil, fmt.Errorf("%s: no such method: Decide", d.Name())
 }

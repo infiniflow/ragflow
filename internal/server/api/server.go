@@ -23,14 +23,10 @@ import (
 	"net"
 	"net/http"
 	_ "net/http/pprof"
+
 	"ragflow/internal/agent/audio"
 	"ragflow/internal/agent/canvas"
-	"ragflow/internal/agent/retrievalbridge"
-	"ragflow/internal/agent/runtime"
-	agenttool "ragflow/internal/agent/tool"
-	agentic_rag "ragflow/internal/agentic_rag"
 	"ragflow/internal/channels"
-	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/handler"
 	"ragflow/internal/router"
 	"ragflow/internal/server/local"
@@ -93,6 +89,7 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 	return nil
 }
 
+// startServer owns the API listeners and background workers until ctx is canceled.
 func startServer(ctx context.Context, serverName string, arguments *bootstrap.ServerArgs) error {
 
 	globalConfig := server.GetConfig()
@@ -143,62 +140,7 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	// Initialize doc engine for skill search
 	docEngine := engine.Get()
 	documentDAO := dao.NewDocumentDAO()
-	retrievalEnhancer := retrievalbridge.NewEnhancer(docEngine, metadataService)
-	// Keep the concrete adapter: it is both the canvas/agent-tool backend and the
-	// target of the agentic-RAG bridge wired below. The bridge must hold it
-	// directly (not look it up in the registry) because the registry is shared —
-	// agenttool.SetRetrievalService and runtime.SetRetrievalService write the same
-	// singleton, so a bridge that resolved its target per call would find itself.
-	retrievalAdapter := agenttool.NewNLPRetrievalAdapterFromDeps(
-		docEngine,
-		documentDAO,
-		agenttool.RetrievalModelConstructors{
-			Embedding: func(ctx context.Context, tenantID, modelRef string) (*modelModule.EmbeddingModel, error) {
-				access := service.Identity{TenantID: tenantID}
-				if strings.TrimSpace(modelRef) == "" {
-					return modelFactory.NewDefaultEmbeddingModel(ctx, access)
-				}
-				return modelFactory.NewEmbeddingModel(ctx, access, modelRef)
-			},
-			Chat: func(ctx context.Context, tenantID, modelRef string) (*modelModule.ChatModel, error) {
-				access := service.Identity{TenantID: tenantID}
-				if strings.TrimSpace(modelRef) == "" {
-					return modelFactory.NewDefaultChatModel(ctx, access)
-				}
-				return modelFactory.NewChatModel(ctx, access, modelRef)
-			},
-			Rerank: func(ctx context.Context, tenantID, modelRef string) (*modelModule.RerankModel, error) {
-				return modelFactory.NewRerankModel(ctx, service.Identity{TenantID: tenantID}, modelRef)
-			},
-		},
-		retrievalEnhancer,
-	)
-	agenttool.SetRetrievalService(retrievalAdapter)
-	agenttool.SetMemoryRetrievalService(retrievalbridge.NewMemoryAdapter(memoryService, retrievalEnhancer))
-	common.Info("agent: retrieval service adapter installed")
-
-	// The smart-reasoning agent's corpus tools (internal/agentic_rag): regex
-	// pushdown and lexical BM25 over the same doc engine the retrieval adapter
-	// wraps. The locate tools resolve these services per call, so they must be
-	// registered before the server starts serving.
-	runtime.SetGrepService(agentic_rag.NewGrepAdapter(docEngine))
-	bm25Adapter := agentic_rag.NewBm25Adapter(docEngine)
-	bm25Adapter.SetQueryBuilder(nlp.GetQueryBuilder())
-	runtime.SetBm25Service(bm25Adapter)
-	common.Info("agent: smart-reasoning corpus services installed (grep + bm25)")
-
-	// The compiled-knowledge graph walk (graph_explore) resolves its service per
-	// call the same way. Without this registration GetKgService() returns the
-	// failing stub, so the tool could only ever report an infrastructure error.
-	// The seed encoder is left unset: the walk then seeds by keyword match on the
-	// entity rows, the documented fallback on a deployment without an embedder.
-	agentic_rag.SetKgService(agentic_rag.NewKgAdapter(docEngine))
-	common.Info("agent: smart-reasoning compiled-knowledge graph service installed")
-	// The smart-reasoning agent's corpus tools resolve the shared retrieval
-	// service per call, so the production adapter must be registered before the
-	// server starts serving.
-	runtime.SetRetrievalService(retrievalbridge.NewRuntimeAdapter(retrievalAdapter))
-	common.Info("agent: runtime retrieval service wired")
+	bootstrap.InitializeRetrievalServices(metadataService, memoryService, modelFactory)
 
 	// Initialize handler layer
 	authHandler := handler.NewAuthHandler()
@@ -363,12 +305,17 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	// HTTP request log captures every endpoint the router owns (including
 	// those registered by Setup itself). Registering it here would run
 	// it twice for those endpoints and double every access-log line.
-	ginEngine.Use(gin.Recovery())
+	ginEngine.Use(gin.CustomRecovery(func(c *gin.Context, recovered interface{}) {
+		if !c.Writer.Written() {
+			common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprint(recovered))
+		}
+		c.Abort()
+	}))
 
 	// Setup routes
 	r.Setup(ginEngine)
 
-	_, err := channels.Start(ctx)
+	_, err := channels.Start(ctx, agentService)
 	if err != nil {
 		return fmt.Errorf("start chat-channel: %w", err)
 	}
@@ -461,7 +408,6 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	// Initialize the ingestion lifecycle event sink (best-effort; stdout is
 	// always on, ingestor.log.path adds an optional rotated file). Flush it on shutdown.
 	bootstrap.SetIngestLog(serverName)
-	defer common.SyncIngestLog()
 
 	// Start server in a goroutine
 	go func() {

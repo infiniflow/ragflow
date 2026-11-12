@@ -228,15 +228,20 @@ func TestGPUStackAudioSpeech(t *testing.T) {
 				t.Run(fmt.Sprintf("%s/stream=%t/auth=%t", tc.name, stream, authenticated), func(t *testing.T) {
 					before, _ := json.Marshal(tc.config)
 					srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-						if r.Method != http.MethodPost || r.URL.Path != "/v1/audio/speech" {
-							t.Errorf("request=%s %s", r.Method, r.URL.Path)
-						}
 						wantAuth := ""
 						if authenticated {
 							wantAuth = "Bearer test-key"
 						}
 						if r.Header.Get("Authorization") != wantAuth {
 							t.Errorf("auth=%q", r.Header.Get("Authorization"))
+						}
+						// The voice lookup: this model declares none.
+						if r.Method == http.MethodGet && r.URL.Path == "/v1/models" {
+							_, _ = w.Write([]byte(`{"data":[{"id":"tts-model"}]}`))
+							return
+						}
+						if r.Method != http.MethodPost || r.URL.Path != "/v1/audio/speech" {
+							t.Errorf("request=%s %s", r.Method, r.URL.Path)
 						}
 						var body map[string]interface{}
 						if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -401,6 +406,117 @@ func TestGPUStackAudioSpeechSurfacesVoiceValidation(t *testing.T) {
 			}
 			if err == nil || !strings.Contains(err.Error(), "400") || !strings.Contains(err.Error(), "voice is not supported by this model") {
 				t.Fatalf("error=%v", err)
+			}
+		})
+	}
+}
+
+// gpustackVoiceServer serves a TTS model that declares voices, and reports a
+// missing voice the way VoxBox does.
+func gpustackVoiceServer(t *testing.T, gotVoice *any) *httptest.Server {
+	t.Helper()
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/models":
+			_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{
+				{"id": "other", "meta": map[string]any{"voices": []string{"wrong"}}},
+				{"id": "voice-out", "meta": map[string]any{"voices": []string{"Chinese Female", "English Male"}}},
+			}})
+		case "/v1/audio/speech":
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			*gotVoice = body["voice"]
+			w.Header().Set("Content-Type", "audio/mpeg")
+			_, _ = w.Write([]byte("audio"))
+		default:
+			t.Errorf("unexpected path %s", r.URL.Path)
+		}
+	}))
+}
+
+func TestGPUStackAudioSpeechDefaultsToDeclaredVoice(t *testing.T) {
+	withSSRFBypass(t)
+	model, text := "voice-out", "hello"
+	apiKey := "test-key"
+	for name, tc := range map[string]struct {
+		config *TTSConfig
+		want   string
+	}{
+		"nil config":     {nil, "Chinese Female"},
+		"read aloud":     {&TTSConfig{Format: "mp3"}, "Chinese Female"},
+		"blank voice":    {&TTSConfig{Params: map[string]interface{}{"voice": " "}}, "Chinese Female"},
+		"explicit voice": {&TTSConfig{Params: map[string]interface{}{"voice": "English Male"}}, "English Male"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			var got any
+			srv := gpustackVoiceServer(t, &got)
+			defer srv.Close()
+
+			_, err := configuredGPUStackForTest(t, srv.URL).AudioSpeech(t.Context(), &model, &text, &APIConfig{ApiKey: &apiKey}, tc.config, nil)
+			if err != nil {
+				t.Fatalf("AudioSpeech: %v", err)
+			}
+			if got != tc.want {
+				t.Errorf("voice=%v, want %s", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGPUStackAudioSpeechDoesNotMutateCallerConfig(t *testing.T) {
+	withSSRFBypass(t)
+	var got any
+	srv := gpustackVoiceServer(t, &got)
+	defer srv.Close()
+
+	model, text, apiKey := "voice-out", "hello", "test-key"
+	config := &TTSConfig{Format: "mp3", Params: map[string]interface{}{"speed": 1.5}}
+	if _, err := configuredGPUStackForTest(t, srv.URL).AudioSpeech(t.Context(), &model, &text, &APIConfig{ApiKey: &apiKey}, config, nil); err != nil {
+		t.Fatalf("AudioSpeech: %v", err)
+	}
+	if _, polluted := config.Params["voice"]; polluted {
+		t.Errorf("caller config mutated: %v", config.Params)
+	}
+}
+
+// VoxBox returns HTTPException objects instead of raising them, so failures
+// arrive as HTTP 200 with the status in the body.
+func TestGPUStackAudioSurfacesEmbeddedErrors(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/v1/models" {
+			_, _ = w.Write([]byte(`{"data":[]}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"status_code":500,"detail":"Failed to generate speech","headers":null}`))
+	}))
+	defer srv.Close()
+
+	path := filepath.Join(t.TempDir(), "a.wav")
+	if err := os.WriteFile(path, []byte("audio"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	driver := configuredGPUStackForTest(t, srv.URL)
+	model, text, apiKey := "m", "hello", "test-key"
+	config := &APIConfig{ApiKey: &apiKey}
+	sender := func(*string, *string) error { return nil }
+	for name, call := range map[string]func() error{
+		"asr": func() error {
+			_, err := driver.TranscribeAudio(t.Context(), &model, &path, config, nil, nil)
+			return err
+		},
+		"asr stream": func() error {
+			return driver.TranscribeAudioWithSender(t.Context(), &model, &path, config, nil, nil, sender)
+		},
+		"tts": func() error { _, err := driver.AudioSpeech(t.Context(), &model, &text, config, nil, nil); return err },
+		"tts stream": func() error {
+			return driver.AudioSpeechWithSender(t.Context(), &model, &text, config, nil, nil, sender)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := call(); err == nil || !strings.Contains(err.Error(), "Failed to generate speech") {
+				t.Errorf("err=%v, want the embedded failure", err)
 			}
 		})
 	}

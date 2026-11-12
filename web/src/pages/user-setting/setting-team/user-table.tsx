@@ -30,7 +30,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useListTenantUser } from '@/hooks/use-user-setting-request';
+import {
+  useFetchTenantInfo,
+  useListTenantUser,
+} from '@/hooks/use-user-setting-request';
 import { formatDate } from '@/utils/date';
 import { upperFirst } from 'lodash';
 import { ArrowDown, ArrowUp, ArrowUpDown, Trash2 } from 'lucide-react';
@@ -49,7 +52,9 @@ const ColorMap: Record<string, string> = {
 };
 
 const UserTable = ({ searchUser }: { searchUser: string }) => {
-  const { data, loading } = useListTenantUser();
+  const { data: tenantInfo } = useFetchTenantInfo();
+  const { data, loading } = useListTenantUser(tenantInfo.tenant_id);
+  //   const { handleDeleteTenantUser } = useHandleDeleteUser();
   const { deleteTenantUser } = useHandleDeleteUser();
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>(null);
   const { t } = useTranslation();

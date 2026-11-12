@@ -25,9 +25,9 @@ import (
 	"strings"
 	"time"
 
-	"ragflow/internal/entity"
-
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/tokenizer"
 
@@ -139,7 +139,7 @@ type OpenAIChatRequest struct {
 	MaxTokens        *int     `json:"max_tokens,omitempty"`
 }
 
-func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID string, bodyBytes []byte) {
+func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, chatID string, bodyBytes []byte) {
 	var req OpenAIChatRequest
 	if err := json.Unmarshal(bodyBytes, &req); err != nil {
 		s.writeArgError(c, err.Error())
@@ -237,20 +237,20 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
-	dialogResp, err := s.chatSvc.GetChat(ctx, userID, chatID)
+	dialogResp, err := s.chatSvc.GetChat(ctx, chatID)
 	if err != nil {
 		if permissionresponse.IsPermissionError(err) {
 			code, permissionErr := permissionresponse.NormalizeHidden(err)
-			common.ResponseWithCodeData(c, code, nil, permissionErr.Error())
+			common.RespondError(c, code, permissionErr.Error())
 			return
 		}
 		s.writeDataError(c, err.Error())
 		return
 	}
 	dialog := dialogResp.Chat
-	if err := validateChatDatasetAccess(ctx, userID, dialog.KBIDs); err != nil {
+	if err := validateChatDatasetAccess(ctx, dialog.KBIDs); err != nil {
 		code, permissionErr := permissionresponse.NormalizeHidden(err)
-		common.ResponseWithCodeData(c, code, nil, permissionErr.Error())
+		common.RespondError(c, code, permissionErr.Error())
 		return
 	}
 	resolvedModel := req.Model
@@ -261,7 +261,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		}
 	}
 	if req.Model != "model" {
-		if _, mErr := s.pipeline.ModelFactory.ResolveInfo(ctx, Identity{UserID: userID, TenantID: dialog.TenantID}, entity.ModelTypeChat, resolvedModel); mErr != nil {
+		if _, mErr := s.pipeline.ModelFactory.ResolveInfo(permission.WithTenantID(ctx, dialog.TenantID), entity.ModelTypeChat, resolvedModel); mErr != nil {
 			s.writeArgError(c, fmt.Sprintf("`llm_id` %s doesn't exist", req.Model))
 			return
 		}
@@ -288,7 +288,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 
 	completionID := fmt.Sprintf("chatcmpl-%s", openaiReq.ChatID)
 
-	lfClient := LangfuseClientFromTenant(ctx, dialog.TenantID, userID, openaiReq.ChatID, openaiReq.Model)
+	lfClient := LangfuseClientFromTenant(ctx, dialog.TenantID, openaiReq.ChatID, openaiReq.Model)
 	if lfClient != nil {
 		ctx = context.WithValue(ctx, langfuseCtxKey, lfClient)
 		defer func() {
@@ -335,7 +335,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 	}
 
 	chatKwargs := openAIChatKwargs(&req, needReference, docIDsStr)
-	asyncResults, asyncErr := s.pipeline.AsyncChat(ctx, userID, dialog, filteredMessages, openaiReq.Stream, chatKwargs)
+	asyncResults, asyncErr := s.pipeline.AsyncChat(ctx, dialog, filteredMessages, openaiReq.Stream, chatKwargs)
 	if asyncErr != nil {
 		s.writeDataError(c, asyncErr.Error())
 		return
@@ -920,12 +920,12 @@ func streamChatCompletionSSE(
 
 // writeArgError writes a 101 JSON error envelope (malformed request).
 func (s *OpenAIChatService) writeArgError(c *gin.Context, msg string) {
-	common.ResponseWithCodeData(c, common.CodeArgumentError, nil, msg)
+	common.RespondError(c, common.CodeArgumentError, msg)
 }
 
 // writeDataError writes a 102 JSON error envelope (service failure).
 func (s *OpenAIChatService) writeDataError(c *gin.Context, msg string) {
-	common.ResponseWithCodeData(c, common.CodeDataError, nil, msg)
+	common.RespondError(c, common.CodeDataError, msg)
 }
 
 func getCreatedOrDefault(created *int64) int64 {

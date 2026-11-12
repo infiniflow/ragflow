@@ -49,8 +49,8 @@ func componentCtx(t *testing.T, method, path, body string) (*gin.Context, *httpt
 	c.Set("user", &entity.User{ID: "u-1"})
 	// The auth middleware attaches the permission subject in production; the
 	// enterprise policy needs the tenant from it, so mirror that here.
-	c.Request = c.Request.WithContext(permission.WithSubject(
-		c.Request.Context(), permission.Subject{UserID: "u-1", TenantID: "u-1"}))
+	c.Request = c.Request.WithContext(permission.WithIdentity(
+		c.Request.Context(), "u-1", "u-1"))
 	return c, w
 }
 

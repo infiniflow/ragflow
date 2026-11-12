@@ -27,6 +27,7 @@ import (
 
 	"ragflow/internal/common"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 	"ragflow/internal/rag/prompts"
 
 	"go.uber.org/zap"
@@ -126,14 +127,13 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 	var chatModel *modelModule.ChatModel
 	var err error
 
-	access := Identity{TenantID: tenantID}
 	if llmID != "" {
-		chatModel, err = modelFactory.NewChatModel(ctx, access, llmID)
+		chatModel, err = modelFactory.NewChatModel(permission.WithTenantID(ctx, tenantID), llmID)
 		if err != nil {
 			return query, fmt.Errorf("failed to get chat model: %w", err)
 		}
 	} else {
-		chatModel, err = modelFactory.NewDefaultChatModel(ctx, access)
+		chatModel, err = modelFactory.NewDefaultChatModel(permission.WithTenantID(ctx, tenantID))
 		if err != nil {
 			return query, fmt.Errorf("failed to get default chat model: %w", err)
 		}

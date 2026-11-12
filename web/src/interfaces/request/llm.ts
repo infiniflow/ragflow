@@ -112,12 +112,14 @@ export type ISetDefaultModelRequestBody =
   | {
       model_type: string;
       model_id: string;
+      tenant_id?: string;
     }
   | {
       model_type: string;
       model_provider: string;
       model_instance: string;
       model_name: string;
+      tenant_id?: string;
     };
 
 /**
@@ -156,4 +158,9 @@ export interface IListProviderModelsRequestBody {
    * server applies the current form's non-secret configuration and endpoint.
    */
   instance_name?: string;
+  /**
+   * Returns failures to the caller instead of raising the global notification,
+   * so they can be explained next to the form.
+   */
+  skipGlobalErrorNotification?: boolean;
 }

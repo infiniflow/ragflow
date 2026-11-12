@@ -69,8 +69,6 @@ func SetLogger(serverName string, arguments *ServerArgs) {
 func SetIngestLog(serverName string) {
 	globalConfig := server.GetConfig()
 	ingestLogConfig := globalConfig.GetIngestLogConfig()
-	// Flush any prior sink before swapping it out (e.g. on a reconfigure).
-	common.SyncIngestLog()
 	if err := common.InitIngestLog(ingestLogConfig.Type, ingestLogConfig.GetFileOutput(), serverName); err != nil {
 		common.Error("Failed to initialize ingest log sink", err)
 	}

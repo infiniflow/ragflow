@@ -354,16 +354,16 @@ func TestRESTRetrievalChunkDeletionConsistency(t *testing.T) {
 	// Establish all target chunks are searchable before either deletion, so an empty index cannot pass.
 	waitRESTRetrievalIDs(t, f.request(), f.chunkIDs)
 	path := "/datasets/" + f.datasetID + "/documents/" + f.documentIDs[0] + "/chunks"
-	deleted := restOK(t, restCall(t, TestConfig, http.MethodDelete, path, apiObject{"chunk_ids": f.chunkIDs[:1]}, nil))["data"]
+	deleted := object(t, restOK(t, restCall(t, TestConfig, http.MethodDelete, path, apiObject{"chunk_ids": f.chunkIDs[:1]}, nil))["data"])["deleted_count"]
 	if deleted != float64(1) {
 		t.Fatalf("deleted count=%v want 1", deleted)
 	}
 	waitRESTRetrievalIDs(t, f.request(), f.chunkIDs[1:])
-	if count := restOK(t, restCall(t, TestConfig, http.MethodDelete, path, apiObject{"chunk_ids": f.chunkIDs[1:2]}, nil))["data"]; count != float64(1) {
+	if count := object(t, restOK(t, restCall(t, TestConfig, http.MethodDelete, path, apiObject{"chunk_ids": f.chunkIDs[1:2]}, nil))["data"])["deleted_count"]; count != float64(1) {
 		t.Fatalf("deleted count=%v want 1", count)
 	}
 	path = "/datasets/" + f.datasetID + "/documents/" + f.documentIDs[1] + "/chunks"
-	deleted = restOK(t, restCall(t, TestConfig, http.MethodDelete, path, apiObject{"chunk_ids": f.chunkIDs[2:]}, nil))["data"]
+	deleted = object(t, restOK(t, restCall(t, TestConfig, http.MethodDelete, path, apiObject{"chunk_ids": f.chunkIDs[2:]}, nil))["data"])["deleted_count"]
 	if deleted != float64(2) {
 		t.Fatalf("batch deleted count=%v want 2", deleted)
 	}

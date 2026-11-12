@@ -384,7 +384,7 @@ func TestMigrateIngestionLogRunIdentity(t *testing.T) {
 		t.Fatalf("migrateIngestionLogRunIdentity: %v", err)
 	}
 	migrator := db.Migrator()
-	for _, column := range []string{"run_count"} {
+	for _, column := range []string{"run_count", "pipeline_version_id"} {
 		if !migrator.HasColumn(&entity.PipelineOperationLog{}, column) {
 			t.Fatalf("pipeline_operation_log missing %s", column)
 		}
@@ -407,6 +407,13 @@ func TestMigrateIngestionLogRunIdentity(t *testing.T) {
 	}
 	if legacyRunCount != nil {
 		t.Fatalf("legacy run_count = %d, want NULL", *legacyRunCount)
+	}
+	var legacyVersionID *string
+	if err := db.Raw(`SELECT pipeline_version_id FROM pipeline_operation_log WHERE id = 'legacy-log'`).Scan(&legacyVersionID).Error; err != nil {
+		t.Fatalf("read legacy pipeline version: %v", err)
+	}
+	if legacyVersionID != nil {
+		t.Fatalf("legacy pipeline_version_id = %q, want NULL", *legacyVersionID)
 	}
 	if err := db.Exec(`INSERT INTO pipeline_operation_log (id, document_id, run_count) VALUES ('run-1', 'doc-1', 1)`).Error; err != nil {
 		t.Fatalf("insert first numbered run: %v", err)
@@ -560,5 +567,48 @@ func TestAutoMigrateRuntimeModelsNamesFailingTable(t *testing.T) {
 	err = autoMigrateRuntimeModels(t.Context(), db)
 	if err == nil || !strings.Contains(err.Error(), "runtime table ingestion_task") {
 		t.Fatalf("autoMigrateRuntimeModels error = %v, want failing table name", err)
+	}
+}
+
+func TestAutoMigrateLeavesEnterpriseEvaluationHistoryUntouched(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tables := []string{"evaluation_datasets", "evaluation_cases", "evaluation_runs", "evaluation_results"}
+	for _, table := range tables {
+		for _, model := range autoMigrateModels() {
+			stmt := &gorm.Statement{DB: db}
+			if err := stmt.Parse(model); err != nil {
+				t.Fatal(err)
+			}
+			if stmt.Schema.Table == table {
+				t.Fatalf("OSS registers %s", table)
+			}
+		}
+		if err := db.Exec("CREATE TABLE " + table + " (id TEXT PRIMARY KEY, history TEXT)").Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Exec("INSERT INTO " + table + " VALUES ('historical', 'keep')").Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := autoMigrateRuntimeModels(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateResourceUserIDs(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range tables {
+		var history string
+		if err := db.Table(table).Select("history").Where("id = ?", "historical").Scan(&history).Error; err != nil {
+			t.Fatal(err)
+		}
+		if history != "keep" {
+			t.Fatalf("%s history changed: %q", table, history)
+		}
+		if db.Migrator().HasColumn(table, "user_id") {
+			t.Fatalf("OSS altered %s", table)
+		}
 	}
 }

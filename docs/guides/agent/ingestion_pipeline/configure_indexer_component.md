@@ -4,13 +4,13 @@ title: Configure the Indexer Component
 sidebar_label: Configure the Indexer Component
 slug: /configure_indexer_component
 sidebar_custom_props: {
-  categoryIcon: RagAiAgent
+  categoryIcon: LucideListPlus
 }
 ---
 
 # Configure the Indexer Component
 
-**Indexer** prepares chunk data for full-text and embedding search. Connect it after the Chunker, Transformer, or Compiler and use the pipeline with a knowledge base to index documents.
+**Indexer** prepares chunk data for full-text and embedding search. Connect it after the Chunker, Transformer, or Compiler and use the pipeline with a Dataset to index documents.
 
 Click the Indexer node to open its panel. Review **Search method**, adjust **Filename embedding weight**, and select **Field** as described below.
 
@@ -41,7 +41,7 @@ For Questions or Augmented context, first enable the corresponding function in T
 
 ## Embedding model
 
-The model comes from the connected knowledge base, rather than an independent model selector in this panel. Knowledge bases searched together must use the same embedding model.
+The model comes from the connected Dataset, rather than an independent model selector in this panel. Datasets searched together must use the same embedding model.
 
 ## Apply and Validate
 

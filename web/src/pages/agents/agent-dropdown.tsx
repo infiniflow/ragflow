@@ -9,6 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { AgentDropdownGuard } from '@/ee/pages/agents/agent-dropdown-guard';
 import { useDeleteAgent } from '@/hooks/use-agent-request';
 import { IFlow } from '@/interfaces/database/agent';
 import { PenLine, Tag, Trash2 } from 'lucide-react';
@@ -25,10 +26,12 @@ import { useRenameAgent } from './use-rename-agent';
 export function AgentDropdown({
   children,
   showAgentRenameModal,
-  agent: agent,
+  agent,
+  showPrivilegeModal,
 }: PropsWithChildren &
   Pick<ReturnType<typeof useRenameAgent>, 'showAgentRenameModal'> & {
     agent: IFlow;
+    showPrivilegeModal(): void;
   }) {
   const { t } = useTranslation();
   const { deleteAgent } = useDeleteAgent();
@@ -57,37 +60,49 @@ export function AgentDropdown({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>{children}</DropdownMenuTrigger>
         <DropdownMenuContent>
-          <DropdownMenuItem onClick={handleShowAgentRenameModal}>
-            {t('common.rename')} <PenLine />
-          </DropdownMenuItem>
-          <DropdownMenuItem onClick={handleEditTags}>
-            {t('flow.editTags')} <Tag />
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <ConfirmDeleteDialog
-            onOk={handleDelete}
-            title={t('deleteModal.delAgent')}
-            content={{
-              node: (
-                <ConfirmDeleteDialogNode
-                  avatar={{ avatar: agent.avatar, name: agent.title }}
-                  name={agent.title}
-                />
-              ),
-            }}
-          >
-            <DropdownMenuItem
-              className="text-state-error"
-              onSelect={(e) => {
-                e.preventDefault();
-              }}
-              onClick={(e) => {
-                e.stopPropagation();
-              }}
-            >
-              {t('common.delete')} <Trash2 />
-            </DropdownMenuItem>
-          </ConfirmDeleteDialog>
+          <AgentDropdownGuard
+            agent={agent}
+            showPrivilegeModal={showPrivilegeModal}
+            manageItems={
+              <>
+                <DropdownMenuItem onClick={handleShowAgentRenameModal}>
+                  {t('common.rename')} <PenLine />
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleEditTags}>
+                  {t('flow.editTags')} <Tag />
+                </DropdownMenuItem>
+              </>
+            }
+            deleteItems={
+              <>
+                <DropdownMenuSeparator />
+                <ConfirmDeleteDialog
+                  onOk={handleDelete}
+                  title={t('deleteModal.delAgent')}
+                  content={{
+                    node: (
+                      <ConfirmDeleteDialogNode
+                        avatar={{ avatar: agent.avatar, name: agent.title }}
+                        name={agent.title}
+                      />
+                    ),
+                  }}
+                >
+                  <DropdownMenuItem
+                    className="text-state-error"
+                    onSelect={(e) => {
+                      e.preventDefault();
+                    }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                    }}
+                  >
+                    {t('common.delete')} <Trash2 />
+                  </DropdownMenuItem>
+                </ConfirmDeleteDialog>
+              </>
+            }
+          />
         </DropdownMenuContent>
       </DropdownMenu>
       <AgentTagEditor

@@ -99,7 +99,7 @@ func ensureDatasetTestMembership(t *testing.T, userID, tenantID, role string) {
 }
 
 func withDatasetTestContext(ctx context.Context, userID, tenantID string) context.Context {
-	return permission.WithSubject(ctx, permission.Subject{UserID: userID, TenantID: tenantID})
+	return permission.WithIdentity(ctx, userID, tenantID)
 }
 
 func sptr(s string) *string { return &s }

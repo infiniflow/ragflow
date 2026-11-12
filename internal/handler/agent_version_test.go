@@ -83,6 +83,9 @@ func TestAgentVersionActions(t *testing.T) {
 					wantCode = common.CodeOperatingError
 				case "unauthenticated":
 					delete(c.Keys, "user")
+					delete(c.Keys, "user_id")
+					delete(c.Keys, "tenant_id")
+					c.Request = c.Request.WithContext(t.Context())
 					wantCode = common.CodeUnauthorized
 				case "nil_dsl":
 					version.DSL = nil
@@ -111,7 +114,7 @@ func TestAgentVersionActions(t *testing.T) {
 				}
 				var response struct {
 					Code    common.ErrorCode `json:"code"`
-					Data    interface{}      `json:"data"`
+					Data    json.RawMessage  `json:"data"`
 					Message string           `json:"message"`
 				}
 				if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
@@ -120,8 +123,8 @@ func TestAgentVersionActions(t *testing.T) {
 				if response.Code != wantCode || response.Message == "" {
 					t.Fatalf("unexpected response: %s", w.Body.String())
 				}
-				if wantCode == common.CodeSuccess && response.Data != true {
-					t.Fatalf("success data = %v, want true", response.Data)
+				if len(response.Data) != 0 {
+					t.Fatalf("data must be omitted, got %s", response.Data)
 				}
 				persisted, err := dao.NewUserCanvasDAO().GetByID(t.Context(), db, current.ID)
 				if err != nil {

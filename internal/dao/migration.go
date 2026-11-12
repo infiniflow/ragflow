@@ -63,6 +63,10 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to modify column types: %w", err)
 	}
 
+	if err := migrateColumnWidths(ctx, db); err != nil {
+		return fmt.Errorf("failed to widen columns: %w", err)
+	}
+
 	// Add case-insensitive unique constraint on knowledgebase (tenant_id, name)
 	if err := migrateKnowledgebaseNameUnique(ctx, db); err != nil {
 		return fmt.Errorf("failed to add unique index on knowledgebase (tenant_id, name): %w", err)
@@ -75,6 +79,10 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 
 	if err := migrateGeneralChunkerParserConfigs(ctx, db); err != nil {
 		return fmt.Errorf("failed to migrate general chunker parser configs: %w", err)
+	}
+
+	if err := migrateConnectorCredentials(ctx, db); err != nil {
+		return fmt.Errorf("failed to encrypt connector credentials: %w", err)
 	}
 
 	// Backfill the tenant model tables from the legacy tenant_llm table.
@@ -113,6 +121,78 @@ func dropModelGroupTables(ctx context.Context, db *gorm.DB) error {
 			return fmt.Errorf("drop %s: %w", table, err)
 		}
 		common.Info("Dropped unused table", zap.String("table", table))
+	}
+	return nil
+}
+
+// migrateColumnWidths widens columns whose values are copied from a wider
+// source or carry a new, longer format. It is idempotent: it reads the
+// current width and only issues DDL when the column is narrower than the
+// target.
+//
+// On MySQL, widening a VARCHAR column changes its length prefix and can
+// rebuild the table. Run it through the standalone --migrate action during a
+// maintenance window.
+func migrateColumnWidths(ctx context.Context, db *gorm.DB) error {
+	specs := []struct {
+		model  any
+		field  string
+		table  string
+		column string
+		width  int64
+	}{
+		{&entity.PipelineOperationLog{}, "PipelineTitle", "pipeline_operation_log", "pipeline_title", common.PipelineTitleLimit},
+		{&entity.Tenant{}, "Name", "tenant", "name", common.TenantNameLimit},
+		// The tenant_*id model-reference columns hold a tenant_model id or,
+		// since the model group feature, a gp-<group_id> reference that does
+		// not fit the legacy varchar(32) width.
+		{&entity.UserTenant{}, "TenantLLMID", "user_tenant", "tenant_llm_id", common.GroupModelRefWidth},
+		{&entity.UserTenant{}, "TenantEmbdID", "user_tenant", "tenant_embd_id", common.GroupModelRefWidth},
+		{&entity.UserTenant{}, "TenantASRID", "user_tenant", "tenant_asr_id", common.GroupModelRefWidth},
+		{&entity.UserTenant{}, "TenantImg2TxtID", "user_tenant", "tenant_img2txt_id", common.GroupModelRefWidth},
+		{&entity.UserTenant{}, "TenantRerankID", "user_tenant", "tenant_rerank_id", common.GroupModelRefWidth},
+		{&entity.UserTenant{}, "TenantTTSID", "user_tenant", "tenant_tts_id", common.GroupModelRefWidth},
+		{&entity.UserTenant{}, "TenantOCRID", "user_tenant", "tenant_ocr_id", common.GroupModelRefWidth},
+		{&entity.UserTenant{}, "TenantDecisionID", "user_tenant", "tenant_decision_id", common.GroupModelRefWidth},
+		{&entity.Chat{}, "TenantLLMID", "dialog", "tenant_llm_id", common.GroupModelRefWidth},
+		{&entity.Chat{}, "TenantDecisionID", "dialog", "tenant_decision_id", common.GroupModelRefWidth},
+		{&entity.Chat{}, "TenantRerankID", "dialog", "tenant_rerank_id", common.GroupModelRefWidth},
+		{&entity.Knowledgebase{}, "TenantEmbdID", "knowledgebase", "tenant_embd_id", common.GroupModelRefWidth},
+		{&entity.Memory{}, "TenantEmbdID", "memory", "tenant_embd_id", common.GroupModelRefWidth},
+		{&entity.Memory{}, "TenantLLMID", "memory", "tenant_llm_id", common.GroupModelRefWidth},
+		{&entity.SkillSearchConfig{}, "TenantRerankID", "skill_search_configs", "tenant_rerank_id", common.GroupModelRefWidth},
+	}
+
+	migrator := db.WithContext(ctx).Migrator()
+	for _, spec := range specs {
+		if !migrator.HasTable(spec.model) {
+			continue
+		}
+		types, err := migrator.ColumnTypes(spec.model)
+		if err != nil {
+			return fmt.Errorf("read %s columns: %w", spec.table, err)
+		}
+		for _, ct := range types {
+			if ct.Name() != spec.column {
+				continue
+			}
+			length, ok := ct.Length()
+			if !ok {
+				// Dialects that cannot report a width are left to AutoMigrate.
+				break
+			}
+			if length >= spec.width {
+				break
+			}
+			if err := migrator.AlterColumn(spec.model, spec.field); err != nil {
+				return fmt.Errorf("widen %s.%s to %d: %w", spec.table, spec.column, spec.width, err)
+			}
+			common.Info("Widened column",
+				zap.String("table", spec.table),
+				zap.String("column", spec.column),
+				zap.Int64("width", spec.width))
+			break
+		}
 	}
 	return nil
 }
@@ -433,10 +513,9 @@ func migrateIngestionTaskPipelineLogID(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
-// migrateIngestionLogRunIdentity adds the columns and indexes that make each
-// ingestion event belong to one immutable pipeline-operation-log run. It is
-// deliberately explicit: the runtime startup path auto-migrates ingestion
-// tables and cannot be trusted to converge an existing schema safely.
+// migrateIngestionLogRunIdentity adds the run identity and pipeline version
+// columns. It is explicit because runtime AutoMigrate cannot be trusted to
+// converge an existing schema safely.
 func migrateIngestionLogRunIdentity(ctx context.Context, db *gorm.DB) error {
 	migrator := db.WithContext(ctx).Migrator()
 	if migrator.HasTable(&entity.PipelineOperationLog{}) {
@@ -449,6 +528,13 @@ func migrateIngestionLogRunIdentity(ctx context.Context, db *gorm.DB) error {
 		}
 		if err := createIngestionLogIndexIfMissing(migrator, &entity.PipelineOperationLog{}, "idx_pipeline_operation_log_document_run", "add pipeline_operation_log document/run index"); err != nil {
 			return err
+		}
+		if !migrator.HasColumn(&entity.PipelineOperationLog{}, "pipeline_version_id") {
+			if err := db.WithContext(ctx).Exec(
+				"ALTER TABLE pipeline_operation_log ADD COLUMN pipeline_version_id varchar(32) NULL",
+			).Error; err != nil && !isDuplicateColumnError(err) {
+				return fmt.Errorf("add pipeline_operation_log.pipeline_version_id: %w", err)
+			}
 		}
 	}
 
@@ -619,14 +705,13 @@ func migrateUserCanvasTitleUnique(ctx context.Context, db *gorm.DB) error {
 }
 
 // knowledgebaseParserConfigTargetVersion is the database version a completed
-// knowledgebase parser config cleanup brings the database to. It is stored in
-// system_settings under mysql_migration.database.version, the marker shared with
-// the other versioned steps, so work already performed by a previous run is
-// skipped.
-const knowledgebaseParserConfigTargetVersion = "v1.0.0-rc2"
+// ingestion/parser config migration brings the database to. It is stored in
+// the shared system_settings migration marker and precedes the tenant-model
+// max_tokens backfill.
+const knowledgebaseParserConfigTargetVersion = "v1.0.0-rc2.dev1"
 
 // removedParserConfigKeys are the top level knowledgebase parser config keys the
-// v1.0.0-rc2 step deletes. raptor and graphrag moved out of the dataset
+// cleanup deletes. raptor and graphrag moved out of the dataset
 // parser config, so the stored sections are dead data.
 var removedParserConfigKeys = []string{"raptor", "graphrag"}
 

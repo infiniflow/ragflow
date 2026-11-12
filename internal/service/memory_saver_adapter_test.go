@@ -65,8 +65,8 @@ func TestMemorySaverAuthorizesWithAuthenticatedCanvasCaller(t *testing.T) {
 	state.Sys["canvas_id"] = canvas.ID
 	state.Sys["user_id"] = "caller"
 	ctx = runtime.WithState(ctx, state)
-	ownerCtx := permission.WithSubject(ctx, permission.Subject{UserID: "canvas-owner", TenantID: "canvas-owner"})
-	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ownerCtx, permission.Subject{UserID: "canvas-owner"}, permission.ResourceRef{
+	ownerCtx := permission.WithIdentity(ctx, "canvas-owner", "canvas-owner")
+	if err := permission.NewDatabaseChecker(dao.DB).CheckResource(permission.WithIdentity(ownerCtx, "canvas-owner", ""), permission.ResourceRef{
 		Kind: permission.ResourceKindMemory, ID: memory.ID,
 	}, permission.OperationUse); err != nil {
 		t.Fatalf("canvas owner should be able to use memory: %v", err)

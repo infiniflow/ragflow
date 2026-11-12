@@ -77,17 +77,17 @@ func TestUpdateMCPServerRejectsDuplicatedName(t *testing.T) {
 	}
 
 	// Renaming to an existing server name of the same tenant is rejected.
-	if _, code, err := s.UpdateMCPServer(ctx, tenantID, "mcp-1", nameReq("beta")); err == nil || code != common.CodeDataError {
+	if _, code, err := s.UpdateMCPServer(ctx, "mcp-1", nameReq("beta")); err == nil || code != common.CodeDataError {
 		t.Errorf("expected duplicated name data error, got code=%v err=%v", code, err)
 	}
 
 	// Keeping the current name is allowed.
-	if _, code, err := s.UpdateMCPServer(ctx, tenantID, "mcp-1", nameReq("alpha")); err != nil || code != common.CodeSuccess {
+	if _, code, err := s.UpdateMCPServer(ctx, "mcp-1", nameReq("alpha")); err != nil || code != common.CodeSuccess {
 		t.Errorf("expected success keeping current name, got code=%v err=%v", code, err)
 	}
 
 	// Renaming to a fresh name is allowed.
-	updated, code, err := s.UpdateMCPServer(ctx, tenantID, "mcp-1", nameReq("gamma"))
+	updated, code, err := s.UpdateMCPServer(ctx, "mcp-1", nameReq("gamma"))
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("expected success renaming to fresh name, got code=%v err=%v", code, err)
 	}
@@ -101,17 +101,17 @@ func TestServerInputValidation(t *testing.T) {
 	ctx := t.Context()
 
 	// Empty URL is rejected before any connection attempt.
-	if _, err := s.TestServer(ctx, "tenant-1", "id-1", &TestServerRequest{ServerType: mcpServerTypeSSE}); !errors.Is(err, ErrMCPInvalidURL) {
+	if _, err := s.TestServer(ctx, "id-1", &TestServerRequest{ServerType: mcpServerTypeSSE}); !errors.Is(err, ErrMCPInvalidURL) {
 		t.Errorf("expected ErrMCPInvalidURL for empty url, got %v", err)
 	}
 
 	// nil body is treated as empty URL.
-	if _, err := s.TestServer(ctx, "tenant-1", "id-1", nil); !errors.Is(err, ErrMCPInvalidURL) {
+	if _, err := s.TestServer(ctx, "id-1", nil); !errors.Is(err, ErrMCPInvalidURL) {
 		t.Errorf("expected ErrMCPInvalidURL for nil body, got %v", err)
 	}
 
 	// Invalid server type is rejected before connecting.
-	if _, err := s.TestServer(ctx, "tenant-1", "id-1", &TestServerRequest{URL: "http://example.com/sse", ServerType: "stdio"}); !errors.Is(err, ErrMCPInvalidType) {
+	if _, err := s.TestServer(ctx, "id-1", &TestServerRequest{URL: "http://example.com/sse", ServerType: "stdio"}); !errors.Is(err, ErrMCPInvalidType) {
 		t.Errorf("expected ErrMCPInvalidType for bad type, got %v", err)
 	}
 }
@@ -132,7 +132,7 @@ func TestImportServersValidationErrors(t *testing.T) {
 		"bad-type":       {"url": "http://example.com", "type": "stdio"},
 	}
 	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
-	results, err := s.ImportServers(ctx, "tenant-1", configs, 1)
+	results, err := s.ImportServers(ctx, configs, 1)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -221,7 +221,7 @@ func TestMCPManagedTokenLifecycle(t *testing.T) {
 	withMCPDiscoveryOverrides(t, server)
 	s := NewMCPService()
 	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
-	created, code, err := s.CreateMCPServer(ctx, "tenant-1", CreateMCPServerRequest{
+	created, code, err := s.CreateMCPServer(ctx, CreateMCPServerRequest{
 		Name: "managed-auth", URL: server.URL, ServerType: mcpServerTypeStreamableHTTP,
 		Headers:   json.RawMessage(`{"Authorization":"Bearer ${authorization_token}"}`),
 		Variables: json.RawMessage(`{"authorization_token":"ragflow-secret"}`),
@@ -235,18 +235,18 @@ func TestMCPManagedTokenLifecycle(t *testing.T) {
 	if created.Headers["Authorization"] != maskedMCPSecret {
 		t.Fatal("create response exposed headers")
 	}
-	listed, _, err := s.ListMCPServers(ctx, "tenant-1", "", nil, "", 0, 0, "create_time", false)
+	listed, _, err := s.ListMCPServers(ctx, "", nil, "", 0, 0, "create_time", false)
 	if err != nil || len(listed.MCPServers) != 1 || listed.MCPServers[0].Variables["authorization_token"] != maskedMCPSecret {
 		t.Fatalf("list: result=%#v err=%v", listed, err)
 	}
 	testReq := &TestServerRequest{URL: server.URL, ServerType: mcpServerTypeStreamableHTTP, Headers: map[string]any(created.Headers), Variables: map[string]any{"authorization_token": maskedMCPSecret}}
 	beforeRejected := len(captured())
 	testReq.URL = server.URL + "/other"
-	if _, err := s.TestServer(ctx, "tenant-1", created.ID, testReq); err == nil {
+	if _, err := s.TestServer(ctx, created.ID, testReq); err == nil {
 		t.Fatal("preview reused credentials for a different URL")
 	}
 	testReq.Variables["authorization_token"] = "replacement"
-	if _, err := s.TestServer(ctx, "tenant-1", created.ID, testReq); err == nil {
+	if _, err := s.TestServer(ctx, created.ID, testReq); err == nil {
 		t.Fatal("preview reused masked headers for a different URL")
 	}
 	testReq.Variables["authorization_token"] = maskedMCPSecret
@@ -257,23 +257,23 @@ func TestMCPManagedTokenLifecycle(t *testing.T) {
 		{"variables": json.RawMessage(`{"authorization_token":"replacement"}`), "headers": json.RawMessage(`{"Authorization":"********"}`)},
 	} {
 		extra["url"] = json.RawMessage(fmt.Sprintf("%q", server.URL+"/other"))
-		if _, _, err := s.UpdateMCPServer(ctx, "tenant-1", created.ID, extra); err == nil {
+		if _, _, err := s.UpdateMCPServer(ctx, created.ID, extra); err == nil {
 			t.Fatal("update reused credentials for a different URL")
 		}
 	}
 	if len(captured()) != beforeRejected {
 		t.Fatal("rejected endpoint changes made outbound requests")
 	}
-	if _, err := s.TestServer(serviceTestContext(t, "other-tenant", "other-tenant"), "other-tenant", created.ID, testReq); err == nil {
+	if _, err := s.TestServer(serviceTestContext(t, "other-tenant", "other-tenant"), created.ID, testReq); err == nil {
 		t.Fatal("masked preview resolved another tenant's credential")
 	}
-	if _, err := s.TestServer(ctx, "tenant-1", created.ID, testReq); err != nil {
+	if _, err := s.TestServer(ctx, created.ID, testReq); err != nil {
 		t.Fatalf("masked preview: %v", err)
 	}
 	if testReq.Variables["authorization_token"] != maskedMCPSecret || testReq.Headers["Authorization"] != maskedMCPSecret {
 		t.Fatal("preview mutated the client payload")
 	}
-	updated, code, err := s.UpdateMCPServer(ctx, "tenant-1", created.ID, UpdateMCPServerRequest{
+	updated, code, err := s.UpdateMCPServer(ctx, created.ID, UpdateMCPServerRequest{
 		"url":       json.RawMessage(fmt.Sprintf("%q", server.URL)),
 		"variables": json.RawMessage(`{"authorization_token":"********"}`),
 		"headers":   json.RawMessage(`{"Authorization":"********"}`),
@@ -281,7 +281,7 @@ func TestMCPManagedTokenLifecycle(t *testing.T) {
 	if err != nil || code != common.CodeSuccess || updated.URL != server.URL || updated.Variables["authorization_token"] != "ragflow-secret" {
 		t.Fatalf("masked update: result=%#v code=%d err=%v", updated, code, err)
 	}
-	stored, _, err := s.GetMCPServer(ctx, "tenant-1", created.ID)
+	stored, _, err := s.GetMCPServer(ctx, created.ID)
 	if err != nil || stored.URL != server.URL || stored.Variables["authorization_token"] != "ragflow-secret" {
 		t.Fatalf("reload: result=%#v err=%v", stored, err)
 	}
@@ -293,7 +293,7 @@ func TestMCPManagedTokenLifecycle(t *testing.T) {
 			t.Fatalf("authentication not preserved: %#v", headers)
 		}
 	}
-	exported, _, err := s.ExportMCPServer(ctx, "tenant-1", created.ID)
+	exported, _, err := s.ExportMCPServer(ctx, created.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -301,7 +301,7 @@ func TestMCPManagedTokenLifecycle(t *testing.T) {
 	if err != nil || !strings.Contains(string(payload), "ragflow-secret") {
 		t.Fatalf("explicit credential export: payload=%s err=%v", payload, err)
 	}
-	updated, code, err = s.UpdateMCPServer(ctx, "tenant-1", created.ID, UpdateMCPServerRequest{
+	updated, code, err = s.UpdateMCPServer(ctx, created.ID, UpdateMCPServerRequest{
 		"url":       json.RawMessage(fmt.Sprintf("%q", server.URL+"/other")),
 		"variables": json.RawMessage(`{"authorization_token":"replacement"}`),
 		"headers":   json.RawMessage(`{"Authorization":"Bearer ${authorization_token}"}`),
@@ -348,7 +348,7 @@ func TestImportServersPreservesExplicitHeadersAndVariables(t *testing.T) {
 			defer srv.Close()
 			withMCPDiscoveryOverrides(t, srv)
 
-			results, err := NewMCPService().ImportServers(serviceTestContext(t, "tenant-1", "tenant-1"), "tenant-1", map[string]map[string]interface{}{
+			results, err := NewMCPService().ImportServers(serviceTestContext(t, "tenant-1", "tenant-1"), map[string]map[string]interface{}{
 				"parallel": {
 					"type":                mcpServerTypeStreamableHTTP,
 					"url":                 srv.URL,
@@ -412,7 +412,7 @@ func TestImportServersPreservesExplicitHeadersAndVariables(t *testing.T) {
 				t.Fatalf("export did not contain parallel config: %s", exported)
 			}
 			capturedBefore := len(captured())
-			reimported, err := NewMCPService().ImportServers(serviceTestContext(t, "tenant-1", "tenant-1"), "tenant-1", map[string]map[string]interface{}{
+			reimported, err := NewMCPService().ImportServers(serviceTestContext(t, "tenant-1", "tenant-1"), map[string]map[string]interface{}{
 				"parallel": reimportConfig,
 			}, 2)
 			if err != nil {
@@ -527,7 +527,7 @@ func TestListMCPServersAppliesAuthorizationBeforeSQLPagination(t *testing.T) {
 	}
 
 	ctx := serviceTestContext(t, "owner", "tenant-1")
-	listed, code, err := NewMCPService().ListMCPServers(ctx, "owner", "tenant-1", nil, "", 2, 1, "name", false)
+	listed, code, err := NewMCPService().ListMCPServers(ctx, "tenant-1", nil, "", 2, 1, "name", false)
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("ListMCPServers() = (code %d, %v), want success", code, err)
 	}

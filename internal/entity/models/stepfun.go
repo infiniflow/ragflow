@@ -158,7 +158,7 @@ func (s *StepFunModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 
 // Balance is not exposed by the StepFun API, so this returns "no such method".
 func (s *StepFunModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Balance", s.Name())
 }
 
 // CheckConnection runs a lightweight ListModels call to verify the API key.
@@ -173,16 +173,16 @@ func (s *StepFunModel) CheckConnection(ctx context.Context, apiConfig *APIConfig
 // Rerank calculates similarity scores between query and documents. StepFun
 // does not expose a public rerank API, so this returns "no such method".
 func (s *StepFunModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Rerank", s.Name())
 }
 
 // TranscribeAudio transcribe audio
 func (s *StepFunModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", s.Name())
 }
 
 func (s *StepFunModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", s.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", s.Name())
 }
 
 // AudioSpeech convert text to audio
@@ -341,22 +341,22 @@ func (s *StepFunModel) AudioSpeechWithSender(ctx context.Context, modelName *str
 
 // OCRFile OCR file
 func (s *StepFunModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", s.Name())
 }
 
 // ParseFile parse file
 func (s *StepFunModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", s.Name())
 }
 
 func (s *StepFunModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", s.Name())
 }
 
 func (s *StepFunModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", s.Name())
 }
 
 func (s *StepFunModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: Decide", s.Name())
 }

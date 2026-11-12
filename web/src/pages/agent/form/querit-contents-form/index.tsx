@@ -13,7 +13,7 @@ import { Switch } from '@/components/ui/switch';
 import { useTranslate } from '@/hooks/common-hooks';
 import { buildOptions } from '@/utils/form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { memo } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import {
@@ -43,14 +43,47 @@ const FormSchema = z.object({
   extras_meta: z.boolean(),
 });
 
+/** Parses a crawl timeout only when it is an integer in the supported range. */
+const parseCrawlTimeout = (value: unknown) => {
+  const numberValue =
+    typeof value === 'number'
+      ? value
+      : typeof value === 'string' && value.trim() !== ''
+        ? Number(value)
+        : Number.NaN;
+
+  return Number.isInteger(numberValue) && numberValue >= 1 && numberValue <= 60
+    ? numberValue
+    : undefined;
+};
+
+/** Replaces a missing or invalid saved timeout with the tool's default. */
+const normalizeCrawlTimeout = (value: unknown) =>
+  parseCrawlTimeout(value) ?? initialQueritContentsValues.crawl_timeout;
+
+/** Renders the Querit Contents form and keeps its timeout valid while editing. */
 function QueritContentsForm({ node }: INextOperatorForm) {
   const { t } = useTranslate('flow');
   const values = useFormValues(initialQueritContentsValues, node);
+  const defaultValues = useMemo(
+    () => ({
+      ...values,
+      crawl_timeout: normalizeCrawlTimeout(values.crawl_timeout),
+    }),
+    [values],
+  );
+  const [crawlTimeoutDraft, setCrawlTimeoutDraft] = useState(() =>
+    String(defaultValues.crawl_timeout),
+  );
   const form = useForm<z.infer<typeof FormSchema>>({
-    defaultValues: values,
+    defaultValues,
     resolver: zodResolver(FormSchema),
     mode: 'onChange',
   });
+
+  useEffect(() => {
+    setCrawlTimeoutDraft(String(normalizeCrawlTimeout(values.crawl_timeout)));
+  }, [node?.id, values.crawl_timeout]);
 
   useWatchFormChange(node?.id, form);
 
@@ -97,17 +130,46 @@ function QueritContentsForm({ node }: INextOperatorForm) {
           <FormField
             control={form.control}
             name="crawl_timeout"
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel tooltip={t('queritContentsTimeoutTip')}>
-                  {t('queritContentsTimeout')}
-                </FormLabel>
-                <FormControl>
-                  <Input type="number" min={1} max={60} step={1} {...field} />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
+            render={({ field }) => {
+              const handleTimeoutChange = (
+                event: React.ChangeEvent<HTMLInputElement>,
+              ) => {
+                const value = String(event.target.value);
+                setCrawlTimeoutDraft(value);
+
+                const timeout = parseCrawlTimeout(value);
+                if (timeout !== undefined) {
+                  field.onChange(timeout);
+                }
+              };
+              const handleTimeoutBlur = () => {
+                field.onBlur();
+                setCrawlTimeoutDraft(
+                  String(normalizeCrawlTimeout(field.value)),
+                );
+              };
+
+              return (
+                <FormItem>
+                  <FormLabel tooltip={t('queritContentsTimeoutTip')}>
+                    {t('queritContentsTimeout')}
+                  </FormLabel>
+                  <FormControl>
+                    <Input
+                      type="number"
+                      min={1}
+                      max={60}
+                      step={1}
+                      {...field}
+                      value={crawlTimeoutDraft}
+                      onChange={handleTimeoutChange}
+                      onBlur={handleTimeoutBlur}
+                    />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              );
+            }}
           />
           <FormField
             control={form.control}

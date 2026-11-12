@@ -19,6 +19,8 @@ package entity
 import (
 	"database/sql/driver"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -150,11 +152,38 @@ func (j *JSONMap) Scan(value interface{}) error {
 		*j = nil
 		return nil
 	}
-	b, ok := value.([]byte)
-	if !ok {
-		return json.Unmarshal([]byte(value.(string)), j)
+	var raw string
+	switch v := value.(type) {
+	case []byte:
+		raw = string(v)
+	case string:
+		raw = v
+	default:
+		raw = fmt.Sprint(value)
 	}
-	return json.Unmarshal(b, j)
+	if strings.TrimSpace(raw) == "" {
+		*j = nil
+		return nil
+	}
+	// Python/legacy rows sometimes stored a JSON object as a JSON-encoded
+	// string ("{...}"). Try parsing directly first, then unwrap one level.
+	// Decode into fresh maps: Unmarshal into a reused non-nil map keeps
+	// stale keys from a previous Scan.
+	var fresh JSONMap
+	if err := json.Unmarshal([]byte(raw), &fresh); err == nil {
+		*j = fresh
+		return nil
+	}
+	var quoted string
+	if err := json.Unmarshal([]byte(raw), &quoted); err != nil {
+		return json.Unmarshal([]byte(raw), j)
+	}
+	var unwrapped JSONMap
+	if err := json.Unmarshal([]byte(quoted), &unwrapped); err != nil {
+		return err
+	}
+	*j = unwrapped
+	return nil
 }
 
 func (j *JSONMap) GormDataType() string {

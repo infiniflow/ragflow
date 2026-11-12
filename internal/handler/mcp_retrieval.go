@@ -8,6 +8,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/mcp"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/service/document"
 )
@@ -24,10 +25,10 @@ const mcpRerankCandidatesCount = 512
 // multiplying so a hostile page value cannot overflow page * pageSize.
 func validateRetrievalWindow(page, pageSize int) error {
 	if page <= 0 {
-		page = 1
+		page = common.DefaultPage
 	}
 	if pageSize <= 0 {
-		pageSize = 30
+		pageSize = common.DefaultPageSize
 	}
 	if page > mcpRerankCandidatesCount/pageSize {
 		return fmt.Errorf("page (%d) * page_size (%d) exceeds the fixed rerank candidate window (%d); narrow page or page_size", page, pageSize, mcpRerankCandidatesCount)
@@ -39,15 +40,19 @@ func validateRetrievalWindow(page, pageSize int) error {
 // the MCP retrieval entry point can be tested against a recording fake without
 // standing up the full DatasetService.
 type mcpDatasetService interface {
-	ListDatasets(ctx context.Context, id, name string, page, pageSize int, terms []dao.OrderTerm, keywords string, ownerIDs []string, parserID, userID string, ids []string, canvasID string) ([]map[string]interface{}, int64, common.ErrorCode, error)
-	SearchDatasets(ctx context.Context, req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error)
-	GetDataset(ctx context.Context, datasetID, userID string) (map[string]interface{}, common.ErrorCode, error)
+	ListDatasets(ctx context.Context, id, name string, page, pageSize int, terms []dao.OrderTerm, keywords string, ownerIDs []string, parserID string, ids []string, canvasID string) ([]map[string]interface{}, int64, common.ErrorCode, error)
+	SearchDatasets(ctx context.Context, req *service.SearchDatasetsRequest) (*service.SearchDatasetsResponse, error)
+	GetDataset(ctx context.Context, datasetID string) (map[string]interface{}, common.ErrorCode, error)
 }
 
 // mcpRetrieval executes a retrieval request on behalf of the MCP tool handler.
 // It translates the mcp.RetrievalRequest into a service.SearchDatasetsRequest
 // and calls DatasetService.SearchDatasets. The result is serialized as JSON.
-func mcpRetrieval(ctx context.Context, ds mcpDatasetService, userID string, req mcp.RetrievalRequest) (string, error) {
+func mcpRetrieval(ctx context.Context, ds mcpDatasetService, req mcp.RetrievalRequest) (string, error) {
+	if permission.UserIDFromContext(ctx) == "" {
+		return "", permission.ErrUnauthenticated
+	}
+
 	if err := validateRetrievalWindow(req.Page, req.PageSize); err != nil {
 		return "", err
 	}
@@ -55,14 +60,13 @@ func mcpRetrieval(ctx context.Context, ds mcpDatasetService, userID string, req 
 	// across all pages (matching Python _fetch_all_datasets behaviour).
 	datasetIDs := req.DatasetIDs
 	if len(datasetIDs) == 0 {
-		const maxPageSize = 100
 		ids, err := fetchAllDatasetIDs(func(page, pageSize int) ([]map[string]interface{}, int64, error) {
 			data, total, _, err := ds.ListDatasets(ctx,
 				"", "", page, pageSize, []dao.OrderTerm{{Column: "create_time", Desc: true}},
-				"", nil, "", userID, nil, "",
+				"", nil, "", nil, "",
 			)
 			return data, total, err
-		}, maxPageSize)
+		}, common.MaxPageSize)
 		if err != nil {
 			return "", fmt.Errorf("cannot resolve accessible datasets: %w", err)
 		}
@@ -111,7 +115,7 @@ func mcpRetrieval(ctx context.Context, ds mcpDatasetService, userID string, req 
 		searchReq.Keyword = &v
 	}
 
-	resp, err := ds.SearchDatasets(ctx, searchReq, userID)
+	resp, err := ds.SearchDatasets(ctx, searchReq)
 	if err != nil {
 		return "", err
 	}
@@ -121,7 +125,7 @@ func mcpRetrieval(ctx context.Context, ds mcpDatasetService, userID string, req 
 	datasetNames := make(map[string]string)
 	documentMetadata := make(map[string]map[string]any)
 	for _, id := range datasetIDs {
-		info, code, err := ds.GetDataset(ctx, id, userID)
+		info, code, err := ds.GetDataset(ctx, id)
 		if err != nil || code != common.CodeSuccess {
 			continue
 		}
@@ -229,10 +233,10 @@ func mcpRetrievalResult(req mcp.RetrievalRequest, datasetIDs []string, resp *ser
 	}
 	page, size := req.Page, req.PageSize
 	if page <= 0 {
-		page = 1
+		page = common.DefaultPage
 	}
 	if size <= 0 {
-		size = 30
+		size = common.DefaultPageSize
 	}
 	return map[string]any{
 		"chunks":     chunks,

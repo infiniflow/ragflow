@@ -126,17 +126,27 @@ func shouldSkipMigration(currentDBVersion, targetVersion string) bool {
 // compareMigrationVersion orders two canonical migration versions, returning -1,
 // 0 or 1 as current sorts before, equal to, or after target.
 //
-// It follows semver except for development prereleases, where it matches PEP
-// 440, the ordering the Python migration gets from packaging.version: a
-// trailing ".devN" identifier marks a build leading the version it is attached
-// to, so v1.0.0-rc1.dev1 sorts below v1.0.0-rc1 and below v1.0.0-rc1.dev2.
-// semver orders a longer prerelease above its prefix, which would place a dev
-// build ahead of the very release it precedes.
+// It follows semver except for development and post-release versions, where it
+// matches PEP 440, the ordering the Python migration gets from
+// packaging.version. A trailing ".devN" marks a build leading the version it is
+// attached to, while a numeric "-N" suffix marks a post-release version.
 func compareMigrationVersion(current, target string) int {
 	currentCore := migrationVersionCore(current)
 	targetCore := migrationVersionCore(target)
 	if cmp := semver.Compare(currentCore, targetCore); cmp != 0 {
 		return cmp
+	}
+	currentPost, isCurrentPost := postReleaseNumber(current)
+	targetPost, isTargetPost := postReleaseNumber(target)
+	if isCurrentPost || isTargetPost {
+		switch {
+		case isCurrentPost && isTargetPost:
+			return comparePostRelease(currentPost, targetPost)
+		case isCurrentPost:
+			return 1
+		default:
+			return -1
+		}
 	}
 	currentBase, currentDev := splitDevPrerelease(semver.Prerelease(current))
 	targetBase, targetDev := splitDevPrerelease(semver.Prerelease(target))
@@ -155,6 +165,63 @@ func compareMigrationVersion(current, target string) int {
 		return -1
 	}
 	return 1
+}
+
+type postReleaseVersion struct {
+	number    int
+	devNumber int
+	isDev     bool
+}
+
+// postReleaseNumber recognizes the PEP 440 "-N" post-release shorthand, such
+// as v1.0.0-1. semver parses it as a numeric prerelease, which sorts before rc
+// versions and would make a later database migration appear older.
+func postReleaseNumber(version string) (postReleaseVersion, bool) {
+	prerelease := strings.TrimPrefix(semver.Prerelease(version), "-")
+	if prerelease == "" {
+		return postReleaseVersion{}, false
+	}
+	parts := strings.Split(prerelease, ".")
+	number, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return postReleaseVersion{}, false
+	}
+	post := postReleaseVersion{number: number}
+	if len(parts) == 1 {
+		return post, true
+	}
+	if len(parts) != 2 {
+		return postReleaseVersion{}, false
+	}
+	dev, ok := devIdentifierNumber(parts[1])
+	if !ok {
+		return postReleaseVersion{}, false
+	}
+	post.devNumber = dev
+	post.isDev = true
+	return post, true
+}
+
+func comparePostRelease(current, target postReleaseVersion) int {
+	if current.number < target.number {
+		return -1
+	}
+	if current.number > target.number {
+		return 1
+	}
+	if current.isDev && !target.isDev {
+		return -1
+	}
+	if !current.isDev && target.isDev {
+		return 1
+	}
+	if current.devNumber < target.devNumber {
+		return -1
+	}
+	if current.devNumber > target.devNumber {
+		return 1
+	}
+	return 0
 }
 
 // migrationVersionCore strips prerelease and build metadata, leaving the
@@ -196,8 +263,9 @@ func devIdentifierNumber(identifier string) (int, bool) {
 	return value, true
 }
 
-// parseMigrationVersion normalizes a version to the "vMAJOR.MINOR.PATCH" form
-// understood by semver, returning an empty string when it cannot be parsed.
+// parseMigrationVersion normalizes a version to the semver form used for
+// ordering, returning an empty string when it cannot be parsed. A numeric
+// fourth component is a post-release counter: v1.0.0.1 becomes v1.0.0-1.
 func parseMigrationVersion(version string) string {
 	normalized := strings.TrimSpace(version)
 	normalized = strings.TrimPrefix(normalized, "v")
@@ -206,6 +274,17 @@ func parseMigrationVersion(version string) string {
 		return ""
 	}
 	normalized = "v" + normalized
+	if !semver.IsValid(normalized) {
+		parts := strings.Split(normalized, ".")
+		if len(parts) == 4 {
+			if _, err := strconv.Atoi(parts[3]); err == nil {
+				candidate := strings.Join(parts[:3], ".") + "-" + parts[3]
+				if semver.IsValid(candidate) {
+					normalized = candidate
+				}
+			}
+		}
+	}
 	if !semver.IsValid(normalized) {
 		common.Warn("Invalid migration version format", zap.String("version", version))
 		return ""

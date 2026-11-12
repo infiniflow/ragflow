@@ -11,8 +11,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/cespare/xxhash/v2"
@@ -27,6 +25,7 @@ import (
 	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
 
 const (
@@ -57,8 +56,6 @@ const (
 	// rankDecayWeightPower is the power exponent applied to relative tag weight.
 	rankDecayWeightPower = 0.4
 )
-
-const taggerLLMConcurrency = 8
 
 var taggerTimeout = 60 * time.Second
 
@@ -405,34 +402,8 @@ func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in ex
 		}
 	}
 
-	if len(docsToTag) > 0 {
-		driver, model, apiKey, baseURL, err := resolveExtractorChatTarget(ctx, db, in.llmID)
-		if err != nil {
-			common.Warn("extractor tag: resolve model failed, skipping LLM tagging", zap.Error(err))
-		}
-		if driver != "" && model != "" {
-			inv := getExtractorChatInvoker()
-			sem := make(chan struct{}, taggerLLMConcurrency)
-			var wg sync.WaitGroup
-			var tagged atomic.Int64
-			total := int64(len(docsToTag))
-
-			for i := range docsToTag {
-				wg.Add(1)
-				go func(idx int) {
-					defer wg.Done()
-					defer func() { w.Report(ctx, float64(tagged.Add(1))/float64(total)) }()
-					select {
-					case sem <- struct{}{}:
-						defer func() { <-sem }()
-					case <-ctx.Done():
-						return
-					}
-					llmTagChunk(ctx, db, inv, docsToTag[idx], indexed.allTags, examples, in.cache, in.llmID, in.modelID, driver, model, apiKey, baseURL, topN, indexed)
-				}(i)
-			}
-			wg.Wait()
-		}
+	if err := c.runLLMTags(ctx, db, in, docsToTag, indexed, examples, w); err != nil {
+		return nil, err
 	}
 
 	taggedCount := 0
@@ -452,6 +423,34 @@ func (c *ExtractorComponent) runAutoTags(ctx context.Context, db *gorm.DB, in ex
 	)
 
 	return in.chunks, nil
+}
+
+// runLLMTags submits unmatched chunks to the shared Extractor pool.
+func (c *ExtractorComponent) runLLMTags(ctx context.Context, db *gorm.DB, in extractorInputs, chunks []map[string]any, indexed *MemoryTagIndex, examples []schema.TaggedChunk, w progress.Window) error {
+	if len(chunks) == 0 {
+		return nil
+	}
+	driver, model, apiKey, baseURL, err := resolveExtractorChatTarget(ctx, db, in.llmID)
+	if err != nil {
+		common.Warn("extractor tag: resolve model failed, skipping LLM tagging", zap.Error(err))
+	}
+	if driver == "" || model == "" {
+		return nil
+	}
+	inv := getExtractorChatInvoker()
+	topN := c.Param.Tags.TopN
+	futs := make([]utility.WorkerPoolFuture[extractorJob, struct{}], 0, len(chunks))
+	for _, chunk := range chunks {
+		f, err := extractorPool.Submit(ctx, func() error {
+			llmTagChunk(ctx, db, inv, chunk, indexed.allTags, examples, in.cache, in.llmID, in.modelID, driver, model, apiKey, baseURL, topN, indexed)
+			return nil
+		})
+		if err != nil {
+			return err
+		}
+		futs = append(futs, f)
+	}
+	return awaitFutures(ctx, futs, w)
 }
 
 func (c *ExtractorComponent) resolveTagSource(ctx context.Context, db *gorm.DB, lang string) (*MemoryTagIndex, bool) {
@@ -632,7 +631,7 @@ func detectTextLanguage(chunks []map[string]any) string {
 	return "English"
 }
 
-// roundInt mirrors Python's round() on a float, which is round-half-to-even
+// roundInt mirrors round() on a float, which is round-half-to-even
 // (banker's rounding): round(2.5) == 2 and round(3.5) == 4. The previous
 // int(f+0.5) form rounded halves away from zero and returned 3 for 2.5.
 func roundInt(f float64) int {
@@ -709,7 +708,7 @@ func llmTagChunk(
 	// system prompt embeds the full chunk text, the entire tag set and up
 	// to two full examples, so oversized chunks or tag files would
 	// otherwise be rejected by the provider (context length exceeded).
-	// Mirrors Python's message_fit_in in content_tagging (generator.py:331).
+	// Mirrors message_fit_in in content_tagging.
 	fitted, fitErr := fitExtractorMessages(ctx, db, llmID, msgs)
 	if fitErr != nil {
 		common.Warn("extractor tags: skipping LLM tagging, message fitting failed", zap.Error(fitErr))

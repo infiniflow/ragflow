@@ -16,6 +16,7 @@
 
 import { HomeCard } from '@/components/home-card';
 import { MoreButton } from '@/components/more-button';
+import { SharedBadge } from '@/components/shared-badge';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { ISearchAppProps } from './hooks';
 import { SearchDropdown } from './search-dropdown';
@@ -23,8 +24,13 @@ import { SearchDropdown } from './search-dropdown';
 interface IProps {
   data: ISearchAppProps;
   showSearchRenameModal: (data: ISearchAppProps) => void;
+  showPrivilegeModal(): void;
 }
-export function SearchCard({ data, showSearchRenameModal }: IProps) {
+export function SearchCard({
+  data,
+  showSearchRenameModal,
+  showPrivilegeModal,
+}: IProps) {
   const { navigateToSearch } = useNavigatePage();
 
   return (
@@ -34,10 +40,12 @@ export function SearchCard({ data, showSearchRenameModal }: IProps) {
         <SearchDropdown
           dataset={data}
           showSearchRenameModal={showSearchRenameModal}
+          showPrivilegeModal={showPrivilegeModal}
         >
           <MoreButton></MoreButton>
         </SearchDropdown>
       }
+      sharedBadge={<SharedBadge>{data.nickname}</SharedBadge>}
       onClick={navigateToSearch(data?.id)}
     />
   );

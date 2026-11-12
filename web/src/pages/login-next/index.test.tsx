@@ -48,6 +48,13 @@ afterAll(() => {
 });
 
 describe('login registration entry', () => {
+  const config = {
+    disablePasswordLogin: false,
+    registerEnabled: 1,
+    emailVerificationEnabled: false,
+    upload_size_limit: 0,
+  };
+
   beforeEach(() => {
     MockUseSystemConfig.mockReturnValue({ config: undefined, loading: true });
   });
@@ -63,7 +70,7 @@ describe('login registration entry', () => {
       expect(screen.getByTestId('auth-submit')).toBeEnabled();
 
       MockUseSystemConfig.mockReturnValue({
-        config: { registerEnabled },
+        config: { ...config, registerEnabled },
         loading: false,
       });
       rerender(<Login />);
@@ -85,7 +92,7 @@ describe('login registration entry', () => {
       ).not.toBeInTheDocument();
 
       MockUseSystemConfig.mockReturnValue({
-        config: { registerEnabled },
+        config: { ...config, registerEnabled },
         loading: false,
       });
       rerender(<Login />);

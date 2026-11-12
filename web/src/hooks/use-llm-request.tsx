@@ -242,6 +242,7 @@ export const useFetchInstanceModels = (
     data,
     isFetching: loading,
     isSuccess,
+    isFetchedAfterMount,
   } = useQuery<IInstanceModel[]>({
     queryKey: LlmKeys.instanceModels(providerName, instanceName),
     initialData: [],
@@ -259,7 +260,7 @@ export const useFetchInstanceModels = (
     },
   });
 
-  return { data, loading, isSuccess };
+  return { data, loading, isSuccess, isFetchedAfterMount };
 };
 
 export type LlmItem = { name: string; logo: string } & IMyLlmValue;
@@ -387,6 +388,7 @@ export const useListProviderModels = () => {
         use_saved_credentials,
         api_key_config,
         instance_name,
+        skipGlobalErrorNotification,
       } = params;
       // GET /api/v1/providers/<provider_name>/models
       // The API accepts api_key and base_url as optional query parameters.
@@ -415,7 +417,13 @@ export const useListProviderModels = () => {
         queryParams.instance_name = instance_name;
       }
       const { data } = await llmService.listProviderModels(
-        { provider_name, params: queryParams },
+        {
+          provider_name,
+          params: queryParams,
+          ...(skipGlobalErrorNotification
+            ? { skipGlobalErrorNotification }
+            : {}),
+        },
         true,
       );
       return data;

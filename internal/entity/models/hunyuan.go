@@ -251,45 +251,45 @@ func (h *HunyuanModel) Embed(ctx context.Context, modelName *string, request Emb
 }
 
 func (h *HunyuanModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: Rerank", h.Name())
 }
 
 func (h *HunyuanModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", h.Name())
 }
 
 func (h *HunyuanModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", h.Name())
 }
 
 func (h *HunyuanModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", h.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", h.Name())
 }
 
 func (h *HunyuanModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", h.Name())
 }
 
 func (h *HunyuanModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", h.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", h.Name())
 }
 
 func (h *HunyuanModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", h.Name())
 }
 
 func (h *HunyuanModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", h.Name())
 }
 
 func (h *HunyuanModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", h.Name())
 }
 
 func (h *HunyuanModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", h.Name())
 }
 
 func (h *HunyuanModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: Decide", h.Name())
 }

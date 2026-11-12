@@ -2,6 +2,9 @@
 sidebar_position: 1
 sidebar_label: Before You Begin
 title: Before You Begin
+sidebar_custom_props: {
+  categoryIcon: LucideInfo
+}
 ---
 
 # Before You Begin
@@ -14,7 +17,7 @@ After entering the Admin UI, administrators can check service status, manage use
 
 ![Enter The Admin Console](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/enter_the_admin_console.jpg)
 
-Regular users do not need to enter the Admin UI when they use business features such as knowledge bases, chat, Agent, files, and model providers.
+Regular users do not need to enter the Admin UI when they use business features such as Datasets, chat, Agent, files, and model providers.
 
 ## Initial Administrator Account
 

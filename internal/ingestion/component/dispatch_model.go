@@ -104,7 +104,7 @@ func defaultResolveTenantModelByType(ctx context.Context, db *gorm.DB, tenantID 
 }
 
 // resolveTenantOCRModelByProvider resolves the tenant's first active OCR
-// model under the named provider (e.g. "PaddleOCR"), mirroring Python's
+// model under the named provider (e.g. "PaddleOCR"), mirroring
 // get_first_provider_model_name(tenant_id, provider_name, LLMType.OCR).
 // It walks provider -> instances -> models and returns the first model whose
 // model_type includes the OCR bit, resolved through resolveModelConfigByID.
@@ -177,8 +177,10 @@ func ocrProviderAliases(providerName string) []string {
 
 func resolveDefaultModelMembership(ctx context.Context, db *gorm.DB, tenantID string) (*entity.UserTenant, error) {
 	membershipDAO := dao.NewUserTenantDAO()
-	if subject, ok := permission.SubjectFromContext(ctx); ok && subject.UserID != "" && (subject.TenantID == "" || subject.TenantID == tenantID) {
-		return membershipDAO.FilterByUserIDAndTenantID(ctx, db, subject.UserID, tenantID)
+	userID := permission.UserIDFromContext(ctx)
+	contextTenantID := permission.TenantIDFromContext(ctx)
+	if userID != "" && (contextTenantID == "" || contextTenantID == tenantID) {
+		return membershipDAO.FilterByUserIDAndTenantID(ctx, db, userID, tenantID)
 	}
 	return membershipDAO.GetOwnerByTenantID(ctx, db, tenantID)
 }

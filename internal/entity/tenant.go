@@ -19,12 +19,12 @@ package entity
 // Tenant tenant model
 type Tenant struct {
 	ID            string  `gorm:"column:id;primaryKey;size:32" json:"id"`
-	Name          *string `gorm:"column:name;size:100;index" json:"name,omitempty"`
+	Name          *string `gorm:"column:name;size:128;index" json:"name,omitempty"`
 	PublicKey     *string `gorm:"column:public_key;size:255;index" json:"public_key,omitempty"`
 	ParserIDs     string  `gorm:"column:parser_ids;size:256;not null;index" json:"parser_ids"`
 	Credit        int     `gorm:"column:credit;default:512;index" json:"credit"`
-	InviteEnabled bool    `gorm:"column:invite_enabled;not null;default:false" json:"invite_enabled"`
 	RoleID        *int32  `gorm:"column:role_id" json:"role_id,omitempty"`
+	DefaultRoleID *int32  `gorm:"column:default_role_id" json:"default_role_id,omitempty"`
 	Status        *string `gorm:"column:status;size:1;index;default:'1'" json:"status,omitempty"`
 	BaseModel
 }

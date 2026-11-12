@@ -68,7 +68,7 @@ func TestCheckCanvasRetrievalDependencies(t *testing.T) {
 	state.Sys["canvas_id"] = canvas.ID
 	state.Sys["user_id"] = "caller"
 	state.Sys["tenant_id"] = "canvas-owner"
-	ctx := permission.WithSubject(runtime.WithState(t.Context(), state), permission.Subject{UserID: "caller", TenantID: "canvas-owner"})
+	ctx := permission.WithIdentity(runtime.WithState(t.Context(), state), "caller", "canvas-owner")
 
 	if err := checkCanvasRetrievalDependencies(ctx, db, map[string]any{"dataset_ids": []string{dataset.ID}}); err != nil {
 		t.Fatalf("check accessible dataset dependency: %v", err)

@@ -29,27 +29,29 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// ListAPIKeys resolves the caller's tenant scope before loading its API keys.
 func (h *SystemHandler) ListAPIKeys(c *gin.Context) {
 	ctx := c.Request.Context()
-	_, tenantID, code, err := currentAPIKeyOwner(c)
+	code, err := currentAPIKeyOwner(c)
 	if err != nil {
 		respondAPIKeyContextError(c, code, err)
 		return
 	}
 
 	// Get keys for the tenant
-	keys, err := h.systemService.ListAPIKeys(ctx, tenantID)
+	keys, err := h.systemService.ListAPIKeys(ctx)
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Failed to list keys")
+		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to list keys: "+err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, keys, "success")
+	common.RespondSuccessList(c, keys, "success")
 }
 
+// CreateKey accepts an empty request body and binds the new key to the caller's tenant.
 func (h *SystemHandler) CreateKey(c *gin.Context) {
 	ctx := c.Request.Context()
-	user, tenantID, code, err := currentAPIKeyOwner(c)
+	code, err := currentAPIKeyOwner(c)
 	if err != nil {
 		respondAPIKeyContextError(c, code, err)
 		return
@@ -59,23 +61,24 @@ func (h *SystemHandler) CreateKey(c *gin.Context) {
 	// ShouldBind reports io.EOF for it.
 	var req service.CreateAPIKeyRequest
 	if err = c.ShouldBind(&req); err != nil && !errors.Is(err, io.EOF) {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Invalid request")
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Invalid request: "+err.Error())
 		return
 	}
 
 	// Create key
-	key, err := h.systemService.CreateAPIKey(ctx, user.ID, tenantID, &req)
+	key, err := h.systemService.CreateAPIKey(ctx, &req)
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Failed to create key")
+		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to create key: "+err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, key, "success")
+	common.RespondSuccess(c, key, "success")
 }
 
+// DeleteKey requires a tenant identity before deleting the requested key.
 func (h *SystemHandler) DeleteKey(c *gin.Context) {
 	ctx := c.Request.Context()
-	_, tenantID, code, err := currentAPIKeyOwner(c)
+	code, err := currentAPIKeyOwner(c)
 	if err != nil {
 		respondAPIKeyContextError(c, code, err)
 		return
@@ -84,27 +87,27 @@ func (h *SystemHandler) DeleteKey(c *gin.Context) {
 	// Get key from path parameter
 	key := c.Param("key")
 	if key == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Key is required")
+		common.Respond(c, http.StatusBadRequest, 400, nil, "Key is required")
 		return
 	}
 
 	// Delete key
-	if err = h.systemService.DeleteAPIKey(ctx, tenantID, key); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Failed to delete key")
+	if err = h.systemService.DeleteAPIKey(ctx, key); err != nil {
+		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to delete key: "+err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, true, "success")
+	common.RespondSuccess(c, nil, "success")
 }
 
-func currentAPIKeyOwner(c *gin.Context) (*entity.User, string, common.ErrorCode, error) {
+func currentAPIKeyOwner(c *gin.Context) (common.ErrorCode, error) {
 	userValue, exists := c.Get("user")
 	if !exists {
-		return nil, "", common.CodeUnauthorized, errors.New("Unauthorized")
+		return common.CodeUnauthorized, errors.New("Unauthorized")
 	}
 	user, ok := userValue.(*entity.User)
 	if !ok {
-		return nil, "", common.CodeServerError, errors.New("Invalid user data")
+		return common.CodeServerError, errors.New("Invalid user data")
 	}
 
 	tenantID := c.GetString("tenant_id")
@@ -114,9 +117,9 @@ func currentAPIKeyOwner(c *gin.Context) (*entity.User, string, common.ErrorCode,
 	}
 	membership, err := dao.NewUserTenantDAO().FilterByUserIDAndTenantID(c.Request.Context(), dao.DB, user.ID, tenantID)
 	if err != nil || membership.Role != "owner" {
-		return nil, "", common.CodeForbidden, errors.New("Only the tenant owner can manage API keys")
+		return common.CodeForbidden, errors.New("Only the tenant owner can manage API keys")
 	}
-	return user, tenantID, common.CodeSuccess, nil
+	return common.CodeSuccess, nil
 }
 
 func respondAPIKeyContextError(c *gin.Context, code common.ErrorCode, err error) {
@@ -126,5 +129,5 @@ func respondAPIKeyContextError(c *gin.Context, code common.ErrorCode, err error)
 	} else if code == common.CodeServerError {
 		status = http.StatusInternalServerError
 	}
-	common.ResponseWithHttpCodeData(c, status, code, nil, err.Error())
+	common.Respond(c, status, code, nil, err.Error())
 }

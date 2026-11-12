@@ -59,7 +59,10 @@ export function PublishConfirmDialog({
               name={agentDetail.title}
               className="size-8"
             />
-            <span className="text-text-primary text-lg">
+            <span
+              className="text-text-primary text-lg break-all"
+              title={agentDetail.title}
+            >
               {agentDetail.title}
             </span>
           </div>

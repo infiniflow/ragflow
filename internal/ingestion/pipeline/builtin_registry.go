@@ -15,7 +15,7 @@ import (
 
 const builtinTemplatePrefix = "ingestion_pipeline_"
 
-// builtinParserOrder matches Python's settings.PARSERS order, projected onto
+// builtinParserOrder matches settings.PARSERS order, projected onto
 // the canonical builtin templates shipped by Go. Templates not in this list
 // are appended deterministically after the shared parser methods.
 var builtinParserOrder = map[string]int{

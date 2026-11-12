@@ -1,4 +1,5 @@
 import { UploadFormSchemaType } from '@/components/file-upload-dialog';
+import { useUploadBillingError } from '@/ee/hooks/use-upload-billing-error';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useUploadFile } from '@/hooks/use-file-request';
 import { useCallback } from 'react';
@@ -11,19 +12,30 @@ export const useHandleUploadFile = () => {
     showModal: showFileUploadModal,
   } = useSetModalState();
   const { uploadFile, loading } = useUploadFile();
+  const { handleUploadError } = useUploadBillingError();
   const id = useGetFolderId();
 
   const onFileUploadOk = useCallback(
     async ({ fileList }: UploadFormSchemaType): Promise<number | undefined> => {
       if (fileList.length > 0) {
-        const ret: number = await uploadFile({ fileList, parentId: id });
-        if (ret === 0) {
-          hideFileUploadModal();
+        const ret = await uploadFile({
+          fileList: fileList as File[],
+          parentId: id,
+        });
+
+        if (handleUploadError(ret)) {
+          return ret?.code;
         }
-        return ret;
+
+        if (ret?.code === 0) {
+          hideFileUploadModal();
+          return 0;
+        }
+
+        return ret?.code;
       }
     },
-    [uploadFile, hideFileUploadModal, id],
+    [uploadFile, hideFileUploadModal, id, handleUploadError],
   );
 
   return {

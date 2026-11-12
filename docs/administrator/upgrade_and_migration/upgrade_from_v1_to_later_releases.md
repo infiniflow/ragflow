@@ -4,7 +4,7 @@ title: Upgrade from v1.x to later releases
 sidebar_label: Upgrade from v1.x to later releases
 slug: /upgrade_from_v1_to_later_releases
 sidebar_custom_props: {
-  categoryIcon: LucideLocateFixed
+  categoryIcon: LucideRocket
 }
 ---
 
@@ -79,7 +79,7 @@ After migration, confirm that:
 
 - All expected containers are running and healthy.
 - Existing users can sign in.
-- Existing knowledge bases and files are visible.
+- Existing Datasets and files are visible.
 - Existing files can be opened and retrieved.
 - A new document can be uploaded, parsed, and retrieved.
 - Existing conversation history is available.

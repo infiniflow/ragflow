@@ -105,7 +105,7 @@ func TestDatasetServiceAggregateTagsSeedsFromTagFile(t *testing.T) {
 	}
 	ctx := withDatasetTestContext(t.Context(), "user-1", "user-1")
 
-	result, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(ctx, []string{kbInput}, "user-1")
+	result, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(ctx, []string{kbInput})
 	if err != nil {
 		t.Fatalf("AggregateTags failed: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestDatasetServiceAggregateTagsMergesAcrossTagFiles(t *testing.T) {
 	}
 	ctx := withDatasetTestContext(t.Context(), "user-1", "user-1")
 
-	result, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(ctx, []string{kb1Input, kb2Input}, "user-1")
+	result, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(ctx, []string{kb1Input, kb2Input})
 	if err != nil {
 		t.Fatalf("AggregateTags failed: %v", err)
 	}
@@ -188,7 +188,7 @@ func TestDatasetServiceAggregateTagsEmptyWhenNoTagFile(t *testing.T) {
 	}
 	ctx := withDatasetTestContext(t.Context(), "user-1", "user-1")
 
-	result, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(ctx, []string{kbInput}, "user-1")
+	result, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(ctx, []string{kbInput})
 	if err != nil {
 		t.Fatalf("AggregateTags failed: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestDatasetServiceAggregateTagsRejectsUnauthorizedDataset(t *testing.T) {
 	insertAggregateTagsKB(t, kbID, "tenant-9", string(entity.TenantPermissionMe), "", 0)
 	ctx := withDatasetTestContext(t.Context(), "user-1", "tenant-9")
 
-	_, code, err := testDatasetServiceForAggregateTags(t, nil).AggregateTags(ctx, []string{kbInput}, "user-1")
+	_, code, err := testDatasetServiceForAggregateTags(t, nil).AggregateTags(ctx, []string{kbInput})
 	if err == nil {
 		t.Fatal("expected authorization error")
 	}
@@ -246,7 +246,7 @@ func TestDatasetServiceAggregateTagsScopesLoaderToDatasetTenant(t *testing.T) {
 		return map[string]int{"finance": 1}, nil
 	}
 
-	if _, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(ctx, []string{kbInput}, "user-1"); err != nil {
+	if _, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(ctx, []string{kbInput}); err != nil {
 		t.Fatalf("AggregateTags failed: code=%d err=%v", code, err)
 	}
 	if gotOwner != kbTenant {
@@ -292,7 +292,7 @@ func TestDatasetServiceAggregateTagsReadsDocumentTagFile(t *testing.T) {
 		return nil, nil
 	}
 
-	result, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(withDatasetTestContext(t.Context(), "user-1", "user-1"), []string{kbInput}, "user-1")
+	result, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(withDatasetTestContext(t.Context(), "user-1", "user-1"), []string{kbInput})
 	if err != nil {
 		t.Fatalf("AggregateTags failed: %v", err)
 	}
@@ -324,7 +324,7 @@ func TestDatasetServiceAggregateTagsCountsSnapshotOnce(t *testing.T) {
 		return nil, nil
 	}
 
-	result, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(withDatasetTestContext(t.Context(), "user-1", "user-1"), []string{kbInput}, "user-1")
+	result, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(withDatasetTestContext(t.Context(), "user-1", "user-1"), []string{kbInput})
 	if err != nil {
 		t.Fatalf("AggregateTags failed: %v", err)
 	}
@@ -360,7 +360,7 @@ func TestDatasetServiceAggregateTagsUnionsDocumentTagFiles(t *testing.T) {
 		return nil, nil
 	}
 
-	result, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(withDatasetTestContext(t.Context(), "user-1", "user-1"), []string{kbInput}, "user-1")
+	result, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(withDatasetTestContext(t.Context(), "user-1", "user-1"), []string{kbInput})
 	if err != nil {
 		t.Fatalf("AggregateTags failed: %v", err)
 	}
@@ -396,7 +396,7 @@ func TestDatasetServiceAggregateTagsCountsSharedFileOnce(t *testing.T) {
 		return nil, nil
 	}
 
-	result, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(withDatasetTestContext(t.Context(), "user-1", "user-1"), []string{kb1Input, kb2Input}, "user-1")
+	result, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(withDatasetTestContext(t.Context(), "user-1", "user-1"), []string{kb1Input, kb2Input})
 	if err != nil {
 		t.Fatalf("AggregateTags failed: %v", err)
 	}
@@ -439,7 +439,7 @@ func TestDatasetServiceAggregateTagsSkipsUnresolvableDocumentTagSource(t *testin
 		return map[string]int{"finance": 2}, nil
 	}
 
-	result, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(withDatasetTestContext(t.Context(), "user-1", "user-1"), []string{deadKB, liveKB}, "user-1")
+	result, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(withDatasetTestContext(t.Context(), "user-1", "user-1"), []string{deadKB, liveKB})
 	if err != nil {
 		t.Fatalf("AggregateTags failed: %v", err)
 	}
@@ -467,7 +467,7 @@ func TestDatasetServiceAggregateTagsIgnoresUnappliedDatasetTagSource(t *testing.
 		return nil, nil
 	}
 
-	result, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(withDatasetTestContext(t.Context(), "user-1", "user-1"), []string{kbInput}, "user-1")
+	result, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(withDatasetTestContext(t.Context(), "user-1", "user-1"), []string{kbInput})
 	if err != nil {
 		t.Fatalf("AggregateTags failed: %v", err)
 	}
@@ -495,7 +495,7 @@ func TestDatasetServiceAggregateTagsFailsOnStorageErrorForDocumentTagSource(t *t
 		return nil, errors.New("tag source file: no storage backend registered")
 	}
 
-	_, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(withDatasetTestContext(t.Context(), "user-1", "user-1"), []string{kbInput}, "user-1")
+	_, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(withDatasetTestContext(t.Context(), "user-1", "user-1"), []string{kbInput})
 	if err == nil {
 		t.Fatal("expected an error for a storage failure on a document-level tag source")
 	}
@@ -524,7 +524,7 @@ func TestDatasetServiceAggregateTagsScopesDocumentTagSourceToDatasetTenant(t *te
 		return map[string]int{"finance": 1}, nil
 	}
 
-	if _, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(withDatasetTestContext(t.Context(), "user-1", "tenant-owner"), []string{kbInput}, "user-1"); err != nil {
+	if _, code, err := testDatasetServiceForAggregateTags(t, loader).AggregateTags(withDatasetTestContext(t.Context(), "user-1", "tenant-owner"), []string{kbInput}); err != nil {
 		t.Fatalf("AggregateTags failed: code=%d err=%v", code, err)
 	}
 	if gotOwner != kbTenant {

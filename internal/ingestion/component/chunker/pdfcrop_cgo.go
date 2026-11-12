@@ -6,7 +6,7 @@
 // path) for a PDF, the chunker re-acquires the source bytes and crops
 // image/table sections on demand, instead of carrying the rendered images
 // (or the raw binary) across the component boundary. This matches the
-// Python pipeline, where pdf_parser.crop() runs at tokenize time, and keeps
+// pipeline, where pdf_parser.crop() runs at tokenize time, and keeps
 // peak memory bounded to one page render per cropped section.
 package chunker
 
@@ -106,7 +106,7 @@ func cropConcurrency() int {
 }
 
 // cropImageChunks crops image/table chunks and renders text previews (for
-// text chunks that carry PDF positions, mirroring Python
+// text chunks that carry PDF positions, mirroring
 // restore_pdf_text_previews). Each spanned page is rendered at most once and
 // cached; the cache is shared across chunks so two chunks on the same page
 // reuse one render.
@@ -126,7 +126,7 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 	// relied on in-order processing and is unsafe under fan-out. render is
 	// called outside the lock; the warning on failure is logged here so the
 	// cache stays render-agnostic and unit-testable.
-	cache := newLRUPageCache(pageCacheLimit())
+	cache := newLRUPageCache(pageCacheLimit(), pageCacheBytes())
 	render := func(pn int) (image.Image, bool) {
 		img, rerr := deepdocpdf.RenderPageToImage(engine, pn)
 		if rerr != nil || img == nil {
@@ -153,7 +153,7 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 		// overwrite the other's MinIO object. Skip the crop and upload
 		// entirely; the finalizer then drops the chunk, so no object is
 		// orphaned and no pdfium render / PNG encode / upload is wasted. This
-		// mirrors Python's token_chunker drop of empty-text media chunks.
+		// mirrors token_chunker drop of empty-text media chunks
 		// Text chunks are excluded: a text body always carries content, and the
 		// Chunker-1.3 preview restore must still run for positioned text
 		// regions. Region-based chunk ids still apply when context or captions
@@ -202,39 +202,7 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 				return
 			}
 
-			single := make(map[int]image.Image, len(positions))
-			acquired := make([]int, 0, len(positions))
-			for _, pos := range positions {
-				for _, pn := range pos.PageNumbers {
-					if _, ok := single[pn]; ok {
-						continue
-					}
-					if img, ok := cache.Acquire(render, pn); ok {
-						single[pn] = img
-						acquired = append(acquired, pn)
-					}
-				}
-			}
-			// Proceed whenever at least one spanned page resolved to an
-			// image — freshly rendered or served from the page cache.
-			if len(single) == 0 {
-				return
-			}
-			var img string
-			if cropChunkType(ck) == "text" {
-				img = util.CropTextSectionPositions(positions, single, deepdoctype.DlaScale)
-			} else {
-				// Media previews are clean position-only crops (Python
-				// cropout): no 120pt context bands, no edge dimming. The
-				// text path above is the only one that keeps context.
-				img = util.CropMediaSectionPositions(positions, single, deepdoctype.DlaScale)
-			}
-			// Release the page bitmaps now that cropping is done. They are no
-			// longer needed and may be evicted under the LRU cap; the image
-			// below is encoded from single and does not depend on the pages.
-			for _, pn := range acquired {
-				cache.Release(pn)
-			}
+			img := cropChunkPreview(cache, render, cropChunkType(ck), positions)
 			if img == "" {
 				return
 			}
@@ -291,10 +259,45 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 	return out
 }
 
+// cropChunkPreview crops the preview of one chunk from the pages its positions
+// span and returns it PNG-encoded in base64, or "" when no page resolved.
+// The pages are released when cropping ends, even if it panics: the crop pool
+// recovers the panic, and a page left referenced would stay pinned in cache.
+func cropChunkPreview(cache *lruPageCache, render func(int) (image.Image, bool), chunkType string, positions []deepdoctype.Position) string {
+	pages := make(map[int]image.Image, len(positions))
+	defer func() {
+		for pn := range pages {
+			cache.Release(pn)
+		}
+	}()
+	for _, pos := range positions {
+		for _, pn := range pos.PageNumbers {
+			if _, ok := pages[pn]; ok {
+				continue
+			}
+			if img, ok := cache.Acquire(render, pn); ok {
+				pages[pn] = img
+			}
+		}
+	}
+	// Proceed whenever at least one spanned page resolved to an image —
+	// freshly rendered or served from the page cache.
+	if len(pages) == 0 {
+		return ""
+	}
+	if chunkType == "text" {
+		return util.CropTextSectionPositions(positions, pages, deepdoctype.DlaScale)
+	}
+	// Media previews are clean position-only crops ( cropout): no 120pt
+	// context bands, no edge dimming. The text path above is the only one that
+	// keeps context.
+	return util.CropMediaSectionPositions(positions, pages, deepdoctype.DlaScale)
+}
+
 // needsCrop reports whether a chunk should be cropped to a page-region
 // preview from its PDF positions. Image/table chunks get their media region
 // cropped; text chunks with positions get a rendered preview of the text
-// region (Python restore_pdf_text_previews). A pre-existing Image is never
+// region ( restore_pdf_text_previews). A pre-existing Image is never
 // re-cropped — cropImageChunks honors that separately.
 //
 // The content type on doc_type_kwd alone decides the crop kind. Headings are

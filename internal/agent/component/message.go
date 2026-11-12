@@ -329,15 +329,15 @@ func (m *MessageComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[s
 		memIDs = m.memoryIDs
 	}
 	if len(memIDs) > 0 {
-		userID := stringFromStateSys(state, "user_id")
-		if userID == "" {
-			userID = m.userID
-		}
+		userID := m.userID
 		// If userID is a canvas variable reference (e.g. "{cpn@user_id}"),
 		// resolve it against the current state. Mirrors Python's
 		// agent/component/message.py:569-571.
 		if userID != "" && runtime.VarRefPattern.MatchString(userID) {
 			userID = runtime.ResolveTemplateForDisplay(userID, state)
+		}
+		if userID == "" {
+			userID = stringFromStateSys(state, "user_id")
 		}
 		saver := GetMemorySaver()
 		saveErr := saver.Save(ctx, MemorySaveRequest{
@@ -481,6 +481,7 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 		}
 		if err != nil {
 			if targetNodeID != "" {
+				state.SetVar(targetNodeID, "content", "**ERROR**: "+runtime.MarkdownSafeErrorText(err))
 				runtime.CompleteDeferredNode(ctx, targetNodeID, err)
 			}
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -492,6 +493,7 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 		}
 		if resultErr, _ := result["_ERROR"].(string); strings.TrimSpace(resultErr) != "" {
 			if targetNodeID != "" {
+				state.SetVar(targetNodeID, "content", resultErr)
 				runtime.CompleteDeferredNode(ctx, targetNodeID, errors.New(resultErr))
 			}
 			return "", true, &runtime.DeferredStreamError{Text: resultErr}
@@ -575,7 +577,6 @@ func formalizedContentFallback(inputs map[string]any) string {
 	if text, _ := inputs["formalized_content"].(string); strings.TrimSpace(text) != "" {
 		return text
 	}
-
 	return ""
 }
 

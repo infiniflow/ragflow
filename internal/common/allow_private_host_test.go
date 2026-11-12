@@ -33,6 +33,7 @@ func TestAllowConfiguredPrivateHost(t *testing.T) {
 		{value: "false", want: false},
 		{value: "no", want: false},
 		{value: "off", want: false},
+		{value: "invalid", want: false},
 		{value: "1", want: true},
 		{value: "true", want: true},
 		{value: "TRUE", want: true},
@@ -44,6 +45,17 @@ func TestAllowConfiguredPrivateHost(t *testing.T) {
 			t.Setenv(EnvAllowAnyHost, tc.value)
 			if got := AllowConfiguredPrivateHost(); got != tc.want {
 				t.Fatalf("AllowConfiguredPrivateHost(%q) = %v, want %v", tc.value, got, tc.want)
+			}
+			if _, err := AssertHostSafe("127.0.0.1"); (err == nil) != tc.want {
+				t.Fatalf("AssertHostSafe(loopback) = %v, want allowed=%v", err, tc.want)
+			}
+			_, ip, err := AssertURLSafe("http://127.0.0.1/")
+			if (err == nil) != tc.want || (err == nil && ip != "127.0.0.1") {
+				t.Fatalf("AssertURLSafe(loopback) = %q, %v, want allowed=%v", ip, err, tc.want)
+			}
+			_, ip, err = AssertURLSafeWithContext(t.Context(), "http://127.0.0.1/")
+			if (err == nil) != tc.want || (err == nil && ip != "127.0.0.1") {
+				t.Fatalf("AssertURLSafeWithContext(loopback) = %q, %v, want allowed=%v", ip, err, tc.want)
 			}
 		})
 	}

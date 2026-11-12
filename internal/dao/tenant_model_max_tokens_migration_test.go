@@ -26,6 +26,14 @@ import (
 	"ragflow/internal/entity"
 )
 
+const tenantModelMaxTokensPreviousSharedVersion = "v1.0.0-rc1"
+
+func TestTenantModelMaxTokensMigrationVersionFollowsParserConfig(t *testing.T) {
+	if compareMigrationVersion(knowledgebaseParserConfigTargetVersion, tenantModelMaxTokensTargetVersion) >= 0 {
+		t.Fatalf("parser-config migration version %q must precede max_tokens version %q", knowledgebaseParserConfigTargetVersion, tenantModelMaxTokensTargetVersion)
+	}
+}
+
 func migrationTestMaxTokens(extra string) int64 {
 	var value struct {
 		MaxTokens int64 `json:"max_tokens"`
@@ -143,8 +151,11 @@ func TestMigrateTenantModelMaxTokensBackfillsOnlyMissingValues(t *testing.T) {
 	if err := db.Create(&models).Error; err != nil {
 		t.Fatalf("failed to seed tenant models: %v", err)
 	}
-	if err := setDatabaseMigrationVersion(t.Context(), db, conversationHistoryTargetVersion); err != nil {
-		t.Fatalf("failed to set rc1 migration version: %v", err)
+	if err := setDatabaseMigrationVersion(t.Context(), db, tenantModelMaxTokensPreviousSharedVersion); err != nil {
+		t.Fatalf("failed to set prior shared migration version: %v", err)
+	}
+	if err := setDatabaseMigrationVersion(t.Context(), db, knowledgebaseParserConfigTargetVersion); err != nil {
+		t.Fatalf("failed to set parser-config migration version: %v", err)
 	}
 
 	if err := migrateTenantModelMaxTokens(t.Context(), db); err != nil {

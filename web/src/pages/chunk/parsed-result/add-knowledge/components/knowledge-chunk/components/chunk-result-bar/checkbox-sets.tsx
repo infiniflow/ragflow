@@ -1,6 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
+import { useDatasetEditButtonDisabled } from '@/ee/hooks/logic-hooks/use-permission';
 import { cn } from '@/lib/utils';
 import {
   LucideToggleLeft,
@@ -18,7 +19,9 @@ type ICheckboxSetProps = {
   checked: boolean;
   selectedChunkIds: string[];
 };
+
 export default function CheckboxSets(props: ICheckboxSetProps) {
+  const datasetEditButtonDisabled = useDatasetEditButtonDisabled();
   const {
     className,
     selectAllChunk,
@@ -51,7 +54,9 @@ export default function CheckboxSets(props: ICheckboxSetProps) {
   const isSelected = useMemo(() => {
     return selectedChunkIds?.length > 0;
   }, [selectedChunkIds]);
-
+  if (datasetEditButtonDisabled) {
+    return null;
+  }
   return (
     <div className={cn('flex gap-4 text-sm text-text-secondary', className)}>
       <Label className="flex items-center gap-2">

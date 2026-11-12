@@ -15,9 +15,69 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
+
+func TestExtractorTagsShareExtractionConcurrency(t *testing.T) {
+	pushExtractorTagChatStub(t, map[string]string{"__static__": `{"finance": 8}`})
+	pushExtractorTagTargetResolverStub(t)
+
+	previous := extractorPool
+	pool := utility.NewWorkerPool[extractorJob, struct{}](1, 4,
+		func(_ context.Context, job extractorJob) (struct{}, error) { return struct{}{}, job() })
+	extractorPool = pool
+	t.Cleanup(func() { pool.StopWait(); extractorPool = previous })
+	release := make(chan struct{})
+	defer close(release)
+	started := make(chan struct{})
+	if _, err := pool.Submit(t.Context(), func() error { close(started); <-release; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{}.Defaults()}
+	c.Param.Tags.TopN = 1
+	chunks := []map[string]any{{"text": "unrelated astronomy observations"}, {"text": "unrelated mountain geology"}}
+	indexed := &MemoryTagIndex{allTags: map[string]float64{"finance": 1}}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- c.runLLMTags(ctx, nil, extractorInputs{llmID: "test@test", modelID: "test@test"}, chunks, indexed, nil, progress.Window{})
+	}()
+
+	// The occupied shared slot must hold up tags, rather than letting their
+	// own pool bypass extraction work already in flight.
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for pool.Stats().SubmittedTotal < 3 {
+		select {
+		case err := <-done:
+			t.Fatalf("tagging bypassed the occupied extraction pool: %v", err)
+		case <-ctx.Done():
+			t.Fatal("tagging did not queue in the shared extraction pool")
+		case <-ticker.C:
+		}
+	}
+	release <- struct{}{}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("tagging did not finish after the extraction slot was released")
+	}
+	for i, chunk := range chunks {
+		weights, ok := chunk[common.TAG_FLD].(OrderedTagWeights)
+		if !ok || weights["finance"] != 8 {
+			t.Fatalf("chunk %d tags = %v, want finance=8", i, chunk[common.TAG_FLD])
+		}
+	}
+}
 
 type stubExtractorTagChat struct {
 	responses map[string]string

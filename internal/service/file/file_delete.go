@@ -16,7 +16,7 @@ import (
 
 // DeleteFiles deletes files and folders by ID after authorizing every entry in
 // each selected folder tree.
-func (s *FileService) DeleteFiles(ctx context.Context, userID string, fileIDs []string) error {
+func (s *FileService) DeleteFiles(ctx context.Context, fileIDs []string) error {
 	files, err := s.fileDAO.GetByIDs(ctx, dao.DB, fileIDs)
 	if err != nil {
 		return err
@@ -37,7 +37,7 @@ func (s *FileService) DeleteFiles(ctx context.Context, userID string, fileIDs []
 		if file.ParentID == file.ID {
 			return errors.New("root folder cannot be deleted")
 		}
-		if err = s.checkFileTreeAccess(ctx, userID, file, permission.OperationDelete); err != nil {
+		if err = s.checkFileTreeAccess(ctx, file, permission.OperationDelete); err != nil {
 			return err
 		}
 	}

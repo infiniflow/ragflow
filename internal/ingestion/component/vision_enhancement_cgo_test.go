@@ -5,6 +5,8 @@ package component
 import (
 	"context"
 	"image"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -55,6 +57,41 @@ func cgoPositions() map[string]any {
 	return map[string]any{
 		"_pdf_positions": [][]any{{1, 10.0, 100.0, 10.0, 100.0}},
 	}
+}
+
+// expiringContext expires on demand instead of on a wall clock, so a test can
+// expire an item budget at a chosen point in the sequence. Done closes on that
+// expiry or when the parent is done, keeping Done and Err consistent.
+type expiringContext struct {
+	context.Context
+	done    chan struct{}
+	once    sync.Once
+	expired atomic.Bool
+}
+
+func newExpiringContext(parent context.Context) (*expiringContext, func()) {
+	ctx := &expiringContext{Context: parent, done: make(chan struct{})}
+	stopParent := context.AfterFunc(parent, func() { ctx.close() })
+	expire := func() {
+		ctx.expired.Store(true)
+		ctx.close()
+		stopParent()
+	}
+	return ctx, expire
+}
+
+func (c *expiringContext) close() { c.once.Do(func() { close(c.done) }) }
+
+func (c *expiringContext) Done() <-chan struct{} { return c.done }
+
+func (c *expiringContext) Err() error {
+	if err := c.Context.Err(); err != nil {
+		return err
+	}
+	if c.expired.Load() {
+		return context.DeadlineExceeded
+	}
+	return nil
 }
 
 // TestVisionCropImage_OnDemandFromPositions verifies the core fix: a parsed
@@ -343,7 +380,10 @@ func TestVisionCropImage_ReusesSourceAfterItemContextExpires(t *testing.T) {
 		visionEngineOpener = oldOpener
 	})
 
-	fetchStarted := make(chan struct{})
+	// Buffered: the fetcher signals with a non-blocking send, so an unbuffered
+	// channel drops the signal whenever this goroutine is not parked on the
+	// receive yet, and the test then blocks there forever.
+	fetchStarted := make(chan struct{}, 1)
 	finishFetch := make(chan struct{})
 	fetchCalls := 0
 	visionSourceFetcher = func(ctx context.Context, bucket, path string) ([]byte, error) {
@@ -371,8 +411,11 @@ func TestVisionCropImage_ReusesSourceAfterItemContextExpires(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = cropper.Close() })
 
-	firstItemCtx, cancelFirstItem := context.WithTimeout(invocationCtx, 20*time.Millisecond)
-	defer cancelFirstItem()
+	// Expire the item context exactly when the shared fetch is in flight. A
+	// wall-clock deadline races Crop's entry check on a loaded runner: when the
+	// 20ms elapsed first, Crop returned before fetching and the test waited for
+	// a fetch that never started.
+	firstItemCtx, expireFirstItem := newExpiringContext(invocationCtx)
 	firstResult := make(chan struct {
 		img *visionImage
 		err error
@@ -384,8 +427,14 @@ func TestVisionCropImage_ReusesSourceAfterItemContextExpires(t *testing.T) {
 			err error
 		}{img: img, err: err}
 	}()
-	<-fetchStarted
-	<-firstItemCtx.Done()
+	// Bound the wait: an unbounded receive turns a missing fetch into a
+	// package-wide 10m timeout instead of a local failure.
+	select {
+	case <-fetchStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("source fetch did not start")
+	}
+	expireFirstItem()
 	close(finishFetch)
 	first := <-firstResult
 	if first.err != nil {

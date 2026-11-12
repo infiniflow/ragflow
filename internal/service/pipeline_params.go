@@ -65,7 +65,8 @@ func loadCanvasDSLJSON(ctx context.Context, canvasID string, versionID *string) 
 	if versionID != nil {
 		pin = strings.TrimSpace(*versionID)
 	}
-	return dao.LoadCanvasVersionDSL(ctx, dao.DB, canvasID, pin)
+	dsl, _, err := dao.LoadCanvasVersionDSL(ctx, dao.DB, canvasID, pin)
+	return dsl, err
 }
 
 func marshalCanvasDSL(canvasID string, dsl entity.JSONMap) ([]byte, error) {
