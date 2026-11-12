@@ -4,7 +4,7 @@ title: Upgrade from v1.x to later releases
 sidebar_label: Upgrade from v1.x to later releases
 slug: /upgrade_from_v1_to_later_releases
 sidebar_custom_props: {
-  categoryIcon: LucideLocateFixed
+  categoryIcon: LucideRocket
 }
 ---
 
