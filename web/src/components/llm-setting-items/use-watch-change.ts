@@ -23,6 +23,7 @@ import { useFormContext } from 'react-hook-form';
 
 export function useHandleFreedomChange(
   getFieldWithPrefix: (name: string) => string,
+  getEnabledFieldWithPrefix?: (name: string) => string,
 ) {
   const form = useFormContext();
   const node = useContext(AgentFormContext);
@@ -35,11 +36,18 @@ export function useHandleFreedomChange(
           const realKey = getFieldWithPrefix(key);
           const element = values[key as keyof typeof values];
 
-          form.setValue(withPrefix ? realKey : key, element);
+          form.setValue(
+            withPrefix
+              ? realKey
+              : getEnabledFieldWithPrefix
+                ? getEnabledFieldWithPrefix(key)
+                : key,
+            element,
+          );
         }
       }
     },
-    [form, getFieldWithPrefix],
+    [form, getFieldWithPrefix, getEnabledFieldWithPrefix],
   );
 
   const handleChange = useCallback(
