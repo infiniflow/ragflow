@@ -114,7 +114,9 @@ type TextBox struct {
 	// overrides PageNumber for page-span computation in BoxesToSections, so a
 	// cross-page merged table records every page it occupies (not just the
 	// anchor page).
-	Pages      []int
+	Pages []int
+	// Positions retains each page's own rectangle for a merged region.
+	Positions  []Position
 	LayoutType string
 	LayoutNo   string
 	// FigureBounds retains DLA geometry in PDF points until figure consolidation.
@@ -192,6 +194,8 @@ type TableItem struct {
 	CropOffY  float64
 	Caption   string
 
+	// RegionPositions preserves the table crop rectangle on each merged page.
+	RegionPositions                                  []Position
 	RegionLeft, RegionRight, RegionTop, RegionBottom float64
 	NoMerge                                          bool
 	Grid                                             [][]TSRCell

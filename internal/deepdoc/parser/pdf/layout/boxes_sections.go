@@ -62,7 +62,14 @@ func BoxesToSections(boxes []pdf.TextBox, pageHeights map[int]float64) []pdf.Sec
 		var posTag string
 		var pageNums []int
 		var bottom float64
-		if len(b.Pages) > 0 {
+		positions := b.Positions
+		if len(positions) > 0 {
+			first, last := positions[0], positions[len(positions)-1]
+			if len(first.PageNumbers) > 0 && len(last.PageNumbers) > 0 {
+				posTag = util.FormatPositionTagRange(first.PageNumbers[0], last.PageNumbers[len(last.PageNumbers)-1],
+					first.Left, last.Right, first.Top, last.Bottom)
+			}
+		} else if len(b.Pages) > 0 {
 			// Box carries an explicit page span (e.g. a cross-page merged
 			// table). Use it directly instead of inferring from geometry, so
 			// the section records every page the box occupies.
@@ -87,11 +94,14 @@ func BoxesToSections(boxes []pdf.TextBox, pageHeights map[int]float64) []pdf.Sec
 				}
 			}
 		}
+		if len(positions) == 0 {
+			positions = []pdf.Position{{PageNumbers: pageNums, Left: b.X0, Right: b.X1, Top: b.Top, Bottom: bottom}}
+		}
 		sections = append(sections, pdf.Section{
 			Text:        t,
 			PositionTag: posTag,
 			LayoutType:  b.LayoutType,
-			Positions:   []pdf.Position{{PageNumbers: pageNums, Left: b.X0, Right: b.X1, Top: b.Top, Bottom: bottom}},
+			Positions:   positions,
 		})
 	}
 	return sections

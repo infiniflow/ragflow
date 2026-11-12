@@ -153,6 +153,41 @@ func TestCropMediaSectionPositionsHasNoContextBands(t *testing.T) {
 	}
 }
 
+func TestCropMediaSectionPositionsOrdersAppendedCaptions(t *testing.T) {
+	red, blue := color.RGBA{255, 0, 0, 255}, color.RGBA{0, 0, 255, 255}
+	green, yellow := color.RGBA{0, 255, 0, 255}, color.RGBA{255, 255, 0, 255}
+	first, second := image.NewRGBA(image.Rect(0, 0, 100, 100)), image.NewRGBA(image.Rect(0, 0, 100, 100))
+	for y := 0; y < 100; y++ {
+		for x := 0; x < 100; x++ {
+			first.SetRGBA(x, y, red)
+			if y < 30 {
+				first.SetRGBA(x, y, blue)
+			}
+			second.SetRGBA(x, y, green)
+			if y >= 30 {
+				second.SetRGBA(x, y, yellow)
+			}
+		}
+	}
+	positions := []pdf.Position{
+		{PageNumbers: []int{0}, Left: 0, Right: 100, Top: 40, Bottom: 50},
+		{PageNumbers: []int{1}, Left: 0, Right: 100, Top: 10, Bottom: 20},
+		{PageNumbers: []int{0}, Left: 0, Right: 100, Top: 20, Bottom: 30},
+		{PageNumbers: []int{1}, Left: 0, Right: 100, Top: 30, Bottom: 40},
+	}
+	encoded := CropMediaSectionPositions(positions, map[int]image.Image{0: first, 1: second}, 1)
+	raw, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	img := decodePNG(t, raw)
+	for i, want := range []color.RGBA{blue, red, green, yellow} {
+		if got := color.RGBAModel.Convert(img.At(0, i*16)).(color.RGBA); got != want {
+			t.Errorf("preview segment %d = %v, want %v", i, got, want)
+		}
+	}
+}
+
 func TestCropMediaSectionPositionsSpansPages(t *testing.T) {
 	// A figure spanning two pages stitches body-only segments in page
 	// order: no context bands, no dimming, first page on top.
