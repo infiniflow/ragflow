@@ -126,6 +126,7 @@ export enum LLMFactory {
   Nace = 'Nace',
   HostingerRouter = 'Hostinger Router',
   Wally = 'Wally',
+  Shengsuanyun = 'Shengsuanyun',
   Synap = 'Synap',
   Wiro = 'Wiro AI',
 }
@@ -235,6 +236,7 @@ export const IconMap = {
   [LLMFactory.HostingerRouter]: 'hostinger-router',
   [LLMFactory.Cheapaimodel]: 'cheapaimodel',
   [LLMFactory.Wally]: 'wally',
+  [LLMFactory.Shengsuanyun]: 'shengsuanyun',
   [LLMFactory.Synap]: 'synap',
   [LLMFactory.Wiro]: 'wiro',
 };
@@ -384,4 +386,5 @@ export const APIMapUrl = {
   [LLMFactory.PaddleOCRLocal]: 'https://aistudio.baidu.com/paddleocr',
   [LLMFactory.RAGcon]: 'https://connect.ragcon.com',
   [LLMFactory.FunASR]: 'https://github.com/modelscope/FunASR',
+  [LLMFactory.Shengsuanyun]: 'https://www.shengsuanyun.com/zh/?from=ragflow',
 };
