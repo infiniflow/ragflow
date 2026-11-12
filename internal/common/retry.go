@@ -77,6 +77,27 @@ func RetryWithBackoff(ctx context.Context, maxRetries int, initialDelay time.Dur
 	return fmt.Errorf("failed after %d retries: %w", maxRetries, lastErr)
 }
 
+// ExponentialBackoff returns the capped exponential backoff duration for a
+// 1-indexed attempt: base * 2^(attempt-1), clamped to max. It never returns a
+// value larger than max, so callers cannot let the delay grow without bound
+// under a high attempt count.
+func ExponentialBackoff(base, max time.Duration, attempt int) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
+	d := base
+	for i := 1; i < attempt; i++ {
+		d *= 2
+		if d > max {
+			return max
+		}
+	}
+	if d > max {
+		return max
+	}
+	return d
+}
+
 // IsTransientError reports whether err is a transient provider failure worth
 // retrying, as opposed to a permanent configuration/client error. It is the
 // shared shouldRetry predicate for provider HTTP calls.

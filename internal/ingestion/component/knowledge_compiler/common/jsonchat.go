@@ -77,6 +77,9 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 	if d, ok := RetryDelayFromCtx(ctx); ok {
 		delay = d
 	}
+	// base is the initial delay (honouring the test override) that every retry
+	// delay is derived from via the shared capped exponential primitive.
+	base := delay
 	failureReporter := RetryFailureReporter{}
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		resp, err := chat.Chat(ctx, req)
@@ -139,10 +142,7 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 			// Jittered backoff so concurrent GenJSON jobs (parallel wiki/plan
 			// batches) do not back off in lockstep and pile up on the provider.
 		}
-		delay *= 2
-		if delay > time.Minute {
-			delay = time.Minute
-		}
+		delay = appcommon.ExponentialBackoff(base, time.Minute, attempt+1)
 	}
 	return nil, lastErr
 }

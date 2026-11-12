@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/harness/core/schema"
 )
 
@@ -70,6 +71,13 @@ func NewTimeoutToolMiddleware(timeout time.Duration) ToolInvokeMiddleware {
 	}
 }
 
+// toolRetrySleep is the delay primitive used between retries. It is a package
+// var so tests can substitute an immediately-ready channel and observe (or
+// suppress) the backoff without waiting out real delays.
+var toolRetrySleep = func(d time.Duration) <-chan time.Time {
+	return time.After(d)
+}
+
 // NewRetryToolMiddleware creates a ToolInvokeMiddleware that retries on failure.
 func NewRetryToolMiddleware(cfg *ToolRetryConfig) ToolInvokeMiddleware {
 	return func(next InvokeTool) InvokeTool {
@@ -99,9 +107,13 @@ func NewRetryToolMiddleware(cfg *ToolRetryConfig) ToolInvokeMiddleware {
 					select {
 					case <-ctx.Done():
 						return nil, ctx.Err()
-					case <-time.After(backoff):
+					case <-toolRetrySleep(backoff):
 					}
-					backoff *= 2
+					// Cap the delay so a large retry budget cannot let the
+					// backoff grow without bound. The recompute uses attempt+2 so
+					// the first retry still sleeps the base delay and each
+					// subsequent retry doubles, matching the prior curve.
+					backoff = common.ExponentialBackoff(rc.Backoff, time.Minute, attempt+2)
 				}
 			}
 			return nil, fmt.Errorf("tool retry exhausted after %d attempts: %w", rc.MaxAttempts, lastErr)
