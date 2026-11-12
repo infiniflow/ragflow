@@ -115,6 +115,10 @@ func (b *Bm25Adapter) SearchBm25(ctx context.Context, req runtime.Bm25Request) (
 	// as Grep.
 	ectx, ecancel := engineCallContext(ctx)
 	defer ecancel()
+	indexes, err := corpusIndexNames(ectx, req.TenantID, req.DatasetIDs)
+	if err != nil || len(indexes) == 0 {
+		return nil, err
+	}
 
 	language := ""
 	if b.queryTokenizer != nil {
@@ -130,7 +134,7 @@ func (b *Bm25Adapter) SearchBm25(ctx context.Context, req runtime.Bm25Request) (
 		// raw text match when no query tokenizer is attached.
 		matchExpr := b.buildMatchExpr(q, topN, language)
 		res, err := b.docEngine.Search(ectx, &enginetypes.SearchRequest{
-			IndexNames: []string{fmt.Sprintf("ragflow_%s", req.TenantID)},
+			IndexNames: indexes,
 			KbIDs:      req.DatasetIDs,
 			Limit:      topN,
 			// Fields left nil: engines apply their default tokenized field set

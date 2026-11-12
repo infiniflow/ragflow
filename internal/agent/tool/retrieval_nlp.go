@@ -527,7 +527,11 @@ func (a *NLPRetrievalAdapter) resolveEmbeddingModel(
 	if kb.TenantEmbdID != nil && strings.TrimSpace(*kb.TenantEmbdID) != "" {
 		modelRef = *kb.TenantEmbdID
 	}
-	model, err := a.modelConstructors.Embedding(ctx, kb.TenantID, modelRef)
+	// The caller has already passed the dataset use check. Resolve the
+	// dataset's model in its owner tenant with the same caller identity,
+	// so the model factory still enforces membership and model access.
+	modelCtx := permission.WithIdentity(ctx, permission.UserIDFromContext(ctx), kb.TenantID)
+	model, err := a.modelConstructors.Embedding(modelCtx, kb.TenantID, modelRef)
 	if err != nil {
 		return nil, fmt.Errorf("retrieval: resolve embedding model for dataset %s: %w", kb.ID, err)
 	}

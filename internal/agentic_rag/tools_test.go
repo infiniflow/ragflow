@@ -389,6 +389,7 @@ func TestBoundedBuffer_CapsOutput(t *testing.T) {
 // methods (GetType / Search / SearchByRegexp) take precedence.
 type grepFakeEngine struct {
 	engine.DocEngine
+	regexpRequests    []enginetypes.RegexpSearchRequest
 	searchByRegexpErr error
 	regexpChunks      []map[string]interface{}
 	searchChunks      []map[string]interface{}
@@ -461,6 +462,7 @@ func keepByKey(chunks []map[string]interface{}, want []string, keys ...string) [
 	return out
 }
 func (e *grepFakeEngine) SearchByRegexp(_ context.Context, req *enginetypes.RegexpSearchRequest) (*enginetypes.SearchResult, error) {
+	e.regexpRequests = append(e.regexpRequests, *req)
 	if e.searchByRegexpErr != nil {
 		return nil, e.searchByRegexpErr
 	}
@@ -494,6 +496,36 @@ func (e *grepFakeEngine) SearchByRegexp(_ context.Context, req *enginetypes.Rege
 		chunks = chunks[:30]
 	}
 	return &enginetypes.SearchResult{Chunks: chunks}, nil
+}
+
+func TestAgenticCorpusSearchUsesDatasetStorageTenants(t *testing.T) {
+	ctx := runtime.WithDatasetTenants(t.Context(), map[string]string{
+		"shared":   "team-1",
+		"personal": "team-2",
+	})
+	fake := &grepFakeEngine{}
+	datasetIDs := []string{"shared", "personal"}
+	_, err := NewGrepAdapter(fake).Grep(ctx, runtime.GrepRequest{
+		TenantID: "chat-tenant", DatasetIDs: datasetIDs, Pattern: "example",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := fake.regexpRequests
+	if len(got) != 2 || got[0].TenantID != "team-1" || strings.Join(got[0].KbIDs, ",") != "shared" ||
+		got[1].TenantID != "team-2" || strings.Join(got[1].KbIDs, ",") != "personal" {
+		t.Fatalf("unexpected grep tenant scopes: %#v", got)
+	}
+	_, err = NewBm25Adapter(fake).SearchBm25(ctx, runtime.Bm25Request{
+		TenantID: "chat-tenant", DatasetIDs: datasetIDs, Queries: []string{"example"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if req := fake.lastReq; strings.Join(req.IndexNames, ",") != "ragflow_team-1,ragflow_team-2" ||
+		strings.Join(req.KbIDs, ",") != "shared,personal" {
+		t.Fatalf("unexpected BM25 scope: %#v", req)
+	}
 }
 
 // TestGrepAdapter_NoFallbackOnRegexpError asserts that with content_with_weight
