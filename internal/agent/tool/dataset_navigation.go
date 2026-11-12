@@ -55,13 +55,13 @@ const datasetNavigationToolDescription = "Navigate a dataset's navigation tree b
 
 // datasetNavigationArgs is the JSON schema the model sends into InvokableRun.
 type datasetNavigationArgs struct {
-	Topic      string   `json:"topic"`
-	Keywords   string   `json:"keywords,omitempty"`
-	DatasetIDs []string `json:"dataset_ids,omitempty"`
+	Topic      string   `json:"topic" doc:"The topic to navigate to. Use the core subject from the original request." required:"true"`
+	Keywords   string   `json:"keywords,omitempty" doc:"Optional additional keywords to disambiguate the topic."`
+	DatasetIDs []string `json:"dataset_ids,omitempty" schema:"-"`
 	// DocScope restricts the routed documents, mirroring Python's
 	// dataset_navigation_by_tree(doc_scope: list[str] | None = None).
-	DocScope []string `json:"doc_scope,omitempty"`
-	MaxDocs  int      `json:"max_docs,omitempty"`
+	DocScope []string `json:"doc_scope,omitempty" doc:"Optional doc ids to restrict the navigation to."`
+	MaxDocs  int      `json:"max_docs,omitempty" schema:"-"`
 }
 
 // datasetNavigationResult is the JSON shape returned to the model.
@@ -98,25 +98,7 @@ func NewDatasetNavigationByTreeWithDefaults(defaults datasetNavigationArgs) *Dat
 
 // Info returns the tool's metadata for the chat model.
 func (d *DatasetNavigationByTree) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: datasetNavigationToolName,
-		Desc: datasetNavigationToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"topic": {
-				Type:     schema.String,
-				Desc:     "The topic to navigate to. Use the core subject from the original request.",
-				Required: true,
-			},
-			"keywords": {
-				Type: schema.String,
-				Desc: "Optional additional keywords to disambiguate the topic.",
-			},
-			"doc_scope": {
-				Type: schema.Array,
-				Desc: "Optional doc ids to restrict the navigation to.",
-			},
-		}),
-	}, nil
+	return BuildToolInfo(datasetNavigationToolName, datasetNavigationToolDescription, datasetNavigationArgs{})
 }
 
 // InvokableRun executes the tool. It navigates the nav tree via the registered

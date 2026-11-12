@@ -59,9 +59,9 @@ var duckduckgoDataImagePattern = regexp.MustCompile(`!?\[[a-z]+\]\(data:image/pn
 var duckduckgoNewlinePattern = regexp.MustCompile(`\n+`)
 
 type duckduckgoParams struct {
-	Query   string `json:"query"`
-	Channel string `json:"channel"`
-	TopN    int    `json:"top_n"`
+	Query   string `json:"query" doc:"Search query." required:"true"`
+	Channel string `json:"channel" doc:"Search channel: general or news. Defaults to general." enum:"general,news"`
+	TopN    int    `json:"top_n,omitempty" schema:"-" doc:"Maximum number of results."`
 }
 
 type duckduckgoResult struct {
@@ -115,42 +115,22 @@ func newDuckDuckGoTool(h *HTTPHelper, defaults duckduckgoParams) *DuckDuckGoTool
 }
 
 func (d *DuckDuckGoTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: duckduckgoToolName,
-		Desc: duckduckgoToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "Search query.",
-				Required: true,
-			},
-			"channel": {
-				Type:     schema.String,
-				Desc:     "Search channel: general or news. Defaults to general.",
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(duckduckgoToolName, duckduckgoToolDescription, duckduckgoParams{})
 }
 
 func (d *DuckDuckGoTool) ComponentSpec() ComponentSpec {
-	return ComponentSpec{
-		Inputs: map[string]string{
-			"query":   "Search query.",
-			"channel": "Search channel: general or news.",
-			"top_n":   "Maximum number of results.",
-		},
-		Outputs: map[string]string{
-			"formalized_content": "Rendered DuckDuckGo references for downstream prompts.",
-			"json":               "DuckDuckGo result list.",
-		},
-		InputForm: map[string]any{
-			"query": map[string]any{"name": "Query", "type": "line"},
-			"channel": map[string]any{
-				"name": "Channel", "type": "options", "value": "general", "options": []string{"general", "news"},
-			},
+	spec := BuildComponentSpec(duckduckgoParams{})
+	spec.Outputs = map[string]string{
+		"formalized_content": "Rendered DuckDuckGo references for downstream prompts.",
+		"json":               "DuckDuckGo result list.",
+	}
+	spec.InputForm = map[string]any{
+		"query": map[string]any{"name": "Query", "type": "line"},
+		"channel": map[string]any{
+			"name": "Channel", "type": "options", "value": "general", "options": []string{"general", "news"},
 		},
 	}
+	return spec
 }
 
 func buildDuckDuckGoSearchURL(query string, topN int) string {

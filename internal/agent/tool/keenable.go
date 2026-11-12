@@ -45,10 +45,10 @@ const keenableToolDescription = `Keenable is a web search API built for AI agent
 // deeper) or "realtime" (requires a server-configured key). top_n caps
 // how many results we keep from the upstream `results` array.
 type keenableParams struct {
-	Query string `json:"query"`
-	Site  string `json:"site"`
-	Mode  string `json:"mode"`
-	TopN  int    `json:"top_n"`
+	Query string `json:"query" doc:"Search keywords to execute with Keenable. The most important words/terms (and synonyms) from the original request." required:"true"`
+	Site  string `json:"site,omitempty" doc:"Optional. Restrict results to a single domain, e.g. 'techcrunch.com'. Defaults to '' (no filter)."`
+	Mode  string `json:"mode" schema:"-"`
+	TopN  int    `json:"top_n" schema:"-"`
 }
 
 // keenableRequestBody is the JSON body POSTed to the Keenable search
@@ -186,22 +186,7 @@ func resolveKeenableBaseURL(raw string) (string, error) {
 // is the short prose above; the parameter schema lists the model-emitted
 // fields with sane defaults documented inline.
 func (k *KeenableTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: keenableToolName,
-		Desc: keenableToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "Search keywords to execute with Keenable. The most important words/terms (and synonyms) from the original request.",
-				Required: true,
-			},
-			"site": {
-				Type:     schema.String,
-				Desc:     "Optional. Restrict results to a single domain, e.g. 'techcrunch.com'. Defaults to '' (no filter).",
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(keenableToolName, keenableToolDescription, keenableParams{})
 }
 
 // InvokableRun performs the Keenable search.

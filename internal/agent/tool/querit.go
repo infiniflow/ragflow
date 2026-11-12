@@ -50,15 +50,15 @@ var (
 )
 
 type queritParams struct {
-	APIKey          string   `json:"api_key"`
-	Query           string   `json:"query"`
-	Count           int      `json:"count"`
-	ChunksPerDoc    *int     `json:"chunks_per_doc"`
-	SiteInclude     []string `json:"site_include"`
-	SiteExclude     []string `json:"site_exclude"`
-	TimeRange       string   `json:"time_range"`
-	CountryInclude  []string `json:"country_include"`
-	LanguageInclude []string `json:"language_include"`
+	APIKey          string   `json:"api_key,omitempty" schema:"-"`
+	Query           string   `json:"query" doc:"Search query." required:"true"`
+	Count           int      `json:"count,omitempty" doc:"Maximum number of documents to return. Defaults to 10 and must be at least 1."`
+	ChunksPerDoc    *int     `json:"chunks_per_doc,omitempty" doc:"Number of snippets per document. Defaults to 3 and must be between 1 and 3."`
+	SiteInclude     []string `json:"site_include,omitempty" doc:"Sites that search results must include."`
+	SiteExclude     []string `json:"site_exclude,omitempty" doc:"Sites that search results must exclude."`
+	TimeRange       string   `json:"time_range,omitempty" doc:"Relative time range such as d7, w1, m3, or y1, or YYYY-MM-DDtoYYYY-MM-DD."`
+	CountryInclude  []string `json:"country_include,omitempty" doc:"Countries that search results must include."`
+	LanguageInclude []string `json:"language_include,omitempty" doc:"Languages that search results must include."`
 }
 
 type queritRequest struct {
@@ -150,56 +150,7 @@ func defaultQueritEnvKey() string { return common.GetEnv(common.EnvQueritAPIKey)
 // Info returns the arguments that a chat model may provide. Credentials stay
 // in node configuration or the environment and are never exposed to the model.
 func (q *QueritTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: queritToolName,
-		Desc: queritToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "Search query.",
-				Required: true,
-			},
-			"count": {
-				Type:     schema.Integer,
-				Desc:     "Maximum number of documents to return. Defaults to 10 and must be at least 1.",
-				Required: false,
-			},
-			"chunks_per_doc": {
-				Type:     schema.Integer,
-				Desc:     "Number of snippets per document. Defaults to 3 and must be between 1 and 3.",
-				Required: false,
-			},
-			"site_include": {
-				Type:     schema.Array,
-				ElemInfo: &schema.ParameterInfo{Type: schema.String},
-				Desc:     "Sites that search results must include.",
-				Required: false,
-			},
-			"site_exclude": {
-				Type:     schema.Array,
-				ElemInfo: &schema.ParameterInfo{Type: schema.String},
-				Desc:     "Sites that search results must exclude.",
-				Required: false,
-			},
-			"time_range": {
-				Type:     schema.String,
-				Desc:     "Relative time range such as d7, w1, m3, or y1, or YYYY-MM-DDtoYYYY-MM-DD.",
-				Required: false,
-			},
-			"country_include": {
-				Type:     schema.Array,
-				ElemInfo: &schema.ParameterInfo{Type: schema.String},
-				Desc:     "Countries that search results must include.",
-				Required: false,
-			},
-			"language_include": {
-				Type:     schema.Array,
-				ElemInfo: &schema.ParameterInfo{Type: schema.String},
-				Desc:     "Languages that search results must include.",
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(queritToolName, queritToolDescription, queritParams{})
 }
 
 // InvokableRun performs a Querit search. All expected operational failures are

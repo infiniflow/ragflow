@@ -46,8 +46,8 @@ var qweatherEndpoint = "https://devapi.qweather.com/v7/weather/now"
 //   - Lang (optional): language code for `text` and `windDir`. Defaults
 //     to "zh" per the inbox spec.
 type qweatherParams struct {
-	Location string `json:"location"`
-	Lang     string `json:"lang,omitempty"`
+	Location string `json:"location" doc:"Location code (e.g. 101010100 for Beijing) or \"lat,lon\" (e.g. \"39.904,116.405\")." required:"true"`
+	Lang     string `json:"lang,omitempty" doc:"Language for text and windDir. Defaults to zh."`
 }
 
 // qweatherNow is the upstream `now` object.
@@ -112,22 +112,7 @@ func (q *QWeatherTool) resolveAPIKey() string {
 
 // Info returns the tool's metadata for the chat model.
 func (q *QWeatherTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: qweatherToolName,
-		Desc: qweatherToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"location": {
-				Type:     schema.String,
-				Desc:     "Location code (e.g. 101010100 for Beijing) or \"lat,lon\" (e.g. \"39.904,116.405\").",
-				Required: true,
-			},
-			"lang": {
-				Type:     schema.String,
-				Desc:     "Language for `text` and `windDir`. Defaults to \"zh\".",
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(qweatherToolName, qweatherToolDescription, qweatherParams{})
 }
 
 // buildQWeatherURL composes the devapi.qweather.com URL. Centralized

@@ -50,9 +50,9 @@ var searxngNewlinePattern = regexp.MustCompile(`\n+`)
 // searxng_url are model inputs; searxng_url may also be node configuration,
 // while top_n is Canvas-only configuration.
 type searxngParams struct {
-	Query      string `json:"query"`
-	SearXNGURL string `json:"searxng_url"`
-	TopN       int    `json:"top_n"`
+	Query      string `json:"query" doc:"The search keywords to execute with SearXNG. The keywords should be the most important words/terms(includes synonyms) from the original request." required:"true"`
+	SearXNGURL string `json:"searxng_url,omitempty" doc:"The base URL of your SearXNG instance (e.g., http://localhost:4000). This is required to connect to your SearXNG server."`
+	TopN       int    `json:"top_n" schema:"-"`
 }
 
 type searxngEnvelope struct {
@@ -103,22 +103,7 @@ func newSearXNGToolWithDefaults(helper *HTTPHelper, defaults searxngParams) *Sea
 
 // Info exposes the Python model-call schema, not Canvas-only configuration.
 func (s *SearXNGTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: searxngToolName,
-		Desc: searxngToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "The search keywords to execute with SearXNG. The keywords should be the most important words/terms(includes synonyms) from the original request.",
-				Required: true,
-			},
-			"searxng_url": {
-				Type:     schema.String,
-				Desc:     "The base URL of your SearXNG instance (e.g., http://localhost:4000). This is required to connect to your SearXNG server.",
-				Required: false,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(searxngToolName, searxngToolDescription, searxngParams{})
 }
 
 func buildSearXNGURL(baseURL, query string) string {

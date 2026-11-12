@@ -52,12 +52,12 @@ var googleScholarNewlinePattern = regexp.MustCompile(`\n+`)
 // Patents uses *bool so the zero value (nil) means "not set" → default
 // true (include patents). False means explicitly exclude patents.
 type googleScholarParams struct {
-	Query    string `json:"query"`
-	TopN     int    `json:"top_n"`
-	SortBy   string `json:"sort_by"`
-	YearLow  int    `json:"year_low"`
-	YearHigh int    `json:"year_high"`
-	Patents  *bool  `json:"patents"`
+	Query    string `json:"query" doc:"The search keyword to execute with Google Scholar. The keywords should be the most important words/terms(includes synonyms) from the original request." required:"true"`
+	TopN     int    `json:"top_n" schema:"-"`
+	SortBy   string `json:"sort_by" schema:"-"`
+	YearLow  int    `json:"year_low" schema:"-"`
+	YearHigh int    `json:"year_high" schema:"-"`
+	Patents  *bool  `json:"patents" schema:"-"`
 }
 
 // googleScholarResult is one row in the parsed result list.
@@ -120,17 +120,7 @@ func NewGoogleScholarToolWithDefaults(h *HTTPHelper, defaults googleScholarParam
 // include top_n / sort_by / year_low / year_high / patents.
 // Those are canvas-form-only parameters passed by the component wrapper.
 func (g *GoogleScholarTool) Info(_ context.Context) (*schema.ToolInfo, error) {
-	return &schema.ToolInfo{
-		Name: googleScholarToolName,
-		Desc: googleScholarToolDescription,
-		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"query": {
-				Type:     schema.String,
-				Desc:     "The search keyword to execute with Google Scholar. The keywords should be the most important words/terms(includes synonyms) from the original request.",
-				Required: true,
-			},
-		}),
-	}, nil
+	return BuildToolInfo(googleScholarToolName, googleScholarToolDescription, googleScholarParams{})
 }
 
 func (g *GoogleScholarTool) ComponentSpec() ComponentSpec {
