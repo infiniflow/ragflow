@@ -316,12 +316,12 @@ func ChatChannelRuntimeFingerprint(channel string, credential map[string]any) st
 // HandleIncomingMessage routes one external channel message through the bound RAGFlow dialog.
 // When onDelta is non-nil the answer is generated as a stream and onDelta receives the
 // cumulative display text as it grows; the returned string is always the complete answer.
-func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg ChatChannelIncomingMessage, onDelta func(string)) (string, error) {
+func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg ChatChannelIncomingMessage, onDelta func(string), notifyThinking ...func() error) (string, error) {
 	if onDelta != nil {
 		send := onDelta
 		onDelta = func(text string) { send(stripChannelCitations(text, true)) }
 	}
-	answer, err := s.handleIncomingMessage(ctx, msg, onDelta)
+	answer, err := s.handleIncomingMessage(ctx, msg, onDelta, notifyThinking...)
 	return stripChannelCitations(answer, false), err
 }
 
@@ -341,7 +341,7 @@ func stripChannelCitations(text string, streaming bool) string {
 	return channelCitationPattern.ReplaceAllString(text, "")
 }
 
-func (s *ChatChannelService) handleIncomingMessage(ctx context.Context, msg ChatChannelIncomingMessage, onDelta func(string)) (string, error) {
+func (s *ChatChannelService) handleIncomingMessage(ctx context.Context, msg ChatChannelIncomingMessage, onDelta func(string), notifyThinking ...func() error) (string, error) {
 	if strings.TrimSpace(msg.Text) == "" {
 		return "", nil
 	}
@@ -369,6 +369,7 @@ func (s *ChatChannelService) handleIncomingMessage(ctx context.Context, msg Chat
 	if err := validateChannelBinding(ownerCtx, channel.ChatID, channel.AgentID); err != nil {
 		return "", err
 	}
+	notifyThinkingMessage(notifyThinking)
 	if channel.AgentID != nil {
 		ctx, cancel := context.WithTimeout(ownerCtx, 5*time.Minute)
 		defer cancel()
@@ -557,5 +558,20 @@ func waitingRuntimeSnapshotMap(channelID string) map[string]any {
 		"last_snapshot_at": nil,
 		"gateway_base_url": nil,
 		"event_cursor":     int64(0),
+	}
+}
+
+// notifyThinkingMessage posts the interim "thinking" message when the channel
+// supplied one. The notifier runs only after the channel's binding has been
+// validated, so unbound channels stay silent.
+func notifyThinkingMessage(notifiers []func() error) {
+	for _, notify := range notifiers {
+		if notify == nil {
+			continue
+		}
+		if err := notify(); err != nil {
+			common.Warn("chat channel thinking placeholder failed", zap.Error(err))
+		}
+		return
 	}
 }
