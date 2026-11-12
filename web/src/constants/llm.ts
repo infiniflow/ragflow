@@ -380,6 +380,5 @@ export const APIMapUrl = {
   [LLMFactory.PaddleOCRLocal]: 'https://aistudio.baidu.com/paddleocr',
   [LLMFactory.RAGcon]: 'https://connect.ragcon.com',
   [LLMFactory.FunASR]: 'https://github.com/modelscope/FunASR',
-  [LLMFactory.Shengsuanyun]:
-    'https://www.shengsuanyun.com/zh/?from=ragflow',
+  [LLMFactory.Shengsuanyun]: 'https://www.shengsuanyun.com/zh/?from=ragflow',
 };
