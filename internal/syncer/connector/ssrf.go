@@ -32,26 +32,18 @@ import (
 	"time"
 )
 
-// connectorAssertURLSafe is the SSRF guard shared by all connectors. It is an
-// indirection over common.AssertURLSafe so unit tests can substitute a stub
-// without touching the shared utility guard (same pattern as sitemap.go and
-// azure_blob.go).
-var connectorAssertURLSafe = common.AssertURLSafe
+// connectorAssertURLSafe lets tests substitute URL validation.
+var connectorAssertURLSafe = resolveConnectorURL
 
 // connectorAssertHostSafe is the host-type SSRF guard shared by the host-based
 // connectors (IMAP/MySQL/PostgreSQL). It is an indirection over
-// utility.AssertHostSafe so unit tests can substitute a stub without touching
+// common.AssertHostSafe so unit tests can substitute a stub without touching
 // the shared utility guard (same pattern as connectorAssertURLSafe).
 var connectorAssertHostSafe = common.AssertHostSafe
 
-// assertConnectorHostSafe validates a bare host (hostname or literal IP, no
-// scheme or port) with the shared strict SSRF guard and returns the first
-// validated public IP so callers can pin the dial, preventing DNS rebinding
-// between validation and the connection.
-//
-// When ALLOW_ANY_HOST is set, the public-address check is skipped for this
-// host dial (MySQL, PostgreSQL, IMAP). The hostname is still resolved and
-// the dial stays pinned to that address. URL connectors do not use this path.
+// assertConnectorHostSafe validates a bare host and returns the first
+// approved IP for a pinned TCP dial. Configured private networks take
+// precedence over the global ALLOW_ANY_HOST policy.
 //
 // When connectorAllowLoopbackForTest is set, loopback-only hosts are allowed
 // (unit tests run against local listeners); anything else falls through to the
@@ -73,17 +65,7 @@ func assertConnectorHostSafe(host string) (net.IP, error) {
 		}
 		// Not allowed by the test hook — fall through to the strict guard.
 	}
-	if pinned, enabled, err := common.PinConfiguredPrivateHost(host); enabled {
-		if err != nil {
-			return nil, err
-		}
-		ip := net.ParseIP(pinned)
-		if ip == nil {
-			return nil, fmt.Errorf("Could not parse validated address %q for host %q", pinned, host)
-		}
-		return ip, nil
-	}
-	ipStr, err := connectorAssertHostSafe(host)
+	ipStr, err := resolveConnectorHost(host)
 	if err != nil {
 		return nil, err
 	}
@@ -108,6 +90,10 @@ var connectorAllowLoopbackForTest bool
 // to loopback addresses are allowed; anything else falls through to the strict
 // guard, so a mixed private address is still rejected.
 func assertConnectorURLSafe(rawURL string) (string, net.IP, error) {
+	return assertConnectorURL(rawURL, connectorAssertURLSafe)
+}
+
+func assertConnectorURL(rawURL string, resolve func(string) (string, string, error)) (string, net.IP, error) {
 	if connectorAllowLoopbackForTest {
 		parsed, err := url.Parse(strings.TrimSpace(rawURL))
 		if err != nil || parsed.Hostname() == "" {
@@ -120,7 +106,7 @@ func assertConnectorURLSafe(rawURL string) (string, net.IP, error) {
 		}
 		// Not allowed by the test hook — fall through to the strict guard.
 	}
-	hostname, ipStr, err := connectorAssertURLSafe(rawURL)
+	hostname, ipStr, err := resolve(rawURL)
 	if err != nil {
 		return "", nil, err
 	}
@@ -282,7 +268,7 @@ type connectorUnsafeURLError struct{ Err error }
 func (e *connectorUnsafeURLError) Error() string { return e.Err.Error() }
 func (e *connectorUnsafeURLError) Unwrap() error { return e.Err }
 
-// connectorRequest is the single HTTP send path shared by every connector. It
+// connectorRequest sends an HTTP request for a connector. It
 // follows redirects manually so that each hop is SSRF-validated and DNS-pinned
 // before a connection is made, closing the TOCTOU window that an automatic
 // redirect policy would leave open (the redirect target would otherwise be
@@ -334,24 +320,11 @@ func connectorRequest(ctx context.Context, opts connectorRequestOptions) (*http.
 				return nil, err
 			}
 		}
-		proxyURL, err := connectorProxyURL(opts.Base, req)
-		if err != nil {
-			return nil, fmt.Errorf("resolve connector proxy: %w", err)
-		}
 		originalURL := *req.URL
-		if req.Host == "" {
-			req.Host = req.URL.Host
+		transport, err := pinConnectorRequest(req, opts.Base, hostname, pinIP, opts.Timeout)
+		if err != nil {
+			return nil, err
 		}
-		requestURI := req.URL.RequestURI()
-		pinnedHost := connectorPinnedHost(req.URL, pinIP)
-		req.URL.Host = pinnedHost
-		if proxyURL != nil && req.URL.Scheme == "http" && (proxyURL.Scheme == "http" || proxyURL.Scheme == "https") {
-			// net/http normally builds an HTTP proxy's absolute request target
-			// from Request.Host. Use an opaque absolute URI so the proxy connects
-			// to the validated IP while the Host header retains the origin name.
-			req.URL.Opaque = "//" + pinnedHost + requestURI
-		}
-		transport := newConnectorPinnedTransport(opts.Base, hostname, pinIP, opts.Timeout, proxyURL)
 		client := &http.Client{
 			Transport: transport,
 			Timeout:   opts.Timeout,
@@ -426,6 +399,28 @@ func connectorRequest(ctx context.Context, opts connectorRequestOptions) (*http.
 		}
 		via = append(via, req)
 	}
+}
+
+// pinConnectorRequest sets the validated IP as the dial or proxy target.
+// Keep the original HTTP Host and TLS server name for authentication.
+func pinConnectorRequest(req *http.Request, base *http.Client, hostname string, pinIP net.IP, timeout time.Duration) (*http.Transport, error) {
+	proxyURL, err := connectorProxyURL(base, req)
+	if err != nil {
+		return nil, fmt.Errorf("resolve connector proxy: %w", err)
+	}
+	if req.Host == "" {
+		req.Host = req.URL.Host
+	}
+	requestURI := req.URL.RequestURI()
+	pinnedHost := connectorPinnedHost(req.URL, pinIP)
+	req.URL.Host = pinnedHost
+	if proxyURL != nil && req.URL.Scheme == "http" && (proxyURL.Scheme == "http" || proxyURL.Scheme == "https") {
+		// net/http normally builds an HTTP proxy's absolute request target
+		// from Request.Host. Use an opaque absolute URI so the proxy connects
+		// to the validated IP while the Host header retains the origin name.
+		req.URL.Opaque = "//" + pinnedHost + requestURI
+	}
+	return newConnectorPinnedTransport(base, hostname, pinIP, timeout, proxyURL), nil
 }
 
 // connectorProxyURL resolves the configured proxy before the request target is pinned.

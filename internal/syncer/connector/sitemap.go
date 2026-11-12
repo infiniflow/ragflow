@@ -51,7 +51,7 @@ const (
 type sitemapFetchFunc func(ctx context.Context, rawURL string) ([]byte, string, error)
 
 // sitemapAssertURLSafe is the SSRF guard, indirected so tests can stub DNS resolution.
-var sitemapAssertURLSafe = common.AssertURLSafe
+var sitemapAssertURLSafe = resolveConnectorURL
 
 // SitemapConnector ingests the web pages listed in a sitemap.xml.
 //

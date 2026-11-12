@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/common"
 	"sort"
 	"strings"
 	"time"
@@ -40,10 +39,8 @@ const (
 	azureBlobErrorMessageLimit = 300
 )
 
-// azureAssertURLSafe is the SSRF guard used for caller-supplied endpoint URLs.
-// It is an indirection over common.AssertURLSafe so unit tests can substitute
-// a stub without touching the shared global guard.
-var azureAssertURLSafe = common.AssertURLSafe
+// azureAssertURLSafe lets tests substitute endpoint validation.
+var azureAssertURLSafe = resolveConnectorURL
 
 // azureBlobTextExtensions mirrors the extension set used by the OneDrive
 // family of file sources in the blob connector.
@@ -244,10 +241,8 @@ func (c *AzureBlobStorageConnector) validateCredentials() error {
 	return nil
 }
 
-// validateURLSafety rejects caller-supplied endpoints that are not HTTPS and
-// do not resolve to a public host. The connection-string mode is a single
-// opaque blob whose endpoint is embedded by Azure, so it is not routed by the
-// caller and is intentionally left alone.
+// validateURLSafety checks explicit endpoints before the SDK runs. All
+// SDK requests, including connection-string endpoints, are checked at send time.
 func (c *AzureBlobStorageConnector) validateURLSafety() error {
 	endpoint := ""
 	switch c.authMode {
@@ -269,31 +264,77 @@ func (c *AzureBlobStorageConnector) ensureClient(ctx context.Context) (*containe
 	if c.containerClient != nil {
 		return c.containerClient, nil
 	}
+	options := &container.ClientOptions{
+		ClientOptions: azcore.ClientOptions{Transport: &http.Client{
+			Transport: azureBlobTransport{},
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if len(via) >= 10 || connectorOrigin(req.URL.String()) != connectorOrigin(via[0].URL.String()) {
+					return http.ErrUseLastResponse
+				}
+				return nil
+			},
+		}},
+	}
 	var (
 		client *container.Client
 		err    error
 	)
 	switch c.authMode {
 	case "connection_string":
-		client, err = container.NewClientFromConnectionString(c.connectionString, c.containerName, nil)
+		client, err = container.NewClientFromConnectionString(c.connectionString, c.containerName, options)
 	case "account_key":
 		var cred *azblob.SharedKeyCredential
 		cred, err = azblob.NewSharedKeyCredential(c.accountName, c.accountKey)
 		if err == nil {
 			accountURL := fmt.Sprintf("https://%s.%s/%s", c.accountName, azureBlobEndpointSuffix, c.containerName)
-			client, err = container.NewClientWithSharedKeyCredential(accountURL, cred, nil)
+			client, err = container.NewClientWithSharedKeyCredential(accountURL, cred, options)
 		}
 	case "sas_token":
 		fullURL := c.containerURL + "?" + c.sasToken
-		client, err = container.NewClientWithNoCredential(fullURL, nil)
+		client, err = container.NewClientWithNoCredential(fullURL, options)
 	default:
 		return nil, &ConnectorMissingCredentialError{Message: "Azure Blob credentials are incomplete."}
 	}
 	if err != nil {
 		return nil, &ConnectorMissingCredentialError{Message: fmt.Sprintf("Failed to initialise Azure Blob client: %v", err)}
 	}
+	if c.authMode == "connection_string" {
+		if _, _, err := azureAssertURLSafe(client.URL()); err != nil {
+			return nil, &ConnectorValidationError{Message: fmt.Sprintf("Azure Blob: unsafe endpoint URL: %v", err)}
+		}
+	}
 	c.containerClient = client
 	return client, nil
+}
+
+// azureBlobTransport validates the SDK's effective endpoint and pins the
+// request after signing, preserving the original Host and TLS name.
+type azureBlobTransport struct{}
+
+func (azureBlobTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	hostname, ip, err := assertConnectorURL(req.URL.String(), azureAssertURLSafe)
+	if err != nil {
+		if req.Body != nil {
+			req.Body.Close()
+		}
+		return nil, &connectorUnsafeURLError{Err: err}
+	}
+	pinned := req.Clone(req.Context())
+	transport, err := pinConnectorRequest(pinned, nil, hostname, ip, 30*time.Second)
+	if err != nil {
+		if req.Body != nil {
+			req.Body.Close()
+		}
+		return nil, err
+	}
+	resp, err := transport.RoundTrip(pinned)
+	if err != nil {
+		transport.CloseIdleConnections()
+		return nil, err
+	}
+	resp.Request = req
+	resp.Body = &connectorCloseIdleBody{body: resp.Body, transport: transport}
+	return resp, nil
 }
 
 // defaultValidateContainer issues the container properties call that proves
@@ -311,7 +352,7 @@ func (c *AzureBlobStorageConnector) defaultValidateContainer(ctx context.Context
 }
 
 func (c *AzureBlobStorageConnector) classifyValidationError(err error) error {
-	msg := truncateAzureBlobMessage(err.Error())
+	msg := truncateAzureBlobMessage(connectorUnsafeErr(err).Error())
 	var respErr *azcore.ResponseError
 	if errors.As(err, &respErr) {
 		switch {
@@ -351,7 +392,7 @@ func (c *AzureBlobStorageConnector) listBlobPage(ctx context.Context, prefix, ma
 	}
 	page, err := client.NewListBlobsFlatPager(options).NextPage(ctx)
 	if err != nil {
-		return nil, "", false, err
+		return nil, "", false, connectorUnsafeErr(err)
 	}
 	objects := make([]azureBlobObject, 0, len(page.Segment.BlobItems))
 	for _, item := range page.Segment.BlobItems {
@@ -396,7 +437,7 @@ func (c *AzureBlobStorageConnector) download(ctx context.Context, name string) (
 	}
 	response, err := client.NewBlockBlobClient(name).DownloadStream(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, connectorUnsafeErr(err)
 	}
 	defer response.Body.Close()
 	return io.ReadAll(response.Body)
