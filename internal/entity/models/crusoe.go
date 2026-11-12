@@ -62,17 +62,18 @@ func (m *CrusoeModel) NewInstance(baseURL map[string]string) ModelDriver {
 // modelName for the least reasoning it supports, and false when the model has
 // no documented value for it.
 //
-// Probed against POST /chat/completions on 2026-08-13: Gemma 4, Kimi K2.6,
-// Nemotron 3 and GLM return no reasoning with "none". gpt-oss rejects "none"
-// with HTTP 400 ("Harmony does not support reasoning_effort='none'") and
-// cannot stop reasoning, so its shortest level, "low", is used. Other models
-// are left alone because "none" is a validation error on some of them.
+// Probed against POST /chat/completions on 2026-08-13: gemma-4-31b-it,
+// Nemotron-3-Nano-Omni and GLM-5.2 return no reasoning with "none", and the
+// rule covers their families. gpt-oss rejects "none" with HTTP 400 ("Harmony
+// does not support reasoning_effort='none'") and cannot stop reasoning, so its
+// shortest level, "low", is used. Other models are left alone because "none"
+// was a validation error on some of them.
 func crusoeReasoningOffEffort(modelName string) (string, bool) {
 	lower := strings.ToLower(modelName)
 	if strings.Contains(lower, "gpt-oss") {
 		return "low", true
 	}
-	for _, family := range []string{"gemma", "kimi", "nemotron", "glm"} {
+	for _, family := range []string{"gemma", "nemotron", "glm"} {
 		if strings.Contains(lower, family) {
 			return "none", true
 		}

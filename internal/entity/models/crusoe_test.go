@@ -183,7 +183,7 @@ func TestCrusoeChatSendsChatCompletionsFields(t *testing.T) {
 	maxTokens := 64
 	_, err := newCrusoeForTest(srv.URL).ChatWithMessages(
 		t.Context(),
-		"Qwen/Qwen3-235B-A22B-Instruct-2507",
+		"qwen/Qwen3.8-27B",
 		[]Message{{Role: "user", Content: "ping"}},
 		&APIConfig{ApiKey: &testAPIKey},
 		&ChatConfig{Thinking: &thinking, DoSample: &doSample, Temperature: &temperature, MaxTokens: &maxTokens},
@@ -224,12 +224,11 @@ func TestCrusoeReasoningEffort(t *testing.T) {
 	}{
 		{name: "no config", model: "openai/gpt-oss-120b", config: nil, want: nil},
 		{name: "empty config", model: "openai/gpt-oss-120b", config: &ChatConfig{}, want: nil},
-		{name: "off on nemotron", model: "nvidia/NVIDIA-Nemotron-3-Super-120B-A12B", config: &ChatConfig{Thinking: &off}, want: "none"},
+		{name: "off on nemotron", model: "nvidia/Nemotron-3-Nano-Omni-Reasoning-30B-A3B", config: &ChatConfig{Thinking: &off}, want: "none"},
 		{name: "off on gemma", model: "google/gemma-4-31b-it", config: &ChatConfig{Thinking: &off}, want: "none"},
-		{name: "off on kimi", model: "moonshotai/Kimi-K2.6", config: &ChatConfig{Thinking: &off}, want: "none"},
 		{name: "off on glm", model: "zai-org/GLM-5.3", config: &ChatConfig{Thinking: &off}, want: "none"},
 		{name: "off on gpt-oss", model: "openai/gpt-oss-120b", config: &ChatConfig{Thinking: &off}, want: "low"},
-		{name: "off on a model without a switch", model: "meta-llama/Llama-3.3-70B-Instruct", config: &ChatConfig{Thinking: &off}, want: nil},
+		{name: "off on a model without a switch", model: "deepseek-ai/DeepSeek-V4.1-Flash", config: &ChatConfig{Thinking: &off}, want: nil},
 		{name: "off wins over effort", model: "google/gemma-4-31b-it", config: &ChatConfig{Thinking: &off, Effort: effort("high")}, want: "none"},
 		{name: "on without effort", model: "google/gemma-4-31b-it", config: &ChatConfig{Thinking: &on}, want: "medium"},
 		{name: "on with effort", model: "openai/gpt-oss-120b", config: &ChatConfig{Thinking: &on, Effort: effort("High")}, want: "high"},
