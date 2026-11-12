@@ -47,7 +47,6 @@ func TestOperationLogLeavesCommunityRequestUnchanged(t *testing.T) {
 	common.SetOperationResource(c, "dataset_id", "dataset-one")
 	common.RespondSuccess(c, map[string]any{"id": "dataset-one"}, "")
 	common.FinishOperationLog(c)
-	common.AuditRequest(c, &common.OperationLog{Operation: "existing"})
 	if len(c.Keys) != 2 || c.GetString("existing") != "preserved" || c.GetString("user_id") != "actor" {
 		t.Fatalf("community context changed: %v", c.Keys)
 	}

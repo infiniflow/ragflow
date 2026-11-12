@@ -90,8 +90,3 @@ func SetOperationResource(_ *gin.Context, _ string, _ any) {}
 func FinishOperationLog(_ *gin.Context) {}
 
 func auditResponse(_ *gin.Context, _ ErrorCode) {}
-
-// AuditRequest preserves the community audit behavior.
-func AuditRequest(_ *gin.Context, operationLog *OperationLog) {
-	Audit(operationLog)
-}

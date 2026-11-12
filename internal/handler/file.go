@@ -594,27 +594,11 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 	common.StartOperationLog(c, "link_files_to_datasets")
 	defer common.FinishOperationLog(c)
 
-	startAt := time.Now()
-	operationLog := &common.OperationLog{
-		EventTime:  startAt,
-		Operation:  "link-to-datasets",
-		APIPath:    c.FullPath(),
-		HTTPMethod: c.Request.Method,
-		IPAddress:  c.ClientIP(),
-	}
-	defer func() {
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		common.AuditRequest(c, operationLog)
-	}()
-
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
-		operationLog.Code = int(errorCode)
-		operationLog.Error = errors.New(errorMessage)
 		return
 	}
-	operationLog.UserID = user.ID
 
 	var req document.LinkToDatasetsRequest
 	// Tolerate bind errors: a malformed or empty body simply leaves the fields
@@ -638,8 +622,6 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 	if len(missing) > 0 {
 		errorMessage = fmt.Sprintf("required argument are missing: %s; ", strings.Join(missing, ","))
 		common.RespondError(c, common.CodeArgumentError, errorMessage)
-		operationLog.Code = int(common.CodeArgumentError)
-		operationLog.Error = errors.New(errorMessage)
 		return
 	}
 
@@ -647,16 +629,12 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 	if mode != "add" && mode != "replace" {
 		errorMessage = "mode must be 'add' or 'replace'"
 		common.RespondError(c, common.CodeArgumentError, errorMessage)
-		operationLog.Code = int(common.CodeArgumentError)
-		operationLog.Error = errors.New(errorMessage)
 		return
 	}
 	ctx := c.Request.Context()
 	if err := h.file2DocumentService.LinkToDatasets(ctx, &req, mode); err != nil {
 		errorCode = linkToDatasetsErrorCode(err)
 		common.RespondError(c, errorCode, err.Error())
-		operationLog.Code = int(errorCode)
-		operationLog.Error = err
 		return
 	}
 
