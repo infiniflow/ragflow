@@ -599,12 +599,12 @@ func (s *MemoryService) CreateMemory(ctx context.Context, req *CreateMemoryReque
 		}
 		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindMemory, ID: memory.ID})
 	}); err != nil {
-		return nil, errors.New("could not create new memory")
+		return nil, fmt.Errorf("could not create new memory: %w", err)
 	}
 
 	createdMemory, err := s.memoryDAO.GetByID(ctx, s.db, newID)
 	if err != nil {
-		return nil, errors.New("could not create new memory")
+		return nil, fmt.Errorf("could not create new memory: %w", err)
 	}
 
 	return formatRetDataFromMemory(createdMemory), nil
@@ -910,12 +910,12 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, memoryID string, req *
 	}
 
 	if err = s.memoryDAO.UpdateByID(ctx, s.db, memoryID, updateDict); err != nil {
-		return nil, errors.New("failed to update memory")
+		return nil, fmt.Errorf("failed to update memory: %w", err)
 	}
 
 	updatedMemory, err := s.memoryDAO.GetByID(ctx, s.db, memoryID)
 	if err != nil {
-		return nil, errors.New("failed to get updated memory")
+		return nil, fmt.Errorf("failed to get updated memory: %w", err)
 	}
 
 	return formatRetDataFromMemory(updatedMemory), nil
@@ -988,7 +988,7 @@ func (s *MemoryService) DeleteMemory(ctx context.Context, memoryID string) error
 
 	// Delete memory record
 	if err := s.memoryDAO.DeleteByID(ctx, s.db, memoryID); err != nil {
-		return errors.New("failed to delete memory")
+		return fmt.Errorf("failed to delete memory: %w", err)
 	}
 
 	return nil
