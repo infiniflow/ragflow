@@ -18,6 +18,7 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -878,5 +879,85 @@ func TestStreamChatCompletionSSE_ChunkJSONShape(t *testing.T) {
 	}
 	if delta["content"] != "x" {
 		t.Errorf("delta.content: got %v, want x", delta["content"])
+	}
+}
+
+func openAIChatBody(t *testing.T, body map[string]interface{}) []byte {
+	t.Helper()
+	raw, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal request body: %v", err)
+	}
+	return raw
+}
+
+func TestParseOpenAIChatRequest_KeepsClientHistory(t *testing.T) {
+	history := []map[string]interface{}{
+		{"role": "user", "content": "Which products support SSO?"},
+		{"role": "assistant", "content": "A, B and C."},
+		{"role": "user", "content": "What about the second one?"},
+	}
+
+	_, got, err := parseOpenAIChatRequest(openAIChatBody(t, map[string]interface{}{"messages": history}))
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !reflect.DeepEqual(got, history) {
+		t.Fatalf("the whole conversation must reach the pipeline, got %#v", got)
+	}
+}
+
+func TestParseOpenAIChatRequest_ExplicitTextCollapsesHistory(t *testing.T) {
+	for _, field := range []string{"question", "query"} {
+		t.Run(field, func(t *testing.T) {
+			body := openAIChatBody(t, map[string]interface{}{
+				field: "standalone question",
+				"messages": []map[string]interface{}{
+					{"role": "user", "content": "old"},
+					{"role": "assistant", "content": "reply"},
+				},
+			})
+
+			_, got, err := parseOpenAIChatRequest(body)
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			want := []map[string]interface{}{{"role": "user", "content": "standalone question"}}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("got %#v, want %#v", got, want)
+			}
+		})
+	}
+}
+
+func TestParseOpenAIChatRequest_Rejections(t *testing.T) {
+	cases := []struct {
+		name    string
+		body    string
+		wantErr string
+		wantArg bool
+	}{
+		{
+			name:    "last message not from user",
+			body:    `{"messages":[{"role":"user","content":"hi"},{"role":"assistant","content":"hello"}]}`,
+			wantErr: "not from user",
+		},
+		{name: "no messages", body: `{"messages":[]}`, wantErr: "provide messages"},
+		{name: "malformed body", body: `{"messages":`, wantArg: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, _, err := parseOpenAIChatRequest([]byte(tc.body))
+
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("error = %v, want it to contain %q", err, tc.wantErr)
+			}
+			var argErr openAIArgumentError
+			if gotArg := errors.As(err, &argErr); gotArg != tc.wantArg {
+				t.Fatalf("argument error = %v, want %v", gotArg, tc.wantArg)
+			}
+		})
 	}
 }
