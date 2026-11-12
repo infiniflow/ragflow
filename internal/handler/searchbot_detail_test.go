@@ -44,7 +44,7 @@ func setupSearchbotDetailHandlerDB(t *testing.T) {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(&entity.User{}, &entity.UserTenant{}, &entity.Search{}, &entity.APIToken{}); err != nil {
+	if err := db.AutoMigrate(&entity.User{}, &entity.Tenant{}, &entity.UserTenant{}, &entity.Search{}, &entity.APIToken{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -296,6 +296,13 @@ func TestSearchbotDetailRedactsInternalErrorText(t *testing.T) {
 		Status:          &status,
 	}).Error; err != nil {
 		t.Fatalf("failed to create user: %v", err)
+	}
+	if err := dao.DB.Create(&entity.Tenant{
+		ID:        "tenant-1",
+		ParserIDs: "",
+		Status:    &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to create tenant: %v", err)
 	}
 	if err := dao.DB.Create(&entity.UserTenant{
 		ID:       "ut-1",
