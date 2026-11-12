@@ -178,6 +178,126 @@ func TestSwitch_LegacyEndCpnIDsFallback(t *testing.T) {
 	}
 }
 
+// TestSwitch_LegacyEndCpnIDsMultiTargetFallback pins #22314: the
+// legacy "ELSE"/"Other" branch (end_cpn_ids) can fan out to several
+// targets, and Python's Switch (v0.27 agent/component/switch.py) set
+// _next to the WHOLE end_cpn_ids list, firing every target. The Go
+// port returned only the first entry, so agents migrated from v0.27.x
+// failed on every query that reached the ELSE branch with
+// "Can't find variable" for the skipped targets. The matched-condition
+// path already returns every "to" target; the scheduler side
+// (makeSwitchBranchCondition) already fires every whitelisted entry
+// of a multi-element _next list.
+func TestSwitch_LegacyEndCpnIDsMultiTargetFallback(t *testing.T) {
+	s, _ := NewSwitchComponent(nil)
+	state := canvas.NewCanvasState("run-else-multi", "task-else-multi")
+	state.Sys["query"] = "nothing matches"
+	ctx := withStateForTest(t.Context(), state)
+
+	inputs := map[string]any{
+		"conditions": []any{
+			map[string]any{
+				"logical_operator": "and",
+				"items": []any{
+					map[string]any{"cpn_id": "sys.query", "operator": "contains", "value": "X"},
+				},
+				"to": []any{"Message:1"},
+			},
+		},
+		"end_cpn_ids": []any{"Retrieval:A", "Retrieval:B"},
+	}
+	out, err := s.Invoke(ctx, nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	targets := nextTargets(out)
+	if len(targets) != 2 || targets[0] != "Retrieval:A" || targets[1] != "Retrieval:B" {
+		t.Errorf("_next: got %v, want [\"Retrieval:A\", \"Retrieval:B\"] (the ELSE branch must route to every end_cpn_ids entry, in order)", targets)
+	}
+}
+
+// TestSwitch_DefaultParamWinsOverEndCpnIDs pins the precedence between
+// the two no-match sources: an explicit "default" cpn_id (v1 DSL) beats
+// the legacy end_cpn_ids list and stays a single target.
+func TestSwitch_DefaultParamWinsOverEndCpnIDs(t *testing.T) {
+	s, _ := NewSwitchComponent(nil)
+	state := canvas.NewCanvasState("run-else-precedence", "task-else-precedence")
+	state.Sys["query"] = "nothing matches"
+	ctx := withStateForTest(t.Context(), state)
+
+	inputs := map[string]any{
+		"conditions": []any{
+			map[string]any{
+				"logical_operator": "and",
+				"items": []any{
+					map[string]any{"cpn_id": "sys.query", "operator": "contains", "value": "X"},
+				},
+				"to": []any{"Message:1"},
+			},
+		},
+		"default":     "explicit_default",
+		"end_cpn_ids": []any{"Retrieval:A", "Retrieval:B"},
+	}
+	out, err := s.Invoke(ctx, nil, inputs)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	targets := nextTargets(out)
+	if len(targets) != 1 || targets[0] != "explicit_default" {
+		t.Errorf("_next: got %v, want [\"explicit_default\"] (explicit default must take precedence over end_cpn_ids)", targets)
+	}
+}
+
+// TestSwitch_LegacyEndCpnIDsStringSliceAndEmptyFallback covers the two
+// remaining shapes of switchDefaultTargets: a []string end_cpn_ids
+// (typed-DSL form) routes to every entry, and a fully-empty
+// configuration keeps the legacy single-empty-string _next shape so
+// the scheduler still sees "no successor" (makeSwitchBranchCondition
+// skips empty entries).
+func TestSwitch_LegacyEndCpnIDsStringSliceAndEmptyFallback(t *testing.T) {
+	state := canvas.NewCanvasState("run-else-shapes", "task-else-shapes")
+	state.Sys["x"] = "no"
+	ctx := withStateForTest(t.Context(), state)
+	conditions := []any{
+		map[string]any{
+			"op": "and",
+			"clauses": []any{
+				map[string]any{"left": "{{sys.x}}", "op": "==", "right": "yes"},
+			},
+		},
+	}
+
+	t.Run("string slice routes to every entry", func(t *testing.T) {
+		s, _ := NewSwitchComponent(map[string]any{
+			"conditions":  conditions,
+			"end_cpn_ids": []string{"Retrieval:A", "Retrieval:B"},
+		})
+		out, err := s.Invoke(ctx, nil, nil)
+		if err != nil {
+			t.Fatalf("Invoke: %v", err)
+		}
+		targets := nextTargets(out)
+		if len(targets) != 2 || targets[0] != "Retrieval:A" || targets[1] != "Retrieval:B" {
+			t.Errorf("_next: got %v, want [\"Retrieval:A\", \"Retrieval:B\"]", targets)
+		}
+	})
+
+	t.Run("all-empty entries keep the legacy no-successor shape", func(t *testing.T) {
+		s, _ := NewSwitchComponent(map[string]any{
+			"conditions":  conditions,
+			"end_cpn_ids": []any{"", ""},
+		})
+		out, err := s.Invoke(ctx, nil, nil)
+		if err != nil {
+			t.Fatalf("Invoke: %v", err)
+		}
+		raw, ok := out["_next"].([]any)
+		if !ok || len(raw) != 1 || raw[0] != "" {
+			t.Errorf("_next: got %v, want [\"\"] (legacy empty shape)", out["_next"])
+		}
+	})
+}
+
 // TestSwitch_ContainsAndEmpty covers two operators that are easy to
 // regress: "contains" (substring match) and "empty" (nil/empty test).
 func TestSwitch_ContainsAndEmpty(t *testing.T) {

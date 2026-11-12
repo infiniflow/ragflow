@@ -68,11 +68,13 @@ func (s *SwitchComponent) Name() string { return s.name }
 
 // Invoke evaluates the conditions list in order, returns the first
 // matching group's downstream cpn_ids at outputs["_next"]. If no
-// group matches, outputs["_next"] = inputs["default"] (a
-// free-form string — resolved to a real cpn_id by the canvas
-// scheduler's MultiBranch wiring in canvas/multibranch.go).
+// group matches, outputs["_next"] is the explicit "default" cpn_id
+// when set; otherwise it is every non-empty end_cpn_ids entry — the
+// legacy ELSE/Other destinations, which may fan out to several
+// targets, exactly like Python's v0.27 Switch (see
+// switchDefaultTargets and #22314).
 // Unknown / empty inputs are tolerated: an absent "conditions"
-// list yields outputs["_next"] = inputs["default"].
+// list yields the default / end_cpn_ids routing described above.
 //
 // The "to" field in each condition group can be a single string
 // or a list of strings — Python's Switch routes to ALL targets
@@ -97,10 +99,7 @@ func (s *SwitchComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		merged[k] = v
 	}
 
-	defaultNext, _ := merged["default"].(string)
-	if defaultNext == "" {
-		defaultNext = legacySwitchDefaultTarget(merged)
-	}
+	defaultTargets := switchDefaultTargets(merged)
 	if raw, ok := merged["conditions"].([]any); ok {
 		for i, item := range raw {
 			group, ok := item.(map[string]any)
@@ -129,9 +128,16 @@ func (s *SwitchComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 			return map[string]any{"_next": nextAny}, nil
 		}
 	}
-	// Default: single target. Wrap as a one-element list so the
-	// MultiBranch condition can still consume it uniformly.
-	return map[string]any{"_next": []any{defaultNext}}, nil
+	// No condition matched: route to the default / ELSE targets.
+	// Wrapped as a list so the MultiBranch condition can consume it
+	// uniformly — the same shape the matched-condition path above
+	// returns, so an ELSE branch fanning out to several end_cpn_ids
+	// fires all of them (#22314).
+	nextAny := make([]any, len(defaultTargets))
+	for i, t := range defaultTargets {
+		nextAny[i] = t
+	}
+	return map[string]any{"_next": nextAny}, nil
 }
 
 // Stream is a synchronous facade over Invoke for P0. Switch is a
@@ -315,25 +321,44 @@ func switchGroupTarget(group map[string]any) (string, bool) {
 	return "", false
 }
 
-func legacySwitchDefaultTarget(merged map[string]any) string {
+// switchDefaultTargets resolves the no-match routing set: the
+// explicit "default" cpn_id when set, otherwise every non-empty
+// end_cpn_ids entry. Python's v0.27 Switch set _next to the WHOLE
+// end_cpn_ids list (agent/component/switch.py:
+// self.set_output("_next", self._param.end_cpn_ids)), so an ELSE
+// branch that fans out to several targets must fire all of them —
+// the same way the matched-condition path already returns every
+// "to" target (#22314: returning only the first entry broke agents
+// migrated from v0.27.x with "Can't find variable" on the skipped
+// targets). When neither source yields a target, the legacy
+// single-empty-string shape is kept so downstream consumers see the
+// same "no successor" signal as before.
+func switchDefaultTargets(merged map[string]any) []string {
+	if next, _ := merged["default"].(string); next != "" {
+		return []string{next}
+	}
+	var targets []string
 	if merged == nil {
-		return ""
+		return []string{""}
 	}
 	if raw, ok := merged["end_cpn_ids"].([]any); ok {
 		for _, item := range raw {
 			if next, ok := item.(string); ok && next != "" {
-				return next
+				targets = append(targets, next)
 			}
 		}
 	}
 	if raw, ok := merged["end_cpn_ids"].([]string); ok {
 		for _, next := range raw {
 			if next != "" {
-				return next
+				targets = append(targets, next)
 			}
 		}
 	}
-	return ""
+	if len(targets) == 0 {
+		return []string{""}
+	}
+	return targets
 }
 
 // evaluateClause resolves a single clause. left is a {{...}} reference
