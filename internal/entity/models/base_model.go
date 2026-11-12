@@ -506,6 +506,11 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 
 		if model.ContextLength != nil && *model.ContextLength > 0 {
 			modelResponse.ContextLength = model.ContextLength
+		} else if model.ContextWindow != nil && *model.ContextWindow > 0 {
+			modelResponse.ContextLength = model.ContextWindow
+		}
+		if model.MaxTokens != nil && *model.MaxTokens > 0 {
+			modelResponse.MaxOutput = model.MaxTokens
 		}
 
 		// The provider-list merge treats remote entries as authoritative

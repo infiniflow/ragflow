@@ -251,6 +251,8 @@ type DecideResponse struct {
 type ModelListItem struct {
 	ID            string `json:"id"`
 	ContextLength *int   `json:"context_length"`
+	ContextWindow *int   `json:"context_window"`
+	MaxTokens     *int   `json:"max_tokens"`
 	Object        string `json:"object"`
 	OwnedBy       string `json:"owned_by"`
 }

@@ -784,9 +784,7 @@ func TestRunAgentRejectsUntrustedSessionContinuation(t *testing.T) {
 // follow-up: when loadCanvasForUser's underlying DAO surfaces a
 // real DB error (NOT the ErrUserCanvasNotFound sentinel), RunAgent
 // must return an error wrapped with ErrAgentStorageError so the
-// handler maps it to CodeServerError (500) with a sanitized
-// message — the raw DAO string (DSN, table name, etc.) MUST NOT
-// reach the client.
+// handler maps it to CodeServerError (500) with the underlying cause.
 //
 // We simulate a real DB failure by closing the underlying sql.DB
 // connection mid-test. The next query against the test SQLite DB
@@ -845,19 +843,13 @@ func TestRunAgent_StorageErrorFromCanvasAccess(t *testing.T) {
 	if !errors.Is(err, ErrAgentStorageError) {
 		t.Errorf("expected ErrAgentStorageError in chain, got %v", err)
 	}
-	// The raw "sql: database is closed" / gorm error text must
-	// not be in the user-facing message — the handler's
-	// mapAgentError returns a sanitized message, but we pin the
-	// contract at the service layer too: the error wraps the
-	// sentinel, and a wrapping chain that includes
-	// ErrAgentStorageError means the handler will sanitize.
 }
 
 // TestLoadCanvasForUser_StorageErrorWrap pins the same wrapping
 // contract at the loadCanvasForUser level (not just through
 // RunAgent). loadCanvasForUser is shared by GetAgent, UpdateAgent,
 // DeleteAgent, PublishAgent, ListVersions, GetVersion, and
-// Session cancellation — sanitising its DAO errors closes the leak in all
+// Session cancellation — its DAO errors retain the same classification in all
 // eight call sites.
 func TestLoadCanvasForUser_StorageErrorWrap(t *testing.T) {
 	testDB := setupServiceTestDB(t)

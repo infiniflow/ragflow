@@ -273,7 +273,7 @@ type CreateUserHTTPRequest struct {
 func (h *Handler) CreateUser(c *gin.Context) {
 	var req CreateUserHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, "Username and password are required")
+		common.RespondError(c, common.CodeBadRequest, "Username and password are required: "+err.Error())
 		return
 	}
 
@@ -356,7 +356,7 @@ func (h *Handler) ChangePassword(c *gin.Context) {
 
 	var req ChangePasswordHTTPRequest
 	if err = c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, "New password is required")
+		common.RespondError(c, common.CodeBadRequest, "New password is required: "+err.Error())
 		return
 	}
 
@@ -383,7 +383,7 @@ func (h *Handler) UpdateUserActivateStatus(c *gin.Context) {
 
 	var req UpdateActivateStatusHTTPRequest
 	if err = c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, "Activation status is required")
+		common.RespondError(c, common.CodeBadRequest, "Activation status is required: "+err.Error())
 		return
 	}
 
@@ -628,7 +628,7 @@ func (h *Handler) ListVariables(c *gin.Context) {
 		VarName string `json:"var_name"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, "Invalid request body")
+		common.RespondError(c, common.CodeBadRequest, "Invalid request body: "+err.Error())
 		return
 	}
 
@@ -822,7 +822,7 @@ type SetSandboxConfigHTTPRequest struct {
 func (h *Handler) SetSandboxConfig(c *gin.Context) {
 	var req SetSandboxConfigHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid JSON request: provider_type must be a nonempty string, config an object, and set_active a boolean")
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid JSON request: provider_type must be a nonempty string, config an object, and set_active a boolean: "+err.Error())
 		return
 	}
 
@@ -851,7 +851,7 @@ type TestSandboxConnectionHTTPRequest struct {
 func (h *Handler) TestSandboxConnection(c *gin.Context) {
 	var req TestSandboxConnectionHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid JSON request: provider_type must be a nonempty string and config an object")
+		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid JSON request: provider_type must be a nonempty string and config an object: "+err.Error())
 		return
 	}
 
@@ -936,7 +936,7 @@ type SetLogLevelRequest struct {
 func (h *Handler) SetLogLevel(c *gin.Context) {
 	var req SetLogLevelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, "Level is required")
+		common.RespondError(c, common.CodeBadRequest, "Level is required: "+err.Error())
 		return
 	}
 
@@ -980,7 +980,7 @@ type PublishMessageToQueueRequest struct {
 func (h *Handler) PublishMessageToQueue(c *gin.Context) {
 	var req PublishMessageToQueueRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, "Message is required")
+		common.RespondError(c, common.CodeBadRequest, "Message is required: "+err.Error())
 		return
 	}
 
@@ -1111,7 +1111,7 @@ type ShutdownIngestorRequest struct {
 func (h *Handler) ShutdownIngestor(c *gin.Context) {
 	var req ShutdownIngestorRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeBadRequest, "Ingestor ID is required")
+		common.RespondError(c, common.CodeBadRequest, "Ingestor ID is required: "+err.Error())
 		return
 	}
 

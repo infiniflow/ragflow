@@ -77,7 +77,7 @@ func (h *SystemHandler) Healthz(c *gin.Context) {
 func (h *SystemHandler) GetConfig(c *gin.Context) {
 	config, err := h.systemService.GetConfig(c.Request.Context())
 	if err != nil {
-		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to get system configuration")
+		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to get system configuration: "+err.Error())
 		return
 	}
 
@@ -109,7 +109,7 @@ func (h *SystemHandler) GetStatus(c *gin.Context) {
 func (h *SystemHandler) GetVersion(c *gin.Context) {
 	version, err := h.systemService.GetVersion()
 	if err != nil {
-		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to get version")
+		common.Respond(c, http.StatusInternalServerError, 500, nil, "Failed to get version: "+err.Error())
 		return
 	}
 
@@ -147,7 +147,7 @@ type SetLogLevelRequest struct {
 func (h *SystemHandler) SetLogLevel(c *gin.Context) {
 	var req SetLogLevelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.RespondError(c, common.CodeDataError, "pkg_name and level are required")
+		common.RespondError(c, common.CodeDataError, "pkg_name and level are required: "+err.Error())
 		return
 	}
 

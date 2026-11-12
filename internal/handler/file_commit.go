@@ -103,7 +103,7 @@ func CommitFolderResolver(h *FileCommitHandler, entityType, urlParam string) gin
 		}
 		folderID, err := h.ResolveFolderID(ctx, entityType, id)
 		if err != nil {
-			common.RespondError(c, common.CodeNotFound, fmt.Sprintf("%s folder not found", entityType))
+			common.RespondError(c, common.CodeNotFound, fmt.Sprintf("%s folder not found: %v", entityType, err))
 			c.Abort()
 			return
 		}
@@ -368,7 +368,7 @@ func (h *FileCommitHandler) GetCommit(c *gin.Context) {
 	ctx := c.Request.Context()
 	commit, err := h.commitService.GetCommit(ctx, commitID)
 	if err != nil {
-		common.RespondError(c, common.CodeNotFound, "Commit not found")
+		common.RespondError(c, common.CodeNotFound, "Commit not found: "+err.Error())
 		return
 	}
 
@@ -383,7 +383,7 @@ func (h *FileCommitHandler) GetCommit(c *gin.Context) {
 	if datasetID != "" && commit.Title != nil {
 		detail, err := h.commitService.GetPageCommitDetail(ctx, datasetID, commitID)
 		if err != nil {
-			common.RespondError(c, common.CodeNotFound, "Commit not found")
+			common.RespondError(c, common.CodeNotFound, "Commit not found: "+err.Error())
 			return
 		}
 		common.RespondSuccess(c, detail, common.CodeSuccess.Message())
@@ -443,7 +443,7 @@ func (h *FileCommitHandler) ListCommitFiles(c *gin.Context) {
 	ctx := c.Request.Context()
 	commit, err := h.commitService.GetCommit(ctx, commitID)
 	if err != nil {
-		common.RespondError(c, common.CodeNotFound, "Commit not found")
+		common.RespondError(c, common.CodeNotFound, "Commit not found: "+err.Error())
 		return
 	}
 	if commit.FolderID != folderID {
@@ -493,12 +493,12 @@ func (h *FileCommitHandler) DiffCommits(c *gin.Context) {
 	ctx := c.Request.Context()
 	fromCommit, err := h.commitService.GetCommit(ctx, fromID)
 	if err != nil {
-		common.RespondError(c, common.CodeNotFound, "Commit not found")
+		common.RespondError(c, common.CodeNotFound, "Commit not found: "+err.Error())
 		return
 	}
 	toCommit, err := h.commitService.GetCommit(ctx, toID)
 	if err != nil {
-		common.RespondError(c, common.CodeNotFound, "Commit not found")
+		common.RespondError(c, common.CodeNotFound, "Commit not found: "+err.Error())
 		return
 	}
 	if fromCommit.FolderID != folderID || toCommit.FolderID != folderID {
@@ -582,7 +582,7 @@ func (h *FileCommitHandler) GetCommitTree(c *gin.Context) {
 	ctx := c.Request.Context()
 	commit, err := h.commitService.GetCommit(ctx, commitID)
 	if err != nil {
-		common.RespondError(c, common.CodeNotFound, "Commit not found")
+		common.RespondError(c, common.CodeNotFound, "Commit not found: "+err.Error())
 		return
 	}
 	if commit.FolderID != folderID {
@@ -633,7 +633,7 @@ func (h *FileCommitHandler) GetCommitFileContent(c *gin.Context) {
 	ctx := c.Request.Context()
 	commit, err := h.commitService.GetCommit(ctx, commitID)
 	if err != nil {
-		common.RespondError(c, common.CodeNotFound, "Commit not found")
+		common.RespondError(c, common.CodeNotFound, "Commit not found: "+err.Error())
 		return
 	}
 	if commit.FolderID != folderID {

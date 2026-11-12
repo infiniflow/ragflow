@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package elasticsearch
+package metafilter
 
 import (
 	"fmt"
@@ -27,7 +27,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// Field prefix in the doc-metadata ES index
+// Field prefix in the doc-metadata index
 const metaFieldsPrefix = "meta_fields"
 
 // Date pattern for YYYY-MM-DD

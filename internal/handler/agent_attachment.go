@@ -39,6 +39,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/permission"
+	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 )
 
@@ -91,7 +92,12 @@ func (h *AgentHandler) streamAgentAttachment(c *gin.Context, attachmentID string
 			common.RespondError(c, common.CodeUnauthorized, err.Error())
 			return
 		}
-		common.RespondError(c, common.CodeDataError, "Attachment not found!")
+		if storage.IsNotFound(err) {
+			common.RespondError(c, common.CodeDataError, "Attachment not found!")
+			return
+		}
+		common.Error("Failed to download agent attachment", err)
+		common.RespondError(c, common.CodeServerError, "Failed to download attachment")
 		return
 	}
 

@@ -1232,7 +1232,7 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 					zap.String("dataset_id", req.DatasetID),
 					zap.String("chunk_id", req.ChunkID),
 					zap.String("mode", imageMode))
-				return updateChunkError{code: common.CodeDataError, message: "Failed to store chunk image"}
+				return updateChunkError{code: common.CodeDataError, message: "Failed to store chunk image: " + err.Error()}
 			}
 			d["img_id"] = fmt.Sprintf("%s-%s", req.DatasetID, req.ChunkID)
 			d["doc_type_kwd"] = "image"
@@ -1266,7 +1266,7 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 			common.Error("failed to remove chunk image", err,
 				zap.String("dataset_id", req.DatasetID),
 				zap.String("chunk_id", req.ChunkID))
-			return updateChunkError{code: common.CodeDataError, message: "Failed to remove chunk image"}
+			return updateChunkError{code: common.CodeDataError, message: "Failed to remove chunk image: " + err.Error()}
 		}
 	}
 
@@ -1499,7 +1499,7 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 				zap.String("dataset_id", req.DatasetID),
 				zap.String("chunk_id", chunkID),
 				zap.String("mode", imageUpdateModeAppend))
-			return nil, addChunkError{code: common.CodeDataError, message: "Failed to store chunk image"}
+			return nil, addChunkError{code: common.CodeDataError, message: "Failed to store chunk image: " + err.Error()}
 		}
 		chunkData["img_id"] = fmt.Sprintf("%s-%s", req.DatasetID, chunkID)
 		chunkData["doc_type_kwd"] = "image"

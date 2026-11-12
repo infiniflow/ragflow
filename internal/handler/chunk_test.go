@@ -855,10 +855,10 @@ func TestChunkHandlerAddChunkForwardsTagKwd(t *testing.T) {
 	}
 }
 
-func TestChunkHandlerAddChunkHidesServerErrorDetails(t *testing.T) {
+func TestChunkHandlerAddChunkReturnsServerErrorDetails(t *testing.T) {
 	mock := &mockChunkSvc{
 		addChunkFn: func(ctx context.Context, req *service.AddChunkRequest) (*service.AddChunkResponse, error) {
-			return nil, addChunkTestError{code: common.CodeServerError, msg: "encode chunk embedding: provider secret"}
+			return nil, addChunkTestError{code: common.CodeServerError, msg: "encode chunk embedding: connection refused"}
 		},
 	}
 
@@ -879,10 +879,7 @@ func TestChunkHandlerAddChunkHidesServerErrorDetails(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp["message"] != "Failed to add chunk" {
-		t.Fatalf("message = %v, want generic failure", resp["message"])
-	}
-	if strings.Contains(w.Body.String(), "provider secret") {
-		t.Fatalf("server error details leaked: %s", w.Body.String())
+	if resp["message"] != "encode chunk embedding: connection refused" {
+		t.Fatalf("message = %v, want original error", resp["message"])
 	}
 }

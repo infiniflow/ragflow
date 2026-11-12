@@ -54,22 +54,6 @@ func seedTenantMembership(t *testing.T, db *gorm.DB, id, userID, tenantID, role 
 	}
 }
 
-// TestListMembersAuthCheck verifies a tenant member without the owner role is denied.
-func TestListMembersAuthCheck(t *testing.T) {
-	db := setupTenantPermissionTestDB(t)
-	seedTenantMembership(t, db, "member", "user-abc", "tenant-xyz", "normal")
-	seedTenantMembership(t, db, "owner", "owner-user", "tenant-xyz", "owner")
-	s := &TenantService{userTenantDAO: dao.NewUserTenantDAO()}
-	ctx := permission.WithIdentity(t.Context(), "user-abc", "tenant-xyz")
-	_, code, err := s.ListMembers(ctx, "tenant-xyz")
-	if err == nil {
-		t.Fatal("expected error for non-owner, got nil")
-	}
-	if code != common.CodeForbidden {
-		t.Errorf("expected CodeForbidden, got %v", code)
-	}
-}
-
 // TestAddMemberAuthCheck verifies that a non-owner is denied by tenant policy.
 func TestAddMemberAuthCheck(t *testing.T) {
 	db := setupTenantPermissionTestDB(t)

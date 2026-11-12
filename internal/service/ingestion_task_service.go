@@ -188,25 +188,126 @@ func (s *IngestionTaskService) SetEventEmitter(emitter observability.IngestionEv
 // observability. Enrichment reads the document (file name/type/size/parser) and
 // the bound pipeline run (run number, begin/end, progress) and forwards them to
 // observability.BuildIngestLog, which owns the field mapping onto common.IngestionLog.
+// emitIngestLogTimeout bounds the lifetime of the background instrumentation
+// goroutine so a hung DB cannot leak it. It is a single coarse bound for the
+// whole emit, not a per-field timeout on the business path.
+const emitIngestLogTimeout = 3 * time.Second
+
+// emitLifecycleEvent forwards a task lifecycle transition to the observability
+// sink. It is fire-and-forget: the business flow (e.g. task creation) must never
+// block on or be affected by instrumentation work, regardless of what happens
+// inside it (slow sink, DB error, panic). The caller snapshots the identity
+// scalars and returns immediately; enrichment + emit run on a detached,
+// panic-recovered goroutine.
 func (s *IngestionTaskService) emitLifecycleEvent(ctx context.Context, task *entity.IngestionTask, typ, status, errorInfo string) {
 	if s.eventEmitter == nil || task == nil {
 		return
 	}
+	// Snapshot the database handle synchronously, at emit time. The background
+	// goroutine must read the store the business event fired against, not
+	// whatever global dao.DB a later test (or caller) has since swapped in via
+	// pushServiceDB. Reading a stale/missing global handle is what let a prior
+	// test's instrumentation goroutine corrupt or race a later test's database.
+	// Capturing the value here keeps each goroutine isolated to its own emit-time
+	// store; if that store is later closed by teardown the best-effort read
+	// simply fails instead of reaching into another test's data.
+	db := dao.DB
+	snap := ingestEventSnapshot{
+		taskID:        task.ID,
+		documentID:    task.DocumentID,
+		userID:        task.UserID,
+		datasetID:     task.DatasetID,
+		pipelineLogID: task.PipelineLogID,
+		typ:           typ,
+		status:        status,
+		errorInfo:     errorInfo,
+	}
+	go s.emitLifecycleEventAsync(ctx, snap, db)
+}
+
+// ingestEventSnapshot carries the immutable identity values needed to build an
+// ingest log. It is copied at emit time so the background goroutine never shares
+// the caller's *entity.IngestionTask (which the business flow may mutate after
+// emitLifecycleEvent returns).
+type ingestEventSnapshot struct {
+	taskID        string
+	documentID    string
+	userID        string
+	datasetID     string
+	pipelineLogID *string
+	typ           string
+	status        string
+	errorInfo     string
+}
+
+// emitLifecycleEventAsync performs the actual enrichment + emit off the business
+// path. It is intentionally isolated: any panic is recovered (instrumentation
+// must never crash the caller), and the context is detached from the caller's
+// cancellation while preserving upstream-injected identity values.
+func (s *IngestionTaskService) emitLifecycleEventAsync(parentCtx context.Context, snap ingestEventSnapshot, db *gorm.DB) {
+	defer func() {
+		if r := recover(); r != nil {
+			common.Warn("ingest lifecycle emit panicked; isolated, business flow unaffected",
+				zap.Any("panic", r))
+		}
+	}()
+	// Detach from the caller's cancellation/deadline so the emit completes even
+	// after the business request returns, keeping upstream-injected identity
+	// (ingestor name, NATS subject, worker). A single coarse timeout bounds the
+	// goroutine's lifetime; this is goroutine hygiene, not per-field processing.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(parentCtx), emitIngestLogTimeout)
+	defer cancel()
+
+	task := &entity.IngestionTask{
+		ID:            snap.taskID,
+		DocumentID:    snap.documentID,
+		UserID:        snap.userID,
+		DatasetID:     snap.datasetID,
+		PipelineLogID: snap.pipelineLogID,
+	}
 	var doc *entity.Document
-	if s.documentDAO != nil {
-		doc, _ = s.documentDAO.GetByID(ctx, dao.DB, task.DocumentID)
+	if s.documentDAO != nil && db != nil {
+		doc, _ = s.documentDAO.GetByID(ctx, db, task.DocumentID)
 	}
 	logID := task.PipelineLogID
-	if (logID == nil || *logID == "") && s.documentDAO != nil {
-		if fresh, err := s.GetTask(ctx, task.ID); err == nil {
+	if (logID == nil || *logID == "") && s.ingestionTaskDAO != nil && db != nil {
+		if fresh, err := s.ingestionTaskDAO.GetByID(ctx, db, task.ID); err == nil {
 			logID = fresh.PipelineLogID
 		}
 	}
 	var run *entity.PipelineOperationLog
-	if logID != nil && *logID != "" && s.pipelineLogDAO != nil {
-		run, _ = s.pipelineLogDAO.GetByID(ctx, dao.DB, *logID)
+	if logID != nil && *logID != "" && s.pipelineLogDAO != nil && db != nil {
+		run, _ = s.pipelineLogDAO.GetByID(ctx, db, *logID)
 	}
-	s.eventEmitter.EmitIngestLog(ctx, observability.BuildIngestLog(ctx, task, doc, run, typ, status, errorInfo))
+	ctx = s.enrichIngestIdentity(ctx, db, task, doc)
+	s.eventEmitter.EmitIngestLog(ctx, observability.BuildIngestLog(ctx, task, doc, run, snap.typ, snap.status, snap.errorInfo))
+}
+
+// enrichIngestIdentity attaches the owning user and tenant display names to the
+// context from which observability.BuildIngestLog reads them. The ingestor name,
+// NATS subject and worker are injected upstream on the ingestor's own context;
+// this completes the user/tenant half, which is only knowable from the task's
+// owner id and its document's knowledgebase. Resolution is best-effort: a missing
+// dao handle, an unresolvable id, or an empty name leaves the field empty so the
+// sink omits it rather than disrupting the parse pipeline.
+func (s *IngestionTaskService) enrichIngestIdentity(ctx context.Context, db *gorm.DB, task *entity.IngestionTask, doc *entity.Document) context.Context {
+	if db == nil {
+		return ctx
+	}
+	if task != nil && task.UserID != "" {
+		if nick, err := dao.NewUserDAO().GetNicknameByID(ctx, db, task.UserID); err == nil && nick != "" {
+			ctx = observability.WithUserName(ctx, nick)
+		}
+	}
+	if doc != nil && doc.KbID != "" {
+		tenantID, err := dao.GetTenantIDByKBID(ctx, db, doc.KbID)
+		if err == nil && tenantID != "" {
+			if t, err := dao.NewTenantDAO().GetByID(ctx, db, tenantID); err == nil && t != nil && t.Name != nil && *t.Name != "" {
+				ctx = observability.WithTenantName(ctx, *t.Name)
+			}
+		}
+	}
+	return ctx
 }
 
 func (s *IngestionTaskService) List(ctx context.Context, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
