@@ -31,12 +31,19 @@ type MemoryCache struct {
 	data     map[string]*cacheEntry
 	maxSize  int
 	eviction EvictionPolicy
+	// clock is a logical clock bumped on every Get/Set under c.mu. Recency is
+	// ordered by this sequence instead of wall-clock timestamps: two
+	// operations within one clock tick (guaranteed on Windows, possible on
+	// any host with a coarse monotonic clock) would otherwise record equal
+	// lastAccess values and let evict() pick an arbitrary entry instead of
+	// the least recently used one. Values start at 1 so 0 stays a sentinel.
+	clock uint64
 }
 
 type cacheEntry struct {
 	value      any
 	expiration time.Time
-	lastAccess time.Time
+	lastAccess uint64
 	hits       int64
 }
 
@@ -77,7 +84,8 @@ func (c *MemoryCache) Get(ctx context.Context, key string) (any, bool) {
 	}
 
 	entry.hits++
-	entry.lastAccess = time.Now()
+	c.clock++
+	entry.lastAccess = c.clock
 	return entry.value, true
 }
 
@@ -96,10 +104,11 @@ func (c *MemoryCache) Set(ctx context.Context, key string, value any, ttl time.D
 		expiration = time.Now().Add(ttl)
 	}
 
+	c.clock++
 	c.data[key] = &cacheEntry{
 		value:      value,
 		expiration: expiration,
-		lastAccess: time.Now(),
+		lastAccess: c.clock,
 		hits:       0,
 	}
 }
@@ -128,20 +137,25 @@ func (c *MemoryCache) evict() {
 
 	switch c.eviction {
 	case EvictLRU:
-		// Find least recently used entry
-		var oldest time.Time
+		// Find least recently used entry. lastAccess comes from the logical
+		// clock, so the values are unique and strictly ordered; comparing
+		// wall-clock timestamps would leave ties to map iteration order and
+		// evict an arbitrary entry.
+		var oldest uint64
 		for k, v := range c.data {
-			if oldest.IsZero() || v.lastAccess.Before(oldest) {
+			if oldest == 0 || v.lastAccess < oldest {
 				oldest = v.lastAccess
 				keyToDelete = k
 			}
 		}
 	case EvictLFU:
-		// Find least frequently used
+		// Find least frequently used, breaking hit ties by least recent use.
 		var minHits int64 = -1
+		var oldest uint64
 		for k, v := range c.data {
-			if minHits == -1 || v.hits < minHits {
+			if minHits == -1 || v.hits < minHits || (v.hits == minHits && v.lastAccess < oldest) {
 				minHits = v.hits
+				oldest = v.lastAccess
 				keyToDelete = k
 			}
 		}
