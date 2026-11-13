@@ -1,13 +1,14 @@
-// Package migrationguard provides a static hygiene check that flags comments
-// still anchoring the Go implementation on the deleted earlier codebase.
+// Package migrationguard provides a build-time hygiene check that flags
+// comments still anchoring the Go implementation on the removed earlier
+// codebase. It matches unambiguous migration tell-tales — a source file name
+// from that codebase, a dotted module path under the old rag tree, or a stray
+// smart-quote — so genuine WHY comments stay and stale anchors are caught in
+// CI.
 //
-// The ingestion tree was ported from an implementation that is being removed
-// (Go-only target). Any surviving reference — the word "python", a .py file
-// name, a rag.(flow|nlp|app|deepdoc) module path, a stray smart-quote, or a
-// degenerate empty parenthesis group (a "(" closed with no content) — is, by
-// definition, a stale migration anchor. A genuine WHY (invariant, payload
-// shape, algorithm) must be rephrased to describe the Go behavior and must not
-// contain any of these.
+// The guard is intentionally high-precision: ordinary English, Go code
+// snippets, Go file::func cross-references, and Go-to-Go "mirrors" references
+// are left alone; those residual references are rephrased by hand rather than
+// by the heuristic.
 package migrationguard
 
 import (
