@@ -327,15 +327,8 @@ func ExtractCitationMarkers(answer string, maxIndex int) []int {
 		if len(m) < 2 {
 			continue
 		}
-		var n int
-		for _, r := range m[1] {
-			if r < '0' || r > '9' {
-				n = 0
-				break
-			}
-			n = n*10 + int(r-'0')
-		}
-		if n < 0 || n >= maxIndex {
+		n, err := strconv.Atoi(m[1])
+		if err != nil || n < 0 || n >= maxIndex {
 			continue
 		}
 		if _, ok := seen[n]; ok {
