@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 
 	"ragflow/internal/common"
@@ -61,6 +62,102 @@ func (m *GreenNodeModel) Name() string {
 // NewInstance returns a driver bound to the given base URL.
 func (m *GreenNodeModel) NewInstance(baseURL map[string]string) ModelDriver {
 	return NewGreenNodeModel(baseURL, m.baseModel.URLSuffix)
+}
+
+// greenNodeModelEntry is the part of a GET /models entry that decides how a
+// model is typed. The gateway names the kind of each model (chat, embedding,
+// rerank, ocr, ...) and lists the input modalities it accepts.
+type greenNodeModelEntry struct {
+	ID                  string `json:"id"`
+	ModelType           string `json:"model_type"`
+	Type                string `json:"type"`
+	ContextLength       *int   `json:"context_length"`
+	MaxCompletionTokens *int   `json:"max_completion_tokens"`
+	Architecture        struct {
+		InputModalities []string `json:"input_modalities"`
+	} `json:"architecture"`
+}
+
+// ListModels lists the models of the API key through GET /models and types
+// each one by the gateway's own `model_type`: chat (plus vision when it takes
+// image input), embedding or rerank. Models of a kind RAGFlow has no slot for
+// (ocr, anything unknown) are left out, so they cannot be picked as chat
+// models. A gateway that does not report `model_type` (a Token Plan host, for
+// instance) falls back to name-based inference, which the catalog can still
+// override.
+func (m *GreenNodeModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return nil, err
+	}
+	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Models)
+	if err != nil {
+		return nil, err
+	}
+	body, err := m.baseModel.doGetRequest(ctx, url, apiConfig, nonStreamCallTimeout)
+	if err != nil {
+		return nil, err
+	}
+
+	var envelope struct {
+		Data []greenNodeModelEntry `json:"data"`
+	}
+	if err = json.Unmarshal(body, &envelope); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if envelope.Data == nil {
+		return nil, fmt.Errorf("invalid models list format")
+	}
+
+	// ParseListModel adds the catalog's limits and embedding metadata for
+	// known ids; the types are then set here from the gateway.
+	entries := make([]greenNodeModelEntry, 0, len(envelope.Data))
+	list := ModelList{Models: make([]ModelListItem, 0, len(envelope.Data))}
+	for _, entry := range envelope.Data {
+		entry.ID = strings.TrimSpace(entry.ID)
+		if entry.ID == "" {
+			continue
+		}
+		entries = append(entries, entry)
+		list.Models = append(list.Models, ModelListItem{
+			ID:            entry.ID,
+			ContextLength: entry.ContextLength,
+			MaxTokens:     entry.MaxCompletionTokens,
+		})
+	}
+
+	parsed := ParseListModel(list)
+	models := make([]ListModelResponse, 0, len(parsed))
+	for i, model := range parsed {
+		entry := entries[i]
+		kind := strings.ToLower(strings.TrimSpace(entry.ModelType))
+		if kind == "" {
+			kind = strings.ToLower(strings.TrimSpace(entry.Type))
+		}
+		switch kind {
+		case "":
+			model.ModelTypes = InferModelTypes(model.Name)
+			model.ModelTypesInferred = true
+		case modelTypeChat:
+			model.ModelTypes = []string{modelTypeChat}
+			if slices.Contains(entry.Architecture.InputModalities, "image") {
+				model.ModelTypes = append(model.ModelTypes, modelTypeVision)
+			}
+			model.ModelTypesInferred = false
+		case modelTypeEmbedding, modelTypeRerank:
+			model.ModelTypes = []string{kind}
+			model.ModelTypesInferred = false
+		default:
+			continue
+		}
+		models = append(models, model)
+	}
+	return models, nil
+}
+
+// CheckConnection verifies the key by listing its models.
+func (m *GreenNodeModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
+	_, err := m.ListModels(ctx, apiConfig)
+	return err
 }
 
 // Embed sends a /embeddings request. The requested dimension is deliberately

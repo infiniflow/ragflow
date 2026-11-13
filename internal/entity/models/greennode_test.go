@@ -230,7 +230,76 @@ func TestGreenNodeChatStreamSplitsReasoningAndContent(t *testing.T) {
 	}
 }
 
-func TestGreenNodeListModels(t *testing.T) {
+// The gateway names the kind of every model; that, not the model name, decides
+// the type. Kinds RAGFlow has no slot for are left out.
+func TestGreenNodeListModelsTypesByGatewayModelType(t *testing.T) {
+	srv := newGreenNodeServer(t, "/models", func(_ map[string]any, w http.ResponseWriter) {
+		entry := func(id, kind string, modalities ...string) map[string]any {
+			return map[string]any{
+				"id": id, "model_type": kind, "type": kind,
+				"architecture": map[string]any{"input_modalities": modalities},
+			}
+		}
+		textOnly := entry("z-ai/glm-5.2", "chat", "text")
+		textOnly["context_length"] = 300000
+		textOnly["max_completion_tokens"] = 128000
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"object": "list",
+			"data": []map[string]any{
+				entry("qwen/qwen3.8-max", "chat", "text", "image", "video"),
+				textOnly,
+				// Unknown to the catalog and named like a chat model.
+				entry("acme/new-model", "chat", "text"),
+				entry("baai/bge-m3", "embedding", "text"),
+				entry("baai/bge-reranker-v2-m3", "rerank", "text"),
+				entry("greennode/idp", "ocr", "image", "file"),
+				entry("acme/speech", "tts", "text"),
+				{"id": "  "},
+			},
+		})
+	})
+	defer srv.Close()
+
+	model := newGreenNodeForTest(srv.URL)
+	list, err := model.ListModels(t.Context(), greenNodeAPIConfig())
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	want := map[string][]string{
+		"qwen/qwen3.8-max":        {"chat", "vision"},
+		"z-ai/glm-5.2":            {"chat"},
+		"acme/new-model":          {"chat"},
+		"baai/bge-m3":             {"embedding"},
+		"baai/bge-reranker-v2-m3": {"rerank"},
+	}
+	if len(list) != len(want) {
+		t.Fatalf("models=%s, want exactly %d (ocr and unknown kinds left out)", joinModelNames(list, ","), len(want))
+	}
+	for _, m := range list {
+		types, ok := want[m.Name]
+		if !ok {
+			t.Errorf("unexpected model %q", m.Name)
+			continue
+		}
+		if !slices.Equal(m.ModelTypes, types) {
+			t.Errorf("%s: types=%v, want %v", m.Name, m.ModelTypes, types)
+		}
+		if m.ModelTypesInferred {
+			t.Errorf("%s: ModelTypesInferred=true, but the gateway declared the type", m.Name)
+		}
+		if m.Name == "z-ai/glm-5.2" && (m.ContextLength == nil || *m.ContextLength != 300000 || m.MaxOutput == nil || *m.MaxOutput != 128000) {
+			t.Errorf("%s: context_length=%v max_output=%v, want 300000 and 128000", m.Name, m.ContextLength, m.MaxOutput)
+		}
+	}
+	if err := model.CheckConnection(t.Context(), greenNodeAPIConfig()); err != nil {
+		t.Fatalf("CheckConnection: %v", err)
+	}
+}
+
+// A gateway that reports no model_type (the Token Plan host, another
+// OpenAI-compatible gateway) is typed by name, and those guesses stay
+// overridable by the catalog in the provider-list merge.
+func TestGreenNodeListModelsInfersTypesWithoutModelType(t *testing.T) {
 	srv := newGreenNodeServer(t, "/models", func(_ map[string]any, w http.ResponseWriter) {
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"object": "list",
@@ -243,8 +312,7 @@ func TestGreenNodeListModels(t *testing.T) {
 	})
 	defer srv.Close()
 
-	model := newGreenNodeForTest(srv.URL)
-	list, err := model.ListModels(t.Context(), greenNodeAPIConfig())
+	list, err := newGreenNodeForTest(srv.URL).ListModels(t.Context(), greenNodeAPIConfig())
 	if err != nil {
 		t.Fatalf("ListModels: %v", err)
 	}
@@ -259,9 +327,6 @@ func TestGreenNodeListModels(t *testing.T) {
 		if !m.ModelTypesInferred {
 			t.Errorf("%s: ModelTypesInferred=false, want true so catalog types win in the merge", m.Name)
 		}
-	}
-	if err := model.CheckConnection(t.Context(), greenNodeAPIConfig()); err != nil {
-		t.Fatalf("CheckConnection: %v", err)
 	}
 }
 
