@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"time"
 
+	"ragflow/internal/agent/chat"
 	"ragflow/internal/common"
 
 	"gorm.io/gorm"
@@ -134,3 +135,65 @@ func (r *retryInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvokeRe
 	}
 	return resp, nil
 }
+
+// Stream satisfies chat.StreamingInvoker. It delegates to the inner invoker
+// when it implements chat.StreamingInvoker, or falls back to Invoke.
+func (r *retryInvoker) Stream(ctx context.Context, db *gorm.DB, req ChatInvokeRequest, onDelta func(delta string, isThink bool) error) (*ChatInvokeResponse, error) {
+	if r == nil || r.inner == nil {
+		return nil, fmt.Errorf("component: retryInvoker: nil inner")
+	}
+	if onDelta == nil {
+		onDelta = func(string, bool) error { return nil }
+	}
+
+	streamer, ok := r.inner.(chat.StreamingInvoker)
+	if !ok {
+		resp, err := r.Invoke(ctx, db, req)
+		if err != nil {
+			return nil, err
+		}
+		if resp != nil {
+			if resp.Thinking != "" {
+				if err := onDelta(resp.Thinking, true); err != nil {
+					return nil, err
+				}
+			}
+			if resp.Content != "" {
+				if err := onDelta(resp.Content, false); err != nil {
+					return nil, err
+				}
+			}
+		}
+		return resp, nil
+	}
+
+	var resp *ChatInvokeResponse
+	var callbackErr error
+	emitted := false
+	err := common.RetryWithBackoff(ctx, r.maxRetries, r.initialDelay, func() error {
+		callbackErr = nil
+		var streamErr error
+		resp, streamErr = streamer.Stream(ctx, db, req, func(delta string, isThink bool) error {
+			if delta != "" {
+				emitted = true
+			}
+			if err := onDelta(delta, isThink); err != nil {
+				callbackErr = err
+				return err
+			}
+			return nil
+		})
+		if callbackErr != nil {
+			return callbackErr
+		}
+		return streamErr
+	}, func(error) bool {
+		return callbackErr == nil && !emitted
+	})
+	if err != nil {
+		return nil, err
+	}
+	return resp, nil
+}
+
+var _ chat.StreamingInvoker = (*retryInvoker)(nil)

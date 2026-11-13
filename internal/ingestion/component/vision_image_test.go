@@ -25,11 +25,14 @@ import (
 	"testing"
 )
 
-func TestMaterializeInlineVisionImageKeepsVLMForImageDimensionLimit(t *testing.T) {
+func TestMaterializeInlineVisionImageNoEdgeLimitKeepsVLM(t *testing.T) {
 	var encoded bytes.Buffer
-	large := image.NewRGBA(image.Rect(0, 0, maxVisionImageEdge+1, 1))
-	if err := png.Encode(&encoded, large); err != nil {
-		t.Fatalf("encode oversized image: %v", err)
+	// Width exceeds the former 12000-edge guard. With the edge limit removed
+	// (aligned to Python's picture.py, which imposes none) the inline image is
+	// still materialized and its VLM payload preserved for the vision model.
+	wide := image.NewRGBA(image.Rect(0, 0, 12001, 1))
+	if err := png.Encode(&encoded, wide); err != nil {
+		t.Fatalf("encode wide image: %v", err)
 	}
 	dataURI := "data:image/png;base64," + base64.StdEncoding.EncodeToString(encoded.Bytes())
 
@@ -37,11 +40,8 @@ func TestMaterializeInlineVisionImageKeepsVLMForImageDimensionLimit(t *testing.T
 	if err != nil {
 		t.Fatalf("materializeInlineVisionImage: %v", err)
 	}
-	if materialized == nil || materialized.Raster != nil {
-		t.Fatalf("raster = %#v, want OCR to skip the oversized image", materialized)
-	}
-	if materialized.VLMData != dataURI || !isUsableVisionImage(materialized.VLMData) {
-		t.Fatal("oversized OCR input should preserve its valid VLM payload")
+	if materialized == nil || materialized.VLMData != dataURI || !isUsableVisionImage(materialized.VLMData) {
+		t.Fatalf("wide inline image must preserve its valid VLM payload (no edge limit): %#v", materialized)
 	}
 }
 

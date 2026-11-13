@@ -83,7 +83,7 @@ func TestCropImageChunks_UploadFailureRedactsChunkText(t *testing.T) {
 	eng := mockCropEngine{}
 	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
 	secret := "SECRET_DOC_TEXT_9f3a"
-	chunks := []schema.ChunkDoc{{CKType: "image", Text: secret, PDFPositions: pos}}
+	chunks := []schema.ChunkDoc{{DocType: "image", Text: secret, PDFPositions: pos}}
 	cropImageChunks(ctx, eng, chunks)
 
 	for _, e := range observedLogs.All() {

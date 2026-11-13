@@ -19,7 +19,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"sort"
 	"sync"
 	"time"
 
@@ -67,10 +66,10 @@ func SetWikiDirtyCompiler(compiler WikiDirtyCompiler) {
 // mutations merge chunk ids and postpone execution until twenty seconds after
 // the most recent successful mutation.
 func MarkWikiDocumentDirty(ctx context.Context, tenantID, datasetID, documentID string, chunkIDs []string) error {
-	db := kcDB
-	if db == nil {
-		db = dao.DB
-	}
+	// The publishing path (wiki_refresh, chunk) calls this from processes that
+	// own the canonical DAO handle; it is an out-of-scope external API, so it
+	// reads the global dao.DB rather than a package-scoped kcDB.
+	db := dao.DB
 	if db == nil {
 		return fmt.Errorf("mark Wiki document dirty: database is unavailable")
 	}
@@ -196,27 +195,10 @@ func processWikiDirty(ctx context.Context, db *gorm.DB, owner string, row entity
 func parseDirtyChunkIDs(raw string) []string {
 	var ids []string
 	_ = json.Unmarshal([]byte(raw), &ids)
-	return uniqueSortedStrings(ids)
+	return common.DeduplicateSorted(ids)
 }
 
 func marshalDirtyChunkIDs(ids []string) string {
-	payload, _ := json.Marshal(uniqueSortedStrings(ids))
+	payload, _ := json.Marshal(common.DeduplicateSorted(ids))
 	return string(payload)
-}
-
-func uniqueSortedStrings(values []string) []string {
-	seen := make(map[string]struct{}, len(values))
-	out := make([]string, 0, len(values))
-	for _, value := range values {
-		if value == "" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		out = append(out, value)
-	}
-	sort.Strings(out)
-	return out
 }

@@ -18,10 +18,8 @@ package tool
 
 import (
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -271,10 +269,9 @@ func buildGoogleReferences(envelope map[string]any) ([]map[string]any, []map[str
 		if content == "" {
 			continue
 		}
-		documentID := strconv.FormatInt(googleHashInt(content, 100000000), 10)
-		displayID := strconv.FormatInt(googleHashInt(documentID, 500), 10)
 		title := strings.TrimSpace(googleText(item["title"]))
 		resultURL := strings.TrimSpace(googleText(item["link"]))
+		documentID, displayID := referenceIDs(resultURL, content)
 		chunks = append(chunks, map[string]any{
 			"id":            displayID,
 			"chunk_id":      documentID,
@@ -345,12 +342,6 @@ func googleText(value any) string {
 
 func googlePromptField(value any) string {
 	return googleNewlinePattern.ReplaceAllString(googleText(value), " ")
-}
-
-func googleHashInt(value string, modulus int64) int64 {
-	digest := sha1.Sum([]byte(value))
-	number := new(big.Int).SetBytes(digest[:])
-	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
 }
 
 func truncateGoogleRunes(value string, limit int) string {

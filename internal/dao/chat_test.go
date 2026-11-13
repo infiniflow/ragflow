@@ -90,10 +90,10 @@ func assertChatOrder(t *testing.T, rows []*entity.ChatListItem, want []string, o
 	}
 }
 
-// TestChatDAOListByTenantIDsOrderByExpressionFallsBack checks that an `orderby`
+// TestChatDAOListByResourceIDsOrderByExpressionFallsBack checks that an `orderby`
 // value that is an expression rather than an allowed column name leaves the
 // rows in the default create_time order.
-func TestChatDAOListByTenantIDsOrderByExpressionFallsBack(t *testing.T) {
+func TestChatDAOListByResourceIDsOrderByExpressionFallsBack(t *testing.T) {
 	db := setupChatTestDB(t)
 	pushDB(t, db)
 	seedOrderableChats(t, db)
@@ -102,29 +102,9 @@ func TestChatDAOListByTenantIDsOrderByExpressionFallsBack(t *testing.T) {
 
 	for _, orderby := range chatOrderExpressions {
 		t.Run(orderby, func(t *testing.T) {
-			rows, _, err := d.ListByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: orderby}}, "")
+			rows, _, err := d.ListByResourceIDs(ctx, db, []string{"c-1", "c-2", "c-3"}, nil, 1, 10, []OrderTerm{{Column: orderby}}, "", "", "")
 			if err != nil {
-				t.Fatalf("ListByTenantIDs with orderby %q: %v", orderby, err)
-			}
-			assertChatOrder(t, rows, []string{"c-1", "c-2", "c-3"}, orderby)
-		})
-	}
-}
-
-// TestChatDAOListByOwnerIDsOrderByExpressionFallsBack is the ListByOwnerIDs
-// counterpart, the branch the endpoint takes when owner_ids is supplied.
-func TestChatDAOListByOwnerIDsOrderByExpressionFallsBack(t *testing.T) {
-	db := setupChatTestDB(t)
-	pushDB(t, db)
-	seedOrderableChats(t, db)
-	ctx := t.Context()
-	d := NewChatDAO()
-
-	for _, orderby := range chatOrderExpressions {
-		t.Run(orderby, func(t *testing.T) {
-			rows, _, err := d.ListByOwnerIDs(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: orderby}}, "")
-			if err != nil {
-				t.Fatalf("ListByOwnerIDs with orderby %q: %v", orderby, err)
+				t.Fatalf("ListByResourceIDs with orderby %q: %v", orderby, err)
 			}
 			assertChatOrder(t, rows, []string{"c-1", "c-2", "c-3"}, orderby)
 		})
@@ -140,17 +120,33 @@ func TestChatDAOListOrderByAllowedColumn(t *testing.T) {
 	ctx := t.Context()
 	d := NewChatDAO()
 
-	rows, _, err := d.ListByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: "name"}}, "")
+	rows, _, err := d.ListByResourceIDs(ctx, db, []string{"c-1", "c-2", "c-3"}, nil, 1, 10, []OrderTerm{{Column: "name"}}, "", "", "")
 	if err != nil {
-		t.Fatalf("ListByTenantIDs ascending by name: %v", err)
+		t.Fatalf("ListByResourceIDs ascending by name: %v", err)
 	}
 	assertChatOrder(t, rows, []string{"c-3", "c-2", "c-1"}, "name")
 
-	rows, _, err = d.ListByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: "name", Desc: true}}, "")
+	rows, _, err = d.ListByResourceIDs(ctx, db, []string{"c-1", "c-2", "c-3"}, nil, 1, 10, []OrderTerm{{Column: "name", Desc: true}}, "", "", "")
 	if err != nil {
-		t.Fatalf("ListByTenantIDs descending by name: %v", err)
+		t.Fatalf("ListByResourceIDs descending by name: %v", err)
 	}
 	assertChatOrder(t, rows, []string{"c-1", "c-2", "c-3"}, "name")
+}
+
+func assertChatRows(t *testing.T, rows []*entity.ChatListItem, total int64, want []string) {
+	t.Helper()
+	got := make([]string, 0, len(rows))
+	for _, row := range rows {
+		got = append(got, row.ID)
+	}
+	if len(got) != len(want) || total != int64(len(want)) {
+		t.Fatalf("rows %v total %d, want rows %v total %d", got, total, want, len(want))
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("rows %v, want %v", got, want)
+		}
+	}
 }
 
 // assertChatIDs compares the returned row IDs against wantIDs, naming the call
@@ -170,6 +166,50 @@ func assertChatIDs(t *testing.T, rows []*entity.ChatListItem, wantIDs []string, 
 		if gotIDs[i] != wantIDs[i] {
 			t.Fatalf("%s returned %v, want %v", call, gotIDs, wantIDs)
 		}
+	}
+}
+
+// TestChatDAOListExactIDAndNameFilters checks that exact ID and name
+// predicates narrow the authorized resource scope and that total follows the
+// filtered rows.
+func TestChatDAOListExactIDAndNameFilters(t *testing.T) {
+	db := setupChatTestDB(t)
+	pushDB(t, db)
+	seedOrderableChats(t, db)
+	// A fourth chat whose name contains "alpha", so the name case only passes
+	// with an exact predicate and not with a substring match.
+	alphaTwo := entity.Chat{ID: "c-4", TenantID: "t1", Name: stringPtr("alpha two"), BaseModel: entity.BaseModel{CreateTime: int64Ptr(400)}}
+	alphaTwo.LLMID = "llm-1"
+	alphaTwo.LLMSetting = entity.JSONMap{}
+	alphaTwo.PromptType = "simple"
+	alphaTwo.PromptConfig = entity.JSONMap{}
+	alphaTwo.DoRefer = "1"
+	alphaTwo.KBIDs = entity.JSONSlice{}
+	alphaTwo.Status = stringPtr("1")
+	if err := db.Create(&alphaTwo).Error; err != nil {
+		t.Fatalf("failed to create chat c-4: %v", err)
+	}
+	ctx := t.Context()
+	d := NewChatDAO()
+	terms := []OrderTerm{{Column: "create_time"}}
+
+	for _, tc := range []struct {
+		label string
+		id    string
+		name  string
+		want  []string
+	}{
+		{label: "id", id: "c-2", want: []string{"c-2"}},
+		{label: "name", name: "alpha", want: []string{"c-3"}},
+		{label: "unknown id", id: "unknown", want: []string{}},
+	} {
+		t.Run(tc.label, func(t *testing.T) {
+			rows, total, err := d.ListByResourceIDs(ctx, db, []string{"c-1", "c-2", "c-3", "c-4"}, nil, 1, 10, terms, "", tc.id, tc.name)
+			if err != nil {
+				t.Fatalf("ListByResourceIDs: %v", err)
+			}
+			assertChatRows(t, rows, total, tc.want)
+		})
 	}
 }
 
@@ -199,11 +239,11 @@ func seedChatRowsWithCreateTime(t *testing.T, db *gorm.DB, tenantID string, coun
 	}
 }
 
-// TestChatDAOListByOwnerIDsPaginatesInSQL checks that page/pageSize reach the
+// TestChatDAOListByResourceIDsPaginatesInSQL checks that page/pageSize reach the
 // query as LIMIT/OFFSET while total keeps reporting the full COUNT(*).
 // ChatService.ListChats returns that total as the response's total field and no
 // longer slices the returned rows itself.
-func TestChatDAOListByOwnerIDsPaginatesInSQL(t *testing.T) {
+func TestChatDAOListByResourceIDsPaginatesInSQL(t *testing.T) {
 	db := setupChatTestDB(t)
 	pushDB(t, db)
 	seedChatRowsWithCreateTime(t, db, "t1", 5)
@@ -225,9 +265,9 @@ func TestChatDAOListByOwnerIDsPaginatesInSQL(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rows, total, err := d.ListByOwnerIDs(ctx, db, []string{"t1"}, "t1", tt.page, tt.pageSize, terms, "")
+			rows, total, err := d.ListByResourceIDs(ctx, db, []string{"c-1", "c-2", "c-3", "c-4", "c-5"}, nil, tt.page, tt.pageSize, terms, "", "", "")
 			if err != nil {
-				t.Fatalf("ListByOwnerIDs(page=%d, pageSize=%d): %v", tt.page, tt.pageSize, err)
+				t.Fatalf("ListByResourceIDs(page=%d, pageSize=%d): %v", tt.page, tt.pageSize, err)
 			}
 			if total != 5 {
 				t.Fatalf("total = %d, want 5: total must count every matching row, not just the page", total)
@@ -237,10 +277,10 @@ func TestChatDAOListByOwnerIDsPaginatesInSQL(t *testing.T) {
 	}
 }
 
-// TestChatDAOListByOwnerIDsKeepsJoinedOwnerColumnsWhenPaginated guards the COUNT
+// TestChatDAOListByResourceIDsKeepsJoinedOwnerColumnsWhenPaginated guards the COUNT
 // followed by the paged Scan: the second statement must still select the joined
 // user columns instead of inheriting count(*) from the first one.
-func TestChatDAOListByOwnerIDsKeepsJoinedOwnerColumnsWhenPaginated(t *testing.T) {
+func TestChatDAOListByResourceIDsKeepsJoinedOwnerColumnsWhenPaginated(t *testing.T) {
 	db := setupChatTestDB(t)
 	pushDB(t, db)
 	seedChatRowsWithCreateTime(t, db, "t1", 3)
@@ -250,9 +290,9 @@ func TestChatDAOListByOwnerIDsKeepsJoinedOwnerColumnsWhenPaginated(t *testing.T)
 		t.Fatalf("failed to create user: %v", err)
 	}
 
-	rows, total, err := NewChatDAO().ListByOwnerIDs(ctx, db, []string{"t1"}, "t1", 1, 2, []OrderTerm{{Column: "create_time", Desc: true}}, "")
+	rows, total, err := NewChatDAO().ListByResourceIDs(ctx, db, []string{"c-1", "c-2", "c-3"}, nil, 1, 2, []OrderTerm{{Column: "create_time", Desc: true}}, "", "", "")
 	if err != nil {
-		t.Fatalf("ListByOwnerIDs: %v", err)
+		t.Fatalf("ListByResourceIDs: %v", err)
 	}
 	if total != 3 {
 		t.Fatalf("total = %d, want 3", total)

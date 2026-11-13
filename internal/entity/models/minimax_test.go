@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 func newMinimaxServer(t *testing.T, handler func(t *testing.T, r *http.Request, body map[string]interface{}, w http.ResponseWriter)) *httptest.Server {
@@ -61,6 +63,145 @@ func newMinimaxForTest(baseURL string) *MinimaxModel {
 			Files:  "v1/files/list",
 		},
 	)
+}
+
+func TestMinimaxCredentialsUnwrapsStoredBundle(t *testing.T) {
+	tests := []struct {
+		name      string
+		stored    string
+		wantKey   string
+		wantGroup string
+	}{
+		{"plain key", "sk-plain", "sk-plain", ""},
+		{"padded plain key", " sk-plain ", "sk-plain", ""},
+		{"bundle", `{"api_key":"sk-bundled","group_id":"12345"}`, "sk-bundled", "12345"},
+		{"bundle without group", `{"api_key":"sk-bundled"}`, "sk-bundled", ""},
+		{"padded bundle", `{"api_key":" sk-bundled ","group_id":" 12345 "}`, "sk-bundled", "12345"},
+		{"malformed bundle", `{"api_key":`, `{"api_key":`, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stored := tt.stored
+			key, groupID := minimaxCredentials(&APIConfig{ApiKey: &stored})
+			if key != tt.wantKey {
+				t.Errorf("apiKey=%q, want %q", key, tt.wantKey)
+			}
+			if groupID != tt.wantGroup {
+				t.Errorf("groupID=%q, want %q", groupID, tt.wantGroup)
+			}
+		})
+	}
+
+	if key, groupID := minimaxCredentials(nil); key != "" || groupID != "" {
+		t.Errorf("nil config: apiKey=%q groupID=%q, want both empty", key, groupID)
+	}
+	if key, groupID := minimaxCredentials(&APIConfig{}); key != "" || groupID != "" {
+		t.Errorf("nil key: apiKey=%q groupID=%q, want both empty", key, groupID)
+	}
+}
+
+func TestMinimaxEndpointURLAppendsGroupID(t *testing.T) {
+	model := NewMinimaxModel(
+		map[string]string{"default": "https://api.minimax.chat"},
+		URLSuffix{Chat: "v1/text/chatcompletion_v2"},
+	)
+	suffix := model.baseModel.URLSuffix.Chat
+
+	plain := "sk-plain"
+	got, err := model.endpointURL(&APIConfig{ApiKey: &plain}, suffix)
+	if err != nil {
+		t.Fatalf("endpointURL: %v", err)
+	}
+	if want := "https://api.minimax.chat/v1/text/chatcompletion_v2"; got != want {
+		t.Errorf("url=%q, want %q: a plain key sends no GroupId", got, want)
+	}
+
+	bundle := `{"api_key":"sk-bundled","group_id":"12345"}`
+	got, err = model.endpointURL(&APIConfig{ApiKey: &bundle}, suffix)
+	if err != nil {
+		t.Fatalf("endpointURL: %v", err)
+	}
+	if want := "https://api.minimax.chat/v1/text/chatcompletion_v2?GroupId=12345"; got != want {
+		t.Errorf("url=%q, want %q", got, want)
+	}
+
+	// A suffix that already carries a query keeps it.
+	got, err = model.endpointURL(&APIConfig{ApiKey: &bundle}, suffix+"?beta=1")
+	if err != nil {
+		t.Fatalf("endpointURL: %v", err)
+	}
+	if want := "https://api.minimax.chat/v1/text/chatcompletion_v2?beta=1&GroupId=12345"; got != want {
+		t.Errorf("url=%q, want %q", got, want)
+	}
+
+	// A group ID is not necessarily numeric: whatever is stored has to reach
+	// the query string escaped, not break the URL.
+	email := `{"api_key":"sk-bundled","group_id":"a@b.com"}`
+	got, err = model.endpointURL(&APIConfig{ApiKey: &email}, suffix)
+	if err != nil {
+		t.Fatalf("endpointURL: %v", err)
+	}
+	if want := "https://api.minimax.chat/v1/text/chatcompletion_v2?GroupId=a%40b.com"; got != want {
+		t.Errorf("url=%q, want %q", got, want)
+	}
+}
+
+// TestMinimaxChatUnwrapsKeyBundle pins that a stored {api_key, group_id}
+// bundle is unwrapped before it is sent: the Bearer token is the api_key and
+// the group travels as the GroupId query parameter. The model settings form
+// stores that bundle whenever the group ID field is filled, and sending the
+// raw JSON object as the token made every MiniMax call fail authentication.
+func TestMinimaxChatUnwrapsKeyBundle(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newMinimaxServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
+		if got := r.URL.Query().Get("GroupId"); got != "12345" {
+			t.Errorf("GroupId=%q, want 12345", got)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{{
+				"message": map[string]interface{}{"content": "pong"},
+			}},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := `{"api_key":"test-key","group_id":"12345"}`
+	resp, err := newMinimaxForTest(srv.URL).ChatWithMessages(
+		t.Context(),
+		"MiniMax-M3",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	if resp.Answer == nil || *resp.Answer != "pong" {
+		t.Errorf("Answer=%v, want pong", resp.Answer)
+	}
+}
+
+func TestMinimaxListModelsUnwrapsKeyBundle(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newMinimaxServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
+		if got := r.URL.Query().Get("GroupId"); got != "12345" {
+			t.Errorf("GroupId=%q, want 12345", got)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]string{{"id": "MiniMax-M3"}},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := `{"api_key":"test-key","group_id":"12345"}`
+	models, err := newMinimaxForTest(srv.URL).ListModels(t.Context(), &APIConfig{ApiKey: &apiKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if got := joinModelNames(models, ","); got != "MiniMax-M3" {
+		t.Errorf("models=%q", got)
+	}
 }
 
 func TestMinimaxNewInstancePreservesConfig(t *testing.T) {
@@ -305,6 +446,121 @@ func TestMinimaxStreamForcesStreaming(t *testing.T) {
 	}
 }
 
+// TestMinimaxStreamReturnsWhenServerHoldsConnectionOpen pins that a completed
+// stream is reported as soon as its terminal event arrives.
+//
+// MiniMax ends an SSE response by sending `data: [DONE]` but leaves the HTTP
+// connection open instead of closing it. The base_resp sniffing goroutine reads
+// the body until EOF, so with the connection held open it stays parked in
+// scanner.Scan(). The stream used to wait for that goroutine after
+// HandleStreamingResponse had already returned, so a finished turn blocked for
+// the whole streamCallTimeout (20 minutes) and the chat never emitted its
+// terminal `final: true` event — the UI sat on "thinking" with the complete
+// answer already rendered.
+//
+// Every other MiniMax stream test closes the server connection, so none of them
+// could see this. Holding the connection open here is what MiniMax actually
+// does.
+func TestMinimaxStreamReturnsWhenServerHoldsConnectionOpen(t *testing.T) {
+	withSSRFBypass(t)
+
+	released := make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(released) }) }
+
+	srv := newMinimaxServer(t, func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, strings.Join([]string{
+			`data: {"choices":[{"delta":{"content":"hello"}}]}`,
+			`data: [DONE]`,
+			``,
+		}, "\n"))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+		// Never return: the response body stays open, so the reader sees no
+		// EOF. This is what the live provider does after [DONE].
+		<-released
+	})
+	// Release the handler BEFORE closing the server: srv.Close() blocks until
+	// outstanding requests finish, so closing in the other order deadlocks the
+	// test binary instead of failing the assertion.
+	defer func() {
+		release()
+		srv.Close()
+	}()
+
+	apiKey := "test-key"
+	var content, reasoning []string
+	done := make(chan error, 1)
+	go func() {
+		done <- newMinimaxForTest(srv.URL).ChatStreamlyWithSender(
+			t.Context(),
+			"MiniMax-M3",
+			[]Message{{Role: "user", Content: "ping"}},
+			&APIConfig{ApiKey: &apiKey},
+			nil,
+			nil,
+			func(answer *string, reason *string) error {
+				if answer != nil && *answer != "" {
+					content = append(content, *answer)
+				}
+				if reason != nil && *reason != "" {
+					reasoning = append(reasoning, *reason)
+				}
+				return nil
+			},
+		)
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("ChatStreamlyWithSender returned %v, want nil once [DONE] was seen", err)
+		}
+		if got := strings.Join(content, ""); !strings.HasPrefix(got, "hello") {
+			t.Errorf("content=%q, want it to start with the streamed answer", got)
+		}
+		_ = reasoning
+	case <-time.After(15 * time.Second):
+		t.Fatal("ChatStreamlyWithSender did not return after [DONE]: it is waiting on a " +
+			"scanner EOF the server never sends, so the chat never emits its final event")
+	}
+}
+
+// TestMinimaxStreamSurfacesBodyReadError pins that a mid-stream transport
+// failure still reaches the caller as an error. Routing the scanner's error
+// through the pipe is what preserves this now that the caller no longer waits
+// on the scanner goroutine.
+func TestMinimaxStreamSurfacesBodyReadError(t *testing.T) {
+	withSSRFBypass(t)
+
+	srv := newMinimaxServer(t, func(t *testing.T, _ *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		// Announce a body longer than what is written, then end the handler:
+		// the client sees a truncated chunked body and Scan fails.
+		w.Header().Set("Content-Length", "4096")
+		_, _ = io.WriteString(w, `data: {"choices":[{"delta":{"content":"partial"}}]}`+"\n")
+	})
+	defer srv.Close()
+
+	apiKey := "test-key"
+	err := newMinimaxForTest(srv.URL).ChatStreamlyWithSender(
+		t.Context(),
+		"MiniMax-M3",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		nil,
+		nil,
+		func(*string, *string) error { return nil },
+	)
+	if err == nil {
+		t.Fatal("expected an error for a truncated stream, got nil")
+	}
+}
+
 func TestMinimaxStreamAcceptsNilConfig(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
@@ -457,6 +713,17 @@ func TestMinimaxValidatesInputs(t *testing.T) {
 			name: "models api key",
 			run: func() error {
 				_, err := newMinimaxForTest("http://unused").ListModels(ctx, &APIConfig{})
+				return err
+			},
+			want: "api key is required",
+		},
+		{
+			// A bundle that only filled in the group ID must fail here
+			// instead of sending an empty Bearer token.
+			name: "bundle without api key",
+			run: func() error {
+				onlyGroup := `{"group_id":"12345"}`
+				_, err := newMinimaxForTest("http://unused").ChatWithMessages(ctx, "MiniMax-M3", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &onlyGroup}, nil, nil)
 				return err
 			},
 			want: "api key is required",

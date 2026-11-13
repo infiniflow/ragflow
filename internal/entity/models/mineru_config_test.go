@@ -4,7 +4,9 @@
 
 package models
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestMinerUProviderConfigFromAPIKey(t *testing.T) {
 	t.Run("plain bearer token", func(t *testing.T) {
@@ -33,6 +35,28 @@ func TestMinerUProviderConfigFromAPIKey(t *testing.T) {
 		cfg := MinerUProviderConfigFromAPIKey(raw)
 		if cfg.AccessToken != "bearer-secret" {
 			t.Fatalf("AccessToken = %q", cfg.AccessToken)
+		}
+	})
+
+	t.Run("provider JSON with UI mineru_api_token", func(t *testing.T) {
+		raw := `{"mineru_apiserver":"https://mineru.net","mineru_api_token":"sk-ui-token","mineru_backend":"vlm-engine"}`
+		cfg := MinerUProviderConfigFromAPIKey(raw)
+		if !cfg.IsProviderJSON {
+			t.Fatal("expected provider JSON")
+		}
+		if cfg.AccessToken != "sk-ui-token" {
+			t.Fatalf("AccessToken = %q, want sk-ui-token", cfg.AccessToken)
+		}
+		if cfg.Backend != "vlm-engine" {
+			t.Fatalf("Backend = %q", cfg.Backend)
+		}
+	})
+
+	t.Run("mineru_api_token wins over mineru_api_key", func(t *testing.T) {
+		raw := `{"mineru_api_token":"from-ui","mineru_api_key":"legacy"}`
+		cfg := MinerUProviderConfigFromAPIKey(raw)
+		if cfg.AccessToken != "from-ui" {
+			t.Fatalf("AccessToken = %q, want from-ui", cfg.AccessToken)
 		}
 	})
 
@@ -69,5 +93,59 @@ func TestResolveMinerUBackendAndServerURL(t *testing.T) {
 	}
 	if got := ResolveMinerUBackend("pipeline", apiKey); got != "pipeline" {
 		t.Fatalf("setup should win, backend = %q", got)
+	}
+}
+
+func TestMinerUTierFromBackend(t *testing.T) {
+	cases := map[string]string{
+		"pipeline":           "basic",
+		"basic":              "basic",
+		"vlm-engine":         "advanced",
+		"vlm-http-client":    "advanced",
+		"hybrid-engine":      "standard",
+		"hybrid-http-client": "standard",
+		"flash":              "flash",
+		"standard":           "standard",
+		"":                   "standard",
+	}
+	for in, want := range cases {
+		if got := MinerUTierFromBackend(in); got != want {
+			t.Errorf("MinerUTierFromBackend(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestValidateMinerUConfigAcceptsTiersOnV1(t *testing.T) {
+	if err := ValidateMinerUConfigForAPI("standard", "", true); err != nil {
+		t.Fatalf("V1 standard: %v", err)
+	}
+	if err := ValidateMinerUConfigForAPI("pipeline", "", true); err != nil {
+		t.Fatalf("V1 pipeline: %v", err)
+	}
+	if err := ValidateMinerUConfigForAPI("flash", "", false); err == nil {
+		t.Fatal("3.x flash tier should fail")
+	}
+	if err := ValidateMinerUConfig("vlm-http-client", ""); err == nil {
+		t.Fatal("3.x vlm-http-client without server_url should fail")
+	}
+}
+
+func TestResolveMinerUAPIServer(t *testing.T) {
+	t.Setenv("MINERU_APISERVER", "http://env-mineru:8000")
+
+	fromJSON := `{"mineru_apiserver":"http://json-mineru:8000"}`
+	empty := ""
+	jsonKey := fromJSON
+	if got := ResolveMinerUAPIServer(&APIConfig{BaseURL: &empty, ApiKey: &jsonKey}); got != "http://json-mineru:8000" {
+		t.Fatalf("api_key JSON = %q", got)
+	}
+
+	direct := "http://instance-mineru:8000"
+	if got := ResolveMinerUAPIServer(&APIConfig{BaseURL: &direct, ApiKey: &jsonKey}); got != "http://instance-mineru:8000" {
+		t.Fatalf("instance base_url should win, got %q", got)
+	}
+
+	if got := ResolveMinerUAPIServer(&APIConfig{BaseURL: &empty}); got != "http://env-mineru:8000" {
+		t.Fatalf("env fallback = %q", got)
 	}
 }

@@ -29,7 +29,7 @@ import (
 // Dedup folds the completed batch's products among themselves (in-memory, before
 // any engine round-trip). Decide judges whether an incoming product duplicates
 // an existing merged row found by KNN and, when so, returns the merged row
-// (mirrors Python _struct_doc_storage_dedup_batch: KNN top1 + LLM merge).
+// (mirrors _struct_doc_storage_dedup_batch: KNN top1 + LLM merge)
 type Deduper interface {
 	Dedup(ctx context.Context, rows []kccommon.Product) ([]kccommon.Product, error)
 	Decide(ctx context.Context, existing, incoming kccommon.Product, bestScore float64) (kccommon.Product, bool, error)
@@ -56,7 +56,7 @@ type MergeGroup struct {
 
 // DeduperFactory builds a per-tenant Deduper. It is invoked once per batch so
 // the LLM deps can be resolved for the owning tenant.
-type DeduperFactory func(tenant string) (Deduper, error)
+type DeduperFactory func(ctx context.Context, tenant string) (Deduper, error)
 
 // llmDeduper wraps the component's GroupedDeduper (which internally uses
 // LLMMergeDecider for duplicate-judging), scoped to the whole KB batch.
@@ -79,7 +79,7 @@ func NewLLMDeduper(chat kccommon.ChatInvoker, embed kccommon.Embedder, llmID str
 	// token-bounded sub-batches run concurrently with the rest of the pipeline
 	// (LLM-bounded), all under one concurrency limit.
 	decider.SetSubmitter(func(ctx context.Context, jobs []func() error) error {
-		return SubmitCompilerJobs(ctx, jobs)
+		return SubmitCompilerLLMJobs(ctx, jobs)
 	})
 	return &llmDeduper{group: structure.NewGroupedDeduper(decider), decider: decider, embed: embed}
 }

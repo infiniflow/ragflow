@@ -11,10 +11,16 @@ const config: Config = {
     // Asset/style stubs must precede the `@/` alias — the alias rewrites
     // `@/assets/x.png` to a real path and only the first matching mapper runs.
     '\\.(css|less|scss|sass)$': '<rootDir>/__mocks__/styleMock.js',
-    '\\.(jpg|jpeg|png|gif|svg|webp)$': '<rootDir>/__mocks__/fileMock.js',
+    '\\.(jpg|jpeg|png|gif|svg|webp)(\\?raw)?$':
+      '<rootDir>/__mocks__/fileMock.js',
     // Drags the app shell (routes/react-router) into jsdom; see __mocks__
     '^@/components/layout-recognize-form-field$':
       '<rootDir>/__mocks__/layout-recognize-form-field.js',
+    // The app shell itself: createBrowserRouter runs at module scope and
+    // needs the fetch Request global, which jsdom does not provide.
+    '^@/routes$': '<rootDir>/__mocks__/routes.js',
+    // Keep the OSS no-op mapping ahead of the generic `@/` mapping.
+    '^@/ee/(.*)$': '<rootDir>/src/ee-stub/$1',
     '^@/(.*)$': '<rootDir>/src/$1',
     '^human-id$': '<rootDir>/__mocks__/human-id.js',
   },

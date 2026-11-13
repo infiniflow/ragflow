@@ -29,14 +29,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestJSONInternalErrorRedactsRawError(t *testing.T) {
+func TestJSONInternalErrorRedactsOriginalError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/files?tenant_id=secret-tenant", nil)
 
-	jsonInternalError(c, errors.New("postgres password=secret host=10.0.0.1 table=tenant"))
+	cause := errors.New("postgres: connection refused")
+	jsonInternalError(c, cause)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status=%d, want %d", recorder.Code, http.StatusOK)
@@ -53,7 +54,7 @@ func TestJSONInternalErrorRedactsRawError(t *testing.T) {
 	if got := body["code"]; got != float64(common.CodeServerError) {
 		t.Fatalf("code=%v, want %d", got, common.CodeServerError)
 	}
-	if strings.Contains(recorder.Body.String(), "password=secret") || strings.Contains(recorder.Body.String(), "10.0.0.1") {
-		t.Fatalf("response leaked raw error details: %s", recorder.Body.String())
+	if strings.Contains(recorder.Body.String(), cause.Error()) {
+		t.Fatalf("response exposed original error: %s", recorder.Body.String())
 	}
 }

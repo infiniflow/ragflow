@@ -19,6 +19,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -27,6 +28,9 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
+	"ragflow/internal/service/file"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -160,7 +164,7 @@ func setupFileCommitTestWithHandler(userID string) (*gin.Engine, *mockFileCommit
 	if err != nil {
 		panic(err)
 	}
-	if err := db.AutoMigrate(&entity.File{}); err != nil {
+	if err := db.AutoMigrate(&entity.File{}, &entity.File2Document{}, &entity.Document{}, &entity.User{}, &entity.UserTenant{}); err != nil {
 		panic(err)
 	}
 	dao.DB = db
@@ -173,12 +177,15 @@ func setupFileCommitTestWithHandler(userID string) (*gin.Engine, *mockFileCommit
 			panic(err)
 		}
 	}
-	seed(&entity.File{ID: "folder-1", TenantID: userID, Name: "workspace", Type: "folder"})
-	seed(&entity.File{ID: "f1", TenantID: userID, Name: "test.txt", Type: "file"})
+	seed(&entity.File{ID: "folder-1", TenantID: userID, CreatedBy: userID, Name: "workspace", Type: "folder"})
+	seed(&entity.File{ID: "f1", TenantID: userID, CreatedBy: userID, Name: "test.txt", Type: "file"})
 	// The mirrored /datasets/{dataset_id}/commits test route maps dataset_id
 	// straight onto folder_id, so seed kb-1 as a folder the user owns to pass
 	// the folder authorization main added.
-	seed(&entity.File{ID: "kb-1", TenantID: userID, Name: "kb-1", Type: "folder"})
+	seed(&entity.File{ID: "kb-1", TenantID: userID, CreatedBy: userID, Name: "kb-1", Type: "folder"})
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, userID, userID); err != nil {
+		panic(err)
+	}
 
 	gin.SetMode(gin.TestMode)
 	r := fileCommitRouter(h, userID)
@@ -189,6 +196,7 @@ func fileCommitRouter(h *FileCommitHandler, userID string) *gin.Engine {
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("user", &entity.User{ID: userID})
+		c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), userID, userID))
 	})
 	r.POST("/api/v1/folders/:folder_id/commits", h.CreateCommit)
 	r.GET("/api/v1/folders/:folder_id/commits", h.ListCommits)
@@ -267,6 +275,82 @@ func TestFileCommit_CreateCommit_Success(t *testing.T) {
 	}
 	if data["message"] != "initial commit" {
 		t.Errorf("expected 'initial commit', got %v", data["message"])
+	}
+}
+
+func TestFileCommit_CreateCommit_DeleteLiveFileIsBadRequest(t *testing.T) {
+	r, mock := setupFileCommitTest("user-1")
+	mock.createCommitFn = func(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
+		return nil, fmt.Errorf("%w: f1", file.ErrDeleteLiveFile)
+	}
+
+	body := `{"message": "remove", "files": [{"file_id": "f1", "file_name": "test.txt", "operation": "delete"}]}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/folders/folder-1/commits", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	// A rejected deletion is caller input, not a server error.
+	if code, _ := resp["code"].(float64); code != float64(common.CodeBadRequest) {
+		t.Errorf("expected bad request, got code %v", code)
+	}
+}
+
+func TestFileCommit_CreateCommit_InvalidRenameIsBadRequest(t *testing.T) {
+	r, mock := setupFileCommitTest("user-1")
+	mock.createCommitFn = func(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
+		return nil, fmt.Errorf("%w: f1", file.ErrInvalidRenameTarget)
+	}
+
+	body := `{"message": "rename", "files": [{"file_id": "f1", "file_name": "test.txt", "operation": "rename", "new_name": ""}]}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/folders/folder-1/commits", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	// An invalid rename target is caller input, not a server error.
+	if code, _ := resp["code"].(float64); code != float64(common.CodeBadRequest) {
+		t.Errorf("expected bad request, got code %v", code)
+	}
+}
+
+func TestFileCommit_CreateCommit_RejectsFileOutsideFolder(t *testing.T) {
+	r, mock := setupFileCommitTest("user-1")
+	mock.createCommitFn = func(ctx context.Context, folderID, authorID, message string, changes []entity.FileChange) (*entity.FileCommit, error) {
+		return nil, fmt.Errorf("%w: file f2 is outside folder %s", permission.ErrPermissionDenied, folderID)
+	}
+
+	body := `{"message": "attempt", "files": [{"file_id": "f2", "file_name": "other.txt", "operation": "modify", "content": "x"}]}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/folders/folder-1/commits", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	// Hidden resource: a file the caller cannot commit is reported exactly like
+	// one that does not exist, not as a server error.
+	if code, _ := resp["code"].(float64); code != float64(common.CodeNotFound) {
+		t.Errorf("expected not found, got code %v", code)
 	}
 }
 

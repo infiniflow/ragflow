@@ -18,6 +18,7 @@ import { CardContainer } from '@/components/card-container';
 import { EmptyCardType } from '@/components/empty/constant';
 import { EmptyAppCard } from '@/components/empty/empty';
 import ListFilterBar from '@/components/list-filter-bar';
+import { PrivilegeManagementDialog } from '@/ee/components/privilege-management/privilege-management-dialog';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
@@ -31,6 +32,7 @@ import { useCallback, useEffect } from 'react';
 import { useSearchParams } from 'react-router';
 import { useFetchSearchList, useRenameSearch } from './hooks';
 import { SearchCard } from './search-card';
+import { useShowPrivilegeDialog } from '@/ee/pages/next-searches/use-show-privilege-dialog';
 
 export default function SearchList() {
   // const { data } = useFetchFlowList();
@@ -61,6 +63,12 @@ export default function SearchList() {
     onSearchRenameOk,
     initialSearchName,
   } = useRenameSearch();
+  const {
+    privilegeModalVisible,
+    hidePrivilegeModal,
+    handShowPrivilegeModal,
+    recordWithSourceType,
+  } = useShowPrivilegeDialog();
 
   // const handleSearchChange = (value: string) => {
   //   console.log(value);
@@ -136,6 +144,7 @@ export default function SearchList() {
                       showSearchRenameModal={() => {
                         showSearchRenameModal(x);
                       }}
+                      showPrivilegeModal={handShowPrivilegeModal(x)}
                     />
                   );
                 })}
@@ -185,6 +194,12 @@ export default function SearchList() {
           loading={searchRenameLoading}
           title={initialSearchName || t('createSearch')}
         ></RenameDialog>
+      )}
+      {privilegeModalVisible && (
+        <PrivilegeManagementDialog
+          hideModal={hidePrivilegeModal}
+          initialValues={recordWithSourceType}
+        />
       )}
     </>
   );

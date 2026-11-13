@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"ragflow/internal/common"
 	"ragflow/internal/server/config"
 	"time"
@@ -74,19 +75,25 @@ func (m *GCSStorage) Health(ctx context.Context) bool {
 }
 
 // Put uploads an object to GCS
-func (m *GCSStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
+func (m *GCSStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) (err error) {
+	defer func() {
+		// Resumable upload URLs contain credentials; retain only the operation
+		// and transport cause when returning an HTTP client error.
+		var transportErr *url.Error
+		if errors.As(err, &transportErr) {
+			err = fmt.Errorf("GCS upload %s: %w", transportErr.Op, transportErr.Err)
+		}
+	}()
+	uploadCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	obj := m.client.Bucket(bucket).Object(fnm)
-	w := obj.NewWriter(ctx)
+	w := obj.NewWriter(uploadCtx)
 
 	if _, err := w.Write(binary); err != nil {
 		return err
 	}
-	if err := w.Close(); err != nil {
-		return err
-	}
-
-	return nil
+	return w.Close()
 }
 
 // Get retrieves an object from GCS

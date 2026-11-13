@@ -460,7 +460,7 @@ func (c *ZoteroConnector) getPinnedURL(ctx context.Context, rawURL string, autho
 		client = http.DefaultClient
 	}
 	httpClient := *client
-	httpClient.Transport = newConnectorPinnedTransport(client, hostname, pinIP, zoteroRequestTimeout)
+	httpClient.Transport = newConnectorPinnedTransport(client, hostname, pinIP, zoteroRequestTimeout, nil)
 	httpClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse
 	}

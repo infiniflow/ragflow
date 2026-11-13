@@ -46,10 +46,20 @@ export function ProgressLogPanel({
             <span
               className={cn(
                 'size-2 shrink-0 rounded-full',
-                entry.isError ? 'bg-state-error' : 'bg-state-success',
+                entry.isError
+                  ? 'bg-state-error'
+                  : entry.isWarning
+                    ? 'bg-state-warning'
+                    : 'bg-state-success',
               )}
             />
-            <span className="break-all text-sm text-text-primary">
+            <span
+              className={cn('break-all text-sm', {
+                'text-state-error': entry.isError,
+                'text-state-warning': entry.isWarning && !entry.isError,
+                'text-text-primary': !entry.isError && !entry.isWarning,
+              })}
+            >
               {entry.text}
             </span>
           </div>

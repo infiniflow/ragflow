@@ -92,6 +92,11 @@ export const useUploadFile = () => {
         formData.append('path', pathList[index]);
       });
       try {
+        // Return the full response (code + message + detail) so the caller
+        // can dispatch the upgrade modal for billing codes 2000-2007. The
+        // global request interceptor already shows the modal for 2000-2005,
+        // but returning the full payload keeps the page-level handler
+        // consistent with the dataset upload flow.
         const ret = await fileManagerService.uploadFile(formData);
         if (ret?.data.code === 0) {
           message.success(t('message.uploaded'));
@@ -100,9 +105,9 @@ export const useUploadFile = () => {
             queryKey: [FileApiAction.FetchFileList],
           });
         }
-        return ret?.data?.code;
+        return ret?.data;
       } catch {
-        return;
+        return undefined;
       }
     },
   });
@@ -225,6 +230,19 @@ export const useFetchFileList = () => {
         page: pagination.current,
       });
 
+      // The requested folder was removed (e.g. by moving an ancestor into
+      // another folder, which recreates the subtree under new IDs). Surface
+      // it as an empty result flagged for redirect instead of an error, so
+      // React Query does not retry a folder that will never come back.
+      if (data?.code === 404) {
+        return {
+          files: [],
+          parent_folder: {} as IFolder,
+          total: 0,
+          folderNotFound: true,
+        };
+      }
+
       return data?.data;
     },
   });
@@ -245,6 +263,7 @@ export const useFetchFileList = () => {
     pagination: { ...pagination, total: data?.total },
     setPagination,
     loading,
+    folderNotFound: data?.folderNotFound === true,
   };
 };
 
@@ -422,11 +441,18 @@ export const useFetchPureFileList = () => {
     mutationKey: [FileApiAction.FetchPureFileList],
     gcTime: 0,
 
-    mutationFn: async (parentId: string) => {
+    mutationFn: async ({
+      parentId,
+      tenantId,
+    }: {
+      parentId: string;
+      tenantId?: string;
+    }) => {
       const { data } = await fileManagerService.listFile({
         parent_id: parentId,
         page_size: 100,
         page: 1,
+        ...(tenantId ? { tenant_id: tenantId } : {}),
       });
 
       return data;

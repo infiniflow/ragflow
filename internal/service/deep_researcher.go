@@ -23,8 +23,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/utility"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -464,7 +464,7 @@ func (dr *DeepResearcher) tavilyRetrieve(ctx context.Context, apiKey, query stri
 	chunks := make([]map[string]interface{}, 0, len(apiResp.Results))
 	aggs := make([]interface{}, 0, len(apiResp.Results))
 	for _, r := range apiResp.Results {
-		id := utility.GenerateToken()
+		id := common.GenerateToken()
 		chunks = append(chunks, map[string]interface{}{
 			"chunk_id":            id,
 			"content_ltks":        tokenizeText(r.Content),
@@ -761,8 +761,13 @@ func kbPrompt(kbinfos map[string]interface{}, maxTokens int, hashID bool) []stri
 		cnt += drawNode("URL", getMapString(m, "url"))
 
 		if meta, ok := m["document_metadata"].(map[string]interface{}); ok {
-			for k, v := range meta {
-				cnt += drawNode(k, v)
+			keys := make([]string, 0, len(meta))
+			for k := range meta {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				cnt += drawNode(k, meta[k])
 			}
 		}
 

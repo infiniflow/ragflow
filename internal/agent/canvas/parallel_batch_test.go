@@ -43,9 +43,9 @@ func TestBuildWorkflow_ParallelBatchStructure(t *testing.T) {
 	c := &Canvas{
 		Components: map[string]CanvasComponent{
 			"begin": {Obj: CanvasComponentObj{ComponentName: "Begin"}, Downstream: []string{"a", "b"}},
-			"a":     {Obj: CanvasComponentObj{ComponentName: "Message"}, Downstream: []string{"final"}},
-			"b":     {Obj: CanvasComponentObj{ComponentName: "Message"}, Downstream: []string{"final"}},
-			"final": {Obj: CanvasComponentObj{ComponentName: "Message"}},
+			"a":     {Obj: CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "a"}}, Downstream: []string{"final"}},
+			"b":     {Obj: CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "b"}}, Downstream: []string{"final"}},
+			"final": {Obj: CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "final"}}},
 		},
 		Path: []string{"begin", "a", "b", "final"},
 	}

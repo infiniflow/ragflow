@@ -24,40 +24,93 @@ export const VisionEnhancementFileTypes: FileType[] = [
   FileType.Video,
 ];
 
-// Lifts the legacy per-setup vision options (vlm.llm_id / flatten_media_to_text)
-// onto the top level. Idempotent, so every boundary (form defaults, canvas
-// save, dataset load) can apply it: values already carrying a top-level
-// enable_vision_enhancement keep it, and per-setup leftovers are always
-// stripped (except Audio's vlm, which holds the ASR model).
+// Lifts the per-setup vision model onto the top level and migrates the image family onto its own contract:
+// `ocr_enabled` replaces parse_method, and the prompt the image setup used to
+// own moves into the global vlm block. Idempotent, so every boundary (form
+// defaults, canvas save, dataset load) can apply it: values already carrying a
+// top-level enable_vision_enhancement keep it, and per-setup leftovers are always
+// stripped (except Audio's vlm, which holds the ASR model). A legacy image
+// parse_method that is neither "ocr" nor empty is a VLM model reference: it
+// lifts onto vlm.llm_id — deliberately beating an already-set global model, so
+// the choice a saved canvas encodes is not lost — and the switch turns off.
+// The family language is dropped outright: it is not the description-language
+// override (that lives on the global vlm block), and a stored value cannot be
+// told apart from the hardcoded default that used to write it (issue #20727).
 export function normalizeParserFormValues<T extends Record<string, any>>(
   values: T,
-): T & { vlm: { llm_id: string }; enable_vision_enhancement: boolean } {
+): T & {
+  vlm: { llm_id: string; system_prompt: string; lang?: string };
+  enable_vision_enhancement: boolean;
+} {
   const setups = Array.isArray(values?.setups) ? values.setups : [];
   const visionSetups = setups.filter((x) =>
     VisionEnhancementFileTypes.includes(x?.fileFormat),
   );
 
+  const imageSetup = setups.find((x) => x?.fileFormat === FileType.Image);
+  // Mirrors the backend: a setup that already carries the ocr_enabled switch is
+  // on the new contract, so any leftover parse_method is dead data — not a model
+  // reference. Hoisting it anyway would overwrite the model the user picked.
+  const hasImageOcrSwitch = typeof imageSetup?.ocr_enabled === 'boolean';
+  const legacyImageMethod = imageSetup?.parse_method;
+  const legacyImageModel =
+    !hasImageOcrSwitch &&
+    typeof legacyImageMethod === 'string' &&
+    !isEmpty(legacyImageMethod) &&
+    legacyImageMethod.toLowerCase() !== 'ocr'
+      ? legacyImageMethod
+      : '';
+
   const enableVisionEnhancement =
     typeof values?.enable_vision_enhancement === 'boolean'
       ? values.enable_vision_enhancement
-      : visionSetups.some(
-          (x) => x?.flatten_media_to_text === false || !isEmpty(x?.vlm?.llm_id),
-        );
+      : visionSetups.some((x) => !isEmpty(x?.vlm?.llm_id));
 
   const llmId =
-    values?.vlm?.llm_id ??
-    visionSetups.find((x) => !isEmpty(x?.vlm?.llm_id))?.vlm?.llm_id ??
-    '';
+    legacyImageModel ||
+    (values?.vlm?.llm_id ??
+      visionSetups.find((x) => !isEmpty(x?.vlm?.llm_id))?.vlm?.llm_id ??
+      '');
 
-  const nextSetups = setups.map((x) =>
-    x?.fileFormat === FileType.Audio
-      ? x
-      : omit(x, ['vlm', 'flatten_media_to_text']),
-  );
+  const nextSetups = setups.map((x) => {
+    // preprocess, output_format, and suffix are retired on every family: the
+    // Parser derives preprocessing from the chunker, emits JSON only, and
+    // routes files by the document's own suffix, so a stored value is dead
+    // config that must not survive a load/save round-trip. Per-setup vlm is
+    // dead for every family except Audio, whose vlm holds the ASR model.
+    if (x?.fileFormat === FileType.Audio) {
+      return omit(x, ['output_format', 'preprocess', 'suffix']);
+    }
+    const stripped = omit(x, ['vlm', 'output_format', 'preprocess', 'suffix']);
+    if (x?.fileFormat !== FileType.Image) return stripped;
+    const { parse_method, ...rest } = omit(stripped, ['lang', 'system_prompt']);
+    // Materialize the switch either way. Absent or "ocr" both mean "run local
+    // OCR", matching the backend's legacy inference, so the toggle can never
+    // display the opposite of what will run. The family language is dropped
+    // because nothing reads it any more: captions follow the knowledge base and
+    // the only engine that takes a language is MinerU, on the pdf family.
+    const runsOCR =
+      parse_method === undefined ||
+      isEmpty(parse_method) ||
+      String(parse_method).toLowerCase() === 'ocr';
+    return { ...rest, ocr_enabled: rest.ocr_enabled ?? runsOCR };
+  });
 
   return {
     ...values,
-    vlm: { ...values?.vlm, llm_id: llmId },
+    vlm: {
+      // Lang is an explicit user choice stored on the global vision block; an
+      // empty value follows the knowledge base language. It is preserved here
+      // so a saved choice survives the load/save round-trip.
+      ...values?.vlm,
+      llm_id: llmId,
+      // Only the prompt lifts: a stored family prompt can only have come from a
+      // person, because its default is empty. The old family language is not
+      // lifted: its default was machine-written, so it cannot be told apart
+      // from an explicit choice. See issue #20727.
+      system_prompt:
+        values?.vlm?.system_prompt || imageSetup?.system_prompt || '',
+    },
     enable_vision_enhancement: enableVisionEnhancement,
     setups: nextSetups,
   };
@@ -95,7 +148,11 @@ export function buildInitialParserValues(
 ) {
   return {
     ...initialParserValues,
-    vlm: { llm_id: defaultModelDictionary[ModelTypeToField.vision] ?? '' },
+    vlm: {
+      llm_id: defaultModelDictionary[ModelTypeToField.vision] ?? '',
+      system_prompt: '',
+      lang: '',
+    },
     setups: initialParserValues.setups.map(
       (setup) =>
         buildInitialParserSetup(

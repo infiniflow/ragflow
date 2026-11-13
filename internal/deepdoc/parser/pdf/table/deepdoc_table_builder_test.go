@@ -79,6 +79,69 @@ func TestDeepDocTableBuildService_GroupCells_HeaderPropagation(t *testing.T) {
 	}
 }
 
+func TestDeepDocTableBuildService_HeaderPropagationIgnoresTouchingDataRow(t *testing.T) {
+	b := &DeepDocTableBuilder{}
+
+	// The header box ends at 50.2 while the first data row starts at 50.0.
+	// The old any-overlap check marked that data row as a header too.
+	cells := []pdf.TSRCell{
+		{X0: 0, Y0: 0, X1: 200, Y1: 150, Label: "table"},
+		{X0: 0, Y0: 0, X1: 200, Y1: 50, Label: "table row"},
+		{X0: 0, Y0: 50, X1: 200, Y1: 100, Label: "table row"},
+		{X0: 0, Y0: 100, X1: 200, Y1: 150, Label: "table row"},
+		{X0: 0, Y0: 0, X1: 100, Y1: 150, Label: "table column"},
+		{X0: 100, Y0: 0, X1: 200, Y1: 150, Label: "table column"},
+		{X0: 0, Y0: 0, X1: 200, Y1: 50.2, Label: "table column header"},
+	}
+
+	grid := b.GroupCells(cells)
+
+	if len(grid) != 3 {
+		t.Fatalf("expected 3 rows, got %d", len(grid))
+	}
+	if grid[0][0].Label != "table column header" {
+		t.Errorf("row 0 label = %q, want table column header", grid[0][0].Label)
+	}
+	if grid[1][0].Label != "" {
+		t.Errorf("row 1 (data, only touching the header by 0.2px) label = %q, want empty", grid[1][0].Label)
+	}
+}
+
+func TestDeepDocTableBuildService_SpanInjectionUsesRawRowCenters(t *testing.T) {
+	b := &DeepDocTableBuilder{}
+
+	// Row 0 carries a column-spanning header and a 3-row vertical span in
+	// column 0. Extending grid[0][0] to y=0..150 first makes its centre
+	// (75) fall outside the 0..50 column span; the old code derived the row
+	// centre from grid[ri][0] and silently dropped the colspan.
+	cells := []pdf.TSRCell{
+		{X0: 0, Y0: 0, X1: 300, Y1: 150, Label: "table"},
+		{X0: 0, Y0: 0, X1: 300, Y1: 50, Label: "table row"},
+		{X0: 0, Y0: 50, X1: 300, Y1: 100, Label: "table row"},
+		{X0: 0, Y0: 100, X1: 300, Y1: 150, Label: "table row"},
+		{X0: 0, Y0: 0, X1: 100, Y1: 150, Label: "table column"},
+		{X0: 100, Y0: 0, X1: 200, Y1: 150, Label: "table column"},
+		{X0: 200, Y0: 0, X1: 300, Y1: 150, Label: "table column"},
+		// rowspan in column 0, listed before the colspan on purpose
+		{X0: 0, Y0: 0, X1: 100, Y1: 150, Label: "table spanning cell"},
+		// colspan across columns 1-2 in row 0
+		{X0: 100, Y0: 0, X1: 300, Y1: 50, Label: "table spanning cell"},
+	}
+
+	grid := b.GroupCells(cells)
+
+	if len(grid) != 3 || len(grid[0]) != 3 {
+		t.Fatalf("expected 3×3 grid, got %d×%d", len(grid), len(grid[0]))
+	}
+	if !strings.Contains(grid[0][1].Label, "spanning") {
+		t.Errorf("colspan at [0,1] was dropped: label = %q (grid row0 labels: %q/%q/%q)",
+			grid[0][1].Label, grid[0][0].Label, grid[0][1].Label, grid[0][2].Label)
+	}
+	if grid[0][1].X0 != 100 || grid[0][1].X1 != 300 {
+		t.Errorf("colspan bbox = (%.0f,%.0f), want (100,300)", grid[0][1].X0, grid[0][1].X1)
+	}
+}
+
 func TestDeepDocTableBuildService_GroupCells_SpanInjection(t *testing.T) {
 	b := &DeepDocTableBuilder{}
 
@@ -158,6 +221,72 @@ func TestDeepDocTableBuildService_GroupCells_NoRows(t *testing.T) {
 	grid := b.GroupCells(cells)
 	if len(grid) != 0 {
 		t.Errorf("expected empty grid without row cells, got %d rows", len(grid))
+	}
+}
+
+func TestDeepDocTableBuildService_GroupCells_SpanOriginIsTopLeft(t *testing.T) {
+	b := &DeepDocTableBuilder{}
+
+	// 3×3 table. Span bbox covers columns {1,2} and rows {1,2} but does
+	// NOT touch column 0 or row 0, so the span origin must be the
+	// top-left of the *covered* rectangle, i.e. grid[1][1] — never an
+	// arbitrary covered cell and never the grid's own corner (0,0).
+	//
+	// This guards the invariant CalSpans relies on: the labelled origin
+	// equals the covered rectangle's top-left, otherwise colspan/rowspan
+	// and the `covered` (hidden) map diverge and the rendered HTML breaks.
+	cells := []pdf.TSRCell{
+		{X0: 0, Y0: 0, X1: 300, Y1: 150, Label: "table"},
+		// rows: 0-50, 50-100, 100-150  (centers 25, 75, 125)
+		{X0: 0, Y0: 0, X1: 300, Y1: 50, Label: "table row"},
+		{X0: 0, Y0: 50, X1: 300, Y1: 100, Label: "table row"},
+		{X0: 0, Y0: 100, X1: 300, Y1: 150, Label: "table row"},
+		// cols: 0-100, 100-200, 200-300  (centers 50, 150, 250)
+		{X0: 0, Y0: 0, X1: 100, Y1: 150, Label: "table column"},
+		{X0: 100, Y0: 0, X1: 200, Y1: 150, Label: "table column"},
+		{X0: 200, Y0: 0, X1: 300, Y1: 150, Label: "table column"},
+		// span bbox X∈[120,280] Y∈[60,140] → covers cols {1,2}, rows {1,2}
+		{X0: 120, Y0: 60, X1: 280, Y1: 140, Label: "table spanning cell"},
+	}
+
+	grid := b.GroupCells(cells)
+	if len(grid) != 3 || len(grid[0]) != 3 {
+		t.Fatalf("expected 3×3 grid, got %d×%d", len(grid), len(grid[0]))
+	}
+
+	// Exactly one spanning-labelled cell, and it must be [1][1].
+	spanCount := 0
+	for r := range grid {
+		for c := range grid[r] {
+			if strings.Contains(strings.ToLower(grid[r][c].Label), "spanning") {
+				spanCount++
+				if r != 1 || c != 1 {
+					t.Errorf("span origin at [%d][%d], want [1][1] (top-left of covered)", r, c)
+				}
+			}
+		}
+	}
+	if spanCount != 1 {
+		t.Fatalf("expected exactly 1 spanning-labelled cell, got %d", spanCount)
+	}
+
+	// The origin keeps the span's full bbox.
+	o := grid[1][1]
+	if o.X0 != 120 || o.X1 != 280 || o.Y0 != 60 || o.Y1 != 140 {
+		t.Errorf("origin bbox = (%.0f,%.0f,%.0f,%.0f), want (120,60,280,140)",
+			o.X0, o.Y0, o.X1, o.Y1)
+	}
+
+	// grid[0][0] is outside the span → must NOT be labelled spanning.
+	if strings.Contains(strings.ToLower(grid[0][0].Label), "spanning") {
+		t.Error("grid[0][0] is outside the span but got 'spanning' label")
+	}
+
+	// Covered cells ([1][2],[2][1],[2][2]) keep their own row×col bbox.
+	for _, pos := range [][2]int{{1, 2}, {2, 1}, {2, 2}} {
+		if isZeroCell(grid[pos[0]][pos[1]]) {
+			t.Errorf("grid[%d][%d] must keep its own bbox (covered, not zeroed)", pos[0], pos[1])
+		}
 	}
 }
 

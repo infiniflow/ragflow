@@ -22,6 +22,7 @@ import (
 
 	"ragflow/internal/common"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/rag/prompts"
 
 	"go.uber.org/zap"
 )
@@ -80,7 +81,7 @@ type AskStreamOptions struct {
 
 // Retriever abstracts chunk retrieval for AskService.
 type Retriever interface {
-	RetrievalTest(ctx context.Context, req *RetrievalTestRequest, userID string) (*RetrievalTestResponse, error)
+	RetrievalTest(ctx context.Context, req *RetrievalTestRequest) (*RetrievalTestResponse, error)
 }
 
 // StreamingLLM abstracts streaming chat for AskService. The first channel
@@ -132,22 +133,22 @@ func NewAskService(retriever Retriever, embedder Embedder, tokenBudget, minStrea
 
 // Stream runs the full ask pipeline.  llm must not be nil.  The returned
 // channel is closed when the pipeline completes or ctx is cancelled.
-func (s *AskService) Stream(ctx context.Context, llm StreamingLLM, userID, question string, kbIDs []string) <-chan AskDelta {
-	return s.StreamWithOptions(ctx, llm, userID, question, kbIDs, AskStreamOptions{})
+func (s *AskService) Stream(ctx context.Context, llm StreamingLLM, question string, kbIDs []string) <-chan AskDelta {
+	return s.StreamWithOptions(ctx, llm, question, kbIDs, AskStreamOptions{})
 }
 
 // StreamWithOptions runs Stream while allowing callers such as saved Search
 // apps to pass search_config retrieval options through to RetrievalTest.
-func (s *AskService) StreamWithOptions(ctx context.Context, llm StreamingLLM, userID, question string, datasetIDs []string, opts AskStreamOptions) <-chan AskDelta {
+func (s *AskService) StreamWithOptions(ctx context.Context, llm StreamingLLM, question string, datasetIDs []string, opts AskStreamOptions) <-chan AskDelta {
 	out := make(chan AskDelta, 32)
 	go func() {
 		defer close(out)
-		s.run(ctx, llm, userID, question, datasetIDs, opts, out)
+		s.run(ctx, llm, question, datasetIDs, opts, out)
 	}()
 	return out
 }
 
-func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question string, datasetIDs []string, opts AskStreamOptions, out chan<- AskDelta) {
+func (s *AskService) run(ctx context.Context, llm StreamingLLM, question string, datasetIDs []string, opts AskStreamOptions, out chan<- AskDelta) {
 	// Phase 1: Retrieval.
 	topK := DefaultAskTopK
 	if opts.TopK != nil {
@@ -189,7 +190,7 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question
 	req.Page = &page
 	req.Size = &ps
 
-	result, err := s.retriever.RetrievalTest(ctx, req, userID)
+	result, err := s.retriever.RetrievalTest(ctx, req)
 	if err != nil {
 		common.Warn("AskService retrieval failed", zap.Error(err))
 		s.sendOrCancel(out, AskDelta{Kind: AskDeltaError, Value: "retrieval failed"}, ctx)
@@ -204,7 +205,7 @@ func (s *AskService) run(ctx context.Context, llm StreamingLLM, userID, question
 
 	// Phase 2: Build system prompt.
 	knowledge := KbPrompt(chunks, s.tokenBudget)
-	prompt, err := LoadPrompt("ask_summary")
+	prompt, err := (prompts.EmbeddedPromptLoader{}).Load("ask_summary")
 	if err != nil {
 		common.Warn("AskService failed to load prompt", zap.Error(err))
 		s.sendOrCancel(out, AskDelta{Kind: AskDeltaError, Value: "prompt configuration error"}, ctx)

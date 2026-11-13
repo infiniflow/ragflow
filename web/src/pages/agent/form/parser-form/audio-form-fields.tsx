@@ -4,10 +4,10 @@ import {
 } from '@/components/model-tree-select';
 import { useTranslation } from 'react-i18next';
 import { useOwnerTenantId } from '../../context';
-import { OutputFormatFormFieldProps } from './common-form-fields';
+import { CommonProps } from './interface';
 import { buildFieldNameWithPrefix } from './utils';
 
-export function AudioFormFields({ prefix }: OutputFormatFormFieldProps) {
+export function AudioFormFields({ prefix }: CommonProps) {
   const { t } = useTranslation();
   const ownerTenantId = useOwnerTenantId();
 

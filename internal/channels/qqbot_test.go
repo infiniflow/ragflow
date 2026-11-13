@@ -126,6 +126,7 @@ func TestQQBotSend(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]any{})
 	}))
 	defer server.Close()
+	allowChannelURLForTest(t, server.URL)
 
 	channel := newQQBotChannel(qqBotAccount{
 		AccountID:    "account-1",
@@ -263,6 +264,7 @@ func TestQQBotGatewayIdentifiesAndDispatches(t *testing.T) {
 		return nil
 	})
 	gatewayURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	allowChannelURLForTest(t, gatewayURL)
 	if err := channel.runGatewaySession(context.Background(), gatewayURL, "token-1"); err == nil || !strings.Contains(err.Error(), "reconnect") {
 		t.Fatalf("runGatewaySession() error = %v, want reconnect request", err)
 	}
@@ -321,6 +323,7 @@ func TestQQBotGatewayResumesExistingSession(t *testing.T) {
 	channel.sessionID = "session-1"
 	channel.setSequence(42)
 	gatewayURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	allowChannelURLForTest(t, gatewayURL)
 	if err := channel.runGatewaySession(context.Background(), gatewayURL, "token-1"); err == nil {
 		t.Fatal("runGatewaySession() succeeded, want reconnect request")
 	}

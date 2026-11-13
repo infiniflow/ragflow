@@ -39,24 +39,11 @@ var audioExtensions = map[string]bool{
 }
 
 // AudioParser handles audio files for transcription.
-type AudioParser struct {
-	OutputFormat string
-}
+type AudioParser struct{}
 
 // NewAudioParser constructs an AudioParser.
 func NewAudioParser() *AudioParser {
 	return &AudioParser{}
-}
-
-// ConfigureFromSetup reads audio-specific configuration from the
-// parser setup map.
-func (p *AudioParser) ConfigureFromSetup(setup map[string]any) {
-	if p == nil || setup == nil {
-		return
-	}
-	if v, ok := setup["output_format"].(string); ok && v != "" {
-		p.OutputFormat = v
-	}
 }
 
 // ParseWithResult implements ParseResultProducer. It validates the
@@ -74,13 +61,7 @@ func (p *AudioParser) ParseWithResult(ctx context.Context, filename string, data
 		}
 	}
 
-	outFmt := p.OutputFormat
-	if outFmt == "" {
-		outFmt = "text"
-	}
-
 	return ParseResult{
-		OutputFormat: outFmt,
 		File: map[string]any{
 			"name": filename,
 			"size": len(data),

@@ -112,7 +112,7 @@ func newLineChannel(account lineAccount) *lineChannel {
 	return &lineChannel{
 		account:     account,
 		ctx:         context.Background(),
-		client:      &http.Client{Timeout: account.Timeout},
+		client:      newSafeChannelHTTPClient(account.Timeout, channelURLPolicy{exactHosts: []string{"api.line.me"}}),
 		replyTokens: map[string]lineReplyToken{},
 		seen:        map[string]time.Time{},
 		workers:     map[string]*lineWorker{},

@@ -16,6 +16,11 @@
 
 package common
 
+import (
+	"sort"
+	"strings"
+)
+
 func Deduplicate(names []string) []string {
 	if names == nil {
 		return nil
@@ -32,4 +37,61 @@ func Deduplicate(names []string) []string {
 	}
 
 	return result
+}
+
+// DeduplicateTrimmed removes surrounding whitespace, drops empty strings, and
+// removes duplicates while preserving order. Returns nil when the result is
+// empty.
+func DeduplicateTrimmed(values []string) []string {
+	seen := make(map[string]bool)
+	result := make([]string, 0, len(values))
+	for _, v := range values {
+		v = strings.TrimSpace(v)
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		result = append(result, v)
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	return result
+}
+
+// DeduplicateSorted drops empty strings, removes duplicates, and sorts the
+// result. It does not mutate the input slice. Returns nil when empty.
+func DeduplicateSorted(values []string) []string {
+	seen := make(map[string]bool)
+	result := make([]string, 0, len(values))
+	for _, v := range values {
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		result = append(result, v)
+	}
+	if len(result) == 0 {
+		return nil
+	}
+	out := append([]string(nil), result...)
+	sort.Strings(out)
+	return out
+}
+
+// AppendUnique appends values not already present in dst (empty strings
+// dropped), preserving order, and returns the extended dst.
+func AppendUnique(dst, values []string) []string {
+	seen := make(map[string]bool, len(dst)+len(values))
+	for _, v := range dst {
+		seen[v] = true
+	}
+	for _, v := range values {
+		if v == "" || seen[v] {
+			continue
+		}
+		seen[v] = true
+		dst = append(dst, v)
+	}
+	return dst
 }

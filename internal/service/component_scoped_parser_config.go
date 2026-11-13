@@ -3,6 +3,7 @@ package service
 import (
 	"strings"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 )
 
@@ -42,9 +43,8 @@ func ApplyComponentScopedParserConfig(
 		if !ok {
 			continue
 		}
-		cpnLower := strings.ToLower(cpnID)
 		switch {
-		case strings.HasPrefix(cpnLower, "extractor:") || strings.HasPrefix(cpnLower, "extractor_"):
+		case common.IsExtractorComponentID(cpnID):
 			if value, _ := params["llm_id"].(string); strings.TrimSpace(value) == "" && strings.TrimSpace(llmID) != "" {
 				params["llm_id"] = llmID
 			}
@@ -63,7 +63,7 @@ func ApplyComponentScopedParserConfig(
 					"built_in_metadata": []any{},
 				}
 			}
-		case strings.HasPrefix(cpnLower, "compiler:") || strings.HasPrefix(cpnLower, "compiler_"):
+		case common.IsCompilerComponentID(cpnID):
 			if value, _ := params["llm_id"].(string); strings.TrimSpace(value) == "" && strings.TrimSpace(llmID) != "" {
 				params["llm_id"] = llmID
 			}
@@ -76,9 +76,9 @@ func ApplyComponentScopedParserConfig(
 	// GeneralChunker:SixApplesFall.delimiters (or .delimiter); without this
 	// bridge the flat transport key is silently dropped.
 	if flatDelim, ok := parserConfig["delimiters"]; ok {
-		bridgeFlatDelimiter(parserConfig, "delimiters", flatDelim)
+		bridgeFlatDelimiter(parserConfig, flatDelim)
 	} else if flatDelim, ok := parserConfig["delimiter"]; ok {
-		bridgeFlatDelimiter(parserConfig, "delimiter", flatDelim)
+		bridgeFlatDelimiter(parserConfig, flatDelim)
 	}
 
 	// Documents and datasets are uniformly component-scoped (every dataset and
@@ -107,7 +107,7 @@ const generalChunkerNodeID = "GeneralChunker:SixApplesFall"
 // JSON-array of strings) into the canonical GeneralChunker node's params map
 // under the canonical delimiters key, creating the node if it does not exist.
 // Called once per parser_config by ApplyComponentScopedParserConfig.
-func bridgeFlatDelimiter(parserConfig entity.JSONMap, key string, value any) {
+func bridgeFlatDelimiter(parserConfig entity.JSONMap, value any) {
 	node, ok := parserConfig[generalChunkerNodeID].(map[string]any)
 	if !ok {
 		node = map[string]any{}
@@ -122,7 +122,36 @@ func bridgeFlatDelimiter(parserConfig entity.JSONMap, key string, value any) {
 func cloneJSONMap(in map[string]any) map[string]any {
 	out := make(map[string]any, len(in))
 	for k, v := range in {
-		out[k] = v
+		out[k] = cloneValue(v)
 	}
 	return out
+}
+
+func cloneValue(v any) any {
+	switch val := v.(type) {
+	case nil:
+		return nil
+	case map[string]any:
+		return cloneJSONMap(val)
+	case entity.JSONMap:
+		out := make(map[string]any, len(val))
+		for k, vv := range val {
+			out[k] = cloneValue(vv)
+		}
+		return out
+	case []any:
+		out := make([]any, len(val))
+		for i, vv := range val {
+			out[i] = cloneValue(vv)
+		}
+		return out
+	case []map[string]any:
+		out := make([]map[string]any, len(val))
+		for i, vv := range val {
+			out[i] = cloneValue(vv).(map[string]any)
+		}
+		return out
+	default:
+		return v
+	}
 }

@@ -87,7 +87,13 @@ export function LabelCard({ children, className, ...props }: LabelCardProps) {
   );
 }
 
-export function LLMLabelCard({ llmId }: { llmId?: string }) {
+export function LLMLabelCard({
+  llmId,
+  modelTypes = ModelTypeMap.llm_id,
+}: {
+  llmId?: string;
+  modelTypes?: string[];
+}) {
   const ownerTenantId = useOwnerTenantId();
   const { t } = useTranslation();
   // Validity is checked against the canvas owner's models: a shared canvas
@@ -95,10 +101,7 @@ export function LLMLabelCard({ llmId }: { llmId?: string }) {
   // importer the owner — anything else is flagged. Gated on isFetched so a
   // slow list never flashes a false error state. The display name likewise
   // resolves through the owner's list.
-  const { validIds, isFetched } = useModelValidIds(
-    ModelTypeMap.llm_id,
-    ownerTenantId,
-  );
+  const { validIds, isFetched } = useModelValidIds(modelTypes, ownerTenantId);
 
   const isUnavailable = !!llmId && isFetched && !validIds.has(llmId);
   // An empty model keeps the historical red state; a loading list shows nothing.

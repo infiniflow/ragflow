@@ -11,6 +11,11 @@ import (
 
 func (a *ReActAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 	return func(ctx context.Context, p *typedRunParams[M]) {
+		ec := newReActExecCtx(p.generator)
+		ec.cancelCtx = getCancelContext(ctx)
+		ec.afterToolCallsHook = p.afterToolCallsHook
+		ctx = withReActExecCtx(ctx, ec)
+
 		maxIter := a.config.MaxIterations
 		if maxIter <= 0 {
 			maxIter = 10
@@ -84,7 +89,7 @@ func (a *ReActAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 		allTools = rc.Tools
 		allRD = rc.ReturnDirectly
 
-		model := BuildModelWrapperChain(a.config.Model, nil, a.config, a.exeCtx.toolInfos)
+		model := BuildModelWrapperChain(ctx, a.config.Model, ec, a.config, a.exeCtx.toolInfos)
 
 		// Build ToolsNode from merged tools, preserving ToolInvokeMiddlewares from config.
 		var tn *ToolsNode[M]
@@ -106,6 +111,7 @@ func (a *ReActAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 			tn = NewToolsNode[M](tnCfg)
 		}
 
+		completed := false
 		for state.RemainingIterations > 0 {
 			state.RemainingIterations--
 
@@ -140,7 +146,6 @@ func (a *ReActAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 				p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("model: %w", err)})
 				return
 			}
-			p.generator.Send(typedModelOutputEvent(resp, nil))
 			state.Messages = append(state.Messages, resp)
 
 			if err := a.runAfterModelRewrite(&ctx, &state, mc, p.generator); err != nil {
@@ -149,6 +154,7 @@ func (a *ReActAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 
 			toolCalls := extractToolCalls(resp)
 			if len(toolCalls) == 0 || tn == nil {
+				completed = true
 				break
 			}
 
@@ -163,11 +169,12 @@ func (a *ReActAgent[M]) buildReActRunFunc() typedRunFunc[M] {
 			}
 			action = act
 			if action != nil && action.Exit {
+				completed = true
 				break
 			}
 		}
 
-		if state.RemainingIterations <= 0 {
+		if !completed && state.RemainingIterations <= 0 {
 			p.generator.Send(&TypedAgentEvent[M]{Err: fmt.Errorf("exceeded max iterations (%d)", a.config.MaxIterations)})
 		}
 		if a.config.OutputKey != "" && len(state.Messages) > 0 {

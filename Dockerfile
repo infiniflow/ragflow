@@ -1,3 +1,16 @@
+ARG TARGETARCH
+
+# Multi-arch runner base images. The amd64 build reuses the published
+# infiniflow/github_action_runner:latest; the arm64 build uses
+# myfbee/github-runner:arm64 (built from the github-runner-dockerfile for
+# linux/arm64). Selecting via TARGETARCH lets a single Dockerfile build natively
+# on either platform (or as one multi-arch image with
+# --platform linux/amd64,linux/arm64). BuildKit only resolves the alias stage
+# that matches the target platform, so a single-arch build never requires both
+# runner images to be present.
+FROM infiniflow/github_action_runner:latest      AS runner-amd64
+FROM infiniflow/github_action_runner:latest-arm64 AS runner-arm64
+
 # base stage
 FROM ubuntu:24.04 AS base
 USER root
@@ -42,16 +55,16 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
 # Copy the cl100k_base BPE table used by the Go tokenizer (tiktoken-go
 # cl100k_base). The deps image ships it at its root; the Go image previously
 # mounted only /huggingface.co and omitted this file, so NumTokensFromString
-# silently returned 0. localBpeLoader resolves it from <workdir>/ragflow_deps/,
+# silently returned 0. localBpeLoader resolves it from <workdir>/deps/,
 # so dropping it here makes the table load offline at startup (see
 # InitCL100KEncoder fail-fast guard).
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/cl100k_base.tiktoken,target=/tmp/cl100k_base.tiktoken \
-    mkdir -p /ragflow/ragflow_deps && \
-    cp /tmp/cl100k_base.tiktoken /ragflow/ragflow_deps/cl100k_base.tiktoken
+    mkdir -p /ragflow/deps && \
+    cp /tmp/cl100k_base.tiktoken /ragflow/deps/cl100k_base.tiktoken
 
 # Embedding tokenizer assets for the Go counters (internal/tokenizer). Same story as
 # the cl100k table above: the deps image carries them and the Go image has to put them
-# where the loaders search (<workdir>/ragflow_deps/huggingface.co/<repo>/<file>). A
+# where the loaders search (<workdir>/deps/huggingface.co/<repo>/<file>). A
 # missing asset FAILS THE BUILD here rather than shipping an image where every tagged
 # model silently counts with the calibrated cl100k estimate. The tokenizer.json files
 # that exist only as cross-check oracles are deliberately not shipped.
@@ -62,8 +75,8 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
         Qwen/Qwen3-Embedding-0.6B/tokenizer.json \
         intfloat/e5-mistral-7b-instruct/tokenizer.json ; do \
         if [ -f "/huggingface.co/$asset" ]; then \
-            mkdir -p "/ragflow/ragflow_deps/huggingface.co/$(dirname "$asset")" && \
-            cp "/huggingface.co/$asset" "/ragflow/ragflow_deps/huggingface.co/$asset" ; \
+            mkdir -p "/ragflow/deps/huggingface.co/$(dirname "$asset")" && \
+            cp "/huggingface.co/$asset" "/ragflow/deps/huggingface.co/$asset" ; \
         else \
             echo "ERROR: tokenizer asset $asset is missing from the infiniflow/ragflow_deps image; this image would count with the calibrated estimate instead of the model's own tokenizer" >&2 ; \
             exit 1 ; \
@@ -71,6 +84,14 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
     done
 
 ENV DEBIAN_FRONTEND=noninteractive
+
+# The Noto Sans CJK SC font is now pre-baked into infiniflow/ragflow_deps:latest
+# (downloaded + verified by deps/download_deps.py) instead of being curl'd from
+# GitHub at main-image build time. gopdf reads it at runtime from
+# /usr/local/share/fonts/truetype/noto/NotoSansCJKsc-VF.ttf (pdf_writer.go).
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/NotoSansCJKsc-VF.ttf,target=/tmp/NotoSansCJKsc-VF.ttf \
+    mkdir -p /usr/local/share/fonts/truetype/noto && \
+    cp /tmp/NotoSansCJKsc-VF.ttf /usr/local/share/fonts/truetype/noto/NotoSansCJKsc-VF.ttf
 
 # Setup apt
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
@@ -86,12 +107,8 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     chmod 1777 /tmp && \
     apt update && \
     apt --no-install-recommends install -y ca-certificates curl vim unzip iproute2 fonts-dejavu fontconfig && \
-    mkdir -p /usr/local/share/fonts/truetype/noto && \
-    curl --retry 5 --retry-delay 2 --retry-all-errors -fsSL \
-        -o /usr/local/share/fonts/truetype/noto/NotoSansCJKsc-VF.ttf \
-        https://github.com/notofonts/noto-cjk/raw/main/Sans/Variable/TTF/NotoSansCJKsc-VF.ttf && \
     fc-cache -f && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && apt-get clean
 
 # Download resource from GitHub to /usr/share/infinity
 # Ship only the directories required by the runtime tokenizer:
@@ -117,7 +134,7 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     rm -rf /tmp/resource && \
     apt-get purge -y git && \
     apt-get autoremove -y && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && apt-get clean
 
 ARG NGINX_VERSION=1.31.3-1~noble
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
@@ -131,12 +148,12 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     apt-mark hold nginx && \
     apt-get purge -y gnupg && \
     apt-get autoremove -y && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* && apt-get clean
 
 
 # ── web-builder stage ──
 
-FROM infiniflow/github_action_runner:latest AS web-builder
+FROM runner-${TARGETARCH} AS web-builder
 USER root
 
 WORKDIR /ragflow
@@ -163,11 +180,36 @@ RUN --mount=type=bind,source=.git,target=/ragflow/.git \
 
 
 
+# Native static-lib cache supplied by CI as a named build context
+# (--build-context native-libs=<host cache dir>). Named contexts take priority
+# over stages, so the host cache wins when passed. With no context this empty
+# stage keeps go-builder's bind mount valid and build.sh falls back to its
+# auto-download path — local builds and the GitHub-hosted release builds have
+# no mounted cache.
+FROM scratch AS native-libs
+
 # ── go-builder stage ──
-FROM infiniflow/github_action_runner:latest AS go-builder
+FROM runner-${TARGETARCH} AS go-builder
 USER root
 SHELL ["/bin/bash", "-c"]
 WORKDIR /ragflow
+
+# Pin GOMODCACHE/GOCACHE to the BuildKit cache-mount paths for the whole stage.
+# Without this, the `GOMODCACHE=... GOCACHE=...` prefix on the RUN lines below only
+# applies to the command before `&&`, so `./build.sh --go` (the command after `&&`)
+# falls back to the default /root/go/pkg/mod and re-downloads every module that
+# `go mod download` already fetched. Exporting them as ENV makes every go command in
+# this stage — including the `go build` inside build.sh — share the same persistent
+# cache mount, so the download happens once and is reused across builds (the CI
+# runner shares the host Docker daemon, so the mount persists across jobs/replicas).
+ENV GOMODCACHE=/root/.cache/gomod GOCACHE=/root/.cache/gobuild
+
+# GOPROXY is overridable via --build-arg. CI passes a proxy that is reliable
+# from GitHub runners (e.g. proxy.golang.org); the default keeps goproxy.cn
+# first for developers behind the GFW. Both `go mod download` below and the
+# `go build` inside build.sh inherit this ENV.
+ARG GOPROXY
+ENV GOPROXY="${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct}"
 
 # Cache Go modules BEFORE copying source (mirrors the Dockerfile_ci fix):
 # copy only the manifests, download the full module graph into a persistent
@@ -175,52 +217,74 @@ WORKDIR /ragflow
 # mounted paths so `go mod download` and `build.sh --go` share the same cache and
 # dependencies are never re-fetched when only source changes.
 COPY go.mod go.sum ./
-RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod \
+# Retry the module download: Go module proxies occasionally drop the HTTP/2
+# connection (GOAWAY) mid-transfer, which is transient and recovers on retry.
+# Exit nonzero if all attempts fail, so the build fails fast instead of
+# continuing with an incomplete module cache (which would surface later in
+# build.sh as a confusing missing-dependency error).
+RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod,sharing=locked \
     --mount=type=cache,id=ragflow_gobuild,target=/root/.cache/gobuild \
-    GOMODCACHE=/root/.cache/gomod GOCACHE=/root/.cache/gobuild \
-    GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
-    go mod download
+    ok=0; \
+    for i in 1 2 3 4 5; do \
+      if go mod download; then ok=1; break; fi; \
+      echo "go mod download attempt $i failed, retrying in 5s" >&2; \
+      [ "$i" -lt 5 ] && sleep 5; \
+    done; \
+    if [ "$ok" -ne 1 ]; then echo "go mod download failed after 5 attempts" >&2; exit 1; fi
 
 COPY internal internal
 COPY cmd cmd
 COPY build.sh ./
-# build.sh's check_ort_version_consistency (run via `./build.sh --go`) greps the
-# ORT version pin from this file; without it the --go build fails with
-# "could not parse the ONNX Runtime version from one of the pinned locations".
-COPY ragflow_deps/download_deps.py ./ragflow_deps/
+COPY tools/scripts tools/scripts
 COPY Dockerfile ./
 
-# ONNX Runtime static archives: build.sh's _seed_from_system looks for the ORT
-# static libs under ONNXRUNTIME_STATIC_PREFIX (default ~/ragflow-native-libs/onnxruntime).
-# The github_action_runner base image pre-bakes them at /opt/ragflow-native-libs,
-# so we copy them into the expected user-cache path before building. These .a files
-# are consumed at link time only; they do NOT enter the final image (only the
-# compiled /ragflow/bin is COPY --from=go-builder). Without this, ORT linking is
-# silently skipped and the binary fails at startup with
-# "no in-process DeepDoc backend serving" (dlopen(NULL)/dlsym can't find OrtGetApiBase).
-# ${HOME} (not hard-coded /root) keeps the path consistent with build.sh regardless of HOME.
+# ONNX Runtime static archives are provisioned by build.sh from the versioned
+# user cache at ONNXRUNTIME_STATIC_PREFIX (${RAGFLOW_NATIVE_LIBS_DIR:-$HOME/
+# ragflow-native-libs}/onnxruntime/static_lib). There is NO /opt pre-bake: CI
+# supplies the host cache as a named build context (--build-context
+# native-libs=<dir>), and builds without a host cache let build.sh fall back to
+# _ensure_native_libs_installed, which runs `uv run
+# tools/scripts/download_dev_deps.py`. That downloader fetches the native
+# archives on demand and self-creates its deps/ workdir when absent (see
+# download_dev_deps.py::ensure_deps_dir), so it no longer crashes on a bare
+# go-builder checkout. These .a files are consumed at link time only and do NOT
+# enter the final image (only the compiled /ragflow/bin is COPY --from=go-builder).
+# ARG ORT_VERSION stays because build.sh's check_ort_version_consistency greps it
+# to cross-check the pinned ORT release against internal/common/environments.go.
 ARG ORT_VERSION=1.29.0
-RUN set -eux; \
-    mkdir -p "${HOME}/ragflow-native-libs/onnxruntime/static_lib"; \
-    _src="/opt/ragflow-native-libs/onnxruntime/static_lib"; \
-    _v="$(ls -d "${_src}"/onnxruntime-linux-x64-static_lib-"${ORT_VERSION}"-* 2>/dev/null | head -1)"; \
-    if [ -z "${_v}" ]; then \
-      _v="$(ls -d "${_src}"/onnxruntime-linux-x64-static_lib-* 2>/dev/null | head -1)"; \
-    fi; \
-    if [ -n "${_v}" ]; then \
-      cp -r "${_v}" "${HOME}/ragflow-native-libs/onnxruntime/static_lib/"; \
-    else \
-      echo "Warning: no pre-baked onnxruntime static_lib in runner image; build.sh will attempt download" >&2; \
-    fi; \
-    find "${HOME}/ragflow-native-libs/onnxruntime/static_lib" -name '*.a' | head -5
+
+# CI sets this to 1 so a missing --build-context fails instead of silently
+# falling back to downloading the native archives from GitHub.
+ARG NATIVE_LIBS_REQUIRED=0
 
 RUN git config --global safe.directory "*" && \
     cd /ragflow && ./build.sh --cpp
 
-RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod \
+# type=bind is read-only by default, but a partial cache is fine: build.sh fills
+# any missing version-keyed archive via its controlled auto-download into
+# RAGFLOW_NATIVE_LIBS_DIR. rw lets that downloader complete the cache inside
+# this RUN. Writes are discarded when the RUN finishes and never enter the image
+# layer; the named context is a copy of the host dir, so the runner's cache is
+# unaffected. Only /ragflow/bin is copied into the production stage.
+RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod,sharing=locked \
     --mount=type=cache,id=ragflow_gobuild,target=/root/.cache/gobuild \
-    GOMODCACHE=/root/.cache/gomod GOCACHE=/root/.cache/gobuild \
-    git config --global safe.directory "*" && \
+    --mount=type=bind,from=native-libs,target=/ragflow/.native-libs,rw \
+    set -euo pipefail; \
+    export GOMODCACHE=/root/.cache/gomod GOCACHE=/root/.cache/gobuild; \
+    git config --global safe.directory "*"; \
+    NATIVE_LIBS_CONTEXT_PASSED=1; \
+    for lib in office_oxide pdfium-static pdf_oxide onnxruntime; do \
+      [ -d "/ragflow/.native-libs/${lib}" ] || NATIVE_LIBS_CONTEXT_PASSED=0; \
+    done; \
+    if [ "${NATIVE_LIBS_CONTEXT_PASSED}" = "1" ]; then \
+      export RAGFLOW_NATIVE_LIBS_DIR=/ragflow/.native-libs; \
+    elif [ "${NATIVE_LIBS_REQUIRED:-0}" = "1" ]; then \
+      echo "ERROR: --build-context native-libs=<host cache dir> was not passed." >&2; \
+      echo "       Re-run with the native static-lib cache from the build host." >&2; \
+      exit 1; \
+    else \
+      export RAGFLOW_NATIVE_LIBS_DIR=/root/ragflow-native-libs; \
+    fi; \
     ./build.sh --go
 
 
@@ -249,7 +313,6 @@ RUN rm -f /etc/nginx/sites-enabled/default
 
 COPY conf conf
 COPY internal/agent/templates agent/templates
-COPY rag/prompts rag/prompts
 
 # Wiki page-structure presets read at runtime by the Go backend
 # (CompilationTemplateService.LoadWikiPresets).

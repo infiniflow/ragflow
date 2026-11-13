@@ -25,12 +25,16 @@ import (
 	"time"
 )
 
-// JSONFloat64 is a float64 that always marshals with decimal point
+// JSONFloat64 is a float64 that always marshals with a decimal point.
+// 0 encodes as 0.0. The value itself is kept, so progress of 0.96 stays 0.96.
 type JSONFloat64 float64
 
 func (f JSONFloat64) MarshalJSON() ([]byte, error) {
-	// Always output with decimal point (e.g., 0.0 instead of 0)
-	return []byte(fmt.Sprintf("%.1f", float64(f))), nil
+	s := strconv.FormatFloat(float64(f), 'f', -1, 64)
+	if !strings.Contains(s, ".") {
+		s += ".0"
+	}
+	return []byte(s), nil
 }
 
 // GetProjectBaseDirectory returns the current working directory.
@@ -195,28 +199,6 @@ func SetFieldArray(result map[string]interface{}, destKey string, v interface{})
 		result[destKey] = []interface{}{}
 	} else {
 		result[destKey] = v
-	}
-}
-
-// ToFloat64 converts various types to float64
-func ToFloat64(val interface{}) (float64, bool) {
-	switch v := val.(type) {
-	case float64:
-		return v, true
-	case float32:
-		return float64(v), true
-	case int:
-		return float64(v), true
-	case int64:
-		return float64(v), true
-	case string:
-		f, err := strconv.ParseFloat(v, 64)
-		if err != nil {
-			return 0, false
-		}
-		return f, true
-	default:
-		return 0, false
 	}
 }
 

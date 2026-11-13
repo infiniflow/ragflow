@@ -63,7 +63,7 @@ func TestCompile_LogsWhenLegacyNodesPresent(t *testing.T) {
 				Downstream: []string{"Body:1"},
 			},
 			"Body:1": {
-				Obj: CanvasComponentObj{ComponentName: "Message", Params: map[string]any{}},
+				Obj: CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "body"}},
 			},
 		},
 	}
@@ -201,7 +201,7 @@ func TestCompile_PropagatesCheckPointID(t *testing.T) {
 		Components: map[string]CanvasComponent{
 			"begin":    {Obj: CanvasComponentObj{ComponentName: "Begin", Params: map[string]any{}}},
 			"llm:0":    {Obj: CanvasComponentObj{ComponentName: "LLM", Params: map[string]any{}}, Downstream: []string{"answer:0"}},
-			"answer:0": {Obj: CanvasComponentObj{ComponentName: "Message", Params: map[string]any{}}},
+			"answer:0": {Obj: CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"text": "answer"}}},
 		},
 	}
 	ctx := t.Context()

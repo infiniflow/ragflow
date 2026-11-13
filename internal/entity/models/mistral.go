@@ -30,7 +30,6 @@ import (
 	"ragflow/internal/common"
 	"strconv"
 	"strings"
-	"time"
 )
 
 // normalizeMistralStructuredContent rewrites a Mistral magistral response
@@ -137,11 +136,10 @@ func (m *MistralModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	body, err := m.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
@@ -173,11 +171,10 @@ func (m *MistralModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		return err
 	}
 
-	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]interface{}{
 		"include_usage": true,
@@ -224,12 +221,10 @@ func (m *MistralModel) Embed(ctx context.Context, modelName *string, request Emb
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -305,12 +300,10 @@ func (m *MistralModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 		return nil, err
 	}
 
-	baseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, m.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -351,7 +344,7 @@ func (m *MistralModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 
 // Balance is not exposed by the Mistral API, so this returns "no such method".
 func (m *MistralModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", m.Name())
 }
 
 // CheckConnection runs a lightweight ListModels call to verify the API key.
@@ -362,7 +355,7 @@ func (m *MistralModel) CheckConnection(ctx context.Context, apiConfig *APIConfig
 
 // Rerank calculates similarity scores between query and documents
 func (m *MistralModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: Rerank", m.Name())
 }
 
 // TranscribeAudio transcribe audio
@@ -378,11 +371,10 @@ func (m *MistralModel) TranscribeAudio(ctx context.Context, modelName *string, f
 		return nil, fmt.Errorf("file is missing")
 	}
 
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.ASR)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.ASR)
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -491,7 +483,7 @@ func writeMistralFormField(writer *multipart.Writer, key string, value interface
 }
 
 func (m *MistralModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", m.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", m.Name())
 }
 
 // AudioSpeech convert text to audio
@@ -506,11 +498,10 @@ func (m *MistralModel) AudioSpeech(ctx context.Context, modelName *string, audio
 		return nil, fmt.Errorf("text content is empty")
 	}
 
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	url, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"model": strings.TrimSpace(*modelName),
@@ -577,105 +568,21 @@ func (m *MistralModel) AudioSpeech(ctx context.Context, modelName *string, audio
 }
 
 func (m *MistralModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", m.Name())
-}
-
-// OCRFile OCR file
-func (m *MistralModel) OCRFile(ctx context.Context, modelName *string, content []byte, urls *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
-		return nil, err
-	}
-
-	if (urls == nil || *urls == "") && (content == nil || len(content) == 0) {
-		return nil, fmt.Errorf("file url or content is required")
-	}
-
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return nil, err
-	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.OCR)
-
-	var docURL string
-	if urls != nil && *urls != "" {
-		docURL = *urls
-	} else {
-		mimeType := http.DetectContentType(content)
-		base64Str := base64.StdEncoding.EncodeToString(content)
-		docURL = fmt.Sprintf("data:%s;base64,%s", mimeType, base64Str)
-	}
-
-	reqData := map[string]interface{}{
-		"model": *modelName,
-		"document": map[string]interface{}{
-			"type":         "document_url",
-			"document_url": docURL,
-		},
-	}
-
-	jsonData, err := json.Marshal(reqData)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal json payload: %w", err)
-	}
-
-	ctx, cancel := context.WithTimeout(ctx, 120*time.Second)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
-
-	resp, err := m.baseModel.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("Mistral OCR API error: %s, body: %s", resp.Status, string(body))
-	}
-
-	var mistralResp struct {
-		Pages []struct {
-			Index    int    `json:"index"`
-			Markdown string `json:"markdown"`
-		} `json:"pages"`
-	}
-
-	if err = json.Unmarshal(body, &mistralResp); err != nil {
-		return nil, fmt.Errorf("failed to parse response json: %w", err)
-	}
-
-	var fullMarkdown strings.Builder
-	for _, page := range mistralResp.Pages {
-		fullMarkdown.WriteString(page.Markdown)
-		fullMarkdown.WriteString("\n\n")
-	}
-
-	resultText := strings.TrimSpace(fullMarkdown.String())
-
-	return &OCRFileResponse{
-		Text: &resultText,
-	}, nil
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", m.Name())
 }
 
 func (m *MistralModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", m.Name())
 }
 
 func (m *MistralModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", m.Name())
 }
 
 func (m *MistralModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", m.Name())
+}
+
+func (m *MistralModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", m.Name())
 }

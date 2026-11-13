@@ -13,10 +13,10 @@ export const MinPort = 1;
 export const MaxPort = 65535;
 
 export const ExeSQLFormSchema = {
-  db_type: z.string().min(1),
-  database: z.string().min(1),
-  username: z.string().min(1),
-  host: z.string().min(1),
+  db_type: z.string().trim().min(1),
+  database: z.string().trim().min(1),
+  username: z.string().trim().min(1),
+  host: z.string().trim().min(1),
   port: z.number().int().min(MinPort).max(MaxPort),
   password: z.string().optional().or(z.literal('')),
   max_records: z.number().int().min(MinMaxRecords).max(MaxMaxRecords),

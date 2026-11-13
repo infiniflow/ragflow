@@ -15,6 +15,10 @@
  */
 
 import { variableEnabledFieldMap } from '@/constants/chat';
+import {
+  ModelVariableType,
+  settledModelVariableMap,
+} from '@/constants/knowledge';
 import { TFunction } from 'i18next';
 import { camelCase, isNil } from 'lodash';
 import omit from 'lodash/omit';
@@ -35,15 +39,42 @@ export const excludeUnEnabledVariables = (
 };
 
 // chat model setting and generate operator
-export const removeUselessFieldsFromValues = (values: any, prefix?: string) => {
+export const removeUselessFieldsFromValues = (values: any, prefix = '') => {
   const nextValues: any = omit(values, [
     ...Object.keys(variableEnabledFieldMap),
-    'parameter',
+    `${prefix}parameter`,
     ...excludeUnEnabledVariables(values, prefix),
   ]);
 
   return nextValues;
 };
+
+// `parameter` (the "freedom" preset select) is a derived field: picking a
+// preset only copies the preset's sampling values into the form, and the preset
+// name itself is never persisted — removeUselessFieldsFromValues strips it on
+// every save path. Rebuild it on load by matching the stored values against
+// the presets. Only keys present in llmSetting participate: presets force
+// maxTokensEnabled off, so a stored preset config legitimately has no
+// max_tokens. Values matching no preset — or several, e.g. only max_tokens —
+// are reported as 'Custom'.
+export function deriveModelPreset(
+  llmSetting?: Record<string, any>,
+): ModelVariableType | 'Custom' {
+  const matches = Object.entries(settledModelVariableMap).filter(
+    ([, presetValues]) => {
+      const comparableKeys = (
+        Object.keys(presetValues) as Array<keyof typeof presetValues>
+      ).filter((key) => !isNil(llmSetting?.[key]));
+
+      return (
+        comparableKeys.length > 0 &&
+        comparableKeys.every((key) => presetValues[key] === llmSetting?.[key])
+      );
+    },
+  );
+
+  return matches.length === 1 ? (matches[0][0] as ModelVariableType) : 'Custom';
+}
 
 export function buildOptions(
   data: Record<string, any>,

@@ -26,7 +26,7 @@ func (w *eventSenderModelWrapper[M]) Generate(ctx context.Context, msgs []M, opt
 	if err != nil {
 		return resp, err
 	}
-	if w.execCtx != nil && w.execCtx.generator != nil && !isNilMessage(resp) {
+	if w.execCtx != nil && w.execCtx.canSend() && !isNilMessage(resp) {
 		w.execCtx.send(typedModelOutputEvent(resp, nil))
 	}
 	return resp, nil
@@ -201,7 +201,10 @@ func (w *callbackModelWrapper[M]) BindTools(tools []*schema.ToolInfo) error {
 //
 // The chain is built from innermost (closest to model) to outermost.
 // allToolInfos contains the merged tool infos from config.Tools + ToolContributor middlewares.
-func BuildModelWrapperChain[M MessageType](base Model[M], ec *reActExecCtx, cfg *ReActConfig[M], allToolInfos []*schema.ToolInfo) Model[M] {
+func BuildModelWrapperChain[M MessageType](ctx context.Context, base Model[M], ec *reActExecCtx, cfg *ReActConfig[M], allToolInfos []*schema.ToolInfo) Model[M] {
+	if ec != nil {
+		ctx = withReActExecCtx(ctx, ec)
+	}
 	model := base
 
 	// 1. Event sender (skip if user middlewares provide their own to avoid duplicates)
@@ -230,7 +233,7 @@ func BuildModelWrapperChain[M MessageType](base Model[M], ec *reActExecCtx, cfg 
 			ModelRetryConfig:    cfg.RetryConfig,
 			ModelFailoverConfig: cfg.FailoverConfig,
 		}
-		wrapped, err := mw.WrapModel(context.Background(), model, mc)
+		wrapped, err := mw.WrapModel(ctx, model, mc)
 		if err == nil && wrapped != nil {
 			model = wrapped
 		}

@@ -1,7 +1,7 @@
 // watershed is the sole clustering method used by the RAPTOR tree.
 //
-// It is the algorithm historically named "AHC" in the Python raptor
-// implementation (raptor.py::_get_clusters_ahc, logged as "RAPTOR seq-clus");
+// It is the algorithm historically named "AHC" in the original
+// RAPTOR implementation;
 // the name "watershed" reflects what the code actually does, which is not
 // agglomerative hierarchical clustering.
 //
@@ -18,7 +18,7 @@ import (
 // watershed clustering. It is the average chunk count per level-0 cluster: the
 // expected number of level-0 clusters is close to len(embeddings)/DefaultTreeOrder,
 // so the recursion depth is roughly log_DefaultTreeOrder(len(embeddings)). 4
-// (ratio 25) is close to the Python raptor "cluster_percentile" default of 30.
+// (ratio 25) is close to the raptor "cluster_percentile" default of 30.
 const DefaultTreeOrder = 4
 
 // MinTreeOrder and MaxTreeOrder bound the integer tree_order parameter.
@@ -50,8 +50,9 @@ func watershed(embeddings [][]float64, treeOrder int) ([]int, error) {
 	case n == 1:
 		return []int{0}, nil
 	case n == 2:
-		// One adjacent pair: the Python reference always splits two points into
-		// two clusters, so the recursion terminates with one-point leaves.
+		// One adjacent pair: the reference implementation always splits two
+		// points into two clusters, so the recursion terminates with one-point
+		// leaves.
 		return []int{0, 1}, nil
 	}
 

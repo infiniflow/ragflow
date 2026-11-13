@@ -60,7 +60,6 @@ export const confluenceConstant = (t: TFunction) => [
     type: FormFieldType.Text,
     customValidate: (val: string, formValues: any) => {
       const index_mode = formValues?.config?.index_mode;
-      console.log('index_mode', index_mode, val);
       if (!val && index_mode === 'page') {
         return t('setting.dataSourceValidationFieldRequired', {
           label: t('setting.dataSourceFieldPageId'),

@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 type FileType string
@@ -51,7 +52,32 @@ const (
 
 var (
 	filenameLenLimit = 255
+
+	// videoExtensions is the single source of truth for video containers.
+	// GetFileType (runtime dispatch) and the ingestion parser-family mapping
+	// read this set. FilenameType keeps the legacy upload bucket (video is
+	// admitted as visual and routed to the picture pipeline), so every video
+	// container accepted below must also be present here.
+	videoExtensions = map[string]struct{}{
+		"mp4": {}, "avi": {}, "mkv": {}, "mov": {}, "webm": {}, "flv": {},
+		"mpeg": {}, "mpg": {}, "wmv": {}, "3gp": {}, "3gpp": {},
+		"rm": {}, "rmvb": {}, "asf": {}, "dat": {}, "asx": {}, "wvx": {},
+		"mpe": {}, "mpa": {},
+	}
 )
+
+// IsVideoExtension reports whether ext (with or without a leading dot,
+// case-insensitive) is a video container.
+func IsVideoExtension(ext string) bool {
+	normalized := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(ext), "."))
+	_, ok := videoExtensions[normalized]
+	return ok
+}
+
+// IsVideoFilename reports whether filename has a video extension.
+func IsVideoFilename(filename string) bool {
+	return IsVideoExtension(filepath.Ext(filename))
+}
 
 func init() {
 }
@@ -62,12 +88,14 @@ func normalizeFilename(filename string) (string, bool) {
 	}
 	base := filepath.Base(filename)
 	base = strings.TrimSpace(base)
-	if base == "" || len(base) > filenameLenLimit {
+	if base == "" || utf8.RuneCountInString(base) > filenameLenLimit {
 		return "", false
 	}
 	return strings.ToLower(base), true
 }
 
+// GetFileType classifies a filename by its case-insensitive extension.
+// It returns FileTypeOTHER when the extension is missing or unsupported.
 func GetFileType(filename string) FileType {
 
 	ext := filepath.Ext(filename)
@@ -76,6 +104,14 @@ func GetFileType(filename string) FileType {
 		suffix = strings.ToLower(ext[1:])
 	} else {
 		suffix = strings.ToLower(ext)
+	}
+
+	if ft, ok := extensionFileTypes[suffix]; ok {
+		return ft
+	}
+
+	if IsVideoExtension(suffix) {
+		return FileTypeVIDEO
 	}
 
 	switch suffix {
@@ -111,9 +147,6 @@ func GetFileType(filename string) FileType {
 	case "da", "wave", "wav", "mp3", "aac", "flac", "ogg",
 		"aiff", "au", "midi", "wma", "ape", "alac", "wv", "opus":
 		return FileTypeAURAL
-	case "mp4", "avi", "mkv", "mov", "webm", "flv", "mpeg",
-		"mpg", "wmv", "3gp", "3gpp":
-		return FileTypeVIDEO
 	case "png", "jpg", "jpeg", "gif", "bmp":
 		return FileTypeVISUAL
 	case "tiff", "tif", "webp", "svg", "ico":
@@ -125,10 +158,54 @@ func GetFileType(filename string) FileType {
 	}
 }
 
+// extensionFileTypes holds extra extension→FileType mappings registered by
+// editions (e.g. enterprise) that the community build does not know about.
+// Lookups consult this map before the built-in switch, so an edition can add
+// brand-new types or redirect an existing extension without the community
+// switch changing.
+var extensionFileTypes = map[string]FileType{}
+
+// RegisterExtensionFileType registers an additional extension→FileType mapping.
+// Intended for enterprise editions to extend the community file-type set. The
+// suffix is matched case-insensitively by GetFileType and FilenameType.
+func RegisterExtensionFileType(suffix string, ft FileType) {
+	normalized := strings.ToLower(strings.TrimPrefix(suffix, "."))
+	if normalized == "" {
+		return
+	}
+	extensionFileTypes[normalized] = ft
+}
+
+// FilenameType returns the upload category for a filename.
+// It classifies supported extensions and returns FileTypeOTHER for invalid
+// filenames or unsupported extensions.
 func FilenameType(filename string) FileType {
 	normalized, ok := normalizeFilename(filename)
 	if !ok {
 		return FileTypeOTHER
+	}
+
+	// Editions may register an extension→type mapping, including overriding a
+	// built-in extension. Honor it before the community upload-bucket logic;
+	// registered Office types still share the document upload bucket.
+	if ext := strings.TrimPrefix(filepath.Ext(normalized), "."); ext != "" {
+		if ft, ok := extensionFileTypes[strings.ToLower(ext)]; ok {
+			// Office parsers use distinct types, but uploads share the document bucket.
+			switch ft {
+			case FileTypeDOC, FileTypeDOCX, FileTypeXLS, FileTypeXLSX, FileTypePPT, FileTypePPTX:
+				return FileTypeDOC
+			}
+			return ft
+		}
+	}
+
+	// Video is admitted at upload in the legacy visual bucket and routed to the
+	// picture pipeline; parsing is blocked later (no parser implements video
+	// analysis). Keep the admission here so every video container in the shared
+	// set passes the upload gate, including webm/flv/3gp/3gpp which the old
+	// bucket missed.
+	if IsVideoFilename(normalized) {
+		return FileTypeVISUAL
 	}
 
 	if matched, _ := regexp.MatchString(`.*\.pdf$`, normalized); matched {
@@ -137,8 +214,8 @@ func FilenameType(filename string) FileType {
 
 	docExtensions := []string{
 		"msg", "eml", "doc", "docx", "ppt", "pptx", "yml", "xml", "htm", "json", "jsonl", "ldjson",
-		"csv", "txt", "ini", "xls", "xlsx", "wps", "rtf", "hlp", "pages", "numbers", "key",
-		"md", "mdx", "py", "js", "java", "c", "cpp", "h", "php", "go", "ts", "sh", "cs", "kt",
+		"csv", "txt", "ini", "xls", "xlsx", "rtf", "hlp", "pages", "numbers", "key",
+		"md", "markdown", "mdx", "py", "js", "java", "c", "cpp", "h", "php", "go", "ts", "sh", "cs", "kt",
 		"html", "sql", "epub",
 	}
 	for _, ext := range docExtensions {
@@ -157,10 +234,8 @@ func FilenameType(filename string) FileType {
 	}
 
 	visualExtensions := []string{
-		"jpg", "jpeg", "png", "tif", "gif", "bmp", "pcx", "tga", "exif", "fpx", "svg", "psd", "cdr",
+		"jpg", "jpeg", "png", "tif", "tiff", "gif", "bmp", "pcx", "tga", "exif", "fpx", "svg", "psd", "cdr",
 		"pcd", "dxf", "ufo", "eps", "ai", "raw", "wmf", "webp", "avif", "apng", "icon", "ico",
-		"mpg", "mpeg", "avi", "rm", "rmvb", "mov", "wmv", "asf", "dat", "asx", "wvx", "mpe",
-		"mpa", "mp4", "mkv",
 	}
 	for _, ext := range visualExtensions {
 		if strings.HasSuffix(normalized, "."+ext) {
@@ -206,6 +281,62 @@ func GetFileExtension(filename string) string {
 		return strings.ToLower(ext[1:])
 	}
 	return strings.ToLower(ext)
+}
+
+// TruncateFilename shortens name to at most maxBytes bytes. It keeps the
+// extension when it fits and cuts on a rune boundary, so the result stays
+// valid UTF-8 and keeps the file type the extension implies.
+func TruncateFilename(name string, maxBytes int) string {
+	if len(name) <= maxBytes {
+		return name
+	}
+	ext := filepath.Ext(name)
+	if len(ext) >= maxBytes {
+		ext = ""
+	}
+	end := maxBytes - len(ext)
+	for end > 0 && !utf8.RuneStart(name[end]) {
+		end--
+	}
+	return name[:end] + ext
+}
+
+// StorageKeyMaxBytes is the maximum size of one object-store path segment.
+// Filesystem-backed backends such as Silo and MinIO store each segment as a
+// file name and reject anything longer.
+const StorageKeyMaxBytes = 255
+
+// StorageObjectName returns a storage key segment for filename that fits
+// within maxBytes. Display names use Unicode code points, but object keys must
+// stay within the byte limit of the storage backend. attempt > 0 adds a
+// collision suffix before the extension without exceeding the budget.
+func StorageObjectName(filename string, attempt, maxBytes int) string {
+	if maxBytes <= 0 {
+		return ""
+	}
+	suffix := ""
+	if attempt > 0 {
+		suffix = fmt.Sprintf("(%d)", attempt)
+	}
+	if len(suffix) >= maxBytes {
+		return suffix[:maxBytes]
+	}
+	ext := filepath.Ext(filename)
+	if len(ext)+len(suffix) >= maxBytes {
+		ext = ""
+	}
+	budget := maxBytes - len(ext) - len(suffix)
+	base := strings.TrimSuffix(filename, ext)
+	if budget <= 0 {
+		base = ""
+	} else if len(base) > budget {
+		end := budget
+		for end > 0 && !utf8.RuneStart(base[end]) {
+			end--
+		}
+		base = base[:end]
+	}
+	return base + suffix + ext
 }
 
 // CONTENT_TYPE_MAP maps file extensions to MIME content types
@@ -404,8 +535,7 @@ func ResolveAttachmentContentType(ext string, mimeType string) (string, string) 
 		normalizedType := strings.ToLower(stripContentTypeParams(mimeType))
 		contentType = normalizedType
 		// Reverse-lookup extension from CONTENT_TYPE_MAP only when
-		// no explicit ext was provided. Never overwrite a caller-
-		// supplied extension (e.g. ext=svg&mime_type=image/png must
+		// no explicit ext was provided. Never overwrite a caller-supplied extension (e.g. ext=svg&mime_type=image/png must
 		// stay ext=svg for the force-attachment check).
 		if ext == "" {
 			for knownExt, knownType := range CONTENT_TYPE_MAP {

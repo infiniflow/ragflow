@@ -4,7 +4,6 @@ import (
 	"errors"
 	"testing"
 
-	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 
@@ -338,65 +337,6 @@ func TestIngestionTaskDAOUpdateStatusIfCurrentRejectsMismatchedStatus(t *testing
 	}
 }
 
-func TestIngestionTaskDAODeleteIfTerminal_RemovesOnlyTerminal(t *testing.T) {
-	db := setupTaskTestDB(t)
-	orig := DB
-	DB = db
-	t.Cleanup(func() { DB = orig })
-
-	// Create tasks in different statuses, each with a unique docID.
-	statuses := []string{common.CREATED, common.SCHEDULED, common.RUNNING, common.STOPPING, common.COMPLETED, common.STOPPED, common.FAILED}
-	for i, status := range statuses {
-		docID := fmt.Sprintf("doc-%d", i)
-		task := &entity.IngestionTask{
-			ID:         fmt.Sprintf("task-%d", i),
-			UserID:     "user-1",
-			DocumentID: docID,
-			DatasetID:  "kb-1",
-			Status:     status,
-		}
-		if err := db.Create(task).Error; err != nil {
-			t.Fatalf("create task %s: %v", status, err)
-		}
-	}
-
-	ctx := t.Context()
-	// DeleteIfTerminal deletes everything except RUNNING and STOPPING.
-	// CREATED and SCHEDULED are safe to delete (no worker has claimed them yet);
-	// COMPLETED/STOPPED/FAILED are terminal.
-	// Call it for every doc and verify the negative cases survived.
-	for i := 0; i < len(statuses); i++ {
-		docID := fmt.Sprintf("doc-%d", i)
-		_, err := NewIngestionTaskDAO().DeleteIfTerminal(ctx, db, docID)
-		if err != nil {
-			t.Fatalf("DeleteIfTerminal(doc-%d): %v", i, err)
-		}
-	}
-
-	// RUNNING and STOPPING must survive.
-	for _, i := range []int{2, 3} {
-		docID := fmt.Sprintf("doc-%d", i)
-		task, err := NewIngestionTaskDAO().GetByDocumentID(ctx, db, docID)
-		if err != nil {
-			t.Fatalf("GetByDocumentID %s: %v", docID, err)
-		}
-		if task == nil {
-			t.Fatalf("%s task (doc=%d) must not be deleted", statuses[i], i)
-		}
-	}
-	// CREATED, SCHEDULED, COMPLETED, STOPPED, FAILED must be gone.
-	for _, i := range []int{0, 1, 4, 5, 6} {
-		docID := fmt.Sprintf("doc-%d", i)
-		task, err := NewIngestionTaskDAO().GetByDocumentID(ctx, db, docID)
-		if err != nil {
-			t.Fatalf("GetByDocumentID %s: %v", docID, err)
-		}
-		if task != nil {
-			t.Fatalf("%s task (doc=%d) should be deleted, still present", statuses[i], i)
-		}
-	}
-}
-
 func TestIngestionTaskDAOCountActiveByDatasetID(t *testing.T) {
 	db := setupTaskTestDB(t)
 	for _, task := range []*entity.IngestionTask{
@@ -433,6 +373,40 @@ func TestIngestionTaskDAOCountActiveByDatasetID(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("active count for unknown = %d, want 0", count)
+	}
+}
+
+func TestIngestionTaskDAODeleteIfTerminalRequiresMatchingTerminalTask(t *testing.T) {
+	db := setupTaskTestDB(t)
+	for _, task := range []*entity.IngestionTask{
+		{ID: "task-terminal", UserID: "user-1", DocumentID: "doc-terminal", DatasetID: "kb-1", Status: common.COMPLETED},
+		{ID: "task-running", UserID: "user-1", DocumentID: "doc-running", DatasetID: "kb-1", Status: common.RUNNING},
+		{ID: "task-queued", UserID: "user-1", DocumentID: "doc-queued", DatasetID: "kb-1", Status: common.SCHEDULED},
+	} {
+		if err := db.Create(task).Error; err != nil {
+			t.Fatalf("create task %s: %v", task.ID, err)
+		}
+	}
+
+	taskDAO := NewIngestionTaskDAO()
+	deleted, err := taskDAO.DeleteIfTerminal(t.Context(), db, "task-terminal")
+	if err != nil {
+		t.Fatalf("delete terminal task: %v", err)
+	}
+	if deleted != 1 {
+		t.Fatalf("deleted terminal rows = %d, want 1", deleted)
+	}
+	for _, taskID := range []string{"task-running", "task-queued"} {
+		deleted, err := taskDAO.DeleteIfTerminal(t.Context(), db, taskID)
+		if err != nil {
+			t.Fatalf("delete %s: %v", taskID, err)
+		}
+		if deleted != 0 {
+			t.Fatalf("deleted %s rows = %d, want 0", taskID, deleted)
+		}
+		if _, err := taskDAO.GetByID(t.Context(), db, taskID); err != nil {
+			t.Fatalf("%s was removed despite non-terminal status: %v", taskID, err)
+		}
 	}
 }
 

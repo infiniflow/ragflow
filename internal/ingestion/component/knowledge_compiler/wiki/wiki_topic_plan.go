@@ -205,6 +205,7 @@ func (p *wikiPipeline) runTopicPlan() (wikiPlan, error) {
 	quotas := allocatePlanQuotas(communities, p.planBudget.Cap())
 	approved := wikiExtract{}
 	plans := make([]wikiPlan, len(communities))
+	var planDone func()
 	jobs := make([]func() error, 0, len(communities))
 	for i, community := range communities {
 		i, community := i, community
@@ -230,9 +231,11 @@ func (p *wikiPipeline) runTopicPlan() (wikiPlan, error) {
 				plan.Pages[pageIndex].PlanGroup = group
 			}
 			plans[i] = plan
+			planDone()
 			return nil
 		})
 	}
+	planDone = p.deps.Progress.Sub(2, 6).Counter(p.ctx, len(jobs))
 	if err := runBatches(p.ctx, jobs); err != nil {
 		return wikiPlan{}, err
 	}

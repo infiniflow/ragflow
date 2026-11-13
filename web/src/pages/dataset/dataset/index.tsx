@@ -4,6 +4,8 @@ import {
 } from '@/components/bulk-operate-bar';
 import { FileUploadDialog } from '@/components/file-upload-dialog';
 import ListFilterBar from '@/components/list-filter-bar';
+import { TruncatedText } from '@/components/truncated-text';
+import { PrivilegeManagementDialog } from '@/ee/components/privilege-management/privilege-management-dialog';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -11,9 +13,9 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { useDatasetEditButtonDisabled } from '@/ee/hooks/logic-hooks/use-permission';
 import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
 import { useClearSelectionOnPageChange } from '@/hooks/logic-hooks/use-clear-selection-on-page-change';
 import {
@@ -28,22 +30,29 @@ import { MetadataType } from '../components/metedata/constant';
 import { useManageMetadata } from '../components/metedata/hooks/use-manage-modal';
 import { ManageMetadataModal } from '../components/metedata/manage-modal';
 import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
+import { CancelParsingDropdown } from './cancel-parsing-dropdown';
 import { DatasetTable } from './dataset-table';
 import { useBulkOperateDataset } from './use-bulk-operate-dataset';
 import { useCreateEmptyDocument } from './use-create-empty-document';
 import { useSelectDatasetFilters } from './use-select-filters';
+import {
+  ShowPrivilegeModalContext,
+  useShowPrivilegeDialog,
+} from '@/ee/pages/dataset/dataset/use-show-privilege-dialog';
 import { useHandleUploadDocument } from './use-upload-document';
 
 export default function Dataset() {
+  const datasetEditButtonDisabled = useDatasetEditButtonDisabled();
+
   const { t } = useTranslation();
+  const { knowledgeBase } = useKnowledgeBaseContext();
   const {
     documentUploadVisible,
     hideDocumentUploadModal,
     showDocumentUploadModal,
     onDocumentUploadOk,
     documentUploadLoading,
-  } = useHandleUploadDocument();
-  const { knowledgeBase } = useKnowledgeBaseContext();
+  } = useHandleUploadDocument(knowledgeBase?.pipeline_id);
   const {
     searchString,
     documents,
@@ -90,12 +99,19 @@ export default function Dataset() {
 
   useClearSelectionOnPageChange(pagination, clearRowSelection);
 
-  const { list, handleRunClick: handleOperationIconClick } =
-    useBulkOperateDataset({
-      documents,
-      rowSelection,
-      setRowSelection,
-    });
+  const {
+    handShowPrivilegeModal,
+    hidePrivilegeModal,
+    privilegeModal,
+    recordWithSourceType,
+  } = useShowPrivilegeDialog();
+
+  const { list } = useBulkOperateDataset({
+    documents,
+    rowSelection,
+    setRowSelection,
+    handShowPrivilegeModal,
+  });
 
   const { selectedIds: selectedRowKeys } = useSelectedIds(
     rowSelection,
@@ -137,11 +153,10 @@ export default function Dataset() {
     return item;
   });
 
+  const datasetDescription = t('knowledgeDetails.datasetDescription');
+
   return (
-    <Card
-      as="article"
-      className="mb-5 mr-5 min-w-[880px] bg-transparent shadow-none"
-    >
+    <Card as="article" className="mb-5 mr-5 bg-transparent shadow-none">
       <CardHeader as="header" className="p-5 space-y-0">
         <ListFilterBar
           onSearchChange={handleInputChange}
@@ -153,33 +168,39 @@ export default function Dataset() {
           filters={filters}
           className="items-end"
           leftPanel={
-            <div>
-              <h1 className="leading-normal font-medium">
+            <div className="min-w-0">
+              <h1 className="leading-normal font-medium truncate">
                 {t('knowledgeDetails.subbarFiles')}
               </h1>
-              <p className="text-text-secondary text-sm font-normal">
-                {t('knowledgeDetails.datasetDescription')}
-              </p>
+              <TruncatedText
+                as="p"
+                className="text-text-secondary text-sm font-normal truncate"
+                tooltip={datasetDescription}
+              >
+                {datasetDescription}
+              </TruncatedText>
             </div>
           }
         >
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button size="default">
-                <LucidePlus />
-                {t('knowledgeDetails.addFile')}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent className="w-auto min-w-40" align="end">
-              <DropdownMenuItem onClick={showDocumentUploadModal}>
-                {t('fileManager.uploadFile')}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={showCreateModal}>
-                {t('knowledgeDetails.emptyFiles')}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+          <div className="flex items-center gap-4">
+            <CancelParsingDropdown />
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="default" disabled={datasetEditButtonDisabled}>
+                  <LucidePlus />
+                  {t('knowledgeDetails.addFile')}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent className="w-auto min-w-40" align="end">
+                <DropdownMenuItem onClick={showDocumentUploadModal}>
+                  {t('fileManager.uploadFile')}
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={showCreateModal}>
+                  {t('knowledgeDetails.emptyFiles')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
         </ListFilterBar>
 
         {rowSelectionIsEmpty || (
@@ -192,16 +213,18 @@ export default function Dataset() {
       </CardHeader>
 
       <CardContent className="px-5 py-0">
-        <DatasetTable
-          documents={documents}
-          pagination={pagination}
-          setPagination={setPagination}
-          rowSelection={rowSelection}
-          setRowSelection={setRowSelection}
-          showManageMetadataModal={showManageMetadataModal}
-          loading={loading}
-          bulkOperateBarVisible={!rowSelectionIsEmpty}
-        />
+        <ShowPrivilegeModalContext.Provider value={{ handShowPrivilegeModal }}>
+          <DatasetTable
+            documents={documents}
+            pagination={pagination}
+            setPagination={setPagination}
+            rowSelection={rowSelection}
+            setRowSelection={setRowSelection}
+            showManageMetadataModal={showManageMetadataModal}
+            loading={loading}
+            bulkOperateBarVisible={!rowSelectionIsEmpty}
+          ></DatasetTable>
+        </ShowPrivilegeModalContext.Provider>
 
         {documentUploadVisible && (
           <FileUploadDialog
@@ -253,6 +276,14 @@ export default function Dataset() {
           />
         )}
       </CardContent>
+      {/* </section> */}
+      {privilegeModal && (
+        <PrivilegeManagementDialog
+          hideModal={hidePrivilegeModal}
+          initialValues={recordWithSourceType}
+        ></PrivilegeManagementDialog>
+      )}
+      {/* </> */}
     </Card>
   );
 }

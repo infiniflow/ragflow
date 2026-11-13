@@ -65,12 +65,12 @@ func (l *LmStudioModel) ChatWithMessages(ctx context.Context, modelName string, 
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, l.baseModel.URLSuffix.Chat)
+	url := joinURL(resolvedBaseURL, l.baseModel.URLSuffix.Chat)
 
 	// For qwen/glm models, use async chat endpoint
 	modelType := strings.Split(modelName, "-")[0]
 	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", resolvedBaseURL, l.baseModel.URLSuffix.AsyncChat)
+		url = joinURL(resolvedBaseURL, l.baseModel.URLSuffix.AsyncChat)
 	}
 
 	// Build request body
@@ -112,10 +112,10 @@ func (l *LmStudioModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, l.baseModel.URLSuffix.Chat)
+	url := joinURL(resolvedBaseURL, l.baseModel.URLSuffix.Chat)
 	modelType := strings.Split(modelName, "-")[0]
 	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", resolvedBaseURL, l.baseModel.URLSuffix.AsyncChat)
+		url = joinURL(resolvedBaseURL, l.baseModel.URLSuffix.AsyncChat)
 	}
 
 	// Build request body with streaming enabled
@@ -164,7 +164,7 @@ func (l *LmStudioModel) Embed(ctx context.Context, modelName *string, request Em
 		return nil, fmt.Errorf("missing base URL: please configure the local access address for LM Studio (e.g., http://127.0.0.1:1234/v1)")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), l.baseModel.URLSuffix.Embedding)
+	url := joinURL(baseURL, l.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -224,35 +224,35 @@ func (l *LmStudioModel) Embed(ctx context.Context, modelName *string, request Em
 }
 
 func (l *LmStudioModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Rerank", l.Name())
 }
 
 // TranscribeAudio transcribe audio
 func (l *LmStudioModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", l.Name())
 }
 
 func (l *LmStudioModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", l.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", l.Name())
 }
 
 // AudioSpeech convert text to audio
 func (l *LmStudioModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", l.Name())
 }
 
 func (l *LmStudioModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", l.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", l.Name())
 }
 
 // OCRFile OCR file
 func (l *LmStudioModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", l.Name())
 }
 
 // ParseFile parse file
 func (l *LmStudioModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", l.Name())
 }
 
 // ListModels list supported models
@@ -273,7 +273,7 @@ func (l *LmStudioModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([
 		return nil, fmt.Errorf("missing base URL: please configure the local access address for LM Studio (e.g., http://127.0.0.1:1234/v1)")
 	}
 
-	url := fmt.Sprintf("%s/%s", baseURL, l.baseModel.URLSuffix.Models)
+	url := joinURL(baseURL, l.baseModel.URLSuffix.Models)
 
 	reqBody := map[string]interface{}{}
 
@@ -324,7 +324,7 @@ func (l *LmStudioModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([
 }
 
 func (l *LmStudioModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Balance", l.Name())
 }
 
 // CheckConnection verifies that the configured LM Studio base URL is reachable
@@ -334,9 +334,13 @@ func (l *LmStudioModel) CheckConnection(ctx context.Context, apiConfig *APIConfi
 }
 
 func (l *LmStudioModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", l.Name())
 }
 
 func (l *LmStudioModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", l.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", l.Name())
+}
+
+func (l *LmStudioModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", l.Name())
 }

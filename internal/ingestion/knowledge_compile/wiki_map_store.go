@@ -22,9 +22,12 @@ import (
 	"fmt"
 	"strings"
 
+	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+
+	"gorm.io/gorm"
 )
 
 const (
@@ -35,7 +38,11 @@ const (
 
 type wikiMapVersionStore struct {
 	engine            engine.DocEngine
+	db                *gorm.DB
 	resolveVectorSize func(context.Context) (int, error)
+	// resolveLanguage returns the dataset language a missing Infinity chunk
+	// table is created with; nil reads it from the dataset row via db.
+	resolveLanguage func(ctx context.Context, datasetID string) (string, error)
 }
 
 func (s *wikiMapVersionStore) GetWikiMapActiveState(ctx context.Context, tenantID, datasetID, key string) ([]byte, error) {
@@ -46,10 +53,10 @@ func (s *wikiMapVersionStore) GetWikiMapActiveState(ctx context.Context, tenantI
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        1,
-		SelectFields: []string{"id", "compile_kwd", "content_with_weight"},
+		SelectFields: []string{"id", "compile_kwd", "type_kwd", "content_with_weight"},
 		Filter: map[string]interface{}{
 			"id":            []string{key},
-			"compile_kwd":   wikiMapActiveCompileKWD,
+			"type_kwd":      wikiMapActiveCompileKWD,
 			"available_int": 0,
 		},
 	})
@@ -77,13 +84,14 @@ func (s *wikiMapVersionStore) PutWikiMapActiveState(ctx context.Context, state k
 		"id":                  state.Key,
 		"doc_id":              "wiki_map_active:" + state.DocumentID,
 		"kb_id":               state.DatasetID,
-		"compile_kwd":         wikiMapActiveCompileKWD,
+		"compile_kwd":         "wiki",
+		"type_kwd":            wikiMapActiveCompileKWD,
 		"scope_kwd":           "doc",
 		"source_doc_ids":      []string{state.DocumentID},
 		"content_with_weight": string(state.Payload),
 		"available_int":       0,
 	}
-	_, err := s.engine.InsertChunks(ctx, []map[string]interface{}{row}, fmt.Sprintf("ragflow_%s", state.TenantID), state.DatasetID)
+	_, err := s.engine.InsertChunks(ctx, []map[string]interface{}{row}, fmt.Sprintf("ragflow_%s", state.TenantID), state.DatasetID, "")
 	return err
 }
 
@@ -92,11 +100,13 @@ func (s *wikiMapVersionStore) PutWikiMapActiveState(ctx context.Context, state k
 // rows. Elasticsearch does not need this resolver because it can create its
 // mapping dynamically.
 func NewWikiMapVersionStoreWithVectorSizeResolver(
+	db *gorm.DB,
 	docEngine engine.DocEngine,
 	resolveVectorSize func(context.Context) (int, error),
 ) kccommon.WikiMapVersionStore {
 	return &wikiMapVersionStore{
 		engine:            docEngine,
+		db:                db,
 		resolveVectorSize: resolveVectorSize,
 	}
 }
@@ -123,10 +133,38 @@ func (s *wikiMapVersionStore) ensureInfinityChunkStore(ctx context.Context, tena
 	if vectorSize <= 0 {
 		return fmt.Errorf("resolve Wiki MAP vector size: got %d", vectorSize)
 	}
-	if err := s.engine.CreateChunkStore(ctx, baseName, datasetID, vectorSize, ""); err != nil {
+	// The table is the dataset's chunk table, and Infinity fixes its fulltext
+	// analyzer here, so it has to be created with the dataset language.
+	resolveLanguage := s.resolveLanguage
+	if resolveLanguage == nil {
+		resolveLanguage = func(ctx context.Context, datasetID string) (string, error) {
+			return datasetLanguageByID(ctx, s.db, datasetID)
+		}
+	}
+	language, err := resolveLanguage(ctx, datasetID)
+	if err != nil {
+		return fmt.Errorf("resolve Wiki MAP dataset language: %w", err)
+	}
+	if err := s.engine.CreateChunkStore(ctx, baseName, datasetID, vectorSize, "", language); err != nil {
 		return fmt.Errorf("initialize Infinity chunk store for Wiki MAP: %w", err)
 	}
 	return nil
+}
+
+// datasetLanguageByID reads the dataset's language, "" when it is unset (or
+// when no database handle was wired — the caller then tokenizes as English).
+func datasetLanguageByID(ctx context.Context, db *gorm.DB, datasetID string) (string, error) {
+	if db == nil {
+		return "", nil
+	}
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, datasetID)
+	if err != nil {
+		return "", err
+	}
+	if kb.Language == nil {
+		return "", nil
+	}
+	return *kb.Language, nil
 }
 
 func (s *wikiMapVersionStore) GetWikiMapVersions(ctx context.Context, tenantID, datasetID string, keys []string) (map[string][]byte, error) {
@@ -147,11 +185,11 @@ func (s *wikiMapVersionStore) GetWikiMapVersions(ctx context.Context, tenantID, 
 			KbIDs:      []string{datasetID},
 			Limit:      end - start,
 			SelectFields: []string{
-				"id", "compile_kwd", "content_with_weight",
+				"id", "compile_kwd", "type_kwd", "content_with_weight",
 			},
 			Filter: map[string]interface{}{
 				"id":            keys[start:end],
-				"compile_kwd":   wikiMapExtractCompileKWD,
+				"type_kwd":      wikiMapExtractCompileKWD,
 				"available_int": 0,
 			},
 		})
@@ -162,7 +200,7 @@ func (s *wikiMapVersionStore) GetWikiMapVersions(ctx context.Context, tenantID, 
 			continue
 		}
 		for _, row := range result.Chunks {
-			if mapStoreString(row["compile_kwd"]) != wikiMapExtractCompileKWD {
+			if types.CompilationRowType(row) != wikiMapExtractCompileKWD {
 				continue
 			}
 			id := mapStoreString(row["id"])
@@ -214,7 +252,7 @@ func (s *wikiMapVersionStore) PutWikiMapVersions(ctx context.Context, versions [
 			if len(rows) == 0 {
 				continue
 			}
-			if _, err := s.engine.InsertChunks(ctx, rows, fmt.Sprintf("ragflow_%s", batch[0].TenantID), batch[0].DatasetID); err != nil {
+			if _, err := s.engine.InsertChunks(ctx, rows, fmt.Sprintf("ragflow_%s", batch[0].TenantID), batch[0].DatasetID, ""); err != nil {
 				return fmt.Errorf("save Wiki MAP versions: %w", err)
 			}
 		}
@@ -229,7 +267,8 @@ func wikiMapVersionRow(version kccommon.WikiMapVersion) map[string]interface{} {
 		// document deletion cannot remove a reusable chunk/hash version.
 		"doc_id":              wikiMapCacheDocID(version.DocumentID),
 		"kb_id":               version.DatasetID,
-		"compile_kwd":         wikiMapExtractCompileKWD,
+		"compile_kwd":         "wiki",
+		"type_kwd":            wikiMapExtractCompileKWD,
 		"scope_kwd":           "doc",
 		"source_chunk_ids":    []string{version.ChunkID},
 		"source_doc_ids":      []string{version.DocumentID},

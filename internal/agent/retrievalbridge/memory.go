@@ -21,39 +21,96 @@ import (
 	"fmt"
 	"strings"
 
+	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
+	"ragflow/internal/common"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
+
+// memoryMessageSearcher is the MemoryService surface the adapter searches.
+type memoryMessageSearcher interface {
+	SearchMessage(
+		ctx context.Context,
+		filterDict, params map[string]any,
+	) ([]map[string]any, common.ErrorCode, error)
+}
+
+// queryTranslator translates the query into the tool's cross_languages.
+type queryTranslator interface {
+	CrossLanguages(
+		ctx context.Context,
+		tenantID, query string,
+		languages []string,
+	) (string, error)
+}
 
 // MemoryAdapter exposes MemoryService.SearchMessage through the agent tool's
 // retrieval interface.
 type MemoryAdapter struct {
-	svc *service.MemoryService
+	svc        memoryMessageSearcher
+	translator queryTranslator
 }
 
-// NewMemoryAdapter creates a memory retrieval adapter.
-func NewMemoryAdapter(svc *service.MemoryService) *MemoryAdapter {
-	return &MemoryAdapter{svc: svc}
+// NewMemoryAdapter creates a memory retrieval adapter. The translator applies
+// the tool's cross_languages to the query, as the dataset path does.
+func NewMemoryAdapter(svc *service.MemoryService, translator queryTranslator) *MemoryAdapter {
+	adapter := &MemoryAdapter{translator: translator}
+	if svc != nil {
+		adapter.svc = svc
+	}
+	return adapter
 }
 
 // Search performs hybrid memory-message retrieval and translates messages to
 // the common RetrievalChunk result shape.
 func (a *MemoryAdapter) Search(
 	ctx context.Context,
-	_ *gorm.DB,
+	db *gorm.DB,
 	req agenttool.RetrievalRequest,
 ) ([]agenttool.RetrievalChunk, error) {
 	if a == nil || a.svc == nil {
 		return nil, agenttool.ErrMemoryRetrievalServiceMissing
 	}
-	if strings.TrimSpace(req.TenantID) == "" {
-		return nil, fmt.Errorf("memory retrieval: tenant id is required")
-	}
 	memoryIDs := compactStrings(req.MemoryIDs)
 	if len(memoryIDs) == 0 {
 		return nil, fmt.Errorf("memory retrieval: memory_ids is required")
+	}
+	actorID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+	tenantID := strings.TrimSpace(permission.TenantIDFromContext(ctx))
+	if actorID == "" {
+		if state, stateErr := runtime.GetStateFromContext(ctx); stateErr == nil && state != nil {
+			userID, _ := state.GetSysString("user_id")
+			actorID = strings.TrimSpace(userID)
+			if tenantID == "" {
+				stateTenantID, _ := state.GetSysString("tenant_id")
+				tenantID = strings.TrimSpace(stateTenantID)
+			}
+		}
+	}
+	if actorID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
+	if permission.UserIDFromContext(ctx) == "" {
+		ctx = permission.WithIdentity(ctx, actorID, tenantID)
+	}
+	if err := agenttool.CheckCanvasDependencies(ctx, db, permission.ResourceKindMemory, memoryIDs); err != nil {
+		return nil, err
+	}
+	query := req.Query
+	if len(req.CrossLanguages) > 0 {
+		if a.translator == nil {
+			return nil, fmt.Errorf("memory retrieval: cross-language service is not configured")
+		}
+		translated, err := a.translator.CrossLanguages(ctx, req.TenantID, query, req.CrossLanguages)
+		if err != nil {
+			common.Warn("agent memory retrieval: cross-language query failed; using original query", zap.Error(err))
+		} else if strings.TrimSpace(translated) != "" {
+			query = translated
+		}
 	}
 	keywordWeight := 0.7
 	if req.KeywordsSimilarityWeight != nil {
@@ -63,17 +120,15 @@ func (a *MemoryAdapter) Search(
 	if user := strings.TrimSpace(req.UserID); user != "" {
 		filter["user_id"] = user
 	}
-	messages, _, err := a.svc.SearchMessage(
-		ctx,
-		req.TenantID,
-		filter,
-		map[string]any{
-			"query":                      req.Query,
-			"similarity_threshold":       req.SimilarityThreshold,
-			"keywords_similarity_weight": keywordWeight,
-			"top_n":                      req.TopN,
-		},
-	)
+	params := map[string]any{
+		"query":                      query,
+		"keywords_similarity_weight": keywordWeight,
+		"top_n":                      req.TopN,
+	}
+	if req.SimilarityThreshold != nil {
+		params["similarity_threshold"] = *req.SimilarityThreshold
+	}
+	messages, _, err := a.svc.SearchMessage(ctx, filter, params)
 	if err != nil {
 		return nil, err
 	}

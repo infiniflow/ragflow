@@ -44,7 +44,7 @@ func TestNewMCPServerResponsePreservesNullDescriptionAndFormatsDates(t *testing.
 		TenantID:   "tenant-id",
 		URL:        "https://example.com/mcp",
 		ServerType: "sse",
-		Variables:  entity.JSONMap{"tools": map[string]interface{}{}},
+		Variables:  entity.JSONMap{"authorization_token": "ragflow-secret", "tools": map[string]interface{}{}},
 		Headers:    entity.JSONMap{"Authorization": "Bearer token"},
 		BaseModel: entity.BaseModel{
 			CreateTime: &createTime,
@@ -74,9 +74,12 @@ func TestNewMCPServerResponsePreservesNullDescriptionAndFormatsDates(t *testing.
 	if bytes.Contains(payload, []byte(`+08:00`)) {
 		t.Fatalf("payload %s includes timezone in date fields", payload)
 	}
+	if bytes.Contains(payload, []byte("ragflow-secret")) || !bytes.Contains(payload, []byte(`"authorization_token":"********"`)) {
+		t.Fatalf("payload %s exposes the MCP authorization token", payload)
+	}
 }
 
-func TestMCPDetailDataErrorOmitsDataFieldLikePython(t *testing.T) {
+func TestMCPDetailDataErrorOmitsData(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
@@ -97,6 +100,6 @@ func TestMCPDetailDataErrorOmitsDataFieldLikePython(t *testing.T) {
 		t.Fatalf("message = %v", body["message"])
 	}
 	if _, ok := body["data"]; ok {
-		t.Fatalf("body unexpectedly contains data field: %s", recorder.Body.String())
+		t.Fatalf("expected data to be omitted: %s", recorder.Body.String())
 	}
 }

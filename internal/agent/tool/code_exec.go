@@ -35,11 +35,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// ErrCodeExecSandboxMissing is returned when no sandbox client is
-// registered. The Python sandbox itself is kept as-is (the Go
-// side never reimplemented the sandbox). When a client is
-// registered via SetSandboxClient at boot, the tool dispatches
-// the execution.
+// ErrCodeExecSandboxMissing is returned when no sandbox client is registered.
 var ErrCodeExecSandboxMissing = errors.New(
 	"CodeExec sandbox client not registered — call SetSandboxClient at boot",
 )
@@ -93,9 +89,7 @@ type codeExecResult struct {
 	Attachments []map[string]any `json:"attachments,omitempty"`
 }
 
-// CodeExecTool is the  for the CodeExec tool
-// ( . It validates language +
-// non-empty code and returns a structured "not-yet-wired" error.
+// CodeExecTool validates input and dispatches execution to the sandbox client.
 type CodeExecTool struct{}
 
 // NewCodeExecTool returns a CodeExecTool implementing eino's

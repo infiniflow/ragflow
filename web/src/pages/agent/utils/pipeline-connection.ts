@@ -1,5 +1,9 @@
 import { Operator } from '@/constants/agent';
-import { ChunkerOperators, SingleOperators } from '../constant/pipeline';
+import {
+  ChunkerOperators,
+  SingleOperators,
+  TopLevelOperators,
+} from '../constant/pipeline';
 
 export function isChunkerOperator(operator: Operator): boolean {
   return (ChunkerOperators as Operator[]).includes(operator);
@@ -15,8 +19,8 @@ export function isSingleInstanceOperator(operator: Operator): boolean {
 }
 
 export interface PipelineNextOperators {
-  // Operators offered in the flat top-level list (Parser, Tokenizer,
-  // Extractor, Compiler), minus the single-instance ones already on canvas.
+  // Operators offered in the flat top-level list, minus the single-instance
+  // ones already on canvas.
   operators: Operator[];
   // The chunker variants, offered only while the single chunker slot is free.
   chunkerOperators: Operator[];
@@ -38,16 +42,14 @@ export function buildPipelineNextOperators(
   const operators: Operator[] = [];
 
   // Pipelines require a Parser to feed a chunker, so from a Parser node the
-  // menu offers only the chunker group.
+  // menu offers only the chunker group. Extractor joins the filtered list
+  // because the Go pipeline allows at most one per canvas (ValidatePipeline).
   if (source !== Operator.Parser) {
-    [Operator.Parser, Operator.Tokenizer, Operator.Compiler].forEach(
-      (operator) => {
-        if (!hasOperator(operator)) {
-          operators.push(operator);
-        }
-      },
-    );
-    operators.push(Operator.Extractor);
+    TopLevelOperators.forEach((operator) => {
+      if (!hasOperator(operator)) {
+        operators.push(operator);
+      }
+    });
   }
 
   // The chunker group occupies a single slot: any chunker already on the

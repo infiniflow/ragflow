@@ -17,20 +17,23 @@ After creating a Chat, configure its datasets, model, system prompt, and retriev
 
 ## Create a Chat
 
-1. Select **Chat** in the left navigation bar.
+1. Select **Chat** in the top navigation bar.
 2. Click **Create chat**.
+
+   ![Open Chat from the navigation bar](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_chat_1.jpg)
+
 3. Enter a name for the Chat.
 4. Confirm the creation.
-5. Open **Chat setting**, then configure the datasets, model, system prompt, and retrieval parameters.
+
+   ![Enter a name for the Chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_chat_2.jpg)
+
+5. Click the gear icon on the right to open **Chat setting**. Configure **Model**, **Opening greeting**, and **Datasets**. Expand **Advanced settings** for shared options and the separate **Naive** and **Agentic** settings groups.
+
+   ![Open the newly created Chat conversation page](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_chat_3.jpg)
+
+   ![Configure the newly created Chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_chat_4.jpg)
+
 6. Save the setting, then open the chat window to test and use the Chat.
-
-![Open Chat from the navigation bar](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_chat_1.jpg)
-
-![Create a Chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_chat_2.jpg)
-
-![Enter a name for the Chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_chat_3.jpg)
-
-![Configure the newly created Chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/create_chat_4.jpg)
 
 You do not need to complete every setting when creating a Chat. You can return to the corresponding Chat from the Chat list and update its configuration later.
 
@@ -50,8 +53,11 @@ Complete the main Chat settings according to the actual scenario:
 
 - **Dataset**: Select the dataset the Chat can retrieve from. When answering a question, the system searches for relevant content in the associated dataset.
 - **Model**: Select the large language model used to generate answers.
-- **Retrieval configuration**: Configure the similarity threshold, vector similarity weight, Top N, and other settings to control the retrieval scope and results.
-- **Advanced settings**: Use the options available in the current version to further tune answer generation and retrieval behavior.
+- **Naive settings**: Under **Advanced settings > Naive**, configure **System prompt**, **Similarity threshold**, **Keyword similarity weight**, **Top N**, and other retrieval options. Keyword similarity weight is the full-text weight; the vector weight is `1` minus this value.
+- **Shared options**: Under **Advanced settings**, configure **Show citations**, **Text to speech**, and **Web search provider**.
+- **Agentic settings**: Under **Advanced settings > Agentic**, configure **Decision model** and **Agentic template**.
+
+These groups configure the two modes. Select **Naive** or **Agentic** beside the message box when asking a question. See [Chat Configuration](./chat_configuration.md) for the complete settings and web search prerequisites.
 
 Save the setting and test it in the chat window.
 

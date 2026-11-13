@@ -1,0 +1,13 @@
+{
+  "name": "WorldRouter",
+  "rank": 990,
+  "url": {
+    "default": "https://inference-api.worldrouter.ai/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models"
+  },
+  "class": "worldrouter",
+  "models": []
+}

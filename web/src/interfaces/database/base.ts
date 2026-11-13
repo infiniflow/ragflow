@@ -1,6 +1,6 @@
 export interface ResponseType<T = any> {
   code: number;
-  data: T;
+  data?: T;
   message: string;
   status: number;
 }

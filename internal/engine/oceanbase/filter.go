@@ -40,6 +40,11 @@ func buildFilter(condition map[string]interface{}, kind string) (string, []inter
 		if isEmptyFilterValue(value) {
 			continue
 		}
+		if kind == "memory" && key == "session_id_contains" {
+			parts = append(parts, "INSTR(`session_id`, ?) > 0")
+			args = append(args, value)
+			continue
+		}
 		switch key {
 		case "exists":
 			column, ok := value.(string)

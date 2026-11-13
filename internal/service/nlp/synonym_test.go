@@ -258,9 +258,9 @@ func TestSynonymLoadNoRedis(t *testing.T) {
 	s.load()
 
 	// Lookup num should remain unchanged
-	originalNum := s.lookupNum
+	originalNum := s.lookupNum.Load()
 	s.load()
-	if s.lookupNum != originalNum {
+	if s.lookupNum.Load() != originalNum {
 		t.Error("Lookup num should not change when Redis is nil")
 	}
 }

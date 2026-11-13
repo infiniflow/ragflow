@@ -4,7 +4,6 @@ package parser
 
 import (
 	"bytes"
-	"encoding/base64"
 	"errors"
 	"image"
 	"image/color"
@@ -34,8 +33,8 @@ func TestDOCXParser_RealTableImage(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := NewDOCXParser()
-	p.ConfigureFromSetup(map[string]any{"output_format": "json"})
-	result := p.ParseWithResult(t.Context(), "docx_table_image.docx", data)
+	ctx, cache := officeMediaTestContext()
+	result := p.ParseWithResult(ctx, "docx_table_image.docx", data)
 	if result.Err != nil {
 		t.Fatal(result.Err)
 	}
@@ -43,7 +42,7 @@ func TestDOCXParser_RealTableImage(t *testing.T) {
 		t.Fatalf("warnings = %v, want none for an admitted image", result.Warnings)
 	}
 	var tableID string
-	for _, item := range result.JSON {
+	for _, item := range ItemsToMaps(result.JSON) {
 		if item["doc_type_kwd"] == "table" {
 			tableID, _ = item["source_table_id"].(string)
 		}
@@ -51,14 +50,17 @@ func TestDOCXParser_RealTableImage(t *testing.T) {
 	if tableID == "" {
 		t.Fatalf("table with image not found: %+v", result.JSON)
 	}
-	for _, item := range result.JSON {
+	for _, item := range ItemsToMaps(result.JSON) {
 		if item["doc_type_kwd"] != "image" || item["parent_table_id"] != tableID {
 			continue
 		}
-		encoded, _ := item["image"].(string)
-		decoded, err := base64.StdEncoding.DecodeString(encoded)
+		ref := requireOfficeMediaRef(t, item)
+		if ref.Format != officeMediaFormatDOCX || ref.MIME != "image/png" {
+			t.Fatalf("media_ref = %+v, want docx image/png", ref)
+		}
+		decoded, err := cache.Get(ctx, *ref)
 		if err != nil {
-			t.Fatalf("table image payload: %v", err)
+			t.Fatalf("cache Get: %v", err)
 		}
 		if _, err := png.Decode(bytes.NewReader(decoded)); err != nil {
 			t.Fatalf("table image is not PNG: %v", err)
@@ -92,21 +94,25 @@ func TestPPTXParser_RealSlideImage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	result := NewPPTXParser().ParseWithResult(t.Context(), "slide_image.pptx", data)
+	ctx, cache := officeMediaTestContext()
+	result := NewPPTXParser().ParseWithResult(ctx, "slide_image.pptx", data)
 	if result.Err != nil {
 		t.Fatal(result.Err)
 	}
 	if len(result.Warnings) != 0 {
 		t.Fatalf("warnings = %v, want none for an admitted image", result.Warnings)
 	}
-	for _, item := range result.JSON {
+	for _, item := range ItemsToMaps(result.JSON) {
 		if item["doc_type_kwd"] != "image" {
 			continue
 		}
-		encoded, _ := item["image"].(string)
-		decoded, err := base64.StdEncoding.DecodeString(encoded)
+		ref := requireOfficeMediaRef(t, item)
+		if ref.Format != officeMediaFormatPPTX || ref.MIME != "image/png" {
+			t.Fatalf("media_ref = %+v, want pptx image/png", ref)
+		}
+		decoded, err := cache.Get(ctx, *ref)
 		if err != nil {
-			t.Fatalf("slide image payload: %v", err)
+			t.Fatalf("cache Get: %v", err)
 		}
 		if _, err := png.Decode(bytes.NewReader(decoded)); err != nil {
 			t.Fatalf("slide image is not PNG: %v", err)

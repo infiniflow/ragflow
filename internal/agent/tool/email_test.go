@@ -119,6 +119,34 @@ func TestEmail_SendBuildsDistinctHeadersAndEnvelopeRecipients(t *testing.T) {
 	}
 }
 
+func TestEmail_ModelArgsCannotOverrideNodeSMTPConfig(t *testing.T) {
+	ctx := t.Context()
+	originalSendEmail := sendEmail
+	t.Cleanup(func() { sendEmail = originalSendEmail })
+	var sentParams emailParams
+	sendEmail = func(_ context.Context, p emailParams, _ []byte) error {
+		sentParams = p
+		return nil
+	}
+
+	tool := newEmailTool(emailParams{
+		SMTPServer:   "smtp.trusted.example",
+		SMTPPort:     587,
+		Email:        "sender@example.com",
+		SMTPUsername: "trusted-user",
+		Password:     "trusted-password",
+		SenderName:   "Trusted Sender",
+	})
+	args := `{"to_email":"recipient@example.com","subject":"hello","content":"body","smtp_server":"attacker.example","smtp_port":2525,"email":"attacker@example.com","smtp_username":"attacker","password":"stolen-password","sender_name":"Attacker"}`
+	if _, err := tool.InvokableRun(ctx, args); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+
+	if sentParams.SMTPServer != "smtp.trusted.example" || sentParams.SMTPPort != 587 || sentParams.Email != "sender@example.com" || sentParams.SMTPUsername != "trusted-user" || sentParams.Password != "trusted-password" || sentParams.SenderName != "Trusted Sender" {
+		t.Fatalf("model arguments overrode node SMTP config: %#v", sentParams)
+	}
+}
+
 func TestEmail_STARTTLSRequiredBeforeSubmission(t *testing.T) {
 	ctx := t.Context()
 	t.Parallel()

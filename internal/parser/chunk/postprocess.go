@@ -134,11 +134,17 @@ func (o *PostprocessOperator) mergeChunks(chunks []ChunkData) []ChunkData {
 	var merged []ChunkData
 	var buf strings.Builder
 	var bufMeta map[string]interface{}
+	// bufRunes tracks the buffer length in runes: target and the per-chunk
+	// overflow check are rune-based, so the running total must be too.
+	// buf.Len() is bytes and inflates 3x for CJK, which flushes early and
+	// leaves every merged chunk far below target_size.
+	var bufRunes int
 	firstIndex := 0
 
 	for i, c := range chunks {
+		cRunes := len([]rune(c.Content))
 		// If this single chunk already exceeds target, flush first then add
-		if len([]rune(c.Content)) >= target {
+		if cRunes >= target {
 			if buf.Len() > 0 {
 				merged = append(merged, ChunkData{
 					Content:  buf.String(),
@@ -147,6 +153,7 @@ func (o *PostprocessOperator) mergeChunks(chunks []ChunkData) []ChunkData {
 				})
 				buf.Reset()
 				bufMeta = nil
+				bufRunes = 0
 			}
 			merged = append(merged, c)
 			firstIndex = i + 1
@@ -155,12 +162,12 @@ func (o *PostprocessOperator) mergeChunks(chunks []ChunkData) []ChunkData {
 
 		if buf.Len() == 0 {
 			buf.WriteString(c.Content)
+			bufRunes = cRunes
 			bufMeta = c.Metadata
 			firstIndex = c.Index
 		} else {
-			nextLen := len([]rune(c.Content))
 			// If adding this chunk would exceed target, flush current and start new
-			if buf.Len()+nextLen+1 > target {
+			if bufRunes+cRunes+1 > target {
 				merged = append(merged, ChunkData{
 					Content:  buf.String(),
 					Index:    firstIndex,
@@ -168,11 +175,13 @@ func (o *PostprocessOperator) mergeChunks(chunks []ChunkData) []ChunkData {
 				})
 				buf.Reset()
 				buf.WriteString(c.Content)
+				bufRunes = cRunes
 				bufMeta = c.Metadata
 				firstIndex = c.Index
 			} else {
 				buf.WriteString(" ")
 				buf.WriteString(c.Content)
+				bufRunes += cRunes + 1
 				// Merge metadata (last wins for overlapping keys)
 				if c.Metadata != nil && bufMeta == nil {
 					bufMeta = make(map[string]interface{})

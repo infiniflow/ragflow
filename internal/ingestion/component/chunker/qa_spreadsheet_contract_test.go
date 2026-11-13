@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 )
 
@@ -22,13 +23,13 @@ func TestCSVQAFirstRowIsData(t *testing.T) {
 	out, err := comp.Invoke(t.Context(), nil, map[string]any{
 		"name":          "qa.csv",
 		"file_type":     "csv",
-		"output_format": res.OutputFormat,
+		"output_format": "json",
 		"json":          res.JSON,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 2 {
 		t.Fatalf("expected both QA rows, got %d chunks: %#v", len(chunks), chunks)
 	}
@@ -53,7 +54,7 @@ func TestCSVTypedRowsFoldMalformedRowIntoPreviousAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("malformed row created or removed a pair: %#v", chunks)
 	}
@@ -72,16 +73,15 @@ func TestCSVJSONHTMLTableUsesStrictContinuationRules(t *testing.T) {
 		"name":          "qa.csv",
 		"file_type":     "csv",
 		"output_format": "json",
-		"json": []map[string]any{{
-			"doc_type_kwd": "table",
-			"text": "<table><tr><td>q1</td><td>a1</td></tr>" +
-				"<tr><td>q2</td><td>a2</td><td>trailing</td></tr></table>",
-		}},
+		"json": []map[string]any{
+			tableItem(t, "<table><tr><td>q1</td><td>a1</td></tr>"+
+				"<tr><td>q2</td><td>a2</td><td>trailing</td></tr></table>"),
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("malformed HTML row created a QA pair: %#v", chunks)
 	}

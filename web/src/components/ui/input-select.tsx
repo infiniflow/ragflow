@@ -1,5 +1,6 @@
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
+import { formatDate, formatPureDate } from '@/utils/date';
 import { isEmpty } from 'lodash';
 import { ChevronDown, X } from 'lucide-react';
 import * as React from 'react';
@@ -79,9 +80,11 @@ const SingleSelectDisplay: React.FC<{
     selectedOption?.label ??
     (type === 'number'
       ? String(value)
-      : type === 'date' || type === 'datetime'
-        ? new Date(value as any).toLocaleString()
-        : String(value));
+      : type === 'datetime'
+        ? formatDate(value as string | number | Date)
+        : type === 'date'
+          ? formatPureDate(value as string | number | Date)
+          : String(value));
 
   const canEdit = typeof label === 'string';
 

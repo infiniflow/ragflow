@@ -43,9 +43,12 @@ func LoadPythonChars(jsonPath string) (*PythonCharEngine, error) {
 		// pushing every box off-page — LoadPythonChars fails fast instead.
 		Dims [][]int `json:"dims"`
 		// IsEnglish is the document-level english verdict from the SAME Python
-		// run that produced the text golden. Capturing it (instead of
-		// re-deriving via random sampling) keeps the replay input identical to
-		// Python's. Optional: older dumps omit it.
+		// run that produced the text golden. Capturing it keeps the replay
+		// input identical to Python's. Re-deriving with the Go sampler is
+		// reproducible, but it is not Python's random.choices distribution:
+		// a contiguous English block of about 30% of a page votes English
+		// here, and an unseeded draw of that density does not. Optional:
+		// older dumps omit it.
 		IsEnglish *bool `json:"is_english"`
 	}
 	if err := json.Unmarshal(data, &wrapper); err != nil {
@@ -103,8 +106,9 @@ func (e *PythonCharEngine) PageChars() map[int][]pdf.TextChar { return e.chars }
 
 // IsEnglish returns the document-level english verdict captured from the same
 // Python run that produced the dump, or nil when the dump omits it (older
-// charspy files). Prefer it over re-deriving via random sampling, which is
-// unstable on documents with small english runs.
+// charspy files). Prefer the captured verdict. The Go sampler is
+// deterministic, and it still does not follow Python's random.choices
+// distribution when the English text is one modest contiguous block.
 func (e *PythonCharEngine) IsEnglish() *bool { return e.isEnglish }
 
 // PageDims returns per-page image dimensions [w,h] in ZM/image pixels. They

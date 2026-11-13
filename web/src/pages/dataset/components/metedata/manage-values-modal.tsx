@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import { DatePicker } from '@/components/ui/date-picker';
 import { Input } from '@/components/ui/input';
 import { Modal } from '@/components/ui/modal/modal';
-import { formatDate } from '@/utils/date';
 import dayjs from 'dayjs';
 import { Plus, Trash2 } from 'lucide-react';
 import { memo, useMemo, useRef, useState } from 'react';
@@ -79,7 +78,7 @@ const ValueInputItem = memo(
               onChange={(value) => {
                 onValueChange(
                   index,
-                  formatDate(value, 'YYYY-MM-DDTHH:mm:ss'),
+                  dayjs(value).format('YYYY-MM-DDTHH:mm:ss'),
                   true,
                 );
               }}

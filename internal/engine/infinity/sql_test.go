@@ -716,6 +716,16 @@ func TestKeywordFilterConditionExactForWhitespaceValues(t *testing.T) {
 // would write a doc's parent_kwd while the cluster's own update matched nothing.
 func TestKeywordFilterRenderingBothPaths(t *testing.T) {
 	const name = "Imperial Memorial and Governance Advice 59cbfbef"
+	for _, alias := range []string{"mind_map", "mindmap"} {
+		condition := map[string]interface{}{"entity_type_kwd": alias}
+		for _, query := range []string{equivalentConditionToStr(condition, nil), buildFilterFromCondition(condition, nil)} {
+			for _, value := range []string{"mind_map", "mindmap"} {
+				if !strings.Contains(query, "filter_fulltext('entity_type_kwd', '"+value+"')") {
+					t.Errorf("entity type filter %q does not match %q", query, value)
+				}
+			}
+		}
+	}
 
 	wantParent := `(parent_kwd = '` + name + `')`
 	parentCond := map[string]interface{}{"parent_kwd": []string{name}}

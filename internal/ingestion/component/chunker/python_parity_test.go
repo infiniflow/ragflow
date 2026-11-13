@@ -35,6 +35,7 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/schema"
 )
 
 // invokeAsTokenChunker constructs a TokenChunker component and
@@ -187,21 +188,11 @@ func chunksFromOutput(t *testing.T, out map[string]any) []map[string]any {
 	if !ok {
 		t.Fatalf("output missing 'chunks' key; got keys=%v", keysOf(out))
 	}
-	switch v := raw.(type) {
-	case []map[string]any:
-		return v
-	case []any:
-		out := make([]map[string]any, 0, len(v))
-		for _, it := range v {
-			if m, ok := it.(map[string]any); ok {
-				out = append(out, m)
-			}
-		}
-		return out
-	default:
-		t.Fatalf("chunks: unexpected type %T", raw)
-		return nil
+	maps, ok := schema.ChunkCarrierToMaps(raw)
+	if !ok {
+		t.Fatalf("chunks: unexpected carrier type %T", raw)
 	}
+	return maps
 }
 
 func keysOf(m map[string]any) []string {

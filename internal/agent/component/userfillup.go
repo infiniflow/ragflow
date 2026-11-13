@@ -55,15 +55,20 @@ var tipsPlaceholderPattern = regexp.MustCompile(`\{\{\s*([A-Za-z_][A-Za-z0-9_]*)
 
 // userFillUpParam is the per-instance configuration for UserFillUp.
 type userFillUpParam struct {
-	EnableTips      bool   `json:"enable_tips"`
-	Tips            string `json:"tips"`
-	LayoutRecognize string `json:"layout_recognize"`
+	EnableTips      bool           `json:"enable_tips"`
+	Tips            string         `json:"tips"`
+	LayoutRecognize string         `json:"layout_recognize"`
+	Inputs          map[string]any `json:"inputs"`
 }
 
 // Update copies a fresh params map into the receiver, applying defaults
 // for any omitted keys. Returns nil on success (param validation is
 // performed by Check, not here).
 func (p *userFillUpParam) Update(conf map[string]any) error {
+	p.Inputs, _ = conf["inputs"].(map[string]any)
+	if err := runtime.ValidateUserFillUpOptions(conf, true); err != nil {
+		return err
+	}
 	if conf == nil {
 		conf = map[string]any{}
 	}
@@ -84,10 +89,13 @@ func (p *userFillUpParam) Update(conf map[string]any) error {
 	return nil
 }
 
-// Check performs parameter validation. UserFillUp has no required
-// fields — any config is accepted and degrades gracefully on missing
-// template data. The method is kept to satisfy the ParamBase
-func (p *userFillUpParam) Check() error { return nil }
+// Check rejects incomplete option rows before execution.
+func (p *userFillUpParam) Check() error {
+	if p.Inputs == nil {
+		return nil
+	}
+	return runtime.ValidateUserFillUpOptions(map[string]any{"inputs": p.Inputs}, false)
+}
 
 // AsDict returns the param as a plain map for serialization / debug.
 func (p *userFillUpParam) AsDict() map[string]any {
@@ -118,6 +126,9 @@ func (u *UserFillUpComponent) Name() string { return u.name }
 // output per form field. Inputs are expected under the top-level
 // "inputs" key.
 func (u *UserFillUpComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
+	if err := u.param.Check(); err != nil {
+		return nil, runtime.NewUserFacingError(err.Error())
+	}
 	// State is required for the canvas ref grammar, but UserFillUp's
 	// tips substitution uses simple {{key}} placeholders resolved
 	// against the form input map. We still extract state so a
@@ -297,6 +308,9 @@ func init() {
 		var p userFillUpParam
 		if err := p.Update(params); err != nil {
 			return nil, err
+		}
+		if err := p.Check(); err != nil {
+			return nil, runtime.NewUserFacingError(err.Error())
 		}
 		return NewUserFillUpComponent(p), nil
 	})

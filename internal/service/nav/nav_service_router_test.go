@@ -37,6 +37,9 @@ func (f *scopeRecordingNav) Search(_ context.Context, _, _ string, _ string, _ [
 	f.scope = append([]string(nil), docScope...)
 	return f.hits, nil
 }
+func (f *scopeRecordingNav) EncodeQueryVector(context.Context, string, string) []float64 {
+	return nil
+}
 func (f *scopeRecordingNav) ListClusters(context.Context, string, string, string, int, int) ([]NavNode, int64, error) {
 	return nil, 0, nil
 }

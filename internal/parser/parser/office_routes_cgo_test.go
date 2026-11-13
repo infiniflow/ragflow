@@ -22,7 +22,7 @@ func TestGetParser_RoutesOfficeFamilies(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			p, err := GetParser(tc.fileType)
+			p, _, err := GetParser(tc.fileType, nil)
 			if err != nil {
 				t.Fatalf("GetParser(%q): %v", tc.fileType, err)
 			}

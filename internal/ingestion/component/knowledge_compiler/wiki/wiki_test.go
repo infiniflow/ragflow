@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/ingestion/component/progress"
 )
 
 func TestReduceExtracts_MergesProvenance(t *testing.T) {
@@ -194,7 +195,7 @@ func TestRunMapBatches_PreservesBatchOrderWithSubmitter(t *testing.T) {
 		{{ID: "fast-1", Text: "fast-1"}},
 		{{ID: "fast-2", Text: "fast-2"}},
 	}
-	got, err := runMapBatches(context.Background(), batches, func(batch []common.Chunk) (wikiExtract, error) {
+	got, err := runMapBatches(context.Background(), batches, progress.Window{}, func(batch []common.Chunk) (wikiExtract, error) {
 		if batch[0].ID == "slow" {
 			time.Sleep(25 * time.Millisecond)
 		}

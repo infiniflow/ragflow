@@ -48,6 +48,11 @@ export const LIST_MODEL_PROVIDERS = new Set<string>([
   LLMFactory.NewAPI,
   LLMFactory.RAGcon,
   LLMFactory.SoMark,
+  LLMFactory.HostingerRouter,
+  LLMFactory.Synap,
+  LLMFactory.Wiro,
+  LLMFactory.Crusoe,
+  LLMFactory.HopBase,
 
   // LLMFactory.HuggingFace,
   // LLMFactory.GoogleCloud,

@@ -8,9 +8,7 @@ import { Input, InputProps } from '../ui/input';
 export default React.forwardRef<HTMLInputElement, InputProps>(
   function PasswordInput({ ...props }, ref) {
     const id = useId();
-    const [isVisible, setIsVisible] = useState<boolean>(false);
-
-    const toggleVisibility = () => setIsVisible((prevState) => !prevState);
+    const [isVisible] = useState<boolean>(false);
 
     return (
       <div className="*:not-first:mt-2">

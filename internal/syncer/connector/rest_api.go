@@ -17,6 +17,7 @@
 package connector
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -87,6 +88,7 @@ const (
 	restAPIDefaultRequestDelay = 0.5
 	restAPIRequestTimeout      = 60 * time.Second
 	restAPIMaxRedirects        = 5
+	restAPIMaxResponseBytes    = int64(32 * 1024 * 1024)
 )
 
 const (
@@ -635,15 +637,20 @@ func (c *RestAPIConnector) fetchPageOnce(ctx context.Context, params map[string]
 		}
 	}
 	currentAuth := c.basicAuth
-	previousNetloc := connectorNetloc(currentURL)
+	previousOrigin := connectorOrigin(currentURL)
+	sensitiveHeaders := make([]string, 0, len(c.authHeaders))
+	for name := range c.authHeaders {
+		sensitiveHeaders = append(sensitiveHeaders, name)
+	}
 
 	resp, err := connectorRequest(ctx, connectorRequestOptions{
-		Method:       currentMethod,
-		RawURL:       currentURL,
-		Body:         bodyBytes,
-		Headers:      currentHeaders,
-		Timeout:      restAPIRequestTimeout,
-		MaxRedirects: restAPIMaxRedirects,
+		Method:           currentMethod,
+		RawURL:           currentURL,
+		Body:             bodyBytes,
+		Headers:          currentHeaders,
+		SensitiveHeaders: sensitiveHeaders,
+		Timeout:          restAPIRequestTimeout,
+		MaxRedirects:     restAPIMaxRedirects,
 		Prepare: func(req *http.Request, hop connectorRequestHop) error {
 			if hop.Method == http.MethodPost && req.Header.Get("Content-Type") == "" {
 				req.Header.Set("Content-Type", "application/json")
@@ -680,11 +687,11 @@ func (c *RestAPIConnector) fetchPageOnce(ctx context.Context, params map[string]
 			return wait, true
 		},
 		NextHop: func(nextURL string, status int, hop connectorRequestHop) connectorRequestHop {
-			nextNetloc := connectorNetloc(nextURL)
-			if nextNetloc != "" && nextNetloc != previousNetloc {
+			nextOrigin := connectorOrigin(nextURL)
+			if nextOrigin != "" && nextOrigin != previousOrigin {
 				currentAuth = nil
 			}
-			previousNetloc = nextNetloc
+			previousOrigin = nextOrigin
 			if status == http.StatusMovedPermanently || status == http.StatusFound || status == http.StatusSeeOther {
 				hop.Method = http.MethodGet
 				hop.Body = nil
@@ -722,11 +729,14 @@ func (c *RestAPIConnector) handleResponse(resp *http.Response) (any, error) {
 		return nil, fmt.Errorf("REST API request failed with http %d", status)
 	}
 
-	raw, err := io.ReadAll(resp.Body)
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, restAPIMaxResponseBytes+1))
 	if err != nil {
 		return nil, err
 	}
-	decoder := json.NewDecoder(strings.NewReader(string(raw)))
+	if int64(len(raw)) > restAPIMaxResponseBytes {
+		return nil, &ConnectorValidationError{Message: fmt.Sprintf("REST API response exceeds the %d byte limit", restAPIMaxResponseBytes)}
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
 	var value any
 	if err := decoder.Decode(&value); err != nil {

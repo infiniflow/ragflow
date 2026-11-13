@@ -97,3 +97,26 @@ func TestBaseModelName(t *testing.T) {
 		})
 	}
 }
+
+func TestFirstNonEmpty(t *testing.T) {
+	tests := []struct {
+		name string
+		in   []string
+		want string
+	}{
+		{"plain value unchanged", []string{"a", "b"}, "a"},
+		{"returns first when later match", []string{"x", "y", "z"}, "x"},
+		{"trims chosen value", []string{"  picked  ", "b"}, "picked"},
+		{"chosen whitespace later clean", []string{"  picked  ", "clean"}, "picked"},
+		{"skips whitespace-only candidates", []string{"   ", "  ", "real"}, "real"},
+		{"all empty returns empty", []string{"", " ", "  "}, ""},
+		{"nil returns empty", nil, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := FirstNonEmpty(tt.in...); got != tt.want {
+				t.Fatalf("FirstNonEmpty(%v) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
+	}
+}

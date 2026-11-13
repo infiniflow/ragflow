@@ -398,10 +398,18 @@ func evaluateClause(clause map[string]any, state *runtime.CanvasState) (bool, er
 		ls, rs := fmt.Sprintf("%v", lv), fmt.Sprintf("%v", right)
 		return strings.HasSuffix(strings.ToLower(ls), strings.ToLower(rs)), nil
 	case ">", "<", ">=", "<=":
+		// An operand that does not parse as a number makes the clause a
+		// non-match instead of an error: the comparison value comes
+		// straight from the condition config and defaults to "" (the
+		// component's check() only requires a branch target), so a
+		// numeric variable against an empty or text value used to abort
+		// the whole canvas run. Falling through to the next condition or
+		// the else targets matches how the string operators already
+		// tolerate unparseable operands.
 		ln, lok := numericize(lv)
 		rn, rok := numericize(right)
 		if !lok || !rok {
-			return false, fmt.Errorf("operator %q requires numeric operands (left=%T, right=%T)", op, lv, right)
+			return false, nil
 		}
 		switch op {
 		case ">":
@@ -508,7 +516,7 @@ func indexOf(s, sub string) int {
 
 // numericize attempts to convert v to float64. Returns ok=false if v
 // is a string that doesn't parse as a number (e.g. an LLM response);
-// numeric operators will then error out with a clear message.
+// numeric operators treat that as a non-match rather than an error.
 func numericize(v any) (float64, bool) {
 	var n float64
 	switch x := v.(type) {

@@ -946,10 +946,14 @@ const DynamicForm = {
                 const shouldShow = field.shouldRender
                   ? field.shouldRender(formValues)
                   : true;
+                // `shouldRender === false` unmounts the field entirely (no DOM),
+                // instead of leaving it hidden. `field.hidden` keeps the previous
+                // hidden-class behavior since it's a separate static concern.
+                if (!shouldShow) return null;
                 return (
                   <div
                     key={field.name}
-                    className={cn({ hidden: field.hidden || !shouldShow })}
+                    className={cn({ hidden: field.hidden })}
                   >
                     <RenderField
                       field={field}

@@ -23,6 +23,7 @@ import (
 	"testing"
 	"time"
 
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/tokenizer"
 )
 
@@ -105,10 +106,10 @@ func floatSliceFromAny(t *testing.T, v any) []float64 {
 	}
 }
 
-func joinJSONItemTexts(items []map[string]any) string {
+func joinJSONItemTexts(items []parser.DocItem) string {
 	var parts []string
 	for _, item := range items {
-		text, _ := item["text"].(string)
+		text, _ := item.ToMap()["text"].(string)
 		text = strings.TrimSpace(text)
 		if text == "" {
 			continue

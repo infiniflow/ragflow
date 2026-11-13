@@ -26,10 +26,7 @@
 //   - //go:embed     — the static XML parts (Content_Types, _rels, styles)
 //
 // The output is a Word-compatible .docx. The XML is intentionally
-// minimal: a single font, a single style, and a flat list of
-// paragraphs. Tables / images / lists are future polish items; the
-// test suite (see docx_writer_test.go) verifies the ZIP magic, the
-// embedded document.xml content, and the XML-escape
+// minimal: a single font, heading styles, paragraphs, and native tables.
 package io
 
 import (
@@ -40,6 +37,12 @@ import (
 	"html"
 	"strings"
 	"text/template"
+
+	"github.com/yuin/goldmark"
+	"github.com/yuin/goldmark/ast"
+	"github.com/yuin/goldmark/extension"
+	tableast "github.com/yuin/goldmark/extension/ast"
+	gmtext "github.com/yuin/goldmark/text"
 )
 
 //go:embed templates/content_types.xml
@@ -51,6 +54,7 @@ var relsXML []byte
 //go:embed templates/document_rels.xml.tmpl
 //go:embed templates/styles.xml.tmpl
 //go:embed templates/document.xml.tmpl
+//go:embed templates/numbering.xml.tmpl
 //go:embed templates/header.xml.tmpl
 //go:embed templates/footer.xml.tmpl
 var tmplFS embed.FS
@@ -71,7 +75,8 @@ type DOCXOptions struct {
 // DOCXOptions and Document flatten into this when the writer is
 // invoked.
 type docModel struct {
-	Paragraphs     []string
+	Lists          []*docxList
+	Blocks         []docxBlock
 	HeaderText     string
 	FooterText     string
 	WatermarkText  string
@@ -83,6 +88,21 @@ type docModel struct {
 	FontSize       int
 	FontFamily     string
 	Timestamp      string
+}
+
+type docxBlock struct {
+	Text         string
+	Rows         [][]string
+	HeadingLevel int
+	List         *docxList
+	Indent       int
+}
+
+type docxList struct {
+	ID      int
+	Ordered bool
+	Start   int
+	Indent  int
 }
 
 // tmplFuncs registers the {{xml}} helper used to escape user content
@@ -100,9 +120,7 @@ var tmplFuncs = template.FuncMap{
 //
 // Layout strategy (P4):
 //
-//   - One paragraph per non-empty line in content.
-//   - Empty lines are preserved as empty paragraphs (so the document's
-//     vertical rhythm matches the source).
+//   - Paragraphs and Markdown tables retain their source order.
 //   - The header carries a centered title and (optionally) a VML
 //     watermark shape.
 //   - The footer carries the footer text and (optionally) a page-number
@@ -118,7 +136,7 @@ func WriteDOCX(content string, opts DOCXOptions) ([]byte, error) {
 	}
 
 	model := docModel{
-		Paragraphs:     splitParagraphs(content),
+		Blocks:         markdownDOCXBlocks(content),
 		HeaderText:     opts.HeaderText,
 		FooterText:     opts.FooterText,
 		WatermarkText:  opts.WatermarkText,
@@ -132,7 +150,14 @@ func WriteDOCX(content string, opts DOCXOptions) ([]byte, error) {
 		Timestamp:      nowUTC(),
 	}
 
-	// Pre-parse all 5 templates once; FuncMaps are shared.
+	for _, block := range model.Blocks {
+		if block.List != nil && block.List.ID == 0 {
+			block.List.ID = len(model.Lists) + 1
+			model.Lists = append(model.Lists, block.List)
+		}
+	}
+
+	// Pre-parse templates once; FuncMaps are shared.
 	docTmpl, err := template.New("document.xml.tmpl").Funcs(tmplFuncs).ParseFS(tmplFS, "templates/document.xml.tmpl")
 	if err != nil {
 		return nil, fmt.Errorf("DOCX: parse document template: %w", err)
@@ -154,6 +179,11 @@ func WriteDOCX(content string, opts DOCXOptions) ([]byte, error) {
 		return nil, fmt.Errorf("DOCX: parse document_rels template: %w", err)
 	}
 
+	numberingTmpl, err := template.New("numbering.xml.tmpl").ParseFS(tmplFS, "templates/numbering.xml.tmpl")
+	if err != nil {
+		return nil, fmt.Errorf("DOCX: parse numbering template: %w", err)
+	}
+
 	buf := &bytes.Buffer{}
 	zw := zip.NewWriter(buf)
 
@@ -168,6 +198,9 @@ func WriteDOCX(content string, opts DOCXOptions) ([]byte, error) {
 
 	// word/document.xml.rels — relationships for header / footer / styles.
 	if err := writeZipTmpl(zw, "word/_rels/document.xml.rels", docRelsTmpl, model); err != nil {
+		return nil, err
+	}
+	if err := writeZipTmpl(zw, "word/numbering.xml", numberingTmpl, model); err != nil {
 		return nil, err
 	}
 	// word/styles.xml
@@ -197,6 +230,75 @@ func WriteDOCX(content string, opts DOCXOptions) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+func markdownDOCXBlocks(content string) []docxBlock {
+	content = normalizeMarkdownTableSeparators(content)
+	source := []byte(content)
+	document := goldmark.New(goldmark.WithExtensions(extension.Table)).Parser().Parse(gmtext.NewReader(source))
+	blocks := docxChildBlocks(document, source)
+	if len(blocks) == 0 {
+		return []docxBlock{{}}
+	}
+	return blocks
+}
+
+func docxChildBlocks(parent ast.Node, source []byte) []docxBlock {
+	var blocks []docxBlock
+	for node := parent.FirstChild(); node != nil; node = node.NextSibling() {
+		switch n := node.(type) {
+		case *ast.Heading:
+			blocks = append(blocks, docxBlock{Text: inlinePDFText(n, source), HeadingLevel: n.Level})
+		case *ast.List:
+			depth := 1
+			for ancestor := n.Parent(); ancestor != nil; ancestor = ancestor.Parent() {
+				if _, ok := ancestor.(*ast.List); ok {
+					depth++
+				}
+			}
+			list := &docxList{Ordered: n.IsOrdered(), Start: max(1, n.Start), Indent: depth * 720}
+			for item := n.FirstChild(); item != nil; item = item.NextSibling() {
+				children := docxChildBlocks(item, source)
+				for i := range children {
+					if children[i].Indent == 0 && children[i].Rows == nil {
+						children[i].Indent = list.Indent
+						if i == 0 {
+							children[i].List = list
+						}
+					}
+				}
+				blocks = append(blocks, children...)
+			}
+		case *ast.ListItem, *ast.Blockquote:
+			blocks = append(blocks, docxChildBlocks(n, source)...)
+		case *ast.FencedCodeBlock:
+			text := rawPDFBlockText(n, source)
+			if strings.EqualFold(string(n.Language(source)), "markdown") || strings.EqualFold(string(n.Language(source)), "md") {
+				blocks = append(blocks, markdownDOCXBlocks(text)...)
+			} else {
+				info := ""
+				if n.Info != nil {
+					info = string(n.Info.Text(source))
+				}
+				blocks = append(blocks, docxBlock{Text: "```" + info + "\n" + text + "\n```"})
+			}
+		case *tableast.Table:
+			rows := make([][]string, 0, n.ChildCount())
+			for row := n.FirstChild(); row != nil; row = row.NextSibling() {
+				cells := make([]string, 0, row.ChildCount())
+				for cell := row.FirstChild(); cell != nil; cell = cell.NextSibling() {
+					cells = append(cells, inlinePDFText(cell, source))
+				}
+				rows = append(rows, cells)
+			}
+			blocks = append(blocks, docxBlock{Rows: rows})
+		default:
+			if text := rawPDFBlockText(n, source); text != "" || node == parent.FirstChild() {
+				blocks = append(blocks, docxBlock{Text: text})
+			}
+		}
+	}
+	return blocks
+}
+
 // writeZipFile writes a static []byte payload as a file inside the zip.
 func writeZipFile(zw *zip.Writer, name string, data []byte) error {
 	w, err := zw.Create(name)
@@ -220,22 +322,6 @@ func writeZipTmpl(zw *zip.Writer, name string, tmpl *template.Template, model an
 		return fmt.Errorf("DOCX: execute %s: %w", name, err)
 	}
 	return nil
-}
-
-// splitParagraphs turns the source content into a list of paragraph
-// strings. Empty lines are preserved as empty strings so the rendered
-// document's vertical rhythm matches the source.
-func splitParagraphs(content string) []string {
-	if content == "" {
-		return []string{""}
-	}
-	lines := strings.Split(content, "\n")
-	out := make([]string, 0, len(lines))
-	for _, l := range lines {
-		// Strip trailing \r for CRLF inputs.
-		out = append(out, strings.TrimRight(l, "\r"))
-	}
-	return out
 }
 
 // nowUTC returns a stable timestamp string for footer / watermark

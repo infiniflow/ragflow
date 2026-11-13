@@ -25,7 +25,9 @@ import {
   RetrievalFrom,
   VariableRegex,
 } from '../constant';
+import { FormSchema as ExeSQLFormSchema } from '../form/exesql-form/use-submit-form';
 import { FormSchema as ParserFormSchema } from '../form/parser-form/schema';
+import { FormSchema as VariableAssignerFormSchema } from '../form/variable-assigner-form/schema';
 import { isEmptyMessageContent } from '../utils';
 
 /**
@@ -51,6 +53,7 @@ export type CanvasIssue = {
   type: CanvasIssueType;
   messageKey: string;
   messageParams?: Record<string, string>;
+  blocksRun?: boolean;
 };
 
 export type CanvasChecklistInputs = {
@@ -59,6 +62,7 @@ export type CanvasChecklistInputs = {
   editedNodeFormIds: string[];
   memoryIds?: Set<string>;
   modelValidIds?: Set<string>;
+  categorizeModelValidIds?: Set<string>;
   staleDatasetIds?: Set<string>;
   compilationTemplateGroupIds?: Set<string>;
   variables?: Record<string, any>;
@@ -92,6 +96,13 @@ const OrphanExemptOperators: string[] = [
   Operator.IterationStart,
   Operator.LoopStart,
   Operator.ExitLoop,
+];
+
+// Tools whose API key is required by the service, on the canvas and inside an
+// agent's tool list alike — an empty key always fails at run time.
+const ApiKeyRequiredOperators: string[] = [
+  Operator.SofyaSearch,
+  Operator.Search1APISearch,
 ];
 
 function collectStrings(value: unknown): string[] {
@@ -292,10 +303,32 @@ function collectNodeReferenceIssues(
   return issues;
 }
 
+// An absent binding counts as empty. Switching the source to memories writes
+// no `memory_ids` key until a memory is picked, so requiring an actual array
+// here would let an unbound node through.
+const isEmptyIdList = (ids: unknown) => !Array.isArray(ids) || ids.length === 0;
+
+/**
+ * Params persisted before `retrieval_from` existed carry only one of the two
+ * bindings, so infer the source from whichever is populated. A node with
+ * neither falls back to Dataset, matching the form's default selection.
+ */
+function resolveRetrievalFrom(params: Record<string, any>): RetrievalFrom {
+  const source = params.retrieval_from;
+  if (source === RetrievalFrom.Memory || source === RetrievalFrom.Dataset) {
+    return source;
+  }
+  return !isEmptyIdList(params.memory_ids) &&
+    isEmptyIdList(params.dataset_ids ?? params.kb_ids)
+    ? RetrievalFrom.Memory
+    : RetrievalFrom.Dataset;
+}
+
 /**
  * Shared by Retrieval nodes and Agent-embedded Retrieval tools. Emptiness is
- * asserted directly instead of re-parsing the form schema so legacy DSLs keyed
- * on `kb_ids` are never flagged (ported from find-invalid-retrieval.ts).
+ * asserted directly instead of re-parsing the form schema so a binding still
+ * counts when it is keyed on the legacy `kb_ids`
+ * (ported from find-invalid-retrieval.ts).
  */
 function collectRetrievalBindingIssues(
   params: Record<string, any> | undefined,
@@ -307,23 +340,17 @@ function collectRetrievalBindingIssues(
   }
   const { memoryIds, staleDatasetIds } = inputs;
   const issues: CanvasIssue[] = [];
+  const datasetIds = params.dataset_ids ?? params.kb_ids;
+  const isMemory = resolveRetrievalFrom(params) === RetrievalFrom.Memory;
 
-  if (
-    params.retrieval_from === RetrievalFrom.Dataset &&
-    Array.isArray(params.dataset_ids) &&
-    params.dataset_ids.length === 0
-  ) {
+  if (!isMemory && isEmptyIdList(datasetIds)) {
     issues.push({
       ...target,
       type: CanvasIssueType.MissingRequired,
       messageKey: 'flow.retrievalDatasetMissing',
     });
   }
-  if (
-    params.retrieval_from === RetrievalFrom.Memory &&
-    Array.isArray(params.memory_ids) &&
-    params.memory_ids.length === 0
-  ) {
+  if (isMemory && isEmptyIdList(params.memory_ids)) {
     issues.push({
       ...target,
       type: CanvasIssueType.MissingRequired,
@@ -332,9 +359,9 @@ function collectRetrievalBindingIssues(
   }
   if (
     staleDatasetIds &&
-    params.retrieval_from !== RetrievalFrom.Memory &&
-    Array.isArray(params.dataset_ids) &&
-    params.dataset_ids.some((id: string) => staleDatasetIds.has(id))
+    !isMemory &&
+    Array.isArray(datasetIds) &&
+    datasetIds.some((id: string) => staleDatasetIds.has(id))
   ) {
     issues.push({
       ...target,
@@ -344,7 +371,7 @@ function collectRetrievalBindingIssues(
   }
   if (
     memoryIds &&
-    params.retrieval_from === RetrievalFrom.Memory &&
+    isMemory &&
     Array.isArray(params.memory_ids) &&
     params.memory_ids.some((id: string) => !memoryIds.has(id))
   ) {
@@ -369,12 +396,43 @@ function findToolCanvasNode(
   return toolNodeId ? nodeMap.get(toolNodeId) : undefined;
 }
 
+function collectSearchFilterIssues(
+  params: Record<string, any> | undefined,
+  target: IssueTarget,
+): CanvasIssue[] {
+  const incomplete = [
+    'include_domains',
+    'exclude_domains',
+    'site_include',
+    'site_exclude',
+    'country_include',
+    'language_include',
+  ].some(
+    (field) =>
+      Array.isArray(params?.[field]) &&
+      params[field].some(
+        (value: unknown) => typeof value !== 'string' || !value.trim(),
+      ),
+  );
+  return incomplete
+    ? [
+        {
+          ...target,
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.nodeFormInvalid',
+          blocksRun: true,
+        },
+      ]
+    : [];
+}
+
 export function collectCanvasIssues({
   nodes,
   edges,
   editedNodeFormIds,
   memoryIds,
   modelValidIds,
+  categorizeModelValidIds,
   staleDatasetIds,
   compilationTemplateGroupIds,
   variables,
@@ -479,11 +537,194 @@ export function collectCanvasIssues({
       });
     }
 
-    if (label === Operator.Message && isEmptyMessageContent(form?.content)) {
+    if (
+      label === Operator.Message &&
+      isEmptyMessageContent(form && 'text' in form ? form.text : form?.content)
+    ) {
       issues.push({
         ...target,
         type: CanvasIssueType.MissingRequired,
         messageKey: 'flow.messageMsg',
+        blocksRun: true,
+      });
+    }
+
+    issues.push(...collectSearchFilterIssues(form, target));
+
+    if (
+      label === Operator.UserFillUp &&
+      Object.values(form?.inputs ?? {}).some(
+        (input: any) =>
+          Array.isArray(input?.options) &&
+          input.options.some(
+            (option: unknown) => typeof option === 'string' && !option.trim(),
+          ),
+      )
+    ) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.inputOptionsIncomplete',
+        blocksRun: true,
+      });
+    }
+
+    if (label === Operator.DataOperations) {
+      const blank = (value: unknown) =>
+        value == null || (typeof value === 'string' && !value.trim());
+      const incompleteKeys = ['select_keys', 'remove_keys'].some(
+        (field) =>
+          Array.isArray(form?.[field]) &&
+          form[field].some((row: any) =>
+            blank(typeof row === 'string' ? row : row?.name),
+          ),
+      );
+      const requiredFields: Record<string, string[]> = {
+        updates: ['key', 'value'],
+        rename_keys: ['old_key', 'new_key'],
+        filter_values: ['key', 'operator', 'value'],
+      };
+      const incompleteRows = Object.entries(requiredFields).some(
+        ([field, required]) =>
+          Array.isArray(form?.[field]) &&
+          form[field].some((row: any) =>
+            required.some((key) => blank(row?.[key])),
+          ),
+      );
+      if (incompleteKeys || incompleteRows) {
+        issues.push({
+          ...target,
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.dataOperationsEntriesIncomplete',
+          blocksRun: true,
+        });
+      }
+    }
+
+    if (label === Operator.Invoke && Array.isArray(form?.variables)) {
+      const nonblank = (value: unknown) =>
+        typeof value === 'string' && value.trim().length > 0;
+      if (
+        form.variables.some(
+          (row: any) =>
+            !nonblank(row?.key) ||
+            (!nonblank(row?.ref) &&
+              (row?.value == null ||
+                (typeof row.value === 'string' && !nonblank(row.value)))),
+        )
+      ) {
+        issues.push({
+          ...target,
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.invokeVariablesIncomplete',
+          blocksRun: true,
+        });
+      }
+    }
+
+    if (
+      label === Operator.Loop &&
+      (form?.loop_variables?.some(
+        (row: Record<string, any>) => !row?.variable?.trim(),
+      ) ||
+        form?.loop_termination_condition?.some(
+          (row: Record<string, any>) =>
+            !row?.variable?.trim() ||
+            !row?.operator?.trim() ||
+            row.value == null ||
+            (typeof row.value === 'string' && !row.value.trim()),
+        ))
+    ) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.loopRowsIncomplete',
+        blocksRun: true,
+      });
+    }
+
+    if (
+      label === Operator.Iteration &&
+      Object.entries(form?.outputs ?? {}).some(
+        ([name, output]) =>
+          !name.trim() ||
+          typeof (output as Record<string, unknown>)?.ref !== 'string' ||
+          !(output as Record<string, string>).ref.trim(),
+      )
+    ) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.iterationOutputsIncomplete',
+        blocksRun: true,
+      });
+    }
+
+    if (
+      label === Operator.ExeSQL &&
+      !ExeSQLFormSchema.safeParse(form).success
+    ) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.nodeFormInvalid',
+        blocksRun: true,
+      });
+    }
+
+    if (
+      ['delimiters', 'children_delimiters'].some(
+        (field) =>
+          Array.isArray(form?.[field]) &&
+          form[field].some((entry: unknown) => {
+            const value =
+              entry && typeof entry === 'object' && 'value' in entry
+                ? entry.value
+                : entry;
+            return typeof value !== 'string' || value === '';
+          }),
+      )
+    ) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.nodeFormInvalid',
+        blocksRun: true,
+      });
+    }
+
+    if (
+      label === Operator.VariableAggregator &&
+      (!Array.isArray(form?.groups) ||
+        form.groups.length === 0 ||
+        form.groups.some(
+          (group: any) =>
+            typeof group?.group_name !== 'string' ||
+            !group.group_name.trim() ||
+            !Array.isArray(group.variables) ||
+            group.variables.length === 0 ||
+            group.variables.some((variable: any) => {
+              const value =
+                typeof variable === 'string' ? variable : variable?.value;
+              return (
+                typeof value !== 'string' || !value.replace(/[{}]/g, '').trim()
+              );
+            }),
+        ))
+    ) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.aggregationIncomplete',
+        blocksRun: true,
+      });
+    }
+
+    if (ApiKeyRequiredOperators.includes(label) && !form?.api_key) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.apiKeyMissing',
       });
     }
 
@@ -497,21 +738,32 @@ export function collectCanvasIssues({
     }
 
     if (label === Operator.Agent) {
+      if (hasIncompleteAgentTools(form?.tools)) {
+        issues.push({
+          ...target,
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.agentToolsMissing',
+          blocksRun: true,
+        });
+      }
       // Not gated on editedNodeFormIds: a canvas loaded from storage with an
       // empty model must flag on the very next render, not only after edits.
-      if (!form?.llm_id) {
+      const modelRef = form?.model_id ?? form?.llm_id;
+      if (typeof modelRef !== 'string' || !modelRef.trim()) {
         issues.push({
           ...target,
           type: CanvasIssueType.MissingRequired,
           messageKey: 'flow.agentModelMissing',
+          blocksRun: true,
         });
       }
       if (Array.isArray(form?.tools)) {
         const toolNode = findToolCanvasNode(edges, nodeMap, node.id);
         for (const tool of form.tools) {
-          if (tool?.component_name !== Operator.Retrieval) {
-            continue;
-          }
+          const isRetrieval = tool?.component_name === Operator.Retrieval;
+          const needsApiKey = ApiKeyRequiredOperators.includes(
+            tool?.component_name,
+          );
           // Point at the concrete tool under the concrete agent — the Tool
           // canvas node's own name is just the operator label (legacy canvases
           // even carry the raw i18n key), which says nothing about which tool
@@ -524,12 +776,36 @@ export function collectCanvasIssues({
             }`,
             operatorLabel: tool.component_name ?? Operator.Tool,
           };
-          issues.push(
-            ...collectRetrievalBindingIssues(tool?.params, toolTarget, {
-              memoryIds,
-              staleDatasetIds,
-            }),
-          );
+          issues.push(...collectSearchFilterIssues(tool?.params, toolTarget));
+          // Embedded ExeSQL tools omit `sql` (the agent writes it), which the
+          // schema allows; the connection fields are validated the same way as
+          // the standalone node.
+          if (
+            tool?.component_name === Operator.ExeSQL &&
+            !ExeSQLFormSchema.safeParse(tool.params).success
+          ) {
+            issues.push({
+              ...toolTarget,
+              type: CanvasIssueType.MissingRequired,
+              messageKey: 'flow.nodeFormInvalid',
+              blocksRun: true,
+            });
+          }
+          if (isRetrieval) {
+            issues.push(
+              ...collectRetrievalBindingIssues(tool?.params, toolTarget, {
+                memoryIds,
+                staleDatasetIds,
+              }),
+            );
+          }
+          if (needsApiKey && !tool?.params?.api_key) {
+            issues.push({
+              ...toolTarget,
+              type: CanvasIssueType.MissingRequired,
+              messageKey: 'flow.apiKeyMissing',
+            });
+          }
         }
       }
     }
@@ -545,19 +821,55 @@ export function collectCanvasIssues({
           messageKey: 'flow.extractorModelMissing',
         });
       }
+      // An extraction group switched on with nothing to extract (top_n < 1)
+      // — or tags without a tag file — can be saved but would fail the Go
+      // canvas build / silently skip at run time, so flag it here.
+      if (form?.keywords?.enabled && !(Number(form?.keywords?.top_n) > 0)) {
+        issues.push({
+          ...target,
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.extractorKeywordsTopNMissing',
+        });
+      }
+      if (form?.questions?.enabled && !(Number(form?.questions?.top_n) > 0)) {
+        issues.push({
+          ...target,
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.extractorQuestionsTopNMissing',
+        });
+      }
+      if (form?.tags?.enabled) {
+        if (!(Number(form?.tags?.top_n) > 0)) {
+          issues.push({
+            ...target,
+            type: CanvasIssueType.MissingRequired,
+            messageKey: 'flow.extractorTagsTopNMissing',
+          });
+        }
+        if (!form?.tags?.tag_file_id) {
+          issues.push({
+            ...target,
+            type: CanvasIssueType.MissingRequired,
+            messageKey: 'flow.extractorTagFileMissing',
+          });
+        }
+      }
     }
 
     if (label === Operator.Compiler) {
       // Same always-on policy as the Agent model check: an empty operator
       // must flag on load, not only after edits.
       const groupId = form?.compilation_template_group_id;
-      if (!groupId) {
+      if (!form?.compilation_template_id?.trim() && !groupId?.trim()) {
         issues.push({
           ...target,
           type: CanvasIssueType.MissingRequired,
           messageKey: 'knowledgeConfiguration.compilationTemplateRequired',
+          blocksRun: true,
         });
       } else if (
+        !form?.compilation_template_id?.trim() &&
+        groupId &&
         compilationTemplateGroupIds &&
         !compilationTemplateGroupIds.has(groupId)
       ) {
@@ -581,6 +893,21 @@ export function collectCanvasIssues({
       });
     }
 
+    // The backend hard-fails a run on an empty variable/operator and reports
+    // per-item errors for an empty parameter, so an incomplete row must be
+    // caught before Run/Publish. Same edited-node gate as the Parser check.
+    if (
+      label === Operator.VariableAssigner &&
+      editedNodeFormIds.includes(node.id) &&
+      !VariableAssignerFormSchema.safeParse(form).success
+    ) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.nodeFormInvalid',
+      });
+    }
+
     if (
       label === Operator.Message &&
       memoryIds &&
@@ -594,16 +921,21 @@ export function collectCanvasIssues({
       });
     }
 
+    const validModelIds =
+      label === Operator.Categorize
+        ? (categorizeModelValidIds ?? modelValidIds)
+        : modelValidIds;
     if (
-      modelValidIds &&
-      typeof form?.llm_id === 'string' &&
-      form.llm_id &&
-      !modelValidIds.has(form.llm_id)
+      validModelIds &&
+      typeof (form?.model_id ?? form?.llm_id) === 'string' &&
+      (form?.model_id ?? form?.llm_id) &&
+      !validModelIds.has(form?.model_id ?? form?.llm_id)
     ) {
       issues.push({
         ...target,
         type: CanvasIssueType.InvalidVariable,
         messageKey: 'common.modelUnavailable',
+        blocksRun: label === Operator.Agent,
       });
     }
 
@@ -611,4 +943,20 @@ export function collectCanvasIssues({
   }
 
   return issues;
+}
+
+function hasIncompleteAgentTools(tools: unknown): boolean {
+  if (!Array.isArray(tools)) return tools != null;
+  return tools.some((tool) => {
+    if (typeof tool === 'string') return !tool.trim();
+    if (!tool || typeof tool !== 'object') return true;
+    const name = [tool.component_name, tool.tool_name, tool.name].find(
+      (value) => typeof value === 'string' && value.trim(),
+    );
+    return (
+      !name ||
+      (name.toLowerCase() === 'agent' &&
+        hasIncompleteAgentTools(tool.params?.tools))
+    );
+  });
 }

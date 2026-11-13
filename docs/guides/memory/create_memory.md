@@ -4,7 +4,7 @@ slug: /use_memory
 sidebar_label: Create Memory
 title: Create Memory
 sidebar_custom_props: {
-  categoryIcon: LucideBox
+  categoryIcon: LucideCirclePlus
 }
 ---
 

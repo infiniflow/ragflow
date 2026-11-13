@@ -22,6 +22,7 @@ package component
 
 import (
 	"context"
+	"ragflow/internal/ingestion/component/schema"
 	"testing"
 )
 
@@ -44,7 +45,7 @@ func TestTokenizer_DropsContentWithWeightOnlyChunks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Tokenizer.Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 0 {
 		t.Fatalf("content_with_weight-only chunks must be dropped, got %d chunk(s)", len(chunks))
 	}
@@ -70,7 +71,7 @@ func TestTokenizer_DoesNotChangeChunkText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Tokenizer.Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) == 0 {
 		t.Fatal("no chunks emitted")
 	}

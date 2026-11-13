@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -60,5 +61,41 @@ var PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) 
 	return &http.Client{
 		Transport: transport,
 		Timeout:   timeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("stopped after 10 redirects")
+			}
+			// The pinned dialer only guarantees the host, not the scheme:
+			// a same-host HTTPS -> HTTP redirect would carry credential
+			// headers in cleartext.
+			if via[0].URL.Scheme == "https" && req.URL.Scheme == "http" {
+				return fmt.Errorf("refusing HTTPS to HTTP redirect to %q", req.URL)
+			}
+			// The pinned dialer also leaves the port to the redirect target:
+			// a same-host redirect to another port would reach a different
+			// service while Go still forwards sensitive headers for the host.
+			if !sameRequestOrigin(via[0].URL, req.URL) {
+				return fmt.Errorf("refusing redirect to different origin %q", req.URL)
+			}
+			return nil
+		},
 	}
+}
+
+// sameRequestOrigin reports whether two URLs share scheme, host, and effective
+// port (default 443/80 when the URL omits it).
+func sameRequestOrigin(a, b *url.URL) bool {
+	return a.Scheme == b.Scheme &&
+		strings.EqualFold(a.Hostname(), b.Hostname()) &&
+		effectiveURLPort(a) == effectiveURLPort(b)
+}
+
+func effectiveURLPort(u *url.URL) string {
+	if p := u.Port(); p != "" {
+		return p
+	}
+	if u.Scheme == "https" {
+		return "443"
+	}
+	return "80"
 }

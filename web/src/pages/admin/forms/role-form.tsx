@@ -22,6 +22,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 import { listResources } from '@/services/admin-service';
 import { PERMISSION_TYPES, formMergeDefaultValues } from '../utils';
+import rolePermissions from '@/ee/pages/admin/roles/role-permissions';
 
 export interface CreateRoleFormData {
   name: string;
@@ -113,40 +114,46 @@ export const CreateRoleForm = ({
               ))}
             </TabsList>
 
-            {resourceTypes?.map((resourceType) => (
-              <TabsContent
-                key={resourceType}
-                value={resourceType}
-                className="space-y-4"
-              >
-                <Card className="border-0 bg-bg-card !shadow-none">
-                  <CardContent className="p-6">
-                    <div className="grid grid-cols-4 gap-4">
-                      {PERMISSION_TYPES.map((permissionType) => (
-                        <FormField
-                          key={permissionType}
-                          name={`permissions.${resourceType}.${permissionType}`}
-                          render={({ field }) => (
-                            <FormItem className="space-y-0 inline-flex items-center gap-2">
-                              <FormLabel>
-                                {t(`admin.permissionType.${permissionType}`)}
-                              </FormLabel>
-                              <FormControl>
-                                <Switch
-                                  {...field}
-                                  checked={field.value}
-                                  onCheckedChange={field.onChange}
-                                />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                      ))}
-                    </div>
-                  </CardContent>
-                </Card>
-              </TabsContent>
-            ))}
+            {resourceTypes?.map((resourceType) => {
+              const permissionTypes =
+                rolePermissions.getRolePermissionTypes?.(resourceType) ??
+                PERMISSION_TYPES;
+
+              return (
+                <TabsContent
+                  key={resourceType}
+                  value={resourceType}
+                  className="space-y-4"
+                >
+                  <Card className="border-0 bg-bg-card !shadow-none">
+                    <CardContent className="p-6">
+                      <div className="grid grid-cols-4 gap-4">
+                        {permissionTypes.map((permissionType) => (
+                          <FormField
+                            key={permissionType}
+                            name={`permissions.${resourceType}.${permissionType}`}
+                            render={({ field }) => (
+                              <FormItem className="space-y-0 inline-flex items-center gap-2">
+                                <FormLabel>
+                                  {t(`admin.permissionType.${permissionType}`)}
+                                </FormLabel>
+                                <FormControl>
+                                  <Switch
+                                    {...field}
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
+                                  />
+                                </FormControl>
+                              </FormItem>
+                            )}
+                          />
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              );
+            })}
           </Tabs>
         </div>
       </form>
