@@ -47,11 +47,7 @@ function AdminLogin() {
   const loginMutation = useMutation({
     mutationKey: ['adminLogin'],
     mutationFn: async (params: { email: string; password: string }) => {
-      const rsaPassWord = rsaPsw(params.password) as string;
-      return await login({
-        email: params.email,
-        password: rsaPassWord,
-      });
+      return await login(params);
     },
     onSuccess: (request) => {
       const { data: req, headers } = request;
@@ -113,6 +109,20 @@ function AdminLogin() {
     resolver: zodResolver(FormSchema),
   });
 
+  const onSubmit = (params: z.infer<typeof FormSchema>) => {
+    const password = rsaPsw(params.password);
+    if (!password) {
+      form.setError(
+        'password',
+        { type: 'validate', message: t('passwordEncryptionError') },
+        { shouldFocus: true },
+      );
+      return;
+    }
+
+    loginMutation.mutate({ email: params.email, password });
+  };
+
   return (
     <ScrollArea className="w-screen h-screen">
       <div className="relative h-max min-h-[100vh]">
@@ -153,9 +163,7 @@ function AdminLogin() {
                   <form
                     id={formId}
                     className="space-y-8 text-text-primary"
-                    onSubmit={form.handleSubmit((data) =>
-                      loginMutation.mutate(data),
-                    )}
+                    onSubmit={form.handleSubmit(onSubmit)}
                   >
                     <FormField
                       control={form.control}

@@ -108,6 +108,8 @@ export default {
       emailPlaceholder: 'Please input email',
       passwordLabel: 'Password',
       passwordPlaceholder: 'Please input password',
+      passwordEncryptionError:
+        'Password could not be encrypted. It may be too long.',
       rememberMe: 'Remember me',
       signInTip: 'Don’t have an account?',
       signUpTip: 'Already have an account?',
