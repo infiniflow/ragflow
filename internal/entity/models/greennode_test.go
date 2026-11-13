@@ -252,7 +252,7 @@ func TestGreenNodeListModelsTypesByGatewayModelType(t *testing.T) {
 				entry("acme/new-model", "chat", "text"),
 				entry("baai/bge-m3", "embedding", "text"),
 				entry("baai/bge-reranker-v2-m3", "rerank", "text"),
-				entry("greennode/idp", "ocr", "image", "file"),
+				entry("greennode/ocr-model", "ocr", "image", "file"),
 				entry("acme/speech", "tts", "text"),
 				{"id": "  "},
 			},
