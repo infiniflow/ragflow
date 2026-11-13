@@ -28,7 +28,8 @@ const (
 	DocumentActionAdded = "added"
 	// DocumentActionUpdated means a document was changed.
 	DocumentActionUpdated = "updated"
-	// DocumentActionSkipped means a document was unchanged.
+	// DocumentActionSkipped means a document was left untouched: its
+	// fingerprint matched, or its fetch failed for that document only.
 	DocumentActionSkipped = "skipped"
 )
 
@@ -47,6 +48,11 @@ type DocumentUpsertInput struct {
 type DocumentUpsertResult struct {
 	DocID  string
 	Action string
+	// FetchSkipped marks a result produced by a fetch that failed with the
+	// connector's ErrDocumentSkipped: the runner keeps the watermark behind
+	// the failed document so a later sync lists it again instead of dropping
+	// it once its modified time leaves the listing window.
+	FetchSkipped bool
 }
 
 // DocumentSink stores one normalized source document.
