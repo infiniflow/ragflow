@@ -50,8 +50,8 @@
 //
 // # Deliberately non-uniform health checks
 //
-// MinioStorage.Health uses a read-only bucket HEAD as an endpoint liveness
-// probe; a missing bucket or AccessDenied still confirms a response. The
+// MinioStorage.Health sends HEAD /minio/health/live and requires HTTP 200
+// to confirm endpoint liveness without issuing S3 bucket requests. The
 // s3Base health check uploads a probe object to
 // <bucket or "health-check-bucket">/<prefix>/txtxtxtxt1, matching the
 // pre-migration Python S3 connector. The difference is intentional: a

@@ -16,6 +16,7 @@ package storage
 
 import (
 	"context"
+	"crypto/x509"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -25,46 +26,52 @@ import (
 	"testing"
 	"time"
 
-	"github.com/minio/minio-go/v7"
-	"github.com/minio/minio-go/v7/pkg/credentials"
+	"ragflow/internal/server/config"
 )
 
 func newMinioHealthTestStorage(t *testing.T, region string, handler http.HandlerFunc) *MinioStorage {
 	t.Helper()
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
-	client, err := minio.New(strings.TrimPrefix(server.URL, "http://"), &minio.Options{
-		Region:     region,
-		Creds:      credentials.NewStaticV4("test-access", "test-secret", ""),
-		MaxRetries: 1,
+	storage, err := NewMinioStorage(config.MinioConfig{
+		Host:     strings.TrimPrefix(server.URL, "http://"),
+		Region:   region,
+		User:     "test-access",
+		Password: "test-secret",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return &MinioStorage{client: client}
+	t.Cleanup(storage.healthClient.CloseIdleConnections)
+	return storage
 }
 
-func TestMinioStorageHealthProbesConfiguredRegion(t *testing.T) {
-	for _, status := range []int{http.StatusOK, http.StatusNotFound, http.StatusForbidden, http.StatusInternalServerError} {
-		t.Run(fmt.Sprint(status), func(t *testing.T) {
-			var requests atomic.Int32
-			storage := newMinioHealthTestStorage(t, "eu-west-2", func(w http.ResponseWriter, r *http.Request) {
-				requests.Add(1)
-				if r.Method != http.MethodHead || r.URL.Path == "/" {
-					t.Errorf("expected a bucket HEAD probe, got %s %s", r.Method, r.URL)
+func TestMinioStorageHealthUsesLivenessEndpoint(t *testing.T) {
+	for _, region := range []string{"", "eu-west-2"} {
+		for _, status := range []int{http.StatusOK, http.StatusFound, http.StatusNotFound, http.StatusForbidden, http.StatusInternalServerError, http.StatusServiceUnavailable} {
+			t.Run(fmt.Sprintf("%s/%d", region, status), func(t *testing.T) {
+				var requests atomic.Int32
+				storage := newMinioHealthTestStorage(t, region, func(w http.ResponseWriter, r *http.Request) {
+					requests.Add(1)
+					if r.Method != http.MethodHead || r.URL.Path != "/minio/health/live" || r.URL.RawQuery != "" {
+						t.Errorf("expected HEAD /minio/health/live, got %s %s", r.Method, r.URL)
+					}
+					if r.Header.Get("Authorization") != "" {
+						t.Error("liveness probe sent S3 credentials")
+					}
+					if status == http.StatusFound {
+						w.Header().Set("Location", "/login")
+					}
+					w.WriteHeader(status)
+				})
+				if got, want := storage.Health(t.Context()), status == http.StatusOK; got != want {
+					t.Errorf("Health() = %t for HTTP %d, want %t", got, status, want)
 				}
-				if !strings.Contains(r.Header.Get("Authorization"), "/eu-west-2/s3/aws4_request") {
-					t.Error("probe did not retain the configured signing region")
+				if got := requests.Load(); got != 1 {
+					t.Errorf("probe requests = %d, want 1", got)
 				}
-				w.WriteHeader(status)
 			})
-			if got, want := storage.Health(t.Context()), status != http.StatusInternalServerError; got != want {
-				t.Errorf("Health() = %t for HTTP %d, want %t", got, status, want)
-			}
-			if got := requests.Load(); got != 1 {
-				t.Errorf("probe requests = %d, want 1 even with an explicit region", got)
-			}
-		})
+		}
 	}
 }
 
@@ -77,7 +84,7 @@ func TestMinioStorageHealthConcurrentChecks(t *testing.T) {
 		entered <- struct{}{}
 		select {
 		case <-release:
-			w.WriteHeader(http.StatusNotFound)
+			w.WriteHeader(http.StatusOK)
 		case <-r.Context().Done():
 		}
 	})
@@ -107,7 +114,7 @@ func TestMinioStorageHealthRepeatedChecks(t *testing.T) {
 	var requests atomic.Int32
 	storage := newMinioHealthTestStorage(t, "us-east-1", func(w http.ResponseWriter, _ *http.Request) {
 		requests.Add(1)
-		w.WriteHeader(http.StatusNotFound)
+		w.WriteHeader(http.StatusOK)
 	})
 	for i := range 20 {
 		if !storage.Health(t.Context()) {
@@ -199,26 +206,39 @@ func TestMinioStorageHealthNetworkFailureRecovers(t *testing.T) {
 	}
 }
 
-func TestMinioStorageHealthProbesAfterRegionDiscovery(t *testing.T) {
-	var locations, heads atomic.Int32
-	storage := newMinioHealthTestStorage(t, "", func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet && r.URL.Query().Has("location") {
-			locations.Add(1)
-			fmt.Fprint(w, `<LocationConstraint>us-east-1</LocationConstraint>`)
-			return
-		}
-		if r.Method != http.MethodHead {
-			t.Errorf("unexpected health request: %s %s", r.Method, r.URL)
-		}
-		heads.Add(1)
-		w.WriteHeader(http.StatusNotFound)
-	})
-	for range 2 {
-		if !storage.Health(t.Context()) {
-			t.Fatal("Health() = false after region discovery")
-		}
-	}
-	if locations.Load() != 1 || heads.Load() != 2 {
-		t.Errorf("location requests = %d, HEAD requests = %d, want 1 and 2", locations.Load(), heads.Load())
+func TestMinioStorageHealthTLS(t *testing.T) {
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	for _, tc := range []struct {
+		name    string
+		verify  bool
+		trusted bool
+		healthy bool
+	}{
+		{name: "skip verification", healthy: true},
+		{name: "reject untrusted certificate", verify: true},
+		{name: "verify trusted certificate", verify: true, trusted: true, healthy: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			storage, err := NewMinioStorage(config.MinioConfig{
+				Host:   strings.TrimPrefix(server.URL, "https://"),
+				Secure: true,
+				Verify: tc.verify,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(storage.healthClient.CloseIdleConnections)
+			if tc.trusted {
+				roots := x509.NewCertPool()
+				roots.AddCert(server.Certificate())
+				storage.healthClient.Transport.(*http.Transport).TLSClientConfig.RootCAs = roots
+			}
+			if got := storage.Health(t.Context()); got != tc.healthy {
+				t.Errorf("Health() = %t, want %t", got, tc.healthy)
+			}
+		})
 	}
 }
