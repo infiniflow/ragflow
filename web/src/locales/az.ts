@@ -1368,16 +1368,6 @@ Bu avtomatik etiketləmə funksiyası mövcud verilənlər dəstinə sahəyə ai
       dataSourceFieldClientSecret: 'Müştəri sirri',
       dataSourceFieldFolderPathOptional: 'Qovluq yolu',
       dataSourceFieldBatchSize: 'Dəstə ölçüsü',
-      dataSourceFieldFeishuAppId: 'Feishu tətbiqinin ID-si',
-      dataSourceFieldFeishuAppSecret: 'Feishu tətbiqinin sirri',
-      dataSourceFieldWikiSpaceId: 'Viki sahəsinin ID-si',
-      dataSourceFieldRootNodeToken: 'Vikinin kök düyününün tokeni',
-      dataSourceFieldIncludeExtensions: 'İcazə verilən fayl genişlənmələri',
-      dataSourceFieldIncludeKeywords: 'Fayl adında tələb olunan açar sözlər',
-      dataSourceFieldExcludeKeywords: 'Fayl adında istisna edilən açar sözlər',
-      dataSourceFieldMaxFileSizeBytes: 'Maksimum fayl ölçüsü (bayt)',
-      dataSourceValidationFeishuBatchSize:
-        'Dəstə ölçüsü 1 ilə 10 arasında olmalıdır',
       dataSourceFieldMailFolder: 'Poçt qovluğu',
       dataSourceFieldMailboxUserIds: 'Poçt qutusu istifadəçilərinin ID-ləri',
       dataSourceFieldInstanceUrl: 'Nüsxənin URL-i',
@@ -1654,8 +1644,6 @@ Nümunə: Virtual host üslubu`,
         'Bilik axtarışı üçün Notion-dan səhifələri və verilənlər bazalarını sinxronlaşdırın.',
       google_driveDescription:
         'Google Drive hesabınızı OAuth vasitəsilə qoşun və müəyyən qovluqları və ya diskləri sinxronlaşdırın.',
-      feishu_wikiDescription:
-        'Feishu Wiki alt ağacından endirilə bilən fayl qovşaqlarını sinxronlaşdırın.',
       gmailDescription:
         'E-poçtları sinxronlaşdırmaq üçün Gmail hesabınızı OAuth vasitəsilə qoşun.',
       webdavDescription:

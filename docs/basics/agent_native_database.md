@@ -5,7 +5,7 @@ sidebar_label: "What Is Agent Native Database?"
 slug: /what-is-agent-native-database
 ---
 
-# What is an Agent Native Database?
+# What Is an Agent Native Database?
 
 An agent native database is a **context supply layer** that an agent harness can query directly. It stores, compiles, and governs context—claims with verbatim evidence, navigation structures, entity relations, timelines, ontologies, wikis, and memory—and hands the agent the smallest sufficient set of verified facts instead of a ranked list of passages.
 

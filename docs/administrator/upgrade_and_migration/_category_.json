@@ -2,8 +2,8 @@
   "label": "Upgrade and Migration",
   "position": 4,
   "link": {
-    "type": "doc",
-    "id": "administrator/upgrade_and_migration/start_here"
+    "type": "generated-index",
+    "description": "Start with the Migration Guide to choose the correct upgrade path and prepare a verified backup, then follow the procedure for your version."
   },
   "customProps": {
     "categoryIcon": "LucideArrowBigUpDash"
