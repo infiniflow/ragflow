@@ -53,18 +53,52 @@ func (o *OllamaModel) Name() string {
 	return "Ollama"
 }
 
-func buildOllamaRequestBody(cfg *ChatConfig, modelName string, messages []Message, stream bool) map[string]any {
+func buildOllamaRequestBody(cfg *ChatConfig, modelName string, messages []Message, stream bool) (map[string]any, error) {
 	reqBody := buildRequestBody(cfg, modelName, messages, stream)
-	reqBody["messages"] = buildOllamaMessages(messages)
+	apiMessages, err := buildOllamaMessages(messages)
+	if err != nil {
+		return nil, err
+	}
+	reqBody["messages"] = apiMessages
 	if cfg != nil && cfg.Thinking != nil {
 		reqBody["think"] = *cfg.Thinking
 	}
-	return reqBody
+	return reqBody, nil
 }
 
-func buildOllamaMessages(messages []Message) []map[string]any {
+func buildOllamaMessages(messages []Message) ([]map[string]any, error) {
 	apiMessages := buildChatMessages(messages)
+	toolNames := make(map[string]string)
 	for i, message := range messages {
+		if len(message.ToolCalls) > 0 {
+			calls := make([]map[string]any, 0, len(message.ToolCalls))
+			for _, call := range message.ToolCalls {
+				function, _ := call["function"].(map[string]interface{})
+				name, _ := function["name"].(string)
+				arguments := function["arguments"]
+				if encoded, ok := arguments.(string); ok {
+					var object map[string]any
+					if err := json.Unmarshal([]byte(encoded), &object); err != nil || object == nil {
+						return nil, fmt.Errorf("invalid Ollama tool arguments for %s: expected a JSON object", name)
+					}
+					arguments = object
+				}
+				calls = append(calls, map[string]any{"function": map[string]any{"name": name, "arguments": arguments}})
+				if id, _ := call["id"].(string); id != "" {
+					toolNames[id] = name
+				}
+			}
+			apiMessages[i]["tool_calls"] = calls
+		}
+		if message.Role == "tool" {
+			if name := toolNames[message.ToolCallID]; name != "" {
+				apiMessages[i]["tool_name"] = name
+			} else if name, ok := message.Name.(string); ok && name != "" {
+				apiMessages[i]["tool_name"] = name
+			}
+			delete(apiMessages[i], "tool_call_id")
+			delete(apiMessages[i], "name")
+		}
 		content, images, ok := ollamaMultimodalContent(message.Content)
 		if !ok {
 			continue
@@ -74,7 +108,7 @@ func buildOllamaMessages(messages []Message) []map[string]any {
 			apiMessages[i]["images"] = images
 		}
 	}
-	return apiMessages
+	return apiMessages, nil
 }
 
 func ollamaMultimodalContent(content interface{}) (string, []string, bool) {
@@ -160,7 +194,10 @@ func (o *OllamaModel) ChatWithMessages(ctx context.Context, modelName string, me
 	}
 
 	// Build request body
-	reqBody := buildOllamaRequestBody(chatModelConfig, modelName, messages, false)
+	reqBody, err := buildOllamaRequestBody(chatModelConfig, modelName, messages, false)
+	if err != nil {
+		return nil, err
+	}
 
 	if chatModelConfig != nil {
 		if chatModelConfig.Effort != nil && *chatModelConfig.Effort != "" {
@@ -194,7 +231,10 @@ func (o *OllamaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	}
 
 	// Build request body with streaming enabled
-	reqBody := buildOllamaRequestBody(modelConfig, modelName, messages, true)
+	reqBody, err := buildOllamaRequestBody(modelConfig, modelName, messages, true)
+	if err != nil {
+		return err
+	}
 
 	if modelConfig != nil {
 		if modelConfig.Effort != nil && *modelConfig.Effort != "" {
@@ -212,8 +252,39 @@ func (o *OllamaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 }
 
 type ollamaChatMessage struct {
-	Content  string `json:"content"`
-	Thinking string `json:"thinking"`
+	Content   string           `json:"content"`
+	Thinking  string           `json:"thinking"`
+	ToolCalls []ollamaToolCall `json:"tool_calls"`
+}
+
+type ollamaToolCall struct {
+	ID       string `json:"id"`
+	Function struct {
+		Name      string         `json:"name"`
+		Arguments map[string]any `json:"arguments"`
+	} `json:"function"`
+}
+
+// Ollama sends complete calls with object arguments, including in streaming
+// responses. The agent runtime uses call IDs and JSON-encoded arguments.
+func convertOllamaToolCalls(calls []ollamaToolCall) []map[string]interface{} {
+	var result []map[string]interface{}
+	for _, call := range calls {
+		id := call.ID
+		if id == "" {
+			id = "call_" + common.GenerateUUID()
+		}
+		arguments := call.Function.Arguments
+		if arguments == nil {
+			arguments = map[string]any{}
+		}
+		encoded, _ := json.Marshal(arguments)
+		result = append(result, map[string]interface{}{
+			"id": id, "type": "function",
+			"function": map[string]interface{}{"name": call.Function.Name, "arguments": string(encoded)},
+		})
+	}
+	return result
 }
 
 type ollamaChatResponse struct {
@@ -243,13 +314,15 @@ func handleOllamaNonStreamingResponse(body []byte, modelUsage *common.ModelUsage
 			chatConfig.UsageResult = usage
 		}
 	}
-	if content == "" && reasonContent == "" {
+	toolCalls := convertOllamaToolCalls(result.Message.ToolCalls)
+	if content == "" && reasonContent == "" && len(toolCalls) == 0 {
 		return nil, fmt.Errorf("no message in response")
 	}
 	return &ChatResponse{
 		Answer:        &content,
 		ReasonContent: &reasonContent,
 		Usage:         usage,
+		ToolCalls:     toolCalls,
 	}, nil
 }
 
@@ -258,6 +331,7 @@ func handleOllamaStreamingResponse(body io.Reader, modelUsage *common.ModelUsage
 		return fmt.Errorf("sender is required")
 	}
 	var usage *TokenUsage
+	var toolCalls []map[string]interface{}
 	sawDone := false
 	scanner := bufio.NewScanner(body)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024)
@@ -273,6 +347,7 @@ func handleOllamaStreamingResponse(body io.Reader, modelUsage *common.ModelUsage
 		if event.Error != nil {
 			return fmt.Errorf("upstream stream error: %v", event.Error)
 		}
+		toolCalls = append(toolCalls, convertOllamaToolCalls(event.Message.ToolCalls)...)
 		if event.Message.Thinking != "" {
 			if err := sender(nil, &event.Message.Thinking); err != nil {
 				return err
@@ -293,6 +368,9 @@ func handleOllamaStreamingResponse(body io.Reader, modelUsage *common.ModelUsage
 	}
 	if !sawDone {
 		return fmt.Errorf("stream ended before done")
+	}
+	if chatConfig != nil {
+		chatConfig.ToolCallsResult = &toolCalls
 	}
 	if usage != nil {
 		recordResponseUsage(modelUsage, "", usage, "chat")
