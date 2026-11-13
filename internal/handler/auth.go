@@ -30,18 +30,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// billingAllowsAPIToken applies the paid-plan gate for API key holders across
-// every authentication path. The plan belongs to the token's tenant, not to
-// the user record it resolves to.
-func billingAllowsAPIToken(ctx context.Context, tenantID string) bool {
-	service := billing.Get()
-	if service == nil || !service.Enabled() {
-		return true
-	}
-	allowed, err := service.APIAuthAllowed(ctx, tenantID)
-	return err == nil && allowed
-}
-
 // AuthHandler auth handler
 type AuthHandler struct {
 	userService userTokenResolver
@@ -57,14 +45,14 @@ func (h *AuthHandler) ResolveMCPUser(ctx context.Context, authorization string) 
 		return identity.User, nil
 	}
 	if identity, code, err := h.userService.ResolveAPIToken(ctx, authorization); err == nil && code == common.CodeSuccess {
-		if !billingAllowsAPIToken(ctx, identity.TenantID) {
-			return nil, fmt.Errorf("API key requires a Starter or Pro plan")
+		if _, err := billing.Get().APIAuthAllowed(ctx, identity.TenantID); err != nil {
+			return nil, err
 		}
 		return identity.User, nil
 	}
 	if identity, code, err := h.userService.ResolveBetaAPIToken(ctx, authorization); err == nil && code == common.CodeSuccess {
-		if !billingAllowsAPIToken(ctx, identity.TenantID) {
-			return nil, fmt.Errorf("API key requires a Starter or Pro plan")
+		if _, err := billing.Get().APIAuthAllowed(ctx, identity.TenantID); err != nil {
+			return nil, err
 		}
 		return identity.User, nil
 	}
@@ -124,8 +112,8 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 		}
 		// Then try a regular API token (non-beta public bot flow).
 		if identity, code, err := h.userService.ResolveAPIToken(ctx, auth); err == nil && code == common.CodeSuccess {
-			if !billingAllowsAPIToken(ctx, identity.TenantID) {
-				common.RespondError(c, common.CodePermissionError, "API key requires a Starter or Pro plan")
+			if _, err := billing.Get().APIAuthAllowed(ctx, identity.TenantID); err != nil {
+				common.RespondError(c, common.CodeForbidden, err.Error())
 				c.Abort()
 				return
 			}
@@ -136,8 +124,8 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 		}
 		// Fall back to beta API token (public bot access).
 		if identity, code, err := h.userService.ResolveBetaAPIToken(ctx, auth); err == nil && code == common.CodeSuccess {
-			if !billingAllowsAPIToken(ctx, identity.TenantID) {
-				common.RespondError(c, common.CodePermissionError, "API key requires a Starter or Pro plan")
+			if _, err := billing.Get().APIAuthAllowed(ctx, identity.TenantID); err != nil {
+				common.RespondError(c, common.CodeForbidden, err.Error())
 				c.Abort()
 				return
 			}
@@ -180,20 +168,11 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 			authViaAPIToken = true
 		}
 
-		// API keys are a paid capability: Trial tenants must upgrade first.
 		if authViaAPIToken {
-			if billingService := billing.Get(); billingService != nil && billingService.Enabled() {
-				allowed, gateErr := billingService.APIAuthAllowed(ctx, identity.TenantID)
-				if gateErr != nil {
-					common.Respond(c, http.StatusForbidden, common.CodeForbidden, nil, gateErr.Error())
-					c.Abort()
-					return
-				}
-				if !allowed {
-					common.Respond(c, http.StatusForbidden, common.CodeForbidden, nil, "API key requires a Starter or Pro plan")
-					c.Abort()
-					return
-				}
+			if _, err := billing.Get().APIAuthAllowed(ctx, identity.TenantID); err != nil {
+				common.Respond(c, http.StatusForbidden, common.CodeForbidden, nil, err.Error())
+				c.Abort()
+				return
 			}
 		}
 

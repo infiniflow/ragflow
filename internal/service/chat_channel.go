@@ -26,12 +26,14 @@ import (
 
 	"go.uber.org/zap"
 
-	"gorm.io/gorm"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
+	"ragflow/internal/service/billing"
+
+	"gorm.io/gorm"
 )
 
 type ChatChannelService struct {
@@ -113,6 +115,9 @@ func (s *ChatChannelService) CreateChatChannel(ctx context.Context, name, channe
 	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "chat", permission.ActionWrite); err != nil {
 		return nil, err
 	}
+	if _, err := billing.Get().APIAuthAllowed(ctx, tenantID); err != nil {
+		return nil, err
+	}
 	chatID, agentID = normalizedChannelTarget(chatID), normalizedChannelTarget(agentID)
 	if err := validateChannelBinding(ctx, chatID, agentID); err != nil {
 		return nil, err
@@ -181,6 +186,10 @@ func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, channelID st
 			return nil, code, permissionErr
 		}
 		return nil, common.CodeServerError, err
+	}
+
+	if _, err := billing.Get().APIAuthAllowed(ctx, channel.TenantID); err != nil {
+		return nil, common.CodeForbidden, err
 	}
 
 	updates := map[string]interface{}{}
@@ -329,6 +338,12 @@ func (s *ChatChannelService) handleIncomingMessage(ctx context.Context, msg Chat
 	if channel.Status != 1 {
 		return "", nil
 	}
+	if channel.AgentID == nil && (channel.ChatID == nil || strings.TrimSpace(*channel.ChatID) == "") {
+		return "", nil
+	}
+	if _, err := billing.Get().APIAuthAllowed(ctx, channel.TenantID); err != nil {
+		return err.Error(), nil
+	}
 	ownerCtx := permission.WithIdentity(ctx, channel.TenantID, channel.TenantID)
 	if err := validateChannelBinding(ownerCtx, channel.ChatID, channel.AgentID); err != nil {
 		return "", err
@@ -338,10 +353,6 @@ func (s *ChatChannelService) handleIncomingMessage(ctx context.Context, msg Chat
 		defer cancel()
 		return s.handleChannelAgentMessage(ctx, channel, msg, onDelta)
 	}
-	if channel.ChatID == nil || strings.TrimSpace(*channel.ChatID) == "" {
-		return "", nil
-	}
-
 	dialog, err := s.chatDAO.GetByID(ctx, dao.DB, *channel.ChatID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
