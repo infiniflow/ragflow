@@ -511,7 +511,9 @@ func (c *wecomChannel) handleWebSocketMessage(ctx context.Context, raw map[strin
 		chatType = "group"
 	}
 	text := weComRawStringValue(weComMapValue(body["text"])["content"])
-	c.handleTextMessage(ctx, chatID, senderID, messageID, text, chatType, raw)
+	if err := c.handleTextMessage(ctx, chatID, senderID, messageID, text, chatType, raw); err != nil {
+		common.Error("wecom: websocket message handler error", err, zap.String("account_id", c.account.AccountID))
+	}
 }
 
 // StreamEnabled reports whether this account asked for streaming replies. Streaming needs
@@ -752,15 +754,18 @@ func (c *wecomChannel) requestJSON(ctx context.Context, method, endpoint string,
 	return nil
 }
 
-func (c *wecomChannel) handleTextMessage(ctx context.Context, chatID, senderID, messageID, text, chatType string, raw map[string]any) {
+// handleTextMessage dispatches one inbound text message. The returned error is
+// the bridge failure, i.e. no reply was produced; callers use it to decide
+// whether a retried callback may safely run the message again.
+func (c *wecomChannel) handleTextMessage(ctx context.Context, chatID, senderID, messageID, text, chatType string, raw map[string]any) error {
 	if strings.TrimSpace(text) == "" {
-		return
+		return nil
 	}
 	c.mu.Lock()
 	handler := c.handler
 	c.mu.Unlock()
 	if handler == nil {
-		return
+		return nil
 	}
 	if err := handler(ctx, core.IncomingMessage{
 		Channel:   c.ChannelID(),
@@ -773,7 +778,9 @@ func (c *wecomChannel) handleTextMessage(ctx context.Context, chatID, senderID, 
 		Raw:       raw,
 	}); err != nil {
 		common.Error("wecom: message handler error", err, zap.String("account_id", c.account.AccountID))
+		return err
 	}
+	return nil
 }
 
 func parseWeComInt(value any, field string) (int64, error) {
