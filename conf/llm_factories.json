@@ -3528,6 +3528,14 @@
             "url": "https://llm.wiro.ai/v1"
         },
         {
+            "name": "Crusoe",
+            "logo": "",
+            "tags": "LLM,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.inference.crusoecloud.com/v1"
+        },
+        {
             "name": "StepFun",
             "logo": "",
             "tags": "LLM,IMAGE2TEXT,SPEECH2TEXT,TTS",

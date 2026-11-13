@@ -180,6 +180,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **cheapaimodel** | OpenAI-compatible gateway for open-weight models (DeepSeek, GLM, Kimi) plus Grok |
 | **CloudGPU** | GPU cloud with an OpenAI-compatible inference API for open models |
 | **CometAPI** | Multi-provider aggregator |
+| **Crusoe** | Open-weight model hosting on its own GPU cloud, with an OpenAI-compatible API |
 | **DeepInfra** | Open-source model hosting |
 | **Demon Route** | OpenAI-compatible router |
 | **EmpirioLabs AI** | AI inference provider |
