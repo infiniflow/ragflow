@@ -6,8 +6,9 @@ import {
   findEntityDisplayNameByKeyword,
   getEntityDisplayName,
 } from '@/components/structure-graph/adapters';
+import { OntologyStats } from '@/components/structure-graph/ontology-model-graph/ontology-stats';
+import { OntologyQualityPanel } from '@/components/structure-graph/ontology-model-graph/quality-panel';
 import { RepresentationRenderer } from '@/components/structure-graph/representation-renderer';
-import { Card } from '@/components/ui/card';
 import {
   useGenerateStatus,
   useTraceRunData,
@@ -21,18 +22,23 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import {
+  CompilationViewLayout,
+  CompilationViewProps,
+} from './compilation-view-layout';
 import { StructureKind, ViewMode, ViewModeGenerateTypeMap } from './constants';
-import CompilationEmptyState from './empty-state';
-import { OntologyStats } from '@/components/structure-graph/ontology-model-graph/ontology-stats';
-import { OntologyQualityPanel } from '@/components/structure-graph/ontology-model-graph/quality-panel';
 import { useRunEndEffect } from './hooks/use-run-end-effect';
+import CompilationEmptyState from './empty-state';
 import { CompilationLoadingCard } from './loading-card';
 
-interface DatasetStructureViewProps {
+type DatasetStructureViewProps = CompilationViewProps & {
   kind: StructureKind;
-}
+};
 
-export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
+export function DatasetStructureView({
+  kind,
+  ...viewProps
+}: DatasetStructureViewProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const knowledgeBaseId = useKnowledgeBaseId();
@@ -103,58 +109,61 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
   );
 
   if (loading && !data) {
-    return <CompilationLoadingCard />;
+    return (
+      <CompilationViewLayout {...viewProps}>
+        <CompilationLoadingCard />
+      </CompilationViewLayout>
+    );
   }
 
   if (!template && !graphKeywords) {
-    return <CompilationEmptyState type={kind} data={structureRunData} />;
+    return (
+      <CompilationViewLayout {...viewProps}>
+        <CompilationEmptyState type={kind} data={structureRunData} />
+      </CompilationViewLayout>
+    );
   }
 
   return (
-    <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
-      <div className="flex justify-between gap-4 px-4 pt-4">
-        {kind === ViewMode.Graph && (
-          <SelectWithSearch
-            options={entityOptions}
-            value={selectedEntityName || graphKeywords}
-            onChange={handleSelectEntity}
-            placeholder={t('knowledgeCompilation.searchEntity')}
-            allowClear
-            alwaysShowSearch
-            triggerClassName="ml-auto w-96 max-w-full"
-            onNoMatchEnter={handleNoMatchEnter}
-            disableAutoSelectOnEnter
-          />
+    <CompilationViewLayout {...viewProps}>
+      <div className="flex-1 min-h-0 flex flex-col">
+        {kind === ViewMode.Ontology && (
+          // The ontology's numbers are page-level information, so they are laid
+          // out here rather than floated over the canvas. Shrunk-to-content: the
+          // canvas row below is `flex-1`, so nothing here may grow.
+          <div className="flex shrink-0 flex-col gap-2 px-4 pt-3">
+            <OntologyStats graph={template?.ontology} />
+            {/* The ledger sits next to the totals: the totals say what the scope
+                contains, the ledger says what still has to be fixed. */}
+            <OntologyQualityPanel graph={template?.ontology} />
+          </div>
         )}
-      </div>
-      {kind === ViewMode.Ontology && (
-        // The ontology's numbers are page-level information, so they are laid
-        // out here rather than floated over the canvas — an overlay wider than
-        // the canvas column spills under the detail panel next to it.
-        // Shrunk-to-content: the canvas row below is `flex-1`, so nothing here
-        // may grow. The ledger stays one line until it is opened, and its
-        // details carry their own height cap.
-        <div className="flex shrink-0 flex-col gap-2 px-4 pt-3">
-          <OntologyStats graph={template?.ontology} />
-          {/* The ledger sits next to the totals: the totals say what the scope
-              contains, the ledger says what still has to be fixed. */}
-          <OntologyQualityPanel graph={template?.ontology} />
+        <div className="flex justify-between gap-4 px-4 pt-4">
+          {kind === ViewMode.Graph && (
+            <SelectWithSearch
+              options={entityOptions}
+              value={selectedEntityName || graphKeywords}
+              onChange={handleSelectEntity}
+              placeholder={t('knowledgeCompilation.searchEntity')}
+              allowClear
+              alwaysShowSearch
+              triggerClassName="ml-auto w-96 max-w-full"
+              onNoMatchEnter={handleNoMatchEnter}
+              disableAutoSelectOnEnter
+            />
+          )}
         </div>
-      )}
-      <div className="mt-0 flex flex-1 min-h-0 gap-3">
-        <div className="flex min-w-0 flex-1">
-          <RepresentationRenderer
-            template={template}
-            highlightNodeId={selectedEntityName || null}
-            totalEntities={data?.total_entities}
-            returnedEntities={data?.returned_entities}
-            // The ontology ABox reads the index directly, so it needs the scope
-            // the page is already showing.
-            datasetId={knowledgeBaseId}
-            templateId={template?.template_id}
-          />
-        </div>
+        <RepresentationRenderer
+          template={template}
+          highlightNodeId={selectedEntityName || null}
+          totalEntities={data?.total_entities}
+          returnedEntities={data?.returned_entities}
+          // The ontology ABox reads the index directly, so it needs the scope
+          // the page is already showing.
+          datasetId={knowledgeBaseId}
+          templateId={template?.template_id}
+        />
       </div>
-    </Card>
+    </CompilationViewLayout>
   );
 }

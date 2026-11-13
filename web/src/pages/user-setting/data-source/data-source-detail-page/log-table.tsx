@@ -23,7 +23,6 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Routes } from '@/routes';
 import {
   flexRender,
   getCoreRowModel,
@@ -34,8 +33,8 @@ import {
 } from '@tanstack/react-table';
 import { t } from 'i18next';
 import { pick } from 'lodash';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router';
+import { useEffect, useMemo, useState } from 'react';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useLogListDataSource } from '../hooks';
 import { getDataSourceLogsTableColumns } from '../log-columns';
 
@@ -45,7 +44,7 @@ export const DataSourceLogsTable = ({
   autoRefresh: boolean;
 }) => {
   const { data, pagination, setPagination } = useLogListDataSource(autoRefresh);
-  const navigate = useNavigate();
+  const { navigateToDataset } = useNavigatePage();
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
@@ -64,20 +63,13 @@ export const DataSourceLogsTable = ({
     [pagination],
   );
 
-  const handleToDataSetDetail = useCallback(
-    (id: string) => {
-      navigate(`${Routes.Dataset}/${id}`);
-    },
-    [navigate],
-  );
-
   const columns = useMemo(
     () =>
       getDataSourceLogsTableColumns({
         now,
-        handleToDataSetDetail,
+        handleToDataSetDetail: navigateToDataset,
       }),
-    [now, handleToDataSetDetail],
+    [now, navigateToDataset],
   );
 
   const table = useReactTable({

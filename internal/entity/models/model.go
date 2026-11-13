@@ -750,21 +750,6 @@ func (pm *ProviderManager) SearchByFeature(featureType string) ModelResponse {
 		Message: "success",
 	}
 
-	//for _, provider := range pm.Providers {
-	//	for _, model := range provider.Models {
-	//		if modelHasFeature(model.Features, featureType) {
-	//			modelData := map[string]interface{}{
-	//				"provider":    provider.Name,
-	//				"name":        model.Name,
-	//				"max_tokens":  model.MaxTokens,
-	//				"model_types": model.ModelTypes,
-	//				"features":    getFeaturesMap(model.Features),
-	//			}
-	//			resp.Data = append(resp.Data, modelData)
-	//		}
-	//	}
-	//}
-
 	if len(resp.Data) == 0 {
 		resp.Code = 404
 		resp.Message = fmt.Sprintf("No models found with feature '%s'", featureType)

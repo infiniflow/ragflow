@@ -214,7 +214,7 @@ const FileLogsPage: FC = () => {
   return (
     <Card
       className="
-      p-5 min-w-[880px] mr-5 mb-5 bg-transparent shadow-none
+      p-5 mr-5 mb-5 bg-transparent shadow-none
       flex flex-col min-h-0"
     >
       {/* Stats Cards */}

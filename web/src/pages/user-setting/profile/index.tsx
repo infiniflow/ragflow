@@ -256,7 +256,7 @@ const ProfilePage: FC = () => {
 
       {editType && (
         <Modal
-          title={modalTitle[editType]}
+          title={t(modalTitle[editType])}
           open={isEditing}
           showfooter={false}
           maskClosable={false}
@@ -344,6 +344,7 @@ const ProfilePage: FC = () => {
                           <FormControl className="w-full">
                             <PasswordInput
                               {...field}
+                              placeholder={t('currentPassword')}
                               autoComplete="current-password"
                               className="bg-bg-input border-border-default"
                             />
@@ -370,6 +371,7 @@ const ProfilePage: FC = () => {
                           <FormControl className="w-full">
                             <PasswordInput
                               {...field}
+                              placeholder={t('newPassword')}
                               autoComplete="new-password"
                               className="bg-bg-input border-border-default"
                             />
@@ -396,6 +398,7 @@ const ProfilePage: FC = () => {
                           <FormControl className="w-full">
                             <PasswordInput
                               {...field}
+                              placeholder={t('confirmPassword')}
                               className="bg-bg-input border-border-default"
                               autoComplete="new-password"
                               onBlur={() => {

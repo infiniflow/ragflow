@@ -1,19 +1,3 @@
-/*
- *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
- *
- *  Licensed under the Apache License, Version 2.0 (the "License");
- *  you may not use this file except in compliance with the License.
- *  You may obtain a copy of the License at
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software
- *  distributed under the License is distributed on an "AS IS" BASIS,
- *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- *  See the License for the specific language governing permissions and
- *  limitations under the License.
- */
-
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { CompilationTemplateKind } from '@/constants/compilation';
@@ -30,7 +14,10 @@ import { useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
 import { BlueprintSection } from './components/blueprint-section';
+import { CompilationTemplateEditorSidebar } from './components/editor-sidebar';
+import { JsonPreview } from './components/json-preview';
 import { TemplateConfiguration } from './components/template-configuration';
+import { CompilationTemplateEditorView } from './constant';
 import { CompilationTemplateGroupSaveResult } from './hooks/use-compilation-template-group-submit';
 import { useEditNextCompilationTemplateGroup } from './hooks/use-edit-next-compilation-template-group';
 import {
@@ -68,26 +55,38 @@ type CompilationTemplateGroupEditorProps = {
   onCancel: () => void;
   cancelText: string;
   renderHeader?: (state: CompilationTemplateGroupEditorState) => ReactNode;
+  sidebarCollapsed?: boolean;
+  onSidebarCollapse?: () => void;
 };
 
-// Shared body of the edit-next route page and the create dialog: the form,
-// its scrollable configuration area, and the cancel/save footer. The parent
-// must give it a bounded-height flex column to fill.
+// Shared body of the edit-next route page and the create dialog: secondary
+// navigation, configuration/JSON content, and the cancel/save footer. The
+// parent must give it a bounded-height flex column to fill.
 export function CompilationTemplateGroupEditor({
   id,
   onSuccess,
   onCancel,
   cancelText,
   renderHeader,
+  sidebarCollapsed = false,
+  onSidebarCollapse,
 }: CompilationTemplateGroupEditorProps) {
   const { t } = useTranslation();
   const { form, kindOptions, builtins, onSubmit, isLoading } =
     useEditNextCompilationTemplateGroup({ id, onSuccess });
+  const [activeView, setActiveView] = useState(
+    CompilationTemplateEditorView.Configuration,
+  );
 
   const selectedKind = useWatch({
     control: form.control,
     name: `templates.${SelectedTemplateIndex}.kind`,
   });
+  const templateName = useWatch({
+    control: form.control,
+    name: `templates.${SelectedTemplateIndex}.name`,
+  });
+  const allFormValues = useWatch({ control: form.control });
 
   const isArtifacts = selectedKind === CompilationTemplateKind.Artifacts;
   const isOntology = selectedKind === CompilationTemplateKind.Ontology;
@@ -231,20 +230,37 @@ export function CompilationTemplateGroupEditor({
       })}
       <Form {...form}>
         <form className="flex-1 min-h-0 flex flex-col" onSubmit={handleSubmit}>
-          <TemplateConfiguration
-            form={form}
-            builtins={builtins}
-            kindOptions={kindOptions}
-            selectedTemplateIndex={SelectedTemplateIndex}
-          >
-            {isArtifacts && (
-              <BlueprintSection
-                form={form}
-                selectedTemplateIndex={SelectedTemplateIndex}
-                builtins={builtins}
+          <div className="flex min-h-0 flex-1">
+            {!sidebarCollapsed && (
+              <CompilationTemplateEditorSidebar
+                activeView={activeView}
+                templateName={templateName}
+                onViewChange={setActiveView}
+                onCollapse={onSidebarCollapse}
               />
             )}
-          </TemplateConfiguration>
+
+            <div className="flex min-w-0 flex-1 flex-col">
+              {activeView === CompilationTemplateEditorView.Json ? (
+                <JsonPreview value={allFormValues} />
+              ) : (
+                <TemplateConfiguration
+                  form={form}
+                  builtins={builtins}
+                  kindOptions={kindOptions}
+                  selectedTemplateIndex={SelectedTemplateIndex}
+                >
+                  {isArtifacts && (
+                    <BlueprintSection
+                      form={form}
+                      selectedTemplateIndex={SelectedTemplateIndex}
+                      builtins={builtins}
+                    />
+                  )}
+                </TemplateConfiguration>
+              )}
+            </div>
+          </div>
 
           <footer className="shrink-0 px-5 py-4 border-t border-border-button flex items-center justify-end gap-5">
             {ontologyIssues.length > 0 && (

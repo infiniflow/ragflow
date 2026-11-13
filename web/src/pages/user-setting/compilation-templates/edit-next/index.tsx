@@ -22,31 +22,44 @@ import {
 } from '@/components/compilation-template-group';
 import { OntologyActionWorkbenchSheet } from '@/components/compilation-template-group/ontology/action-workbench-sheet';
 import { Button } from '@/components/ui/button';
+import { useCompilationTemplateSidebarCollapse } from '@/hooks/use-compilation-template-sidebar-collapse';
 import { useFetchCompilationTemplateGroup } from '@/hooks/use-compilation-template-group-request';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { useSidebarCollapse } from '@/layouts/components/app-sidebar/use-sidebar-collapse';
 import { Routes } from '@/routes';
 import { isCreateCompilationTemplateGroup } from '@/utils/compilation-template-util';
 import { Redo2, Undo2 } from 'lucide-react';
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
-
-import { resolveAgentsUrl } from './utils';
 
 export default function EditNextCompilationTemplate() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
-  const agentsUrl = resolveAgentsUrl(searchParams.get('source'));
+  const { navigateToAgentsFromCompilation } = useNavigatePage();
+  const { collapsed, setCollapsed } = useCompilationTemplateSidebarCollapse();
+  const { setCollapsed: setPrimarySidebarCollapsed } = useSidebarCollapse();
+
+  useEffect(() => {
+    setCollapsed(false);
+    setPrimarySidebarCollapsed(true);
+  }, [setCollapsed, setPrimarySidebarCollapsed]);
   /** Where the model's three workspaces hang off. */
   const basePath = Routes.CompilationTemplatesEditNext;
 
   const isCreate = isCreateCompilationTemplateGroup(id);
   const { data: group } = useFetchCompilationTemplateGroup(id);
 
-  const navigateToAgents = useCallback(() => {
-    navigate(agentsUrl);
-  }, [navigate, agentsUrl]);
+  const navigateToAgents = navigateToAgentsFromCompilation(
+    searchParams.get('source'),
+  );
+
+  const collapseSidebars = useCallback(() => {
+    setCollapsed(true);
+    setPrimarySidebarCollapsed(true);
+  }, [setCollapsed, setPrimarySidebarCollapsed]);
 
   // Three questions about the same model, and they need three places: here what
   // it says, the panel below what it produced, and the two sheets here what it
@@ -63,7 +76,7 @@ export default function EditNextCompilationTemplate() {
       isDirty,
     }: CompilationTemplateGroupEditorState) => (
       <header className="shrink-0 px-5 py-4 border-b border-border-button flex gap-3 items-center">
-        <BackButton to={agentsUrl} />
+        <BackButton onClick={navigateToAgents} />
         <h2 className="font-medium text-text-secondary">
           {isCreate
             ? t('knowledgeCompilation.addTemplateGroup')
@@ -147,7 +160,7 @@ export default function EditNextCompilationTemplate() {
         </div>
       </header>
     ),
-    [agentsUrl, basePath, group?.name, isCreate, navigate, t],
+    [basePath, group?.name, isCreate, navigate, navigateToAgents, t],
   );
 
   return (
@@ -158,6 +171,8 @@ export default function EditNextCompilationTemplate() {
         onCancel={navigateToAgents}
         cancelText={t('common.back')}
         renderHeader={renderHeader}
+        sidebarCollapsed={collapsed}
+        onSidebarCollapse={collapseSidebars}
       />
     </section>
   );

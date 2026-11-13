@@ -86,10 +86,9 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 
 	// Top-level actions (no canvas id in path).
 	// NOTE: `/chat/completion` (singular) is intentionally NOT registered.
-	// The singular form was a historical typo in earlier Python releases —
-	// no client, SDK, or doc ever called it, and the Python side
-	// (api/apps/restful_apis/agent_api.py) has since removed the route.
-	// See plan: .claude/plans/agent-api-gaps-go-port.md §Gap E.
+	// The singular form was a historical typo in earlier releases; no
+	// client, SDK, or doc ever called it, so it is intentionally not
+	// registered.
 	g.POST("/chat/completions", h.AgentChatCompletions)
 	g.POST("/test-db-connection", h.TestDBConnection)
 }

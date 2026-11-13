@@ -18,6 +18,7 @@ const TitleKeyMap: Record<EmptyStateType, string> = {
   [ViewMode.Graph]: 'knowledgeCompilation.noStructureGraph',
   [ViewMode.MindMap]: 'knowledgeCompilation.noStructureMindmap',
   [ViewMode.Timeline]: 'knowledgeCompilation.noStructureTimeline',
+  [ViewMode.Ontology]: 'knowledgeCompilation.noStructureGraph',
 };
 
 export function CompilationEmptyState({

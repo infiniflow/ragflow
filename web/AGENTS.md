@@ -47,12 +47,13 @@ Do not reintroduce backend-variant primitives or detection helpers (e.g. a `useI
 
 ### Enterprise Overlays
 
-`src/ee/` holds the enterprise customization of shared modules at the same path it overrides. This tree ships those files empty so every shared import resolves; the enterprise repository ships the real implementation. Keep both sides in that shape:
+The frontend mirrors the backend's `stub.go` / `*_ee.go` naming. `src/ee-stub/` holds the no-op customization points for shared modules; the enterprise repository carries real implementations at the same relative paths under `src/ee/`. Shared code always imports the logical `@/ee/...` specifier, and the OSS directory-level aliases resolve it to `src/ee-stub/`.
 
-- `src/ee/locales/<lang>-private.ts` carries enterprise locale strings and `src/ee/utils/api-private.ts` enterprise-only API endpoints. Both stay empty objects here.
+- `src/ee-stub/locales/<lang>-private.ts` and `src/ee-stub/utils/api-private.ts` stay empty objects here; their enterprise counterparts under `src/ee/` carry private locale strings and API endpoints.
 - The shared file only imports the overlay and merges it — `merge(base, private)` in `src/locales/config.ts`, `merge(apiEndpoints, apiPrivate)` in `src/utils/api.ts`. Never inline enterprise strings or endpoints into `src/locales/*.ts` or `src/utils/api.ts`, and never delete the overlay import.
-- The edition is chosen by the file's content, never at runtime: no `import.meta.env` switch that selects enterprise code and no `isEnterprise` branch in shared modules.
-- Adding a new overlay means adding the empty file here and the implementation downstream in the same change.
+- The edition is chosen by directory aliases and file content, never at runtime: no `import.meta.env` switch that selects enterprise code and no `isEnterprise` branch in shared modules.
+- Keep the `@/ee` mappings in `vite.config.ts`, `tsconfig.json`, `jest.config.ts`, and `.storybook/main.ts` ahead of the generic `@` / `@/*` mapping. Do not add per-file aliases or rewrite shared imports to `@/ee-stub`.
+- Adding a new overlay means adding the empty file under `src/ee-stub/` here and the implementation at the same relative path under `src/ee/` downstream in the same change.
 
 ### CSS and Layout Debugging
 
