@@ -9,10 +9,6 @@ const loadAvailableDataSourceKeys = () => {
 };
 
 describe('data source backend adapter', () => {
-  it('includes Feishu Wiki so the connector is available on both backends', () => {
-    expect(loadAvailableDataSourceKeys()).toContain('feishu_wiki');
-  });
-
   it('returns every DataSourceKey', () => {
     const { DataSourceKey } = require('./constant');
     expect(loadAvailableDataSourceKeys().sort()).toEqual(

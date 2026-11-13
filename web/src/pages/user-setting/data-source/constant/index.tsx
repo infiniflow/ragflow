@@ -28,10 +28,6 @@ import { IDataSourceInfoMap } from '../interface';
 import { azureDevOpsConstant } from './azure-devops-constant';
 import { bitbucketConstant } from './bitbucket-constant';
 import { confluenceConstant } from './confluence-constant';
-import {
-  feishuWikiConstant,
-  feishuWikiDefaultValues,
-} from './feishu-wiki-constant';
 import { jiraConstant } from './jira-constant';
 import { S3Constant } from './s3-constant';
 import { seafileConstant } from './seafile-constant';
@@ -41,7 +37,6 @@ export enum DataSourceKey {
   CONFLUENCE = 'confluence',
   NOTION = 'notion',
   GOOGLE_DRIVE = 'google_drive',
-  FEISHU_WIKI = 'feishu_wiki',
   GMAIL = 'gmail',
   GOOGLE_CLOUD_STORAGE = 'google_cloud_storage',
   OCI_STORAGE = 'oci_storage',
@@ -271,11 +266,6 @@ export const generateDataSourceInfo = (t: TFunction) => {
       name: 'Google Drive',
       description: t(`setting.${DataSourceKey.GOOGLE_DRIVE}Description`),
       icon: <SvgIcon name={'data-source/google-drive'} width={38} />,
-    },
-    [DataSourceKey.FEISHU_WIKI]: {
-      name: 'Feishu Wiki',
-      description: t(`setting.${DataSourceKey.FEISHU_WIKI}Description`),
-      icon: <BookOpen className="text-text-primary" size={22} />,
     },
     [DataSourceKey.GMAIL]: {
       name: 'Gmail',
@@ -507,7 +497,6 @@ export const getCommonExtraDefaultValues = () => ({
 });
 
 const generateDataSourceFormFields = (t: TFunction) => ({
-  [DataSourceKey.FEISHU_WIKI]: feishuWikiConstant(t),
   [DataSourceKey.ONEDRIVE]: [
     {
       label: t('setting.dataSourceFieldTenantId'),
@@ -2227,7 +2216,6 @@ const generateDataSourceFormFields = (t: TFunction) => ({
 });
 
 export const DataSourceFormDefaultValues = {
-  [DataSourceKey.FEISHU_WIKI]: feishuWikiDefaultValues,
   [DataSourceKey.RSS]: {
     name: '',
     source: DataSourceKey.RSS,
