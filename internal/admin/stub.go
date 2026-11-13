@@ -32,6 +32,9 @@ import (
 // SetupEERouter adds no enterprise middleware in the community edition.
 func SetupEERouter(engine *gin.Engine) {}
 
+// RegisterInternalEERouter registers no internal service routes in this build.
+func RegisterInternalEERouter(engine *gin.Engine, r *Router) {}
+
 // RegisterEERouter registers no enterprise admin routes in the community
 // edition.
 func RegisterEERouter(protected *gin.RouterGroup, r *Router) {}

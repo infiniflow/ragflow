@@ -250,17 +250,17 @@ func TestExecuteTask_HeartbeatsInProgressDuringLongTask(t *testing.T) {
 func TestClaimTask_FirstTrueThenFalse(t *testing.T) {
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 
-	if !ingestor.claimTask("task-1") {
+	if !claimTaskForTest(t, ingestor, "task-1") {
 		t.Fatal("first claim should succeed")
 	}
 
 	// Same task claimed again — must fail (another worker is already on it).
-	if ingestor.claimTask("task-1") {
+	if claimTaskForTest(t, ingestor, "task-1") {
 		t.Fatal("second claim should fail: task already claimed by another worker")
 	}
 
 	// Different task — should succeed.
-	if !ingestor.claimTask("task-2") {
+	if !claimTaskForTest(t, ingestor, "task-2") {
 		t.Fatal("different task should succeed")
 	}
 }
@@ -269,18 +269,18 @@ func TestClaimTask_FirstTrueThenFalse(t *testing.T) {
 // the task, a fresh claim (e.g. on restart) must succeed again.
 func TestClaimTask_AfterReleaseCanReclaim(t *testing.T) {
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
-	ingestor.claimTask("task-1")
-	ingestor.releaseTask("task-1")
+	claimTaskForTest(t, ingestor, "task-1")
+	ingestor.taskClaims.Release(context.Background(), "task-1")
 
-	if !ingestor.claimTask("task-1") {
+	if !claimTaskForTest(t, ingestor, "task-1") {
 		t.Fatal("after release should be able to reclaim (previous worker finished)")
 	}
 }
 
-// TestExecuteTask_ReleasesTaskFromCurrentTasks: executeTask must call
-// releaseTask in its defer so the task is removed from currentTasks and
-// a subsequent claim succeeds.
-func TestExecuteTask_ReleasesTaskFromCurrentTasks(t *testing.T) {
+// TestExecuteTask_ReleasesTaskClaim: executeTask must release the claim in its
+// defer so the task is removed from the in-flight set and a subsequent claim
+// succeeds.
+func TestExecuteTask_ReleasesTaskClaim(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
@@ -294,19 +294,28 @@ func TestExecuteTask_ReleasesTaskFromCurrentTasks(t *testing.T) {
 	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
 		return nil
 	}
-	ingestor.claimTask(taskID)
+	claimTaskForTest(t, ingestor, taskID)
 	ctx := t.Context()
 
 	handle := &fakeTaskHandle{}
 	ingestor.executeTask(ctx, newAckTaskCtx(t.Context(), taskID, docID, handle))
 
-	if _, stillActive := ingestor.currentTasks[taskID]; stillActive {
-		t.Fatal("expected task released from currentTasks after executeTask finished")
+	if taskInFlight(ingestor.taskClaims.InFlight(), taskID) {
+		t.Fatal("expected task released from claims after executeTask finished")
 	}
 	// After release, a new claim must succeed.
-	if !ingestor.claimTask(taskID) {
+	if !claimTaskForTest(t, ingestor, taskID) {
 		t.Fatal("expected reclaim after executeTask to succeed")
 	}
+}
+
+func claimTaskForTest(t *testing.T, ingestor *Ingestor, taskID string) bool {
+	t.Helper()
+	claimed, err := ingestor.taskClaims.Claim(context.Background(), taskID)
+	if err != nil {
+		t.Fatalf("claim task %s: %v", taskID, err)
+	}
+	return claimed
 }
 
 // TestSettleMessage_AckOnTerminal: body returns true -> Ack, no Nack.

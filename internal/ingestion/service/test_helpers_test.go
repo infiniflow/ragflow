@@ -17,16 +17,66 @@
 package service
 
 import (
+	"context"
+	"sync"
+
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	kvrocks "ragflow/internal/engine/kvrocks"
 	"ragflow/internal/ingestion"
 )
 
+// fakeTaskClaimStore is the test double for task ownership. Shared tests inject
+// it so they exercise the claim contract independently of the concrete store.
+type fakeTaskClaimStore struct {
+	mu     sync.Mutex
+	claims map[string]struct{}
+}
+
+func newFakeTaskClaimStore() *fakeTaskClaimStore {
+	return &fakeTaskClaimStore{claims: make(map[string]struct{})}
+}
+
+func (s *fakeTaskClaimStore) Claim(_ context.Context, taskID string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.claims[taskID]; ok {
+		return false, nil
+	}
+	s.claims[taskID] = struct{}{}
+	return true, nil
+}
+
+func (s *fakeTaskClaimStore) Release(_ context.Context, taskID string) {
+	s.mu.Lock()
+	delete(s.claims, taskID)
+	s.mu.Unlock()
+}
+
+func (s *fakeTaskClaimStore) InFlight() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ids := make([]string, 0, len(s.claims))
+	for id := range s.claims {
+		ids = append(ids, id)
+	}
+	return ids
+}
+
+func taskInFlight(ids []string, target string) bool {
+	for _, id := range ids {
+		if id == target {
+			return true
+		}
+	}
+	return false
+}
+
 // NewTestIngestor creates a new Ingestor for testing with default values.
 func NewTestIngestor() *Ingestor {
 	return &Ingestor{
-		id: "test-ingestor",
+		id:         "test-ingestor",
+		taskClaims: newFakeTaskClaimStore(),
 	}
 }
 
@@ -40,11 +90,15 @@ type IngestorOption func(*Ingestor)
 // nil-dependency guards. Engine stays nil: executor tests stub the index writer
 // or assert the downstream no-engine failure.
 func newUnitIngestor(name string, maxConcurrency int32, supportedTypes []string) *Ingestor {
-	return NewIngestor(name, maxConcurrency, supportedTypes, &ingestion.Deps{
+	ingestor := NewIngestor(name, maxConcurrency, supportedTypes, &ingestion.Deps{
 		DB: dao.DB,
 		MQ: engine.GetMessageQueueEngine(),
 		KV: kvrocks.Get(),
 	})
+	// Shared tests exercise the claim contract, not a concrete backend; inject
+	// the in-memory double so the test behavior is independent of the store.
+	ingestor.taskClaims = newFakeTaskClaimStore()
+	return ingestor
 }
 
 // SetupTestIngestor creates a new test Ingestor with the given options.

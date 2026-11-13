@@ -35,6 +35,7 @@ func NewRouter(handler *Handler) *Router {
 // Setup setup routes
 func (r *Router) Setup(engine *gin.Engine) {
 	SetupEERouter(engine)
+	RegisterInternalEERouter(engine, r)
 
 	// Healthz to get system health
 	engine.GET("/healthz", r.handler.Healthz)

@@ -14,14 +14,19 @@
 //  limitations under the License.
 //
 
-//go:build !ee
-
 package service
 
-import "ragflow/internal/common"
+import "context"
 
-func (e *Ingestor) handleEvaluationTask(common.TaskHandle, *Heartbeat) bool {
-	return false
+// taskClaimStore records which process owns a task while it executes.
+//
+// Claim returns false when another process already owns the task. An error
+// means ownership could not be established; the caller must not execute the
+// task in that case. Release relinquishes a task owned by this process.
+// InFlight reports the task IDs this process currently owns for shutdown
+// diagnostics.
+type taskClaimStore interface {
+	Claim(ctx context.Context, taskID string) (bool, error)
+	Release(ctx context.Context, taskID string)
+	InFlight() []string
 }
-
-func (e *Ingestor) startEvaluationTaskReconciler() {}
