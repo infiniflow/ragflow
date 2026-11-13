@@ -14,7 +14,7 @@ import (
 // attributes to it, including scheduled/created events raised outside a worker.
 // The per-worker name is added per task and must NOT be present here.
 func TestNewIngestorSeedsContextIdentity(t *testing.T) {
-	ing := NewIngestor("ing-test-1", 1, []string{"pdf"}, &ingestion.Deps{})
+	ing := NewIngestor("ing-test-1", 1, []string{"pdf"}, common.TierDefault, &ingestion.Deps{})
 
 	if got := observability.IngestorName(ing.ctx); got != "ing-test-1" {
 		t.Errorf("IngestorName on root ctx = %q, want ing-test-1", got)

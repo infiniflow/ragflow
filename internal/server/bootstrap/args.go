@@ -45,6 +45,9 @@ type ServerArgs struct {
 	// DeepdocInferenceCPUCores, when set, overrides the DeepDoc inference CPU-core
 	// budget from env/config. nil means "unspecified" (0 means "all cores").
 	DeepdocInferenceCPUCores *int
+	// IngestorTier, when set, restricts which ingestion lanes the ingestor
+	// consumes (high/medium/low). nil means "unspecified" (default: low).
+	IngestorTier *string
 }
 
 // SelectedLogLevel resolves the effective log level: an explicit --log-level

@@ -622,6 +622,82 @@ func (n *NatsEngine) PullMessage(ctx context.Context) (common.TaskHandle, error)
 	return messages[0], nil
 }
 
+// PullMessagesForTier fetches up to messageCount messages, but only from the
+// lanes the given ingestor tier is allowed to consume (see ingestorLanes),
+// draining them in the edition's priority order (tierOrder) and stopping as
+// soon as the batch is full. An ingestor tier whose lane set is unknown (e.g.
+// an enterprise-only tier name in the community build) is rejected. In the
+// community build the only tier is default, so this is equivalent to
+// PullMessages.
+func (n *NatsEngine) PullMessagesForTier(ctx context.Context, tier common.Tier, messageCount int) ([]common.TaskHandle, error) {
+	if messageCount < 1 || messageCount > common.MaxManualPullMessages {
+		return nil, fmt.Errorf("message count must be between 1 and %d", common.MaxManualPullMessages)
+	}
+	lanes, err := ingestorLanes(tier)
+	if err != nil {
+		return nil, err
+	}
+	// Fail fast on a half-initialized engine before the deadline requirement,
+	// so an uninitialized engine always reports "not properly initialized"
+	// regardless of the caller's context (mirrors PullMessages/PublishTask).
+	if _, err := n.consumerHandle(defaultTier()); err != nil {
+		return nil, err
+	}
+	if _, ok := ctx.Deadline(); !ok {
+		return nil, errors.New("pull messages context must have a deadline")
+	}
+
+	allowed := make(map[common.Tier]struct{}, len(lanes))
+	for _, l := range lanes {
+		allowed[l] = struct{}{}
+	}
+
+	result := make([]common.TaskHandle, 0, messageCount)
+	for _, lane := range tierOrder {
+		if _, ok := allowed[lane]; !ok {
+			continue
+		}
+		if err := ctx.Err(); err != nil {
+			if errors.Is(err, context.Canceled) {
+				nackAll(result)
+				return nil, err
+			}
+			break // DeadlineExceeded: budget spent, return what we have
+		}
+		remaining := messageCount - len(result)
+		handles, err := n.pullLane(ctx, lane, remaining)
+		if err != nil {
+			if errors.Is(err, context.Canceled) {
+				nackAll(result)
+				return nil, err
+			}
+			if ctx.Err() != nil {
+				break
+			}
+			nackAll(result)
+			return nil, err
+		}
+		result = append(result, handles...)
+		if len(result) >= messageCount {
+			break
+		}
+	}
+	return result, nil
+}
+
+// PullMessageForTier returns one task handle from PullMessagesForTier. A nil
+// handle with a nil error means the pull expired without an available task.
+func (n *NatsEngine) PullMessageForTier(ctx context.Context, tier common.Tier) (common.TaskHandle, error) {
+	messages, err := n.PullMessagesForTier(ctx, tier, 1)
+	if err != nil {
+		return nil, err
+	}
+	if len(messages) == 0 {
+		return nil, nil
+	}
+	return messages[0], nil
+}
+
 func (n *NatsEngine) CheckStatus() string {
 	if n.nc == nil {
 		return "NATS connection is nil, engine not properly initialized"
