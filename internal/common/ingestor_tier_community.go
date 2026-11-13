@@ -23,17 +23,16 @@ import (
 	"strings"
 )
 
-// parseIngestorTier normalizes and validates an ingestor-tier CLI/env string
-// for the community/OSS build, which owns a single default lane. The accepted
-// spellings are "", "low", "default" (case-insensitive), all mapping to
-// TierDefault. Any other value (including the enterprise-only "high"/"medium")
-// is rejected, because the multi-lane topology those names imply does not exist
-// in this build — a silent default would mask a misconfiguration. The exported
-// ParseIngestorTier delegates to this function; the enterprise build supplies
-// its own parseIngestorTier in a build-tagged file.
+// parseIngestorTier normalizes and validates an ingestor-tier CLI/env string.
+// The accepted spellings are "", "low" (case-insensitive): an empty/absent
+// value defaults to low, and "low" maps to TierDefault. Any other value —
+// including "default" and the multi-lane "high"/"medium" — is rejected, because
+// the lane topology those names imply is not defined in this build; a silent
+// default would mask a misconfiguration. The exported ParseIngestorTier
+// delegates to this function.
 func parseIngestorTier(s string) (Tier, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
-	case "", "low", "default":
+	case "", "low":
 		return TierDefault, nil
 	default:
 		return "", fmt.Errorf("invalid ingestor tier %q: the open-source build supports only the default (low) lane", s)

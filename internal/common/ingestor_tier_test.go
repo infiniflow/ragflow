@@ -19,10 +19,9 @@ package common
 import "testing"
 
 // TestParseIngestorTier verifies the ingestor-tier CLI value is mapped to a
-// queue Tier. The community/OSS build has a single queue, so only low/default
-// (and an empty/absent value, which defaults to low) are valid; medium/high are
-// rejected because they require the multi-lane topology that only the
-// enterprise build provides.
+// queue Tier. Only "low" (and an empty/absent value, which defaults to low) are
+// valid; "default" and any other value (e.g. medium/high) are rejected because
+// they refer to lanes not defined in this build.
 func TestParseIngestorTier(t *testing.T) {
 	cases := []struct {
 		in   string
@@ -33,11 +32,11 @@ func TestParseIngestorTier(t *testing.T) {
 		{"low", TierDefault, false},
 		{"LOW", TierDefault, false},
 		{"Low", TierDefault, false},
-		{"default", TierDefault, false},
-		{"DEFAULT", TierDefault, false},
-		{"medium", TierDefault, true}, // rejected in community
-		{"high", TierDefault, true},   // rejected in community
-		{"bogus", TierDefault, true},  // rejected in community
+		{"default", TierDefault, true}, // removed: now rejected
+		{"DEFAULT", TierDefault, true}, // removed: now rejected
+		{"medium", TierDefault, true},  // rejected in community
+		{"high", TierDefault, true},    // rejected in community
+		{"bogus", TierDefault, true},   // rejected in community
 	}
 	for _, c := range cases {
 		got, err := ParseIngestorTier(c.in)
