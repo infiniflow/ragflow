@@ -4,7 +4,7 @@ title: FAQ
 sidebar_label: FAQ
 slug: /chat_channels_faq
 sidebar_custom_props: {
-  categoryIcon: LucideMessagesSquare
+  categoryIcon: LucideFileQuestionMark
 }
 ---
 

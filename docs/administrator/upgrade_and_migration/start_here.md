@@ -4,7 +4,7 @@ title: Migration Guide
 sidebar_label: Start Here
 slug: /migration_overview
 sidebar_custom_props: {
-  categoryIcon: LucideFlag
+  categoryIcon: LucideBookOpen
 }
 ---
 

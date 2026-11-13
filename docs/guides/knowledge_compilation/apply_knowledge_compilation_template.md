@@ -4,7 +4,7 @@ title: Apply a Knowledge Compilation Template
 sidebar_label: Apply a Knowledge Compilation Template
 slug: /knowledge_compilation/apply_knowledge_compilation_template
 sidebar_custom_props: {
-  categoryIcon: LucideWandSparkles
+  categoryIcon: LucideRoute
 }
 ---
 
