@@ -187,8 +187,6 @@ func (h *MemoryHandler) UpdateMemory(c *gin.Context) {
 		return
 	}
 
-	common.SetOperationResource(c, "memory_id", memoryID)
-
 	// Parse JSON request body
 	var req service.UpdateMemoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -247,8 +245,6 @@ func (h *MemoryHandler) DeleteMemory(c *gin.Context) {
 		common.RespondError(c, common.CodeArgumentError, "memory ID is required")
 		return
 	}
-
-	common.SetOperationResource(c, "memory_id", memoryID)
 
 	ctx := c.Request.Context()
 

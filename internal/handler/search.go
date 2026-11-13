@@ -246,7 +246,6 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 	common.StartOperationLog(c, "delete_search")
 	defer common.FinishOperationLog(c)
-	common.SetOperationResource(c, "search_id", c.Param("search_id"))
 
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
@@ -283,7 +282,6 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 	common.StartOperationLog(c, "update_search")
 	defer common.FinishOperationLog(c)
-	common.SetOperationResource(c, "search_id", c.Param("search_id"))
 
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
@@ -352,7 +350,6 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 func (h *SearchHandler) Completion(c *gin.Context) {
 	common.StartOperationLog(c, "request_search_answer")
 	defer common.FinishOperationLog(c)
-	common.SetOperationResource(c, "search_id", c.Param("search_id"))
 
 	var req service.SearchCompletionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
