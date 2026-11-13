@@ -33,6 +33,7 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 	models := []interface{}{
 		&entity.Document{},
 		&entity.Knowledgebase{},
+		&entity.DatasetModelRef{},
 		&entity.Task{},
 		&entity.IngestionTask{},
 		&entity.IngestionTaskLog{},

@@ -198,6 +198,49 @@ func (h *CompilationTemplateGroupHandler) Update(c *gin.Context) {
 	common.RespondSuccess(c, group, "success")
 }
 
+// ApplyOntologyFix applies one confirmed edit from the compile-quality ledger to
+// an ontology template (widen a declaration, or declare an observed property)
+// and saves it through the ordinary group-update path.
+//
+// The edit vocabulary is closed and validated server-side: the ledger proposes,
+// this endpoint is what decides whether the proposal is one the template can
+// take. Re-compiling the affected documents is the client's next step.
+//
+//	@Summary Apply one ontology template fix
+//	@Tags compilation template group
+//	@Security ApiKeyAuth
+//	@Param template_id path string true "compilation template id"
+//	@Router /compilation-templates/:template_id/ontology-fix [post]
+func (h *CompilationTemplateGroupHandler) ApplyOntologyFix(c *gin.Context) {
+	_, code, msg := GetUser(c)
+	if code != common.CodeSuccess {
+		common.RespondError(c, code, msg)
+		return
+	}
+	templateID := c.Param("template_id")
+	// The ledger applies what the reader selected as one batch, because the
+	// expensive part is the re-compile that follows it, not the edit. A single
+	// edit is accepted too, so one line can still be applied on its own.
+	var req struct {
+		Fixes []service.OntologyFixRequest `json:"fixes"`
+		service.OntologyFixRequest
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.RespondError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
+		return
+	}
+	fixes := req.Fixes
+	if len(fixes) == 0 {
+		fixes = []service.OntologyFixRequest{req.OntologyFixRequest}
+	}
+	template, err := h.compilationTemplateGroupService.ApplyOntologyFixes(c.Request.Context(), templateID, fixes)
+	if err != nil {
+		common.RespondError(c, common.CodeDataError, err.Error())
+		return
+	}
+	common.RespondSuccess(c, template, "success")
+}
+
 // Delete soft-deletes a compilation template group and its children.
 //
 //	@Summary Delete compilation template group

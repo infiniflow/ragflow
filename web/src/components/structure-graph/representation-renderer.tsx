@@ -15,6 +15,7 @@
  */
 
 import ArtifactForceGraph from '@/components/artifact-force-graph';
+import { OntologyAboxPanel } from '@/components/ontology-abox';
 import { TreeView, type TreeDataItem } from '@/components/ui/tree-view';
 import { CompilationTemplateKind } from '@/constants/compilation';
 import {
@@ -62,6 +63,19 @@ interface RepresentationRendererProps {
   highlightNodeId?: string | null;
   totalEntities?: number;
   returnedEntities?: number;
+  /**
+   * Scope for the ontology model graph's drill-down (only that representation
+   * queries the index directly). Without it the graph still renders, but its
+   * class and property panels do not offer the drill-down.
+   */
+  datasetId?: string;
+  /**
+   * The document the page is showing, when it is a document page. Passed through
+   * so the ontology drill-down counts and lists the SAME scope the graph's
+   * numbers came from.
+   */
+  documentId?: string;
+  templateId?: string;
 }
 
 function UnsupportedPlaceholder({ kind }: { kind: StructureTemplateKind }) {
@@ -88,6 +102,9 @@ export function RepresentationRenderer({
   highlightNodeId,
   totalEntities,
   returnedEntities,
+  datasetId,
+  documentId,
+  templateId,
 }: RepresentationRendererProps) {
   const getKnowledgeGraphNodeColor = useKnowledgeGraphNodeColor();
   const handleTreeItemClick = useCallback(
@@ -204,6 +221,24 @@ export function RepresentationRenderer({
             highlightNodeId={highlightNodeId}
             totalEntities={totalEntities}
             returnedEntities={returnedEntities}
+          />
+        </div>
+      );
+    case CompilationTemplateKind.Ontology:
+      // The ABox of this scope: the instances and assertions the model
+      // actually produced, as pages of rows with the source text behind each
+      // one. It is a list rather than a graph on purpose — the graph answered
+      // "what does the model declare", which is the template editor's job, and
+      // it left the rows of a class reachable only through a drill-down that
+      // could not say how much of them was on screen.
+      return (
+        <div className="mt-6 flex-1 min-h-0">
+          <OntologyAboxPanel
+            datasetId={datasetId ?? ''}
+            documentId={documentId}
+            templateId={templateId ?? template?.template_id}
+            classes={template.ontology?.classes}
+            properties={template.ontology?.properties}
           />
         </div>
       );

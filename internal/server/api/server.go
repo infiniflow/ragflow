@@ -26,6 +26,7 @@ import (
 
 	"ragflow/internal/agent/audio"
 	"ragflow/internal/agent/canvas"
+	"ragflow/internal/agentic_rag"
 	"ragflow/internal/channels"
 	"ragflow/internal/handler"
 	"ragflow/internal/router"
@@ -148,6 +149,17 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	tenantHandler := handler.NewTenantHandler(tenantService, userTenantService, datasetsService)
 	documentHandler := handler.NewDocumentHandler(documentService, datasetsService, fileService)
 	datasetsHandler := handler.NewDatasetsHandler(datasetsService, metadataService)
+	// One compiled-rows (ABox) retrieval service serves both entry points: its
+	// REST endpoint and the agent loop's knowledge-layer prefetch. Sharing the
+	// instance is what keeps the preview a person reads and the rows a turn
+	// searches narrowed by the same structure under the same model version.
+	ontologyABoxRetrieval := service.NewOntologyABoxRetrievalService(docEngine, documentDAO)
+	agentic_rag.SetOntologyService(service.NewOntologyAdapter(ontologyABoxRetrieval))
+	// The action layer's boundary. The agent reads a contract and asks for
+	// execution; every judgement (contract state, binding switches, the process
+	// switch) happens behind this interface, never in the prompt.
+	agentic_rag.SetActionService(service.NewOntologyActionAdapter(nil))
+	ontologyABoxRetrievalHandler := handler.NewOntologyABoxRetrievalHandler(ontologyABoxRetrieval)
 	systemHandler := handler.NewSystemHandler(systemService)
 	statsHandler := handler.NewStatsHandler(statsService)
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)
@@ -228,6 +240,7 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 	pipelineHandler := handler.NewPipelineHandler()
 	compilationTemplateHandler := handler.NewCompilationTemplateHandler(service.NewCompilationTemplateService())
 	compilationTemplateGroupHandler := handler.NewCompilationTemplateGroupHandler(service.NewCompilationTemplateGroupService())
+	compilationModelHandler := handler.NewCompilationModelHandler(service.NewCompilationTemplateGovernanceService())
 	datasetArtifactHandler := handler.NewDatasetArtifactHandler(service.NewDatasetArtifactService(), datasetsService, file.NewFileCommitService())
 
 	// Install the production eino-based chat invoker as the shared chat default,
@@ -285,7 +298,9 @@ func startServer(ctx context.Context, serverName string, arguments *bootstrap.Se
 		pipelineHandler,
 		compilationTemplateHandler,
 		compilationTemplateGroupHandler,
-		datasetArtifactHandler)
+		compilationModelHandler,
+		datasetArtifactHandler,
+		ontologyABoxRetrievalHandler)
 
 	// Create Gin engine
 	ginEngine := gin.New()

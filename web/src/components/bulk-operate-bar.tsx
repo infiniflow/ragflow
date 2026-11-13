@@ -30,6 +30,13 @@ export type BulkOperateItemType = {
   label: ReactNode;
   icon: ReactNode;
   onClick(): void;
+  /**
+   * A blocked bulk action: rendered disabled rather than hidden, with `title`
+   * saying why. A disappeared button reads as a bug; a disabled one reads as a
+   * rule.
+   */
+  disabled?: boolean;
+  title?: string;
 };
 
 type BulkOperateBarProps = {
@@ -75,6 +82,8 @@ export function BulkOperateBar({
                 variant={isDeleteItem ? 'danger' : 'outline'}
                 onClick={isDeleteItem ? () => {} : x.onClick}
                 role="menuitem"
+                disabled={x.disabled}
+                title={x.title}
               >
                 {x.icon} {x.label}
               </Button>

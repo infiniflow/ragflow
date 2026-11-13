@@ -10,6 +10,12 @@ type EmptyStateType = GenerableViewMode;
 interface ICompilationEmptyStateProps {
   type: EmptyStateType;
   data?: ITraceInfo;
+  /**
+   * The dataset has nothing to compile yet, so the "it happens automatically"
+   * line would promise something this run cannot do. The progress board is
+   * unaffected: it reports a run that is already going.
+   */
+  disabled?: boolean;
 }
 
 const TitleKeyMap: Record<EmptyStateType, string> = {
@@ -18,11 +24,13 @@ const TitleKeyMap: Record<EmptyStateType, string> = {
   [ViewMode.Graph]: 'knowledgeCompilation.noStructureGraph',
   [ViewMode.MindMap]: 'knowledgeCompilation.noStructureMindmap',
   [ViewMode.Timeline]: 'knowledgeCompilation.noStructureTimeline',
+  [ViewMode.Ontology]: 'knowledgeCompilation.noStructureGraph',
 };
 
 export function CompilationEmptyState({
   type,
   data,
+  disabled = false,
 }: ICompilationEmptyStateProps) {
   const { t } = useTranslation();
   const { status } = useGenerateStatus(data);
@@ -34,9 +42,11 @@ export function CompilationEmptyState({
       {!showProgress ? (
         <div className="flex flex-col items-center gap-4">
           <p className="text-text-secondary text-lg">{t(TitleKeyMap[type])}</p>
-          <p className="text-sm text-text-secondary">
-            {t('knowledgeCompilation.autoCompiled')}
-          </p>
+          {disabled ? null : (
+            <p className="text-sm text-text-secondary">
+              {t('knowledgeCompilation.autoCompiled')}
+            </p>
+          )}
         </div>
       ) : (
         <CompileProgressBoard

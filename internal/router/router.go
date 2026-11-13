@@ -57,7 +57,9 @@ type Router struct {
 
 	compilationTemplateHandler      *handler.CompilationTemplateHandler
 	compilationTemplateGroupHandler *handler.CompilationTemplateGroupHandler
+	compilationModelHandler         *handler.CompilationModelHandler
 	datasetArtifactHandler          *handler.DatasetArtifactHandler
+	ontologyABoxRetrievalHandler    *handler.OntologyABoxRetrievalHandler
 }
 
 // NewRouter create router
@@ -94,7 +96,9 @@ func NewRouter(
 	pipelineHandler *handler.PipelineHandler,
 	compilationTemplateHandler *handler.CompilationTemplateHandler,
 	compilationTemplateGroupHandler *handler.CompilationTemplateGroupHandler,
+	compilationModelHandler *handler.CompilationModelHandler,
 	datasetArtifactHandler *handler.DatasetArtifactHandler,
+	ontologyABoxRetrievalHandler *handler.OntologyABoxRetrievalHandler,
 ) *Router {
 	return &Router{
 		authHandler:          authHandler,
@@ -130,7 +134,9 @@ func NewRouter(
 
 		compilationTemplateHandler:      compilationTemplateHandler,
 		compilationTemplateGroupHandler: compilationTemplateGroupHandler,
+		compilationModelHandler:         compilationModelHandler,
 		datasetArtifactHandler:          datasetArtifactHandler,
+		ontologyABoxRetrievalHandler:    ontologyABoxRetrievalHandler,
 	}
 }
 
@@ -319,6 +325,9 @@ func (r *Router) Setup(engine *gin.Engine) {
 			}
 			v1.POST("/openai/:chat_id/chat/completions", ToggleChat(), r.openaiChatHandler.OpenAIChatCompletions)
 			v1.POST("/retrieval", r.datasetsHandler.SearchDatasets)
+			// Compiled-rows (ABox) retrieval with an explicitly stated structure, kept
+			// out of the main pipeline on purpose (ontology.md §6.6 B).
+			v1.POST("/retrieval/ontology", r.ontologyABoxRetrievalHandler.Retrieve)
 
 			// Dataset routes
 			datasets := v1.Group("/datasets", ToggleDataset())
@@ -399,6 +408,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id/documents/:document_id/structure/graph", r.datasetArtifactHandler.GetDocumentGraph)
 				datasets.GET("/:dataset_id/documents/:document_id/structure/claims", r.datasetArtifactHandler.GetDocumentClaims)
 				datasets.DELETE("/:dataset_id/documents/:document_id/structure/graph", r.datasetArtifactHandler.DeleteDocumentGraph)
+				// Ontology ABox browser: one page of compiled instances
+				// (kind=entity) or assertions (kind=relation). The class /
+				// property narrowing travels as a query parameter so the
+				// unnamed case ("everything") needs no path sentinel.
+				datasets.GET("/:dataset_id/ontology/artifacts", r.datasetArtifactHandler.GetOntologyArtifacts)
+				// The ABox canvas: a bounded subgraph (node budget + hop walk)
+				// instead of a page, because a graph cannot "load more" the way
+				// a list can.
+				datasets.GET("/:dataset_id/ontology/graph", r.datasetArtifactHandler.GetOntologyGraph)
 				datasets.POST("/:dataset_id/metadata/update", r.documentHandler.MetadataBatchUpdate)
 				datasets.PATCH("/:dataset_id/documents/metadatas", r.documentHandler.UpdateDocumentMetadatas)
 			}
@@ -608,6 +626,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Compilation template routes
 			v1.GET("/compilation-templates/builtins", r.compilationTemplateHandler.ListBuiltins)
 			v1.GET("/compilation-templates/wiki-presets", r.compilationTemplateHandler.ListWikiPresets)
+			// One confirmed edit from the compile-quality ledger. Served by the
+			// group handler because the write path (and its validation) is the
+			// group's.
+			v1.POST("/compilation-templates/:template_id/ontology-fix", r.compilationTemplateGroupHandler.ApplyOntologyFix)
 
 			// Compilation template group routes
 			v1.GET("/compilation-template-groups", r.compilationTemplateGroupHandler.List)
@@ -615,6 +637,46 @@ func (r *Router) Setup(engine *gin.Engine) {
 			v1.GET("/compilation-template-groups/:group_id", r.compilationTemplateGroupHandler.Get)
 			v1.PUT("/compilation-template-groups/:group_id", r.compilationTemplateGroupHandler.Update)
 			v1.DELETE("/compilation-template-groups/:group_id", r.compilationTemplateGroupHandler.Delete)
+
+			// Model lifecycle routes. These answer "which version of this model
+			// is in force and who put it there", which is a different question
+			// from the template palette above — and the one that has to survive
+			// an edit.
+			v1.GET("/compilation-models", r.compilationModelHandler.List)
+			v1.GET("/compilation-models/:template_id/check", r.compilationModelHandler.Check)
+			v1.POST("/compilation-models/:template_id/review", r.compilationModelHandler.SubmitForReview)
+			v1.POST("/compilation-models/:template_id/publish", r.compilationModelHandler.Publish)
+			v1.POST("/compilation-models/:template_id/reject", r.compilationModelHandler.Reject)
+			v1.POST("/compilation-models/:template_id/retire", r.compilationModelHandler.Retire)
+			v1.GET("/compilation-models/:template_id/versions", r.compilationModelHandler.ListVersions)
+			v1.GET("/compilation-models/:template_id/versions/diff", r.compilationModelHandler.VersionDiff)
+			v1.GET("/compilation-models/:template_id/datasets", r.compilationModelHandler.Impact)
+			v1.POST("/compilation-models/:template_id/trial", r.compilationModelHandler.Trial)
+			// Assertion review: the only cross-dataset read of a model's rows.
+			// The rows themselves are browsed per dataset (the ABox panel), but
+			// "what has this model produced that nobody checked" is a model-level
+			// question, so the queue still fans out.
+			v1.GET("/compilation-models/:template_id/assertions/review", r.compilationModelHandler.AssertionReviewQueue)
+			v1.POST("/compilation-models/:template_id/assertions/review", r.compilationModelHandler.DecideAssertions)
+
+			// Actions: the contract an action must state, the tool that executes
+			// it, and the audit of every attempt. Reads are member-level because
+			// an analyst has to be able to see why an action is not runnable;
+			// every write is admin-level, since a contract decides what the
+			// system may do and a binding decides which system does it.
+			v1.GET("/compilation-models/:template_id/actions", r.compilationModelHandler.ListActions)
+			v1.PATCH("/compilation-models/:template_id/actions/:action_id", r.compilationModelHandler.UpdateAction)
+			v1.POST("/compilation-models/:template_id/actions/:action_name/dry-run", r.compilationModelHandler.DryRunAction)
+			v1.POST("/compilation-models/:template_id/actions/:action_name/execute", r.compilationModelHandler.ExecuteAction)
+			v1.GET("/compilation-models/:template_id/action-bindings", r.compilationModelHandler.ListBindings)
+			v1.PUT("/compilation-models/:template_id/action-bindings/:action_name", r.compilationModelHandler.SaveBinding)
+			v1.DELETE("/compilation-models/:template_id/action-bindings/:action_name", r.compilationModelHandler.DeleteBinding)
+			v1.GET("/compilation-models/:template_id/action-executions", r.compilationModelHandler.ListExecutions)
+			// The contract's own history: the row keeps only its newest signature.
+			v1.GET("/compilation-models/:template_id/actions/:action_name/contract-edits", r.compilationModelHandler.ListContractEdits)
+			// Stamps the contract columns on rows compiled before they existed.
+			// Idempotent, so it is a button rather than a script.
+			v1.POST("/compilation-models/:template_id/actions/backfill", r.compilationModelHandler.BackfillActions)
 
 			connectors := v1.Group("/connectors")
 			{

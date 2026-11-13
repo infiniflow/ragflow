@@ -31,6 +31,16 @@ jest.mock('@/components/compilation-template-group', () => ({
   CompilationTemplateGroupEditor: (props: unknown) => mockEditor(props),
 }));
 
+// The header's model sheet is a reader of the model's impact, so it pulls the
+// request stack (and with it the i18n bootstrap) into the page. This suite is
+// about the editor's props, so the sheet stands in as a placeholder.
+jest.mock('@/components/compilation-models-sheet', () => ({
+  CompilationModelsSheet: () => null,
+}));
+jest.mock('@/hooks/use-compilation-template-group-request', () => ({
+  useFetchCompilationTemplateGroup: () => ({ data: undefined }),
+}));
+
 jest.mock('@/hooks/use-compilation-template-sidebar-collapse', () => ({
   useCompilationTemplateSidebarCollapse: () => ({
     collapsed: mockSecondarySidebarCollapsed,

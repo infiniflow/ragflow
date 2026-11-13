@@ -263,6 +263,16 @@ const apiEndpoints = {
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/structure/graph`,
   documentStructureClaims: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/structure/claims`,
+  // Ontology ABox browser: one page of the rows a compile produced in a scope.
+  // `kind` / `class` / `property` travel as query parameters so "everything" is
+  // the absent key rather than an empty path segment.
+  ontologyArtifacts: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/ontology/artifacts`,
+  // The ABox canvas. A separate endpoint from the artifacts page because the
+  // cost model differs: here the budget (`limit` / `hop`) is the parameter and
+  // the response reports what it left out.
+  ontologyGraph: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/ontology/graph`,
   retrievalTest: `${restAPIv1}/datasets/search`,
 
   // document
@@ -425,6 +435,61 @@ const apiEndpoints = {
   compilationTemplateGroup: (id: string) =>
     `${restAPIv1}/compilation-template-groups/${id}`,
   wikiPresets: `${restAPIv1}/compilation-templates/wiki-presets`,
+  // The model lifecycle: which version of a template is in force, and who
+  // moved it there. Separate from the template palette above because a save
+  // stops affecting the corpus the moment a model has been published.
+  compilationModels: `${restAPIv1}/compilation-models`,
+  compilationModelCheck: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/check`,
+  compilationModelReview: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/review`,
+  compilationModelPublish: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/publish`,
+  compilationModelReject: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/reject`,
+  compilationModelRetire: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/retire`,
+  compilationModelVersions: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/versions`,
+  compilationModelVersionDiff: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/versions/diff`,
+  compilationModelDatasets: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/datasets`,
+  compilationModelTrial: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/trial`,
+  // The assertion queue and the verdicts on it share a path: a review is a
+  // write to the rows the read just listed, not a separate resource.
+  assertionReview: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/assertions/review`,
+  // Actions: the compiled actions of a model, their tool bindings, and the
+  // audit of every attempt. The contract edit is a PATCH on one action row
+  // because it changes that row and nothing else.
+  compilationModelActions: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/actions`,
+  compilationModelAction: (id: string, actionId: string) =>
+    `${restAPIv1}/compilation-models/${id}/actions/${actionId}`,
+  compilationModelActionDryRun: (id: string, actionName: string) =>
+    `${restAPIv1}/compilation-models/${id}/actions/${actionName}/dry-run`,
+  compilationModelActionExecute: (id: string, actionName: string) =>
+    `${restAPIv1}/compilation-models/${id}/actions/${actionName}/execute`,
+  compilationModelActionBindings: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/action-bindings`,
+  compilationModelActionBinding: (id: string, actionName: string) =>
+    `${restAPIv1}/compilation-models/${id}/action-bindings/${actionName}`,
+  compilationModelActionBackfill: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/actions/backfill`,
+  compilationModelActionExecutions: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/action-executions`,
+  // The contract's own history: the action row keeps only its newest signature,
+  // so "who widened the authorization, and from what" lives here.
+  compilationModelActionContractEdits: (id: string, actionName: string) =>
+    `${restAPIv1}/compilation-models/${id}/actions/${actionName}/contract-edits`,
+  // One confirmed edit from the compile-quality ledger (ontology.md §2.7).
+  compilationTemplateOntologyFix: (id: string) =>
+    `${restAPIv1}/compilation-templates/${id}/ontology-fix`,
+  // The knowledge layer read on its own: the compiled assertions that fit a
+  // declared structure, which is what the agent loop's prefetch calls too.
+  ontologyRetrieval: `${restAPIv1}/retrieval/ontology`,
 
   // mcp server
   listMcpServer: `${restAPIv1}/mcp/servers`,

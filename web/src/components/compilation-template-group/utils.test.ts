@@ -14,7 +14,11 @@
  *  limitations under the License.
  */
 
-import { sortSectionNames } from './utils';
+import {
+  sortSectionNames,
+  transformDetailToForm,
+  transformTemplateToPayload,
+} from './utils';
 
 describe('sortSectionNames', () => {
   it('prioritizes known sections and preserves remaining order and duplicates', () => {
@@ -28,5 +32,81 @@ describe('sortSectionNames', () => {
         'claim',
       ]),
     ).toEqual(['entity', 'relation', 'claim', 'claim', 'concept', 'claim']);
+  });
+});
+
+/**
+ * The builtin ontology template declares more than the editor models:
+ * `config.base_uri` at the top level and `entity.output_fields` inside a section.
+ * Both used to be destroyed by a read/write cycle — the form read them as
+ * sections and wrote back an empty one — so saving a template silently dropped
+ * them.
+ */
+const ontologyDetail = (): any => ({
+  id: 'tpl-1',
+  name: 'Ontology',
+  description: '',
+  kind: 'ontology',
+  config: {
+    kind: 'ontology',
+    base_uri: 'http://example.org/ontology#',
+    global_rules: '',
+    rechunk: false,
+    rechunk_rules: '',
+    entity: {
+      description: 'The classes.',
+      output_fields: [{ name: 'name', shape: 'text', required: true }],
+      fields: [
+        {
+          type: 'person',
+          label: 'Person',
+          description: 'A human.',
+          parent: '',
+          rule: '',
+        },
+      ],
+    },
+    relation: {
+      fields: [
+        {
+          type: 'birth_date',
+          kind: 'datatype',
+          domain: 'person',
+          range: '',
+          datatype: 'date',
+          label: 'birth date',
+          description: 'When someone was born.',
+          rule: '',
+        },
+      ],
+    },
+  },
+});
+
+describe('compilation template round trip', () => {
+  it('keeps base_uri, which is not a section', () => {
+    const payload = transformTemplateToPayload(
+      transformDetailToForm(ontologyDetail()),
+    );
+    expect((payload.config as any).base_uri).toBe(
+      'http://example.org/ontology#',
+    );
+  });
+
+  it('keeps a section key the field editor does not model', () => {
+    const payload = transformTemplateToPayload(
+      transformDetailToForm(ontologyDetail()),
+    );
+    expect((payload.config as any).entity.output_fields).toEqual([
+      { name: 'name', shape: 'text', required: true },
+    ]);
+  });
+
+  it('keeps the ontology sections themselves', () => {
+    const payload = transformTemplateToPayload(
+      transformDetailToForm(ontologyDetail()),
+    );
+    expect((payload.config as any).entity.fields).toHaveLength(1);
+    expect((payload.config as any).relation.fields[0].datatype).toBe('date');
   });
 });

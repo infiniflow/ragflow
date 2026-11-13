@@ -465,6 +465,110 @@ func (h *DatasetArtifactHandler) GetDocumentGraph(c *gin.Context) {
 	common.RespondSuccess(c, resp, "success")
 }
 
+// GetOntologyArtifacts handles GET /datasets/<dataset_id>/ontology/artifacts —
+// one page of the rows a compile produced in a scope.
+//
+// This is the ABox browser's only read. `kind` decides which half of the ABox
+// answers (instances vs assertions); `class` / `property` narrow it and are
+// absent for "everything". Both halves are engine-paged, and a page carries the
+// total, so the panel can say "12–30 of 240" instead of showing a window that
+// looks like the whole set.
+func (h *DatasetArtifactHandler) GetOntologyArtifacts(c *gin.Context) {
+	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
+	if tenantID == "" {
+		return
+	}
+	offset, _ := strconv.Atoi(c.Query("offset"))
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	templateID := c.Query("template_id")
+	documentID := c.Query("document_id")
+
+	if c.Query("kind") == "relation" {
+		property := c.Query("property")
+		resp, err := h.svc.GetOntologyPropertyRelations(c.Request.Context(), service.OntologyPropertyRelationsInput{
+			TenantID:  tenantID,
+			DatasetID: c.Param("dataset_id"),
+			Property:  property,
+			// No property named: the reader asked for the whole page, not for an
+			// unnamed one.
+			All:        property == "",
+			SourceType: c.Query("source_type"),
+			TargetType: c.Query("target_type"),
+			TemplateID: templateID,
+			DocumentID: documentID,
+			Offset:     offset,
+			Limit:      limit,
+		})
+		if err != nil {
+			common.RespondError(c, common.CodeDataError, err.Error())
+			return
+		}
+		if resp == nil {
+			resp = &service.OntologyRelationPage{Relations: []service.StructureGraphRelation{}}
+		}
+		common.RespondSuccess(c, resp, "success")
+		return
+	}
+
+	class := c.Query("class")
+	resp, err := h.svc.GetOntologyClassEntities(c.Request.Context(), service.OntologyClassEntitiesInput{
+		TenantID:   tenantID,
+		DatasetID:  c.Param("dataset_id"),
+		Class:      class,
+		All:        class == "",
+		TemplateID: templateID,
+		DocumentID: documentID,
+		Offset:     offset,
+		Limit:      limit,
+	})
+	if err != nil {
+		common.RespondError(c, common.CodeDataError, err.Error())
+		return
+	}
+	if resp == nil {
+		resp = &service.OntologyEntityPage{Entities: []service.StructureGraphNode{}}
+	}
+	common.RespondSuccess(c, resp, "success")
+}
+
+// GetOntologyGraph handles GET /datasets/<dataset_id>/ontology/graph — the
+// ABox canvas read.
+//
+// It is a separate endpoint from /ontology/artifacts because the two answer
+// different questions with different cost models: artifacts pages rows and can
+// reach the last one, while a canvas has to decide up front how much it draws.
+// Here the budget is the parameter (limit / hop) and the response says how much
+// was left out, so the UI can point at the list instead of implying it drew the
+// whole ABox.
+func (h *DatasetArtifactHandler) GetOntologyGraph(c *gin.Context) {
+	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
+	if tenantID == "" {
+		return
+	}
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	hop, _ := strconv.Atoi(c.Query("hop"))
+
+	resp, err := h.svc.GetOntologyGraph(c.Request.Context(), service.OntologyGraphInput{
+		TenantID:   tenantID,
+		DatasetID:  c.Param("dataset_id"),
+		Class:      c.Query("class"),
+		DocumentID: c.Query("document_id"),
+		TemplateID: c.Query("template_id"),
+		// node switches the canvas from "instances of a class" to "neighbours of
+		// one instance"; the canvas sends the row id it drew, and the service
+		// falls back to treating the value as a name when no row matches.
+		Node:      c.Query("node"),
+		Direction: c.Query("direction"),
+		Hop:       hop,
+		Limit:     limit,
+	})
+	if err != nil {
+		common.RespondError(c, common.CodeDataError, err.Error())
+		return
+	}
+	common.RespondSuccess(c, resp, "success")
+}
+
 // GetDocumentClaims handles GET /documents/<document_id>/structure/claims —
 // page one document's claim/evidence rows (entity_type_kwd="claim"). The tree
 // UI fetches them per leaf cluster on demand: chunk_ids carries the cluster's

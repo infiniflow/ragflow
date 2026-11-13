@@ -98,6 +98,12 @@
     --border-button: rgba(0, 0, 0, 0.1);
     /* Regulators, parsing, switches, variables */
     --accent-primary: 0 190 180;
+    /* Elevation. Two steps only: a card sits on a surface, a popover sits above
+       everything. --shadow-card is deliberately near-invisible — the border is
+       what separates a card from its surface, and a visible shadow on top of a
+       1px border reads as a floating window. */
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
+    --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.12);
     /* Categorical graph fills shared by light and dark themes. */
     --graph-node-1: #4e79a7;
     --graph-node-2: #b96b1d;
@@ -221,6 +227,10 @@
     --border-default: rgba(255, 255, 255, 0.2);
     --border-accent: #ffffff;
     --border-button: rgba(255, 255, 255, 0.1);
+    /* Redefined here, not inherited: a custom property resolves its var()
+       references where it is declared, so these would keep the light values. */
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-pop: 0 8px 28px rgba(0, 0, 0, 0.5);
 
     /* *-inverse: colors in light mode */
     --text-primary-inverse: 22 22 24;

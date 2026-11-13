@@ -27,6 +27,7 @@ export default {
       descriptionPlaceholder: 'Enter description',
       descriptionMaxLength: 'Description must be at most {{max}} characters.',
       next: 'Next',
+      prev: 'Previous',
       create: 'Create',
       edit: 'Edit',
       upload: 'Upload',
@@ -1157,6 +1158,70 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'The selected dataset is unavailable (deleted or has no chunks), please re-select',
       knowledgeBasesTip:
         'Select the datasets to associate with this chat assistant. An empty dataset will not appear in the dropdown list.',
+      knowledgeLayer: 'Knowledge layer',
+      knowledgeLayerTip:
+        'Reads the assertions compiled in a knowledge dataset (entities and relations) with their verbatim quotations. The datasets above answer "how is this worded in the documents"; this layer answers "what does the model declare". Both can be in force at once.',
+      knowledgeLayerMode: 'How it applies',
+      knowledgeLayerModeInherit: 'Follow the template',
+      knowledgeLayerModeOn: 'On',
+      knowledgeLayerModeOff: 'Off',
+      knowledgeLayerModeHint:
+        'Follow the template: the default declared on the agentic template decides. On: this assistant overrides it. Off: it does not apply even when the template declares one.',
+      knowledgeLayerModel: 'Ontology model',
+      knowledgeLayerModelPlaceholder: 'Select a model',
+      knowledgeLayerModelEmpty:
+        'No ontology model yet — create and publish one in the compilation templates first',
+      knowledgeLayerModelPublishedVersion: 'Published version v{{version}}',
+      knowledgeLayerModelNeverPublished:
+        'Never published: no readable declaration snapshot',
+      knowledgeLayerVersion: 'Model version',
+      knowledgeLayerVersionTip:
+        'Pinning a published version keeps later publishes from changing this assistant; following the published version always uses the current one.',
+      knowledgeLayerVersionFollowPublished: 'Follow the published version',
+      knowledgeLayerVersionCurrent: 'v{{version}} (current)',
+      knowledgeLayerKnowledgeScope: 'Knowledge datasets',
+      knowledgeLayerKnowledgeScopeTip:
+        'The datasets that hold the compiled rows. They are usually not the conversation datasets above: the rows are written there and read only from there.',
+      ontologyModelRequired:
+        'Select an ontology model: without one this layer does not apply',
+      ontologyKnowledgeScopeRequired:
+        'Select at least one knowledge dataset: without one this layer does not apply',
+      knowledgeLayerPreview: 'Try a lookup',
+      knowledgeLayerPreviewTip:
+        'Ask one question of the knowledge layer to see whether the model actually narrows the search and whether its quotations resolve to documents you can read. It uses the settings in this form, so you can check before saving.',
+      knowledgeLayerPreviewQuestion: 'Type a question',
+      knowledgeLayerPreviewRun: 'Search',
+      knowledgeLayerPreviewRunning: 'Searching…',
+      knowledgeLayerPreviewNeedsBinding:
+        'Select a model and a knowledge dataset to try a lookup',
+      ontologyPreviewFailed: 'The lookup failed',
+      ontologyPreviewMatched: 'Matched {{total}} row(s)',
+      ontologyPreviewModel: 'Model: {{name}} v{{version}}',
+      ontologyPreviewDegrade: 'Degraded ({{code}}): {{reason}}',
+      ontologyPreviewCitations:
+        'Citations: {{resolvable}} readable, {{unresolvable}} not',
+      ontologyPreviewUnreviewed: '{{rows}} row(s) not reviewed yet',
+      ontologyReceiptRows: 'Carried {{carried}} of {{total}} row(s)',
+      ontologyReceiptUncitable: '{{rows}} quotation(s) not readable',
+      ontologyPreviewMissingClasses:
+        'Declared without an instance: {{classes}}',
+      ontologyPreviewCoverageTruncated:
+        'The coverage scan was truncated ({{sampled}} rows read, limit {{limit}})',
+      ontologyPreviewSuggested:
+        'Constraints derived from the question: {{constraints}}',
+      ontologyPreviewNoAssertion:
+        'No assertion in the knowledge scope matched. That is a coverage gap, not a statement that nothing exists.',
+      ontologyEvidenceStructured: 'Structured',
+      ontologyEvidenceSchemaFree: 'Schema-free',
+      ontologyEvidenceNone: 'No evidence',
+      ontologyEvidenceStructuredHint:
+        'These rows were narrowed by the declared structure and matched: they may be cited as what the model says about the question.',
+      ontologyEvidenceSchemaFreeHint:
+        'These rows were not narrowed by the declared structure (the reason is above). Read them as leads, not as the model\u2019s statement about the question.',
+      ontologyEvidenceNoneHint:
+        'The knowledge scope returned no assertion; do not answer from this layer in this turn.',
+      ontologyAssertionUnreviewed: 'not reviewed',
+      ontologyAssertionUncitable: 'no citable quotation',
       system: 'System prompt',
       systemPlaceholder: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided dataset.
 
@@ -2556,6 +2621,239 @@ Example: Virtual Hosted Style`,
       modelMaxTokensMinMessage: 'Max tokens must be at least 0',
     },
     knowledgeCompilation: {
+      // What the model produced, read from the corpus. It sits next to the
+      // editor because "is this model any good" is answered by the compiled rows
+      // and their source text, not by the declaration alone.
+      ontologyInspect: {
+        open: 'Compiled output',
+        openHint: 'What this model extracted, with the source text behind it',
+        saveFirst:
+          'Save the model first: there is no output until a dataset has compiled with it',
+        title: 'Compiled output',
+        intro:
+          'What this model extracted from the datasets that compile with it. Every row comes with the dataset it came from and the source text behind it.',
+        scopeDataset: 'One dataset',
+        scopeCorpus: 'All datasets',
+        datasetsLoading: 'Loading datasets…',
+        noDatasets:
+          'No dataset compiles with this model yet, so there is nothing to inspect.',
+        instances: 'Instances',
+        assertions: 'Assertions',
+        allClasses: 'All entities',
+        allProperties: 'All properties',
+        summary:
+          '{{count}} in scope · {{datasets}} dataset(s) · model v{{version}}',
+        truncated:
+          'Showing a capped window, not everything in scope. Narrow the datasets or pick one class or property to see the rest.',
+        skipped: 'Not read: {{ids}}',
+        loading: 'Reading compiled rows…',
+        empty: 'Nothing in this scope.',
+        emptyHint:
+          'Either these datasets have not been compiled with this model yet, or nothing here matches the current filters.',
+        staleVersion:
+          'Extracted by v{{version}}; the model is now v{{current}}, so this row predates it',
+        evidence: 'Source text ({{count}})',
+        evidenceQuotes: 'Source quotes ({{count}})',
+        evidenceMissing: 'No source text recorded for this row',
+        evidenceTitle: 'Source text',
+        evidenceQuote: 'Quote',
+        evidenceQuoteFrom: 'Quoted from {{chunk}}',
+        evidenceContextGone:
+          'The surrounding text is no longer available; the quote above is what the model was shown.',
+        evidenceLoading: 'Loading…',
+        evidenceNone:
+          'No source text was recorded for this row. It was extracted before the row kept its chunks, or the text has since been deleted.',
+        review: 'Review',
+        reviewTitle: 'Assertion review',
+        reviewIntro:
+          'What this model extracted, with the text it was read from. A row is only as good as the sentence behind it: accept what the source supports, reject what it does not, and reset a verdict that was made too quickly.',
+        reviewQueueEmpty:
+          'Nothing to review here. Pick another status, or clear the filters.',
+        reviewUnreviewed: 'Unreviewed',
+        reviewAccepted: 'Accepted',
+        reviewRejected: 'Rejected',
+        reviewView_unreviewed: 'Awaiting review',
+        reviewView_missing: 'Missing contract fields',
+        reviewView_reviewed: 'Judged',
+        reviewAccept: 'Accept',
+        reviewReject: 'Reject',
+        reviewReset: 'Reset',
+        reviewNote: 'Rejection note',
+        reviewNotePlaceholder:
+          'Why these are rejected — recorded on every row the batch rejects.',
+        reviewSucceeded: 'Reviewed {{count}} assertion(s)',
+        reviewFailed: '{{count}} assertion(s) could not be reviewed',
+        reviewNoEvidence:
+          'No source text was recorded for this assertion, so it cannot be judged from here.',
+        reviewProgress:
+          '{{unreviewed}} unreviewed · {{conflicts}} conflict(s) on this page',
+        reviewSelectAll: 'Select all on this page',
+        reviewScopeDoc: 'Document',
+        reviewScopeDataset: 'Dataset',
+        conflict: 'Conflict',
+        conflictTargets: 'Disagrees with: {{targets}}',
+        conflictTypes: 'Over: {{types}}',
+        actionContractTitle: 'Execution contract',
+        actionContractMissingNote:
+          'A missing field means the document does not state it — not that no restriction applies.',
+        actionContractMissing: 'not stated by the document',
+        actionContractExplicitNone: 'explicitly none',
+        actionContractManual: 'no source quote',
+        actionContractMissingAuth: '{{count}} action(s) without authorization',
+        actionContractField: {
+          authorization: 'Authorization',
+          preconditions: 'Preconditions',
+          atomic_effects: 'Atomic effects',
+          follow_ups: 'Follow-ups',
+          failure_policy: 'Failure policy',
+          audit_required: 'Audit required',
+        },
+        actionContractEditTitle: 'Edit contract · {{name}}',
+        actionContractEditIntro:
+          'A value entered here replaces the document’s wording for that field: it becomes authoritative for execution, but no source text supports it, so it can no longer be quoted or cited. Leave a field empty to clear it.',
+        actionContractEditFromDoc: 'read from the document',
+        actionContractReason: 'Reason (required, kept in the audit trail)',
+        actionContractReasonRequired:
+          'State why the contract is being changed.',
+        actionContractNoChange: 'Nothing changed.',
+        actionContractSaved: 'Contract updated.',
+        actionsTitle: 'Actions',
+        actionsExecOff: 'execution is off for this deployment',
+        actionsEmpty:
+          'This model compiled no actions. An action is an instance of the `action` class.',
+        actionsPickOne: 'Select an action.',
+        actionUnbound: 'not bound',
+        actionToolMissing: 'tool missing',
+        actionBindingTitle: 'Binding',
+        actionBindingServer: 'MCP server',
+        actionBindingTool: 'Tool',
+        actionBindingMapping: 'Argument mapping (JSON: tool argument → source)',
+        actionBindingMappingHint:
+          'Sources: contract.<field>, action.name|description|type, attr.<name>, literal:<json>.',
+        actionBindingEnabled: 'Enabled',
+        actionBindingReadOnly: 'Read-only',
+        actionBindingQaCallable: 'Agent may call it',
+        actionBindingRiskAck:
+          'I understand: letting an agent call this action, or declaring it writable, means it can change a system outside RAGFlow without a person in the loop.',
+        actionsTabActions: 'Actions',
+        actionsTabAudit: 'Attempts ({{count}})',
+        actionStatus_runnable: 'Runnable',
+        actionStatus_authorization_missing: 'Authorization unclear',
+        actionStatus_unbound: 'Not bound',
+        actionStatus_unreviewed: 'Awaiting review',
+        actionStatus_rejected: 'Rejected',
+        actionStatus_blocked: 'Cannot run',
+        actionStatus_manual: 'no quote',
+        actionReviewLink:
+          'Open the review queue filtered to this class of assertion',
+        actionGroupRows: '{{rows}} rows · {{judged}} judged',
+        actionScopeDoc: 'per document',
+        actionScopeDataset: 'dataset-wide',
+        reviewScopedToClass:
+          'Only {{class}} assertions are in this queue: the rows and the numbers above count the same ones.',
+        actionAuditIntro:
+          'Every attempt, including the ones the gates refused. A refusal is a fact about the model or the binding.',
+        actionAuditEmptyAll: 'No attempt has been made on this model yet.',
+        actionAuditArgs: 'Arguments (names only): {{args}}',
+        actionAuditConfirmed: 'Confirmed by {{by}}',
+        ontologyEntityList: 'Entities ({{count}})',
+        ontologyContractFields: 'Required contract fields',
+        ontologyContractFieldsHint:
+          'Nothing ticked means no requirement, which reads as all six. The class rule should also state that an action needs an actor and an object.',
+        actionBackfill: 'Backfill old rows',
+        actionBackfillDone: 'Stamped {{count}} row(s).',
+        actionArgsUnmapped: 'Unmapped required arguments: {{args}}',
+        actionMappingInvalid: 'The argument mapping is not valid JSON.',
+        actionTrialTitle: 'Rehearse and run',
+        actionTrialIntro:
+          'A rehearsal calls nothing: it reports the verdict and the exact arguments the mapping produces. Running is audited either way, refusals included.',
+        actionDryRun: 'Rehearse',
+        actionReason: 'Reason for running (required)',
+        actionReasonRequired: 'State why this action is being run.',
+        actionExecute: 'Run',
+        actionDryRunResult: 'Rehearsal',
+        actionExecResult: 'Result',
+        actionAudit: 'Recent attempts',
+        actionAuditEmpty: 'Nobody has tried to run this action.',
+      },
+      ontologyModel: {
+        title: 'Models',
+        description:
+          'Each model shows the version in force, who published it, and how many datasets compile against it. The corpus is extracted with the published version, so an edit only takes effect once it is published.',
+        loading: 'Loading…',
+        empty: 'No models yet. Create one from the template editor first.',
+        status: {
+          draft: 'Draft',
+          review: 'In review',
+          published: 'Published',
+          retired: 'Retired',
+        },
+        unpublishedChanges: 'Unpublished changes',
+        history: 'Versions',
+        publishOrCheck: 'Publish',
+        submitForReview: 'Submit for review',
+        reject: 'Reject',
+        retire: 'Retire',
+        versionLine: 'v{{version}} · {{at}} by {{by}}',
+        notPublished: 'Never published — compilation reads the draft',
+        datasetCount: '{{count}} dataset(s) compiling against it',
+        impactTitle: 'Datasets compiling against {{name}}',
+        impactDescription:
+          'Publishing a new version does not recompile these datasets. They keep the knowledge extracted under the version they last ran on until someone recompiles them.',
+        impactEmpty: 'No dataset compiles against this model right now.',
+        impactDocs: '{{count}} document(s)',
+        openDataset: 'Open dataset',
+        trial: 'Rehearse',
+        trialTitle: 'Rehearse {{name}}',
+        trialDescription:
+          'The draft (v{{next}}) is compiled over real documents and compared with what the corpus holds under v{{current}}.',
+        trialWarning:
+          'A rehearsal compiles real documents with the model: it calls the chat model once per document and can take a while. It writes nothing — no dataset is recompiled and no version is published.',
+        trialRun: 'Run the rehearsal',
+        trialRerun: 'Run again',
+        trialRunning: 'Compiling…',
+        trialFailed: 'The rehearsal could not run',
+        trialSummary:
+          '{{added}} assertion(s) added · {{removed}} dropped, over {{runs}} compile(s)',
+        trialNoChange:
+          'The draft produces the same knowledge the corpus holds now, over {{runs}} compile(s).',
+        trialAdded: 'Added',
+        trialRemoved: 'Dropped',
+        trialUnchanged: '{{count}} unchanged',
+        trialChunks: '{{count}} chunk(s) of source text',
+        modelLibraryLink: 'Models & versions',
+        reviewNote: 'Review note',
+        editModel: 'Edit this model',
+        publishTitle: 'Publish {{name}}',
+        publishDescription:
+          'Publishing records v{{next}} and moves compilation onto it. The version in force now is v{{current}}.',
+        publishNote: 'What changed',
+        publishNotePlaceholder:
+          'Describe the change — it is what the version list shows later.',
+        cancel: 'Cancel',
+        publish: 'Publish',
+        publishAnyway: 'Publish anyway',
+        publishSucceeded: 'Published v{{version}}',
+        publishFailed: 'Publish failed',
+        reviewSubmitted: 'Submitted for review',
+        reviewSubmitFailed: 'Could not submit for review',
+        rejectPrompt: 'Why is this model being sent back?',
+        rejected: 'Sent back to draft',
+        rejectFailed: 'Could not reject the model',
+        retired: 'Model retired',
+        retireFailed: 'Could not retire the model',
+        checking: 'Checking the model…',
+        noFindings: 'No findings — nothing stands in the way of publishing.',
+        blockers: '{{count}} blocking finding(s) — publishing is refused',
+        warnings: '{{count}} warning(s) — publishing needs confirmation',
+        historyTitle: 'Versions of {{name}}',
+        historyDescription:
+          'Pick a version to see what it changed against the previous one.',
+        noVersions: 'This model has never been published.',
+        current: 'current',
+        noChanges: 'No differences between v{{from}} and v{{to}}.',
+        diffHeading: 'v{{from}} → v{{to}}',
+      },
       addTemplateGroup: 'Add template',
       editTemplateGroup: 'Edit template',
       deleteTemplateGroupTitle: 'Delete template group',
@@ -2573,6 +2871,173 @@ Example: Virtual Hosted Style`,
       description: 'Description',
       fieldDescriptionRequired: 'Please input description',
       fieldRule: 'Rule',
+      fieldDomain: 'Domain (class it runs from)',
+      fieldRange: 'Range (class it runs to)',
+      fieldLabel: 'Label (rdfs:label)',
+      fieldParent: 'Parent class (rdfs:subClassOf)',
+      fieldKind: 'Property kind (object / datatype)',
+      fieldDatatype: 'Datatype (literal range)',
+      ontology: 'Ontology',
+      ontologyInstanceCount: '{{count}} instance(s)',
+      ontologySearchClass: 'Find a class…',
+      ontologyGraphStats:
+        '{{classes}} classes · {{properties}} properties · {{entities}} entities · {{relations}} relations',
+      ontologyCountsTruncated:
+        'Counts stopped at the scan cap, so they are lower bounds.',
+      ontologyUnattributed:
+        '{{count}} relation(s) carry no class and are off the graph.',
+      ontologyDeclaredClass: 'Declared class',
+      ontologyUndeclaredClass: 'Observed, not declared',
+      ontologyProperties: 'Properties',
+      ontologyNoProperties: 'No property touches this class.',
+      ontologyAttributes: 'Attributes',
+      ontologyNoAttributes: 'No datatype property is declared for it.',
+      ontologyInheritedFrom: 'inherited from {{name}}',
+      ontologyInheritance: 'Inheritance',
+      ontologyNoInheritance: 'No superclass and no subclass.',
+      ontologyShowInheritance: 'Inheritance',
+      ontologyInheritanceCount: '{{count}} inheritance link(s)',
+      ontologyViewInstances: 'View instances',
+      ontologyViewAssertions: 'View assertions',
+      ontologyDrilldownTotal: '{{count}} row(s) in scope',
+      ontologyDrilldownLoading: 'Loading…',
+      ontologyDrilldownEmpty: 'Nothing compiled for this yet.',
+      ontologyDrilldownMore: '{{count}} more not shown',
+      ontologyGoToClass: 'Go to the other class',
+      ontologyShowUndeclared: 'Show undeclared classes and properties',
+      ontologyFocusedOnly: 'Only the focused class’s edges',
+      ontologyNoInstancesToShow:
+        'No instance of this class was compiled in this scope, so there is no list to open.',
+      ontologyDrilldownFailed: 'The request failed: {{message}}',
+      ontologyDrilldownLoadMore: 'Load {{count}} more',
+      ontologyDrilldownAllShown: 'All {{count}} row(s) shown',
+      ontologyDrilldownCapped:
+        'Showing the first {{shown}} of {{total}} — open the class in a narrower scope to see the rest',
+      // ABox browser: the instances and assertions one dataset scope compiled.
+      ontologyInstancesEntities: 'Entities',
+      ontologyInstancesRelations: 'Relations',
+      ontologyInstancesEmpty: 'Nothing compiled for this filter yet.',
+      ontologyInstancesNoEvidence: 'No source text was kept for this row.',
+      ontologyInstancesPickOne: 'Select a row to read its source.',
+      ontologyInstancesPage: 'Instances & assertions — {{name}}',
+      // The editor's three workspaces. Entry and title share one name: the same
+      // panel under two labels is how "Actions" and "Actions & bindings" ended
+      // up looking like two different places.
+      ontologyOpenInstances: 'Instances & assertions',
+      // Bindings have no editor yet, so the entry names the thing on screen;
+      // binding shows up as a per-action state instead.
+      ontologyOpenActions: 'Actions',
+      ontologyOpenAudit: 'Audit',
+      ontologyActionsPage: 'Actions — {{name}}',
+      ontologyInstancesNoDataset:
+        'No dataset compiles with this model yet, so there are no rows to read.',
+      aboxAllClasses: 'All classes',
+      aboxAllProperties: 'All properties',
+      aboxPageRange: '{{start}}–{{end}} of {{total}}',
+      aboxNoDataset: 'Pick a dataset to read its compiled rows.',
+      aboxSourceQuotes: 'Source quotes ({{count}})',
+      aboxSourceText: 'Source text ({{count}})',
+      aboxPrevious: 'Previous',
+      aboxNext: 'Next',
+      aboxClassesTab: 'Classes',
+      aboxInstancesTab: 'Graph',
+      aboxRowsTab: 'Rows',
+      aboxRelationsTab: 'Relations',
+      aboxBudget: 'Canvas {{drawn}} / {{total}} instances',
+      aboxOpenRemainder: 'Rest in list →',
+      aboxExpandHop: 'One more ring',
+      aboxExpandHopHint: 'Widens the walk by one ring of neighbouring classes',
+      aboxEgoOnly: 'One hop only',
+      aboxEgoOnlyHint:
+        'Keeps only the selected node and the neighbours this canvas already drew',
+      aboxEgoHint:
+        'Showing one hop around the selected node, from what this canvas drew.',
+      aboxSearchPlaceholder: 'Search instances on this canvas',
+      aboxSearchNoMatch: 'Nothing on this canvas matches.',
+      aboxOpenInList: 'Open in list',
+      aboxSourceDocs: 'Sources',
+      ontologyTypeColumn: 'Class',
+      ontologyAliasColumn: 'Aliases',
+      ontologyDescriptionColumn: 'Description',
+      ontologyAttributeColumn: 'Values',
+      ontologyFromColumn: 'From',
+      ontologyPropertyColumn: 'Relation',
+      ontologyToColumn: 'To',
+      ontologyEndpointsColumn: 'Endpoints',
+      ontologyRelationsColumn: 'Relations',
+      ontologyMentionsColumn: 'Mentions',
+      ontologyOpenEvidence: 'View source',
+      ontologyMoreAttributes: '+{{count}} more attribute(s)',
+      ontologyResetLayout: 'Reset layout',
+      ontologyAddEntity: '+ Entity',
+      ontologyAddRelation: '+ Relation',
+      ontologyRailEntities: 'Entities',
+      ontologyRailRelations: 'Relations',
+      ontologyRailRules: 'Rules',
+      ontologyNoRelations: 'No relations yet.',
+      ontologyNoRules: 'No problems found.',
+      ontologyPolymorphicHidden:
+        '{{count}} relation(s) span several entities, so they are listed in Relations instead of drawn here.',
+      ontologyPolymorphicRow: 'not drawn: several endpoints',
+      ontologyRelationsViaRail:
+        'Drag from an entity’s edge dot to another entity, or add one in the Relations tab.',
+      ontologyLinkAnchor: 'Drag to another entity to declare a relation.',
+      ontologyAutoArrange: 'Auto arrange',
+      ontologyDragHint:
+        'Drag an entity to move it; drag its edge dot onto another entity to connect them. Positions are not stored in the template.',
+      ontologyCanvas: 'Ontology canvas',
+      ontologySelectHint: 'Select an entity or a property on the canvas.',
+      ontologyClass: 'Entity',
+      ontologyProperty: 'Property',
+      ontologyDeleteClass: 'Delete entity',
+      ontologyDeleteProperty: 'Delete property',
+      ontologyPitfallCategory_logical: 'Logical issues',
+      ontologySaveBlocked:
+        '{{count}} ontology problem(s) must be fixed first — the canvas lists them.',
+      ontologyMoreSettings: 'More settings',
+      ontologyOwnProperties: 'Properties of this entity',
+      ontologyNoOwnProperties: 'None yet.',
+      ontologyAddOwnAttribute: '+ Attribute',
+      ontologyBelongsTo: 'Belongs to',
+      ontologyBundleHeader: '{{count}} properties share this edge',
+      ontologyBundleHint: 'Pick one to edit it.',
+      ontologyResizePanel: 'Resize the panel',
+      ontologyResizePanelHint: 'Drag to resize; double-click to reset.',
+      ontologyNoDomain: 'no entity yet — the canvas draws nothing for it',
+      ontologyFoldMeta: 'Fold settings',
+      ontologyPitfallCategory_structural: 'Structural issues',
+      ontologyPitfallCategory_naming: 'Naming issues',
+      ontologyPitfallCategory_semantic: 'Semantic issues',
+      ontologyPitfall_dangling_property:
+        'A property names an endpoint class the template does not declare',
+      ontologyPitfall_dangling_parent:
+        'A class declares a parent that is not a declared class',
+      ontologyPitfall_redundant_parent:
+        "A class declares a parent and that parent's ancestor, so one edge says nothing",
+      ontologyPitfall_class_without_property:
+        'No property touches this class, own or inherited',
+      ontologyPitfall_orphan_class:
+        'This class has no property and no compiled instance, so it only ever draws an isolated node',
+      ontologyPitfall_single_child_parent:
+        'A parent class has a single subclass',
+      ontologyPitfall_disconnected_hierarchy:
+        'The hierarchy has more than one root, so it is split into separate trees',
+      ontologyPitfall_endpoint_ancestor_expansion:
+        'A property names an endpoint and one of its ancestors, which the ancestor already covers',
+      ontologyPitfall_property_name_hierarchy:
+        "One property's name nests inside another's between the same classes, so it reads as a sub-property",
+      ontologyPitfall_standard_vocabulary_property:
+        'The name is already owned by RDF/OWL vocabulary',
+      ontologyPitfall_range_in_property_name:
+        "The property's name repeats the class it points at",
+      ontologyPitfall_domain_in_property_name:
+        "The property's name repeats the class it starts from",
+      ontologyPitfall_overly_generic_class:
+        'The name is so general that an extraction model can file anything under it',
+      ontologyPitfall_class_property_name_collision:
+        'A class and a property share this name',
+      ontologyPitfall_datatype_is_class:
+        'The declared datatype is a class of this ontology, so it was meant to be an object property',
       addField: 'Add field',
       editField: 'Edit field',
       selectFieldType: 'Select or enter a field type',
