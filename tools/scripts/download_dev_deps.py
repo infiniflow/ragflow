@@ -493,9 +493,7 @@ def _stamp_present(data, version, stamp_format):
     return needle in data
 
 
-def native_lib_provisioned(
-    directory, required_files, version=None, stamp_format="null", *, platform=None, archive_hash=None
-):
+def native_lib_provisioned(directory, required_files, version=None, stamp_format="null", *, platform=None, archive_hash=None):
     """Check required files and version stamps in a provisioned native library.
 
     PDFium callers also supply the target platform and, when available, the
@@ -526,9 +524,7 @@ def native_lib_provisioned(
     return True
 
 
-def _extract_native_archive(
-    archive_path, target, required_files, version=None, stamp_format="null", *, platform=None, archive_hash=None
-):
+def _extract_native_archive(archive_path, target, required_files, version=None, stamp_format="null", *, platform=None, archive_hash=None):
     """Extract ARCHIVE_PATH into TARGET, verifying REQUIRED_FILES (and, for .a
     files, an optional VERSION stamp) before promoting the staged tree.
 
@@ -544,9 +540,7 @@ def _extract_native_archive(
     if platform is not None:
         platform_token = f"{platform[0]}/{platform[1]}" if isinstance(platform, tuple) else str(platform)
 
-    if native_lib_provisioned(
-        target, required_files, version, stamp_format, platform=platform, archive_hash=archive_hash
-    ):
+    if native_lib_provisioned(target, required_files, version, stamp_format, platform=platform, archive_hash=archive_hash):
         print(f"  ✓ {os.path.basename(target)} already extracted to {target}")
         return
     os.makedirs(os.path.dirname(target), exist_ok=True)
@@ -580,9 +574,7 @@ def _extract_native_archive(
     print(f"  ✓ extracted {os.path.basename(archive_path)} to {target}")
 
 
-def extract_native_lib(
-    archive_path, subdir, dir_version, required_files, stamp_version=None, stamp_format="null", *, platform=None
-):
+def extract_native_lib(archive_path, subdir, dir_version, required_files, stamp_version=None, stamp_format="null", *, platform=None):
     """Extract a native static archive into the version-keyed cache dir
     ~/ragflow-native-libs/<subdir>/<dir_version>/.
 
@@ -607,9 +599,7 @@ def extract_native_lib(
     target = os.path.join(native_libs_dir(), subdir, dir_version)
     archive_hash = _sha256_of(archive_path) if platform is not None else None
     try:
-        _extract_native_archive(
-            archive_path, target, required_files, stamp_version, stamp_format, platform=platform, archive_hash=archive_hash
-        )
+        _extract_native_archive(archive_path, target, required_files, stamp_version, stamp_format, platform=platform, archive_hash=archive_hash)
     except (tarfile.TarError, EOFError, RuntimeError):
         os.unlink(archive_path)
         raise
@@ -990,9 +980,7 @@ def download_native_archives(goos, goarch):
         target = os.path.join(native_libs_dir(), subdir, dir_version)
         platform = (goos, goarch) if subdir == "pdfium-static" else None
         archive_hash = _sha256_of(archive) if platform is not None and os.path.isfile(archive) else None
-        if native_lib_provisioned(
-            target, required_files, stamp_version, stamp_format, platform=platform, archive_hash=archive_hash
-        ):
+        if native_lib_provisioned(target, required_files, stamp_version, stamp_format, platform=platform, archive_hash=archive_hash):
             print(f"  ✓ {subdir} {dir_version} already provisioned at {target}; skipping download")
             continue
         print(f"Downloading {archive} from {url}...")
@@ -1051,9 +1039,7 @@ def main():
         target = os.path.join(native_libs_dir(), subdir, dir_version)
         platform = (goos, goarch) if subdir == "pdfium-static" else None
         archive_hash = _sha256_of(archive) if platform is not None and os.path.isfile(archive) else None
-        if native_lib_provisioned(
-            target, required_files, stamp_version, stamp_format, platform=platform, archive_hash=archive_hash
-        ):
+        if native_lib_provisioned(target, required_files, stamp_version, stamp_format, platform=platform, archive_hash=archive_hash):
             print(f"  ✓ {subdir} {dir_version} already provisioned at {target}; skipping extraction")
             continue
         archive_path = os.path.join(RAGFLOW_DEPS_DIR, archive)

@@ -370,6 +370,7 @@ def test_extracts_darwin_pdfium_archive_without_bundled_libcxx(tmp_path):
 
 def test_extract_native_archive_replaces_cached_tree_when_platform_changes(tmp_path):
     """Switching target platform/arch replaces a cached PDFium tree instead of reusing it."""
+
     def write_pdfium_tar(path, payload):
         """Create a minimal Darwin PDFium tar.gz with the given libpdfium.a payload."""
         with tarfile.open(path, "w:gz") as tf:
@@ -397,6 +398,7 @@ def test_extract_native_archive_replaces_cached_tree_when_platform_changes(tmp_p
 
 def test_extract_native_lib_replaces_cached_pdfium_when_hash_changes(tmp_path, monkeypatch):
     """A changed archive replaces PDFium cached under the same version and platform."""
+
     def write_pdfium_tar(path, payload):
         with tarfile.open(path, "w:gz") as tf:
             for rel, data in [
