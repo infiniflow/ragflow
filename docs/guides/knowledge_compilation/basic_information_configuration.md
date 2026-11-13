@@ -4,7 +4,7 @@ title: Basic Information Configuration
 sidebar_label: Basic Information Configuration
 slug: /knowledge_compilation/basic_information_configuration
 sidebar_custom_props: {
-  categoryIcon: LucideWandSparkles
+  categoryIcon: LucideSettings
 }
 ---
 

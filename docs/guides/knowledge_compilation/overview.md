@@ -4,7 +4,7 @@ title: Overview
 sidebar_label: Overview
 slug: /knowledge_compilation/overview
 sidebar_custom_props: {
-  categoryIcon: LucideWandSparkles
+  categoryIcon: LucideHouse
 }
 ---
 

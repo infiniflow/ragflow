@@ -4,7 +4,7 @@ title: Built-In Templates and Dedicated Configuration
 sidebar_label: Built-In Templates and Dedicated Configuration
 slug: /knowledge_compilation/built_in_templates_and_dedicated_configuration
 sidebar_custom_props: {
-  categoryIcon: LucideWandSparkles
+  categoryIcon: LucideForm
 }
 ---
 

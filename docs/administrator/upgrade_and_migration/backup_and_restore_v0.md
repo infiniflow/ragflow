@@ -4,7 +4,7 @@ title: Backup and Restore (v0.x)
 sidebar_label: Backup and Restore (v0.x)
 slug: /backup_and_restore_v0
 sidebar_custom_props: {
-  categoryIcon: LucideArchiveRestore
+  categoryIcon: LucideArchiveArrowUp
 }
 ---
 
