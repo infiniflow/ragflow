@@ -59,38 +59,6 @@ func TestXLSXParserEmitsSegmentedHTMLTable(t *testing.T) {
 	}
 }
 
-// TestXLSXParserHTML4ExcelIsIgnored pins the retirement: html4excel is still
-// accepted at the entry (with a deprecation warning) but selects nothing —
-// the wire is identical to the default path.
-func TestXLSXParserHTML4ExcelIsIgnored(t *testing.T) {
-	data := newTestXLSX(t, func(f *excelize.File) {
-		mustSetCell(t, f, "Sheet1", "A1", "Question")
-		mustSetCell(t, f, "Sheet1", "B1", "Answer")
-		mustSetCell(t, f, "Sheet1", "A2", "Q1")
-		mustSetCell(t, f, "Sheet1", "B2", "A1")
-	})
-	plain, _ := NewXLSXParser("")
-	plainRes := plain.ParseWithResult(t.Context(), "qa.xlsx", data)
-	if plainRes.Err != nil {
-		t.Fatalf("ParseWithResult: %v", plainRes.Err)
-	}
-	p, _ := NewXLSXParser("")
-	p.ConfigureFromSetup(map[string]any{"html4excel": true})
-	res := p.ParseWithResult(t.Context(), "qa.xlsx", data)
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
-	}
-	if len(res.JSON) != 1 {
-		t.Fatalf("items = %d, want one atomic table item", len(res.JSON))
-	}
-	if res.JSON[0].ToMap()["doc_type_kwd"] != "table" || res.JSON[0].ToMap()["table"] == nil {
-		t.Fatalf("html4excel item = %#v", res.JSON[0])
-	}
-	if !reflect.DeepEqual(res.JSON, plainRes.JSON) {
-		t.Errorf("html4excel changed the wire: %v vs %v", res.JSON, plainRes.JSON)
-	}
-}
-
 func TestXLSXParserDoesNotPrechunkRows(t *testing.T) {
 	const dataRows = 257
 	data := newTestXLSX(t, func(f *excelize.File) {
@@ -1636,6 +1604,126 @@ func TestMergeExtentCol(t *testing.T) {
 	}
 }
 
+func TestDetectHeaderRow_RecoveryCountsFilledCellsInMergedRows(t *testing.T) {
+	f := excelize.NewFile()
+	defer f.Close()
+	bold, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for r := 1; r <= 2; r++ {
+		mustSetCell(t, f, "Sheet1", cellRef('A', r), "Project")
+		mustSetCell(t, f, "Sheet1", cellRef('B', r), "Owner")
+		if err := f.SetCellStyle("Sheet1", cellRef('A', r), cellRef('B', r), bold); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for c, value := range []string{"item", "", "", "1", "2", "note"} {
+		mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), 3), value)
+	}
+	if err := f.MergeCell("Sheet1", "A3", "C3"); err != nil {
+		t.Fatal(err)
+	}
+	for r := 4; r <= 10; r++ {
+		for c, value := range []string{"a", "b", "c", "d", "e", "f"} {
+			mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), value)
+		}
+	}
+	_, _, _, headerRow, _, _, err := readSpreadsheetRecords(f, "Sheet1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if headerRow != 1 {
+		t.Fatalf("half-numeric merged data row was promoted to header %d, want fallback 1", headerRow)
+	}
+}
+
+func TestDetectHeaderRow_MergedFirstRowNeedsHeaderEvidence(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		mergeEnd   string
+		styled     bool
+		numeric    bool
+		wantHeader int
+	}{
+		{name: "merged header over text data", mergeEnd: "C1", wantHeader: 1},
+		{name: "ambiguous merged title over text rows", mergeEnd: "F1", wantHeader: 1},
+		{name: "merged title over styled header", mergeEnd: "F1", styled: true, wantHeader: 2},
+		{name: "merged title over numeric contrast", mergeEnd: "F1", numeric: true, wantHeader: 2},
+		{name: "unmerged title over text header", wantHeader: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := excelize.NewFile()
+			defer f.Close()
+			mustSetCell(t, f, "Sheet1", "A1", "Group")
+			if tc.mergeEnd != "" {
+				if err := f.MergeCell("Sheet1", "A1", tc.mergeEnd); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for c, value := range []string{"Name", "Quantity", "Cost"} {
+				mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), 2), value)
+			}
+			if tc.styled {
+				style, err := f.NewStyle(&excelize.Style{Font: &excelize.Font{Bold: true}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := f.SetCellStyle("Sheet1", "A2", "C2", style); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for r := 3; r <= 8; r++ {
+				values := []string{"Widget", "Blue", "Small"}
+				if tc.numeric {
+					values = []string{"Widget", "2", "50"}
+				}
+				for c, value := range values {
+					mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), value)
+				}
+			}
+			_, _, _, headerRow, _, _, err := readSpreadsheetRecords(f, "Sheet1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if headerRow != tc.wantHeader {
+				t.Fatalf("header row = %d, want %d", headerRow, tc.wantHeader)
+			}
+		})
+	}
+}
+
+func TestXLSXParser_NarrowTablesDoNotEmitFormChunks(t *testing.T) {
+	for _, header := range [][]string{{"Item", "Qty"}, {"Item", "Qty", "Cost"}} {
+		t.Run(strconv.Itoa(len(header))+" columns", func(t *testing.T) {
+			data := newTestXLSX(t, func(f *excelize.File) {
+				for c, value := range header {
+					mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), 1), value)
+				}
+				for r := 2; r <= 6; r++ {
+					for c, value := range []string{"Widget", "2", "50"}[:len(header)] {
+						mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), value)
+					}
+				}
+			})
+			p, _ := NewXLSXParser("")
+			res := p.ParseWithResult(t.Context(), "table.xlsx", data)
+			if res.Err != nil {
+				t.Fatal(res.Err)
+			}
+			for _, item := range res.JSON {
+				text, _ := item.ToMap()["text"].(string)
+				if strings.HasPrefix(text, "Sheet:") {
+					t.Fatalf("ordinary table emitted a form chunk: %s", text)
+				}
+			}
+			if !strings.Contains(spreadsheetText(res), "<th>Item</th><th>Qty</th>") {
+				t.Fatal("ordinary table lost its headers")
+			}
+		})
+	}
+}
+
 // TestIsFormSheet verifies the form-sheet detection heuristic.
 func TestIsFormSheet(t *testing.T) {
 	// Kros cover sheet: 30 rows, most with 1-2 cells.
@@ -1660,7 +1748,7 @@ func TestIsFormSheet(t *testing.T) {
 	for i := 27; i < 30; i++ {
 		form[i] = []string{""}
 	}
-	if !isFormSheet(form) {
+	if !isFormSheet(form, 1) {
 		t.Fatal("Kros cover sheet should be detected as form")
 	}
 
@@ -1670,7 +1758,7 @@ func TestIsFormSheet(t *testing.T) {
 	for i := 1; i < 20; i++ {
 		table[i] = []string{"SO01", "", "OBJEKT", "17234914", "689480", "17924395", "3584879"}
 	}
-	if isFormSheet(table) {
+	if isFormSheet(table, 1) {
 		t.Fatal("regular table should NOT be detected as form")
 	}
 
@@ -1689,12 +1777,12 @@ func TestIsFormSheet(t *testing.T) {
 			hybrid[i][j] = "data"
 		}
 	}
-	if !isFormSheet(hybrid) {
+	if !isFormSheet(hybrid, 1) {
 		t.Fatal("hybrid sheet (form prefix + table body) should be detected as form")
 	}
 
 	// Too few rows.
-	if isFormSheet([][]string{{"a"}, {"b"}}) {
+	if isFormSheet([][]string{{"a"}, {"b"}}, 1) {
 		t.Fatal("tiny sheet should not be form")
 	}
 }

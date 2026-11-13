@@ -52,7 +52,6 @@ func (p *XLSXParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["parse_method"].(string); ok && v != "" {
 		p.ParseMethod = v
 	}
-	deprecatedHTML4Excel(setup, p.String())
 	deprecatedChunkRows(setup, p.String())
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
@@ -70,7 +69,7 @@ func (p *XLSXParser) ConfigureFromSetup(setup map[string]any) {
 
 func normalizeXLSXParseMethod(raw string) string {
 	method := strings.ToLower(strings.TrimSpace(raw))
-	if method == "tcadp parser" {
+	if method == "tcadp parser" || method == "tcadp" {
 		return "tcadp"
 	}
 	// "deepdoc" / "deepdoc parser" is the default spreadsheet parse_method
@@ -178,7 +177,7 @@ func parseXLSXBytes(data []byte, sink *officeMediaSink) ([]map[string]any, []str
 		// additional plain-text KV chunk so the sheet name (which often
 		// carries the discipline, e.g. "E1.2 - Statika") and label→value
 		// pairs become searchable by both keyword and embedding.
-		if isFormSheet(rawRows) {
+		if isFormSheet(rawRows, headerRow) {
 			kvText := renderFormSheetKV(sheet, rawRows)
 			if len(kvText) > 0 {
 				kvItem := NewTextJSONItem(kvText).ToMap()

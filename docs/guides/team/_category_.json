@@ -2,8 +2,8 @@
   "label": "Team",
   "position": 8,
   "link": {
-    "type": "generated-index",
-    "description": "Team-specific guides."
+    "type": "doc",
+    "id": "guides/team/index"
   },
   "customProps": {
     "categoryIcon": "LucideUsers"

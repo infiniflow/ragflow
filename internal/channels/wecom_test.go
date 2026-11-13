@@ -27,6 +27,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -90,15 +91,14 @@ func TestNewWeComChannelFromConfigTreatsUnknownConnectionTypeAsWebhook(t *testin
 	}
 }
 
-func TestNewWeComChannelFromConfigAcceptsIntegerAgentID(t *testing.T) {
+func TestNewWeComChannelFromConfigAcceptsIntegerAgentIDAndDefaultsListener(t *testing.T) {
 	encodingAESKey, _ := testWeComAESKey()
 	channel, err := newWeComChannelFromConfig("account-1", map[string]any{
-		"corp_id":      "corp-id",
-		"agent_id":     0,
-		"secret":       "secret",
-		"token":        "token",
-		"aes_key":      encodingAESKey,
-		"webhook_port": 0,
+		"corp_id":  "corp-id",
+		"agent_id": 0,
+		"secret":   "secret",
+		"token":    "token",
+		"aes_key":  encodingAESKey,
 	})
 	if err != nil {
 		t.Fatalf("agent_id=0 error = %v", err)
@@ -106,8 +106,64 @@ func TestNewWeComChannelFromConfigAcceptsIntegerAgentID(t *testing.T) {
 	if channel.account.AgentID != 0 {
 		t.Fatalf("agent_id = %d, want 0", channel.account.AgentID)
 	}
-	if channel.account.WebhookPort != 0 {
-		t.Fatalf("webhook_port = %d, want 0", channel.account.WebhookPort)
+	if channel.account.WebhookPort != defaultWeComWebhookPort {
+		t.Fatalf("webhook_port = %d, want %d", channel.account.WebhookPort, defaultWeComWebhookPort)
+	}
+	if channel.account.WebhookHost != defaultWeComWebhookHost {
+		t.Fatalf("webhook_host = %q, want %q", channel.account.WebhookHost, defaultWeComWebhookHost)
+	}
+}
+
+func TestNewWeComChannelFromConfigRejectsTenantControlledListener(t *testing.T) {
+	encodingAESKey, _ := testWeComAESKey()
+	baseConfig := map[string]any{
+		"corp_id":  "corp-id",
+		"agent_id": "1000001",
+		"secret":   "secret",
+		"token":    "token",
+		"aes_key":  encodingAESKey,
+	}
+	for _, tc := range []struct {
+		name  string
+		field string
+		value any
+	}{
+		{name: "ephemeral port", field: "webhook_port", value: 0},
+		{name: "out of range port", field: "webhook_port", value: 65536},
+		{name: "tenant selected port", field: "webhook_port", value: 3003},
+		{name: "loopback host", field: "webhook_host", value: "127.0.0.1"},
+		{name: "hostname", field: "webhook_host", value: "localhost"},
+		{name: "non-string host", field: "webhook_host", value: []string{"0.0.0.0"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			config := make(map[string]any, len(baseConfig)+1)
+			for key, value := range baseConfig {
+				config[key] = value
+			}
+			config[tc.field] = tc.value
+			if _, err := newWeComChannelFromConfig("account-1", config); err == nil {
+				t.Fatalf("accepted tenant controlled %s=%v", tc.field, tc.value)
+			}
+		})
+	}
+}
+
+func TestNewWeComChannelFromConfigAllowsSharedListenerConfig(t *testing.T) {
+	encodingAESKey, _ := testWeComAESKey()
+	channel, err := newWeComChannelFromConfig("account-1", map[string]any{
+		"corp_id":      "corp-id",
+		"agent_id":     "1000001",
+		"secret":       "secret",
+		"token":        "token",
+		"aes_key":      encodingAESKey,
+		"webhook_host": defaultWeComWebhookHost,
+		"webhook_port": defaultWeComWebhookPort,
+	})
+	if err != nil {
+		t.Fatalf("shared listener config error = %v", err)
+	}
+	if channel.account.WebhookHost != defaultWeComWebhookHost || channel.account.WebhookPort != defaultWeComWebhookPort {
+		t.Fatalf("listener address = %s:%d, want %s:%d", channel.account.WebhookHost, channel.account.WebhookPort, defaultWeComWebhookHost, defaultWeComWebhookPort)
 	}
 }
 
@@ -479,7 +535,7 @@ func TestWeComWebSocketMessagePreservesWhitespaceAndFallsBackToSender(t *testing
 	}
 }
 
-func TestWeComSendIgnoresTransportErrors(t *testing.T) {
+func TestWeComSendReturnsTransportErrors(t *testing.T) {
 	channel, err := newWeComChannel(wecomAccount{
 		AccountID:      "account-1",
 		ConnectionType: "websocket",
@@ -489,8 +545,31 @@ func TestWeComSendIgnoresTransportErrors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("newWeComChannel() error = %v", err)
 	}
-	if err := channel.Send(context.Background(), core.OutgoingMessage{ChatID: "chat-1", Text: "answer"}); err != nil {
-		t.Fatalf("Send() error = %v, want nil", err)
+	if err := channel.Send(t.Context(), core.OutgoingMessage{ChatID: "chat-1", Text: "answer"}); err == nil {
+		t.Fatal("Send() succeeded without a websocket connection")
+	}
+}
+
+func TestWeComSendRedactsApplicationTransportError(t *testing.T) {
+	aesKey, _ := testWeComAESKey()
+	channel, err := newWeComChannel(wecomAccount{
+		AccountID: "account-1", CorpID: "corp", AgentID: 1, Secret: "secret",
+		Token: "token", AESKey: aesKey,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	channel.accessToken = "sensitive-access-token"
+	channel.tokenExpiry = time.Now().Add(time.Hour)
+	channel.client = &http.Client{Transport: telegramRoundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		return nil, &url.Error{Op: "Post", URL: req.URL.String(), Err: net.ErrClosed}
+	})}
+	err = channel.Send(t.Context(), core.OutgoingMessage{ChatID: "user-1", Text: "answer"})
+	if err == nil {
+		t.Fatal("Send() succeeded after a transport failure")
+	}
+	if strings.Contains(err.Error(), channel.accessToken) {
+		t.Fatalf("Send() exposed access token: %v", err)
 	}
 }
 
@@ -523,4 +602,251 @@ func testWeComSignature(token, timestamp, nonce, encrypted string) string {
 	sort.Strings(parts)
 	hash := sha1.Sum([]byte(strings.Join(parts, "")))
 	return hex.EncodeToString(hash[:])
+}
+
+func TestWeComStreamEnabledOnlyForWebSocket(t *testing.T) {
+	for _, test := range []struct {
+		name           string
+		connectionType string
+		stream         any
+		want           bool
+	}{
+		{name: "websocket with the switch on", connectionType: "websocket", stream: true, want: true},
+		{name: "websocket without the switch", connectionType: "websocket", stream: nil, want: false},
+		{name: "webhook ignores the switch", connectionType: "webhook", stream: true, want: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := map[string]any{
+				"connection_type": test.connectionType,
+				"secret":          "secret",
+				"bot_id":          "bot-id",
+				"corp_id":         "corp-id",
+				"token":           "token",
+				"aes_key":         strings.Repeat("a", 43),
+				"agent_id":        1000001,
+			}
+			if test.stream != nil {
+				cfg["stream"] = test.stream
+			}
+			ch, err := newWeComChannelFromConfig("account-1", cfg)
+			if err != nil {
+				t.Fatalf("newWeComChannelFromConfig() error = %v", err)
+			}
+			if got := ch.StreamEnabled(); got != test.want {
+				t.Fatalf("StreamEnabled() = %t, want %t", got, test.want)
+			}
+		})
+	}
+}
+
+func TestWeComSendStreamPushesAndFinishes(t *testing.T) {
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	frames := make(chan map[string]any, 8)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade websocket: %v", err)
+			return
+		}
+		defer conn.Close()
+
+		var subscribe map[string]any
+		if err := conn.ReadJSON(&subscribe); err != nil {
+			t.Errorf("read subscribe: %v", err)
+			return
+		}
+		if err := conn.WriteJSON(map[string]any{"cmd": "aibot_subscribe", "errcode": 0, "errmsg": "ok"}); err != nil {
+			t.Errorf("write subscribe response: %v", err)
+			return
+		}
+		if err := conn.WriteJSON(map[string]any{
+			"cmd":     "aibot_msg_callback",
+			"headers": map[string]any{"req_id": "request-1"},
+			"body": map[string]any{
+				"msgid":    "message-1",
+				"msgtype":  "text",
+				"chattype": "group",
+				"chatid":   "chat-1",
+				"from":     map[string]any{"userid": "user-1"},
+				"text":     map[string]any{"content": "question"},
+			},
+		}); err != nil {
+			t.Errorf("write callback: %v", err)
+			return
+		}
+		for {
+			var frame map[string]any
+			if err := conn.ReadJSON(&frame); err != nil {
+				return
+			}
+			frames <- frame
+			stream := weComMapValue(weComMapValue(frame["body"])["stream"])
+			if finished, _ := stream["finish"].(bool); finished {
+				return
+			}
+		}
+	}))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	allowChannelURLForTest(t, wsURL)
+	channel, err := newWeComChannel(wecomAccount{
+		AccountID:      "account-1",
+		ConnectionType: "websocket",
+		BotID:          "bot-id",
+		Secret:         "secret",
+		WSURL:          wsURL,
+		Stream:         true,
+	})
+	if err != nil {
+		t.Fatalf("newWeComChannel() error = %v", err)
+	}
+	handlerErr := make(chan error, 1)
+	channel.SetMessageHandler(func(ctx context.Context, msg core.IncomingMessage) error {
+		text := make(chan string, 2)
+		text <- "Hel"
+		text <- "Hello"
+		close(text)
+		err := channel.SendStream(ctx, core.OutgoingMessage{ChatID: msg.ChatID, ReplyToMessageID: msg.MessageID}, text)
+		handlerErr <- err
+		return err
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := channel.Start(ctx); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	var got []map[string]any
+	for len(got) < 2 {
+		select {
+		case frame := <-frames:
+			got = append(got, frame)
+		case <-time.After(3 * time.Second):
+			t.Fatalf("timed out waiting for stream frames, got %d", len(got))
+		}
+	}
+	if err := <-handlerErr; err != nil {
+		t.Fatalf("SendStream() error = %v", err)
+	}
+
+	var streamID string
+	for index, frame := range got {
+		if frame["cmd"] != "aibot_respond_msg" {
+			t.Fatalf("frame %d cmd = %v, want aibot_respond_msg", index, frame["cmd"])
+		}
+		if reqID := weComMapValue(frame["headers"])["req_id"]; reqID != "request-1" {
+			t.Fatalf("frame %d req_id = %v, want the callback request id", index, reqID)
+		}
+		body := weComMapValue(frame["body"])
+		if body["msgtype"] != "stream" {
+			t.Fatalf("frame %d msgtype = %v, want stream", index, body["msgtype"])
+		}
+		stream := weComMapValue(body["stream"])
+		id, _ := stream["id"].(string)
+		if id == "" {
+			t.Fatalf("frame %d is missing the stream id", index)
+		}
+		if streamID == "" {
+			streamID = id
+		} else if id != streamID {
+			t.Fatalf("frame %d stream id = %q, want the same id as the first push", index, id)
+		}
+		if stream["content"] != "Hello" {
+			t.Fatalf("frame %d content = %v, want the complete answer", index, stream["content"])
+		}
+		if finish, _ := stream["finish"].(bool); finish != (index == len(got)-1) {
+			t.Fatalf("frame %d finish = %v, want the last frame to finish the stream", index, finish)
+		}
+	}
+	if err := channel.Stop(context.Background()); err != nil {
+		t.Fatalf("Stop() error = %v", err)
+	}
+}
+
+func TestWeComSendStreamFinishesWhenCancelled(t *testing.T) {
+	upgrader := websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }}
+	frames := make(chan map[string]any, 8)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			t.Errorf("upgrade websocket: %v", err)
+			return
+		}
+		defer conn.Close()
+		for {
+			var frame map[string]any
+			if err := conn.ReadJSON(&frame); err != nil {
+				return
+			}
+			frames <- frame
+		}
+	}))
+	defer server.Close()
+
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
+	conn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	if err != nil {
+		t.Fatalf("dial websocket: %v", err)
+	}
+	defer conn.Close()
+
+	channel, err := newWeComChannel(wecomAccount{
+		AccountID:      "account-1",
+		ConnectionType: "websocket",
+		BotID:          "bot-id",
+		Secret:         "secret",
+		Stream:         true,
+	})
+	if err != nil {
+		t.Fatalf("newWeComChannel() error = %v", err)
+	}
+	channel.ws = conn
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	text := make(chan string, 1)
+	text <- "Hello"
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- channel.SendStream(ctx, core.OutgoingMessage{ChatID: "chat-1", ReplyToMessageID: "request-1"}, text)
+	}()
+
+	readFrame := func() map[string]any {
+		select {
+		case frame := <-frames:
+			return frame
+		case err := <-errCh:
+			t.Fatalf("SendStream returned before the expected frame: %v", err)
+			return nil
+		case <-time.After(3 * time.Second):
+			t.Fatal("timed out waiting for a stream frame")
+			return nil
+		}
+	}
+
+	first := readFrame()
+	if stream := weComMapValue(weComMapValue(first["body"])["stream"]); stream["finish"] != false {
+		t.Fatalf("first frame finish = %v, want an unfinished update", stream["finish"])
+	}
+
+	cancel()
+
+	select {
+	case sendErr := <-errCh:
+		if !errors.Is(sendErr, context.Canceled) {
+			t.Fatalf("SendStream error = %v, want context.Canceled", sendErr)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("SendStream did not return after the context was cancelled")
+	}
+
+	last := readFrame()
+	stream := weComMapValue(weComMapValue(last["body"])["stream"])
+	if stream["finish"] != true {
+		t.Fatalf("last frame finish = %v, want the stream to be closed", stream["finish"])
+	}
+	if stream["content"] != "Hello" {
+		t.Fatalf("finish content = %v, want the last shown text", stream["content"])
+	}
 }

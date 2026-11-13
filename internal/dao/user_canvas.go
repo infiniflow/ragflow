@@ -184,6 +184,18 @@ func (dao *UserCanvasDAO) GetList(ctx context.Context, db *gorm.DB, tenantID str
 	return canvases, err
 }
 
+// ListMetadataByIDs loads only the fields needed by the version catalog.
+func (dao *UserCanvasDAO) ListMetadataByIDs(ctx context.Context, db *gorm.DB, canvasIDs []string, category string) ([]entity.UserCanvas, error) {
+	if len(canvasIDs) == 0 {
+		return []entity.UserCanvas{}, nil
+	}
+	var canvases []entity.UserCanvas
+	err := db.WithContext(ctx).Select("id", "title").
+		Where("id IN ? AND canvas_category = ?", canvasIDs, category).
+		Order("create_time DESC").Order("id ASC").Find(&canvases).Error
+	return canvases, err
+}
+
 // UserCanvasListItem is the joined row returned by ListByIDs.
 type UserCanvasListItem struct {
 	ID                 string  `gorm:"column:id"`

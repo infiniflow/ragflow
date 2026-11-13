@@ -145,18 +145,27 @@ func TestSearchBotsRetrieval_MissingQuestion(t *testing.T) {
 	}
 }
 
-func TestSearchBotsRetrieval_NoAuth(t *testing.T) {
+func TestSearchBotsRetrieval_Unauthenticated(t *testing.T) {
 	h := NewSearchBotHandler(nil, nil, nil, &mockChunkService{})
 	gin.SetMode(gin.TestMode)
 	r := gin.New()
-	r.POST("/api/v1/searchbots/retrieval", h.RetrievalTest)
+	api := r.Group("/api/v1")
+	api.Use((&AuthHandler{}).BetaAuthMiddleware())
+	api.POST("/searchbots/retrieval", h.RetrievalTest)
 	w := httptest.NewRecorder()
 	body := `{"kb_ids": ["kb1"], "question": "test"}`
 	req, _ := http.NewRequest("POST", "/api/v1/searchbots/retrieval", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401, got %d", w.Code)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected BetaAuthMiddleware response status 200, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("failed to unmarshal response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeDataError) {
+		t.Errorf("expected BetaAuthMiddleware auth error code %d, got %v", common.CodeDataError, resp["code"])
 	}
 }
 
@@ -534,7 +543,7 @@ func TestAskHandler_NoChatModel(t *testing.T) {
 		strings.NewReader(`{"question": "test", "kb_ids": ["kb1"]}`))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Set("user", &entity.User{ID: "user-1"})
-	c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{UserID: "user-1"}))
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user-1", ""))
 	h.Ask(c)
 	body := buf.String()
 	if !strings.Contains(body, "chat model not configured") {

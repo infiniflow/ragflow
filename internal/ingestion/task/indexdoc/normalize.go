@@ -25,7 +25,7 @@ import (
 )
 
 // NormalizeChunks converts pipeline output into a uniform []map[string]any slice.
-// Mirrors Python: DataflowService._normalize_chunks()
+// Mirrors DataflowService._normalize_chunks()
 func NormalizeChunks(output map[string]any) []map[string]any {
 	if output == nil {
 		return nil
@@ -90,7 +90,7 @@ func toChunkMaps(v any) ([]map[string]any, bool) {
 // Other value types (nested maps, [][]float64 positions, etc.) are shared by
 // reference, not recursively deep-copied; positions are later flattened and
 // copied independently by processChunkPositions. It is therefore NOT a full
-// recursive deep copy (unlike Python's copy.deepcopy), only the copy needed
+// recursive deep copy (unlike copy.deepcopy), only the copy needed
 // for the post-processing pass over pipeline output.
 func DeepCopyChunks(chunks []map[string]any) []map[string]any {
 	if chunks == nil {
@@ -124,7 +124,7 @@ func DeepCopyChunks(chunks []map[string]any) []map[string]any {
 
 // PrepareTextsForPipelineEmbedding extracts texts for embedding from chunks.
 // Priority: questions > summary > text.
-// Mirrors Python: EmbeddingUtils.prepare_texts_for_dataflow_embedding()
+// Mirrors EmbeddingUtils.prepare_texts_for_dataflow_embedding()
 func PrepareTextsForPipelineEmbedding(chunks []map[string]any) []string {
 	if chunks == nil {
 		return nil

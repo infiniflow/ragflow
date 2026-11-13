@@ -55,19 +55,19 @@ func (f *FunASR) Name() string {
 }
 
 func (f *FunASR) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
-	return nil, fmt.Errorf("%s no such method", f.Name())
+	return nil, fmt.Errorf("%s: no such method: ChatWithMessages", f.Name())
 }
 
 func (f *FunASR) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s no such method", f.Name())
+	return fmt.Errorf("%s: no such method: ChatStreamlyWithSender", f.Name())
 }
 
 func (f *FunASR) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("%s no such method", f.Name())
+	return nil, fmt.Errorf("%s: no such method: Embed", f.Name())
 }
 
 func (f *FunASR) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s no such method", f.Name())
+	return nil, fmt.Errorf("%s: no such method: Rerank", f.Name())
 }
 
 func (f *FunASR) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
@@ -193,23 +193,23 @@ func (f *FunASR) TranscribeAudio(ctx context.Context, modelName *string, file *s
 }
 
 func (f *FunASR) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s no such method", f.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", f.Name())
 }
 
 func (f *FunASR) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s no such method", f.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", f.Name())
 }
 
 func (f *FunASR) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s no such method", f.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", f.Name())
 }
 
 func (f *FunASR) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s no such method", f.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", f.Name())
 }
 
 func (f *FunASR) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s no such method", f.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", f.Name())
 }
 
 func (f *FunASR) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
@@ -264,7 +264,7 @@ func (f *FunASR) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListMo
 }
 
 func (f *FunASR) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s no such method", f.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", f.Name())
 }
 
 func (f *FunASR) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
@@ -273,13 +273,13 @@ func (f *FunASR) CheckConnection(ctx context.Context, apiConfig *APIConfig) erro
 }
 
 func (f *FunASR) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s no such method", f.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", f.Name())
 }
 
 func (f *FunASR) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s no such method", f.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", f.Name())
 }
 
 func (f *FunASR) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", f.Name())
+	return nil, fmt.Errorf("%s: no such method: Decide", f.Name())
 }

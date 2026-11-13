@@ -12,9 +12,9 @@ sidebar_custom_props: {
 
 ## 1. Why can't I see Wiki in Artifacts after knowledge compilation is complete?
 
-Wiki is a knowledge-base-level knowledge artifact. After a document completes a Pipeline configured with a Wiki compilation template, the system automatically schedules Wiki generation and merging in the background. Document parsing can finish before this knowledge-base-level processing completes.
+Wiki is a Dataset-level knowledge artifact. After a document completes a Pipeline configured with a Wiki compilation template, the system automatically schedules Wiki generation and merging in the background. Document parsing can finish before this Dataset-level processing completes.
 
-Open **Artifacts > Wiki** after background compilation completes. No manual generation step is required. If Wiki pages do not appear, confirm that Compiler uses a Wiki template, the document processing succeeded, and the Ingestor service is running. Check the compilation status and knowledge-base-level logs for pending processing or errors.
+Open **Artifacts > Wiki** after background compilation completes. No manual generation step is required. If Wiki pages do not appear, confirm that Compiler uses a Wiki template, the document processing succeeded, and the Ingestor service is running. Check the compilation status and Dataset-level logs for pending processing or errors.
 
 ## 2. Why are no corresponding knowledge artifacts generated after knowledge compilation?
 

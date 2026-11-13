@@ -14,16 +14,22 @@
  *  limitations under the License.
  */
 
+import sitemapSvg from '@/assets/svg/data-source/sitemap.svg?raw';
 import { FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { TFunction } from 'i18next';
-import { BookOpen, Globe, Mail, Rss, Search } from 'lucide-react';
+import { Mail, Rss, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
 import GmailTokenField from '../component/gmail-token-field';
 import GoogleDriveTokenField from '../component/google-drive-token-field';
+import {
+  eeDataSourceDefaultValues,
+  eeDataSourceFormFields,
+  generateEeDataSourceInfo,
+} from '@/ee/pages/user-setting/data-source/ee-extensions';
 import { IDataSourceInfoMap } from '../interface';
 import { azureDevOpsConstant } from './azure-devops-constant';
 import { bitbucketConstant } from './bitbucket-constant';
@@ -223,7 +229,12 @@ export const generateDataSourceInfo = (t: TFunction) => {
     [DataSourceKey.SITEMAP]: {
       name: 'Sitemap',
       description: t(`setting.${DataSourceKey.SITEMAP}Description`),
-      icon: <Globe className="text-text-primary" size={22} />,
+      icon: (
+        <span
+          className="flex w-[22px] text-text-primary [&>svg]:h-auto [&>svg]:w-full"
+          dangerouslySetInnerHTML={{ __html: sitemapSvg }}
+        />
+      ),
     },
     [DataSourceKey.GOOGLE_CLOUD_STORAGE]: {
       name: 'Google Cloud Storage',
@@ -275,7 +286,7 @@ export const generateDataSourceInfo = (t: TFunction) => {
     [DataSourceKey.FEISHU_WIKI]: {
       name: 'Feishu Wiki',
       description: t(`setting.${DataSourceKey.FEISHU_WIKI}Description`),
-      icon: <BookOpen className="text-text-primary" size={22} />,
+      icon: <SvgIcon name={'chat-channel/feishu'} width={38} />,
     },
     [DataSourceKey.GMAIL]: {
       name: 'Gmail',
@@ -381,7 +392,7 @@ export const generateDataSourceInfo = (t: TFunction) => {
     [DataSourceKey.ZOTERO]: {
       name: 'Zotero',
       description: t(`setting.${DataSourceKey.ZOTERO}Description`),
-      icon: <BookOpen className="text-text-primary" size={22} />,
+      icon: <SvgIcon name={'data-source/zotero'} width={38} />,
     },
     [DataSourceKey.SEAFILE]: {
       name: 'SeaFile',
@@ -411,7 +422,7 @@ export const generateDataSourceInfo = (t: TFunction) => {
     [DataSourceKey.OUTLOOK]: {
       name: 'Outlook',
       description: t(`setting.${DataSourceKey.OUTLOOK}Description`),
-      icon: <Mail className="text-text-primary" size={22} />,
+      icon: <SvgIcon name={'data-source/outlook'} width={38} />,
     },
     [DataSourceKey.SALESFORCE]: {
       name: 'Salesforce',
@@ -423,6 +434,7 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.AZURE_BLOB}Description`),
       icon: <SvgIcon name={'data-source/azure-blob'} width={38} />,
     },
+    ...generateEeDataSourceInfo(t),
   };
 };
 
@@ -2224,6 +2236,7 @@ const generateDataSourceFormFields = (t: TFunction) => ({
         !!values?.config?.show_advanced && values?.config?.method === 'POST',
     },
   ],
+  ...eeDataSourceFormFields,
 });
 
 export const DataSourceFormDefaultValues = {
@@ -2781,6 +2794,7 @@ export const DataSourceFormDefaultValues = {
       },
     },
   },
+  ...eeDataSourceDefaultValues,
 };
 
 export const getDataSourceFieldsWithExtras = (

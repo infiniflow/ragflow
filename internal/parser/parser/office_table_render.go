@@ -94,10 +94,8 @@ func trimCells(row []string) []string {
 // inside a merged block moves after the block, so every segment owns the
 // origins of its Covered slots.
 //
-// Segmentation is semantic only — sheet boundaries and image anchors, never a
-// size budget. The legacy html4excel path pre-cut a fixed 12 rows here, which
-// ignored the user's chunk size; that budget belongs to the chunker (see the
-// chunker's splitSpreadsheetTable).
+// Segmentation follows sheet boundaries and image anchors; the chunker applies
+// the configured size budget (see splitSpreadsheetTable).
 //
 // Every tuple is a spreadsheet position, [sheet, rowStart, rowEnd, colStart,
 // colEnd]. The same `positions` field carries PDF layout boxes
@@ -582,17 +580,6 @@ func deprecatedChunkRows(setup map[string]any, parserName string) {
 		zap.String("parser", parserName), zap.Int("chunk_rows", rows))
 }
 
-// deprecatedHTML4Excel reports the retired html4excel option. Both
-// spreadsheet builders collapsed into the segmented-HTML wire, so the flag
-// selects nothing anymore. Only an enabled flag warns: false is the default
-// every parser config carries, and warning there would be noise.
-func deprecatedHTML4Excel(setup map[string]any, parserName string) {
-	if enabled, ok := setup["html4excel"].(bool); ok && enabled {
-		common.Warn("spreadsheet parser ignored deprecated html4excel; spreadsheet tables are always emitted as segmented HTML",
-			zap.String("parser", parserName))
-	}
-}
-
 // extractXLSXImages returns the floating and in-cell images anchored to a
 // worksheet as structured parser items. Excelize exposes both kinds through
 // GetPictureCells/GetPictures; walking the reported anchor cells avoids
@@ -1058,7 +1045,7 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 	// 3) Title-stub fallback: when row 1 is a lone title cell and no styled or
 	// contrast anchor was found, prefer the first text-majority row below it.
 	// A title followed by an unstyled header has no other signal to pick from.
-	if bestCandidate == 0 && rowNonEmpty(records[0]) <= 1 {
+	if bestCandidate == 0 && rowNonEmpty(records[0]) <= 1 && !mergeTouchesRow(ranges, 1) {
 		stubScan := 12
 		if stubScan > n-1 {
 			stubScan = n - 1
@@ -1135,7 +1122,7 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 					numCells++
 				}
 			}
-			if ne > 0 && numCells*2 >= ne {
+			if numCells*2 >= rowNonEmpty(row) {
 				continue
 			}
 			return k + 1
@@ -1257,12 +1244,12 @@ const formSheetPrefixLen = 50
 // formSheetPrefixLen rows so that a budget table below the cover does not
 // mask the form prefix (e.g. E1.2 - Statika has a 43-row cover page
 // followed by a 29-column budget).
-func isFormSheet(rows [][]string) bool {
+func isFormSheet(rows [][]string, headerRow int) bool {
 	limit := len(rows)
 	if limit > formSheetPrefixLen {
 		limit = formSheetPrefixLen
 	}
-	if limit < 6 {
+	if limit < 6 || isDenseSheetTable(rows[:limit], headerRow) {
 		return false
 	}
 	nonEmpty := 0
@@ -1297,6 +1284,51 @@ func isFormSheet(rows [][]string) bool {
 		return false
 	}
 	return narrow*2 > nonEmpty // majority of prefix rows are narrow → form
+}
+
+func isDenseSheetTable(rows [][]string, headerRow int) bool {
+	if headerRow < 1 || headerRow >= len(rows) {
+		return false
+	}
+	prefixRows := 0
+	for _, row := range rows[:headerRow-1] {
+		if filled := rowNonEmpty(row); filled > 0 {
+			prefixRows++
+			if prefixRows > 1 || filled > 1 {
+				return false
+			}
+		}
+	}
+	var columns []int
+	for c, value := range rows[headerRow-1] {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		if isNumericCell(value) {
+			return false
+		}
+		columns = append(columns, c)
+	}
+	if len(columns) < 2 || len(columns) > 3 {
+		return false
+	}
+	bodyRows := 0
+	for _, row := range rows[headerRow:] {
+		filled := rowNonEmpty(row)
+		if filled == 0 {
+			continue
+		}
+		if filled != len(columns) {
+			return false
+		}
+		for _, c := range columns {
+			if c >= len(row) || strings.TrimSpace(row[c]) == "" {
+				return false
+			}
+		}
+		bodyRows++
+	}
+	return bodyRows >= 3
 }
 
 // renderFormSheetKV extracts key-value pairs from the form prefix of a sheet

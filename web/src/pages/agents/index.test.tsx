@@ -42,6 +42,9 @@ jest.mock('@/hooks/logic-hooks/navigate-hooks', () => ({
     navigateToBuiltinPipeline: jest.fn(() => jest.fn()),
   }),
 }));
+jest.mock('@/layouts/components/app-sidebar/use-sidebar-collapse', () => ({
+  useSidebarCollapse: () => ({ setCollapsed: jest.fn() }),
+}));
 // Avoid loading routes.tsx (it builds a data router that needs the `Request`
 // global jsdom lacks); the route constants are only passed to mocked navigators.
 jest.mock('@/routes', () => ({

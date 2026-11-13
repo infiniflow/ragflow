@@ -59,7 +59,6 @@ type PDFParser struct {
 	Model      string // DeepDoc@buildin@ragflow
 	LibType    string // pdf_oxide, used by DeepDoc
 
-	FlattenMediaToText bool
 	RemoveTOC          bool
 	RemoveHeaderFooter bool
 	EnableMultiColumn  bool
@@ -77,7 +76,10 @@ type PDFParser struct {
 	// caller observes per-page parse progress (done/total). Only the deepdoc
 	// backend invokes it; remote engines poll opaque HTTP jobs and never call
 	// it, so the fraction simply stays where it was.
-	OnPageDone                        func(done, total int)
+	OnPageDone func(done, total int)
+	// OnModelCall reports the start and end of an individual DeepDOC model call.
+	// It is runtime-only and is wired by the ingestion parser component.
+	OnModelCall                       func(ctx context.Context, operation string) func()
 	MinerUAPIServer                   string
 	MinerUAPIKey                      string
 	MinerUBackend                     string
@@ -141,9 +143,6 @@ func (p *PDFParser) String() string {
 func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
-	}
-	if v, ok := setup["flatten_media_to_text"].(bool); ok {
-		p.FlattenMediaToText = v
 	}
 	if v, ok := setup["remove_toc"].(bool); ok {
 		p.RemoveTOC = v
@@ -288,6 +287,7 @@ var pdfParseMethodSpellings = map[string]string{
 	"plaintext":      "plain_text",
 	"plain text":     "plain_text",
 	"mineru":         "mineru",
+	"monkeyocr":      "monkeyocr",
 	"monkeyocrv2":    "monkeyocrv2",
 	"docling":        "docling",
 	"opendataloader": "opendataloader",
@@ -326,6 +326,8 @@ func normalizePDFParseMethod(raw string) string {
 	switch {
 	case strings.HasSuffix(method, "@mineru"):
 		return "mineru"
+	case strings.HasSuffix(method, "@monkeyocr"):
+		return "monkeyocr"
 	case strings.HasSuffix(method, "@paddleocr"):
 		return "paddleocr"
 	case strings.HasSuffix(method, "@somark"):
@@ -400,11 +402,11 @@ func (p *PDFParser) parseWithResult(ctx context.Context, filename string, data [
 	cfg.RemoveTOC = p.RemoveTOC
 	cfg.RemoveHeaderFooter = p.RemoveHeaderFooter
 	cfg.OnPageDone = p.OnPageDone
+	cfg.OnModelCall = p.OnModelCall
 	res := parsePDFWithDeepDocOptions(ctx, filename, data, pdfPostProcessOptions{
-		zoom:               cfg.Zoom,
-		enableMultiColumn:  p.EnableMultiColumn,
-		flattenMediaToText: p.FlattenMediaToText,
-		parseMethod:        p.ParseMethod,
+		zoom:              cfg.Zoom,
+		enableMultiColumn: p.EnableMultiColumn,
+		parseMethod:       p.ParseMethod,
 	}, deepdocpdf.NewParser(cfg).Parse)
 	if res.Err != nil {
 		if errors.Is(res.Err, deepdocpdf.ErrNoPDFData) ||
@@ -552,8 +554,6 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 	if opts.enableMultiColumn && opts.pageWidth <= 0 {
 		opts.pageWidth = firstPDFPageWidth(processed.PageWidth)
 	}
-	// JSON media policy is applied once at the PDFParser result boundary.
-	opts.flattenMediaToText = false
 	applyPDFPostProcess(&processed, opts)
 	defer processed.Close()
 	// NOTE: PDF media (figure/table) is intentionally NOT cropped here under

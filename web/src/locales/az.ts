@@ -608,10 +608,6 @@ Nümunə: 1024 ölçülü vektor təsviri olan 1 KB-lıq mesaj ~9 KB yer tutur. 
       layoutRecognize: 'PDF parseri',
       layoutRecognizeTip:
         'Sənəd başlıqlarının, mətn bloklarının, şəkillərin və cədvəllərin yerini səmərəli şəkildə müəyyən etmək üçün PDF tərtibatının təhlilində vizual modeldən istifadə edin. Sadə seçim seçilərsə, PDF-dən yalnız adi mətn çıxarılacaq. Nəzərə alın ki, bu seçim hazırda YALNIZ PDF sənədləri üçün işləyir.',
-      taskPageSize: 'Tapşırıq üzrə səhifə sayı',
-      taskPageSizeMessage: 'Tapşırıq üzrə səhifə sayını daxil edin!',
-      taskPageSizeTip:
-        'Tərtibatın tanınması zamanı emal sürətini artırmaq üçün PDF faylı fraqmentlərə bölünür və paralel emal olunur. Bu parametr hər fraqmentin ölçüsünü təyin edir. Daha böyük fraqment ölçüsü ardıcıl mətnin səhifələr arasında bölünməsi ehtimalını azaldır.',
       addPage: 'Səhifə əlavə et',
       greaterThan: 'Cari dəyər son dəyərdən böyük olmalıdır!',
       greaterThanPrevious: 'Cari dəyər əvvəlki son dəyərdən böyük olmalıdır!',
@@ -643,9 +639,6 @@ Nümunə: 1024 ölçülü vektor təsviri olan 1 KB-lıq mesaj ~9 KB yer tutur. 
       delimiterPreviewEmpty:
         'Ayırıcı yoxdur — mətn yalnız ölçüsünə görə hissələrə bölünəcək.',
       delimiterPreviewCount: '({{count}})',
-      html4excel: 'Excel-dən HTML-ə',
-      html4excelTip:
-        'Ümumi hissələrə bölmə üsulu ilə istifadə edin. Söndürüldükdə verilənlər dəstindəki elektron cədvəllər (XLSX və ya XLS(Excel 97-2003)) açar-dəyər cütlərinə çevriləcək. Aktivləşdirildikdə isə HTML cədvəllərinə çevriləcək və ilkin cədvəldə 12-dən çox sətir varsa, hər 12 sətirdən bir bölünəcək. Ətraflı məlumat üçün https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration ünvanına baxın.',
       autoKeywords: 'Çıxarılacaq açar sözlərin sayı',
       autoKeywordsTip:
         "Hər hissə üçün avtomatik olaraq N açar söz çıxarır ki, həmin sözləri ehtiva edən sorğularda hissələrin sıralamadakı yeri yüksəlsin. Nəzərə alın ki, 'Konfiqurasiya' bölməsində göstərilən indeksləşdirmə modeli əlavə tokenlər sərf edəcək. Hissəyə əlavə edilmiş açar sözləri hissələr siyahısından yoxlaya və ya yeniləyə bilərsiniz. Ətraflı məlumat üçün https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration ünvanına baxın.",
@@ -719,9 +712,8 @@ Nümunə: 1024 ölçülü vektor təsviri olan 1 KB-lıq mesaj ~9 KB yer tutur. 
       paddleocrApiUrlPlaceholder:
         'məsələn, https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio giriş tokeni',
-      paddleocrAccessTokenTip:
-        'PaddleOCR API-si üçün giriş tokeni (istəyə bağlı)',
-      paddleocrAccessTokenPlaceholder: 'AI Studio tokeniniz (istəyə bağlı)',
+      paddleocrAccessTokenTip: 'PaddleOCR API-si üçün giriş tokeni',
+      paddleocrAccessTokenPlaceholder: 'AI Studio tokeniniz',
       paddleocrAlgorithm: 'PaddleOCR alqoritmi',
       paddleocrAlgorithmTip:
         'PaddleOCR təhlili üçün istifadə ediləcək alqoritm',
@@ -1374,7 +1366,7 @@ Bu avtomatik etiketləmə funksiyası mövcud verilənlər dəstinə sahəyə ai
       dataSourceFieldTenantId: 'İcarəçi ID-si',
       dataSourceFieldClientId: 'Müştəri ID-si',
       dataSourceFieldClientSecret: 'Müştəri sirri',
-      dataSourceFieldFolderPathOptional: 'Qovluq yolu (istəyə bağlı)',
+      dataSourceFieldFolderPathOptional: 'Qovluq yolu',
       dataSourceFieldBatchSize: 'Dəstə ölçüsü',
       dataSourceFieldFeishuAppId: 'Feishu tətbiqinin ID-si',
       dataSourceFieldFeishuAppSecret: 'Feishu tətbiqinin sirri',
@@ -1387,8 +1379,7 @@ Bu avtomatik etiketləmə funksiyası mövcud verilənlər dəstinə sahəyə ai
       dataSourceValidationFeishuBatchSize:
         'Dəstə ölçüsü 1 ilə 10 arasında olmalıdır',
       dataSourceFieldMailFolder: 'Poçt qovluğu',
-      dataSourceFieldMailboxUserIds:
-        'Poçt qutusu istifadəçilərinin ID-ləri (istəyə bağlı)',
+      dataSourceFieldMailboxUserIds: 'Poçt qutusu istifadəçilərinin ID-ləri',
       dataSourceFieldInstanceUrl: 'Nüsxənin URL-i',
       dataSourceFieldObjects: 'Obyektlər',
       dataSourceFieldApiVersion: 'API versiyası',
@@ -1399,7 +1390,7 @@ Bu avtomatik etiketləmə funksiyası mövcud verilənlər dəstinə sahəyə ai
       dataSourceFieldContainerUrl: 'Konteynerin URL-i',
       dataSourceFieldSasToken: 'SAS tokeni',
       dataSourceFieldContainerName: 'Konteynerin adı',
-      dataSourceFieldPrefixOptional: 'Prefiks (istəyə bağlı)',
+      dataSourceFieldPrefixOptional: 'Prefiks',
       dataSourceFieldFeedUrl: 'Lentin URL-i',
       dataSourceFieldSitemapUrl: 'Sayt xəritəsinin URL-i',
       dataSourceFieldUrlFilter: 'URL süzgəci (müntəzəm ifadə)',
@@ -2153,9 +2144,8 @@ Nümunə: Virtual host üslubu`,
       paddleocrApiUrlPlaceholder:
         'Məsələn, https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio giriş tokeni',
-      paddleocrAccessTokenMessage:
-        'PaddleOCR API-si üçün giriş tokeni (istəyə bağlı)',
-      paddleocrAccessTokenPlaceholder: 'AI Studio tokeniniz (istəyə bağlı)',
+      paddleocrAccessTokenMessage: 'PaddleOCR API-si üçün giriş tokeni',
+      paddleocrAccessTokenPlaceholder: 'AI Studio tokeniniz',
       paddleocrAlgorithm: 'PaddleOCR alqoritmi',
       paddleocrAlgorithmMessage: 'PaddleOCR alqoritmini seçin',
       paddleocrSelectAlgorithm: 'Alqoritm seç',
@@ -2236,7 +2226,7 @@ Nümunə: Virtual host üslubu`,
         apiUrlPlaceholder:
           'Məsələn: https://paddleocr-server.com/layout-parsing',
         accessToken: 'AI Studio giriş tokeni',
-        accessTokenPlaceholder: 'AI Studio tokeniniz (istəyə bağlı)',
+        accessTokenPlaceholder: 'AI Studio tokeniniz',
         algorithm: 'PaddleOCR alqoritmi',
         selectAlgorithm: 'Alqoritm seç',
         modelNamePlaceholder: 'Məsələn: paddleocr-from-env-1',
@@ -2669,13 +2659,6 @@ Nümunə: Virtual host üslubu`,
     },
     flow: {
       exportCurrentPage: 'Cari səhifəni ixrac et',
-      preprocess: {
-        preprocess: 'İlkin emal',
-        mainContent: 'Əsas məzmun',
-        abstract: 'Xülasə',
-        author: 'Müəllif',
-        sectionTitle: 'Bölmə başlığı',
-      },
       tags: 'Etiketlər',
       agentCategory: 'Kətan kateqoriyası',
       editTags: 'Etiketləri redaktə et',
@@ -2788,9 +2771,6 @@ Nümunə: Virtual host üslubu`,
       oneChunkTitle: 'Qeyd',
       oneChunkDescription:
         'Təhlil edilmiş bütün bölmələr ardıcıllıqla bir hissədə birləşdiriləcək.',
-      flattenMediaToText: 'Görmə modelini söndür',
-      flattenMediaToTextTip:
-        'Şəkil və cədvəl bölmələrini adi mətn kimi qəbul edir və görmə modeli ilə təkmilləşdirməni ötürür.',
       enableChildrenDelimiters: 'Alt hissələr axtarış üçün istifadə olunur',
       merge: 'Birləşdir',
       split: 'Böl',
@@ -3341,9 +3321,9 @@ Nümunə: Virtual host üslubu`,
       jsonFormatTip:
         'Əvvəlki komponent aşağıdakı formatda JSON sətri təqdim etməlidir:',
       toEmailTip: 'to_email: Alıcının e-poçtu (məcburi)',
-      ccEmailTip: 'cc_email: CC e-poçtu (istəyə bağlı)',
-      subjectTip: 'subject: E-poçtun mövzusu (istəyə bağlı)',
-      contentTip: 'content: E-poçtun məzmunu (istəyə bağlı)',
+      ccEmailTip: 'cc_email: CC e-poçtu',
+      subjectTip: 'subject: E-poçtun mövzusu',
+      contentTip: 'content: E-poçtun məzmunu',
       jsonUploadTypeErrorMessage: 'JSON faylı yükləyin',
       jsonUploadContentErrorMessage: 'JSON faylı xətası',
       nameExists: 'Ad artıq mövcuddur',

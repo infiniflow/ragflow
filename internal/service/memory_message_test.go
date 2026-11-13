@@ -121,7 +121,7 @@ func TestMemoryWithAccessReturnsCanceledContext(t *testing.T) {
 	cancel()
 
 	err := ctx.Err()
-	if _, gotErr := NewMemoryService(dao.DB, engine.Get()).memoryWithAccess(ctx, "user-1", "memory-1", permission.OperationRead); !errors.Is(gotErr, err) {
+	if _, gotErr := NewMemoryService(dao.DB, engine.Get()).memoryWithAccess(ctx, "memory-1", permission.OperationRead); !errors.Is(gotErr, err) {
 		t.Fatalf("memoryWithAccess error = %v, want %v", gotErr, err)
 	}
 }
@@ -219,7 +219,7 @@ func TestListMemoryFiltersUsesAccessibleMemoryAggregates(t *testing.T) {
 	}
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
-	filters, err := NewMemoryService(dao.DB, engine.Get()).ListMemoryFilters(ctx, "user-1")
+	filters, err := NewMemoryService(dao.DB, engine.Get()).ListMemoryFilters(ctx)
 	if err != nil {
 		t.Fatalf("ListMemoryFilters: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestListMemoryFiltersUsesAccessibleMemoryAggregates(t *testing.T) {
 		t.Fatalf("storage type filter = %+v, want %+v", got, want)
 	}
 
-	refreshed, err := NewMemoryService(dao.DB, engine.Get()).ListMemoryFilters(ctx, "user-1")
+	refreshed, err := NewMemoryService(dao.DB, engine.Get()).ListMemoryFilters(ctx)
 	if err != nil {
 		t.Fatalf("ListMemoryFilters refresh: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestListMemoryFiltersKeepsCanonicalFacetOrder(t *testing.T) {
 	}
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
-	filters, err := NewMemoryService(dao.DB, engine.Get()).ListMemoryFilters(ctx, "user-1")
+	filters, err := NewMemoryService(dao.DB, engine.Get()).ListMemoryFilters(ctx)
 	if err != nil {
 		t.Fatalf("ListMemoryFilters: %v", err)
 	}
@@ -310,7 +310,7 @@ func TestListMemoryFiltersKeepsCanonicalFacetOrder(t *testing.T) {
 	if err := dao.DB.Model(&entity.Memory{ID: "mem-semantic"}).Update("update_time", bumped).Error; err != nil {
 		t.Fatalf("bump update_time: %v", err)
 	}
-	refreshed, err := NewMemoryService(dao.DB, engine.Get()).ListMemoryFilters(ctx, "user-1")
+	refreshed, err := NewMemoryService(dao.DB, engine.Get()).ListMemoryFilters(ctx)
 	if err != nil {
 		t.Fatalf("ListMemoryFilters refresh: %v", err)
 	}
@@ -361,7 +361,7 @@ func TestForgetMessageKeepsCompanionFieldForNonOceanBaseEngines(t *testing.T) {
 			service := NewMemoryService(dao.DB, engine.Get())
 			service.docEngine = docEngine
 
-			if err := service.ForgetMessage(serviceTestContext(t, "user-1", "user-1"), "user-1", "memory-1", 42); err != nil {
+			if err := service.ForgetMessage(serviceTestContext(t, "user-1", "user-1"), "memory-1", 42); err != nil {
 				t.Fatalf("ForgetMessage() error = %v", err)
 			}
 			if docEngine.updateCond["id"] != "memory-1_42" {
@@ -420,7 +420,7 @@ func TestUpdateMemoryTeamMemberCannotChangePermissions(t *testing.T) {
 
 	svc := NewMemoryService(dao.DB, engine.Get())
 	samePermission := " TEAM "
-	if _, err := svc.UpdateMemory(ctx, "member-1", "mem-team", &UpdateMemoryRequest{
+	if _, err := svc.UpdateMemory(ctx, "mem-team", &UpdateMemoryRequest{
 		Description: sptr("member edit"),
 		Permissions: &samePermission,
 	}); err != nil {
@@ -428,7 +428,7 @@ func TestUpdateMemoryTeamMemberCannotChangePermissions(t *testing.T) {
 	}
 
 	nextPermission := "me"
-	if _, err := svc.UpdateMemory(ctx, "member-1", "mem-team", &UpdateMemoryRequest{
+	if _, err := svc.UpdateMemory(ctx, "mem-team", &UpdateMemoryRequest{
 		Permissions: &nextPermission,
 	}); err == nil {
 		t.Fatal("UpdateMemory permission change error = nil, want error")
@@ -496,7 +496,7 @@ func TestListMemoriesUsesTenantModelIDForDisplayName(t *testing.T) {
 	}
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
-	resp, err := NewMemoryService(dao.DB, engine.Get()).ListMemories(ctx, "user-1", []string{"user-1"}, nil, "", "", 1, 10, "")
+	resp, err := NewMemoryService(dao.DB, engine.Get()).ListMemories(ctx, []string{"user-1"}, nil, "", "", 1, 10, "")
 	if err != nil {
 		t.Fatalf("ListMemories: %v", err)
 	}
@@ -533,7 +533,7 @@ func TestListMemoriesFallsBackToRawModelIDWithoutTenantModelID(t *testing.T) {
 	}
 
 	ctx := serviceTestContext(t, "user-1", "user-1")
-	resp, err := NewMemoryService(dao.DB, engine.Get()).ListMemories(ctx, "user-1", []string{"user-1"}, nil, "", "", 1, 10, "")
+	resp, err := NewMemoryService(dao.DB, engine.Get()).ListMemories(ctx, []string{"user-1"}, nil, "", "", 1, 10, "")
 	if err != nil {
 		t.Fatalf("ListMemories: %v", err)
 	}
@@ -579,7 +579,7 @@ func TestListMemoriesRejectsUnjoinedTenantFilter(t *testing.T) {
 		t.Fatalf("seed memory: %v", err)
 	}
 
-	resp, err := NewMemoryService(dao.DB, engine.Get()).ListMemories(serviceTestContext(t, "user-1", "user-1"), "user-1", []string{"tenant-2"}, nil, "", "", 1, 10, "")
+	resp, err := NewMemoryService(dao.DB, engine.Get()).ListMemories(serviceTestContext(t, "user-1", "user-1"), []string{"tenant-2"}, nil, "", "", 1, 10, "")
 	if err != nil {
 		t.Fatalf("ListMemories: %v", err)
 	}
@@ -643,7 +643,7 @@ func TestListMemoriesKeepsJoinedTenantFilter(t *testing.T) {
 	ctx := serviceTestContext(t, "user-1", "tenant-2", "tenant-2")
 	grantServiceTestResource(t, "tenant-2", "memory", "mem-joined-team", "user-1", testResourcePermissionRead)
 
-	resp, err := NewMemoryService(dao.DB, engine.Get()).ListMemories(ctx, "user-1", []string{"tenant-2"}, nil, "", "", 1, 10, "")
+	resp, err := NewMemoryService(dao.DB, engine.Get()).ListMemories(ctx, []string{"tenant-2"}, nil, "", "", 1, 10, "")
 	if err != nil {
 		t.Fatalf("ListMemories: %v", err)
 	}
@@ -651,7 +651,7 @@ func TestListMemoriesKeepsJoinedTenantFilter(t *testing.T) {
 		t.Fatalf("joined tenant filter must return its team memory, got total=%d list=%v", resp.TotalCount, resp.MemoryList)
 	}
 
-	resp, err = NewMemoryService(dao.DB, engine.Get()).ListMemories(ctx, "user-1", []string{"tenant-2", "tenant-3"}, nil, "", "", 1, 10, "")
+	resp, err = NewMemoryService(dao.DB, engine.Get()).ListMemories(ctx, []string{"tenant-2", "tenant-3"}, nil, "", "", 1, 10, "")
 	if err != nil {
 		t.Fatalf("ListMemories: %v", err)
 	}
@@ -702,7 +702,7 @@ func TestListMemoriesForCanvasUsesCallerOwnerIntersection(t *testing.T) {
 		}
 	}
 
-	response, err := NewMemoryService(dao.DB, engine.Get()).ListMemories(ctx, "caller", nil, nil, "", "", 1, 30, canvas.ID)
+	response, err := NewMemoryService(dao.DB, engine.Get()).ListMemories(ctx, nil, nil, "", "", 1, 30, canvas.ID)
 	if err != nil {
 		t.Fatalf("ListMemories(canvas): %v", err)
 	}
@@ -770,12 +770,12 @@ func TestSaveAgentMessageChecksMemoryAccess(t *testing.T) {
 		AgentResponse: "hello",
 	}
 
-	ok, detail, err := svc.AddMessage(t.Context(), "", []string{"mem-owned"}, msg)
+	ok, detail, err := svc.AddMessage(t.Context(), []string{"mem-owned"}, msg)
 	if ok || !errors.Is(err, permission.ErrUnauthenticated) {
 		t.Fatalf("AddMessage with empty current user = (%v, %q, %v), want unauthenticated error", ok, detail, err)
 	}
 
-	ok, detail, err = svc.saveAgentMessage(serviceTestContext(t, "user-2", "user-2"), "user-2", []string{"mem-owned"}, msg)
+	ok, detail, err = svc.saveAgentMessage(serviceTestContext(t, "user-2", "user-2"), []string{"mem-owned"}, msg)
 	if err != nil {
 		t.Fatalf("saveAgentMessage as outsider: %v", err)
 	}
@@ -783,7 +783,7 @@ func TestSaveAgentMessageChecksMemoryAccess(t *testing.T) {
 		t.Fatalf("saveAgentMessage as outsider = (%v, %q), want hidden memory not found", ok, detail)
 	}
 
-	ok, detail, err = svc.saveAgentMessage(serviceTestContext(t, "user-1", "user-1"), "user-1", []string{"mem-owned"}, msg)
+	ok, detail, err = svc.saveAgentMessage(serviceTestContext(t, "user-1", "user-1"), []string{"mem-owned"}, msg)
 	if err != nil {
 		t.Fatalf("saveAgentMessage as owner: %v", err)
 	}
@@ -821,7 +821,7 @@ func TestGetMessagesFiltersAccessibleMemoryAndBuildsRecentSearch(t *testing.T) {
 	}
 	svc := &MemoryService{memoryDAO: dao.NewMemoryDAO(), db: dao.DB, docEngine: docEngine}
 
-	got, code, err := svc.GetMessages(serviceTestContext(t, "user-1", "user-1"), []string{"mem-owned", "mem-other"}, "user-1", "agent-1", "session-1", 3)
+	got, code, err := svc.GetMessages(serviceTestContext(t, "user-1", "user-1"), []string{"mem-owned", "mem-other"}, "agent-1", "session-1", 3)
 	if err != nil {
 		t.Fatalf("GetMessages error: %v", err)
 	}
@@ -903,7 +903,7 @@ func TestSearchMessageFiltersAccessibleMemoryAndDefaultsStatus(t *testing.T) {
 		"top_n":                      5,
 	}
 
-	got, code, err := svc.SearchMessage(serviceTestContext(t, "user-1", "user-1"), "user-1", filter, params)
+	got, code, err := svc.SearchMessage(serviceTestContext(t, "user-1", "user-1"), filter, params)
 	if err != nil {
 		t.Fatalf("SearchMessage error: %v", err)
 	}
@@ -942,7 +942,7 @@ func TestUpdateMessageUpdatesStatusByMessageDocID(t *testing.T) {
 	docEngine := &memoryMessageDocEngine{}
 	svc := &MemoryService{memoryDAO: dao.NewMemoryDAO(), db: dao.DB, docEngine: docEngine}
 
-	ok, err := svc.UpdateMessage(serviceTestContext(t, "user-1", "user-1"), "user-1", "mem-owned", 42, true)
+	ok, err := svc.UpdateMessageStatus(serviceTestContext(t, "user-1", "user-1"), "mem-owned", 42, true)
 	if err != nil {
 		t.Fatalf("UpdateMessage error: %v", err)
 	}
@@ -977,7 +977,7 @@ func TestUpdateMessageRejectsMissingAndFailedReads(t *testing.T) {
 		seedMemoryMessages(t)
 		e := &missingMessageEngine{getErr: readErr}
 		svc := &MemoryService{memoryDAO: dao.NewMemoryDAO(), db: dao.DB, docEngine: e}
-		ok, err := svc.UpdateMessage(serviceTestContext(t, "user-1", "user-1"), "user-1", "mem-owned", 42, true)
+		ok, err := svc.UpdateMessageStatus(serviceTestContext(t, "user-1", "user-1"), "mem-owned", 42, true)
 		if ok || err == nil || e.updateCond != nil {
 			t.Fatalf("ok=%v error=%v update=%v", ok, err, e.updateCond)
 		}
@@ -995,10 +995,76 @@ func TestUpdateMessageRejectsMissingAndFailedReads(t *testing.T) {
 func TestMemorySearchRejectsInvalidSimilarityBeforeStorage(t *testing.T) {
 	for _, field := range []string{"similarity_threshold", "keywords_similarity_weight"} {
 		for _, value := range []interface{}{-0.1, 1.1, "invalid", math.NaN(), math.Inf(1), nil} {
-			_, code, err := (&MemoryService{}).SearchMessage(t.Context(), "user", nil, map[string]interface{}{field: value})
+			_, code, err := (&MemoryService{}).SearchMessage(t.Context(), nil, map[string]interface{}{field: value})
 			if code != common.CodeArgumentError || err == nil {
 				t.Fatalf("%s=%v code=%v err=%v", field, value, code, err)
 			}
 		}
 	}
+}
+
+// The engine query behind the extract list only sorts by valid_at, so facts
+// sharing a second-granularity valid_at — the common case, since extraction
+// stamps them with the conversation time — come back in storage order, which
+// reshuffles whenever a document is rewritten (e.g. an enable/disable toggle).
+// This pins the ported Python fix (PR #21246): each message's extracts are
+// re-ordered in place by the combined key (valid_at desc, message_id asc).
+func TestSortMemoryExtractMessagesOrdersByValidAtThenMessageID(t *testing.T) {
+	t.Run("newest valid_at first, ties broken by message_id ascending", func(t *testing.T) {
+		extracts := []map[string]interface{}{
+			{"id": "extract-1", "message_id": 12, "valid_at": "2026-08-12 10:00:00"},
+			{"id": "extract-2", "message_id": 13, "valid_at": "2026-08-13 09:00:00"},
+			{"id": "extract-3", "message_id": 11, "valid_at": "2026-08-12 10:00:00"},
+		}
+		sortMemoryExtractMessages(extracts)
+		want := []string{"extract-2", "extract-3", "extract-1"}
+		for i, id := range want {
+			if extracts[i]["id"] != id {
+				t.Fatalf("position %d = %v, want %s (full order: %v)", i, extracts[i]["id"], id, ids(extracts))
+			}
+		}
+	})
+
+	t.Run("string ids compare numerically and missing valid_at sorts oldest", func(t *testing.T) {
+		// Infinity returns message_id as a string; a lexicographic tie-break
+		// would order "10" before "9". valid_at can be missing entirely; its
+		// empty key must lose to every real timestamp.
+		extracts := []map[string]interface{}{
+			{"id": "a", "message_id": "10", "valid_at": "2026-08-12 10:00:00"},
+			{"id": "b", "message_id": "9", "valid_at": "2026-08-12 10:00:00"},
+			{"id": "c", "message_id": "11", "valid_at": "2026-08-12 10:00:00"},
+			{"id": "d", "message_id": "12"},
+		}
+		sortMemoryExtractMessages(extracts)
+		want := []string{"b", "a", "c", "d"}
+		for i, id := range want {
+			if extracts[i]["id"] != id {
+				t.Fatalf("position %d = %v, want %s (full order: %v)", i, extracts[i]["id"], id, ids(extracts))
+			}
+		}
+	})
+
+	t.Run("groups sort independently", func(t *testing.T) {
+		first := []map[string]interface{}{
+			{"id": "first-old", "message_id": 2, "valid_at": "2026-08-01 00:00:00"},
+			{"id": "first-new", "message_id": 3, "valid_at": "2026-08-02 00:00:00"},
+		}
+		second := []map[string]interface{}{
+			{"id": "second-old", "message_id": 5, "valid_at": "2026-08-05 00:00:00"},
+			{"id": "second-new", "message_id": 6, "valid_at": "2026-08-06 00:00:00"},
+		}
+		sortMemoryExtractMessages(first)
+		sortMemoryExtractMessages(second)
+		if ids(first)[0] != "first-new" || ids(second)[0] != "second-new" {
+			t.Fatalf("groups interfered: first=%v second=%v", ids(first), ids(second))
+		}
+	})
+}
+
+func ids(extracts []map[string]interface{}) []string {
+	out := make([]string, 0, len(extracts))
+	for _, extract := range extracts {
+		out = append(out, fmt.Sprint(extract["id"]))
+	}
+	return out
 }

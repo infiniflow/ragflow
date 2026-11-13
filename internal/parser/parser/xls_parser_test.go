@@ -205,50 +205,6 @@ func TestXLSParser_GenuineBIFF8SpreadsheetJSONOutput(t *testing.T) {
 	}
 }
 
-func TestXLSParser_SpreadsheetJSONOutput(t *testing.T) {
-	data := createTestExcelBytes(t)
-	p, err := NewXLSParser("excelize")
-	if err != nil {
-		t.Fatalf("NewXLSParser failed: %v", err)
-	}
-
-	res := p.ParseWithResult(context.Background(), "test.xls", data)
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult failed: %v", res.Err)
-	}
-
-	// Default output format for XLSParser is "json"
-	if !res.Produced() {
-		t.Errorf("res.produced = %t, want true", res.Produced())
-	}
-	if len(res.JSON) == 0 {
-		t.Fatalf("res.JSON should have structured table items")
-	}
-	item := res.JSON[0].ToMap()
-	if item["doc_type_kwd"] != "table" {
-		t.Errorf("table item doc_type_kwd = %v, want table", item["doc_type_kwd"])
-	}
-	text := tableItemHTML(t, item)
-	if !strings.Contains(text, "<tr><th>Header1</th><th>Header2</th></tr>") ||
-		!strings.Contains(text, "<tr><td>Val1</td><td>Val2</td></tr>") {
-		t.Errorf("table markup = %q, want captioned header and data row", text)
-	}
-	if item["doc_type_kwd"] != "table" {
-		t.Errorf("doc_type_kwd = %v, want 'table'", item["doc_type_kwd"])
-	}
-
-	resJSON := p.ParseWithResult(context.Background(), "test.xls", data)
-	if resJSON.Err != nil {
-		t.Fatalf("ParseWithResult failed: %v", resJSON.Err)
-	}
-	if !resJSON.Produced() {
-		t.Errorf("resJSON.produced = %t, want true", resJSON.Produced())
-	}
-	if len(resJSON.JSON) == 0 {
-		t.Errorf("resJSON.JSON should not be empty")
-	}
-}
-
 func TestXLSXParser_JSONOutput(t *testing.T) {
 	data := createTestExcelBytes(t)
 	p, err := NewXLSXParser("excelize")
@@ -272,7 +228,7 @@ func TestXLSXParser_JSONOutput(t *testing.T) {
 	}
 }
 
-func TestXLSParser_ImagesDoNotRunOCR(t *testing.T) {
+func TestXLSXParser_ImagesDoNotRunOCR(t *testing.T) {
 	var imageData bytes.Buffer
 	if err := png.Encode(&imageData, image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
 		t.Fatalf("encode fixture: %v", err)
@@ -298,12 +254,12 @@ func TestXLSParser_ImagesDoNotRunOCR(t *testing.T) {
 		return &deepdocpdf.MockDocAnalyzer{Healthy: true, OCRDetectErr: errors.New("xls OCR sentinel")}, true
 	})
 
-	p, err := NewXLSParser("excelize")
+	p, err := NewXLSXParser("excelize")
 	if err != nil {
-		t.Fatalf("NewXLSParser: %v", err)
+		t.Fatalf("NewXLSXParser: %v", err)
 	}
 	ctx, cache := officeMediaTestContext()
-	result := p.ParseWithResult(ctx, "with-image.xls", workbook.Bytes())
+	result := p.ParseWithResult(ctx, "with-image.xlsx", workbook.Bytes())
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
 	}
@@ -329,7 +285,7 @@ func TestXLSParser_ImagesDoNotRunOCR(t *testing.T) {
 	}
 }
 
-func TestXLSParser_CapsEmbeddedImageCount(t *testing.T) {
+func TestXLSXParser_CapsEmbeddedImageCount(t *testing.T) {
 	const limit = 256
 	t.Setenv("RAGFLOW_MEDIA_MAX_IMAGES_PER_RUN", "256")
 	f := excelize.NewFile()
@@ -353,12 +309,12 @@ func TestXLSParser_CapsEmbeddedImageCount(t *testing.T) {
 	deepdoctype.SetNativeDocAnalyzerFactory(func() (deepdoctype.DocAnalyzer, bool) {
 		return &deepdocpdf.MockDocAnalyzer{Healthy: true}, true
 	})
-	p, err := NewXLSParser("excelize")
+	p, err := NewXLSXParser("excelize")
 	if err != nil {
-		t.Fatalf("NewXLSParser: %v", err)
+		t.Fatalf("NewXLSXParser: %v", err)
 	}
 	ctx, _ := officeMediaTestContext()
-	result := p.ParseWithResult(ctx, "many-images.xls", workbook.Bytes())
+	result := p.ParseWithResult(ctx, "many-images.xlsx", workbook.Bytes())
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
 	}
