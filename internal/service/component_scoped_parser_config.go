@@ -105,7 +105,7 @@ const generalChunkerNodeID = "GeneralChunker:SixApplesFall"
 
 // bridgeFlatDelimiter writes a single delimiter value (either a string or a
 // JSON-array of strings) into the canonical GeneralChunker node's params map
-// under the original transport key, creating the node if it does not exist.
+// under the canonical delimiters key, creating the node if it does not exist.
 // Called once per parser_config by ApplyComponentScopedParserConfig.
 func bridgeFlatDelimiter(parserConfig entity.JSONMap, key string, value any) {
 	node, ok := parserConfig[generalChunkerNodeID].(map[string]any)
@@ -113,8 +113,10 @@ func bridgeFlatDelimiter(parserConfig entity.JSONMap, key string, value any) {
 		node = map[string]any{}
 		parserConfig[generalChunkerNodeID] = node
 	}
-	node[key] = value
-	delete(parserConfig, key)
+	node["delimiters"] = value
+	delete(node, "delimiter")
+	delete(parserConfig, "delimiter")
+	delete(parserConfig, "delimiters")
 }
 
 func cloneJSONMap(in map[string]any) map[string]any {

@@ -284,7 +284,7 @@ func TestApplyComponentScopedParserConfig_BridgesFlatDelimitersList(t *testing.T
 // TestApplyComponentScopedParserConfig_BridgesFlatDelimiterString pins the
 // #20497 Defect 1 fix for the singular form: a flat top-level
 // parser_config["delimiter"] (string) must be rewritten into the canonical
-// GeneralChunker:SixApplesFall node under the same singular key.
+// GeneralChunker:SixApplesFall node under the canonical plural key.
 func TestApplyComponentScopedParserConfig_BridgesFlatDelimiterString(t *testing.T) {
 	parserConfig := entity.JSONMap{
 		"delimiter": "`问：`",
@@ -296,8 +296,8 @@ func TestApplyComponentScopedParserConfig_BridgesFlatDelimiterString(t *testing.
 	if !ok {
 		t.Fatalf("expected GeneralChunker:SixApplesFall node, got keys %#v", keysOf(got))
 	}
-	if chunker["delimiter"] != "`问：`" {
-		t.Fatalf("chunker delimiter = %#v, want `问：`", chunker["delimiter"])
+	if chunker["delimiters"] != "`问：`" {
+		t.Fatalf("chunker delimiter = %#v, want `问：`", chunker["delimiters"])
 	}
 	if _, dropped := got["delimiter"]; dropped {
 		t.Fatalf("flat top-level delimiter key should have been removed, got %#v", got["delimiter"])
@@ -344,7 +344,7 @@ func TestApplyComponentScopedParserConfig_PrefersDelimitersOverDelimiter(t *test
 	if !reflect.DeepEqual(chunker["delimiters"], []any{"`问：`"}) {
 		t.Fatalf("chunker delimiters = %#v, want [`问：`]", chunker["delimiters"])
 	}
-	if _, leaked := chunker["delimiter"]; leaked {
+	if _, leaked := got["delimiter"]; leaked {
 		t.Fatalf("singular delimiter should not have been bridged alongside delimiters")
 	}
 }
@@ -355,4 +355,25 @@ func keysOf(m entity.JSONMap) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+func TestApplyComponentScopedParserConfig_SingularDelimiterOverridesNode(t *testing.T) {
+	got := ApplyComponentScopedParserConfig(entity.JSONMap{
+		"delimiter": "`问：`",
+		generalChunkerNodeID: map[string]any{
+			"delimiters":       []any{"\n"},
+			"delimiter":        "old",
+			"chunk_token_size": 512,
+		},
+	}, "llm-default")
+	node := got[generalChunkerNodeID].(map[string]any)
+	if node["delimiters"] != "`问：`" || node["chunk_token_size"] != 512 {
+		t.Fatalf("delimiter update lost or unrelated setting changed: %#v", node)
+	}
+	if _, ok := node["delimiter"]; ok {
+		t.Fatalf("node retains singular alias: %#v", node)
+	}
+	if _, ok := got["delimiter"]; ok {
+		t.Fatalf("top-level singular alias retained: %#v", got)
+	}
 }
