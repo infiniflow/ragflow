@@ -569,12 +569,12 @@ func applyMergeInvariants(existing common.Product, mergedPayload map[string]any)
 	if existingPayload == nil {
 		return mergedPayload
 	}
-	for _, field := range []string{"source", "src", "from"} {
+	for _, field := range sourceEndpointAliases {
 		if v, ok := existingPayload[field]; ok {
 			mergedPayload[field] = v
 		}
 	}
-	for _, field := range []string{"target", "tgt", "to"} {
+	for _, field := range targetEndpointAliases {
 		if v, ok := existingPayload[field]; ok {
 			mergedPayload[field] = v
 		}
@@ -602,7 +602,7 @@ func resolveAlias(name string, aliases map[string]string) string {
 // whether anything changed.
 func rewriteRelationPayload(payload map[string]any, aliases map[string]string) bool {
 	changed := false
-	for _, fields := range [][]string{{"source", "src", "from"}, {"target", "tgt", "to"}} {
+	for _, fields := range [][]string{sourceEndpointAliases, targetEndpointAliases} {
 		for _, field := range fields {
 			v, ok := payload[field]
 			if !ok || v == nil {
@@ -639,13 +639,13 @@ func refreshMetaFromPayload(meta map[string]any, kind string, payload map[string
 		}
 		return
 	}
-	if from := relationEndpoint(payload, "", "source", "src", "from"); from != "" {
+	if from := relationEndpoint(payload, "", sourceEndpointAliases...); from != "" {
 		meta["from"] = from
 	}
-	if to := relationEndpoint(payload, "", "target", "tgt", "to"); to != "" {
+	if to := relationEndpoint(payload, "", targetEndpointAliases...); to != "" {
 		meta["to"] = to
 	}
-	if typ := strings.TrimSpace(stringOf(payload["type"])); typ != "" {
+	if typ := relationType(payload); typ != "" {
 		meta["relation_type"] = typ
 	}
 }
