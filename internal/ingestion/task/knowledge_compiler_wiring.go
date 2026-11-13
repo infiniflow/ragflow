@@ -872,7 +872,7 @@ func (s *kcWikiPageStore) FindSimilarPages(ctx context.Context, tenantID, datase
 	for i, v := range queryVec {
 		vec[i] = float64(v)
 	}
-	vectorField := fmt.Sprintf("q_%d_vec", len(vec))
+	vectorField := appcommon.VectorColumnName(len(vec))
 	req := &enginetypes.SearchRequest{
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},

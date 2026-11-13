@@ -178,7 +178,7 @@ func normalizeMemory(document map[string]interface{}) (map[string]interface{}, e
 			if !ok || len(vector) == 0 {
 				continue
 			}
-			key = fmt.Sprintf("q_%d_vec", len(vector))
+			key = common.VectorColumnName(len(vector))
 			value = vector
 		}
 		if vectorColumnPattern.MatchString(key) {

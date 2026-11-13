@@ -32,8 +32,9 @@ import (
 	"ragflow/internal/permission"
 	"strings"
 
-	"go.uber.org/zap"
 	permissionresponse "ragflow/internal/permission/response"
+
+	"go.uber.org/zap"
 )
 
 // SkillSearchService handles business logic for skill search operations
@@ -418,7 +419,7 @@ func (s *SkillSearchService) vectorSearch(ctx context.Context, docEngine engine.
 	}
 
 	// Build MatchDenseExpr for vector search
-	vectorColumnName := fmt.Sprintf("q_%d_vec", len(vector))
+	vectorColumnName := common.VectorColumnName(len(vector))
 	matchDense := &types.MatchDenseExpr{
 		VectorColumnName:  vectorColumnName,
 		EmbeddingData:     vector,
@@ -489,7 +490,7 @@ func (s *SkillSearchService) hybridSearch(ctx context.Context, docEngine engine.
 		zap.Int("dimension", len(vector)))
 
 	// Build MatchDenseExpr for hybrid search
-	vectorColumnName := fmt.Sprintf("q_%d_vec", len(vector))
+	vectorColumnName := common.VectorColumnName(len(vector))
 	matchDense := &types.MatchDenseExpr{
 		VectorColumnName:  vectorColumnName,
 		EmbeddingData:     vector,

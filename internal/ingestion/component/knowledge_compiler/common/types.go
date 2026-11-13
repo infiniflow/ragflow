@@ -451,13 +451,13 @@ func MetaStringSlice(meta map[string]any, key string) []string {
 // them would be unstable across runs — such chunks are rejected with an error.
 func VectorFromChunkMap(m map[string]any, dim int) ([]float32, error) {
 	if dim > 0 {
-		if v, ok := m[fmt.Sprintf("q_%d_vec", dim)]; ok {
+		if v, ok := m[appcommon.VectorColumnName(dim)]; ok {
 			return toFloat32Slice(v), nil
 		}
 	}
 	var keys []string
 	for k := range m {
-		if strings.HasPrefix(k, "q_") && strings.HasSuffix(k, "_vec") {
+		if appcommon.IsVectorColumn(k) {
 			keys = append(keys, k)
 		}
 	}
