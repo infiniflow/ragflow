@@ -224,14 +224,14 @@ func TestMemoryMessageVectorField(t *testing.T) {
 }
 
 func TestGetDefaultSkillMapping(t *testing.T) {
-	m := esoscommon.GetDefaultSkillMapping()
+	m := esoscommon.GetDefaultSkillMapping(esoscommon.ESVectorField)
 	if m == nil {
 		t.Error("mapping must not be nil")
 	}
 }
 
 func TestLoadSkillMapping(t *testing.T) {
-	m, err := esoscommon.LoadSkillMapping()
+	m, err := esoscommon.LoadSkillMapping("conf/skill_es_mapping.json", esoscommon.ESVectorField)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -241,12 +241,12 @@ func TestLoadSkillMapping(t *testing.T) {
 }
 
 func TestBuildRankFeatureQuery(t *testing.T) {
-	q := esoscommon.BuildRankFeatureQuery(map[string]float64{"pagerank": 0.5})
+	q := esoscommon.BuildRankFeatureQuery(map[string]float64{"pagerank": 0.5}, true)
 	if len(q) == 0 {
 		t.Error("expected at least one rank feature clause")
 	}
 	// empty input -> empty slice (adversarial)
-	if q := esoscommon.BuildRankFeatureQuery(map[string]float64{}); len(q) != 0 {
+	if q := esoscommon.BuildRankFeatureQuery(map[string]float64{}, true); len(q) != 0 {
 		t.Errorf("empty input -> %v", q)
 	}
 }
@@ -379,14 +379,14 @@ func TestMemoryMessageStatusInt(t *testing.T) {
 }
 
 func TestMemoryMessageVectorProperty(t *testing.T) {
-	p := esoscommon.MemoryMessageVectorProperty(128)
+	p := esoscommon.MemoryMessageVectorProperty(128, esoscommon.ESVectorField)
 	if p == nil {
 		t.Error("property must not be nil")
 	}
 }
 
 func TestGetMemoryMessageMapping(t *testing.T) {
-	m := esoscommon.GetMemoryMessageMapping(128)
+	m := esoscommon.GetMemoryMessageMapping(128, esoscommon.ESVectorField)
 	if m == nil {
 		t.Error("mapping must not be nil")
 	}

@@ -71,10 +71,10 @@ func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID strin
 	// Load mapping based on index type
 	var mapping map[string]interface{}
 	if strings.HasPrefix(baseName, "memory_") {
-		mapping = esoscommon.GetMemoryMessageMapping(vectorSize)
+		mapping = esoscommon.GetMemoryMessageMapping(vectorSize, esoscommon.OSVectorField)
 	} else if datasetID == "skill" {
 		// Load skill-specific mapping
-		skillMapping, err := esoscommon.LoadSkillMapping()
+		skillMapping, err := esoscommon.LoadSkillMapping("conf/skill_os_mapping.json", esoscommon.OSVectorField)
 		if err != nil {
 			return fmt.Errorf("failed to load skill mapping: %w", err)
 		}
@@ -1002,7 +1002,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	// present the should is a pure scoring boost; OpenSearch defaults
 	// minimum_should_match to 0 when must or filter exists.
 	if req.RankFeature != nil && len(req.RankFeature) > 0 && !isSkillIndex && !isMemoryIndex {
-		rankFeatureQuery := esoscommon.BuildRankFeatureQuery(req.RankFeature)
+		rankFeatureQuery := esoscommon.BuildRankFeatureQuery(req.RankFeature, false)
 		if len(rankFeatureQuery) > 0 {
 			if keywordQuery == nil {
 				keywordQuery = map[string]interface{}{"bool": map[string]interface{}{}}
@@ -2478,7 +2478,7 @@ func (e *Engine) ensureMemoryMessageVectorMapping(ctx context.Context, indexName
 
 	body := map[string]interface{}{
 		"properties": map[string]interface{}{
-			fieldName: esoscommon.MemoryMessageVectorProperty(vectorSize),
+			fieldName: esoscommon.MemoryMessageVectorProperty(vectorSize, esoscommon.OSVectorField),
 		},
 	}
 	data, err := json.Marshal(body)

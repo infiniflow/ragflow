@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"sort"
@@ -22,6 +23,33 @@ import (
 var queryStringOperators = map[string]bool{"AND": true, "OR": true, "NOT": true}
 
 var memoryMessageVectorFieldRE = regexp.MustCompile(`^q_\d+_vec$`)
+
+// VectorFieldSpec describes how a particular engine renders a dense/knn vector
+// mapping property. Elasticsearch and OpenSearch use different mapping syntax,
+// so the shared builders must be told which flavour to emit instead of
+// hardcoding one engine's syntax (which silently breaks the other engine).
+type VectorFieldSpec struct {
+	Type         string // "dense_vector" (Elasticsearch) | "knn_vector" (OpenSearch)
+	DimsKey      string // "dims" (Elasticsearch) | "dimension" (OpenSearch)
+	SimKey       string // "similarity" (Elasticsearch) | "space_type" (OpenSearch)
+	SimValue     string // "cosine" | "cosinesimil"
+	IndexKnnbool bool   // OpenSearch sets settings.index.knn=true
+}
+
+var ESVectorField = VectorFieldSpec{
+	Type:     "dense_vector",
+	DimsKey:  "dims",
+	SimKey:   "similarity",
+	SimValue: "cosine",
+}
+
+var OSVectorField = VectorFieldSpec{
+	Type:         "knn_vector",
+	DimsKey:      "dimension",
+	SimKey:       "space_type",
+	SimValue:     "cosinesimil",
+	IndexKnnbool: true,
+}
 
 func BuildQueryStringQuery(matchText *types.MatchTextExpr, isSkillIndex, isMemoryIndex bool) map[string]interface{} {
 	if matchText == nil {
@@ -70,7 +98,15 @@ func BuildQueryStringQuery(matchText *types.MatchTextExpr, isSkillIndex, isMemor
 	}
 }
 
-func BuildRankFeatureQuery(rankFeature map[string]float64) []map[string]interface{} {
+// BuildRankFeatureQuery builds rank_feature clauses for learning-to-rank.
+//
+// emitPagerankRankFeature selects the engine flavour:
+//   - Elasticsearch emits a top-level rank_feature clause for pagerank_fea and
+//     then passes "" to CalculateScores, so pagerank is counted exactly once.
+//   - OpenSearch keeps pagerank scoring in the secondary CalculateScores path
+//     (it passes common.PAGERANK_FLD there) and must NOT also emit a
+//     rank_feature boost here, otherwise pagerank is counted twice.
+func BuildRankFeatureQuery(rankFeature map[string]float64, emitPagerankRankFeature bool) []map[string]interface{} {
 	if rankFeature == nil || len(rankFeature) == 0 {
 		return nil
 	}
@@ -84,6 +120,11 @@ func BuildRankFeatureQuery(rankFeature map[string]float64) []map[string]interfac
 
 	var queries []map[string]interface{}
 	for _, fld := range keys {
+		if fld == common.PAGERANK_FLD && !emitPagerankRankFeature {
+			// OpenSearch scores pagerank via CalculateScores only; skip the
+			// rank_feature boost to avoid double counting.
+			continue
+		}
 		sc := rankFeature[fld]
 		field := fmt.Sprintf("%s.%s", common.TAG_FLD, fld)
 		if fld == common.PAGERANK_FLD {
@@ -256,132 +297,129 @@ func GetChunkScore(chunk map[string]interface{}) float64 {
 	return 0.0
 }
 
-func GetDefaultSkillMapping() map[string]interface{} {
-	return map[string]interface{}{
-		"settings": map[string]interface{}{
+// GetDefaultSkillMapping returns the fallback skill-index mapping. vf selects
+// the vector flavour: Elasticsearch uses dense_vector/dims/similarity with no
+// index.knn setting, OpenSearch uses knn_vector/dimension/space_type and sets
+// index.knn=true (OpenSearch rejects dense_vector mappings).
+func GetDefaultSkillMapping(vf VectorFieldSpec) map[string]interface{} {
+	settings := map[string]interface{}{
+		"number_of_shards":   1,
+		"number_of_replicas": 0,
+		"refresh_interval":   "1000ms",
+	}
+	if vf.IndexKnnbool {
+		// OpenSearch requires index.knn=true for knn_vector; the original
+		// per-engine mapping nested every index setting under settings.index.
+		settings = map[string]interface{}{
 			"index": map[string]interface{}{
 				"number_of_shards":   1,
 				"number_of_replicas": 0,
 				"refresh_interval":   "1000ms",
+				"knn":                true,
 			},
+		}
+	}
+
+	// Vector columns follow the shared "q_<dim>_vec" convention. The only
+	// engine-specific part is the mapping syntax, injected through vf.
+	vectorDims := []int{3072, 2560, 1536, 1024, 768, 512, 256}
+	properties := map[string]interface{}{
+		"skill_id": map[string]interface{}{
+			"type":  "keyword",
+			"store": true,
 		},
+		"name": map[string]interface{}{
+			"type":  "text",
+			"index": false,
+			"store": true,
+		},
+		"name_tks": map[string]interface{}{
+			"type":     "text",
+			"analyzer": "whitespace",
+			"store":    true,
+		},
+		"tags": map[string]interface{}{
+			"type":  "text",
+			"index": false,
+			"store": true,
+		},
+		"tags_tks": map[string]interface{}{
+			"type":     "text",
+			"analyzer": "whitespace",
+			"store":    true,
+		},
+		"description": map[string]interface{}{
+			"type":  "text",
+			"index": false,
+			"store": true,
+		},
+		"description_tks": map[string]interface{}{
+			"type":     "text",
+			"analyzer": "whitespace",
+			"store":    true,
+		},
+		"content": map[string]interface{}{
+			"type":  "text",
+			"index": false,
+			"store": true,
+		},
+		"content_tks": map[string]interface{}{
+			"type":     "text",
+			"analyzer": "whitespace",
+			"store":    true,
+		},
+		"version": map[string]interface{}{
+			"type":  "keyword",
+			"store": true,
+		},
+		"status": map[string]interface{}{
+			"type":  "keyword",
+			"store": true,
+		},
+		"create_time": map[string]interface{}{
+			"type":  "long",
+			"store": true,
+		},
+		"update_time": map[string]interface{}{
+			"type":  "long",
+			"store": true,
+		},
+	}
+	for _, dim := range vectorDims {
+		properties[common.VectorColumnName(dim)] = map[string]interface{}{
+			"type":     vf.Type,
+			vf.DimsKey: dim,
+			"index":    true,
+			vf.SimKey:  vf.SimValue,
+		}
+	}
+
+	return map[string]interface{}{
+		"settings": settings,
 		"mappings": map[string]interface{}{
-			"dynamic": false,
-			"properties": map[string]interface{}{
-				"skill_id": map[string]interface{}{
-					"type":  "keyword",
-					"store": true,
-				},
-				"name": map[string]interface{}{
-					"type":  "text",
-					"index": false,
-					"store": true,
-				},
-				"name_tks": map[string]interface{}{
-					"type":     "text",
-					"analyzer": "whitespace",
-					"store":    true,
-				},
-				"tags": map[string]interface{}{
-					"type":  "text",
-					"index": false,
-					"store": true,
-				},
-				"tags_tks": map[string]interface{}{
-					"type":     "text",
-					"analyzer": "whitespace",
-					"store":    true,
-				},
-				"description": map[string]interface{}{
-					"type":  "text",
-					"index": false,
-					"store": true,
-				},
-				"description_tks": map[string]interface{}{
-					"type":     "text",
-					"analyzer": "whitespace",
-					"store":    true,
-				},
-				"content": map[string]interface{}{
-					"type":  "text",
-					"index": false,
-					"store": true,
-				},
-				"content_tks": map[string]interface{}{
-					"type":     "text",
-					"analyzer": "whitespace",
-					"store":    true,
-				},
-				"q_3072_vec": map[string]interface{}{
-					"type":       "dense_vector",
-					"dims":       3072,
-					"index":      true,
-					"similarity": "cosine",
-				},
-				"q_2560_vec": map[string]interface{}{
-					"type":       "dense_vector",
-					"dims":       2560,
-					"index":      true,
-					"similarity": "cosine",
-				},
-				"q_1536_vec": map[string]interface{}{
-					"type":       "dense_vector",
-					"dims":       1536,
-					"index":      true,
-					"similarity": "cosine",
-				},
-				"q_1024_vec": map[string]interface{}{
-					"type":       "dense_vector",
-					"dims":       1024,
-					"index":      true,
-					"similarity": "cosine",
-				},
-				"q_768_vec": map[string]interface{}{
-					"type":       "dense_vector",
-					"dims":       768,
-					"index":      true,
-					"similarity": "cosine",
-				},
-				"q_512_vec": map[string]interface{}{
-					"type":       "dense_vector",
-					"dims":       512,
-					"index":      true,
-					"similarity": "cosine",
-				},
-				"q_256_vec": map[string]interface{}{
-					"type":       "dense_vector",
-					"dims":       256,
-					"index":      true,
-					"similarity": "cosine",
-				},
-				"version": map[string]interface{}{
-					"type":  "keyword",
-					"store": true,
-				},
-				"status": map[string]interface{}{
-					"type":  "keyword",
-					"store": true,
-				},
-				"create_time": map[string]interface{}{
-					"type":  "long",
-					"store": true,
-				},
-				"update_time": map[string]interface{}{
-					"type":  "long",
-					"store": true,
-				},
-			},
+			"dynamic":    false,
+			"properties": properties,
 		},
 	}
 }
 
-func GetMemoryMessageMapping(vectorSize int) map[string]interface{} {
+// GetMemoryMessageMapping returns the memory-message index mapping. vf selects
+// the vector flavour: Elasticsearch uses dense_vector with no index.knn setting,
+// OpenSearch uses knn_vector and must set settings.index.knn=true (otherwise
+// the knn_vector field cannot be created).
+func GetMemoryMessageMapping(vectorSize int, vf VectorFieldSpec) map[string]interface{} {
 	vectorField := MemoryMessageVectorField(vectorSize)
+	settings := map[string]interface{}{
+		"number_of_shards":   1,
+		"number_of_replicas": 0,
+	}
+	if vf.IndexKnnbool {
+		settings["index"] = map[string]interface{}{
+			"knn": true,
+		}
+	}
 	return map[string]interface{}{
-		"settings": map[string]interface{}{
-			"number_of_shards":   1,
-			"number_of_replicas": 0,
-		},
+		"settings": settings,
 		"mappings": map[string]interface{}{
 			"properties": map[string]interface{}{
 				"id": map[string]interface{}{
@@ -437,7 +475,7 @@ func GetMemoryMessageMapping(vectorSize int) map[string]interface{} {
 					"type":   "date",
 					"format": "yyyy-MM-dd HH:mm:ss||strict_date_optional_time||epoch_millis",
 				},
-				vectorField: MemoryMessageVectorProperty(vectorSize),
+				vectorField: MemoryMessageVectorProperty(vectorSize, vf),
 			},
 		},
 	}
@@ -456,12 +494,20 @@ func IsLatinKeyword(keyword string) bool {
 	return keyword != ""
 }
 
-func LoadSkillMapping() (map[string]interface{}, error) {
-	// Try multiple possible locations for the mapping file
+// LoadSkillMapping reads the engine-specific skill-index mapping file. The
+// caller must pass the correct file for its engine (conf/skill_es_mapping.json
+// for Elasticsearch, conf/skill_os_mapping.json for OpenSearch) together with
+// the matching vf: OpenSearch rejects the dense_vector syntax in the ES file,
+// so the loader must never silently substitute one engine's file or default
+// for the other. When the file is missing the engine-correct default mapping
+// (built from vf) is returned as a graceful fallback, preserving the original
+// per-engine behaviour; a parse error is still surfaced as an error.
+func LoadSkillMapping(filename string, vf VectorFieldSpec) (map[string]interface{}, error) {
+	base := filepath.Base(filename)
 	possiblePaths := []string{
-		"conf/skill_es_mapping.json",
-		"../conf/skill_es_mapping.json",
-		"/app/conf/skill_es_mapping.json",
+		filename,
+		"../conf/" + base,
+		"/app/conf/" + base,
 	}
 
 	var data []byte
@@ -474,13 +520,15 @@ func LoadSkillMapping() (map[string]interface{}, error) {
 	}
 
 	if err != nil {
-		// Fallback to default skill mapping if file not found
-		return GetDefaultSkillMapping(), nil
+		// File missing: fall back to the engine-correct default rather than
+		// erroring, matching the original per-engine behaviour. The default is
+		// built from vf so it carries the correct vector flavour.
+		return GetDefaultSkillMapping(vf), nil
 	}
 
 	var mapping map[string]interface{}
 	if err := json.Unmarshal(data, &mapping); err != nil {
-		return nil, fmt.Errorf("failed to parse skill mapping: %w", err)
+		return nil, fmt.Errorf("failed to parse skill mapping %q: %w", filename, err)
 	}
 
 	return mapping, nil
@@ -667,12 +715,15 @@ func MemoryMessageVectorField(vectorSize int) string {
 	return common.VectorColumnName(vectorSize)
 }
 
-func MemoryMessageVectorProperty(vectorSize int) map[string]interface{} {
+// MemoryMessageVectorProperty returns the vector mapping property for the
+// memory-message index. vf selects the engine flavour (dense_vector for
+// Elasticsearch, knn_vector for OpenSearch).
+func MemoryMessageVectorProperty(vectorSize int, vf VectorFieldSpec) map[string]interface{} {
 	return map[string]interface{}{
-		"type":       "dense_vector",
-		"dims":       vectorSize,
-		"index":      true,
-		"similarity": "cosine",
+		"type":     vf.Type,
+		vf.DimsKey: vectorSize,
+		"index":    true,
+		vf.SimKey:  vf.SimValue,
 	}
 }
 

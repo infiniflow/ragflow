@@ -616,7 +616,7 @@ func TestBuildRankFeatureQueryUsesTopLevelPagerank(t *testing.T) {
 	queries := esoscommon.BuildRankFeatureQuery(map[string]float64{
 		common.PAGERANK_FLD: 10,
 		"tag_a":             0.8,
-	})
+	}, true)
 	if len(queries) != 2 {
 		t.Fatalf("queries = %d, want 2", len(queries))
 	}
