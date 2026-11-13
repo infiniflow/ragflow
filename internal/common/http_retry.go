@@ -51,9 +51,9 @@ const (
 
 	llmRetryBaseDelay = 500 * time.Millisecond
 	llmRetryMaxDelay  = 30 * time.Second
-	// retryDrainBytes bounds how much of a discarded failed response is read
-	// so its connection can be reused.
-	retryDrainBytes = 4 << 10
+	// llmRetryMaxAfter is the longest Retry-After a provider can ask for and
+	// still be waited out; a longer one hands the response back instead.
+	llmRetryMaxAfter = 5 * time.Minute
 )
 
 var llmMaxRetries atomic.Int64
@@ -90,11 +90,18 @@ func LLMMaxRetries() int {
 // has started is never replayed; once the caller can see output it is final.
 // A request whose body cannot be replayed, or whose context is done, is sent
 // once.
+//
+// maxDelay caps the computed backoff only. A provider's Retry-After is honored
+// in full, because retrying earlier just draws the same rate-limit answer and
+// spends the retry budget. When the provider asks for longer than maxRetryAfter,
+// or longer than the request deadline leaves, the response is returned to the
+// caller instead of waiting.
 type retryTransport struct {
-	base       http.RoundTripper
-	maxRetries func() int
-	baseDelay  time.Duration
-	maxDelay   time.Duration
+	base          http.RoundTripper
+	maxRetries    func() int
+	baseDelay     time.Duration
+	maxDelay      time.Duration
+	maxRetryAfter time.Duration
 }
 
 // NewRetryTransport wraps base with retries bounded by LLMMaxRetries.
@@ -102,7 +109,7 @@ func NewRetryTransport(base http.RoundTripper) http.RoundTripper {
 	if base == nil {
 		base = http.DefaultTransport
 	}
-	return &retryTransport{base: base, maxRetries: LLMMaxRetries, baseDelay: llmRetryBaseDelay, maxDelay: llmRetryMaxDelay}
+	return &retryTransport{base: base, maxRetries: LLMMaxRetries, baseDelay: llmRetryBaseDelay, maxDelay: llmRetryMaxDelay, maxRetryAfter: llmRetryMaxAfter}
 }
 
 func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -130,7 +137,7 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		case !retryableStatus(resp.StatusCode):
 			return resp, nil
 		}
-		if attempt >= retries {
+		giveUp := func() (*http.Response, error) {
 			if resp != nil && attempt > 0 {
 				resp.Header.Set(RetryAttemptsHeader, strconv.Itoa(attempt+1))
 			}
@@ -139,13 +146,20 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			}
 			return resp, err
 		}
+		if attempt >= retries {
+			return giveUp()
+		}
 
 		wait := t.backoff(attempt + 1)
 		if resp != nil {
 			if after := retryAfter(resp); after > wait {
-				wait = min(after, t.maxDelay)
+				if after > t.maxRetryAfter || exceedsDeadline(ctx, after) {
+					return giveUp()
+				}
+				wait = after
 			}
-			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, retryDrainBytes))
+			// Not drained: a provider that stalls after its headers must not
+			// hold up the retry, and the connection is cheap to replace.
 			_ = resp.Body.Close()
 		}
 		Warn("Retrying provider call",
@@ -181,6 +195,12 @@ func cloneForRetry(req *http.Request) (*http.Request, error) {
 		clone.Body = body
 	}
 	return clone, nil
+}
+
+// exceedsDeadline reports whether waiting d would outlast ctx's deadline.
+func exceedsDeadline(ctx context.Context, d time.Duration) bool {
+	deadline, ok := ctx.Deadline()
+	return ok && time.Until(deadline) <= d
 }
 
 func sleepContext(ctx context.Context, d time.Duration) error {

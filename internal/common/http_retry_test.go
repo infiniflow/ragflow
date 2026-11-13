@@ -32,10 +32,11 @@ import (
 
 func newTestRetryClient(retries int) *http.Client {
 	return &http.Client{Transport: &retryTransport{
-		base:       http.DefaultTransport.(*http.Transport).Clone(),
-		maxRetries: func() int { return retries },
-		baseDelay:  time.Millisecond,
-		maxDelay:   5 * time.Millisecond,
+		base:          http.DefaultTransport.(*http.Transport).Clone(),
+		maxRetries:    func() int { return retries },
+		baseDelay:     time.Millisecond,
+		maxDelay:      5 * time.Millisecond,
+		maxRetryAfter: time.Minute,
 	}}
 }
 
@@ -451,10 +452,11 @@ func TestRetryTransportHonorsRetryAfter(t *testing.T) {
 	defer srv.Close()
 
 	client := &http.Client{Transport: &retryTransport{
-		base:       http.DefaultTransport.(*http.Transport).Clone(),
-		maxRetries: func() int { return 1 },
-		baseDelay:  time.Millisecond,
-		maxDelay:   2 * time.Second,
+		base:          http.DefaultTransport.(*http.Transport).Clone(),
+		maxRetries:    func() int { return 1 },
+		baseDelay:     time.Millisecond,
+		maxDelay:      10 * time.Millisecond, // caps the backoff, not Retry-After
+		maxRetryAfter: 5 * time.Second,
 	}}
 	start := time.Now()
 	resp, err := post(t, client, context.Background(), srv.URL, "x")
@@ -545,4 +547,97 @@ func TestRetryTransportReportsAttempts(t *testing.T) {
 			t.Fatalf("err = %v, want it to report 3 attempts", err)
 		}
 	})
+}
+
+// A Retry-After the provider asks for but the caller cannot wait out returns the
+// response instead of retrying early, which would only draw the same answer.
+func TestRetryTransportReturnsResponseWhenRetryAfterCannotBeWaitedOut(t *testing.T) {
+	tests := []struct {
+		name       string
+		retryAfter string
+		maxAfter   time.Duration
+		timeout    time.Duration
+	}{
+		{name: "longer than the ceiling", retryAfter: "120", maxAfter: time.Minute},
+		{name: "longer than the request deadline", retryAfter: "60", maxAfter: time.Hour, timeout: 5 * time.Second},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var requests atomic.Int32
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				w.Header().Set("Retry-After", tt.retryAfter)
+				w.WriteHeader(429)
+				_, _ = w.Write([]byte("slow down"))
+			}))
+			defer srv.Close()
+
+			client := &http.Client{Transport: &retryTransport{
+				base:          http.DefaultTransport.(*http.Transport).Clone(),
+				maxRetries:    func() int { return 3 },
+				baseDelay:     time.Millisecond,
+				maxDelay:      5 * time.Millisecond,
+				maxRetryAfter: tt.maxAfter,
+			}}
+			ctx := context.Background()
+			if tt.timeout > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, tt.timeout)
+				defer cancel()
+			}
+
+			start := time.Now()
+			resp, err := post(t, client, ctx, srv.URL, "x")
+			if err != nil {
+				t.Fatalf("Do: %v", err)
+			}
+			defer resp.Body.Close()
+			body, _ := io.ReadAll(resp.Body)
+			if resp.StatusCode != 429 || string(body) != "slow down" {
+				t.Errorf("got %d %q, want the provider's own 429 response", resp.StatusCode, body)
+			}
+			if requests.Load() != 1 {
+				t.Errorf("requests = %d, want 1: waiting for the retry would have been pointless", requests.Load())
+			}
+			if time.Since(start) > 3*time.Second {
+				t.Errorf("returned after %v, want it to give up at once", time.Since(start))
+			}
+		})
+	}
+}
+
+// A provider that sends 503 headers and then stalls must not hold up the retry:
+// the failed response is closed without being read.
+func TestRetryTransportDoesNotWaitOnAStalledFailedResponse(t *testing.T) {
+	var requests atomic.Int32
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if requests.Add(1) == 1 {
+			w.Header().Set("Content-Length", "100000")
+			w.WriteHeader(503)
+			_, _ = w.Write([]byte("partial"))
+			w.(http.Flusher).Flush()
+			select {
+			case <-release:
+			case <-r.Context().Done():
+			}
+			return
+		}
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+	defer close(release)
+
+	start := time.Now()
+	resp, err := post(t, newTestRetryClient(2), context.Background(), srv.URL, "x")
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != 200 || requests.Load() != 2 {
+		t.Errorf("status = %d, requests = %d, want 200 after one retry", resp.StatusCode, requests.Load())
+	}
+	if time.Since(start) > 3*time.Second {
+		t.Errorf("retry started after %v, want it not to wait for the stalled body", time.Since(start))
+	}
 }

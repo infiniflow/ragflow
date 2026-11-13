@@ -26,6 +26,13 @@ import (
 	"ragflow/internal/ingestion/testutil"
 )
 
+// restoreLLMMaxRetries puts back the count that was in effect before the test.
+func restoreLLMMaxRetries(t *testing.T) {
+	t.Helper()
+	previous := common.LLMMaxRetries()
+	t.Cleanup(func() { _ = common.SetLLMMaxRetries(previous) })
+}
+
 func TestApplyLLMMaxRetriesSetting(t *testing.T) {
 	const configured = 4
 	tests := []struct {
@@ -43,7 +50,7 @@ func TestApplyLLMMaxRetriesSetting(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			t.Cleanup(func() { _ = common.SetLLMMaxRetries(common.DefaultLLMMaxRetries) })
+			restoreLLMMaxRetries(t)
 			if err := common.SetLLMMaxRetries(2); err != nil {
 				t.Fatal(err)
 			}
@@ -70,7 +77,7 @@ func TestApplyLLMMaxRetriesSetting(t *testing.T) {
 // override takes effect on the next sync, and clearing it returns to the
 // configured count.
 func TestApplyLLMMaxRetriesSettingFollowsEdits(t *testing.T) {
-	t.Cleanup(func() { _ = common.SetLLMMaxRetries(common.DefaultLLMMaxRetries) })
+	restoreLLMMaxRetries(t)
 	db := testutil.SetupTestDB(t, &entity.SystemSettings{})
 	row := entity.SystemSettings{Name: common.SettingLLMMaxRetries, Value: "", DataType: "integer"}
 	if err := db.Create(&row).Error; err != nil {
@@ -98,7 +105,7 @@ func TestApplyLLMMaxRetriesSettingFollowsEdits(t *testing.T) {
 // start-up path: the stored override is in effect before the first tick, and
 // the loop ends when the service shuts down.
 func TestSyncLLMMaxRetriesAppliesImmediatelyAndStopsWithItsContext(t *testing.T) {
-	t.Cleanup(func() { _ = common.SetLLMMaxRetries(common.DefaultLLMMaxRetries) })
+	restoreLLMMaxRetries(t)
 	db := testutil.SetupTestDB(t, &entity.SystemSettings{})
 	row := entity.SystemSettings{Name: common.SettingLLMMaxRetries, Value: "6", DataType: "integer"}
 	if err := db.Create(&row).Error; err != nil {
@@ -107,9 +114,15 @@ func TestSyncLLMMaxRetriesAppliesImmediatelyAndStopsWithItsContext(t *testing.T)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
+	// Registered before anything can fail, and after restoreLLMMaxRetries so it
+	// runs first: the loop must be gone before the count is put back.
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
 	go func() {
+		defer close(done)
 		SyncLLMMaxRetries(ctx, db, 3)
-		close(done)
 	}()
 
 	deadline := time.After(5 * time.Second)

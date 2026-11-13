@@ -227,7 +227,7 @@ For other S3-compatible backends (AWS S3, Alibaba Cloud OSS, Azure Blob, Google 
 
   This value is the deployment default. An administrator can override it without a restart in the admin console under **Models** > **Retries on failure** (`0` to `10`; leave the field empty to go back to the deployment default). The saved override is stored as the `llm.max_retries` system setting, applies to every service within about 15 seconds, and wins over the environment variable and the config file until it is cleared. The same setting can be changed through `PUT /api/v1/admin/variables` with `{"var_name": "llm.max_retries", "var_value": 5}`, which is limited to superusers.
 
-  A call is retried on a network error, a timeout, or an HTTP `408`, `429`, or `5xx` response, waiting with exponential backoff and jitter (and honoring `Retry-After`). Authentication and validation errors (other `4xx`) and cancelled requests are never retried. A streamed answer is retried only until its first byte arrives. All attempts share the original request timeout.
+  A call is retried on a network error, a timeout, or an HTTP `408`, `429`, or `5xx` response, waiting with exponential backoff and jitter capped at 30 seconds. A `Retry-After` header is honored in full, even above that cap. If it asks for more than 5 minutes, or for longer than the request's remaining timeout, the provider's response is returned at once instead of retrying early. Authentication and validation errors (other `4xx`) and cancelled requests are never retried. A streamed answer is retried only until its first byte arrives. All attempts share the original request timeout.
 
 ### Configure model providers
 
