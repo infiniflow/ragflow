@@ -24,6 +24,7 @@ import (
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/structure"
 	"ragflow/internal/ingestion/component/progress"
+	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 )
@@ -1099,11 +1100,11 @@ func (p *wikiPipeline) runPlanBatch(batch wikiExtract, batchIndex, batchTotal, q
 		"batch_index":         fmt.Sprintf("%d", batchIndex),
 		"batch_total":         fmt.Sprintf("%d", batchTotal),
 		"max_pages":           fmt.Sprintf("%d", maxPagesForBatch(quota)),
-		"entities":            mustJSON(batch.Entities),
-		"concepts":            mustJSON(batch.Concepts),
-		"claims":              mustJSON(batch.Claims),
-		"relations":           mustJSON(batch.Relations),
-		"topics":              mustJSON(batch.Topics),
+		"entities":            utility.MustJSON(batch.Entities),
+		"concepts":            utility.MustJSON(batch.Concepts),
+		"claims":              utility.MustJSON(batch.Claims),
+		"relations":           utility.MustJSON(batch.Relations),
+		"topics":              utility.MustJSON(batch.Topics),
 		"planning_mode_rules": planningModeRules,
 	})
 	raw, err := common.GenJSON(p.ctx, p.deps.Chat, common.ChatRequest{
@@ -2206,19 +2207,19 @@ func packWikiPlanBatches(reduced wikiExtract, budget int) []wikiExtract {
 		curTokens += itemTokens
 	}
 	for _, e := range reduced.Entities {
-		add(common.EstimateTokens(mustJSON(e)), func() { cur.Entities = append(cur.Entities, e) })
+		add(common.EstimateTokens(utility.MustJSON(e)), func() { cur.Entities = append(cur.Entities, e) })
 	}
 	for _, c := range reduced.Concepts {
-		add(common.EstimateTokens(mustJSON(c)), func() { cur.Concepts = append(cur.Concepts, c) })
+		add(common.EstimateTokens(utility.MustJSON(c)), func() { cur.Concepts = append(cur.Concepts, c) })
 	}
 	for _, c := range reduced.Claims {
-		add(common.EstimateTokens(mustJSON(c)), func() { cur.Claims = append(cur.Claims, c) })
+		add(common.EstimateTokens(utility.MustJSON(c)), func() { cur.Claims = append(cur.Claims, c) })
 	}
 	for _, r := range reduced.Relations {
-		add(common.EstimateTokens(mustJSON(r)), func() { cur.Relations = append(cur.Relations, r) })
+		add(common.EstimateTokens(utility.MustJSON(r)), func() { cur.Relations = append(cur.Relations, r) })
 	}
 	for _, t := range reduced.Topics {
-		add(common.EstimateTokens(mustJSON(t)), func() { cur.Topics = append(cur.Topics, t) })
+		add(common.EstimateTokens(utility.MustJSON(t)), func() { cur.Topics = append(cur.Topics, t) })
 	}
 	flush()
 	return batches
@@ -3025,14 +3026,6 @@ func lastPathSlug(slug string) string {
 		return slug[idx+1:]
 	}
 	return slug
-}
-
-func mustJSON(v any) string {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return "[]"
-	}
-	return string(b)
 }
 
 func mustPrettyJSON(v any) string {
