@@ -23,6 +23,7 @@ import (
 	"sort"
 	"strings"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/types"
 )
@@ -551,7 +552,7 @@ func buildOntologyPitfalls(d declaredOntology, classCounts map[string]int) []Ont
 			Severity: "error",
 			Message: fmt.Sprintf("declared property/ies name an endpoint class the template does not declare: %s -> %s",
 				strings.Join(danglingProps, ", "),
-				strings.Join(sortedUnique(danglingClasses), ", ")),
+				strings.Join(common.DeduplicateSorted(danglingClasses), ", ")),
 			Subjects: danglingProps,
 		})
 	}
@@ -607,8 +608,8 @@ func buildOntologyPitfalls(d declaredOntology, classCounts map[string]int) []Ont
 			Code:     "redundant_parent",
 			Category: pitfallLogical,
 			Severity: "warning",
-			Message:  "class(es) declaring a parent and its ancestor, so one edge is redundant: " + strings.Join(sortedUnique(redundantParents), ", "),
-			Subjects: sortedUnique(redundantParents),
+			Message:  "class(es) declaring a parent and its ancestor, so one edge is redundant: " + strings.Join(common.DeduplicateSorted(redundantParents), ", "),
+			Subjects: common.DeduplicateSorted(redundantParents),
 		})
 	}
 
@@ -674,8 +675,8 @@ func buildOntologyPitfalls(d declaredOntology, classCounts map[string]int) []Ont
 			Code:     "endpoint_ancestor_expansion",
 			Category: pitfallStructural,
 			Severity: "warning",
-			Message:  "property/ies naming an endpoint and one of its ancestors, which the ancestor already covers: " + strings.Join(sortedUnique(expandedEndpoints), ", "),
-			Subjects: sortedUnique(expandedEndpoints),
+			Message:  "property/ies naming an endpoint and one of its ancestors, which the ancestor already covers: " + strings.Join(common.DeduplicateSorted(expandedEndpoints), ", "),
+			Subjects: common.DeduplicateSorted(expandedEndpoints),
 		})
 	}
 
@@ -700,8 +701,8 @@ func buildOntologyPitfalls(d declaredOntology, classCounts map[string]int) []Ont
 			Code:     "property_name_hierarchy",
 			Category: pitfallStructural,
 			Severity: "warning",
-			Message:  "property/ies whose name nests inside another property's and whose domain is the same or narrower: " + strings.Join(sortedUnique(impliedSubProperties), ", "),
-			Subjects: sortedUnique(impliedSubProperties),
+			Message:  "property/ies whose name nests inside another property's and whose domain is the same or narrower: " + strings.Join(common.DeduplicateSorted(impliedSubProperties), ", "),
+			Subjects: common.DeduplicateSorted(impliedSubProperties),
 		})
 	}
 
@@ -747,8 +748,8 @@ func buildOntologyPitfalls(d declaredOntology, classCounts map[string]int) []Ont
 			Code:     "range_in_property_name",
 			Category: pitfallNaming,
 			Severity: "warning",
-			Message:  "property/ies whose name repeats the range class it points at: " + strings.Join(sortedUnique(rangeInName), ", "),
-			Subjects: sortedUnique(rangeInName),
+			Message:  "property/ies whose name repeats the range class it points at: " + strings.Join(common.DeduplicateSorted(rangeInName), ", "),
+			Subjects: common.DeduplicateSorted(rangeInName),
 		})
 	}
 	if len(domainInName) > 0 {
@@ -756,8 +757,8 @@ func buildOntologyPitfalls(d declaredOntology, classCounts map[string]int) []Ont
 			Code:     "domain_in_property_name",
 			Category: pitfallNaming,
 			Severity: "warning",
-			Message:  "property/ies whose name repeats the domain class they start from: " + strings.Join(sortedUnique(domainInName), ", "),
-			Subjects: sortedUnique(domainInName),
+			Message:  "property/ies whose name repeats the domain class they start from: " + strings.Join(common.DeduplicateSorted(domainInName), ", "),
+			Subjects: common.DeduplicateSorted(domainInName),
 		})
 	}
 

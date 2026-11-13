@@ -597,9 +597,12 @@ This method uses PaddleOCR's official API service with an access token.
    ```bash
    # In your docker/.env file:
    PADDLEOCR_API_URL=https://paddleocr.aistudio-app.com/api
-   PADDLEOCR_ALGORITHM=PaddleOCR-VL
    PADDLEOCR_ACCESS_TOKEN=your-access-token-here
    ```
+
+   :::tip NOTE
+   Setting environment variables auto-provisions the provider instance. Be sure to add or select a supported model (such as `PaddleOCR-VL-1.6` or `PP-StructureV3`) under **Model providers** and select that specific model in your dataset configuration, as the cloud API requires a valid model name rather than the generated `paddleocr-from-env` instance handle.
+   :::
 
 - **Via UI:**
 
@@ -607,8 +610,8 @@ This method uses PaddleOCR's official API service with an access token.
    - Add a new OCR model with factory type "PaddleOCR"
    - Configure the following fields:
       - **PaddleOCR API URL**: The API base URL, such as `https://paddleocr.aistudio-app.com/api`, without the `/v2/ocr/jobs` suffix
-      - **PaddleOCR Algorithm**: Select the algorithm corresponding to the API endpoint
       - **AI Studio Access Token**: Your access token for the PaddleOCR API
+   - Select or add the model you want to use (such as `PaddleOCR-VL-1.6` or `PP-StructureV3`)
 
 **Step 2: Usage in Dataset Configuration**
 
@@ -661,7 +664,6 @@ Enter the base URL without the `/layout-parsing` suffix because the Go provider 
 |---------------------|-------------|---------|----------|
 | `PADDLEOCR_API_URL` | Asynchronous model-provider base URL, including `/api` but without `/v2/ocr/jobs` | _unset_ | Yes, when configuring the model provider through environment variables |
 | `PADDLEOCR_BASE_URL` | Direct PDF-parser service origin, without `/api/v2/ocr/jobs` | _unset_ | Yes, when configuring the parser directly through environment variables |
-| `PADDLEOCR_ALGORITHM` | Algorithm to use for parsing | `"PaddleOCR-VL"` | No |
 | `PADDLEOCR_ACCESS_TOKEN` | Bearer token for the PaddleOCR service | _unset_ | When the service requires authentication |
 
 `PADDLEOCR_API_URL` configures and auto-provisions the asynchronous **PaddleOCR** model provider. `PADDLEOCR_BASE_URL` is the fallback used by the direct PDF parser. These variables are not required when configuring a provider through the UI and do not select **PaddleOCR.local**.

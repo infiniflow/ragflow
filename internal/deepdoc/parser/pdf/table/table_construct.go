@@ -203,6 +203,7 @@ func tableRegionBox(tbl *pdf.TableItem, ref *pdf.TextBox, html string) pdf.TextB
 			PageNumber:    pg,
 			HasPageNumber: hasPageNumber,
 			Pages:         pages,
+			Positions:     tableRegionPositions(*tbl),
 			LayoutType:    pdf.LayoutTypeTable,
 		}
 	}
@@ -217,6 +218,7 @@ func tableRegionBox(tbl *pdf.TableItem, ref *pdf.TextBox, html string) pdf.TextB
 		PageNumber:    pg,
 		HasPageNumber: hasPageNumber,
 		Pages:         pages,
+		Positions:     tableRegionPositions(*tbl),
 		LayoutType:    pdf.LayoutTypeTable,
 	}
 }

@@ -48,12 +48,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -82,11 +76,9 @@ import {
   createUser,
   deleteUser,
   grantSuperuser,
-  listRoles,
   listUsers,
   revokeSuperuser,
   updateUserPassword,
-  updateUserRole,
   updateUserStatus,
 } from '@/services/admin-service';
 
@@ -94,7 +86,6 @@ import {
   createColumnFilterFn,
   createFuzzySearchFn,
   EMPTY_DATA,
-  IS_ENTERPRISE,
   parseBooleanish,
 } from './utils';
 
@@ -136,14 +127,6 @@ function AdminUserManagement() {
   const changePasswordForm = useChangePasswordForm();
   const createUserForm = useCreateUserForm();
 
-  const { data: roleList } = useQuery({
-    queryKey: ['admin/listRoles'],
-    queryFn: async () => (await listRoles()).data.data.roles,
-    enabled: IS_ENTERPRISE,
-    retry: false,
-    placeholderData: keepPreviousData,
-  });
-
   const { data: usersList } = useQuery({
     queryKey: ['admin/listUsers'],
     queryFn: async () => (await listUsers()).data.data,
@@ -175,32 +158,16 @@ function AdminUserManagement() {
     retry: false,
   });
 
-  // Update user role mutation
-  const updateUserRoleMutation = useMutation({
-    mutationFn: ({ email, role }: { email: string; role: string }) =>
-      updateUserRole(email, role),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin/listUsers'] });
-    },
-    retry: false,
-  });
-
   // Create user mutation
   const createUserMutation = useMutation({
     mutationFn: async ({
       email,
       password,
-      role,
     }: {
       email: string;
       password: string;
-      role?: string;
     }) => {
       await createUser(email, rsaPsw(password) as string);
-
-      if (IS_ENTERPRISE && role) {
-        await updateUserRoleMutation.mutateAsync({ email, role });
-      }
     },
     onSuccess: () => {
       // message.success(t('admin.userCreatedSuccessfully'));
@@ -245,45 +212,6 @@ function AdminUserManagement() {
       columnHelper.accessor('nickname', {
         header: t('admin.nickname'),
       }),
-
-      ...(IS_ENTERPRISE
-        ? [
-            columnHelper.accessor('role', {
-              header: t('admin.role'),
-              cell: ({ row, cell }) => (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="min-w-16">
-                      {cell.getValue()}
-                    </Button>
-                  </DropdownMenuTrigger>
-
-                  <DropdownMenuContent>
-                    {roleList?.map(({ id, role_name }) => (
-                      <DropdownMenuItem
-                        key={id}
-                        onClick={() => {
-                          updateUserRoleMutation.mutate({
-                            email: row.original.email,
-                            role: role_name,
-                          });
-                        }}
-                      >
-                        {role_name}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              ),
-              filterFn: createColumnFilterFn(
-                (row, id, filterValue) => row.getValue(id) === filterValue,
-                {
-                  autoRemove: (v) => !v,
-                },
-              ),
-            }),
-          ]
-        : []),
 
       columnHelper.accessor('is_active', {
         header: t('admin.status'),
@@ -440,8 +368,6 @@ function AdminUserManagement() {
     ],
     [
       t,
-      roleList,
-      updateUserRoleMutation,
       userInfo?.email,
       updateUserStatusMutation,
       setSuperuserMutation,
@@ -510,45 +436,6 @@ function AdminUserManagement() {
                   className="bg-bg-base text-text-secondary"
                 >
                   <div className="p-2 space-y-6">
-                    <EnterpriseFeature>
-                      {() => (
-                        <section>
-                          <div className="font-bold mb-3">
-                            {t('admin.role')}
-                          </div>
-
-                          <RadioGroup
-                            value={
-                              (table
-                                .getColumn('role')
-                                ?.getFilterValue() as string) ?? ''
-                            }
-                            onValueChange={(value) =>
-                              table.getColumn('role')?.setFilterValue(value)
-                            }
-                          >
-                            <Label className="flex items-center space-x-2">
-                              <RadioGroupItem value="" />
-                              <span>{t('admin.all')}</span>
-                            </Label>
-
-                            {roleList?.map(({ id, role_name }) => (
-                              <Label
-                                key={id}
-                                className="flex items-center space-x-2"
-                              >
-                                <RadioGroupItem
-                                  className="bg-bg-input border-border-button"
-                                  value={role_name}
-                                />
-                                <span>{role_name}</span>
-                              </Label>
-                            ))}
-                          </RadioGroup>
-                        </section>
-                      )}
-                    </EnterpriseFeature>
-
                     <section>
                       <div className="font-bold mb-3">{t('admin.status')}</div>
 

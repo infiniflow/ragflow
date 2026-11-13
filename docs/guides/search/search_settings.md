@@ -4,7 +4,7 @@ title: Search Settings
 sidebar_label: Search Settings
 slug: /search_settings
 sidebar_custom_props:
-  categoryIcon: LucideSearch
+  categoryIcon: LucideSettings2
 ---
 
 # Search Settings

@@ -4,7 +4,7 @@ title: Upgrade from v0.x to v1.x
 sidebar_label: Upgrade from v0.x to v1.x
 slug: /upgrade_from_v0_to_v1
 sidebar_custom_props: {
-  categoryIcon: LucideLocateFixed
+  categoryIcon: LucideChevronsUp
 }
 ---
 

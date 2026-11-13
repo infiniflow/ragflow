@@ -4,7 +4,7 @@ slug: /file_management/file_operations
 sidebar_label: File Operations
 title: File Operations
 sidebar_custom_props: {
-  categoryIcon: LucideFolderDot
+  categoryIcon: LucideFileCog
 }
 ---
 

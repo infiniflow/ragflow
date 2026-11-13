@@ -114,7 +114,12 @@ type TextBox struct {
 	// overrides PageNumber for page-span computation in BoxesToSections, so a
 	// cross-page merged table records every page it occupies (not just the
 	// anchor page).
-	Pages      []int
+	Pages []int
+	// Positions retains each page's own rectangle for a box that spans pages
+	// (a cross-page merged table). BoxesToSections prefers them over Pages so
+	// every page is cropped with its own page-local geometry instead of one
+	// page's rectangle being applied to the whole span.
+	Positions  []Position
 	LayoutType string
 	LayoutNo   string
 	// FigureBounds retains DLA geometry in PDF points until figure consolidation.
@@ -192,9 +197,18 @@ type TableItem struct {
 	CropOffY  float64
 	Caption   string
 
+	// RegionPositions preserves the table crop rectangle on each merged page.
+	// It is a cache derived from Positions (one union rectangle per page,
+	// with the anchor page overridden by Region*); extend it whenever
+	// Positions grows.
+	RegionPositions                                  []Position
 	RegionLeft, RegionRight, RegionTop, RegionBottom float64
 	NoMerge                                          bool
 	Grid                                             [][]TSRCell
+	// HeaderRows is the number of leading header rows detected when the table
+	// was assembled. It is used by the cross-page merge guard to compare
+	// table headers without re-deriving them from scratch.
+	HeaderRows int
 	// Page is the 0-based page index this table was detected on. It is set
 	// by the pipeline and used by parity/replay harnesses to map replay
 	// intermediates (which are keyed by page) back onto the correct table.

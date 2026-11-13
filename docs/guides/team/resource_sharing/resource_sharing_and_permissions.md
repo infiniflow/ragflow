@@ -2,6 +2,9 @@
 sidebar_position: 1
 sidebar_label: Resource Sharing and Permissions
 title: Resource Sharing and Permissions
+sidebar_custom_props: {
+  categoryIcon: LucideShieldCheck
+}
 ---
 
 # Resource Sharing and Permissions

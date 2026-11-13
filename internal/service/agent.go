@@ -345,9 +345,8 @@ var ErrAgentNotOwner = errors.New("agent not owned by user")
 
 // ErrAgentStorageError identifies internal Agent service failures such as
 // database connectivity, schema drift, or persistence errors. Synchronous
-// callers map this sentinel to a sanitized 500 response; failures raised after
-// streaming starts are wrapped with canvas.NewInternalRunError so Runner emits
-// the same safe message in its terminal event.
+// callers map this sentinel to a 500 response with the underlying error;
+// failures raised after streaming starts are wrapped with canvas.NewInternalRunError.
 var ErrAgentStorageError = errors.New("agent storage error")
 
 // AgentService agent service
@@ -1126,17 +1125,9 @@ func updatedAgentCanvasCategory(canvasInstance *entity.UserCanvas, updates map[s
 // handler layer can map every "not yours" case to the same 404 envelope
 // — see plan §4.8 IDOR mitigation.
 //
-// DAO-error sanitization (v3.5.2 follow-up): the raw userTenantDAO and
-// canvasDAO errors are wrapped with ErrAgentStorageError so mapAgentError
-// classifies them as CodeServerError (500) with a sanitized message —
-// the original DAO error string (DSN, table name, gorm stack frame)
-// MUST NOT reach the client. Sentinels (ErrUserCanvasNotFound) pass
-// through unchanged so they keep mapping to the 404 envelope.
-//
-// This is the FIRST storage access path RunAgent hits, so leaving the
-// raw errors here would have left a DAO-string leak in the very first
-// hop — the earlier af2ac2eda + 804854a5e commits only sanitized the
-// version-read path, missing the canvas-access path.
+// DAO errors wrap ErrAgentStorageError so mapAgentError classifies them as
+// CodeServerError (500) while retaining the cause. Missing resources keep
+// mapping to the same permission response.
 func (s *AgentService) loadCanvasForUser(ctx context.Context, canvasID string, operation permission.Operation) (*entity.UserCanvas, error) {
 	userID := permission.UserIDFromContext(ctx)
 	if canvasID == "" || userID == "" {
@@ -1897,8 +1888,7 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 	// path) already enforces this check; the run path mirrors it and surfaces
 	// ErrUserCanvasVersionNotFound so the handler maps to a clean 404 rather
 	// than silently using the foreign DSL. DB-side errors are wrapped with
-	// ErrAgentStorageError so raw DAO strings (DSNs, table names, gorm stack
-	// frames) never reach the client.
+	// ErrAgentStorageError so callers classify them as server errors.
 	//
 	// The buildRunFunc placeholder branch is reserved for the rare
 	// "canvas exists but has no DSL at all" edge case.

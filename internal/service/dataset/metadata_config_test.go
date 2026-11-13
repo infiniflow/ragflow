@@ -459,7 +459,11 @@ func TestDatasetServiceGetMetadataConfig(t *testing.T) {
 func TestUpdateMetadataConfig_TenantLookupFailureDoesNotPersist(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
-	// kb-1 points at a tenant that does not exist, so tenantDAO.GetByID fails.
+	inactive := string(entity.StatusInvalid)
+	if err := db.Create(&entity.Tenant{ID: "missing-tenant", ParserIDs: "", Status: &inactive}).Error; err != nil {
+		t.Fatalf("insert inactive Tenant: %v", err)
+	}
+	// kb-1 points at an inactive tenant, so tenantDAO.GetByID fails.
 	insertDatasetMetadataConfigKB(t, "kb-1", "missing-tenant")
 
 	ctx := withDatasetTestContext(t.Context(), "missing-tenant", "missing-tenant")
@@ -542,7 +546,11 @@ func TestUpdateDocumentMetadataConfig_KBAndTenantLookupFailure(t *testing.T) {
 		t.Fatalf("expected error for missing kb, got code=%v err=%v", code, err)
 	}
 
-	// KB exists but tenant lookup fails (kb.TenantID points to missing tenant)
+	// KB exists but tenant lookup fails because its tenant is inactive.
+	inactive := string(entity.StatusInvalid)
+	if err := db.Create(&entity.Tenant{ID: "missing-tenant", ParserIDs: "", Status: &inactive}).Error; err != nil {
+		t.Fatalf("insert inactive Tenant: %v", err)
+	}
 	insertDatasetMetadataConfigKB(t, "kb-bad-tenant", "missing-tenant")
 	insertDatasetMetadataConfigDoc(t, "doc2", "kb-bad-tenant", entity.JSONMap{})
 	missingTenantCtx := withDatasetTestContext(t.Context(), "missing-tenant", "missing-tenant")

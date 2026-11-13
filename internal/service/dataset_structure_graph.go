@@ -779,6 +779,15 @@ func entityResponseID(entity StructureGraphNode) string {
 	return ""
 }
 
+// endpointTerms is the set of spellings an endpoint name is looked up by.
+func endpointTerms(value string) []string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil
+	}
+	return common.DeduplicateSorted([]string{value, strings.ToLower(value)})
+}
+
 // normalizeRelationEndpoints aligns relation endpoints to returned entity ids.
 // Matching ignores case and internal whitespace, so an endpoint that differs
 // from the entity name only by the space character (e.g. U+0020 vs U+3000) is

@@ -426,7 +426,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		// engine never returns it even when a legacy chunk carries it.
 		resultChunk["tag_kwd"] = []string{}
 
-		vectorColumn := fmt.Sprintf("q_%d_vec", dim)
+		vectorColumn := common.VectorColumnName(dim)
 		if v, ok := chunk[vectorColumn]; ok {
 			resultChunk["vector"] = v
 		} else {
@@ -1092,7 +1092,7 @@ func (s *RetrievalService) GetVector(ctx context.Context, txt string, embModel *
 
 	vector := embeddings[0].Embedding
 	vectorSize := len(vector)
-	vectorColumnName := fmt.Sprintf("q_%d_vec", vectorSize)
+	vectorColumnName := common.VectorColumnName(vectorSize)
 
 	return &types.MatchDenseExpr{
 		VectorColumnName:  vectorColumnName,
@@ -1424,7 +1424,7 @@ func (s *RetrievalService) FetchChunkVectors(ctx context.Context, chunkIDs []str
 		return map[string][]float64{}, nil
 	}
 
-	vecField := fmt.Sprintf("q_%d_vec", dim)
+	vecField := common.VectorColumnName(dim)
 	idxNames := buildIndexNames(tenantIDs)
 
 	req := &types.SearchRequest{

@@ -42,10 +42,15 @@ var arrayColumns = map[string]bool{
 	"important_kwd": true, "question_kwd": true, "tag_kwd": true,
 	"position_int": true, "page_num_int": true, "top_int": true,
 	"source_id": true, "entities_kwd": true,
+	"source_chunk_ids": true, "source_doc_ids": true, "compilation_template_ids": true,
+	"doc_ids_kwd": true, "entity_names_kwd": true, "entity_names": true,
+	"outlinks_kwd": true, "related_kb_pages_kwd": true, "page_ids": true,
+	"rechunked_from_chunk_ids": true, "aliases": true, "children_kwd": true,
 }
 
 var jsonColumns = map[string]bool{
 	"tag_feas": true, "chunk_data": true, "metadata": true, "extra": true, "meta_fields": true,
+	"claims": true, "source_chunk_hashes": true,
 }
 
 var knownChunkColumns = func() map[string]bool {
@@ -68,9 +73,13 @@ var memoryColumnToField = map[string]string{
 	"content_ltks":     "content",
 }
 
-func normalizeChunk(document map[string]interface{}) (map[string]interface{}, error) {
+// normalizeChunk builds the row for a chunk table. tableColumns is the live
+// column set of the target table: a field the table has is written to its
+// column, anything else goes into the extra JSON column, which is where an
+// existing table keeps fields added to the schema after it was created.
+func normalizeChunk(document map[string]interface{}, tableColumns map[string]bool) (map[string]interface{}, error) {
 	document = normalizeImportantKeywordFields(document)
-	result := make(map[string]interface{}, len(chunkColumns)+1)
+	result := make(map[string]interface{}, len(tableColumns)+1)
 	extra := make(map[string]interface{})
 	if existing, ok := document["extra"].(map[string]interface{}); ok {
 		for key, value := range existing {
@@ -87,7 +96,7 @@ func normalizeChunk(document map[string]interface{}) (map[string]interface{}, er
 			result[key] = encoded
 			continue
 		}
-		if !knownChunkColumns[key] {
+		if !tableColumns[key] {
 			extra[key] = value
 			continue
 		}
@@ -111,6 +120,9 @@ func normalizeChunk(document map[string]interface{}) (map[string]interface{}, er
 		result[key] = encoded
 	}
 	for _, column := range chunkColumns {
+		if !tableColumns[column.name] {
+			continue
+		}
 		if _, ok := result[column.name]; ok {
 			continue
 		}
@@ -166,7 +178,7 @@ func normalizeMemory(document map[string]interface{}) (map[string]interface{}, e
 			if !ok || len(vector) == 0 {
 				continue
 			}
-			key = fmt.Sprintf("q_%d_vec", len(vector))
+			key = common.VectorColumnName(len(vector))
 			value = vector
 		}
 		if vectorColumnPattern.MatchString(key) {

@@ -270,7 +270,7 @@ func (h *SkillSearchHandler) DeleteSkillIndex(c *gin.Context) {
 		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
-		common.RespondError(c, common.CodeOperatingError, "failed to delete skill index")
+		common.RespondError(c, common.CodeOperatingError, "failed to delete skill index: "+err.Error())
 		return
 	}
 

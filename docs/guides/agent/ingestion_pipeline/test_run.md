@@ -4,7 +4,7 @@ title: Validate the Pipeline
 sidebar_label: Validate the Pipeline
 slug: /test_run
 sidebar_custom_props: {
-  categoryIcon: RagAiAgent
+  categoryIcon: LucidePlay
 }
 ---
 

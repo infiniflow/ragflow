@@ -100,7 +100,7 @@ export const useGetPaginationWithRouter = () => {
   );
 
   const setCurrentPagination = useCallback(
-    (pagination: { page: number; pageSize?: number }) => {
+    (pagination: { page: number; pageSize?: number; total?: number }) => {
       if (pagination.pageSize !== pageSize) {
         pagination.page = 1; // Reset to first page if pageSize changes
       }
@@ -209,12 +209,14 @@ export const useGetPagination = (options?: { pageSize?: number }) => {
   const [pagination, setPagination] = useState({
     page: 1,
     pageSize: options?.pageSize ?? 10,
+    total: 0,
   });
   const { t } = useTranslate('common');
 
   const onPageChange: Pagination['onChange'] = useCallback(
     (pageNumber: number, pageSize?: number) => {
       setPagination((pre) => ({
+        ...pre,
         page: pageNumber,
         pageSize: pageSize ?? pre.pageSize,
       }));
@@ -222,10 +224,17 @@ export const useGetPagination = (options?: { pageSize?: number }) => {
     [],
   );
 
+  const changePagination = useCallback(
+    (pagination: { page: number; pageSize?: number; total?: number }) => {
+      setPagination((prev) => ({ ...prev, ...pagination }));
+    },
+    [],
+  );
+
   const currentPagination: Pagination = useMemo(() => {
     return {
       showQuickJumper: true,
-      total: 0,
+      total: pagination.total ?? 0,
       showSizeChanger: true,
       current: pagination.page,
       pageSize: pagination.pageSize,
@@ -237,6 +246,7 @@ export const useGetPagination = (options?: { pageSize?: number }) => {
 
   return {
     pagination: currentPagination,
+    changePagination,
     setPagination,
   };
 };

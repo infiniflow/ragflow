@@ -124,7 +124,7 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 	}
 }
 
-// ParseWithResult implements ParseResultProducer (plan §6.5) and
+// ParseWithResult implements ParseResultProducer and
 // returns a structured JSON payload. Each top-level block
 // emits one item with `text` + `doc_type_kwd: "text"`. When the
 // block contains a Markdown image reference (![alt](src)), the image

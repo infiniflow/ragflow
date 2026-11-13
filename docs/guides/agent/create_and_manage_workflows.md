@@ -4,7 +4,7 @@ title: Create and Manage Workflows
 sidebar_label: Create and Manage Workflows
 slug: /creation_and_management
 sidebar_custom_props: {
-  categoryIcon: RagAiAgent
+  categoryIcon: LucideSquarePen
 }
 ---
 
