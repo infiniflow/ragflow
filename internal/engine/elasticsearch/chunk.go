@@ -24,20 +24,16 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"reflect"
 	"regexp"
 	"slices"
-	"sort"
 	"strconv"
 	"strings"
-	"unicode"
 	"unicode/utf8"
 
 	"ragflow/internal/common"
 	"ragflow/internal/engine/internal/esoscommon"
 	"ragflow/internal/engine/types"
-	"ragflow/internal/tokenizer"
 
 	"github.com/bytedance/sonic"
 	"github.com/elastic/go-elasticsearch/v8/esapi"
@@ -48,8 +44,6 @@ import (
 var jsonIterator = sonic.Config{
 	SortMapKeys: false,
 }.Froze()
-
-var memoryMessageVectorFieldRE = regexp.MustCompile(`^q_\d+_vec$`)
 
 // CreateChunkStore creates an index
 func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID, language string) error {
@@ -77,10 +71,10 @@ func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID strin
 	// Load mapping based on index type
 	var mapping map[string]interface{}
 	if strings.HasPrefix(baseName, "memory_") {
-		mapping = getMemoryMessageMapping(vectorSize)
+		mapping = esoscommon.GetMemoryMessageMapping(vectorSize, esoscommon.ESVectorField)
 	} else if datasetID == "skill" {
 		// Load skill-specific mapping
-		skillMapping, err := loadSkillMapping()
+		skillMapping, err := esoscommon.LoadSkillMapping("conf/skill_es_mapping.json", esoscommon.ESVectorField)
 		if err != nil {
 			return fmt.Errorf("failed to load skill mapping: %w", err)
 		}
@@ -280,7 +274,7 @@ func (e *Engine) insertChunks(ctx context.Context, chunks []map[string]interface
 		if isMemoryIndex {
 			// Memory messages arrive with logical fields; map them to
 			// the storage document (tokenization included) before write.
-			doc = mapMemoryMessageToESDoc(doc)
+			doc = esoscommon.MapMemoryMessageToESDoc(doc)
 		}
 		docID, _ := doc["doc_id"].(string)
 		chunkID, _ := doc["id"].(string)
@@ -304,12 +298,12 @@ func (e *Engine) insertChunks(ctx context.Context, chunks []map[string]interface
 		buf.WriteByte('\n')
 
 		// Document line: work with a copy to avoid mutating the original
-		docCopy := copyFields(doc)
+		docCopy := esoscommon.CopyFields(doc)
 		docCopy["kb_id"] = datasetID
 		if !isMemoryIndex && docCopy["available_int"] == nil {
 			docCopy["available_int"] = 1
 		}
-		if raw, ok := formatOrderedTagFeas(docCopy["tag_feas"]); ok {
+		if raw, ok := esoscommon.FormatOrderedTagFeas(docCopy["tag_feas"]); ok {
 			docCopy["tag_feas"] = raw
 		}
 		if err := jsonIterator.NewEncoder(&buf).Encode(docCopy); err != nil {
@@ -359,7 +353,7 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition map[string]interfac
 		if messageDocID, ok := condition["id"].(string); ok {
 			return e.updateSingleMemoryMessage(ctx, fullIndexName, messageDocID, newValue)
 		}
-		return e.updateChunksByQuery(ctx, fullIndexName, mapMemoryMessageESConditionFields(condition), mapMemoryMessageESUpdateFields(newValue))
+		return e.updateChunksByQuery(ctx, fullIndexName, esoscommon.MapMemoryMessageESConditionFields(condition), esoscommon.MapMemoryMessageESUpdateFields(newValue))
 	}
 
 	// Add kb_id to condition
@@ -462,7 +456,7 @@ func (e *Engine) AdjustChunkPagerank(ctx context.Context, indexName, chunkID, kb
 }
 
 func (e *Engine) updateSingleMemoryMessage(ctx context.Context, indexName, messageDocID string, newValue map[string]interface{}) error {
-	doc := mapMemoryMessageESUpdateFields(newValue)
+	doc := esoscommon.MapMemoryMessageESUpdateFields(newValue)
 	delete(doc, "id")
 	if len(doc) == 0 {
 		return nil
@@ -494,32 +488,6 @@ func (e *Engine) updateSingleMemoryMessage(ctx context.Context, indexName, messa
 	return nil
 }
 
-func mapMemoryMessageESUpdateFields(newValue map[string]interface{}) map[string]interface{} {
-	doc := make(map[string]interface{}, len(newValue))
-	for k, v := range newValue {
-		switch k {
-		case "remove", "add":
-			doc[k] = v
-		default:
-			doc[mapMemoryMessageESField(k, false)] = v
-		}
-	}
-	// Mirror Python memory/utils/es_conn.py update: writing content
-	// refreshes tokenized_content_ltks before write.
-	if content, ok := newValue["content"].(string); ok {
-		doc["tokenized_content_ltks"] = tokenizeMemoryMessageContent(content)
-	}
-	return doc
-}
-
-func mapMemoryMessageESConditionFields(condition map[string]interface{}) map[string]interface{} {
-	mapped := make(map[string]interface{}, len(condition))
-	for k, v := range condition {
-		mapped[mapMemoryMessageESField(k, false)] = v
-	}
-	return mapped
-}
-
 // updateSingleChunk handles single document update
 func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID string, condition, newValue map[string]interface{}) error {
 	common.Debug("ElasticsearchConnection.updateSingleChunk called", zap.String("indexName", indexName), zap.String("chunkID", chunkID))
@@ -531,7 +499,7 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 		case "and", "or", "must_not", "exists":
 			return fmt.Errorf("unsupported single chunk update condition %q", field)
 		}
-		if items, ok := conditionTermsList(value); ok {
+		if items, ok := esoscommon.ConditionTermsList(value); ok {
 			filters = append(filters, map[string]interface{}{"terms": map[string]interface{}{field: items}})
 			continue
 		}
@@ -592,7 +560,7 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 		return fmt.Errorf("%w: %s", types.ErrDocumentNotFound, chunkID)
 	}
 
-	doc := copyFields(newValue)
+	doc := esoscommon.CopyFields(newValue)
 	delete(doc, "id")
 
 	removeValue, _ := doc["remove"]
@@ -679,7 +647,7 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 
 	// Update document fields if any remain
 	if len(doc) > 0 {
-		if raw, ok := formatOrderedTagFeas(doc["tag_feas"]); ok {
+		if raw, ok := esoscommon.FormatOrderedTagFeas(doc["tag_feas"]); ok {
 			doc["tag_feas"] = raw
 		}
 		updateBody := map[string]interface{}{"doc": doc}
@@ -713,25 +681,6 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID strin
 // (internal callers, e.g. the document availability switch). A typed slice the
 // builder does not recognize silently drops the field, which turns a bounded
 // update/delete by query into an unfiltered one over the whole index.
-func conditionTermsList(value interface{}) ([]interface{}, bool) {
-	items, ok := value.([]interface{})
-	if ok {
-		return items, true
-	}
-	rv := reflect.ValueOf(value)
-	if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
-		return nil, false
-	}
-	if rv.Type().Elem().Kind() == reflect.Uint8 {
-		// []byte is a scalar blob, not a list of ids/keywords.
-		return nil, false
-	}
-	out := make([]interface{}, 0, rv.Len())
-	for i := 0; i < rv.Len(); i++ {
-		out = append(out, rv.Index(i).Interface())
-	}
-	return out, true
-}
 
 // mustNotExistsClauses renders field and existence exclusions.
 func mustNotExistsClauses(value interface{}) []map[string]interface{} {
@@ -774,7 +723,7 @@ func (e *Engine) updateChunksByQuery(ctx context.Context, indexName string, cond
 		if v == nil || v == "" {
 			continue
 		}
-		if items, ok := conditionTermsList(v); ok {
+		if items, ok := esoscommon.ConditionTermsList(v); ok {
 			mustClauses = append(mustClauses, map[string]interface{}{
 				"terms": map[string]interface{}{k: items},
 			})
@@ -845,7 +794,7 @@ func (e *Engine) updateChunksByQuery(ctx context.Context, indexName string, cond
 			continue
 		}
 
-		if items, ok := conditionTermsList(v); ok {
+		if items, ok := esoscommon.ConditionTermsList(v); ok {
 			params[fmt.Sprintf("pp_%s", k)] = items
 			scripts = append(scripts, fmt.Sprintf("ctx._source.%s=params.pp_%s;", k, k))
 			continue
@@ -918,97 +867,9 @@ func closeESBody(res *esapi.Response) {
 }
 
 // copyFields creates a shallow copy of a map
-func copyFields(m map[string]interface{}) map[string]interface{} {
-	result := make(map[string]interface{})
-	for k, v := range m {
-		result[k] = v
-	}
-	return result
-}
 
 // formatOrderedTagFeas formats tag_feas as json.RawMessage with keys ordered
 // strictly descending by score, preventing jsoniter map-key randomized output.
-func formatOrderedTagFeas(v any) (json.RawMessage, bool) {
-	if v == nil {
-		return nil, false
-	}
-	if raw, ok := v.(json.RawMessage); ok {
-		return raw, true
-	}
-	if marshaler, ok := v.(json.Marshaler); ok {
-		b, err := marshaler.MarshalJSON()
-		if err == nil {
-			return json.RawMessage(b), true
-		}
-	}
-	type kv struct {
-		k string
-		v int
-	}
-	var kvs []kv
-	roundScore := func(f float64) int {
-		if f < 0 {
-			return int(f - 0.5)
-		}
-		return int(f + 0.5)
-	}
-
-	switch m := v.(type) {
-	case map[string]int:
-		kvs = make([]kv, 0, len(m))
-		for k, val := range m {
-			kvs = append(kvs, kv{k, val})
-		}
-	case map[string]float64:
-		kvs = make([]kv, 0, len(m))
-		for k, val := range m {
-			kvs = append(kvs, kv{k, roundScore(val)})
-		}
-	case map[string]any:
-		kvs = make([]kv, 0, len(m))
-		for k, val := range m {
-			switch score := val.(type) {
-			case int:
-				kvs = append(kvs, kv{k, score})
-			case float64:
-				kvs = append(kvs, kv{k, roundScore(score)})
-			case int64:
-				kvs = append(kvs, kv{k, int(score)})
-			case json.Number:
-				if f, err := score.Float64(); err == nil {
-					kvs = append(kvs, kv{k, roundScore(f)})
-				}
-			}
-		}
-	default:
-		return nil, false
-	}
-
-	if len(kvs) == 0 {
-		return json.RawMessage("{}"), true
-	}
-
-	sort.Slice(kvs, func(i, j int) bool {
-		if kvs[i].v != kvs[j].v {
-			return kvs[i].v > kvs[j].v
-		}
-		return kvs[i].k < kvs[j].k
-	})
-
-	var buf bytes.Buffer
-	buf.WriteByte('{')
-	for i, item := range kvs {
-		if i > 0 {
-			buf.WriteByte(',')
-		}
-		kb, _ := json.Marshal(item.k)
-		buf.Write(kb)
-		buf.WriteByte(':')
-		buf.WriteString(strconv.Itoa(item.v))
-	}
-	buf.WriteByte('}')
-	return json.RawMessage(buf.Bytes()), true
-}
 
 // DeleteChunks deletes chunks from a dataset index by condition
 func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
@@ -1032,9 +893,9 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 	// Scope the delete to the dataset the caller asked for. The tenant index is
 	// shared by every dataset, so without this a condition that omits kb_id
 	// deletes matching chunks in other datasets too.
-	condition = copyFields(condition)
+	condition = esoscommon.CopyFields(condition)
 	if idVal, ok := condition["id"]; ok {
-		items, isList := conditionTermsList(idVal)
+		items, isList := esoscommon.ConditionTermsList(idVal)
 		if idVal == nil || (isList && len(items) == 0) {
 			return 0, fmt.Errorf("ES delete aborted: empty id list on index %s", fullIndexName)
 		}
@@ -1052,7 +913,7 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 			mustClauses = append(mustClauses, map[string]interface{}{
 				"term": map[string]interface{}{"id": id},
 			})
-		} else if items, isList := conditionTermsList(idVal); isList {
+		} else if items, isList := esoscommon.ConditionTermsList(idVal); isList {
 			ids := make([]interface{}, 0, len(items))
 			for _, item := range items {
 				if id, isString := item.(string); isString {
@@ -1090,7 +951,7 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 		} else if k == "must_not" {
 			mustNotClauses = append(mustNotClauses, mustNotExistsClauses(v)...)
 		} else if v != nil {
-			if items, ok := conditionTermsList(v); ok {
+			if items, ok := esoscommon.ConditionTermsList(v); ok {
 				mustClauses = append(mustClauses, map[string]interface{}{
 					"terms": map[string]interface{}{k: items},
 				})
@@ -1290,7 +1151,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	hasVectorMatch := matchDense != nil && len(matchDense.EmbeddingData) > 0
 
 	if matchText != nil {
-		textQuery := buildQueryStringQuery(matchText, isSkillIndex, isMemoryIndex)
+		textQuery := esoscommon.BuildQueryStringQuery(matchText, isSkillIndex, isMemoryIndex)
 		if boolQuery != nil {
 			if boolMap, ok := boolQuery["bool"].(map[string]interface{}); ok {
 				if must, ok := boolMap["must"].([]interface{}); ok {
@@ -1374,7 +1235,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 
 	// Add rank_feature queries
 	if req.RankFeature != nil && len(req.RankFeature) > 0 && !isSkillIndex && !isMemoryIndex {
-		rankFeatureQuery := buildRankFeatureQuery(req.RankFeature)
+		rankFeatureQuery := esoscommon.BuildRankFeatureQuery(req.RankFeature, true)
 		if rankFeatureQuery != nil {
 			if boolQuery, ok := queryBody["query"].(map[string]interface{}); ok {
 				if boolMap, ok := boolQuery["bool"].(map[string]interface{}); ok {
@@ -1392,7 +1253,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 
 	// Add sorting if order_by specified
 	if req.OrderBy != nil && len(req.OrderBy.Fields) > 0 {
-		sort := parseOrderByExpr(req.OrderBy)
+		sort := esoscommon.ParseOrderByExpr(req.OrderBy)
 		if len(sort) > 0 {
 			queryBody["sort"] = sort
 		}
@@ -1426,7 +1287,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	hasTextMatch := matchText != nil
 	selectFields := req.SelectFields
 	if isMemoryIndex {
-		selectFields = mapMemoryMessageESFields(req.SelectFields, false)
+		selectFields = esoscommon.MapMemoryMessageESFields(req.SelectFields, false)
 	}
 	if len(req.SelectFields) > 0 {
 		// Use caller-specified fields, add pagerank_fld/tag_fld if needed
@@ -1517,7 +1378,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	}
 
 	if isMemoryIndex {
-		normalizeMemoryMessageChunks(allResults)
+		esoscommon.NormalizeMemoryMessageChunks(allResults)
 	}
 
 	// Post-processing: Sort results by score
@@ -1529,8 +1390,8 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		// pagerank reaches the ES hit score only through the rank_feature query
 		// built above, and reaches the final similarity in the reranker. Adding
 		// it to _score here as well would count it twice.
-		allResults = calculateScores(allResults, scoreColumn, "")
-		allResults = sortByScore(allResults, limit)
+		allResults = esoscommon.CalculateScores(allResults, scoreColumn, "")
+		allResults = esoscommon.SortByScore(allResults, limit)
 	}
 
 	return &types.SearchResult{
@@ -1541,16 +1402,6 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 
 // esIndexNameForTenant maps one tenant id to its physical ES index. Regexp
 // search deliberately has no multi-tenant mode.
-func esIndexNameForTenant(tenantID string) (string, error) {
-	tenantID = strings.TrimSpace(tenantID)
-	if tenantID == "" {
-		return "", fmt.Errorf("tenant id cannot be empty")
-	}
-	if strings.Contains(tenantID, ",") {
-		return "", fmt.Errorf("regexp search supports exactly one tenant")
-	}
-	return "ragflow_" + tenantID, nil
-}
 
 // SearchByRegexp executes a regex-match-only search over chunk content. It
 // reuses the same scope-filter builder and response converter as Search but
@@ -1566,7 +1417,7 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 	}
 	// Map the engine-agnostic tenant to this engine's physical index. ES
 	// stores one index per tenant (ragflow_<tenant>).
-	indexName, err := esIndexNameForTenant(req.TenantID)
+	indexName, err := esoscommon.EsIndexNameForTenant(req.TenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -1630,7 +1481,7 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 	// When an explicit sort is requested (e.g. a document's reading order), push
 	// it down so the capped first page is deterministic.
 	if req.Sort != nil && len(req.Sort.Fields) > 0 {
-		if sortClause := parseOrderByExpr(req.Sort); len(sortClause) > 0 {
+		if sortClause := esoscommon.ParseOrderByExpr(req.Sort); len(sortClause) > 0 {
 			queryBody["sort"] = sortClause
 		}
 	}
@@ -1678,7 +1529,7 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 	allResults := convertESResponse(&esResp, "")
 	totalHits := esResp.Hits.Total.Value
 	if req.Sort != nil && len(req.Sort.Fields) > 0 {
-		allResults = sortByFields(allResults, req.Sort)
+		allResults = esoscommon.SortByFields(allResults, req.Sort)
 	} else {
 		// Regexp matches have no meaningful relevance score. Preserve ES's
 		// returned order when no explicit deterministic sort was requested.
@@ -1696,56 +1547,6 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 // sortByFields orders chunks by the given OrderByExpr fields ascending. It is
 // used for deterministic ordering of regexp results. Numeric fields sort
 // numerically, string fields lexicographically.
-func sortByFields(chunks []map[string]interface{}, expr *types.OrderByExpr) []map[string]interface{} {
-	if expr == nil || len(expr.Fields) == 0 {
-		return chunks
-	}
-	sort.SliceStable(chunks, func(i, j int) bool {
-		for _, field := range expr.Fields {
-			vi, oki := chunks[i][field.Field]
-			vj, okj := chunks[j][field.Field]
-			if !oki || !okj {
-				// Missing field sorts before a present one.
-				if !oki && !okj {
-					continue
-				}
-				return !oki
-			}
-			// Compare the two values and derive a stable equality key. The raw
-			// interface{} equality test below would panic on uncomparable types
-			// ([]interface{}, map from ES source), so the equality check always
-			// runs on string forms instead.
-			var less bool
-			var keyI, keyJ string
-			if fi, ei := toFloat64(vi); ei {
-				if fj, ej := toFloat64(vj); ej {
-					less = fi < fj
-				} else {
-					less = false // numeric before non-numeric
-				}
-				keyI, keyJ = fmt.Sprintf("%v", vi), fmt.Sprintf("%v", vj)
-			} else {
-				si, siOk := vi.(string)
-				sj, sjOk := vj.(string)
-				if siOk && sjOk {
-					less = si < sj
-					keyI, keyJ = si, sj
-				} else {
-					keyI, keyJ = fmt.Sprintf("%v", vi), fmt.Sprintf("%v", vj)
-					less = keyI < keyJ
-				}
-			}
-			if keyI != keyJ {
-				if field.Type == types.SortDesc {
-					return !less
-				}
-				return less
-			}
-		}
-		return false
-	})
-	return chunks
-}
 
 // searchOneIndex sends an ordinary search with a fresh request body. A valid
 // missing-index response is empty; other request and response failures propagate.
@@ -1887,7 +1688,7 @@ func searchAfterPaginate(
 			break
 		}
 		nextCursor := resp.Hits.Hits[len(resp.Hits.Hits)-1].Sort
-		if len(nextCursor) == 0 || sortValuesEqual(nextCursor, cursor) {
+		if len(nextCursor) == 0 || esoscommon.SortValuesEqual(nextCursor, cursor) {
 			// ES returned hits but no usable cursor (e.g. sort field
 			// missing or unchanged). The index is exhausted from our
 			// point of view.
@@ -1947,7 +1748,7 @@ func searchAfterPaginate(
 		}
 
 		nextCursor := resp.Hits.Hits[len(resp.Hits.Hits)-1].Sort
-		if len(nextCursor) == 0 || sortValuesEqual(nextCursor, cursor) {
+		if len(nextCursor) == 0 || esoscommon.SortValuesEqual(nextCursor, cursor) {
 			break
 		}
 		cursor = nextCursor
@@ -2024,17 +1825,6 @@ func (e *Engine) executeSearchRequest(
 // ES guarantees that successive requests with `search_after: <cursor>`
 // advance strictly past the cursor, so an unchanged cursor between
 // iterations means the index is exhausted.
-func sortValuesEqual(a, b []interface{}) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
 
 // mapMemoryMessageToESDoc converts a logical memory message into the
 // Elasticsearch storage document, mirroring Python
@@ -2042,132 +1832,11 @@ func sortValuesEqual(a, b []interface{}) bool {
 // server-side rag tokenizer, so tokenized_content_ltks is computed here
 // before write; on Infinity the equivalent insert path stores content
 // verbatim and lets Infinity tokenize on save.
-func mapMemoryMessageToESDoc(message map[string]interface{}) map[string]interface{} {
-	doc := make(map[string]interface{}, len(message)+2)
-	for k, v := range message {
-		switch k {
-		case "message_type":
-			doc["message_type_kwd"] = v
-		case "status":
-			doc["status_int"] = memoryMessageStatusInt(v)
-		case "content":
-			content, _ := v.(string)
-			doc["content_ltks"] = content
-			doc["tokenized_content_ltks"] = tokenizeMemoryMessageContent(content)
-		default:
-			doc[k] = v
-		}
-	}
-	return doc
-}
 
 // tokenizeMemoryMessageContent runs the rag tokenizer pipeline
 // (tokenize + fine-grained tokenize) over message content. On tokenizer
 // failure it degrades to the untokenized text so the document stays
 // searchable under the whitespace analyzer.
-func tokenizeMemoryMessageContent(content string) string {
-	tokenized, err := tokenizer.Tokenize(content)
-	if err != nil {
-		common.Warn("memory message tokenize failed, storing raw content", zap.Error(err))
-		return content
-	}
-	fine, err := tokenizer.FineGrainedTokenize(tokenized)
-	if err != nil {
-		common.Warn("memory message fine-grained tokenize failed, storing coarse tokens", zap.Error(err))
-		return tokenized
-	}
-	return fine
-}
-
-func memoryMessageStatusInt(value interface{}) int {
-	if memoryMessageStatusBool(value) {
-		return 1
-	}
-	return 0
-}
-
-func mapMemoryMessageESField(field string, useTokenizedContent bool) string {
-	name := field
-	boost := ""
-	if base, suffix, ok := strings.Cut(field, "^"); ok {
-		name = base
-		boost = "^" + suffix
-	}
-
-	switch name {
-	case "message_type":
-		name = "message_type_kwd"
-	case "status":
-		name = "status_int"
-	case "content":
-		if useTokenizedContent {
-			name = "tokenized_content_ltks"
-		} else {
-			name = "content_ltks"
-		}
-	}
-	return name + boost
-}
-
-func mapMemoryMessageESFields(fields []string, useTokenizedContent bool) []string {
-	if len(fields) == 0 {
-		return fields
-	}
-	mapped := make([]string, 0, len(fields))
-	seen := make(map[string]struct{}, len(fields))
-	for _, field := range fields {
-		mappedField := mapMemoryMessageESField(field, useTokenizedContent)
-		if _, ok := seen[mappedField]; ok {
-			continue
-		}
-		seen[mappedField] = struct{}{}
-		mapped = append(mapped, mappedField)
-	}
-	return mapped
-}
-
-func normalizeMemoryMessageChunks(chunks []map[string]interface{}) {
-	for _, chunk := range chunks {
-		for key, val := range chunk {
-			if memoryMessageVectorFieldRE.MatchString(key) {
-				chunk["content_embed"] = val
-				delete(chunk, key)
-			}
-		}
-		if val, ok := chunk["message_type_kwd"]; ok {
-			chunk["message_type"] = val
-			delete(chunk, "message_type_kwd")
-		}
-		if val, ok := chunk["status_int"]; ok {
-			chunk["status"] = memoryMessageStatusBool(val)
-			delete(chunk, "status_int")
-		}
-		if val, ok := chunk["content_ltks"]; ok {
-			chunk["content"] = val
-			delete(chunk, "content_ltks")
-		}
-	}
-}
-
-func memoryMessageStatusBool(value interface{}) bool {
-	switch v := value.(type) {
-	case bool:
-		return v
-	case int:
-		return v != 0
-	case int64:
-		return v != 0
-	case float64:
-		return v != 0
-	case json.Number:
-		n, err := v.Int64()
-		return err == nil && n != 0
-	case string:
-		return v != "" && v != "0" && !strings.EqualFold(v, "false")
-	default:
-		return false
-	}
-}
 
 // cloneFilterSnapshot freezes the bool query's shape at the point the kNN clause
 // is built. The reference does the same by passing bool_query.to_dict() as the
@@ -2250,7 +1919,7 @@ func buildBoolQueryFromConditionRaw(filter map[string]interface{}, kbIDs []strin
 			continue
 		}
 		if isMemoryIndex {
-			k = mapMemoryMessageESField(k, false)
+			k = esoscommon.MapMemoryMessageESField(k, false)
 		}
 		// For skill index, handle 'status' field instead of 'available_int'
 		if isSkillIndex && k == "status" {
@@ -2436,7 +2105,7 @@ func idTermClauses(value interface{}) []interface{} {
 			map[string]interface{}{"term": map[string]interface{}{"_id": val}},
 		}
 	}
-	items, ok := conditionTermsList(value)
+	items, ok := esoscommon.ConditionTermsList(value)
 	if !ok || len(items) == 0 {
 		return nil
 	}
@@ -2458,108 +2127,8 @@ func idTermClauses(value interface{}) []interface{} {
 // consisting only of proper nouns returns zero hits — observed live when a
 // perfect pivot query ("Isabel Wood co-lead Ross Feldner ...") dead-ended a
 // benchmark question that was answerable from the corpus (q156).
-func buildQueryStringQuery(matchText *types.MatchTextExpr, isSkillIndex, isMemoryIndex bool) map[string]interface{} {
-	if matchText == nil {
-		return nil
-	}
-
-	minimumShouldMatch := "0%"
-	if matchText.ExtraOptions != nil {
-		if msm, ok := matchText.ExtraOptions["minimum_should_match"].(float64); ok {
-			minimumShouldMatch = common.FormatMinimumShouldMatchPercent(msm)
-		}
-	}
-
-	fields := matchText.Fields
-	if fields == nil || len(fields) == 0 {
-		if isSkillIndex {
-			fields = []string{"name_tks^10", "tags_tks^5", "description_tks^3", "content_tks^1"}
-		} else if isMemoryIndex {
-			fields = []string{"tokenized_content_ltks"}
-		} else {
-			fields = []string{"title_tks^10", "title_sm_tks^5", "important_kwd^30", "important_tks^20", "question_tks^20", "content_ltks^2", "content_sm_ltks"}
-		}
-	}
-	if isSkillIndex {
-		fields = mapSkillSearchFields(fields)
-	}
-	if isMemoryIndex {
-		fields = mapMemoryMessageESFields(fields, true)
-	}
-
-	boost := 1.0
-	if matchText.ExtraOptions != nil {
-		if b, ok := matchText.ExtraOptions["boost"].(float64); ok {
-			boost = b
-		}
-	}
-
-	return map[string]interface{}{
-		"query_string": map[string]interface{}{
-			"fields":               fields,
-			"type":                 "best_fields",
-			"query":                lowerCaseQueryText(matchText.MatchingText),
-			"minimum_should_match": minimumShouldMatch,
-			"boost":                boost,
-		},
-	}
-}
-
-func mapSkillSearchFields(fields []string) []string {
-	mapped := make([]string, 0, len(fields))
-	for _, field := range fields {
-		name, boost, hasBoost := strings.Cut(field, "^")
-		switch name {
-		case "name":
-			name = "name_tks"
-		case "tags":
-			name = "tags_tks"
-		case "description":
-			name = "description_tks"
-		case "content":
-			name = "content_tks"
-		}
-		if hasBoost {
-			mapped = append(mapped, name+"^"+boost)
-		} else {
-			mapped = append(mapped, name)
-		}
-	}
-	return mapped
-}
 
 // buildRankFeatureQuery builds rank_feature queries for learning to rank
-func buildRankFeatureQuery(rankFeature map[string]float64) []map[string]interface{} {
-	if rankFeature == nil || len(rankFeature) == 0 {
-		return nil
-	}
-
-	// Sort keys for deterministic query order (Go map iteration is randomized)
-	keys := make([]string, 0, len(rankFeature))
-	for k := range rankFeature {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-
-	var queries []map[string]interface{}
-	for _, fld := range keys {
-		sc := rankFeature[fld]
-		field := fmt.Sprintf("%s.%s", common.TAG_FLD, fld)
-		if fld == common.PAGERANK_FLD {
-			// pagerank_fea is a top-level rank_feature field (the "*_fea" dynamic
-			// template), not one key inside the tag_feas map.
-			field = common.PAGERANK_FLD
-		}
-		queries = append(queries, map[string]interface{}{
-			"rank_feature": map[string]interface{}{
-				"field":  field,
-				"linear": map[string]interface{}{},
-				"boost":  sc,
-			},
-		})
-	}
-	return queries
-}
 
 // GetChunk gets a chunk by ID using ES search API
 func (e *Engine) GetChunk(ctx context.Context, baseName, chunkID string, datasetIDs []string) (interface{}, error) {
@@ -2676,7 +2245,7 @@ func (e *Engine) getMemoryMessage(ctx context.Context, indexName, docID string) 
 
 	message := getResult.Source
 	message["id"] = docID
-	normalizeMemoryMessageChunks([]map[string]interface{}{message})
+	esoscommon.NormalizeMemoryMessageChunks([]map[string]interface{}{message})
 	return message, nil
 }
 
@@ -2903,20 +2472,11 @@ func compileElasticsearchHighlightPattern(keywords []string) *regexp.Regexp {
 	parts := make([]string, len(nonEmpty))
 	for i, keyword := range nonEmpty {
 		parts[i] = regexp.QuoteMeta(keyword)
-		if isLatinKeyword(keyword) {
+		if esoscommon.IsLatinKeyword(keyword) {
 			parts[i] += `\p{Latin}*`
 		}
 	}
 	return regexp.MustCompile("(?i)" + strings.Join(parts, "|"))
-}
-
-func isLatinKeyword(keyword string) bool {
-	for _, r := range keyword {
-		if !unicode.In(r, unicode.Latin) {
-			return false
-		}
-	}
-	return keyword != ""
 }
 
 // DropChunkStore deletes a chunk index
@@ -3084,59 +2644,6 @@ func (e *Engine) GetScores(knnResult map[string]interface{}) map[string]float64 
 }
 
 // loadSkillMapping loads the skill index mapping from config file
-func loadSkillMapping() (map[string]interface{}, error) {
-	// Try multiple possible locations for the mapping file
-	possiblePaths := []string{
-		"conf/skill_es_mapping.json",
-		"../conf/skill_es_mapping.json",
-		"/app/conf/skill_es_mapping.json",
-	}
-
-	var data []byte
-	var err error
-	for _, path := range possiblePaths {
-		data, err = os.ReadFile(path)
-		if err == nil {
-			break
-		}
-	}
-
-	if err != nil {
-		// Fallback to default skill mapping if file not found
-		return getDefaultSkillMapping(), nil
-	}
-
-	var mapping map[string]interface{}
-	if err := json.Unmarshal(data, &mapping); err != nil {
-		return nil, fmt.Errorf("failed to parse skill mapping: %w", err)
-	}
-
-	return mapping, nil
-}
-
-func memoryMessageVectorField(vectorSize int) string {
-	return common.VectorColumnName(vectorSize)
-}
-
-func memoryMessageVectorProperty(vectorSize int) map[string]interface{} {
-	return map[string]interface{}{
-		"type":       "dense_vector",
-		"dims":       vectorSize,
-		"index":      true,
-		"similarity": "cosine",
-	}
-}
-
-func parseMemoryMessageVectorSize(field string) (int, bool) {
-	if !memoryMessageVectorFieldRE.MatchString(field) {
-		return 0, false
-	}
-	dim, ok := common.VectorColumnDim(field)
-	if !ok || dim <= 0 {
-		return 0, false
-	}
-	return dim, true
-}
 
 func (e *Engine) memoryMessageVectorMappingExists(ctx context.Context, indexName, fieldName string) (bool, error) {
 	req := esapi.IndicesGetMappingRequest{
@@ -3186,7 +2693,7 @@ func (e *Engine) ensureMemoryMessageVectorMapping(ctx context.Context, indexName
 		return fmt.Errorf("memory vector size must be positive, got %d", vectorSize)
 	}
 
-	fieldName := memoryMessageVectorField(vectorSize)
+	fieldName := esoscommon.MemoryMessageVectorField(vectorSize)
 	exists, err := e.memoryMessageVectorMappingExists(ctx, indexName, fieldName)
 	if err != nil {
 		return err
@@ -3197,7 +2704,7 @@ func (e *Engine) ensureMemoryMessageVectorMapping(ctx context.Context, indexName
 
 	body := map[string]interface{}{
 		"properties": map[string]interface{}{
-			fieldName: memoryMessageVectorProperty(vectorSize),
+			fieldName: esoscommon.MemoryMessageVectorProperty(vectorSize, esoscommon.ESVectorField),
 		},
 	}
 	data, err := json.Marshal(body)
@@ -3231,7 +2738,7 @@ func (e *Engine) ensureMemoryMessageVectorMappingsForDocs(ctx context.Context, i
 	seen := map[int]struct{}{}
 	for _, chunk := range chunks {
 		for field := range chunk {
-			vectorSize, ok := parseMemoryMessageVectorSize(field)
+			vectorSize, ok := esoscommon.ParseMemoryMessageVectorSize(field)
 			if !ok {
 				continue
 			}
@@ -3248,7 +2755,7 @@ func (e *Engine) ensureMemoryMessageVectorMappingsForDocs(ctx context.Context, i
 }
 
 func (e *Engine) ensureMemoryMessageSearchVectorMappings(ctx context.Context, indexNames []string, vectorFieldName string, fallbackVectorSize int) error {
-	vectorSize, ok := parseMemoryMessageVectorSize(vectorFieldName)
+	vectorSize, ok := esoscommon.ParseMemoryMessageVectorSize(vectorFieldName)
 	if !ok {
 		vectorSize = fallbackVectorSize
 	}
@@ -3274,198 +2781,10 @@ func (e *Engine) ensureMemoryMessageSearchVectorMappings(ctx context.Context, in
 	return nil
 }
 
-func getMemoryMessageMapping(vectorSize int) map[string]interface{} {
-	vectorField := memoryMessageVectorField(vectorSize)
-	return map[string]interface{}{
-		"settings": map[string]interface{}{
-			"number_of_shards":   1,
-			"number_of_replicas": 0,
-		},
-		"mappings": map[string]interface{}{
-			"properties": map[string]interface{}{
-				"id": map[string]interface{}{
-					"type": "keyword",
-				},
-				"doc_id": map[string]interface{}{
-					"type": "keyword",
-				},
-				"kb_id": map[string]interface{}{
-					"type": "keyword",
-				},
-				"memory_id": map[string]interface{}{
-					"type": "keyword",
-				},
-				"user_id": map[string]interface{}{
-					"type": "keyword",
-				},
-				"agent_id": map[string]interface{}{
-					"type": "keyword",
-				},
-				"session_id": map[string]interface{}{
-					"type": "keyword",
-				},
-				"message_id": map[string]interface{}{
-					"type": "long",
-				},
-				"source_id": map[string]interface{}{
-					"type": "long",
-				},
-				"message_type_kwd": map[string]interface{}{
-					"type": "keyword",
-				},
-				"status_int": map[string]interface{}{
-					"type": "integer",
-				},
-				"content_ltks": map[string]interface{}{
-					"type":     "text",
-					"analyzer": "whitespace",
-				},
-				"tokenized_content_ltks": map[string]interface{}{
-					"type":     "text",
-					"analyzer": "whitespace",
-				},
-				"valid_at": map[string]interface{}{
-					"type":   "date",
-					"format": "yyyy-MM-dd HH:mm:ss||strict_date_optional_time||epoch_millis",
-				},
-				"invalid_at": map[string]interface{}{
-					"type":   "date",
-					"format": "yyyy-MM-dd HH:mm:ss||strict_date_optional_time||epoch_millis",
-				},
-				"forget_at": map[string]interface{}{
-					"type":   "date",
-					"format": "yyyy-MM-dd HH:mm:ss||strict_date_optional_time||epoch_millis",
-				},
-				vectorField: memoryMessageVectorProperty(vectorSize),
-			},
-		},
-	}
-}
-
 // getDefaultSkillMapping returns the default skill index mapping
-func getDefaultSkillMapping() map[string]interface{} {
-	return map[string]interface{}{
-		"settings": map[string]interface{}{
-			"index": map[string]interface{}{
-				"number_of_shards":   1,
-				"number_of_replicas": 0,
-				"refresh_interval":   "1000ms",
-			},
-		},
-		"mappings": map[string]interface{}{
-			"dynamic": false,
-			"properties": map[string]interface{}{
-				"skill_id": map[string]interface{}{
-					"type":  "keyword",
-					"store": true,
-				},
-				"name": map[string]interface{}{
-					"type":  "text",
-					"index": false,
-					"store": true,
-				},
-				"name_tks": map[string]interface{}{
-					"type":     "text",
-					"analyzer": "whitespace",
-					"store":    true,
-				},
-				"tags": map[string]interface{}{
-					"type":  "text",
-					"index": false,
-					"store": true,
-				},
-				"tags_tks": map[string]interface{}{
-					"type":     "text",
-					"analyzer": "whitespace",
-					"store":    true,
-				},
-				"description": map[string]interface{}{
-					"type":  "text",
-					"index": false,
-					"store": true,
-				},
-				"description_tks": map[string]interface{}{
-					"type":     "text",
-					"analyzer": "whitespace",
-					"store":    true,
-				},
-				"content": map[string]interface{}{
-					"type":  "text",
-					"index": false,
-					"store": true,
-				},
-				"content_tks": map[string]interface{}{
-					"type":     "text",
-					"analyzer": "whitespace",
-					"store":    true,
-				},
-				"q_3072_vec": map[string]interface{}{
-					"type":       "dense_vector",
-					"dims":       3072,
-					"index":      true,
-					"similarity": "cosine",
-				},
-				"q_2560_vec": map[string]interface{}{
-					"type":       "dense_vector",
-					"dims":       2560,
-					"index":      true,
-					"similarity": "cosine",
-				},
-				"q_1536_vec": map[string]interface{}{
-					"type":       "dense_vector",
-					"dims":       1536,
-					"index":      true,
-					"similarity": "cosine",
-				},
-				"q_1024_vec": map[string]interface{}{
-					"type":       "dense_vector",
-					"dims":       1024,
-					"index":      true,
-					"similarity": "cosine",
-				},
-				"q_768_vec": map[string]interface{}{
-					"type":       "dense_vector",
-					"dims":       768,
-					"index":      true,
-					"similarity": "cosine",
-				},
-				"q_512_vec": map[string]interface{}{
-					"type":       "dense_vector",
-					"dims":       512,
-					"index":      true,
-					"similarity": "cosine",
-				},
-				"q_256_vec": map[string]interface{}{
-					"type":       "dense_vector",
-					"dims":       256,
-					"index":      true,
-					"similarity": "cosine",
-				},
-				"version": map[string]interface{}{
-					"type":  "keyword",
-					"store": true,
-				},
-				"status": map[string]interface{}{
-					"type":  "keyword",
-					"store": true,
-				},
-				"create_time": map[string]interface{}{
-					"type":  "long",
-					"store": true,
-				},
-				"update_time": map[string]interface{}{
-					"type":  "long",
-					"store": true,
-				},
-			},
-		},
-	}
-}
 
 // convertESResponse converts ES SearchResponse to unified chunks format
-// queryStringOperators holds the tokens Lucene's query_string parser only
 // recognises as operators in upper case.
-var queryStringOperators = map[string]bool{"AND": true, "OR": true, "NOT": true}
 
 // lowerCaseQueryText folds the terms of a query_string expression but keeps its
 // upper-case boolean operators. The *_tks/*_ltks fields are whitespace-analyzed
@@ -3477,51 +2796,6 @@ var queryStringOperators = map[string]bool{"AND": true, "OR": true, "NOT": true}
 // That folded "or" is an extra clause every minimum_should_match percentage is
 // re-based on — a 94-hit search came back with 32. Quoted text is a phrase, never
 // an operator, so it is folded too.
-func lowerCaseQueryText(text string) string {
-	var b strings.Builder
-	b.Grow(len(text))
-	inQuote := false
-	escaped := false
-	for i := 0; i < len(text); {
-		c := text[i]
-		if escaped {
-			b.WriteByte(c)
-			escaped = false
-			i++
-			continue
-		}
-		switch {
-		case c == '\\':
-			b.WriteByte(c)
-			escaped = true
-			i++
-		case c == '"':
-			inQuote = !inQuote
-			b.WriteByte(c)
-			i++
-		case isASCIILetter(c):
-			j := i
-			for j < len(text) && isASCIILetter(text[j]) {
-				j++
-			}
-			word := text[i:j]
-			if !inQuote && queryStringOperators[word] {
-				b.WriteString(word)
-			} else {
-				b.WriteString(strings.ToLower(word))
-			}
-			i = j
-		default:
-			b.WriteByte(c)
-			i++
-		}
-	}
-	return b.String()
-}
-
-func isASCIILetter(c byte) bool {
-	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-}
 
 // queryVectorField matches the serialized query vector: 1024 floats that say
 // nothing about why a search came back short, so they never reach the log.
@@ -3555,132 +2829,11 @@ func convertESResponse(esResp *SearchResponse, vectorFieldName string) []map[str
 }
 
 // parseOrderByExpr parses the OrderBy expression into ES sort format
-func parseOrderByExpr(orderBy *types.OrderByExpr) []map[string]interface{} {
-	if orderBy == nil || len(orderBy.Fields) == 0 {
-		return nil
-	}
-
-	var result []map[string]interface{}
-	for _, field := range orderBy.Fields {
-		direction := "asc"
-		if field.Type == types.SortDesc {
-			direction = "desc"
-		}
-
-		// Skip id field (cannot order by text field). The logical "id" column is
-		// shimmed from the ES _id in the response path, but ordering on _id
-		// requires indices.id_field_data, which is disabled by default on the
-		// bundled Elasticsearch 8.x deployment and would make every id-ordered
-		// query fail at runtime. Callers that need deep pagination must supply a
-		// real stored, sortable field instead of relying on the logical id.
-		if field.Field == "id" {
-			continue
-		}
-
-		// Special handling for page_num_int and top_int
-		if field.Field == "page_num_int" || field.Field == "top_int" {
-			result = append(result, map[string]interface{}{
-				field.Field: map[string]interface{}{
-					"order":         direction,
-					"unmapped_type": "float",
-					"mode":          "avg",
-					"numeric_type":  "double",
-				},
-			})
-		} else if strings.HasSuffix(field.Field, "_int") || strings.HasSuffix(field.Field, "_flt") {
-			// Fields ending with _int or _flt
-			result = append(result, map[string]interface{}{
-				field.Field: map[string]interface{}{
-					"order":         direction,
-					"unmapped_type": "float",
-				},
-			})
-		} else if field.Field == "_score" || field.Field == "score" {
-			result = append(result, map[string]interface{}{
-				"_score": direction,
-			})
-		} else {
-			// Default: unmapped_type = keyword
-			result = append(result, map[string]interface{}{
-				field.Field: map[string]interface{}{
-					"order":         direction,
-					"unmapped_type": "keyword",
-				},
-			})
-		}
-	}
-
-	return result
-}
 
 // calculateScores calculates _score for chunks
-func calculateScores(chunks []map[string]interface{}, scoreColumn, pagerankField string) []map[string]interface{} {
-	for i := range chunks {
-		score := 0.0
-		if scoreVal, ok := chunks[i][scoreColumn]; ok {
-			if f, ok := toFloat64(scoreVal); ok {
-				score += f
-			}
-		}
-		if pagerankField != "" {
-			if prVal, ok := chunks[i][pagerankField]; ok {
-				if f, ok := toFloat64(prVal); ok {
-					score += f
-				}
-			}
-		}
-		chunks[i]["_score"] = score
-	}
-	return chunks
-}
 
 // toFloat64 converts a value to float64
-func toFloat64(v interface{}) (float64, bool) {
-	switch val := v.(type) {
-	case float64:
-		return val, true
-	case float32:
-		return float64(val), true
-	case int:
-		return float64(val), true
-	case int64:
-		return float64(val), true
-	}
-	return 0, false
-}
 
 // sortByScore sorts chunks by _score descending and limits
-func sortByScore(chunks []map[string]interface{}, limit int) []map[string]interface{} {
-	if len(chunks) == 0 {
-		return chunks
-	}
-
-	// Stable: the reference does not re-sort at all, so ties keep the order ES
-	// returned them in.
-	sort.SliceStable(chunks, func(i, j int) bool {
-		scoreI := getChunkScore(chunks[i])
-		scoreJ := getChunkScore(chunks[j])
-		return scoreI > scoreJ
-	})
-
-	// Limit
-	if len(chunks) > limit && limit > 0 {
-		chunks = chunks[:limit]
-	}
-
-	return chunks
-}
 
 // getChunkScore extracts the score from a chunk
-func getChunkScore(chunk map[string]interface{}) float64 {
-	if v, ok := chunk["_score"].(float64); ok {
-		return v
-	}
-	if v, ok := chunk["SCORE"].(float64); ok {
-		return v
-	}
-	if v, ok := chunk["SIMILARITY"].(float64); ok {
-		return v
-	}
-	return 0.0
-}
