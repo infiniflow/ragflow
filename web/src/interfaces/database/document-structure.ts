@@ -21,6 +21,21 @@ export interface IStructureGraphEntity {
   claim_count?: number;
   /** page_index fact/conclusion only: gate-verified verbatim quotes. */
   evidence?: IClaimEvidence[];
+  /**
+   * Row identity: `scope` and `doc_id` say which row this instance IS
+   * (dataset-level folded row vs document-level row), which is what the review
+   * queue addresses. The ABox panel keys rows by them.
+   */
+  scope?: string;
+  doc_id?: string;
+  /** Every document the assertions behind this row were read from. */
+  document_ids?: string[];
+  /** The model version that extracted it; absent for an unversioned row. */
+  version?: number;
+  review_status?: string;
+  review_by?: string;
+  review_note?: string;
+  review_at?: number;
 }
 
 export interface IClaimEvidence {
@@ -48,7 +63,24 @@ export interface IClaimsResponse {
 export interface IStructureGraphRelation {
   from: string;
   to: string;
+  /** The property name (the ontology's object property). */
   type?: string;
+  id?: string;
+  /** The row's own statement, when the compiler wrote one. */
+  description?: string;
+  /** `entity_type_kwd` of each endpoint: the edge's declared domain → range. */
+  source_type?: string;
+  target_type?: string;
+  source_chunk_ids?: string[];
+  document_ids?: string[];
+  doc_id?: string;
+  scope?: string;
+  version?: number;
+  review_status?: string;
+  review_by?: string;
+  review_note?: string;
+  /** Gate-verified quotes naming both endpoints. */
+  evidence?: IClaimEvidence[];
 }
 
 /**

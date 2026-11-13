@@ -29,10 +29,6 @@ import {
   type EvidencePanelState,
   NodeDetailPanel,
 } from '@/pages/chunk/representation/components/claim-list';
-import {
-  OntologyDetailPanel,
-  type OntologyDetailPanelState,
-} from '@/components/structure-graph/ontology-model-graph/detail-panel';
 import { useGetDocumentUrl } from '@/components/document-preview/hooks';
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
@@ -64,14 +60,9 @@ function Chunk() {
   const [evidencePanel, setEvidencePanel] = useState<EvidencePanelState | null>(
     null,
   );
-  // The ontology graph publishes its selected class the same way: the panel is a
-  // real column of this page, so the column divider obeys it instead of cutting
-  // through it.
-  const [ontologyPanel, setOntologyPanel] =
-    useState<OntologyDetailPanelState | null>(null);
   // The ontology view does not read the raw chunk list, so while it is on screen
   // that column is not rendered at all: it would only take width away from the
-  // graph and the panel the data arrives in.
+  // ABox panel that carries the data.
   const [ontologyView, setOntologyView] = useState(false);
   const { removeChunk } = useDeleteChunkByIds();
   const {
@@ -215,9 +206,7 @@ function Chunk() {
 
   // Two columns until the artifact tree opens a claims / evidence / ontology
   // panel: the middle column only exists while there is something to show in it.
-  const showArtifactDetail = Boolean(
-    claimsPanel || evidencePanel || ontologyPanel,
-  );
+  const showArtifactDetail = Boolean(claimsPanel || evidencePanel);
 
   const fileType = useMemo(() => {
     const name = documentInfo?.name || '';
@@ -291,7 +280,6 @@ function Chunk() {
                   onChunkIdsChange={handleChunkIdsChange}
                   onClaimsPanelChange={handleClaimsPanelChange}
                   onEvidencePanelChange={handleEvidencePanelChange}
-                  onOntologyPanelChange={setOntologyPanel}
                   onOntologyViewChange={setOntologyView}
                 />
               </article>
@@ -326,13 +314,6 @@ function Chunk() {
                   {evidencePanel && (
                     <div className="flex-1 min-h-0">
                       <NodeDetailPanel {...evidencePanel} />
-                    </div>
-                  )}
-                  {ontologyPanel && (
-                    // `relative` keeps the panel in the positioned layer, so
-                    // nothing from the canvas column can paint over it.
-                    <div className="relative flex-1 min-h-0">
-                      <OntologyDetailPanel {...ontologyPanel} />
                     </div>
                   )}
                 </article>

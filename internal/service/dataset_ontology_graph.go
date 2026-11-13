@@ -52,12 +52,19 @@ func loadTemplateConfig(ctx context.Context, templateDAO *dao.CompilationTemplat
 // engines expose no group-by: SearchRequest carries filters, match expressions
 // and ordering, and SearchResult exposes only the rows plus a total.
 
-// ontologyCountPageSize is the page size used while scanning rows for counts.
-const ontologyCountPageSize = 2000
-
 // ontologyCountScanCap bounds how many rows one ontology count scan reads. A
 // scope with more rows than this reports CountsTruncated instead of scanning
 // unbounded.
+//
+// The scan reads its rows in ONE ordered request instead of walking offset
+// pages. An unordered page above the engine's result window (ES:
+// common.MAX_RESULT_WINDOW, 10 000 rows) is rejected outright — from+size is
+// refused, not truncated — which turned a large scope into a failed request
+// rather than a lower-bound count. Below the window the order is by score,
+// which for a filter-only query is arbitrary, so a row written between two
+// pages is counted twice or missed. Asc("id") is the stable cursor the engines
+// need to walk past the window with search_after (the same idiom buildBucket
+// uses for the whole bucket).
 const ontologyCountScanCap = 20000
 
 // OntologyClassNode is one class of the model graph.
@@ -1149,44 +1156,48 @@ func countOntologyClasses(
 ) (counts map[string]int, attrs attributeCounts, untyped int, truncated bool, err error) {
 	counts = map[string]int{}
 	attrs = attributeCounts{}
-	scanned := 0
-	for offset := 0; ; offset += ontologyCountPageSize {
-		page, _, searchErr := graphRowSearch(ctx, tenantID, datasetID,
-			[]string{"id", "entity_type_kwd", "attr"}, filter, nil, offset, ontologyCountPageSize, nil)
-		if searchErr != nil {
-			return nil, nil, 0, false, searchErr
+
+	_, total, err := graphRowSearch(ctx, tenantID, datasetID, []string{"id"}, filter, nil, 0, 1, nil)
+	if err != nil {
+		return nil, nil, 0, false, err
+	}
+	if total == 0 {
+		return counts, attrs, 0, false, nil
+	}
+	fetch := int(total)
+	if fetch > ontologyCountScanCap {
+		// The cap bounds what one count may cost, not what the scope holds: the
+		// rows past it are reported as CountsTruncated, so the numbers stay
+		// lower bounds instead of a failed request.
+		fetch, truncated = ontologyCountScanCap, true
+	}
+	rows, _, err := graphRowSearch(ctx, tenantID, datasetID,
+		[]string{"id", "entity_type_kwd", "attr"}, filter,
+		(&types.OrderByExpr{}).Asc("id"), 0, fetch, nil)
+	if err != nil {
+		return nil, nil, 0, false, err
+	}
+	for _, row := range rows {
+		typ := strings.TrimSpace(firstStringValue(row["entity_type_kwd"]))
+		if typ == "" {
+			// Counted rather than skipped: an entity with no class cannot be
+			// placed on the class-level graph, and the quality ledger is where
+			// that has to be visible (ontology.md §2.7 (4)).
+			untyped++
+			continue
 		}
-		if len(page) == 0 {
-			return counts, attrs, untyped, false, nil
-		}
-		for _, row := range page {
-			scanned++
-			typ := strings.TrimSpace(firstStringValue(row["entity_type_kwd"]))
-			if typ == "" {
-				// Counted rather than skipped: an entity with no class cannot be
-				// placed on the class-level graph, and the quality ledger is where
-				// that has to be visible (ontology.md §2.7 (4)).
-				untyped++
+		counts[typ]++
+		for name, value := range attrValues(row) {
+			if value == nil {
 				continue
 			}
-			counts[typ]++
-			for name, value := range attrValues(row) {
-				if value == nil {
-					continue
-				}
-				if attrs[typ] == nil {
-					attrs[typ] = map[string]int{}
-				}
-				attrs[typ][name]++
+			if attrs[typ] == nil {
+				attrs[typ] = map[string]int{}
 			}
-		}
-		if scanned >= ontologyCountScanCap {
-			return counts, attrs, untyped, true, nil
-		}
-		if len(page) < ontologyCountPageSize {
-			return counts, attrs, untyped, false, nil
+			attrs[typ][name]++
 		}
 	}
+	return counts, attrs, untyped, truncated, nil
 }
 
 // attrValues reads one row's `attr` json column. The engines hand a json column
@@ -1225,34 +1236,35 @@ func countOntologyEdges(
 	ctx context.Context, tenantID, datasetID string, filter map[string]interface{},
 ) (counts map[string]int, truncated bool, unattributed int, err error) {
 	counts = map[string]int{}
-	scanned := 0
-	for offset := 0; ; offset += ontologyCountPageSize {
-		page, _, searchErr := graphRowSearch(ctx, tenantID, datasetID,
-			[]string{"id", "prop_kwd", "from_type_kwd", "to_type_kwd"}, filter, nil, offset, ontologyCountPageSize, nil)
-		if searchErr != nil {
-			return nil, false, 0, searchErr
-		}
-		if len(page) == 0 {
-			return counts, false, unattributed, nil
-		}
-		for _, row := range page {
-			scanned++
-			prop := strings.TrimSpace(firstStringValue(row["prop_kwd"]))
-			source := strings.TrimSpace(firstStringValue(row["from_type_kwd"]))
-			target := strings.TrimSpace(firstStringValue(row["to_type_kwd"]))
-			if prop == "" || source == "" || target == "" {
-				unattributed++
-				continue
-			}
-			counts[ontologyEdgeKey(prop, source, target)]++
-		}
-		if scanned >= ontologyCountScanCap {
-			return counts, true, unattributed, nil
-		}
-		if len(page) < ontologyCountPageSize {
-			return counts, false, unattributed, nil
-		}
+
+	_, total, err := graphRowSearch(ctx, tenantID, datasetID, []string{"id"}, filter, nil, 0, 1, nil)
+	if err != nil {
+		return nil, false, 0, err
 	}
+	if total == 0 {
+		return counts, false, 0, nil
+	}
+	fetch := int(total)
+	if fetch > ontologyCountScanCap {
+		fetch, truncated = ontologyCountScanCap, true
+	}
+	rows, _, err := graphRowSearch(ctx, tenantID, datasetID,
+		[]string{"id", "prop_kwd", "from_type_kwd", "to_type_kwd"}, filter,
+		(&types.OrderByExpr{}).Asc("id"), 0, fetch, nil)
+	if err != nil {
+		return nil, false, 0, err
+	}
+	for _, row := range rows {
+		prop := strings.TrimSpace(firstStringValue(row["prop_kwd"]))
+		source := strings.TrimSpace(firstStringValue(row["from_type_kwd"]))
+		target := strings.TrimSpace(firstStringValue(row["to_type_kwd"]))
+		if prop == "" || source == "" || target == "" {
+			unattributed++
+			continue
+		}
+		counts[ontologyEdgeKey(prop, source, target)]++
+	}
+	return counts, truncated, unattributed, nil
 }
 
 // mergeOntologyClasses returns the declared classes in declaration order

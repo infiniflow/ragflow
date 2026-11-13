@@ -50,42 +50,28 @@ export const deleteDocumentStructureGraph = (
   });
 
 /**
- * One page of a class's instances — the drill-down behind a class node of the
- * ontology model graph. `template_id` / `document_id` narrow the scope; leaving
- * both out asks the whole dataset.
+ * One page of a scope's compiled rows — the ABox browser's single read.
+ *
+ * `kind` decides whether the page answers instances (`entity`) or assertions
+ * (`relation`); `class` / `property` narrow it and are OMITTED for "everything"
+ * (an empty term list means opposite things on the two engines, so the absent
+ * key is the only spelling that means "all").
  */
-export const getOntologyClassEntities = (
+export const getOntologyArtifacts = (
   datasetId: string,
-  classType: string,
   params: {
-    template_id?: string;
-    document_id?: string;
-    offset?: number;
-    limit?: number;
-  } = {},
-) =>
-  request.get(api.ontologyClassEntities(datasetId, classType), {
-    params,
-  });
-
-/**
- * One page of a property edge's assertions. `source_type` / `target_type` pin one
- * domain -> range combination of a polymorphic property, which is the edge the
- * graph drew.
- */
-export const getOntologyPropertyRelations = (
-  datasetId: string,
-  property: string,
-  params: {
+    kind: 'entity' | 'relation';
+    class?: string;
+    property?: string;
     source_type?: string;
     target_type?: string;
     template_id?: string;
     document_id?: string;
     offset?: number;
     limit?: number;
-  } = {},
+  },
 ) =>
-  request.get(api.ontologyPropertyRelations(datasetId, property), {
+  request.get(api.ontologyArtifacts(datasetId), {
     params,
   });
 
@@ -93,8 +79,7 @@ const documentStructureService = {
   getDocumentStructureGraph,
   getDocumentStructureClaims,
   deleteDocumentStructureGraph,
-  getOntologyClassEntities,
-  getOntologyPropertyRelations,
+  getOntologyArtifacts,
 };
 
 export default documentStructureService;

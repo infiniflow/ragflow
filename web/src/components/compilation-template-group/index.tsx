@@ -49,8 +49,6 @@ const SelectedTemplateIndex = 0;
 export type CompilationTemplateGroupEditorState = {
   isOntology: boolean;
   templateId?: string;
-  ontologyEntities: string[];
-  ontologyProperties: string[];
   /**
    * Canvas history. The header owns the buttons because it is where the design
    * puts them, but the stack belongs to the form, so the editor hands both the
@@ -119,23 +117,6 @@ export function CompilationTemplateGroupEditor({
         ? validateDraft(draftFromSections(entitySection, relationSection))
         : [],
     [entitySection, relationSection, isOntology],
-  );
-
-  // What the model declares, which is what the compiled-output panel can be
-  // asked about: an instance list is per entity, an assertion list per property.
-  const ontologyEntities = useMemo(
-    () =>
-      (entitySection?.fields ?? [])
-        .map((field) => String(field.type ?? ''))
-        .filter(Boolean),
-    [entitySection],
-  );
-  const ontologyProperties = useMemo(
-    () =>
-      (relationSection?.fields ?? [])
-        .map((field) => String(field.type ?? ''))
-        .filter(Boolean),
-    [relationSection],
   );
 
   /**
@@ -239,8 +220,6 @@ export function CompilationTemplateGroupEditor({
       {renderHeader?.({
         isOntology,
         templateId,
-        ontologyEntities,
-        ontologyProperties,
         canUndo: isOntology && historyCursor > 0,
         canRedo:
           isOntology &&

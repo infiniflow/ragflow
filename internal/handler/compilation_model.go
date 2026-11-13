@@ -322,65 +322,6 @@ func (h *CompilationModelHandler) Impact(c *gin.Context) {
 	common.RespondSuccess(c, impact, "success")
 }
 
-// Instances returns what a model produced: the instances of one declared class,
-// the assertions of one declared property, or — with neither named — everything
-// of the requested kind, merged over the datasets that compile with the model.
-//
-// It is the model-scope counterpart of the dataset-scope ontology drill-downs
-// (/datasets/<id>/ontology/...). Those answer "what is in this library"; this
-// answers "what did this model extract", which is the question an author has
-// while editing it — and the one that needs the fan-out, because a model is one
-// template over many datasets while every compiled row is stored per dataset.
-//
-//	@Summary Inspect what a model produced
-//	@Tags compilation model
-//	@Security ApiKeyAuth
-//	@Param template_id path string true "model (template) id"
-//	@Param kind query string false "entity (instances) | relation (assertions); default entity, or relation when only property is named"
-//	@Param class query string false "declared class name; omit it for every class"
-//	@Param property query string false "declared property name; omit it for every property"
-//	@Param source_type query string false "property domain class, to pin one polymorphic edge"
-//	@Param target_type query string false "property range class"
-//	@Param scope query string false "doc | dataset | corpus (default dataset)"
-//	@Param dataset_ids query string false "comma-separated datasets to read; default every dataset of the model, capped"
-//	@Param document_id query string false "document id; doc scope only"
-//	@Param limit query int false "merged page size (default 50, max 200)"
-//	@Success 200 {object} map[string]interface{}
-//	@Router /v1/compilation-models/{template_id}/instances [get]
-func (h *CompilationModelHandler) Instances(c *gin.Context) {
-	_, tenantID, ok := h.resolveReader(c)
-	if !ok {
-		return
-	}
-	limit := 0
-	if raw := c.Query("limit"); raw != "" {
-		parsed, err := strconv.Atoi(raw)
-		if err != nil {
-			common.RespondError(c, common.CodeExceptionError, "limit must be an integer")
-			return
-		}
-		limit = parsed
-	}
-	result, err := h.governance.InspectInstances(c.Request.Context(), dao.DB, service.ModelInspectInput{
-		TenantID:   tenantID,
-		TemplateID: c.Param("template_id"),
-		Kind:       c.Query("kind"),
-		Class:      c.Query("class"),
-		Property:   c.Query("property"),
-		SourceType: c.Query("source_type"),
-		TargetType: c.Query("target_type"),
-		Scope:      service.ModelInspectScope(c.Query("scope")),
-		DatasetIDs: splitCSV(c.Query("dataset_ids")),
-		DocumentID: c.Query("document_id"),
-		Limit:      limit,
-	})
-	if err != nil {
-		common.RespondError(c, common.CodeExceptionError, err.Error())
-		return
-	}
-	common.RespondSuccess(c, result, "success")
-}
-
 // AssertionReviewQueue lists the assertions of a model by review state.
 //
 //	@Summary List assertions awaiting a review decision

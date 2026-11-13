@@ -779,27 +779,6 @@ func entityResponseID(entity StructureGraphNode) string {
 	return ""
 }
 
-func endpointTerms(value string) []string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return nil
-	}
-	return sortedUnique([]string{value, strings.ToLower(value)})
-}
-
-func sortedUnique(in []string) []string {
-	seen := map[string]bool{}
-	var out []string
-	for _, s := range in {
-		if s != "" && !seen[s] {
-			seen[s] = true
-			out = append(out, s)
-		}
-	}
-	sort.Strings(out)
-	return out
-}
-
 // normalizeRelationEndpoints aligns relation endpoints to returned entity ids.
 // Matching ignores case and internal whitespace, so an endpoint that differs
 // from the entity name only by the space character (e.g. U+0020 vs U+3000) is

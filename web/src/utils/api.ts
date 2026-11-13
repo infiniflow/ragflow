@@ -265,13 +265,11 @@ const apiEndpoints = {
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/structure/graph`,
   documentStructureClaims: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/structure/claims`,
-  // Ontology model graph drill-down: the graph itself is a class-level skeleton
-  // (classes / object properties / inheritance) plus counts, and these two
-  // pages turn one of its nodes or edges into rows.
-  ontologyClassEntities: (datasetId: string, classType: string) =>
-    `${restAPIv1}/datasets/${datasetId}/ontology/classes/${encodeURIComponent(classType)}/entities`,
-  ontologyPropertyRelations: (datasetId: string, property: string) =>
-    `${restAPIv1}/datasets/${datasetId}/ontology/properties/${encodeURIComponent(property)}/relations`,
+  // Ontology ABox browser: one page of the rows a compile produced in a scope.
+  // `kind` / `class` / `property` travel as query parameters so "everything" is
+  // the absent key rather than an empty path segment.
+  ontologyArtifacts: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/ontology/artifacts`,
   retrievalTest: `${restAPIv1}/datasets/search`,
 
   // document
@@ -456,8 +454,6 @@ const apiEndpoints = {
     `${restAPIv1}/compilation-models/${id}/datasets`,
   compilationModelTrial: (id: string) =>
     `${restAPIv1}/compilation-models/${id}/trial`,
-  compilationModelInstances: (id: string) =>
-    `${restAPIv1}/compilation-models/${id}/instances`,
   // The assertion queue and the verdicts on it share a path: a review is a
   // write to the rows the read just listed, not a separate resource.
   assertionReview: (id: string) =>

@@ -21,7 +21,6 @@ import {
   CompilationTemplateGroupEditorState,
 } from '@/components/compilation-template-group';
 import { OntologyActionWorkbenchSheet } from '@/components/compilation-template-group/ontology/action-workbench-sheet';
-import { OntologyInspectSheet } from '@/components/compilation-template-group/ontology/inspect-sheet';
 import { Button } from '@/components/ui/button';
 import { useFetchCompilationTemplateGroup } from '@/hooks/use-compilation-template-group-request';
 import { Routes } from '@/routes';
@@ -57,8 +56,6 @@ export default function EditNextCompilationTemplate() {
     ({
       isOntology,
       templateId,
-      ontologyEntities,
-      ontologyProperties,
       canUndo,
       canRedo,
       onUndo,
@@ -139,13 +136,6 @@ export default function EditNextCompilationTemplate() {
                 })}
               </Button>
             </div>
-          )}
-          {isOntology && (
-            <OntologyInspectSheet
-              templateId={templateId}
-              entities={ontologyEntities}
-              properties={ontologyProperties}
-            />
           )}
           {/* What the model says it may do, next to what it says: an action the
               model declares but nobody has wired to a tool cannot run, and that

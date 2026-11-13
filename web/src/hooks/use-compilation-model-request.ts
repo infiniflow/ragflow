@@ -19,8 +19,6 @@ import {
   IAssertionReviewResult,
   ICompilationModel,
   ICompilationModelImpact,
-  ICompilationModelInspect,
-  ICompilationModelInspectParams,
   ICompilationModelPublishCheck,
   ICompilationModelTrial,
   ICompilationModelVersion,
@@ -34,7 +32,6 @@ import i18n from '@/locales/config';
 import {
   checkCompilationModel,
   diffCompilationModelVersions,
-  inspectCompilationModelInstances,
   listAssertionReview,
   listCompilationModelDatasets,
   listCompilationModelVersions,
@@ -60,7 +57,6 @@ export const enum CompilationModelApiAction {
   Retire = 'retireCompilationModel',
   FetchImpact = 'fetchCompilationModelImpact',
   Trial = 'trialCompilationModel',
-  Inspect = 'inspectCompilationModelInstances',
   ReviewAssertions = 'reviewAssertions',
 }
 
@@ -74,8 +70,6 @@ export const CompilationModelKeys = {
     [CompilationModelApiAction.FetchVersionDiff, { id, from, to }] as const,
   datasets: (id?: string) =>
     [CompilationModelApiAction.FetchImpact, id] as const,
-  inspect: (id?: string, params?: ICompilationModelInspectParams) =>
-    [CompilationModelApiAction.Inspect, id, params] as const,
   assertionReview: (id?: string, params?: IAssertionReviewRequestParams) =>
     [CompilationModelApiAction.ReviewAssertions, id, params] as const,
   /**
@@ -217,43 +211,6 @@ export const useFetchCompilationModelImpact = (id?: string) => {
   });
 
   return { impact: data, loading };
-};
-
-/**
- * Reads what the model extracted: one class's instances, or one property's
- * assertions, over the datasets that compile with it.
- *
- * An unfiltered read is the opening state, not an empty one: with nothing
- * selected the answer is every row of the requested kind, which is what "what
- * did this model produce at all" means. So the only thing that can hold the
- * query back is the missing model.
- *
- * It is a corpus question, not a dataset one — a model is one template over many
- * datasets — so the query fans out server-side and every row comes back labelled
- * with the dataset it came from.
- */
-export const useFetchCompilationModelInstances = (
-  id?: string,
-  params?: ICompilationModelInspectParams,
-) => {
-  const {
-    data,
-    isFetching: loading,
-    error,
-  } = useQuery<ICompilationModelInspect>({
-    queryKey: CompilationModelKeys.inspect(id, params),
-    enabled: !!id,
-    gcTime: 0,
-    queryFn: async () => {
-      const { data } = await inspectCompilationModelInstances(
-        id!,
-        params ?? {},
-      );
-      return data?.data as ICompilationModelInspect;
-    },
-  });
-
-  return { inspect: data, loading, error };
 };
 
 /**

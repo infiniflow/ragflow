@@ -408,11 +408,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id/documents/:document_id/structure/graph", r.datasetArtifactHandler.GetDocumentGraph)
 				datasets.GET("/:dataset_id/documents/:document_id/structure/claims", r.datasetArtifactHandler.GetDocumentClaims)
 				datasets.DELETE("/:dataset_id/documents/:document_id/structure/graph", r.datasetArtifactHandler.DeleteDocumentGraph)
-				// Ontology model graph drill-down: the graph is a skeleton
-				// (classes / object properties / inheritance) and these two
-				// pages turn one of its nodes or edges into rows.
-				datasets.GET("/:dataset_id/ontology/classes/:class/entities", r.datasetArtifactHandler.GetOntologyClassEntities)
-				datasets.GET("/:dataset_id/ontology/properties/:property/relations", r.datasetArtifactHandler.GetOntologyPropertyRelations)
+				// Ontology ABox browser: one page of compiled instances
+				// (kind=entity) or assertions (kind=relation). The class /
+				// property narrowing travels as a query parameter so the
+				// unnamed case ("everything") needs no path sentinel.
+				datasets.GET("/:dataset_id/ontology/artifacts", r.datasetArtifactHandler.GetOntologyArtifacts)
 				datasets.POST("/:dataset_id/metadata/update", r.documentHandler.MetadataBatchUpdate)
 				datasets.PATCH("/:dataset_id/documents/metadatas", r.documentHandler.UpdateDocumentMetadatas)
 			}
@@ -646,11 +646,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 			v1.GET("/compilation-models/:template_id/versions", r.compilationModelHandler.ListVersions)
 			v1.GET("/compilation-models/:template_id/versions/diff", r.compilationModelHandler.VersionDiff)
 			v1.GET("/compilation-models/:template_id/datasets", r.compilationModelHandler.Impact)
-			v1.GET("/compilation-models/:template_id/instances", r.compilationModelHandler.Instances)
 			v1.POST("/compilation-models/:template_id/trial", r.compilationModelHandler.Trial)
-			// Assertion review: the actions behind the read-only Inspect panel.
-			// Same scope as Inspect (one model, many datasets), because the
-			// question is "what has this model produced that nobody checked".
+			// Assertion review: the only cross-dataset read of a model's rows.
+			// The rows themselves are browsed per dataset (the ABox panel), but
+			// "what has this model produced that nobody checked" is a model-level
+			// question, so the queue still fans out.
 			v1.GET("/compilation-models/:template_id/assertions/review", r.compilationModelHandler.AssertionReviewQueue)
 			v1.POST("/compilation-models/:template_id/assertions/review", r.compilationModelHandler.DecideAssertions)
 

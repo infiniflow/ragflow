@@ -19,7 +19,6 @@ import type {
 } from './components/claim-list';
 import { RepresentationSelect } from './components/representation-select';
 import { useGraphEntitySearch } from './hooks/use-graph-entity-search';
-import type { OntologyDetailPanelState } from '@/components/structure-graph/ontology-model-graph/detail-panel';
 import { OntologyStats } from '@/components/structure-graph/ontology-model-graph/ontology-stats';
 import { OntologyQualityPanel } from '@/components/structure-graph/ontology-model-graph/quality-panel';
 import type { OntologyFixAction } from '@/components/structure-graph/ontology-model-graph/quality-panel';
@@ -35,19 +34,11 @@ export type {
 interface RepresentationProps {
   onNodeClick?: (node: ClickableNode) => void;
   /**
-   * The ontology model graph publishes the class it has selected; the page owns
-   * the column that shows it. Kept a separate prop from the claims / evidence
-   * panels because it comes from a different representation and has its own
-   * shape.
-   */
-  onOntologyPanelChange?: (state: OntologyDetailPanelState | null) => void;
-  /**
    * Tells the page whether the ontology representation is the one on screen.
    *
-   * The ontology view is the only one that does not read the raw chunk list —
-   * its data arrives in the detail panel — so the page can give its width back
-   * to the graph while it is showing. Only this component knows, because the
-   * template selection lives here.
+   * The ontology ABox reads compiled rows rather than the raw chunk list, so the
+   * page can give its width back to the panel while it is showing. Only this
+   * component knows, because the template selection lives here.
    */
   onOntologyViewChange?: (active: boolean) => void;
   // The claims / evidence panels belong to the artifact page's middle column,
@@ -62,15 +53,12 @@ function Representation({
   onNodeClick,
   onClaimsPanelChange,
   onEvidencePanelChange,
-  onOntologyPanelChange,
   onOntologyViewChange,
 }: RepresentationProps) {
   const { t } = useTranslation();
-  // Both halves of the scope: the graph on this page is one DOCUMENT's, so the
-  // ontology panel's drill-down has to be narrowed the same way. Without the
-  // document id the panel's count and its list would be counting different
-  // scopes — the panel would say "5 instances" and list rows from other
-  // documents.
+  // Both halves of the scope: the page shows ONE document, so the ABox has to be
+  // narrowed the same way. Without the document id the panel would list rows
+  // from other documents under this document's heading.
   const { knowledgeId: datasetId, documentId } = useGetKnowledgeSearchParams();
 
   const [claimsLeaf, setClaimsLeaf] = useState<ClickableNode | null>(null);
@@ -350,12 +338,11 @@ function Representation({
           highlightNodeId={highlightNodeId}
           totalEntities={data?.total_entities}
           returnedEntities={data?.returned_entities}
-          // The document-level artifact column is where the ontology graph is
-          // read, so the drill-down scope comes from the route.
+          // The document-level artifact column is where the ontology ABox is
+          // read, so its scope comes from the route.
           datasetId={datasetId}
           documentId={documentId}
           templateId={selectedTemplateId}
-          onOntologyDetailChange={onOntologyPanelChange}
         />
       )}
     </section>

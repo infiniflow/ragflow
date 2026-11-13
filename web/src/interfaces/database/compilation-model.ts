@@ -163,95 +163,6 @@ export interface IOntologyEvidence {
   end?: number;
 }
 
-export interface ICompilationModelInstance {
-  name?: string;
-  type?: string;
-  description?: string;
-  aliases?: string[];
-  mention_count?: number;
-  from?: string;
-  to?: string;
-  source_chunk_ids?: string[];
-  document_ids?: string[];
-  /** The quotes this assertion was read from, when the template asked for them. */
-  evidence?: IOntologyEvidence[];
-  dataset_id?: string;
-  dataset_name?: string;
-  /**
-   * The published model version that extracted this row, when it recorded one.
-   * Lower than the model's current version means it has not been recompiled
-   * since — the row is what an earlier model said, not what this one says.
-   */
-  version?: number;
-  /** The row's identity inside its dataset; a review has to name the row it judges. */
-  id?: string;
-  /** How far the assertion reaches: one document, or every document of the dataset. */
-  scope?: AssertionScope;
-  review_status?: AssertionReviewVerdict;
-  review_by?: string;
-  /** Epoch milliseconds, as the row records it. */
-  review_at?: number;
-  review_note?: string;
-  /** True when another row of the same class and endpoint disagrees with this one. */
-  conflict?: boolean;
-  conflict_targets?: string[];
-  conflict_types?: string[];
-}
-
-/** One dataset the inspection read. */
-export interface ICompilationModelInspectDataset {
-  id: string;
-  name: string;
-  doc_num: number;
-}
-
-/** How wide an inspection reads. */
-export enum CompilationModelInspectScope {
-  Dataset = 'dataset',
-  Corpus = 'corpus',
-}
-
-export interface ICompilationModelInspectParams {
-  /**
-   * Which row kind to read: the panel's two tabs are two kinds, not two
-   * filters, so the tab says it and class/property only narrow within it.
-   */
-  kind?: AssertionKind;
-  /** Omitted means every class of the model, not "nothing". */
-  class?: string;
-  /** Omitted means every property of the model, not "nothing". */
-  property?: string;
-  source_type?: string;
-  target_type?: string;
-  scope?: CompilationModelInspectScope | string;
-  dataset_ids?: string;
-  limit?: number;
-}
-
-export interface ICompilationModelInspect {
-  template_id: string;
-  scope: string;
-  /**
-   * Which of the two row lists this response answers. It is reported because an
-   * unfiltered read names neither a class nor a property, so nothing else would
-   * say which list was populated.
-   */
-  kind: AssertionKind;
-  class?: string;
-  property?: string;
-  source?: string;
-  target?: string;
-  /** The version in force, to compare each row's own version against. */
-  model_version: number;
-  datasets: ICompilationModelInspectDataset[];
-  /** Datasets the read cap left out: "did not look" must not read as "empty". */
-  skipped_dataset_ids?: string[];
-  total: number;
-  truncated: boolean;
-  entities: ICompilationModelInstance[];
-  relations: ICompilationModelInstance[];
-}
-
 /**
  * What a row asserts, and how far it reaches.
  *
@@ -488,6 +399,18 @@ export interface IAssertionReviewItem {
   conflict_targets?: string[];
   /** What the disagreement is about, e.g. a class admitted by one side only. */
   conflict_types?: string[];
+}
+
+/**
+ * One dataset a cross-dataset read touched, as the review queue reports it.
+ *
+ * The rows themselves are browsed per dataset; this list exists so a queue that
+ * could not read everything can say which datasets it skipped.
+ */
+export interface ICompilationModelInspectDataset {
+  id: string;
+  name: string;
+  doc_num: number;
 }
 
 /**

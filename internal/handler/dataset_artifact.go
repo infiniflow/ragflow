@@ -455,25 +455,59 @@ func (h *DatasetArtifactHandler) GetDocumentGraph(c *gin.Context) {
 	common.RespondSuccess(c, resp, "success")
 }
 
-// GetOntologyClassEntities handles GET /datasets/<dataset_id>/ontology/classes/<class>/entities
-// — one page of a class's instances.
+// GetOntologyArtifacts handles GET /datasets/<dataset_id>/ontology/artifacts —
+// one page of the rows a compile produced in a scope.
 //
-// This is the drill-down behind the ontology model graph: the graph itself is a
-// skeleton plus counts, and clicking a class asks which instances it actually
-// has (ontology.md §10.8.4).
-func (h *DatasetArtifactHandler) GetOntologyClassEntities(c *gin.Context) {
+// This is the ABox browser's only read. `kind` decides which half of the ABox
+// answers (instances vs assertions); `class` / `property` narrow it and are
+// absent for "everything". Both halves are engine-paged, and a page carries the
+// total, so the panel can say "12–30 of 240" instead of showing a window that
+// looks like the whole set.
+func (h *DatasetArtifactHandler) GetOntologyArtifacts(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
 		return
 	}
 	offset, _ := strconv.Atoi(c.Query("offset"))
 	limit, _ := strconv.Atoi(c.Query("limit"))
+	templateID := c.Query("template_id")
+	documentID := c.Query("document_id")
+
+	if c.Query("kind") == "relation" {
+		property := c.Query("property")
+		resp, err := h.svc.GetOntologyPropertyRelations(c.Request.Context(), service.OntologyPropertyRelationsInput{
+			TenantID:  tenantID,
+			DatasetID: c.Param("dataset_id"),
+			Property:  property,
+			// No property named: the reader asked for the whole page, not for an
+			// unnamed one.
+			All:        property == "",
+			SourceType: c.Query("source_type"),
+			TargetType: c.Query("target_type"),
+			TemplateID: templateID,
+			DocumentID: documentID,
+			Offset:     offset,
+			Limit:      limit,
+		})
+		if err != nil {
+			common.RespondError(c, common.CodeDataError, err.Error())
+			return
+		}
+		if resp == nil {
+			resp = &service.OntologyRelationPage{Relations: []service.StructureGraphRelation{}}
+		}
+		common.RespondSuccess(c, resp, "success")
+		return
+	}
+
+	class := c.Query("class")
 	resp, err := h.svc.GetOntologyClassEntities(c.Request.Context(), service.OntologyClassEntitiesInput{
 		TenantID:   tenantID,
 		DatasetID:  c.Param("dataset_id"),
-		Class:      c.Param("class"),
-		TemplateID: c.Query("template_id"),
-		DocumentID: c.Query("document_id"),
+		Class:      class,
+		All:        class == "",
+		TemplateID: templateID,
+		DocumentID: documentID,
 		Offset:     offset,
 		Limit:      limit,
 	})
@@ -483,38 +517,6 @@ func (h *DatasetArtifactHandler) GetOntologyClassEntities(c *gin.Context) {
 	}
 	if resp == nil {
 		resp = &service.OntologyEntityPage{Entities: []service.StructureGraphNode{}}
-	}
-	common.RespondSuccess(c, resp, "success")
-}
-
-// GetOntologyPropertyRelations handles GET /datasets/<dataset_id>/ontology/properties/<property>/relations
-// — one page of a property edge's assertions. source_type / target_type pin one
-// domain → range combination of a polymorphic property, which is how the graph
-// draws it (one edge per combination).
-func (h *DatasetArtifactHandler) GetOntologyPropertyRelations(c *gin.Context) {
-	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
-	if tenantID == "" {
-		return
-	}
-	offset, _ := strconv.Atoi(c.Query("offset"))
-	limit, _ := strconv.Atoi(c.Query("limit"))
-	resp, err := h.svc.GetOntologyPropertyRelations(c.Request.Context(), service.OntologyPropertyRelationsInput{
-		TenantID:   tenantID,
-		DatasetID:  c.Param("dataset_id"),
-		Property:   c.Param("property"),
-		SourceType: c.Query("source_type"),
-		TargetType: c.Query("target_type"),
-		TemplateID: c.Query("template_id"),
-		DocumentID: c.Query("document_id"),
-		Offset:     offset,
-		Limit:      limit,
-	})
-	if err != nil {
-		common.RespondError(c, common.CodeDataError, err.Error())
-		return
-	}
-	if resp == nil {
-		resp = &service.OntologyRelationPage{Relations: []service.StructureGraphRelation{}}
 	}
 	common.RespondSuccess(c, resp, "success")
 }

@@ -14,7 +14,6 @@
  *  limitations under the License.
  */
 
-import { ICompilationModelInspectParams } from '@/interfaces/database/compilation-model';
 import {
   IAssertionReviewRequestBody,
   IAssertionReviewRequestParams,
@@ -62,16 +61,6 @@ export const listCompilationModelDatasets = (id: string) =>
  */
 export const trialCompilationModel = (id: string) =>
   request.post(api.compilationModelTrial(id), {});
-
-/**
- * Reads what the model already extracted, over the datasets that compile with
- * it. A read, unlike the rehearsal above: it calls no model and costs one engine
- * query per dataset.
- */
-export const inspectCompilationModelInstances = (
-  id: string,
-  params: ICompilationModelInspectParams,
-) => request.get(api.compilationModelInstances(id), { params });
 
 /**
  * Reads the assertions of a model that still need a verdict.

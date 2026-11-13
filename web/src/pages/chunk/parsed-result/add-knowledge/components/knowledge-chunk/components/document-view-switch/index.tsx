@@ -6,7 +6,6 @@ import Representation, {
   type ClickableNode,
   type EvidencePanelState,
 } from '@/pages/chunk/representation';
-import type { OntologyDetailPanelState } from '@/components/structure-graph/ontology-model-graph/detail-panel';
 import { File, LayoutList } from 'lucide-react';
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -33,9 +32,6 @@ interface DocumentViewSwitchProps {
   // can render them as a resizable middle column instead of inside the tree.
   onClaimsPanelChange?: (panel: ClaimsPanelState | null) => void;
   onEvidencePanelChange?: (panel: EvidencePanelState | null) => void;
-  // Same contract for the ontology graph's class panel: it is a panel like any
-  // other, so the page's own divider must own it.
-  onOntologyPanelChange?: (panel: OntologyDetailPanelState | null) => void;
   // Forwarded for the same reason: the page reclaims the chunk column's width
   // while the ontology representation is on screen, and only the tree view knows
   // which template is selected.
@@ -52,7 +48,6 @@ export default function DocumentViewSwitch({
   onChunkIdsChange,
   onClaimsPanelChange,
   onEvidencePanelChange,
-  onOntologyPanelChange,
   onOntologyViewChange,
 }: DocumentViewSwitchProps) {
   const { t } = useTranslation();
@@ -139,7 +134,6 @@ export default function DocumentViewSwitch({
             onNodeClick={handleNodeClick}
             onClaimsPanelChange={onClaimsPanelChange}
             onEvidencePanelChange={onEvidencePanelChange}
-            onOntologyPanelChange={onOntologyPanelChange}
             onOntologyViewChange={onOntologyViewChange}
           />
         )}

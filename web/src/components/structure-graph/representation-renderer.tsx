@@ -15,6 +15,7 @@
  */
 
 import ArtifactForceGraph from '@/components/artifact-force-graph';
+import { OntologyAboxPanel } from '@/components/ontology-abox';
 import { TreeView, type TreeDataItem } from '@/components/ui/tree-view';
 import { CompilationTemplateKind } from '@/constants/compilation';
 import {
@@ -35,8 +36,6 @@ import {
   adaptTreeToTreeData,
 } from './adapters';
 import MindMapG6Graph from './mindmap-g6-graph';
-import OntologyModelGraph from './ontology-model-graph';
-import type { OntologyDetailPanelState } from './ontology-model-graph/detail-panel';
 import TimelineX6Graph from './timeline-x6-graph';
 import {
   getKnowledgeGraphNodeLabel,
@@ -77,13 +76,6 @@ interface RepresentationRendererProps {
    */
   documentId?: string;
   templateId?: string;
-  /**
-   * Publishes the class the ontology graph has selected, for the host to render
-   * in its own column — the graph must not draw the panel itself, because it
-   * sits in a resizable column whose divider does not know about a panel nested
-   * inside it.
-   */
-  onOntologyDetailChange?: (state: OntologyDetailPanelState | null) => void;
 }
 
 function UnsupportedPlaceholder({ kind }: { kind: StructureTemplateKind }) {
@@ -113,7 +105,6 @@ export function RepresentationRenderer({
   datasetId,
   documentId,
   templateId,
-  onOntologyDetailChange,
 }: RepresentationRendererProps) {
   const getKnowledgeGraphNodeColor = useKnowledgeGraphNodeColor();
   const handleTreeItemClick = useCallback(
@@ -234,18 +225,20 @@ export function RepresentationRenderer({
         </div>
       );
     case CompilationTemplateKind.Ontology:
-      // Class-level model graph: classes are the nodes and properties are the
-      // domain -> range edges, so it is deliberately not routed through
-      // ArtifactForceGraph (which draws the instance graph).
+      // The ABox of this scope: the instances and assertions the model
+      // actually produced, as pages of rows with the source text behind each
+      // one. It is a list rather than a graph on purpose — the graph answered
+      // "what does the model declare", which is the template editor's job, and
+      // it left the rows of a class reachable only through a drill-down that
+      // could not say how much of them was on screen.
       return (
         <div className="mt-6 flex-1 min-h-0">
-          <OntologyModelGraph
-            graph={template.ontology}
-            highlightClass={highlightNodeId ?? null}
-            datasetId={datasetId}
+          <OntologyAboxPanel
+            datasetId={datasetId ?? ''}
             documentId={documentId}
-            templateId={templateId}
-            onClassDetailChange={onOntologyDetailChange}
+            templateId={templateId ?? template?.template_id}
+            classes={template.ontology?.classes}
+            properties={template.ontology?.properties}
           />
         </div>
       );
