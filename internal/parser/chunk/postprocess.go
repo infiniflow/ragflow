@@ -91,10 +91,12 @@ func (o *PostprocessOperator) Execute(chunkCtx *ChunkContext) error {
 		chunks = o.filterChunks(chunks)
 	}
 
-	// Re-index
+	// Re-index. Size stays a rune count, the unit splitByLength writes and
+	// merge/filter measure against; len() would count bytes and inflate CJK
+	// chunks threefold.
 	for i := range chunks {
 		chunks[i].Index = i
-		chunks[i].Size = len(chunks[i].GetContent())
+		chunks[i].Size = RuneCount(chunks[i].GetContent())
 	}
 
 	chunkCtx.ResultChunks = chunks
