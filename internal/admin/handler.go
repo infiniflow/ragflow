@@ -1082,17 +1082,13 @@ func (h *Handler) ListIngestors(c *gin.Context) {
 	serverList = AppendServiceList(serverList)
 	var ingestorResults []map[string]string
 	now := time.Now()
+	interval := server.GetConfig().GetHeartbeatInterval()
 	for _, ingestorServer := range serverList {
 		if ingestorServer.ServerType == common.ServerTypeIngestion {
 			ingestorResult := map[string]string{}
 			ingestorResult["name"] = ingestorServer.ServerName
 			ingestorResult["host"] = ingestorServer.Host
-			ingestorResult["status"] = ingestorServer.Version
-			if now.Sub(ingestorServer.Timestamp) < 30*time.Second {
-				ingestorResult["status"] = "alive"
-			} else {
-				ingestorResult["status"] = "timeout"
-			}
+			ingestorResult["status"] = getHeartbeatStatus(ingestorServer.Timestamp, now, interval)
 			ingestorResults = append(ingestorResults, ingestorResult)
 		}
 	}
