@@ -84,9 +84,14 @@ func TestInsertChunks_WritesIngestionShape(t *testing.T) {
 		"important_kwd":        []string{"k1"},
 		"page_num_int":         int(1),
 		"position_int":         int(2),
+		"mom_id":               "parent-1",
+		"available_int":        int(0),
 	}
 
-	if _, err := engine.InsertChunks(t.Context(), []map[string]interface{}{chunk}, "ragflow_chunk_readback_test", "kb-1"); err != nil {
+	visible := map[string]interface{}{"id": "visible", "doc_id": "doc-1", "content_with_weight": "visible source"}
+	nullAvailability := map[string]interface{}{"id": "null", "doc_id": "doc-1", "available_int": nil}
+	enabled := map[string]interface{}{"id": "enabled", "doc_id": "doc-1", "available_int": 1}
+	if _, err := engine.InsertChunks(t.Context(), []map[string]interface{}{chunk, visible, nullAvailability, enabled}, "ragflow_chunk_readback_test", "kb-1", ""); err != nil {
 		t.Fatalf("InsertChunks: %v", err)
 	}
 
@@ -106,6 +111,21 @@ func TestInsertChunks_WritesIngestionShape(t *testing.T) {
 	assertStoredField(t, doc, "important_kwd", []interface{}{"k1"})
 	assertStoredField(t, doc, "page_num_int", float64(1))
 	assertStoredField(t, doc, "position_int", float64(2))
+	assertStoredField(t, doc, "mom_id", "parent-1")
+	assertStoredField(t, doc, "available_int", float64(0))
 	// InsertChunks overrides kb_id with datasetID on write.
 	assertStoredField(t, doc, "kb_id", "kb-1")
+	if len(lines) != 8 {
+		t.Fatalf("bulk body has %d lines, want 8", len(lines))
+	}
+	for _, line := range []string{lines[3], lines[5], lines[7]} {
+		var stored map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &stored); err != nil {
+			t.Fatal(err)
+		}
+		assertStoredField(t, stored, "available_int", float64(1))
+	}
+	if _, ok := visible["available_int"]; ok || nullAvailability["available_int"] != nil {
+		t.Fatal("InsertChunks must not modify the caller's availability fields")
+	}
 }

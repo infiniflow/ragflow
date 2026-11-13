@@ -25,9 +25,13 @@
 //   - CONCURRENCY: auto extraction tasks (keywords, questions, summary, metadata)
 //     run concurrently across chunks via a bounded worker pool (extractorPool).
 //
-//   - TIMEOUT / ELAPSED: the call is wrapped in
-//     runtime.WithTimeout(600s) and runtime.TrackElapsed so the
-//     upstream pipeline gets _created_time / _elapsed_time stamps.
+//   - TIMEOUT / ELAPSED: each LLM call carries its own budget
+//     (extractorChatTimeout) instead of one node-level deadline, so the
+//     total work scales with the chunk count — a 3000-chunk document
+//     legitimately needs longer than a 3-chunk one. A call that exceeds
+//     its budget skips its chunk instead of failing the document; task
+//     cancellation still aborts via ctx. Outputs are stamped with
+//     _created_time / _elapsed_time by runtime.TrackElapsed upstream.
 package component
 
 import (
@@ -35,37 +39,49 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
+	"math"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"github.com/cespare/xxhash/v2"
 	eschema "github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
-	"ragflow/internal/dao"
-	"ragflow/internal/engine/redis"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/ingestion/chunkcache"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/modelcontext"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
 )
 
-const componentNameExtractor = "Extractor"
+// componentNameExtractor is the canonical Extractor component name; the value
+// lives in common and is re-exported by the schema package so both layers
+// reference the same identity.
+const componentNameExtractor = schema.ComponentNameExtractor
 
-// extractorTimeout bounds one LLM chat call. Matches the python
-// `@timeout(60)` default at rag/flow/base.py:60. The pipeline
-// orchestrator (Phase 3) overrides this if a stage-level ceiling
-// is configured.
-const extractorTimeout = 600 * time.Second
+// defaultExtractorChatTimeout bounds one Extractor LLM call, including
+// retries and backoff. Tag extraction has its own timeout.
+const defaultExtractorChatTimeout = 180 * time.Second
+
+// extractorChatTimeout resolves the per-call LLM budget from
+// EXTRACTOR_CHAT_TIMEOUT (seconds), falling back to
+// defaultExtractorChatTimeout on unset/invalid values.
+func extractorChatTimeout() time.Duration {
+	if n := common.GetEnvInt(common.EnvExtractorChatTimeout, 0); n > 0 && int64(n) <= math.MaxInt64/int64(time.Second) {
+		return time.Duration(n) * time.Second
+	}
+	return defaultExtractorChatTimeout
+}
 
 // extractorRetryMax and extractorRetryDelay are package-level vars
 // so tests can override them (extractorRetryDelay → time.Millisecond)
@@ -76,57 +92,37 @@ var (
 	extractorRetryDelay = common.DefaultRetryDelay
 )
 
-// extractorTemperature mirrors Python's 0.2 default for keyword
-// and question extraction calls (generator.py:230,245).
+// extractorTemperature mirrors 0.2 default for keyword
+// and question extraction calls (,245)
 const extractorTemperature = 0.2
 
-// defaultExtractorConcurrency bounds concurrent LLM extraction calls
-// process-wide. It mirrors Python's chat_limiter bound
-// (agent/component/base.py:353 asyncio.Semaphore(MAX_CONCURRENT_CHATS,
-// default 10)) so the Go port rate-limits auto-keywords / auto-questions /
-// auto-metadata extraction the same way Python does.
+// defaultExtractorConcurrency bounds concurrent chunk extraction jobs
+// process-wide to reduce provider rate-limit pressure.
 const defaultExtractorConcurrency = 10
 
 // extractorJob is one chunk's auto-extraction unit of work.
 type extractorJob func() error
 
-// extractorPool is the process-wide bounded worker pool that drives
-// cross-chunk concurrency for auto-keywords / auto-questions /
-// auto-metadata extraction. It mirrors the parser/structure/mindmap
-// WorkerPool usage, but is held globally so every Extractor
-// invocation shares one rate limiter instead of spinning up one pool
-// per batch. The pool only bounds concurrency (it is never StopWait'd),
-// so per-invocation completion is tracked by runAutoExtractions with its
-// own sync.WaitGroup + first-error collection — concurrent Invoke calls
-// therefore do not disturb each other.
+// extractorPool bounds chunk extraction concurrency across all Extractor
+// invocations in this process: keywords, LLM tags, questions, summary, and
+// metadata share the same workers. Each invocation waits for its own futures.
 var extractorPool = utility.NewWorkerPool[extractorJob, struct{}](
 	extractorConcurrency(),
 	extractorConcurrency()*4,
 	func(_ context.Context, j extractorJob) (struct{}, error) { return struct{}{}, j() },
 )
 
-// extractorConcurrency resolves the pool size from MAX_CONCURRENT_CHATS
-// (Python parity) with a safe default of defaultExtractorConcurrency.
+// extractorConcurrency resolves the pool size from EXTRACTOR_CONCURRENCY
+// with a safe default of defaultExtractorConcurrency.
 func extractorConcurrency() int {
-	if v := os.Getenv("MAX_CONCURRENT_CHATS"); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return n
-		}
+	if n := common.GetEnvInt(common.EnvExtractorConcurrency, 0); n > 0 {
+		return n
 	}
 	return defaultExtractorConcurrency
 }
 
-// SetExtractorConcurrency overrides the global extractor pool size at
-// runtime (e.g. from service init or tests). Mirrors tuning Python's
-// chat_limiter bound.
-func SetExtractorConcurrency(n int) {
-	if n > 0 {
-		extractorPool.Resize(n)
-	}
-}
-
 // extractorTopNPattern matches the {{ topn }} placeholder accepted in
-// keyword/question system prompts (same convention as rag/prompts/*.md).
+// keyword/question system prompts.
 // It is replaced with the configured top_n so the count slider stays
 // authoritative even when a prompt was pre-filled by the frontend.
 var extractorTopNPattern = regexp.MustCompile(`\{\{\s*topn\s*\}\}`)
@@ -166,6 +162,7 @@ Propose questions about a given piece of text content.
 
 	autoMetadataPrompt = `## Role: Metadata extraction expert.
 ## Rules:
+ - Fixed Key Set: Output ONLY the keys that appear in the Schema. Never add, rename, translate, pluralize or re-case a key, and never invent an extra key even if the Content clearly carries that information. Any key that is not in the Schema MUST be omitted.
  - Strict Evidence Only: Extract a value ONLY if it is explicitly mentioned in the Content.
  - Enum Filter: For any field with an 'enum' list, the list acts as a strict filter. If no element from the list (or its direct synonym) is found in the Content, you MUST NOT extract that field.
  - No Meta-Inference: Do not infer values based on the document's nature, format, or category. If the text does not literally state the information, treat it as missing.
@@ -215,6 +212,11 @@ type ExtractorComponent struct {
 //	  "metadata":       map[string]any,   — optional auto metadata extraction config
 //	}
 //
+// The keywords/questions/tags groups accept an "enabled" switch. A group
+// without the key is a legacy DSL: enabled derives from top_n > 0, matching
+// the pre-switch behavior of saved canvases. A group carrying an explicit
+// "enabled": true with top_n < 1 is a contradictory config and fails here.
+//
 // errors here surface as canvas compile failures so a malformed
 // param is caught at build time rather than mid-run.
 func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
@@ -232,6 +234,11 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 			if v, ok := kwRaw["system_prompt"].(string); ok {
 				p.Keywords.SystemPrompt = v
 			}
+			enabled, err := resolveExtractToggle(kwRaw, "keywords", p.Keywords.TopN)
+			if err != nil {
+				return nil, err
+			}
+			p.Keywords.Enabled = enabled
 		}
 
 		// 2. Questions
@@ -242,6 +249,11 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 			if v, ok := qRaw["system_prompt"].(string); ok {
 				p.Questions.SystemPrompt = v
 			}
+			enabled, err := resolveExtractToggle(qRaw, "questions", p.Questions.TopN)
+			if err != nil {
+				return nil, err
+			}
+			p.Questions.Enabled = enabled
 		}
 
 		// 3. Tags
@@ -252,6 +264,11 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 			if v, ok := tagRaw["tag_file_id"].(string); ok {
 				p.Tags.TagFileID = v
 			}
+			enabled, err := resolveExtractToggle(tagRaw, "tags", p.Tags.TopN)
+			if err != nil {
+				return nil, err
+			}
+			p.Tags.Enabled = enabled
 		}
 
 		// 4. Summary
@@ -288,13 +305,43 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 	return &ExtractorComponent{Param: p}, nil
 }
 
-// Inputs returns the parameter metadata. Matches the python
+// resolveExtractToggle resolves the enabled switch of one extraction group
+// (keywords / questions / tags).
+//
+// The presence of the "enabled" key distinguishes the contract version:
+//   - key present: it is authoritative. enabled=true with top_n < 1 is a
+//     contradictory config (nothing could be extracted) and fails fast, so
+//     the canvas run dies at build time with a clear message instead of
+//     silently skipping the extraction.
+//   - key absent: legacy DSL saved before the switch existed — enabled
+//     derives from top_n > 0, preserving the saved canvas's behavior.
+//
+// Accepts bool and numeric "enabled" values, mirroring the summary/metadata
+// parsing below.
+func resolveExtractToggle(group map[string]any, name string, topN int) (bool, error) {
+	v, ok := group["enabled"]
+	if !ok {
+		return topN > 0, nil
+	}
+	enabled := false
+	if b, ok := v.(bool); ok {
+		enabled = b
+	} else {
+		enabled = mapInt(v) == 1
+	}
+	if enabled && topN < 1 {
+		return false, fmt.Errorf("extractor: %s.enabled requires top_n >= 1", name)
+	}
+	return enabled, nil
+}
+
+// Inputs returns the parameter metadata. Matches the
 // Extractor._invoke kwargs plus the optional per-call llm_id
-// override (python: args["llm_id"] path is implicit via
+// override (: args["llm_id"] path is implicit via
 // self.chat_mdl; the Go port exposes it explicitly).
 func (c *ExtractorComponent) Inputs() map[string]string {
 	return map[string]string{
-		"chunks": "List of map[string]any from upstream Tokenizer. Each entry must carry a string 'text' (or 'content_with_weight') field. Optional — when absent the LLM is called once with the resolved args.",
+		"chunks": "List of map[string]any from the upstream Chunker. Each entry must carry a string 'text' field. Optional — when absent the LLM is called once with the resolved args.",
 		"llm_id": "Optional per-call LLM id override. Falls back to Param.LLMID when absent.",
 	}
 }
@@ -304,15 +351,19 @@ func (c *ExtractorComponent) Inputs() map[string]string {
 //
 //	chunks         []map[string]any — input chunks, each augmented with
 //	                                 extracted modular fields (important_kwd,
-//	                                 question_kwd, tag_kwd, summary, metadata).
+//	                                 question_kwd, tag_feas, summary, metadata).
 //	output_format  string          — always "chunks". Parity with
-//	                                 python set_output contract.
+//
+// set_output contract
+//
 //	_ERROR         string          — populated on a short-circuit
-//	                                 error (matches python
-//	                                 set_output("_ERROR", ...)).
+//
+// error (matches
+//
+//	set_output("_ERROR", ...)).
 func (c *ExtractorComponent) Outputs() map[string]string {
 	return map[string]string{
-		"chunks":        "Extraction results — input chunks, each enriched with modular extraction fields (important_kwd, question_kwd, tag_kwd, summary, metadata).",
+		"chunks":        "Extraction results — input chunks, each enriched with modular extraction fields (important_kwd, question_kwd, tag_feas, summary, metadata).",
 		"output_format": "Always \"chunks\". Parity marker for downstream consumers.",
 		"_ERROR":        "Optional short-circuit error message (reserved for the future TOC branch and other error paths).",
 	}
@@ -391,6 +442,97 @@ func getExtractorChatTargetResolverOverride() func(llmID string) (driver, modelN
 	extractorChatTargetResolverMu.RLock()
 	defer extractorChatTargetResolverMu.RUnlock()
 	return extractorChatTargetResolverOverride
+}
+
+// extractorResolvedTarget is the memoized result of a successful chat-target
+// resolution. Only successful resolutions are cached (see target), so the
+// stored entry never carries an error.
+type extractorResolvedTarget struct {
+	driver, modelName, apiKey, baseURL string
+}
+
+// extractorModelCache memoizes per-run chat-model resolution. Within a single
+// ExtractorComponent.Invoke the llm_id is constant, so the chat target
+// (driver/model/apiKey/baseURL) and the context length are resolved once and
+// reused across every chunk / LLM call, avoiding thousands of redundant DAO
+// reads per document. It is scoped to one run via context (never package
+// global) so concurrent documents cannot leak state across tenants, and it is
+// concurrency-safe because the extractor pool runs chunk jobs in parallel.
+type extractorModelCache struct {
+	mu      sync.Mutex
+	targets map[string]extractorResolvedTarget
+	ctxLens map[string]int
+
+	// resolveTarget / resolveCtxLen are the underlying resolvers, wired to the
+	// uncached implementations by newExtractorModelCache. Tests may replace
+	// them to avoid a database.
+	resolveTarget func(ctx context.Context, db *gorm.DB, llmID string) (string, string, string, string, error)
+	resolveCtxLen func(ctx context.Context, db *gorm.DB, llmID string) int
+}
+
+func newExtractorModelCache() *extractorModelCache {
+	return &extractorModelCache{
+		targets:       make(map[string]extractorResolvedTarget),
+		ctxLens:       make(map[string]int),
+		resolveTarget: resolveExtractorChatTargetUncached,
+		resolveCtxLen: extractorContextLengthUncached,
+	}
+}
+
+// target returns the resolved chat target for llmID, computing and caching it
+// on first use. Only successful resolutions are cached; a failed resolution is
+// not memoized so a transient error is re-attempted and the run still fails
+// fast on the first chunk instead of reusing a stale error.
+func (m *extractorModelCache) target(ctx context.Context, db *gorm.DB, llmID string) (driver, modelName, apiKey, baseURL string, err error) {
+	m.mu.Lock()
+	if r, ok := m.targets[llmID]; ok {
+		m.mu.Unlock()
+		return r.driver, r.modelName, r.apiKey, r.baseURL, nil
+	}
+	m.mu.Unlock()
+
+	driver, modelName, apiKey, baseURL, err = m.resolveTarget(ctx, db, llmID)
+	if err == nil {
+		m.mu.Lock()
+		m.targets[llmID] = extractorResolvedTarget{driver, modelName, apiKey, baseURL}
+		m.mu.Unlock()
+	}
+	return driver, modelName, apiKey, baseURL, err
+}
+
+// ctxLen returns the resolved context length for llmID, computing and caching
+// it on first use. A zero result (unknown model / no canvas state) is a valid,
+// cacheable resolution meaning "skip fitting".
+func (m *extractorModelCache) ctxLen(ctx context.Context, db *gorm.DB, llmID string) int {
+	m.mu.Lock()
+	if v, ok := m.ctxLens[llmID]; ok {
+		m.mu.Unlock()
+		return v
+	}
+	m.mu.Unlock()
+
+	v := m.resolveCtxLen(ctx, db, llmID)
+	m.mu.Lock()
+	m.ctxLens[llmID] = v
+	m.mu.Unlock()
+	return v
+}
+
+type extractorModelCacheKey struct{}
+
+// withExtractorModelCache attaches a fresh per-run model cache to ctx. The
+// cache is created once per ExtractorComponent.Invoke and shared by every
+// downstream chunk job, so resolution happens at most once per distinct
+// llm_id for the whole run.
+func withExtractorModelCache(ctx context.Context) context.Context {
+	return context.WithValue(ctx, extractorModelCacheKey{}, newExtractorModelCache())
+}
+
+func extractorModelCacheFromCtx(ctx context.Context) *extractorModelCache {
+	if c, ok := ctx.Value(extractorModelCacheKey{}).(*extractorModelCache); ok {
+		return c
+	}
+	return nil
 }
 
 // getExtractorChatInvoker returns the current default invoker.
@@ -501,14 +643,27 @@ func toExtractorEinoMessages(msgs []eschema.Message) []*eschema.Message {
 // input map. Computed once at the top of Invoke so the rest of
 // the function reads as straight-line code.
 type extractorInputs struct {
-	llmID  string
-	lang   string
-	chunks []map[string]any
+	llmID string
+	// modelID is the resolved cache-key model identity (the llm_id, or — when
+	// that is empty — the tenant-default chat model resolved once per run in
+	// Invoke). Carrying it on the struct lets the per-chunk cache-key builders
+	// reuse the single run-level resolution instead of re-resolving the default
+	// model for every chunk. Empty means "not yet resolved"
+	// and triggers a per-call fallback so direct unit-test construction of
+	// extractorInputs keeps working.
+	modelID string
+	lang    string
+	chunks  []map[string]any
 	// temperature overrides the LLM temperature for this call. A
 	// nil value leaves the request's Temperature unset so the model
 	// (or the chat-model default) decides. The keyword/question helpers set it to
-	// extractorTemperature (0.2) to mirror generator.py.
+	// extractorTemperature (0.2) to mirror
 	temperature *float64
+	// cache memoises per-chunk extraction results so a resumed run (which
+	// re-executes every stage after the Parser checkpoint) pays no LLM cost
+	// for chunks it already extracted. nil disables caching: a Redis-less
+	// deployment, or a test that wants every call to reach the model.
+	cache chunkcache.Store
 }
 
 // resolveInputs overlays per-call inputs on top of the
@@ -518,6 +673,7 @@ type extractorInputs struct {
 func (c *ExtractorComponent) resolveInputs(inputs map[string]any) extractorInputs {
 	out := extractorInputs{
 		llmID: c.Param.LLMID,
+		cache: chunkcache.Client(),
 	}
 	if inputs == nil {
 		return out
@@ -560,6 +716,8 @@ func extractorChunkList(v any) ([]map[string]any, bool) {
 	switch list := v.(type) {
 	case []map[string]any:
 		return list, true
+	case []schema.ChunkDoc:
+		return schema.ChunkDocsToMaps(list), true
 	case []any:
 		out := make([]map[string]any, 0, len(list))
 		for _, item := range list {
@@ -593,7 +751,23 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	if err := c.Param.Validate(); err != nil {
 		return nil, fmt.Errorf("extractor: %w", err)
 	}
+	// Attach a per-run model cache so the chat target and context length are
+	// resolved once per distinct llm_id and reused across every chunk, instead
+	// of being re-resolved in every callRaw / fitExtractorMessages.
+	ctx = withExtractorModelCache(ctx)
 	in := c.resolveInputs(inputs)
+	// Resolve the cache-key model identity once for the whole run and reuse it
+	// across every chunk, rather than re-resolving the (most common) default
+	// model per chunk when keying the per-chunk cache.
+	in.modelID = extractorCacheModelID(ctx, db, in.llmID)
+	// Warm the cache before fan-out so the (parallel) chunk jobs read a
+	// populated entry: the resolution happens exactly once here, eliminating
+	// any first-batch resolution herd. A failed resolution is not cached, so
+	// the first chunk's callRaw still surfaces it and the run fails fast.
+	if cache := extractorModelCacheFromCtx(ctx); cache != nil {
+		cache.target(ctx, db, in.llmID)
+		cache.ctxLen(ctx, db, in.llmID)
+	}
 	common.Debug("extractor stage",
 		zap.String("component", "Extractor"),
 		zap.Int("input_chunks", len(in.chunks)),
@@ -605,26 +779,35 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		}, nil
 	}
 
-	if err := runtime.WithTimeout(ctx, extractorTimeout, func(timeoutCtx context.Context) error {
-		// Phase 1: Keywords extraction (if enabled), running across chunks via extractorPool.
-		if c.Param.Keywords.TopN > 0 {
-			if err := c.runAutoKeywordsPool(timeoutCtx, db, in); err != nil {
-				return err
-			}
-		}
+	keywordsOn := c.Param.Keywords.Enabled
+	tagsOn := c.Param.Tags.Enabled
+	remainingOn := c.Param.Questions.Enabled || c.Param.Summary.Enabled || c.Param.Metadata.Enabled
+	phaseWindows := progress.NewSplit(keywordsOn, tagsOn, remainingOn)
 
-		// Phase 2: Tag phase (if enabled), benefiting from title and freshly extracted keywords.
-		if c.Param.Tags.TopN > 0 {
-			tagged, tagErr := c.runAutoTags(timeoutCtx, db, in)
-			if tagErr != nil {
-				return tagErr
-			}
-			in.chunks = tagged
-		}
+	// No node-level wall-clock budget (see the package doc): each LLM call
+	// carries its own budget, and an expired call skips its chunk instead
+	// of failing the document. Task cancellation still aborts via ctx.
+	if err := c.runAutoKeywordsPool(ctx, db, in, phaseWindows.Take(keywordsOn)); err != nil {
+		return nil, fmt.Errorf("extractor: %w", err)
+	}
 
-		// Phase 3: Remaining extractions (Questions, Summary, Metadata) via extractorPool.
-		return c.runRemainingExtractions(timeoutCtx, db, in)
-	}); err != nil {
+	// Phase 2: Tag phase (if enabled), benefiting from title and freshly extracted keywords.
+	if tagsOn {
+		tagged, tagErr := c.runAutoTags(ctx, db, in, phaseWindows.Take(tagsOn))
+		if tagErr != nil {
+			return nil, fmt.Errorf("extractor: %w", tagErr)
+		}
+		in.chunks = tagged
+	}
+
+	// Phase 3: Remaining extractions (Questions, Summary, Metadata) via extractorPool.
+	if err := c.runRemainingExtractions(ctx, db, in, phaseWindows.Take(remainingOn)); err != nil {
+		return nil, fmt.Errorf("extractor: %w", err)
+	}
+	// The tag phase swallows per-chunk failures, so a task stopped mid-run
+	// could otherwise report success. This mirrors the old node-level
+	// WithTimeout post-check: never report success on a dead context.
+	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("extractor: %w", err)
 	}
 	common.Debug("extractor stage",
@@ -637,26 +820,51 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	}, nil
 }
 
-// extractorLLMCacheKey builds a Redis key for textual extractions.
-func extractorLLMCacheKey(taskType, modelID, systemPrompt, text string) string {
-	h := xxhash.New()
-	h.WriteString(taskType)
-	h.WriteString("\x00")
-	h.WriteString(modelID)
-	h.WriteString("\x00")
-	h.WriteString(systemPrompt)
-	h.WriteString("\x00")
-	h.WriteString(text)
-	return fmt.Sprintf("kc:extractor:%s:%x", taskType, h.Sum64())
+// extractorLLMCacheKey builds the cache key for one textual extraction. The
+// chunk id — not the chunk text — carries the chunk's identity: it already
+// derives from the text (component.ChunkID) and is the same handle the persist
+// stage uses, so the two stages agree on what "the same chunk" is. Returns ""
+// when the chunk has no id, which makes the cache a no-op for that chunk.
+func extractorLLMCacheKey(taskType, modelID, systemPrompt, chunkID string) string {
+	return chunkcache.Key("extractor:"+taskType, modelID, chunkID, systemPrompt)
 }
 
-// callTextCached wraps callText with a 24-hour Redis cache.
-func (c *ExtractorComponent) callTextCached(ctx context.Context, db *gorm.DB, in extractorInputs, taskType, systemPrompt, chunkText string) (string, error) {
-	key := extractorLLMCacheKey(taskType, in.llmID, systemPrompt, chunkText)
-	if client := redis.Get(); client != nil {
-		if data, err := client.Get(ctx, key); err == nil && data != "" {
-			return data, nil
-		}
+// extractorCacheModelID returns the model identity the per-chunk extraction
+// cache is keyed on. The cache must capture the model that actually produced
+// the text, not the raw llm_id override: when llm_id is empty the pipeline
+// falls back to the tenant's default chat model (resolveExtractorChatTarget,
+// extractor.go:1212), so keying on the empty override would collapse every
+// tenant-default run onto one bucket and serve extractions from a model the
+// tenant no longer uses. This mirrors the tokenizer's decision to key on the
+// dataset-bound embd_id rather than the raw DSL string.
+//
+// Non-empty llm_id is already a stable tenant-model id, so it is used as-is
+// (no behaviour change for the configured path). Only the empty case is
+// resolved to its real default-model identity. A resolution failure returns ""
+// — chunkcache.Key turns an empty modelID into an empty key, which disables
+// caching for that chunk rather than risking a cross-model hit.
+func extractorCacheModelID(ctx context.Context, db *gorm.DB, llmID string) string {
+	if llmID != "" {
+		return llmID
+	}
+	driver, modelName, _, _, err := resolveExtractorChatTarget(ctx, db, "")
+	if err != nil || (driver == "" && modelName == "") {
+		return ""
+	}
+	return driver + "/" + modelName
+}
+
+// callTextCached wraps callText with the per-chunk result cache.
+func (c *ExtractorComponent) callTextCached(ctx context.Context, db *gorm.DB, in extractorInputs, taskType, systemPrompt, chunkText, chunkID string) (string, error) {
+	// Prefer the run-level resolved identity; fall back only for callers that
+	// build extractorInputs directly in unit tests without pre-resolving it.
+	modelID := in.modelID
+	if modelID == "" {
+		modelID = extractorCacheModelID(ctx, db, in.llmID)
+	}
+	key := extractorLLMCacheKey(taskType, modelID, systemPrompt, chunkID)
+	if cached, hit := chunkcache.Get(ctx, in.cache, key); hit {
+		return cached, nil
 	}
 	res, err := c.callText(ctx, db, in, systemPrompt, chunkText)
 	if err != nil {
@@ -664,24 +872,25 @@ func (c *ExtractorComponent) callTextCached(ctx context.Context, db *gorm.DB, in
 	}
 	res = cleanExtractionResult(res)
 	if res != "" && !strings.Contains(res, "**ERROR**") {
-		if client := redis.Get(); client != nil {
-			client.Set(ctx, key, res, 24*time.Hour)
-		}
+		chunkcache.Set(ctx, in.cache, key, res)
 	}
 	return res, nil
 }
 
 // runAutoKeywords extracts keywords for the current chunk and stores
 // them on ck["important_kwd"]. Keyword extraction pins
-// temperature to extractorTemperature (0.2) to mirror generator.py.
+// temperature to extractorTemperature (0.2) to mirror
 func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
+	if strings.TrimSpace(chunkText) == "" {
+		return nil
+	}
 	if _, exists := ck["important_kwd"]; exists {
 		return nil
 	}
-	topN := c.Param.Keywords.TopN
-	if topN <= 0 {
+	if !c.Param.Keywords.Enabled {
 		return nil
 	}
+	topN := c.Param.Keywords.TopN
 	systemPrompt := strings.TrimSpace(c.Param.Keywords.SystemPrompt)
 	if systemPrompt == "" {
 		systemPrompt = autoKeywordPrompt
@@ -690,9 +899,11 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 	kwTemp := extractorTemperature
 	kwIn := extractorInputs{
 		llmID:       in.llmID,
+		modelID:     in.modelID,
 		temperature: &kwTemp,
+		cache:       in.cache,
 	}
-	resultStr, err := c.callTextCached(ctx, db, kwIn, "keywords", systemPrompt, chunkText)
+	resultStr, err := c.callTextCached(ctx, db, kwIn, "keywords", systemPrompt, chunkText, chunkCacheID(ck))
 	if err != nil {
 		return err
 	}
@@ -715,13 +926,16 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 // runAutoQuestions extracts questions for the current chunk and stores
 // them on ck["question_kwd"]. See runAutoKeywords for the temperature pin.
 func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
+	if strings.TrimSpace(chunkText) == "" {
+		return nil
+	}
 	if _, exists := ck["question_kwd"]; exists {
 		return nil
 	}
-	topN := c.Param.Questions.TopN
-	if topN <= 0 {
+	if !c.Param.Questions.Enabled {
 		return nil
 	}
+	topN := c.Param.Questions.TopN
 	systemPrompt := strings.TrimSpace(c.Param.Questions.SystemPrompt)
 	if systemPrompt == "" {
 		systemPrompt = autoQuestionPrompt
@@ -730,9 +944,11 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 	qTemp := extractorTemperature
 	qIn := extractorInputs{
 		llmID:       in.llmID,
+		modelID:     in.modelID,
 		temperature: &qTemp,
+		cache:       in.cache,
 	}
-	resultStr, err := c.callTextCached(ctx, db, qIn, "questions", systemPrompt, chunkText)
+	resultStr, err := c.callTextCached(ctx, db, qIn, "questions", systemPrompt, chunkText, chunkCacheID(ck))
 	if err != nil {
 		return err
 	}
@@ -763,6 +979,9 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 // runAutoSummary extracts a concise summary for the current chunk using autoSummaryPrompt
 // and stores it on ck["summary"].
 func (c *ExtractorComponent) runAutoSummary(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
+	if strings.TrimSpace(chunkText) == "" {
+		return nil
+	}
 	if _, exists := ck["summary"]; exists {
 		return nil
 	}
@@ -776,9 +995,11 @@ func (c *ExtractorComponent) runAutoSummary(ctx context.Context, db *gorm.DB, in
 	sumTemp := extractorTemperature
 	sumIn := extractorInputs{
 		llmID:       in.llmID,
+		modelID:     in.modelID,
 		temperature: &sumTemp,
+		cache:       in.cache,
 	}
-	resultStr, err := c.callTextCached(ctx, db, sumIn, "summary", systemPrompt, chunkText)
+	resultStr, err := c.callTextCached(ctx, db, sumIn, "summary", systemPrompt, chunkText, chunkCacheID(ck))
 	if err != nil {
 		return err
 	}
@@ -789,24 +1010,74 @@ func (c *ExtractorComponent) runAutoSummary(ctx context.Context, db *gorm.DB, in
 	return nil
 }
 
-// runAutoKeywordsPool dispatches keyword extraction across all chunks concurrently
-// using extractorPool before the tagging stage.
-func (c *ExtractorComponent) runAutoKeywordsPool(ctx context.Context, db *gorm.DB, in extractorInputs) error {
-	if c.Param.Keywords.TopN <= 0 || len(in.chunks) == 0 {
+// resolveChunkCallError maps one chunk job's error to the pool outcome:
+//   - parent ctx done (task stop): propagate so cancellation stays fast.
+//   - call budget expiry with a live parent: skip the chunk, keep the
+//     document. errors.Is covers both our per-call budget and a
+//     driver-level deadline. completedAny reports whether an earlier op
+//     already succeeded for this chunk: a later timeout then keeps the
+//     partial result instead of counting toward the all-timed-out failure.
+//   - anything else: hard failure (existing fail-fast semantics).
+func resolveChunkCallError(ctx context.Context, idx int, phase string, err error, completedAny bool, skipped *atomic.Int64) error {
+	if err == nil {
 		return nil
 	}
+	if ctx.Err() != nil {
+		return err
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		if completedAny {
+			common.Warn("extractor: chunk extraction partially timed out; keeping completed fields",
+				zap.String("component", componentNameExtractor),
+				zap.String("phase", phase),
+				zap.Int("chunk_index", idx),
+			)
+			return nil
+		}
+		skipped.Add(1)
+		common.Warn("extractor: chunk extraction timed out; skipping chunk",
+			zap.String("component", componentNameExtractor),
+			zap.String("phase", phase),
+			zap.Int("chunk_index", idx),
+		)
+		return nil
+	}
+	return err
+}
+
+// checkAllChunksSkipped fails the phase when every submitted chunk timed
+// out with zero completed extractions: all-hung means the model is down,
+// and silently producing a document with no extractions would hide the
+// outage. Chunks that timed out after a partial extraction succeed with
+// the per-chunk warnings above and do not count here.
+func checkAllChunksSkipped(phase string, total int, skipped int64) error {
+	if total > 0 && skipped == int64(total) {
+		return fmt.Errorf("extractor: %s: all %d chunks exceeded the per-call LLM timeout; the model is likely hung or unreachable", phase, total)
+	}
+	return nil
+}
+
+// runAutoKeywordsPool dispatches keyword extraction across all chunks concurrently
+// using extractorPool before the tagging stage.
+func (c *ExtractorComponent) runAutoKeywordsPool(ctx context.Context, db *gorm.DB, in extractorInputs, w progress.Window) error {
+	if !c.Param.Keywords.Enabled || len(in.chunks) == 0 {
+		return nil
+	}
+	var skipped atomic.Int64
 	futs := make([]utility.WorkerPoolFuture[extractorJob, struct{}], 0, len(in.chunks))
 	for i, ck := range in.chunks {
 		i, ck := i, ck
-		text, _ := ck["content_with_weight"].(string)
+		text := extractorChunkText(ck)
 		if strings.TrimSpace(text) == "" {
-			text, _ = ck["text"].(string)
+			continue
 		}
 		fn := func() error {
-			if err := c.runAutoKeywords(ctx, db, in, ck, text); err != nil {
-				return fmt.Errorf("chunk %d keywords: %w", i, err)
+			err := c.runAutoKeywords(ctx, db, in, ck, text)
+			completed := err == nil
+			if err != nil {
+				err = fmt.Errorf("chunk %d keywords: %w", i, err)
 			}
-			return nil
+			return resolveChunkCallError(ctx, i, "keywords", err, completed, &skipped)
 		}
 		f, err := extractorPool.Submit(ctx, fn)
 		if err != nil {
@@ -814,61 +1085,86 @@ func (c *ExtractorComponent) runAutoKeywordsPool(ctx context.Context, db *gorm.D
 		}
 		futs = append(futs, f)
 	}
-	return awaitFutures(ctx, futs)
+	if err := awaitFutures(ctx, futs, w); err != nil {
+		return err
+	}
+	return checkAllChunksSkipped("keywords", len(futs), skipped.Load())
 }
 
 // runRemainingExtractions dispatches auto questions / summary / metadata
 // extractions across all chunks concurrently using extractorPool.
-func (c *ExtractorComponent) runRemainingExtractions(ctx context.Context, db *gorm.DB, in extractorInputs) error {
-	if c.Param.Questions.TopN <= 0 && !c.Param.Summary.Enabled && !c.Param.Metadata.Enabled {
+func (c *ExtractorComponent) runRemainingExtractions(ctx context.Context, db *gorm.DB, in extractorInputs, w progress.Window) error {
+	if !c.Param.Questions.Enabled && !c.Param.Summary.Enabled && !c.Param.Metadata.Enabled {
 		return nil
 	}
+	var skipped atomic.Int64
 	futs := make([]utility.WorkerPoolFuture[extractorJob, struct{}], 0, len(in.chunks))
 	for i, ck := range in.chunks {
 		i, ck := i, ck
-		text, _ := ck["content_with_weight"].(string)
+		text := extractorChunkText(ck)
 		if strings.TrimSpace(text) == "" {
-			text, _ = ck["text"].(string)
+			continue
 		}
-		fn := c.remainingExtractionJob(ctx, db, in, i, ck, text)
+		fn := c.remainingExtractionJob(ctx, db, in, i, ck, text, &skipped)
 		f, err := extractorPool.Submit(ctx, fn)
 		if err != nil {
 			return err
 		}
 		futs = append(futs, f)
 	}
-	return awaitFutures(ctx, futs)
+	if err := awaitFutures(ctx, futs, w); err != nil {
+		return err
+	}
+	return checkAllChunksSkipped("remaining", len(futs), skipped.Load())
 }
 
-func (c *ExtractorComponent) remainingExtractionJob(ctx context.Context, db *gorm.DB, in extractorInputs, idx int, ck map[string]any, chunkText string) extractorJob {
+func (c *ExtractorComponent) remainingExtractionJob(ctx context.Context, db *gorm.DB, in extractorInputs, idx int, ck map[string]any, chunkText string, skipped *atomic.Int64) extractorJob {
 	return func() error {
-		if c.Param.Questions.TopN > 0 {
-			if err := c.runAutoQuestions(ctx, db, in, ck, chunkText); err != nil {
-				return fmt.Errorf("chunk %d questions: %w", idx, err)
+		var err error
+		var completed bool
+		if c.Param.Questions.Enabled {
+			if qErr := c.runAutoQuestions(ctx, db, in, ck, chunkText); qErr != nil {
+				err = fmt.Errorf("chunk %d questions: %w", idx, qErr)
+			} else {
+				completed = true
 			}
 		}
-		if c.Param.Summary.Enabled {
-			if err := c.runAutoSummary(ctx, db, in, ck, chunkText); err != nil {
-				return fmt.Errorf("chunk %d summary: %w", idx, err)
+		if err == nil && c.Param.Summary.Enabled {
+			if sErr := c.runAutoSummary(ctx, db, in, ck, chunkText); sErr != nil {
+				err = fmt.Errorf("chunk %d summary: %w", idx, sErr)
+			} else {
+				completed = true
 			}
 		}
-		if c.Param.Metadata.Enabled {
-			if err := c.runEnableMetadata(ctx, db, in, ck, chunkText); err != nil {
-				return fmt.Errorf("chunk %d metadata: %w", idx, err)
+		if err == nil && c.Param.Metadata.Enabled {
+			if mErr := c.runEnableMetadata(ctx, db, in, ck, chunkText); mErr != nil {
+				err = fmt.Errorf("chunk %d metadata: %w", idx, mErr)
+			} else {
+				completed = true
 			}
 		}
-		return nil
+		return resolveChunkCallError(ctx, idx, "remaining", err, completed, skipped)
 	}
 }
 
-func awaitFutures(ctx context.Context, futs []utility.WorkerPoolFuture[extractorJob, struct{}]) error {
+// awaitFutures waits for every submitted job and returns the first failure.
+// Each settled future advances the phase's fraction window, so a chunk-heavy
+// LLM extraction reports in-flight progress instead of going quiet until the
+// whole phase is done.
+func awaitFutures(ctx context.Context, futs []utility.WorkerPoolFuture[extractorJob, struct{}], w progress.Window) error {
+	if len(futs) == 0 {
+		return nil
+	}
 	var firstErr error
 	var emu sync.Mutex
 	var wg sync.WaitGroup
+	var done atomic.Int64
+	total := int64(len(futs))
 	for _, f := range futs {
 		wg.Add(1)
 		go func(f utility.WorkerPoolFuture[extractorJob, struct{}]) {
 			defer wg.Done()
+			defer func() { w.Report(ctx, float64(done.Add(1))/float64(total)) }()
 			res, werr := f.Wait(ctx)
 			if werr != nil {
 				emu.Lock()
@@ -896,10 +1192,13 @@ func awaitFutures(ctx context.Context, futs []utility.WorkerPoolFuture[extractor
 // runAutoKeywords/runAutoQuestions shape but parses a JSON object and
 // merges into the chunk's metadata map.
 func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB, in extractorInputs, ck map[string]any, chunkText string) error {
+	if strings.TrimSpace(chunkText) == "" {
+		return nil
+	}
 	if !c.Param.Metadata.Enabled || len(c.Param.Metadata.Metadata) == 0 {
 		return nil
 	}
-	// Render the field schema into the prompt, mirroring Python's
+	// Render the field schema into the prompt, mirroring
 	// turn2jsonschema(metadata_conf) rendered into the META_DATA template.
 	schemaMap := common.Turn2JSONSchema(c.Param.Metadata.Metadata)
 	if len(schemaMap) == 0 {
@@ -911,20 +1210,28 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 	}
 	schemaStr := string(schemaJSON)
 
-	// LLM cache (mirrors Python get_llm_cache/set_llm_cache in
-	// task_executor.py:543/550 gen_metadata_task): identical (model + chunk
-	// text + schema) extractions are served from Redis within a 24h window so
-	// repeated runs / identical chunks don't re-pay the LLM call.
-	// Best-effort: a missing Redis client or any cache error falls through to
-	// a live call instead of failing the extraction.
+	// Per-chunk result cache: identical (model + chunk + schema) extractions
+	// are served from the cache so a resumed run — which re-executes every
+	// stage after the Parser checkpoint — doesn't re-pay the LLM call.
+	// Best-effort: a missing client or any cache error falls through to a live
+	// call instead of failing the extraction.
+	chunkID := chunkCacheID(ck)
+	// Prefer the run-level resolved identity; fall back only for direct unit
+	// callers that did not pre-resolve it.
+	modelID := in.modelID
+	if modelID == "" {
+		modelID = extractorCacheModelID(ctx, db, in.llmID)
+	}
 	var parsed map[string]any
-	if cached, hit := getMetadataLLMCache(ctx, in.llmID, schemaStr, chunkText); hit {
+	if cached, hit := getMetadataLLMCache(ctx, in.cache, modelID, schemaStr, chunkID); hit {
 		parsed = cached
 	} else {
 		metaTemp := extractorTemperature
 		metaIn := extractorInputs{
 			llmID:       in.llmID,
+			modelID:     in.modelID,
 			temperature: &metaTemp,
+			cache:       in.cache,
 		}
 		systemPrompt := fmt.Sprintf(autoMetadataPrompt, schemaStr)
 		parsed, err = c.callStructured(ctx, db, metaIn, systemPrompt, chunkText)
@@ -935,7 +1242,12 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 			// Non-JSON or empty response — nothing to extract, not an error.
 			return nil
 		}
-		setMetadataLLMCache(ctx, in.llmID, schemaStr, chunkText, parsed)
+		parsed = filterMetadataToDeclaredKeys(parsed, c.Param.Metadata.Metadata)
+		if len(parsed) == 0 {
+			// Every key fell outside the declared field set — nothing to keep.
+			return nil
+		}
+		setMetadataLLMCache(ctx, in.cache, modelID, schemaStr, chunkID, parsed)
 	}
 	// Merge into the chunk metadata map, preserving existing keys.
 	var meta map[string]any
@@ -957,53 +1269,93 @@ func (c *ExtractorComponent) runEnableMetadata(ctx context.Context, db *gorm.DB,
 	return nil
 }
 
-// metadataLLMCacheTTL mirrors Python get_llm_cache/set_llm_cache 24h TTL.
-const metadataLLMCacheTTL = 24 * time.Hour
+// filterMetadataToDeclaredKeys drops every key that is not part of the
+// declared metadata field set.
+//
+// The rendered schema carries additionalProperties:false, but that is only a
+// hint to the model: a model that renames, pluralizes or invents a field still
+// returns a parseable object, and such a key would otherwise widen the
+// dataset's metadata schema through mergeChunkMetadata. The declared set is
+// therefore enforced here, in code.
+func filterMetadataToDeclaredKeys(parsed map[string]any, fields []common.MetadataFieldDef) map[string]any {
+	allowed := make(map[string]struct{}, len(fields))
+	for _, f := range fields {
+		allowed[f.Key] = struct{}{}
+	}
+	kept := make(map[string]any, len(parsed))
+	for k, v := range parsed {
+		if _, ok := allowed[k]; !ok {
+			common.Debug("extractor stage",
+				zap.String("component", componentNameExtractor),
+				zap.String("dropped_metadata_key", k),
+			)
+			continue
+		}
+		kept[k] = v
+	}
+	return kept
+}
 
-// metadataLLMCacheKey builds a Redis key from (llm id, chunk text, "metadata",
-// schema), mirroring Python get_llm_cache's xxh64(llmnm + txt + history + genconf).
-func metadataLLMCacheKey(llmID, schemaJSON, chunkText string) string {
-	h := xxhash.New()
-	h.WriteString(llmID)
-	h.WriteString("\x00")
-	h.WriteString(chunkText)
-	h.WriteString("\x00")
-	h.WriteString("metadata")
-	h.WriteString("\x00")
-	h.WriteString(schemaJSON)
-	return fmt.Sprintf("kc:meta:%x", h.Sum64())
+// extractorChunkText resolves the body an extraction is run against.
+//
+// Canonical text wins. Media-only chunks may use their explicit surrounding
+// context; chunks with neither body nor context are skipped by the extraction
+// schedulers.
+func extractorChunkText(ck map[string]any) string {
+	if v, _ := ck["text"].(string); strings.TrimSpace(v) != "" {
+		return v
+	}
+	var contextParts []string
+	for _, key := range []string{"context_above", "context_below"} {
+		if v, _ := ck[key].(string); strings.TrimSpace(v) != "" {
+			contextParts = append(contextParts, strings.TrimSpace(v))
+		}
+	}
+	if len(contextParts) > 0 {
+		return strings.Join(contextParts, " ")
+	}
+	return ""
+}
+
+// chunkCacheID returns the chunk's stable per-chunk id, assigned by the chunker
+// (component.ChunkID over doc id + text). Returns "" when the chunk carries no
+// id — e.g. chunks that reached the Extractor without passing a chunker — in
+// which case callers must skip the cache instead of sharing one bucket across
+// every unidentified chunk.
+func chunkCacheID(ck map[string]any) string {
+	id, _ := ck["id"].(string)
+	return id
+}
+
+// metadataLLMCacheKey builds the cache key for one metadata extraction. The
+// schema is part of the key so editing the field set invalidates results
+// extracted against the previous one.
+func metadataLLMCacheKey(llmID, schemaJSON, chunkID string) string {
+	return chunkcache.Key("meta", llmID, chunkID, schemaJSON)
 }
 
 // getMetadataLLMCache returns a cached extraction for the given chunk, or
-// (nil, false) on miss / Redis unavailable / decode error. Best-effort.
-func getMetadataLLMCache(ctx context.Context, llmID, schemaJSON, chunkText string) (map[string]any, bool) {
-	client := redis.Get()
-	if client == nil {
-		return nil, false
-	}
-	data, err := client.Get(ctx, metadataLLMCacheKey(llmID, schemaJSON, chunkText))
-	if err != nil || data == "" {
+// (nil, false) on miss / cache unavailable / decode error. Best-effort.
+func getMetadataLLMCache(ctx context.Context, store chunkcache.Store, modelID, schemaJSON, chunkID string) (map[string]any, bool) {
+	data, hit := chunkcache.Get(ctx, store, metadataLLMCacheKey(modelID, schemaJSON, chunkID))
+	if !hit {
 		return nil, false
 	}
 	var parsed map[string]any
-	if err = json.Unmarshal([]byte(data), &parsed); err != nil {
+	if err := json.Unmarshal([]byte(data), &parsed); err != nil {
 		return nil, false
 	}
 	return parsed, true
 }
 
-// setMetadataLLMCache stores an extraction result for 24h. Best-effort: a
-// missing Redis client or marshal error is silently ignored.
-func setMetadataLLMCache(ctx context.Context, llmID, schemaJSON, chunkText string, parsed map[string]any) {
-	client := redis.Get()
-	if client == nil {
-		return
-	}
+// setMetadataLLMCache stores an extraction result. Best-effort: an unavailable
+// cache or a marshal error is silently ignored.
+func setMetadataLLMCache(ctx context.Context, store chunkcache.Store, modelID, schemaJSON, chunkID string, parsed map[string]any) {
 	data, err := json.Marshal(parsed)
 	if err != nil {
 		return
 	}
-	client.Set(ctx, metadataLLMCacheKey(llmID, schemaJSON, chunkText), string(data), metadataLLMCacheTTL)
+	chunkcache.Set(ctx, store, metadataLLMCacheKey(modelID, schemaJSON, chunkID), string(data))
 }
 
 // callRaw runs one chat call against the LLM (per chunk in the normal path)
@@ -1014,8 +1366,12 @@ func setMetadataLLMCache(ctx context.Context, llmID, schemaJSON, chunkText strin
 //   - callText wraps callRaw with the LLM-layer two-step cleanup (think +
 //     tool_call) and returns a plain string.
 //   - callStructured wraps callRaw with cleanup + explicit JSON parsing and
-//     returns a map — the metadata path, matching Python gen_metadata.
+//
+// returns a map — the metadata path, matching gen_metadata
 func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extractorInputs, systemPrompt, chunkText string) (*extractorChatResponse, error) {
+	if strings.TrimSpace(chunkText) == "" {
+		return nil, fmt.Errorf("extractor: chunk text is empty")
+	}
 	driver, modelName, apiKey, baseURL, err := resolveExtractorChatTarget(ctx, db, in.llmID)
 	if err != nil {
 		return nil, err
@@ -1036,15 +1392,22 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 	}
 	// Only override the temperature when the caller set one. A nil
 	// Temperature lets the model / chat-model default decide, matching
-	// Python's generic Extractor path; keyword/question helpers set
-	// extractorTemperature (0.2) to mirror generator.py.
+	// generic Extractor path; keyword/question helpers set
+	// extractorTemperature (0.2) to mirror
 	if in.temperature != nil {
 		temp := *in.temperature
 		req.Temperature = &temp
 	}
 	var resp *extractorChatResponse
-	if err := common.RetryWithBackoff(ctx, extractorRetryMax, extractorRetryDelay, func() error {
-		r, e := inv.Chat(ctx, req)
+	// One hung-call ceiling per LLM request (see extractorChatTimeout).
+	// RetryWithBackoff treats a budget expiry as terminal (no retry), so a
+	// hung call burns at most one attempt. The pool jobs map the expiry to
+	// a per-chunk skip; anything else keeps fail-fast semantics.
+	budget := extractorChatTimeout()
+	callCtx, cancel := context.WithTimeout(ctx, budget)
+	defer cancel()
+	if err := common.RetryWithBackoff(callCtx, extractorRetryMax, extractorRetryDelay, func() error {
+		r, e := inv.Chat(callCtx, req)
 		resp = r
 		return e
 	}, isRetryableLLMError); err != nil {
@@ -1058,25 +1421,26 @@ func (c *ExtractorComponent) callRaw(ctx context.Context, db *gorm.DB, in extrac
 	return resp, nil
 }
 
-// toolCallRE matches a <tool_call>...</tool_call> block, mirroring Python's
+// toolCallRE matches a <tool_call>...</tool_call> block, mirroring
 // `re.sub(r"<tool_call>.*?</tool_call>", "", txt, flags=re.DOTALL)` at
-// llm_service.py:461. Non-greedy so consecutive tool_call blocks are each
+// . Non-greedy so consecutive tool_call blocks are each
 // stripped.
 var toolCallRE = regexp.MustCompile(`(?s)<tool_call>.*?</tool_call>`)
 
-// cleanLLMText applies the two-step LLM-layer cleanup that Python performs
-// in LLMBundle.async_chat (llm_service.py:459-461) for every response,
-// before any parsing:
+// cleanLLMText applies the two-step LLM-layer cleanup that runs for every
+// response before any parsing:
 //
 //  1. Reasoning content: when the response BEGINS with `<think>`, take
 //     everything after the LAST `</think>`. A `<think>` that appears after
 //     a non-empty prefix is treated as ordinary content and preserved, so a
-//     legitimate prefix is never stripped. Python's _remove_reasoning_content
-//     (llm_service.py:332-346) finds the first `<think>` anywhere; restricting
-//     to a leading `<think>` avoids deleting real content that merely contains
-//     a think-looking tag. A leading `<think>` with no closing `</think>` is
-//     kept unchanged.
-//  2. Tool-call blocks: remove `<tool_call>...</tool_call>` spans.
+//
+// legitimate prefix is never stripped. _remove_reasoning_content
+// finds the first `<think>` anywhere; restricting
+//
+//	   to a leading `<think>` avoids deleting real content that merely contains
+//	   a think-looking tag. A leading `<think>` with no closing `</think>` is
+//	   kept unchanged.
+//	2. Tool-call blocks: remove `<tool_call>...</tool_call>` spans.
 //
 // The result is a plain string, ready for the caller to consume as text or
 // to parse explicitly.
@@ -1089,7 +1453,7 @@ func cleanLLMText(s string) string {
 }
 
 // cleanExtractionResult strips `</think>` tags and rejects `**ERROR**` responses,
-// matching Python's keyword_extraction and question_proposal post-processing.
+// matching keyword_extraction and question_proposal post-processing
 func cleanExtractionResult(s string) string {
 	s = common.StripThinkTrailing(s)
 	s = strings.TrimSpace(s)
@@ -1167,7 +1531,7 @@ func (c *ExtractorComponent) callText(ctx context.Context, db *gorm.DB, in extra
 
 // callStructured runs one chat call, cleans the response, and explicitly
 // parses it as a JSON object. Used by the metadata path, which needs a
-// structured value to merge into chunk metadata — matching Python
+// structured value to merge into chunk metadata — matching
 // gen_metadata's json_repair.loads. A non-JSON or empty response returns
 // (nil, nil) so the caller treats it as "nothing extracted", not an error.
 func (c *ExtractorComponent) callStructured(ctx context.Context, db *gorm.DB, in extractorInputs, systemPrompt, chunkText string) (map[string]any, error) {
@@ -1179,12 +1543,12 @@ func (c *ExtractorComponent) callStructured(ctx context.Context, db *gorm.DB, in
 	if s == "" {
 		return nil, nil
 	}
-	// Second cleanup layer, mirroring Python gen_metadata's
+	// Second cleanup layer, mirroring gen_metadata's
 	// re.sub(r"^.*</think>", "", ans, re.DOTALL): cleanLLMText only strips a
 	// leading <think>, so a mid-text reasoning block preceded by a preamble
 	// would otherwise survive into JSON parsing and silently drop the whole
-	// metadata extraction that Python would have kept. No **ERROR** check here
-	// — Python's gen_metadata has none either.
+	// metadata extraction that would have kept. No **ERROR** check here
+	// — gen_metadata has none either
 	s = common.StripThinkTrailing(s)
 	parsed, ok := tryParseJSONObject(s)
 	if !ok {
@@ -1193,11 +1557,22 @@ func (c *ExtractorComponent) callStructured(ctx context.Context, db *gorm.DB, in
 	return parsed, nil
 }
 
-// resolveExtractorChatTarget resolves the llm_id into driver / model /
-// api_key / base_url. The llm_id may be a bare tenant_model UUID or
-// a composite "model@provider" string. Errors from DAO resolution are
-// propagated so the caller sees the real failure reason.
+// resolveExtractorChatTarget resolves the chat target for llmID, reusing a
+// per-run cache attached to ctx when present. Without the cache it behaves
+// exactly as resolveExtractorChatTargetUncached (the historical per-call path),
+// so callers and tests that do not inject a cache are unchanged.
 func resolveExtractorChatTarget(ctx context.Context, db *gorm.DB, llmID string) (driver, modelName, apiKey, baseURL string, err error) {
+	if c := extractorModelCacheFromCtx(ctx); c != nil {
+		return c.target(ctx, db, llmID)
+	}
+	return resolveExtractorChatTargetUncached(ctx, db, llmID)
+}
+
+// resolveExtractorChatTargetUncached resolves the llm_id into driver / model /
+// api_key / base_url without any per-run cache. The llm_id may be a bare
+// tenant_model UUID or a composite "model@provider" string. Errors from DAO
+// resolution are propagated so the caller sees the real failure reason.
+func resolveExtractorChatTargetUncached(ctx context.Context, db *gorm.DB, llmID string) (driver, modelName, apiKey, baseURL string, err error) {
 	if override := getExtractorChatTargetResolverOverride(); override != nil {
 		if driver, modelName, apiKey, baseURL, ok := override(llmID); ok {
 			return driver, modelName, apiKey, baseURL, nil
@@ -1205,7 +1580,7 @@ func resolveExtractorChatTarget(ctx context.Context, db *gorm.DB, llmID string) 
 	}
 
 	// When llmID is empty, try tenant default chat model
-	// (mirrors Python task_executor.py:573-574 fallback).
+	// (mirrors fallback)
 	if llmID == "" {
 		if cfg := resolveExtractorChatDefaultConfig(ctx, db); cfg.driver != "" {
 			return cfg.driver, cfg.modelName, cfg.apiKey, cfg.baseURL, nil
@@ -1248,7 +1623,7 @@ type extractorChatConfig struct {
 // Returns nil error when there is no canvas state (unit tests) —
 // the caller's @ split fallback handles that case.
 func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID string) (extractorChatConfig, error) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return extractorChatConfig{}, nil
 	}
@@ -1262,14 +1637,12 @@ func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID
 	var modelName string
 	var apiConfig *models.APIConfig
 	if isBareTenantModelID(compositeLLMID) {
-		// UUID path: resolveModelConfigByID does a single GetByID and
-		// returns a clear error if the record doesn't exist.  No need
-		// for a separate pre-check — resolveModelConfig's redundant
-		// GetByID dispatch check is also bypassed.
-		driver, modelName, apiConfig, _, err = resolveModelConfigByID(ctx, db, tid, entity.ModelTypeChat, compositeLLMID)
+		// Resolve the exact tenant model without a separate existence check.
+		resolved, err := resolveModelConfigByID(ctx, db, tid, entity.ModelTypeChat, compositeLLMID)
 		if err != nil {
 			return extractorChatConfig{}, fmt.Errorf("extractor: tenant model %q not found or not usable: %w", compositeLLMID, err)
 		}
+		driver, modelName, apiConfig = resolved.driver, resolved.model.ModelName, resolved.apiConfig
 	} else {
 		// Composite "model@provider" path: delegate to the shared dispatcher.
 		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tid, entity.ModelTypeChat, compositeLLMID)
@@ -1278,6 +1651,14 @@ func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID
 		}
 	}
 
+	return newExtractorChatConfig(driver, modelName, apiConfig), nil
+}
+
+// newExtractorChatConfig builds the chat config from a resolved driver and its
+// API settings: the driver name lowercased as the llm_factory, with the
+// credentials dereferenced defensively (a nil apiConfig or nil fields mean
+// "not configured", not a panic).
+func newExtractorChatConfig(driver models.ModelDriver, modelName string, apiConfig *models.APIConfig) extractorChatConfig {
 	apiKey := ""
 	baseURL := ""
 	if apiConfig != nil {
@@ -1293,14 +1674,14 @@ func resolveExtractorChatConfig(ctx context.Context, db *gorm.DB, compositeLLMID
 		modelName: modelName,
 		apiKey:    apiKey,
 		baseURL:   baseURL,
-	}, nil
+	}
 }
 
 // resolveExtractorChatDefaultConfig resolves the tenant's default chat
 // model when no explicit llm_id is provided. Returns empty config when
 // no canvas state or tenant_id is available (unit-test context).
 func resolveExtractorChatDefaultConfig(ctx context.Context, db *gorm.DB) extractorChatConfig {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return extractorChatConfig{}
 	}
@@ -1315,22 +1696,7 @@ func resolveExtractorChatDefaultConfig(ctx context.Context, db *gorm.DB) extract
 		return extractorChatConfig{}
 	}
 
-	apiKey := ""
-	baseURL := ""
-	if apiConfig != nil {
-		if apiConfig.ApiKey != nil {
-			apiKey = *apiConfig.ApiKey
-		}
-		if apiConfig.BaseURL != nil {
-			baseURL = *apiConfig.BaseURL
-		}
-	}
-	return extractorChatConfig{
-		driver:    strings.ToLower(driver.Name()),
-		modelName: modelName,
-		apiKey:    apiKey,
-		baseURL:   baseURL,
-	}
+	return newExtractorChatConfig(driver, modelName, apiConfig)
 }
 
 // isBareTenantModelID reports whether s is a 32-character hex string
@@ -1372,23 +1738,31 @@ func getExtractorContextLengthOverride() func(ctx context.Context, llmID string)
 	return extractorContextLengthOverride
 }
 
-// extractorContextLength returns the chat model's context window
-// (content_length) for the effective chat model used by a call, or 0 when
-// unavailable. Mirrors Python's chat_mdl.max_length. Used as the token
-// budget for message fitting so oversized prompts are trimmed instead of
-// rejected by the provider. When llm_id is empty the call falls back to the
-// tenant default chat model (see resolveExtractorChatTarget), so the same
-// model is resolved here; otherwise the default-model path would never get
-// message fitting. Returns 0 (skip fitting) when the model is unknown (e.g.
-// unit tests with synthetic llm_id or no canvas state).
+// extractorContextLength returns the chat model's context window for llmID,
+// reusing a per-run cache attached to ctx when present. The context-length
+// override seam is still consulted first (unchanged test priority), and without
+// a cache the behavior is exactly extractorContextLengthUncached.
 func extractorContextLength(ctx context.Context, db *gorm.DB, llmID string) int {
 	if fn := getExtractorContextLengthOverride(); fn != nil {
 		return fn(ctx, llmID)
 	}
-	if db == nil {
-		db = dao.DB
+	if c := extractorModelCacheFromCtx(ctx); c != nil {
+		return c.ctxLen(ctx, db, llmID)
 	}
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	return extractorContextLengthUncached(ctx, db, llmID)
+}
+
+// extractorContextLengthUncached returns the chat model's context window
+// (content_length) for llmID, or 0 when unavailable. It is used as the token
+// budget for message fitting so oversized prompts are trimmed instead of
+// rejected by the provider. When
+// llm_id is empty the call falls back to the tenant default chat model (see
+// resolveExtractorChatTarget), so the same model is resolved here; otherwise
+// the default-model path would never get message fitting. Returns 0 (skip
+// fitting) when the model is unknown (e.g. unit tests with synthetic llm_id or
+// no canvas state).
+func extractorContextLengthUncached(ctx context.Context, db *gorm.DB, llmID string) int {
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return 0
 	}
@@ -1403,7 +1777,7 @@ func extractorContextLength(ctx context.Context, db *gorm.DB, llmID string) int 
 	if llmID == "" {
 		return 0
 	}
-	return dao.ResolveModelContentLength(ctx, db, tid, llmID, "", "")
+	return modelcontext.ResolveModelContentLength(ctx, db, tid, llmID, "", "")
 }
 
 // defaultChatModelRef returns the tenant's default chat model reference —
@@ -1414,18 +1788,19 @@ func defaultChatModelRef(ctx context.Context, db *gorm.DB, tenantID string) stri
 		// No database to read the tenant's default chat model from.
 		return ""
 	}
-	tenant, err := dao.NewTenantDAO().GetByID(ctx, db, tenantID)
-	if err != nil || tenant == nil {
+	membership, err := resolveDefaultModelMembership(ctx, db, tenantID)
+	if err != nil || membership == nil {
 		return ""
 	}
-	if tenant.TenantLLMID != nil && *tenant.TenantLLMID != "" {
-		return *tenant.TenantLLMID
+	if membership.TenantLLMID != nil && *membership.TenantLLMID != "" {
+		return *membership.TenantLLMID
 	}
-	return tenant.LLMID
+	return membership.LLMID
 }
 
 // extractorContextFitBudget returns 97% of the model's context window as the
-// fitting budget, mirroring the agent component's contextFitBudget. The
+// fitting budget, mirroring agent/chat's ContextFitBudget (the canonical
+// helper) plus the clamp below. The
 // margin leaves headroom for the difference between the cl100k tokenizer used
 // for counting and the model's own tokenizer, plus per-message formatting
 // overhead, so a fitted prompt stays inside the provider's real context limit
@@ -1441,7 +1816,7 @@ func extractorContextFitBudget(ctxLen int) int {
 }
 
 // fitExtractorMessages trims msgs to the chat model's context window using
-// the shared tokenizer fitter (mirrors Python's message_fit_in), dropping
+// the shared tokenizer fitter (mirrors message_fit_in), dropping
 // entries the fitter removed. It returns a clear error instead of letting a
 // conversation whose final user turn was trimmed to empty reach the provider:
 // the proportional trim can do that when the system prompt alone exceeds the
@@ -1501,8 +1876,9 @@ func fitExtractorMessages(ctx context.Context, db *gorm.DB, llmID string, msgs [
 }
 
 // buildExtractorMessages assembles system + user messages for one extraction
-// call. The user message strictly carries chunkText (or a fallback single space
-// if empty), ensuring a clean and consistent message contract.
+// call. Normal per-chunk schedulers reject empty chunk text before reaching
+// this low-level builder; the single-space fallback remains for direct
+// callRaw callers that rely on the historical message shape.
 // System prompt is omitted if empty or whitespace-only to avoid sending empty
 // system turns to LLM providers.
 func buildExtractorMessages(systemPrompt, chunkText string) []eschema.Message {
@@ -1526,7 +1902,7 @@ func tryParseJSONObject(s string) (map[string]any, bool) {
 	trimmed := strings.TrimSpace(s)
 	// Strip a surrounding Markdown code fence. Models commonly wrap JSON in
 	// ```json ... ``` (language tag on the opening line) but some emit the tag
-	// on its own line (```\njson\n{...}); Python's json_repair tolerates both,
+	// on its own line (```\njson\n{...}); json_repair tolerates both
 	// encoding/json does not, so we drop the fence and any bare leading
 	// "json"/"JSON" language line before parsing.
 	if strings.HasPrefix(trimmed, "```") {
@@ -1570,53 +1946,10 @@ func tryParseJSONObject(s string) (map[string]any, bool) {
 }
 
 // parseMetadataFieldDefs converts an any value (typically []any of maps)
-// to a typed []common.MetadataFieldDef slice.
+// to a typed []common.MetadataFieldDef slice. The parsing lives in common so the
+// ingestion extractor and the agentic metadata catalog share one field contract.
 func parseMetadataFieldDefs(v any) []common.MetadataFieldDef {
-	if v == nil {
-		return nil
-	}
-	if defs, ok := v.([]common.MetadataFieldDef); ok {
-		return defs
-	}
-	var arr []any
-	switch typed := v.(type) {
-	case []any:
-		arr = typed
-	case []map[string]any:
-		arr = make([]any, 0, len(typed))
-		for _, item := range typed {
-			arr = append(arr, item)
-		}
-	default:
-		return nil
-	}
-	fields := make([]common.MetadataFieldDef, 0, len(arr))
-	for _, f := range arr {
-		m, ok := f.(map[string]any)
-		if !ok {
-			continue
-		}
-		key, _ := m["key"].(string)
-		if key = strings.TrimSpace(key); key == "" {
-			continue
-		}
-		def := common.MetadataFieldDef{Key: key}
-		if t, ok := m["type"].(string); ok {
-			def.Type = t
-		}
-		if d, ok := m["description"].(string); ok {
-			def.Description = d
-		}
-		if e, ok := m["enum"].([]any); ok {
-			for _, ev := range e {
-				if s, ok := ev.(string); ok {
-					def.Enum = append(def.Enum, s)
-				}
-			}
-		}
-		fields = append(fields, def)
-	}
-	return fields
+	return common.MetadataFieldDefsFromRaw(v)
 }
 
 // mapInt converts a JSON-compatible value to int.

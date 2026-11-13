@@ -51,13 +51,25 @@ export function getTenantModelId(
   return '';
 }
 
-/** Build "modelName@instanceName@providerName" */
+/** Build "modelName@instanceName@providerName" (plus "#tenantId" when known) */
 export function buildModelValue(model: {
   model_name: string;
   model_instance: string;
   model_provider: string;
+  tenant_id?: string;
 }) {
-  return `${model.model_name}@${model.model_instance}@${model.model_provider}`;
+  const value = `${model.model_name}@${model.model_instance}@${model.model_provider}`;
+  return model.tenant_id ? `${value}#${model.tenant_id}` : value;
+}
+
+/**
+ * Identity of a provider model name. The bundled catalog and a live upstream
+ * listing can spell the same model with different case or padding, so every
+ * merge, lookup and duplicate check compares this normalized form instead of
+ * the raw name. Mirrors the backend's `providerModelKey`.
+ */
+export function modelNameKey(name: string): string {
+  return name.trim().toLowerCase();
 }
 
 /**
@@ -72,6 +84,11 @@ export function buildValidModelIds(
 ): Set<string> {
   const ids = new Set<string>();
   for (const m of allModels) {
+    if (
+      (m.status != null && m.status !== 'active') ||
+      (m.instance_status != null && m.instance_status !== 'active')
+    )
+      continue;
     if (!m.model_type?.some((t) => modelTypes.includes(t))) continue;
     const legacyId = buildModelValue({
       model_name: getRealModelName(m.name),
@@ -102,24 +119,37 @@ export function buildValidModelIds(
  *
  * Right-anchored split mirrors `api/db/joint_services/tenant_model_service.py`
  * `split_model_name` and the Go `parseModelName` (PR #16468 family).
+ *
+ * A trailing "#tenantId" suffix, when present, is returned separately as
+ * `tenant_id` so `model_provider` always holds the bare factory name.
  */
 export function parseModelValue(val: string) {
   if (!val) return null;
   const lastAt = val.lastIndexOf('@');
   if (lastAt === -1) return null;
+  const hashIndex = val.indexOf('#');
   const secondLastAt = val.lastIndexOf('@', lastAt - 1);
+  const tenantId = hashIndex === -1 ? undefined : val.substring(hashIndex + 1);
+  const providerPart = val.substring(lastAt + 1);
+  const providerHash = providerPart.indexOf('#');
+  const modelProvider =
+    providerHash === -1
+      ? providerPart
+      : providerPart.substring(0, providerHash);
   if (secondLastAt === -1) {
     // 2-part form: "modelName@providerName" — instance defaults to "default".
     return {
       model_name: val.substring(0, lastAt),
       model_instance: 'default',
-      model_provider: val.substring(lastAt + 1),
+      model_provider: modelProvider,
+      tenant_id: tenantId,
     };
   }
   return {
     model_name: val.substring(0, secondLastAt),
     model_instance: val.substring(secondLastAt + 1, lastAt),
-    model_provider: val.substring(lastAt + 1),
+    model_provider: modelProvider,
+    tenant_id: tenantId,
   };
 }
 
@@ -196,18 +226,13 @@ export function isUrlInWhitelist(url: string): boolean {
 export function addTenantParams(data: any, url?: string): any {
   if (!data || typeof data !== 'object') return data;
 
-  // If URL is provided and not in whitelist, return original data
-  if (url && !isUrlInWhitelist(url)) {
-    return data;
-  }
-
   // Handle arrays
   if (Array.isArray(data)) {
+    if (url && !isUrlInWhitelist(url)) return data;
     return data.map((item) => addTenantParams(item, url));
   }
 
   const newData = { ...data };
-  const llmList = getCachedLlmList();
 
   // Clear the paired tenant ID when a model selection is explicitly cleared.
   for (const [paramName, tenantParamName] of Object.entries(modelParamMap)) {
@@ -219,6 +244,11 @@ export function addTenantParams(data: any, url?: string): any {
     }
   }
 
+  // Non-whitelisted endpoints can clear an explicit model selection, but
+  // tenant model IDs are only resolved and injected for whitelisted endpoints.
+  if (url && !isUrlInWhitelist(url)) return newData;
+
+  const llmList = getCachedLlmList();
   if (!llmList) return newData;
 
   for (const [paramName, tenantParamName] of Object.entries(modelParamMap)) {

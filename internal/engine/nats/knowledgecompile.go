@@ -60,7 +60,7 @@ func (n *NatsEngine) InitKnowledgeCompileStream() error {
 		Storage:   jetstream.FileStorage,
 		Discard:   jetstream.DiscardNew,
 		MaxMsgs:   1024 * 1024,
-		MaxBytes:  1024 * 1024 * 64,
+		MaxBytes:  1024 * 1024 * 1024,
 	})
 	if err != nil {
 		return fmt.Errorf("knowledgecompile: create stream: %w", err)

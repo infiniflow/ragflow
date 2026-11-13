@@ -24,9 +24,18 @@ import (
 
 // AdminStatus represents the admin status
 // 0 = valid, 1 = invalid
+
+type AdminStatusCode int
+
+const (
+	Available      AdminStatusCode = 0
+	Unavailable    AdminStatusCode = 1
+	NotInitialized AdminStatusCode = 10
+)
+
 type AdminStatus struct {
-	Status int    `json:"status"` // 0 = available, 1 = not available
-	Reason string `json:"reason"` // reason for invalid status
+	Status AdminStatusCode `json:"status"` // 0 = available, 1 = not available
+	Reason string          `json:"reason"` // reason for invalid status
 }
 
 var (
@@ -37,11 +46,11 @@ var (
 
 // InitAdminStatus initializes the global admin status
 // status: 0 = valid, 1 = invalid (default)
-func InitAdminStatus(status int, reason string) {
+func InitAdminStatus() {
 	adminStatusOnce.Do(func() {
 		adminStatus = &AdminStatus{
-			Status: status,
-			Reason: reason,
+			Status: NotInitialized,
+			Reason: "admin server not connected",
 		}
 	})
 }
@@ -60,26 +69,27 @@ func GetAdminStatus() AdminStatus {
 }
 
 // SetAdminStatus updates the admin status
-func SetAdminStatus(status int, reason string) {
+func SetAdminStatus(statusCode AdminStatusCode, reason string) {
 	adminStatusMu.Lock()
 	defer adminStatusMu.Unlock()
 	if adminStatus == nil {
-		adminStatus = &AdminStatus{}
+		common.Fatal("Admin server status not initialized")
 	}
-	adminStatus.Status = status
+
+	if adminStatus.Status == statusCode {
+		return
+	}
+
+	switch statusCode {
+	case Available:
+		common.Warn(fmt.Sprintf("Admin server is available"))
+	case Unavailable:
+		common.Warn(fmt.Sprintf("Admin server is unavailable, code: %d, reason: %s", statusCode, reason))
+	default:
+		common.Fatal(fmt.Sprintf("Invalid admin status code: %d, reason: %s", statusCode, reason))
+		return
+	}
+
+	adminStatus.Status = statusCode
 	adminStatus.Reason = reason
-
-	if adminStatus.Status != 0 {
-		common.Warn(fmt.Sprintf("Admin server is unavailable, reason: %s", adminStatus.Reason))
-	}
-}
-
-// IsAdminAvailable returns true if admin is valid (Status == 0)
-func IsAdminAvailable() bool {
-	adminStatusMu.RLock()
-	defer adminStatusMu.RUnlock()
-	if adminStatus == nil {
-		return false
-	}
-	return adminStatus.Status == 0
 }

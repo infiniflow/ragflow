@@ -1,53 +1,57 @@
-import { ChunkMethodDialog } from '@/components/chunk-method-dialog';
+import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { DocumentPipelineDialog } from '@/components/document-pipeline-dialog';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { IChangeParserRequestBody } from '@/interfaces/request/document';
-import { BackendVariant } from '@/utils/backend-variant';
-import { getExtension } from '@/utils/document-util';
+import { useTranslation } from 'react-i18next';
 
 type ChangeParserDialogProps = {
   record: IDocumentInfo;
-  visible: boolean;
   onOk: (values: IChangeParserRequestBody) => Promise<void>;
   hideModal: () => void;
   loading: boolean;
 };
 
-// Dispatch point for the document parser-change dialog: the Go backend edits
-// the pipeline-shaped parser config, while the Python backend uses the legacy
-// chunk-method dialog.
+// The document parser-change dialog edits the pipeline-shaped parser config.
 export function ChangeParserDialog({
   record,
-  visible,
   onOk,
   hideModal,
   loading,
 }: ChangeParserDialogProps) {
   return (
-    <BackendVariant
-      go={
-        <DocumentPipelineDialog
-          parserId={record.chunk_method}
-          pipelineId={record.pipeline_id}
-          parserConfig={record.parser_config}
-          onOk={onOk}
-          hideModal={hideModal}
-          loading={loading}
-        ></DocumentPipelineDialog>
-      }
-      python={
-        <ChunkMethodDialog
-          documentId={record.id}
-          parserId={record.chunk_method}
-          pipelineId={record.pipeline_id}
-          parserConfig={record.parser_config}
-          documentExtension={getExtension(record.name)}
-          onOk={onOk}
-          visible={visible}
-          hideModal={hideModal}
-          loading={loading}
-        ></ChunkMethodDialog>
-      }
-    />
+    <DocumentPipelineDialog
+      parserId={record.chunk_method}
+      pipelineId={record.pipeline_id}
+      pipelineVersionId={record.pipeline_version_id}
+      parserConfig={record.parser_config}
+      onOk={onOk}
+      hideModal={hideModal}
+      loading={loading}
+    ></DocumentPipelineDialog>
+  );
+}
+
+// Shown after a parser-config save when the document already has chunks:
+// confirm dropping them and re-parsing with the saved settings.
+export function ReparseConfirmDialog({
+  visible,
+  onOk,
+  onCancel,
+}: {
+  visible: boolean;
+  onOk: () => void | Promise<void>;
+  onCancel: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <ConfirmDeleteDialog
+      open={visible}
+      title={t('knowledgeDetails.parseFile')}
+      content={{ title: t('knowledgeDetails.parserConfigReparseTip') }}
+      okButtonText={t('common.yes')}
+      cancelButtonText={t('common.no')}
+      onOk={onOk}
+      onCancel={onCancel}
+    ></ConfirmDeleteDialog>
   );
 }

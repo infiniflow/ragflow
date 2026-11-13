@@ -2,6 +2,7 @@ import { CardContainer } from '@/components/card-container';
 import { EmptyCardType } from '@/components/empty/constant';
 import { EmptyAppCard } from '@/components/empty/empty';
 import ListFilterBar from '@/components/list-filter-bar';
+import { PrivilegeManagementDialog } from '@/ee/components/privilege-management/privilege-management-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { ListDeletionKey } from '@/constants/list-deletion';
@@ -13,9 +14,15 @@ import { useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router';
 import { AddOrEditModal } from './add-or-edit-modal';
 import { defaultMemoryFields } from './constants';
-import { useFetchMemoryList, useRenameMemory, useSelectFilters } from './hooks';
+import {
+  useFetchMemoryFilters,
+  useFetchMemoryList,
+  useRenameMemory,
+  useSelectFilters,
+} from './hooks';
 import { ICreateMemoryProps, IMemory } from './interface';
 import { MemoryCard } from './memory-card';
+import { useShowPrivilegeDialog } from '@/ee/pages/memories/use-show-privilege-dialog';
 
 export default function MemoryList() {
   // const { data } = useFetchFlowList();
@@ -35,15 +42,22 @@ export default function MemoryList() {
     setFilterValue,
     handleFilterSubmit,
   } = useFetchMemoryList();
+  const { data: filterData } = useFetchMemoryFilters();
 
   const {
     openCreateModal,
     showMemoryRenameModal,
     hideMemoryModal,
-    searchRenameLoading,
+    memoryRenameLoading,
     onMemoryRenameOk,
     initialMemory,
   } = useRenameMemory();
+  const {
+    privilegeModalVisible,
+    hidePrivilegeModal,
+    handShowPrivilegeModal,
+    recordWithSourceType,
+  } = useShowPrivilegeDialog();
 
   const onMemoryConfirm = (data: ICreateMemoryProps) => {
     onMemoryRenameOk(data, () => {
@@ -70,7 +84,7 @@ export default function MemoryList() {
   });
 
   const [searchUrl, setMemoryUrl] = useSearchParams();
-  const { filters } = useSelectFilters();
+  const { filters } = useSelectFilters(filterData);
   const isCreate = searchUrl.get('isCreate') === 'true';
   useEffect(() => {
     if (isCreate) {
@@ -115,6 +129,7 @@ export default function MemoryList() {
                       setAddOrEditType('edit');
                       showMemoryRenameModal(x);
                     }}
+                    showPrivilegeModal={handShowPrivilegeModal(x)}
                   />
                 ))}
               </CardContainer>
@@ -166,9 +181,15 @@ export default function MemoryList() {
           initialMemory={initialMemory}
           isCreate={addOrEditType === 'add'}
           open={openCreateModal}
-          loading={searchRenameLoading}
+          loading={memoryRenameLoading}
           onClose={hideMemoryModal}
           onSubmit={onMemoryConfirm}
+        />
+      )}
+      {privilegeModalVisible && (
+        <PrivilegeManagementDialog
+          hideModal={hidePrivilegeModal}
+          initialValues={recordWithSourceType}
         />
       )}
     </>

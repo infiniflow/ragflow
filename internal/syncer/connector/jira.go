@@ -17,7 +17,6 @@
 package connector
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -112,7 +111,6 @@ func NewJiraConnector(config map[string]any) (*JiraConnector, error) {
 		commentEmailBlacklist: jiraStringSet(jiraStringSlice(config["comment_email_blacklist"])),
 		client:                &http.Client{Timeout: jiraRequestTimeout},
 	}
-	c.client.CheckRedirect = c.checkRedirect
 	if len(c.labelsToSkip) == 0 {
 		c.labelsToSkip = jiraStringSet(strings.Split(os.Getenv("JIRA_CONNECTOR_LABELS_TO_SKIP"), ","))
 	}
@@ -132,6 +130,9 @@ func (c *JiraConnector) Validate(ctx context.Context) error {
 	parsed, err := url.Parse(c.baseURL)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return &ConnectorValidationError{Message: "invalid Jira base URL"}
+	}
+	if err := validateConnectorURL(c.baseURL); err != nil {
+		return &ConnectorValidationError{Message: err.Error()}
 	}
 	if c.apiToken == "" && (c.userEmail == "" || c.password == "") {
 		return &ConnectorMissingCredentialError{Message: "Jira credentials must include either an API token or username/password."}
@@ -226,18 +227,11 @@ func (c *JiraConnector) buildJQL(start *time.Time, end time.Time) string {
 		sort.Strings(labels)
 		clauses = append(clauses, "labels NOT IN ("+strings.Join(labels, ", ")+")")
 	}
-	if start != nil {
-		adjusted := *start
-		if c.timeBuffer > 0 {
-			adjusted = adjusted.Add(-c.timeBuffer)
-			if adjusted.Before(time.Unix(0, 0)) {
-				adjusted = time.Unix(0, 0).UTC()
-			}
-		}
-		clauses = append(clauses, fmt.Sprintf("updated >= %q", c.formatJQLTime(adjusted)))
+	if lower := c.jiraQueryLowerBound(start); lower != nil {
+		clauses = append(clauses, fmt.Sprintf("updated >= %q", c.formatJQLTime(*lower)))
 	}
 	if !end.IsZero() {
-		clauses = append(clauses, fmt.Sprintf("updated <= %q", c.formatJQLTime(end)))
+		clauses = append(clauses, fmt.Sprintf("updated < %q", c.formatJQLTime(end.Add(time.Minute))))
 	}
 	jql := strings.Join(clauses, " AND ")
 	if orderBy == "" {
@@ -252,6 +246,27 @@ func (c *JiraConnector) buildJQL(start *time.Time, end time.Time) string {
 func (c *JiraConnector) formatJQLTime(t time.Time) string {
 	offsetSeconds := int(c.timezoneOffset * 3600)
 	return t.UTC().In(time.FixedZone("jira", offsetSeconds)).Format("2006-01-02 15:04")
+}
+
+// jiraQueryLowerBound is the `updated >=` bound buildJQL sends, and the bound
+// page filtering must apply. JQL accepts minute precision, so the value is
+// floored to the minute. Filtering at the unbuffered start instead would make
+// the time buffer widen only the server response and then throw the extra rows
+// away; because the previous run's upper bound is floored the same way, an
+// issue updated inside the waterline minute would be covered by neither run.
+func (c *JiraConnector) jiraQueryLowerBound(start *time.Time) *time.Time {
+	if start == nil || start.IsZero() {
+		return nil
+	}
+	adjusted := start.UTC()
+	if c.timeBuffer > 0 {
+		adjusted = adjusted.Add(-c.timeBuffer)
+		if adjusted.Before(time.Unix(0, 0)) {
+			adjusted = time.Unix(0, 0).UTC()
+		}
+	}
+	floor := adjusted.Truncate(time.Minute)
+	return &floor
 }
 
 func splitJiraOrderBy(query string) (string, string) {
@@ -484,29 +499,33 @@ func (c *JiraConnector) syncTimezoneFromServer(ctx context.Context) error {
 
 func (c *JiraConnector) doJiraJSON(ctx context.Context, method, apiPath string, query url.Values, body any, out any) (http.Header, error) {
 	apiURL := c.apiURL(apiPath, query)
-	var reader io.Reader
+	var data []byte
 	if body != nil {
-		data, err := json.Marshal(body)
+		var err error
+		data, err = json.Marshal(body)
 		if err != nil {
 			return nil, err
 		}
-		reader = bytes.NewReader(data)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, apiURL, reader)
-	if err != nil {
-		return nil, err
-	}
-	c.authorize(req)
+	headers := map[string]string{"Accept": "application/json"}
 	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
+		headers["Content-Type"] = "application/json"
 	}
-	req.Header.Set("Accept", "application/json")
-	resp, err := c.client.Do(req)
+	resp, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:        method,
+		RawURL:        apiURL,
+		Body:          data,
+		Headers:       headers,
+		Timeout:       jiraRequestTimeout,
+		Base:          c.client,
+		Prepare:       func(req *http.Request, _ connectorRequestHop) error { c.authorize(req); return nil },
+		CheckRedirect: c.checkRedirect,
+	})
 	if err != nil {
 		return nil, err
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 32*1024*1024))
+	data, err = io.ReadAll(io.LimitReader(resp.Body, 32*1024*1024))
 	if err != nil {
 		return resp.Header, err
 	}
@@ -534,12 +553,14 @@ func (c *JiraConnector) downloadURL(ctx context.Context, rawURL string) ([]byte,
 	if !sameJiraOrigin(parsed, base) {
 		return nil, fmt.Errorf("Jira attachment origin %q does not match the configured base URL", parsed.Scheme+"://"+parsed.Host)
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	c.authorize(req)
-	resp, err := c.client.Do(req)
+	resp, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:        http.MethodGet,
+		RawURL:        rawURL,
+		Timeout:       jiraRequestTimeout,
+		Base:          c.client,
+		Prepare:       func(req *http.Request, _ connectorRequestHop) error { c.authorize(req); return nil },
+		CheckRedirect: c.checkRedirect,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -628,7 +649,12 @@ func (s *jiraSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 				continue
 			}
 			updatedAt := issue.Fields.Updated.Time()
-			if s.windowStart != nil && !s.fromBeginning && !updatedAt.IsZero() && !updatedAt.After(*s.windowStart) {
+			if !s.fromBeginning && !updatedAt.IsZero() {
+				if lower := s.connector.jiraQueryLowerBound(s.windowStart); lower != nil && updatedAt.Before(*lower) {
+					continue
+				}
+			}
+			if !s.windowEnd.IsZero() && !updatedAt.IsZero() && updatedAt.After(s.windowEnd) {
 				continue
 			}
 			doc, ok := s.connector.issueDocument(issue)

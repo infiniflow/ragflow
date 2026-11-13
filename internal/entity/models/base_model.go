@@ -26,22 +26,46 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/clickhouse"
-	"ragflow/internal/utility"
 	"sort"
 	"strings"
 	"time"
 )
+
+// APIStatusError is a provider HTTP failure with its status code preserved, so
+// callers can act on the status (failover cooldown, retry) instead of matching
+// the error text. hideBody prevents untrusted MWS responses from echoing
+// credentials through user-visible error messages.
+type APIStatusError struct {
+	Status   int
+	Body     string
+	hideBody bool
+}
+
+func (e *APIStatusError) Error() string {
+	if e.hideBody {
+		return fmt.Sprintf("API request failed with status %d", e.Status)
+	}
+	return fmt.Sprintf("API request failed with status %d: %s", e.Status, e.Body)
+}
 
 type BaseModel struct {
 	BaseURL          map[string]string
 	URLSuffix        URLSuffix
 	httpClient       *http.Client
 	AllowEmptyAPIKey bool
+	hideAPIErrorBody bool
 	// authHeader, when non-nil, supplies the (name, value) pair used for
 	// authentication instead of the default "Authorization: Bearer <key>".
 	// Drivers with non-standard auth (e.g. Xiaomi's api-key header, Xunfei's
 	// spark_api_password bundle) set it in their constructor.
 	authHeader func(*APIConfig) (string, string)
+	// requestHeaders, when non-nil, adds driver-specific headers to every
+	// request built by the shared helpers. It runs before authentication is
+	// applied, so authentication headers take precedence over anything it
+	// sets. It receives the request itself, so a driver can decide from the
+	// actual destination (e.g. AI/ML API sends partner attribution only to its
+	// own gateway host).
+	requestHeaders func(*http.Request)
 }
 
 // chatResponseParts is the provider-normalized result of a non-streaming chat
@@ -124,7 +148,11 @@ func collectModelUsage(modelUsage *common.ModelUsage, usage *TokenUsage) error {
 	if !modelUsage.StartAt.IsZero() {
 		modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
 	}
-	return clickhouse.GetDriver().CollectModelUsage(modelUsage)
+	driver := clickhouse.GetDriver()
+	if driver == nil {
+		return nil
+	}
+	return driver.CollectModelUsage(modelUsage)
 }
 
 // applyStreamUsage exposes streamed token usage to the caller and records it
@@ -168,8 +196,12 @@ func (b *BaseModel) APIConfigCheck(apiConfig *APIConfig) error {
 
 // applyAuth sets the authentication header on req. Drivers with a custom
 // authHeader hook (e.g. Xiaomi's api-key header, Xunfei's spark_api_password
-// bundle) use it; the default is "Authorization: Bearer <key>".
+// bundle) use it; the default is "Authorization: Bearer <key>". A driver's
+// requestHeaders hook runs first, so the authentication header always wins.
 func (b *BaseModel) applyAuth(req *http.Request, apiConfig *APIConfig) {
+	if b.requestHeaders != nil {
+		b.requestHeaders(req)
+	}
 	if b.authHeader != nil {
 		name, value := b.authHeader(apiConfig)
 		req.Header.Set(name, value)
@@ -213,15 +245,16 @@ func (b *BaseModel) doRequest(ctx context.Context, url string, apiConfig *APICon
 	}
 	defer resp.Body.Close()
 
+	var body []byte
 	if resp.StatusCode != http.StatusOK {
-		body, err := readModelErrorBody(resp.Body)
+		body, err = readModelErrorBody(resp.Body)
 		if err != nil {
 			return nil, fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
 		}
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body), hideBody: b.hideAPIErrorBody}
 	}
 
-	body, err := readModelResponseBody(resp.Body)
+	body, err = readModelResponseBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
@@ -253,7 +286,7 @@ func (b *BaseModel) doGetRequest(ctx context.Context, url string, apiConfig *API
 		if err != nil {
 			return nil, fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
 		}
-		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body), hideBody: b.hideAPIErrorBody}
 	}
 
 	body, err := readModelResponseBody(resp.Body)
@@ -286,7 +319,7 @@ func (b *BaseModel) doStreamRequest(ctx context.Context, url string, apiConfig *
 		if err != nil {
 			return fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
 		}
-		return fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
+		return &APIStatusError{Status: resp.StatusCode, Body: string(body), hideBody: b.hideAPIErrorBody}
 	}
 
 	return handler(resp.Body)
@@ -329,6 +362,64 @@ func (b *BaseModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	return baseURL, nil
+}
+
+// EndpointURL resolves the request URL for an API path suffix, joining it onto
+// the base URL configured for this request. Drivers use it instead of
+// fmt.Sprintf("%s/%s", baseURL, suffix) so a version segment pasted into the
+// user-supplied base URL is not duplicated onto the suffix.
+func (b *BaseModel) EndpointURL(apiConfig *APIConfig, suffix string) (string, error) {
+	baseURL, err := b.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", err
+	}
+	return joinURL(baseURL, suffix), nil
+}
+
+// joinURL concatenates a resolved base URL with an API path suffix.
+// Some providers keep the API version in url_suffix (MiniMax's
+// "v1/text/chatcompletion_v2", Anthropic's "v1/messages", Xinference's
+// "v1/chat/completions") and expect a versionless base URL, while
+// OpenAI-compatible ones expect "/v1" to sit in the base URL. Users paste
+// whichever habit they learned, so drop the duplicated segment rather than
+// emitting "/v1/v1/text/chatcompletion_v2", which the provider answers 404.
+func joinURL(baseURL, suffix string) string {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	path := strings.TrimLeft(strings.TrimSpace(suffix), "/")
+	if base == "" {
+		return path
+	}
+	if path == "" {
+		return base
+	}
+	if idx := strings.LastIndex(base, "/"); idx >= 0 {
+		if version := apiVersionSegment(base[idx+1:]); version != "" && version == firstPathSegment(path) {
+			base = base[:idx]
+		}
+	}
+	return base + "/" + path
+}
+
+// apiVersionSegment reports whether the path segment is an API version marker
+// such as "v1" or "v2". Only version segments are deduplicated — they are what
+// users habitually paste into the base URL.
+func apiVersionSegment(segment string) string {
+	if len(segment) < 2 || (segment[0] != 'v' && segment[0] != 'V') {
+		return ""
+	}
+	for _, c := range []byte(segment[1:]) {
+		if c < '0' || c > '9' {
+			return ""
+		}
+	}
+	return segment
+}
+
+func firstPathSegment(path string) string {
+	if idx := strings.Index(path, "/"); idx >= 0 {
+		return path[:idx]
+	}
+	return path
 }
 
 // ParseSSEStream reads the body of an OpenAI-compatible Server-Sent Events
@@ -426,6 +517,11 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 
 		if model.ContextLength != nil && *model.ContextLength > 0 {
 			modelResponse.ContextLength = model.ContextLength
+		} else if model.ContextWindow != nil && *model.ContextWindow > 0 {
+			modelResponse.ContextLength = model.ContextWindow
+		}
+		if model.MaxTokens != nil && *model.MaxTokens > 0 {
+			modelResponse.MaxOutput = model.MaxTokens
 		}
 
 		// The provider-list merge treats remote entries as authoritative
@@ -444,65 +540,30 @@ func ParseListModel(modelList ModelList) []ListModelResponse {
 	return FillMissingModelTypes(models)
 }
 
-// NewDriverHTTPClient returns an *http.Client with the standard connection-pool
-// settings and an SSRF guard wired into its Transport.
-//
-// allowPrivate selects the guard strictness:
-//   - false (cloud-hosted drivers): every request is validated with
-//     utility.AssertURLSafe — scheme + host must be present and every resolved
-//     IP must be globally routable (private/loopback/link-local/metadata are
-//     rejected). This is the default and closes the go/request-forgery sink.
-//   - true (local-inference drivers): requests are validated with
-//     utility.AssertURLSchemeSafe — only the scheme and a non-empty host are
-//     enforced, so self-hosted backends on private networks or loopback work.
-func NewDriverHTTPClient(allowPrivate bool) *http.Client {
-	var t *http.Transport
-	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
-		t = dt.Clone()
-	} else {
-		t = &http.Transport{Proxy: http.ProxyFromEnvironment}
+const (
+	// streamTTSErrorBodyBytes caps the part of a non-200 streaming-TTS response
+	// that is quoted in the error message, so a large error page cannot inflate
+	// the error string.
+	streamTTSErrorBodyBytes = 1024
+	// streamTTSErrorBodyDrainBytes bounds the follow-up read that lets a short
+	// error page release its connection for reuse.
+	streamTTSErrorBodyDrainBytes = 4 << 10
+)
+
+// readStreamTTSErrorBody captures the head of a failed streaming-TTS response
+// for the error message, then drains a bounded remainder so the transport can
+// reuse the connection. A read failure in either phase is returned with what was
+// captured so far: reading only the head can succeed on a body that is later
+// cut short.
+func readStreamTTSErrorBody(body io.Reader) ([]byte, error) {
+	head, err := io.ReadAll(io.LimitReader(body, streamTTSErrorBodyBytes))
+	if err != nil {
+		return head, err
 	}
-	t.MaxIdleConns = 100
-	t.MaxIdleConnsPerHost = 10
-	t.IdleConnTimeout = 90 * time.Second
-	t.DisableCompression = false
-	t.ResponseHeaderTimeout = 5 * 60 * time.Second
-	t.TLSHandshakeTimeout = 30 * time.Second
-
-	var rt http.RoundTripper = t
-	if allowPrivate {
-		rt = &schemeSafeTransport{base: rt}
-	} else {
-		rt = &strictSSRFTransport{base: rt}
+	if _, err := io.Copy(io.Discard, io.LimitReader(body, streamTTSErrorBodyDrainBytes)); err != nil {
+		return head, err
 	}
-	return &http.Client{Transport: rt}
-}
-
-// schemeSafeTransport wraps an http.RoundTripper so every outgoing request is
-// validated by the lenient SSRF guard (http/https scheme + non-empty host).
-// Private and loopback hosts are permitted. Used only by local-inference
-// drivers that may target a user's own network.
-type schemeSafeTransport struct{ base http.RoundTripper }
-
-func (t *schemeSafeTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if err := utility.AssertURLSchemeSafe(req.URL.String()); err != nil {
-		return nil, err
-	}
-	return t.base.RoundTrip(req)
-}
-
-// strictSSRFTransport wraps an http.RoundTripper so every outgoing request is
-// validated by the strict SSRF guard (scheme + host + globally routable IP).
-// This is the default for cloud-hosted model drivers and closes the
-// go/request-forgery data flow: the user-controllable BaseURL cannot be made to
-// point at private hosts, loopback, link-local, or cloud metadata endpoints.
-type strictSSRFTransport struct{ base http.RoundTripper }
-
-func (t *strictSSRFTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if _, _, err := utility.AssertURLSafe(req.URL.String()); err != nil {
-		return nil, err
-	}
-	return t.base.RoundTrip(req)
+	return head, nil
 }
 
 // PostJSONRequest marshals body to JSON, creates a POST request to url
@@ -522,10 +583,10 @@ func PostJSONRequest(ctx context.Context, client *http.Client, url, auth string,
 	return client.Do(req)
 }
 
-// ReadErrorBody reads all bytes from r and returns them as a string suitable
-func ReadErrorBody(r io.Reader) string {
-	b, _ := io.ReadAll(r)
-	return string(b)
+func setOpt[T any](m map[string]any, key string, p *T) {
+	if p != nil {
+		m[key] = *p
+	}
 }
 
 func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, stream bool) map[string]any {
@@ -536,33 +597,26 @@ func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, str
 	}
 
 	if cfg != nil {
-		if cfg.Temperature != nil {
-			reqBody["temperature"] = *cfg.Temperature
-		}
-
-		if cfg.DoSample != nil {
-			reqBody["do_sample"] = *cfg.DoSample
-		}
-
-		if cfg.TopP != nil {
-			reqBody["top_p"] = *cfg.TopP
-		}
-
-		if cfg.MaxTokens != nil {
-			reqBody["max_tokens"] = *cfg.MaxTokens
-		}
-
-		if cfg.Stop != nil {
-			reqBody["stop"] = *cfg.Stop
-		}
+		setOpt(reqBody, "temperature", cfg.Temperature)
+		setOpt(reqBody, "do_sample", cfg.DoSample)
+		setOpt(reqBody, "top_p", cfg.TopP)
+		setOpt(reqBody, "presence_penalty", cfg.PresencePenalty)
+		setOpt(reqBody, "frequency_penalty", cfg.FrequencyPenalty)
+		setOpt(reqBody, "max_tokens", cfg.MaxTokens)
+		setOpt(reqBody, "stop", cfg.Stop)
 
 		if cfg.Tools != nil {
 			reqBody["tools"] = cfg.Tools
-			toolChoice := "auto"
-			if cfg.ToolChoice != nil {
-				toolChoice = *cfg.ToolChoice
+		}
+		if cfg.Tools != nil || cfg.ToolChoice != nil || cfg.ToolChoiceValue != nil {
+			switch {
+			case cfg.ToolChoiceValue != nil:
+				reqBody["tool_choice"] = cfg.ToolChoiceValue
+			case cfg.ToolChoice != nil:
+				reqBody["tool_choice"] = *cfg.ToolChoice
+			default:
+				reqBody["tool_choice"] = "auto"
 			}
-			reqBody["tool_choice"] = toolChoice
 		}
 	}
 
@@ -614,23 +668,12 @@ func applyChatToolConfig(reqBody map[string]interface{}, chatConfig *ChatConfig)
 	}
 	reqBody["tools"] = chatConfig.Tools
 	if chatConfig.ToolChoice != nil {
-		reqBody["tool_choice"] = *chatConfig.ToolChoice
-	}
-}
-
-// extractToolCalls converts an OpenAI-compatible message's tool calls.
-func extractToolCalls(message map[string]interface{}) []map[string]interface{} {
-	rawToolCalls, ok := message["tool_calls"].([]interface{})
-	if !ok {
-		return nil
-	}
-	toolCalls := make([]map[string]interface{}, 0, len(rawToolCalls))
-	for _, rawToolCall := range rawToolCalls {
-		if toolCall, ok := rawToolCall.(map[string]interface{}); ok {
-			toolCalls = append(toolCalls, toolCall)
+		if chatConfig.ToolChoiceValue != nil {
+			reqBody["tool_choice"] = chatConfig.ToolChoiceValue
+		} else {
+			reqBody["tool_choice"] = *chatConfig.ToolChoice
 		}
 	}
-	return toolCalls
 }
 
 // setSortedToolCallsResult stores accumulated tool calls in index order.

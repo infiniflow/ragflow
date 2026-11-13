@@ -92,7 +92,6 @@ export const ImageCarousel = ({
 
   const handleImageClick = useCallback(
     (
-      imageId: string,
       chunkItem: IReferenceChunk,
       documentId: string,
       fileExtension: string,
@@ -127,11 +126,11 @@ export const ImageCarousel = ({
               <section>
                 <Image
                   id={imageId!}
+                  documentId={documentId}
                   className="object-contain max-h-36"
                   onClick={
                     documentId && chunkItem
                       ? handleImageClick(
-                          imageId!,
                           chunkItem,
                           documentId,
                           fileExtension!,

@@ -8,12 +8,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"ragflow/internal/common"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"ragflow/internal/utility"
 )
 
 func TestNewBitbucketConnectorParsesConfig(t *testing.T) {
@@ -480,18 +479,16 @@ func TestBitbucketConnectorValidateMissingConfig(t *testing.T) {
 }
 
 func TestBitbucketGetJSONRetriesOnTransientStatuses(t *testing.T) {
-	originalAllowAny := utility.AllowAnyHostForTest
 	originalTries := bitbucketRetryTries
 	originalDelay := bitbucketRetryBaseDelay
 	originalBackoff := bitbucketRetryBackoff
 	originalMaxDelay := bitbucketRetryMaxDelay
-	utility.AllowAnyHostForTest = true
+	t.Setenv(common.EnvAllowAnyHost, "true")
 	bitbucketRetryTries = 3
 	bitbucketRetryBaseDelay = time.Millisecond
 	bitbucketRetryBackoff = 1
 	bitbucketRetryMaxDelay = 10 * time.Millisecond
 	t.Cleanup(func() {
-		utility.AllowAnyHostForTest = originalAllowAny
 		bitbucketRetryTries = originalTries
 		bitbucketRetryBaseDelay = originalDelay
 		bitbucketRetryBackoff = originalBackoff

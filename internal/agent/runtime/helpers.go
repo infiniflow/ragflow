@@ -104,7 +104,7 @@ func WithProgressMessageCallback(ctx context.Context, cb ProgressMessageCallback
 
 // ReportProgressMessage forwards a detailed component message when a sink is
 // attached. Components can call this without depending on the persistence
-// layer or changing the lifecycle progress contract.
+// layer or changing the lifecycle progress
 func ReportProgressMessage(ctx context.Context, component, message string) {
 	if cb, ok := ctx.Value(progressMessageCallbackKey{}).(ProgressMessageCallback); ok && cb != nil {
 		cb(component, message)
@@ -250,4 +250,54 @@ func ProgressCallbackFromContext(ctx context.Context) ProgressCallback {
 		return cb
 	}
 	return nil
+}
+
+// ProgressFractionCallback receives an in-flight component's completion
+// fraction (0..1) — pages parsed, chunks embedded. Unlike lifecycle events,
+// fractions are high-frequency and purely observational: they refine the
+// progress percentage between two lifecycle events and carry no persistence
+// contract. component is the node id (cpnID), the same identity
+// ProgressEvent.Component carries, so sinks key both channels identically.
+type ProgressFractionCallback func(component string, fraction float64)
+
+// progressFractionCBKey carries the run-level ProgressFractionCallback.
+type progressFractionCBKey struct{}
+
+// componentFractionReporterKey carries the per-node closure that
+// ReportComponentFraction invokes. It is pre-bound with the cpnID by
+// BindComponentFraction so components report a bare fraction and can never
+// misattribute progress to another node.
+type componentFractionReporterKey struct{}
+
+// WithProgressFractionCallback attaches a run-level fraction sink to ctx.
+// A nil callback is valid and keeps components observer-independent.
+func WithProgressFractionCallback(ctx context.Context, cb ProgressFractionCallback) context.Context {
+	return context.WithValue(ctx, progressFractionCBKey{}, cb)
+}
+
+// BindComponentFraction derives a context whose ReportComponentFraction calls
+// carry the given component id. The canvas framework (realComponentBody) is
+// the single caller, mirroring how it owns TrackProgress; when no run-level
+// callback is attached it returns ctx unchanged so headless runs pay nothing.
+func BindComponentFraction(ctx context.Context, component string) context.Context {
+	cb, _ := ctx.Value(progressFractionCBKey{}).(ProgressFractionCallback)
+	if cb == nil {
+		return ctx
+	}
+	return context.WithValue(ctx, componentFractionReporterKey{}, func(fraction float64) {
+		cb(component, fraction)
+	})
+}
+
+// ReportComponentFraction forwards a component's in-flight completion
+// fraction to the run-level sink. Components call it from their progress
+// loops without knowing their own node id; the framework-bound closure
+// supplies the attribution. No-op when no sink is attached.
+func ReportComponentFraction(ctx context.Context, fraction float64) {
+	if ctx == nil {
+		return
+	}
+	if report, ok := ctx.Value(componentFractionReporterKey{}).(func(float64)); ok && report != nil {
+		report(fraction)
+	}
 }

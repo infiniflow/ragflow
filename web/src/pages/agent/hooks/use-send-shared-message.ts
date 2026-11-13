@@ -58,7 +58,8 @@ export const useSendNextSharedMessage = (
     release,
   } = useGetSharedChatSearchParams();
   const botType = from === SharedFrom.Agent ? 'agentbots' : 'chatbots';
-  const releaseQuery = release ? `?release=${encodeURIComponent(release)}` : '';
+  const releaseEnabled = release === 'true';
+  const releaseQuery = releaseEnabled ? '?release=true' : '';
   const url = `/api/v1/${botType}/${conversationId}/completions${releaseQuery}`;
   const { data: inputsData } = useFetchExternalAgentInputs();
 
@@ -79,7 +80,7 @@ export const useSendNextSharedMessage = (
     beginParams: params,
     isShared: true,
     isTaskMode,
-    releaseMode: release,
+    releaseMode: releaseEnabled,
   });
   const ok = useCallback(
     (params: BeginQuery[]) => {

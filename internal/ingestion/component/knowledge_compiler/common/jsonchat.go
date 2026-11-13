@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/kaptinlin/jsonrepair"
 	"ragflow/internal/agent/runtime"
 	appcommon "ragflow/internal/common"
 
@@ -31,6 +32,23 @@ const jsonRetryDelay = 2 * time.Second
 // dropped by the extraction parser (a data-loss path). We strip the fence and
 // retry before giving up.
 var fencedJSONRE = regexp.MustCompile("(?s)```(?:json)?\\s*(.*?)\\s*```")
+
+// retryDelayCtxKey carries a test-only override for jsonRetryDelay. Production
+// code never sets it, so the real backoff budget is preserved at runtime.
+type retryDelayCtxKey struct{}
+
+// WithRetryDelay returns a ctx that makes GenJSON use d as the initial
+// exponential-backoff delay instead of jsonRetryDelay. It exists so tests that
+// exercise the LLM-failure retry path need not wait out the real ~60s budget
+// per failed call. Pass 0 or a negative value to keep the default.
+func WithRetryDelay(ctx context.Context, d time.Duration) context.Context {
+	return context.WithValue(ctx, retryDelayCtxKey{}, d)
+}
+
+func RetryDelayFromCtx(ctx context.Context) (time.Duration, bool) {
+	d, ok := ctx.Value(retryDelayCtxKey{}).(time.Duration)
+	return d, ok && d > 0
+}
 
 // GenJSON dispatches a chat call in JSON mode and parses the response into a
 // map. It first tries the raw content, then a fenced ```json ... ``` block the
@@ -56,19 +74,36 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 	req.DisableRetry = true
 	var lastErr error
 	delay := jsonRetryDelay
+	if d, ok := RetryDelayFromCtx(ctx); ok {
+		delay = d
+	}
+	// baseDelay captures the (possibly test-overridden) initial delay so the
+	// capped exponential backoff recomputes from the same base every attempt.
+	baseDelay := delay
+	failureReporter := RetryFailureReporter{}
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		resp, err := chat.Chat(ctx, req)
 		if err != nil {
 			// Permanent chat errors (auth, unknown model, context-length,
 			// cancelled ctx) cannot succeed on a retry; escape immediately.
 			if !appcommon.IsTransientError(err) {
-				reportLLMFailure(ctx, attempt, maxRetries, 0, err)
+				if message, ok := failureReporter.FailureMessage(attempt+1, maxRetries+1, 0, err, true); ok {
+					runtime.ReportProgressMessage(ctx, "Compiler", message)
+				}
 				return nil, err
 			}
 			// Transient chat failure (timeout / transport / provider); retry
 			// with a fresh LLM call.
 			lastErr = err
 		} else {
+			if repaired, repairErr := RepairJSONText(resp.Content); repairErr == nil {
+				if m, unmarshalErr := tryUnmarshalJSONErr(repaired); unmarshalErr == nil {
+					if message, ok := failureReporter.RecoveryMessage(attempt + 1); ok {
+						runtime.ReportProgressMessage(ctx, "Compiler", message)
+					}
+					return m, nil
+				}
+			}
 			candidates := jsonCandidates(resp.Content)
 			for _, candidate := range candidates {
 				if m, ok := tryUnmarshalJSON(candidate); ok {
@@ -89,34 +124,70 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 			lastErr = fmt.Errorf("knowledge_compiler: LLM response is not parseable JSON (%d bytes)", len(resp.Content))
 		}
 		if attempt == maxRetries {
-			reportLLMFailure(ctx, attempt, maxRetries, 0, lastErr)
+			if message, ok := failureReporter.FailureMessage(attempt+1, maxRetries+1, 0, lastErr, true); ok {
+				runtime.ReportProgressMessage(ctx, "Compiler", message)
+			}
 			break
 		}
-		reportLLMFailure(ctx, attempt, maxRetries, delay, lastErr)
+		if message, ok := failureReporter.FailureMessage(attempt+1, maxRetries+1, delay, lastErr, false); ok {
+			runtime.ReportProgressMessage(ctx, "Compiler", message)
+		}
+		// Compute the capped, jittered delay for the current attempt
+		// (1-indexed: attempt 0 -> baseDelay) before sleeping, so the first
+		// retry is also clamped to the 1-minute ceiling.
+		d := appcommon.ExponentialBackoff(baseDelay, time.Minute, attempt+1)
 		appcommon.Info("knowledge_compiler: GenJSON attempt failed, retrying",
-			zap.Int("attempt", attempt), zap.Duration("delay", delay),
+			zap.Int("attempt", attempt), zap.Duration("delay", d),
 			zap.Error(lastErr))
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(delay + time.Duration(rand.Int63n(int64(delay/2)+1))):
+		case <-time.After(d + time.Duration(rand.Int63n(int64(d/2)+1))):
 			// Jittered backoff so concurrent GenJSON jobs (parallel wiki/plan
 			// batches) do not back off in lockstep and pile up on the provider.
-		}
-		delay *= 2
-		if delay > time.Minute {
-			delay = time.Minute
 		}
 	}
 	return nil, lastErr
 }
 
-func reportLLMFailure(ctx context.Context, attempt, maxRetries int, delay time.Duration, err error) {
-	message := fmt.Sprintf("[ERROR] LLM call failed (attempt %d/%d): %s", attempt+1, maxRetries+1, CompactError(err))
-	if delay > 0 {
-		message += fmt.Sprintf("; retrying in %s", delay)
+// RepairJSONText extracts and repairs a JSON object or array from an LLM response.
+// It accepts plain JSON, fenced JSON, JSON surrounded by prose, and common
+// malformed forms such as trailing commas or unquoted keys. The returned text
+// is guaranteed to be a valid JSON object or array.
+func RepairJSONText(s string) (string, error) {
+	s = appcommon.StripThinkTrailing(s)
+	var lastErr error
+	for _, candidate := range jsonCandidates(s) {
+		candidate = strings.TrimSpace(candidate)
+		if candidate == "" {
+			lastErr = fmt.Errorf("empty JSON candidate")
+			continue
+		}
+		if isJSONObjectOrArray(candidate) {
+			return candidate, nil
+		}
+		repaired, err := jsonrepair.Repair(candidate)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if isJSONObjectOrArray(repaired) {
+			return repaired, nil
+		}
+		lastErr = fmt.Errorf("repaired candidate is not a JSON object or array")
 	}
-	runtime.ReportProgressMessage(ctx, "Compiler", message)
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no JSON candidate")
+	}
+	return "", lastErr
+}
+
+func isJSONObjectOrArray(s string) bool {
+	s = strings.TrimSpace(s)
+	if len(s) < 2 || (s[0] != '{' && s[0] != '[') {
+		return false
+	}
+	return json.Valid([]byte(s))
 }
 
 // CompactError produces a bounded, single-line error suitable for progress
@@ -149,6 +220,11 @@ func jsonCandidates(s string) []string {
 	}
 	if i := strings.Index(s, "{"); i >= 0 {
 		if j := strings.LastIndex(s, "}"); j > i {
+			cands = append(cands, s[i:j+1])
+		}
+	}
+	if i := strings.Index(s, "["); i >= 0 {
+		if j := strings.LastIndex(s, "]"); j > i {
 			cands = append(cands, s[i:j+1])
 		}
 	}

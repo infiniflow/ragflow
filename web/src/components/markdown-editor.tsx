@@ -18,12 +18,13 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import LexicalEditor from '@/lib/editor/lexical-editor';
 import RawMarkdownEditor from '@/lib/editor/raw-markdown-editor';
+import type { WikiPageType } from '@/utils/wiki-link-util';
 
 interface MarkdownEditorProps {
   content: string;
   onChange?: (content: string) => void;
   readOnly?: boolean;
-  onWikiLinkClick?: (pageType: 'concept' | 'entity', slug: string) => void;
+  onWikiLinkClick?: (pageType: WikiPageType, slug: string) => void;
 }
 
 export default function MarkdownEditor({
@@ -40,6 +41,9 @@ export default function MarkdownEditor({
     if (content === contentRef.current) {
       return;
     }
+    // External content change (e.g. page switch): keep the ref in sync so
+    // toggleSource picks up the new content.
+    contentRef.current = content;
     if (showSource) setRawContent(content);
   }, [showSource, content]);
 

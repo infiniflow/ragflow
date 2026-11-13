@@ -2,6 +2,8 @@ package tool
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -14,7 +16,8 @@ import (
 // queries by topic rather than walking arbitrary clusters.
 type navRoutingFake struct {
 	mu       sync.Mutex
-	searched []string // topics passed to Search
+	searched []string   // topics passed to Search
+	scopes   [][]string // doc scopes passed to Search
 	hits     []nav.NavHit
 	clusters []nav.NavNode
 	children map[string][]nav.NavNode
@@ -24,22 +27,37 @@ func (f *navRoutingFake) UpsertDoc(context.Context, nav.UpsertDocInput) error { 
 func (f *navRoutingFake) RemoveDoc(context.Context, string, string, string) error {
 	return nil
 }
-func (f *navRoutingFake) Search(_ context.Context, _, _ string, query string, _ []float32, _ int) ([]nav.NavHit, error) {
+func (f *navRoutingFake) Search(_ context.Context, _, _ string, query string, _ []float32, docScope []string, _ int) ([]nav.NavHit, error) {
 	f.mu.Lock()
 	f.searched = append(f.searched, query)
+	f.scopes = append(f.scopes, append([]string(nil), docScope...))
 	f.mu.Unlock()
 	return f.hits, nil
 }
-func (f *navRoutingFake) ListClusters(context.Context, string, string, int, int) ([]nav.NavNode, int64, error) {
+func (f *navRoutingFake) EncodeQueryVector(context.Context, string, string) []float64 {
+	return nil
+}
+func (f *navRoutingFake) ListClusters(context.Context, string, string, string, int, int) ([]nav.NavNode, int64, error) {
 	return f.clusters, int64(len(f.clusters)), nil
 }
-func (f *navRoutingFake) ListChildren(_ context.Context, _, _, name string, _, _ int) ([]nav.NavNode, int64, error) {
+func (f *navRoutingFake) ListChildren(_ context.Context, _, _, name, _ string, _, _ int) ([]nav.NavNode, int64, error) {
 	return f.children[name], int64(len(f.children[name])), nil
+}
+func (f *navRoutingFake) SummariesByDocIDs(context.Context, string, string, []string) map[string]string {
+	return map[string]string{}
 }
 func (f *navRoutingFake) searchedTopics() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]string(nil), f.searched...)
+}
+
+func (f *navRoutingFake) searchedScopes() [][]string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([][]string, len(f.scopes))
+	copy(out, f.scopes)
+	return out
 }
 
 // TestDatasetNavigation_UsesTopicRouting asserts the router queries the nav tree
@@ -117,6 +135,191 @@ func TestCanvasDatasetIDs_DedupEmpty(t *testing.T) {
 	ids := canvasDatasetIDs(t.Context(), []string{"kb1", "", "kb2"})
 	if len(ids) != 2 || ids[0] != "kb1" || ids[1] != "kb2" {
 		t.Errorf("canvasDatasetIDs = %v, want [kb1 kb2]", ids)
+	}
+}
+
+func navTestContext(t *testing.T) context.Context {
+	t.Helper()
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["tenant_id"] = "tenant-1"
+	return runtime.WithState(t.Context(), state)
+}
+
+func decodeNavDocs(t *testing.T, out string) []string {
+	t.Helper()
+	var res struct {
+		Docs []string `json:"docs"`
+	}
+	if err := json.Unmarshal([]byte(out), &res); err != nil {
+		t.Fatalf("unmarshal result %q: %v", out, err)
+	}
+	return res.Docs
+}
+
+// TestDatasetNavigation_HonorsDocScope pins that a supplied doc_scope reaches the
+// nav service AND filters the routed result: Python's dataset_navigation_by_tree
+// threads tools.scoped_doc_ids(doc_scope), so an out-of-scope document must never
+// come back from a scoped request.
+func TestDatasetNavigation_HonorsDocScope(t *testing.T) {
+	fake := &navRoutingFake{hits: []nav.NavHit{
+		{Type: nav.TypeNavDoc, DocID: "d1", Name: "in scope"},
+		{Type: nav.TypeNavDoc, DocID: "out", Name: "out of scope"},
+	}}
+	prev := nav.GetNavService()
+	nav.SetNavService(fake)
+	defer func() { nav.SetNavService(prev) }()
+
+	tool := NewDatasetNavigationByTree()
+	out, err := tool.InvokableRun(navTestContext(t), `{"topic":"X","dataset_ids":["kb1"],"doc_scope":["d1"]}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	scopes := fake.searchedScopes()
+	if len(scopes) != 1 || len(scopes[0]) != 1 || scopes[0][0] != "d1" {
+		t.Fatalf("doc scope not forwarded to Search: %v", scopes)
+	}
+	if docs := decodeNavDocs(t, out); len(docs) != 1 || docs[0] != "d1" {
+		t.Errorf("docs = %v, want only the in-scope d1", docs)
+	}
+}
+
+// TestDatasetNavigation_DocScopeFiltersClusterFallback pins the fallback half:
+// when semantic routing finds nothing, the cluster walk must still not surface
+// out-of-scope documents (ListClusters/ListChildren take no scope, so the tool
+// filters the leaves itself — standing in for Python's _content_recall_docs).
+func TestDatasetNavigation_DocScopeFiltersClusterFallback(t *testing.T) {
+	fake := &navRoutingFake{
+		clusters: []nav.NavNode{{Name: "c1"}},
+		children: map[string][]nav.NavNode{
+			"c1": {{DocID: "d1"}, {DocID: "out"}},
+		},
+	}
+	prev := nav.GetNavService()
+	nav.SetNavService(fake)
+	defer func() { nav.SetNavService(prev) }()
+
+	tool := NewDatasetNavigationByTree()
+	out, err := tool.InvokableRun(navTestContext(t), `{"topic":"X","dataset_ids":["kb1"],"doc_scope":["d1"]}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if docs := decodeNavDocs(t, out); len(docs) != 1 || docs[0] != "d1" {
+		t.Errorf("fallback docs = %v, want only the in-scope d1", docs)
+	}
+}
+
+// TestDatasetNavigation_RecallFallbackDisablesDenseFallback pins the agentic
+// half of the split on the content-recall tier: when the nav tree routes
+// nothing the tool recalls by chunk content, and the model reads those chunks
+// as evidence, so no dense-only rescue there either.
+func TestDatasetNavigation_RecallFallbackDisablesDenseFallback(t *testing.T) {
+	fake := &navRoutingFake{}
+	prevNav := nav.GetNavService()
+	nav.SetNavService(fake)
+	defer func() { nav.SetNavService(prevNav) }()
+
+	prevSvc := GetRetrievalService()
+	svc := &capturingRetrievalService{}
+	SetRetrievalService(svc)
+	defer func() { SetRetrievalService(prevSvc) }()
+
+	tool := NewDatasetNavigationByTree()
+	if _, err := tool.InvokableRun(navTestContext(t), `{"topic":"X","dataset_ids":["kb1"]}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if svc.req.Query == "" {
+		t.Fatal("content-recall tier was not exercised: the tool never reached the retrieval service")
+	}
+	if svc.req.AllowDenseFallback == nil || *svc.req.AllowDenseFallback {
+		t.Fatal("dataset navigation is agentic and must disable the dense fallback")
+	}
+}
+
+// TestDatasetNavigation_BlankRequestScopeFallsBackToDefaults pins that a blank
+// request value cannot DISABLE the configured default scope: [" "] has a
+// non-zero length, so it suppressed the default and then compacted to an empty
+// scope, which inScope()/ns.Search read as "unscoped" — the tool returned
+// documents the default scope excludes.
+func TestDatasetNavigation_BlankRequestScopeFallsBackToDefaults(t *testing.T) {
+	fake := &navRoutingFake{hits: []nav.NavHit{
+		{Type: nav.TypeNavDoc, DocID: "d1", Name: "in scope"},
+		{Type: nav.TypeNavDoc, DocID: "out", Name: "out of scope"},
+	}}
+	prev := nav.GetNavService()
+	nav.SetNavService(fake)
+	defer func() { nav.SetNavService(prev) }()
+
+	tool := NewDatasetNavigationByTreeWithDefaults(datasetNavigationArgs{DocScope: []string{"d1"}})
+	out, err := tool.InvokableRun(navTestContext(t), `{"topic":"X","dataset_ids":["kb1"],"doc_scope":[" "]}`)
+	if err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	scopes := fake.searchedScopes()
+	if len(scopes) != 1 || len(scopes[0]) != 1 || scopes[0][0] != "d1" {
+		t.Fatalf("doc scope forwarded to Search = %v, want the configured default [d1]", scopes)
+	}
+	if docs := decodeNavDocs(t, out); len(docs) != 1 || docs[0] != "d1" {
+		t.Errorf("docs = %v, want only the in-scope d1 (a blank request value must not disable the default scope)", docs)
+	}
+}
+
+// TestDatasetNavigation_MaxDocsCannotExceedCap pins the ceiling on the
+// doc-count budget: the model's argument JSON is not schema-validated, so a
+// max_docs above the cap must be clamped down to it, while a smaller value still
+// narrows the result.
+func TestDatasetNavigation_MaxDocsCannotExceedCap(t *testing.T) {
+	hits := make([]nav.NavHit, 0, 20)
+	for i := 0; i < 20; i++ {
+		hits = append(hits, nav.NavHit{Type: nav.TypeNavDoc, DocID: fmt.Sprintf("d%02d", i)})
+	}
+	cases := []struct {
+		name string
+		args string
+		want int
+	}{
+		{"above the cap", `{"topic":"X","dataset_ids":["kb1"],"max_docs":5000}`, datasetNavigationDefaultMaxDocs},
+		{"below the cap", `{"topic":"X","dataset_ids":["kb1"],"max_docs":2}`, 2},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fake := &navRoutingFake{hits: hits}
+			prev := nav.GetNavService()
+			nav.SetNavService(fake)
+			defer func() { nav.SetNavService(prev) }()
+
+			tool := NewDatasetNavigationByTree()
+			out, err := tool.InvokableRun(navTestContext(t), tc.args)
+			if err != nil {
+				t.Fatalf("InvokableRun: %v", err)
+			}
+			if docs := decodeNavDocs(t, out); len(docs) != tc.want {
+				t.Errorf("docs = %d, want %d", len(docs), tc.want)
+			}
+		})
+	}
+}
+
+// TestCanvasTenantID_FromCanvasState asserts the tenant id resolves from canvas
+// state, falling back to user_id.
+func TestCanvasTenantID_FromCanvasState(t *testing.T) {
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["tenant_id"] = "canvas-tenant"
+	ctx := runtime.WithState(context.Background(), state)
+	if got := canvasTenantID(ctx); got != "canvas-tenant" {
+		t.Errorf("canvasTenantID = %q, want canvas tenant canvas-tenant", got)
+	}
+
+	// Fall back to user_id when tenant_id is absent.
+	state2 := runtime.NewCanvasState("run-1", "task-1")
+	state2.Sys["user_id"] = "user-1"
+	ctx2 := runtime.WithState(context.Background(), state2)
+	if got := canvasTenantID(ctx2); got != "user-1" {
+		t.Errorf("canvasTenantID = %q, want fallback user-1", got)
+	}
+
+	// No canvas state at all → empty.
+	if got := canvasTenantID(context.Background()); got != "" {
+		t.Errorf("canvasTenantID = %q, want empty without canvas state", got)
 	}
 }
 

@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"ragflow/internal/common"
 	"ragflow/internal/server/config"
 	"time"
@@ -74,19 +75,25 @@ func (m *GCSStorage) Health(ctx context.Context) bool {
 }
 
 // Put uploads an object to GCS
-func (m *GCSStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
+func (m *GCSStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) (err error) {
+	defer func() {
+		// Resumable upload URLs contain credentials; retain only the operation
+		// and transport cause when returning an HTTP client error.
+		var transportErr *url.Error
+		if errors.As(err, &transportErr) {
+			err = fmt.Errorf("GCS upload %s: %w", transportErr.Op, transportErr.Err)
+		}
+	}()
+	uploadCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	obj := m.client.Bucket(bucket).Object(fnm)
-	w := obj.NewWriter(ctx)
+	w := obj.NewWriter(uploadCtx)
 
 	if _, err := w.Write(binary); err != nil {
 		return err
 	}
-	if err := w.Close(); err != nil {
-		return err
-	}
-
-	return nil
+	return w.Close()
 }
 
 // Get retrieves an object from GCS
@@ -111,6 +118,9 @@ func (m *GCSStorage) Remove(ctx context.Context, bucketName, objectName string, 
 
 	obj := m.client.Bucket(bucketName).Object(objectName)
 	if err := obj.Delete(ctx); err != nil {
+		if errors.Is(err, storage.ErrObjectNotExist) || errors.Is(err, storage.ErrBucketNotExist) {
+			return nil
+		}
 		return fmt.Errorf("fail to delete object: %w", err)
 	}
 
@@ -128,6 +138,17 @@ func (m *GCSStorage) ObjExist(ctx context.Context, bucketName, objectName string
 	}
 
 	return true
+}
+
+func (m *GCSStorage) ObjectExists(ctx context.Context, bucketName, objectName string) (bool, error) {
+	_, err := m.client.Bucket(bucketName).Object(objectName).Attrs(ctx)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, storage.ErrObjectNotExist) || errors.Is(err, storage.ErrBucketNotExist) {
+		return false, nil
+	}
+	return false, err
 }
 
 func (m *GCSStorage) ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error) {
@@ -182,6 +203,17 @@ func (m *GCSStorage) BucketExists(ctx context.Context, bucket string) bool {
 	return true
 }
 
+func (m *GCSStorage) BucketExistsWithError(ctx context.Context, bucket string) (bool, error) {
+	_, err := m.client.Bucket(bucket).Attrs(ctx)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, storage.ErrBucketNotExist) {
+		return false, nil
+	}
+	return false, err
+}
+
 // RemoveBucket removes a bucket and all its objects
 func (m *GCSStorage) RemoveBucket(ctx context.Context, bucketName string) error {
 	if bucketName == "" {
@@ -210,6 +242,18 @@ func (m *GCSStorage) RemoveBucket(ctx context.Context, bucketName string) error 
 	}
 
 	return nil
+}
+
+// RemoveEmptyBucket removes a bucket only if GCS finds it empty.
+func (m *GCSStorage) RemoveEmptyBucket(ctx context.Context, bucketName string) error {
+	if bucketName == "" {
+		return fmt.Errorf("attempt to delete bucket without name")
+	}
+	err := m.client.Bucket(bucketName).Delete(ctx)
+	if errors.Is(err, storage.ErrBucketNotExist) {
+		return nil
+	}
+	return err
 }
 
 // Copy copies an object from source to destination

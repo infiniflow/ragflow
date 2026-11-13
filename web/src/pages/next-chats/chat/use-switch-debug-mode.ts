@@ -3,12 +3,17 @@ import { useCallback, useState } from 'react';
 export function useSwitchDebugMode() {
   const [isDebugMode, setIsDebugMode] = useState(false);
 
-  const switchDebugMode = useCallback(() => {
-    setIsDebugMode(!isDebugMode);
-  }, [isDebugMode]);
+  const enterDebugMode = useCallback(() => {
+    setIsDebugMode(true);
+  }, []);
+
+  const exitDebugMode = useCallback(() => {
+    setIsDebugMode(false);
+  }, []);
 
   return {
     isDebugMode,
-    switchDebugMode,
+    enterDebugMode,
+    exitDebugMode,
   };
 }

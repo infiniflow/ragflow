@@ -17,29 +17,11 @@ func TestEncodePNG(t *testing.T) {
 	}
 }
 
-func TestEncodeImageToBase64PNG(t *testing.T) {
-	img := image.NewRGBA(image.Rect(0, 0, 10, 10))
-	b64, err := EncodeImageToBase64PNG(img)
-	if err != nil {
-		t.Fatalf("EncodeImageToBase64PNG: %v", err)
-	}
-	if b64 == "" {
-		t.Error("base64 string should not be empty")
-	}
-	// Should be valid base64 and decode to valid PNG
-	data, err := base64.StdEncoding.DecodeString(b64)
-	if err != nil {
-		t.Fatalf("invalid base64: %v", err)
-	}
-	if len(data) == 0 {
-		t.Error("decoded data should not be empty")
-	}
-}
-
 func TestDecodeBase64PNG(t *testing.T) {
 	// Encode → base64 → decode roundtrip
 	img := image.NewRGBA(image.Rect(0, 0, 10, 10))
-	b64, _ := EncodeImageToBase64PNG(img)
+	data, _ := EncodePNG(img)
+	b64 := base64.StdEncoding.EncodeToString(data)
 	decoded, err := DecodeBase64PNG(b64)
 	if err != nil {
 		t.Fatalf("DecodeBase64PNG: %v", err)

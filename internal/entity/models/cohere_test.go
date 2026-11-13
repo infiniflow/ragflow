@@ -5,9 +5,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"ragflow/internal/common"
 	"strings"
 	"testing"
+
+	"ragflow/internal/common"
 )
 
 func newCohereForTest(baseURL string) *CoHereModel {
@@ -127,3 +128,30 @@ func TestCohereStreamRecordsDeltaUsage(t *testing.T) {
 		t.Fatalf("model usage=(%d,%d,%d), want (4,2,6)", usage.InputTokens, usage.OutputTokens, usage.TotalTokens)
 	}
 }
+
+// TestCohereEmbedInputTypeFollowsQuery pins Python CoHereEmbed: encode sends
+// input_type="search_document", encode_queries sends "search_query".
+func TestCohereEmbedInputTypeFollowsQuery(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	baseURL, bodies := captureEmbedBodies(t, `{"embeddings":{"float":[[0.1]]}}`)
+	m := newCohereForTest(baseURL)
+	apiKey := "test-key"
+	model := "embed-v4.0"
+
+	if _, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if _, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"a"}, Query: true}, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
+		t.Fatalf("Embed(query): %v", err)
+	}
+	if got := (*bodies)[0]["input_type"]; got != "search_document" {
+		t.Errorf("document input_type = %v, want search_document", got)
+	}
+	if got := (*bodies)[1]["input_type"]; got != "search_query" {
+		t.Errorf("query input_type = %v, want search_query", got)
+	}
+}
+
+// TestVoyageEmbedInputTypeFollowsQuery pins Python VoyageEmbed: encode sends
+// input_type="document", encode_queries sends "query".

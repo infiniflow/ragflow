@@ -75,12 +75,7 @@ func (r *DocumentIDResolver) Resolve(ctx context.Context, kbID, connectorID, sou
 	if _, ok := fingerprints[legacyID]; ok {
 		docID = legacyID
 	}
-	stored := fingerprints[legacyID]
-	if stored == "" {
-		stored = fingerprints[newID]
-	}
-
-	return ResolvedDocumentID{DocID: docID, LegacyID: legacyID, NewID: newID, StoredFingerprint: stored}, nil
+	return ResolvedDocumentID{DocID: docID, LegacyID: legacyID, NewID: newID, StoredFingerprint: fingerprints[docID]}, nil
 }
 
 // GormDocumentStore reads documents from the current GORM database.

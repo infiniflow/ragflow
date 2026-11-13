@@ -16,7 +16,6 @@ import ChunkCard from './components/chunk-card';
 import CreatingModal from './components/chunk-creating-modal';
 import ChunkResultBar from './components/chunk-result-bar';
 import CheckboxSets from './components/chunk-result-bar/checkbox-sets';
-import RerunButton from './components/rerun-button';
 import {
   useChangeChunkTextMode,
   useDeleteChunkByIds,
@@ -30,7 +29,7 @@ interface IProps {
   step?: TimelineNode;
 }
 const ChunkerContainer = (props: IProps) => {
-  const { isChange, setIsChange, step } = props;
+  const { setIsChange } = props;
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
 
   const { t } = useTranslation();
@@ -142,16 +141,8 @@ const ChunkerContainer = (props: IProps) => {
     onChunkUpdatingOk(e);
   };
 
-  const handleReRunFunc = () => {
-    setIsChange(false);
-  };
   return (
     <div className="w-full h-full">
-      {isChange && (
-        <div className=" absolute top-2 right-6">
-          <RerunButton step={step} onRerun={handleReRunFunc} />
-        </div>
-      )}
       <div className={classNames('flex flex-col w-full')}>
         <Spin spinning={loading} className={styles.spin} size="large">
           <div className="h-[50px] flex flex-row justify-between items-end pb-[5px]">

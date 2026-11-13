@@ -4,6 +4,11 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
+
+	"ragflow/internal/common"
 )
 
 func TestXLSXParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
@@ -30,7 +35,7 @@ func TestXLSXParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 	}
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":                 "TCADP parser",
-		"output_format":                "json",
+		"chunk_rows":                   50,
 		"tcadp_apiserver":              server.URL,
 		"tcadp_api_key":                "tcadp-secret",
 		"table_result_type":            "1",
@@ -68,7 +73,6 @@ func TestXLSParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 	}
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":    "TCADP parser",
-		"output_format":   "json",
 		"tcadp_apiserver": server.URL,
 		"tcadp_api_key":   "tcadp-secret",
 	})
@@ -101,7 +105,6 @@ func TestCSVParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 	p := NewCSVParser()
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":    "TCADP parser",
-		"output_format":   "json",
 		"tcadp_apiserver": server.URL,
 		"tcadp_api_key":   "tcadp-secret",
 	})
@@ -114,7 +117,7 @@ func TestCSVParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
 	}
 }
 
-func TestXLSXParser_ParseWithResult_TCADPMarkdownIntegration(t *testing.T) {
+func TestXLSXParser_ParseWithResult_TCADPIntegration(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
 	zipPayload := tcadpZipFixture(t)
@@ -137,15 +140,14 @@ func TestXLSXParser_ParseWithResult_TCADPMarkdownIntegration(t *testing.T) {
 	}
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":    "TCADP parser",
-		"output_format":   "markdown",
 		"tcadp_apiserver": server.URL,
 	})
 	res := p.ParseWithResult(ctx, "sample.xlsx", []byte("mock xlsx content"))
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if res.Markdown == "" {
-		t.Fatal("Markdown is empty; want rendered content")
+	if len(res.JSON) == 0 {
+		t.Fatal("JSON is empty; want rendered content")
 	}
 }
 
@@ -216,11 +218,14 @@ func TestCSVParser_ParseWithResult_DefaultCSVBehavior(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if got, want := res.OutputFormat, "html"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
+	if got, want := res.Produced(), true; got != want {
+		t.Fatalf("produced = %t, want %t", got, want)
 	}
-	if res.HTML == "" {
-		t.Fatal("HTML is empty; want rendered table")
+	if len(res.JSON) != 1 {
+		t.Fatalf("JSON items = %d, want one HTML table item", len(res.JSON))
+	}
+	if res.JSON[0].ToMap()["doc_type_kwd"] != "table" {
+		t.Fatalf("JSON item = %#v; want a table item", res.JSON[0])
 	}
 }
 
@@ -231,7 +236,7 @@ func TestXLSXParser_ConfigureFromSetup_TCADP(t *testing.T) {
 	}
 	p.ConfigureFromSetup(map[string]any{
 		"parse_method":                 "TCADP parser",
-		"output_format":                "json",
+		"chunk_rows":                   50,
 		"tcadp_apiserver":              "https://tcadp.example.com",
 		"tcadp_api_key":                "secret",
 		"table_result_type":            "2",
@@ -239,9 +244,6 @@ func TestXLSXParser_ConfigureFromSetup_TCADP(t *testing.T) {
 	})
 	if got, want := p.ParseMethod, "TCADP parser"; got != want {
 		t.Fatalf("ParseMethod = %q, want %q", got, want)
-	}
-	if got, want := p.OutputFormat, "json"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
 	}
 	if got, want := p.TCADPAPIServer, "https://tcadp.example.com"; got != want {
 		t.Fatalf("TCADPAPIServer = %q, want %q", got, want)
@@ -251,5 +253,18 @@ func TestXLSXParser_ConfigureFromSetup_TCADP(t *testing.T) {
 	}
 	if got, want := p.TCADPMarkdownImageResponseType, "2"; got != want {
 		t.Fatalf("TCADPMarkdownImageResponseType = %q, want %q", got, want)
+	}
+}
+
+func TestSpreadsheetParserWarnsForDeprecatedChunkRows(t *testing.T) {
+	core, logs := observer.New(zap.WarnLevel)
+	originalLogger := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = originalLogger })
+
+	p := NewCSVParser()
+	p.ConfigureFromSetup(map[string]any{"chunk_rows": 32})
+	if logs.FilterMessage("spreadsheet parser ignored deprecated chunk_rows; configure row merging on the chunker").Len() != 1 {
+		t.Fatalf("logs = %v, want deprecated chunk_rows warning", logs.All())
 	}
 }

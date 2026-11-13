@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"ragflow/internal/deepdoc/parser/pdf/util"
 )
 
 func TestBoxesToSections_CrossPagePositionTag(t *testing.T) {
@@ -56,6 +57,32 @@ func TestBoxesToSections_SinglePageUnchanged(t *testing.T) {
 	}
 	if len(sections[0].Positions[0].PageNumbers) != 1 {
 		t.Errorf("single-page PageNumbers: got %v, want [0]", sections[0].Positions[0].PageNumbers)
+	}
+}
+
+// TestBoxesToSections_SinglePageTableWithPositions locks the legacy tag form
+// for a box that carries per-page Positions: a one-page section must emit
+// @@N, not the degenerate @@N-N that ExtractPositions reads as two pages.
+func TestBoxesToSections_SinglePageTableWithPositions(t *testing.T) {
+	box := pdf.TextBox{
+		X0: 10, X1: 300, Top: 40, Bottom: 90,
+		PageNumber: 1, HasPageNumber: true, Pages: []int{1},
+		Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 10, Right: 300, Top: 40, Bottom: 90}},
+		Text:      "<table><tr><td>x</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+	}
+	sections := BoxesToSections([]pdf.TextBox{box}, map[int]float64{1: 800})
+	if len(sections) != 1 {
+		t.Fatalf("expected 1 section, got %d", len(sections))
+	}
+	if got, want := sections[0].PositionTag, "@@2\t10.0\t300.0\t40.0\t90.0##"; got != want {
+		t.Errorf("PositionTag: got %q, want %q", got, want)
+	}
+	parsed := util.ExtractPositions(sections[0].PositionTag)
+	if len(parsed) != 1 || len(parsed[0].PageNumbers) != 1 || parsed[0].PageNumbers[0] != 1 {
+		t.Errorf("tag must round-trip to one page: %+v", parsed)
+	}
+	if len(sections[0].Positions) != 1 {
+		t.Errorf("per-page positions must pass through: %+v", sections[0].Positions)
 	}
 }
 
@@ -228,166 +255,6 @@ func TestNormalizeSectionPositions_EmptySlice(t *testing.T) {
 	NormalizeSectionPositions(sections)
 	if len(sections) != 0 {
 		t.Error("empty slice should remain empty")
-	}
-}
-
-func TestSectionsToMarkdown_Title(t *testing.T) {
-	sections := []pdf.Section{
-		{LayoutType: pdf.LayoutTypeTitle, Text: "标题", Image: ""},
-	}
-	got := SectionsToMarkdown(sections)
-	want := "\n## 标题\n"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestSectionsToMarkdown_FigureWithImage(t *testing.T) {
-	sections := []pdf.Section{
-		{LayoutType: pdf.LayoutTypeFigure, Text: "图1", Image: "abc123"},
-	}
-	got := SectionsToMarkdown(sections)
-	want := "\n![Image](data:image/png;base64,abc123)"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestSectionsToMarkdown_FigureWithDataURLImage(t *testing.T) {
-	sections := []pdf.Section{
-		{LayoutType: pdf.LayoutTypeFigure, Text: "图1", Image: "data:image/png;base64,abc123"},
-	}
-	got := SectionsToMarkdown(sections)
-	want := "\n![Image](data:image/png;base64,abc123)"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestSectionsToMarkdown_FigureWithoutImage(t *testing.T) {
-	sections := []pdf.Section{
-		{LayoutType: pdf.LayoutTypeFigure, Text: "图1", Image: ""},
-	}
-	got := SectionsToMarkdown(sections)
-	want := "图1\n"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestSectionsToMarkdown_FigureWithWhitespaceImage(t *testing.T) {
-	sections := []pdf.Section{
-		{LayoutType: pdf.LayoutTypeFigure, Text: "图1", Image: "   \t\n"},
-	}
-	got := SectionsToMarkdown(sections)
-	want := "图1\n"
-	if got != want {
-		t.Errorf("got %q, want %q (whitespace image should not emit empty image tag or drop text)", got, want)
-	}
-}
-
-func TestSectionsToMarkdown_Text(t *testing.T) {
-	sections := []pdf.Section{
-		{LayoutType: pdf.LayoutTypeText, Text: "普通内容", Image: ""},
-	}
-	got := SectionsToMarkdown(sections)
-	want := "普通内容\n"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestSectionsToMarkdown_Table(t *testing.T) {
-	sections := []pdf.Section{
-		{LayoutType: pdf.LayoutTypeTable, Text: "表格内容", Image: ""},
-	}
-	got := SectionsToMarkdown(sections)
-	want := "表格内容\n"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestSectionsToMarkdown_TableWithImageAndText(t *testing.T) {
-	sections := []pdf.Section{
-		{LayoutType: pdf.LayoutTypeTable, Text: "<table><tr><td>1</td></tr></table>", Image: "dGFibGVpbWc="},
-	}
-	got := SectionsToMarkdown(sections)
-	want := "<table><tr><td>1</td></tr></table>\n"
-	if got != want {
-		t.Errorf("got %q, want %q (table with text should render table text)", got, want)
-	}
-}
-
-func TestSectionsToMarkdown_TableFallbackWhenEmptyText(t *testing.T) {
-	sections := []pdf.Section{
-		{LayoutType: pdf.LayoutTypeTable, Text: "", Image: "dGFibGVpbWc="},
-	}
-	got := SectionsToMarkdown(sections)
-	want := "\n![Image](data:image/png;base64,dGFibGVpbWc=)"
-	if got != want {
-		t.Errorf("got %q, want %q (table with empty text should fallback to image)", got, want)
-	}
-}
-
-func TestSectionsToMarkdown_TableFallbackWhitespaceImage(t *testing.T) {
-	sections := []pdf.Section{
-		{LayoutType: pdf.LayoutTypeTable, Text: "", Image: "   \t\n"},
-	}
-	got := SectionsToMarkdown(sections)
-	want := "\n"
-	if got != want {
-		t.Errorf("got %q, want %q (table with empty text and whitespace image should render empty text newline, no empty tag)", got, want)
-	}
-}
-
-func TestSectionsToMarkdown_DocTypeKwdImage(t *testing.T) {
-	sections := []pdf.Section{
-		{LayoutType: "custom_block", DocTypeKwd: "image", Text: "caption", Image: "aGVsbG8="},
-	}
-	got := SectionsToMarkdown(sections)
-	want := "\n![Image](data:image/png;base64,aGVsbG8=)"
-	if got != want {
-		t.Errorf("got %q, want %q (DocTypeKwd == 'image' should render image)", got, want)
-	}
-}
-
-func TestSectionsToMarkdown_DocTypeKwdImage_Whitespace(t *testing.T) {
-	sections := []pdf.Section{
-		{LayoutType: "custom_block", DocTypeKwd: "image", Text: "caption", Image: "   "},
-	}
-	got := SectionsToMarkdown(sections)
-	want := "caption\n"
-	if got != want {
-		t.Errorf("got %q, want %q (DocTypeKwd == 'image' with whitespace image should keep text)", got, want)
-	}
-}
-
-func TestSectionsToMarkdown_Mixed(t *testing.T) {
-	sections := []pdf.Section{
-		{LayoutType: pdf.LayoutTypeTitle, Text: "标题", Image: ""},
-		{LayoutType: pdf.LayoutTypeText, Text: "内容", Image: ""},
-		{LayoutType: pdf.LayoutTypeFigure, Text: "图", Image: "img"},
-		{LayoutType: pdf.LayoutTypeTable, Text: "表格", Image: ""},
-	}
-	got := SectionsToMarkdown(sections)
-	want := "\n## 标题\n内容\n\n![Image](data:image/png;base64,img)表格\n"
-	if got != want {
-		t.Errorf("got %q, want %q", got, want)
-	}
-}
-
-func TestSectionsToMarkdown_EmptySlice(t *testing.T) {
-	got := SectionsToMarkdown([]pdf.Section{})
-	if got != "" {
-		t.Errorf("got %q, want empty string", got)
-	}
-}
-
-func TestSectionsToMarkdown_NilSlice(t *testing.T) {
-	got := SectionsToMarkdown(nil)
-	if got != "" {
-		t.Errorf("got %q, want empty string", got)
 	}
 }
 

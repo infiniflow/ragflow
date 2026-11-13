@@ -1,8 +1,5 @@
 import { useLexicalComposerContext } from '@lexical/react/LexicalComposerContext';
-import {
-  parseWikiLinkHref,
-  type WikiPageType,
-} from '@/pages/dataset/compilation/utils/parse-wiki-link';
+import { parseWikiLinkHref, type WikiPageType } from '@/utils/wiki-link-util';
 import { useEffect } from 'react';
 
 type WikiLinkClickPluginProps = {

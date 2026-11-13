@@ -18,16 +18,19 @@ import (
 	"fmt"
 	"io"
 	"ragflow/internal/dao"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
 
+	"github.com/cloudwego/eino/components/model"
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/flow/agent/react"
 	"github.com/cloudwego/eino/schema"
 	"gorm.io/gorm"
 
+	"ragflow/internal/agent/chat"
 	"ragflow/internal/agent/component/prompts"
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
@@ -40,14 +43,6 @@ import (
 const maxSubAgentDepth = 8
 const defaultAgentDeferredTimeout = 10 * time.Minute
 
-// agentPatternless matches `<model>@<provider>` and
-// `<model>@<instance>@<provider>` (the trailing `@<provider>` is
-// always the last segment — the segment just before the last `@`
-// is treated as the bare model name for upstream API calls). The
-// browser component has the same idea at browser.go:88-92, but
-// keeps the regex greedy for its 2-part fixture; we keep both
-// behaviors here via the in-function split below.
-
 // agentProviderLastSegmentSplit takes a composite llm_id and
 // returns (bareModelName, providerName, true) — or ("", "", false)
 // when no `@<provider>` suffix exists. The bare model name is
@@ -55,8 +50,7 @@ const defaultAgentDeferredTimeout = 10 * time.Minute
 // provider is `parts[1]` for the 2-part shape and `parts[2]` for
 // the 3+ shape. Any middle `@<seg>` segments (the "instance" in
 // Python's split_model_name) are intentionally dropped — the Go
-// drivers and the tenant_llm lookup both key on the bare model
-// name + factory, not on the instance.
+// drivers key on the bare model name, not on the instance.
 //
 // Mirrors Python's split_model_name at
 // api/db/joint_services/tenant_model_service.py:163-178:
@@ -88,15 +82,21 @@ type AgentParam struct {
 	Tools                    []string                  // Agent-visible tool names resolved into Eino BaseTool instances
 	ToolParams               map[string]map[string]any // node-level tool constructor params keyed by tool name
 	SubAgents                []SubAgentTool
+	MCP                      any // Saved MCP selections, decoded and validated when tools are built.
+	ToolTimeout              time.Duration
+	MaxRetries               int           // retry attempts after a failed model call
+	DelayAfterError          time.Duration // initial retry backoff
 	MaxRounds                int
-	MessageHistoryWindowSize int // number of prior conversation turns to include; zero disables history
+	MessageHistoryWindowSize int    // number of prior conversation turns to include; zero disables history
+	VisualFilesVar           string // canvas-state ref containing image data URIs for the model
 	OptimizeMultiTurn        bool
 	OptimizeHistoryWindow    int
 	// Meta is the OpenAI-style function-call schema the Agent exposes
 	// when it is itself called as a tool by a parent component. Mirrors
 	// Python's `meta: ToolMeta` field — describes the Agent's own
 	// inputs (user_prompt / reasoning / context) for callers.
-	Meta AgentMeta
+	Meta            AgentMeta
+	toolInvocations *toolInvocationRecorder
 	// Cite enables post-stream citation grounding. When true,
 	// the Agent reads the chunks recorded in
 	// state.Retrieval["chunks"] (populated by the Retrieval tool),
@@ -107,6 +107,20 @@ type AgentParam struct {
 	Driver  string
 	APIKey  string
 	BaseURL string
+
+	// MaxTokensDisabled, TopPDisabled and TemperatureDisabled record a DSL
+	// *Enabled switch set to false, so runtime inputs that carry the value
+	// without its switch do not bring it back (see gateSampler).
+	MaxTokensDisabled   bool
+	TopPDisabled        bool
+	TemperatureDisabled bool
+
+	// OutputStructure is the expected top-level JSON key set for the
+	// Agent's structured output. Canvas DSL stores the JSON Schema under
+	// outputs.structured; when set, Invoke populates outputs["structured"]
+	// so downstream Message templates like {Agent:X@structured} resolve.
+	OutputStructure map[string]any
+	visualFiles     []string // image URIs resolved from VisualFilesVar for this invocation
 }
 
 // SubAgentTool is a child Agent exposed to a parent Agent as an Eino tool.
@@ -167,6 +181,10 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	if err != nil {
 		return nil, fmt.Errorf("build tools: %w", err)
 	}
+	tools = wrapReferenceRecordingTools(tools)
+	if p.toolInvocations != nil {
+		tools = wrapToolInvocationRecording(tools, p.toolInvocations)
+	}
 	input := buildAgentInputMessages(ctx, p)
 	// Eino's MaxStep counts graph nodes, not model calls. One ReAct round
 	// consists of a model decision, a tool node, and the following model
@@ -174,9 +192,19 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	// the final model response, so max_rounds=1 can complete a tool call and
 	// produce its answer instead of failing with "exceeds max steps".
 	maxSteps := p.MaxRounds*2 + 1
+	if hasCodeExecTool(p.Tools) {
+		// CodeExec user-code failures return a non-zero tool result, allowing
+		// one repair attempt without changing other agents' step budget.
+		maxSteps += 2
+	}
 
 	agent, err := react.NewAgent(ctx, &react.AgentConfig{
-		ToolCallingModel: chatModel,
+		ToolCallingModel: &roundLimitedChatModel{
+			ToolCallingChatModel: chatModel,
+			remaining:            maxSteps / 2,
+			maxRetries:           p.MaxRetries,
+			initialDelay:         p.DelayAfterError,
+		},
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools: tools,
 		},
@@ -199,14 +227,17 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 
 	opt, future := react.WithMessageFuture()
 	ctx = setArtifactCollector(ctx, future)
+	// Nested agents inherit the context, but each run owns its tool history.
+	toolCalls := &toolCallCollector{}
+	ctx = context.WithValue(ctx, toolCallCollectorKey{}, toolCalls)
 	// Start the model-stream collector BEFORE agent.Stream. The checker
 	// (scanAllStreamForToolCall) must consume the whole round before the
 	// graph releases its output stream, so agent.Stream does not return
 	// until the model finishes. GetMessageStreams blocks on the future's
 	// started signal (closed by the graph onStart callback), so starting
-	// the collector first lets thinking deltas stream out in real time
+	// the collector first lets non-citation deltas stream out in real time
 	// while the checker runs, instead of buffering the entire round.
-	emitDone := emitAgentModelStreams(ctx, future)
+	emitDone := emitAgentModelStreams(ctx, future, p.Cite, len(p.OutputStructure) > 0)
 	stream, err := agent.Stream(ctx, input, opt)
 	if err != nil {
 		// Drain the collector so its goroutine exits before we return.
@@ -240,13 +271,121 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 		return nil, emitErr
 	}
 	if len(chunks) == 0 {
-		return &schema.Message{Role: schema.Assistant}, nil
+		return &schema.Message{Role: schema.Assistant, ToolCalls: toolCalls.calls}, nil
 	}
 	msg, err := schema.ConcatMessages(chunks)
 	if err != nil {
 		return nil, err
 	}
+	if len(toolCalls.calls) > 0 {
+		msg.ToolCalls = toolCalls.calls
+	}
 	return msg, nil
+}
+
+// The reserved final model step must answer rather than schedule more tools.
+type roundLimitedChatModel struct {
+	model.ToolCallingChatModel
+	remaining    int
+	maxRetries   int
+	initialDelay time.Duration
+}
+
+func (m *roundLimitedChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	bound, err := m.ToolCallingChatModel.WithTools(tools)
+	if err != nil {
+		return nil, err
+	}
+	return &roundLimitedChatModel{
+		ToolCallingChatModel: bound,
+		remaining:            m.remaining,
+		maxRetries:           m.maxRetries,
+		initialDelay:         m.initialDelay,
+	}, nil
+}
+
+func (m *roundLimitedChatModel) roundOptions(opts []model.Option) []model.Option {
+	if m.remaining <= 0 {
+		opts = append(opts, model.WithToolChoice(schema.ToolChoiceForbidden))
+	}
+	m.remaining--
+	return opts
+}
+
+func (m *roundLimitedChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
+	input = m.roundInput(input)
+	opts = m.roundOptions(opts)
+	var response *schema.Message
+	err := common.RetryWithBackoff(ctx, m.maxRetries, m.initialDelay, func() error {
+		var err error
+		response, err = m.ToolCallingChatModel.Generate(ctx, input, opts...)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
+func (m *roundLimitedChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	input = m.roundInput(input)
+	opts = m.roundOptions(opts)
+	return retryChatModelStream(ctx, m.ToolCallingChatModel, input, opts, m.maxRetries, m.initialDelay)
+}
+
+// retryChatModelStream retries only before the first message reaches the
+// caller, so a failed partial response is never replayed as duplicate output.
+func retryChatModelStream(ctx context.Context, inner model.ToolCallingChatModel, input []*schema.Message, opts []model.Option, maxRetries int, initialDelay time.Duration) (*schema.StreamReader[*schema.Message], error) {
+	if maxRetries <= 0 {
+		return inner.Stream(ctx, input, opts...)
+	}
+
+	reader, writer := schema.Pipe[*schema.Message](1)
+	go func() {
+		defer writer.Close()
+		emitted := false
+		readerClosed := false
+		err := common.RetryWithBackoff(ctx, maxRetries, initialDelay, func() error {
+			emitted = false
+			stream, err := inner.Stream(ctx, input, opts...)
+			if err != nil {
+				return err
+			}
+			defer stream.Close()
+			for {
+				message, err := stream.Recv()
+				if errors.Is(err, io.EOF) {
+					return nil
+				}
+				if err != nil {
+					return err
+				}
+				if message == nil {
+					continue
+				}
+				emitted = true
+				if writer.Send(message, nil) {
+					readerClosed = true
+					return context.Canceled
+				}
+			}
+		}, func(error) bool {
+			return !emitted && !readerClosed
+		})
+		if err != nil {
+			writer.Send(nil, err)
+		}
+	}()
+	return reader, nil
+}
+
+func (m *roundLimitedChatModel) roundInput(input []*schema.Message) []*schema.Message {
+	if m.remaining > 0 {
+		return input
+	}
+	final := make([]*schema.Message, 0, len(input)+1)
+	final = append(final, input...)
+	return append(final, schema.SystemMessage("The configured tool-call budget is exhausted. Do not call any more tools. Produce your final answer using the evidence already collected. State any missing evidence or uncertainty; do not claim that unperformed searches were completed."))
 }
 
 // scanAllStreamForToolCall consumes the whole model response, then branches
@@ -261,13 +400,22 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 // runEinoReActAgent starts emitAgentModelStreams before agent.Stream to keep
 // thinking deltas streaming in real time while this function drains the
 // round.
-func scanAllStreamForToolCall(_ context.Context, stream *schema.StreamReader[*schema.Message]) (bool, error) {
+func scanAllStreamForToolCall(ctx context.Context, stream *schema.StreamReader[*schema.Message]) (bool, error) {
 	defer stream.Close()
 
 	hasToolCall := false
+	var toolCallChunks []*schema.Message
 	for {
 		msg, err := stream.Recv()
 		if err == io.EOF {
+			if collector, ok := ctx.Value(toolCallCollectorKey{}).(*toolCallCollector); ok && len(toolCallChunks) > 0 {
+				// Indices restart each model turn; merge only this turn's deltas.
+				message, err := schema.ConcatMessages(toolCallChunks)
+				if err != nil {
+					return false, err
+				}
+				collector.calls = append(collector.calls, message.ToolCalls...)
+			}
 			return hasToolCall, nil
 		}
 		if err != nil {
@@ -275,6 +423,7 @@ func scanAllStreamForToolCall(_ context.Context, stream *schema.StreamReader[*sc
 		}
 		if msg != nil && len(msg.ToolCalls) > 0 {
 			hasToolCall = true
+			toolCallChunks = append(toolCallChunks, msg)
 		}
 	}
 }
@@ -287,7 +436,7 @@ func scanAllStreamForToolCall(_ context.Context, stream *schema.StreamReader[*sc
 // images attached as multi-modal content parts).
 func buildAgentInputMessages(ctx context.Context, p AgentParam) []*schema.Message {
 	var state *runtime.CanvasState
-	if s, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && s != nil {
+	if s, err := runtime.GetStateFromContext(ctx); err == nil && s != nil {
 		state = s
 	}
 	// Inject sys.files uploads into the current user message, mirroring
@@ -313,6 +462,7 @@ func buildAgentInputMessages(ctx context.Context, p AgentParam) []*schema.Messag
 			}
 		}
 	}
+	images = dedupStrings(append(images, p.visualFiles...))
 	current := schema.Message{Role: schema.User, Content: userText}
 	if len(images) > 0 {
 		current = userMessageWithImages(userText, images)
@@ -338,7 +488,43 @@ func buildAgentInputMessages(ctx context.Context, p AgentParam) []*schema.Messag
 	return input
 }
 
-func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-chan error {
+func resolveAgentVisualFiles(state *runtime.CanvasState, variable string) ([]string, error) {
+	variable = strings.TrimSpace(variable)
+	if variable == "" {
+		return nil, nil
+	}
+	if state == nil {
+		return nil, fmt.Errorf("canvas state is required for %q", variable)
+	}
+	value, err := state.GetVar(variable)
+	if err != nil {
+		return nil, err
+	}
+	if value == nil {
+		return nil, nil
+	}
+	var files []string
+	switch v := value.(type) {
+	case string:
+		files = []string{v}
+	case []string:
+		files = v
+	case []any:
+		files = make([]string, 0, len(v))
+		for _, item := range v {
+			file, ok := item.(string)
+			if !ok {
+				return nil, fmt.Errorf("%q must resolve to a string or string array", variable)
+			}
+			files = append(files, file)
+		}
+	default:
+		return nil, fmt.Errorf("%q must resolve to a string or string array, got %T", variable, value)
+	}
+	return extractDataImages(files), nil
+}
+
+func emitAgentModelStreams(ctx context.Context, future react.MessageFuture, cite bool, holdContent bool) <-chan error {
 	done := make(chan error, 1)
 	go func() {
 		var firstErr error
@@ -369,16 +555,35 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture) <-ch
 				if msg == nil {
 					continue
 				}
+				if msg.Role == schema.Tool {
+					recordArtifactsFromToolMessage(ctx, msg)
+					continue
+				}
 				if msg.Role != "" && msg.Role != schema.Assistant {
 					continue
 				}
 				if msg.Content == "" && msg.ReasoningContent == "" {
 					continue
 				}
+				// Retrieval tools can add chunks during this call. Hold the first
+				// answer until we know whether citation grounding will run.
+				if cite {
+					continue
+				}
 				if runtime.AgentMessageEventsEmitted(ctx) && !runtime.HasDeferredAgentMessageSink(ctx) {
 					continue
 				}
-				runtime.EmitAgentMessage(ctx, msg.Content, msg.ReasoningContent)
+				content := msg.Content
+				if holdContent {
+					// Structured outputs are normalized (fence-stripped) after the
+					// model finishes. Do not stream the raw body; invokeNow emits
+					// the cleaned content once so SSE matches outputs["content"].
+					content = ""
+				}
+				if content == "" && msg.ReasoningContent == "" {
+					continue
+				}
+				runtime.EmitAgentMessage(ctx, content, msg.ReasoningContent)
 			}
 			msgStream.Close()
 		}
@@ -428,6 +633,23 @@ func addToolCallMemory(ctx context.Context, db *gorm.DB, p AgentParam, msg *sche
 	return strings.TrimSpace(resp.Content), nil
 }
 
+// citationGroundingMarkerRe matches canonical [ID:…] / [ID: …] markers that
+// the grounding call is asked to insert. IDs may be numeric or non-numeric
+// (e.g. "simple-0", "ck-1"). Used only to decide whether a grounding
+// response still has answer text after the markers are removed. The ID:
+// prefix is required so bare brackets like [2026] are not treated as markers.
+// The id cannot contain "[", matching citationGroundingMarkerCaptureRe: an
+// unclosed [ID: must not be stripped together with the text up to a later ].
+var citationGroundingMarkerRe = regexp.MustCompile(`\[ID:\s*[^\[\]]+\]`)
+
+// citationGroundingHasSubstantiveText reports whether s contains any
+// non-whitespace text once citation markers are stripped. Marker-only
+// responses such as "[ID:0] [ID:1]" must not replace the first-pass answer.
+func citationGroundingHasSubstantiveText(s string) bool {
+	stripped := citationGroundingMarkerRe.ReplaceAllString(s, "")
+	return strings.TrimSpace(stripped) != ""
+}
+
 // applyCitationGrounding is the post-stream citation grounding
 // call. It reads the chunks recorded in state.Retrieval["chunks"]
 // (populated by the Retrieval tool), renders
@@ -435,9 +657,11 @@ func addToolCallMemory(ctx context.Context, db *gorm.DB, p AgentParam, msg *sche
 // the model to insert [ID:N] tags into the assistant's final
 // content.
 //
-// Returns the grounded content on success, the original content
-// unchanged when no chunks are available or the call fails. Mirrors
-// Python's `cite_letter` / `generate_with_citation` flow.
+// Streams grounded deltas when the invoker supports streaming. Returns the
+// original content when no chunks are available or the call fails before
+// emitting anything. Marker-only grounding responses fall back to the
+// original answer; if invalid deltas were already streamed, an error is
+// returned so the caller does not append the first-pass text afterward.
 func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, content string, chunks []prompts.CitationSource) (string, error) {
 	if !p.Cite {
 		return content, nil
@@ -448,9 +672,9 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 	if strings.TrimSpace(content) == "" {
 		return content, nil
 	}
-	systemPrompt, _ := prompts.CitationPlusPrompt(chunks)
+	systemPrompt, ids := prompts.CitationPlusPrompt(chunks)
 	inv := getDefaultChatInvoker()
-	resp, err := inv.Invoke(ctx, db, ChatInvokeRequest{
+	req := ChatInvokeRequest{
 		Driver:    p.Driver,
 		ModelName: p.ModelID,
 		APIKey:    p.APIKey,
@@ -460,15 +684,74 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 			{Role: schema.User, Content: content},
 		},
 		TopP: p.TopP,
-	})
+	}
+	var resp *ChatInvokeResponse
+	var err error
+	emittedVisible := false
+	var leadingWhitespace strings.Builder
+	emitting := false
+	emitContent := func(text string) error {
+		if text == "" {
+			return nil
+		}
+		if !emitting {
+			leadingWhitespace.WriteString(text)
+			if strings.TrimSpace(leadingWhitespace.String()) == "" {
+				return nil
+			}
+			text = leadingWhitespace.String()
+			emitting = true
+		}
+		emittedVisible = true
+		runtime.EmitAgentMessage(ctx, text, "")
+		return nil
+	}
+	if streamer, ok := inv.(chat.StreamingInvoker); ok {
+		streamFilter := newCitationMarkerStreamFilter(ids)
+		resp, err = streamer.Stream(ctx, db, req, func(delta string, isThink bool) error {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			if isThink || delta == "" {
+				return nil
+			}
+			// Structured output is normalized once after grounding. Streaming
+			// these deltas would duplicate that final emission, and the raw
+			// chunks would not match the cleaned content.
+			if len(p.OutputStructure) > 0 {
+				return nil
+			}
+			return emitContent(streamFilter.Push(delta))
+		})
+		if err == nil {
+			if flushErr := emitContent(streamFilter.Flush()); flushErr != nil {
+				err = flushErr
+			}
+		}
+	} else {
+		resp, err = inv.Invoke(ctx, db, req)
+	}
 	if err != nil {
 		// Grounding is best-effort. Return the original content
 		// so the message still flows; the caller can decide
 		// whether to surface the error.
 		return content, err
 	}
-	grounded := strings.TrimSpace(resp.Content)
-	if grounded == "" {
+	if resp == nil {
+		return content, fmt.Errorf("citation grounding returned no response")
+	}
+	grounded := filterCitationMarkers(resp.Content, ids)
+	if strings.TrimSpace(grounded) == "" {
+		return content, nil
+	}
+	// Marker-only grounding must not silently replace the first-pass answer
+	// (#20613). Non-stream (or stream that never emitted) can fall back.
+	// Once invalid deltas have already been streamed, surface an error so the
+	// caller does not append the original answer after the bad markers.
+	if !citationGroundingHasSubstantiveText(grounded) {
+		if emittedVisible {
+			return content, fmt.Errorf("citation grounding returned markers without answer text")
+		}
 		return content, nil
 	}
 	return grounded, nil
@@ -479,7 +762,7 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 // chunks key is absent / empty. The returned slice is shaped
 // for prompts.CitationSource — the grounding renderer.
 func chunksFromState(ctx context.Context) []prompts.CitationSource {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return nil
 	}
@@ -640,11 +923,26 @@ func optimizeMultiTurnQuestion(ctx context.Context, db *gorm.DB, p AgentParam, h
 	return strings.TrimSpace(resp.Content), nil
 }
 
+func hasCodeExecTool(names []string) bool {
+	for _, name := range names {
+		switch strings.ToLower(strings.TrimSpace(name)) {
+		case "codeexec", "code_exec", "execute_code":
+			return true
+		}
+	}
+	return false
+}
+
 func buildAgentTools(ctx context.Context, p AgentParam) ([]einotool.BaseTool, error) {
 	tools, err := agenttool.BuildAll(p.Tools, p.ToolParams)
 	if err != nil {
 		return nil, err
 	}
+	mcpTools, err := buildAgentMCPTools(ctx, dao.DB, p.MCP, p.ToolTimeout)
+	if err != nil {
+		return nil, err
+	}
+	tools = append(tools, mcpTools...)
 	toolNames := make(map[string]struct{}, len(tools)+len(p.SubAgents))
 	for _, tool := range tools {
 		info, err := tool.Info(ctx)
@@ -841,6 +1139,8 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	defer runtime.FinalizeAgentMessage(ctx)
 
 	p := mergeAgentParam(c.param, inputs)
+	p.toolInvocations = &toolInvocationRecorder{}
+	originalModelID := p.ModelID
 	hasRuntimeUserPrompt := false
 	if v, ok := stringFrom(inputs, "user_prompt"); ok {
 		hasRuntimeUserPrompt = !shouldFallbackToSysQuery(v)
@@ -853,23 +1153,33 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	}
 
 	var state *runtime.CanvasState
-	if s, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && s != nil {
+	if s, err := runtime.GetStateFromContext(ctx); err == nil && s != nil {
 		state = s
 		if inputs["_ERROR"] == "No dataset is selected." {
 			return map[string]any{"content": "No dataset is selected."}, nil
 		}
-		if resolved, rerr := runtime.ResolveTemplate(p.SystemPrompt, state); resolved != p.SystemPrompt || rerr == nil {
+		if resolved, rerr := runtime.ResolveTemplate(p.SystemPrompt, state); rerr != nil {
+			return nil, rerr
+		} else {
 			p.SystemPrompt = resolved
-			if rerr != nil {
-				common.Debug("agent: resolve system_prompt", zap.Error(rerr))
-			}
 		}
-		if resolved, rerr := runtime.ResolveTemplate(p.UserPrompt, state); resolved != p.UserPrompt || rerr == nil {
+		if resolved, rerr := runtime.ResolveTemplate(p.UserPrompt, state); rerr != nil {
+			return nil, rerr
+		} else {
 			p.UserPrompt = resolved
-			if rerr != nil {
-				common.Debug("agent: resolve user_prompt", zap.Error(rerr))
-			}
 		}
+	}
+	p.visualFiles, err = resolveAgentVisualFiles(state, p.VisualFilesVar)
+	if err != nil {
+		return nil, fmt.Errorf("Agent: resolve visual_files_var: %w", err)
+	}
+	var imageFiles []string
+	if state != nil {
+		_, imageFiles = collectSysFiles(state)
+	}
+	imageFiles = append(imageFiles, p.visualFiles...)
+	if err := rejectUnsupportedImageFiles(ctx, db, imageFiles, originalModelID, p.ModelID); err != nil {
+		return nil, err
 	}
 	if hasRuntimeUserPrompt {
 		p.UserPrompt = formatAgentRuntimePrompt(inputs, p.UserPrompt)
@@ -877,6 +1187,18 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		if query, ok := stringFromState(state, "query"); ok {
 			p.UserPrompt = query
 		}
+	}
+	if len(p.OutputStructure) > 0 {
+		keySource := p.OutputStructure
+		if props, ok := p.OutputStructure["properties"].(map[string]any); ok && len(props) > 0 {
+			keySource = props
+		}
+		keys := make([]string, 0, len(keySource))
+		for key := range keySource {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		p.SystemPrompt = appendPromptText(p.SystemPrompt, "Return your final answer as a single valid JSON object containing these keys: "+strings.Join(keys, ", ")+". Do not include markdown fences or prose outside the JSON object.")
 	}
 
 	if p.ModelID == "" {
@@ -898,43 +1220,48 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	// a dedicated LLM call. The rephrased prompt is what the Agent runner
 	// actually consumes.
 	if p.OptimizeMultiTurn {
-		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
+		if state, sErr := runtime.GetStateFromContext(ctx); sErr == nil && state != nil {
 			if rephrased, err := optimizeMultiTurnQuestion(ctx, db, p, state.SnapshotPriorHistory()); err == nil && rephrased != "" {
 				p.UserPrompt = rephrased
 			}
 		}
 	}
 
+	ctx = prepareArtifactCollector(ctx)
 	msg, err := agentRunner(ctx, p)
 	// Tool-call memory summarization. After the ReAct loop
 	// completes, summarize the tool calls via an LLM and append to
 	// the canvas state's Memory. Conversation History is reserved for
 	// actual user/assistant turns maintained by the canvas service.
 	if err == nil && msg != nil {
-		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
+		if state, sErr := runtime.GetStateFromContext(ctx); sErr == nil && state != nil {
 			if summary, sErr2 := addToolCallMemory(ctx, db, p, msg); sErr2 == nil && summary != "" {
 				state.AppendMemory(p.UserPrompt, msg.Content, summary)
 			}
 		}
 	}
 	if err != nil {
-		// Python's LLM layer turns model/tool execution failures into an
-		// ``**ERROR**`` response, which Agent exposes as the `_ERROR`
-		// component output.  Preserve cancellation as a real graph error,
-		// but keep ordinary ReAct failures in the component data flow so
-		// Canvas exception branches can handle them.
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || !isAgentGraphRunError(err) {
+		invocations := p.toolInvocations.snapshot()
+		// Only step exhaustion is an _ERROR output. Model/tool failures must
+		// stop execution before downstream nodes read an absent content output.
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, compose.ErrExceedMaxSteps) {
+			if len(invocations) > 0 {
+				return map[string]any{"tool_invocations": invocations}, fmt.Errorf("component: Agent.Invoke: %w", err)
+			}
 			return nil, fmt.Errorf("component: Agent.Invoke: %w", err)
 		}
-		return map[string]any{"_ERROR": "**ERROR**: " + err.Error()}, nil
+		out := map[string]any{"_ERROR": "**ERROR**: " + runtime.MarkdownSafeErrorText(err)}
+		if len(invocations) > 0 {
+			out["tool_invocations"] = invocations
+		}
+		return out, nil
 	}
 	// Post-stream citation grounding. When Cite is enabled and
 	// the canvas state has recorded retrieval chunks (populated
 	// by the Retrieval tool during the ReAct loop), make a second
 	// LLM call to insert [ID:N] tags into the final content. The
-	// grounding call is best-effort — on failure the original
-	// content is kept and the error is surfaced under
-	// outputs["grounding_error"].
+	// grounding call is best-effort until it emits a visible delta. An
+	// interrupted citation stream must not be followed by the first answer.
 	// Diagnostic sentinel (temporary — see plan): log the post-
 	// agentRunner state right before the `msg.Content` deref so a
 	// subsequent panic shows whether the agent returned (nil, nil).
@@ -955,7 +1282,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 
 	var groundingStatus string
 	if p.Cite {
-		chunks := chunksFromState(ctx)
+		chunks := limitCitationSources(chunksFromState(ctx), citationGroundingSourceTokenBudget)
 		if len(chunks) == 0 {
 			groundingStatus = "no_chunks"
 		} else {
@@ -964,6 +1291,9 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 				content = grounded
 				groundingStatus = "applied"
 			} else if gErr != nil {
+				if ctx.Err() != nil || runtime.AgentMessageEventsEmitted(ctx) || runtime.DeferredAgentMessageEventsEmitted(ctx) {
+					return nil, fmt.Errorf("component: Agent citation grounding stream: %w", gErr)
+				}
 				groundingStatus = "error: " + gErr.Error()
 			}
 		}
@@ -976,26 +1306,46 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		"tool_calls": extractToolCalls(msg),
 		"artifacts":  artifacts,
 	}
+	if invocations := p.toolInvocations.snapshot(); len(invocations) > 0 {
+		out["tool_invocations"] = invocations
+	}
 	if groundingStatus != "" {
 		out["grounding_status"] = groundingStatus
 	}
+	structuredHeld := len(p.OutputStructure) > 0
+	if structuredHeld {
+		cleaned := strings.TrimSpace(cleanFormattedAnswer(content))
+		parsed, ok := matchAgentOutputStructure(cleaned, p.OutputStructure)
+		if !ok {
+			parsed, ok = matchAgentOutputStructure(content, p.OutputStructure)
+		}
+		if ok {
+			out["structured"] = parsed
+			out["content"] = cleaned + artifactMD
+			content = cleaned
+		} else {
+			common.Warn("component: Agent: outputs.structured set but no parseable JSON matching schema",
+				zap.Strings("expected_keys", sortedMapKeys(structuredExpectedKeySet(p.OutputStructure))))
+		}
+	}
 	streamed := runtime.AgentMessageEventsEmitted(ctx) || runtime.DeferredAgentMessageEventsEmitted(ctx)
-	if !streamed {
+	switch {
+	case structuredHeld:
+		// Content deltas were held above; emit the normalized body once so the
+		// live stream matches outputs["content"] (no fenced/raw mismatch).
+		runtime.EmitAgentMessage(ctx, content+artifactMD, "")
+	case !streamed:
 		runtime.EmitAgentMessage(ctx, content+artifactMD, thinking)
+	case artifactMD != "":
+		// Python's stream_output_with_tools_async yields the tool-artifact
+		// markdown as a trailing delta after the LLM stream, so the live SSE
+		// stream (and hence the chat) includes the artifact references even
+		// when the model did not embed them itself. The Go port previously
+		// appended them only to the recorded output and skipped live emission
+		// once the stream had run, so artifact images never appeared in chat.
+		runtime.EmitAgentMessage(ctx, artifactMD, "")
 	}
 	return out, nil
-}
-
-// isAgentGraphRunError identifies ReAct graph failures that Python exposes
-// through the Agent component's _ERROR output. Construction/configuration
-// errors must remain real component errors so invalid canvases still fail
-// fast; only the graph execution limit/error is routed to exception branches.
-func isAgentGraphRunError(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "[graphrunerror]") || strings.Contains(msg, "exceeds max steps")
 }
 
 // Stream implements Component.Stream. Mirrors Invoke then pushes the
@@ -1037,6 +1387,7 @@ func (c *AgentComponent) Inputs() map[string]string {
 func (c *AgentComponent) Outputs() map[string]string {
 	return map[string]string{
 		"content":          "Final assistant content (after the ReAct loop terminates)",
+		"structured":       "Parsed structured output when configured.",
 		"thinking":         "Model reasoning content, when the provider returns it separately.",
 		"tool_calls":       "One entry per tool call observed during the run",
 		"artifacts":        "Artifacts collected from tool responses (empty in P0)",
@@ -1054,9 +1405,7 @@ func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatMod
 	// llm_id format. The RAGFlow DSL stores the model identifier as
 	// "<model>@<instance>@<provider>" (mirrors Python's
 	// split_model_name at
-	// api/db/joint_services/tenant_model_service.py:163-178 and the
-	// Go-side SplitModelNameAndFactory at
-	// internal/service/tenant.go:168). Two-part
+	// api/db/joint_services/tenant_model_service.py:163-178. Two-part
 	// "<model>@<provider>" and bare "<model>" are also accepted —
 	// bare means no driver known, which falls through to the dummy
 	// driver below. The trailing "@<provider>" suffix must also be
@@ -1105,33 +1454,49 @@ func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatMod
 // artifactEntry is the shape of a single tool-returned artifact
 // surfaced through the Agent's outputs["artifacts"].
 type artifactEntry struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
+	Name     string `json:"name"`
+	URL      string `json:"url"`
+	MIMEType string `json:"mime_type,omitempty"`
 }
 
-// artifactCollectorKey is the context key used to stash the
-// MessageFuture from react.WithMessageFuture() so the AgentComponent
-// can collect artifacts after the ReAct loop finishes. The collector
-// is created per-invocation in runEinoReActAgent.
+// artifactCollectorKey is the context key used to share the
+// MessageFuture between Agent.Invoke and runEinoReActAgent.
 type artifactCollectorKey struct{}
 
-// setArtifactCollector registers the MessageFuture for this agent run
-// in the context. It is called from runEinoReActAgent after
-// react.WithMessageFuture() returns a future.
+type toolCallCollectorKey struct{}
+
+type toolCallCollector struct {
+	calls []schema.ToolCall
+}
+
+type artifactCollector struct {
+	future    react.MessageFuture
+	artifacts []artifactEntry
+}
+
+func prepareArtifactCollector(ctx context.Context) context.Context {
+	if _, ok := ctx.Value(artifactCollectorKey{}).(*artifactCollector); ok {
+		return ctx
+	}
+	return context.WithValue(ctx, artifactCollectorKey{}, &artifactCollector{})
+}
+
+// setArtifactCollector registers the MessageFuture for this agent run.
+// Invoke creates the holder before entering the runner so the runner can
+// publish its future without replacing the caller's immutable context.
 func setArtifactCollector(ctx context.Context, future react.MessageFuture) context.Context {
-	return context.WithValue(ctx, artifactCollectorKey{}, future)
+	if collector, ok := ctx.Value(artifactCollectorKey{}).(*artifactCollector); ok {
+		collector.future = future
+		return ctx
+	}
+	return context.WithValue(ctx, artifactCollectorKey{}, &artifactCollector{future: future})
 }
 
 // getArtifactCollector retrieves the MessageFuture registered for the
-// current agent run. Returns nil when no collector was registered
-// (e.g., tests that stub agentRunner).
+// current agent run. Returns nil when no collector was registered.
 func getArtifactCollector(ctx context.Context) react.MessageFuture {
-	v := ctx.Value(artifactCollectorKey{})
-	if v == nil {
-		return nil
-	}
-	if f, ok := v.(react.MessageFuture); ok {
-		return f
+	if collector, ok := ctx.Value(artifactCollectorKey{}).(*artifactCollector); ok {
+		return collector.future
 	}
 	return nil
 }
@@ -1147,6 +1512,10 @@ func getArtifactCollector(ctx context.Context) react.MessageFuture {
 //
 //	{ "_ARTIFACTS": [{ "name": "report.pdf", "url": "https://..." }, ...] }
 func collectArtifactsFromToolCalls(ctx context.Context, _ *schema.Message) []artifactEntry {
+	collector, _ := ctx.Value(artifactCollectorKey{}).(*artifactCollector)
+	if collector != nil && len(collector.artifacts) > 0 {
+		return append([]artifactEntry(nil), collector.artifacts...)
+	}
 	future := getArtifactCollector(ctx)
 	if future == nil {
 		return nil
@@ -1181,6 +1550,28 @@ func collectArtifactsFromToolCalls(ctx context.Context, _ *schema.Message) []art
 		}
 	}
 	return out
+}
+
+func recordArtifactsFromToolMessage(ctx context.Context, msg *schema.Message) {
+	collector, ok := ctx.Value(artifactCollectorKey{}).(*artifactCollector)
+	if !ok {
+		return
+	}
+	for _, artifact := range extractArtifactsFromToolMessage(msg) {
+		if artifact.Name == "" || artifact.URL == "" {
+			continue
+		}
+		seen := false
+		for _, existing := range collector.artifacts {
+			if existing.URL == artifact.URL {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			collector.artifacts = append(collector.artifacts, artifact)
+		}
+	}
 }
 
 // extractArtifactsFromToolMessage parses the JSON payload of a tool
@@ -1218,7 +1609,8 @@ func extractArtifactsFromToolMessage(msg *schema.Message) []artifactEntry {
 		if name == "" || url == "" {
 			continue
 		}
-		out = append(out, artifactEntry{Name: name, URL: url})
+		mime, _ := m["mime_type"].(string)
+		out = append(out, artifactEntry{Name: name, URL: url, MIMEType: mime})
 	}
 	return out
 }
@@ -1257,16 +1649,23 @@ func formatArtifactMarkdown(artifacts []artifactEntry, existingText string) stri
 		if strings.Contains(existingText, a.URL) {
 			continue
 		}
-		lower := strings.ToLower(a.URL)
-		if strings.HasSuffix(lower, ".png") || strings.HasSuffix(lower, ".jpg") ||
-			strings.HasSuffix(lower, ".jpeg") || strings.HasSuffix(lower, ".gif") ||
-			strings.HasSuffix(lower, ".webp") {
+		if isImageArtifact(a) {
 			fmt.Fprintf(&sb, "\n\n![%s](%s)", a.Name, a.URL)
 		} else {
 			fmt.Fprintf(&sb, "\n\n[Download %s](%s)", a.Name, a.URL)
 		}
 	}
 	return sb.String()
+}
+
+func isImageArtifact(a artifactEntry) bool {
+	if strings.HasPrefix(strings.ToLower(a.MIMEType), "image/") {
+		return true
+	}
+	lower := strings.ToLower(a.URL)
+	return strings.HasSuffix(lower, ".png") || strings.HasSuffix(lower, ".jpg") ||
+		strings.HasSuffix(lower, ".jpeg") || strings.HasSuffix(lower, ".gif") ||
+		strings.HasSuffix(lower, ".webp") || strings.HasSuffix(lower, ".svg")
 }
 
 // extractToolCalls converts eino ToolCalls from a message into the
@@ -1354,7 +1753,7 @@ func stringFromState(state *runtime.CanvasState, name string) (string, bool) {
 	if state == nil {
 		return "", false
 	}
-	v, ok := state.Sys[name].(string)
+	v, ok := state.GetSysString(name)
 	if !ok || strings.TrimSpace(v) == "" {
 		return "", false
 	}
@@ -1410,14 +1809,17 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 		f := v
 		p.TopP = &f
 	}
+	gateSampler(inputs, "topPEnabled", &p.TopP, &p.TopPDisabled)
 	if v, ok := intFrom(inputs, "max_tokens"); ok {
 		f := v
 		p.MaxTokens = &f
 	}
+	gateSampler(inputs, "maxTokensEnabled", &p.MaxTokens, &p.MaxTokensDisabled)
 	if v, ok := floatFrom(inputs, "temperature"); ok {
 		f := v
 		p.Temperature = &f
 	}
+	gateSampler(inputs, "temperatureEnabled", &p.Temperature, &p.TemperatureDisabled)
 	if v, ok := stringFrom(inputs, "thinking"); ok && v != "" && v != "default" {
 		p.Thinking = v
 	}
@@ -1436,6 +1838,21 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	if v, ok := stringFrom(inputs, "base_url"); ok {
 		p.BaseURL = v
 	}
+	if v, ok := inputs["mcp"]; ok {
+		p.MCP = v
+	}
+	if v, ok := intFrom(inputs, "tool_timeout"); ok {
+		p.ToolTimeout = time.Duration(v) * time.Second
+	}
+	if v, ok := intFrom(inputs, "max_retries"); ok {
+		p.MaxRetries = v
+	}
+	if v, ok := floatFrom(inputs, "delay_after_error"); ok {
+		p.DelayAfterError = time.Duration(v * float64(time.Second))
+	}
+	if v, ok := stringFrom(inputs, "visual_files_var"); ok {
+		p.VisualFilesVar = v
+	}
 	if tools, params, subAgents, ok := agentToolsFrom(inputs, "tools"); ok {
 		p.Tools = tools
 		p.SubAgents = subAgents
@@ -1453,7 +1870,212 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	if v, ok := boolFrom(inputs, "cite"); ok {
 		p.Cite = v
 	}
+	if keys := agentOutputStructureFrom(inputs); len(keys) > 0 {
+		p.OutputStructure = keys
+	}
 	return p
+}
+
+// agentOutputStructureFrom reads the Agent's structured-output schema from
+// either the LLM-style output_structure map or the canvas outputs.structured
+// JSON Schema. The raw map is preserved so matchAgentOutputStructure can honor
+// required vs properties and declared property types.
+func agentOutputStructureFrom(inputs map[string]any) map[string]any {
+	if v, ok := mapFrom(inputs, "output_structure"); ok {
+		return v
+	}
+	outputs, ok := mapFrom(inputs, "outputs")
+	if !ok {
+		return nil
+	}
+	structured, ok := mapFrom(outputs, "structured")
+	if !ok || len(structured) == 0 {
+		return nil
+	}
+	return structured
+}
+
+// matchAgentOutputStructure parses content against a flat key hint or a JSON
+// Schema object. Flat hints require every listed key. JSON Schema requires only
+// `required` keys (properties alone do not imply required), checks declared
+// top-level property types, rejects a null document when the root type excludes
+// null, and rejects keys outside properties when additionalProperties is false.
+func matchAgentOutputStructure(content string, structure map[string]any) (map[string]any, bool) {
+	if strings.TrimSpace(content) == "null" {
+		types, hasType := schemaTypeNames(structure["type"])
+		if !hasType {
+			// An omitted type does not exclude null. required applies only to objects.
+			if isJSONSchemaObject(structure) {
+				return nil, true
+			}
+		} else {
+			for _, typ := range types {
+				if typ == "null" {
+					return nil, true
+				}
+			}
+			return nil, false
+		}
+	}
+	expected := structuredExpectedKeySet(structure)
+	parsed, ok := matchOutputStructure(content, expected)
+	if !ok {
+		return nil, false
+	}
+	if props, ok := structure["properties"].(map[string]any); ok && len(props) > 0 {
+		if !matchStructuredPropertyTypes(parsed, props) {
+			return nil, false
+		}
+	}
+	if structure["additionalProperties"] == false {
+		props, _ := structure["properties"].(map[string]any)
+		for k := range parsed {
+			if _, declared := props[k]; !declared {
+				return nil, false
+			}
+		}
+	}
+	return parsed, true
+}
+
+// structuredExpectedKeySet turns a JSON Schema (properties/required) or a
+// flat key map into the key set matchOutputStructure checks against.
+func structuredExpectedKeySet(schema map[string]any) map[string]any {
+	if isJSONSchemaObject(schema) {
+		keys := make(map[string]any)
+		if req, ok := schema["required"].([]any); ok {
+			for _, item := range req {
+				if s, ok := item.(string); ok && s != "" {
+					keys[s] = true
+				}
+			}
+		}
+		// No required → empty key set: any JSON object passes the presence check.
+		return keys
+	}
+	return schema
+}
+
+func isJSONSchemaObject(schema map[string]any) bool {
+	if _, ok := schema["type"]; ok {
+		return true
+	}
+	if _, ok := schema["properties"]; ok {
+		return true
+	}
+	if _, ok := schema["required"]; ok {
+		return true
+	}
+	return false
+}
+
+func matchStructuredPropertyTypes(parsed map[string]any, props map[string]any) bool {
+	for k, propSchema := range props {
+		v, present := parsed[k]
+		if !present {
+			continue
+		}
+		ps, ok := propSchema.(map[string]any)
+		if !ok {
+			continue
+		}
+		types, ok := schemaTypeNames(ps["type"])
+		if !ok {
+			continue
+		}
+		matched := false
+		for _, typ := range types {
+			if jsonValueMatchesSchemaType(v, typ) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			return false
+		}
+	}
+	return true
+}
+
+// schemaTypeNames reads a JSON Schema type keyword. It is a single string or
+// an array of strings. An omitted or empty type reports ok=false.
+func schemaTypeNames(raw any) ([]string, bool) {
+	switch t := raw.(type) {
+	case string:
+		if t == "" {
+			return nil, false
+		}
+		return []string{t}, true
+	case []string:
+		if len(t) == 0 {
+			return nil, false
+		}
+		return t, true
+	case []any:
+		names := make([]string, 0, len(t))
+		for _, item := range t {
+			s, ok := item.(string)
+			if !ok || s == "" {
+				continue
+			}
+			names = append(names, s)
+		}
+		if len(names) == 0 {
+			return nil, false
+		}
+		return names, true
+	default:
+		return nil, false
+	}
+}
+
+func jsonValueMatchesSchemaType(v any, typ string) bool {
+	switch typ {
+	case "string":
+		_, ok := v.(string)
+		return ok
+	case "number":
+		switch v.(type) {
+		case float64, json.Number, int, int32, int64:
+			return true
+		default:
+			return false
+		}
+	case "integer":
+		switch x := v.(type) {
+		case float64:
+			return x == float64(int64(x))
+		case json.Number:
+			_, err := x.Int64()
+			return err == nil
+		case int, int32, int64:
+			return true
+		default:
+			return false
+		}
+	case "boolean":
+		_, ok := v.(bool)
+		return ok
+	case "object":
+		_, ok := v.(map[string]any)
+		return ok
+	case "array":
+		_, ok := v.([]any)
+		return ok
+	case "null":
+		return v == nil
+	default:
+		return true
+	}
+}
+
+func sortedMapKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // agentToolsFrom extracts the Agent tools list. The Go-native shape is
@@ -1541,13 +2163,39 @@ func agentToolObject(item map[string]any) (string, map[string]any, bool) {
 
 	rawParams, _ := item["params"].(map[string]any)
 	toolParams := cloneMap(rawParams)
-	if fn, ok := stringFrom(item, "function_name"); ok && strings.TrimSpace(fn) != "" {
-		if toolParams == nil {
-			toolParams = make(map[string]any)
-		}
-		toolParams["function_name"] = strings.TrimSpace(fn)
+	if toolParams == nil {
+		toolParams = make(map[string]any)
 	}
-	return toolName, toolParams, true
+	toolParams["component_name"] = toolName
+
+	// Some Canvas DSLs store function_name/description inside params rather
+	// than as top-level tool object fields.
+	functionName, _ := stringFrom(item, "function_name")
+	functionName = strings.TrimSpace(functionName)
+	if functionName == "" {
+		functionName, _ = stringFrom(toolParams, "function_name")
+		functionName = strings.TrimSpace(functionName)
+	}
+	// Only forward a DSL-provided function_name; without one the tool
+	// factory keeps its registered default (e.g. retrieval stays
+	// search_my_dateset), which is what the model calls.
+	if functionName == "" {
+		functionName = toolName
+	} else {
+		toolParams["function_name"] = functionName
+	}
+
+	description, _ := stringFrom(item, "description")
+	description = strings.TrimSpace(description)
+	if description == "" {
+		description, _ = stringFrom(toolParams, "description")
+		description = strings.TrimSpace(description)
+	}
+	if description != "" {
+		toolParams["description"] = description
+	}
+
+	return functionName, toolParams, true
 }
 
 func cloneMap(in map[string]any) map[string]any {
@@ -1641,6 +2289,9 @@ func agentParamFromMap(params map[string]any) AgentParam {
 // init registers AgentComponent with the orchestrator-owned registry.
 func init() {
 	Register("Agent", func(params map[string]any) (Component, error) {
+		if err := validateAgentToolEntries(params["tools"], false); err != nil {
+			return nil, runtime.NewUserFacingError(fmt.Sprintf("Agent: %v", err))
+		}
 		return NewAgentComponent(agentParamFromMap(params)), nil
 	})
 }

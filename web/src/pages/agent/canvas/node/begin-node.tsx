@@ -61,7 +61,7 @@ function InnerBeginNode({
       )}
       {isWebhookMode ? (
         <LabelCard className="mt-2 flex gap-1 items-center">
-          <span className="font-bold">URL</span>
+          <span className="font-bold">{t('flow.webhook.endpoint')}</span>
           <span className="flex-1 truncate">{url}</span>
         </LabelCard>
       ) : (

@@ -193,7 +193,29 @@ func RectOverlap(a, b Rect) float64 {
 // Uses direct Pix slice copy for *image.RGBA sources (zero allocation per row);
 // falls back to pixel-by-pixel for other image types.
 func FastCrop(src image.Image, x0, y0, x1, y1 int) *image.RGBA {
-	// Clamp to source bounds
+	b := cropRectBounds(src, x0, y0, x1, y1)
+	if b.Empty() {
+		return image.NewRGBA(image.Rect(0, 0, 1, 1))
+	}
+	w, h := b.Dx(), b.Dy()
+	dst := image.NewRGBA(image.Rect(0, 0, w, h))
+	if rgba, ok := src.(*image.RGBA); ok {
+		for y := b.Min.Y; y < b.Max.Y; y++ {
+			srcRow := rgba.Pix[rgba.PixOffset(b.Min.X, y):rgba.PixOffset(b.Max.X, y)]
+			dstRow := dst.Pix[dst.PixOffset(0, y-b.Min.Y):]
+			copy(dstRow, srcRow)
+		}
+	} else {
+		for y := b.Min.Y; y < b.Max.Y; y++ {
+			for x := b.Min.X; x < b.Max.X; x++ {
+				dst.Set(x-b.Min.X, y-b.Min.Y, src.At(x, y))
+			}
+		}
+	}
+	return dst
+}
+
+func cropRectBounds(src image.Image, x0, y0, x1, y1 int) image.Rectangle {
 	b := src.Bounds()
 	if x0 < b.Min.X {
 		x0 = b.Min.X
@@ -208,25 +230,9 @@ func FastCrop(src image.Image, x0, y0, x1, y1 int) *image.RGBA {
 		y1 = b.Max.Y
 	}
 	if x0 >= x1 || y0 >= y1 {
-		return image.NewRGBA(image.Rect(0, 0, 1, 1))
+		return image.Rectangle{}
 	}
-	w, h := x1-x0, y1-y0
-	dst := image.NewRGBA(image.Rect(0, 0, w, h))
-	if rgba, ok := src.(*image.RGBA); ok {
-		for y := y0; y < y1; y++ {
-			srcRow := rgba.Pix[rgba.PixOffset(x0, y):rgba.PixOffset(x1, y)]
-			dstRow := dst.Pix[dst.PixOffset(0, y-y0):]
-			copy(dstRow, srcRow)
-		}
-
-	} else {
-		for y := y0; y < y1; y++ {
-			for x := x0; x < x1; x++ {
-				dst.Set(x-x0, y-y0, src.At(x, y))
-			}
-		}
-	}
-	return dst
+	return image.Rect(x0, y0, x1, y1)
 }
 
 // ── Geometry helpers (pure functions, moved from type/types.go) ─────────

@@ -9,11 +9,6 @@ import { useHandleSearchChange } from '@/hooks/logic-hooks';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import memoryService, { updateMemoryById } from '@/services/memory-service';
 import { markListItemsDeleted } from '@/utils/list-deletion-util';
-import {
-  buildOwnersFilter,
-  groupListByArray,
-  groupListByType,
-} from '@/utils/list-filter-util';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
 import { omit } from 'lodash';
@@ -30,26 +25,47 @@ import {
   IMemoryAppDetailProps,
   MemoryDetailResponse,
   MemoryListResponse,
+  MemoryFiltersResponse,
 } from './interface';
+
+export const MemoryKeys = {
+  list: () => ['memoryList'] as const,
+  filters: () => ['memoryFilters'] as const,
+};
 
 export const useCreateMemory = () => {
   const { t } = useTranslation();
+  const queryClient = useQueryClient();
 
-  const createMemory = useCallback(
-    async (props: ICreateMemoryProps): Promise<CreateMemoryResponse> => {
+  const {
+    data,
+    isError,
+    isPending,
+    mutateAsync: createMemoryMutation,
+  } = useMutation<CreateMemoryResponse, Error, ICreateMemoryProps>({
+    mutationKey: ['createMemory'],
+    mutationFn: async (props) => {
       const { data: response } = await memoryService.createMemory(props);
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to create memory');
       }
-      if (response.code === 0) {
-        message.success(t('message.created'));
-      }
+      queryClient.invalidateQueries({ queryKey: MemoryKeys.list() });
+      queryClient.invalidateQueries({ queryKey: MemoryKeys.filters() });
       return response.data;
     },
-    [t],
+    onSuccess: () => {
+      message.success(t('message.created'));
+    },
+  });
+
+  const createMemory = useCallback(
+    (props: ICreateMemoryProps) => {
+      return createMemoryMutation(props);
+    },
+    [createMemoryMutation],
   );
 
-  return { createMemory };
+  return { data, isError, isPending, createMemory };
 };
 
 export const useFetchMemoryList = () => {
@@ -80,14 +96,14 @@ export const useFetchMemoryList = () => {
   };
 
   if (Array.isArray(owner) && owner.length > 0) {
-    requestParams.owner_ids = owner.join(',');
+    requestParams.tenant_id = owner.join(',');
   }
   const { data, isLoading, isError, refetch } = useQuery<
     MemoryListResponse,
     Error
   >({
     queryKey: [
-      'memoryList',
+      ...MemoryKeys.list(),
       {
         debouncedSearchString,
         ...pagination,
@@ -105,7 +121,6 @@ export const useFetchMemoryList = () => {
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to fetch memory list');
       }
-      console.log(response);
       return response;
     },
   });
@@ -133,30 +148,48 @@ export const useFetchMemoryList = () => {
   };
 };
 
+export const useFetchMemoryFilters = () => {
+  const {
+    data,
+    isFetching: isLoading,
+    isError,
+  } = useQuery<MemoryFiltersResponse, Error>({
+    queryKey: MemoryKeys.filters(),
+    initialData: {
+      filter: { owner: [], memory_type: [], storage_type: [] },
+      total: 0,
+    },
+    queryFn: async () => {
+      const { data: response } = await memoryService.getMemoryFilters(
+        { params: { type: 'filter' } },
+        true,
+      );
+      if (response.code !== 0) {
+        throw new Error(response.message || 'Failed to fetch memory filters');
+      }
+      return response.data;
+    },
+  });
+
+  return { data, isLoading, isError };
+};
+
+/** Loads the memory configuration for a route or shared memory link. */
 export const useFetchMemoryDetail = (tenantId?: string) => {
   const { id } = useParams();
 
   const [memoryParams] = useSearchParams();
   const shared_id = memoryParams.get('shared_id');
   const memoryId = id || shared_id;
-  let param: { id: string | null; tenant_id?: string } = {
-    id: memoryId,
-  };
-  if (shared_id) {
-    param = {
-      id: memoryId,
-      tenant_id: tenantId,
-    };
-  }
-  const fetchMemoryDetailFunc = shared_id
-    ? memoryService.getMemoryDetailShare
-    : memoryService.getMemoryDetail;
 
   const { data, isLoading, isError } = useQuery<MemoryDetailResponse, Error>({
     queryKey: ['memoryDetail', memoryId],
-    enabled: !shared_id || !!tenantId,
+    enabled: !!memoryId && (!shared_id || !!tenantId),
     queryFn: async () => {
-      const { data: response } = await fetchMemoryDetailFunc(param);
+      if (!memoryId) {
+        throw new Error('Memory id is required');
+      }
+      const { data: response } = await memoryService.getMemoryConfig(memoryId);
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to fetch memory detail');
       }
@@ -184,15 +217,13 @@ export const useDeleteMemory = () => {
         throw new Error(response.message || 'Failed to delete memory');
       }
 
-      queryClient.invalidateQueries({ queryKey: ['memoryList'] });
+      queryClient.invalidateQueries({ queryKey: MemoryKeys.list() });
+      queryClient.invalidateQueries({ queryKey: MemoryKeys.filters() });
       markListItemsDeleted(ListDeletionKey.MemoryList);
       return response;
     },
     onSuccess: () => {
       message.success(t('message.deleted'));
-    },
-    onError: (error) => {
-      message.error(t('message.error', { error: error.message }));
     },
   });
 
@@ -212,6 +243,7 @@ export const useUpdateMemory = () => {
   const {
     data,
     isError,
+    isPending,
     mutateAsync: updateMemoryMutation,
   } = useMutation<any, Error, IMemoryAppDetailProps>({
     mutationKey: ['updateMemory'],
@@ -224,7 +256,7 @@ export const useUpdateMemory = () => {
 
       return response.data;
     },
-    onSuccess: (data, variables) => {
+    onSuccess: (_data, variables) => {
       message.success(t('message.updated'));
       queryClient.invalidateQueries({
         queryKey: ['memoryDetail', variables.id],
@@ -232,6 +264,8 @@ export const useUpdateMemory = () => {
       queryClient.invalidateQueries({
         queryKey: [MemoryApiAction.FetchMemoryDetail],
       });
+      queryClient.invalidateQueries({ queryKey: MemoryKeys.list() });
+      queryClient.invalidateQueries({ queryKey: MemoryKeys.filters() });
     },
   });
 
@@ -242,7 +276,7 @@ export const useUpdateMemory = () => {
     [updateMemoryMutation],
   );
 
-  return { data, isError, updateMemory };
+  return { data, isError, isPending, updateMemory };
 };
 
 export const useRenameMemory = () => {
@@ -252,9 +286,9 @@ export const useRenameMemory = () => {
     hideModal: hideChatRenameModal,
     showModal: showChatRenameModal,
   } = useSetModalState();
-  const { updateMemory } = useUpdateMemory();
-  const { createMemory } = useCreateMemory();
-  const [loading, setLoading] = useState(false);
+  const { isPending: createPending, createMemory } = useCreateMemory();
+  const { isPending: updatePending, updateMemory } = useUpdateMemory();
+  const memoryRenameLoading = createPending || updatePending;
   const defaultModelDictionary = useFetchDefaultModelDictionary();
 
   const handleShowChatRenameModal = useCallback(
@@ -280,32 +314,30 @@ export const useRenameMemory = () => {
 
   const onMemoryRenameOk = useCallback(
     async (data: ICreateMemoryProps, callBack?: () => void) => {
-      // let res;
-      setLoading(true);
-      if (memory?.id) {
-        try {
+      let saved = false;
+      try {
+        if (memory?.id) {
           await updateMemory({
-            // ...memoryDataTemp,
             name: data.name,
-            id: memory?.id,
+            id: memory.id,
           } as unknown as IMemoryAppDetailProps);
-        } catch (e) {
-          console.error('error', e);
+        } else {
+          await createMemory(data);
         }
-      } else {
-        await createMemory(data);
+        saved = true;
+      } catch {
+        // Request failures are already reported by the request layer; keep
+        // the dialog open so the user can retry.
       }
-      // if (res && !memory?.id) {
-      //   navigateToMemory(res?.id)();
-      // }
-      callBack?.();
-      setLoading(false);
-      handleHideModal();
+      if (saved) {
+        callBack?.();
+        handleHideModal();
+      }
     },
     [memory, createMemory, handleHideModal, updateMemory],
   );
   return {
-    memoryRenameLoading: loading,
+    memoryRenameLoading,
     initialMemory: memory,
     onMemoryRenameOk,
     openCreateModal,
@@ -314,35 +346,38 @@ export const useRenameMemory = () => {
   };
 };
 
-export function useSelectFilters() {
+/**
+ * Build the filter facet collections from the server-side aggregation query.
+ *
+ * @param filterData - Server-side filter aggregations for visible memories.
+ * @returns The filter collections consumed by ListFilterBar.
+ *
+ * @example
+ * const { data: list } = useFetchMemoryList();
+ * const { filters } = useSelectFilters(list?.data?.memory_list ?? []);
+ */
+export function useSelectFilters(filterData: MemoryFiltersResponse) {
   const { t } = useTranslation();
-  const { data: res } = useFetchMemoryList();
-  const data = res?.data;
 
-  const memoryType = useMemo(() => {
-    return groupListByArray(data?.memory_list ?? [], 'memory_type');
-  }, [data?.memory_list]);
-  const storageType = useMemo(() => {
-    return groupListByType(
-      data?.memory_list ?? [],
-      'storage_type',
-      'storage_type',
-    );
-  }, [data?.memory_list]);
-
-  const filters: FilterCollection[] = [
-    buildOwnersFilter(data?.memory_list ?? [], 'owner_name', t('common.owner')),
-    {
-      field: 'memoryType',
-      list: memoryType,
-      label: t('memories.memoryType'),
-    },
-    {
-      field: 'storageType',
-      list: storageType,
-      label: t('memory.config.storageType'),
-    },
-  ];
+  const filters: FilterCollection[] = useMemo(() => {
+    return [
+      {
+        field: 'owner',
+        list: filterData.filter.owner,
+        label: t('common.owner'),
+      },
+      {
+        field: 'memoryType',
+        list: filterData.filter.memory_type,
+        label: t('memories.memoryType'),
+      },
+      {
+        field: 'storageType',
+        list: filterData.filter.storage_type,
+        label: t('memory.config.storageType'),
+      },
+    ];
+  }, [filterData, t]);
 
   return { filters };
 }

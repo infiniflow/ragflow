@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -41,7 +42,12 @@ func TestRealProducerConsumer(t *testing.T) {
 
 	// Purge stale messages
 	for {
-		h, _ := natsEngine.GetMessages(1)
+		pullCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+		h, err := natsEngine.PullMessages(pullCtx, 1)
+		cancel()
+		if err != nil {
+			t.Fatalf("drain queue: %v", err)
+		}
 		if len(h) == 0 {
 			break
 		}
@@ -53,7 +59,8 @@ func TestRealProducerConsumer(t *testing.T) {
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 
-	db.Create(&entity.Tenant{ID: "t1", LLMID: "gpt-4", Status: testutil.StrPtr("1")})
+	db.Create(&entity.Tenant{ID: "t1", Status: testutil.StrPtr("1")})
+	db.Create(&entity.UserTenant{ID: "owner-t1", UserID: "t1", TenantID: "t1", Role: "owner", Status: testutil.StrPtr("1"), LLMID: "gpt-4"})
 	db.Create(&entity.Knowledgebase{ID: "kb1", TenantID: "t1", EmbdID: "e1", Status: testutil.StrPtr("1"), ParserConfig: entity.JSONMap{}})
 	docName := "doc-real.pdf"
 	db.Create(&entity.Document{ID: "doc-real", KbID: "kb1", ParserID: "naive", ParserConfig: entity.JSONMap{}, Name: &docName})
@@ -77,15 +84,17 @@ func TestRealProducerConsumer(t *testing.T) {
 		TaskType: common.TaskTypeIngestionTask,
 	}
 	payload, _ := json.Marshal(taskMessage)
-	if err := natsEngine.PublishTask("tasks.RAGFLOW", payload); err != nil {
+	if err := natsEngine.PublishTask(common.DefaultTierSubject(), payload); err != nil {
 		t.Fatalf("PublishTask: %v", err)
 	}
 	t.Logf("Producer: Published %s", payload)
 
 	// ── 4. Consumer: Mirrors Ingestor.Start():131-189 exactly ──
-	handles, err := natsEngine.GetMessages(1)
+	pullCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	handles, err := natsEngine.PullMessages(pullCtx, 1)
 	if err != nil {
-		t.Fatalf("GetMessages: %v", err)
+		t.Fatalf("PullMessages: %v", err)
 	}
 	if len(handles) != 1 {
 		t.Fatalf("expected 1 message, got %d", len(handles))
@@ -102,7 +111,7 @@ func TestRealProducerConsumer(t *testing.T) {
 
 	// Mirrors Start():142-143 — UpdateStatusIfCurrent
 	ingestionTaskDAO := dao.NewIngestionTaskDAO()
-	_, err = ingestionTaskDAO.UpdateStatusIfCurrent(context.Background(), db, taskMsg.TaskID, common.CREATED, common.RUNNING)
+	_, err = ingestionTaskDAO.UpdateStatusIfCurrent(context.Background(), db, taskMsg.TaskID, []string{common.CREATED}, common.RUNNING)
 	if err != nil {
 		t.Fatalf("UpdateStatusIfCurrent: %v", err)
 	}
@@ -134,14 +143,14 @@ func TestRealProducerConsumer(t *testing.T) {
 		t.Fatalf("set pipeline_id: %v", err)
 	}
 
-	tc, err := LoadFromIngestionTask(context.Background(), task)
+	tc, err := LoadFromIngestionTask(context.Background(), dao.DB, task)
 	if err != nil {
 		t.Fatalf("LoadFromIngestionTask: %v", err)
 	}
 	t.Logf("Consumer: Loaded Doc=%s Parser=%s KB=%s Tenant=%s",
 		tc.Doc.ID, tc.Doc.ParserID, tc.KB.ID, tc.Tenant.ID)
 
-	svc, err := NewPipelineExecutor(tc, tc.PipelineID, 0)
+	svc, err := NewPipelineExecutor(tc, tc.PipelineID, 0, testPipelineDeps())
 	if err != nil {
 		t.Fatalf("NewPipelineExecutor: %v", err)
 	}
@@ -160,7 +169,7 @@ func TestRealProducerConsumer(t *testing.T) {
 	t.Log("Consumer: PipelineExecutor.Execute() - OK")
 
 	// Mirrors executeTask — mark as completed
-	if _, err := ingestionTaskDAO.UpdateStatusIfCurrent(context.Background(), db, task.ID, common.RUNNING, common.COMPLETED); err != nil {
+	if _, err := ingestionTaskDAO.UpdateStatusIfCurrent(context.Background(), db, task.ID, []string{common.RUNNING}, common.COMPLETED); err != nil {
 		t.Fatalf("UpdateStatus: %v", err)
 	}
 

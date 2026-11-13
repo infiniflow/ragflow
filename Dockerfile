@@ -1,3 +1,16 @@
+ARG TARGETARCH
+
+# Multi-arch runner base images. The amd64 build reuses the published
+# infiniflow/github_action_runner:latest; the arm64 build uses
+# myfbee/github-runner:arm64 (built from the github-runner-dockerfile for
+# linux/arm64). Selecting via TARGETARCH lets a single Dockerfile build natively
+# on either platform (or as one multi-arch image with
+# --platform linux/amd64,linux/arm64). BuildKit only resolves the alias stage
+# that matches the target platform, so a single-arch build never requires both
+# runner images to be present.
+FROM infiniflow/github_action_runner:latest      AS runner-amd64
+FROM infiniflow/github_action_runner:latest-arm64 AS runner-arm64
+
 # base stage
 FROM ubuntu:24.04 AS base
 USER root
@@ -8,34 +21,79 @@ ARG NEED_MIRROR=0
 #Optional parameter
 #If set NEED_MIRROR=1, and set GITEE_TOKEN="xxxxx" , donwload source from gitee.
 #If don't set GITEE_TOKEN , download from github
-ARG GITEE_TOKEN=""
+ARG GITEE_TOKEN
 
 WORKDIR /ragflow
 
 # copy models downloaded via download_deps.py
-RUN mkdir -p /ragflow/rag/res/deepdoc /root/.ragflow
+# layout.laws/manual/paper.onnx are byte-identical to layout.onnx, so we
+# exclude them from the tar extract and symlink them to layout.onnx instead,
+# saving ~219MB in the image.
+RUN mkdir -p /ragflow/internal/rag/res/deepdoc /root/.ragflow
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
-    tar --exclude='.*' -cf - \
-        /huggingface.co/InfiniFlow/text_concat_xgb_v1.0 \
+    tar --exclude='.*' \
+        --exclude='layout.laws.onnx' \
+        --exclude='layout.manual.onnx' \
+        --exclude='layout.paper.onnx' \
+        --exclude='layout.onnx' \
+        --exclude='det.onnx' \
+        --exclude='rec.onnx' \
+        --exclude='tsr.onnx' \
+        --exclude='layout.laws.ort' \
+        --exclude='layout.manual.ort' \
+        --exclude='layout.paper.ort' \
+        -cf - \
         /huggingface.co/InfiniFlow/deepdoc \
-        | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc
+        | tar -xf - --strip-components=3 -C /ragflow/internal/rag/res/deepdoc && \
+    #ln -s layout.onnx /ragflow/internal/rag/res/deepdoc/layout.laws.onnx && \
+    #ln -s layout.onnx /ragflow/internal/rag/res/deepdoc/layout.manual.onnx && \
+    #ln -s layout.onnx /ragflow/internal/rag/res/deepdoc/layout.paper.onnx
+    ln -s layout.ort /ragflow/internal/rag/res/deepdoc/layout.laws.ort && \
+    ln -s layout.ort /ragflow/internal/rag/res/deepdoc/layout.manual.ort && \
+    ln -s layout.ort /ragflow/internal/rag/res/deepdoc/layout.paper.ort
 
-# https://github.com/chrismattmann/tika-python
-# This is the only way to run python-tika without internet access. Without this set, the default is to check the tika version and pull latest every time from Apache.
-RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
-    cp -r /deps/nltk_data /root/ && \
-    cp /deps/tika-server-standard-3.3.0.jar /deps/tika-server-standard-3.3.0.jar.md5 /ragflow/ && \
-    cp /deps/cl100k_base.tiktoken /ragflow/9b5ad71b2ce5302211f9c61530b329a4922fc6a4
+# Copy the cl100k_base BPE table used by the Go tokenizer (tiktoken-go
+# cl100k_base). The deps image ships it at its root; the Go image previously
+# mounted only /huggingface.co and omitted this file, so NumTokensFromString
+# silently returned 0. localBpeLoader resolves it from <workdir>/deps/,
+# so dropping it here makes the table load offline at startup (see
+# InitCL100KEncoder fail-fast guard).
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/cl100k_base.tiktoken,target=/tmp/cl100k_base.tiktoken \
+    mkdir -p /ragflow/deps && \
+    cp /tmp/cl100k_base.tiktoken /ragflow/deps/cl100k_base.tiktoken
 
-ENV TIKA_SERVER_JAR="file:///ragflow/tika-server-standard-3.3.0.jar"
+# Embedding tokenizer assets for the Go counters (internal/tokenizer). Same story as
+# the cl100k table above: the deps image carries them and the Go image has to put them
+# where the loaders search (<workdir>/deps/huggingface.co/<repo>/<file>). A
+# missing asset FAILS THE BUILD here rather than shipping an image where every tagged
+# model silently counts with the calibrated cl100k estimate. The tokenizer.json files
+# that exist only as cross-check oracles are deliberately not shipped.
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
+    for asset in \
+        BAAI/bge-m3/sentencepiece.bpe.model \
+        BAAI/bge-large-en-v1.5/vocab.txt \
+        Qwen/Qwen3-Embedding-0.6B/tokenizer.json \
+        intfloat/e5-mistral-7b-instruct/tokenizer.json ; do \
+        if [ -f "/huggingface.co/$asset" ]; then \
+            mkdir -p "/ragflow/deps/huggingface.co/$(dirname "$asset")" && \
+            cp "/huggingface.co/$asset" "/ragflow/deps/huggingface.co/$asset" ; \
+        else \
+            echo "ERROR: tokenizer asset $asset is missing from the infiniflow/ragflow_deps image; this image would count with the calibrated estimate instead of the model's own tokenizer" >&2 ; \
+            exit 1 ; \
+        fi ; \
+    done
+
 ENV DEBIAN_FRONTEND=noninteractive
 
+# The Noto Sans CJK SC font is now pre-baked into infiniflow/ragflow_deps:latest
+# (downloaded + verified by deps/download_deps.py) instead of being curl'd from
+# GitHub at main-image build time. gopdf reads it at runtime from
+# /usr/local/share/fonts/truetype/noto/NotoSansCJKsc-VF.ttf (pdf_writer.go).
+RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/NotoSansCJKsc-VF.ttf,target=/tmp/NotoSansCJKsc-VF.ttf \
+    mkdir -p /usr/local/share/fonts/truetype/noto && \
+    cp /tmp/NotoSansCJKsc-VF.ttf /usr/local/share/fonts/truetype/noto/NotoSansCJKsc-VF.ttf
+
 # Setup apt
-# Python package and implicit dependencies:
-# opencv-python: libglib2.0-0 libglx-mesa0 libgl1
-# python-pptx:   default-jdk                              tika-server-standard-3.3.0.jar
-# selenium:      libatk-bridge2.0-0                       chrome-linux64-121-0-6167-85
-# Building C extensions: libpython3-dev libgtk-4-1 libnss3 xdg-utils libgbm-dev
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     if [ "$NEED_MIRROR" == "1" ]; then \
         # CI runners may inject a proxy whose TLS certificate is not trusted inside
@@ -48,14 +106,19 @@ RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
     echo 'Binary::apt::APT::Keep-Downloaded-Packages "true";' > /etc/apt/apt.conf.d/keep-cache && \
     chmod 1777 /tmp && \
     apt update && \
-    apt --no-install-recommends install -y ca-certificates \
-    libglib2.0-0 libglx-mesa0 libgl1 pkg-config libgdiplus default-jdk libatk-bridge2.0-0 \
-    libgtk-4-1 libnss3 xdg-utils libjemalloc-dev gnupg unzip curl wget git vim less \
-    ghostscript pandoc lmodern texlive texlive-latex-extra texlive-xetex texlive-lang-chinese \
-    fonts-freefont-ttf fonts-noto-cjk postgresql-client
+    apt --no-install-recommends install -y ca-certificates curl vim unzip iproute2 fonts-dejavu fontconfig && \
+    fc-cache -f && \
+    rm -rf /var/lib/apt/lists/* && apt-get clean
 
 # Download resource from GitHub to /usr/share/infinity
-RUN mkdir -p /usr/share/infinity/resource && \
+# Ship only the directories required by the runtime tokenizer:
+#   rag     - base analyzer dictionaries (mandatory)
+#   opencc  - Traditional/Simplified Chinese conversion
+#   wordnet - WordNet resources
+RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    apt-get update && \
+    apt-get install -y --no-install-recommends git && \
+    mkdir -p /usr/share/infinity/resource && \
     if [ "$NEED_MIRROR" == "1" ]; then \
         if [ -n "$GITEE_TOKEN" ]; then \
             git clone --depth 1 --single-branch "https://oauth2:${GITEE_TOKEN}@gitee.com/infiniflow/resource" /tmp/resource; \
@@ -65,169 +128,36 @@ RUN mkdir -p /usr/share/infinity/resource && \
     else \
         git clone --depth 1 --single-branch https://github.com/infiniflow/resource.git /tmp/resource; \
     fi && \
-    cp -r /tmp/resource/* /usr/share/infinity/resource && \
-    rm -rf /tmp/resource
+    for d in rag opencc wordnet; do \
+        cp -r "/tmp/resource/$d" /usr/share/infinity/resource/; \
+    done && \
+    rm -rf /tmp/resource && \
+    apt-get purge -y git && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/* && apt-get clean
 
 ARG NGINX_VERSION=1.31.3-1~noble
 RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
+    apt -o Acquire::Retries=5 update && \
+    apt -o Acquire::Retries=5 install -y --no-install-recommends gnupg && \
     mkdir -p /etc/apt/keyrings && \
     curl --retry 5 --retry-delay 2 --retry-all-errors -fsSL https://nginx.org/keys/nginx_signing.key | gpg --dearmor -o /etc/apt/keyrings/nginx-archive-keyring.gpg && \
     echo "deb [signed-by=/etc/apt/keyrings/nginx-archive-keyring.gpg] https://nginx.org/packages/mainline/ubuntu/ noble nginx" > /etc/apt/sources.list.d/nginx.list && \
     apt -o Acquire::Retries=5 update && \
-    apt -o Acquire::Retries=5 install -y nginx=${NGINX_VERSION} && \
-    apt-mark hold nginx
-
-# Install uv
-RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
-    if [ "$NEED_MIRROR" == "1" ]; then \
-        mkdir -p /etc/uv && \
-        echo 'python-install-mirror = "https://registry.npmmirror.com/-/binary/python-build-standalone/"' > /etc/uv/uv.toml && \
-        echo '[[index]]' >> /etc/uv/uv.toml && \
-        echo 'url = "https://mirrors.aliyun.com/pypi/simple"' >> /etc/uv/uv.toml && \
-        echo 'default = true' >> /etc/uv/uv.toml; \
-    fi; \
-    arch="$(uname -m)"; \
-    if [ "$arch" = "x86_64" ]; then uv_arch="x86_64"; else uv_arch="aarch64"; fi; \
-    tar xzf "/deps/uv-${uv_arch}-unknown-linux-gnu.tar.gz" \
-    && cp "uv-${uv_arch}-unknown-linux-gnu/"* /usr/local/bin/ \
-    && rm -rf "uv-${uv_arch}-unknown-linux-gnu" \
-    && uv python install 3.13
-
-ENV PYTHONDONTWRITEBYTECODE=1 DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
-    UV_HTTP_TIMEOUT=200 \
-    UV_HTTP_RETRIES=3
-ENV PATH=/root/.local/bin:$PATH
-
-# Install Node.js 22.x (Ubuntu 24.04's Node.js is too old)
-RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
-    curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
-    apt-get purge -y nodejs npm && \
+    apt -o Acquire::Retries=5 install -y --no-install-recommends nginx=${NGINX_VERSION} && \
+    apt-mark hold nginx && \
+    apt-get purge -y gnupg && \
     apt-get autoremove -y && \
-    apt-get update && \
-    apt-get install -y nodejs
-
-# stagehand-server-v3 (Node.js SEA binary used by Browser component
-# in local mode).
-#
-# The `v3.21.0` value below is the `stagehand-go/v3` Go module
-# version pinned in `go.mod`. It is used here only to compute the
-# `go_<ver>/` subdirectory that `local.go:cacheDir()` will look in
-# for the binary at runtime — that subdirectory name is keyed by
-# the Go module's own `internal.PackageVersion`, NOT by the server
-# binary's release tag.
-#
-# The server binary itself is fetched separately by `download_deps.py`
-# from the browserbase/stagehand GitHub releases. The two are
-# LOOSELY MATCHED — both stay on the v3.x line and remain protocol-
-# compatible, but the version numbers do NOT track each other (Go
-# SDK is at v3.21.0, server binary is at v3.7.2 today). On every
-# go.mod bump, refresh the server binary pin in `download_deps.py`
-# to the current latest server release; no version correspondence
-# is required to maintain.
-#
-# Drift on the Go SDK pin (this ARG vs go.mod) forces a fresh
-# GitHub download at process boot — a hard failure in air-gapped
-# deployments. CI cross-checks the two values.
-#
-# The binary is pre-fetched by `download_deps.py` and shipped via
-# the ragflow_deps image, then written directly to the stagehand-go
-# cache path that `local.go:cacheDir()` constructs at runtime —
-# `/root/.cache/stagehand/lib/go_<ver>/stagehand-server-v3-<arch>`.
-ARG STAGEHAND_GO_VERSION=v3.21.0
-RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
-    set -eux; \
-    arch="$(uname -m)"; \
-    case "$arch" in \
-        x86_64) stagehand_arch=x64 ;; \
-        aarch64|arm64) stagehand_arch=arm64 ;; \
-        *) echo "Unsupported architecture: $arch" >&2; exit 1 ;; \
-    esac; \
-    stagehand_version="${STAGEHAND_GO_VERSION#v}"; \
-    stagehand_cache_dir="/root/.cache/stagehand/lib/go_${stagehand_version}"; \
-    mkdir -p "${stagehand_cache_dir}"; \
-    cp "/deps/stagehand-server-v3-linux-${stagehand_arch}" \
-       "${stagehand_cache_dir}/stagehand-server-v3-linux-${stagehand_arch}"; \
-    chmod +x "${stagehand_cache_dir}/stagehand-server-v3-linux-${stagehand_arch}"
-
-# Add msssql ODBC driver
-# macOS ARM64 environment, install msodbcsql18.
-# general x86_64 environment, install msodbcsql17.
-RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
-    curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - && \
-    curl https://packages.microsoft.com/config/ubuntu/22.04/prod.list > /etc/apt/sources.list.d/mssql-release.list && \
-    apt update && \
-    arch="$(uname -m)"; \
-    if [ "$arch" = "arm64" ] || [ "$arch" = "aarch64" ]; then \
-        # ARM64 (macOS/Apple Silicon or Linux aarch64) \
-        ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql18; \
-    else \
-        # x86_64 or others \
-        ACCEPT_EULA=Y apt install -y unixodbc-dev msodbcsql17; \
-    fi || \
-    { echo "Failed to install ODBC driver"; exit 1; }
+    rm -rf /var/lib/apt/lists/* && apt-get clean
 
 
+# ── web-builder stage ──
 
-# Add dependencies of selenium
-RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/chrome-linux64-121-0-6167-85,target=/chrome-linux64.zip \
-    unzip /chrome-linux64.zip && \
-    mv chrome-linux64 /opt/chrome && \
-    ln -s /opt/chrome/chrome /usr/local/bin/
-RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/chromedriver-linux64-121-0-6167-85,target=/chromedriver-linux64.zip \
-    unzip -j /chromedriver-linux64.zip chromedriver-linux64/chromedriver && \
-    mv chromedriver /usr/local/bin/ && \
-    rm -f /usr/bin/google-chrome
-
-RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/,target=/deps \
-    if [ "$(uname -m)" = "x86_64" ]; then \
-        dpkg -i /deps/libssl1.1_1.1.1f-1ubuntu2_amd64.deb; \
-    elif [ "$(uname -m)" = "aarch64" ]; then \
-        dpkg -i /deps/libssl1.1_1.1.1f-1ubuntu2_arm64.deb; \
-    fi
-
-
-# builder stage
-FROM base AS builder
+FROM runner-${TARGETARCH} AS web-builder
 USER root
 
 WORKDIR /ragflow
 
-# Install build-only dependencies for compiling Python C extensions.
-# These are not inherited from base to keep the production image smaller.
-RUN --mount=type=cache,id=ragflow_apt,target=/var/cache/apt,sharing=locked \
-    apt-get update --fix-missing && \
-    apt-get install -y build-essential libpython3-dev libicu-dev libgbm-dev && \
-    rm -rf /var/lib/apt/lists/*
-
-# install dependencies from uv.lock file
-COPY pyproject.toml uv.lock ./
-
-# https://github.com/astral-sh/uv/issues/10462
-# uv records index url into uv.lock but doesn't failover among multiple indexes
-# Also rewrite pypi.tuna.tsinghua.edu.cn to mirrors.aliyun.com/pypi so locks
-# that were resolved against the Tsinghua mirror (e.g. when UV_INDEX pointed
-# there) get normalized to the Aliyun mirror in NEED_MIRROR=1 builds. Without
-# this, stale Tsinghua URLs slip through and `uv sync --frozen` 404s on
-# packages that the Tsinghua mirror no longer carries.
-RUN --mount=type=cache,id=ragflow_uv,target=/root/.cache/uv,sharing=locked \
-    if [ "$NEED_MIRROR" == "1" ]; then \
-        sed -i 's|pypi.org|mirrors.aliyun.com/pypi|g' uv.lock; \
-        sed -i 's|pypi.tuna.tsinghua.edu.cn|mirrors.aliyun.com/pypi|g' uv.lock; \
-    else \
-        sed -i 's|mirrors.aliyun.com/pypi|pypi.org|g' uv.lock; \
-        sed -i 's|pypi.tuna.tsinghua.edu.cn|pypi.org|g' uv.lock; \
-        sed -i 's|gitee.com|github.com|g' uv.lock; \
-    fi; \
-    # --refresh-package litellm forces a re-download of litellm from the
-    # (post-sed) URLs in uv.lock even if BuildKit's persistent uv cache mount
-    # holds a stale wheel from a previous build. litellm 1.88.x has had
-    # multiple internal ImportError issues (1.88.1 missing
-    # DEFAULT_HEALTH_CHECK_STALENESS_MULTIPLIER, 1.88.0 wheel pulled via
-    # some proxies missing RedisPipelineLpopOperation) — always re-fetching
-    # the locked version avoids serving a half-broken cached copy.
-    uv sync --python 3.13 --frozen --refresh-package litellm && \
-    # Ensure pip is available in the venv for runtime package installation (fixes #12651)
-    .venv/bin/python3 -m ensurepip --upgrade
 
 # Install frontend dependencies — depends only on package manifests so
 # web source / docs changes don't invalidate this layer.
@@ -241,56 +171,159 @@ COPY docs docs
 RUN --mount=type=cache,id=ragflow_npm,target=/root/.npm,sharing=locked \
     cd web && NODE_OPTIONS="--max-old-space-size=8192" VITE_BUILD_SOURCEMAP=false VITE_MINIFY=esbuild npm run build
 
+# Stamp the build version into /ragflow/VERSION. Requires git, which must be
+# preinstalled in the github_action_runner base image (the former apt-get install
+# git step was removed), and the host .git tree bound in at build time.
 RUN --mount=type=bind,source=.git,target=/ragflow/.git \
     version_info=$(git describe --tags --match=v* --first-parent --always) && \
     echo "$version_info" > /ragflow/VERSION
 
-# production stage
+
+
+# Native static-lib cache supplied by CI as a named build context
+# (--build-context native-libs=<host cache dir>). Named contexts take priority
+# over stages, so the host cache wins when passed. With no context this empty
+# stage keeps go-builder's bind mount valid and build.sh falls back to its
+# auto-download path — local builds and the GitHub-hosted release builds have
+# no mounted cache.
+FROM scratch AS native-libs
+
+# ── go-builder stage ──
+FROM runner-${TARGETARCH} AS go-builder
+USER root
+SHELL ["/bin/bash", "-c"]
+WORKDIR /ragflow
+
+# Pin GOMODCACHE/GOCACHE to the BuildKit cache-mount paths for the whole stage.
+# Without this, the `GOMODCACHE=... GOCACHE=...` prefix on the RUN lines below only
+# applies to the command before `&&`, so `./build.sh --go` (the command after `&&`)
+# falls back to the default /root/go/pkg/mod and re-downloads every module that
+# `go mod download` already fetched. Exporting them as ENV makes every go command in
+# this stage — including the `go build` inside build.sh — share the same persistent
+# cache mount, so the download happens once and is reused across builds (the CI
+# runner shares the host Docker daemon, so the mount persists across jobs/replicas).
+ENV GOMODCACHE=/root/.cache/gomod GOCACHE=/root/.cache/gobuild
+
+# GOPROXY is overridable via --build-arg. CI passes a proxy that is reliable
+# from GitHub runners (e.g. proxy.golang.org); the default keeps goproxy.cn
+# first for developers behind the GFW. Both `go mod download` below and the
+# `go build` inside build.sh inherit this ENV.
+ARG GOPROXY
+ENV GOPROXY="${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct}"
+
+# Cache Go modules BEFORE copying source (mirrors the Dockerfile_ci fix):
+# copy only the manifests, download the full module graph into a persistent
+# BuildKit cache mount, then bring in source. GOMODCACHE/GOCACHE are pinned to the
+# mounted paths so `go mod download` and `build.sh --go` share the same cache and
+# dependencies are never re-fetched when only source changes.
+COPY go.mod go.sum ./
+# Retry the module download: Go module proxies occasionally drop the HTTP/2
+# connection (GOAWAY) mid-transfer, which is transient and recovers on retry.
+# Exit nonzero if all attempts fail, so the build fails fast instead of
+# continuing with an incomplete module cache (which would surface later in
+# build.sh as a confusing missing-dependency error).
+RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod,sharing=locked \
+    --mount=type=cache,id=ragflow_gobuild,target=/root/.cache/gobuild \
+    ok=0; \
+    for i in 1 2 3 4 5; do \
+      if go mod download; then ok=1; break; fi; \
+      echo "go mod download attempt $i failed, retrying in 5s" >&2; \
+      [ "$i" -lt 5 ] && sleep 5; \
+    done; \
+    if [ "$ok" -ne 1 ]; then echo "go mod download failed after 5 attempts" >&2; exit 1; fi
+
+COPY internal internal
+COPY cmd cmd
+COPY build.sh ./
+COPY tools/scripts tools/scripts
+COPY Dockerfile ./
+
+# ONNX Runtime static archives are provisioned by build.sh from the versioned
+# user cache at ONNXRUNTIME_STATIC_PREFIX (${RAGFLOW_NATIVE_LIBS_DIR:-$HOME/
+# ragflow-native-libs}/onnxruntime/static_lib). There is NO /opt pre-bake: CI
+# supplies the host cache as a named build context (--build-context
+# native-libs=<dir>), and builds without a host cache let build.sh fall back to
+# _ensure_native_libs_installed, which runs `uv run
+# tools/scripts/download_dev_deps.py`. That downloader fetches the native
+# archives on demand and self-creates its deps/ workdir when absent (see
+# download_dev_deps.py::ensure_deps_dir), so it no longer crashes on a bare
+# go-builder checkout. These .a files are consumed at link time only and do NOT
+# enter the final image (only the compiled /ragflow/bin is COPY --from=go-builder).
+# ARG ORT_VERSION stays because build.sh's check_ort_version_consistency greps it
+# to cross-check the pinned ORT release against internal/common/environments.go.
+ARG ORT_VERSION=1.29.0
+
+# CI sets this to 1 so a missing --build-context fails instead of silently
+# falling back to downloading the native archives from GitHub.
+ARG NATIVE_LIBS_REQUIRED=0
+
+RUN git config --global safe.directory "*" && \
+    cd /ragflow && ./build.sh --cpp
+
+# type=bind is read-only by default, but a partial cache is fine: build.sh fills
+# any missing version-keyed archive via its controlled auto-download into
+# RAGFLOW_NATIVE_LIBS_DIR. rw lets that downloader complete the cache inside
+# this RUN. Writes are discarded when the RUN finishes and never enter the image
+# layer; the named context is a copy of the host dir, so the runner's cache is
+# unaffected. Only /ragflow/bin is copied into the production stage.
+RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod,sharing=locked \
+    --mount=type=cache,id=ragflow_gobuild,target=/root/.cache/gobuild \
+    --mount=type=bind,from=native-libs,target=/ragflow/.native-libs,rw \
+    set -euo pipefail; \
+    export GOMODCACHE=/root/.cache/gomod GOCACHE=/root/.cache/gobuild; \
+    git config --global safe.directory "*"; \
+    NATIVE_LIBS_CONTEXT_PASSED=1; \
+    for lib in office_oxide pdfium-static pdf_oxide onnxruntime; do \
+      [ -d "/ragflow/.native-libs/${lib}" ] || NATIVE_LIBS_CONTEXT_PASSED=0; \
+    done; \
+    if [ "${NATIVE_LIBS_CONTEXT_PASSED}" = "1" ]; then \
+      export RAGFLOW_NATIVE_LIBS_DIR=/ragflow/.native-libs; \
+    elif [ "${NATIVE_LIBS_REQUIRED:-0}" = "1" ]; then \
+      echo "ERROR: --build-context native-libs=<host cache dir> was not passed." >&2; \
+      echo "       Re-run with the native static-lib cache from the build host." >&2; \
+      exit 1; \
+    else \
+      export RAGFLOW_NATIVE_LIBS_DIR=/root/ragflow-native-libs; \
+    fi; \
+    ./build.sh --go
+
+
+##### production stage
 FROM base AS production
 USER root
 
 WORKDIR /ragflow
 
-# Copy Python environment and packages
-ENV VIRTUAL_ENV=/ragflow/.venv
-COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
-ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
+# Copy the compiled Go backend binaries (set exec bits at copy time to avoid a redundant chmod layer)
+COPY --from=go-builder --chmod=755 /ragflow/bin/ragflow_server /ragflow/bin/ragflow_server
 
 ENV PYTHONPATH=/ragflow/
 
 COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
-COPY docker/entrypoint*.sh ./
-RUN chmod +x ./entrypoint*.sh
+COPY --chmod=755 docker/entrypoint*.sh ./
 
 # Copy nginx configuration for frontend serving
 RUN mkdir -p /etc/nginx/conf.d /var/log/nginx
 
 COPY docker/nginx/nginx.conf docker/nginx/proxy.conf /etc/nginx/
-COPY docker/nginx/ragflow.conf.golang \
-     docker/nginx/ragflow.conf.python \
-     docker/nginx/ragflow.conf.hybrid \
-     /etc/nginx/conf.d/
+COPY docker/nginx/ragflow.conf /etc/nginx/conf.d/
 
 RUN rm -f /etc/nginx/sites-enabled/default
 
-COPY admin admin
-COPY api api
+
 COPY conf conf
-COPY deepdoc deepdoc
-COPY rag rag
-COPY agent agent
-COPY pyproject.toml uv.lock ./
-COPY mcp mcp
-COPY common common
-COPY memory memory
-COPY bin bin
-COPY tools/scripts tools/scripts
+COPY internal/agent/templates agent/templates
+
+# Wiki page-structure presets read at runtime by the Go backend
+# (CompilationTemplateService.LoadWikiPresets).
+COPY internal/ingestion/knowledge_compile/templates ./internal/ingestion/knowledge_compile/templates
+
 
 # Copy compiled web pages
-COPY --from=builder /ragflow/web/dist /ragflow/web/dist
+COPY --from=web-builder /ragflow/web/dist /ragflow/web/dist
 
 # Copy version info
-COPY --from=builder /ragflow/VERSION /ragflow/VERSION
+COPY --from=web-builder /ragflow/VERSION /ragflow/VERSION
 
 # Set environment variables
 ENV HF_ENDPOINT=https://hf-mirror.com

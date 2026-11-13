@@ -1,0 +1,103 @@
+import { FileType } from '@/constants/file';
+import i18n from '@/locales/config';
+import { z } from 'zod';
+
+export const SetupSchema = z
+  .object({
+    fileFormat: z.string().nullish(),
+    parse_method: z.string().optional(),
+    mineru_parse_method: z.string().optional(),
+    mineru_lang: z.string().optional(),
+    mineru_formula_enable: z.boolean().optional(),
+    mineru_table_enable: z.boolean().optional(),
+    // Image OCR runs independently of the global vision-enhancement switch.
+    // The dropdown used to encode this choice in parse_method; ocr_enabled is
+    // the new boolean contract. Legacy setups may still carry a parse_method
+    // only; normalizeParserFormValues migrates them on load.
+    ocr_enabled: z.boolean().optional(),
+    ocr_model_id: z.string().optional(),
+    lang: z.string().optional(),
+    fields: z.array(z.string()).optional(),
+    // Per-setup vlm is only used by Audio (its ASR model); the vision model
+    // lives at the top level, shared by all vision-capable file types.
+    vlm: z.object({ llm_id: z.string().optional() }).optional(),
+    system_prompt: z.string().optional(),
+    table_result_type: z.string().optional(),
+    markdown_image_response_type: z.string().optional(),
+    enable_multi_column: z.boolean().optional(),
+    remove_toc: z.boolean().optional(),
+    remove_header_footer: z.boolean().optional(),
+    pages: z
+      .array(
+        z
+          .object({
+            // Keep these checks on the fields themselves: an object-level
+            // `superRefine` is skipped whenever the base shape fails to
+            // parse, so one missing sibling would silently swallow the
+            // other field's error.
+            from: z.coerce
+              .number()
+              .int(i18n.t('knowledgeDetails.pageRangeFromInvalid'))
+              .min(1, i18n.t('knowledgeDetails.pageRangeFromInvalid')),
+            to: z.coerce
+              .number()
+              .int(i18n.t('knowledgeDetails.pageRangeToInvalid'))
+              .min(1, i18n.t('knowledgeDetails.pageRangeToInvalid')),
+          })
+          .refine(({ from, to }) => to >= from, {
+            path: ['to'],
+            message: i18n.t('knowledgeDetails.pageRangeToInvalid'),
+          }),
+      )
+      .optional(),
+  })
+  .superRefine((values, ctx) => {
+    if (values.fileFormat === FileType.Email && !values.fields?.length) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['fields'],
+        message: 'Fields is required',
+      });
+    }
+  });
+
+export const FormSchema = z
+  .object({
+    setups: z.array(SetupSchema).min(1, i18n.t('flow.atLeastOneFileType')),
+    // Global vision enhancement: one switch + img2txt model + description prompt,
+    // sitting at the params top level alongside the per-family setups (see the
+    // backend Parser component contract). Response language is intentionally not
+    // here: captions are indexed text, so they follow the knowledge base language
+    // that also drives tokenization, and can never disagree with it.
+    vlm: z
+      .object({
+        llm_id: z.string().optional(),
+        system_prompt: z.string().optional(),
+        // Optional caption-language override. Empty follows the knowledge base
+        // language, which still drives tokenization.
+        lang: z.string().optional(),
+      })
+      .optional(),
+    enable_vision_enhancement: z.boolean().optional(),
+  })
+  .superRefine((values, ctx) => {
+    // An image needs at least one text source: local OCR or the global vision
+    // enhancement. Reject the dead configuration at save time so a canvas that
+    // indexes nothing cannot be written (mirrors the backend Check()).
+    if (values.enable_vision_enhancement) {
+      return;
+    }
+    const imageIndex = values.setups.findIndex(
+      (setup) =>
+        setup.fileFormat === FileType.Image && setup.ocr_enabled === false,
+    );
+    if (imageIndex >= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['setups', imageIndex, 'ocr_enabled'],
+        message: i18n.t('flow.imageTextSourceRequired'),
+      });
+    }
+  });
+
+export type ParserFormSchemaType = z.infer<typeof FormSchema>;

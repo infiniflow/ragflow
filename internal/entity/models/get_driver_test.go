@@ -41,6 +41,23 @@ func TestGetPreconfiguredDriverReturnsPreBuiltDriver(t *testing.T) {
 	}
 }
 
+func TestGetPreconfiguredDriverMatchesRuntimeDriverName(t *testing.T) {
+	dir, restore := setupProviderTestDir(t, "zhipu-ai.json")
+	defer restore()
+
+	if err := InitProviderManager(dir); err != nil {
+		t.Fatalf("InitProviderManager: %v", err)
+	}
+
+	driver, err := GetPreconfiguredDriver("zhipu", "")
+	if err != nil {
+		t.Fatalf("GetPreconfiguredDriver: %v", err)
+	}
+	if _, ok := driver.(*ZhipuAIModel); !ok {
+		t.Fatalf("GetPreconfiguredDriver returned %T, want *ZhipuAIModel", driver)
+	}
+}
+
 func TestGetPreconfiguredDriverWithBaseURLOverride(t *testing.T) {
 	dir, restore := setupProviderTestDir(t, "aliyun.json")
 	defer restore()
@@ -88,9 +105,9 @@ func TestGetPreconfiguredDriverProviderNotFound(t *testing.T) {
 
 func TestGetPreconfiguredDriverManagerNotInitialized(t *testing.T) {
 	// Save and reset the global so we can test the nil-manager path.
-	saved := providerManager
-	providerManager = nil
-	defer func() { providerManager = saved }()
+	saved := GetProviderManager()
+	setProviderManager(nil)
+	defer setProviderManager(saved)
 
 	_, err := GetPreconfiguredDriver("Tongyi-Qianwen", "")
 	if err == nil {

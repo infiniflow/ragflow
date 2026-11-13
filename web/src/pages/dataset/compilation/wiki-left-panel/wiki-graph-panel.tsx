@@ -66,6 +66,7 @@ export function WikiGraphPanel({
       }
       const entity = data.entities.find((item) => item.slug === slug);
       if (entity) {
+        setGraphKeywords(entity.name);
         onSelectArtifact(mapNodeToValue(entity));
       }
     },

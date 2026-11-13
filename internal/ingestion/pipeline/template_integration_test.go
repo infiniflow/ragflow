@@ -40,7 +40,9 @@ import (
 	doctype "ragflow/internal/deepdoc/parser/type"
 	componentpkg "ragflow/internal/ingestion/component"
 	_ "ragflow/internal/ingestion/component/chunker"
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/ingestion/testutil"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/storage"
 
 	"github.com/signintech/gopdf"
@@ -102,11 +104,11 @@ func TestPipelineRun_TemplateGeneral_RealComponents(t *testing.T) {
 	if got := payload["output_format"]; got != "chunks" {
 		t.Fatalf("output_format = %v, want chunks", got)
 	}
-	chunks, ok := payload["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(payload["chunks"])
 	if !ok {
 		t.Fatalf("chunks = %T, want []map[string]any", payload["chunks"])
 	}
-	wantChunkTexts := []string{"Alpha paragraph.\nBeta paragraph."}
+	wantChunkTexts := []string{"Alpha paragraph.\n\nBeta paragraph."}
 	if len(chunks) != len(wantChunkTexts) {
 		t.Fatalf("len(chunks) = %d, want %d", len(chunks), len(wantChunkTexts))
 	}
@@ -133,14 +135,14 @@ func TestPipelineRun_TemplateGeneral_RealComponents(t *testing.T) {
 	}
 
 	state := stateFromRunOutput(t, out)
-	chunkerState, ok := state["TokenChunker:SixApplesFall"]
+	chunkerState, ok := state["GeneralChunker:SixApplesFall"]
 	if !ok {
-		t.Fatal("missing TokenChunker:SixApplesFall state")
+		t.Fatal("missing GeneralChunker:SixApplesFall state")
 	}
 	if got := chunkerState["output_format"]; got != "chunks" {
 		t.Fatalf("chunker output_format = %v, want chunks", got)
 	}
-	chunkerChunks, ok := chunkerState["chunks"].([]map[string]any)
+	chunkerChunks, ok := schema.ChunkCarrierToMaps(chunkerState["chunks"])
 	if !ok || len(chunkerChunks) != len(wantChunkTexts) {
 		t.Fatalf("chunker chunks = %T/%v, want %d items", chunkerState["chunks"], chunkerState["chunks"], len(wantChunkTexts))
 	}
@@ -191,8 +193,7 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 	}
 	payload := terminalPayloadFromRunOutput(t, out, terminalIDs[0])
 
-	wantTexts := []string{"Alpha paragraph.", "Beta paragraph."}
-	wantMergedText := "Alpha paragraph.\nBeta paragraph."
+	wantMergedText := "Alpha paragraph.\n\nBeta paragraph."
 	assertTokenizerTerminalChunk(t, payload, filename, wantMergedText)
 
 	state := stateFromRunOutput(t, out)
@@ -216,15 +217,12 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 	if got := parserState["output_format"]; got != "json" {
 		t.Fatalf("parser output_format = %v, want json", got)
 	}
-	jsonItems, ok := parserState["json"].([]map[string]any)
-	if !ok || len(jsonItems) != 2 {
-		t.Fatalf("parser json = %T/%v, want 2 items", parserState["json"], parserState["json"])
+	jsonItems, ok := parserState["json"].([]parser.DocItem)
+	if !ok || len(jsonItems) != 1 {
+		t.Fatalf("parser json = %T/%v, want 1 item", parserState["json"], parserState["json"])
 	}
-	for i, wantText := range wantTexts {
-		item := jsonItems[i]
-		if got := item["text"]; got != wantText {
-			t.Fatalf("parser json[%d].text = %v, want %q", i, got, wantText)
-		}
+	if got := jsonItems[0].ToMap()["text"]; got != "Alpha paragraph.\n\nBeta paragraph." {
+		t.Fatalf("parser json[0].text = %v, want normalized full text", got)
 	}
 	chunkerState, ok := state["OneChunker:DryDrinksVisit"]
 	if !ok {
@@ -233,7 +231,7 @@ func TestPipelineRun_TemplateOne_RealComponents(t *testing.T) {
 	if got := chunkerState["output_format"]; got != "chunks" {
 		t.Fatalf("chunker output_format = %v, want chunks", got)
 	}
-	chunkerChunks, ok := chunkerState["chunks"].([]map[string]any)
+	chunkerChunks, ok := schema.ChunkCarrierToMaps(chunkerState["chunks"])
 	if !ok || len(chunkerChunks) != 1 {
 		t.Fatalf("chunker chunks = %T/%v, want 1 item", chunkerState["chunks"], chunkerState["chunks"])
 	}
@@ -280,7 +278,7 @@ func TestPipelineRun_TemplateOne_RealComponents_PDFDeepdocChunking(t *testing.T)
 	if got := payload["output_format"]; got != "chunks" {
 		t.Fatalf("output_format = %v, want chunks", got)
 	}
-	chunks, ok := payload["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(payload["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("chunks = %T/%v, want 1 merged chunk", payload["chunks"], payload["chunks"])
 	}
@@ -321,9 +319,9 @@ func TestPipelineRun_TemplateOne_RealComponents_PDFDeepdocChunking(t *testing.T)
 	if got := fileState["page_count"]; got != fixture.PageCount {
 		t.Fatalf("parser file.page_count = %v, want %d", got, fixture.PageCount)
 	}
-	jsonItems, ok := parserState["json"].([]map[string]any)
+	jsonItems, ok := parserState["json"].([]parser.DocItem)
 	if !ok || len(jsonItems) == 0 {
-		t.Fatalf("parser json = %T/%v, want non-empty []map[string]any", parserState["json"], parserState["json"])
+		t.Fatalf("parser json = %T/%v, want non-empty []parser.DocItem", parserState["json"], parserState["json"])
 	}
 	parserJoined := joinJSONItemTexts(jsonItems)
 	assertNormalizedContainsAll(t, parserJoined, fixture.ExpectContains...)
@@ -332,7 +330,7 @@ func TestPipelineRun_TemplateOne_RealComponents_PDFDeepdocChunking(t *testing.T)
 	if !ok {
 		t.Fatal("missing OneChunker:DryDrinksVisit state")
 	}
-	chunkerChunks, ok := chunkerState["chunks"].([]map[string]any)
+	chunkerChunks, ok := schema.ChunkCarrierToMaps(chunkerState["chunks"])
 	if !ok || len(chunkerChunks) != 1 {
 		t.Fatalf("chunker chunks = %T/%v, want 1 item", chunkerState["chunks"], chunkerState["chunks"])
 	}
@@ -379,7 +377,7 @@ func TestPipelineRun_TemplateManual_RealComponents(t *testing.T) {
 	if got := payload["output_format"]; got != "chunks" {
 		t.Fatalf("output_format = %v, want chunks", got)
 	}
-	chunks, ok := payload["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(payload["chunks"])
 	if !ok {
 		t.Fatalf("chunks = %T, want []map[string]any", payload["chunks"])
 	}
@@ -414,13 +412,13 @@ func TestPipelineRun_TemplateManual_RealComponents(t *testing.T) {
 	if !ok {
 		t.Fatal("missing Parser:HipSignsRhyme state")
 	}
-	jsonItems, ok := parserState["json"].([]map[string]any)
-	if !ok || len(jsonItems) != 6 {
-		t.Fatalf("parser json = %T/%v, want 6 items", parserState["json"], parserState["json"])
+	jsonItems, ok := parserState["json"].([]parser.DocItem)
+	if !ok || len(jsonItems) != 1 {
+		t.Fatalf("parser json = %T/%v, want 1 item", parserState["json"], parserState["json"])
 	}
-	wantParserTexts := []string{"PART ONE", "Intro paragraph.", "Section 1", "Detail paragraph.", "PART TWO", "Tail paragraph."}
+	wantParserTexts := []string{"PART ONE\n\nIntro paragraph.\n\nSection 1\n\nDetail paragraph.\n\nPART TWO\n\nTail paragraph."}
 	for i, wantText := range wantParserTexts {
-		if got := jsonItems[i]["text"]; got != wantText {
+		if got := jsonItems[i].ToMap()["text"]; got != wantText {
 			t.Fatalf("parser json[%d].text = %v, want %q", i, got, wantText)
 		}
 	}
@@ -428,7 +426,7 @@ func TestPipelineRun_TemplateManual_RealComponents(t *testing.T) {
 	if !ok {
 		t.Fatal("missing ManualChunker:NineInsectsFind state")
 	}
-	chunkerChunks, ok := chunkerState["chunks"].([]map[string]any)
+	chunkerChunks, ok := schema.ChunkCarrierToMaps(chunkerState["chunks"])
 	if !ok || len(chunkerChunks) != len(wantChunkTexts) {
 		t.Fatalf("chunker chunks = %T/%v, want %d items", chunkerState["chunks"], chunkerState["chunks"], len(wantChunkTexts))
 	}
@@ -477,7 +475,7 @@ func TestPipelineRun_TemplateLaws_RealComponents(t *testing.T) {
 	if got := payload["output_format"]; got != "chunks" {
 		t.Fatalf("output_format = %v, want chunks", got)
 	}
-	chunks, ok := payload["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(payload["chunks"])
 	if !ok {
 		t.Fatalf("chunks = %T, want []map[string]any", payload["chunks"])
 	}
@@ -511,7 +509,7 @@ func TestPipelineRun_TemplateLaws_RealComponents(t *testing.T) {
 	if !ok {
 		t.Fatal("missing TitleChunker:SpicyKeysKick state")
 	}
-	chunkerChunks, ok := chunkerState["chunks"].([]map[string]any)
+	chunkerChunks, ok := schema.ChunkCarrierToMaps(chunkerState["chunks"])
 	if !ok || len(chunkerChunks) != len(wantChunkTexts) {
 		t.Fatalf("chunker chunks = %T/%v, want %d items", chunkerState["chunks"], chunkerState["chunks"], len(wantChunkTexts))
 	}
@@ -560,7 +558,7 @@ func TestPipelineRun_TemplatePaper_RealComponents(t *testing.T) {
 	if got := payload["output_format"]; got != "chunks" {
 		t.Fatalf("output_format = %v, want chunks", got)
 	}
-	chunks, ok := payload["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(payload["chunks"])
 	if !ok {
 		t.Fatalf("chunks = %T, want []map[string]any", payload["chunks"])
 	}
@@ -592,7 +590,7 @@ func TestPipelineRun_TemplatePaper_RealComponents(t *testing.T) {
 	if !ok {
 		t.Fatal("missing TitleChunker:SparklySchoolsTravel state")
 	}
-	chunkerChunks, ok := chunkerState["chunks"].([]map[string]any)
+	chunkerChunks, ok := schema.ChunkCarrierToMaps(chunkerState["chunks"])
 	if !ok || len(chunkerChunks) != len(wantChunkTexts) {
 		t.Fatalf("chunker chunks = %T/%v, want %d items", chunkerState["chunks"], chunkerState["chunks"], len(wantChunkTexts))
 	}
@@ -641,7 +639,7 @@ func TestPipelineRun_TemplateBook_RealComponents(t *testing.T) {
 	if got := payload["output_format"]; got != "chunks" {
 		t.Fatalf("output_format = %v, want chunks", got)
 	}
-	chunks, ok := payload["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(payload["chunks"])
 	if !ok {
 		t.Fatalf("chunks = %T, want []map[string]any", payload["chunks"])
 	}
@@ -678,7 +676,7 @@ func TestPipelineRun_TemplateBook_RealComponents(t *testing.T) {
 	if !ok {
 		t.Fatal("missing TitleChunker:GrumpyGarlicsBake state")
 	}
-	chunkerChunks, ok := chunkerState["chunks"].([]map[string]any)
+	chunkerChunks, ok := schema.ChunkCarrierToMaps(chunkerState["chunks"])
 	if !ok || len(chunkerChunks) != len(wantChunkTexts) {
 		t.Fatalf("chunker chunks = %T/%v, want %d items", chunkerState["chunks"], chunkerState["chunks"], len(wantChunkTexts))
 	}
@@ -744,7 +742,7 @@ func TestPipelineRun_AllIngestionTemplates_RealComponentsSmoke(t *testing.T) {
 			if got := payload["output_format"]; got != "chunks" {
 				t.Fatalf("output_format = %v, want chunks", got)
 			}
-			chunks, ok := payload["chunks"].([]map[string]any)
+			chunks, ok := schema.ChunkCarrierToMaps(payload["chunks"])
 			if !ok || len(chunks) == 0 {
 				t.Fatalf("chunks = %T/%v, want non-empty []map[string]any", payload["chunks"], payload["chunks"])
 			}
@@ -756,8 +754,8 @@ func attachFixedEmbedderFactory(t *testing.T, pipe *Pipeline) {
 	t.Helper()
 	pipe.WithComponentFactory(func(name string, params map[string]any) (runtime.Component, error) {
 		if name == componentpkg.ComponentNameTokenizer {
-			return componentpkg.NewTokenizerComponentWithResolver(params, func(ctx context.Context, _, _, _ string) (componentpkg.Embedder, error) {
-				return fixedEmbedder{}, nil
+			return componentpkg.NewTokenizerComponentWithResolver(params, func(ctx context.Context, _, _ string) (componentpkg.Embedder, string, error) {
+				return fixedEmbedder{}, "", nil
 			})
 		}
 		factory, _, _, ok := runtime.DefaultRegistry.Lookup(name)
@@ -1023,7 +1021,7 @@ func assertTokenizerTerminalChunk(t *testing.T, payload map[string]any, name, wa
 	if got := payload["output_format"]; got != "chunks" {
 		t.Fatalf("output_format = %v, want chunks", got)
 	}
-	chunks, ok := payload["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(payload["chunks"])
 	if !ok {
 		t.Fatalf("chunks = %T, want []map[string]any", payload["chunks"])
 	}

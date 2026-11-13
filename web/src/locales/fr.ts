@@ -365,6 +365,8 @@ export default {
       dataFlowRequired: 'Le flux de données est requis',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'Poursuivez le téléversement ; le système basculera automatiquement ces fichiers vers une configuration d’analyse intégrée compatible.',
       dataset: 'Ensemble de données',
       testing: 'Test de récupération',
       files: 'Fichiers',
@@ -382,13 +384,13 @@ export default {
       webCrawl: 'Exploration Web',
       chunkNumber: 'Nombre de segments',
       uploadDate: 'Date de téléversement',
-      chunkMethod: 'Méthode de segmentation',
+      parsingMode: "Mode d'analyse",
       enabled: 'Activé',
       disabled: 'Désactivé',
       action: 'Action',
       parsingStatus: "Statut d'analyse",
       parsingStatusTip:
-        "Le temps d'analyse dépend de plusieurs facteurs. L'activation de fonctions comme le Graphe de connaissances, RAPTOR, l'extraction automatique de mots-clés ou de questions peut considérablement augmenter ce temps. Si la barre de progression reste bloquée, veuillez consulter ces deux FAQ : https: //ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.",
+        "Le temps d'analyse dépend de plusieurs facteurs. L'activation de fonctions comme le Graphe de connaissances, RAPTOR, l'extraction automatique de mots-clés ou de questions peut considérablement augmenter ce temps. Si la barre de progression reste bloquée, veuillez consulter ces deux FAQ : https://ragflow.io/docs/dev/faq#why-does-my-document-parsing-stall-at-under-one-percent.",
       processBeginAt: 'Commencé à',
       processDuration: 'Durée',
       progressMsg: 'Progression',
@@ -396,10 +398,10 @@ export default {
         'Effectuez un test de récupération pour vérifier si RAGFlow peut retrouver le contenu pertinent pour le LLM. Si vous avez modifié les paramètres par défaut, comme le poids de similarité ou le seuil de similarité, ces changements ne seront pas automatiquement sauvegardés. Vous devez les appliquer dans les paramètres de votre assistant de chat ou dans le composant agent de récupération.',
       similarityThreshold: 'Seuil de similarité',
       similarityThresholdTip:
-        'RAGFlow utilise une combinaison de similarité par mots-clés pondérée et de similarité cosinus vectorielle, ou bien un score de réordonnancement pondéré. Ce paramètre fixe le seuil en dessous duquel un segment est exclu. Par défaut, le seuil est 20 (soit 20%).',
+        'Lors de la récupération, RAGFlow utilise soit une combinaison de similarité pondérée par mots-clés et de similarité cosinus vectorielle pondérée, soit, lorsqu’un modèle de reranking est sélectionné, une combinaison de similarité pondérée par mots-clés et de score de reranking pondéré. Ce paramètre définit le seuil de similarité entre la requête de l’utilisateur et les segments. Tout segment dont le score de similarité est inférieur à ce seuil sera exclu des résultats. Par défaut, le seuil est défini sur 20. Cela signifie que seuls les segments dont le score de similarité hybride est supérieur ou égal à 20 seront récupérés. Si le poids de la similarité vectorielle est défini sur 0, ce seuil ne s’applique pas.',
       vectorSimilarityWeight: 'Poids de similarité des mots-clés',
       vectorSimilarityWeightTip:
-        "Définit l'importance de la similarité par mots-clés dans le score global. Le total des poids doit être de 1.0.",
+        "Définit le poids de la similarité vectorielle dans le score de similarité combiné, qu'elle soit utilisée avec la similarité cosinus vectorielle ou le score de réordonnancement. La somme des deux poids doit être égale à 1.0.",
       testText: 'Texte de test',
       testTextPlaceholder: 'Saisissez votre question ici !',
       testingLabel: 'Test',
@@ -427,10 +429,6 @@ export default {
       layoutRecognize: 'Analyseur PDF',
       layoutRecognizeTip:
         "Utilise un modèle visuel pour détecter les titres, blocs de texte, images et tableaux dans les PDF. Si l'option naïve est choisie, seul le texte brut est extrait. Ne fonctionne que sur les fichiers PDF.",
-      taskPageSize: 'Taille de page par tâche',
-      taskPageSizeMessage: 'Veuillez saisir une taille de page pour la tâche !',
-      taskPageSizeTip:
-        'Pendant la reconnaissance, un fichier PDF est divisé en segments traités en parallèle. Une taille plus grande réduit les coupures de texte entre pages.',
       addPage: 'Ajouter une page',
       greaterThan: 'La valeur actuelle doit être supérieure à "à" !',
       greaterThanPrevious:
@@ -445,18 +443,15 @@ export default {
       cancel: 'Annuler',
       rerankModel: 'Modèle de réordonnancement',
       rerankPlaceholder: 'Veuillez sélectionner',
-      rerankTip: `Optionnel. Si vide, RAGFlow utilisera une combinaison de similarités pondérées. Un modèle de réordonnancement remplace la similarité vectorielle. Attention, cela augmente le temps de réponse. Pour un modèle local, utilisez docker-compose-gpu.yml.`,
+      rerankTip: `Optionnel. Si vide, RAGFlow utilisera une combinaison de similarités pondérées. Un modèle de réordonnancement remplace la similarité vectorielle. Attention, cela augmente le temps de réponse.`,
       topK: 'Top-K',
       topKTip: 'Nombre de segments à envoyer au modèle de réordonnancement.',
       delimiter: 'Délimiteur de texte',
       delimiterTip:
         'Un délimiteur peut être un ou plusieurs caractères spéciaux. Pour plusieurs caractères, encadrez-les de backticks (``). Ex : \\n`##`;',
-      html4excel: 'Excel vers HTML',
-      html4excelTip:
-        'Utilisé avec la méthode "générale". Si désactivé, les tableaux sont convertis en paires clé-valeur. Sinon, ils deviennent des tableaux HTML divisés toutes les 12 lignes.',
       autoKeywords: 'Mots-clés automatiques',
       autoKeywordsTip:
-        'Extrait automatiquement N mots-clés par segment. Consomme des tokens. Voir la documentation : https: //ragflow.io/docs/dev/autokeyword_autoquestion.',
+        'Extrait automatiquement N mots-clés par segment. Consomme des tokens. Voir la documentation : https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',
       autoQuestions: 'Questions automatiques',
       autoQuestionsTip:
         "Extrait automatiquement N questions par segment. N'interrompt pas l'analyse si une erreur survient. Consomme aussi des tokens. Voir la documentation.",
@@ -577,7 +572,7 @@ export default {
         "Aucun test n'a encore été lancé. Les résultats apparaîtront ici.",
       keywordSimilarityWeight: 'Poids de similarité par mots-clés',
       keywordSimilarityWeightTip:
-        'Définit le poids de la similarité par mots-clés dans le score global, combiné avec la similarité vectorielle ou le score de réordonnancement. Le total des deux poids doit être égal à 1.0.',
+        'Définit le poids de la similarité par mots-clés dans le score de similarité combiné. La somme des poids de similarité vectorielle et par mots-clés doit être égale à 1.0.',
       close: 'Fermer',
       enableChildrenDelimiter:
         'Utiliser les segments enfants pour la récupération',
@@ -588,6 +583,7 @@ export default {
         'Le modèle de réordonnancement est très consommateur de temps.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       titleDescription:
         'Modifiez ici la configuration de votre base de connaissances, notamment la méthode de découpage.',
       imageTableContextWindow: 'Fenêtre de contexte image & tableau',
@@ -610,8 +606,6 @@ export default {
         "Si défini sur 'Équipe', tous les membres de votre équipe pourront gérer cette base.",
       chunkTokenNumberTip:
         "Définit un seuil de tokens pour créer un segment. Les textes courts sont regroupés jusqu'à dépasser ce seuil, sauf si un délimiteur est détecté.",
-      chunkMethod: 'Méthode de découpage',
-      chunkMethodTip: 'Voir les conseils à droite.',
       upload: 'Téléverser',
       english: 'Anglais',
       chinese: 'Chinois',
@@ -632,7 +626,7 @@ export default {
       // Les contenus HTML comme "book", "laws", etc. sont laissés en l'état pour ne pas altérer leur structure technique.
       useRaptor: 'Utiliser RAPTOR pour améliorer la récupération',
       useRaptorTip:
-        "Activez RAPTOR pour les questions nécessitant plusieurs étapes. Voir https: //ragflow.io/docs/dev/enable_raptor pour plus d'informations.",
+        "Activez RAPTOR pour les questions nécessitant plusieurs étapes. Voir https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree pour plus d'informations.",
       prompt: 'Prompt',
       promptTip:
         'Décrivez la tâche attendue du LLM, ses réponses, ses exigences, etc. Utilisez `/` pour afficher les variables disponibles.',
@@ -685,7 +679,7 @@ export default {
       resolutionTip:
         'Fusionne des entités similaires comme "2025" et "l\'année 2025".',
       community: 'Génération de rapports communautaires',
-      communityTip: `Un "community" est un groupe d'entités liées. Le LLM peut générer un résumé pour chaque groupe. Voir plus ici : https: //www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/`,
+      communityTip: `Un "community" est un groupe d'entités liées. Le LLM peut générer un résumé pour chaque groupe. Voir plus ici : https://www.microsoft.com/en-us/research/blog/graphrag-improving-global-search-via-dynamic-community-selection/`,
       theDocumentBeingParsedCannotBeDeleted:
         "Le document en cours d'analyse ne peut pas être supprimé",
       lastWeek: 'de la semaine dernière',
@@ -697,8 +691,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         'Par exemple : https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: "Jeton d'accès AI Studio",
-      paddleocrAccessTokenTip: "Jeton d'accès à l'API PaddleOCR (optionnel)",
-      paddleocrAccessTokenPlaceholder: 'Votre jeton AI Studio (optionnel)',
+      paddleocrAccessTokenTip: "Jeton d'accès à l'API PaddleOCR",
+      paddleocrAccessTokenPlaceholder: 'Votre jeton AI Studio',
       paddleocrAlgorithm: 'Algorithme PaddleOCR',
       paddleocrAlgorithmTip: "Algorithme utilisé pour l'analyse PaddleOCR",
       paddleocrSelectAlgorithm: 'Sélectionner un algorithme',
@@ -764,7 +758,7 @@ export default {
       dataFlowPlaceholder: 'Veuillez sélectionner un pipeline.',
       buildItFromScratch: 'Créer depuis zéro',
       dataFlow: 'Pipeline',
-      parseType: "Type d'analyse",
+      parsingMode: "Mode d'analyse",
       manualSetup: 'Pipeline',
       builtIn: 'Intégré',
       tableColumnMode: 'Mode colonne',
@@ -1011,7 +1005,7 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       quoteTip: 'Afficher ou non le texte original en référence.',
       selfRag: 'Self-RAG',
       selfRagTip:
-        'Veuillez vous référer à : https: //huggingface.co/papers/2310.11511',
+        'Veuillez vous référer à : https://huggingface.co/papers/2310.11511',
       overview: 'ID de discussion',
       pv: 'Nombre de messages',
       uv: "Nombre d'utilisateurs actifs",
@@ -1074,7 +1068,7 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       tavilyApiKeyTip:
         'Si une clé API est correctement configurée ici, les recherches web basées sur Tavily seront utilisées pour compléter la récupération des bases de connaissances.',
       tavilyApiKeyMessage: 'Veuillez saisir votre clé API Tavily',
-      tavilyApiKeyHelp: "Comment l'obtenir ?",
+      webSearchApiKeyHelp: "Comment l'obtenir ?",
       crossLanguage: 'Recherche inter-langues',
       crossLanguagePlaceholder: 'Sélectionner une valeur',
       crossLanguageTip: `Sélectionnez une ou plusieurs langues pour la recherche inter-langues. Si aucune langue n'est sélectionnée, le système recherche avec la requête originale.`,
@@ -1121,8 +1115,6 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       },
       cancel: 'Annuler',
       chatSetting: 'Paramètres du chat',
-      tocEnhance: 'IndexPage',
-      tocEnhanceTip: `Lors de l'analyse du document, des informations de table des matières ont été générées (voir l'option 'Activer l'extraction de la table des matières' dans la méthode Général). Cela permet au grand modèle de retourner les éléments de table des matières pertinents à la requête de l'utilisateur, d'utiliser ces éléments pour récupérer les segments associés et d'appliquer une pondération lors du tri.`,
       batchDeleteSessions: 'Suppression en masse',
       deleteSelectedConfirm:
         'Supprimer les {{count}} session(s) sélectionnée(s) ?',
@@ -1233,9 +1225,8 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       paddleocrApiUrlPlaceholder:
         'Ex. : https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: "Jeton d'accès AI Studio",
-      paddleocrAccessTokenMessage:
-        "Jeton d'accès à l'API PaddleOCR (optionnel)",
-      paddleocrAccessTokenPlaceholder: 'Votre jeton AI Studio (optionnel)',
+      paddleocrAccessTokenMessage: "Jeton d'accès à l'API PaddleOCR",
+      paddleocrAccessTokenPlaceholder: 'Votre jeton AI Studio',
       paddleocrAlgorithm: 'Algorithme PaddleOCR',
       paddleocrAlgorithmMessage:
         'Veuillez sélectionner un algorithme PaddleOCR',
@@ -1267,19 +1258,19 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
         'Le modèle de chat par défaut pour chaque base de connaissances nouvellement créée.',
       embeddingModel: "Modèle d'embedding",
       embeddingModelTip:
-        "Le modèle d'embedding par défaut pour chaque base de connaissances nouvellement créée. Si vous ne trouvez pas de modèle d'embedding dans la liste déroulante, vérifiez si vous utilisez l'édition RAGFlow slim (qui n'inclut pas les modèles d'embedding) ou consultez https://ragflow.io/docs/dev/supported_models pour voir si votre fournisseur de modèle supporte ce modèle.",
+        "Le modèle d'embedding par défaut pour chaque base de connaissances nouvellement créée. Si vous ne trouvez pas de modèle d'embedding dans la liste déroulante, consultez la page Fournisseurs de modèles pour voir si votre fournisseur de modèle supporte ce modèle.",
       img2txtModel: 'Modèle Img2txt',
       img2txtModelTip:
-        'Le modèle img2txt par défaut pour chaque base de connaissances nouvellement créée. Il décrit une image ou une vidéo. Si vous ne trouvez pas de modèle dans la liste déroulante, consultez https://ragflow.io/docs/dev/supported_models pour voir si votre fournisseur le supporte.',
+        'Le modèle img2txt par défaut pour chaque base de connaissances nouvellement créée. Il décrit une image ou une vidéo. Si vous ne trouvez pas de modèle dans la liste déroulante, consultez la page Fournisseurs de modèles pour voir si votre fournisseur le supporte.',
       sequence2txtModel: 'Modèle Speech2txt',
       sequence2txtModelTip:
         'Le modèle ASR par défaut pour chaque base de connaissances nouvellement créée. Utilisez ce modèle pour traduire les voix en texte correspondant.',
       rerankModel: 'Modèle de rerank',
       rerankModelTip:
-        'Le modèle de rerank par défaut pour le rerank des segments. Si vous ne trouvez pas de modèle dans la liste déroulante, consultez https://ragflow.io/docs/dev/supported_models pour voir si votre fournisseur le supporte.',
+        'Le modèle de rerank par défaut pour le rerank des segments. Si vous ne trouvez pas de modèle dans la liste déroulante, consultez la page Fournisseurs de modèles pour voir si votre fournisseur le supporte.',
       ttsModel: 'Modèle TTS',
       ttsModelTip:
-        'Le modèle de synthèse vocale par défaut. Si vous ne trouvez pas de modèle dans la liste déroulante, consultez https://ragflow.io/docs/dev/supported_models pour voir si votre fournisseur le supporte.',
+        'Le modèle de synthèse vocale par défaut. Si vous ne trouvez pas de modèle dans la liste déroulante, consultez la page Fournisseurs de modèles pour voir si votre fournisseur le supporte.',
       workspace: 'Espace de travail',
       upgrade: 'Mettre à jour',
       addLlmTitle: 'Ajouter LLM',
@@ -1302,7 +1293,7 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
         apiUrlPlaceholder:
           'Par exemple : https://paddleocr-server.com/layout-parsing',
         accessToken: "Jeton d'accès AI Studio",
-        accessTokenPlaceholder: 'Votre jeton AI Studio (optionnel)',
+        accessTokenPlaceholder: 'Votre jeton AI Studio',
         algorithm: 'Algorithme PaddleOCR',
         selectAlgorithm: 'Sélectionner un algorithme',
         modelNamePlaceholder: 'Par exemple : paddleocr-from-env-1',
@@ -1831,6 +1822,7 @@ Exemple : Virtual Hosted Style`,
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       showToc: 'Afficher le contenu',
       hideToc: 'Masquer le contenu',
@@ -1920,7 +1912,7 @@ Exemple : Virtual Hosted Style`,
       pleaseUploadAtLeastOneFile: 'Veuillez téléverser au moins un fichier',
     },
     flow: {
-      cite: 'Citation',
+      cite: 'Afficher les citations',
       citeTip: 'Astuce citation',
       name: 'Nom',
       nameMessage: 'Veuillez saisir un nom',
@@ -2230,7 +2222,7 @@ Exemple : Virtual Hosted Style`,
       },
       akShare: 'AkShare',
       akShareDescription:
-        'Un composant qui obtient des nouvelles sur les actions depuis https: //www.eastmoney.com/.',
+        'Un composant qui obtient des nouvelles sur les actions depuis https://www.eastmoney.com/.',
       yahooFinance: 'YahooFinance',
       yahooFinanceDescription:
         'Un composant qui interroge des informations sur une société cotée en bourse à partir de son symbole boursier.',
@@ -2364,9 +2356,9 @@ Exemple : Virtual Hosted Style`,
       jsonFormatTip:
         'Le composant en amont doit fournir une chaîne JSON au format suivant :',
       toEmailTip: 'to_email : Email du destinataire (Obligatoire)',
-      ccEmailTip: 'cc_email : Email en copie (Optionnel)',
-      subjectTip: "subject : Sujet de l'email (Optionnel)",
-      contentTip: "content : Contenu de l'email (Optionnel)",
+      ccEmailTip: 'cc_email : Email en copie',
+      subjectTip: "subject : Sujet de l'email",
+      contentTip: "content : Contenu de l'email",
       jsonUploadTypeErrorMessage: 'Veuillez uploader un fichier JSON',
       jsonUploadContentErrorMessage: 'Erreur dans le fichier JSON',
       iteration: 'Itération',
@@ -2470,13 +2462,6 @@ Exemple : Virtual Hosted Style`,
       seconds: 'Secondes',
       subject: 'Sujet',
       // --- clés manquantes ajoutées ---
-      preprocess: {
-        preprocess: 'Prétraitement',
-        mainContent: 'Contenu principal',
-        abstract: 'Résumé',
-        author: 'Auteur',
-        sectionTitle: 'Titre de section',
-      },
       editTags: 'Modifier les étiquettes',
       editTagsDescription:
         'Ajoutez des étiquettes pour organiser et filtrer vos agents. Appuyez sur Entrée ou virgule pour ajouter.',
@@ -2552,9 +2537,6 @@ Idéal pour : les documents avec un contenu fluide et contextuellement lié — 
       oneChunkTitle: 'Note',
       oneChunkDescription:
         'Toutes les sections analysées seront fusionnées dans un seul bloc.',
-      flattenMediaToText: 'Désactiver le modèle de vision',
-      flattenMediaToTextTip:
-        "Traite les sections d'images et de tableaux comme du texte brut et ignore l'amélioration par vision.",
       enableChildrenDelimiters:
         'Les blocs enfants sont utilisés pour la récupération',
       merge: 'Fusionner',
@@ -2576,20 +2558,6 @@ Idéal pour : les documents avec un contenu fluide et contextuellement lié — 
       maxRounds: 'Nombre maximum de cycles de réflexion',
       delayAfterError: 'Délai après une erreur',
       maxRetries: 'Nombre maximum de tentatives',
-      maxSteps: "Nombre maximum d'étapes",
-      headless: 'Mode sans interface',
-      enableDefaultExtensions: 'Activer les extensions par défaut',
-      enableDefaultExtensionsTip:
-        "Active les extensions par défaut de browser-use (uBlock, gestion des cookies, ClearURLs). Désactivez cette option pour éviter les téléchargements d'extensions au moment de l'exécution.",
-      chromiumSandbox: 'Bac à sable Chromium',
-      chromiumSandboxTip:
-        "Indique si le bac à sable Chromium doit être activé. Dans les environnements Docker root, il est généralement désactivé ; sur les hôtes normaux, il est recommandé de l'activer.",
-      persistSession: 'Conserver la session',
-      persistSessionTip:
-        'Lorsque cette option est activée, ce nœud Browser réutilise sa session de navigateur pour éviter les connexions répétées.',
-      uploadSources: 'Sources de téléversement',
-      uploadSourcesTip:
-        'Prend en charge les IDs de fichiers, les URLs de fichiers ou des variables. Vous pouvez séparer plusieurs valeurs par des virgules ou utiliser un tableau JSON (par exemple ["id1","https://example.com/a.pdf"]).',
       advancedSettings: 'Paramètres avancés',
       addTools: 'Ajouter des outils',
       sysPromptDefaultValue: `
@@ -2924,9 +2892,6 @@ Les informations structurées importantes peuvent inclure : noms, dates, lieux, 
       variableAggregatorDescription: `
 Ce processus agrège des variables de plusieurs branches en une seule variable pour obtenir une configuration unifiée pour les nœuds en aval.`,
       userFillUpDescription: `Met en pause le workflow et attend le message de l'utilisateur avant de continuer.`,
-      browser: 'Navigateur',
-      browserDescription:
-        'Automatise les tâches de navigation. Prend en charge la configuration du modèle et les actions pilotées par invite. Les sources de téléversement acceptent les IDs de fichiers et les URLs, et les fichiers téléchargés peuvent être enregistrés dans un dossier cible.',
       channel: 'Canal',
       channelTip:
         "Effectuer une recherche textuelle ou une recherche d'actualités sur l'entrée du composant",
@@ -2934,7 +2899,7 @@ Ce processus agrège des variables de plusieurs branches en une seule variable p
       text: 'Texte',
       userId: 'ID utilisateur',
       tags: 'Étiquettes',
-      canvasCategory: 'Catégorie de canvas',
+      agentCategory: 'Catégorie de canvas',
     },
     llmTools: {
       bad_calculator: {
@@ -3139,10 +3104,10 @@ Mémoire procédurale : compétences acquises, habitudes et procédures automati
         share: 'Partage',
       },
 
-      serviceStatus: 'État des services',
-      userManagement: 'Gestion des utilisateurs',
-      sandboxSettings: 'Paramètres du bac à sable',
-      registrationWhitelist: "Liste blanche d'inscription",
+      serviceStatus: 'Services',
+      userManagement: 'Utilisateurs',
+      sandboxSettings: 'Bac à sable',
+      registrationWhitelist: 'Liste blanche',
       roles: 'Rôles',
       monitoring: 'Surveillance',
 
@@ -3249,7 +3214,7 @@ Mémoire procédurale : compétences acquises, habitudes et procédures automati
       importWhitelist: 'Importer la liste blanche (Excel)',
       importSelectExcelFile: 'Fichier Excel (.xlsx)',
       importOverwriteExistingEmails: 'Écraser les e-mails existants',
-      importInvalidExcelFile: 'Veuillez sélectionner un fichier Excel valide',
+      importValidExcelFile: 'Veuillez sélectionner un fichier Excel valide',
       importFileRequired: 'Veuillez sélectionner un fichier à importer',
       importFileTips:
         "Le fichier doit contenir une seule colonne d'en-tête nommée <code>email</code>.",
@@ -3263,7 +3228,6 @@ Mémoire procédurale : compétences acquises, habitudes et procédures automati
       permission: 'Permission',
 
       agentTitle: "Titre de l'agent",
-      canvasCategory: 'Catégorie du canvas',
 
       newRole: 'Nouveau rôle',
       addNewRole: 'Ajouter un rôle',
@@ -3282,19 +3246,15 @@ Mémoire procédurale : compétences acquises, habitudes et procédures automati
     },
     explore: {
       title: 'Lancer',
-      canvasList: 'Liste des canvas',
       sessions: 'Sessions',
       newSession: 'Nouvelle session',
       newSessionLabel: 'Démarrer une nouvelle conversation',
       deleteSession: 'Supprimer la session',
-      searchCanvas: 'Rechercher un canvas...',
       searchSessions: 'Rechercher des sessions...',
-      noCanvasSelected: 'Veuillez sélectionner un canvas',
       noSessionSelected:
         'Veuillez sélectionner une session ou en créer une nouvelle',
       noSessionsFound: 'Aucune session trouvée',
       createFirstSession: 'Créez votre première session',
-      noCanvasFound: 'Aucun canvas trouvé',
       deleteSelectedConfirm:
         'Êtes-vous sûr de vouloir supprimer {{count}} session(s) ?',
       batchDeleteSessions: 'Supprimer les sessions',

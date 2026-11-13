@@ -30,11 +30,14 @@ import (
 	"github.com/gin-gonic/gin"
 	goredis "github.com/redis/go-redis/v9"
 
+	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/ingestion/task"
+	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service"
 )
 
@@ -118,6 +121,10 @@ func TestGetAgentLogs_E2EViaMiniredis(t *testing.T) {
 	orig := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = orig })
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "u1", "u1"); err != nil {
+		t.Fatalf("prepare agent log permission fixture: %v", err)
+	}
+	ctx = permission.WithIdentity(ctx, "u1", "u1")
 
 	db.Create(&entity.UserCanvas{ID: "c1", UserID: "u1", Title: sptr("Test")})
 
@@ -140,6 +147,7 @@ func TestGetAgentLogs_E2EViaMiniredis(t *testing.T) {
 	}
 
 	h := NewAgentHandler(ctx, service.NewAgentService(), nil).
+		WithRedisStore(miniredisDebugStore{rdb: rdb}).
 		WithRedisGetter(func(key string) (string, error) {
 			return rdb.Get(ctx, key).Result()
 		})
@@ -148,6 +156,7 @@ func TestGetAgentLogs_E2EViaMiniredis(t *testing.T) {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
 		c.Request = httptest.NewRequest("GET", "/api/v1/agents/c1/logs/"+messageID, nil)
+		c.Request = c.Request.WithContext(ctx)
 		c.Set("user", &entity.User{ID: "u1"})
 		c.Set("user_id", "u1")
 		c.Params = gin.Params{
@@ -160,6 +169,21 @@ func TestGetAgentLogs_E2EViaMiniredis(t *testing.T) {
 			t.Fatalf("decode (msg=%s): %v body=%s", messageID, err, w.Body.String())
 		}
 		return resp
+	}
+
+	h.persistAgentToolInvocations(ctx, "c1", canvas.RunEvent{
+		Type: "node_finished", MessageID: "tool-msg",
+		Data: `{"component_id":"Agent:one","component_name":"Agent","outputs":{"tool_invocations":[{"tool_name":"youcom_search","arguments":{"query":"ragflow"},"result":"found","elapsed_time":0.25,"started_at":1793070042000,"status":"success"}]}}`,
+	})
+	toolRun := run("tool-msg")
+	toolEntries, ok := toolRun["data"].([]interface{})
+	if !ok || len(toolEntries) != 1 {
+		t.Fatalf("tool logs response data = %#v", toolRun["data"])
+	}
+	toolEntry := toolEntries[0].(map[string]interface{})
+	toolTrace := toolEntry["trace"].([]interface{})[0].(map[string]interface{})
+	if toolEntry["component_id"] != "Agent:one" || toolTrace["tool_name"] != "youcom_search" || toolTrace["status"] != "success" {
+		t.Fatalf("tool trace response = %#v", toolTrace)
 	}
 
 	// Present key -> data must be the array, with File first and END last.
@@ -231,6 +255,10 @@ func TestGetAgentLogs_EndSignalCompletion(t *testing.T) {
 	orig := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = orig })
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "u1", "u1"); err != nil {
+		t.Fatalf("prepare agent log permission fixture: %v", err)
+	}
+	ctx = permission.WithIdentity(ctx, "u1", "u1")
 
 	db.Create(&entity.UserCanvas{ID: "c1", UserID: "u1", Title: sptr("Test")})
 
@@ -272,6 +300,7 @@ func TestGetAgentLogs_EndSignalCompletion(t *testing.T) {
 		w := httptest.NewRecorder()
 		c, _ := gin.CreateTestContext(w)
 		c.Request = httptest.NewRequest("GET", "/api/v1/agents/c1/logs/"+messageID, nil)
+		c.Request = c.Request.WithContext(ctx)
 		c.Set("user", &entity.User{ID: "u1"})
 		c.Set("user_id", "u1")
 		c.Params = gin.Params{
@@ -310,6 +339,40 @@ func TestGetAgentLogs_EndSignalCompletion(t *testing.T) {
 type capturedStore struct {
 	mu   sync.Mutex
 	data map[string]string
+}
+
+func TestPersistAgentToolInvocations_UsesAgentNodeAndExistingLogShape(t *testing.T) {
+	store := &capturedStore{}
+	h := &AgentHandler{
+		redisStore: store,
+		redisGet: func(key string) (string, error) {
+			value, ok := store.Get(t.Context(), key)
+			if !ok {
+				return "", errors.New("missing")
+			}
+			return value, nil
+		},
+	}
+	ev := canvas.RunEvent{
+		Type: "node_finished", MessageID: "message-1",
+		Data: `{"component_id":"Agent:one","component_name":"Agent","outputs":{"tool_invocations":[{"tool_name":"youcom_search","arguments":{"query":"ragflow"},"result":"found","elapsed_time":0.25,"started_at":1793070042000,"status":"success"}]}}`,
+	}
+	h.persistAgentToolInvocations(t.Context(), "agent-1", ev)
+	raw, ok := store.Get(t.Context(), "agent-1-message-1-logs")
+	if !ok {
+		t.Fatal("tool trace was not persisted")
+	}
+	var entries []map[string]any
+	if err := json.Unmarshal([]byte(raw), &entries); err != nil {
+		t.Fatalf("decode persisted trace: %v", err)
+	}
+	if len(entries) != 1 || entries[0]["component_id"] != "Agent:one" {
+		t.Fatalf("entries = %#v", entries)
+	}
+	trace := entries[0]["trace"].([]any)[0].(map[string]any)
+	if trace["tool_name"] != "youcom_search" || trace["path"] != "Agent" || trace["status"] != "success" || trace["arguments"].(map[string]any)["query"] != "ragflow" {
+		t.Fatalf("trace = %#v", trace)
+	}
 }
 
 func (s *capturedStore) Set(ctx context.Context, key, value string, _ time.Duration) bool {
@@ -430,12 +493,7 @@ func TestRespondWithDebugResult_Shape(t *testing.T) {
 	}
 }
 
-// TestRespondWithDebugResult_ErrorCarriesMessageID pins that a run failure
-// still surfaces the polling key: the response must keep a non-success code
-// (the existing contract forbids masking errors as success) BUT the error
-// envelope's data must carry message_id so the front-end can poll the failure
-// timeline that DebugLogSink.Flush already wrote to Redis.
-func TestRespondWithDebugResult_ErrorCarriesMessageID(t *testing.T) {
+func TestRespondWithDebugResult_ErrorOmitsData(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	w := httptest.NewRecorder()
@@ -445,15 +503,14 @@ func TestRespondWithDebugResult_ErrorCarriesMessageID(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("decode: %v body=%s", err, w.Body.String())
 	}
-	if code, _ := resp["code"].(float64); int(code) == int(common.CodeSuccess) {
-		t.Fatalf("error case must not be success: %v", resp)
+	if code, _ := resp["code"].(float64); int(code) != int(common.CodeServerError) {
+		t.Fatalf("code=%v want %d", resp["code"], common.CodeServerError)
 	}
-	data, ok := resp["data"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("error envelope data must be an object carrying message_id: %v", resp)
+	if _, ok := resp["data"]; ok {
+		t.Fatalf("error envelope must omit data: %v", resp)
 	}
-	if data["message_id"] != "m-err" {
-		t.Fatalf("error envelope data.message_id=%v want m-err", data["message_id"])
+	if resp["message"] != "boom" {
+		t.Fatalf("message=%v want boom", resp["message"])
 	}
 }
 
@@ -505,7 +562,7 @@ func TestRunCanvasPipelineDebug_ErrorStillExposesMessageID(t *testing.T) {
 }
 
 // TestRunCanvasPipelineDebug_WiresMessageIDAndLog asserts the full write-side wiring
-// of runCanvasPipelineDebug without a live Redis or real canvas: a fake executor
+// of runCanvasPipelineDebug without a live Redis or real agent: a fake executor
 // emits component progress, the injected DebugLogSink flushes the
 // [{component_id, trace}] array (with the END marker last) to the captured
 // store under the key "{canvasID}-{messageID}-logs", and the returned result
@@ -597,6 +654,10 @@ func TestRunCanvasPipelineDebug_WriteThenReadViaMiniredis(t *testing.T) {
 	orig := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = orig })
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "u1", "u1"); err != nil {
+		t.Fatalf("prepare agent log permission fixture: %v", err)
+	}
+	ctx = permission.WithIdentity(ctx, "u1", "u1")
 	db.Create(&entity.UserCanvas{ID: "c1", UserID: "u1", Title: sptr("Test")})
 
 	mr, err := miniredis.Run()
@@ -641,6 +702,7 @@ func TestRunCanvasPipelineDebug_WriteThenReadViaMiniredis(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest("GET", "/api/v1/agents/c1/logs/"+messageID, nil)
+	c.Request = c.Request.WithContext(ctx)
 	c.Set("user", &entity.User{ID: "u1"})
 	c.Set("user_id", "u1")
 	c.Params = gin.Params{

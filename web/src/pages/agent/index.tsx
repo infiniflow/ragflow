@@ -4,14 +4,6 @@ import EmbedDialog, {
 } from '@/components/embed-dialog';
 import { useShowEmbedModal } from '@/components/embed-dialog/use-show-embed-dialog';
 import { PageHeader } from '@/components/page-header';
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
 import { Button, ButtonLoading } from '@/components/ui/button';
 import {
   DropdownMenu,
@@ -23,20 +15,17 @@ import {
 import message from '@/components/ui/message';
 import { SharedFrom } from '@/constants/chat';
 import { useSetModalState } from '@/hooks/common-hooks';
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { useSetAgent } from '@/hooks/use-agent-request';
-import { useIsGoBackend } from '@/utils/backend-variant';
+import { useFetchAgent, useSaveAgent } from '@/hooks/use-agent-request';
+import { useFetchCanvasPresence } from '@/ee/hooks/use-agent-presence';
+import { AgentEditGuard } from '@/ee/pages/agent/agent-edit-guard';
 import { ReactFlowProvider } from '@xyflow/react';
 import {
   ChevronDown,
   CirclePlay,
-  Compass,
   History,
   LaptopMinimalCheck,
-  Logs,
   MessageSquareCode,
   ScreenShare,
-  Settings,
   Upload,
 } from 'lucide-react';
 import { ComponentPropsWithoutRef, useCallback, useMemo } from 'react';
@@ -44,31 +33,27 @@ import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import AgentCanvas from './canvas';
 import { DropdownProvider } from './canvas/context';
+import { CanvasChecklist } from './components/canvas-checklist';
 import { PublishConfirmDialog } from './components/publish-confirm-dialog';
 import { Operator } from './constant';
 import { OwnerTenantIdContext } from './context';
 import { GlobalParamSheet } from './gobal-variable-sheet';
 import { useBuildDslData } from './hooks/use-build-dsl';
 import { useCancelCurrentDataflow } from './hooks/use-cancel-dataflow';
+import { useCanvasChecklist } from './hooks/use-canvas-checklist';
 import { useHandleExportJsonFile } from './hooks/use-export-json';
-import { useFetchDataOnMount } from './hooks/use-fetch-data';
 import { useFetchPipelineLog } from './hooks/use-fetch-pipeline-log';
-import { useGetBeginNodeDataInputs } from './hooks/use-get-begin-query';
 import { useIsPipeline } from './hooks/use-is-pipeline';
-import {
-  useIsConversationMode,
-  useIsWebhookMode,
-} from './hooks/use-is-webhook';
+import { useIsWebhookMode } from './hooks/use-is-webhook';
 import { useRunDataflow } from './hooks/use-run-dataflow';
 import {
   useSaveGraph,
   useSaveGraphBeforeOpeningDebugDrawer,
-  useValidateNodeForms,
   useWatchAgentChange,
 } from './hooks/use-save-graph';
+import { OnlineUsers } from '@/ee/pages/agent/online-users';
 import { PipelineLogSheet } from './pipeline-log-sheet';
 import PipelineRunSheet from './pipeline-run-sheet';
-import { SettingDialog } from './setting-dialog';
 import useGraphStore from './store';
 import { useAgentHistoryManager } from './use-agent-history-manager';
 import { VersionDialog } from './version-dialog';
@@ -98,7 +83,6 @@ const AgentWidgetSettingsGlobalKey = 'sys.widget_settings';
 export default function Agent() {
   const { id } = useParams();
   const isPipeline = useIsPipeline();
-  const { navigateToAgents } = useNavigatePage();
   const {
     visible: chatDrawerVisible,
     hideModal: hideChatDrawer,
@@ -106,52 +90,46 @@ export default function Agent() {
   } = useSetModalState();
   const { t } = useTranslation();
   useAgentHistoryManager();
-  const isGoBackend = useIsGoBackend();
-  // Resolves the i18n key for the canvas "Run" tooltip describing the Go-side
+  // Resolves the i18n key for the canvas "Run" tooltip describing the
   // debug preview limits. It is shown ONLY for a dataflow (ingestion pipeline)
-  // canvas on the golang backend — an agent canvas runs the agent, not an
-  // ingestion debug preview, so it must never show this tooltip.
-  const runTooltipKey = debugRunLimitsTooltipKey(isGoBackend, isPipeline);
+  // canvas — an agent canvas runs the agent, not an ingestion debug preview.
+  const runTooltipKey = debugRunLimitsTooltipKey(isPipeline);
+  // The ingestion (dataflow) canvas hides the Run/test-run entry entirely;
+  // the agent canvas keeps its Run button.
+  const showRunButton = !isPipeline;
 
   const { handleExportJson } = useHandleExportJsonFile();
   const { saveGraph, loading } = useSaveGraph();
-  const { notifyIfInvalid } = useValidateNodeForms();
-  const handleSave = useCallback(() => {
-    if (notifyIfInvalid()) {
-      saveGraph();
-    }
-  }, [notifyIfInvalid, saveGraph]);
-  const { flowDetail: agentDetail } = useFetchDataOnMount();
+  // Manual Save is a draft save, same as auto-save: it refreshes the live
+  // canvas without minting a user_canvas_version row. Publishing does that.
+  const handleSave = useCallback(async () => {
+    await saveGraph(undefined, undefined, undefined, true);
+  }, [saveGraph]);
+  const handlePublish = useCallback(
+    async (alias?: string) => {
+      await saveGraph(undefined, undefined, true, undefined, alias);
+    },
+    [saveGraph],
+  );
+  const { data: agentDetail } = useFetchAgent();
+  // The checklist displays all issues; Run separately checks blocking rules.
+  const { issues } = useCanvasChecklist({
+    ownerTenantId: agentDetail?.tenant_id,
+    canvasID: id,
+  });
   const { buildDslData } = useBuildDslData();
-  const { setAgent, loading: savingWidgetSettings } = useSetAgent(false);
-  const inputs = useGetBeginNodeDataInputs();
+  const { saveAgent, loading: savingWidgetSettings } = useSaveAgent(false);
   const { handleRun } = useSaveGraphBeforeOpeningDebugDrawer(showChatDrawer);
-  const handleRunAgent = useCallback(() => {
-    if (inputs.length > 0) {
-      showChatDrawer();
-    } else {
-      handleRun();
-    }
-  }, [handleRun, inputs, showChatDrawer]);
   const {
     visible: versionDialogVisible,
     hideModal: hideVersionDialog,
     showModal: showVersionDialog,
   } = useSetModalState();
 
-  const {
-    visible: settingDialogVisible,
-    hideModal: hideSettingDialog,
-    showModal: showSettingDialog,
-  } = useSetModalState();
-
   const { showEmbedModal, hideEmbedModal, embedVisible, beta } =
     useShowEmbedModal();
-  const { navigateToAgentLogs, navigateToAgentExplore } = useNavigatePage();
   const time = useWatchAgentChange(chatDrawerVisible);
   const isWebhookMode = useIsWebhookMode();
-
-  const isConversationMode = useIsConversationMode();
 
   // pipeline
 
@@ -219,23 +197,26 @@ export default function Agent() {
     stopFetchTrace,
   });
 
-  const handleButtonRunClick = useCallback(() => {
+  const handleButtonRunClick = useCallback(async () => {
     if (isWebhookMode) {
-      saveGraph();
-      showWebhookTestSheet();
+      if ((await saveGraph())?.code === 0) showWebhookTestSheet();
     } else if (isPipeline) {
       handleRunPipeline();
     } else {
-      handleRunAgent();
+      handleRun();
     }
   }, [
-    handleRunAgent,
+    handleRun,
     handleRunPipeline,
     isPipeline,
     isWebhookMode,
     saveGraph,
     showWebhookTestSheet,
   ]);
+
+  const handleEmbedClick = useCallback(() => {
+    showEmbedModal();
+  }, [showEmbedModal]);
 
   // Single source for the Run button so the tooltip gating in the JSX below
   // doesn't duplicate it.
@@ -256,6 +237,8 @@ export default function Agent() {
     uploadedFileData,
   } = useRunDataflow({ showLogSheet: showPipelineLogSheet, setMessageId });
 
+  const { data: presence } = useFetchCanvasPresence();
+  const operatorPermission = presence.operator_permission ?? 0;
   const initialWidgetSettings = useMemo<WidgetSettings>(() => {
     const widgetSettings =
       agentDetail?.dsl?.globals?.[AgentWidgetSettingsGlobalKey];
@@ -272,7 +255,7 @@ export default function Agent() {
     async (widgetSettings: WidgetSettings) => {
       const dsl = buildDslData();
 
-      return setAgent({
+      return saveAgent({
         id: id!,
         title: agentDetail.title,
         dsl: {
@@ -284,57 +267,47 @@ export default function Agent() {
         },
       });
     },
-    [agentDetail.title, buildDslData, id, setAgent],
+    [agentDetail.title, buildDslData, id, saveAgent],
   );
 
   return (
     <section className="h-full" data-testid="agent-detail">
-      <PageHeader>
+      <PageHeader className="pl-0">
         <section>
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbLink onClick={navigateToAgents}>
-                  {t('header.flow')}
-                </BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbPage>{agentDetail.title}</BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
-          <div className="text-xs text-text-secondary translate-y-3">
+          <div className="text-xs text-text-secondary">
             {t('flow.autosaved')} {time}
           </div>
         </section>
         <div className="flex items-center gap-5">
-          <ButtonLoading
-            variant={'secondary'}
-            onClick={handleSave}
-            loading={loading}
-          >
-            <LaptopMinimalCheck /> {t('flow.save')}
-          </ButtonLoading>
-          {runTooltipKey ? (
-            <RunTooltip tooltip={runTooltipKey}>{runButton}</RunTooltip>
-          ) : (
-            runButton
-          )}
-          {isConversationMode && (
-            <Button
+          <OnlineUsers></OnlineUsers>
+          <AgentEditGuard operatorPermission={operatorPermission}>
+            <ButtonLoading
               variant={'secondary'}
-              onClick={navigateToAgentExplore(id as string)}
+              onClick={handleSave}
+              loading={loading}
             >
-              <Compass />
-              {t('explore.title')}
-            </Button>
-          )}
-          <PublishConfirmDialog
-            agentDetail={agentDetail}
-            loading={loading}
-            onPublish={() => saveGraph(undefined, undefined, true)}
-          />
+              <LaptopMinimalCheck /> {t('flow.saveDraft')}
+            </ButtonLoading>
+
+            {showRunButton &&
+              (runTooltipKey ? (
+                <RunTooltip tooltip={runTooltipKey}>{runButton}</RunTooltip>
+              ) : (
+                runButton
+              ))}
+            {/* <PublishConfirmDialog
+              agentDetail={agentDetail}
+              loading={loading}
+              onPublish={() => saveGraph(undefined, undefined, true)}
+              onBeforeOpen={hasBlockingIssues}
+            /> */}
+            <PublishConfirmDialog
+              agentDetail={agentDetail}
+              loading={loading}
+              onPublish={handlePublish}
+            />
+          </AgentEditGuard>
+          <CanvasChecklist issues={issues} />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant={'secondary'}>
@@ -342,39 +315,27 @@ export default function Agent() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent>
-              <AgentDropdownMenuItem onClick={() => showGlobalParamSheet()}>
-                <MessageSquareCode />
-                {t('flow.conversationVariable')}
-              </AgentDropdownMenuItem>
-              <DropdownMenuSeparator />
+              <AgentEditGuard operatorPermission={operatorPermission}>
+                <AgentDropdownMenuItem onClick={() => showGlobalParamSheet()}>
+                  <MessageSquareCode />
+                  {t('flow.conversationVariable')}
+                </AgentDropdownMenuItem>
+                <DropdownMenuSeparator />
+              </AgentEditGuard>
               <AgentDropdownMenuItem onClick={showVersionDialog}>
                 <History />
                 {t('flow.historyVersion')}
               </AgentDropdownMenuItem>
               <DropdownMenuSeparator />
-              {isPipeline || (
-                <AgentDropdownMenuItem
-                  onClick={() => navigateToAgentLogs(id as string)()}
-                >
-                  <Logs />
-                  {t('flow.log')}
-                </AgentDropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
               <AgentDropdownMenuItem onClick={handleExportJson}>
                 <Upload />
                 {t('flow.export')}
-              </AgentDropdownMenuItem>
-              <DropdownMenuSeparator />
-              <AgentDropdownMenuItem onClick={showSettingDialog}>
-                <Settings />
-                {t('flow.setting')}
               </AgentDropdownMenuItem>
               {isPipeline ||
                 (location.hostname !== 'cloud.ragflow.io' && (
                   <>
                     <DropdownMenuSeparator />
-                    <AgentDropdownMenuItem onClick={showEmbedModal}>
+                    <AgentDropdownMenuItem onClick={handleEmbedClick}>
                       <ScreenShare />
                       {t('common.embedIntoSite')}
                     </AgentDropdownMenuItem>
@@ -384,7 +345,7 @@ export default function Agent() {
           </DropdownMenu>
         </div>
       </PageHeader>
-      <OwnerTenantIdContext.Provider value={agentDetail?.user_id}>
+      <OwnerTenantIdContext.Provider value={agentDetail?.tenant_id}>
         <ReactFlowProvider>
           <DropdownProvider>
             <AgentCanvas
@@ -412,10 +373,6 @@ export default function Agent() {
           <VersionDialog hideModal={hideVersionDialog}></VersionDialog>
         </DropdownProvider>
       )}
-      {settingDialogVisible && (
-        <SettingDialog hideModal={hideSettingDialog}></SettingDialog>
-      )}
-
       {pipelineLogSheetVisible && (
         <PipelineLogSheet
           hideModal={hidePipelineLogSheet}

@@ -20,18 +20,112 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"image"
-	"log/slog"
+	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
 	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
-	"ragflow/internal/deepdoc/parser/pdf/util"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/utility"
 )
+
+const (
+	MinMinerURequestTimeout = 1 * time.Second
+	MaxMinerURequestTimeout = 24 * time.Hour
+)
+
+// ClampMinerUTimeout clamps duration into a safe operational window [1s, 24h],
+// preventing tiny-duration/zero deadline panics or numeric overflow.
+func ClampMinerUTimeout(d time.Duration) time.Duration {
+	if d <= 0 {
+		return minerUPollTimeout
+	}
+	if d < MinMinerURequestTimeout {
+		return MinMinerURequestTimeout
+	}
+	if d > MaxMinerURequestTimeout {
+		return MaxMinerURequestTimeout
+	}
+	return d
+}
+
+// parseMinerUTimeoutSetupValue extracts and clamps a duration from setup values,
+// safeguarding against integer and floating-point multiplication overflow before conversion.
+func parseMinerUTimeoutSetupValue(raw any) (time.Duration, bool) {
+	if raw == nil {
+		return 0, false
+	}
+	minSec := MinMinerURequestTimeout.Seconds()
+	maxSec := MaxMinerURequestTimeout.Seconds()
+	switch v := raw.(type) {
+	case int:
+		if v <= 0 {
+			return 0, false
+		}
+		if float64(v) < minSec {
+			return MinMinerURequestTimeout, true
+		}
+		if float64(v) > maxSec {
+			return MaxMinerURequestTimeout, true
+		}
+		return ClampMinerUTimeout(time.Duration(v) * time.Second), true
+	case int64:
+		if v <= 0 {
+			return 0, false
+		}
+		if float64(v) < minSec {
+			return MinMinerURequestTimeout, true
+		}
+		if float64(v) > maxSec {
+			return MaxMinerURequestTimeout, true
+		}
+		return ClampMinerUTimeout(time.Duration(v) * time.Second), true
+	case float64:
+		if v <= 0 {
+			return 0, false
+		}
+		if v < minSec {
+			return MinMinerURequestTimeout, true
+		}
+		if v > maxSec {
+			return MaxMinerURequestTimeout, true
+		}
+		return ClampMinerUTimeout(time.Duration(v * float64(time.Second))), true
+	case string:
+		s := strings.TrimSpace(v)
+		if s == "" {
+			return 0, false
+		}
+		if sec, err := strconv.Atoi(s); err == nil && sec > 0 {
+			if float64(sec) < minSec {
+				return MinMinerURequestTimeout, true
+			}
+			if float64(sec) > maxSec {
+				return MaxMinerURequestTimeout, true
+			}
+			return ClampMinerUTimeout(time.Duration(sec) * time.Second), true
+		}
+		if secF, err := strconv.ParseFloat(s, 64); err == nil && secF > 0 {
+			if secF < minSec {
+				return MinMinerURequestTimeout, true
+			}
+			if secF > maxSec {
+				return MaxMinerURequestTimeout, true
+			}
+			return ClampMinerUTimeout(time.Duration(secF * float64(time.Second))), true
+		}
+		if d, err := time.ParseDuration(s); err == nil && d > 0 {
+			return ClampMinerUTimeout(d), true
+		}
+	}
+	return 0, false
+}
 
 // ErrPDFEngineUnavailable is returned by PDFParser.ParseWithResult
 // when the current build cannot construct the DeepDOC PDF backend.
@@ -39,12 +133,14 @@ import (
 // is compiled behind `//go:build cgo`.
 var ErrPDFEngineUnavailable = errors.New("parser: PDF backend unavailable in this build")
 
+// supportedPDFParseMethods is the set of canonical tokens PDFParser can
+// execute; see pdfParseMethodSpellings for the accepted spellings and
+// TestPDFParseMethodTablesAgree for dispatcher-handled methods.
 var supportedPDFParseMethods = map[string]struct{}{
 	"":               {},
 	"deepdoc":        {},
 	"plain_text":     {},
 	"mineru":         {},
-	"paddleocr":      {},
 	"docling":        {},
 	"opendataloader": {},
 	"somark":         {},
@@ -52,29 +148,41 @@ var supportedPDFParseMethods = map[string]struct{}{
 }
 
 type PDFParser struct {
-	ParserType string // DeepDoc, PaddleOCR, MinerU
+	ParserType string // DeepDoc, MinerU
 	Model      string // DeepDoc@buildin@ragflow
 	LibType    string // pdf_oxide, used by DeepDoc
 
-	FlattenMediaToText bool
 	RemoveTOC          bool
 	RemoveHeaderFooter bool
 	EnableMultiColumn  bool
-	OutputFormat       string
 	ParseMethod        string
+	// UseTenantModelConfig disables global endpoint/credential/option fallback
+	// for explicitly resolved SoMark/OpenDataLoader instances. Runtime-only;
+	// ConfigureFromSetup does not accept this flag from persisted settings.
+	UseTenantModelConfig bool
 	// Pages restricts parsing to these 1-indexed inclusive page ranges.
 	// nil/empty means parse all pages. Populated by ConfigureFromSetup from
-	// the filetype setup map and forwarded to the deepdoc ParserConfig.
-	Pages                             [][]int
+	// the filetype setup map. DeepDOC reads it through its ParserConfig, and
+	// plain_text skips the pages outside it.
+	Pages [][]int
+	// OnPageDone, when set, is forwarded to the deepdoc ParserConfig so the
+	// caller observes per-page parse progress (done/total). Only the deepdoc
+	// backend invokes it; remote engines poll opaque HTTP jobs and never call
+	// it, so the fraction simply stays where it was.
+	OnPageDone func(done, total int)
+	// OnModelCall reports the start and end of an individual DeepDOC model call.
+	// It is runtime-only and is wired by the ingestion parser component.
+	OnModelCall                       func(ctx context.Context, operation string) func()
 	MinerUAPIServer                   string
 	MinerUAPIKey                      string
 	MinerUBackend                     string
+	MinerUServerURL                   string
 	MinerUPollTimeout                 time.Duration
-	PaddleOCRBaseURL                  string
-	PaddleOCRAPIKey                   string
-	PaddleOCRAlgorithm                string
+	MinerUTimeoutConfigured           bool
 	DoclingServerURL                  string
 	DoclingAPIKey                     string
+	DoclingDoOCR                      *bool
+	DoclingPDFBackend                 string
 	OpenDataLoaderAPIServer           string
 	OpenDataLoaderAPIKey              string
 	OpenDataLoaderTimeout             int
@@ -106,11 +214,9 @@ func NewPDFParser() *PDFParser {
 		Model:                          "DeepDoc@buildin@ragflow",
 		LibType:                        "pdf_oxide",
 		ParseMethod:                    "deepdoc",
-		OutputFormat:                   "json",
-		MinerUBackend:                  "pipeline",
+		MinerUBackend:                  "",
 		MinerUPollTimeout:              minerUPollTimeout,
-		PaddleOCRAlgorithm:             "PaddleOCR-VL",
-		OpenDataLoaderTimeout:          600,
+		OpenDataLoaderTimeout:          openDataLoaderTimeoutSeconds,
 		SoMarkBaseURL:                  "https://somark.cn/api/v1",
 		SoMarkImageFormat:              "url",
 		SoMarkFormulaFormat:            "latex",
@@ -131,9 +237,6 @@ func (p *PDFParser) String() string {
 func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 	if p == nil || setup == nil {
 		return
-	}
-	if v, ok := setup["flatten_media_to_text"].(bool); ok {
-		p.FlattenMediaToText = v
 	}
 	if v, ok := setup["remove_toc"].(bool); ok {
 		p.RemoveTOC = v
@@ -156,29 +259,27 @@ func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["mineru_backend"].(string); ok && v != "" {
 		p.MinerUBackend = v
 	}
-	if v, ok := setup["mineru_timeout_seconds"].(int); ok && v > 0 {
-		p.MinerUPollTimeout = time.Duration(v) * time.Second
+	if v, ok := setup["mineru_server_url"].(string); ok && v != "" {
+		p.MinerUServerURL = v
 	}
-	if v, ok := setup["mineru_timeout_seconds"].(float64); ok && v > 0 {
-		p.MinerUPollTimeout = time.Duration(v * float64(time.Second))
-	}
-	if v, ok := setup["output_format"].(string); ok && v != "" {
-		p.OutputFormat = v
-	}
-	if v, ok := setup["paddleocr_base_url"].(string); ok && v != "" {
-		p.PaddleOCRBaseURL = v
-	}
-	if v, ok := setup["paddleocr_api_key"].(string); ok {
-		p.PaddleOCRAPIKey = v
-	}
-	if v, ok := setup["paddleocr_algorithm"].(string); ok && v != "" {
-		p.PaddleOCRAlgorithm = v
+	if d, ok := parseMinerUTimeoutSetupValue(setup["mineru_timeout"]); ok {
+		p.MinerUPollTimeout = d
+		p.MinerUTimeoutConfigured = true
+	} else if d, ok := parseMinerUTimeoutSetupValue(setup["mineru_timeout_seconds"]); ok {
+		p.MinerUPollTimeout = d
+		p.MinerUTimeoutConfigured = true
 	}
 	if v, ok := setup["docling_server_url"].(string); ok && v != "" {
 		p.DoclingServerURL = v
 	}
 	if v, ok := setup["docling_api_key"].(string); ok {
 		p.DoclingAPIKey = v
+	}
+	if v, ok := setup["docling_do_ocr"].(bool); ok {
+		p.DoclingDoOCR = &v
+	}
+	if v, ok := setup["docling_pdf_backend"].(string); ok && v != "" {
+		p.DoclingPDFBackend = v
 	}
 	if v, ok := setup["opendataloader_apiserver"].(string); ok && v != "" {
 		p.OpenDataLoaderAPIServer = v
@@ -258,12 +359,61 @@ func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 		// should already be normalized; degrade to "parse all pages" rather
 		// than failing the parse if an unexpected shape slips through.
 		if pages, err := utility.NormalizePDFPages(raw); err != nil {
-			slog.Warn("ConfigureFromSetup: invalid pages range, falling back to all pages",
-				"raw", raw, "err", err)
+			common.Warn("ConfigureFromSetup: invalid pages range, falling back to all pages",
+				zap.Any("raw", raw), zap.Error(err))
 		} else {
 			p.Pages = pages
 		}
 	}
+}
+
+// pdfParseMethodSpellings is the single vocabulary of PDF parse methods:
+// every accepted spelling (lower-cased and trimmed) mapped to its canonical
+// token. Consumers must not keep their own copies of this set — tell a parse
+// method apart from a VLM model selector via IsPDFParseMethod, and resolve
+// its canonical token via normalizePDFParseMethod.
+//
+// "plaintext" / "plain text" are the spellings the dataset configuration UI
+// persists for its plain-text option (ParseDocumentType.PlainText), so they
+// are parse methods rather than model names.
+var pdfParseMethodSpellings = map[string]string{
+	"deepdoc":        "deepdoc",
+	"plain_text":     "plain_text",
+	"plaintext":      "plain_text",
+	"plain text":     "plain_text",
+	"mineru":         "mineru",
+	"monkeyocr":      "monkeyocr",
+	"monkeyocrv2":    "monkeyocrv2",
+	"docling":        "docling",
+	"opendataloader": "opendataloader",
+	"tcadp parser":   "tcadp",
+	"paddleocr":      "paddleocr",
+	"somark":         "somark",
+}
+
+// IsPDFParseMethod reports whether raw names a PDF parse method rather than
+// a VLM model selector. "@"-suffixed spellings such as "foo@mineru" are
+// layout_recognizer selectors resolved separately, so they report false.
+//
+// A method backed by a registered external analyzer factory (see
+// RegisterAnalyzerFactory — e.g. "deepdoc_ee" in the EE build) is a real PDF
+// parse method even though it is absent from the built-in whitelist: it is
+// routed to the DeepDoc dispatch path. Recognizing it here keeps
+// IsPDFParseMethod consistent with validateParseMethod and stops the routing
+// code (pdf_vision_dispatch.go and the ingestion config migration) from
+// misclassifying a registered method as a VLM model selector.
+func IsPDFParseMethod(raw string) bool {
+	key := strings.ToLower(strings.TrimSpace(raw))
+	if _, ok := pdfParseMethodSpellings[key]; ok {
+		return true
+	}
+	// Registered external methods are keyed by their normalized token (see
+	// RegisterAnalyzerFactory / resolveDocAnalyzerForMethod), so look them up
+	// via normalizePDFParseMethod rather than the raw key.
+	if _, ok := analyzerFactories[normalizePDFParseMethod(raw)]; ok {
+		return true
+	}
+	return false
 }
 
 func normalizePDFParseMethod(raw string) string {
@@ -271,6 +421,8 @@ func normalizePDFParseMethod(raw string) string {
 	switch {
 	case strings.HasSuffix(method, "@mineru"):
 		return "mineru"
+	case strings.HasSuffix(method, "@monkeyocr"):
+		return "monkeyocr"
 	case strings.HasSuffix(method, "@paddleocr"):
 		return "paddleocr"
 	case strings.HasSuffix(method, "@somark"):
@@ -278,32 +430,97 @@ func normalizePDFParseMethod(raw string) string {
 	case strings.HasSuffix(method, "@opendataloader"):
 		return "opendataloader"
 	}
-	switch method {
-	case "plaintext":
-		return "plain_text"
-	case "tcadp parser":
-		return "tcadp"
+	if canonical, ok := pdfParseMethodSpellings[method]; ok {
+		return canonical
 	}
 	return method
 }
 
 func (p *PDFParser) validateParseMethod() error {
 	method := normalizePDFParseMethod(p.ParseMethod)
+	// A method backed by a registered external analyzer factory (see
+	// RegisterAnalyzerFactory) is a supported method even though it is not in
+	// the built-in whitelist — it is routed to the DeepDoc dispatch path, which
+	// selects the external factory. Without this, a registered method would be
+	// rejected here before dispatch ever ran.
+	if _, ok := analyzerFactories[method]; ok {
+		return nil
+	}
 	if _, ok := supportedPDFParseMethods[method]; ok {
 		return nil
 	}
-	return fmt.Errorf("parser: unsupported PDF parse_method %q (Go currently supports: deepdoc, plain_text, mineru, paddleocr, docling, opendataloader, somark, tcadp; tenant-resolved custom IMAGE2TEXT/VLM model names are not supported in the Go parser layer)", p.ParseMethod)
+	return fmt.Errorf("parser: unsupported PDF parse_method %q (standalone PDFParser supports: deepdoc, plain_text, mineru, docling, opendataloader, somark, tcadp; methods backed by a registered external analyzer factory are supported; tenant-resolved custom IMAGE2TEXT/VLM model names are not supported in the parser layer)", p.ParseMethod)
+}
+
+// ParseWithResult parses a PDF into a ParseResult, dispatching on the
+// configured ParseMethod. The native extraction — the deepdoc default and the
+// plain_text strategy — lives in the internal/deepdoc/parser/pdf engine; this
+// method is the facade that wires strategies and post-processing. It is
+// build-tag agnostic: under !cgo the deepdoc path transparently reports
+// ErrPDFEngineUnavailable while plain_text falls back to the pure-Go engine.
+func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+	result := p.parseWithResult(ctx, filename, data)
+	if result.Err == nil {
+		return AttachPDFOutlines(p.NormalizeResult(ctx, filename, result), data)
+	}
+	return result
+}
+
+func (p *PDFParser) parseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+	if err := p.validateParseMethod(); err != nil {
+		return ParseResult{Err: err}
+	}
+	common.Info(fmt.Sprintf("------------file: %s, parse_method: %s", filename, p.ParseMethod))
+	switch normalizePDFParseMethod(p.ParseMethod) {
+	case "plain_text":
+		if len(data) == 0 {
+			return emptyPDFResult(filename)
+		}
+		items, pageCount, err := deepdocpdf.PlainText(data, p.Pages)
+		if err != nil {
+			return ParseResult{Err: fmt.Errorf("parser: plain_text: %w", err)}
+		}
+		return pdfItemsToResult(filename, items, pageCount)
+	case "mineru":
+		return parsePDFWithMinerU(ctx, filename, data, p)
+	case "docling":
+		return parsePDFWithDocling(ctx, filename, data, p)
+	case "opendataloader":
+		return parsePDFWithOpenDataLoader(ctx, filename, data, p)
+	case "somark":
+		return parsePDFWithSoMark(ctx, filename, data, p)
+	case "tcadp":
+		return parsePDFWithTCADP(ctx, filename, data, p)
+	}
+	cfg := deepdoctype.DefaultParserConfig()
+	cfg.Pages = p.Pages
+	cfg.RemoveTOC = p.RemoveTOC
+	cfg.RemoveHeaderFooter = p.RemoveHeaderFooter
+	cfg.OnPageDone = p.OnPageDone
+	cfg.OnModelCall = p.OnModelCall
+	res := parsePDFWithDeepDocOptions(ctx, filename, data, pdfPostProcessOptions{
+		zoom:              cfg.Zoom,
+		enableMultiColumn: p.EnableMultiColumn,
+		parseMethod:       p.ParseMethod,
+	}, deepdocpdf.NewParser(cfg).Parse)
+	if res.Err != nil {
+		if errors.Is(res.Err, deepdocpdf.ErrNoPDFData) ||
+			strings.Contains(res.Err.Error(), "deepdoc/pdf: cgo required") ||
+			strings.Contains(res.Err.Error(), "no in-process DeepDoc backend") {
+			return ParseResult{Err: fmt.Errorf("%w: %s", ErrPDFEngineUnavailable, filename)}
+		}
+	}
+	return res
 }
 
 func emptyPDFResult(filename string) ParseResult {
 	return ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name":       filename,
 			"page_count": 0,
 			"outline":    []map[string]any{},
 		},
-		JSON: []map[string]any{{"text": "", "doc_type_kwd": "text"}},
+		JSON: []DocItem{NewTextJSONItem("")},
 	}
 }
 
@@ -339,16 +556,87 @@ func resolveDocAnalyzer(factory func() (deepdoctype.DocAnalyzer, bool)) (deepdoc
 	return nil, fmt.Errorf("deepdoc: no in-process DeepDoc backend available: build with -tags cgo and provide ORT + models")
 }
 
-// GetDocAnalyzer returns the configured in-process DeepDoc analyzer. It is the
-// single production entry point now that the external HTTP service is no longer
-// a backend. Callers outside the parser package (e.g. standalone image OCR in
-// the ingestion component) use this instead of constructing a client.
-func GetDocAnalyzer() (deepdoctype.DocAnalyzer, error) {
-	return deepDocAnalyzerFromEnv()
+// analyzerFactories maps a canonical PDF parse method to a factory that builds
+// an out-of-process DocAnalyzer from a base URL. It is empty by default, so the
+// OSS build stays in-process only (see resolveDocAnalyzer). A deployment that
+// serves a parse method over an external inference service registers a factory
+// for it via RegisterAnalyzerFactory; resolveDocAnalyzerForMethod then routes
+// that method to the factory, reading the endpoint from the <METHOD>_URL
+// environment variable — a generic convention, so no per-service name is baked
+// into this package.
+//
+// Registration is expected at process start-up (init), before parsing begins;
+// the map is only read while parsing, so concurrent resolution is safe.
+var analyzerFactories = map[string]func(baseURL string) (deepdoctype.DocAnalyzer, error){}
+
+// RegisterAnalyzerFactory registers an external DocAnalyzer backend for a
+// canonical parse method. The method is normalized (aliases collapse to the
+// canonical token) so registration and resolution agree; registering the same
+// method again replaces the previous factory. It mirrors
+// deepdoctype.SetNativeDocAnalyzerFactory, but for out-of-process backends
+// selected per parse method.
+//
+// Reserved registrations are rejected (panic):
+//   - a built-in method that ParseWithResult dispatches to an internal engine
+//     (every switch case other than the fall-through to DeepDoc) — the switch
+//     intercepts it before resolution runs, so the factory would never be used;
+//   - "paddleocr" — this method requires tenant model dispatch;
+//   - the empty (default) method — routing it externally would hijack every
+//     caller that omits parse_method and divert the default in-process path.
+//
+// The only built-in that may be overridden externally is "deepdoc", which falls
+// through to the DeepDoc path and is the DEEPDOC_URL convention. Any
+// non-built-in custom method name is also accepted. Registration is expected at
+// process start-up (init); the map is only read while parsing.
+func RegisterAnalyzerFactory(method string, factory func(baseURL string) (deepdoctype.DocAnalyzer, error)) {
+	m := normalizePDFParseMethod(method)
+	if m == "" {
+		panic("parser: RegisterAnalyzerFactory: cannot register an external analyzer for the empty (default) parse method; use an explicit method name")
+	}
+	if m != "deepdoc" {
+		if _, builtin := supportedPDFParseMethods[m]; builtin || m == "paddleocr" {
+			panic(fmt.Sprintf("parser: RegisterAnalyzerFactory: cannot register an external analyzer for reserved method %q; it requires a built-in parser or tenant model dispatch", m))
+		}
+	}
+	analyzerFactories[m] = factory
 }
 
-func pdfParseResultToJSON(filename string, parsed *deepdoctype.ParseResult) ParseResult {
-	return pdfParseResultToJSONWithOptions(filename, parsed, pdfPostProcessOptions{})
+// externalAnalyzerURL derives the endpoint for a registered external method
+// from the generic <METHOD>_URL environment convention (upper-cased canonical
+// token). The value is trimmed and otherwise handed to the factory verbatim —
+// the dispatcher never interprets it as a path.
+func externalAnalyzerURL(method string) string {
+	return strings.TrimSpace(os.Getenv(strings.ToUpper(method) + "_URL"))
+}
+
+// resolveDocAnalyzerForMethod selects the DeepDoc backend for a parse method:
+//   - a method with a registered external factory (RegisterAnalyzerFactory)
+//     routes to that factory with the <METHOD>_URL endpoint, failing loudly
+//     when the URL is unset rather than silently producing empty results;
+//   - every other method (including "") uses the in-process native factory,
+//     preserving the historical in-process-only production path.
+//
+// It takes the in-process factory explicitly (like resolveDocAnalyzer) so the
+// policy is unit-testable without ONNX Runtime, and it never returns a mock.
+func resolveDocAnalyzerForMethod(method string, nativeFactory func() (deepdoctype.DocAnalyzer, bool)) (deepdoctype.DocAnalyzer, error) {
+	m := normalizePDFParseMethod(method)
+	if factory, ok := analyzerFactories[m]; ok {
+		url := externalAnalyzerURL(m)
+		if url == "" {
+			return nil, fmt.Errorf("parser: parse method %q is backed by an external analyzer but %s_URL is not set", m, strings.ToUpper(m))
+		}
+		return factory(url)
+	}
+	return resolveDocAnalyzer(nativeFactory)
+}
+
+// GetDocAnalyzer returns the configured in-process DeepDoc analyzer. It is the
+// in-process entry point used by PDF (deepdoc method) and non-PDF image parsers.
+// External, out-of-process backends are now available too, but only per parse
+// method via RegisterAnalyzerFactory (resolved in resolveDocAnalyzerForMethod);
+// GetDocAnalyzer itself stays in-process only and is never the external path.
+func GetDocAnalyzer() (deepdoctype.DocAnalyzer, error) {
+	return deepDocAnalyzerFromEnv()
 }
 
 func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseResult, opts pdfPostProcessOptions) ParseResult {
@@ -363,7 +651,12 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 	}
 	applyPDFPostProcess(&processed, opts)
 	defer processed.Close()
-	cropMediaSections(&processed)
+	// NOTE: PDF media (figure/table) is intentionally NOT cropped here under
+	// cgo. The parser no longer inlines base64 images — that is what bounded
+	// the parser-phase memory peak. Image/table sections keep only their PDF
+	// positions; the chunker re-acquires the source PDF and crops on demand at
+	// index time, and the VLM path crops on demand when it needs to describe a
+	// figure/table.
 
 	items := pdflayout.SectionsToJSON(processed.Sections)
 	if len(items) == 0 {
@@ -373,51 +666,24 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 		if layoutType, _ := items[i]["layout_type"].(string); layoutType != "" {
 			items[i]["layout"] = layoutType
 		}
-		if normalized := normalizePDFPositions(items[i]["_pdf_positions"]); len(normalized) > 0 {
+		if normalized := normalizeDeepDocPositions(items[i]["_pdf_positions"]); len(normalized) > 0 {
 			items[i]["_pdf_positions"] = normalized
 			items[i]["positions"] = normalized
 			if _, ok := items[i]["page_number"]; !ok {
 				items[i]["page_number"] = firstPageNumber(normalized)
 			}
 		}
-		normalizePDFDocType(items[i])
 		if img, _ := items[i]["image"].(string); img != "" {
 			items[i]["image"] = pdflayout.InlinePNGDataURL(img)
 		}
 	}
 	return ParseResult{
-		OutputFormat: "json",
 		File: map[string]any{
 			"name":       filename,
 			"page_count": len(processed.PageHeight),
 			"outline":    outlinesToFileMeta(processed.Outlines),
 		},
-		JSON: items,
-	}
-}
-
-func pdfParseResultToMarkdownWithOptions(filename string, parsed *deepdoctype.ParseResult, opts pdfPostProcessOptions) ParseResult {
-	if parsed == nil {
-		return ParseResult{Err: fmt.Errorf("parser: nil DeepDOC PDF result for %s", filename)}
-	}
-	processed := *parsed
-	processed.Sections = append([]deepdoctype.Section(nil), parsed.Sections...)
-	processed.Outlines = append([]deepdoctype.Outline(nil), parsed.Outlines...)
-	if opts.enableMultiColumn && opts.pageWidth <= 0 {
-		opts.pageWidth = firstPDFPageWidth(processed.PageWidth)
-	}
-	applyPDFPostProcess(&processed, opts)
-	defer processed.Close()
-	cropMediaSections(&processed)
-
-	return ParseResult{
-		OutputFormat: "markdown",
-		File: map[string]any{
-			"name":       filename,
-			"page_count": len(processed.PageHeight),
-			"outline":    outlinesToFileMeta(processed.Outlines),
-		},
-		Markdown: sectionsToMarkdown(processed.Sections),
+		JSON: MapsToItems(items),
 	}
 }
 
@@ -453,119 +719,6 @@ func firstPageNumber(raw any) int {
 	}
 }
 
-func sectionsToMarkdown(sections []deepdoctype.Section) string {
-	return pdflayout.SectionsToMarkdown(sections)
-}
-
-// cropMediaSections crops figure and table sections from rendered PDF page
-// images while the engine is still alive, populating sec.Image.
-// It is used by both the JSON and Markdown serialization paths.
-func cropMediaSections(result *deepdoctype.ParseResult) {
-	engine := result.Engine
-	if engine == nil || len(result.PageHeight) == 0 {
-		return
-	}
-	// Render each page at most once across all media sections. A PDF can have many
-	// figures/tables on the same page, so a cache shared across the section loop
-	// avoids re-rendering the page for every section.
-	//
-	// result.Sections is ordered by page, so once we advance to a section whose
-	// minimum page is P, no later section references a page < P. We therefore
-	// keep only a sliding window of page images: pages strictly below the
-	// current section's minimum page are evicted. This bounds memory to the
-	// current section's page span (typically one page, a few at most for a
-	// cross-page section) instead of caching the whole PDF.
-	pageCache := make(map[int]image.Image)
-	var lastMinPage = -1
-	sectionsOrdered := true
-	renderPage := func(pn int) image.Image {
-		if img, ok := pageCache[pn]; ok {
-			return img
-		}
-		img, err := deepdocpdf.RenderPageToImage(engine, pn)
-		if err != nil || img == nil {
-			slog.Warn("cropMediaSections: render failed, skipping section",
-				"page", pn, "err", err)
-			pageCache[pn] = nil
-			return nil
-		}
-		pageCache[pn] = img
-		return img
-	}
-
-	for i := range result.Sections {
-		sec := &result.Sections[i]
-		if strings.TrimSpace(sec.Image) != "" {
-			continue
-		}
-		if sec.LayoutType != deepdoctype.LayoutTypeFigure &&
-			sec.LayoutType != deepdoctype.LayoutTypeTable &&
-			strings.TrimSpace(sec.LayoutType) != "image" &&
-			sec.DocTypeKwd != "image" && sec.DocTypeKwd != "table" {
-			continue
-		}
-		if len(sec.Positions) == 0 {
-			continue
-		}
-		// Minimum page this section touches; used both to prune stale cache
-		// entries and to bound the window.
-		minPage := -1
-		pages := make(map[int]struct{})
-		for _, pos := range sec.Positions {
-			for _, pn := range pos.PageNumbers {
-				pages[pn] = struct{}{}
-				if pn < minPage || minPage < 0 {
-					minPage = pn
-				}
-			}
-		}
-		if lastMinPage >= 0 && minPage < lastMinPage {
-			if sectionsOrdered {
-				slog.Warn("cropMediaSections: sections out of page order; disabling page cache eviction",
-					"min_page", minPage, "last_min_page", lastMinPage)
-			}
-			sectionsOrdered = false
-		}
-		lastMinPage = minPage
-		// Evict page images that no later section can reference (all future
-		// sections start at page >= minPage).
-		if sectionsOrdered {
-			for pn := range pageCache {
-				if pn < minPage {
-					delete(pageCache, pn)
-				}
-			}
-		}
-		// Collect every distinct page this section spans so CropSectionByDLA
-		// can crop and vertically concatenate each page (mirroring Python's
-		// cropout multi-page branch). Single-page sections still render exactly
-		// one page, and the pageCache above guarantees a page is rendered at
-		// most once even when several sections share it.
-		single := make(map[int]image.Image, len(pages))
-		for pn := range pages {
-			if img := renderPage(pn); img != nil {
-				single[pn] = img
-			}
-		}
-		if len(single) == 0 {
-			continue
-		}
-		if sec.LayoutType == deepdoctype.LayoutTypeFigure {
-			if dla := util.CropSectionByDLA(*sec, result.DLARegions, single); dla != "" {
-				sec.Image = dla
-				continue
-			}
-		}
-		if len(sec.Positions) > 0 {
-			if img := util.CropSectionPositions(sec.Positions, single, deepdoctype.DlaScale); img != "" {
-				sec.Image = img
-				continue
-			}
-		}
-		sec.Image = util.CropSectionImage(sec.PositionTag, single, deepdoctype.DlaScale)
-	}
-}
-
 // firstPDFPageWidth returns the first page's width from a map of
 // per-page PDF-point widths. The map is guaranteed to store values
 // already converted to PDF-point space by processPage.
@@ -582,7 +735,9 @@ func firstPDFPageWidth(pageWidths map[int]float64) float64 {
 	return pageWidths[pg]
 }
 
-func normalizePDFPositions(raw any) [][]any {
+// normalizeDeepDocPositions converts DeepDoc source positions, including its
+// zero-based pages. Other engines must not pass canonical positions here.
+func normalizeDeepDocPositions(raw any) [][]any {
 	positions, ok := raw.([][]any)
 	if !ok || len(positions) == 0 {
 		return nil
@@ -592,7 +747,7 @@ func normalizePDFPositions(raw any) [][]any {
 		if len(pos) < 5 {
 			continue
 		}
-		pageNumber, ok := normalizePDFPageNumber(pos[0])
+		pageNumber, ok := normalizeDeepDocPageNumber(pos[0])
 		if !ok {
 			continue
 		}
@@ -608,32 +763,32 @@ func normalizePDFPositions(raw any) [][]any {
 	return normalized
 }
 
-// normalizePDFPageNumber converts a DeepDoc 0-indexed page number to the
+// normalizeDeepDocPageNumber converts a DeepDoc 0-indexed page number to the
 // 1-indexed form stored in _pdf_positions / positions. It is the SINGLE
 // 0→1 conversion point: DeepDoc (pdf_oxide/pdfium) emits 0-indexed pages,
-// and every downstream consumer (AddPositions for ES storage,
+// and every downstream consumer (addPDFPositions for ES storage,
 // PositionsFromMatrix for the PDFium render path) expects 1-indexed input.
 // Adding +1 unconditionally — instead of only for v<=0 — keeps all pages
-// consistent; the old heuristic left page>=1 unconverted, which AddPositions
+// consistent; the old heuristic left page>=1 unconverted, which addPDFPositions
 // then double-incremented and PositionsFromMatrix mis-decremented.
-func normalizePDFPageNumber(raw any) (int, bool) {
+func normalizeDeepDocPageNumber(raw any) (int, bool) {
 	switch v := raw.(type) {
 	case int:
 		return v + 1, true
 	case int64:
-		return normalizePDFPageNumber(int(v))
+		return normalizeDeepDocPageNumber(int(v))
 	case float64:
-		return normalizePDFPageNumber(int(v))
+		return normalizeDeepDocPageNumber(int(v))
 	case []any:
 		if len(v) == 0 {
 			return 0, false
 		}
-		return normalizePDFPageNumber(v[len(v)-1])
+		return normalizeDeepDocPageNumber(v[len(v)-1])
 	case []int:
 		if len(v) == 0 {
 			return 0, false
 		}
-		return normalizePDFPageNumber(v[len(v)-1])
+		return normalizeDeepDocPageNumber(v[len(v)-1])
 	default:
 		return 0, false
 	}
@@ -652,37 +807,32 @@ func numericAny(raw any) (float64, bool) {
 	}
 }
 
-func normalizePDFDocType(item map[string]any) {
-	if item == nil {
-		return
-	}
-	if docType, _ := item["doc_type_kwd"].(string); docType != "" {
-		return
-	}
-	layoutType, _ := item["layout_type"].(string)
-	switch layoutType {
-	case "table":
-		item["doc_type_kwd"] = "table"
-	case "figure", "image":
-		item["doc_type_kwd"] = "image"
-	default:
-		if img, _ := item["image"].(string); img != "" {
-			item["doc_type_kwd"] = "image"
-			return
+// ExtractPDFPositions is the single source of truth for "does this parsed item
+// carry PDF positions". It returns the position rows (under the canonical
+// _pdf_positions key or the legacy positions key), decoded through
+// PDFPositionRows so every wire shape is understood. The bool reports whether
+// any row was present.
+//
+// The parser (doc-type classification in normalizePDFDocType) and the on-demand
+// croppers (VLM vision_enhancement and the chunker) MUST agree on this
+// contract, so all call sites delegate here instead of re-implementing the
+// check. A loose "non-nil" test previously misclassified items whose positions
+// were empty or not actually a matrix (e.g. an empty []any or a stray scalar),
+// which escaped the figure-caption → image normalization and the crop path.
+func ExtractPDFPositions(item map[string]any) ([][]any, bool) {
+	for _, key := range []string{"_pdf_positions", "positions"} {
+		if rows := PDFPositionRows(item[key]); len(rows) > 0 {
+			return rows, true
 		}
-		item["doc_type_kwd"] = "text"
 	}
-}
-
-func parsePDFWithDeepDoc(ctx context.Context, filename string, data []byte, parseFn func(context.Context, []byte, deepdoctype.DocAnalyzer) (*deepdoctype.ParseResult, error)) ParseResult {
-	return parsePDFWithDeepDocOptions(ctx, filename, data, pdfPostProcessOptions{}, parseFn)
+	return nil, false
 }
 
 func parsePDFWithDeepDocOptions(ctx context.Context, filename string, data []byte, opts pdfPostProcessOptions, parseFn func(context.Context, []byte, deepdoctype.DocAnalyzer) (*deepdoctype.ParseResult, error)) ParseResult {
 	if len(data) == 0 {
 		return emptyPDFResult(filename)
 	}
-	analyzer, aerr := deepDocAnalyzerFromEnv()
+	analyzer, aerr := resolveDocAnalyzerForMethod(opts.parseMethod, deepdoctype.NativeDocAnalyzerFactory)
 	if aerr != nil {
 		return ParseResult{Err: aerr}
 	}
@@ -690,18 +840,12 @@ func parsePDFWithDeepDocOptions(ctx context.Context, filename string, data []byt
 	if err != nil {
 		return ParseResult{Err: err}
 	}
-	var res ParseResult
-	switch strings.ToLower(strings.TrimSpace(opts.outputFormat)) {
-	case "", "json":
-		res = pdfParseResultToJSONWithOptions(filename, parsed, opts)
-	case "markdown":
-		res = pdfParseResultToMarkdownWithOptions(filename, parsed, opts)
-	default:
-		return ParseResult{Err: fmt.Errorf("parser: unsupported PDF output_format %q", opts.outputFormat)}
-	}
+	res := pdfParseResultToJSONWithOptions(filename, parsed, opts)
 	for i := range res.JSON {
-		if img, _ := res.JSON[i]["image"].(string); img != "" {
-			res.JSON[i]["image"] = pdflayout.InlinePNGDataURL(img)
+		m := res.JSON[i].ToMap()
+		if img, _ := m["image"].(string); img != "" {
+			m["image"] = pdflayout.InlinePNGDataURL(img)
+			res.JSON[i] = DocItemFromMap(m)
 		}
 	}
 	return res

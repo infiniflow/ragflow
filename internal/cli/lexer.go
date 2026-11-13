@@ -369,6 +369,10 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenSearch, Value: ident}
 	case "AGENT":
 		return Token{Type: TokenAgent, Value: ident}
+	case "CORES":
+		return Token{Type: TokenCores, Value: ident}
+	case "CONCURRENCY":
+		return Token{Type: TokenConcurrency, Value: ident}
 	case "MEMORY":
 		return Token{Type: TokenMemory, Value: ident}
 	case "MEMORIES":
@@ -447,8 +451,6 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenDisable, Value: ident}
 	case "ENABLE":
 		return Token{Type: TokenEnable, Value: ident}
-	case "INSERT":
-		return Token{Type: TokenInsert, Value: ident}
 	case "FILE":
 		return Token{Type: TokenFile, Value: ident}
 	case "USE":
@@ -481,8 +483,6 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenDocument, Value: ident}
 	case "DOCUMENTS":
 		return Token{Type: TokenDocuments, Value: ident}
-	case "TAGS":
-		return Token{Type: TokenTag, Value: ident}
 	case "REGION":
 		return Token{Type: TokenRegion, Value: ident}
 	case "URL":
@@ -539,6 +539,8 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenWindow, Value: ident}
 	case "ACTIVITY":
 		return Token{Type: TokenActivity, Value: ident}
+	case "HARDWARE":
+		return Token{Type: TokenHardware, Value: ident}
 	case "PURGE":
 		return Token{Type: TokenPurge, Value: ident}
 	case "PREVIEW":
@@ -567,6 +569,14 @@ func (l *Lexer) lookupIdent(ident string) Token {
 		return Token{Type: TokenFatal, Value: ident}
 	case "PANIC":
 		return Token{Type: TokenPanic, Value: ident}
+	case "GROUP":
+		return Token{Type: TokenGroup, Value: ident}
+	case "GROUPS":
+		return Token{Type: TokenGroups, Value: ident}
+	case "BY":
+		return Token{Type: TokenBy, Value: ident}
+	case "DATE":
+		return Token{Type: TokenDate, Value: ident}
 	case "PARAM":
 		return Token{Type: TokenParam, Value: ident}
 	case "PLAY":

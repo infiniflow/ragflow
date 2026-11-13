@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// ssh.go is the Go port of `agent/sandbox/providers/ssh.py`.
+// SSH execution runs code on a configured remote host.
 //
 // SSHProvider runs the user's code on a remote host via SSH. The
 // Go equivalent of Python's `paramiko` library is
@@ -31,7 +31,7 @@
 // <script_path>`. The `__RAGFLOW_RESULT__:` marker extraction
 // works identically across all providers.
 //
-// File ops use SSH exec (cat heredoc / find / cat | base64) rather
+// File ops use SSH exec (cat / find / cat | base64) rather
 // than the SFTP subsystem. This avoids the
 // `github.com/pkg/sftp` dependency and keeps the import surface
 // at just `golang.org/x/crypto/ssh` (already a transitive dep).
@@ -46,10 +46,12 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"net"
 	"os"
 	"path"
+	"path/filepath"
 	"ragflow/internal/common"
 	"strconv"
 	"strings"
@@ -74,8 +76,7 @@ const (
 	sshDefaultWorkDir      = "/tmp"
 )
 
-// SSHProvider is the Go port of
-// `agent/sandbox/providers/ssh.py::SSHProvider`.
+// SSHProvider executes code on a remote host.
 type SSHProvider struct {
 	host             string
 	port             int
@@ -91,6 +92,7 @@ type SSHProvider struct {
 	maxArtifacts     int
 	maxArtifactBytes int
 	knownHosts       string
+	configError      error
 
 	mu          sync.Mutex
 	instances   map[string]*sshInstance
@@ -112,52 +114,52 @@ func newSSHProviderFromEnv() *SSHProvider {
 }
 
 // sshConfigFromEnv builds a config map from the SSH_* env vars.
-// PRIVATE_KEY is the literal key contents; PRIVATE_KEY_PATH is
-// a path on disk (read at provider-init time). KNOWN_HOSTS is the
+// PRIVATE_KEY is either literal key contents or a path on disk.
+// KNOWN_HOSTS is the
 // path to an OpenSSH-format known_hosts file used to verify the
-// remote host's key (fail-closed when unset).
+// remote host's key, in addition to ~/.ssh/known_hosts.
 func sshConfigFromEnv() map[string]any {
+	privateKey := common.GetEnv(common.EnvSSHPrivateKey)
+	if privateKey == "" {
+		privateKey = common.GetEnv(common.EnvSSHPrivateKeyPath)
+	}
 	return map[string]any{
-		"HOST":               common.GetEnv(common.EnvSSHHost),
-		"PORT":               common.GetEnv(common.EnvSSHPort),
-		"USERNAME":           common.GetEnv(common.EnvSSHUsername),
-		"PASSWORD":           common.GetEnv(common.EnvSSHPassword),
-		"PRIVATE_KEY":        common.GetEnv(common.EnvSSHPrivateKey),
-		"PRIVATE_KEY_PATH":   common.GetEnv(common.EnvSSHPrivateKeyPath),
-		"PASSPHRASE":         common.GetEnv(common.EnvSSHPassphrase),
-		"PYTHON_BIN":         common.GetEnv(common.EnvSSHPythonBin),
-		"NODE_BIN":           common.GetEnv(common.EnvSSHNodeBin),
-		"WORK_DIR":           common.GetEnv(common.EnvSSHWorkDir),
-		"TIMEOUT":            common.GetEnv(common.EnvSSHTimeout),
-		"MAX_OUTPUT_BYTES":   common.GetEnv(common.EnvSSHMaxOutputBytes),
-		"MAX_ARTIFACTS":      common.GetEnv(common.EnvSSHMaxArtifacts),
-		"MAX_ARTIFACT_BYTES": common.GetEnv(common.EnvSSHMaxArtifactBytes),
-		"KNOWN_HOSTS":        common.GetEnv(common.EnvSSHKnownHosts),
+		"host":               common.GetEnv(common.EnvSSHHost),
+		"port":               common.GetEnv(common.EnvSSHPort),
+		"username":           common.GetEnv(common.EnvSSHUsername),
+		"password":           common.GetEnv(common.EnvSSHPassword),
+		"private_key":        privateKey,
+		"passphrase":         common.GetEnv(common.EnvSSHPassphrase),
+		"python_bin":         common.GetEnv(common.EnvSSHPythonBin),
+		"node_bin":           common.GetEnv(common.EnvSSHNodeBin),
+		"work_dir":           common.GetEnv(common.EnvSSHWorkDir),
+		"timeout":            common.GetEnv(common.EnvSSHTimeout),
+		"max_output_bytes":   common.GetEnv(common.EnvSSHMaxOutputBytes),
+		"max_artifacts":      common.GetEnv(common.EnvSSHMaxArtifacts),
+		"max_artifact_bytes": common.GetEnv(common.EnvSSHMaxArtifactBytes),
+		"known_hosts":        common.GetEnv(common.EnvSSHKnownHosts),
 	}
 }
 
 // newSSHProviderFromConfig builds the provider from a JSON config
-// map. Config keys mirror the env-var names without the SSH_
-// prefix. PRIVATE_KEY is the literal key contents (preferred);
-// PRIVATE_KEY_PATH is a filesystem path (loaded here, like the
-// env path). KNOWN_HOSTS is the path to a known_hosts file used
-// to verify the remote host key (required for security; the dial
-// fails closed when unset).
+// map. Config keys use the lowercase Python schema names.
+// private_key is either literal key contents or a filesystem path.
+// known_hosts adds trusted host keys to ~/.ssh/known_hosts.
 func newSSHProviderFromConfig(cfg map[string]any) *SSHProvider {
 	p := &SSHProvider{
-		host:             configString(cfg, "HOST"),
-		port:             configInt(cfg, "PORT", sshDefaultPort),
-		username:         configString(cfg, "USERNAME"),
-		password:         configString(cfg, "PASSWORD"),
-		passphrase:       configString(cfg, "PASSPHRASE"),
-		pythonBin:        configString(cfg, "PYTHON_BIN"),
-		nodeBin:          configString(cfg, "NODE_BIN"),
-		workDir:          configString(cfg, "WORK_DIR"),
-		timeout:          configInt(cfg, "TIMEOUT", sshDefaultTimeout),
-		maxOutputBytes:   configInt(cfg, "MAX_OUTPUT_BYTES", sshDefaultMaxOutput),
-		maxArtifacts:     configInt(cfg, "MAX_ARTIFACTS", sshDefaultMaxArtifacts),
-		maxArtifactBytes: configInt(cfg, "MAX_ARTIFACT_BYTES", sshDefaultMaxArtifact),
-		knownHosts:       configString(cfg, "KNOWN_HOSTS"),
+		host:             configString(cfg, "host"),
+		port:             configInt(cfg, "port", sshDefaultPort),
+		username:         configString(cfg, "username"),
+		password:         configString(cfg, "password"),
+		passphrase:       configString(cfg, "passphrase"),
+		pythonBin:        configString(cfg, "python_bin"),
+		nodeBin:          configString(cfg, "node_bin"),
+		workDir:          configString(cfg, "work_dir"),
+		timeout:          configInt(cfg, "timeout", sshDefaultTimeout),
+		maxOutputBytes:   configInt(cfg, "max_output_bytes", sshDefaultMaxOutput),
+		maxArtifacts:     configInt(cfg, "max_artifacts", sshDefaultMaxArtifacts),
+		maxArtifactBytes: configInt(cfg, "max_artifact_bytes", sshDefaultMaxArtifact),
+		knownHosts:       configString(cfg, "known_hosts"),
 		instances:        map[string]*sshInstance{},
 	}
 	if p.pythonBin == "" {
@@ -169,12 +171,12 @@ func newSSHProviderFromConfig(cfg map[string]any) *SSHProvider {
 	if p.workDir == "" {
 		p.workDir = sshDefaultWorkDir
 	}
-	// Private key: prefer the literal content if set; otherwise
-	// read from the path.
-	if v := configString(cfg, "PRIVATE_KEY"); v != "" {
-		p.privateKey = []byte(v)
-	} else if keyPath := configString(cfg, "PRIVATE_KEY_PATH"); keyPath != "" {
-		if b, err := os.ReadFile(keyPath); err == nil {
+	if v := configString(cfg, "private_key"); strings.TrimSpace(v) != "" {
+		if strings.Contains(v, "-----BEGIN ") {
+			p.privateKey = []byte(v)
+		} else if b, err := os.ReadFile(strings.TrimSpace(v)); err != nil {
+			p.configError = fmt.Errorf("ssh: read private_key path %q: %w", v, err)
+		} else {
 			p.privateKey = b
 		}
 	}
@@ -191,6 +193,9 @@ func (p *SSHProvider) ProviderType() ProviderType { return ProviderSSH }
 // a connection here — connectivity is verified by HealthCheck
 // and by CreateInstance.
 func (p *SSHProvider) Initialize(ctx context.Context) error {
+	if p.configError != nil {
+		return p.configError
+	}
 	if p.host == "" {
 		return errors.New("ssh: SSH_HOST env var is required")
 	}
@@ -301,7 +306,7 @@ func (p *SSHProvider) ExecuteCode(
 		return nil, fmt.Errorf("ssh: unknown instance id %q", inst.InstanceID)
 	}
 
-	// Wrap the code + write to remote via heredoc.
+	// Wrap the code and write it to the remote file through SSH stdin.
 	argsJSON, err := argsToJSON(args)
 	if err != nil {
 		return nil, err
@@ -431,7 +436,13 @@ func (p *SSHProvider) isInitialized() bool {
 func (p *SSHProvider) dial(ctx context.Context) (*ssh.Client, error) {
 	auth := []ssh.AuthMethod{}
 	if len(p.privateKey) > 0 {
-		signer, err := ssh.ParsePrivateKey(p.privateKey)
+		var signer ssh.Signer
+		var err error
+		if p.passphrase != "" {
+			signer, err = ssh.ParsePrivateKeyWithPassphrase(p.privateKey, []byte(p.passphrase))
+		} else {
+			signer, err = ssh.ParsePrivateKey(p.privateKey)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("ssh: parse private key: %w", err)
 		}
@@ -493,16 +504,25 @@ func (p *SSHProvider) dial(ctx context.Context) (*ssh.Client, error) {
 }
 
 // hostKeyCallback builds an ssh.HostKeyCallback backed by an OpenSSH
-// known_hosts file. The provider fails closed when no known_hosts
-// path is configured: this protects against man-in-the-middle attacks
-// on the SSH transport used to run sandboxed code.
+// known_hosts files. Unknown host keys are always rejected.
 func (p *SSHProvider) hostKeyCallback() (ssh.HostKeyCallback, error) {
-	if p.knownHosts == "" {
-		return nil, errors.New("ssh: KNOWN_HOSTS not configured; refusing to connect without host key verification (set SSH_KNOWN_HOSTS)")
+	var files []string
+	if home, err := os.UserHomeDir(); err == nil {
+		file := filepath.Join(home, ".ssh", "known_hosts")
+		if _, err := os.Stat(file); err == nil {
+			files = append(files, file)
+		}
 	}
-	callback, err := knownhosts.New(p.knownHosts)
+	knownHosts := p.knownHosts
+	if knownHosts == "" {
+		knownHosts = common.GetEnv(common.EnvSSHKnownHosts)
+	}
+	if knownHosts != "" {
+		files = append(files, knownHosts)
+	}
+	callback, err := knownhosts.New(files...)
 	if err != nil {
-		return nil, fmt.Errorf("ssh: load known_hosts %q: %w", p.knownHosts, err)
+		return nil, fmt.Errorf("ssh: load known_hosts %q: %w", knownHosts, err)
 	}
 	return callback, nil
 }
@@ -517,11 +537,22 @@ func (p *SSHProvider) hostKeyCallback() (ssh.HostKeyCallback, error) {
 // tricked into re-interpreting it (see remoteMkdirAll,
 // remoteRemoveAll, remoteReadFile, remoteWriteFile, etc).
 func (p *SSHProvider) runRemoteCommand(ctx context.Context, client *ssh.Client, command string, timeoutSec int) (string, string, int, error) {
+	return p.runRemoteCommandWithInput(ctx, client, command, timeoutSec, nil)
+}
+
+func (p *SSHProvider) runRemoteCommandWithInput(ctx context.Context, client *ssh.Client, command string, timeoutSec int, input io.Reader) (string, string, int, error) {
 	sess, err := client.NewSession()
 	if err != nil {
 		return "", "", -1, fmt.Errorf("ssh: open session: %w", err)
 	}
 	defer sess.Close()
+	var stdin io.WriteCloser
+	if input != nil {
+		stdin, err = sess.StdinPipe()
+		if err != nil {
+			return "", "", -1, fmt.Errorf("ssh: open stdin: %w", err)
+		}
+	}
 	stdoutBuf, stderrBuf := &strings.Builder{}, &strings.Builder{}
 	sess.Stdout = stdoutBuf
 	sess.Stderr = stderrBuf
@@ -537,29 +568,57 @@ func (p *SSHProvider) runRemoteCommand(ctx context.Context, client *ssh.Client, 
 		runCtx, cancel = context.WithTimeout(ctx, time.Duration(timeoutSec)*time.Second)
 	}
 	defer cancel()
-	done := make(chan error, 1)
-	go func() { done <- sess.Wait() }()
-
-	select {
-	case err = <-done:
-	case <-runCtx.Done():
-		// Closing the SSH session interrupts Wait and asks the remote server to
-		// terminate the associated command channel. Wait for the goroutine so
-		// the output builders are no longer being written before returning.
-		_ = sess.Signal(ssh.SIGKILL)
-		_ = sess.Close()
-		<-done
-		return stdoutBuf.String(), stderrBuf.String(), -1, runCtx.Err()
+	waitDone := make(chan error, 1)
+	go func() { waitDone <- sess.Wait() }()
+	var writeDone chan error
+	if stdin != nil {
+		writeDone = make(chan error, 1)
+		go func() {
+			_, writeErr := io.Copy(stdin, input)
+			closeErr := stdin.Close()
+			if writeErr == nil {
+				writeErr = closeErr
+			}
+			writeDone <- writeErr
+		}()
 	}
-	if err != nil {
+
+	var waitErr, writeErr error
+	waitComplete, writeComplete := false, stdin == nil
+	for !waitComplete || !writeComplete {
+		select {
+		case waitErr = <-waitDone:
+			waitComplete = true
+			waitDone = nil
+		case writeErr = <-writeDone:
+			writeComplete = true
+			writeDone = nil
+		case <-runCtx.Done():
+			// Closing the SSH session interrupts Wait and the stdin writer.
+			// Wait for both goroutines before reading their output buffers.
+			_ = sess.Signal(ssh.SIGKILL)
+			_ = sess.Close()
+			if !waitComplete {
+				<-waitDone
+			}
+			if !writeComplete {
+				<-writeDone
+			}
+			return stdoutBuf.String(), stderrBuf.String(), -1, runCtx.Err()
+		}
+	}
+	if waitErr != nil {
 		// ssh.ExitError carries the remote exit code; we surface
 		// it as a normal non-zero exit (the caller can branch on
 		// the ExitCode field).
 		var exitErr *ssh.ExitError
-		if errors.As(err, &exitErr) {
+		if errors.As(waitErr, &exitErr) {
 			return stdoutBuf.String(), stderrBuf.String(), exitErr.ExitStatus(), nil
 		}
-		return stdoutBuf.String(), stderrBuf.String(), -1, err
+		return stdoutBuf.String(), stderrBuf.String(), -1, waitErr
+	}
+	if writeErr != nil {
+		return stdoutBuf.String(), stderrBuf.String(), -1, fmt.Errorf("ssh: write stdin: %w", writeErr)
 	}
 	return stdoutBuf.String(), stderrBuf.String(), 0, nil
 }
@@ -581,20 +640,11 @@ func (p *SSHProvider) remoteMkdirAll(ctx context.Context, client *ssh.Client, re
 	return nil
 }
 
-// remoteWriteFile writes content to remotePath via a
-// `cat > file <<'__RAGFLOW_SSH_EOF__' ... EOF` heredoc. The
-// heredoc tag is unique enough to never collide with user
-// code (it includes the package name). For very large scripts
-// (>1 MiB) this is inefficient vs. SFTP; the threshold is
-// intentionally not implemented here — Python's paramiko
-// also writes via SFTP for the same reason.
+// remoteWriteFile writes content to remotePath through the SSH
+// session's stdin so file contents are never interpreted by the shell.
 func (p *SSHProvider) remoteWriteFile(ctx context.Context, client *ssh.Client, remotePath, content string) error {
-	const tag = "__RAGFLOW_SSH_EOF__"
-	cmd := fmt.Sprintf(
-		"cat > %s <<'%s'\n%s\n%s",
-		shq(remotePath), tag, content, tag,
-	)
-	_, stderr, exitCode, err := p.runRemoteCommand(ctx, client, cmd, p.timeout)
+	cmd := fmt.Sprintf("cat > %s", shq(remotePath))
+	_, stderr, exitCode, err := p.runRemoteCommandWithInput(ctx, client, cmd, p.timeout, strings.NewReader(content))
 	if err != nil {
 		return err
 	}
@@ -719,13 +769,11 @@ func (p *SSHProvider) collectArtifacts(ctx context.Context, client *ssh.Client, 
 	return out, nil
 }
 
-// shq single-quotes a string for shell-safe inclusion. Matches
-// the Python `shlex.quote` behavior the SSH provider uses for
-// building `cd <work_dir> && <bin> <script>` commands. The
-// escape sequence for an embedded single quote is `\'` (a
-// backslash followed by a single quote).
+// shq single-quotes a string for POSIX shell inclusion. Embedded
+// single quotes are represented by ending the quoted string,
+// emitting a quoted single quote, then starting a new quoted string.
 func shq(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `\'`) + "'"
+	return "'" + strings.ReplaceAll(s, "'", "'\\''") + "'"
 }
 
 // minTimeout returns the smaller of a and b, with a floor of 1.

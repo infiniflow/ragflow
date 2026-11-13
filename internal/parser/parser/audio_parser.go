@@ -38,33 +38,12 @@ var audioExtensions = map[string]bool{
 	"vqf": true, "oggvorbis": true, "ape": true,
 }
 
-// AudioParser handles audio files for transcription. The struct mirrors
-// the configuration from setups["audio"]:output_format and
-// setups["audio"].vlm.llm_id.
-type AudioParser struct {
-	VLMModelID   string // vlm.llm_id — identifies the speech-to-text model
-	OutputFormat string
-}
+// AudioParser handles audio files for transcription.
+type AudioParser struct{}
 
 // NewAudioParser constructs an AudioParser.
 func NewAudioParser() *AudioParser {
 	return &AudioParser{}
-}
-
-// ConfigureFromSetup reads audio-specific configuration from the
-// parser setup map. It extracts vlm.llm_id and output_format.
-func (p *AudioParser) ConfigureFromSetup(setup map[string]any) {
-	if p == nil || setup == nil {
-		return
-	}
-	if vlm, ok := setup["vlm"].(map[string]any); ok {
-		if llmID, ok := vlm["llm_id"].(string); ok && llmID != "" {
-			p.VLMModelID = llmID
-		}
-	}
-	if v, ok := setup["output_format"].(string); ok && v != "" {
-		p.OutputFormat = v
-	}
 }
 
 // ParseWithResult implements ParseResultProducer. It validates the
@@ -82,14 +61,7 @@ func (p *AudioParser) ParseWithResult(ctx context.Context, filename string, data
 		}
 	}
 
-	// OutputFormat and VLMModelID are consumed by maybeDispatchAudio.
-	outFmt := p.OutputFormat
-	if outFmt == "" {
-		outFmt = "text"
-	}
-
 	return ParseResult{
-		OutputFormat: outFmt,
 		File: map[string]any{
 			"name": filename,
 			"size": len(data),

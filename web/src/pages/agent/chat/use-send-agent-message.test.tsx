@@ -1,7 +1,10 @@
 import { act, renderHook } from '@testing-library/react';
 import { MessageEventType } from '@/hooks/use-send-message';
 import { MessageType } from '@/constants/chat';
-import { useSendAgentMessage } from './use-send-agent-message';
+import {
+  findMessageFromList,
+  useSendAgentMessage,
+} from './use-send-agent-message';
 
 let mockAnswerList: any[] = [];
 let mockDone = true;
@@ -44,7 +47,7 @@ jest.mock('@/hooks/logic-hooks', () => ({
   useSelectDerivedMessages: () => ({
     derivedMessages: [],
     setDerivedMessages: jest.fn(),
-    scrollRef: { current: null },
+    virtualizer: {},
     messageContainerRef: { current: null },
     removeLatestMessage: jest.fn(),
     removeMessageById: jest.fn(),
@@ -165,5 +168,24 @@ describe('useSendAgentMessage session-scoped stream gating', () => {
       });
     });
     expect(result.current.requestedSessionId).toBe('session-new');
+  });
+});
+
+describe('findMessageFromList memory errors', () => {
+  it.each([
+    [
+      MessageEventType.NodeFinished,
+      { outputs: { memory_error: 'failed' } },
+      'failed',
+    ],
+    [
+      MessageEventType.Message,
+      { content: 'hello', memory_error: 'failed' },
+      'failed',
+    ],
+    [MessageEventType.Message, { content: 'hello' }, undefined],
+  ])('extracts memory_error from %s with data %j', (event, data, expected) => {
+    mockAnswerList = [{ ...messageFrame('session-a', 'hello'), event, data }];
+    expect(findMessageFromList(mockAnswerList).memory_error).toBe(expected);
   });
 });

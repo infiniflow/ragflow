@@ -1,6 +1,20 @@
 {
     "factory_llm_infos": [
         {
+            "name": "AnonRouter",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": []
+        },
+        {
+            "name": "API-Route",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING",
+            "status": "1",
+            "llm": []
+        },
+        {
             "name": "Synthorai",
             "logo": "",
             "tags": "LLM",
@@ -178,6 +192,41 @@
             "url": "https://api.openai.com/v1",
             "llm": [
                 {
+                    "llm_name": "gpt-5.6",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5.6-sol",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5.6-cyber",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5.6-luna",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
+                    "llm_name": "gpt-5.6-terra",
+                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true
+                },
+                {
                     "llm_name": "gpt-5.5",
                     "tags": "LLM,CHAT,400k,IMAGE2TEXT",
                     "max_tokens": 400000,
@@ -227,13 +276,6 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "gpt-5.1-chat-latest",
-                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
-                    "max_tokens": 400000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
                     "llm_name": "gpt-5",
                     "tags": "LLM,CHAT,400k,IMAGE2TEXT",
                     "max_tokens": 400000,
@@ -255,13 +297,6 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "gpt-5-chat-latest",
-                    "tags": "LLM,CHAT,400k,IMAGE2TEXT",
-                    "max_tokens": 400000,
-                    "model_type": "chat",
-                    "is_tools": false
-                },
-                {
                     "llm_name": "gpt-4.1",
                     "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1047576,
@@ -276,28 +311,7 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "gpt-4.1-nano",
-                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
-                    "max_tokens": 1047576,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "gpt-4.5-preview",
-                    "tags": "LLM,CHAT,128K",
-                    "max_tokens": 128000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
                     "llm_name": "o3",
-                    "tags": "LLM,CHAT,200K,IMAGE2TEXT",
-                    "max_tokens": 200000,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "o4-mini",
                     "tags": "LLM,CHAT,200K,IMAGE2TEXT",
                     "max_tokens": 200000,
                     "model_type": "chat",
@@ -325,20 +339,6 @@
                     "is_tools": true
                 },
                 {
-                    "llm_name": "gpt-3.5-turbo",
-                    "tags": "LLM,CHAT,4K",
-                    "max_tokens": 4096,
-                    "model_type": "chat",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "gpt-3.5-turbo-16k-0613",
-                    "tags": "LLM,CHAT,16k",
-                    "max_tokens": 16385,
-                    "model_type": "chat",
-                    "is_tools": false
-                },
-                {
                     "llm_name": "text-embedding-ada-002",
                     "tags": "TEXT EMBEDDING,8K",
                     "max_tokens": 8191,
@@ -364,27 +364,6 @@
                     "tags": "SPEECH2TEXT",
                     "max_tokens": 26214400,
                     "model_type": "speech2text",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "gpt-4",
-                    "tags": "LLM,CHAT,8K",
-                    "max_tokens": 8191,
-                    "model_type": "chat",
-                    "is_tools": false
-                },
-                {
-                    "llm_name": "gpt-4-turbo",
-                    "tags": "LLM,CHAT,8K",
-                    "max_tokens": 8191,
-                    "model_type": "chat",
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "gpt-4-32k",
-                    "tags": "LLM,CHAT,32K",
-                    "max_tokens": 32768,
-                    "model_type": "chat",
                     "is_tools": false
                 },
                 {
@@ -583,7 +562,8 @@
                     "llm_name": "qwen3.8-max",
                     "max_tokens": 128000,
                     "model_type": [
-                        "chat", "image2text"
+                        "chat",
+                        "image2text"
                     ],
                     "is_tools": true
                 },
@@ -1856,8 +1836,7 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK",
             "status": "1",
-            "llm": [],
-            "rank": "984"
+            "llm": []
         },
         {
             "name": "VLLM",
@@ -2031,6 +2010,723 @@
             "tags": "SPEECH2TEXT",
             "status": "1",
             "llm": []
+        },
+        {
+            "name": "Cheaper Inference",
+            "logo": "",
+            "tags": "LLM,IMAGE2TEXT",
+            "status": "1",
+            "rank": "885",
+            "url": "https://api.cheaperinference.com/v1",
+            "llm": [
+                {
+                    "llm_name": "aion-labs.aion-2-0",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "claude-fable-5",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "claude-fable-5.1",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "claude-haiku-4.5",
+                    "tags": "LLM,CHAT,200K,IMAGE2TEXT",
+                    "max_tokens": 200000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools"
+                    ]
+                },
+                {
+                    "llm_name": "claude-opus-4-8-fast",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "claude-opus-4.5",
+                    "tags": "LLM,CHAT,198K,IMAGE2TEXT",
+                    "max_tokens": 198000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools"
+                    ]
+                },
+                {
+                    "llm_name": "claude-opus-4.6",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools"
+                    ]
+                },
+                {
+                    "llm_name": "claude-opus-4.7",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools"
+                    ]
+                },
+                {
+                    "llm_name": "claude-opus-4.8",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "claude-opus-5",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "claude-opus-5-fast",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "claude-sonnet-4.5",
+                    "tags": "LLM,CHAT,198K,IMAGE2TEXT",
+                    "max_tokens": 198000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools"
+                    ]
+                },
+                {
+                    "llm_name": "claude-sonnet-4.6",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools"
+                    ]
+                },
+                {
+                    "llm_name": "claude-sonnet-5",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "deepseek-v4-flash",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "deepseek-v4-flash-0731",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "deepseek-v4-pro",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "deepseek-v4-pro-0813",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1048576,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "deepseek-v4.1-flash",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gemini-2.5-flash",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools"
+                    ]
+                },
+                {
+                    "llm_name": "gemini-3-5-flash",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gemini-3-flash-preview",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gemini-3.1-flash-lite",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools"
+                    ]
+                },
+                {
+                    "llm_name": "gemini-3.1-pro",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gemini-3.1-pro-preview",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gemini-3.7-flash",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "glm-4.5",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "glm-4.5-air",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "glm-4.6",
+                    "tags": "LLM,CHAT,198K",
+                    "max_tokens": 198000,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "glm-4.7",
+                    "tags": "LLM,CHAT,128K",
+                    "max_tokens": 128000,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "glm-5",
+                    "tags": "LLM,CHAT,198K",
+                    "max_tokens": 198000,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "glm-5.1",
+                    "tags": "LLM,CHAT,200K",
+                    "max_tokens": 200000,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "glm-5.2",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1048576,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "glm-5.3",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1000000,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "glm-5.3-flash",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1048576,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gpt-5-mini",
+                    "tags": "LLM,CHAT,400K",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gpt-5-nano",
+                    "tags": "LLM,CHAT,400K",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gpt-5.2-codex",
+                    "tags": "LLM,CHAT,256K,IMAGE2TEXT",
+                    "max_tokens": 256000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gpt-5.4",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gpt-5.4-mini",
+                    "tags": "LLM,CHAT,400K,IMAGE2TEXT",
+                    "max_tokens": 400000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gpt-5.4-nano",
+                    "tags": "LLM,CHAT,400K",
+                    "max_tokens": 400000,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gpt-5.5",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gpt-5.6-luna",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1050000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gpt-5.6-sol",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1050000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gpt-5.6-terra",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1050000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gpt-6-astra",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1050000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "grok-4.5",
+                    "tags": "LLM,CHAT,500K,IMAGE2TEXT",
+                    "max_tokens": 500000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "kimi-k3",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "minimax-m2.7",
+                    "tags": "LLM,CHAT,198K",
+                    "max_tokens": 198000,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "muse-spark-1.2",
+                    "tags": "LLM,CHAT,1M",
+                    "max_tokens": 1048576,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "qwen-3-8-27b",
+                    "tags": "LLM,CHAT,262K,IMAGE2TEXT",
+                    "max_tokens": 262144,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "qwen-3-8-max",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1000000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "qwen3-5-35b-a3b",
+                    "tags": "LLM,CHAT,256K,IMAGE2TEXT",
+                    "max_tokens": 256000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "qwen3-6-35b-a3b",
+                    "tags": "LLM,CHAT,262K",
+                    "max_tokens": 262144,
+                    "model_type": "chat",
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "qwen3.6-27b",
+                    "tags": "LLM,CHAT,256K,IMAGE2TEXT",
+                    "max_tokens": 256000,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "DaoXE",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING",
+            "status": "1",
+            "llm": [],
+            "rank": "885"
         },
         {
             "name": "DeepSeek",
@@ -2489,64 +3185,157 @@
             "rank": "997",
             "llm": [
                 {
-                    "llm_name": "gemini-3-pro-preview",
-                    "tags": "LLM,1M,IMAGE2TEXT",
+                    "llm_name": "gemini-3.8-flash",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1048576,
                     "model_type": [
-                        "image2text",
-                        "chat"
+                        "chat",
+                        "vision"
                     ],
-                    "is_tools": true
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
                 },
                 {
-                    "llm_name": "gemini-2.5-flash",
-                    "tags": "LLM,1024K,IMAGE2TEXT",
+                    "llm_name": "gemini-3.6-flash",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1048576,
                     "model_type": [
-                        "image2text",
-                        "chat"
+                        "chat",
+                        "vision"
                     ],
-                    "is_tools": true
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gemini-3.5-flash",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gemini-3.1-pro",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gemini-3.1-flash",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gemini-3.1-flash-lite",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools"
+                    ]
+                },
+                {
+                    "llm_name": "gemini-3-flash-preview",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gemini-3-pro-preview",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
                 },
                 {
                     "llm_name": "gemini-2.5-pro",
-                    "tags": "LLM,IMAGE2TEXT,1024K",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1048576,
                     "model_type": [
-                        "image2text",
-                        "chat"
+                        "chat",
+                        "vision"
                     ],
-                    "is_tools": true
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
+                },
+                {
+                    "llm_name": "gemini-2.5-flash",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
+                    "max_tokens": 1048576,
+                    "model_type": [
+                        "chat",
+                        "vision"
+                    ],
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
                 },
                 {
                     "llm_name": "gemini-2.5-flash-lite",
-                    "tags": "LLM,1024K,IMAGE2TEXT",
+                    "tags": "LLM,CHAT,1M,IMAGE2TEXT",
                     "max_tokens": 1048576,
                     "model_type": [
-                        "image2text",
-                        "chat"
+                        "chat",
+                        "vision"
                     ],
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "gemini-2.0-flash",
-                    "tags": "LLM,1024K",
-                    "max_tokens": 1048576,
-                    "model_type": [
-                        "image2text",
-                        "chat"
-                    ],
-                    "is_tools": true
-                },
-                {
-                    "llm_name": "gemini-2.0-flash-lite",
-                    "tags": "LLM,1024K",
-                    "max_tokens": 1048576,
-                    "model_type": [
-                        "image2text",
-                        "chat"
-                    ],
-                    "is_tools": true
+                    "is_tools": true,
+                    "features": [
+                        "is_tools",
+                        "thinking"
+                    ]
                 },
                 {
                     "llm_name": "gemini-embedding-001",
@@ -2623,6 +3412,136 @@
             "llm": [],
             "rank": "989",
             "url": "https://openrouter.ai/api/v1"
+        },
+        {
+            "name": "TrustedRouter",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.trustedrouter.com/v1"
+        },
+        {
+            "name": "AI Stupid Level",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [],
+            "url": "https://aistupidlevel.info/v1"
+        },
+        {
+            "name": "Demon Route",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [],
+            "rank": "880",
+            "url": "https://api.demonroute.com/v1"
+        },
+        {
+            "name": "Opper",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.opper.ai/v3/compat"
+        },
+        {
+            "name": "EmpirioLabs AI",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.empiriolabs.ai/v1"
+        },
+        {
+            "name": "Runcrate",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.runcrate.ai/v1"
+        },
+        {
+            "name": "WorldRouter",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [],
+            "rank": "990",
+            "url": "https://inference-api.worldrouter.ai/v1"
+        },
+        {
+            "name": "CloudGPU",
+            "logo": "",
+            "tags": "LLM,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://cloudgpu.app/v1"
+        },
+        {
+            "name": "Obscurify.ai",
+            "logo": "",
+            "tags": "LLM",
+            "status": "1",
+            "llm": [],
+            "url": "https://obscurify.ai/v1"
+        },
+        {
+            "name": "Hostinger Router",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://router.hostinger.com/v1"
+        },
+        {
+            "name": "cheapaimodel",
+            "logo": "",
+            "tags": "LLM,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.cheapaimodel.ai/v1"
+        },
+        {
+            "name": "Wally",
+            "logo": "",
+            "tags": "LLM,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://inference.runanywhere.ai/v1"
+        },
+        {
+            "name": "Synap",
+            "logo": "",
+            "tags": "LLM,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://pool.linkrra.com/v1"
+        },
+        {
+            "name": "Wiro AI",
+            "logo": "",
+            "tags": "LLM,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://llm.wiro.ai/v1"
+        },
+        {
+            "name": "Crusoe",
+            "logo": "",
+            "tags": "LLM,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.inference.crusoecloud.com/v1"
+        },
+        {
+            "name": "HopBase",
+            "logo": "",
+            "tags": "LLM,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.hop-base.com/v1"
         },
         {
             "name": "StepFun",
@@ -5381,6 +6300,13 @@
             "name": "Google Cloud",
             "logo": "",
             "tags": "LLM",
+            "status": "1",
+            "llm": []
+        },
+        {
+            "name": "Hubris",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING",
             "status": "1",
             "llm": []
         },

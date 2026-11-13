@@ -2,6 +2,7 @@ import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Trash2 } from 'lucide-react';
+import { useCallback } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { DynamicFormHeader, FormListHeaderProps } from './dynamic-fom-header';
 
@@ -14,15 +15,19 @@ export function DynamicStringForm({ name, label }: DynamicStringFormProps) {
     control: form.control,
   });
 
+  // append is not a change event, so trigger manually to surface
+  // the validation errors of the freshly added empty row.
+  const handleAdd = useCallback(() => {
+    append({ value: '' });
+    form.trigger(name);
+  }, [append, form, name]);
+
   return (
     <section>
-      <DynamicFormHeader
-        label={label}
-        onClick={() => append({ value: '' })}
-      ></DynamicFormHeader>
+      <DynamicFormHeader label={label} onClick={handleAdd}></DynamicFormHeader>
       <div className="space-y-4">
         {fields.map((field, index) => (
-          <div key={field.id} className="flex items-center gap-2">
+          <div key={field.id} className="flex items-start gap-2">
             <RAGFlowFormItem
               name={`${name}.${index}.value`}
               label="delimiter"

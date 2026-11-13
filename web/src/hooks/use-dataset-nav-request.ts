@@ -14,11 +14,10 @@
  *  limitations under the License.
  */
 
-import message from '@/components/ui/message';
 import { DatasetNavList } from '@/interfaces/database/dataset-nav';
 import i18n from '@/locales/config';
 import datasetNavService from '@/services/dataset-nav-service';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { trim } from 'lodash';
 
 import { useKnowledgeBaseId } from './use-knowledge-request';
@@ -27,8 +26,8 @@ export const DatasetNavKeys = {
   all: (kbId: string) => ['dataset_nav', kbId] as const,
   list: (kbId: string, keywords = '') =>
     ['dataset_nav', kbId, 'list', keywords] as const,
-  children: (kbId: string, name: string) =>
-    ['dataset_nav', kbId, 'children', name] as const,
+  children: (kbId: string, name: string, keywords = '') =>
+    ['dataset_nav', kbId, 'children', name, keywords] as const,
 };
 
 type DatasetNavResponse<T> = {
@@ -85,8 +84,12 @@ export function useFetchDatasetNav(keywords = '') {
   return { data, loading, isError, error, refetch };
 }
 
-export function useFetchDatasetNavChildren(parentName: string | null) {
+export function useFetchDatasetNavChildren(
+  parentName: string | null,
+  keywords = '',
+) {
   const kbId = useKnowledgeBaseId();
+  const trimmedKeywords = trim(keywords);
   const enabled = !!kbId && !!parentName;
 
   const {
@@ -96,7 +99,7 @@ export function useFetchDatasetNavChildren(parentName: string | null) {
     error,
     refetch,
   } = useQuery<DatasetNavList | null>({
-    queryKey: DatasetNavKeys.children(kbId, parentName ?? ''),
+    queryKey: DatasetNavKeys.children(kbId, parentName ?? '', trimmedKeywords),
     initialData: null,
     enabled,
     gcTime: 0,
@@ -105,61 +108,11 @@ export function useFetchDatasetNavChildren(parentName: string | null) {
       const { data } = await datasetNavService.getNavChildren({
         datasetId: kbId,
         name: parentName!,
+        keywords: trimmedKeywords,
       });
       return unwrapDatasetNavResponse(data);
     },
   });
 
   return { data, loading, isError, error, refetch };
-}
-
-export function useDeleteDatasetNav() {
-  const kbId = useKnowledgeBaseId();
-  const queryClient = useQueryClient();
-
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationFn: async () => {
-      const { data } = await datasetNavService.deleteNav({ datasetId: kbId });
-      if (data?.code === 0) {
-        message.success(i18n.t('message.deleted'));
-        queryClient.invalidateQueries({
-          queryKey: DatasetNavKeys.all(kbId),
-        });
-      }
-      return data;
-    },
-  });
-
-  return { data, loading, deleteNav: mutateAsync };
-}
-
-export function useDeleteDatasetNavNode() {
-  const kbId = useKnowledgeBaseId();
-  const queryClient = useQueryClient();
-
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationFn: async (name: string) => {
-      const { data } = await datasetNavService.deleteNavNode({
-        datasetId: kbId,
-        name,
-      });
-      if (data?.code === 0) {
-        message.success(i18n.t('message.deleted'));
-        queryClient.invalidateQueries({
-          queryKey: DatasetNavKeys.all(kbId),
-        });
-      }
-      return data;
-    },
-  });
-
-  return { data, loading, deleteNavNode: mutateAsync };
 }

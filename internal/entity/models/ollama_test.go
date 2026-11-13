@@ -136,6 +136,81 @@ func TestOllamaStreamingChatMapsMultimodalImages(t *testing.T) {
 	}
 }
 
+func TestOllamaThinkingPayloadTriState(t *testing.T) {
+	withSSRFBypass(t)
+	for _, tc := range []struct {
+		name string
+		cfg  *ChatConfig
+		want any
+	}{
+		{name: "nil omitted"},
+		{name: "false", cfg: &ChatConfig{Thinking: boolPointer(false)}, want: false},
+		{name: "true", cfg: &ChatConfig{Thinking: boolPointer(true)}, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var body map[string]interface{}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Errorf("decode request: %v", err)
+				}
+				_, _ = io.WriteString(w, `{"message":{"content":"ok","thinking":""}}`)
+			}))
+			defer srv.Close()
+
+			if _, err := newOllamaForChatTest(srv.URL).ChatWithMessages(t.Context(), "llava", []Message{{Role: "user", Content: "hello"}}, &APIConfig{}, tc.cfg, nil); err != nil {
+				t.Fatalf("ChatWithMessages: %v", err)
+			}
+			got, exists := body["think"]
+			if tc.want == nil {
+				if exists {
+					t.Fatalf("think=%v, want omitted", got)
+				}
+				return
+			}
+			if !exists || got != tc.want {
+				t.Fatalf("think=%v, want %v", got, tc.want)
+			}
+			if options, exists := body["options"]; exists {
+				if optionsMap, ok := options.(map[string]interface{}); ok {
+					if _, nested := optionsMap["think"]; nested {
+						t.Fatal("think must not be nested in options")
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestOllamaThinkingOverridesEffortOnlyForGPTOSS(t *testing.T) {
+	withSSRFBypass(t)
+	for _, tc := range []struct {
+		name, model string
+		want        any
+	}{
+		{name: "gpt-oss uses effort", model: "gpt-oss:20b", want: "high"},
+		{name: "other model keeps thinking", model: "llava", want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var body map[string]interface{}
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Errorf("decode request: %v", err)
+				}
+				_, _ = io.WriteString(w, `{"message":{"content":"ok","thinking":""}}`)
+			}))
+			defer srv.Close()
+			thinking := false
+			effort := "high"
+			if _, err := newOllamaForChatTest(srv.URL).ChatWithMessages(t.Context(), tc.model, []Message{{Role: "user", Content: "hello"}}, &APIConfig{}, &ChatConfig{Thinking: &thinking, Effort: &effort}, nil); err != nil {
+				t.Fatalf("ChatWithMessages: %v", err)
+			}
+			if got := body["think"]; got != tc.want {
+				t.Fatalf("think=%v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestOllamaListModels(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()

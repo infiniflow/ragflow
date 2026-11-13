@@ -37,6 +37,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/common"
+	"reflect"
 	"sort"
 	"strings"
 
@@ -105,7 +107,14 @@ func (p *listOperationsParam) Update(conf map[string]any) error {
 		p.Operations = "nth"
 	}
 	p.Operations = normalizeListOperationName(p.Operations)
-	p.N = toInt(conf["n"])
+	var ok bool
+
+	p.N, ok = common.ToInt(conf["n"])
+	if !ok {
+		common.Error("n must be an integer", nil)
+		return &ParamError{Field: "n", Reason: "must be an integer"}
+	}
+
 	if v, ok := conf["strict"]; ok {
 		p.Strict = coerceBool(v)
 	}
@@ -211,31 +220,6 @@ func parseSortByFieldList(v any) []string {
 	return out
 }
 
-// toInt coerces a value to int. Floats are truncated; strings parsed
-// via Atoi; bools follow Python's int() semantics (true → 1, false → 0);
-// everything else falls back to 0. Mirrors Python's _coerce_n in
-// agent/component/list_operations.py:73-77.
-func toInt(v any) int {
-	switch x := v.(type) {
-	case int:
-		return x
-	case int64:
-		return int(x)
-	case float64:
-		return int(x)
-	case string:
-		var n int
-		fmt.Sscanf(x, "%d", &n)
-		return n
-	case bool:
-		if x {
-			return 1
-		}
-		return 0
-	}
-	return 0
-}
-
 // ListOperationsComponent implements the 6 list transforms.
 type ListOperationsComponent struct {
 	name  string
@@ -284,7 +268,7 @@ func (l *ListOperationsComponent) Invoke(ctx context.Context, db *gorm.DB, _ map
 		panic(r)
 	}()
 
-	state, _, serr := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, serr := runtime.GetStateFromContext(ctx)
 	if serr != nil {
 		return nil, fmt.Errorf("ListOperations: %w", serr)
 	}
@@ -298,7 +282,32 @@ func (l *ListOperationsComponent) Invoke(ctx context.Context, db *gorm.DB, _ map
 	}
 	items, ok := raw.([]any)
 	if !ok {
-		return nil, fmt.Errorf("ListOperations: input is not a list (got %T)", raw)
+		// A nil value means the referenced variable was never written in
+		// this run — typically an upstream node routed around by a
+		// conditional branch. That is "no variable passed in", not a
+		// misconfiguration: operate on an empty list so the canvas run
+		// survives. Non-nil non-list values remain a hard error.
+		if raw == nil {
+			items = []any{}
+		} else {
+			rv := reflect.ValueOf(raw)
+			if rv.Kind() != reflect.Slice && rv.Kind() != reflect.Array {
+				return nil, fmt.Errorf("ListOperations: input is not a list (got %T)", raw)
+			}
+			items = make([]any, rv.Len())
+			for i := range items {
+				items[i] = rv.Index(i).Interface()
+			}
+		}
+	}
+	// A typed nil []any satisfies the assertion above (ok=true, items=nil)
+	// and bypasses the unset-variable branch — e.g. an upstream component
+	// that wrote a never-appended `var out []any` into state. Normalize it
+	// to the same empty list so both nil forms are indistinguishable for
+	// the operators and the non-nil result contract holds structurally,
+	// not by each operator's slice-construction style.
+	if items == nil {
+		items = []any{}
 	}
 
 	var out []any
@@ -538,7 +547,7 @@ func dedupKey(v any) string {
 
 // normValue is the Python _norm helper: "" for nil, else str(v).
 // Bools are rendered as "True" / "False" (Python's str() output) so
-// filter `=` comparisons match the Python DSL contract. Mirrors
+// filter `=` comparisons match the Python DSL  Mirrors
 // agent/component/list_operations.py:151-153.
 func normValue(v any) string {
 	if v == nil {

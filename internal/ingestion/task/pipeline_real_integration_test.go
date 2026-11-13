@@ -85,7 +85,7 @@ func TestPipelineExecutor_Run_RealCanvasDSL_UsesGeneralPipeline(t *testing.T) {
 		CanvasCategory: "agent_canvas",
 		DSL:            templateDSL,
 	}).Error; err != nil {
-		t.Fatalf("create user canvas: %v", err)
+		t.Fatalf("create user agent: %v", err)
 	}
 	t.Cleanup(func() {
 		cleanUpCtx := context.Background()
@@ -210,7 +210,7 @@ func TestPipelineExecutor_Run_RealPDF_ProducesIndexedChunks(t *testing.T) {
 		CanvasCategory: "agent_canvas",
 		DSL:            templateDSL,
 	}).Error; err != nil {
-		t.Fatalf("create user canvas: %v", err)
+		t.Fatalf("create user agent: %v", err)
 	}
 	t.Cleanup(func() {
 		_ = realDB.Where("id = ?", canvasID).Delete(&entity.UserCanvas{}).Error
@@ -242,8 +242,7 @@ func TestPipelineExecutor_Run_RealPDF_ProducesIndexedChunks(t *testing.T) {
 		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 			inserted = append(inserted, deepCopyTaskChunks(chunks))
 			return nil, nil
-		}).
-		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error { return nil })
+		})
 
 	if _, err = svc.Execute(ctx); err != nil {
 		t.Fatalf("Run: %v", err)
@@ -434,6 +433,7 @@ func mustOpenTaskTestDB(t *testing.T) *gorm.DB {
 	}
 	if err = db.AutoMigrate(
 		&entity.Tenant{},
+		&entity.UserTenant{},
 		&entity.Knowledgebase{},
 		&entity.Document{},
 		&entity.File{},
@@ -529,7 +529,7 @@ func taskMustWriteTokenizerPOSDef(t *testing.T, dictPath, outPath string) {
 
 func taskMustPrepareTokenizerWordNet(t *testing.T, root string) {
 	t.Helper()
-	zipPath := filepath.Join(taskRepoRoot(t), "ragflow_deps", "nltk_data", "corpora", "wordnet.zip")
+	zipPath := filepath.Join(taskRepoRoot(t), "deps", "nltk_data", "corpora", "wordnet.zip")
 	reader, err := zip.OpenReader(zipPath)
 	if err != nil {
 		t.Skipf("open wordnet zip %s: %v", zipPath, err)
@@ -612,15 +612,16 @@ func mustSeedTaskRealPipelineDocumentBytes(
 	ocrID := "ocr-default"
 	if err := db.Create(&entity.Tenant{
 		ID:        tenantID,
-		LLMID:     "gpt-4",
-		ASRID:     "asr-default",
-		Img2TxtID: "img2txt-default",
-		RerankID:  "rerank-default",
 		ParserIDs: "parser-default",
-		OCRID:     &ocrID,
 		Status:    taskStrPtr("1"),
 	}).Error; err != nil {
 		t.Fatalf("create tenant: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{
+		ID: "owner-" + tenantID, UserID: tenantID, TenantID: tenantID, Role: "owner", Status: taskStrPtr("1"),
+		LLMID: "gpt-4", ASRID: "asr-default", Img2TxtID: "img2txt-default", RerankID: "rerank-default", OCRID: &ocrID,
+	}).Error; err != nil {
+		t.Fatalf("create tenant owner membership: %v", err)
 	}
 	if err := db.Create(&entity.Knowledgebase{
 		ID:           kbID,

@@ -22,10 +22,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+
+	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
+	ragprompts "ragflow/internal/rag/prompts"
 	"ragflow/internal/service/file"
 	"ragflow/internal/service/graph"
 	"ragflow/internal/service/nlp"
@@ -33,6 +37,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"ragflow/internal/dao"
 
@@ -52,17 +57,17 @@ var llmMessageFields = [...]string{"role", "content", "name", "tool_calls", "too
 // and all their supporting helpers. Callers (OpenAIChatService, ChatSessionService)
 // compose it to avoid code duplication.
 type ChatPipelineService struct {
-	ModelProviderSvc *ModelProviderService
-	MetadataSvc      *MetadataService
-	kbDAO            *dao.KnowledgebaseDAO
+	ModelFactory *ModelFactory
+	MetadataSvc  *MetadataService
+	kbDAO        *dao.KnowledgebaseDAO
 }
 
 // NewChatPipelineService creates a new ChatPipelineService with all required dependencies.
 func NewChatPipelineService() *ChatPipelineService {
 	return &ChatPipelineService{
-		ModelProviderSvc: NewModelProviderService(),
-		MetadataSvc:      NewMetadataService(),
-		kbDAO:            dao.NewKnowledgebaseDAO(),
+		ModelFactory: NewModelFactory(),
+		MetadataSvc:  NewMetadataService(),
+		kbDAO:        dao.NewKnowledgebaseDAO(),
 	}
 }
 
@@ -93,8 +98,69 @@ type AsyncChatResult struct {
 	Final        bool                   `json:"final"`
 	StartToThink bool                   `json:"start_to_think,omitempty"`
 	EndToThink   bool                   `json:"end_to_think,omitempty"`
+	// ThinkEvent is one STRUCTURED reasoning step (the machine-readable twin of
+	// the think-block sentence), forwarded so a client can render steps —
+	// tool, status, counts, sources, duration — instead of paragraphs.
+	ThinkEvent *ThinkEvent `json:"think_event,omitempty"`
+	// Usage and ElapsedMs are this turn's cost, emitted on the final chunk so a
+	// client can show what the answer cost. They are the same numbers the
+	// Langfuse generation below records; without them a UI has to parse the
+	// human-readable prompt text to learn anything about cost.
+	Usage     *ChatTurnUsage `json:"usage,omitempty"`
+	ElapsedMs float64        `json:"elapsed_ms,omitempty"`
+	// Internal-only: set when Answer is the run's authoritative full text —
+	// <think> stretch included, citation handles already compacted against the
+	// shipped reference — so the session writer must persist it instead of the
+	// accumulated stream deltas, which still carry the pre-compaction handles.
+	AnswerIsAuthoritative bool
 	// Internal-only: accumulated answer for building the decorated final result.
 	accumulatedAnswer string
+}
+
+// ChatTurnUsage is one turn's token cost. CompletionTokens is an estimate (the
+// answer has no tokenizer on this path), which is why it is reported separately
+// rather than folded into a single "tokens" number a reader would trust.
+type ChatTurnUsage struct {
+	PromptTokens     int `json:"prompt_tokens"`
+	CompletionTokens int `json:"completion_tokens"`
+	TotalTokens      int `json:"total_tokens"`
+}
+
+// ThinkEvent is one structured agentic reasoning step as it goes over the
+// wire (the SSE `think_event` field). This is the ONE definition, so a
+// producer that needs structured steps aliases this type instead of carrying
+// a second copy bridged field by field — that older shape compiled for as
+// long as one side stayed a subset, and a field added on the producer side
+// then reached the client as nothing at all.
+//
+// The JSON tags below ARE the client contract; TestThinkEventWireKeys pins
+// them.
+type ThinkEvent struct {
+	Kind string `json:"kind"`
+	// Stage is the bracketed tag the step belongs to ("Function tool",
+	// "RAGAgent", ...). It is the grouping key.
+	Stage string `json:"stage,omitempty"`
+	// Tool is the tool name for tool_call / tool_result events.
+	Tool string `json:"tool,omitempty"`
+	// Args is the tool call's arguments, rendered for display.
+	Args string `json:"args,omitempty"`
+	// Status and Reason describe a tool step's outcome.
+	Status string `json:"status,omitempty"`
+	Reason string `json:"reason,omitempty"`
+	// Cause is the tool's own explanation of a failure: a bare reason such as
+	// "infra" tells a client nothing about what actually broke.
+	Cause string `json:"cause,omitempty"`
+	// Results is how many results the step returned; Documents how many
+	// distinct documents they came from.
+	Results   int `json:"results,omitempty"`
+	Documents int `json:"documents,omitempty"`
+	// Sources are the evidence anchors the step produced (capped).
+	Sources []string `json:"sources,omitempty"`
+	// DurationMS is the wall time of a tool call; 0 for a stage step.
+	DurationMS int64 `json:"duration_ms,omitempty"`
+	// Summary is the human sentence for this step, exactly what the think
+	// block shows.
+	Summary string `json:"summary"`
 }
 
 // AsyncChat is the Go equivalent of Python's async_chat() in
@@ -134,7 +200,7 @@ type AsyncChatResult struct {
 //	│         → sufficiencyCheck → multiQueriesGen → recurse│
 //	│   NO  → Standard vector retrieval                     │
 //	│         vector/hybrid search → rerank →               │
-//	│         TOC enhance → child chunk retrieval →         │
+//	│         child chunk retrieval →                       │
 //	│         Web search → KG retrieval (prepend)           │
 //	│                                                       │
 //	│    enrichChunksWithMetadata (doc metadata)            │
@@ -152,12 +218,11 @@ type AsyncChatResult struct {
 //
 // Parameters:
 //   - chat: the chat/chat entity with KBs, prompt_config, etc.
-//   - messages: pre-filtered user/assistant messages (system already stripped).
+//   - messages: saved user/assistant history, or the full payload for non-storing model tests.
 //   - stream: if true, yields content deltas as they arrive.
 //   - kwargs: extra parameters (doc_ids, knowledge, quote, etc.).
 func (s *ChatPipelineService) AsyncChat(
 	ctx context.Context,
-	userID string,
 	chat *entity.Chat,
 	messages []map[string]interface{},
 	stream bool,
@@ -172,12 +237,19 @@ func (s *ChatPipelineService) AsyncChat(
 	if len(messages) == 0 {
 		return nil, fmt.Errorf("AsyncChat: messages is empty")
 	}
+	if err := validateUserMessageContent(messages); err != nil {
+		return nil, common.NewCodedError(common.CodeArgumentError, err.Error())
+	}
 	lastMsg := messages[len(messages)-1]
 	if role, _ := lastMsg["role"].(string); role != "user" {
 		return nil, fmt.Errorf("the last content of this conversation is not from user")
 	}
+	if err := validateChatDatasetAccess(ctx, chat.KBIDs); err != nil {
+		return nil, err
+	}
 
-	// No KBs & no web search → fast-path to LLM-only chat.
+	// Resolve what this conversation can reach BEFORE dispatching: whether it
+	// has knowledge bases, and whether web search is enabled.
 	hasKBs := false
 	for _, raw := range chat.KBIDs {
 		if id, ok := raw.(string); ok && id != "" {
@@ -194,8 +266,42 @@ func (s *ChatPipelineService) AsyncChat(
 			zap.Bool("enabled", useWebSearch))
 	}
 
+	// The smart-reasoning agent runs its own retrieval through its corpus
+	// tools, so the pipeline's search and generation phases do not apply. Two
+	// things select it: an explicit agent_mode kwarg, and reasoning level
+	// reasoningLevelAgentic. Reading a nil kwargs map is safe (the zero value
+	// is "").
+	//
+	// The level is resolved from the request first and the dialog's
+	// prompt_config second, exactly as Phase 9 resolves it; a dialog pinned to
+	// the agentic mode therefore keeps that mode when the request omits the
+	// level, and the check stays ahead of the solo-chat short-circuit below so
+	// a level-selected turn is never diverted to a plain LLM answer.
+	//
+	// A dialog with no knowledge bases is NOT agentic-eligible. The agent
+	// resolves a citation with an explicit kb_id scope, and an empty scope
+	// drops that term from the ES query (buildBoolQueryFromCondition), which
+	// would let a cited chunk resolve out of any KB in the tenant. Falling
+	// through keeps an empty scope unreachable instead of trusting every
+	// citation path to defend itself; grep_chunks already refuses an empty
+	// scope, and this keeps fetchChunksByIDs from disagreeing with it.
+	_, agenticSelected := kwargs["agent_mode"].(string)
+	if !agenticSelected {
+		agenticSelected = resolveReasoningLevel(kwargs, map[string]interface{}(chat.PromptConfig)) == reasoningLevelAgentic
+	}
+	if agenticSelected && hasKBs {
+		if useWebSearch {
+			ctx = agentic_rag.WithWebSearch(ctx, s.webSearchFunc(chat.PromptConfig))
+		}
+		return s.agenticRag(ctx, chat, messages, stream, kwargs, quoteEnabled(kwargs, chat.PromptConfig))
+	}
+
+	// No KBs & no web search → fast-path to LLM-only chat.
 	if !hasKBs && !useWebSearch {
-		return s.AsyncChatSolo(ctx, userID, chat, messages, stream, kwargs)
+		return s.AsyncChatSolo(ctx, chat, messages, stream, kwargs)
+	}
+	if kwargs == nil {
+		kwargs = make(map[string]interface{})
 	}
 
 	// Spawn goroutine for the async pipeline. All remaining phases run inside.
@@ -207,15 +313,27 @@ func (s *ChatPipelineService) AsyncChat(
 		timer := common.NewTimer()
 		timer.Start()
 
+		sendResult := func(res AsyncChatResult) bool {
+			if ctx.Err() != nil {
+				return false
+			}
+			select {
+			case out <- res:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		}
+
 		// === Phase 2: Resolve LLM Model Config + max_tokens ===
 		common.Info("Phase 2: Resolve LLM Model Config + max_tokens")
 		timer.Enter(common.PhaseCheckLLM)
 		llmModelConfig, _, _, _, err := s.getLLMModelConfig(ctx, chat)
 		if err != nil {
-			out <- AsyncChatResult{
+			sendResult(AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
 				Final:  true,
-			}
+			})
 			return
 		}
 		modelMaxTokens := 8192
@@ -253,10 +371,10 @@ func (s *ChatPipelineService) AsyncChat(
 		timer.Enter(common.PhaseBindModels)
 		kbs, embModel, rerankModel, chatModel, ttsModel, err := s.getModels(ctx, chat)
 		if err != nil {
-			out <- AsyncChatResult{
+			sendResult(AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
 				Final:  true,
-			}
+			})
 			return
 		}
 
@@ -275,11 +393,11 @@ func (s *ChatPipelineService) AsyncChat(
 
 		// === Phase 5: Extract Questions, doc_ids, Attachments ===
 		common.Info("Phase 5: Extract questions, doc_ids, attachments")
-		// Retrieve the last 3 user questions.
+		// Entry validation guarantees the final user content normalizes to a question.
 		var questions []string
 		for _, m := range messages {
 			if role, _ := m["role"].(string); role == "user" {
-				if content, ok := m["content"].(string); ok {
+				if content, err := NormalizeOpenAIMessageContent(m["content"]); err == nil {
 					questions = append(questions, content)
 				}
 			}
@@ -331,7 +449,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// Whether the message carried image attachments before the
 		// vision gate (read by the empty-response fallback below).
 		var hasImageAttachments bool
-		// Joined text attachments (appended to system prompt).
+		// Joined text attachments (appended to the last user message).
 		var attachments string
 		// When files are file dicts, splitFileAttachments fetches blobs
 		// from storage. When plain strings, falls back to string splitting;
@@ -344,7 +462,7 @@ func (s *ChatPipelineService) AsyncChat(
 				}
 			}
 			var images []string
-			textAttachmentsList, images = splitFileAttachments(ctx, userID, files, modelType == "image2text")
+			textAttachmentsList, images = splitFileAttachments(ctx, files, modelType == "image2text")
 			imageFiles, hasImageAttachments = gateImageAttachments(chat.LLMID, modelType, images)
 			attachments = strings.Join(textAttachmentsList, "\n\n")
 			// Log counts only: attachment payloads are base64 images or
@@ -355,9 +473,24 @@ func (s *ChatPipelineService) AsyncChat(
 				zap.Int("attachment_bytes", len(attachments)))
 		}
 
+		var historyImageFiles []string
+		for _, previous := range messages[:len(messages)-1] {
+			if previous["role"] == "user" && previous["files"] != nil {
+				_, images := s.splitChatAttachments(ctx, previous["files"])
+				modelType, _ := llmModelConfig["model_type"].(string)
+				images, _ = gateImageAttachments(chat.LLMID, modelType, images)
+				historyImageFiles = append(historyImageFiles, images...)
+			}
+		}
+		hasImageAttachments = hasImageAttachments || len(historyImageFiles) > 0
+
 		// === Phase 6: SQL Retrieval ===
 		// Retrieve field_map for SQL retrieval (preferred over vector search)
 		promptConfig := chat.PromptConfig
+		// Either the chat setting or the request can disable citations. Resolved
+		// once before any retrieval path can return early. The agentic dispatch
+		// above resolves the same value through quoteEnabled.
+		quote := quoteEnabled(kwargs, promptConfig)
 		fieldMap, fmErr := s.kbDAO.GetFieldMap(ctx, dao.DB, kbIDStrings(kbs))
 		if fmErr != nil {
 			common.Warn("get_field_map failed; proceeding without field_map", zap.Error(fmErr))
@@ -370,11 +503,6 @@ func (s *ChatPipelineService) AsyncChat(
 		if len(fieldMap) > 0 && chatModel != nil && len(kbs) > 0 {
 			common.Info("Phase 6: Use SQL to retrieval")
 			common.Debug("field_map retrieved", zap.Any("field_map", fieldMap))
-			quote := true
-			if v, ok := promptConfig["quote"].(bool); ok {
-				quote = v
-			}
-
 			ans, sqlErr := s.useSQL(
 				ctx, chat, kbs, questions[len(questions)-1], chatModel, fieldMap, quote,
 			)
@@ -416,11 +544,11 @@ func (s *ChatPipelineService) AsyncChat(
 					s.enrichChunksWithMetadata(ctx, kbinfos, chat.TenantID, metadataFields)
 				}
 
-				out <- AsyncChatResult{
+				sendResult(AsyncChatResult{
 					Answer:    ansStr,
 					Reference: ans["reference"].(map[string]interface{}),
 					Final:     true,
-				}
+				})
 				return
 			}
 			common.Info("SQL retrieval: no valid result, falling back to vector search")
@@ -478,6 +606,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// - "knowledge" is always skipped (system-injected, not caller-supplied).
 		// - Missing non-optional param => return error immediately.
 		// - Missing optional param => replace "{key}" placeholder with space.
+		kwargs["date"] = time.Now().UTC().Format(time.RFC3339)
 		systemPrompt, _ := promptConfig["system"].(string)
 		for _, p := range parameters {
 			pMap, ok := p.(map[string]interface{})
@@ -492,10 +621,10 @@ func (s *ChatPipelineService) AsyncChat(
 				optional, _ := pMap["optional"].(bool)
 				if !optional {
 					// Required parameter missing => fail fast
-					out <- AsyncChatResult{
+					sendResult(AsyncChatResult{
 						Answer: fmt.Sprintf("**ERROR**: Miss parameter: %s", key),
 						Final:  true,
-					}
+					})
 					return
 				}
 				// Optional parameter missing => erase placeholder from system prompt
@@ -556,41 +685,14 @@ func (s *ChatPipelineService) AsyncChat(
 		// meta_data_filter — use LLM to map the question to metadata
 		// criteria, then filter docIDs to matching
 		// documents only.
-		if chat.MetaDataFilter != nil && len(*chat.MetaDataFilter) > 0 && len(kbs) > 0 {
-			kbIDs := kbIDStrings(kbs)
-			if metaQ := questions[len(questions)-1]; metaQ != "" {
-				var flattedMeta common.MetaData
-				var mErr error
-				if s.MetadataSvc != nil {
-					flattedMeta, mErr = s.MetadataSvc.GetFlattedMetaByKBs(ctx, kbIDs)
-				}
-				if mErr == nil {
-					if filtered, _ := ApplyMetaDataFilter(
-						ctx,
-						*chat.MetaDataFilter,
-						flattedMeta,
-						metaQ,
-						chatModel,
-						docIDs,
-						kbIDs,
-					); filtered != nil {
-						common.Debug("meta_data_filter applied",
-							zap.Int("filtered_count", len(filtered)),
-							zap.Int("pre_filter_count", len(docIDs)))
-						docIDs = filtered
-					}
-				} else {
-					common.Warn("loadMetaData failed; skipping meta_data_filter", zap.Error(mErr))
-				}
-			}
-		}
+		docIDs = s.chatMetadataDocIDs(ctx, chat, questions[len(questions)-1], chatModel, docIDs, kbIDStrings(kbs))
 
 		// keyword — extract top-N keywords from the question via LLM and
 		// append them to the question text to boost lexical retrieval recall.
 		if useKW, _ := chat.PromptConfig["keyword"].(bool); useKW && chatModel != nil && len(questions) > 0 {
 			if kw, err := KeywordExtraction(ctx, chatModel, questions[len(questions)-1], 3); err == nil && kw != "" {
 				original := questions[len(questions)-1]
-				questions[len(questions)-1] = questions[len(questions)-1] + "," + kw
+				questions[len(questions)-1] = AppendKeywords(original, kw)
 				common.Debug("keyword extraction applied",
 					zap.String("original_question", original),
 					zap.String("augmented_question", questions[len(questions)-1]))
@@ -601,12 +703,13 @@ func (s *ChatPipelineService) AsyncChat(
 		timer.Exit(common.PhaseQueryRefinement)
 
 		// === Phase 9: Retrieval ===
-		promptReasoning, _ := chat.PromptConfig["reasoning"].(bool)
-		kwargReasoning, _ := kwargs["reasoning"].(bool)
-		useReasoning := promptReasoning || kwargReasoning
+		// The retrieval strategy was chosen before this goroutine started:
+		// AsyncChat hands reasoning level reasoningLevelAgentic to the
+		// smart-reasoning agent, which runs its own retrieval and never returns
+		// here. Every other level — including a stale 1..4 sent by an older
+		// client — retrieves through the standard path below.
 		common.Info("Phase 9: Retrieval",
-			zap.Bool("has_knowledge_param", hasKnowledgeParam),
-			zap.Bool("reasoning", useReasoning))
+			zap.Bool("has_knowledge_param", hasKnowledgeParam))
 
 		timer.Enter(common.PhaseRetrieval)
 		var kbinfos map[string]interface{}
@@ -621,193 +724,133 @@ func (s *ChatPipelineService) AsyncChat(
 			rerankCandidatesCount = 64
 		}
 
-		// When hasKnowledgeParam is true, runs (mutually exclusive):
-		//   a) If reasoning is enabled: DeepResearcher replaces vector retrieval.
-		//   b) Otherwise: standard retrieval, then:
-		//      - TOC enhancement (if toc_enhance is enabled).
-		//      - Child chunk retrieval.
-		//      - Web search provider (if internet is enabled).
-		//      - Knowledge graph retrieval (if use_kg is enabled).
+		// When hasKnowledgeParam is true, runs standard retrieval, then:
+		//   - Child chunk retrieval.
+		//   - Web search provider (if internet is enabled).
+		//   - Knowledge graph retrieval (if use_kg is enabled).
 		// Populates kbinfos (chunks + doc_aggs) and knowledges.
 		// When false, the entire block is skipped.
 		if hasKnowledgeParam {
-			if useReasoning && chatModel != nil && len(kbs) > 0 {
-				// DeepResearcher — replaces vector retrieval.
-				// Yields <retrieving> / </retrieving> markers + intermediate messages.
-				docEngine := engine.Get()
-				if docEngine != nil {
-					retSvc := nlp.NewRetrievalService(docEngine, dao.NewDocumentDAO())
-					tenantIDs := kbTenantIDStrings(kbs)
-					kbIDs := kbIDStrings(kbs)
-
-					// KB retrieval callback for the deep researcher
-					kbRetrieve := func(ctx context.Context, q string) (*nlp.RetrievalResult, error) {
-						return retSvc.Retrieval(ctx, &nlp.RetrievalRequest{
-							Question:              q,
-							TenantIDs:             tenantIDs,
-							KbIDs:                 kbIDs,
-							DocIDs:                docIDs,
-							Page:                  1,
-							PageSize:              int(chat.TopN),
-							RerankCandidatesCount: &rerankCandidatesCount,
-							EmbeddingModel:        embModel,
-						})
+			// Regular RAG mirroring Python's async_chat — native docStore
+			// retrieval, then the child chunk / web search / KG
+			// enhancements below.
+			searchQuestion := strings.Join(questions, " ")
+			if embModel != nil {
+				rankFeature := s.MetadataSvc.LabelQuestion(ctx, searchQuestion, kbs)
+				{
+					tenantIDs := make([]string, 0)
+					kbIDs := make([]string, 0)
+					for _, kb := range kbs {
+						tenantIDs = append(tenantIDs, kb.TenantID)
+						kbIDs = append(kbIDs, kb.ID)
 					}
 
-					dr := NewDeepResearcher(
-						chatModel,
-						map[string]interface{}(chat.PromptConfig),
-						kbRetrieve,
-						useWebSearch,
-						docEngine,
-						kbIDs,
-						tenantIDs,
-						embModel,
-					)
-					question := strings.Join(questions, " ")
+					docEngine := engine.Get()
+					documentDAO := dao.NewDocumentDAO()
+					retrievalSvc := nlp.NewRetrievalService(docEngine, documentDAO)
 
-					drErr := dr.Research(ctx, kbinfos, question, question, s.deepResearchProgressCallback(ctx, out))
-					if drErr != nil {
-						common.Warn("DeepResearcher failed", zap.Error(drErr))
+					top := int(chat.TopK)
+					threshold := chat.SimilarityThreshold
+					vsw := chat.VectorSimilarityWeight
+					topN := int(chat.TopN)
+
+					req := &nlp.RetrievalRequest{
+						Question:               searchQuestion,
+						TenantIDs:              tenantIDs,
+						KbIDs:                  kbIDs,
+						DocIDs:                 docIDs,
+						Page:                   1,
+						PageSize:               topN,
+						RerankCandidatesCount:  &rerankCandidatesCount,
+						KNNTopK:                &top,
+						SimilarityThreshold:    &threshold,
+						VectorSimilarityWeight: &vsw,
+						RankFeature:            &rankFeature,
+						RerankModel:            rerankModel,
+						EmbeddingModel:         embModel,
+						Aggs:                   func() *bool { v := true; return &v }(),
+						Language:               entity.KnowledgebasesLanguage(kbs),
+					}
+
+					result, retErr := retrievalSvc.Retrieval(ctx, req)
+					if retErr != nil {
+						kbinfos = map[string]interface{}{
+							"total":    0,
+							"chunks":   []map[string]interface{}{},
+							"doc_aggs": []interface{}{},
+						}
+						err = retErr
 					} else {
-						// kbinfos now contains real chunks with proper
-						// chunk_ids from the recursive tree search.
-						common.Debug("DeepResearcher completed",
-							zap.Int("chunks", len(kbinfos["chunks"].([]map[string]interface{}))))
-					}
-				}
-			} else {
-				searchQuestion := strings.Join(questions, " ")
-				if embModel != nil {
-					// Retrieval
-					rankFeature := s.MetadataSvc.LabelQuestion(ctx, searchQuestion, kbs)
-					{
-						tenantIDs := make([]string, 0)
-						kbIDs := make([]string, 0)
-						for _, kb := range kbs {
-							tenantIDs = append(tenantIDs, kb.TenantID)
-							kbIDs = append(kbIDs, kb.ID)
+						docAggs := make([]interface{}, len(result.DocAggs))
+						for i, da := range result.DocAggs {
+							docAggs[i] = da
 						}
 
-						docEngine := engine.Get()
-						documentDAO := dao.NewDocumentDAO()
-						retrievalSvc := nlp.NewRetrievalService(docEngine, documentDAO)
-
-						top := int(chat.TopK)
-						threshold := chat.SimilarityThreshold
-						vsw := chat.VectorSimilarityWeight
-						topN := int(chat.TopN)
-
-						req := &nlp.RetrievalRequest{
-							Question:               searchQuestion,
-							TenantIDs:              tenantIDs,
-							KbIDs:                  kbIDs,
-							DocIDs:                 docIDs,
-							Page:                   1,
-							PageSize:               topN,
-							RerankCandidatesCount:  &rerankCandidatesCount,
-							KNNTopK:                &top,
-							SimilarityThreshold:    &threshold,
-							VectorSimilarityWeight: &vsw,
-							RankFeature:            &rankFeature,
-							RerankModel:            rerankModel,
-							EmbeddingModel:         embModel,
-							Aggs:                   func() *bool { v := true; return &v }(),
-						}
-
-						result, retErr := retrievalSvc.Retrieval(ctx, req)
-						if retErr != nil {
-							kbinfos = map[string]interface{}{
-								"total":    0,
-								"chunks":   []map[string]interface{}{},
-								"doc_aggs": []interface{}{},
-							}
-							err = retErr
-						} else {
-							docAggs := make([]interface{}, len(result.DocAggs))
-							for i, da := range result.DocAggs {
-								docAggs[i] = da
-							}
-
-							kbinfos = map[string]interface{}{
-								"total":    len(result.Chunks),
-								"chunks":   result.Chunks,
-								"doc_aggs": docAggs,
-							}
-						}
-					}
-					if err != nil {
-						common.Warn("Retrieval failed", zap.Error(err))
-						// Continue with empty kbinfos.
-					}
-
-					// TOC enhancement
-					if useTOC, _ := chat.PromptConfig["toc_enhance"].(bool); useTOC && chatModel != nil && len(kbs) > 0 {
-						enhancer := NewTOCEnhancer(
-							engine.Get(),
-							chatModel,
-							kbTenantIDStrings(kbs),
-							kbIDStrings(kbs),
-							searchQuestion,
-							int(chat.TopN),
-						)
-						if added, err := enhancer.Enhance(ctx, kbinfos); err != nil {
-							common.Warn("TOC enhance failed", zap.Error(err))
-						} else if added > 0 {
-							common.Debug("TOC enhance added chunks", zap.Int("added", added))
+						kbinfos = map[string]interface{}{
+							"total":    len(result.Chunks),
+							"chunks":   result.Chunks,
+							"doc_aggs": docAggs,
 						}
 					}
 				}
-
-				// Child chunk retrieval
-				if existingChunks, ok := kbinfos["chunks"].([]map[string]interface{}); ok && len(existingChunks) > 0 {
-					kbinfos["chunks"] = nlp.RetrievalByChildren(existingChunks, kbTenantIDStrings(kbs), engine.Get(), ctx)
+				if err != nil {
+					common.Warn("Retrieval failed", zap.Error(err))
+					sendResult(AsyncChatResult{
+						Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
+						Final:  true,
+					})
+					return
 				}
+			}
 
-				// Web search
-				if s.shouldUseWebSearch(chat, kwargs["internet"]) {
-					provider := resolveWebSearchProvider(chat.PromptConfig)
-					webResult, webErr := s.retrieveWebSearch(ctx, provider, searchQuestion)
-					if webErr != nil {
-						common.Warn("Web search failed", zap.Error(webErr))
-					} else {
-						// Extend chunks and doc_aggs with web search results.
-						if existingChunks, ok := kbinfos["chunks"].([]map[string]interface{}); ok {
-							if newChunks, ok := webResult["chunks"].([]map[string]interface{}); ok {
-								kbinfos["chunks"] = append(existingChunks, newChunks...)
-							}
+			// Child chunk retrieval
+			if existingChunks, ok := kbinfos["chunks"].([]map[string]interface{}); ok && len(existingChunks) > 0 {
+				kbinfos["chunks"] = nlp.RetrievalByChildren(existingChunks, kbTenantIDStrings(kbs), engine.Get(), ctx)
+			}
+
+			// Web search
+			if s.shouldUseWebSearch(chat, kwargs["internet"]) {
+				provider := resolveWebSearchProvider(chat.PromptConfig)
+				webResult, webErr := s.retrieveWebSearch(ctx, provider, searchQuestion)
+				if webErr != nil {
+					common.Warn("Web search failed", zap.Error(webErr))
+				} else {
+					// Extend chunks and doc_aggs with web search results.
+					if existingChunks, ok := kbinfos["chunks"].([]map[string]interface{}); ok {
+						if newChunks, ok := webResult["chunks"].([]map[string]interface{}); ok {
+							kbinfos["chunks"] = append(existingChunks, newChunks...)
 						}
-						if existingAggs, ok := kbinfos["doc_aggs"].([]interface{}); ok {
-							if newAggs, ok := webResult["doc_aggs"].([]interface{}); ok {
-								kbinfos["doc_aggs"] = append(existingAggs, newAggs...)
-							}
+					}
+					if existingAggs, ok := kbinfos["doc_aggs"].([]interface{}); ok {
+						if newAggs, ok := webResult["doc_aggs"].([]interface{}); ok {
+							kbinfos["doc_aggs"] = append(existingAggs, newAggs...)
 						}
 					}
 				}
+			}
 
-				// Knowledge Graph retrieval
-				if useKG, _ := chat.PromptConfig["use_kg"].(bool); useKG && chatModel != nil && len(kbs) > 0 {
-					kgIDs := kbIDStrings(kbs)
-					if len(kgIDs) > 0 {
-						kgPipeline := graph.NewPipeline(engine.Get(), kgIDs, kbTenantIDStrings(kbs), searchQuestion)
-						kgPipeline.SetChatModel(chatModel)
-						if embModel != nil {
-							kgPipeline.SetEmbModel(embModel)
-						}
-						kgChunk, kgErr := kgPipeline.Retrieval(ctx)
-						if kgErr != nil {
-							common.Warn("KG retrieval failed; falling through to vector-only",
-								zap.Error(kgErr))
-						} else if kgChunk != nil {
-							if _, hasContent := kgChunk["content_with_weight"]; hasContent {
-								if existingChunks, ok := kbinfos["chunks"].([]map[string]interface{}); ok {
-									newChunks := make([]map[string]interface{}, 0, len(existingChunks)+1)
-									newChunks = append(newChunks, kgChunk)
-									newChunks = append(newChunks, existingChunks...)
-									kbinfos["chunks"] = newChunks
-									common.Debug("KG chunk prepended",
-										zap.Int("total_chunks", len(newChunks)))
-								}
+			// Knowledge Graph retrieval
+			if useKG, _ := chat.PromptConfig["use_kg"].(bool); useKG && chatModel != nil && len(kbs) > 0 {
+				kgIDs := kbIDStrings(kbs)
+				if len(kgIDs) > 0 {
+					kgPipeline := graph.NewPipeline(engine.Get(), kgIDs, kbTenantIDStrings(kbs), searchQuestion)
+					kgPipeline.SetChatModel(chatModel)
+					if embModel != nil {
+						kgPipeline.SetEmbModel(embModel)
+					}
+					kgChunk, kgErr := kgPipeline.Retrieval(ctx)
+					if kgErr != nil {
+						common.Warn("KG retrieval failed; falling through to vector-only",
+							zap.Error(kgErr))
+					} else if kgChunk != nil {
+						if _, hasContent := kgChunk["content_with_weight"]; hasContent {
+							if existingChunks, ok := kbinfos["chunks"].([]map[string]interface{}); ok {
+								newChunks := make([]map[string]interface{}, 0, len(existingChunks)+1)
+								newChunks = append(newChunks, kgChunk)
+								newChunks = append(newChunks, existingChunks...)
+								kbinfos["chunks"] = newChunks
+								common.Debug("KG chunk prepended",
+									zap.Int("total_chunks", len(newChunks)))
 							}
 						}
 					}
@@ -826,6 +869,15 @@ func (s *ChatPipelineService) AsyncChat(
 		// Sub-steps: empty_response check → formatPrompt → citationPrompt →
 		// messageFitIn (95% token budget) → multimodal conversion → adjust max_tokens.
 		// If no knowledges and empty_response is configured, yield it and return.
+		// Compiled-serve: swap/extend the retrieved chunk text with knowledge-compiled
+		// products when enabled. Mirrors the agentic locate exit for the standard
+		// (reasoning level 1-4) retrieval path. No-op when inactive or no products
+		// were found for the recalled chunks.
+		if rawChunks, ok := kbinfos["chunks"].([]map[string]interface{}); ok && len(rawChunks) > 0 {
+			if served := agentic_rag.CompiledServeChunks(ctx, chat.TenantID, rawChunks, kbIDStrings(kbs)); served != nil {
+				kbinfos["chunks"] = served
+			}
+		}
 		knowledges = s.kbPrompt(kbinfos, modelMaxTokens)
 		common.Info("Phase 10: Build LLM Request")
 		common.Debug("Knowledge prompt",
@@ -844,7 +896,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// must reach a vision model instead of being swallowed by the
 		// canned response. In that case we skip the early return and fall
 		// through to the normal LLM call where attachments are appended to
-		// the system prompt.
+		// the last user message.
 		//
 		// Two results are yielded (mirroring Python dialog_service.py):
 		//   1. Final=false — carries the answer text so streaming consumers
@@ -856,17 +908,23 @@ func (s *ChatPipelineService) AsyncChat(
 		//      otherwise see an empty reply.
 		if emptyResponseApplies(len(knowledges), attachments, hasImageAttachments) {
 			if emptyResp, ok := promptConfig["empty_response"].(string); ok && emptyResp != "" {
-				out <- AsyncChatResult{
+				finalReference := kbinfos
+				if !quote {
+					finalReference = map[string]interface{}{}
+				}
+				if !sendResult(AsyncChatResult{
 					Answer:    emptyResp,
 					Reference: map[string]interface{}{},
+				}) {
+					return
 				}
-				out <- AsyncChatResult{
+				sendResult(AsyncChatResult{
 					Answer:      emptyResp,
-					Reference:   kbinfos,
+					Reference:   finalReference,
 					AudioBinary: s.synthesizeTTS(ctx, ttsModel, emptyResp),
 					Prompt:      fmt.Sprintf("\n\n### Query:\n%s", strings.Join(questions, " ")),
 					Final:       true,
-				}
+				})
 				return
 			}
 		}
@@ -880,7 +938,7 @@ func (s *ChatPipelineService) AsyncChat(
 		}
 		systemPrompt = ""
 		if sp, ok := promptConfig["system"].(string); ok {
-			systemPrompt = s.formatPrompt(sp, kwargs) + attachments
+			systemPrompt = s.formatPrompt(sp, kwargs)
 			// If knowledge was retrieved but the template has no {knowledge}
 			// placeholder, auto-append it so the LLM still sees the context.
 			if len(knowledges) > 0 && !strings.Contains(sp, "{knowledge}") {
@@ -890,27 +948,29 @@ func (s *ChatPipelineService) AsyncChat(
 			}
 		}
 		if systemPrompt != "" {
+			// Python logs characters; a Chinese prompt is ~3x longer in bytes, so
+			// report both to keep the two comparable.
 			common.Info("System prompt built",
-				zap.Int("length", len(systemPrompt)))
+				zap.Int("length", len(systemPrompt)),
+				zap.Int("runes", utf8.RuneCountInString(systemPrompt)),
+				zap.Int("knowledgeRunes", utf8.RuneCountInString(knowledge)))
 		}
 
 		// Build citation prompt if quoting is enabled.
 		prompt4citation := ""
-		quote := true
-		if v, ok := kwargs["quote"].(bool); ok {
-			quote = v
-		}
-		if promptConfigQuote, ok := promptConfig["quote"].(bool); ok {
-			quote = quote && promptConfigQuote
-		}
 		if len(knowledges) > 0 && quote {
-			prompt4citation = citationPrompt()
+			// Python's citation_prompt() (generator.py:226) renders
+			// citation_prompt.md — the full rules with examples, which the agent
+			// path already reads from the same embedded copy. The standard path
+			// used a ~380-char paraphrase of it.
+			prompt4citation = ragprompts.CitationPrompt("")
 		}
 
 		if prompt4citation != "" {
 			common.Info("Citation prompt built",
 				zap.Bool("quote", quote),
-				zap.Int("length", len(prompt4citation)))
+				zap.Int("length", len(prompt4citation)),
+				zap.Int("runes", utf8.RuneCountInString(prompt4citation)))
 		}
 
 		// Build the message list: system + cleaned user/assistant messages.
@@ -928,12 +988,16 @@ func (s *ChatPipelineService) AsyncChat(
 		if factoryName == "" {
 			factoryName = factoryFromLLMID(chat.LLMID)
 		}
-		for _, m := range messages {
+		modelType, _ := llmModelConfig["model_type"].(string)
+		for i, m := range messages {
 			role, _ := m["role"].(string)
-			if role == "system" {
+			if role == "system" && kwargs["store_history_messages"] != false {
 				continue
 			}
 			llmMessage := normalizeLLMMessage(m)
+			if i < len(messages)-1 {
+				llmMessage["files"] = m["files"]
+			}
 			content := llmMessage["content"]
 			if contentStr, ok := content.(string); ok {
 				content = cleanCitationMarkers(contentStr)
@@ -941,9 +1005,17 @@ func (s *ChatPipelineService) AsyncChat(
 			llmMessage["content"] = content
 			llmMessages = append(llmMessages, llmMessage)
 		}
+		if attachments != "" && len(llmMessages) > 0 {
+			if lastContent, ok := llmMessages[len(llmMessages)-1]["content"].(string); ok {
+				llmMessages[len(llmMessages)-1]["content"] = lastContent + attachments
+			}
+		}
 
 		// Fit messages within token budget.
 		usedTokenCount, llmMessages := s.messageFitIn(llmMessages, int(float64(modelMaxTokens)*0.95))
+		for i := range llmMessages[:len(llmMessages)-1] {
+			llmMessages[i] = s.chatHistoryMessage(ctx, llmMessages[i], modelType, factoryName)
+		}
 		common.Debug("Messages fitted in token budget",
 			zap.Int("model max_tokens", modelMaxTokens),
 			zap.Int("used_token_count", usedTokenCount),
@@ -973,19 +1045,33 @@ func (s *ChatPipelineService) AsyncChat(
 		}
 
 		if len(llmMessages) < 2 {
-			out <- AsyncChatResult{
+			sendResult(AsyncChatResult{
 				Answer: "**ERROR**: message_fit_in has bug",
 				Final:  true,
-			}
+			})
 			return
 		}
 
 		chatCfg := BuildChatConfig(chat, kwargs)
-		if adjusted, ok, err := clampChatConfigMaxTokens(chatCfg, modelMaxTokens, usedTokenCount); err != nil {
-			out <- AsyncChatResult{
+		// The citation template joins the prompt only when the request is issued
+		// (prompt+prompt4citation, below), which is after messageFitIn sized the
+		// window — so its tokens are added here by hand. They are deliberately NOT
+		// folded into messageFitIn: the reference implementation trims on the same
+		// budget (dialog_service async_chat: message_fit_in(msg, max_tokens*0.95),
+		// then prompt + prompt4citation), and moving the trim boundary would change
+		// which messages get cut. The completion clamp is where the omission bites:
+		// it derives the completion budget from the room the prompt leaves, so
+		// leaving ~2k tokens of citation instructions out of that sum can hand the
+		// provider a prompt plus completion that overruns the context window.
+		citationTokens := 0
+		if prompt4citation != "" {
+			citationTokens = graph.NumTokensFromString(prompt4citation)
+		}
+		if adjusted, ok, err := clampChatConfigMaxTokens(chatCfg, modelMaxTokens, usedTokenCount+citationTokens); err != nil {
+			sendResult(AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
 				Final:  true,
-			}
+			})
 			return
 		} else if ok {
 			common.Debug("Adjusted max_tokens", zap.Int("max_tokens in chat", adjusted))
@@ -1001,10 +1087,10 @@ func (s *ChatPipelineService) AsyncChat(
 		timer.Enter(common.PhaseGenerateAnswer)
 		chatDriver := s.buildChatDriver(ctx, chat, chatModel)
 		if chatDriver == nil {
-			out <- AsyncChatResult{
+			sendResult(AsyncChatResult{
 				Answer: "**ERROR**: No chat model available for this chat.",
 				Final:  true,
-			}
+			})
 			return
 		}
 		chatMessages := s.buildChatMessages(prompt+prompt4citation, llmMessages[1:])
@@ -1050,6 +1136,38 @@ func (s *ChatPipelineService) AsyncChat(
 			// Streaming path: accumulate answer, emit deltas.
 			var fullAnswer string
 			thinkState := &ThinkStreamState{}
+			var answerFilter, reasoningFilter citationStreamFilter
+			emit := func(result AsyncChatResult) bool {
+				if !result.Final && result.Answer != "" {
+					result.AudioBinary = s.synthesizeTTS(ctx, ttsModel, result.Answer)
+				}
+				return sendResult(result)
+			}
+			send := func(result AsyncChatResult) bool {
+				if !quote {
+					// Flush before a boundary so buffered text stays in its section.
+					if result.StartToThink || result.EndToThink || result.Final {
+						if text := reasoningFilter.flush(); text != "" {
+							if !emit(AsyncChatResult{Reasoning: text, Reference: map[string]interface{}{}, CreatedAt: float64(time.Now().Unix())}) {
+								return false
+							}
+						}
+						if text := answerFilter.flush(); text != "" {
+							if !emit(AsyncChatResult{Answer: text, Reference: map[string]interface{}{}, CreatedAt: float64(time.Now().Unix())}) {
+								return false
+							}
+						}
+					}
+					if !result.Final && (result.Answer != "" || result.Reasoning != "") {
+						result.Answer = answerFilter.write(result.Answer)
+						result.Reasoning = reasoningFilter.write(result.Reasoning)
+						if result.Answer == "" && result.Reasoning == "" {
+							return true
+						}
+					}
+				}
+				return emit(result)
+			}
 
 			// Tool routing: use tool-loop method when tools are bound.
 			var driverErr error
@@ -1068,25 +1186,29 @@ func (s *ChatPipelineService) AsyncChat(
 
 						if text == "<think>" {
 							inThink = true
-							out <- AsyncChatResult{
+							if !send(AsyncChatResult{
 								Answer:       "",
 								Reference:    map[string]interface{}{},
 								AudioBinary:  nil,
 								CreatedAt:    float64(time.Now().Unix()),
 								Final:        false,
 								StartToThink: true,
+							}) {
+								return ctx.Err()
 							}
 							return nil
 						}
 						if text == "</think>" {
 							inThink = false
-							out <- AsyncChatResult{
+							if !send(AsyncChatResult{
 								Answer:      "",
 								Reference:   map[string]interface{}{},
 								AudioBinary: nil,
 								CreatedAt:   float64(time.Now().Unix()),
 								Final:       false,
 								EndToThink:  true,
+							}) {
+								return ctx.Err()
 							}
 							return nil
 						}
@@ -1094,50 +1216,56 @@ func (s *ChatPipelineService) AsyncChat(
 							// Reasoning text — route to Reasoning field so
 							// the SSE handler maps it to
 							// `delta.reasoning_content`.
-							out <- AsyncChatResult{
+							if !send(AsyncChatResult{
 								Reasoning:   text,
 								Reference:   map[string]interface{}{},
 								AudioBinary: nil,
 								CreatedAt:   float64(time.Now().Unix()),
 								Final:       false,
+							}) {
+								return ctx.Err()
 							}
 						} else {
 							// Regular answer content
-							out <- AsyncChatResult{
-								Answer:      text,
-								Reference:   map[string]interface{}{},
-								AudioBinary: s.synthesizeTTS(ctx, ttsModel, text),
-								CreatedAt:   float64(time.Now().Unix()),
-								Final:       false,
+							if !send(AsyncChatResult{
+								Answer:    text,
+								Reference: map[string]interface{}{},
+								CreatedAt: float64(time.Now().Unix()),
+								Final:     false,
+							}) {
+								return ctx.Err()
 							}
 						}
 						return nil
 					})
 			} else {
-				driverErr = chatDriver.ModelDriver.ChatStreamlyWithSender(
-					ctx, *chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg, nil,
+				driverErr = chatDriver.ChatStreamlyWithSender(
+					ctx, chatMessages, chatCfg, nil,
 					func(answer *string, reason *string) error {
 						if reason != nil && *reason != "" {
 							if thinkState.EnterReasoning() {
-								out <- AsyncChatResult{
+								if !send(AsyncChatResult{
 									Answer:       "",
 									Reference:    map[string]interface{}{},
 									AudioBinary:  nil,
 									CreatedAt:    float64(time.Now().Unix()),
 									Final:        false,
 									StartToThink: true,
+								}) {
+									return ctx.Err()
 								}
 							}
 							deltas := NextThinkDelta(thinkState, *reason, 16)
 							for _, d := range deltas {
 								if d.Kind == ThinkDeltaText && d.Value != "" {
 									fullAnswer += d.Value
-									out <- AsyncChatResult{
-										Answer:      d.Value,
-										Reference:   map[string]interface{}{},
-										AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-										CreatedAt:   float64(time.Now().Unix()),
-										Final:       false,
+									if !send(AsyncChatResult{
+										Answer:    d.Value,
+										Reference: map[string]interface{}{},
+										CreatedAt: float64(time.Now().Unix()),
+										Final:     false,
+									}) {
+										return ctx.Err()
 									}
 								}
 							}
@@ -1147,34 +1275,38 @@ func (s *ChatPipelineService) AsyncChat(
 								for _, d := range FlushRemaining(thinkState) {
 									if d.Kind == ThinkDeltaText && d.Value != "" {
 										fullAnswer += d.Value
-										out <- AsyncChatResult{
-											Answer:      d.Value,
-											Reference:   map[string]interface{}{},
-											AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-											CreatedAt:   float64(time.Now().Unix()),
-											Final:       false,
+										if !send(AsyncChatResult{
+											Answer:    d.Value,
+											Reference: map[string]interface{}{},
+											CreatedAt: float64(time.Now().Unix()),
+											Final:     false,
+										}) {
+											return ctx.Err()
 										}
 									}
 								}
-								out <- AsyncChatResult{
+								if !send(AsyncChatResult{
 									Answer:      "",
 									Reference:   map[string]interface{}{},
 									AudioBinary: nil,
 									CreatedAt:   float64(time.Now().Unix()),
 									Final:       false,
 									EndToThink:  true,
+								}) {
+									return ctx.Err()
 								}
 							}
 							fullAnswer += *answer
 							deltas := BufferAnswerDelta(thinkState, *answer, 16)
 							for _, d := range deltas {
 								if d.Kind == ThinkDeltaText && d.Value != "" {
-									out <- AsyncChatResult{
-										Answer:      d.Value,
-										Reference:   map[string]interface{}{},
-										AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-										CreatedAt:   float64(time.Now().Unix()),
-										Final:       false,
+									if !send(AsyncChatResult{
+										Answer:    d.Value,
+										Reference: map[string]interface{}{},
+										CreatedAt: float64(time.Now().Unix()),
+										Final:     false,
+									}) {
+										return ctx.Err()
 									}
 								}
 							}
@@ -1184,10 +1316,17 @@ func (s *ChatPipelineService) AsyncChat(
 				)
 			}
 			if driverErr != nil {
-				out <- AsyncChatResult{
+				if ctx.Err() != nil {
+					return
+				}
+				send(AsyncChatResult{
 					Answer: fmt.Sprintf("**ERROR**: %s", driverErr.Error()),
 					Final:  true,
-				}
+				})
+				return
+			}
+			timer.Exit(common.PhaseGenerateAnswer)
+			if ctx.Err() != nil {
 				return
 			}
 
@@ -1198,21 +1337,24 @@ func (s *ChatPipelineService) AsyncChat(
 			for _, d := range FlushRemaining(thinkState) {
 				if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
 					hadThinkClose = true
-					out <- AsyncChatResult{
+					if !send(AsyncChatResult{
 						Answer:      "",
 						Reference:   map[string]interface{}{},
 						AudioBinary: nil,
 						CreatedAt:   float64(time.Now().Unix()),
 						Final:       false,
 						EndToThink:  true,
+					}) {
+						return
 					}
 				} else if d.Kind == ThinkDeltaText && d.Value != "" {
-					out <- AsyncChatResult{
-						Answer:      d.Value,
-						Reference:   map[string]interface{}{},
-						AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-						CreatedAt:   float64(time.Now().Unix()),
-						Final:       false,
+					if !send(AsyncChatResult{
+						Answer:    d.Value,
+						Reference: map[string]interface{}{},
+						CreatedAt: float64(time.Now().Unix()),
+						Final:     false,
+					}) {
+						return
 					}
 				}
 			}
@@ -1220,13 +1362,15 @@ func (s *ChatPipelineService) AsyncChat(
 			// (e.g. model returned only reasoning chunks with no content delta).
 			// Skip when FlushRemaining already emitted a </think> marker.
 			if !hadThinkClose && thinkState.ExitReasoning() {
-				out <- AsyncChatResult{
+				if !send(AsyncChatResult{
 					Answer:      "",
 					Reference:   map[string]interface{}{},
 					AudioBinary: nil,
 					CreatedAt:   float64(time.Now().Unix()),
 					Final:       false,
 					EndToThink:  true,
+				}) {
+					return
 				}
 			}
 
@@ -1239,8 +1383,7 @@ func (s *ChatPipelineService) AsyncChat(
 			final := s.decorateAnswer(ctx, visibleAnswer, kbinfos, prompt, questions, usedTokenCount, timer, embModel, chat.VectorSimilarityWeight, quote, nil, langfuseTraceID, llmModelConfig, chat.TenantID, kbTenantIDStrings(kbs), len(knowledges) > 0)
 			final.Final = true
 			final.AudioBinary = nil
-			timer.Exit(common.PhaseGenerateAnswer)
-			out <- final
+			send(final)
 		} else {
 			// Non-streaming: get the answer synchronously.
 			var answer string
@@ -1249,21 +1392,20 @@ func (s *ChatPipelineService) AsyncChat(
 			if chatDriver.ToolConfig != nil {
 				answer, _, err = chatDriver.ChatWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg)
 			} else {
-				resp, respErr := chatDriver.ModelDriver.ChatWithMessages(
-					ctx, *chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg, nil,
-				)
+				resp, respErr := chatDriver.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
 				if respErr != nil {
 					err = respErr
 				} else if resp != nil && resp.Answer != nil {
 					answer = *resp.Answer
 				}
 			}
+			timer.Exit(common.PhaseGenerateAnswer)
 
 			if err != nil {
-				out <- AsyncChatResult{
+				sendResult(AsyncChatResult{
 					Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
 					Final:  true,
-				}
+				})
 				return
 			}
 
@@ -1279,13 +1421,29 @@ func (s *ChatPipelineService) AsyncChat(
 			// Synthesize TTS for the full answer (non-stream, one-shot).
 			final := s.decorateAnswer(ctx, answer, kbinfos, prompt, questions, usedTokenCount, timer, embModel, chat.VectorSimilarityWeight, quote, ttsModel, langfuseTraceID, llmModelConfig, chat.TenantID, kbTenantIDStrings(kbs), len(knowledges) > 0)
 			final.Final = true
-			timer.Exit(common.PhaseGenerateAnswer)
-			out <- final
+			sendResult(final)
 		}
 		common.Info("AsyncChat completed", zap.String("chat_id", chat.ID))
 	}()
 
 	return out, nil
+}
+
+func validateUserMessageContent(messages []map[string]interface{}) error {
+	for i, message := range messages {
+		role, _ := message["role"].(string)
+		if role != "user" {
+			continue
+		}
+		content, ok := message["content"]
+		if !ok || content == nil {
+			return fmt.Errorf("messages[%d].content is required for user messages", i)
+		}
+		if _, err := NormalizeOpenAIMessageContent(content); err != nil {
+			return fmt.Errorf("messages[%d].content is invalid: %w", i, err)
+		}
+	}
+	return nil
 }
 
 // deepResearchProgressCallback builds the progress callback handed to
@@ -1318,7 +1476,6 @@ func (s *ChatPipelineService) deepResearchProgressCallback(ctx context.Context, 
 // Equivalent to Python's async_chat_solo() in dialog_service.py:289-337.
 func (s *ChatPipelineService) AsyncChatSolo(
 	ctx context.Context,
-	userID string,
 	chat *entity.Chat,
 	messages []map[string]interface{},
 	stream bool,
@@ -1334,11 +1491,23 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		timer := common.NewTimer()
 		timer.Start()
 
+		sendResult := func(res AsyncChatResult) bool {
+			if ctx.Err() != nil {
+				return false
+			}
+			select {
+			case out <- res:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		}
+
 		// 1. Resolve system prompt.
 		promptConfig := chat.PromptConfig
 		systemPrompt := ""
 		if sp, ok := promptConfig["system"].(string); ok {
-			systemPrompt = sp
+			systemPrompt = strings.ReplaceAll(sp, "{date}", time.Now().UTC().Format(time.RFC3339))
 		}
 
 		// 1b. Resolve LLM model config (needed early for model_type dispatch).
@@ -1368,7 +1537,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		if len(messages) > 0 {
 			if files, hasFiles := messages[len(messages)-1]["files"]; hasFiles {
 				var images []string
-				attachmentsStr, images = s.splitChatAttachments(ctx, userID, files)
+				attachmentsStr, images = s.splitChatAttachments(ctx, files)
 				imageFiles, _ = gateImageAttachments(chat.LLMID, modelType, images)
 				common.Info("AsyncChatSolo: file attachments resolved",
 					zap.Bool("vision_model", isImage2Text),
@@ -1377,12 +1546,15 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			}
 		}
 
-		// 3. Strip citation markers and drop system messages from history.
+		// 3. Strip citation markers; non-storing model tests retain payload system messages.
 		var msg []map[string]interface{}
-		for _, m := range messages {
+		for i, m := range messages {
 			role, _ := m["role"].(string)
-			if role == "system" {
+			if role == "system" && config["store_history_messages"] != false {
 				continue
+			}
+			if i < len(messages)-1 {
+				m = s.chatHistoryMessage(ctx, m, modelType, factoryName)
 			}
 			llmMessage := normalizeLLMMessage(m)
 			content := llmMessage["content"]
@@ -1399,30 +1571,32 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			}
 		}
 
-		// 4. Build the chat model wrapper.
-		driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(ctx, chat.TenantID, chat.LLMID)
+		// 4. Construct the selected chat model through the factory.
+		modelCtx := permission.WithTenantID(ctx, chat.TenantID)
+		var chatModel *modelModule.ChatModel
+		if strings.TrimSpace(chat.LLMID) == "" {
+			chatModel, err = s.ModelFactory.NewDefaultChatModel(modelCtx)
+		} else {
+			chatModel, err = s.ModelFactory.NewChatModel(modelCtx, chat.LLMID)
+		}
 		if err != nil {
-			out <- AsyncChatResult{
+			sendResult(AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
 				Final:  true,
-			}
+			})
 			return
 		}
-		chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
 
 		// 5. Resolve TTS model. Best-effort: warn and proceed without TTS on lookup failure.
-		var ttsModel *modelModule.ChatModel
+		var ttsModel *modelModule.TTSModel
 		if promptConfig != nil {
 			if useTTS, _ := promptConfig["tts"].(bool); useTTS {
-				ttsDriver, ttsName, ttsConfig, _, ttsErr := s.ModelProviderSvc.GetTenantDefaultModelByType(
-					ctx, chat.TenantID, entity.ModelTypeTTS,
-				)
-				if ttsErr != nil {
+				ttsModel, err = s.ModelFactory.NewDefaultTTSModel(modelCtx)
+				if err != nil || ttsModel == nil {
 					common.Warn("AsyncChatSolo: TTS lookup failed; proceeding without TTS",
 						zap.String("tenant_id", chat.TenantID),
-						zap.Error(ttsErr))
-				} else {
-					ttsModel = modelModule.NewChatModel(ttsDriver, &ttsName, ttsConfig)
+						zap.Error(err))
+					ttsModel = nil
 				}
 			}
 		}
@@ -1459,30 +1633,34 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			chatCfg := BuildChatConfig(chat, config)
 			timer.Enter(common.PhaseGenerateAnswer)
 
-			driverErr := chatModel.ModelDriver.ChatStreamlyWithSender(
-				ctx, *chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg, nil,
+			driverErr := chatModel.ChatStreamlyWithSender(
+				ctx, chatMessages, chatCfg, nil,
 				func(answer *string, reason *string) error {
 					if reason != nil && *reason != "" {
 						if thinkState.EnterReasoning() {
-							out <- AsyncChatResult{
+							if !sendResult(AsyncChatResult{
 								Answer:       "",
 								Reference:    map[string]interface{}{},
 								AudioBinary:  nil,
 								CreatedAt:    float64(time.Now().Unix()),
 								Final:        false,
 								StartToThink: true,
+							}) {
+								return ctx.Err()
 							}
 						}
 						deltas := NextThinkDelta(thinkState, *reason, 16)
 						for _, d := range deltas {
 							if d.Kind == ThinkDeltaText && d.Value != "" {
 								fullAnswer += d.Value
-								out <- AsyncChatResult{
+								if !sendResult(AsyncChatResult{
 									Answer:      d.Value,
 									Reference:   map[string]interface{}{},
 									AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
 									CreatedAt:   float64(time.Now().Unix()),
 									Final:       false,
+								}) {
+									return ctx.Err()
 								}
 							}
 						}
@@ -1492,34 +1670,40 @@ func (s *ChatPipelineService) AsyncChatSolo(
 							for _, d := range FlushRemaining(thinkState) {
 								if d.Kind == ThinkDeltaText && d.Value != "" {
 									fullAnswer += d.Value
-									out <- AsyncChatResult{
+									if !sendResult(AsyncChatResult{
 										Answer:      d.Value,
 										Reference:   map[string]interface{}{},
 										AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
 										CreatedAt:   float64(time.Now().Unix()),
 										Final:       false,
+									}) {
+										return ctx.Err()
 									}
 								}
 							}
-							out <- AsyncChatResult{
+							if !sendResult(AsyncChatResult{
 								Answer:      "",
 								Reference:   map[string]interface{}{},
 								AudioBinary: nil,
 								CreatedAt:   float64(time.Now().Unix()),
 								Final:       false,
 								EndToThink:  true,
+							}) {
+								return ctx.Err()
 							}
 						}
 						fullAnswer += *answer
 						deltas := BufferAnswerDelta(thinkState, *answer, 16)
 						for _, d := range deltas {
 							if d.Kind == ThinkDeltaText && d.Value != "" {
-								out <- AsyncChatResult{
+								if !sendResult(AsyncChatResult{
 									Answer:      d.Value,
 									Reference:   map[string]interface{}{},
 									AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
 									CreatedAt:   float64(time.Now().Unix()),
 									Final:       false,
+								}) {
+									return ctx.Err()
 								}
 							}
 						}
@@ -1528,10 +1712,16 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				},
 			)
 			if driverErr != nil {
-				out <- AsyncChatResult{
+				if ctx.Err() != nil {
+					return
+				}
+				sendResult(AsyncChatResult{
 					Answer: fmt.Sprintf("**ERROR**: %s", driverErr.Error()),
 					Final:  true,
-				}
+				})
+				return
+			}
+			if ctx.Err() != nil {
 				return
 			}
 			timer.Exit(common.PhaseGenerateAnswer)
@@ -1539,21 +1729,25 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			for _, d := range FlushRemaining(thinkState) {
 				if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
 					hadThinkClose = true
-					out <- AsyncChatResult{
+					if !sendResult(AsyncChatResult{
 						Answer:      "",
 						Reference:   map[string]interface{}{},
 						AudioBinary: nil,
 						CreatedAt:   float64(time.Now().Unix()),
 						Final:       false,
 						EndToThink:  true,
+					}) {
+						return
 					}
 				} else if d.Kind == ThinkDeltaText && d.Value != "" {
-					out <- AsyncChatResult{
+					if !sendResult(AsyncChatResult{
 						Answer:      d.Value,
 						Reference:   map[string]interface{}{},
 						AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
 						CreatedAt:   float64(time.Now().Unix()),
 						Final:       false,
+					}) {
+						return
 					}
 				}
 			}
@@ -1561,39 +1755,39 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			// (e.g. model returned only reasoning chunks with no content delta).
 			// Skip when FlushRemaining already emitted a </think> marker.
 			if !hadThinkClose && thinkState.ExitReasoning() {
-				out <- AsyncChatResult{
+				if !sendResult(AsyncChatResult{
 					Answer:      "",
 					Reference:   map[string]interface{}{},
 					AudioBinary: nil,
 					CreatedAt:   float64(time.Now().Unix()),
 					Final:       false,
 					EndToThink:  true,
+				}) {
+					return
 				}
 			}
 			finalAnswer := ExtractVisibleAnswer(thinkState.fullText)
 			if finalAnswer == "" {
 				finalAnswer = fullAnswer
 			}
-			out <- AsyncChatResult{
+			sendResult(AsyncChatResult{
 				Answer:      finalAnswer,
 				Reference:   map[string]interface{}{},
 				AudioBinary: nil,
 				CreatedAt:   float64(time.Now().Unix()),
 				Final:       true,
-			}
+			})
 		} else {
 			// Non-streaming: one-shot call.
 			chatCfg := BuildChatConfig(chat, config)
 			timer.Enter(common.PhaseGenerateAnswer)
-			resp, err := chatModel.ModelDriver.ChatWithMessages(
-				ctx, *chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg, nil,
-			)
+			resp, err := chatModel.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
 			timer.Exit(common.PhaseGenerateAnswer)
 			if err != nil {
-				out <- AsyncChatResult{
+				sendResult(AsyncChatResult{
 					Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
 					Final:  true,
-				}
+				})
 				return
 			}
 			answer := ""
@@ -1610,13 +1804,13 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			common.Debug("User: " + userContent + "|Assistant: " + answer)
 
 			// Raw answer with full TTS, no decorate_answer. Caller handles decoration.
-			out <- AsyncChatResult{
+			sendResult(AsyncChatResult{
 				Answer:      answer,
 				Reference:   map[string]interface{}{},
 				AudioBinary: s.synthesizeTTS(ctx, ttsModel, answer),
 				CreatedAt:   float64(time.Now().Unix()),
 				Final:       true,
-			}
+			})
 		}
 	}()
 
@@ -1635,13 +1829,13 @@ func (s *ChatPipelineService) AsyncChatSolo(
 //
 // Downstream ConvertLastUserMsgToMultimodal → parseDataURIOrB64 accepts the
 // returned data URIs directly.
-func (s *ChatPipelineService) splitChatAttachments(ctx context.Context, userID string, files interface{}) (string, []string) {
+func (s *ChatPipelineService) splitChatAttachments(ctx context.Context, files interface{}) (string, []string) {
 	// ── File-dict mode ──
 	if fileDicts, ok := parseFileDicts(files); ok {
 		// Only used for GetFileContents (read-only); nil DocRemover means
 		// this FileService MUST NOT be used for DeleteFiles.
-		fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
-		texts, images, err := fileSvc.GetFileContents(ctx, userID, fileDicts)
+		fileSvc := file.NewFileService(nil)
+		texts, images, err := fileSvc.GetFileContents(ctx, fileDicts)
 		if err != nil {
 			common.Warn("GetFileContents failed in splitChatAttachments",
 				zap.Error(err))
@@ -1791,7 +1985,7 @@ func (s *ChatPipelineService) tavilyRetrieve(ctx context.Context, apiKey, questi
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := tavilyWebSearchHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("tavily: do request: %w", err)
@@ -1861,12 +2055,13 @@ func tokenizeText(text string) string {
 }
 
 // getLLMModelConfig resolves the LLM model configuration for the chat.
-// Mirrors Python's three-branch resolver at dialog_service.py:552-561,
-// extended so the tenant-default branch also probes vision capability:
+// Mirrors Python's three-branch resolver at dialog_service.py:552-561. Chat
+// model resolution always requires the enrolled Chat type; vision capability
+// is determined separately for attachment dispatch:
 //
 //	if chat.llm_id:
-//	    if "image2text" in get_model_type_by_name(...): → IMAGE2TEXT
-//	    else:                                            → CHAT
+//	    if "chat" and "image2text" in get_model_type_by_name(...): → IMAGE2TEXT
+//	    else:                                                       → CHAT
 //	else:                                                → tenant default
 //	    (IMAGE2TEXT when the default model is vision-capable, else CHAT)
 //
@@ -1876,90 +2071,48 @@ func tokenizeText(text string) string {
 // models reject them at the provider (e.g. Zhipu GLM error 1210:
 // messages.content.type only allows 'text').
 func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entity.Chat) (map[string]interface{}, string, string, string, error) {
-	if chat.LLMID == "" {
-		// Branch 3: no explicit LLM → tenant default chat model.
-		cfg, modelName, factoryName, baseURL, err := s.buildLLMModelConfig(
-			s.ModelProviderSvc.GetTenantDefaultModelByType(ctx, chat.TenantID, entity.ModelTypeChat),
-		)
-		if err != nil {
-			return nil, "", "", "", err
-		}
-		// Probe the default model's enrolled types so a vision-capable
-		// default dispatches as image2text (same rule as the explicit-LLM
-		// branches below).
-		if ref, refErr := s.ModelProviderSvc.GetTenantDefaultModelRef(ctx, chat.TenantID, entity.ModelTypeChat); refErr == nil {
-			cfg["model_type"] = s.resolveChatModelType(ctx, chat.TenantID, ref)
-		}
-		return cfg, modelName, factoryName, baseURL, nil
+	ctx = permission.WithTenantID(ctx, chat.TenantID)
+	var info *modelModule.ModelInfo
+	var err error
+	if strings.TrimSpace(chat.LLMID) == "" {
+		info, err = s.ModelFactory.ResolveDefaultInfo(ctx, entity.ModelTypeChat)
+	} else {
+		info, err = s.ModelFactory.ResolveInfo(ctx, entity.ModelTypeChat, chat.LLMID)
 	}
-
-	// Branches 1/2: explicit LLM. Probe model types and pick IMAGE2TEXT
-	// when the LLM is registered as such, otherwise CHAT.
-	modelTypeStr := s.resolveChatModelType(ctx, chat.TenantID, chat.LLMID)
-	modelType := entity.ModelTypeChat
-	if modelTypeStr == "image2text" {
-		modelType = entity.ModelTypeImage2Text
-	}
-	cfg, modelName, factoryName, baseURL, err := s.buildLLMModelConfig(
-		s.ModelProviderSvc.ResolveModelConfig(ctx, chat.TenantID, modelType, chat.LLMID),
-	)
 	if err != nil {
 		return nil, "", "", "", err
 	}
-	cfg["model_type"] = modelTypeStr
+	cfg, modelName, factoryName, baseURL, err := s.buildLLMModelConfig(info)
+	if err != nil {
+		return nil, "", "", "", err
+	}
+	cfg["model_type"] = "chat"
+	if entity.ModelTypeFromStrings(info.ModelTypes).Has(entity.ModelTypeImage2Text) {
+		cfg["model_type"] = "image2text"
+	}
+	cfg["is_tools"] = info.SupportsTools
 	return cfg, modelName, factoryName, baseURL, nil
 }
 
-// resolveChatModelType probes the enrolled model types for llmRef and
-// returns "image2text" when the model is vision-capable (enrolled with an
-// image2text / "vision" type), "chat" otherwise. Probe failures are
-// conservative: they yield "chat", which drops image attachments instead
-// of risking a provider-side rejection.
-func (s *ChatPipelineService) resolveChatModelType(ctx context.Context, tenantID, llmRef string) string {
-	modelTypes, err := s.ModelProviderSvc.ResolveModelType(ctx, tenantID, llmRef)
-	if err != nil {
-		return "chat"
+// buildLLMModelConfig returns only the public metadata needed by RAG's token
+// fitting and attachment dispatch. The persisted legacy max_tokens value is
+// the input/context budget; generated output limits are enforced by ChatModel
+// against ModelInfo.MaxOutput.
+func (s *ChatPipelineService) buildLLMModelConfig(info *modelModule.ModelInfo) (map[string]interface{}, string, string, string, error) {
+	if info == nil {
+		return nil, "", "", "", fmt.Errorf("chat model metadata is unavailable")
 	}
-	for _, mt := range modelTypes {
-		// ModelType is a bitmask: a model enrolled as chat+image2text
-		// reports a combined value, so test membership, not equality.
-		if mt.Has(entity.ModelTypeImage2Text) {
-			return "image2text"
-		}
-	}
-	return "chat"
-}
-
-// buildLLMModelConfig collapses the (driver, modelName, apiConfig,
-// _, err) tuple from a model-provider lookup into the dict-shaped
-// config the rest of async_chat.go consumes. Default "model_type" is
-// "chat"; callers that resolved a different type overwrite the key
-// before returning.
-func (s *ChatPipelineService) buildLLMModelConfig(
-	driver modelModule.ModelDriver,
-	modelName string,
-	apiConfig *modelModule.APIConfig,
-	maxTokens int,
-	err error,
-) (map[string]interface{}, string, string, string, error) {
-	if err != nil {
-		return nil, "", "", "", err
-	}
-	// Match Python: llm.max_tokens if llm.max_tokens else 8192.
-	if maxTokens == 0 {
-		maxTokens = 8192
+	contextLength := info.ContextLength
+	if contextLength <= 0 {
+		contextLength = 8192
 	}
 	cfg := map[string]interface{}{
 		"model_type":  "chat",
-		"llm_name":    modelName,
-		"max_tokens":  maxTokens,
-		"llm_factory": driver.Name(),
+		"llm_name":    info.Name,
+		"max_tokens":  contextLength,
+		"llm_factory": info.ProviderName,
 	}
-	baseURL := ""
-	if apiConfig != nil && apiConfig.BaseURL != nil {
-		baseURL = *apiConfig.BaseURL
-	}
-	return cfg, modelName, driver.Name(), baseURL, nil
+	return cfg, info.Name, info.ProviderName, "", nil
 }
 
 // getModels resolves all models needed for the RAG pipeline.
@@ -1969,7 +2122,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	*modelModule.EmbeddingModel,
 	*modelModule.RerankModel,
 	*modelModule.ChatModel,
-	*modelModule.ChatModel, // TTS model
+	*modelModule.TTSModel, // TTS model
 	error,
 ) {
 	kbDAO := dao.NewKnowledgebaseDAO()
@@ -2000,9 +2153,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 		}
 		if kbs[0].EmbdID != "" {
 			embdTenantID := kbs[0].TenantID
-			driver, modelName, apiConfig, maxTokens, err := s.ModelProviderSvc.ResolveModelConfig(
-				ctx, embdTenantID, entity.ModelTypeEmbedding, kbs[0].EmbdID,
-			)
+			model, err := s.ModelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, embdTenantID), kbs[0].EmbdID)
 			if err != nil {
 				common.Warn("Failed to get embedding model for chat retrieval",
 					zap.String("embdID", kbs[0].EmbdID),
@@ -2010,38 +2161,30 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 					zap.Error(err))
 				return nil, nil, nil, nil, nil, fmt.Errorf("failed to get embedding model: %w", err)
 			}
-			embModel = modelModule.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
+			embModel = model
 		}
 	}
 
 	// Chat model.
-	driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(ctx, chat.TenantID, chat.LLMID)
+	modelCtx := permission.WithTenantID(ctx, chat.TenantID)
 	var chatModel *modelModule.ChatModel
-	if err == nil {
-		chatModel = modelModule.NewChatModel(driver, &modelName, apiConfig)
+	if strings.TrimSpace(chat.LLMID) == "" {
+		chatModel, _ = s.ModelFactory.NewDefaultChatModel(modelCtx)
+	} else {
+		chatModel, _ = s.ModelFactory.NewChatModel(modelCtx, chat.LLMID)
 	}
 
 	// Rerank model.
 	var rerankModel *modelModule.RerankModel
 	if chat.RerankID != "" {
-		rerankDriver, rerankName, rerankConfig, _, err := s.ModelProviderSvc.ResolveModelConfig(
-			ctx, chat.TenantID, entity.ModelTypeRerank, chat.RerankID,
-		)
-		if err == nil {
-			rerankModel = modelModule.NewRerankModel(rerankDriver, &rerankName, rerankConfig)
-		}
+		rerankModel, _ = s.ModelFactory.NewRerankModel(modelCtx, chat.RerankID)
 	}
 
 	// TTS model.
-	var ttsModel *modelModule.ChatModel
+	var ttsModel *modelModule.TTSModel
 	if chat.PromptConfig != nil {
 		if useTTS, _ := chat.PromptConfig["tts"].(bool); useTTS {
-			ttsDriver, ttsName, ttsConfig, _, err := s.ModelProviderSvc.GetTenantDefaultModelByType(
-				ctx, chat.TenantID, entity.ModelTypeTTS,
-			)
-			if err == nil {
-				ttsModel = modelModule.NewChatModel(ttsDriver, &ttsName, ttsConfig)
-			}
+			ttsModel, _ = s.ModelFactory.NewDefaultTTSModel(modelCtx)
 		}
 	}
 
@@ -2133,13 +2276,13 @@ func emptyResponseApplies(knowledgeCount int, attachments string, imageAttachmen
 //     URIs → image files.
 //     - raw=true: all items go to textAttachments (Python's FileService.get_files
 //     with raw=True pre-separates images, so non-image content arrives here).
-func splitFileAttachments(ctx context.Context, userID string, files interface{}, raw bool) (textAttachments []string, imageAttachments []string) {
+func splitFileAttachments(ctx context.Context, files interface{}, raw bool) (textAttachments []string, imageAttachments []string) {
 	// ── Mode 1: file dicts (Python-compatible) ──
 	if fileDicts, ok := parseFileDicts(files); ok {
 		// Only used for GetFileContents (read-only); nil DocRemover means
 		// this FileService MUST NOT be used for DeleteFiles.
-		fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
-		texts, images, err := fileSvc.GetFileContents(ctx, userID, fileDicts)
+		fileSvc := file.NewFileService(nil)
+		texts, images, err := fileSvc.GetFileContents(ctx, fileDicts)
 		if err != nil {
 			common.Warn("GetFileContents failed, falling back to string splitting",
 				zap.Error(err))
@@ -2240,30 +2383,68 @@ func parseFileDicts(files interface{}) ([]map[string]interface{}, bool) {
 }
 
 // cleanTTSText sanitizes text for TTS synthesis.
-// Mirrors dialog_service.py:1404-1423.
 func cleanTTSText(text string) string {
 	if text == "" {
 		return ""
 	}
+	// Drop invalid UTF-8 before applying the character limit.
+	text = strings.ToValidUTF8(text, "")
 	// Strip control chars.
 	controlRe := regexp.MustCompile(`[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]`)
 	text = controlRe.ReplaceAllString(text, "")
 	// Strip emojis.
 	emojiRe := regexp.MustCompile("[\U0001f600-\U0001f64f\U0001f300-\U0001f5ff\U0001f680-\U0001f6ff\U0001f1e0-\U0001f1ff\U00002700-\U000027bf\U0001f900-\U0001f9ff\U0001fa70-\U0001faff\U0001fad0-\U0001faff]+")
 	text = emojiRe.ReplaceAllString(text, "")
+	text = stripTTSTags(text)
 	// Collapse whitespace.
 	wsRe := regexp.MustCompile(`\s+`)
 	text = wsRe.ReplaceAllString(text, " ")
 	text = strings.TrimSpace(text)
-	if len(text) > 500 {
-		text = text[:500]
+	if r := []rune(text); len(r) > 500 {
+		text = string(r[:500])
 	}
 	return text
 }
 
+// stripTTSTags removes paired markup and standalone reasoning/void tags.
+// Unmatched tags stay literal so compact comparisons such as a<b>c survive.
+func stripTTSTags(text string) string {
+	// Quoted attributes may contain > without ending the tag.
+	tagRe := regexp.MustCompile(`<(/?)([A-Za-z][A-Za-z0-9:-]*)(?:\s+(?:[^<>"']|"[^"]*"|'[^']*')*)?\s*/?>`)
+	matches := tagRe.FindAllStringSubmatchIndex(text, -1)
+	strip := make([]bool, len(matches))
+	open := make(map[string][]int)
+	for i, match := range matches {
+		name := strings.ToLower(text[match[4]:match[5]])
+		switch name {
+		case "think", "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr":
+			strip[i] = true
+		default:
+			if strings.HasSuffix(text[match[0]:match[1]], "/>") {
+				strip[i] = true
+			} else if match[2] == match[3] {
+				open[name] = append(open[name], i)
+			} else if stack := open[name]; len(stack) > 0 {
+				strip[stack[len(stack)-1]] = true
+				strip[i] = true
+				open[name] = stack[:len(stack)-1]
+			}
+		}
+	}
+	var result strings.Builder
+	last := 0
+	for i, match := range matches {
+		if strip[i] {
+			result.WriteString(text[last:match[0]])
+			last = match[1]
+		}
+	}
+	result.WriteString(text[last:])
+	return result.String()
+}
+
 // synthesizeTTS calls the TTS model to convert text to audio.
-// Mirrors dialog_service.py:1426-1432.
-func (s *ChatPipelineService) synthesizeTTS(ctx context.Context, ttsModel *modelModule.ChatModel, text string) interface{} {
+func (s *ChatPipelineService) synthesizeTTS(ctx context.Context, ttsModel *modelModule.TTSModel, text string) interface{} {
 	if ttsModel == nil || text == "" {
 		return nil
 	}
@@ -2271,9 +2452,7 @@ func (s *ChatPipelineService) synthesizeTTS(ctx context.Context, ttsModel *model
 	if text == "" {
 		return nil
 	}
-	ttsResp, err := ttsModel.ModelDriver.AudioSpeech(
-		ctx, ttsModel.ModelName, &text, ttsModel.APIConfig, &modelModule.TTSConfig{Format: "mp3"}, nil,
-	)
+	ttsResp, err := ttsModel.Speech(ctx, &text, &modelModule.TTSConfig{Format: "mp3"}, nil)
 	if err != nil {
 		common.Warn("TTS synthesis failed", zap.Error(err))
 		return nil
@@ -2424,12 +2603,21 @@ func (s *ChatPipelineService) kbPrompt(kbinfos map[string]interface{}, maxTokens
 			continue
 		}
 
+		// The id is the chunk's pool position, which is also its index in the
+		// reference the client receives (chunksFormat(chunksRaw)), so a marker copied
+		// from a block opens exactly that passage. 0-based: the first block is "ID: 0".
+		// (The compose renders a ranked subset instead, hence its own CiteChunkIDs order.)
 		cnt := fmt.Sprintf("\nID: %d", i)
 		cnt += drawNode("Title", getMapString(ck, "docnm_kwd", "document_name"))
 		cnt += drawNode("URL", getMapString(ck, "url"))
 		if meta, ok := ck["document_metadata"].(map[string]interface{}); ok {
-			for k, v := range meta {
-				cnt += drawNode(k, v)
+			keys := make([]string, 0, len(meta))
+			for k := range meta {
+				keys = append(keys, k)
+			}
+			sort.Strings(keys)
+			for _, k := range keys {
+				cnt += drawNode(k, meta[k])
 			}
 		}
 		cnt += "\n└── Content:\n"
@@ -2556,6 +2744,21 @@ func (s *ChatPipelineService) buildChatMessages(systemContent string, messages [
 	return result
 }
 
+func (s *ChatPipelineService) chatHistoryMessage(ctx context.Context, message map[string]interface{}, modelType, factory string) map[string]interface{} {
+	if message["role"] != "user" || message["files"] == nil {
+		return message
+	}
+	_, images := s.splitChatAttachments(ctx, message["files"])
+	images, _ = gateImageAttachments("", modelType, images)
+	msg := normalizeLLMMessage(message)
+	converted, err := common.ConvertLastUserMsgToMultimodal(msg, images, factory)
+	if err != nil {
+		common.Warn("chat history multimodal conversion failed", zap.Error(err))
+		return msg
+	}
+	return converted
+}
+
 func normalizeLLMMessage(message map[string]interface{}) map[string]interface{} {
 	normalized := make(map[string]interface{}, len(llmMessageFields))
 	for _, field := range llmMessageFields {
@@ -2587,11 +2790,19 @@ func (s *ChatPipelineService) buildChatDriver(ctx context.Context, chat *entity.
 	if chatModel != nil {
 		return chatModel
 	}
-	driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(ctx, chat.TenantID, chat.LLMID)
+	modelCtx := permission.WithTenantID(ctx, chat.TenantID)
+	if strings.TrimSpace(chat.LLMID) == "" {
+		model, err := s.ModelFactory.NewDefaultChatModel(modelCtx)
+		if err != nil {
+			return nil
+		}
+		return model
+	}
+	model, err := s.ModelFactory.NewChatModel(modelCtx, chat.LLMID)
 	if err != nil {
 		return nil
 	}
-	return modelModule.NewChatModel(driver, &modelName, apiConfig)
+	return model
 }
 
 // HydrateChunkVectors fills the `vector` field on each chunk in `kbinfos`
@@ -2606,7 +2817,7 @@ func (s *ChatPipelineService) buildChatDriver(ctx context.Context, chat *entity.
 // Returns the number of chunks that gained a vector.
 //
 // Skips:
-//   - chunks that already have a non-empty `vector`
+//   - chunks whose `vector` already carries signal (non-zero components)
 //   - chunks without a `chunk_id`
 //
 // Errors are non-fatal: caller logs and proceeds with whatever vectors
@@ -2617,7 +2828,10 @@ func (s *ChatPipelineService) buildChatDriver(ctx context.Context, chat *entity.
 // Parameters:
 //   - tenantIDs: tenant ID(s) to derive index/table names (ragflow_<tid>).
 //     If empty, no fetch is attempted.
-func HydrateChunkVectors(ctx context.Context, kbinfos map[string]interface{}, tenantIDs []string, kbIDs []string, docEngine engine.DocEngine) (int, error) {
+//   - dim: embedding dimension, used to name the q_{dim}_vec field. Zero means
+//     "infer from the chunks"; the agentic evidence pool carries no chunk
+//     vectors at all, so its caller passes the model dimension explicitly.
+func HydrateChunkVectors(ctx context.Context, kbinfos map[string]interface{}, tenantIDs []string, kbIDs []string, dim int, docEngine engine.DocEngine) (int, error) {
 	if kbinfos == nil {
 		return 0, nil
 	}
@@ -2632,22 +2846,27 @@ func HydrateChunkVectors(ctx context.Context, kbinfos map[string]interface{}, te
 		return 0, nil
 	}
 
-	// Auto-detect vector dimension from chunks that already carry a
-	// vector. If none do, there is nothing to hydrate against.
-	var dim int
+	// A vector counts as present only when it carries signal. The agentic
+	// evidence pool reaches this function with no `vector` key at all (the
+	// runtime chunk shape has no vector field), and the naive path ships zero
+	// placeholders for chunks whose embedding was not selected. Python refills
+	// both, because _hydrate_chunk_vectors treats a chunk as already hydrated
+	// only when `any(x for x in v)` (dialog_service.py:93-95). A length check
+	// alone skips exactly the chunks hydration exists for, leaving them at zero
+	// similarity where they can never be cited.
+	if dim <= 0 {
+		dim = firstChunkVectorDim(chunksRaw)
+	}
 	var missing []string
 	for _, cm := range chunksRaw {
-		if cv, ok := cm["vector"].([]float64); ok && len(cv) > 0 {
-			if dim == 0 {
-				dim = len(cv)
-			}
+		if vectorHasSignal(chunkVector(cm)) {
 			continue
 		}
 		if cid, ok := cm["chunk_id"].(string); ok && cid != "" {
 			missing = append(missing, cid)
 		}
 	}
-	if len(missing) == 0 || dim == 0 || len(tenantIDs) == 0 {
+	if len(missing) == 0 || dim <= 0 || len(tenantIDs) == 0 {
 		return 0, nil
 	}
 
@@ -2659,18 +2878,20 @@ func HydrateChunkVectors(ctx context.Context, kbinfos map[string]interface{}, te
 		return 0, err
 	}
 
-	// Stitch the vectors back onto the chunks.
+	// Stitch the vectors back onto the chunks. FetchChunkVectors answers with
+	// zeros for chunks it could not resolve, so only a vector with signal counts
+	// as a hit.
 	hits := 0
 	for _, cm := range chunksRaw {
-		if cv, ok := cm["vector"].([]float64); ok && len(cv) > 0 {
+		if vectorHasSignal(chunkVector(cm)) {
 			continue
 		}
 		cid, _ := cm["chunk_id"].(string)
 		if cid == "" {
 			continue
 		}
-		vec, ok := vectors[cid]
-		if !ok || len(vec) == 0 {
+		vec := vectors[cid]
+		if !vectorHasSignal(vec) {
 			continue
 		}
 		cm["vector"] = vec
@@ -2681,6 +2902,51 @@ func HydrateChunkVectors(ctx context.Context, kbinfos map[string]interface{}, te
 	return hits, nil
 }
 
+// chunkVector reads a chunk's embedding vector in the shapes the in-process
+// layers produce ([]float64; []interface{} after a JSON round-trip).
+func chunkVector(cm map[string]interface{}) []float64 {
+	switch v := cm["vector"].(type) {
+	case []float64:
+		return v
+	case []interface{}:
+		out := make([]float64, 0, len(v))
+		for _, item := range v {
+			f, ok := item.(float64)
+			if !ok {
+				return nil
+			}
+			out = append(out, f)
+		}
+		return out
+	}
+	return nil
+}
+
+// vectorHasSignal reports whether a vector has any non-zero component, mirroring
+// Python's `any(x for x in v)` (dialog_service.py:94). A placeholder of zeros is
+// the shape both retrieval paths leave behind for a chunk whose embedding was
+// not selected, and it must be refilled rather than treated as hydrated.
+func vectorHasSignal(v []float64) bool {
+	for _, x := range v {
+		if x != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// firstChunkVectorDim returns the dimension carried by the first chunk vector,
+// which is the dimension naming the q_{dim}_vec field. Zero means no chunk
+// carries a vector at all.
+func firstChunkVectorDim(chunksRaw []map[string]interface{}) int {
+	for _, cm := range chunksRaw {
+		if v := chunkVector(cm); len(v) > 0 {
+			return len(v)
+		}
+	}
+	return 0
+}
+
 // embeddingModelEmbedder adapts an EmbeddingModel to the Embedder interface.
 type embeddingModelEmbedder struct {
 	embModel *modelModule.EmbeddingModel
@@ -2688,7 +2954,9 @@ type embeddingModelEmbedder struct {
 
 func (e *embeddingModelEmbedder) Encode(ctx context.Context, texts []string) ([][]float64, error) {
 	config := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeds, err := e.embModel.ModelDriver.Embed(ctx, e.embModel.ModelName, modelModule.EmbedRequest{Texts: texts}, e.embModel.APIConfig, config, nil)
+	// Embed inside the model's window: the caller supplies arbitrary text and the
+	// provider rejects an over-window input with 400/20015 instead of truncating it.
+	embeds, err := e.embModel.Embed(ctx, modelModule.EmbedRequest{Texts: texts}, config, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2717,7 +2985,7 @@ func (s *ChatPipelineService) decorateAnswer(
 	embModel *modelModule.EmbeddingModel,
 	vectorSimilarityWeight float64,
 	quote bool,
-	ttsModel *modelModule.ChatModel,
+	ttsModel *modelModule.TTSModel,
 	langfuseTraceID string,
 	llmModelConfig map[string]interface{},
 	tenantID string,
@@ -2735,6 +3003,10 @@ func (s *ChatPipelineService) decorateAnswer(
 			ans = strings.TrimSpace(parts[1])
 		}
 	}
+	if !quote {
+		think = stripCitations(think)
+		ans = stripCitations(ans)
+	}
 
 	var citationIdx map[int]struct{}
 	var refs map[string]interface{}
@@ -2748,29 +3020,48 @@ func (s *ChatPipelineService) decorateAnswer(
 	if hasKnowledges && quote {
 		chunksRaw, ok := kbinfos["chunks"].([]map[string]interface{})
 		if ok && len(chunksRaw) > 0 {
+			think = RepairBadCitationFormats(think)
+			ans = RepairBadCitationFormats(ans)
+			normalizedOutput := normalizeArabicDigits(think + ans)
 			// P7 — _hydrate_chunk_vectors. Mirrors
-			// dialog_service.py:794. If any chunk lacks a `vector`
-			// field (true for the ES path; Infinity ships vectors
-			// inline), fetch them in one batched engine call. We only
-			// need this when we'll actually call insertCitations
-			// (i.e., the LLM didn't already emit markers).
-			if embModel != nil && !HasCitationMarkers(ans) {
-				if _, err := HydrateChunkVectors(ctx, kbinfos, tenantIDs, nil, engine.Get()); err != nil {
+			// dialog_service.py:794. Fetch the chunk embeddings insertCitations
+			// scores against, in one batched engine call. The agentic evidence
+			// pool reaches here with no `vector` key at all and the naive path
+			// ships zero placeholders, so the dimension comes from the embedding
+			// model whenever no chunk carries one. Only needed when we'll
+			// actually call insertCitations (the LLM didn't emit markers).
+			if embModel != nil && !HasCitationMarkers(normalizedOutput) {
+				dim := firstChunkVectorDim(chunksRaw)
+				if dim <= 0 {
+					// One short probe encode buys the q_{dim}_vec field name.
+					// Every citation-scored answer already pays for a full
+					// sentence encode, so this is not a new call class.
+					probe, perr := (&embeddingModelEmbedder{embModel: embModel}).Encode(ctx, []string{"x"})
+					if perr == nil && len(probe) > 0 {
+						dim = len(probe[0])
+					}
+				}
+				if _, err := HydrateChunkVectors(ctx, kbinfos, tenantIDs, nil, dim, engine.Get()); err != nil {
 					common.Warn("hydrate chunk vectors failed", zap.Error(err))
 				}
 			}
 			if embModel != nil && !HasCitationMarkers(ans) {
-				// Build chunkVectors aligned with chunksRaw.
+				// Build chunkVectors aligned with chunksRaw. A chunk that still
+				// has no vector scores as zeros — exactly what Python does when
+				// it substitutes [0.0]*dim on a dimension mismatch
+				// (rag/nlp/search.py:463-468): that chunk simply never wins a
+				// citation, instead of one vector-less chunk (an image chunk, a
+				// web snippet) suppressing every citation in the answer.
+				dim := firstChunkVectorDim(chunksRaw)
 				chunkVectors := make([][]float64, len(chunksRaw))
-				allVec := len(chunksRaw) > 0
 				for i, cm := range chunksRaw {
-					cv, _ := cm["vector"].([]float64)
-					chunkVectors[i] = cv
-					if len(cv) == 0 {
-						allVec = false
+					cv := chunkVector(cm)
+					if len(cv) != dim {
+						cv = make([]float64, dim)
 					}
+					chunkVectors[i] = cv
 				}
-				if allVec {
+				if dim > 0 {
 					embedder := &embeddingModelEmbedder{embModel: embModel}
 					if decorated, cited := InsertCitations(ctx, ans, NewSourcedChunks(chunksRaw), embedder, chunkVectors); len(cited) > 0 {
 						ans = decorated
@@ -2780,27 +3071,13 @@ func (s *ChatPipelineService) decorateAnswer(
 						}
 					}
 				}
-			} else {
+			} else if HasCitationMarkers(normalizedOutput) {
 				// P0.11 pre-check matched: collect indices from existing
-				// markers instead of calling insertCitations.
-				for _, ci := range ExtractCitationMarkers(ans, len(chunksRaw)) {
-					if citationIdx == nil {
-						citationIdx = make(map[int]struct{})
-					}
+				// markers in both the thinking block and final answer.
+				citationIdx = make(map[int]struct{})
+				for _, ci := range ExtractCitationMarkers(normalizedOutput, len(chunksRaw)) {
 					citationIdx[ci] = struct{}{}
 				}
-			}
-		}
-
-		// repair_bad_citation_formats — runs even when chunks are empty.
-		// Mirrors dialog_service.py:818.
-		if ok {
-			ans = RepairBadCitationFormats(ans)
-			for _, ci := range ExtractCitationMarkers(ans, len(chunksRaw)) {
-				if citationIdx == nil {
-					citationIdx = make(map[int]struct{})
-				}
-				citationIdx[ci] = struct{}{}
 			}
 		}
 
@@ -2819,7 +3096,7 @@ func (s *ChatPipelineService) decorateAnswer(
 				}
 			}
 			if len(citedDocIDs) > 0 {
-				if docAggsRaw, ok := kbinfos["doc_aggs"].([]interface{}); ok && len(docAggsRaw) > 0 {
+				if docAggsRaw, ok := kbinfos["doc_aggs"].([]interface{}); ok {
 					var filtered []interface{}
 					for _, da := range docAggsRaw {
 						if dam, ok := da.(map[string]interface{}); ok {
@@ -2830,19 +3107,20 @@ func (s *ChatPipelineService) decorateAnswer(
 							}
 						}
 					}
-					if len(filtered) > 0 {
-						kbinfos["doc_aggs"] = filtered
-					}
+					kbinfos["doc_aggs"] = filtered
 				}
 			}
 		}
 	}
 
-	// Build refs: deepcopy kbinfos and strip vectors — done whenever
-	// hasKnowledges is true, regardless of quote flag.
-	// Mirrors dialog_service.py:826-829.
+	// Reference assembly. `chunks` is the evidence the answer was grounded on,
+	// so it ships whenever knowledge was retrieved and independent of the cite
+	// setting; `doc_aggs` is the list of source cards the UI opens from a
+	// citation marker, so it ships only while citations are enabled — with no
+	// marker to open them from, the cards would be dead weight. Chunk vectors
+	// never leave this function.
 	if hasKnowledges {
-		refs = make(map[string]interface{})
+		refs = make(map[string]interface{}, len(kbinfos))
 		for k, v := range kbinfos {
 			refs[k] = v
 		}
@@ -2860,6 +3138,9 @@ func (s *ChatPipelineService) decorateAnswer(
 			}
 			refs["chunks"] = chunksFormat(newChunks)
 		}
+		if !quote {
+			delete(refs, "doc_aggs")
+		}
 	}
 
 	// Check for invalid API key errors (outside knowledges guard).
@@ -2872,7 +3153,7 @@ func (s *ChatPipelineService) decorateAnswer(
 	finishChatTs := time.Now()
 
 	// Build timing stats.
-	// P1: emit Timer.Markdown() (6 phase lines + Total) and then the
+	// P1: emit Timer.Markdown() (phase lines, Other, and Total) and then the
 	// token-count / token-speed lines that the existing OpenAI endpoint
 	// already exposes. Total wall-clock is rounded to ms.
 	totalMs := timer.Total().Seconds() * 1000
@@ -2933,6 +3214,14 @@ func (s *ChatPipelineService) decorateAnswer(
 		Prompt:    strings.ReplaceAll(timeStats, "\n", "  \n"),
 		CreatedAt: float64(finishChatTs.Unix()),
 		Final:     false, // caller sets Final = true
+		// Same numbers the Langfuse generation above records, on the wire so a
+		// client does not have to parse the human-readable prompt to learn them.
+		Usage: &ChatTurnUsage{
+			PromptTokens:     usedTokenCount,
+			CompletionTokens: tkNum,
+			TotalTokens:      usedTokenCount + tkNum,
+		},
+		ElapsedMs: totalMs,
 	}
 }
 
@@ -2955,13 +3244,6 @@ func langfuseExtractTimeElapsed(prompt string) string {
 // extractVisibleAnswer mirrors Python's _extract_visible_answer.
 func (s *ChatPipelineService) extractVisibleAnswer(text string) string {
 	return ExtractVisibleAnswer(text)
-}
-
-// citationPrompt returns the citation instruction prompt.
-// Mirrors Python's citation_prompt() in rag/prompts/generator.py.
-func citationPrompt() string {
-	return "\n\n### Citation\nWhen answering, please cite sources using the format [ID:N] " +
-		"(where N is the chunk number) after each sentence where the information from that chunk is used."
 }
 
 // -----------------------------------------------------------------------
@@ -3172,23 +3454,6 @@ Please correct the error and write SQL again using the exact field names above, 
 //
 //   - err: non-nil when something went wrong; caller should log and fall
 //     through.
-//
-// StructuredQuery is the exported narrow entrypoint for the agentic-search
-// structured_query tool: translate a natural-language question to SQL over the
-// given tabular KBs and return the answer + reference chunks. It forwards to the
-// internal useSQL with quote=false (the agent tool returns the answer directly,
-// not a cited natural-language response).
-func (s *ChatPipelineService) StructuredQuery(
-	ctx context.Context,
-	chat *entity.Chat,
-	kbs []*entity.Knowledgebase,
-	question string,
-	chatModel *modelModule.ChatModel,
-	fieldMap map[string]interface{},
-) (ans map[string]interface{}, err error) {
-	return s.useSQL(ctx, chat, kbs, question, chatModel, fieldMap, false)
-}
-
 func (s *ChatPipelineService) useSQL(
 	ctx context.Context,
 	chat *entity.Chat,
@@ -3243,20 +3508,22 @@ func (s *ChatPipelineService) useSQL(
 		}
 	}
 
-	// Step 1.5: inject the kb_id WHERE filter for ES / OS / OceanBase.
-	// No-op for Infinity (the table name already encodes the KB scope).
-	// Mirrors add_kb_filter at dialog_service.py:992-1021, called from
-	// get_table right after normalize_sql.
+	// Step 1.5: constrain the SQL to the authorized kb_ids for ES / OS /
+	// OceanBase. No-op for Infinity (the table name already encodes the KB
+	// scope). When the scope cannot be enforced safely, skip SQL retrieval so
+	// the caller falls back to vector search instead of running an unfiltered
+	// query.
 	if filtered, ok := addKBFilter(sqlText, engineName, kbs); ok {
 		sqlText = filtered
 	} else {
-		common.Warn("SQL retrieval: invalid kb_id UUID; SQL will run unfiltered")
+		common.Warn("SQL retrieval: SQL cannot be scoped to the authorized datasets; falling back")
+		return nil, nil
 	}
 
 	// Step 2: try to execute. On failure, repair once with the
 	// engine-specific execution-error prompt so the LLM regenerates
 	// correctly (Flow B at dialog_service.py:1164-1205).
-	rows, execErr := docEngine.RunSQL(ctx, tableName, sqlText, kbIDStrings(kbs), "json")
+	rows, execErr := docEngine.RunSQL(ctx, sqlText, "json")
 	if execErr != nil {
 		common.Debug("SQL retrieval: initial execution failed, attempting repair",
 			zap.String("sql", sqlText), zap.Error(execErr))
@@ -3268,10 +3535,12 @@ func (s *ChatPipelineService) useSQL(
 			return nil, nil
 		}
 		// Re-apply the kb filter after the LLM-driven repair.
-		if filtered, ok := addKBFilter(repaired, engineName, kbs); ok {
-			repaired = filtered
+		filtered, ok := addKBFilter(repaired, engineName, kbs)
+		if !ok {
+			common.Warn("SQL retrieval: repaired SQL cannot be scoped to the authorized datasets; falling back")
+			return nil, nil
 		}
-		rows, execErr = docEngine.RunSQL(ctx, tableName, repaired, kbIDStrings(kbs), "json")
+		rows, execErr = docEngine.RunSQL(ctx, filtered, "json")
 		if execErr != nil {
 			common.Warn("SQL retrieval: repaired SQL also failed", zap.Error(execErr))
 			return nil, nil
@@ -3290,7 +3559,7 @@ func (s *ChatPipelineService) useSQL(
 	// repair doesn't yield source columns, fall through to the
 	// best-effort answer (matches Python's `returning best-effort
 	// answer` log at line 1221).
-	if !isAggregateSQL(sqlText) && !hasSourceColumns(rows) {
+	if quote && !isAggregateSQL(sqlText) && !hasSourceColumns(rows) {
 		common.Debug("SQL retrieval: result missing source columns; attempting repair",
 			zap.String("sql", sqlText))
 		expectedCol := expectedDocNameColumn(engineName)
@@ -3298,19 +3567,23 @@ func (s *ChatPipelineService) useSQL(
 			ctx, chatModel, sysPrompt, tableName, question, sqlText, expectedCol, engineName, fieldMap,
 		)
 		if repairErr == nil && repaired != "" {
-			// Re-apply the kb filter after the LLM-driven repair.
-			if filtered, ok := addKBFilter(repaired, engineName, kbs); ok {
-				repaired = filtered
-			}
-			repairedRows, repairedErr := docEngine.RunSQL(ctx, tableName, repaired, kbIDStrings(kbs), "json")
-			if repairedErr == nil && len(repairedRows) > 0 && hasSourceColumns(repairedRows) {
-				common.Debug("SQL retrieval: missing-columns repair succeeded",
-					zap.String("sql", repaired))
-				rows = repairedRows
-				sqlText = repaired
+			// Re-apply the kb filter after the LLM-driven repair. The current
+			// rows are already scope-safe, so when the repaired SQL cannot be
+			// scoped we keep them instead of running an unfiltered query.
+			filtered, ok := addKBFilter(repaired, engineName, kbs)
+			if !ok {
+				common.Warn("SQL retrieval: repaired SQL cannot be scoped to the authorized datasets; keeping the scoped result")
 			} else {
-				common.Warn("SQL retrieval: missing-columns repair did not yield source columns; using best-effort answer",
-					zap.String("sql", repaired))
+				repairedRows, repairedErr := docEngine.RunSQL(ctx, filtered, "json")
+				if repairedErr == nil && len(repairedRows) > 0 && hasSourceColumns(repairedRows) {
+					common.Debug("SQL retrieval: missing-columns repair succeeded",
+						zap.String("sql", filtered))
+					rows = repairedRows
+					sqlText = filtered
+				} else {
+					common.Warn("SQL retrieval: missing-columns repair did not yield source columns; using best-effort answer",
+						zap.String("sql", filtered))
+				}
 			}
 		} else if repairErr != nil {
 			common.Warn("SQL retrieval: missing-columns repair failed; using best-effort answer",
@@ -3326,7 +3599,7 @@ func (s *ChatPipelineService) useSQL(
 	// and best-effort empty refs.
 	answerStr, ref := s.buildSQLReference(
 		ctx, docEngine, tableName, sqlText, rows,
-		sysPrompt, engineName, kbs, fieldMap,
+		sysPrompt, engineName, kbs, fieldMap, quote,
 	)
 	return map[string]interface{}{
 		"answer":    answerStr,
@@ -3369,23 +3642,257 @@ func isValidUUID(s string) bool {
 	return uuidRe.MatchString(s)
 }
 
-// addKBFilter injects a validated kb_id WHERE filter into sqlText for
-// ES / OS / OceanBase engines. Infinity is a no-op because the table
-// name already encodes the KB scope. Mirrors dialog_service.py:992-1021.
+// scalarWord is one unquoted SQL word plus its parenthesis depth.
+type scalarWord struct {
+	word       string
+	start, end int
+	depth      int
+}
+
+func isScalarWordStart(c byte) bool {
+	return c == '_' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= 0x80
+}
+
+func isScalarWordByte(c byte) bool {
+	return isScalarWordStart(c) || c >= '0' && c <= '9' || c == '$'
+}
+
+// scalarDollarQuoteDelimiter returns the delimiter of a PostgreSQL dollar-quoted
+// string starting at start (either "$$" or "$tag$"). ok is false when start does
+// not open one, e.g. for the "$1" bind placeholder.
+func scalarDollarQuoteDelimiter(sqlText string, start int) (string, bool) {
+	i := start + 1
+	if i < len(sqlText) && sqlText[i] == '$' {
+		return "$$", true
+	}
+	if i >= len(sqlText) || !isScalarWordStart(sqlText[i]) {
+		return "", false
+	}
+	for i < len(sqlText) && (isScalarWordStart(sqlText[i]) || sqlText[i] >= '0' && sqlText[i] <= '9') {
+		i++
+	}
+	if i >= len(sqlText) || sqlText[i] != '$' {
+		return "", false
+	}
+	return sqlText[start : i+1], true
+}
+
+// sqlScanDialect selects the lexical differences between the engines
+// addKBFilter runs against. The scan never guesses: a construct it cannot skip
+// exactly makes it fail, which callers treat as "do not execute".
+type sqlScanDialect struct {
+	// backslashEscapes enables MySQL-family backslash escapes in quoted strings.
+	backslashEscapes bool
+	// hashLineComments treats "#" as a line comment (MySQL/OceanBase). It is
+	// refused rather than skipped because a "#" would swallow any filter the
+	// wrapper appends on the same line.
+	hashLineComments bool
+	// executableComments refuses "/*! ... */" (MySQL/OceanBase), whose contents
+	// the server executes and which could therefore hide a set operation.
+	executableComments bool
+	// dollarQuotes enables $$...$$ and $tag$...$tag$ literals (PostgreSQL).
+	dollarQuotes bool
+	// nestedBlockComments enables PostgreSQL's nested "/* /* */ */".
+	nestedBlockComments bool
+}
+
+func sqlScanDialectFor(engineName string) sqlScanDialect {
+	switch {
+	case engine.IsOceanBaseFamily(engineName):
+		return sqlScanDialect{backslashEscapes: true, hashLineComments: true, executableComments: true}
+	case engine.IsVastbase(engineName), engineName == string(engine.EngineSereneDB):
+		return sqlScanDialect{dollarQuotes: true, nestedBlockComments: true}
+	default:
+		// Elasticsearch / OpenSearch / unknown: standard literals only.
+		return sqlScanDialect{}
+	}
+}
+
+// scanScalarWords tokenizes sqlText, skipping quoted strings, quoted
+// identifiers, dollar-quoted strings, and comments. It records only unquoted
+// words plus their parenthesis depth, which is all that is needed to locate the
+// top-level WHERE clause without being fooled by keywords inside literals or
+// comments.
 //
-// Returns the (possibly modified) SQL and a boolean indicating whether
-// all kb_ids passed UUID validation. When validation fails, the SQL is
-// returned unchanged — the engine will likely reject the un-filtered
-// query, triggering the repair path (Python's `_assert_valid_uuid` raises
-// ValueError, which `get_table`'s try/except catches and routes to the
-// repair flow).
+// lineComments lists the byte ranges of line comments (from "--" to the
+// terminating newline or end of input). Callers use it to avoid appending SQL
+// onto a commented-out line.
 //
-// If the SQL already has a WHERE clause with `kb_id =`, the filter is
-// not duplicated. Otherwise a fresh WHERE is appended, or `kb_id = '...'
-// AND` is prepended to an existing WHERE.
+// Parentheses must balance: a ')' at depth 0 or a positive depth at the end
+// would let a predicate escape the wrapping parentheses, so both make the scan
+// fail. Unterminated literals and comments also fail so callers can fail closed
+// instead of guessing.
+func scanScalarWords(sqlText string, dialect sqlScanDialect) (words []scalarWord, lineComments [][2]int, ok bool) {
+	words = make([]scalarWord, 0, len(sqlText)/4)
+	depth := 0
+	for i := 0; i < len(sqlText); {
+		c := sqlText[i]
+		if c == ' ' || c == '\t' || c == '\n' || c == '\r' || c == '\f' {
+			i++
+			continue
+		}
+		if c == '-' && i+1 < len(sqlText) && sqlText[i+1] == '-' {
+			// MySQL-family SQL treats "--" as a comment only when followed by
+			// whitespace or a control character. Otherwise it is SQL syntax.
+			if dialect.hashLineComments && (i+2 >= len(sqlText) || sqlText[i+2] > ' ') {
+				return nil, nil, false
+			}
+			start := i
+			i += 2
+			for i < len(sqlText) && sqlText[i] != '\n' && sqlText[i] != '\r' {
+				i++
+			}
+			lineComments = append(lineComments, [2]int{start, i})
+			continue
+		}
+		if dialect.hashLineComments && c == '#' {
+			// A "#" comment runs to end of line and would swallow anything the
+			// wrapper appends after it. Refuse instead of trying to place the
+			// filter around it.
+			return nil, nil, false
+		}
+		if c == '/' && i+1 < len(sqlText) && sqlText[i+1] == '*' {
+			if dialect.executableComments && i+2 < len(sqlText) && sqlText[i+2] == '!' {
+				// Executable comment: the server runs its contents, so the scan
+				// would not see statements (e.g. a UNION) hidden inside it.
+				return nil, nil, false
+			}
+			i += 2
+			commentDepth := 1
+			for i < len(sqlText) && commentDepth > 0 {
+				if i+1 < len(sqlText) && sqlText[i] == '/' && sqlText[i+1] == '*' {
+					if !dialect.nestedBlockComments {
+						return nil, nil, false
+					}
+					commentDepth++
+					i += 2
+					continue
+				}
+				if i+1 < len(sqlText) && sqlText[i] == '*' && sqlText[i+1] == '/' {
+					commentDepth--
+					i += 2
+					continue
+				}
+				i++
+			}
+			if commentDepth != 0 {
+				return nil, nil, false
+			}
+			continue
+		}
+		if c == '\'' || c == '"' || c == '`' {
+			quote := c
+			escapes := quote != '`' && dialect.backslashEscapes
+			if dialect.dollarQuotes && quote == '\'' && i > 0 &&
+				(sqlText[i-1] == 'E' || sqlText[i-1] == 'e') &&
+				(i == 1 || !isScalarWordByte(sqlText[i-2])) {
+				escapes = true // PostgreSQL E'...' escape string.
+			}
+			i++
+			closed := false
+			for i < len(sqlText) {
+				if sqlText[i] == '\\' && i+1 < len(sqlText) {
+					// OceanBase's SQL mode may make backslash an ordinary
+					// character. Refuse quote boundaries that depend on it.
+					if dialect.backslashEscapes && sqlText[i+1] == quote {
+						return nil, nil, false
+					}
+					if escapes {
+						i += 2
+						continue
+					}
+					// PostgreSQL's plain-string behavior depends on the server
+					// setting. Refuse ambiguous quote escapes in either mode.
+					if dialect.dollarQuotes && quote == '\'' && sqlText[i+1] == '\'' {
+						return nil, nil, false
+					}
+				}
+				if sqlText[i] == quote {
+					if i+1 < len(sqlText) && sqlText[i+1] == quote {
+						i += 2
+						continue
+					}
+					i++
+					closed = true
+					break
+				}
+				i++
+			}
+			if !closed {
+				return nil, nil, false
+			}
+			continue
+		}
+		if dialect.dollarQuotes && c == '$' {
+			if delim, isQuote := scalarDollarQuoteDelimiter(sqlText, i); isQuote {
+				bodyStart := i + len(delim)
+				closeOffset := strings.Index(sqlText[bodyStart:], delim)
+				if closeOffset < 0 {
+					return nil, nil, false
+				}
+				i = bodyStart + closeOffset + len(delim)
+				continue
+			}
+		}
+		if c == '(' {
+			depth++
+			i++
+			continue
+		}
+		if c == ')' {
+			// A ')' without a matching '(' means the predicate would close the
+			// wrapper early and let OR escape the injected scope.
+			if depth == 0 {
+				return nil, nil, false
+			}
+			depth--
+			i++
+			continue
+		}
+		if isScalarWordStart(c) {
+			start := i
+			i++
+			for i < len(sqlText) && isScalarWordByte(sqlText[i]) {
+				i++
+			}
+			words = append(words, scalarWord{
+				word:  strings.ToUpper(sqlText[start:i]),
+				start: start,
+				end:   i,
+				depth: depth,
+			})
+			continue
+		}
+		i++
+	}
+	if depth != 0 {
+		return nil, nil, false
+	}
+	return words, lineComments, true
+}
+
+// addKBFilter constrains sqlText to the caller's authorized kb_ids. Infinity is
+// a no-op because its table name already encodes the KB scope.
+//
+// The authorized filter is always ANDed onto the top-level predicate, with the
+// model's own predicate wrapped in parentheses. This means a model-written
+// `kb_id = '<other>'` is neutralized rather than trusted: the resulting
+// predicate is a contradiction and yields zero rows. The filter is never
+// skipped just because the text already mentions kb_id.
+//
+// Returns the rewritten SQL and whether the result is safe to execute. It
+// returns false when a kb_id is not a UUID, or when the statement shape cannot
+// be scoped safely (set operations, unterminated literals/comments). Callers
+// must not execute the SQL when it is false.
 func addKBFilter(sqlText, engineName string, kbs []*entity.Knowledgebase) (string, bool) {
 	if engineName == "infinity" || len(kbs) == 0 {
 		return sqlText, true
+	}
+	// ES and OceanBase remove backticks after this rewrite. Refuse them so
+	// engine preprocessing cannot expose SQL syntax hidden from the scan.
+	if strings.Contains(sqlText, "`") &&
+		(engine.IsOceanBaseFamily(engineName) || engineName == "elasticsearch" || engineName == "opensearch") {
+		return sqlText, false
 	}
 
 	// Validate all kb_ids as UUIDs.
@@ -3407,20 +3914,98 @@ func addKBFilter(sqlText, engineName string, kbs []*entity.Knowledgebase) (strin
 		kbFilter = "(" + strings.Join(parts, " OR ") + ")"
 	}
 
-	lower := strings.ToLower(sqlText)
-	if !strings.Contains(lower, "where ") {
-		// No WHERE clause: append one. Honor ORDER BY if present.
-		if oIdx := strings.Index(lower, "order by"); oIdx >= 0 {
-			sqlText = sqlText[:oIdx] + " WHERE " + kbFilter + "  order by " + sqlText[oIdx+len("order by"):]
-		} else {
-			sqlText += " WHERE " + kbFilter
-		}
-	} else if !strings.Contains(lower, "kb_id =") && !strings.Contains(lower, "kb_id=") {
-		// Has WHERE but no kb_id: insert "kb_id = '...' AND" after WHERE.
-		whereRe := regexp.MustCompile(`(?i)\bwhere\b `)
-		sqlText = whereRe.ReplaceAllString(sqlText, "where "+kbFilter+" and ")
+	// ES removes '%' before execution. Do the same before locating SQL clauses
+	// so that removal cannot create comments after the filter is injected.
+	if engineName == "elasticsearch" || engineName == "opensearch" {
+		sqlText = strings.ReplaceAll(sqlText, "%", "")
 	}
-	return sqlText, true
+
+	words, lineComments, ok := scanScalarWords(sqlText, sqlScanDialectFor(engineName))
+	if !ok {
+		return sqlText, false
+	}
+
+	// Set operations cannot be scoped from the first arm alone: the second arm
+	// would bypass the injected predicate. Refuse instead of guessing.
+	for _, w := range words {
+		if w.depth == 0 && (w.word == "UNION" || w.word == "INTERSECT" || w.word == "EXCEPT") {
+			return sqlText, false
+		}
+	}
+
+	whereIdx := -1
+	for i, w := range words {
+		if w.depth == 0 && w.word == "WHERE" {
+			whereIdx = i
+			break
+		}
+	}
+
+	// The predicate ends at the first top-level trailing clause after WHERE, or
+	// at end of statement. Comments after WHERE stay inside the predicate: they
+	// may sit mid-expression (`1=1 -- note\n OR 1=1`), and cutting there would
+	// leave the trailing OR outside the wrapper and make it always true.
+	endPos := len(sqlText)
+	scanFrom := 0
+	if whereIdx >= 0 {
+		scanFrom = whereIdx + 1
+	}
+	for i := scanFrom; i < len(words); i++ {
+		w := words[i]
+		if w.depth != 0 {
+			continue
+		}
+		switch w.word {
+		case "GROUP", "HAVING", "ORDER", "LIMIT", "OFFSET":
+			endPos = w.start
+		}
+		if endPos != len(sqlText) {
+			break
+		}
+	}
+
+	// A line comment running to the end of its line swallows anything appended
+	// on that line. When the insertion point falls at the end of such a
+	// comment, terminate the comment with a newline first so the injected text
+	// starts on a fresh line.
+	lineCommentSwallows := func(pos int) bool {
+		for _, lc := range lineComments {
+			if pos > lc[0] && pos <= lc[1] {
+				return true
+			}
+		}
+		return false
+	}
+
+	if whereIdx < 0 {
+		head := strings.TrimRight(sqlText[:endPos], " \t\r\n")
+		sep := " WHERE "
+		if lineCommentSwallows(len(head)) {
+			sep = "\nWHERE "
+		}
+		tail := strings.TrimSpace(sqlText[endPos:])
+		if tail != "" {
+			return head + sep + kbFilter + " " + tail, true
+		}
+		return head + sep + kbFilter, true
+	}
+
+	whereWord := words[whereIdx]
+	predicateRaw := sqlText[whereWord.end:endPos]
+	predicate := strings.TrimSpace(predicateRaw)
+	if predicate == "" {
+		return sqlText, false
+	}
+	closeParen := ")"
+	if lineCommentSwallows(whereWord.end + len(strings.TrimRight(predicateRaw, " \t\r\n"))) {
+		closeParen = "\n)"
+	}
+	rewritten := sqlText[:whereWord.start] +
+		"WHERE (" + predicate + closeParen + " AND (" + kbFilter + ")"
+	if tail := strings.TrimSpace(sqlText[endPos:]); tail != "" {
+		rewritten += " " + tail
+	}
+	return rewritten, true
 }
 
 // generateSQL calls the chat model to produce a SQL SELECT.
@@ -3653,17 +4238,11 @@ func chatForSQL(
 	cfg := &modelModule.ChatConfig{
 		Temperature: &tempLow,
 	}
-	modelName := ""
-	if chatModel.ModelName != nil {
-		modelName = *chatModel.ModelName
-	}
 	msgs := []modelModule.Message{
 		modelModule.Message{Role: "system", Content: sysPrompt},
 		modelModule.Message{Role: "user", Content: userPrompt},
 	}
-	resp, err := chatModel.ModelDriver.ChatWithMessages(
-		ctx, modelName, msgs, chatModel.APIConfig, cfg, nil,
-	)
+	resp, err := chatModel.ChatWithMessages(ctx, msgs, cfg, nil)
 	if err != nil {
 		return "", err
 	}
@@ -3734,23 +4313,6 @@ func normalizeSQL(s string) string {
 // -----------------------------------------------------------------------
 // Python parity helpers (dialog_service.py:56-59, 1238-1309, 1321-1365)
 // -----------------------------------------------------------------------
-
-// Redundant-space cleanup regexes. Mirrors
-// common.string_utils.remove_redundant_spaces (string_utils.py:20-46).
-// Pass 1: drop spaces after a "left boundary" character (parens, <, >).
-// Pass 2: drop spaces before a "right boundary" character (parens, !).
-var (
-	redundantSpacePass1Re = regexp.MustCompile(`([^a-z0-9.,)>\x{ff08}]) +([^ ])`) // left boundary + space + non-space
-	redundantSpacePass2Re = regexp.MustCompile(`([^ ]) +([^a-z0-9.,(<])`)         // non-space + space + right boundary
-)
-
-// removeRedundantSpaces ports common.string_utils.remove_redundant_spaces.
-// Two-pass regex cleanup; both passes use case-insensitive matching.
-func removeRedundantSpaces(s string) string {
-	s = redundantSpacePass1Re.ReplaceAllString(s, "$1$2")
-	s = redundantSpacePass2Re.ReplaceAllString(s, "$1$2")
-	return s
-}
 
 // ISO timestamp stripping regex. Mirrors the cleanup at
 // dialog_service.py:1309. Matches `T13:24:55|` or `T13:24:55.123Z|`.
@@ -3840,7 +4402,7 @@ func chunkKBIDForDoc(rowDict map[string]interface{}, kbIDs []string, docID inter
 func cleanCellValue(v interface{}) string {
 	s := fmt.Sprintf("%v", v)
 	s = strings.ReplaceAll(s, "None", " ")
-	return removeRedundantSpaces(s)
+	return common.RemoveRedundantSpaces(s)
 }
 
 // extractSourceColumnIndexes returns, for a set of SQL result rows,
@@ -3871,35 +4433,57 @@ func extractSourceColumnIndexes(rows []map[string]interface{}) (docIDIdx, docNam
 	return
 }
 
-// WHERE-clause extraction for the aggregate secondary fetch.
-// Mirrors dialog_service.py:1321.
-var whereClauseRe = regexp.MustCompile(`(?i)\bwhere\b(.+?)(?:\bgroup by\b|\border by\b|\blimit\b|$)`)
-
-// limitClauseRe detects whether a SQL already has a LIMIT clause.
-var limitClauseRe = regexp.MustCompile(`(?i)\blimit\b`)
-
-// buildChunkFetchSQL extracts the WHERE clause from the original SQL
-// and constructs a secondary SQL to fetch source chunks. Mirrors
-// dialog_service.py:1327-1331. Returns ("", false) when no WHERE is
-// present. The `multiKB` flag controls whether `kb_id` is included
+// buildChunkFetchSQL extracts the top-level WHERE predicate from the original
+// SQL and constructs a secondary query to fetch source chunks. Returns
+// ("", false) when scanning fails or no predicate is present.
+// The `multiKB` flag controls whether `kb_id` is included
 // in the SELECT list (single-kb queries don't need it because the
 // caller already knows the kb_id).
-func buildChunkFetchSQL(originalSQL, tableName, expectedCol string, multiKB bool) (string, bool) {
-	m := whereClauseRe.FindStringSubmatch(originalSQL)
-	if len(m) < 2 {
+func buildChunkFetchSQL(originalSQL, tableName, expectedCol string, multiKB bool, engineName string) (string, bool) {
+	words, lineComments, ok := scanScalarWords(originalSQL, sqlScanDialectFor(engineName))
+	if !ok {
 		return "", false
 	}
-	where := strings.TrimSpace(m[1])
+	start, end := -1, len(originalSQL)
+predicate:
+	for _, word := range words {
+		if word.depth != 0 {
+			continue
+		}
+		if start < 0 {
+			if word.word == "WHERE" {
+				start = word.end
+			}
+			continue
+		}
+		switch word.word {
+		case "GROUP", "HAVING", "ORDER", "LIMIT", "OFFSET":
+			end = word.start
+			break predicate
+		}
+	}
+	if start < 0 {
+		return "", false
+	}
+	where := strings.TrimSpace(originalSQL[start:end])
+	if where == "" {
+		return "", false
+	}
 	kbCol := ""
 	if multiKB {
 		kbCol = ", kb_id"
 	}
 	sql := fmt.Sprintf("select doc_id, %s%s from %s where %s",
 		expectedCol, kbCol, tableName, where)
-	if !limitClauseRe.MatchString(sql) {
-		sql += " limit 20"
+	limitSeparator := " "
+	predicateEnd := len(strings.TrimRight(originalSQL[:end], " \t\r\n"))
+	for _, comment := range lineComments {
+		if predicateEnd > comment[0] && predicateEnd <= comment[1] {
+			limitSeparator = "\n"
+			break
+		}
 	}
-	return sql, true
+	return sql + limitSeparator + "limit 20", true
 }
 
 // toIfaceSlice converts a []map[string]interface{} to []interface{} for
@@ -3944,14 +4528,28 @@ func (s *ChatPipelineService) fetchAggregateChunks(
 		return nil, nil
 	}
 
-	chunksSQL, ok := buildChunkFetchSQL(originalSQL, tableName, expectedCol, multiKB)
+	engineName := docEngine.GetType()
+	chunksSQL, ok := buildChunkFetchSQL(originalSQL, tableName, expectedCol, multiKB, engineName)
 	if !ok {
 		common.Debug("SQL retrieval: aggregate secondary fetch skipped (no WHERE clause)",
 			zap.String("sql", originalSQL))
 		return nil, nil
 	}
 
-	rows, err := docEngine.RunSQL(ctx, tableName, chunksSQL, kbIDs, "json")
+	if len(kbIDs) == 0 {
+		return nil, nil
+	}
+	kbs := make([]*entity.Knowledgebase, len(kbIDs))
+	for i, kbID := range kbIDs {
+		kbs[i] = &entity.Knowledgebase{ID: kbID}
+	}
+	chunksSQL, ok = addKBFilter(chunksSQL, engineName, kbs)
+	if !ok {
+		common.Warn("SQL retrieval: aggregate secondary fetch cannot be scoped to the authorized datasets; skipping")
+		return nil, nil
+	}
+
+	rows, err := docEngine.RunSQL(ctx, chunksSQL, "json")
 	if err != nil {
 		common.Warn("SQL retrieval: aggregate secondary fetch failed",
 			zap.String("sql", chunksSQL), zap.Error(err))
@@ -4040,8 +4638,12 @@ func (s *ChatPipelineService) buildSQLReference(
 	sysPrompt, engineName string,
 	kbs []*entity.Knowledgebase,
 	fieldMap map[string]interface{},
+	quote bool,
 ) (string, map[string]interface{}) {
 	if len(rows) == 0 {
+		if !quote {
+			return "No results.", map[string]interface{}{}
+		}
 		return "No results.", map[string]interface{}{
 			"chunks":   []map[string]interface{}{},
 			"doc_aggs": []interface{}{},
@@ -4052,6 +4654,9 @@ func (s *ChatPipelineService) buildSQLReference(
 	// Scalar shortcut — matches the previous renderSQLAnswer behavior.
 	if len(rows) == 1 && len(rows[0]) == 1 {
 		for _, v := range rows[0] {
+			if !quote {
+				return cleanCellValue(v), map[string]interface{}{}
+			}
 			return cleanCellValue(v), map[string]interface{}{
 				"chunks":   []map[string]interface{}{},
 				"doc_aggs": []interface{}{},
@@ -4064,6 +4669,7 @@ func (s *ChatPipelineService) buildSQLReference(
 	docIDIdx, docNameIdx, kbIDIdx, columns := extractSourceColumnIndexes(rows)
 	expectedCol := expectedDocNameColumn(engineName)
 	hasSrc := len(docIDIdx) > 0 && len(docNameIdx) > 0
+	showSource := quote && hasSrc
 
 	// Build the set of "display column" indices (everything except
 	// doc_id, docnm*, kb_id*). Python uses set subtraction at
@@ -4092,13 +4698,13 @@ func (s *ChatPipelineService) buildSQLReference(
 		header.WriteString(mapColumnName(columns[i], fieldMap))
 		header.WriteString("|")
 	}
-	if hasSrc {
+	if showSource {
 		header.WriteString("Source|")
 	}
 
 	// --- Separator (Python L1285) ---
 	sep := strings.Repeat("|------", len(displayCols)) + "|"
-	if hasSrc {
+	if showSource {
 		sep += "------|"
 	}
 
@@ -4111,7 +4717,7 @@ func (s *ChatPipelineService) buildSQLReference(
 			cells.WriteString(cleanCellValue(r[columns[i]]))
 			cells.WriteString("|")
 		}
-		if hasSrc {
+		if showSource {
 			cells.WriteString(fmt.Sprintf(" ##%d$$|", rowIdx))
 		}
 		// Skip rows that are entirely empty/whitespace (Python's
@@ -4124,6 +4730,9 @@ func (s *ChatPipelineService) buildSQLReference(
 	rowsJoined := stripISOTimestamps(strings.Join(bodyRows, "\n"))
 
 	answer := strings.Join([]string{header.String(), sep, rowsJoined}, "\n")
+	if !quote {
+		return answer, map[string]interface{}{}
+	}
 
 	// --- Reference: chunks + doc_aggs ---
 	ref := map[string]interface{}{
@@ -4311,7 +4920,7 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 
 func clampChatConfigMaxTokens(cfg *modelModule.ChatConfig, modelMaxTokens, usedTokenCount int) (int, bool, error) {
 	if usedTokenCount >= modelMaxTokens {
-		return 0, false, fmt.Errorf("prompt uses %d tokens, leaving no completion capacity for model max_tokens %d", usedTokenCount, modelMaxTokens)
+		return 0, false, fmt.Errorf("prompt uses %d tokens, leaving no completion capacity for model max context length %d", usedTokenCount, modelMaxTokens)
 	}
 	if cfg == nil || cfg.MaxTokens == nil {
 		return 0, false, nil
@@ -4412,11 +5021,100 @@ func chunksFormat(chunksRaw []map[string]interface{}) []map[string]interface{} {
 	return result
 }
 
-// getChunkValue returns the first non-nil value from a chunk map, trying k1 first then k2.
-// Mirrors Python's get_value helper in rag/prompts/generator.py:37-38.
+// getChunkValue returns chunk[k1] when the key is present, otherwise chunk[k2].
+// Mirrors Python's get_value helper in rag/prompts/generator.py:37-38
+// (`d.get(k1, d.get(k2))`), which falls back on KEY ABSENCE only: a key present
+// with a nil/empty value is returned as-is rather than skipping to k2.
 func getChunkValue(chunk map[string]interface{}, k1, k2 string) interface{} {
-	if v, ok := chunk[k1]; ok && v != nil {
+	if v, ok := chunk[k1]; ok {
 		return v
 	}
 	return chunk[k2]
+}
+
+// toAnySlice widens a []map[string]any to []interface{} so the doc_aggs field
+// keeps the element type the downstream phases expect from the native pipeline.
+func toAnySlice(in []map[string]any) []interface{} {
+	out := make([]interface{}, 0, len(in))
+	for _, m := range in {
+		out = append(out, m)
+	}
+	return out
+}
+
+// asInt64 coerces a JSON-decoded value (float64/json.Number/int/string/bool) to
+// an int64, returning ok=false when the value is absent or not numeric.
+func asInt64(v interface{}) (int64, bool) {
+	switch t := v.(type) {
+	case float64:
+		return int64(t), true
+	case int:
+		return int64(t), true
+	case int64:
+		return t, true
+	case json.Number:
+		if n, err := t.Int64(); err == nil {
+			return n, true
+		}
+	case string:
+		var n int64
+		if _, err := fmt.Sscanf(t, "%d", &n); err == nil {
+			return n, true
+		}
+	case bool:
+		if t {
+			return 1, true
+		}
+		return 0, true
+	}
+	return 0, false
+}
+
+// quoteEnabled resolves the effective citation-visibility setting: either the
+// chat setting or the request can disable citations, and both must agree. An
+// absent setting on either side leaves citations on.
+//
+// It is a function because two dispatch points need it — the agentic branch
+// and Phase 6 — and the agentic branch returns before Phase 6 runs. Resolving
+// it twice is how the agentic path ended up ignoring a request's quote:false.
+func quoteEnabled(kwargs map[string]interface{}, promptConfig map[string]interface{}) bool {
+	quote := true
+	if v, ok := kwargs["quote"].(bool); ok {
+		quote = v
+	}
+	if promptConfigQuote, ok := promptConfig["quote"].(bool); ok {
+		quote = quote && promptConfigQuote
+	}
+	return quote
+}
+
+// reasoningLevelAgentic is the reasoning level that hands the turn to the
+// smart-reasoning agent (internal/agentic_rag) instead of running the pipeline's
+// own retrieval phases.
+//
+// It is the only level that means anything beyond "retrieve normally": every
+// other value — including a stale 1..4 from a client still sending one of the
+// removed thinking modes — runs the standard retrieval path below.
+const reasoningLevelAgentic = 5
+
+// resolveReasoningLevel reads the requesting reasoning level from the request
+// kwargs first, falling back to the chat prompt_config. Only
+// reasoningLevelAgentic selects the smart-reasoning agent. Frontend sends
+// Number(getThinkingLevel()), so the raw value is numeric, not a bool.
+func resolveReasoningLevel(kwargs map[string]interface{}, promptConfig map[string]interface{}) int {
+	if kwargs != nil {
+		if v, ok := kwargs["reasoning"]; ok {
+			if n, ok2 := asInt64(v); ok2 {
+				return int(n)
+			}
+		}
+	}
+	if promptConfig != nil {
+		if v, ok := promptConfig["reasoning"]; ok {
+			if n, ok2 := asInt64(v); ok2 {
+				return int(n)
+			}
+		}
+	}
+	return 0
 }

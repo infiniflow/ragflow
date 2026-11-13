@@ -1,3 +1,4 @@
+import { EnterpriseModalProvider } from '@/ee/components/modal-provider';
 import { ReactNode, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { createRoot } from 'react-dom/client';
@@ -72,7 +73,13 @@ export const createPortalModal = () => {
       },
       ...props,
     };
-    root?.render(isVisible ? <PortalModal {...modalParam} /> : null);
+    root?.render(
+      isVisible ? (
+        <EnterpriseModalProvider>
+          <PortalModal {...modalParam} />
+        </EnterpriseModalProvider>
+      ) : null,
+    );
   };
 
   const show = (props: PortalModalProps) => {

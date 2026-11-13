@@ -22,11 +22,14 @@ import { Authorization } from '@/constants/authorization';
 import i18n from '@/locales/config';
 import { Routes } from '@/routes';
 import api from '@/utils/api';
-import authorizationUtil, {
-  getAuthorization,
-} from '@/utils/authorization-util';
+import { adminStorage } from '@/utils/authorization-util';
 import { convertTheKeysOfTheObjectToSnake } from '@/utils/common-util';
 import { ResultCode, RetcodeMessage } from '@/utils/request';
+import {
+  adaptServiceDetail,
+  adaptServiceList,
+  GoServiceStatus,
+} from './admin-service-adapter';
 
 const request = axios.create({
   timeout: 300000,
@@ -40,7 +43,7 @@ request.interceptors.request.use((config) => {
 
   // @ts-ignore
   if (!newConfig.skipToken) {
-    newConfig.headers.set(Authorization, getAuthorization());
+    newConfig.headers.set(Authorization, adminStorage.getAuthorization());
   }
 
   return newConfig;
@@ -55,18 +58,20 @@ request.interceptors.response.use(
     const { data } = response ?? {};
 
     if (data?.code === 100) {
-      message.error(data?.message);
+      message.error(data?.message, { position: 'top-right' });
     } else if (data?.code === 401) {
       message.error(data?.message, {
         description: data?.message,
+        position: 'top-right',
       });
 
-      authorizationUtil.removeAll();
+      adminStorage.removeAll();
       history.push(Routes.Admin);
       window.location.reload();
     } else if (data?.code && data.code !== 0) {
       message.error(`${i18n.t('message.hint')}: ${data?.code}`, {
         description: data?.message,
+        position: 'top-right',
       });
     }
 
@@ -91,7 +96,7 @@ request.interceptors.response.use(
         duration: 3,
       });
 
-      authorizationUtil.removeAll();
+      adminStorage.removeAll();
       history.push(Routes.Admin);
       window.location.reload();
     } else if (data?.code && data.code !== 0) {
@@ -139,7 +144,6 @@ const {
   adminRevokeRolePermissions,
 
   adminGetUserPermissions,
-  adminUpdateUserRole,
 
   adminListResources,
 
@@ -166,12 +170,12 @@ type ResponseData<D = NonNullable<unknown>> = {
 
 export const login = (params: { email: string; password: string }) =>
   request.post<ResponseData<AdminService.LoginData>>(adminLogin, params);
-export const logout = () => request.post<ResponseData<boolean>>(adminLogout);
+export const logout = () => request.post<ResponseData<void>>(adminLogout);
 export const listUsers = () =>
   request.get<ResponseData<AdminService.ListUsersItem[]>>(adminListUsers, {});
 
 export const createUser = (email: string, password: string) =>
-  request.post<ResponseData<boolean>>(adminCreateUser, {
+  request.post<ResponseData<Record<string, unknown>>>(adminCreateUser, {
     username: email,
     password,
   });
@@ -201,12 +205,17 @@ export const updateUserPassword = (email: string, password: string) =>
 export const deleteUser = (email: string) =>
   request.delete(adminDeleteUser(email));
 
-export const listServices = () =>
-  request.get<ResponseData<AdminService.ListServicesItem[]>>(adminListServices);
-export const showServiceDetails = (serviceId: number) =>
-  request.get<ResponseData<AdminService.ServiceDetail>>(
-    adminShowServiceDetails(String(serviceId)),
+export const listServices = async () => {
+  const { data } =
+    await request.get<ResponseData<GoServiceStatus[]>>(adminListServices);
+  return data.code === 0 ? adaptServiceList(data.data) : [];
+};
+export const showServiceDetails = async (serviceId: number | string) => {
+  const { data } = await request.get<ResponseData<GoServiceStatus>>(
+    adminShowServiceDetails(encodeURIComponent(String(serviceId))),
   );
+  return data.code === 0 ? adaptServiceDetail(data.data) : undefined;
+};
 
 export const createRole = (params: {
   roleName: string;
@@ -250,10 +259,6 @@ export const revokeRolePermissions = (
     data: { revoke_permissions: permissions },
   });
 
-export const updateUserRole = (username: string, role: string) =>
-  request.put<ResponseData<never>>(adminUpdateUserRole(username), {
-    role_name: role,
-  });
 export const getUserPermissions = (username: string) =>
   request.get<ResponseData<AdminService.UserDetailWithPermission>>(
     adminGetUserPermissions(username),
@@ -300,8 +305,10 @@ export const getSandboxProviderSchema = (providerId: string) =>
     adminGetSandboxProviderSchema(providerId),
   );
 
-export const getSandboxConfig = () =>
-  request.get<ResponseData<AdminService.SandboxConfig>>(adminGetSandboxConfig);
+export const getSandboxConfig = (providerType?: string) =>
+  request.get<ResponseData<AdminService.SandboxConfig>>(adminGetSandboxConfig, {
+    params: { provider_type: providerType },
+  });
 
 export const setSandboxConfig = (params: {
   providerType: string;

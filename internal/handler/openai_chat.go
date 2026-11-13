@@ -44,41 +44,48 @@ func NewOpenAIChatHandler(svc *service.OpenAIChatService) *OpenAIChatHandler {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/openai/{chat_id}/chat/completions [post]
 func (h *OpenAIChatHandler) OpenAIChatCompletions(c *gin.Context) {
+	common.StartOperationLog(c, "request_chat_completion")
+	defer common.FinishOperationLog(c)
+	common.SetOperationResource(c, "chat_id", c.Param("chat_id"))
+
 	chatID := c.Param("chat_id")
 	if chatID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "You don't own the chat "+chatID)
-		return
-	}
-
-	user, code, msg := GetUser(c)
-	if code != common.CodeSuccess {
-		common.ResponseWithCodeData(c, code, nil, msg)
+		common.RespondError(c, common.CodeDataError, "You don't own the chat "+chatID)
 		return
 	}
 
 	bodyBytes, err := io.ReadAll(c.Request.Body)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
 
 	// Parse body into the typed request
 	var req service.OpenAIChatRequest
 	if err := json.Unmarshal(bodyBytes, &req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
+		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
+	}
+
+	question, err := service.ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	if err != nil {
+		common.RespondError(c, common.CodeDataError, err.Error())
+		return
+	}
+	if req.Question != "" || req.Query != "" {
+		req.Messages = []map[string]interface{}{{"role": "user", "content": question}}
 	}
 
 	// Messages presence
 	if len(req.Messages) == 0 {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "You have to provide messages.")
+		common.RespondError(c, common.CodeDataError, "You have to provide messages.")
 		return
 	}
 
 	// extra_body shape validation
 	extraBody, extraBodyOK := req.ExtraBody.(map[string]interface{})
 	if req.ExtraBody != nil && !extraBodyOK {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "extra_body must be an object.")
+		common.RespondError(c, common.CodeArgumentError, "extra_body must be an object.")
 		return
 	}
 
@@ -87,14 +94,12 @@ func (h *OpenAIChatHandler) OpenAIChatCompletions(c *gin.Context) {
 		if rm, ok := extraBody["reference_metadata"].(map[string]interface{}); ok {
 			if rawFields, has := rm["fields"]; has {
 				if rawArr, ok := rawFields.([]interface{}); !ok {
-					common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
-						"reference_metadata.fields must be an array.")
+					common.RespondError(c, common.CodeArgumentError, "reference_metadata.fields must be an array.")
 					return
 				} else {
 					for _, item := range rawArr {
 						if _, ok = item.(string); !ok {
-							common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
-								"reference_metadata.fields must be an array.")
+							common.RespondError(c, common.CodeArgumentError, "reference_metadata.fields must be an array.")
 							return
 						}
 					}
@@ -107,8 +112,7 @@ func (h *OpenAIChatHandler) OpenAIChatCompletions(c *gin.Context) {
 	if extraBody != nil {
 		if mc, ok := extraBody["metadata_condition"]; ok && mc != nil {
 			if _, ok := mc.(map[string]interface{}); !ok {
-				common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
-					"metadata_condition must be an object.")
+				common.RespondError(c, common.CodeArgumentError, "metadata_condition must be an object.")
 				return
 			}
 		}
@@ -117,12 +121,15 @@ func (h *OpenAIChatHandler) OpenAIChatCompletions(c *gin.Context) {
 	// Last message must be from the user
 	if last := req.Messages[len(req.Messages)-1]; last != nil {
 		if role, _ := last["role"].(string); role != "user" {
-			common.ResponseWithCodeData(c, common.CodeDataError, nil, "The last content of this conversation is not from user.")
+			common.RespondError(c, common.CodeDataError, "The last content of this conversation is not from user.")
 			return
 		}
 	}
 
 	// All early-rejection checks passed. Delegate to the service for the
 	// actual LLM call.
-	h.svc.OpenAIChatCompletions(c, user.ID, chatID, bodyBytes)
+	// Long agentic runs stream for minutes or compute before their single
+	// write; clear http.Server.WriteTimeout so neither is cut off mid-response.
+	clearResponseWriteDeadline(c)
+	h.svc.OpenAIChatCompletions(c, chatID, bodyBytes)
 }

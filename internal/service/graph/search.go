@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"encoding/json"
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	modelModule "ragflow/internal/entity/models"
@@ -99,7 +100,9 @@ func buildDenseExpr(ctx context.Context, embModel *modelModule.EmbeddingModel, q
 		return nil, nil
 	}
 	embCfg := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeddings, err := embModel.ModelDriver.Embed(ctx, embModel.ModelName, modelModule.EmbedRequest{Texts: []string{question}}, embModel.APIConfig, embCfg, nil)
+	// Query: true — the KG search embeds the user's question (Python
+	// get_vector → encode_queries), not a document.
+	embeddings, err := embModel.Embed(ctx, modelModule.EmbedRequest{Texts: []string{question}, Query: true}, embCfg, nil)
 	if err != nil {
 		return nil, fmt.Errorf("KG entity embed failed: %w", err)
 	}
@@ -108,7 +111,7 @@ func buildDenseExpr(ctx context.Context, embModel *modelModule.EmbeddingModel, q
 	}
 	vector := embeddings[0].Embedding
 	return &types.MatchDenseExpr{
-		VectorColumnName:  fmt.Sprintf("q_%d_vec", len(vector)),
+		VectorColumnName:  common.VectorColumnName(len(vector)),
 		EmbeddingData:     vector,
 		EmbeddingDataType: "float",
 		DistanceType:      "cosine",

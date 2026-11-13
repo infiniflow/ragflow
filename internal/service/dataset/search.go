@@ -3,38 +3,46 @@ package dataset
 import (
 	"context"
 	"fmt"
+
 	"ragflow/internal/dao"
+	"ragflow/internal/permission"
+	"slices"
 
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 	"ragflow/internal/service/nlp"
 )
 
-func (d *DatasetService) SearchDataset(ctx context.Context, datasetID, userID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error) {
+func (d *DatasetService) SearchDataset(ctx context.Context, datasetID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error) {
 	if datasetID == "" {
 		return nil, fmt.Errorf("dataset_id is required")
 	}
-	return d.SearchDatasets(ctx, req.ToSearchDatasetsRequest(datasetID), userID)
+	return d.SearchDatasets(ctx, req.ToSearchDatasetsRequest(datasetID))
 }
 
-func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error) {
+func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.SearchDatasetsRequest) (*service.SearchDatasetsResponse, error) {
 	if req.Question == "" {
 		return nil, fmt.Errorf("question is required")
 	}
 	if len(req.DatasetIDs) == 0 {
 		return nil, fmt.Errorf("dataset_ids is required")
 	}
+	if err := service.ValidateKnowledgeCompilationScope(req.KnowledgeCompilationScope); err != nil {
+		return nil, err
+	}
+	userID := permission.UserIDFromContext(ctx)
 	common.Info("SearchDatasets started", zap.String("userID", userID), zap.Any("datasets", req.DatasetIDs), zap.String("question", req.Question))
 
-	page := 1
+	page := common.DefaultPage
 	if req.Page != nil {
 		page = *req.Page
 	}
-	pageSize := 30
+	pageSize := common.DefaultPageSize
 	if req.PageSize != nil {
 		pageSize = *req.PageSize
 	} else if req.Size != nil {
@@ -87,7 +95,6 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	question := req.Question
 	datasetIDs := req.DatasetIDs
 	metadataFilter := req.MetadataFilter
-	hasMetadataCondition := req.MetadataCondition != nil
 	if req.MetadataCondition != nil {
 		manual := make([]interface{}, 0)
 		if conditions, ok := req.MetadataCondition["conditions"].([]interface{}); ok {
@@ -105,16 +112,17 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		documentIDs = req.DocIDs
 	}
 
-	modelProviderSvc := service.NewModelProviderService()
+	modelFactory := service.NewModelFactory()
 
 	// Access check for all datasets
 	var tenantIDs []string
 	var kbRecords []*entity.Knowledgebase
 	seenTenants := make(map[string]bool)
 	for _, datasetID := range datasetIDs {
-		if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationUse); err != nil {
 			common.Warn("SearchDatasets access denied", zap.String("datasetID", datasetID), zap.String("userID", userID))
-			return nil, fmt.Errorf("only owner of dataset %s is authorized for this operation", datasetID)
+			_, permissionErr := permissionresponse.Normalize(err)
+			return nil, permissionErr
 		}
 
 		kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
@@ -146,6 +154,9 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
+			if permissionresponse.IsPermissionError(err) {
+				return nil, err
+			}
 			common.Warn("Invalid search_id", zap.String("searchID", searchID), zap.Error(err))
 			return nil, fmt.Errorf("invalid search_id")
 		}
@@ -153,12 +164,6 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			common.Warn("Invalid search_id", zap.String("searchID", searchID))
 			return nil, fmt.Errorf("invalid search_id")
 		}
-		searchTenantID, ok := searchDetail["tenant_id"].(string)
-		if !ok || searchTenantID != userID {
-			common.Warn("Invalid search_id", zap.String("searchID", searchID))
-			return nil, fmt.Errorf("invalid search_id")
-		}
-
 		if searchConfig, ok := searchDetail["search_config"].(map[string]interface{}); ok && searchConfig != nil {
 			rerankCandidatesCount = 100
 			if scMetadataFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
@@ -208,24 +213,22 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 
 	// If meta_data_filter method is auto/semi_auto, get chat model
 	var chatModelForFilter *modelModule.ChatModel
+	var err error
 	if metadataFilter != nil {
 		method, _ := metadataFilter["method"].(string)
 		if method == "auto" || method == "semi_auto" {
+			modelCtx := permission.WithTenantID(ctx, tenantIDs[0])
 			if chatID != "" {
-				driver, modelName, apiConfig, _, err := modelProviderSvc.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeChat, chatID)
+				chatModelForFilter, err = modelFactory.NewChatModel(modelCtx, chatID)
 				if err != nil {
 					common.Warn("Failed to get chat model config from search_config chat_id, using tenant default", zap.String("chatID", chatID), zap.Error(err))
-				} else {
-					chatModelForFilter = modelModule.NewChatModel(driver, &modelName, apiConfig)
 				}
 			}
 
 			if chatModelForFilter == nil {
-				driver, modelName, apiConfig, _, err := modelProviderSvc.GetTenantDefaultModelByType(ctx, tenantIDs[0], entity.ModelTypeChat)
+				chatModelForFilter, err = modelFactory.NewDefaultChatModel(modelCtx)
 				if err != nil {
 					common.Warn("Failed to get tenant default chat model for meta_data_filter", zap.Error(err))
-				} else {
-					chatModelForFilter = modelModule.NewChatModel(driver, &modelName, apiConfig)
 				}
 			}
 		}
@@ -241,14 +244,10 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			common.Warn("Failed to get flatted metadata, using empty metadata for filter", zap.Error(err))
 			flattedMeta = make(common.MetaData)
 		}
-		if hasMetadataCondition {
-			filteredDocIDs, _ := service.ApplyMetaDataFilter(ctx, metadataFilter, flattedMeta, question, chatModelForFilter, documentIDs, datasetIDs)
+		// nil means the metadata filter produced no scope at all, so the
+		// request keeps the document scope it came with.
+		if filteredDocIDs := service.ApplyMetaDataFilter(ctx, metadataFilter, flattedMeta, question, chatModelForFilter, documentIDs, datasetIDs); filteredDocIDs != nil {
 			docIDs = filteredDocIDs
-		} else {
-			filteredDocIDs, filterReturnedEmpty := service.ApplyMetaDataFilter(ctx, metadataFilter, flattedMeta, question, chatModelForFilter, nil, datasetIDs)
-			if !filterReturnedEmpty {
-				docIDs = append(docIDs, filteredDocIDs...)
-			}
 		}
 	}
 
@@ -263,16 +262,15 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		}
 	}
 	if keyword {
-		driver, modelName, apiConfig, _, err := modelProviderSvc.GetTenantDefaultModelByType(ctx, tenantIDs[0], entity.ModelTypeChat)
+		chatModel, err := modelFactory.NewDefaultChatModel(permission.WithTenantID(ctx, tenantIDs[0]))
 		if err != nil {
 			common.Warn("Failed to get default chat model for LLM transformations", zap.Error(err))
 		} else {
-			chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
 			extractedKeywords, err := service.KeywordExtraction(ctx, chatModel, modifiedQuestion, 3)
 			if err != nil {
 				common.Warn("Failed to extract keywords from question", zap.Error(err))
-			} else if extractedKeywords != "" {
-				modifiedQuestion = modifiedQuestion + extractedKeywords
+			} else {
+				modifiedQuestion = service.AppendKeywords(modifiedQuestion, extractedKeywords)
 			}
 		}
 	}
@@ -284,21 +282,19 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	// Determine embedding model
 	var embeddingModel *modelModule.EmbeddingModel
 	if kbRecords[0].EmbdID != "" {
-		driver, modelName, apiConfig, maxTokens, embErr := modelProviderSvc.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeEmbedding, kbRecords[0].EmbdID)
-		if embErr != nil {
-			return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", embErr)
+		embeddingModel, err = modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantIDs[0]), kbRecords[0].EmbdID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", err)
 		}
-		embeddingModel = modelModule.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
 	}
 
 	// Get rerank model if rerankID is specified
 	var rerankModel *modelModule.RerankModel
 	if rerankID != "" {
-		driver, modelName, apiConfig, _, rErr := modelProviderSvc.ResolveModelConfig(ctx, tenantIDs[0], entity.ModelTypeRerank, rerankID)
-		if rErr != nil {
-			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", rErr)
+		rerankModel, err = modelFactory.NewRerankModel(permission.WithTenantID(ctx, tenantIDs[0]), rerankID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get rerank model by rerank_id: %w", err)
 		}
-		rerankModel = modelModule.NewRerankModel(driver, &modelName, apiConfig)
 	}
 
 	retrievalReq := &nlp.RetrievalRequest{
@@ -317,9 +313,12 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		RankFeature:            &labels,
 		EmbeddingModel:         embeddingModel,
 		Highlight:              req.Highlight,
+		Language:               entity.KnowledgebasesLanguage(kbRecords),
 	}
-	if req.IncludeCompiledChunks != nil && !*req.IncludeCompiledChunks {
-		retrievalReq.Filter = map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}}
+	retrievalReq.Filter = knowledgeCompilationFilter(req.IncludeCompiledChunks, req.KnowledgeCompilationScope)
+	if len(docIDs) > 0 && (req.IncludeCompiledChunks == nil || *req.IncludeCompiledChunks) && req.KnowledgeCompilationScope != "document" {
+		// Dataset artifacts use dataset IDs instead of source document IDs.
+		retrievalReq.DocIDs = append(slices.Clone(docIDs), datasetIDs...)
 	}
 
 	retrievalResult, err := nlp.NewRetrievalService(d.docEngine, d.documentDAO).Retrieval(ctx, retrievalReq)
@@ -334,25 +333,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	}
 
 	filteredChunks = nlp.RetrievalByChildren(filteredChunks, tenantIDs, d.docEngine, ctx)
-
-	keyMapping := map[string]string{
-		"chunk_id":            "id",
-		"content_with_weight": "content",
-		"doc_id":              "document_id",
-		"important_kwd":       "important_keywords",
-		"question_kwd":        "questions",
-		"docnm_kwd":           "document_keyword",
-		"kb_id":               "dataset_id",
-	}
-	for i := range filteredChunks {
-		delete(filteredChunks[i], "vector")
-		for oldKey, newKey := range keyMapping {
-			if value, ok := filteredChunks[i][oldKey]; ok {
-				filteredChunks[i][newKey] = value
-				delete(filteredChunks[i], oldKey)
-			}
-		}
-	}
+	formatDatasetSearchChunks(filteredChunks, req.IncludeCompiledChunks)
 
 	common.Info("SearchDatasets completed", zap.String("userID", userID), zap.Any("kbID", datasetIDs), zap.String("question", question), zap.Int64("chunkCount", int64(len(filteredChunks))))
 
@@ -364,4 +345,45 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		Labels:  &labels,
 		Total:   retrievalResult.Total,
 	}, nil
+}
+
+// formatDatasetSearchChunks applies API field names and compilation visibility after parent promotion.
+func formatDatasetSearchChunks(filteredChunks []map[string]interface{}, includeCompiledChunks *bool) {
+	keyMapping := map[string]string{
+		"chunk_id":            "id",
+		"content_with_weight": "content",
+		"doc_id":              "document_id",
+		"important_kwd":       "important_keywords",
+		"question_kwd":        "questions",
+		"docnm_kwd":           "document_keyword",
+		"kb_id":               "dataset_id",
+	}
+	for i := range filteredChunks {
+		if includeCompiledChunks != nil && !*includeCompiledChunks {
+			delete(filteredChunks[i], "compile_kwd")
+		}
+		delete(filteredChunks[i], "vector")
+		for oldKey, newKey := range keyMapping {
+			if value, ok := filteredChunks[i][oldKey]; ok {
+				filteredChunks[i][newKey] = value
+				delete(filteredChunks[i], oldKey)
+			}
+		}
+	}
+}
+
+func knowledgeCompilationFilter(include *bool, scope string) map[string]interface{} {
+	ordinary := map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}}
+	if include != nil && !*include {
+		return ordinary
+	}
+	switch scope {
+	case "all":
+		return nil
+	case "document":
+		scope = "doc"
+	default:
+		scope = "dataset"
+	}
+	return map[string]interface{}{"or": []map[string]interface{}{ordinary, {"scope_kwd": scope}}}
 }

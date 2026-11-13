@@ -16,6 +16,7 @@
 
 import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
 import { parseModelValue } from '@/utils/llm-util';
+import { TriangleAlert } from 'lucide-react';
 import { memo } from 'react';
 import { LlmIcon } from '../svg-icon';
 
@@ -24,41 +25,65 @@ interface IProps {
   ownerTenantId?: string;
 }
 
-export const LLMLabel = ({ value, ownerTenantId }: IProps) => {
+/**
+ * Resolve the display name for a persisted model value without judging its
+ * availability: composite values yield their parsed name, plain model_id
+ * values are looked up in the (optionally owner-scoped) added-model list.
+ */
+function useModelDisplayName({ value, ownerTenantId }: IProps) {
   const { data: models } = useFetchAllAddedModels(undefined, ownerTenantId);
 
   const parsed = value ? parseModelValue(value) : null;
-
-  let modelName = parsed?.model_name;
-  let instanceName = parsed?.model_instance;
-  let iconName = parsed ? parsed.model_provider : '';
-
-  if (!modelName && value) {
-    const model = models.find((m) => m.model_id === value);
-    if (model) {
-      modelName = model.name;
-      instanceName = model.instance_name;
-      iconName = model.provider_name;
-    }
+  if (parsed?.model_name) {
+    return parsed;
   }
+  const model = value ? models.find((m) => m.model_id === value) : undefined;
+  return model
+    ? {
+        model_name: model.name,
+        model_instance: model.instance_name,
+        model_provider: model.provider_name,
+      }
+    : null;
+}
 
-  if (!modelName) return null;
+export const LLMLabel = ({ value, ownerTenantId }: IProps) => {
+  const display = useModelDisplayName({ value, ownerTenantId });
+
+  if (!display?.model_name) return null;
 
   return (
     <div className="flex items-center gap-1.5 min-w-0">
       <LlmIcon
-        name={iconName}
+        name={display.model_provider}
         width={22}
         height={22}
         imgClass="size-[22px] flex-shrink-0"
       />
-      <span className="font-medium truncate">{modelName}</span>
-      {instanceName && (
+      <span className="font-medium truncate">{display.model_name}</span>
+      {display.model_instance && (
         <span className="text-text-secondary truncate flex-shrink-0">
-          {instanceName}
+          {display.model_instance}
         </span>
       )}
     </div>
+  );
+};
+
+/**
+ * Warning marker for a persisted model value that resolves against no usable
+ * model — mirrors the retrieval node's stale-dataset row. Best-effort name:
+ * parsed composite name, else a model_id lookup in the (optionally
+ * owner-scoped) added-model list, else the raw value.
+ */
+export const MissingModelLabel = ({ value, ownerTenantId }: IProps) => {
+  const display = useModelDisplayName({ value, ownerTenantId });
+
+  return (
+    <span className="flex items-center gap-1.5 text-text-disabled">
+      <TriangleAlert className="size-4 flex-shrink-0" />
+      <span className="truncate">{display?.model_name ?? value}</span>
+    </span>
   );
 };
 

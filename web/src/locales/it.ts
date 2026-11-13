@@ -383,6 +383,8 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       dataFlowRequired: 'Il flusso dati è richiesto',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'Continua il caricamento: il sistema passerà automaticamente questi file a una configurazione di analisi integrata supportata.',
       metadata: {
         fields: 'campi',
         selectFiles: 'Selezionati {{count}} file',
@@ -501,7 +503,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       webCrawl: 'Web crawl',
       chunkNumber: 'Chunk',
       uploadDate: 'Data caricamento',
-      chunkMethod: 'Metodo di chunking',
+      parsingMode: 'Modalità di analisi',
       enabled: 'Abilita',
       disabled: 'Disabilita',
       action: 'Azione',
@@ -519,13 +521,13 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
         'Esegui un test di recupero per verificare se RAGFlow riesce a recuperare il contenuto previsto per il LLM. Se hai modificato le impostazioni predefinite, come il peso della similarità delle parole chiave o la soglia di similarità, per ottenere i risultati ottimali, tieni presente che queste modifiche non saranno salvate automaticamente. Devi applicarle alle impostazioni del tuo assistente chat o alle impostazioni del componente agente Recupero.',
       similarityThreshold: 'Soglia di similarità',
       similarityThresholdTip:
-        'RAGFlow utilizza una combinazione di similarità delle parole chiave ponderata e similarità coseno vettoriale ponderata, o una combinazione di similarità delle parole chiave ponderata e punteggio di reranking ponderato durante il recupero. Questo parametro imposta la soglia per le similarità tra la query utente e i chunk. Qualsiasi chunk con un punteggio di similarità inferiore a questa soglia sarà escluso dai risultati. Per impostazione predefinita, la soglia è impostata a 20. Ciò significa che solo i chunk con punteggio di similarità ibrida di 20 o superiore saranno recuperati.',
+        'Durante il recupero, RAGFlow utilizza una combinazione di similarità ponderata delle parole chiave e similarità coseno vettoriale ponderata oppure, quando è selezionato un modello di reranking, una combinazione di similarità ponderata delle parole chiave e punteggio di reranking ponderato. Questo parametro imposta la soglia di similarità tra la query dell’utente e i chunk. Qualsiasi chunk con un punteggio di similarità inferiore a questa soglia sarà escluso dai risultati. Per impostazione predefinita, la soglia è impostata su 20. Ciò significa che verranno recuperati solo i chunk con un punteggio di similarità ibrida pari o superiore a 20. Se il peso della similarità vettoriale è impostato su 0, questa soglia non si applica.',
       vectorSimilarityWeight: 'Peso similarità vettoriale',
       vectorSimilarityWeightTip:
-        'Imposta il peso della similarità delle parole chiave nel punteggio di similarità combinato, usato con la similarità coseno vettoriale o con il punteggio di reranking. Il totale dei due pesi deve essere uguale a 1.0.',
+        'Imposta il peso della similarità vettoriale nel punteggio di similarità combinato, usato con la similarità coseno vettoriale o con il punteggio di reranking. Il totale dei due pesi deve essere uguale a 1.0.',
       keywordSimilarityWeight: 'Peso similarità parole chiave',
       keywordSimilarityWeightTip:
-        'Imposta il peso della similarità delle parole chiave nel punteggio di similarità combinato, usato con la similarità coseno vettoriale o con il punteggio di reranking. Il totale dei due pesi deve essere uguale a 1.0.',
+        'Imposta il peso della similarità delle parole chiave nel punteggio di similarità combinato. La somma dei pesi della similarità vettoriale e delle parole chiave deve essere uguale a 1.0.',
       testText: 'Testo di test',
       testTextPlaceholder: 'Inserisci la tua domanda qui!',
       testingLabel: 'Esegui',
@@ -553,9 +555,6 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       layoutRecognize: 'Parser PDF',
       layoutRecognizeTip:
         "Usa un modello visivo per l'analisi del layout PDF per individuare efficacemente titoli, blocchi di testo, immagini e tabelle. Se viene scelta l'opzione naive, sarà recuperato solo il testo semplice nel PDF. Nota che questa opzione attualmente funziona SOLO per i documenti PDF.",
-      taskPageSize: 'Dimensione pagina attività',
-      taskPageSizeMessage: 'Inserisci la dimensione della pagina attività!',
-      taskPageSizeTip: `Durante il riconoscimento del layout, un file PDF viene suddiviso in chunk ed elaborato in parallelo per aumentare la velocità di elaborazione. Questo parametro imposta la dimensione di ogni chunk. Una dimensione chunk maggiore riduce la probabilità di dividere il testo continuo tra le pagine.`,
       addPage: 'Aggiungi pagina',
       greaterThan: 'Il valore attuale deve essere maggiore di!',
       greaterThanPrevious:
@@ -571,7 +570,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       close: 'Chiudi',
       rerankModel: 'Modello rerank',
       rerankPlaceholder: 'Seleziona valore',
-      rerankTip: `Opzionale. Se lasciato vuoto, RAGFlow userà una combinazione di similarità delle parole chiave ponderata e similarità coseno vettoriale ponderata; se viene selezionato un modello rerank, un punteggio di reranking ponderato sostituirà la similarità coseno vettoriale ponderata. Tieni presente che l'uso di un modello rerank aumenterà significativamente il tempo di risposta del sistema. Se desideri usare un modello rerank, assicurati di usare un reranker SaaS; se preferisci un modello rerank distribuito localmente, assicurati di avviare RAGFlow con docker-compose-gpu.yml.`,
+      rerankTip: `Opzionale. Se lasciato vuoto, RAGFlow userà una combinazione di similarità delle parole chiave ponderata e similarità coseno vettoriale ponderata; se viene selezionato un modello rerank, un punteggio di reranking ponderato sostituirà la similarità coseno vettoriale ponderata. Tieni presente che l'uso di un modello rerank aumenterà significativamente il tempo di risposta del sistema.`,
       topK: 'Top-K',
       topKTip: `Usato insieme al modello Rerank, questa impostazione definisce il numero di chunk di testo da inviare al modello di reranking specificato.`,
       delimiter: `Delimitatore per testo`,
@@ -582,12 +581,10 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       childrenDelimiterTip:
         'Un delimitatore può consistere in uno o più caratteri speciali. Se sono più caratteri, assicurati che siano racchiusi tra backtick (``). Ad esempio, se configuri i tuoi delimitatori così: \\n`##`;, i tuoi testi saranno separati a interruzioni di riga, doppio cancelletto (##) e punto e virgola.',
 
-      html4excel: 'Excel in HTML',
-      html4excelTip: `Usa con il metodo di chunking Generale. Quando disabilitato, i fogli di calcolo (XLSX o XLS (Excel 97-2003)) nel dataset saranno analizzati in coppie chiave-valore. Quando abilitato, saranno analizzati in tabelle HTML, dividendo ogni 12 righe se la tabella originale ha più di 12 righe. Vedi https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration per i dettagli.`,
       autoKeywords: 'Parole chiave automatiche',
-      autoKeywordsTip: `Estrai automaticamente N parole chiave per ogni chunk per aumentare il loro ranking per le query contenenti quelle parole chiave. Tieni presente che saranno consumati token extra dal modello di indicizzazione specificato in 'Configurazione'. Puoi controllare o aggiornare le parole chiave aggiunte per un chunk dalla lista dei chunk. Per i dettagli, vedi https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
+      autoKeywordsTip: `Estrai automaticamente N parole chiave per ogni chunk per aumentare il loro ranking per le query contenenti quelle parole chiave. Tieni presente che saranno consumati token extra dal modello di indicizzazione specificato in 'Configurazione'. Puoi controllare o aggiornare le parole chiave aggiunte per un chunk dalla lista dei chunk. Per i dettagli, vedi https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoQuestions: 'Domande automatiche',
-      autoQuestionsTip: `Estrai automaticamente N domande per ogni chunk per aumentare il loro ranking per le query contenenti quelle domande. Puoi controllare o aggiornare le domande aggiunte per un chunk dalla lista dei chunk. Questa funzionalità non interromperà il processo di chunking se si verifica un errore, eccetto che potrebbe aggiungere un risultato vuoto al chunk originale. Tieni presente che saranno consumati token extra dal modello di indicizzazione specificato in 'Configurazione'. Per i dettagli, vedi https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
+      autoQuestionsTip: `Estrai automaticamente N domande per ogni chunk per aumentare il loro ranking per le query contenenti quelle domande. Puoi controllare o aggiornare le domande aggiunte per un chunk dalla lista dei chunk. Questa funzionalità non interromperà il processo di chunking se si verifica un errore, eccetto che potrebbe aggiungere un risultato vuoto al chunk originale. Tieni presente che saranno consumati token extra dal modello di indicizzazione specificato in 'Configurazione'. Per i dettagli, vedi https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       redo: 'Vuoi cancellare i {{chunkNum}} chunk esistenti?',
       setMetaData: 'Imposta metadati',
       pleaseInputJson: 'Inserisci JSON',
@@ -617,6 +614,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       reRankModelWaring: 'Il modello re-rank richiede molto tempo.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       randomSeedTip:
         'Il seme è il punto di partenza per un algoritmo pseudo-casuale che garantisce la riproducibilità dello stesso output in esecuzioni diverse.',
       datasetDescription: 'Descrivi il tuo dataset',
@@ -647,9 +645,8 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       paddleocrApiUrlPlaceholder:
         'es. https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'Token di accesso AI Studio',
-      paddleocrAccessTokenTip:
-        "Token di accesso per l'API PaddleOCR (opzionale)",
-      paddleocrAccessTokenPlaceholder: 'Il tuo token AI Studio (opzionale)',
+      paddleocrAccessTokenTip: "Token di accesso per l'API PaddleOCR",
+      paddleocrAccessTokenPlaceholder: 'Il tuo token AI Studio',
       paddleocrAlgorithm: 'Algoritmo PaddleOCR',
       paddleocrAlgorithmTip: "Algoritmo da usare per l'analisi PaddleOCR",
       paddleocrSelectAlgorithm: 'Seleziona algoritmo',
@@ -694,7 +691,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       dataFlowPlaceholder: 'Seleziona una pipeline.',
       buildItFromScratch: 'Costruiscilo da zero',
       dataFlow: 'Pipeline',
-      parseType: 'Tipo di analisi',
+      parsingMode: 'Modalità di analisi',
       manualSetup: 'Pipeline',
       builtIn: 'Integrato',
       titleDescription:
@@ -717,8 +714,6 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
         "Se impostato su 'Team', tutti i membri del team potranno gestire il dataset.",
       chunkTokenNumberTip:
         'Imposta in qualche modo la soglia di token per creare un chunk. Un segmento con meno token di questa soglia sarà combinato con i segmenti successivi finché il conteggio dei token non supera la soglia, a quel punto viene creato un chunk. Non viene creato un nuovo chunk a meno che non si incontri un delimitatore, anche se la soglia viene superata.',
-      chunkMethod: 'Metodo di chunking',
-      chunkMethodTip: 'Visualizza i suggerimenti a destra.',
       upload: 'Carica',
       english: 'Inglese',
       chinese: 'Cinese',
@@ -863,7 +858,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
 `,
       useRaptor: 'RAPTOR',
       useRaptorTip:
-        'RAPTOR può essere usato per attività di question-answering multi-hop. Naviga alla pagina File, clicca Genera > RAPTOR per abilitarlo. Vedi https://ragflow.io/docs/dev/enable_raptor per i dettagli.',
+        'RAPTOR può essere usato per attività di question-answering multi-hop. Naviga alla pagina File, clicca Genera > RAPTOR per abilitarlo. Vedi https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree per i dettagli.',
       prompt: 'Prompt',
       promptTip:
         "Usa il prompt di sistema per descrivere il compito per l'LLM, specificare come dovrebbe rispondere e delineare altri requisiti vari. Il prompt di sistema è spesso usato insieme a chiavi (variabili), che servono come vari input di dati per l'LLM. Usa una barra `/` o il pulsante (x) per mostrare le chiavi da usare.",
@@ -915,7 +910,7 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       addTag: 'Aggiungi tag',
       useGraphRag: 'Grafo della conoscenza',
       useGraphRagTip:
-        'Costruisci un grafo della conoscenza sui chunk di file del dataset corrente per migliorare il question-answering multi-hop che coinvolge logica annidata. Vedi https://ragflow.io/docs/dev/construct_knowledge_graph per i dettagli.',
+        'Costruisci un grafo della conoscenza sui chunk di file del dataset corrente per migliorare il question-answering multi-hop che coinvolge logica annidata. Vedi https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#graph per i dettagli.',
       graphRagMethod: 'Metodo',
       graphRagMethodTip: `
       Light: (Predefinito) Usa prompt forniti da github.com/HKUDS/LightRAG per estrarre entità e relazioni. Questa opzione consuma meno token, meno memoria e meno risorse computazionali.</br>
@@ -1147,7 +1142,7 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       tavilyApiKeyTip:
         'Se una chiave API è impostata correttamente qui, le ricerche web basate su Tavily saranno usate per integrare il recupero dal dataset.',
       tavilyApiKeyMessage: 'Inserisci la tua chiave API Tavily',
-      tavilyApiKeyHelp: 'Come ottenerla?',
+      webSearchApiKeyHelp: 'Come ottenerla?',
       crossLanguage: 'Ricerca cross-lingua',
       crossLanguagePlaceholder: 'Seleziona valore',
       crossLanguageTip: `Seleziona una o più lingue per la ricerca cross-lingua. Se non viene selezionata nessuna lingua, il sistema cerca con la query originale.`,
@@ -1166,8 +1161,6 @@ Questa funzionalità di auto-tagging migliora il recupero aggiungendo un ulterio
       },
       cancel: 'Annulla',
       chatSetting: 'Impostazioni chat',
-      tocEnhance: 'PageIndex',
-      tocEnhanceTip: ` Durante l'analisi del documento, sono state generate informazioni sull'indice (vedi l'opzione 'Abilita estrazione indice' nel metodo Generale). Questo permette al modello grande di restituire elementi dell'indice rilevanti per la query dell'utente, usando così questi elementi per recuperare i chunk correlati e applicare una ponderazione a questi chunk durante il processo di ordinamento. Questo approccio imita il comportamento umano di ricerca delle informazioni nei libri.`,
       batchDeleteSessions: 'Eliminazione multipla',
       deleteSelectedConfirm: 'Eliminare le {{count}} sessioni selezionate?',
       showChunkMetadata: 'Mostra metadati del chunk',
@@ -1592,18 +1585,18 @@ Esempio: Virtual Hosted Style`,
       chatModelTip: 'Il LLM predefinito per ogni nuovo dataset creato.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        'Il modello di embedding predefinito per ogni nuovo dataset creato. Se non riesci a trovare un modello di embedding dal menu a discesa, controlla se stai usando la versione slim di RAGFlow (che non include modelli di embedding) o controlla https://ragflow.io/docs/dev/supported_models per vedere se il tuo fornitore di modelli supporta questo modello.',
+        'Il modello di embedding predefinito per ogni nuovo dataset creato. Se non riesci a trovare un modello di embedding dal menu a discesa, controlla la pagina Provider di modelli per vedere se il tuo fornitore di modelli supporta questo modello.',
       img2txtModel: 'VLM',
       img2txtModelTip:
-        "Il VLM predefinito per ogni nuovo dataset creato. Descrive un'immagine o un video. Se non riesci a trovare un modello dal menu a discesa, controlla https://ragflow.io/docs/dev/supported_models per vedere se il tuo fornitore di modelli supporta questo modello.",
+        "Il VLM predefinito per ogni nuovo dataset creato. Descrive un'immagine o un video. Se non riesci a trovare un modello dal menu a discesa, controlla la pagina Provider di modelli per vedere se il tuo fornitore di modelli supporta questo modello.",
       sequence2txtModel: 'ASR',
       sequence2txtModelTip:
         'Il modello ASR predefinito per ogni nuovo dataset creato. Usa questo modello per tradurre le voci in testo corrispondente.',
       rerankModel: 'Rerank',
-      rerankModelTip: `Il modello rerank predefinito per il reranking dei chunk. Se non riesci a trovare un modello dal menu a discesa, controlla https://ragflow.io/docs/dev/supported_models per vedere se il tuo fornitore di modelli supporta questo modello.`,
+      rerankModelTip: `Il modello rerank predefinito per il reranking dei chunk. Se non riesci a trovare un modello dal menu a discesa, controlla la pagina Provider di modelli per vedere se il tuo fornitore di modelli supporta questo modello.`,
       ttsModel: 'TTS',
       ttsModelTip:
-        'Il modello text-to-speech predefinito. Se non riesci a trovare un modello dal menu a discesa, controlla https://ragflow.io/docs/dev/supported_models per vedere se il tuo fornitore di modelli supporta questo modello.',
+        'Il modello text-to-speech predefinito. Se non riesci a trovare un modello dal menu a discesa, controlla la pagina Provider di modelli per vedere se il tuo fornitore di modelli supporta questo modello.',
       workspace: 'workspace',
       upgrade: 'Aggiorna',
       addLlmTitle: 'Aggiungi LLM',
@@ -1626,7 +1619,7 @@ Esempio: Virtual Hosted Style`,
         apiUrlPlaceholder:
           'Ad esempio: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Token di accesso AI Studio',
-        accessTokenPlaceholder: 'Il tuo token AI Studio (opzionale)',
+        accessTokenPlaceholder: 'Il tuo token AI Studio',
         algorithm: 'Algoritmo PaddleOCR',
         selectAlgorithm: 'Seleziona algoritmo',
         modelNamePlaceholder: 'Ad esempio: paddleocr-from-env-1',
@@ -1776,6 +1769,7 @@ Esempio: Virtual Hosted Style`,
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       showToc: 'Mostra contenuto',
       hideToc: 'Nascondi contenuto',
@@ -1844,13 +1838,6 @@ Esempio: Virtual Hosted Style`,
       pleaseUploadAtLeastOneFile: 'Carica almeno un file',
     },
     flow: {
-      preprocess: {
-        preprocess: 'Pre-elaborazione',
-        mainContent: 'Contenuto principale',
-        abstract: 'Abstract',
-        author: 'Autore',
-        sectionTitle: 'Titolo sezione',
-      },
       editTags: 'Modifica tag',
       editTagsDescription:
         'Aggiungi tag per organizzare e filtrare i tuoi agenti. Premi Invio o virgola per aggiungere.',
@@ -1926,9 +1913,6 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       oneChunkTitle: 'Nota',
       oneChunkDescription:
         'Tutte le sezioni analizzate saranno unite in ordine in un singolo chunk.',
-      flattenMediaToText: 'Disabilita modello visivo',
-      flattenMediaToTextTip:
-        'Tratta le sezioni di immagini e tabelle come testo semplice e salta il miglioramento visivo.',
       enableChildrenDelimiters: 'I chunk figli sono usati per il recupero',
       merge: 'Unisci',
       split: 'Dividi',
@@ -1948,20 +1932,6 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       maxRounds: 'Round massimi di riflessione',
       delayAfterError: 'Ritardo dopo errore',
       maxRetries: 'Round massimi di ritentativo',
-      maxSteps: 'Passi massimi',
-      headless: 'Headless',
-      enableDefaultExtensions: 'Abilita estensioni predefinite',
-      enableDefaultExtensionsTip:
-        'Abilita le estensioni predefinite di browser-use (uBlock, gestione cookie, ClearURLs). Disabilita questo per evitare download di estensioni in runtime.',
-      chromiumSandbox: 'Sandbox Chromium',
-      chromiumSandboxTip:
-        'Se abilitare la sandbox Chromium. Negli ambienti Docker root questo è solitamente disabilitato; su host normali è consigliato abilitarlo.',
-      persistSession: 'Mantieni sessione',
-      persistSessionTip:
-        'Quando abilitato, questo nodo Browser riutilizza la sua sessione del browser per evitare accessi ripetuti.',
-      uploadSources: 'Carica sorgenti',
-      uploadSourcesTip:
-        'Supporta ID di file, URL di file o variabili. Puoi separare più valori con virgole o usare un formato array JSON (ad esempio ["id1","https://example.com/a.pdf"]).',
       advancedSettings: 'Impostazioni avanzate',
       addTools: 'Aggiungi strumenti',
       sysPromptDefaultValue: `
@@ -1989,7 +1959,7 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       dataManipulation: 'Manipolazione dati',
       flow: 'Flusso',
       dialog: 'Dialogo',
-      cite: 'Cita',
+      cite: 'Mostra citazioni',
       citeTip: 'citeTip',
       name: 'Nome',
       nameMessage: 'Inserisci nome',
@@ -2065,9 +2035,6 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
         "Un componente che cerca tramite l'URL dell'istanza SearXNG fornita. Specifica TopN e l'URL dell'istanza.",
       docGenerator: 'Generatore Documenti',
       docGeneratorDescription: `Genera un file da contenuto Markdown.`,
-      browser: 'Browser',
-      browserDescription:
-        'Automatizza attività del browser. Supporta la configurazione del modello e azioni guidate da prompt. Le sorgenti di caricamento supportano ID di file e URL, e i file scaricati possono essere salvati in una cartella di destinazione.',
       subtitle: 'Sottotitolo',
       logoImage: 'Immagine Logo',
       logoPosition: 'Posizione Logo',
@@ -2435,9 +2402,9 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       jsonFormatTip:
         'Il componente a monte dovrebbe fornire una stringa JSON nel seguente formato:',
       toEmailTip: 'to_email: Email destinatario (Richiesto)',
-      ccEmailTip: 'cc_email: Email CC (Opzionale)',
-      subjectTip: 'subject: Oggetto email (Opzionale)',
-      contentTip: 'content: Contenuto email (Opzionale)',
+      ccEmailTip: 'cc_email: Email CC',
+      subjectTip: 'subject: Oggetto email',
+      contentTip: 'content: Contenuto email',
       jsonUploadTypeErrorMessage: 'Carica un file json',
       jsonUploadContentErrorMessage: 'errore file json',
       iteration: 'Iterazione',
@@ -2840,7 +2807,7 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
       failed: 'Fallito',
       logTitle: 'Titolo',
       tags: 'Tag',
-      canvasCategory: 'Categoria canvas',
+      agentCategory: 'Categoria canvas',
     },
     llmTools: {
       bad_calculator: {
@@ -3031,10 +2998,10 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
         share: 'Condividi',
       },
 
-      serviceStatus: 'Stato servizio',
-      userManagement: 'Gestione utenti',
-      sandboxSettings: 'Impostazioni sandbox',
-      registrationWhitelist: 'Whitelist registrazione',
+      serviceStatus: 'Servizi',
+      userManagement: 'Utenti',
+      sandboxSettings: 'Sandbox',
+      registrationWhitelist: 'Whitelist',
       roles: 'Ruoli',
       monitoring: 'Monitoraggio',
 
@@ -3138,7 +3105,7 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
       importWhitelist: 'Importa whitelist (Excel)',
       importSelectExcelFile: 'File Excel (.xlsx)',
       importOverwriteExistingEmails: 'Sovrascrivi email esistenti',
-      importInvalidExcelFile: 'Seleziona un file Excel valido',
+      importValidExcelFile: 'Seleziona un file Excel valido',
       importFileRequired: 'Seleziona un file da importare',
       importFileTips:
         'Il file deve contenere una singola colonna di intestazione chiamata <code>email</code>.',
@@ -3152,7 +3119,6 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
       permission: 'Permesso',
 
       agentTitle: 'Titolo agente',
-      canvasCategory: 'Categoria canvas',
 
       newRole: 'Nuovo ruolo',
       addNewRole: 'Aggiungi nuovo ruolo',
@@ -3171,18 +3137,14 @@ Le informazioni strutturate importanti possono includere: nomi, date, luoghi, ev
     },
     explore: {
       title: 'Avvia',
-      canvasList: 'Lista Canvas',
       sessions: 'Sessioni',
       newSession: 'Nuova sessione',
       newSessionLabel: 'Avvia una nuova conversazione',
       deleteSession: 'Elimina sessione',
-      searchCanvas: 'Cerca canvas...',
       searchSessions: 'Cerca sessioni...',
-      noCanvasSelected: 'Seleziona un canvas',
       noSessionSelected: 'Seleziona una sessione o creane una nuova',
       noSessionsFound: 'Nessuna sessione trovata',
       createFirstSession: 'Crea la tua prima sessione',
-      noCanvasFound: 'Nessun canvas trovato',
       deleteSelectedConfirm:
         'Sei sicuro di voler eliminare {{count}} sessioni?',
       batchDeleteSessions: 'Elimina sessioni',

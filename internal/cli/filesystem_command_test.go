@@ -18,6 +18,8 @@ package cli
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"testing"
 
 	"ragflow/internal/cli/filesystem"
@@ -25,6 +27,55 @@ import (
 
 type recordingFileProvider struct {
 	searchOptions *filesystem.SearchOptions
+}
+
+func TestFilesystemUsesSelectedAPIServer(t *testing.T) {
+	newServer := func(name string) *HTTPClient {
+		return newTestHTTPClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/api/v1/datasets" {
+				t.Errorf("%s received unexpected path %s", name, r.URL.Path)
+			}
+			_, _ = fmt.Fprintf(w, `{"code":0,"data":[{"id":"%s","name":"%s"}]}`, name, name)
+		}))
+	}
+	first := newServer("first")
+	second := newServer("second")
+	config := &CommandLineConfig{
+		CLIMode: APIMode,
+		APIClientConfig: APIModeConfig{
+			CurrentAPIServer: "first",
+			APIServerMap: map[string]*APIServerConfig{
+				"first":  {IP: first.Host, Port: first.Port},
+				"second": {IP: second.Host, Port: second.Port},
+			},
+		},
+	}
+	cli, err := NewCLIWithConfig(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { cli.line.Close() })
+	cli.APIServerClientMap["second"] = second
+
+	check := func(name string) {
+		t.Helper()
+		result, err := cli.ContextEngine.List(t.Context(), "datasets", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(result.Nodes) != 1 || result.Nodes[0].Name != name {
+			t.Fatalf("selected %s, got datasets %+v", name, result.Nodes)
+		}
+	}
+	check("first")
+	if _, err := cli.CommonUseAPIServerCommand(0, &Command{Params: map[string]interface{}{"server_name": "second"}}); err != nil {
+		t.Fatal(err)
+	}
+	check("second")
+	if _, err := cli.CommonUseAPIServerCommand(0, &Command{Params: map[string]interface{}{"server_name": "first"}}); err != nil {
+		t.Fatal(err)
+	}
+	check("first")
 }
 
 func (p *recordingFileProvider) Name() string        { return "files" }

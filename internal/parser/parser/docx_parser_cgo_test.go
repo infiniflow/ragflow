@@ -5,25 +5,25 @@ package parser
 import (
 	"archive/zip"
 	"bytes"
+	"strings"
 	"testing"
 )
 
 func TestDOCXParser_ParseWithResult_JSON(t *testing.T) {
 	ctx := t.Context()
 	p := NewDOCXParser()
-	p.outputFormat = "json"
 	data := minimalDOCX(t, "Hello from JSON path")
 	res := p.ParseWithResult(ctx, "sample.docx", data)
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if got, want := res.OutputFormat, "json"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
+	if got, want := res.Produced(), true; got != want {
+		t.Fatalf("produced = %t, want %t", got, want)
 	}
 	if len(res.JSON) == 0 {
 		t.Fatal("JSON items is empty; expected parsed content")
 	}
-	for i, item := range res.JSON {
+	for i, item := range ItemsToMaps(res.JSON) {
 		if _, ok := item["text"]; !ok {
 			t.Errorf("item[%d] missing 'text' field", i)
 		}
@@ -33,47 +33,17 @@ func TestDOCXParser_ParseWithResult_JSON(t *testing.T) {
 	}
 }
 
-func TestDOCXParser_ConfigureFromSetup_JSON(t *testing.T) {
-	ctx := t.Context()
+func TestDOCXParser_ConfigureFromSetup_Options(t *testing.T) {
 	p := NewDOCXParser()
-	p.ConfigureFromSetup(map[string]any{"output_format": "json"})
-	if p.outputFormat != "json" {
-		t.Fatalf("After ConfigureFromSetup, outputFormat = %q, want %q", p.outputFormat, "json")
+	p.ConfigureFromSetup(map[string]any{"remove_toc": true, "remove_header_footer": true})
+	if !p.RemoveTOC {
+		t.Error("RemoveTOC not configured")
+	}
+	if !p.RemoveHeaderFooter {
+		t.Error("RemoveHeaderFooter not configured")
 	}
 	if p.libType != "" {
 		t.Errorf("libType unexpectedly = %q", p.libType)
-	}
-	// Full round-trip: json config → json output
-	data := minimalDOCX(t, "Config test")
-	res := p.ParseWithResult(ctx, "sample.docx", data)
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
-	}
-	if res.OutputFormat != "json" {
-		t.Errorf("OutputFormat = %q, want %q", res.OutputFormat, "json")
-	}
-	if len(res.JSON) == 0 {
-		t.Error("JSON items is empty")
-	}
-}
-
-func TestDOCXParser_ConfigureFromSetup_Markdown(t *testing.T) {
-	ctx := t.Context()
-	p := NewDOCXParser()
-	p.ConfigureFromSetup(map[string]any{"output_format": "markdown"})
-	if p.outputFormat != "markdown" {
-		t.Fatalf("After ConfigureFromSetup, outputFormat = %q, want %q", p.outputFormat, "markdown")
-	}
-	data := minimalDOCX(t, "Config md test")
-	res := p.ParseWithResult(ctx, "sample.docx", data)
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
-	}
-	if res.OutputFormat != "markdown" {
-		t.Errorf("OutputFormat = %q, want %q", res.OutputFormat, "markdown")
-	}
-	if res.Markdown == "" {
-		t.Error("Markdown is empty")
 	}
 }
 
@@ -85,11 +55,11 @@ func TestDOCXParser_ParseWithResult_CGOMinimalDocument(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if got, want := res.OutputFormat, "markdown"; got != want {
-		t.Fatalf("OutputFormat = %q, want %q", got, want)
+	if got, want := res.Produced(), true; got != want {
+		t.Fatalf("produced = %t, want %t", got, want)
 	}
-	if res.Markdown == "" {
-		t.Fatal("Markdown is empty; want parsed content")
+	if len(res.JSON) == 0 {
+		t.Fatal("JSON items is empty; want parsed content")
 	}
 }
 
@@ -128,4 +98,49 @@ func writeZipFile(t *testing.T, zw *zip.Writer, name, body string) {
 	if _, err := w.Write([]byte(body)); err != nil {
 		t.Fatalf("write zip entry %s: %v", name, err)
 	}
+}
+
+// TestDOCXParser_PreservesXMLCharacterReferences pins the office_oxide version.
+// v0.1.9 deleted every XML character reference in DOCX run text instead of
+// decoding it, so <w:t>&lt;SEP&gt;</w:t> parsed as "SEP". That reached the
+// chunker intact, so a delimiter configured as "`<SEP>`" could never match and
+// the marker survived into the chunk body. v0.1.10 was the correctness release
+// that fixed this defect class; v0.1.12 is the pinned version.
+func TestDOCXParser_PreservesXMLCharacterReferences(t *testing.T) {
+	cases := []struct {
+		name string
+		run  string // run text as it appears inside <w:t>, entities unescaped
+		want string
+	}{
+		{"named", "&lt;SEP&gt;", "<SEP>"},
+		{"decimal", "&#60;SEP&#62;", "<SEP>"},
+		{"hex", "&#x3C;SEP&#x3E;", "<SEP>"},
+		{"ampersand", "A&amp;B", "A&B"},
+		{"apostrophe", "it&apos;s", "it's"},
+		{"emdash", "a&#8212;b", "a—b"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			data := minimalDOCX(t, tc.run)
+
+			p := NewDOCXParser()
+			res := p.ParseWithResult(t.Context(), "entities.docx", data)
+			if res.Err != nil {
+				t.Fatalf("ParseWithResult: %v", res.Err)
+			}
+			if got := joinItemTexts(ItemsToMaps(res.JSON)); !strings.Contains(got, tc.want) {
+				t.Errorf("json text = %q, want it to contain %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func joinItemTexts(items []map[string]any) string {
+	parts := make([]string, 0, len(items))
+	for _, item := range items {
+		if text, ok := item["text"].(string); ok {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, "\n")
 }

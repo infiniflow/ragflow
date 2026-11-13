@@ -9,14 +9,16 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 )
 
-func (s *DocumentService) ListIngestionTasks(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
-	return s.ingestionTaskSvc.ListByUser(ctx, userID, datasetID, page, pageSize)
+func (s *DocumentService) ListIngestionTasks(ctx context.Context, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
+	return s.ingestionTaskSvc.List(ctx, datasetID, page, pageSize)
 }
 
-func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
-	responses, err := s.ingestionTaskSvc.CreateForDocuments(ctx, datasetID, userID, docIDs)
+func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
+	responses, err := s.ingestionTaskSvc.CreateForDocuments(ctx, datasetID, docIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -24,15 +26,17 @@ func (s *DocumentService) IngestDocuments(ctx context.Context, datasetID, userID
 	return responses, nil
 }
 
-func (s *DocumentService) StopIngestionTasks(ctx context.Context, tasks []string, userID string) ([]*entity.IngestionTask, error) {
+func (s *DocumentService) StopIngestionTasks(ctx context.Context, tasks []string) ([]*entity.IngestionTask, error) {
+	userID := permission.UserIDFromContext(ctx)
 	return s.ingestionTaskSvc.RequestStopMany(ctx, tasks, &userID)
 }
 
-func (s *DocumentService) RemoveIngestionTasks(ctx context.Context, tasks []string, userID string) ([]map[string]string, error) {
+func (s *DocumentService) RemoveIngestionTasks(ctx context.Context, tasks []string) ([]map[string]string, error) {
+	userID := permission.UserIDFromContext(ctx)
 	return s.ingestionTaskSvc.RemoveMany(ctx, tasks, &userID)
 }
 
-func (s *DocumentService) Ingest(ctx context.Context, userID string, req *IngestDocumentRequest) (common.ErrorCode, error) {
+func (s *DocumentService) Ingest(ctx context.Context, req *IngestDocumentRequest) (common.ErrorCode, error) {
 	run := fmt.Sprint(req.Run)
 
 	docs, err := s.documentDAO.GetByIDs(ctx, dao.DB, req.DocIDs)
@@ -64,39 +68,66 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		if err != nil {
 			return common.CodeDataError, fmt.Errorf("dataset not found")
 		}
-		if !s.kbDAO.Accessible(ctx, dao.DB, kb.ID, userID) {
-			return common.CodeAuthenticationError, fmt.Errorf("no authorization")
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID}, permission.OperationRun); err != nil {
+			code, permissionErr := permissionresponse.Normalize(err)
+			return code, permissionErr
 		}
 		validated = append(validated, validatedDoc{doc, kb})
 		validatedIDs = append(validatedIDs, docID)
 	}
 
-	// Batch pre-check for reparse with delete: use the validated doc IDs
-	// so we don't silently skip non-existent or unauthorized documents.
-	if run == string(entity.TaskStatusRunning) && req.Delete {
-		if err = s.AssertIngestionTasksTerminal(ctx, validatedIDs); err != nil {
-			return common.CodeDataError, err
+	// Start parsing: filter out in-flight documents (RUNNING, SCHEDULED,
+	// CREATED, STOPPING) so active parses continue undisturbed, and skip
+	// already COMPLETED documents when delete is false to avoid duplicate
+	// chunk errors. Only documents requiring a new parse run are started.
+	if run == string(entity.TaskStatusRunning) {
+		taskMap := make(map[string]*entity.IngestionTask, len(validatedIDs))
+		if s.ingestionTaskDAO != nil && len(validatedIDs) > 0 {
+			taskMap, err = s.ingestionTaskDAO.GetLatestByDocumentIDs(ctx, dao.DB, validatedIDs)
+			if err != nil {
+				return common.CodeExceptionError, fmt.Errorf("fail to get ingestion tasks: %w", err)
+			}
 		}
-	}
 
-	for _, vd := range validated {
-		doc := vd.doc
-		kb := vd.kb
+		toStart := make([]validatedDoc, 0, len(validated))
+		for _, vd := range validated {
+			task := taskMap[vd.doc.ID]
+			if task != nil && common.IsActiveTaskStatus(task.Status) {
+				common.Debug(fmt.Sprintf("skip document %s ingestion, active task status: %s", vd.doc.ID, task.Status))
+				continue
+			}
+			if !req.Delete && task != nil && task.Status == common.COMPLETED {
+				common.Debug(fmt.Sprintf("skip document %s ingestion, already completed and delete is false", vd.doc.ID))
+				continue
+			}
+			toStart = append(toStart, vd)
+		}
 
-		// Start parsing: delegates to the shared start-parse flow. The
-		// document run status is set by service.IngestionTaskService.StartRunning
-		// when the task transitions from CREATED or SCHEDULED,
-		// not here.
-		if run == string(entity.TaskStatusRunning) {
-			if err = s.StartParseDocuments(ctx, doc, kb, userID, StartParseOptions{
+		if skipped := len(validated) - len(toStart); skipped > 0 {
+			common.Info(fmt.Sprintf("batch ingest: requested %d, started %d, skipped %d", len(validated), len(toStart), skipped))
+		}
+
+		if len(toStart) == 0 {
+			return common.CodeSuccess, nil
+		}
+
+		for _, vd := range toStart {
+			doc := vd.doc
+			kb := vd.kb
+			if err = s.StartParseDocuments(ctx, doc, kb, StartParseOptions{
 				ApplyKB:         req.ApplyKB,
 				RerunWithDelete: req.Delete,
 			}); err != nil {
 				common.Error(fmt.Sprintf("go side, doc %s, start parse", doc.ID), err)
 				return common.CodeExceptionError, err
 			}
-			continue
 		}
+		return common.CodeSuccess, nil
+	}
+
+	for _, vd := range validated {
+		doc := vd.doc
+		kb := vd.kb
 
 		// Cancel: RequestStop (STOPPING) and update doc state. Do NOT
 		// delete the ingestion task or chunks here — deletion races with
@@ -106,14 +137,13 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		if run == string(entity.TaskStatusCancel) {
 			if err = s.CancelDocParse(ctx, doc); err != nil {
 				common.Error(fmt.Sprintf("go side, start to process %s, run is cancel", doc.ID), err)
-				if errors.Is(err, errParseNotRunning) {
+				if errors.Is(err, ErrParseNotRunning) {
 					// Mirror the Python /documents/ingest endpoint's message.
 					return common.CodeDataError, errors.New("Cannot cancel a task that is not in RUNNING status")
 				}
 				return common.CodeDataError, err
 			}
 			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
-				"run":      string(entity.TaskStatusCancel),
 				"progress": 0,
 			}); err != nil {
 				common.Error(fmt.Sprintf("go side, doc %s, UpdateByID failed", doc.ID), err)
@@ -122,38 +152,32 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 			continue
 		}
 
-		// Delete-only: user asked to remove prior parse results without
-		// starting a new parse. RUNNING already continued above.
+		if req.Delete {
+			// Delete-only: user asked to remove prior parse results without
+			// starting a new parse. Serialize the counter reset and cleanup with
+			// StartParseDocuments so a concurrent parse cannot reuse the task
+			// while its old cache state is being removed.
+			unlock := lockDocumentParse(doc.ID)
+			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
+				"progress": 0,
+			}); err != nil {
+				unlock()
+				common.Error(fmt.Sprintf("go side, doc %s, UpdateByID failed", doc.ID), err)
+				return common.CodeExceptionError, err
+			}
+			if err := s.clearDocumentParseResults(ctx, doc, kb.TenantID, taskTerminalMessageParseResultsDeleted); err != nil {
+				unlock()
+				return common.CodeExceptionError, err
+			}
+			unlock()
+			continue
+		}
+
 		if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
-			"run":      run,
 			"progress": 0,
 		}); err != nil {
 			common.Error(fmt.Sprintf("go side, doc %s, UpdateByID failed", doc.ID), err)
 			return common.CodeExceptionError, err
-		}
-
-		if req.Delete {
-			if _, delErr := s.taskDAO.DeleteIngestionTasksByDocIDs(ctx, dao.DB, []string{doc.ID}); delErr != nil {
-				if errors.Is(delErr, context.Canceled) || errors.Is(delErr, context.DeadlineExceeded) {
-					return common.CodeExceptionError, fmt.Errorf("delete ingestion tasks: %w", delErr)
-				}
-				common.Error(fmt.Sprintf("go side, doc %s, DeleteIngestionTasksByDocIDs failed", doc.ID), delErr)
-			}
-			indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
-			if s.docEngine != nil {
-				var exists bool
-				exists, err = s.docEngine.ChunkStoreExists(ctx, indexName, doc.KbID)
-				if err != nil {
-					common.Error(fmt.Sprintf("go side, doc %s, ChunkStoreExists failed", doc.ID), err)
-					return common.CodeExceptionError, err
-				}
-				if exists {
-					if _, err = s.docEngine.DeleteChunks(ctx, map[string]interface{}{"doc_id": doc.ID}, indexName, doc.KbID); err != nil {
-						common.Error(fmt.Sprintf("go side, doc %s, DeleteChunks failed", doc.ID), err)
-						return common.CodeExceptionError, err
-					}
-				}
-			}
 		}
 	}
 

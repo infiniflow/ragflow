@@ -27,12 +27,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func TestDisableWriteDeadlineForSSEAllowsLongLivedStream(t *testing.T) {
+func TestClearWriteDeadlineAllowsLongLivedStream(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	router := gin.New()
 	router.GET("/stream", func(c *gin.Context) {
-		disableWriteDeadlineForSSE(c)
+		clearResponseWriteDeadline(c)
 		c.Header("Content-Type", "text/event-stream")
 		c.Writer.WriteHeader(http.StatusOK)
 		c.Writer.Flush()
@@ -75,5 +75,43 @@ func TestDisableWriteDeadlineForSSEAllowsLongLivedStream(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Fatalf("stream body missing %q: %q", want, body)
 		}
+	}
+}
+
+// TestClearWriteDeadlineAllowsLateSingleWrite pins the non-stream counterpart:
+// a handler that computes past http.Server.WriteTimeout before writing its one
+// JSON response must still deliver the body once the deadline is cleared — the
+// exact failure mode of long agentic chat runs ("write tcp ... i/o timeout").
+func TestClearWriteDeadlineAllowsLateSingleWrite(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	router.POST("/complete", func(c *gin.Context) {
+		clearResponseWriteDeadline(c)
+
+		time.Sleep(120 * time.Millisecond)
+
+		c.JSON(http.StatusOK, gin.H{"answer": "done"})
+	})
+
+	server := httptest.NewUnstartedServer(router)
+	server.Config.WriteTimeout = 30 * time.Millisecond
+	server.Start()
+	defer server.Close()
+
+	client := server.Client()
+	client.Timeout = time.Second
+	resp, err := client.Post(server.URL+"/complete", "application/json", strings.NewReader(`{}`))
+	if err != nil {
+		t.Fatalf("post complete: %v", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if got := string(bodyBytes); !strings.Contains(got, `"answer":"done"`) {
+		t.Fatalf("response body missing answer after exceeded WriteTimeout: %q", got)
 	}
 }

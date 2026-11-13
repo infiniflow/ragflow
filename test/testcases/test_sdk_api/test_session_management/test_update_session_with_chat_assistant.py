@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -13,86 +13,98 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from random import randint
 
 import pytest
-from configs import SESSION_WITH_CHAT_NAME_LIMIT
 
 
+@pytest.mark.integration
 class TestSessionWithChatAssistantUpdate:
-    @pytest.mark.parametrize(
-        "payload, expected_message",
-        [
-            pytest.param({"name": "valid_name"}, "", marks=pytest.mark.p3),
-            pytest.param({"name": "a" * (SESSION_WITH_CHAT_NAME_LIMIT + 1)}, "", marks=pytest.mark.skip(reason="issues/")),
-            pytest.param({"name": 1}, "", marks=pytest.mark.skip(reason="issues/")),
-            pytest.param({"name": ""}, "`name` can not be empty", marks=pytest.mark.p3),
-            pytest.param({"name": "duplicated_name"}, "", marks=pytest.mark.p3),
-            pytest.param({"name": "case insensitive"}, "", marks=pytest.mark.p3),
-        ],
-    )
-    def test_name(self, add_sessions_with_chat_assistant_func, payload, expected_message):
-        chat_assistant, sessions = add_sessions_with_chat_assistant_func
-        session = sessions[0]
-
-        if payload["name"] == "duplicated_name":
-            session.update(payload)
-        elif payload["name"] == "case insensitive":
-            session.update({"name": payload["name"].upper()})
-
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                session.update(payload)
-            assert expected_message in str(exception_info.value)
-        else:
-            session.update(payload)
-            updated_session = chat_assistant.list_sessions(id=session.id)[0]
-            assert updated_session.name == payload["name"]
-
-    @pytest.mark.p3
-    def test_repeated_update_session(self, add_sessions_with_chat_assistant_func):
-        _, sessions = add_sessions_with_chat_assistant_func
-        session = sessions[0]
-
-        session.update({"name": "valid_name_1"})
-        session.update({"name": "valid_name_2"})
-
     @pytest.mark.p3
     @pytest.mark.parametrize(
-        "payload, expected_message",
+        "name, expected_name, error",
         [
-            pytest.param({"unknown_key": "unknown_value"}, "ValueError", marks=pytest.mark.skip),
-            ({}, ""),
-            pytest.param(None, "TypeError", marks=pytest.mark.skip),
+            ("valid_name", "valid_name", None),
+            ("a" * 256, "a" * 255, None),
+            (1, None, "`name` can not be empty"),
+            ("", None, "`name` can not be empty"),
+            ("duplicated_name", "duplicated_name", None),
+            ("case insensitive", "case insensitive", None),
+            ("  trimmed name  ", "trimmed name", None),
+            ("   ", None, "`name` can not be empty"),
+            ("会" * 256, "会" * 255, None),
         ],
     )
-    def test_invalid_params(self, add_sessions_with_chat_assistant_func, payload, expected_message):
-        _, sessions = add_sessions_with_chat_assistant_func
+    def test_name(self, add_sessions_with_chat_assistant, name, expected_name, error):
+        chat, sessions = add_sessions_with_chat_assistant
         session = sessions[0]
-
-        if expected_message:
-            with pytest.raises(Exception) as exception_info:
-                session.update(payload)
-            assert expected_message in str(exception_info.value)
+        if name == "duplicated_name":
+            sessions[1].update({"name": name})
+        elif name == "case insensitive":
+            session.update({"name": name.upper()})
+        original = chat.list_sessions(id=session.id)[0].name
+        if error:
+            with pytest.raises(Exception, match=error):
+                session.update({"name": name})
         else:
-            session.update(payload)
+            assert session.update({"name": name}) is None
+        persisted = chat.list_sessions(id=session.id)
+        assert len(persisted) == 1
+        assert persisted[0].name == (original if error else expected_name)
+        if name == "duplicated_name":
+            assert chat.list_sessions(id=sessions[1].id)[0].name == name
 
     @pytest.mark.p3
-    def test_concurrent_update_session(self, add_sessions_with_chat_assistant_func):
-        count = 50
-        _, sessions = add_sessions_with_chat_assistant_func
+    def test_repeated_update_session(self, add_sessions_with_chat_assistant):
+        chat, sessions = add_sessions_with_chat_assistant
+        session = sessions[0]
+        for name in ("valid_name_1", "valid_name_2", "valid_name_2"):
+            assert session.update({"name": name}) is None
+            assert chat.list_sessions(id=session.id)[0].name == name
 
+    @pytest.mark.p3
+    @pytest.mark.parametrize(
+        "payload, error",
+        [
+            pytest.param({}, None, id="empty-noop"),
+            pytest.param(None, None, id="absent-body-noop"),
+            pytest.param({"id": "other", "dialog_id": "other", "chat_id": "other", "user_id": "other"}, None, id="protected-identifiers"),
+            pytest.param({"messages": []}, "`messages` cannot be changed", id="messages"),
+            pytest.param({"message": []}, "`messages` cannot be changed", id="message"),
+            pytest.param({"reference": []}, "`reference` cannot be changed", id="reference"),
+        ],
+    )
+    def test_invalid_params(self, add_sessions_with_chat_assistant, payload, error):
+        chat, sessions = add_sessions_with_chat_assistant
+        session = sessions[0]
+        before = chat.list_sessions(id=session.id)[0].to_json()
+        if error:
+            with pytest.raises(Exception) as exc:
+                session.update(payload)
+            assert str(exc.value) == error
+        else:
+            assert session.update(payload) is None
+        after = chat.list_sessions(id=session.id)[0].to_json()
+        assert after == before
+
+    @pytest.mark.p3
+    def test_concurrent_update_session(self, add_sessions_with_chat_assistant):
+        chat, sessions = add_sessions_with_chat_assistant
+        names = {session.id: {f"update {session.id} {i}" for i in range(10)} for session in sessions}
         with ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(sessions[randint(0, 4)].update, {"name": f"update session test {i}"}) for i in range(count)]
-        responses = list(as_completed(futures))
-        assert len(responses) == count, responses
+            futures = [executor.submit(session.update, {"name": name}) for session in sessions for name in names[session.id]]
+            for future in as_completed(futures):
+                assert future.result() is None
+        persisted = chat.list_sessions()
+        assert {session.id for session in persisted} == set(names)
+        for session in persisted:
+            assert session.name in names[session.id]
 
     @pytest.mark.p3
-    def test_update_session_to_deleted_chat_assistant(self, client, add_sessions_with_chat_assistant_func):
-        chat_assistant, sessions = add_sessions_with_chat_assistant_func
-        client.delete_chats(ids=[chat_assistant.id])
-
-        with pytest.raises(Exception) as exception_info:
+    def test_update_session_to_deleted_chat_assistant(self, client, add_sessions_with_chat_assistant):
+        chat, sessions = add_sessions_with_chat_assistant
+        client.delete_chats(ids=[chat.id])
+        with pytest.raises(Exception) as exc:
             sessions[0].update({"name": "valid_name"})
-        assert "no authorization" in str(exception_info.value)
+        assert str(exc.value) == "Resource not found"

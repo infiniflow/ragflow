@@ -89,6 +89,8 @@ export default {
       noMoreData: 'Tất cả chỉ có thế, không còn gì nữa',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'Tiếp tục tải lên, hệ thống sẽ tự động chuyển các tệp này sang cấu hình phân tích tích hợp được hỗ trợ.',
       dataset: 'Dữ liệu',
       testing: 'Kiểm tra truy hồi',
       files: 'Các tệp',
@@ -105,7 +107,7 @@ export default {
       webCrawl: 'Web Crawl',
       chunkNumber: 'Số lượng khối',
       uploadDate: 'Ngày tải lên',
-      chunkMethod: 'Phương thức khối',
+      parsingMode: 'Chế độ phân tích',
       enabled: 'Bật',
       disabled: 'Tắt',
       action: 'Hành động',
@@ -119,10 +121,12 @@ export default {
         'Thực hiện kiểm tra truy hồi để kiểm tra xem RAGFlow có thể phục hồi nội dung mong muốn cho LLM không.Vui lòng lưu ý rằng các thay đổi được thực hiện ở đây sẽ không được lưu tự động. Nếu bạn điều chỉnh các cài đặt mặc định ở đây, chẳng hạn như trọng số tương tự của từ khóa, hãy đảm bảo rằng bạn cập nhật các cài đặt liên quan theo cách đồng bộ trong cài đặt trợ lý trò chuyện hoặc cài đặt toán tử thu hồi.',
       similarityThreshold: 'Ngưỡng tương đồng',
       similarityThresholdTip:
-        'RAGFlow sử dụng kết hợp giữa độ tương đồng từ khóa được trọng số và độ tương đồng vectơ cosin được trọng số hoặc kết hợp giữa độ tương đồng từ khóa được trọng số và điểm xếp hạng được tính lại trong quá trình truy hồi. Tham số này đặt ngưỡng cho sự tương đồng giữa truy vấn của người dùng và các khối. Bất kỳ khối nào có điểm tương đồng dưới ngưỡng này sẽ bị loại khỏi kết quả. Theo mặc định, ngưỡng được đặt thành 20. Điều đó có nghĩa là chỉ những đoạn có điểm tương đồng hỗn hợp từ 20 trở lên mới được truy xuất.',
+        'Trong quá trình truy hồi, RAGFlow sử dụng kết hợp giữa độ tương đồng từ khóa có trọng số và độ tương đồng cosin vectơ có trọng số, hoặc kết hợp giữa độ tương đồng từ khóa có trọng số và điểm tái xếp hạng có trọng số khi một mô hình tái xếp hạng được chọn. Tham số này đặt ngưỡng tương đồng giữa truy vấn của người dùng và các đoạn. Mọi đoạn có điểm tương đồng thấp hơn ngưỡng này sẽ bị loại khỏi kết quả. Theo mặc định, ngưỡng được đặt thành 20. Điều này có nghĩa là chỉ những đoạn có điểm tương đồng kết hợp từ 20 trở lên mới được truy hồi. Nếu trọng số tương đồng vectơ được đặt thành 0, ngưỡng này không được áp dụng.',
       vectorSimilarityWeight: 'Trọng số tương đồng từ khóa',
       vectorSimilarityWeightTip:
-        'Cài đặt trọng số của độ tương đồng từ khóa trong điểm tương đồng kết hợp, được sử dụng với độ tương đồng vectơ cosin hoặc với điểm xếp hạng được tính lại. Tổng của hai trọng số phải bằng 1.0.',
+        'Đặt trọng số của độ tương đồng vectơ trong điểm tương đồng kết hợp, được sử dụng với độ tương đồng cosin vectơ hoặc điểm tái xếp hạng. Tổng của hai trọng số phải bằng 1.0.',
+      keywordSimilarityWeightTip:
+        'Đặt trọng số của độ tương đồng từ khóa trong điểm tương đồng kết hợp. Tổng trọng số vectơ và từ khóa phải bằng 1.0.',
       testText: 'Văn bản kiểm tra',
       testTextPlaceholder: 'Nhập câu hỏi của bạn tại đây!',
       testingLabel: 'Kiểm tra',
@@ -150,9 +154,6 @@ export default {
       layoutRecognize: 'Nhận dạng bố cục',
       layoutRecognizeTip:
         'Sử dụng các mô hình trực quan để phân tích bố cục nhằm xác định tốt hơn cấu trúc tài liệu, tìm vị trí của tiêu đề, khối văn bản, hình ảnh và bảng. Nếu không có tính năng này, chỉ có thể lấy được văn bản thuần của PDF. Để biết thêm thông tin, hãy xem https://ragflow.io/docs/dataset_configuration#document-parsing-configuration.',
-      taskPageSize: 'Kích thước trang tác vụ',
-      taskPageSizeMessage: 'Vui lòng nhập kích thước trang tác vụ của bạn!',
-      taskPageSizeTip: `Nếu sử dụng nhận dạng bố cục, tệp PDF sẽ được chia thành các nhóm trang liên tiếp. Phân tích bố cục sẽ được thực hiện song song giữa các nhóm để tăng tốc độ xử lý. 'Kích thước trang tác vụ' xác định kích thước của các nhóm. Kích thước trang càng lớn, khả năng chia tách văn bản liên tục giữa các trang thành các khối khác nhau càng thấp.`,
       addPage: 'Thêm trang',
       greaterThan: 'Giá trị hiện tại phải lớn hơn!',
       greaterThanPrevious: 'Giá trị hiện tại phải lớn hơn giá trị trước đó!',
@@ -166,16 +167,14 @@ export default {
       cancel: 'Hủy bỏ',
       rerankModel: 'Mô hình xếp hạng lại',
       rerankPlaceholder: 'Vui lòng chọn',
-      rerankTip: `Tùy chọn. Nếu để trống, RAGFlow sẽ sử dụng kết hợp giữa độ tương đồng từ khóa có trọng số và độ tương đồng cosine vector có trọng số; nếu chọn mô hình rerank, điểm rerank có trọng số sẽ thay thế độ tương đồng cosine vector có trọng số. Xin lưu ý rằng việc sử dụng mô hình rerank sẽ làm tăng đáng kể thời gian phản hồi của hệ thống. Nếu bạn muốn sử dụng mô hình rerank, hãy đảm bảo sử dụng SaaS reranker; nếu bạn muốn sử dụng mô hình rerank triển khai cục bộ, hãy khởi động RAGFlow bằng docker-compose-gpu.yml.`,
+      rerankTip: `Tùy chọn. Nếu để trống, RAGFlow sẽ sử dụng kết hợp giữa độ tương đồng từ khóa có trọng số và độ tương đồng cosine vector có trọng số; nếu chọn mô hình rerank, điểm rerank có trọng số sẽ thay thế độ tương đồng cosine vector có trọng số. Xin lưu ý rằng việc sử dụng mô hình rerank sẽ làm tăng đáng kể thời gian phản hồi của hệ thống.`,
       topK: 'Top-K',
       topKTip: `Sử dụng cùng với Rerank model, thiết lập này xác định số lượng đoạn văn cần gửi đến mô hình reranking được chỉ định.`,
       delimiter: 'Dấu phân cách cho phân đoạn văn bản',
-      html4excel: 'Excel sang HTML',
-      html4excelTip: `Sử dụng cùng với phương pháp cắt khúc General. Khi chưa được bật, tệp bảng tính (XLSX, XLS (Excel 97-2003)) sẽ được phân tích theo dòng thành các cặp khóa-giá trị. Khi bật, tệp bảng tính sẽ được phân tích thành bảng HTML. Nếu bảng gốc vượt quá 12 dòng, hệ thống sẽ tự động chia thành nhiều bảng HTML mỗi 12 dòng. Để biết thêm thông tin, vui lòng xem https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.`,
       autoKeywords: 'Từ khóa tự động',
-      autoKeywordsTip: `Tự động trích xuất N từ khóa cho mỗi khối để tăng thứ hạng của chúng trong các truy vấn chứa các từ khóa đó. Lưu ý rằng các token bổ sung sẽ được tiêu thụ bởi mô hình trò chuyện được chỉ định trong "Cài đặt mô hình hệ thống". Bạn có thể kiểm tra hoặc cập nhật các từ khóa đã thêm cho một khối từ danh sách khối. Để biết chi tiết, vui lòng xem https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
+      autoKeywordsTip: `Tự động trích xuất N từ khóa cho mỗi khối để tăng thứ hạng của chúng trong các truy vấn chứa các từ khóa đó. Lưu ý rằng các token bổ sung sẽ được tiêu thụ bởi mô hình trò chuyện được chỉ định trong "Cài đặt mô hình hệ thống". Bạn có thể kiểm tra hoặc cập nhật các từ khóa đã thêm cho một khối từ danh sách khối. Để biết chi tiết, vui lòng xem https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoQuestions: 'Câu hỏi tự động',
-      autoQuestionsTip: `Để tăng điểm xếp hạng, hãy trích xuất N câu hỏi cho mỗi đoạn kiến thức bằng mô hình trò chuyện được xác định trong "Cài đặt mô hình hệ thống". Lưu ý rằng việc này sẽ tiêu tốn thêm token. Kết quả có thể được xem và chỉnh sửa trong danh sách các đoạn. Lỗi trích xuất câu hỏi sẽ không chặn quá trình phân đoạn; kết quả trống sẽ được thêm vào đoạn gốc. Để biết chi tiết, vui lòng xem https://ragflow.io/docs/dev/autokeyword_autoquestion.`,
+      autoQuestionsTip: `Để tăng điểm xếp hạng, hãy trích xuất N câu hỏi cho mỗi đoạn kiến thức bằng mô hình trò chuyện được xác định trong "Cài đặt mô hình hệ thống". Lưu ý rằng việc này sẽ tiêu tốn thêm token. Kết quả có thể được xem và chỉnh sửa trong danh sách các đoạn. Lỗi trích xuất câu hỏi sẽ không chặn quá trình phân đoạn; kết quả trống sẽ được thêm vào đoạn gốc. Để biết chi tiết, vui lòng xem https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       delimiterTip: `Hỗ trợ nhiều ký tự phân cách, và các ký tự phân cách nhiều ký tự được bao bọc bởi dấu . Ví dụ: nếu được cấu hình như thế này: "##"; thì văn bản sẽ được phân tách bởi dấu xuống dòng, hai dấu # và dấu chấm phẩy, sau đó được lắp ráp theo kích thước của "số token". Thiết lập các dấu phân cách chỉ sau khi hiểu cơ chế phân đoạn và phân khối văn bản.`,
       redo: `Bạn có muốn xóa các đoạn {{chunkNum}} hiện có không?`,
       knowledgeGraph: 'Đồ thị tri thức',
@@ -187,6 +186,8 @@ export default {
       documentMetaTips: `<p>Dữ liệu meta ở định dạng Json (không thể tìm kiếm). Nó sẽ được thêm vào prompt cho LLM nếu bất kỳ đoạn nào của tài liệu này được đưa vào prompt.</p> <p>Ví dụ:</p> <b>Dữ liệu meta là:</b><br> <code> { "Author": "Alex Dowson", "Date": "2024-11-12" } </code><br><b>Prompt sẽ là:</b><br> <p>Tài liệu: the_name_of_document</p> <p>Tác giả: Alex Dowson</p> <p>Ngày: 2024-11-12</p> <p>Các đoạn liên quan như sau:</p> <ul> <li> Đây là nội dung của đoạn...</li> <li> Đây là nội dung của đoạn...</li> </ul>`,
     },
     knowledgeConfiguration: {
+      parsingMode: 'Chế độ phân tích',
+      builtInSuffix: ' (built in)',
       imageTableContextWindow: 'Cửa sổ ngữ cảnh hình ảnh & bảng',
       imageTableContextWindowTip:
         'Trích xuất N token văn bản phía trên và phía dưới hình ảnh và bảng để cung cấp bối cảnh phong phú hơn.',
@@ -208,8 +209,6 @@ export default {
         'Nếu được đặt thành "Đội", tất cả các thành viên trong nhóm sẽ có thể quản lý cơ sở kiến thức.',
       chunkTokenNumberTip:
         'Nó đặt ngưỡng token cho một khối. Một đoạn văn có ít token hơn ngưỡng này sẽ được kết hợp với đoạn văn tiếp theo cho đến khi số lượng token vượt quá ngưỡng, tại thời điểm đó, một khối được tạo. Không có khối mới nào được tạo ra trừ khi một dấu phân cách được gặp, ngay cả khi ngưỡng này bị vượt quá.',
-      chunkMethod: 'Phương thức khối',
-      chunkMethodTip: 'Mẹo ở bên phải.',
       upload: 'Tải lên',
       english: 'Tiếng Anh',
       chinese: 'Tiếng Trung',
@@ -310,7 +309,7 @@ export default {
       <p>Đảm bảo bạn đã đặt <b>Loại thực thể</b>.</p>`,
       useRaptor: 'Sử dụng RAPTOR để cải thiện truy xuất',
       useRaptorTip:
-        'Kích hoạt RAPTOR cho các tác vụ hỏi đáp đa bước. Xem chi tiết tại https://ragflow.io/docs/dev/enable_raptor.',
+        'Kích hoạt RAPTOR cho các tác vụ hỏi đáp đa bước. Xem chi tiết tại https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree.',
       prompt: 'Nhắc nhở',
       promptTip:
         'Sử dụng lời nhắc hệ thống để mô tả nhiệm vụ cho LLM, chỉ định cách nó nên phản hồi và phác thảo các yêu cầu khác nhau. Lời nhắc hệ thống thường được sử dụng kết hợp với các khóa (biến), đóng vai trò là các đầu vào dữ liệu khác nhau cho LLM. Sử dụng dấu gạch chéo `/` hoặc nút (x) để hiển thị các khóa cần sử dụng.',
@@ -359,7 +358,7 @@ export default {
       General: Câu lệnh trích xuất thực thể và quan hệ này được lấy từ GitHub - microsoft/graphrag: Một hệ thống Tạo sinh tăng cường truy xuất (RAG) dựa trên đồ thị theo mô-đun.
       NER: Sử dụng spaCy NER và trích xuất từ khóa dựa trên quy tắc để trích xuất thực thể và quan hệ. Không cần LLM cho việc trích xuất, giúp nhanh chóng và tiết kiệm tài nguyên.`,
       useGraphRagTip:
-        'Xây dựng một biểu đồ tri thức trên các đoạn tệp của cơ sở tri thức hiện tại để tăng cường khả năng trả lời câu hỏi đa bước liên quan đến logic lồng nhau. Xem https://ragflow.io/docs/dev/construct_knowledge_graph để biết thêm chi tiết.',
+        'Xây dựng một biểu đồ tri thức trên các đoạn tệp của cơ sở tri thức hiện tại để tăng cường khả năng trả lời câu hỏi đa bước liên quan đến logic lồng nhau. Xem https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#graph để biết thêm chi tiết.',
       resolution: 'Hợp nhất thực thể',
       resolutionTip:
         'Quy trình phân giải sẽ hợp nhất các thực thể có cùng ý nghĩa lại với nhau, giúp đồ thị trở nên cô đọng và chính xác hơn. Các thực thể sau đây nên được hợp nhất: President Trump, Donald Trump, Donald J. Trump, Donald John Trump.',
@@ -372,8 +371,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         'Ví dụ: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'Token truy cập AI Studio',
-      paddleocrAccessTokenTip: 'Token truy cập cho API PaddleOCR (tùy chọn)',
-      paddleocrAccessTokenPlaceholder: 'Token AI Studio của bạn (tùy chọn)',
+      paddleocrAccessTokenTip: 'Token truy cập cho API PaddleOCR',
+      paddleocrAccessTokenPlaceholder: 'Token AI Studio của bạn',
       paddleocrAlgorithm: 'Thuật toán PaddleOCR',
       paddleocrAlgorithmTip: 'Thuật toán được sử dụng để xử lý PaddleOCR',
       paddleocrSelectAlgorithm: 'Chọn thuật toán',
@@ -606,18 +605,18 @@ export default {
         'LLM trò chuyện mặc định mà tất cả các cơ sở kiến thức mới tạo sẽ sử dụng.',
       embeddingModel: 'Mô hình nhúng',
       embeddingModelTip:
-        'Mô hình nhúng mặc định cho từng cơ sở tri thức mới được tạo. Nếu bạn không tìm thấy mô hình nhúng từ danh sách thả xuống, hãy kiểm tra xem bạn có đang sử dụng phiên bản RAGFlow slim (không bao gồm các mô hình nhúng) hay không, hoặc kiểm tra https://ragflow.io/docs/dev/supported_models để xem nhà cung cấp mô hình của bạn có hỗ trợ mô hình này không.',
+        'Mô hình nhúng mặc định cho từng cơ sở tri thức mới được tạo. Nếu bạn không tìm thấy mô hình nhúng từ danh sách thả xuống, kiểm tra trang Nhà cung cấp mô hình để xem nhà cung cấp mô hình của bạn có hỗ trợ mô hình này không.',
       img2txtModel: 'Mô hình img2txt',
       img2txtModelTip:
-        'Mô hình img2txt mặc định cho mỗi cơ sở tri thức mới được tạo. Nó mô tả một bức tranh hoặc video. Nếu bạn không thể tìm thấy mô hình từ danh sách thả xuống, hãy kiểm tra https://ragflow.io/docs/dev/supported_models để xem nhà cung cấp mô hình của bạn có hỗ trợ mô hình này không.',
+        'Mô hình img2txt mặc định cho mỗi cơ sở tri thức mới được tạo. Nó mô tả một bức tranh hoặc video. Nếu bạn không thể tìm thấy mô hình từ danh sách thả xuống, hãy kiểm tra trang Nhà cung cấp mô hình để xem nhà cung cấp mô hình của bạn có hỗ trợ mô hình này không.',
       sequence2txtModel: 'Mô hình speech2txt',
       sequence2txtModelTip:
-        'Mô hình ASR mặc định mà tất cả các cơ sở kiến thức mới tạo sẽ sử dụng. Sử dụng mô hình này để chuyển đổi giọng nói thành văn bản tương ứng. Nếu bạn không thể tìm thấy mô hình từ danh sách thả xuống, hãy kiểm tra https://ragflow.io/docs/dev/supported_models để xem nhà cung cấp mô hình của bạn có hỗ trợ mô hình này không.',
+        'Mô hình ASR mặc định mà tất cả các cơ sở kiến thức mới tạo sẽ sử dụng. Sử dụng mô hình này để chuyển đổi giọng nói thành văn bản tương ứng. Nếu bạn không thể tìm thấy mô hình từ danh sách thả xuống, hãy kiểm tra trang Nhà cung cấp mô hình để xem nhà cung cấp mô hình của bạn có hỗ trợ mô hình này không.',
       rerankModel: 'Mô hình xếp hạng lại',
-      rerankModelTip: `Mô hình rerank mặc định để reranking các đoạn văn bản. Nếu bạn không tìm thấy mô hình nào từ danh sách thả xuống, hãy kiểm tra https://ragflow.io/docs/dev/supported_models để xem nhà cung cấp mô hình của bạn có hỗ trợ mô hình này không.`,
+      rerankModelTip: `Mô hình rerank mặc định để reranking các đoạn văn bản. Nếu bạn không tìm thấy mô hình nào từ danh sách thả xuống, hãy kiểm tra trang Nhà cung cấp mô hình để xem nhà cung cấp mô hình của bạn có hỗ trợ mô hình này không.`,
       ttsModel: 'Mô hình TTS',
       ttsModelTip:
-        'Mô hình text-to-speech mặc định. Nếu bạn không tìm thấy mô hình nào từ danh sách thả xuống, hãy kiểm tra https://ragflow.io/docs/dev/supported_models để xem nhà cung cấp mô hình của bạn có hỗ trợ mô hình này không.',
+        'Mô hình text-to-speech mặc định. Nếu bạn không tìm thấy mô hình nào từ danh sách thả xuống, hãy kiểm tra trang Nhà cung cấp mô hình để xem nhà cung cấp mô hình của bạn có hỗ trợ mô hình này không.',
       workspace: 'Không gian làm việc',
       upgrade: 'Nâng cấp',
       addLlmTitle: 'Thêm LLM',
@@ -633,7 +632,7 @@ export default {
         apiUrl: 'URL API PaddleOCR',
         apiUrlPlaceholder: 'Ví dụ: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Token truy cập AI Studio',
-        accessTokenPlaceholder: 'Token AI Studio của bạn (tùy chọn)',
+        accessTokenPlaceholder: 'Token AI Studio của bạn',
         algorithm: 'Thuật toán PaddleOCR',
         selectAlgorithm: 'Chọn thuật toán',
         modelNamePlaceholder: 'Ví dụ: paddleocr-from-env-1',
@@ -805,7 +804,7 @@ export default {
       destinationFolder: 'Thư mục đích',
     },
     flow: {
-      cite: 'Dẫn nguồn',
+      cite: 'Hiển thị trích dẫn',
       citeTip: 'Mẹo dẫn nguồn',
       name: 'Tên',
       nameMessage: 'Vui lòng nhập tên',
@@ -1232,14 +1231,14 @@ export default {
       authCode: 'Mật khẩu SMTP / mật khẩu ứng dụng',
       senderName: 'Tên hiển thị người gửi',
       jsonUploadContentErrorMessage: 'lỗi tệp json',
-      contentTip: 'content: Nội dung email (Tùy chọn)',
-      subjectTip: 'subject: Tiêu đề email (Tùy chọn)',
+      contentTip: 'content: Nội dung email',
+      subjectTip: 'subject: Tiêu đề email',
       jsonUploadTypeErrorMessage: 'Vui lòng tải lên tệp json',
       dynamicParameters: 'Tham số động',
       emailSubject: 'Tiêu đề email',
       ccEmail: 'Email CC',
       toEmailTip: 'to_email: Email người nhận (Bắt buộc)',
-      ccEmailTip: 'cc_email: Email CC (Tùy chọn)',
+      ccEmailTip: 'cc_email: Email CC',
       iteration: 'Khối lặp',
       iterationDescription: `Thành phần này trước tiên chia đầu vào thành mảng bằng "dấu phân cách". Thực hiện các bước thao tác tương tự trên các phần tử trong mảng theo trình tự cho đến khi tất cả các kết quả được xuất ra, có thể được hiểu là bộ xử lý hàng loạt tác vụ. Ví dụ: trong nút lặp lại bản dịch văn bản dài, nếu tất cả nội dung được nhập vào nút LLM, có thể đạt đến giới hạn hội thoại duy nhất. Trước tiên, nút ngược dòng có thể chia văn bản dài thành nhiều mảnh và hợp tác với nút lặp đi lặp lại để thực hiện dịch hàng loạt trên mỗi phân đoạn để tránh đạt đến giới hạn tin nhắn LLM cho một cuộc hội thoại.`,
       delimiterTip: `Dấu phân cách này được sử dụng để chia văn bản đầu vào thành nhiều đoạn văn bản, tiếng vang sẽ được thực hiện dưới dạng mục đầu vào của mỗi lần lặp.`,
@@ -1257,7 +1256,7 @@ export default {
         'Sử dụng lời nhắc hệ thống để mô tả nhiệm vụ cho LLM, chỉ định cách nó nên phản hồi và phác thảo các yêu cầu khác nhau. Lời nhắc hệ thống thường được sử dụng kết hợp với các khóa (biến), đóng vai trò là các đầu vào dữ liệu khác nhau cho LLM. Sử dụng dấu gạch chéo `/` hoặc nút (x) để hiển thị các khóa cần sử dụng.',
       promptMessage: 'Nhắc nhở là bắt buộc',
       runningHintText: 'đang chạy...🕞',
-      canvasCategory: 'Danh mục canvas',
+      agentCategory: 'Danh mục canvas',
       tags: 'Thẻ',
       created: 'Đã tạo',
       id: 'ID',

@@ -13,8 +13,6 @@ jest.mock('@/hooks/auth-hooks', () => ({
 jest.mock('@/hooks/use-login-request', () => ({
   useLogin: () => ({ login: jest.fn(), loading: false }),
   useRegister: () => ({ register: jest.fn(), loading: false }),
-  useLoginChannels: () => ({ channels: [], loading: false }),
-  useLoginWithChannel: () => ({ login: jest.fn(), loading: false }),
 }));
 
 jest.mock('react-router', () => ({
@@ -26,7 +24,6 @@ jest.mock('react-i18next', () => ({
 }));
 
 jest.mock('@/utils', () => ({ rsaPsw: jest.fn() }));
-jest.mock('@/components/svg-icon', () => () => null);
 jest.mock('@/components/spotlight', () => () => null);
 jest.mock('./bg', () => ({ BgSvg: () => null }));
 jest.mock('./card', () => ({
@@ -51,6 +48,13 @@ afterAll(() => {
 });
 
 describe('login registration entry', () => {
+  const config = {
+    disablePasswordLogin: false,
+    registerEnabled: 1,
+    emailVerificationEnabled: false,
+    upload_size_limit: 0,
+  };
+
   beforeEach(() => {
     MockUseSystemConfig.mockReturnValue({ config: undefined, loading: true });
   });
@@ -66,7 +70,7 @@ describe('login registration entry', () => {
       expect(screen.getByTestId('auth-submit')).toBeEnabled();
 
       MockUseSystemConfig.mockReturnValue({
-        config: { registerEnabled },
+        config: { ...config, registerEnabled },
         loading: false,
       });
       rerender(<Login />);
@@ -88,7 +92,7 @@ describe('login registration entry', () => {
       ).not.toBeInTheDocument();
 
       MockUseSystemConfig.mockReturnValue({
-        config: { registerEnabled },
+        config: { ...config, registerEnabled },
         loading: false,
       });
       rerender(<Login />);

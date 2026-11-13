@@ -38,7 +38,7 @@ func setupChatSessionDAOTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(&entity.API4Conversation{}, &entity.ChatSession{}); err != nil {
+	if err := db.AutoMigrate(&entity.API4Conversation{}, &entity.API4ConversationMessage{}, &entity.API4ConversationReference{}, &entity.ChatSession{}, &entity.ConversationMessage{}, &entity.ConversationReference{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -50,11 +50,10 @@ func createAgentSessionForDAOTest(t *testing.T, db *gorm.DB, id, agentID, userID
 
 	updateDate := time.UnixMilli(updateTime).Local()
 	session := &entity.API4Conversation{
-		ID:        id,
-		DialogID:  agentID,
-		UserID:    userID,
-		Message:   json.RawMessage(`[{"role":"assistant","content":"hello"}]`),
-		Reference: json.RawMessage(`[]`),
+		ID:       id,
+		DialogID: agentID,
+		UserID:   userID,
+		Message:  json.RawMessage(`[{"role":"assistant","content":"hello"}]`),
 		BaseModel: entity.BaseModel{
 			CreateTime: &updateTime,
 			CreateDate: &updateDate,
@@ -62,7 +61,7 @@ func createAgentSessionForDAOTest(t *testing.T, db *gorm.DB, id, agentID, userID
 			UpdateDate: &updateDate,
 		},
 	}
-	if err := db.Create(session).Error; err != nil {
+	if err := NewAPI4ConversationDAO().Create(t.Context(), db, session); err != nil {
 		t.Fatalf("failed to create session %s: %v", id, err)
 	}
 }
@@ -72,12 +71,11 @@ func createNamedAgentSessionForDAOTest(t *testing.T, db *gorm.DB, id, agentID, u
 
 	updateDate := time.UnixMilli(updateTime).Local()
 	session := &entity.API4Conversation{
-		ID:        id,
-		Name:      &name,
-		DialogID:  agentID,
-		UserID:    userID,
-		Message:   message,
-		Reference: json.RawMessage(`[]`),
+		ID:       id,
+		Name:     &name,
+		DialogID: agentID,
+		UserID:   userID,
+		Message:  message,
 		BaseModel: entity.BaseModel{
 			CreateTime: &updateTime,
 			CreateDate: &updateDate,
@@ -85,7 +83,7 @@ func createNamedAgentSessionForDAOTest(t *testing.T, db *gorm.DB, id, agentID, u
 			UpdateDate: &updateDate,
 		},
 	}
-	if err := db.Create(session).Error; err != nil {
+	if err := NewAPI4ConversationDAO().Create(t.Context(), db, session); err != nil {
 		t.Fatalf("failed to create session %s: %v", id, err)
 	}
 }
@@ -95,11 +93,10 @@ func createChatSessionForDAOTest(t *testing.T, db *gorm.DB, id, chatID, name str
 
 	updateDate := time.UnixMilli(updateTime).Local()
 	session := &entity.ChatSession{
-		ID:        id,
-		DialogID:  chatID,
-		Name:      &name,
-		Message:   json.RawMessage(`[{"role":"assistant","content":"hello"}]`),
-		Reference: json.RawMessage(`[]`),
+		ID:       id,
+		DialogID: chatID,
+		Name:     &name,
+		Message:  json.RawMessage(`[{"role":"assistant","content":"hello"}]`),
 		BaseModel: entity.BaseModel{
 			CreateTime: &updateTime,
 			CreateDate: &updateDate,
@@ -107,7 +104,7 @@ func createChatSessionForDAOTest(t *testing.T, db *gorm.DB, id, chatID, name str
 			UpdateDate: &updateDate,
 		},
 	}
-	if err := db.Create(session).Error; err != nil {
+	if err := NewChatSessionDAO().Create(t.Context(), db, session); err != nil {
 		t.Fatalf("failed to create chat session %s: %v", id, err)
 	}
 }
@@ -229,12 +226,13 @@ func TestChatSessionDAOListAgentSessionsFiltersAndPaginates(t *testing.T) {
 	}
 }
 
-func TestChatSessionDAOListAgentSessionsSearchesIDNameAndMessage(t *testing.T) {
+func TestChatSessionDAOListAgentSessionsSearchesOnlyIDAndName(t *testing.T) {
 	db := setupChatSessionDAOTestDB(t)
 
 	createNamedAgentSessionForDAOTest(t, db, "release-session-id", "agent-1", "user-1", "plain", json.RawMessage(`[{"content":"ordinary"}]`), 1000)
 	createNamedAgentSessionForDAOTest(t, db, "session-title", "agent-1", "user-1", "Release Notes", json.RawMessage(`[{"content":"ordinary"}]`), 2000)
 	createNamedAgentSessionForDAOTest(t, db, "session-message", "agent-1", "user-1", "plain", json.RawMessage(`[{"content":"release details"}]`), 3000)
+	createNamedAgentSessionForDAOTest(t, db, "session-metadata", "agent-1", "user-1", "plain", json.RawMessage(`[{"content":"ordinary","feedback":"release","attachment":"release"}]`), 3500)
 	createNamedAgentSessionForDAOTest(t, db, "other-agent-release", "agent-2", "user-1", "Release Notes", json.RawMessage(`[{"content":"release details"}]`), 4000)
 
 	ctx := t.Context()
@@ -250,8 +248,8 @@ func TestChatSessionDAOListAgentSessionsSearchesIDNameAndMessage(t *testing.T) {
 		t.Fatalf("ListAgentSessions failed: %v", err)
 	}
 
-	if total != 3 {
-		t.Fatalf("expected total 3, got %d", total)
+	if total != 2 {
+		t.Fatalf("expected total 2, got %d", total)
 	}
 	gotIDs := make([]string, 0, len(sessions))
 	for _, session := range sessions {
@@ -260,7 +258,7 @@ func TestChatSessionDAOListAgentSessionsSearchesIDNameAndMessage(t *testing.T) {
 			t.Fatalf("session %s leaked from agent %s", session.ID, session.DialogID)
 		}
 	}
-	wantIDs := []string{"release-session-id", "session-title", "session-message"}
+	wantIDs := []string{"release-session-id", "session-title"}
 	if len(gotIDs) != len(wantIDs) {
 		t.Fatalf("ids = %v, want %v", gotIDs, wantIDs)
 	}
@@ -268,5 +266,44 @@ func TestChatSessionDAOListAgentSessionsSearchesIDNameAndMessage(t *testing.T) {
 		if gotIDs[i] != wantIDs[i] {
 			t.Fatalf("ids = %v, want %v", gotIDs, wantIDs)
 		}
+	}
+}
+
+func TestChatSessionDAOListAgentSessionsTitleSearch(t *testing.T) {
+	db := setupChatSessionDAOTestDB(t)
+	createNamedAgentSessionForDAOTest(t, db, "abc-session", "agent-1", "user-1", "hello in chinese", json.RawMessage(`[{"content":"你好"}]`), 1000)
+	createNamedAgentSessionForDAOTest(t, db, "def-session", "agent-1", "user-1", "你好世界", json.RawMessage(`[{"content":"ordinary"}]`), 2000)
+	for _, tc := range []struct {
+		keyword, id string
+		total       int64
+		page        int
+	}{
+		{"HELLO IN CHINESE", "abc-session", 1, 1},
+		{"in chin", "abc-session", 1, 1},
+		{"ABC-SESSION", "abc-session", 1, 1},
+		{"abc-", "abc-session", 1, 1},
+		{"你好", "def-session", 1, 1},
+		{"ordinary", "", 0, 1},
+		{"", "abc-session", 2, 1},
+		{"", "def-session", 2, 2},
+	} {
+		t.Run(tc.keyword+tc.id, func(t *testing.T) {
+			total, rows, err := NewChatSessionDAO().ListAgentSessions(t.Context(), db, ListAgentSessionsParams{AgentID: "agent-1", Keywords: tc.keyword, Page: tc.page, PageSize: 1, OrderBy: "update_time"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if total != tc.total {
+				t.Fatalf("total=%d, want %d", total, tc.total)
+			}
+			if tc.id == "" {
+				if len(rows) != 0 {
+					t.Fatalf("unexpected rows: %v", rows)
+				}
+				return
+			}
+			if len(rows) != 1 || rows[0].ID != tc.id {
+				t.Fatalf("rows=%v, want %s", rows, tc.id)
+			}
+		})
 	}
 }

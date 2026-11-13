@@ -50,6 +50,58 @@ func newJinaForTest(baseURL string) *JinaModel {
 	)
 }
 
+func TestJinaListModelsRejectsMalformedResponsesWithoutPanicking(t *testing.T) {
+	withSSRFBypass(t)
+	cases := []struct {
+		name string
+		body string
+	}{
+		{name: "missing data", body: `{}`},
+		{name: "data is not an array", body: `{"data":{}}`},
+		{name: "model is not an object", body: `{"data":[null]}`},
+		{name: "model id is missing", body: `{"data":[{}]}`},
+		{name: "model id is not a string", body: `{"data":[{"id":1}]}`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			defer server.Close()
+
+			var callErr error
+			var panicValue any
+			func() {
+				defer func() { panicValue = recover() }()
+				_, callErr = newJinaForTest(server.URL).ListModels(t.Context(), &APIConfig{})
+			}()
+			if panicValue != nil {
+				t.Fatalf("ListModels panicked for malformed response: %v", panicValue)
+			}
+			if callErr == nil {
+				t.Fatal("ListModels error = nil, want malformed response error")
+			}
+		})
+	}
+}
+
+func TestJinaListModelsParsesValidResponse(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"data":[{"id":"jina-embeddings-v3"}]}`)
+	}))
+	defer server.Close()
+
+	models, err := newJinaForTest(server.URL).ListModels(t.Context(), &APIConfig{})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(models) != 1 || models[0].Name != "jina-embeddings-v3" {
+		t.Fatalf("ListModels = %+v, want one jina-embeddings-v3 model", models)
+	}
+}
+
 func TestJinaChatHappyPath(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
@@ -525,5 +577,39 @@ func TestJinaRerankDefaultsTopNToDocumentCount(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatalf("Rerank: %v", err)
+	}
+}
+
+func TestJinaEmbedTaskFollowsQueryForV3V4(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	baseURL, bodies := captureEmbedBodies(t, openAIShapeEmbeddingBody)
+	m := NewJinaModel(
+		map[string]string{"default": baseURL},
+		URLSuffix{Embedding: "embeddings", Rerank: "rerank"},
+	)
+	apiKey := "test-key"
+
+	v4 := "jina-embeddings-v4"
+	if _, err := m.Embed(ctx, &v4, EmbedRequest{Texts: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
+		t.Fatalf("Embed(v4): %v", err)
+	}
+	if _, err := m.Embed(ctx, &v4, EmbedRequest{Texts: []string{"a"}, Query: true}, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
+		t.Fatalf("Embed(v4 query): %v", err)
+	}
+	if got := (*bodies)[0]["task"]; got != "retrieval.passage" {
+		t.Errorf("v4 document task = %v, want retrieval.passage", got)
+	}
+	if got := (*bodies)[1]["task"]; got != "retrieval.query" {
+		t.Errorf("v4 query task = %v, want retrieval.query", got)
+	}
+
+	// An older model must NOT carry a task at all (Python only sets it for v3/v4).
+	v2 := "jina-embeddings-v2-base-en"
+	if _, err := m.Embed(ctx, &v2, EmbedRequest{Texts: []string{"a"}, Query: true}, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
+		t.Fatalf("Embed(v2 query): %v", err)
+	}
+	if _, ok := (*bodies)[2]["task"]; ok {
+		t.Errorf("v2 must not send task, got %v", (*bodies)[2]["task"])
 	}
 }

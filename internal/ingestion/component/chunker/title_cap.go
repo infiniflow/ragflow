@@ -15,7 +15,7 @@
 package chunker
 
 // Token-count cap for the title-chunker family (GroupTitle / HierarchyTitle),
-// mirroring Python title_chunker/common.py:_enforce_token_cap (#18455).
+// mirroring :_enforce_token_cap (#18455)
 //
 // A built chunk that exceeds `chunk_token_cap` tokens is re-split on sentence
 // boundaries into <= cap sub-chunks; a single boundary-less run that still
@@ -23,6 +23,10 @@ package chunker
 // chunks are atomic and never split. Every sub-chunk keeps the source chunk's
 // merged PDF position matrix so each one still gets its page-region preview
 // image and position highlight.
+//
+// Hierarchy sub-chunks additionally re-prepend the source chunk's leading
+// segment, so a split never strips the parent headings from the continuation
+// pieces (see splitTitleChunkByCap).
 
 import (
 	"strings"
@@ -33,18 +37,25 @@ import (
 
 // realNumTokens / realTrimToTokenLimit are the production tokenizer functions.
 // They are referenced through package-level vars (numTokens /
-// trimToTokenLimit) so tests can swap in a deterministic stub.
+// trimToTokenLimit, and encodeTokens / decodeTokens for the raw token-id
+// API the O(L) hard-split walk drives on) so tests can swap in a
+// deterministic stub.
 var (
 	realNumTokens        = tokenizer.NumTokensFromString
 	realTrimToTokenLimit = tokenizer.TrimContentToTokenLimit
 
 	numTokens        = realNumTokens
 	trimToTokenLimit = realTrimToTokenLimit
+
+	encodeTokens = tokenizer.EncodeCL100KTokens
+	decodeTokens = tokenizer.DecodeCL100KTokens
 )
 
-// titleTokenCount counts tokens for text. numTokensFromString returns 0 when
-// the encoder is unavailable; in that case fall back to the rune count so the
-// cap is still enforced (mirrors Python #18455's character-count fallback).
+// titleTokenCount counts tokens for text. tokenizer.NumTokensFromString now
+// PANICS when the encoder is unavailable (mirroring raise), so a 0 here
+// can only come from the counter itself (empty input, or the stubbed counter the
+// tests install); fall back to the rune count so the cap is still enforced
+// (mirrors #18455's character-count fallback)
 func titleTokenCount(text string) int {
 	if text == "" {
 		return 0
@@ -59,7 +70,7 @@ func titleTokenCount(text string) int {
 // titleSentenceSplit splits text on sentence boundaries, keeping each
 // delimiter attached to the preceding sentence so the concatenation of the
 // returned pieces reproduces the original text exactly. It uses the shared
-// sentenceBoundaryRe (Python _sentence_boundary.py SENTENCE_BOUNDARY_RE),
+// sentenceBoundaryRe ( SENTENCE_BOUNDARY_RE)
 // which includes the English ". " boundary.
 func titleSentenceSplit(text string) []string {
 	if text == "" {
@@ -99,9 +110,9 @@ func runePrefix(s string, n int) string {
 }
 
 // hardSplitByTokens hard-splits text into pieces whose token count is <= cap.
-// It mirrors Python's _hard_split_by_tokens (token_utils.truncate prefix).
+// It mirrors _hard_split_by_tokens (token_utils.truncate prefix)
 // When the tokenizer is unavailable (numTokens returns 0) it degrades to a
-// rune-prefix of length cap, keeping the ceiling intact (Python #18455
+// rune-prefix of length cap, keeping the ceiling intact ( #18455
 // character-count fallback).
 func hardSplitByTokens(text string, cap int) []string {
 	if cap <= 0 {
@@ -137,17 +148,27 @@ func hardSplitByTokens(text string, cap int) []string {
 }
 
 // enforceTitleTokenCap applies the hard token ceiling to every text chunk
-// after build_chunks. Mirrors Python BaseTitleChunker._enforce_token_cap:
+// after build_chunks. Mirrors BaseTitleChunker._enforce_token_cap
 //   - cap <= 0 disables the ceiling (chunks returned unchanged);
 //   - non-text chunks (table/image) are atomic and skipped;
 //   - a text chunk already within cap is kept;
 //   - an over-cap text chunk is re-split via splitTitleChunkByCap.
-func enforceTitleTokenCap(chunks []map[string]any, cap int) []map[string]any {
+//
+// prefixes is aligned 1:1 with chunks (nil outside the hierarchy strategy):
+// prefixes[i] is the leading segment chunk i starts with (ancestor headings
+// and any ancestor body text folded in). Every sub-chunk of a split
+// re-prepends it (see splitTitleChunkByCap), so a split does not strip the
+// parent headings from the continuation pieces.
+func enforceTitleTokenCap(chunks []map[string]any, prefixes []string, cap int) []map[string]any {
 	if cap <= 0 {
 		return chunks
 	}
 	out := make([]map[string]any, 0, len(chunks))
-	for _, chunk := range chunks {
+	for i, chunk := range chunks {
+		prefix := ""
+		if prefixes != nil {
+			prefix = prefixes[i]
+		}
 		if toStringOrDefault(chunk["doc_type_kwd"], "text") != "text" {
 			out = append(out, chunk)
 			continue
@@ -157,7 +178,7 @@ func enforceTitleTokenCap(chunks []map[string]any, cap int) []map[string]any {
 			out = append(out, chunk)
 			continue
 		}
-		out = append(out, splitTitleChunkByCap(chunk, cap)...)
+		out = append(out, splitTitleChunkByCap(chunk, prefix, cap)...)
 	}
 	return out
 }
@@ -168,9 +189,33 @@ func enforceTitleTokenCap(chunks []map[string]any, cap int) []map[string]any {
 // merged PDF position matrix (the coordinates are coarse, source-chunk
 // level), so the on-demand crop pass can attach a preview image to each
 // sub-chunk.
-func splitTitleChunkByCap(chunk map[string]any, cap int) []map[string]any {
+//
+// prefix is the leading segment the source chunk starts with (empty outside
+// the hierarchy strategy): the ancestor headings plus any ancestor body text
+// folded in, up to and including the leaf's own heading. It is detached from
+// the text before grouping and re-prepended to every piece: without that,
+// only the first piece would keep the parent headings and every continuation
+// piece would be a bare body fragment. The grouping budget subtracts the
+// prefix so each piece still fits the cap; a prefix that would leave the
+// body less than half the cap disables re-attachment (plain split) instead
+// of multiplying near-empty pieces that each repeat it.
+func splitTitleChunkByCap(chunk map[string]any, prefix string, cap int) []map[string]any {
 	text := toString(chunk["text"])
-	sentences := titleSentenceSplit(text)
+	body := text
+	if prefix != "" {
+		// Re-attaching the prefix only pays off while the body keeps at
+		// least half the cap: a larger prefix would multiply near-empty
+		// pieces that each repeat it, so fall back to a plain split. The
+		// HasPrefix check is a safety net (the prefix is the text's leading
+		// segment by construction).
+		if !strings.HasPrefix(text, prefix) || titleTokenCount(prefix) > cap/2 {
+			prefix = ""
+		} else {
+			body = text[len(prefix):]
+		}
+	}
+	budget := cap - titleTokenCount(prefix)
+	sentences := titleSentenceSplit(body)
 	if len(sentences) == 0 {
 		return []map[string]any{chunk}
 	}
@@ -181,7 +226,7 @@ func splitTitleChunkByCap(chunk map[string]any, cap int) []map[string]any {
 		if current != "" {
 			cand = current + s
 		}
-		if current != "" && titleTokenCount(cand) > cap {
+		if current != "" && titleTokenCount(cand) > budget {
 			groups = append(groups, current)
 			current = s
 		} else {
@@ -193,10 +238,10 @@ func splitTitleChunkByCap(chunk map[string]any, cap int) []map[string]any {
 	}
 	finalGroups := []string{}
 	for _, g := range groups {
-		if titleTokenCount(g) <= cap {
+		if titleTokenCount(g) <= budget {
 			finalGroups = append(finalGroups, g)
 		} else {
-			finalGroups = append(finalGroups, hardSplitByTokens(g, cap)...)
+			finalGroups = append(finalGroups, hardSplitByTokens(g, budget)...)
 		}
 	}
 	if len(finalGroups) == 0 {
@@ -212,7 +257,7 @@ func splitTitleChunkByCap(chunk map[string]any, cap int) []map[string]any {
 		out := make([]map[string]any, 0, len(finalGroups))
 		for _, g := range finalGroups {
 			sub := shallowCopyChunk(chunk)
-			sub["text"] = g
+			sub["text"] = prefix + g
 			out = append(out, sub)
 		}
 		return out
@@ -222,7 +267,7 @@ func splitTitleChunkByCap(chunk map[string]any, cap int) []map[string]any {
 		out := make([]map[string]any, 0, len(finalGroups))
 		for _, g := range finalGroups {
 			sub := shallowCopyChunk(chunk)
-			sub["text"] = g
+			sub["text"] = prefix + g
 			out = append(out, sub)
 		}
 		return out
@@ -234,7 +279,7 @@ func splitTitleChunkByCap(chunk map[string]any, cap int) []map[string]any {
 		startRatio := float64(cum) / float64(total)
 		endRatio := float64(cum+pcRunes) / float64(total)
 		sub := shallowCopyChunk(chunk)
-		sub["text"] = g
+		sub["text"] = prefix + g
 		if hasPDF {
 			if sliced := sliceAnyPositions(chunk["_pdf_positions"], startRatio, endRatio); sliced != nil {
 				sub["_pdf_positions"] = sliced

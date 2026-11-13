@@ -20,16 +20,19 @@
 package component
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"log"
 	"math"
 	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
+
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 )
@@ -73,7 +76,7 @@ func TestTokenizerComponent_Invoke_HappyPath(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 
-	gotChunks, ok := out["chunks"].([]map[string]any)
+	gotChunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok {
 		t.Fatalf("chunks type = %T, want []map[string]any", out["chunks"])
 	}
@@ -139,7 +142,7 @@ func TestTokenizerComponent_Invoke_Unicode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	gotChunks, _ := out["chunks"].([]map[string]any)
+	gotChunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(gotChunks) != len(inputs) {
 		t.Fatalf("chunks len = %d, want %d", len(gotChunks), len(inputs))
 	}
@@ -169,7 +172,7 @@ func TestTokenizerComponent_Invoke_TextPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, _ := out["chunks"].([]map[string]any)
+	got, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(got) != 1 {
 		t.Fatalf("chunks len = %d, want 1", len(got))
 	}
@@ -195,7 +198,7 @@ func TestTokenizerComponent_Invoke_JSONPayload(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, _ := out["chunks"].([]map[string]any)
+	got, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(got) != 2 {
 		t.Fatalf("chunks len = %d, want 2", len(got))
 	}
@@ -250,7 +253,7 @@ func TestTokenizerComponent_Invoke_FullTextOnly(t *testing.T) {
 	if out["embedding_token_consumption"] != nil {
 		t.Errorf("embedding_token_consumption should be absent, got %v", out["embedding_token_consumption"])
 	}
-	got, _ := out["chunks"].([]map[string]any)
+	got, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(got) == 0 || got[0]["content_ltks"] == nil {
 		t.Errorf("content_ltks missing: %v", got)
 	}
@@ -279,7 +282,7 @@ func TestTokenizerComponent_Invoke_KeywordSplitCommaOnly(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Invoke(%q): %v", keywords, err)
 		}
-		got, _ := out["chunks"].([]map[string]any)
+		got, _ := schema.ChunkCarrierToMaps(out["chunks"])
 		if len(got) != 1 {
 			t.Fatalf("chunks len = %d, want 1", len(got))
 		}
@@ -322,7 +325,7 @@ func TestTokenizerComponent_Invoke_FullTextAndEmbedding(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, _ := out["chunks"].([]map[string]any)
+	got, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(got) != 1 {
 		t.Fatalf("chunks len = %d, want 1", len(got))
 	}
@@ -385,7 +388,7 @@ func TestTokenizerComponent_Invoke_EncoderCountMismatch(t *testing.T) {
 	// Inject an embedder that returns the wrong number of vectors
 	// regardless of input.
 	wrong := &countMismatchedEmbedder{want: 1}
-	cIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _, _ string) (Embedder, error) { return wrong, nil })
+	cIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _ string) (Embedder, string, error) { return wrong, "", nil })
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
 	}
@@ -469,7 +472,7 @@ func TestTokenizerComponent_Smoke_EndToEnd(t *testing.T) {
 		t.Errorf("elapsed %v exceeds 5s ceiling", elapsed)
 	}
 
-	got, ok := out["chunks"].([]map[string]any)
+	got, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(got) != 1 {
 		t.Fatalf("chunks output malformed: %v", out["chunks"])
 	}
@@ -510,7 +513,7 @@ func TestTokenizerComponent_Embedding_MergesTitleAndContentVectors(t *testing.T)
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, _ := out["chunks"].([]map[string]any)
+	got, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	want0 := []float64{1.9, 3.8}
 	want1 := []float64{3.7, 5.6}
 	if !floatSliceClose(got[0]["q_2_vec"].([]float64), want0) {
@@ -525,13 +528,13 @@ func TestTokenizerComponent_Embedding_UsesFilenameWeight(t *testing.T) {
 	requireTokenizerPool(t)
 	cIntf, err := NewTokenizerComponentWithResolver(map[string]any{
 		"filename_embd_weight": 0.25,
-	}, func(_ context.Context, _, _, _ string) (Embedder, error) {
+	}, func(_ context.Context, _, _ string) (Embedder, string, error) {
 		stub := newStubEmbedder(2)
 		stub.resultsByCall = []embeddingCallResult{
 			{vectors: [][]float64{{8, 8}}, tokenCount: 3},
 			{vectors: [][]float64{{2, 2}}, tokenCount: 5},
 		}
-		return stub, nil
+		return stub, "", nil
 	})
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver: %v", err)
@@ -546,7 +549,7 @@ func TestTokenizerComponent_Embedding_UsesFilenameWeight(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, _ := out["chunks"].([]map[string]any)
+	got, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	want := []float64{3.5, 3.5}
 	if !floatSliceClose(got[0]["q_2_vec"].([]float64), want) {
 		t.Fatalf("q_2_vec = %v, want %v", got[0]["q_2_vec"], want)
@@ -558,15 +561,12 @@ func TestTokenizerComponent_Embedding_EmptyNameWarnsAndUsesContentVector(t *test
 	c, stub := withStubEmbedder(t, 2)
 	stub.resultsByCall = []embeddingCallResult{{vectors: [][]float64{{2, 4}}, tokenCount: 5}}
 
-	var buf bytes.Buffer
-	prevWriter := log.Writer()
-	prevFlags := log.Flags()
-	log.SetOutput(&buf)
-	log.SetFlags(0)
-	t.Cleanup(func() {
-		log.SetOutput(prevWriter)
-		log.SetFlags(prevFlags)
-	})
+	// The empty-name warning goes through internal/common (zap), so observe it
+	// by swapping the project logger instead of the stdlib global one.
+	oldLogger := common.Logger
+	core, logs := observer.New(zapcore.WarnLevel)
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = oldLogger })
 
 	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "   ",
@@ -580,10 +580,10 @@ func TestTokenizerComponent_Embedding_EmptyNameWarnsAndUsesContentVector(t *test
 	if got := stub.calls.Load(); got != 1 {
 		t.Fatalf("embedder calls = %d, want 1 (content only)", got)
 	}
-	if !strings.Contains(buf.String(), "empty name provided from upstream") {
-		t.Fatalf("log output = %q, want empty-name warning", buf.String())
+	if got := logs.FilterMessageSnippet("empty name provided from upstream").Len(); got != 1 {
+		t.Fatalf("empty-name warnings = %d, want 1 (entries: %v)", got, logs.All())
 	}
-	got, _ := out["chunks"].([]map[string]any)
+	got, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	want := []float64{2, 4}
 	if !floatSliceClose(got[0]["q_2_vec"].([]float64), want) {
 		t.Fatalf("q_2_vec = %v, want %v", got[0]["q_2_vec"], want)
@@ -665,7 +665,7 @@ func TestTokenizerComponent_Embedding_SkipsEmptyCleanedTextsButReturnsZeroWhenAl
 	if got := out["embedding_token_consumption"]; got != 0 {
 		t.Fatalf("embedding_token_consumption = %v, want 0", got)
 	}
-	got, _ := out["chunks"].([]map[string]any)
+	got, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	for i, ck := range got {
 		if _, ok := ck["q_2_vec"]; ok {
 			t.Fatalf("chunk[%d] should not have vector: %v", i, ck)
@@ -735,18 +735,18 @@ func floatSliceClose(got, want []float64) bool {
 
 func TestTokenizerComponent_InstanceResolversDoNotLeakAcrossComponents(t *testing.T) {
 	requireTokenizerPool(t)
-	compAIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _, _ string) (Embedder, error) {
+	compAIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _ string) (Embedder, string, error) {
 		stub := newStubEmbedder(2)
 		stub.resultsByCall = []embeddingCallResult{{vectors: [][]float64{{10, 10}}, tokenCount: 1}, {vectors: [][]float64{{1, 1}}, tokenCount: 1}}
-		return stub, nil
+		return stub, "", nil
 	})
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver(A): %v", err)
 	}
-	compBIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _, _ string) (Embedder, error) {
+	compBIntf, err := NewTokenizerComponentWithResolver(nil, func(_ context.Context, _, _ string) (Embedder, string, error) {
 		stub := newStubEmbedder(2)
 		stub.resultsByCall = []embeddingCallResult{{vectors: [][]float64{{20, 20}}, tokenCount: 1}, {vectors: [][]float64{{2, 2}}, tokenCount: 1}}
-		return stub, nil
+		return stub, "", nil
 	})
 	if err != nil {
 		t.Fatalf("NewTokenizerComponentWithResolver(B): %v", err)
@@ -762,8 +762,16 @@ func TestTokenizerComponent_InstanceResolversDoNotLeakAcrossComponents(t *testin
 	if err != nil {
 		t.Fatalf("Invoke B: %v", err)
 	}
-	vecA := outA["chunks"].([]map[string]any)[0]["q_2_vec"].([]float64)
-	vecB := outB["chunks"].([]map[string]any)[0]["q_2_vec"].([]float64)
+	chunksA, okA := schema.ChunkCarrierToMaps(outA["chunks"])
+	if !okA || len(chunksA) == 0 {
+		t.Fatalf("A: no chunks emitted: %v", outA["chunks"])
+	}
+	vecA, _ := chunksA[0]["q_2_vec"].([]float64)
+	chunksB, okB := schema.ChunkCarrierToMaps(outB["chunks"])
+	if !okB || len(chunksB) == 0 {
+		t.Fatalf("B: no chunks emitted: %v", outB["chunks"])
+	}
+	vecB, _ := chunksB[0]["q_2_vec"].([]float64)
 	if reflect.DeepEqual(vecA, vecB) {
 		t.Fatalf("instance resolvers leaked: vecA=%v vecB=%v", vecA, vecB)
 	}

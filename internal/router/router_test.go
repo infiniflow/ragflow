@@ -4,14 +4,86 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 
 	"ragflow/internal/common"
 	"ragflow/internal/handler"
+	"ragflow/internal/server"
 	"ragflow/internal/service"
 )
+
+func TestMain(m *testing.M) {
+	if err := server.InitLocalVariables(); err != nil {
+		panic(err)
+	}
+	server.SetServerName("test")
+	os.Exit(m.Run())
+}
+
+func TestRouterSetupRemovesActionRoutes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	originalLogger := common.Logger
+	common.Logger = zap.NewNop()
+	t.Cleanup(func() { common.Logger = originalLogger })
+
+	engine := gin.New()
+	r := &Router{authHandler: handler.NewAuthHandler()}
+	r.Setup(engine)
+
+	tests := []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/api/v1/tenant/list"},
+		{http.MethodPost, "/api/v1/document/list"},
+		{http.MethodPost, "/api/v1/document/metadata/summary"},
+		{http.MethodPost, "/api/v1/document/delete_meta"},
+		{http.MethodPost, "/api/v1/document/set_meta"},
+		{http.MethodPost, "/api/v1/chunk/list"},
+		{http.MethodPost, "/api/v1/chunk/update"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.method+" "+tt.path, func(t *testing.T) {
+			resp := httptest.NewRecorder()
+			engine.ServeHTTP(resp, httptest.NewRequest(tt.method, tt.path, nil))
+			if resp.Code != http.StatusNotFound {
+				t.Fatalf("status=%d body=%s; want 404", resp.Code, resp.Body.String())
+			}
+		})
+	}
+}
+
+func TestSystemVariableRoutesAreNotRegisteredOnAPI(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	originalLogger := common.Logger
+	common.Logger = zap.NewNop()
+	t.Cleanup(func() { common.Logger = originalLogger })
+
+	engine := gin.New()
+	r := &Router{authHandler: handler.NewAuthHandler()}
+	r.Setup(engine)
+
+	for _, tt := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/api/v1/system/variables"},
+		{http.MethodPut, "/api/v1/system/variables"},
+		{http.MethodGet, "/api/v1/system/variables/register_enabled"},
+	} {
+		resp := httptest.NewRecorder()
+		req := httptest.NewRequest(tt.method, tt.path, nil)
+		engine.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusNotFound {
+			t.Errorf("%s %s status=%d body=%s; want system variable route to be unavailable on the API service", tt.method, tt.path, resp.Code, resp.Body.String())
+		}
+	}
+}
 
 func TestConnectorRoutesDoNotConflictWithOAuthCallbacks(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -105,6 +177,22 @@ func TestRouterSetupRegistersUpdateDatasetRoute(t *testing.T) {
 	}
 }
 
+func TestRouterSetupRegistersApplyDatasetParserConfigRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	r := &Router{
+		authHandler:     handler.NewAuthHandler(),
+		datasetsHandler: handler.NewDatasetsHandler(nil, nil),
+	}
+	r.Setup(engine)
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets/dataset-1/documents/apply-parser-config", nil)
+	engine.ServeHTTP(resp, req)
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d body=%s; want auth middleware to handle the registered route", resp.Code, resp.Body.String())
+	}
+}
+
 func TestRouterSetupRegistersSearchbotMindMapRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -189,5 +277,85 @@ func TestRouterSetupRegistersChatMindMapRoute(t *testing.T) {
 	}
 	if body.Code != common.CodeUnauthorized {
 		t.Fatalf("status=%d body=%s; want auth middleware to handle registered Chat MindMap route", resp.Code, resp.Body.String())
+	}
+}
+
+// TestRouterSetupPipelinesRoutesRequireAuth asserts that the pipeline
+// catalog endpoints are mounted behind the strict AuthMiddleware (the
+// authorized group), not the public apiNoAuth group. Built-in templates
+// are static data, but gating the /pipelines namespace behind auth keeps
+// it ready for per-tenant user pipelines (dataflow canvases) that will
+// later need ownership checks. An unauthenticated request must be
+// rejected with 401; if the route is moved back to apiNoAuth it would
+// return 200 and this test fails.
+func TestRouterSetupPipelinesRoutesRequireAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	originalLogger := common.Logger
+	common.Logger = zap.NewNop()
+	t.Cleanup(func() { common.Logger = originalLogger })
+
+	engine := gin.New()
+	r := &Router{
+		authHandler:     handler.NewAuthHandler(),
+		pipelineHandler: handler.NewPipelineHandler(),
+	}
+	r.Setup(engine)
+
+	paths := []string{
+		"/api/v1/pipelines?type=builtin",
+		"/api/v1/pipelines/general",
+	}
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			resp := httptest.NewRecorder()
+			engine.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, path, nil))
+			if resp.Code != http.StatusUnauthorized {
+				t.Fatalf("GET %s: status=%d body=%s; want 401 (route must be behind auth middleware)", path, resp.Code, resp.Body.String())
+			}
+		})
+	}
+}
+
+func TestRouterSetupRegistersDocumentImageRoutesWithBetaAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	engine := gin.New()
+	r := &Router{
+		authHandler: handler.NewAuthHandler(),
+	}
+	r.Setup(engine)
+
+	// These routes must sit behind BetaAuthMiddleware so the beta token a
+	// shared chat carries (?auth=...) can fetch the images its answer cites,
+	// matching Python's login_required(auth_types=[AUTH_JWT, AUTH_API,
+	// AUTH_BETA]). Behind the strict AuthMiddleware they answer HTTP 401 for
+	// beta tokens and shared chats render broken images.
+	paths := []string{
+		"/api/v1/documents/doc-1/thumbnail",
+		"/api/v1/documents/doc-1/images/kb-1-img-1",
+		"/api/v1/documents/images/kb-1-img-1",
+	}
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			resp := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			engine.ServeHTTP(resp, req)
+
+			if resp.Code == http.StatusNotFound {
+				t.Fatalf("GET %s returned 404; route is not registered", path)
+			}
+			if resp.Code == http.StatusUnauthorized {
+				t.Fatalf("GET %s returned 401; route is behind the strict auth middleware instead of the beta one", path)
+			}
+			var body struct {
+				Code common.ErrorCode `json:"code"`
+			}
+			if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+				t.Fatalf("failed to decode response body: %v", err)
+			}
+			if body.Code != common.CodeDataError {
+				t.Fatalf("status=%d body=%s; want beta auth middleware to handle registered route", resp.Code, resp.Body.String())
+			}
+		})
 	}
 }

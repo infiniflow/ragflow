@@ -24,7 +24,7 @@ import (
 	"sync"
 	"testing"
 
-	"ragflow/internal/utility"
+	"ragflow/internal/common"
 )
 
 // recordingDialer is an exesqlDialer that records the host it was
@@ -74,6 +74,12 @@ func TestExeSQL_SSRF_RejectsLoopbackLinkLocalAndRFC1918(t *testing.T) {
 		{"rfc1918_192", "192.168.1.1"},
 		{"rfc1918_172", "172.16.0.1"},
 		{"unspecified", "0.0.0.0"},
+		{"this_network", "0.1.2.3"},
+		{"cgnat", "100.64.0.1"},
+		{"benchmark", "198.19.0.1"},
+		{"mapped_cgnat", "::ffff:100.64.0.1"},
+		{"six_to_four_loopback", "2002:7f00:101::1"},
+		{"nat64_loopback", "64:ff9b::7f00:1"},
 	}
 
 	for _, c := range cases {
@@ -81,7 +87,7 @@ func TestExeSQL_SSRF_RejectsLoopbackLinkLocalAndRFC1918(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 
-			rec := &recordingDialer{}
+			rec := &recordingDialer{failFast: true}
 			e := NewExeSQLTool(exesqlConnParams{
 				DBType: "mysql", Host: c.host, Port: 3306,
 				Database: "d", Username: "u", Password: "p",
@@ -128,21 +134,42 @@ func TestExeSQL_SSRF_RejectsEmptyHost(t *testing.T) {
 	}
 }
 
+func TestExeSQL_SSRF_RejectsMixedDNSBeforeDial(t *testing.T) {
+	origLookup := common.LookupHost
+	common.LookupHost = func(host string) ([]string, error) {
+		if host == "mixed.example" {
+			return []string{"1.1.1.1", "198.18.0.1"}, nil
+		}
+		return origLookup(host)
+	}
+	t.Cleanup(func() { common.LookupHost = origLookup })
+
+	rec := &recordingDialer{failFast: true}
+	e := NewExeSQLTool(exesqlConnParams{
+		DBType: "mysql", Host: "mixed.example", Port: 3306,
+		Database: "d", Username: "u", Password: "p", MaxRecords: 10,
+	}).WithExeSQLDialer(rec.dial)
+	_, err := e.InvokableRun(t.Context(), `{"sql":"SELECT 1"}`)
+	if !errors.Is(err, ErrSSRFBlocked) || len(rec.dialed) != 0 {
+		t.Fatalf("mixed DNS = (%v, %d dials), want SSRF blocked before dial", err, len(rec.dialed))
+	}
+}
+
 // TestExeSQL_SSRF_PinsToValidatedIP ensures that when a DNS name
 // resolves to a public IP, InvokableRun dials the validated IP, not
 // the original hostname — closing the TOCTOU window for DNS
-// rebinding. The resolver is stubbed via utility.LookupHost so the
+// rebinding. The resolver is stubbed via common.LookupHost so the
 // test does not depend on real DNS.
 func TestExeSQL_SSRF_PinsToValidatedIP(t *testing.T) {
 	// Stub the resolver so example.test -> 1.2.3.4 (public, stable).
-	origLookup := utility.LookupHost
-	utility.LookupHost = func(host string) ([]string, error) {
+	origLookup := common.LookupHost
+	common.LookupHost = func(host string) ([]string, error) {
 		if host == "example.test" {
 			return []string{"1.2.3.4"}, nil
 		}
 		return origLookup(host)
 	}
-	t.Cleanup(func() { utility.LookupHost = origLookup })
+	t.Cleanup(func() { common.LookupHost = origLookup })
 
 	// failFast:true makes the test dialer return an error instead of
 	// opening a real *sql.DB, so the InvokableRun path stops after

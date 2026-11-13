@@ -45,7 +45,7 @@ import (
 )
 
 // ErrNoCGO is returned by all cgo-backed entry points on non-CGO
-// builds. The Python-side ThincNER engine requires the C++ static
+// builds. The ThincNER engine requires the C++ static
 // library at internal/cpp/cmake-build-release/librag_tokenizer_c_api.a;
 // without it the package compiles but the inference paths fail
 // with this error.

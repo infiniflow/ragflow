@@ -20,9 +20,10 @@
 // nlp.RetrievalService, which requires a doc engine + document
 // DAO. Those require network access and aren't worth standing up
 // in a unit test. Instead we exercise the translation layer
-// (translateChunk + helpers) directly — that's the surface that
+// (translateChunk + helpers) and the rank-feature resolution
+// (resolveRankFeature) directly — that's the surface that
 // differs between the nlp chunk shape and the agent-tool chunk
-// shape, and it's the only piece the adapter owns.
+// shape, and the only piece the adapter itself decides.
 
 package tool
 
@@ -32,10 +33,14 @@ import (
 	"math"
 	"testing"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/service/nlp"
 
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -225,7 +230,7 @@ func TestTranslateChunk_MissingAllScores(t *testing.T) {
 // must produce an adapter whose Search returns the missing-service
 // error, not a panic.
 func TestNewNLPRetrievalAdapter_NilService(t *testing.T) {
-	a := NewNLPRetrievalAdapter(nil, nil, nil)
+	a := NewNLPRetrievalAdapter(nil, RetrievalModelConstructors{}, nil)
 	_, err := a.Search(context.TODO(), nil, RetrievalRequest{Query: "hi"})
 	if err == nil {
 		t.Fatal("expected error from nil-service adapter")
@@ -246,10 +251,14 @@ func TestNLPRequestFromRetrieval_ThreadsSearchControls(t *testing.T) {
 		TopK:                     99,
 		KeywordsSimilarityWeight: &keywordWeight,
 		SimilarityThreshold:      &similarityThreshold,
-	}, []string{"tenant-a"}, 3, embeddingModel)
+		AllowDenseFallback:       new(false),
+	}, []string{"tenant-a"}, 3, embeddingModel, false)
 
 	if got.Question != "hi" {
 		t.Fatalf("Question=%q want hi", got.Question)
+	}
+	if got.AllowDenseFallback == nil || *got.AllowDenseFallback {
+		t.Fatal("dense fallback opt-out was not passed to nlp retrieval")
 	}
 	if len(got.TenantIDs) != 1 || got.TenantIDs[0] != "tenant-a" {
 		t.Fatalf("TenantIDs=%v want [tenant-a]", got.TenantIDs)
@@ -272,6 +281,44 @@ func TestNLPRequestFromRetrieval_ThreadsSearchControls(t *testing.T) {
 	if got.EmbeddingModel != embeddingModel {
 		t.Fatal("EmbeddingModel was not passed to nlp retrieval request")
 	}
+	if got.VectorOnly {
+		t.Fatal("mixed retrieval must not be vector-only")
+	}
+}
+
+func TestNLPRequestFromRetrieval_DerivesPureModesFromKeywordWeight(t *testing.T) {
+	embeddingModel := &modelModule.EmbeddingModel{}
+	vectorOnlyWeight := 0.0
+	vectorOnly := nlpRequestFromRetrieval(RetrievalRequest{
+		Query:                    "hi",
+		DatasetIDs:               []string{"kb-1"},
+		KeywordsSimilarityWeight: &vectorOnlyWeight,
+	}, []string{"tenant-a"}, 3, embeddingModel, false)
+	if !vectorOnly.VectorOnly {
+		t.Fatal("keywords weight 0 must derive vector-only search")
+	}
+	if vectorOnly.EmbeddingModel != embeddingModel {
+		t.Fatal("vector-only search must retain the embedding model")
+	}
+	if vectorOnly.VectorSimilarityWeight == nil || *vectorOnly.VectorSimilarityWeight != 1 {
+		t.Fatalf("vector-only vector weight = %v, want 1", vectorOnly.VectorSimilarityWeight)
+	}
+
+	keywordOnlyWeight := 1.0
+	keywordOnly := nlpRequestFromRetrieval(RetrievalRequest{
+		Query:                    "hi",
+		DatasetIDs:               []string{"kb-1"},
+		KeywordsSimilarityWeight: &keywordOnlyWeight,
+	}, []string{"tenant-a"}, 3, embeddingModel, false)
+	if keywordOnly.VectorOnly {
+		t.Fatal("keywords weight 1 must not derive vector-only search")
+	}
+	if keywordOnly.EmbeddingModel != nil {
+		t.Fatal("keywords weight 1 must disable the vector leg")
+	}
+	if keywordOnly.VectorSimilarityWeight == nil || *keywordOnly.VectorSimilarityWeight != 0 {
+		t.Fatalf("keyword-only vector weight = %v, want 0", keywordOnly.VectorSimilarityWeight)
+	}
 }
 
 func TestNLPRequestFromRetrieval_FallsBackToTopNHeadroom(t *testing.T) {
@@ -279,13 +326,16 @@ func TestNLPRequestFromRetrieval_FallsBackToTopNHeadroom(t *testing.T) {
 		Query:      "hi",
 		DatasetIDs: []string{"kb-1"},
 		TopN:       3,
-	}, []string{"tenant-a"}, 3, &modelModule.EmbeddingModel{})
+	}, []string{"tenant-a"}, 3, &modelModule.EmbeddingModel{}, false)
 
 	if got.KNNTopK == nil || *got.KNNTopK != 12 {
 		t.Fatalf("KNNTopK=%v want 12", got.KNNTopK)
 	}
 	if got.VectorSimilarityWeight != nil {
 		t.Fatalf("VectorSimilarityWeight=%v want nil", got.VectorSimilarityWeight)
+	}
+	if got.AllowDenseFallback != nil {
+		t.Fatal("ordinary retrieval must preserve default dense fallback policy")
 	}
 }
 
@@ -295,10 +345,38 @@ func TestNLPRequestFromRetrieval_PreservesExplicitZeroSimilarityThreshold(t *tes
 		Query:               "hi",
 		DatasetIDs:          []string{"kb-1"},
 		SimilarityThreshold: &similarityThreshold,
-	}, []string{"tenant-a"}, 3, &modelModule.EmbeddingModel{})
+	}, []string{"tenant-a"}, 3, &modelModule.EmbeddingModel{}, false)
 
 	if got.SimilarityThreshold == nil || *got.SimilarityThreshold != 0 {
 		t.Fatalf("SimilarityThreshold = %v; want explicit zero", got.SimilarityThreshold)
+	}
+}
+
+// TestNLPRequestFromRetrieval_ExcludeCompiled verifies the compiled-product
+// exclusion reaches the nlp request as must_not={"exists":"compile_kwd"},
+// mirroring Python hybrid_search (search.py:171).
+func TestNLPRequestFromRetrieval_ExcludeCompiled(t *testing.T) {
+	// excludeCompiled=false leaves Filter nil (no exclusion).
+	got := nlpRequestFromRetrieval(RetrievalRequest{
+		Query:      "hi",
+		DatasetIDs: []string{"kb-1"},
+	}, []string{"tenant-a"}, 3, &modelModule.EmbeddingModel{}, false)
+	if got.Filter != nil {
+		t.Fatalf("Filter = %v; want nil when not excluding compiled", got.Filter)
+	}
+	// excludeCompiled=true sets must_not exists compile_kwd.
+	got = nlpRequestFromRetrieval(RetrievalRequest{
+		Query:      "hi",
+		DatasetIDs: []string{"kb-1"},
+	}, []string{"tenant-a"}, 3, &modelModule.EmbeddingModel{}, true)
+	mustNot, ok := got.Filter["must_not"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Filter.must_not = %v; want map", got.Filter["must_not"])
+	}
+	// Python hybrid_search: must_not={"exists":"compile_kwd"} — the exists
+	// clause names the compile_kwd field, mirroring dataset/search.go:292.
+	if exists, ok := mustNot["exists"].(string); !ok || exists != "compile_kwd" {
+		t.Fatalf("must_not.exists = %v; want \"compile_kwd\"", mustNot["exists"])
 	}
 }
 
@@ -336,6 +414,49 @@ func TestNLPRetrievalAdapter_SearchRejectsDatasetsFromMultipleTenants(t *testing
 	})
 	if err == nil || err.Error() != "retrieval: datasets span multiple tenants" {
 		t.Fatalf("Search error = %v, want multiple-tenant rejection", err)
+	}
+}
+
+func TestNLPRetrievalAdapter_SearchRequiresDatasetUsePermission(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
+		t.Fatalf("migrate permission tables: %v", err)
+	}
+	status := string(entity.StatusValid)
+	dataset := entity.Knowledgebase{
+		ID: "kb-private", TenantID: "tenant-1", Name: "private", EmbdID: "embedding@provider",
+		Permission: string(entity.TenantPermissionMe), CreatedBy: "owner", Status: &status,
+	}
+	if err := db.Create(&dataset).Error; err != nil {
+		t.Fatalf("create dataset: %v", err)
+	}
+	memberships := []entity.UserTenant{
+		{ID: "owner-membership", UserID: "owner", TenantID: "tenant-1", Role: string(permission.RoleOwner), InvitedBy: "owner", Status: &status},
+		{ID: "member-membership", UserID: "member", TenantID: "tenant-1", Role: string(permission.RoleNormal), InvitedBy: "owner", Status: &status},
+	}
+	if err := db.Create(&memberships).Error; err != nil {
+		t.Fatalf("create memberships: %v", err)
+	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant-1", "owner", "member"); err != nil {
+		t.Fatalf("prepare permission fixture: %v", err)
+	}
+
+	adapter := &NLPRetrievalAdapter{
+		svc:   &nlp.RetrievalService{},
+		kbDAO: fakeKnowledgebaseLookup{kbs: []*entity.Knowledgebase{&dataset}},
+	}
+	state := runtime.NewCanvasState("run-1", "session-1")
+	state.Sys["user_id"] = "member"
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := permission.WithIdentity(runtime.WithState(t.Context(), state), "member", "tenant-1")
+	_, err = adapter.Search(ctx, db, RetrievalRequest{
+		Query: "hello", DatasetIDs: []string{dataset.ID}, UserID: "owner",
+	})
+	if !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("Search error = %v, want permission denial for runtime caller despite req.UserID=owner", err)
 	}
 }
 
@@ -395,7 +516,7 @@ func TestNLPRetrievalAdapter_ResolveEmbeddingModelPriority(t *testing.T) {
 				EmbdID:       "embedding@provider",
 				TenantEmbdID: &tenantEmbeddingID,
 			},
-			wantCall: "id:tenant-embedding-1",
+			wantCall: "resolve:tenant-embedding-1",
 		},
 		{
 			name: "knowledge base embedding reference",
@@ -412,20 +533,28 @@ func TestNLPRetrievalAdapter_ResolveEmbeddingModelPriority(t *testing.T) {
 				ID:       "kb-1",
 				TenantID: "tenant-1",
 			},
-			wantCall: "default",
+			wantCall: "resolve:",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			resolver := &fakeModelResolver{modelName: "resolved-model"}
-			adapter := &NLPRetrievalAdapter{modelResolver: resolver}
+			var gotRef string
+			adapter := &NLPRetrievalAdapter{
+				modelConstructors: RetrievalModelConstructors{
+					Embedding: func(_ context.Context, _ string, modelRef string) (*modelModule.EmbeddingModel, error) {
+						gotRef = modelRef
+						modelName := "resolved-model"
+						return modelModule.NewEmbeddingModel(&modelModule.DummyModel{}, &modelName, &modelModule.APIConfig{}, 512), nil
+					},
+				},
+			}
 			model, err := adapter.resolveEmbeddingModel(t.Context(), test.kb)
 			if err != nil {
 				t.Fatalf("resolveEmbeddingModel: %v", err)
 			}
-			if resolver.call != test.wantCall {
-				t.Fatalf("resolver call = %q, want %q", resolver.call, test.wantCall)
+			if got := "resolve:" + gotRef; got != test.wantCall {
+				t.Fatalf("constructor model ref = %q, want %q", got, test.wantCall)
 			}
 			if model == nil || model.ModelName == nil || *model.ModelName != "resolved-model" {
 				t.Fatalf("resolved model = %#v", model)
@@ -473,41 +602,6 @@ type fakeKnowledgebaseLookup struct {
 	err error
 }
 
-type fakeModelResolver struct {
-	call      string
-	modelName string
-	err       error
-}
-
-func (f *fakeModelResolver) GetModelConfigByID(
-	_ context.Context,
-	_ string,
-	_ entity.ModelType,
-	modelID string,
-) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	f.call = "id:" + modelID
-	return nil, f.modelName, &modelModule.APIConfig{}, 512, f.err
-}
-
-func (f *fakeModelResolver) ResolveModelConfig(
-	_ context.Context,
-	_ string,
-	_ entity.ModelType,
-	modelRef string,
-) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	f.call = "resolve:" + modelRef
-	return nil, f.modelName, &modelModule.APIConfig{}, 512, f.err
-}
-
-func (f *fakeModelResolver) GetTenantDefaultModelByType(
-	_ context.Context,
-	_ string,
-	_ entity.ModelType,
-) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	f.call = "default"
-	return nil, f.modelName, &modelModule.APIConfig{}, 512, f.err
-}
-
 func (f fakeKnowledgebaseLookup) GetByIDs(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Knowledgebase, error) {
 	requested := make(map[string]struct{}, len(ids))
 	for _, id := range ids {
@@ -532,4 +626,143 @@ func (f fakeKnowledgebaseLookup) GetByName(_ context.Context, _ *gorm.DB, name, 
 		}
 	}
 	return nil, gorm.ErrRecordNotFound
+}
+
+// stubRankFeatureEnhancer records whether the question was labelled.
+type stubRankFeatureEnhancer struct {
+	labels map[string]float64
+	calls  int
+}
+
+func (s *stubRankFeatureEnhancer) CrossLanguages(context.Context, string, string, []string) (string, error) {
+	return "", nil
+}
+
+func (s *stubRankFeatureEnhancer) FilterDocuments(
+	context.Context, map[string]any, string, *modelModule.ChatModel, []string, []string,
+) ([]string, error) {
+	return nil, nil
+}
+
+func (s *stubRankFeatureEnhancer) LabelQuestion(
+	context.Context, string, []*entity.Knowledgebase,
+) map[string]float64 {
+	s.calls++
+	return s.labels
+}
+
+func (s *stubRankFeatureEnhancer) RetrieveByChildren(
+	context.Context, []map[string]any, []string,
+) []map[string]any {
+	return nil
+}
+
+func testRankFeatureKBs() []*entity.Knowledgebase {
+	return []*entity.Knowledgebase{{ID: "kb-1", TenantID: "tenant-1"}}
+}
+
+// No tag source: labelling yields nil, which must still reach the request as an
+// empty map instead of letting the nlp layer apply its default.
+func TestResolveRankFeature_NoTagSourceReturnsEmptyMap(t *testing.T) {
+	enhancer := &stubRankFeatureEnhancer{labels: nil}
+
+	got := resolveRankFeature(context.Background(), nil, enhancer, "q", testRankFeatureKBs(), false)
+
+	if got == nil {
+		t.Fatal("rankFeature = nil, want an empty (non-nil) map")
+	}
+	if len(got) != 0 {
+		t.Fatalf("rankFeature = %v, want empty", got)
+	}
+	if enhancer.calls != 1 {
+		t.Fatalf("LabelQuestion calls = %d, want 1", enhancer.calls)
+	}
+}
+
+func TestResolveRankFeature_TagMatchIsForwarded(t *testing.T) {
+	enhancer := &stubRankFeatureEnhancer{labels: map[string]float64{"tag_1": 0.8}}
+
+	got := resolveRankFeature(context.Background(), nil, enhancer, "q", testRankFeatureKBs(), false)
+
+	if got["tag_1"] != 0.8 {
+		t.Fatalf("rankFeature = %v, want tag_1=0.8", got)
+	}
+}
+
+// A caller-supplied feature wins over the enhancer and must not trigger a label
+// lookup.
+func TestResolveRankFeature_PrefersRequestSuppliedFeature(t *testing.T) {
+	enhancer := &stubRankFeatureEnhancer{labels: map[string]float64{"from_enhancer": 0.1}}
+	requested := map[string]float64{"from_request": 0.5}
+
+	got := resolveRankFeature(context.Background(), &requested, enhancer, "q", testRankFeatureKBs(), false)
+
+	if got["from_request"] != 0.5 || len(got) != 1 {
+		t.Fatalf("rankFeature = %v, want only from_request=0.5", got)
+	}
+	if enhancer.calls != 0 {
+		t.Fatalf("LabelQuestion calls = %d, want 0", enhancer.calls)
+	}
+}
+
+// A vector-only request skips the label lookup; the map must still be non-nil.
+func TestResolveRankFeature_VectorOnlySkipsLabelling(t *testing.T) {
+	enhancer := &stubRankFeatureEnhancer{labels: map[string]float64{"tag_1": 0.8}}
+
+	got := resolveRankFeature(context.Background(), nil, enhancer, "q", testRankFeatureKBs(), true)
+
+	if got == nil {
+		t.Fatal("rankFeature = nil, want an empty (non-nil) map")
+	}
+	if len(got) != 0 {
+		t.Fatalf("rankFeature = %v, want empty", got)
+	}
+	if enhancer.calls != 0 {
+		t.Fatalf("LabelQuestion calls = %d, want 0", enhancer.calls)
+	}
+}
+
+func TestResolveRankFeature_NilEnhancerReturnsEmptyMap(t *testing.T) {
+	got := resolveRankFeature(context.Background(), nil, nil, "q", testRankFeatureKBs(), false)
+
+	if got == nil {
+		t.Fatal("rankFeature = nil, want an empty (non-nil) map")
+	}
+	if len(got) != 0 {
+		t.Fatalf("rankFeature = %v, want empty", got)
+	}
+}
+
+// nil and {} are distinct: nil asks for labelling, {} means there are none.
+func TestResolveRankFeature_ExplicitEmptyMapSuppressesLabelling(t *testing.T) {
+	enhancer := &stubRankFeatureEnhancer{labels: map[string]float64{"tag_1": 0.8}}
+	requested := map[string]float64{}
+
+	got := resolveRankFeature(context.Background(), &requested, enhancer, "q", testRankFeatureKBs(), false)
+
+	if got == nil {
+		t.Fatal("rankFeature = nil, want an empty (non-nil) map")
+	}
+	if len(got) != 0 {
+		t.Fatalf("rankFeature = %v, want empty", got)
+	}
+	if enhancer.calls != 0 {
+		t.Fatalf("LabelQuestion calls = %d, want 0", enhancer.calls)
+	}
+}
+
+// The result must not alias the caller's map.
+func TestResolveRankFeature_ReturnsDetachedCopy(t *testing.T) {
+	requested := map[string]float64{"tag_1": 0.4}
+
+	got := resolveRankFeature(context.Background(), &requested, nil, "q", testRankFeatureKBs(), false)
+	got["tag_1"] = 0.9
+	got["injected"] = 1.0
+
+	if requested["tag_1"] != 0.4 {
+		t.Fatalf("caller map mutated through the result: %v", requested)
+	}
+	if _, ok := requested["injected"]; ok {
+		t.Fatalf("caller map gained a key through the result: %v", requested)
+	}
 }

@@ -113,6 +113,9 @@ func (c *ConfluenceConnector) Validate(ctx context.Context) error {
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return fmt.Errorf("Confluence wiki_base must use HTTP or HTTPS")
 	}
+	if err := validateConnectorURL(c.wikiBase); err != nil {
+		return err
+	}
 	if c.accessToken == "" {
 		return fmt.Errorf("Confluence access token is required")
 	}
@@ -419,17 +422,19 @@ func (c *ConfluenceConnector) do(ctx context.Context, method, rawURL string) ([]
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, method, resolved, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
+	headers := map[string]string{"Accept": "application/json"}
 	if c.isCloud || c.username != "" {
-		req.SetBasicAuth(c.username, c.accessToken)
+		headers["Authorization"] = "Basic " + basicAuthHeader(c.username, c.accessToken)
 	} else {
-		req.Header.Set("Authorization", "Bearer "+c.accessToken)
+		headers["Authorization"] = "Bearer " + c.accessToken
 	}
-	res, err := c.client.Do(req)
+	res, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:  method,
+		RawURL:  resolved,
+		Headers: headers,
+		Timeout: confluenceRequestTimeout,
+		Base:    c.client,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -506,22 +511,31 @@ func (c *ConfluenceConnector) basePageCQL() string {
 
 func (c *ConfluenceConnector) pageCQL(start *time.Time, end time.Time, fromBeginning bool) string {
 	query := c.basePageCQL()
-	if !fromBeginning && start != nil && !start.IsZero() {
-		query += " and lastmodified >= '" + confluenceCQLTime(*start) + "'"
+	if !fromBeginning {
+		if lower := confluenceQueryLowerBound(start); lower != nil {
+			query += " and lastmodified >= '" + confluenceCQLTime(*lower) + "'"
+		}
 	}
 	if !end.IsZero() {
-		query += " and lastmodified <= '" + confluenceCQLTime(end) + "'"
+		// CQL timestamps carry minute granularity, so an inclusive `<=` on the
+		// truncated end drops everything updated in the rest of that minute and
+		// the next window's lower bound skips it for good. Bound with an
+		// exclusive comparison against the next minute tick; inConfluenceWindow
+		// drops the rows that lie past the window end.
+		query += " and lastmodified < '" + confluenceCQLTime(end.Add(time.Minute)) + "'"
 	}
 	return query + " order by lastmodified asc"
 }
 
 func (c *ConfluenceConnector) attachmentCQL(pageID string, start *time.Time, end time.Time, fromBeginning bool) string {
 	query := fmt.Sprintf("type=attachment and container='%s'", confluenceCQLQuote(pageID))
-	if !fromBeginning && start != nil && !start.IsZero() {
-		query += " and lastmodified >= '" + confluenceCQLTime(*start) + "'"
+	if !fromBeginning {
+		if lower := confluenceQueryLowerBound(start); lower != nil {
+			query += " and lastmodified >= '" + confluenceCQLTime(*lower) + "'"
+		}
 	}
 	if !end.IsZero() {
-		query += " and lastmodified <= '" + confluenceCQLTime(end) + "'"
+		query += " and lastmodified < '" + confluenceCQLTime(end.Add(time.Minute)) + "'"
 	}
 	return query + " order by lastmodified asc"
 }
@@ -822,10 +836,24 @@ func inConfluenceWindow(updatedAt time.Time, start *time.Time, end time.Time) bo
 	if !end.IsZero() && updatedAt.After(end) {
 		return false
 	}
-	if start != nil && !updatedAt.After(*start) {
+	if lower := confluenceQueryLowerBound(start); lower != nil && updatedAt.Before(*lower) {
 		return false
 	}
 	return true
+}
+
+// confluenceQueryLowerBound is the `lastmodified >=` bound both CQL builders
+// emit. CQL only accepts minute precision, so a waterline inside a minute is
+// queried from the start of that minute. Page filtering has to use the same
+// bound: filtering at the unbuffered start drops rows the server already
+// returned, and since the previous run's upper bound is the very same minute,
+// a page updated between floor(start) and start is covered by neither run.
+func confluenceQueryLowerBound(start *time.Time) *time.Time {
+	if start == nil || start.IsZero() {
+		return nil
+	}
+	floor := start.UTC().Truncate(time.Minute)
+	return &floor
 }
 
 func parseConfluenceTime(value string) time.Time {

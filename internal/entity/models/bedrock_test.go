@@ -886,6 +886,37 @@ func TestBedrockCohereEmbedHappyPath(t *testing.T) {
 	}
 }
 
+// TestBedrockCohereEmbedQueryUsesSearchQuery pins Python BedrockEmbed: the
+// Cohere path sends input_type="search_query" for encode_queries, while encode
+// sends "search_document" (see TestBedrockCohereEmbedHappyPath).
+func TestBedrockCohereEmbedQueryUsesSearchQuery(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := newBedrockServer(t, http.MethodPost,
+		"/model/cohere.embed-english-v3/invoke",
+		func(w http.ResponseWriter, r *http.Request) {
+			raw, _ := io.ReadAll(r.Body)
+			var body bedrockCohereEmbeddingRequest
+			if err := json.Unmarshal(raw, &body); err != nil {
+				t.Errorf("unmarshal body: %v", err)
+				return
+			}
+			if body.InputType != "search_query" {
+				t.Errorf("input_type=%q want search_query", body.InputType)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"embeddings":[[1,2]]}`))
+		})
+	defer srv.Close()
+
+	m := newBedrockForTest(srv.URL)
+	key := validBedrockKey()
+	model := "cohere.embed-english-v3"
+	if _, err := m.Embed(ctx, &model, EmbedRequest{Texts: []string{"q"}, Query: true}, &APIConfig{ApiKey: &key}, nil, nil); err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+}
+
 func TestBedrockCohereV4ForwardsDimensionAndParsesTypedResponse(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()

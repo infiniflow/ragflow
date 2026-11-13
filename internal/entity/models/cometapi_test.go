@@ -2,9 +2,11 @@ package models
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -585,6 +587,59 @@ func TestCometAPIBalanceRequiresConfiguredURL(t *testing.T) {
 	_, err := m.Balance(ctx, &APIConfig{ApiKey: &apiKey})
 	if err == nil || !strings.Contains(err.Error(), "balance URL is required") {
 		t.Errorf("Balance: expected balance URL error, got %v", err)
+	}
+}
+
+func TestCometAPIBalanceRedactsAPIKeyOnTransportError(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	server.Close()
+
+	model := newCometAPIForTest("http://unused")
+	model.baseModel.URLSuffix.Balance = server.URL + "/user/quota"
+	apiKey := "cometapi-secret-key"
+	_, err := model.Balance(t.Context(), &APIConfig{ApiKey: &apiKey})
+	if err == nil {
+		t.Fatal("Balance error = nil, want transport error")
+	}
+	if strings.Contains(err.Error(), apiKey) {
+		t.Fatalf("Balance error exposed API key: %v", err)
+	}
+
+	var requestErr *url.Error
+	if !errors.As(err, &requestErr) {
+		t.Fatalf("Balance error %T does not preserve the request error", err)
+	}
+	parsedURL, parseErr := url.Parse(requestErr.URL)
+	if parseErr != nil {
+		t.Fatalf("parse sanitized request URL: %v", parseErr)
+	}
+	if got := parsedURL.Query().Get("key"); got != "" {
+		t.Fatalf("transport error URL contains API key query value %q", got)
+	}
+}
+
+func TestRedactCometAPIBalanceRequestErrorHidesUnparseableURL(t *testing.T) {
+	const apiKey = "cometapi-secret-key"
+	cause := errors.New("connection refused")
+	err := redactCometAPIBalanceRequestError(&url.Error{
+		Op:  "Get",
+		URL: "http://[::1?key=" + apiKey,
+		Err: cause,
+	})
+
+	if strings.Contains(err.Error(), apiKey) {
+		t.Fatalf("redacted request error exposed API key: %v", err)
+	}
+	var requestErr *url.Error
+	if !errors.As(err, &requestErr) {
+		t.Fatalf("redacted error %T does not preserve the request error type", err)
+	}
+	if requestErr.URL != "" {
+		t.Fatalf("redacted request URL = %q, want empty URL", requestErr.URL)
+	}
+	if !errors.Is(err, cause) {
+		t.Fatalf("redacted error does not preserve the transport cause")
 	}
 }
 

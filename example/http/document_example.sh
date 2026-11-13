@@ -2,7 +2,7 @@
 set -euo pipefail
 
 HOST_ADDRESS="${RAGFLOW_HOST_ADDRESS:-http://localhost:9380}"
-API_KEY="${RAGFLOW_API_KEY:-ragflow-IzZmY1MGVhYTBhMjExZWZiYTdjMDI0Mm}"
+API_KEY="${RAGFLOW_API_KEY:?Set RAGFLOW_API_KEY before running this example}"
 
 command -v jq >/dev/null || { echo "jq is required" >&2; exit 1; }
 TEMP_FILE=$(mktemp)

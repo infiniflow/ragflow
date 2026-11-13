@@ -35,7 +35,7 @@ package chunker
 // silently-collapsed baseline into a hard failure instead of a false pass.
 //
 // Comparison logic is shared with the golden harness: chunkDiffs reports every
-// difference, allowedExtraFields tolerates the Go-only id/ck_type/tk_nums
+// difference, allowedExtraFields tolerates the Go-only id/tk_nums
 // fields, and known_diffs.json is consulted so documented divergences are
 // reported (not failed) rather than surprising the reader.
 

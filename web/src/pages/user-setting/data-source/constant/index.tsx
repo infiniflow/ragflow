@@ -14,16 +14,22 @@
  *  limitations under the License.
  */
 
+import sitemapSvg from '@/assets/svg/data-source/sitemap.svg?raw';
 import { FormFieldType } from '@/components/dynamic-form';
 import { IconFontFill } from '@/components/icon-font';
 import SvgIcon from '@/components/svg-icon';
 import { TFunction } from 'i18next';
-import { Globe, Mail, Rss, Search } from 'lucide-react';
+import { Mail, Rss, Search } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import BoxTokenField from '../component/box-token-field';
 import GmailTokenField from '../component/gmail-token-field';
 import GoogleDriveTokenField from '../component/google-drive-token-field';
+import {
+  eeDataSourceDefaultValues,
+  eeDataSourceFormFields,
+  generateEeDataSourceInfo,
+} from '@/ee/pages/user-setting/data-source/ee-extensions';
 import { IDataSourceInfoMap } from '../interface';
 import { azureDevOpsConstant } from './azure-devops-constant';
 import { bitbucketConstant } from './bitbucket-constant';
@@ -53,6 +59,7 @@ export enum DataSourceKey {
   DISCORD = 'discord',
   XQUIK = 'xquik',
   ZENDESK = 'zendesk',
+  ZOTERO = 'zotero',
   WEBDAV = 'webdav',
   AIRTABLE = 'airtable',
   ASANA = 'asana',
@@ -146,6 +153,9 @@ export const DataSourceFeatureVisibilityMap: Partial<
   [DataSourceKey.ZENDESK]: {
     syncDeletedFiles: true,
   },
+  [DataSourceKey.ZOTERO]: {
+    syncDeletedFiles: true,
+  },
   [DataSourceKey.SEAFILE]: {
     syncDeletedFiles: true,
   },
@@ -214,7 +224,12 @@ export const generateDataSourceInfo = (t: TFunction) => {
     [DataSourceKey.SITEMAP]: {
       name: 'Sitemap',
       description: t(`setting.${DataSourceKey.SITEMAP}Description`),
-      icon: <Globe className="text-text-primary" size={22} />,
+      icon: (
+        <span
+          className="flex w-[22px] text-text-primary [&>svg]:h-auto [&>svg]:w-full"
+          dangerouslySetInnerHTML={{ __html: sitemapSvg }}
+        />
+      ),
     },
     [DataSourceKey.GOOGLE_CLOUD_STORAGE]: {
       name: 'Google Cloud Storage',
@@ -364,6 +379,11 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.ZENDESK}Description`),
       icon: <SvgIcon name={'data-source/zendesk'} width={38} />,
     },
+    [DataSourceKey.ZOTERO]: {
+      name: 'Zotero',
+      description: t(`setting.${DataSourceKey.ZOTERO}Description`),
+      icon: <SvgIcon name={'data-source/zotero'} width={38} />,
+    },
     [DataSourceKey.SEAFILE]: {
       name: 'SeaFile',
       description: t(`setting.${DataSourceKey.SEAFILE}Description`),
@@ -392,7 +412,7 @@ export const generateDataSourceInfo = (t: TFunction) => {
     [DataSourceKey.OUTLOOK]: {
       name: 'Outlook',
       description: t(`setting.${DataSourceKey.OUTLOOK}Description`),
-      icon: <Mail className="text-text-primary" size={22} />,
+      icon: <SvgIcon name={'data-source/outlook'} width={38} />,
     },
     [DataSourceKey.SALESFORCE]: {
       name: 'Salesforce',
@@ -404,6 +424,7 @@ export const generateDataSourceInfo = (t: TFunction) => {
       description: t(`setting.${DataSourceKey.AZURE_BLOB}Description`),
       icon: <SvgIcon name={'data-source/azure-blob'} width={38} />,
     },
+    ...generateEeDataSourceInfo(t),
   };
 };
 
@@ -1002,7 +1023,7 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       label: t('setting.dataSourceFieldMyDriveEmails'),
       name: 'config.my_drive_emails',
       type: FormFieldType.Text,
-      required: true,
+      required: false,
       placeholder: 'user1@example.com,user2@example.com',
       tooltip: t('setting.google_driveMyDriveEmailsTip'),
     },
@@ -1475,6 +1496,93 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       ],
     },
   ],
+  [DataSourceKey.ZOTERO]: [
+    {
+      label: t('setting.dataSourceFieldZoteroUserId'),
+      name: 'config.zotero_user_id',
+      type: FormFieldType.Text,
+      required: true,
+      placeholder: '12345678',
+      tooltip: t('setting.zoteroUserIdTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldZoteroApiKey'),
+      name: 'config.credentials.zotero_api_key',
+      type: FormFieldType.Password,
+      required: true,
+      tooltip: t('setting.zoteroApiKeyTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldZoteroStorageMode'),
+      name: 'config.storage_mode',
+      type: FormFieldType.Segmented,
+      required: true,
+      options: [
+        {
+          label: t('setting.dataSourceOptionZoteroCloudStorage'),
+          value: 'zotero_storage',
+        },
+        {
+          label: t('setting.dataSourceOptionZoteroWebdav'),
+          value: 'webdav',
+        },
+      ],
+      tooltip: t('setting.zoteroStorageModeTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldWebdavServerUrl'),
+      name: 'config.webdav_url',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: 'https://webdav.example.com',
+      tooltip: t('setting.zoteroWebdavUrlTip'),
+      shouldRender: (formValues: any) =>
+        formValues?.config?.storage_mode === 'webdav',
+      customValidate: (val: string, formValues: any) => {
+        if (formValues?.config?.storage_mode === 'webdav' && !val?.trim()) {
+          return t('setting.zoteroWebdavUrlRequired');
+        }
+        return true;
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldZoteroWebdavUsername'),
+      name: 'config.credentials.webdav_username',
+      type: FormFieldType.Text,
+      required: false,
+      tooltip: t('setting.zoteroWebdavUsernameTip'),
+      shouldRender: (formValues: any) =>
+        formValues?.config?.storage_mode === 'webdav',
+      customValidate: (val: string, formValues: any) => {
+        if (formValues?.config?.storage_mode === 'webdav' && !val?.trim()) {
+          return t('setting.zoteroWebdavUsernameRequired');
+        }
+        return true;
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldZoteroWebdavPassword'),
+      name: 'config.credentials.webdav_password',
+      type: FormFieldType.Password,
+      required: false,
+      tooltip: t('setting.zoteroWebdavPasswordTip'),
+      shouldRender: (formValues: any) =>
+        formValues?.config?.storage_mode === 'webdav',
+      customValidate: (val: string, formValues: any) => {
+        if (formValues?.config?.storage_mode === 'webdav' && !val?.trim()) {
+          return t('setting.zoteroWebdavPasswordRequired');
+        }
+        return true;
+      },
+    },
+    {
+      label: t('setting.dataSourceFieldBatchSize'),
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      placeholder: '4',
+    },
+  ],
   [DataSourceKey.SEAFILE]: seafileConstant(t),
   [DataSourceKey.MYSQL]: [
     {
@@ -1549,6 +1657,27 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       placeholder: 'updated_at',
       tooltip: t('setting.mysqlTimestampColumnTip'),
     },
+    {
+      label: 'File Extension',
+      name: 'config.file_extension',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '.txt',
+      tooltip: t('setting.mysqlFileExtensionTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldBatchSize'),
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      placeholder: '2',
+      validation: {
+        min: 1,
+        message: t('setting.dataSourceValidationMinOne', {
+          label: t('setting.dataSourceFieldBatchSize'),
+        }),
+      },
+    },
   ],
   [DataSourceKey.POSTGRESQL]: [
     {
@@ -1622,6 +1751,27 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       required: false,
       placeholder: 'updated_at',
       tooltip: t('setting.postgresqlTimestampColumnTip'),
+    },
+    {
+      label: 'File Extension',
+      name: 'config.file_extension',
+      type: FormFieldType.Text,
+      required: false,
+      placeholder: '.txt',
+      tooltip: t('setting.postgresqlFileExtensionTip'),
+    },
+    {
+      label: t('setting.dataSourceFieldBatchSize'),
+      name: 'config.batch_size',
+      type: FormFieldType.Number,
+      required: false,
+      placeholder: '2',
+      validation: {
+        min: 1,
+        message: t('setting.dataSourceValidationMinOne', {
+          label: t('setting.dataSourceFieldBatchSize'),
+        }),
+      },
     },
   ],
   [DataSourceKey.BIGQUERY]: [
@@ -2075,6 +2225,7 @@ const generateDataSourceFormFields = (t: TFunction) => ({
         !!values?.config?.show_advanced && values?.config?.method === 'POST',
     },
   ],
+  ...eeDataSourceFormFields,
 });
 
 export const DataSourceFormDefaultValues = {
@@ -2415,6 +2566,7 @@ export const DataSourceFormDefaultValues = {
     name: '',
     source: DataSourceKey.AZURE_DEVOPS,
     config: {
+      base_url: '',
       organization: '',
       index_mode: 'organization',
       projects: '',
@@ -2451,6 +2603,21 @@ export const DataSourceFormDefaultValues = {
       },
     },
   },
+  [DataSourceKey.ZOTERO]: {
+    name: '',
+    source: DataSourceKey.ZOTERO,
+    config: {
+      zotero_user_id: '',
+      storage_mode: 'zotero_storage',
+      webdav_url: '',
+      batch_size: 4,
+      credentials: {
+        zotero_api_key: '',
+        webdav_username: '',
+        webdav_password: '',
+      },
+    },
+  },
   [DataSourceKey.SEAFILE]: {
     name: '',
     source: DataSourceKey.SEAFILE,
@@ -2479,6 +2646,7 @@ export const DataSourceFormDefaultValues = {
       metadata_columns: '',
       id_column: '',
       timestamp_column: '',
+      batch_size: 32,
       credentials: {
         username: '',
         password: '',
@@ -2497,6 +2665,7 @@ export const DataSourceFormDefaultValues = {
       metadata_columns: '',
       id_column: '',
       timestamp_column: '',
+      batch_size: 32,
       credentials: {
         username: '',
         password: '',
@@ -2613,6 +2782,7 @@ export const DataSourceFormDefaultValues = {
       },
     },
   },
+  ...eeDataSourceDefaultValues,
 };
 
 export const getDataSourceFieldsWithExtras = (

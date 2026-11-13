@@ -20,7 +20,7 @@ package tokenizer
 //
 // RAGFlow ships the cl100k_base table on disk (Dockerfile drops it into the
 // working directory under its sha1 name; download_deps.py writes it to
-// ragflow_deps/). tiktoken-go's stock loader instead downloads it over HTTP and
+// deps/). tiktoken-go's stock loader instead downloads it over HTTP and
 // relies on TIKTOKEN_CACHE_DIR, which the Go server never inherits, so a
 // missing table degrades every token count to 0. This loader resolves the
 // table from disk only: it performs no network I/O, and when nothing is found
@@ -35,6 +35,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"ragflow/internal/common"
 
@@ -51,17 +52,37 @@ func init() {
 // loaded without a digest check (defense-in-depth, not a hard gate).
 //
 // NOTE: this is the digest of the file *contents*, not the tiktoken cache
-// filename. tiktoken-go names its cached file by sha1(bpeURL)
+// filename. The loader names its cached file after the URL
 // (223921b76ee99bde995b7ff738513eef100fb51d18c93597a113bcffe865b2a7 for
 // cl100k_base); that value identifies the path, while the value below verifies
 // the bytes we actually load. Compute it from the table shipped by
-// ragflow_deps/download_deps.py: `sha1sum cl100k_base.tiktoken`.
+// deps/download_deps.py: `sha1sum cl100k_base.tiktoken`.
 var expectedBpeHashes = map[string]string{
 	"https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken": "6494e42d5aad2bbb441ea9793af9e7db335c8d9c",
 }
 
 // localBpeLoader resolves tiktoken BPE tables from the local filesystem.
 type localBpeLoader struct{}
+
+// cl100kTablePath records the table file the loader accepted, for diagnostics: the
+// availability report (CounterStatuses) prints it, which is how an operator sees which
+// copy of the table is in use.
+var (
+	cl100kTablePathMu sync.Mutex
+	cl100kTablePath   string
+)
+
+func recordCl100kTablePath(path string) {
+	cl100kTablePathMu.Lock()
+	cl100kTablePath = path
+	cl100kTablePathMu.Unlock()
+}
+
+func cl100kTableSource() string {
+	cl100kTablePathMu.Lock()
+	defer cl100kTablePathMu.Unlock()
+	return cl100kTablePath
+}
 
 // LoadTiktokenBpe implements tiktoken.BpeLoader.
 //
@@ -96,11 +117,12 @@ func (localBpeLoader) LoadTiktokenBpe(bpeURL string) (map[string]int, error) {
 			// name collision. Continuing to the next candidate would mask it.
 			return nil, fmt.Errorf("BPE table %s is malformed: %w", candidate, err)
 		}
+		recordCl100kTablePath(candidate)
 		return ranks, nil
 	}
 
 	err := fmt.Errorf(
-		"no local BPE table for %s; run `uv run ragflow_deps/download_deps.py` or set TIKTOKEN_CACHE_DIR to the directory holding the table; tried: %s",
+		"no local BPE table for %s; run `uv run deps/download_deps.py` or set TIKTOKEN_CACHE_DIR to the directory holding the table; tried: %s",
 		bpeURL, strings.Join(candidates, ", "))
 	// Logged as well as returned: tiktoken-go propagates this to GetEncoding,
 	// whose error NumTokensFromString discards to keep returning 0.
@@ -138,14 +160,20 @@ func bpeCandidatePaths(bpeURL string) []string {
 		}
 	}
 
+	// MODEL_ASSETS_DIR: the shared model-asset root (see common.ModelAssetCandidates).
+	// Listed before the working-directory walk because it is an explicit instruction.
+	for _, candidate := range common.ModelAssetCandidates(bundledName) {
+		add(candidate)
+	}
+
 	for _, root := range bpeSearchRoots() {
 		// Same layout the Dockerfile creates: the table sits in the
 		// installation root under its sha1 name.
 		add(filepath.Join(root, cacheName))
-		// download_deps.py writes the table into ragflow_deps/ under its
+		// download_deps.py writes the table into deps/ under its
 		// download name; a developer checkout that has run it but never
 		// started the Python side only has this copy.
-		add(filepath.Join(root, "ragflow_deps", bundledName))
+		add(filepath.Join(root, "deps", bundledName))
 	}
 
 	return paths

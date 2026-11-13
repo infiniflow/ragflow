@@ -48,20 +48,30 @@ func NewNATSEventStore(conn *nats.Conn, stream string) (*NATSEventStore, error) 
 		return nil, fmt.Errorf("jetstream init: %w", err)
 	}
 
+	streamCfg := jetstream.StreamConfig{
+		Name:      stream,
+		Subjects:  []string{fmt.Sprintf("%s.>", defaultNATSPrefix)},
+		MaxAge:    7 * 24 * time.Hour, // 7 days retention
+		Storage:   jetstream.FileStorage,
+		Retention: jetstream.LimitsPolicy,
+		Discard:   jetstream.DiscardNew,
+		MaxMsgs:   1024 * 1024,
+		MaxBytes:  1024 * 1024 * 1024,
+	}
 	// Ensure the stream exists.
 	_, err = js.Stream(ctxForInit(), stream)
 	if err != nil {
 		// Create the stream if it doesn't exist.
-		_, err = js.CreateStream(ctxForInit(), jetstream.StreamConfig{
-			Name:      stream,
-			Subjects:  []string{fmt.Sprintf("%s.>", defaultNATSPrefix)},
-			MaxAge:    7 * 24 * time.Hour, // 7 days retention
-			Storage:   jetstream.FileStorage,
-			Retention: jetstream.LimitsPolicy,
-			Discard:   jetstream.DiscardNew,
-		})
+		_, err = js.CreateStream(ctxForInit(), streamCfg)
 		if err != nil {
 			return nil, fmt.Errorf("create jetstream stream: %w", err)
+		}
+	} else {
+		// Reconcile an existing stream created under older settings with the
+		// current config (DiscardNew + larger MaxMsgs/MaxBytes). CreateStream
+		// never touches an already-existing stream, so UpdateStream is required.
+		if _, err = js.UpdateStream(ctxForInit(), streamCfg); err != nil {
+			return nil, fmt.Errorf("update jetstream stream: %w", err)
 		}
 	}
 

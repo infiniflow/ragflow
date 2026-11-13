@@ -22,10 +22,12 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 func TestAgentRunSessionUpdateFailurePreventsSuccessEvents(t *testing.T) {
@@ -37,13 +39,12 @@ func TestAgentRunSessionUpdateFailurePreventsSuccessEvents(t *testing.T) {
 	dao.DB = testDB
 	t.Cleanup(func() { dao.DB = originalDB })
 
-	if err := testDB.Create(&entity.API4Conversation{
-		ID:        "session-update-failure",
-		DialogID:  "canvas-update-failure",
-		UserID:    "user-1",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
-	}).Error; err != nil {
+	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
+		ID:       "session-update-failure",
+		DialogID: "canvas-update-failure",
+		UserID:   "user-1",
+		Message:  json.RawMessage(`[]`),
+	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 	if err := testDB.Exec(`
@@ -70,7 +71,8 @@ func TestAgentRunSessionUpdateFailurePreventsSuccessEvents(t *testing.T) {
 		"path": []any{"begin_0", "message_0"},
 	}
 	events := make(chan canvas.RunEvent, 32)
-	_, err := NewAgentService().buildRunFunc("canvas-update-failure", nil, dsl)(context.Background(), map[string]any{
+	ctx := permission.WithIdentity(context.Background(), "user-1", "")
+	_, err := NewAgentService().buildRunFunc("canvas-update-failure", nil, dsl)(ctx, map[string]any{
 		"__events__":     events,
 		"__message_id__": "message-1",
 		"__session_id__": "session-update-failure",
@@ -126,23 +128,26 @@ func TestPersistAgentRunSessionPreservesThinking(t *testing.T) {
 	dao.DB = testDB
 	t.Cleanup(func() { dao.DB = originalDB })
 
-	if err := testDB.Create(&entity.API4Conversation{
-		ID:        "session-think",
-		DialogID:  "canvas-think",
-		UserID:    "user-1",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
-	}).Error; err != nil {
+	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
+		ID:       "session-think",
+		DialogID: "canvas-think",
+		UserID:   "user-1",
+		Message:  json.RawMessage(`[]`),
+	}); err != nil {
 		t.Fatalf("create session: %v", err)
 	}
 
 	svc := NewAgentService()
-	if err := svc.persistAgentRunSession(context.Background(), "canvas-think", "user-1", "session-think", "msg-think-1", "question", "final answer", "reasoning trace", map[string]interface{}{}, nil, nil, true); err != nil {
+	ctx := permission.WithIdentity(t.Context(), "user-1", "")
+	if err := svc.persistAgentRunQuestion(ctx, "canvas-think", "session-think", "msg-think-1", "question", 1); err != nil {
+		t.Fatalf("persist question: %v", err)
+	}
+	if err := svc.persistAgentRunSession(permission.WithIdentity(context.Background(), "user-1", ""), "canvas-think", "session-think", "msg-think-1", "question", "final answer", "reasoning trace", map[string]interface{}{}, nil, nil, true); err != nil {
 		t.Fatalf("persist: %v", err)
 	}
 
-	var conv entity.API4Conversation
-	if err := testDB.First(&conv, "id = ?", "session-think").Error; err != nil {
+	conv, err := dao.NewAPI4ConversationDAO().GetByID(t.Context(), testDB, "session-think", dao.ConversationHistoryOptions{IncludeReference: true})
+	if err != nil {
 		t.Fatalf("reload session: %v", err)
 	}
 	var messages []map[string]any
@@ -158,4 +163,78 @@ func TestPersistAgentRunSessionPreservesThinking(t *testing.T) {
 	if got, _ := messages[1]["content"].(string); got != "<think>reasoning trace</think>final answer" {
 		t.Fatalf("persisted assistant content = %q, want %q", got, "<think>reasoning trace</think>final answer")
 	}
+	// Both requests must save their questions while the session is busy,
+	// then complete without overwriting either answer or immutable reference.
+	if err := testDB.AutoMigrate(&entity.UserCanvas{}, &entity.UserCanvasVersion{}); err != nil {
+		t.Fatal(err)
+	}
+	dsl := entity.JSONMap{"components": map[string]any{
+		"begin_0":   map[string]any{"obj": map[string]any{"component_name": "Begin", "params": map[string]any{}}, "downstream": []any{"message_0"}},
+		"message_0": map[string]any{"obj": map[string]any{"component_name": "Message", "params": map[string]any{"text": "answer {{sys.query}}"}}, "upstream": []any{"begin_0"}},
+	}, "path": []any{"begin_0", "message_0"}}
+	if err := testDB.Create(&entity.UserCanvas{ID: "canvas-think", UserID: "user-1", DSL: dsl}).Error; err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := testDB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+	svc.activeSessions["session-think"] = &activeAgentRun{sessionID: "session-think"}
+	ctx, cancel := context.WithTimeout(serviceTestContext(t, "user-1", "user-1"), 5*time.Second)
+	defer cancel()
+	results := make(chan error, 2)
+	for _, question := range []string{"concurrent question 1", "concurrent question 2"} {
+		go func(question string) {
+			events, err := svc.RunAgent(ctx, "canvas-think", "session-think", "", question, nil)
+			if err == nil {
+				for event := range events {
+					if event.Type == "error" {
+						err = errors.New(event.Data)
+					}
+				}
+			}
+			results <- err
+		}(question)
+	}
+	wait := time.NewTicker(10 * time.Millisecond)
+	defer wait.Stop()
+	for {
+		var questions int64
+		if err := testDB.Model(&entity.API4ConversationMessage{}).Where("conversation_id = ? AND role = ?", "session-think", "user").Count(&questions).Error; err != nil {
+			t.Fatal(err)
+		}
+		if questions == 3 {
+			break
+		}
+		select {
+		case err := <-results:
+			t.Fatalf("queued request finished before the active run was released: %v", err)
+		case <-ctx.Done():
+			t.Fatal("concurrent questions were not saved immediately")
+		case <-wait.C:
+		}
+	}
+	svc.runMu.Lock()
+	delete(svc.activeSessions, "session-think")
+	svc.runMu.Unlock()
+	for range 2 {
+		if err := <-results; err != nil {
+			t.Fatalf("concurrent run: %v", err)
+		}
+	}
+	conv, err = dao.NewAPI4ConversationDAO().GetByID(ctx, testDB, "session-think", dao.ConversationHistoryOptions{IncludeReference: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages = parseMessages(conv.Message)
+	if len(messages) != 6 || messages[1]["reference"] == nil || messages[3]["reference"] == nil || messages[5]["reference"] == nil {
+		t.Fatalf("concurrent turns were lost: messages=%s", conv.Message)
+	}
+	for _, index := range []int{2, 4} {
+		if messages[index]["role"] != "user" || messages[index+1]["role"] != "assistant" || messages[index]["id"] != messages[index+1]["id"] {
+			t.Fatalf("answer is not associated with its question: %#v", messages[index:index+2])
+		}
+	}
+
 }

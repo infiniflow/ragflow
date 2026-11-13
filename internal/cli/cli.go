@@ -106,6 +106,8 @@ func (c *CommandLineConfig) Print() {
 	}
 }
 
+var Arguments *CommandLineConfig
+
 func ParseArgs(args []string) (*CommandLineConfig, error) {
 	commandLineConfig := &CommandLineConfig{
 		CLIMode:           APIMode,
@@ -285,7 +287,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 			defaultApiServerConfig.IP = "127.0.0.1"
 		}
 		if defaultApiServerConfig.Port == 0 {
-			defaultApiServerConfig.Port = 9384
+			defaultApiServerConfig.Port = 9380
 		}
 
 		commandLineConfig.APIClientConfig.APIServerMap = config.APIServerMap
@@ -300,7 +302,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 	case AdminMode:
 		AdminConfig := &AdminModeConfig{
 			AdminHost: "127.0.0.1",
-			AdminPort: 9383,
+			AdminPort: 9381,
 			//AdminName:     "admin@ragflow.io",
 			//AdminPassword: "admin",
 		}
@@ -536,15 +538,7 @@ func NewCLIWithConfig(commandLineConfig *CommandLineConfig) (*CLI, error) {
 			}
 		}
 
-		engine := filesystem.NewEngine()
-
-		// Register providers
-		// TODO: if http config change, engine http config won't be updated. They should share the same config
-		engine.RegisterProvider(filesystem.NewDatasetProvider(&httpClientAdapter{httpClient}))
-		engine.RegisterProvider(filesystem.NewFileProvider(&httpClientAdapter{httpClient}))
-		engine.RegisterProvider(filesystem.NewSkillProvider(&httpClientAdapter{httpClient}))
-
-		cli.ContextEngine = engine
+		cli.setFilesystemClient(httpClient)
 	} else if commandLineConfig.CLIMode == AdminMode {
 		httpClient := NewHTTPClient()
 		httpClient.Host = commandLineConfig.AdminClientConfig.AdminHost
@@ -565,6 +559,15 @@ func NewCLIWithConfig(commandLineConfig *CommandLineConfig) (*CLI, error) {
 	}
 
 	return cli, nil
+}
+
+func (c *CLI) setFilesystemClient(client *HTTPClient) {
+	engine := filesystem.NewEngine()
+	adapter := &httpClientAdapter{client: client}
+	engine.RegisterProvider(filesystem.NewDatasetProvider(adapter))
+	engine.RegisterProvider(filesystem.NewFileProvider(adapter))
+	engine.RegisterProvider(filesystem.NewSkillProvider(adapter))
+	c.ContextEngine = engine
 }
 
 // sanitizeCLIError returns an operator-safe rendering of a CLI
@@ -763,19 +766,19 @@ func (c *CLI) execute(input string) error {
 
 	// Handle meta commands
 	if cmd.Type == "meta" {
-		return c.handleMetaCommand(cmd)
+		return c.handleMetaCommand(1, cmd)
 	}
 
 	// Execute the command using the client
 	var result ResponseIf
-	result, err = c.ExecuteCommand(cmd)
+	result, err = c.ExecuteCommand(1, cmd)
 	if result != nil {
 		result.PrintOut()
 	}
 	return err
 }
 
-func (c *CLI) handleMetaCommand(cmd *Command) error {
+func (c *CLI) handleMetaCommand(commandCount int, cmd *Command) error {
 	command := cmd.Params["command"].(string)
 	//args, _ := cmd.Params["args"].([]string)
 
@@ -797,20 +800,14 @@ func (c *CLI) handleMetaCommand(cmd *Command) error {
 	return nil
 }
 
-func (c *CLI) printHelp() {
-	help := `
+const helpText = `
 RAGFlow CLI Help
 ================
 
 Meta Commands:
-  \admin        - Switch to ADMIN mode (port 9381)
-  \user         - Switch to USER mode (port 9380)
-  \host [ip]    - Show or set server host (default: 127.0.0.1)
-  \port [num]   - Show or set server port (default: 9380 for user, 9381 for admin)
-  \status       - Show current connection status
   \? or \h      - Show this help
+  \pwd          - Show current working directory
   \q or \quit   - Exit CLI
-  \c or \clear  - Clear screen
 
 Commands (User Mode):
   LOGIN USER 'email';                                    - Login as user
@@ -821,28 +818,43 @@ Commands (User Mode):
   LIST DATASETS;                                         - List user datasets
   LIST AGENTS;                                           - List user agents
   LIST CHATS;                                            - List user chats
-  LIST MODEL PROVIDERS;                                  - List model providers
+  LIST PROVIDERS;                                        - List model providers
   LIST DEFAULT MODELS;                                   - List default models
-  LIST TOKENS;                                           - List API tokens
-  LIST PROVIDERS;                                        - List available LLM providers
-  CREATE TOKEN;                                          - Create new API token
+  LIST KEYS;                                             - List API keys
+  LIST AVAILABLE PROVIDERS;                              - List available LLM providers
+  CREATE KEY;                                            - Create new API key
   ADD PROVIDER 'name';                                   - Create a provider without API key
-  ADD PROVIDER 'name' 'api_key';                         - Create a provider with API key
-  DROP TOKEN 'token_value';                              - Delete an API token
+  ADD PROVIDER 'name' INSTANCE 'instance' KEY 'api_key'; - Create a provider instance with API key
+  DROP KEY 'api_key';                                    - Delete an API key
   DELETE PROVIDER 'name';                                - Delete a provider
-  SET TOKEN 'token_value';                               - Set and validate API token
-  SHOW TOKEN;                                            - Show current API token
+  SET KEY 'api_key';                                     - Set and validate API key
+  SHOW KEY;                                              - Show current API key
   SHOW PROVIDER 'name';                                  - Show provider details
-  SHOW CURRENT MODEL;                                    - Show current model settings
-  UNSET TOKEN;                                           - Remove current API token
-  ALTER PROVIDER 'name' NAME 'new_name';                 - Rename a provider
-  USE MODEL 'provider/instance/model';                   - Set current model for chat
-  CHAT 'message';                                        - Chat using current model
-  CHAT 'provider/instance/model' 'message';              - Chat with specified model
+  SHOW CURRENT;                                          - Show current model settings
+  RESET KEY;                                             - Remove current API key
+  ALTER PROVIDER 'name' INSTANCE 'instance' NAME 'new_name';
+                                                         - Rename a provider instance
+  USE MODEL 'model@instance@provider';                   - Set current model for chat
+  CHAT MESSAGE 'message';                                - Chat using current model
+  CHAT WITH 'model@instance@provider' MESSAGE 'message'; - Chat with specified model
   OPENAI_CHAT 'chat_id' 'message' [options] ;            - OpenAI-compatible chat
                                                            (run openai_chat -h for detailed options)
   CHAT COMPLETIONS 'question' [options] ;                - Chat completions via /api/v1/chat/completions
                                                            (run chat completions -h for detailed options)
+
+Commands (Admin Mode):
+  LIST USERS;                                            - List the first page of users
+  LIST USERS WITH keyword 'alice' status 'active' order 'create_time' sort 'asc' page 1 page_size 10;
+                                                         - Search, filter, sort, and paginate users
+  User list sorting supports create_time and last_login_time.
+  LIST USERS WITH role 'Reader' plan 'Pro' quota 80 days 30 page 2 page_size 10;
+                                                         - Enterprise filters with pagination
+  LIST USERS STORAGE TOP 20;                             - Enterprise storage ranking, top results
+  LIST USERS DOCUMENTS PAGE 2 PAGE_SIZE 10;               - Enterprise document ranking, paginated
+  LIST USERS INDEX TOP 20;                               - Enterprise index ranking (individual indices)
+  Only storage, documents and index support top. Do not combine top with page or page_size.
+  In EE user filters, days limits recent logins.
+  WITH text values must be quoted. JSON output includes users and total.
 
 Filesystem Commands (no quotes):
   ls [path]                    - List resources
@@ -858,15 +870,18 @@ Filesystem Commands (no quotes):
                                  Note: cat datasets or cat datasets/kb1 will error
 
 Examples:
-  ragflow-cli -f rf.yml "LIST USERS"           # SQL mode (with quotes)
+  ragflow-cli -f rf.yml "LIST DATASETS"        # SQL mode (with quotes)
   ragflow-cli -f rf.yml ls datasets            # Filesystem mode (no quotes)
   ragflow-cli -f rf.yml ls files               # List files in root
   ragflow-cli -f rf.yml cat datasets           # Error: datasets is a directory
   ragflow-cli -f rf.yml ls files/myfolder      # List folder contents
 
 For more information, see documentation.
+
 `
-	fmt.Println(help)
+
+func (c *CLI) printHelp() {
+	fmt.Print(helpText)
 }
 
 // Cleanup performs cleanup before exit
@@ -905,7 +920,7 @@ func (c *CLI) VerifyAuth(username, password string) error {
 	cmd.Params["email"] = username
 	cmd.Params["password"] = password
 
-	_, err := c.LoginUserByCommand(cmd)
+	_, err := c.LoginUserByCommand(1, cmd)
 	return err
 }
 
@@ -1061,7 +1076,7 @@ Syntax:
        [system "..."] [history "..."] [history_delimiter "<char>"]
        [temperature <float>] [max_tokens <int>] [stream <bool>]
        [top_p <float>] [frequency_penalty <float>] [presence_penalty <float>]
-       [pass_all_history <bool>] [legacy <bool>] ;
+       [legacy <bool>] ;
 
 Required positional:
   'question'  the user question
@@ -1079,7 +1094,6 @@ Named options (any order; all optional with defaults):
   top_p             <float>  0..1
   frequency_penalty <float>  -2..2
   presence_penalty  <float>  -2..2
-  pass_all_history  <bool>   pass all history messages
   legacy            <bool>   use legacy SSE format
 
 Defaults:

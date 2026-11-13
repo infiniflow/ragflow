@@ -18,6 +18,7 @@ package component
 
 import (
 	"context"
+	"encoding/json"
 	"reflect"
 	"testing"
 
@@ -96,18 +97,106 @@ func TestBegin_MapsNamedQueryInputs(t *testing.T) {
 	}
 }
 
+func TestBegin_SeparatesNamedInputFromQuery(t *testing.T) {
+	c, _ := NewBeginComponent(map[string]any{
+		"inputs": map[string]any{"name": map[string]any{}},
+	})
+	state := canvas.NewCanvasState("run-separated", "task-separated")
+	out, err := c.Invoke(canvas.WithState(t.Context(), state), nil, map[string]any{
+		"name":  "Alice",
+		"query": "Hello",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if out["name"] != "Alice" || state.Sys["query"] != "Hello" {
+		t.Fatalf("outputs = %#v, sys.query = %v", out, state.Sys["query"])
+	}
+}
+
+func TestBegin_PreservesStarterInputAcrossQueries(t *testing.T) {
+	c, _ := NewBeginComponent(map[string]any{
+		"inputs": map[string]any{"name": map[string]any{}},
+	})
+	state := canvas.NewCanvasState("run-persistent", "task-persistent")
+	ctx := canvas.WithState(t.Context(), state)
+
+	first, err := c.Invoke(ctx, nil, map[string]any{"query": "Alice"})
+	if err != nil {
+		t.Fatalf("first Invoke: %v", err)
+	}
+	if first["name"] != "Alice" || state.Sys["query"] != "Alice" {
+		t.Fatalf("first values = %#v, sys.query=%v", first, state.Sys["query"])
+	}
+
+	second, err := c.Invoke(ctx, nil, map[string]any{"query": "Hello"})
+	if err != nil {
+		t.Fatalf("second Invoke: %v", err)
+	}
+	if second["name"] != "Alice" {
+		t.Fatalf("name = %v, want Alice", second["name"])
+	}
+	if state.Sys["query"] != "Hello" {
+		t.Fatalf("sys.query = %v, want Hello", state.Sys["query"])
+	}
+}
+
+func TestBegin_ExplicitNamedInputUpdatesStarterValue(t *testing.T) {
+	c, _ := NewBeginComponent(map[string]any{
+		"inputs": map[string]any{"name": map[string]any{}},
+	})
+	state := canvas.NewCanvasState("run-explicit-update", "task-explicit-update")
+	ctx := canvas.WithState(t.Context(), state)
+
+	if _, err := c.Invoke(ctx, nil, map[string]any{"query": map[string]any{"name": "Alice"}}); err != nil {
+		t.Fatalf("first Invoke: %v", err)
+	}
+	out, err := c.Invoke(ctx, nil, map[string]any{"query": map[string]any{"name": "Bob"}})
+	if err != nil {
+		t.Fatalf("second Invoke: %v", err)
+	}
+	if out["name"] != "Bob" {
+		t.Fatalf("name = %v, want Bob", out["name"])
+	}
+	if value, ok := state.GetGlobal("begin@name"); !ok || value != "Bob" {
+		t.Fatalf("begin@name = %v, %v; want Bob, true", value, ok)
+	}
+}
+
+func TestBegin_InitializesNilGlobalsAfterRestore(t *testing.T) {
+	c, _ := NewBeginComponent(map[string]any{
+		"inputs": map[string]any{"name": map[string]any{}},
+	})
+	var state canvas.CanvasState
+	if err := json.Unmarshal([]byte(`{"sys":{}}`), &state); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	out, err := c.Invoke(canvas.WithState(t.Context(), &state), nil, map[string]any{"query": "Alice"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if out["name"] != "Alice" {
+		t.Fatalf("name = %v, want Alice", out["name"])
+	}
+	if value, ok := state.GetGlobal("begin@name"); !ok || value != "Alice" {
+		t.Fatalf("begin@name = %v, %v; want Alice, true", value, ok)
+	}
+}
+
 // TestBegin_PassesThroughInputs asserts the full inputs map — including
 // arbitrary keys beyond query / user_id — is returned unchanged as
 // outputs. This is the contract downstream components rely on to access
 // DSL-level inputs the engine has not explicitly modeled.
-func TestBegin_PassesThroughInputs(t *testing.T) {
+func TestBegin_PassesThroughInputsWithoutOverridingIdentity(t *testing.T) {
 	c, _ := NewBeginComponent(nil)
 	state := canvas.NewCanvasState("run-2", "task-2")
+	state.SeedIdentity("authenticated-user", "tenant-7")
 	ctx := canvas.WithState(t.Context(), state)
 
 	inputs := map[string]any{
 		"query":   "what is ragflow",
-		"user_id": "tenant-7",
+		"user_id": "input-user",
 		"inputs":  map[string]any{"k": "v"},
 		"extra":   42,
 	}
@@ -118,8 +207,8 @@ func TestBegin_PassesThroughInputs(t *testing.T) {
 	if !reflect.DeepEqual(out, inputs) {
 		t.Errorf("output passthrough failed:\n got  %v\n want %v", out, inputs)
 	}
-	if got, _ := state.Sys["user_id"].(string); got != "tenant-7" {
-		t.Errorf("state.Sys[user_id]: got %q, want %q", got, "tenant-7")
+	if got, _ := state.Sys["user_id"].(string); got != "authenticated-user" {
+		t.Errorf("state.Sys[user_id]: got %q, want authenticated identity", got)
 	}
 }
 
@@ -168,6 +257,19 @@ func TestBegin_InjectsWebhookPayload(t *testing.T) {
 	// Passthrough preserved.
 	if outPayload, _ := out["webhook_payload"].(map[string]any); !reflect.DeepEqual(outPayload, payload) {
 		t.Errorf("outputs[webhook_payload] mismatch:\n got  %v\n want %v", outPayload, payload)
+	}
+	for key, value := range out {
+		state.SetVar("Begin", key, value)
+	}
+	for _, tt := range []struct{ ref, want string }{
+		{"Begin@headers.x-token", "abc"},
+		{"Begin@query.q", "hello"},
+		{"Begin@body.k", "v"},
+	} {
+		got, err := canvas.ResolveTemplate("{{"+tt.ref+"}}", state)
+		if err != nil || got != tt.want {
+			t.Errorf("resolve %s = %q, %v; want %q", tt.ref, got, err, tt.want)
+		}
 	}
 }
 
@@ -260,5 +362,38 @@ func TestBegin_SingleFieldScalarQueryStillMaps(t *testing.T) {
 	}
 	if out["question"] != "hello" {
 		t.Errorf("single declared field not populated from scalar query: %#v", out)
+	}
+}
+
+func TestBegin_MultiFieldScalarPreservesStoredAndOptionalInputs(t *testing.T) {
+	c, _ := NewBeginComponent(map[string]any{"inputs": map[string]any{
+		"name": map[string]any{}, "language": map[string]any{"optional": true},
+	}})
+	state := canvas.NewCanvasState("run-stored", "task-stored")
+	ctx := canvas.WithState(t.Context(), state)
+	if _, err := c.Invoke(ctx, nil, map[string]any{"name": "Alice", "query": "first"}); err != nil {
+		t.Fatal(err)
+	}
+	out, err := c.Invoke(ctx, nil, map[string]any{"query": "second"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["name"] != "Alice" || out["language"] != "" || out["query"] != "second" {
+		t.Fatalf("outputs = %#v", out)
+	}
+}
+
+func TestBegin_MultiFieldDirectInputWinsOverScalar(t *testing.T) {
+	c, _ := NewBeginComponent(map[string]any{"inputs": map[string]any{"name": map[string]any{}, "language": map[string]any{}}})
+	state := canvas.NewCanvasState("run-direct", "task-direct")
+	out, err := c.Invoke(canvas.WithState(t.Context(), state), nil, map[string]any{"name": "Alice", "query": "hello"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if out["name"] != "Alice" || out["query"] != "hello" {
+		t.Fatalf("outputs = %#v", out)
+	}
+	if _, supplied := out["language"]; supplied {
+		t.Fatalf("language copied from scalar: %#v", out)
 	}
 }

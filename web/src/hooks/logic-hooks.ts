@@ -22,17 +22,12 @@ import { MessageType } from '@/constants/chat';
 import { FormInstance } from '@/interfaces/antd-compat';
 import { Pagination } from '@/interfaces/common';
 import { ResponseType } from '@/interfaces/database/base';
-import {
-  IAnswer,
-  IClientConversation,
-  IMessage,
-  Message,
-} from '@/interfaces/database/chat';
+import { IAnswer, IMessage, Message } from '@/interfaces/database/chat';
 import { IKnowledgeFile } from '@/interfaces/database/dataset';
 import { changeLanguageAsync } from '@/locales/config';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
-import { buildMessageUuid } from '@/utils/chat';
+import { buildMessageUuid, mergeAnswerChunk } from '@/utils/chat';
 import {
   consumeListDeletionMarker,
   discardListDeletionMarker,
@@ -51,6 +46,7 @@ import {
 import { useTranslate } from './common-hooks';
 import { useSetPaginationParams } from './route-hook';
 import { useSaveSetting } from './use-user-setting-request';
+import { useVirtualMessages } from './use-virtual-messages';
 
 export function usePrevious<T>(value: T) {
   const ref = useRef<T>();
@@ -104,7 +100,7 @@ export const useGetPaginationWithRouter = () => {
   );
 
   const setCurrentPagination = useCallback(
-    (pagination: { page: number; pageSize?: number }) => {
+    (pagination: { page: number; pageSize?: number; total?: number }) => {
       if (pagination.pageSize !== pageSize) {
         pagination.page = 1; // Reset to first page if pageSize changes
       }
@@ -213,12 +209,24 @@ export const useGetPagination = (options?: { pageSize?: number }) => {
   const [pagination, setPagination] = useState({
     page: 1,
     pageSize: options?.pageSize ?? 10,
+    total: 0,
   });
   const { t } = useTranslate('common');
 
   const onPageChange: Pagination['onChange'] = useCallback(
-    (pageNumber: number, pageSize: number) => {
-      setPagination({ page: pageNumber, pageSize });
+    (pageNumber: number, pageSize?: number) => {
+      setPagination((pre) => ({
+        ...pre,
+        page: pageNumber,
+        pageSize: pageSize ?? pre.pageSize,
+      }));
+    },
+    [],
+  );
+
+  const changePagination = useCallback(
+    (pagination: { page: number; pageSize?: number; total?: number }) => {
+      setPagination((prev) => ({ ...prev, ...pagination }));
     },
     [],
   );
@@ -226,7 +234,7 @@ export const useGetPagination = (options?: { pageSize?: number }) => {
   const currentPagination: Pagination = useMemo(() => {
     return {
       showQuickJumper: true,
-      total: 0,
+      total: pagination.total ?? 0,
       showSizeChanger: true,
       current: pagination.page,
       pageSize: pagination.pageSize,
@@ -238,6 +246,7 @@ export const useGetPagination = (options?: { pageSize?: number }) => {
 
   return {
     pagination: currentPagination,
+    changePagination,
     setPagination,
   };
 };
@@ -365,31 +374,9 @@ export const useSendMessageWithSse = () => {
                 const d = val?.data;
                 if (typeof d !== 'boolean') {
                   setAnswer((prev) => {
-                    const prevAnswer = prev.answer || '';
-                    // Skip final-chunk answer only when prior stream chunks exist (avoids duplicate).
-                    // Empty-response and other single-shot answers arrive with final=true only.
-                    // const currentAnswer = d.final ? '' : d.answer || '';
-                    const currentAnswer =
-                      d.final && prevAnswer ? '' : d.answer || '';
-
-                    let newAnswer: string;
-                    if (prevAnswer && currentAnswer.startsWith(prevAnswer)) {
-                      newAnswer = currentAnswer;
-                    } else {
-                      newAnswer = prevAnswer + currentAnswer;
-                    }
-
-                    if (d.start_to_think === true) {
-                      newAnswer = newAnswer + '<think>';
-                    }
-
-                    if (d.end_to_think === true) {
-                      newAnswer = newAnswer + '</think>';
-                    }
-
                     return {
                       ...d,
-                      answer: newAnswer,
+                      answer: mergeAnswerChunk(prev.answer || '', d),
                       conversationId: body?.session_id ?? body?.conversation_id,
                       chatBoxId: body.chatBoxId,
                     };
@@ -464,129 +451,6 @@ export const useSpeechWithSse = (url: string = api.chatsTts) => {
 
 //#region chat hooks
 
-// Firefox reports a fractional `scrollTop`, while `scrollHeight` / `clientHeight`
-// are rounded. `scrollToBottom` therefore lands a sub-pixel *below* the position
-// a native clamp had produced, which reads as a decreasing `scrollTop`. Require a
-// real gesture's worth of movement so that jitter is not mistaken for one.
-const UserScrollUpThreshold = 2;
-
-export const useScrollToBottom = (
-  messages?: unknown,
-  containerRef?: React.RefObject<HTMLDivElement>,
-) => {
-  const ref = useRef<HTMLDivElement>(null);
-  const [isAtBottom, setIsAtBottom] = useState(true);
-  const isAtBottomRef = useRef(true);
-  // `null` means "no baseline yet", so the very first measurement has to fall
-  // back to the distance check instead of guessing a scroll direction.
-  const lastScrollTopRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    isAtBottomRef.current = isAtBottom;
-  }, [isAtBottom]);
-
-  // We pin the transcript to the bottom ourselves, so browser scroll anchoring is
-  // pure interference: when a streamed answer re-lays out (markdown turning a
-  // paragraph into a code block, a line re-wrapping), Firefox shifts `scrollTop`
-  // to hold its anchor node still. That shift is indistinguishable from a user
-  // scrolling up in the handler below, so it latched auto-follow off mid-answer.
-  // Chrome suppresses the adjustment while pinned to the bottom, which is why
-  // only Firefox drifted away from the bottom.
-  useEffect(() => {
-    if (!containerRef?.current) return;
-    containerRef.current.style.overflowAnchor = 'none';
-  }, [containerRef]);
-
-  const checkIfNearBottom = useCallback(() => {
-    if (!containerRef?.current) return true;
-    const { scrollTop, scrollHeight, clientHeight } = containerRef.current;
-    // Content shorter than the viewport has nothing to scroll, so it is
-    // trivially "at the bottom". Returning false here would latch auto-follow
-    // off when a stream starts from a short transcript: growing content does
-    // not fire a `scroll` event, so no later check would ever re-arm the flag
-    // and the view would never track the incoming message.
-    if (scrollHeight <= clientHeight) return true;
-    return Math.abs(scrollTop + clientHeight - scrollHeight) < 60;
-  }, [containerRef]);
-
-  useEffect(() => {
-    if (!containerRef?.current) return;
-    const container = containerRef.current;
-
-    const handleScroll = () => {
-      const previousScrollTop = lastScrollTopRef.current;
-      const { scrollTop } = container;
-      lastScrollTopRef.current = scrollTop;
-
-      const nearBottom = checkIfNearBottom();
-      let atBottom: boolean;
-      if (nearBottom) {
-        atBottom = true;
-      } else if (
-        previousScrollTop === null ||
-        scrollTop < previousScrollTop - UserScrollUpThreshold
-      ) {
-        // With scroll anchoring off, only a user gesture (wheel, drag, keys,
-        // touch) can shrink `scrollTop` by a meaningful amount, so this is the
-        // one reliable signal that they want to leave the bottom.
-        atBottom = false;
-      } else {
-        // We are far from the bottom yet `scrollTop` did not move: the gap comes
-        // from content that grew after `scrollToBottom` ran but before this
-        // event was dispatched. Disarming here would strand auto-follow forever,
-        // because growing content never fires another `scroll` event to re-arm
-        // it. Keep whatever the user last asked for.
-        atBottom = isAtBottomRef.current;
-      }
-
-      // Write the ref here rather than relying on the effect that mirrors
-      // `isAtBottom`: that effect only runs after the next render, and while the
-      // main thread is busy rendering a streaming answer an already scheduled
-      // auto-scroll would still see the stale `true`.
-      isAtBottomRef.current = atBottom;
-      setIsAtBottom(atBottom);
-    };
-
-    container.addEventListener('scroll', handleScroll);
-    handleScroll();
-    return () => container.removeEventListener('scroll', handleScroll);
-  }, [containerRef, checkIfNearBottom]);
-
-  // Imperative scroll function
-  const scrollToBottom = useCallback(() => {
-    if (containerRef?.current) {
-      const container = containerRef.current;
-      // Overshoot and let the browser clamp. `scrollHeight - clientHeight` is a
-      // difference of two rounded values, so in Firefox — where the real maximum
-      // is fractional — it can land just short of the bottom.
-      container.scrollTo({
-        top: container.scrollHeight,
-        behavior: 'auto',
-      });
-    }
-  }, [containerRef]);
-
-  // Streaming replaces `messages` many times a second. The previous
-  // rAF + setTimeout(100) chain always had several scrolls queued, and they read
-  // `isAtBottomRef` long after the user had scrolled up — yanking the view back
-  // down. One cancellable frame per change, gated on the latest position, keeps
-  // auto-follow without fighting the user.
-  useEffect(() => {
-    if (!messages) return;
-    if (!containerRef?.current) return;
-    if (!isAtBottomRef.current) return;
-
-    const frame = requestAnimationFrame(() => {
-      if (isAtBottomRef.current) {
-        scrollToBottom();
-      }
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [messages, containerRef, scrollToBottom]);
-
-  return { scrollRef: ref, isAtBottom, scrollToBottom };
-};
-
 export const useHandleMessageInputChange = () => {
   const [value, setValue] = useState('');
 
@@ -603,14 +467,15 @@ export const useHandleMessageInputChange = () => {
   };
 };
 
-export const useSelectDerivedMessages = () => {
+export const useSelectDerivedMessages = (resetKey?: string) => {
   const [derivedMessages, setDerivedMessages] = useState<IMessage[]>([]);
 
   const messageContainerRef = useRef<HTMLDivElement>(null);
 
-  const { scrollRef, scrollToBottom } = useScrollToBottom(
+  const { virtualizer, scrollToBottom } = useVirtualMessages(
     derivedMessages,
     messageContainerRef,
+    { resetKey },
   );
 
   const addNewestQuestion = useCallback(
@@ -659,13 +524,19 @@ export const useSelectDerivedMessages = () => {
           role: MessageType.Assistant,
           content: answer.answer,
           reference: answer.reference,
-          id: buildMessageUuid({
-            id: answer.id,
-            role: MessageType.Assistant,
-          }),
           prompt: answer.prompt,
           audio_binary: answer.audio_binary,
           ...omit(answer, 'reference'),
+          // Chatbot/embed SSE frames carry `id: null`; assigned after the
+          // spread so the null cannot clobber a real id. Reusing the
+          // placeholder message's id keeps the virtualizer item key stable
+          // across stream chunks — otherwise every assistant message shares
+          // the `assistant_null` key and the virtualizer's per-key size
+          // cache inflates the other assistant rows with this row's height.
+          id: buildMessageUuid({
+            id: answer.id || pre?.at(-1)?.id,
+            role: MessageType.Assistant,
+          }),
         },
       ];
     });
@@ -705,6 +576,12 @@ export const useSelectDerivedMessages = () => {
 
   const addPrologue = useCallback((prologue: string) => {
     setDerivedMessages((pre) => {
+      // The prologue is the conversation opener. Once the user has said
+      // something, the first message is real history — never overwrite or
+      // retro-inject the prologue into it.
+      if (pre.some((x) => x.role === MessageType.User)) {
+        return pre;
+      }
       if (pre.length > 0) {
         return [
           {
@@ -784,7 +661,7 @@ export const useSelectDerivedMessages = () => {
   }, [setDerivedMessages]);
 
   return {
-    scrollRef,
+    virtualizer,
     messageContainerRef,
     derivedMessages,
     setDerivedMessages,
@@ -805,43 +682,6 @@ export const useSelectDerivedMessages = () => {
 export interface IRemoveMessageById {
   removeMessageById(messageId: string): void;
 }
-
-export const useRemoveMessagesAfterCurrentMessage = (
-  setCurrentConversation: (
-    callback: (state: IClientConversation) => IClientConversation,
-  ) => void,
-) => {
-  const removeMessagesAfterCurrentMessage = useCallback(
-    (messageId: string) => {
-      setCurrentConversation((pre) => {
-        const index = pre.message?.findIndex((x) => x.id === messageId);
-        if (index !== -1) {
-          let nextMessages = pre.message?.slice(0, index + 2) ?? [];
-          const latestMessage = nextMessages.at(-1);
-          nextMessages = latestMessage
-            ? [
-                ...nextMessages.slice(0, -1),
-                {
-                  ...latestMessage,
-                  content: '',
-                  reference: undefined,
-                  prompt: undefined,
-                },
-              ]
-            : nextMessages;
-          return {
-            ...pre,
-            message: nextMessages,
-          };
-        }
-        return pre;
-      });
-    },
-    [setCurrentConversation],
-  );
-
-  return { removeMessagesAfterCurrentMessage };
-};
 
 export interface IRegenerateMessage {
   regenerateMessage?: (message: Message) => void;
@@ -866,9 +706,6 @@ export const useRegenerateMessage = ({
       if (message.id) {
         removeMessagesAfterCurrentMessage(message.id);
         const index = messages.findIndex((x) => x.id === message.id);
-        // Always pass the truncated history explicitly, even when it is
-        // empty (regenerating the first question), so the backend can
-        // overwrite the session with it via pass_all_history_messages.
         const nextMessages = index !== -1 ? messages.slice(0, index) : [];
         sendMessage({
           // Keep the original id so the question/answer pair id stays

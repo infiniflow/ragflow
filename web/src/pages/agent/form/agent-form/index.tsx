@@ -7,20 +7,19 @@ import { LlmSettingSchema } from '@/components/llm-setting-items/next';
 import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { SwitchFormField } from '@/components/switch-form-field';
 import { Button } from '@/components/ui/button';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-} from '@/components/ui/form';
-import { Input, NumberInput } from '@/components/ui/input';
+import { Form } from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { Switch } from '@/components/ui/switch';
-import NumberInputStepper from '@/components/originui/number-input';
+import NumberInput from '@/components/originui/number-input';
 import { useFindLlmByUuid } from '@/hooks/use-llm-request';
+import {
+  useRevalidateUnavailableValue,
+  useUnavailableModelFormSchema,
+} from '@/hooks/use-unavailable-value-validation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { get } from 'lodash';
 import { memo, useEffect, useMemo } from 'react';
@@ -33,6 +32,7 @@ import {
   NodeHandleId,
   VariableType,
 } from '../../constant';
+import { useOwnerTenantId } from '../../context';
 import { INextOperatorForm } from '../../interface';
 import useGraphStore from '../../store';
 import { hasSubAgentOrTool, isBottomSubAgent } from '../../utils';
@@ -94,6 +94,12 @@ function AgentForm({ node }: INextOperatorForm) {
 
   const defaultValues = useValues(node);
 
+  const ownerTenantId = useOwnerTenantId();
+  const { formSchema, modelsFetched } = useUnavailableModelFormSchema(
+    FormSchema,
+    { ownerTenantId },
+  );
+
   const { extraOptions } = useBuildPromptExtraPromptOptions(edges, node?.id);
 
   const ExceptionMethodOptions = Object.values(AgentExceptionMethod).map(
@@ -109,7 +115,7 @@ function AgentForm({ node }: INextOperatorForm) {
 
   const form = useForm<AgentFormSchemaType>({
     defaultValues: defaultValues,
-    resolver: zodResolver(FormSchema),
+    resolver: zodResolver(formSchema),
   });
 
   const llmId = useWatch({ control: form.control, name: 'llm_id' });
@@ -157,12 +163,16 @@ function AgentForm({ node }: INextOperatorForm) {
 
   useWatchFormChange(node?.id, form);
 
+  // A persisted model from a shared canvas may be unusable to the current
+  // user — surface the error once the model list has loaded.
+  useRevalidateUnavailableValue(form, modelsFetched, 'llm_id');
+
   return (
     <>
       <Form {...form}>
         <FormWrapper>
           {isSubAgent && <DescriptionField></DescriptionField>}
-          <LargeModelFormField></LargeModelFormField>
+          <LargeModelFormField ownerTenantId={ownerTenantId} />
           {findLlmByUuid(llmId)?.model_type?.includes('vision') && (
             <QueryVariable
               name="visual_files_var"
@@ -170,89 +180,60 @@ function AgentForm({ node }: INextOperatorForm) {
               types={[VariableType.File]}
             ></QueryVariable>
           )}
-          <FormField
-            control={form.control}
-            name={`sys_prompt`}
-            render={({ field }) => (
-              <FormItem className="flex-1">
-                <FormLabel>{t('flow.systemPrompt')}</FormLabel>
-                <FormControl>
-                  <PromptEditor
-                    {...field}
-                    placeholder={t('flow.messagePlaceholder')}
-                    showToolbar={true}
-                    extraOptions={extraOptions}
-                  ></PromptEditor>
-                </FormControl>
-              </FormItem>
-            )}
-          />
-          {isSubAgent || (
-            <FormField
-              control={form.control}
-              name={`prompts`}
-              render={({ field }) => (
-                <FormItem className="flex-1">
-                  <FormLabel>{t('flow.userPrompt')}</FormLabel>
-                  <FormControl>
-                    <section>
-                      <PromptEditor
-                        {...field}
-                        showToolbar={true}
-                      ></PromptEditor>
-                    </section>
-                  </FormControl>
-                </FormItem>
-              )}
+          <RAGFlowFormItem
+            name="sys_prompt"
+            label={t('flow.systemPrompt')}
+            className="flex-1"
+          >
+            <PromptEditor
+              placeholder={t('flow.messagePlaceholder')}
+              showToolbar={true}
+              extraOptions={extraOptions}
             />
+          </RAGFlowFormItem>
+          {isSubAgent || (
+            <RAGFlowFormItem
+              name="prompts"
+              label={t('flow.userPrompt')}
+              className="flex-1"
+            >
+              <PromptEditor showToolbar={true} />
+            </RAGFlowFormItem>
           )}
           <Separator></Separator>
           <AgentTools></AgentTools>
           <Agents node={node}></Agents>
           <Collapse defaultOpen title={<div>{t('flow.advancedSettings')}</div>}>
             <section className="space-y-5">
+              <SwitchFormField
+                name="cite"
+                label={t('flow.cite')}
+                tooltip={t('chat.quoteTip')}
+              />
+              {(mcpIds.length > 0 || hasSubAgentOrTool(edges, node?.id)) && (
+                <RAGFlowFormItem
+                  name="max_rounds"
+                  label={t('flow.maxRounds')}
+                  className="flex-1"
+                >
+                  <NumberInput min={0} className="w-full" />
+                </RAGFlowFormItem>
+              )}
               <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
-              <FormField
-                control={form.control}
-                name={`cite`}
-                render={({ field }) => (
-                  <FormItem className="flex-1">
-                    <FormLabel tooltip={t('chat.quoteTip')}>
-                      {t('flow.cite')}
-                    </FormLabel>
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      ></Switch>
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name={`max_retries`}
-                render={({ field }) => (
-                  <FormItem className="flex-1">
-                    <FormLabel>{t('flow.maxRetries')}</FormLabel>
-                    <FormControl>
-                      <NumberInput {...field} max={8} min={0}></NumberInput>
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
-              <FormField
-                control={form.control}
-                name={`delay_after_error`}
-                render={({ field }) => (
-                  <FormItem className="flex-1">
-                    <FormLabel>{t('flow.delayAfterError')}</FormLabel>
-                    <FormControl>
-                      <NumberInput {...field} max={5} step={0.1}></NumberInput>
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
+              <RAGFlowFormItem
+                name="max_retries"
+                label={t('flow.maxRetries')}
+                className="flex-1"
+              >
+                <NumberInput max={8} min={0} className="w-full" />
+              </RAGFlowFormItem>
+              <RAGFlowFormItem
+                name="delay_after_error"
+                label={t('flow.delayAfterError')}
+                className="flex-1"
+              >
+                <NumberInput max={5} step={0.1} className="w-full" />
+              </RAGFlowFormItem>
               {mcpIds.length > 0 && (
                 <RAGFlowFormItem
                   label={t('flow.toolTimeout')}
@@ -261,7 +242,7 @@ function AgentForm({ node }: INextOperatorForm) {
                 >
                   {(field) => (
                     <div className="flex gap-2 items-center">
-                      <NumberInputStepper
+                      <NumberInput
                         value={field.value}
                         onChange={field.onChange}
                         min={1}
@@ -271,53 +252,25 @@ function AgentForm({ node }: INextOperatorForm) {
                   )}
                 </RAGFlowFormItem>
               )}
-              {hasSubAgentOrTool(edges, node?.id) && (
-                <FormField
-                  control={form.control}
-                  name={`max_rounds`}
-                  render={({ field }) => (
-                    <FormItem className="flex-1">
-                      <FormLabel>{t('flow.maxRounds')}</FormLabel>
-                      <FormControl>
-                        <NumberInput {...field} min={0}></NumberInput>
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
-              )}
-              <FormField
-                control={form.control}
-                name={`exception_method`}
-                render={({ field }) => (
-                  <FormItem className="flex-1">
-                    <FormLabel>{t('flow.exceptionMethod')}</FormLabel>
-                    <FormControl>
-                      <SelectWithSearch
-                        {...field}
-                        options={ExceptionMethodOptions}
-                        allowClear
-                      />
-                    </FormControl>
-                  </FormItem>
-                )}
-              />
+
+              <RAGFlowFormItem
+                name="exception_method"
+                label={t('flow.exceptionMethod')}
+                className="flex-1"
+              >
+                <SelectWithSearch options={ExceptionMethodOptions} allowClear />
+              </RAGFlowFormItem>
               {exceptionMethod === AgentExceptionMethod.Comment && (
-                <FormField
-                  control={form.control}
-                  name={`exception_default_value`}
-                  render={({ field }) => (
-                    <FormItem className="flex-1">
-                      <FormLabel>{t('flow.ExceptionDefaultValue')}</FormLabel>
-                      <FormControl>
-                        <Input {...field} />
-                      </FormControl>
-                    </FormItem>
-                  )}
-                />
+                <RAGFlowFormItem
+                  name="exception_default_value"
+                  label={t('flow.ExceptionDefaultValue')}
+                  className="flex-1"
+                >
+                  <Input />
+                </RAGFlowFormItem>
               )}
             </section>
           </Collapse>
-
           <Output list={outputList}>
             <RAGFlowFormItem name="showStructuredOutput">
               {(field) => (

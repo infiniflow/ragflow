@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	modelModule "ragflow/internal/entity/models"
-	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 
 	"gorm.io/gorm"
 )
@@ -61,11 +61,9 @@ func TestDispatch_PDFVisionJSON_RealPDFFixture(t *testing.T) {
 		t.Fatalf("ReadFile(%s): %v", path, err)
 	}
 
-	param := schema.ParserParam{}.Defaults()
 	setups := defaultSetups()
 	setups["pdf"]["parse_method"] = "CustomVLM"
-	setups["pdf"]["output_format"] = "json"
-	c := &ParserComponent{Param: param, Setups: setups}
+	c := &ParserComponent{setups: setups}
 
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"binary":    data,
@@ -89,7 +87,8 @@ func TestDispatch_PDFVisionJSON_RealPDFFixture(t *testing.T) {
 		t.Fatalf("vision call count = %d, want %d", got, pageCount)
 	}
 
-	jsonItems, ok := out["json"].([]map[string]any)
+	jsonDocs, ok := out["json"].([]parser.DocItem)
+	jsonItems := parser.ItemsToMaps(jsonDocs)
 	if !ok || len(jsonItems) == 0 {
 		t.Fatalf("json payload missing or empty: %T", out["json"])
 	}

@@ -22,186 +22,21 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"slices"
-	"sort"
 	"strings"
 	"time"
+
+	"golang.org/x/net/idna"
 )
 
-// AllowedURLSchemes are the schemes accepted by AssertURLSafe.
-var AllowedURLSchemes = []string{"http", "https"}
-
-// LookupHost is the indirection used to resolve hostnames. Tests override it.
-var LookupHost = net.LookupHost
-
-// AllowAnyHostForTest is a test-only override that bypasses the
-// SSRF guard (no public-IP check, no DNS resolution, no DNS
-// pinning). Production code MUST leave this at its zero value
-// (false). Tests that need to talk to a local httptest server
-// flip it on and reset it in t.Cleanup.
-//
-// The previous form (env-var ALLOW_ANY_HOST) was a live runtime
-// toggle that any operator could flip to disable the SSRF guard
-// globally — including the DNS pinning that the Invoke component
-// relies on. PR review round 6, Major #3: this variable lives in
-// process memory only, so it cannot be enabled by an env var or
-// a deployment mistake. The explicit "_ForTest" suffix is the
-// signal that production code must never touch it.
-var AllowAnyHostForTest = false
-
-// allowAnyHost reads the test-only override. Kept as a private
-// helper so the call sites don't all have to know about the
-// exported variable name.
-func allowAnyHost() bool {
-	return AllowAnyHostForTest
-}
-
-// AssertURLSafe parses rawURL and rejects it if the scheme is disallowed,
-// the host is missing, or any resolved IP is not globally routable
-// (private, loopback, link-local, multicast, reserved). Returns the hostname
-// and the first validated public IP so callers can DNS-pin the address and
-// prevent rebinding between validation and the actual TCP connection.
-//
-// Mirrors common/ssrf_guard.py:assert_url_is_safe.
-var AssertURLSafe = func(rawURL string) (hostname, resolvedIP string, err error) {
-	parsed, err := url.Parse(strings.TrimSpace(rawURL))
-	if err != nil {
-		return "", "", fmt.Errorf("invalid url")
-	}
-
-	scheme := strings.ToLower(parsed.Scheme)
-	if !slices.Contains(AllowedURLSchemes, scheme) {
-		sorted := append([]string(nil), AllowedURLSchemes...)
-		sort.Strings(sorted)
-		return "", "", fmt.Errorf("disallowed URL scheme: '%s'. Only %v are allowed", scheme, sorted)
-	}
-
-	hostname = parsed.Hostname()
-	if hostname == "" {
-		return "", "", fmt.Errorf("URL is missing a host")
-	}
-
-	allowAny := allowAnyHost()
-	addresses, err := LookupHost(hostname)
-	if err != nil {
-		return "", "", fmt.Errorf("could not resolve hostname '%s': %w", hostname, err)
-	}
-	if len(addresses) == 0 {
-		return "", "", fmt.Errorf("hostname '%s' resolved to no addresses", hostname)
-	}
-
-	for _, addr := range addresses {
-		ip := net.ParseIP(addr)
-		if ip == nil {
-			return "", "", fmt.Errorf("could not parse resolved address '%s' for hostname '%s'", addr, hostname)
-		}
-		if !allowAny && !isGlobalIP(effectiveIP(ip)) {
-			return "", "", fmt.Errorf("URL resolves to a non-public address (%s), which is not allowed", ip.String())
-		}
-		if resolvedIP == "" {
-			resolvedIP = ip.String()
-		}
-	}
-	return hostname, resolvedIP, nil
-}
-
-// effectiveIP unwraps IPv4-mapped IPv6 addresses (e.g. ::ffff:127.0.0.1) so
-// the routability check sees the IPv4 form. Without this, an attacker could
-// bypass the guard with an IPv4-mapped IPv6 representation of a private host.
-func effectiveIP(ip net.IP) net.IP {
-	if v4 := ip.To4(); v4 != nil {
-		return v4
-	}
-	return ip
-}
-
-// isGlobalIP mirrors Python's ipaddress.IPv*Address.is_global: an address is
-// global if it is none of {unspecified, loopback, multicast, link-local,
-// private (including CGNAT and IPv6 ULA), benchmarking, documentation,
-// reserved}.
-func isGlobalIP(ip net.IP) bool {
-	if ip == nil || ip.IsUnspecified() || ip.IsLoopback() || ip.IsMulticast() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsInterfaceLocalMulticast() || ip.IsPrivate() {
-		return false
-	}
-	if v4 := ip.To4(); v4 != nil {
-		// CGNAT 100.64.0.0/10 — not flagged by IsPrivate in older Go versions.
-		if v4[0] == 100 && v4[1]&0xC0 == 64 {
-			return false
-		}
-		// 192.0.0.0/24 reserved for IETF protocol assignments.
-		if v4[0] == 192 && v4[1] == 0 && v4[2] == 0 {
-			return false
-		}
-		// 192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24 documentation (TEST-NET-1/2/3).
-		if v4[0] == 192 && v4[1] == 0 && v4[2] == 2 {
-			return false
-		}
-		if v4[0] == 198 && v4[1] == 51 && v4[2] == 100 {
-			return false
-		}
-		if v4[0] == 203 && v4[1] == 0 && v4[2] == 113 {
-			return false
-		}
-		// 198.18.0.0/15 benchmarking.
-		if v4[0] == 198 && (v4[1] == 18 || v4[1] == 19) {
-			return false
-		}
-		// 240.0.0.0/4 reserved (excluding 255.255.255.255 which IsUnspecified misses).
-		if v4[0] >= 240 {
-			return false
-		}
-	} else if v6 := ip.To16(); v6 != nil {
-		// 2001:db8::/32 documentation prefix.
-		if v6[0] == 0x20 && v6[1] == 0x01 && v6[2] == 0x0d && v6[3] == 0xb8 {
-			return false
-		}
-		// 100::/64 discard-only address block.
-		if v6[0] == 0x01 && v6[1] == 0x00 && allZero(v6[2:8]) {
-			return false
-		}
-	}
-	return true
-}
-
-func allZero(b []byte) bool {
-	for _, x := range b {
-		if x != 0 {
-			return false
-		}
-	}
-	return true
-}
-
-// AssertURLSchemeSafe is a lenient SSRF guard for drivers that may legitimately
-// target private networks or loopback addresses (e.g. self-hosted Ollama, vLLM,
-// Xinference). It only rejects dangerous schemes and empty hosts; it does not
-// resolve DNS and does not require public routability. Use this ONLY for
-// local-inference model drivers — cloud-hosted drivers must use AssertURLSafe.
-var AssertURLSchemeSafe = func(rawURL string) error {
-	parsed, err := url.Parse(strings.TrimSpace(rawURL))
-	if err != nil {
-		return fmt.Errorf("invalid url")
-	}
-
-	scheme := strings.ToLower(parsed.Scheme)
-	if !slices.Contains(AllowedURLSchemes, scheme) {
-		sorted := append([]string(nil), AllowedURLSchemes...)
-		sort.Strings(sorted)
-		return fmt.Errorf("disallowed URL scheme: '%s'. Only %v are allowed", scheme, sorted)
-	}
-
-	if parsed.Hostname() == "" {
-		return fmt.Errorf("URL is missing a host")
-	}
-
-	return nil
-}
-
-// PinnedHTTPClient returns an HTTP client whose Transport rewrites every
-// outbound dial for hostname:port to resolvedIP:port, closing the TOCTOU
-// window between AssertURLSafe and the actual TCP connection. Pins are
-// scoped to this client only.
+// PinnedHTTPClient returns an HTTP client whose Transport dials resolvedIP
+// for hostname and rejects other hosts (including redirect targets), closing
+// the TOCTOU window between AssertURLSafe and the TCP connection.
 var PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) *http.Client {
+	asciiHostname := hostname
+	var idnaErr error
+	if net.ParseIP(hostname) == nil {
+		asciiHostname, idnaErr = idna.Lookup.ToASCII(hostname)
+	}
 	dialer := &net.Dialer{
 		Timeout:   timeout,
 		KeepAlive: 30 * time.Second,
@@ -213,10 +48,10 @@ var PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) 
 		Proxy: nil,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			host, port, splitErr := net.SplitHostPort(addr)
-			if splitErr == nil && host == hostname && resolvedIP != "" {
-				return dialer.DialContext(ctx, network, net.JoinHostPort(resolvedIP, port))
+			if splitErr != nil || idnaErr != nil || !strings.EqualFold(host, asciiHostname) || resolvedIP == "" {
+				return nil, fmt.Errorf("unvalidated HTTP destination %q", addr)
 			}
-			return dialer.DialContext(ctx, network, addr)
+			return dialer.DialContext(ctx, network, net.JoinHostPort(resolvedIP, port))
 		},
 		TLSHandshakeTimeout:   timeout,
 		ResponseHeaderTimeout: timeout,
@@ -226,5 +61,41 @@ var PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) 
 	return &http.Client{
 		Transport: transport,
 		Timeout:   timeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("stopped after 10 redirects")
+			}
+			// The pinned dialer only guarantees the host, not the scheme:
+			// a same-host HTTPS -> HTTP redirect would carry credential
+			// headers in cleartext.
+			if via[0].URL.Scheme == "https" && req.URL.Scheme == "http" {
+				return fmt.Errorf("refusing HTTPS to HTTP redirect to %q", req.URL)
+			}
+			// The pinned dialer also leaves the port to the redirect target:
+			// a same-host redirect to another port would reach a different
+			// service while Go still forwards sensitive headers for the host.
+			if !sameRequestOrigin(via[0].URL, req.URL) {
+				return fmt.Errorf("refusing redirect to different origin %q", req.URL)
+			}
+			return nil
+		},
 	}
+}
+
+// sameRequestOrigin reports whether two URLs share scheme, host, and effective
+// port (default 443/80 when the URL omits it).
+func sameRequestOrigin(a, b *url.URL) bool {
+	return a.Scheme == b.Scheme &&
+		strings.EqualFold(a.Hostname(), b.Hostname()) &&
+		effectiveURLPort(a) == effectiveURLPort(b)
+}
+
+func effectiveURLPort(u *url.URL) string {
+	if p := u.Port(); p != "" {
+		return p
+	}
+	if u.Scheme == "https" {
+		return "443"
+	}
+	return "80"
 }

@@ -18,15 +18,24 @@ package dao
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"reflect"
+	"strings"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 
 	"github.com/glebarez/sqlite"
+	"github.com/lib/pq"
+	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/gorm/schema"
 )
 
-func TestAutoMigrateRuntimeModelsCreatesIngestionTaskTables(t *testing.T) {
+func TestAutoMigrateRuntimeModelsCreatesGoRuntimeTables(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -38,6 +47,9 @@ func TestAutoMigrateRuntimeModelsCreatesIngestionTaskTables(t *testing.T) {
 	}
 	if db.Migrator().HasTable(&entity.IngestionTaskLog{}) {
 		t.Fatal("expected ingestion_task_log to not exist initially")
+	}
+	if db.Migrator().HasTable(&entity.MemoryTask{}) {
+		t.Fatal("expected memory_task to not exist initially")
 	}
 
 	ctx := context.Background()
@@ -52,9 +64,551 @@ func TestAutoMigrateRuntimeModelsCreatesIngestionTaskTables(t *testing.T) {
 	if !db.Migrator().HasTable(&entity.IngestionTaskLog{}) {
 		t.Fatal("expected ingestion_task_log to exist after autoMigrateRuntimeModels")
 	}
+	if !db.Migrator().HasTable(&entity.MemoryTask{}) {
+		t.Fatal("expected memory_task to exist after autoMigrateRuntimeModels")
+	}
+	if !db.Migrator().HasIndex(&entity.MemoryTask{}, "idx_memory_task_due") {
+		t.Fatal("expected memory_task due index to exist after autoMigrateRuntimeModels")
+	}
+
+	memoryTask := &entity.MemoryTask{
+		TaskID:   "task-1",
+		MemoryID: "memory-1",
+		SourceID: 42,
+		Input: entity.JSONMap{
+			"user_id":    "user-1",
+			"user_input": "remember this",
+		},
+		State: entity.MemoryTaskStatePending,
+		Extraction: entity.JSONSlice{
+			map[string]interface{}{"message_id": float64(7), "content": "remembered"},
+		},
+		LastError: "",
+	}
+	if err = db.Create(memoryTask).Error; err != nil {
+		t.Fatalf("create memory task: %v", err)
+	}
+
+	var stored entity.MemoryTask
+	if err = db.First(&stored, "task_id = ?", memoryTask.TaskID).Error; err != nil {
+		t.Fatalf("load memory task: %v", err)
+	}
+	if stored.State != entity.MemoryTaskStatePending {
+		t.Fatalf("memory task state = %q, want %q", stored.State, entity.MemoryTaskStatePending)
+	}
+	if got := stored.Input["user_input"]; got != "remember this" {
+		t.Fatalf("memory task input user_input = %#v, want %q", got, "remember this")
+	}
+	if len(stored.Extraction) != 1 {
+		t.Fatalf("memory task extraction length = %d, want 1", len(stored.Extraction))
+	}
 
 	// Verify idempotency
 	if err = autoMigrateRuntimeModels(ctx, db); err != nil {
 		t.Fatalf("second autoMigrateRuntimeModels failed: %v", err)
+	}
+}
+
+func TestAutoMigrateRuntimeModelsAddsIngestionTaskFilterIndexes(t *testing.T) {
+	db := setupTaskTestDB(t)
+	indexes := []string{"idx_ingestion_task_user_id", "idx_ingestion_task_status"}
+	for _, name := range indexes {
+		if err := db.Migrator().DropIndex(&entity.IngestionTask{}, name); err != nil {
+			t.Fatalf("drop index %s: %v", name, err)
+		}
+	}
+	if err := autoMigrateRuntimeModels(t.Context(), db); err != nil {
+		t.Fatalf("migrate runtime models: %v", err)
+	}
+	for _, name := range indexes {
+		if !db.Migrator().HasIndex(&entity.IngestionTask{}, name) {
+			t.Errorf("missing task index %s after migration", name)
+		}
+	}
+}
+
+func prepareDuplicateIngestionTaskDB(t *testing.T) *gorm.DB {
+	t.Helper()
+
+	db := setupTaskTestDB(t)
+	if err := db.Migrator().DropIndex(&entity.IngestionTask{}, "idx_ingestion_task_document_id"); err != nil {
+		t.Fatalf("drop ingestion task unique index: %v", err)
+	}
+	if err := db.Exec("CREATE INDEX idx_ingestion_task_document_id ON ingestion_task(document_id)").Error; err != nil {
+		t.Fatalf("create legacy non-unique document index: %v", err)
+	}
+	return db
+}
+
+func seedDuplicateIngestionTasks(t *testing.T, db *gorm.DB, staleStatus string, stalePipelineLogID *string) {
+	t.Helper()
+
+	for _, task := range []*entity.IngestionTask{
+		{
+			ID:            "task-old",
+			UserID:        "user-1",
+			DocumentID:    "doc-duplicate",
+			DatasetID:     "kb-1",
+			Status:        staleStatus,
+			PipelineLogID: stalePipelineLogID,
+			BaseModel: entity.BaseModel{
+				CreateTime: int64Ptr(100),
+			},
+		},
+		{
+			ID:         "task-new",
+			UserID:     "user-1",
+			DocumentID: "doc-duplicate",
+			DatasetID:  "kb-1",
+			Status:     common.COMPLETED,
+			BaseModel: entity.BaseModel{
+				CreateTime: int64Ptr(200),
+			},
+		},
+	} {
+		if err := db.Create(task).Error; err != nil {
+			t.Fatalf("create task %s: %v", task.ID, err)
+		}
+	}
+}
+
+func TestRepairDuplicateIngestionTasksDeletesOnlyTerminalStaleRows(t *testing.T) {
+	db := prepareDuplicateIngestionTaskDB(t)
+	doneLogID := "run-done"
+	if err := db.Exec(`CREATE TABLE pipeline_operation_log (
+		id varchar(32) PRIMARY KEY,
+		document_id varchar(32) NOT NULL,
+		operation_status varchar(32) NOT NULL
+	)`).Error; err != nil {
+		t.Fatalf("create pipeline operation log table: %v", err)
+	}
+	if err := db.Exec(
+		"INSERT INTO pipeline_operation_log (id, document_id, operation_status) VALUES (?, ?, ?)",
+		doneLogID, "doc-duplicate", string(entity.TaskStatusDone),
+	).Error; err != nil {
+		t.Fatalf("create completed pipeline operation log: %v", err)
+	}
+	seedDuplicateIngestionTasks(t, db, common.COMPLETED, &doneLogID)
+
+	if err := repairDuplicateIngestionTasks(t.Context(), db); err != nil {
+		t.Fatalf("repairDuplicateIngestionTasks: %v", err)
+	}
+	var ids []string
+	if err := db.Model(&entity.IngestionTask{}).
+		Where("document_id = ?", "doc-duplicate").
+		Pluck("id", &ids).Error; err != nil {
+		t.Fatalf("list remaining ingestion tasks: %v", err)
+	}
+	if !reflect.DeepEqual(ids, []string{"task-new"}) {
+		t.Fatalf("remaining task ids = %v, want [task-new]", ids)
+	}
+	if err := repairDuplicateIngestionTasks(t.Context(), db); err != nil {
+		t.Fatalf("second repairDuplicateIngestionTasks: %v", err)
+	}
+}
+
+func TestRepairDuplicateIngestionTasksRejectsNonTerminalStaleRows(t *testing.T) {
+	for _, status := range common.ActiveTaskStatuses {
+		t.Run(status, func(t *testing.T) {
+			db := prepareDuplicateIngestionTaskDB(t)
+			seedDuplicateIngestionTasks(t, db, status, nil)
+
+			err := repairDuplicateIngestionTasks(t.Context(), db)
+			for _, want := range []string{"doc-duplicate", "task-old", status} {
+				if err == nil || !strings.Contains(err.Error(), want) {
+					t.Fatalf("repair error = %v, want it to contain %q", err, want)
+				}
+			}
+			var count int64
+			if err := db.Model(&entity.IngestionTask{}).
+				Where("document_id = ?", "doc-duplicate").
+				Count(&count).Error; err != nil {
+				t.Fatalf("count ingestion tasks: %v", err)
+			}
+			if count != 2 {
+				t.Fatalf("ingestion task count = %d, want 2 after failed repair", count)
+			}
+		})
+	}
+}
+
+func TestRepairDuplicateIngestionTasksRejectsOpenBoundPipelineLog(t *testing.T) {
+	db := prepareDuplicateIngestionTaskDB(t)
+	openLogID := "run-open"
+	if err := db.Exec(`CREATE TABLE pipeline_operation_log (
+		id varchar(32) PRIMARY KEY,
+		document_id varchar(32) NOT NULL,
+		operation_status varchar(32) NOT NULL
+	)`).Error; err != nil {
+		t.Fatalf("create pipeline operation log table: %v", err)
+	}
+	if err := db.Exec(
+		"INSERT INTO pipeline_operation_log (id, document_id, operation_status) VALUES (?, ?, ?)",
+		openLogID, "doc-duplicate", string(entity.TaskStatusRunning),
+	).Error; err != nil {
+		t.Fatalf("create open pipeline operation log: %v", err)
+	}
+	seedDuplicateIngestionTasks(t, db, common.FAILED, &openLogID)
+
+	err := repairDuplicateIngestionTasks(t.Context(), db)
+	for _, want := range []string{"doc-duplicate", "task-old", openLogID} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Fatalf("repair error = %v, want it to contain %q", err, want)
+		}
+	}
+	var count int64
+	if err := db.Model(&entity.IngestionTask{}).
+		Where("document_id = ?", "doc-duplicate").
+		Count(&count).Error; err != nil {
+		t.Fatalf("count ingestion tasks: %v", err)
+	}
+	if count != 2 {
+		t.Fatalf("ingestion task count = %d, want 2 after failed repair", count)
+	}
+}
+
+func TestRepairDuplicateIngestionTasksSupportsLegacySchemaWithoutPipelineLogID(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE ingestion_task (
+		id varchar(32) PRIMARY KEY,
+		user_id varchar(32) NOT NULL,
+		document_id varchar(32) NOT NULL,
+		dataset_id varchar(32) NOT NULL,
+		status varchar(32) NOT NULL,
+		create_time bigint NULL
+	)`).Error; err != nil {
+		t.Fatalf("create legacy ingestion_task table: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO ingestion_task
+		(id, user_id, document_id, dataset_id, status, create_time)
+		VALUES
+		('task-old', 'user-1', 'doc-duplicate', 'kb-1', 'COMPLETED', 100),
+		('task-new', 'user-1', 'doc-duplicate', 'kb-1', 'FAILED', 200)`).Error; err != nil {
+		t.Fatalf("seed legacy ingestion tasks: %v", err)
+	}
+
+	if err := repairDuplicateIngestionTasks(t.Context(), db); err != nil {
+		t.Fatalf("repairDuplicateIngestionTasks: %v", err)
+	}
+	var ids []string
+	if err := db.Table("ingestion_task").Pluck("id", &ids).Error; err != nil {
+		t.Fatalf("list remaining ingestion tasks: %v", err)
+	}
+	if !reflect.DeepEqual(ids, []string{"task-new"}) {
+		t.Fatalf("remaining task ids = %v, want [task-new]", ids)
+	}
+}
+
+// TestMigrateIngestionTaskPipelineLogID covers the upgrade path AutoMigrate
+// cannot handle on MySQL: an existing ingestion_task created before
+// pipeline_log_id existed must gain the column, and running the migration again
+// must be a no-op.
+func TestMigrateIngestionTaskPipelineLogID(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	ctx := context.Background()
+
+	// An ingestion_task table without the column, as created by an older build.
+	if err := db.Exec(`CREATE TABLE ingestion_task (
+		id varchar(32) PRIMARY KEY,
+		user_id varchar(32) NOT NULL,
+		document_id varchar(32) NOT NULL,
+		dataset_id varchar(32) NOT NULL,
+		status varchar(32) NOT NULL
+	)`).Error; err != nil {
+		t.Fatalf("create legacy table: %v", err)
+	}
+	migrator := db.Migrator()
+	if migrator.HasColumn(&entity.IngestionTask{}, "pipeline_log_id") {
+		t.Fatal("precondition failed: column already present")
+	}
+
+	if err := migrateIngestionTaskPipelineLogID(ctx, db); err != nil {
+		t.Fatalf("migrateIngestionTaskPipelineLogID: %v", err)
+	}
+	if !migrator.HasColumn(&entity.IngestionTask{}, "pipeline_log_id") {
+		t.Fatal("expected pipeline_log_id to be added")
+	}
+
+	// Idempotent: a second run must not fail on the existing column.
+	if err := migrateIngestionTaskPipelineLogID(ctx, db); err != nil {
+		t.Fatalf("second migrateIngestionTaskPipelineLogID: %v", err)
+	}
+
+	// Missing table is a no-op, not an error.
+	fresh, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open second sqlite: %v", err)
+	}
+	if err := migrateIngestionTaskPipelineLogID(ctx, fresh); err != nil {
+		t.Fatalf("migration on a table-less database should be a no-op: %v", err)
+	}
+}
+
+// TestMigrateIngestionLogRunIdentity verifies that legacy pipeline and event
+// tables gain the run identity columns without assigning a fake run number to
+// pre-existing rows. A NULL legacy run_count lets the unique document/run
+// index protect only newly allocated runs.
+func TestMigrateIngestionLogRunIdentity(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	ctx := context.Background()
+	if err := db.Exec(`CREATE TABLE pipeline_operation_log (
+		id varchar(32) PRIMARY KEY,
+		document_id varchar(32) NOT NULL
+	)`).Error; err != nil {
+		t.Fatalf("create legacy pipeline log table: %v", err)
+	}
+	if err := db.Exec(`CREATE TABLE ingestion_task_log (
+		id integer PRIMARY KEY,
+		task_id varchar(32) NOT NULL,
+		checkpoint text NOT NULL,
+		phase integer,
+		component varchar(64),
+		message text
+	)`).Error; err != nil {
+		t.Fatalf("create legacy ingestion event table: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO pipeline_operation_log (id, document_id) VALUES ('legacy-log', 'doc-1')`).Error; err != nil {
+		t.Fatalf("seed legacy pipeline log: %v", err)
+	}
+
+	if err := migrateIngestionLogRunIdentity(ctx, db); err != nil {
+		t.Fatalf("migrateIngestionLogRunIdentity: %v", err)
+	}
+	migrator := db.Migrator()
+	for _, column := range []string{"run_count", "pipeline_version_id"} {
+		if !migrator.HasColumn(&entity.PipelineOperationLog{}, column) {
+			t.Fatalf("pipeline_operation_log missing %s", column)
+		}
+	}
+	for _, column := range []string{"pipeline_log_id", "event_type"} {
+		if !migrator.HasColumn(&entity.IngestionTaskLog{}, column) {
+			t.Fatalf("ingestion_task_log missing %s", column)
+		}
+	}
+	if !migrator.HasIndex(&entity.IngestionTaskLog{}, "idx_ingestion_task_log_pipeline_id") {
+		t.Fatal("ingestion_task_log missing pipeline event index")
+	}
+	if !migrator.HasIndex(&entity.PipelineOperationLog{}, "idx_pipeline_operation_log_document_run") {
+		t.Fatal("pipeline_operation_log missing document run unique index")
+	}
+
+	var legacyRunCount *int
+	if err := db.Raw(`SELECT run_count FROM pipeline_operation_log WHERE id = 'legacy-log'`).Scan(&legacyRunCount).Error; err != nil {
+		t.Fatalf("read legacy run count: %v", err)
+	}
+	if legacyRunCount != nil {
+		t.Fatalf("legacy run_count = %d, want NULL", *legacyRunCount)
+	}
+	var legacyVersionID *string
+	if err := db.Raw(`SELECT pipeline_version_id FROM pipeline_operation_log WHERE id = 'legacy-log'`).Scan(&legacyVersionID).Error; err != nil {
+		t.Fatalf("read legacy pipeline version: %v", err)
+	}
+	if legacyVersionID != nil {
+		t.Fatalf("legacy pipeline_version_id = %q, want NULL", *legacyVersionID)
+	}
+	if err := db.Exec(`INSERT INTO pipeline_operation_log (id, document_id, run_count) VALUES ('run-1', 'doc-1', 1)`).Error; err != nil {
+		t.Fatalf("insert first numbered run: %v", err)
+	}
+	if err := db.Exec(`INSERT INTO pipeline_operation_log (id, document_id, run_count) VALUES ('run-2', 'doc-1', 1)`).Error; err == nil {
+		t.Fatal("duplicate numbered run was accepted")
+	}
+
+	if err := migrateIngestionLogRunIdentity(ctx, db); err != nil {
+		t.Fatalf("second migrateIngestionLogRunIdentity: %v", err)
+	}
+}
+
+type ingestionLogSchemaMigratorStub struct {
+	indexExistsAfterCreate bool
+}
+
+func (s *ingestionLogSchemaMigratorStub) HasIndex(any, string) bool {
+	return s.indexExistsAfterCreate
+}
+
+func (s *ingestionLogSchemaMigratorStub) CreateIndex(any, string) error {
+	s.indexExistsAfterCreate = true
+	return errors.New("connection closed after index creation")
+}
+
+func TestCreateIngestionLogSchemaObjectsRechecksAfterCreateError(t *testing.T) {
+	migrator := &ingestionLogSchemaMigratorStub{}
+	if err := createIngestionLogIndexIfMissing(migrator, &entity.IngestionTaskLog{}, "idx_ingestion_task_log_pipeline_id", "add ingestion_task_log pipeline index"); err != nil {
+		t.Fatalf("createIngestionLogIndexIfMissing: %v", err)
+	}
+}
+
+// uniqueColumnType is a gorm.ColumnType that answers Unique() and nothing
+// else, which is all MigrateColumnUnique branches on.
+type uniqueColumnType struct {
+	unique bool
+}
+
+func (c uniqueColumnType) Name() string                      { return "document_id" }
+func (c uniqueColumnType) DatabaseTypeName() string          { return "VARCHAR" }
+func (c uniqueColumnType) ColumnType() (string, bool)        { return "varchar(32)", true }
+func (c uniqueColumnType) PrimaryKey() (bool, bool)          { return false, true }
+func (c uniqueColumnType) AutoIncrement() (bool, bool)       { return false, true }
+func (c uniqueColumnType) Length() (int64, bool)             { return 32, true }
+func (c uniqueColumnType) DecimalSize() (int64, int64, bool) { return 0, 0, false }
+func (c uniqueColumnType) Nullable() (bool, bool)            { return false, true }
+func (c uniqueColumnType) Unique() (bool, bool)              { return c.unique, true }
+func (c uniqueColumnType) ScanType() reflect.Type            { return reflect.TypeOf("") }
+func (c uniqueColumnType) Comment() (string, bool)           { return "", false }
+func (c uniqueColumnType) DefaultValue() (string, bool)      { return "", false }
+
+// TestNamedIndexMigratorSkipsPhantomUniqueDrop pins the behaviour that kept
+// failing every startup on MySQL: a unique index created as an index is not a
+// column-level unique constraint, so nothing exists to drop. The other three
+// combinations must fall through to the stock migrator, which decides whether
+// the constraint it names has to be created.
+func TestNamedIndexMigratorSkipsPhantomUniqueDrop(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		unique   bool
+		tag      bool
+		wantSkip bool
+	}{
+		{"named index with no unique tag", true, false, true},
+		{"column is not unique", false, false, false},
+		{"unique tag already set", false, true, false},
+		{"index and tag agree", true, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := phantomUniqueDrop(&schema.Field{Unique: tc.tag}, uniqueColumnType{unique: tc.unique})
+			if got != tc.wantSkip {
+				t.Fatalf("phantomUniqueDrop(unique=%v, tag=%v) = %v, want %v", tc.unique, tc.tag, got, tc.wantSkip)
+			}
+		})
+	}
+}
+
+// TestIsPostgresDuplicateObjectErr pins the typed classification the
+// Vastbase convergence skip relies on: only the three duplicate-object
+// SQLSTATEs count as convergence, and errors that merely contain "already
+// exists" in their text — a non-pq error, or a pq error with another code —
+// must surface instead of being suppressed.
+func TestIsPostgresDuplicateObjectErr(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"relation exists", &pq.Error{Code: "42P07", Message: `relation "user" already exists`}, true},
+		{"column exists", &pq.Error{Code: "42701", Message: `column "foo" of relation "user" already exists`}, true},
+		{"object exists", &pq.Error{Code: "42710", Message: `constraint "c" for relation "user" already exists`}, true},
+		{"wrapped relation exists", fmt.Errorf("auto migrate: %w", &pq.Error{Code: "42P07"}), true},
+		{"unique violation", &pq.Error{Code: "23505", Message: "duplicate key value violates unique constraint", Detail: "Key (id)=(1) already exists."}, false},
+		{"text only", errors.New(`relation "user" already exists`), false},
+		{"other pq error", &pq.Error{Code: "42602", Message: "invalid name"}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isPostgresDuplicateObjectErr(tc.err); got != tc.want {
+				t.Fatalf("isPostgresDuplicateObjectErr(%v) = %v, want %v", tc.err, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestWrappersExposeEverythingWrappedTypeDoes is the guard that made the
+// concrete embedding necessary: embedding gorm's interfaces instead would drop
+// the twenty migrator methods and the three dialector methods that gorm reaches
+// by type assertion, and losing one surfaces as a panic part-way through
+// AutoMigrate. Embedding the concrete types promotes all of them by
+// construction; this catches a future refactor that reverts to the interfaces.
+func TestWrappersExposeEverythingWrappedTypeDoes(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		wrapped  reflect.Type
+		wrapper  reflect.Type
+		override string
+	}{
+		{"dialector", reflect.TypeOf(&mysql.Dialector{}), reflect.TypeOf(migrationAwareDialector{}), "Migrator"},
+		{"migrator", reflect.TypeOf(mysql.Migrator{}), reflect.TypeOf(namedIndexMigrator{}), "MigrateColumnUnique"},
+		{"dialector", reflect.TypeOf(&postgres.Dialector{}), reflect.TypeOf(vastbaseDialector{}), "Migrator"},
+		{"migrator", reflect.TypeOf(postgres.Migrator{}), reflect.TypeOf(vastbaseMigrator{}), "MigrateColumnUnique"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for i := 0; i < tc.wrapped.NumMethod(); i++ {
+				name := tc.wrapped.Method(i).Name
+				if name == tc.override {
+					continue
+				}
+				if _, ok := tc.wrapper.MethodByName(name); !ok {
+					t.Errorf("wrapper does not expose %s; gorm reaches some capabilities by type assertion on the wrapped type rather than through its interfaces", name)
+				}
+			}
+		})
+	}
+}
+
+func TestAutoMigrateRuntimeModelsNamesFailingTable(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sql database: %v", err)
+	}
+	if err = sqlDB.Close(); err != nil {
+		t.Fatalf("close sql database: %v", err)
+	}
+
+	err = autoMigrateRuntimeModels(t.Context(), db)
+	if err == nil || !strings.Contains(err.Error(), "runtime table ingestion_task") {
+		t.Fatalf("autoMigrateRuntimeModels error = %v, want failing table name", err)
+	}
+}
+
+func TestAutoMigrateLeavesEnterpriseEvaluationHistoryUntouched(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tables := []string{"evaluation_datasets", "evaluation_cases", "evaluation_runs", "evaluation_results"}
+	for _, table := range tables {
+		for _, model := range autoMigrateModels() {
+			stmt := &gorm.Statement{DB: db}
+			if err := stmt.Parse(model); err != nil {
+				t.Fatal(err)
+			}
+			if stmt.Schema.Table == table {
+				t.Fatalf("OSS registers %s", table)
+			}
+		}
+		if err := db.Exec("CREATE TABLE " + table + " (id TEXT PRIMARY KEY, history TEXT)").Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Exec("INSERT INTO " + table + " VALUES ('historical', 'keep')").Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := autoMigrateRuntimeModels(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	if err := migrateResourceUserIDs(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range tables {
+		var history string
+		if err := db.Table(table).Select("history").Where("id = ?", "historical").Scan(&history).Error; err != nil {
+			t.Fatal(err)
+		}
+		if history != "keep" {
+			t.Fatalf("%s history changed: %q", table, history)
+		}
+		if db.Migrator().HasColumn(table, "user_id") {
+			t.Fatalf("OSS altered %s", table)
+		}
 	}
 }

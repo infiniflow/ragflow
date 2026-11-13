@@ -166,6 +166,9 @@ type DataOperationsComponent struct {
 // NewDataOperationsComponent constructs a DataOperations from the
 // DSL param map.
 func NewDataOperationsComponent(params map[string]any) (Component, error) {
+	if err := validateDataOperationsParams(componentNameDataOperations, params, false); err != nil {
+		return nil, runtime.NewUserFacingError(err.Error())
+	}
 	p := &dataOperationsParam{}
 	if err := p.Update(params); err != nil {
 		return nil, fmt.Errorf("DataOperations: param update: %w", err)
@@ -185,7 +188,7 @@ func (d *DataOperationsComponent) Name() string { return d.name }
 // Invoke loads input_objects from the configured query refs, then
 // dispatches to the operation-specific helper.
 func (d *DataOperationsComponent) Invoke(ctx context.Context, db *gorm.DB, _ map[string]any) (map[string]any, error) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("DataOperations: %w", err)
 	}

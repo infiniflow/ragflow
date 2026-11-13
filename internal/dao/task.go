@@ -18,6 +18,8 @@ package dao
 
 import (
 	"context"
+
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 
 	"gorm.io/gorm"
@@ -47,7 +49,7 @@ func (dao *TaskDAO) CreateMany(ctx context.Context, db *gorm.DB, tasks []*entity
 // GetByID gets task by ID
 func (dao *TaskDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.Task, error) {
 	var task entity.Task
-	err := db.WithContext(ctx).Where("id = ?", id).First(&task).Error
+	err := db.WithContext(ctx).Take(&task, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -60,6 +62,18 @@ func (dao *TaskDAO) UpdateProgress(ctx context.Context, db *gorm.DB, id string, 
 		"progress":     progress,
 		"progress_msg": progressMsg,
 	}).Error
+}
+
+// MarkActiveMemoryTaskFailed marks an unfinished memory task's UI projection
+// as failed without overwriting a task that completed or failed concurrently.
+func (dao *TaskDAO) MarkActiveMemoryTaskFailed(ctx context.Context, db *gorm.DB, id, progressMsg string) (bool, error) {
+	result := db.WithContext(ctx).Model(&entity.Task{}).
+		Where("id = ? AND task_type = ? AND progress >= 0 AND progress < 1", id, common.TaskTypeMemory).
+		Updates(map[string]any{
+			"progress":     -1,
+			"progress_msg": progressMsg,
+		})
+	return result.RowsAffected == 1, result.Error
 }
 
 // DeleteIngestionTasksByDocIDs deletes ingestion tasks by document IDs (hard delete)
@@ -77,12 +91,6 @@ func (dao *TaskDAO) DeleteByDocIDs(ctx context.Context, db *gorm.DB, docIDs []st
 		return 0, nil
 	}
 	result := db.WithContext(ctx).Unscoped().Where("doc_id IN ?", docIDs).Delete(&entity.Task{})
-	return result.RowsAffected, result.Error
-}
-
-// DeleteByTenantID deletes all tasks by tenant ID (hard delete via document join)
-func (dao *TaskDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("doc_id IN (SELECT id FROM document WHERE tenant_id = ?)", tenantID).Delete(&entity.Task{})
 	return result.RowsAffected, result.Error
 }
 

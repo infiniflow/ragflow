@@ -7,7 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { buildOptions } from '@/utils/form';
 import { loader } from '@monaco-editor/react';
 import { X } from 'lucide-react';
-import { ReactNode } from 'react';
+import { ReactNode, useCallback } from 'react';
 import { useFieldArray, useFormContext } from 'react-hook-form';
 import { TypesWithArray, WebhookRequestParameters } from '../../../constant';
 import { DynamicFormHeader } from '../../components/dynamic-fom-header';
@@ -24,8 +24,10 @@ type SelectKeysProps = {
   nodeId?: string;
   isObject?: boolean;
   operatorList: WebhookRequestParameters[];
+  keyInputPattern?: RegExp;
 };
 
+/** Edits request fields, applying the supplied key pattern when filtering names. */
 export function DynamicRequest({
   name,
   label,
@@ -34,6 +36,7 @@ export function DynamicRequest({
   operatorField = 'type',
   requiredField = 'required',
   operatorList,
+  keyInputPattern,
 }: SelectKeysProps) {
   const form = useFormContext();
 
@@ -42,18 +45,23 @@ export function DynamicRequest({
     control: form.control,
   });
 
+  // append is not a change event, so trigger manually to surface
+  // the required/duplicate errors of the freshly added empty row.
+  const handleAdd = useCallback(() => {
+    append({
+      [keyField]: '',
+      [operatorField]: TypesWithArray.String,
+      [requiredField]: false,
+    });
+    form.trigger(name);
+  }, [append, form, keyField, name, operatorField, requiredField]);
+
   return (
     <section className="space-y-2">
       <DynamicFormHeader
         label={label}
         tooltip={tooltip}
-        onClick={() =>
-          append({
-            [keyField]: '',
-            [operatorField]: TypesWithArray.String,
-            [requiredField]: false,
-          })
-        }
+        onClick={handleAdd}
       ></DynamicFormHeader>
       <div className="space-y-5">
         {fields.map((field, index) => {
@@ -64,11 +72,13 @@ export function DynamicRequest({
           return (
             <section key={field.id} className="flex gap-2">
               <div className="flex-1 space-y-3 min-w-0">
-                <div className="flex items-center gap-2">
+                <div className="flex items-start gap-2">
                   <RAGFlowFormItem name={keyFieldAlias} className="flex-1 ">
-                    <KeyInput></KeyInput>
+                    <KeyInput searchValue={keyInputPattern}></KeyInput>
                   </RAGFlowFormItem>
-                  <Separator className="w-2" />
+                  <div className="flex h-8 items-center">
+                    <Separator className="w-2" />
+                  </div>
                   <RAGFlowFormItem name={operatorFieldAlias} className="flex-1">
                     {(field) => (
                       <SelectWithSearch
@@ -80,13 +90,17 @@ export function DynamicRequest({
                       ></SelectWithSearch>
                     )}
                   </RAGFlowFormItem>
-                  <Separator className="w-2" />
+                  <div className="flex h-8 items-center">
+                    <Separator className="w-2" />
+                  </div>
                   <RAGFlowFormItem name={requiredFieldAlias}>
                     {(field) => (
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      ></Switch>
+                      <div className="flex h-8 items-center">
+                        <Switch
+                          checked={field.value}
+                          onCheckedChange={field.onChange}
+                        ></Switch>
+                      </div>
                     )}
                   </RAGFlowFormItem>
                 </div>

@@ -24,8 +24,8 @@ package handler
 //
 //   - max body size (with the 10 MB cap at agent_api.py:1652)
 //   - IP whitelist (CIDR + exact match)
-//   - rate limit (token bucket via redis.EvalTokenBucketStrict — strict
-//     fail-closed; see redis.go)
+//   - rate limit (token bucket via kvrocks.EvalTokenBucketStrict — strict
+//     fail-closed; see kvrocks.go)
 //   - token auth (header check)
 //   - basic auth (HTTP Basic)
 //   - JWT (HS/RS256, audience/issuer/required-claims)
@@ -48,7 +48,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"go.uber.org/zap"
 
-	rediscli "ragflow/internal/engine/redis"
+	kvrocks "ragflow/internal/engine/kvrocks"
 )
 
 const (
@@ -60,13 +60,8 @@ const (
 	bytesPerKB int64 = 1000
 	bytesPerMB int64 = bytesPerKB * 1000
 
-	// webhookBodyMaxBytes is the hard ceiling above which a configured
-	// max_body_size is rejected at config-validation time. Stated
-	// in decimal MB to match the kb/mb unit base above; 10 MB
-	// decimal = 10 000 000 bytes. The python reference
-	// (agent_api.py:1652) uses 10 * 1024 * 1024 = 10 485 760 bytes,
-	// so this is ~486 KB stricter than python.
-	webhookBodyMaxBytes int64 = 10 * bytesPerMB
+	// webhookBodyMaxBytes is the default and hard maximum request body size.
+	webhookBodyMaxBytes int64 = common.MaxWebhookRequestBodyBytes
 
 	// webhookRateLimitTimeout is the redis call timeout used for the
 	// strict token-bucket lookup. Short on purpose — a security gate
@@ -149,12 +144,11 @@ func validateMaxBodySize(c *gin.Context, cfg map[string]any) error {
 	return nil
 }
 
-// parseMaxBodySize returns the byte limit configured by
-// `max_body_size` (with the 10 MB cap enforced) or 0 when no limit
-// is configured. The handler uses this to wrap c.Request.Body in
-// http.MaxBytesReader so the actual stream read is bounded — the
-// Content-Length header check alone is insufficient because a client
-// can advertise a small Content-Length and stream more.
+// parseMaxBodySize returns the configured body limit, defaulting to 10 MB
+// when `max_body_size` is absent. Configured values cannot exceed that cap.
+// The handler wraps c.Request.Body in http.MaxBytesReader so the actual stream
+// read is bounded — the Content-Length header check alone is insufficient
+// because a client can advertise a small Content-Length and stream more.
 //
 // Unit base: 1 kb = 1 000 B, 1 mb = 1 000 000 B (SI decimal). Per
 // user request; note this DIVERGES from the python reference
@@ -166,11 +160,18 @@ func validateMaxBodySize(c *gin.Context, cfg map[string]any) error {
 // the 10 MB cap. We check the parsed number against the cap before
 // multiplying.
 func parseMaxBodySize(cfg map[string]any) (int64, error) {
-	raw, ok := cfg["max_body_size"].(string)
-	if !ok || raw == "" {
-		return 0, nil
+	rawValue, exists := cfg["max_body_size"]
+	if !exists || rawValue == nil {
+		return webhookBodyMaxBytes, nil
+	}
+	raw, ok := rawValue.(string)
+	if !ok {
+		return 0, fmt.Errorf("invalid max_body_size format")
 	}
 	sizeStr := strings.ToLower(strings.TrimSpace(raw))
+	if sizeStr == "" {
+		return webhookBodyMaxBytes, nil
+	}
 	var limit int64
 	switch {
 	case strings.HasSuffix(sizeStr, "kb"):
@@ -202,8 +203,16 @@ func parseMaxBodySize(cfg map[string]any) (int64, error) {
 
 // validateIPWhitelist mirrors python agent_api.py:1660-1679. Empty
 // list → allow. Supports CIDR ("10.0.0.0/8") and exact ("1.2.3.4").
-// The client IP comes from gin's c.ClientIP() which honours
-// X-Forwarded-For when trusted proxies are configured.
+//
+// This is a security gate, so the address it checks must be one the
+// caller cannot choose. c.ClientIP() takes X-Forwarded-For / X-Real-IP
+// only when the direct peer is in the engine's trusted proxy list and
+// falls back to the socket peer otherwise; the engine is configured via
+// common.ConfigureTrustedProxies (default: loopback, the nginx bundled
+// in the image) instead of gin's trust-everything default, which let any
+// caller send "X-Forwarded-For: <an-allowed-ip>" and pass. The socket
+// peer alone (c.RemoteIP()) is not usable here because behind that
+// bundled nginx it is 127.0.0.1 for every request.
 func validateIPWhitelist(c *gin.Context, cfg map[string]any) error {
 	whitelist, _ := cfg["ip_whitelist"].([]any)
 	if len(whitelist) == 0 {
@@ -283,7 +292,7 @@ func validateRateLimit(ctx context.Context, canvasID string, cfg map[string]any)
 	newCtx, cancel := context.WithTimeout(ctx, webhookRateLimitTimeout)
 	defer cancel()
 
-	rdb := rediscli.Get()
+	rdb := kvrocks.Get()
 	if rdb == nil {
 		return fmt.Errorf("rate limit error: redis not initialised")
 	}

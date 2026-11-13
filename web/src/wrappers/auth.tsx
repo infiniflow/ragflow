@@ -14,17 +14,25 @@
  *  limitations under the License.
  */
 
+import {
+  redirectToLogin,
+  redirectToSpecifiedPage,
+} from '@/ee/utils/private-util';
 import { useAuth } from '@/hooks/auth-hooks';
-import { redirectToLogin } from '@/utils/authorization-util';
 import { Outlet } from 'react-router';
 
-export default function AuthWrapper() {
-  const { isLogin } = useAuth();
+export default () => {
+  const { isLogin, redirectUrl } = useAuth();
+
   if (isLogin === true) {
+    if (redirectUrl) {
+      redirectToSpecifiedPage(redirectUrl);
+    }
+
     return <Outlet />;
   } else if (isLogin === false) {
     redirectToLogin();
   }
 
   return <></>;
-}
+};

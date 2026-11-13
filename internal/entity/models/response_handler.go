@@ -17,6 +17,7 @@
 package models
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -27,7 +28,7 @@ import (
 
 // HandleNonStreamingResponse processes a complete non-streaming chat
 // response using the ParserConfig's ResponseParser to extract usage.
-func HandleNonStreamingResponse(body []byte, modelUsage *common.ModelUsage, chatConfig *ChatConfig, cfg *ParserConfig) (*ChatResponse, error) {
+func HandleNonStreamingResponse(ctx context.Context, body []byte, modelUsage *common.ModelUsage, chatConfig *ChatConfig, cfg *ParserConfig) (*ChatResponse, error) {
 	var result map[string]any
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
@@ -52,11 +53,16 @@ func HandleNonStreamingResponse(body []byte, modelUsage *common.ModelUsage, chat
 	}
 
 	if usage != nil {
+		// Charge the run that made this call, if it is budgeted. A no-op for
+		// every other caller, which is why it sits in the shared response
+		// handler rather than in the agentic loop: the token count only exists
+		// here.
+		common.ChargeTokens(ctx, usage.TotalTokens)
 		recordResponseUsage(modelUsage, extractRequestID(result), usage, "chat")
 		if chatConfig != nil {
 			chatConfig.UsageResult = usage
 			model, _ := result["model"].(string)
-			common.Info("NonStreamUsage", zap.String("model", model), zap.Int("prompt", usage.PromptTokens), zap.Int("completion", usage.CompletionTokens), zap.Int("total", usage.TotalTokens))
+			common.InfoCtx(ctx, "NonStreamUsage", zap.String("model", model), zap.Int("prompt", usage.PromptTokens), zap.Int("completion", usage.CompletionTokens), zap.Int("total", usage.TotalTokens))
 		}
 	}
 

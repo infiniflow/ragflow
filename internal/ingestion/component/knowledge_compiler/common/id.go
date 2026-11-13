@@ -24,6 +24,16 @@ import (
 // re-runs regenerate them deterministically; if the encoding or hash ever
 // changes after GA, a backfill/migration of existing compiled rows is
 // required before rollout.
+//
+// ID FORMAT: the digest is a 256-bit SHA-256 over the length-prefixed parts
+// above, so every id is exactly 64 hex characters. A 64-bit hash of ":"-joined
+// parts would be cheaper, but a part containing ":" could forge another row's
+// id; the length-prefixed encoding above is what closes that forgery gap (M10),
+// and the 256-bit digest keeps distinct products from colliding.
+//
+// Ids are only ever compared within a runtime — cleanup is scoped by
+// doc/template columns, never by id — so a document recompiled under a
+// different row-id scheme has its rows rewritten instead of duplicated.
 func StableRowID(parts ...string) string {
 	h := sha256.New()
 	var lenBuf [4]byte

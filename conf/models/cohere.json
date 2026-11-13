@@ -18,7 +18,8 @@
       "context_length": 131072,
       "max_output": 65536,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ]
     },
     {
@@ -58,7 +59,8 @@
       "context_length": 131072,
       "max_output": 8192,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ]
     },
     {

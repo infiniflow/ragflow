@@ -14,11 +14,17 @@ import (
 
 // PipelineMetrics records diagnostic counts at each pipeline stage.
 type PipelineMetrics struct {
-	BoxesInitial   int
-	BoxesTextMerge int
-	BoxesVertMerge int
-	BoxesFinal     int
-	TablesCount    int
+	BoxesInitial int
+	// BoxesTOCRemoved / BoxesHeaderFooterRemoved count the boxes dropped by the
+	// optional box-level content removal passes, so the box budget can be
+	// reconciled: BoxesInitial - BoxesTOCRemoved - BoxesHeaderFooterRemoved >=
+	// BoxesTextMerge.
+	BoxesTOCRemoved          int
+	BoxesHeaderFooterRemoved int
+	BoxesTextMerge           int
+	BoxesVertMerge           int
+	BoxesFinal               int
+	TablesCount              int
 }
 
 // ParseResult encapsulates all outputs from a single Parse() call.
@@ -95,17 +101,35 @@ type TextBox struct {
 	Top, Bottom float64
 	Text        string
 	PageNumber  int
+	// HasPageNumber distinguishes a box whose PageNumber is a real page index
+	// (including page 0, the first page, which is 0-based) from a box that was
+	// built without page metadata. Without it, code that wants to skip the
+	// page check when metadata is absent cannot tell "page 0" apart from
+	// "no page", so the legitimate first page would be treated as missing and
+	// matched against every other page's positions.
+	HasPageNumber bool
 	// Pages carries the full set of page numbers a box spans, when it is a
 	// single logical region split across consecutive pages (e.g. a table
 	// merged across pages by MergeTablesAcrossPages). When non-empty it
 	// overrides PageNumber for page-span computation in BoxesToSections, so a
 	// cross-page merged table records every page it occupies (not just the
 	// anchor page).
-	Pages      []int
+	Pages []int
+	// Positions retains each page's own rectangle for a box that spans pages
+	// (a cross-page merged table). BoxesToSections prefers them over Pages so
+	// every page is cropped with its own page-local geometry instead of one
+	// page's rectangle being applied to the whole span.
+	Positions  []Position
 	LayoutType string
 	LayoutNo   string
-	ColID      int
-	R          int
+	// FigureBounds retains DLA geometry in PDF points until figure consolidation.
+	FigureBounds *Position
+	ColID        int
+	// HasTableAnnotations marks that the post-TSR table annotation pass ran
+	// for this box. R/C zero values are otherwise indistinguishable from
+	// "not annotated".
+	HasTableAnnotations bool
+	R                   int
 	// IsOCR marks a box produced by an OCR pass (ocrDetectAndRecognize /
 	// ocrMergeChars), as opposed to one built from embedded PDF chars
 	// (CharsToBoxes). It scopes OCR-only post-processing (see layout.Dedup*)
@@ -165,7 +189,6 @@ func CollectFigures(sections []Section) []Section {
 
 // TableItem represents a detected table or figure region.
 type TableItem struct {
-	ImageB64  string
 	Rows      [][]string
 	Cells     []TSRCell
 	Positions []Position
@@ -174,13 +197,28 @@ type TableItem struct {
 	CropOffY  float64
 	Caption   string
 
+	// RegionPositions preserves the table crop rectangle on each merged page.
+	// It is a cache derived from Positions (one union rectangle per page,
+	// with the anchor page overridden by Region*); extend it whenever
+	// Positions grows.
+	RegionPositions                                  []Position
 	RegionLeft, RegionRight, RegionTop, RegionBottom float64
 	NoMerge                                          bool
 	Grid                                             [][]TSRCell
+	// HeaderRows is the number of leading header rows detected when the table
+	// was assembled. It is used by the cross-page merge guard to compare
+	// table headers without re-deriving them from scratch.
+	HeaderRows int
 	// Page is the 0-based page index this table was detected on. It is set
 	// by the pipeline and used by parity/replay harnesses to map replay
 	// intermediates (which are keyed by page) back onto the correct table.
 	Page int
+	// RenderVH marks tables assembled by an EE V/H (vertical/horizontal span)
+	// assembler. It is false for every OSS-built table; the EE tree's
+	// AttachSpanInfo sets it and the EE tree's ConstructTableVH renders those
+	// tables. It is a plain (non-build-tagged) field so the shared
+	// ConstructTable can dispatch without branching on the edition.
+	RenderVH bool
 }
 
 // TSRCell represents one table cell from TSR.
@@ -193,6 +231,11 @@ type TSRCell struct {
 	// so the production table assembly needs it to de-duplicate rows/columns
 	// the same way Python does.
 	Score float64
+	// ColSpan / RowSpan record grid span from the v/h edge-clustering
+	// assembler (deepdoc/vision/tsr.py port). 0 means no span. They are set
+	// only by the EE V/H builder; the OSS pipeline leaves them at zero.
+	ColSpan int
+	RowSpan int
 }
 
 func (c TSRCell) Bounds() (float64, float64, float64, float64) {
@@ -237,6 +280,29 @@ type ParserConfig struct {
 	// nil/empty means parse all pages. Ranges beyond the document are clamped
 	// at parse time; fully out-of-range ranges are skipped.
 	Pages [][]int
+	// RemoveTOC enables box-level table-of-contents page removal in
+	// Parser.buildLayout. Detection relies on leader-dot boxes and per-box
+	// geometry that are destroyed by the later TextMerge pass, so it is gated
+	// onto the box-level pipeline there rather than the section-level
+	// post-process.
+	RemoveTOC bool
+	// RemoveHeaderFooter enables box-level running header / footer removal in
+	// Parser.buildLayout. It operates on intact box geometry (page zones and
+	// cross-page text repetition) before TextMerge can fold a header box into
+	// a body section.
+	RemoveHeaderFooter bool
+	// OnPageDone, when set, is called as each page finishes, from the worker
+	// that parsed it — not after every page has been submitted — so the first
+	// report arrives with the first completed page on any document size (done
+	// counts completed pages, in completion order; total is the number of
+	// pages to process). Calls are ordered and serialized but run on page
+	// workers, so the callback must be fast and non-blocking. It lets callers
+	// surface parse progress without the parser knowing about any progress
+	// sink; nil disables the callback at zero cost.
+	OnPageDone func(done, total int)
+	// OnModelCall wraps one DeepDOC model operation. It lets the caller report
+	// long-running inference without coupling the parser to a progress sink.
+	OnModelCall func(ctx context.Context, operation string) func()
 }
 
 // DefaultParserConfig returns a ParserConfig with sensible defaults.
@@ -353,6 +419,18 @@ type TableBuilder interface {
 	Name() string
 	DetectCells(ctx context.Context, cropped image.Image) ([]TSRCell, error)
 	GroupCells(cells []TSRCell) [][]TSRCell
+	// FinalizeGrid turns the annotated structure grid plus the table's
+	// OCR/text boxes into the final grid. The DeepDoc builder already
+	// folds OCR text into the grid inline during processOneTable's box-RC
+	// grouping, so its implementation is the identity function; an EE V/H
+	// builder that defers OCR overlay to after structure grouping performs
+	// the overlay here.
+	FinalizeGrid(annotGrid [][]TSRCell, boxes []TextBox) [][]TSRCell
+	// AttachSpanInfo attaches any builder-specific span geometry onto the
+	// assembled table item. The DeepDoc builder's TableItem carries no
+	// such geometry, so its implementation is a no-op; an EE V/H builder
+	// uses this step to attach V/H span info.
+	AttachSpanInfo(item *TableItem)
 }
 
 // Rectangular is any 2D axis-aligned rectangle that can report its bounds.

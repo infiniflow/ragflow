@@ -4,7 +4,7 @@ title: Channel Access and Configuration
 sidebar_label: Channel Access and Configuration
 slug: /channel_access_and_configuration
 sidebar_custom_props: {
-  categoryIcon: LucideMessagesSquare
+  categoryIcon: LucideSettings
 }
 ---
 
@@ -177,7 +177,7 @@ Usage:
 
 The credentials for `Webhook` and `WebSocket` cannot be mixed. When selecting `WebSocket`, first create a smart bot in WeCom, then fill the obtained `BotID` and `Secret` into RAGFlow. When selecting `Webhook`, fill in `CorpID`, `AgentID`, `Secret`, `Token`, and `AESKey` according to the WeCom application callback configuration.
 
-After saving the channel, connect the WeCom channel to a Chat. After the connection succeeds, users can send messages to the bot in WeCom, and the bot calls the bound Chat to return replies.
+After saving the channel, [connect it to a Chat](./connect_chat.md). Users can then send messages to the bot in WeCom and receive replies from the connected Chat.
 
 Connection verification:
 

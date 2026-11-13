@@ -17,7 +17,9 @@
 package component
 
 import (
+	"context"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
@@ -408,6 +410,26 @@ func TestBuildAgentInputMessagesInjectsSysFiles(t *testing.T) {
 	}
 }
 
+func TestAgentRejectsImageForKnownTextOnlyModel(t *testing.T) {
+	called := false
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
+		called = true
+		return &schema.Message{Role: schema.Assistant, Content: "unexpected"}, nil
+	})
+	state := runtime.NewCanvasState("run-agent-text-only-image", "task-agent-text-only-image")
+	state.Sys["files"] = []string{"data:image/png;base64,iVBORw0KGgo="}
+
+	_, err := NewAgentComponent(AgentParam{ModelID: "glm-4.7@ZHIPU-AI"}).Invoke(
+		runtime.WithState(t.Context(), state), nil, map[string]any{"user_prompt": "describe this"},
+	)
+	if err == nil || !strings.Contains(err.Error(), "Image input is not supported by the selected model") {
+		t.Fatalf("Invoke error = %v, want clear unsupported-image error", err)
+	}
+	if called {
+		t.Fatal("text-only model must be rejected before agentRunner")
+	}
+}
+
 // TestBuildAgentInputMessagesSysFilesTextOnly: non-image uploads merge into
 // the plain string Content without creating multi-modal parts.
 func TestBuildAgentInputMessagesSysFilesTextOnly(t *testing.T) {
@@ -426,5 +448,55 @@ func TestBuildAgentInputMessagesSysFilesTextOnly(t *testing.T) {
 	if len(messages[0].UserInputMultiContent) != 0 {
 		t.Errorf("text-only files must not create multi-modal parts, got %d",
 			len(messages[0].UserInputMultiContent))
+	}
+}
+
+func TestAgentVisualFilesVarResolvesImageVariable(t *testing.T) {
+	uri := "data:image/png;base64,iVBORw0KGgo="
+	state := runtime.NewCanvasState("run-agent-selected-file", "task-agent-selected-file")
+	state.SetVar("FileNode", "attachments", []any{"notes.txt", uri})
+
+	images, err := resolveAgentVisualFiles(state, "FileNode@attachments")
+	if err != nil {
+		t.Fatalf("resolveAgentVisualFiles: %v", err)
+	}
+	if !reflect.DeepEqual(images, []string{uri}) {
+		t.Fatalf("resolved images = %#v, want [%q]", images, uri)
+	}
+
+	messages := buildAgentInputMessages(runtime.WithState(t.Context(), state), AgentParam{
+		UserPrompt:  "describe this",
+		visualFiles: images,
+	})
+	if len(messages) != 1 || len(messages[0].UserInputMultiContent) != 2 {
+		t.Fatalf("messages = %#v, want one user message with text and image parts", messages)
+	}
+	image := messages[0].UserInputMultiContent[1]
+	if image.Type != schema.ChatMessagePartTypeImageURL || image.Image == nil || image.Image.URL == nil || *image.Image.URL != uri {
+		t.Fatalf("selected image part = %+v, want URI %q", image, uri)
+	}
+}
+
+func TestAgentInvokeUsesVisualFilesVar(t *testing.T) {
+	uri := "data:image/jpeg;base64,/9j/4AAQ"
+	state := runtime.NewCanvasState("run-agent-selected-file", "task-agent-selected-file")
+	state.SetVar("FileNode", "attachments", []string{uri})
+	var captured []string
+	withAgentRunner(t, func(_ context.Context, p AgentParam) (*schema.Message, error) {
+		captured = p.visualFiles
+		return &schema.Message{Role: schema.Assistant, Content: "described"}, nil
+	})
+
+	component := NewAgentComponent(agentParamFromMap(map[string]any{
+		"model_id":         "stub",
+		"visual_files_var": "FileNode@attachments",
+	}))
+	if _, err := component.Invoke(runtime.WithState(t.Context(), state), nil, map[string]any{
+		"user_prompt": "describe this image",
+	}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if !reflect.DeepEqual(captured, []string{uri}) {
+		t.Fatalf("agent runner visual files = %#v, want [%q]", captured, uri)
 	}
 }

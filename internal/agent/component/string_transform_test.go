@@ -17,6 +17,7 @@
 package component
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
@@ -39,8 +40,8 @@ func TestStringTransform_SplitBasic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, _ := out["result"].([]string)
-	want := []string{"a", "b", "c"}
+	got, _ := out["result"].([]any)
+	want := []any{"a", "b", "c"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("split: got %v, want %v", got, want)
 	}
@@ -59,8 +60,8 @@ func TestStringTransform_SplitNoDelim(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, _ := out["result"].([]string)
-	want := []string{"abc"}
+	got, _ := out["result"].([]any)
+	want := []any{"abc"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("split: got %v, want %v", got, want)
 	}
@@ -121,8 +122,8 @@ func TestStringTransform_SplitFromStateRef(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	got, _ := out["result"].([]string)
-	want := []string{"alpha", "beta", "gamma"}
+	got, _ := out["result"].([]any)
+	want := []any{"alpha", "beta", "gamma"}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("split from state: got %v, want %v", got, want)
 	}
@@ -156,6 +157,149 @@ func TestStringTransform_ParamCheck(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for bad method, got nil")
+	}
+}
+
+// TestStringTransform_MergeStringDelimiter: the agent UI saves merge-mode
+// delimiters as a single string (","), which must build and merge.
+func TestStringTransform_MergeStringDelimiter(t *testing.T) {
+	c, err := NewStringTransformComponent(map[string]any{
+		"method":     "merge",
+		"delimiters": ",",
+		"script":     "{{x}} and {{y}}",
+	})
+	if err != nil {
+		t.Fatalf("NewStringTransformComponent: %v", err)
+	}
+	state := canvas.NewCanvasState("run-6", "task-6")
+	ctx := canvas.WithState(t.Context(), state)
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"x": "foo", "y": "bar"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, want := out["result"], "foo and bar"; got != want {
+		t.Errorf("merge: got %v, want %v", got, want)
+	}
+}
+
+// TestStringTransform_WhitespaceStringDelimiter: a whitespace string
+// delimiter ("\n") is kept as is, not trimmed away.
+func TestStringTransform_WhitespaceStringDelimiter(t *testing.T) {
+	c, err := NewStringTransformComponent(map[string]any{
+		"method":     "merge",
+		"delimiters": "\n",
+	})
+	if err != nil {
+		t.Fatalf("NewStringTransformComponent: %v", err)
+	}
+	got := c.(*StringTransformComponent).param.Delimiters
+	want := []string{"\n"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("delimiters: got %q, want %q", got, want)
+	}
+}
+
+// TestStringTransform_SplitStringDelimiter: "a;b" with delimiters=";" → ["a", "b"].
+func TestStringTransform_SplitStringDelimiter(t *testing.T) {
+	c, err := NewStringTransformComponent(map[string]any{
+		"method":     "split",
+		"delimiters": ";",
+	})
+	if err != nil {
+		t.Fatalf("NewStringTransformComponent: %v", err)
+	}
+	state := canvas.NewCanvasState("run-7", "task-7")
+	ctx := canvas.WithState(t.Context(), state)
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"line": "a;b"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	got, _ := out["result"].([]any)
+	want := []any{"a", "b"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("split: got %v, want %v", got, want)
+	}
+}
+
+// splitIntoState runs a split of line on "," and stores the outputs under
+// cpnID, the way the canvas records a node's outputs for later nodes.
+func splitIntoState(t *testing.T, state *canvas.CanvasState, cpnID, line string) {
+	t.Helper()
+	c, err := NewStringTransformComponent(map[string]any{
+		"method":     "split",
+		"delimiters": []string{","},
+	})
+	if err != nil {
+		t.Fatalf("NewStringTransformComponent: %v", err)
+	}
+	out, err := c.Invoke(canvas.WithState(t.Context(), state), nil, map[string]any{"line": line})
+	if err != nil {
+		t.Fatalf("split Invoke: %v", err)
+	}
+	state.Outputs[cpnID] = out
+}
+
+// TestStringTransform_SplitFeedsListOperations: a split result is a list
+// that ListOperations accepts in the same run.
+func TestStringTransform_SplitFeedsListOperations(t *testing.T) {
+	state := canvas.NewCanvasState("run-8", "task-8")
+	splitIntoState(t, state, "st_0", "a,b,c")
+
+	c, err := NewListOperationsComponent(map[string]any{
+		"query":      "st_0@result",
+		"operations": "head",
+		"n":          2,
+	})
+	if err != nil {
+		t.Fatalf("NewListOperationsComponent: %v", err)
+	}
+	out, err := c.Invoke(canvas.WithState(t.Context(), state), nil, nil)
+	if err != nil {
+		t.Fatalf("ListOperations Invoke: %v", err)
+	}
+	got, _ := out["result"].([]any)
+	want := []any{"a", "b"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("head: got %v, want %v", got, want)
+	}
+}
+
+// TestStringTransform_SplitFeedsVariableAssignerAppend: a split result is a
+// list that the VariableAssigner append operator accepts in the same run.
+func TestStringTransform_SplitFeedsVariableAssignerAppend(t *testing.T) {
+	state := canvas.NewCanvasState("run-9", "task-9")
+	splitIntoState(t, state, "st_0", "a,b,c")
+
+	c, err := NewVariableAssignerComponent(map[string]any{"variables": []map[string]any{
+		{"variable": "st_0@result", "operator": "append", "parameter": "d"},
+	}})
+	if err != nil {
+		t.Fatalf("NewVariableAssignerComponent: %v", err)
+	}
+	if _, err := c.Invoke(canvas.WithState(t.Context(), state), nil, nil); err != nil {
+		t.Fatalf("VariableAssigner Invoke: %v", err)
+	}
+	got := state.Outputs["st_0"]["result"]
+	want := []any{"a", "b", "c", "d"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("st_0@result: got %v, want %v", got, want)
+	}
+}
+
+// TestStringTransform_EmptyStringDelimiter: delimiters="" is rejected.
+func TestStringTransform_EmptyStringDelimiter(t *testing.T) {
+	_, err := NewStringTransformComponent(map[string]any{
+		"method":     "merge",
+		"delimiters": "",
+	})
+	var pe *ParamError
+	if !errors.As(err, &pe) {
+		t.Fatalf("err=%v, want *ParamError", err)
+	}
+	if pe.Field != "delimiters" {
+		t.Errorf("ParamError.Field=%q, want delimiters", pe.Field)
 	}
 }
 

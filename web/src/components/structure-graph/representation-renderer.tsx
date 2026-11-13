@@ -22,6 +22,7 @@ import {
   type IArtifactGraphEntity,
 } from '@/interfaces/database/dataset';
 import {
+  type IClaimEvidence,
   type IStructureGraphTemplate,
   type StructureTemplateKind,
 } from '@/interfaces/database/document-structure';
@@ -35,11 +36,22 @@ import {
 } from './adapters';
 import MindMapG6Graph from './mindmap-g6-graph';
 import TimelineX6Graph from './timeline-x6-graph';
+import {
+  getKnowledgeGraphNodeLabel,
+  useKnowledgeGraphNodeColor,
+} from './use-knowledge-graph-node-style';
 
 export interface ClickableNode {
   id: string;
   name?: string;
   source_chunk_ids?: string[];
+  /** Tree leaves only: whether this node has child clusters. */
+  hasChildren?: boolean;
+  /** Leaf claim badge (tree slot). 0/undefined ⇒ nothing for the claims panel. */
+  badge?: React.ReactNode;
+  /** page_index fact/conclusion: gate-verified quotes for the detail panel. */
+  description?: string;
+  evidence?: IClaimEvidence[];
 }
 
 const EmptyForceGraphData: IArtifactGraph = { entities: [], relations: [] };
@@ -65,6 +77,11 @@ function UnsupportedPlaceholder({ kind }: { kind: StructureTemplateKind }) {
   );
 }
 
+/**
+ * Renders a structure template and forwards supported node selections.
+ * Knowledge graphs receive entity-type colors and labels; other graph views
+ * retain the shared defaults.
+ */
 export function RepresentationRenderer({
   template,
   onNodeClick,
@@ -72,6 +89,7 @@ export function RepresentationRenderer({
   totalEntities,
   returnedEntities,
 }: RepresentationRendererProps) {
+  const getKnowledgeGraphNodeColor = useKnowledgeGraphNodeColor();
   const handleTreeItemClick = useCallback(
     (item: TreeDataItem | undefined) => {
       if (item?.source_chunk_ids?.length) {
@@ -79,6 +97,12 @@ export function RepresentationRenderer({
           id: item.id,
           name: item.name,
           source_chunk_ids: item.source_chunk_ids,
+          // Tree leaves are where the claims UI attaches; branches are pure
+          // structure and clicking them keeps the old behaviour.
+          hasChildren: !!item.children?.length,
+          badge: item.badge,
+          description: item.description,
+          evidence: item.evidence,
         });
       }
     },
@@ -174,6 +198,8 @@ export function RepresentationRenderer({
             data={forceGraphData}
             show
             getNodeId={getArtifactNodeName}
+            getNodeColor={getKnowledgeGraphNodeColor}
+            getNodeLabel={getKnowledgeGraphNodeLabel}
             onNodeClick={handleArtifactNodeClick}
             highlightNodeId={highlightNodeId}
             totalEntities={totalEntities}

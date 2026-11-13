@@ -32,6 +32,7 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/service/nlp"
 
@@ -42,44 +43,36 @@ import (
 
 type mockKBService struct {
 	KBServiceIface
-	getByIDFn    func(ctx context.Context, kbID string) (*entity.Knowledgebase, error)
-	accessibleFn func(ctx context.Context, kbID, userID string) bool
+	getKnowledgebaseByIDFn func(ctx context.Context, kbID string) (*entity.Knowledgebase, error)
+	checkAccessFn          func(ctx context.Context, datasetID string, operation permission.Operation) error
 }
 
-func (m *mockKBService) GetByID(ctx context.Context, kbID string) (*entity.Knowledgebase, error) {
-	if m.getByIDFn != nil {
-		return m.getByIDFn(ctx, kbID)
+func (m *mockKBService) GetKnowledgebaseByID(ctx context.Context, kbID string) (*entity.Knowledgebase, error) {
+	if m.getKnowledgebaseByIDFn != nil {
+		return m.getKnowledgebaseByIDFn(ctx, kbID)
 	}
 	return &entity.Knowledgebase{
 		ID: kbID, TenantID: "tenant1", EmbdID: "text-embedding",
 	}, nil
 }
 
-func (m *mockKBService) Accessible(ctx context.Context, kbID, userID string) bool {
-	if m.accessibleFn != nil {
-		return m.accessibleFn(ctx, kbID, userID)
+func (m *mockKBService) CheckResource(ctx context.Context, resource permission.ResourceRef, operation permission.Operation) error {
+	if m.checkAccessFn != nil {
+		return m.checkAccessFn(ctx, resource.ID, operation)
 	}
-	return true
+	return nil
 }
 
-type mockModelService struct {
-	ModelServiceIface
-	getEmbeddingFn func(ctx context.Context, tenantID, embdID string) (*modelModule.EmbeddingModel, error)
-	getChatModelFn func(ctx context.Context, tenantID, llmID string) (*modelModule.ChatModel, error)
+type mockModelFactory struct{}
+
+func (mockModelFactory) NewEmbeddingModel(context.Context, string) (*modelModule.EmbeddingModel, error) {
+	name := "test-model"
+	return modelModule.NewEmbeddingModel(&modelModule.DummyModel{}, &name, &modelModule.APIConfig{}, 0), nil
 }
 
-func (m *mockModelService) GetEmbeddingModel(ctx context.Context, tenantID, embdID string) (*modelModule.EmbeddingModel, error) {
-	if m.getEmbeddingFn != nil {
-		return m.getEmbeddingFn(ctx, tenantID, embdID)
-	}
-	return &modelModule.EmbeddingModel{}, nil
-}
-
-func (m *mockModelService) GetChatModel(ctx context.Context, tenantID, llmID string) (*modelModule.ChatModel, error) {
-	if m.getChatModelFn != nil {
-		return m.getChatModelFn(ctx, tenantID, llmID)
-	}
-	return &modelModule.ChatModel{}, nil
+func (mockModelFactory) NewDefaultChatModel(context.Context) (*modelModule.ChatModel, error) {
+	name := "test-model"
+	return modelModule.NewChatModel(&modelModule.DummyModel{}, &name, &modelModule.APIConfig{}), nil
 }
 
 type mockMetadataService struct {
@@ -162,13 +155,15 @@ func (m *mockDocEngine) GetChunk(ctx context.Context, _, _ string, _ []string) (
 // --- Helper ---
 
 func setupDifyTest(userID string) (*DifyRetrievalHandler, *gin.Engine) {
+	kbSvc := &mockKBService{}
 	h := &DifyRetrievalHandler{
-		kbSvc:        &mockKBService{},
-		modelSvc:     &mockModelService{},
-		metadataSvc:  &mockMetadataService{},
-		retrievalSvc: &mockRetrievalService{},
-		docDAO:       &mockDocDAO{},
-		docEngine:    &mockDocEngine{},
+		kbSvc:             kbSvc,
+		permissionChecker: kbSvc,
+		modelFactory:      mockModelFactory{},
+		metadataSvc:       &mockMetadataService{},
+		retrievalSvc:      &mockRetrievalService{},
+		docDAO:            &mockDocDAO{},
+		docEngine:         &mockDocEngine{},
 	}
 
 	gin.SetMode(gin.TestMode)
@@ -185,7 +180,7 @@ func setupDifyTest(userID string) (*DifyRetrievalHandler, *gin.Engine) {
 func setupDifyTestNoAuth() (*DifyRetrievalHandler, *gin.Engine) {
 	h := &DifyRetrievalHandler{
 		kbSvc:        &mockKBService{},
-		modelSvc:     &mockModelService{},
+		modelFactory: mockModelFactory{},
 		metadataSvc:  &mockMetadataService{},
 		retrievalSvc: &mockRetrievalService{},
 		docDAO:       &mockDocDAO{},
@@ -212,8 +207,11 @@ func TestDifyRetrieval_HealthCheck(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp["data"] != true {
-		t.Errorf("expected data=true, got %v", resp["data"])
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected success, got %v", resp)
+	}
+	if data, exists := resp["data"]; exists {
+		t.Fatalf("data must be omitted, got %v", data)
 	}
 }
 
@@ -359,7 +357,7 @@ func TestDifyRetrieval_MissingArgs(t *testing.T) {
 func TestDifyRetrieval_KBNotFound(t *testing.T) {
 	h, r := setupDifyTest("user1")
 	h.kbSvc = &mockKBService{
-		getByIDFn: func(ctx context.Context, kbID string) (*entity.Knowledgebase, error) {
+		getKnowledgebaseByIDFn: func(ctx context.Context, kbID string) (*entity.Knowledgebase, error) {
 			return nil, gorm.ErrRecordNotFound
 		},
 	}
@@ -387,16 +385,23 @@ func TestDifyRetrieval_NoAuth(t *testing.T) {
 
 func TestDifyRetrieval_Unauthorized(t *testing.T) {
 	h, r := setupDifyTest("user1")
-	h.kbSvc = &mockKBService{
-		accessibleFn: func(ctx context.Context, kbID, userID string) bool { return false },
+	kbSvc := &mockKBService{
+		checkAccessFn: func(ctx context.Context, datasetID string, operation permission.Operation) error {
+			if operation != permission.OperationUse {
+				t.Errorf("dataset operation = %q, want %q", operation, permission.OperationUse)
+			}
+			return permission.ErrPermissionDenied
+		},
 	}
+	h.kbSvc = kbSvc
+	h.permissionChecker = kbSvc
 	w := httptest.NewRecorder()
 	body := `{"knowledge_id": "kb1", "query": "test"}`
 	req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	r.ServeHTTP(w, req)
-	if w.Code != http.StatusUnauthorized {
-		t.Errorf("expected 401, got %d", w.Code)
+	if w.Code != http.StatusForbidden {
+		t.Errorf("expected 403, got %d", w.Code)
 	}
 }
 
@@ -414,6 +419,59 @@ func TestDifyRetrieval_WithMetadataFilter(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+}
+
+func TestDifyRetrieval_EmptyMetadataConditionDoesNotUseSentinel(t *testing.T) {
+	h, r := setupDifyTest("user1")
+	var docIDs []string
+	h.retrievalSvc = &mockRetrievalService{
+		retrievalFn: func(ctx context.Context, req *nlp.RetrievalRequest) (*nlp.RetrievalResult, error) {
+			docIDs = append([]string(nil), req.DocIDs...)
+			return &nlp.RetrievalResult{
+				Chunks: []map[string]interface{}{
+					{"doc_id": "doc1", "docnm_kwd": "Test Doc", "content_with_weight": "test content", "similarity": 0.85},
+				},
+			}, nil
+		},
+	}
+	body := `{"knowledge_id":"kb1","query":"test","metadata_condition":{"logic":"and","conditions":[]}}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(docIDs) != 0 {
+		t.Fatalf("DocIDs = %v, want an unscoped search", docIDs)
+	}
+}
+
+func TestDifyRetrieval_UnmatchedMetadataConditionUsesSentinel(t *testing.T) {
+	h, r := setupDifyTest("user1")
+	var docIDs []string
+	h.retrievalSvc = &mockRetrievalService{
+		retrievalFn: func(ctx context.Context, req *nlp.RetrievalRequest) (*nlp.RetrievalResult, error) {
+			docIDs = append([]string(nil), req.DocIDs...)
+			return &nlp.RetrievalResult{Chunks: []map[string]interface{}{}}, nil
+		},
+	}
+	h.metadataSvc = &mockMetadataService{
+		getFlattedMetaFn: func(ctx context.Context, kbIDs []string) (common.MetaData, error) {
+			return common.MetaData{}, nil
+		},
+	}
+	body := `{"knowledge_id":"kb1","query":"test","metadata_condition":{"conditions":[{"name":"author","comparison_operator":"is","value":"nobody"}],"logic":"and"}}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if len(docIDs) != 1 || docIDs[0] != service.NoMatchDocIDSentinel {
+		t.Fatalf("DocIDs = %v, want no-match sentinel", docIDs)
 	}
 }
 
@@ -450,7 +508,7 @@ func strPtr(s string) *string { return &s }
 func TestDifyRetrieval_KBDBError(t *testing.T) {
 	h, r := setupDifyTest("user1")
 	h.kbSvc = &mockKBService{
-		getByIDFn: func(ctx context.Context, kbID string) (*entity.Knowledgebase, error) {
+		getKnowledgebaseByIDFn: func(ctx context.Context, kbID string) (*entity.Knowledgebase, error) {
 			return nil, errors.New("connection refused")
 		},
 	}
@@ -495,5 +553,142 @@ func TestDifyRetrieval_RetrievalNotFound(t *testing.T) {
 	r.ServeHTTP(w, req)
 	if w.Code != http.StatusNotFound {
 		t.Errorf("expected 404 for not_found, got %d", w.Code)
+	}
+}
+
+func TestDifyRetrieval_RerankWindowCoversTopK(t *testing.T) {
+	cases := []struct {
+		name, method, url, body  string
+		wantPageSize, wantWindow int
+	}{
+		{"default top_k", "POST", "/api/v1/dify/retrieval", `{"knowledge_id": "kb1", "query": "test"}`, 1024, 1024},
+		{"top_k above 64", "POST", "/api/v1/dify/retrieval", `{"knowledge_id": "kb1", "query": "test", "retrieval_setting": {"top_k": 100}}`, 100, 100},
+		{"GET top_k", "GET", "/api/v1/dify/retrieval?knowledge_id=kb1&query=test&top_k=200", "", 200, 200},
+		{"top_k below 64 keeps the default window", "POST", "/api/v1/dify/retrieval", `{"knowledge_id": "kb1", "query": "test", "retrieval_setting": {"top_k": 10}}`, 10, 64},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h, r := setupDifyTest("user1")
+			var got *nlp.RetrievalRequest
+			h.retrievalSvc = &mockRetrievalService{
+				retrievalFn: func(ctx context.Context, req *nlp.RetrievalRequest) (*nlp.RetrievalResult, error) {
+					got = req
+					return &nlp.RetrievalResult{}, nil
+				},
+			}
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest(tc.method, tc.url, strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			r.ServeHTTP(w, req)
+			if w.Code != http.StatusOK {
+				t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+			}
+			if got.PageSize != tc.wantPageSize {
+				t.Errorf("PageSize = %d, want %d", got.PageSize, tc.wantPageSize)
+			}
+			if got.RerankCandidatesCount == nil {
+				t.Fatal("RerankCandidatesCount is nil")
+			}
+			if *got.RerankCandidatesCount != tc.wantWindow {
+				t.Errorf("RerankCandidatesCount = %d, want %d", *got.RerankCandidatesCount, tc.wantWindow)
+			}
+		})
+	}
+}
+
+func TestDifyRetrieval_TopKOutOfRange(t *testing.T) {
+	for _, topK := range []string{"0", "-1", "1025"} {
+		t.Run(topK, func(t *testing.T) {
+			h, r := setupDifyTest("user1")
+			h.retrievalSvc = &mockRetrievalService{
+				retrievalFn: func(ctx context.Context, req *nlp.RetrievalRequest) (*nlp.RetrievalResult, error) {
+					t.Fatal("retrieval must not run for an out-of-range top_k")
+					return nil, nil
+				},
+			}
+			w := httptest.NewRecorder()
+			body := `{"knowledge_id": "kb1", "query": "test", "retrieval_setting": {"top_k": ` + topK + `}}`
+			req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			r.ServeHTTP(w, req)
+			if w.Code != http.StatusBadRequest {
+				t.Errorf("expected 400, got %d: %s", w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+// captureRetrievalRequest installs a retrieval service that records the request
+// it was handed, so a test can assert on the nlp-layer parameters.
+func captureRetrievalRequest(h *DifyRetrievalHandler) **nlp.RetrievalRequest {
+	captured := new(*nlp.RetrievalRequest)
+	h.retrievalSvc = &mockRetrievalService{
+		retrievalFn: func(ctx context.Context, req *nlp.RetrievalRequest) (*nlp.RetrievalResult, error) {
+			*captured = req
+			return &nlp.RetrievalResult{
+				Chunks: []map[string]interface{}{
+					{"doc_id": "doc1", "docnm_kwd": "Test Doc", "content_with_weight": "test content", "similarity": 0.85},
+				},
+			}, nil
+		},
+	}
+	return captured
+}
+
+// LabelQuestion returning nil (no tag source on the dataset) must still reach the
+// retrieval layer as a non-nil pointer to an empty map; a nil pointer makes the
+// nlp layer substitute its {pagerank_fea: 10} default.
+func TestDifyRetrieval_NoTagSourceSendsEmptyRankFeature(t *testing.T) {
+	h, r := setupDifyTest("user1")
+	h.metadataSvc = &mockMetadataService{
+		labelQuestionFn: func(ctx context.Context, question string, kbs []*entity.Knowledgebase) map[string]float64 {
+			return nil
+		},
+	}
+	captured := captureRetrievalRequest(h)
+
+	body := `{"knowledge_id": "kb1", "query": "test question"}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if *captured == nil {
+		t.Fatal("retrieval service was not called")
+	}
+	if (*captured).RankFeature == nil {
+		t.Fatal("RankFeature = nil, want a pointer to an empty map; nil lets the nlp layer substitute the pagerank_fea default")
+	}
+	if got := len(*(*captured).RankFeature); got != 0 {
+		t.Fatalf("RankFeature has %d entries (%v), want empty", got, *(*captured).RankFeature)
+	}
+}
+
+func TestDifyRetrieval_TagSourceForwardsRankFeatures(t *testing.T) {
+	h, r := setupDifyTest("user1")
+	h.metadataSvc = &mockMetadataService{
+		labelQuestionFn: func(ctx context.Context, question string, kbs []*entity.Knowledgebase) map[string]float64 {
+			return map[string]float64{"tag_1": 0.8}
+		},
+	}
+	captured := captureRetrievalRequest(h)
+
+	body := `{"knowledge_id": "kb1", "query": "test question"}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	if *captured == nil || (*captured).RankFeature == nil {
+		t.Fatal("RankFeature was not forwarded to the retrieval layer")
+	}
+	if got := (*(*captured).RankFeature)["tag_1"]; got != 0.8 {
+		t.Fatalf("RankFeature[tag_1] = %v, want 0.8", got)
 	}
 }

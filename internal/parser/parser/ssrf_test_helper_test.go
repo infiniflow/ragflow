@@ -1,9 +1,8 @@
 package parser
 
 import (
+	"ragflow/internal/common"
 	"testing"
-
-	"ragflow/internal/utility"
 )
 
 // withSSRFBypass enables the test-only SSRF bypass for the duration of a test
@@ -13,7 +12,5 @@ import (
 // internal/utility/ssrf_test.go.
 func withSSRFBypass(t *testing.T) {
 	t.Helper()
-	prev := utility.AllowAnyHostForTest
-	utility.AllowAnyHostForTest = true
-	t.Cleanup(func() { utility.AllowAnyHostForTest = prev })
+	t.Setenv(common.EnvAllowAnyHost, "true")
 }

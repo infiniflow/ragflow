@@ -72,3 +72,14 @@ func syncSourceDocumentFilenameFromDocument(doc SourceDocument) string {
 	}
 	return name[:baseLimit] + ext
 }
+
+// fileExtensionFromConfig returns the configured document file extension,
+// defaulting to ".txt" when unset or blank. A missing leading dot is
+// normalized downstream by syncSourceDocumentFilenameFromDocument.
+func fileExtensionFromConfig(value any) string {
+	ext := strings.TrimSpace(stringConfig(value))
+	if ext == "" {
+		return ".txt"
+	}
+	return ext
+}

@@ -17,7 +17,6 @@
 package connector
 
 import (
-	"bytes"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -33,6 +32,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"ragflow/internal/common"
 )
 
 const (
@@ -141,6 +142,9 @@ func (c *WebDAVConnector) Validate(ctx context.Context) error {
 	}
 	if c.baseURL == "" {
 		return fmt.Errorf("WebDAV base URL is required")
+	}
+	if err := validateConnectorURL(c.baseURL); err != nil {
+		return err
 	}
 	if c.username == "" || c.password == "" {
 		return fmt.Errorf("WebDAV requires username and password credentials")
@@ -406,16 +410,18 @@ func (c *webdavClient) propfind(ctx context.Context, target string) ([]webdavFil
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, "PROPFIND", resolved, bytes.NewReader([]byte(webdavPropfindBody)))
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Depth", "1")
-	req.Header.Set("Content-Type", "application/xml")
+	headers := map[string]string{"Depth": "1", "Content-Type": "application/xml"}
 	if c.username != "" {
-		req.SetBasicAuth(c.username, c.password)
+		headers["Authorization"] = "Basic " + basicAuthHeader(c.username, c.password)
 	}
-	resp, err := c.httpClient.Do(req)
+	resp, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:  "PROPFIND",
+		RawURL:  resolved,
+		Body:    []byte(webdavPropfindBody),
+		Headers: headers,
+		Timeout: webdavRequestTimeout,
+		Base:    c.httpClient,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -432,14 +438,17 @@ func (c *webdavClient) propfind(ctx context.Context, target string) ([]webdavFil
 
 // download fetches a file body over GET.
 func (c *webdavClient) download(ctx context.Context, fileURL string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fileURL, nil)
-	if err != nil {
-		return nil, err
-	}
+	headers := map[string]string{}
 	if c.username != "" {
-		req.SetBasicAuth(c.username, c.password)
+		headers["Authorization"] = "Basic " + basicAuthHeader(c.username, c.password)
 	}
-	resp, err := c.httpClient.Do(req)
+	resp, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:  http.MethodGet,
+		RawURL:  fileURL,
+		Headers: headers,
+		Timeout: webdavRequestTimeout,
+		Base:    c.httpClient,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -645,10 +654,8 @@ func normalizeWebDAVPath(remotePath string) string {
 
 // webDAVSizeThreshold returns the configured blob size threshold.
 func webDAVSizeThreshold() int64 {
-	if raw := strings.TrimSpace(os.Getenv("BLOB_STORAGE_SIZE_THRESHOLD")); raw != "" {
-		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
-			return parsed
-		}
+	if n := common.GetEnvInt("BLOB_STORAGE_SIZE_THRESHOLD", 0); n > 0 {
+		return int64(n)
 	}
 	return defaultWebDAVSizeThreshold
 }

@@ -24,17 +24,17 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"regexp"
 	"strings"
 	"time"
 
-	"ragflow/internal/utility"
-
-	md "github.com/JohannesKaufmann/html-to-markdown"
+	"go.uber.org/zap"
 	"golang.org/x/net/html"
+
+	"ragflow/internal/common"
+	"ragflow/internal/utility"
 )
 
 const (
@@ -51,7 +51,7 @@ const (
 type sitemapFetchFunc func(ctx context.Context, rawURL string) ([]byte, string, error)
 
 // sitemapAssertURLSafe is the SSRF guard, indirected so tests can stub DNS resolution.
-var sitemapAssertURLSafe = utility.AssertURLSafe
+var sitemapAssertURLSafe = common.AssertURLSafe
 
 // SitemapConnector ingests the web pages listed in a sitemap.xml.
 //
@@ -206,7 +206,8 @@ func (c *SitemapConnector) OpenPrune(ctx context.Context, request PruneRequest) 
 			}
 			body, contentType, err := c.fetch(ctx, entry.loc)
 			if err != nil {
-				slog.Warn("sitemap prune: failed to fetch page for PDF discovery", "url", entry.loc, "error", err)
+				common.Warn("sitemap prune: failed to fetch page for PDF discovery",
+					zap.String("url", entry.loc), zap.Error(err))
 				continue
 			}
 			if isPDFResponse(contentType, body) {
@@ -242,23 +243,25 @@ func (c *SitemapConnector) listEntries(ctx context.Context) ([]sitemapEntry, err
 	var walk func(sitemapURL string, depth int) error
 	walk = func(sitemapURL string, depth int) error {
 		if depth > maxSitemapDepth {
-			slog.Warn("sitemap: max depth reached, stopping", "url", sitemapURL)
+			common.Warn("sitemap: max depth reached, stopping", zap.String("url", sitemapURL))
 			return nil
 		}
 		if _, done := visited[sitemapURL]; done {
-			slog.Warn("sitemap: nested sitemap already visited, skipping", "url", sitemapURL)
+			common.Warn("sitemap: nested sitemap already visited, skipping", zap.String("url", sitemapURL))
 			return nil
 		}
 		visited[sitemapURL] = struct{}{}
 		if fetched >= maxSitemapFetches {
-			slog.Warn("sitemap: maximum number of sitemap fetches reached, stopping", "url", sitemapURL, "max", maxSitemapFetches)
+			common.Warn("sitemap: maximum number of sitemap fetches reached, stopping",
+				zap.String("url", sitemapURL), zap.Int("max", maxSitemapFetches))
 			return nil
 		}
 		if err := validateSitemapURL(sitemapURL); err != nil {
 			if depth == 0 {
 				return err
 			}
-			slog.Warn("sitemap: skipping invalid nested sitemap URL", "url", sitemapURL, "error", err)
+			common.Warn("sitemap: skipping invalid nested sitemap URL",
+				zap.String("url", sitemapURL), zap.Error(err))
 			return nil
 		}
 		body, _, err := c.fetch(ctx, sitemapURL)
@@ -266,7 +269,8 @@ func (c *SitemapConnector) listEntries(ctx context.Context) ([]sitemapEntry, err
 			if depth == 0 {
 				return fmt.Errorf("failed to fetch sitemap %s: %w", sitemapURL, err)
 			}
-			slog.Warn("sitemap: failed to fetch nested sitemap", "url", sitemapURL, "error", err)
+			common.Warn("sitemap: failed to fetch nested sitemap",
+				zap.String("url", sitemapURL), zap.Error(err))
 			return nil
 		}
 		fetched++
@@ -310,12 +314,12 @@ func (c *SitemapConnector) urlMatches(rawURL string) bool {
 // It returns nil when the page must be skipped (fetch error or empty content).
 func (c *SitemapConnector) buildDocument(ctx context.Context, rawURL string, lastmod time.Time, parentURL string) (*SourceDocument, []string) {
 	if err := validateSitemapURL(rawURL); err != nil {
-		slog.Warn("sitemap: skipping invalid page URL", "url", rawURL, "error", err)
+		common.Warn("sitemap: skipping invalid page URL", zap.String("url", rawURL), zap.Error(err))
 		return nil, nil
 	}
 	body, contentType, err := c.fetch(ctx, rawURL)
 	if err != nil {
-		slog.Warn("sitemap: failed to fetch page", "url", rawURL, "error", err)
+		common.Warn("sitemap: failed to fetch page", zap.String("url", rawURL), zap.Error(err))
 		return nil, nil
 	}
 
@@ -331,7 +335,7 @@ func (c *SitemapConnector) buildDocument(ctx context.Context, rawURL string, las
 	)
 	if isPDFResponse(contentType, body) {
 		if len(body) == 0 {
-			slog.Debug("sitemap: empty PDF, skipping", "url", rawURL)
+			common.Debug("sitemap: empty PDF, skipping", zap.String("url", rawURL))
 			return nil, nil
 		}
 		blob = body
@@ -342,11 +346,11 @@ func (c *SitemapConnector) buildDocument(ctx context.Context, rawURL string, las
 		}
 		text, err := sitemapHTMLToMarkdown(body)
 		if err != nil {
-			slog.Warn("sitemap: failed to parse page", "url", rawURL, "error", err)
+			common.Warn("sitemap: failed to parse page", zap.String("url", rawURL), zap.Error(err))
 			return nil, pdfLinks
 		}
 		if strings.TrimSpace(text) == "" {
-			slog.Debug("sitemap: empty content, skipping", "url", rawURL)
+			common.Debug("sitemap: empty content, skipping", zap.String("url", rawURL))
 			return nil, pdfLinks
 		}
 		blob = []byte(text)
@@ -522,9 +526,11 @@ func (s *sitemapSyncSession) Close() error {
 
 // applyResume advances past the last committed sitemap page when retrying a task.
 //
-// Only sitemap-listed URLs can anchor a resume: PDFs discovered inside pages are
-// not known before those pages are fetched, so a checkpoint taken during the
-// PDF pass anchors on the last sitemap page instead and the PDF pass replays.
+// Only sitemap-listed URLs can anchor a partial resume. A checkpoint taken
+// during the PDF pass anchors on the PDF itself (see sitemapSyncCheckpoint);
+// that anchor is not a sitemap-listed URL, so ErrSyncResumeInvalid is returned
+// here and the runner restarts the whole window. Skipping past the parent page
+// instead would silently drop any of its PDFs that were not committed yet.
 func (s *sitemapSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 	if checkpoint == nil {
 		return nil
@@ -543,17 +549,18 @@ func (s *sitemapSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 }
 
 // sitemapSyncCheckpoint returns a resume point after a committed document.
+//
+// The anchor is the document's own SourceID, never the parent page. A
+// checkpoint taken during the PDF pass therefore anchors on the PDF itself;
+// that anchor is not a sitemap-listed URL, so applyResume reports
+// ErrSyncResumeInvalid and the runner restarts the window instead of skipping
+// the parent page and silently dropping the PDFs that had not been committed
+// yet (those PDFs are only known again once the parent page is re-fetched).
 func sitemapSyncCheckpoint(doc SourceDocument) *SyncCheckpoint {
-	// Discovered PDFs carry parent_url; anchor on the parent page so the
-	// checkpoint always points at a sitemap-listed URL.
-	anchor := doc.SourceID
-	if parent, ok := doc.Metadata["parent_url"].(string); ok && parent != "" {
-		anchor = sitemapSourceID(parent)
-	}
 	updatedAt := doc.UpdatedAt
 	return &SyncCheckpoint{
-		Cursor:    anchor,
-		SourceID:  anchor,
+		Cursor:    doc.SourceID,
+		SourceID:  doc.SourceID,
 		UpdatedAt: &updatedAt,
 	}
 }
@@ -662,7 +669,7 @@ func parseSitemapLastmod(value string) time.Time {
 			return parsed.UTC()
 		}
 	}
-	slog.Debug("sitemap: unrecognised lastmod format", "value", value)
+	common.Debug("sitemap: unrecognised lastmod format", zap.String("value", value))
 	return time.Time{}
 }
 
@@ -723,7 +730,7 @@ func hostOf(rawURL string) string {
 
 // sitemapHTMLToMarkdown converts a page to Markdown, dropping navigation chrome.
 func sitemapHTMLToMarkdown(body []byte) (string, error) {
-	converter := md.NewConverter("", true, &md.Options{EmDelimiter: "*"})
+	converter := newMarkdownConverter()
 	converter.Remove("script", "style", "noscript", "nav", "header", "footer", "aside", "form", "iframe", "svg")
 	out, err := converter.ConvertString(string(body))
 	if err != nil {

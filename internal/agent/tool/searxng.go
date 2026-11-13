@@ -18,7 +18,6 @@ package tool
 
 import (
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"net"
@@ -287,10 +286,9 @@ func buildSearXNGReferences(envelope map[string]any) ([]map[string]any, []map[st
 			continue
 		}
 
-		documentID := strconv.Itoa(hashSearXNGString(content, 100000000))
-		displayID := strconv.Itoa(hashSearXNGString(documentID, 500))
 		title := searxngText(item["title"])
 		resultURL := searxngText(item["url"])
+		documentID, displayID := referenceIDs(resultURL, content)
 		chunks = append(chunks, map[string]any{
 			"id":                displayID,
 			"chunk_id":          documentID,
@@ -361,15 +359,6 @@ func searxngText(value any) string {
 
 func searxngPromptField(value any) string {
 	return searxngNewlinePattern.ReplaceAllString(searxngText(value), " ")
-}
-
-func hashSearXNGString(value string, modulus int) int {
-	digest := sha1.Sum([]byte(value))
-	result := 0
-	for _, part := range digest {
-		result = (result*256 + int(part)) % modulus
-	}
-	return result
 }
 
 func searxngJSON(env searxngEnvelope) string {

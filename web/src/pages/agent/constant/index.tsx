@@ -25,6 +25,8 @@ export {
 
 export * from './pipeline';
 
+import { DocGeneratorOutputFormat } from './doc-generator';
+
 import { ModelVariableType } from '@/constants/knowledge';
 import { t } from 'i18next';
 import {
@@ -61,7 +63,6 @@ export const AgentOperatorList = [
   Operator.Retrieval,
   Operator.Categorize,
   Operator.Message,
-  Operator.RewriteQuestion,
   Operator.Switch,
   Operator.Iteration,
   Operator.WaitingDialogue,
@@ -89,6 +90,10 @@ export const initialRetrievalValues = {
   top_n: 8,
   rerank_candidates_count: 64,
   dataset_ids: [],
+  // Both bindings default to an empty array rather than being absent: the
+  // checklist treats a missing key as unbound, and without a default an
+  // unbound node would never be written back with the key.
+  memory_ids: [],
   rerank_id: '',
   ...initialSimilarityThresholdValue,
   ...initialKeywordsSimilarityWeightValue,
@@ -104,12 +109,6 @@ export const initialRetrievalValues = {
       value: [],
     },
   },
-};
-
-export const initialRewriteQuestionValues = {
-  ...initialLlmBaseValues,
-  language: '',
-  message_history_window_size: 6,
 };
 
 export const initialRelevantValues = {
@@ -238,6 +237,73 @@ export const initialSofyaValues = {
     json: {
       value: [],
       type: 'Array<Object>',
+    },
+  },
+};
+
+export enum Search1APIChannel {
+  General = 'general',
+  News = 'news',
+}
+
+// Search services each Search1API channel accepts. The agent may pick any of
+// them at call time; the node value is only the default.
+export const Search1APIServices: Record<Search1APIChannel, string[]> = {
+  [Search1APIChannel.General]: [
+    'google',
+    'bing',
+    'bingcn',
+    'duckduckgo',
+    'yahoo',
+    'yandex',
+    'youtube',
+    'x',
+    'reddit',
+    'github',
+    'arxiv',
+    'wechat',
+    'bilibili',
+    'imdb',
+    'wikipedia',
+    'baidu',
+    '360',
+    'quark',
+  ],
+  [Search1APIChannel.News]: [
+    'google',
+    'bing',
+    'duckduckgo',
+    'yahoo',
+    'hackernews',
+    'reuters',
+  ],
+};
+
+export const initialSearch1APISearchValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
+  channel: Search1APIChannel.General,
+  search_service: 'google',
+  top_n: 10,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
+};
+
+export const initialSearch1APICrawlValues = {
+  api_key: '',
+  url: '',
+  outputs: {
+    json: {
+      value: {},
+      type: 'object',
     },
   },
 };
@@ -448,6 +514,11 @@ export const initialCrawlerValues = {
   extract_type: 'markdown',
   query: '',
 };
+
+export const InvokeParameterTypeOptions = [
+  { label: 'String', value: 'string' },
+  { label: 'Object', value: 'object' },
+];
 
 export const initialInvokeValues = {
   url: '',
@@ -773,18 +844,7 @@ export const RestrictedUpstreamMap = {
   [Operator.Begin]: [Operator.Begin],
   [Operator.Categorize]: [Operator.Begin],
   [Operator.Retrieval]: [Operator.Begin, Operator.Retrieval],
-  [Operator.Message]: [
-    Operator.Begin,
-    Operator.Message,
-    Operator.Retrieval,
-    Operator.RewriteQuestion,
-    Operator.Categorize,
-  ],
-  [Operator.RewriteQuestion]: [
-    Operator.Begin,
-    Operator.Message,
-    Operator.RewriteQuestion,
-  ],
+  [Operator.Message]: [Operator.Begin, Operator.Message, Operator.Categorize],
   [Operator.DuckDuckGo]: [Operator.Begin, Operator.Retrieval],
   [Operator.Wikipedia]: [Operator.Begin, Operator.Retrieval],
   [Operator.PubMed]: [Operator.Begin, Operator.Retrieval],
@@ -798,6 +858,8 @@ export const RestrictedUpstreamMap = {
   [Operator.KeenableSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.YouComSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.SofyaSearch]: [Operator.Begin, Operator.Retrieval],
+  [Operator.Search1APISearch]: [Operator.Begin, Operator.Retrieval],
+  [Operator.Search1APICrawl]: [Operator.Begin],
   [Operator.ExeSQL]: [Operator.Begin],
   [Operator.Switch]: [Operator.Begin],
   [Operator.WenCai]: [Operator.Begin],
@@ -824,6 +886,7 @@ export const RestrictedUpstreamMap = {
   [Operator.VariableAssigner]: [Operator.Begin],
   [Operator.VariableAggregator]: [Operator.Begin],
   [Operator.Parser]: [Operator.Begin], // pipeline
+  [Operator.GeneralChunker]: [Operator.Begin],
   [Operator.TokenChunker]: [Operator.Begin],
   [Operator.TitleChunker]: [Operator.Begin],
   [Operator.Tokenizer]: [Operator.Begin],
@@ -834,7 +897,6 @@ export const RestrictedUpstreamMap = {
   [Operator.LoopStart]: [Operator.Begin],
   [Operator.ExitLoop]: [Operator.Begin],
   [Operator.DocGenerator]: [Operator.Begin],
-  [Operator.Browser]: [Operator.Begin],
 };
 
 export const NodeMap = {
@@ -842,7 +904,6 @@ export const NodeMap = {
   [Operator.Categorize]: 'categorizeNode',
   [Operator.Retrieval]: 'retrievalNode',
   [Operator.Message]: 'messageNode',
-  [Operator.RewriteQuestion]: 'rewriteNode',
   [Operator.DuckDuckGo]: 'ragNode',
   [Operator.Wikipedia]: 'ragNode',
   [Operator.PubMed]: 'ragNode',
@@ -856,6 +917,8 @@ export const NodeMap = {
   [Operator.KeenableSearch]: 'ragNode',
   [Operator.YouComSearch]: 'ragNode',
   [Operator.SofyaSearch]: 'ragNode',
+  [Operator.Search1APISearch]: 'ragNode',
+  [Operator.Search1APICrawl]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',
   [Operator.Switch]: 'switchNode',
   [Operator.WenCai]: 'ragNode',
@@ -880,8 +943,10 @@ export const NodeMap = {
   [Operator.File]: 'fileNode',
   [Operator.Parser]: 'parserNode',
   [Operator.Tokenizer]: 'tokenizerNode',
+  [Operator.GeneralChunker]: 'chunkerNode',
   [Operator.TokenChunker]: 'chunkerNode',
   [Operator.TitleChunker]: 'chunkerNode',
+  [Operator.ManualChunker]: 'chunkerNode',
   [Operator.Extractor]: 'contextNode',
   [Operator.Compiler]: 'compilationNode',
   [Operator.DataOperations]: 'dataOperationsNode',
@@ -893,7 +958,6 @@ export const NodeMap = {
   [Operator.ExitLoop]: 'exitLoopNode',
   [Operator.ExcelProcessor]: 'ragNode',
   [Operator.DocGenerator]: 'ragNode',
-  [Operator.Browser]: 'ragNode',
 };
 
 export enum BeginQueryType {
@@ -919,7 +983,6 @@ export const BeginQueryTypeIconMap = {
 export const NoDebugOperatorsList = [
   Operator.Begin,
   Operator.Message,
-  Operator.RewriteQuestion,
   Operator.Switch,
   Operator.Iteration,
   Operator.UserFillUp,
@@ -927,6 +990,7 @@ export const NoDebugOperatorsList = [
   Operator.File,
   Operator.Parser,
   Operator.Tokenizer,
+  Operator.GeneralChunker,
   Operator.TokenChunker,
   Operator.TitleChunker,
   Operator.Extractor,
@@ -939,6 +1003,7 @@ export const NoCopyOperatorsList = [
   Operator.File,
   Operator.Parser,
   Operator.Tokenizer,
+  Operator.GeneralChunker,
   Operator.TokenChunker,
   Operator.TitleChunker,
   Operator.Extractor,
@@ -1115,7 +1180,7 @@ export enum AgentVariableType {
 }
 
 export const initialDocGeneratorValues = {
-  output_format: 'pdf',
+  output_format: DocGeneratorOutputFormat.Pdf,
   content: '',
   filename: '',
   header_text: '',
@@ -1123,7 +1188,6 @@ export const initialDocGeneratorValues = {
   watermark_text: '',
   add_page_numbers: true,
   add_timestamp: true,
-  include_download_info_in_content: false,
   font_size: 12,
   outputs: {
     doc_id: { type: 'string' },
@@ -1131,21 +1195,6 @@ export const initialDocGeneratorValues = {
     mime_type: { type: 'string' },
     size: { type: 'number' },
     download: { type: 'string' },
-  },
-};
-
-export const initialBrowserValues = {
-  ...initialLlmBaseValues,
-  prompts: `{${AgentGlobals.SysQuery}}`,
-  max_steps: 30,
-  headless: true,
-  enable_default_extensions: false,
-  chromium_sandbox: false,
-  persist_session: true,
-  upload_sources: '',
-  outputs: {
-    content: { type: 'string', value: '' },
-    downloaded_files: { type: 'Array<Object>', value: [] },
   },
 };
 

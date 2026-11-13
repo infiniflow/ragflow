@@ -50,7 +50,6 @@ import { useTheme } from '../theme-provider';
 import { Button } from '../ui/button';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
 import styles from './index.module.less';
-import { ReferenceDocumentList } from './reference-document-list';
 import { ReferenceImageList } from './reference-image-list';
 import { UploadedMessageFiles } from './uploaded-message-files';
 
@@ -69,11 +68,13 @@ interface IProps
   avatarDialog?: string | null;
   agentName?: string;
   clickDocumentButton?: (documentId: string, chunk: IReferenceChunk) => void;
-  index: number;
+  index?: number;
   showLikeButton?: boolean;
   showLoudspeaker?: boolean;
   showLog?: boolean;
   isShare?: boolean;
+  hideTitle?: boolean;
+  className?: string;
 }
 
 function MessageItem({
@@ -96,6 +97,8 @@ function MessageItem({
   children,
   showLog,
   isShare,
+  hideTitle = false,
+  className,
   nickname,
 }: IProps) {
   const { theme } = useTheme();
@@ -109,12 +112,6 @@ function MessageItem({
       setLastSendLoadingFunc(loading, item.id);
     }
   }, [loading, setLastSendLoadingFunc, item.id]);
-
-  const referenceDocuments = useMemo(() => {
-    const docs = reference?.doc_aggs ?? {};
-
-    return Object.values(docs);
-  }, [reference?.doc_aggs]);
 
   const documentDownloadInfos = useMemo(
     () => item.downloads ?? [],
@@ -143,7 +140,7 @@ function MessageItem({
   );
 
   const renderContent = useCallback(() => {
-    if (!messageContent && !(item.data || (sendLoading && !isShare))) {
+    if (!messageContent && !(item.data || sendLoading)) {
       return null;
     }
 
@@ -162,13 +159,14 @@ function MessageItem({
         {hasCustomChildren ? (
           children
         ) : sendLoading && isEmpty(messageContent) ? (
-          <>{!isShare && <LoadingDots className="text-text-secondary" />}</>
+          <LoadingDots className="text-text-secondary" />
         ) : (
           <MarkdownContent
             loading={loading}
             content={messageContent}
             reference={reference}
             clickDocumentButton={clickDocumentButton}
+            disableMath={isUser}
           ></MarkdownContent>
         )}
       </div>
@@ -177,7 +175,7 @@ function MessageItem({
     children,
     clickDocumentButton,
     isAssistant,
-    isShare,
+    isUser,
     item.data,
     loading,
     messageContent,
@@ -188,7 +186,7 @@ function MessageItem({
 
   return (
     <div
-      className={classNames(styles.messageItem, {
+      className={classNames(styles.messageItem, className, {
         [styles.messageItemLeft]: item.role === MessageType.Assistant,
         [styles.messageItemRight]: item.role === MessageType.User,
       })}
@@ -225,65 +223,69 @@ function MessageItem({
               ></SvgIcon>
             ))}
           <section className="flex-col gap-2 flex-1">
-            <div className="flex justify-between items-center">
-              {isShare && isAssistant && (
-                <Button
-                  variant={'transparent'}
-                  onClick={() => setShowThinking((think) => !think)}
-                >
-                  <div className="flex items-center gap-1">
-                    <div className="">
-                      <Atom
-                        className={startedNodeList(item) ? 'animate-spin' : ''}
-                      />
+            {hideTitle || (
+              <div className="flex justify-between items-center">
+                {isShare && isAssistant && (
+                  <Button
+                    variant={'transparent'}
+                    onClick={() => setShowThinking((think) => !think)}
+                  >
+                    <div className="flex items-center gap-1">
+                      <div className="">
+                        <Atom
+                          className={
+                            startedNodeList(item) ? 'animate-spin' : ''
+                          }
+                        />
+                      </div>
+                      Thinking
+                      {showThinking ? <ChevronUp /> : <ChevronDown />}
                     </div>
-                    Thinking
-                    {showThinking ? <ChevronUp /> : <ChevronDown />}
-                  </div>
-                </Button>
-              )}
-              <div className="space-x-1">
-                {isAssistant ? (
-                  <>
-                    {isShare && !sendLoading && !isEmpty(item.content) && (
-                      <AssistantGroupButton
-                        messageId={item.id}
-                        content={messageContent}
-                        prompt={item.prompt}
-                        showLikeButton={showLikeButton}
-                        audioBinary={item.audio_binary}
-                        showLoudspeaker={showLoudspeaker}
-                        showLog={showLog}
-                        attachment={item.attachment}
-                        isShare={isShare}
-                      ></AssistantGroupButton>
-                    )}
-                    {!isShare && (
-                      <AssistantGroupButton
-                        messageId={item.id}
-                        content={messageContent}
-                        prompt={item.prompt}
-                        showLikeButton={showLikeButton}
-                        audioBinary={item.audio_binary}
-                        showLoudspeaker={showLoudspeaker}
-                        showLog={showLog}
-                        attachment={item.attachment}
-                      ></AssistantGroupButton>
-                    )}
-                  </>
-                ) : (
-                  <UserGroupButton
-                    content={messageContent}
-                    messageId={item.id}
-                    removeMessageById={removeMessageById}
-                    regenerateMessage={
-                      regenerateMessage && handleRegenerateMessage
-                    }
-                    sendLoading={sendLoading}
-                  ></UserGroupButton>
+                  </Button>
                 )}
+                <div className="space-x-1">
+                  {isAssistant ? (
+                    <>
+                      {isShare && !sendLoading && !isEmpty(item.content) && (
+                        <AssistantGroupButton
+                          messageId={item.id}
+                          content={messageContent}
+                          prompt={item.prompt}
+                          showLikeButton={showLikeButton}
+                          audioBinary={item.audio_binary}
+                          showLoudspeaker={showLoudspeaker}
+                          showLog={showLog}
+                          attachment={item.attachment}
+                          isShare={isShare}
+                        ></AssistantGroupButton>
+                      )}
+                      {!isShare && (
+                        <AssistantGroupButton
+                          messageId={item.id}
+                          content={messageContent}
+                          prompt={item.prompt}
+                          showLikeButton={showLikeButton}
+                          audioBinary={item.audio_binary}
+                          showLoudspeaker={showLoudspeaker}
+                          showLog={showLog}
+                          attachment={item.attachment}
+                        ></AssistantGroupButton>
+                      )}
+                    </>
+                  ) : (
+                    <UserGroupButton
+                      content={messageContent}
+                      messageId={item.id}
+                      removeMessageById={removeMessageById}
+                      regenerateMessage={
+                        regenerateMessage && handleRegenerateMessage
+                      }
+                      sendLoading={sendLoading}
+                    ></UserGroupButton>
+                  )}
+                </div>
               </div>
-            </div>
+            )}
 
             {isAssistant &&
               currentEventListWithoutMessageById &&
@@ -308,12 +310,6 @@ function MessageItem({
                 referenceChunks={reference?.chunks}
                 messageContent={messageContent}
               ></ReferenceImageList>
-            )}
-
-            {isAssistant && referenceDocuments.length > 0 && (
-              <ReferenceDocumentList
-                list={referenceDocuments}
-              ></ReferenceDocumentList>
             )}
 
             {isUser && (

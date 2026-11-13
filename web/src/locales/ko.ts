@@ -377,6 +377,8 @@ export default {
       dataFlowRequired: '데이터 흐름을 선택해 주세요',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        '업로드를 계속하면 시스템이 이 파일들을 지원되는 기본 제공 구문 분석 구성으로 자동 전환합니다.',
       metadata: {
         fields: '필드',
         selectFiles: '{{count}}개 파일 선택됨',
@@ -490,7 +492,7 @@ export default {
       webCrawl: '웹 크롤',
       chunkNumber: 'Chunk',
       uploadDate: '업로드 날짜',
-      chunkMethod: 'Chunking 방법',
+      parsingMode: '파싱 모드',
       enabled: '활성화',
       disabled: '비활성화',
       action: '작업',
@@ -508,13 +510,13 @@ export default {
         'RAGFlow가 LLM에 전달하고자 하는 내용을 정확히 가져올 수 있는지 확인하는 검색 테스트를 실행하세요. 키워드 유사도 가중치나 유사도 임계값 등 기본 설정을 조정하여 최적의 결과를 얻었다면, 해당 변경 사항은 자동으로 저장되지 않으므로 채팅 어시스턴트 설정 또는 검색 에이전트 컴포넌트 설정에 적용해야 합니다.',
       similarityThreshold: '유사도 임계값',
       similarityThresholdTip:
-        'RAGFlow는 검색 시 가중 키워드 유사도와 가중 벡터 코사인 유사도, 또는 가중 키워드 유사도와 가중 rerank 점수의 조합을 사용합니다. 이 파라미터는 사용자 쿼리와 chunk 간 유사도 임계값을 설정합니다.\n이 임계값보다 낮은 유사도 점수를 가진 chunk는 결과에서 제외됩니다. 기본 임계값은 20이며, 하이브리드 유사도 점수가 20 이상인 chunk만 검색됩니다.',
+        'RAGFlow는 검색 시 가중 키워드 유사도와 가중 벡터 코사인 유사도의 조합을 사용하거나, 리랭커 모델이 선택된 경우 가중 키워드 유사도와 가중 리랭킹 점수의 조합을 사용합니다. 이 매개변수는 사용자 쿼리와 청크 간의 유사도 임계값을 설정합니다. 유사도 점수가 이 임계값보다 낮은 청크는 결과에서 제외됩니다. 기본 임계값은 20입니다. 즉, 하이브리드 유사도 점수가 20 이상인 청크만 검색됩니다. 벡터 유사도 가중치가 0으로 설정된 경우 이 임계값은 적용되지 않습니다.',
       vectorSimilarityWeight: '벡터 유사도 가중치',
       vectorSimilarityWeightTip:
-        '벡터 코사인 유사도 또는 rerank 점수와 함께 사용되는 결합 유사도 점수에서 키워드 유사도의 가중치를 설정합니다. 두 가중치의 합은 1.0이어야 합니다.',
+        '벡터 코사인 유사도 또는 리랭킹 점수와 함께 사용되는 결합 유사도 점수에서 벡터 유사도의 가중치를 설정합니다. 두 가중치의 합은 1.0이어야 합니다.',
       keywordSimilarityWeight: '키워드 유사도 가중치',
       keywordSimilarityWeightTip:
-        '벡터 코사인 유사도 또는 rerank 점수와 함께 사용되는 결합 유사도 점수에서 키워드 유사도의 가중치를 설정합니다. 두 가중치의 합은 1.0이어야 합니다.',
+        '결합 유사도 점수에서 키워드 유사도의 가중치를 설정합니다. 벡터와 키워드 가중치의 합은 1.0이어야 합니다.',
       testText: '테스트 텍스트',
       testTextPlaceholder: '질문을 입력하세요',
       testingLabel: '실행',
@@ -542,9 +544,6 @@ export default {
       layoutRecognize: 'PDF 파서',
       layoutRecognizeTip:
         '비전 모델을 사용하여 PDF 레이아웃을 분석하고 문서 제목, 텍스트 블록, 이미지 및 표를 효과적으로 찾습니다. Naive 옵션을 선택하면 PDF의 일반 텍스트만 검색됩니다. 이 옵션은 현재 PDF 문서에만 적용됩니다.',
-      taskPageSize: '작업 페이지 크기',
-      taskPageSizeMessage: '작업 페이지 크기를 입력해 주세요',
-      taskPageSizeTip: `레이아웃 인식 중 PDF 파일은 처리 속도를 높이기 위해 chunk로 분할되어 병렬로 처리됩니다. 이 파라미터는 각 chunk의 크기를 설정합니다. chunk 크기가 클수록 페이지 간에 연속적인 텍스트가 분리될 가능성이 낮아집니다.`,
       addPage: '페이지 추가',
       greaterThan: '현재 값은 끝 값보다 커야 합니다',
       greaterThanPrevious: '현재 값은 이전 끝 값보다 커야 합니다',
@@ -559,7 +558,7 @@ export default {
       close: '닫기',
       rerankModel: 'Rerank 모델',
       rerankPlaceholder: '값 선택',
-      rerankTip: `선택 사항입니다. 비워두면 RAGFlow는 가중 키워드 유사도와 가중 벡터 코사인 유사도의 조합을 사용합니다. rerank 모델을 선택하면 가중 rerank 점수가 가중 벡터 코사인 유사도를 대체합니다. rerank 모델을 사용하면 시스템 응답 시간이 크게 증가합니다. rerank 모델을 사용하려면 SaaS reranker를 사용하거나, 로컬 배포 rerank 모델을 선호하는 경우 docker-compose-gpu.yml로 RAGFlow를 시작해야 합니다.`,
+      rerankTip: `선택 사항입니다. 비워두면 RAGFlow는 가중 키워드 유사도와 가중 벡터 코사인 유사도의 조합을 사용합니다. rerank 모델을 선택하면 가중 rerank 점수가 가중 벡터 코사인 유사도를 대체합니다. rerank 모델을 사용하면 시스템 응답 시간이 크게 증가합니다.`,
       topK: 'Top-K',
       topKTip: `Rerank 모델과 함께 사용하며, 지정된 reranking 모델로 전송할 텍스트 chunk 수를 정의합니다.`,
       delimiter: `텍스트 구분자`,
@@ -570,12 +569,10 @@ export default {
       childrenDelimiterTip:
         '구분자는 하나 또는 여러 특수 문자로 구성될 수 있습니다. 여러 문자인 경우 백틱(` `)으로 감싸야 합니다. 예를 들어 구분자를 \\n`##`;으로 설정하면 줄바꿈, 이중 해시 기호(##), 세미콜론에서 텍스트가 분리됩니다.',
 
-      html4excel: 'Excel을 HTML로',
-      html4excelTip: `일반 chunking 방법과 함께 사용합니다. 비활성화 시 데이터셋의 스프레드시트(XLSX 또는 XLS(Excel 97-2003))는 키-값 쌍으로 파싱됩니다. 활성화 시 HTML 표로 파싱되며, 원래 표가 12행을 초과하면 12행마다 분리됩니다. 자세한 내용은 https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration 을 참조하세요.`,
       autoKeywords: '자동 키워드',
-      autoKeywordsTip: `각 chunk에서 N개의 키워드를 자동으로 추출하여 해당 키워드가 포함된 쿼리에서의 순위를 높입니다. '설정'에서 지정된 인덱싱 모델이 추가 토큰을 소비합니다. chunk 목록에서 추가된 키워드를 확인하거나 업데이트할 수 있습니다. 자세한 내용은 https://ragflow.io/docs/dev/autokeyword_autoquestion 을 참조하세요.`,
+      autoKeywordsTip: `각 chunk에서 N개의 키워드를 자동으로 추출하여 해당 키워드가 포함된 쿼리에서의 순위를 높입니다. '설정'에서 지정된 인덱싱 모델이 추가 토큰을 소비합니다. chunk 목록에서 추가된 키워드를 확인하거나 업데이트할 수 있습니다. 자세한 내용은 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration 을 참조하세요.`,
       autoQuestions: '자동 질문',
-      autoQuestionsTip: `각 chunk에서 N개의 질문을 자동으로 추출하여 해당 질문이 포함된 쿼리에서의 순위를 높입니다. chunk 목록에서 추가된 질문을 확인하거나 업데이트할 수 있습니다. 오류가 발생해도 chunking 과정에 영향을 주지 않으나, 원래 chunk에 빈 결과가 추가될 수 있습니다. '설정'에서 지정된 인덱싱 모델이 추가 토큰을 소비합니다. 자세한 내용은 https://ragflow.io/docs/dev/autokeyword_autoquestion 을 참조하세요.`,
+      autoQuestionsTip: `각 chunk에서 N개의 질문을 자동으로 추출하여 해당 질문이 포함된 쿼리에서의 순위를 높입니다. chunk 목록에서 추가된 질문을 확인하거나 업데이트할 수 있습니다. 오류가 발생해도 chunking 과정에 영향을 주지 않으나, 원래 chunk에 빈 결과가 추가될 수 있습니다. '설정'에서 지정된 인덱싱 모델이 추가 토큰을 소비합니다. 자세한 내용은 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration 을 참조하세요.`,
       redo: '기존 {{chunkNum}}개의 chunk를 초기화하시겠습니까?',
       setMetaData: '메타데이터 설정',
       pleaseInputJson: 'JSON을 입력해 주세요',
@@ -605,6 +602,7 @@ export default {
       reRankModelWaring: 'Re-rank 모델은 처리 시간이 매우 오래 걸립니다.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       randomSeedTip:
         'Seed는 의사 난수 알고리즘의 시작점으로, 여러 실행에서 동일한 출력을 재현할 수 있도록 합니다.',
       datasetDescription: '데이터셋을 설명하세요',
@@ -633,8 +631,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         '예: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio 액세스 토큰',
-      paddleocrAccessTokenTip: 'PaddleOCR API용 액세스 토큰 (선택 사항)',
-      paddleocrAccessTokenPlaceholder: 'AI Studio 토큰 (선택 사항)',
+      paddleocrAccessTokenTip: 'PaddleOCR API용 액세스 토큰',
+      paddleocrAccessTokenPlaceholder: 'AI Studio 토큰',
       paddleocrAlgorithm: 'PaddleOCR 알고리즘',
       paddleocrAlgorithmTip: 'PaddleOCR 파싱에 사용할 알고리즘',
       paddleocrSelectAlgorithm: '알고리즘 선택',
@@ -678,7 +676,7 @@ export default {
       dataFlowPlaceholder: '파이프라인을 선택해 주세요.',
       buildItFromScratch: '처음부터 만들기',
       dataFlow: '파이프라인',
-      parseType: '파싱 유형',
+      parsingMode: '파싱 모드',
       manualSetup: '파이프라인',
       builtIn: '기본 제공',
       titleDescription: 'LLM 및 프롬프트를 포함한 데이터셋에 대해 설정합니다',
@@ -699,8 +697,6 @@ export default {
         "'팀'으로 설정하면 모든 팀원이 데이터셋을 관리할 수 있습니다.",
       chunkTokenNumberTip:
         'Chunk 생성을 위한 토큰 임계값을 설정합니다. 이 임계값보다 토큰이 적은 세그먼트는 임계값을 초과할 때까지 다음 세그먼트와 결합되며, 그 시점에 chunk가 생성됩니다. 임계값을 초과하더라도 구분자가 나오지 않으면 새 chunk가 생성되지 않습니다.',
-      chunkMethod: 'Chunking 방법',
-      chunkMethodTip: '오른쪽의 안내를 참조하세요.',
       upload: '업로드',
       english: 'English',
       chinese: 'Chinese',
@@ -843,7 +839,7 @@ export default {
 `,
       useRaptor: 'RAPTOR',
       useRaptorTip:
-        'RAPTOR는 멀티홉 질의응답 작업에 사용할 수 있습니다. 파일 탭에서 [생성 > RAPTOR]를 클릭하여 활성화하세요. 자세한 내용은 https://ragflow.io/docs/dev/enable_raptor 을 참조하세요.',
+        'RAPTOR는 멀티홉 질의응답 작업에 사용할 수 있습니다. 파일 탭에서 [생성 > RAPTOR]를 클릭하여 활성화하세요. 자세한 내용은 https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#tree 을 참조하세요.',
       prompt: '프롬프트',
       promptTip:
         'LLM의 역할, 원하는 응답 길이, 톤, 언어 등을 포함한 시스템 프롬프트를 사용하세요. 시스템 프롬프트는 LLM에 대한 다양한 데이터 입력으로 사용되는 키(변수)와 함께 자주 사용됩니다. 사용할 키를 표시하려면 슬래시 `/` 또는 (x) 버튼을 사용하세요.',
@@ -894,7 +890,7 @@ export default {
       addTag: '태그 추가',
       useGraphRag: '지식 그래프',
       useGraphRagTip:
-        '현재 데이터셋의 파일 청크에 대해 지식 그래프를 구성하여, 중첩된 논리가 포함된 멀티홉 질의응답(multi-hop QA) 성능을 향상시킵니다. 자세한 내용은 https://ragflow.io/docs/dev/construct_knowledge_graph 을 참조하세요.',
+        '현재 데이터셋의 파일 청크에 대해 지식 그래프를 구성하여, 중첩된 논리가 포함된 멀티홉 질의응답(multi-hop QA) 성능을 향상시킵니다. 자세한 내용은 https://ragflow.io/docs/knowledge_compilation/built_in_templates_and_dedicated_configuration#graph 을 참조하세요.',
       graphRagMethod: '방법',
       graphRagMethodTip: `
       Light: (기본값) github.com/HKUDS/LightRAG에서 제공하는 프롬프트를 사용하여 엔티티와 관계를 추출합니다. 더 적은 토큰, 메모리, 연산 리소스를 사용합니다.</br>
@@ -1124,7 +1120,7 @@ export default {
       tavilyApiKeyTip:
         'API 키가 올바르게 설정되면 Tavily 기반 웹 검색이 데이터셋 검색을 보완하는 데 사용됩니다.',
       tavilyApiKeyMessage: 'Tavily API 키를 입력해 주세요',
-      tavilyApiKeyHelp: '어떻게 얻나요?',
+      webSearchApiKeyHelp: '어떻게 얻나요?',
       crossLanguage: '교차 언어 검색',
       crossLanguagePlaceholder: '값 선택',
       crossLanguageTip: `교차 언어(cross-language) 검색을 위해 언어를 하나 이상 선택하세요. 언어를 선택하지 않으면 시스템은 원본 쿼리로 검색합니다.`,
@@ -1143,8 +1139,6 @@ export default {
       },
       cancel: '취소',
       chatSetting: '채팅 설정',
-      tocEnhance: 'PageIndex',
-      tocEnhanceTip: `문서 파싱 과정에서 목차 정보가 생성됩니다(일반 방법의 '목차 추출 활성화' 옵션 참조). 이 정보를 활용하면 대형 모델이 사용자 질의와 관련된 목차 항목을 반환하고, 이를 바탕으로 관련 청크를 검색한 뒤 정렬 시 해당 청크에 가중치를 부여할 수 있습니다. 책에서 목차를 보고 원하는 정보를 찾아가는 사람의 행동 방식을 모방한 방식입니다.`,
       batchDeleteSessions: '일괄 삭제',
       deleteSelectedConfirm: '선택한 {{count}}개의 세션을 삭제하시겠습니까?',
       showChunkMetadata: 'Chunk 메타데이터 표시',
@@ -1551,7 +1545,7 @@ export default {
         '예: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'PaddleOCR 액세스 토큰',
       paddleocrAccessTokenMessage: 'PaddleOCR 액세스 토큰을 입력해 주세요',
-      paddleocrAccessTokenPlaceholder: 'PaddleOCR 액세스 토큰 (선택 사항)',
+      paddleocrAccessTokenPlaceholder: 'PaddleOCR 액세스 토큰',
       paddleocrAlgorithm: 'PaddleOCR 알고리즘',
       paddleocrAlgorithmMessage: 'PaddleOCR 알고리즘을 선택해 주세요',
       mineruApiserver: 'MinerU API 서버',
@@ -1578,18 +1572,18 @@ export default {
       chatModelTip: '새로 생성된 각 데이터셋의 기본 LLM입니다.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        '새로 생성된 각 데이터셋의 기본 임베딩 모델입니다. 드롭다운에서 임베딩 모델을 찾을 수 없으면 RAGFlow 슬림 에디션(임베딩 모델 미포함)을 사용 중인지 확인하거나 https://ragflow.io/docs/dev/supported_models 에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.',
+        '새로 생성된 각 데이터셋의 기본 임베딩 모델입니다. 드롭다운에서 임베딩 모델을 찾을 수 없으면 RAGFlow 슬림 에디션(임베딩 모델 미포함)을 사용 중인지 확인하거나 모델 공급자 페이지에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.',
       img2txtModel: 'VLM',
       img2txtModelTip:
-        '새로 생성된 각 데이터셋의 기본 VLM입니다. 이미지나 동영상을 설명합니다. 드롭다운에서 모델을 찾을 수 없으면 https://ragflow.io/docs/dev/supported_models 에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.',
+        '새로 생성된 각 데이터셋의 기본 VLM입니다. 이미지나 동영상을 설명합니다. 드롭다운에서 모델을 찾을 수 없으면 모델 공급자 페이지에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.',
       sequence2txtModel: 'ASR',
       sequence2txtModelTip:
         '새로 생성된 각 데이터셋의 기본 ASR 모델입니다. 이 모델을 사용하여 음성을 텍스트로 변환하세요.',
       rerankModel: 'Rerank',
-      rerankModelTip: `Chunk rerank를 위한 기본 rerank 모델입니다. 드롭다운에서 모델을 찾을 수 없으면 https://ragflow.io/docs/dev/supported_models 에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.`,
+      rerankModelTip: `Chunk rerank를 위한 기본 rerank 모델입니다. 드롭다운에서 모델을 찾을 수 없으면 모델 공급자 페이지에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.`,
       ttsModel: 'TTS',
       ttsModelTip:
-        '기본 텍스트 음성 변환 모델입니다. 드롭다운에서 모델을 찾을 수 없으면 https://ragflow.io/docs/dev/supported_models 에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.',
+        '기본 텍스트 음성 변환 모델입니다. 드롭다운에서 모델을 찾을 수 없으면 모델 공급자 페이지에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.',
       workspace: '워크스페이스',
       upgrade: '업그레이드',
       addLlmTitle: 'LLM 추가',
@@ -1611,7 +1605,7 @@ export default {
         apiUrl: 'PaddleOCR API URL',
         apiUrlPlaceholder: '예: https://paddleocr-server.com/layout-parsing',
         accessToken: 'AI Studio 액세스 토큰',
-        accessTokenPlaceholder: 'AI Studio 토큰 (선택 사항)',
+        accessTokenPlaceholder: 'AI Studio 토큰',
         algorithm: 'PaddleOCR 알고리즘',
         selectAlgorithm: '알고리즘 선택',
         modelNamePlaceholder: '예: paddleocr-from-env-1',
@@ -1759,6 +1753,7 @@ export default {
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       showToc: '목차 보기',
       hideToc: '목차 숨기기',
@@ -1847,13 +1842,6 @@ export default {
       pleaseUploadAtLeastOneFile: '최소 하나의 파일을 업로드해 주세요',
     },
     flow: {
-      preprocess: {
-        preprocess: '전처리',
-        mainContent: '본문 내용',
-        abstract: '요약',
-        author: '저자',
-        sectionTitle: '섹션 제목',
-      },
       editTags: '태그 편집',
       editTagsDescription:
         '에이전트를 정리하고 필터링하기 위한 태그를 추가하세요. Enter 또는 쉼표를 눌러 추가합니다.',
@@ -1928,9 +1916,6 @@ export default {
       oneChunkTitle: '참고',
       oneChunkDescription:
         '파싱된 모든 섹션이 순서대로 단일 chunk로 병합됩니다.',
-      flattenMediaToText: '비전 모델 비활성화',
-      flattenMediaToTextTip:
-        '이미지 및 표 섹션을 일반 텍스트로 처리하고 비전 향상을 건너뜁니다.',
       enableChildrenDelimiters: '하위 chunk를 검색에 사용',
       merge: '병합',
       split: '분할',
@@ -1950,20 +1935,6 @@ export default {
       maxRounds: '최대 반성 횟수',
       delayAfterError: '오류 후 지연',
       maxRetries: '최대 재시도 횟수',
-      maxSteps: '최대 단계 수',
-      headless: '헤드리스',
-      enableDefaultExtensions: '기본 확장 기능 활성화',
-      enableDefaultExtensionsTip:
-        'browser-use 기본 확장 기능(uBlock, 쿠키 처리, ClearURLs)을 활성화합니다. 런타임 확장 다운로드를 피하려면 비활성화하세요.',
-      chromiumSandbox: 'Chromium 샌드박스',
-      chromiumSandboxTip:
-        'Chromium 샌드박스 활성화 여부입니다. Docker root 환경에서는 일반적으로 비활성화되며, 일반 호스트에서는 활성화를 권장합니다.',
-      persistSession: '세션 유지',
-      persistSessionTip:
-        '활성화하면 이 Browser 노드가 브라우저 세션을 재사용하여 반복 로그인을 방지합니다.',
-      uploadSources: '업로드 소스',
-      uploadSourcesTip:
-        '파일 ID, 파일 URL 또는 변수를 지원합니다. 쉼표로 여러 값을 구분하거나 JSON 배열 형식(예: ["id1","https://example.com/a.pdf"])을 사용할 수 있습니다.',
       advancedSettings: '고급 설정',
       addTools: '도구 추가',
       sysPromptDefaultValue: `
@@ -1991,7 +1962,7 @@ export default {
       dataManipulation: '데이터 조작',
       flow: '플로우',
       dialog: '대화',
-      cite: '인용',
+      cite: '인용 표시',
       citeTip: 'citeTip',
       name: '이름',
       nameMessage: '이름을 입력해 주세요',
@@ -2067,9 +2038,6 @@ export default {
         '제공된 SearXNG 인스턴스 URL을 통해 검색하는 구성 요소입니다. TopN과 인스턴스 URL을 지정하세요.',
       docGenerator: 'Doc Generator',
       docGeneratorDescription: `Markdown 내용에서 파일을 생성합니다.`,
-      browser: '브라우저',
-      browserDescription:
-        '브라우저 작업을 자동화합니다. 모델 설정 및 프롬프트 기반 작업을 지원합니다. 업로드 소스는 파일 ID와 URL을 지원하며, 다운로드된 파일은 대상 폴더에 저장할 수 있습니다.',
       subtitle: '자막',
       logoImage: '로고 이미지',
       logoPosition: '로고 위치',
@@ -2437,9 +2405,9 @@ export default {
       jsonFormatTip:
         '업스트림 구성 요소는 다음 형식의 JSON 문자열을 제공해야 합니다:',
       toEmailTip: 'to_email: 수신자 이메일 (필수)',
-      ccEmailTip: 'cc_email: 참조 이메일 (선택)',
-      subjectTip: 'subject: 이메일 제목 (선택)',
-      contentTip: 'content: 이메일 내용 (선택)',
+      ccEmailTip: 'cc_email: 참조 이메일',
+      subjectTip: 'subject: 이메일 제목',
+      contentTip: 'content: 이메일 내용',
       jsonUploadTypeErrorMessage: 'json 파일을 업로드해 주세요',
       jsonUploadContentErrorMessage: 'json 파일 오류',
       iteration: '반복',
@@ -2480,7 +2448,6 @@ export default {
       historyVersion: '버전 이력',
       version: {
         created: '생성됨',
-        canvasCategory: '캔버스 카테고리',
         tags: '태그',
         details: '버전 세부 사항',
         dsl: 'DSL',
@@ -3026,10 +2993,10 @@ Important structured information may include: names, dates, locations, events, k
         write: '쓰기',
         share: '공유',
       },
-      serviceStatus: '서비스 상태',
-      userManagement: '사용자 관리',
-      sandboxSettings: '샌드박스 설정',
-      registrationWhitelist: '등록 화이트리스트',
+      serviceStatus: '서비스',
+      userManagement: '사용자',
+      sandboxSettings: '샌드박스',
+      registrationWhitelist: '화이트리스트',
       roles: '역할',
       monitoring: '모니터링',
       sandboxSettingsPage: {
@@ -3115,7 +3082,7 @@ Important structured information may include: names, dates, locations, events, k
       importWhitelist: '화이트리스트 가져오기 (Excel)',
       importSelectExcelFile: 'Excel 파일 (.xlsx)',
       importOverwriteExistingEmails: '기존 이메일 덮어쓰기',
-      importInvalidExcelFile: '유효한 Excel 파일을 선택해 주세요',
+      importValidExcelFile: '유효한 Excel 파일을 선택해 주세요',
       importFileRequired: '가져올 파일을 선택해 주세요',
       importFileTips:
         '파일에는 <code>email</code>이라는 단일 헤더 열이 있어야 합니다.',
@@ -3127,7 +3094,6 @@ Important structured information may include: names, dates, locations, events, k
       updateDate: '업데이트 날짜',
       permission: '권한',
       agentTitle: '에이전트 제목',
-      canvasCategory: '캔버스 카테고리',
       newRole: '새 역할',
       addNewRole: '새 역할 추가',
       roleName: '역할 이름',
@@ -3143,18 +3109,14 @@ Important structured information may include: names, dates, locations, events, k
     },
     explore: {
       title: '시작',
-      canvasList: '캔버스 목록',
       sessions: '세션',
       newSession: '새 세션',
       newSessionLabel: '새 대화 시작',
       deleteSession: '세션 삭제',
-      searchCanvas: '캔버스 검색...',
       searchSessions: '세션 검색...',
-      noCanvasSelected: '캔버스를 선택해 주세요',
       noSessionSelected: '세션을 선택하거나 새 세션을 만들어 주세요',
       noSessionsFound: '세션을 찾을 수 없습니다',
       createFirstSession: '첫 번째 세션을 만들어 보세요',
-      noCanvasFound: '캔버스를 찾을 수 없습니다',
       deleteSelectedConfirm: '선택한 {{count}}개의 세션을 삭제하시겠습니까?',
       batchDeleteSessions: '세션 삭제',
     },

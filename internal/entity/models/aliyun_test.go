@@ -17,13 +17,19 @@
 package models
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/google/uuid"
 )
 
 func TestAliyunChatWithMessagesSupportsToolCalls(t *testing.T) {
@@ -569,5 +575,910 @@ func TestAliyunAudioSpeechWithSenderSendsSingleChunk(t *testing.T) {
 	}
 	if len(chunks) != 1 || chunks[0] != "fake-wav-bytes" {
 		t.Fatalf("chunks = %v, want [fake-wav-bytes]", chunks)
+	}
+}
+
+// TestAliyunNativeEmbeddingRootMapping pins Python
+// _dashscope_native_http_api_url (embedding_model.py:80-128): an already-native
+// base is kept, known DashScope hosts map to their /api/v1 root, and anything
+// else (private gateways) leaves the compatible endpoint in place.
+func TestAliyunNativeEmbeddingRootMapping(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{"", ""},
+		{"https://dashscope.aliyuncs.com/compatible-mode/v1", "https://dashscope.aliyuncs.com/api/v1"},
+		{"https://dashscope-intl.aliyuncs.com/compatible-mode/v1/", "https://dashscope-intl.aliyuncs.com/api/v1"},
+		{"https://dashscope.aliyuncs.com/api/v1", "https://dashscope.aliyuncs.com/api/v1"},
+		{"https://private-gateway.example.com/v1", ""},
+		// Hostname matching, not substring: a crafted query string must not
+		// select the native API.
+		{"https://attacker.example/?u=dashscope.aliyuncs.com", ""},
+	}
+	for _, c := range cases {
+		if got := aliyunNativeEmbeddingRoot(c.in); got != c.want {
+			t.Errorf("aliyunNativeEmbeddingRoot(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// TestAliyunEmbedIgnoresNonDashScopeHost pins the Python QWenEmbed contract for a
+// base URL that is not a DashScope host: the configured host is IGNORED and the
+// call goes to the dashscope SDK's default native root — still carrying
+// text_type, so the query/document distinction survives — with a single warning
+// naming the ignored host (embedding_model.py:121-127, :134-138, :448-450).
+func TestAliyunEmbedIgnoresNonDashScopeHost(t *testing.T) {
+	withSSRFBypass(t)
+
+	var paths []string
+	var bodies []map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		var body map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		bodies = append(bodies, body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[{"text_index":0,"embedding":[0.5]}]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+	// DASHSCOPE_HTTP_BASE_URL is the SDK endpoint Python leaves in place when the
+	// configured base URL is unrecognized (dashscope/common/env.py:20-23).
+	t.Setenv("DASHSCOPE_HTTP_BASE_URL", srv.URL)
+
+	var warnings []string
+	prev := aliyunWarnSink
+	t.Cleanup(func() { aliyunWarnSink = prev })
+	aliyunWarnSink = func(format string, args ...any) { warnings = append(warnings, fmt.Sprintf(format, args...)) }
+
+	apiKey := "test-key"
+	model := "text-embedding-v4"
+	// A private gateway that is not a DashScope host: it must be ignored, not used.
+	m := NewAliyunModel(map[string]string{"default": "https://ignored-gateway.internal/v1"},
+		URLSuffix{Embedding: "embeddings", Chat: "chat/completions"})
+
+	if _, err := m.Embed(t.Context(), &model, EmbedRequest{Texts: []string{"d"}}, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
+		t.Fatalf("Embed(document): %v", err)
+	}
+	if _, err := m.Embed(t.Context(), &model, EmbedRequest{Texts: []string{"q"}, Query: true}, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
+		t.Fatalf("Embed(query): %v", err)
+	}
+	if _, err := m.Embed(t.Context(), &model, EmbedRequest{Texts: []string{"q2"}, Query: true}, &APIConfig{ApiKey: &apiKey}, nil, nil); err != nil {
+		t.Fatalf("Embed(query 2): %v", err)
+	}
+
+	// Every call lands on the native text-embedding path of the SDK endpoint.
+	if len(paths) != 3 {
+		t.Fatalf("requests = %d, want 3 (the ignored host must not be contacted)", len(paths))
+	}
+	for i, p := range paths {
+		if want := "/" + aliyunNativeEmbeddingPath; p != want {
+			t.Errorf("path[%d] = %q, want %q", i, p, want)
+		}
+	}
+	// text_type survives the fallback: document for the plain call, query after.
+	for i, want := range []string{"document", "query", "query"} {
+		params, _ := bodies[i]["parameters"].(map[string]interface{})
+		if params["text_type"] != want {
+			t.Errorf("body[%d] text_type = %v, want %q", i, bodies[i]["parameters"], want)
+		}
+	}
+	// One warning, naming the host that was ignored.
+	if len(warnings) != 1 {
+		t.Fatalf("warnings = %v, want exactly one (once per host, not per call)", warnings)
+	}
+	if !strings.Contains(warnings[0], "ignored-gateway.internal") {
+		t.Errorf("warning %q does not name the ignored host", warnings[0])
+	}
+}
+
+// TestAliyunBaseURLHostIsHostOnly pins that the warning can only ever log a host:
+// credentials, path and query string from a configured base URL stay out of the
+// log line.
+func TestAliyunBaseURLHostIsHostOnly(t *testing.T) {
+	for _, c := range []struct{ in, want string }{
+		{"https://user:secret@gateway.internal/v1?key=abc", "gateway.internal"},
+		{"https://dashscope.aliyuncs.com/compatible-mode/v1", "dashscope.aliyuncs.com"},
+		{"gateway.internal/v1", "gateway.internal"},
+		{"", ""},
+	} {
+		if got := aliyunBaseURLHost(c.in); got != c.want {
+			t.Errorf("aliyunBaseURLHost(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+// embedding call used for Tongyi-Qianwen: text_type follows EmbedRequest.Query,
+// inputs are sent in batches of 4 (Python QWenEmbed.encode), and each response's
+// batch-relative text_index is offset back into the caller's slice.
+func TestAliyunEmbedNativeSendsTextTypeAndBatches(t *testing.T) {
+	withSSRFBypass(t)
+	var paths []string
+	var bodies []map[string]interface{}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		paths = append(paths, r.URL.Path)
+		var body map[string]interface{}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		bodies = append(bodies, body)
+		input, _ := body["input"].(map[string]interface{})
+		texts, _ := input["texts"].([]interface{})
+		parts := make([]string, 0, len(texts))
+		for i := range texts {
+			parts = append(parts, fmt.Sprintf(`{"text_index":%d,"embedding":[%d]}`, i, i))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[` + strings.Join(parts, ",") + `]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	m := NewAliyunModel(map[string]string{"default": srv.URL}, URLSuffix{Embedding: "embeddings"})
+	apiKey := "test-key"
+	got, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"a", "b", "c", "d", "e"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("embedNative: %v", err)
+	}
+	if len(paths) != 2 {
+		t.Fatalf("requests = %d, want 2 (batch of 4 + 1)", len(paths))
+	}
+	if want := "/" + aliyunNativeEmbeddingPath; paths[0] != want {
+		t.Errorf("path = %q, want %q", paths[0], want)
+	}
+	if params, ok := bodies[0]["parameters"].(map[string]interface{}); !ok || params["text_type"] != "document" {
+		t.Errorf("document text_type = %v, want document", bodies[0]["parameters"])
+	}
+	byIndex := map[int]EmbeddingData{}
+	for _, e := range got {
+		byIndex[e.Index] = e
+	}
+	if len(byIndex) != 5 {
+		t.Fatalf("embeddings cover indexes %v, want 0..4", byIndex)
+	}
+	if _, ok := byIndex[4]; !ok {
+		t.Errorf("second batch's text_index was not offset to the global index 4: %v", byIndex)
+	}
+
+	// The query path flips text_type.
+	if _, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"q"}, Query: true}, &APIConfig{ApiKey: &apiKey}, nil); err != nil {
+		t.Fatalf("embedNative(query): %v", err)
+	}
+	if params, ok := bodies[len(bodies)-1]["parameters"].(map[string]interface{}); !ok || params["text_type"] != "query" {
+		t.Errorf("query text_type = %v, want query", bodies[len(bodies)-1]["parameters"])
+	}
+}
+
+// TestAliyunEmbedNativePlacesVectorsByTextIndex pins that an out-of-order
+// response is reordered onto the caller's inputs: nav_embedder/dataset-utils
+// read the result positionally and discard Index, so placing by text_index is
+// what keeps each vector bound to the right text.
+func TestAliyunEmbedNativePlacesVectorsByTextIndex(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		// Deliberately reversed: text_index 3,2,1,0 with distinct vectors.
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[` +
+			`{"text_index":3,"embedding":[3]},` +
+			`{"text_index":2,"embedding":[2]},` +
+			`{"text_index":1,"embedding":[1]},` +
+			`{"text_index":0,"embedding":[0]}` +
+			`]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	m := NewAliyunModel(map[string]string{"default": srv.URL}, URLSuffix{Embedding: "embeddings"})
+	apiKey := "test-key"
+	got, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"a", "b", "c", "d"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("embedNative: %v", err)
+	}
+	if len(got) != 4 {
+		t.Fatalf("len = %d, want 4", len(got))
+	}
+	for i, e := range got {
+		if e.Index != i || len(e.Embedding) != 1 || e.Embedding[0] != float64(i) {
+			t.Errorf("got[%d] = {index:%d vec:%v}, want {index:%d vec:[%d]}", i, e.Index, e.Embedding, i, i)
+		}
+	}
+}
+
+// TestAliyunEmbedNativeDuplicateIndexLastWins pins Python QWenEmbed.encode's
+// "embds[e['text_index']] = e['embedding']": a repeated text_index overwrites
+// the earlier vector and the slot left unfilled stays empty — no error.
+func TestAliyunEmbedNativeDuplicateIndexLastWins(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[` +
+			`{"text_index":0,"embedding":[0]},` +
+			`{"text_index":1,"embedding":[1]},` +
+			`{"text_index":1,"embedding":[9]}` +
+			`]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	m := NewAliyunModel(map[string]string{"default": srv.URL}, URLSuffix{Embedding: "embeddings"})
+	apiKey := "test-key"
+	got, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"a", "b", "c"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("embedNative: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("len = %d, want 3 (one chunk entry per returned embedding)", len(got))
+	}
+	if len(got[0].Embedding) != 1 || got[0].Embedding[0] != 0 {
+		t.Errorf("got[0] = %v, want [0]", got[0].Embedding)
+	}
+	if len(got[1].Embedding) != 1 || got[1].Embedding[0] != 9 {
+		t.Errorf("got[1] = %v, want the LAST duplicate [9]", got[1].Embedding)
+	}
+	if len(got[2].Embedding) != 0 {
+		t.Errorf("got[2] = %v, want the unfilled slot to stay empty", got[2].Embedding)
+	}
+}
+
+// TestAliyunEmbedNativeShortResponseStaysShort pins that Go mirrors Python's
+// len(resp.embeddings)-sized chunks: a response covering only part of the batch
+// is NOT rejected, it just yields a shorter result (Python's res.extend).
+func TestAliyunEmbedNativeShortResponseStaysShort(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[` +
+			`{"text_index":0,"embedding":[0]},` +
+			`{"text_index":1,"embedding":[1]}` +
+			`]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	m := NewAliyunModel(map[string]string{"default": srv.URL}, URLSuffix{Embedding: "embeddings"})
+	apiKey := "test-key"
+	got, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"a", "b", "c", "d"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("embedNative: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("len = %d, want 2 (response count, Python res.extend)", len(got))
+	}
+	if got[0].Embedding[0] != 0 || got[1].Embedding[0] != 1 {
+		t.Errorf("got = %v, want [[0],[1]]", got)
+	}
+}
+
+// TestAliyunEmbedNativeRejectsOutOfRangeIndex pins Python's IndexError: a
+// text_index past the returned chunk is an error.
+func TestAliyunEmbedNativeRejectsOutOfRangeIndex(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[` +
+			`{"text_index":5,"embedding":[5]}` +
+			`]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	m := NewAliyunModel(map[string]string{"default": srv.URL}, URLSuffix{Embedding: "embeddings"})
+	apiKey := "test-key"
+	_, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "out of range") {
+		t.Fatalf("err = %v, want out-of-range error", err)
+	}
+}
+
+// TestAliyunEmbedNativeRejectsMissingTextIndexKey pins Python's KeyError on
+// e["text_index"]: an item without the key is an error, not a silent index 0.
+func TestAliyunEmbedNativeRejectsMissingTextIndexKey(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[` +
+			`{"embedding":[1]}` +
+			`]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	m := NewAliyunModel(map[string]string{"default": srv.URL}, URLSuffix{Embedding: "embeddings"})
+	apiKey := "test-key"
+	_, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"a"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "text_index") {
+		t.Fatalf("err = %v, want missing-text_index error", err)
+	}
+}
+
+// TestAliyunEmbedNativeNegativeIndexCountsFromEnd pins Python list-assignment
+// semantics: a negative text_index indexes from the END of the chunk, so
+// embds[-1] overwrites the last slot.
+func TestAliyunEmbedNativeNegativeIndexCountsFromEnd(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[` +
+			`{"text_index":-1,"embedding":[7]},` +
+			`{"text_index":0,"embedding":[0]},` +
+			`{"text_index":1,"embedding":[1]}` +
+			`]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	m := NewAliyunModel(map[string]string{"default": srv.URL}, URLSuffix{Embedding: "embeddings"})
+	apiKey := "test-key"
+	got, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"a", "b", "c"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err != nil {
+		t.Fatalf("embedNative: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("len = %d, want 3", len(got))
+	}
+	// embds[-1] = [7] lands in the last slot: [[0],[1],[7]].
+	want := []float64{0, 1, 7}
+	for i, w := range want {
+		if len(got[i].Embedding) != 1 || got[i].Embedding[0] != w {
+			t.Errorf("got[%d] = %v, want [%v]", i, got[i].Embedding, w)
+		}
+	}
+}
+
+// TestAliyunEmbedNativeRejectsTooNegativeIndex pins that an index below
+// -len(chunk) raises, exactly like Python's IndexError.
+func TestAliyunEmbedNativeRejectsTooNegativeIndex(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"output":{"embeddings":[` +
+			`{"text_index":-5,"embedding":[5]}` +
+			`]},"usage":{"total_tokens":1}}`))
+	}))
+	defer srv.Close()
+
+	m := NewAliyunModel(map[string]string{"default": srv.URL}, URLSuffix{Embedding: "embeddings"})
+	apiKey := "test-key"
+	_, err := m.embedNative(t.Context(), srv.URL, "text-embedding-v4",
+		EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil)
+	if err == nil || !strings.Contains(err.Error(), "out of range") {
+		t.Fatalf("err = %v, want out-of-range error", err)
+	}
+}
+
+const (
+	aliyunASRTestSuffix = "api/v1/services/aigc/multimodal-generation/generation"
+	aliyunUploadTestDir = "dashscope-tmp"
+)
+
+// aliyunUploadCapture is one multipart upload the ASR flow sent to the stubbed
+// OSS host.
+type aliyunUploadCapture struct {
+	Fields map[string]string
+	Name   string
+	Data   []byte
+}
+
+// aliyunASRTestStub stubs the three DashScope calls an ASR request makes: the
+// upload policy, the OSS multipart upload, and the multimodal-generation call
+// carrying the transcription. Channels are buffered so a test may ignore them.
+type aliyunASRTestStub struct {
+	Server   *httptest.Server
+	Requests chan map[string]interface{}
+	Paths    chan string
+	Uploads  chan aliyunUploadCapture
+}
+
+func newAliyunASRTestServer(t *testing.T, transcription string) *aliyunASRTestStub {
+	t.Helper()
+	return newAliyunASRTestServerWithASRResponse(t, "test-key", http.StatusOK, fmt.Sprintf(`{"output":{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":[{"text":%q}]}}]},"request_id":"req-1"}`, transcription))
+}
+
+// newAliyunASRTestServerWithASRResponse stubs a successful policy and upload
+// and replies to the transcription call with the given status and body.
+func newAliyunASRTestServerWithASRResponse(t *testing.T, apiKey string, asrStatus int, asrBody string) *aliyunASRTestStub {
+	t.Helper()
+	stub := &aliyunASRTestStub{
+		Requests: make(chan map[string]interface{}, 4),
+		Paths:    make(chan string, 4),
+		Uploads:  make(chan aliyunUploadCapture, 4),
+	}
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == aliyunUploadsPath:
+			if got := r.URL.Query().Get("action"); got != "getPolicy" {
+				http.Error(w, "action = "+got, http.StatusBadRequest)
+				return
+			}
+			if got := r.URL.Query().Get("model"); got == "" {
+				http.Error(w, "model query is missing", http.StatusBadRequest)
+				return
+			}
+			if got := r.Header.Get("Authorization"); got != "Bearer "+apiKey {
+				http.Error(w, "authorization = "+got, http.StatusUnauthorized)
+				return
+			}
+			if got := r.Header.Get("Content-Type"); got != "application/json" {
+				http.Error(w, "content-type = "+got, http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			if _, err := fmt.Fprintf(w, `{"request_id":"req-policy","data":{"policy":"policy-value","signature":"signature-value","upload_dir":%q,"upload_host":%q,"oss_access_key_id":"access-key","x_oss_object_acl":"private","x_oss_forbid_overwrite":"true"}}`,
+				aliyunUploadTestDir, server.URL+"/oss-upload"); err != nil {
+				t.Errorf("failed to write upload policy: %v", err)
+			}
+		case r.Method == http.MethodPost && r.URL.Path == "/oss-upload":
+			if err := r.ParseMultipartForm(1 << 20); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			file, header, err := r.FormFile("file")
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			defer file.Close()
+			data, err := io.ReadAll(file)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			capture := aliyunUploadCapture{Fields: map[string]string{}, Name: header.Filename, Data: data}
+			for key := range r.MultipartForm.Value {
+				capture.Fields[key] = r.FormValue(key)
+			}
+			stub.Uploads <- capture
+			w.WriteHeader(http.StatusOK)
+		case r.Method == http.MethodPost && r.URL.Path == "/"+aliyunASRTestSuffix:
+			if got := r.Header.Get("X-DashScope-OssResourceResolve"); got != "enable" {
+				http.Error(w, "X-DashScope-OssResourceResolve = "+got, http.StatusBadRequest)
+				return
+			}
+			var body map[string]interface{}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			stub.Paths <- r.URL.Path
+			stub.Requests <- body
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(asrStatus)
+			if _, err := w.Write([]byte(asrBody)); err != nil {
+				t.Errorf("failed to write ASR response: %v", err)
+			}
+		default:
+			http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+		}
+	}))
+	stub.Server = server
+	t.Cleanup(server.Close)
+	return stub
+}
+
+func writeAliyunASRTestFile(t *testing.T, name string, content []byte) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatalf("write audio file: %v", err)
+	}
+	return path
+}
+
+func aliyunASRMessages(t *testing.T, body map[string]interface{}) []map[string]interface{} {
+	t.Helper()
+	input, ok := body["input"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("input = %T, want JSON object", body["input"])
+	}
+	raw, ok := input["messages"].([]interface{})
+	if !ok {
+		t.Fatalf("input.messages = %T, want JSON array", input["messages"])
+	}
+	messages := make([]map[string]interface{}, 0, len(raw))
+	for _, item := range raw {
+		message, ok := item.(map[string]interface{})
+		if !ok {
+			t.Fatalf("message = %T, want JSON object", item)
+		}
+		messages = append(messages, message)
+	}
+	return messages
+}
+
+func aliyunASRContentString(t *testing.T, message map[string]interface{}, key string) string {
+	t.Helper()
+	content, ok := message["content"].([]interface{})
+	if !ok || len(content) == 0 {
+		t.Fatalf("content = %v, want non-empty JSON array", message["content"])
+	}
+	part, ok := content[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("content[0] = %T, want JSON object", content[0])
+	}
+	value, _ := part[key].(string)
+	return value
+}
+
+func TestAliyunTranscribeAudioUploadsFileAndSendsOSSURL(t *testing.T) {
+	withSSRFBypass(t)
+	stub := newAliyunASRTestServer(t, "hello world")
+	ctx := t.Context()
+
+	model := NewAliyunModel(
+		map[string]string{"default": stub.Server.URL},
+		URLSuffix{ASR: aliyunASRTestSuffix},
+	)
+	apiKey := "test-key"
+	modelName := "qwen-asr-flash"
+	audio := []byte("RIFF....WAVE")
+	file := writeAliyunASRTestFile(t, "clip.wav", audio)
+
+	response, err := model.TranscribeAudio(ctx, &modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	if err != nil {
+		t.Fatalf("TranscribeAudio: %v", err)
+	}
+	if response.Text != "hello world" {
+		t.Errorf("text = %q, want %q", response.Text, "hello world")
+	}
+
+	if got := <-stub.Paths; got != "/"+aliyunASRTestSuffix {
+		t.Errorf("request path = %q, want /%s", got, aliyunASRTestSuffix)
+	}
+	body := <-stub.Requests
+	if body["model"] != "qwen-asr-flash" {
+		t.Errorf("model = %v, want qwen-asr-flash", body["model"])
+	}
+	messages := aliyunASRMessages(t, body)
+	if len(messages) != 2 {
+		t.Fatalf("messages = %d, want 2 (system + user)", len(messages))
+	}
+	if messages[0]["role"] != "system" {
+		t.Errorf("messages[0].role = %v, want system", messages[0]["role"])
+	}
+	if messages[1]["role"] != "user" {
+		t.Errorf("messages[1].role = %v, want user", messages[1]["role"])
+	}
+	audioURL := aliyunASRContentString(t, messages[1], "audio")
+	wantPrefix := "oss://" + aliyunUploadTestDir + "/"
+	if !strings.HasPrefix(audioURL, wantPrefix) || !strings.HasSuffix(audioURL, ".wav") {
+		t.Errorf("audio = %q, want %q<uuid>.wav", audioURL, wantPrefix)
+	}
+
+	upload := <-stub.Uploads
+	key := upload.Fields["key"]
+	objectName := strings.TrimPrefix(key, aliyunUploadTestDir+"/")
+	if _, err := uuid.Parse(strings.TrimSuffix(objectName, filepath.Ext(objectName))); err != nil {
+		t.Errorf("uploaded object name = %q, want <uuid>.wav: %v", objectName, err)
+	}
+	if upload.Name != objectName {
+		t.Errorf("uploaded file name = %q, want %q", upload.Name, objectName)
+	}
+	if "oss://"+key != audioURL {
+		t.Errorf("audio url %q does not reference uploaded key %q", audioURL, key)
+	}
+	if !bytes.Equal(upload.Data, audio) {
+		t.Errorf("uploaded data = %q, want %q", upload.Data, audio)
+	}
+	for field, want := range map[string]string{
+		"OSSAccessKeyId":         "access-key",
+		"policy":                 "policy-value",
+		"Signature":              "signature-value",
+		"x-oss-object-acl":       "private",
+		"x-oss-forbid-overwrite": "true",
+		"success_action_status":  "200",
+	} {
+		if got := upload.Fields[field]; got != want {
+			t.Errorf("upload field %s = %q, want %q", field, got, want)
+		}
+	}
+
+	params, ok := body["parameters"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("parameters = %T, want JSON object", body["parameters"])
+	}
+	if params["result_format"] != "message" {
+		t.Errorf("result_format = %v, want message", params["result_format"])
+	}
+	options, ok := params["asr_options"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("asr_options = %T, want JSON object", params["asr_options"])
+	}
+	if options["enable_lid"] != true || options["enable_itn"] != false {
+		t.Errorf("asr_options = %v, want defaults enable_lid=true enable_itn=false", options)
+	}
+}
+
+func TestAliyunTranscribeAudioHonorsContextAndASROptions(t *testing.T) {
+	withSSRFBypass(t)
+	stub := newAliyunASRTestServer(t, "ok")
+	ctx := t.Context()
+
+	model := NewAliyunModel(
+		map[string]string{"default": stub.Server.URL},
+		URLSuffix{ASR: aliyunASRTestSuffix},
+	)
+	apiKey := "test-key"
+	modelName := "qwen-asr-flash"
+	file := writeAliyunASRTestFile(t, "clip.MP3", []byte("ID3...."))
+
+	_, err := model.TranscribeAudio(ctx, &modelName, &file, &APIConfig{ApiKey: &apiKey}, &ASRConfig{Params: map[string]interface{}{
+		"context":    "NAVI vs Faze",
+		"language":   "en",
+		"enable_itn": true,
+	}}, nil)
+	if err != nil {
+		t.Fatalf("TranscribeAudio: %v", err)
+	}
+	body := <-stub.Requests
+	messages := aliyunASRMessages(t, body)
+	if got := aliyunASRContentString(t, messages[0], "text"); got != "NAVI vs Faze" {
+		t.Errorf("system text = %q, want NAVI vs Faze", got)
+	}
+	if got := aliyunASRContentString(t, messages[1], "audio"); !strings.HasPrefix(got, "oss://"+aliyunUploadTestDir+"/") || !strings.HasSuffix(got, ".mp3") {
+		t.Errorf("audio = %q, want oss://%s/<uuid>.mp3", got, aliyunUploadTestDir)
+	}
+	params, ok := body["parameters"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("parameters = %T, want JSON object", body["parameters"])
+	}
+	options, ok := params["asr_options"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("asr_options = %T, want JSON object", params["asr_options"])
+	}
+	if options["language"] != "en" {
+		t.Errorf("language = %v, want en", options["language"])
+	}
+	if options["enable_itn"] != true {
+		t.Errorf("enable_itn = %v, want true (explicit override)", options["enable_itn"])
+	}
+	if options["enable_lid"] != true {
+		t.Errorf("enable_lid = %v, want default true", options["enable_lid"])
+	}
+}
+
+func TestAliyunTranscribeAudioSurfacesAPIError(t *testing.T) {
+	withSSRFBypass(t)
+	stub := newAliyunASRTestServerWithASRResponse(t, "bad-key", http.StatusUnauthorized, `{"code":"InvalidApiKey","message":"Invalid API-key provided."}`)
+
+	model := NewAliyunModel(
+		map[string]string{"default": stub.Server.URL},
+		URLSuffix{ASR: aliyunASRTestSuffix},
+	)
+	apiKey := "bad-key"
+	modelName := "qwen-asr-flash"
+	file := writeAliyunASRTestFile(t, "clip.wav", []byte("data"))
+
+	_, err := model.TranscribeAudio(t.Context(), &modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	var statusErr *APIStatusError
+	if !errors.As(err, &statusErr) || statusErr.Status != http.StatusUnauthorized {
+		t.Fatalf("error = %v, want APIStatusError with status 401", err)
+	}
+	if !strings.Contains(statusErr.Body, "InvalidApiKey") {
+		t.Fatalf("error body = %q, want to include InvalidApiKey", statusErr.Body)
+	}
+}
+
+func TestAliyunTranscribeAudioSurfacesUploadPolicyError(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"code":"AccessDenied","message":"upload policy denied"}`))
+	}))
+	defer server.Close()
+
+	model := NewAliyunModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{ASR: aliyunASRTestSuffix},
+	)
+	apiKey := "test-key"
+	modelName := "fun-asr"
+	file := writeAliyunASRTestFile(t, "clip.wav", []byte("data"))
+
+	_, err := model.TranscribeAudio(t.Context(), &modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	var statusErr *APIStatusError
+	if !errors.As(err, &statusErr) || statusErr.Status != http.StatusForbidden {
+		t.Fatalf("error = %v, want APIStatusError with status 403", err)
+	}
+	if !strings.Contains(statusErr.Body, "upload policy denied") {
+		t.Fatalf("error body = %q, want to include upload policy denied", statusErr.Body)
+	}
+}
+
+func TestAliyunTranscribeAudioSurfacesProviderCodedPolicyError(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"request_id":"req-policy","code":"InvalidApiKey","message":"invalid key"}`))
+	}))
+	defer server.Close()
+
+	model := NewAliyunModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{ASR: aliyunASRTestSuffix},
+	)
+	apiKey := "bad-key"
+	modelName := "qwen-asr-flash"
+	file := writeAliyunASRTestFile(t, "clip.wav", []byte("data"))
+
+	_, err := model.TranscribeAudio(t.Context(), &modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	var statusErr *APIStatusError
+	if !errors.As(err, &statusErr) || statusErr.Status != http.StatusOK {
+		t.Fatalf("error = %v, want APIStatusError with the policy status", err)
+	}
+	if !strings.Contains(statusErr.Body, "InvalidApiKey") {
+		t.Fatalf("error body = %q, want to include InvalidApiKey", statusErr.Body)
+	}
+}
+
+func TestAliyunTranscribeAudioSurfacesUploadError(t *testing.T) {
+	withSSRFBypass(t)
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == aliyunUploadsPath {
+			w.Header().Set("Content-Type", "application/json")
+			if _, err := fmt.Fprintf(w, `{"request_id":"req-policy","data":{"policy":"policy-value","signature":"signature-value","upload_dir":%q,"upload_host":%q,"oss_access_key_id":"access-key","x_oss_object_acl":"private","x_oss_forbid_overwrite":"true"}}`,
+				aliyunUploadTestDir, server.URL+"/oss-upload"); err != nil {
+				t.Errorf("failed to write upload policy: %v", err)
+			}
+			return
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = w.Write([]byte("oss exploded"))
+	}))
+	defer server.Close()
+
+	model := NewAliyunModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{ASR: aliyunASRTestSuffix},
+	)
+	apiKey := "test-key"
+	modelName := "qwen-asr-flash"
+	file := writeAliyunASRTestFile(t, "clip.wav", []byte("data"))
+
+	_, err := model.TranscribeAudio(t.Context(), &modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	var statusErr *APIStatusError
+	if !errors.As(err, &statusErr) || statusErr.Status != http.StatusInternalServerError {
+		t.Fatalf("error = %v, want APIStatusError with status 500", err)
+	}
+	if !strings.Contains(statusErr.Body, "oss exploded") {
+		t.Fatalf("error body = %q, want to include oss exploded", statusErr.Body)
+	}
+}
+
+func TestAliyunTranscribeAudioRejectsEmptyFile(t *testing.T) {
+	withSSRFBypass(t)
+	model := NewAliyunModel(
+		map[string]string{"default": "https://dashscope.example"},
+		URLSuffix{ASR: aliyunASRTestSuffix},
+	)
+	apiKey := "test-key"
+	modelName := "qwen-asr-flash"
+	file := writeAliyunASRTestFile(t, "empty.wav", nil)
+
+	_, err := model.TranscribeAudio(t.Context(), &modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	if err == nil || err.Error() != "audio file is empty" {
+		t.Fatalf("error = %v, want empty audio error", err)
+	}
+}
+
+func TestAliyunTranscribeAudioRequiresASRSuffix(t *testing.T) {
+	withSSRFBypass(t)
+	model := NewAliyunModel(
+		map[string]string{"default": "https://dashscope.example"},
+		URLSuffix{Chat: "compatible-mode/v1/chat/completions"},
+	)
+	apiKey := "test-key"
+	modelName := "qwen-asr-flash"
+	file := writeAliyunASRTestFile(t, "clip.wav", []byte("data"))
+
+	_, err := model.TranscribeAudio(t.Context(), &modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	if err == nil || err.Error() != "aliyun ASR URL suffix is required" {
+		t.Fatalf("error = %v, want missing ASR suffix error", err)
+	}
+}
+
+func TestAliyunTranscribeAudioWithSenderSendsSingleChunk(t *testing.T) {
+	withSSRFBypass(t)
+	stub := newAliyunASRTestServer(t, "transcribed")
+	model := NewAliyunModel(
+		map[string]string{"default": stub.Server.URL},
+		URLSuffix{ASR: aliyunASRTestSuffix},
+	)
+	apiKey := "test-key"
+	modelName := "qwen-asr-flash"
+	file := writeAliyunASRTestFile(t, "clip.wav", []byte("data"))
+
+	var chunks []string
+	err := model.TranscribeAudioWithSender(t.Context(), &modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil, func(content, _ *string) error {
+		if content != nil {
+			chunks = append(chunks, *content)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("TranscribeAudioWithSender: %v", err)
+	}
+	if len(chunks) != 1 || chunks[0] != "transcribed" {
+		t.Fatalf("chunks = %v, want [transcribed]", chunks)
+	}
+}
+
+// TestAliyunUploadAudioNormalisesSchemelessUploadHost pins the upload-host
+// repair: a policy response whose upload_host lacks a scheme must be retried
+// against an explicit https:// target instead of failing with an opaque
+// "unsupported protocol scheme" from the HTTP client.
+func TestAliyunUploadAudioNormalisesSchemelessUploadHost(t *testing.T) {
+	withSSRFBypass(t)
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet && r.URL.Path == aliyunUploadsPath {
+			w.Header().Set("Content-Type", "application/json")
+			schemeless := strings.TrimPrefix(server.URL, "http://")
+			if _, err := fmt.Fprintf(w, `{"request_id":"req-policy","data":{"policy":"policy-value","signature":"signature-value","upload_dir":"dashscope-tmp","upload_host":%q,"oss_access_key_id":"access-key"}}`, schemeless+"/oss-upload"); err != nil {
+				t.Errorf("failed to write policy: %v", err)
+			}
+			return
+		}
+		http.Error(w, "unexpected "+r.Method+" "+r.URL.Path, http.StatusNotFound)
+	}))
+	defer server.Close()
+	model := NewAliyunModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{ASR: aliyunASRTestSuffix},
+	)
+	_, err := model.uploadAudio(t.Context(), server.URL+"/"+aliyunASRTestSuffix, "test-key", "qwen-asr-flash", "clip.wav", []byte("data"))
+	if err == nil {
+		t.Fatal("upload must fail: the test server speaks plain http, not https")
+	}
+	if !strings.Contains(err.Error(), "https://"+strings.TrimPrefix(server.URL, "http://")) {
+		t.Errorf("error = %q, want it to name the normalised https:// upload target", err)
+	}
+}
+
+// TestAliyunAudioExt pins the URL-safe extension normalization: only a
+// dot followed by alphanumerics survives, everything URL-sensitive falls
+// back to ".wav".
+func TestAliyunAudioExt(t *testing.T) {
+	for filename, want := range map[string]string{
+		"clip.wav":    ".wav",
+		"CLIP.MP3":    ".mp3",
+		"clip.wav#1":  ".wav",
+		"clip.tar.gz": ".gz",
+		"clip.wav ":   ".wav",
+		"clip.wav%23": ".wav",
+		"clip.音频":     ".wav",
+		"no-ext":      ".wav",
+		".":           ".wav",
+		"":            ".wav",
+		"clip.":       ".wav",
+		"dir.d/clip":  ".wav",
+	} {
+		if got := aliyunAudioExt(filename); got != want {
+			t.Errorf("aliyunAudioExt(%q) = %q, want %q", filename, got, want)
+		}
+	}
+}
+
+// TestAliyunUploadAudioSanitisesFragmentFilename pins that a filename whose
+// extension carries a URL fragment marker never reaches the returned oss://
+// URL: "clip.wav#1" must upload as <uuid>.wav, not <uuid>.wav#1.
+func TestAliyunUploadAudioSanitisesFragmentFilename(t *testing.T) {
+	withSSRFBypass(t)
+	stub := newAliyunASRTestServer(t, "hello")
+	model := NewAliyunModel(
+		map[string]string{"default": stub.Server.URL},
+		URLSuffix{ASR: aliyunASRTestSuffix},
+	)
+	audioURL, err := model.uploadAudio(t.Context(), stub.Server.URL+"/"+aliyunASRTestSuffix, "test-key", "qwen-asr-flash", "clip.wav#1", []byte("data"))
+	if err != nil {
+		t.Fatalf("uploadAudio: %v", err)
+	}
+	if strings.Contains(audioURL, "#") {
+		t.Errorf("audio url = %q, want no fragment character", audioURL)
+	}
+	if !strings.HasPrefix(audioURL, "oss://"+aliyunUploadTestDir+"/") || !strings.HasSuffix(audioURL, ".wav") {
+		t.Errorf("audio url = %q, want oss://%s/<uuid>.wav", audioURL, aliyunUploadTestDir)
+	}
+	upload := <-stub.Uploads
+	if upload.Fields["key"] != strings.TrimPrefix(audioURL, "oss://") {
+		t.Errorf("uploaded key = %q, want %q", upload.Fields["key"], strings.TrimPrefix(audioURL, "oss://"))
 	}
 }

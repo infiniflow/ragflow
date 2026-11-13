@@ -32,6 +32,8 @@ export const LanguageList = [
   'Arabic',
   'Turkish',
   'Dutch',
+  'Slovak',
+  'Czech',
 ];
 export const LanguageMap = {
   English: 'English',
@@ -51,6 +53,8 @@ export const LanguageMap = {
   Arabic: 'العربية',
   Turkish: 'Türkçe',
   Dutch: 'Nederlands',
+  Slovak: 'Slovenčina',
+  Czech: 'Čeština',
 };
 
 export enum LanguageAbbreviation {
@@ -71,6 +75,8 @@ export enum LanguageAbbreviation {
   Tr = 'tr',
   Ko = 'ko',
   Nl = 'nl',
+  Az = 'az',
+  Uz = 'uz',
 }
 
 export const LanguageAbbreviationMap = {
@@ -91,6 +97,8 @@ export const LanguageAbbreviationMap = {
   [LanguageAbbreviation.Tr]: 'Türkçe',
   [LanguageAbbreviation.Ko]: '한국어',
   [LanguageAbbreviation.Nl]: 'Nederlands',
+  [LanguageAbbreviation.Az]: 'Azərbaycanca',
+  [LanguageAbbreviation.Uz]: 'O‘zbekcha',
 };
 
 export const LanguageTranslationMap = {
@@ -121,6 +129,8 @@ export const LanguageTranslationMap = {
   Arabic: 'ar',
   Turkish: 'tr',
   Dutch: 'nl',
+  Slovak: 'sk',
+  Czech: 'cs',
 };
 
 export enum FileMimeType {
@@ -162,6 +172,39 @@ export const Images = [
   'webp',
   // 'svg',
   'ico',
+];
+
+export const AudioExtensions = [
+  'mp3',
+  'wav',
+  'wave',
+  'aac',
+  'flac',
+  'ogg',
+  'oga',
+  'm4a',
+  'wma',
+  'aiff',
+  'aif',
+  'au',
+  'midi',
+  'opus',
+  'ape',
+  'amr',
+];
+
+export const VideoExtensions = [
+  'mp4',
+  'avi',
+  'mov',
+  'mkv',
+  'wmv',
+  'flv',
+  'mpeg',
+  'mpg',
+  'asf',
+  'rm',
+  'rmvb',
 ];
 
 // Without FileViewer

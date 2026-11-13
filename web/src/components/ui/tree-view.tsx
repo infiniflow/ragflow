@@ -20,6 +20,13 @@ export interface TreeDataItem {
   id: string;
   name: string;
   entityType?: string;
+  /**
+   * Domain-agnostic trailing slot next to the node name. The tree renders
+   * whatever the caller passes (e.g. the structure graph's claim-count pill);
+   * the shared component knows nothing about the business meaning. Hidden
+   * callers simply omit it.
+   */
+  badge?: React.ReactNode;
   icon?: any;
   selectedIcon?: any;
   openIcon?: any;
@@ -49,7 +56,10 @@ type TreeProps = React.HTMLAttributes<HTMLDivElement> & {
 const TreeItemLabel = ({ item }: { item: TreeDataItem }) => {
   if (!item.entityType) {
     return (
-      <span className="flex-grow truncate text-sm text-left">{item.name}</span>
+      <span className="flex min-w-0 flex-grow items-center gap-2 text-left">
+        <span className="truncate text-sm">{item.name}</span>
+        {item.badge}
+      </span>
     );
   }
 
@@ -74,6 +84,7 @@ const TreeItemLabel = ({ item }: { item: TreeDataItem }) => {
       >
         {item.entityType}
       </span>
+      {item.badge}
     </span>
   );
 };

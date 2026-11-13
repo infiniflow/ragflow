@@ -24,7 +24,6 @@ import (
 const (
 	detLimitSideLen  = 960
 	detThresh        = 0.3
-	detBoxThresh     = 0.5
 	detMaxCandidates = 1000
 	detUnclipRatio   = 1.5
 	detMinSize       = 3
@@ -32,6 +31,18 @@ const (
 	detMean0, detMean1, detMean2 = 0.485, 0.456, 0.406
 	detStd0, detStd1, detStd2    = 0.229, 0.224, 0.225
 )
+
+// detBoxThresh is the detection box confidence threshold. It is a package-level
+// variable (not a constant) so a downstream build variant can override it.
+// Override seam: a downstream build variant assigns this at init/startup,
+// before any inference runs. It is set once and never mutated during serving,
+// so concurrent inference stays race-free.
+var detBoxThresh float32 = 0.5
+
+// modelFileDet is the detection model filename. Override seam: a downstream
+// build variant assigns this at init/startup, before any inference runs. Set
+// once, never mutated during serving.
+var modelFileDet = "det.ort"
 
 // DetBox is one detected text region as a 4-point quad in original-image
 // coordinates, clockwise from top-left.
@@ -49,10 +60,12 @@ type DetResult struct {
 // at a VARIABLE input size: each page is aspect-preserved-rescaled to a round32
 // size bounded by detLimitSideLen, so the pool is keyed by the resized
 // (height, width) and distinct page sizes get distinct sessions. Sessions are
-// pooled per instance, never shared across concurrent Run calls, because
-// session.Run mutates the session's fixed-shape input/output tensors; the
+// pooled per instance, never shared across concurrent Run calls, because a
+// session's underlying ONNX handle is not safe for concurrent use; the
 // native det branch runs concurrently across the page worker pool, so a
-// naively shared single session would race.
+// naively shared single session would race. (Each Run allocates its own
+// input/output tensors and frees them before returning, so the constraint is
+// about the session handle, not any pinned buffer.)
 //
 // The set of distinct shapes is BOUNDED (detMaxShapePools). A long-running
 // server ingesting many differently-sized pages would otherwise pin a pool
@@ -82,18 +95,11 @@ var detSessions = newSessionPool[detSessKey, *session](detMaxShapePools, detShap
 // shape plus a release func. The caller must call release exactly once. On a
 // pool miss a fresh session is created; creation errors are propagated and
 // nothing is cached.
-func getDetSession(modelPath string, rh, rw int64) (*session, func(), error) {
+func getDetSession(ctx context.Context, modelPath string, rh, rw int64) (*session, func(), error) {
 	key := detSessKey{modelPath, rh, rw}
-	return detSessions.Get(key, func() (*session, error) {
-		// intraOpThreads=1 is preserved as-is for the verified det parity
-		// (mean|Δ|≈4e-5 vs the Python reference). The historical comment that
-		// this avoids competing OpenCV findContours worker threads does NOT
-		// apply to this pure-Go port, where the postprocess runs fully
-		// synchronously after RunWithOptions returns. Re-confirm parity on the
-		// det fixtures before switching to 0 (all cores) to match DLA/TSR.
+	return detSessions.Get(ctx, key, func() (*session, error) {
 		return NewSession(modelPath, "x",
-			[]int64{1, 3, rh, rw}, "sigmoid_0.tmp_0",
-			[]int64{1, 1, rh, rw}, 1)
+			[]int64{1, 3, rh, rw}, "sigmoid_0.tmp_0")
 	})
 }
 
@@ -102,7 +108,7 @@ func getDetSession(modelPath string, rh, rw int64) (*session, func(), error) {
 // extraction uses the pure-Go connected-components backend.
 func RunDet(ctx context.Context, modelDir string, img *Image) (DetResult, error) {
 	blob, rh, rw, sh, sw := detPreprocess(img)
-	sess, release, e := getDetSession(filepath.Join(modelDir, "det.ort"), int64(rh), int64(rw))
+	sess, release, e := getDetSession(ctx, filepath.Join(modelDir, modelFileDet), int64(rh), int64(rw))
 	if e != nil {
 		return DetResult{}, e
 	}
@@ -110,6 +116,9 @@ func RunDet(ctx context.Context, modelDir string, img *Image) (DetResult, error)
 
 	out, e := sess.Run(ctx, blob)
 	if e != nil {
+		return DetResult{}, e
+	}
+	if e := checkOutputLength("det", len(out), rh*rw); e != nil {
 		return DetResult{}, e
 	}
 	// out is [1,1,rh,rw]; flatten to [rh,rw].

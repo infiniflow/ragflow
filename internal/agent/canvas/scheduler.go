@@ -20,7 +20,9 @@ package canvas
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -36,9 +38,7 @@ import (
 // (events channel, message/session ids) so the statePre/statePost
 // wrappers can emit node_started/node_finished without depending on
 // the service package.
-type ctxKey string
-
-const ctxKeyRunMeta ctxKey = "canvas_run_meta"
+const ctxKeyRunMeta = "canvas_run_meta"
 const terminalMergeNodeID = "__canvas_terminal_merge__"
 
 // RunMeta carries the per-run metadata that node lifecycle hooks need.
@@ -72,6 +72,9 @@ func GetRunMeta(ctx context.Context) *RunMeta {
 func placeholderLambda(_ context.Context, in map[string]any) (map[string]any, error) {
 	out := make(map[string]any, len(in))
 	for k, v := range in {
+		if k == "state" {
+			continue
+		}
 		out[k] = v
 	}
 	return out, nil
@@ -124,6 +127,8 @@ func isKnownPrimitive(name string) bool {
 		"stringtransform", "variableaggregator", "variableassigner",
 		"loop", "parallel": // macros in BuildWorkflow; the pre-pass absorbs them.
 		return true
+	case "generalchunker":
+		return true
 	}
 	return false
 }
@@ -148,28 +153,20 @@ func statePre(ctx context.Context, in map[string]any, state *CanvasState) (map[s
 	// downstream components reading via GetStateFromContext see
 	// the upstream outputs the state post handler already wrote.
 	if state != nil {
-		if ctxState, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx); ctxState != nil && ctxState != state {
+		if ctxState, _ := runtime.GetStateFromContext(ctx); ctxState != nil && ctxState != state {
 			localHistory := state.SnapshotHistory()
 			contextHistory := ctxState.SnapshotHistory()
 			localMemory := state.SnapshotMemory()
 			contextMemory := ctxState.SnapshotMemory()
 			localSysHistory := state.SnapshotSysHistory()
 			contextSysHistory := ctxState.SnapshotSysHistory()
-			for cpnID, bucket := range state.Outputs {
+			for cpnID, bucket := range state.Snapshot() {
 				for k, v := range bucket {
 					ctxState.SetVar(cpnID, k, v)
 				}
 			}
 			sysNS, envNS, globalsNS := state.SnapshotNamespaces()
-			for k, v := range sysNS {
-				ctxState.Sys[k] = v
-			}
-			for k, v := range envNS {
-				ctxState.Env[k] = v
-			}
-			for k, v := range globalsNS {
-				ctxState.Globals[k] = v
-			}
+			ctxState.MergeNamespaces(sysNS, envNS, globalsNS)
 			if len(contextHistory) >= len(localHistory) {
 				state.SetHistory(contextHistory)
 			} else {
@@ -209,19 +206,19 @@ func statePre(ctx context.Context, in map[string]any, state *CanvasState) (map[s
 // payload under Outputs[cpnID]["result"] would force every template
 // to use {{cpnID@result.content}} which the v1 DSL never writes.
 //
-// The write is mirrored into the context-attached *CanvasState when
-// one is present, so downstream components that read state via
-// runtime.GetStateFromContext (Begin / Message / LLM) see the
-// upstream output. The eino per-run state stays the source of truth
-// for the snapshot exposed via statePre.
+// Node outputs are mirrored into context for components that read
+// state via runtime.GetStateFromContext. Components may also mutate
+// that context state directly (for example VariableAssigner); copy
+// those output changes back to the eino state before statePre syncs it
+// in the opposite direction for the next node.
 func statePost(ctx context.Context, out map[string]any, state *CanvasState) (map[string]any, error) {
 	cpnID, _ := out["__cpn_id__"].(string)
 	if cpnID == "" {
 		return out, nil
 	}
-	ctxState, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	ctxState, _ := runtime.GetStateFromContext(ctx)
 	for k, v := range out {
-		if k == "__cpn_id__" || k == "state" || k == "__legacy_noop__" {
+		if k == "__cpn_id__" || k == "__legacy_noop__" {
 			continue
 		}
 		if state != nil {
@@ -232,10 +229,13 @@ func statePost(ctx context.Context, out map[string]any, state *CanvasState) (map
 		}
 	}
 	if ctxState != nil && state != nil && ctxState != state {
+		for cpnID, bucket := range ctxState.Snapshot() {
+			for k, v := range bucket {
+				state.SetVar(cpnID, k, v)
+			}
+		}
 		sysNS, envNS, globalsNS := ctxState.SnapshotNamespaces()
-		state.Sys = sysNS
-		state.Env = envNS
-		state.Globals = globalsNS
+		state.ReplaceNamespaces(sysNS, envNS, globalsNS)
 		state.SetHistory(ctxState.SnapshotHistory())
 		state.SetMemory(ctxState.SnapshotMemory())
 	}
@@ -280,10 +280,10 @@ func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName
 	}
 	now := float64(time.Now().UnixNano()) / 1e9
 
-	if state.Sys != nil {
-		state.Sys["_node_start_"+cpnID] = now
-		state.Sys["_node_inputs_"+cpnID] = sanitizeNodeInputs(inputs)
-	}
+	state.MergeNamespaces(map[string]any{
+		"_node_start_" + cpnID:  now,
+		"_node_inputs_" + cpnID: sanitizeNodeInputs(inputs),
+	}, nil, nil)
 	nsData, err := runtime.SafeJSONMarshal(NodeStartedData{
 		Inputs:        sanitizeNodeInputs(inputs),
 		CreatedAt:     now,
@@ -322,31 +322,32 @@ func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentNa
 	}
 	now := float64(time.Now().UnixNano()) / 1e9
 	var elapsed float64
-	if state.Sys != nil {
-		if start, ok := state.Sys["_node_start_"+cpnID].(float64); ok {
-			elapsed = now - start
-		}
+	sysNS, _, _ := state.SnapshotNamespaces()
+	if start, ok := sysNS["_node_start_"+cpnID].(float64); ok {
+		elapsed = now - start
 	}
 	if elapsed < 0 {
 		elapsed = 0
 	}
 
 	// Collect outputs from the state's Outputs bucket for this cpn.
+	// Read from runtime.GetStateFromContext(ctx) first so resolved outputs from Message
+	// take precedence over raw deferred streams.
 	var outputs map[string]any
-	if state.Outputs != nil {
-		if bucket, ok := state.Outputs[cpnID]; ok && len(bucket) > 0 {
-			outputs = make(map[string]any, len(bucket))
-			for k, v := range bucket {
-				outputs[k] = v
-			}
+	if ctxState, _ := runtime.GetStateFromContext(ctx); ctxState != nil {
+		if bucket := ctxState.Snapshot()[cpnID]; len(bucket) > 0 {
+			outputs = bucket
+		}
+	}
+	if len(outputs) == 0 {
+		if bucket := state.Snapshot()[cpnID]; len(bucket) > 0 {
+			outputs = bucket
 		}
 	}
 
 	inputs := map[string]any{}
-	if state.Sys != nil {
-		if v, ok := state.Sys["_node_inputs_"+cpnID].(map[string]any); ok {
-			inputs = v
-		}
+	if v, ok := sysNS["_node_inputs_"+cpnID].(map[string]any); ok {
+		inputs = v
 	}
 
 	var nfErr interface{}
@@ -401,10 +402,10 @@ func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentNa
 // extracts from context for us (via WithGenLocalState — wired in compile.go).
 func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string]any, map[string]any], error) {
 	if c == nil {
-		return nil, fmt.Errorf("canvas: nil canvas")
+		return nil, fmt.Errorf("agent: nil canvas")
 	}
 	if len(c.Components) == 0 {
-		return nil, fmt.Errorf("canvas: no components")
+		return nil, fmt.Errorf("agent: no components")
 	}
 
 	// GenLocalState copies the request-initialized *CanvasState when the
@@ -427,7 +428,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	// self.globals["env.counter"] = 0 path.
 	globals := c.Globals
 	genState := func(runCtx context.Context) *CanvasState {
-		if ctxState, _, _ := runtime.GetStateFromContext[*runtime.CanvasState](runCtx); ctxState != nil {
+		if ctxState, _ := runtime.GetStateFromContext(runCtx); ctxState != nil {
 			st := NewCanvasState(ctxState.RunID, ctxState.SessionID)
 			for cpnID, bucket := range ctxState.Snapshot() {
 				for key, value := range bucket {
@@ -435,9 +436,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 				}
 			}
 			sysNS, envNS, globalsNS := ctxState.SnapshotNamespaces()
-			st.Sys = sysNS
-			st.Env = envNS
-			st.Globals = globalsNS
+			st.ReplaceNamespaces(sysNS, envNS, globalsNS)
 			st.Path = append([]string(nil), ctxState.Path...)
 			st.SetHistory(ctxState.SnapshotHistory())
 			st.SetMemory(ctxState.SnapshotMemory())
@@ -445,15 +444,19 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		}
 		st := NewCanvasState("", "")
 		if globals != nil {
+			sysNS := make(map[string]any)
+			envNS := make(map[string]any)
+			globalsNS := make(map[string]any)
 			for k, v := range globals {
 				if strings.HasPrefix(k, "sys.") {
-					st.Sys[strings.TrimPrefix(k, "sys.")] = v
+					sysNS[strings.TrimPrefix(k, "sys.")] = v
 				} else if strings.HasPrefix(k, "env.") {
-					st.Env[strings.TrimPrefix(k, "env.")] = v
+					envNS[strings.TrimPrefix(k, "env.")] = v
 				} else {
-					st.Globals[k] = v
+					globalsNS[k] = v
 				}
 			}
+			st.MergeNamespaces(sysNS, envNS, globalsNS)
 		}
 		st.SetHistory(c.History)
 		st.SetMemory(c.Memory)
@@ -480,14 +483,15 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 			}
 			var opts []workflowx.LoopOption
 			opts = append(opts, workflowx.WithLoopStream(workflowx.LoopStreamEveryIteration))
+			opts = append(opts, workflowx.WithLoopStatePersistence(exp.snapshot, exp.restore))
 			opts = append(opts, workflowx.WithLoopLifecycleHooks(
 				func(ctx context.Context, input any) {
-					state, _, _ := runtime.GetStateFromContext[*CanvasState](ctx)
+					state, _ := runtime.GetStateFromContext(ctx)
 					in, _ := input.(map[string]any)
 					nodeStartedAt(ctx, state, cpnID, comp.Obj.ComponentName, comp.Obj.ComponentName, in)
 				},
 				func(ctx context.Context, loopErr error) {
-					state, _, _ := runtime.GetStateFromContext[*CanvasState](ctx)
+					state, _ := runtime.GetStateFromContext(ctx)
 					nodeFinishedNow(ctx, state, cpnID, comp.Obj.ComponentName, comp.Obj.ComponentName, loopErr)
 				},
 			))
@@ -498,7 +502,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 				ctx, wf, cpnID, exp.Sub, exp.ShouldQuit, opts...,
 			)
 			if err != nil {
-				return nil, fmt.Errorf("canvas: install loop %q: %w", cpnID, err)
+				return nil, fmt.Errorf("agent: install loop %q: %w", cpnID, err)
 			}
 			macroNodes[cpnID] = node
 			for m := range exp.Members {
@@ -563,14 +567,10 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		}
 		name := c.Components[cpnID].Obj.ComponentName
 		if name == "" {
-			return nil, fmt.Errorf("canvas: component %q has empty component_name", cpnID)
+			return nil, fmt.Errorf("agent: component %q has empty component_name", cpnID)
 		}
-		deferToMessage := directMessageDownstream(c, cpnID)
-		nodeOpts := runtime.ComponentExecutionOptions{
-			DeferAgentToMessage:        deferToMessage,
-			SuppressAgentMessageEvents: strings.EqualFold(name, "Agent") && !deferToMessage,
-		}
-		body, err := buildNodeBodyWithOptions(ctx, cpnID, name, c.Components[cpnID].Obj.Params, nodeOpts)
+		nodeOpts := resolveComponentExecutionOptions(c, cpnID, name)
+		body, err := buildNodeBodyWithOptions(ctx, cpnID, name, c.Components[cpnID].DisplayName, c.Components[cpnID].Obj.Params, nodeOpts)
 		if err != nil {
 			return nil, err
 		}
@@ -591,15 +591,36 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 				// Python keeps the Agent node pending while Message consumes its
 				// partial generator. Message completes this callback after the
 				// deferred stream closes.
-				runtime.RegisterDeferredNode(ctx, cpnID, func() {
-					nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
+				runtime.RegisterDeferredNode(ctx, cpnID, func(nodeErr error) {
+					targetState := state
+					if ctxState, _ := runtime.GetStateFromContext(ctx); ctxState != nil {
+						targetState = ctxState
+					}
+					nodeFinishedNow(ctx, targetState, cpnID, componentName, componentName, nodeErr)
 				})
 			} else {
 				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, postErr)
 			}
 			return result, postErr
 		}
-		lambda := compose.InvokableLambda[map[string]any, map[string]any](body)
+		// Eino skips statePost on errors, so persist failed node outputs here.
+		nodeBody := func(ctx context.Context, in map[string]any) (map[string]any, error) {
+			out, invokeErr := body(ctx, in)
+			if invokeErr == nil || IsInterruptError(invokeErr) {
+				return out, invokeErr
+			}
+			if out == nil {
+				out = make(map[string]any, 2)
+			}
+			out["__cpn_id__"] = cpnID
+			stateErr := compose.ProcessState(ctx, func(ctx context.Context, state *CanvasState) error {
+				_, postErr := statePost(ctx, out, state)
+				nodeFinishedNow(ctx, state, cpnID, componentName, componentName, invokeErr)
+				return postErr
+			})
+			return out, errors.Join(invokeErr, stateErr)
+		}
+		lambda := compose.InvokableLambda[map[string]any, map[string]any](nodeBody)
 		node := wf.AddLambdaNode(cpnID, lambda,
 			compose.WithStatePreHandler[map[string]any, *CanvasState](nodePre),
 			compose.WithStatePostHandler[map[string]any, *CanvasState](nodePost),
@@ -641,29 +662,56 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	}
 	wired := make(map[pendingEdge]struct{}, len(pending))
 	first := make(map[string]bool, len(c.Components))
-	for _, e := range pending {
-		// Multiple output handles may converge on the same downstream
-		// node. The DSL keeps one upstream entry per handle, while eino
-		// permits only one control edge for a source/target pair.
+	wireOne := func(e pendingEdge) error {
 		if _, ok := wired[e]; ok {
-			continue
+			return nil
 		}
 		wired[e] = struct{}{}
 		if e.cpn == e.up {
-			return nil, fmt.Errorf("canvas: self-edge on %q", e.cpn)
+			return fmt.Errorf("agent: self-edge on %q", e.cpn)
 		}
 		if resolveNode(e.up) == nil {
-			return nil, fmt.Errorf("canvas: component %q has unknown upstream %q", e.cpn, e.up)
+			return fmt.Errorf("agent: component %q has unknown upstream %q", e.cpn, e.up)
 		}
 		cpnNode := resolveNode(e.cpn)
 		if cpnNode == nil {
-			return nil, fmt.Errorf("canvas: pending edge references unknown cpn %q", e.cpn)
+			return fmt.Errorf("agent: pending edge references unknown cpn %q", e.cpn)
+		}
+		if messageEdgeIsOrderingOnly(c, e.up) {
+			// This edge leaves a Message. Wait for it, but do not copy
+			// its output. Edges into a Message are wired above and still
+			// copy the previous node's output, including the final message.
+			// When nothing else supplies data, read the workflow input
+			// without a direct edge from START, so an unselected branch
+			// does not run this node.
+			cpnNode.AddDependency(e.up)
+			if !first[e.cpn] {
+				cpnNode.AddInputWithOptions(compose.START, nil, compose.WithNoDirectDependency())
+				first[e.cpn] = true
+			}
+			return nil
 		}
 		if !first[e.cpn] {
 			cpnNode.AddInput(e.up)
 			first[e.cpn] = true
 		} else {
 			cpnNode.AddDependency(e.up)
+		}
+		return nil
+	}
+	var messageEdges []pendingEdge
+	for _, e := range pending {
+		if messageEdgeIsOrderingOnly(c, e.up) {
+			messageEdges = append(messageEdges, e)
+			continue
+		}
+		if err := wireOne(e); err != nil {
+			return nil, err
+		}
+	}
+	for _, e := range messageEdges {
+		if err := wireOne(e); err != nil {
+			return nil, err
 		}
 	}
 
@@ -682,13 +730,8 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	// tracks start/end membership by these explicit wirings — without
 	// them, Compile() returns "start node not set" / "end node not set".
 	//
-	// Multi-terminal case: eino's END node is stricter than regular
-	// workflow nodes about repeated output mappings. Instead of wiring
-	// multiple terminals directly into END, route them through one
-	// synthetic merge node. The merge node consumes one terminal as its
-	// data input and treats the rest as exec-only dependencies, mirroring
-	// the same "first input carries data; the rest are dependencies"
-	// policy used in Pass 2.
+	// Multiple terminals use distinct field mappings into a gather node.
+	// Branch pruning lets it collect only the leaves selected in this run.
 	//
 	// A "start" node with no upstream gets an empty input from START so
 	// eino registers it as a workflow entry point. FieldMapping is nil
@@ -699,7 +742,15 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	// (a downstream that's also a sub-graph member doesn't count — that
 	// node is part of the loop's body, not the outer graph's edge).
 	terminals := make([]string, 0, len(c.Components))
+	roots := make(map[string]bool)
+	entries := make(map[string]bool)
 	for cpnID, comp := range c.Components {
+		if !macroMembers[cpnID] && len(comp.Upstream) == 0 && !first[cpnID] {
+			roots[cpnID] = true
+			if strings.EqualFold(comp.Obj.ComponentName, "Begin") || strings.EqualFold(comp.Obj.ComponentName, "File") {
+				entries[cpnID] = true
+			}
+		}
 		if node, isMacro := macroNodes[cpnID]; isMacro {
 			// Macro parents with no upstream are START nodes. Parents
 			// with upstream had their AddInput wired in Pass 2 already.
@@ -730,6 +781,14 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		}
 	}
 
+	if len(entries) > 0 && len(entries) < len(roots) {
+		// Branch pruning skips disconnected roots and their terminal dependencies.
+		wf.AddBranch(compose.START, compose.NewGraphMultiBranch(
+			func(context.Context, map[string]any) (map[string]bool, error) {
+				return entries, nil
+			}, roots))
+	}
+
 	if err := wireWorkflowTerminals(wf, terminals, "", true); err != nil {
 		return nil, err
 	}
@@ -737,24 +796,134 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	return wf, nil
 }
 
-// directMessageDownstream: only a direct
-// Message child enables lazy Agent execution. Intermediate nodes must not
+// messageEdgeIsOrderingOnly reports that an edge leaving a Message only
+// schedules the next node. Message output is not that node's input.
+// The check looks at the upstream id, so an edge whose target is a
+// Message still carries the previous node's output into that Message.
+func messageEdgeIsOrderingOnly(c *Canvas, upstreamID string) bool {
+	if c == nil {
+		return false
+	}
+	comp, ok := c.Components[upstreamID]
+	if !ok {
+		return false
+	}
+	return strings.EqualFold(comp.Obj.ComponentName, "Message")
+}
+
+// directMessageDownstream reports whether a component may hand a deferred
+// stream to its downstream consumers. Only a direct Message child enables lazy
+// Agent execution, and only when EVERY direct downstream is a Message that
+// ends the branch. A Message that itself continues is a status line: the
+// Agent must run eagerly and write a real value, or the stream is never
+// opened and later nodes observe the unresolved placeholder.
+//
+// A mixed graph (Agent -> [Agent, Message]) must keep eager execution: the
+// deferred stream is opaque to non-Message consumers, which would otherwise
+// observe the lazy object instead of the semantic answer. An empty downstream
+// list keeps eager execution as before. Intermediate nodes must not
 // accidentally change the Agent's execution mode.
 func directMessageDownstream(c *Canvas, cpnID string) bool {
 	if c == nil {
 		return false
 	}
 	comp, ok := c.Components[cpnID]
-	if !ok {
+	if !ok || len(comp.Downstream) == 0 {
 		return false
 	}
 	for _, downID := range comp.Downstream {
 		down, ok := c.Components[downID]
-		if ok && strings.EqualFold(down.Obj.ComponentName, "Message") {
+		if !ok || !strings.EqualFold(down.Obj.ComponentName, "Message") {
+			return false
+		}
+		if len(down.Downstream) > 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func messageConsumesComponent(c *Canvas, msgID, cpnID string) bool {
+	if c == nil {
+		return false
+	}
+	msgComp, ok := c.Components[msgID]
+	if !ok {
+		return false
+	}
+	text := ""
+	if v, ok := msgComp.Obj.Params["text"].(string); ok {
+		text = v
+	} else {
+		switch x := msgComp.Obj.Params["content"].(type) {
+		case string:
+			text = x
+		case []string:
+			text = strings.Join(x, "")
+		case []any:
+			parts := make([]string, 0, len(x))
+			for _, item := range x {
+				if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+					parts = append(parts, s)
+				}
+			}
+			text = strings.Join(parts, "")
+		}
+	}
+	return strings.Contains(strings.ToLower(text), strings.ToLower(cpnID)+"@")
+}
+
+func hasStructuredOutput(params map[string]any) bool {
+	if params == nil {
+		return false
+	}
+	if v, ok := params["json_output"]; ok {
+		if b, ok := v.(bool); ok && b {
+			return true
+		}
+		if s, ok := v.(string); ok && strings.EqualFold(s, "true") {
 			return true
 		}
 	}
+	if v, ok := params["output_structure"]; ok && v != nil {
+		switch m := v.(type) {
+		case map[string]any:
+			if len(m) > 0 {
+				return true
+			}
+		case map[string]string:
+			if len(m) > 0 {
+				return true
+			}
+		}
+	}
 	return false
+}
+
+func resolveComponentExecutionOptions(c *Canvas, cpnID string, name string) runtime.ComponentExecutionOptions {
+	deferToMessage := directMessageDownstream(c, cpnID)
+	if c != nil {
+		// Exception routing needs the producer's actual result before choosing a path.
+		if method, _ := c.Components[cpnID].Obj.Params["exception_method"].(string); method != "" {
+			deferToMessage = false
+		}
+	}
+	isAgent := strings.EqualFold(name, "Agent")
+	isLLM := strings.EqualFold(name, "LLM") || strings.EqualFold(name, "Generate")
+	deferLLM := false
+	if isLLM && deferToMessage && c != nil {
+		comp, ok := c.Components[cpnID]
+		if ok && len(comp.Downstream) == 1 && messageConsumesComponent(c, comp.Downstream[0], cpnID) {
+			if !hasStructuredOutput(comp.Obj.Params) {
+				deferLLM = true
+			}
+		}
+	}
+	return runtime.ComponentExecutionOptions{
+		DeferAgentToMessage:        deferToMessage && isAgent,
+		DeferLLMToMessage:          deferLLM,
+		SuppressAgentMessageEvents: isAgent && !deferToMessage,
+	}
 }
 
 func wireWorkflowTerminals(
@@ -765,7 +934,7 @@ func wireWorkflowTerminals(
 ) error {
 	if len(terminals) == 0 {
 		if fallback == "" {
-			return fmt.Errorf("canvas: end node not set")
+			return fmt.Errorf("agent: end node not set")
 		}
 		terminals = []string{fallback}
 	}
@@ -783,63 +952,29 @@ func wireWorkflowTerminals(
 		return nil
 	}
 
-	// Sub-workflows wire END without field mappings. These multi-terminal
-	// shapes commonly come from mutually exclusive branches (for example a
-	// loop body Switch choosing either continue or exit). We therefore
-	// create a small field-mapped gather node that forwards whichever
-	// branch actually produced output, instead of the outer workflow's
-	// dependency-based merge node that would incorrectly wait for every
-	// terminal to execute in the same run.
-	if !useFieldMapping {
-		gatherNode := wf.AddLambdaNode(
-			terminalMergeNodeID,
-			compose.InvokableLambda[map[string]any, map[string]any](
-				func(_ context.Context, in map[string]any) (map[string]any, error) {
-					for _, terminalID := range terminals {
-						if v, ok := in[terminalID].(map[string]any); ok && v != nil {
-							return v, nil
-						}
-					}
-					return in, nil
-				},
-			),
-			compose.WithNodeName(terminalMergeNodeID),
-		)
-		for _, terminalID := range terminals {
-			gatherNode.AddInput(terminalID, compose.ToField(terminalID))
-		}
-		addEndInput(terminalMergeNodeID)
-		return nil
-	}
-
-	mergeNode := wf.AddLambdaNode(
+	// Keep checkpoint mappings stable across builds. Every terminal has the
+	// same data/control role, regardless of component map enumeration order.
+	terminals = append([]string(nil), terminals...)
+	sort.Strings(terminals)
+	gatherNode := wf.AddLambdaNode(
 		terminalMergeNodeID,
 		compose.InvokableLambda[map[string]any, map[string]any](
 			func(_ context.Context, in map[string]any) (map[string]any, error) {
+				if !useFieldMapping {
+					for _, terminalID := range terminals {
+						if output, ok := in[terminalID].(map[string]any); ok && output != nil {
+							return output, nil
+						}
+					}
+				}
 				return in, nil
 			},
 		),
 		compose.WithNodeName(terminalMergeNodeID),
 	)
-	mergeNode.AddInput(terminals[0])
-	for _, terminalID := range terminals[1:] {
-		mergeNode.AddDependency(terminalID)
+	for _, terminalID := range terminals {
+		gatherNode.AddInput(terminalID, compose.ToField(terminalID))
 	}
-	addEndInput(terminalMergeNodeID)
+	wf.End().AddInput(terminalMergeNodeID)
 	return nil
-}
-
-// snapshotOutputs is retained as a thin wrapper around state.Snapshot()
-// for any leftover callers in test/bench files. New code should call
-// state.Snapshot() directly.
-func snapshotOutputs(src map[string]map[string]any) map[string]map[string]any {
-	out := make(map[string]map[string]any, len(src))
-	for k, v := range src {
-		cp := make(map[string]any, len(v))
-		for kk, vv := range v {
-			cp[kk] = vv
-		}
-		out[k] = cp
-	}
-	return out
 }

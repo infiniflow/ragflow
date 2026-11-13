@@ -268,16 +268,3 @@ func clipLine(mw, mh, x0, y0, x1, y1 int) (int, int, int, int) {
 	}
 	return x0, y0, x1, y1
 }
-
-func math_min(a, b float64) float64 {
-	if a < b {
-		return a
-	}
-	return b
-}
-func math_max(a, b float64) float64 {
-	if a > b {
-		return a
-	}
-	return b
-}

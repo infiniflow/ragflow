@@ -31,29 +31,6 @@ type PyResult struct {
 	Error          string  `json:"error,omitempty"`
 }
 
-// TableItem stores per-table output.
-type TableItem struct {
-	ImageB64  string     `json:"image_b64"`
-	Rows      [][]string `json:"rows"`
-	Cells     []TSRCell  `json:"cells,omitempty"`
-	Positions []Position `json:"positions"`
-}
-
-// TSRCell mirrors parser.TSRCell for serialization.
-type TSRCell struct {
-	X0    float64 `json:"x0"`
-	Y0    float64 `json:"y0"`
-	X1    float64 `json:"x1"`
-	Y1    float64 `json:"y1"`
-	Text  string  `json:"text"`
-	Label string  `json:"label"`
-}
-
-// Position stores a bounding box.
-type Position struct {
-	Left, Right, Top, Bottom float64
-}
-
 // RealPDFResult holds per-PDF stats for Go vs Python comparison.
 type RealPDFResult struct {
 	File     string `json:"file"`

@@ -22,15 +22,18 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
+	"ragflow/internal/cli/utils"
 	"ragflow/internal/common"
+	"strconv"
 	"strings"
 	"time"
 
 	"golang.org/x/term"
 )
 
-func (c *CLI) LoginUserByCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) LoginUserByCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	email, ok := cmd.Params["email"].(string)
 	if !ok {
 		return nil, fmt.Errorf("email not provided")
@@ -92,7 +95,7 @@ func (c *CLI) LoginUserInteractive(email, password string) error {
 		return err
 	}
 
-	fmt.Printf("Login successfully\n")
+	fmt.Fprintln(os.Stderr, "Login successfully")
 
 	switch c.Config.CLIMode {
 	case AdminMode:
@@ -109,31 +112,23 @@ func (c *CLI) LoginUserInteractive(email, password string) error {
 	return nil
 }
 
-func (c *CLI) PingServerByCommand(cmd *Command) (ResponseIf, error) {
-	iterations := 1
-	if iterationsParam, ok := cmd.Params["iterations"]; ok {
-		iterations = int(iterationsParam.(float64))
-	}
-	return c.PingServer(iterations)
+func (c *CLI) PingServerByCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	return c.PingServer(commandCount)
 }
 
-func (c *CLI) PingServer(iterations int) (ResponseIf, error) {
+func (c *CLI) PingServer(commandCount int) (ResponseIf, error) {
 	var pingPath string
 	var resp *Response
 	var err error
 	switch c.Config.CLIMode {
 	case AdminMode:
 		pingPath = "/admin/ping"
-		if iterations > 1 {
-			return c.AdminServerClient.RequestWithIterations("GET", pingPath, "web", nil, nil, iterations)
-		}
-		resp, err = c.AdminServerClient.Request("GET", pingPath, "web", nil, nil)
+		httpClient := c.AdminServerClient
+		resp, err = httpClient.Request(commandCount, "GET", pingPath, httpClient.AuthKind(), nil, nil)
 	case APIMode:
 		pingPath = "/system/ping"
-		if iterations > 1 {
-			return c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].RequestWithIterations("GET", pingPath, "web", nil, nil, iterations)
-		}
-		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", pingPath, "web", nil, nil)
+		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		resp, err = httpClient.Request(commandCount, "GET", pingPath, httpClient.AuthKind(), nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -191,7 +186,7 @@ func (c *CLI) loginUser(httpClient *HTTPClient, baseURL, email, password string)
 	}
 
 	var resp *Response
-	resp, err = httpClient.Request("POST", baseURL, "", nil, payload)
+	resp, err = httpClient.Request(1, "POST", baseURL, "", nil, payload)
 	if err != nil {
 		return "", err
 	}
@@ -205,7 +200,7 @@ func (c *CLI) loginUser(httpClient *HTTPClient, baseURL, email, password string)
 		return "", fmt.Errorf("login failed: %s", result.Message)
 	}
 
-	token := resp.Headers.Get("Authorization")
+	token := resp.Header.Get("Authorization")
 	if token == "" {
 		return "", fmt.Errorf("login failed: missing Authorization header")
 	}
@@ -219,15 +214,17 @@ func (c *CLI) Logout() (ResponseIf, error) {
 	var err error
 	switch c.Config.CLIMode {
 	case AdminMode:
-		if c.AdminServerClient.LoginToken == nil {
+		httpClient := c.AdminServerClient
+		if httpClient.LoginToken == nil {
 			return nil, fmt.Errorf("not logged in")
 		}
-		resp, err = c.AdminServerClient.Request("POST", "/admin/logout", "web", nil, nil)
+		resp, err = httpClient.Request(1, "POST", "/admin/logout", httpClient.AuthKind(), nil, nil)
 	case APIMode:
-		if c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].LoginToken == nil {
+		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		if httpClient.LoginToken == nil {
 			return nil, fmt.Errorf("not logged in")
 		}
-		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("POST", "/auth/logout", "web", nil, nil)
+		resp, err = httpClient.Request(1, "POST", "/auth/logout", httpClient.AuthKind(), nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -261,15 +258,17 @@ func (c *CLI) Logout() (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) CommonAvailableProvidersCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonAvailableProvidersCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	var resp *Response
 	var err error
 	switch c.Config.CLIMode {
 	case AdminMode:
-		resp, err = c.AdminServerClient.Request("GET", "/admin/providers?available=true", "web", nil, nil)
+		httpClient := c.AdminServerClient
+		resp, err = httpClient.Request(commandCount, "GET", "/admin/providers?available=true", httpClient.AuthKind(), nil, nil)
 	case APIMode:
-		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", "/providers?available=true", "web", nil, nil)
+		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		resp, err = httpClient.Request(commandCount, "GET", "/providers?available=true", httpClient.AuthKind(), nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -294,7 +293,7 @@ func (c *CLI) CommonAvailableProvidersCommand(cmd *Command) (ResponseIf, error) 
 	return &result, nil
 }
 
-func (c *CLI) CommonShowProviderCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonShowProviderCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("provider_name not provided")
@@ -305,11 +304,13 @@ func (c *CLI) CommonShowProviderCommand(cmd *Command) (ResponseIf, error) {
 	var endPoint string
 	switch c.Config.CLIMode {
 	case AdminMode:
-		endPoint = fmt.Sprintf("/admin/providers/%s", providerName)
-		resp, err = c.AdminServerClient.Request("GET", endPoint, "web", nil, nil)
+		httpClient := c.AdminServerClient
+		endPoint = utils.APIPath("/admin/providers", providerName)
+		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	case APIMode:
-		endPoint = fmt.Sprintf("/providers/%s", providerName)
-		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", endPoint, "web", nil, nil)
+		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		endPoint = utils.APIPath("/providers", providerName)
+		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -322,7 +323,7 @@ func (c *CLI) CommonShowProviderCommand(cmd *Command) (ResponseIf, error) {
 }
 
 // CommonShowProviderInstanceCommand shows details of a specific instance
-func (c *CLI) CommonShowProviderInstanceCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonShowProviderInstanceCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	instanceName, ok := cmd.Params["instance_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("instance name not provided")
@@ -338,11 +339,13 @@ func (c *CLI) CommonShowProviderInstanceCommand(cmd *Command) (ResponseIf, error
 	var endPoint string
 	switch c.Config.CLIMode {
 	case AdminMode:
-		endPoint = fmt.Sprintf("/admin/providers/%s/instances/%s", providerName, instanceName)
-		resp, err = c.AdminServerClient.Request("GET", endPoint, "web", nil, nil)
+		httpClient := c.AdminServerClient
+		endPoint = utils.APIPath("/admin/providers", providerName, "instances", instanceName)
+		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	case APIMode:
-		endPoint = fmt.Sprintf("/providers/%s/instances/%s", providerName, instanceName)
-		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", endPoint, "web", nil, nil)
+		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		endPoint = utils.APIPath("/providers", providerName, "instances", instanceName)
+		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -355,7 +358,7 @@ func (c *CLI) CommonShowProviderInstanceCommand(cmd *Command) (ResponseIf, error
 }
 
 // CommonShowProviderInstanceBalanceCommand shows balance of a specific instance
-func (c *CLI) CommonShowProviderInstanceBalanceCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonShowProviderInstanceBalanceCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	instanceName, ok := cmd.Params["instance_name"].(string)
 	if !ok {
@@ -372,11 +375,13 @@ func (c *CLI) CommonShowProviderInstanceBalanceCommand(cmd *Command) (ResponseIf
 	var endPoint string
 	switch c.Config.CLIMode {
 	case AdminMode:
-		endPoint = fmt.Sprintf("/admin/providers/%s/instances/%s/balance", providerName, instanceName)
-		resp, err = c.AdminServerClient.Request("GET", endPoint, "web", nil, nil)
+		httpClient := c.AdminServerClient
+		endPoint = utils.APIPath("/admin/providers", providerName, "instances", instanceName, "balance")
+		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	case APIMode:
-		endPoint = fmt.Sprintf("/providers/%s/instances/%s/balance", providerName, instanceName)
-		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", endPoint, "web", nil, nil)
+		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		endPoint = utils.APIPath("/providers", providerName, "instances", instanceName, "balance")
+		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -390,7 +395,7 @@ func (c *CLI) CommonShowProviderInstanceBalanceCommand(cmd *Command) (ResponseIf
 
 // CommonListProviderInstancesCommand lists all instances of a provider
 // LIST INSTANCES FROM PROVIDER <name>
-func (c *CLI) CommonListProviderInstancesCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonListProviderInstancesCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
@@ -402,11 +407,13 @@ func (c *CLI) CommonListProviderInstancesCommand(cmd *Command) (ResponseIf, erro
 	var endPoint string
 	switch c.Config.CLIMode {
 	case AdminMode:
-		endPoint = fmt.Sprintf("/admin/providers/%s/instances", providerName)
-		resp, err = c.AdminServerClient.Request("GET", endPoint, "web", nil, nil)
+		httpClient := c.AdminServerClient
+		endPoint = utils.APIPath("/admin/providers", providerName, "instances")
+		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	case APIMode:
-		endPoint = fmt.Sprintf("/providers/%s/instances", providerName)
-		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", endPoint, "web", nil, nil)
+		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		endPoint = utils.APIPath("/providers", providerName, "instances")
+		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -432,7 +439,7 @@ func (c *CLI) CommonListProviderInstancesCommand(cmd *Command) (ResponseIf, erro
 	return &result, nil
 }
 
-func (c *CLI) CommonListInstanceModelsCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonListInstanceModelsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
@@ -448,11 +455,13 @@ func (c *CLI) CommonListInstanceModelsCommand(cmd *Command) (ResponseIf, error) 
 	var endPoint string
 	switch c.Config.CLIMode {
 	case AdminMode:
-		endPoint = fmt.Sprintf("/admin/providers/%s/instances/%s/models", providerName, instanceName)
-		resp, err = c.AdminServerClient.Request("GET", endPoint, "web", nil, nil)
+		httpClient := c.AdminServerClient
+		endPoint = utils.APIPath("/admin/providers", providerName, "instances", instanceName, "models")
+		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	case APIMode:
-		endPoint = fmt.Sprintf("/providers/%s/instances/%s/models", providerName, instanceName)
-		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", endPoint, "web", nil, nil)
+		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		endPoint = utils.APIPath("/providers", providerName, "instances", instanceName, "models")
+		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -477,7 +486,7 @@ func (c *CLI) CommonListInstanceModelsCommand(cmd *Command) (ResponseIf, error) 
 	return &result, nil
 }
 
-func (c *CLI) CommonListModelsCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonListModelsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
@@ -489,11 +498,13 @@ func (c *CLI) CommonListModelsCommand(cmd *Command) (ResponseIf, error) {
 	var endPoint string
 	switch c.Config.CLIMode {
 	case AdminMode:
-		endPoint = fmt.Sprintf("/admin/providers/%s/models", providerName)
-		resp, err = c.AdminServerClient.Request("GET", endPoint, "web", nil, nil)
+		httpClient := c.AdminServerClient
+		endPoint = utils.APIPath("/admin/providers", providerName, "models")
+		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	case APIMode:
-		endPoint = fmt.Sprintf("/providers/%s/models", providerName)
-		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", endPoint, "web", nil, nil)
+		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		endPoint = utils.APIPath("/providers", providerName, "models")
+		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -518,7 +529,7 @@ func (c *CLI) CommonListModelsCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) CommonListInstanceModelsSyncCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonListInstanceModelsSyncCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
@@ -534,11 +545,13 @@ func (c *CLI) CommonListInstanceModelsSyncCommand(cmd *Command) (ResponseIf, err
 	var endPoint string
 	switch c.Config.CLIMode {
 	case AdminMode:
-		endPoint = fmt.Sprintf("/admin/providers/%s/instances/%s/models?supported=true", providerName, instanceName)
-		resp, err = c.AdminServerClient.Request("GET", endPoint, "web", nil, nil)
+		httpClient := c.AdminServerClient
+		endPoint = utils.APIPath("/admin/providers", providerName, "instances", instanceName, "models") + "?supported=true"
+		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	case APIMode:
-		endPoint = fmt.Sprintf("/providers/%s/instances/%s/models?supported=true", providerName, instanceName)
-		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", endPoint, "web", nil, nil)
+		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		endPoint = utils.APIPath("/providers", providerName, "instances", instanceName, "models") + "?supported=true"
+		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -563,7 +576,7 @@ func (c *CLI) CommonListInstanceModelsSyncCommand(cmd *Command) (ResponseIf, err
 	return &result, nil
 }
 
-func (c *CLI) CommonShowProviderModelCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonShowProviderModelCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("provider_name not provided")
@@ -578,11 +591,13 @@ func (c *CLI) CommonShowProviderModelCommand(cmd *Command) (ResponseIf, error) {
 	var endPoint string
 	switch c.Config.CLIMode {
 	case AdminMode:
-		endPoint = fmt.Sprintf("/admin/providers/%s/models/%s", providerName, modelName)
-		resp, err = c.AdminServerClient.Request("GET", endPoint, "web", nil, nil)
+		httpClient := c.AdminServerClient
+		endPoint = utils.APIPath("/admin/providers", providerName, "models", modelName)
+		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	case APIMode:
-		endPoint = fmt.Sprintf("/providers/%s/models/%s", providerName, modelName)
-		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", endPoint, "web", nil, nil)
+		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		endPoint = utils.APIPath("/providers", providerName, "models", modelName)
+		resp, err = httpClient.Request(commandCount, "GET", endPoint, httpClient.AuthKind(), nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -593,7 +608,7 @@ func (c *CLI) CommonShowProviderModelCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonDataResponse(resp, "show model")
 }
 
-func (c *CLI) CommonCheckProviderWithKeyCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonCheckProviderWithKeyCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok || providerName == "" {
@@ -629,11 +644,13 @@ func (c *CLI) CommonCheckProviderWithKeyCommand(cmd *Command) (ResponseIf, error
 	var endPoint string
 	switch c.Config.CLIMode {
 	case AdminMode:
-		endPoint = fmt.Sprintf("/admin/providers/%s/connection", providerName)
-		resp, err = c.AdminServerClient.Request("POST", endPoint, "web", nil, payload)
+		httpClient := c.AdminServerClient
+		endPoint = utils.APIPath("/admin/providers", providerName, "connection")
+		resp, err = httpClient.Request(commandCount, "POST", endPoint, httpClient.AuthKind(), nil, payload)
 	case APIMode:
-		endPoint = fmt.Sprintf("/providers/%s/connection", providerName)
-		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("POST", endPoint, "web", nil, payload)
+		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		endPoint = utils.APIPath("/providers", providerName, "connection")
+		resp, err = httpClient.Request(commandCount, "POST", endPoint, httpClient.AuthKind(), nil, payload)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -652,7 +669,7 @@ func (c *CLI) CommonCheckProviderWithKeyCommand(cmd *Command) (ResponseIf, error
 	}
 }
 
-func (c *CLI) CommonCheckProviderConnectionCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonCheckProviderConnectionCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	instanceName, ok := cmd.Params["instance_name"].(string)
 	if !ok {
@@ -669,11 +686,13 @@ func (c *CLI) CommonCheckProviderConnectionCommand(cmd *Command) (ResponseIf, er
 	var endPoint string
 	switch c.Config.CLIMode {
 	case AdminMode:
-		endPoint = fmt.Sprintf("/admin/providers/%s/instances/%s/connection", providerName, instanceName)
-		resp, err = c.AdminServerClient.Request("POST", endPoint, "web", nil, nil)
+		httpClient := c.AdminServerClient
+		endPoint = utils.APIPath("/admin/providers", providerName, "instances", instanceName, "connection")
+		resp, err = httpClient.Request(commandCount, "POST", endPoint, httpClient.AuthKind(), nil, nil)
 	case APIMode:
-		endPoint = fmt.Sprintf("/providers/%s/instances/%s/connection", providerName, instanceName)
-		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("POST", endPoint, "web", nil, nil)
+		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		endPoint = utils.APIPath("/providers", providerName, "instances", instanceName, "connection")
+		resp, err = httpClient.Request(commandCount, "POST", endPoint, httpClient.AuthKind(), nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -692,8 +711,8 @@ func (c *CLI) CommonCheckProviderConnectionCommand(cmd *Command) (ResponseIf, er
 	}
 }
 
-// AlterProviderInstanceCommand alters a provider instance
-func (c *CLI) CommonAlterProviderInstanceCommand(cmd *Command) (ResponseIf, error) {
+// CommonAlterProviderInstanceCommand alters a provider instance
+func (c *CLI) CommonAlterProviderInstanceCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	providerName, ok := cmd.Params["provider_name"].(string)
 	if !ok {
@@ -722,11 +741,13 @@ func (c *CLI) CommonAlterProviderInstanceCommand(cmd *Command) (ResponseIf, erro
 	var endPoint string
 	switch c.Config.CLIMode {
 	case AdminMode:
-		endPoint = fmt.Sprintf("/admin/providers/%s/instances/%s", providerName, instanceName)
-		resp, err = c.AdminServerClient.Request("PUT", endPoint, "web", nil, payload)
+		httpClient := c.AdminServerClient
+		endPoint = utils.APIPath("/admin/providers", providerName, "instances", instanceName)
+		resp, err = httpClient.Request(commandCount, "PUT", endPoint, httpClient.AuthKind(), nil, payload)
 	case APIMode:
-		endPoint = fmt.Sprintf("/providers/%s/instances/%s", providerName, instanceName)
-		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("PUT", endPoint, "web", nil, payload)
+		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		endPoint = utils.APIPath("/providers", providerName, "instances", instanceName)
+		resp, err = httpClient.Request(commandCount, "PUT", endPoint, httpClient.AuthKind(), nil, payload)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -771,11 +792,13 @@ func (c *CLI) CommonEnableOrDisableModelCommand(cmd *Command, status string) (Re
 	var endPoint string
 	switch c.Config.CLIMode {
 	case AdminMode:
-		endPoint = fmt.Sprintf("/admin/providers/%s/instances/%s/models/%s", providerName, instanceName, modelName)
-		resp, err = c.AdminServerClient.Request("PATCH", endPoint, "web", nil, payload)
+		httpClient := c.AdminServerClient
+		endPoint = utils.APIPath("/admin/providers", providerName, "instances", instanceName, "models", modelName)
+		resp, err = httpClient.Request(1, "PATCH", endPoint, httpClient.AuthKind(), nil, payload)
 	case APIMode:
-		endPoint = fmt.Sprintf("/providers/%s/instances/%s/models/%s", providerName, instanceName, modelName)
-		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("PATCH", endPoint, "web", nil, payload)
+		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		endPoint = utils.APIPath("/providers", providerName, "instances", instanceName, "models", modelName)
+		resp, err = httpClient.Request(1, "PATCH", endPoint, httpClient.AuthKind(), nil, payload)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -794,7 +817,7 @@ func (c *CLI) CommonEnableOrDisableModelCommand(cmd *Command, status string) (Re
 	}
 }
 
-func (c *CLI) APISetDefaultModelCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APISetDefaultModelCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	modelType, ok := cmd.Params["model_type"].(string)
 	if !ok {
@@ -823,9 +846,11 @@ func (c *CLI) APISetDefaultModelCommand(cmd *Command) (ResponseIf, error) {
 	var resp *Response
 	switch c.Config.CLIMode {
 	case AdminMode:
-		resp, err = c.AdminServerClient.Request("PATCH", "/admin/models", "web", nil, payload)
+		httpClient := c.AdminServerClient
+		resp, err = httpClient.Request(commandCount, "PATCH", "/admin/models", httpClient.AuthKind(), nil, payload)
 	case APIMode:
-		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("PATCH", "/models", "web", nil, payload)
+		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		resp, err = httpClient.Request(commandCount, "PATCH", "/models", httpClient.AuthKind(), nil, payload)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -837,7 +862,7 @@ func (c *CLI) APISetDefaultModelCommand(cmd *Command) (ResponseIf, error) {
 	return HandleSimpleResponse(resp, "set default model")
 }
 
-func (c *CLI) APIResetDefaultModelCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIResetDefaultModelCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	modelType, ok := cmd.Params["model_type"].(string)
 	if !ok {
@@ -852,9 +877,11 @@ func (c *CLI) APIResetDefaultModelCommand(cmd *Command) (ResponseIf, error) {
 	var err error
 	switch c.Config.CLIMode {
 	case AdminMode:
-		resp, err = c.AdminServerClient.Request("PATCH", "/admin/models", "web", nil, payload)
+		httpClient := c.AdminServerClient
+		resp, err = httpClient.Request(commandCount, "PATCH", "/admin/models", httpClient.AuthKind(), nil, payload)
 	case APIMode:
-		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("PATCH", "/models", "web", nil, payload)
+		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		resp, err = httpClient.Request(commandCount, "PATCH", "/models", httpClient.AuthKind(), nil, payload)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -866,15 +893,17 @@ func (c *CLI) APIResetDefaultModelCommand(cmd *Command) (ResponseIf, error) {
 	return HandleSimpleResponse(resp, "reset default model")
 }
 
-func (c *CLI) APIListDefaultModelsCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) APIListDefaultModelsCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	var resp *Response
 	var err error
 	switch c.Config.CLIMode {
 	case AdminMode:
-		resp, err = c.AdminServerClient.Request("GET", "/admin/models", "web", nil, nil)
+		httpClient := c.AdminServerClient
+		resp, err = httpClient.Request(commandCount, "GET", "/admin/models", httpClient.AuthKind(), nil, nil)
 	case APIMode:
-		resp, err = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer].Request("GET", "/models/default", "web", nil, nil)
+		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		resp, err = httpClient.Request(commandCount, "GET", "/models/default", httpClient.AuthKind(), nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -899,7 +928,7 @@ func (c *CLI) APIListDefaultModelsCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) CommonShowCurrentCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonShowCurrentCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	var result *CommonDataResponse
 
 	switch c.Config.CLIMode {
@@ -944,11 +973,11 @@ func (c *CLI) CommonShowCurrentCommand(cmd *Command) (ResponseIf, error) {
 	return result, nil
 }
 
-func (c *CLI) CommonShowAdminServerCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonShowAdminServerCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	return c.GetAdminServerInfo()
 }
 
-func (c *CLI) CommonShowAPIServerCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonShowAPIServerCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	apiServerName, ok := cmd.Params["api_server_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("api_server_name not provided")
@@ -960,7 +989,41 @@ func (c *CLI) CommonShowAPIServerCommand(cmd *Command) (ResponseIf, error) {
 	return result, nil
 }
 
-func (c *CLI) CommonListAPIServersCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonShowHardwareCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	var resp *Response
+	var err error
+	switch c.Config.CLIMode {
+	case AdminMode:
+		httpClient := c.AdminServerClient
+		resp, err = httpClient.Request(commandCount, "GET", "/admin/hardware", httpClient.AuthKind(), nil, nil)
+	case APIMode:
+		httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
+		resp, err = httpClient.Request(commandCount, "GET", "/system/hardware", httpClient.AuthKind(), nil, nil)
+	default:
+		return nil, fmt.Errorf("invalid server type")
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to show hardware: %w", err)
+	}
+
+	if resp.StatusCode != 200 {
+		return nil, fmt.Errorf("failed to show hardware: HTTP %d, body: %s", resp.StatusCode, string(resp.Body))
+	}
+
+	var result CommonDataResponse
+	if err = json.Unmarshal(resp.Body, &result); err != nil {
+		return nil, fmt.Errorf("failed to show hardware: invalid JSON (%w)", err)
+	}
+
+	if result.Code != 0 {
+		return nil, fmt.Errorf("%s", result.Message)
+	}
+	result.Duration = resp.Duration
+	return &result, nil
+}
+
+func (c *CLI) CommonListAPIServersCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	var result CommonResponse
 	result.Data = make([]map[string]interface{}, 0)
@@ -990,7 +1053,7 @@ func (c *CLI) CommonListAPIServersCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AddAPIServerCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AddAPIServerCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	apiServerName, ok := cmd.Params["server_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("server name not provided")
@@ -1056,7 +1119,7 @@ func (c *CLI) AddAPIServerCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) DeleteAPIServerCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) DeleteAPIServerCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	apiServerName, ok := cmd.Params["server_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("server name not provided")
@@ -1078,7 +1141,7 @@ func (c *CLI) DeleteAPIServerCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) AddAdminServerCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) AddAdminServerCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.AdminServerClient != nil && c.AdminServerClient.LoginToken != nil {
 		return nil, fmt.Errorf("admin server already login, please logout")
@@ -1132,7 +1195,7 @@ func (c *CLI) AddAdminServerCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) DeleteAdminServerCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) DeleteAdminServerCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.AdminServerClient == nil && c.Config.AdminClientConfig == nil {
 		return nil, fmt.Errorf("admin server not exists")
@@ -1153,7 +1216,7 @@ func (c *CLI) DeleteAdminServerCommand(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) CommonSaveServerConfigCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonSaveServerConfigCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	switch c.Config.CLIMode {
 	case AdminMode:
@@ -1230,7 +1293,7 @@ func (c *CLI) GetAPIServerInfo(serverName string) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) CommonListAllModels(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonListAllModels(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	page, ok := cmd.Params["page"].(int)
 	if !ok {
@@ -1254,11 +1317,11 @@ func (c *CLI) CommonListAllModels(cmd *Command) (ResponseIf, error) {
 	case AdminMode:
 		httpClient = c.AdminServerClient
 		apiURL := "/admin/all-models"
-		resp, err = httpClient.Request("GET", apiURL, "web", nil, payload)
+		resp, err = httpClient.Request(commandCount, "GET", apiURL, httpClient.AuthKind(), nil, payload)
 	case APIMode:
 		httpClient = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
 		apiURL := "/all-models"
-		resp, err = httpClient.Request("GET", apiURL, "web", nil, payload)
+		resp, err = httpClient.Request(commandCount, "GET", apiURL, httpClient.AuthKind(), nil, payload)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -1283,7 +1346,7 @@ func (c *CLI) CommonListAllModels(cmd *Command) (ResponseIf, error) {
 	return &result, nil
 }
 
-func (c *CLI) CommonShowModelCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonShowModelCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	modelName, ok := cmd.Params["model_name"].(string)
 	if !ok {
@@ -1299,11 +1362,11 @@ func (c *CLI) CommonShowModelCommand(cmd *Command) (ResponseIf, error) {
 	case AdminMode:
 		baseURL := fmt.Sprintf("/admin/all-models/%s", encodedModelName)
 		httpClient = c.AdminServerClient
-		resp, err = httpClient.Request("GET", baseURL, "web", nil, nil)
+		resp, err = httpClient.Request(commandCount, "GET", baseURL, httpClient.AuthKind(), nil, nil)
 	case APIMode:
 		baseURL := fmt.Sprintf("/all-models/%s", encodedModelName)
 		httpClient = c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-		resp, err = httpClient.Request("GET", baseURL, "web", nil, nil)
+		resp, err = httpClient.Request(commandCount, "GET", baseURL, httpClient.AuthKind(), nil, nil)
 	default:
 		return nil, fmt.Errorf("invalid server type")
 	}
@@ -1315,7 +1378,7 @@ func (c *CLI) CommonShowModelCommand(cmd *Command) (ResponseIf, error) {
 	return HandleCommonDataResponse(resp, "show model")
 }
 
-// readPassword reads password from terminal without echoing
+// ReadPassword reads password from terminal without echoing
 func ReadPassword() (string, error) {
 	if !term.IsTerminal(int(os.Stdin.Fd())) {
 		return ReadPasswordFallback()
@@ -1332,7 +1395,7 @@ func ReadPassword() (string, error) {
 	return strings.TrimSpace(string(passwordBytes)), nil
 }
 
-// readPasswordFallback reads password as plain text (fallback mode)
+// ReadPasswordFallback reads password as plain text (fallback mode)
 func ReadPasswordFallback() (string, error) {
 	fmt.Print("Password (will be visible): ")
 	reader := bufio.NewReader(os.Stdin)
@@ -1367,7 +1430,7 @@ func FlattenMap(data map[string]interface{}, prefix string, result *[]map[string
 	}
 }
 
-func (c *CLI) CommonUseAPIServerCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonUseAPIServerCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	serverName, ok := cmd.Params["server_name"].(string)
 	if !ok {
 		return nil, fmt.Errorf("server_name not provided")
@@ -1398,6 +1461,7 @@ func (c *CLI) CommonUseAPIServerCommand(cmd *Command) (ResponseIf, error) {
 
 	c.Config.APIClientConfig.CurrentAPIServer = serverName
 	c.Config.CLIMode = APIMode
+	c.setFilesystemClient(httpClient)
 
 	var result SimpleResponse
 	result.Code = 0
@@ -1407,7 +1471,7 @@ func (c *CLI) CommonUseAPIServerCommand(cmd *Command) (ResponseIf, error) {
 
 }
 
-func (c *CLI) CommonUseAdminServerCommand(cmd *Command) (ResponseIf, error) {
+func (c *CLI) CommonUseAdminServerCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 
 	if c.Config.CLIMode == AdminMode {
 		return nil, fmt.Errorf("already in admin mode")
@@ -1428,7 +1492,7 @@ func (c *CLI) CommonUseAdminServerCommand(cmd *Command) (ResponseIf, error) {
 }
 
 func (c *CLI) getDatasetIDByName(datasetName string) (string, error) {
-	response, err := c.APIListDatasetsCommand(nil)
+	response, err := c.APIListDatasetsCommand(1, nil)
 	if err != nil {
 		return "", err
 	}
@@ -1445,77 +1509,80 @@ func (c *CLI) getDatasetIDByName(datasetName string) (string, error) {
 }
 
 func (c *CLI) getAgentIDByName(agentName string) (string, error) {
-	response, err := c.APIListAgentsCommand(nil)
-	if err != nil {
-		return "", err
-	}
-	commonResponse, ok := response.(*CommonResponse)
-	if !ok {
-		return "", fmt.Errorf("invalid response")
-	}
-	for _, agent := range commonResponse.Data {
-		if agent["name"] == agentName {
-			return agent["id"].(string), nil
-		}
-	}
-	return "", fmt.Errorf("agent %s not found", agentName)
+	return c.getResourceIDByName("agent", agentName, "canvas")
 }
 
 func (c *CLI) getSearchIDByName(searchName string) (string, error) {
-	response, err := c.APIListSearchesCommand(nil)
-	if err != nil {
-		return "", err
-	}
-	searchesResponse, ok := response.(*ListSearchesResponse)
-	if !ok {
-		return "", fmt.Errorf("invalid response")
-	}
-	searches := searchesResponse.Data["search_apps"].([]interface{})
-	for _, search := range searches {
-		searchMap := search.(map[string]interface{})
-		if searchMap["name"] == searchName {
-			return searchMap["id"].(string), nil
-		}
-	}
-	return "", fmt.Errorf("search %s not found", searchName)
+	return c.getResourceIDByName("search", searchName, "search_apps")
 }
 
 func (c *CLI) getChatIDByName(chatName string) (string, error) {
-	response, err := c.APIListChatsCommand(nil)
-	if err != nil {
-		return "", err
-	}
-	commonResponse, ok := response.(*CommonResponse)
-	if !ok {
-		return "", fmt.Errorf("invalid response")
-	}
-	for _, chat := range commonResponse.Data {
-		if chat["name"] == chatName {
-			return chat["id"].(string), nil
-		}
-	}
-	return "", fmt.Errorf("chat %s not found", chatName)
+	return c.getResourceIDByName("chat", chatName, "chats")
 }
 
 func (c *CLI) getMemoryIDByName(memoryName string) (string, error) {
-	response, err := c.APIListMemoriesCommand(nil)
+	return c.getResourceIDByName("memory", memoryName, "memory_list")
+}
+
+func (c *CLI) getResourceIDByName(resource, name, listKey string) (string, error) {
+	httpClient, err := c.apiModeClient()
 	if err != nil {
 		return "", err
 	}
-	listMemoriesResponse, ok := response.(*ListMemoriesResponse)
-	memories := listMemoriesResponse.Data["memory_list"].([]interface{})
-	if !ok {
-		return "", fmt.Errorf("invalid response")
+	path, nameKey, totalKey := "/"+resource+"s", "name", "total"
+	if resource == "memory" {
+		path, totalKey = "/memories", "total_count"
+	} else if resource == "search" {
+		path = "/searches"
 	}
-	for _, memory := range memories {
-		var memoryMap map[string]interface{}
-		memoryMap, ok = memory.(map[string]interface{})
-		if !ok {
-			continue
+	if resource == "agent" {
+		nameKey = "title"
+	}
+	query := url.Values{"page_size": {strconv.Itoa(common.MaxPageSize)}}
+	var remaining int64
+	for page := common.DefaultPage; ; page++ {
+		query.Set("page", strconv.Itoa(page))
+		resp, err := httpClient.Request(1, http.MethodGet, path+"?"+query.Encode(), httpClient.AuthKind(), nil, nil)
+		if err != nil {
+			return "", err
 		}
-		if memoryMap["name"] == memoryName {
-			return memoryMap["id"].(string), nil
+		if resp.StatusCode != http.StatusOK {
+			return "", fmt.Errorf("failed to list %s: HTTP %d", path[1:], resp.StatusCode)
+		}
+		var result struct {
+			Code    int                        `json:"code"`
+			Message string                     `json:"message"`
+			Data    map[string]json.RawMessage `json:"data"`
+		}
+		if err := json.Unmarshal(resp.Body, &result); err != nil {
+			return "", fmt.Errorf("invalid response: %w", err)
+		}
+		if result.Code != 0 {
+			return "", fmt.Errorf("%s", result.Message)
+		}
+		if page == common.DefaultPage {
+			if err := json.Unmarshal(result.Data[totalKey], &remaining); err != nil || remaining < 0 {
+				return "", fmt.Errorf("invalid %s in response", totalKey)
+			}
+		}
+		var items []map[string]interface{}
+		if err := json.Unmarshal(result.Data[listKey], &items); err != nil {
+			return "", fmt.Errorf("invalid %s in response: %w", listKey, err)
+		}
+		for _, item := range items {
+			if item[nameKey] != name || (resource == "agent" && item["type"] == "compilation_template_group") {
+				continue
+			}
+			id, ok := item["id"].(string)
+			if !ok || id == "" {
+				return "", fmt.Errorf("invalid %s ID in response", resource)
+			}
+			return id, nil
+		}
+		remaining -= int64(len(items))
+		if remaining <= 0 || len(items) < common.MaxPageSize {
+			break
 		}
 	}
-	return "", fmt.Errorf("memory %s not found", memoryName)
+	return "", fmt.Errorf("%s %s not found", resource, name)
 }

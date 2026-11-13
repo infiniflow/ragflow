@@ -28,7 +28,6 @@ const {
   deleteMemoryMessage,
   getMessageContent,
   updateMessageState,
-  // getMemoryDetailShare,
 } = api;
 const methods = {
   createMemory: {
@@ -36,6 +35,10 @@ const methods = {
     method: 'post',
   },
   getMemoryList: {
+    url: getMemoryList,
+    method: 'get',
+  },
+  getMemoryFilters: {
     url: getMemoryList,
     method: 'get',
   },

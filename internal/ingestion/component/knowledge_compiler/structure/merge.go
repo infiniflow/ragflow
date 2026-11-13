@@ -24,7 +24,7 @@ import (
 // even for models with tight limits, at the cost of more, smaller sub-calls.
 const maxWindowUsage = 0.2
 
-// Merge prompts, verbatim from Python structure.py. The merge is driven by
+// Merge prompts, verbatim from . The merge is driven by
 // the user-supplied prompts; the decision instruction lets us branch on the
 // LLM's verdict via GenJSON.
 const mergeSystemPrompt = `You are an intelligent data merging assistant.
@@ -61,7 +61,7 @@ Return ONLY a JSON object with exactly one key "pairs", whose value is a JSON ar
   "merged": <merged JSON object using the same keys as the inputs when duplicated=true; otherwise null>
 }`
 
-// mergeJudgeTemperature mirrors Python's gen_conf for merge judging
+// mergeJudgeTemperature mirrors gen_conf for merge judging
 // (_struct_merge_pair uses temperature 0.0).
 var mergeJudgeTemperature = 0.0
 
@@ -97,7 +97,7 @@ func (d CosineDecider) Decide(_ context.Context, _, _ common.Product, bestScore 
 	return DecisionKeepBoth, common.Product{}, nil
 }
 
-// LLMMergeDecider mirrors Python's local-dedup judge (_struct_merge_pair):
+// LLMMergeDecider mirrors local-dedup judge (_struct_merge_pair)
 // pairs above Threshold are adjudicated by the LLM; on a duplicated verdict
 // the merged payload replaces the existing row (re-embedded, provenance
 // unioned, id preserved). Entity merges record aliases so relation endpoints
@@ -180,6 +180,18 @@ func (d *LLMMergeDecider) SetSubmitter(submit func(ctx context.Context, jobs []f
 
 // Decide implements MergeDecider.
 func (d *LLMMergeDecider) Decide(ctx context.Context, existing, incoming common.Product, bestScore float64) (MergeDecision, common.Product, error) {
+	// Entity names are the graph's endpoint identity.  A type is descriptive
+	// metadata, not a second node identity; otherwise relations that only carry
+	// endpoint names become ambiguous when the same name is emitted with two
+	// different types.
+	if sameEntityName(existing, incoming) {
+		merged := mergeEntitiesByName(existing, incoming)
+		replacement, err := d.BuildReplacement(ctx, existing, incoming, merged)
+		if err != nil {
+			return DecisionKeepBoth, common.Product{}, err
+		}
+		return DecisionMerge, replacement, nil
+	}
 	if bestScore < d.Threshold {
 		return DecisionKeepBoth, common.Product{}, nil
 	}
@@ -195,6 +207,61 @@ func (d *LLMMergeDecider) Decide(ctx context.Context, existing, incoming common.
 		return DecisionKeepBoth, common.Product{}, err
 	}
 	return DecisionMerge, replacement, nil
+}
+
+func sameEntityName(existing, incoming common.Product) bool {
+	if kind, _ := existing.Meta["kind"].(string); kind != "entity" {
+		return false
+	}
+	if kind, _ := incoming.Meta["kind"].(string); kind != "entity" {
+		return false
+	}
+	name := normalizedEntityName(entityNameValue(existing))
+	return name != "" && name == normalizedEntityName(entityNameValue(incoming))
+}
+
+func normalizedEntityName(name string) string {
+	return strings.ToLower(strings.Join(strings.Fields(name), " "))
+}
+
+func preferredEntityType(existing, incoming string) string {
+	existing = strings.TrimSpace(existing)
+	incoming = strings.TrimSpace(incoming)
+	if existing == "" || strings.EqualFold(existing, "other") {
+		if incoming != "" && !strings.EqualFold(incoming, "other") {
+			return incoming
+		}
+	}
+	if existing != "" {
+		return existing
+	}
+	return incoming
+}
+
+func mergeEntitiesByName(existing, incoming common.Product) map[string]any {
+	merged := parsePayload(existing.Content)
+	if merged == nil {
+		merged = map[string]any{}
+	}
+	existingPayload := parsePayload(existing.Content)
+	incomingPayload := parsePayload(incoming.Content)
+	for key, value := range incomingPayload {
+		if _, exists := merged[key]; !exists || strings.TrimSpace(stringOf(merged[key])) == "" {
+			merged[key] = value
+		}
+	}
+	merged["type"] = preferredEntityType(stringOf(existingPayload["type"]), stringOf(incomingPayload["type"]))
+	left := strings.TrimSpace(stringOf(existingPayload["description"]))
+	right := strings.TrimSpace(stringOf(incomingPayload["description"]))
+	if left != "" && right != "" && !strings.EqualFold(left, right) {
+		merged["description"] = left + "\n" + right
+	} else if left != "" {
+		merged["description"] = left
+	} else if right != "" {
+		merged["description"] = right
+	}
+	merged["aliases"] = unionOrdered(toStrings(merged["aliases"]), toStrings(incomingPayload["aliases"]))
+	return merged
 }
 
 // buildReplacement folds an LLM-merged payload back into a replacement Product
@@ -219,7 +286,7 @@ func (d *LLMMergeDecider) BuildReplacement(ctx context.Context, existing, incomi
 	}
 	merged = applyMergeInvariants(existing, merged)
 
-	chunkIDs := unionOrdered(metaStrings(existing.Meta, "source_chunk_ids"), metaStrings(incoming.Meta, "source_chunk_ids"))
+	chunkIDs := unionOrdered(common.MetaStringSlice(existing.Meta, "source_chunk_ids"), common.MetaStringSlice(incoming.Meta, "source_chunk_ids"))
 	texts := []string{payloadDescription(merged)}
 	vecs, err := d.Embed.Encode(ctx, texts)
 	if err != nil {
@@ -391,7 +458,7 @@ func splitByTokens(pairs []MergePairInput, totalBudget, outputBudget int) [][]Me
 // mergePairsBatch mirrors mergePair but judges every pair in one LLM call and
 // returns the verdicts in input order. Pairs whose inputs are unparseable or
 // whose verdict is missing are reported as not-duplicated (mirrors the
-// per-pair skip behavior: Python logs and keeps both).
+// per-pair skip behavior: logs and keeps both)
 func mergePairsBatch(ctx context.Context, chat common.ChatInvoker, llmID string, pairs []MergePairInput) ([]BatchMergeResult, error) {
 	if len(pairs) == 0 {
 		return nil, nil
@@ -464,7 +531,7 @@ func (d *LLMMergeDecider) Aliases() map[string]string {
 
 // mergePair mirrors _struct_merge_pair: LLM-judged merge of two payload JSON
 // documents. It returns the merged payload when the pair is a duplicate, nil
-// when not (including unparseable inputs, which Python logs and skips).
+// when not (including unparseable inputs, which logs and skips)
 func mergePair(ctx context.Context, chat common.ChatInvoker, llmID, existingContent, incomingContent string) (map[string]any, error) {
 	existingPayload := parsePayload(existingContent)
 	incomingPayload := parsePayload(incomingContent)
@@ -595,23 +662,6 @@ func entityNameValue(p common.Product) string {
 	return strings.TrimSpace(name)
 }
 
-// metaStrings reads a []string meta value (tolerating []any).
-func metaStrings(meta map[string]any, key string) []string {
-	switch v := meta[key].(type) {
-	case []string:
-		return v
-	case []any:
-		out := make([]string, 0, len(v))
-		for _, e := range v {
-			if s, ok := e.(string); ok {
-				out = append(out, s)
-			}
-		}
-		return out
-	}
-	return nil
-}
-
 // unionOrdered mirrors _common.union_ordered: concatenated, deduped,
 // first-seen order preserved.
 func unionOrdered(lists ...[]string) []string {
@@ -634,6 +684,7 @@ type MergeStats struct {
 	Inserted          int
 	Updated           int
 	DuplicatesDropped int
+	survivorID        string
 }
 
 // MergeIntoStore folds the incoming rows into store, using DedupeAdd so the
@@ -643,13 +694,15 @@ type MergeStats struct {
 // When a row is dropped as a duplicate, its source_chunk_ids are still merged
 // into the surviving entry's source_chunk_ids (order-preserving union), so an
 // entity that appears across multiple chunks accumulates provenance from all
-// of them — mirroring Python's _struct_merge_graph_entities.
+// of them — mirroring _struct_merge_graph_entities
 func MergeIntoStore(ctx context.Context, store *common.MemStore, decider MergeDecider, rows []common.Product) (MergeStats, error) {
 	var stats MergeStats
 	for _, row := range rows {
 		var droppedExisting common.Product
 		var dropped bool
+		var survivorID string
 		action, err := store.DedupeAdd(row, 0, func(existing common.Product, score float64) (common.KeepAction, common.Product, error) {
+			survivorID = existing.ID
 			d, replacement, e := decider.Decide(ctx, existing, row, score)
 			if e != nil {
 				return common.KeepAdd, common.Product{}, e
@@ -658,7 +711,7 @@ func MergeIntoStore(ctx context.Context, store *common.MemStore, decider MergeDe
 			case DecisionDropIncoming:
 				// Capture the existing entry so we can fold the incoming
 				// source_chunk_ids into it after the drop (provenance union,
-				// mirroring Python's _struct_merge_graph_entities).
+				// mirroring _struct_merge_graph_entities)
 				droppedExisting = existing
 				dropped = true
 				return common.KeepDrop, common.Product{}, nil
@@ -674,52 +727,56 @@ func MergeIntoStore(ctx context.Context, store *common.MemStore, decider MergeDe
 		switch action {
 		case common.KeepDrop:
 			stats.DuplicatesDropped++
+			stats.survivorID = droppedExisting.ID
 			// Fold the incoming source_chunk_ids into the surviving entry.
 			if dropped && droppedExisting.ID != "" {
-				if ids := metaStrings(row.Meta, "source_chunk_ids"); len(ids) > 0 {
+				if ids := common.MetaStringSlice(row.Meta, "source_chunk_ids"); len(ids) > 0 {
 					store.MergeSourceChunkIDs(droppedExisting.ID, ids)
 				}
 			}
 		case common.KeepMerge:
 			stats.Updated++
 			stats.DuplicatesDropped++
+			stats.survivorID = survivorID
 		default:
 			stats.Inserted++
+			stats.survivorID = row.ID
 		}
 	}
 	return stats, nil
 }
 
-// GroupedDeduper mirrors _struct_local_dedup's group-by-filter-key behaviour:
-// rows are bucketed by their relation endpoints (entities share one bucket,
-// mirroring _struct_filter_key where entity rows carry no from/to), so an
-// entity never merges with a relation and relations only merge with
-// same-endpoint relations. One MemStore per bucket keeps cosine candidates
-// group-scoped. doc/compile/template are constant per run and therefore not
-// part of the key (they are in Python's key for the cross-document ES case).
+// GroupedDeduper keeps entities in one semantic candidate pool while tracking
+// exact names separately. Exact-name matches take precedence over vectors, so
+// same-name entities always merge regardless of their emitted type; different
+// names retain the existing alias/similarity dedupe behavior.
 type GroupedDeduper struct {
 	decider MergeDecider
 
-	mu     sync.Mutex
-	order  []string
-	stores map[string]*common.MemStore
-	stats  MergeStats
+	mu           sync.Mutex
+	order        []string
+	stores       map[string]*common.MemStore
+	entityByName map[string]string
+	stats        MergeStats
 }
 
 // NewGroupedDeduper constructs a deduper around the given decider.
 func NewGroupedDeduper(decider MergeDecider) *GroupedDeduper {
-	return &GroupedDeduper{decider: decider, stores: map[string]*common.MemStore{}}
+	return &GroupedDeduper{decider: decider, stores: map[string]*common.MemStore{}, entityByName: map[string]string{}}
 }
 
-// groupKey mirrors _struct_filter_key minus the per-run constants.
+// groupKey returns the graph identity used by the in-run deduper.
 func groupKey(row common.Product) string {
+	if kind, _ := row.Meta["kind"].(string); kind == "entity" {
+		return "entity"
+	}
 	from, _ := row.Meta["from"].(string)
 	to, _ := row.Meta["to"].(string)
-	return from + "\x00" + to
+	return "relation\x00" + normalizedEntityName(from) + "\x00" + normalizedEntityName(to)
 }
 
 // Add folds one row into its endpoint bucket. Safe for concurrent use, but
-// callers that need deterministic merge outcomes (mirroring Python's
+// callers that need deterministic merge outcomes (mirroring
 // sequential _struct_local_dedup) should call it sequentially in batch order.
 func (g *GroupedDeduper) Add(ctx context.Context, row common.Product) error {
 	key := groupKey(row)
@@ -732,14 +789,77 @@ func (g *GroupedDeduper) Add(ctx context.Context, row common.Product) error {
 	}
 	g.mu.Unlock()
 
-	s, err := MergeIntoStore(ctx, store, g.decider, []common.Product{row})
+	var action common.KeepAction
+	var err error
+	var candidateID string
+	if kind, _ := row.Meta["kind"].(string); kind == "entity" {
+		name := normalizedEntityName(entityNameValue(row))
+		g.mu.Lock()
+		candidateID = g.entityByName[name]
+		g.mu.Unlock()
+		if candidateID != "" {
+			action, err = store.DedupeAddByID(row, candidateID, func(existing common.Product, _ float64) (common.KeepAction, common.Product, error) {
+				d, replacement, e := g.decider.Decide(ctx, existing, row, 1)
+				if e != nil {
+					return common.KeepAdd, common.Product{}, e
+				}
+				switch d {
+				case DecisionDropIncoming:
+					return common.KeepDrop, common.Product{}, nil
+				case DecisionMerge:
+					return common.KeepMerge, replacement, nil
+				default:
+					return common.KeepAdd, common.Product{}, nil
+				}
+			})
+			if err == nil && action == common.KeepDrop {
+				store.MergeSourceChunkIDs(candidateID, common.MetaStringSlice(row.Meta, "source_chunk_ids"))
+			}
+		} else {
+			var stats MergeStats
+			stats, err = MergeIntoStore(ctx, store, g.decider, []common.Product{row})
+			candidateID = stats.survivorID
+			action = common.KeepAdd
+			if stats.Updated > 0 {
+				action = common.KeepMerge
+			} else if stats.DuplicatesDropped > 0 {
+				action = common.KeepDrop
+			}
+		}
+	} else {
+		var stats MergeStats
+		stats, err = MergeIntoStore(ctx, store, g.decider, []common.Product{row})
+		action = common.KeepAdd
+		if stats.Updated > 0 {
+			action = common.KeepMerge
+		} else if stats.DuplicatesDropped > 0 {
+			action = common.KeepDrop
+		}
+	}
 	if err != nil {
 		return err
 	}
+	if action == common.KeepAdd {
+		candidateID = row.ID
+	}
 	g.mu.Lock()
-	g.stats.Inserted += s.Inserted
-	g.stats.Updated += s.Updated
-	g.stats.DuplicatesDropped += s.DuplicatesDropped
+	if kind, _ := row.Meta["kind"].(string); kind == "entity" {
+		name := normalizedEntityName(entityNameValue(row))
+		if candidateID != "" {
+			g.entityByName[name] = candidateID
+		} else if action == common.KeepAdd && row.ID != "" {
+			g.entityByName[name] = row.ID
+		}
+	}
+	switch action {
+	case common.KeepMerge:
+		g.stats.Updated++
+		g.stats.DuplicatesDropped++
+	case common.KeepDrop:
+		g.stats.DuplicatesDropped++
+	default:
+		g.stats.Inserted++
+	}
 	g.mu.Unlock()
 	return nil
 }
@@ -766,7 +886,7 @@ func (g *GroupedDeduper) Rows() []common.Product {
 // when entity merges recorded aliases, every relation row's endpoints are
 // resolved through them (re-embedding the changed payloads, preserving row
 // ids), then ALL relation rows are re-folded through the deduper so relations
-// that became identical collapse (Python's second pass with
+// that became identical collapse ( second pass with
 // rewrite_relations=False). It is a no-op without aliases.
 func (g *GroupedDeduper) RewriteRelations(ctx context.Context, aliases map[string]string, embed common.Embedder) error {
 	if len(aliases) == 0 {

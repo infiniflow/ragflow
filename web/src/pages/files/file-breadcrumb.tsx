@@ -5,21 +5,21 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
-import { useNavigate } from 'react-router';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useSelectBreadcrumbItems } from './use-navigate-to-folder';
 
 export function FileBreadcrumb() {
   const breadcrumbItems = useSelectBreadcrumbItems();
-  const navigate = useNavigate();
+  const { navigateToFolder } = useNavigatePage();
   return (
     <Breadcrumb>
       <BreadcrumbList>
         {breadcrumbItems.map((x, idx) => (
-          <div key={x.path} className="flex items-center gap-2">
+          <div key={x.folderId} className="flex items-center gap-2">
             {idx !== 0 && <BreadcrumbSeparator />}
             <BreadcrumbItem
-              key={x.path}
-              onClick={() => navigate(x.path)}
+              key={x.folderId}
+              onClick={navigateToFolder(x.folderId)}
               className="cursor-pointer"
             >
               {idx === breadcrumbItems.length - 1 ? (

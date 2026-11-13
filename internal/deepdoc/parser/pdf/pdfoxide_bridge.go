@@ -29,12 +29,7 @@ func (e *PDFOxideEngine) PageCount() (int, error) { return e.Inner.PageCount() }
 func (e *PDFOxideEngine) Close() error            { return e.Inner.Close() }
 
 func (e *PDFOxideEngine) Outlines() ([]pdf.Outline, error) {
-	ol := pdfium.ExtractOutlines(e.Inner.RawData())
-	result := make([]pdf.Outline, len(ol))
-	for i, o := range ol {
-		result[i] = pdf.Outline{Title: o.Title, Level: o.Level, PageNumber: o.PageNumber}
-	}
-	return result, nil
+	return pdfium.ExtractOutlines(e.Inner.RawData()), nil
 }
 
 func (e *PDFOxideEngine) RenderPage(pageNum int, dpi float64) ([]byte, error) {
@@ -43,6 +38,11 @@ func (e *PDFOxideEngine) RenderPage(pageNum int, dpi float64) ([]byte, error) {
 
 func (e *PDFOxideEngine) RenderPageImage(pageNum int, dpi float64) (image.Image, error) {
 	return e.Inner.RenderPageImage(pageNum, dpi)
+}
+
+// PageSize returns the effective dimensions of a zero-based page in PDF points.
+func (e *PDFOxideEngine) PageSize(pageNum int) (float64, float64, error) {
+	return e.Inner.PageSize(pageNum)
 }
 
 func (e *PDFOxideEngine) ExtractChars(pageNum int) ([]pdf.TextChar, error) {

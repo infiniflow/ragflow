@@ -1,31 +1,126 @@
+import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { BlockButton, Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormMessage,
-} from '@/components/ui/form';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { Form } from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
 import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
-import { SwitchLogicOperator } from '@/constants/agent';
+import { CanvasSwitchOperators, SwitchLogicOperator } from '@/constants/agent';
 import { useBuildSwitchOperatorOptions } from '@/hooks/logic-hooks/use-build-operator-options';
 import { useBuildSwitchLogicOperatorOptions } from '@/hooks/logic-hooks/use-build-options';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { reconnectEdge } from '@xyflow/react';
 import { t } from 'i18next';
 import { X } from 'lucide-react';
-import { memo, useCallback } from 'react';
-import { useFieldArray, useForm, useFormContext } from 'react-hook-form';
+import { memo, useCallback, useMemo } from 'react';
+import {
+  useFieldArray,
+  useForm,
+  useFormContext,
+  useWatch,
+} from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
+import { useFilterQueryVariableOptionsByTypes } from '../../hooks/use-get-begin-query';
 import { IOperatorForm } from '../../interface';
+import useGraphStore from '../../store';
+import { generateSwitchHandleText, getOperatorIndex } from '../../utils';
 import { FormWrapper } from '../components/form-wrapper';
-import { QueryVariable } from '../components/query-variable';
+import { GroupedSelectWithSecondaryMenu } from '../components/select-with-secondary-menu';
 import { useValues } from './use-values';
 import { useWatchFormChange } from './use-watch-change';
+
+/**
+ * Split a stored cpn_id reference into the dropdown base (`cpn@root`) and the
+ * dotted-path suffix (`field.subfield`). The canvas resolver in
+ * `agent/canvas.py` (`Graph.get_variable_value`) consumes the combined string;
+ * the suffix lets the Switch condition target nested fields of an object
+ * output instead of the whole output. See issue #14235.
+ */
+function splitBaseAndPath(value: string): { base: string; suffix: string } {
+  if (!value) return { base: '', suffix: '' };
+  const atIdx = value.indexOf('@');
+  if (atIdx < 0) {
+    // Globals / env vars / sys vars have no '@' — they're leaf values and
+    // cannot be drilled into via Switch, so the whole string is the base.
+    return { base: value, suffix: '' };
+  }
+  const rest = value.slice(atIdx + 1);
+  const dotIdx = rest.indexOf('.');
+  if (dotIdx < 0) return { base: value, suffix: '' };
+  return {
+    base: value.slice(0, atIdx + 1 + dotIdx),
+    suffix: rest.slice(dotIdx + 1),
+  };
+}
+
+/** Combine a dropdown base and a user-typed dotted suffix into a single ref. */
+function joinBaseAndPath(base: string, suffix: string): string {
+  const trimmed = suffix.trim().replace(/^\.+/, '');
+  if (!base) return trimmed;
+  return trimmed ? `${base}.${trimmed}` : base;
+}
+
+type VariableWithPathProps = {
+  name: string;
+};
+
+/**
+ * Switch-condition variable picker: a dropdown for the upstream variable plus
+ * an optional `.field.subfield` text input. Both controls write to a single
+ * `cpn_id` form field, joined as `cpn@root.field.subfield`.
+ */
+function VariableWithPath({ name }: VariableWithPathProps) {
+  const { t: translate } = useTranslation();
+  const form = useFormContext();
+  const fullValue: string = useWatch({ control: form.control, name }) ?? '';
+
+  const { base, suffix } = useMemo(
+    () => splitBaseAndPath(fullValue),
+    [fullValue],
+  );
+
+  const options = useFilterQueryVariableOptionsByTypes({ types: [] });
+
+  const writeCombined = useCallback(
+    (nextBase: string, nextSuffix: string) => {
+      // Globals/env/sys vars (no '@') are leaf values — drilling a dotted
+      // path into them would produce an invalid ref the canvas resolver
+      // can't look up. Drop any stale suffix when the base isn't drillable.
+      const safeSuffix = nextBase.includes('@') ? nextSuffix : '';
+      form.setValue(name, joinBaseAndPath(nextBase, safeSuffix), {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    },
+    [form, name],
+  );
+
+  const isDrillable = base.includes('@');
+
+  return (
+    <div className="flex-1 min-w-0 flex items-center gap-2">
+      <div className="flex-[3] min-w-0">
+        <GroupedSelectWithSecondaryMenu
+          options={options}
+          value={base}
+          onChange={(val) => writeCombined(val, suffix)}
+        />
+      </div>
+      <Input
+        className="flex-[2] min-w-0 bg-transparent"
+        placeholder={translate('flow.fieldPathPlaceholder', {
+          defaultValue: '.field.subfield',
+        })}
+        value={suffix}
+        disabled={!isDrillable}
+        onChange={(e) => writeCombined(base, e.target.value)}
+      />
+    </div>
+  );
+}
 
 const ConditionKey = 'conditions';
 const ItemKey = 'items';
@@ -45,7 +140,9 @@ function ConditionCards({
 }: ConditionCardsProps) {
   const form = useFormContext();
 
-  const switchOperatorOptions = useBuildSwitchOperatorOptions();
+  const switchOperatorOptions = useBuildSwitchOperatorOptions(
+    CanvasSwitchOperators,
+  );
 
   const name = `${parentName}.${ItemKey}`;
 
@@ -79,57 +176,28 @@ function ConditionCards({
                 },
               )}
             >
-              <section className="p-2 bg-bg-card flex justify-between items-center">
-                <FormField
-                  control={form.control}
+              <section className="p-2 bg-bg-card flex justify-between items-center gap-2">
+                <RAGFlowFormItem
                   name={`${name}.${index}.cpn_id`}
-                  render={({ field }) => (
-                    <FormItem className="flex-1 min-w-0">
-                      <FormControl>
-                        <QueryVariable
-                          pureQuery
-                          {...field}
-                          hideLabel
-                        ></QueryVariable>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                  className="flex-1 min-w-0"
+                >
+                  {() => <VariableWithPath name={`${name}.${index}.cpn_id`} />}
+                </RAGFlowFormItem>
                 <div className="flex items-center">
                   <Separator orientation="vertical" className="h-2.5" />
-                  <FormField
-                    control={form.control}
-                    name={`${name}.${index}.operator`}
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormControl>
-                          <RAGFlowSelect
-                            {...field}
-                            options={switchOperatorOptions}
-                            onlyShowSelectedIcon
-                            triggerClassName="w-30 bg-transparent border-none"
-                          />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
+                  <RAGFlowFormItem name={`${name}.${index}.operator`}>
+                    <SelectWithSearch
+                      options={switchOperatorOptions}
+                      onlyShowSelectedIcon
+                      triggerClassName="w-30 bg-transparent border-none"
+                    />
+                  </RAGFlowFormItem>
                 </div>
               </section>
               <CardContent className="p-4 ">
-                <FormField
-                  control={form.control}
-                  name={`${name}.${index}.value`}
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormControl>
-                        <Textarea {...field} className="bg-transparent" />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <RAGFlowFormItem name={`${name}.${index}.value`}>
+                  <Textarea className="bg-transparent" />
+                </RAGFlowFormItem>
               </CardContent>
             </Card>
             <Button variant={'ghost'} onClick={handleRemove(index)}>
@@ -153,7 +221,9 @@ function ConditionCards({
 function SwitchForm({ node }: IOperatorForm) {
   const { t } = useTranslation();
   const values = useValues(node);
-  const switchOperatorOptions = useBuildSwitchOperatorOptions();
+  const switchOperatorOptions = useBuildSwitchOperatorOptions(
+    CanvasSwitchOperators,
+  );
 
   const FormSchema = z.object({
     conditions: z.array(
@@ -185,6 +255,44 @@ function SwitchForm({ node }: IOperatorForm) {
     control: form.control,
   });
 
+  const removeCondition = useCallback(
+    (index: number) => {
+      if (node?.id) {
+        const { edges, setEdges } = useGraphStore.getState();
+        setEdges(
+          edges
+            .filter(
+              (edge) =>
+                edge.source !== node.id ||
+                edge.sourceHandle !== generateSwitchHandleText(index),
+            )
+            .map((edge) => {
+              const branchIndex =
+                Number(getOperatorIndex(edge.sourceHandle ?? '')) - 1;
+              if (
+                edge.source !== node.id ||
+                !Number.isInteger(branchIndex) ||
+                branchIndex <= index
+              )
+                return edge;
+              return reconnectEdge(
+                edge,
+                {
+                  source: edge.source,
+                  target: edge.target,
+                  sourceHandle: generateSwitchHandleText(branchIndex - 1),
+                  targetHandle: edge.targetHandle ?? null,
+                },
+                [edge],
+              )[0];
+            }),
+        );
+      }
+      remove(index);
+    },
+    [node?.id, remove],
+  );
+
   const switchLogicOperatorOptions = useBuildSwitchLogicOperatorOptions();
 
   useWatchFormChange(node?.id, form);
@@ -207,7 +315,7 @@ function SwitchForm({ node }: IOperatorForm) {
                   <Button
                     variant={'secondary'}
                     className="-translate-y-1"
-                    onClick={() => remove(index)}
+                    onClick={() => removeCondition(index)}
                   >
                     {t('common.remove')} <X />
                   </Button>
@@ -217,27 +325,17 @@ function SwitchForm({ node }: IOperatorForm) {
                 {conditionLength > 1 && (
                   <section className="flex flex-col w-[72px]">
                     <div className="relative  w-1 flex-1 before:absolute before:w-[1px]  before:bg-input-border before:top-20 before:bottom-0 before:left-10"></div>
-                    <FormField
-                      control={form.control}
+                    <RAGFlowFormItem
                       name={`${ConditionKey}.${index}.logical_operator`}
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormControl>
-                            <RAGFlowSelect
-                              {...field}
-                              options={switchLogicOperatorOptions}
-                            />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
+                    >
+                      <SelectWithSearch options={switchLogicOperatorOptions} />
+                    </RAGFlowFormItem>
                     <div className="relative  w-1 flex-1 before:absolute before:w-[1px]  before:bg-input-border before:top-0 before:bottom-36 before:left-10"></div>
                   </section>
                 )}
                 <ConditionCards
                   name={name}
-                  removeParent={remove}
+                  removeParent={removeCondition}
                   parentIndex={index}
                   parentLength={fields.length}
                 ></ConditionCards>

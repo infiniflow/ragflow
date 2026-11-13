@@ -1,4 +1,12 @@
 import { IngestionTaskStatus, RunningStatus } from '@/constants/knowledge';
+import { IngestionEventItem } from './ingestion';
+
+export interface IApplyDatasetParserConfigResult {
+  dataset_id: string;
+  total_documents: number;
+  updated_documents: number;
+  unchanged_documents: number;
+}
 
 export interface IDocumentInfo {
   // chunk_num: number;
@@ -14,11 +22,19 @@ export interface IDocumentInfo {
   // parser_id: string;
   pipeline_id: string;
   pipeline_name: string;
+  // Pinned dataflow canvas version; empty when the latest version is used
+  // (design section 5 sticky snapshot). Outdated/Missing flags come from the
+  // dataset/document read path (design section 6.2/6.3).
+  pipeline_version_id?: string;
+  pipeline_version_outdated?: boolean;
   process_begin_at?: string;
   process_duration: number;
   progress: number;
   progress_msg: string;
-  run: RunningStatus;
+  latest_ingestion_event?: IngestionEventItem | null;
+  // Python backend only. The Go backend removed this field and reports
+  // parsing state exclusively through ingestion_status.
+  run?: RunningStatus;
   ingestion_status?: IngestionTaskStatus;
   size: number;
   source_type: string;
@@ -36,15 +52,11 @@ export interface IDocumentInfo {
 
 export interface IParserConfig {
   delimiter?: string;
-  html4excel?: boolean;
   layout_recognize?: string;
   pages?: any[];
   chunk_token_num?: number;
   auto_keywords?: number;
   auto_questions?: number;
-  task_page_size?: number;
-  raptor?: Raptor;
-  graphrag?: GraphRag;
   image_context_window?: number;
   image_table_context_window?: number;
   image_context_size?: number;
@@ -63,21 +75,8 @@ export interface IParserConfig {
   compilation_template_group_id?: string[];
 }
 
-interface Raptor {
-  use_raptor: boolean;
-}
-
-interface GraphRag {
-  batch_chunk_token_size?: number;
-  community?: boolean;
-  entity_types?: string[];
-  method?: string;
-  resolution?: boolean;
-  use_graphrag?: boolean;
-}
-
 export type IDocumentInfoFilter = {
-  run_status: Record<number, number>;
+  run_status: Record<string, number>;
   suffix: Record<string, number>;
   metadata: Record<string, Record<string, number>>;
 };

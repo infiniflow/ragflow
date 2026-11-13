@@ -1,14 +1,21 @@
 package service
 
 import (
+	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
+	"time"
+	"unicode/utf8"
+
+	"gorm.io/gorm"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 type recordingTaskPublisher struct {
@@ -74,17 +81,18 @@ func TestIngestionTaskServiceCreateForDocumentsPublishesTaskMessages(t *testing.
 	publisher := &recordingTaskPublisher{}
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
+	svc.tierResolver = (&fakeTierResolver{tier: common.TierDefault}).resolve
 
 	ctx := t.Context()
-	resp, err := svc.CreateForDocuments(ctx, "kb-1", "user-1", []string{"doc-1"})
+	resp, err := svc.CreateForDocuments(permission.WithIdentity(ctx, "user-1", ""), "kb-1", []string{"doc-1"})
 	if err != nil {
 		t.Fatalf("CreateForDocuments failed: %v", err)
 	}
 	if len(resp) != 1 {
 		t.Fatalf("expected 1 response, got %d", len(resp))
 	}
-	if publisher.subject != "tasks.RAGFLOW" {
-		t.Fatalf("subject = %q, want %q", publisher.subject, "tasks.RAGFLOW")
+	if publisher.subject != common.TaskSubject {
+		t.Fatalf("subject = %q, want %q", publisher.subject, common.TaskSubject)
 	}
 	if len(publisher.messages) != 1 {
 		t.Fatalf("expected 1 published message, got %d", len(publisher.messages))
@@ -99,6 +107,94 @@ func TestIngestionTaskServiceCreateForDocumentsPublishesTaskMessages(t *testing.
 	}
 	if task.DocumentID != "doc-1" || task.DatasetID != "kb-1" || task.UserID != "user-1" {
 		t.Fatalf("unexpected task: %+v", task)
+	}
+}
+
+func TestIngestionTaskServiceCreateForDocumentsRejectsDatasetMismatch(t *testing.T) {
+	tests := []struct {
+		name, docKB, taskStatus, wantError string
+	}{
+		{"foreign new task", "kb-2", "", gorm.ErrRecordNotFound.Error()},
+		{"foreign created task", "kb-2", common.CREATED, gorm.ErrRecordNotFound.Error()},
+		{"foreign failed task", "kb-2", common.FAILED, gorm.ErrRecordNotFound.Error()},
+		{"foreign stopped task", "kb-2", common.STOPPED, gorm.ErrRecordNotFound.Error()},
+		{"mismatched existing task", "kb-1", common.FAILED, "different dataset"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+			insertTestKB(t, "kb-2", "tenant-2", 1, 0, 0)
+			insertTestDoc(t, "doc-1", tt.docKB, 0, 0)
+			if tt.taskStatus != "" {
+				insertTestIngestionTaskWithStatus(t, "task-1", "user-2", "doc-1", "kb-2", tt.taskStatus)
+			}
+			ctx := t.Context()
+			taskDAO := dao.NewIngestionTaskDAO()
+			before, err := taskDAO.GetByDocumentID(ctx, db, "doc-1")
+			if err != nil {
+				t.Fatalf("load existing task: %v", err)
+			}
+			publisher := &recordingTaskPublisher{}
+			svc := NewIngestionTaskService()
+			svc.taskPublisher = publisher
+
+			responses, err := svc.CreateForDocuments(permission.WithIdentity(ctx, "user-1", ""), "kb-1", []string{"doc-1"})
+			if err != nil {
+				t.Fatalf("expected per-document failure: %v", err)
+			}
+			if len(responses) != 1 {
+				t.Fatalf("responses = %d, want 1", len(responses))
+			}
+			if responses[0].DocumentID != "doc-1" || !strings.Contains(responses[0].Result, tt.wantError) {
+				t.Fatalf("expected dataset rejection, got %+v", responses[0])
+			}
+			if len(publisher.messages) != 0 {
+				t.Fatalf("published rejected document: %+v", publisher.messages)
+			}
+			after, err := taskDAO.GetByDocumentID(ctx, db, "doc-1")
+			if err != nil {
+				t.Fatalf("reload existing task: %v", err)
+			}
+			if !reflect.DeepEqual(before, after) {
+				t.Fatalf("task changed: before=%+v, after=%+v", before, after)
+			}
+			if got := countPipelineLogs(t, db, "doc-1"); got != 0 {
+				t.Fatalf("pipeline logs = %d, want 0", got)
+			}
+		})
+	}
+}
+
+func TestIngestionTaskServiceCreateForDocumentsRejectsMissingRunMetadata(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestDoc(t, "doc-1", "missing-kb", 0, 0)
+
+	publisher := &recordingTaskPublisher{}
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = publisher
+
+	responses, err := svc.CreateForDocuments(permission.WithIdentity(t.Context(), "user-1", ""), "missing-kb", []string{"doc-1"})
+	if err != nil {
+		t.Fatalf("CreateForDocuments returns per-document failures: %v", err)
+	}
+	if len(responses) != 1 || !strings.Contains(responses[0].Result, "ensure run identity") {
+		t.Fatalf("unexpected responses: %+v", responses)
+	}
+	if len(publisher.messages) != 0 {
+		t.Fatalf("published messages = %d, want 0", len(publisher.messages))
+	}
+	task, err := dao.NewIngestionTaskDAO().GetByDocumentID(t.Context(), db, "doc-1")
+	if err != nil {
+		t.Fatalf("load queued task: %v", err)
+	}
+	if task != nil {
+		t.Fatalf("task = %+v, want no task after identity setup fails", task)
+	}
+	if got := countPipelineLogs(t, db, "doc-1"); got != 0 {
+		t.Fatalf("pipeline log rows = %d, want 0 when metadata lookup fails", got)
 	}
 }
 
@@ -121,7 +217,7 @@ func TestIngestionTaskServiceMarksTaskScheduledOnlyAfterPublish(t *testing.T) {
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
 
-	responses, err := svc.CreateForDocuments(t.Context(), "kb-1", "user-1", []string{"doc-1"})
+	responses, err := svc.CreateForDocuments(permission.WithIdentity(t.Context(), "user-1", ""), "kb-1", []string{"doc-1"})
 	if err != nil {
 		t.Fatalf("CreateForDocuments failed: %v", err)
 	}
@@ -158,7 +254,7 @@ func TestIngestionTaskServiceAcceptsConsumerWinningPublishRace(t *testing.T) {
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
 
-	responses, err := svc.CreateForDocuments(t.Context(), "kb-1", "user-1", []string{"doc-1"})
+	responses, err := svc.CreateForDocuments(permission.WithIdentity(t.Context(), "user-1", ""), "kb-1", []string{"doc-1"})
 	if err != nil {
 		t.Fatalf("CreateForDocuments failed: %v", err)
 	}
@@ -182,12 +278,53 @@ func TestIngestionTaskServiceStartRunningTransitionsScheduledTask(t *testing.T) 
 	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.SCHEDULED)
 
-	task, err := NewIngestionTaskService().StartRunning(t.Context(), "task-1")
+	task, err := NewIngestionTaskService().TransitionTaskToRunning(t.Context(), "task-1")
 	if err != nil {
 		t.Fatalf("StartRunning failed: %v", err)
 	}
 	if task.Status != common.RUNNING {
 		t.Fatalf("status = %q, want %q", task.Status, common.RUNNING)
+	}
+}
+
+func TestIngestionTaskServiceStartRunningFromCreatedTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
+
+	task, err := NewIngestionTaskService().TransitionTaskToRunning(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("StartRunning failed: %v", err)
+	}
+	if task.Status != common.RUNNING {
+		t.Fatalf("status = %q, want %q", task.Status, common.RUNNING)
+	}
+}
+
+func TestIngestionTaskServiceTransitionFromRejectsConflict(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.STOPPED)
+
+	svc := NewIngestionTaskService()
+	ctx := t.Context()
+	_, err := svc.transitionFrom(ctx, "task-1", []string{common.CREATED, common.SCHEDULED}, common.RUNNING)
+	if err == nil {
+		t.Fatal("expected conflict error, got nil")
+	}
+	var conflictErr *TaskStatusConflictError
+	if !errors.As(err, &conflictErr) {
+		t.Fatalf("expected TaskStatusConflictError, got %T (%v)", err, err)
+	}
+	if conflictErr.ExpectedFrom != "CREATED/SCHEDULED" {
+		t.Fatalf("expected %q, got %q", "CREATED/SCHEDULED", conflictErr.ExpectedFrom)
+	}
+	if conflictErr.ActualCurrent != common.STOPPED {
+		t.Fatalf("actual current = %q, want %q", conflictErr.ActualCurrent, common.STOPPED)
 	}
 }
 
@@ -201,7 +338,7 @@ func TestIngestionTaskServiceListByUserFiltersDataset(t *testing.T) {
 	svc := NewIngestionTaskService()
 	datasetID := "kb-1"
 	ctx := t.Context()
-	tasks, err := svc.ListByUser(ctx, "user-1", &datasetID, 0, 0)
+	tasks, err := svc.List(permission.WithIdentity(ctx, "user-1", ""), &datasetID, 0, 0)
 	if err != nil {
 		t.Fatalf("ListByUser failed: %v", err)
 	}
@@ -292,52 +429,6 @@ func TestIngestionTaskServiceRemoveManyRemovesOwnedTasks(t *testing.T) {
 	}
 }
 
-func TestIngestionTaskServiceListAllForAdminIncludesRunAndUserEmail(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	status := "1"
-	if err := dao.DB.Create(&entity.User{
-		ID:              "user-1",
-		Email:           "user-1@test.com",
-		Nickname:        "user-1",
-		IsAuthenticated: "1",
-		IsActive:        "1",
-		IsAnonymous:     "0",
-		Status:          &status,
-	}).Error; err != nil {
-		t.Fatalf("insert user: %v", err)
-	}
-	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
-	if err := dao.DB.Create(&entity.IngestionTaskLog{
-		TaskID:     "task-1",
-		Checkpoint: entity.JSONMap{"run_count": 3},
-	}).Error; err != nil {
-		t.Fatalf("insert task log: %v", err)
-	}
-
-	ctx := t.Context()
-	svc := NewIngestionTaskService()
-	tasks, err := svc.ListAllForAdmin(ctx)
-	if err != nil {
-		t.Fatalf("ListAllForAdmin failed: %v", err)
-	}
-	if len(tasks) != 1 {
-		t.Fatalf("expected 1 task, got %d", len(tasks))
-	}
-	if tasks[0]["user"] != "user-1@test.com" {
-		t.Fatalf("user = %v, want user-1@test.com", tasks[0]["user"])
-	}
-	if tasks[0]["run_count"] != 3 {
-		t.Fatalf("run_count = %v, want 3", tasks[0]["run_count"])
-	}
-	if tasks[0]["component_total"] != 0 {
-		t.Fatalf("component_total = %v, want 0", tasks[0]["component_total"])
-	}
-	if tasks[0]["component_done"] != 0 {
-		t.Fatalf("component_done = %v, want 0", tasks[0]["component_done"])
-	}
-}
-
 func TestIngestionTaskServiceStartRunningTransitionsCreatedTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -345,7 +436,7 @@ func TestIngestionTaskServiceStartRunningTransitionsCreatedTask(t *testing.T) {
 
 	svc := NewIngestionTaskService()
 	ctx := t.Context()
-	task, err := svc.StartRunning(ctx, "task-1")
+	task, err := svc.TransitionTaskToRunning(ctx, "task-1")
 	if err != nil {
 		t.Fatalf("StartRunning failed: %v", err)
 	}
@@ -354,55 +445,54 @@ func TestIngestionTaskServiceStartRunningTransitionsCreatedTask(t *testing.T) {
 	}
 }
 
-// TestStartRunningMarksDocumentRunning locks in that starting a CREATED task
-// mirrors the transition to its document: run=RUNNING and progress counters
-// reset, with a fresh process_begin_at. The document bookkeeping is owned by
-// the task-lifecycle transition, not the ingestion worker's execution path.
-func TestStartRunningMarksDocumentRunning(t *testing.T) {
+// TestPrepareValidatedRunResetsDocumentProgress verifies validation precedes
+// document initialization while preserving committed counts and progress_msg.
+func TestPrepareValidatedRunResetsDocumentProgress(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
 	insertTestDoc(t, "doc-1", "kb-1", 100, 10)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
-	// Seed the document as a partially-processed, non-RUNNING state that the
-	// start transition must clobber.
+	// Seed the document as a partially-processed state that the start transition must reset.
 	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").
 		Updates(map[string]interface{}{
-			"run":          string(entity.TaskStatusDone),
-			"progress":     float64(0.5),
-			"progress_msg": "partial",
+			"progress":         float64(0.5),
+			"progress_msg":     "partial",
+			"process_duration": 0.719,
 		}).Error; err != nil {
 		t.Fatalf("seed document: %v", err)
 	}
 
 	svc := NewIngestionTaskService()
 	ctx := t.Context()
-	if _, err := svc.StartRunning(ctx, "task-1"); err != nil {
-		t.Fatalf("StartRunning failed: %v", err)
+	task, err := svc.TransitionTaskToRunning(ctx, "task-1")
+	if err != nil {
+		t.Fatalf("TransitionTaskToRunning failed: %v", err)
 	}
+	svc.PrepareValidatedRun(ctx, task)
 
 	var doc entity.Document
 	if err := db.Where("id = ?", "doc-1").First(&doc).Error; err != nil {
 		t.Fatalf("reload document: %v", err)
 	}
-	if doc.Run == nil || *doc.Run != string(entity.TaskStatusRunning) {
-		t.Fatalf("run = %v, want RUNNING(%q)", doc.Run, string(entity.TaskStatusRunning))
-	}
 	if doc.Progress != 0 {
 		t.Fatalf("progress = %f, want 0", doc.Progress)
 	}
-	if doc.ChunkNum != 0 {
-		t.Fatalf("chunk_num = %d, want 0", doc.ChunkNum)
+	if doc.ChunkNum != 10 {
+		t.Fatalf("chunk_num = %d, want 10", doc.ChunkNum)
 	}
-	if doc.TokenNum != 0 {
-		t.Fatalf("token_num = %d, want 0", doc.TokenNum)
+	if doc.TokenNum != 100 {
+		t.Fatalf("token_num = %d, want 100", doc.TokenNum)
 	}
-	if doc.ProgressMsg != nil && *doc.ProgressMsg != "" {
-		t.Fatalf("progress_msg = %q, want empty", *doc.ProgressMsg)
+	if doc.ProgressMsg == nil || *doc.ProgressMsg != "partial" {
+		t.Fatalf("progress_msg = %v, want partial", doc.ProgressMsg)
 	}
 	if doc.ProcessBeginAt == nil || doc.ProcessBeginAt.IsZero() {
 		t.Fatal("process_begin_at not set")
+	}
+	if doc.ProcessDuration != 0 {
+		t.Fatalf("process_duration = %f, want 0", doc.ProcessDuration)
 	}
 }
 
@@ -416,10 +506,8 @@ func TestStartRunningLeavesTerminalDocumentUntouched(t *testing.T) {
 	insertTestDoc(t, "doc-1", "kb-1", 100, 10)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
-	finishedRun := string(entity.TaskStatusDone)
 	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").
 		Updates(map[string]interface{}{
-			"run":          finishedRun,
 			"progress":     float64(1.0),
 			"progress_msg": "done",
 		}).Error; err != nil {
@@ -432,7 +520,7 @@ func TestStartRunningLeavesTerminalDocumentUntouched(t *testing.T) {
 
 	svc := NewIngestionTaskService()
 	ctx := t.Context()
-	task, err := svc.StartRunning(ctx, "task-1")
+	task, err := svc.TransitionTaskToRunning(ctx, "task-1")
 	if err != nil {
 		t.Fatalf("StartRunning failed: %v", err)
 	}
@@ -444,8 +532,8 @@ func TestStartRunningLeavesTerminalDocumentUntouched(t *testing.T) {
 	if err := db.Where("id = ?", "doc-1").First(&doc).Error; err != nil {
 		t.Fatalf("reload document: %v", err)
 	}
-	if doc.Run == nil || *doc.Run != finishedRun {
-		t.Fatalf("run = %v, want %q (terminal document must not be resurrected)", doc.Run, finishedRun)
+	if doc.Progress != 1.0 {
+		t.Fatalf("progress = %v, want 1.0", doc.Progress)
 	}
 	if doc.ChunkNum != 10 || doc.TokenNum != 100 {
 		t.Fatalf("counters changed: chunk_num=%d token_num=%d, want 10/100", doc.ChunkNum, doc.TokenNum)
@@ -467,7 +555,7 @@ func TestStartRunningFinalizesStoppingTask(t *testing.T) {
 
 	svc := NewIngestionTaskService()
 	ctx := t.Context()
-	task, err := svc.StartRunning(ctx, "task-1")
+	task, err := svc.TransitionTaskToRunning(ctx, "task-1")
 	if err != nil {
 		t.Fatalf("StartRunning failed: %v", err)
 	}
@@ -480,6 +568,26 @@ func TestIngestionTaskServiceRequestStopTransitionsCreatedTaskToStopped(t *testi
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	ctx := t.Context()
+
+	svc := NewIngestionTaskService()
+	task, err := svc.RequestStop(ctx, "task-1")
+	if err != nil {
+		t.Fatalf("RequestStop failed: %v", err)
+	}
+	if task.Status != common.STOPPED {
+		t.Fatalf("status = %q, want %q", task.Status, common.STOPPED)
+	}
+}
+
+func TestIngestionTaskServiceRequestStopTransitionsScheduledTaskToStopped(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("status", common.SCHEDULED).Error; err != nil {
+		t.Fatalf("set SCHEDULED: %v", err)
+	}
 	ctx := t.Context()
 
 	svc := NewIngestionTaskService()
@@ -543,7 +651,7 @@ func TestIngestionTaskServiceMarkFailedUpdatesTaskStatus(t *testing.T) {
 	ctx := t.Context()
 
 	svc := NewIngestionTaskService()
-	if err := svc.MarkFailed(ctx, "task-1"); err != nil {
+	if err := svc.MarkFailed(ctx, "task-1", ""); err != nil {
 		t.Fatalf("MarkFailed failed: %v", err)
 	}
 	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
@@ -595,6 +703,9 @@ func TestIngestionTaskServiceMarkCompletedReturnsTaskIDInTransitionError(t *test
 func TestIngestionTaskServiceCreateAndEnqueueRetriesTerminalTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestDoc(t, "doc-2", "kb-1", 0, 0)
 	publisher := &recordingTaskPublisher{}
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
@@ -602,9 +713,10 @@ func TestIngestionTaskServiceCreateAndEnqueueRetriesTerminalTask(t *testing.T) {
 	testCases := []struct {
 		name   string
 		status string
+		docID  string
 	}{
-		{name: "failed", status: common.FAILED},
-		{name: "stopped", status: common.STOPPED},
+		{name: "failed", status: common.FAILED, docID: "doc-1"},
+		{name: "stopped", status: common.STOPPED, docID: "doc-2"},
 	}
 
 	ctx := t.Context()
@@ -615,13 +727,13 @@ func TestIngestionTaskServiceCreateAndEnqueueRetriesTerminalTask(t *testing.T) {
 			if err := dao.DB.Where("id = ?", "task-1").Delete(&entity.IngestionTask{}).Error; err != nil {
 				t.Fatalf("clear task: %v", err)
 			}
-			insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+			insertTestIngestionTask(t, "task-1", "user-1", tc.docID, "kb-1")
 			if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("status", tc.status).Error; err != nil {
 				t.Fatalf("set terminal status: %v", err)
 			}
 
 			task, err := svc.CreateAndEnqueue(ctx, &entity.IngestionTask{
-				DocumentID: "doc-1",
+				DocumentID: tc.docID,
 				UserID:     "user-1",
 				DatasetID:  "kb-1",
 				Status:     common.CREATED,
@@ -652,6 +764,8 @@ func TestIngestionTaskServiceCreateAndEnqueueRetriesTerminalTask(t *testing.T) {
 func TestIngestionTaskServiceCreateAndEnqueueSchedulesExistingCreatedTask(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	insertTestIngestionTaskWithStatus(t, "stale-task", "user-1", "doc-1", "kb-1", common.CREATED)
 
 	publisher := &recordingTaskPublisher{}
@@ -689,6 +803,8 @@ func TestIngestionTaskServiceCreateAndEnqueueSchedulesExistingCreatedTask(t *tes
 func TestIngestionTaskServiceConcurrentCreatedTaskPublicationsConverge(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
 
 	publisher := &duplicatePublishRecorder{
@@ -755,6 +871,8 @@ func TestIngestionTaskServiceConcurrentCreatedTaskPublicationsConverge(t *testin
 func TestIngestionTaskServiceScheduleCreatedTasksKeepsTaskCreatedOnPublishFailure(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
 
 	svc := NewIngestionTaskService()
@@ -767,14 +885,17 @@ func TestIngestionTaskServiceScheduleCreatedTasksKeepsTaskCreatedOnPublishFailur
 	if err != nil {
 		t.Fatalf("reload task: %v", err)
 	}
-	if task.Status != common.CREATED {
-		t.Fatalf("status after failed recovery publish = %q, want %q", task.Status, common.CREATED)
+	if task.Status != common.FAILED {
+		t.Fatalf("status after failed recovery publish = %q, want %q", task.Status, common.FAILED)
 	}
 }
 
 func TestIngestionTaskServiceScheduleCreatedTasksContinuesAfterPublishFailure(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestDoc(t, "doc-2", "kb-1", 0, 0)
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
 	insertTestIngestionTaskWithStatus(t, "task-2", "user-1", "doc-2", "kb-1", common.CREATED)
 	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("create_time", 1).Error; err != nil {
@@ -798,8 +919,8 @@ func TestIngestionTaskServiceScheduleCreatedTasksContinuesAfterPublishFailure(t 
 	if err != nil {
 		t.Fatalf("reload first task: %v", err)
 	}
-	if first.Status != common.CREATED {
-		t.Fatalf("first task status = %q, want %q", first.Status, common.CREATED)
+	if first.Status != common.FAILED {
+		t.Fatalf("first task status = %q, want %q", first.Status, common.FAILED)
 	}
 	second, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, "task-2")
 	if err != nil {
@@ -828,9 +949,11 @@ func TestIngestionTaskServiceCreateAndEnqueueRejectsActiveExistingTask(t *testin
 	}
 }
 
-func TestIngestionTaskServiceCreateAndEnqueueRollsBackNewTaskOnPublishFailure(t *testing.T) {
+func TestIngestionTaskServiceCreateAndEnqueueSettlesNewRunOnPublishFailure(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	publisher := &recordingTaskPublisher{err: errors.New("publish failed")}
 	svc := NewIngestionTaskService()
 	svc.taskPublisher = publisher
@@ -849,14 +972,25 @@ func TestIngestionTaskServiceCreateAndEnqueueRollsBackNewTaskOnPublishFailure(t 
 	if getErr != nil {
 		t.Fatalf("reload task by document id: %v", getErr)
 	}
-	if task != nil {
-		t.Fatalf("expected created task to be deleted after publish failure, got %+v", task)
+	if task == nil || task.Status != common.FAILED {
+		t.Fatalf("task = %+v, want a durably failed task", task)
+	}
+	var run entity.PipelineOperationLog
+	if err := db.Where("id = ?", *task.PipelineLogID).First(&run).Error; err != nil {
+		t.Fatalf("load numbered pipeline log: %v", err)
+	}
+	if run.RunCount == nil || *run.RunCount != 1 || run.OperationStatus != string(entity.TaskStatusFail) {
+		t.Fatalf("run = %+v, want numbered failed run", run)
 	}
 }
 
-func TestIngestionTaskServiceCreateAndEnqueueRollsBackRetriedTaskOnPublishFailure(t *testing.T) {
+func TestIngestionTaskServiceCreateAndEnqueueSettlesRetriedRunOnPublishFailure(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	// Seed the document and KB so buildOpenLogInput succeeds: without them no
+	// open row is created and the rollback cleanup below is never exercised.
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("status", common.FAILED).Error; err != nil {
 		t.Fatalf("set failed status: %v", err)
@@ -883,25 +1017,599 @@ func TestIngestionTaskServiceCreateAndEnqueueRollsBackRetriedTaskOnPublishFailur
 	if reloaded.Status != common.FAILED {
 		t.Fatalf("status = %q, want %q", reloaded.Status, common.FAILED)
 	}
+	if reloaded.PipelineLogID == nil {
+		t.Fatal("failed retry lost its run identity")
+	}
+	var run entity.PipelineOperationLog
+	if err := db.Where("id = ?", *reloaded.PipelineLogID).First(&run).Error; err != nil {
+		t.Fatalf("load failed retry run: %v", err)
+	}
+	if run.RunCount == nil || *run.RunCount != 1 || run.OperationStatus != string(entity.TaskStatusFail) {
+		t.Fatalf("run = %+v, want numbered failed retry", run)
+	}
 }
 
-func TestIngestionTaskServiceRemoveDeletesOwnedTask(t *testing.T) {
+func TestIngestionTaskServiceRemoveSettlesNumberedQueuedRun(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
-	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
-	ctx := t.Context()
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
 
-	userID := "user-1"
-	svc := NewIngestionTaskService()
-	info, err := svc.Remove(ctx, "task-1", &userID)
-	if err != nil {
+	runCount := 1
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID:              "numbered-open-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        string(entity.PipelineTaskTypeParse),
+		OperationStatus: string(entity.TaskStatusUnstart),
+		RunCount:        &runCount,
+	}).Error; err != nil {
+		t.Fatalf("seed numbered pipeline log: %v", err)
+	}
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("pipeline_log_id", "numbered-open-log").Error; err != nil {
+		t.Fatalf("bind numbered pipeline log: %v", err)
+	}
+
+	if _, err := NewIngestionTaskService().Remove(t.Context(), "task-1", sptr("user-1")); err != nil {
 		t.Fatalf("Remove failed: %v", err)
 	}
-	if info == nil || info.TaskID != "task-1" {
-		t.Fatalf("unexpected task info: %+v", info)
+
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", "numbered-open-log").Error; err != nil {
+		t.Fatalf("numbered run was deleted: %v", err)
 	}
-	if _, err = dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1"); err == nil {
-		t.Fatal("task should be removed")
+	if run.OperationStatus != string(entity.TaskStatusCancel) {
+		t.Fatalf("numbered run status = %q, want %q", run.OperationStatus, entity.TaskStatusCancel)
+	}
+	var terminal entity.IngestionTaskLog
+	if err := db.Where("pipeline_log_id = ? AND event_type = ?", "numbered-open-log", dao.EventTypeTerminal).
+		First(&terminal).Error; err != nil {
+		t.Fatalf("terminal event missing: %v", err)
+	}
+	if terminal.Message != "Task superseded by a new parse request." {
+		t.Fatalf("terminal message = %q, want supersede reason", terminal.Message)
+	}
+}
+
+func TestIngestionTaskServiceRemoveRetriesStoppedRunSettlement(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
+
+	runCount := 1
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID:              "remove-open-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        string(entity.PipelineTaskTypeParse),
+		OperationStatus: string(entity.TaskStatusUnstart),
+		RunCount:        &runCount,
+	}).Error; err != nil {
+		t.Fatalf("seed numbered pipeline log: %v", err)
+	}
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("pipeline_log_id", "remove-open-log").Error; err != nil {
+		t.Fatalf("bind numbered pipeline log: %v", err)
+	}
+
+	settlementErr := errors.New("pipeline ledger unavailable")
+	const callbackName = "test:fail-remove-ledger-settlement"
+	if err := db.Callback().Update().Before("gorm:update").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Table == (&entity.PipelineOperationLog{}).TableName() {
+			_ = tx.AddError(settlementErr)
+		}
+	}); err != nil {
+		t.Fatalf("register update failure: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	if _, err := svc.Remove(t.Context(), "task-1", sptr("user-1")); !errors.Is(err, settlementErr) {
+		t.Fatalf("first Remove error = %v, want settlement failure", err)
+	}
+	task, err := svc.ingestionTaskDAO.GetByID(t.Context(), db, "task-1")
+	if err != nil {
+		t.Fatalf("reload task after failed settlement: %v", err)
+	}
+	if task.Status != common.STOPPED {
+		t.Fatalf("task status = %q, want %q", task.Status, common.STOPPED)
+	}
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", "remove-open-log").Error; err != nil {
+		t.Fatalf("load pipeline log after failed settlement: %v", err)
+	}
+	if run.OperationStatus != string(entity.TaskStatusUnstart) {
+		t.Fatalf("pipeline run status = %q, want %q", run.OperationStatus, entity.TaskStatusUnstart)
+	}
+
+	if err := db.Callback().Update().Remove(callbackName); err != nil {
+		t.Fatalf("remove update failure: %v", err)
+	}
+	if _, err := svc.Remove(t.Context(), "task-1", sptr("user-1")); err != nil {
+		t.Fatalf("retry Remove: %v", err)
+	}
+	if _, err := svc.ingestionTaskDAO.GetByID(t.Context(), db, "task-1"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("deleted task reload error = %v, want record not found", err)
+	}
+	if err := db.First(&run, "id = ?", "remove-open-log").Error; err != nil {
+		t.Fatalf("load pipeline log after retry: %v", err)
+	}
+	if run.OperationStatus != string(entity.TaskStatusCancel) {
+		t.Fatalf("pipeline run status after retry = %q, want %q", run.OperationStatus, entity.TaskStatusCancel)
+	}
+	var terminal entity.IngestionTaskLog
+	if err := db.Where("pipeline_log_id = ? AND event_type = ?", "remove-open-log", dao.EventTypeTerminal).
+		First(&terminal).Error; err != nil {
+		t.Fatalf("load terminal event after retry: %v", err)
+	}
+	if terminal.Message != "Task superseded by a new parse request." {
+		t.Fatalf("terminal message after retry = %q, want supersede reason", terminal.Message)
+	}
+}
+
+func TestIngestionTaskServiceRemoveSettlesTerminalTaskRun(t *testing.T) {
+	cases := []struct {
+		name         string
+		taskStatus   string
+		runStatus    entity.TaskStatus
+		terminalText string
+	}{
+		{"failed", common.FAILED, entity.TaskStatusFail, taskTerminalMessageFailed},
+		{"completed", common.COMPLETED, entity.TaskStatusDone, taskTerminalMessageComplete},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+			insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+			insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", tc.taskStatus)
+
+			runCount := 1
+			if err := db.Create(&entity.PipelineOperationLog{
+				ID:              "terminal-open-log",
+				DocumentID:      "doc-1",
+				TenantID:        "tenant-1",
+				KbID:            "kb-1",
+				ParserID:        "naive",
+				TaskType:        string(entity.PipelineTaskTypeParse),
+				OperationStatus: string(entity.TaskStatusUnstart),
+				RunCount:        &runCount,
+			}).Error; err != nil {
+				t.Fatalf("seed numbered pipeline log: %v", err)
+			}
+			if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+				Update("pipeline_log_id", "terminal-open-log").Error; err != nil {
+				t.Fatalf("bind numbered pipeline log: %v", err)
+			}
+
+			if _, err := NewIngestionTaskService().Remove(t.Context(), "task-1", sptr("user-1")); err != nil {
+				t.Fatalf("Remove failed: %v", err)
+			}
+
+			var run entity.PipelineOperationLog
+			if err := db.First(&run, "id = ?", "terminal-open-log").Error; err != nil {
+				t.Fatalf("numbered run was deleted: %v", err)
+			}
+			if run.OperationStatus != string(tc.runStatus) {
+				t.Fatalf("numbered run status = %q, want %q", run.OperationStatus, tc.runStatus)
+			}
+			var terminal entity.IngestionTaskLog
+			if err := db.Where("pipeline_log_id = ? AND event_type = ?", "terminal-open-log", dao.EventTypeTerminal).
+				First(&terminal).Error; err != nil {
+				t.Fatalf("terminal event missing: %v", err)
+			}
+			if terminal.Message != tc.terminalText {
+				t.Fatalf("terminal message = %q, want %q", terminal.Message, tc.terminalText)
+			}
+		})
+	}
+}
+
+func TestIngestionTaskServicePrepareDocumentTaskForCleanupRecordsCleanupReason(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
+
+	runCount := 1
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID:              "cleanup-open-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        string(entity.PipelineTaskTypeParse),
+		OperationStatus: string(entity.TaskStatusUnstart),
+		RunCount:        &runCount,
+	}).Error; err != nil {
+		t.Fatalf("seed numbered pipeline log: %v", err)
+	}
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("pipeline_log_id", "cleanup-open-log").Error; err != nil {
+		t.Fatalf("bind numbered pipeline log: %v", err)
+	}
+
+	task, err := NewIngestionTaskService().PrepareDocumentTaskForCleanup(
+		t.Context(),
+		"doc-1",
+		"Task cancelled by document cleanup.",
+	)
+	if err != nil {
+		t.Fatalf("PrepareDocumentTaskForCleanup failed: %v", err)
+	}
+	if task == nil || task.Status != common.STOPPED {
+		t.Fatalf("cleanup task = %+v, want one STOPPED task", task)
+	}
+
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", "cleanup-open-log").Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if run.OperationStatus != string(entity.TaskStatusCancel) {
+		t.Fatalf("pipeline run status = %q, want %q", run.OperationStatus, entity.TaskStatusCancel)
+	}
+
+	var terminal entity.IngestionTaskLog
+	if err := db.Where("pipeline_log_id = ? AND event_type = ?", "cleanup-open-log", dao.EventTypeTerminal).
+		First(&terminal).Error; err != nil {
+		t.Fatalf("load terminal event: %v", err)
+	}
+	if terminal.Message != "Task cancelled by document cleanup." {
+		t.Fatalf("terminal message = %q, want cleanup reason", terminal.Message)
+	}
+}
+
+func TestIngestionTaskServicePrepareDocumentTaskForCleanupRetriesOpenLedgerSettlement(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
+
+	runCount := 1
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID:              "cleanup-open-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        string(entity.PipelineTaskTypeParse),
+		OperationStatus: string(entity.TaskStatusUnstart),
+		RunCount:        &runCount,
+	}).Error; err != nil {
+		t.Fatalf("seed numbered pipeline log: %v", err)
+	}
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("pipeline_log_id", "cleanup-open-log").Error; err != nil {
+		t.Fatalf("bind numbered pipeline log: %v", err)
+	}
+
+	settlementErr := errors.New("pipeline ledger unavailable")
+	const callbackName = "test:fail-cleanup-ledger-settlement"
+	if err := db.Callback().Update().Before("gorm:update").Register(callbackName, func(tx *gorm.DB) {
+		if tx.Statement.Table == (&entity.PipelineOperationLog{}).TableName() {
+			_ = tx.AddError(settlementErr)
+		}
+	}); err != nil {
+		t.Fatalf("register update failure: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	if _, err := svc.PrepareDocumentTaskForCleanup(
+		t.Context(),
+		"doc-1",
+		"Task cancelled by document cleanup.",
+	); !errors.Is(err, settlementErr) {
+		t.Fatalf("first cleanup error = %v, want settlement failure", err)
+	}
+
+	task, err := svc.ingestionTaskDAO.GetByID(t.Context(), db, "task-1")
+	if err != nil {
+		t.Fatalf("reload task after failed settlement: %v", err)
+	}
+	if task.Status != common.STOPPED {
+		t.Fatalf("task status = %q, want %q", task.Status, common.STOPPED)
+	}
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", "cleanup-open-log").Error; err != nil {
+		t.Fatalf("load pipeline log after failed settlement: %v", err)
+	}
+	if run.OperationStatus != string(entity.TaskStatusUnstart) {
+		t.Fatalf("pipeline run status = %q, want %q", run.OperationStatus, entity.TaskStatusUnstart)
+	}
+	var terminalCount int64
+	if err := db.Model(&entity.IngestionTaskLog{}).
+		Where("pipeline_log_id = ? AND event_type = ?", "cleanup-open-log", dao.EventTypeTerminal).
+		Count(&terminalCount).Error; err != nil {
+		t.Fatalf("count terminal events after failed settlement: %v", err)
+	}
+	if terminalCount != 0 {
+		t.Fatalf("terminal events after failed settlement = %d, want 0", terminalCount)
+	}
+
+	if err := db.Callback().Update().Remove(callbackName); err != nil {
+		t.Fatalf("remove update failure: %v", err)
+	}
+	task, err = svc.PrepareDocumentTaskForCleanup(
+		t.Context(),
+		"doc-1",
+		"Task cancelled by document cleanup.",
+	)
+	if err != nil {
+		t.Fatalf("retry PrepareDocumentTaskForCleanup: %v", err)
+	}
+	if task == nil || task.Status != common.STOPPED {
+		t.Fatalf("retried cleanup task = %+v, want one STOPPED task", task)
+	}
+	if err := db.First(&run, "id = ?", "cleanup-open-log").Error; err != nil {
+		t.Fatalf("load pipeline log after retry: %v", err)
+	}
+	if run.OperationStatus != string(entity.TaskStatusCancel) {
+		t.Fatalf("pipeline run status after retry = %q, want %q", run.OperationStatus, entity.TaskStatusCancel)
+	}
+	var terminal entity.IngestionTaskLog
+	if err := db.Where("pipeline_log_id = ? AND event_type = ?", "cleanup-open-log", dao.EventTypeTerminal).
+		First(&terminal).Error; err != nil {
+		t.Fatalf("load terminal event after retry: %v", err)
+	}
+	if terminal.Message != "Task cancelled by document cleanup." {
+		t.Fatalf("terminal message after retry = %q, want cleanup reason", terminal.Message)
+	}
+	if err := db.Model(&entity.IngestionTaskLog{}).
+		Where("pipeline_log_id = ? AND event_type = ?", "cleanup-open-log", dao.EventTypeTerminal).
+		Count(&terminalCount).Error; err != nil {
+		t.Fatalf("count terminal events after retry: %v", err)
+	}
+	if terminalCount != 1 {
+		t.Fatalf("terminal events after retry = %d, want 1", terminalCount)
+	}
+}
+
+func TestIngestionTaskServicePrepareDocumentTaskForCleanupSettlesTerminalTaskLedger(t *testing.T) {
+	tests := []struct {
+		name            string
+		taskStatus      string
+		operationStatus entity.TaskStatus
+		wantMessage     string
+	}{
+		{
+			name:            "completed",
+			taskStatus:      common.COMPLETED,
+			operationStatus: entity.TaskStatusDone,
+			wantMessage:     "Task completed.",
+		},
+		{
+			name:            "failed",
+			taskStatus:      common.FAILED,
+			operationStatus: entity.TaskStatusFail,
+			wantMessage:     "Task failed.",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+			insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+			insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", tc.taskStatus)
+
+			runCount := 1
+			run := &entity.PipelineOperationLog{
+				ID:              "cleanup-terminal-log",
+				DocumentID:      "doc-1",
+				TenantID:        "tenant-1",
+				KbID:            "kb-1",
+				ParserID:        "naive",
+				TaskType:        string(entity.PipelineTaskTypeParse),
+				OperationStatus: string(entity.TaskStatusRunning),
+				RunCount:        &runCount,
+			}
+			if err := db.Create(run).Error; err != nil {
+				t.Fatalf("seed numbered pipeline log: %v", err)
+			}
+			if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+				Update("pipeline_log_id", run.ID).Error; err != nil {
+				t.Fatalf("bind numbered pipeline log: %v", err)
+			}
+
+			task, err := NewIngestionTaskService().PrepareDocumentTaskForCleanup(
+				t.Context(),
+				"doc-1",
+				"Task cancelled by document cleanup.",
+			)
+			if err != nil {
+				t.Fatalf("PrepareDocumentTaskForCleanup failed: %v", err)
+			}
+			if task == nil || task.Status != tc.taskStatus {
+				t.Fatalf("cleanup task = %+v, want status %q", task, tc.taskStatus)
+			}
+			if err := db.First(run, "id = ?", run.ID).Error; err != nil {
+				t.Fatalf("load pipeline log: %v", err)
+			}
+			if run.OperationStatus != string(tc.operationStatus) {
+				t.Fatalf("pipeline run status = %q, want %q", run.OperationStatus, tc.operationStatus)
+			}
+			var terminal entity.IngestionTaskLog
+			if err := db.Where("pipeline_log_id = ? AND event_type = ?", run.ID, dao.EventTypeTerminal).
+				First(&terminal).Error; err != nil {
+				t.Fatalf("load terminal event: %v", err)
+			}
+			if terminal.Message != tc.wantMessage {
+				t.Fatalf("terminal message = %q, want %q", terminal.Message, tc.wantMessage)
+			}
+		})
+	}
+}
+
+func TestIngestionTaskServicePrepareDocumentTaskForCleanupRetriesMissingTerminalEvent(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	runCount := 1
+	run := &entity.PipelineOperationLog{
+		ID:              "cleanup-event-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        string(entity.PipelineTaskTypeParse),
+		OperationStatus: string(entity.TaskStatusDone),
+		RunCount:        &runCount,
+	}
+	if err := db.Create(run).Error; err != nil {
+		t.Fatalf("seed numbered pipeline log: %v", err)
+	}
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("pipeline_log_id", run.ID).Error; err != nil {
+		t.Fatalf("bind numbered pipeline log: %v", err)
+	}
+
+	insertErr := errors.New("terminal event unavailable")
+	failInsert := true
+	const callbackName = "test:fail-cleanup-terminal-event"
+	if err := db.Callback().Create().Before("gorm:create").Register(callbackName, func(tx *gorm.DB) {
+		if !failInsert || tx.Statement.Table != (&entity.IngestionTaskLog{}).TableName() {
+			return
+		}
+		eventType, ok := tx.Statement.Dest.(map[string]interface{})["event_type"].(int)
+		if ok && eventType == dao.EventTypeTerminal {
+			_ = tx.AddError(insertErr)
+		}
+	}); err != nil {
+		t.Fatalf("register terminal insert failure: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	if _, err := svc.PrepareDocumentTaskForCleanup(
+		t.Context(),
+		"doc-1",
+		"Task cancelled by document cleanup.",
+	); !errors.Is(err, insertErr) {
+		t.Fatalf("first cleanup error = %v, want terminal insert failure", err)
+	}
+	var terminalCount int64
+	if err := db.Model(&entity.IngestionTaskLog{}).
+		Where("pipeline_log_id = ? AND event_type = ?", run.ID, dao.EventTypeTerminal).
+		Count(&terminalCount).Error; err != nil {
+		t.Fatalf("count terminal events after failed insert: %v", err)
+	}
+	if terminalCount != 0 {
+		t.Fatalf("terminal events after failed insert = %d, want 0", terminalCount)
+	}
+
+	failInsert = false
+	if _, err := svc.PrepareDocumentTaskForCleanup(
+		t.Context(),
+		"doc-1",
+		"Task cancelled by document cleanup.",
+	); err != nil {
+		t.Fatalf("retry PrepareDocumentTaskForCleanup: %v", err)
+	}
+	if err := db.Model(&entity.IngestionTaskLog{}).
+		Where("pipeline_log_id = ? AND event_type = ?", run.ID, dao.EventTypeTerminal).
+		Count(&terminalCount).Error; err != nil {
+		t.Fatalf("count terminal events after retry: %v", err)
+	}
+	if terminalCount != 1 {
+		t.Fatalf("terminal events after retry = %d, want 1", terminalCount)
+	}
+}
+
+func TestIngestionTaskServiceRemovePurgesTaskState(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	purged := make(chan string, 1)
+	svc := NewIngestionTaskService()
+	svc.purgeTaskState = func(_ context.Context, taskID string) error {
+		purged <- taskID
+		return nil
+	}
+	if _, err := svc.Remove(t.Context(), "task-1", sptr("user-1")); err != nil {
+		t.Fatalf("Remove failed: %v", err)
+	}
+	select {
+	case taskID := <-purged:
+		if taskID != "task-1" {
+			t.Fatalf("purged task = %q, want task-1", taskID)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Remove did not schedule task-state purge")
+	}
+}
+
+func TestIngestionTaskServiceRemoveDoesNotWaitForTaskStatePurge(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-remove-async", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	svc := NewIngestionTaskService()
+	svc.purgeTaskState = func(ctx context.Context, _ string) error {
+		close(started)
+		select {
+		case <-release:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := svc.Remove(t.Context(), "task-remove-async", sptr("user-1"))
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Remove failed: %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Remove blocked on task-state purge")
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("background task-state purge did not start")
+	}
+	close(release)
+}
+
+func TestIngestionTaskServiceRemoveKeepsDeleteWhenPurgeFails(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	svc := NewIngestionTaskService()
+	svc.purgeTaskState = func(_ context.Context, _ string) error {
+		return errors.New("kvrocks unavailable")
+	}
+	if _, err := svc.Remove(t.Context(), "task-1", sptr("user-1")); err != nil {
+		t.Fatalf("Remove failed after a purge error: %v", err)
+	}
+	if _, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, "task-1"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("deleted task reload error = %v, want record not found", err)
 	}
 }
 
@@ -924,207 +1632,165 @@ func TestIngestionTaskServiceUpdateComponentTotalPersistsDenominator(t *testing.
 	}
 }
 
-func TestIngestionTaskServiceRecordComponentProgressAppendsRow(t *testing.T) {
+func TestIngestionTaskServiceRecordLifecyclePersistsRunScopedLifecycleEvent(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
-	ctx := t.Context()
 
 	svc := NewIngestionTaskService()
-	if err := svc.RecordComponentProgress(ctx, "task-1", "Parser", 1, "Parser Done"); err != nil {
-		t.Fatalf("RecordComponentProgress failed: %v", err)
+	if err := svc.RecordLifecycle(t.Context(), "run-1", "task-1", "Parser", 1, "Parser Done"); err != nil {
+		t.Fatalf("RecordLifecycle failed: %v", err)
 	}
-	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID(ctx, db, "task-1")
+	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(t.Context(), db, "run-1")
 	if err != nil {
 		t.Fatalf("list logs: %v", err)
 	}
 	if len(logs) != 1 {
-		t.Fatalf("expected 1 log row, got %d", len(logs))
+		t.Fatalf("event count = %d, want 1", len(logs))
 	}
-	row := logs[0]
-	if row.Component != "Parser" || row.Phase != 1 || row.Message != "Parser Done" {
-		t.Fatalf("unexpected log row: %+v", row)
+	event := logs[0]
+	if event.PipelineLogID == nil || *event.PipelineLogID != "run-1" {
+		t.Fatalf("pipeline_log_id = %v, want run-1", event.PipelineLogID)
 	}
-	if len(row.Checkpoint) != 0 {
-		t.Fatalf("component progress row must have empty checkpoint, got %v", row.Checkpoint)
+	if event.EventType != dao.EventTypeLifecycle || event.Component != "Parser" || event.Phase != 1 {
+		t.Fatalf("event = %+v, want lifecycle Parser/1", event)
 	}
 }
 
-func TestIngestionTaskServiceAggregateTaskProgressClassifiesByPhase(t *testing.T) {
+func TestIngestionTaskServiceRecordMessageClearsLifecycleFields(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
-	ctx := t.Context()
+
+	if err := NewIngestionTaskService().RecordMessage(t.Context(), "run-1", "task-1", "detail"); err != nil {
+		t.Fatalf("RecordMessage failed: %v", err)
+	}
+
+	var event entity.IngestionTaskLog
+	if err := db.Order("id DESC").First(&event).Error; err != nil {
+		t.Fatalf("load event: %v", err)
+	}
+	if event.EventType != dao.EventTypeMessage || event.Component != "" || event.Phase != 0 || event.Message != "detail" {
+		t.Fatalf("event = %+v, want message with empty component and phase", event)
+	}
+}
+
+func TestIngestionTaskServiceRecordEventRejectsInvalidIdentityAndPhase(t *testing.T) {
+	svc := NewIngestionTaskService()
+	cases := []struct {
+		name string
+		call func() error
+	}{
+		{name: "missing pipeline log id", call: func() error {
+			return svc.RecordMessage(t.Context(), "", "task-1", "detail")
+		}},
+		{name: "missing task id", call: func() error {
+			return svc.RecordMessage(t.Context(), "run-1", "", "detail")
+		}},
+		{name: "missing lifecycle component", call: func() error {
+			return svc.RecordLifecycle(t.Context(), "run-1", "task-1", "", 0, "started")
+		}},
+		{name: "invalid lifecycle phase", call: func() error {
+			return svc.RecordLifecycle(t.Context(), "run-1", "task-1", "Parser", 3, "bad")
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.call(); err == nil {
+				t.Fatal("expected event validation error")
+			}
+		})
+	}
+}
+
+func TestIngestionTaskServiceEventMessageIsBoundedByRunesAndBytes(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+
+	message := strings.Repeat("界", 10_000)
+	if err := NewIngestionTaskService().RecordMessage(t.Context(), "run-1", "task-1", message); err != nil {
+		t.Fatalf("RecordMessage failed: %v", err)
+	}
+
+	var event entity.IngestionTaskLog
+	if err := db.Order("id DESC").First(&event).Error; err != nil {
+		t.Fatalf("load event: %v", err)
+	}
+	if got := len([]rune(event.Message)); got > 4_000 {
+		t.Fatalf("message rune length = %d, want <= 4000", got)
+	}
+	if got := len([]byte(event.Message)); got > 16_384 {
+		t.Fatalf("message byte length = %d, want <= 16384", got)
+	}
+	if !strings.Contains(event.Message, "… [truncated,") || !strings.HasSuffix(event.Message, " chars dropped]") {
+		t.Fatalf("message lacks truncation marker: %q", event.Message[len(event.Message)-64:])
+	}
+	if !utf8.ValidString(event.Message) {
+		t.Fatal("message is not valid UTF-8")
+	}
+}
+
+func TestIngestionTaskServiceUsesConfiguredEventMessageLimits(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 
 	svc := NewIngestionTaskService()
-	if err := svc.RecordComponentProgress(ctx, "task-1", "Parser", 1, "Parser Done"); err != nil {
-		t.Fatalf("record Parser: %v", err)
+	if err := svc.SetIngestionLogSettings(IngestionLogSettings{
+		MaxRowsPerRun:      5,
+		MaxRowsPerDocument: 20,
+		MaxMessageChars:    8,
+		MaxMessageBytes:    16,
+	}); err != nil {
+		t.Fatalf("SetIngestionLogSettings failed: %v", err)
 	}
-	if err := svc.RecordComponentProgress(ctx, "task-1", "Chunker", 0, "Chunker Started"); err != nil {
-		t.Fatalf("record Chunker: %v", err)
+	if err := svc.RecordMessage(t.Context(), "run-1", "task-1", "abcdefghijk"); err != nil {
+		t.Fatalf("RecordMessage failed: %v", err)
 	}
-	agg, err := svc.AggregateTaskProgress(ctx, "task-1", 2)
-	if err != nil {
-		t.Fatalf("AggregateTaskProgress failed: %v", err)
+
+	var event entity.IngestionTaskLog
+	if err := db.Order("id DESC").First(&event).Error; err != nil {
+		t.Fatalf("load event: %v", err)
 	}
-	if agg.Done != 1 || agg.Running != 1 || agg.Failed != 0 {
-		t.Fatalf("aggregate = %+v, want Done=1 Running=1 Failed=0", agg)
-	}
-	if agg.Percent != 50 {
-		t.Fatalf("percent = %v, want 50", agg.Percent)
+	if got := len([]rune(event.Message)); got > 8 || len([]byte(event.Message)) > 16 {
+		t.Fatalf("message limits = %d runes/%d bytes, want <= 8/16: %q", got, len([]byte(event.Message)), event.Message)
 	}
 }
 
-func TestIngestionTaskServiceIncrementRunCountInitializesAndBumps(t *testing.T) {
+func TestIngestionTaskServiceAdvanceOpenLogLeavesLegacyMessageUntouched(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
-	ctx := t.Context()
-
-	svc := NewIngestionTaskService()
-	if err := svc.IncrementRunCount(ctx, "task-1"); err != nil {
-		t.Fatalf("IncrementRunCount (first call) failed: %v", err)
-	}
-	run, ok := svc.lastRunCount(ctx, "task-1")
-	if !ok || run != 1 {
-		t.Fatalf("run_count = %v (ok=%v), want 1", run, ok)
-	}
-
-	// Second call bumps the existing counter to 2.
-	if err := svc.IncrementRunCount(ctx, "task-1"); err != nil {
-		t.Fatalf("IncrementRunCount (second call) failed: %v", err)
-	}
-	run, _ = svc.lastRunCount(ctx, "task-1")
-	if run != 2 {
-		t.Fatalf("run_count after second bump = %v, want 2", run)
-	}
-}
-
-func TestIngestionTaskServiceIncrementRunCountSkippedCorruptedRunCount(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
-	if err := dao.DB.Create(&entity.IngestionTaskLog{
-		TaskID:     "task-1",
-		Checkpoint: entity.JSONMap{"run_count": "not-a-number"},
+	legacy := "legacy value"
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID:              "run-1",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		TaskType:        string(entity.PipelineTaskTypeParse),
+		OperationStatus: string(entity.TaskStatusUnstart),
+		ProgressMsg:     &legacy,
 	}).Error; err != nil {
-		t.Fatalf("insert bad task log: %v", err)
+		t.Fatalf("insert pipeline operation log: %v", err)
 	}
-	ctx := t.Context()
-
-	svc := NewIngestionTaskService()
-	// Corrupted value is skipped; a fresh run_count=1 row is created.
-	if err := svc.IncrementRunCount(ctx, "task-1"); err != nil {
-		t.Fatalf("IncrementRunCount should skip corrupted value, got: %v", err)
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("pipeline_log_id", "run-1").Error; err != nil {
+		t.Fatalf("bind pipeline operation log: %v", err)
 	}
-	run, ok := svc.lastRunCount(ctx, "task-1")
-	if !ok || run != 1 {
-		t.Fatalf("run_count = %v (ok=%v), want 1", run, ok)
-	}
-}
-
-func TestIngestionTaskServiceIncrementRunCountRecoversFromComponentProgressLog(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
-	ctx := t.Context()
-
-	// Simulate a previous run that created some component-progress logs
-	// but died before recording a run_count row. The latest log has no run_count.
-	svc := NewIngestionTaskService()
-	if err := svc.RecordComponentProgress(ctx, "task-1", "Parser", 1, "Parser Done"); err != nil {
-		t.Fatalf("record Parser: %v", err)
-	}
-	if err := svc.RecordComponentProgress(ctx, "task-1", "Chunker", 1, "Chunker Done"); err != nil {
-		t.Fatalf("record Chunker: %v", err)
-	}
-	// Verify latest log has empty checkpoint (no run_count).
-	latest, err := dao.NewIngestionTaskLogDAO().LatestLogByTaskID(ctx, db, "task-1")
+	task, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, "task-1")
 	if err != nil {
-		t.Fatalf("load latest: %v", err)
-	}
-	if len(latest.Checkpoint) != 0 {
-		t.Fatalf("component-progress row should have empty checkpoint, got %v", latest.Checkpoint)
+		t.Fatalf("load task: %v", err)
 	}
 
-	// IncrementRunCount should create a new row with run_count=1.
-	if err = svc.IncrementRunCount(ctx, "task-1"); err != nil {
-		t.Fatalf("IncrementRunCount failed: %v", err)
+	NewIngestionTaskService().advanceOpenLog(t.Context(), task, logFromUnstart, string(entity.TaskStatusSchedule))
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", "run-1").Error; err != nil {
+		t.Fatalf("load run: %v", err)
 	}
-	run, ok := svc.lastRunCount(ctx, "task-1")
-	if !ok || run != 1 {
-		t.Fatalf("run_count = %v (ok=%v), want 1", run, ok)
-	}
-
-	// AggregateProgress should still work (run_count row with component=""
-	// has phase=0, which doesn't affect counts).
-	agg, err := svc.AggregateTaskProgress(ctx, "task-1", 2)
-	if err != nil {
-		t.Fatalf("AggregateTaskProgress: %v", err)
-	}
-	if agg.Done != 2 {
-		t.Fatalf("Done = %d, want 2 (run_count row didn't interfere)", agg.Done)
-	}
-}
-
-func TestIngestionTaskServiceIncrementRunCountAccumulatesAcrossRetries(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
-
-	svc := NewIngestionTaskService()
-	ctx := t.Context()
-
-	// First attempt: IncrementRunCount creates run_count=1.
-	if err := svc.IncrementRunCount(ctx, "task-1"); err != nil {
-		t.Fatalf("first IncrementRunCount: %v", err)
-	}
-	// Simulate first run: some components progress, then failure.
-	if err := svc.RecordComponentProgress(ctx, "task-1", "Parser", 1, "Parser Done"); err != nil {
-		t.Fatalf("record Parser: %v", err)
-	}
-
-	// Second attempt (retry): should find previous run_count=1 and create row with run_count=2.
-	if err := svc.IncrementRunCount(ctx, "task-1"); err != nil {
-		t.Fatalf("second IncrementRunCount: %v", err)
-	}
-	// More progress, then failure.
-	if err := svc.RecordComponentProgress(ctx, "task-1", "Chunker", 1, "Chunker Done"); err != nil {
-		t.Fatalf("record Chunker: %v", err)
-	}
-
-	// Third attempt (retry): should find previous run_count=2 and create row with run_count=3.
-	if err := svc.IncrementRunCount(ctx, "task-1"); err != nil {
-		t.Fatalf("third IncrementRunCount: %v", err)
-	}
-
-	run, ok := svc.lastRunCount(ctx, "task-1")
-	if !ok || run != 3 {
-		t.Fatalf("run_count = %v (ok=%v), want 3", run, ok)
-	}
-
-	// ListAllForAdmin should still pick up the correct run_count.
-	status := "1"
-	if err := dao.DB.Create(&entity.User{
-		ID:              "user-1",
-		Email:           "user-1@test.com",
-		Nickname:        "user-1",
-		IsAuthenticated: "1",
-		IsActive:        "1",
-		IsAnonymous:     "0",
-		Status:          &status,
-	}).Error; err != nil {
-		t.Fatalf("insert user: %v", err)
-	}
-	adminTasks, err := svc.ListAllForAdmin(ctx)
-	if err != nil {
-		t.Fatalf("ListAllForAdmin: %v", err)
-	}
-	if len(adminTasks) != 1 || adminTasks[0]["id"] != "task-1" {
-		t.Fatalf("ListAllForAdmin = %+v, want single task task-1", adminTasks)
-	}
-	if adminTasks[0]["run_count"] != 3 {
-		t.Fatalf("ListAllForAdmin run_count = %v, want 3", adminTasks[0]["run_count"])
+	if run.ProgressMsg == nil || *run.ProgressMsg != legacy {
+		t.Fatalf("progress_msg = %v, want unchanged legacy value %q", run.ProgressMsg, legacy)
 	}
 }
 
@@ -1219,7 +1885,7 @@ func TestIngestionTaskServiceMarkFailedIdempotentOnAlreadyTerminal(t *testing.T)
 
 	svc := NewIngestionTaskService()
 	ctx := t.Context()
-	if err := svc.MarkFailed(ctx, "task-1"); err != nil {
+	if err := svc.MarkFailed(ctx, "task-1", ""); err != nil {
 		t.Fatalf("MarkFailed on already COMPLETED task should be idempotent, got: %v", err)
 	}
 }
@@ -1237,5 +1903,807 @@ func TestIngestionTaskServiceMarkCompletedIdempotentOnAlreadyTerminal(t *testing
 	svc := NewIngestionTaskService()
 	if err := svc.MarkCompleted(ctx, "task-1"); err != nil {
 		t.Fatalf("MarkCompleted on already FAILED task should be idempotent, got: %v", err)
+	}
+}
+
+func loadOpenPipelineLog(t *testing.T, ctx context.Context, db *gorm.DB, documentID string) *entity.PipelineOperationLog {
+	t.Helper()
+	var open entity.PipelineOperationLog
+	if err := db.WithContext(ctx).
+		Where("document_id = ? AND operation_status IN ?", documentID, dao.OpenPipelineOperationStatuses()).
+		Order("create_time DESC").
+		Order("id DESC").
+		First(&open).Error; err != nil {
+		t.Fatalf("expected open pipeline log for document %s", documentID)
+	}
+	return &open
+}
+
+func countPipelineLogs(t *testing.T, db *gorm.DB, documentID string) int {
+	t.Helper()
+	var count int64
+	if err := db.Model(&entity.PipelineOperationLog{}).Where("document_id = ?", documentID).Count(&count).Error; err != nil {
+		t.Fatalf("count pipeline logs: %v", err)
+	}
+	return int(count)
+}
+
+func TestIngestionTaskServiceCreateForDocumentsOpensPreTerminalPipelineLog(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = &recordingTaskPublisher{}
+	ctx := t.Context()
+	if _, err := svc.CreateForDocuments(permission.WithIdentity(ctx, "user-1", ""), "kb-1", []string{"doc-1"}); err != nil {
+		t.Fatalf("CreateForDocuments failed: %v", err)
+	}
+
+	open := loadOpenPipelineLog(t, ctx, db, "doc-1")
+	if open.OperationStatus != string(entity.TaskStatusSchedule) {
+		t.Fatalf("OperationStatus = %q, want %q (scheduled write wins over created)", open.OperationStatus, string(entity.TaskStatusSchedule))
+	}
+	if open.KbID != "kb-1" || open.TenantID != "tenant-1" {
+		t.Fatalf("unexpected kb/tenant scope: %+v", open)
+	}
+	if open.RunCount == nil || *open.RunCount != 1 {
+		t.Fatalf("run_count = %v, want 1", open.RunCount)
+	}
+	if open.ProgressMsg != nil {
+		t.Fatalf("ProgressMsg = %v, want legacy field untouched", open.ProgressMsg)
+	}
+	events, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(ctx, db, open.ID)
+	if err != nil {
+		t.Fatalf("list run events: %v", err)
+	}
+	var queuedMessage *entity.IngestionTaskLog
+	for _, event := range events {
+		if event.EventType == dao.EventTypeMessage && event.Message == "Task is queued..." {
+			queuedMessage = event
+			break
+		}
+	}
+	if queuedMessage == nil {
+		t.Fatalf("expected queued message event for run %s, events: %+v", open.ID, events)
+	}
+	if countPipelineLogs(t, db, "doc-1") != 1 {
+		t.Fatalf("expected exactly 1 pipeline log row for one run")
+	}
+	// The task must be bound to the row so the terminal writer knows which row
+	// belongs to this run.
+	task, err := dao.NewIngestionTaskDAO().GetByDocumentID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.PipelineLogID == nil || *task.PipelineLogID != open.ID {
+		t.Fatalf("task PipelineLogID = %v, want %q (row bound to the owning run)", task.PipelineLogID, open.ID)
+	}
+}
+
+// loadTaskPipelineLogID returns the pipeline-operation-log id bound to a task.
+func loadTaskPipelineLogID(t *testing.T, ctx context.Context, db *gorm.DB, taskID string) string {
+	t.Helper()
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
+	if err != nil {
+		t.Fatalf("load task %s: %v", taskID, err)
+	}
+	if task.PipelineLogID == nil {
+		t.Fatalf("task %s has no bound pipeline log", taskID)
+	}
+	return *task.PipelineLogID
+}
+
+func TestIngestionTaskServiceStartRunningAdvancesPreTerminalPipelineLog(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = &recordingTaskPublisher{}
+	ctx := t.Context()
+	resp, err := svc.CreateForDocuments(permission.WithIdentity(ctx, "user-1", ""), "kb-1", []string{"doc-1"})
+	if err != nil {
+		t.Fatalf("CreateForDocuments failed: %v", err)
+	}
+	if len(resp) != 1 {
+		t.Fatalf("expected 1 response, got %d", len(resp))
+	}
+	open := loadOpenPipelineLog(t, ctx, db, "doc-1")
+	if open.OperationStatus != string(entity.TaskStatusSchedule) {
+		t.Fatalf("OperationStatus after schedule = %q, want %q", open.OperationStatus, string(entity.TaskStatusSchedule))
+	}
+	task, err := dao.NewIngestionTaskDAO().GetByDocumentID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	task, err = svc.TransitionTaskToRunning(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("TransitionTaskToRunning failed: %v", err)
+	}
+	svc.PrepareValidatedRun(ctx, task)
+	open = loadOpenPipelineLog(t, ctx, db, "doc-1")
+	if open.OperationStatus != string(entity.TaskStatusRunning) {
+		t.Fatalf("OperationStatus after start = %q, want %q", open.OperationStatus, string(entity.TaskStatusRunning))
+	}
+	if countPipelineLogs(t, db, "doc-1") != 1 {
+		t.Fatalf("expected running to reuse the queued row, not insert a second one")
+	}
+	if bound := loadTaskPipelineLogID(t, ctx, db, task.ID); bound != open.ID {
+		t.Fatalf("task bound to %q, want the same running row %q", bound, open.ID)
+	}
+}
+
+func TestIngestionTaskServiceRequestStopBeforeRunClosesPreTerminalPipelineLog(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = &recordingTaskPublisher{}
+	ctx := t.Context()
+	if _, err := svc.CreateForDocuments(permission.WithIdentity(ctx, "user-1", ""), "kb-1", []string{"doc-1"}); err != nil {
+		t.Fatalf("CreateForDocuments failed: %v", err)
+	}
+	loadOpenPipelineLog(t, ctx, db, "doc-1")
+	task, err := dao.NewIngestionTaskDAO().GetByDocumentID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	stopped, err := svc.RequestStop(ctx, task.ID)
+	if err != nil {
+		t.Fatalf("RequestStop failed: %v", err)
+	}
+	if stopped.Status != common.STOPPED {
+		t.Fatalf("status = %q, want %q", stopped.Status, common.STOPPED)
+	}
+	var done entity.PipelineOperationLog
+	if err := db.Where("document_id = ?", "doc-1").First(&done).Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if done.OperationStatus != string(entity.TaskStatusCancel) {
+		t.Fatalf("OperationStatus = %q, want %q (stop without worker must close the row)", done.OperationStatus, string(entity.TaskStatusCancel))
+	}
+	if countPipelineLogs(t, db, "doc-1") != 1 {
+		t.Fatalf("expected stop to reuse the queued row, not insert a second one")
+	}
+}
+
+func TestIngestionTaskServiceRetryAfterTerminalOpensFreshPipelineLog(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("status", common.FAILED).Error; err != nil {
+		t.Fatalf("set failed status: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = &recordingTaskPublisher{}
+	ctx := t.Context()
+	finished := &entity.PipelineOperationLog{
+		ID:              "finished-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: string(entity.TaskStatusFail),
+	}
+	if err := dao.DB.Create(finished).Error; err != nil {
+		t.Fatalf("seed finished log: %v", err)
+	}
+	if _, err := svc.CreateAndEnqueue(ctx, &entity.IngestionTask{
+		DocumentID: "doc-1",
+		UserID:     "user-1",
+		DatasetID:  "kb-1",
+		Status:     common.CREATED,
+	}); err != nil {
+		t.Fatalf("CreateAndEnqueue retry failed: %v", err)
+	}
+	open := loadOpenPipelineLog(t, ctx, db, "doc-1")
+	if open.ID == "finished-log" {
+		t.Fatalf("retry reused the finished row; want a fresh queued row")
+	}
+	if countPipelineLogs(t, db, "doc-1") != 2 {
+		t.Fatalf("expected 2 pipeline log rows (finished + fresh queued)")
+	}
+}
+
+func TestIngestionTaskServiceOpensRunWithDocumentPipelineVersion(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	pipelineID := "canvas-1"
+	if err := db.Create(&entity.UserCanvas{
+		ID:             pipelineID,
+		UserID:         "user-1",
+		CanvasCategory: "dataflow_canvas",
+	}).Error; err != nil {
+		t.Fatalf("insert pipeline: %v", err)
+	}
+	versionID := "ver-1"
+	if err := db.Create(&entity.Document{
+		ID:                "doc-1",
+		KbID:              "kb-1",
+		ParserID:          "naive",
+		ParserConfig:      entity.JSONMap{},
+		Suffix:            ".txt",
+		Status:            sptr("1"),
+		PipelineID:        &pipelineID,
+		PipelineVersionID: &versionID,
+	}).Error; err != nil {
+		t.Fatalf("insert versioned document: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = &recordingTaskPublisher{}
+	task, err := svc.CreateAndEnqueue(t.Context(), &entity.IngestionTask{
+		DocumentID: "doc-1", UserID: "user-1", DatasetID: "kb-1", Status: common.CREATED,
+	})
+	if err != nil {
+		t.Fatalf("CreateAndEnqueue: %v", err)
+	}
+	if task.PipelineLogID == nil {
+		t.Fatal("enqueued task has no pipeline log id")
+	}
+
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", *task.PipelineLogID).Error; err != nil {
+		t.Fatalf("load pipeline log: %v", err)
+	}
+	if run.PipelineVersionID == nil || *run.PipelineVersionID != versionID {
+		t.Fatalf("PipelineVersionID = %v, want %q", run.PipelineVersionID, versionID)
+	}
+}
+
+func TestIngestionTaskServiceRetryAllocatesNextRunCount(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = &recordingTaskPublisher{}
+	first, err := svc.CreateAndEnqueue(t.Context(), &entity.IngestionTask{
+		DocumentID: "doc-1", UserID: "user-1", DatasetID: "kb-1", Status: common.CREATED,
+	})
+	if err != nil {
+		t.Fatalf("create first run: %v", err)
+	}
+	if first.PipelineLogID == nil {
+		t.Fatal("first run has no pipeline log id")
+	}
+	svc.settlePublishFailure(t.Context(), first)
+
+	second, err := svc.CreateAndEnqueue(t.Context(), &entity.IngestionTask{
+		DocumentID: "doc-1", UserID: "user-1", DatasetID: "kb-1", Status: common.CREATED,
+	})
+	if err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if second.PipelineLogID == nil || *second.PipelineLogID == *first.PipelineLogID {
+		t.Fatalf("second run id = %v, want a new run", second.PipelineLogID)
+	}
+	var secondLog entity.PipelineOperationLog
+	if err := db.First(&secondLog, "id = ?", *second.PipelineLogID).Error; err != nil {
+		t.Fatalf("load second run: %v", err)
+	}
+	if secondLog.RunCount == nil || *secondLog.RunCount != 2 {
+		t.Fatalf("second run_count = %v, want 2", secondLog.RunCount)
+	}
+}
+
+func TestIngestionTaskServiceReloadAndValidateRunIdentityRejectsInvalidBindings(t *testing.T) {
+	validRunCount := 1
+	invalidRunCount := 0
+	testCases := []struct {
+		name          string
+		pipelineLogID *string
+		createRun     bool
+		runDocumentID string
+		runDatasetID  string
+		runCount      *int
+		wantReason    string
+	}{
+		{name: "missing pipeline log ID", wantReason: "missing_pipeline_log_id"},
+		{name: "pipeline log not found", pipelineLogID: sptr("missing-run"), wantReason: "pipeline_log_not_found"},
+		{name: "pipeline log document mismatch", pipelineLogID: sptr("run-1"), createRun: true, runDocumentID: "other-doc", runDatasetID: "kb-1", runCount: &validRunCount, wantReason: "pipeline_log_document_mismatch"},
+		{name: "pipeline log dataset mismatch", pipelineLogID: sptr("run-1"), createRun: true, runDocumentID: "doc-1", runDatasetID: "other-kb", runCount: &validRunCount, wantReason: "pipeline_log_dataset_mismatch"},
+		{name: "missing run count", pipelineLogID: sptr("run-1"), createRun: true, runDocumentID: "doc-1", runDatasetID: "kb-1", wantReason: "invalid_run_count"},
+		{name: "non-positive run count", pipelineLogID: sptr("run-1"), createRun: true, runDocumentID: "doc-1", runDatasetID: "kb-1", runCount: &invalidRunCount, wantReason: "invalid_run_count"},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+			insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+			insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+
+			if testCase.createRun {
+				if err := db.Create(&entity.PipelineOperationLog{
+					ID:              *testCase.pipelineLogID,
+					DocumentID:      testCase.runDocumentID,
+					KbID:            testCase.runDatasetID,
+					TaskType:        string(entity.PipelineTaskTypeParse),
+					OperationStatus: string(entity.TaskStatusRunning),
+					RunCount:        testCase.runCount,
+				}).Error; err != nil {
+					t.Fatalf("create pipeline operation log: %v", err)
+				}
+			}
+			if testCase.pipelineLogID != nil {
+				if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("pipeline_log_id", *testCase.pipelineLogID).Error; err != nil {
+					t.Fatalf("bind pipeline operation log: %v", err)
+				}
+			}
+
+			_, err := NewIngestionTaskService().ReloadAndValidateRunIdentity(t.Context(), "task-1")
+			var identityErr *InvalidRunIdentityError
+			if !errors.As(err, &identityErr) || identityErr.Reason != testCase.wantReason {
+				t.Fatalf("error = %v, want invalid run identity reason %q", err, testCase.wantReason)
+			}
+		})
+	}
+}
+
+// TestIngestionTaskServiceOpensPreTerminalLogBeforePublish locks the ordering that
+// closes the orphan window: the run's row must exist before its message is
+// published, so a worker that claims and finishes the task immediately still
+// finds a row to terminalize.
+func TestIngestionTaskServiceOpensPreTerminalLogBeforePublish(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	var logIDAtPublish string
+	publisher := &recordingTaskPublisher{
+		beforeReturn: func(taskID string) {
+			task, err := dao.NewIngestionTaskDAO().GetByID(t.Context(), db, taskID)
+			if err != nil {
+				t.Fatalf("load task at publish: %v", err)
+			}
+			if task.PipelineLogID == nil {
+				t.Fatal("task was published before its open log row was bound")
+			}
+			logIDAtPublish = *task.PipelineLogID
+		},
+	}
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = publisher
+
+	if _, err := svc.CreateForDocuments(permission.WithIdentity(t.Context(), "user-1", ""), "kb-1", []string{"doc-1"}); err != nil {
+		t.Fatalf("CreateForDocuments failed: %v", err)
+	}
+	if logIDAtPublish == "" {
+		t.Fatal("publish did not observe a bound open log row")
+	}
+	open := loadOpenPipelineLog(t, t.Context(), db, "doc-1")
+	if open.ID != logIDAtPublish {
+		t.Fatalf("open row = %q, want the row bound before publish %q", open.ID, logIDAtPublish)
+	}
+}
+
+// TestIngestionTaskServiceStartRunningClosingStoppingTaskClosesPreTerminalLog locks
+// the workerless STOPPING finalize: MQ redelivery of a STOPPING task stops it
+// without ever running a terminal pipeline-log writer, so StartRunning must
+// close the row itself.
+func TestIngestionTaskServiceStartRunningClosingStoppingTaskClosesPreTerminalLog(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.STOPPING)
+
+	runningMsg := "Task is running..."
+	if err := dao.DB.Create(&entity.PipelineOperationLog{
+		ID:              "running-log",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: string(entity.TaskStatusRunning),
+		ProgressMsg:     &runningMsg,
+	}).Error; err != nil {
+		t.Fatalf("seed running log: %v", err)
+	}
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("pipeline_log_id", "running-log").Error; err != nil {
+		t.Fatalf("bind running log: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	task, err := svc.TransitionTaskToRunning(t.Context(), "task-1")
+	if err != nil {
+		t.Fatalf("StartRunning failed: %v", err)
+	}
+	if task.Status != common.STOPPED {
+		t.Fatalf("status = %q, want %q", task.Status, common.STOPPED)
+	}
+	var done entity.PipelineOperationLog
+	if err := db.First(&done, "id = ?", "running-log").Error; err != nil {
+		t.Fatalf("load running log: %v", err)
+	}
+	if done.OperationStatus != string(entity.TaskStatusCancel) {
+		t.Fatalf("OperationStatus = %q, want %q (workerless stop must close the row)", done.OperationStatus, string(entity.TaskStatusCancel))
+	}
+}
+
+// TestIngestionTaskServiceKeepsBoundRowOverUnrelatedOpenRow locks the ownership
+// rule: a run reuses the row it is bound to, never an unrelated open row that
+// happens to exist for the same document.
+func TestIngestionTaskServiceKeepsBoundRowOverUnrelatedOpenRow(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
+
+	queuedMsg := "Task is queued..."
+	runCount := 1
+	seed := func(id, status string, runCount *int) {
+		t.Helper()
+		if err := dao.DB.Create(&entity.PipelineOperationLog{
+			ID:              id,
+			DocumentID:      "doc-1",
+			RunCount:        runCount,
+			TenantID:        "tenant-1",
+			KbID:            "kb-1",
+			ParserID:        "naive",
+			TaskType:        "Parse",
+			OperationStatus: status,
+			ProgressMsg:     &queuedMsg,
+		}).Error; err != nil {
+			t.Fatalf("seed %s: %v", id, err)
+		}
+	}
+	seed("bound-log", string(entity.TaskStatusUnstart), &runCount)
+	seed("unrelated-log", string(entity.TaskStatusSchedule), nil)
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").
+		Update("pipeline_log_id", "bound-log").Error; err != nil {
+		t.Fatalf("bind: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	svc.taskPublisher = &recordingTaskPublisher{}
+	if _, err := svc.CreateAndEnqueue(t.Context(), &entity.IngestionTask{
+		DocumentID: "doc-1",
+		UserID:     "user-1",
+		DatasetID:  "kb-1",
+		Status:     common.CREATED,
+	}); err != nil {
+		t.Fatalf("CreateAndEnqueue failed: %v", err)
+	}
+
+	if got := countPipelineLogs(t, db, "doc-1"); got != 2 {
+		t.Fatalf("pipeline log rows = %d, want 2 (bound row advanced, no third row created)", got)
+	}
+	if bound := loadTaskPipelineLogID(t, t.Context(), db, "task-1"); bound != "bound-log" {
+		t.Fatalf("task bound to %q, want its own row bound-log", bound)
+	}
+	var bound entity.PipelineOperationLog
+	if err := db.First(&bound, "id = ?", "bound-log").Error; err != nil {
+		t.Fatalf("load bound log: %v", err)
+	}
+	if bound.OperationStatus != string(entity.TaskStatusSchedule) {
+		t.Fatalf("bound row status = %q, want %q", bound.OperationStatus, string(entity.TaskStatusSchedule))
+	}
+}
+
+func TestIngestionTaskServiceStaleSnapshotKeepsEstablishedOpenLogBinding(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
+
+	taskDAO := dao.NewIngestionTaskDAO()
+	firstSnapshot, err := taskDAO.GetByID(t.Context(), db, "task-1")
+	if err != nil {
+		t.Fatalf("load first task snapshot: %v", err)
+	}
+	staleSnapshot, err := taskDAO.GetByID(t.Context(), db, "task-1")
+	if err != nil {
+		t.Fatalf("load stale task snapshot: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	if err := svc.ensureRunIdentity(t.Context(), firstSnapshot, nil); err != nil {
+		t.Fatalf("establish first identity: %v", err)
+	}
+	firstLogID := loadTaskPipelineLogID(t, t.Context(), db, "task-1")
+	if err := svc.ensureRunIdentity(t.Context(), staleSnapshot, nil); err != nil {
+		t.Fatalf("reuse established identity: %v", err)
+	}
+
+	if got := loadTaskPipelineLogID(t, t.Context(), db, "task-1"); got != firstLogID {
+		t.Fatalf("stale snapshot replaced binding %q with %q", firstLogID, got)
+	}
+	if got := countPipelineLogs(t, db, "doc-1"); got != 1 {
+		t.Fatalf("pipeline log rows = %d, want the original single row", got)
+	}
+	var firstLog entity.PipelineOperationLog
+	if err := db.First(&firstLog, "id = ?", firstLogID).Error; err != nil {
+		t.Fatalf("established open log was removed: %v", err)
+	}
+}
+
+// TestIngestionTaskServicePreTerminalLogAdvanceIsMonotonic locks the monotonic
+// transition contract: a late queued write must not regress a row a concurrent
+// worker already moved to running.
+func TestIngestionTaskServicePreTerminalLogAdvanceIsMonotonic(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.CREATED)
+
+	openLog := &entity.PipelineOperationLog{
+		ID:              "log-1",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: string(entity.TaskStatusUnstart),
+	}
+	if err := dao.DB.Create(openLog).Error; err != nil {
+		t.Fatalf("seed open log: %v", err)
+	}
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("pipeline_log_id", "log-1").Error; err != nil {
+		t.Fatalf("bind task: %v", err)
+	}
+
+	svc := NewIngestionTaskService()
+	ctx := t.Context()
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+
+	svc.advanceOpenLog(ctx, task, logFromUnstart, string(entity.TaskStatusSchedule))
+	if got := loadOpenPipelineLog(t, ctx, db, "doc-1").OperationStatus; got != string(entity.TaskStatusSchedule) {
+		t.Fatalf("after schedule = %q, want %q", got, string(entity.TaskStatusSchedule))
+	}
+	svc.advanceOpenLog(ctx, task, logFromUnstartOrScheduled, string(entity.TaskStatusRunning))
+	if got := loadOpenPipelineLog(t, ctx, db, "doc-1").OperationStatus; got != string(entity.TaskStatusRunning) {
+		t.Fatalf("after start = %q, want %q", got, string(entity.TaskStatusRunning))
+	}
+	// The enqueue-time scheduled write lands late; it must not regress the row.
+	svc.advanceOpenLog(ctx, task, logFromUnstart, string(entity.TaskStatusSchedule))
+	open := loadOpenPipelineLog(t, ctx, db, "doc-1")
+	if open.OperationStatus != string(entity.TaskStatusRunning) {
+		t.Fatalf("late scheduled write regressed the row to %q, want %q", open.OperationStatus, string(entity.TaskStatusRunning))
+	}
+	if open.ID != "log-1" || countPipelineLogs(t, db, "doc-1") != 1 {
+		t.Fatalf("expected the same single row, got id=%q count=%d", open.ID, countPipelineLogs(t, db, "doc-1"))
+	}
+}
+
+// TestIngestionTaskServiceAdvanceRejectsMissingIdentity ensures a status
+// advance never creates a run identity. Only publish-time EnsureRunIdentity
+// may bind a task to a pipeline-operation-log row.
+func TestIngestionTaskServiceAdvanceRejectsMissingIdentity(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-terminal", "kb-1", 0, 0)
+	insertTestDoc(t, "doc-live", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-terminal", "user-1", "doc-terminal", "kb-1", common.STOPPED)
+	insertTestIngestionTaskWithStatus(t, "task-live", "user-1", "doc-live", "kb-1", common.CREATED)
+
+	svc := NewIngestionTaskService()
+	ctx := t.Context()
+
+	terminal, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-terminal")
+	if err != nil {
+		t.Fatalf("load terminal task: %v", err)
+	}
+	svc.advanceOpenLog(ctx, terminal, logFromUnstart, string(entity.TaskStatusSchedule))
+	if got := countPipelineLogs(t, db, "doc-terminal"); got != 0 {
+		t.Fatalf("terminal task resurrected %d queued row(s); want none", got)
+	}
+
+	live, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-live")
+	if err != nil {
+		t.Fatalf("load live task: %v", err)
+	}
+	svc.advanceOpenLog(ctx, live, logFromUnstart, string(entity.TaskStatusSchedule))
+	if got := countPipelineLogs(t, db, "doc-live"); got != 0 {
+		t.Fatalf("missing identity created %d pipeline log rows, want 0", got)
+	}
+}
+
+// A deleted ledger must not strand a terminal task during document cleanup.
+// Active/queued tasks still require valid identity; runtime event writes remain strict.
+func TestIngestionTaskServiceCleanupMissingRun(t *testing.T) {
+	for _, status := range []string{common.STOPPED, common.COMPLETED, common.FAILED, common.CREATED, common.SCHEDULED, common.RUNNING, common.STOPPING} {
+		t.Run(status, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", status)
+			if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("pipeline_log_id", "deleted-run").Error; err != nil {
+				t.Fatal(err)
+			}
+			svc := NewIngestionTaskService()
+			svc.purgeTaskState = func(context.Context, string) error { return nil }
+			terminal := common.IsTerminalTaskStatus(status)
+			prepared, err := svc.PrepareDocumentTaskForCleanup(t.Context(), "doc-1", "Document cleanup")
+			if terminal {
+				if err != nil || prepared == nil || prepared.ID != "task-1" {
+					t.Fatalf("terminal cleanup: task=%v err=%v", prepared, err)
+				}
+			} else if err == nil {
+				t.Fatal("nonterminal cleanup accepted missing run identity")
+			}
+			// Recreate the original state: preparing a queued task may freeze it.
+			if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("status", status).Error; err != nil {
+				t.Fatal(err)
+			}
+			_, err = svc.Remove(t.Context(), "task-1", sptr("user-1"))
+			if terminal {
+				if err != nil {
+					t.Fatalf("Remove terminal task with deleted run: %v", err)
+				}
+				if _, err := svc.GetTask(t.Context(), "task-1"); !errors.Is(err, common.ErrTaskNotFound) {
+					t.Fatalf("task remains after removal: %v", err)
+				}
+			} else if err == nil {
+				t.Fatal("removed nonterminal task with missing run identity")
+			}
+			if err := svc.RecordTerminal(t.Context(), "deleted-run", "task-1", "runtime write"); !errors.Is(err, gorm.ErrRecordNotFound) {
+				t.Fatalf("runtime event error = %v, want missing run failure", err)
+			}
+			var events int64
+			if err := db.Model(&entity.IngestionTaskLog{}).Where("pipeline_log_id = ?", "deleted-run").Count(&events).Error; err != nil {
+				t.Fatal(err)
+			}
+			if events != 0 {
+				t.Fatalf("orphan terminal events = %d", events)
+			}
+		})
+	}
+}
+
+// recordingIngestLogEmitter captures emitted lifecycle events for assertions.
+type recordingIngestLogEmitter struct {
+	mu   sync.Mutex
+	logs []common.IngestionLog
+}
+
+func (e *recordingIngestLogEmitter) EmitIngestLog(_ context.Context, log common.IngestionLog) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.logs = append(e.logs, log)
+}
+
+func (e *recordingIngestLogEmitter) last() common.IngestionLog {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if len(e.logs) == 0 {
+		return common.IngestionLog{}
+	}
+	return e.logs[len(e.logs)-1]
+}
+
+func (e *recordingIngestLogEmitter) count() int {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return len(e.logs)
+}
+
+// TestIngestionTaskServiceMarkFailedCarriesReason verifies that the failure
+// reason supplied by the ingestor reaches the emitted lifecycle event's
+// ErrorInfo, instead of being dropped (the previous gap: the run ledger got the
+// message but the observability event carried an empty ErrorInfo).
+func TestIngestionTaskServiceMarkFailedCarriesReason(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	if err := dao.DB.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("status", common.RUNNING).Error; err != nil {
+		t.Fatalf("set running status: %v", err)
+	}
+	ctx := t.Context()
+	emitter := &recordingIngestLogEmitter{}
+	svc := NewIngestionTaskService()
+	svc.SetEventEmitter(emitter)
+	const reason = "boom: nil deref"
+	if err := svc.MarkFailed(ctx, "task-1", reason); err != nil {
+		t.Fatalf("MarkFailed failed: %v", err)
+	}
+	// The emit is fire-and-forget: it runs on a detached goroutine, so wait for
+	// it to actually land before asserting on the recorded log.
+	if !waitForEmitCount(emitter.count, 1) {
+		t.Fatalf("ingest log not emitted by background goroutine within timeout")
+	}
+	got := emitter.last()
+	if got.ErrorInfo != reason {
+		t.Fatalf("emitted ErrorInfo = %q, want %q", got.ErrorInfo, reason)
+	}
+	if got.EventType != "failed" || got.Status != common.FAILED {
+		t.Fatalf("emitted event type/status = %q/%q, want failed/%q", got.EventType, got.Status, common.FAILED)
+	}
+}
+
+// TestPrepareValidatedRunEmitsRunningEventWithFreshClaimTime verifies that the
+// running lifecycle event is emitted AFTER PrepareValidatedRun stamps the
+// document's worker-claim time. Previously the running event was emitted in
+// TransitionTaskToRunning, before the claim time was written, so its BeginTime
+// (and therefore wait_duration_s) was either zero or the previous run's stale
+// value.
+func TestPrepareValidatedRunEmitsRunningEventWithFreshClaimTime(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+
+	// Simulate a previous run that already stamped a claim time one hour ago.
+	stale := time.Now().Add(-time.Hour)
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("process_begin_at", stale).Error; err != nil {
+		t.Fatalf("seed stale claim time: %v", err)
+	}
+
+	// Bind a pipeline-operation-log row so advanceOpenLog/recordRunMessage succeed.
+	openLog := &entity.PipelineOperationLog{
+		ID:              "log-1",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		TaskType:        "Parse",
+		OperationStatus: string(entity.TaskStatusUnstart),
+	}
+	if err := db.Create(openLog).Error; err != nil {
+		t.Fatalf("seed open log: %v", err)
+	}
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("pipeline_log_id", "log-1").Error; err != nil {
+		t.Fatalf("bind task: %v", err)
+	}
+
+	ctx := t.Context()
+	emitter := &recordingIngestLogEmitter{}
+	svc := NewIngestionTaskService()
+	svc.SetEventEmitter(emitter)
+
+	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, "task-1")
+	if err != nil {
+		t.Fatalf("load task: %v", err)
+	}
+	svc.PrepareValidatedRun(ctx, task)
+
+	// The emit is fire-and-forget: it runs on a detached goroutine, so wait for
+	// it to actually land before scanning the recorded logs.
+	if !waitForEmitCount(emitter.count, 1) {
+		t.Fatalf("ingest log not emitted by background goroutine within timeout")
+	}
+
+	var running common.IngestionLog
+	found := false
+	for _, l := range emitter.logs {
+		if l.EventType == "running" {
+			running = l
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no running event emitted by PrepareValidatedRun")
+	}
+	if running.BeginTime.IsZero() {
+		t.Fatalf("running event BeginTime is zero - claim time was not stamped before emit")
+	}
+	if !running.BeginTime.After(stale) {
+		t.Fatalf("running event BeginTime = %v, want after stale claim time %v (must reflect current run)", running.BeginTime, stale)
+	}
+	if time.Since(running.BeginTime) > 30*time.Second {
+		t.Fatalf("running event BeginTime = %v, suspiciously old for a fresh claim", running.BeginTime)
 	}
 }

@@ -1,5 +1,5 @@
 #
-#  Copyright 2025 The InfiniFlow Authors. All Rights Reserved.
+#  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -16,11 +16,94 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pytest
-from common import bulk_upload_documents
-from utils import compare_by_hash
+from ragflow_sdk.modules.document import Document
+
+
+class _DownloadResponse:
+    def __init__(self, content, payload, headers=None):
+        self.content = content
+        self._payload = payload
+        self.headers = headers or {}
+
+    def json(self):
+        if isinstance(self._payload, Exception):
+            raise self._payload
+        return self._payload
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "content,payload",
+    [
+        (b"[]", []),
+        (b"[1, 2]", [1, 2]),
+        (b"null", None),
+        (b'"hello"', "hello"),
+        (b"42", 42),
+        (
+            b'{"code": 0, "message": "file content"}',
+            {"code": 0, "message": "file content"},
+        ),
+    ],
+)
+def test_download_preserves_attached_json_bytes(monkeypatch, content, payload):
+    response = _DownloadResponse(
+        content,
+        payload,
+        {"Content-Disposition": 'attachment; filename="sample.json"'},
+    )
+    document = Document(None, {"id": "doc", "dataset_id": "dataset"})
+    monkeypatch.setattr(document, "get", lambda *_args, **_kwargs: response)
+
+    assert document.download() == content
+
+
+@pytest.mark.p2
+def test_download_still_raises_api_error_without_attachment(monkeypatch):
+    response = _DownloadResponse(
+        b'{"code": 102, "message": "document not found"}',
+        {"code": 102, "message": "document not found"},
+        {"Content-Type": "application/json"},
+    )
+    document = Document(None, {"id": "doc", "dataset_id": "dataset"})
+    monkeypatch.setattr(document, "get", lambda *_args, **_kwargs: response)
+
+    with pytest.raises(Exception, match="document not found"):
+        document.download()
+
+
+@pytest.mark.p2
+def test_download_raises_api_error_with_extra_response_fields(monkeypatch):
+    response = _DownloadResponse(
+        b'{"code": 102, "message": "document not found", "data": null}',
+        {"code": 102, "message": "document not found", "data": None},
+        {"Content-Type": "application/json"},
+    )
+    document = Document(None, {"id": "doc", "dataset_id": "dataset"})
+    monkeypatch.setattr(document, "get", lambda *_args, **_kwargs: response)
+
+    with pytest.raises(Exception, match="document not found"):
+        document.download()
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    "content,payload",
+    [
+        (b'{"code": 0, "message": "success"}', {"code": 0, "message": "success"}),
+        (b"plain text", ValueError("not JSON")),
+    ],
+)
+def test_download_preserves_non_error_content_without_attachment(monkeypatch, content, payload):
+    response = _DownloadResponse(content, payload, {"Content-Type": "application/json"})
+    document = Document(None, {"id": "doc", "dataset_id": "dataset"})
+    monkeypatch.setattr(document, "get", lambda *_args, **_kwargs: response)
+
+    assert document.download() == content
 
 
 @pytest.mark.p1
+@pytest.mark.integration
 @pytest.mark.parametrize(
     "generate_test_files",
     [
@@ -37,65 +120,77 @@ from utils import compare_by_hash
     ],
     indirect=True,
 )
-def test_file_type_validation(add_dataset, generate_test_files, request):
-    dataset = add_dataset
+def test_file_type_validation(add_dataset_func, generate_test_files, request):
+    dataset = add_dataset_func
     fp = generate_test_files[request.node.callspec.params["generate_test_files"]]
     with fp.open("rb") as f:
         blob = f.read()
 
     documents = dataset.upload_documents([{"display_name": fp.name, "blob": blob}])
 
-    for document in documents:
-        with fp.with_stem("ragflow_test_download").open("wb") as f:
-            f.write(document.download())
+    assert len(documents) == 1, str(documents)
+    document = documents[0]
+    assert document.dataset_id == dataset.id
+    assert document.name == fp.name
+    with fp.with_stem("ragflow_test_download").open("wb") as f:
+        f.write(document.download())
 
-        assert compare_by_hash(fp, fp.with_stem("ragflow_test_download"))
+    assert fp.read_bytes() == fp.with_stem("ragflow_test_download").read_bytes()
 
 
+@pytest.mark.integration
 class TestDocumentDownload:
     @pytest.mark.p3
-    def test_same_file_repeat(self, add_documents, tmp_path, ragflow_tmp_dir):
+    def test_download_empty_uploaded_file(self, add_dataset_func):
+        dataset = add_dataset_func
+        documents = dataset.upload_documents([{"display_name": "empty.txt", "blob": b""}])
+
+        assert len(documents) == 1
+        assert documents[0].download() == b""
+
+    @pytest.mark.p3
+    def test_same_file_repeat(self, add_document_func):
         num = 5
-        _, documents = add_documents
+        _, document = add_document_func
 
-        for i in range(num):
-            download_path = tmp_path / f"ragflow_test_download_{i}.txt"
-            with download_path.open("wb") as f:
-                f.write(documents[0].download())
-            assert compare_by_hash(ragflow_tmp_dir / "ragflow_test_upload_0.txt", download_path), f"Downloaded file {i} does not match original"
+        expected = b"RAGFlow document SDK integration test.\n"
+        for _ in range(num):
+            assert document.download() == expected
 
-    @pytest.mark.p2
-    def test_download_error_json_raises(self, add_documents):
-        dataset, documents = add_documents
-        document = documents[0]
+    @pytest.mark.p3
+    def test_download_error_json_raises(self, add_document_func):
+        dataset, document = add_document_func
         invalid_document = document.__class__(
             document.rag,
             {"id": "missing-document-id-for-download", "dataset_id": dataset.id},
         )
-        with pytest.raises(Exception) as exception_info:
+        with pytest.raises(Exception, match="Resource not found"):
             invalid_document.download()
-        assert str(exception_info.value), exception_info
 
 
 @pytest.mark.p3
-def test_concurrent_download(add_dataset, tmp_path):
+@pytest.mark.integration
+def test_concurrent_download(add_dataset_func, tmp_path):
     count = 20
-    dataset = add_dataset
-    documents = bulk_upload_documents(dataset, count, tmp_path)
+    dataset = add_dataset_func
+    document_infos = []
+    for i in range(count):
+        fp = tmp_path / f"ragflow_test_upload_{i}.txt"
+        fp.write_text("This is the content of a test TXT file.", encoding="utf-8")
+        document_infos.append({"display_name": fp.name, "blob": fp.read_bytes()})
+    documents = dataset.upload_documents(document_infos)
+    assert len(documents) == count
 
     def download_doc(document, i):
         download_path = tmp_path / f"ragflow_test_download_{i}.txt"
         with download_path.open("wb") as f:
             f.write(document.download())
-        # assert compare_by_hash(tmp_path / f"ragflow_test_upload_{i}.txt", download_path), str(download_path)
+        return download_path
 
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = [executor.submit(download_doc, documents[i], i) for i in range(count)]
-    responses = list(as_completed(futures))
-    assert len(responses) == count, responses
+        responses = [future.result() for future in as_completed(futures)]
+    assert len(responses) == count
 
     for i in range(count):
-        assert compare_by_hash(
-            tmp_path / f"ragflow_test_upload_{i}.txt",
-            tmp_path / f"ragflow_test_download_{i}.txt",
-        )
+        assert (tmp_path / f"ragflow_test_upload_{i}.txt").read_bytes() == (tmp_path / f"ragflow_test_download_{i}.txt").read_bytes()

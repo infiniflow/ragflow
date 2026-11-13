@@ -1,10 +1,14 @@
 import { EmbedContainer } from '@/components/embed-container';
 import { FileUploadProps } from '@/components/file-upload';
+import { LoadingDots } from '@/components/loading-dots';
 import { NextMessageInput } from '@/components/message-input/next';
 import MessageItem from '@/components/next-message-item';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
+import { RAGFlowAvatar } from '@/components/ragflow-avatar';
+import SvgIcon from '@/components/svg-icon';
 import { useSyncThemeFromParams } from '@/components/theme-provider';
+import { VirtualMessageList } from '@/components/virtual-message-list';
 import { MessageType } from '@/constants/chat';
 import { useUploadAgentFileWithProgress } from '@/hooks/use-agent-request';
 import { cn } from '@/lib/utils';
@@ -12,7 +16,6 @@ import i18n, { changeLanguageAsync } from '@/locales/config';
 import DebugContent from '@/pages/agent/debug-content';
 import { useCacheChatLog } from '@/pages/agent/hooks/use-cache-chat-log';
 import { useAwaitComponentData } from '@/pages/agent/hooks/use-chat-logic';
-import { buildMessageUuidWithRole } from '@/utils/chat';
 import { isEmpty } from 'lodash';
 import React, { forwardRef, useCallback } from 'react';
 import {
@@ -47,7 +50,7 @@ const ChatContainer = () => {
     handleInputChange,
     value,
     sendLoading,
-    scrollRef,
+    virtualizer,
     messageContainerRef,
     derivedMessages,
     hasError,
@@ -69,6 +72,10 @@ const ChatContainer = () => {
     sendFormMessage,
   });
   const sendDisabled = useSendButtonDisabled(value);
+  // The assistant message is only created when the first SSE frame arrives,
+  // so fill the gap between sending and the first frame with a loading row.
+  const showSendLoading =
+    sendLoading && derivedMessages.at(-1)?.role !== MessageType.Assistant;
 
   const showBeginParameterDialog = useCallback(() => {
     if (inputsData && inputsData.inputs && !isEmpty(inputsData.inputs)) {
@@ -130,60 +137,81 @@ const ChatContainer = () => {
             )}
             ref={messageContainerRef}
           >
-            <div>
-              {derivedMessages?.map((message, i) => {
-                return (
-                  <MessageItem
-                    visibleAvatar={visibleAvatar}
-                    conversationId={conversationId}
-                    currentEventListWithoutMessageById={
-                      currentEventListWithoutMessageById
-                    }
-                    setCurrentMessageId={setCurrentMessageId}
-                    key={buildMessageUuidWithRole(message)}
-                    item={message}
-                    nickname="You"
-                    reference={findReferenceByMessageId(message.id)}
-                    loading={
-                      message.role === MessageType.Assistant &&
-                      sendLoading &&
-                      derivedMessages?.length - 1 === i
-                    }
-                    isShare={true}
-                    avatarDialog={inputsData.avatar}
-                    agentName={inputsData.title}
-                    index={i}
-                    clickDocumentButton={clickDocumentButton}
-                    showLikeButton={false}
-                    showLoudspeaker={false}
-                    showLog={false}
-                    sendLoading={sendLoading}
-                  >
-                    {message.role === MessageType.Assistant &&
-                      derivedMessages.length - 1 === i && (
-                        <DebugContent
-                          parameters={buildInputList(message)}
-                          message={message}
-                          ok={handleOk(message)}
-                          isNext={false}
-                          btnText={'Submit'}
-                        ></DebugContent>
-                      )}
-                    {message.role === MessageType.Assistant &&
-                      derivedMessages.length - 1 !== i && (
-                        <div>
-                          <div>{message?.data?.tips}</div>
+            <VirtualMessageList
+              className="w-full pr-6"
+              items={derivedMessages}
+              virtualizer={virtualizer}
+              renderItem={(message, i) => (
+                <MessageItem
+                  visibleAvatar={visibleAvatar}
+                  conversationId={conversationId}
+                  currentEventListWithoutMessageById={
+                    currentEventListWithoutMessageById
+                  }
+                  setCurrentMessageId={setCurrentMessageId}
+                  item={message}
+                  nickname="You"
+                  reference={findReferenceByMessageId(message.id)}
+                  loading={
+                    message.role === MessageType.Assistant &&
+                    sendLoading &&
+                    derivedMessages?.length - 1 === i
+                  }
+                  isShare={true}
+                  avatarDialog={inputsData.avatar}
+                  agentName={inputsData.title}
+                  index={i}
+                  clickDocumentButton={clickDocumentButton}
+                  showLikeButton={false}
+                  showLoudspeaker={false}
+                  showLog={false}
+                  sendLoading={sendLoading}
+                >
+                  {message.role === MessageType.Assistant &&
+                    derivedMessages.length - 1 === i && (
+                      <DebugContent
+                        parameters={buildInputList(message)}
+                        message={message}
+                        ok={handleOk(message)}
+                        isNext={false}
+                        btnText={'Submit'}
+                      ></DebugContent>
+                    )}
+                  {message.role === MessageType.Assistant &&
+                    derivedMessages.length - 1 !== i && (
+                      <div>
+                        <div>{message?.data?.tips}</div>
 
-                          <div>
-                            {buildInputList(message)?.map((item) => item.value)}
-                          </div>
+                        <div>
+                          {buildInputList(message)?.map((item) => item.value)}
                         </div>
-                      )}
-                  </MessageItem>
-                );
-              })}
-            </div>
-            <div ref={scrollRef} />
+                      </div>
+                    )}
+                </MessageItem>
+              )}
+            />
+            {showSendLoading && (
+              <div className="flex w-full gap-5 py-6">
+                {visibleAvatar &&
+                  (inputsData.avatar || inputsData.title ? (
+                    <RAGFlowAvatar
+                      className="size-10"
+                      avatar={inputsData.avatar}
+                      name={inputsData.title}
+                      isPerson
+                    />
+                  ) : (
+                    <SvgIcon
+                      name={'assistant'}
+                      width={'100%'}
+                      className="size-10 fill-current"
+                    />
+                  ))}
+                <div className="px-2.5 py-1.5">
+                  <LoadingDots className="text-text-secondary" />
+                </div>
+              </div>
+            )}
           </div>
           {isTaskMode || (
             <div className="flex w-full justify-center md:mb-8">

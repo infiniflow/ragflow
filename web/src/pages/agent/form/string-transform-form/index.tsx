@@ -8,7 +8,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { MultiSelect } from '@/components/ui/multi-select';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { toLower } from 'lodash';
@@ -87,16 +87,16 @@ function StringTransformForm({ node }: INextOperatorForm) {
               <FormItem>
                 <FormLabel>{t('flow.method')}</FormLabel>
                 <FormControl>
-                  <RAGFlowSelect
+                  <SelectWithSearch
                     {...field}
                     options={Object.values(StringTransformMethod).map(
                       (val) => ({ label: t('flow.' + val), value: val }),
                     )}
                     onChange={(value) => {
-                      handleMethodChange(value);
+                      handleMethodChange(value as StringTransformMethod);
                       field.onChange(value);
                     }}
-                  ></RAGFlowSelect>
+                  ></SelectWithSearch>
                 </FormControl>
                 <FormMessage />
               </FormItem>
@@ -139,10 +139,11 @@ function StringTransformForm({ node }: INextOperatorForm) {
                       // {...field}
                     />
                   ) : (
-                    <RAGFlowSelect
+                    <SelectWithSearch
                       {...field}
+                      value={field.value as string}
                       options={DelimiterOptions}
-                    ></RAGFlowSelect>
+                    ></SelectWithSearch>
                   )}
                 </FormControl>
                 <FormMessage />

@@ -43,7 +43,10 @@ function DatasetLabel({ text }: { text: string }) {
   );
 }
 
-export function useDisableDifferenceEmbeddingDataset(name: string) {
+export function useDisableDifferenceEmbeddingDataset(
+  name: string,
+  canvasID?: string,
+) {
   const form = useFormContext();
   const datasetId = useWatch({ name, control: form.control });
   const [searchString, setSearchString] = useState('');
@@ -53,7 +56,7 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
     loading,
     handleScroll,
     hasNextPage,
-  } = useFetchKnowledgeList(false, debouncedSearchString);
+  } = useFetchKnowledgeList(false, debouncedSearchString, undefined, canvasID);
   const selectedDatasetIds = useMemo(
     () => (Array.isArray(datasetId) ? datasetId : []),
     [datasetId],
@@ -63,7 +66,10 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
   // pages, filtered out by the search box), so resolve them by ID to echo
   // their names back in the form field. A dataset that has been deleted
   // comes back missing and its badge falls back to the raw id.
-  const { data: selectedDatasets } = useFetchDatasetsByIds(selectedDatasetIds);
+  const { data: selectedDatasets } = useFetchDatasetsByIds(
+    selectedDatasetIds,
+    canvasID,
+  );
 
   const datasetList = useMemo(() => {
     return Array.from(
@@ -138,11 +144,15 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
 export function KnowledgeBaseFormField({
   showVariable = false,
   name = 'dataset_ids',
+  label,
   required = false,
+  canvasID,
 }: {
   showVariable?: boolean;
   name?: string;
+  label?: ReactNode;
   required?: boolean;
+  canvasID?: string;
 }) {
   const { t } = useTranslation();
 
@@ -153,7 +163,7 @@ export function KnowledgeBaseFormField({
     searchString,
     handleScroll,
     hasNextPage,
-  } = useDisableDifferenceEmbeddingDataset(name);
+  } = useDisableDifferenceEmbeddingDataset(name, canvasID);
 
   const nextOptions = buildQueryVariableOptionsByShowVariable(showVariable)();
 
@@ -202,7 +212,7 @@ export function KnowledgeBaseFormField({
       name={name}
       tooltip={t('chat.knowledgeBasesTip')}
       required={required}
-      label={t('chat.knowledgeBases')}
+      label={label ?? t('chat.knowledgeBases')}
     >
       {(field) => (
         <MultiSelect

@@ -14,7 +14,7 @@ import (
 // a ZHIPU-AI provider, a default instance, and enrolled models:
 //
 //	glm-4-flash     — chat only (text-only: rejects image content with error 1210)
-//	glm-4v          — chat + image2text, one tenant_model row per type
+//	glm-4v          — chat + image2text in one tenant_model row
 //	glm-4.6v-Flash  — combined chat|image2text bitmask in a single row
 //
 // Enrollment rows are what getLLMModelConfig probes to decide whether image
@@ -43,11 +43,10 @@ func setupChatPipelineVisionTestDB(t *testing.T) *gorm.DB {
 	activeStatus := "1"
 	rows := []interface{}{
 		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
-		&entity.TenantModelProvider{ID: "provider-zhipu", TenantID: "tenant-1", ProviderName: "ZHIPU-AI"},
+		&entity.TenantModelProvider{ID: "provider-zhipu", UserID: "user-1", TenantID: "tenant-1", ProviderName: "ZHIPU-AI"},
 		&entity.TenantModelInstance{ID: "instance-zhipu", ProviderID: "provider-zhipu", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
 		&entity.TenantModel{ID: "model-flash-chat", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4-flash", ModelType: int(entity.ModelTypeChat), Status: "active"},
-		&entity.TenantModel{ID: "model-4v-chat", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4v", ModelType: int(entity.ModelTypeChat), Status: "active"},
-		&entity.TenantModel{ID: "model-4v-i2t", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4v", ModelType: int(entity.ModelTypeImage2Text), Status: "active"},
+		&entity.TenantModel{ID: "model-4v", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4v", ModelType: int(entity.ModelTypeChat | entity.ModelTypeImage2Text), Status: "active"},
 		// Combined chat+image2text enrollment (bitmask), as produced for
 		// catalog entries with model_types ["chat", "vision"] (e.g. glm-4.6v-Flash).
 		&entity.TenantModel{ID: "model-46v-combined", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4.6v-Flash", ModelType: int(entity.ModelTypeChat | entity.ModelTypeImage2Text), Status: "active"},
@@ -65,10 +64,12 @@ func seedChatPipelineVisionTenant(t *testing.T, db *gorm.DB, defaultLLMID string
 	status := string(entity.StatusValid)
 	if err := db.Create(&entity.Tenant{
 		ID:     "tenant-1",
-		LLMID:  defaultLLMID,
 		Status: &status,
 	}).Error; err != nil {
-		t.Fatalf("failed to create tenant: %v", err)
+		t.Fatalf("set tenant owner default chat model: %v", err)
+	}
+	if err := db.Model(&entity.UserTenant{}).Where("id = ?", "user-tenant-1").Update("llm_id", defaultLLMID).Error; err != nil {
+		t.Fatalf("failed to configure owner default model: %v", err)
 	}
 }
 

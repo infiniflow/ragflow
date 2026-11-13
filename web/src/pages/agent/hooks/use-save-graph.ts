@@ -1,157 +1,37 @@
 import message from '@/components/ui/message';
+import { ModelTypeMap } from '@/components/model-tree-select';
+import { useModelValidIds } from '@/hooks/use-llm-request';
+import { Operator } from '../constant';
 import {
   useFetchAgent,
   useResetAgent,
-  useSetAgent,
+  useSaveAgent,
 } from '@/hooks/use-agent-request';
+import { useFetchCanvasPresence } from '@/ee/hooks/use-agent-presence';
 import {
   GlobalVariableType,
   RAGFlowNodeType,
 } from '@/interfaces/database/agent';
 import { formatDate } from '@/utils/date';
+import { canEditAgent } from '@/ee/pages/agent/can-edit-agent';
+import i18n from '@/locales/config';
 import { useDebounceEffect } from 'ahooks';
-import { t } from 'i18next';
 import { useCallback, useEffect, useState } from 'react';
-import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
-import { Operator } from '../constant';
-import { FormSchema as ParserFormSchema } from '../form/parser-form';
-import { FormSchema as RetrievalFormSchema } from '../form/retrieval-form/next';
 import useGraphStore from '../store';
-import { getEmptyMessageNodeNames } from '../utils';
-import { findAgentNodeWithoutModel } from '../utils/agent-node-model';
+import { collectCanvasIssues } from '../utils/canvas-checklist';
 import { useBuildDslData } from './use-build-dsl';
-
-/**
- * A node's form only validates while its panel is mounted, so bad values can
- * sit in the store long after the user has moved on. Re-check them against the
- * same schema before persisting, but only for nodes the user actually edited —
- * a node still carrying stale DSL from an older version must not wedge saving.
- */
-function findInvalidNode(
-  nodes: RAGFlowNodeType[],
-  editedNodeIds: string[],
-): { node: RAGFlowNodeType; messageKey: string } | undefined {
-  const invalidParserNode = nodes.find(
-    (node) =>
-      editedNodeIds.includes(node.id) &&
-      node.data?.label === Operator.Parser &&
-      !ParserFormSchema.safeParse(node.data?.form).success,
-  );
-  if (invalidParserNode) {
-    return { node: invalidParserNode, messageKey: 'flow.nodeFormInvalid' };
-  }
-  // A Retrieval node sourcing from datasets must name at least one dataset,
-  // and one sourcing from memories must name at least one memory; the backend
-  // otherwise rejects the run with a `dataset_ids`/`memory_ids is required`
-  // error that only surfaces at runtime. The same applies to Retrieval tools
-  // embedded in an Agent node, which is how template-built agents usually
-  // bind retrieval. Only forms/tools carrying the canonical `dataset_ids`/
-  // `memory_ids` field are checked, so legacy DSLs still keyed on `kb_ids`
-  // cannot wedge saving. The warning follows the field that actually failed,
-  // so a memory-mode retrieval never reports a missing dataset.
-  const toInvalidRetrieval = (
-    params: Record<string, any>,
-  ): { memoryMissing: boolean } | undefined => {
-    if (
-      !Array.isArray(params?.dataset_ids) &&
-      !Array.isArray(params?.memory_ids)
-    ) {
-      return undefined;
-    }
-    const parsed = RetrievalFormSchema.safeParse(params);
-    if (parsed.success) {
-      return undefined;
-    }
-    return {
-      memoryMissing: parsed.error.issues.some(
-        (issue) => issue.path[0] === 'memory_ids',
-      ),
-    };
-  };
-
-  for (const node of nodes) {
-    if (node.data?.label === Operator.Retrieval) {
-      const invalid = toInvalidRetrieval(node.data?.form);
-      if (invalid) {
-        return {
-          node,
-          messageKey: invalid.memoryMissing
-            ? 'flow.retrievalMemoryMissing'
-            : 'flow.retrievalDatasetMissing',
-        };
-      }
-    }
-    if (node.data?.label === Operator.Agent) {
-      const tools = node.data?.form?.tools;
-      if (Array.isArray(tools)) {
-        for (const tool of tools) {
-          if (tool?.component_name !== 'Retrieval') {
-            continue;
-          }
-          const invalid = toInvalidRetrieval(tool?.params);
-          if (invalid) {
-            return {
-              node,
-              messageKey: invalid.memoryMissing
-                ? 'flow.retrievalMemoryMissing'
-                : 'flow.retrievalDatasetMissing',
-            };
-          }
-        }
-      }
-    }
-  }
-  // Unlike the schema re-check above, the missing-model check is not gated on
-  // editedNodeIds: a canvas loaded from storage with an empty model must warn
-  // on the very next save, not only after the node is edited again.
-  const agentNode = findAgentNodeWithoutModel(nodes);
-  if (agentNode) {
-    return { node: agentNode, messageKey: 'flow.agentModelMissing' };
-  }
-  return undefined;
-}
-
-export const useValidateNodeForms = () => {
-  const { t } = useTranslation();
-  const nodes = useGraphStore((state) => state.nodes);
-  const editedNodeFormIds = useGraphStore((state) => state.editedNodeFormIds);
-
-  const getInvalidNode = useCallback(
-    (currentNodes?: RAGFlowNodeType[]) =>
-      findInvalidNode(currentNodes ?? nodes, editedNodeFormIds),
-    [editedNodeFormIds, nodes],
-  );
-
-  // Only the entry points the user drives explicitly should warn; autosave and
-  // publish stay silent and just skip the write.
-  const notifyIfInvalid = useCallback(
-    (currentNodes?: RAGFlowNodeType[]) => {
-      const invalid = getInvalidNode(currentNodes);
-      if (invalid) {
-        message.warning(
-          t(invalid.messageKey, { name: invalid.node.data?.name }),
-        );
-        return false;
-      }
-      return true;
-    },
-    [getInvalidNode, t],
-  );
-
-  return { getInvalidNode, notifyIfInvalid };
-};
 
 export const useSaveGraph = (
   showMessage: boolean = true,
-  skipInvalidation: boolean = false,
+  skipDetailRefresh: boolean = false,
 ) => {
   const { data } = useFetchAgent();
-  const { setAgent, loading } = useSetAgent(showMessage, skipInvalidation);
+  const { saveAgent, loading } = useSaveAgent(showMessage, skipDetailRefresh);
   const { id } = useParams();
   const { buildDslData } = useBuildDslData();
-  const { getInvalidNode } = useValidateNodeForms();
 
+  // Draft saving is independent of run-readiness checks.
   const saveGraph = useCallback(
     async (
       currentNodes?: RAGFlowNodeType[],
@@ -159,45 +39,49 @@ export const useSaveGraph = (
         globalVariables: Record<string, GlobalVariableType>;
       },
       release?: boolean,
+      autosave?: boolean,
+      alias?: string,
     ) => {
       if (!id) {
         return;
       }
 
-      if (getInvalidNode(currentNodes)) {
-        return;
-      }
+      try {
+        const params: Record<string, any> = {
+          id,
+          title: data.title,
+          dsl: buildDslData(currentNodes, otherParam),
+        };
 
-      // Warn about Message components with empty content at save time; the
-      // canvas only fails on them when the agent runs otherwise (backend
-      // MessageParam.check() rejects empty content). Advisory only — the save
-      // itself proceeds. Autosave/publish (showMessage=false) stay silent to
-      // avoid nagging toasts.
-      if (showMessage) {
-        const emptyMessageNodeNames = getEmptyMessageNodeNames(
-          currentNodes ?? useGraphStore.getState().nodes,
-        );
-        if (emptyMessageNodeNames.length > 0) {
-          message.warning(
-            `${emptyMessageNodeNames.join(', ')}: ${t('flow.messageMsg')}`,
-          );
-          return;
+        if (release) {
+          params.release = 'true';
         }
+        // Both the debounced auto-save and the explicit Save button pass
+        // autosave:true so the backend refreshes only the live draft and never
+        // mints a new version. Only publishing (release) writes a version row,
+        // optionally carrying an alias into user_canvas_version.
+        if (autosave) {
+          params.autosave = true;
+        }
+        if (alias) {
+          params.alias = alias;
+        }
+
+        const result = await saveAgent(params);
+        if (result?.code !== undefined && result.code !== 0) {
+          message.error(result.message || i18n.t('message.requestError'));
+        }
+        return result;
+      } catch (error) {
+        message.error(
+          error instanceof Error && error.message
+            ? error.message
+            : i18n.t('message.requestError'),
+        );
+        return undefined;
       }
-
-      const params: Record<string, any> = {
-        id,
-        title: data.title,
-        dsl: buildDslData(currentNodes, otherParam),
-      };
-
-      if (release) {
-        params.release = 'true';
-      }
-
-      return setAgent(params);
     },
-    [id, getInvalidNode, showMessage, data.title, buildDslData, setAgent],
+    [id, data.title, buildDslData, saveAgent],
   );
 
   return { saveGraph, loading };
@@ -206,15 +90,42 @@ export const useSaveGraph = (
 export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
   const { saveGraph, loading } = useSaveGraph();
   const { resetAgent } = useResetAgent();
-  const { notifyIfInvalid } = useValidateNodeForms();
+  const { data: agent } = useFetchAgent();
+  const { resolveValidIds } = useModelValidIds(
+    ModelTypeMap.llm_id,
+    agent?.tenant_id,
+  );
 
   const handleRun = useCallback(
     async (nextNodes?: RAGFlowNodeType[]) => {
-      if (!notifyIfInvalid(nextNodes)) {
+      const { nodes, edges, editedNodeFormIds } = useGraphStore.getState();
+      const inputs = { nodes: nextNodes ?? nodes, edges, editedNodeFormIds };
+      let issue = collectCanvasIssues({
+        nodes: nextNodes ?? nodes,
+        edges,
+        editedNodeFormIds,
+      }).find((issue) => issue.blocksRun);
+      if (
+        !issue &&
+        inputs.nodes.some((node) => node.data?.label === Operator.Agent)
+      ) {
+        try {
+          const modelValidIds = await resolveValidIds();
+          issue = collectCanvasIssues({ ...inputs, modelValidIds }).find(
+            (issue) => issue.blocksRun,
+          );
+        } catch {
+          message.error(i18n.t('common.modelUnavailable'));
+          return;
+        }
+      }
+      if (issue) {
+        message.error(
+          `${issue.nodeName}: ${i18n.t(issue.messageKey, issue.messageParams)}`,
+        );
         return;
       }
-
-      const saveRet = await saveGraph(nextNodes);
+      const saveRet = await saveGraph(nextNodes, undefined, undefined, true);
       if (saveRet?.code === 0) {
         // Call the reset api before opening the run drawer each time
         const resetRet = await resetAgent();
@@ -224,7 +135,7 @@ export const useSaveGraphBeforeOpeningDebugDrawer = (show: () => void) => {
         }
       }
     },
-    [notifyIfInvalid, saveGraph, resetAgent, show],
+    [saveGraph, resetAgent, show, resolveValidIds],
   );
 
   return { handleRun, loading };
@@ -265,6 +176,7 @@ export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
   const edges = useGraphStore((state) => state.edges);
   const { saveGraph } = useSaveGraph(false, true);
   const { data: flowDetail } = useFetchAgent();
+  const { data: presence } = useFetchCanvasPresence();
 
   const setSaveTime = useCallback((updateTime: number) => {
     setTime(formatDate(updateTime));
@@ -282,11 +194,12 @@ export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
         agentLoaded: Boolean(flowDetail?.id),
         nodeCount: nodes.length,
         edgeCount: edges.length,
-      })
+      }) ||
+      !canEditAgent(presence.operator_permission ?? 0)
     ) {
       return;
     }
-    const ret = await saveGraph();
+    const ret = await saveGraph(undefined, undefined, undefined, true);
     if (ret?.data?.update_time) {
       setSaveTime(ret.data.update_time);
     }
@@ -298,6 +211,7 @@ export const useWatchAgentChange = (chatDrawerVisible: boolean) => {
     nodes.length,
     saveGraph,
     setSaveTime,
+    presence.operator_permission,
   ]);
 
   useDebounceEffect(

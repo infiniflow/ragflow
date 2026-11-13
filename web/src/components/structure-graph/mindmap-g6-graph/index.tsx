@@ -19,7 +19,10 @@ import { cn } from '@/lib/utils';
 import { Graph, IElementEvent, NodeEvent, treeToGraphData } from '@antv/g6';
 import { memo, useEffect, useRef, useState } from 'react';
 
-import { adaptMindMapToIndentedTree } from '../adapters';
+import {
+  adaptMindMapToIndentedTree,
+  SyntheticMindMapRootId,
+} from '../adapters';
 import { type MindMapG6GraphProps, type MindMapNodeValue } from './types';
 
 interface MindMapNodeData {
@@ -109,6 +112,9 @@ function MindMapG6Graph({
 
       const handleNodeClick = (evt: IElementEvent) => {
         const nodeId = evt.target.id as string;
+        // The synthetic root only wraps multi-root API data — it is not an
+        // entity, so clicking it must not fire chunk navigation/fetching.
+        if (nodeId === SyntheticMindMapRootId) return;
         const nodeData = graph!.getNodeData(nodeId);
         const data = nodeData.data as MindMapNodeData | undefined;
         if (data?.source_chunk_ids?.length) {

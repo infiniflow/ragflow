@@ -24,12 +24,16 @@ function toTreeNode(x: IFile): TreeNodeType {
   };
 }
 
-export function useTagFileTree(value?: string) {
+export function useTagFileTree(value?: string, ownerTenantId?: string) {
   const { fetchList } = useFetchPureFileList();
 
   const [treeData, setTreeData] = useState<TreeNodeType[]>([]);
-
-  const appendFiles = useCallback((files: IFile[]) => {
+  const ownerTenantIdRef = useRef(ownerTenantId);
+  ownerTenantIdRef.current = ownerTenantId;
+  const appendFiles = useCallback((files: IFile[], tenantId?: string) => {
+    if (ownerTenantIdRef.current !== tenantId) {
+      return;
+    }
     setTreeData((tree) =>
       uniqBy(
         tree.concat(
@@ -48,18 +52,26 @@ export function useTagFileTree(value?: string) {
 
   const loadData = useCallback(
     async ({ id }: TreeNodeType) => {
-      const ret = await fetchList(id as string);
-      if (ret.code === 0) {
-        appendFiles(ret.data.files);
+      const ret = await fetchList({
+        parentId: id as string,
+        tenantId: ownerTenantId,
+      }).catch(() => null);
+      if (ret?.code === 0) {
+        appendFiles(ret.data.files, ownerTenantId);
       }
     },
-    [fetchList, appendFiles],
+    [fetchList, appendFiles, ownerTenantId],
   );
 
   // Resolve a previously saved selection: the tree is lazy-loaded, so a file
   // nested in subfolders is not in treeData on mount and its title cannot be
   // displayed. Walk the ancestor chain top-down and load each level.
   const resolvedValueRef = useRef<string>('');
+  useEffect(() => {
+    setTreeData([]);
+    resolvedValueRef.current = '';
+  }, [ownerTenantId]);
+
   useEffect(() => {
     if (
       !value ||
@@ -70,11 +82,22 @@ export function useTagFileTree(value?: string) {
     }
     resolvedValueRef.current = value;
     (async () => {
-      const { data } = await fileManagerService.getAllParentFolder(
-        {},
-        `${value}/ancestors`,
-      );
-      const folders: IFile[] = data?.data?.parent_folders?.toReversed() ?? [];
+      const response = await fileManagerService
+        .getAllParentFolder(
+          {
+            ...(ownerTenantId ? { tenant_id: ownerTenantId } : {}),
+          },
+          `${value}/ancestors`,
+        )
+        .catch(() => null);
+      if (!response) {
+        return;
+      }
+      if (ownerTenantIdRef.current !== ownerTenantId) {
+        return;
+      }
+      const folders: IFile[] =
+        response.data?.data?.parent_folders?.toReversed() ?? [];
       // The root folder is its own parent (parent_id === id). Keeping it in
       // the tree breaks AsyncTreeSelect's root detection (no node would count
       // as top-level, so nothing renders), so drop it — its children then
@@ -82,13 +105,27 @@ export function useTagFileTree(value?: string) {
       const chain = folders.filter((x) => x.id !== x.parent_id);
       setTreeData((tree) => uniqBy(tree.concat(chain.map(toTreeNode)), 'id'));
       for (const folder of folders) {
-        const ret = await fetchList(folder.id);
+        // The ancestor response starts with the selected file itself. Only
+        // folders can be used as parent_id when loading child entries.
+        if (!isFolderType(folder.type)) {
+          continue;
+        }
+        const ret = await fetchList({
+          parentId: folder.id,
+          tenantId: ownerTenantId,
+        }).catch(() => null);
+        if (!ret) {
+          return;
+        }
+        if (ownerTenantIdRef.current !== ownerTenantId) {
+          return;
+        }
         if (ret.code === 0) {
-          appendFiles(ret.data.files);
+          appendFiles(ret.data.files, ownerTenantId);
         }
       }
     })();
-  }, [value, treeData, fetchList, appendFiles]);
+  }, [value, treeData, fetchList, appendFiles, ownerTenantId]);
 
   return { treeData, loadData };
 }
