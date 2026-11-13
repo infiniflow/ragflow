@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/utility"
 )
 
 func TestWikiTargetPageCount_Clamp(t *testing.T) {
@@ -356,7 +357,7 @@ func TestRunPlan_TruncatesToGlobalHardCap(t *testing.T) {
 		ctx:   context.Background(),
 		param: topicModeParam(),
 		deps: common.Deps{
-			Chat: reconcileChatStub{resp: mustJSON(payload)},
+			Chat: reconcileChatStub{resp: utility.MustJSON(payload)},
 		},
 		reduced: wikiExtract{
 			Entities: []wikiEntity{{Name: "Entity", SourceChunkIDs: []string{"c1"}}},

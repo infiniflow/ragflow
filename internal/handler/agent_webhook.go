@@ -58,7 +58,6 @@ package handler
 //     unchanged.
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -72,6 +71,7 @@ import (
 	"ragflow/internal/common"
 	kvrocks "ragflow/internal/engine/kvrocks"
 	"ragflow/internal/service"
+	"ragflow/internal/utility"
 	"strconv"
 	"strings"
 	"time"
@@ -752,7 +752,7 @@ func webhookStartErrorEvent(err error, sessionID string) canvas.RunEvent {
 	return canvas.RunEvent{
 		Type:      "error",
 		SessionID: sessionID,
-		Data:      mustJSON(payload),
+		Data:      utility.MustJSON(payload),
 	}
 }
 
@@ -821,7 +821,7 @@ func webhookContextTerminalEvent(err error, sessionID string) canvas.RunEvent {
 	return canvas.RunEvent{
 		Type:      eventType,
 		SessionID: sessionID,
-		Data:      mustJSON(canvas.ErrorEvent{Message: message}),
+		Data:      utility.MustJSON(canvas.ErrorEvent{Message: message}),
 	}
 }
 
@@ -833,7 +833,7 @@ func (h *AgentHandler) appendWebhookRunTrace(
 		var payload canvas.ErrorEvent
 		if err := json.Unmarshal([]byte(ev.Data), &payload); err == nil && payload.Kind == canvas.RunErrorKindInternal {
 			payload.Message = canvas.InternalRunErrorMessage
-			ev.Data = mustJSON(payload)
+			ev.Data = utility.MustJSON(payload)
 		}
 	}
 	if h.webhookTraceAppender != nil {
@@ -849,7 +849,7 @@ func (h *AgentHandler) appendWebhookFinishedTrace(
 	h.appendWebhookRunTrace(ctx, agentID, startTs, canvas.RunEvent{
 		Type:      "finished",
 		SessionID: sessionID,
-		Data: mustJSON(map[string]any{
+		Data: utility.MustJSON(map[string]any{
 			"elapsed_time": time.Since(startTs).Seconds(),
 			"success":      success,
 		}),
@@ -863,15 +863,6 @@ func (h *AgentHandler) appendWebhookInterruptedTrace(
 	defer cancel()
 	h.appendWebhookRunTrace(traceCtx, agentID, startTs, event)
 	h.appendWebhookFinishedTrace(traceCtx, agentID, startTs, sessionID, false)
-}
-
-// mustJSON marshals v to a JSON object string. Used by trace appenders;
-// panics on marshal failure (acceptable because we only marshal
-// statically-typed map[string]any values).
-func mustJSON(v any) string {
-	var buf bytes.Buffer
-	_ = json.NewEncoder(&buf).Encode(v)
-	return buf.String()
 }
 
 const (

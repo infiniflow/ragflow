@@ -75,19 +75,9 @@ func normalizeRemoteUploadFilename(rawURL, contentType string, data []byte) stri
 
 func sanitizeFilename(name string) string {
 	name = filepath.Base(name)
-	name = strings.TrimSpace(name)
-
-	name = strings.Map(func(r rune) rune {
-		switch r {
-		case '/', '\\', ':', '*', '?', '"', '<', '>', '|', 0:
-			return '_'
-		}
-		if r < 0x20 {
-			return '_'
-		}
-		return r
-	}, name)
-
+	// Delegate control-char stripping and forbidden-char mapping to the
+	// shared component, then keep this function's ext/length/fallback policy.
+	name = utility.SanitizeFileNameComponent(name)
 	name = strings.Trim(name, ". ")
 
 	if name == "" || name == "." || name == ".." {
