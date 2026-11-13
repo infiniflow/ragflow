@@ -17,6 +17,9 @@
 package oceanbase
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -180,5 +183,147 @@ func TestTableCollationMatchesEngine(t *testing.T) {
 				t.Fatal(err)
 			}
 		})
+	}
+}
+
+// conf/infinity_mapping.json is the field list readers select by name. This
+// engine rejects an unknown name before any SQL is sent, so a mapping field the
+// engine has no column for fails at parse time once the tenant table exists.
+// Keep the two in step instead of discovering the gap in production.
+func TestChunkColumnsCoverInfinityMapping(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("..", "..", "..", "conf", "infinity_mapping.json"))
+	if err != nil {
+		t.Fatalf("read conf/infinity_mapping.json: %v", err)
+	}
+	var mapping map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &mapping); err != nil {
+		t.Fatalf("parse conf/infinity_mapping.json: %v", err)
+	}
+	// Fields the mapping keeps as aliases of columns this engine already models,
+	// plus chunk_order_int, which mapChunkField folds onto _order_id.
+	aliases := map[string]bool{
+		"docnm": true, "important_keywords": true, "questions": true,
+		"content": true, "authors": true, "chunk_order_int": true,
+	}
+	selectable := validColumns("chunk")
+	for field := range mapping {
+		if aliases[field] {
+			continue
+		}
+		if !selectable[field] {
+			t.Errorf("field %q is declared in conf/infinity_mapping.json but is not a chunk column", field)
+		}
+		if _, _, err := buildSelectFields([]string{field}, "chunk"); err != nil {
+			t.Errorf("selecting %q from a chunk table: %v", field, err)
+		}
+	}
+}
+
+// The value encoders are driven by their own name sets, so a column stored as
+// an array or JSON must be registered there or a read returns the raw string.
+func TestMappingListColumnsKeepTheirEncoding(t *testing.T) {
+	types := make(map[string]string, len(chunkColumns))
+	for _, column := range chunkColumns {
+		types[column.name] = column.typeSQL
+	}
+	for _, name := range []string{
+		"source_chunk_ids", "source_doc_ids", "compilation_template_ids",
+		"doc_ids_kwd", "entity_names_kwd", "entity_names", "outlinks_kwd",
+		"related_kb_pages_kwd", "page_ids", "rechunked_from_chunk_ids", "aliases",
+		"children_kwd",
+	} {
+		if !arrayColumns[name] {
+			t.Errorf("%q stores a list but is not registered in arrayColumns", name)
+		}
+		if !strings.Contains(types[name], "ARRAY(") {
+			t.Errorf("%q is not an ARRAY column: %q", name, types[name])
+		}
+	}
+	for _, name := range []string{"claims", "source_chunk_hashes"} {
+		if !jsonColumns[name] {
+			t.Errorf("%q stores an object payload but is not registered in jsonColumns", name)
+		}
+		if !strings.Contains(types[name], "JSON") {
+			t.Errorf("%q is not a JSON column: %q", name, types[name])
+		}
+	}
+}
+
+// A chunk table gains columns only when CreateChunkStore runs, and reads can
+// run first. The default projection must therefore follow the table's real
+// schema instead of a static list that includes a column the table lacks.
+func TestChunkDefaultProjectionFollowsTheTableSchema(t *testing.T) {
+	fieldsSQL, _, err := buildSelectFields(nil, "chunk")
+	if err != nil {
+		t.Fatalf("buildSelectFields: %v", err)
+	}
+	if fieldsSQL != "*" {
+		t.Errorf("default chunk projection = %q, want %q", fieldsSQL, "*")
+	}
+	qualified, _, err := buildQualifiedSelectFields(nil, "chunk", "t")
+	if err != nil {
+		t.Fatalf("buildQualifiedSelectFields: %v", err)
+	}
+	if qualified != "`t`.*" {
+		t.Errorf("qualified default chunk projection = %q, want %q", qualified, "`t`.*")
+	}
+}
+
+// An explicit projection that names a column an existing table lacks must read
+// the value from extra instead of failing on the missing column, and a column
+// the table has keeps its plain form.
+func TestChunkExplicitProjectionReadsMissingColumnFromExtra(t *testing.T) {
+	schema := fullChunkSchema()
+	delete(schema, "compile_kwd")
+
+	fieldsSQL, _, err := buildSelectFieldsWithAlias([]string{"compile_kwd"}, "chunk", "", schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "`id`, `extra`"
+	if fieldsSQL != want {
+		t.Errorf("projection = %q, want %q", fieldsSQL, want)
+	}
+
+	qualified, _, err := buildSelectFieldsWithAlias([]string{"compile_kwd"}, "chunk", "t", schema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantQualified := "`t`.`id`, `t`.`extra`"
+	if qualified != wantQualified {
+		t.Errorf("qualified projection = %q, want %q", qualified, wantQualified)
+	}
+
+	fieldsSQL, _, err = buildSelectFieldsWithAlias([]string{"compile_kwd"}, "chunk", "", fullChunkSchema())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fieldsSQL != "`id`, `compile_kwd`" {
+		t.Errorf("projection on a table that has the column = %q, want the physical column", fieldsSQL)
+	}
+
+	// Callers that did not read the schema keep the static form.
+	if fieldsSQL, _, _ = buildSelectFields([]string{"compile_kwd"}, "chunk"); fieldsSQL != "`id`, `compile_kwd`" {
+		t.Errorf("projection without a schema read = %q, want the physical column", fieldsSQL)
+	}
+}
+
+func TestChunkSelectionNeedsSchemaOnlyForOptionalColumns(t *testing.T) {
+	for _, tc := range []struct {
+		fields []string
+		want   bool
+	}{
+		{nil, false},
+		{[]string{"id", "content_with_weight"}, false},
+		{[]string{"compile_kwd"}, true},
+		{[]string{"chunk_order_int", "source_chunk_ids"}, true},
+		{[]string{"*"}, false},
+		// A wildcard already carries every column; asking for an optional field
+		// next to it must not degrade the row to a partial extra projection.
+		{[]string{"*", "compile_kwd"}, false},
+	} {
+		if got := chunkSelectionNeedsSchema(tc.fields); got != tc.want {
+			t.Errorf("chunkSelectionNeedsSchema(%v) = %v, want %v", tc.fields, got, tc.want)
+		}
 	}
 }
