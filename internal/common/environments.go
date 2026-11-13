@@ -48,6 +48,46 @@ func GetEnvSmall(key string) string {
 	return strings.ToLower(GetEnv(key))
 }
 
+// GetEnvBool reads a boolean setting, falling back to def when the variable is
+// unset, blank, or not a boolean. strconv.ParseBool already accepts
+// 1/t/T/TRUE/True/true and 0/f/FALSE/False/false, so malformed values degrade
+// to the default rather than to a fixed zero/false — the caller's def is the
+// only fallback, in either direction.
+func GetEnvBool(key string, def bool) bool {
+	raw := strings.TrimSpace(GetEnv(key))
+	if raw == "" {
+		return def
+	}
+	v, err := strconv.ParseBool(raw)
+	if err != nil {
+		return def
+	}
+	return v
+}
+
+// SplitCommaList reads a comma-separated list, trimming each entry and dropping
+// empty ones. An unset, blank, or separators-only value returns nil so call
+// sites that branch on `if list == nil` keep distinguishing "no list" from
+// "empty list". Entries surrounded by whitespace are trimmed before the
+// empty-check, so "a, ,b" yields [a b], not [a " " b].
+func SplitCommaList(key string) []string {
+	raw := strings.TrimSpace(GetEnv(key))
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // getEnvDuration reads a duration setting such as "90s" or "5m", falling back to
 // def when the variable is unset, malformed, or non-positive. A zero or
 // negative value would remove the deadline instead of tightening it, so it is
@@ -89,9 +129,11 @@ var SandboxArtifactContentTypes = map[string]string{
 	".html": "text/html",
 }
 
+// IsLLMDebugEnabled reports whether LLM_DEBUG is set to a true boolean. Kept as
+// a named entry point so call sites read by intent; it is a thin wrapper over
+// GetEnvBool(EnvLLMDebug, false).
 func IsLLMDebugEnabled() bool {
-	enabled, err := strconv.ParseBool(strings.TrimSpace(GetEnv(EnvLLMDebug)))
-	return err == nil && enabled
+	return GetEnvBool(EnvLLMDebug, false)
 }
 
 // environment variables

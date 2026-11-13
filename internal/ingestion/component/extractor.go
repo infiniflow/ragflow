@@ -40,7 +40,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"regexp"
 	"sort"
 	"strconv"
@@ -78,10 +77,8 @@ const defaultExtractorChatTimeout = 180 * time.Second
 // EXTRACTOR_CHAT_TIMEOUT (seconds), falling back to
 // defaultExtractorChatTimeout on unset/invalid values.
 func extractorChatTimeout() time.Duration {
-	if v := os.Getenv(common.EnvExtractorChatTimeout); v != "" {
-		if n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64); err == nil && n > 0 && n <= math.MaxInt64/int64(time.Second) {
-			return time.Duration(n) * time.Second
-		}
+	if n := common.GetEnvInt(common.EnvExtractorChatTimeout, 0); n > 0 && int64(n) <= math.MaxInt64/int64(time.Second) {
+		return time.Duration(n) * time.Second
 	}
 	return defaultExtractorChatTimeout
 }
@@ -118,10 +115,8 @@ var extractorPool = utility.NewWorkerPool[extractorJob, struct{}](
 // extractorConcurrency resolves the pool size from EXTRACTOR_CONCURRENCY
 // with a safe default of defaultExtractorConcurrency.
 func extractorConcurrency() int {
-	if v := os.Getenv(common.EnvExtractorConcurrency); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return n
-		}
+	if n := common.GetEnvInt(common.EnvExtractorConcurrency, 0); n > 0 {
+		return n
 	}
 	return defaultExtractorConcurrency
 }
