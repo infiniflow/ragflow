@@ -1121,6 +1121,85 @@ func TestAgentChatCompletions_NonStreamingPreservesThinkMarkers(t *testing.T) {
 	}
 }
 
+// TestAgentChatCompletions_NonStreamingReturnsTrace covers `return_trace`: the
+// request field is documented (http_api_reference.md) and Python's agent_api.py
+// aggregated every finished node's event data into final_ans["data"]["trace"]
+// as {component_id, trace: [data]}. The Go handler parsed the flag but never
+// read it, so the aggregated response silently omitted the trace.
+func TestAgentChatCompletions_NonStreamingReturnsTrace(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, tt := range []struct {
+		name        string
+		returnTrace bool
+		wantTrace   bool
+	}{
+		{name: "enabled", returnTrace: true, wantTrace: true},
+		{name: "disabled", returnTrace: false, wantTrace: false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			body := fmt.Sprintf(`{"agent_id":"a1","query":"hello","stream":false,"return_trace":%t}`, tt.returnTrace)
+			c.Request = httptest.NewRequest("POST", "/api/v1/agents/chat/completions", strings.NewReader(body))
+			c.Request.Header.Set("Content-Type", "application/json")
+			c.Set("user", &entity.User{ID: "u1"})
+			c.Set("user_id", "u1")
+
+			runner := &stubChatRunner{events: []canvas.RunEvent{
+				{Type: "node_finished", MessageID: "msg-1", SessionID: "sess-1", Data: `{"component_id":"c1","component_name":"retrieval","outputs":{"structured":{"k":"v"}},"error":null}`},
+				{Type: "node_finished", MessageID: "msg-1", SessionID: "sess-1", Data: `{"component_id":"c2","outputs":{"tool_invocations":[{"tool_name":"search"}]}}`},
+				{Type: "message", MessageID: "msg-1", SessionID: "sess-1", Data: `{"content":"hello back"}`},
+				{Type: "message_end", MessageID: "msg-1", SessionID: "sess-1", Data: `{}`},
+			}}
+			(&AgentHandler{chatRunner: runner}).AgentChatCompletions(c)
+
+			var response map[string]any
+			if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			data, _ := response["data"].(map[string]any)
+			ansData, _ := data["data"].(map[string]any)
+			if ansData == nil {
+				t.Fatalf("response data = %v, want object", response)
+			}
+			trace, hasTrace := ansData["trace"]
+			if !tt.wantTrace {
+				if hasTrace {
+					t.Fatalf("trace = %v, want key absent when return_trace is false", trace)
+				}
+				return
+			}
+			if !hasTrace {
+				t.Fatalf("response data has no trace: %v", ansData)
+			}
+			items, ok := trace.([]any)
+			if !ok || len(items) != 2 {
+				t.Fatalf("trace = %#v, want two node_finished entries", trace)
+			}
+			first, _ := items[0].(map[string]any)
+			if first["component_id"] != "c1" {
+				t.Errorf("trace[0].component_id = %v, want c1", first["component_id"])
+			}
+			nodes, _ := first["trace"].([]any)
+			if len(nodes) != 1 {
+				t.Fatalf("trace[0].trace = %#v, want the node's event data", first["trace"])
+			}
+			node, _ := nodes[0].(map[string]any)
+			if node["component_name"] != "retrieval" {
+				t.Errorf("trace payload = %v, want the node_finished data", node)
+			}
+			outputs, _ := node["outputs"].(map[string]any)
+			if structured, _ := outputs["structured"].(map[string]any); structured["k"] != "v" {
+				t.Errorf("trace outputs = %v, want the node outputs preserved", outputs)
+			}
+			second, _ := items[1].(map[string]any)
+			if second["component_id"] != "c2" {
+				t.Errorf("trace[1].component_id = %v, want c2", second["component_id"])
+			}
+		})
+	}
+}
+
 type emptySessionCaptureRunner struct {
 	sessionID        string
 	trustedSessionID string
