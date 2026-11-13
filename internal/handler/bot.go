@@ -193,6 +193,10 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 // http.Server.WriteTimeout covers the whole response, so a slow answer would be
 // truncated without it (issue #21649).
 func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
+	common.StartOperationLog(c, "request_chatbot_completion")
+	defer common.FinishOperationLog(c)
+	common.SetOperationResource(c, "chat_id", c.Param("dialog_id"))
+
 	dialogID := c.Param("dialog_id")
 	if dialogID == "" {
 		common.RespondError(c, common.CodeArgumentError, "`dialog_id` is required.")
@@ -211,6 +215,7 @@ func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 	}
 	ctx, cancel := context.WithCancel(c.Request.Context())
 	defer cancel()
+	common.SetOperationResource(c, "session_id", body.SessionID)
 	frames, ec, err := h.botService.ChatbotCompletion(
 		ctx, dialogID, body)
 	if err != nil {
@@ -224,6 +229,7 @@ func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
+	common.FinishOperationLog(c)
 	for f := range frames {
 		if f.Done {
 			if err := service.WriteDoneFrame(c.Writer); err != nil {
