@@ -466,6 +466,9 @@ func (o *OllamaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 	}
 
 	req.Header.Set("Content-Type", "application/json")
+	if auth := BearerAuth(apiConfig); auth != "" {
+		req.Header.Set("Authorization", auth)
+	}
 
 	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {

@@ -238,6 +238,49 @@ func TestOllamaListModels(t *testing.T) {
 	}
 }
 
+func TestOllamaListModelsSendsAuthorizationWithAPIKey(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
+			t.Errorf("Authorization=%q, want %q", got, "Bearer test-key")
+		}
+		_, _ = io.WriteString(w, `{"models":[{"name":"llama3:latest"}]}`)
+	}))
+	defer srv.Close()
+
+	apiKey := "test-key"
+	models, err := newOllamaForListModelsTest(srv.URL).ListModels(ctx, &APIConfig{ApiKey: &apiKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(models) != 1 {
+		t.Fatalf("len(models)=%d, want 1", len(models))
+	}
+}
+
+func TestOllamaListModelsOmitsAuthorizationWithoutAPIKey(t *testing.T) {
+	withSSRFBypass(t)
+	ctx := t.Context()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "" {
+			t.Errorf("Authorization=%q, want empty", got)
+		}
+		_, _ = io.WriteString(w, `{"models":[{"name":"llama3:latest"}]}`)
+	}))
+	defer srv.Close()
+
+	// A key of only whitespace must behave like an empty key.
+	apiKey := "   "
+	models, err := newOllamaForListModelsTest(srv.URL).ListModels(ctx, &APIConfig{ApiKey: &apiKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(models) != 1 {
+		t.Fatalf("len(models)=%d, want 1", len(models))
+	}
+}
+
 func TestOllamaListModelsFallsBackToModelField(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
