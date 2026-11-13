@@ -21,6 +21,7 @@ import { CreateFolderDialog } from './create-folder-dialog';
 import { FileBreadcrumb } from './file-breadcrumb';
 import { FilesTable } from './files-table';
 import {
+  useGetFolderId,
   useHandleConnectToKnowledge,
   UseHandleConnectToKnowledgeReturnType,
 } from './hooks';
@@ -82,8 +83,13 @@ export default function Files() {
     clearRowSelection,
     selectedCount,
   } = useRowSelection();
+  const folderId = useGetFolderId();
 
   useClearSelectionOnPageChange(pagination, clearRowSelection);
+
+  useEffect(() => {
+    clearRowSelection();
+  }, [folderId, clearRowSelection]);
 
   useGoToPreviousPageOnEmpty(files?.length, loading, {
     deletionKey: ListDeletionKey.FileList,
