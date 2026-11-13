@@ -300,9 +300,28 @@ function useSetDoneRecord() {
   };
 }
 
+// A model failure while answering is streamed as a frame with a non-zero code
+// and an answer of "**ERROR**: <reason>".
+const ErrorAnswerPattern = /^\s*\*\*ERROR\*\*:?\s*/;
+
+function getStreamFailure(frame: any): string | undefined {
+  const answer = frame?.data?.answer;
+  const isErrorAnswer =
+    typeof answer === 'string' && ErrorAnswerPattern.test(answer);
+  if (!isErrorAnswer && (!frame?.code || frame.code === 0)) return undefined;
+  return (
+    frame.message ||
+    (isErrorAnswer ? answer.replace(ErrorAnswerPattern, '') : '') ||
+    'Request failed'
+  );
+}
+
 export const useSendMessageWithSse = () => {
   const [answer, setAnswer] = useState<IAnswer>({} as IAnswer);
   const [done, setDone] = useState(true);
+  // Why the latest request failed (an error envelope instead of a stream, or no
+  // response at all); cleared when the next request starts.
+  const [error, setError] = useState<string>();
   const { doneRecord, clearDoneRecord, setDoneRecordById, allDone } =
     useSetDoneRecord();
   const timer = useRef<any>();
@@ -340,7 +359,9 @@ export const useSendMessageWithSse = () => {
       controller?: AbortController,
     ): Promise<{ response: Response; data: ResponseType } | undefined> => {
       initializeSseRef();
+      let gotResponse = false;
       try {
+        setError(undefined);
         setDoneValue(body, false);
         const response = await fetch(url, {
           method: 'POST',
@@ -352,6 +373,7 @@ export const useSendMessageWithSse = () => {
           signal: controller?.signal || sseRef.current?.signal,
         });
 
+        gotResponse = true;
         const res = response.clone().json();
 
         const reader = response?.body
@@ -372,7 +394,10 @@ export const useSendMessageWithSse = () => {
               try {
                 const val = JSON.parse(value?.data || '');
                 const d = val?.data;
-                if (typeof d !== 'boolean') {
+                const failure = getStreamFailure(val);
+                if (failure !== undefined) {
+                  setError(failure);
+                } else if (typeof d !== 'boolean') {
                   setAnswer((prev) => {
                     return {
                       ...d,
@@ -394,8 +419,31 @@ export const useSendMessageWithSse = () => {
         }
         setDoneValue(body, true);
         resetAnswer();
-        return { data: await res, response };
-      } catch {
+        // A stream body is not JSON, so it does not parse; a parseable body is
+        // an error envelope or a plain reply. A non-OK status is a failure
+        // whatever the body: a proxy's 502 or 503 page is HTML or empty.
+        let data: any;
+        try {
+          data = await res;
+        } catch {
+          data = undefined;
+        }
+        if (
+          response.status !== 200 ||
+          (data !== undefined && data?.code !== 0)
+        ) {
+          setError(
+            data?.message || response.statusText || `HTTP ${response.status}`,
+          );
+        }
+        return data === undefined ? undefined : { data, response };
+      } catch (e) {
+        if (
+          !gotResponse &&
+          !(e instanceof DOMException && e.name === 'AbortError')
+        ) {
+          setError(e instanceof Error ? e.message : String(e));
+        }
         setDoneValue(body, true);
 
         resetAnswer();
@@ -413,6 +461,7 @@ export const useSendMessageWithSse = () => {
     send,
     answer,
     done,
+    error,
     doneRecord,
     allDone,
     setDone,

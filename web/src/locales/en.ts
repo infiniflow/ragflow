@@ -20,6 +20,7 @@ export default {
       rename: 'Rename',
       name: 'Name',
       save: 'Save',
+      retry: 'Retry',
       stop: 'Stop',
       resume: 'Resume',
       namePlaceholder: 'Please input name',
@@ -4188,9 +4189,23 @@ Important structured information may include: names, dates, locations, events, k
       serviceStatus: 'Services',
       userManagement: 'Users',
       sandboxSettings: 'Sandbox',
+      modelSettings: 'Models',
       registrationWhitelist: 'Whitelist',
       roles: 'Roles',
       monitoring: 'Monitoring',
+
+      modelSettingsPage: {
+        description:
+          'Settings that apply to every call RAGFlow makes to a model provider.',
+        maxRetries: 'Retries on failure',
+        maxRetriesHint:
+          'How many times a failed model call is retried ({{min}}-{{max}}, 0 turns retries off). Applies to network errors and HTTP 408, 429 and 5xx; takes effect on every service within about 15 seconds. Leave empty to use the deployment default (llm.max_retries or LLM_MAX_RETRIES).',
+        useDefault: 'Deployment default',
+        errorNotInteger: 'Enter a whole number.',
+        errorOutOfRange: 'Enter a number from {{min}} to {{max}}.',
+        saved: 'Model settings saved',
+        saveFailed: 'Failed to save model settings',
+      },
 
       sandboxSettingsPage: {
         description:

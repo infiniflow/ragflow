@@ -1,6 +1,12 @@
 {
   "system_settings": [
     {
+      "name": "llm.max_retries",
+      "source": "variable",
+      "data_type": "integer",
+      "value": ""
+    },
+    {
       "name": "enable_whitelist",
       "source": "variable",
       "data_type": "bool",

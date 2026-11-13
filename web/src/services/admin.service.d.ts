@@ -15,6 +15,13 @@
  */
 
 declare namespace AdminService {
+  export type Variable = {
+    name: string;
+    value: string;
+    data_type: string;
+    setting_type: string;
+  };
+
   export type LoginData = {
     access_token: string;
     avatar: unknown;

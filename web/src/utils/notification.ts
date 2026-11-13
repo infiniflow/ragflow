@@ -22,6 +22,8 @@ type NotificationOptions = {
   message: string;
   description?: string;
   duration?: number;
+  /** A button on the toast, e.g. to re-send the request that failed. */
+  action?: { label: string; onClick: () => void };
 };
 
 const notification = {
@@ -45,6 +47,7 @@ const notification = {
       duration: options.duration
         ? options.duration * 1000
         : defaultConfig.duration,
+      action: options.action,
     });
   },
   warning: (options: NotificationOptions) => {

@@ -4,7 +4,7 @@ import { useHandleMessageInputChange } from '@/hooks/logic-hooks';
 import { useFetchChat, useGetChatSearchParams } from '@/hooks/use-chat-request';
 import { useVirtualMessages } from '@/hooks/use-virtual-messages';
 import { buildMessageListWithUuid } from '@/utils/chat';
-import { IMessage, Message } from '@/interfaces/database/chat';
+import { IMessage, Message, Variable } from '@/interfaces/database/chat';
 import notification from '@/utils/notification';
 import { trim } from 'lodash';
 import { useCallback, useEffect, useRef } from 'react';
@@ -66,6 +66,19 @@ export const useCurrentChatSession = () => {
   };
 };
 
+/**
+ * Everything needed to re-send a failed question as it was first sent: the
+ * toast outlives the render that raised it, so the chat, its model settings and
+ * the send options are captured here rather than read from the latest render.
+ */
+type SendRequest = { chatId?: string; llmSetting?: Variable };
+
+type FailedSend = {
+  sessionId: string;
+  message: IMessage;
+  request: SendRequest;
+} & NextMessageInputOnPressEnterParameter;
+
 export const useSendMessage = () => {
   const { conversationId } = useGetChatSearchParams();
   const { t } = useTranslation();
@@ -103,28 +116,37 @@ export const useSendMessage = () => {
   // so a retry keeps the same options instead of silently dropping them.
   const lastSendOptionsRef = useRef<NextMessageInputOnPressEnterParameter>({});
 
+  // The Retry action on the failure toast re-sends the failed question. It
+  // reaches back into sendMessage, which is what raises that toast.
+  const retryFailedSendRef = useRef<(failed: FailedSend) => void>();
+
   const sendMessage = useCallback(
     async ({
       message,
       currentConversationId,
       enableInternet,
       enableThinking,
+      request,
     }: {
       message: IMessage;
       currentConversationId?: string;
+      /** Pins the chat and model settings of a retried send. */
+      request?: SendRequest;
     } & NextMessageInputOnPressEnterParameter) => {
       const sessionId = currentConversationId ?? conversationId;
+      const { chatId: requestChatId, llmSetting: requestLlmSetting } =
+        request ?? { chatId, llmSetting: currentDialog?.llm_setting };
 
       lastSendOptionsRef.current = { enableInternet, enableThinking };
 
-      const { ok, aborted } = await runChatCompletionStream({
+      const { ok, aborted, errorMessage } = await runChatCompletionStream({
         conversationId: sessionId,
-        chatId,
+        chatId: requestChatId,
         question: message.content,
         files: message.files,
         enableThinking,
         enableInternet,
-        llmSetting: currentDialog?.llm_setting,
+        llmSetting: requestLlmSetting,
       });
 
       if (!ok && !aborted) {
@@ -133,11 +155,69 @@ export const useSendMessage = () => {
         // text on the failing session instead, and tell the user something went
         // wrong wherever they currently are.
         failStream(sessionId, message.content);
-        notification.error({ message: t('message.requestError') });
+        const failed: FailedSend = {
+          sessionId,
+          message,
+          request: { chatId: requestChatId, llmSetting: requestLlmSetting },
+          enableInternet,
+          enableThinking,
+        };
+        const retry = () => retryFailedSendRef.current?.(failed);
+        notification.error({
+          message: t('message.requestError'),
+          description: errorMessage,
+          // Long enough to reach the Retry button.
+          duration: 15,
+          action: { label: t('common.retry'), onClick: retry },
+        });
       }
     },
     [conversationId, chatId, failStream, t, currentDialog?.llm_setting],
   );
+
+  const retryFailedSend = useCallback(
+    ({
+      sessionId,
+      message,
+      request,
+      enableInternet,
+      enableThinking,
+    }: FailedSend) => {
+      // A stream that is already running owns the last message pair.
+      if (useChatStreamStore.getState().sessions[sessionId]?.isStreaming) {
+        return;
+      }
+
+      // The failure parked the question in the input box; sending it again
+      // replaces that copy, unless the user has typed something else since.
+      // The box belongs to the active conversation, so a draft in another one
+      // is left alone even if it happens to hold the same text.
+      consumePendingInput(sessionId);
+      if (sessionId === conversationId) {
+        setValue((current) => (current === message.content ? '' : current));
+      }
+
+      const questionMessage: IMessage = { ...message, id: uuid() };
+      appendQuestion(sessionId, questionMessage);
+      sendMessage({
+        message: questionMessage,
+        currentConversationId: sessionId,
+        request,
+        ...resolveResendOptions({ enableInternet, enableThinking }),
+      });
+    },
+    [
+      appendQuestion,
+      consumePendingInput,
+      conversationId,
+      sendMessage,
+      setValue,
+    ],
+  );
+
+  useEffect(() => {
+    retryFailedSendRef.current = retryFailedSend;
+  }, [retryFailedSend]);
 
   // Hand a failed question back to the input box, but only once the box is
   // empty so a message the user is currently typing is never clobbered.

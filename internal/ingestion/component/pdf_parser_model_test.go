@@ -51,6 +51,7 @@ type pdfParserRequest struct {
 func tenantPDFParserFixture(t *testing.T, provider string) (*gorm.DB, string, chan pdfParserRequest) {
 	t.Helper()
 	withSSRFBypass(t)
+	withoutProviderRetries(t)
 	requests := make(chan pdfParserRequest, 8)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.Header.Get("Content-Type"), "multipart") {

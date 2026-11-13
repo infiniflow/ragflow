@@ -14,6 +14,10 @@ import { mergeAnswerChunk } from '@/utils/chat';
 import { AnswerFlushIntervalMs } from './constants';
 import { useChatStreamStore } from './store';
 
+// A model failure that happens while answering reaches the client as a normal
+// stream whose whole answer is "**ERROR**: <reason>", not as an error envelope.
+const ErrorAnswerPattern = /^\s*\*\*ERROR\*\*:?\s*/;
+
 export type RunChatCompletionStreamParams = {
   conversationId: string;
   chatId?: string;
@@ -27,6 +31,8 @@ export type RunChatCompletionStreamParams = {
 export type RunChatCompletionStreamResult = {
   ok: boolean;
   aborted: boolean;
+  /** The server's explanation when it answered with an error envelope. */
+  errorMessage?: string;
 };
 
 export async function runChatCompletionStream({
@@ -52,6 +58,7 @@ export async function runChatCompletionStream({
   let accumulatedAnswer = '';
   let aborted = false;
   let ok = true;
+  let errorMessage: string | undefined;
 
   // Chunks arrive faster than the UI can use them, so they're coalesced into a
   // single store write per AnswerFlushIntervalMs. Fields are merged rather than
@@ -110,6 +117,14 @@ export async function runChatCompletionStream({
       }
     }
 
+    // An answer that is nothing but the error marker is a failed request, like
+    // an error envelope; an error after real text stays part of the answer.
+    if (!aborted && ErrorAnswerPattern.test(accumulatedAnswer)) {
+      ok = false;
+      errorMessage =
+        accumulatedAnswer.replace(ErrorAnswerPattern, '') || undefined;
+    }
+
     // A healthy stream body isn't valid JSON, so errorBody stays undefined and
     // the request counts as successful. A parseable body means the endpoint
     // answered with an error envelope instead of a stream.
@@ -120,6 +135,7 @@ export async function runChatCompletionStream({
       (response.status !== 200 || errorBody.code !== 0)
     ) {
       ok = false;
+      errorMessage = errorBody.message || undefined;
     }
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
@@ -134,5 +150,5 @@ export async function runChatCompletionStream({
     endStream(conversationId);
   }
 
-  return { ok, aborted };
+  return { ok, aborted, errorMessage };
 }

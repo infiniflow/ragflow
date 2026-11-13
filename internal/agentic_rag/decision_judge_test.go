@@ -85,9 +85,15 @@ func decisionStub(t *testing.T, nouls []float64, status int, seen *map[string]an
 	}))
 }
 
-// backendFor builds a backend against the stub with the given threshold.
+// backendFor builds a backend against the stub with the given threshold. The
+// tests count the requests a failing stub receives, so provider-call retries are
+// off: they would multiply every failure.
 func backendFor(t *testing.T, url string, minProb float64) *decisionBackend {
 	t.Helper()
+	t.Cleanup(func() { _ = common.SetLLMMaxRetries(common.DefaultLLMMaxRetries) })
+	if err := common.SetLLMMaxRetries(0); err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv(common.EnvDecisionBackend, "decision-api")
 	t.Setenv(common.EnvDecisionKey, "test-key")
 	t.Setenv(common.EnvDecisionURL, url)

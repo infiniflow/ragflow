@@ -20,6 +20,7 @@ export default {
       rename: '重命名',
       name: '名称',
       save: '保存',
+      retry: '重试',
       stop: '停止',
       resume: '恢复',
       namePlaceholder: '请输入名称',
@@ -3650,9 +3651,22 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
       serviceStatus: '服务',
       userManagement: '用户',
       sandboxSettings: '沙箱',
+      modelSettings: '模型',
       registrationWhitelist: '白名单',
       roles: '角色',
       monitoring: '监控',
+
+      modelSettingsPage: {
+        description: '适用于 RAGFlow 调用模型供应商的所有请求的设置。',
+        maxRetries: '失败重试次数',
+        maxRetriesHint:
+          '模型调用失败后的重试次数（{{min}}-{{max}}，0 表示不重试）。适用于网络错误以及 HTTP 408、429 和 5xx；约 15 秒内对所有服务生效。留空则使用部署默认值（llm.max_retries 或 LLM_MAX_RETRIES）。',
+        useDefault: '部署默认值',
+        errorNotInteger: '请输入整数。',
+        errorOutOfRange: '请输入 {{min}} 到 {{max}} 之间的数字。',
+        saved: '模型设置已保存',
+        saveFailed: '保存模型设置失败',
+      },
 
       sandboxSettingsPage: {
         description: '配置代码执行沙箱供应商。沙箱由 Agent 中的代码组件使用。',
