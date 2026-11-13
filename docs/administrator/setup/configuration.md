@@ -221,6 +221,12 @@ For other S3-compatible backends (AWS S3, Alibaba Cloud OSS, Azure Blob, Google 
 - `username`: Optional Kvrocks ACL username.
 - `password`: The password used by the Go services to access Kvrocks.
 
+### `llm`
+
+- `max_retries`: How many times a failed model-provider call (chat, embedding, rerank, and other remote model APIs) is retried. Defaults to `3`; `0` disables retries; the valid range is `0` to `10`, and any other value stops the service at startup. The `LLM_MAX_RETRIES` environment variable overrides this key.
+
+  A call is retried on a network error, a timeout, or an HTTP `408`, `429`, or `5xx` response, waiting with exponential backoff and jitter (and honoring `Retry-After`). Authentication and validation errors (other `4xx`) and cancelled requests are never retried. A streamed answer is retried only until its first byte arrives. All attempts share the original request timeout.
+
 ### Configure model providers
 
 Go to **User settings** **>** **Model providers** to configure provider credentials, add models, and select the default models for the current account. See [Configure Model API Key](../../guides/models/llm_api_key_setup.md) for instructions.

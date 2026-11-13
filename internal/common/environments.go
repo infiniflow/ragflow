@@ -584,6 +584,12 @@ const (
 // built. Unset, malformed, or non-positive keeps the client default.
 const EnvLLMHTTPResponseHeaderTimeout = "LLM_HTTP_RESPONSE_HEADER_TIMEOUT"
 
+// EnvLLMMaxRetries sets how many times a failed model-provider call is retried
+// (network errors, HTTP 408/429/5xx). It overrides the llm.max_retries config
+// key. 0 disables retries; valid range [0, MaxLLMMaxRetries], default
+// DefaultLLMMaxRetries.
+const EnvLLMMaxRetries = "LLM_MAX_RETRIES"
+
 // DeepDocModelFiles is the single source of truth for the weights the
 // in-process (Go) DeepDoc backend requires to serve. The Go backend consumes
 // the FlatBuffer (.ort) serialization — the static ONNX Runtime build linked

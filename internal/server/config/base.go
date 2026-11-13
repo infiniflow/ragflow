@@ -33,6 +33,7 @@ type Config struct {
 	apiServer APIServerConfig
 	syncer    SyncerConfig
 	ingestor  IngestorConfig
+	llm       LLMConfig
 
 	log  LogConfig
 	smtp common.SMTPConfig
