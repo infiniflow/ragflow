@@ -130,6 +130,9 @@ func (h *ChatHandler) ListChats(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/chats [post]
 func (h *ChatHandler) Create(c *gin.Context) {
+	common.StartOperationLog(c, "create_chat")
+	defer common.FinishOperationLog(c)
+
 	user, errorCode, err := billingQuotaUser(c)
 	if err != nil {
 		common.RespondError(c, errorCode, err.Error())
@@ -157,6 +160,7 @@ func (h *ChatHandler) Create(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "chat_id", result["id"])
 	common.RespondSuccess(c, result, "success")
 }
 
@@ -232,6 +236,10 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 }
 
 func (h *ChatHandler) DeleteChat(c *gin.Context) {
+	common.StartOperationLog(c, "delete_chat")
+	defer common.FinishOperationLog(c)
+	common.SetOperationResource(c, "chat_id", c.Param("chat_id"))
+
 	chatID := c.Param("chat_id")
 	if chatID == "" {
 		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "chat_id is required")
@@ -252,6 +260,9 @@ func (h *ChatHandler) DeleteChat(c *gin.Context) {
 
 // BulkDeleteChats soft deletes multiple chats owned by the current user.
 func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
+	common.StartOperationLog(c, "delete_chats")
+	defer common.FinishOperationLog(c)
+
 	if c.Request.Body == nil || c.Request.ContentLength == 0 {
 		common.RespondSuccess(c, map[string]interface{}{}, "success")
 		return
@@ -263,9 +274,12 @@ func (h *ChatHandler) BulkDeleteChats(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "chat_ids", req.IDs)
+	common.SetOperationResource(c, "delete_all", req.DeleteAll)
 	ctx := c.Request.Context()
 	if len(req.IDs) == 0 && !req.DeleteAll {
 		if req.ChatID != "" {
+			common.SetOperationResource(c, "chat_id", req.ChatID)
 			if err := h.chatService.DeleteChat(ctx, req.ChatID); err != nil {
 				if respondPermissionErrorIf(c, err, true) {
 					return
@@ -397,6 +411,10 @@ func (h *ChatHandler) PatchChat(c *gin.Context) {
 }
 
 func (h *ChatHandler) updateChatByMethod(c *gin.Context, patch bool) {
+	common.StartOperationLog(c, "update_chat")
+	defer common.FinishOperationLog(c)
+	common.SetOperationResource(c, "chat_id", c.Param("chat_id"))
+
 	chatID := c.Param("chat_id")
 	if chatID == "" {
 		common.RespondError(c, common.CodeBadRequest, "chat_id is required")

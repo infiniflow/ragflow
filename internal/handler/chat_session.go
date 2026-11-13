@@ -330,6 +330,10 @@ func (h *ChatSessionHandler) GetSession(c *gin.Context) {
 
 // CreateSession create a session in a dialog
 func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
+	common.StartOperationLog(c, "create_chat_session")
+	defer common.FinishOperationLog(c)
+	common.SetOperationResource(c, "chat_id", c.Param("chat_id"))
+
 	chatID := strings.TrimSpace(c.Param("chat_id"))
 	if chatID == "" {
 		common.RespondError(c, common.CodeBadRequest, "chat_id is required")
@@ -360,11 +364,16 @@ func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "session_id", result.ID)
 	common.RespondSuccess(c, result, "success")
 }
 
 // DeleteSessions delete a session in a dialog
 func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
+	common.StartOperationLog(c, "delete_chat_sessions")
+	defer common.FinishOperationLog(c)
+	common.SetOperationResource(c, "chat_id", c.Param("chat_id"))
+
 	chatID := strings.TrimSpace(c.Param("chat_id"))
 	if chatID == "" {
 		common.RespondError(c, common.CodeBadRequest, "chat_id is required")
@@ -386,6 +395,17 @@ func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+	var sessionIDs []string
+	if ids, ok := req["ids"].([]any); ok {
+		for _, value := range ids {
+			if id, ok := value.(string); ok && strings.TrimSpace(id) != "" {
+				sessionIDs = append(sessionIDs, id)
+			}
+		}
+	}
+	deleteAll, _ := req["delete_all"].(bool)
+	common.SetOperationResource(c, "session_ids", sessionIDs)
+	common.SetOperationResource(c, "delete_all", deleteAll)
 	result, message, code, err := h.chatSessionService.DeleteSessions(ctx, chatID, req)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
@@ -399,6 +419,10 @@ func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
 }
 
 func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
+	common.StartOperationLog(c, "update_chat_session")
+	defer common.FinishOperationLog(c)
+	common.SetOperationResource(c, "chat_id", c.Param("chat_id"))
+
 	chatID, sessionID := c.Param("chat_id"), c.Param("session_id")
 
 	// An empty payload is a valid no-op (mirrors Python's update_session).
