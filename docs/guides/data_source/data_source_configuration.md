@@ -96,6 +96,27 @@ The SharePoint data source is used to synchronize SharePoint site document libra
 
 ![SharePoint](https://raw.githubusercontent.com/infiniflow/ragflow-docs/2ee87008723d56cb6ebf0e9c92f6ef2ad1a45254/images/SharePoint.jpg)
 
+### Select files and folders
+
+- **Document library ID** (`drive_id`): optional Microsoft Graph drive ID within the configured site. Empty means all accessible libraries.
+- **Root folder IDs** (`root_folder_ids`): optional list of Graph folder item IDs within that library. Requires `drive_id`. Add IDs individually with **+**, or separate them with semicolons. Empty means the library root. Use Graph IDs, not sharing URLs. Saved single-folder settings are displayed as one list entry.
+- **Excluded file extensions** (`excluded_extensions`): a list such as `["mp4", ".zip"]`. Matching ignores case and accepts an optional leading dot.
+- **Excluded folder names** (`excluded_folder_names`): exact, case-sensitive names at any depth, such as `["Archive"]`.
+- **Excluded folder paths** (`excluded_folder_paths`): exact, case-sensitive paths relative to each independent selected root, such as `["Projects/Archive"]`. Use `/` separators without a leading or trailing slash. Paths cannot contain `.` or `..` segments or wildcards.
+- **Exclude video files** (`exclude_videos`): skip video MIME types and recognized video extensions. Enabled for new connections created in the form. Existing configurations without this field retain their previous video selection behavior.
+
+Each excluded folder is skipped together with its entire subtree, before listing its children. Missing exclusion lists mean no exclusions. These rules use a shared filter implementation; SharePoint is the first connector that exposes these settings. Other connectors do not yet support them.
+
+Repeated root IDs are collapsed. When both an ancestor and its descendant are selected, only the ancestor is traversed, regardless of input order. Its exclusions still apply: adding an excluded descendant as another root does not bypass them. Independent roots are combined by drive/item ID, so equal filenames in different folders remain separate documents. Overlap detection reads ancestor metadata; a failed lookup fails the run instead of silently widening its scope. All roots must belong to one library; use separate connections for different libraries.
+
+SharePoint scans metadata on every run, including older files that become eligible after a filter or root change. It compares `cTag` (falling back to `eTag`), size, filename, and path with the stored fingerprint before downloading. Files without either tag are downloaded because their revision cannot be determined reliably. Changed files are fetched individually, with a revision check after download. A file changed during download fails that item and is reconsidered on the next run. Existing documents may require one download when first adopting version fingerprints.
+
+Excluded files, unsupported upload types, and files above the connector's size limit are counted as skipped, with a reason in the syncer log. Authentication, listing, and download failures are not treated as exclusions. Unsupported types use RAGFlow's upload classification, not a second connector-specific allowlist. A recognized upload type may still fail its dataset's parser.
+
+Changing the library, root, or exclusions does **not** remove previously indexed files. If **Sync deleted files** is enabled, pruning lists the entire configured site without applying these restrictions. Only items missing from that complete snapshot are candidates for deletion. This requires listing access to the entire site and may be more expensive than synchronization. Keep deletion disabled for the initial pilot; changing the site itself or source permissions requires a separate migration review.
+
+Connect the source to the intended Dataset using RAGFlow's existing source association. Test first with an empty Dataset: previously uploaded manual documents do not automatically become connector-managed documents. Scheduling continues to use RAGFlow's existing refresh interval; these settings do not add a wall-clock schedule.
+
 ## Box
 
 The Box data source is used to synchronize files and folders in Box cloud drive to a RAGFlow Dataset. After configuration, enterprise cloud drive materials and externally collaborated files can be queried in a unified way.

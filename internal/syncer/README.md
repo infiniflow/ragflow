@@ -7,6 +7,22 @@ This document describes the main architecture of the Go data-source syncer, the 
 
 ## Overall architecture
 
+### SharePoint request budget
+
+SharePoint Graph calls share a process-local budget keyed by tenant and client ID:
+at most two requests in flight and one new request every 500 ms. Sync, prune and
+validation connector instances in the same process share this budget. A 429 or
+503 response postpones all matching instances according to `Retry-After` (or
+exponential backoff when absent). Waiting respects cancellation and task deadlines.
+Separate server processes do not share this limiter.
+
+Interrupted response bodies are discarded and the individual GET is retried,
+up to four attempts. Permanent HTTP errors and oversized responses fail without
+retrying. Exhausted request errors include the original Graph path without query
+parameters or signed redirect URLs. File failures additionally record the file
+name, source ID, task ID and dataset ID in the syncer log; the task summary retains
+the first file failure.
+
 The Go syncer converts sync tasks in `sync_logs` into connector calls, then writes the unified documents produced by the connectors into the knowledge base. The production path relies on NATS/JetStream for task wake-up and cross-process delivery; the DB remains the source of truth for task status, connector configuration, and scheduling times.
 
 ```mermaid

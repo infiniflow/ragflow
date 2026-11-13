@@ -21,9 +21,105 @@ import {
   DataSourceKey,
   generateDataSourceInfo,
   getDataSourceFieldsWithExtras,
+  getCommonExtraDefaultValues,
+  mergeDataSourceFormValues,
+  normalizeSharePointRoots,
 } from './index';
 
 const translate = ((key: string) => key) as TFunction;
+
+describe('Data source form merging', () => {
+  it('merges values without interpreting connector-specific fields', () => {
+    const values = {
+      source: DataSourceKey.SHAREPOINT,
+      config: { root_folder_id: 'saved-root' },
+    };
+    expect(mergeDataSourceFormValues({}, values)).toEqual(values);
+  });
+});
+
+describe('SharePoint file selection', () => {
+  it('edits multiple roots as tags and loads a saved single root', () => {
+    const fields = getDataSourceFieldsWithExtras(
+      translate,
+      DataSourceKey.SHAREPOINT,
+    );
+    expect(
+      fields.find((field) => field.name === 'config.root_folder_ids'),
+    ).toMatchObject({ type: FormFieldType.Tag });
+    const values = mergeDataSourceFormValues(
+      DataSourceFormDefaultValues[DataSourceKey.SHAREPOINT],
+      normalizeSharePointRoots({
+        source: DataSourceKey.SHAREPOINT,
+        config: { root_folder_id: ' old-root ' },
+      }),
+    );
+    expect(values.config.root_folder_ids).toEqual(['old-root']);
+    expect(values.config).not.toHaveProperty('root_folder_id');
+    const edited = mergeDataSourceFormValues(values, {
+      config: { root_folder_ids: ['a', 'b', 'c'] },
+    });
+    expect(edited.config.root_folder_ids).toEqual(['a', 'b', 'c']);
+  });
+
+  it('keeps an explicitly cleared root list empty', () => {
+    const values = mergeDataSourceFormValues(
+      DataSourceFormDefaultValues[DataSourceKey.SHAREPOINT],
+      normalizeSharePointRoots({
+        source: DataSourceKey.SHAREPOINT,
+        config: { root_folder_id: 'old-root', root_folder_ids: [] },
+      }),
+    );
+    expect(values.config.root_folder_ids).toEqual([]);
+    expect(values.config).not.toHaveProperty('root_folder_id');
+  });
+
+  it('offers optional scope and exclusion settings without enabling deletion', () => {
+    const fields = getDataSourceFieldsWithExtras(
+      translate,
+      DataSourceKey.SHAREPOINT,
+    );
+    for (const name of [
+      'drive_id',
+      'root_folder_ids',
+      'excluded_extensions',
+      'excluded_folder_names',
+      'excluded_folder_paths',
+      'exclude_videos',
+    ]) {
+      expect(
+        fields.find((field) => field.name === `config.${name}`),
+      ).toMatchObject({ required: false });
+    }
+    const values = mergeDataSourceFormValues(
+      DataSourceFormDefaultValues[DataSourceKey.SHAREPOINT],
+      getCommonExtraDefaultValues(),
+      {
+        config: {
+          excluded_extensions: ['.MP4'],
+          excluded_folder_paths: ['Projects/Archive'],
+          exclude_videos: false,
+        },
+      },
+    );
+    expect(values.config).toMatchObject({
+      excluded_extensions: ['.MP4'],
+      excluded_folder_paths: ['Projects/Archive'],
+      exclude_videos: false,
+      sync_deleted_files: false,
+    });
+  });
+
+  it('does not show folder exclusions on sources that have not implemented them', () => {
+    const fields = getDataSourceFieldsWithExtras(
+      translate,
+      DataSourceKey.GOOGLE_DRIVE,
+    );
+    expect(
+      fields.some((field) => field.name === 'config.excluded_folder_paths'),
+    ).toBe(false);
+  });
+});
 
 describe('Xquik data source', () => {
   it('registers its catalog entry and defaults', () => {

@@ -36,6 +36,7 @@ import {
   getDataSourceFormBaseFields,
   getDataSourceFieldsWithExtras,
   mergeDataSourceFormValues,
+  normalizeSharePointRoots,
   useDataSourceInfo,
 } from '../constant';
 import {
@@ -156,7 +157,7 @@ const SourceDetailPage = () => {
         detail.source as keyof typeof DataSourceFormDefaultValues
       ] as FieldValues,
       getCommonExtraDefaultValues(),
-      detail as FieldValues,
+      normalizeSharePointRoots(detail as FieldValues),
     );
   }, [detail]);
 

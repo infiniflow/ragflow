@@ -24,6 +24,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"sort"
 	"strings"
 	"sync"
@@ -38,7 +39,7 @@ const (
 	sharepointDefaultBatchSize    = 2
 	sharepointRequestTimeout      = 60 * time.Second
 	sharepointRetryCount          = 4
-	sharepointRetryBaseDelay      = 200 * time.Millisecond
+	sharepointRetryBaseDelay      = time.Second
 	sharepointTokenExpiryMargin   = 5 * time.Minute
 	sharepointMaxJSONResponseSize = 16 * 1024 * 1024
 	sharepointDefaultMaxFileSize  = 256 * 1024 * 1024
@@ -51,17 +52,22 @@ var sharepointMaxFileSize int64 = sharepointDefaultMaxFileSize
 // SharePointConnector reads files from SharePoint document libraries through
 // the Microsoft Graph API using an app-only (client-credentials) token.
 type SharePointConnector struct {
-	tenantID     string
-	clientID     string
-	clientSecret string
-	siteURL      string
-	batchSize    int
+	tenantID      string
+	clientID      string
+	clientSecret  string
+	siteURL       string
+	batchSize     int
+	driveID       string
+	rootFolderIDs []string
+	excludeVideos bool
+	filters       fileFilters
 
 	clientMu    sync.Mutex
 	accessToken string
 	tokenExpiry time.Time
 	httpClient  *http.Client
 	now         func() time.Time
+	limiter     *sharePointLimiter
 
 	tokenURL     string
 	graphBaseURL string
@@ -76,7 +82,7 @@ func NewSharePointConnector(config map[string]any) (*SharePointConnector, error)
 		batchSize = sharepointDefaultBatchSize
 	}
 
-	return &SharePointConnector{
+	c := &SharePointConnector{
 		tenantID:     strings.TrimSpace(stringConfig(credentials["tenant_id"])),
 		clientID:     strings.TrimSpace(stringConfig(credentials["client_id"])),
 		clientSecret: stringConfig(credentials["client_secret"]),
@@ -85,7 +91,12 @@ func NewSharePointConnector(config map[string]any) (*SharePointConnector, error)
 		httpClient:   &http.Client{Timeout: sharepointRequestTimeout},
 		tokenURL:     "",
 		graphBaseURL: sharepointGraphBase,
-	}, nil
+	}
+	if err := c.configureFileSelection(config); err != nil {
+		return nil, err
+	}
+	c.limiter = sharedSharePointLimiter(c.tenantID, c.clientID)
+	return c, nil
 }
 
 // Validate validates SharePoint connector settings, credentials, and access.
@@ -102,10 +113,11 @@ func (c *SharePointConnector) Validate(ctx context.Context) error {
 	if _, err := c.token(ctx); err != nil {
 		return &ConnectorMissingCredentialError{Message: fmt.Sprintf("Failed to acquire SharePoint access token: %v", err)}
 	}
-	if _, err := c.resolveSite(ctx); err != nil {
+	site, err := c.resolveSite(ctx)
+	if err != nil {
 		return c.siteValidationError(err)
 	}
-	return nil
+	return c.validateScope(ctx, site.ID)
 }
 
 // ValidateConnectorSetting validates SharePoint settings from an unsaved config.
@@ -124,7 +136,7 @@ func (c *SharePointConnector) OpenSync(ctx context.Context, request SyncRequest)
 	if err != nil {
 		return nil, err
 	}
-	drives, err := c.listDrives(ctx, site.ID)
+	drives, err := c.syncDrives(ctx, site.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -195,6 +207,12 @@ type sharePointItem struct {
 	LastModifiedDateTime string                 `json:"lastModifiedDateTime"`
 	Folder               *sharePointFolderFacet `json:"folder,omitempty"`
 	File                 *sharePointFileFacet   `json:"file,omitempty"`
+	CTag                 string                 `json:"cTag"`
+	ETag                 string                 `json:"eTag"`
+	ParentReference      struct {
+		ID string `json:"id"`
+	} `json:"parentReference"`
+	relativePath string
 }
 
 type sharePointFolderFacet struct {
@@ -317,19 +335,37 @@ func (c *SharePointConnector) listChildren(ctx context.Context, driveID, itemID 
 
 // walkDriveFiles depth-first walks a drive yielding file (non-folder) items.
 func (c *SharePointConnector) walkDriveFiles(ctx context.Context, driveID string) ([]sharePointItem, error) {
+	// Prune deliberately includes excluded files and files outside the sync
+	// root. Editing filters or the root must not remove indexed documents.
+	return c.walkFiles(ctx, driveID, "", fileFilters{})
+}
+
+func (c *SharePointConnector) walkFiles(ctx context.Context, driveID, rootID string, filters fileFilters) ([]sharePointItem, error) {
+	if rootID != "" && len(filters.folderNames) > 0 {
+		root, err := c.getItem(ctx, driveID, rootID)
+		if err != nil {
+			return nil, err
+		}
+		if filters.folderNames[root.Name] {
+			return nil, nil
+		}
+	}
 	var files []sharePointItem
-	stack := []string{""}
+	stack := []sharePointItem{{ID: rootID}}
 	for len(stack) > 0 {
-		folderID := stack[len(stack)-1]
+		folder := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
-		children, err := c.listChildren(ctx, driveID, folderID)
+		children, err := c.listChildren(ctx, driveID, folder.ID)
 		if err != nil {
 			return nil, err
 		}
 		for _, child := range children {
+			child.relativePath = path.Join(folder.relativePath, child.Name)
 			if child.Folder != nil {
-				stack = append(stack, child.ID)
-			} else {
+				if !filters.excludesFolder(child.relativePath) {
+					stack = append(stack, child)
+				}
+			} else if child.File != nil {
 				files = append(files, child)
 			}
 		}
@@ -359,63 +395,44 @@ func (c *SharePointConnector) getBytes(ctx context.Context, apiURL string) ([]by
 
 // doGraphRequest issues one authorized Graph GET, retrying transient failures
 // and refreshing an expired access token once on 401.
-func (c *SharePointConnector) doGraphRequest(ctx context.Context, apiURL string, maxBody int64) ([]byte, error) {
+func (c *SharePointConnector) doGraphRequest(ctx context.Context, apiURL string, maxBody int64) (data []byte, err error) {
+	defer func() { err = sharePointRequestError(apiURL, err) }()
+	if err := c.validateGraphURL(apiURL); err != nil {
+		return nil, err
+	}
 	token, err := c.token(ctx)
 	if err != nil {
 		return nil, err
 	}
-
 	var lastErr error
-	retriedUnauthorized := false
+	refreshed := false
+	delay := sharepointRetryBaseDelay
 	for attempt := 1; attempt <= sharepointRetryCount; attempt++ {
-		requestCtx, cancel := context.WithTimeout(ctx, sharepointRequestTimeout)
-		req, err := http.NewRequestWithContext(requestCtx, http.MethodGet, apiURL, nil)
-		if err != nil {
-			cancel()
-			return nil, err
-		}
-		req.Header.Set("Authorization", "Bearer "+token)
-
-		resp, err := c.httpClient.Do(req)
-		if err != nil {
-			cancel()
-			lastErr = err
-		} else {
-			body, readErr := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
-			resp.Body.Close()
-			cancel()
-			if resp.StatusCode >= 400 {
-				lastErr = sharePointGraphError(resp.StatusCode, body)
-				if resp.StatusCode == http.StatusUnauthorized && !retriedUnauthorized {
-					c.invalidateToken(token)
-					token, err = c.token(ctx)
-					if err != nil {
-						return nil, err
-					}
-					retriedUnauthorized = true
-					attempt--
-					continue
-				}
-				if !sharePointRetryable(resp.StatusCode) {
-					return nil, lastErr
-				}
-			} else if readErr != nil {
-				return nil, readErr
-			} else if int64(len(body)) > maxBody {
-				return nil, fmt.Errorf("SharePoint API response from %s exceeds maximum size of %d bytes", apiURL, maxBody)
-			} else {
-				return body, nil
+		body, status, retryAfter, requestErr := c.graphRequestAttempt(ctx, apiURL, token, maxBody, delay)
+		lastErr = requestErr
+		if status == http.StatusUnauthorized && !refreshed {
+			c.invalidateToken(token)
+			token, err = c.token(ctx)
+			if err != nil {
+				return nil, err
 			}
+			refreshed = true
+			attempt--
+			continue
+		}
+		if requestErr == nil {
+			return body, nil
+		}
+		if errors.Is(requestErr, errSharePointResponseTooLarge) || (status >= 400 && !sharePointRetryable(status)) {
+			return nil, requestErr
 		}
 		if attempt == sharepointRetryCount {
 			break
 		}
-		delay := time.Duration(attempt) * sharepointRetryBaseDelay
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(delay):
+		if err := waitSharePointRetry(ctx, sharePointRetryDelay(retryAfter, delay, time.Now())); err != nil {
+			return nil, err
 		}
+		delay = min(delay*2, 30*time.Second)
 	}
 	return nil, lastErr
 }
@@ -569,44 +586,27 @@ func sharePointExtension(name string) string {
 	return ""
 }
 
-func (s *sharePointSyncSession) fileToDocument(ctx context.Context, drive sharePointDrive, file sharePointItem) (*SourceDocument, error) {
+func (s *sharePointSyncSession) fileToDocument(drive sharePointDrive, file sharePointItem) SourceDocument {
 	name := file.Name
 	if name == "" {
 		name = file.ID
 	}
-	blob, err := s.connector.downloadContent(ctx, drive.ID, file.ID)
-	if err != nil {
-		return nil, err
-	}
-
-	sizeBytes := file.Size
-	if sizeBytes <= 0 {
-		sizeBytes = int64(len(blob))
-	}
-
 	modified := parseOutlookTime(file.LastModifiedDateTime)
 	if modified.IsZero() {
 		modified = time.Now().UTC()
 	}
 
-	metadata := map[string]any{
-		"drive":         drive.Name,
-		"drive_id":      drive.ID,
-		"drive_item_id": file.ID,
-	}
-	if file.WebURL != "" {
-		metadata["web_url"] = file.WebURL
-	}
-
-	return &SourceDocument{
+	return SourceDocument{
 		SourceID:           sharePointDocID(drive.ID, file.ID),
 		SemanticIdentifier: name,
 		Extension:          sharePointExtension(name),
-		Blob:               blob,
+		FetchRef:           sharePointFetchRef(drive.ID, file),
+		Fingerprint:        sharePointFingerprint(file),
+		SkipReason:         s.connector.skipReason(file),
 		UpdatedAt:          modified,
-		SizeBytes:          sizeBytes,
-		Metadata:           metadata,
-	}, nil
+		SizeBytes:          file.Size,
+		Metadata:           sharePointMetadata(drive, file),
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -713,10 +713,10 @@ func (s *sharePointSyncSession) maxUpdatedAt(documents []SourceDocument) time.Ti
 	return max
 }
 
-// driveDocuments builds the documents for one drive, filtering files by the
-// sync window before downloading content.
+// driveDocuments lists metadata only. The runner compares fingerprints before
+// fetching individual bodies, so a whole library is never buffered as blobs.
 func (s *sharePointSyncSession) driveDocuments(ctx context.Context, drive sharePointDrive) ([]SourceDocument, error) {
-	files, err := s.connector.walkDriveFiles(ctx, drive.ID)
+	files, err := s.connector.walkSelectedRoots(ctx, drive.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -725,27 +725,18 @@ func (s *sharePointSyncSession) driveDocuments(ctx context.Context, drive shareP
 		if !s.fileInWindow(file) {
 			continue
 		}
-		doc, err := s.fileToDocument(ctx, drive, file)
-		if err != nil {
-			return nil, err
-		}
-		if doc != nil {
-			documents = append(documents, *doc)
-		}
+		documents = append(documents, s.fileToDocument(drive, file))
 	}
 	return documents, nil
 }
 
-// fileInWindow reports whether a file's lastModifiedDateTime falls in the
-// exclusive-open, inclusive-closed sync window. Files without a parseable
-// modification time are always included.
+// Enumerate older metadata too: expanding a root or removing an exclusion can
+// admit files whose modification time predates the previous sync waterline.
+// Fingerprints, rather than modification dates, prevent redundant downloads.
 func (s *sharePointSyncSession) fileInWindow(file sharePointItem) bool {
 	modified := parseOutlookTime(file.LastModifiedDateTime)
 	if modified.IsZero() {
 		return true
-	}
-	if s.request.WindowStart != nil && !modified.After(*s.request.WindowStart) {
-		return false
 	}
 	if !s.request.WindowEnd.IsZero() && modified.After(s.request.WindowEnd) {
 		return false
