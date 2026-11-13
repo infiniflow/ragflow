@@ -65,6 +65,8 @@ func NewMCPHandler(mcpService *service.MCPService) *MCPHandler {
 
 // CreateMCPServer creates an MCP server for the current user.
 func (h *MCPHandler) CreateMCPServer(c *gin.Context) {
+	common.StartOperationLog(c, "create_mcp_server")
+	defer common.FinishOperationLog(c)
 
 	var req service.CreateMCPServerRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -79,6 +81,7 @@ func (h *MCPHandler) CreateMCPServer(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "mcp_id", result.ID)
 	common.RespondSuccess(c, result, "success")
 }
 
@@ -142,6 +145,11 @@ func mcpDetailError(c *gin.Context, code common.ErrorCode, err error) {
 
 // UpdateMCPServer updates an MCP server for the current user.
 func (h *MCPHandler) UpdateMCPServer(c *gin.Context) {
+	common.StartOperationLog(c, "update_mcp_server")
+	defer common.FinishOperationLog(c)
+	if id := c.Param("mcp_id"); id != "" {
+		common.SetOperationResource(c, "mcp_id", id)
+	}
 
 	mcpID := c.Param("mcp_id")
 	var req service.UpdateMCPServerRequest
@@ -161,6 +169,12 @@ func (h *MCPHandler) UpdateMCPServer(c *gin.Context) {
 
 // DeleteMCPServer deletes an MCP server for the current user.
 func (h *MCPHandler) DeleteMCPServer(c *gin.Context) {
+	common.StartOperationLog(c, "delete_mcp_server")
+	defer common.FinishOperationLog(c)
+	if id := c.Param("mcp_id"); id != "" {
+		common.SetOperationResource(c, "mcp_id", id)
+	}
+
 	ctx := c.Request.Context()
 	_, code, err := h.mcpService.DeleteMCPServer(ctx, c.Param("mcp_id"))
 	if err != nil {
@@ -250,6 +264,8 @@ type ImportMCPRequest struct {
 // @Param request body handler.ImportMCPRequest true "import config"
 // @Router /api/v1/mcp/servers/import [post]
 func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
+	common.StartOperationLog(c, "import_mcp_servers")
+	defer common.FinishOperationLog(c)
 
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
@@ -301,6 +317,13 @@ func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 		return
 	}
 
+	mcpIDs := make([]string, 0, len(results))
+	for _, result := range results {
+		if result.ID != "" {
+			mcpIDs = append(mcpIDs, result.ID)
+		}
+	}
+	common.SetOperationResource(c, "mcp_ids", mcpIDs)
 	common.RespondSuccess(c, gin.H{"results": results}, "success")
 }
 
@@ -313,6 +336,11 @@ func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 // @Param request body service.TestServerRequest true "test parameters"
 // @Router /api/v1/mcp/servers/{mcp_id}/test [post]
 func (h *MCPHandler) TestMCPServer(c *gin.Context) {
+	common.StartOperationLog(c, "test_mcp_server")
+	defer common.FinishOperationLog(c)
+	if id := c.Param("mcp_id"); id != "" {
+		common.SetOperationResource(c, "mcp_id", id)
+	}
 
 	mcpID := c.Param("mcp_id")
 	if mcpID == "" {
