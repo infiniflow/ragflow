@@ -170,6 +170,7 @@ func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, da
 		for index, child := range node.GetChildren() {
 			if paragraph, ok := child.(*ast.Paragraph); ok && bytes.Contains(paragraph.Content, []byte("|")) {
 				_, inList := node.(*ast.ListItem)
+				_, topLevel := node.(*ast.Document)
 				afterList := false
 				if index > 0 {
 					_, afterList = node.GetChildren()[index-1].(*ast.List)
@@ -177,6 +178,9 @@ func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, da
 				content := paragraph.Content
 				if afterList {
 					content = dedentMarkdownTable(content)
+				}
+				if topLevel && bytes.Equal(content, paragraph.Content) {
+					content = dedentTopLevelTable(content)
 				}
 				if !inList && bytes.Equal(content, paragraph.Content) {
 					children = append(children, child)
@@ -371,6 +375,35 @@ func dedentMarkdownTable(data []byte) []byte {
 		lines[i] = strings.TrimPrefix(lines[i], prefix)
 	}
 	return mdparser.NormalizeNewlines([]byte(strings.Join(lines, "\n")))
+}
+
+// GFM allows up to three spaces of indentation before each line of a table. At the top level
+// gomarkdown reads such a table as a paragraph that keeps the indentation of its continuation
+// lines, also when a line of text comes first. Normalize the lines from the first header and
+// delimiter row on, when each of them is indented by at most three spaces; a tab or four spaces
+// leave the paragraph to the parser's own rules, and the text before the table stays as it is.
+func dedentTopLevelTable(data []byte) []byte {
+	lines := strings.Split(string(data), "\n")
+	start := -1
+	for i := 0; i+1 < len(lines); i++ {
+		if isMarkdownTableRow(lines[i]) && isMarkdownTableSeparator(lines[i+1]) {
+			start = i
+			break
+		}
+	}
+	if start == -1 {
+		return data
+	}
+	for i := start; i < len(lines); i++ {
+		trimmed := strings.TrimLeft(lines[i], " ")
+		if strings.HasPrefix(trimmed, "\t") || len(lines[i])-len(trimmed) > 3 {
+			return data
+		}
+		lines[i] = trimmed
+	}
+	// Paragraph content has no final newline, and the block parser reads a delimiter row only
+	// when one ends it, as in a file.
+	return append(mdparser.NormalizeNewlines([]byte(strings.Join(lines, "\n"))), '\n')
 }
 
 // balanceTableColumns pads the header row and its separator up to the widest row's cell
