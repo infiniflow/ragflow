@@ -7,18 +7,18 @@ import (
 )
 
 // VectorColumnName returns the storage column name for a dense vector of the
-// given dimension. Every search backend (elasticsearch, infinity, opensearch,
-// vastbase, oceanbase, serenedb) and the indexing/query code agree on this
-// single convention; centralizing it removes the duplicated fmt.Sprintf that
-// was scattered across engines, services, and the ingestion pipeline.
+// given dimension. All search backends (elasticsearch, infinity, opensearch,
+// vastbase, oceanbase, serenedb) and the indexing/query code use this single
+// convention, whose format is "q_<dim>_vec".
 func VectorColumnName(dim int) string {
 	return fmt.Sprintf("q_%d_vec", dim)
 }
 
-// IsVectorColumn reports whether key names a dense-vector column produced by
-// VectorColumnName. It mirrors the historical HasPrefix("q_")/HasSuffix("_vec")
-// check exactly, so engine-internal shadow columns such as "q_<dim>_vec_n"
-// (SereneDB normalization) are correctly excluded.
+// IsVectorColumn reports whether key names a dense-vector column. A key matches
+// when it has the "q_" prefix and the "_vec" suffix — equivalent to
+// HasPrefix(key, "q_") && HasSuffix(key, "_vec"). Engine-internal shadow columns
+// such as "q_<dim>_vec_n" (SereneDB normalization) are therefore correctly
+// excluded. Use VectorColumnDim to recover the dimension from a matching key.
 func IsVectorColumn(key string) bool {
 	return strings.HasPrefix(key, "q_") && strings.HasSuffix(key, "_vec")
 }

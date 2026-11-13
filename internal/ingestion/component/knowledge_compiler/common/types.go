@@ -457,7 +457,7 @@ func VectorFromChunkMap(m map[string]any, dim int) ([]float32, error) {
 	}
 	var keys []string
 	for k := range m {
-		if strings.HasPrefix(k, "q_") && strings.HasSuffix(k, "_vec") {
+		if appcommon.IsVectorColumn(k) {
 			keys = append(keys, k)
 		}
 	}
