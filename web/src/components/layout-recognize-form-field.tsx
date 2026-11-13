@@ -24,6 +24,7 @@ import { useFormContext } from 'react-hook-form';
 import { MinerUOptionsFormField } from './mineru-options-form-field';
 import { useModelTree } from './model-tree-select';
 import { PaddleOCROptionsFormField } from './paddleocr-options-form-field';
+import { UnlimitedOCROptionsFormField } from './unlimited-ocr-options-form-field';
 import { TreeSelect, TreeSelectNode } from './tree-select';
 import {
   FormControl,
@@ -40,6 +41,7 @@ export const enum ParseDocumentType {
   OpenDataLoader = 'OpenDataLoader',
   TCADPParser = 'TCADP Parser',
   MonkeyOCRv2 = 'MonkeyOCRv2',
+  UnlimitedOCR2 = 'Unlimited-OCR-2',
 }
 
 // Stable reference: useModelTree keys its memoized tree on its identity.
@@ -100,6 +102,7 @@ export function LayoutRecognizeFormField({
           ParseDocumentType.OpenDataLoader,
           ParseDocumentType.TCADPParser,
           ParseDocumentType.MonkeyOCRv2,
+          ParseDocumentType.UnlimitedOCR2,
         ].map((x) => ({
           label: x === ParseDocumentType.PlainText ? t(camelCase(x)) : x,
           value: x,
@@ -128,6 +131,10 @@ export function LayoutRecognizeFormField({
           [LLMFactory.MinerU, LLMFactory.MinerUNet].some(
             (factory) => factory.toLowerCase() === provider.toLowerCase(),
           );
+        const isUnlimitedOCR =
+          (typeof provider === 'string' &&
+            provider.toLowerCase().includes('unlimited')) ||
+          field.value === ParseDocumentType.UnlimitedOCR2;
         const namePrefix = name.split('.').slice(0, -1).join('.');
         return (
           <>
@@ -173,6 +180,9 @@ export function LayoutRecognizeFormField({
             </FormItem>
             {showMineruOptions && isMinerU && (
               <MinerUOptionsFormField namePrefix={namePrefix} />
+            )}
+            {isUnlimitedOCR && (
+              <UnlimitedOCROptionsFormField namePrefix={namePrefix} />
             )}
             {showPaddleocrOptions && <PaddleOCROptionsFormField />}
           </>

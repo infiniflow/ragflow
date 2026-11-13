@@ -85,6 +85,44 @@ describe('MinerU provider configuration', () => {
   });
 });
 
+describe('Unlimited-OCR-2 provider configuration', () => {
+  const config = ProviderConfigMap[LLMFactory.UnlimitedOCR];
+
+  it('configures server URL and stores nested config properly', () => {
+    const values = {
+      instance_name: 'unlimited-ocr-instance',
+      unlimited_ocr_server_url: 'http://127.0.0.1:18000',
+      unlimited_ocr_api_key: 'token-123',
+    };
+
+    expect(
+      config.fields.find((field) => field.name === 'unlimited_ocr_server_url'),
+    ).toMatchObject({ defaultValue: 'http://127.0.0.1:18000', required: true });
+
+    const saved = config.submitTransform?.(values);
+    expect(saved).toMatchObject({
+      instance_name: 'unlimited-ocr-instance',
+      llm_factory: LLMFactory.UnlimitedOCR,
+      base_url: 'http://127.0.0.1:18000',
+      api_key: {
+        unlimited_ocr_server_url: 'http://127.0.0.1:18000',
+        unlimited_ocr_apiserver: 'http://127.0.0.1:18000',
+        unlimited_ocr_api_key: 'token-123',
+      },
+    });
+
+    expect(
+      config.echoTransform?.({
+        api_key_config: saved?.api_key,
+        base_url: 'http://127.0.0.1:18000',
+      }),
+    ).toMatchObject({
+      unlimited_ocr_server_url: 'http://127.0.0.1:18000',
+      unlimited_ocr_api_key: 'token-123',
+    });
+  });
+});
+
 describe('provider instance submit transforms', () => {
   it.each([
     [

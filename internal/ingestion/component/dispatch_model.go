@@ -170,6 +170,8 @@ func ocrProviderAliases(providerName string) []string {
 		return []string{"PaddleOCR", "PaddleOCR.local"}
 	case "MinerU", "MinerU.Net":
 		return []string{"MinerU", "MinerU.Net"}
+	case "Unlimited-OCR-2", "Unlimited-OCR", "unlimited_ocr":
+		return []string{"Unlimited-OCR-2", "Unlimited-OCR", "unlimited_ocr"}
 	default:
 		return []string{providerName}
 	}
