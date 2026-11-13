@@ -104,18 +104,31 @@ func TestGreenNodeProviderConfig(t *testing.T) {
 	}
 
 	types := map[string][]string{
-		"qwen/qwen3.8-27b":             {"chat", "vision"},
-		"qwen/qwen3.8-max":             {"chat", "vision"},
-		"z-ai/glm-5.3-flash":           {"chat", "vision"},
-		"z-ai/glm-5.3":                 {"chat"},
-		"z-ai/glm-5.2":                 {"chat"},
-		"deepseek/deepseek-v4.1-flash": {"chat", "vision"},
-		"minimax/minimax-m3":           {"chat", "vision"},
-		"google/gemma-4-31b-it":        {"chat", "vision"},
-		"baai/bge-m3":                  {"embedding"},
-		"qwen/qwen3-embedding-8b":      {"embedding"},
-		"baai/bge-reranker-v2-m3":      {"rerank"},
-		"qwen/qwen3-reranker-8b":       {"rerank"},
+		"qwen/qwen3.8-max":                        {"chat", "vision"},
+		"qwen/qwen3.8-flash":                      {"chat", "vision"},
+		"qwen/qwen3.8-27b":                        {"chat", "vision"},
+		"qwen/qwen3.7-plus":                       {"chat", "vision"},
+		"qwen/qwen3.6-plus":                       {"chat", "vision"},
+		"qwen/qwen3.6-flash":                      {"chat", "vision"},
+		"z-ai/glm-5.3-flash":                      {"chat", "vision"},
+		"z-ai/glm-5.3-flash-thirdparty":           {"chat", "vision"},
+		"z-ai/glm-5.3":                            {"chat"},
+		"z-ai/glm-5.2":                            {"chat"},
+		"z-ai/glm-5.2-thirdparty":                 {"chat"},
+		"deepseek/deepseek-v4.1-flash-thirdparty": {"chat", "vision"},
+		"deepseek/deepseek-v4-pro":                {"chat"},
+		"deepseek/deepseek-v4-flash":              {"chat"},
+		"minimax/minimax-m3":                      {"chat", "vision"},
+		"minimax/minimax-m2.5":                    {"chat"},
+		"kimi/kimi-k2.7-code":                     {"chat", "vision"},
+		"kimi/kimi-k2.6":                          {"chat", "vision"},
+		"anthropic/claude-opus-4-8":               {"chat", "vision"},
+		"openai/gpt-5.4-nano":                     {"chat", "vision"},
+		"google/gemma-4-31b-it":                   {"chat", "vision"},
+		"baai/bge-m3":                             {"embedding"},
+		"qwen/qwen3-embedding-8b":                 {"embedding"},
+		"baai/bge-reranker-v2-m3":                 {"rerank"},
+		"qwen/qwen3-reranker-8b":                  {"rerank"},
 	}
 	if len(provider.Models) != len(types) {
 		t.Errorf("got %d models, want %d", len(provider.Models), len(types))
@@ -140,8 +153,8 @@ func TestGreenNodeProviderConfig(t *testing.T) {
 	}
 
 	gemma := GetProviderManager().FindModel(provider, "google/gemma-4-31b-it")
-	if gemma == nil || gemma.MaxOutput == nil || *gemma.MaxOutput != 8192 {
-		t.Errorf("gemma=%+v, want max_output 8192", gemma)
+	if gemma == nil || gemma.MaxOutput == nil || *gemma.MaxOutput != 32000 {
+		t.Errorf("gemma=%+v, want max_output 32000 (as advertised by /models)", gemma)
 	}
 }
 

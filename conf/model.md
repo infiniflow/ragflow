@@ -186,7 +186,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **EmpirioLabs AI** | AI inference provider |
 | **FuturMix** | Multi-provider aggregator |
 | **GiteeAI** | Chinese aggregator |
-| **GreenNode** | VNG Cloud model-as-a-service: OpenAI-compatible chat, embedding and rerank for self-hosted (GLM) and third-party (Qwen, DeepSeek, MiniMax, Gemma, etc.) models, with a 10 requests/minute default account limit |
+| **GreenNode** | VNG Cloud model-as-a-service: OpenAI-compatible chat, embedding and rerank for self-hosted (GLM, Qwen, Gemma) and third-party (DeepSeek, MiniMax, Kimi, Claude, GPT, etc.) models, with a 10 requests/minute default account limit |
 | **GreenPT** | GLM-based models |
 | **HopBase** | Enterprise AI gateway: one OpenAI-compatible key for Claude, GPT, Gemini, DeepSeek, Qwen, GLM, Kimi and more, with high-concurrency routing and automatic failover |
 | **Hostinger Router** | OpenAI-compatible router with EU/US regional model variants |
