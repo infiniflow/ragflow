@@ -377,8 +377,8 @@ func TestHandleAndExecute_DocumentDuplicateClaimRenewsLease(t *testing.T) {
 
 	ingestor := newUnitIngestor("test-doc-dup", 1, []string{"pdf"})
 	// Simulate active claim by another worker
-	if !ingestor.claimTask(taskID) {
-		t.Fatal("first claim should succeed")
+	if claimed, err := ingestor.taskClaims.Claim(context.Background(), taskID); err != nil || !claimed {
+		t.Fatalf("first claim should succeed: %v", err)
 	}
 	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
 		"progress":         0.42,

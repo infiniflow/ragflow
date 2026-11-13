@@ -70,8 +70,7 @@ type Ingestor struct {
 	memoryReconcileBatchSize int
 
 	// Runtime state
-	currentTasks         map[string]struct{} // set of task IDs currently claimed by a worker
-	tasksMu              sync.RWMutex
+	taskClaims           taskClaimStore // task ownership guard for duplicate deliveries
 	pendingCompileEvents map[string]pendingDocumentCompileEvent
 	compileEventsMu      sync.Mutex
 	activeWorkers        atomic.Int32 // number of worker goroutines currently in workerLoop
@@ -198,7 +197,7 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string, dep
 		maxConcurrency:           maxConcurrency,
 		supportedDocTypes:        supportedTypes,
 		version:                  "1.0.0",
-		currentTasks:             make(map[string]struct{}),
+		taskClaims:               newTaskClaimStore(id),
 		pendingCompileEvents:     make(map[string]pendingDocumentCompileEvent),
 		activeLeases:             make(map[*Heartbeat]*activeLease),
 		workerQueue:              make(chan *worker, maxConcurrency),
@@ -575,7 +574,13 @@ func (e *Ingestor) handleAndExecute(w *worker, handle common.TaskHandle) {
 			return
 		}
 		task = validatedTask
-		if !e.claimTask(task.ID) {
+		claimed, claimErr := e.taskClaims.Claim(e.ctx, task.ID)
+		if claimErr != nil {
+			common.Error(fmt.Sprintf("claim task %s", task.ID), claimErr)
+			e.nackHandle(hb, handle, taskMessage.TaskID)
+			return
+		}
+		if !claimed {
 			common.Warn(fmt.Sprintf("task %s redelivered while worker still processing, renew lease (task_id=%s doc_id=%s kb_id=%s)",
 				taskMessage.TaskID, task.ID, task.DocumentID, task.DatasetID))
 			e.renewDuplicateHandle(hb, handle, taskMessage.TaskID)
@@ -787,7 +792,7 @@ func (e *Ingestor) executeTaskWithHeartbeat(ctx context.Context, taskCtx *taskpk
 
 	// Release the claim when executeTask returns so that a future
 	// redelivery (after restart) can re-claim the task.
-	defer e.releaseTask(task.ID)
+	defer e.taskClaims.Release(context.WithoutCancel(ctx), task.ID)
 
 	// Derive a per-task cancelable context so that an external cancel
 	// signal (Redis cancel flag, mirrored from {task_id}-cancel)
@@ -1204,29 +1209,6 @@ func docRunFromTasks(tasks []*entity.IngestionTask) string {
 	}
 }
 
-// claimTask registers a worker claim on a task ID. Returns false if another
-// worker has already claimed it (e.g. MQ redelivery), true on first claim.
-// The claim is released by releaseTask when the worker finishes, so a future
-// redelivery (after restart) can re-claim the task. Broker lease renewal is a
-// separate concern handled by the worker-owned Heartbeat until settlement.
-func (e *Ingestor) claimTask(taskID string) bool {
-	e.tasksMu.Lock()
-	defer e.tasksMu.Unlock()
-	if _, ok := e.currentTasks[taskID]; ok {
-		return false
-	}
-	e.currentTasks[taskID] = struct{}{}
-	return true
-}
-
-// releaseTask removes the claim so a future redelivery (after process restart)
-// can re-claim the task.
-func (e *Ingestor) releaseTask(taskID string) {
-	e.tasksMu.Lock()
-	delete(e.currentTasks, taskID)
-	e.tasksMu.Unlock()
-}
-
 func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *entity.IngestionTask) error {
 	const documentBulkSize = 32
 
@@ -1394,12 +1376,7 @@ func (e *Ingestor) Stop(ctx context.Context) {
 	case <-ctx.Done():
 		e.stopActiveLeases()
 		e.cancel()
-		e.tasksMu.RLock()
-		ids := make([]string, 0, len(e.currentTasks))
-		for id := range e.currentTasks {
-			ids = append(ids, id)
-		}
-		e.tasksMu.RUnlock()
+		ids := e.taskClaims.InFlight()
 		common.Warn(fmt.Sprintf("Stop timed out with %d task(s) still in-flight (will be redelivered by broker): %v", len(ids), ids))
 	}
 
