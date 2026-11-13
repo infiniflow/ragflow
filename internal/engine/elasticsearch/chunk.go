@@ -1508,7 +1508,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 				if limit > 0 && len(searchChunks) < limit {
 					common.InfoCtx(ctx, "Elasticsearch hybrid body (window not filled)",
 						zap.Strings("indexes", req.IndexNames),
-						zap.String("body", elideQueryVector(payload)))
+						zap.String("body", esoscommon.ElideQueryVector(payload, esoscommon.QueryVectorFieldName)))
 				}
 			}
 			totalHits += indexTotal
@@ -3521,15 +3521,6 @@ func lowerCaseQueryText(text string) string {
 
 func isASCIILetter(c byte) bool {
 	return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-}
-
-// queryVectorField matches the serialized query vector: 1024 floats that say
-// nothing about why a search came back short, so they never reach the log.
-var queryVectorField = regexp.MustCompile(`"query_vector":\s*\[[^\]]*\]`)
-
-// elideQueryVector drops that vector from a body before it is logged.
-func elideQueryVector(body []byte) string {
-	return queryVectorField.ReplaceAllString(string(body), `"query_vector":"<elided>"`)
 }
 
 func convertESResponse(esResp *SearchResponse, vectorFieldName string) []map[string]interface{} {

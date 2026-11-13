@@ -24,6 +24,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/engine/internal/esoscommon"
 	"ragflow/internal/engine/types"
 )
 
@@ -240,12 +241,12 @@ func TestDeleteChunksScopesToDataset(t *testing.T) {
 
 func TestElideQueryVectorRedactsOpenSearchKNNBody(t *testing.T) {
 	body := []byte(`{"query":{"knn":{"q_2_vec":{"vector":[0.1,0.2],"k":3}}}}`)
-	elided := elideQueryVector(body)
+	elided := esoscommon.ElideQueryVector(body, esoscommon.VectorFieldName)
 	if strings.Contains(elided, "0.1") {
-		t.Fatalf("elideQueryVector left the embedding in %s", elided)
+		t.Fatalf("ElideQueryVector left the embedding in %s", elided)
 	}
 	if !strings.Contains(elided, `"vector":"<elided>"`) {
-		t.Fatalf("elideQueryVector = %s, want the vector replaced", elided)
+		t.Fatalf("ElideQueryVector = %s, want the vector replaced", elided)
 	}
 }
 
