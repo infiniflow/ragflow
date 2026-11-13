@@ -300,6 +300,22 @@ function useSetDoneRecord() {
   };
 }
 
+// A model failure while answering is streamed as a frame with a non-zero code
+// and an answer of "**ERROR**: <reason>".
+const ErrorAnswerPattern = /^\s*\*\*ERROR\*\*:?\s*/;
+
+function getStreamFailure(frame: any): string | undefined {
+  const answer = frame?.data?.answer;
+  const isErrorAnswer =
+    typeof answer === 'string' && ErrorAnswerPattern.test(answer);
+  if (!isErrorAnswer && (!frame?.code || frame.code === 0)) return undefined;
+  return (
+    frame.message ||
+    (isErrorAnswer ? answer.replace(ErrorAnswerPattern, '') : '') ||
+    'Request failed'
+  );
+}
+
 export const useSendMessageWithSse = () => {
   const [answer, setAnswer] = useState<IAnswer>({} as IAnswer);
   const [done, setDone] = useState(true);
@@ -378,7 +394,10 @@ export const useSendMessageWithSse = () => {
               try {
                 const val = JSON.parse(value?.data || '');
                 const d = val?.data;
-                if (typeof d !== 'boolean') {
+                const failure = getStreamFailure(val);
+                if (failure !== undefined) {
+                  setError(failure);
+                } else if (typeof d !== 'boolean') {
                   setAnswer((prev) => {
                     return {
                       ...d,

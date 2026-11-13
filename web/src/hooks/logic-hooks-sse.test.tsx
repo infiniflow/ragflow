@@ -111,3 +111,36 @@ it('does not report a request the user stopped', async () => {
   await sendOnce(result);
   expect(result.current.error).toBeUndefined();
 });
+
+it('reports a failure streamed as an error frame instead of showing it as the answer', async () => {
+  const frame = {
+    code: 500,
+    message: 'API request failed with status 503 (gave up after 4 attempts)',
+    data: {
+      answer:
+        '**ERROR**: API request failed with status 503 (gave up after 4 attempts)',
+    },
+  };
+  mockFetch.mockResolvedValueOnce(
+    fakeResponse({ text: `data: ${JSON.stringify(frame)}\n\n` }),
+  );
+  const { result } = renderHook(() => useSendMessageWithSse());
+
+  await sendOnce(result);
+  expect(result.current.error).toBe(frame.message);
+  expect(result.current.answer.answer).toBeUndefined();
+});
+
+it('reports an error answer that arrives with a zero code', async () => {
+  const frame = {
+    code: 0,
+    data: { answer: '**ERROR**: provider unavailable' },
+  };
+  mockFetch.mockResolvedValueOnce(
+    fakeResponse({ text: `data: ${JSON.stringify(frame)}\n\n` }),
+  );
+  const { result } = renderHook(() => useSendMessageWithSse());
+
+  await sendOnce(result);
+  expect(result.current.error).toBe('provider unavailable');
+});

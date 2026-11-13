@@ -142,6 +142,8 @@ export const useSendMessage = () => {
         notification.error({
           message: t('message.requestError'),
           description: errorMessage,
+          // Long enough to reach the Retry button.
+          duration: 15,
           action: { label: t('common.retry'), onClick: retry },
         });
       }

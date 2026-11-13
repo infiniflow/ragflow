@@ -14,6 +14,10 @@ import { mergeAnswerChunk } from '@/utils/chat';
 import { AnswerFlushIntervalMs } from './constants';
 import { useChatStreamStore } from './store';
 
+// A model failure that happens while answering reaches the client as a normal
+// stream whose whole answer is "**ERROR**: <reason>", not as an error envelope.
+const ErrorAnswerPattern = /^\s*\*\*ERROR\*\*:?\s*/;
+
 export type RunChatCompletionStreamParams = {
   conversationId: string;
   chatId?: string;
@@ -111,6 +115,14 @@ export async function runChatCompletionStream({
       } else {
         throw error;
       }
+    }
+
+    // An answer that is nothing but the error marker is a failed request, like
+    // an error envelope; an error after real text stays part of the answer.
+    if (!aborted && ErrorAnswerPattern.test(accumulatedAnswer)) {
+      ok = false;
+      errorMessage =
+        accumulatedAnswer.replace(ErrorAnswerPattern, '') || undefined;
     }
 
     // A healthy stream body isn't valid JSON, so errorBody stays undefined and
