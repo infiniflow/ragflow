@@ -234,6 +234,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewCrusoeModel(baseURL, urlSuffix), nil
 	case "hopbase":
 		return NewHopBaseModel(baseURL, urlSuffix), nil
+	case "greennode":
+		return NewGreenNodeModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

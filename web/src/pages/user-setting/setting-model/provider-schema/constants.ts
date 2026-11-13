@@ -53,6 +53,7 @@ export const LIST_MODEL_PROVIDERS = new Set<string>([
   LLMFactory.Wiro,
   LLMFactory.Crusoe,
   LLMFactory.HopBase,
+  LLMFactory.GreenNode,
 
   // LLMFactory.HuggingFace,
   // LLMFactory.GoogleCloud,
