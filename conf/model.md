@@ -187,6 +187,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **FuturMix** | Multi-provider aggregator |
 | **GiteeAI** | Chinese aggregator |
 | **GreenPT** | GLM-based models |
+| **HopBase** | Enterprise AI gateway: one OpenAI-compatible key for Claude, GPT, Gemini, DeepSeek, Qwen, GLM, Kimi and more, with high-concurrency routing and automatic failover |
 | **Hostinger Router** | OpenAI-compatible router with EU/US regional model variants |
 | **Huawei Cloud** | Hosts GLM, Kimi, etc. |
 | **JieKouAI** | Multi-provider aggregator |
