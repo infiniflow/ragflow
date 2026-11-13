@@ -204,6 +204,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **TogetherAI** | Open-source model hosting |
 | **TokenHub** | Multi-provider aggregator |
 | **TrustedRouter** | OpenAI-compatible router |
+| **UberLLM** | OpenAI-compatible API for GPT, Claude, Gemini, DeepSeek, GLM, Qwen, Kimi and other models (prepaid) |
 | **Wally** | OpenAI-compatible API for open-weight models |
 | **Wiro AI** | Multi-provider LLM gateway with an OpenAI-compatible API |
 | **WorldRouter** | Multi-provider gateway with an OpenAI-compatible inference API |

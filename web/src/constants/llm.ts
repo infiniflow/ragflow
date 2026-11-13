@@ -129,6 +129,7 @@ export enum LLMFactory {
   Shengsuanyun = 'Shengsuanyun',
   Synap = 'Synap',
   Wiro = 'Wiro AI',
+  UberLLM = 'UberLLM',
 }
 
 // Please lowercase the file name
@@ -239,6 +240,7 @@ export const IconMap = {
   [LLMFactory.Shengsuanyun]: 'shengsuanyun',
   [LLMFactory.Synap]: 'synap',
   [LLMFactory.Wiro]: 'wiro',
+  [LLMFactory.UberLLM]: 'uberllm',
 };
 
 /**
@@ -298,6 +300,7 @@ export const APIMapUrl = {
   [LLMFactory.Wally]: 'https://console.runanywhere.ai',
   [LLMFactory.Synap]: 'https://synap.linkrra.com/pricing',
   [LLMFactory.Wiro]: 'https://wiro.ai/panel/project/new',
+  [LLMFactory.UberLLM]: 'https://uberllm.dev/dashboard/keys',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',

@@ -51,6 +51,7 @@ export const LIST_MODEL_PROVIDERS = new Set<string>([
   LLMFactory.HostingerRouter,
   LLMFactory.Synap,
   LLMFactory.Wiro,
+  LLMFactory.UberLLM,
 
   // LLMFactory.HuggingFace,
   // LLMFactory.GoogleCloud,
