@@ -104,6 +104,8 @@ class Session(Base):
             raise Exception(f"Unknown session type: {self.__session_type}")
 
         if stream:
+            # SSE is UTF-8, even when Content-Type omits the charset.
+            res.encoding = "utf-8"
             for line in res.iter_lines(decode_unicode=True):
                 if not line:
                     continue  # Skip empty lines
