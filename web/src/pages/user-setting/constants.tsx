@@ -62,6 +62,7 @@ export const LocalLlmFactories = [
 export enum TenantMembershipStatus {
   Joined = '1',
   Invited = '2',
+  Left = '0',
 }
 
 export enum TenantRole {

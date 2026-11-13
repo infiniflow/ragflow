@@ -1526,7 +1526,7 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: err.Error()}
 	}
-	chunkData[fmt.Sprintf("q_%d_vec", len(mergedVec))] = mergedVec
+	chunkData[common.VectorColumnName(len(mergedVec))] = mergedVec
 
 	ctx, cancel := context.WithTimeout(ctx, 600*time.Second)
 	defer cancel()

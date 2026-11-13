@@ -780,46 +780,6 @@ func (s *Service) GetServicesByType(serviceType string) ([]map[string]interface{
 	return nil, errors.New("get_services_by_type: not implemented")
 }
 
-// GetServiceDetails get service details
-func (s *Service) GetServiceDetails(configDict map[string]interface{}) ([]ServiceStatus, error) {
-	//serviceType, _ := configDict["service_type"].(string)
-	//name, _ := configDict["name"].(string)
-	//ctx := context.Background()
-	//
-	//// Call detail function based on service type
-	//switch serviceType {
-	//case "meta_data":
-	//	return s.getMySQLStatus(ctx), nil
-	//case "cache":
-	//	return s.getKvrocksStatus(ctx), nil
-	//case "message_queue":
-	//	host := configDict["host"].(string)
-	//	port := configDict["port"].(int)
-	//	return s.checkNatsAlive(name, host, port)
-	//case "retrieval":
-	//	// Check the extra.retrieval_type to determine which retrieval service
-	//	if extra, ok := configDict["extra"].(map[string]interface{}); ok {
-	//		if retrievalType, ok := extra["retrieval_type"].(string); ok {
-	//			if retrievalType == "infinity" {
-	//				return s.getInfinityStatus(name)
-	//			}
-	//		}
-	//	}
-	//	return s.getESClusterStats(name)
-	//case "ragflow_server":
-	//	return s.checkRAGFlowServerAlive(name)
-	//case "file_store":
-	//	return s.checkMinioAlive(name)
-	//case "olap":
-	//	return s.checkOlapAlive(name)
-	//case "tracing":
-	//	return s.checkTracingAlive(name)
-	//default:
-	//	return nil, nil
-	//}
-	return nil, nil
-}
-
 // getMySQLStatus gets MySQL service status
 func (s *Service) getMySQLStatus(ctx context.Context) ServiceStatus {
 

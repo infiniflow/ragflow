@@ -147,6 +147,9 @@ type CreateSearchRequest struct {
 }
 
 func (h *SearchHandler) CreateSearch(c *gin.Context) {
+	common.StartOperationLog(c, "create_search")
+	defer common.FinishOperationLog(c)
+
 	user, errorCode, err := billingQuotaUser(c)
 	if err != nil {
 		common.RespondError(c, errorCode, err.Error())
@@ -175,6 +178,8 @@ func (h *SearchHandler) CreateSearch(c *gin.Context) {
 		common.Respond(c, http.StatusInternalServerError, common.CodeBadRequest, nil, err.Error())
 		return
 	}
+
+	common.SetOperationResource(c, "search_id", result.SearchID)
 
 	// Return success response (same as Python get_json_result(data={"search_id": req["id"]}))
 	common.RespondSuccess(c, result, "success")
@@ -239,6 +244,9 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searches/{search_id} [delete]
 func (h *SearchHandler) DeleteSearch(c *gin.Context) {
+	common.StartOperationLog(c, "delete_search")
+	defer common.FinishOperationLog(c)
+
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
 	if searchID == "" {
@@ -272,6 +280,9 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searches/{search_id} [put]
 func (h *SearchHandler) UpdateSearch(c *gin.Context) {
+	common.StartOperationLog(c, "update_search")
+	defer common.FinishOperationLog(c)
+
 	// Get search_id from path parameter (same as Python <search_id>)
 	searchID := c.Param("search_id")
 	if searchID == "" {
@@ -337,6 +348,8 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 
 // Completion authorizes and prepares the search before committing an SSE response.
 func (h *SearchHandler) Completion(c *gin.Context) {
+	common.StartOperationLog(c, "request_search_answer")
+	defer common.FinishOperationLog(c)
 
 	var req service.SearchCompletionsRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -376,6 +389,7 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 	if writer == nil {
 		writer = &ginSSEWriter{}
 	}
+	common.FinishOperationLog(c)
 	if plan.ModelID == "" {
 		writer.Write(c, sseError("chat model not configured"))
 		return

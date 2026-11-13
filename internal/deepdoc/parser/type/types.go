@@ -205,6 +205,10 @@ type TableItem struct {
 	RegionLeft, RegionRight, RegionTop, RegionBottom float64
 	NoMerge                                          bool
 	Grid                                             [][]TSRCell
+	// HeaderRows is the number of leading header rows detected when the table
+	// was assembled. It is used by the cross-page merge guard to compare
+	// table headers without re-deriving them from scratch.
+	HeaderRows int
 	// Page is the 0-based page index this table was detected on. It is set
 	// by the pipeline and used by parity/replay harnesses to map replay
 	// intermediates (which are keyed by page) back onto the correct table.

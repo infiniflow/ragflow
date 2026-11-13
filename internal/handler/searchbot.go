@@ -165,11 +165,17 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searchbots/retrieval [post]
 func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
+	common.StartOperationLog(c, "request_search_query")
+	defer common.FinishOperationLog(c)
 
 	var req SearchBotRetrievalTestRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
+	}
+
+	if req.SearchID != nil {
+		common.SetOperationResource(c, "search_id", *req.SearchID)
 	}
 
 	// Filter out empty strings from KbIDs before validation.
@@ -229,12 +235,16 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searchbots/ask [post]
 func (h *SearchBotHandler) Ask(c *gin.Context) {
+	common.StartOperationLog(c, "request_search_answer")
+	defer common.FinishOperationLog(c)
 
 	var req SearchBotAskRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
+
+	common.SetOperationResource(c, "search_id", req.SearchID)
 
 	question, err := service.ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
 	if err != nil {
@@ -296,6 +306,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 			modelID = service.ModelReference(info)
 		}
 	}
+	common.FinishOperationLog(c)
 	if modelID == "" {
 		h.sseWriter.Write(c, sseError("chat model not configured"))
 		return
@@ -354,12 +365,16 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/searchbots/mindmap [post]
 func (h *SearchBotHandler) MindMap(c *gin.Context) {
+	common.StartOperationLog(c, "request_search_mindmap")
+	defer common.FinishOperationLog(c)
 
 	var req SearchBotMindMapRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
+
+	common.SetOperationResource(c, "search_id", req.SearchID)
 
 	filtered := make(common.StringSlice, 0, len(req.KbIDs))
 	for _, id := range req.KbIDs {

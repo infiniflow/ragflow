@@ -1566,7 +1566,7 @@ func (s *MemoryService) memoryMessageDenseExpr(ctx context.Context, question str
 
 	vector := embeddings[0].Embedding
 	return &enginetypes.MatchDenseExpr{
-		VectorColumnName:  fmt.Sprintf("q_%d_vec", len(vector)),
+		VectorColumnName:  common.VectorColumnName(len(vector)),
 		EmbeddingData:     vector,
 		EmbeddingDataType: "float",
 		DistanceType:      "cosine",

@@ -35,6 +35,7 @@ import (
 	"unicode/utf8"
 
 	"ragflow/internal/common"
+	"ragflow/internal/engine/internal/esoscommon"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/tokenizer"
 
@@ -852,7 +853,7 @@ func (e *Engine) updateChunksByQuery(ctx context.Context, indexName string, cond
 		switch val := v.(type) {
 		case string:
 			// Sanitize: replace ' \n \r with space
-			sanitized := sanitizeString(val)
+			sanitized := esoscommon.SanitizeString(val)
 			params[fmt.Sprintf("pp_%s", k)] = sanitized
 			scripts = append(scripts, fmt.Sprintf("ctx._source.%s=params.pp_%s;", k, k))
 		case int, int8, int16, int32, int64, float32, float64:
@@ -903,14 +904,6 @@ func (e *Engine) updateChunksByQuery(ctx context.Context, indexName string, cond
 
 	common.Debug("ElasticsearchConnection.updateChunksByQuery completed", zap.String("indexName", indexName))
 	return nil
-}
-
-// sanitizeString replaces ' \n \r with space
-func sanitizeString(s string) string {
-	s = strings.ReplaceAll(s, "'", " ")
-	s = strings.ReplaceAll(s, "\n", " ")
-	s = strings.ReplaceAll(s, "\r", " ")
-	return strings.TrimSpace(s)
 }
 
 // closeESBody releases an ES response body, tolerating the nil response the
@@ -2968,7 +2961,7 @@ func (e *Engine) KNNScores(ctx context.Context, chunks []map[string]interface{},
 	vectorSize := len(queryVector)
 	k := len(chunkIDs)
 	knnQuery := map[string]interface{}{
-		"field":          fmt.Sprintf("q_%d_vec", vectorSize),
+		"field":          common.VectorColumnName(vectorSize),
 		"query_vector":   queryVector,
 		"k":              k,
 		"num_candidates": k * 2,
@@ -3122,7 +3115,7 @@ func loadSkillMapping() (map[string]interface{}, error) {
 }
 
 func memoryMessageVectorField(vectorSize int) string {
-	return fmt.Sprintf("q_%d_vec", vectorSize)
+	return common.VectorColumnName(vectorSize)
 }
 
 func memoryMessageVectorProperty(vectorSize int) map[string]interface{} {
@@ -3138,12 +3131,11 @@ func parseMemoryMessageVectorSize(field string) (int, bool) {
 	if !memoryMessageVectorFieldRE.MatchString(field) {
 		return 0, false
 	}
-	sizeText := strings.TrimSuffix(strings.TrimPrefix(field, "q_"), "_vec")
-	vectorSize, err := strconv.Atoi(sizeText)
-	if err != nil || vectorSize <= 0 {
+	dim, ok := common.VectorColumnDim(field)
+	if !ok || dim <= 0 {
 		return 0, false
 	}
-	return vectorSize, true
+	return dim, true
 }
 
 func (e *Engine) memoryMessageVectorMappingExists(ctx context.Context, indexName, fieldName string) (bool, error) {

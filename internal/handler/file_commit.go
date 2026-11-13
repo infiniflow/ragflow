@@ -168,6 +168,11 @@ type CreateCommitRequest struct {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/workspaces/{workspace_id}/commits [post]
 func (h *FileCommitHandler) CreateCommit(c *gin.Context) {
+	if c.Param("dataset_id") != "" {
+		common.StartOperationLog(c, "create_dataset_commit")
+		defer common.FinishOperationLog(c)
+	}
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
@@ -210,6 +215,7 @@ func (h *FileCommitHandler) CreateCommit(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "commit_id", commit.ID)
 	ct := int64(0)
 	if commit.CreateTime != nil {
 		ct = *commit.CreateTime

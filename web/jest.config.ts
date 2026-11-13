@@ -19,6 +19,8 @@ const config: Config = {
     // The app shell itself: createBrowserRouter runs at module scope and
     // needs the fetch Request global, which jsdom does not provide.
     '^@/routes$': '<rootDir>/__mocks__/routes.js',
+    // Keep the OSS no-op mapping ahead of the generic `@/` mapping.
+    '^@/ee/(.*)$': '<rootDir>/src/ee-stub/$1',
     '^@/(.*)$': '<rootDir>/src/$1',
     '^human-id$': '<rootDir>/__mocks__/human-id.js',
   },

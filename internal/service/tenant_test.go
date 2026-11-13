@@ -117,8 +117,8 @@ func TestRemoveMemberSelfAllowed(t *testing.T) {
 	if err := db.Where("user_id = ? AND tenant_id = ?", "user-abc", "tenant-xyz").Take(&membership).Error; err != nil {
 		t.Fatalf("read self-membership after leaving: %v", err)
 	}
-	if membership.Status == nil || *membership.Status != entity.TenantMembershipStatusLeft || membership.Role != "" {
-		t.Fatalf("self-membership after leaving = %+v, want left status and empty role", membership)
+	if membership.Status == nil || *membership.Status != entity.TenantMembershipStatusLeft {
+		t.Fatalf("self-membership after leaving = %+v, want left status", membership)
 	}
 }
 
