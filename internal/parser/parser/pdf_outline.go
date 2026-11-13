@@ -1,8 +1,18 @@
 package parser
 
+import (
+	doctype "ragflow/internal/deepdoc/parser/type"
+)
+
 // pdfOutlinesFromPDF reads a PDF's bookmark tree. The native engine backs it
 // under cgo; without cgo it reports no bookmarks.
 var pdfOutlinesFromPDF = pdfOutlinesFromData
+
+// ExtractPDFOutlines reads the PDF's outline bookmark tree. Under cgo, it is
+// backed by pdfium; without cgo it returns nil.
+func ExtractPDFOutlines(data []byte) []doctype.Outline {
+	return pdfOutlinesFromPDF(data)
+}
 
 // AttachPDFOutlines populates File["outline"] from the source PDF's bookmarks,
 // mutating result.File in place. Remote engines return document content only,
