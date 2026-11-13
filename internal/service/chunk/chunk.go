@@ -779,6 +779,11 @@ func (s *ChunkService) Parse(ctx context.Context, datasetID string, req *service
 	if err = (document.NewDocumentService().AssertIngestionTasksTerminal(ctx, docIDs)); err != nil {
 		return nil, common.CodeDataError, err
 	}
+	for _, docID := range docIDs {
+		if err = document.ValidateDocumentParseSelection(docByID[docID]); err != nil {
+			return nil, common.CodeDataError, err
+		}
+	}
 
 	startParse := s.startParseDocumentsFunc
 	if startParse == nil {

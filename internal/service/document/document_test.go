@@ -5089,6 +5089,48 @@ func TestGetDocumentThumbnailAuthorizesBeforeStorage(t *testing.T) {
 	}
 }
 
+func TestStartParseDocuments_RetiredParserPreservesResults(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 0, 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
+		"location": "doc-1.txt", "parser_id": "knowledge_graph",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := documentTestContext(t.Context())
+	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	engine := &rerunDeleteDocEngine{}
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+	parseErr := svc.StartParseDocuments(ctx, doc, kb, StartParseOptions{RerunWithDelete: true})
+	if engine.deleteCalls != 0 {
+		t.Errorf("deleted chunks %d times with an invalid parser", engine.deleteCalls)
+	}
+	remaining, err := svc.ingestionTaskDAO.GetByDocumentID(ctx, db, "doc-1")
+	if err != nil || remaining == nil || remaining.ID != "task-1" || remaining.Status != common.COMPLETED {
+		t.Fatalf("completed ingestion task was changed: task=%v, err=%v (parse error=%v)", remaining, err, parseErr)
+	}
+	current, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	if err != nil || current == nil || current.ChunkNum != 5 || current.TokenNum != 10 {
+		t.Fatalf("document counters were changed: doc=%v, err=%v", current, err)
+	}
+	if parseErr == nil || !strings.Contains(parseErr.Error(), "knowledge_graph") {
+		t.Fatalf("StartParseDocuments() error=%v; want retired parser error", parseErr)
+	}
+}
+
 // TestStartParseDocuments_FailsBeforeClearing verifies that GetDocumentStorageAddress
 // runs before clearDocumentParseResults: when storage is invalid, we fail without
 // deleting existing parse results.
