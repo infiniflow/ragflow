@@ -57,6 +57,15 @@ func TestIssue22340_UnwrapItems(t *testing.T) {
 	if len(edges) != 1 || edges[0]["source"] != "A" {
 		t.Fatalf("unwrapItems(edges): got %#v", edges)
 	}
+
+	// 4. Diagnostic arrays (e.g. warnings, errors) must NOT be converted to entities
+	rawDiag := map[string]any{
+		"items":    []any{},
+		"warnings": []any{"No entities found in batch"},
+	}
+	if diag := unwrapItems(rawDiag); len(diag) != 0 {
+		t.Fatalf("unwrapItems(diagnostic array): expected nil/empty, got %#v", diag)
+	}
 }
 
 // TestIssue22340_EndpointAndTypeAliases verifies that relationEndpoint and relationType
@@ -208,5 +217,90 @@ func TestIssue22340_EndToEndRelationExtraction(t *testing.T) {
 
 	if preservedRelations != 2 {
 		t.Fatalf("FilterOrphanRelations preserved relations: got %d, want 2 (Issue #22340 0 relations bug)", preservedRelations)
+	}
+}
+
+// TestIssue22340_EntityAliasPopulatesKnown verifies that when entities are returned
+// with alias fields like entity_name or entity, extractHypergraph still populates
+// known nodes and does not skip relation extraction.
+func TestIssue22340_EntityAliasPopulatesKnown(t *testing.T) {
+	ctx := context.Background()
+	chat := &issue22340EntityAliasChat{}
+	deps := common.Deps{
+		Chat:     chat,
+		Embed:    constEmbedder{dim: 4},
+		TenantID: "t1",
+	}
+	cfg := CompileConfig{
+		LLMID:    "test-llm",
+		Type:     TypeHypergraph,
+		TenantID: "t1",
+		DocID:    "d1",
+		Variant:  common.VariantStructure,
+		ParserConfig: map[string]any{
+			"kind": "knowledge_graph",
+			"entity": map[string]any{
+				"fields": []any{map[string]any{"type": "equipment"}},
+			},
+			"relation": map[string]any{
+				"fields": []any{map[string]any{"type": "repairs"}},
+			},
+		},
+	}
+	nodePrompt, edgePromptTmpl := HypergraphPrompts(cfg.ParserConfig, "en")
+	nodes, edges, err := extractHypergraph(ctx, deps, cfg, nodePrompt, edgePromptTmpl, "test text")
+	if err != nil {
+		t.Fatalf("extractHypergraph: %v", err)
+	}
+	if len(nodes) != 2 {
+		t.Fatalf("nodes: got %d, want 2", len(nodes))
+	}
+	if len(edges) != 1 {
+		t.Fatalf("edges: got %d, want 1 (known entities resolution failed)", len(edges))
+	}
+}
+
+type issue22340EntityAliasChat struct{}
+
+func (m *issue22340EntityAliasChat) Chat(_ context.Context, req common.ChatRequest) (*common.ChatResponse, error) {
+	if strings.Contains(req.SystemPrompt, "## Known Entities:") {
+		return &common.ChatResponse{
+			Content: `{"items": [{"from_entity": "Pump-001", "to_entity": "Bearing-001", "relation": "uses"}]}`,
+		}, nil
+	}
+	// Return entity with entity_name alias
+	return &common.ChatResponse{
+		Content: `{"items": [{"entity_name": "Pump-001", "type": "equipment"}, {"entity_name": "Bearing-001", "type": "spare_part"}]}`,
+	}, nil
+}
+
+// TestIssue22340_MergeInvariantsAndRefreshMeta verifies that applyMergeInvariants and
+// refreshMetaFromPayload correctly protect and resolve endpoint aliases across merges.
+func TestIssue22340_MergeInvariantsAndRefreshMeta(t *testing.T) {
+	existing := common.Product{
+		Meta: map[string]any{
+			"kind": "relation",
+			"from": "Pump-001",
+			"to":   "Bearing-001",
+		},
+		Content: `{"from_entity": "Pump-001", "to_entity": "Bearing-001", "relation": "uses"}`,
+	}
+	mergedPayload := map[string]any{
+		"from_entity": "Pump-002",
+		"to_entity":   "Bearing-002",
+		"relation":    "uses_new",
+	}
+	protected := applyMergeInvariants(existing, mergedPayload)
+	if protected["from_entity"] != "Pump-001" || protected["to_entity"] != "Bearing-001" {
+		t.Errorf("applyMergeInvariants failed to protect endpoints: %#v", protected)
+	}
+
+	meta := map[string]any{"kind": "relation"}
+	refreshMetaFromPayload(meta, "relation", protected)
+	if meta["from"] != "Pump-001" || meta["to"] != "Bearing-001" {
+		t.Errorf("refreshMetaFromPayload failed to refresh endpoints: %#v", meta)
+	}
+	if meta["relation_type"] != "uses_new" {
+		t.Errorf("refreshMetaFromPayload relation_type: got %v, want uses_new", meta["relation_type"])
 	}
 }
