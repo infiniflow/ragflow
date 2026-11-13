@@ -16,6 +16,11 @@
 
 import { FormSchemaType, TemplateSchemaType } from './schema';
 
+export enum CompilationTemplateEditorView {
+  Configuration = 'configuration',
+  Json = 'json',
+}
+
 export const DefaultFieldKeys = ['type', 'description', 'rule'];
 
 export const FieldKeyOrders = [
