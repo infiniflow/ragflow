@@ -190,8 +190,12 @@ export const useSendMessage = () => {
 
       // The failure parked the question in the input box; sending it again
       // replaces that copy, unless the user has typed something else since.
+      // The box belongs to the active conversation, so a draft in another one
+      // is left alone even if it happens to hold the same text.
       consumePendingInput(sessionId);
-      setValue((current) => (current === message.content ? '' : current));
+      if (sessionId === conversationId) {
+        setValue((current) => (current === message.content ? '' : current));
+      }
 
       const questionMessage: IMessage = { ...message, id: uuid() };
       appendQuestion(sessionId, questionMessage);
@@ -202,7 +206,13 @@ export const useSendMessage = () => {
         ...resolveResendOptions({ enableInternet, enableThinking }),
       });
     },
-    [appendQuestion, consumePendingInput, sendMessage, setValue],
+    [
+      appendQuestion,
+      consumePendingInput,
+      conversationId,
+      sendMessage,
+      setValue,
+    ],
   );
 
   useEffect(() => {

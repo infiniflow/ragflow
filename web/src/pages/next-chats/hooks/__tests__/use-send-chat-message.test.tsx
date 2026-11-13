@@ -4,6 +4,7 @@ import { useSendMessage } from '../use-send-chat-message';
 
 const mockRun = jest.fn();
 let mockChatId = 'chat-1';
+let mockConversationId = 'c1';
 let mockLlmSetting: Record<string, number> = {};
 const mockNotifyError = jest.fn();
 
@@ -17,7 +18,10 @@ jest.mock('@/utils/notification', () => ({
 jest.mock('react-router', () => ({ useParams: () => ({ id: mockChatId }) }));
 jest.mock('@/hooks/use-chat-request', () => ({
   useFetchChat: () => ({ data: { llm_setting: mockLlmSetting } }),
-  useGetChatSearchParams: () => ({ conversationId: 'c1', isNew: 'false' }),
+  useGetChatSearchParams: () => ({
+    conversationId: mockConversationId,
+    isNew: 'false',
+  }),
 }));
 jest.mock('@/hooks/use-virtual-messages', () => ({
   useVirtualMessages: () => ({
@@ -53,6 +57,7 @@ const asked = () =>
 
 beforeEach(() => {
   mockChatId = 'chat-1';
+  mockConversationId = 'c1';
   mockLlmSetting = {};
   mockRun.mockReset();
   mockNotifyError.mockReset();
@@ -114,6 +119,38 @@ it('keeps what the user typed meanwhile when retrying', async () => {
   await waitFor(() => expect(mockRun).toHaveBeenCalledTimes(2));
   expect(asked()[1]).toBe('first question');
   expect(result.current.value).toBe('something else');
+});
+
+it("leaves another conversation's draft alone when retrying, even if it holds the same text", async () => {
+  mockRun
+    .mockResolvedValueOnce({ ok: false, aborted: false })
+    .mockResolvedValueOnce({ ok: true, aborted: false });
+  const { result, rerender } = renderHook(() => useSendMessage());
+
+  act(() => result.current.setValue('same question'));
+  await act(async () => {
+    await result.current.handlePressEnter({});
+  });
+  await waitFor(() => expect(mockNotifyError).toHaveBeenCalled());
+  await waitFor(() => expect(result.current.value).toBe('same question'));
+
+  // The user moves to conversation B and types the same text there.
+  mockConversationId = 'c2';
+  useChatStreamStore.getState().ensureSession('c2', 'chat-1');
+  rerender();
+  act(() => result.current.setValue('same question'));
+
+  await act(async () => {
+    mockNotifyError.mock.calls[0][0].action.onClick();
+  });
+
+  // A is re-sent to its own session, and B's draft is untouched.
+  await waitFor(() => expect(mockRun).toHaveBeenCalledTimes(2));
+  expect(mockRun.mock.calls[1][0]).toMatchObject({
+    conversationId: 'c1',
+    question: 'same question',
+  });
+  expect(result.current.value).toBe('same question');
 });
 
 it('does not offer Retry for a stopped answer', async () => {
