@@ -20,7 +20,6 @@ import {
   CompilationTemplateGroupEditor,
   CompilationTemplateGroupEditorState,
 } from '@/components/compilation-template-group';
-import { OntologyActionWorkbenchSheet } from '@/components/compilation-template-group/ontology/action-workbench-sheet';
 import { Button } from '@/components/ui/button';
 import { useCompilationTemplateSidebarCollapse } from '@/hooks/use-compilation-template-sidebar-collapse';
 import { useFetchCompilationTemplateGroup } from '@/hooks/use-compilation-template-group-request';
@@ -114,15 +113,20 @@ export default function EditNextCompilationTemplate() {
         <div className="ml-auto flex items-center gap-3">
           {/* The three workspaces that answer different questions about the same
               model. They are pages, not sheets: browsing a few hundred rows is
-              what a reviewer does, and a modal gets in the way of it. A model
-              that was never saved has no compiled rows, so the links stay off
-              until it has an id. */}
-          {isOntology && templateId && (
+              what a reviewer does, and a modal gets in the way of it.
+
+              They hang off the group's URL (`:id`), not the template's: the
+              group is what the editor route addresses, and a sub-page that
+              carried the template id fetched a group by a foreign id — 404 —
+              while its body asked the model APIs about a model the id did not
+              name. A group that was never saved has no compiled rows, so the
+              links stay off until it has an id. */}
+          {isOntology && !isCreate && templateId && (
             <div className="flex items-center gap-1">
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => navigate(`${basePath}/${templateId}/instances`)}
+                onClick={() => navigate(`${basePath}/${id}/instances`)}
               >
                 {t('knowledgeCompilation.ontologyOpenInstances', {
                   defaultValue: 'Instances',
@@ -131,18 +135,16 @@ export default function EditNextCompilationTemplate() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => navigate(`${basePath}/${templateId}/actions`)}
+                onClick={() => navigate(`${basePath}/${id}/actions`)}
               >
                 {t('knowledgeCompilation.ontologyOpenActions', {
-                  defaultValue: 'Actions',
+                  defaultValue: 'Actions & bindings',
                 })}
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() =>
-                  navigate(`${basePath}/${templateId}/action-audit`)
-                }
+                onClick={() => navigate(`${basePath}/${id}/action-audit`)}
               >
                 {t('knowledgeCompilation.ontologyOpenAudit', {
                   defaultValue: 'Audit',
@@ -150,17 +152,11 @@ export default function EditNextCompilationTemplate() {
               </Button>
             </div>
           )}
-          {/* What the model says it may do, next to what it says: an action the
-              model declares but nobody has wired to a tool cannot run, and that
-              gap is invisible from the assertion preview alone. */}
-          {isOntology && (
-            <OntologyActionWorkbenchSheet templateId={templateId} />
-          )}
           <CompilationModelsSheet templateId={templateId} />
         </div>
       </header>
     ),
-    [basePath, group?.name, isCreate, navigate, navigateToAgents, t],
+    [basePath, group?.name, id, isCreate, navigate, navigateToAgents, t],
   );
 
   return (

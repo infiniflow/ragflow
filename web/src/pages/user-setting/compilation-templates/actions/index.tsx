@@ -15,9 +15,10 @@
  */
 
 import BackButton from '@/components/back-button';
-import { ActionWorkbench } from '@/components/compilation-template-group/ontology/action-workbench-sheet';
+import { ActionWorkbench } from '@/components/compilation-template-group/ontology/action-workbench';
 import { useFetchCompilationTemplateGroup } from '@/hooks/use-compilation-template-group-request';
 import { Routes } from '@/routes';
+import { ontologyTemplateIdOf } from '@/utils/compilation-template-util';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 
@@ -33,6 +34,8 @@ export default function CompilationTemplateActionsPage() {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const { data: group } = useFetchCompilationTemplateGroup(id);
+  // `:id` addresses the group; the workbench is keyed by the template row.
+  const templateId = ontologyTemplateIdOf(group);
   const backTo = `${Routes.CompilationTemplatesEditNext}/${id}`;
 
   return (
@@ -47,7 +50,9 @@ export default function CompilationTemplateActionsPage() {
         </h2>
       </header>
       <div className="flex-1 min-h-0 p-4 flex flex-col">
-        <ActionWorkbench templateId={id} />
+        {/* The template id only exists once the group has loaded; until then the
+            workbench must not fire model-scoped reads with an empty id. */}
+        <ActionWorkbench templateId={templateId} enabled={!!templateId} />
       </div>
     </section>
   );

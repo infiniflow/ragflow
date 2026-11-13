@@ -531,6 +531,44 @@ func (h *DatasetArtifactHandler) GetOntologyArtifacts(c *gin.Context) {
 	common.RespondSuccess(c, resp, "success")
 }
 
+// GetOntologyGraph handles GET /datasets/<dataset_id>/ontology/graph — the
+// ABox canvas read.
+//
+// It is a separate endpoint from /ontology/artifacts because the two answer
+// different questions with different cost models: artifacts pages rows and can
+// reach the last one, while a canvas has to decide up front how much it draws.
+// Here the budget is the parameter (limit / hop) and the response says how much
+// was left out, so the UI can point at the list instead of implying it drew the
+// whole ABox.
+func (h *DatasetArtifactHandler) GetOntologyGraph(c *gin.Context) {
+	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
+	if tenantID == "" {
+		return
+	}
+	limit, _ := strconv.Atoi(c.Query("limit"))
+	hop, _ := strconv.Atoi(c.Query("hop"))
+
+	resp, err := h.svc.GetOntologyGraph(c.Request.Context(), service.OntologyGraphInput{
+		TenantID:   tenantID,
+		DatasetID:  c.Param("dataset_id"),
+		Class:      c.Query("class"),
+		DocumentID: c.Query("document_id"),
+		TemplateID: c.Query("template_id"),
+		// node switches the canvas from "instances of a class" to "neighbours of
+		// one instance"; the canvas sends the row id it drew, and the service
+		// falls back to treating the value as a name when no row matches.
+		Node:      c.Query("node"),
+		Direction: c.Query("direction"),
+		Hop:       hop,
+		Limit:     limit,
+	})
+	if err != nil {
+		common.RespondError(c, common.CodeDataError, err.Error())
+		return
+	}
+	common.RespondSuccess(c, resp, "success")
+}
+
 // GetDocumentClaims handles GET /documents/<document_id>/structure/claims —
 // page one document's claim/evidence rows (entity_type_kwd="claim"). The tree
 // UI fetches them per leaf cluster on demand: chunk_ids carries the cluster's

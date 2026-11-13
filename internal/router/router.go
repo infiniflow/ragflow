@@ -413,6 +413,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// property narrowing travels as a query parameter so the
 				// unnamed case ("everything") needs no path sentinel.
 				datasets.GET("/:dataset_id/ontology/artifacts", r.datasetArtifactHandler.GetOntologyArtifacts)
+				// The ABox canvas: a bounded subgraph (node budget + hop walk)
+				// instead of a page, because a graph cannot "load more" the way
+				// a list can.
+				datasets.GET("/:dataset_id/ontology/graph", r.datasetArtifactHandler.GetOntologyGraph)
 				datasets.POST("/:dataset_id/metadata/update", r.documentHandler.MetadataBatchUpdate)
 				datasets.PATCH("/:dataset_id/documents/metadatas", r.documentHandler.UpdateDocumentMetadatas)
 			}

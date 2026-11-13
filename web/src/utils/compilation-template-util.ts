@@ -15,6 +15,7 @@
  */
 
 import { CompilationTemplateKind } from '@/constants/compilation';
+import { ICompilationTemplateGroup } from '@/interfaces/database/compilation-template';
 import { TFunction } from 'i18next';
 import { capitalize, lowerCase } from 'lodash';
 
@@ -41,3 +42,28 @@ export const isCreateCompilationTemplateGroup = (
 ): id is undefined => {
   return !id;
 };
+
+/**
+ * The template row inside a group that the model-scoped routes address.
+ *
+ * A group is the addressable unit (`/compilation-templates/edit-next/:group_id`),
+ * but every model-scoped API — actions, executions, ABox rows — is keyed by the
+ * template row id. The workspace pages hang off the group's URL and resolve this
+ * from the group payload; passing the group id down instead asks those APIs
+ * about a model that does not exist.
+ *
+ * Ontology groups hold exactly one template; the first-template fallback keeps
+ * a group whose kind label was written by an older build openable.
+ */
+export function ontologyTemplateIdOf(
+  group?: ICompilationTemplateGroup,
+): string {
+  const templates = group?.templates ?? [];
+  return (
+    (
+      templates.find(
+        (item) => item.kind === CompilationTemplateKind.Ontology,
+      ) ?? templates[0]
+    )?.id ?? ''
+  );
+}

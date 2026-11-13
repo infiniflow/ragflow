@@ -75,11 +75,28 @@ export const getOntologyArtifacts = (
     params,
   });
 
+// The ABox canvas read. `class` picks the centre of the walk, `hop` how far it
+// widens into neighbouring classes, `limit` how many nodes it may draw.
+export const getOntologyGraph = (
+  datasetId: string,
+  params: {
+    class?: string;
+    template_id?: string;
+    document_id?: string;
+    hop?: number;
+    limit?: number;
+  },
+) =>
+  request.get(api.ontologyGraph(datasetId), {
+    params,
+  });
+
 const documentStructureService = {
   getDocumentStructureGraph,
   getDocumentStructureClaims,
   deleteDocumentStructureGraph,
   getOntologyArtifacts,
+  getOntologyGraph,
 };
 
 export default documentStructureService;

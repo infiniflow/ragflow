@@ -37,10 +37,6 @@ jest.mock('@/components/compilation-template-group', () => ({
 jest.mock('@/components/compilation-models-sheet', () => ({
   CompilationModelsSheet: () => null,
 }));
-jest.mock(
-  '@/components/compilation-template-group/ontology/action-workbench-sheet',
-  () => ({ OntologyActionWorkbenchSheet: () => null }),
-);
 jest.mock('@/hooks/use-compilation-template-group-request', () => ({
   useFetchCompilationTemplateGroup: () => ({ data: undefined }),
 }));

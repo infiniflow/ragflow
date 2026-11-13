@@ -270,6 +270,11 @@ const apiEndpoints = {
   // the absent key rather than an empty path segment.
   ontologyArtifacts: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ontology/artifacts`,
+  // The ABox canvas. A separate endpoint from the artifacts page because the
+  // cost model differs: here the budget (`limit` / `hop`) is the parameter and
+  // the response reports what it left out.
+  ontologyGraph: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/ontology/graph`,
   retrievalTest: `${restAPIv1}/datasets/search`,
 
   // document

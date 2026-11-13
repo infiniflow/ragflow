@@ -24,6 +24,7 @@ import { useFetchCompilationTemplateGroup } from '@/hooks/use-compilation-templa
 import type { ICompilationTemplate } from '@/interfaces/database/compilation-template';
 import { CompilationTemplateKind } from '@/constants/compilation';
 import { Routes } from '@/routes';
+import { ontologyTemplateIdOf } from '@/utils/compilation-template-util';
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
@@ -48,7 +49,10 @@ export default function CompilationTemplateInstancesPage() {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const { data: group } = useFetchCompilationTemplateGroup(id);
-  const { impact } = useFetchCompilationModelImpact(id);
+  // `:id` addresses the group (the editor route's unit); every model-scoped read
+  // below is keyed by the template row inside it.
+  const templateId = ontologyTemplateIdOf(group);
+  const { impact } = useFetchCompilationModelImpact(templateId);
   const datasets = useMemo(() => impact?.datasets ?? [], [impact]);
   const [datasetId, setDatasetId] = useState('');
 
@@ -93,8 +97,8 @@ export default function CompilationTemplateInstancesPage() {
           {/* Judging a row and browsing rows are the same session's two halves,
               so the queue opens from here rather than from a separate page. */}
           <OntologyReviewSheet
-            templateId={id}
-            entities={declaredClasses(group?.templates, id)?.map(
+            templateId={templateId}
+            entities={declaredClasses(group?.templates, templateId)?.map(
               (item) => item.type,
             )}
             trigger={
@@ -112,8 +116,8 @@ export default function CompilationTemplateInstancesPage() {
         {datasetId ? (
           <OntologyAboxPanel
             datasetId={datasetId}
-            templateId={id}
-            classes={declaredClasses(group?.templates, id)}
+            templateId={templateId}
+            classes={declaredClasses(group?.templates, templateId)}
           />
         ) : (
           <span className="text-xs text-text-secondary">

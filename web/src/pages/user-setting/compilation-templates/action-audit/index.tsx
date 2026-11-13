@@ -15,10 +15,11 @@
  */
 
 import BackButton from '@/components/back-button';
-import { ActionAuditTable } from '@/components/compilation-template-group/ontology/action-workbench-sheet';
+import { ActionAuditTable } from '@/components/compilation-template-group/ontology/action-workbench';
 import { useFetchCompilationTemplateGroup } from '@/hooks/use-compilation-template-group-request';
 import { useFetchActionExecutions } from '@/hooks/use-ontology-action-request';
 import { Routes } from '@/routes';
+import { ontologyTemplateIdOf } from '@/utils/compilation-template-util';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
@@ -33,8 +34,14 @@ export default function CompilationTemplateActionAuditPage() {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
   const { data: group } = useFetchCompilationTemplateGroup(id);
+  // `:id` addresses the group; executions are keyed by the template row.
+  const templateId = ontologyTemplateIdOf(group);
   const [page, setPage] = useState(1);
-  const { executions, total } = useFetchActionExecutions(id, page, !!id);
+  const { executions, total } = useFetchActionExecutions(
+    templateId,
+    page,
+    !!templateId,
+  );
   const backTo = `${Routes.CompilationTemplatesEditNext}/${id}`;
 
   return (

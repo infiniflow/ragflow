@@ -260,3 +260,27 @@ export interface IStructureGraphResponse {
   total_entities?: number;
   returned_entities?: number;
 }
+
+/**
+ * One canvas of the ABox: a bounded subgraph rather than a page of rows.
+ *
+ * A list can say "12–30 of 240" and still let the reader reach row 240; a canvas
+ * has to decide up front how much it draws. So the response carries the budget
+ * it spent (`drawn`) next to the scope it was drawn from (`total`), and
+ * `truncated` says the two differ — the UI has to offer the list at that point
+ * instead of implying the graph is the whole ABox.
+ */
+export interface IOntologyGraphPage {
+  /** The class the canvas was asked for; empty means the whole scope. */
+  class: string;
+  /** How many hops the walk spent widening to neighbouring classes. */
+  hop: number;
+  /** Instances of `class` in scope — the denominator, not what was drawn. */
+  total: number;
+  drawn: number;
+  truncated: boolean;
+  /** The classes drawn, in walk order: the requested one first. */
+  classes: string[];
+  entities: IStructureGraphEntity[];
+  relations: IStructureGraphRelation[];
+}

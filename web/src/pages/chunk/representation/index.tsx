@@ -203,6 +203,10 @@ function Representation({
 
   return (
     <section className="p-5 rounded-2xl h-full flex flex-col">
+      {/* Ontology has no page-level search: the ABox reads the index directly and
+          never consumes the keyword-narrowed structure response, so a box here
+          searched nothing the panel draws. The panel's own canvas search is the
+          one that can address what it shows. */}
       <div className="flex items-center gap-2">
         <div className="min-w-0">
           {isGraphKind ? (
@@ -215,7 +219,8 @@ function Representation({
               onNoMatchEnter={handleNoMatchEnter}
               disableAutoSelectOnEnter
             />
-          ) : (
+          ) : selectedTemplate?.kind ===
+            CompilationTemplateKind.Ontology ? null : (
             <ExpandableSearchInput
               value={searchKeyword}
               onChange={handleSearchKeywordChange}
