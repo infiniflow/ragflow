@@ -1,3 +1,4 @@
+import type { AdminOperation } from '@/interfaces/database/admin-audit';
 /*
  *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
  *
@@ -173,6 +174,20 @@ export const login = (params: { email: string; password: string }) =>
 export const logout = () => request.post<ResponseData<void>>(adminLogout);
 export const listUsers = () =>
   request.get<ResponseData<AdminService.ListUsersItem[]>>(adminListUsers, {});
+
+export interface AdminAuditParams {
+  page: number;
+  page_size: number;
+  keyword?: string;
+  action?: string;
+  result?: string;
+}
+
+export const listOperationLogs = (params: AdminAuditParams) =>
+  request.get<ResponseData<AdminOperation[]> & { total: number }>(
+    api.adminListOperationLogs,
+    { params },
+  );
 
 export const createUser = (email: string, password: string) =>
   request.post<ResponseData<Record<string, unknown>>>(adminCreateUser, {

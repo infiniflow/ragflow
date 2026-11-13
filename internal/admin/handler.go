@@ -98,12 +98,18 @@ func (h *Handler) Login(c *gin.Context) {
 	// This allows default admin account to log in admin system
 	user, code, err := h.userService.LoginByEmail(ctx, &req)
 	if err != nil {
+		if auditErr := h.recordLogin(c, nil, req.Email, code); auditErr != nil {
+			common.Error("Could not record failed administrator login", auditErr)
+		}
 		common.RespondError(c, code, err.Error())
 		return
 	}
 
 	// Check if user is superuser (admin)
 	if user.IsSuperuser == nil || !*user.IsSuperuser {
+		if auditErr := h.recordLogin(c, user, req.Email, common.CodeForbidden); auditErr != nil {
+			common.Error("Could not record rejected administrator login", auditErr)
+		}
 		common.RespondError(c, common.CodeForbidden, "Only superuser can login admin system")
 		return
 	}
@@ -117,6 +123,12 @@ func (h *Handler) Login(c *gin.Context) {
 	authToken, err := common.DumpAccessToken(*user.AccessToken, "", secretKey)
 	if err != nil {
 		common.RespondError(c, common.CodeServerError, fmt.Sprintf("Failed to generate auth token: %s", err.Error()))
+		return
+	}
+
+	if err := h.recordLogin(c, user, req.Email, common.CodeSuccess); err != nil {
+		common.Error("Could not record successful administrator login", err)
+		common.Respond(c, http.StatusServiceUnavailable, common.CodeServerError, nil, "Cannot record administrator login")
 		return
 	}
 
@@ -277,12 +289,14 @@ func (h *Handler) CreateUser(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 
+	c.Set("audit_target_email", req.Username)
 	userInfo, err := h.service.CreateUser(ctx, req.Username, req.Password, req.Role)
 	if err != nil {
 		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
 
+	c.Set("audit_target_id", userInfo["id"])
 	common.RespondSuccess(c, userInfo, "User created successfully")
 }
 
