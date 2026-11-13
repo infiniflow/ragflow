@@ -881,6 +881,153 @@ func TestUpdateChunkStoresTagKwdOnlyWhenSent(t *testing.T) {
 	}
 }
 
+func TestUpdateChunkRewritesTksForSentKeywordsAndQuestions(t *testing.T) {
+	tests := []struct {
+		name           string
+		importantKwd   []string
+		questions      []string
+		wantTokenized  []string
+		wantImpTks     string
+		wantImpTksSet  bool
+		wantQuesTks    string
+		wantQuesTksSet bool
+		wantQuesKwd    []string
+		wantQuesKwdSet bool
+	}{
+		{
+			name:           "keywords and questions sent",
+			importantKwd:   []string{"alpha", "beta"},
+			questions:      []string{" first question ", "", "second question"},
+			wantTokenized:  []string{"existing content", "alpha beta", " first question \n\nsecond question"},
+			wantImpTks:     "TK(alpha beta)",
+			wantImpTksSet:  true,
+			wantQuesTks:    "TK( first question \n\nsecond question)",
+			wantQuesTksSet: true,
+			wantQuesKwd:    []string{"first question", "second question"},
+			wantQuesKwdSet: true,
+		},
+		{
+			name:           "empty questions list clears question fields",
+			questions:      []string{},
+			wantTokenized:  []string{"existing content", ""},
+			wantQuesTks:    "TK()",
+			wantQuesTksSet: true,
+			wantQuesKwd:    []string{},
+			wantQuesKwdSet: true,
+		},
+		{
+			name:          "absent fields leave tks untouched",
+			wantTokenized: []string{"existing content"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupChunkTestDB(t)
+			pushChunkTestDB(t, db)
+
+			insertChunkTestUserTenant(t, "user-1", "tenant-1")
+			insertChunkTestKB(t, "kb-1", "tenant-1")
+			insertChunkTestDoc(t, "doc-a", "kb-1")
+
+			engine := &updateChunkTestEngine{
+				existingChunk: map[string]interface{}{
+					"doc_id":              "doc-a",
+					"content_with_weight": "existing content",
+				},
+			}
+			var tokenized []string
+			svc := &ChunkService{
+				docEngine: engine,
+				kbDAO:     dao.NewKnowledgebaseDAO(),
+				tokenizeFunc: func(text, _ string) (string, error) {
+					tokenized = append(tokenized, text)
+					return "TK(" + text + ")", nil
+				},
+				fineGrainedTokenizeFunc: func(text, _ string) (string, error) { return text + "_fg", nil },
+			}
+
+			err := svc.UpdateChunk(chunkTestContext(t, "user-1", "tenant-1"), &service.UpdateChunkRequest{
+				DatasetID:    "kb-1",
+				DocumentID:   "doc-a",
+				ChunkID:      "chunk-1",
+				ImportantKwd: tt.importantKwd,
+				Questions:    tt.questions,
+			})
+			if err != nil {
+				t.Fatalf("UpdateChunk() error = %v", err)
+			}
+			if len(engine.updateCalls) != 1 {
+				t.Fatalf("UpdateChunks calls = %d, want 1", len(engine.updateCalls))
+			}
+			newValue := engine.updateCalls[0].newValue
+			if !reflect.DeepEqual(tokenized, tt.wantTokenized) {
+				t.Fatalf("tokenize inputs = %#v, want %#v", tokenized, tt.wantTokenized)
+			}
+			impTks, ok := newValue["important_tks"].(string)
+			if ok != tt.wantImpTksSet || (tt.wantImpTksSet && impTks != tt.wantImpTks) {
+				t.Fatalf("important_tks = %#v (present=%v), want %q (set=%v)", newValue["important_tks"], ok, tt.wantImpTks, tt.wantImpTksSet)
+			}
+			quesTks, ok := newValue["question_tks"].(string)
+			if ok != tt.wantQuesTksSet || (tt.wantQuesTksSet && quesTks != tt.wantQuesTks) {
+				t.Fatalf("question_tks = %#v (present=%v), want %q (set=%v)", newValue["question_tks"], ok, tt.wantQuesTks, tt.wantQuesTksSet)
+			}
+			quesKwd, ok := newValue["question_kwd"].([]string)
+			if ok != tt.wantQuesKwdSet || (tt.wantQuesKwdSet && !reflect.DeepEqual(quesKwd, tt.wantQuesKwd)) {
+				t.Fatalf("question_kwd = %#v (present=%v), want %#v (set=%v)", newValue["question_kwd"], ok, tt.wantQuesKwd, tt.wantQuesKwdSet)
+			}
+		})
+	}
+}
+
+func TestUpdateChunkFailsWithoutIndexWriteWhenTokenizeFails(t *testing.T) {
+	for _, field := range []string{"important_kwd", "questions"} {
+		t.Run(field, func(t *testing.T) {
+			db := setupChunkTestDB(t)
+			pushChunkTestDB(t, db)
+
+			insertChunkTestUserTenant(t, "user-1", "tenant-1")
+			insertChunkTestKB(t, "kb-1", "tenant-1")
+			insertChunkTestDoc(t, "doc-a", "kb-1")
+
+			engine := &updateChunkTestEngine{
+				existingChunk: map[string]interface{}{
+					"doc_id":              "doc-a",
+					"content_with_weight": "existing content",
+				},
+			}
+			svc := &ChunkService{
+				docEngine: engine,
+				kbDAO:     dao.NewKnowledgebaseDAO(),
+				tokenizeFunc: func(text, _ string) (string, error) {
+					if text != "existing content" {
+						return "", errors.New("tokenizer unavailable")
+					}
+					return text, nil
+				},
+				fineGrainedTokenizeFunc: func(text, _ string) (string, error) { return text + "_fg", nil },
+			}
+
+			req := &service.UpdateChunkRequest{
+				DatasetID:  "kb-1",
+				DocumentID: "doc-a",
+				ChunkID:    "chunk-1",
+			}
+			if field == "important_kwd" {
+				req.ImportantKwd = []string{"alpha"}
+			} else {
+				req.Questions = []string{"first question"}
+			}
+
+			if err := svc.UpdateChunk(chunkTestContext(t, "user-1", "tenant-1"), req); err == nil {
+				t.Fatalf("UpdateChunk() with failing tokenizer for %s = nil error, want error", field)
+			}
+			if len(engine.updateCalls) != 0 {
+				t.Fatalf("UpdateChunks calls = %d, want 0 (newValue=%#v)", len(engine.updateCalls), engine.updateCalls[0].newValue)
+			}
+		})
+	}
+}
+
 func TestUpdateChunkStoresImageAndFlagsImageChunk(t *testing.T) {
 	cases := []struct {
 		name     string
