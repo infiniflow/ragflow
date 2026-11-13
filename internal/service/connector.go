@@ -1039,29 +1039,6 @@ func (s *ConnectorService) UpdateConnector(ctx context.Context, connectorID stri
 		code, permissionErr := permissionresponse.NormalizeHidden(err)
 		return nil, code, permissionErr
 	}
-	if req != nil && (req.Reschedule || isConnectorCancelStatus(req.Status) || isConnectorScheduleStatus(req.Status)) {
-		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connectorID}, permission.OperationRun); err != nil {
-			code, permissionErr := permissionresponse.NormalizeHidden(err)
-			return nil, code, permissionErr
-		}
-	}
-
-	connector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, common.CodeDataError, fmt.Errorf("can't find this Connector")
-		}
-		return nil, common.CodeServerError, err
-	}
-
-	// The response returns the stored credentials. Fail before any write when they
-	// cannot be decrypted; a request with new credentials replaces them instead.
-	if req == nil || req.Config == nil {
-		if _, err = common.DecryptConnectorCredentials(connector.Config); err != nil {
-			return nil, common.CodeServerError, err
-		}
-	}
-
 	updates := map[string]interface{}{}
 	if req != nil {
 		if req.PruneFreq != nil {
@@ -1088,36 +1065,77 @@ func (s *ConnectorService) UpdateConnector(ctx context.Context, connectorID stri
 		}
 	}
 
-	if len(updates) > 0 {
-		if err = s.connectorDAO.UpdateByID(ctx, dao.DB, connectorID, updates); err != nil {
-			return nil, common.CodeServerError, err
+	var taskIDs []string
+	errorCode := common.CodeServerError
+	err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		connector, err := s.connectorDAO.GetByIDForUpdate(ctx, tx, connectorID)
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			errorCode = common.CodeDataError
+			return fmt.Errorf("can't find this Connector")
 		}
-	}
-
-	if req != nil {
-		if req.Reschedule {
-			if err = s.cancelConnectorTasks(ctx, connectorID); err != nil {
-				return nil, common.CodeServerError, err
-			}
-			taskIDs, err := s.connectorDAO.ScheduleConnectorTasks(ctx, dao.DB, connectorID)
-			if err != nil {
-				return nil, common.CodeServerError, err
-			}
-			publishSyncerTasks(taskIDs)
-		} else if isConnectorCancelStatus(req.Status) {
-			if err = s.cancelConnectorTasks(ctx, connectorID); err != nil {
-				return nil, common.CodeServerError, err
-			}
-		} else if isConnectorScheduleStatus(req.Status) {
-			taskIDs, err := s.connectorDAO.ScheduleConnectorTasks(ctx, dao.DB, connectorID)
-			if err != nil {
-				return nil, common.CodeServerError, err
-			}
-			publishSyncerTasks(taskIDs)
+		if err != nil {
+			return err
 		}
-	}
+		if req == nil || req.Config == nil {
+			if _, err = common.DecryptConnectorCredentials(connector.Config); err != nil {
+				return err
+			}
+		}
+		if req == nil {
+			return nil
+		}
 
-	connector, err = s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
+		scopeChanged := connector.Source == "confluence" && req.Config != nil &&
+			syncerconnector.ConfluenceScopeChanged(map[string]any(connector.Config), req.Config)
+		reschedule := req.Reschedule || scopeChanged
+		cancel := !req.Reschedule && isConnectorCancelStatus(req.Status)
+		schedule := isConnectorScheduleStatus(req.Status)
+		if reschedule || cancel || schedule {
+			ref := permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connectorID}
+			if err := permission.NewDatabaseChecker(tx).CheckResource(ctx, ref, permission.OperationRun); err != nil {
+				code, permissionErr := permissionresponse.NormalizeHidden(err)
+				errorCode = code
+				return permissionErr
+			}
+		}
+		if len(updates) > 0 {
+			if err := s.connectorDAO.UpdateByID(ctx, tx, connectorID, updates); err != nil {
+				return err
+			}
+			if req.Config != nil {
+				connector.Config = entity.ConnectorConfig(req.Config)
+			}
+		}
+		if reschedule || cancel {
+			if err := s.connectorDAO.CancelRunningOrScheduledLogs(ctx, tx, connectorID); err != nil {
+				return err
+			}
+		}
+		if reschedule || schedule {
+			taskIDs, err = s.connectorDAO.ScheduleConnectorTasks(ctx, tx, connector, scopeChanged)
+			if err != nil {
+				return err
+			}
+		}
+		if cancel {
+			if scopeChanged {
+				if err := s.connectorDAO.CancelRunningOrScheduledLogs(ctx, tx, connectorID); err != nil {
+					return err
+				}
+				taskIDs = nil
+			}
+			return s.connectorDAO.UpdateByID(ctx, tx, connectorID, map[string]any{
+				"status": string(entity.TaskStatusCancel),
+			})
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, errorCode, err
+	}
+	publishSyncerTasks(taskIDs)
+
+	connector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, common.CodeDataError, fmt.Errorf("can't find this Connector")
@@ -1269,6 +1287,9 @@ func (s *ConnectorService) ResumeFailedSync(ctx context.Context, connectorID str
 	}
 	// resume the task
 	if err = s.connectorDAO.ResumeFailedSyncTask(ctx, dao.DB, connectorID, req.KbID, req.TaskID); err != nil {
+		if errors.Is(err, dao.ErrConnectorSyncScopeChanged) {
+			return false, common.CodeDataError, err
+		}
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return false, common.CodeDataError, fmt.Errorf("failed sync task not found")
 		}
