@@ -34,13 +34,15 @@ export function useRunDataflow({
       // result.
       setMessageId('');
       showLogSheet();
-      const res = await send({
+      const completion = await send({
         agent_id: id,
         query: '',
         'openai-compatible': false,
         session_id: null,
         files: [fileResponseData.file],
       });
+      if (!completion.isCurrent()) return;
+      const res = completion.result;
 
       if (!res) {
         // send() swallowed a network/parse failure; without a new message_id
