@@ -45,14 +45,17 @@ describe('Extractor parameter transformations & precedence', () => {
         temperature: 0.5,
         temperatureEnabled: true,
         keywords: {
+          enabled: true,
           top_n: 5,
           system_prompt: 'KW prompt',
         },
         questions: {
+          enabled: true,
           top_n: 3,
           system_prompt: 'Q prompt',
         },
         tags: {
+          enabled: true,
           top_n: 2,
           tag_file_id: 'tag-123',
         },
@@ -83,9 +86,17 @@ describe('Extractor parameter transformations & precedence', () => {
       const result = transformExtractorParams(input);
 
       expect(result).toEqual({
-        keywords: { top_n: 4, system_prompt: 'legacy kw prompt' },
-        questions: { top_n: 2, system_prompt: 'legacy q prompt' },
-        tags: { top_n: 1, tag_file_id: 'tag-legacy' },
+        keywords: {
+          enabled: true,
+          top_n: 4,
+          system_prompt: 'legacy kw prompt',
+        },
+        questions: {
+          enabled: true,
+          top_n: 2,
+          system_prompt: 'legacy q prompt',
+        },
+        tags: { enabled: true, top_n: 1, tag_file_id: 'tag-legacy' },
         summary: { enabled: true, system_prompt: 'legacy summary prompt' },
         metadata: { enabled: false, metadata: [], built_in_metadata: [] },
       });
@@ -101,15 +112,42 @@ describe('Extractor parameter transformations & precedence', () => {
       const result = transformExtractorParams(input);
 
       expect(result).toEqual({
-        keywords: { top_n: 0, system_prompt: '' },
-        questions: { top_n: 0, system_prompt: '' },
-        tags: { top_n: 0, tag_file_id: '' },
+        keywords: { enabled: false, top_n: 0, system_prompt: '' },
+        questions: { enabled: false, top_n: 0, system_prompt: '' },
+        tags: { enabled: false, top_n: 0, tag_file_id: '' },
         summary: { enabled: false, system_prompt: '' },
         metadata: {
           enabled: true,
           metadata: [{ key: 'author', type: 'string' }],
           built_in_metadata: [{ key: 'file_name', type: 'string' }],
         },
+      });
+    });
+
+    it('keeps an explicit enabled switch authoritative over top_n', () => {
+      const input: any = {
+        keywords: { enabled: false, top_n: 5, system_prompt: '' },
+        questions: { enabled: true, top_n: 2, system_prompt: '' },
+        tags: { enabled: false, top_n: 3, tag_file_id: 'tag-1' },
+      };
+
+      const result = transformExtractorParams(input);
+
+      // top_n survives a disabled switch so toggling back on restores it.
+      expect(result.keywords).toEqual({
+        enabled: false,
+        top_n: 5,
+        system_prompt: '',
+      });
+      expect(result.questions).toEqual({
+        enabled: true,
+        top_n: 2,
+        system_prompt: '',
+      });
+      expect(result.tags).toEqual({
+        enabled: false,
+        top_n: 3,
+        tag_file_id: 'tag-1',
       });
     });
 
@@ -186,8 +224,25 @@ describe('Extractor parameter transformations & precedence', () => {
       expect(result).not.toHaveProperty('enable_metadata');
       expect(result).not.toHaveProperty('built_in_metadata');
       expect(result.keywords.top_n).toBe(4);
+      expect(result.keywords.enabled).toBe(true);
       expect(result.questions.top_n).toBe(2);
+      expect(result.questions.enabled).toBe(true);
       expect(result.tags.top_n).toBe(1);
+      expect(result.tags.enabled).toBe(true);
+    });
+
+    it('prefers an explicit group enabled over the top_n derivation', () => {
+      const result = transformExtractorConfigToForm({
+        keywords: { enabled: false, top_n: 5 },
+        questions: { enabled: true, top_n: 0 },
+        tags: { top_n: 0 },
+      });
+
+      // top_n is preserved so re-enabling restores the previous count.
+      expect(result.keywords).toMatchObject({ enabled: false, top_n: 5 });
+      expect(result.questions).toMatchObject({ enabled: true, top_n: 0 });
+      // Legacy group without the switch derives from top_n.
+      expect(result.tags).toMatchObject({ enabled: false, top_n: 0 });
     });
 
     it('passes through the metadata group shape unchanged', () => {

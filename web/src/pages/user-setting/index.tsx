@@ -14,19 +14,36 @@
  *  limitations under the License.
  */
 
+import { Button } from '@/components/ui/button';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { cn } from '@/lib/utils';
+import { X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { Outlet } from 'react-router';
 import { SideBar } from './sidebar';
 
-import { cn } from '@/lib/utils';
-
 function UserSetting() {
+  const { t } = useTranslation();
+  const { closeUserSetting } = useNavigatePage();
+
   return (
-    <section className="pt-8 size-full grid grid-cols-[4rem_minmax(0,1fr)] md:grid-cols-[303px_minmax(0,1fr)] grid-rows-1 min-w-0">
+    <section className="relative pt-16 size-full grid grid-cols-[4rem_minmax(0,1fr)] md:grid-cols-[303px_minmax(0,1fr)] grid-rows-1 min-w-0">
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label={t('common.close')}
+        title={t('common.close')}
+        onClick={closeUserSetting}
+        className="absolute right-2 top-4 z-10 md:right-6"
+      >
+        <X className="size-6" />
+      </Button>
+
       <SideBar />
 
       <div
         className={cn(
-          'pr-2 md:pr-6 pb-6 flex flex-1 min-w-0 rounded-lg overflow-hidden',
+          'pr-16 md:pr-20 pb-6 flex flex-1 min-w-0 rounded-lg overflow-hidden',
         )}
       >
         <Outlet />

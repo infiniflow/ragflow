@@ -63,7 +63,7 @@ func (r *RAGconModel) chatURL(apiConfig *APIConfig) (string, error) {
 		return "", err
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
-	return fmt.Sprintf("%s/%s", baseURL, r.baseModel.URLSuffix.Chat), nil
+	return joinURL(baseURL, r.baseModel.URLSuffix.Chat), nil
 }
 
 func (r *RAGconModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
@@ -146,12 +146,10 @@ func (r *RAGconModel) Embed(ctx context.Context, modelName *string, request Embe
 		return []EmbeddingData{}, nil
 	}
 
-	baseURL, err := r.baseModel.GetBaseURL(apiConfig)
+	url, err := r.baseModel.EndpointURL(apiConfig, r.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, r.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -216,12 +214,10 @@ func (r *RAGconModel) Rerank(ctx context.Context, modelName *string, request Rer
 		return &RerankResponse{}, nil
 	}
 
-	baseURL, err := r.baseModel.GetBaseURL(apiConfig)
+	url, err := r.baseModel.EndpointURL(apiConfig, r.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, r.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN != 0 {
@@ -290,12 +286,10 @@ func (r *RAGconModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 		return nil, err
 	}
 
-	baseURL, err := r.baseModel.GetBaseURL(apiConfig)
+	url, err := r.baseModel.EndpointURL(apiConfig, r.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, r.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -336,7 +330,7 @@ func (r *RAGconModel) CheckConnection(ctx context.Context, apiConfig *APIConfig)
 
 // Balance is not exposed by RAGcon's LiteLLM proxy.
 func (r *RAGconModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", r.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", r.Name())
 }
 
 func (r *RAGconModel) newASRRequest(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, stream bool) (*http.Request, string, error) {
@@ -350,12 +344,10 @@ func (r *RAGconModel) newASRRequest(ctx context.Context, modelName *string, file
 		return nil, "", fmt.Errorf("file is missing")
 	}
 
-	baseURL, err := r.baseModel.GetBaseURL(apiConfig)
+	url, err := r.baseModel.EndpointURL(apiConfig, r.baseModel.URLSuffix.ASR)
 	if err != nil {
 		return nil, "", err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(r.baseModel.URLSuffix.ASR, "/"))
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -524,12 +516,10 @@ func (r *RAGconModel) newTTSRequest(ctx context.Context, modelName *string, audi
 		return nil, "", fmt.Errorf("audio content is empty")
 	}
 
-	baseURL, err := r.baseModel.GetBaseURL(apiConfig)
+	url, err := r.baseModel.EndpointURL(apiConfig, r.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return nil, "", err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(r.baseModel.URLSuffix.TTS, "/"))
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -632,18 +622,22 @@ func (r *RAGconModel) AudioSpeechWithSender(ctx context.Context, modelName *stri
 
 // OCRFile is not offered by RAGcon.
 func (r *RAGconModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", r.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", r.Name())
 }
 
 // ParseFile is not offered by RAGcon.
 func (r *RAGconModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", r.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", r.Name())
 }
 
 func (r *RAGconModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", r.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", r.Name())
 }
 
 func (r *RAGconModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", r.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", r.Name())
+}
+
+func (r *RAGconModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", r.Name())
 }

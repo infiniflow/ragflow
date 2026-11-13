@@ -24,12 +24,13 @@
 // traceparent headers.
 //
 // SSRF guard (PR #15426): every outbound URL is validated against
-// the shared common.AssertURLSafe before any network I/O. Both the
-// target URL and an optional proxy URL are checked — the proxy
+// the shared common.AssertURLSafe before any network I/O, unless
+// ALLOW_ANY_HOST permits private hosts. Both the target URL and
+// an optional proxy URL are checked — the proxy
 // vector matters because the Go transport hands the request to the
 // proxy host, which would otherwise re-resolve the original host
 // and re-open the rebinding window the SSRF guard just closed. To
-// defeat DNS rebinding the transport dials the validated public IP
+// defeat DNS rebinding the transport dials the validated IP
 // directly (utility.PinnedHTTPClient) and we disable redirect
 // following so a 30x to a private host cannot bypass the guard.
 package component
@@ -44,6 +45,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"strings"
 	"time"
@@ -78,6 +80,9 @@ type InvokeComponent struct {
 
 // NewInvokeComponent constructs an Invoke component.
 func NewInvokeComponent(params map[string]any) (Component, error) {
+	if err := validateInvokeVariables(componentNameInvoke, params, false); err != nil {
+		return nil, runtime.NewUserFacingError(err.Error())
+	}
 	return &InvokeComponent{name: componentNameInvoke, params: cloneInvokeParams(params)}, nil
 }
 
@@ -89,12 +94,12 @@ func (i *InvokeComponent) Name() string { return i.name }
 // param
 //
 // SSRF flow (PR #15426):
-//  1. Validate the target URL via common.AssertURLSafe (loopback /
-//     link-local / RFC1918 / metadata / unresolvable are rejected).
+//  1. Validate the target URL (private addresses are rejected unless
+//     ALLOW_ANY_HOST is enabled; scheme and DNS checks always apply).
 //  2. Validate the optional proxy URL the same way (the proxy
 //     re-resolves the target host; an unsafe proxy would defeat
 //     step 1).
-//  3. Use utility.PinnedHTTPClient to dial the validated public IP
+//  3. Use utility.PinnedHTTPClient to dial the validated IP
 //     for the target host — closing the TOCTOU window between
 //     validation and connect.
 //  4. Disable redirect following so a 30x to a private host cannot
@@ -136,8 +141,8 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	}
 
 	// Step 1: SSRF guard for the target URL. The validated
-	// hostname + resolved public IP are reused for DNS pinning.
-	host, pinnedIP, err := common.AssertURLSafe(rawURL)
+	// hostname + resolved IP are reused for DNS pinning.
+	host, pinnedIP, err := validateInvokeURL(rawURL)
 	if err != nil {
 		return invokeSSRFError("url", rawURL, err), nil
 	}
@@ -145,11 +150,12 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	// Step 2: SSRF guard for the proxy URL (if configured).
 	// Mirrors the Python assert_url_is_safe(proxy_url) check.
 	var (
-		proxyHost string
-		proxyIP   string
+		proxyURL *url.URL
+		proxyIP  string
 	)
 	proxyStr, _ := inputs["proxy"].(string)
 	if proxyStr != "" {
+		proxyStr = strings.TrimSpace(proxyStr)
 		// Fail-closed target check (PR #15426 round-2 review).
 		//
 		// When a proxy is configured, Go dials the proxy host and then
@@ -176,11 +182,15 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 			return invokeSSRFError("url", rawURL,
 				fmt.Errorf("Invoke: proxy mode requires a literal-IP target URL (hostnames are unsafe because the proxy re-resolves them)")), nil
 		}
-		ph, pip, perr := common.AssertURLSafe(proxyStr)
-		if perr != nil {
-			return invokeSSRFError("proxy", proxyStr, perr), nil
+		proxyURL, err = url.Parse(proxyStr)
+		if err != nil {
+			// Parse errors include the raw URL, which may contain credentials.
+			return invokeSSRFError("proxy", proxyStr, errors.New("invalid proxy URL")), nil
 		}
-		proxyHost, proxyIP = ph, pip
+		_, proxyIP, err = validateInvokeURL(proxyStr)
+		if err != nil {
+			return invokeSSRFError("proxy", proxyStr, err), nil
+		}
 	}
 
 	timeout := defaultInvokeTimeout
@@ -193,6 +203,64 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	contentType, _ := inputs["content_type"].(string)
 	if contentType == "" && (method == http.MethodPost || method == http.MethodPut) {
 		contentType = defaultInvokeContentCT
+	}
+
+	// Form variables supply request fields unless an explicit body is configured.
+	if _, explicit := inputs["body"]; !explicit {
+		fields := map[string]any{}
+		variables, _ := inputs["variables"].([]any)
+		for _, raw := range variables {
+			variable, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			key, _ := variable["key"].(string)
+			value := variable["value"]
+			if ref, _ := variable["ref"].(string); ref != "" {
+				var found bool
+				value, found = inputs[ref]
+				if !found {
+					state, err := runtime.GetStateFromContext(ctx)
+					if err != nil || state == nil {
+						return nil, fmt.Errorf("Invoke: cannot resolve variable %q", key)
+					}
+					value, err = state.GetVar(ref)
+					if err != nil {
+						return nil, fmt.Errorf("Invoke: variable %q: %w", key, err)
+					}
+				}
+			}
+			if variable["type"] == "object" {
+				if text, ok := value.(string); ok {
+					var object map[string]any
+					if err := json.Unmarshal([]byte(text), &object); err != nil || object == nil {
+						return nil, fmt.Errorf("Invoke: parameter %q must be a valid JSON object", key)
+					}
+					value = object
+				}
+				if object, ok := value.(map[string]any); !ok || object == nil {
+					return nil, fmt.Errorf("Invoke: parameter %q must be a valid JSON object", key)
+				}
+			}
+			fields[key] = value
+		}
+		if len(fields) > 0 {
+			if method == http.MethodGet || method == http.MethodDelete {
+				u, _ := url.Parse(rawURL)
+				query := u.Query()
+				for key, value := range fields {
+					query.Set(key, fmt.Sprint(value))
+				}
+				u.RawQuery = query.Encode()
+				rawURL = u.String()
+			} else {
+				encoded, err := json.Marshal(fields)
+				if err != nil {
+					return nil, fmt.Errorf("Invoke: encode variables: %w", err)
+				}
+				inputs["body"] = string(encoded)
+			}
+		}
 	}
 
 	var body io.Reader
@@ -230,8 +298,7 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	// different answer (TOCTOU). The validated IP is captured
 	// from the proxy SSRF check above (proxyIP).
 	var client *http.Client
-	if proxyStr != "" {
-		proxyURL := mustParseProxy(proxyStr)
+	if proxyURL != nil {
 		pinnedProxyDialer := &net.Dialer{
 			Timeout:   timeout,
 			KeepAlive: 30 * time.Second,
@@ -243,7 +310,7 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 				DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 					// When the transport dials the proxy, addr is
 					// "<proxy_host>:<proxy_port>". Replace the
-					// host with the validated public IP while
+					// host with the validated IP while
 					// keeping the original port. Any other dial
 					// (e.g. a redirect hop the no-redirect policy
 					// would have blocked) falls through to the
@@ -262,7 +329,7 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 			CheckRedirect: noRedirects,
 		}
 	} else {
-		// Direct path: pin to the validated public IP, disable
+		// Direct path: pin to the validated IP, disable
 		// redirects, and apply the OTel transport. PinnedHTTPClient
 		// sets its own timeout; we re-wrap with otelhttp so the
 		// request gets a child span + W3C traceparent injected.
@@ -271,9 +338,6 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		pinned.CheckRedirect = noRedirects
 		client = pinned
 	}
-	_ = proxyHost
-	_ = proxyIP
-
 	// a generic HTTP client node in the canvas DSL — operators wire it
 	// to arbitrary endpoints. SSRF surface is limited to operators
 	// (not end users), and outbound traffic is rate-limited by the
@@ -294,6 +358,9 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	}
 
 	bodyStr := string(bodyBytes)
+	if resp.StatusCode >= http.StatusBadRequest {
+		return map[string]any{"result": bodyStr}, fmt.Errorf("Invoke: HTTP %d: %s", resp.StatusCode, bodyStr)
+	}
 
 	// Clean HTML from response body when clean_html input is set.
 	if cleanHTML, _ := inputs["clean_html"].(bool); cleanHTML {
@@ -375,6 +442,22 @@ func invokeHeaders(raw any) (map[string]any, error) {
 	return headers, nil
 }
 
+func validateInvokeURL(rawURL string) (hostname, resolvedIP string, err error) {
+	if !common.AllowConfiguredPrivateHost() {
+		return common.AssertURLSafe(rawURL)
+	}
+	if err := common.AssertURLSchemeSafe(rawURL); err != nil {
+		return "", "", err
+	}
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	if err != nil {
+		return "", "", err
+	}
+	hostname = parsed.Hostname()
+	resolvedIP, err = common.ResolveHostPin(hostname)
+	return hostname, resolvedIP, err
+}
+
 // invokeSSRFError builds the _ERROR output the canvas uses to route
 // around a refused URL. We mirror the Python message verbatim
 // ("URL not valid") so downstream consumers that key on the string
@@ -445,24 +528,6 @@ func (i *InvokeComponent) Outputs() map[string]string {
 	return map[string]string{
 		"result": "Response body as text.",
 	}
-}
-
-// mustParseProxy parses a proxy URL string. We keep this helper here
-// (rather than calling url.Parse inline) so the panic-on-bad-input
-// behavior is uniform across the package — proxy strings are operator-
-// configured, a malformed one is a deployment error worth crashing
-// loud on.
-func mustParseProxy(raw string) *url.URL {
-	u, err := url.Parse(raw)
-	if err != nil {
-		panic(fmt.Sprintf("Invoke: invalid proxy URL %q: %v", raw, err))
-	}
-	// Defensive check: net/http.ProxyURL will silently no-op on a
-	// URL with no Host. Surface a clear panic instead.
-	if u.Host == "" {
-		panic(fmt.Sprintf("Invoke: proxy URL %q has no host", raw))
-	}
-	return u
 }
 
 // stripHTMLTags removes HTML tags from the input string. This is a

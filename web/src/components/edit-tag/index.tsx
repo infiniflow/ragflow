@@ -89,10 +89,8 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
                   <Button
                     variant="delete"
                     size="icon-xs"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      handleClose(tag);
-                    }}
+                    type="button"
+                    onClick={() => handleClose(tag)}
                   >
                     <Trash2 className="size-[1em]" />
                   </Button>
@@ -135,6 +133,7 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
             <Button
               variant="outline"
               size="icon"
+              type="button"
               onClick={showInput}
               disabled={disabled}
               data-testid={addButtonTestId}

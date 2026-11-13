@@ -23,70 +23,125 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { UseFormReturn } from 'react-hook-form';
 
-export const usePipelineOperatorNodes = (
-  pipelineId?: string,
-  pipelineParserConfig?: Record<string, any>,
+export const usePipelineOperatorNodes = ({
+  pipelineId,
+  versionId,
+  savedParserConfig,
   isBuiltin = false,
-) => {
+}: {
+  pipelineId?: string;
+  // Selected canvas version id; ignored for builtin pipelines. Without it no
+  // version is fetched and operatorNodes stays empty (tabs hidden).
+  versionId?: string;
+  // Saved parser_config, passed only while the selection still matches the
+  // saved pipeline+version binding; otherwise defaults come from the DSL.
+  savedParserConfig?: Record<string, any>;
+  isBuiltin?: boolean;
+}) => {
   const { dsl, loading } = useFetchPipelineDslByPipelineId(
     pipelineId,
+    versionId,
     isBuiltin,
   );
 
   const operatorNodes = useMemo(() => {
-    return buildPipelineOperatorNodes(dsl, pipelineParserConfig);
-  }, [dsl, pipelineParserConfig]);
+    return buildPipelineOperatorNodes(dsl, savedParserConfig);
+  }, [dsl, savedParserConfig]);
 
   return { operatorNodes, loading };
 };
 
 /**
- * Resets parser_config when the selected pipeline changes, so stale configs
- * from the previous pipeline are never submitted. Once the new pipeline's
- * DSL has loaded, parser_config is seeded with the DSL defaults (i.e. what
- * the operator tabs display).
+ * Resets parser_config when the selected pipeline binding (pipeline +
+ * version) changes, so stale configs from the previous binding are never
+ * submitted. Once the new version's DSL has loaded, parser_config is seeded
+ * with the DSL defaults (i.e. what the operator tabs display).
  *
- * The very first pipeline seen is treated as the initial load: the form was
+ * The very first binding seen is treated as the initial load: the form was
  * already reset with the saved parser_config on mount, so it is left
- * untouched.
+ * untouched when pipeline and version both match the saved binding.
+ *
+ * A `'' → versionId` transition within the same pipeline is the latest-
+ * version prefill adopting a concrete version for an unpinned binding, not a
+ * user switch — parser_config (which still holds the saved values) must not
+ * be reset.
  */
-export const useResetParserConfigOnPipelineChange = (
-  form: UseFormReturn<any>,
-  pipelineId: string | undefined,
-  savedPipelineId: string | undefined,
-  operatorNodes: RAGFlowNodeType[],
-) => {
-  const previousPipelineIdRef = useRef<string>();
+export const useResetParserConfigOnPipelineChange = ({
+  form,
+  pipelineId,
+  versionId,
+  savedPipelineId,
+  savedVersionId,
+  operatorNodes,
+}: {
+  form: UseFormReturn<any>;
+  pipelineId: string | undefined;
+  versionId: string | undefined;
+  savedPipelineId: string | undefined;
+  savedVersionId: string | undefined;
+  operatorNodes: RAGFlowNodeType[];
+}) => {
+  const previousBindingRef = useRef<string>();
 
   useEffect(() => {
     if (!pipelineId) {
       // Selection cleared (e.g. parse type switched): drop configs that
       // belonged to the previously selected pipeline.
-      if (previousPipelineIdRef.current) {
-        previousPipelineIdRef.current = '';
+      if (previousBindingRef.current) {
+        previousBindingRef.current = '';
         form.setValue('parser_config', {});
       }
       return;
     }
 
-    const isInitialLoad =
-      previousPipelineIdRef.current === undefined &&
-      pipelineId === savedPipelineId;
-    if (isInitialLoad || previousPipelineIdRef.current === pipelineId) {
-      previousPipelineIdRef.current = pipelineId;
+    const binding = `${pipelineId}::${versionId ?? ''}`;
+    const previousBinding = previousBindingRef.current;
+    if (previousBinding === binding) {
       return;
     }
 
+    if (previousBinding === undefined) {
+      // Initial load: the form was already reset with the saved
+      // parser_config on mount, so leave it untouched when the selection
+      // still matches the saved binding.
+      const matchesSavedBinding =
+        pipelineId === savedPipelineId &&
+        (versionId ?? '') === (savedVersionId ?? '');
+      if (matchesSavedBinding) {
+        previousBindingRef.current = binding;
+        return;
+      }
+    } else {
+      // Prefill adoption: a `'' → versionId` transition within the same
+      // pipeline is the latest-version prefill, never a user switch.
+      const [prevPipelineId, prevVersionId] = previousBinding.split('::');
+      const isPrefillAdoption =
+        prevPipelineId === pipelineId && prevVersionId === '' && !!versionId;
+      if (isPrefillAdoption) {
+        previousBindingRef.current = binding;
+        return;
+      }
+    }
+
     if (operatorNodes.length === 0) {
-      // The new pipeline's DSL is still loading — clear the previous
-      // pipeline's configs right away; defaults are seeded once it arrives.
+      // The new binding's DSL is still loading — clear the previous
+      // configs right away but keep the previous binding in the ref, so
+      // the arrival of operatorNodes re-fires this effect and seeds the
+      // defaults then.
       form.setValue('parser_config', {});
       return;
     }
 
-    previousPipelineIdRef.current = pipelineId;
+    previousBindingRef.current = binding;
     form.setValue('parser_config', buildParserConfigFromNodes(operatorNodes));
-  }, [form, pipelineId, savedPipelineId, operatorNodes]);
+  }, [
+    form,
+    pipelineId,
+    versionId,
+    savedPipelineId,
+    savedVersionId,
+    operatorNodes,
+  ]);
 };
 
 export const useActiveTab = (operatorNodes: RAGFlowNodeType[]) => {

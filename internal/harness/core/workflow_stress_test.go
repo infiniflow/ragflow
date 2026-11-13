@@ -314,35 +314,29 @@ func TestAgentLoop_ConcurrentPushStop_Race(t *testing.T) {
 	}
 }
 
-// ---- Bug #6: handleIter panic in runner.go may cause double-close ----
-//
-// runner.go handleIter has recover() that sends an error event then calls gen.Close().
-// But gen.Send() after gen.Close() would panic. If the panic occurs during gen.Send(),
-// the recover() would fire again, causing infinite recursion.
-//
-// NOTE: This test confirmed that a panic inside an agent's Run() is NOT caught
-// by runner.go's handleIter, because the panic happens in flowAgent.Run() which
-// is called BEFORE handleIter starts. The panic propagates up to the test.
-// This is itself a bug — agent panics should be caught and converted to error events.
+// ---- Bug #6: closing a paired iterator must not make runner cleanup panic ----
 func TestRunner_HandleIter_PanicSafety(t *testing.T) {
-	// Instead of using the full runner (which panics outside handleIter),
-	// directly test handleIter's recover behavior.
-	_, gen := NewAsyncIteratorPair[*TypedAgentEvent[*schema.Message]]()
-	ai := NewAsyncIterator[*TypedAgentEvent[*schema.Message]]()
-	ai.Close() // closed iterator to simulate quick termination
+	ai, inputGen := NewAsyncIteratorPair[*TypedAgentEvent[*schema.Message]]()
+	outputIter, outputGen := NewAsyncIteratorPair[*TypedAgentEvent[*schema.Message]]()
+	outputIter.Close()
+	inputGen.Send(nil)
+	inputGen.Close()
 
 	done := make(chan struct{})
+	var panicValue any
 	go func() {
 		defer close(done)
-		// This should NOT panic — handleIter has recover()
-		handleIter(false, nil, t.Context(), ai, gen, nil, nil)
+		defer func() { panicValue = recover() }()
+		handleIter(false, nil, t.Context(), ai, outputGen, nil, nil)
 	}()
 
 	select {
 	case <-done:
-		// Clean termination
+		if panicValue != nil {
+			t.Fatalf("handleIter panicked after its iterator was closed: %v", panicValue)
+		}
 	case <-time.After(time.Second * 5):
-		t.Errorf("BUG: handleIter deadlocked")
+		t.Fatal("handleIter did not terminate after its iterator was closed")
 	}
 }
 

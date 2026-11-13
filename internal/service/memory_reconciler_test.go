@@ -33,9 +33,6 @@ func TestReconcileMemoryTasksPublishesDueWakeups(t *testing.T) {
 	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
 	pinMemoryNow(t, now)
 	db := testutil.SetupTestDB(t, &entity.MemoryTask{})
-	cleanup := testutil.ReplaceDBForTest(t, db)
-	defer cleanup()
-
 	future := now.Add(time.Minute)
 	for _, task := range []*entity.MemoryTask{
 		{TaskID: "due", MemoryID: "memory-1", SourceID: 1, Input: entity.JSONMap{}, State: entity.MemoryTaskStatePending},
@@ -48,8 +45,9 @@ func TestReconcileMemoryTasksPublishesDueWakeups(t *testing.T) {
 	}
 
 	publisher := &recordingTaskPublisher{}
-	svc := NewMemoryMessageService(nil)
+	svc := NewMemoryMessageService(NewMemoryService(db, nil))
 	svc.taskPublisher = publisher
+	svc.tierResolver = (&fakeTierResolver{tier: common.TierDefault}).resolve
 	if err := svc.ReconcileMemoryTasks(t.Context(), 100); err != nil {
 		t.Fatalf("ReconcileMemoryTasks: %v", err)
 	}
@@ -68,9 +66,6 @@ func TestReconcileMemoryTasksStopsPublishingWhenCanceled(t *testing.T) {
 	now := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
 	pinMemoryNow(t, now)
 	db := testutil.SetupTestDB(t, &entity.MemoryTask{})
-	cleanup := testutil.ReplaceDBForTest(t, db)
-	defer cleanup()
-
 	for _, taskID := range []string{"due-1", "due-2"} {
 		if err := db.Create(&entity.MemoryTask{
 			TaskID: taskID, MemoryID: "memory-1", SourceID: 1,
@@ -82,7 +77,7 @@ func TestReconcileMemoryTasksStopsPublishingWhenCanceled(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	publisher := &recordingTaskPublisher{beforeReturn: func(string) { cancel() }}
-	svc := NewMemoryMessageService(nil)
+	svc := NewMemoryMessageService(NewMemoryService(db, nil))
 	svc.taskPublisher = publisher
 	err := svc.ReconcileMemoryTasks(ctx, 100)
 	if !errors.Is(err, context.Canceled) {

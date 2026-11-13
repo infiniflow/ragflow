@@ -21,7 +21,7 @@ import TOCInline from '@theme/TOCInline';
 
 **Agent**
 
-An Agent is an AI application that combines large language models, knowledge bases, tools, and workflows to perform tasks.
+An Agent is an AI application that combines large language models, Datasets, tools, and workflows to perform tasks.
 
 In RAGFlow, users can visually build Agents and combine capabilities such as retrieval, model invocation, conditional logic, loops, variables, code execution, and HTTP requests to implement complex task-processing workflows.
 
@@ -31,7 +31,7 @@ Agentic Retrieval is a retrieval approach designed for complex questions.
 
 Unlike one-time retrieval, it incorporates model reasoning to analyze user queries and, when necessary, perform steps such as question decomposition, retrieval, and evidence checking to obtain more comprehensive context for answer generation.
 
-In Chat, different Thinking levels can be used to control the processing depth of Agentic Retrieval.
+In Chat, select **Agentic** from the Thinking menu to use Agentic Retrieval. The **Naive** mode performs retrieval without complex analysis.
 
 **Auto keyword**
 
@@ -69,7 +69,7 @@ In RAGFlow, BM25 is used for relevance scoring in full-text search and can be co
 
 **Chat**
 
-Chat is a knowledge question-answering application provided by RAGFlow that enables conversations based on one or more knowledge bases and large language models. Chat can combine knowledge retrieval, Agentic Retrieval, and web search to obtain relevant information and generate answers based on the retrieved results.
+Chat is a knowledge question-answering application provided by RAGFlow that enables conversations based on one or more Datasets and large language models. Chat can combine knowledge retrieval, Agentic Retrieval, and web search to obtain relevant information and generate answers based on the retrieved results.
 
 **Chunk**
 
@@ -103,7 +103,7 @@ Context is the information available to a large language model when processing t
 
 Cross-language search allows users to submit a query in one language and retrieve relevant content written in other languages. For example, an English query can be used to retrieve Chinese documents.
 
-This capability reduces retrieval limitations caused by differences between the query language and the language of the knowledge base content.
+This capability reduces retrieval limitations caused by differences between the query language and the language of the Dataset content.
 
 **Creativity**
 
@@ -141,13 +141,13 @@ Embedding is the process of converting text or other content into numerical vect
 
 An embedding model converts text into vector representations, enabling the system to perform retrieval based on semantic similarity.
 
-Chunks in a knowledge base and user queries can be converted into vectors through an embedding model to support capabilities such as vector search.
+Chunks in a Dataset and user queries can be converted into vectors through an embedding model to support capabilities such as vector search.
 
 **Empty response**
 
 An empty response is predefined content returned when no knowledge satisfying the retrieval conditions is found.
 
-Configuring an empty response can prevent the model from continuing to generate answers unrelated to the knowledge base when valid supporting knowledge is unavailable.
+Configuring an empty response can prevent the model from continuing to generate answers unrelated to the Dataset when valid supporting knowledge is unavailable.
 
 **Entity**
 
@@ -161,7 +161,7 @@ Entity Extraction is the process of identifying and extracting meaningful entiti
 
 **Full-text search**
 
-Full-text search retrieves relevant content based on lexical matches between query terms and knowledge base content.
+Full-text search retrieves relevant content based on lexical matches between query terms and Dataset content.
 
 Compared with vector search, which primarily focuses on semantic similarity, full-text search is generally better suited for retrieving proper nouns, identifiers, keywords, and other content requiring exact lexical matching.
 
@@ -203,7 +203,7 @@ An index is a data structure built to improve data retrieval efficiency. In RAGF
 
 **Ingestion Pipeline**
 
-Ingestion Pipeline defines how documents are processed after they enter a knowledge base.
+Ingestion Pipeline defines how documents are processed after they enter a Dataset.
 
 Users can customize document parsing, content processing, chunking, and other processing steps through a Pipeline to accommodate different data types and business requirements.
 
@@ -223,23 +223,23 @@ In RAGFlow, keyword analysis is used to enrich query representation, helping the
 
 **Knowledge artifact**
 
-A knowledge artifact is a structured representation of knowledge generated from documents or knowledge base content through Knowledge Compilation.
+A knowledge artifact is a structured representation of knowledge generated from documents or Dataset content through Knowledge Compilation.
 
-Depending on the Knowledge Compilation template used, different forms of knowledge artifacts can be generated, including Wiki, Graph, Tree, PageIndex, Mind Map, Timeline, and Skills.
+Depending on the Knowledge Compilation template used, different forms of knowledge artifacts can be generated, including Wiki, Graph, Tree, PageIndex, Mindmap, Timeline, and Skills.
 
 These artifacts reorganize existing knowledge into different structures and can be used for knowledge browsing, understanding, and subsequent applications.
 
 **Knowledge Compilation**
 
-Knowledge Compilation further refines, organizes, and structures existing document or knowledge base content.
+Knowledge Compilation further refines, organizes, and structures existing document or Dataset content.
 
-Knowledge Compilation can be performed on an individual document or an entire knowledge base. By selecting different compilation templates, raw content can be transformed into knowledge artifacts such as Wiki, Graph, Tree, PageIndex, Mind Map, Timeline, or Skills.
+Knowledge Compilation can be performed on an individual document or an entire Dataset. By selecting different compilation templates, raw content can be transformed into knowledge artifacts such as Wiki, Graph, Tree, PageIndex, Mindmap, Timeline, or Skills.
 
 **Knowledge Compilation Template**
 
 A Knowledge Compilation Template is a predefined template that determines how knowledge is compiled and how the resulting artifact is structured.
 
-In RAGFlow, different templates can compile source documents or knowledge base content into specific forms of knowledge artifacts, such as Wiki, Graph, Tree, Page Index, Mind Map, Timeline, and Skills, to support different knowledge organization and usage scenarios.
+In RAGFlow, different templates can compile source documents or Dataset content into specific forms of knowledge artifacts, such as Wiki, Graph, Tree, Page Index, Mindmap, Timeline, and Skills, to support different knowledge organization and usage scenarios.
 
 ### **L**
 
@@ -275,9 +275,9 @@ Metadata filtering restricts the retrieval scope based on document or chunk meta
 
 For example, retrieval can be limited to content that matches a specified category, source, or other business attribute, making retrieval results more targeted.
 
-**Mind Map**
+**Mindmap**
 
-Mind Map is a knowledge artifact supported by Knowledge Compilation.
+Mindmap is a knowledge artifact supported by Knowledge Compilation.
 
 It organizes the main topics and subtopics in the content into a hierarchical mind map, helping users quickly understand the knowledge structure and relationships among different topics.
 
@@ -325,7 +325,7 @@ In a RAG system, a prompt can include task instructions, role definitions, retri
 
 A query is a retrieval request submitted by a user to express the information they want to find or the question they want answered.
 
-In a RAG system, queries are used to retrieve relevant content from knowledge bases or other data sources and provide context for subsequent answer generation.
+In a RAG system, queries are used to retrieve relevant content from Datasets or other data sources and provide context for subsequent answer generation.
 
 **Query Expansion**
 
@@ -345,11 +345,11 @@ In a RAG system, a question typically serves as input to the retrieval and gener
 
 RAG (Retrieval-Augmented Generation) is an approach that combines information retrieval with large language model generation.
 
-The system first retrieves content relevant to a question from a knowledge base or other data sources and then provides the retrieved results to a large language model as context for answer generation, improving consistency with existing knowledge and answer traceability.
+The system first retrieves content relevant to a question from a Dataset or other data sources and then provides the retrieved results to a large language model as context for answer generation, improving consistency with existing knowledge and answer traceability.
 
 **Recall**
 
-Recall refers to the process of retrieving relevant content from a knowledge base based on a user query. In RAGFlow, recall is typically performed through vector search, full-text search, or hybrid search. The recalled content can then be reranked or provided to the model as context for answer generation.
+Recall refers to the process of retrieving relevant content from a Dataset based on a user query. In RAGFlow, recall is typically performed through vector search, full-text search, or hybrid search. The recalled content can then be reranked or provided to the model as context for answer generation.
 
 **Reranker**
 
@@ -359,7 +359,7 @@ Reranking allows content that is more relevant to the user's question to be prio
 
 **Retrieval**
 
-Retrieval is the process of finding relevant content in a knowledge base based on a user query.
+Retrieval is the process of finding relevant content in a Dataset based on a user query.
 
 RAGFlow supports vector search, full-text search, and hybrid search, and can further optimize retrieval results using mechanisms such as reranking and metadata filtering.
 
@@ -371,7 +371,7 @@ Depending on the configuration, the system can perform keyword analysis, semanti
 
 **Retrieval test**
 
-Retrieval test is used to evaluate the retrieval performance of a knowledge base.
+Retrieval test is used to evaluate the retrieval performance of a Dataset.
 
 Users can enter test queries and inspect the recalled chunks and related information to evaluate and adjust retrieval methods, similarity thresholds, reranking, and other configurations.
 
@@ -397,7 +397,7 @@ This parameter controls the target size of generated chunks. Smaller chunks gene
 
 **Search**
 
-Search is one of the knowledge applications provided by RAGFlow. It searches knowledge base content and returns relevant results.
+Search is one of the knowledge applications provided by RAGFlow. It searches Dataset content and returns relevant results.
 
 Unlike Chat, which generates answers in a conversational format, Search focuses more on knowledge retrieval and the presentation of search results.
 
@@ -415,11 +415,11 @@ Candidate chunks with relevance scores below this threshold are filtered out. In
 
 **Skills**
 
-Skills are a knowledge organization mechanism that precompiled knowledge from a knowledge base into a navigable hierarchical directory.
+Skills are a knowledge organization mechanism that precompiled knowledge from a Dataset into a navigable hierarchical directory.
 
 They organize knowledge into a hierarchical structure based on thematic and semantic relationships, with directory summaries describing the knowledge contained at each level and its child branches. During retrieval, an Agent reads these summaries based on the user query, selects relevant branches, and progressively navigates down the hierarchy to locate and retrieve the relevant source documents or evidence.
 
-Unlike traditional retrieval methods that recall Top-K text chunks based on similarity scores, Skills transform retrieval into a process of navigation and localization over a hierarchical knowledge structure. This enables the Agent to actively explore the knowledge base and progressively narrow the retrieval scope.
+Unlike traditional retrieval methods that recall Top-K text chunks based on similarity scores, Skills transform retrieval into a process of navigation and localization over a hierarchical knowledge structure. This enables the Agent to actively explore the Dataset and progressively narrow the retrieval scope.
 
 
 **System prompt**
@@ -434,7 +434,7 @@ Users can use the system prompt to specify response style, task rules, how knowl
 
 A tag is an attribute used to label and categorize documents or content and can describe their category, topic, or other characteristics.
 
-In RAGFlow, tags can be used to classify and manage documents in a knowledge base and can also serve as retrieval criteria to help the system filter and locate relevant content.
+In RAGFlow, tags can be used to classify and manage documents in a Dataset and can also serve as retrieval criteria to help the system filter and locate relevant content.
 
 **Temperature**
 
@@ -442,11 +442,12 @@ Temperature is a parameter that controls randomness in model generation.
 
 Lower values generally make outputs more stable and deterministic, while higher values increase diversity and randomness. The exact effect depends on the model being used.
 
-**Thinking level**
+**Thinking mode**
 
-Thinking level controls the depth of retrieval and reasoning used by Chat when processing a question.
+Thinking mode determines how Chat investigates available data before answering. Select **Naive** or **Agentic** from the Thinking menu near the message box.
 
-RAGFlow provides different Thinking levels. Higher levels can perform deeper question analysis and retrieval processing and are suitable for complex questions that require multi-step analysis or more comprehensive supporting evidence, but they generally require more processing time and model invocations.
+- **Naive**: Performs retrieval without complex analysis and is suitable for straightforward factual questions. It generally responds faster.
+- **Agentic**: Uses a retrieval agent to search the corpus, read documents in depth, and combine evidence across documents before answering. It is suitable for comparisons and multi-step research, but generally takes longer and invokes the model more often.
 
 **Timeline**
 
@@ -492,7 +493,7 @@ A vector is a data representation consisting of a set of numerical values. In RA
 
 **Vector search**
 
-Vector search retrieves relevant content by comparing the similarity between query vectors and vectors representing knowledge base content.
+Vector search retrieves relevant content by comparing the similarity between query vectors and vectors representing Dataset content.
 
 Unlike full-text search, which relies on lexical matching, vector search primarily focuses on semantic similarity between texts, allowing it to retrieve content with different wording but similar meanings.
 

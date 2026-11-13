@@ -19,8 +19,8 @@ package document
 import (
 	"context"
 	"errors"
+	"fmt"
 	"path/filepath"
-	"ragflow/internal/service"
 	"strings"
 
 	"go.uber.org/zap"
@@ -28,22 +28,18 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
+
 	"ragflow/internal/utility"
 )
 
-// Sentinel errors returned by File2DocumentService. Handlers map these to
-// Python-compatible response codes/messages. Returning sentinels (instead of
-// wrapped DAO/runtime errors) prevents internal DB details from leaking through
-// the API response path.
+// Sentinel errors returned by File2DocumentService for missing resources.
 var (
 	// ErrLinkFileNotFound mirrors Python "File not found!".
 	ErrLinkFileNotFound = errors.New("File not found!")
 	// ErrLinkDatasetNotFound mirrors Python "Can't find this dataset!".
 	ErrLinkDatasetNotFound = errors.New("Can't find this dataset!")
-	// ErrLinkNoAuthorization mirrors Python "no authorization".
-	ErrLinkNoAuthorization = errors.New("no authorization")
-	// ErrLinkInternal is a generic, safe-to-expose internal failure.
-	ErrLinkInternal = errors.New("Internal server error.")
 )
 
 // File2DocumentService handles linking files to datasets.
@@ -77,14 +73,13 @@ type LinkToDatasetsRequest struct {
 // LinkToDatasets validates inputs, expands folders, checks permissions, and
 // schedules convertFiles in a goroutine — mirroring Python convert().
 //
-// On validation failure it returns a sentinel error (see ErrLink* above) so the
-// handler can map it to a Python-compatible response without leaking internals.
-func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string, req *LinkToDatasetsRequest, mode string) error {
+// Missing resources return sentinel errors; runtime failures retain their cause.
+func (s *File2DocumentService) LinkToDatasets(ctx context.Context, req *LinkToDatasetsRequest, mode string) error {
 	// ── 1. Validate files exist ───────────────────────────────────────────────
 	files, err := s.fileDAO.GetByIDs(ctx, dao.DB, req.FileIDs)
 	if err != nil {
 		common.Warn("LinkToDatasets: GetByIDs failed", zap.Error(err))
-		return ErrLinkInternal
+		return fmt.Errorf("load files: %w", err)
 	}
 	filesSet := make(map[string]*entity.File, len(files))
 	for _, f := range files {
@@ -107,6 +102,17 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 	}
 
 	// ── 3. Expand folders to leaf files, then deduplicate ─────────────────────
+	checker := permission.NewDatabaseChecker(dao.DB)
+	checkFileRead := func(file *entity.File) error {
+		kind := permission.ResourceKindFile
+		if file.Type == "folder" {
+			kind = permission.ResourceKindFolder
+		}
+		return checker.CheckResource(ctx, permission.ResourceRef{
+			Kind: kind,
+			ID:   file.ID,
+		}, permission.OperationRead)
+	}
 	// Mixed folder + direct file inputs (or overlapping folders) can yield the
 	// same leaf file more than once; dedupe so each file is converted exactly
 	// once.
@@ -114,10 +120,14 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 	for _, id := range req.FileIDs {
 		file := filesSet[id]
 		if file.Type == "folder" {
+			if err := checkFileRead(file); err != nil {
+				_, permissionErr := permissionresponse.Normalize(err)
+				return permissionErr
+			}
 			inner, err := s.getAllInnermostFileIDs(ctx, id)
 			if err != nil {
 				common.Warn("LinkToDatasets: folder expansion failed", zap.String("fileID", id), zap.Error(err))
-				return ErrLinkInternal
+				return fmt.Errorf("expand folder: %w", err)
 			}
 			expanded = append(expanded, inner...)
 		} else {
@@ -132,23 +142,25 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 		if err != nil || file == nil {
 			return ErrLinkFileNotFound
 		}
-		if !service.CheckFileTeamPermission(ctx, s.fileDAO, file, userID) {
-			return ErrLinkNoAuthorization
+		if err := checkFileRead(file); err != nil {
+			_, permissionErr := permissionresponse.Normalize(err)
+			return permissionErr
 		}
 	}
 
 	// ── 5. Validate KB permissions ────────────────────────────────────────────
 	for _, kb := range kbMap {
-		if !service.HasKBTeamPermission(ctx, kb, userID, dao.NewTenantDAO()) {
-			return ErrLinkNoAuthorization
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID}, permission.OperationUpdate); err != nil {
+			_, permissionErr := permissionresponse.Normalize(err)
+			return permissionErr
 		}
 	}
 
 	// ── 6. Run conversion in background (fire-and-forget) ────────────────────
 	kbIDs := req.KbIDs
 	go func() {
-		newCtx := context.Background()
-		if err = s.convertFiles(newCtx, allFileIDs, kbIDs, userID, mode); err != nil {
+		newCtx := context.WithoutCancel(ctx)
+		if err := s.convertFiles(newCtx, allFileIDs, kbIDs, mode); err != nil {
 			common.Warn("file2document.convertFiles failed",
 				zap.Strings("file_ids", allFileIDs),
 				zap.Strings("kb_ids", kbIDs),
@@ -161,7 +173,8 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 
 // convertFiles mirrors Python _convert_files: keep existing links, remove links
 // outside the requested KBs in replace mode, then add any missing links.
-func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs []string, userID, mode string) error {
+func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs []string, mode string) error {
+	userID := permission.UserIDFromContext(ctx)
 	replaceExisting := mode != "add"
 	kbIDs = dedupeStrings(kbIDs)
 	requestedKBIDs := make(map[string]struct{}, len(kbIDs))
@@ -224,37 +237,37 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 				continue
 			}
 
-			parserID, parserConfig := resolveDocumentParser(ctx, kb, docName, utility.FileType(file.Type), cloneParserConfigForDocument(kb.ParserConfig))
+			selection, parserConfig := resolveDocumentParser(ctx, kb, docName, utility.FileType(file.Type), cloneParserConfigForDocument(kb.ParserConfig))
+			parserID, pipelineID := parserSelectionColumns(selection)
 			suffix := strings.TrimPrefix(filepath.Ext(docName), ".")
 			doc := &entity.Document{
-				ID:           utility.GenerateUUID(),
-				KbID:         kb.ID,
-				ParserID:     parserID,
-				ParserConfig: parserConfig,
-				CreatedBy:    userID,
-				Type:         file.Type,
-				Name:         &docName,
-				Suffix:       suffix,
-				Size:         file.Size,
+				ID:                common.GenerateUUID(),
+				KbID:              kb.ID,
+				UserID:            userID,
+				ParserID:          parserID,
+				PipelineID:        pipelineID,
+				PipelineVersionID: kb.PipelineVersionID,
+				ParserConfig:      parserConfig,
+				CreatedBy:         userID,
+				Type:              file.Type,
+				Name:              &docName,
+				Suffix:            suffix,
+				Size:              file.Size,
 			}
 			if file.Location != nil {
 				doc.Location = file.Location
 			}
-			if kb.PipelineID != nil {
-				doc.PipelineID = kb.PipelineID
-				doc.ParserID = "" // canvas pipeline mode — parser_id not applicable
-			}
 
 			// InsertDocument creates the row and increments KB doc_num in one
 			// transaction, so a failed insert never leaves a stale counter.
-			if err = s.documentSvc.InsertDocument(doc); err != nil {
+			if err = s.documentSvc.InsertDocument(ctx, doc); err != nil {
 				common.Warn("convertFiles: InsertDocument failed",
 					zap.String("kbID", kbID), zap.String("fileID", fileID), zap.Error(err))
 				continue
 			}
 
 			mapping := &entity.File2Document{
-				ID:         utility.GenerateUUID(),
+				ID:         common.GenerateUUID(),
 				FileID:     &fileID,
 				DocumentID: &doc.ID,
 			}

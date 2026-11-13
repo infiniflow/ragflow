@@ -9,6 +9,40 @@ import (
 	"time"
 )
 
+func TestWorkerPoolStatsPendingTotal(t *testing.T) {
+	tests := []struct {
+		name      string
+		submitted uint64
+		completed uint64
+		pending   uint64
+	}{
+		{name: "idle"},
+		{name: "all pending", submitted: 3, pending: 3},
+		{name: "partially completed", submitted: 3, completed: 1, pending: 2},
+		{name: "all completed", submitted: 3, completed: 3},
+		{name: "completion before submission counter", completed: 1},
+		{name: "completion ahead of nonzero submissions", submitted: 2, completed: 3},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Model the counters observed by Stats without relying on goroutine scheduling.
+			pool := &WorkerPool[int, int]{
+				submittedTotal: tt.submitted,
+				completedTotal: tt.completed,
+			}
+			stats := pool.Stats()
+			if stats.PendingTotal != tt.pending {
+				t.Fatalf("PendingTotal = %d, want %d (submitted=%d completed=%d)",
+					stats.PendingTotal, tt.pending, tt.submitted, tt.completed)
+			}
+			if stats.SubmittedTotal != tt.submitted || stats.CompletedTotal != tt.completed {
+				t.Fatalf("stats totals = %+v, want submitted=%d completed=%d",
+					stats, tt.submitted, tt.completed)
+			}
+		})
+	}
+}
+
 func TestWorkerPoolSubmitAndStats(t *testing.T) {
 	pool := NewWorkerPool[int, int](2, 4, func(_ context.Context, in int) (int, error) {
 		return in * 2, nil

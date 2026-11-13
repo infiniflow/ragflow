@@ -33,6 +33,23 @@ const jsonRetryDelay = 2 * time.Second
 // retry before giving up.
 var fencedJSONRE = regexp.MustCompile("(?s)```(?:json)?\\s*(.*?)\\s*```")
 
+// retryDelayCtxKey carries a test-only override for jsonRetryDelay. Production
+// code never sets it, so the real backoff budget is preserved at runtime.
+type retryDelayCtxKey struct{}
+
+// WithRetryDelay returns a ctx that makes GenJSON use d as the initial
+// exponential-backoff delay instead of jsonRetryDelay. It exists so tests that
+// exercise the LLM-failure retry path need not wait out the real ~60s budget
+// per failed call. Pass 0 or a negative value to keep the default.
+func WithRetryDelay(ctx context.Context, d time.Duration) context.Context {
+	return context.WithValue(ctx, retryDelayCtxKey{}, d)
+}
+
+func RetryDelayFromCtx(ctx context.Context) (time.Duration, bool) {
+	d, ok := ctx.Value(retryDelayCtxKey{}).(time.Duration)
+	return d, ok && d > 0
+}
+
 // GenJSON dispatches a chat call in JSON mode and parses the response into a
 // map. It first tries the raw content, then a fenced ```json ... ``` block the
 // model may have wrapped around the JSON, and finally the outermost {...} span
@@ -57,6 +74,12 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 	req.DisableRetry = true
 	var lastErr error
 	delay := jsonRetryDelay
+	if d, ok := RetryDelayFromCtx(ctx); ok {
+		delay = d
+	}
+	// baseDelay captures the (possibly test-overridden) initial delay so the
+	// capped exponential backoff recomputes from the same base every attempt.
+	baseDelay := delay
 	failureReporter := RetryFailureReporter{}
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		resp, err := chat.Chat(ctx, req)
@@ -109,19 +132,19 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 		if message, ok := failureReporter.FailureMessage(attempt+1, maxRetries+1, delay, lastErr, false); ok {
 			runtime.ReportProgressMessage(ctx, "Compiler", message)
 		}
+		// Compute the capped, jittered delay for the current attempt
+		// (1-indexed: attempt 0 -> baseDelay) before sleeping, so the first
+		// retry is also clamped to the 1-minute ceiling.
+		d := appcommon.ExponentialBackoff(baseDelay, time.Minute, attempt+1)
 		appcommon.Info("knowledge_compiler: GenJSON attempt failed, retrying",
-			zap.Int("attempt", attempt), zap.Duration("delay", delay),
+			zap.Int("attempt", attempt), zap.Duration("delay", d),
 			zap.Error(lastErr))
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(delay + time.Duration(rand.Int63n(int64(delay/2)+1))):
+		case <-time.After(d + time.Duration(rand.Int63n(int64(d/2)+1))):
 			// Jittered backoff so concurrent GenJSON jobs (parallel wiki/plan
 			// batches) do not back off in lockstep and pile up on the provider.
-		}
-		delay *= 2
-		if delay > time.Minute {
-			delay = time.Minute
 		}
 	}
 	return nil, lastErr

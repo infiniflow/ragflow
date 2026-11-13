@@ -18,12 +18,13 @@
 //
 // Pipeline (KnowledgeCompiler, per document) writes compiled chunks with
 // available_int=0. Its completion/deletion is recorded by appending a
-// BacklogEntry to the KB's durable MySQL scheduling row
-// (knowledge_compile_docs), then waking idle workers over NATS. A cluster of
+// BacklogEntry to knowledge_compile_docs_backlog under the KB's scheduling row
+// lock (knowledge_compile_docs), then waking idle workers over NATS. A cluster of
 // competing workers claims a closed batch (backlog -> inflight) per KB, runs
 // dataset-level dedup on that batch, and writes the merged dataset-level
-// products with available_int=1. The MySQL row — not the broker — is the
-// scheduling system of record and the source of same-KB serialization.
+// products with available_int=1. The MySQL scheduling row and its backlog and
+// inflight tables are the scheduling system of record; the row lock serializes
+// same-KB processing.
 package knowledge_compile
 
 import (

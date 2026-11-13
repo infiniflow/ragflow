@@ -17,173 +17,208 @@
 package chunker
 
 import (
-	"regexp"
-	"strings"
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
+	"ragflow/internal/entity"
+	"ragflow/internal/parser/tableutil"
 )
 
-var trRegex = regexp.MustCompile(`(?is)<tr\b[^>]*>.*?</tr>`)
-
-// tableOpenTagEnd returns the index of the ">" that closes the open tag whose
-// name s begins after, skipping ">" inside quoted attribute values. It returns
-// -1 when the tag never closes before the next "<": a malformed open tag must
-// not be cut at the next ">", which may belong to a closing tag — slicing
-// "<table </table>" there would invert the slice bounds.
-func tableOpenTagEnd(s string) int {
-	quote := byte(0)
-	for i := 0; i < len(s); i++ {
-		switch c := s[i]; {
-		case quote != 0:
-			if c == quote {
-				quote = 0
-			}
-		case c == '"' || c == '\'':
-			quote = c
-		case c == '>':
-			return i
-		case c == '<':
-			return -1
-		}
-	}
-	return -1
-}
-
-// splitLargeHTMLTable splits an HTML table into sub-tables that fit within
-// maxTokens, replicating the caption and header row(s) in each sub-table.
-// Token counting is injected (countTokens) so the caller's tokenizer decides
-// what "size" means. This is the chunker-side size budget: Python's flow path
-// never splits a spreadsheet sheet, but honouring chunk_token_size keeps a
-// wide or long table from losing its tail rows to embedding truncation.
+// splitLargeTable enforces the ChunkTokenSize budget on a structured table,
+// splitting it into sub-tables that fit. Splitting is row-granular: every
+// emitted sub-table is a whole number of complete rows (never a partial row),
+// so the per-row chunk produced downstream keeps full row semantics. The token
+// budget is counted on the HTML rendering of each row — the text actually
+// stored on the chunk — so a rendered part never exceeds the budget.
 //
-// The text is expected to hold one outer <table> with flat rows — the shape
-// the spreadsheet parsers render. Markup this function cannot cut safely (an
-// open tag that never closes, a ">" inside an attribute value, a nested or
-// second table) is returned unchanged, so callers fall back to one whole
-// chunk instead of cutting at a guessed boundary.
+// Splitting is also span-safe: a cut never falls inside a merged cell's
+// rowspan, so an origin and every row it covers stay in the same part, and a
+// header cell whose rowspan reached into data rows is re-derived per part so
+// it never claims rows the part does not contain. Every part therefore
+// satisfies the same grid contract as a freshly parsed table.
+//
+// The budget covers DATA rows only. Header rows and the caption are replicated
+// into every part — each part has to stand alone — but they are fixed
+// boilerplate that does not grow with content, so charging them per part would
+// shrink every part's data allowance and, on a wide-header table, fragment the
+// data into one-row chunks. A part may therefore exceed maxTokens by up to the
+// size of the replicated header. When that header alone meets or exceeds the
+// whole budget the table width and the configured chunk size disagree, which is
+// reported through a warning rather than silently absorbed.
 //
 // Alongside the parts it returns dataRanges and headerRows: for part i, the
-// half-open range [start, end) of DATA rows (rows below the header in the
-// original table) the part contains, and the number of leading header rows
-// every part replicates. A caller carrying a per-row position matrix slices
+// half-open range [start, end) of DATA rows (rows below the header) the part
+// contains, and the number of leading header rows every part replicates. A
+// caller carrying a per-row position matrix slices
 // matrix[:headerRows] + matrix[headerRows+start : headerRows+end] to stay
-// aligned with the sub-table markup. headerRows and ranges are 0/nil when
-// the text is returned unchanged.
-func splitLargeHTMLTable(text string, maxTokens int, countTokens func(string) int) (parts []string, dataRanges [][2]int, headerRows int) {
-	lower := strings.ToLower(text)
-	startIdx := strings.Index(lower, "<table")
-	endIdx := strings.LastIndex(lower, "</table>")
-	if startIdx < 0 || endIdx < 0 || endIdx <= startIdx {
-		return []string{text}, nil, 0
+// aligned with the sub-table. headerRows and ranges are 0/nil when the table
+// fits in a single chunk (the caller then emits the whole table unchanged).
+// docID is only used to attribute the oversized-header warning.
+func splitLargeTable(td *entity.TableData, maxTokens int, countTokens func(string) int, docID string) (parts []entity.TableData, dataRanges [][2]int, headerRows int) {
+	if td == nil || len(td.Grid) == 0 {
+		return nil, nil, 0
+	}
+	headerRows = td.HeaderRows
+	if headerRows > len(td.Grid) {
+		headerRows = len(td.Grid)
+	}
+	dataRows := td.Grid[headerRows:]
+	if len(dataRows) == 0 {
+		return nil, nil, 0
 	}
 
-	prefix := text[:startIdx]
-	afterOpen := text[startIdx:]
-	const openTag = "<table"
-	// The match must be a tag name, not the prefix of a longer one such as
-	// "<tableau>".
-	if len(afterOpen) <= len(openTag) || !strings.ContainsRune(" \t\n\f\r/>", rune(afterOpen[len(openTag)])) {
-		return []string{text}, nil, 0
-	}
-	tagRel := tableOpenTagEnd(afterOpen[len(openTag):])
-	if tagRel < 0 {
-		return []string{text}, nil, 0
-	}
-	tagEnd := len(openTag) + tagRel
-	innerStart := startIdx + tagEnd + 1
-	if innerStart > endIdx {
-		return []string{text}, nil, 0
-	}
-	tableOpenTag := afterOpen[:tagEnd+1]
-	inner := text[innerStart:endIdx]
-	// A second table (or a nested one) has no modelled boundary here; leaving
-	// the text alone keeps the caller on the single-chunk path.
-	if innerLower := strings.ToLower(inner); strings.Contains(innerLower, "<table") || strings.Contains(innerLower, "</table>") {
-		return []string{text}, nil, 0
-	}
-	suffix := text[endIdx+len("</table>"):]
+	headerGrid := append([][]entity.TableCell{}, td.Grid[:headerRows]...)
 
-	// Extract caption if present.
-	lowerInner := strings.ToLower(inner)
-	capStart := strings.Index(lowerInner, "<caption")
-	var captionHTML string
-	if capStart >= 0 {
-		capEndRel := strings.Index(lowerInner[capStart:], "</caption>")
-		if capEndRel >= 0 {
-			capEnd := capStart + capEndRel + len("</caption>")
-			captionHTML = inner[capStart:capEnd]
+	// Base tokens: header rows + caption, replicated into every sub-table,
+	// counted on the HTML rendering — the text actually stored on the chunk —
+	// so a rendered part never exceeds the budget. The <table> wrapper + caption
+	// appear once per part; emptyWrapper isolates them so each data row below is
+	// charged only its own <tr> contribution. The base count no longer feeds
+	// the splitting budget; it is kept only to detect a header that cannot fit
+	// a part on its own.
+	base := &entity.TableData{Grid: headerGrid, Caption: td.Caption}
+	baseTokens := countTokens(tableutil.RenderTableHTML(base))
+	emptyWrapper := countTokens(tableutil.RenderTableHTML(&entity.TableData{Caption: td.Caption}))
+	if baseTokens >= maxTokens {
+		common.Warn("chunker: table header alone exceeds chunk budget",
+			zap.String("doc_id", docID),
+			zap.Int("header_tokens", baseTokens),
+			zap.Int("chunk_token_size", maxTokens),
+			zap.Int("header_rows", headerRows))
+	}
+
+	// spanThrough[i] is the last data-row index any rowspan originating at or
+	// before row i still covers (-1 while no span is active). Header-origin
+	// spans need no entry here: every part carries the whole header block.
+	spanThrough := make([]int, len(dataRows))
+	maxEnd := -1
+	for i, row := range dataRows {
+		for _, cell := range row {
+			if !cell.Covered && cell.RowSpan > 1 {
+				if end := i + cell.RowSpan - 1; end > maxEnd {
+					maxEnd = end
+				}
+			}
 		}
+		spanThrough[i] = maxEnd
 	}
-
-	// Extract all rows.
-	rows := trRegex.FindAllString(inner, -1)
-	if len(rows) <= 1 {
-		return []string{text}, nil, 0
-	}
-
-	// Determine header rows vs data rows.
-	headerEnd := 0
-	for i, r := range rows {
-		if strings.Contains(strings.ToLower(r), "<th") {
-			headerEnd = i + 1
-		} else {
-			break
+	// safeCut moves a desired cut at j right to the end of the span group it
+	// would otherwise split. Span-group integrity wins over the budget, the
+	// same way single-row integrity already does.
+	safeCut := func(j int) int {
+		if j <= 0 || j >= len(dataRows) {
+			return j
 		}
+		if end := spanThrough[j-1]; end >= j {
+			if end+1 > len(dataRows) {
+				return len(dataRows)
+			}
+			return end + 1
+		}
+		return j
 	}
-	if headerEnd == 0 || headerEnd >= len(rows) {
-		headerEnd = 1
-	}
-	headerRowHTML := rows[:headerEnd]
-	dataRows := rows[headerEnd:]
 
-	baseHeader := tableOpenTag + captionHTML + strings.Join(headerRowHTML, "")
-	prefixTokens := countTokens(prefix)
-	baseTokens := countTokens(baseHeader + "</table>")
-
-	// prefix (text before the table, e.g. a short Markdown heading) belongs to
-	// the table's position in the document: repeat only the table wrapper,
-	// caption and header rows in every chunk, and prepend prefix to the first.
-	var chunks []string
-	var ranges [][2]int
-	var currentDataRows []string
-	currentTokens := baseTokens + prefixTokens
-	currentStart := 0
-	firstChunk := true
-
+	var start int
+	// currentTokens counts the data rows batched into the current part. It
+	// starts at zero on purpose: the replicated header is not charged, see the
+	// doc comment above.
+	var currentTokens int
 	flush := func(end int) {
-		if len(currentDataRows) == 0 {
+		if end <= start {
 			return
 		}
-		var b strings.Builder
-		if firstChunk {
-			b.WriteString(prefix)
-			firstChunk = false
+		part := entity.TableData{
+			Caption:    td.Caption,
+			HeaderRows: headerRows,
+			Grid: append(cloneHeaderGridForPart(headerGrid, dataRows, start, end, headerRows),
+				partDataRows(dataRows, start, end, headerRows)...),
 		}
-		b.WriteString(baseHeader)
-		for _, dr := range currentDataRows {
-			b.WriteString(dr)
-		}
-		b.WriteString("</table>")
-		chunks = append(chunks, b.String())
-		ranges = append(ranges, [2]int{currentStart, end})
-		currentDataRows = nil
-		currentTokens = baseTokens
-		currentStart = end
+		parts = append(parts, part)
+		dataRanges = append(dataRanges, [2]int{start, end})
+		start = end
+		currentTokens = 0
 	}
 
 	for i, row := range dataRows {
-		rowTokens := countTokens(row)
-		if len(currentDataRows) > 0 && currentTokens+rowTokens > maxTokens {
-			flush(i)
+		if i < start {
+			continue // already belongs to a flushed part
 		}
-		currentDataRows = append(currentDataRows, row)
+		rowTokens := countTokens(tableutil.RenderTableHTML(&entity.TableData{Grid: [][]entity.TableCell{row}, Caption: td.Caption})) - emptyWrapper
+		// Flush the running batch before this row if adding it would exceed the
+		// budget. A single row that alone exceeds the budget still becomes its
+		// own chunk (row integrity wins over the budget).
+		if i > start && currentTokens+rowTokens > maxTokens {
+			end := safeCut(i)
+			flush(end)
+			if i < end {
+				continue // this row is inside the flushed part
+			}
+		}
 		currentTokens += rowTokens
 	}
 	flush(len(dataRows))
 
-	if len(chunks) <= 1 {
-		return []string{text}, nil, 0
+	if len(parts) <= 1 {
+		return nil, nil, 0
 	}
-	if suffix != "" {
-		chunks[len(chunks)-1] += suffix
+	return parts, dataRanges, headerRows
+}
+
+// cloneHeaderGridForPart copies the header grid for one split part and
+// re-derives each header origin's RowSpan from the data rows the part
+// actually contains. A header cell whose rowspan reached into data rows must
+// not claim rows outside the part: the part keeps the full span when all
+// spanned rows travel with it, shrinks it when only some do, and degrades it
+// to a plain cell when none do. ColSpan is row-local and never changes.
+func cloneHeaderGridForPart(headerGrid, dataRows [][]entity.TableCell, start, end, headerRows int) [][]entity.TableCell {
+	cloned := make([][]entity.TableCell, len(headerGrid))
+	for r, row := range headerGrid {
+		cloned[r] = append([]entity.TableCell{}, row...)
+		for c := range cloned[r] {
+			cell := &cloned[r][c]
+			if cell.Covered || cell.RowSpan <= 1 {
+				continue
+			}
+			// Rows below the origin inside the header block are in every
+			// part; count those first, then the part's own covered rows.
+			below := headerRows - 1 - r
+			if below > cell.RowSpan-1 {
+				below = cell.RowSpan - 1
+			}
+			span := 1 + below
+			for i := start; i < end && span < cell.RowSpan; i++ {
+				if c >= len(dataRows[i]) {
+					break
+				}
+				covered := dataRows[i][c]
+				if !covered.Covered || covered.OriginRow != r || covered.OriginCol != c {
+					break
+				}
+				span++
+			}
+			cell.RowSpan = span
+		}
 	}
-	return chunks, ranges, headerEnd
+	return cloned
+}
+
+// partDataRows clones the data rows [start,end) for one part and shifts the
+// OriginRow back-pointer of every Covered slot whose origin is a data-row
+// cell (OriginRow >= headerRows) so it names the origin's row inside the
+// part; data rows move down by start. Header-origin markers keep their index
+// because the header block is identical in every part. The source grid is
+// never mutated.
+func partDataRows(dataRows [][]entity.TableCell, start, end, headerRows int) [][]entity.TableCell {
+	out := make([][]entity.TableCell, 0, end-start)
+	for i := start; i < end; i++ {
+		row := make([]entity.TableCell, len(dataRows[i]))
+		copy(row, dataRows[i])
+		for c := range row {
+			if row[c].Covered && row[c].OriginRow >= headerRows {
+				row[c].OriginRow -= start
+			}
+		}
+		out = append(out, row)
+	}
+	return out
 }

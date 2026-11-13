@@ -18,9 +18,11 @@ package agentic_rag
 
 import (
 	"context"
+	"encoding/xml"
 	"errors"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/tool"
 )
@@ -50,13 +52,16 @@ func TestWebSearchTool_RendersHits(t *testing.T) {
 		t.Fatalf("provider queries = %v", *seen)
 	}
 	// The blank-content hit is dropped: an empty snippet carries nothing.
-	if !strings.Contains(out, `<web_results count="1"`) {
+	if !strings.Contains(out, `<search_results count="1"`) {
 		t.Errorf("expected one rendered hit, got %q", out)
 	}
 	for _, want := range []string{
 		`rank="1"`,
 		`url="https://ragflow.io/docs"`,
-		`title="RAGFlow docs"`,
+		`doc_name="RAGFlow docs"`,
+		`source="web"`,
+		`chunk_id="web-`,
+		`<match_snippet>Agentic RAG line one line two</match_snippet>`,
 		"Agentic RAG line one line two",
 	} {
 		if !strings.Contains(out, want) {
@@ -75,7 +80,7 @@ func TestWebSearchTool_EscapesHits(t *testing.T) {
 		t.Fatalf("InvokableRun: %v", err)
 	}
 	for _, want := range []string{
-		`title="A &amp; B &quot;quoted&quot;"`,
+		`doc_name="A &amp; B &quot;quoted&quot;"`,
 		`url="https://x.test/?a=1&amp;b=2"`,
 		"&lt;script&gt;alert(1)&lt;/script&gt;",
 	} {
@@ -139,6 +144,49 @@ func TestWebSearchTool_PartialFailureKeepsHits(t *testing.T) {
 	if !strings.Contains(out, `url="https://ok.test"`) {
 		t.Errorf("output missing surviving hit: %s", out)
 	}
+	var result struct {
+		XMLName xml.Name `xml:"search_results"`
+		Warning string   `xml:"tool_error"`
+	}
+	if err := xml.Unmarshal([]byte(out), &result); err != nil || result.Warning != "provider: status 429" {
+		t.Errorf("partial failure must remain inside the search result XML: err=%v result=%+v", err, result)
+	}
+}
+
+func TestWebSearchTool_ReferencesRetainServedSnippet(t *testing.T) {
+	registry := NewEvidenceRegistry()
+	registry.Stamp("corpus-chunk")
+	ctx := WithEvidenceRegistry(t.Context(), registry)
+	search, _ := fixedWebSearch([]WebResult{{
+		Title: "  Public  source ", URL: " https://example.com/source ",
+		Content: strings.Repeat("证据", webSearchSnippetRunes),
+	}}, nil)
+	web := NewWebSearchTool(search)
+	for range 2 {
+		out, err := web.InvokableRun(ctx, `{"queries":["keyword"]}`)
+		if err != nil || !strings.Contains(out, `ref="1"`) {
+			t.Fatalf("web result must keep its handle after corpus evidence: err=%v out=%.300q", err, out)
+		}
+	}
+	ids := registry.IDs()
+	if len(ids) != 2 {
+		t.Fatalf("duplicate web results must share a reference: %v", ids)
+	}
+	result, ok := registry.WebResult(ids[1])
+	if !ok || result.Title != "Public source" || result.URL != "https://example.com/source" || utf8.RuneCountInString(result.Content) != webSearchSnippetRunes+3 || !strings.HasSuffix(result.Content, "...") {
+		t.Fatalf("reference did not retain the bounded snippet served to the model: %+v, ok=%t", result, ok)
+	}
+}
+
+func TestWebSearchTool_ZeroHits(t *testing.T) {
+	search, _ := fixedWebSearch(nil, nil)
+	out, err := NewWebSearchTool(search).InvokableRun(t.Context(), `{"queries":["keyword"]}`)
+	if err != nil || !strings.Contains(out, `<search_results count="0"`) || !strings.Contains(out, "0 web hits") {
+		t.Fatalf("unexpected empty web result: err=%v out=%q", err, out)
+	}
+	if strings.Contains(out, "WORD FORM") || strings.Contains(out, "MEANING search") {
+		t.Errorf("empty web results must not claim the corpus was searched: %s", out)
+	}
 }
 
 func TestWebSearchTool_AllQueriesFail(t *testing.T) {
@@ -161,7 +209,7 @@ func TestWebSearchTool_CapsResults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InvokableRun: %v", err)
 	}
-	if got := strings.Count(out, "<result "); got != webSearchMaxResults {
+	if got := strings.Count(out, "<chunk "); got != webSearchMaxResults {
 		t.Errorf("results = %d, want %d", got, webSearchMaxResults)
 	}
 }
@@ -189,15 +237,30 @@ func TestWebSearchRidesOnTheContext(t *testing.T) {
 }
 
 // TestToolsFor_WebSearchIsRuntimeInjected: web_search is never assembled from
-// a template's tool list — Run injects it from the run context, so the template
+// a template's tool list — toolsFor adds it from the run context, so the template
 // list stays a description of the corpus toolset alone.
 func TestToolsFor_WebSearchIsRuntimeInjected(t *testing.T) {
-	tools := toolsFor(Template{ID: "t", Tools: []string{"think", webSearchToolName}},
-		"tenant", nil)
+	tools := toolsFor(context.Background(), Template{ID: "t", Tools: []string{"think", webSearchToolName}},
+		"tenant", nil, nil)
 	if len(tools) != 1 {
-		t.Fatalf("tools = %d, want only think (web_search is injected by Run)", len(tools))
+		t.Fatalf("tools = %d, want only think without a configured provider", len(tools))
 	}
-	// Run appends the tool to the ADK tool node, which runs InvokableTool
+	search, seen := fixedWebSearch(nil, nil)
+	ctx := WithWebSearch(context.Background(), search)
+	for _, explicit := range [][]tool.BaseTool{nil, tools} {
+		enabled := toolsFor(ctx, Template{ID: "t", Tools: []string{"think"}}, "tenant", nil, explicit)
+		if len(enabled) != 2 {
+			t.Fatalf("enabled tools = %d, want think and web_search", len(enabled))
+		}
+		info, err := enabled[1].Info(ctx)
+		if err != nil || info.Name != webSearchToolName {
+			t.Fatalf("enabled web tool: info=%v err=%v", info, err)
+		}
+	}
+	if len(*seen) != 0 {
+		t.Fatalf("tool assembly must not search, got queries %v", *seen)
+	}
+	// The ADK tool node runs InvokableTool
 	// implementations; a tool that is only a BaseTool would be silently
 	// unusable there.
 	var _ tool.InvokableTool = NewWebSearchTool(nil)

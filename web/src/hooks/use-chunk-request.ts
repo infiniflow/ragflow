@@ -187,10 +187,8 @@ export const useFetchNextChunkList = (
       const { data } = await kbService.chunkList({
         kb_id: knowledgeId,
         doc_id: documentId,
-        page: chunkIds?.length ? 1 : pagination.current,
-        size: chunkIds?.length
-          ? chunkIds.length
-          : Math.min(pagination.pageSize, 100),
+        page: pagination.current,
+        size: Math.min(pagination.pageSize, 100),
         available_int: available,
         keywords: searchString,
         chunk_ids: chunkIds,

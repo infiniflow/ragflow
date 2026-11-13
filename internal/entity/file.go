@@ -20,6 +20,7 @@ package entity
 type File struct {
 	ID         string  `gorm:"column:id;primaryKey;size:32" json:"id"`
 	ParentID   string  `gorm:"column:parent_id;size:32;not null;index" json:"parent_id"`
+	UserID     string  `gorm:"column:user_id;size:32;not null;default:'';index" json:"user_id"`
 	TenantID   string  `gorm:"column:tenant_id;size:32;not null;index" json:"tenant_id"`
 	CreatedBy  string  `gorm:"column:created_by;size:32;not null;index" json:"created_by"`
 	Name       string  `gorm:"column:name;size:255;not null;index" json:"name"`

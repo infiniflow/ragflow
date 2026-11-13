@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -29,11 +30,12 @@ import (
 )
 
 type dropboxTestServer struct {
-	server        *httptest.Server
-	listRequests  []dropboxListFolderRequest
-	continueCalls int
-	downloadPaths []string
-	downloadArgs  []string
+	server            *httptest.Server
+	listRequests      []dropboxListFolderRequest
+	continueCalls     int
+	downloadPaths     []string
+	downloadArgs      []string
+	downloadRecovered bool
 }
 
 func newDropboxTestServer(t *testing.T) *dropboxTestServer {
@@ -93,7 +95,7 @@ func newDropboxTestServer(t *testing.T) *dropboxTestServer {
 				return
 			}
 			fixture.downloadPaths = append(fixture.downloadPaths, arg["path"])
-			if arg["path"] == "/broken.txt" {
+			if arg["path"] == "/broken.txt" && !fixture.downloadRecovered {
 				w.WriteHeader(http.StatusInternalServerError)
 				_, _ = io.WriteString(w, `{"error_summary":"broken"}`)
 				return
@@ -171,11 +173,17 @@ func TestDropboxConnectorOpenSync(t *testing.T) {
 		t.Fatalf("OpenSync downloaded files eagerly: %#v", fixture.downloadPaths)
 	}
 
+	failed, err := session.NextBatch(context.Background())
+	if err == nil || failed.Checkpoint != nil {
+		t.Fatalf("download failure: %+v, %v", failed, err)
+	}
+	fixture.downloadRecovered = true
+	fixture.downloadPaths = nil
 	first, err := session.NextBatch(context.Background())
 	if err != nil {
 		t.Fatalf("NextBatch first failed: %v", err)
 	}
-	if len(first.Documents) != 1 {
+	if len(first.Documents) != 2 {
 		t.Fatalf("first batch size = %d", len(first.Documents))
 	}
 	if first.Documents[0].SourceID != "dropbox:id:alpha" || string(first.Documents[0].Blob) != "body:/alpha.txt" {
@@ -288,6 +296,7 @@ func TestDropboxConnectorDownloadFileEscapesAPIArgHeader(t *testing.T) {
 
 func TestDropboxConnectorSessionsNormalizeNonPositiveBatchSize(t *testing.T) {
 	fixture := newDropboxTestServer(t)
+	fixture.downloadRecovered = true
 	connector := newDropboxTestConnector(t, fixture, true)
 	connector.batchSize = 0
 
@@ -316,5 +325,74 @@ func TestDropboxConnectorSessionsNormalizeNonPositiveBatchSize(t *testing.T) {
 	}
 	if len(pruneBatch.Documents) == 0 {
 		t.Fatalf("prune batch should advance with a positive effective size")
+	}
+}
+
+// A failed download must not produce a checkpoint that makes resume skip it.
+func TestDropboxSyncDownloadFailureKeepsBatchRetryable(t *testing.T) {
+	for _, batchSize := range []int{1, 2} {
+		t.Run(fmt.Sprint(batchSize), func(t *testing.T) {
+			failing := true
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if strings.HasSuffix(r.URL.Path, "/list_folder") {
+					writeDropboxTestListResponse(w, []map[string]any{
+						{".tag": "file", "id": "id:a", "name": "a.txt", "path_display": "/a.txt", "client_modified": "2026-01-02T00:00:00Z", "size": 4},
+						{".tag": "file", "id": "id:b", "name": "b.txt", "path_display": "/b.txt", "client_modified": "2026-01-02T00:00:00Z", "size": 4},
+					}, "", false)
+					return
+				}
+				if failing && strings.Contains(r.Header.Get("Dropbox-API-Arg"), "/b.txt") {
+					w.WriteHeader(http.StatusServiceUnavailable)
+					return
+				}
+				_, _ = io.WriteString(w, "body")
+			}))
+			defer server.Close()
+			c, err := NewDropboxConnector(map[string]any{"batch_size": batchSize})
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.apiBaseURL, c.contentBaseURL = server.URL, server.URL
+			request := SyncRequest{WindowEnd: time.Date(2026, 1, 3, 0, 0, 0, 0, time.UTC)}
+			session, err := c.OpenSync(context.Background(), request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer session.Close()
+			if batchSize == 1 {
+				first, err := session.NextBatch(context.Background())
+				if err != nil || len(first.Documents) != 1 {
+					t.Fatalf("first batch: %+v, %v", first, err)
+				}
+				request.Resume = first.Checkpoint
+			}
+			failed, err := session.NextBatch(context.Background())
+			if err == nil || !strings.Contains(err.Error(), "503") {
+				t.Fatalf("download failure lost: batch=%+v err=%v", failed, err)
+			}
+			if failed.Checkpoint != nil || len(failed.Documents) != 0 {
+				t.Fatalf("failed batch must not commit: %+v", failed)
+			}
+			failing = false
+			// Both retrying the session and reopening from the last committed
+			// checkpoint must replay every uncommitted document.
+			reopened, err := c.OpenSync(context.Background(), request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reopened.Close()
+			for _, retrySession := range []SyncSession{session, reopened} {
+				batch, err := retrySession.NextBatch(context.Background())
+				if err != nil || len(batch.Documents) != batchSize {
+					t.Fatalf("retry: %+v, %v", batch, err)
+				}
+				if batch.Documents[len(batch.Documents)-1].SourceID != "dropbox:id:b" {
+					t.Fatalf("failed file missing: %+v", batch)
+				}
+				if _, err := retrySession.NextBatch(context.Background()); err != io.EOF {
+					t.Fatalf("end: %v", err)
+				}
+			}
+		})
 	}
 }

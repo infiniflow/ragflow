@@ -46,7 +46,13 @@ Accepts 1-5 queries. Output is the same <search_results> XML as the other locate
 // is that the keyword leg cannot be dialled back in, so the field would only
 // invite the caller to rebuild search_chunks by hand.
 type searchSemanticChunksArgs struct {
-	Queries             []string `json:"queries"`
+	Queries []string `json:"queries"`
+	// Intent is what THIS call is trying to find, in the caller's own words.
+	// The filter judges a hit against THIS rather than against the overall
+	// question alone, because a necessary middle step of a multi-hop run is
+	// often irrelevant to the final question while being exactly what the step
+	// needed. Optional: omitted means the filter falls back to the question.
+	Intent              string   `json:"intent,omitempty"`
 	DatasetIDs          []string `json:"dataset_ids,omitempty"`
 	DocScope            []string `json:"doc_scope,omitempty"`
 	TopN                int      `json:"top_n,omitempty"`
@@ -103,9 +109,13 @@ func (k *SearchSemanticChunksTool) Info(_ context.Context) (*schema.ToolInfo, er
       "description": "Minimum vector similarity (0.0-1.0) for a chunk to be returned; higher is stricter (fewer, more relevant results). Default 0.2.",
       "minimum": 0,
       "maximum": 1
+    },
+    "intent": {
+      "type": "string",
+      "description": "REQUIRED: what information THIS call needs, in one sentence, e.g. the first name of Sarah Polk's mother, needed to build the final name. Each returned passage is kept or dropped by whether it serves this stated need, so name the fact you are looking for - not the search terms, and not 'relevant information'."
     }
   },
-  "required": ["queries"]
+  "required": ["queries", "intent"]
 }`
 	s := &jsonschema.Schema{}
 	if err := json.Unmarshal([]byte(schemaJSON), s); err != nil {
@@ -129,6 +139,10 @@ func (k *SearchSemanticChunksTool) invokableRun(ctx context.Context, argumentsIn
 	if err := json.Unmarshal([]byte(argumentsInJSON), &args); err != nil {
 		return "", fmt.Errorf("%s: parse arguments: %w", searchSemanticChunksToolName, err)
 	}
+
+	// Published for the decision filter: it judges each passage against this
+	// stated need, which is narrower than the overall question.
+	ctx = withIntent(ctx, args.Intent)
 	return runLocateSearch(ctx, locateSearchSpec{
 		tool:                searchSemanticChunksToolName,
 		queries:             args.Queries,

@@ -96,7 +96,7 @@ func resolveTemplate(tmpl string, ctx context.Context) string {
 		return tmpl
 	}
 	result := tmpl
-	for k, v := range s.Values {
+	for k, v := range s.valuesSnapshot() {
 		repl := fmt.Sprintf("{%s}", k)
 		if sv, ok := v.(string); ok {
 			result = strings.ReplaceAll(result, repl, sv)
@@ -190,6 +190,7 @@ type typedRunParams[M MessageType] struct {
 // retry signal propagation, and after-tool-calls hooks.
 type reActExecCtx struct {
 	generator          *AsyncGenerator[*TypedAgentEvent[*schema.Message]]
+	sendTypedEvent     func(any) bool
 	cancelCtx          *cancelContext
 	suppressEventSend  bool
 	retrySignal        *retrySignal
@@ -197,12 +198,54 @@ type reActExecCtx struct {
 	afterToolCallsHook func(ctx context.Context) error
 }
 
-func (ec *reActExecCtx) send(ev any) {
-	if ec != nil && ec.generator != nil {
-		if te, ok := ev.(*TypedAgentEvent[*schema.Message]); ok {
-			ec.generator.Send(te)
-		}
+func newReActExecCtx[M MessageType](gen *AsyncGenerator[*TypedAgentEvent[M]]) *reActExecCtx {
+	ec := &reActExecCtx{}
+	if gen == nil {
+		return ec
 	}
+	ec.sendTypedEvent = func(ev any) bool {
+		event, ok := ev.(*TypedAgentEvent[M])
+		if !ok {
+			return false
+		}
+		gen.Send(event)
+		return true
+	}
+	if messageGen, ok := any(gen).(*AsyncGenerator[*TypedAgentEvent[*schema.Message]]); ok {
+		ec.generator = messageGen
+	}
+	return ec
+}
+
+func (ec *reActExecCtx) canSend() bool {
+	return ec != nil && (ec.generator != nil || ec.sendTypedEvent != nil)
+}
+
+func (ec *reActExecCtx) send(ev any) bool {
+	if ec == nil {
+		return false
+	}
+	if ec.sendTypedEvent != nil {
+		return ec.sendTypedEvent(ev)
+	}
+	if ec.generator == nil {
+		return false
+	}
+	event, ok := ev.(*TypedAgentEvent[*schema.Message])
+	if !ok {
+		return false
+	}
+	ec.generator.Send(event)
+	return true
+}
+
+type reActExecCtxKey struct{}
+
+func withReActExecCtx(ctx context.Context, ec *reActExecCtx) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithValue(ctx, reActExecCtxKey{}, ec)
 }
 
 type execContext struct {
@@ -299,6 +342,11 @@ func (a *ReActAgent[M]) prepareExecContext(ctx context.Context) (*execContext, e
 
 func (a *ReActAgent[M]) buildNoToolsRunFunc() typedRunFunc[M] {
 	return func(ctx context.Context, p *typedRunParams[M]) {
+		ec := newReActExecCtx(p.generator)
+		ec.cancelCtx = getCancelContext(ctx)
+		ec.afterToolCallsHook = p.afterToolCallsHook
+		ctx = withReActExecCtx(ctx, ec)
+
 		// Build allTools: config.Tools + contribTools
 		allTools := make([]Tool, 0, len(a.config.Tools)+len(a.exeCtx.contribTools))
 		allTools = append(allTools, a.config.Tools...)
@@ -310,7 +358,7 @@ func (a *ReActAgent[M]) buildNoToolsRunFunc() typedRunFunc[M] {
 			return
 		}
 
-		model := BuildModelWrapperChain(a.config.Model, nil, a.config, a.exeCtx.toolInfos)
+		model := BuildModelWrapperChain(ctx, a.config.Model, ec, a.config, a.exeCtx.toolInfos)
 		state := NewReActAgentState(p.input.Messages, a.exeCtx.toolInfos, a.config.MaxIterations)
 
 		// BeforeModelRewrite middleware
@@ -334,7 +382,6 @@ func (a *ReActAgent[M]) buildNoToolsRunFunc() typedRunFunc[M] {
 			p.generator.Send(&TypedAgentEvent[M]{Err: err})
 			return
 		}
-		p.generator.Send(typedModelOutputEvent(resp, nil))
 		state.Messages = append(state.Messages, resp)
 
 		// AfterModelRewrite middleware
@@ -432,7 +479,7 @@ func setOutputToSession[M MessageType](ctx context.Context, msg M, key string) {
 	if !isNilMessage(msg) {
 		s := getSession(ctx)
 		if s != nil {
-			s.Values[key] = extractTextContent(msg)
+			s.setValue(key, extractTextContent(msg))
 		}
 	}
 }
@@ -568,15 +615,11 @@ func streamWithCancel[M MessageType](s *schema.StreamReader[M], cc *cancelContex
 
 // getChatModelExecCtx retrieves the chat model execution context from context.
 func getChatModelExecCtx(ctx context.Context) *reActExecCtx {
-	rc := getRunCtx(ctx)
-	if rc == nil {
+	if ctx == nil {
 		return nil
 	}
-	// The exec ctx is stored on the run session or passed via context value
-	if ec, ok := rc.Session.Values["__exec_ctx"].(*reActExecCtx); ok {
-		return ec
-	}
-	return nil
+	ec, _ := ctx.Value(reActExecCtxKey{}).(*reActExecCtx)
+	return ec
 }
 
 // getReActExecCtx retrieves the typed execution context from context.
@@ -633,6 +676,11 @@ func (a *ReActAgent[M]) buildGraphReActRunFunc() typedRunFunc[M] {
 			return
 		}
 
+		ec := newReActExecCtx(p.generator)
+		ec.cancelCtx = getCancelContext(ctx)
+		ec.afterToolCallsHook = p.afterToolCallsHook
+		ctx = withReActExecCtx(ctx, ec)
+
 		// Build graph config from agent config.
 		graphCfg := &ReActGraphConfig{
 			Checkpointer:    a.config.GraphReActCheckpointer,
@@ -657,18 +705,10 @@ func (a *ReActAgent[M]) buildGraphReActRunFunc() typedRunFunc[M] {
 		input := &AgentInput{Messages: messageSliceToAny2(p.input.Messages)}
 
 		// Run the graph (synchronous invoke or streaming).
-		state, err := rg.Invoke(ctx, input, nil)
+		_, err = rg.Invoke(ctx, input, nil)
 		if err != nil {
 			p.generator.Send(&TypedAgentEvent[M]{Err: err})
 			return
-		}
-
-		// Emit the final model response as an event.
-		if len(state.Messages) > 0 {
-			last := state.Messages[len(state.Messages)-1]
-			if !isNilMessage(last) {
-				p.generator.Send(any(typedModelOutputEvent(last, nil)).(*TypedAgentEvent[M]))
-			}
 		}
 
 		// Emit afterToolCallsHook if configured.

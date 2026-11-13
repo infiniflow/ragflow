@@ -46,8 +46,7 @@ const aliyunDefaultRegion = "cn-hangzhou"
 
 const aliyunExecutePath = "/sandboxes/%s/contexts/execute"
 
-// AliyunCodeInterpreterProvider is the Go port of
-// `agent/sandbox/providers/aliyun_codeinterpreter.py::AliyunCodeInterpreterProvider`.
+// AliyunCodeInterpreterProvider calls Alibaba Cloud Code Interpreter.
 type AliyunCodeInterpreterProvider struct {
 	accessKeyID     string
 	accessKeySecret string

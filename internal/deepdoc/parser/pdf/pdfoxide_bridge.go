@@ -29,12 +29,7 @@ func (e *PDFOxideEngine) PageCount() (int, error) { return e.Inner.PageCount() }
 func (e *PDFOxideEngine) Close() error            { return e.Inner.Close() }
 
 func (e *PDFOxideEngine) Outlines() ([]pdf.Outline, error) {
-	ol := pdfium.ExtractOutlines(e.Inner.RawData())
-	result := make([]pdf.Outline, len(ol))
-	for i, o := range ol {
-		result[i] = pdf.Outline{Title: o.Title, Level: o.Level, PageNumber: o.PageNumber}
-	}
-	return result, nil
+	return pdfium.ExtractOutlines(e.Inner.RawData()), nil
 }
 
 func (e *PDFOxideEngine) RenderPage(pageNum int, dpi float64) ([]byte, error) {

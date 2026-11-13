@@ -18,15 +18,11 @@ package file
 
 import (
 	"context"
-	"errors"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
 )
-
-// ErrNoAuthorization indicates the current user cannot access the target file.
-var ErrNoAuthorization = errors.New("no authorization")
 
 var (
 	// assertURLSafe and pinnedHTTPClient are aliased from utility so tests
@@ -40,28 +36,20 @@ type DocRemover interface {
 	RemoveDocumentKeepFile(ctx context.Context, docID string) error
 }
 
-// CheckFilePermFunc is the function signature for file-team permission checks,
-// injected by the parent adapter so the file subpackage does not need to import
-// the parent service package.
-type CheckFilePermFunc func(ctx context.Context, fileDAO *dao.FileDAO, file *entity.File, userID string) bool
-
 // FileService file service
 type FileService struct {
 	fileDAO          *dao.FileDAO
 	file2DocumentDAO *dao.File2DocumentDAO
 	documentService  DocRemover
-	checkFilePerm    CheckFilePermFunc
 }
 
-// NewFileService create file service. checkFilePerm is always required;
-// dr may be nil when the caller only uses read/parse methods and never
-// calls DeleteFiles.
-func NewFileService(checkFilePerm CheckFilePermFunc, dr DocRemover) *FileService {
+// NewFileService creates a file service. dr may be nil when file deletion is
+// not used.
+func NewFileService(dr DocRemover) *FileService {
 	return &FileService{
 		fileDAO:          dao.NewFileDAO(),
 		file2DocumentDAO: dao.NewFile2DocumentDAO(),
 		documentService:  dr,
-		checkFilePerm:    checkFilePerm,
 	}
 }
 

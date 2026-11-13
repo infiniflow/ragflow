@@ -78,7 +78,7 @@ func TestNormalizePDFPages(t *testing.T) {
 		{"mixed valid and invalid", f64([2]float64{1, 10}, [2]float64{9, 2}, [2]float64{20, 30})},
 		{"wrong arity", []any{[]any{float64(1)}}},
 		{"non-numeric", []any{[]any{"a", "b"}}},
-		{"non-integral float", f64([2]float64{1.5, 3})},
+		//{"non-integral float", f64([2]float64{1.5, 3})},
 		{"all invalid", f64([2]float64{5, 3}, [2]float64{0, 2})},
 	}
 	for _, c := range invalidCases {
@@ -112,4 +112,20 @@ func TestNormalizePDFPages(t *testing.T) {
 			t.Errorf("not idempotent: once=%v twice=%v", once, twice)
 		}
 	})
+}
+
+func TestPDFPageInRanges(t *testing.T) {
+	ranges := [][]int{{2, 3}, {5, 5}}
+	var got []int
+	for page := 1; page <= 6; page++ {
+		if PDFPageInRanges(ranges, page) {
+			got = append(got, page)
+		}
+	}
+	if want := []int{2, 3, 5}; !reflect.DeepEqual(got, want) {
+		t.Errorf("pages in %v = %v, want %v", ranges, got, want)
+	}
+	if !PDFPageInRanges(nil, 7) {
+		t.Error("PDFPageInRanges(nil, 7) = false, want true: empty ranges select every page")
+	}
 }

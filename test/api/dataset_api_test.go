@@ -21,561 +21,195 @@ package api
 import (
 	"bytes"
 	"encoding/base64"
-	"encoding/json"
-	"fmt"
 	"image"
 	"image/color"
-	"image/draw"
 	"image/png"
-	"io"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 )
 
-func decodeResponseJSON(resp *http.Response) (map[string]interface{}, error) {
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	var payload map[string]interface{}
-	if err = json.Unmarshal(body, &payload); err != nil {
-		return nil, err
-	}
-	return payload, nil
-}
-
-func requireStatusCode(t *testing.T, resp *http.Response, expected int) map[string]interface{} {
+// createRESTDataset registers ownership before checking the persisted resource.
+// Explicit names are useful for duplicate and boundary tests; all callers own
+// only the returned ID, even when the server deduplicates the requested name.
+func createRESTDataset(t *testing.T, fields apiObject) apiObject {
 	t.Helper()
-	if resp.StatusCode != expected {
-		t.Fatalf("expected status code %d, got %d", expected, resp.StatusCode)
+	payload := apiObject{"name": uniqueName("go_dataset"), "parse_type": 1, "parser_id": "general"}
+	for key, value := range fields {
+		payload[key] = value
 	}
-	payload, err := decodeResponseJSON(resp)
-	if err != nil {
-		t.Fatalf("failed to decode response: %v", err)
+	result := restCall(t, TestConfig, http.MethodPost, "/datasets", payload, nil)
+	if data, ok := result.JSON["data"].(apiObject); ok {
+		if id, ok := data["id"].(string); ok && id != "" {
+			cleanupResource(t, TestConfig, "datasets", id)
+		}
 	}
-	return payload
+	data := object(t, restOK(t, result)["data"])
+	id, ok := data["id"].(string)
+	if !ok || id == "" {
+		t.Fatalf("created dataset has invalid id: %v", data)
+	}
+	persisted := getRESTDataset(t, id)
+	for _, key := range []string{"id", "name", "permission", "parser_id", "embedding_model", "parser_config"} {
+		if !reflect.DeepEqual(data[key], persisted[key]) {
+			t.Fatalf("created %s differs from persisted value: response=%v stored=%v", key, data[key], persisted[key])
+		}
+	}
+	return persisted
 }
 
-func requireCodeZero(t *testing.T, payload map[string]interface{}) {
+func getRESTDataset(t *testing.T, id string) apiObject {
 	t.Helper()
-	code, ok := payload["code"].(float64)
-	if !ok || int(code) != 0 {
-		t.Fatalf("expected code 0, got %v, payload: %v", payload["code"], payload)
-	}
+	return object(t, restOK(t, restCall(t, TestConfig, http.MethodGet, "/datasets/"+id, nil, nil))["data"])
 }
 
-func clearDatasets(t *testing.T) {
+func requireDatasetFields(t *testing.T, id string, expected apiObject) apiObject {
 	t.Helper()
-	resp, err := TestConfig.DeleteJSON("/datasets", map[string]interface{}{"ids": nil, "delete_all": true}, nil)
-	if err != nil {
-		t.Fatalf("clear datasets request failed: %v", err)
+	actual := getRESTDataset(t, id)
+	for key, want := range expected {
+		if !reflect.DeepEqual(actual[key], want) {
+			t.Errorf("dataset %s field %s=%#v want=%#v", id, key, actual[key], want)
+		}
 	}
-	payload := requireStatusCode(t, resp, http.StatusOK)
-	code, _ := payload["code"].(float64)
-	if int(code) != 0 && int(code) != 102 {
-		t.Fatalf("clear datasets failed: code=%v, payload=%v", payload["code"], payload)
-	}
+	return actual
 }
 
-func jsonDeepEqual(a, b interface{}) bool {
-	switch av := a.(type) {
-	case float64:
-		switch bv := b.(type) {
-		case float64:
-			return av == bv
-		case int:
-			return av == float64(bv)
-		case int64:
-			return av == float64(bv)
-		default:
-			return false
-		}
-	case int:
-		return jsonDeepEqual(float64(av), b)
-	case int64:
-		return jsonDeepEqual(float64(av), b)
-	case string, bool, nil:
-		return a == b
-	case []interface{}:
-		bv, ok := b.([]interface{})
-		if !ok || len(av) != len(bv) {
-			return false
-		}
-		for i := range av {
-			if !jsonDeepEqual(av[i], bv[i]) {
-				return false
-			}
-		}
-		return true
-	case map[string]interface{}:
-		bv, ok := b.(map[string]interface{})
-		if !ok || len(av) != len(bv) {
-			return false
-		}
-		for k, v := range av {
-			bvVal, ok := bv[k]
-			if !ok || !jsonDeepEqual(v, bvVal) {
-				return false
-			}
-		}
-		return true
-	default:
-		return a == b
-	}
+func requireDatasetAbsent(t *testing.T, id string) {
+	t.Helper()
+	restCode(t, restCall(t, TestConfig, http.MethodGet, "/datasets/"+id, nil, nil), 200, 404)
+	restCode(t, restCall(t, TestConfig, http.MethodGet, "/datasets", nil, apiObject{"id": id}), 200, 404)
 }
 
 func TestDatasetCRUDCycle(t *testing.T) {
-	clearDatasets(t)
-	// Create
-	createResp, err := TestConfig.PostJSON("/datasets", map[string]interface{}{"name": "restful_dataset_crud"}, nil)
-	if err != nil {
-		t.Fatalf("create dataset request failed: %v", err)
+	dataset := createRESTDataset(t, nil)
+	id := dataset["id"].(string)
+	name := uniqueName("renamed")
+	restOK(t, restCall(t, TestConfig, http.MethodPut, "/datasets/"+id, apiObject{"name": name}, nil))
+	requireDatasetFields(t, id, apiObject{"name": name})
+	listed := restOK(t, restCall(t, TestConfig, http.MethodGet, "/datasets", nil, apiObject{"id": id}))
+	items := array(t, listed["data"])
+	if len(items) != 1 || object(t, items[0])["id"] != id || listed["total_datasets"] != float64(1) {
+		t.Fatalf("id-filtered list=%v", listed)
 	}
-	createPayload := requireStatusCode(t, createResp, http.StatusOK)
-	requireCodeZero(t, createPayload)
-	createData, ok := createPayload["data"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("create response data is not an object: %v", createPayload)
-	}
-	datasetID, ok := createData["id"].(string)
-	if !ok || datasetID == "" {
-		t.Fatalf("create response data.id is not a valid string: %v", createData)
-	}
-
-	// Get by id
-	getResp, err := TestConfig.GetJSON(fmt.Sprintf("/datasets/%s", datasetID), nil, nil)
-	if err != nil {
-		t.Fatalf("get dataset request failed: %v", err)
-	}
-	getPayload := requireStatusCode(t, getResp, http.StatusOK)
-	requireCodeZero(t, getPayload)
-	getData, ok := getPayload["data"].(map[string]interface{})
-	if !ok || getData["id"] != datasetID {
-		t.Fatalf("get response data.id mismatch: %v", getPayload)
-	}
-
-	// Update
-	updateResp, err := TestConfig.PutJSON(fmt.Sprintf("/datasets/%s", datasetID), map[string]interface{}{"name": "restful_dataset_crud_updated"}, nil)
-	if err != nil {
-		t.Fatalf("update dataset request failed: %v", err)
-	}
-	updatePayload := requireStatusCode(t, updateResp, http.StatusOK)
-	requireCodeZero(t, updatePayload)
-	updateData, ok := updatePayload["data"].(map[string]interface{})
-	if !ok || updateData["name"] != "restful_dataset_crud_updated" {
-		t.Fatalf("update response data.name mismatch: %v", updatePayload)
-	}
-
-	// List with id filter
-	listResp, err := TestConfig.GetJSON("/datasets", map[string]interface{}{"id": datasetID}, nil)
-	if err != nil {
-		t.Fatalf("list dataset request failed: %v", err)
-	}
-	listPayload := requireStatusCode(t, listResp, http.StatusOK)
-	requireCodeZero(t, listPayload)
-	listData, ok := listPayload["data"].([]interface{})
-	if !ok || len(listData) != 1 {
-		t.Fatalf("expected 1 dataset in list, got %v", listPayload)
-	}
-	firstItem, ok := listData[0].(map[string]interface{})
-	if !ok || firstItem["id"] != datasetID {
-		t.Fatalf("list response data[0].id mismatch: %v", listPayload)
-	}
-
-	// Delete
-	deleteResp, err := TestConfig.DeleteJSON("/datasets", map[string]interface{}{"ids": []interface{}{datasetID}}, nil)
-	if err != nil {
-		t.Fatalf("delete dataset request failed: %v", err)
-	}
-	deletePayload := requireStatusCode(t, deleteResp, http.StatusOK)
-	requireCodeZero(t, deletePayload)
-
-	// List after delete
-	listAfterResp, err := TestConfig.GetJSON("/datasets", nil, nil)
-	if err != nil {
-		t.Fatalf("list after delete request failed: %v", err)
-	}
-	listAfterPayload := requireStatusCode(t, listAfterResp, http.StatusOK)
-	requireCodeZero(t, listAfterPayload)
-	listAfterData, ok := listAfterPayload["data"].([]interface{})
-	if !ok {
-		t.Fatalf("list after delete data is not an array: %v", listAfterPayload)
-	}
-	for _, item := range listAfterData {
-		dataset, ok := item.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		if dataset["id"] == datasetID {
-			t.Fatalf("deleted dataset %s still present in list: %v", datasetID, listAfterPayload)
-		}
-	}
+	restOK(t, restCall(t, TestConfig, http.MethodDelete, "/datasets", apiObject{"ids": []string{id}}, nil))
+	requireDatasetAbsent(t, id)
 }
 
 func TestDatasetUpdateNameAndCaseInsensitiveContract(t *testing.T) {
-	clearDatasets(t)
-
-	// Create first dataset
-	firstResp, err := TestConfig.PostJSON("/datasets", map[string]interface{}{"name": "dataset_update_name_source"}, nil)
-	if err != nil {
-		t.Fatalf("create first dataset request failed: %v", err)
-	}
-	firstPayload := requireStatusCode(t, firstResp, http.StatusOK)
-	requireCodeZero(t, firstPayload)
-	firstData, ok := firstPayload["data"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("first response data is not an object: %v", firstPayload)
-	}
-	firstDatasetID, ok := firstData["id"].(string)
-	if !ok || firstDatasetID == "" {
-		t.Fatalf("first dataset id is invalid: %v", firstData)
-	}
-
-	// Create second dataset
-	secondResp, err := TestConfig.PostJSON("/datasets", map[string]interface{}{"name": "dataset_update_name_target"}, nil)
-	if err != nil {
-		t.Fatalf("create second dataset request failed: %v", err)
-	}
-	secondPayload := requireStatusCode(t, secondResp, http.StatusOK)
-	requireCodeZero(t, secondPayload)
-	secondData, ok := secondPayload["data"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("second response data is not an object: %v", secondPayload)
-	}
-	secondDatasetName, ok := secondData["name"].(string)
-	if !ok || secondDatasetName == "" {
-		t.Fatalf("second dataset name is invalid: %v", secondData)
-	}
-
-	// Rename first dataset
-	renameResp, err := TestConfig.PutJSON(fmt.Sprintf("/datasets/%s", firstDatasetID), map[string]interface{}{"name": "dataset_update_name_renamed"}, nil)
-	if err != nil {
-		t.Fatalf("rename dataset request failed: %v", err)
-	}
-	renamePayload := requireStatusCode(t, renameResp, http.StatusOK)
-	requireCodeZero(t, renamePayload)
-	renameData, ok := renamePayload["data"].(map[string]interface{})
-	if !ok || renameData["name"] != "dataset_update_name_renamed" {
-		t.Fatalf("rename response data.name mismatch: %v", renamePayload)
-	}
-
-	// List with id filter
-	listResp, err := TestConfig.GetJSON("/datasets", map[string]interface{}{"id": firstDatasetID}, nil)
-	if err != nil {
-		t.Fatalf("list dataset request failed: %v", err)
-	}
-	listPayload := requireStatusCode(t, listResp, http.StatusOK)
-	requireCodeZero(t, listPayload)
-	listData, ok := listPayload["data"].([]interface{})
-	if !ok || len(listData) != 1 {
-		t.Fatalf("expected 1 dataset in list, got %v", listPayload)
-	}
-	firstItem, ok := listData[0].(map[string]interface{})
-	if !ok || firstItem["name"] != "dataset_update_name_renamed" {
-		t.Fatalf("list response data[0].name mismatch: %v", listPayload)
-	}
-
-	// Try duplicate name (case-insensitive)
-	duplicateResp, err := TestConfig.PutJSON(fmt.Sprintf("/datasets/%s", firstDatasetID), map[string]interface{}{"name": strings.ToUpper(secondDatasetName)}, nil)
-	if err != nil {
-		t.Fatalf("duplicate case rename request failed: %v", err)
-	}
-	duplicatePayload := requireStatusCode(t, duplicateResp, http.StatusOK)
-	duplicateCode, ok := duplicatePayload["code"].(float64)
-	if !ok || int(duplicateCode) != 102 {
-		t.Fatalf("expected code 102 for duplicate case rename, got %v, payload: %v", duplicatePayload["code"], duplicatePayload)
-	}
-	duplicateMessage, _ := duplicatePayload["message"].(string)
-	if !strings.Contains(duplicateMessage, "already exists") {
-		t.Fatalf("expected message to contain 'already exists', got %q, payload: %v", duplicateMessage, duplicatePayload)
-	}
+	first := createRESTDataset(t, nil)
+	second := createRESTDataset(t, nil)
+	id := first["id"].(string)
+	name := uniqueName("renamed")
+	restOK(t, restCall(t, TestConfig, http.MethodPut, "/datasets/"+id, apiObject{"name": name}, nil))
+	restOK(t, restCall(t, TestConfig, http.MethodPut, "/datasets/"+id, apiObject{"name": strings.ToUpper(name)}, nil))
+	requireDatasetFields(t, id, apiObject{"name": strings.ToUpper(name)})
+	restCode(t, restCall(t, TestConfig, http.MethodPut, "/datasets/"+id, apiObject{"name": strings.ToUpper(second["name"].(string))}, nil), 200, 102)
+	requireDatasetFields(t, id, apiObject{"name": strings.ToUpper(name)})
 }
 
 func encodeAvatar() (string, error) {
-	img := image.NewRGBA(image.Rectangle{
-		Min: image.Point{X: 0, Y: 0},
-		Max: image.Point{X: 100, Y: 100},
-	})
-	draw.Draw(img, img.Bounds(), &image.Uniform{color.RGBA{R: 0, G: 0, B: 255, A: 255}}, image.Point{}, draw.Src)
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.Set(0, 0, color.RGBA{B: 255, A: 255})
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
 		return "", err
 	}
-	encoded := base64.StdEncoding.EncodeToString(buf.Bytes())
-	return fmt.Sprintf("data:image/png;base64,%s", encoded), nil
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes()), nil
 }
 
 func TestDatasetUpdateLanguageConnectorsAvatarAndDescriptionContract(t *testing.T) {
-	clearDatasets(t)
-
-	createResp, err := TestConfig.PostJSON("/datasets", map[string]interface{}{"name": "dataset_update_lang_connectors"}, nil)
+	dataset := createRESTDataset(t, nil)
+	id := dataset["id"].(string)
+	avatar, err := encodeAvatar()
 	if err != nil {
-		t.Fatalf("create dataset request failed: %v", err)
+		t.Fatal(err)
 	}
-	createPayload := requireStatusCode(t, createResp, http.StatusOK)
-	requireCodeZero(t, createPayload)
-	createData, ok := createPayload["data"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("create response data is not an object: %v", createPayload)
-	}
-	datasetID, ok := createData["id"].(string)
-	if !ok || datasetID == "" {
-		t.Fatalf("dataset id is invalid: %v", createData)
-	}
-
-	avatarValue, err := encodeAvatar()
-	if err != nil {
-		t.Fatalf("failed to encode avatar: %v", err)
-	}
-
-	updateResp, err := TestConfig.PutJSON(fmt.Sprintf("/datasets/%s", datasetID), map[string]interface{}{
-		"name":        "dataset_update_lang_connectors",
-		"description": "",
-		"parser_id":   "naive",
-		"parse_type":  1,
-		"language":    "English",
-		"connectors":  []interface{}{},
-		"avatar":      avatarValue,
-	}, nil)
-	if err != nil {
-		t.Fatalf("update dataset request failed: %v", err)
-	}
-	updatePayload := requireStatusCode(t, updateResp, http.StatusOK)
-	requireCodeZero(t, updatePayload)
-	updateData, ok := updatePayload["data"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("update response data is not an object: %v", updatePayload)
-	}
-	if updateData["language"] != "English" {
-		t.Fatalf("language mismatch: expected English, got %v", updatePayload)
-	}
-	connectors, ok := updateData["connectors"].([]interface{})
-	if !ok {
-		t.Fatalf("connectors is not an array: %v", updatePayload)
-	}
-	if len(connectors) != 0 {
-		t.Fatalf("connectors should be empty: %v", updatePayload)
-	}
-	if updateData["avatar"] != avatarValue {
-		t.Fatalf("avatar mismatch: %v", updatePayload)
-	}
-
-	descriptionResp, err := TestConfig.PutJSON(fmt.Sprintf("/datasets/%s", datasetID), map[string]interface{}{"description": "description"}, nil)
-	if err != nil {
-		t.Fatalf("update description request failed: %v", err)
-	}
-	descriptionPayload := requireStatusCode(t, descriptionResp, http.StatusOK)
-	requireCodeZero(t, descriptionPayload)
-	descriptionData, ok := descriptionPayload["data"].(map[string]interface{})
-	if !ok || descriptionData["description"] != "description" {
-		t.Fatalf("description mismatch: %v", descriptionPayload)
-	}
+	fields := apiObject{"language": "English", "connectors": []any{}, "avatar": avatar, "description": "description"}
+	restOK(t, restCall(t, TestConfig, http.MethodPut, "/datasets/"+id, fields, nil))
+	requireDatasetFields(t, id, fields)
+	restOK(t, restCall(t, TestConfig, http.MethodPut, "/datasets/"+id, apiObject{"description": ""}, nil))
+	requireDatasetFields(t, id, apiObject{"description": "", "language": "English", "avatar": avatar, "connectors": []any{}})
 }
 
-func TestDatasetUpdateParserConfigValidMatrixContract(t *testing.T) {
-	clearDatasets(t)
-	t.Skip("Go validation or response contract does not match the established API contract")
-
-	cases := []struct {
-		name         string
-		parserConfig map[string]interface{}
-	}{
-		{name: "auto_keywords_min", parserConfig: map[string]interface{}{"auto_keywords": 0}},
-		{name: "auto_keywords_mid", parserConfig: map[string]interface{}{"auto_keywords": 16}},
-		{name: "auto_keywords_max", parserConfig: map[string]interface{}{"auto_keywords": 32}},
-		{name: "auto_questions_min", parserConfig: map[string]interface{}{"auto_questions": 0}},
-		{name: "auto_questions_mid", parserConfig: map[string]interface{}{"auto_questions": 5}},
-		{name: "auto_questions_max", parserConfig: map[string]interface{}{"auto_questions": 10}},
-		{name: "chunk_token_num_min", parserConfig: map[string]interface{}{"chunk_token_num": 1}},
-		{name: "chunk_token_num_mid", parserConfig: map[string]interface{}{"chunk_token_num": 1024}},
-		{name: "chunk_token_num_max", parserConfig: map[string]interface{}{"chunk_token_num": 2048}},
-		{name: "delimiter", parserConfig: map[string]interface{}{"delimiter": "\n"}},
-		{name: "delimiter_space", parserConfig: map[string]interface{}{"delimiter": " "}},
-		{name: "html4excel_true", parserConfig: map[string]interface{}{"html4excel": true}},
-		{name: "html4excel_false", parserConfig: map[string]interface{}{"html4excel": false}},
-		{name: "layout_recognize_DeepDOC", parserConfig: map[string]interface{}{"layout_recognize": "DeepDOC"}},
-		{name: "layout_recognize_navie", parserConfig: map[string]interface{}{"layout_recognize": "Plain Text"}},
-		{name: "topn_tags_min", parserConfig: map[string]interface{}{"topn_tags": 1}},
-		{name: "topn_tags_mid", parserConfig: map[string]interface{}{"topn_tags": 5}},
-		{name: "topn_tags_max", parserConfig: map[string]interface{}{"topn_tags": 10}},
-		{name: "tags_tag_file_id", parserConfig: map[string]interface{}{"tags": map[string]interface{}{"tag_file_id": "file-123"}}},
-		{name: "filename_embd_weight_min", parserConfig: map[string]interface{}{"filename_embd_weight": 0.1}},
-		{name: "filename_embd_weight_mid", parserConfig: map[string]interface{}{"filename_embd_weight": 0.5}},
-		{name: "filename_embd_weight_max", parserConfig: map[string]interface{}{"filename_embd_weight": 1.0}},
-		{name: "task_page_size_min", parserConfig: map[string]interface{}{"task_page_size": 1}},
-		{name: "task_page_size_None", parserConfig: map[string]interface{}{"task_page_size": nil}},
-		{name: "pages", parserConfig: map[string]interface{}{"pages": []interface{}{[]interface{}{1, 100}}}},
-		{name: "pages_none", parserConfig: map[string]interface{}{"pages": nil}},
-		{name: "graphrag_true", parserConfig: map[string]interface{}{"graphrag": map[string]interface{}{"use_graphrag": true}}},
-		{name: "graphrag_false", parserConfig: map[string]interface{}{"graphrag": map[string]interface{}{"use_graphrag": false}}},
-		{name: "graphrag_entity_types", parserConfig: map[string]interface{}{"graphrag": map[string]interface{}{"entity_types": []interface{}{"age", "sex", "height", "weight"}}}},
-		{name: "graphrag_method_general", parserConfig: map[string]interface{}{"graphrag": map[string]interface{}{"method": "general"}}},
-		{name: "graphrag_method_light", parserConfig: map[string]interface{}{"graphrag": map[string]interface{}{"method": "light"}}},
-		{name: "graphrag_community_true", parserConfig: map[string]interface{}{"graphrag": map[string]interface{}{"community": true}}},
-		{name: "graphrag_community_false", parserConfig: map[string]interface{}{"graphrag": map[string]interface{}{"community": false}}},
-		{name: "graphrag_resolution_true", parserConfig: map[string]interface{}{"graphrag": map[string]interface{}{"resolution": true}}},
-		{name: "graphrag_resolution_false", parserConfig: map[string]interface{}{"graphrag": map[string]interface{}{"resolution": false}}},
-		{name: "raptor_true", parserConfig: map[string]interface{}{"raptor": map[string]interface{}{"use_raptor": true}}},
-		{name: "raptor_false", parserConfig: map[string]interface{}{"raptor": map[string]interface{}{"use_raptor": false}}},
-		{name: "raptor_prompt", parserConfig: map[string]interface{}{"raptor": map[string]interface{}{"prompt": "Who are you?"}}},
-		{name: "raptor_max_token_min", parserConfig: map[string]interface{}{"raptor": map[string]interface{}{"max_token": 512}}},
-		{name: "raptor_max_token_mid", parserConfig: map[string]interface{}{"raptor": map[string]interface{}{"max_token": 1024}}},
-		{name: "raptor_max_token_max", parserConfig: map[string]interface{}{"raptor": map[string]interface{}{"max_token": 2048}}},
-		{name: "raptor_clustering_threshold_min", parserConfig: map[string]interface{}{"raptor": map[string]interface{}{"clustering_threshold": 0.0}}},
-		{name: "raptor_clustering_threshold_mid", parserConfig: map[string]interface{}{"raptor": map[string]interface{}{"clustering_threshold": 0.5}}},
-		{name: "raptor_clustering_threshold_max", parserConfig: map[string]interface{}{"raptor": map[string]interface{}{"clustering_threshold": 1.0}}},
-		{name: "raptor_max_cluster_min", parserConfig: map[string]interface{}{"raptor": map[string]interface{}{"max_cluster": 1}}},
-		{name: "raptor_max_cluster_mid", parserConfig: map[string]interface{}{"raptor": map[string]interface{}{"max_cluster": 512}}},
-		{name: "raptor_max_cluster_max", parserConfig: map[string]interface{}{"raptor": map[string]interface{}{"max_cluster": 1024}}},
-		{name: "raptor_random_seed_min", parserConfig: map[string]interface{}{"raptor": map[string]interface{}{"random_seed": 0}}},
+func requirePipelineParserConfig(t *testing.T, value any, chunkerPrefix string) apiObject {
+	t.Helper()
+	config := object(t, value)
+	if _, ok := config["File"]; !ok {
+		t.Fatalf("parser config missing File node: %v", config)
 	}
-
-	for _, tc := range cases {
-		tc := tc
-		t.Run(tc.name, func(t *testing.T) {
-			createResp, err := TestConfig.PostJSON("/datasets", map[string]interface{}{"name": fmt.Sprintf("dataset_update_parser_%s", tc.name)}, nil)
-			if err != nil {
-				t.Fatalf("create dataset request failed: %v", err)
-			}
-			createPayload := requireStatusCode(t, createResp, http.StatusOK)
-			requireCodeZero(t, createPayload)
-			createData, ok := createPayload["data"].(map[string]interface{})
-			if !ok {
-				t.Fatalf("create response data is not an object: %v", createPayload)
-			}
-			datasetID, ok := createData["id"].(string)
-			if !ok || datasetID == "" {
-				t.Fatalf("dataset id is invalid: %v", createData)
-			}
-
-			updateResp, err := TestConfig.PutJSON(fmt.Sprintf("/datasets/%s", datasetID), map[string]interface{}{"parser_config": tc.parserConfig}, nil)
-			if err != nil {
-				t.Fatalf("update parser_config request failed: %v", err)
-			}
-			updatePayload := requireStatusCode(t, updateResp, http.StatusOK)
-			requireCodeZero(t, updatePayload)
-
-			listResp, err := TestConfig.GetJSON("/datasets", map[string]interface{}{"id": datasetID}, nil)
-			if err != nil {
-				t.Fatalf("list dataset request failed: %v", err)
-			}
-			listPayload := requireStatusCode(t, listResp, http.StatusOK)
-			requireCodeZero(t, listPayload)
-			listData, ok := listPayload["data"].([]interface{})
-			if !ok || len(listData) != 1 {
-				t.Fatalf("expected 1 dataset in list, got %v", listPayload)
-			}
-			firstItem, ok := listData[0].(map[string]interface{})
-			if !ok {
-				t.Fatalf("list data[0] is not an object: %v", listPayload)
-			}
-			actualParserConfig, ok := firstItem["parser_config"].(map[string]interface{})
-			if !ok {
-				t.Fatalf("parser_config is not an object: %v", firstItem)
-			}
-
-			for key, expectedValue := range tc.parserConfig {
-				if key == "graphrag" || key == "raptor" {
-					if _, exists := actualParserConfig[key]; exists {
-						t.Fatalf("expected %s not in parser_config, but got %v", key, actualParserConfig)
-					}
-					continue
-				}
-				actualValue, ok := actualParserConfig[key]
-				if !ok {
-					t.Fatalf("parser_config missing key %s: %v", key, actualParserConfig)
-				}
-				if !jsonDeepEqual(actualValue, expectedValue) {
-					t.Fatalf("parser_config.%s mismatch: expected %v, got %v", key, expectedValue, actualValue)
-				}
-			}
-		})
+	parser, chunker := false, false
+	for id, params := range config {
+		object(t, params)
+		parser = parser || strings.HasPrefix(id, "Parser:")
+		chunker = chunker || strings.HasPrefix(id, chunkerPrefix)
 	}
+	if !parser || !chunker {
+		t.Fatalf("parser config missing parser/chunker nodes: %v", config)
+	}
+	for _, key := range []string{"chunk_token_num", "raptor", "graphrag"} {
+		if _, ok := config[key]; ok {
+			t.Fatalf("unexpected flat setting %s: %v", key, config)
+		}
+	}
+	return config
 }
 
 func TestDatasetUpdateParserConfigWithChunkMethodChangeContract(t *testing.T) {
-	clearDatasets(t)
-
-	cases := []struct {
-		name          string
-		updatePayload map[string]interface{}
-	}{
-		{
-			name: "parser_config_empty",
-			updatePayload: map[string]interface{}{
-				"parser_id":     "qa",
-				"parse_type":    1,
-				"parser_config": map[string]interface{}{},
-			},
-		},
-		{
-			name: "parser_config_none",
-			updatePayload: map[string]interface{}{
-				"parser_id":     "qa",
-				"parse_type":    1,
-				"parser_config": nil,
-			},
-		},
-		{
-			name: "parser_config_unset",
-			updatePayload: map[string]interface{}{
-				"parser_id":  "qa",
-				"parse_type": 1,
-			},
-		},
-	}
-
-	for _, tc := range cases {
-		tc := tc
+	for _, tc := range []struct {
+		name     string
+		provided bool
+		config   any
+	}{{"empty", true, apiObject{}}, {"null", true, nil}, {"unset", false, nil}} {
 		t.Run(tc.name, func(t *testing.T) {
-			createResp, err := TestConfig.PostJSON("/datasets", map[string]interface{}{"name": fmt.Sprintf("dataset_update_%s", tc.name)}, nil)
-			if err != nil {
-				t.Fatalf("create dataset request failed: %v", err)
+			dataset := createRESTDataset(t, nil)
+			id := dataset["id"].(string)
+			fields := apiObject{"parse_type": 1, "parser_id": "qa"}
+			if tc.provided {
+				fields["parser_config"] = tc.config
 			}
-			createPayload := requireStatusCode(t, createResp, http.StatusOK)
-			requireCodeZero(t, createPayload)
-			createData, ok := createPayload["data"].(map[string]interface{})
-			if !ok {
-				t.Fatalf("create response data is not an object: %v", createPayload)
+			restOK(t, restCall(t, TestConfig, http.MethodPut, "/datasets/"+id, fields, nil))
+			persisted := requireDatasetFields(t, id, apiObject{"parser_id": "qa"})
+			config := object(t, persisted["parser_config"])
+			if len(config) == 0 {
+				t.Fatal("parser config is empty after method change")
 			}
-			datasetID, ok := createData["id"].(string)
-			if !ok || datasetID == "" {
-				t.Fatalf("dataset id is invalid: %v", createData)
-			}
-
-			updateResp, err := TestConfig.PutJSON(fmt.Sprintf("/datasets/%s", datasetID), tc.updatePayload, nil)
-			if err != nil {
-				t.Fatalf("update dataset request failed: %v", err)
-			}
-			updatePayload := requireStatusCode(t, updateResp, http.StatusOK)
-			requireCodeZero(t, updatePayload)
-
-			listResp, err := TestConfig.GetJSON("/datasets", map[string]interface{}{"id": datasetID}, nil)
-			if err != nil {
-				t.Fatalf("list dataset request failed: %v", err)
-			}
-			listPayload := requireStatusCode(t, listResp, http.StatusOK)
-			requireCodeZero(t, listPayload)
-			listData, ok := listPayload["data"].([]interface{})
-			if !ok || len(listData) != 1 {
-				t.Fatalf("expected 1 dataset in list, got %v", listPayload)
-			}
-			firstItem, ok := listData[0].(map[string]interface{})
-			if !ok {
-				t.Fatalf("list data[0] is not an object: %v", listPayload)
-			}
-			actualParserConfig, ok := firstItem["parser_config"].(map[string]interface{})
-			if !ok || len(actualParserConfig) == 0 {
-				t.Fatalf("parser_config should be non-empty map: %v", firstItem)
-			}
-			if _, exists := actualParserConfig["raptor"]; exists {
-				t.Fatalf("raptor should not be in parser_config: %v", actualParserConfig)
-			}
-			if _, exists := actualParserConfig["graphrag"]; exists {
-				t.Fatalf("graphrag should not be in parser_config: %v", actualParserConfig)
+			for _, key := range []string{"raptor", "graphrag"} {
+				if _, ok := config[key]; ok {
+					t.Fatalf("unexpected flat key %s", key)
+				}
 			}
 		})
 	}
+}
+
+func TestDatasetComponentScopedParserConfigRoundtrip(t *testing.T) {
+	dataset := createRESTDataset(t, nil)
+	id := dataset["id"].(string)
+	config := requirePipelineParserConfig(t, dataset["parser_config"], "GeneralChunker:")
+	chunkerID := ""
+	for key := range config {
+		if strings.HasPrefix(key, "GeneralChunker:") {
+			chunkerID = key
+			break
+		}
+	}
+	for _, delimiter := range []string{"|", ";", "\n"} {
+		t.Run(strings.ReplaceAll(delimiter, "\n", "newline"), func(t *testing.T) {
+			fields := apiObject{"parser_config": apiObject{chunkerID: apiObject{"parent_child": apiObject{"use_parent_child": true, "children_delimiter": delimiter}}}}
+			restOK(t, restCall(t, TestConfig, http.MethodPut, "/datasets/"+id, fields, nil))
+			updated := object(t, getRESTDataset(t, id)["parser_config"])
+			chunker := object(t, updated[chunkerID])
+			if object(t, chunker["parent_child"])["use_parent_child"] != true || !reflect.DeepEqual(chunker["children_delimiters"], []any{delimiter}) {
+				t.Fatalf("component settings did not reach chunker: %v", chunker)
+			}
+			for key, params := range config {
+				if key != chunkerID && !reflect.DeepEqual(params, updated[key]) {
+					t.Errorf("unrelated parser node %s changed", key)
+				}
+			}
+		})
+	}
+	restOK(t, restCall(t, TestConfig, http.MethodPut, "/datasets/"+id, apiObject{"parser_config": apiObject{"File": apiObject{"layout_recognize": "DeepDOC"}}}, nil))
+	requirePipelineParserConfig(t, getRESTDataset(t, id)["parser_config"], "GeneralChunker:")
 }

@@ -47,6 +47,8 @@ package component
 import (
 	"context"
 
+	"ragflow/internal/agent/runtime"
+
 	"gorm.io/gorm"
 )
 
@@ -216,6 +218,9 @@ func toAnyMapSlice(raw any) []map[string]any {
 // when it sees a Loop cpn in the DSL.
 func init() {
 	Register(componentNameLoop, func(params map[string]any) (Component, error) {
+		if err := validateDynamicParams(componentNameLoop, params, false); err != nil {
+			return nil, runtime.NewUserFacingError(err.Error())
+		}
 		var p loopParam
 		if err := p.Update(params); err != nil {
 			return nil, err

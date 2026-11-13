@@ -54,16 +54,16 @@ describe('useFetchDatasetsByIds', () => {
     mockListDatasetByIds.mockResolvedValue({ data: { data: [] } });
   });
 
-  it('passes the owner tenant through to the by-ids lookup', async () => {
-    renderHook(() => useFetchDatasetsByIds([DatasetId], 'owner-1'), {
+  it('passes the canvas id through to the by-ids lookup', async () => {
+    renderHook(() => useFetchDatasetsByIds([DatasetId], 'canvas-1'), {
       wrapper: createWrapper(),
     });
 
     await waitFor(() => expect(mockListDatasetByIds).toHaveBeenCalled());
-    expect(mockListDatasetByIds).toHaveBeenCalledWith([DatasetId], 'owner-1');
+    expect(mockListDatasetByIds).toHaveBeenCalledWith([DatasetId], 'canvas-1');
   });
 
-  it('leaves the owner tenant undefined for own-canvas lookups', async () => {
+  it('leaves the canvas id undefined for global lookups', async () => {
     renderHook(() => useFetchDatasetsByIds([DatasetId]), {
       wrapper: createWrapper(),
     });
@@ -81,25 +81,29 @@ describe('useFetchKnowledgeList', () => {
     });
   });
 
-  it('adds tenant_id to the list params when an owner tenant is given', async () => {
-    renderHook(() => useFetchKnowledgeList(false, '', 30, 'owner-1'), {
+  it('adds canvas_id to the list params when a canvas is given', async () => {
+    renderHook(() => useFetchKnowledgeList(false, '', 30, 'canvas-1'), {
       wrapper: createWrapper(),
     });
 
     await waitFor(() => expect(mockListDataset).toHaveBeenCalled());
     expect(mockListDataset).toHaveBeenCalledWith(
-      expect.objectContaining({ page: 1, page_size: 30, tenant_id: 'owner-1' }),
+      expect.objectContaining({
+        page: 1,
+        page_size: 30,
+        canvas_id: 'canvas-1',
+      }),
     );
   });
 
-  it('omits tenant_id without an owner tenant', async () => {
+  it('omits canvas_id without a canvas', async () => {
     renderHook(() => useFetchKnowledgeList(false, 'kw'), {
       wrapper: createWrapper(),
     });
 
     await waitFor(() => expect(mockListDataset).toHaveBeenCalled());
     const params = mockListDataset.mock.calls[0][0];
-    expect(params).not.toHaveProperty('tenant_id');
+    expect(params).not.toHaveProperty('canvas_id');
     expect(params).toMatchObject({ page: 1, keywords: 'kw' });
   });
 });

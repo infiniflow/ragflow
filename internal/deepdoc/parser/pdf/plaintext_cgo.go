@@ -20,13 +20,14 @@ import (
 	"fmt"
 
 	"ragflow/internal/deepdoc/parser/pdf/pdfoxide"
+	"ragflow/internal/utility"
 )
 
 // PlainText extracts plain text per page using the pdf_oxide native engine.
 // It is the cgo implementation of the parser package's plain_text PDF
 // strategy. The returned items carry the keys text/doc_type_kwd/page_number
 // so the parser package can wrap them with pdfItemsToResult unchanged.
-func PlainText(data []byte) ([]map[string]any, int, error) {
+func PlainText(data []byte, pages [][]int) ([]map[string]any, int, error) {
 	if len(data) == 0 {
 		return nil, 0, nil
 	}
@@ -42,6 +43,9 @@ func PlainText(data []byte) ([]map[string]any, int, error) {
 	}
 	items := make([]map[string]any, 0, pageCount)
 	for page := 0; page < pageCount; page++ {
+		if !utility.PDFPageInRanges(pages, page+1) {
+			continue
+		}
 		text, err := doc.GetPageText(page)
 		if err != nil {
 			return nil, 0, fmt.Errorf("deepdoc/pdf: plain_text page %d: %w", page+1, err)

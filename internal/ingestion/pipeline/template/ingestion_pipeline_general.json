@@ -31,60 +31,16 @@
                 "obj": {
                     "component_name": "Parser",
                     "params": {
-                        "doc": {
-                            "output_format": "json",
-                            "preprocess": [
-                                "main_content"
-                            ],
-                            "suffix": [
-                                "doc"
-                            ]
+                        "enable_vision_enhancement": false,
+                        "vlm": {
+                            "llm_id": ""
                         },
-                        "docx": {
-                            "flatten_media_to_text": false,
-                            "output_format": "json",
-                            "preprocess": [
-                                "main_content"
-                            ],
-                            "suffix": [
-                                "docx"
-                            ],
-                            "vlm": {}
-                        },
-                        "html": {
-                            "output_format": "json",
-                            "preprocess": [
-                                "main_content"
-                            ],
-                            "suffix": [
-                                "htm",
-                                "html"
-                            ]
-                        },
-                        "markdown": {
-                            "flatten_media_to_text": false,
-                            "output_format": "json",
-                            "preprocess": [
-                                "main_content"
-                            ],
-                            "suffix": [
-                                "md",
-                                "markdown",
-                                "mdx"
-                            ],
-                            "vlm": {}
-                        },
+                        "doc": {},
+                        "docx": {},
+                        "html": {},
+                        "markdown": {},
                         "pdf": {
-                            "flatten_media_to_text": false,
-                            "output_format": "json",
                             "parse_method": "DeepDOC",
-                            "preprocess": [
-                                "main_content"
-                            ],
-                            "suffix": [
-                                "pdf"
-                            ],
-                            "vlm": {},
                             "pages": [
                                 [
                                     1,
@@ -93,39 +49,22 @@
                             ]
                         },
                         "spreadsheet": {
-                            "flatten_media_to_text": false,
-                            "output_format": "json",
-                            "parse_method": "DeepDOC",
-                            "preprocess": [
-                                "main_content"
-                            ],
-                            "suffix": [
-                                "xls",
-                                "xlsx",
-                                "csv"
-                            ],
-                            "vlm": {}
+                            "parse_method": "DeepDOC"
                         },
-                        "text&code": {
-                            "output_format": "json",
-                            "preprocess": [
-                                "main_content"
-                            ],
-                            "suffix": [
-                                "txt",
-                                "py",
-                                "js",
-                                "java",
-                                "c",
-                                "cpp",
-                                "h",
-                                "php",
-                                "go",
-                                "ts",
-                                "sh",
-                                "cs",
-                                "kt",
-                                "sql"
+                        "text&code": {},
+                        "image": {
+                            "ocr_enabled": true
+                        },
+                        "email": {
+                            "fields": [
+                                "from",
+                                "to",
+                                "cc",
+                                "bcc",
+                                "date",
+                                "subject",
+                                "body",
+                                "attachments"
                             ]
                         }
                     }
@@ -261,7 +200,7 @@
                     },
                     "id": "File",
                     "measured": {
-                        "height": 50,
+                        "height": 49,
                         "width": 200
                     },
                     "position": {
@@ -275,65 +214,50 @@
                 {
                     "data": {
                         "form": {
+                            "enable_vision_enhancement": false,
+                            "vlm": {
+                                "llm_id": ""
+                            },
                             "setups": [
                                 {
                                     "fileFormat": "pdf",
-                                    "flatten_media_to_text": false,
-                                    "output_format": "json",
-                                    "parse_method": "DeepDOC",
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "vlm": {}
+                                    "parse_method": "DeepDOC"
                                 },
                                 {
                                     "fileFormat": "spreadsheet",
-                                    "flatten_media_to_text": false,
-                                    "output_format": "json",
-                                    "parse_method": "DeepDOC",
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "vlm": {}
+                                    "parse_method": "DeepDOC"
                                 },
                                 {
-                                    "fileFormat": "markdown",
-                                    "flatten_media_to_text": false,
-                                    "output_format": "json",
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "vlm": {}
+                                    "fileFormat": "markdown"
                                 },
                                 {
-                                    "fileFormat": "text&code",
-                                    "output_format": "json",
-                                    "preprocess": [
-                                        "main_content"
+                                    "fileFormat": "text&code"
+                                },
+                                {
+                                    "fileFormat": "html"
+                                },
+                                {
+                                    "fileFormat": "doc"
+                                },
+                                {
+                                    "fileFormat": "docx"
+                                },
+                                {
+                                    "fileFormat": "image",
+                                    "ocr_enabled": true
+                                },
+                                {
+                                    "fileFormat": "email",
+                                    "fields": [
+                                        "from",
+                                        "to",
+                                        "cc",
+                                        "bcc",
+                                        "date",
+                                        "subject",
+                                        "body",
+                                        "attachments"
                                     ]
-                                },
-                                {
-                                    "fileFormat": "html",
-                                    "output_format": "json",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
-                                },
-                                {
-                                    "fileFormat": "doc",
-                                    "output_format": "json",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
-                                },
-                                {
-                                    "fileFormat": "docx",
-                                    "flatten_media_to_text": false,
-                                    "output_format": "json",
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "vlm": {}
                                 }
                             ]
                         },
@@ -343,12 +267,12 @@
                     "dragging": false,
                     "id": "Parser:HipSignsRhyme",
                     "measured": {
-                        "height": 57,
+                        "height": 121,
                         "width": 200
                     },
                     "position": {
                         "x": 316.99524094206413,
-                        "y": 195.39629819663406
+                        "y": 164
                     },
                     "selected": true,
                     "sourcePosition": "right",
@@ -400,12 +324,12 @@
                     },
                     "id": "GeneralChunker:SixApplesFall",
                     "measured": {
-                        "height": 74,
+                        "height": 73,
                         "width": 200
                     },
                     "position": {
                         "x": 616.9952409420641,
-                        "y": 195.39629819663406
+                        "y": 188
                     },
                     "selected": false,
                     "sourcePosition": "right",
@@ -428,12 +352,12 @@
                     },
                     "id": "Tokenizer:LegalReadersDecide",
                     "measured": {
-                        "height": 114,
+                        "height": 113,
                         "width": 200
                     },
                     "position": {
-                        "x": 916.9952409420641,
-                        "y": 195.39629819663406
+                        "x": 1216.9952409420641,
+                        "y": 168
                     },
                     "sourcePosition": "right",
                     "targetPosition": "left",
@@ -442,9 +366,13 @@
                 {
                     "id": "Extractor:AutoExtractDefault",
                     "type": "contextNode",
+                    "measured": {
+                        "height": 59,
+                        "width": 200
+                    },
                     "position": {
-                        "x": 796.9952409420641,
-                        "y": 195.39629819663406
+                        "x": 916.9952409420641,
+                        "y": 195
                     },
                     "data": {
                         "label": "Extractor",

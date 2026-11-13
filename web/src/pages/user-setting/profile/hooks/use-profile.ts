@@ -32,6 +32,7 @@ interface ProfileData {
   avatar: string;
   email: string;
   confirmPasswd?: string;
+  loginChannel?: string;
 }
 
 export const EditType = {
@@ -43,9 +44,9 @@ export const EditType = {
 export type IEditType = keyof typeof EditType;
 
 export const modalTitle = {
-  [EditType.editName]: 'Edit Name',
-  [EditType.editTimeZone]: 'Edit Time Zone',
-  [EditType.editPassword]: 'Edit Password',
+  [EditType.editName]: 'editName',
+  [EditType.editTimeZone]: 'editTimeZone',
+  [EditType.editPassword]: 'editPassword',
 } as const;
 
 const normalizeTimezone = (tz: string | undefined): string => {
@@ -82,6 +83,7 @@ export const useProfile = () => {
       avatar: userInfo.avatar || '',
       email: userInfo.email,
       currPasswd: userInfo.password,
+      loginChannel: userInfo.login_channel,
     };
     setProfile(profile);
   }, [userInfo, setProfile]);

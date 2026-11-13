@@ -3,6 +3,8 @@ project(rag_tokenizer)
 
 set(CMAKE_CXX_STANDARD 23)
 
+include(CTest)
+
 # macOS dependency discovery — Homebrew installs headers and libs under a
 # prefix that is NOT on the compiler's default search path (Apple Silicon:
 # /opt/homebrew, Intel: /usr/local). Linux is left completely untouched:
@@ -137,6 +139,7 @@ add_library(rag_tokenizer_c_api STATIC
         thinc_ner.h
         thinc_parser.cpp
         thinc_parser.h
+        thinc_json.h
         rag_analyzer.cpp
         rag_analyzer.h
         dart_trie.h
@@ -174,3 +177,39 @@ set_target_properties(rag_analyzer_c_test PROPERTIES
         CXX_STANDARD 20
         CXX_STANDARD_REQUIRED ON
 )
+
+if(BUILD_TESTING)
+    add_executable(thinc_json_test
+            thinc_json_test.cpp
+    )
+    target_link_libraries(thinc_json_test rag_tokenizer_c_api stdc++ m ${PCRE2_LIB})
+    target_include_directories(thinc_json_test PUBLIC "${CMAKE_SOURCE_DIR}")
+    set_target_properties(thinc_json_test PROPERTIES
+            CXX_STANDARD 20
+            CXX_STANDARD_REQUIRED ON
+    )
+    add_test(NAME thinc_json COMMAND thinc_json_test)
+
+    add_executable(rag_analyzer_opencc_copy_test
+            rag_analyzer_opencc_copy_test.cpp
+    )
+    target_link_libraries(rag_analyzer_opencc_copy_test rag_tokenizer_c_api stdc++ m ${PCRE2_LIB})
+    target_include_directories(rag_analyzer_opencc_copy_test PUBLIC "${CMAKE_SOURCE_DIR}")
+    set_target_properties(rag_analyzer_opencc_copy_test PROPERTIES
+            CXX_STANDARD 20
+            CXX_STANDARD_REQUIRED ON
+    )
+    add_test(NAME rag_analyzer_opencc_copy COMMAND rag_analyzer_opencc_copy_test)
+
+    add_executable(wordnet_lemmatizer_missing_exceptions_test
+            wordnet_lemmatizer_test.cpp
+            wordnet_lemmatizer.cpp
+    )
+    target_include_directories(wordnet_lemmatizer_missing_exceptions_test PUBLIC "${CMAKE_SOURCE_DIR}")
+    set_target_properties(wordnet_lemmatizer_missing_exceptions_test PROPERTIES
+            CXX_STANDARD 20
+            CXX_STANDARD_REQUIRED ON
+    )
+    add_test(NAME wordnet_lemmatizer_missing_exceptions
+            COMMAND wordnet_lemmatizer_missing_exceptions_test)
+endif()

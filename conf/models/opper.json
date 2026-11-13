@@ -1,0 +1,80 @@
+{
+  "name": "Opper",
+  "url": {
+    "default": "https://api.opper.ai/v3/compat"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "embedding": "embeddings"
+  },
+  "class": "opper",
+  "models": [
+    {
+      "name": "claude-sonnet-4-6",
+      "context_length": 1000000,
+      "max_output": 64000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-5.5",
+      "context_length": 1050000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gpt-5.4-mini",
+      "context_length": 400000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "gemini-3.8-flash",
+      "context_length": 1048576,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-v4-pro",
+      "context_length": 1048576,
+      "max_output": 65536,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "text-embedding-3-small",
+      "max_tokens": 8191,
+      "model_types": [
+        "embedding"
+      ]
+    }
+  ]
+}

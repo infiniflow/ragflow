@@ -31,7 +31,7 @@ import {
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { t } from 'i18next';
-import { isEmpty } from 'lodash';
+import { isEmpty, isEqual } from 'lodash';
 
 export type MultiSelectOptionType = {
   label: React.ReactNode;
@@ -255,10 +255,13 @@ export const MultiSelect = React.forwardRef<
     const triggerId = React.useId();
 
     React.useEffect(() => {
-      if (isEmpty(selectedValues) && !isEmpty(props.value)) {
-        setSelectedValues(props.value as string[]);
+      if (props.value === undefined) return;
+      const nextValue = Array.isArray(props.value) ? props.value : [];
+      if (!isEqual(selectedValues, nextValue)) {
+        setSelectedValues(nextValue);
       }
-    }, [props.value, selectedValues]);
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [props.value]);
 
     React.useEffect(() => {
       if (

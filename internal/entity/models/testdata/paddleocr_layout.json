@@ -1,0 +1,125 @@
+{
+  "errorCode": 0,
+  "result": {
+    "layoutParsingResults": [
+      {
+        "prunedResult": {
+          "width": 1191,
+          "height": 1684,
+          "parsing_res_list": [
+            {
+              "block_label": "header",
+              "block_content": "IgnoredFurnitureHeader",
+              "block_bbox": [
+                10,
+                10,
+                100,
+                30
+              ]
+            },
+            {
+              "block_label": "text",
+              "block_content": "Paragraph 1.",
+              "block_bbox": [
+                174,
+                146,
+                1015,
+                240
+              ],
+              "block_order": 1
+            },
+            {
+              "block_label": "figure_title",
+              "block_content": "Paragraph 2.",
+              "block_bbox": [
+                175,
+                270,
+                592,
+                298
+              ],
+              "block_order": null
+            },
+            {
+              "block_label": "table",
+              "block_content": "<table><tr><th>Item</th><th>Value</th></tr><tr><td>A</td><td>42</td></tr></table>",
+              "block_bbox": [
+                167,
+                298,
+                1022,
+                527
+              ],
+              "block_order": null
+            },
+            {
+              "block_label": "text",
+              "block_content": "Paragraph 4.",
+              "block_bbox": [
+                172,
+                559,
+                1017,
+                652
+              ],
+              "block_order": 2
+            },
+            {
+              "block_label": "text",
+              "block_content": "Paragraph 5.",
+              "block_bbox": [
+                175,
+                684,
+                1013,
+                743
+              ],
+              "block_order": 3
+            },
+            {
+              "block_label": "table",
+              "block_content": "<table><tr><th>Item</th><th>Value</th></tr><tr><td>A</td><td>43</td></tr></table>",
+              "block_bbox": [
+                167,
+                743,
+                1021,
+                1062
+              ],
+              "block_order": null
+            },
+            {
+              "block_label": "text",
+              "block_content": "Paragraph 7.",
+              "block_bbox": [
+                174,
+                1094,
+                1016,
+                1219
+              ],
+              "block_order": 4
+            },
+            {
+              "block_label": "number",
+              "block_content": "IgnoredFurniturePageNumber",
+              "block_bbox": [
+                10,
+                1600,
+                100,
+                1640
+              ]
+            }
+          ]
+        },
+        "markdown": {
+          "text": "Paragraph 1.\n\nParagraph 2.\n\n<table><tr><th>Item</th><th>Value</th></tr><tr><td>A</td><td>42</td></tr></table>\n\nParagraph 4.\n\nParagraph 5.\n\n<table><tr><th>Item</th><th>Value</th></tr><tr><td>A</td><td>43</td></tr></table>\n\nParagraph 7."
+        }
+      }
+    ],
+    "dataInfo": {
+      "numPages": 1,
+      "pages": [
+        {
+          "width": 1191,
+          "height": 1684
+        }
+      ],
+      "type": "pdf"
+    }
+  }
+}

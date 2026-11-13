@@ -14,89 +14,46 @@
  *  limitations under the License.
  */
 
-import BackButton from '@/components/back-button';
-import { Button } from '@/components/ui/button';
-import { Form } from '@/components/ui/form';
-import { CompilationTemplateKind } from '@/constants/compilation';
-import { useFetchCompilationTemplateGroup } from '@/hooks/use-compilation-template-group-request';
-import { Routes } from '@/routes';
-import { useCallback, useMemo } from 'react';
-import { useWatch } from 'react-hook-form';
+import { CompilationTemplateGroupEditor } from '@/components/compilation-template-group';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { useCompilationTemplateSidebarCollapse } from '@/hooks/use-compilation-template-sidebar-collapse';
+import { useSidebarCollapse } from '@/layouts/components/app-sidebar/use-sidebar-collapse';
+import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router';
-
-import { BlueprintSection } from './components/blueprint-section';
-import { TemplateConfiguration } from './components/template-configuration';
-import { useEditNextCompilationTemplateGroup } from './hooks/use-edit-next-compilation-template-group';
-
-const SelectedTemplateIndex = 0;
-
-const agentsUrl = Routes.Agents;
+import { useParams, useSearchParams } from 'react-router';
 
 export default function EditNextCompilationTemplate() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
+  const { navigateToAgentsFromCompilation } = useNavigatePage();
+  const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const { collapsed, setCollapsed } = useCompilationTemplateSidebarCollapse();
+  const { setCollapsed: setPrimarySidebarCollapsed } = useSidebarCollapse();
 
-  const navigateToAgents = useCallback(() => {
-    navigate(agentsUrl);
-  }, [navigate]);
+  useEffect(() => {
+    setCollapsed(false);
+    setPrimarySidebarCollapsed(true);
+  }, [setCollapsed, setPrimarySidebarCollapsed]);
 
-  const { form, kindOptions, builtins, onSubmit, isCreate, isLoading } =
-    useEditNextCompilationTemplateGroup({
-      onSuccess: navigateToAgents,
-    });
-  const { data: group } = useFetchCompilationTemplateGroup();
-
-  const selectedKind = useWatch({
-    control: form.control,
-    name: `templates.${SelectedTemplateIndex}.kind`,
-  });
-
-  const isArtifacts = selectedKind === CompilationTemplateKind.Artifacts;
-
-  const handleSave = useMemo(
-    () => form.handleSubmit(onSubmit),
-    [form, onSubmit],
+  const navigateToAgents = navigateToAgentsFromCompilation(
+    searchParams.get('source'),
   );
+
+  const collapseSidebars = useCallback(() => {
+    setCollapsed(true);
+    setPrimarySidebarCollapsed(true);
+  }, [setCollapsed, setPrimarySidebarCollapsed]);
 
   return (
     <section className="h-full flex flex-col bg-bg-base">
-      <header className="shrink-0 px-5 py-4 border-b border-border-button flex gap-3 items-center">
-        <BackButton to={agentsUrl} />
-        <h2 className="font-medium text-text-secondary">
-          {isCreate
-            ? t('knowledgeCompilation.addTemplateGroup')
-            : group?.name || t('knowledgeCompilation.editTemplateGroup')}
-        </h2>
-      </header>
-
-      <Form {...form}>
-        <form className="flex-1 min-h-0 flex flex-col" onSubmit={handleSave}>
-          <TemplateConfiguration
-            form={form}
-            builtins={builtins}
-            kindOptions={kindOptions}
-            selectedTemplateIndex={SelectedTemplateIndex}
-          >
-            {isArtifacts && (
-              <BlueprintSection
-                form={form}
-                selectedTemplateIndex={SelectedTemplateIndex}
-                builtins={builtins}
-              />
-            )}
-          </TemplateConfiguration>
-
-          <footer className="shrink-0 px-5 py-4 border-t border-border-button flex items-center justify-end gap-5">
-            <Button type="button" variant="outline" onClick={navigateToAgents}>
-              {t('common.back')}
-            </Button>
-            <Button type="submit" loading={isLoading}>
-              {t('common.save')}
-            </Button>
-          </footer>
-        </form>
-      </Form>
+      <CompilationTemplateGroupEditor
+        id={id}
+        onSuccess={navigateToAgents}
+        onCancel={navigateToAgents}
+        cancelText={t('common.back')}
+        sidebarCollapsed={collapsed}
+        onSidebarCollapse={collapseSidebars}
+      />
     </section>
   );
 }

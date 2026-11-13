@@ -230,8 +230,8 @@ func TestStrictSSRFTransportPinsUnicodeHost(t *testing.T) {
 }
 
 func TestGetSSRFHTTPClientDoesNotUseProxy(t *testing.T) {
-	originalDefault, originalClient := http.DefaultTransport, ssrfHttpClient
-	t.Cleanup(func() { http.DefaultTransport, ssrfHttpClient = originalDefault, originalClient })
+	originalDefault := http.DefaultTransport
+	t.Cleanup(func() { http.DefaultTransport = originalDefault })
 	stubLookupHost(t, func(_ string, _ int64) ([]string, error) {
 		return []string{"93.184.216.34"}, nil
 	})
@@ -240,8 +240,7 @@ func TestGetSSRFHTTPClientDoesNotUseProxy(t *testing.T) {
 		Proxy:       func(_ *http.Request) (*url.URL, error) { return url.Parse("http://proxy.example:8080") },
 		DialContext: rec.DialContext,
 	}
-	ssrfHttpClient = nil
-	client := GetSSRFHTTPClient()
+	client := newSSRFHTTPClient()
 	t.Cleanup(client.CloseIdleConnections)
 	req, _ := http.NewRequest(http.MethodGet, "http://validated.example/", nil)
 	_, _ = client.Do(req)

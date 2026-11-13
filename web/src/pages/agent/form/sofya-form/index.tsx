@@ -1,18 +1,13 @@
 import { FormContainer } from '@/components/form-container';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { TopNFormField } from '@/components/top-n-item';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form } from '@/components/ui/form';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { useTranslate } from '@/hooks/common-hooks';
+import i18n from '@/locales/config';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useMemo } from 'react';
-import { useForm, useFormContext } from 'react-hook-form';
+import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { SofyaSearchDepth, initialSofyaValues } from '../../constant';
 import { useFormValues } from '../../hooks/use-form-values';
@@ -32,7 +27,7 @@ const SofyaSearchDepthLabelKeys: Record<SofyaSearchDepth, string> = {
 };
 
 export const SofyaFormPartialSchema = {
-  api_key: z.string().optional(),
+  api_key: z.string().min(1, i18n.t('flow.apiKeyRequired')),
   search_depth: z.string().optional(),
   top_n: z.coerce.number(),
 };
@@ -44,7 +39,6 @@ const FormSchema = z.object({
 
 export function SofyaWidgets() {
   const { t } = useTranslate('flow');
-  const form = useFormContext();
 
   const searchDepthOptions = useMemo(
     () =>
@@ -57,22 +51,14 @@ export function SofyaWidgets() {
 
   return (
     <>
-      <ApiKeyField placeholder={t('sofyaApiKeyTip')}></ApiKeyField>
-      <FormField
-        control={form.control}
-        name={'search_depth'}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel tooltip={t('sofyaSearchDepthTip')}>
-              {t('sofyaSearchDepth')}
-            </FormLabel>
-            <FormControl>
-              <SelectWithSearch {...field} options={searchDepthOptions} />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
+      <ApiKeyField placeholder={t('sofyaApiKeyTip')} required></ApiKeyField>
+      <RAGFlowFormItem
+        name="search_depth"
+        label={t('sofyaSearchDepth')}
+        tooltip={t('sofyaSearchDepthTip')}
+      >
+        <SelectWithSearch options={searchDepthOptions} />
+      </RAGFlowFormItem>
       <TopNFormField></TopNFormField>
     </>
   );
@@ -86,6 +72,7 @@ function SofyaForm({ node }: INextOperatorForm) {
   const form = useForm<z.infer<typeof FormSchema>>({
     defaultValues,
     resolver: zodResolver(FormSchema),
+    mode: 'onChange',
   });
 
   useWatchFormChange(node?.id, form);

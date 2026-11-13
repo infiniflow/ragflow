@@ -39,6 +39,7 @@ func setupDocumentTestDB(t *testing.T) *gorm.DB {
 		&entity.Document{},
 		&entity.Knowledgebase{},
 		&entity.Tenant{},
+		&entity.UserTenant{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
@@ -506,16 +507,15 @@ func TestDocumentGetByDocumentIDAndDatasetIDUsesKBID(t *testing.T) {
 func TestDocumentGetChunkingConfigScansParserConfig(t *testing.T) {
 	db := setupDocumentTestDB(t)
 
-	if err := db.Create(&entity.Tenant{
-		ID:        "tenant1",
-		LLMID:     "llm1",
-		EmbdID:    "embd1",
-		ASRID:     "asr1",
-		Img2TxtID: "img2txt1",
-		RerankID:  "rerank1",
-		ParserIDs: "naive",
-	}).Error; err != nil {
+	if err := db.Create(&entity.Tenant{ID: "tenant1", ParserIDs: "naive"}).Error; err != nil {
 		t.Fatalf("create tenant: %v", err)
+	}
+	joined := entity.TenantMembershipStatusJoined
+	if err := db.Create(&entity.UserTenant{
+		ID: "ut-tenant1", UserID: "tenant1", TenantID: "tenant1", Role: "owner", Status: &joined,
+		LLMID: "llm1", EmbdID: "embd1", ASRID: "asr1", Img2TxtID: "img2txt1", RerankID: "rerank1",
+	}).Error; err != nil {
+		t.Fatalf("create owner membership: %v", err)
 	}
 	if err := db.Create(&entity.Knowledgebase{
 		ID:           "kb1",

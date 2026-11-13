@@ -116,6 +116,7 @@ func TestDiscordRequestJSONReturnsRateLimitError(t *testing.T) {
 		_, _ = w.Write([]byte(`{"message":"rate limited","retry_after":0.001,"global":true}`))
 	}))
 	defer server.Close()
+	allowChannelURLForTest(t, server.URL)
 
 	ch := newDiscordChannel(discordAccount{
 		AccountID:  "account-1",
@@ -152,6 +153,7 @@ func TestDiscordSendRetriesRateLimit(t *testing.T) {
 		_, _ = w.Write([]byte(`{"id":"message-2"}`))
 	}))
 	defer server.Close()
+	allowChannelURLForTest(t, server.URL)
 
 	ch := newDiscordChannel(discordAccount{
 		AccountID:  "account-1",

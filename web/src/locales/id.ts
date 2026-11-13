@@ -83,6 +83,8 @@ export default {
       searchKnowledgePlaceholder: 'Cari',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'Lanjutkan pengunggahan, lalu sistem akan secara otomatis mengalihkan file-file ini ke konfigurasi parsing bawaan yang didukung.',
       dataset: 'Dataset',
       testing: 'Pengujian pengambilan',
       files: 'file',
@@ -99,7 +101,7 @@ export default {
       webCrawl: 'Penjelajahan Web',
       chunkNumber: 'Jumlah Potongan',
       uploadDate: 'Tanggal Unggah',
-      chunkMethod: 'Metode Potongan',
+      parsingMode: 'Mode parsing',
       enabled: 'Aktifkan',
       disabled: 'Nonaktifkan',
       action: 'Aksi',
@@ -146,9 +148,6 @@ export default {
       layoutRecognize: 'Pengenalan tata letak',
       layoutRecognizeTip:
         'Gunakan model visual untuk analisis tata letak untuk lebih mengidentifikasi struktur dokumen, menemukan di mana judul, blok teks, gambar, and tabel berada. Tanpa fitur ini, hanya teks biasa dari PDF yang dapat diperoleh. Untuk informasi lebih lanjut, lihat https://ragflow.io/docs/dataset_configuration#document-parsing-configuration.',
-      taskPageSize: 'Ukuran halaman tugas',
-      taskPageSizeMessage: 'Silakan masukkan ukuran halaman tugas Anda!',
-      taskPageSizeTip: `Jika menggunakan pengenalan tata letak, file PDF akan dibagi menjadi kelompok berturut-turut. Analisis tata letak akan dilakukan secara paralel antar kelompok untuk meningkatkan kecepatan pemrosesan. 'Ukuran halaman tugas' menentukan ukuran kelompok. Semakin besar ukuran halaman, semakin kecil kemungkinan teks berkelanjutan antara halaman dibagi menjadi potongan yang berbeda.`,
       addPage: 'Tambah halaman',
       greaterThan: 'Nilai saat ini harus lebih besar dari!',
       greaterThanPrevious: 'Nilai saat ini harus lebih besar dari sebelumnya!',
@@ -166,10 +165,10 @@ export default {
       topK: 'Top-K',
       topKTip: `Digunakan bersama dengan Rerank model, pengaturan ini menentukan jumlah potongan teks yang akan dikirim ke model reranking yang ditentukan.`,
       delimiter: `Pemisah untuk segmentasi teks`,
-      html4excel: 'Excel ke HTML',
-      html4excelTip: `Gunakan bersama dengan metode pemotongan General. Ketika dinonaktifkan, file spreadsheet (XLSX, XLS (Excel 97-2003)) akan dianalisis baris demi baris menjadi pasangan kunci-nilai. Ketika diaktifkan, file spreadsheet akan dianalisis menjadi tabel HTML. Jika tabel asli memiliki lebih dari 12 baris, sistem akan secara otomatis membagi menjadi beberapa tabel HTML setiap 12 baris. Untuk informasi lebih lanjut, lihat https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.`,
     },
     knowledgeConfiguration: {
+      parsingMode: 'Mode parsing',
+      builtInSuffix: ' (built in)',
       imageTableContextWindow: 'Jendela konteks gambar & tabel',
       imageTableContextWindowTip:
         'Mengambil N token teks di atas dan di bawah gambar dan tabel untuk memberikan konteks latar yang lebih kaya.',
@@ -191,8 +190,6 @@ export default {
         "Jika izinnya 'Tim', semua anggota tim dapat memanipulasi basis pengetahuan.",
       chunkTokenNumberTip:
         'Ini menentukan jumlah token dari sebuah potongan secara kira-kira. Tidak ada blok baru yang akan dibuat kecuali jika sebuah pembatas ditemukan, bahkan jika ambang batas ini dilampaui.',
-      chunkMethod: 'Metode potongan',
-      chunkMethodTip: 'Instruksi ada di sebelah kanan.',
       upload: 'Unggah',
       english: 'Inggris',
       chinese: 'Cina',
@@ -335,8 +332,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         'Contoh: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'Token Akses AI Studio',
-      paddleocrAccessTokenTip: 'Token akses untuk API PaddleOCR (opsional)',
-      paddleocrAccessTokenPlaceholder: 'Token AI Studio Anda (opsional)',
+      paddleocrAccessTokenTip: 'Token akses untuk API PaddleOCR',
+      paddleocrAccessTokenPlaceholder: 'Token AI Studio Anda',
       paddleocrAlgorithm: 'Algoritma PaddleOCR',
       paddleocrAlgorithmTip:
         'Algoritma yang digunakan untuk pemrosesan PaddleOCR',
@@ -568,18 +565,18 @@ export default {
         'Model LLM obrolan default yang akan digunakan semua basis pengetahuan baru yang dibuat.',
       embeddingModel: 'Model Embedding',
       embeddingModelTip:
-        'Model embedding default untuk setiap basis pengetahuan baru yang dibuat. Jika Anda tidak dapat menemukan model embedding dari dropdown, periksa apakah Anda menggunakan RAGFlow slim edition (yang tidak menyertakan model embedding) atau periksa https://ragflow.io/docs/dev/supported_models untuk melihat apakah penyedia model Anda mendukung model ini.',
+        'Model embedding default untuk setiap basis pengetahuan baru yang dibuat. Jika Anda tidak dapat menemukan model embedding dari dropdown, periksa halaman Penyedia model untuk melihat apakah penyedia model Anda mendukung model ini.',
       img2txtModel: 'Model Img2txt',
       img2txtModelTip:
-        'Model img2txt default untuk setiap basis pengetahuan yang baru dibuat. Model ini menggambarkan gambar atau video. Jika Anda tidak dapat menemukan model dari menu dropdown, periksa https://ragflow.io/docs/dev/supported_models untuk melihat apakah penyedia model Anda mendukung model ini.',
+        'Model img2txt default untuk setiap basis pengetahuan yang baru dibuat. Model ini menggambarkan gambar atau video. Jika Anda tidak dapat menemukan model dari menu dropdown, periksa halaman Penyedia model untuk melihat apakah penyedia model Anda mendukung model ini.',
       sequence2txtModel: 'Model Speech2txt',
       sequence2txtModelTip:
-        'Model ASR default yang akan digunakan semua basis pengetahuan baru yang dibuat. Gunakan model ini untuk menerjemahkan suara ke teks yang sesuai. Jika Anda tidak dapat menemukan model dari menu dropdown, periksa https://ragflow.io/docs/dev/supported_models untuk melihat apakah penyedia model Anda mendukung model ini.',
+        'Model ASR default yang akan digunakan semua basis pengetahuan baru yang dibuat. Gunakan model ini untuk menerjemahkan suara ke teks yang sesuai. Jika Anda tidak dapat menemukan model dari menu dropdown, periksa halaman Penyedia model untuk melihat apakah penyedia model Anda mendukung model ini.',
       rerankModel: 'Model Rerank',
-      rerankModelTip: `Model rerank default untuk reranking potongan teks. Jika Anda tidak dapat menemukan model dari dropdown, periksa https://ragflow.io/docs/dev/supported_models untuk melihat apakah penyedia model Anda mendukung model ini.`,
+      rerankModelTip: `Model rerank default untuk reranking potongan teks. Jika Anda tidak dapat menemukan model dari dropdown, periksa halaman Penyedia model untuk melihat apakah penyedia model Anda mendukung model ini.`,
       ttsModel: 'Model TTS',
       ttsModelTip:
-        'Model text-to-speech default. Jika Anda tidak dapat menemukan model dari dropdown, periksa https://ragflow.io/docs/dev/supported_models untuk melihat apakah penyedia model Anda mendukung model ini.',
+        'Model text-to-speech default. Jika Anda tidak dapat menemukan model dari dropdown, periksa halaman Penyedia model untuk melihat apakah penyedia model Anda mendukung model ini.',
       workspace: 'Ruang Kerja',
       upgrade: 'Tingkatkan',
       addLlmTitle: 'Tambahkan LLM',
@@ -596,7 +593,7 @@ export default {
         apiUrlPlaceholder:
           'Contoh: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Token Akses AI Studio',
-        accessTokenPlaceholder: 'Token AI Studio Anda (opsional)',
+        accessTokenPlaceholder: 'Token AI Studio Anda',
         algorithm: 'Algoritma PaddleOCR',
         selectAlgorithm: 'Pilih algoritma',
         modelNamePlaceholder: 'Contoh: paddleocr-from-env-1',
@@ -766,7 +763,7 @@ export default {
       destinationFolder: 'Folder tujuan',
     },
     flow: {
-      cite: 'Kutip',
+      cite: 'Tampilkan kutipan',
       citeTip: 'tipKutip',
       name: 'Nama',
       nameMessage: 'Silakan masukkan nama',
@@ -1156,7 +1153,7 @@ export default {
         'Gunakan prompt sistem untuk menjelaskan tugas untuk LLM, tentukan bagaimana harus merespons, dan menguraikan persyaratan lainnya. Prompt sistem sering digunakan bersama dengan kunci (variabel), yang berfungsi sebagai berbagai input data untuk LLM. Gunakan garis miring `/` atau tombol (x) untuk menampilkan kunci yang digunakan.',
       promptMessage: 'Prompt diperlukan',
       tags: 'Tag',
-      canvasCategory: 'Kategori kanvas',
+      agentCategory: 'Kategori kanvas',
       created: 'Dibuat',
       id: 'ID',
       logTitle: 'Judul',

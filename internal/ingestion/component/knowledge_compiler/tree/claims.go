@@ -16,13 +16,12 @@ import (
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
-// claimBatchSize is how many chunks one extraction call covers, mirroring Python
-// _CLAIM_BATCH_SIZE (raptor.py). Every chunk in the batch is a TARGET and the
-// model attributes each claim by chunk id.
+// claimBatchSize is how many chunks one extraction call covers. Every chunk in
+// the batch is a TARGET and the model attributes each claim by chunk id.
 const claimBatchSize = 4
 
 // EvidenceGateMode decides what happens to a claim whose evidence all failed to
-// locate. Mirrors Python _EVIDENCE_GATE_MODES.
+// locate.
 type EvidenceGateMode string
 
 const (
@@ -39,8 +38,7 @@ const (
 const evidenceGateDefault = EvidenceGateSoft
 
 // ParseEvidenceGateMode maps a configured gate mode onto EvidenceGateMode,
-// falling back to the default for anything unrecognised (mirrors Python
-// _struct_evidence_gate_mode).
+// falling back to the default for anything unrecognised.
 func ParseEvidenceGateMode(raw any) EvidenceGateMode {
 	s, ok := raw.(string)
 	if !ok {
@@ -55,11 +53,10 @@ func ParseEvidenceGateMode(raw any) EvidenceGateMode {
 	return evidenceGateDefault
 }
 
-// claimExtractionPrompt mirrors the Python prompt in
-// rag/advanced_rag/knowlege_compile/raptor.py (_CLAIM_EXTRACTION_PROMPT). The
-// two must stay in sync: a divergence here silently changes what the tree is
-// summarised from, which then makes Python-derived and Go-derived trees
-// incomparable.
+// claimExtractionPrompt is the built-in claim-extraction prompt. It must stay in
+// sync with the template-declared version; a divergence here silently changes
+// what the tree is summarised from, making the built-in and template-declared
+// versions' trees incomparable.
 const claimExtractionPrompt = `## Task
 You are a high-recall claim harvester for the TARGET chunks below. For EACH
 TARGET chunk, extract EVERY explicit atomic claim that chunk supports: factual
@@ -149,7 +146,7 @@ func (r *claimProgressReporter) shouldReport(completed int) bool {
 // Every chunk in the batch is a TARGET, so the model harvests claims for all of
 // them in one call. Each chunk carries its own id, which both pins the claim
 // attribution and lets the validation gate check the quote against the right
-// text (mirrors Python _render_claim_source).
+// text.
 func renderClaimSource(targets []claimEntry) string {
 	var b strings.Builder
 	b.WriteString("## Source Text\n")
@@ -187,8 +184,8 @@ type EvidenceRef struct {
 // instead of from truncated raw text (see buildClusterContent vs
 // buildClaimContent).
 //
-// Chunks are packed into batches of claimBatchSize (mirroring Python
-// _CLAIM_BATCH_SIZE) and each batch is harvested by one LLM call. Every chunk in
+// Chunks are packed into batches of claimBatchSize and each batch is harvested
+// by one LLM call. Every chunk in
 // a batch is a TARGET and the model reports which chunk each claim came from
 // through source_chunk_ids; the validation gate then checks each quote against
 // that chunk's text.
@@ -198,9 +195,8 @@ type EvidenceRef struct {
 // with the other compiler variants instead of maintaining a second,
 // document-local semaphore.
 //
-// claimPrompt is the template-declared extraction contract (Python passes
-// raptor_config["claim_prompt"] from tree.yaml's raptor section into
-// extract_claims_for_chunks); an empty value falls back to the built-in
+// claimPrompt is the template-declared extraction contract (supplied via
+// tree.yaml's raptor section); an empty value falls back to the built-in
 // claimExtractionPrompt.
 //
 // Extraction is best-effort: a failing batch is skipped and simply contributes
@@ -232,7 +228,7 @@ func ExtractClaimsForChunks(ctx context.Context, deps common.Deps, llmID string,
 
 	// Announce the fan-out shape before the first LLM call: the batches take
 	// model latency, so without this line the log would sit silent on
-	// "building tree" for tens of seconds (mirrors Python's start message).
+	// "building tree" for tens of seconds.
 	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("tree-template: claim extraction start: %d chunk(s) -> %d batch(es)", total, len(batches)))
 
 	results := make([]map[string][]Claim, len(batches))
@@ -252,11 +248,11 @@ func ExtractClaimsForChunks(ctx context.Context, deps common.Deps, llmID string,
 
 			mu.Lock()
 			// Report progress *after* the batch completes, counting the chunks
-			// the user-visible unit covers (mirrors Python's as_completed loop,
-			// which advances the counter only for finished batches; workers
-			// finish out of order, so the figure jumps by batch size).
+			// the user-visible unit covers; the counter advances only for finished
+			// batches, and since workers finish out of order the figure jumps by
+			// batch size.
 			completed += len(batch)
-			runtime.ReportComponentFraction(ctx, float64(completed)/float64(total))
+			deps.Progress.Sub(1, 5).Report(ctx, float64(completed)/float64(total))
 			if reporter.shouldReport(completed) {
 				runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("tree-template: extracting claims for chunk %d/%d", completed, total))
 			}
@@ -354,8 +350,7 @@ func extractClaimsForBatch(ctx context.Context, deps common.Deps, llmID, claimPr
 	// Recover attribution from the evidence that survived the gate: the chunk a
 	// quote was located in IS where the claim came from. A claim that neither the
 	// model nor its evidence can place is dropped — filing it under an arbitrary
-	// chunk would cite text it never came from (mirrors Python, which drops the
-	// claim instead of defaulting to the batch's first chunk).
+	// chunk would cite text it never came from.
 	out := make(map[string][]Claim)
 	for _, c := range claims {
 		id := ""
@@ -379,8 +374,7 @@ func extractClaimsForBatch(ctx context.Context, deps common.Deps, llmID, claimPr
 	return out
 }
 
-// packClaimBatches groups chunks into fixed-size batches, mirroring Python
-// _pack_claim_batches / _CLAIM_BATCH_SIZE.
+// packClaimBatches groups chunks into fixed-size batches.
 func packClaimBatches(entries []claimEntry) [][]claimEntry {
 	bs := claimBatchSize
 	if bs < 1 {
@@ -454,7 +448,7 @@ func parseClaimItemsMap(raw map[string]any) ([]Claim, error) {
 // questions), hard drops the claim.
 //
 // Returns the surviving claims plus (verified, rejected) counts for the gate
-// log. Mirrors Python _struct_apply_evidence_gate.
+// log.
 func ValidateClaims(claims []Claim, textByID map[string]string, mode EvidenceGateMode) ([]Claim, int, int) {
 	verified, rejected := 0, 0
 	if mode != EvidenceGateSoft && mode != EvidenceGateHard {
@@ -585,10 +579,10 @@ func normalizeForMatch(text string) (string, []int) {
 	return b.String(), idxMap
 }
 
-// ClaimDigest renders one chunk's claims the way Python
-// format_claims_for_summary (raptor.py) does — the text that is embedded as the
-// chunk's claim-view clustering vector. Each claim carries the verbatim quote
-// that backs it, so the embedding sees the facts AND their grounding.
+// ClaimDigest renders one chunk's claims for embedding as the chunk's claim-view
+// clustering vector. Each claim may carry the verbatim quote that backs it
+// (claims without evidence are rendered by name alone), so the embedding sees
+// the facts AND their grounding.
 func ClaimDigest(claims []Claim) string {
 	var lines []string
 	for _, c := range claims {
@@ -630,9 +624,9 @@ func BuildClaimContent(texts []string, chunkIDs []string, pointIdxs []int, claim
 				}
 				if len(c.Evidence) > 0 && strings.TrimSpace(c.Evidence[0].Quote) != "" {
 					// Plain quotes, not %q: Go's %q escapes embedded quotes and
-					// non-printables, which Python's f'- {name}\n  Evidence:
-					// "{quote}"' does not — the two runtimes would feed the
-					// abstraction layer different text for the same claim.
+					// non-printables, which the template-declared formatter does not
+					// — the two variants would feed the abstraction layer
+					// different text for the same claim.
 					lines = append(lines, fmt.Sprintf("- %s\n  Evidence: \"%s\"", name, c.Evidence[0].Quote))
 				} else {
 					lines = append(lines, "- "+name)

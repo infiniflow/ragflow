@@ -113,12 +113,7 @@
                         "max_retries": 3,
                         "max_rounds": 1,
                         "max_tokens": 256,
-                        "mcp": [
-                            {
-                                "mcp_id": "30d6ef8ea8d511f0828382e3548809fa",
-                                "tools": {}
-                            }
-                        ],
+                        "mcp": [],
                         "message_history_window_size": 12,
                         "outputs": {
                             "content": {
@@ -573,16 +568,6 @@
                     "targetHandle": "end",
                     "type": "buttonEdge",
                     "zIndex": 1001
-                },
-                {
-                    "data": {
-                        "isHovered": false
-                    },
-                    "id": "xy-edge__Agent:SadDodosRescuetool-Tool:ClearKiwisRollend",
-                    "source": "Agent:SadDodosRescue",
-                    "sourceHandle": "tool",
-                    "target": "Tool:ClearKiwisRoll",
-                    "targetHandle": "end"
                 }
             ],
             "nodes": [
@@ -801,12 +786,7 @@
                             "max_retries": 3,
                             "max_rounds": 1,
                             "max_tokens": 256,
-                            "mcp": [
-                                {
-                                    "mcp_id": "30d6ef8ea8d511f0828382e3548809fa",
-                                    "tools": {}
-                                }
-                            ],
+                            "mcp": [],
                             "message_history_window_size": 12,
                             "outputs": {
                                 "content": {
@@ -1113,28 +1093,6 @@
                     "sourcePosition": "right",
                     "targetPosition": "left",
                     "type": "switchNode"
-                },
-                {
-                    "data": {
-                        "form": {
-                            "description": "This is an agent for a specific task.",
-                            "user_prompt": "This is the order you need to send to the agent."
-                        },
-                        "label": "Tool",
-                        "name": "flow.tool_2"
-                    },
-                    "id": "Tool:ClearKiwisRoll",
-                    "measured": {
-                        "height": 44,
-                        "width": 200
-                    },
-                    "position": {
-                        "x": 592.0210917308762,
-                        "y": 294.6374701767713
-                    },
-                    "sourcePosition": "right",
-                    "targetPosition": "left",
-                    "type": "toolNode"
                 },
                 {
                     "data": {

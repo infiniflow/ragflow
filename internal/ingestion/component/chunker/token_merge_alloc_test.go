@@ -126,7 +126,6 @@ func benchMergeUnitsJSON(b *testing.B, n int) {
 	for i := 0; i < n; i++ {
 		units[i] = schema.ChunkDoc{
 			Text:         strings.Repeat("word ", 5),
-			CKType:       "text",
 			TKNums:       intPtr(5),
 			PDFPositions: append(json.RawMessage(nil), pos...),
 		}

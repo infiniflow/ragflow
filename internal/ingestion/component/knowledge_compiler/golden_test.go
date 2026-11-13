@@ -6,9 +6,9 @@ import (
 	"hash/fnv"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
+	appcommon "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/golden"
 	"ragflow/internal/ingestion/component/schema"
@@ -17,7 +17,7 @@ import (
 // chunkHasVector reports whether a compiled chunk carries any q_<dim>_vec embedding.
 func chunkHasVector(c schema.ChunkDoc) bool {
 	for k := range c.Extra {
-		if strings.HasPrefix(k, "q_") && strings.HasSuffix(k, "_vec") {
+		if appcommon.IsVectorColumn(k) {
 			return true
 		}
 	}
@@ -56,7 +56,7 @@ func signedVec(str string, dim int) []float32 {
 // installSignedProseDeps wires a prose LLM + signed deterministic embedder.
 func installSignedProseDeps(t *testing.T) {
 	t.Helper()
-	common.SetDepsResolver(func(tenantID, llmID, embeddingModel string) (common.Deps, error) {
+	common.SetDepsResolver(func(_ context.Context, tenantID, llmID, embeddingModel string) (common.Deps, error) {
 		return common.Deps{Chat: proseChat{}, Embed: signedEmbedder{dim: 8}, TenantID: tenantID}, nil
 	})
 	t.Cleanup(func() { common.SetDepsResolver(nil) })
@@ -210,7 +210,7 @@ func TestGolden_Wiki_ProductCount(t *testing.T) {
 	foundPage := false
 	for _, p := range prods {
 		// compile_kwd=wiki_page is the page/section discriminator.
-		if kwd, _ := p.GetExtraString("compile_kwd"); kwd == "wiki_page" {
+		if kwd, _ := p.GetExtraString("type_kwd"); kwd == "wiki_page" {
 			foundPage = true
 		}
 	}

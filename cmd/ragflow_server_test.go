@@ -21,12 +21,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"ragflow/internal/server/bootstrap"
 	"strings"
 	"testing"
 	"time"
 )
 
-func parseArgsForTest(t *testing.T, argv ...string) (*serverArgs, error) {
+func parseArgsForTest(t *testing.T, argv ...string) (*bootstrap.ServerArgs, error) {
 	t.Helper()
 	orig := os.Args
 	os.Args = append([]string{"ragflow_server"}, argv...)
@@ -39,8 +40,8 @@ func TestParseArgsMigrateSelectsMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseArgs(--migrate) error = %v", err)
 	}
-	if args.mode == nil || *args.mode != "migrate" {
-		t.Fatalf("mode = %v, want migrate", args.mode)
+	if args.Mode == nil || *args.Mode != "migrate" {
+		t.Fatalf("mode = %v, want migrate", args.Mode)
 	}
 }
 
@@ -51,7 +52,7 @@ func TestParseArgsLogLevel(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parseArgs(%v) error = %v", argv, err)
 			}
-			if got := selectedLogLevel(args, "info"); got != level {
+			if got := bootstrap.SelectedLogLevel(args, "info"); got != level {
 				t.Errorf("selectedLogLevel(%v) = %q, want %q", argv, got, level)
 			}
 		}
@@ -69,10 +70,10 @@ func TestSelectedLogLevelPrecedence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseArgs(--api) error = %v", err)
 	}
-	if got := selectedLogLevel(args, ""); got != "info" {
+	if got := bootstrap.SelectedLogLevel(args, ""); got != "info" {
 		t.Errorf("default log level = %q, want info", got)
 	}
-	if got := selectedLogLevel(args, "info"); got != "info" {
+	if got := bootstrap.SelectedLogLevel(args, "info"); got != "info" {
 		t.Errorf("configured log level = %q, want info", got)
 	}
 
@@ -80,11 +81,15 @@ func TestSelectedLogLevelPrecedence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseArgs with --log-level error = %v", err)
 	}
-	if got := selectedLogLevel(args, "info"); got != "error" {
+	if got := bootstrap.SelectedLogLevel(args, "info"); got != "error" {
 		t.Errorf("--log-level log level = %q, want error", got)
 	}
 	if _, err = parseArgsForTest(t, "--api", "--debug"); err == nil {
-		t.Error("parseArgs(--debug) error = nil, want unknown parameter error")
+		t.Error("parseArgs(--api --debug) error = nil, want rejection")
+	} else if !strings.Contains(err.Error(), "flag provided but not defined") {
+		// The stdlib flag package owns unknown-flag errors now; the old
+		// "unknown parameter" string no longer applies.
+		t.Errorf("parseArgs(--api --debug) error = %q, want \"flag provided but not defined\"", err)
 	}
 }
 
@@ -99,16 +104,16 @@ func TestParseArgsMigrateFollowsLastModeWins(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parseArgs(%s --migrate) error = %v", mode, err)
 		}
-		if args.mode == nil || *args.mode != "migrate" {
-			t.Errorf("parseArgs(%s --migrate) mode = %v, want migrate", mode, args.mode)
+		if args.Mode == nil || *args.Mode != "migrate" {
+			t.Errorf("parseArgs(%s --migrate) mode = %v, want migrate", mode, args.Mode)
 		}
 
 		args, err = parseArgsForTest(t, "--migrate", mode)
 		if err != nil {
 			t.Fatalf("parseArgs(--migrate %s) error = %v", mode, err)
 		}
-		if args.mode == nil || *args.mode != want {
-			t.Errorf("parseArgs(--migrate %s) mode = %v, want %s", mode, args.mode, want)
+		if args.Mode == nil || *args.Mode != want {
+			t.Errorf("parseArgs(--migrate %s) mode = %v, want %s", mode, args.Mode, want)
 		}
 	}
 }
@@ -142,5 +147,37 @@ func TestMainMigrateReachesConfiguration(t *testing.T) {
 	output, err := cmd.CombinedOutput()
 	if err == nil || !strings.Contains(string(output), "initialize configuration") || strings.Contains(string(output), "Usage:") {
 		t.Fatalf("migration did not reach config: %v\n%s", err, output)
+	}
+}
+
+// TestPrintHelpDeepdoc guards the DeepDoc help text. It must describe the
+// DeepDoc server (not the Sync service) and show the real --name default
+// (deepdoc_server). The hand-rolled help text previously copied the syncer
+// case verbatim, printing "Sync service server name (default: "default_syncer")"
+// under --deepdoc.
+func TestPrintHelpDeepdoc(t *testing.T) {
+	if os.Getenv("RAGFLOW_TEST_DEEPDOC_HELP") == "1" {
+		os.Args = append([]string{os.Args[0]}, os.Args[len(os.Args)-2:]...)
+		main()
+		return
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	dir := t.TempDir()
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestPrintHelpDeepdoc$", "--", "--deepdoc", "--help")
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "RAGFLOW_TEST_DEEPDOC_HELP=1")
+	output, err := cmd.CombinedOutput()
+	if err == nil {
+		t.Fatalf("deepdoc --help did not exit non-zero: %s", output)
+	}
+	if !strings.Contains(string(output), "DeepDoc server name") {
+		t.Errorf("deepdoc help missing the DeepDoc server name line:\n%s", output)
+	}
+	if !strings.Contains(string(output), `default: "deepdoc_server"`) {
+		t.Errorf("deepdoc help missing the correct --name default (want deepdoc_server):\n%s", output)
+	}
+	if strings.Contains(string(output), "Sync service server name") {
+		t.Errorf("deepdoc help still shows the syncer's text:\n%s", output)
 	}
 }

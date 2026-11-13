@@ -1,4 +1,5 @@
 #include "thinc_parser.h"
+#include "thinc_json.h"
 
 #include <algorithm>
 #include <cmath>
@@ -453,8 +454,8 @@ char* ThincParser_Predict(ThincParserHandle h, const char* tokens_json) {
     std::string r="[";
     for(int i=0;i<n;i++){
         if(i)r+=",";
-        r+="{\"text\":\""+tokens[i]+"\",\"head\":"+std::to_string(heads[i])+
-           ",\"dep\":\""+labels[i]+"\",\"index\":"+std::to_string(i)+"}";
+        r+="{\"text\":"+thinc::JsonString(tokens[i])+",\"head\":"+std::to_string(heads[i])+
+           ",\"dep\":"+thinc::JsonString(labels[i])+",\"index\":"+std::to_string(i)+"}";
     }
     r+="]";
     return strdup(r.c_str());
@@ -536,7 +537,8 @@ char* ThincTagger_Predict(ThincTaggerHandle h, const char* tokens_json) {
     for(int i=0;i<n;i++){
         if(i)r+=",";
         std::string tag = best_tags[i] < (int)s->tags.size() ? s->tags[best_tags[i]] : "";
-        r+="{\"text\":\""+tokens[i]+"\",\"tag\":\""+pos_only(tag)+"\",\"index\":"+std::to_string(i)+"}";
+        r+="{\"text\":"+thinc::JsonString(tokens[i])+",\"tag\":"+thinc::JsonString(pos_only(tag))+
+           ",\"index\":"+std::to_string(i)+"}";
     }
     r+="]";
     return strdup(r.c_str());

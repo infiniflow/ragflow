@@ -5,15 +5,24 @@ import (
 	"errors"
 
 	"ragflow/internal/ingestion/chunkcache"
+	"ragflow/internal/ingestion/mediacache"
 )
 
-// PurgeTaskState removes the per-chunk cache state for a task using the
-// process-wide Kvrocks client. The checkpoint (eino resume) store was removed
-// from the ingestion pipeline, so only the per-chunk LLM/embedding results are
-// purged here; a rerun therefore starts with a cold chunk cache.
+// PurgeTaskState removes the run-scoped cache state for a task using the
+// process-wide Kvrocks client. Model results and media use separate manifests.
 func PurgeTaskState(ctx context.Context, taskID string) error {
+	return purgeTaskStateWithBackend(ctx, chunkcache.Client(), taskID)
+}
+
+// purgeTaskStateWithBackend purges the chunk and media manifests on one
+// backend. The task-id guard stays in both entry points so an empty id can
+// never purge a shared or empty-keyed manifest.
+func purgeTaskStateWithBackend(ctx context.Context, backend chunkcache.Store, taskID string) error {
 	if taskID == "" {
 		return errors.New("task state cleanup requires a task id")
 	}
-	return chunkcache.PurgeTask(ctx, chunkcache.Client(), taskID)
+	return errors.Join(
+		chunkcache.PurgeTask(ctx, backend, taskID),
+		mediacache.PurgeTask(ctx, backend, taskID),
+	)
 }

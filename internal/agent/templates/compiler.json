@@ -57,24 +57,12 @@
           },
           "setups": {
             "doc": {
-              "flatten_media_to_text": false,
               "order_index": 7,
-              "output_format": "json",
-              "remove_header_footer": false,
-              "suffix": [
-                "doc"
-              ],
-              "vlm": {}
+              "remove_header_footer": false
             },
             "docx": {
-              "flatten_media_to_text": false,
               "order_index": 8,
-              "output_format": "json",
-              "remove_header_footer": false,
-              "suffix": [
-                "docx"
-              ],
-              "vlm": {}
+              "remove_header_footer": false
             },
             "email": {
               "fields": [
@@ -87,95 +75,34 @@
                 "body",
                 "attachments"
               ],
-              "order_index": 3,
-              "output_format": "text",
-              "suffix": [
-                "eml",
-                "msg"
-              ]
+              "order_index": 3
             },
             "html": {
               "order_index": 6,
-              "output_format": "json",
-              "remove_header_footer": false,
-              "suffix": [
-                "htm",
-                "html"
-              ]
+              "remove_header_footer": false
             },
             "image": {
               "order_index": 2,
-              "output_format": "json",
-              "parse_method": "ocr",
-              "suffix": [
-                "jpg",
-                "jpeg",
-                "png",
-                "gif"
-              ]
+              "parse_method": "ocr"
             },
             "markdown": {
-              "flatten_media_to_text": false,
-              "order_index": 4,
-              "output_format": "json",
-              "suffix": [
-                "md",
-                "markdown",
-                "mdx"
-              ],
-              "vlm": {}
+              "order_index": 4
             },
             "pdf": {
-              "flatten_media_to_text": false,
               "order_index": 0,
-              "output_format": "json",
               "parse_method": "DeepDOC",
-              "remove_header_footer": false,
-              "suffix": [
-                "pdf"
-              ],
-              "vlm": {}
+              "remove_header_footer": false
             },
             "slides": {
               "order_index": 9,
-              "output_format": "json",
-              "parse_method": "DeepDOC",
-              "suffix": [
-                "pptx",
-                "ppt"
-              ]
+              "parse_method": "DeepDOC"
             },
             "spreadsheet": {
-              "flatten_media_to_text": false,
               "order_index": 1,
-              "output_format": "html",
-              "parse_method": "DeepDOC",
-              "suffix": [
-                "xls",
-                "xlsx",
-                "csv"
-              ],
-              "vlm": {}
+              "parse_method": "DeepDOC"
             },
             "text&code": {
-              "order_index": 5,
-              "output_format": "json",
-              "suffix": [
-                "txt",
-                "py",
-                "js",
-                "java",
-                "c",
-                "cpp",
-                "h",
-                "php",
-                "go",
-                "ts",
-                "sh",
-                "cs",
-                "kt",
-                "sql"
-              ]
+              "order_index": 5
             }
           }
         }
@@ -284,22 +211,15 @@
             "setups": [
               {
                 "fileFormat": "pdf",
-                "flatten_media_to_text": false,
-                "output_format": "json",
                 "parse_method": "DeepDOC",
-                "remove_header_footer": false,
-                "vlm": {}
+                "remove_header_footer": false
               },
               {
                 "fileFormat": "spreadsheet",
-                "flatten_media_to_text": false,
-                "output_format": "html",
-                "parse_method": "DeepDOC",
-                "vlm": {}
+                "parse_method": "DeepDOC"
               },
               {
                 "fileFormat": "image",
-                "output_format": "json",
                 "parse_method": "ocr"
               },
               {
@@ -313,41 +233,28 @@
                   "body",
                   "attachments"
                 ],
-                "fileFormat": "email",
-                "output_format": "text"
+                "fileFormat": "email"
               },
               {
-                "fileFormat": "markdown",
-                "flatten_media_to_text": false,
-                "output_format": "json",
-                "vlm": {}
+                "fileFormat": "markdown"
               },
               {
-                "fileFormat": "text&code",
-                "output_format": "json"
+                "fileFormat": "text&code"
               },
               {
                 "fileFormat": "html",
-                "output_format": "json",
                 "remove_header_footer": false
               },
               {
                 "fileFormat": "doc",
-                "flatten_media_to_text": false,
-                "output_format": "json",
-                "remove_header_footer": false,
-                "vlm": {}
+                "remove_header_footer": false
               },
               {
                 "fileFormat": "docx",
-                "flatten_media_to_text": false,
-                "output_format": "json",
-                "remove_header_footer": false,
-                "vlm": {}
+                "remove_header_footer": false
               },
               {
                 "fileFormat": "slides",
-                "output_format": "json",
                 "parse_method": "DeepDOC"
               }
             ]

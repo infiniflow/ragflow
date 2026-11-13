@@ -13,16 +13,13 @@ import (
 //
 // Engine lifetime / ownership: Parse creates the native PDF engine and
 // transfers ownership of it to the returned *pdf.ParseResult (result.Engine is
-// populated inside ParseRaw/processPages). The engine is intentionally kept
-// alive past Parse so the serialization step can still use it — most
-// importantly the Markdown path (cropMarkdownFigures) renders and crops figure
-// images on demand. Parse must therefore NOT close the engine itself.
+// populated inside ParseRaw/processPages). Parse must therefore NOT close the
+// engine itself.
 //
-// The caller (the adapter layer: pdfParseResultToJSONWithOptions /
-// pdfParseResultToMarkdownWithOptions) releases the engine via result.Close()
-// once serialization is complete. The only place Parse closes the engine is on
-// its own error return, since in that case no ParseResult is handed back for
-// the caller to release.
+// The caller (the adapter layer: pdfParseResultToJSONWithOptions) releases the
+// engine via result.Close() once serialization is complete. The only place Parse
+// closes the engine is on its own error return, since in that case no
+// ParseResult is handed back for the caller to release.
 func (p *Parser) Parse(ctx context.Context, data []byte, docAnalyzer pdf.DocAnalyzer) (*pdf.ParseResult, error) {
 	engine, err := NewEngine(data)
 	if err != nil {

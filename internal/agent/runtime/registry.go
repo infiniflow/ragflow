@@ -16,18 +16,11 @@
 
 // runtime — category-aware component registry.
 //
-// Phase 0 of plan port-rag-flow-pipeline-to-go.md lifts the component
-// registry out of internal/agent/component into the runtime package
-// so the ingestion pipeline (Phase 2) can register under
-// CategoryIngestion without depending on the agent canvas. The legacy
-// component.Register / component.New / component.RegisteredNames become
-// thin adapters that delegate here.
-//
-// The single source of truth is DefaultRegistry. The component package's
-// internal `registry` map has been removed — keeping two maps in sync
-// during the transition would cause RegisteredNames() to return a
-// partial set (the internal map only sees legacy Register calls; the
-// new map only sees RegisterWithMeta calls). See plan §5.
+// DefaultRegistry is the single source of truth. The agent/component
+// package's internal `registry` map was removed because keeping two
+// maps in sync caused RegisteredNames() to return a partial set (the
+// internal map only saw legacy Register calls; the runtime map only saw
+// RegisterWithMeta calls).
 package runtime
 
 import (
@@ -52,15 +45,13 @@ const (
 // a complete component catalog (name, category, inputs, outputs) without
 // having to instantiate the component.
 //
-// The plan §4 Phase 0 task 1 contract says Register REJECTS empty
-// metadata. The "is empty" check is implemented in Register as
-// "Version == \"\" AND Inputs == nil AND Outputs == nil"; this
-// three-way check lets a caller fill in any single field as
-// evidence of intent. The Version field is the canonical marker
-// (plan §4 Phase 0 task 2 uses `Metadata{Version: "legacy"}` for
-// the legacy-adapter shim), but a component that wants to skip
-// the version stamp but still record inputs/outputs is also
-// allowed.
+// Register REJECTS empty metadata. The "is empty" check is implemented in
+// Register as "Version == \"\" AND Inputs == nil AND Outputs == nil"; this
+// three-way check lets a caller fill in any single field as evidence of
+// intent. The Version field is the canonical marker (the legacy
+// agent-component adapter supplies `Metadata{Version: "legacy"}`), but a
+// component that wants to skip the version stamp but still record
+// inputs/outputs is also allowed.
 type Metadata struct {
 	Version string            // contract version; required for ingestion, "legacy" for the legacy adapter
 	Inputs  map[string]string // input key → human-readable description
@@ -87,9 +78,7 @@ type Registry interface {
 // memoryRegistry is the production Registry. It is concurrency-safe; init()
 // race-to-register is acceptable for `Register` — the duplicate-registration
 // check rejects the second writer, so the FIRST successful registration
-// for a given name wins. (This is independent of the `SetDefaultFactory`
-// "first-wins" guard, which is REMOVED in Phase 0 task 3; see
-// "two-layer model" comment there for the distinction.)
+// for a given name wins.
 //
 // Lookup is **case-insensitive**: keys are lowercased on Register and Lookup.
 // This matches internal/agent/component/registry.go:28, 43, which lowercases
@@ -107,11 +96,10 @@ type memoryRegistry struct {
 // callers who want the legacy panic-on-duplicate semantics at init()
 // time should wrap the call with MustRegister.
 //
-// "Empty metadata" (plan §4 Phase 0 task 1) means all three of
-// Version, Inputs, Outputs are unset. The Version field is the
-// canonical marker — ingestion components MUST supply a real
-// version string; the legacy agent-component adapter MUST supply
-// "legacy"; the catalog endpoint only serves components whose
+// "Empty metadata" means all three of Version, Inputs, Outputs are unset.
+// The Version field is the canonical marker — ingestion components MUST
+// supply a real version string; the legacy agent-component adapter MUST
+// supply "legacy"; the catalog endpoint only serves components whose
 // metadata passes this check.
 func (r *memoryRegistry) Register(name string, category Category, factory ComponentFactory, metadata Metadata) error {
 	key := strings.ToLower(strings.TrimSpace(name))
@@ -120,7 +108,7 @@ func (r *memoryRegistry) Register(name string, category Category, factory Compon
 	}
 	if metadata.Version == "" && metadata.Inputs == nil && metadata.Outputs == nil {
 		return fmt.Errorf("runtime: %q registered with empty metadata (Version, Inputs, Outputs all unset; "+
-			"see plan §4 Phase 0 task 1 — ingestion components MUST supply a version string, "+
+			"ingestion components MUST supply a version string, "+
 			"legacy agent-component adapter MUST supply {Version: \"legacy\"})", name)
 	}
 	r.mu.Lock()

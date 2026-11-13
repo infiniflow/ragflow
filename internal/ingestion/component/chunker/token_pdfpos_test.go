@@ -37,8 +37,8 @@ func TestMergeByTokenSizeFromJSON_ExtendsPDFPositions(t *testing.T) {
 	posB := json.RawMessage(`[[2,15,25,35,45]]`)
 	items := [][]schema.ChunkDoc{
 		{
-			{Text: "alpha", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posA},
-			{Text: "beta", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posB},
+			{Text: "alpha", DocType: "text", TKNums: intPtr(5), PDFPositions: posA},
+			{Text: "beta", DocType: "text", TKNums: intPtr(5), PDFPositions: posB},
 		},
 	}
 	got := mergeByTokenSizeFromJSON(items, 128, 0)
@@ -62,8 +62,8 @@ func TestMergeByTokenSizeFromJSON_ExtendsPositions(t *testing.T) {
 	posB := json.RawMessage(`[[4,5,6]]`)
 	items := [][]schema.ChunkDoc{
 		{
-			{Text: "a", DocType: "text", CKType: "text", TKNums: intPtr(5), Positions: posA},
-			{Text: "b", DocType: "text", CKType: "text", TKNums: intPtr(5), Positions: posB},
+			{Text: "a", DocType: "text", TKNums: intPtr(5), Positions: posA},
+			{Text: "b", DocType: "text", TKNums: intPtr(5), Positions: posB},
 		},
 	}
 	got := mergeByTokenSizeFromJSON(items, 128, 0)
@@ -102,8 +102,8 @@ func TestMergeByTokenSizeFromJSON_PositionsDecodeToMatrix(t *testing.T) {
 	posB := json.RawMessage(`[[6,7,8,9,10]]`)
 	items := [][]schema.ChunkDoc{
 		{
-			{Text: "a", DocType: "text", CKType: "text", TKNums: intPtr(5), Positions: posA},
-			{Text: "b", DocType: "text", CKType: "text", TKNums: intPtr(5), Positions: posB},
+			{Text: "a", DocType: "text", TKNums: intPtr(5), Positions: posA},
+			{Text: "b", DocType: "text", TKNums: intPtr(5), Positions: posB},
 		},
 	}
 	got := mergeByTokenSizeFromJSON(items, 128, 0)
@@ -144,9 +144,9 @@ func TestMergeByTokenSizeFromJSON_OverlapPrefixCarriesPrevPositions(t *testing.T
 	// first starts a fresh chunk carrying the WHOLE previous chunk as overlap.
 	items := [][]schema.ChunkDoc{
 		{
-			{Text: "alpha", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posA},
-			{Text: "beta", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posB},
-			{Text: "gamma", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posC},
+			{Text: "alpha", DocType: "text", TKNums: intPtr(5), PDFPositions: posA},
+			{Text: "beta", DocType: "text", TKNums: intPtr(5), PDFPositions: posB},
+			{Text: "gamma", DocType: "text", TKNums: intPtr(5), PDFPositions: posC},
 		},
 	}
 	got := mergeByTokenSizeFromJSON(items, 20, 100)
@@ -208,12 +208,12 @@ func TestMergeByTokenSizeFromJSON_PartialOverlapPrefixCarriesOnlyTailPositions(t
 	// actual-count check agrees with the declared TKNums.)
 	items := [][]schema.ChunkDoc{
 		{
-			{Text: "a", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posA},
-			{Text: "b", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posB},
-			{Text: "c", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posC},
-			{Text: "d", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posD},
-			{Text: "e", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posE},
-			{Text: "f", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posF},
+			{Text: "a", DocType: "text", TKNums: intPtr(1), PDFPositions: posA},
+			{Text: "b", DocType: "text", TKNums: intPtr(1), PDFPositions: posB},
+			{Text: "c", DocType: "text", TKNums: intPtr(1), PDFPositions: posC},
+			{Text: "d", DocType: "text", TKNums: intPtr(1), PDFPositions: posD},
+			{Text: "e", DocType: "text", TKNums: intPtr(1), PDFPositions: posE},
+			{Text: "f", DocType: "text", TKNums: intPtr(1), PDFPositions: posF},
 		},
 	}
 	got := mergeByTokenSizeFromJSON(items, 5, 20)
@@ -254,7 +254,6 @@ func TestChunkFromItem_SlicesPositionsAcrossDelimiterPieces(t *testing.T) {
 	it := schema.ChunkDoc{
 		Text:         "AAAA\nBBBB",
 		DocType:      "text",
-		CKType:       "text",
 		PDFPositions: json.RawMessage(`[[1,0,200,0,40]]`),
 	}
 	got := chunkFromItem(it, compileDelimPattern([]string{"`\n`"}), false)
@@ -294,7 +293,6 @@ func TestSplitOversizedText_SlicedPositionsTrackPieceTextShare(t *testing.T) {
 		return schema.ChunkDoc{
 			Text:         text,
 			DocType:      "text",
-			CKType:       "text",
 			TKNums:       intPtr(tokenizeStr(text)),
 			PDFPositions: json.RawMessage(`[[1,10,200,50,80]]`),
 		}
@@ -358,7 +356,6 @@ func TestChunkFromItem_SlicesPositionsIgnoresPositionTags(t *testing.T) {
 	it := schema.ChunkDoc{
 		Text:         "AAAA@@1\t0\t200\t0\t40##\nCCCC",
 		DocType:      "text",
-		CKType:       "text",
 		PDFPositions: json.RawMessage(`[[1,0,200,0,40]]`),
 	}
 	got := chunkFromItem(it, compileDelimPattern([]string{"`\n`"}), false)
@@ -392,7 +389,6 @@ func TestSplitOversizedText_SlicesPositionsIgnoreTags(t *testing.T) {
 	ck := schema.ChunkDoc{
 		Text:         body,
 		DocType:      "text",
-		CKType:       "text",
 		TKNums:       intPtr(tokenizeStr(body)),
 		PDFPositions: json.RawMessage(`[[1,0,200,0,40]]`),
 	}
@@ -461,7 +457,6 @@ func TestMergeByTokenSizeFromJSON_ChainedOverlapNoHeadAccumulation(t *testing.T)
 		row = append(row, schema.ChunkDoc{
 			Text:         string(rune('a' + i)),
 			DocType:      "text",
-			CKType:       "text",
 			TKNums:       intPtr(1),
 			PDFPositions: pos(i + 1),
 		})
@@ -601,7 +596,6 @@ func TestMergeByTokenSizeFromJSON_ChainedOverlapPerChunkConvergence(t *testing.T
 		row = append(row, schema.ChunkDoc{
 			Text:         string(rune('a' + i)),
 			DocType:      "text",
-			CKType:       "text",
 			TKNums:       intPtr(1),
 			PDFPositions: pos(i + 1),
 		})

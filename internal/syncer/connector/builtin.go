@@ -18,7 +18,9 @@ package connector
 
 import (
 	"context"
+	"strings"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 )
 
@@ -27,7 +29,6 @@ import (
 // and the raw-config factory (used by the test-connection endpoint).
 func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "confluence", NewConfluenceConnector)
-	registerBuiltIn(registry, "feishu_wiki", NewFeishuWikiConnector)
 	registerBuiltIn(registry, "rss", NewRSSConnector)
 	registerBuiltIn(registry, "sitemap", NewSitemapConnector)
 	registerBuiltIn(registry, "salesforce", NewSalesforceConnector)
@@ -47,7 +48,7 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "azure_blob", NewAzureBlobStorageConnector)
 	registerBuiltIn(registry, "airtable", NewAirtableConnector)
 	registerBuiltIn(registry, "r2", NewR2Connector)
-	registerBuiltIn(registry, "s3", NewS3Connector)
+	registerBuiltIn(registry, "s3", newS3SourceConnector)
 	registerBuiltIn(registry, "s3_compatible", NewS3CompatibleConnector)
 	registerBuiltIn(registry, "dingtalk_ai_table", NewDingTalkAITableConnector)
 	registerBuiltIn(registry, "imap", NewIMAPConnector)
@@ -70,11 +71,27 @@ func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "zotero", NewZoteroConnector)
 }
 
+// newS3SourceConnector selects the client for the bucket type stored under an S3 source.
+// The data source form keeps an S3-compatible bucket under source "s3" with bucket_type "s3_compatible".
+// Compatible mode keeps the "s3" ID namespace, so documents already indexed under this source keep their IDs.
+func newS3SourceConnector(config map[string]any) (Connector, error) {
+	if strings.TrimSpace(stringConfig(config["bucket_type"])) == s3CompatibleSource {
+		return newS3CompatibleConnector(config, s3Source)
+	}
+	return NewS3Connector(config)
+}
+
 func registerBuiltIn[T Connector](registry *Registry, source string, factory func(map[string]any) (T, error)) {
 	registry.RegisterConfigFactory(source, func(config map[string]any) (Connector, error) {
 		return factory(config)
 	})
 	registry.Register(source, func(ctx context.Context, taskContext dao.SyncTaskContext) (Connector, error) {
-		return factory(map[string]any(taskContext.Connector.Config))
+		// Decrypt here, not when the task is loaded: a missing key then fails
+		// this task through the normal retry path instead of blocking its claim.
+		config, err := common.DecryptConnectorCredentials(taskContext.Connector.Config)
+		if err != nil {
+			return nil, err
+		}
+		return factory(config)
 	})
 }

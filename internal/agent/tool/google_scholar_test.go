@@ -278,7 +278,7 @@ func TestGoogleScholar_ComponentReferencesAndValidation(t *testing.T) {
 	if scholar.defaults.TopN != 7 || scholar.defaults.SortBy != "date" || scholar.defaults.YearLow != 2020 || scholar.defaults.Patents == nil || *scholar.defaults.Patents {
 		t.Fatalf("defaults = %+v", scholar.defaults)
 	}
-	for _, params := range []map[string]any{{"top_n": 0}, {"top_n": 1.5}, {"sort_by": "newest"}, {"patents": "yes"}} {
+	for _, params := range []map[string]any{{"top_n": 0}, {"top_n": 1.5}, {"sort_by": "data"}, {"sort_by": "newest"}, {"patents": "yes"}} {
 		if _, err := BuildByName("google_scholar", params); err == nil {
 			t.Fatalf("BuildByName(%#v) succeeded", params)
 		}

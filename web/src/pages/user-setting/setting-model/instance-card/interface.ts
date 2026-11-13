@@ -33,12 +33,12 @@ export type VerifyTransform = (values: Record<string, any>) => {
 };
 
 /**
- * Imperative save API exposed by each instance card (generic, Bedrock,
- * SoMark) so the parent page can drive a single batch save from the
- * top-of-page Save button.
+ * Imperative API exposed by each instance card (generic, Bedrock,
+ * SoMark) for tests and embedders that need to validate a card or
+ * inspect its save payload without clicking the header Save button.
  *
- * The card owns its form state and dirty tracking; the parent only needs
- * to validate, collect payloads, and dispatch the API calls.
+ * The card owns its form state, dirty tracking, and save request; the
+ * header Save button persists only its own instance.
  */
 export interface ProviderInstanceCardRef {
   /**
@@ -75,7 +75,7 @@ export interface InstanceSavePayload {
   /** True for a new (unsaved) instance, false for an existing one. */
   isDraft: boolean;
   /**
-   * Which save endpoint the parent should dispatch to:
+   * Which save endpoint the card dispatches to:
    *  - `'add'`: call `addProviderInstance` for drafts.
    *  - `'update'`: call `updateProviderInstance` for saved cards.
    */
@@ -94,8 +94,7 @@ export interface ProviderInstanceCardProps {
   /**
    * True when this card represents a freshly-added (unsaved) instance.
    * Renders the instance-name input section and treats all fields as
-   * editable. Saving is driven by the parent through the imperative
-   * ref API (see {@link ProviderInstanceCardRef}).
+   * editable. The card's own Save button persists it.
    */
   isDraft?: boolean;
   /**
@@ -104,6 +103,8 @@ export interface ProviderInstanceCardProps {
    * the component calls useDeleteProviderInstance internally.
    */
   onDelete?: () => void;
+  /** Called after the card's Save button persists this instance. */
+  onSaved?: (payload: InstanceSavePayload) => void;
   /**
    * When true, this card starts expanded and its instance details
    * are fetched on mount. Default `false` so additional cards stay
@@ -151,6 +152,10 @@ export interface SavedModeCardProps {
   formRef: RefObject<DynamicFormRef>;
   handleVerify: (params: any) => Promise<{ isValid: boolean; logs: string }>;
   handleDelete: () => Promise<void>;
+  /** Persist this card's instance (header Save button). */
+  handleSave: () => Promise<void>;
+  /** True while the save request is in flight. */
+  saving: boolean;
   handleInstanceModelsEdited: () => void;
   providerName: string;
   /** Persisted instance name (from the backend). */
@@ -181,6 +186,10 @@ export interface DraftModeCardProps {
   formRef: RefObject<DynamicFormRef>;
   handleVerify: (params: any) => Promise<{ isValid: boolean; logs: string }>;
   handleDelete: () => Promise<void>;
+  /** Persist this card's instance (header Save button). */
+  handleSave: () => Promise<void>;
+  /** True while the save request is in flight. */
+  saving: boolean;
   handleInstanceModelsEdited: () => void;
   providerName: string;
   instanceName: string;

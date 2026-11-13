@@ -1,0 +1,259 @@
+package charset
+
+import (
+	"strings"
+	"testing"
+	"unicode/utf8"
+
+	"golang.org/x/text/encoding/japanese"
+	"golang.org/x/text/encoding/korean"
+	"golang.org/x/text/encoding/simplifiedchinese"
+	"golang.org/x/text/encoding/traditionalchinese"
+	"golang.org/x/text/encoding/unicode"
+)
+
+// TestCharsetEncodingSharedLabelContract locks the single-label contract of
+// CharsetEncoding: every fallback label the HTML parser may walk (and the
+// mail chain ships) resolves through the shared resolver, detector/WHATWG
+// spellings fold onto the same encoder, and labels outside the shared
+// family (e.g. windows-1252, handled by the HTML prescan layer, or utf-8,
+// handled natively by decodeWithCharset) stay out so the two parsers cannot
+// drift apart again.
+func TestCharsetEncodingSharedLabelContract(t *testing.T) {
+	mailLabels := []string{"gb2312", "gbk", "gb18030", "hz-gb-2312", "big5", "shift_jis", "sjis", "euc-kr", "iso-8859-1", "latin1"}
+	for _, label := range append(mailLabels, fallbackCharsetLabels...) {
+		if _, ok := CharsetEncoding(label); !ok {
+			t.Errorf("CharsetEncoding(%q) = (_, false); the shared resolver must cover every mail-chain and HTML-fallback label", label)
+		}
+	}
+
+	aliases := map[string]string{
+		"GB-18030":   "gb18030",
+		"GB2312":     "gb2312",
+		"Shift_JIS":  "shift_jis",
+		"Shift-JIS":  "shift_jis",
+		"EUC-KR":     "euc-kr",
+		"ISO-8859-1": "iso-8859-1",
+		"ISO8859-1":  "iso-8859-1",
+		"Latin1":     "latin1",
+		" Big5 ":     "big5",
+	}
+	for alias, label := range aliases {
+		aliasEnc, aliasOK := CharsetEncoding(alias)
+		labelEnc, labelOK := CharsetEncoding(label)
+		if !aliasOK || !labelOK || aliasEnc != labelEnc {
+			t.Errorf("CharsetEncoding(%q) = (%v, %v), CharsetEncoding(%q) = (%v, %v); alias spelling must fold onto the same encoder", alias, aliasEnc, aliasOK, label, labelEnc, labelOK)
+		}
+	}
+
+	for _, label := range []string{"windows-1252", "utf-8", "utf-16", "euc-jp", ""} {
+		if _, ok := CharsetEncoding(label); ok {
+			t.Errorf("CharsetEncoding(%q) = (_, true); labels handled elsewhere (prescan / native utf-8) must not enter the shared resolver", label)
+		}
+	}
+}
+
+// TestDecodeFirstCharsetMatchAcceptance pins the shared walker's contract:
+// the first candidate whose decode produces no replacement runes wins and
+// reports its own label; when every candidate is rejected the walker
+// reports failure so callers apply their own terminal fallback. (utf-8 is
+// the deterministic rejecting candidate: the Big5 bytes are invalid UTF-8.)
+func TestDecodeFirstCharsetMatchAcceptance(t *testing.T) {
+	big5Bytes := []byte{0xA4, 0xA4, 0xA4, 0xE5} // "中文" in Big5
+
+	decoded, label, ok := decodeFirstCharsetMatch(big5Bytes, []string{"utf-8", "big5"})
+	if !ok || label != "big5" || decoded != "中文" {
+		t.Errorf("decodeFirstCharsetMatch(big5) = (%q, %q, %v); want (中文, big5, true)", decoded, label, ok)
+	}
+
+	if _, _, ok := decodeFirstCharsetMatch(big5Bytes, []string{"utf-8"}); ok {
+		t.Error("decodeFirstCharsetMatch over a rejecting candidate list must report failure")
+	}
+}
+
+func TestDecodeToUTF8(t *testing.T) {
+	// 1. Empty input passes through
+	out, label := DecodeToUTF8(nil, "")
+	if len(out) != 0 || label != "utf-8" {
+		t.Errorf("empty input: got (%d, %q), want (0, utf-8)", len(out), label)
+	}
+
+	// 2. Already UTF-8 passes through without alteration
+	utf8Str := "你好，世界！This is valid UTF-8 text."
+	out, label = DecodeToUTF8([]byte(utf8Str), "")
+	if string(out) != utf8Str || label != "utf-8" {
+		t.Errorf("UTF-8 input: got %q (%q), want %q (utf-8)", string(out), label, utf8Str)
+	}
+
+	// 3. GBK / GB2312 text
+	chinese := "自然语言处理与知识图谱构建"
+	gbkBytes, err := simplifiedchinese.GBK.NewEncoder().Bytes([]byte(chinese))
+	if err != nil {
+		t.Fatalf("GBK encode: %v", err)
+	}
+	out, label = DecodeToUTF8(gbkBytes, "text/plain")
+	if string(out) != chinese {
+		t.Errorf("GBK decode: got %q, want %q", string(out), chinese)
+	}
+	if label != "gb18030" && label != "gbk" && label != "gb2312" {
+		t.Errorf("GBK label: got %q, want gb18030/gbk/gb2312", label)
+	}
+
+	// 4. Big5 text
+	traditional := "繁體中文測試資料"
+	big5Bytes, err := traditionalchinese.Big5.NewEncoder().Bytes([]byte(traditional))
+	if err != nil {
+		t.Fatalf("Big5 encode: %v", err)
+	}
+	out, label = DecodeToUTF8(big5Bytes, "")
+	if string(out) != traditional {
+		t.Errorf("Big5 decode: got %q, want %q", string(out), traditional)
+	}
+
+	// 5. Shift-JIS Japanese text
+	japaneseText := "日本語テキストのテストです"
+	sjisBytes, err := japanese.ShiftJIS.NewEncoder().Bytes([]byte(japaneseText))
+	if err != nil {
+		t.Fatalf("Shift-JIS encode: %v", err)
+	}
+	out, _ = DecodeToUTF8(sjisBytes, "")
+	if string(out) != japaneseText {
+		t.Errorf("Shift-JIS decode: got %q, want %q", string(out), japaneseText)
+	}
+
+	// 6. EUC-KR Korean text
+	koreanText := "한국어 시험: 이 문서는 EUC-KR로 인코딩되어 있습니다. 서울특별시."
+	euckrBytes, err := korean.EUCKR.NewEncoder().Bytes([]byte(koreanText))
+	if err != nil {
+		t.Fatalf("EUC-KR encode: %v", err)
+	}
+	out, _ = DecodeToUTF8(euckrBytes, "")
+	if string(out) != koreanText {
+		t.Errorf("EUC-KR decode: got %q, want %q", string(out), koreanText)
+	}
+
+	// 7. XML declaration check
+	xmlHeader := `<?xml version="1.0" encoding="GB2312"?><html><body><p>章节测试</p></body></html>`
+	xmlGBK, err := simplifiedchinese.GBK.NewEncoder().Bytes([]byte(xmlHeader))
+	if err != nil {
+		t.Fatalf("XML GBK encode: %v", err)
+	}
+	out, label = DecodeToUTF8(xmlGBK, "application/xhtml+xml")
+	if !strings.Contains(string(out), "章节测试") {
+		t.Errorf("XML declaration decode: missing expected text in %q", string(out))
+	}
+	if label != "gb2312" && label != "gb18030" && label != "gbk" {
+		t.Errorf("XML declaration label: got %q", label)
+	}
+}
+
+func TestDecodeToUTF8_HZGB2312Hint(t *testing.T) {
+	// HZ-GB-2312 escape sequences (~{...~}) are pure 7-bit ASCII, hence valid UTF-8.
+	// An explicit hint must decode via HZ-GB-2312 rather than returning bytes untouched.
+	hz := []byte("~{<4Ky~}")
+	out, label := DecodeToUTF8(hz, "hz-gb-2312")
+	if label != "hzgb2312" && label != "hz-gb-2312" {
+		t.Errorf("got label %q, want hzgb2312 or hz-gb-2312", label)
+	}
+	if string(out) == string(hz) {
+		t.Fatal("hint ignored; utf8 fast-path swallowed HZ escapes")
+	}
+	if !utf8.Valid(out) {
+		t.Fatal("decoded HZ output must be valid UTF-8")
+	}
+}
+
+func TestDecodeToUTF8_XMLEncoding_HZGB2312(t *testing.T) {
+	// XML encoding declaration for HZ-GB-2312 must be evaluated before the UTF-8 fast path.
+	xml := []byte("<?xml version=\"1.0\" encoding=\"HZ-GB-2312\"?><html><body>~{<4Ky~}</body></html>")
+	out, label := DecodeToUTF8(xml, "application/xhtml+xml")
+	if label != "hzgb2312" && label != "hz-gb-2312" {
+		t.Errorf("got label %q, want hzgb2312", label)
+	}
+	if string(out) == string(xml) {
+		t.Fatal("XML HZ-GB-2312 declaration ignored; utf8 fast-path swallowed HZ escapes")
+	}
+}
+
+func TestDecodeToUTF8_UnrecognizedHint_UTF8Payload(t *testing.T) {
+	// Unrecognized charset labels (e.g. unknown-8bit from MIME) must not trigger
+	// a bogus latin-1 decode or corrupt valid UTF-8 input.
+	utf8Text := []byte("这是一段标准的UTF-8中文内容")
+	out, label := DecodeToUTF8(utf8Text, "unknown-8bit")
+	if label != "utf-8" {
+		t.Errorf("got label %q, want utf-8", label)
+	}
+	if string(out) != string(utf8Text) {
+		t.Errorf("unrecognized hint corrupted UTF-8 text; got %q, want %q", string(out), string(utf8Text))
+	}
+}
+
+func TestDecodeToUTF8_BOMOverridesConflictingXMLDeclaration(t *testing.T) {
+	// RFC 7303: UTF-8 BOM (\xef\xbb\xbf) takes precedence over a conflicting XML declaration (e.g. ISO-8859-1).
+	conflictXML := append([]byte("\xef\xbb\xbf"), []byte(`<?xml version="1.0" encoding="ISO-8859-1"?><html><body>中文测试内容</body></html>`)...)
+	out, label := DecodeToUTF8(conflictXML, "application/xhtml+xml")
+	if label != "utf-8" {
+		t.Errorf("got label %q, want utf-8", label)
+	}
+	if !strings.Contains(string(out), "中文测试内容") {
+		t.Fatalf("UTF-8 BOM was overridden by XML ISO-8859-1; got: %s", string(out))
+	}
+}
+
+func TestDecodeToUTF8_UTF16LEBOM(t *testing.T) {
+	// UTF-16LE with BOM (\xff\xfe) must decode to valid UTF-8.
+	src := "UTF-16LE 中文测试"
+	utf16Bytes, err := unicode.UTF16(unicode.LittleEndian, unicode.UseBOM).NewEncoder().Bytes([]byte(src))
+	if err != nil {
+		t.Fatalf("UTF-16 encode: %v", err)
+	}
+	out, label := DecodeToUTF8(utf16Bytes, "text/plain")
+	if label != "utf-16le" {
+		t.Errorf("got label %q, want utf-16le", label)
+	}
+	if !strings.Contains(string(out), src) {
+		t.Errorf("got %q, want containing %q", string(out), src)
+	}
+}
+
+// A byte-order mark marks the encoding; it is not content. Python's
+// decode_text drops it, so a leading U+FEFF must not reach the parsers.
+func TestDecodeToUTF8_DropsByteOrderMark(t *testing.T) {
+	src := "name,备注\n"
+	utf16le, err := unicode.UTF16(unicode.LittleEndian, unicode.UseBOM).NewEncoder().Bytes([]byte(src))
+	if err != nil {
+		t.Fatalf("UTF-16LE encode: %v", err)
+	}
+	utf16be, err := unicode.UTF16(unicode.BigEndian, unicode.UseBOM).NewEncoder().Bytes([]byte(src))
+	if err != nil {
+		t.Fatalf("UTF-16BE encode: %v", err)
+	}
+	cases := []struct {
+		name  string
+		data  []byte
+		label string
+	}{
+		{"utf-8", append([]byte("\xef\xbb\xbf"), src...), "utf-8"},
+		{"utf-16le", utf16le, "utf-16le"},
+		{"utf-16be", utf16be, "utf-16be"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, label := DecodeToUTF8(tc.data, "text/plain")
+			if string(out) != src {
+				t.Errorf("got %q, want %q", out, src)
+			}
+			if label != tc.label {
+				t.Errorf("got label %q, want %q", label, tc.label)
+			}
+		})
+	}
+}
+
+func TestDecodeToUTF8_KeepsNonLeadingZeroWidthNoBreakSpace(t *testing.T) {
+	src := "a\ufeffb"
+	out, _ := DecodeToUTF8([]byte(src), "text/plain")
+	if string(out) != src {
+		t.Errorf("got %q, want %q", out, src)
+	}
+}

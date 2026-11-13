@@ -69,7 +69,7 @@ func (s *DocumentService) documentKnowledgeCompileTypes(ctx context.Context, ten
 			KbIDs:              []string{datasetID},
 			Offset:             offset,
 			Limit:              1000,
-			SelectFields:       []string{"compile_kwd", "compilation_template_kind_kwd"},
+			SelectFields:       []string{"compile_kwd", "compilation_template_kind_kwd", "type_kwd"},
 			Filter:             map[string]any{"doc_id": []string{documentID}},
 			IncludeUnavailable: true,
 		})
@@ -81,7 +81,10 @@ func (s *DocumentService) documentKnowledgeCompileTypes(ctx context.Context, ten
 			break
 		}
 		for _, row := range result.Chunks {
-			kind := strings.TrimSpace(documentStoreString(row["compilation_template_kind_kwd"]))
+			if types.IsNavigationRow(row) {
+				continue
+			}
+			kind := types.CompilationKind(row)
 			variant, variantErr := kccommon.KindToVariant(kind)
 			if variantErr != nil {
 				variant, variantErr = knowledge_compile.KwdToVariant(strings.TrimSpace(documentStoreString(row["compile_kwd"])))

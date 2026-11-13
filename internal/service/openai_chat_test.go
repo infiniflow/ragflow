@@ -525,10 +525,57 @@ func TestService_ExtractGenerationConfig_OnlyKnownFields(t *testing.T) {
 	if cfg["presence_penalty"] != pres {
 		t.Fatalf("presence_penalty: got %v want %v", cfg["presence_penalty"], pres)
 	}
-	for _, k := range []string{"stop", "user", "internet", "tools"} {
+	for _, k := range []string{"stop", "user", "internet", "tools", "reasoning"} {
 		if _, has := cfg[k]; has {
 			t.Fatalf("%s should not be in generation config, got %v", k, cfg[k])
 		}
+	}
+}
+
+// TestOpenAI_ChatKwargs_ReasoningDrivesAgentic pins the wiring: the request
+// body's top-level `reasoning` must reach AsyncChat as kwargs["reasoning"] so
+// resolveReasoningLevel can select the smart-reasoning agent. The three input
+// shapes cover what clients actually send; none may fail the unmarshal.
+func TestOpenAI_ChatKwargs_ReasoningDrivesAgentic(t *testing.T) {
+	bodies := []string{
+		`{"model":"model","messages":[{"role":"user","content":"q"}],"reasoning":5}`,
+		`{"model":"model","messages":[{"role":"user","content":"q"}],"reasoning":5.0}`,
+		`{"model":"model","messages":[{"role":"user","content":"q"}],"reasoning":"5"}`,
+	}
+	for _, body := range bodies {
+		var req OpenAIChatRequest
+		if err := json.Unmarshal([]byte(body), &req); err != nil {
+			t.Fatalf("unmarshal %s: %v", body, err)
+		}
+		kwargs := openAIChatKwargs(&req, false, "")
+		if got := resolveReasoningLevel(kwargs, nil); got != reasoningLevelAgentic {
+			t.Errorf("body %s: resolveReasoningLevel = %d, want %d", body, got, reasoningLevelAgentic)
+		}
+		if _, has := extractGenerationConfig(&req)["reasoning"]; has {
+			t.Errorf("body %s: reasoning must not enter the generation config", body)
+		}
+	}
+}
+
+// TestOpenAI_ChatKwargs_AbsentReasoningKeepsPromptConfigLevel pins the
+// fallback: a request without `reasoning` leaves the key out of the kwargs, so
+// a dialog pinned to the agentic level still gets it.
+func TestOpenAI_ChatKwargs_AbsentReasoningKeepsPromptConfigLevel(t *testing.T) {
+	var req OpenAIChatRequest
+	body := `{"model":"model","messages":[{"role":"user","content":"q"}],"reasoning":null}`
+	if err := json.Unmarshal([]byte(body), &req); err != nil {
+		t.Fatalf("unmarshal %s: %v", body, err)
+	}
+	kwargs := openAIChatKwargs(&req, true, "")
+	if _, has := kwargs["reasoning"]; has {
+		t.Fatalf("reasoning must be absent from kwargs, got %#v", kwargs)
+	}
+	if kwargs["quote"] != true {
+		t.Errorf("quote = %#v, want true", kwargs["quote"])
+	}
+	pinned := map[string]interface{}{"reasoning": float64(reasoningLevelAgentic)}
+	if got := resolveReasoningLevel(kwargs, pinned); got != reasoningLevelAgentic {
+		t.Errorf("resolveReasoningLevel = %d, want %d from prompt_config", got, reasoningLevelAgentic)
 	}
 }
 

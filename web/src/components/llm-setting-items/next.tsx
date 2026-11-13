@@ -44,6 +44,7 @@ import { useHandleFreedomChange } from './use-watch-change';
 
 interface LlmSettingFieldItemsProps {
   prefix?: string;
+  enabledPrefix?: string;
   modelTypes?: string[];
   llmId?: string;
   llmSelectTestId?: string;
@@ -83,10 +84,6 @@ export const LlmSettingFieldSchema = {
   max_tokens: z.number().optional(),
   parameter: z.string().optional(),
   thinking: z.enum(['default', 'enabled', 'disabled']).optional(),
-  // Ordered fallback models for the agentic agent. It has to be declared here
-  // or z.object() strips it: an undeclared key never reaches the form, so the
-  // editor renders nothing and the value is dropped on submit.
-  failover_llm_ids: z.array(z.string()).optional(),
 };
 
 export const LlmSettingSchema = {
@@ -97,6 +94,7 @@ export const LlmSettingSchema = {
 
 export function LlmSettingFieldItems({
   prefix,
+  enabledPrefix,
   modelTypes,
   llmSelectTestId,
   llmOptionTestIdPrefix,
@@ -125,7 +123,17 @@ export function LlmSettingFieldItems({
     [prefix],
   );
 
-  const handleChange = useHandleFreedomChange(getFieldWithPrefix);
+  const getCheckFieldWithPrefix = useCallback(
+    (name: string) => {
+      return `${enabledPrefix ?? ''}${name}`;
+    },
+    [enabledPrefix],
+  );
+
+  const handleChange = useHandleFreedomChange(
+    getFieldWithPrefix,
+    getCheckFieldWithPrefix,
+  );
 
   const parameterOptions = Object.values(ModelVariableType).map((x) => ({
     label: t(camelCase(x)),

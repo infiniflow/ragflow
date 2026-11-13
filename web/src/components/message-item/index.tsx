@@ -29,7 +29,6 @@ import { memo, useCallback, useMemo } from 'react';
 import { DocumentDownloadButton } from '../document-download-button';
 import { LoadingDots } from '../loading-dots';
 import MarkdownContent from '../markdown-content';
-import { ReferenceDocumentList } from '../next-message-item/reference-document-list';
 import { ReferenceImageList } from '../next-message-item/reference-image-list';
 import { UploadedMessageFiles } from '../next-message-item/uploaded-message-files';
 import { RAGFlowAvatar } from '../ragflow-avatar';
@@ -37,12 +36,14 @@ import SvgIcon from '../svg-icon';
 import { useTheme } from '../theme-provider';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
 import styles from './index.module.less';
+import { TurnUsage } from './turn-usage';
 
 interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
   item: IMessage;
   reference: IReference;
   loading?: boolean;
   sendLoading?: boolean;
+  deleteDisabled?: boolean;
   visibleAvatar?: boolean;
   nickname?: string;
   avatar?: string;
@@ -61,6 +62,7 @@ const MessageItem = ({
   avatar,
   avatarDialog,
   sendLoading = false,
+  deleteDisabled = false,
   clickDocumentButton,
   index,
   removeMessageById,
@@ -78,10 +80,6 @@ const MessageItem = ({
   const uploadedFiles = useMemo(() => {
     return item?.files ?? [];
   }, [item?.files]);
-
-  const referenceDocumentList = useMemo(() => {
-    return reference?.doc_aggs ?? [];
-  }, [reference?.doc_aggs]);
 
   const documentDownloadInfos = useMemo(
     () => item.downloads ?? [],
@@ -152,6 +150,7 @@ const MessageItem = ({
                 removeMessageById={removeMessageById}
                 regenerateMessage={regenerateMessage && handleRegenerateMessage}
                 sendLoading={sendLoading}
+                deleteDisabled={deleteDisabled}
               ></UserGroupButton>
             )}
             {/* Show message content if there's any text besides the download */}
@@ -177,6 +176,14 @@ const MessageItem = ({
                     disableMath={isUser}
                   ></MarkdownContent>
                 )}
+                {/* What the turn cost. Under the answer, and only for the turn
+                    that reported it — see TurnUsage. */}
+                {isAssistant && (
+                  <TurnUsage
+                    usage={item.usage}
+                    elapsedMs={item.elapsed_ms}
+                  ></TurnUsage>
+                )}
               </div>
             )}
             {isAssistant && (
@@ -184,11 +191,6 @@ const MessageItem = ({
                 referenceChunks={reference.chunks}
                 messageContent={messageContent}
               ></ReferenceImageList>
-            )}
-            {isAssistant && referenceDocumentList.length > 0 && (
-              <ReferenceDocumentList
-                list={referenceDocumentList}
-              ></ReferenceDocumentList>
             )}
             {isUser &&
               Array.isArray(uploadedFiles) &&

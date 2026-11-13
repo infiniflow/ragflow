@@ -143,10 +143,20 @@ func PairwiseSum(xs []float64) float64 {
 	return xs[0]
 }
 
+// GetInt returns the int behind a value and whether it was a number at all.
+// Callers read values that come from config files, JSON decoding, or a document
+// engine row — the last two hand numbers back as int, int32, int64, float32 or
+// float64 depending on the encoder and the driver, so all of them are accepted.
 func GetInt(value interface{}) (int, bool) {
 	switch v := value.(type) {
 	case int:
 		return v, true
+	case int32:
+		return int(v), true
+	case int64:
+		return int(v), true
+	case float32:
+		return int(v), true
 	case float64:
 		return int(v), true
 	default:

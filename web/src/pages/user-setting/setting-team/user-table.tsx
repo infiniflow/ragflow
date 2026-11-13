@@ -30,13 +30,16 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useListTenantUser } from '@/hooks/use-user-setting-request';
+import {
+  useFetchTenantInfo,
+  useListTenantUser,
+} from '@/hooks/use-user-setting-request';
 import { formatDate } from '@/utils/date';
 import { upperFirst } from 'lodash';
 import { ArrowDown, ArrowUp, ArrowUpDown, Trash2 } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { TenantRole } from '../constants';
+import { TenantMembershipStatus, TenantRole } from '../constants';
 import { useHandleDeleteUser } from './hooks';
 
 const ColorMap: Record<string, string> = {
@@ -49,7 +52,9 @@ const ColorMap: Record<string, string> = {
 };
 
 const UserTable = ({ searchUser }: { searchUser: string }) => {
-  const { data, loading } = useListTenantUser();
+  const { data: tenantInfo } = useFetchTenantInfo();
+  const { data, loading } = useListTenantUser(tenantInfo.tenant_id);
+  //   const { handleDeleteTenantUser } = useHandleDeleteUser();
   const { deleteTenantUser } = useHandleDeleteUser();
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | null>(null);
   const { t } = useTranslation();
@@ -153,12 +158,15 @@ const UserTable = ({ searchUser }: { searchUser: string }) => {
                   <SearchHighlight text={record.email} query={searchUser} />
                 </TableCell>
                 <TableCell className="p-4">
-                  {record.role === TenantRole.Normal && (
+                  {record.status === TenantMembershipStatus.Invited ? (
+                    <Badge className={ColorMap[TenantRole.Invite]}>
+                      {upperFirst(TenantRole.Invite)}
+                    </Badge>
+                  ) : record.role === TenantRole.Normal ? (
                     <Badge className={ColorMap[record.role]}>
                       {upperFirst('Member')}
                     </Badge>
-                  )}
-                  {record.role !== TenantRole.Normal && (
+                  ) : (
                     <Badge className={ColorMap[record.role]}>
                       {upperFirst(record.role)}
                     </Badge>

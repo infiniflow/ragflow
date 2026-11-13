@@ -1,7 +1,14 @@
+import { MessageType } from '@/constants/chat';
+import type { IReference } from '@/interfaces/database/chat';
 import {
+  buildMessageListWithUuid,
+  buildReferenceObject,
+  decodeAngleBracketEntities,
+  escapeUnmatchedAngleBrackets,
   mergeAnswerChunk,
   preprocessLaTeX,
   replaceThinkToSection,
+  unescapeAngleBrackets,
 } from '../chat';
 
 describe('mergeAnswerChunk', () => {
@@ -108,6 +115,34 @@ describe('preprocessLaTeX', () => {
   });
 });
 
+describe('decodeAngleBracketEntities', () => {
+  it('decodes the entities restored by unescapeAngleBrackets', () => {
+    expect(decodeAngleBracketEntities('a &lt; b &gt; c')).toBe('a < b > c');
+  });
+
+  it('round-trips raw angle brackets through the escape helpers', () => {
+    // Code renderers rely on this: unescapeAngleBrackets restores entities
+    // (so prose parsing keeps <, > as text), and code content is literal,
+    // so the entities must be decoded back at render time.
+    const original = 'if (a > b) return a - b < c;';
+    const escaped = unescapeAngleBrackets(
+      escapeUnmatchedAngleBrackets(original),
+    );
+    expect(escaped).toBe('if (a &gt; b) return a - b &lt; c;');
+    expect(decodeAngleBracketEntities(escaped)).toBe(original);
+  });
+
+  it('does not touch &amp; or double-encoded entities', () => {
+    expect(decodeAngleBracketEntities('a &amp; b &amp;gt; c')).toBe(
+      'a &amp; b &amp;gt; c',
+    );
+  });
+
+  it.each(['', 'no entities here'])('passes through %j unchanged', (input) => {
+    expect(decodeAngleBracketEntities(input)).toBe(input);
+  });
+});
+
 describe('replaceThinkToSection', () => {
   it('drops an empty think section instead of rendering a bare strip', () => {
     expect(replaceThinkToSection('<think></think>Here is the answer.')).toBe(
@@ -135,5 +170,41 @@ describe('replaceThinkToSection', () => {
 
   it('leaves text without think markers unchanged', () => {
     expect(replaceThinkToSection('plain answer')).toBe('plain answer');
+  });
+});
+
+describe('message references', () => {
+  it('preserves persisted references when assigning message ids', () => {
+    const reference: IReference = { chunks: [], doc_aggs: [], total: 0 };
+    const messages = buildMessageListWithUuid([
+      { role: MessageType.Assistant, content: 'answer', reference },
+    ]);
+    expect(messages[0].id).toBeTruthy();
+    expect(messages[0].reference).toBe(reference);
+  });
+
+  it('maps persisted citations and documents for the agent renderer', () => {
+    const chunk = {
+      id: 'chunk',
+      content: null,
+      citation_id: 'citation',
+      document_id: 'document',
+      document_name: 'Document',
+      dataset_id: 'dataset',
+      image_id: '',
+      similarity: 1,
+      vector_similarity: 1,
+      term_similarity: 1,
+      positions: [],
+    };
+    const document = { doc_id: 'document', doc_name: 'Document', count: 1 };
+    const reference = buildReferenceObject({
+      chunks: [chunk],
+      doc_aggs: [document],
+      total: 1,
+    });
+    expect(reference.chunks.citation).toBe(chunk);
+    expect(reference.doc_aggs.document).toBe(document);
+    expect(buildReferenceObject()).toEqual({ chunks: {}, doc_aggs: {} });
   });
 });

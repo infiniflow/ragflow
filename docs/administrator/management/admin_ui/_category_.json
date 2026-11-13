@@ -1,0 +1,11 @@
+{
+  "label": "Admin UI",
+  "position": 0,
+  "link": {
+    "type": "generated-index",
+    "description": "Manage RAGFlow in the Admin UI."
+  },
+  "customProps": {
+    "categoryIcon": "LucidePalette"
+  }
+}

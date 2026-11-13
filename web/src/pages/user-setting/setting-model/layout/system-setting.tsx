@@ -138,6 +138,15 @@ function SystemSetting() {
         value: defaultModelDictionary.tts_id ?? '',
         tooltip: t('ttsModelTip'),
       },
+      {
+        // The decision model judges whether a retrieved passage is worth
+        // putting in front of the chat model. It sits next to the chat model
+        // because it is chosen the same way and independently of it.
+        id: 'decision_id',
+        label: t('decisionModel'),
+        value: defaultModelDictionary.decision_id ?? '',
+        tooltip: t('decisionModelTip'),
+      },
     ];
   }, [defaultModelDictionary, t]);
 

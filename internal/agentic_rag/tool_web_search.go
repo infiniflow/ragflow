@@ -27,31 +27,32 @@ import (
 	"github.com/eino-contrib/jsonschema"
 	"go.uber.org/zap"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 )
 
 // webSearchToolName is the ReAct loop's only door to the public internet. It is
 // deliberately NOT in the template tool registry: whether it exists is a
 // property of the CONVERSATION (the chat has a web search provider configured
-// and the request enabled internet), not of the agent template, so Run appends
-// it whenever the caller supplies one.
+// and the request enabled internet), not of the agent template. Tool assembly
+// includes it whenever the caller supplies a provider.
 const webSearchToolName = "web_search"
 
 const webSearchToolDescription = `Web search tool: queries the public internet through the conversation's configured search provider and returns the top snippets with their URLs.
 
 ## When to use it
-Only after the corpus tools cannot ground a sub-question: the dataset is missing the fact, is stale, or the question reaches outside every bound dataset. It is never a substitute for a locate pass you have not run.
+When this tool is available, the user enabled internet search. Search with short keyword queries for public information you need. Use the web alongside corpus evidence to check current facts and resolve public meanings of ambiguous names.
 
 ## What the Tool Does NOT Do
 - Does NOT search the conversation's datasets (use grep_chunks / search_bm25_chunks / search_chunks)
 - Does NOT return full pages: hits are provider SNIPPETS, and they are not corpus chunks — list_chunks cannot open them
-- Does NOT justify a claim on its own: a web hit is supporting evidence, cite it by URL
+- Does NOT support facts absent from its snippet: ground web-backed claims in the returned text and cite its ref handle
 
-## Citing a hit in your deliverable
-A hit has no chunk_id and list_chunks cannot open it, so a matrix/chain line citing one carries (source: web, url: <url>, title: <title>, snippet: "<verbatim passage from that result>") IN PLACE of the doc/doc_id/chunk_id triple — never paste a URL into a doc/doc_id field, never invent a chunk_id for a web hit, and the snippet is verbatim from that result. Keep dataset deep-reads as the standard for anything the bound datasets hold.
+## Citing a hit in your answer
+A web chunk_id identifies a returned snippet, not a corpus chunk that list_chunks can open. Cite web-backed claims with [ID:n], where n is the chunk's ref attribute. Never invent a chunk_id or a citation handle. Use only the handles actually supplied by the tool, and distinguish web facts from corpus facts.
 
 ## Output (XML)
-Returns an XML <web_results count="N" query="..."> document. Each hit is a <result> element with rank, url and title attributes and the snippet as its text.`
+Returns an XML <search_results count="N" query="..."> document, like corpus search. Each hit is a <chunk> element with source="web", chunk_id, rank, url, doc_name and ref attributes, with its snippet in <match_snippet>.`
 
 // WebResult is one hit handed back by the conversation's web search provider.
 // Content is the provider's snippet/passage text — web hits are snippets and
@@ -155,14 +156,6 @@ func (w *WebSearchTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	}, nil
 }
 
-// webHit is one rendered hit: the result plus the query that produced it.
-type webHit struct {
-	query   string
-	title   string
-	url     string
-	content string
-}
-
 // InvokableRun searches the web for each query and returns the merged hits as
 // one XML document. Queries run sequentially (the provider is rate-limited) and
 // a single failing query is reported inline instead of aborting the whole call:
@@ -196,7 +189,7 @@ func (w *WebSearchTool) invokableRun(ctx context.Context, argumentsInJSON string
 		return "", fmt.Errorf("web_search: queries must contain at most %d queries, got %d", webSearchMaxQueries, len(queries))
 	}
 
-	var hits []webHit
+	var hits []snippetHit
 	var notices []string
 	var failures []string
 	for _, q := range queries {
@@ -214,11 +207,21 @@ func (w *WebSearchTool) invokableRun(ctx context.Context, argumentsInJSON string
 			if content == "" {
 				continue
 			}
-			hits = append(hits, webHit{
-				query:   q,
-				title:   collapseSpaces(r.Title),
-				url:     strings.TrimSpace(r.URL),
-				content: truncateRunes(content, webSearchSnippetRunes),
+			result := WebResult{
+				Title:   collapseSpaces(r.Title),
+				URL:     strings.TrimSpace(r.URL),
+				Content: truncateRunes(content, webSearchSnippetRunes),
+			}
+			hits = append(hits, snippetHit{
+				chunk: runtime.RetrievalChunk{
+					ID:           webResultID(result),
+					DocumentID:   result.URL,
+					DocumentName: result.Title,
+					Content:      result.Content,
+					URL:          result.URL,
+				},
+				snippet: result.Content,
+				web:     true,
 			})
 		}
 	}
@@ -234,25 +237,5 @@ func (w *WebSearchTool) invokableRun(ctx context.Context, argumentsInJSON string
 		zap.Int("hits", len(hits)),
 		zap.Strings("failures", failures),
 	)
-	return formatWebResultsXML(strings.Join(queries, " | "), hits, notices), nil
-}
-
-// formatWebResultsXML renders the web_search payload: the same compact XML
-// vocabulary as the locate tools, with url/title attributes instead of
-// corpus identifiers, since a web hit has no chunk_id or doc_id to deep-read.
-// notices (non-empty only when a query errored) are emitted right after the
-// opening tag so a partial failure is visible rather than fatal.
-func formatWebResultsXML(query string, hits []webHit, notices []string) string {
-	var b strings.Builder
-	fmt.Fprintf(&b, "<web_results count=\"%d\" query=\"%s\">\n", len(hits), xmlEscape(query))
-	for _, n := range notices {
-		b.WriteString(n)
-		b.WriteString("\n")
-	}
-	for i, h := range hits {
-		fmt.Fprintf(&b, "<result rank=\"%d\" query=\"%s\" url=\"%s\" title=\"%s\">%s</result>\n",
-			i+1, xmlEscape(h.query), xmlEscape(h.url), xmlEscape(h.title), xmlEscape(h.content))
-	}
-	b.WriteString("</web_results>")
-	return b.String()
+	return formatLocateResultsXML(ctx, webSearchToolName, strings.Join(queries, " | "), hits, notices...), nil
 }

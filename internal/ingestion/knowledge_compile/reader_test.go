@@ -45,16 +45,12 @@ func TestWikiReadersFilterDisabledDocuments(t *testing.T) {
 			t.Fatalf("create document %s: %v", doc.ID, err)
 		}
 	}
-	previousDB := kcDB
-	kcDB = db
-	t.Cleanup(func() { kcDB = previousDB })
-
 	eng := &fakeEngine{searchChunks: []map[string]interface{}{{
 		"id": "page-1", "doc_id": "active-doc", "compile_kwd": "wiki_page",
 		"available_int": 0, "content_with_weight": "page content", "slug_kwd": "entity/page",
 		"page_type_kwd": "entity", "title_kwd": "page", "source_doc_ids": []string{"active-doc"},
 	}}}
-	r := engineReader{eng: eng}
+	r := engineReader{eng: eng, db: db}
 	if _, err := r.LoadDocumentWikiPagesBySlugs(t.Context(), "tenant", "kb1", []string{"entity/page"}); err != nil {
 		t.Fatalf("load document Wiki pages: %v", err)
 	}
@@ -63,7 +59,7 @@ func TestWikiReadersFilterDisabledDocuments(t *testing.T) {
 		t.Fatalf("document Wiki filter = %#v, want active document IDs", wikiFilter)
 	}
 
-	w := engineWriter{eng: eng}
+	w := engineWriter{eng: eng, db: db}
 	if _, err := w.loadActiveDocumentWikiPages(t.Context(), "tenant", "kb1"); err != nil {
 		t.Fatalf("load active document Wiki pages: %v", err)
 	}
@@ -131,7 +127,7 @@ func TestSearchSimilarFiltersByVariant(t *testing.T) {
 	if eng.lastSearchReq.Filter["available_int"] != 1 {
 		t.Fatalf("expected available_int=1 filter, got %v", eng.lastSearchReq.Filter["available_int"])
 	}
-	if eng.lastSearchReq.Filter["compile_kwd"] != string(compileKwdWikiPage) {
+	if eng.lastSearchReq.Filter["compile_kwd"] != "wiki" || eng.lastSearchReq.Filter["type_kwd"] != compileKwdWikiPage {
 		t.Fatalf("expected compile_kwd=%q filter, got %v", compileKwdWikiPage, eng.lastSearchReq.Filter["compile_kwd"])
 	}
 	// SelectFields must include the round-trip columns added in the 8th review.

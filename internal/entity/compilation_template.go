@@ -19,6 +19,7 @@ package entity
 // CompilationTemplate represents a compilation template
 type CompilationTemplate struct {
 	ID          string  `gorm:"column:id;primaryKey;size:32" json:"id"`
+	UserID      string  `gorm:"column:user_id;size:32;not null;default:'';index" json:"user_id"`
 	TenantID    *string `gorm:"column:tenant_id;size:32;index" json:"tenant_id,omitempty"`
 	GroupID     *string `gorm:"column:group_id;size:32;index" json:"group_id,omitempty"`
 	Name        string  `gorm:"column:name;size:128;not null;index" json:"name"`

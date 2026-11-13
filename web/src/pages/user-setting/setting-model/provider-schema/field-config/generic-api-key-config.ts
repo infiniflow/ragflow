@@ -61,7 +61,7 @@ export const GenericApiKeyConfig: ProviderConfig = {
           return 'tongyiBaseUrlPlaceholder';
         if (factory === LLMFactory.SILICONFLOW)
           return 'siliconflowBaseUrlPlaceholder';
-        if (factory?.toLowerCase() === 'Anthropic')
+        if (factory === LLMFactory.Anthropic)
           return 'anthropicBaseUrlPlaceholder';
         return 'openaiBaseUrlPlaceholder';
       },

@@ -22,24 +22,22 @@ func TestDatasetCompileLogLifecycle(t *testing.T) {
 	if err := db.AutoMigrate(&entity.PipelineOperationLog{}, &entity.IngestionTaskLog{}); err != nil {
 		t.Fatalf("migrate ingestion logs: %v", err)
 	}
-	oldDB := kcDB
-	kcDB = db
-	t.Cleanup(func() { kcDB = oldDB })
 
+	consumer := &Consumer{db: db}
 	entries := []BacklogEntry{
 		{DocID: "doc-1", EventType: string(EventTypeCompleted), Variants: []string{"wiki"}, TaskTypes: []string{kccommon.TaskTypeWiki}},
 		{DocID: "doc-2", EventType: string(EventTypeCompleted), Variants: []string{"structure"}, TaskTypes: []string{kccommon.TaskTypeGraph}},
 	}
-	if err := startDatasetCompileLog(t.Context(), "tenant-1", "kb-1", "claim-1", entries); err != nil {
+	if err := consumer.startDatasetCompileLog(t.Context(), "tenant-1", "kb-1", "claim-1", entries); err != nil {
 		t.Fatalf("start dataset log: %v", err)
 	}
-	if err := startDatasetCompileLog(t.Context(), "tenant-1", "kb-1", "claim-1", entries); err != nil {
+	if err := consumer.startDatasetCompileLog(t.Context(), "tenant-1", "kb-1", "claim-1", entries); err != nil {
 		t.Fatalf("restart dataset log: %v", err)
 	}
-	if err := updateDatasetCompileLog(t.Context(), "claim-1", []string{kccommon.TaskTypeWiki, kccommon.TaskTypeGraph}, 0.5, "Comparing knowledge contributions: 2 affected page(s)"); err != nil {
+	if err := consumer.updateDatasetCompileLog(t.Context(), "claim-1", []string{kccommon.TaskTypeWiki, kccommon.TaskTypeGraph}, 0.5, "Comparing knowledge contributions: 2 affected page(s)"); err != nil {
 		t.Fatalf("update dataset log: %v", err)
 	}
-	if err := finishDatasetCompileLog(t.Context(), "claim-1", []string{kccommon.TaskTypeWiki, kccommon.TaskTypeGraph}, common.COMPLETED, "Knowledge compilation completed", 1); err != nil {
+	if err := consumer.finishDatasetCompileLog(t.Context(), "claim-1", []string{kccommon.TaskTypeWiki, kccommon.TaskTypeGraph}, common.COMPLETED, "Knowledge compilation completed", 1); err != nil {
 		t.Fatalf("finish dataset log: %v", err)
 	}
 

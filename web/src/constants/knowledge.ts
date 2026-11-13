@@ -57,20 +57,20 @@ export enum IngestionTaskStatus {
 }
 
 export const RunningStatusMap = {
-  [RunningStatus.UNSTART]: 'Pending',
+  [RunningStatus.UNSTART]: 'Unstarted',
   [RunningStatus.RUNNING]: 'Running',
-  [RunningStatus.CANCEL]: 'Cancel',
+  [RunningStatus.CANCEL]: 'Canceled',
   [RunningStatus.DONE]: 'Success',
   [RunningStatus.FAIL]: 'Failed',
-  [RunningStatus.SCHEDULE]: 'Schedule',
+  [RunningStatus.SCHEDULE]: 'Scheduled',
   [RunningStatus.QUEUED]: 'Queued',
 
-  [RunningStatusOld.UNSTART]: 'Pending',
+  [RunningStatusOld.UNSTART]: 'Unstarted',
   [RunningStatusOld.RUNNING]: 'Running',
-  [RunningStatusOld.CANCEL]: 'Cancel',
+  [RunningStatusOld.CANCEL]: 'Canceled',
   [RunningStatusOld.DONE]: 'Success',
   [RunningStatusOld.FAIL]: 'Failed',
-  [RunningStatusOld.SCHEDULE]: 'Schedule',
+  [RunningStatusOld.SCHEDULE]: 'Scheduled',
 };
 
 export enum ModelVariableType {

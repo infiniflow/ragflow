@@ -85,6 +85,22 @@ func newEmbedModel(t *testing.T, driver ModelDriver, tokenizerID string, maxToke
 	return NewEmbeddingModel(driver, nil, &APIConfig{ApiKey: &apiKey}, maxTokens)
 }
 
+func TestEmbeddingModelResolveBatchSizeUsesStrictestLimit(t *testing.T) {
+	t.Setenv("TOKENIZER_EMBEDDING_BATCH_SIZE", "16")
+	modelName := "unlisted-embedding-model"
+	maxBatchSize := 32
+	model := &EmbeddingModel{ModelName: &modelName, MaxBatchSize: &maxBatchSize}
+	if got := model.ResolveBatchSize(); got != 16 {
+		t.Fatalf("ResolveBatchSize() = %d, want 16 (provider/runtime limit)", got)
+	}
+
+	t.Setenv("TOKENIZER_EMBEDDING_BATCH_SIZE", "32")
+	maxBatchSize = 8
+	if got := model.ResolveBatchSize(); got != 8 {
+		t.Fatalf("ResolveBatchSize() = %d, want 8 (model limit)", got)
+	}
+}
+
 // embedBudget is the budget a single cut would use, computed the same way
 // Embed computes its first rung.
 func embedBudget(t *testing.T, model *EmbeddingModel) (int, tokenizer.Counter) {

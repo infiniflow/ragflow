@@ -15,6 +15,5 @@ public:
     long convert(const std::wstring &in, std::wstring &out, long length = -1);
 
 private:
-    char *config_file;
     opencc_t od;
 };

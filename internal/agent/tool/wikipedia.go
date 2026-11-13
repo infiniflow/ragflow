@@ -18,15 +18,12 @@ package tool
 
 import (
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"net/http"
 	"net/url"
 	"regexp"
 	"sort"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -264,9 +261,7 @@ func (w *WikipediaTool) InvokableRun(ctx context.Context, argsJSON string, _ ...
 		if content == "" {
 			continue
 		}
-		if len(content) > 10000 {
-			content = content[:10000]
-		}
+		content = truncateWikipediaRunes(content, 10000)
 		fullURL := p.FullURL
 		if fullURL == "" {
 			fullURL = fmt.Sprintf("https://%s.wikipedia.org/wiki/%s", lang, url.PathEscape(p.Title))
@@ -310,10 +305,9 @@ func buildWikipediaReferences(envelope map[string]any) ([]map[string]any, []map[
 		if content == "" {
 			continue
 		}
-		documentID := strconv.FormatInt(wikipediaHashInt(content, 100000000), 10)
-		displayID := strconv.FormatInt(wikipediaHashInt(documentID, 500), 10)
 		title := wikipediaText(item["title"])
 		resultURL := wikipediaText(item["url"])
+		documentID, displayID := referenceIDs(resultURL, content)
 		chunks = append(chunks, map[string]any{
 			"id":            displayID,
 			"chunk_id":      documentID,
@@ -360,12 +354,6 @@ func wikipediaText(value any) string {
 		return text
 	}
 	return fmt.Sprint(value)
-}
-
-func wikipediaHashInt(value string, modulus int64) int64 {
-	digest := sha1.Sum([]byte(value))
-	number := new(big.Int).SetBytes(digest[:])
-	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
 }
 
 func truncateWikipediaRunes(value string, limit int) string {

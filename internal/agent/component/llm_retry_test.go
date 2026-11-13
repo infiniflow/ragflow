@@ -404,3 +404,79 @@ func TestLLM_NoParamOverride_StackingPreserved(t *testing.T) {
 		t.Errorf("bare.calls=%d, want %d (boot layer ran unchanged — no param override means we keep the implicit 3-retry budget)", got, want)
 	}
 }
+
+type mockStreamingInvoker struct {
+	calls     int32
+	failTimes int32
+	err       error
+	deltas    []string
+	postErr   error
+}
+
+func (m *mockStreamingInvoker) Invoke(context.Context, *gorm.DB, ChatInvokeRequest) (*ChatInvokeResponse, error) {
+	return nil, errors.New("unexpected Invoke call")
+}
+
+func (m *mockStreamingInvoker) Stream(_ context.Context, _ *gorm.DB, _ ChatInvokeRequest, onDelta func(delta string, isThink bool) error) (*ChatInvokeResponse, error) {
+	n := atomic.AddInt32(&m.calls, 1)
+	if n <= atomic.LoadInt32(&m.failTimes) {
+		return nil, m.err
+	}
+	for _, d := range m.deltas {
+		if onDelta != nil {
+			if err := onDelta(d, false); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return &ChatInvokeResponse{Content: strings.Join(m.deltas, "")}, m.postErr
+}
+
+func TestRetryInvoker_Stream(t *testing.T) {
+	t.Run("retries transient error before first delta", func(t *testing.T) {
+		inner := &mockStreamingInvoker{failTimes: 1, err: errors.New("blip"), deltas: []string{"o", "k"}}
+		inv := newRetryInvoker(inner, 2, time.Millisecond)
+
+		var got []string
+		resp, err := inv.Stream(t.Context(), nil, ChatInvokeRequest{}, func(d string, _ bool) error {
+			got = append(got, d)
+			return nil
+		})
+		if err != nil || resp == nil || resp.Content != "ok" || inner.calls != 2 || strings.Join(got, "") != "ok" {
+			t.Errorf("got %v, err %v, calls %d", resp, err, inner.calls)
+		}
+	})
+
+	t.Run("does not retry after deltas are emitted", func(t *testing.T) {
+		inner := &mockStreamingInvoker{deltas: []string{"partial"}, postErr: errors.New("mid-stream fail")}
+		inv := newRetryInvoker(inner, 3, time.Millisecond)
+
+		_, err := inv.Stream(t.Context(), nil, ChatInvokeRequest{}, nil)
+		if err == nil || inner.calls != 1 {
+			t.Errorf("expected error, inner.calls = %d, want 1", inner.calls)
+		}
+	})
+
+	t.Run("stops and propagates callback error without retrying", func(t *testing.T) {
+		inner := &mockStreamingInvoker{deltas: []string{"a", "b"}}
+		inv := newRetryInvoker(inner, 3, time.Millisecond)
+
+		sinkErr := errors.New("sink broken")
+		_, err := inv.Stream(t.Context(), nil, ChatInvokeRequest{}, func(string, bool) error { return sinkErr })
+		if !errors.Is(err, sinkErr) || inner.calls != 1 {
+			t.Errorf("err = %v, calls = %d, want sinkErr and 1 call", err, inner.calls)
+		}
+	})
+
+	t.Run("non-streaming invoker fallback propagates callback error", func(t *testing.T) {
+		resp := &ChatInvokeResponse{Thinking: "ponder", Content: "reply"}
+		inner := &scriptedInvoker{failTimes: 0, resp: resp}
+		inv := newRetryInvoker(inner, 1, time.Millisecond)
+
+		sinkErr := errors.New("sink failed")
+		_, err := inv.Stream(t.Context(), nil, ChatInvokeRequest{}, func(string, bool) error { return sinkErr })
+		if !errors.Is(err, sinkErr) {
+			t.Errorf("err = %v, want sinkErr", err)
+		}
+	})
+}

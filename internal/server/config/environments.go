@@ -79,7 +79,6 @@ type Environments struct {
 	PaddleOCRBaseURL                  string `mapstructure:"paddle_ocr_base_url"`               // PADDLEOCR_BASE_URL
 	PaddleOCRAPIURL                   string `mapstructure:"paddle_ocr_api_url"`                // PADDLEOCR_API_URL
 	PaddleOCRAccessToken              string `mapstructure:"paddle_ocr_access_token"`           // PADDLEOCR_ACCESS_TOKEN
-	PaddleOCRAlgorithm                string `mapstructure:"paddle_ocr_algorithm"`              // PADDLEOCR_ALGORITHM
 	SOMarkBaseURL                     string `mapstructure:"somark_base_url"`                   // SOMARK_BASE_URL
 	SOMarkAPIKey                      string `mapstructure:"somark_api_key"`                    // SOMARK_API_KEY
 	SOMarkImageFormat                 string `mapstructure:"somark_image_format"`               // SOMARK_IMAGE_FORMAT
@@ -103,9 +102,15 @@ type Environments struct {
 	MinerUAPIServer                   string `mapstructure:"miner_userver"`                     // MINERU_APISERVER
 	MinerUAPIKey                      string `mapstructure:"mineru_api_key"`                    // MINERU_API_KEY
 	MinerUBackend                     string `mapstructure:"mineru_backend"`                    // MINERU_BACKEND
+	MonkeyOCRAPIServer                string `mapstructure:"monkeyocr_apiserver"`               // MONKEYOCR_APISERVER
+	MonkeyOCROutputDir                string `mapstructure:"monkeyocr_output_dir"`              // MONKEYOCR_OUTPUT_DIR
+	MonkeyOCRServerURL                string `mapstructure:"monkeyocr_server_url"`              // MONKEYOCR_SERVER_URL
+	MonkeyOCRBackend                  string `mapstructure:"monkeyocr_backend"`                 // MONKEYOCR_BACKEND
+	MonkeyOCRDeleteOutput             string `mapstructure:"monkeyocr_delete_output"`           // MONKEYOCR_DELETE_OUTPUT
 	TavilyAPIKey                      string `mapstructure:"tavily_api_key"`
 	QueritAPIKey                      string `mapstructure:"querit_api_key"`
-	KeenableAPIURL                    string `mapstructure:"keenable_api_url"` // KEENABLE_API_URL
+	KeenableAPIURL                    string `mapstructure:"keenable_api_url"`        // KEENABLE_API_URL
+	MCPAllowPrivateHosts              bool   `mapstructure:"mcp_allow_private_hosts"` // ALLOW_ANY_HOST
 }
 
 type DefaultSuperUser struct {
@@ -114,6 +119,8 @@ type DefaultSuperUser struct {
 	Nickname string `mapstructure:"nickname"`
 }
 
+// GetEnvironments overlays environment variables on top of the file-based
+// settings, filling the runtime environment snapshot.
 func (c *Config) GetEnvironments() error {
 
 	// Language
@@ -122,6 +129,11 @@ func (c *Config) GetEnvironments() error {
 	// Secret key
 	if envVal := common.GetEnv(common.EnvRAGFlowSecretKey); envVal != "" {
 		c.environments.SecretKey = envVal
+	}
+
+	// Fail at startup, not on the first connector write.
+	if _, err := common.ConnectorKey(); err != nil {
+		return err
 	}
 
 	if envVal := common.GetEnv(common.EnvEnableRegister); envVal != "" {
@@ -152,10 +164,8 @@ func (c *Config) GetEnvironments() error {
 	docEngine := common.GetEnvSmall(common.EnvDocEngine)
 	if docEngine != "" {
 		switch docEngine {
-		case "infinity", "elasticsearch", "oceanbase", "seekdb":
+		case "infinity", "elasticsearch", "oceanbase", "opensearch", "seekdb", "vastbase":
 			c.environments.DocumentEngineType = docEngine
-		case "opensearch":
-			return fmt.Errorf("not implemented: %s", docEngine)
 		default:
 			return fmt.Errorf("invalid doc engine: %s", docEngine)
 		}
@@ -165,7 +175,7 @@ func (c *Config) GetEnvironments() error {
 	databaseType := common.GetEnvSmall(common.EnvDBType)
 	if databaseType != "" {
 		switch databaseType {
-		case "mysql", "oceanbase":
+		case "mysql", "oceanbase", "vastbase":
 			c.environments.DatabaseType = databaseType
 		default:
 			return fmt.Errorf("invalid database type: %s", databaseType)
@@ -178,6 +188,8 @@ func (c *Config) GetEnvironments() error {
 		switch storageType {
 		case "minio", "s3", "oss", "gcs":
 			c.environments.StorageType = storageType
+		case "aws_s3":
+			c.environments.StorageType = "s3"
 		default:
 			return fmt.Errorf("invalid storage type: %s", storageType)
 		}
@@ -204,12 +216,18 @@ func (c *Config) GetEnvironments() error {
 		c.environments.DefaultSuperUser.Email = superUserEmail
 	}
 
-	superUserPassword := common.GetEnv(common.EnvDefaultSuperuserPassword)
+	// DEFAULT_SUPERUSER_PASSWORD is canonical. ADMIN_DEFAULT_PASSWORD is the
+	// same alias creation uses when the canonical name is empty. A generated
+	// bootstrap-file password is not filled in here.
+	superUserPassword := strings.TrimSpace(common.GetEnv(common.EnvDefaultSuperuserPassword))
+	if superUserPassword == "" {
+		superUserPassword = strings.TrimSpace(common.GetEnv(common.EnvAdminDefaultPassword))
+	}
 	if superUserPassword != "" {
 		c.environments.DefaultSuperUser.Password = superUserPassword
 	}
 
-	superUserNickname := common.GetEnv(common.EnvDefaultSuperuserNickname)
+	superUserNickname := strings.TrimSpace(common.GetEnv(common.EnvDefaultSuperuserNickname))
 	if superUserNickname != "" {
 		c.environments.DefaultSuperUser.Nickname = superUserNickname
 	}
@@ -283,6 +301,8 @@ func (c *Config) GetEnvironments() error {
 	if homePath != "" {
 		c.environments.HomePath = homePath
 	}
+
+	c.environments.MCPAllowPrivateHosts = common.AllowConfiguredPrivateHost()
 
 	userProfile := common.GetEnv(common.EnvUserProfile)
 	if userProfile != "" {
@@ -401,11 +421,6 @@ func (c *Config) GetEnvironments() error {
 		c.environments.PaddleOCRAccessToken = PaddleOCRAccessTokenStr
 	}
 
-	PaddleOCRAlgorithmStr := common.GetEnv(common.EnvPaddleOCRAlgorithm)
-	if PaddleOCRAlgorithmStr != "" {
-		c.environments.PaddleOCRAlgorithm = PaddleOCRAlgorithmStr
-	}
-
 	SOMarkBaseURLStr := common.GetEnv(common.EnvSOMarkBaseUrl)
 	if SOMarkBaseURLStr != "" {
 		c.environments.SOMarkBaseURL = SOMarkBaseURLStr
@@ -521,6 +536,22 @@ func (c *Config) GetEnvironments() error {
 		c.environments.MinerUBackend = MinerUBackendStr
 	}
 
+	if v := common.GetEnv(common.EnvMonkeyOCRAPIServer); v != "" {
+		c.environments.MonkeyOCRAPIServer = v
+	}
+	if v := common.GetEnv(common.EnvMonkeyOCROutputDir); v != "" {
+		c.environments.MonkeyOCROutputDir = v
+	}
+	if v := common.GetEnv(common.EnvMonkeyOCRServerURL); v != "" {
+		c.environments.MonkeyOCRServerURL = v
+	}
+	if v := common.GetEnv(common.EnvMonkeyOCRBackend); v != "" {
+		c.environments.MonkeyOCRBackend = v
+	}
+	if v := common.GetEnv(common.EnvMonkeyOCRDeleteOutput); v != "" {
+		c.environments.MonkeyOCRDeleteOutput = v
+	}
+
 	TavilyAPIKeyStr := common.GetEnv(common.EnvTavilyAPIKey)
 	if TavilyAPIKeyStr != "" {
 		c.environments.TavilyAPIKey = TavilyAPIKeyStr
@@ -595,7 +626,7 @@ func (c *Config) GetEnvDefaultSuperUserEmail() string {
 }
 
 func (c *Config) GetEnvDefaultSuperUserNick() string {
-	return c.environments.DefaultSuperUser.Email
+	return c.environments.DefaultSuperUser.Nickname
 }
 
 func (c *Config) GetEnvDictionaryPath() string {
@@ -635,6 +666,8 @@ func (c *Config) GetMaxFileNumPerUser() int { return c.environments.MAXFileNumbe
 func (c *Config) GetMaxContentLength() int { return c.environments.MAXContentLength }
 
 func (c *Config) GetHomePath() string { return c.environments.HomePath }
+
+func (c *Config) GetMCPAllowPrivateHosts() bool { return c.environments.MCPAllowPrivateHosts }
 
 func (c *Config) GetUserProfile() string { return c.environments.UserProfile }
 
@@ -706,10 +739,6 @@ func (c *Config) GetPaddleOCRAPIURL() string {
 
 func (c *Config) GetPaddleOCRAccessToken() string {
 	return c.environments.PaddleOCRAccessToken
-}
-
-func (c *Config) GetPaddleOCRAlgorithm() string {
-	return c.environments.PaddleOCRAlgorithm
 }
 
 func (c *Config) GetSOMarkBaseURL() string {
@@ -798,6 +827,26 @@ func (c *Config) GetMinerUAPIKey() string {
 
 func (c *Config) GetMinerUBackend() string {
 	return c.environments.MinerUBackend
+}
+
+func (c *Config) GetMonkeyOCRAPIServer() string {
+	return c.environments.MonkeyOCRAPIServer
+}
+
+func (c *Config) GetMonkeyOCROutputDir() string {
+	return c.environments.MonkeyOCROutputDir
+}
+
+func (c *Config) GetMonkeyOCRServerURL() string {
+	return c.environments.MonkeyOCRServerURL
+}
+
+func (c *Config) GetMonkeyOCRBackend() string {
+	return c.environments.MonkeyOCRBackend
+}
+
+func (c *Config) GetMonkeyOCRDeleteOutput() string {
+	return c.environments.MonkeyOCRDeleteOutput
 }
 
 func (c *Config) GetQueritAPIKey() string {
