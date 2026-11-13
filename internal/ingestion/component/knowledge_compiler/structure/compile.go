@@ -87,22 +87,47 @@ func extractHypergraph(ctx context.Context, deps common.Deps, cfg CompileConfig,
 	return nodes, unwrapItems(edgeRaw), nil
 }
 
-// unwrapItems mirrors _struct_unwrap_items: the contract is
-// {"items": [{...}, ...]}; a top-level array is tolerated defensively.
-// GenJSON already guarantees a JSON object, so the list form only appears
-// under "items". Non-object entries are dropped.
+// unwrapItems mirrors _struct_unwrap_items: the canonical contract is
+// {"items": [{...}, ...]}; a top-level array or alternate alias key
+// ("relationships", "relations", "edges", "entities", "data", "results") is
+// tolerated defensively to accommodate LLMs and custom templates.
+// Non-object entries are converted to {"name": string} if scalar strings,
+// otherwise dropped.
 func unwrapItems(raw map[string]any) []map[string]any {
 	if raw == nil {
 		return nil
 	}
-	arr, ok := raw["items"].([]any)
-	if !ok {
+	var arr []any
+	if a, ok := raw["items"].([]any); ok && len(a) > 0 {
+		arr = a
+	} else {
+		for _, k := range []string{"relationships", "relations", "edges", "links", "entities", "data", "results", "triples"} {
+			if a, ok := raw[k].([]any); ok && len(a) > 0 {
+				arr = a
+				break
+			}
+		}
+	}
+	if len(arr) == 0 {
+		for _, v := range raw {
+			if a, ok := v.([]any); ok && len(a) > 0 {
+				arr = a
+				break
+			}
+		}
+	}
+	if len(arr) == 0 {
 		return nil
 	}
 	out := make([]map[string]any, 0, len(arr))
 	for _, e := range arr {
-		if m, ok := e.(map[string]any); ok {
+		switch m := e.(type) {
+		case map[string]any:
 			out = append(out, m)
+		case string:
+			if s := strings.TrimSpace(m); s != "" {
+				out = append(out, map[string]any{"name": s})
+			}
 		}
 	}
 	return out
@@ -276,13 +301,13 @@ func buildRows(ctx context.Context, deps common.Deps, cfg CompileConfig, nodes, 
 				meta["description"] = desc
 			}
 		} else {
-			if from := relationEndpoint(s.payload, srcField, "source", "src", "from"); from != "" {
+			if from := relationEndpoint(s.payload, srcField, "source", "src", "from", "from_entity", "source_entity", "head", "start", "subject", "origin"); from != "" {
 				meta["from"] = from
 			}
-			if to := relationEndpoint(s.payload, tgtField, "target", "tgt", "to"); to != "" {
+			if to := relationEndpoint(s.payload, tgtField, "target", "tgt", "to", "to_entity", "target_entity", "tail", "end", "object", "destination"); to != "" {
 				meta["to"] = to
 			}
-			if typ := strings.TrimSpace(stringOf(s.payload["type"])); typ != "" {
+			if typ := relationType(s.payload); typ != "" {
 				meta["relation_type"] = typ
 			}
 		}
@@ -300,8 +325,8 @@ func buildRows(ctx context.Context, deps common.Deps, cfg CompileConfig, nodes, 
 }
 
 func isSelfLoopRelation(payload map[string]any, sourceField, targetField string) bool {
-	from := relationEndpoint(payload, sourceField, "source", "src", "from")
-	to := relationEndpoint(payload, targetField, "target", "tgt", "to")
+	from := relationEndpoint(payload, sourceField, "source", "src", "from", "from_entity", "source_entity", "head", "start", "subject", "origin")
+	to := relationEndpoint(payload, targetField, "target", "tgt", "to", "to_entity", "target_entity", "tail", "end", "object", "destination")
 	return isSelfLoop(from, to)
 }
 
@@ -317,10 +342,10 @@ func filterSelfLoopRelations(rows []common.Product) []common.Product {
 			from, _ := row.Meta["from"].(string)
 			to, _ := row.Meta["to"].(string)
 			if payload := parsePayload(row.Content); payload != nil {
-				if payloadFrom := relationEndpoint(payload, "", "source", "src", "from"); payloadFrom != "" {
+				if payloadFrom := relationEndpoint(payload, "", "source", "src", "from", "from_entity", "source_entity", "head", "start", "subject", "origin"); payloadFrom != "" {
 					from = payloadFrom
 				}
-				if payloadTo := relationEndpoint(payload, "", "target", "tgt", "to"); payloadTo != "" {
+				if payloadTo := relationEndpoint(payload, "", "target", "tgt", "to", "to_entity", "target_entity", "tail", "end", "object", "destination"); payloadTo != "" {
 					to = payloadTo
 				}
 			}
@@ -334,9 +359,19 @@ func filterSelfLoopRelations(rows []common.Product) []common.Product {
 }
 
 // entityName mirrors _struct_graph_entity's name resolution
-// (name → text → term → title, "-1" sentinel rejected).
+// (name → text → term → title → entity → entity_name → id, "-1" sentinel rejected).
 func entityName(payload map[string]any) string {
-	for _, k := range []string{"name", "text", "term", "title"} {
+	for _, k := range []string{"name", "text", "term", "title", "entity", "entity_name", "id"} {
+		if s := strings.TrimSpace(stringOf(payload[k])); s != "" && s != "-1" {
+			return s
+		}
+	}
+	return ""
+}
+
+// relationType extracts the relation label/predicate from common alias keys.
+func relationType(payload map[string]any) string {
+	for _, k := range []string{"type", "relation", "relationship", "relation_type", "rel", "predicate", "label"} {
 		if s := strings.TrimSpace(stringOf(payload[k])); s != "" && s != "-1" {
 			return s
 		}
