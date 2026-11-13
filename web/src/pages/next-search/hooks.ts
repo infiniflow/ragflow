@@ -332,7 +332,16 @@ export const useSendQuestion = (
     : searchId
       ? api.searchCompletion(searchId)
       : '';
-  const { send, answer, done, stopOutputMessage } = useSendMessageWithSse();
+  const {
+    send,
+    answer,
+    done,
+    stopOutputMessage,
+    error: answerError,
+  } = useSendMessageWithSse();
+  // What the AI summary was last asked, so a failed summary can be retried
+  // even after the search box has been edited.
+  const lastQuestionRef = useRef('');
 
   const { testChunk, loading } = useTestChunkRetrieval(tenantId);
   const { testChunkAll } = useTestChunkAllRetrieval(tenantId);
@@ -358,6 +367,7 @@ export const useSendQuestion = (
           return;
         }
         setSendingLoading(true);
+        lastQuestionRef.current = q;
         send(askUrl, {
           kb_ids: kbIds,
           question: q,
@@ -391,6 +401,10 @@ export const useSendQuestion = (
       related_search,
     ],
   );
+
+  const retryAnswer = useCallback(() => {
+    sendQuestion(lastQuestionRef.current);
+  }, [sendQuestion]);
 
   const handleSearchStrChange: ChangeEventHandler<HTMLInputElement> =
     useCallback((e) => {
@@ -465,6 +479,8 @@ export const useSendQuestion = (
     loading,
     sendingLoading,
     answer: currentAnswer,
+    answerError,
+    retryAnswer,
     relatedQuestions: relatedQuestions?.slice(0, 5) ?? [],
     searchStr,
     setSearchStr,
@@ -489,6 +505,8 @@ export const useSearching = ({
     handleTestChunk,
     setSelectedDocumentIds,
     answer,
+    answerError,
+    retryAnswer,
     sendingLoading,
     relatedQuestions,
     searchStr,
@@ -572,6 +590,8 @@ export const useSearching = ({
     handleTestChunk,
     setSelectedDocumentIds,
     answer,
+    answerError,
+    retryAnswer,
     sendingLoading,
     relatedQuestions,
     searchStr,

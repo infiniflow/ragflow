@@ -27,6 +27,8 @@ export type RunChatCompletionStreamParams = {
 export type RunChatCompletionStreamResult = {
   ok: boolean;
   aborted: boolean;
+  /** The server's explanation when it answered with an error envelope. */
+  errorMessage?: string;
 };
 
 export async function runChatCompletionStream({
@@ -52,6 +54,7 @@ export async function runChatCompletionStream({
   let accumulatedAnswer = '';
   let aborted = false;
   let ok = true;
+  let errorMessage: string | undefined;
 
   // Chunks arrive faster than the UI can use them, so they're coalesced into a
   // single store write per AnswerFlushIntervalMs. Fields are merged rather than
@@ -120,6 +123,7 @@ export async function runChatCompletionStream({
       (response.status !== 200 || errorBody.code !== 0)
     ) {
       ok = false;
+      errorMessage = errorBody.message || undefined;
     }
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
@@ -134,5 +138,5 @@ export async function runChatCompletionStream({
     endStream(conversationId);
   }
 
-  return { ok, aborted };
+  return { ok, aborted, errorMessage };
 }

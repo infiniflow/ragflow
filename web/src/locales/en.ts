@@ -20,6 +20,7 @@ export default {
       rename: 'Rename',
       name: 'Name',
       save: 'Save',
+      retry: 'Retry',
       stop: 'Stop',
       resume: 'Resume',
       namePlaceholder: 'Please input name',

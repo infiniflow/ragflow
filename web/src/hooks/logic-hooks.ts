@@ -303,6 +303,9 @@ function useSetDoneRecord() {
 export const useSendMessageWithSse = () => {
   const [answer, setAnswer] = useState<IAnswer>({} as IAnswer);
   const [done, setDone] = useState(true);
+  // Why the latest request failed (an error envelope instead of a stream, or no
+  // response at all); cleared when the next request starts.
+  const [error, setError] = useState<string>();
   const { doneRecord, clearDoneRecord, setDoneRecordById, allDone } =
     useSetDoneRecord();
   const timer = useRef<any>();
@@ -340,7 +343,9 @@ export const useSendMessageWithSse = () => {
       controller?: AbortController,
     ): Promise<{ response: Response; data: ResponseType } | undefined> => {
       initializeSseRef();
+      let gotResponse = false;
       try {
+        setError(undefined);
         setDoneValue(body, false);
         const response = await fetch(url, {
           method: 'POST',
@@ -352,6 +357,7 @@ export const useSendMessageWithSse = () => {
           signal: controller?.signal || sseRef.current?.signal,
         });
 
+        gotResponse = true;
         const res = response.clone().json();
 
         const reader = response?.body
@@ -394,8 +400,20 @@ export const useSendMessageWithSse = () => {
         }
         setDoneValue(body, true);
         resetAnswer();
-        return { data: await res, response };
-      } catch {
+        // A stream body is not JSON, so awaiting it rejects and lands in the
+        // catch below; a parseable body is an error envelope or a plain reply.
+        const data = await res;
+        if (response.status !== 200 || data?.code !== 0) {
+          setError(data?.message || response.statusText);
+        }
+        return { data, response };
+      } catch (e) {
+        if (
+          !gotResponse &&
+          !(e instanceof DOMException && e.name === 'AbortError')
+        ) {
+          setError(e instanceof Error ? e.message : String(e));
+        }
         setDoneValue(body, true);
 
         resetAnswer();
@@ -413,6 +431,7 @@ export const useSendMessageWithSse = () => {
     send,
     answer,
     done,
+    error,
     doneRecord,
     allDone,
     setDone,

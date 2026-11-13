@@ -103,6 +103,11 @@ export const useSendMessage = () => {
   // so a retry keeps the same options instead of silently dropping them.
   const lastSendOptionsRef = useRef<NextMessageInputOnPressEnterParameter>({});
 
+  // The Retry action on the failure toast re-sends the failed question. It
+  // reaches back into sendMessage, which is what raises that toast.
+  const retryFailedSendRef =
+    useRef<(sessionId: string, failed: IMessage) => void>();
+
   const sendMessage = useCallback(
     async ({
       message,
@@ -117,7 +122,7 @@ export const useSendMessage = () => {
 
       lastSendOptionsRef.current = { enableInternet, enableThinking };
 
-      const { ok, aborted } = await runChatCompletionStream({
+      const { ok, aborted, errorMessage } = await runChatCompletionStream({
         conversationId: sessionId,
         chatId,
         question: message.content,
@@ -133,11 +138,43 @@ export const useSendMessage = () => {
         // text on the failing session instead, and tell the user something went
         // wrong wherever they currently are.
         failStream(sessionId, message.content);
-        notification.error({ message: t('message.requestError') });
+        const retry = () => retryFailedSendRef.current?.(sessionId, message);
+        notification.error({
+          message: t('message.requestError'),
+          description: errorMessage,
+          action: { label: t('common.retry'), onClick: retry },
+        });
       }
     },
     [conversationId, chatId, failStream, t, currentDialog?.llm_setting],
   );
+
+  const retryFailedSend = useCallback(
+    (sessionId: string, failed: IMessage) => {
+      // A stream that is already running owns the last message pair.
+      if (useChatStreamStore.getState().sessions[sessionId]?.isStreaming) {
+        return;
+      }
+
+      // The failure parked the question in the input box; sending it again
+      // replaces that copy, unless the user has typed something else since.
+      consumePendingInput(sessionId);
+      setValue((current) => (current === failed.content ? '' : current));
+
+      const questionMessage: IMessage = { ...failed, id: uuid() };
+      appendQuestion(sessionId, questionMessage);
+      sendMessage({
+        message: questionMessage,
+        currentConversationId: sessionId,
+        ...resolveResendOptions(lastSendOptionsRef.current),
+      });
+    },
+    [appendQuestion, consumePendingInput, sendMessage, setValue],
+  );
+
+  useEffect(() => {
+    retryFailedSendRef.current = retryFailedSend;
+  }, [retryFailedSend]);
 
   // Hand a failed question back to the input box, but only once the box is
   // empty so a message the user is currently typing is never clobbered.

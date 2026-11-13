@@ -20,6 +20,7 @@ export default {
       rename: '重命名',
       name: '名称',
       save: '保存',
+      retry: '重试',
       stop: '停止',
       resume: '恢复',
       namePlaceholder: '请输入名称',

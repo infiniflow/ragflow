@@ -140,7 +140,9 @@ const VerifyButton: React.FC<IVerifyButton> = ({
             size={14}
             className={cn(isVerifying ? 'animate-spin-reverse' : '', '')}
           />
-          {t('Verify')}
+          {verifyResult?.isValid === false
+            ? i18n.t('common.retry')
+            : t('Verify')}
         </Button>
 
         {verifyResult && verifyResult.isValid !== null && (
