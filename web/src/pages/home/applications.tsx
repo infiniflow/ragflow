@@ -4,10 +4,10 @@ import { EmptyAppCard } from '@/components/empty/empty';
 import { PrivilegeManagementDialog } from '@/ee/components/privilege-management/privilege-management-dialog';
 import { HomeIcon } from '@/components/svg-icon';
 import { Segmented, SegmentedValue } from '@/components/ui/segmented';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { Routes } from '@/routes';
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router';
 import { useShowPrivilegeDialog as useAgentShowPrivilegeDialog } from '@/ee/pages/agents/use-show-privilege-dialog';
 import { Agents } from './agent-list';
 import { SeeAllAppCard } from './application-card';
@@ -32,7 +32,7 @@ const EmptyTypeMap = {
 export function Applications() {
   const [val, setVal] = useState(Routes.Chats);
   const { t } = useTranslation();
-  const navigate = useNavigate();
+  const { navigateToApplicationList } = useNavigatePage();
   const [listLength, setListLength] = useState(0);
   const [loading, setLoading] = useState(false);
   const {
@@ -41,17 +41,6 @@ export function Applications() {
     handShowPrivilegeModal,
     recordWithSourceType,
   } = useAgentShowPrivilegeDialog();
-
-  const handleNavigate = useCallback(
-    ({ isCreate }: { isCreate?: boolean }) => {
-      if (isCreate) {
-        navigate(val + '?isCreate=true');
-      } else {
-        navigate(val);
-      }
-    },
-    [navigate, val],
-  );
 
   const options = useMemo(
     () => [
@@ -119,7 +108,9 @@ export function Applications() {
           />
         )}
         {listLength > 0 && (
-          <SeeAllAppCard click={() => handleNavigate({ isCreate: false })} />
+          <SeeAllAppCard
+            click={navigateToApplicationList(val, { isCreate: false })}
+          />
         )}
       </CardSineLineContainer>
 
@@ -127,7 +118,7 @@ export function Applications() {
         <div className="w-[210px]">
           <EmptyAppCard
             type={EmptyTypeMap[val as keyof typeof EmptyTypeMap]}
-            onClick={() => handleNavigate({ isCreate: true })}
+            onClick={navigateToApplicationList(val, { isCreate: true })}
           />
         </div>
       )}

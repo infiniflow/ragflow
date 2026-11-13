@@ -15,20 +15,18 @@
  */
 
 import { CompilationTemplateGroupEditor } from '@/components/compilation-template-group';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useCompilationTemplateSidebarCollapse } from '@/hooks/use-compilation-template-sidebar-collapse';
 import { useSidebarCollapse } from '@/layouts/components/app-sidebar/use-sidebar-collapse';
 import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate, useParams, useSearchParams } from 'react-router';
-
-import { resolveAgentsUrl } from './utils';
+import { useParams, useSearchParams } from 'react-router';
 
 export default function EditNextCompilationTemplate() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
+  const { navigateToAgentsFromCompilation } = useNavigatePage();
   const { id } = useParams<{ id: string }>();
   const [searchParams] = useSearchParams();
-  const agentsUrl = resolveAgentsUrl(searchParams.get('source'));
   const { collapsed, setCollapsed } = useCompilationTemplateSidebarCollapse();
   const { setCollapsed: setPrimarySidebarCollapsed } = useSidebarCollapse();
 
@@ -37,9 +35,9 @@ export default function EditNextCompilationTemplate() {
     setPrimarySidebarCollapsed(true);
   }, [setCollapsed, setPrimarySidebarCollapsed]);
 
-  const navigateToAgents = useCallback(() => {
-    navigate(agentsUrl);
-  }, [navigate, agentsUrl]);
+  const navigateToAgents = navigateToAgentsFromCompilation(
+    searchParams.get('source'),
+  );
 
   const collapseSidebars = useCallback(() => {
     setCollapsed(true);

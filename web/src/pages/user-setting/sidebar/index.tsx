@@ -14,21 +14,12 @@
  *  limitations under the License.
  */
 
-import { RAGFlowAvatar } from '@/components/ragflow-avatar';
-import ThemeSwitch from '@/components/theme-switch';
 import { Button } from '@/components/ui/button';
-import { Domain } from '@/constants/common';
 import { useSettingMenuItems } from '@/ee/pages/user-setting/sidebar/use-setting-menu';
-import { useLogout } from '@/hooks/use-login-request';
-import {
-  useFetchSystemVersion,
-  useFetchUserInfo,
-} from '@/hooks/use-user-setting-request';
 import { cn } from '@/lib/utils';
 import { Routes } from '@/routes';
 import { TFunction } from 'i18next';
-import { LucideLogOut, LucideUnplug, LucideUser } from 'lucide-react';
-import { useEffect } from 'react';
+import { LucideUnplug, LucideUser } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useHandleMenuClick } from './hooks';
 
@@ -46,34 +37,12 @@ const menuItems = (t: TFunction) => [
 ];
 
 export function SideBar() {
-  const { data: userInfo } = useFetchUserInfo();
   const { handleMenuClick, active: activeItemKey } = useHandleMenuClick();
-  const { version, fetchSystemVersion } = useFetchSystemVersion();
   const { t } = useTranslation();
-  useEffect(() => {
-    if (location.host !== Domain) {
-      fetchSystemVersion();
-    }
-  }, [fetchSystemVersion]);
-  const { logout } = useLogout();
   const items = useSettingMenuItems(menuItems(t));
 
   return (
     <aside className="shrink-0 w-16 md:w-[303px] bg-bg-base flex flex-col overflow-hidden">
-      <header>
-        <h1 className="px-2 md:px-6 flex gap-2.5 items-center justify-center md:justify-start font-normal">
-          <RAGFlowAvatar
-            avatar={userInfo?.avatar}
-            name={userInfo?.nickname}
-            isPerson
-          />
-
-          <p className="hidden md:block text-sm text-text-primary truncate">
-            {userInfo?.email}
-          </p>
-        </h1>
-      </header>
-
       <nav className="flex-1 overflow-auto mt-4 py-1">
         <ul className="px-2 md:px-6 flex flex-col gap-2 md:gap-5 items-center md:items-stretch">
           {items.map((item) => {
@@ -102,26 +71,6 @@ export function SideBar() {
           })}
         </ul>
       </nav>
-
-      <footer className="p-2 md:p-6 mt-auto">
-        <div className="hidden md:flex items-center gap-2 mb-6 justify-between">
-          <span className="text-xs text-accent-primary">{version}</span>
-
-          <ThemeSwitch />
-        </div>
-
-        <Button
-          block
-          size="lg"
-          variant="transparent"
-          aria-label={t('setting.logout')}
-          className="max-md:size-10 max-md:p-0 max-md:mx-auto max-md:justify-center"
-          onClick={() => logout()}
-        >
-          <LucideLogOut className="size-[1em] md:hidden" />
-          <span className="hidden md:inline">{t('setting.logout')}</span>
-        </Button>
-      </footer>
     </aside>
   );
 }

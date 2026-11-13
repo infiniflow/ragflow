@@ -19,16 +19,28 @@ import { AgentListItemType } from '@/interfaces/database/agent';
 import { NavigateToDataflowResultProps } from '@/pages/dataflow-result/interface';
 import { Routes } from '@/routes';
 import { useCallback } from 'react';
-import { useNavigate, useSearchParams } from 'react-router';
+import { useLocation, useNavigate, useSearchParams } from 'react-router';
 
 export enum QueryStringMap {
   KnowledgeId = 'knowledgeId',
   id = 'id',
 }
 
+type UserSettingLocationState = {
+  returnTo?: string;
+};
+
+type AgentExploreNavigationOptions = {
+  sessionId?: string;
+  isNew?: boolean;
+};
+
 export const useNavigatePage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
+  const returnTo = (location.state as UserSettingLocationState | null)
+    ?.returnTo;
 
   const navigateToDatasetList = useCallback(
     ({ isCreate = false }: { isCreate?: boolean }) => {
@@ -52,6 +64,14 @@ export const useNavigatePage = () => {
     [navigate],
   );
 
+  const navigateToApplicationList = useCallback(
+    (route: Routes, { isCreate = false }: { isCreate?: boolean } = {}) =>
+      () => {
+        navigate(isCreate ? `${route}?isCreate=true` : route);
+      },
+    [navigate],
+  );
+
   const navigateToDataset = useCallback(
     (id: string) => () => {
       // navigate(`${Routes.DatasetBase}${Routes.DataSetOverview}/${id}`);
@@ -59,6 +79,13 @@ export const useNavigatePage = () => {
     },
     [navigate],
   );
+  const navigateToDatasetSection = useCallback(
+    (id: string | undefined, section: Routes, state?: unknown) => () => {
+      navigate(`${Routes.DatasetBase}${section}/${id}`, { state });
+    },
+    [navigate],
+  );
+
   const navigateToDatasetOverview = useCallback(
     (id: string) => () => {
       navigate(`${Routes.DatasetBase}${Routes.DataSetOverview}/${id}`);
@@ -91,13 +118,42 @@ export const useNavigatePage = () => {
     navigate(Routes.Root);
   }, [navigate]);
 
+  const navigateToDefaultPage = useCallback(
+    (pathname: string) => () => {
+      navigate(pathname.startsWith(Routes.Admin) ? Routes.Admin : Routes.Root);
+    },
+    [navigate],
+  );
+
   const navigateToProfile = useCallback(() => {
     navigate(Routes.ProfileSetting);
   }, [navigate]);
 
-  const navigateToOldProfile = useCallback(() => {
-    navigate(Routes.UserSetting);
-  }, [navigate]);
+  const navigateToUserSetting = useCallback(
+    (section: string) => {
+      const isUserSettingPath =
+        location.pathname === Routes.UserSetting ||
+        location.pathname.startsWith(`${Routes.UserSetting}/`);
+      const currentPath = `${location.pathname}${location.search}${location.hash}`;
+
+      navigate(`${Routes.UserSetting}${section}`, {
+        state: { returnTo: isUserSettingPath ? returnTo : currentPath },
+      });
+    },
+    [location, navigate, returnTo],
+  );
+
+  const navigateToUserSettingProfile = useCallback(() => {
+    navigateToUserSetting(Routes.Profile);
+  }, [navigateToUserSetting]);
+
+  const navigateToUserSettingApi = useCallback(() => {
+    navigateToUserSetting(Routes.Api);
+  }, [navigateToUserSetting]);
+
+  const closeUserSetting = useCallback(() => {
+    navigate(returnTo || Routes.Datasets, { replace: true });
+  }, [navigate, returnTo]);
 
   const navigateToChatList = useCallback(() => {
     navigate(Routes.Chats);
@@ -114,7 +170,7 @@ export const useNavigatePage = () => {
   // callers back on a canvas page pass their own category to land on the
   // matching tab instead of the default workflow tab.
   const navigateToAgents = useCallback(
-    (canvasCategory?: AgentCategory) => {
+    (canvasCategory?: AgentCategory | AgentListItemType) => {
       navigate(
         canvasCategory
           ? `${Routes.Agents}?${AgentQuery.CanvasCategory}=${canvasCategory}`
@@ -124,6 +180,17 @@ export const useNavigatePage = () => {
     [navigate],
   );
 
+  const navigateToAgentsFromCompilation = useCallback(
+    (source: string | null) => () => {
+      navigateToAgents(
+        source === 'agents'
+          ? AgentListItemType.CompilationTemplateGroup
+          : undefined,
+      );
+    },
+    [navigateToAgents],
+  );
+
   const navigateToAgentList = useCallback(() => {
     navigate(Routes.AgentList);
   }, [navigate]);
@@ -131,6 +198,26 @@ export const useNavigatePage = () => {
   const navigateToAgent = useCallback(
     (id: string, category?: AgentCategory) => () => {
       navigate(`${Routes.Agent}/${id}?${AgentQuery.Category}=${category}`);
+    },
+    [navigate],
+  );
+
+  const navigateToAgentExplore = useCallback(
+    (
+      canvasId: string | undefined,
+      { sessionId, isNew }: AgentExploreNavigationOptions = {},
+    ) => {
+      const params = new URLSearchParams();
+      if (sessionId) {
+        params.set('sessionId', sessionId);
+      }
+      if (isNew) {
+        params.set('isNew', 'true');
+      }
+      const queryString = params.toString();
+      navigate(
+        `${Routes.Agent}/${canvasId}${Routes.Explore}${queryString ? `?${queryString}` : ''}`,
+      );
     },
     [navigate],
   );
@@ -195,6 +282,13 @@ export const useNavigatePage = () => {
     [navigate],
   );
 
+  const navigateToMemorySection = useCallback(
+    (id: string | undefined, section: Routes) => () => {
+      navigate(`${Routes.Memory}${section}/${id}`);
+    },
+    [navigate],
+  );
+
   const navigateToChunkParsedResult = useCallback(
     (id: string, knowledgeId?: string) => () => {
       navigate(
@@ -223,10 +317,26 @@ export const useNavigatePage = () => {
 
   const navigateToFiles = useCallback(
     (folderId?: string) => {
-      navigate(`${Routes.Files}?folderId=${folderId}`);
+      const params = new URLSearchParams();
+      if (folderId) {
+        params.set('folderId', folderId);
+      }
+      const queryString = params.toString();
+      navigate(`${Routes.Files}${queryString ? `?${queryString}` : ''}`);
     },
     [navigate],
   );
+
+  const navigateToFolder = useCallback(
+    (folderId?: string) => () => {
+      navigateToFiles(folderId);
+    },
+    [navigateToFiles],
+  );
+
+  const navigateToSkills = useCallback(() => {
+    navigate(Routes.Skills);
+  }, [navigate]);
 
   const navigateToDataSourceDetail = useCallback(
     (id?: string) => {
@@ -264,15 +374,19 @@ export const useNavigatePage = () => {
   return {
     navigateToDatasetList,
     navigateToDataset,
+    navigateToDatasetSection,
     navigateToDatasetOverview,
     navigateToHome,
+    navigateToDefaultPage,
     navigateToProfile,
     navigateToChatList,
     navigateToChat,
     navigateToChunkParsedResult,
     getQueryString,
     navigateToAgents,
+    navigateToAgentsFromCompilation,
     navigateToAgent,
+    navigateToAgentExplore,
     navigateToAgentLogs,
     navigateToAgentTemplates,
     navigateToCompilationEditor,
@@ -280,15 +394,22 @@ export const useNavigatePage = () => {
     navigateToSearchList,
     navigateToSearch,
     navigateToFiles,
+    navigateToFolder,
+    navigateToSkills,
     navigateToAgentList,
-    navigateToOldProfile,
+    navigateToUserSetting,
+    navigateToUserSettingProfile,
+    navigateToUserSettingApi,
+    closeUserSetting,
     navigateToDataflowResult,
     navigateToDataFile,
     navigateToDatasetSetting,
     navigateToCompilation,
     navigateToDataSourceDetail,
     navigateToMemory,
+    navigateToMemorySection,
     navigateToMemoryList,
+    navigateToApplicationList,
     navigateToModelSetting,
   };
 };

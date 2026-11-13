@@ -19,6 +19,7 @@ import {
   EnterpriseHeaderTicketsLink,
 } from '@/ee/layouts/components/header-enterprise';
 import { useChangeLanguage } from '@/hooks/logic-hooks';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useLogout } from '@/hooks/use-login-request';
 import {
   useFetchSystemVersion,
@@ -28,7 +29,6 @@ import {
 import { cn } from '@/lib/utils';
 import { supportedLanguages } from '@/locales/config';
 import { TenantMembershipStatus } from '@/pages/user-setting/constants';
-import { Routes } from '@/routes';
 import {
   LucideChevronLeft,
   LucideCircleHelp,
@@ -41,7 +41,6 @@ import {
 } from 'lucide-react';
 import { useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router';
 import { BellButton } from '../bell-button';
 import { useSidebarCollapse } from './use-sidebar-collapse';
 
@@ -51,7 +50,8 @@ const DiscordUrl = 'https://discord.com/invite/NjYzJD3GM3';
 
 export function UserFooter() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
+  const { navigateToUserSettingProfile, navigateToUserSettingApi } =
+    useNavigatePage();
   const changeLanguage = useChangeLanguage();
   const { logout } = useLogout();
   const { theme, setTheme } = useTheme();
@@ -74,14 +74,6 @@ export function UserFooter() {
       fetchSystemVersion();
     }
   }, [fetchSystemVersion]);
-
-  const navigateToProfile = useCallback(() => {
-    navigate(`${Routes.UserSetting}${Routes.Profile}`);
-  }, [navigate]);
-
-  const navigateToApi = useCallback(() => {
-    navigate(`${Routes.UserSetting}${Routes.Api}`);
-  }, [navigate]);
 
   const toggleTheme = useCallback(() => {
     setTheme(theme === ThemeEnum.Dark ? ThemeEnum.Light : ThemeEnum.Dark);
@@ -170,11 +162,11 @@ export function UserFooter() {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
 
-            <DropdownMenuItem onClick={navigateToProfile}>
+            <DropdownMenuItem onClick={navigateToUserSettingProfile}>
               <LucideUser />
               {t('setting.profile')}
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={navigateToApi}>
+            <DropdownMenuItem onClick={navigateToUserSettingApi}>
               <LucideUnplug />
               {t('setting.api')}
             </DropdownMenuItem>
