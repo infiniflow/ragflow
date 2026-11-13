@@ -36,6 +36,9 @@ func TestSplitNameCounter(t *testing.T) {
 		{"报告(12)", "报告", 12, true},
 		{"(3)", "", 3, true},
 		{"test()", "test()", 0, false},
+		{"report(2023)", "report(2023)", 0, false},
+		{"report(999)", "report", 999, true},
+		{"report(1000)", "report(1000)", 0, false},
 	}
 	for _, tc := range cases {
 		base, count, ok := splitNameCounter(tc.stem)
@@ -102,6 +105,8 @@ func TestUniqueFileName_PreservesExtension(t *testing.T) {
 		{"report.pdf", map[string]bool{"report.pdf": true, "report(1).pdf": true}, "report(2).pdf"},
 		{"report(1).pdf", map[string]bool{"report(1).pdf": true}, "report(2).pdf"},
 		{"archive.tar.gz", map[string]bool{"archive.tar.gz": true}, "archive.tar(1).gz"},
+		// A year in parentheses is part of the name, not an upload counter.
+		{"report(2023).pdf", map[string]bool{"report(2023).pdf": true}, "report(2023)(1).pdf"},
 	}
 	for _, tc := range cases {
 		taken := tc.taken

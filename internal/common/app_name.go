@@ -30,7 +30,8 @@ const maxNameRetries = 1000
 
 // splitNameCounter splits a name stem (already stripped of its file extension)
 // into its base and a trailing "(N)" counter. The boolean reports whether a
-// trailing counter was present.
+// trailing counter was present. Counters of maxNameRetries or more are not
+// treated as counters, since UniqueName never generates them.
 //
 // Example:
 //
@@ -43,7 +44,9 @@ func splitNameCounter(stem string) (string, int, bool) {
 		return stem, 0, false
 	}
 	counter, err := strconv.Atoi(matches[2])
-	if err != nil {
+	if err != nil || counter >= maxNameRetries {
+		// A number the generator could never have produced (e.g. a year such
+		// as "(2023)") belongs to the name, not to an upload counter.
 		return stem, 0, false
 	}
 	return strings.TrimRight(matches[1], " "), counter, true
