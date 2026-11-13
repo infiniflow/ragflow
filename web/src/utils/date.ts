@@ -15,35 +15,19 @@
  */
 
 import dayjs, { type ConfigType } from 'dayjs';
-import utc from 'dayjs/plugin/utc';
 
-// `parseDate` calls `.utc()` for strings that already carry a timezone
-// suffix; dayjs only exposes that method once the plugin is registered.
-dayjs.extend(utc);
-
-const hasTimezoneSuffix = (value: string) =>
-  /(?:GMT|Z|[+-]\d{2}:?\d{2})$/.test(value.trim());
-
-const parseDate = (date: ConfigType) => {
-  if (typeof date === 'string' && hasTimezoneSuffix(date)) {
-    return dayjs(date).utc();
-  }
-  return dayjs(date);
-};
-
-export function formatDate(date: ConfigType, format?: string) {
-  const thisFormat = format || 'DD/MM/YYYY HH:mm:ss';
+export function formatDate(date: ConfigType) {
   if (!date) {
     return '';
   }
-  return parseDate(date).format(thisFormat);
+  return dayjs(date).format('YYYY-MM-DD HH:mm:ss');
 }
 
 export function formatTime(date: ConfigType) {
   if (!date) {
     return '';
   }
-  return parseDate(date).format('HH:mm:ss');
+  return dayjs(date).format('HH:mm:ss');
 }
 
 export function today() {
@@ -62,14 +46,14 @@ export function formatPureDate(date: ConfigType) {
   if (!date) {
     return '';
   }
-  return parseDate(date).format('DD/MM/YYYY');
+  return dayjs(date).format('YYYY-MM-DD');
 }
 
 export function formatStandardDate(date: ConfigType) {
   if (!date) {
     return '';
   }
-  const parsedDate = parseDate(date);
+  const parsedDate = dayjs(date);
   if (!parsedDate.isValid()) {
     return '';
   }
@@ -81,13 +65,6 @@ export function formatIsoDateTime(timestamp_ms: number): string {
     return '';
   }
   return dayjs(timestamp_ms).format('YYYY-MM-DDTHH:mm:ssZ');
-}
-
-export function formatDateToLocal(date: ConfigType) {
-  if (!date) {
-    return '';
-  }
-  return dayjs(date).format('DD/MM/YYYY HH:mm:ss');
 }
 
 export function formatSecondsToHumanReadable(seconds: number): string {
