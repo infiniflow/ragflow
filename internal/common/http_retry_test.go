@@ -557,9 +557,16 @@ func TestRetryTransportReturnsResponseWhenRetryAfterCannotBeWaitedOut(t *testing
 		retryAfter string
 		maxAfter   time.Duration
 		timeout    time.Duration
+		baseDelay  time.Duration // zero keeps the 1ms test backoff
+		maxDelay   time.Duration
 	}{
 		{name: "longer than the ceiling", retryAfter: "120", maxAfter: time.Minute},
 		{name: "longer than the request deadline", retryAfter: "60", maxAfter: time.Hour, timeout: 5 * time.Second},
+		// Retry-After is shorter than the computed backoff (2s or more), yet
+		// still longer than the 500ms left: the response comes back at once
+		// instead of the transport sleeping into a context error.
+		{name: "shorter than the backoff but longer than the request deadline", retryAfter: "1", maxAfter: time.Hour, timeout: 500 * time.Millisecond, baseDelay: 4 * time.Second, maxDelay: 4 * time.Second},
+		{name: "shorter than the backoff but longer than the ceiling", retryAfter: "1", maxAfter: 500 * time.Millisecond, baseDelay: 4 * time.Second, maxDelay: 4 * time.Second},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -572,11 +579,15 @@ func TestRetryTransportReturnsResponseWhenRetryAfterCannotBeWaitedOut(t *testing
 			}))
 			defer srv.Close()
 
+			baseDelay, maxDelay := tt.baseDelay, tt.maxDelay
+			if baseDelay == 0 {
+				baseDelay, maxDelay = time.Millisecond, 5*time.Millisecond
+			}
 			client := &http.Client{Transport: &retryTransport{
 				base:          http.DefaultTransport.(*http.Transport).Clone(),
 				maxRetries:    func() int { return 3 },
-				baseDelay:     time.Millisecond,
-				maxDelay:      5 * time.Millisecond,
+				baseDelay:     baseDelay,
+				maxDelay:      maxDelay,
 				maxRetryAfter: tt.maxAfter,
 			}}
 			ctx := context.Background()
@@ -598,6 +609,9 @@ func TestRetryTransportReturnsResponseWhenRetryAfterCannotBeWaitedOut(t *testing
 			}
 			if requests.Load() != 1 {
 				t.Errorf("requests = %d, want 1: waiting for the retry would have been pointless", requests.Load())
+			}
+			if time.Since(start) > 400*time.Millisecond && tt.baseDelay > 0 {
+				t.Errorf("returned after %v, want it to give up before the 500ms deadline", time.Since(start))
 			}
 			if time.Since(start) > 3*time.Second {
 				t.Errorf("returned after %v, want it to give up at once", time.Since(start))

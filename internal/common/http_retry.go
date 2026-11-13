@@ -152,11 +152,16 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 		wait := t.backoff(attempt + 1)
 		if resp != nil {
-			if after := retryAfter(resp); after > wait {
+			// The ceiling and the deadline are checked first, whether or not
+			// Retry-After is shorter than the backoff: if the provider asks for
+			// more than the caller can wait out, its response is the answer.
+			if after := retryAfter(resp); after > 0 {
 				if after > t.maxRetryAfter || exceedsDeadline(ctx, after) {
 					return giveUp()
 				}
-				wait = after
+				if after > wait {
+					wait = after
+				}
 			}
 			// Not drained: a provider that stalls after its headers must not
 			// hold up the retry, and the connection is cheap to replace.
