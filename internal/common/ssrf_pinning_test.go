@@ -119,6 +119,8 @@ func TestPinTableWrapDialContextRejectsInvalidAddr(t *testing.T) {
 
 func TestPinTableConcurrentPinLookup(t *testing.T) {
 	pt := NewPinTable()
+	// Readers may run before any writer goroutine. Seed the key first.
+	pt.Pin("h.example", "10.0.0.1")
 	const writers, reader = 50, 50
 	done := make(chan struct{}, writers+reader)
 

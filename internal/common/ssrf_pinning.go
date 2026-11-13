@@ -21,6 +21,8 @@ import (
 	"net"
 	"strings"
 	"sync"
+
+	"golang.org/x/net/idna"
 )
 
 // PinTable binds validated (hostname, resolvedIP) pairs established by
@@ -45,6 +47,13 @@ func NewPinTable() *PinTable {
 	return &PinTable{pins: map[string]string{}}
 }
 
+func normalizePinHostname(hostname string) string {
+	if ascii, err := idna.Lookup.ToASCII(hostname); err == nil {
+		return strings.ToLower(ascii)
+	}
+	return strings.ToLower(hostname)
+}
+
 // Pin records that hostname resolved to resolvedIP during the
 // latest AssertURLSafe call. Later dials for the same hostname
 // dial resolvedIP instead of re-resolving.
@@ -53,18 +62,18 @@ func (p *PinTable) Pin(hostname, resolvedIP string) {
 		return
 	}
 	p.mu.Lock()
-	p.pins[strings.ToLower(hostname)] = resolvedIP
+	p.pins[normalizePinHostname(hostname)] = resolvedIP
 	p.mu.Unlock()
 }
 
 // Lookup returns the pinned resolvedIP for hostname, if any.
-// The hostname match is case-insensitive (ASCII).
+// Hostnames use the same IDNA normalization as the HTTP transport.
 func (p *PinTable) Lookup(hostname string) (string, bool) {
 	if hostname == "" {
 		return "", false
 	}
 	p.mu.RLock()
-	ip, ok := p.pins[strings.ToLower(hostname)]
+	ip, ok := p.pins[normalizePinHostname(hostname)]
 	p.mu.RUnlock()
 	return ip, ok
 }

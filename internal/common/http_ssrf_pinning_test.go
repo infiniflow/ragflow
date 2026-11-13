@@ -22,6 +22,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -194,5 +195,57 @@ func TestDriverHTTPClientStrictPinsReboundHost(t *testing.T) {
 	if err == nil {
 		resp.Body.Close()
 		t.Fatalf("rebinding request unexpectedly succeeded (status=%d) — strictSSRFTransport is not pinning the validated IP", resp.StatusCode)
+	}
+}
+
+func TestPinTableNormalizesIDNA(t *testing.T) {
+	for _, names := range [][2]string{
+		{"bücher.example", "xn--bcher-kva.example"},
+		{"xn--bcher-kva.example", "bücher.example"},
+		{"BÜCHER.example", "xn--bcher-kva.example"},
+		{"EXAMPLE.COM", "example.com"},
+	} {
+		pins := NewPinTable()
+		pins.Pin(names[0], "93.184.216.34")
+		if got, ok := pins.Lookup(names[1]); !ok || got != "93.184.216.34" {
+			t.Errorf("pin %q lookup %q: ip=%q ok=%v", names[0], names[1], got, ok)
+		}
+	}
+}
+
+func TestStrictSSRFTransportPinsUnicodeHost(t *testing.T) {
+	stubLookupHost(t, func(_ string, _ int64) ([]string, error) {
+		return []string{"93.184.216.34"}, nil
+	})
+	pins := NewPinTable()
+	rec := &recordingAddrDialer{}
+	transport := &http.Transport{DialContext: pins.WrapDialContext(rec.DialContext)}
+	defer transport.CloseIdleConnections()
+	rt := &strictSSRFTransport{base: transport, pins: pins}
+	req, _ := http.NewRequest(http.MethodGet, "http://bücher.example/", nil)
+	_, _ = rt.RoundTrip(req)
+	if len(rec.addrs) != 1 || rec.addrs[0] != "93.184.216.34:80" {
+		t.Fatalf("Unicode host dialed %v, want validated IP", rec.addrs)
+	}
+}
+
+func TestGetSSRFHTTPClientDoesNotUseProxy(t *testing.T) {
+	originalDefault, originalClient := http.DefaultTransport, ssrfHttpClient
+	t.Cleanup(func() { http.DefaultTransport, ssrfHttpClient = originalDefault, originalClient })
+	stubLookupHost(t, func(_ string, _ int64) ([]string, error) {
+		return []string{"93.184.216.34"}, nil
+	})
+	rec := &recordingAddrDialer{}
+	http.DefaultTransport = &http.Transport{
+		Proxy:       func(_ *http.Request) (*url.URL, error) { return url.Parse("http://proxy.example:8080") },
+		DialContext: rec.DialContext,
+	}
+	ssrfHttpClient = nil
+	client := GetSSRFHTTPClient()
+	t.Cleanup(client.CloseIdleConnections)
+	req, _ := http.NewRequest(http.MethodGet, "http://validated.example/", nil)
+	_, _ = client.Do(req)
+	if len(rec.addrs) != 1 || rec.addrs[0] != "93.184.216.34:80" {
+		t.Fatalf("strict SSRF client dialed %v, want validated origin without a proxy", rec.addrs)
 	}
 }

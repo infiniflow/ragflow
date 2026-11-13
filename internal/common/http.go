@@ -51,6 +51,7 @@ func GetSSRFHTTPClient() *http.Client {
 		} else {
 			t = &http.Transport{Proxy: http.ProxyFromEnvironment}
 		}
+		t.Proxy = nil
 		t.MaxIdleConns = 100
 		t.MaxIdleConnsPerHost = 10
 		t.IdleConnTimeout = 90 * time.Second
