@@ -114,6 +114,9 @@ func (h *AgentHandler) componentInputForm(ctx context.Context, dslMap map[string
 // An Agent request with include_model_inputs=true requires update permission and
 // wraps outputs with request-local model-input diagnostics, including on failure.
 func (h *AgentHandler) DebugComponent(c *gin.Context) {
+	common.StartOperationLog(c, "request_agent_component_debug")
+	defer common.FinishOperationLog(c)
+
 	user, code, msg := GetUser(c)
 	if code != common.CodeSuccess {
 		common.RespondError(c, code, msg)

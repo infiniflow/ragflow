@@ -174,6 +174,12 @@ func (h *ChatHandler) MindMap(c *gin.Context) {
 		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
 		return
 	}
+	if strings.TrimSpace(req.SearchID) != "" {
+		common.StartOperationLog(c, "request_search_mindmap")
+		defer common.FinishOperationLog(c)
+		common.SetOperationResource(c, "search_id", req.SearchID)
+	}
+
 	if strings.TrimSpace(req.Question) == "" {
 		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_ids and question are required")
 		return

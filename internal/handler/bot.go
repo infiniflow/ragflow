@@ -131,6 +131,9 @@ func (h *BotHandler) AgentbotInputs(c *gin.Context) {
 // The server write deadline is cleared before the first frame so an agent run
 // longer than http.Server.WriteTimeout is not cut off mid-stream (issue #21649).
 func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
+	common.StartOperationLog(c, "request_agentbot_completion")
+	defer common.FinishOperationLog(c)
+
 	agentID := c.Param("agent_id")
 	if agentID == "" {
 		common.RespondError(c, common.CodeArgumentError, "`agent_id` is required.")
@@ -147,6 +150,7 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 			return
 		}
 	}
+	common.SetOperationResource(c, "session_id", body.SessionID)
 	if body.Release == nil {
 		if rawRelease, ok := c.GetQuery("release"); ok {
 			release, err := strconv.ParseBool(rawRelease)
@@ -169,6 +173,7 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
+	common.FinishOperationLog(c)
 	doneSent := false
 	for ev := range events {
 		if ev.Type == "done" {

@@ -82,6 +82,9 @@ func NewMemoryHandler(memoryService *service.MemoryService) *MemoryHandler {
 //  3. Call service layer to create memory
 //  4. Return creation result
 func (h *MemoryHandler) CreateMemory(c *gin.Context) {
+	common.StartOperationLog(c, "create_memory")
+	defer common.FinishOperationLog(c)
+
 	user, errorCode, err := billingQuotaUser(c)
 	if err != nil {
 		common.RespondError(c, errorCode, err.Error())
@@ -140,6 +143,8 @@ func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "memory_id", result.ID)
+
 	// Return success response
 	common.RespondSuccess(c, result, "success")
 }
@@ -172,6 +177,9 @@ func (h *MemoryHandler) CreateMemory(c *gin.Context) {
 //   - Cannot update tenant_embd_id, embd_id, memory_type when memory_size > 0
 //   - When updating memory_type, system_prompt is automatically regenerated if it's the default
 func (h *MemoryHandler) UpdateMemory(c *gin.Context) {
+	common.StartOperationLog(c, "update_memory")
+	defer common.FinishOperationLog(c)
+
 	// Get memory_id from URL path
 	memoryID := c.Param("memory_id")
 	if memoryID == "" {
@@ -228,6 +236,9 @@ func (h *MemoryHandler) UpdateMemory(c *gin.Context) {
 //  2. Delete memory record
 //  3. Delete associated message index
 func (h *MemoryHandler) DeleteMemory(c *gin.Context) {
+	common.StartOperationLog(c, "delete_memory")
+	defer common.FinishOperationLog(c)
+
 	// Get memory_id from URL path
 	memoryID := c.Param("memory_id")
 	if memoryID == "" {
@@ -480,6 +491,9 @@ type AddMessageRequest struct {
 //   - agent_response (required): Agent response
 //   - user_id (optional): User ID
 func (h *MemoryHandler) AddMessage(c *gin.Context) {
+	common.StartOperationLog(c, "request_memory_message_add")
+	defer common.FinishOperationLog(c)
+
 	currentUserID := strings.TrimSpace(permission.UserIDFromContext(c.Request.Context()))
 
 	var reqBody AddMessageRequest
@@ -490,6 +504,19 @@ func (h *MemoryHandler) AddMessage(c *gin.Context) {
 	if len(reqBody.MemoryIDs) == 0 {
 		common.RespondError(c, common.CodeArgumentError, "memory_id is required")
 		return
+	}
+
+	var memoryIDs []string
+	for _, value := range reqBody.MemoryIDs {
+		for id := range strings.SplitSeq(value, ",") {
+			if id = strings.TrimSpace(id); id != "" {
+				memoryIDs = append(memoryIDs, id)
+			}
+		}
+	}
+	common.SetOperationResource(c, "memory_ids", memoryIDs)
+	if len(memoryIDs) == 1 {
+		common.SetOperationResource(c, "memory_id", memoryIDs[0])
 	}
 
 	effectiveUserID := currentUserID
@@ -531,12 +558,17 @@ func (h *MemoryHandler) AddMessage(c *gin.Context) {
 //   - memory_id: Memory ID
 //   - message_id: Message ID (integer)
 func (h *MemoryHandler) ForgetMessage(c *gin.Context) {
+	common.StartOperationLog(c, "forget_memory_message")
+	defer common.FinishOperationLog(c)
 
 	memoryID, messageID, err := parseMemoryMessagePath(c.Param("memory_message"))
 	if err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
+
+	common.SetOperationResource(c, "memory_id", memoryID)
+	common.SetOperationResource(c, "message_id", messageID)
 
 	if err = h.memoryService.ForgetMessage(c.Request.Context(), memoryID, messageID); err != nil {
 		if respondPermissionErrorIf(c, err, true) {
@@ -598,12 +630,17 @@ func parseMemoryMessagePath(memoryMessage string) (string, int64, error) {
 // Request Parameters (JSON Body):
 //   - status (required): Message status, boolean
 func (h *MemoryHandler) UpdateMessage(c *gin.Context) {
+	common.StartOperationLog(c, "update_memory_message_status")
+	defer common.FinishOperationLog(c)
 
 	memoryID, messageID, err := parseMemoryMessagePath(c.Param("memory_message"))
 	if err != nil {
 		common.RespondError(c, common.CodeArgumentError, err.Error())
 		return
 	}
+
+	common.SetOperationResource(c, "memory_id", memoryID)
+	common.SetOperationResource(c, "message_id", messageID)
 
 	var req map[string]interface{}
 	if err = json.NewDecoder(c.Request.Body).Decode(&req); err != nil {
