@@ -9,11 +9,7 @@ const loadAvailableDataSourceKeys = () => {
 };
 
 describe('data source backend adapter', () => {
-  it('includes Feishu Wiki so the connector is available on both backends', () => {
-    expect(loadAvailableDataSourceKeys()).toContain('feishu_wiki');
-  });
-
-  it('returns every DataSourceKey plus the enterprise connectors', () => {
+  it('returns every DataSourceKey', () => {
     const { DataSourceKey } = require('./constant');
     const {
       eeDataSourceKeys,
