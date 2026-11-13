@@ -5,6 +5,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router';
 import { useMutation, useQuery } from '@tanstack/react-query';
 
 import {
+  LucideBrain,
   LucideMonitor,
   LucideServerCrash,
   LucideSquareUserRound,
@@ -53,6 +54,11 @@ const AdminNavigationLayout = () => {
         path: Routes.AdminSandboxSettings,
         name: t('admin.sandboxSettings'),
         icon: <LucideZap className="size-[1em]" />,
+      },
+      {
+        path: Routes.AdminModelSettings,
+        name: t('admin.modelSettings'),
+        icon: <LucideBrain className="size-[1em]" />,
       },
       ...(IS_ENTERPRISE
         ? [
