@@ -32,6 +32,11 @@ func ExtractAllComponentParams(dslJSON []byte) ([]ComponentParamsSchema, error) 
 				ComponentName string         `json:"component_name"`
 				Params        map[string]any `json:"params"`
 			} `json:"obj"`
+			// dsl.NormalizeForCanvas replaces obj with the flat component shape
+			// (name/params/downstream/upstream) when it derives a graph, so a
+			// canvas saved through the API without one has no obj at all.
+			Name   string         `json:"name"`
+			Params map[string]any `json:"params"`
 		} `json:"components"`
 	}
 	if err := json.Unmarshal(dslJSON, &dsl); err != nil {
@@ -46,7 +51,7 @@ func ExtractAllComponentParams(dslJSON []byte) ([]ComponentParamsSchema, error) 
 		if cpnID != common.ComponentNameFile && !common.IsComponentKey(cpnID) {
 			return nil, fmt.Errorf("ExtractAllComponentParams: component ID %q must be <name>:<instance>; re-save the pipeline with canonical component IDs", cpnID)
 		}
-		if common.IsExtractorComponent(cpnID, comp.Obj.ComponentName) {
+		if common.IsExtractorComponent(cpnID, resolvedComponentName(comp.Obj.ComponentName, comp.Name)) {
 			extractorCount++
 		}
 	}
@@ -56,8 +61,13 @@ func ExtractAllComponentParams(dslJSON []byte) ([]ComponentParamsSchema, error) 
 
 	out := make([]ComponentParamsSchema, 0, len(dsl.Components))
 	for cpnID, comp := range dsl.Components {
-		params := make(map[string]any, len(comp.Obj.Params))
-		for k, v := range comp.Obj.Params {
+		name := resolvedComponentName(comp.Obj.ComponentName, comp.Name)
+		source := comp.Obj.Params
+		if source == nil {
+			source = comp.Params
+		}
+		params := make(map[string]any, len(source))
+		for k, v := range source {
 			if k == "outputs" {
 				continue
 			}
@@ -66,16 +76,25 @@ func ExtractAllComponentParams(dslJSON []byte) ([]ComponentParamsSchema, error) 
 		// Canvases saved by the -era frontend nest the Parser's
 		// per-family setups under a "setups" key; lift them so the extracted
 		// defaults (and the parser_config built from them) stay flat.
-		if common.IsParserComponent(cpnID, comp.Obj.ComponentName) {
+		if common.IsParserComponent(cpnID, name) {
 			params = schema.FlattenLegacyParserSetups(params)
 		}
 		out = append(out, ComponentParamsSchema{
 			CpnID:          cpnID,
-			ComponentName:  comp.Obj.ComponentName,
+			ComponentName:  name,
 			ParamsDefaults: params,
 		})
 	}
 	return out, nil
+}
+
+// resolvedComponentName prefers the nested component_name and falls back to the
+// flat name NormalizeForCanvas writes.
+func resolvedComponentName(nested, flat string) string {
+	if nested != "" {
+		return nested
+	}
+	return flat
 }
 
 // ComponentParamsDefaults extracts component params from DSL JSON and returns
