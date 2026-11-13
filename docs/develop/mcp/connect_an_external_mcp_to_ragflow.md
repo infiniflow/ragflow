@@ -4,7 +4,7 @@ title: Connect an External MCP Server to RAGFlow
 sidebar_label: Connect an External MCP Server to RAGFlow
 slug: /connect_external_mcp_server
 sidebar_custom_props:
-  categoryIcon: LucideBookOpen
+  categoryIcon: LucideCable
 ---
 
 # Connect an External MCP Server to RAGFlow

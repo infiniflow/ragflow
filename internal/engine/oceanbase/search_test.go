@@ -17,6 +17,7 @@
 package oceanbase
 
 import (
+	"context"
 	"reflect"
 	"regexp"
 	"testing"
@@ -83,6 +84,47 @@ func TestSearchAppliesPaginationAfterMergingTables(t *testing.T) {
 	}
 	if _, exists := result.Chunks[0]["create_timestamp_flt"]; exists {
 		t.Fatalf("Search() exposed an internal sort field: %#v", result.Chunks[0])
+	}
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A wildcard projection that also names an optional chunk field stays a
+// full-row read. Treating it as a partial extra projection would resolve only
+// compile_kwd and drop the rest of a legacy row's extra (for example token_num).
+func TestSearchWildcardWithOptionalFieldKeepsExtra(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	engine := newEngineWithDB("seekdb", "legacy_doc", db)
+
+	mock.ExpectQuery(regexp.QuoteMeta("SELECT COUNT(`id`) FROM `ragflow_tenant_1` WHERE 1=1")).
+		WillReturnRows(sqlmock.NewRows([]string{"COUNT(id)"}).AddRow(1))
+	mock.ExpectQuery("SELECT \\* FROM `ragflow_tenant_1` WHERE 1=1").
+		WillReturnRows(sqlmock.NewRows([]string{"id", "extra"}).
+			AddRow("chunk-1", `{"compile_kwd":"tree","token_num":12}`))
+
+	rows, count, err := engine.searchTableWithSQL(context.Background(), "ragflow_tenant_1", "chunk",
+		map[string]interface{}{},
+		&types.SearchRequest{SelectFields: []string{"*", "compile_kwd"}},
+		searchPlan{})
+	if err != nil {
+		t.Fatalf("searchTableWithSQL: %v", err)
+	}
+	if count != 1 || len(rows) != 1 {
+		t.Fatalf("count=%d rows=%d, want one row", count, len(rows))
+	}
+	if rows[0]["compile_kwd"] != "tree" {
+		t.Errorf("compile_kwd = %#v, want the value from extra", rows[0]["compile_kwd"])
+	}
+	if rows[0]["token_num"] != float64(12) {
+		t.Errorf("token_num = %#v, want the untouched value from extra", rows[0]["token_num"])
+	}
+	if _, ok := rows[0]["extra"]; !ok {
+		t.Error("extra was dropped although the projection asked for the whole row")
 	}
 	if err := mock.ExpectationsWereMet(); err != nil {
 		t.Fatal(err)

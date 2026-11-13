@@ -1,0 +1,31 @@
+{
+  "name": "Shengsuanyun",
+  "rank": 985,
+  "url": {
+    "default": "https://router.shengsuanyun.com/api/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models",
+    "embedding": "embeddings"
+  },
+  "class": "shengsuanyun",
+  "models": [
+    {
+      "name": "openai/text-embedding-3-small",
+      "max_tokens": 8191,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 2048
+    },
+    {
+      "name": "openai/text-embedding-3-large",
+      "max_tokens": 8191,
+      "model_types": [
+        "embedding"
+      ],
+      "max_batch_size": 2048
+    }
+  ]
+}

@@ -126,8 +126,10 @@ export enum LLMFactory {
   Nace = 'Nace',
   HostingerRouter = 'Hostinger Router',
   Wally = 'Wally',
+  Shengsuanyun = 'Shengsuanyun',
   Synap = 'Synap',
   Wiro = 'Wiro AI',
+  Crusoe = 'Crusoe',
 }
 
 // Please lowercase the file name
@@ -235,8 +237,10 @@ export const IconMap = {
   [LLMFactory.HostingerRouter]: 'hostinger-router',
   [LLMFactory.Cheapaimodel]: 'cheapaimodel',
   [LLMFactory.Wally]: 'wally',
+  [LLMFactory.Shengsuanyun]: 'shengsuanyun',
   [LLMFactory.Synap]: 'synap',
   [LLMFactory.Wiro]: 'wiro',
+  [LLMFactory.Crusoe]: 'crusoe',
 };
 
 /**
@@ -296,6 +300,7 @@ export const APIMapUrl = {
   [LLMFactory.Wally]: 'https://console.runanywhere.ai',
   [LLMFactory.Synap]: 'https://synap.linkrra.com/pricing',
   [LLMFactory.Wiro]: 'https://wiro.ai/panel/project/new',
+  [LLMFactory.Crusoe]: 'https://console.crusoecloud.com',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
@@ -384,4 +389,5 @@ export const APIMapUrl = {
   [LLMFactory.PaddleOCRLocal]: 'https://aistudio.baidu.com/paddleocr',
   [LLMFactory.RAGcon]: 'https://connect.ragcon.com',
   [LLMFactory.FunASR]: 'https://github.com/modelscope/FunASR',
+  [LLMFactory.Shengsuanyun]: 'https://www.shengsuanyun.com/zh/?from=ragflow',
 };

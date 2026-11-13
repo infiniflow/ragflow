@@ -117,11 +117,12 @@ type imageOwnershipEngine struct {
 	fakeChatDocEngine
 	result  *types.SearchResult
 	request *types.SearchRequest
+	err     error
 }
 
 func (e *imageOwnershipEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	e.request = req
-	return e.result, nil
+	return e.result, e.err
 }
 func (f *fakeUploadStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
 	delete(f.objects, f.key(bucket, fnm))
@@ -5008,6 +5009,10 @@ func TestGetDocumentImageRejectsUnindexedObjectBeforeStorage(t *testing.T) {
 
 	if _, err := svc.GetDocumentImage(ctx, kbID+"-raw.pdf"); !errors.Is(err, ErrDocumentImageNotFound) {
 		t.Fatalf("GetDocumentImage() error = %v", err)
+	}
+	engine.err = errors.New("search ragflow_tenant-private: connection refused")
+	if _, err := svc.GetDocumentImage(ctx, kbID+"-raw.pdf"); err == nil || err.Error() != "Failed to find document image" {
+		t.Fatalf("GetDocumentImage() lookup failure = %v, want safe error", err)
 	}
 	if store.getCalls != 0 {
 		t.Fatalf("storage Get called %d times after ownership denial", store.getCalls)

@@ -28,11 +28,11 @@ type Chat struct {
 	Icon        *string `gorm:"column:icon;type:longtext" json:"icon,omitempty"`
 	Language    *string `gorm:"column:language;size:32;index" json:"language,omitempty"`
 	LLMID       string  `gorm:"column:llm_id;size:128;not null" json:"llm_id"`
-	TenantLLMID *string `gorm:"column:tenant_llm_id;size:32;index" json:"tenant_llm_id,omitempty"`
+	TenantLLMID *string `gorm:"column:tenant_llm_id;size:35;index" json:"tenant_llm_id,omitempty"`
 	// TenantDecisionID mirrors TenantLLMID: the resolved row id behind the
 	// requested decision_id, so a later rename of the model value does not
 	// silently point this chat at a different model.
-	TenantDecisionID *string `gorm:"column:tenant_decision_id;size:32;index" json:"tenant_decision_id,omitempty"`
+	TenantDecisionID *string `gorm:"column:tenant_decision_id;size:35;index" json:"tenant_decision_id,omitempty"`
 	LLMSetting       JSONMap `gorm:"column:llm_setting;type:longtext;not null" json:"llm_setting"`
 	// DecisionID overrides the tenant's default decision model for this
 	// conversation. Nullable and empty by default: empty means "inherit the
@@ -54,7 +54,7 @@ type Chat struct {
 	TopK                   int64     `gorm:"column:top_k;type:int" json:"top_k"`
 	DoRefer                string    `gorm:"column:do_refer;size:1;not null" json:"do_refer"`
 	RerankID               string    `gorm:"column:rerank_id;size:128;not null;default:''" json:"rerank_id"`
-	TenantRerankID         *string   `gorm:"column:tenant_rerank_id;size:32;index" json:"tenant_rerank_id,omitempty"`
+	TenantRerankID         *string   `gorm:"column:tenant_rerank_id;size:35;index" json:"tenant_rerank_id,omitempty"`
 	KBIDs                  JSONSlice `gorm:"column:kb_ids;type:longtext;not null" json:"kb_ids"`
 	Status                 *string   `gorm:"column:status;size:1;index" json:"status,omitempty"`
 	OperatorPermission     int32     `gorm:"-" json:"operator_permission,omitempty"`

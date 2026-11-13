@@ -2,6 +2,9 @@
 sidebar_position: 2
 sidebar_label: Check System Status
 title: Check System Status
+sidebar_custom_props: {
+  categoryIcon: LucideActivity
+}
 ---
 
 # Check System Status

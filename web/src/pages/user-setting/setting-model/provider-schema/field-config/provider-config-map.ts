@@ -539,22 +539,6 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         autoComplete: 'new-password',
         validation: { message: 'paddleocrApiUrlMessage' },
       },
-      {
-        name: 'paddleocr_algorithm',
-        label: 'paddleocrAlgorithm',
-        type: FormFieldType.Select,
-        required: false,
-        defaultValue: 'PaddleOCR-VL',
-        placeholder: 'paddleocrSelectAlgorithm',
-        options: [
-          { label: 'PaddleOCR-VL-1.6', value: 'PaddleOCR-VL-1.6' },
-          { label: 'PaddleOCR-VL-1.5', value: 'PaddleOCR-VL-1.5' },
-          { label: 'PaddleOCR-VL', value: 'PaddleOCR-VL' },
-          { label: 'PP-OCRv6', value: 'PP-OCRv6' },
-          { label: 'PP-OCRv5', value: 'PP-OCRv5' },
-          { label: 'PP-StructureV3', value: 'PP-StructureV3' },
-        ],
-      },
     ],
     verifyTransform: (values) => {
       const cfg: Record<string, any> = {};
@@ -562,8 +546,6 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         cfg.paddleocr_api_url = values.paddleocr_api_url;
       if (values.paddleocr_access_token)
         cfg.paddleocr_access_token = values.paddleocr_access_token;
-      if (values.paddleocr_algorithm)
-        cfg.paddleocr_algorithm = values.paddleocr_algorithm;
       return {
         apiKey: cfg,
         baseUrl: values.paddleocr_api_url,
@@ -576,8 +558,6 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         cfg.paddleocr_api_url = values.paddleocr_api_url;
       if (values.paddleocr_access_token)
         cfg.paddleocr_access_token = values.paddleocr_access_token;
-      if (values.paddleocr_algorithm)
-        cfg.paddleocr_algorithm = values.paddleocr_algorithm;
       return {
         instance_name: values.instance_name,
         llm_factory: LLMFactory.PaddleOCR,
@@ -591,7 +571,6 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       return {
         paddleocr_api_url: obj.paddleocr_api_url ?? '',
         paddleocr_access_token: obj.paddleocr_access_token ?? '',
-        paddleocr_algorithm: obj.paddleocr_algorithm ?? 'PaddleOCR-VL',
       };
     },
   },

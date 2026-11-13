@@ -2,6 +2,9 @@
 sidebar_position: 1
 sidebar_label: Before You Begin
 title: Before You Begin
+sidebar_custom_props: {
+  categoryIcon: LucideInfo
+}
 ---
 
 # Before You Begin

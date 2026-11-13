@@ -323,7 +323,7 @@ func (s *UserService) LoginByEmail(ctx context.Context, req *EmailLoginRequest) 
 
 	decryptedPassword, err := common.DecryptPassword(req.Password)
 	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("fail to crypt password")
+		return nil, common.CodeServerError, fmt.Errorf("fail to crypt password: %w", err)
 	}
 
 	if user.Password == nil || !s.VerifyPassword(*user.Password, decryptedPassword) {

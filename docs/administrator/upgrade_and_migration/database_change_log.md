@@ -4,7 +4,7 @@ title: Database Change Log
 sidebar_label: Database Change Log
 slug: /database_change_log
 sidebar_custom_props: {
-  categoryIcon: LucideLocateFixed
+  categoryIcon: LucideFileDiff
 }
 ---
 
@@ -24,7 +24,7 @@ A record of the schema and data changes the Go backend applies to a RAGFlow data
 
 Startup order in `InitDB` for `ragflow_server --migrate` ([database.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/database.go)):
 
-1. `RunMigrations` — manual, idempotent steps plus the two versioned tenant model steps. This includes `migrateNameColumnWidths`, which widens `pipeline_operation_log.pipeline_title` and `tenant.name` only when the existing column is narrower. Runs *before* `AutoMigrate` because it has to observe the legacy schema.
+1. `RunMigrations` — manual, idempotent steps plus the two versioned tenant model steps. This includes `migrateColumnWidths`, which widens `pipeline_operation_log.pipeline_title`, `tenant.name`, and the `tenant_*id` model-reference columns only when the existing column is narrower. Runs *before* `AutoMigrate` because it has to observe the legacy schema.
 2. `migrateIngestionLogRunIdentity` — ingestion log columns and indexes.
 3. `migrateUserTenantDuplicates` — deduplicates memberships before `AutoMigrate` creates their unique index.
 4. `AutoMigrate` — converges every ORM model, including the compilation queue tables.
@@ -415,6 +415,7 @@ These steps are not gated by the version marker. They use schema or data checks 
 | `pipeline_operation_log`                                                                   | Adds `run_count int NULL`, `pipeline_version_id varchar(32) NULL` (the concrete dataflow canvas version a run executed), and the index `idx_pipeline_operation_log_document_run`.                                                                                                                                                             |
 | `pipeline_operation_log`                                                                   | Widens `pipeline_title` from `varchar(32)` to `varchar(255)` so it can store the `user_canvas.title` snapshot. Only a narrower column is altered, so rerunning `--migrate` is a no-op.                                                                                                                                                         |
 | `tenant`                                                                                   | Widens `name` from `varchar(100)` to `varchar(128)` to match the shared short-name limit. Only a narrower column is altered, so rerunning `--migrate` is a no-op.                                                                                                                                                                              |
+| `user_tenant`, `dialog`, `knowledgebase`, `memory`, `skill_search_configs`                 | Widens the `tenant_*id` model-reference columns (`tenant_llm_id`, `tenant_embd_id`, `tenant_asr_id`, `tenant_img2txt_id`, `tenant_rerank_id`, `tenant_tts_id`, `tenant_ocr_id`, `tenant_decision_id`) from `varchar(32)` to `varchar(35)` so they can store a `gp-<group_id>` model group reference. Only a narrower column is altered, so rerunning `--migrate` is a no-op. |
 | `ingestion_task`                                                                           | Adds `pipeline_log_id varchar(32) NULL`.                                                                                                                                                                                                                                                                                                      |
 | `ingestion_task_log`                                                                       | Adds `pipeline_log_id varchar(32) NULL`, `event_type tinyint NOT NULL DEFAULT 4`, and the index `idx_ingestion_task_log_pipeline_id`.                                                                                                                                                                                                         |
 | `dialog`, `tenant_llm`, `api_token`, `canvas_template`, `system_settings`, `knowledgebase` | Column types converged to the Peewee models, for example `dialog.top_k int NOT NULL DEFAULT 1024`, `tenant_llm.api_key text`, `api_token.dialog_id varchar(32)`, `canvas_template.title` / `description` nullable longtext, `system_settings.value text NOT NULL`, `knowledgebase.raptor_task_finish_at` / `mindmap_task_finish_at` datetime. |
@@ -423,12 +424,13 @@ These steps are not gated by the version marker. They use schema or data checks 
 | `document` | Adds `pipeline_version_id varchar(32) NULL` (inherits the dataset pinned version at upload; design section 5). |
 | `user_canvas_version` | Adds `alias varchar(255) NULL` (free-text version alias for the version list filter; design A2/F1). |
 
-`migrateNameColumnWidths` performs the two width changes above. It reads
+`migrateColumnWidths` performs the width changes above. It reads
 `ColumnTypes().Length()` and only issues `ALTER COLUMN` when the current width is
-below the target. On MySQL with `utf8mb4`, widening `pipeline_title` from
-`varchar(32)` to `varchar(255)` changes the VARCHAR length prefix and can rebuild
-`pipeline_operation_log`; run `ragflow_server --migrate` in a maintenance window
-and confirm free disk space. The existing `pipeline_title` index is preserved.
+below the target. On MySQL with `utf8mb4`, widening a VARCHAR column changes its
+length prefix and can rebuild the table (for example `pipeline_title` from
+`varchar(32)` to `varchar(255)` rebuilding `pipeline_operation_log`); run
+`ragflow_server --migrate` in a maintenance window and confirm free disk space.
+The existing `pipeline_title` index is preserved.
 
 ### Data changes
 

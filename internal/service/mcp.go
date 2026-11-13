@@ -173,7 +173,7 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, req CreateMCPServerReq
 		}
 		return permission.NewDatabaseChecker(tx).GrantResourceOwner(ctx, permission.ResourceRef{Kind: permission.ResourceKindMCPServer, ID: server.ID})
 	}); err != nil {
-		return nil, common.CodeDataError, errors.New("failed to create MCP server")
+		return nil, common.CodeDataError, fmt.Errorf("failed to create MCP server: %w", err)
 	}
 
 	return &CreateMCPServerResponse{
