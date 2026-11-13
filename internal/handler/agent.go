@@ -1426,6 +1426,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	reference := map[string]any{}
 	structuredOutput := map[string]any{}
 	var runUsage any
+	var traceItems []any
 	var finalAns *canvas.RunEvent
 	hasEvents := false
 	for ev := range events {
@@ -1465,6 +1466,16 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 							structuredOutput[componentID] = structured
 						}
 					}
+				}
+				// `return_trace` was read from the request but never consumed, so the
+				// documented `data.trace` never reached the client. Mirror Python
+				// agent_api.py: each finished node contributes its own event data as
+				// {component_id, trace: [data]}.
+				if req.ReturnTrace {
+					traceItems = append(traceItems, map[string]any{
+						"component_id": evData["component_id"],
+						"trace":        []any{evData},
+					})
 				}
 			}
 			// #5: capture run_usage from workflow_finished events
@@ -1510,6 +1521,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	//   final_ans["data"]["reference"] = reference
 	//   final_ans["data"]["usage"] = run_usage (if present)
 	//   final_ans["data"]["structured"] = structured_output (if present)
+	//   final_ans["data"]["trace"] = trace_items (when return_trace is set)
 	var ansData map[string]any
 	if err := json.Unmarshal([]byte(finalAns.Data), &ansData); err != nil || ansData == nil {
 		ansData = map[string]any{}
@@ -1523,6 +1535,9 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	}
 	if len(structuredOutput) > 0 {
 		ansData["structured"] = structuredOutput
+	}
+	if len(traceItems) > 0 {
+		ansData["trace"] = traceItems
 	}
 
 	result := gin.H{
