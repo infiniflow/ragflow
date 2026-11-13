@@ -16,7 +16,7 @@ func TestPaddleOCRPDFResultWithoutCGOKeepsTextAndPageIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := &models.OCRFileResponse{Pages: []models.OCRPage{{Index: 2, Width: 900, Height: 800, Blocks: []models.OCRBlock{{Text: "body", Label: "text", BBox: []float64{30, 40, 300, 160}}}}}}
-	result := PaddleOCRPDFResult(t.Context(), "sample.pdf", data, response)
+	result := OCRPDFResult(t.Context(), "PaddleOCR", "sample.pdf", data, response)
 	if result.Err != nil {
 		t.Fatal(result.Err)
 	}

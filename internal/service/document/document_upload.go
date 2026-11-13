@@ -15,6 +15,9 @@ import (
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strings"
+
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // UploadLocalDocuments stores each uploaded file in object storage and inserts a
@@ -168,21 +171,32 @@ func (s *DocumentService) UploadEmptyDocument(ctx context.Context, kb *entity.Kn
 // folder: root -> .knowledgebase -> <dataset name>. Mirrors Python
 // get_root_folder + get_kb_folder + new_a_file_from_kb.
 func (s *DocumentService) ensureKBFolder(ctx context.Context, kb *entity.Knowledgebase, tenantID string) (*entity.File, error) {
-	root, err := s.fileDAO.GetRootFolder(ctx, dao.DB, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	kbRoot, err := s.newAFileFromKB(ctx, tenantID, knowledgebaseFolderName, root.ID)
-	if err != nil {
-		return nil, err
-	}
-	return s.newAFileFromKB(ctx, kb.TenantID, kb.Name, kbRoot.ID)
+	var kbFolder *entity.File
+	err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		// Use the same lock order as dataset rename and refresh the caller's stale name.
+		var current entity.Knowledgebase
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND tenant_id = ?", kb.ID, kb.TenantID).Take(&current).Error; err != nil {
+			return err
+		}
+		root, err := s.fileDAO.GetRootFolder(ctx, tx, tenantID)
+		if err != nil {
+			return err
+		}
+		kbRoot, err := s.newAFileFromKB(ctx, tx, tenantID, knowledgebaseFolderName, root.ID)
+		if err != nil {
+			return err
+		}
+		kbFolder, err = s.newAFileFromKB(ctx, tx, current.TenantID, current.Name, kbRoot.ID)
+		return err
+	})
+	return kbFolder, err
 }
 
 // newAFileFromKB returns the existing folder named name under parentID, or
 // creates it. Mirrors Python FileService.new_a_file_from_kb.
-func (s *DocumentService) newAFileFromKB(ctx context.Context, tenantID, name, parentID string) (*entity.File, error) {
-	existingFolders, err := s.fileDAO.Query(ctx, dao.DB, name, parentID, tenantID)
+func (s *DocumentService) newAFileFromKB(ctx context.Context, db *gorm.DB, tenantID, name, parentID string) (*entity.File, error) {
+	existingFolders, err := s.fileDAO.Query(ctx, db, name, parentID, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -204,7 +218,7 @@ func (s *DocumentService) newAFileFromKB(ctx context.Context, tenantID, name, pa
 		Location:   &loc,
 		SourceType: string(entity.FileSourceKnowledgebase),
 	}
-	if err := s.fileDAO.Create(ctx, dao.DB, folder); err != nil {
+	if err := s.fileDAO.Create(ctx, db, folder); err != nil {
 		return nil, err
 	}
 	return folder, nil

@@ -2,6 +2,7 @@ package table
 
 import (
 	"html"
+	"math"
 	"sort"
 	"strings"
 	"unicode"
@@ -530,7 +531,8 @@ func appendRawCaptions(target *pdf.Section, captions []string) {
 // earlier in the loop cannot widen what a later one is allowed to claim.
 //
 // Appending (not prepending) keeps Positions[0] as the primary box, which
-// reading-order sorting and the proximity searches elsewhere depend on.
+// reading-order sorting and the proximity searches elsewhere depend on. The
+// appended tail is then put back in page/reading order.
 func extendCaptionPositions(target *pdf.Section, entries []captionText) {
 	base := make([]pdf.Position, len(target.Positions))
 	copy(base, target.Positions)
@@ -546,6 +548,32 @@ func extendCaptionPositions(target *pdf.Section, entries []captionText) {
 			target.Positions = append(target.Positions, p)
 		}
 	}
+	// Captions arrive ordered by top edge only, so a caption on an earlier
+	// page of a cross-page table would stay after the later page's row in the
+	// serialized _pdf_positions. Sort the tail (Positions[0] stays primary) so
+	// the metadata matches page and reading order.
+	if len(target.Positions) > 1 {
+		tail := target.Positions[1:]
+		sort.SliceStable(tail, func(i, j int) bool {
+			a, b := tail[i], tail[j]
+			if ap, bp := positionSortPage(a), positionSortPage(b); ap != bp {
+				return ap < bp
+			}
+			if a.Top != b.Top {
+				return a.Top < b.Top
+			}
+			return a.Left < b.Left
+		})
+	}
+}
+
+// positionSortPage ranks a position's first page for ordering. A position
+// with no page metadata sorts after every placed one.
+func positionSortPage(p pdf.Position) int {
+	if len(p.PageNumbers) == 0 {
+		return math.MaxInt
+	}
+	return p.PageNumbers[0]
 }
 
 // sharedPageNumbers returns the page numbers p and have have in common.

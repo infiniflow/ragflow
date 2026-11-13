@@ -75,14 +75,14 @@ func payloadChunkIDs(payload map[string]any) []string {
 // payloadDescription is the index text for a tree-graph entity/relation. It
 // delegates to common.PayloadDescription — the shared implementation the
 // structure variant also uses — so both variants index compiled rows the same
-// way and both match Python _struct_payload_description.
+// way.
 func payloadDescription(payload map[string]any) string {
 	return common.PayloadDescription(payload, nil)
 }
 
-// payloadJSON serialises a payload the way Python's json.dumps(ensure_ascii=
-// False) does (no HTML escaping), with alphabetically sorted keys for a
-// canonical, hash-stable form.
+// payloadJSON serialises a payload with no HTML escaping (json.Encoder with
+// SetEscapeHTML(false)), using alphabetically sorted keys for a canonical,
+// hash-stable form.
 func payloadJSON(payload map[string]any) string {
 	var b bytes.Buffer
 	enc := json.NewEncoder(&b)
@@ -93,10 +93,9 @@ func payloadJSON(payload map[string]any) string {
 	return strings.TrimSpace(b.String())
 }
 
-// graphNode mirrors Python's RAPTOR tree node dict (title/description/children/
-// source_chunk_ids) reconstructed from the flat products emitted by buildTree,
-// so the tree can be projected to a {entities, relations} graph exactly like
-// Python's raptor_tree_to_graph (chunk_post_processor.py:470).
+// graphNode holds the reconstructed RAPTOR tree node (title/description/
+// children/source_chunk_ids) from the flat products emitted by buildTree,
+// so the tree can be projected to a {entities, relations} graph.
 type graphNode struct {
 	title          string
 	description    string
@@ -104,10 +103,9 @@ type graphNode struct {
 	children       []*graphNode
 }
 
-// collapseUnary merges a node that wraps exactly one child into that child,
-// mirroring Python raptor_tree_to_graph._collapse_unary: the parent's and the
-// child's descriptions/source-chunk-ids are concatenated (dedup'd), then the
-// collapsed node adopts the child's children.
+// collapseUnary merges a node that wraps exactly one child into that child: the
+// parent's and the child's descriptions/source-chunk-ids are concatenated
+// (dedup'd), then the collapsed node adopts the child's children.
 func collapseUnary(node *graphNode) *graphNode {
 	collapsed := &graphNode{
 		title:          node.title,
@@ -154,9 +152,9 @@ func collapseUnary(node *graphNode) *graphNode {
 	return collapsed
 }
 
-// raptorTreeToGraph projects a RAPTOR tree onto {entities, relations}, matching
-// Python raptor_tree_to_graph: every node becomes an entity of type "tree_node";
-// every parent→child edge (that is not a self-loop) becomes a "child" relation.
+// raptorTreeToGraph projects a RAPTOR tree onto {entities, relations}: every
+// node becomes an entity of type "tree_node"; every parent→child edge (that is
+// not a self-loop) becomes a "child" relation.
 func raptorTreeToGraph(root *graphNode) ([]map[string]any, []map[string]any) {
 	var entities []map[string]any
 	var relations []map[string]any
@@ -192,8 +190,7 @@ func raptorTreeToGraph(root *graphNode) ([]map[string]any, []map[string]any) {
 }
 
 // buildTreeGraph reconstructs the tree from the flat summary products and
-// produces the per-row products Python writes for a tree variant
-// (_struct_upsert_tree_graph_rows):
+// produces the per-row products for a tree variant:
 //   - one entity product per tree node (kind "entity", knowledge_graph_kwd via
 //     the writer), type "tree_node";
 //   - one relation product per parent→child edge (kind "relation").
@@ -297,15 +294,14 @@ func sortedKeys(m map[string][]Claim) []string {
 // them out of the artifacts query (it filters knowledge_graph_kwd=["entity",
 // "relation"]) without any frontend change.
 //
-// The embedding excludes evidence, matching the page_index claim path and the
-// Python implementation: the geometric layer indexes the claim, not the raw
-// source it was verified against.
+// The embedding excludes evidence: the geometric layer indexes the claim, not
+// the raw source it was verified against.
 //
-// templateID scopes the row to the compilation template that produced it, like
-// Python's _struct_upsert_tree_claim_rows: it is stamped on the product and
-// mixed into the row id, so two templates that extract the same claim from the
-// same document get two rows instead of overwriting each other — and a
-// template-scoped cleanup can remove one without touching the other.
+// templateID scopes the row to the compilation template that produced it: it
+// is stamped on the product and mixed into the row id, so two templates that
+// extract the same claim from the same document get two rows instead of
+// overwriting each other — and a template-scoped cleanup can remove one
+// without touching the other.
 func buildTreeClaimProducts(ctx context.Context, deps common.Deps, docID string, claimsByChunk map[string][]Claim, templateID string) ([]common.Product, error) {
 	if len(claimsByChunk) == 0 {
 		return nil, nil
@@ -366,10 +362,9 @@ func buildTreeClaimProducts(ctx context.Context, deps common.Deps, docID string,
 	for i, payload := range payloads {
 		vec := vecs[i]
 		content := payloadJSON(payload)
-		// Mirror Python _struct_to_doc_storage_doc, which mixes the template id
-		// into the row-id seed (row_seed_extras): without it two templates that
-		// extract an identical claim from the same document would share a row id
-		// and silently overwrite one another.
+		// The template id is mixed into the row-id seed: without it two templates
+		// that extract an identical claim from the same document would share a
+		// row id and silently overwrite one another.
 		idParts := []string{content, docID}
 		if templateID != "" {
 			idParts = append(idParts, templateID)

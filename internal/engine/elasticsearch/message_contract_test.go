@@ -28,3 +28,53 @@ func TestMessageSubstringEscapesWildcardCharacters(t *testing.T) {
 		t.Fatalf("query = %#v, want %#v", got, want)
 	}
 }
+
+func TestMemorySessionFilterMatchesLiteralSubstring(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{input: "alpha", want: "*alpha*"},
+		{input: "lph", want: "*lph*"},
+		{input: "alpha OR beta", want: "*alpha OR beta*"},
+		{input: "alpha* OR session_id:*", want: `*alpha\* OR session_id:\**`},
+		{input: `a*b?c\d`, want: `*a\*b\?c\\d*`},
+		{input: "x:(y)", want: "*x:(y)*"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.input, func(t *testing.T) {
+			got := buildBoolQueryFromCondition(map[string]interface{}{"session_id": tc.input}, nil, false, true)
+			want := map[string]interface{}{"bool": map[string]interface{}{"filter": []interface{}{
+				map[string]interface{}{"wildcard": map[string]interface{}{"session_id": tc.want}},
+			}}}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("query = %#v, want %#v", got, want)
+			}
+		})
+	}
+}
+
+func TestSessionFilterPreservesOtherQueryForms(t *testing.T) {
+	cases := []struct {
+		name   string
+		value  interface{}
+		memory bool
+		clause map[string]interface{}
+	}{
+		{name: "non-memory string", value: "alpha", clause: map[string]interface{}{"term": map[string]interface{}{"session_id": "alpha"}}},
+		{name: "memory list", value: []string{"alpha", "beta"}, memory: true, clause: map[string]interface{}{"terms": map[string]interface{}{"session_id": []string{"alpha", "beta"}}}},
+		{name: "empty memory string", value: "", memory: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := buildBoolQueryFromCondition(map[string]interface{}{"session_id": tc.value}, nil, false, tc.memory)
+			var want map[string]interface{}
+			if tc.clause != nil {
+				want = map[string]interface{}{"bool": map[string]interface{}{"filter": []interface{}{tc.clause}}}
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("query = %#v, want %#v", got, want)
+			}
+		})
+	}
+}

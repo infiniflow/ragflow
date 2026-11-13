@@ -2,6 +2,9 @@
 sidebar_position: 3
 sidebar_label: Manage User Accounts
 title: Manage User Accounts
+sidebar_custom_props: {
+  categoryIcon: LucideUsers
+}
 ---
 
 # Manage User Accounts

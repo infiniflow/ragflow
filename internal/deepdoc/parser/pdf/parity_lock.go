@@ -15,7 +15,7 @@ package pdf
 // go_intentional), never an open/accepted_at_merge failure.
 //
 // 13_crosspage_table.pdf is NOT locked: the production R/C-assembly path
-// (AnnotateBoxesWithGrid + GroupBoxesByRC) renders its first row at 3 columns
+// (AnnotateBoxesWithGridAndRows + GroupBoxesByRC) renders its first row at 3 columns
 // vs Python's 5 (a cross-page merged table whose first-page header boxes get
 // re-assigned C indices after dedup/vertical-merge) — structSim 98.8%, a
 // documented follow-up, so locking it would forbid a known gap.

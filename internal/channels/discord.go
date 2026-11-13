@@ -624,7 +624,7 @@ func (c *discordChannel) requestJSON(ctx context.Context, method, path string, b
 		if resp.StatusCode == http.StatusTooManyRequests {
 			return newDiscordRateLimitError(resp.Header, respBody)
 		}
-		return fmt.Errorf("discord api status: %d, response: %s", resp.StatusCode, string(respBody))
+		return fmt.Errorf("discord api status: %d, response: %.200s", resp.StatusCode, respBody)
 	}
 	if out != nil && len(bytes.TrimSpace(respBody)) > 0 {
 		return json.Unmarshal(respBody, out)
@@ -649,7 +649,7 @@ func newDiscordRateLimitError(header http.Header, body []byte) *discordRateLimit
 	return &discordRateLimitError{
 		RetryAfter: retryAfter,
 		Global:     payload.Global,
-		Response:   strings.TrimSpace(string(body)),
+		Response:   fmt.Sprintf("%.200s", strings.TrimSpace(string(body))),
 	}
 }
 

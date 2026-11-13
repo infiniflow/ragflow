@@ -1,9 +1,11 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"image/png"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -119,6 +121,37 @@ func TestMonkeyOCRv2EnvConfig(t *testing.T) {
 	if config[common.EnvMonkeyOCRv2Timeout] != "120" {
 		t.Fatalf("timeout = %#v", config[common.EnvMonkeyOCRv2Timeout])
 	}
+}
+
+func TestPaddleOCREnvConfig(t *testing.T) {
+	t.Run("ignores deprecated PADDLEOCR_ALGORITHM when set alone", func(t *testing.T) {
+		t.Setenv(common.EnvPaddleOCRBaseUrl, "")
+		t.Setenv(common.EnvPaddleOCRAPIURL, "")
+		t.Setenv(common.EnvPaddleOCRAccessToken, "")
+		t.Setenv("PADDLEOCR_ALGORITHM", "PaddleOCR-VL")
+		if config := collectEnvConfig(paddleOCREnvKeys, paddleOCRDefaultConfig); config != nil {
+			t.Fatalf("collectEnvConfig = %#v, want nil", config)
+		}
+	})
+
+	t.Run("collects API URL and token without PADDLEOCR_ALGORITHM", func(t *testing.T) {
+		t.Setenv(common.EnvPaddleOCRAPIURL, "https://paddleocr.aistudio-app.com/api")
+		t.Setenv(common.EnvPaddleOCRAccessToken, "tok-123")
+
+		config := collectEnvConfig(paddleOCREnvKeys, paddleOCRDefaultConfig)
+		if config == nil {
+			t.Fatal("collectEnvConfig returned nil")
+		}
+		if config[common.EnvPaddleOCRAPIURL] != "https://paddleocr.aistudio-app.com/api" {
+			t.Fatalf("API URL = %#v", config[common.EnvPaddleOCRAPIURL])
+		}
+		if config[common.EnvPaddleOCRAccessToken] != "tok-123" {
+			t.Fatalf("access token = %#v", config[common.EnvPaddleOCRAccessToken])
+		}
+		if _, hasAlgo := config["PADDLEOCR_ALGORITHM"]; hasAlgo {
+			t.Fatalf("unexpected PADDLEOCR_ALGORITHM in config: %#v", config["PADDLEOCR_ALGORITHM"])
+		}
+	})
 }
 
 func TestValidateEmbeddingModel(t *testing.T) {
@@ -333,6 +366,21 @@ func TestVerifyProviderModelNamesUnverifiableTypes(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "quantum") {
 		t.Fatalf("verifyProviderModel() error = %v, want it to name the unverifiable type", err)
+	}
+}
+
+// OCR services decode the verification image before recognizing anything, so
+// an image that fails to decode fails verification of a working model.
+func TestMinimalPNGDecodes(t *testing.T) {
+	img, err := png.Decode(bytes.NewReader(minimalPNG()))
+	if err != nil {
+		t.Fatalf("decode verification image: %v", err)
+	}
+	if bounds := img.Bounds(); bounds.Dx() != 1 || bounds.Dy() != 1 {
+		t.Fatalf("verification image bounds = %v, want 1x1", bounds)
+	}
+	if r, g, b, _ := img.At(0, 0).RGBA(); r != 0xffff || g != 0xffff || b != 0xffff {
+		t.Fatalf("verification image pixel = %v, want white", img.At(0, 0))
 	}
 }
 

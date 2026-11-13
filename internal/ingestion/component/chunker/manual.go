@@ -33,8 +33,6 @@ import (
 	"gorm.io/gorm"
 )
 
-const ComponentNameManualChunker = "ManualChunker"
-
 // ManualChunkerComponent is the standalone manual-layout chunker. It shares
 // the GroupTitleChunker grouping body (chunkFromRecords) and only differs by
 // the optional physical-position pre-sort.

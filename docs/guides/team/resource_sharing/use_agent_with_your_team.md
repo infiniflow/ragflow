@@ -2,6 +2,9 @@
 sidebar_position: 3
 sidebar_label: Use Agent with Your Team
 title: Use Agent with Your Team
+sidebar_custom_props: {
+  categoryIcon: LucideBot
+}
 ---
 
 # Use Agent with Your Team

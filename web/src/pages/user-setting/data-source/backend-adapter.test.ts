@@ -13,10 +13,13 @@ describe('data source backend adapter', () => {
     expect(loadAvailableDataSourceKeys()).toContain('feishu_wiki');
   });
 
-  it('returns every DataSourceKey', () => {
+  it('returns every DataSourceKey plus the enterprise connectors', () => {
     const { DataSourceKey } = require('./constant');
+    const {
+      eeDataSourceKeys,
+    } = require('@/ee/pages/user-setting/data-source/ee-extensions');
     expect(loadAvailableDataSourceKeys().sort()).toEqual(
-      Object.values(DataSourceKey).sort(),
+      [...Object.values(DataSourceKey), ...eeDataSourceKeys].sort(),
     );
   });
 });

@@ -98,6 +98,8 @@ func (s *AgentService) RunAgentWithWebhook(
 
 type agentSessionIDContextKey struct{}
 
+type agentChannelNameContextKey struct{}
+
 type openAICompatMessagesContextKey struct{}
 
 // WithAgentSessionID lets an HTTP boundary allocate the session identity while
@@ -113,6 +115,24 @@ func AgentSessionIDFromContext(ctx context.Context) string {
 	}
 	sessionID, _ := ctx.Value(agentSessionIDContextKey{}).(string)
 	return sessionID
+}
+
+// withAgentChannelName lets a chat-channel boundary record the channel name so
+// the session RunAgent creates carries it in its display name.
+func withAgentChannelName(ctx context.Context, channelName string) context.Context {
+	name := strings.TrimSpace(channelName)
+	if name == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, agentChannelNameContextKey{}, name)
+}
+
+func agentChannelNameFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	name, _ := ctx.Value(agentChannelNameContextKey{}).(string)
+	return name
 }
 
 // WithOpenAICompatMessages attaches the complete OpenAI messages list to an
@@ -325,9 +345,8 @@ var ErrAgentNotOwner = errors.New("agent not owned by user")
 
 // ErrAgentStorageError identifies internal Agent service failures such as
 // database connectivity, schema drift, or persistence errors. Synchronous
-// callers map this sentinel to a sanitized 500 response; failures raised after
-// streaming starts are wrapped with canvas.NewInternalRunError so Runner emits
-// the same safe message in its terminal event.
+// callers map this sentinel to a 500 response with the underlying error;
+// failures raised after streaming starts are wrapped with canvas.NewInternalRunError.
 var ErrAgentStorageError = errors.New("agent storage error")
 
 // AgentService agent service
@@ -1106,17 +1125,9 @@ func updatedAgentCanvasCategory(canvasInstance *entity.UserCanvas, updates map[s
 // handler layer can map every "not yours" case to the same 404 envelope
 // — see plan §4.8 IDOR mitigation.
 //
-// DAO-error sanitization (v3.5.2 follow-up): the raw userTenantDAO and
-// canvasDAO errors are wrapped with ErrAgentStorageError so mapAgentError
-// classifies them as CodeServerError (500) with a sanitized message —
-// the original DAO error string (DSN, table name, gorm stack frame)
-// MUST NOT reach the client. Sentinels (ErrUserCanvasNotFound) pass
-// through unchanged so they keep mapping to the 404 envelope.
-//
-// This is the FIRST storage access path RunAgent hits, so leaving the
-// raw errors here would have left a DAO-string leak in the very first
-// hop — the earlier af2ac2eda + 804854a5e commits only sanitized the
-// version-read path, missing the canvas-access path.
+// DAO errors wrap ErrAgentStorageError so mapAgentError classifies them as
+// CodeServerError (500) while retaining the cause. Missing resources keep
+// mapping to the same permission response.
 func (s *AgentService) loadCanvasForUser(ctx context.Context, canvasID string, operation permission.Operation) (*entity.UserCanvas, error) {
 	userID := permission.UserIDFromContext(ctx)
 	if canvasID == "" || userID == "" {
@@ -1877,8 +1888,7 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 	// path) already enforces this check; the run path mirrors it and surfaces
 	// ErrUserCanvasVersionNotFound so the handler maps to a clean 404 rather
 	// than silently using the foreign DSL. DB-side errors are wrapped with
-	// ErrAgentStorageError so raw DAO strings (DSNs, table names, gorm stack
-	// frames) never reach the client.
+	// ErrAgentStorageError so callers classify them as server errors.
 	//
 	// The buildRunFunc placeholder branch is reserved for the rare
 	// "canvas exists but has no DSL at all" edge case.
@@ -1886,6 +1896,20 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 		versionRow *entity.UserCanvasVersion
 		dsl        map[string]any
 	)
+	channelRun, _ := ctx.Value(channelAgentRunContextKey{}).(bool)
+	refreshSessionDSL := channelRun && version == ""
+	paused := s.runner != nil && s.runner.Peek(canvasID, sessionID)
+	var resumeInterruptID string
+	if userInput != nil && s.runTracker != nil {
+		interruptID, ok, err := s.runTracker.GetInterruptID(ctx, runID)
+		if err != nil && refreshSessionDSL {
+			return nil, fmt.Errorf("RunAgent: load pending interrupt: %w: %w", err, ErrAgentStorageError)
+		}
+		if err == nil && ok {
+			resumeInterruptID = interruptID
+			paused = true
+		}
+	}
 	if version != "" {
 		row, err := s.versionDAO.GetByID(ctx, dao.DB, version)
 		if err != nil {
@@ -1922,7 +1946,12 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 		}
 		sessionFound = existingSession != nil
 		if existingSession != nil && len(existingSession.DSL) > 0 {
-			dsl = dslpkg.NormalizeForRun(existingSession.DSL)
+			if refreshSessionDSL && !paused {
+				dsl = refreshChannelAgentDSL(dsl, existingSession.DSL)
+			} else {
+				// A paused execution must resume the graph that wrote its checkpoint.
+				dsl = dslpkg.NormalizeForRun(existingSession.DSL)
+			}
 		}
 	}
 	if err := validateAgentChatModels(ctx, agentTenantID, dsl); err != nil {
@@ -1955,6 +1984,9 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 		"session_id":     sessionID,
 		"user_id":        userID,
 	}
+	if refreshSessionDSL && !paused {
+		root["__force_new_run__"] = true
+	}
 	// Drop failed first-touch sessions only when there was no user question.
 	if (!sessionFound || newSession) && stringifyAgentUserInput(agentRunQuery(userInput)) == "" {
 		root["__drop_session_on_failure__"] = true
@@ -1964,11 +1996,9 @@ func (s *AgentService) RunAgent(ctx context.Context, canvasID, sessionID, versio
 	// cancellation identity.
 	// Recover a pending UserFillUp interrupt from Redis when this request
 	// lands on a different process.
-	if userInput != nil && s.runTracker != nil {
-		if interruptID, ok, ierr := s.runTracker.GetInterruptID(ctx, runID); ierr == nil && ok {
-			root["__resume_interrupt_id__"] = interruptID
-			root["__resume_data__"] = userInput
-		}
+	if resumeInterruptID != "" {
+		root["__resume_interrupt_id__"] = resumeInterruptID
+		root["__resume_data__"] = userInput
 	}
 	if userInput != nil {
 		root["user_input"] = userInput
@@ -2449,6 +2479,10 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		if cpID != "" {
 			invokeOpts = []compose.Option{compose.WithCheckPointID(cpID)}
 		}
+		if forceNewRun, _ := root["__force_new_run__"].(bool); forceNewRun {
+			// Completed checkpoints retain node state from the previous graph.
+			invokeOpts = append(invokeOpts, compose.WithForceNewRun())
+		}
 		// On a resume, the user input is the resume payload for the
 		// previously-paused UserFillUp node — it does NOT represent
 		// a fresh sys.query. The 'BEGIN' node writes inputs["query"]
@@ -2644,6 +2678,9 @@ func (s *AgentService) createAgentRunSession(
 	}
 	source := "agent"
 	name := deriveAgentSessionName(userInput)
+	if channelName := agentChannelNameFromContext(ctx); channelName != "" {
+		name = channelSessionName(name, channelName)
+	}
 	session := &entity.API4Conversation{
 		ID:        sessionID,
 		Name:      &name,
@@ -2795,6 +2832,41 @@ func (s *AgentService) persistAgentRunSession(
 		updates["dsl"] = buildPersistedAgentDSL(runDSL, state)
 	}
 	return s.api4ConversationDAO.UpdateHistory(ctx, dao.DB, sessionID, agentID, userID, updates, history)
+}
+
+// refreshChannelAgentDSL keeps conversation data while replacing the workflow.
+func refreshChannelAgentDSL(dsl, previous map[string]any) map[string]any {
+	dsl = dslpkg.ResetForNewSession(dsl)
+	for _, key := range []string{"history", "memory"} {
+		if value, ok := previous[key]; ok {
+			dsl[key] = value
+		}
+	}
+	globals, _ := dsl["globals"].(map[string]any)
+	if globals == nil {
+		globals = map[string]any{}
+		dsl["globals"] = globals
+	}
+	oldGlobals, _ := previous["globals"].(map[string]any)
+	variables, _ := dsl["variables"].(map[string]any)
+	oldVariables, _ := previous["variables"].(map[string]any)
+	for key, value := range oldGlobals {
+		switch key {
+		case "sys.history", "sys.conversation_turns":
+			globals[key] = value
+		default:
+			if !strings.HasPrefix(key, "env.") {
+				continue
+			}
+			name := strings.TrimPrefix(key, "env.")
+			if current, ok := globals[key]; ok &&
+				reflect.TypeOf(current) == reflect.TypeOf(value) &&
+				reflect.DeepEqual(variables[name], oldVariables[name]) {
+				globals[key] = value
+			}
+		}
+	}
+	return dsl
 }
 
 func buildPersistedAgentDSL(runDSL map[string]any, state *canvas.CanvasState) entity.JSONMap {

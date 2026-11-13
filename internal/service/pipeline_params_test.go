@@ -167,3 +167,24 @@ func TestValidateDatasetEmbeddingModels_UnresolvableIDsStayIsolated(t *testing.T
 		t.Fatal("expected error for distinct unresolvable embedding ids")
 	}
 }
+
+func TestValidateDatasetEmbeddingModelsSharedReferenceFallback(t *testing.T) {
+	db := setupValidateEmbeddingTestDB(t)
+	id := "shared"
+	kbs := []*entity.Knowledgebase{
+		{TenantEmbdID: &id, EmbdID: "model-A@instance@provider"},
+		{TenantEmbdID: &id, EmbdID: "model-B@instance@provider"},
+	}
+	for range 2 {
+		if err := ValidateDatasetEmbeddingModels(t.Context(), db, kbs); err == nil {
+			t.Fatal("unresolved references with different fallbacks must be incompatible")
+		}
+		kbs[0], kbs[1] = kbs[1], kbs[0]
+	}
+	if err := db.Create(&entity.TenantModel{ID: id, ModelName: "stored-model"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateDatasetEmbeddingModels(t.Context(), db, kbs); err != nil {
+		t.Fatalf("valid shared reference: %v", err)
+	}
+}

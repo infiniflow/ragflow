@@ -13,6 +13,7 @@ npm install
 ## Run
 
 ```bash
+WHATSAPP_GATEWAY_TOKEN=change-me \
 WHATSAPP_GATEWAY_PORT=3005 \
 WHATSAPP_GATEWAY_DATA_DIR=~/.ragflow/whatsapp-gateway \
 npm start
@@ -30,6 +31,9 @@ npm start
 ## Notes
 
 - Authentication state is persisted under `WHATSAPP_GATEWAY_DATA_DIR`.
+- Set `WHATSAPP_GATEWAY_TOKEN` and configure the same token for the RAGFlow
+  WhatsApp channel. Requests to `/whatsapp/*` require this bearer token; only
+  `/health` is public for readiness checks.
 - Scan the QR code exposed in `status.qr_data_url`.
 - RAGFlow polls `status` and `events` and forwards inbound messages to the
   connected assistant.

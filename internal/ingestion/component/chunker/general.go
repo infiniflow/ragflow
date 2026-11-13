@@ -44,8 +44,6 @@ import (
 	"ragflow/internal/parser/tableutil"
 )
 
-const ComponentNameGeneralChunker = "GeneralChunker"
-
 var contextSentencePattern = regexp.MustCompile(`([。!?？；！\n]|\. )`)
 
 type generalChunkerParam struct {
@@ -95,7 +93,7 @@ func (p *generalChunkerParam) Update(conf map[string]any) {
 }
 
 // normalizeGeneralDelimiterValue accepts both the canonical list form and
-// the legacy Python single-string form. A legacy string is split into Unicode
+// the legacy single-string form. A legacy string is split into Unicode
 // rune delimiters, except backtick-wrapped tokens which remain one delimiter.
 func normalizeGeneralDelimiterValue(value any) ([]string, bool) {
 	switch value := value.(type) {
@@ -260,7 +258,6 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 		}
 		joinSep := "\n"
 		if !customDelimiter {
-			body, bodySources = joinPDFContinuations(body, bodySources)
 			body = separateGeneralTextBlocks(body)
 			body, bodySources = splitPDFUnits(body, bodySources, primaryPattern, true)
 			joinSep = ""
@@ -1425,7 +1422,7 @@ func joinGeneralOverlapText(prefix, text, separator string) string {
 
 // splitGeneralUnitsDroppingRecordPrefix splits grouped DOCX records and drops
 // the leading custom-delimiter record prefix (for example "问："). A custom
-// (backtick) delimiter is a split instruction, not content: Python
+// (backtick) delimiter is a split instruction, not content:
 // naive_merge_docx/_build_cks drops it and strips each flushed record. Inline
 // delimiter matches are dropped by splitByDelim drop mode.
 func splitGeneralUnitsDroppingRecordPrefix(units []schema.ChunkDoc, pattern *regexp.Regexp, recordPrefixes []string) []schema.ChunkDoc {

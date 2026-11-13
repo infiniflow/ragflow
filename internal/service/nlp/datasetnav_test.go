@@ -176,7 +176,7 @@ func (m *memNavEngine) GetAggregation([]map[string]interface{}, string) []map[st
 func (m *memNavEngine) GetHighlight([]map[string]interface{}, []string, string) map[string]string {
 	return nil
 }
-func (m *memNavEngine) RunSQL(context.Context, string, string, []string, string) ([]map[string]interface{}, error) {
+func (m *memNavEngine) RunSQL(context.Context, string, string) ([]map[string]interface{}, error) {
 	return nil, nil
 }
 func (m *memNavEngine) GetChunkIDs([]map[string]interface{}) []string { return nil }

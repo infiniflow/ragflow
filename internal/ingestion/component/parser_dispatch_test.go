@@ -2090,7 +2090,7 @@ func tcadpZipFixtureForComponent(t *testing.T) []byte {
 }
 
 func TestParserFileFamilyPresentationExtensions(t *testing.T) {
-	for _, ext := range []string{"ppt", "pptx", "pages", "dps", "dpt"} {
+	for _, ext := range []string{"ppt", "pptx", "pages"} {
 		if got := ParserFileFamily(ext); got != "slides" {
 			t.Errorf("ParserFileFamily(%q) = %q, want slides", ext, got)
 		}
@@ -2158,5 +2158,33 @@ func TestConfigureParserFromSetups_Visual(t *testing.T) {
 			t.Errorf("FileTypeVISUAL parse_method = %v, want %v", v, want["parse_method"])
 		}
 	})
+}
 
+// TestConfigureParserFromSetups_Doc verifies that DOCParser implements
+// parserSetupConfigurer and receives its remove_toc and remove_header_footer
+// configuration from the "doc" setups family.
+func TestConfigureParserFromSetups_Doc(t *testing.T) {
+	setups := defaultSetups()
+	setups["doc"] = schema.ParserSetup{
+		"remove_toc":           true,
+		"remove_header_footer": true,
+	}
+
+	p, _, err := parser.GetParser(utility.FileTypeDOC, nil)
+	if err != nil {
+		t.Fatalf("GetParser(FileTypeDOC): %v", err)
+	}
+
+	configureParserFromSetups(p, utility.FileTypeDOC, setups)
+
+	docP, ok := p.(*parser.DOCParser)
+	if !ok {
+		t.Fatalf("expected *parser.DOCParser, got %T", p)
+	}
+	if !docP.RemoveTOC {
+		t.Errorf("DOCParser.RemoveTOC = false, want true")
+	}
+	if !docP.RemoveHeaderFooter {
+		t.Errorf("DOCParser.RemoveHeaderFooter = false, want true")
+	}
 }

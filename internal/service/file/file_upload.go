@@ -289,7 +289,7 @@ func (s *FileService) checkUploadInfoHealth(ctx context.Context, filename string
 		var maxNum int64
 		if _, err := fmt.Sscanf(maxFileNumPerUser, "%d", &maxNum); err == nil && maxNum > 0 {
 			var docCount int64
-			docCount, err = s.GetDocCount(ctx, userID)
+			docCount, err = dao.NewDocumentDAO().CountByUserID(ctx, dao.DB, userID)
 			if err != nil {
 				return fmt.Errorf("failed to get document count: %w", err)
 			}

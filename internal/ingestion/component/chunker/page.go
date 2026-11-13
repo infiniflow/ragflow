@@ -15,9 +15,8 @@
 //
 
 // PageChunker emits one chunk per upstream slide or page.
-// It is the faithful Go port of the Python `presentation` chunk method
-// (rag/app/presentation.py), whose docstring states: "Every page will
-// be treated as a chunk."
+// It is the faithful Go port of the `presentation` chunk method, whose
+// docstring states: "Every page will be treated as a chunk."
 //
 // Unlike TokenChunker (which merges slides into a single chunk) or
 // OneChunker (which collapses many slides into one), PageChunker
@@ -33,8 +32,6 @@ import (
 
 	"gorm.io/gorm"
 )
-
-const ComponentNamePageChunker = "PageChunker"
 
 type pageChunkerParam struct{}
 

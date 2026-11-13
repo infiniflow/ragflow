@@ -4,7 +4,7 @@ title: "Retrieval Testing: Retrieval Test"
 sidebar_label: "Retrieval Testing: Retrieval Test"
 slug: /retrieval_testing
 sidebar_custom_props:
-  categoryIcon: LucideDatabaseZap
+  categoryIcon: LucideTextSearch
 ---
 
 # Retrieval Testing: Retrieval Test

@@ -1,5 +1,4 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useQuery } from '@tanstack/react-query';
 import { useCallback, useId, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -15,24 +14,10 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 
-import {
-  Select,
-  SelectContent,
-  SelectGroup,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { listRoles } from '@/services/admin-service';
-
-import EnterpriseFeature from '../components/enterprise-feature';
-import { IS_ENTERPRISE } from '../utils';
-
 interface CreateUserFormData {
   email: string;
   password: string;
   confirmPassword: string;
-  role?: string;
 }
 
 interface CreateUserFormProps {
@@ -47,13 +32,6 @@ export const CreateUserForm = ({
   onSubmit = () => {},
 }: CreateUserFormProps) => {
   const { t } = useTranslation();
-
-  const { data: roleList } = useQuery({
-    queryKey: ['admin/listRoles'],
-    queryFn: async () => (await listRoles()).data.data.roles,
-    enabled: IS_ENTERPRISE,
-    retry: false,
-  });
 
   return (
     <Form {...form}>
@@ -129,44 +107,6 @@ export const CreateUserForm = ({
             </FormItem>
           )}
         />
-
-        <EnterpriseFeature>
-          {/* Role field */}
-          {() => (
-            <FormField
-              control={form.control}
-              name="role"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel className="text-sm font-medium">
-                    {t('admin.role')}
-                  </FormLabel>
-                  <FormControl>
-                    <Select {...field}>
-                      <SelectTrigger className="w-full h-10">
-                        <SelectValue />
-                      </SelectTrigger>
-
-                      <SelectContent className="bg-bg-base">
-                        <SelectGroup>
-                          {roleList?.map((role) => (
-                            <SelectItem key={role.id} value={role.role_name}>
-                              {role.role_name}
-                            </SelectItem>
-                          )) ?? (
-                            <div className="text-text-secondary px-2 py-6 text-sm text-center">
-                              {t('common.noData')}
-                            </div>
-                          )}
-                        </SelectGroup>
-                      </SelectContent>
-                    </Select>
-                  </FormControl>
-                </FormItem>
-              )}
-            />
-          )}
-        </EnterpriseFeature>
       </form>
     </Form>
   );
@@ -187,7 +127,6 @@ function useCreateUserForm(props?: {
         confirmPassword: z
           .string()
           .min(1, { message: t('admin.confirmPasswordRequired') }),
-        role: z.string().optional(),
       })
       .refine((data) => data.password === data.confirmPassword, {
         message: t('admin.confirmPasswordDoNotMatch'),

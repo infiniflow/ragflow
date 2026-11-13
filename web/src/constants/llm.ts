@@ -86,6 +86,7 @@ export enum LLMFactory {
   MinerUNet = 'MinerU.Net',
   PaddleOCR = 'PaddleOCR',
   PaddleOCRLocal = 'PaddleOCR.local',
+  MiniCPMOCR = 'MiniCPM-OCR',
   OpenDataLoader = 'OpenDataLoader',
   SoMark = 'SoMark',
   N1n = 'n1n',
@@ -122,9 +123,13 @@ export enum LLMFactory {
   Obscurify = 'Obscurify.ai',
   Cheapaimodel = 'cheapaimodel',
   SystemOne = 'SystemOne',
+  Nace = 'Nace',
   HostingerRouter = 'Hostinger Router',
   Wally = 'Wally',
+  Shengsuanyun = 'Shengsuanyun',
   Synap = 'Synap',
+  Wiro = 'Wiro AI',
+  Crusoe = 'Crusoe',
   HopBase = 'HopBase',
 }
 
@@ -195,6 +200,7 @@ export const IconMap = {
   [LLMFactory.MinerUNet]: 'mineru',
   [LLMFactory.PaddleOCR]: 'paddleocr',
   [LLMFactory.PaddleOCRLocal]: 'paddleocr',
+  [LLMFactory.MiniCPMOCR]: 'minicpm-ocr',
   [LLMFactory.N1n]: 'n1n',
   [LLMFactory.Avian]: 'avian',
   [LLMFactory.RAGcon]: 'ragcon',
@@ -225,13 +231,17 @@ export const IconMap = {
   [LLMFactory.EmpirioLabs]: 'empiriolabs',
   [LLMFactory.AIStupidLevel]: 'aistupidlevel',
   [LLMFactory.Runcrate]: 'runcrate',
+  [LLMFactory.Nace]: 'nace',
   [LLMFactory.WorldRouter]: 'worldrouter',
   [LLMFactory.CloudGPU]: 'cloudgpu',
   [LLMFactory.Obscurify]: 'obscurify',
   [LLMFactory.HostingerRouter]: 'hostinger-router',
   [LLMFactory.Cheapaimodel]: 'cheapaimodel',
   [LLMFactory.Wally]: 'wally',
+  [LLMFactory.Shengsuanyun]: 'shengsuanyun',
   [LLMFactory.Synap]: 'synap',
+  [LLMFactory.Wiro]: 'wiro',
+  [LLMFactory.Crusoe]: 'crusoe',
   [LLMFactory.HopBase]: 'hopbase',
 };
 
@@ -281,6 +291,7 @@ export const APIMapUrl = {
   [LLMFactory.AIStupidLevel]: 'https://aistupidlevel.info/router/keys',
   [LLMFactory.Runcrate]:
     'https://www.runcrate.ai/dashboard/api-keys?utm_source=ragflow&utm_medium=directory&utm_campaign=gpu_pricing',
+  [LLMFactory.Nace]: 'https://console.nace.ai/dashboard/api-keys',
   [LLMFactory.WorldRouter]:
     'https://worldrouter.ai/dashboard/api-keys?utm_source=ragflow&utm_medium=provider&utm_campaign=integration',
   [LLMFactory.CloudGPU]: 'https://cloudgpu.app/api/console',
@@ -290,6 +301,8 @@ export const APIMapUrl = {
     'https://console.cheapaimodel.ai/keys?utm_source=ragflow',
   [LLMFactory.Wally]: 'https://console.runanywhere.ai',
   [LLMFactory.Synap]: 'https://synap.linkrra.com/pricing',
+  [LLMFactory.Wiro]: 'https://wiro.ai/panel/project/new',
+  [LLMFactory.Crusoe]: 'https://console.crusoecloud.com',
   [LLMFactory.HopBase]: 'https://api.hop-base.com/login',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
@@ -341,6 +354,7 @@ export const APIMapUrl = {
   [LLMFactory.TokenPony]: 'https://www.tokenpony.cn/#/user/keys',
   [LLMFactory.DeepInfra]: 'https://deepinfra.com/dash/api_keys',
   [LLMFactory.PaddleOCR]: 'https://aistudio.baidu.com/paddleocr',
+  [LLMFactory.MiniCPMOCR]: 'https://platform.modelbest.cn/console/keys',
   [LLMFactory.SoMark]: 'https://somark.cn/workbench/apikey',
   [LLMFactory.N1n]: 'https://docs.n1n.ai',
   [LLMFactory.Avian]: 'https://avian.io',
@@ -378,4 +392,5 @@ export const APIMapUrl = {
   [LLMFactory.PaddleOCRLocal]: 'https://aistudio.baidu.com/paddleocr',
   [LLMFactory.RAGcon]: 'https://connect.ragcon.com',
   [LLMFactory.FunASR]: 'https://github.com/modelscope/FunASR',
+  [LLMFactory.Shengsuanyun]: 'https://www.shengsuanyun.com/zh/?from=ragflow',
 };

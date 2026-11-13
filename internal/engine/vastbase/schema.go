@@ -379,7 +379,7 @@ func (e *Engine) ensureVectorColumnAndIndex(ctx context.Context, tableName strin
 	if vectorSize <= 0 {
 		return nil
 	}
-	columnName := fmt.Sprintf("q_%d_vec", vectorSize)
+	columnName := common.VectorColumnName(vectorSize)
 	if err := e.ensureColumn(ctx, tableName, columnDefinition{
 		name:    columnName,
 		typeSQL: fmt.Sprintf("floatvector(%d)", vectorSize),

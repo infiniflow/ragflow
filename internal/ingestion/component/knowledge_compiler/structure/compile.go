@@ -21,21 +21,21 @@ type CompileConfig struct {
 	Lang         string
 	ParserConfig map[string]any
 	// TemplateID is mixed into stable row ids so two templates sharing a
-	// compile kind don't collide on identical payloads (mirrors Python's
+	// compile kind don't collide on identical payloads (mirrors
 	// row_seed_extras in _struct_to_doc_storage_doc).
 	TemplateID string
 }
 
-// extractionTemperature mirrors Python's gen_conf for structure extraction
+// extractionTemperature mirrors gen_conf for structure extraction
 // (_struct_extract_hypergraph uses temperature 0.1).
 var extractionTemperature = 0.1
 
 // disableThinking mirrors knowledge_compile_gen_conf's intent: extraction and
-// judging calls must not spend the budget on chain-of-thought. Python disables
+// judging calls must not spend the budget on chain-of-thought. disables
 // it per model family (deepseek-v4/minimax via extra_body.thinking, qwen3 via
 // enable_thinking, everything else via reasoning_effort="none"); the Go chat
 // drivers expose a single normalized switch, so every compile call turns it
-// off. The one Python exception — qwen3 -preview endpoints that REQUIRE
+// off. The one exception — qwen3 -preview endpoints that REQUIRE
 // thinking enabled — would need a model-name branch in the Go driver.
 func chatRequest(llmID, systemPrompt, userPrompt string) common.ChatRequest {
 	return common.ChatRequest{
@@ -153,8 +153,9 @@ func payloadDescription(payload map[string]any) string {
 }
 
 // IndexText returns the flattened payload description for a compiled row's
-// content JSON — the exact text Python tokenizes into content_ltks /
-// content_sm_ltks (“_tokenize_for_search(_struct_payload_description(payload))“).
+// content JSON — the exact text tokenizes into content_ltks /
+// content_sm_ltks — the exact text the upstream _tokenize_for_search step
+// tokenizes.
 // Non-JSON content yields "", so non-structure variants keep tokenizing their
 // raw content.
 func IndexText(content string) string {
@@ -185,7 +186,7 @@ func mentionCountOf(payload map[string]any) int {
 	return 1
 }
 
-// payloadJSON serialises a payload the way Python's json.dumps(ensure_ascii=
+// payloadJSON serialises a payload the way json.dumps(ensure_ascii=
 // False) does: Go's json.Marshal escapes <, > and & to < etc., which
 // would corrupt entity names containing those characters, so HTML escaping is
 // disabled. Keys are alphabetically sorted (map marshal), giving a canonical,
@@ -211,7 +212,7 @@ func parsePayload(content string) map[string]any {
 
 // buildRows converts extracted node/edge payloads into entity/relation
 // products, mirroring _struct_process_batch: embedding input is
-// payloadDescription(payload); content is the payload JSON (Python's
+// payloadDescription(payload); content is the payload JSON (
 // content_with_weight); source_chunk_ids are the model's picks filtered to
 // the batch; the stable row id hashes (content, doc_id, template_id).
 func buildRows(ctx context.Context, deps common.Deps, cfg CompileConfig, nodes, edges []map[string]any, batchIDs []string) ([]common.Product, error) {
@@ -257,7 +258,7 @@ func buildRows(ctx context.Context, deps common.Deps, cfg CompileConfig, nodes, 
 		meta := map[string]any{
 			"kind":             s.kind,
 			"source_chunk_ids": payloadChunkIDs(s.payload, batchIDs),
-			// mention_count_int mirrors Python: the payload's own count when it
+			// mention_count carries the payload's own count when it
 			// carries one, else 1 (never a synthesized constant).
 			"mention_count": mentionCountOf(s.payload),
 		}
@@ -266,7 +267,7 @@ func buildRows(ctx context.Context, deps common.Deps, cfg CompileConfig, nodes, 
 				meta["name"] = name
 			}
 			// entity_type_kwd is only stamped when the payload has a type —
-			// Python omits the column entirely for an untyped entity rather
+			// omits the column entirely for an untyped entity rather
 			// than writing a synthesized "other".
 			if typ := strings.TrimSpace(stringOf(s.payload["type"])); typ != "" {
 				meta["entity_type"] = typ
