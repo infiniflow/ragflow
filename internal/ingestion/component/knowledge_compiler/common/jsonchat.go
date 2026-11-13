@@ -73,13 +73,12 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 	// GenJSON attempt, avoiding multiplicative nested retries.
 	req.DisableRetry = true
 	var lastErr error
-	delay := jsonRetryDelay
+	// baseDelay is the (possibly test-overridden) initial delay; the capped
+	// exponential backoff recomputes every attempt from this same base.
+	baseDelay := jsonRetryDelay
 	if d, ok := RetryDelayFromCtx(ctx); ok {
-		delay = d
+		baseDelay = d
 	}
-	// baseDelay captures the (possibly test-overridden) initial delay so the
-	// capped exponential backoff recomputes from the same base every attempt.
-	baseDelay := delay
 	failureReporter := RetryFailureReporter{}
 	for attempt := 0; attempt <= maxRetries; attempt++ {
 		resp, err := chat.Chat(ctx, req)
@@ -129,13 +128,13 @@ func GenJSON(ctx context.Context, chat ChatInvoker, req ChatRequest, retryMax ..
 			}
 			break
 		}
-		if message, ok := failureReporter.FailureMessage(attempt+1, maxRetries+1, delay, lastErr, false); ok {
+		// Compute the capped delay for the current attempt (1-indexed:
+		// attempt 0 -> baseDelay) before reporting and sleeping, so the
+		// progress message names the wait the caller is about to take.
+		d := appcommon.ExponentialBackoff(baseDelay, time.Minute, attempt+1)
+		if message, ok := failureReporter.FailureMessage(attempt+1, maxRetries+1, d, lastErr, false); ok {
 			runtime.ReportProgressMessage(ctx, "Compiler", message)
 		}
-		// Compute the capped, jittered delay for the current attempt
-		// (1-indexed: attempt 0 -> baseDelay) before sleeping, so the first
-		// retry is also clamped to the 1-minute ceiling.
-		d := appcommon.ExponentialBackoff(baseDelay, time.Minute, attempt+1)
 		appcommon.Info("knowledge_compiler: GenJSON attempt failed, retrying",
 			zap.Int("attempt", attempt), zap.Duration("delay", d),
 			zap.Error(lastErr))
