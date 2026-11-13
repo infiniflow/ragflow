@@ -15,10 +15,7 @@
 
 package esoscommon
 
-import (
-	"regexp"
-	"sync"
-)
+import "regexp"
 
 // QueryVectorFieldName is the dense-vector query field used by the
 // Elasticsearch wire format.
@@ -28,25 +25,24 @@ const QueryVectorFieldName = "query_vector"
 // format (Elasticsearch uses QueryVectorFieldName).
 const VectorFieldName = "vector"
 
-var (
-	elideVectorMu    sync.Mutex
-	elideVectorCache = map[string]*regexp.Regexp{}
-)
+// elideVectorRegexes holds the compiled regexes for the two engine field names,
+// precomputed once at package init so the hot path (every vector-search log
+// call) looks them up without locking or recompiling.
+var elideVectorRegexes = map[string]*regexp.Regexp{
+	QueryVectorFieldName: regexp.MustCompile(`"` + regexp.QuoteMeta(QueryVectorFieldName) + `":\s*\[[^\]]*\]`),
+	VectorFieldName:      regexp.MustCompile(`"` + regexp.QuoteMeta(VectorFieldName) + `":\s*\[[^\]]*\]`),
+}
 
-// elideVectorRegex returns a cached, compiled regex that matches the serialized
-// dense-vector query under the given field name: "field":[...]. The regex is
-// cached per field name because the only two callers (the ES and OS engines)
-// invoke this on the hot path of every vector search whose request body is
-// written to the log, so recompiling on each call would be wasteful.
+// elideVectorRegex returns the precomputed regex for a known field name, or
+// compiles one on demand for any other field name. The two real engine callers
+// always pass a constant above, so they take the lock-free path; the fallback
+// keeps the helper correct for an unexpected field name without caching an
+// unbounded set of compiled patterns.
 func elideVectorRegex(fieldName string) *regexp.Regexp {
-	elideVectorMu.Lock()
-	defer elideVectorMu.Unlock()
-	if re, ok := elideVectorCache[fieldName]; ok {
+	if re, ok := elideVectorRegexes[fieldName]; ok {
 		return re
 	}
-	re := regexp.MustCompile(`"` + regexp.QuoteMeta(fieldName) + `":\s*\[[^\]]*\]`)
-	elideVectorCache[fieldName] = re
-	return re
+	return regexp.MustCompile(`"` + regexp.QuoteMeta(fieldName) + `":\s*\[[^\]]*\]`)
 }
 
 // ElideQueryVector removes the dense-vector array from a search request body
