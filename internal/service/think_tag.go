@@ -93,6 +93,11 @@ const (
 type ThinkDelta struct {
 	Kind  ThinkDeltaKind
 	Value string
+	// Reasoning marks text that belongs to the thinking section. Callers with a
+	// separate reasoning channel (the OpenAI-compatible encoder) route it there;
+	// the native protocol still folds it into the answer between the think
+	// markers, so a zero value keeps the existing behaviour.
+	Reasoning bool
 }
 
 // emitText returns the batched text and its kind.
@@ -124,7 +129,7 @@ func flushThinkBufferInternal(state *ThinkStreamState) ThinkDelta {
 	}
 	out := state.thinkBuffer
 	state.thinkBuffer = ""
-	return ThinkDelta{Kind: ThinkDeltaText, Value: out}
+	return ThinkDelta{Kind: ThinkDeltaText, Value: out, Reasoning: true}
 }
 
 func flushAnswerBufferInternal(state *ThinkStreamState) ThinkDelta {
@@ -215,11 +220,11 @@ func NextThinkDelta(state *ThinkStreamState, chunk string, minTokens int) []Thin
 		if openIdx == -1 && closeIdx == -1 {
 			if piece := stripThinkTags(pending); piece != "" {
 				section := "answer"
-				if state.inThink {
+				if state.inThink || state.inReasoning {
 					section = "think"
 				}
 				if out, kind := emitText(state, section, piece, minTokens); out != "" {
-					deltas = append(deltas, ThinkDelta{Kind: kind, Value: out})
+					deltas = append(deltas, ThinkDelta{Kind: kind, Value: out, Reasoning: section == "think"})
 				}
 			}
 			break
@@ -231,11 +236,11 @@ func NextThinkDelta(state *ThinkStreamState, chunk string, minTokens int) []Thin
 			if before != "" {
 				piece := stripThinkTags(before)
 				section := "answer"
-				if state.inThink {
+				if state.inThink || state.inReasoning {
 					section = "think"
 				}
 				if out, kind := emitText(state, section, piece, minTokens); out != "" {
-					deltas = append(deltas, ThinkDelta{Kind: kind, Value: out})
+					deltas = append(deltas, ThinkDelta{Kind: kind, Value: out, Reasoning: section == "think"})
 				}
 			}
 			pending = pending[openIdx+len(thinkOpen):]
@@ -258,11 +263,11 @@ func NextThinkDelta(state *ThinkStreamState, chunk string, minTokens int) []Thin
 		if before != "" {
 			piece := stripThinkTags(before)
 			section := "answer"
-			if state.inThink {
+			if state.inThink || state.inReasoning {
 				section = "think"
 			}
 			if out, kind := emitText(state, section, piece, minTokens); out != "" {
-				deltas = append(deltas, ThinkDelta{Kind: kind, Value: out})
+				deltas = append(deltas, ThinkDelta{Kind: kind, Value: out, Reasoning: section == "think"})
 			}
 		}
 		if strings.TrimSpace(after) != "" {
@@ -294,7 +299,7 @@ func FlushRemaining(state *ThinkStreamState) []ThinkDelta {
 	}
 	var deltas []ThinkDelta
 	if state.thinkBuffer != "" {
-		deltas = append(deltas, ThinkDelta{Kind: ThinkDeltaText, Value: state.thinkBuffer})
+		deltas = append(deltas, ThinkDelta{Kind: ThinkDeltaText, Value: state.thinkBuffer, Reasoning: true})
 		state.thinkBuffer = ""
 	}
 	if state.closePending {
@@ -366,15 +371,48 @@ func StreamThinkTagDelta(ctx context.Context, chunks <-chan string, minTokens in
 }
 
 // ExtractVisibleAnswer returns the visible answer text after the last </think>.
-// Stray <think>/</think> tags are stripped. If there is no </think>, all tags are stripped.
+// A trailing <think> without a matching </think> means the model was cut off
+// mid-reasoning: everything from that marker on is reasoning, not answer.
+// Stray <think>/</think> tags are stripped.
 func ExtractVisibleAnswer(raw string) string {
 	if raw == "" {
 		return ""
 	}
+	if open := strings.LastIndex(raw, thinkOpen); open > strings.LastIndex(raw, thinkClose) {
+		raw = raw[:open]
+	}
 	// Cut through the last </think> (common.StripThinkTrailing), then strip
-	// residual stray tags. With no </think> the cut is a no-op and all tags
-	// are stripped — same behaviour as before.
+	// residual stray tags.
 	return stripThinkTags(common.StripThinkTrailing(raw))
+}
+
+// ExtractReasoning returns the thinking text of the last <think> block. The
+// native pipeline keeps reasoning inside the answer between the markers while
+// the OpenAI protocol carries it in a separate field. An unclosed last block
+// still counts as reasoning: a truncated stream must not surface it as answer.
+func ExtractReasoning(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	end := strings.LastIndex(raw, thinkClose)
+	start := strings.LastIndex(raw, thinkOpen)
+	if start > end {
+		return strings.TrimSpace(stripThinkTags(raw[start+len(thinkOpen):]))
+	}
+	if end < 0 || start < 0 {
+		return ""
+	}
+	return strings.TrimSpace(stripThinkTags(raw[start+len(thinkOpen) : end]))
+}
+
+// ReasoningOf returns the reasoning a result carries: the driver-reported
+// field when the driver separates the think block, otherwise the inline block
+// the native path leaves in Answer.
+func ReasoningOf(result AsyncChatResult) string {
+	if result.Reasoning != "" {
+		return result.Reasoning
+	}
+	return ExtractReasoning(result.Answer)
 }
 
 // BufferAnswerDelta processes an answer delta through the think-state lifecycle.

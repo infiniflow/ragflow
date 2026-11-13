@@ -367,6 +367,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, chatID string,
 
 			var (
 				fullContent    string
+				fullReasoning  string
 				completionTok  int
 				deltaCount     int
 				finalReference []FormattedChunk
@@ -388,10 +389,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, chatID string,
 				// which is what left an answer opening mid-sentence.
 
 				if result.Final {
-					finalContent := strings.TrimSpace(result.Answer)
-					if result.AnswerIsAuthoritative {
-						finalContent = strings.TrimSpace(ExtractVisibleAnswer(result.Answer))
-					}
+					finalContent, _, finalTokens := splitFinalResponse(result, fullReasoning)
 					fullContent = finalContent
 					finalReference = []FormattedChunk{}
 					if ref, ok := result.Reference["chunks"]; ok {
@@ -400,7 +398,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, chatID string,
 						}
 					}
 					s.enrichChunksWithDocumentMetadata(ctx, finalReference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
-					completionTok = tokenizer.NumTokensFromString(finalContent)
+					completionTok = finalTokens
 					_ = sendEvent(OpenAIStreamEvent{
 						Kind:             OpenAIEventFinal,
 						FinalAnswer:      finalContent,
@@ -413,6 +411,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, chatID string,
 				}
 
 				if result.Reasoning != "" {
+					fullReasoning += result.Reasoning
 					completionTok += tokenizer.NumTokensFromString(result.Reasoning)
 					if !sendEvent(OpenAIStreamEvent{Kind: OpenAIEventReasoning, Delta: result.Reasoning}) {
 						return
@@ -477,11 +476,10 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, chatID string,
 			return
 		}
 
-		content := strings.TrimSpace(finalResult.Answer)
-		if finalResult.AnswerIsAuthoritative {
-			content = strings.TrimSpace(ExtractVisibleAnswer(finalResult.Answer))
-		}
-		completionTokens := tokenizer.NumTokensFromString(content)
+		// Drivers that separate the think block report it on Reasoning; the
+		// native no-tool path keeps it inline, so fall back to the markers.
+		content, reasoning, completionTokens := splitFinalResponse(finalResult, "")
+		reasoningTokens := tokenizer.NumTokensFromString(reasoning)
 		resp := &OpenAICompletionResponse{
 			Model:            openaiReq.Model,
 			Content:          content,
@@ -499,21 +497,19 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, chatID string,
 			s.enrichChunksWithDocumentMetadata(ctx, resp.Reference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
 		}
 
-		contextUsed := 0
-		for _, m := range openaiReq.Messages {
-			if c, ok := m["content"].(string); ok {
-				contextUsed += tokenizer.NumTokensFromString(c)
-			}
+		message := gin.H{
+			"role":    "assistant",
+			"content": resp.Content,
 		}
-
+		// Route the extracted block to the protocol field for it.
+		if reasoning != "" {
+			message["reasoning_content"] = reasoning
+		}
 		choices := []gin.H{{
 			"index":         0,
 			"finish_reason": "stop",
 			"logprobs":      nil,
-			"message": gin.H{
-				"role":    "assistant",
-				"content": resp.Content,
-			},
+			"message":       message,
 		}}
 		if openaiReq.NeedReference {
 			choices[0]["message"].(gin.H)["reference"] = resp.Reference
@@ -529,7 +525,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, chatID string,
 				"completion_tokens": resp.CompletionTokens,
 				"total_tokens":      resp.PromptTokens + resp.CompletionTokens,
 				"completion_tokens_details": gin.H{
-					"reasoning_tokens":           contextUsed,
+					"reasoning_tokens":           reasoningTokens,
 					"accepted_prediction_tokens": resp.CompletionTokens,
 					"rejected_prediction_tokens": 0,
 				},
@@ -538,6 +534,33 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, chatID string,
 		})
 	}
 	common.Info("OpenAIChatCompletions completed", zap.String("chat_id", chatID))
+}
+
+// splitFinalResponse derives the visible answer, the reasoning text and the
+// completion token count from a final pipeline result, so the streaming and
+// non-streaming paths split and count the same way. reasoningFallback is the
+// reasoning the streaming path already routed to the reasoning channel; the
+// final result wins when it carries the block itself.
+func splitFinalResponse(final AsyncChatResult, reasoningFallback string) (content, reasoning string, completionTokens int) {
+	reasoning = ReasoningOf(final)
+	if reasoning == "" {
+		reasoning = strings.TrimSpace(reasoningFallback)
+	}
+	content = strings.TrimSpace(final.Answer)
+	// A trailing block with no text yields no reasoning, but its markers still
+	// enclose an earlier block that must not reach the answer. Decide on the
+	// markup, not on whether extraction produced text.
+	if final.AnswerIsAuthoritative || reasoning != "" || hasThinkMarkup(final.Answer) {
+		content = strings.TrimSpace(ExtractVisibleAnswer(final.Answer))
+	}
+	completionTokens = tokenizer.NumTokensFromString(content) + tokenizer.NumTokensFromString(reasoning)
+	return content, reasoning, completionTokens
+}
+
+// hasThinkMarkup reports whether raw carries any think marker, including an
+// unclosed trailing block whose text is empty.
+func hasThinkMarkup(raw string) bool {
+	return strings.Contains(raw, thinkOpen) || strings.Contains(raw, thinkClose)
 }
 
 // MergeGenerationConfig merges request config into dialog.LLMSetting (mutating).

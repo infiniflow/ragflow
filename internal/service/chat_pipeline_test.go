@@ -2284,3 +2284,20 @@ func TestAsyncChat_ContextCancellationTerminatesGoroutine(t *testing.T) {
 		}
 	}
 }
+
+// Thinking deltas must travel on the Reasoning field so the OpenAI-compatible
+// encoder can emit delta.reasoning_content; answer deltas must stay on Answer.
+func TestThinkStreamResultRoutesReasoning(t *testing.T) {
+	got := thinkStreamResult(ThinkDelta{Kind: ThinkDeltaText, Value: "plan", Reasoning: true})
+	if got.Reasoning != "plan" || got.Answer != "" {
+		t.Fatalf("reasoning delta = %+v, want Reasoning=plan and empty Answer", got)
+	}
+	if got.Reference == nil || got.CreatedAt == 0 || got.Final {
+		t.Fatalf("reasoning delta metadata = %+v", got)
+	}
+
+	got = thinkStreamResult(ThinkDelta{Kind: ThinkDeltaText, Value: "answer"})
+	if got.Answer != "answer" || got.Reasoning != "" {
+		t.Fatalf("answer delta = %+v, want Answer=answer and empty Reasoning", got)
+	}
+}

@@ -196,9 +196,14 @@ func TestExtractVisibleAnswer_NoTags(t *testing.T) {
 	}
 }
 
-func TestExtractVisibleAnswer_StrayTag(t *testing.T) {
-	if got := ExtractVisibleAnswer("<think>text"); got != "text" {
-		t.Errorf("got %q", got)
+// A <think> without a matching </think> is a reasoning block cut off mid-stream,
+// so none of its text is answer text.
+func TestExtractVisibleAnswer_UnclosedThink(t *testing.T) {
+	if got := ExtractVisibleAnswer("<think>text"); got != "" {
+		t.Errorf("got %q, want no visible answer for an unclosed block", got)
+	}
+	if got := ExtractVisibleAnswer("answer<think>text"); got != "answer" {
+		t.Errorf("got %q, want the text before the unclosed block", got)
 	}
 }
 
@@ -320,9 +325,15 @@ func TestReasoningChannelWrapsThinkTags(t *testing.T) {
 	if len(deltas) != 1 || deltas[0].Value != "reasoning step 1" {
 		t.Fatalf("unexpected reasoning deltas: %+v", deltas)
 	}
+	if !deltas[0].Reasoning {
+		t.Fatalf("model-level reasoning must be marked as Reasoning: %+v", deltas[0])
+	}
 	deltas = NextThinkDelta(state, " reasoning step 2", 0)
 	if len(deltas) != 1 || deltas[0].Value != " reasoning step 2" {
 		t.Fatalf("unexpected reasoning deltas: %+v", deltas)
+	}
+	if !deltas[0].Reasoning {
+		t.Fatalf("model-level reasoning must be marked as Reasoning: %+v", deltas[0])
 	}
 
 	if state.ExitReasoning() != true {
@@ -334,9 +345,96 @@ func TestReasoningChannelWrapsThinkTags(t *testing.T) {
 	if len(deltas) != 1 || deltas[0].Value != "visible answer" {
 		t.Fatalf("unexpected answer deltas: %+v", deltas)
 	}
+	if deltas[0].Reasoning {
+		t.Fatalf("visible answer must not be marked as Reasoning: %+v", deltas[0])
+	}
 
 	wantVisible := "visible answer"
 	if got := ExtractVisibleAnswer(state.fullText); got != wantVisible {
 		t.Errorf("ExtractVisibleAnswer(%q) = %q, want %q", state.fullText, got, wantVisible)
+	}
+}
+
+// Tag-driven thinking must be distinguishable from the answer so the
+// OpenAI-compatible encoder can split the two into reasoning_content and
+// content instead of sending reasoning as plain answer text.
+func TestNextThinkDelta_SeparatesReasoningFromAnswer(t *testing.T) {
+	state := &ThinkStreamState{}
+	deltas := NextThinkDelta(state, "<think>plan</think>answer", 0)
+
+	var reasoning, answer strings.Builder
+	for _, d := range deltas {
+		if d.Kind != ThinkDeltaText {
+			continue
+		}
+		if d.Reasoning {
+			reasoning.WriteString(d.Value)
+		} else {
+			answer.WriteString(d.Value)
+		}
+	}
+	if reasoning.String() != "plan" || answer.String() != "answer" {
+		t.Fatalf("reasoning=%q answer=%q, deltas=%+v", reasoning.String(), answer.String(), deltas)
+	}
+}
+
+// Buffered thinking flushed at the end of a stream keeps its Reasoning mark.
+func TestFlushRemaining_MarksBufferedReasoning(t *testing.T) {
+	state := &ThinkStreamState{}
+	state.EnterReasoning()
+	_ = NextThinkDelta(state, "plan", 1000)
+
+	deltas := FlushRemaining(state)
+	if len(deltas) != 1 || deltas[0].Kind != ThinkDeltaText || deltas[0].Value != "plan" || !deltas[0].Reasoning {
+		t.Fatalf("flushed deltas = %+v, want one reasoning delta", deltas)
+	}
+}
+
+func TestExtractReasoning_LastBlock(t *testing.T) {
+	raw := "<think>first step</think>answer<think>second step</think>done"
+	if got := ExtractReasoning(raw); got != "second step" {
+		t.Fatalf("ExtractReasoning(%q) = %q, want %q", raw, got, "second step")
+	}
+}
+
+func TestExtractReasoning_OnlyThink(t *testing.T) {
+	if got := ExtractReasoning("<think>plan</think>"); got != "plan" {
+		t.Fatalf("ExtractReasoning = %q, want plan", got)
+	}
+}
+
+func TestExtractReasoning_NoTags(t *testing.T) {
+	if got := ExtractReasoning("plain answer"); got != "" {
+		t.Fatalf("ExtractReasoning = %q, want empty", got)
+	}
+}
+
+// The model can be cut off before it closes the block; the text it produced is
+// still reasoning and must not be returned as the answer.
+func TestExtractReasoning_UnclosedBlock(t *testing.T) {
+	if got := ExtractReasoning("<think>plan"); got != "plan" {
+		t.Fatalf("ExtractReasoning = %q, want the truncated reasoning text", got)
+	}
+	raw := "<think>first</think>answer<think>second"
+	if got := ExtractReasoning(raw); got != "second" {
+		t.Fatalf("ExtractReasoning(%q) = %q, want the last unclosed block", raw, got)
+	}
+}
+
+// A driver that separates the think block reports it on Reasoning; the value
+// must win over any marker left in Answer.
+func TestReasoningOfPrefersDriverField(t *testing.T) {
+	got := ReasoningOf(AsyncChatResult{Reasoning: "from driver", Answer: "<think>from answer</think>answer"})
+	if got != "from driver" {
+		t.Fatalf("ReasoningOf = %q, want the driver field", got)
+	}
+}
+
+// The native no-tool path keeps reasoning inline, so the marker fallback has
+// to recover it when the driver field is empty.
+func TestReasoningOfFallsBackToMarkers(t *testing.T) {
+	got := ReasoningOf(AsyncChatResult{Answer: "<think>from answer</think>answer"})
+	if got != "from answer" {
+		t.Fatalf("ReasoningOf = %q, want the inline block", got)
 	}
 }

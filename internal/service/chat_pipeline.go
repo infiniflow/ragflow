@@ -1259,12 +1259,7 @@ func (s *ChatPipelineService) AsyncChat(
 							for _, d := range deltas {
 								if d.Kind == ThinkDeltaText && d.Value != "" {
 									fullAnswer += d.Value
-									if !send(AsyncChatResult{
-										Answer:    d.Value,
-										Reference: map[string]interface{}{},
-										CreatedAt: float64(time.Now().Unix()),
-										Final:     false,
-									}) {
+									if !send(thinkStreamResult(d)) {
 										return ctx.Err()
 									}
 								}
@@ -1275,12 +1270,7 @@ func (s *ChatPipelineService) AsyncChat(
 								for _, d := range FlushRemaining(thinkState) {
 									if d.Kind == ThinkDeltaText && d.Value != "" {
 										fullAnswer += d.Value
-										if !send(AsyncChatResult{
-											Answer:    d.Value,
-											Reference: map[string]interface{}{},
-											CreatedAt: float64(time.Now().Unix()),
-											Final:     false,
-										}) {
+										if !send(thinkStreamResult(d)) {
 											return ctx.Err()
 										}
 									}
@@ -1300,12 +1290,7 @@ func (s *ChatPipelineService) AsyncChat(
 							deltas := BufferAnswerDelta(thinkState, *answer, 16)
 							for _, d := range deltas {
 								if d.Kind == ThinkDeltaText && d.Value != "" {
-									if !send(AsyncChatResult{
-										Answer:    d.Value,
-										Reference: map[string]interface{}{},
-										CreatedAt: float64(time.Now().Unix()),
-										Final:     false,
-									}) {
+									if !send(thinkStreamResult(d)) {
 										return ctx.Err()
 									}
 								}
@@ -1348,12 +1333,7 @@ func (s *ChatPipelineService) AsyncChat(
 						return
 					}
 				} else if d.Kind == ThinkDeltaText && d.Value != "" {
-					if !send(AsyncChatResult{
-						Answer:    d.Value,
-						Reference: map[string]interface{}{},
-						CreatedAt: float64(time.Now().Unix()),
-						Final:     false,
-					}) {
+					if !send(thinkStreamResult(d)) {
 						return
 					}
 				}
@@ -1387,6 +1367,7 @@ func (s *ChatPipelineService) AsyncChat(
 		} else {
 			// Non-streaming: get the answer synchronously.
 			var answer string
+			var reasoning string
 			var err error
 			// Tool routing: use tool-loop when tools are bound.
 			if chatDriver.ToolConfig != nil {
@@ -1395,8 +1376,16 @@ func (s *ChatPipelineService) AsyncChat(
 				resp, respErr := chatDriver.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
 				if respErr != nil {
 					err = respErr
-				} else if resp != nil && resp.Answer != nil {
-					answer = *resp.Answer
+				} else if resp != nil {
+					// Drivers that separate the think block report it here and
+					// leave Answer clean, so the field has to travel with the
+					// result or the OpenAI encoder cannot fill reasoning_content.
+					if resp.Answer != nil {
+						answer = *resp.Answer
+					}
+					if resp.ReasonContent != nil {
+						reasoning = *resp.ReasonContent
+					}
 				}
 			}
 			timer.Exit(common.PhaseGenerateAnswer)
@@ -1421,6 +1410,7 @@ func (s *ChatPipelineService) AsyncChat(
 			// Synthesize TTS for the full answer (non-stream, one-shot).
 			final := s.decorateAnswer(ctx, answer, kbinfos, prompt, questions, usedTokenCount, timer, embModel, chat.VectorSimilarityWeight, quote, ttsModel, langfuseTraceID, llmModelConfig, chat.TenantID, kbTenantIDStrings(kbs), len(knowledges) > 0)
 			final.Final = true
+			final.Reasoning = reasoning
 			sendResult(final)
 		}
 		common.Info("AsyncChat completed", zap.String("chat_id", chat.ID))
@@ -1653,13 +1643,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 						for _, d := range deltas {
 							if d.Kind == ThinkDeltaText && d.Value != "" {
 								fullAnswer += d.Value
-								if !sendResult(AsyncChatResult{
-									Answer:      d.Value,
-									Reference:   map[string]interface{}{},
-									AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-									CreatedAt:   float64(time.Now().Unix()),
-									Final:       false,
-								}) {
+								if !sendResult(s.thinkStreamTTSResult(ctx, ttsModel, d)) {
 									return ctx.Err()
 								}
 							}
@@ -1670,13 +1654,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 							for _, d := range FlushRemaining(thinkState) {
 								if d.Kind == ThinkDeltaText && d.Value != "" {
 									fullAnswer += d.Value
-									if !sendResult(AsyncChatResult{
-										Answer:      d.Value,
-										Reference:   map[string]interface{}{},
-										AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-										CreatedAt:   float64(time.Now().Unix()),
-										Final:       false,
-									}) {
+									if !sendResult(s.thinkStreamTTSResult(ctx, ttsModel, d)) {
 										return ctx.Err()
 									}
 								}
@@ -1696,13 +1674,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 						deltas := BufferAnswerDelta(thinkState, *answer, 16)
 						for _, d := range deltas {
 							if d.Kind == ThinkDeltaText && d.Value != "" {
-								if !sendResult(AsyncChatResult{
-									Answer:      d.Value,
-									Reference:   map[string]interface{}{},
-									AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-									CreatedAt:   float64(time.Now().Unix()),
-									Final:       false,
-								}) {
+								if !sendResult(s.thinkStreamTTSResult(ctx, ttsModel, d)) {
 									return ctx.Err()
 								}
 							}
@@ -1740,13 +1712,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 						return
 					}
 				} else if d.Kind == ThinkDeltaText && d.Value != "" {
-					if !sendResult(AsyncChatResult{
-						Answer:      d.Value,
-						Reference:   map[string]interface{}{},
-						AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-						CreatedAt:   float64(time.Now().Unix()),
-						Final:       false,
-					}) {
+					if !sendResult(s.thinkStreamTTSResult(ctx, ttsModel, d)) {
 						return
 					}
 				}
@@ -1791,8 +1757,12 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				return
 			}
 			answer := ""
+			reasoning := ""
 			if resp.Answer != nil {
 				answer = *resp.Answer
+			}
+			if resp.ReasonContent != nil {
+				reasoning = *resp.ReasonContent
 			}
 			// Debug log matching Python's dialog_service.py:335-336.
 			userContent := "[content not available]"
@@ -1806,6 +1776,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			// Raw answer with full TTS, no decorate_answer. Caller handles decoration.
 			sendResult(AsyncChatResult{
 				Answer:      answer,
+				Reasoning:   reasoning,
 				Reference:   map[string]interface{}{},
 				AudioBinary: s.synthesizeTTS(ctx, ttsModel, answer),
 				CreatedAt:   float64(time.Now().Unix()),
@@ -2461,6 +2432,31 @@ func (s *ChatPipelineService) synthesizeTTS(ctx context.Context, ttsModel *model
 		return nil
 	}
 	return ttsResp.Audio
+}
+
+// thinkStreamResult routes one think-state delta to the channel its section
+// belongs to. Thinking text travels on Reasoning so the OpenAI-compatible
+// encoder can fill delta.reasoning_content; the native protocol folds both
+// fields back into the answer between the think markers.
+func thinkStreamResult(d ThinkDelta) AsyncChatResult {
+	result := AsyncChatResult{
+		Reference: map[string]interface{}{},
+		CreatedAt: float64(time.Now().Unix()),
+	}
+	if d.Reasoning {
+		result.Reasoning = d.Value
+	} else {
+		result.Answer = d.Value
+	}
+	return result
+}
+
+// thinkStreamTTSResult adds the per-delta speech clip for the answer side.
+// Reasoning text is not spoken, matching the tool path.
+func (s *ChatPipelineService) thinkStreamTTSResult(ctx context.Context, ttsModel *modelModule.TTSModel, d ThinkDelta) AsyncChatResult {
+	result := thinkStreamResult(d)
+	result.AudioBinary = s.synthesizeTTS(ctx, ttsModel, result.Answer)
+	return result
 }
 
 // truncateForLog returns at most n characters of s, appending an
