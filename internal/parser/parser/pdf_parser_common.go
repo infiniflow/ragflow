@@ -76,7 +76,10 @@ type PDFParser struct {
 	// caller observes per-page parse progress (done/total). Only the deepdoc
 	// backend invokes it; remote engines poll opaque HTTP jobs and never call
 	// it, so the fraction simply stays where it was.
-	OnPageDone                        func(done, total int)
+	OnPageDone func(done, total int)
+	// OnModelCall reports the start and end of an individual DeepDOC model call.
+	// It is runtime-only and is wired by the ingestion parser component.
+	OnModelCall                       func(ctx context.Context, operation string) func()
 	MinerUAPIServer                   string
 	MinerUAPIKey                      string
 	MinerUBackend                     string
@@ -399,6 +402,7 @@ func (p *PDFParser) parseWithResult(ctx context.Context, filename string, data [
 	cfg.RemoveTOC = p.RemoveTOC
 	cfg.RemoveHeaderFooter = p.RemoveHeaderFooter
 	cfg.OnPageDone = p.OnPageDone
+	cfg.OnModelCall = p.OnModelCall
 	res := parsePDFWithDeepDocOptions(ctx, filename, data, pdfPostProcessOptions{
 		zoom:              cfg.Zoom,
 		enableMultiColumn: p.EnableMultiColumn,

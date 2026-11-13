@@ -84,15 +84,11 @@ type ChatbotSSEFrame struct {
 // WriteChatbotFrame emits one SSE frame and flushes the underlying
 // http.ResponseWriter. The frame is `data: <json>\n\n`.
 //
-// Error frames sanitize the message — internal errors (gorm stack
-// frames, SQL details, storage paths) MUST NOT be echoed to the
-// client. The caller is expected to log the real error via
-// common.Error / zap before publishing the frame; only a generic
-// placeholder is rendered here. Mirrors the python
-// `api/db/services/conversation_service.py` error frame shape.
+// Error frames log the failure server-side and use a generic client message.
 func WriteChatbotFrame(w http.ResponseWriter, f ChatbotSSEFrame) error {
 	var payload map[string]any
 	if f.Err != nil {
+		common.Error("Chatbot pipeline failed", f.Err)
 		const clientErrMsg = "an internal error occurred"
 		payload = map[string]any{
 			"code":    500,
@@ -219,6 +215,8 @@ func WriteChatbotRunEvent(w http.ResponseWriter, ev canvas.RunEvent) error {
 			} else if s, _ := m["message"].(string); s != "" {
 				msg = s
 			}
+		} else if s, ok := data.(string); ok && s != "" {
+			msg = s
 		}
 		payload := map[string]any{
 			"code":    500,
@@ -381,10 +379,8 @@ func (s *BotService) ChatbotCompletion(
 		return nil, common.CodeDataError, errors.New("session not found")
 	}
 
-	// 3. Guard rails mirroring the previous implementation: surface
-	// a sanitised error before any SSE byte is written when the
-	// service is unwired (test boot path) or the dialog has no LLM
-	// configured — see WriteChatbotFrame's sanitization contract.
+	// 3. Surface an error before any SSE byte is written when the service is
+	// unwired (test boot path) or the dialog has no LLM configured.
 	// NewBotService wires the pipeline; the nil check only guards a
 	// hand-rolled zero-value BotService against panicking.
 	if s.pipeline == nil {

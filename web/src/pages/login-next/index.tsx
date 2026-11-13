@@ -1,10 +1,10 @@
 import { useAuth } from '@/hooks/auth-hooks';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useLogin, useRegister } from '@/hooks/use-login-request';
 import { useSystemConfig } from '@/hooks/use-system-request';
 import { rsaPsw } from '@/utils';
 import { useContext, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router';
 
 import Spotlight from '@/components/spotlight';
 import { Button, ButtonLoading } from '@/components/ui/button';
@@ -209,7 +209,7 @@ function LoginFormContent({
 
 const Login = () => {
   const [title, setTitle] = useState('login');
-  const navigate = useNavigate();
+  const { navigateToHome } = useNavigatePage();
   const { login, loading: signLoading } = useLogin();
   const { register, loading: registerLoading } = useRegister();
   const { t } = useTranslation('translation', { keyPrefix: 'login' });
@@ -226,9 +226,9 @@ const Login = () => {
   const { isLogin } = useAuth();
   useEffect(() => {
     if (isLogin) {
-      navigate('/');
+      navigateToHome();
     }
-  }, [isLogin, navigate]);
+  }, [isLogin, navigateToHome]);
 
   const changeTitle = () => {
     setIsLoginPage(title !== 'login');
@@ -290,7 +290,7 @@ const Login = () => {
           password: rsaPassWord,
         });
         if (code === 0) {
-          navigate('/');
+          navigateToHome();
         }
       } else {
         const code = await register({

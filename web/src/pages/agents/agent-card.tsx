@@ -10,7 +10,8 @@ import {
 } from '@/components/ui/tooltip';
 import { AgentCategory } from '@/constants/agent';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { useRef, useState } from 'react';
+import { useSidebarCollapse } from '@/layouts/components/app-sidebar/use-sidebar-collapse';
+import { useCallback, useRef, useState } from 'react';
 import { AgentListItemType, IFlow } from '@/interfaces/database/agent';
 import { CanvasCategoryToFlowType, FlowType, FlowTypeConfig } from './constant';
 import { AgentDropdown } from './agent-dropdown';
@@ -108,6 +109,17 @@ export function AgentCard({
   showPrivilegeModal,
 }: DatasetCardProps) {
   const { navigateToAgent } = useNavigatePage();
+  const { setCollapsed: setPrimarySidebarCollapsed } = useSidebarCollapse();
+
+  const handleCardClick = useCallback(() => {
+    setPrimarySidebarCollapsed(true);
+    navigateToAgent(data.id, data.canvas_category as AgentCategory)();
+  }, [
+    data.canvas_category,
+    data.id,
+    navigateToAgent,
+    setPrimarySidebarCollapsed,
+  ]);
 
   return (
     <HomeCard
@@ -128,12 +140,7 @@ export function AgentCard({
         </AgentDropdown>
       }
       sharedBadge={<SharedBadge>{data.nickname}</SharedBadge>}
-      onClick={
-        // data.canvas_category === AgentCategory.DataflowCanvas
-        //   ? navigateToDataflow(data.id)
-        //   :
-        navigateToAgent(data?.id, data.canvas_category as AgentCategory)
-      }
+      onClick={handleCardClick}
       icon={<AgentTypeIcon data={data} />}
       extra={<AgentTags tags={data.tags} />}
       showReleaseTime

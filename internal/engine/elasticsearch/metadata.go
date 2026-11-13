@@ -30,6 +30,8 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine/internal/esoscommon"
+	"ragflow/internal/engine/metafilter"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/utility"
 
@@ -621,7 +623,7 @@ func (e *Engine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRe
 
 	// Add sorting if order_by specified
 	if req.OrderBy != nil && len(req.OrderBy.Fields) > 0 {
-		sort := parseOrderByExpr(req.OrderBy)
+		sort := esoscommon.ParseOrderByExpr(req.OrderBy)
 		if len(sort) > 0 {
 			queryBody["sort"] = sort
 		}
@@ -768,7 +770,7 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 	}
 
 	// Check if push-down is supported
-	if !IsPushdownSupported(conditions) {
+	if !metafilter.IsPushdownSupported(conditions) {
 		common.Debug("FilterDocIdsByMetaPushdown: push-down not supported for some filters")
 		return nil
 	}
@@ -789,7 +791,7 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 	}
 
 	// Build the filter query using the full meta_filter logic
-	queryBody, err := BuildMetaFilterQuery(conditions, logic, kbIDs)
+	queryBody, err := metafilter.BuildMetaFilterQuery(conditions, logic, kbIDs)
 	if err != nil {
 		common.Debug("FilterDocIdsByMetaPushdown: build query failed", zap.String("error", err.Error()))
 		return nil
@@ -834,7 +836,7 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 
 	// Extract doc IDs before the cap check so we can use uniqueDocIDs to
 	// detect silent truncation when the ES total isn't available.
-	docIDs := ExtractDocIDs(result)
+	docIDs := metafilter.ExtractDocIDs(result)
 	uniqueDocIDs := dedupeStrings(docIDs)
 
 	// Detect silent truncation: the push-down is a fast path, not the

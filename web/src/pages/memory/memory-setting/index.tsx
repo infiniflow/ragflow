@@ -4,6 +4,7 @@ import Divider from '@/components/ui/divider';
 import { Form } from '@/components/ui/form';
 import { TopTitle } from '@/pages/dataset/dataset-title';
 import { IMemory } from '@/pages/memories/interface';
+import { showPermissionField } from '@/ee/constants/feature-flags';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
@@ -54,7 +55,9 @@ export default function MemoryMessage() {
       user_prompt: data?.user_prompt || '',
       forgetting_policy: data?.forgetting_policy || 'FIFO',
       storage_type: data?.storage_type || 'Table',
-      permissions: data?.permissions || 'me',
+      ...(showPermissionField
+        ? { permissions: data?.permissions || 'me' }
+        : {}),
     });
   }, [data, form]);
 

@@ -15,7 +15,7 @@
 //
 
 // TableChunker emits one chunk per upstream table row. It is the faithful
-// Go port of the Python `table` chunk method, whose docstring states:
+// Go port of the `table` chunk method, whose docstring states
 // "Every row in table will be treated as a chunk."
 //
 // Unlike TokenChunker (which token-shreds a row's text into multiple
@@ -23,7 +23,7 @@
 // TableChunker keeps the row as the unit of chunking. Every table arrives as
 // structured TableData on ChunkDoc.TableData — the parsers emit captioned
 // table segments — and each data row becomes one chunk whose text repeats the
-// column names in the Python "- field: value" line format, carrying its own
+// column names in the "- field: value" line format, carrying its own
 // position tuple when the item is a spreadsheet item with a row-aligned
 // matrix. A table whose only row is the header stays one whole chunk.
 package chunker

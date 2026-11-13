@@ -17,5 +17,5 @@ export interface IModalProps<T> {
   visible?: boolean;
   loading?: boolean;
   onOk?(payload?: T): Promise<any> | void;
-  initialValues?: T;
+  initialValues?: Partial<T>;
 }

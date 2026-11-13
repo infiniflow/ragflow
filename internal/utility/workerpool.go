@@ -303,6 +303,12 @@ func (p *WorkerPool[T, R]) StopWait() {
 func (p *WorkerPool[T, R]) Stats() WorkerPoolStats {
 	submitted := atomic.LoadUint64(&p.submittedTotal)
 	completed := atomic.LoadUint64(&p.completedTotal)
+	// A task can complete before its submission is counted, and the two loads
+	// above are not a consistent snapshot. Clamp the difference to avoid underflow.
+	var pending uint64
+	if submitted >= completed {
+		pending = submitted - completed
+	}
 
 	return WorkerPoolStats{
 		DesiredWorkers: int(atomic.LoadInt64(&p.desiredWorkers)),
@@ -312,6 +318,6 @@ func (p *WorkerPool[T, R]) Stats() WorkerPoolStats {
 		SubmittedTotal: submitted,
 		CompletedTotal: completed,
 		FailedTotal:    atomic.LoadUint64(&p.failedTotal),
-		PendingTotal:   submitted - completed,
+		PendingTotal:   pending,
 	}
 }

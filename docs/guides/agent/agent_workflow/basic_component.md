@@ -4,7 +4,7 @@ title: Basic Component
 sidebar_label: Basic Component
 slug: /basic_component
 sidebar_custom_props: {
-  categoryIcon: RagAiAgent
+  categoryIcon: LucideHome
 }
 ---
 

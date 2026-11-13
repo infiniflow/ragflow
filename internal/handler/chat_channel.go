@@ -57,6 +57,9 @@ type CreateChatChannelRequest struct {
 
 // CreateChatChannel handles POST /chat-channels.
 func (h *ChatChannelHandler) CreateChatChannel(c *gin.Context) {
+	common.StartOperationLog(c, "create_chat_channel")
+	defer common.FinishOperationLog(c)
+
 	var req CreateChatChannelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.RespondError(c, common.CodeDataError, "Invalid request: "+err.Error())
@@ -92,6 +95,7 @@ func (h *ChatChannelHandler) CreateChatChannel(c *gin.Context) {
 		common.RespondError(c, common.CodeServerError, err.Error())
 		return
 	}
+	common.SetOperationResource(c, "channel_id", row.ID)
 	common.RespondSuccess(c, row, "success")
 }
 
@@ -129,12 +133,16 @@ func (h *ChatChannelHandler) GetChatChannel(c *gin.Context) {
 
 // UpdateChatChannel handles PATCH /chat-channels/:channel_id.
 func (h *ChatChannelHandler) UpdateChatChannel(c *gin.Context) {
+	common.StartOperationLog(c, "update_chat_channel")
+	defer common.FinishOperationLog(c)
+
 	channelID := strings.TrimSpace(c.Param("channel_id"))
 	if channelID == "" {
 		common.RespondError(c, common.CodeArgumentError, "channel_id is required")
 		return
 	}
 
+	common.SetOperationResource(c, "channel_id", channelID)
 	var request map[string]interface{}
 	if err := c.ShouldBindJSON(&request); err != nil {
 		common.RespondError(c, common.CodeDataError, err.Error())
@@ -173,12 +181,16 @@ func (h *ChatChannelHandler) GetChatChannelRuntime(c *gin.Context) {
 
 // DeleteChatChannel handles DELETE /chat-channels/:channel_id.
 func (h *ChatChannelHandler) DeleteChatChannel(c *gin.Context) {
+	common.StartOperationLog(c, "delete_chat_channel")
+	defer common.FinishOperationLog(c)
+
 	channelID := strings.TrimSpace(c.Param("channel_id"))
 	if channelID == "" {
 		common.RespondError(c, common.CodeArgumentError, "channel_id is required")
 		return
 	}
 
+	common.SetOperationResource(c, "channel_id", channelID)
 	ctx := c.Request.Context()
 	_, code, err := h.chatChannelService.DeleteChatChannel(ctx, channelID)
 	if code != common.CodeSuccess || err != nil {

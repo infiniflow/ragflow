@@ -18,7 +18,7 @@ package schema
 
 // TokenizerFromUpstream is the upstream payload consumed by the
 // Tokenizer component. It mirrors
-// rag/flow/tokenizer/schema.py:TokenizerFromUpstream, including the
+// TokenizerFromUpstream, including the
 // Pydantic `model_validator(mode="after")` invariant on
 // `output_format <-> payload` consistency.
 //
@@ -39,7 +39,7 @@ type TokenizerFromUpstream struct {
 	ElapsedTime *float64 `json:"_elapsed_time,omitempty"`
 
 	// Name is the source document name. Optional in this schema
-	// (Python default = "").
+	// ( default = "")
 	Name string `json:"name,omitempty"`
 
 	// File is the optional upstream file descriptor.
@@ -70,13 +70,13 @@ type TokenizerFromUpstream struct {
 	HTMLResult *string `json:"html,omitempty"`
 }
 
-// Validate enforces the Python model_validator invariants: when
+// Validate enforces the model_validator invariants: when
 // OutputFormat is "markdown" / "text" / "html", the matching
 // *Result field must be non-nil (the Go equivalent of a non-None
-// string in Python); when OutputFormat is empty, nil, or any other
+// string in ); when OutputFormat is empty, nil, or any other
 // value, JSONResult (or Chunks) must be supplied.
 //
-// The intent is to mirror the Python error messages verbatim where
+// The intent is to mirror the error messages verbatim where
 // possible. The Tokenizer's runtime contract treats an empty chunk
 // list as valid (the component short-circuits silently), so Chunks
 // being nil is allowed even when OutputFormat == "chunks".
@@ -102,7 +102,7 @@ func (t *TokenizerFromUpstream) Validate() error {
 		}
 	default:
 		// Empty / "json" / any other value: require a JSON list payload
-		// OR a Chunks list. Mirrors the Python check.
+		// OR a Chunks list. Mirrors the check
 		if t.JSONResult == nil && t.Chunks == nil {
 			return errRequiredField{Field: "json"}
 		}
@@ -111,7 +111,7 @@ func (t *TokenizerFromUpstream) Validate() error {
 }
 
 // TokenizerParam is the static configuration for the Tokenizer
-// component. Mirrors rag/flow/tokenizer/tokenizer.py:TokenizerParam.
+// component. Mirrors TokenizerParam
 //
 //	search_method:        list[str]   # ["full_text", "embedding"]
 //	filename_embd_weight: float       # 0.1
@@ -125,13 +125,13 @@ type TokenizerParam struct {
 	// chunk embedding. Value in [0.0, 1.0].
 	FilenameEmbdWeight float64 `json:"filename_embd_weight"`
 
-	// Fields selects which fields of each chunk to embed. Python
+	// Fields selects which fields of each chunk to embed.
 	// supports either a single string (then auto-wrapped to a list at
 	// runtime) or a list of strings. Go callers should pass a slice.
 	Fields []string `json:"fields"`
 }
 
-// Defaults returns the Python default TokenizerParam.
+// Defaults returns the default TokenizerParam
 func (TokenizerParam) Defaults() TokenizerParam {
 	return TokenizerParam{
 		SearchMethod:       []string{"full_text", "embedding"},
@@ -141,7 +141,7 @@ func (TokenizerParam) Defaults() TokenizerParam {
 }
 
 // Validate enforces the SearchMethod enum. Fields and
-// FilenameEmbdWeight have no schema-level range checks in the Python
+// FilenameEmbdWeight have no schema-level range checks in the
 // `check()`.
 func (p *TokenizerParam) Validate() error {
 	if len(p.SearchMethod) == 0 {
@@ -158,8 +158,8 @@ func (p *TokenizerParam) Validate() error {
 }
 
 // TokenizerOutputs is the result of invoking the Tokenizer component.
-// Mirrors what the Python component sets via `self.set_output(...)` at
-// rag/flow/tokenizer/tokenizer.py:_invoke.
+// Mirrors what the component sets via `self.set_output(...)` at
+// its _invoke entrypoint.
 //
 // Always sets:
 //   - output_format = "chunks"
@@ -184,6 +184,6 @@ type TokenizerOutputs struct {
 	EmbeddingTokenConsumption *int `json:"embedding_token_consumption,omitempty"`
 
 	// Error is set when the component short-circuits with an error
-	// message (Python: set_output("_ERROR", ...)).
+	// message (: set_output("_ERROR", ...))
 	Error string `json:"_ERROR,omitempty"`
 }

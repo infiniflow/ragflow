@@ -62,6 +62,23 @@ jest.mock('@/components/model-tree-select', () => ({
   },
 }));
 
+jest.mock('@/components/originui/select-with-search', () => ({
+  SelectWithSearch: ({ value, onChange, options, placeholder }: any) => (
+    <select
+      aria-label="Description language"
+      value={value ?? ''}
+      onChange={(event) => onChange?.(event.target.value)}
+    >
+      <option value="">{placeholder}</option>
+      {options.map((option: any) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  ),
+}));
+
 function ParserVisionForm({ model = '' }: { model?: string }) {
   const form = useForm({
     defaultValues: {
@@ -77,20 +94,31 @@ function ParserVisionForm({ model = '' }: { model?: string }) {
 }
 
 describe('global vision model selection', () => {
-  it('offers the shared prompt only while enhancement is on', () => {
+  it('offers the shared language and prompt only while enhancement is on', () => {
     render(<ParserVisionForm />);
     expect(
       screen.queryByPlaceholderText('flow.systemPromptPlaceholder'),
     ).toBeNull();
+    expect(screen.queryByLabelText('Description language')).toBeNull();
 
     fireEvent.click(screen.getByRole('switch'));
 
     expect(
       screen.getByPlaceholderText('flow.systemPromptPlaceholder'),
     ).toBeInTheDocument();
-    // Language has no control here on purpose: captions follow the knowledge
-    // base language, which also drives tokenization.
-    expect(screen.queryByLabelText('Vision language')).toBeNull();
+    // Empty means follow the knowledge base language; the user can override it
+    // when they want captions in a different language.
+    expect(screen.getByLabelText('Description language')).toHaveValue('');
+  });
+
+  it('stores an explicit description language', () => {
+    render(<ParserVisionForm />);
+    fireEvent.click(screen.getByRole('switch'));
+
+    const language = screen.getByLabelText('Description language');
+    fireEvent.change(language, { target: { value: 'Japanese' } });
+
+    expect(language).toHaveValue('Japanese');
   });
 
   it('selects default A on first enable and preserves user-selected B across toggles', () => {

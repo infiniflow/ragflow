@@ -260,12 +260,12 @@ func (s *ChatSessionService) CreateSession(ctx context.Context, chatID string, r
 	}
 
 	if err = s.chatSessionDAO.Create(ctx, dao.DB, conv); err != nil {
-		return nil, common.CodeDataError, errors.New("fail to create a session")
+		return nil, common.CodeDataError, fmt.Errorf("fail to create a session: %w", err)
 	}
 
 	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, conv.ID, sessionHistoryOptions())
 	if err != nil {
-		return nil, common.CodeDataError, errors.New("fail to create a session")
+		return nil, common.CodeDataError, fmt.Errorf("fail to create a session: %w", err)
 	}
 	return s.buildSessionPayload(session, nil, false), common.CodeSuccess, nil
 }
@@ -957,7 +957,8 @@ func (s *ChatSessionService) updateChunkWeight(ctx context.Context, tenantID, ch
 	}
 
 	newValue := map[string]interface{}{common.PAGERANK_FLD: nextWeight}
-	if nextWeight <= 0 && strings.ToLower(docEngine.GetType()) == string(engine.EngineElasticsearch) {
+	engineType := strings.ToLower(docEngine.GetType())
+	if nextWeight <= 0 && (engineType == string(engine.EngineElasticsearch) || engineType == string(engine.EngineOpenSearch)) {
 		newValue = map[string]interface{}{"remove": common.PAGERANK_FLD}
 	}
 	if err := docEngine.UpdateChunks(ctx, map[string]interface{}{"id": chunkID}, newValue, indexName, kbID); err != nil {

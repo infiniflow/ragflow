@@ -1994,14 +1994,6 @@ export default {
       apiKeyTip:
         'API Key mos LLM provayderida ro‘yxatdan o‘tish orqali olinishi mumkin.',
       aimlapiGetKey: 'API kalitini olish',
-      aimlapiCheckStatus: 'Holatni tekshirish',
-      aimlapiAwaitingConsent: 'AI/ML API oynasida tasdiqlanishi kutilmoqda…',
-      aimlapiKeyAdded: 'AI/ML API kalitingiz yaratildi va yuqorida qo‘shildi.',
-      aimlapiAuthDenied: 'Ruxsat rad etildi. Iltimos, qayta urinib ko‘ring.',
-      aimlapiAuthExpired:
-        'So‘rov muddati tugadi. Iltimos, qayta urinib ko‘ring.',
-      aimlapiAuthFailed:
-        'Kirish amalga oshmadi. Iltimos, qayta urinib ko‘ring.',
       showMoreModels: 'Modellarni ko‘rish',
       hideModels: 'Modellarni yashirish',
       baseUrl: 'Base URL',
@@ -2545,13 +2537,6 @@ export default {
     },
     flow: {
       exportCurrentPage: 'Joriy sahifani eksport qilish',
-      preprocess: {
-        preprocess: 'Oldindan qayta ishlash',
-        mainContent: 'Asosiy kontent',
-        abstract: 'Annotatsiya',
-        author: 'Muallif',
-        sectionTitle: 'Bo‘lim sarlavhasi',
-      },
       tags: 'Teglar',
       agentCategory: 'Canvas toifasi',
       editTags: 'Teglarni tahrirlash',

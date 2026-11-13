@@ -49,6 +49,7 @@ func createTableBoxFromItem(tbl *pdf.TableItem, html string) pdf.TextBox {
 		PageNumber:    pg,
 		HasPageNumber: len(tbl.Positions) > 0 && len(tbl.Positions[0].PageNumbers) > 0,
 		Pages:         mergedTablePages(tbl),
+		Positions:     tableRegionPositions(*tbl),
 		LayoutType:    pdf.LayoutTypeTable,
 	}
 }

@@ -115,12 +115,16 @@ type agentWebhookCredentialManager interface {
 // a single path. Gin has no Match() — the router registers each verb
 // individually via registerAnyMethod (see internal/router/agent_routes.go).
 func (h *AgentHandler) Webhook(c *gin.Context) {
+	isTest := strings.HasSuffix(c.Request.URL.Path, "/webhook/test")
+	if isTest {
+		common.StartOperationLog(c, "request_agent_webhook_test")
+		defer common.FinishOperationLog(c)
+	}
 	canvasID := c.Param("canvas_id")
 	if h.loader == nil {
 		jsonInternalError(c, errors.New("agent webhook: loader not configured"))
 		return
 	}
-	isTest := strings.HasSuffix(c.Request.URL.Path, "/webhook/test")
 	ctx := c.Request.Context()
 	if isTest {
 	} else {
@@ -256,11 +260,17 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 		}
 		// Detached background run — does NOT inherit c.Request.Context()
 		// so a client disconnect does not cancel the canvas run.
+		if isTest {
+			common.FinishOperationLog(c)
+		}
 		go h.runWebhookDetached(ctx, cv, clean, isTest, startTs)
 		c.Data(status, contentType, payload)
 		return
 	}
 	// Streaming / blocking mode.
+	if isTest {
+		common.FinishOperationLog(c)
+	}
 	out := h.runWebhookSync(ctx, cv, clean, isTest, startTs)
 	c.JSON(out.status, out.body)
 }
@@ -268,6 +278,9 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 // CreateWebhookCredential issues or rotates the authenticated user's
 // capability for this Agent and returns the URL once.
 func (h *AgentHandler) CreateWebhookCredential(c *gin.Context) {
+	common.StartOperationLog(c, "create_agent_webhook_credential")
+	defer common.FinishOperationLog(c)
+
 	if h.loader == nil {
 		jsonInternalError(c, errors.New("agent webhook: loader not configured"))
 		return
@@ -300,6 +313,9 @@ func (h *AgentHandler) CreateWebhookCredential(c *gin.Context) {
 // RevokeWebhookCredential revokes only the authenticated user's capability
 // for this Agent.
 func (h *AgentHandler) RevokeWebhookCredential(c *gin.Context) {
+	common.StartOperationLog(c, "revoke_agent_webhook_credential")
+	defer common.FinishOperationLog(c)
+
 	if err := h.webhookCredentialManager().Revoke(c.Request.Context(), c.Param("canvas_id")); err != nil {
 		jsonInternalError(c, err)
 		return
@@ -571,6 +587,8 @@ func (h *AgentHandler) runWebhookDetached(
 	h.runWebhookDetachedWithContext(ctx, cv, payload, isTest, startTs, sessionID)
 }
 
+// runWebhookDetachedWithContext drains the run until completion or cancellation
+// and records a terminal trace for test runs.
 func (h *AgentHandler) runWebhookDetachedWithContext(
 	ctx context.Context, cv *entity.UserCanvas, payload map[string]any,
 	isTest bool, startTs time.Time, sessionID string,
@@ -600,18 +618,17 @@ func (h *AgentHandler) runWebhookDetachedWithContext(
 		terminal := isWebhookTerminalEvent(ev)
 		if terminal {
 			if isTest {
-				event := sanitizeWebhookTraceEvent(ev)
 				if ctx.Err() != nil {
-					h.appendWebhookInterruptedTrace(ctx, cv.ID, startTs, sessionID, event)
+					h.appendWebhookInterruptedTrace(ctx, cv.ID, startTs, sessionID, ev)
 				} else {
-					h.appendWebhookRunTrace(ctx, cv.ID, startTs, event)
+					h.appendWebhookRunTrace(ctx, cv.ID, startTs, ev)
 					h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, false)
 				}
 			}
 			return
 		}
 		if isTest {
-			h.appendWebhookRunTrace(ctx, cv.ID, startTs, sanitizeWebhookTraceEvent(ev))
+			h.appendWebhookRunTrace(ctx, cv.ID, startTs, ev)
 		}
 	}
 	if err = ctx.Err(); err != nil {
@@ -626,15 +643,13 @@ func (h *AgentHandler) runWebhookDetachedWithContext(
 	}
 }
 
-// runWebhookSync drives the canvas in the non-Immediately (streaming)
-// mode. Returns the HTTP status + body to send. Mirrors
-// agent_api.py:2178-2247 with the python sse() coroutine flattened into
-// a synchronous loop.
 type webhookSyncResult struct {
 	status int
 	body   any
 }
 
+// runWebhookSync waits for the canvas result and maps terminal events to HTTP
+// failures while preserving the session ID in responses and test traces.
 func (h *AgentHandler) runWebhookSync(
 	ctx context.Context, cv *entity.UserCanvas, payload map[string]any,
 	isTest bool, startTs time.Time,
@@ -668,11 +683,10 @@ func (h *AgentHandler) runWebhookSync(
 		}
 		if result, terminal := webhookTerminalResult(ev, sessionID); terminal {
 			if isTest {
-				event := sanitizeWebhookTraceEvent(ev)
 				if ctx.Err() != nil {
-					h.appendWebhookInterruptedTrace(ctx, cv.ID, startTs, sessionID, event)
+					h.appendWebhookInterruptedTrace(ctx, cv.ID, startTs, sessionID, ev)
 				} else {
-					h.appendWebhookRunTrace(ctx, cv.ID, startTs, event)
+					h.appendWebhookRunTrace(ctx, cv.ID, startTs, ev)
 					h.appendWebhookFinishedTrace(ctx, cv.ID, startTs, sessionID, false)
 				}
 			}
@@ -811,22 +825,17 @@ func webhookContextTerminalEvent(err error, sessionID string) canvas.RunEvent {
 	}
 }
 
-func sanitizeWebhookTraceEvent(ev canvas.RunEvent) canvas.RunEvent {
-	if ev.Type != "error" {
-		return ev
-	}
-	var payload canvas.ErrorEvent
-	if err := json.Unmarshal([]byte(ev.Data), &payload); err != nil || payload.Kind != canvas.RunErrorKindInternal {
-		return ev
-	}
-	payload.Message = canvas.InternalRunErrorMessage
-	ev.Data = mustJSON(payload)
-	return ev
-}
-
+// appendWebhookRunTrace masks internal error messages before either trace writer receives them.
 func (h *AgentHandler) appendWebhookRunTrace(
 	ctx context.Context, agentID string, startTs time.Time, ev canvas.RunEvent,
 ) {
+	if ev.Type == "error" {
+		var payload canvas.ErrorEvent
+		if err := json.Unmarshal([]byte(ev.Data), &payload); err == nil && payload.Kind == canvas.RunErrorKindInternal {
+			payload.Message = canvas.InternalRunErrorMessage
+			ev.Data = mustJSON(payload)
+		}
+	}
 	if h.webhookTraceAppender != nil {
 		h.webhookTraceAppender(ctx, agentID, startTs, ev)
 		return

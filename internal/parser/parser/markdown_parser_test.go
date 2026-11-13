@@ -512,18 +512,9 @@ func TestMarkdownParser_ParseWithResult_InlineRawHTMLSurvives(t *testing.T) {
 
 func TestMarkdownParser_ConfigureFromSetup(t *testing.T) {
 	p, _ := NewMarkdownParser(GoMarkdown)
-	p.ConfigureFromSetup(map[string]any{
-		"parse_method": "deepdoc",
-		"vlm":          map[string]any{"llm_id": "gpt-4-vision"},
-	})
+	p.ConfigureFromSetup(map[string]any{"parse_method": "deepdoc"})
 	if p.ParseMethod != "deepdoc" {
 		t.Fatalf("ParseMethod = %q, want %q", p.ParseMethod, "deepdoc")
-	}
-	if p.VLM == nil {
-		t.Fatal("VLM is nil; want map")
-	}
-	if id, _ := p.VLM["llm_id"].(string); id != "gpt-4-vision" {
-		t.Fatalf("VLM[llm_id] = %q, want %q", id, "gpt-4-vision")
 	}
 }
 
@@ -874,6 +865,75 @@ func TestMarkdownParser_TableInCodeFenceNotRendered(t *testing.T) {
 	}
 }
 
+// TestMarkdownParser_IndentedTables covers pipe tables that do not start in column 0. GFM
+// allows up to three spaces of indentation before each line of a table, so such a table at the
+// top level is still a table. Tables inside list items keep the parser's own handling, and four
+// spaces or a tab at the top level make an indented code block, which must stay code.
+func TestMarkdownParser_IndentedTables(t *testing.T) {
+	ctx := t.Context()
+	p, _ := NewMarkdownParser(GoMarkdown)
+	for _, md := range []string{
+		" | a | b |\n |---|---|\n | one | two |\n",
+		"  | a | b |\n  |---|---|\n  | one | two |\n",
+		"   | a | b |\n   |---|---|\n   | one | two |\n",
+		" | a | b |\n   |---|---|\n  | one | two |\n",
+		"- item\n\n | a | b |\n   |---|---|\n  | one | two |\n",
+		"Intro\n | a | b |\n |---|---|\n | one | two |\n",
+		"- item\n\n  | a | b |\n  |---|---|\n  | one | two |\n",
+		"- item\n\n    | a | b |\n    |---|---|\n    | one | two |\n",
+		"- item\n\n\t| a | b |\n\t|---|---|\n\t| one | two |\n",
+		"- outer\n  - inner\n\n    | a | b |\n    |---|---|\n    | one | two |\n",
+		"10. Step\n\n    | a | b |\n    |---|---|\n    | one | two |\n",
+	} {
+		res := p.ParseWithResult(ctx, "test.md", []byte(md))
+		if res.Err != nil {
+			t.Fatalf("ParseWithResult(%q): %v", md, res.Err)
+		}
+		tables := 0
+		for _, item := range ItemsToMaps(res.JSON) {
+			text, _ := item["text"].(string)
+			if strings.Contains(text, "|---|") {
+				t.Fatalf("ParseWithResult(%q): table rows left in the text: %q", md, text)
+			}
+			if kd, _ := item["doc_type_kwd"].(string); kd == "table" {
+				tables++
+				td, ok := item["table"].(*entity.TableData)
+				if !ok || td == nil || !tableRowsContain(td, "one") {
+					t.Fatalf("ParseWithResult(%q): table item without its rows: %#v", md, item)
+				}
+			}
+		}
+		if tables != 1 {
+			t.Fatalf("ParseWithResult(%q): table items = %d, want 1", md, tables)
+		}
+	}
+
+	// The text before a table in the same paragraph stays, and a table may have no body rows.
+	res := p.ParseWithResult(ctx, "test.md", []byte("Intro\n | a | b |\n |---|---|\n | one | two |\n"))
+	if items := ItemsToMaps(res.JSON); len(items) != 2 || items[0]["text"] != "Intro" {
+		t.Fatalf("intro before an indented table: %#v", items)
+	}
+	res = p.ParseWithResult(ctx, "test.md", []byte(" | a | b |\n |---|---\n"))
+	if items := ItemsToMaps(res.JSON); len(items) != 1 || items[0]["doc_type_kwd"] != "table" {
+		t.Fatalf("indented header-only table: %#v", items)
+	}
+
+	for _, md := range []string{
+		"Code:\n\n    | a | b |\n    |---|---|\n    | one | two |\n",
+		"Code:\n\n\t| a | b |\n\t|---|---|\n\t| one | two |\n",
+	} {
+		res := p.ParseWithResult(ctx, "test.md", []byte(md))
+		if res.Err != nil {
+			t.Fatalf("ParseWithResult(%q): %v", md, res.Err)
+		}
+		for _, item := range ItemsToMaps(res.JSON) {
+			if kd, _ := item["doc_type_kwd"].(string); kd == "table" {
+				t.Fatalf("ParseWithResult(%q): an indented code block became a table item", md)
+			}
+		}
+	}
+}
+
 // TestMarkdownParser_RawHTMLTableHandled covers a user-written raw <table> HTML
 // block (not a GFM pipe table). The table hook only pads GFM
 // pipe tables, so the raw <table> passes through and is caught by isTableHTML
@@ -1045,4 +1105,276 @@ func tableRowsContain(td *entity.TableData, want string) bool {
 		}
 	}
 	return false
+}
+
+// TestMarkdownParser_RemoveTOC_Chinese verifies that Markdown TOC sections are filtered
+// when remove_toc is enabled, mirroring HTML and DOCX behavior.
+func TestMarkdownParser_RemoveTOC_Chinese(t *testing.T) {
+	ctx := t.Context()
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	p.ConfigureFromSetup(map[string]any{"remove_toc": true})
+
+	md := `# 前言
+
+前言内容。
+
+# 目录
+
+* 第一章 概述
+* 第二章 架构
+
+# 第一章 概述
+
+第一章正文内容。
+
+# 第二章 架构
+
+第二章正文内容。
+`
+
+	res := p.ParseWithResult(ctx, "test.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if strings.Contains(text, "目录") {
+			t.Errorf("TOC heading %q was not removed", text)
+		}
+		if text == "* 第一章 概述" || text == "* 第二章 架构" {
+			t.Errorf("TOC entry %q was not removed", text)
+		}
+	}
+
+	wantTexts := map[string]bool{
+		"# 前言":     false,
+		"前言内容。":    false,
+		"# 第一章 概述": false,
+		"第一章正文内容。": false,
+		"# 第二章 架构": false,
+		"第二章正文内容。": false,
+	}
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if _, ok := wantTexts[text]; ok {
+			wantTexts[text] = true
+		}
+	}
+	for text, found := range wantTexts {
+		if !found {
+			t.Errorf("expected text %q was unexpectedly removed", text)
+		}
+	}
+}
+
+// TestMarkdownParser_RemoveTOC_English verifies that English Markdown TOC sections
+// are filtered when remove_toc is enabled.
+func TestMarkdownParser_RemoveTOC_English(t *testing.T) {
+	ctx := t.Context()
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	p.ConfigureFromSetup(map[string]any{"remove_toc": true})
+
+	md := `# Overview
+
+Project overview.
+
+# Table of Contents
+
+* Chapter 1 Getting Started
+* Chapter 2 Deep Dive
+
+# Chapter 1 Getting Started
+
+First chapter content.
+
+# Chapter 2 Deep Dive
+
+Second chapter content.
+`
+
+	res := p.ParseWithResult(ctx, "test_en.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if strings.Contains(strings.ToLower(text), "table of contents") {
+			t.Errorf("TOC heading %q was not removed", text)
+		}
+		if text == "* Chapter 1 Getting Started" || text == "* Chapter 2 Deep Dive" {
+			t.Errorf("TOC entry %q was not removed", text)
+		}
+	}
+
+	wantTexts := map[string]bool{
+		"# Overview":                  false,
+		"Project overview.":           false,
+		"# Chapter 1 Getting Started": false,
+		"First chapter content.":      false,
+		"# Chapter 2 Deep Dive":       false,
+		"Second chapter content.":     false,
+	}
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if _, ok := wantTexts[text]; ok {
+			wantTexts[text] = true
+		}
+	}
+	for text, found := range wantTexts {
+		if !found {
+			t.Errorf("expected text %q was unexpectedly removed", text)
+		}
+	}
+}
+
+// TestMarkdownParser_RemoveTOC_DisabledByDefault verifies that TOC content is preserved
+// when remove_toc is disabled or omitted.
+func TestMarkdownParser_RemoveTOC_DisabledByDefault(t *testing.T) {
+	ctx := t.Context()
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+
+	md := `# 目录
+
+* 第一章 概述
+* 第二章 架构
+
+# 第一章 概述
+
+第一章正文内容。
+`
+
+	res := p.ParseWithResult(ctx, "test.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+
+	foundHeading := false
+	foundEntry := false
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if strings.Contains(text, "目录") {
+			foundHeading = true
+		}
+		if text == "* 第一章 概述" {
+			foundEntry = true
+		}
+	}
+	if !foundHeading {
+		t.Errorf("expected TOC heading to be preserved by default")
+	}
+	if !foundEntry {
+		t.Errorf("expected TOC entry to be preserved by default")
+	}
+}
+
+// TestMarkdownParser_RemoveTOC_OrderedList verifies that TOC entries formatted as
+// ordered lists (1. ..., 2. ...) are stripped when remove_toc is enabled.
+func TestMarkdownParser_RemoveTOC_OrderedList(t *testing.T) {
+	ctx := t.Context()
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	p.ConfigureFromSetup(map[string]any{"remove_toc": true})
+
+	md := `# Contents
+
+1. Introduction
+2. Installation
+
+# Introduction
+
+Welcome to the project.
+
+# Installation
+
+Run npm install.
+`
+
+	res := p.ParseWithResult(ctx, "test_ordered.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if strings.EqualFold(text, "# Contents") || strings.EqualFold(text, "Contents") {
+			t.Errorf("TOC heading %q was not removed", text)
+		}
+		if strings.HasPrefix(text, "1. Introduction") || strings.HasPrefix(text, "2. Installation") {
+			t.Errorf("TOC entry %q was not removed", text)
+		}
+	}
+
+	wantTexts := map[string]bool{
+		"# Introduction":          false,
+		"Welcome to the project.": false,
+		"# Installation":          false,
+		"Run npm install.":        false,
+	}
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if _, ok := wantTexts[text]; ok {
+			wantTexts[text] = true
+		}
+	}
+	for text, found := range wantTexts {
+		if !found {
+			t.Errorf("expected body text %q was unexpectedly removed", text)
+		}
+	}
+}
+
+// TestMarkdownParser_RemoveTOC_PreservesAcknowledgments verifies that standalone
+// 致谢 / Acknowledgments headings and their content are NOT treated as TOCs.
+func TestMarkdownParser_RemoveTOC_PreservesAcknowledgments(t *testing.T) {
+	ctx := t.Context()
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	p.ConfigureFromSetup(map[string]any{"remove_toc": true})
+
+	md := `# 致谢
+
+感谢所有开源贡献者的付出。
+
+# Acknowledgments
+
+We thank all contributors for their support.
+`
+
+	res := p.ParseWithResult(ctx, "test_ack.md", []byte(md))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+
+	wantTexts := map[string]bool{
+		"# 致谢": false,
+		"感谢所有开源贡献者的付出。":                                false,
+		"# Acknowledgments":                            false,
+		"We thank all contributors for their support.": false,
+	}
+	for _, item := range ItemsToMaps(res.JSON) {
+		text, _ := item["text"].(string)
+		if _, ok := wantTexts[text]; ok {
+			wantTexts[text] = true
+		}
+	}
+	for text, found := range wantTexts {
+		if !found {
+			t.Errorf("expected acknowledgment text %q was unexpectedly removed", text)
+		}
+	}
 }

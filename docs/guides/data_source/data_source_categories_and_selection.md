@@ -4,7 +4,7 @@ title: Data Source Categories and Selection
 sidebar_label: Categories and Selection
 slug: /add_data_source/data_source_categories_and_selection
 sidebar_custom_props: {
-  categoryIcon: LucideServer
+  categoryIcon: LucideListTree
 }
 ---
 

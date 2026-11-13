@@ -53,9 +53,9 @@ export const DEFAULT_LANGUAGE_CODE =
   import.meta.env.VITE_DEFAULT_LANGUAGE_CODE || LanguageAbbreviation.En;
 
 // Enterprise customization overlays: the enterprise repository carries real
-// implementations of these same-path files (`web/src/ee/locales/*-private.ts`);
-// upstream ships them as empty objects so shared imports resolve in both
-// trees. Enterprise content must live only in the ee/ files, never here.
+// implementations under `web/src/ee/locales/`; upstream ships no-op stubs
+// under `web/src/ee-stub/locales/` so shared imports resolve in both trees.
+// Enterprise content must live only in the enterprise ee/ files, never here.
 import merge from 'lodash/merge';
 import translation_en_private from '@/ee/locales/en-private';
 import translation_zh_private from '@/ee/locales/zh-private';

@@ -4,7 +4,7 @@ title: Workflow Overview
 sidebar_label: Workflow Overview
 slug: /agent_overview
 sidebar_custom_props: {
-  categoryIcon: RagAiAgent
+  categoryIcon: LucideBookOpenText
 }
 ---
 

@@ -4,7 +4,7 @@ slug: /connect_to_an_agent
 title: Connect to an Agent
 sidebar_label: Connect to an Agent
 sidebar_custom_props: {
-  categoryIcon: LucideBox
+  categoryIcon: LucidePlug
 }
 ---
 

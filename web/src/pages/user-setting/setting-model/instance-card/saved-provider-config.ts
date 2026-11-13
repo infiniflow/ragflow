@@ -32,7 +32,6 @@ export const SavedProviderConfigFields = [
   'mineru_output_dir',
   'mineru_server_url',
   'opendataloader_apiserver',
-  'paddleocr_algorithm',
   'paddleocr_api_url',
   'provider_order',
 ] as const;

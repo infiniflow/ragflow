@@ -40,7 +40,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
-import { Routes } from '@/routes';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import fileManagerService from '@/services/file-manager-service';
 import { formatFileSize } from '@/utils/common-util';
 import { formatDate } from '@/utils/date';
@@ -57,7 +57,7 @@ import {
 } from 'lucide-react';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useLocation, useNavigate } from 'react-router';
+import { useLocation } from 'react-router';
 import { CreateSpaceDialog } from './components/create-space-dialog';
 import DeleteSelectedSpacesDialog from './components/delete-selected-spaces-dialog';
 import DeleteSpaceDialog from './components/delete-space-dialog';
@@ -99,7 +99,7 @@ const formatRelative = (timestamp: number): string => {
 const SkillsPage: React.FC = () => {
   const { t } = useTranslation();
   const { pathname } = useLocation();
-  const navigate = useNavigate();
+  const { navigateToFolder } = useNavigatePage();
   const [spaces, setSpaces] = useState<Array<{ id: string; name: string }>>([]);
   const [spaceInput, setSpaceInput] = useState('');
   const [selectedSpaceId, setSelectedSpaceId] = useState<string>('');
@@ -566,7 +566,7 @@ const SkillsPage: React.FC = () => {
     <div className="flex items-center gap-2">
       <span
         className="text-text-secondary cursor-pointer hover:text-text-primary"
-        onClick={() => navigate(Routes.Files)}
+        onClick={navigateToFolder()}
       >
         root
       </span>
@@ -580,7 +580,7 @@ const SkillsPage: React.FC = () => {
     <div className="flex items-center gap-2">
       <span
         className="text-text-secondary cursor-pointer hover:text-text-primary"
-        onClick={() => navigate(Routes.Files)}
+        onClick={navigateToFolder()}
       >
         root
       </span>
@@ -743,7 +743,7 @@ const SkillsPage: React.FC = () => {
                           {t('skills.spaceName') || 'Name'}
                         </TableHead>
                         <TableHead className="w-[160px]">
-                          {t('fileManager.uploadDate') || 'Upload Date'}
+                          {t('fileManager.uploadDate') || 'Uploaded at'}
                         </TableHead>
                         <TableHead className="w-[96px]">
                           {t('fileManager.size') || 'Size'}

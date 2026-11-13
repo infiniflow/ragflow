@@ -1,5 +1,5 @@
 // Go implementation of dependency-based relation extraction.
-// Direct port of Python DepRelationExtractor — semantica-aligned.
+// Direct port of DepRelationExtractor — semantically-aligned
 // Operates on a dependency tree (heads + labels) independent of parser.
 
 package extractor
@@ -78,7 +78,7 @@ func lemma(w string) string {
 
 // Verb+prep → relation type (multi-language)
 // Keys: verbLemma+prep (or verbLemma alone for direct-object relations).
-// Matches Python _VERB_RELATIONS exactly.
+// Matches _VERB_RELATIONS exactly
 var depVerbRelations = map[string]string{
 	// English
 	"found+by": "founded_by", "co-found+by": "founded_by",
@@ -169,7 +169,7 @@ var multiHopRules = map[string]map[string]string{
 // ---------------------------------------------------------------------------
 // Language-specific dependency role mappings
 // ---------------------------------------------------------------------------
-// Matches Python _LANG_DEP_RULES exactly for all 7 languages.
+// Matches _LANG_DEP_RULES exactly for all 7 languages
 
 type roleSpec struct {
 	dep        string // main dependency label (e.g. "nsubj", "obl:agent")
@@ -226,7 +226,7 @@ var langRolesMap = map[string]map[string]roleSpec{
 }
 
 // Copula dependency labels per language (attr_deps, prep_deps, obj_deps).
-// Matches Python _extract_copula label sets.
+// Matches _extract_copula label sets
 var copulaDeps = map[string]struct {
 	attrDeps []string
 	prepDeps []string
@@ -321,7 +321,7 @@ func DepExtractRelations(text string, tokens []DepToken, entities []Entity, lang
 		}
 	}
 
-	// Co-occurrence (always, matching Python DepRelationExtractor.extract())
+	// Co-occurrence (always, matching DepRelationExtractor.extract())
 	if maxDistance <= 0 {
 		maxDistance = 100
 	}
@@ -429,7 +429,7 @@ func findBestEntity(key string, entityMap map[string][]Entity) *Entity {
 // ---------------------------------------------------------------------------
 
 // getByRole returns matching (entity, prep) pairs for a semantic role.
-// Matches Python DepRelationExtractor._get_by_role.
+// Matches DepRelationExtractor._get_by_role
 func getByRole(lang string, role string, rootIdx int, tokens []DepToken, entityMap map[string][]Entity) []roleResult {
 	roles, ok := langRolesMap[lang]
 	if !ok {

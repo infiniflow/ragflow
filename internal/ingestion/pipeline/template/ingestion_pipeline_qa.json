@@ -53,56 +53,15 @@
                                 "value": ""
                             }
                         },
-                        "docx": {
-                            "preprocess": [
-                                "main_content"
-                            ],
-                            "suffix": [
-                                "docx"
-                            ],
-                            "vlm": {}
-                        },
-                        "markdown": {
-                            "preprocess": [
-                                "main_content"
-                            ],
-                            "suffix": [
-                                "md",
-                                "markdown",
-                                "mdx"
-                            ],
-                            "vlm": {}
-                        },
+                        "docx": {},
+                        "markdown": {},
                         "pdf": {
-                            "parse_method": "DeepDOC",
-                            "preprocess": [
-                                "main_content"
-                            ],
-                            "suffix": [
-                                "pdf"
-                            ],
-                            "vlm": {}
+                            "parse_method": "DeepDOC"
                         },
                         "spreadsheet": {
-                            "parse_method": "DeepDOC",
-                            "preprocess": [
-                                "main_content"
-                            ],
-                            "suffix": [
-                                "xls",
-                                "xlsx",
-                                "csv"
-                            ],
-                            "vlm": {}
+                            "parse_method": "DeepDOC"
                         },
-                        "text&code": {
-                            "preprocess": [
-                                "main_content"
-                            ],
-                            "suffix": [
-                                "txt"
-                            ]
-                        }
+                        "text&code": {}
                     }
                 },
                 "upstream": [
@@ -221,39 +180,20 @@
                             "setups": [
                                 {
                                     "fileFormat": "pdf",
-                                    "parse_method": "DeepDOC",
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "vlm": {}
+                                    "parse_method": "DeepDOC"
                                 },
                                 {
                                     "fileFormat": "spreadsheet",
-                                    "parse_method": "DeepDOC",
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "vlm": {}
+                                    "parse_method": "DeepDOC"
                                 },
                                 {
-                                    "fileFormat": "markdown",
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "vlm": {}
+                                    "fileFormat": "markdown"
                                 },
                                 {
-                                    "fileFormat": "text&code",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "fileFormat": "text&code"
                                 },
                                 {
-                                    "fileFormat": "docx",
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "vlm": {}
+                                    "fileFormat": "docx"
                                 }
                             ]
                         },

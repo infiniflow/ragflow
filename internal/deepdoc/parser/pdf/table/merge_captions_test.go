@@ -29,6 +29,47 @@ func TestMergeCaptions_Unit(t *testing.T) {
 	}
 }
 
+// TestMergeCaptions_KeepsTailInPageOrder locks the canonical order of the
+// merged highlight geometry: a caption on an earlier page of a cross-page
+// table is appended after the later page's region, and must be sorted back so
+// the serialized _pdf_positions reads page by page. Positions[0] stays the
+// table's primary box.
+func TestMergeCaptions_KeepsTailInPageOrder(t *testing.T) {
+	table := pdf.Section{
+		Text: "<table><tr><td>x</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+		Positions: []pdf.Position{
+			{PageNumbers: []int{0}, Left: 10, Right: 300, Top: 40, Bottom: 900},
+			{PageNumbers: []int{1}, Left: 10, Right: 300, Top: 0, Bottom: 30},
+		},
+	}
+	caption := pdf.Section{
+		Text: "Table 1: results", LayoutType: pdf.DLALabelTableCaption,
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 300, Top: 910, Bottom: 925}},
+	}
+	result := MergeCaptions([]pdf.Section{table, caption})
+	if len(result) != 1 {
+		t.Fatalf("expected the caption to merge into the table, got %d sections", len(result))
+	}
+	got := result[0].Positions
+	want := []struct {
+		page        int
+		top, bottom float64
+	}{
+		{page: 0, top: 40, bottom: 900},
+		{page: 0, top: 910, bottom: 925},
+		{page: 1, top: 0, bottom: 30},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("positions: got %d rows, want %d: %+v", len(got), len(want), got)
+	}
+	for i, w := range want {
+		if len(got[i].PageNumbers) != 1 || got[i].PageNumbers[0] != w.page ||
+			got[i].Top != w.top || got[i].Bottom != w.bottom {
+			t.Errorf("position %d = %+v, want page %d top %v bottom %v", i, got[i], w.page, w.top, w.bottom)
+		}
+	}
+}
+
 // TestMergeCaptions_TableCaption verifies table caption merging directly.
 func TestMergeCaptions_TableCaption(t *testing.T) {
 	sections := []pdf.Section{

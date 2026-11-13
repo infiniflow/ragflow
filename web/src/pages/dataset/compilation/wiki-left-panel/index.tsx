@@ -24,14 +24,22 @@ export function WikiLeftPanel({
   const { t } = useTranslation();
 
   return (
-    <aside className="size-full flex flex-col p-5">
-      <Tabs value={tab} onValueChange={onTabChange} className="pb-5">
-        <TabsList className="grid grid-cols-2 w-80">
-          <TabsTrigger value={LeftPanelTab.Contents}>
-            {t('knowledgeCompilation.contents')}
+    <aside className="size-full min-w-0 flex flex-col p-5">
+      <Tabs
+        value={tab}
+        onValueChange={onTabChange}
+        className="w-full min-w-0 pb-5"
+      >
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value={LeftPanelTab.Contents} className="min-w-0 px-2">
+            <span className="min-w-0 truncate">
+              {t('knowledgeCompilation.contents')}
+            </span>
           </TabsTrigger>
-          <TabsTrigger value={LeftPanelTab.Graph}>
-            {t('knowledgeCompilation.graph')}
+          <TabsTrigger value={LeftPanelTab.Graph} className="min-w-0 px-2">
+            <span className="min-w-0 truncate">
+              {t('knowledgeCompilation.graph')}
+            </span>
           </TabsTrigger>
         </TabsList>
       </Tabs>

@@ -132,7 +132,7 @@ const DataSourceLogsTable = ({ datasetId }: { datasetId: string }) => {
             </TableRow>
           ))}
         </TableHeader>
-        <TableBody className="min-w-[1280px]">
+        <TableBody>
           {table.getRowModel().rows?.length ? (
             table.getRowModel().rows.map((row) => (
               <TableRow key={row.id}>

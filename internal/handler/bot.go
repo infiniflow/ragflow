@@ -58,8 +58,8 @@ func NewBotHandler(svc *service.BotService) *BotHandler {
 
 // ChatbotInfo GET /api/v1/chatbots/<dialog_id>/info
 //
-// Mirrors python bot_api.py:126-154. Returns the public metadata of
-// a chatbot dialog (title, avatar, prologue, web search flag, llm_id).
+// Returns the public metadata of a chatbot dialog (title, avatar,
+// prologue, web search flag, llm_id).
 func (h *BotHandler) ChatbotInfo(c *gin.Context) {
 	dialogID := c.Param("dialog_id")
 	if dialogID == "" {
@@ -87,8 +87,8 @@ func (h *BotHandler) ChatbotInfo(c *gin.Context) {
 
 // AgentbotInputs GET /api/v1/agentbots/<agent_id>/inputs
 //
-// Mirrors python bot_api.py:239-250. Returns the public metadata of
-// an agentbot canvas (title, avatar, inputs, prologue, mode).
+// Returns the public metadata of an agentbot canvas (title, avatar,
+// inputs, prologue, mode).
 func (h *BotHandler) AgentbotInputs(c *gin.Context) {
 	agentID := c.Param("agent_id")
 	if agentID == "" {
@@ -112,7 +112,6 @@ func (h *BotHandler) AgentbotInputs(c *gin.Context) {
 
 // AgentbotCompletion POST /api/v1/agentbots/<agent_id>/completions
 //
-// Mirrors python bot_api.py:157 (canvas_service.completion wrapper).
 // The URL-bound agent_id is authoritative — the body must NOT
 // override it.
 //
@@ -122,10 +121,15 @@ func (h *BotHandler) AgentbotInputs(c *gin.Context) {
 // — {event, message_id, session_id, task_id, created_at, data} —
 // terminated by `data:[DONE]`. Forwarding raw canvas.RunEvent via
 // WriteChatbotRunEvent keeps this endpoint byte-compatible with the
-// python canvas_service.completion output (which yields every
-// canvas event, including node_* telemetry used by the "Thinking"
-// log panel).
+// canvas event stream the chat UI expects (every canvas event,
+// including node_* telemetry used by the "Thinking" log panel).
+//
+// The server write deadline is cleared before the first frame so an agent run
+// longer than http.Server.WriteTimeout is not cut off mid-stream (issue #21649).
 func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
+	common.StartOperationLog(c, "request_agentbot_completion")
+	defer common.FinishOperationLog(c)
+
 	agentID := c.Param("agent_id")
 	if agentID == "" {
 		common.RespondError(c, common.CodeArgumentError, "`agent_id` is required.")
@@ -142,6 +146,7 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 			return
 		}
 	}
+	common.SetOperationResource(c, "session_id", body.SessionID)
 	if body.Release == nil {
 		if rawRelease, ok := c.GetQuery("release"); ok {
 			release, err := strconv.ParseBool(rawRelease)
@@ -160,9 +165,11 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 		common.RespondError(c, ec, err.Error())
 		return
 	}
+	clearResponseWriteDeadline(c)
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
+	common.FinishOperationLog(c)
 	doneSent := false
 	for ev := range events {
 		if ev.Type == "done" {
@@ -179,9 +186,12 @@ func (h *BotHandler) AgentbotCompletion(c *gin.Context) {
 
 // ChatbotCompletion POST /api/v1/chatbots/<dialog_id>/completions
 //
-// Mirrors python bot_api.py:55 (async_iframe_completion). Streams
-// SSE frames in the Python envelope shape. The streaming helper
+// Streams SSE frames in the SSE envelope shape. The streaming helper
 // lives in service/bot_completion.go.
+//
+// Like AgentbotCompletion it clears the server write deadline first: the
+// http.Server.WriteTimeout covers the whole response, so a slow answer would be
+// truncated without it (issue #21649).
 func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 	dialogID := c.Param("dialog_id")
 	if dialogID == "" {
@@ -210,6 +220,7 @@ func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 		common.RespondError(c, ec, err.Error())
 		return
 	}
+	clearResponseWriteDeadline(c)
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
@@ -230,7 +241,7 @@ func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 //
 // Beta-token sibling of GetAgentLogs. The shared/embedded chat page's
 // "Thinking" button hits this endpoint because the share flow authenticates
-// with a beta APIToken (no session JWT). Mirrors python bot_api.py:agent_bot_logs.
+// with a beta APIToken (no session JWT).
 func (h *BotHandler) GetAgentbotLogs(c *gin.Context) {
 	agentIDStr := c.Param("agent_id")
 	if agentIDStr == "" {

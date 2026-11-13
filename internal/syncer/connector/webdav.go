@@ -32,6 +32,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"ragflow/internal/common"
 )
 
 const (
@@ -652,10 +654,8 @@ func normalizeWebDAVPath(remotePath string) string {
 
 // webDAVSizeThreshold returns the configured blob size threshold.
 func webDAVSizeThreshold() int64 {
-	if raw := strings.TrimSpace(os.Getenv("BLOB_STORAGE_SIZE_THRESHOLD")); raw != "" {
-		if parsed, err := strconv.ParseInt(raw, 10, 64); err == nil && parsed > 0 {
-			return parsed
-		}
+	if n := common.GetEnvInt("BLOB_STORAGE_SIZE_THRESHOLD", 0); n > 0 {
+		return int64(n)
 	}
 	return defaultWebDAVSizeThreshold
 }

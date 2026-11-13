@@ -89,6 +89,13 @@ const buttonVariants = cva(
           focus-visible:text-state-error focus-visible:bg-state-error-5
         `,
 
+        metallic: `
+          text-bg-base shadow-xs transition-colors
+          border-b-2 border-b-[#00beb4]
+          bg-text-primary
+          hover:bg-text-primary/90 hover:border-b-[#02bcdd]
+          focus-visible:bg-text-primary/90 focus-visible:border-b-[#02bcdd]
+        `,
         link: 'text-primary underline-offset-4 hover:underline',
 
         // Static
