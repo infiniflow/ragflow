@@ -218,7 +218,7 @@ func (c *ConfluenceConnector) loadSlimDocuments(ctx context.Context) ([]SlimDocu
 	return documents, nil
 }
 
-func (c *ConfluenceConnector) pageDocument(ctx context.Context, page confluenceContent) (SourceDocument, error) {
+func (c *ConfluenceConnector) pageDocument(ctx context.Context, page confluenceContent, updatedAt time.Time) (SourceDocument, error) {
 	pageURL := c.documentURL(page.Links.WebUI)
 	content := confluenceHTMLText(page.bodyHTML())
 	comments, err := c.pageComments(ctx, page.ID.String())
@@ -229,10 +229,6 @@ func (c *ConfluenceConnector) pageDocument(ctx context.Context, page confluenceC
 		content = strings.TrimSpace(content + "\n\nComments:\n" + comments)
 	}
 	blob := []byte(content)
-	updatedAt := parseConfluenceTime(page.Version.When)
-	if updatedAt.IsZero() {
-		updatedAt = time.Now().UTC()
-	}
 	metadata := map[string]any{}
 	if page.Space.Name != "" {
 		metadata["space"] = page.Space.Name
@@ -274,7 +270,7 @@ func (c *ConfluenceConnector) pageComments(ctx context.Context, pageID string) (
 	return strings.Join(parts, "\n"), nil
 }
 
-func (c *ConfluenceConnector) attachmentDocument(ctx context.Context, page confluenceContent, attachment confluenceContent) (SourceDocument, bool, error) {
+func (c *ConfluenceConnector) attachmentDocument(ctx context.Context, page, attachment confluenceContent, updatedAt time.Time) (SourceDocument, bool, error) {
 	if !isConfluenceAttachmentAccepted(attachment) {
 		return SourceDocument{}, false, nil
 	}
@@ -291,13 +287,6 @@ func (c *ConfluenceConnector) attachmentDocument(ctx context.Context, page confl
 	}
 	if len(blob) == 0 {
 		return SourceDocument{}, false, nil
-	}
-	updatedAt := parseConfluenceTime(attachment.Version.When)
-	if updatedAt.IsZero() {
-		updatedAt = parseConfluenceTime(page.Version.When)
-	}
-	if updatedAt.IsZero() {
-		updatedAt = time.Now().UTC()
 	}
 	metadata := map[string]any{"parent_page_id": c.documentURL(page.Links.WebUI)}
 	if firstNonEmpty(attachment.Space.Name, page.Space.Name) != "" {
@@ -510,32 +499,26 @@ func (c *ConfluenceConnector) basePageCQL() string {
 }
 
 func (c *ConfluenceConnector) pageCQL(start *time.Time, end time.Time, fromBeginning bool) string {
-	query := c.basePageCQL()
-	if !fromBeginning {
-		if lower := confluenceQueryLowerBound(start); lower != nil {
-			query += " and lastmodified >= '" + confluenceCQLTime(*lower) + "'"
-		}
-	}
-	if !end.IsZero() {
-		// CQL timestamps carry minute granularity, so an inclusive `<=` on the
-		// truncated end drops everything updated in the rest of that minute and
-		// the next window's lower bound skips it for good. Bound with an
-		// exclusive comparison against the next minute tick; inConfluenceWindow
-		// drops the rows that lie past the window end.
-		query += " and lastmodified < '" + confluenceCQLTime(end.Add(time.Minute)) + "'"
-	}
-	return query + " order by lastmodified asc"
+	return confluenceSyncCQL(c.basePageCQL(), start, end, fromBeginning)
 }
 
 func (c *ConfluenceConnector) attachmentCQL(pageID string, start *time.Time, end time.Time, fromBeginning bool) string {
 	query := fmt.Sprintf("type=attachment and container='%s'", confluenceCQLQuote(pageID))
-	if !fromBeginning {
-		if lower := confluenceQueryLowerBound(start); lower != nil {
-			query += " and lastmodified >= '" + confluenceCQLTime(*lower) + "'"
+	return confluenceSyncCQL(query, start, end, fromBeginning)
+}
+
+func confluenceSyncCQL(query string, start *time.Time, end time.Time, fromBeginning bool) string {
+	lower := confluenceQueryLowerBound(start)
+	if !fromBeginning && lower != nil {
+		// CQL interprets date literals in the configured Confluence time zone.
+		// Widen both bounds to cover any UTC offset while keeping pagination and
+		// retries on a fixed query. Filter by the actual timestamps in NextBatch.
+		const zonePadding = 24 * time.Hour
+		query += " and lastmodified >= '" + confluenceCQLTime(lower.Add(-zonePadding)) + "'"
+		if !end.IsZero() {
+			// CQL has minute precision, so use the next minute as the exclusive bound.
+			query += " and lastmodified < '" + confluenceCQLTime(end.Add(zonePadding+time.Minute)) + "'"
 		}
-	}
-	if !end.IsZero() {
-		query += " and lastmodified < '" + confluenceCQLTime(end.Add(time.Minute)) + "'"
 	}
 	return query + " order by lastmodified asc"
 }
@@ -612,15 +595,16 @@ func (s *confluenceSyncSession) nextDocument(ctx context.Context) (*SourceDocume
 
 		if s.pageDocPending {
 			s.pageDocPending = false
-			doc, err := s.connector.pageDocument(ctx, s.currentPage)
+			updatedAt := confluenceUpdatedAt(s.currentPage.Version.When)
+			if !s.fromBeginning && !inConfluenceWindow(updatedAt, s.windowStart, s.windowEnd) {
+				continue
+			}
+			doc, err := s.connector.pageDocument(ctx, s.currentPage, updatedAt)
 			if err != nil {
 				return nil, err
 			}
-			if s.fromBeginning || inConfluenceWindow(doc.UpdatedAt, s.windowStart, s.windowEnd) {
-				doc.SemanticIdentifier = confluenceSemanticIdentifier(s.currentPage.Space.Name, s.currentPage.ancestorTitles(), s.currentPage.Title)
-				return &doc, nil
-			}
-			continue
+			doc.SemanticIdentifier = confluenceSemanticIdentifier(s.currentPage.Space.Name, s.currentPage.ancestorTitles(), s.currentPage.Title)
+			return &doc, nil
 		}
 
 		attachment, ok, err := s.attachCursor.next(ctx)
@@ -631,18 +615,29 @@ func (s *confluenceSyncSession) nextDocument(ctx context.Context) (*SourceDocume
 			s.hasCurrentPage = false
 			continue
 		}
-		doc, accepted, err := s.connector.attachmentDocument(ctx, s.currentPage, attachment)
+		updatedAt := confluenceUpdatedAt(attachment.Version.When, s.currentPage.Version.When)
+		if !s.fromBeginning && !inConfluenceWindow(updatedAt, s.windowStart, s.windowEnd) {
+			continue
+		}
+		doc, accepted, err := s.connector.attachmentDocument(ctx, s.currentPage, attachment, updatedAt)
 		if err != nil {
 			return nil, err
 		}
 		if !accepted {
 			continue
 		}
-		if s.fromBeginning || inConfluenceWindow(doc.UpdatedAt, s.windowStart, s.windowEnd) {
-			doc.SemanticIdentifier = confluenceSemanticIdentifier(firstNonEmpty(s.currentPage.Space.Name, attachment.Space.Name), s.currentPage.ancestorTitles(), s.currentPage.Title+" / "+confluenceAttachmentTitle(attachment))
-			return &doc, nil
+		doc.SemanticIdentifier = confluenceSemanticIdentifier(firstNonEmpty(s.currentPage.Space.Name, attachment.Space.Name), s.currentPage.ancestorTitles(), s.currentPage.Title+" / "+confluenceAttachmentTitle(attachment))
+		return &doc, nil
+	}
+}
+
+func confluenceUpdatedAt(values ...string) time.Time {
+	for _, value := range values {
+		if updatedAt := parseConfluenceTime(value); !updatedAt.IsZero() {
+			return updatedAt
 		}
 	}
+	return time.Now().UTC()
 }
 
 func (s *confluenceSyncSession) includeResumed(doc SourceDocument) bool {
@@ -842,12 +837,8 @@ func inConfluenceWindow(updatedAt time.Time, start *time.Time, end time.Time) bo
 	return true
 }
 
-// confluenceQueryLowerBound is the `lastmodified >=` bound both CQL builders
-// emit. CQL only accepts minute precision, so a waterline inside a minute is
-// queried from the start of that minute. Page filtering has to use the same
-// bound: filtering at the unbuffered start drops rows the server already
-// returned, and since the previous run's upper bound is the very same minute,
-// a page updated between floor(start) and start is covered by neither run.
+// confluenceQueryLowerBound keeps the waterline minute in both consecutive
+// windows. Fingerprint checks skip any unchanged documents in the overlap.
 func confluenceQueryLowerBound(start *time.Time) *time.Time {
 	if start == nil || start.IsZero() {
 		return nil
