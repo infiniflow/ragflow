@@ -147,8 +147,10 @@ func (m *MinerULocalModel) CheckConnection(ctx context.Context, apiConfig *APICo
 	if IsMinerUCloudBase(u.String()) {
 		return minerUCloudReachable(ctx, m.baseModel.httpClient, u)
 	}
-	v1URL := *u
-	v1URL.Path = "/v1/health"
+	// Append the probe paths to the configured endpoint instead of replacing
+	// its path: a MinerU service fronted by a path-prefixed reverse proxy
+	// only answers under that prefix, so host-root probes never reach it.
+	v1URL := u.JoinPath("v1", "health")
 	v1Code, v1Body, v1Err := minerUGET(ctx, m.baseModel.httpClient, v1URL.String(), token)
 	if v1Err == nil && (v1Code == http.StatusUnauthorized || v1Code == http.StatusForbidden) {
 		return fmt.Errorf("authentication failed (HTTP %d)", v1Code)
@@ -157,8 +159,7 @@ func (m *MinerULocalModel) CheckConnection(ctx context.Context, apiConfig *APICo
 		return nil
 	}
 
-	legacy := *u
-	legacy.Path = "/health"
+	legacy := u.JoinPath("health")
 	code, body, err := minerUGET(ctx, m.baseModel.httpClient, legacy.String(), token)
 	if err != nil {
 		if v1Err != nil {
