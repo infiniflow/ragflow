@@ -69,6 +69,13 @@ type Ingestor struct {
 	memoryReconcileInterval  time.Duration
 	memoryReconcileBatchSize int
 
+	// ingestorTier restricts which ingestion lanes this ingestor consumes. It
+	// is set at construction from --ingestor-tier / RAGFLOW_INGESTOR_TIER and
+	// defaults to TierDefault. The consume loop pulls only the lanes this tier
+	// allows (see the engine's tier-restricted pull); in the community build the
+	// only lane is default, so it is equivalent to the legacy whole-queue pull.
+	ingestorTier common.Tier
+
 	// Runtime state
 	currentTasks         map[string]struct{} // set of task IDs currently claimed by a worker
 	tasksMu              sync.RWMutex
@@ -168,12 +175,15 @@ type pendingDocumentCompileEvent struct {
 // process-wide relational handle, message-queue engine, and kvrocks client;
 // they are resolved once at the server assembly point and injected here rather
 // than read from the package globals (arch_test.go guards that rule).
-func NewIngestor(name string, maxConcurrency int32, supportedTypes []string, deps *ingestion.Deps) *Ingestor {
+func NewIngestor(name string, maxConcurrency int32, supportedTypes []string, tier common.Tier, deps *ingestion.Deps) *Ingestor {
 	if maxConcurrency <= 0 {
 		maxConcurrency = int32(runtime.NumCPU())
 	}
 	if deps == nil {
 		deps = &ingestion.Deps{}
+	}
+	if tier == "" {
+		tier = common.TierDefault
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	// Carry process-level ingest identity on the ingestor's root context so that
@@ -198,6 +208,7 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string, dep
 		maxConcurrency:           maxConcurrency,
 		supportedDocTypes:        supportedTypes,
 		version:                  "1.0.0",
+		ingestorTier:             tier,
 		currentTasks:             make(map[string]struct{}),
 		pendingCompileEvents:     make(map[string]pendingDocumentCompileEvent),
 		activeLeases:             make(map[*Heartbeat]*activeLease),
@@ -321,13 +332,21 @@ func (e *Ingestor) defaultReconcileMemoryTasks(ctx context.Context) error {
 	return e.memorySvc.ReconcileMemoryTasks(ctx, batchSize)
 }
 
+// tierPuller is implemented by message-queue engines that can drain only the
+// lanes an ingestor tier is allowed to consume. The base MessageQueue interface
+// does not require it, so engines without tier support (including the
+// dispatcher test fake) keep using the legacy whole-queue PullMessage.
+type tierPuller interface {
+	PullMessageForTier(ctx context.Context, tier common.Tier) (common.TaskHandle, error)
+}
+
 // consumeLoop is the worker dispatcher for the tiered task lanes. It waits for
 // an available worker before synchronously pulling one task, preventing prefetch
 // and limiting this ingestor to one outstanding broker request. Priority
-// (high -> medium -> low) is enforced inside PullMessage, not here.
+// (high -> medium -> low) is enforced by the engine's tier-restricted pull,
+// which drains only the lanes this ingestor's tier allows.
 func (e *Ingestor) consumeLoop() {
 	defer e.dispatcherWg.Done()
-	msgQueueEngine := e.deps.MQ
 	for {
 		var w *worker
 		select {
@@ -342,7 +361,7 @@ func (e *Ingestor) consumeLoop() {
 
 		pullStart := time.Now()
 		pullCtx, cancel := context.WithTimeout(e.dispatchCtx, taskPullRequestTimeout)
-		handle, err := msgQueueEngine.PullMessage(pullCtx)
+		handle, err := e.pullOneTask(pullCtx)
 		cancel()
 		if err != nil {
 			e.returnWorker(w)
@@ -397,6 +416,17 @@ func (e *Ingestor) returnWorker(w *worker) {
 	case e.workerQueue <- w:
 	case <-e.dispatchCtx.Done():
 	}
+}
+
+// pullOneTask pulls a single task for this ingestor's tier. If the message-queue
+// engine supports tier-restricted pulls it consumes only the lanes this ingestor
+// tier allows (in priority order); otherwise it falls back to the legacy
+// whole-queue PullMessage so engines without the capability behave as before.
+func (e *Ingestor) pullOneTask(ctx context.Context) (common.TaskHandle, error) {
+	if tp, ok := e.deps.MQ.(tierPuller); ok {
+		return tp.PullMessageForTier(ctx, e.ingestorTier)
+	}
+	return e.deps.MQ.PullMessage(ctx)
 }
 
 // SetMemoryMessageService installs the memory-extraction service used by

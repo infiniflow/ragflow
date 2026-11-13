@@ -18,7 +18,11 @@
 
 package nats
 
-import "ragflow/internal/common"
+import (
+	"fmt"
+
+	"ragflow/internal/common"
+)
 
 // tierOrder for the open-source / community build is a single lane: the bare
 // community subject "tasks.RAGFLOW". The enterprise build (see
@@ -39,3 +43,18 @@ var tierStreams = map[common.Tier]tierStreamSpec{
 // the legacy community queue. The enterprise build (tier_policy_ee.go) designates
 // its own default lane.
 func defaultTier() common.Tier { return common.TierDefault }
+
+// ingestorLanes returns the ordered subset of tierOrder an ingestor of the
+// given tier is allowed to consume, in priority (drain) order. The community
+// build has a single lane, so every valid ingestor tier collapses to
+// [TierDefault]; an unknown tier is an error rather than a silent fallback.
+// The enterprise build (tier_policy_ee.go) supplies the real
+// high/medium/low mapping.
+func ingestorLanes(tier common.Tier) ([]common.Tier, error) {
+	switch tier {
+	case common.TierDefault:
+		return []common.Tier{common.TierDefault}, nil
+	default:
+		return nil, fmt.Errorf("unknown ingestor tier %q", tier)
+	}
+}

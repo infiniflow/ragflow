@@ -131,6 +131,12 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 	if err != nil {
 		return err
 	}
+	// Resolve the ingestor tier (which lanes this ingestor consumes) from
+	// CLI > env > default(low), failing fast on an invalid value.
+	tier, err := globalConfig.GetIngestorTier(args.IngestorTier)
+	if err != nil {
+		return err
+	}
 	// Apply the configured compiler pool size (no-op when 0; the pool keeps its
 	// vCPU default, overridable via KC_COMPILE_CONCURRENCY).
 	knowledge_compile.SetCompilerConcurrency(ingestorCfg.CompilerPoolSize)
@@ -147,7 +153,7 @@ func Run(ctx context.Context, cancel context.CancelFunc, serverName string, args
 		common.Error("Invalid ingestor dependencies", err)
 		return fmt.Errorf("ingestor dependencies invalid: %w", err)
 	}
-	ingestor := ingestion.NewIngestor(*args.Name, int32(workers), defaultSupportedTypes(), ingestorDeps)
+	ingestor := ingestion.NewIngestor(*args.Name, int32(workers), defaultSupportedTypes(), tier, ingestorDeps)
 	ingestor.SetKnowledgeCompileModelConfig(
 		globalConfig.GetDefaultChatModel().Name,
 		globalConfig.GetDefaultEmbeddingModel().Name,
