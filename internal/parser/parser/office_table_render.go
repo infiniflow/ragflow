@@ -732,11 +732,13 @@ func trimTrailingEmptyColumns(records [][]string) [][]string {
 
 // ──────────────────────────────────────────────────────────── axis helpers
 
-// axisToRC parses an "A1"-style cell reference (optionally with a leading "$")
-// into 1-based (row, col). A malformed reference yields (0, 0).
+// axisToRC parses an "A1"-style cell reference into 1-based (row, col).
+// Excel marks an absolute row or column with "$", and a reference can carry
+// either marker on its own ("$A1", "A$1") or both ("$A$1"), so every "$" is
+// dropped rather than only a leading one. A malformed reference yields (0, 0).
 func axisToRC(axis string) (row, col int) {
 	axis = strings.TrimSpace(axis)
-	axis = strings.TrimPrefix(axis, "$")
+	axis = strings.ReplaceAll(axis, "$", "")
 	i := 0
 	for i < len(axis) && (axis[i] < '0' || axis[i] > '9') {
 		i++

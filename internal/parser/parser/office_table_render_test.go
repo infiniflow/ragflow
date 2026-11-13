@@ -1697,3 +1697,25 @@ func TestDetectHeaderRow_MergedHeaderBelowMetadata(t *testing.T) {
 		})
 	}
 }
+
+func TestAxisToRCAbsoluteReferences(t *testing.T) {
+	cases := []struct {
+		axis     string
+		row, col int
+	}{
+		{"A1", 1, 1},
+		{"$A$1", 1, 1},
+		{"$B2", 2, 2},
+		{"A$5", 5, 1},
+		{"$AA$10", 10, 27},
+	}
+	for _, tc := range cases {
+		row, col := axisToRC(tc.axis)
+		if row != tc.row || col != tc.col {
+			t.Errorf("axisToRC(%q) = (%d, %d), want (%d, %d)", tc.axis, row, col, tc.row, tc.col)
+		}
+	}
+	if got := rangeTopRow("$A$5:$D$20"); got != 5 {
+		t.Errorf("rangeTopRow(%q) = %d, want 5", "$A$5:$D$20", got)
+	}
+}
