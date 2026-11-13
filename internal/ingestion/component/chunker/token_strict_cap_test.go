@@ -37,7 +37,7 @@ func TestMergeByTokenSizeFromJSON_HardCapNoOvershoot(t *testing.T) {
 	for i := 0; i < 8; i++ {
 		text := strings.TrimSpace(strings.Repeat("w ", 25))
 		sections = append(sections, schema.ChunkDoc{
-			Text: text, DocType: "text", CKType: "text", TKNums: intPtr(tokenizeStr(text)),
+			Text: text, DocType: "text", TKNums: intPtr(tokenizeStr(text)),
 		})
 	}
 	got := mergeByTokenSizeFromJSON([][]schema.ChunkDoc{sections}, budget, 0)
@@ -60,7 +60,7 @@ func TestMergeByTokenSizeFromJSON_OverlapStrictCap(t *testing.T) {
 	for i := 0; i < 20; i++ {
 		text := strings.TrimSpace(strings.Repeat("w ", 10))
 		sections = append(sections, schema.ChunkDoc{
-			Text: text, DocType: "text", CKType: "text", TKNums: intPtr(tokenizeStr(text)),
+			Text: text, DocType: "text", TKNums: intPtr(tokenizeStr(text)),
 		})
 	}
 	got := mergeByTokenSizeFromJSON([][]schema.ChunkDoc{sections}, budget, 20)
@@ -78,7 +78,7 @@ func TestMergeByTokenSizeFromJSON_OversizedUnitSplit(t *testing.T) {
 	const budget = 30
 	long := strings.TrimSpace(strings.Repeat("word ", 100))
 	items := [][]schema.ChunkDoc{{
-		{Text: long, DocType: "text", CKType: "text", TKNums: intPtr(tokenizeStr(long))},
+		{Text: long, DocType: "text", TKNums: intPtr(tokenizeStr(long))},
 	}}
 	got := mergeByTokenSizeFromJSON(items, budget, 0)
 	merged := got[0]
@@ -114,7 +114,7 @@ func TestMergeByTokenSize_TextPathStrictCap(t *testing.T) {
 	}
 	tc := comp.(*TokenChunkerComponent)
 	out := tc.mergeByTokenSize(b.String(), nil, nil)
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) < 2 {
 		t.Fatalf("want multiple chunks, got %d", len(chunks))
 	}
@@ -139,7 +139,7 @@ func TestMergeByTokenSize_OversizedBoundarylessRunSplit(t *testing.T) {
 		t.Fatalf("NewTokenChunker: %v", err)
 	}
 	out := comp.(*TokenChunkerComponent).mergeByTokenSize(long, nil, nil)
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) < 2 {
 		t.Fatalf("oversized run must be split, got %d chunk(s)", len(chunks))
 	}
@@ -176,7 +176,7 @@ func TestInvokeTextPayload_HardCapEndToEnd(t *testing.T) {
 	if errMsg, _ := out["_ERROR"].(string); errMsg != "" {
 		t.Fatalf("Invoke error payload: %s", errMsg)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) == 0 {
 		t.Fatalf("expected chunks, got %#v", out)
 	}
@@ -216,7 +216,7 @@ func TestInvokeJSONPayload_HardCapEndToEnd(t *testing.T) {
 	if errMsg, _ := out["_ERROR"].(string); errMsg != "" {
 		t.Fatalf("Invoke error payload: %s", errMsg)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) < 2 {
 		t.Fatalf("want multiple chunks, got %d", len(chunks))
 	}
@@ -235,8 +235,8 @@ func TestInvokeJSONPayload_HardCapEndToEnd(t *testing.T) {
 // standing alone.
 func TestMergeUnits_UnderCapBoundaryDecision(t *testing.T) {
 	units := []schema.ChunkDoc{
-		{Text: "prev text", TKNums: intPtr(10), CKType: "text"},
-		{Text: "incoming text", TKNums: intPtr(10), CKType: "text"},
+		{Text: "prev text", TKNums: intPtr(10)},
+		{Text: "incoming text", TKNums: intPtr(10)},
 	}
 	// prev+incoming == target: merge into one chunk.
 	got := mergeUnits(units, 20, 0, "\n")
@@ -255,8 +255,8 @@ func TestMergeUnits_UnderCapBoundaryDecision(t *testing.T) {
 
 	// An oversized incoming unit is expanded (split) instead of standing whole.
 	big := []schema.ChunkDoc{
-		{Text: "prev text", TKNums: intPtr(10), CKType: "text"},
-		{Text: strings.Repeat("word ", 100), TKNums: intPtr(100), CKType: "text"},
+		{Text: "prev text", TKNums: intPtr(10)},
+		{Text: strings.Repeat("word ", 100), TKNums: intPtr(100)},
 	}
 	bigMerged := mergeUnits(big, 30, 0, "\n")
 	if len(bigMerged) < 2 {

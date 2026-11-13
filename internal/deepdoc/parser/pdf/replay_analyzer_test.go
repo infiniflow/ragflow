@@ -221,6 +221,15 @@ func (b *PythonIntermediateTableBuilder) GroupCells(cells []pdf.TSRCell) [][]pdf
 	return (&table.DeepDocTableBuilder{}).GroupCells(cells)
 }
 
+// FinalizeGrid returns annotGrid unchanged (identity). The fake carries no
+// deferred OCR-overlay behavior, matching the production DeepDoc builder.
+func (b *PythonIntermediateTableBuilder) FinalizeGrid(annotGrid [][]pdf.TSRCell, boxes []pdf.TextBox) [][]pdf.TSRCell {
+	return annotGrid
+}
+
+// AttachSpanInfo is a no-op for the fake builder.
+func (b *PythonIntermediateTableBuilder) AttachSpanInfo(item *pdf.TableItem) {}
+
 func (b *PythonIntermediateTableBuilder) Name() string { return "py-intermediate" }
 
 func maxf(a, b float64) float64 {

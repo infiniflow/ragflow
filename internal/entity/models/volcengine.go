@@ -364,30 +364,30 @@ func (v *VolcEngine) Rerank(ctx context.Context, modelName *string, request Rera
 
 // TranscribeAudio transcribe audio
 func (v *VolcEngine) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", v.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", v.Name())
 }
 
 func (v *VolcEngine) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", v.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", v.Name())
 }
 
 // AudioSpeech convert text to audio
 func (v *VolcEngine) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", v.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", v.Name())
 }
 
 func (v *VolcEngine) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", v.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", v.Name())
 }
 
 // OCRFile OCR file
 func (v *VolcEngine) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", v.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", v.Name())
 }
 
 // ParseFile parse file
 func (v *VolcEngine) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", v.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", v.Name())
 }
 
 // volcengineModelData is a VolcEngine-specific model list item with
@@ -545,7 +545,7 @@ func (v *VolcEngine) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Li
 }
 
 func (v *VolcEngine) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", v.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", v.Name())
 }
 
 func (v *VolcEngine) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
@@ -588,9 +588,13 @@ func (v *VolcEngine) CheckConnection(ctx context.Context, apiConfig *APIConfig) 
 }
 
 func (v *VolcEngine) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", v.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", v.Name())
 }
 
 func (v *VolcEngine) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", v.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", v.Name())
+}
+
+func (v *VolcEngine) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", v.Name())
 }

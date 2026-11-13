@@ -623,7 +623,7 @@ func (s *SiliconflowModel) TranscribeAudio(ctx context.Context, modelName *strin
 }
 
 func (s *SiliconflowModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", s.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", s.Name())
 }
 
 // siliconflowTTSRequestBody mirrors rag/llm/tts_model.py SILICONFLOWTTS._build_payload:
@@ -767,18 +767,22 @@ func (s *SiliconflowModel) AudioSpeechWithSender(ctx context.Context, modelName 
 
 // OCRFile OCR file
 func (s *SiliconflowModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", s.Name())
 }
 
 // ParseFile parse file
 func (s *SiliconflowModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", s.Name())
 }
 
 func (s *SiliconflowModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", s.Name())
 }
 
 func (s *SiliconflowModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", s.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", s.Name())
+}
+
+func (s *SiliconflowModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", s.Name())
 }

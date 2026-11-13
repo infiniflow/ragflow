@@ -2,6 +2,7 @@ export interface IProgressLogEntry {
   key: number;
   text: string;
   isError: boolean;
+  isWarning: boolean;
 }
 
 export const parseProgressMsg = (progressMsg?: string): IProgressLogEntry[] =>
@@ -12,4 +13,5 @@ export const parseProgressMsg = (progressMsg?: string): IProgressLogEntry[] =>
       key: index,
       text: line,
       isError: line.includes('[ERROR]') || line.startsWith('ERROR:'),
+      isWarning: line.includes('[WARN]'),
     }));

@@ -420,7 +420,7 @@ func (d *DeepInfraModel) TranscribeAudio(ctx context.Context, modelName *string,
 }
 
 func (d *DeepInfraModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s no such method", d.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", d.Name())
 }
 
 func (d *DeepInfraModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
@@ -599,11 +599,11 @@ func (d *DeepInfraModel) AudioSpeechWithSender(ctx context.Context, modelName *s
 }
 
 func (d *DeepInfraModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s no such method", d.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", d.Name())
 }
 
 func (d *DeepInfraModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s no such method", d.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", d.Name())
 }
 
 func (d *DeepInfraModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
@@ -722,9 +722,13 @@ func (d *DeepInfraModel) CheckConnection(ctx context.Context, apiConfig *APIConf
 }
 
 func (d *DeepInfraModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s no such method", d.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", d.Name())
 }
 
 func (d *DeepInfraModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s no such method", d.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", d.Name())
+}
+
+func (d *DeepInfraModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", d.Name())
 }

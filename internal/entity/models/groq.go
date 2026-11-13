@@ -221,15 +221,15 @@ func (g *GroqModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) e
 }
 
 func (g *GroqModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: Embed", g.Name())
 }
 
 func (g *GroqModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: Rerank", g.Name())
 }
 
 func (g *GroqModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", g.Name())
 }
 
 func (g *GroqModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
@@ -312,7 +312,7 @@ func (g *GroqModel) TranscribeAudio(ctx context.Context, modelName *string, file
 	}
 
 	// build request
-	req, err := http.NewRequest("POST", url, &body)
+	req, err := http.NewRequestWithContext(ctx, "POST", url, &body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -349,7 +349,7 @@ func (g *GroqModel) TranscribeAudio(ctx context.Context, modelName *string, file
 }
 
 func (g *GroqModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", g.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", g.Name())
 }
 
 func (g *GroqModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
@@ -385,7 +385,7 @@ func (g *GroqModel) AudioSpeech(ctx context.Context, modelName *string, audioCon
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -412,21 +412,25 @@ func (g *GroqModel) AudioSpeech(ctx context.Context, modelName *string, audioCon
 }
 
 func (g *GroqModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", g.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", g.Name())
 }
 
 func (g *GroqModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", g.Name())
 }
 
 func (g *GroqModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", g.Name())
 }
 
 func (g *GroqModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", g.Name())
 }
 
 func (g *GroqModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", g.Name())
+}
+
+func (g *GroqModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", g.Name())
 }

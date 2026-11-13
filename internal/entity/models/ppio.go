@@ -377,37 +377,41 @@ func (p *PPIOModel) Rerank(ctx context.Context, modelName *string, request Reran
 }
 
 func (p *PPIOModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", p.Name())
 }
 
 func (p *PPIOModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", p.Name())
 }
 
 func (p *PPIOModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", p.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", p.Name())
 }
 
 func (p *PPIOModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", p.Name())
 }
 
 func (p *PPIOModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", p.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", p.Name())
 }
 
 func (p *PPIOModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", p.Name())
 }
 
 func (p *PPIOModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", p.Name())
 }
 
 func (p *PPIOModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", p.Name())
 }
 
 func (p *PPIOModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", p.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", p.Name())
+}
+
+func (p *PPIOModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", p.Name())
 }

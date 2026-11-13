@@ -45,8 +45,12 @@ export function RenameDialog({
   return (
     <Dialog open onOpenChange={hideModal}>
       <DialogContent className="sm:max-w-[425px]" data-testid="rename-modal">
-        <DialogHeader>
-          <DialogTitle>{title || t('common.rename')}</DialogTitle>
+        <DialogHeader className="min-w-0">
+          {/* The title may be an existing entity name; keep a very long
+              name on one line so it cannot push the dialog wider. */}
+          <DialogTitle className="truncate">
+            {title || t('common.rename')}
+          </DialogTitle>
         </DialogHeader>
         <RenameForm
           initialName={initialName}

@@ -23,7 +23,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"net/url"
 	"slices"
@@ -215,51 +214,8 @@ func createChunkTestDocument(t *testing.T, filename string) (string, string) {
 func uploadChunkTestDocument(t *testing.T, datasetID, filename string) string {
 	t.Helper()
 
-	const fileContents = "ragflow test upload"
-	var uploadBody bytes.Buffer
-	writer := multipart.NewWriter(&uploadBody)
-	file, err := writer.CreateFormFile("file", filename)
-	if err != nil {
-		t.Fatalf("create multipart file field: %v", err)
-	}
-	if _, err := io.WriteString(file, fileContents); err != nil {
-		t.Fatalf("write multipart file: %v", err)
-	}
-	if err := writer.Close(); err != nil {
-		t.Fatalf("close multipart writer: %v", err)
-	}
-
-	requestURL := fmt.Sprintf("%s/datasets/%s/documents", TestConfig.apiBase(), datasetID)
-	t.Logf("request: %s %s\npayload: multipart file %q (%d bytes), content=%q",
-		http.MethodPost, requestURL, filename, len(fileContents), fileContents)
-	request, err := http.NewRequest(http.MethodPost, requestURL, &uploadBody)
-	if err != nil {
-		t.Fatalf("create document upload request: %v", err)
-	}
-	request.Header = TestConfig.buildHeaders(nil)
-	request.Header.Set("Content-Type", writer.FormDataContentType())
-	response, err := chunkHTTPClient.Do(request)
-	if err != nil {
-		t.Fatalf("upload test document: %v", err)
-	}
-	uploadResult := readChunkAPIResponse(t, requestURL, response)
-	if uploadResult.err != nil {
-		t.Fatalf("decode document upload response: %v; body: %s", uploadResult.err, uploadResult.body)
-	}
-	if uploadResult.status != http.StatusOK {
-		t.Fatalf("document upload status = %d, want %d; response: %s", uploadResult.status, http.StatusOK, uploadResult.body)
-	}
-	requireChunkCode(t, uploadResult.payload, 0)
-
-	items, ok := uploadResult.payload["data"].([]interface{})
-	if !ok || len(items) == 0 {
-		t.Fatalf("document upload data is not a non-empty array: %v", uploadResult.payload)
-	}
-	document, ok := items[0].(map[string]interface{})
-	if !ok {
-		t.Fatalf("document upload item is not an object: %v", items[0])
-	}
-	documentID := chunkString(t, document, "id")
+	items := uploadRESTDocuments(t, TestConfig, datasetID, []documentUpload{{Name: filename, Content: []byte("ragflow test upload")}})
+	documentID := chunkString(t, object(t, items[0]), "id")
 	t.Cleanup(func() {
 		deleted := requestChunkAPI(t, TestConfig, http.MethodDelete,
 			fmt.Sprintf("/datasets/%s/documents", datasetID),
@@ -314,9 +270,9 @@ func TestChunkListRejectsInvalidQueryValues(t *testing.T) {
 		message string
 	}{
 		{name: "page zero", key: "page", value: "0", message: "page must be a positive integer"},
-		{name: "page not numeric", key: "page", value: "first", message: "page must be a positive integer"},
-		{name: "page_size zero", key: "page_size", value: "0", message: "page_size must be a positive integer"},
-		{name: "page_size not numeric", key: "page_size", value: "many", message: "page_size must be a positive integer"},
+		{name: "page not numeric", key: "page", value: "first", message: "page must be an integer"},
+		{name: "page_size zero", key: "page_size", value: "0", message: "page_size must be between 1 and 100"},
+		{name: "page_size not numeric", key: "page_size", value: "many", message: "page_size must be an integer"},
 		{name: "available invalid", key: "available", value: "sometimes", message: "available must be one of: true, false, 1, 0"},
 	}
 
@@ -585,20 +541,20 @@ func TestChunkLifecycle(t *testing.T) {
 	deleted := callChunkAPI(t, TestConfig, http.MethodDelete, path,
 		map[string]interface{}{"chunk_ids": []string{ids[0], ids[1], ids[0]}}, nil, http.StatusOK)
 	requireChunkCode(t, deleted, 0)
-	if deleted["data"] != float64(2) {
+	if chunkData(t, deleted)["deleted_count"] != float64(2) {
 		t.Fatalf("deleted count = %v, want 2 unique chunks", deleted["data"])
 	}
 	assertChunkIDs(t, listChunkIDs(t, path, nil, 1), ids[2:])
 	deleted = callChunkAPI(t, TestConfig, http.MethodDelete, path,
 		map[string]interface{}{"chunk_ids": ids[:2]}, nil, http.StatusOK)
 	requireChunkCode(t, deleted, 0)
-	if deleted["data"] != float64(0) {
+	if chunkData(t, deleted)["deleted_count"] != float64(0) {
 		t.Fatalf("repeated deletion count = %v, want 0", deleted["data"])
 	}
 	deleted = callChunkAPI(t, TestConfig, http.MethodDelete, path,
 		map[string]interface{}{"delete_all": true}, nil, http.StatusOK)
 	requireChunkCode(t, deleted, 0)
-	if deleted["data"] != float64(1) {
+	if chunkData(t, deleted)["deleted_count"] != float64(1) {
 		t.Fatalf("delete_all count = %v, want 1", deleted["data"])
 	}
 	assertChunkIDs(t, listChunkIDs(t, path, nil, 0), nil)
@@ -698,7 +654,7 @@ func TestChunkReadUpdateAndDeleteStayWithinDocument(t *testing.T) {
 	deleted := callChunkAPI(t, TestConfig, http.MethodDelete, otherPath,
 		map[string]interface{}{"chunk_ids": []string{id}}, nil, http.StatusOK)
 	requireChunkCode(t, deleted, 0)
-	if deleted["data"] != float64(0) {
+	if chunkData(t, deleted)["deleted_count"] != float64(0) {
 		t.Fatalf("deleted another document's chunk: %v", deleted)
 	}
 	get := callChunkAPI(t, TestConfig, http.MethodGet, path+"/"+id, nil, nil, http.StatusOK)

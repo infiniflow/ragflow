@@ -191,35 +191,35 @@ func (h *HuggingFaceModel) Embed(ctx context.Context, modelName *string, request
 }
 
 func (h *HuggingFaceModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Rerank", h.Name())
 }
 
 // TranscribeAudio transcribe audio
 func (h *HuggingFaceModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", h.Name())
 }
 
 func (h *HuggingFaceModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", h.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", h.Name())
 }
 
 // AudioSpeech convert text to audio
 func (h *HuggingFaceModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", h.Name())
 }
 
 func (h *HuggingFaceModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", h.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", h.Name())
 }
 
 // OCRFile OCR file
 func (h *HuggingFaceModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", h.Name())
 }
 
 // ParseFile parse file
 func (h *HuggingFaceModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", h.Name())
 }
 
 func (h *HuggingFaceModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
@@ -280,7 +280,7 @@ func (h *HuggingFaceModel) ListModels(ctx context.Context, apiConfig *APIConfig)
 }
 
 func (h *HuggingFaceModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Balance", h.Name())
 }
 
 func (h *HuggingFaceModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
@@ -289,9 +289,13 @@ func (h *HuggingFaceModel) CheckConnection(ctx context.Context, apiConfig *APICo
 }
 
 func (h *HuggingFaceModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", h.Name())
 }
 
 func (h *HuggingFaceModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", h.Name())
+}
+
+func (h *HuggingFaceModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", h.Name())
 }

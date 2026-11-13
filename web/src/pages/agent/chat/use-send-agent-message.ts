@@ -305,7 +305,7 @@ export const useSendAgentMessage = ({
   const prologue = useGetBeginNodePrologue();
   const {
     derivedMessages,
-    scrollRef,
+    virtualizer,
     messageContainerRef,
     removeLatestMessage,
     removeMessageById,
@@ -316,7 +316,7 @@ export const useSendAgentMessage = ({
     scrollToBottom,
     addPrologue,
     setDerivedMessages,
-  } = useSelectDerivedMessages();
+  } = useSelectDerivedMessages(activeSessionId);
   const { addEventList: addEventListFun } = useContext(AgentChatLogContext);
   const {
     appendUploadResponseList,
@@ -392,8 +392,9 @@ export const useSendAgentMessage = ({
           // useSendMessageBySSE already reports application errors from
           // streamed code != 0 frames. Only HTTP failures need a second
           // layer's notification because the SSE hook cannot parse them.
-          if (res?.response?.status !== 200) {
-            sonnerMessage.error(res?.data?.message);
+          const msg = res?.data?.message;
+          if (res?.response?.status !== 200 && msg) {
+            sonnerMessage.error(msg);
           }
 
           // cancel loading
@@ -610,7 +611,7 @@ export const useSendAgentMessage = ({
     value,
     sendLoading: !done,
     derivedMessages,
-    scrollRef,
+    virtualizer,
     messageContainerRef,
     handlePressEnter,
     handleInputChange,

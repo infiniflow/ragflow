@@ -21,12 +21,13 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"ragflow/internal/server/bootstrap"
 	"strings"
 	"testing"
 	"time"
 )
 
-func parseArgsForTest(t *testing.T, argv ...string) (*serverArgs, error) {
+func parseArgsForTest(t *testing.T, argv ...string) (*bootstrap.ServerArgs, error) {
 	t.Helper()
 	orig := os.Args
 	os.Args = append([]string{"ragflow_server"}, argv...)
@@ -39,8 +40,8 @@ func TestParseArgsMigrateSelectsMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseArgs(--migrate) error = %v", err)
 	}
-	if args.mode == nil || *args.mode != "migrate" {
-		t.Fatalf("mode = %v, want migrate", args.mode)
+	if args.Mode == nil || *args.Mode != "migrate" {
+		t.Fatalf("mode = %v, want migrate", args.Mode)
 	}
 }
 
@@ -51,7 +52,7 @@ func TestParseArgsLogLevel(t *testing.T) {
 			if err != nil {
 				t.Fatalf("parseArgs(%v) error = %v", argv, err)
 			}
-			if got := selectedLogLevel(args, "info"); got != level {
+			if got := bootstrap.SelectedLogLevel(args, "info"); got != level {
 				t.Errorf("selectedLogLevel(%v) = %q, want %q", argv, got, level)
 			}
 		}
@@ -69,10 +70,10 @@ func TestSelectedLogLevelPrecedence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseArgs(--api) error = %v", err)
 	}
-	if got := selectedLogLevel(args, ""); got != "info" {
+	if got := bootstrap.SelectedLogLevel(args, ""); got != "info" {
 		t.Errorf("default log level = %q, want info", got)
 	}
-	if got := selectedLogLevel(args, "info"); got != "info" {
+	if got := bootstrap.SelectedLogLevel(args, "info"); got != "info" {
 		t.Errorf("configured log level = %q, want info", got)
 	}
 
@@ -80,7 +81,7 @@ func TestSelectedLogLevelPrecedence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseArgs with --log-level error = %v", err)
 	}
-	if got := selectedLogLevel(args, "info"); got != "error" {
+	if got := bootstrap.SelectedLogLevel(args, "info"); got != "error" {
 		t.Errorf("--log-level log level = %q, want error", got)
 	}
 	if _, err = parseArgsForTest(t, "--api", "--debug"); err == nil {
@@ -103,16 +104,16 @@ func TestParseArgsMigrateFollowsLastModeWins(t *testing.T) {
 		if err != nil {
 			t.Fatalf("parseArgs(%s --migrate) error = %v", mode, err)
 		}
-		if args.mode == nil || *args.mode != "migrate" {
-			t.Errorf("parseArgs(%s --migrate) mode = %v, want migrate", mode, args.mode)
+		if args.Mode == nil || *args.Mode != "migrate" {
+			t.Errorf("parseArgs(%s --migrate) mode = %v, want migrate", mode, args.Mode)
 		}
 
 		args, err = parseArgsForTest(t, "--migrate", mode)
 		if err != nil {
 			t.Fatalf("parseArgs(--migrate %s) error = %v", mode, err)
 		}
-		if args.mode == nil || *args.mode != want {
-			t.Errorf("parseArgs(--migrate %s) mode = %v, want %s", mode, args.mode, want)
+		if args.Mode == nil || *args.Mode != want {
+			t.Errorf("parseArgs(--migrate %s) mode = %v, want %s", mode, args.Mode, want)
 		}
 	}
 }

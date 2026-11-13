@@ -404,39 +404,43 @@ func (n *N1NModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) er
 }
 
 func (n *N1NModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", n.Name())
 }
 
 func (n *N1NModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", n.Name())
 }
 
 func (n *N1NModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", n.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", n.Name())
 }
 
 func (n *N1NModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", n.Name())
 }
 
 func (n *N1NModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", n.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", n.Name())
 }
 
 // OCRFile is not exposed by the n1n.ai API.
 func (n *N1NModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", n.Name())
 }
 
 // ParseFile is not exposed by the n1n.ai API.
 func (n *N1NModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", n.Name())
 }
 
 func (n *N1NModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", n.Name())
 }
 
 func (n *N1NModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", n.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", n.Name())
+}
+
+func (n *N1NModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", n.Name())
 }

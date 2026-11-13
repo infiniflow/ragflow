@@ -72,20 +72,10 @@ const McpKeys = {
 };
 
 export const useListMcpServer = (
-  tenantIdOrMcpIds?: string | string[],
-  enabledOrMcpIds?: boolean | string[],
+  tenantId?: string,
   enabled = true,
+  mcpIds: string[] = [],
 ) => {
-  const tenantId =
-    typeof tenantIdOrMcpIds === 'string' ? tenantIdOrMcpIds : undefined;
-  const mcpIds = Array.isArray(tenantIdOrMcpIds)
-    ? tenantIdOrMcpIds
-    : Array.isArray(enabledOrMcpIds)
-      ? enabledOrMcpIds
-      : [];
-  const queryEnabled =
-    typeof enabledOrMcpIds === 'boolean' ? enabledOrMcpIds : enabled;
-
   const { searchString, setSearchString, handleInputChange } =
     useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
@@ -107,7 +97,7 @@ export const useListMcpServer = (
     ),
     initialData: { total: 0, mcp_servers: [] },
     gcTime: 0,
-    enabled: queryEnabled,
+    enabled,
     queryFn: async () => {
       const params: IMcpServerListRequestBody = {
         keywords: requestKeywords,
@@ -212,7 +202,7 @@ export const useDeleteMcpServer = () => {
         ids.map((id) => mcpServerService.delete({ mcp_id: id })),
       );
       const failed = results.find(({ data = {} }) => data.code !== 0);
-      const data = failed?.data ?? { code: 0, data: true };
+      const data = failed?.data ?? { code: 0 };
       if (!failed) {
         message.success(i18n.t(`message.deleted`));
 

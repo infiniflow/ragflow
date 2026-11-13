@@ -5,8 +5,8 @@ export function useFindMcpById(mcpIds: string[] = []) {
   const ownerTenantId = useOwnerTenantId();
   const { data } = useListMcpServer(
     ownerTenantId,
-    mcpIds,
     Boolean(ownerTenantId) || mcpIds.length > 0,
+    mcpIds,
   );
 
   const findMcpById = (id: string) =>

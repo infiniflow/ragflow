@@ -50,7 +50,7 @@ func FetchRemoteFileSafelyWithTimeout(ctx context.Context, rawURL string, maxSiz
 	}
 	currentURL := rawURL
 	for redirects := 0; redirects < 10; redirects++ {
-		hostname, resolvedIP, err := common.AssertURLSafe(currentURL)
+		hostname, resolvedIP, err := common.AssertURLSafeWithContext(ctx, currentURL)
 		if err != nil {
 			return nil, nil, "", err
 		}

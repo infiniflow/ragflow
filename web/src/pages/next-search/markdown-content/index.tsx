@@ -34,6 +34,7 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 
 import {
   currentReg,
+  decodeAngleBracketEntities,
   escapeUnmatchedAngleBrackets,
   parseCitationIndex,
   preprocessLaTeX,
@@ -103,6 +104,8 @@ const MarkdownContent = ({
         replaceThinkToSection,
         replaceRetrievingToSection,
         preprocessLaTeX,
+        // Entity decoding can expose a line-leading > after the first escape.
+        escapeUnmatchedAngleBrackets,
       )(nextText),
     );
   }, [content, t]);
@@ -294,6 +297,10 @@ const MarkdownContent = ({
               const { children, className, ...rest } = props;
               const restProps = omit(rest, 'node');
               const match = /language-(\w+)/.exec(className || '');
+              // Code content is literal for react-markdown, so the &lt;/&gt;
+              // entities restored by unescapeAngleBrackets survive parsing;
+              // decode them back.
+              const codeText = decodeAngleBracketEntities(String(children));
               return match ? (
                 <SyntaxHighlighter
                   {...restProps}
@@ -301,14 +308,14 @@ const MarkdownContent = ({
                   language={match[1]}
                   wrapLongLines
                 >
-                  {String(children).replace(/\n$/, '')}
+                  {codeText.replace(/\n$/, '')}
                 </SyntaxHighlighter>
               ) : (
                 <code
                   {...restProps}
                   className={classNames(className, 'text-wrap')}
                 >
-                  {children}
+                  {codeText}
                 </code>
               );
             },

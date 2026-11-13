@@ -69,6 +69,16 @@ import (
 // SANDBOX_EXECUTOR_MANAGER_URL.
 const selfManagedDefaultEndpoint = "http://sandbox-executor-manager:9385"
 
+// selfManagedMaxErrorBody bounds how much of a non-2xx executor_manager
+// response is quoted into the returned error. A failure body is
+// diagnostic text rather than a payload, so this is far smaller than the
+// 4 MiB the agent tools cap successful HTTP responses at. Without a cap
+// the drain is unbounded: the executor_manager is operator-configured and
+// reached over the network, so a compromised or misbehaving one can make
+// this process buffer — and then log — an arbitrarily large body from the
+// failure path alone.
+const selfManagedMaxErrorBody = 64 << 10
+
 // SelfManagedProvider calls the external executor-manager API.
 type SelfManagedProvider struct {
 	endpoint     string
@@ -274,10 +284,19 @@ func (p *SelfManagedProvider) ExecuteCode(
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		// Drain for connection reuse and return a typed error.
-		var b strings.Builder
-		_, _ = io.Copy(&b, resp.Body)
-		return nil, fmt.Errorf("self_managed: POST /run returned %d: %s", resp.StatusCode, b.String())
+		// Drain for connection reuse and return a typed error. The drain is
+		// bounded because everything read here is quoted into an error that
+		// gets logged, and the peer controls the body length. Reading one byte
+		// past the cap distinguishes "exactly at the limit" from "too large",
+		// matching how the agent tools cap HTTP response bodies.
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, selfManagedMaxErrorBody+1))
+		detail := string(body)
+		if len(body) > selfManagedMaxErrorBody {
+			// Slicing can land mid-rune; keep the logged text valid UTF-8.
+			detail = strings.ToValidUTF8(detail[:selfManagedMaxErrorBody], "")
+			detail += "… (truncated)"
+		}
+		return nil, fmt.Errorf("self_managed: POST /run returned %d: %s", resp.StatusCode, detail)
 	}
 
 	var raw struct {

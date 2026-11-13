@@ -46,6 +46,7 @@ type Client struct {
 	client           *redis.Client
 	luaDeleteIfEqual *redis.Script
 	luaTokenBucket   *redis.Script
+	luaMediaPut      *redis.Script
 	luaAutoIncrement *redis.Script
 	config           config.KvrocksConfig
 }
@@ -104,6 +105,53 @@ const (
 
 		return {1, tokens}
 	`
+
+	luaMediaPutScript = `
+		local media_key  = KEYS[1]
+		local digest_key = KEYS[2]
+		local state_key  = KEYS[3]
+		local digest     = ARGV[1]
+		local value      = ARGV[2]
+		local max_images = tonumber(ARGV[3])
+		local max_bytes  = tonumber(ARGV[4])
+		local ttl        = tonumber(ARGV[5])
+		local manifest_key = ARGV[6]
+		local manifest_member = ARGV[7]
+
+		local function track_manifest()
+			if manifest_key ~= "" then
+				redis.call("SADD", manifest_key, manifest_member)
+				redis.call("EXPIRE", manifest_key, ttl)
+			end
+		end
+
+		if redis.call("SISMEMBER", digest_key, digest) == 1 then
+			if redis.call("EXISTS", media_key) == 0 then
+				redis.call("SET", media_key, value, "EX", ttl)
+				redis.call("EXPIRE", digest_key, ttl)
+				redis.call("EXPIRE", state_key, ttl)
+				track_manifest()
+			end
+			return {1, 0}
+		end
+
+		local images = redis.call("SCARD", digest_key)
+		local bytes  = tonumber(redis.call("HGET", state_key, "bytes") or "0")
+		if max_images > 0 and images >= max_images then
+			return {0, 0}
+		end
+		if max_bytes > 0 and #value > max_bytes - bytes then
+			return {0, 0}
+		end
+
+		redis.call("SET", media_key, value, "EX", ttl)
+		track_manifest()
+		redis.call("SADD", digest_key, digest)
+		redis.call("HINCRBY", state_key, "bytes", #value)
+		redis.call("EXPIRE", digest_key, ttl)
+		redis.call("EXPIRE", state_key, ttl)
+		return {2, 1}
+	`
 )
 
 // Init initializes the Kvrocks client. Kvrocks is the only supported cache/queue
@@ -139,6 +187,7 @@ func Init(ctx context.Context) error {
 			config:           kvrocksConfig,
 			luaDeleteIfEqual: redis.NewScript(luaDeleteIfEqualScript),
 			luaTokenBucket:   redis.NewScript(luaTokenBucketScript),
+			luaMediaPut:      redis.NewScript(luaMediaPutScript),
 		}
 
 		common.Info("Kvrocks client initialized",
@@ -368,68 +417,83 @@ func (r *Client) Set(ctx context.Context, key string, value string, exp time.Dur
 	return true
 }
 
-// SetNX sets value only if key does not exist
-//
-// Deprecated: prefer SetNXErr, which surfaces transport errors instead of
-// collapsing them into "lock held". Callers that only need a yes/no answer
-// for an idempotent write can keep using SetNX; callers that retry on
-// contention (notably DistributedLock.Acquire / SpinAcquire) should call
-// SetNXErr so a connection outage is not mistaken for a held lock.
-func (r *Client) SetNX(ctx context.Context, key string, value string, exp time.Duration) bool {
-	ok, _ := r.SetNXErr(ctx, key, value, exp)
-	return ok
+// MediaPut atomically writes one media payload, records it on the manifest,
+// and charges the run quota. accepted is false when a configured count or byte
+// cap rejects the payload. inserted is false for a digest already charged by
+// this scope; in that case a missing media value is restored without charging
+// the quota again.
+func (r *Client) MediaPut(
+	ctx context.Context,
+	mediaKey, digestKey, stateKey, digest, value string,
+	manifestKey, manifestMember string,
+	maxImages int,
+	maxBytes int64,
+	ttl time.Duration,
+) (accepted, inserted bool, err error) {
+	if r == nil || r.client == nil || r.luaMediaPut == nil {
+		return false, false, fmt.Errorf("redis: media cache is not initialised")
+	}
+	ttlSeconds := int64(math.Ceil(ttl.Seconds()))
+	if ttlSeconds <= 0 {
+		return false, false, fmt.Errorf("redis: media cache ttl must be positive")
+	}
+	result, err := r.luaMediaPut.Run(
+		ctx,
+		r.client,
+		[]string{mediaKey, digestKey, stateKey},
+		digest,
+		value,
+		maxImages,
+		maxBytes,
+		ttlSeconds,
+		manifestKey,
+		manifestMember,
+	).Result()
+	if err != nil {
+		return false, false, fmt.Errorf("media put: %w", err)
+	}
+	values, ok := result.([]interface{})
+	if !ok || len(values) != 2 {
+		return false, false, fmt.Errorf("media put: malformed reply")
+	}
+	status, ok := values[0].(int64)
+	if !ok {
+		return false, false, fmt.Errorf("media put: malformed status")
+	}
+	insertedValue, ok := values[1].(int64)
+	if !ok {
+		return false, false, fmt.Errorf("media put: malformed insert result")
+	}
+	switch status {
+	case 0:
+		return false, false, nil
+	case 1:
+		return true, insertedValue == 1, nil
+	case 2:
+		return true, true, nil
+	default:
+		return false, false, fmt.Errorf("media put: unknown status %d", status)
+	}
 }
 
-// SetNXErr sets value only if key does not exist and reports whether the
-// Redis/Kvrocks backend could be reached. ok=false with err=nil means the
-// key already existed (lock contested); ok=false with err!=nil means the
-// transport failed (caller should fail fast, not retry on contention).
-func (r *Client) SetNXErr(ctx context.Context, key string, value string, exp time.Duration) (bool, error) {
-	if r.client == nil {
+// SetNX sets value only if key does not exist.
+// It returns false with a nil error when the key already exists.
+func (r *Client) SetNX(ctx context.Context, key string, value string, exp time.Duration) (bool, error) {
+	if r == nil || r.client == nil {
+		return false, errors.New("kvrocks client is not initialized")
+	}
+	result, err := r.client.SetArgs(ctx, key, value, redis.SetArgs{
+		Mode: "NX",
+		TTL:  exp,
+	}).Result()
+	if errors.Is(err, redis.Nil) {
 		return false, nil
 	}
-	ok, err := r.client.SetNX(ctx, key, value, exp).Result()
 	if err != nil {
 		common.Warn("Redis SetNX error", zap.String("key", key), zap.Error(err))
-		return false, err
+		return false, fmt.Errorf("set key %q if absent: %w", key, err)
 	}
-	return ok, nil
-}
-
-// GetOrCreateKey atomically retrieves an existing key or creates a new one
-// Uses Redis SETNX command to ensure atomicity across multiple goroutines/processes
-func (r *Client) GetOrCreateKey(ctx context.Context, key string, value string) (string, error) {
-	if r.client == nil {
-		return "", nil
-	}
-	// First, try to get the existing key
-	existingKey, err := r.client.Get(ctx, key).Result()
-	if err == nil {
-		common.Warn("Redis Get error", zap.String("key", key), zap.Error(err))
-		// Successfully retrieved existing key
-		return existingKey, nil
-	}
-
-	// Use SETNX to atomically set the key only if it doesn't exist
-	// SETNX returns true if the key was set, false if it already existed
-	success, err := r.client.SetNX(ctx, key, value, 0).Result()
-	if err != nil {
-		return "", fmt.Errorf("failed to set key in Redis: %w", err)
-	}
-
-	if success {
-		// This goroutine successfully set the key
-		return value, nil
-	}
-
-	// SETNX failed, meaning another goroutine set the key concurrently
-	// Retrieve and return that key
-	finalKey, err := r.client.Get(ctx, key).Result()
-	if err != nil {
-		return "", fmt.Errorf("failed to get key set by another process: %w", err)
-	}
-
-	return finalKey, nil
+	return result == "OK", nil
 }
 
 // SAdd adds member to set
@@ -835,17 +899,20 @@ func (r *Client) QueueInfo(ctx context.Context, queue, groupName string) (map[st
 	return nil, nil
 }
 
-// DeleteIfEqual deletes key if its value equals expected value (atomic)
-func (r *Client) DeleteIfEqual(ctx context.Context, key, expectedValue string) bool {
-	if r.client == nil {
-		return false
+// DeleteIfEqual deletes key if its value equals expected value atomically.
+func (r *Client) DeleteIfEqual(ctx context.Context, key, expectedValue string) (bool, error) {
+	if r == nil || r.client == nil {
+		return false, errors.New("kvrocks client is not initialized")
 	}
-	result, err := r.luaDeleteIfEqual.Run(ctx, r.client, []string{key}, expectedValue).Result()
+	if r.luaDeleteIfEqual == nil {
+		return false, errors.New("kvrocks delete-if-equal script is not initialized")
+	}
+	result, err := r.luaDeleteIfEqual.Run(ctx, r.client, []string{key}, expectedValue).Int64()
 	if err != nil {
-		common.Warn("Redis DeleteIfEqual error", zap.Error(err))
-		return false
+		common.Warn("Redis DeleteIfEqual error", zap.String("key", key), zap.Error(err))
+		return false, fmt.Errorf("delete key %q if value matches: %w", key, err)
 	}
-	return result.(int64) == 1
+	return result == 1, nil
 }
 
 // Delete deletes a key
@@ -858,6 +925,61 @@ func (r *Client) Delete(ctx context.Context, key string) bool {
 		return false
 	}
 	return true
+}
+
+// deleteBatchSize bounds a single DEL command issued by DeleteMany. The previous
+// unbounded DEL scaled its argument list with the task manifest size; splitting
+// keeps each command small (avoids Redis/kvrocks proto-size limits and long
+// single-threaded stalls) at the cost of losing strict atomicity across the whole
+// batch. That loss is acceptable because cache reclaim is best-effort and TTL is
+// the fallback. Declared as a var (not a const) so tests can shrink it to
+// exercise the multi-batch path; production always uses the default.
+var deleteBatchSize = 1024
+
+// splitIntoBatches partitions keys into chunks of at most size, preserving input
+// order within and across chunks. A non-positive size degrades to one key per
+// chunk so the helper never emits an infinite or empty loop. No key is dropped
+// or duplicated; an empty input yields nil.
+func splitIntoBatches(keys []string, size int) [][]string {
+	if size <= 0 {
+		size = 1
+	}
+	if len(keys) == 0 {
+		return nil
+	}
+	out := make([][]string, 0, (len(keys)+size-1)/size)
+	for start := 0; start < len(keys); start += size {
+		end := start + size
+		if end > len(keys) {
+			end = len(keys)
+		}
+		out = append(out, keys[start:end])
+	}
+	return out
+}
+
+// DeleteMany deletes multiple keys by issuing one DEL per batch of at most
+// deleteBatchSize keys. A key that no longer exists is not an error (DEL reports
+// only the count removed), so a purge that races a TTL expiration still completes
+// instead of failing on a vanished key. An empty key list is a no-op: go-redis
+// rejects a zero-argument DEL, and there is nothing to remove anyway. The overall
+// result is false if any batch fails, but batches already issued are not rolled
+// back — TTL reclaims the rest.
+func (r *Client) DeleteMany(ctx context.Context, keys ...string) bool {
+	if r.client == nil {
+		return false
+	}
+	if len(keys) == 0 {
+		return true
+	}
+	ok := true
+	for _, batch := range splitIntoBatches(keys, deleteBatchSize) {
+		if err := r.client.Del(ctx, batch...).Err(); err != nil {
+			common.Warn("Redis DeleteMany error", zap.Strings("keys", batch), zap.Error(err))
+			ok = false
+		}
+	}
+	return ok
 }
 
 // Expire sets expiration on a key
@@ -911,20 +1033,17 @@ func NewDistributedLock(lockKey string, lockValue string, timeout time.Duration,
 	}
 }
 
-// Acquire attempts to take the lock. Returns (true, nil) on success,
-// (false, nil) when the lock is held by someone else, and (false, err)
-// when the underlying SETNX itself could not be issued (transport / auth).
-// The third case is what used to be collapsed into "lock held" by the
-// bool-only SetNX path, which made every DocumentService.WithDocument-
-// MetadataLock caller spin for its full 15 s budget during a Redis/
-// Kvrocks outage instead of failing immediately.
+// Acquire acquires the lock. It returns false with a nil error when another
+// owner holds the lock.
 func (l *DistributedLock) Acquire(ctx context.Context) (bool, error) {
-	if l.client == nil {
-		return false, nil
+	if l == nil || l.client == nil {
+		return false, errors.New("distributed lock client is not initialized")
 	}
-	// Delete if stale
-	l.client.DeleteIfEqual(ctx, l.lockKey, l.lockValue)
-	return l.client.SetNXErr(ctx, l.lockKey, l.lockValue, l.timeout)
+	// Remove a lock left by this owner before trying to acquire it again.
+	if _, err := l.client.DeleteIfEqual(ctx, l.lockKey, l.lockValue); err != nil {
+		return false, err
+	}
+	return l.client.SetNX(ctx, l.lockKey, l.lockValue, l.timeout)
 }
 
 // SpinAcquire keeps trying to acquire the lock. Returns the underlying
@@ -937,12 +1056,11 @@ func (l *DistributedLock) SpinAcquire(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			l.client.DeleteIfEqual(ctx, l.lockKey, l.lockValue)
-			ok, err := l.client.SetNXErr(ctx, l.lockKey, l.lockValue, l.timeout)
+			acquired, err := l.Acquire(ctx)
 			if err != nil {
 				return err
 			}
-			if ok {
+			if acquired {
 				return nil
 			}
 			time.Sleep(10 * time.Second)
@@ -952,10 +1070,11 @@ func (l *DistributedLock) SpinAcquire(ctx context.Context) error {
 
 // Release releases the lock
 func (l *DistributedLock) Release(ctx context.Context) bool {
-	if l.client == nil {
+	if l == nil || l.client == nil {
 		return false
 	}
-	return l.client.DeleteIfEqual(ctx, l.lockKey, l.lockValue)
+	released, err := l.client.DeleteIfEqual(ctx, l.lockKey, l.lockValue)
+	return err == nil && released
 }
 
 // TokenBucket token bucket rate limiter

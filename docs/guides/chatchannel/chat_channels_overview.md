@@ -14,7 +14,7 @@ This chapter describes how to configure chat channels in RAGFlow, including supp
 
 With chat channels, users can chat with a Chat directly in chat applications such as Discord, Telegram, WeCom, and Feishu / Lark. User messages from third-party platforms enter RAGFlow, where the bound Chat generates replies and sends them back to the original chat window.
 
-Chat channels are responsible only for platform access and message forwarding. Reply content, knowledge base scope, model capabilities, and answer quality are determined by the bound chat model.
+Chat channels are responsible only for platform access and message forwarding. Reply content, Dataset scope, model capabilities, and answer quality are determined by the bound chat model.
 
 **Supported channels**
 

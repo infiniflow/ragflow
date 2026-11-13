@@ -1,0 +1,11 @@
+{
+  "label": "Monitoring",
+  "position": 3,
+  "link": {
+    "type": "generated-index",
+    "description": "Monitor and trace RAGFlow activity."
+  },
+  "customProps": {
+    "categoryIcon": "LucideActivity"
+  }
+}

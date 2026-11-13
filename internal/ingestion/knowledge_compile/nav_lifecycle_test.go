@@ -46,6 +46,10 @@ func (f *recordingNavService) Search(context.Context, string, string, string, []
 	return nil, nil
 }
 
+func (f *recordingNavService) EncodeQueryVector(context.Context, string, string) []float64 {
+	return nil
+}
+
 func (f *recordingNavService) ListClusters(context.Context, string, string, string, int, int) ([]nav.NavNode, int64, error) {
 	return nil, 0, nil
 }

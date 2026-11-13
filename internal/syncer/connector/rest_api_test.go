@@ -650,6 +650,35 @@ func TestRestAPIFetchPageRedirectStripsAuth(t *testing.T) {
 	}
 }
 
+func TestRestAPIFetchPageRedirectStripsCustomAuthHeader(t *testing.T) {
+	withRestAPITestHooks(t)
+	var gotHeader string
+	final := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotHeader = r.Header.Get("X-Tenant-Credential")
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{}`))
+	}))
+	defer final.Close()
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, final.URL, http.StatusFound)
+	}))
+	defer redirector.Close()
+
+	c := mustRestAPIConnector(t, map[string]any{
+		"url":            redirector.URL,
+		"content_fields": "title",
+		"auth_type":      "api_key_header",
+		"auth_config":    map[string]any{"header_name": "X-Tenant-Credential"},
+		"credentials":    map[string]any{"api_key": "tenant-secret"},
+	})
+	if _, err := c.fetchPage(t.Context(), nil); err != nil {
+		t.Fatalf("fetchPage: %v", err)
+	}
+	if gotHeader != "" {
+		t.Fatalf("cross-origin custom auth header=%q want stripped", gotHeader)
+	}
+}
+
 func TestRestAPISyncSessionPagination(t *testing.T) {
 	withRestAPITestHooks(t)
 	var requests atomic.Int32

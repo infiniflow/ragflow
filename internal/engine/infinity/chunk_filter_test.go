@@ -1,6 +1,7 @@
 package infinity
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -109,5 +110,68 @@ func TestListFilterConditionKeepsDocumentScope(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// buildRegexpFilter must keep the caller's document scope, drop kb_id (the
+// per-dataset table name already scopes the query), and append the regex()
+// predicate with the case-insensitive inline flag on the content column.
+func TestBuildRegexpFilterScopesAndMatchesContent(t *testing.T) {
+	got := buildRegexpFilter(map[string]interface{}{
+		"available_int": 1,
+		"doc_id":        []string{"d1", "d2"},
+		"must_not":      map[string]interface{}{"exists": "compile_kwd"},
+		"kb_id":         "kb-must-not-appear",
+	}, `foo.*bar`)
+
+	for _, want := range []string{
+		"regex(content, '(?i)foo.*bar')",
+		"available_int=1",
+		"doc_id IN ('d1', 'd2')",
+		"NOT (compile_kwd!='')",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("buildRegexpFilter() = %q, want it to contain %q", got, want)
+		}
+	}
+	if strings.Contains(got, "kb_id") {
+		t.Errorf("buildRegexpFilter() = %q, must not carry kb_id into the per-dataset table filter", got)
+	}
+}
+
+// A pattern quoted in SQL-ish filter syntax must double its single quotes, or
+// the SDK's expression parser would read a truncated literal.
+func TestBuildRegexpFilterEscapesSingleQuotes(t *testing.T) {
+	got := buildRegexpFilter(nil, `it's a match`)
+	if want := `regex(content, '(?i)it''s a match')`; got != want {
+		t.Errorf("buildRegexpFilter() = %q, want %q", got, want)
+	}
+}
+
+// A regexp search from the agent's grep tools carries only a pattern and no
+// scope filter; the predicate itself must still be well-formed.
+func TestBuildRegexpFilterWithoutScope(t *testing.T) {
+	if got, want := buildRegexpFilter(nil, `.*`), `regex(content, '(?i).*')`; got != want {
+		t.Errorf("buildRegexpFilter() = %q, want %q", got, want)
+	}
+}
+
+// An unscoped regexp search must fail rather than scan the bare ragflow_<tenant> table:
+// chunk tables are per dataset, so an empty KbIDs would come back as an error-free empty
+// result. The check runs before the client is touched, so a zero Engine pins it.
+func TestSearchByRegexpRejectsEmptyScope(t *testing.T) {
+	eng := &Engine{}
+	for _, kbIDs := range [][]string{nil, {}, {""}, {"", "  "}} {
+		_, err := eng.SearchByRegexp(context.Background(), &types.RegexpSearchRequest{
+			TenantID: "tenant1",
+			KbIDs:    kbIDs,
+			Pattern:  "foo.*bar",
+		})
+		if err == nil {
+			t.Fatalf("SearchByRegexp(KbIDs=%v) must reject an empty dataset scope", kbIDs)
+		}
+		if !strings.Contains(err.Error(), "at least one dataset id") {
+			t.Errorf("SearchByRegexp(KbIDs=%v) error = %v, want it to name the missing dataset scope", kbIDs, err)
+		}
 	}
 }

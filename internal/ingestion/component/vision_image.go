@@ -31,12 +31,16 @@ import (
 	_ "image/gif"
 	_ "image/jpeg"
 
+	"ragflow/internal/parser/media"
 	parserlib "ragflow/internal/parser/parser"
 )
 
-const (
-	maxVisionImageBytes = parserlib.MaxImagePayloadBytes
+var (
+	maxVisionImageBytes = media.ImageMaxBytes()
 	maxVLMEncodedBytes  = (maxVisionImageBytes+2)/3*4 + 256
+)
+
+const (
 	// maxVLMCropPixels and maxVLMCropEdge bound the raster of PDF page crops
 	// rendered for the vision model (see vision_enhancement_cgo.go). They are a
 	// pixel budget for the VLM crop path and are intentionally separate from
@@ -99,7 +103,7 @@ func inspectVisionImagePayload(payload string) (string, error) {
 	}
 	for _, encoding := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding} {
 		decoder := base64.NewDecoder(encoding, &visionPayloadReader{source: payload})
-		config, format, err := image.DecodeConfig(io.LimitReader(decoder, maxVisionImageBytes+1))
+		config, format, err := image.DecodeConfig(io.LimitReader(decoder, int64(maxVisionImageBytes)+1))
 		if err != nil {
 			continue
 		}
@@ -129,7 +133,7 @@ func decodeVisionPayload(raw string) ([]byte, error) {
 	}
 	for _, encoding := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding} {
 		decoder := base64.NewDecoder(encoding, &visionPayloadReader{source: encoded})
-		data, err := io.ReadAll(io.LimitReader(decoder, maxVisionImageBytes+1))
+		data, err := io.ReadAll(io.LimitReader(decoder, int64(maxVisionImageBytes)+1))
 		if err != nil {
 			continue
 		}
@@ -178,7 +182,7 @@ func imageWithinVisionLimits(img image.Image) bool {
 	if width <= 0 || height <= 0 {
 		return false
 	}
-	// Edge is unbounded (mirrors Python); only the opt-in raster-byte ceiling applies.
+	// Edge is unbounded (mirrors ); only the opt-in raster-byte ceiling applies
 	return parserlib.CheckImageRasterLimit(width, height) == nil
 }
 

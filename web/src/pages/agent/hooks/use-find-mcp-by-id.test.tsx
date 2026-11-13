@@ -30,11 +30,9 @@ describe('useFindMcpById', () => {
       wrapper: Wrapper,
     });
 
-    expect(mockUseListMcpServer).toHaveBeenCalledWith(
-      'owner-tenant',
-      ['shared-mcp'],
-      true,
-    );
+    expect(mockUseListMcpServer).toHaveBeenCalledWith('owner-tenant', true, [
+      'shared-mcp',
+    ]);
     expect(result.current.findMcpById('shared-mcp')?.name).toBe('Navigo3');
   });
 });

@@ -18,7 +18,7 @@ services:
       nproc:
         soft: 65535
         hard: 65535
-    # MCP is served in-process by the API server (POST /mcp on the 9380 port).
+    # Go API also serves POST /api/v1/mcp on 9380; the optional listener is separate.
 
     # Example configuration to start Admin server:
     command:
@@ -30,6 +30,7 @@ services:
       - ${SVR_WEB_HTTPS_PORT}:443
       - ${SVR_HTTP_PORT}:9380
       - ${ADMIN_SVR_HTTP_PORT}:9381
+      # - 0.0.0.0:${SVR_MCP_PORT}:${RAGFLOW_MCP_PORT:-9382}
     volumes:
       - ./ragflow-logs:/ragflow/logs
       # - ./nginx/ragflow.conf:/etc/nginx/conf.d/ragflow.conf

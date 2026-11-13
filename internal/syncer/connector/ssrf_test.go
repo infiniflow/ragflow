@@ -18,10 +18,13 @@ package connector
 
 import (
 	"context"
+	"crypto/tls"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/http/httptrace"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -189,6 +192,160 @@ func TestConnectorRequestPinsRedirectHopAgainstDNSRebinding(t *testing.T) {
 	}
 	if lookups != 1 {
 		t.Fatalf("LookupHost(localhost) called %d times, want 1 (the redirect hop dial must reuse the validated pin, not re-resolve)", lookups)
+	}
+}
+
+func TestConnectorRequestUsesProxyWithPinnedHTTPTarget(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
+
+	type observedRequest struct {
+		urlHost string
+	}
+	observed := make(chan observedRequest, 1)
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		observed <- observedRequest{urlHost: r.URL.Host}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer proxy.Close()
+	proxyURL, err := url.Parse(proxy.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const rawURL = "http://docs.example.test:8123/file"
+	base := &http.Client{Transport: &http.Transport{Proxy: func(req *http.Request) (*url.URL, error) {
+		if req.URL.Host != "docs.example.test:8123" {
+			t.Errorf("proxy selection saw rewritten host %q", req.URL.Host)
+		}
+		return proxyURL, nil
+	}}}
+	hostHeader := make(chan string, 1)
+	trace := &httptrace.ClientTrace{WroteHeaderField: func(key string, values []string) {
+		if strings.EqualFold(key, "Host") && len(values) > 0 {
+			hostHeader <- values[0]
+		}
+	}}
+	ctx := httptrace.WithClientTrace(context.Background(), trace)
+	resp, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:  http.MethodGet,
+		RawURL:  rawURL,
+		Timeout: webdavRequestTimeout,
+		Base:    base,
+		Validate: func(string) (string, net.IP, error) {
+			return "docs.example.test", net.ParseIP("203.0.113.9"), nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("connectorRequest: %v", err)
+	}
+	resp.Body.Close()
+
+	got := <-observed
+	if got.urlHost != "203.0.113.9:8123" {
+		t.Errorf("proxy target URL host = %q, want pinned IP", got.urlHost)
+	}
+	select {
+	case got := <-hostHeader:
+		if got != "docs.example.test:8123" {
+			t.Errorf("HTTP Host header = %q, want original host", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("HTTP request did not write the origin Host header")
+	}
+	if resp.Request.URL.String() != rawURL {
+		t.Errorf("response request URL = %q, want original URL %q", resp.Request.URL, rawURL)
+	}
+}
+
+func TestConnectorRequestUsesHTTPSConnectToPinnedIPAndPreservesOrigin(t *testing.T) {
+	withConnectorLoopbackTestHook(t)
+
+	type observedRequest struct {
+		host       string
+		serverName string
+	}
+	observed := make(chan observedRequest, 1)
+	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		serverName := ""
+		if r.TLS != nil {
+			serverName = r.TLS.ServerName
+		}
+		observed <- observedRequest{host: r.Host, serverName: serverName}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+	targetURL, err := url.Parse(target.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targetPort := targetURL.Port()
+
+	connectTarget := make(chan string, 1)
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodConnect {
+			http.Error(w, "CONNECT required", http.StatusMethodNotAllowed)
+			return
+		}
+		connectTarget <- r.Host
+		clientConn, rw, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Errorf("hijack proxy connection: %v", err)
+			return
+		}
+		defer clientConn.Close()
+		targetConn, err := net.Dial("tcp", r.Host)
+		if err != nil {
+			t.Errorf("dial CONNECT target %q: %v", r.Host, err)
+			return
+		}
+		defer targetConn.Close()
+		if _, err := io.WriteString(rw, "HTTP/1.1 200 Connection Established\r\n\r\n"); err != nil {
+			t.Errorf("write CONNECT response: %v", err)
+			return
+		}
+		if err := rw.Flush(); err != nil {
+			t.Errorf("flush CONNECT response: %v", err)
+			return
+		}
+		go func() {
+			_, _ = io.Copy(targetConn, rw)
+		}()
+		_, _ = io.Copy(clientConn, targetConn)
+	}))
+	defer proxy.Close()
+	proxyURL, err := url.Parse(proxy.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	rawURL := "https://docs.example.test:" + targetPort + "/file"
+	base := &http.Client{Transport: &http.Transport{
+		Proxy:           func(req *http.Request) (*url.URL, error) { return proxyURL, nil },
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // Test certificate only.
+	}}
+	resp, err := connectorRequest(context.Background(), connectorRequestOptions{
+		Method:  http.MethodGet,
+		RawURL:  rawURL,
+		Timeout: webdavRequestTimeout,
+		Base:    base,
+		Validate: func(string) (string, net.IP, error) {
+			return "docs.example.test", net.ParseIP("127.0.0.1"), nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("connectorRequest: %v", err)
+	}
+	resp.Body.Close()
+
+	if got := <-connectTarget; got != "127.0.0.1:"+targetPort {
+		t.Errorf("CONNECT target = %q, want validated IP and port", got)
+	}
+	got := <-observed
+	if got.host != "docs.example.test:"+targetPort {
+		t.Errorf("TLS request Host = %q, want original host", got.host)
+	}
+	if got.serverName != "docs.example.test" {
+		t.Errorf("TLS SNI = %q, want original hostname", got.serverName)
 	}
 }
 
@@ -368,7 +525,7 @@ func TestAssertConnectorHostSafeLoopbackHookAllowsOnlyLoopback(t *testing.T) {
 
 // TestAssertConnectorHostSafeHonorsAllowAnyHost checks that a private
 // connector host is pinned when ALLOW_ANY_HOST is set, and that URL
-// connector checks stay strict.
+// connector checks honor the same opt-in.
 func TestAssertConnectorHostSafeHonorsAllowAnyHost(t *testing.T) {
 	t.Setenv(common.EnvAllowAnyHost, "1")
 	connectorAllowLoopbackForTest = false
@@ -376,7 +533,10 @@ func TestAssertConnectorHostSafeHonorsAllowAnyHost(t *testing.T) {
 
 	orig := common.LookupHost
 	common.LookupHost = func(host string) ([]string, error) {
-		if host == "host.docker.internal" {
+		if ip := net.ParseIP(host); ip != nil {
+			return []string{ip.String()}, nil
+		}
+		if host == "host.docker.internal" || host == "localhost" {
 			return []string{"192.168.65.254"}, nil
 		}
 		return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
@@ -398,8 +558,15 @@ func TestAssertConnectorHostSafeHonorsAllowAnyHost(t *testing.T) {
 	if _, err = assertConnectorHostSafe("missing.internal"); err == nil {
 		t.Fatal("unresolvable host must still fail when ALLOW_ANY_HOST is set")
 	}
-	if err = validateConnectorURL("http://10.0.0.5/x"); err == nil {
-		t.Fatal("ALLOW_ANY_HOST must not relax URL connector checks")
+	for _, rawURL := range []string{"http://10.0.0.5/x", "http://host.docker.internal/x", "http://localhost/x"} {
+		if err = validateConnectorURL(rawURL); err != nil {
+			t.Fatalf("validateConnectorURL(%q) = %v, want nil when ALLOW_ANY_HOST is set", rawURL, err)
+		}
+	}
+	for _, rawURL := range []string{"ftp://10.0.0.5/x", "http:///path", "http://missing.internal/x"} {
+		if err = validateConnectorURL(rawURL); err == nil {
+			t.Fatalf("validateConnectorURL(%q) must still fail when ALLOW_ANY_HOST is set", rawURL)
+		}
 	}
 }
 

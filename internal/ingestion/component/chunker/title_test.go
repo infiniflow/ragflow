@@ -98,7 +98,7 @@ func TestTitleChunker_InvokeEmptyInput(t *testing.T) {
 	if got, want := out["output_format"], "chunks"; got != want {
 		t.Errorf("output_format = %v, want %v", got, want)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 0 {
 		t.Errorf("chunks = %d, want 0", len(chunks))
 	}
@@ -136,7 +136,7 @@ func TestTitleChunker_Headings_ASCII(t *testing.T) {
 	if got, want := out["output_format"], "chunks"; got != want {
 		t.Errorf("output_format = %v, want %v", got, want)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
@@ -165,7 +165,7 @@ func TestTitleChunker_NoHeadings_FallsBack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
@@ -218,7 +218,7 @@ func TestTitleChunker_InvokeDeterministic(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Invoke run %d: %v", run, err)
 		}
-		chunks, _ := out["chunks"].([]map[string]any)
+		chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 		texts := make([]string, len(chunks))
 		for i, ck := range chunks {
 			texts[i], _ = ck["text"].(string)
@@ -439,18 +439,23 @@ func TestNewLevelContext_OutlineBranch(t *testing.T) {
 	}
 }
 
-// TestOutlineFromInputs verifies the parser-supplied file.outline is parsed
-// into outlineEntry, tolerating float64-encoded levels (runtime JSON path).
-func TestOutlineFromInputs(t *testing.T) {
-	inputs := map[string]any{
+// TestOutlineFromUpstream verifies the parser-supplied file.outline survives
+// the decode path and is parsed into outlineEntry, tolerating float64-encoded
+// levels (runtime JSON path).
+func TestOutlineFromUpstream(t *testing.T) {
+	up, err := decodeChunkerFromUpstream(map[string]any{
+		"name": "t.pdf",
 		"file": map[string]any{
 			"outline": []any{
 				map[string]any{"title": "第一章", "level": float64(0), "page_number": float64(1)},
 				map[string]any{"title": "第二章", "level": float64(1), "page_number": float64(3)},
 			},
 		},
+	})
+	if err != nil {
+		t.Fatalf("decodeChunkerFromUpstream: %v", err)
 	}
-	out := outlineFromInputs(inputs)
+	out := outlineFromUpstream(up)
 	if len(out) != 2 {
 		t.Fatalf("outline len = %d, want 2", len(out))
 	}
@@ -462,8 +467,12 @@ func TestOutlineFromInputs(t *testing.T) {
 	}
 
 	// No file / no outline -> nil (frequency fallback).
-	if got := outlineFromInputs(map[string]any{}); got != nil {
-		t.Errorf("empty inputs outline = %v, want nil", got)
+	empty, err := decodeChunkerFromUpstream(map[string]any{"name": "t.pdf"})
+	if err != nil {
+		t.Fatalf("decodeChunkerFromUpstream: %v", err)
+	}
+	if got := outlineFromUpstream(empty); got != nil {
+		t.Errorf("empty upstream outline = %v, want nil", got)
 	}
 }
 

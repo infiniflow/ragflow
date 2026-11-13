@@ -32,13 +32,6 @@ var integerParams = map[string]map[string]struct{}{
 		"message_history_window_size": {},
 		"optimize_history_window":     {},
 	},
-	"browser": {
-		"max_retries":                 {},
-		"max_steps":                   {},
-		"max_tokens":                  {},
-		"message_history_window_size": {},
-		"timeout":                     {},
-	},
 	"categorize": {
 		"max_retries":                 {},
 		"max_tokens":                  {},

@@ -140,11 +140,11 @@ func TestParserComponent_Check(t *testing.T) {
 		// --- audio/video: vlm.llm_id not validated (matches Python check()) ---
 		{
 			name:   "audio: no vlm field → pass (model falls back to tenant default)",
-			setups: map[string]schema.ParserSetup{"audio": {"output_format": "text"}},
+			setups: map[string]schema.ParserSetup{"audio": {}},
 		},
 		{
 			name:   "video: no vlm field → pass",
-			setups: map[string]schema.ParserSetup{"video": {"output_format": "text"}},
+			setups: map[string]schema.ParserSetup{"video": {}},
 		},
 		{
 			name:   "audio: vlm.llm_id empty → pass (empty falls back to tenant default)",
@@ -162,7 +162,7 @@ func TestParserComponent_Check(t *testing.T) {
 		},
 		{
 			name:   "only unrelated family → pass",
-			setups: map[string]schema.ParserSetup{"markdown": {"output_format": "json"}},
+			setups: map[string]schema.ParserSetup{"markdown": {}},
 		},
 	}
 

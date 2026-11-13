@@ -46,12 +46,13 @@ func imageSetupsWithSwitch(ocrEnabled bool) map[string]schema.ParserSetup {
 
 func assertNativeOCRTextAndImage(t *testing.T, result parser.ParseResult) {
 	t.Helper()
-	text, _ := result.JSON[0]["text"].(string)
+	maps := parser.ItemsToMaps(result.JSON)
+	text, _ := maps[0]["text"].(string)
 	if strings.Join(strings.Fields(strings.ToUpper(text)), "") != pictureOCRExpectedText {
 		t.Fatalf("native OCR text = %q, want HELLO WORLD: warnings = %v", text, result.Warnings)
 	}
-	if result.JSON[0]["image"] == "" || result.JSON[0]["doc_type_kwd"] != "image" {
-		t.Fatalf("missing image attachment: %+v", result.JSON[0])
+	if maps[0]["image"] == "" || maps[0]["doc_type_kwd"] != "image" {
+		t.Fatalf("missing image attachment: %+v", maps[0])
 	}
 }
 
@@ -60,7 +61,7 @@ func assertNativeOCRTextAndImage(t *testing.T, result parser.ParseResult) {
 // reading of canvases saved before the ocr_enabled switch existed.
 func TestMaybeDispatchImageNativeOCRWithoutVision(t *testing.T) {
 	registerNativeOCRModels(t)
-	result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL,
+	result, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL,
 		"picture_ocr.png", pictureOCRFixture, nil, defaultSetups(), false, visionSettings{})
 	if err != nil {
 		t.Fatal(err)
@@ -76,7 +77,7 @@ func TestMaybeDispatchImageNativeOCRWithoutVision(t *testing.T) {
 // would only ever be exercised against a fake analyzer.
 func TestMaybeDispatchImageNativeOCRWithSwitch(t *testing.T) {
 	registerNativeOCRModels(t)
-	result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL,
+	result, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL,
 		"picture_ocr.png", pictureOCRFixture, nil, imageSetupsWithSwitch(true), false, visionSettings{})
 	if err != nil {
 		t.Fatal(err)
@@ -93,7 +94,7 @@ func TestMaybeDispatchImageNativeOCRWithSwitch(t *testing.T) {
 // dispatch says so instead of failing silently.
 func TestMaybeDispatchImageNativeSwitchOffRunsNoOCR(t *testing.T) {
 	registerNativeOCRModels(t)
-	result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL,
+	result, handled, err := maybeDispatchImage(t.Context(), parser.NewPictureParser(), nil, utility.FileTypeVISUAL,
 		"picture_ocr.png", pictureOCRFixture, nil, imageSetupsWithSwitch(false), false, visionSettings{})
 	if err != nil || result.Err != nil {
 		t.Fatalf("degraded config must not error: err = %v, result.Err = %v", err, result.Err)
@@ -101,11 +102,12 @@ func TestMaybeDispatchImageNativeSwitchOffRunsNoOCR(t *testing.T) {
 	if !handled || len(result.JSON) != 1 {
 		t.Fatalf("result = %+v, handled = %v", result, handled)
 	}
-	if text, _ := result.JSON[0]["text"].(string); text != "" {
+	maps := parser.ItemsToMaps(result.JSON)
+	if text, _ := maps[0]["text"].(string); text != "" {
 		t.Fatalf("OCR must not run with the switch off, got text %q", text)
 	}
-	if result.JSON[0]["image"] == "" {
-		t.Fatalf("image attachment must survive: %+v", result.JSON[0])
+	if maps[0]["image"] == "" {
+		t.Fatalf("image attachment must survive: %+v", maps[0])
 	}
 	if !strings.Contains(strings.Join(result.Warnings, "\n"), "the Tokenizer will discard this item") {
 		t.Fatalf("expected a no-text-source warning, got %v", result.Warnings)

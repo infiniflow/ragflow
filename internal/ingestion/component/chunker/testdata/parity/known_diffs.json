@@ -15,9 +15,9 @@
       "tag": "go_intentional",
       "kind": "extra_fields",
       "applies_to": ["token__*"],
-      "fields": ["ck_type", "tk_nums"],
+      "fields": ["tk_nums"],
       "permanent": true,
-      "reason": "Python builds both fields internally (token_chunker.py:141,144) but _finalize_json_chunks (token_chunker.py:256-259) whitelists only text/doc_type_kwd/_pdf_positions/mom/img_id, dropping them. Go keeps them because they are still live downstream: needsCrop (pdfcrop_cgo.go:151) reads ck_type, and tokenizer.go:615 forwards tk_nums. The divergence follows from Go cropping after the chunker returns, whereas Python crops inside _invoke (token_chunker.py:370) before finalizing."
+      "reason": "Python builds tk_nums internally (token_chunker.py:144) but _finalize_json_chunks (token_chunker.py:256-259) whitelists only text/doc_type_kwd/_pdf_positions/mom/img_id, dropping it. Go keeps it because tokenizer.go forwards tk_nums to the Tokenizer."
     },
     {
       "id": "token-hardcap-chunk-count",

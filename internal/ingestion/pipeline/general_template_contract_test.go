@@ -65,12 +65,22 @@ func TestGeneralTemplateUsesGeneralChunker(t *testing.T) {
 	if _, ok := parserParams["outputs"]; ok {
 		t.Fatal("general parser retains obsolete html/markdown/text output declarations")
 	}
-	spreadsheet, ok := parserParams["spreadsheet"].(map[string]interface{})
-	if !ok {
+	if _, ok := parserParams["spreadsheet"].(map[string]interface{}); !ok {
 		t.Fatal("general parser has no spreadsheet setup")
 	}
-	if got := spreadsheet["output_format"]; got != "json" {
-		t.Fatalf("general spreadsheet output_format = %v, want json", got)
+	image, ok := parserParams["image"].(map[string]interface{})
+	if !ok {
+		t.Fatal("general parser has no image setup")
+	}
+	if got := image["ocr_enabled"]; got != true {
+		t.Fatalf("general image ocr_enabled = %v, want true", got)
+	}
+	email, ok := parserParams["email"].(map[string]interface{})
+	if !ok {
+		t.Fatal("general parser has no email setup")
+	}
+	if _, ok := email["fields"]; !ok {
+		t.Fatal("general email setup has no fields")
 	}
 }
 
@@ -111,17 +121,21 @@ func TestGeneralTemplateParserGraphUsesJSONContract(t *testing.T) {
 		if !ok {
 			t.Fatal("general parser graph form has no setups")
 		}
+		seen := map[string]bool{}
 		for _, rawSetup := range setups {
 			setup, ok := rawSetup.(map[string]interface{})
-			if !ok || setup["fileFormat"] != "spreadsheet" {
+			if !ok {
 				continue
 			}
-			if got := setup["output_format"]; got != "json" {
-				t.Fatalf("general graph spreadsheet output_format = %v, want json", got)
-			}
-			return
+			format, _ := setup["fileFormat"].(string)
+			seen[format] = true
 		}
-		t.Fatal("general parser graph form has no spreadsheet setup")
+		for _, want := range []string{"spreadsheet", "image", "email"} {
+			if !seen[want] {
+				t.Fatalf("general parser graph form has no %s setup", want)
+			}
+		}
+		return
 	}
 	t.Fatal("general graph has no Parser:HipSignsRhyme node")
 }

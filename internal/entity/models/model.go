@@ -25,6 +25,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 )
 
 // ReasoningSimple represents simple reasoning capability
@@ -237,10 +238,21 @@ func decodeProviderConfig(data []byte) (Provider, error) {
 	return provider, nil
 }
 
-var providerManager *ProviderManager
+// providerManager holds the published catalog. The catalog is immutable once
+// built, so publishing it through an atomic pointer gives every reader a fully
+// initialized snapshot without a lock.
+var providerManager atomic.Pointer[ProviderManager]
 
+// GetProviderManager returns the published provider catalog, or nil when no
+// catalog has been published yet.
 func GetProviderManager() *ProviderManager {
-	return providerManager
+	return providerManager.Load()
+}
+
+// setProviderManager publishes a catalog built by InitProviderManager. Tests
+// use it to install and restore fixture catalogs.
+func setProviderManager(pm *ProviderManager) {
+	providerManager.Store(pm)
 }
 
 // InitProviderManager creates a new ProviderManager by reading all JSON files from a directory
@@ -355,11 +367,11 @@ func InitProviderManager(dirPath string) error {
 		}
 	}
 
-	providerManager = &ProviderManager{
+	setProviderManager(&ProviderManager{
 		Providers:        providers,
 		AllModels:        allModels.Models,
 		Alias2ModelIndex: alias2ModelIndex,
-	}
+	})
 	return nil
 }
 
@@ -738,21 +750,6 @@ func (pm *ProviderManager) SearchByFeature(featureType string) ModelResponse {
 		Message: "success",
 	}
 
-	//for _, provider := range pm.Providers {
-	//	for _, model := range provider.Models {
-	//		if modelHasFeature(model.Features, featureType) {
-	//			modelData := map[string]interface{}{
-	//				"provider":    provider.Name,
-	//				"name":        model.Name,
-	//				"max_tokens":  model.MaxTokens,
-	//				"model_types": model.ModelTypes,
-	//				"features":    getFeaturesMap(model.Features),
-	//			}
-	//			resp.Data = append(resp.Data, modelData)
-	//		}
-	//	}
-	//}
-
 	if len(resp.Data) == 0 {
 		resp.Code = 404
 		resp.Message = fmt.Sprintf("No models found with feature '%s'", featureType)
@@ -873,6 +870,27 @@ func findRepoRoot() string {
 		dir = filepath.Dir(dir)
 	}
 	return "."
+}
+
+// storedCatalogProviders maps provider names found in
+// tenant_model_provider.provider_name and in model references onto the
+// catalog provider that serves those models. Rows created by Python's
+// "Mistral OCR" factory carry that name; their models are the Mistral
+// provider's ocr models.
+var storedCatalogProviders = map[string]string{
+	"mistral ocr": "Mistral",
+}
+
+// CatalogProviderName returns the catalog provider name for a stored provider
+// name, for looking up a stored model in the catalog (FindProvider,
+// GetModelByName). Tenant rows are still looked up by the stored name, and
+// FindProvider itself does not apply this mapping, so provider management
+// keeps treating the stored name as an unknown provider.
+func CatalogProviderName(storedName string) string {
+	if name, ok := storedCatalogProviders[strings.ToLower(strings.TrimSpace(storedName))]; ok {
+		return name
+	}
+	return storedName
 }
 
 func (pm *ProviderManager) FindProvider(name string) *Provider {

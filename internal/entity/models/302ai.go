@@ -468,16 +468,16 @@ func (a *AI302Model) TranscribeAudio(ctx context.Context, modelName *string, fil
 }
 
 func (a *AI302Model) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s no such method", a.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", a.Name())
 }
 
 func (a *AI302Model) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
 	// TODO https://302ai-en.apifox.cn/225254060e0
-	return nil, fmt.Errorf("%s no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", a.Name())
 }
 
 func (a *AI302Model) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s no such method", a.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", a.Name())
 }
 
 func (a *AI302Model) OCRFile(ctx context.Context, modelName *string, content []byte, urls *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
@@ -697,7 +697,7 @@ func (a *AI302Model) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Li
 }
 
 func (a *AI302Model) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", a.Name())
 }
 
 func (a *AI302Model) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
@@ -706,7 +706,7 @@ func (a *AI302Model) CheckConnection(ctx context.Context, apiConfig *APIConfig) 
 }
 
 func (a *AI302Model) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s no such method", a.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", a.Name())
 }
 
 func (a *AI302Model) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
@@ -784,4 +784,8 @@ func (a *AI302Model) ShowTask(ctx context.Context, taskID string, apiConfig *API
 			},
 		},
 	}, nil
+}
+
+func (a *AI302Model) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", a.Name())
 }

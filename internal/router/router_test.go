@@ -57,6 +57,34 @@ func TestRouterSetupRemovesActionRoutes(t *testing.T) {
 	}
 }
 
+func TestSystemVariableRoutesAreNotRegisteredOnAPI(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	originalLogger := common.Logger
+	common.Logger = zap.NewNop()
+	t.Cleanup(func() { common.Logger = originalLogger })
+
+	engine := gin.New()
+	r := &Router{authHandler: handler.NewAuthHandler()}
+	r.Setup(engine)
+
+	for _, tt := range []struct {
+		method string
+		path   string
+	}{
+		{http.MethodGet, "/api/v1/system/variables"},
+		{http.MethodPut, "/api/v1/system/variables"},
+		{http.MethodGet, "/api/v1/system/variables/register_enabled"},
+	} {
+		resp := httptest.NewRecorder()
+		req := httptest.NewRequest(tt.method, tt.path, nil)
+		engine.ServeHTTP(resp, req)
+
+		if resp.Code != http.StatusNotFound {
+			t.Errorf("%s %s status=%d body=%s; want system variable route to be unavailable on the API service", tt.method, tt.path, resp.Code, resp.Body.String())
+		}
+	}
+}
+
 func TestConnectorRoutesDoNotConflictWithOAuthCallbacks(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -149,6 +177,22 @@ func TestRouterSetupRegistersUpdateDatasetRoute(t *testing.T) {
 	}
 }
 
+func TestRouterSetupRegistersApplyDatasetParserConfigRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	r := &Router{
+		authHandler:     handler.NewAuthHandler(),
+		datasetsHandler: handler.NewDatasetsHandler(nil, nil),
+	}
+	r.Setup(engine)
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets/dataset-1/documents/apply-parser-config", nil)
+	engine.ServeHTTP(resp, req)
+	if resp.Code != http.StatusUnauthorized {
+		t.Fatalf("status=%d body=%s; want auth middleware to handle the registered route", resp.Code, resp.Body.String())
+	}
+}
+
 func TestRouterSetupRegistersSearchbotMindMapRoute(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -233,6 +277,42 @@ func TestRouterSetupRegistersChatMindMapRoute(t *testing.T) {
 	}
 	if body.Code != common.CodeUnauthorized {
 		t.Fatalf("status=%d body=%s; want auth middleware to handle registered Chat MindMap route", resp.Code, resp.Body.String())
+	}
+}
+
+// TestRouterSetupPipelinesRoutesRequireAuth asserts that the pipeline
+// catalog endpoints are mounted behind the strict AuthMiddleware (the
+// authorized group), not the public apiNoAuth group. Built-in templates
+// are static data, but gating the /pipelines namespace behind auth keeps
+// it ready for per-tenant user pipelines (dataflow canvases) that will
+// later need ownership checks. An unauthenticated request must be
+// rejected with 401; if the route is moved back to apiNoAuth it would
+// return 200 and this test fails.
+func TestRouterSetupPipelinesRoutesRequireAuth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	originalLogger := common.Logger
+	common.Logger = zap.NewNop()
+	t.Cleanup(func() { common.Logger = originalLogger })
+
+	engine := gin.New()
+	r := &Router{
+		authHandler:     handler.NewAuthHandler(),
+		pipelineHandler: handler.NewPipelineHandler(),
+	}
+	r.Setup(engine)
+
+	paths := []string{
+		"/api/v1/pipelines?type=builtin",
+		"/api/v1/pipelines/general",
+	}
+	for _, path := range paths {
+		t.Run(path, func(t *testing.T) {
+			resp := httptest.NewRecorder()
+			engine.ServeHTTP(resp, httptest.NewRequest(http.MethodGet, path, nil))
+			if resp.Code != http.StatusUnauthorized {
+				t.Fatalf("GET %s: status=%d body=%s; want 401 (route must be behind auth middleware)", path, resp.Code, resp.Body.String())
+			}
+		})
 	}
 }
 

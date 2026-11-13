@@ -414,35 +414,35 @@ func (o *OllamaModel) Embed(ctx context.Context, modelName *string, request Embe
 }
 
 func (o *OllamaModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Rerank", o.Name())
 }
 
 // TranscribeAudio transcribe audio
 func (o *OllamaModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", o.Name())
 }
 
 func (o *OllamaModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", o.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", o.Name())
 }
 
 // AudioSpeech convert text to audio
 func (o *OllamaModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", o.Name())
 }
 
 func (o *OllamaModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", o.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", o.Name())
 }
 
 // OCRFile OCR file
 func (o *OllamaModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", o.Name())
 }
 
 // ParseFile parse file
 func (o *OllamaModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", o.Name())
 }
 
 func (o *OllamaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
@@ -513,7 +513,7 @@ func (o *OllamaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 }
 
 func (o *OllamaModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Balance", o.Name())
 }
 
 // CheckConnection verifies that the configured Ollama base URL is reachable
@@ -523,9 +523,13 @@ func (o *OllamaModel) CheckConnection(ctx context.Context, apiConfig *APIConfig)
 }
 
 func (o *OllamaModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", o.Name())
 }
 
 func (o *OllamaModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", o.Name())
+}
+
+func (o *OllamaModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", o.Name())
 }

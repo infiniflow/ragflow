@@ -38,26 +38,26 @@ func (x *llmDeduper) RouteTopic(ctx context.Context, incoming, existing kccommon
 }
 
 func isTopicPage(product kccommon.Product) bool {
-	return strings.EqualFold(strings.TrimSpace(metaString(product.Meta, "page_type")), "topic")
+	return strings.EqualFold(strings.TrimSpace(kccommon.MetaString(product.Meta, "page_type")), "topic")
 }
 
 func productTopic(product kccommon.Product) string {
-	return kccommon.NormalizeWikiTopicPath(metaString(product.Meta, "topic"))
+	return kccommon.NormalizeWikiTopicPath(kccommon.MetaString(product.Meta, "topic"))
 }
 
 func productTitle(product kccommon.Product) string {
-	return strings.TrimSpace(metaString(product.Meta, "title"))
+	return strings.TrimSpace(kccommon.MetaString(product.Meta, "title"))
 }
 
 func productSummary(product kccommon.Product) string {
-	if summary := strings.TrimSpace(metaString(product.Meta, "summary")); summary != "" {
+	if summary := strings.TrimSpace(kccommon.MetaString(product.Meta, "summary")); summary != "" {
 		return summary
 	}
 	return strings.TrimSpace(product.Content)
 }
 
 func productEntities(product kccommon.Product) []string {
-	return metaStringSlice(product.Meta, "entity_names")
+	return kccommon.MetaStringSlice(product.Meta, "entity_names")
 }
 
 func firstTopicString(values ...string) string {
@@ -152,11 +152,11 @@ func mergeTopicProducts(tenant, kb string, products []kccommon.Product) ([]kccom
 func mergeTopicPage(existing, incoming kccommon.Product) kccommon.Product {
 	merged := wikiEntityMerge(existing, incoming)
 	merged.Meta = copyMeta(merged.Meta)
-	merged.Meta["slug"] = metaString(existing.Meta, "slug")
+	merged.Meta["slug"] = kccommon.MetaString(existing.Meta, "slug")
 	merged.Meta["page_type"] = "topic"
-	topic := kccommon.NormalizeWikiTopicPath(firstTopicString(metaString(incoming.Meta, "topic"), metaString(existing.Meta, "topic")))
+	topic := kccommon.NormalizeWikiTopicPath(firstTopicString(kccommon.MetaString(incoming.Meta, "topic"), kccommon.MetaString(existing.Meta, "topic")))
 	merged.Meta["topic"] = topic
-	merged.Meta["title"] = firstTopicString(metaString(existing.Meta, "title"), metaString(incoming.Meta, "title"), topic)
-	merged.Meta["entity_names"] = unionStrs(metaStringSlice(existing.Meta, "entity_names"), metaStringSlice(incoming.Meta, "entity_names"))
+	merged.Meta["title"] = firstTopicString(kccommon.MetaString(existing.Meta, "title"), kccommon.MetaString(incoming.Meta, "title"), topic)
+	merged.Meta["entity_names"] = unionStrs(kccommon.MetaStringSlice(existing.Meta, "entity_names"), kccommon.MetaStringSlice(incoming.Meta, "entity_names"))
 	return merged
 }

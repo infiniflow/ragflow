@@ -679,7 +679,7 @@ func (g *GoogleModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 }
 
 func (g *GoogleModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Balance", g.Name())
 }
 
 func (g *GoogleModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
@@ -694,36 +694,40 @@ func (g *GoogleModel) Rerank(ctx context.Context, modelName *string, request Rer
 
 // TranscribeAudio transcribe audio
 func (g *GoogleModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", g.Name())
 }
 
 func (g *GoogleModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", g.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", g.Name())
 }
 
 // AudioSpeech convert text to audio
 func (g *GoogleModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", g.Name())
 }
 
 func (g *GoogleModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", g.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", g.Name())
 }
 
 // OCRFile OCR file
 func (g *GoogleModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", g.Name())
 }
 
 // ParseFile parse file
 func (g *GoogleModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", g.Name())
 }
 
 func (g *GoogleModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", g.Name())
 }
 
 func (g *GoogleModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", g.Name())
+}
+
+func (g *GoogleModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", g.Name())
 }

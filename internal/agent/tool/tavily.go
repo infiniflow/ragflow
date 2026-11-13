@@ -18,13 +18,11 @@ package tool
 
 import (
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"fmt"
-	"math/big"
 	"net/http"
+	"net/url"
 	"regexp"
-	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -303,6 +301,12 @@ func (t *TavilyTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 	var provided map[string]json.RawMessage
 	_ = json.Unmarshal([]byte(argsJSON), &provided)
 	p = mergeTavilyParams(t.defaults, p, provided)
+	if err := ValidateSearchFilters(map[string]any{
+		"include_domains": p.IncludeDomains,
+		"exclude_domains": p.ExcludeDomains,
+	}, false); err != nil {
+		return tavilyErrJSON(fmt.Errorf("tavily: %w", err)), nil
+	}
 
 	apiKey := p.APIKey
 	if apiKey == "" {
@@ -312,9 +316,7 @@ func (t *TavilyTool) InvokableRun(ctx context.Context, argsJSON string, _ ...too
 		return tavilyErrJSON(fmt.Errorf("tavily: api_key is required (or set TAVILY_API_KEY)")), nil
 	}
 
-	// Match the Python implementation: always disable images and raw content.
 	p.IncludeImages = false
-	p.IncludeRawContent = false
 
 	body, _ := json.Marshal(tavilyRequestBody{
 		Query:                    p.Query,
@@ -436,14 +438,14 @@ func buildTavilyReferences(envelope map[string]any) ([]map[string]any, []map[str
 			content = tavilyText(item["content"])
 		}
 		content = tavilyDataImagePattern.ReplaceAllString(content, "")
+		content = rewriteTavilyImageURLs(content, tavilyText(item["url"]))
 		content = truncateTavilyRunes(content, 10000)
 		if content == "" {
 			continue
 		}
-		documentID := strconv.FormatInt(tavilyHashInt(content, 100000000), 10)
-		displayID := strconv.FormatInt(tavilyHashInt(documentID, 500), 10)
 		title := tavilyText(item["title"])
 		resultURL := tavilyText(item["url"])
+		documentID, displayID := referenceIDs(resultURL, content)
 		score := item["score"]
 		chunks = append(chunks, map[string]any{
 			"id":            displayID,
@@ -465,6 +467,23 @@ func buildTavilyReferences(envelope map[string]any) ([]map[string]any, []map[str
 		})
 	}
 	return chunks, docAggs
+}
+
+var tavilyMarkdownImagePattern = regexp.MustCompile(`(!\[[^]]*\]\()([^\s)]+)(\))`)
+
+func rewriteTavilyImageURLs(content, pageURL string) string {
+	base, err := url.Parse(pageURL)
+	if err != nil || base.Scheme == "" || base.Host == "" {
+		return content
+	}
+	return tavilyMarkdownImagePattern.ReplaceAllStringFunc(content, func(image string) string {
+		parts := tavilyMarkdownImagePattern.FindStringSubmatch(image)
+		ref, err := url.Parse(parts[2])
+		if err != nil || ref.Scheme != "" || ref.Host != "" || strings.HasPrefix(parts[2], "data:") {
+			return image
+		}
+		return parts[1] + base.ResolveReference(ref).String() + parts[3]
+	})
 }
 
 func renderTavilyReferences(chunks []map[string]any, maxTokens int) string {
@@ -501,12 +520,6 @@ func tavilyText(value any) string {
 
 func tavilyPromptField(value any) string {
 	return tavilyNewlinePattern.ReplaceAllString(tavilyText(value), " ")
-}
-
-func tavilyHashInt(value string, modulus int64) int64 {
-	digest := sha1.Sum([]byte(value))
-	number := new(big.Int).SetBytes(digest[:])
-	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
 }
 
 func truncateTavilyRunes(value string, limit int) string {

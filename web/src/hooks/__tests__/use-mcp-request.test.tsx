@@ -46,9 +46,10 @@ describe('useListMcpServer', () => {
   });
 
   it('requests all selected MCP metadata on the first page', async () => {
-    renderHook(() => useListMcpServer(['mcp-1', 'mcp-2', 'mcp-3']), {
-      wrapper: Wrapper,
-    });
+    renderHook(
+      () => useListMcpServer(undefined, true, ['mcp-1', 'mcp-2', 'mcp-3']),
+      { wrapper: Wrapper },
+    );
 
     await waitFor(() => expect(mockListMcpServers).toHaveBeenCalled());
 
@@ -58,6 +59,27 @@ describe('useListMcpServer', () => {
       page_size: 3,
       mcp_ids: 'mcp-1,mcp-2,mcp-3',
     });
+  });
+
+  it('keeps the owner tenant on selected metadata requests', async () => {
+    renderHook(() => useListMcpServer('owner-tenant', true, ['shared-mcp']), {
+      wrapper: Wrapper,
+    });
+    await waitFor(() => expect(mockListMcpServers).toHaveBeenCalled());
+    expect(mockListMcpServers).toHaveBeenCalledWith({
+      keywords: '',
+      page: 1,
+      page_size: 1,
+      tenant_id: 'owner-tenant',
+      mcp_ids: 'shared-mcp',
+    });
+  });
+
+  it('does not fetch selected metadata when disabled', () => {
+    renderHook(() => useListMcpServer('owner-tenant', false, ['shared-mcp']), {
+      wrapper: Wrapper,
+    });
+    expect(mockListMcpServers).not.toHaveBeenCalled();
   });
 
   it('preserves search pagination for the regular MCP list', async () => {

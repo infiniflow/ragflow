@@ -27,9 +27,9 @@ type fakeSearchDatasetService struct {
 	err       error
 }
 
-func (f *fakeSearchDatasetService) SearchDataset(ctx context.Context, datasetID, userID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error) {
+func (f *fakeSearchDatasetService) SearchDataset(ctx context.Context, datasetID string, req *service.SearchDatasetRequest) (*service.SearchDatasetsResponse, error) {
 	f.datasetID = datasetID
-	f.userID = userID
+	f.userID = permission.UserIDFromContext(ctx)
 	f.req = req
 	return f.resp, f.err
 }
@@ -41,8 +41,8 @@ type fakeSearchDatasetsService struct {
 	err    error
 }
 
-func (f *fakeSearchDatasetsService) SearchDatasets(ctx context.Context, req *service.SearchDatasetsRequest, userID string) (*service.SearchDatasetsResponse, error) {
-	f.userID = userID
+func (f *fakeSearchDatasetsService) SearchDatasets(ctx context.Context, req *service.SearchDatasetsRequest) (*service.SearchDatasetsResponse, error) {
+	f.userID = permission.UserIDFromContext(ctx)
 	f.req = req
 	return f.resp, f.err
 }
@@ -55,6 +55,7 @@ func TestDatasetsHandlerSearchDataset(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets/ds-1/search", strings.NewReader(`{"question":"hello","document_ids":["doc-1"],"page_size":9,"metadata_condition":{"logic":"and","conditions":[{"name":"author","comparison_operator":"=","value":"Luo"}]},"knn_top_k":7,"knn_num_candidates":14,"keywords_similarity_weight":0.7}`))
 	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(permission.WithIdentity(req.Context(), "user-1", ""))
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = req
 	c.Set("user", &entity.User{ID: "user-1"})
@@ -171,6 +172,7 @@ func TestDatasetsHandlerSearchDatasetsSuccess(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets/search", strings.NewReader(`{"question":"  hello  ","dataset_ids":["ds-1"],"document_ids":["doc-1"],"page_size":9,"metadata_condition":{"logic":"and","conditions":[]},"top_k":7,"include_knowledge_compilation":false}`))
 	req.Header.Set("Content-Type", "application/json")
+	req = req.WithContext(permission.WithIdentity(req.Context(), "user-1", ""))
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = req
 	c.Set("user", &entity.User{ID: "user-1"})
@@ -195,6 +197,32 @@ func TestDatasetsHandlerSearchDatasetsSuccess(t *testing.T) {
 	body := decodeSearchResponse(t, rec)
 	if body["code"] != float64(common.CodeSuccess) {
 		t.Fatalf("code=%v want=%d body=%s", body["code"], common.CodeSuccess, rec.Body.String())
+	}
+}
+
+func TestDatasetsHandlerSearchDatasetsIgnoresUnknownFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, extra := range []string{``, `,"force_refresh":true`, `,"force_refresh":false`, `,"force_refresh":"unused"`, `,"unknown":"unused"`} {
+		t.Run(extra, func(t *testing.T) {
+			fake := &fakeSearchDatasetsService{resp: &service.SearchDatasetsResponse{Total: 2}}
+			h := &DatasetsHandler{searchDatasetsService: fake}
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/retrieval", strings.NewReader(`{"question":"hello","dataset_ids":["ds-1"]`+extra+`}`))
+			req.Header.Set("Content-Type", "application/json")
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = req
+			c.Set("user", &entity.User{ID: "user-1"})
+
+			h.SearchDatasets(c)
+
+			body := decodeSearchResponse(t, rec)
+			if rec.Code != http.StatusOK || body["code"] != float64(common.CodeSuccess) {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+			if fake.req == nil || fake.req.Question != "hello" || len(fake.req.DatasetIDs) != 1 || fake.req.DatasetIDs[0] != "ds-1" {
+				t.Fatalf("request = %#v", fake.req)
+			}
+		})
 	}
 }
 

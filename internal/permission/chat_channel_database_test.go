@@ -40,21 +40,21 @@ func TestDatabaseCheckerScopesChatChannelsToTenantMembers(t *testing.T) {
 		t.Fatalf("create tenant membership: %v", err)
 	}
 
-	checker := NewDatabaseChecker(db)
-	member := Subject{UserID: "member-a"}
+	checker := newCommunityDatabaseChecker(db)
+	member := permissionTestIdentity{UserID: "member-a"}
 	for _, operation := range []Operation{OperationRead, OperationUpdate, OperationDelete, OperationUse} {
-		if err := checker.CheckResource(context.Background(), member, ResourceRef{Kind: ResourceKindChatChannel, ID: "team-channel"}, operation); err != nil {
+		if err := checker.CheckResource(WithIdentity(context.Background(), member.UserID, member.TenantID), ResourceRef{Kind: ResourceKindChatChannel, ID: "team-channel"}, operation); err != nil {
 			t.Errorf("member cannot %s team channel: %v", operation, err)
 		}
 	}
-	if err := checker.CheckResource(context.Background(), member, ResourceRef{Kind: ResourceKindChatChannel, ID: "other-channel"}, OperationRead); err != ErrPermissionDenied {
+	if err := checker.CheckResource(WithIdentity(context.Background(), member.UserID, member.TenantID), ResourceRef{Kind: ResourceKindChatChannel, ID: "other-channel"}, OperationRead); err != ErrPermissionDenied {
 		t.Errorf("cross-tenant access error = %v, want %v", err, ErrPermissionDenied)
 	}
-	if err := checker.CheckResource(context.Background(), member, ResourceRef{Kind: ResourceKindChatChannel, ID: "inactive-channel"}, OperationRead); err != nil {
+	if err := checker.CheckResource(WithIdentity(context.Background(), member.UserID, member.TenantID), ResourceRef{Kind: ResourceKindChatChannel, ID: "inactive-channel"}, OperationRead); err != nil {
 		t.Errorf("inactive channel should remain manageable: %v", err)
 	}
 
-	scope, err := checker.Scope(context.Background(), member, ScopeQuery{Kind: ResourceKindChatChannel, Operation: OperationRead})
+	scope, err := checker.Scope(WithIdentity(context.Background(), member.UserID, member.TenantID), ScopeQuery{Kind: ResourceKindChatChannel, Operation: OperationRead})
 	if err != nil {
 		t.Fatalf("scope chat channels: %v", err)
 	}

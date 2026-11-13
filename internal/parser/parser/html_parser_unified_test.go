@@ -62,7 +62,7 @@ func TestHTMLParser_ParseWithResult_UnifiedSemantics(t *testing.T) {
 			if len(res.JSON) != 1 {
 				t.Fatalf("block count = %d, want 1: %#v", len(res.JSON), res.JSON)
 			}
-			if got := res.JSON[0]["text"].(string); got != tc.Want {
+			if got := res.JSON[0].ToMap()["text"].(string); got != tc.Want {
 				t.Errorf("got %q, want %q", got, tc.Want)
 			}
 		})
@@ -90,7 +90,7 @@ func TestHTMLParser_ParseWithResult_RealisticSmoke(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	var texts []string
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		texts = append(texts, item["text"].(string))
 	}
 	want := []string{

@@ -108,6 +108,16 @@ type NavService interface {
 	// returned coverage is trimmed to the scope so no out-of-scope document
 	// surfaces under a cluster that merely overlaps it.
 	Search(ctx context.Context, tenantID, kbID, query string, embd []float32, docScope []string, topK int) ([]NavHit, error)
+	// EncodeQueryVector embeds one search query with the tenant's default
+	// embedding model and returns it in the engine's float64 form.
+	//
+	// Every KNN read over compiled rows needs the query-side half of the model
+	// that wrote those rows: nav routing (Search) and navigate_structure's claim
+	// recall both address q_<dim>_vec columns the service's embedder produced.
+	// Exposing it here means a caller that already reaches this service needs no
+	// second wiring point for the embedder. nil/empty means the model did not
+	// resolve, and the caller must degrade to lexical recall.
+	EncodeQueryVector(ctx context.Context, tenantID, text string) []float64
 	// ListClusters returns the depth-0 clusters (parent_kwd=root), or — when
 	// keywords is non-empty — the pruned search forest: the matched leaves plus
 	// the cluster path above each of them. The total is a cluster count in both

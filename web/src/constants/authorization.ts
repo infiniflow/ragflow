@@ -18,3 +18,10 @@ export const Authorization = 'Authorization';
 export const Token = 'token';
 export const UserInfo = 'userInfo';
 export const ThinkingLevel = 'thinkingLevel';
+
+// The admin interface stores credentials under its own keys: localStorage is
+// origin-wide, so sharing these keys with /login let each session silently
+// overwrite the other.
+export const AdminAuthorization = 'AdminAuthorization';
+export const AdminToken = 'AdminToken';
+export const AdminUserInfo = 'AdminUserInfo';

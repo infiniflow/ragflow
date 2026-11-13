@@ -25,6 +25,7 @@ import { citationMarkerReg } from '@/utils/citation-utils';
 import { getExtension } from '@/utils/document-util';
 import { supportsSourceLocate } from '@/utils/source-locate';
 import { getDirAttribute } from '@/utils/text-direction';
+import * as HoverCardPrimitive from '@radix-ui/react-hover-card';
 import DOMPurify from 'dompurify';
 import { memo, useCallback, useEffect, useMemo } from 'react';
 import Markdown from 'react-markdown';
@@ -41,6 +42,7 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 import { useFetchDocumentThumbnailsByIds } from '@/hooks/use-document-request';
 import { useLoadingPause } from '@/hooks/use-loading-pause';
 import {
+  decodeAngleBracketEntities,
   escapeUnmatchedAngleBrackets,
   parseCitationIndex,
   preprocessLaTeX,
@@ -103,6 +105,9 @@ const MarkdownCode = (props: any) => {
   const { children, className, ...rest } = props;
   const restProps = omit(rest, 'node');
   const match = /language-(\w+)/.exec(className || '');
+  // Code content is literal for react-markdown, so the &lt;/&gt; entities
+  // restored by unescapeAngleBrackets survive parsing; decode them back.
+  const codeText = decodeAngleBracketEntities(String(children));
   return match ? (
     <SyntaxHighlighter
       {...restProps}
@@ -110,11 +115,11 @@ const MarkdownCode = (props: any) => {
       language={match[1]}
       wrapLongLines
     >
-      {String(children).replace(/\n$/, '')}
+      {codeText.replace(/\n$/, '')}
     </SyntaxHighlighter>
   ) : (
     <code {...restProps} className={classNames(className, 'text-wrap')}>
-      {children}
+      {codeText}
     </code>
   );
 };
@@ -163,6 +168,8 @@ const MarkdownContent = ({
         (value: string) => replaceThinkToSection(value, thinkSummary),
         replaceRetrievingToSection,
         preprocessLaTeX,
+        // Entity decoding can expose a line-leading > after the first escape.
+        escapeUnmatchedAngleBrackets,
       )(nextText),
     );
   }, [content, loading, t]);
@@ -332,9 +339,11 @@ const MarkdownContent = ({
                 </bdi>
               </HoverCardTrigger>
               {hasReference && (
-                <HoverCardContent className="max-w-3xl">
-                  {getPopoverContent(chunkIndex)}
-                </HoverCardContent>
+                <HoverCardPrimitive.Portal>
+                  <HoverCardContent className="max-w-3xl">
+                    {getPopoverContent(chunkIndex)}
+                  </HoverCardContent>
+                </HoverCardPrimitive.Portal>
               )}
             </HoverCard>
           );

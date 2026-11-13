@@ -17,7 +17,7 @@ Generated knowledge artifacts can be used for knowledge retrieval, intelligent Q
 - **Knowledge graph**: Displays entities in documents and their relationships. It is suitable for content such as personal relationships, organizational structures, and product relationships.
 - **Knowledge tree**: Organizes document content by hierarchy. It is suitable for chapter structures, topic classification, and knowledge system organization.
 - **Page index**: Preserves the original document structure and enhances chapter positioning. It is suitable for manuals, specifications, reports, and similar materials.
-- **Mind map**: Expands content relationships around core topics and helps users quickly understand the overall document structure.
+- **Mindmap**: Expands content relationships around core topics and helps users quickly understand the overall document structure.
 - **Timeline**: Organizes event information in chronological order. It is suitable for historical materials, project records, event tracking, and similar content.
 - **Knowledge page**: Generates interconnected knowledge pages. It is suitable for enterprise knowledge, product materials, and domain knowledge management.
 
@@ -40,7 +40,7 @@ Knowledge compilation provides multiple built-in templates. Different templates 
 | Graph | Suitable for extracting entities and relationships between entities in documents, such as people, organizations, products, and their relationships. |
 | Tree | Suitable for organizing document content by topic and hierarchy, arranging knowledge into a tree structure. |
 | PageIndex | Suitable for preserving the original chapter and page structure of a document and building a hierarchical index for quick content positioning and retrieval. |
-| MindMap | Suitable for extracting core topics and branch content from documents and displaying the knowledge structure as a mind map. |
+| Mindmap | Suitable for extracting core topics and branch content from documents and displaying the knowledge structure as a mind map. |
 | Timeline | Suitable for documents that contain clear time information and events, organizing and displaying events in chronological order. |
 | Wiki | Suitable for documents with substantial content and relationships between topics, organizing the content into interconnected Wiki pages. |
 
@@ -59,17 +59,11 @@ Recommendation: When using this feature for the first time, select a small numbe
 
 ## Standard Workflow
 
-1. **Create a knowledge compilation template**: On the Agent page, select **Compilation Operator** when creating a new Agent. Then create a template based on the type of knowledge artifact to generate and complete the related parameter configuration.
-2. **Configure the Ingestion Pipeline**: Add Compiler to the Ingestion Pipeline and select the created knowledge compilation template.
-3. **Apply the Ingestion Pipeline**: In Dataset, select the documents to process and apply the configured Ingestion Pipeline.
-4. **Execute knowledge compilation**: The system parses documents according to the Pipeline configuration and generates the corresponding knowledge artifacts based on the selected template.
-5. **View knowledge artifacts**: After compilation is complete, view generated artifacts such as Graph, Tree, PageIndex, MindMap, Timeline, or Wiki.
-
-![Create a knowledge compilation template](https://raw.githubusercontent.com/infiniflow/ragflow-docs/78dcfd707366b45934720c7abe480897f31ecbe7/images/usage-flow-standard-usage-flow.jpg)
-
-![Choose Compilation Operator](https://raw.githubusercontent.com/infiniflow/ragflow-docs/78dcfd707366b45934720c7abe480897f31ecbe7/images/usage-flow-standard-usage-flow-2.jpg)
-
-Note: This section helps users quickly understand the overall workflow of knowledge compilation and only shows the operation interface for "creating a knowledge compilation template". Ingestion Pipeline configuration, document application, knowledge artifact viewing, and other operations are described in detail in the corresponding later chapters with interface screenshots. For specific operations, refer to the relevant chapters.
+1. **Create a knowledge compilation template**: Open **Agent** and select **Compilation operator**. Choose **Create from blank** to open **Add template**. Enter **Name**, optionally enter **Description**, and select **Template**: Graph, Mindmap, PageIndex, Timeline, Tree, or Wiki. Complete **Global rules** and the settings displayed for the selected type, then click **Save**. See [Basic Information Configuration](./basic_information_configuration.md).
+2. **Configure the ingestion pipeline**: Create or open a pipeline under **Agent > Ingestion pipeline**. Add **Compiler**, select the saved template group under **Operator**, and choose the model used for compilation. Connect the processing steps to **Indexer**.
+3. **Publish the pipeline**: Click **Save draft**, resolve any reported configuration issues, then click **Publish** and confirm.
+4. **Apply the pipeline**: Open the target Dataset's **Configuration**, open **Parsing mode**, expand the custom pipeline, select its published version within that dropdown, and click **Save**.
+5. **Execute and check compilation**: Upload and parse a representative document. Document parsing and background Dataset-level artifact processing complete separately; Wiki generation and merging may finish later. Check the compilation status and **Logs > Dataset** for pending tasks or errors, and wait for background processing to complete before assessing Dataset-level artifacts. A missing artifact immediately after parsing does not by itself indicate a pipeline failure. Inspect the completed results before processing more documents. See [Apply a Knowledge Compilation Template](./apply_knowledge_compilation_template.md).
 
 Typical flow: Parser -> Chunker -> Compiler -> Indexer.
 

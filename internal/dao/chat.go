@@ -176,12 +176,6 @@ func (dao *ChatDAO) UpdateManyByID(ctx context.Context, db *gorm.DB, updates []m
 	return tx.Commit().Error
 }
 
-// DeleteByTenantID deletes all chats by tenant ID (hard delete)
-func (dao *ChatDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.Chat{})
-	return result.RowsAffected, result.Error
-}
-
 // GetAllDialogIDsByTenantID gets all dialog IDs by tenant ID
 func (dao *ChatDAO) GetAllDialogIDsByTenantID(ctx context.Context, db *gorm.DB, tenantID string) ([]string, error) {
 	var dialogIDs []string

@@ -152,45 +152,49 @@ func (t *TokenPonyModel) CheckConnection(ctx context.Context, apiConfig *APIConf
 }
 
 func (t *TokenPonyModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("%s, no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: Embed", t.Name())
 }
 
 func (t *TokenPonyModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: Rerank", t.Name())
 }
 
 func (t *TokenPonyModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", t.Name())
 }
 
 func (t *TokenPonyModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", t.Name())
 }
 
 func (t *TokenPonyModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", t.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", t.Name())
 }
 
 func (t *TokenPonyModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", t.Name())
 }
 
 func (t *TokenPonyModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", t.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", t.Name())
 }
 
 func (t *TokenPonyModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", t.Name())
 }
 
 func (t *TokenPonyModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", t.Name())
 }
 
 func (t *TokenPonyModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", t.Name())
 }
 
 func (t *TokenPonyModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", t.Name())
+}
+
+func (t *TokenPonyModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", t.Name())
 }

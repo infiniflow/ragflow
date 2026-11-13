@@ -9,63 +9,22 @@ import {
 } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Switch } from '@/components/ui/switch';
-import { FileType } from '@/constants/file';
-import { upperCase, upperFirst } from 'lodash';
 import { useEffect } from 'react';
 import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { useOwnerTenantId } from '../../context';
-import {
-  OutputFormatMap,
-  SpreadsheetOutputFormat,
-} from '../../constant/pipeline';
 import { CommonProps } from './interface';
 import { buildFieldNameWithPrefix } from './utils';
 
-const UppercaseFields = [
-  SpreadsheetOutputFormat.Html,
-  SpreadsheetOutputFormat.Json,
-];
-
-function buildOutputOptionsFormatMap() {
-  return Object.entries(OutputFormatMap).reduce<
-    Record<string, SelectWithSearchFlagOptionType[]>
-  >((pre, [key, value]) => {
-    pre[key] = Object.values(value).map((v) => ({
-      label: UppercaseFields.some((x) => x === v)
-        ? upperCase(v)
-        : upperFirst(v),
-      value: v,
-    }));
-    return pre;
-  }, {});
-}
-
-export type OutputFormatFormFieldProps = CommonProps & {
-  fileType: FileType;
-};
-
-export function OutputFormatFormField({
-  prefix,
-  fileType,
-}: OutputFormatFormFieldProps) {
-  const { t } = useTranslation();
-  return (
-    <RAGFlowFormItem
-      name={buildFieldNameWithPrefix(`output_format`, prefix)}
-      label={t('flow.outputFormat')}
-    >
-      <SelectWithSearch
-        options={buildOutputOptionsFormatMap()[fileType]}
-      ></SelectWithSearch>
-    </RAGFlowFormItem>
-  );
-}
-
+/** Uses owner-tenant models, enabling MinerU options only for PDF callers. */
 export function ParserMethodFormField({
   prefix,
   optionsWithoutLLM,
-}: CommonProps & { optionsWithoutLLM?: { value: string; label: string }[] }) {
+  showMineruOptions = false,
+}: CommonProps & {
+  optionsWithoutLLM?: { value: string; label: string }[];
+  showMineruOptions?: boolean;
+}) {
   const { t } = useTranslation();
   const ownerTenantId = useOwnerTenantId();
   return (
@@ -75,6 +34,7 @@ export function ParserMethodFormField({
       optionsWithoutLLM={optionsWithoutLLM}
       label={t('flow.parserMethod')}
       ownerTenantId={ownerTenantId}
+      showMineruOptions={showMineruOptions}
     ></LayoutRecognizeFormField>
   );
 }

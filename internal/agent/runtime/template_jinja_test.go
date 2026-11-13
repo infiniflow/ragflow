@@ -42,6 +42,7 @@ func TestContainsJinjaSyntax_PlainReference(t *testing.T) {
 		"hello {{name}}",
 		"{{a.b}}",
 		"{{ cpn_0@content }}",
+		"{{ cpn_0@content }} | literal pipe",
 		"no refs at all",
 		"",
 	}
@@ -188,6 +189,31 @@ func TestResolveTemplateAuto_FilterFallsToGonja(t *testing.T) {
 	}
 	if got != "AUTO" {
 		t.Errorf("output = %q, want \"AUTO\" (filter applied via gonja path)", got)
+	}
+}
+
+func TestResolveTemplateAutoResolvesSysAndEnvNamespaces(t *testing.T) {
+	state := NewCanvasState("r1", "t1")
+	state.MergeNamespaces(
+		map[string]any{"query": "rag"},
+		map[string]any{"max_tokens": 32},
+		nil,
+	)
+
+	got, err := ResolveTemplateAuto("{{sys.query}} | literal pipe", state)
+	if err != nil {
+		t.Fatalf("ResolveTemplateAuto with literal pipe: %v", err)
+	}
+	if want := "rag | literal pipe"; got != want {
+		t.Fatalf("ResolveTemplateAuto with literal pipe = %q, want %q", got, want)
+	}
+
+	got, err = ResolveTemplateAuto("{{ sys.query | upper }} / {{ env.max_tokens }}", state)
+	if err != nil {
+		t.Fatalf("ResolveTemplateAuto with Jinja filter: %v", err)
+	}
+	if want := "RAG / 32"; got != want {
+		t.Fatalf("ResolveTemplateAuto with Jinja filter = %q, want %q", got, want)
 	}
 }
 

@@ -1,10 +1,12 @@
 import { Modal } from '@/components/ui/modal/modal';
+import { FileType } from '@/constants/file';
 import { useSetModalState } from '@/hooks/common-hooks';
 import { useRunDocument } from '@/hooks/use-document-request';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { buildParserGapModalContent } from './parser-gap-content';
+import { ParserGapReason } from './constant';
 import { UseChangeDocumentParserShowType } from './use-change-document-parser';
 import { useParserGapValidation } from './use-parser-gap-validation';
 import { pickByGapKind } from './utils';
@@ -35,6 +37,18 @@ export const useHandleRunDocumentByIds = (
       const gaps = findDocumentParseGaps([record]);
       if (gaps.length > 0) {
         hideModal();
+        // Video has no parser that can process it, so offering "reselect parse
+        // method" would send the user into a dialog that cannot fix anything.
+        // Acknowledge instead; the change-parser route stays for the other
+        // gap kinds. The reason check keeps this narrow: a future gap kind on
+        // a parseable file must keep the actionable dialog.
+        const videoOnly =
+          gaps.length > 0 &&
+          gaps.every(
+            (gap) =>
+              gap.fileType === FileType.Video &&
+              gap.reason === ParserGapReason.UnsupportedType,
+          );
         Modal.error({
           title: t('knowledgeDetails.parseBlockedTitle'),
           content: buildParserGapModalContent(t, gaps, {
@@ -42,16 +56,17 @@ export const useHandleRunDocumentByIds = (
             unsupportedType: 'knowledgeDetails.reselectParserToParseHint',
           }),
           okText: t(
-            pickByGapKind(gaps, {
-              missingModel: 'knowledgeDetails.goAddModel',
-              unsupportedType: 'knowledgeDetails.reselectParser',
-            }),
+            videoOnly
+              ? 'common.ok'
+              : pickByGapKind(gaps, {
+                  missingModel: 'knowledgeDetails.goAddModel',
+                  unsupportedType: 'knowledgeDetails.reselectParser',
+                }),
           ),
           cancelText: t('common.cancel'),
+          showCancel: !videoOnly,
           closable: false,
-          onOk: () => {
-            showChangeParserModal(record);
-          },
+          onOk: videoOnly ? undefined : () => showChangeParserModal(record),
         });
         return;
       }

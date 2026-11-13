@@ -98,6 +98,8 @@ export function DataflowTimeline({ traceList }: DataflowTimelineProps) {
                                 className={cn('break-all', {
                                   'text-state-error':
                                     x.message.startsWith('[ERROR]'),
+                                  'text-state-warning':
+                                    x.message.startsWith('[WARN]'),
                                 })}
                               >
                                 {x.message}

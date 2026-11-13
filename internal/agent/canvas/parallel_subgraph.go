@@ -61,6 +61,11 @@ func buildParallelExpansion(ctx context.Context, c *Canvas, parallelID string) (
 		return nil, fmt.Errorf("agent: buildParallelExpansion: unknown cpn %q", parallelID)
 	}
 
+	// Parallel expansion bypasses normal node construction; validate its params here.
+	if _, err := buildNodeBody(ctx, parallelID, "Parallel", "", comp.Obj.Params); err != nil {
+		return nil, fmt.Errorf("agent: parallel %q: %w", parallelID, err)
+	}
+
 	members := collectGroupedMembers(c, parallelID)
 	if len(members) == 0 {
 		members = collectDescendants(c, parallelID)
@@ -178,10 +183,9 @@ func buildParallelItemWorkflow(
 			if err != nil || localState == nil {
 				return nil, fmt.Errorf("agent: parallel %q item collector: no canvas state in context", parallelID)
 			}
-			out := map[string]any{
-				"item":  localState.Globals["__item__"],
-				"index": localState.Globals["__index__"],
-			}
+			item, _ := localState.GetGlobal("__item__")
+			index, _ := localState.GetGlobal("__index__")
+			out := map[string]any{"item": item, "index": index}
 			for cpnID, bucket := range localState.Snapshot() {
 				cp := make(map[string]any, len(bucket))
 				for k, v := range bucket {
@@ -268,8 +272,8 @@ func buildParallelOuterWorkflow(
 		if cloneErr != nil {
 			return nil, fmt.Errorf("agent: parallel %q item %d: clone state: %w", key, index, cloneErr)
 		}
-		localState.Globals["__item__"] = itemMap["item"]
-		localState.Globals["__index__"] = index
+		localState.SetGlobal("__item__", itemMap["item"])
+		localState.SetGlobal("__index__", index)
 		return runtime.WithState(ctx, localState), nil
 	}))
 

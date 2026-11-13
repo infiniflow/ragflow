@@ -36,7 +36,7 @@ func permissionErrorResult(err error, hideResource bool) (common.ErrorCode, stri
 
 func respondPermissionError(c *gin.Context, err error, hideResource bool) {
 	code, message := permissionErrorResult(err, hideResource)
-	common.ResponseWithCodeData(c, code, nil, message)
+	common.RespondError(c, code, message)
 }
 
 func respondPermissionErrorIf(c *gin.Context, err error, hideResource bool) bool {
@@ -47,14 +47,9 @@ func respondPermissionErrorIf(c *gin.Context, err error, hideResource bool) bool
 	return true
 }
 
-func respondPermissionFailure(c *gin.Context, err error, hideResource bool) {
-	code, message := permissionErrorResult(err, hideResource)
-	common.ErrorWithCode(c, code, message)
-}
-
 func respondHTTPPermissionError(c *gin.Context, err error, hideResource bool) {
 	code, message := permissionErrorResult(err, hideResource)
-	common.ResponseWithHttpCodeData(c, int(code), code, nil, message)
+	common.Respond(c, int(code), code, nil, message)
 }
 
 // sortTermsFromQuery reads the `sort` parameter, a comma separated list of

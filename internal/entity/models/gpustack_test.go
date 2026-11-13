@@ -5,6 +5,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"ragflow/internal/common"
+	"reflect"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -73,11 +77,14 @@ func newGPUStackSSEServer(t *testing.T, expectedPath, ssePayload string) *httpte
 func newGPUStackForTest(baseURL string) *GPUStackModel {
 	return NewGPUStackModel(
 		map[string]string{"default": baseURL},
-		URLSuffix{Chat: "v1/chat/completions", Models: "v1/models", Embedding: "v1-openai/embeddings"},
+		URLSuffix{
+			Chat: "v1/chat/completions", Models: "v1/models", Embedding: "v1/embeddings",
+			Rerank: "v1/rerank", ASR: "v1/audio/transcriptions", TTS: "v1/audio/speech",
+		},
 	)
 }
 
-const gpustackEmbeddingsPath = "/v1-openai/embeddings"
+const gpustackEmbeddingsPath = "/v1/embeddings"
 
 func TestGPUStackName(t *testing.T) {
 	if got := newGPUStackForTest("http://unused").Name(); got != "gpustack" {
@@ -495,6 +502,226 @@ func TestGPUStackListModelsHappyPath(t *testing.T) {
 	}
 }
 
+// newGPUStackCategoryServer serves /v1/models like GPUStack: every route without
+// a filter, or only the routes carrying one of the requested categories.
+func newGPUStackCategoryServer(t *testing.T, routes map[string][]string) *httptest.Server {
+	t.Helper()
+	names := make([]string, 0, len(routes))
+	for name := range routes {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Errorf("path=%s", r.URL.Path)
+		}
+		requested := r.URL.Query()["categories"]
+		data := []map[string]interface{}{}
+		for _, name := range names {
+			if len(requested) == 0 || slices.Contains(routes[name], requested[0]) {
+				data = append(data, map[string]interface{}{"id": name})
+			}
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": data})
+	}))
+}
+
+func gpustackModelTypesByName(t *testing.T, baseURL string) map[string][]string {
+	t.Helper()
+	apiKey := "test-key"
+	listed, err := newGPUStackForTest(baseURL).ListModels(t.Context(), &APIConfig{ApiKey: &apiKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	types := make(map[string][]string, len(listed))
+	for _, model := range listed {
+		types[model.Name] = model.ModelTypes
+	}
+	return types
+}
+
+func TestGPUStackListModelsUsesCategories(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newGPUStackCategoryServer(t, map[string][]string{
+		"assistant":           {"llm"},
+		"kb-encoder":          {"embedding"},
+		"doc-sorter":          {"reranker"},
+		"voice-in":            {"speech_to_text"},
+		"voice-out":           {"text_to_speech"},
+		"qwen2.5-vl":          {"llm"},
+		"rerank-as-embedding": {"embedding"},
+		"whisper-small":       {"llm"},
+		"bge-as-rerank":       {"reranker"},
+		"painter":             {"image"},
+		"no-category":         {},
+		"bge-m3-route":        {},
+	})
+	defer srv.Close()
+
+	got := gpustackModelTypesByName(t, srv.URL)
+	want := map[string][]string{
+		"assistant":  {modelTypeChat},
+		"kb-encoder": {modelTypeEmbedding},
+		"doc-sorter": {modelTypeRerank},
+		"voice-in":   {modelTypeASR},
+		"voice-out":  {modelTypeTTS},
+		// Vision has no GPUStack category, so it still comes from the name.
+		"qwen2.5-vl": {modelTypeChat, modelTypeVision},
+		// A specific category beats a name that suggests something else.
+		"rerank-as-embedding": {modelTypeEmbedding},
+		"bge-as-rerank":       {modelTypeRerank},
+		// "llm" is GPUStack's default for unknown architectures, so the name wins.
+		"whisper-small": {modelTypeASR},
+		// Routes without categories fall back to the name.
+		"no-category":  {modelTypeChat},
+		"bge-m3-route": {modelTypeEmbedding},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("types=%v\nwant %v", got, want)
+	}
+}
+
+// CosyVoice has no config.json, so GPUStack files it under "llm" by default.
+func TestGPUStackListModelsDetectsTTSFromVoices(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data := []map[string]interface{}{{"id": "plain"}, {"id": "voice-out"}}
+		switch r.URL.Query().Get("categories") {
+		case "":
+			if r.URL.Query().Get("with_meta") == "true" {
+				data[1]["meta"] = map[string]interface{}{"voices": []string{"Chinese Female"}}
+			}
+		case "llm":
+		default:
+			data = nil
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": data})
+	}))
+	defer srv.Close()
+
+	got := gpustackModelTypesByName(t, srv.URL)
+	want := map[string][]string{"plain": {modelTypeChat}, "voice-out": {modelTypeTTS}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("types=%v, want %v", got, want)
+	}
+}
+
+func TestGPUStackListModelsReadsContextLengthFromMeta(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		data := []map[string]interface{}{{"id": "served"}, {"id": "unknown"}}
+		if r.URL.Query().Get("with_meta") == "true" {
+			data[0]["meta"] = map[string]interface{}{"max_model_len": 8192}
+		}
+		if r.URL.Query().Has("categories") {
+			data = nil
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": data})
+	}))
+	defer srv.Close()
+
+	apiKey := "test-key"
+	listed, err := newGPUStackForTest(srv.URL).ListModels(t.Context(), &APIConfig{ApiKey: &apiKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(listed) != 2 {
+		t.Fatalf("listed=%v", listed)
+	}
+	if listed[0].ContextLength == nil || *listed[0].ContextLength != 8192 {
+		t.Errorf("served context length=%v, want 8192", listed[0].ContextLength)
+	}
+	if listed[1].ContextLength != nil {
+		t.Errorf("unknown context length=%v, want nil", *listed[1].ContextLength)
+	}
+}
+
+func TestGPUStackListModelsSingleCategoryCluster(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newGPUStackCategoryServer(t, map[string][]string{"a": {"embedding"}, "b": {"embedding"}})
+	defer srv.Close()
+
+	got := gpustackModelTypesByName(t, srv.URL)
+	want := map[string][]string{"a": {modelTypeEmbedding}, "b": {modelTypeEmbedding}}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("types=%v, want %v", got, want)
+	}
+}
+
+func TestGPUStackListModelsIgnoresUnappliedCategoryFilter(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]interface{}{{"id": "bge-m3"}, {"id": "bge-reranker-v2-m3"}, {"id": "qwen3-8b"}},
+		})
+	}))
+	defer srv.Close()
+
+	got := gpustackModelTypesByName(t, srv.URL)
+	want := map[string][]string{
+		"bge-m3":             {modelTypeEmbedding},
+		"bge-reranker-v2-m3": {modelTypeRerank},
+		"qwen3-8b":           {modelTypeChat},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("types=%v, want %v", got, want)
+	}
+}
+
+func TestGPUStackListModelsSurvivesCategoryLookupFailure(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Has("categories") {
+			http.Error(w, "boom", http.StatusInternalServerError)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"data": []map[string]interface{}{{"id": "bge-m3"}}})
+	}))
+	defer srv.Close()
+
+	got := gpustackModelTypesByName(t, srv.URL)
+	if !reflect.DeepEqual(got, map[string][]string{"bge-m3": {modelTypeEmbedding}}) {
+		t.Errorf("types=%v", got)
+	}
+}
+
+func TestGPUStackListModelsReportsAuthFailure(t *testing.T) {
+	withSSRFBypass(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"code":401,"message":"Invalid authentication credentials"}`, http.StatusUnauthorized)
+	}))
+	defer srv.Close()
+
+	apiKey := "wrong"
+	_, err := newGPUStackForTest(srv.URL).ListModels(t.Context(), &APIConfig{ApiKey: &apiKey})
+	if err == nil || !strings.Contains(err.Error(), "401") {
+		t.Errorf("err=%v, want the 401 surfaced", err)
+	}
+}
+
+func TestGPUStackEmbedRecordsUsage(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"id":    "embd-1",
+			"data":  []map[string]interface{}{{"embedding": []float64{0.1}, "index": 0}},
+			"usage": map[string]interface{}{"prompt_tokens": 8, "total_tokens": 8},
+		})
+	})
+	defer srv.Close()
+
+	model := "bge-m3"
+	apiKey := "test-key"
+	usage := &common.ModelUsage{}
+	_, err := configuredGPUStackForTest(t, srv.URL).Embed(t.Context(), &model, EmbedRequest{Texts: []string{"hello"}}, &APIConfig{ApiKey: &apiKey}, nil, usage)
+	if err != nil {
+		t.Fatalf("Embed: %v", err)
+	}
+	if usage.TotalTokens != 8 || usage.Type != "embedding" || usage.RequestID != "embd-1" {
+		t.Errorf("usage=%+v", usage)
+	}
+}
+
 func TestGPUStackListModelsAllowsEmptyAPIKey(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()
@@ -504,41 +731,45 @@ func TestGPUStackListModelsAllowsEmptyAPIKey(t *testing.T) {
 	}
 }
 
-// TestGPUStackEmbedHappyPath verifies request shape and dimensions on v1-openai/embeddings.
+// TestGPUStackEmbedHappyPath verifies request shape and dimensions on v1/embeddings.
 func TestGPUStackEmbedHappyPath(t *testing.T) {
 	withSSRFBypass(t)
-	srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
-		if body["model"] != "bge-m3" {
-			t.Errorf("model=%v", body["model"])
-		}
-		if body["dimensions"] != float64(512) {
-			t.Errorf("dimensions=%v, want 512", body["dimensions"])
-		}
-		inputs, ok := body["input"].([]interface{})
-		if !ok || len(inputs) != 2 {
-			t.Errorf("input=%v, want 2-element array", body["input"])
-		}
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{
-			"data": []map[string]interface{}{
-				{"embedding": []float64{0.2, 0.2}, "index": 1},
-				{"embedding": []float64{0.1, 0.2}, "index": 0},
-			},
-		})
-	})
-	defer srv.Close()
+	for _, basePath := range []string{"", "/v1/"} {
+		t.Run("base="+basePath, func(t *testing.T) {
+			srv := newGPUStackServer(t, gpustackEmbeddingsPath, func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
+				if body["model"] != "bge-m3" {
+					t.Errorf("model=%v", body["model"])
+				}
+				if body["dimensions"] != float64(512) {
+					t.Errorf("dimensions=%v, want 512", body["dimensions"])
+				}
+				inputs, ok := body["input"].([]interface{})
+				if !ok || len(inputs) != 2 {
+					t.Errorf("input=%v, want 2-element array", body["input"])
+				}
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{
+					"data": []map[string]interface{}{
+						{"embedding": []float64{0.2, 0.2}, "index": 1},
+						{"embedding": []float64{0.1, 0.2}, "index": 0},
+					},
+				})
+			})
+			defer srv.Close()
 
-	apiKey := "test-key"
-	model := "bge-m3"
-	ctx := t.Context()
-	vecs, err := newGPUStackForTest(srv.URL).Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, &EmbeddingConfig{Dimension: 512}, nil)
-	if err != nil {
-		t.Fatalf("Embed: %v", err)
-	}
-	if len(vecs) != 2 {
-		t.Fatalf("len(vecs)=%d, want 2", len(vecs))
-	}
-	if vecs[0].Index != 0 || vecs[0].Embedding[0] != 0.1 || vecs[1].Index != 1 || vecs[1].Embedding[0] != 0.2 {
-		t.Errorf("vecs=%+v", vecs)
+			apiKey := "test-key"
+			model := "bge-m3"
+			ctx := t.Context()
+			vecs, err := configuredGPUStackForTest(t, srv.URL+basePath).Embed(ctx, &model, EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, &EmbeddingConfig{Dimension: 512}, nil)
+			if err != nil {
+				t.Fatalf("Embed: %v", err)
+			}
+			if len(vecs) != 2 {
+				t.Fatalf("len(vecs)=%d, want 2", len(vecs))
+			}
+			if vecs[0].Index != 0 || vecs[0].Embedding[0] != 0.1 || vecs[1].Index != 1 || vecs[1].Embedding[0] != 0.2 {
+				t.Errorf("vecs=%+v", vecs)
+			}
+		})
 	}
 }
 
@@ -714,18 +945,11 @@ func TestGPUStackUnsupportedMethods(t *testing.T) {
 	ctx := t.Context()
 	m := newGPUStackForTest("http://unused")
 	model := "x"
-	if _, err := m.Rerank(ctx, &model, RerankRequest{Query: "q", Documents: []string{"a"}}, &APIConfig{}, &RerankConfig{TopN: 1}, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("Rerank: %v", err)
-	}
+
 	if _, err := m.Balance(ctx, &APIConfig{}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("Balance: %v", err)
 	}
-	if _, err := m.TranscribeAudio(ctx, &model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("TranscribeAudio: %v", err)
-	}
-	if _, err := m.AudioSpeech(ctx, &model, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
-		t.Errorf("AudioSpeech: %v", err)
-	}
+
 	if _, err := m.OCRFile(ctx, &model, nil, &model, &APIConfig{}, nil, nil); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("OCRFile: %v", err)
 	}

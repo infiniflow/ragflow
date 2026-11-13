@@ -180,7 +180,7 @@ that declares an unavailable counter fails instead of being calibrated silently.
 
 | id | family / models | asset (SHA-1 pinned) | implementation |
 |---|---|---|---|
-| `cl100k_base` | OpenAI `text-embedding-3-*`, `ada-002` | `ragflow_deps/cl100k_base.tiktoken` (`download_deps.py`) | tiktoken-go + offline loader (`bpe_loader.go`) |
+| `cl100k_base` | OpenAI `text-embedding-3-*`, `ada-002` | `deps/cl100k_base.tiktoken` (`download_deps.py`) | tiktoken-go + offline loader (`bpe_loader.go`) |
 | `xlmr-spm` | `bge-m3`, `multilingual-e5-*`, `m3e`, `gte-multilingual`, `jina-embeddings-v3` | `…/BAAI/bge-m3/sentencepiece.bpe.model` `7e88c49f…` | `spm.go`: Unigram Viterbi, byte fallback, NFKC + whitespace + charmap-lite |
 | `bert-wordpiece` | `bge-{large,base,small}-en-v1.5`, `bge-en-icl`, `e5-{base,large}-v2`, `gte-{base,large}`, `jina-embeddings-v2-*` | `…/BAAI/bge-large-en-v1.5/vocab.txt` `c3b41053…` | `wordpiece.go`: BertNormalizer + BertPreTokenizer + `##` longest-match |
 | `qwen-bpe` | `Qwen3-Embedding-*` | `…/Qwen/Qwen3-Embedding-0.6B/tokenizer.json` `e6592f4d…` | `bpe.go`: hand-written Split scanner, GPT-2 byte alphabet, BPE |
@@ -348,11 +348,11 @@ an unrelated `vocab.txt` there silently replaces the verified artifact; and audi
    `vocab.txt` / `sentencepiece.bpe.model`). If the vocabulary is byte-identical to a
    family fixture, only step 4 is needed; if it differs, the model needs its own fixture.
 2. **Add the artifact** to the `TOKENIZER_ASSETS` list inlined in
-   `ragflow_deps/download_deps.py` (the downloader fetches individual files from) -
+   `deps/download_deps.py` (the downloader fetches individual files from) -
    individual files, not `snapshot_download` of a multi-GB repo - pin its SHA-1 in the
    loader map so a mismatch fails at load instead of counting with the wrong table, and add
    it to the copy loop in `Dockerfile` / `Dockerfile_base` so every runtime image ships it
-   (the published `ragflow_deps` image also needs the asset, so refresh it -
+   (the published `deps` image also needs the asset, so refresh it -
    see §Assets and the oracle for the whole chain).
 3. **Add the fixture line** to `ORACLES` in `scripts/gen_tokenizer_oracle.py`, generate it,
    and run `TestCountersMatchOracle`. Passing means every sample agrees, or sits inside the
@@ -390,10 +390,10 @@ property tier green, `gofmt` clean.
 ## Assets and the oracle
 
 Assets are fetched, never committed: the `TOKENIZER_ASSETS` list inlined in
-`ragflow_deps/download_deps.py` is the source the downloader reads to download
+`deps/download_deps.py` is the source the downloader reads to download
 **individual files** (not `snapshot_download` of a repo that also carries multi-GB
 weights) from, into
-`ragflow_deps/huggingface.co/<repo>/<file>`, which
+`deps/huggingface.co/<repo>/<file>`, which
 `.gitignore` already excludes (`huggingface.co/`). Loaders read them from disk with a
 SHA-1 pin, walk up from the working and executable directories like `bpe_loader.go`, and
 perform no network I/O. A missing asset fails loudly at every layer that can report one: the
@@ -402,10 +402,10 @@ model declares a tokenizer it cannot load refuses to count rather than substitut
 calibrated estimate, and the cl100k table fetched from the OpenAI blob has always been a startup panic when missing.
 
 **The whole chain, because a gap in it is invisible**: `download_deps.py` writes
-`ragflow_deps/huggingface.co/…`; the published `ragflow_deps` image contains those
+`deps/huggingface.co/…`; the published `deps` image contains those
 files under `/huggingface.co`; the root
 `Dockerfile` and `Dockerfile_base` bind-mount that image and copy the four *runtime*
-tokenizer assets into `/ragflow/ragflow_deps/huggingface.co/…`, which is where the
+tokenizer assets into `/ragflow/deps/huggingface.co/…`, which is where the
 counters look (the working directory is `/ragflow`). The `tokenizer.json` files that
 exist only as cross-check oracles are deliberately **not** shipped. Two consequences
 worth knowing: adding an asset means touching all three places (script, deps image,
@@ -428,23 +428,23 @@ degraded to the calibrated path in the image.
 
 By default the loaders walk the working directory and the executable's directory (and
 their ancestors) for the shipped relative names. `MODEL_ASSETS_DIR` overrides that: it
-names a directory playing the role of `ragflow_deps/` - downloaded model assets in the
+names a directory playing the role of `deps/` - downloaded model assets in the
 HuggingFace repo layout - and it is **consulted first**. Three spellings are accepted, so
 an operator can point at whichever tree they have:
 
 | `MODEL_ASSETS_DIR` points at | candidate used |
 |---|---|
-| the `ragflow_deps`-like root | `<dir>/huggingface.co/<repo>/<file>` |
+| the `deps`-like root | `<dir>/huggingface.co/<repo>/<file>` |
 | a `huggingface.co`-like root | `<dir>/<repo>/<file>` |
 | a flat directory | `<dir>/<file>` |
 
 The variable is deliberately **not** embedding-specific: `resolveDeepDocModelDir`
 also checks `<dir>/huggingface.co/InfiniFlow/deepdoc` when `MODEL_ASSETS_DIR`
 points at `<dir>`. The downloader prepares the five Go DeepDoc files in that tree
-under `ragflow_deps/`, as well as in `internal/rag/res/deepdoc/` for local use.
-One mounted `ragflow_deps/` directory can therefore serve both asset types.
-`ragflow_deps/Dockerfile` packages the tree under `/huggingface.co/` when built
-from `ragflow_deps/`.
+under `deps/`, as well as in `internal/rag/res/deepdoc/` for local use.
+One mounted `deps/` directory can therefore serve both asset types.
+`deps/Dockerfile` packages the tree under `/huggingface.co/` when built
+from `deps/`.
 The layout and the precedence are pinned by tests:
 `internal/common/model_assets_test.go` for the candidate list, and
 `internal/tokenizer/asset_dir_test.go` for the end-to-end case (a child process with an
@@ -455,7 +455,7 @@ Two things make the state of the assets observable:
 - each counter reports the file it loaded (`SourcePath`), so logs and failures can name it;
 - the ingestor logs an **availability report once at startup** -
   `embedding tokenizer counters {available: [...]}` plus, when something is missing, a
-  warning naming the unavailable ones and pointing at `ragflow_deps/download_deps.py` /
+  warning naming the unavailable ones and pointing at `deps/download_deps.py` /
   `MODEL_ASSETS_DIR`. The report is diagnostics rather than the guard: startup is not fatal
   (untagged models count with the calibrated estimate by design, and they keep working), but
   ingesting a model that declares a missing asset fails outright - so this report is what
@@ -489,7 +489,7 @@ exactly one such spot, 18,182 tokens in).
 
 | counter | reference implementation | what is compared |
 |---|---|---|
-| `cl100k_base` | OpenAI's own `tiktoken` (Python 0.12.0) over the table shipped in `ragflow_deps` | token **ids** (the numbering is shared - both read the same table) |
+| `cl100k_base` | OpenAI's own `tiktoken` (Python 0.12.0) over the table shipped in `deps` | token **ids** (the numbering is shared - both read the same table) |
 | `xlmr-spm` | the HuggingFace conversion of `BAAI/bge-m3` (the files SILICONFLOW serves), via `tokenizers` 0.22.2 reading the model's `tokenizer.json` | token **texts** - this family's ids are renumbered by the conversion (below) |
 | `bert-wordpiece` | the same library reading `BAAI/bge-large-en-v1.5/tokenizer.json`; the algorithm itself is Google's `WordPiece` / `BasicTokenizer` | token texts (ids match as well) |
 | `qwen-bpe`, `llama-bpe` | the same library reading each model's `tokenizer.json` | token texts (ids match as well) |
@@ -615,7 +615,7 @@ against a different vocabulary:
 
 | counter | authoritative artifact (pinned) | format / algorithm reference | behavioural reference |
 |---|---|---|---|
-| `cl100k_base` | `ragflow_deps/cl100k_base.tiktoken` (`expectedBpeHashes`, `bpe_loader.go`) | tiktoken's table format (`<base64 token> <rank>` per line) | the table itself, plus the Python anchors in `TestNumTokensFromString_MatchesPythonAnchors` |
+| `cl100k_base` | `deps/cl100k_base.tiktoken` (`expectedBpeHashes`, `bpe_loader.go`) | tiktoken's table format (`<base64 token> <rank>` per line) | the table itself, plus the Python anchors in `TestNumTokensFromString_MatchesPythonAnchors` |
 | `xlmr-spm` | `BAAI/bge-m3/sentencepiece.bpe.model` `7e88c49f…` | `sentencepiece/model.proto` wire format (decoded by the minimal protobuf reader in `spm.go`): `pieces`, `trainer_spec.model_type = UNIGRAM`, `normalizer_spec`; Unigram Viterbi; `BYTE` pieces for fallback | the HuggingFace conversion of the same repo (`tokenizer.json`) — it decides whitespace and pre-tokenization behaviour, and it **wins over the `.model` flags** when they disagree |
 | `bert-wordpiece` | `BAAI/bge-large-en-v1.5/vocab.txt` `c3b41053…` | HuggingFace `BertNormalizer` / `BertPreTokenizer` / `WordPiece`, whose configuration is quoted from the model's `tokenizer.json` in `wordpiece.go`'s header; BERT's own `_is_punctuation` (category **P**, not S) | the same `tokenizer.json` |
 | `qwen-bpe` | `Qwen/Qwen3-Embedding-0.6B/tokenizer.json` `e6592f4d…` | the artifact's `pre_tokenizer` regex, copied verbatim into `bpe.go`, plus GPT-2's `bytes_to_unicode` alphabet and canonical BPE merge order | the artifact's own `vocab` + `merges` (`NFC`, `byte_fallback=false`) |
