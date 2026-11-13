@@ -505,7 +505,7 @@ var AssertURLSchemeSafe = func(rawURL string) error {
 }
 
 var AssertURLSafe = func(rawURL string) (hostname, resolvedIP string, err error) {
-	return assertURLSafe(rawURL, LookupHost)
+	return assertURLSafe(rawURL, LookupHost, allowAnyHost(), PrivateNetworks{})
 }
 
 // AssertURLSafeWithContext validates every resolved address while allowing
@@ -513,10 +513,10 @@ var AssertURLSafe = func(rawURL string) (hostname, resolvedIP string, err error)
 var AssertURLSafeWithContext = func(ctx context.Context, rawURL string) (hostname, resolvedIP string, err error) {
 	return assertURLSafe(rawURL, func(host string) ([]string, error) {
 		return net.DefaultResolver.LookupHost(ctx, host)
-	})
+	}, allowAnyHost(), PrivateNetworks{})
 }
 
-func assertURLSafe(rawURL string, lookup func(string) ([]string, error)) (hostname, resolvedIP string, err error) {
+func assertURLSafe(rawURL string, lookup func(string) ([]string, error), allowAny bool, privateNetworks PrivateNetworks) (hostname, resolvedIP string, err error) {
 	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
 		return "", "", fmt.Errorf("invalid url")
@@ -534,7 +534,6 @@ func assertURLSafe(rawURL string, lookup func(string) ([]string, error)) (hostna
 		return "", "", fmt.Errorf("URL is missing a host")
 	}
 
-	allowAny := allowAnyHost()
 	addresses, err := lookup(hostname)
 	if err != nil {
 		return "", "", fmt.Errorf("could not resolve hostname '%s': %w", hostname, err)
@@ -548,7 +547,7 @@ func assertURLSafe(rawURL string, lookup func(string) ([]string, error)) (hostna
 		if ip == nil {
 			return "", "", fmt.Errorf("could not parse resolved address '%s' for hostname '%s'", addr, hostname)
 		}
-		if !allowAny && !isGlobalIP(effectiveIP(ip)) {
+		if !allowAny && !privateNetworks.permits(ip) {
 			return "", "", fmt.Errorf("URL resolves to a non-public address (%s), which is not allowed", ip.String())
 		}
 		if resolvedIP == "" {
@@ -570,14 +569,17 @@ func assertURLSafe(rawURL string, lookup func(string) ([]string, error)) (hostna
 // test_db_connection host guards, mirroring common/ssrf_guard.py:
 // assert_host_is_safe.
 var AssertHostSafe = func(host string) (resolvedIP string, err error) {
+	return assertHostSafe(host, allowAnyHost(), PrivateNetworks{})
+}
+
+func assertHostSafe(host string, allowAny bool, privateNetworks PrivateNetworks) (resolvedIP string, err error) {
 	host = strings.TrimSpace(host)
 	if host == "" {
 		return "", fmt.Errorf("host is missing")
 	}
 
-	allowAny := allowAnyHost()
 	if ip := net.ParseIP(host); ip != nil {
-		if !allowAny && !isGlobalIP(effectiveIP(ip)) {
+		if !allowAny && !privateNetworks.permits(ip) {
 			return "", fmt.Errorf("host is not a public address (%s), which is not allowed", ip.String())
 		}
 		return ip.String(), nil
@@ -596,7 +598,7 @@ var AssertHostSafe = func(host string) (resolvedIP string, err error) {
 		if ip == nil {
 			return "", fmt.Errorf("could not parse resolved address '%s' for hostname '%s'", addr, host)
 		}
-		if !allowAny && !isGlobalIP(effectiveIP(ip)) {
+		if !allowAny && !privateNetworks.permits(ip) {
 			return "", fmt.Errorf("hostname '%s' resolves to a non-public address (%s), which is not allowed", host, ip.String())
 		}
 		if resolvedIP == "" {

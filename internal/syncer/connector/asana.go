@@ -29,8 +29,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"ragflow/internal/utility"
 )
 
 const (
@@ -734,7 +732,7 @@ func includeAsanaDocument(request SyncRequest, document SourceDocument) bool {
 }
 
 func (c *AsanaConnector) downloadAsanaFile(ctx context.Context, rawURL string, maxSize int64) ([]byte, error) {
-	data, _, _, err := utility.FetchRemoteFileSafely(ctx, rawURL, maxSize)
+	data, _, _, err := fetchConnectorRemoteFile(ctx, rawURL, maxSize, 0)
 	return data, err
 }
 
