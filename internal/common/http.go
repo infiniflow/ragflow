@@ -109,8 +109,10 @@ func newSSRFHTTPClient() *http.Client {
 	if dt, ok := http.DefaultTransport.(*http.Transport); ok {
 		t = dt.Clone()
 	} else {
-		t = &http.Transport{Proxy: http.ProxyFromEnvironment}
+		t = &http.Transport{}
+
 	}
+	t.Proxy = nil
 	t.MaxIdleConns = 100
 	t.MaxIdleConnsPerHost = 10
 	t.IdleConnTimeout = 90 * time.Second
@@ -118,8 +120,11 @@ func newSSRFHTTPClient() *http.Client {
 	t.ResponseHeaderTimeout = llmHTTPResponseHeaderTimeout(ssrfResponseHeaderTimeoutDefault)
 	t.TLSHandshakeTimeout = 30 * time.Second
 
+	pinTable := NewPinTable()
+	t.DialContext = pinTable.WrapDialContext(t.DialContext)
+
 	var rt http.RoundTripper = t
-	rt = &strictSSRFTransport{base: rt}
+	rt = &strictSSRFTransport{base: rt, pins: pinTable}
 	rt = NewProviderLoggingTransport(rt)
 	return &http.Client{Transport: rt}
 }
@@ -455,15 +460,20 @@ func (t *schemeSafeTransport) RoundTrip(req *http.Request) (*http.Response, erro
 }
 
 // strictSSRFTransport wraps an http.RoundTripper so every outgoing request is
-// validated by the SSRF guard (scheme + host + globally routable IP unless
-// ALLOW_ANY_HOST is enabled).
-// This is the default for cloud-hosted model drivers and blocks private hosts,
-// loopback, link-local, and cloud metadata endpoints unless explicitly enabled.
-type strictSSRFTransport struct{ base http.RoundTripper }
+// validated by the SSRF guard unless ALLOW_ANY_HOST is enabled.
+// Validated hostnames are pinned so the dial does not resolve them again.
+type strictSSRFTransport struct {
+	base http.RoundTripper
+	pins *PinTable
+}
 
 func (t *strictSSRFTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if _, _, err := AssertURLSafe(req.URL.String()); err != nil {
+	hostname, resolvedIP, err := AssertURLSafe(req.URL.String())
+	if err != nil {
 		return nil, err
+	}
+	if t.pins != nil {
+		t.pins.Pin(hostname, resolvedIP)
 	}
 	return t.base.RoundTrip(req)
 }
