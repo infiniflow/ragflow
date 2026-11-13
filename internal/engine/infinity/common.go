@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 	"regexp"
+	"sort"
 	"strings"
 	"unicode"
 
@@ -392,13 +393,27 @@ func buildFilterFromCondition(condition map[string]interface{}, tableColumns map
 	return buildFilterFromConditionRaw(types.CompilationFilter(condition), tableColumns)
 }
 
+// sortedConditionKeys walks a filter condition in a stable order. Both filter
+// builders append clauses while ranging over the condition map, so an unsorted
+// walk renders the same logical filter with a different clause order on each
+// call — including the predicate of a bulk update or delete.
+func sortedConditionKeys(condition map[string]interface{}) []string {
+	keys := make([]string, 0, len(condition))
+	for k := range condition {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
 func buildFilterFromConditionRaw(condition map[string]interface{}, tableColumns map[string]struct {
 	Type    string
 	Default interface{}
 }) string {
 	var conditions []string
 
-	for k, v := range condition {
+	for _, k := range sortedConditionKeys(condition) {
+		v := condition[k]
 		if k == "and" || k == "or" {
 			var children []string
 			for _, child := range types.FilterClauses(v) {

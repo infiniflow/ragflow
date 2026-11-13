@@ -3162,7 +3162,8 @@ func equivalentConditionToStrRaw(condition map[string]interface{}, tableColumns 
 
 	var cond []string
 
-	for k, v := range condition {
+	for _, k := range sortedConditionKeys(condition) {
+		v := condition[k]
 		if k == "and" || k == "or" {
 			var children []string
 			for _, child := range types.FilterClauses(v) {
