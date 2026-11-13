@@ -50,6 +50,8 @@ export function ModelVerifyButton({
 }: ModelVerifyButtonProps) {
   const { t } = useTranslation();
   const cfg = VERIFY_ICON[status];
+  const actionLabel =
+    status === 'error' ? t('common.retry') : t('setting.Verify');
   return (
     <button
       type="button"
@@ -59,8 +61,8 @@ export function ModelVerifyButton({
       )}
       onClick={onVerify}
       disabled={status === 'loading'}
-      aria-label={`${status === 'error' ? 'Retry' : 'Verify'} ${modelName}`}
-      title={status === 'error' ? t('common.retry') : undefined}
+      aria-label={`${actionLabel} ${modelName}`}
+      title={status === 'error' ? actionLabel : undefined}
     >
       {cfg.icon}
     </button>

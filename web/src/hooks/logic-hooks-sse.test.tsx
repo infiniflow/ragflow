@@ -144,3 +144,26 @@ it('reports an error answer that arrives with a zero code', async () => {
   await sendOnce(result);
   expect(result.current.error).toBe('provider unavailable');
 });
+
+it.each([
+  ['an HTML page', 'Bad Gateway'],
+  ['an empty body', ''],
+])('reports a non-OK status whose body is %s', async (_name, text) => {
+  mockFetch.mockResolvedValueOnce(fakeResponse({ status: 502, text }));
+  const { result } = renderHook(() => useSendMessageWithSse());
+
+  await sendOnce(result);
+  expect(result.current.error).toBe('status text');
+  expect(result.current.done).toBe(true);
+});
+
+it('falls back to the HTTP status when a non-OK response has no status text', async () => {
+  mockFetch.mockResolvedValueOnce({
+    ...fakeResponse({ status: 503, text: '' }),
+    statusText: '',
+  });
+  const { result } = renderHook(() => useSendMessageWithSse());
+
+  await sendOnce(result);
+  expect(result.current.error).toBe('HTTP 503');
+});

@@ -354,6 +354,27 @@ export const useSendQuestion = (
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([]);
   const [pageSize, setPageSize] = useState(10);
 
+  // Asks for the AI summary only, leaving the retrieved documents alone.
+  const askSummary = useCallback(
+    (question: string) => {
+      if (!sharedId && !searchId) {
+        message.error('Search ID is required.');
+        return false;
+      }
+      setCurrentAnswer({} as IAnswer);
+      setSendingLoading(true);
+      lastQuestionRef.current = question;
+      send(askUrl, {
+        kb_ids: kbIds,
+        question,
+        tenantId,
+        search_id: searchId,
+      });
+      return true;
+    },
+    [send, askUrl, kbIds, tenantId, searchId, sharedId],
+  );
+
   const sendQuestion = useCallback(
     (question: string, enableAI: boolean = true) => {
       const q = trim(question);
@@ -361,19 +382,8 @@ export const useSendQuestion = (
       setIsFirstRender(false);
       setCurrentAnswer({} as IAnswer);
       setSelectedDocumentIds([]);
-      if (enableAI) {
-        if (!sharedId && !searchId) {
-          message.error('Search ID is required.');
-          return;
-        }
-        setSendingLoading(true);
-        lastQuestionRef.current = q;
-        send(askUrl, {
-          kb_ids: kbIds,
-          question: q,
-          tenantId,
-          search_id: searchId,
-        });
+      if (enableAI && !askSummary(q)) {
+        return;
       }
       testChunk({
         kb_id: kbIds,
@@ -389,22 +399,23 @@ export const useSendQuestion = (
       }
     },
     [
-      send,
+      askSummary,
       testChunk,
-      askUrl,
       kbIds,
       fetchRelatedQuestions,
       pageSize,
-      tenantId,
       searchId,
-      sharedId,
       related_search,
     ],
   );
 
+  // A failed summary is asked again as it was, without touching the document
+  // filter or the results page the user has since chosen.
   const retryAnswer = useCallback(() => {
-    sendQuestion(lastQuestionRef.current);
-  }, [sendQuestion]);
+    if (lastQuestionRef.current) {
+      askSummary(lastQuestionRef.current);
+    }
+  }, [askSummary]);
 
   const handleSearchStrChange: ChangeEventHandler<HTMLInputElement> =
     useCallback((e) => {

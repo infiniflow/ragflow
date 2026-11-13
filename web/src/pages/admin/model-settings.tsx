@@ -14,7 +14,7 @@
  *  limitations under the License.
  */
 
-import { ChangeEvent, FormEvent, useCallback, useState } from 'react';
+import { ChangeEvent, FormEvent, useCallback, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { LucideLoader2, LucideSave } from 'lucide-react';
@@ -63,32 +63,48 @@ function AdminModelSettings() {
   const parsed = parseLlmMaxRetriesInput(input);
   const isDirty = parsed.valid && parsed.value !== (savedValue ?? null);
 
+  // A number input reports text it cannot parse (such as "-") as "", which is
+  // also what an intentionally blank field reports. The browser's own validity
+  // state tells them apart, and the shared Input rebuilds its event target, so
+  // it is read from the element.
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [hasBadInput, setHasBadInput] = useState(false);
+
   // The shared number Input reports its value as a number, or "" when empty.
   const handleChange = useCallback((e: ChangeEvent<HTMLInputElement>) => {
+    setHasBadInput(inputRef.current?.validity.badInput ?? false);
     setDraft(String(e.target.value));
   }, []);
+
+  const canSave = !saving && !hasBadInput && parsed.valid && isDirty;
 
   const handleSubmit = useCallback(
     (e: FormEvent) => {
       e.preventDefault();
-      if (!parsed.valid) return;
-      save(parsed.value, { onSuccess: () => setDraft(undefined) });
+      if (hasBadInput || !parsed.valid) return;
+      const submitted = input;
+      // Keep whatever was typed while the save was running.
+      save(parsed.value, {
+        onSuccess: () =>
+          setDraft((current) => (current === submitted ? undefined : current)),
+      });
     },
-    [parsed, save],
+    [hasBadInput, input, parsed, save],
   );
 
   const handleRetryLoad = useCallback(() => {
     refetch();
   }, [refetch]);
 
-  const fieldError = parsed.valid
-    ? undefined
-    : parsed.reason === 'notInteger'
+  const fieldError =
+    hasBadInput || (!parsed.valid && parsed.reason === 'notInteger')
       ? t('admin.modelSettingsPage.errorNotInteger')
-      : t('admin.modelSettingsPage.errorOutOfRange', {
-          min: MinLlmMaxRetries,
-          max: MaxLlmMaxRetries,
-        });
+      : !parsed.valid
+        ? t('admin.modelSettingsPage.errorOutOfRange', {
+            min: MinLlmMaxRetries,
+            max: MaxLlmMaxRetries,
+          })
+        : undefined;
 
   return (
     <Card className="!shadow-none relative h-full bg-transparent overflow-hidden">
@@ -121,6 +137,7 @@ function AdminModelSettings() {
                 {t('admin.modelSettingsPage.maxRetries')}
               </Label>
               <Input
+                ref={inputRef}
                 id={FieldId}
                 type="number"
                 inputMode="numeric"
@@ -149,10 +166,7 @@ function AdminModelSettings() {
               </p>
             </div>
 
-            <Button
-              type="submit"
-              disabled={saving || !parsed.valid || !isDirty}
-            >
+            <Button type="submit" disabled={!canSave}>
               {saving ? (
                 <LucideLoader2 className="animate-spin" />
               ) : (

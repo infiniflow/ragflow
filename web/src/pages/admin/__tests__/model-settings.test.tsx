@@ -118,3 +118,58 @@ it('offers Retry when the setting cannot be loaded', async () => {
   expect(await field()).toHaveValue(2);
   expect(mockGet).toHaveBeenCalledTimes(2);
 });
+
+it('does not treat unparsable text as a blank field that clears the override', async () => {
+  mockGet.mockResolvedValue(stored('4'));
+  renderPage();
+
+  const input = await field();
+  // A number input reports text such as "-" as an empty value with badInput set.
+  Object.defineProperty(input, 'validity', {
+    configurable: true,
+    get: () => ({ badInput: true }),
+  });
+  fireEvent.change(input, { target: { value: '' } });
+
+  expect(
+    screen.getByText('admin.modelSettingsPage.errorNotInteger'),
+  ).toBeInTheDocument();
+  expect(saveButton()).toBeDisabled();
+  fireEvent.click(saveButton());
+  expect(mockSet).not.toHaveBeenCalled();
+});
+
+it('keeps edits made while a save is still pending', async () => {
+  mockGet.mockResolvedValue(stored('4'));
+  let finishSave!: (value: unknown) => void;
+  mockSet.mockReturnValue(new Promise((resolve) => (finishSave = resolve)));
+  renderPage();
+
+  const input = await field();
+  fireEvent.change(input, { target: { value: '6' } });
+  fireEvent.click(saveButton());
+  await waitFor(() => expect(mockSet).toHaveBeenCalledWith(6));
+
+  // Typed after Save was clicked and before it finished.
+  fireEvent.change(input, { target: { value: '7' } });
+  mockGet.mockResolvedValue(stored('6'));
+  finishSave({ data: { code: 0, message: '' } });
+
+  await waitFor(() => expect(mockNotify.success).toHaveBeenCalled());
+  expect(input).toHaveValue(7);
+});
+
+it('goes back to the saved value after a save when nothing was typed meanwhile', async () => {
+  mockGet.mockResolvedValue(stored('4'));
+  mockSet.mockResolvedValue({ data: { code: 0, message: '' } });
+  renderPage();
+
+  const input = await field();
+  fireEvent.change(input, { target: { value: '6' } });
+  mockGet.mockResolvedValue(stored('6'));
+  fireEvent.click(saveButton());
+
+  await waitFor(() => expect(mockNotify.success).toHaveBeenCalled());
+  await waitFor(() => expect(input).toHaveValue(6));
+  expect(saveButton()).toBeDisabled();
+});

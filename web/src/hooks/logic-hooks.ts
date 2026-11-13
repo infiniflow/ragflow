@@ -419,13 +419,24 @@ export const useSendMessageWithSse = () => {
         }
         setDoneValue(body, true);
         resetAnswer();
-        // A stream body is not JSON, so awaiting it rejects and lands in the
-        // catch below; a parseable body is an error envelope or a plain reply.
-        const data = await res;
-        if (response.status !== 200 || data?.code !== 0) {
-          setError(data?.message || response.statusText);
+        // A stream body is not JSON, so it does not parse; a parseable body is
+        // an error envelope or a plain reply. A non-OK status is a failure
+        // whatever the body: a proxy's 502 or 503 page is HTML or empty.
+        let data: any;
+        try {
+          data = await res;
+        } catch {
+          data = undefined;
         }
-        return { data, response };
+        if (
+          response.status !== 200 ||
+          (data !== undefined && data?.code !== 0)
+        ) {
+          setError(
+            data?.message || response.statusText || `HTTP ${response.status}`,
+          );
+        }
+        return data === undefined ? undefined : { data, response };
       } catch (e) {
         if (
           !gotResponse &&
