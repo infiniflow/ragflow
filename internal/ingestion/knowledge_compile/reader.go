@@ -669,7 +669,7 @@ func (r engineReader) SearchSimilar(ctx context.Context, tenant, kb string, vari
 		},
 		MatchExprs: []interface{}{
 			&types.MatchDenseExpr{
-				VectorColumnName: fmt.Sprintf("q_%d_vec", dim),
+				VectorColumnName: common.VectorColumnName(dim),
 				EmbeddingData:    vector,
 				DistanceType:     "cosine",
 				TopN:             topN,

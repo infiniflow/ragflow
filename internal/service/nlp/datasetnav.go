@@ -563,7 +563,7 @@ func (s *NavService) navScan(ctx context.Context, tenantID, kbID string, filter 
 		filter,
 		[]string{"type_kwd", "title_kwd", "docnm_kwd", "doc_id", "doc_ids_kwd", "_score"}, 0, limit,
 		[]interface{}{&types.MatchDenseExpr{
-			VectorColumnName:  fmt.Sprintf("q_%d_vec", len(f64)),
+			VectorColumnName:  common.VectorColumnName(len(f64)),
 			EmbeddingData:     f64,
 			EmbeddingDataType: "float",
 			DistanceType:      "cosine",
@@ -846,7 +846,7 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 			return err
 		}
 		if err := s.appendDocToCluster(ctx, de, in.TenantID, in.KbID, bestName, in.DocID,
-			fmt.Sprintf("q_%d_vec", len(vec)), in.CompileKind); err != nil {
+			common.VectorColumnName(len(vec)), in.CompileKind); err != nil {
 			return err
 		}
 		// Explicit stable id (A5): the nav_doc row is addressable by a
@@ -868,13 +868,13 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 			"parent_kwd": parent,
 			// The nav_doc sits one level below its (possibly nested) parent
 			// cluster, so its depth is parentDepth+1 — not a hard-coded 1.
-			"depth_int":           bestDepth + 1,
-			"doc_id":              in.DocID,
-			"doc_count_int":       1,
-			"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_doc", "description": in.Summary}),
-			"content_ltks":        contentLtks,
-			"content_sm_ltks":     contentSmLtks,
-			"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
+			"depth_int":                       bestDepth + 1,
+			"doc_id":                          in.DocID,
+			"doc_count_int":                   1,
+			"content_with_weight":             payloadJSONNav(map[string]interface{}{"type": "nav_doc", "description": in.Summary}),
+			"content_ltks":                    contentLtks,
+			"content_sm_ltks":                 contentSmLtks,
+			common.VectorColumnName(len(vec)): f32ToF64Slice(vec),
 		}
 		_, err = de.InsertChunks(ctx, []map[string]interface{}{row}, idx, in.KbID, "")
 		return err
@@ -914,21 +914,21 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 		clusterContentSmLtks = clusterContentLtks
 	}
 	clusterRow := map[string]interface{}{
-		"id":                  navClusterID(in.TenantID, in.KbID, name),
-		"doc_id":              in.KbID, // cluster rows carry the kb as doc_id (Python _build_nav_cluster_row), so ES InsertChunks does not skip them
-		"compile_kwd":         in.CompileKind,
-		"scope_kwd":           "dataset",
-		"available_int":       0,
-		"type_kwd":            "nav_cluster",
-		"title_kwd":           name,
-		"parent_kwd":          parent,
-		"depth_int":           depth,
-		"doc_count_int":       1,
-		"doc_ids_kwd":         []string{in.DocID},
-		"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_cluster", "description": summary}),
-		"content_ltks":        clusterContentLtks,
-		"content_sm_ltks":     clusterContentSmLtks,
-		"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
+		"id":                              navClusterID(in.TenantID, in.KbID, name),
+		"doc_id":                          in.KbID, // cluster rows carry the kb as doc_id (Python _build_nav_cluster_row), so ES InsertChunks does not skip them
+		"compile_kwd":                     in.CompileKind,
+		"scope_kwd":                       "dataset",
+		"available_int":                   0,
+		"type_kwd":                        "nav_cluster",
+		"title_kwd":                       name,
+		"parent_kwd":                      parent,
+		"depth_int":                       depth,
+		"doc_count_int":                   1,
+		"doc_ids_kwd":                     []string{in.DocID},
+		"content_with_weight":             payloadJSONNav(map[string]interface{}{"type": "nav_cluster", "description": summary}),
+		"content_ltks":                    clusterContentLtks,
+		"content_sm_ltks":                 clusterContentSmLtks,
+		common.VectorColumnName(len(vec)): f32ToF64Slice(vec),
 	}
 	_, err = de.InsertChunks(ctx, []map[string]interface{}{clusterRow}, idx, in.KbID, "")
 	if err != nil {
@@ -940,20 +940,20 @@ func (s *NavService) UpsertDoc(ctx context.Context, in nav.UpsertDocInput) error
 	// nav tree with a single cluster and no nav_doc child, so /children returns
 	// empty. The nav_doc carries a readable title + parent_kwd = the cluster name.
 	docRow := map[string]interface{}{
-		"id":                  navDocID(in.TenantID, in.KbID, in.DocID),
-		"compile_kwd":         in.CompileKind,
-		"scope_kwd":           "doc",
-		"available_int":       0,
-		"type_kwd":            "nav_doc",
-		"title_kwd":           navDocTitle(in.Summary),
-		"parent_kwd":          name,
-		"depth_int":           depth + 1,
-		"doc_id":              in.DocID,
-		"doc_count_int":       1,
-		"content_with_weight": payloadJSONNav(map[string]interface{}{"type": "nav_doc", "description": in.Summary}),
-		"content_ltks":        contentLtks,
-		"content_sm_ltks":     contentSmLtks,
-		"q_" + fmt.Sprintf("%d", len(vec)) + "_vec": f32ToF64Slice(vec),
+		"id":                              navDocID(in.TenantID, in.KbID, in.DocID),
+		"compile_kwd":                     in.CompileKind,
+		"scope_kwd":                       "doc",
+		"available_int":                   0,
+		"type_kwd":                        "nav_doc",
+		"title_kwd":                       navDocTitle(in.Summary),
+		"parent_kwd":                      name,
+		"depth_int":                       depth + 1,
+		"doc_id":                          in.DocID,
+		"doc_count_int":                   1,
+		"content_with_weight":             payloadJSONNav(map[string]interface{}{"type": "nav_doc", "description": in.Summary}),
+		"content_ltks":                    contentLtks,
+		"content_sm_ltks":                 contentSmLtks,
+		common.VectorColumnName(len(vec)): f32ToF64Slice(vec),
 	}
 	_, err = de.InsertChunks(ctx, []map[string]interface{}{docRow}, idx, in.KbID, "")
 	return err
@@ -1087,7 +1087,7 @@ func (s *NavService) findBestCluster(ctx context.Context, tenantID, kbID string,
 			}),
 			[]string{"title_kwd", "docnm_kwd", "_score"}, 0, 1,
 			[]interface{}{&types.MatchDenseExpr{
-				VectorColumnName:  fmt.Sprintf("q_%d_vec", len(f64)),
+				VectorColumnName:  common.VectorColumnName(len(f64)),
 				EmbeddingData:     f64,
 				EmbeddingDataType: "float",
 				DistanceType:      "cosine",
@@ -1326,7 +1326,7 @@ func (s *NavService) maybeSplitCluster(ctx context.Context, tenantID, kbID, clus
 		// so the split cluster participates in KNN routing. This is a heuristic
 		// stand-in for Python's k-means centroid.
 		if vec := pickAnyVector(children, i2boolForTarget(spl.name, splitA)); len(vec) > 0 {
-			row["q_"+fmt.Sprintf("%d", len(vec))+"_vec"] = f32ToF64Slice(vec)
+			row[common.VectorColumnName(len(vec))] = f32ToF64Slice(vec)
 		}
 		if _, err := de.InsertChunks(ctx, []map[string]interface{}{row}, s.navIndexName(tenantID), kbID, ""); err != nil {
 			return err
@@ -1358,7 +1358,7 @@ func pickAnyVector(children []map[string]interface{}, wantA bool) []float32 {
 		// The engine returns dense vectors as []interface{} of float64 (q_<n>_vec
 		// is unboxed); walk any key that looks like a q_*_vec.
 		for k, v := range c {
-			if !strings.HasPrefix(k, "q_") || !strings.HasSuffix(k, "_vec") {
+			if !common.IsVectorColumn(k) {
 				continue
 			}
 			return toF32Vector(v)
@@ -1442,7 +1442,7 @@ func (s *NavService) mergeClusterDescription(ctx context.Context, de engine.DocE
 	}
 	if s.embed != nil {
 		if vecs, err := s.embed.Encode(ctx, tenantID, []string{merged}); err == nil && len(vecs) > 0 && len(vecs[0]) > 0 {
-			updates[fmt.Sprintf("q_%d_vec", len(vecs[0]))] = f32ToF64Slice(vecs[0])
+			updates[common.VectorColumnName(len(vecs[0]))] = f32ToF64Slice(vecs[0])
 		}
 	}
 	return de.UpdateChunks(ctx,
