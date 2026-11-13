@@ -620,3 +620,17 @@ func TestModularMetadataConfigWithLegacyNotFiredForModularShape(t *testing.T) {
 		t.Errorf("meta=%#v builtIn=%#v, want [{new_key}] and [] (stale legacy ignored)", meta, builtIn)
 	}
 }
+
+func TestModularMetadataConfigIgnoresLegacyWithoutFieldLists(t *testing.T) {
+	for _, pc := range []map[string]any{
+		{"enable_metadata": false},
+		{"enable_metadata": true},
+		{"metadata": "invalid"},
+		{"built_in_metadata": 42},
+	} {
+		present, enabled, meta, builtIn, usedLegacy := modularMetadataConfigWithLegacy(pc)
+		if present || enabled || usedLegacy || len(meta) != 0 || len(builtIn) != 0 {
+			t.Errorf("invalid legacy config %#v: got present=%v enabled=%v metadata=%#v builtIn=%#v usedLegacy=%v", pc, present, enabled, meta, builtIn, usedLegacy)
+		}
+	}
+}

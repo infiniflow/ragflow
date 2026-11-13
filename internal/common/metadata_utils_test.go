@@ -776,3 +776,31 @@ func TestDeclaredMetadataFieldsFallsBackToLegacyFlat(t *testing.T) {
 		t.Errorf("fields = %#v, want %#v", got, want)
 	}
 }
+
+func TestLegacyFlatMetadataConfigRequiresFieldList(t *testing.T) {
+	for name, pc := range map[string]map[string]any{
+		"disabled flag only":        {"enable_metadata": false},
+		"enabled flag only":         {"enable_metadata": true},
+		"invalid metadata":          {"metadata": "not a list"},
+		"invalid builtin":           {"built_in_metadata": 42},
+		"nil lists":                 {"metadata": nil, "built_in_metadata": nil},
+		"flag and invalid metadata": {"enable_metadata": false, "metadata": "invalid"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, ok := LegacyFlatMetadataConfig(pc); ok {
+				t.Fatalf("LegacyFlatMetadataConfig(%#v) returned a legacy config without a field list", pc)
+			}
+		})
+	}
+	for name, pc := range map[string]map[string]any{
+		"empty field list":                    {"metadata": []any{}},
+		"typed empty field list":              {"built_in_metadata": []map[string]any{}},
+		"valid builtin with invalid metadata": {"metadata": "invalid", "built_in_metadata": []any{map[string]any{"key": "author"}}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, ok := LegacyFlatMetadataConfig(pc); !ok {
+				t.Fatalf("LegacyFlatMetadataConfig(%#v) rejected an explicit field list", pc)
+			}
+		})
+	}
+}

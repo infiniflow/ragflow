@@ -494,10 +494,10 @@ func LegacyFlatMetadataConfig(parserConfig map[string]any) (map[string]any, bool
 		// ignored here.
 		return nil, false
 	}
-	flatMeta, hasMeta := parserConfig["metadata"]
-	flatBuiltIn, hasBuiltIn := parserConfig["built_in_metadata"]
+	flatMeta := MetadataRawFieldList(parserConfig["metadata"])
+	flatBuiltIn := MetadataRawFieldList(parserConfig["built_in_metadata"])
 	flatEnabled, hasFlatEnabled := parserConfig["enable_metadata"]
-	if !hasMeta && !hasBuiltIn && !hasFlatEnabled {
+	if flatMeta == nil && flatBuiltIn == nil {
 		return nil, false
 	}
 	metaObj := map[string]any{}
@@ -507,11 +507,11 @@ func LegacyFlatMetadataConfig(parserConfig map[string]any) (map[string]any, bool
 		// synthesis see the correct enabled state.
 		metaObj["enabled"] = ParserConfigBool(flatEnabled)
 	}
-	if hasMeta {
-		metaObj["metadata"] = MetadataRawFieldList(flatMeta)
+	if flatMeta != nil {
+		metaObj["metadata"] = flatMeta
 	}
-	if hasBuiltIn {
-		metaObj["built_in_metadata"] = MetadataRawFieldList(flatBuiltIn)
+	if flatBuiltIn != nil {
+		metaObj["built_in_metadata"] = flatBuiltIn
 	}
 	return metaObj, true
 }
