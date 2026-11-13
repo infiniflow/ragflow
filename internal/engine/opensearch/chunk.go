@@ -35,6 +35,7 @@ import (
 	"unicode/utf8"
 
 	"ragflow/internal/common"
+	"ragflow/internal/engine/internal/esoscommon"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/tokenizer"
 
@@ -711,7 +712,7 @@ func (e *Engine) updateChunksByQuery(ctx context.Context, indexName string, cond
 		switch val := v.(type) {
 		case string:
 			// Sanitize: replace ' \n \r with space
-			sanitized := sanitizeString(val)
+			sanitized := esoscommon.SanitizeString(val)
 			params[fmt.Sprintf("pp_%s", k)] = sanitized
 			scripts = append(scripts, fmt.Sprintf("ctx._source.%s=params.pp_%s;", k, k))
 		case int, int8, int16, int32, int64, float32, float64:
@@ -745,14 +746,6 @@ func (e *Engine) updateChunksByQuery(ctx context.Context, indexName string, cond
 	}
 	common.Debug("OpenSearchConnection.updateChunksByQuery completed", zap.String("indexName", indexName))
 	return nil
-}
-
-// sanitizeString replaces ' \n \r with space
-func sanitizeString(s string) string {
-	s = strings.ReplaceAll(s, "'", " ")
-	s = strings.ReplaceAll(s, "\n", " ")
-	s = strings.ReplaceAll(s, "\r", " ")
-	return strings.TrimSpace(s)
 }
 
 // copyFields creates a shallow copy of a map
