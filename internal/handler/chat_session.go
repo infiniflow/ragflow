@@ -162,6 +162,9 @@ type ChatCompletionsRequest struct {
 // @Success 200 {string} text/event-stream "Streaming SSE response"
 // @Router /api/v1/chat/completions [post]
 func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
+	common.StartOperationLog(c, "request_chat_completion")
+	defer common.FinishOperationLog(c)
+
 	var rawBody map[string]interface{}
 	if err := c.ShouldBindJSON(&rawBody); err != nil {
 		common.RespondError(c, common.CodeBadRequest, err.Error())
@@ -192,6 +195,8 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 	if sessionID == "" {
 		sessionID = req.ConversationID
 	}
+	common.SetOperationResource(c, "chat_id", req.ChatID)
+	common.SetOperationResource(c, "session_id", sessionID)
 
 	// Build generation config
 	genConfig := make(map[string]interface{})
@@ -244,6 +249,7 @@ func (h *ChatSessionHandler) ChatCompletions(c *gin.Context) {
 	}
 
 	if streamMode {
+		common.FinishOperationLog(c)
 		clearResponseWriteDeadline(c)
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
@@ -421,6 +427,11 @@ func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
 }
 
 func (h *ChatSessionHandler) DeleteSessionMessage(c *gin.Context) {
+	common.StartOperationLog(c, "delete_chat_message")
+	defer common.FinishOperationLog(c)
+	common.SetOperationResource(c, "chat_id", c.Param("chat_id"))
+	common.SetOperationResource(c, "message_id", c.Param("msg_id"))
+
 	chatID, sessionID, msgID := c.Param("chat_id"), c.Param("session_id"), c.Param("msg_id")
 
 	ctx := c.Request.Context()
@@ -436,6 +447,11 @@ func (h *ChatSessionHandler) DeleteSessionMessage(c *gin.Context) {
 }
 
 func (h *ChatSessionHandler) UpdateMessageFeedback(c *gin.Context) {
+	common.StartOperationLog(c, "update_chat_message_feedback")
+	defer common.FinishOperationLog(c)
+	common.SetOperationResource(c, "chat_id", c.Param("chat_id"))
+	common.SetOperationResource(c, "message_id", c.Param("msg_id"))
+
 	chatID, sessionID, msgID := c.Param("chat_id"), c.Param("session_id"), c.Param("msg_id")
 
 	req := map[string]interface{}{}
