@@ -12,8 +12,8 @@ import {
   AccordionTrigger,
 } from '@/components/ui/accordion';
 import { cn } from '@/lib/utils';
+import { formatTime } from '@/utils/date';
 import { isEmpty } from 'lodash';
-import dayjs from 'dayjs';
 import { Operator } from '../constant';
 import { JsonViewer } from '../form/components/json-viewer';
 import OperatorIcon, { SVGIconMap } from '@/components/operator-icon';
@@ -165,9 +165,7 @@ const ToolTimelineItem = ({
                           </span>
                         )}
                         <span className="text-text-secondary text-xs">
-                          {tool.timestamp
-                            ? dayjs(tool.timestamp).format('HH:mm:ss')
-                            : ''}
+                          {tool.timestamp ? formatTime(tool.timestamp) : ''}
                           {tool.timestamp && ' | '}
                           {tool.elapsed_time?.toString().slice(0, 6) || ''}
                           {tool.elapsed_time ? 's' : ''}

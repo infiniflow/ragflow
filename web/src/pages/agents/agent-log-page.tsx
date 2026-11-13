@@ -108,8 +108,8 @@ const AgentLogPage: React.FC = () => {
       dataIndex: 'update_date',
       key: 'update_date',
       sortable: true,
-      render(text: string) {
-        return formatDate(text);
+      render(_text: string, record: IAgentLogResponse) {
+        return formatDate(record.update_time);
       },
     },
     {
@@ -117,8 +117,8 @@ const AgentLogPage: React.FC = () => {
       dataIndex: 'create_date',
       key: 'create_date',
       sortable: true,
-      render(text: string) {
-        return formatDate(text);
+      render(_text: string, record: IAgentLogResponse) {
+        return formatDate(record.create_time);
       },
     },
     {
@@ -373,7 +373,9 @@ const AgentLogPage: React.FC = () => {
                       <TableCell key={column.dataIndex}>
                         {column.render
                           ? column.render(
-                              item[column.dataIndex as keyof IAgentLogResponse],
+                              item[
+                                column.dataIndex as keyof IAgentLogResponse
+                              ] as string,
                               item,
                             )
                           : (item[
