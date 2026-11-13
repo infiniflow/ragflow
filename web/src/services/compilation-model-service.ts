@@ -156,8 +156,26 @@ export const executeAction = (
 
 export const listActionExecutions = (
   id: string,
-  params?: { page?: number; page_size?: number },
+  params?: {
+    page?: number;
+    page_size?: number;
+    action_name?: string;
+    verdict?: string;
+    status?: string;
+    mode?: string;
+    from?: number;
+    to?: number;
+  },
 ) => request.get(api.compilationModelActionExecutions(id), { params });
+
+export const listActionContractEdits = (
+  id: string,
+  actionName: string,
+  params?: { page?: number; page_size?: number },
+) =>
+  request.get(api.compilationModelActionContractEdits(id, actionName), {
+    params,
+  });
 
 /**
  * Stamps the contract columns on action rows compiled before they existed.

@@ -187,6 +187,8 @@ export type AssertionReviewStatus =
   | 'unreviewed'
   | 'accepted'
   | 'rejected'
+  /** Both verdicts at once: what has already been judged, either way. */
+  | 'decided'
   | 'all';
 
 /** The state a judged row carries. */
@@ -279,6 +281,12 @@ export interface IModelAction {
   id: string;
   name: string;
   dataset_id: string;
+  /**
+   * `doc` or `dataset`: one action is stated twice, once per document and once
+   * as the dataset-wide fold. Two rows, same action — the list groups by name so
+   * a reader does not count one action twice.
+   */
+  scope?: string;
   description?: string;
   contract: IActionContractView;
   verdict: ActionVerdict;
@@ -338,6 +346,12 @@ export interface IActionExecution {
   verdict_reasons?: string[];
   status: string;
   request_arg?: Record<string, unknown>;
+  /**
+   * Truncated hash of the arguments this attempt sent. Values are never stored,
+   * so the digest is the only way to tell a retry of the same call from a
+   * different call with the same argument names.
+   */
+  input_digest?: string;
   response_excerpt?: string;
   error?: string;
   duration_ms: number;
@@ -346,8 +360,45 @@ export interface IActionExecution {
   create_time?: number;
 }
 
+/**
+ * The audit trail's filters, applied in SQL.
+ *
+ * They must not be applied to a fetched page: narrowing client-side answers
+ * "among the loaded rows", which reads as "in this model".
+ */
+export interface IActionExecutionFilters {
+  action_name?: string;
+  verdict?: string;
+  status?: string;
+  mode?: string;
+  /** Epoch milliseconds, matching create_time. */
+  from?: number;
+  to?: number;
+}
+
 export interface IActionExecutionList {
   executions: IActionExecution[];
+  total: number;
+}
+
+/**
+ * One manual change to an action's contract.
+ *
+ * `before`/`after` hold only the fields the call touched, in the contract
+ * column's own shape (`{v, q}`). An edit that changed `authorization` must not
+ * read as if it also rewrote `failure_policy`.
+ */
+export interface IActionContractEdit {
+  id: string;
+  operator_id?: string;
+  reason?: string;
+  before?: Record<string, { v?: unknown; q?: string } | null>;
+  after?: Record<string, { v?: unknown; q?: string } | null>;
+  create_time?: number;
+}
+
+export interface IActionContractEditList {
+  edits: IActionContractEdit[];
   total: number;
 }
 

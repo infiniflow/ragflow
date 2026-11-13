@@ -482,6 +482,10 @@ const apiEndpoints = {
     `${restAPIv1}/compilation-models/${id}/actions/backfill`,
   compilationModelActionExecutions: (id: string) =>
     `${restAPIv1}/compilation-models/${id}/action-executions`,
+  // The contract's own history: the action row keeps only its newest signature,
+  // so "who widened the authorization, and from what" lives here.
+  compilationModelActionContractEdits: (id: string, actionName: string) =>
+    `${restAPIv1}/compilation-models/${id}/actions/${actionName}/contract-edits`,
   // One confirmed edit from the compile-quality ledger (ontology.md §2.7).
   compilationTemplateOntologyFix: (id: string) =>
     `${restAPIv1}/compilation-templates/${id}/ontology-fix`,

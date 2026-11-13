@@ -672,6 +672,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 			v1.PUT("/compilation-models/:template_id/action-bindings/:action_name", r.compilationModelHandler.SaveBinding)
 			v1.DELETE("/compilation-models/:template_id/action-bindings/:action_name", r.compilationModelHandler.DeleteBinding)
 			v1.GET("/compilation-models/:template_id/action-executions", r.compilationModelHandler.ListExecutions)
+			// The contract's own history: the row keeps only its newest signature.
+			v1.GET("/compilation-models/:template_id/actions/:action_name/contract-edits", r.compilationModelHandler.ListContractEdits)
 			// Stamps the contract columns on rows compiled before they existed.
 			// Idempotent, so it is a button rather than a script.
 			v1.POST("/compilation-models/:template_id/actions/backfill", r.compilationModelHandler.BackfillActions)

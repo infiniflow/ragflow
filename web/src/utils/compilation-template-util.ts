@@ -44,6 +44,19 @@ export const isCreateCompilationTemplateGroup = (
 };
 
 /**
+ * Where a review queue was opened from, carried in the URL.
+ *
+ * The queue lives in the instances workspace, but other workspaces link into it
+ * (the actions page opens it filtered to the `action` class). Without the source
+ * recorded, closing the sheet would leave the reader on a page they never asked
+ * for, under a queue they no longer have open.
+ */
+export const ReviewSourceParam = 'from';
+
+/** The actions workspace, as a review-queue source. */
+export const ReviewSourceActions = 'actions';
+
+/**
  * The template row inside a group that the model-scoped routes address.
  *
  * A group is the addressable unit (`/compilation-templates/edit-next/:group_id`),

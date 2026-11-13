@@ -52,7 +52,11 @@ export default function CompilationTemplateActionsPage() {
       <div className="flex-1 min-h-0 p-4 flex flex-col">
         {/* The template id only exists once the group has loaded; until then the
             workbench must not fire model-scoped reads with an empty id. */}
-        <ActionWorkbench templateId={templateId} enabled={!!templateId} />
+        <ActionWorkbench
+          templateId={templateId}
+          groupId={id}
+          enabled={!!templateId}
+        />
       </div>
     </section>
   );

@@ -153,15 +153,17 @@ type ModelVersionDiff struct {
 // snapshot — so this service is the only place that decides when an edit starts
 // affecting the corpus. Without it the answer was "the moment it was saved".
 type CompilationTemplateGovernanceService struct {
-	templateDAO *dao.CompilationTemplateDAO
-	versionDAO  *dao.CompilationTemplateVersionDAO
+	templateDAO     *dao.CompilationTemplateDAO
+	versionDAO      *dao.CompilationTemplateVersionDAO
+	contractEditDAO *dao.OntologyActionContractEditDAO
 }
 
 // NewCompilationTemplateGovernanceService creates the governance service.
 func NewCompilationTemplateGovernanceService() *CompilationTemplateGovernanceService {
 	return &CompilationTemplateGovernanceService{
-		templateDAO: dao.NewCompilationTemplateDAO(),
-		versionDAO:  dao.NewCompilationTemplateVersionDAO(),
+		templateDAO:     dao.NewCompilationTemplateDAO(),
+		versionDAO:      dao.NewCompilationTemplateVersionDAO(),
+		contractEditDAO: dao.NewOntologyActionContractEditDAO(),
 	}
 }
 

@@ -312,6 +312,7 @@ func autoMigrateModels() []interface{} {
 		// outlive the row it talks about.
 		&entity.OntologyActionBinding{},
 		&entity.OntologyActionExecution{},
+		&entity.OntologyActionContractEdit{},
 	}
 	dataModels = append(dataModels, permissionDataModelsEE()...)
 	dataModels = append(dataModels, billingDataModelsEE()...)
@@ -625,6 +626,7 @@ func autoMigrateRuntimeModels(ctx context.Context, db *gorm.DB) error {
 		// Both are queried by a server started without --migrate.
 		&entity.OntologyActionBinding{},
 		&entity.OntologyActionExecution{},
+		&entity.OntologyActionContractEdit{},
 	}
 	for _, m := range goRuntimeModels {
 		if err := autoMigrateSafely(ctx, db, m); err != nil {

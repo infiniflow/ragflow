@@ -71,15 +71,56 @@ func (dao *OntologyActionExecutionDAO) Create(ctx context.Context, db *gorm.DB, 
 	return db.WithContext(ctx).Create(row).Error
 }
 
-// ListByTemplate returns the newest attempts of a model, paged.
-func (dao *OntologyActionExecutionDAO) ListByTemplate(ctx context.Context, db *gorm.DB, tenantID, templateID string, offset, limit int) ([]entity.OntologyActionExecution, int64, error) {
+// ExecutionFilter narrows the audit trail. Zero values mean "no restriction",
+// so the default query is the whole trail.
+//
+// The filters are applied in SQL rather than on the page: a reader who narrows
+// to "refused" and gets the refusals of the current twenty rows has been shown
+// the window, not the answer.
+type ExecutionFilter struct {
+	ActionName string
+	Verdict    string
+	Status     string
+	Mode       string
+	// FromMS/ToMS are unix milliseconds over create_time, matching BaseModel.
+	FromMS int64
+	ToMS   int64
+	Offset int
+	Limit  int
+}
+
+// ListByTemplate returns the newest attempts of a model, filtered and paged.
+func (dao *OntologyActionExecutionDAO) ListByTemplate(
+	ctx context.Context, db *gorm.DB, tenantID, templateID string, filter ExecutionFilter,
+) ([]entity.OntologyActionExecution, int64, error) {
 	query := db.WithContext(ctx).Model(&entity.OntologyActionExecution{}).
 		Where("tenant_id = ? AND template_id = ?", tenantID, templateID)
+	if filter.ActionName != "" {
+		query = query.Where("action_name = ?", filter.ActionName)
+	}
+	if filter.Verdict != "" {
+		query = query.Where("verdict = ?", filter.Verdict)
+	}
+	if filter.Status != "" {
+		query = query.Where("status = ?", filter.Status)
+	}
+	if filter.Mode != "" {
+		query = query.Where("mode = ?", filter.Mode)
+	}
+	if filter.FromMS > 0 {
+		query = query.Where("create_time >= ?", filter.FromMS)
+	}
+	if filter.ToMS > 0 {
+		query = query.Where("create_time <= ?", filter.ToMS)
+	}
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
-	var rows []entity.OntologyActionExecution
-	err := query.Order("create_time DESC").Offset(offset).Limit(limit).Find(&rows).Error
+	rows := []entity.OntologyActionExecution{}
+	err := query.Order("create_time DESC").
+		Offset(filter.Offset).
+		Limit(filter.Limit).
+		Find(&rows).Error
 	return rows, total, err
 }

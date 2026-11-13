@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"ragflow/internal/engine"
+	"ragflow/internal/entity"
 	"ragflow/internal/ontology/contract"
 
 	"gorm.io/gorm"
@@ -172,6 +173,22 @@ func (s *CompilationTemplateGovernanceService) EditActionContract(ctx context.Co
 		updated = contract.NewActionContract()
 	}
 
+	// Snapshot only what this call changed. The history is read to answer "who
+	// widened the authorization, and from what", so a copy of all six fields
+	// would bury the one that moved.
+	changedFields := contractEditFieldNames(in.Values)
+	before := contractFieldSnapshot(current, changedFields)
+	after := contractFieldSnapshot(updated, changedFields)
+	if in.Description != nil {
+		changedFields = append(changedFields, "description")
+		before["description"] = map[string]interface{}{
+			"v": strings.TrimSpace(firstStringValue(graphLoadPayload(row)["description"])),
+		}
+		after["description"] = map[string]interface{}{
+			"v": strings.TrimSpace(*in.Description),
+		}
+	}
+
 	update := map[string]interface{}{
 		"contract":             updated,
 		"contract_missing_kwd": contract.ContractMissingFields(updated),
@@ -204,8 +221,28 @@ func (s *CompilationTemplateGovernanceService) EditActionContract(ctx context.Co
 		update, wikiIndexName(in.TenantID), rowDataset); err != nil {
 		return nil, err
 	}
+	// The row carries only the newest signature, so the history is written after
+	// the change lands. A failure here must not undo the edit: the contract is
+	// already in force, and reporting it as failed would invite a retry that
+	// applies the same change twice. It is logged instead.
+	history := &entity.OntologyActionContractEdit{
+		ID:         newOntologyUUID(),
+		TenantID:   in.TenantID,
+		TemplateID: template.ID,
+		ActionName: firstStringValue(row["name_kwd"]),
+		ActionID:   in.ActionID,
+		DatasetID:  rowDataset,
+		OperatorID: strings.TrimSpace(in.ActorID),
+		Reason:     strings.TrimSpace(in.Reason),
+		Before:     before,
+		After:      after,
+	}
+	if err := s.contractEditDAO.Create(ctx, db, history); err != nil {
+		log.Printf("[action-contract] history write failed action=%s operator=%s: %v",
+			history.ActionName, in.ActorID, err)
+	}
 	log.Printf("[action-contract] manual edit action=%s fields=%s operator=%s",
-		firstStringValue(row["name_kwd"]), strings.Join(contractEditFieldNames(in.Values), ","), in.ActorID)
+		firstStringValue(row["name_kwd"]), strings.Join(changedFields, ","), in.ActorID)
 
 	return &ActionContractEditResult{
 		ID:           in.ActionID,
@@ -214,6 +251,86 @@ func (s *CompilationTemplateGovernanceService) EditActionContract(ctx context.Co
 		ReviewStatus: string(AssertionReviewAccepted),
 		ReviewBy:     strings.TrimSpace(in.ActorID),
 	}, nil
+}
+
+// contractFieldSnapshot serialises only the named fields, in the column's own
+// {"v":value,"q":"quote"} shape.
+//
+// It goes through the contract's JSON form rather than the typed view because
+// the history is evidence: it must store the bytes that were in force, including
+// a field that was cleared (absent here, recorded as null) — a view would
+// convert "nobody stated it" back into a status and lose what actually changed.
+func contractFieldSnapshot(c contract.ActionContract, names []string) entity.JSONMap {
+	out := entity.JSONMap{}
+	if len(names) == 0 {
+		return out
+	}
+	raw, err := json.Marshal(c)
+	if err != nil {
+		return out
+	}
+	parsed := map[string]interface{}{}
+	if err := json.Unmarshal(raw, &parsed); err != nil {
+		return out
+	}
+	for _, name := range names {
+		if value, ok := parsed[name]; ok {
+			out[name] = value
+			continue
+		}
+		out[name] = nil
+	}
+	return out
+}
+
+// ActionContractEditView is one history row as the workbench lists it.
+type ActionContractEditView struct {
+	ID         string         `json:"id"`
+	OperatorID string         `json:"operator_id"`
+	Reason     string         `json:"reason"`
+	Before     entity.JSONMap `json:"before,omitempty"`
+	After      entity.JSONMap `json:"after,omitempty"`
+	CreateTime int64          `json:"create_time,omitempty"`
+}
+
+// ListActionContractEdits returns the manual edits of one action, newest first.
+//
+// Keyed by name, not by row id: a recompile mints a new id for the same action,
+// and "what may this action do" is a question that spans those recompiles.
+func (s *CompilationTemplateGovernanceService) ListActionContractEdits(
+	ctx context.Context, db *gorm.DB, tenantID, templateID, actionName string, offset, limit int,
+) ([]ActionContractEditView, int64, error) {
+	actionName = strings.TrimSpace(actionName)
+	if actionName == "" {
+		return nil, 0, &ActionEditRejectedError{
+			Code: ActionEditCodeActionNotFound, Message: "empty action name",
+		}
+	}
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	if offset < 0 {
+		offset = 0
+	}
+	rows, total, err := s.contractEditDAO.ListByAction(ctx, db, tenantID, templateID, actionName, offset, limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	out := make([]ActionContractEditView, 0, len(rows))
+	for _, row := range rows {
+		view := ActionContractEditView{
+			ID:         row.ID,
+			OperatorID: row.OperatorID,
+			Reason:     row.Reason,
+			Before:     row.Before,
+			After:      row.After,
+		}
+		if row.CreateTime != nil {
+			view.CreateTime = *row.CreateTime
+		}
+		out = append(out, view)
+	}
+	return out, total, nil
 }
 
 // findActionRow locates one compiled row by id inside the model's scope.

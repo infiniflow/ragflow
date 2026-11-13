@@ -34,6 +34,7 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/ingestion/reviewcarry"
 	"ragflow/internal/ontology/contract"
 	"ragflow/internal/service/file"
 	"ragflow/internal/tokenizer"
@@ -683,6 +684,10 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 	if len(rows) == 0 {
 		return nil
 	}
+	// A rebuilt fold replaces the whole row, so the verdict it carried has to be
+	// handed back first. Every row here is template-stamped, and the stale
+	// deletions below run after the inserts, so the old rows are still readable.
+	reviewcarry.CarryOver(ctx, eng, baseName, kb, rows)
 	// Insert in bounded batches, matching writeMergedBatchSize.
 	jobs := make([]CompilerJob, 0, (len(rows)+writeMergedBatchSize-1)/writeMergedBatchSize)
 	for start := 0; start < len(rows); start += writeMergedBatchSize {

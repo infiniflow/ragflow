@@ -159,7 +159,7 @@ function ContractFieldRow({
           >
             {/* Not a warning about the value: a warning that it cannot be cited. */}
             {t('knowledgeCompilation.ontologyInspect.actionContractManual', {
-              defaultValue: 'entered manually',
+              defaultValue: 'no source quote',
             })}
           </Badge>
         )}

@@ -39,6 +39,7 @@ import (
 	"ragflow/internal/ingestion/knowledge_compile"
 	"ragflow/internal/ingestion/mediacache"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/ingestion/reviewcarry"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 
 	"go.uber.org/zap"
@@ -129,6 +130,10 @@ type noRefreshChunkInserter interface {
 // fulltext analyzer, so the dataset language has to travel with it.
 func insertChunksForIngestion(eng engine.DocEngine, language string) InsertFunc {
 	return func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
+		// Compiled rows ride in this stream and are replaced whole on every
+		// recompile. Their review verdict is written by the review endpoint, not
+		// by the compiler, so it has to be handed back before the write.
+		reviewcarry.CarryOver(ctx, eng, baseName, datasetID, chunks)
 		if bulk, ok := eng.(noRefreshChunkInserter); ok {
 			return bulk.InsertChunksNoRefresh(ctx, chunks, baseName, datasetID, language)
 		}
@@ -141,6 +146,9 @@ func insertChunksForIngestion(eng engine.DocEngine, language string) InsertFunc 
 // document task is acknowledged and its completion event is published.
 func insertFinalChunksForIngestion(eng engine.DocEngine, language string) InsertFunc {
 	return func(ctx context.Context, chunks []map[string]any, baseName string, datasetID string) ([]string, error) {
+		// Same reason as the incremental path: the final batch can still carry
+		// compiled rows, and writing them whole would drop their verdict.
+		reviewcarry.CarryOver(ctx, eng, baseName, datasetID, chunks)
 		return eng.InsertChunks(ctx, chunks, baseName, datasetID, language)
 	}
 }

@@ -379,13 +379,43 @@ func (s *ActionBindingService) DeleteBinding(ctx context.Context, db *gorm.DB, t
 	return s.bindingDAO.Delete(ctx, db, tenantID, bindingID)
 }
 
+// ExecutionQuery is one page of the audit trail plus the filters that chose it.
+type ExecutionQuery struct {
+	ActionName string
+	Verdict    string
+	Status     string
+	Mode       string
+	// FromMS/ToMS bound create_time, unix milliseconds. Zero means unbounded.
+	FromMS   int64
+	ToMS     int64
+	Page     int
+	PageSize int
+}
+
 // ListExecutions returns the audit trail of a model.
-func (s *ActionBindingService) ListExecutions(ctx context.Context, db *gorm.DB, tenantID, templateID string, page, pageSize int) ([]entity.OntologyActionExecution, int64, error) {
+//
+// The filters travel to SQL: narrowing a page client-side shows the decisions
+// inside the loaded window, which reads as "this is how often it was refused"
+// while the answer is "how often it was refused among the last fifty rows".
+func (s *ActionBindingService) ListExecutions(
+	ctx context.Context, db *gorm.DB, tenantID, templateID string, in ExecutionQuery,
+) ([]entity.OntologyActionExecution, int64, error) {
+	page := in.Page
 	if page < 1 {
 		page = 1
 	}
+	pageSize := in.PageSize
 	if pageSize <= 0 || pageSize > 200 {
 		pageSize = 50
 	}
-	return s.execDAO.ListByTemplate(ctx, db, tenantID, templateID, (page-1)*pageSize, pageSize)
+	return s.execDAO.ListByTemplate(ctx, db, tenantID, templateID, dao.ExecutionFilter{
+		ActionName: strings.TrimSpace(in.ActionName),
+		Verdict:    strings.TrimSpace(in.Verdict),
+		Status:     strings.TrimSpace(in.Status),
+		Mode:       strings.TrimSpace(in.Mode),
+		FromMS:     in.FromMS,
+		ToMS:       in.ToMS,
+		Offset:     (page - 1) * pageSize,
+		Limit:      pageSize,
+	})
 }

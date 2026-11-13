@@ -26,6 +26,12 @@ type OntologyActionExecution struct {
 	VerdictReasons JSONSlice `gorm:"column:verdict_reasons;type:json" json:"verdict_reasons,omitempty"`
 	Status         string    `gorm:"column:status;size:16;not null;default:''" json:"status"`
 	RequestArg     *JSONMap  `gorm:"column:request_arg;type:json" json:"request_arg,omitempty"`
+	// InputDigest is a truncated hash of the exact arguments the call sent. The
+	// values themselves are never stored (see RequestArg), so without a digest
+	// two attempts differ only by timestamp and nobody can tell whether the same
+	// input was retried or a different one was tried — the first question after
+	// a duplicate effect.
+	InputDigest string `gorm:"column:input_digest;size:32;not null;default:''" json:"input_digest,omitempty"`
 	// ResponseExcerpt is truncated: the audit needs to show what came back, not to
 	// become a second copy of the upstream system's data.
 	ResponseExcerpt string `gorm:"column:response_excerpt;type:text" json:"response_excerpt"`

@@ -17,6 +17,8 @@
 import {
   IActionBinding,
   IActionCallResult,
+  IActionContractEditList,
+  IActionExecutionFilters,
   IActionExecutionList,
   IModelAction,
 } from '@/interfaces/database/compilation-model';
@@ -25,6 +27,7 @@ import {
   dryRunAction,
   executeAction,
   listActionBindings,
+  listActionContractEdits,
   listActionExecutions,
   listModelActions,
   saveActionBinding,
@@ -36,6 +39,7 @@ export const enum OntologyActionApiAction {
   FetchActions = 'fetchModelActions',
   FetchBindings = 'fetchActionBindings',
   FetchExecutions = 'fetchActionExecutions',
+  FetchContractEdits = 'fetchActionContractEdits',
   UpdateContract = 'updateActionContract',
   SaveBinding = 'saveActionBinding',
   DeleteBinding = 'deleteActionBinding',
@@ -53,8 +57,10 @@ export const OntologyActionKeys = {
   actions: (id?: string) => [OntologyActionApiAction.FetchActions, id] as const,
   bindings: (id?: string) =>
     [OntologyActionApiAction.FetchBindings, id] as const,
-  executions: (id?: string, page?: number) =>
-    [OntologyActionApiAction.FetchExecutions, id, page] as const,
+  executions: (id?: string, page?: number, filters?: IActionExecutionFilters) =>
+    [OntologyActionApiAction.FetchExecutions, id, page, filters] as const,
+  edits: (id?: string, actionName?: string) =>
+    [OntologyActionApiAction.FetchContractEdits, id, actionName] as const,
 };
 
 export const useFetchModelActions = (id?: string, enabled = true) => {
@@ -110,19 +116,31 @@ export const useFetchActionExecutions = (
   id?: string,
   page = 1,
   enabled = true,
+  /**
+   * Filters go to the server. Narrowing the page that happens to be loaded would
+   * answer "among these rows", while the reader is asking about the model.
+   */
+  filters?: IActionExecutionFilters,
+  pageSize = 20,
 ) => {
   const {
     data,
     isFetching: loading,
     error,
   } = useQuery<IActionExecutionList>({
-    queryKey: OntologyActionKeys.executions(id, page),
+    queryKey: OntologyActionKeys.executions(id, page, filters),
     enabled: !!id && enabled,
     gcTime: 0,
     queryFn: async () => {
       const { data } = await listActionExecutions(id!, {
         page,
-        page_size: 20,
+        page_size: pageSize,
+        action_name: filters?.action_name || undefined,
+        verdict: filters?.verdict || undefined,
+        status: filters?.status || undefined,
+        mode: filters?.mode || undefined,
+        from: filters?.from || undefined,
+        to: filters?.to || undefined,
       });
       return (data?.data ?? {
         executions: [],
@@ -132,6 +150,34 @@ export const useFetchActionExecutions = (
   });
 
   return { executions: data?.executions, total: data?.total, loading, error };
+};
+
+/**
+ * The manual edit history of one action.
+ *
+ * Fetched per action on demand: the workbench shows it under the contract of the
+ * action the reader picked, and loading every action's history at once would be
+ * a request paid for rows nobody is looking at.
+ */
+export const useFetchActionContractEdits = (
+  id?: string,
+  actionName?: string,
+  enabled = true,
+) => {
+  const { data, isFetching: loading } = useQuery<IActionContractEditList>({
+    queryKey: OntologyActionKeys.edits(id, actionName),
+    enabled: !!id && !!actionName && enabled,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await listActionContractEdits(id!, actionName!, {
+        page: 1,
+        page_size: 20,
+      });
+      return (data?.data ?? { edits: [], total: 0 }) as IActionContractEditList;
+    },
+  });
+
+  return { edits: data?.edits, total: data?.total, loading };
 };
 
 export const useUpdateActionContract = () => {

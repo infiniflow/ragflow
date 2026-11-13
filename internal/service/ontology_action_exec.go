@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -98,9 +100,13 @@ func ontologyAttributesOf(raw any) map[string]any {
 
 // ModelActionView is one compiled action as the workbench lists it.
 type ModelActionView struct {
-	ID          string                      `json:"id"`
-	Name        string                      `json:"name"`
-	DatasetID   string                      `json:"dataset_id"`
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	DatasetID string `json:"dataset_id"`
+	// Scope says whether this row states the action once for a document ("doc")
+	// or once for the whole dataset ("dataset"). One action normally has both,
+	// so a caller that lists them without this reads two entries as two actions.
+	Scope       string                      `json:"scope,omitempty"`
 	Description string                      `json:"description,omitempty"`
 	Contract    contract.ActionContractView `json:"contract"`
 	// Verdict is computed with the binding's state, so the list answers "what can
@@ -128,7 +134,7 @@ func (s *ActionBindingService) ListModelActions(ctx context.Context, db *gorm.DB
 		return nil, err
 	}
 	rows, _, err := reviewSearch(ctx, tenantID, datasetIDs,
-		[]string{"id", "kb_id", "name_kwd", "contract", "content_with_weight", "review_status_kwd", "attr"},
+		[]string{"id", "kb_id", "name_kwd", "contract", "content_with_weight", "review_status_kwd", "scope_kwd", "attr"},
 		map[string]interface{}{
 			"compilation_template_ids": []string{templateID},
 			"knowledge_graph_kwd":      []string{"entity"},
@@ -152,6 +158,7 @@ func (s *ActionBindingService) ListModelActions(ctx context.Context, db *gorm.DB
 			ID:           action.ID,
 			Name:         action.Name,
 			DatasetID:    action.DatasetID,
+			Scope:        firstStringValue(row["scope_kwd"]),
 			Description:  action.Description,
 			Contract:     action.Contract.View(),
 			ReviewStatus: firstStringValue(row["review_status_kwd"]),
@@ -378,6 +385,7 @@ func (s *ActionBindingService) RunAction(ctx context.Context, db *gorm.DB, in Ac
 		finish(entity.ActionExecutionStatusFailed, err.Error())
 		return result, err
 	}
+	audit.InputDigest = argumentDigest(encoded)
 	serverRow, err := s.loadMCPServer(ctx, db, in.TenantID, binding.MCPServer)
 	if err != nil {
 		result.Status = entity.ActionExecutionStatusFailed
@@ -497,6 +505,19 @@ func resolveArgExpression(expression string, action *compiledAction) (any, error
 // key in this schema (the dashes of a canonical UUID do not fit).
 func newOntologyUUID() string {
 	return strings.ReplaceAll(uuid.NewString(), "-", "")
+}
+
+// argumentDigest fingerprints the arguments a call actually sent.
+//
+// The audit stores argument names only, on purpose (see RunAction). That leaves
+// two attempts indistinguishable except by timestamp, which cannot answer the
+// question a duplicate side effect raises: was this a retry of the same call or
+// a different one? A truncated SHA-256 answers exactly that and nothing else —
+// it cannot be turned back into an account number, so the trail stays safe to
+// read.
+func argumentDigest(encoded []byte) string {
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:8])
 }
 
 // reasonsToJSONSlice keeps the gate reasons in the audit row. Empty stays nil so

@@ -49,7 +49,11 @@ const (
 	AssertionReviewUnreviewed AssertionReviewStatus = "unreviewed"
 	AssertionReviewAccepted   AssertionReviewStatus = "accepted"
 	AssertionReviewRejected   AssertionReviewStatus = "rejected"
-	AssertionReviewAll        AssertionReviewStatus = "all"
+	// AssertionReviewDecided spans both verdicts. "What have I already judged" is
+	// one question, and answering it with accepted-only hides every rejection the
+	// reader made — the rows they most likely want to revisit.
+	AssertionReviewDecided AssertionReviewStatus = "decided"
+	AssertionReviewAll     AssertionReviewStatus = "all"
 )
 
 // NormalizeAssertionReviewStatus maps the request vocabulary onto the stored one,
@@ -60,6 +64,8 @@ func NormalizeAssertionReviewStatus(raw string) AssertionReviewStatus {
 		return AssertionReviewAccepted
 	case AssertionReviewRejected:
 		return AssertionReviewRejected
+	case AssertionReviewDecided, "judged":
+		return AssertionReviewDecided
 	case AssertionReviewAll, "any":
 		return AssertionReviewAll
 	default:
@@ -256,7 +262,11 @@ func (s *CompilationTemplateGovernanceService) ReviewAssertionQueue(ctx context.
 		return queue, nil
 	}
 
-	counts, err := reviewCounts(ctx, in.TenantID, template.ID, datasetIDs)
+	// What the reader is looking at, shared by the page and its headline numbers
+	// so the two cannot describe different populations.
+	scope := reviewScopeFilter(in)
+
+	counts, err := reviewCounts(ctx, in.TenantID, template.ID, datasetIDs, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -274,25 +284,9 @@ func (s *CompilationTemplateGovernanceService) ReviewAssertionQueue(ctx context.
 	// The model is a template, and one dataset can be compiled by several of
 	// them: without the template pin the queue would list another model's rows
 	// and a reviewer would be asked to judge assertions this model never made.
-	baseFilter := map[string]interface{}{
-		"compilation_template_ids": []string{template.ID},
-	}
+	baseFilter := cloneFilter(scope)
+	baseFilter["compilation_template_ids"] = []string{template.ID}
 	applyReviewStatusFilter(baseFilter, status)
-	if class := strings.TrimSpace(in.Class); class != "" {
-		baseFilter["entity_type_kwd"] = []string{class}
-	}
-	if prop := strings.TrimSpace(in.Property); prop != "" {
-		baseFilter["prop_kwd"] = []string{prop}
-	}
-	if src := strings.TrimSpace(in.SourceType); src != "" {
-		baseFilter["from_type_kwd"] = []string{src}
-	}
-	if tgt := strings.TrimSpace(in.TargetType); tgt != "" {
-		baseFilter["to_type_kwd"] = []string{tgt}
-	}
-	if missing := trimmedNonEmpty(in.Missing); len(missing) > 0 {
-		baseFilter["contract_missing_kwd"] = missing
-	}
 
 	entityFilter := reviewKindFilter(baseFilter, "entity")
 	entityRows, entityTotal, err := reviewSearch(ctx, in.TenantID, datasetIDs, graphEntityFields, entityFilter,
@@ -518,7 +512,9 @@ func (s *CompilationTemplateGovernanceService) DecideAssertions(ctx context.Cont
 		result.Updated += len(applicable)
 	}
 
-	counts, err := reviewCounts(ctx, in.TenantID, template.ID, datasetIDs)
+	// A batch names rows, not a view, so the numbers it reports are the model's
+	// own progress rather than a narrowed one.
+	counts, err := reviewCounts(ctx, in.TenantID, template.ID, datasetIDs, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -560,10 +556,12 @@ func reviewScopeDatasets(ctx context.Context, db *gorm.DB, tenantID string, temp
 // per bucket instead of deriving "unreviewed = total - decided" so a row whose
 // status was written as an unknown value cannot silently land in the queue.
 //
-// The counts carry the same template pin the queue applies: the headline numbers
-// describe this model's progress, and a dataset shared with another model would
-// otherwise make the total exceed the page's own item count.
-func reviewCounts(ctx context.Context, tenantID, templateID string, datasetIDs []string) (ModelAssertionReviewCounts, error) {
+// The counts carry the same template pin and the same scope the queue applies:
+// a dataset shared with another model would otherwise make the total exceed the
+// page's own item count, and a queue narrowed to one class would show a
+// corpus-wide total above a handful of rows. The caller passes a nil scope when
+// it wants the model-wide numbers (the batch response does).
+func reviewCounts(ctx context.Context, tenantID, templateID string, datasetIDs []string, scope map[string]interface{}) (ModelAssertionReviewCounts, error) {
 	counts := ModelAssertionReviewCounts{}
 	for _, bucket := range []struct {
 		status AssertionReviewStatus
@@ -573,10 +571,9 @@ func reviewCounts(ctx context.Context, tenantID, templateID string, datasetIDs [
 		{AssertionReviewAccepted, &counts.Accepted},
 		{AssertionReviewRejected, &counts.Rejected},
 	} {
-		filter := map[string]interface{}{
-			"compilation_template_ids": []string{templateID},
-			"knowledge_graph_kwd":      []string{"entity", "relation"},
-		}
+		filter := cloneFilter(scope)
+		filter["compilation_template_ids"] = []string{templateID}
+		filter["knowledge_graph_kwd"] = []string{"entity", "relation"}
 		applyReviewStatusFilter(filter, bucket.status)
 		_, total, err := reviewSearch(ctx, tenantID, datasetIDs, []string{"id"}, filter, nil, 0, 1)
 		if err != nil {
@@ -593,19 +590,19 @@ func reviewCounts(ctx context.Context, tenantID, templateID string, datasetIDs [
 	// therefore not counted here. They also cannot be executed (an empty contract
 	// reads as all-missing), so the error only understates how much backfill is
 	// owed — it never overstates coverage.
-	missingAuthorization, err := reviewActionCount(ctx, tenantID, templateID, datasetIDs, AssertionReviewAll, contract.AuthorizationField)
+	missingAuthorization, err := reviewActionCount(ctx, tenantID, templateID, datasetIDs, scope, AssertionReviewAll, contract.AuthorizationField)
 	if err != nil {
 		return counts, err
 	}
 	counts.ContractMissingAuthorization = missingAuthorization
-	if counts.ContractMissingPrecondition, err = reviewActionCount(ctx, tenantID, templateID, datasetIDs, AssertionReviewAll, "preconditions"); err != nil {
+	if counts.ContractMissingPrecondition, err = reviewActionCount(ctx, tenantID, templateID, datasetIDs, scope, AssertionReviewAll, "preconditions"); err != nil {
 		return counts, err
 	}
-	unreviewedActions, err := reviewActionCount(ctx, tenantID, templateID, datasetIDs, AssertionReviewUnreviewed, "")
+	unreviewedActions, err := reviewActionCount(ctx, tenantID, templateID, datasetIDs, scope, AssertionReviewUnreviewed, "")
 	if err != nil {
 		return counts, err
 	}
-	unreviewedMissingAuthorization, err := reviewActionCount(ctx, tenantID, templateID, datasetIDs, AssertionReviewUnreviewed, contract.AuthorizationField)
+	unreviewedMissingAuthorization, err := reviewActionCount(ctx, tenantID, templateID, datasetIDs, scope, AssertionReviewUnreviewed, contract.AuthorizationField)
 	if err != nil {
 		return counts, err
 	}
@@ -622,12 +619,28 @@ func reviewCounts(ctx context.Context, tenantID, templateID string, datasetIDs [
 // field == "" means "every action", which is how the critical count avoids a
 // filter that would need to express "has a contract column at all" — an
 // expression the two engines spell differently.
-func reviewActionCount(ctx context.Context, tenantID, templateID string, datasetIDs []string, status AssertionReviewStatus, field string) (int, error) {
-	filter := map[string]interface{}{
-		"compilation_template_ids": []string{templateID},
-		"knowledge_graph_kwd":      []string{"entity"},
-		"entity_type_kwd":          []string{contract.ActionEntityType},
+//
+// The scope is the reader's own filter, so the coverage numbers describe the
+// view they are looking at. Two of its keys cannot apply to an action: a class
+// pinned to something other than `action` names a population with no actions in
+// it, and the relation columns (`prop_kwd`, endpoint types) are never written on
+// entity rows. Both answer zero without asking the engine, which would receive
+// two contradicting terms on one field and could only be relied on to be empty.
+func reviewActionCount(ctx context.Context, tenantID, templateID string, datasetIDs []string, scope map[string]interface{}, status AssertionReviewStatus, field string) (int, error) {
+	if class, ok := scope["entity_type_kwd"].([]string); ok && len(class) > 0 {
+		if !strings.EqualFold(class[0], contract.ActionEntityType) {
+			return 0, nil
+		}
 	}
+	for _, relationKey := range []string{"prop_kwd", "from_type_kwd", "to_type_kwd"} {
+		if _, ok := scope[relationKey]; ok {
+			return 0, nil
+		}
+	}
+	filter := cloneFilter(scope)
+	filter["compilation_template_ids"] = []string{templateID}
+	filter["knowledge_graph_kwd"] = []string{"entity"}
+	filter["entity_type_kwd"] = []string{contract.ActionEntityType}
 	applyReviewStatusFilter(filter, status)
 	if field != "" {
 		filter["contract_missing_kwd"] = []string{field}
@@ -664,6 +677,10 @@ func applyReviewStatusFilter(filter map[string]interface{}, status AssertionRevi
 		filter["review_status_kwd"] = []string{string(AssertionReviewAccepted)}
 	case AssertionReviewRejected:
 		filter["review_status_kwd"] = []string{string(AssertionReviewRejected)}
+	case AssertionReviewDecided:
+		filter["review_status_kwd"] = []string{
+			string(AssertionReviewAccepted), string(AssertionReviewRejected),
+		}
 	case AssertionReviewAll:
 	default:
 		filter["must_not"] = map[string]interface{}{
@@ -672,12 +689,48 @@ func applyReviewStatusFilter(filter map[string]interface{}, status AssertionRevi
 	}
 }
 
+// reviewScopeFilter is the row-narrowing half of a review query: what the reader
+// said they are looking at. Status and row kind are left to the caller, because
+// each bucket applies its own status and the two kinds are queried apart.
+//
+// The queue and its headline numbers share it. A count that ignored the class
+// filter would put a corpus-wide total above a list of five action rows, and two
+// numbers side by side that describe different populations read as one claim
+// about both.
+func reviewScopeFilter(in ModelAssertionReviewInput) map[string]interface{} {
+	filter := map[string]interface{}{}
+	if class := strings.TrimSpace(in.Class); class != "" {
+		filter["entity_type_kwd"] = []string{class}
+	}
+	if prop := strings.TrimSpace(in.Property); prop != "" {
+		filter["prop_kwd"] = []string{prop}
+	}
+	if src := strings.TrimSpace(in.SourceType); src != "" {
+		filter["from_type_kwd"] = []string{src}
+	}
+	if tgt := strings.TrimSpace(in.TargetType); tgt != "" {
+		filter["to_type_kwd"] = []string{tgt}
+	}
+	if missing := trimmedNonEmpty(in.Missing); len(missing) > 0 {
+		filter["contract_missing_kwd"] = missing
+	}
+	return filter
+}
+
+// cloneFilter copies a filter so a caller can add keys of its own. The counts
+// run several queries over one scope, and mutating it would make each bucket
+// inherit whatever the previous one added.
+func cloneFilter(src map[string]interface{}) map[string]interface{} {
+	out := make(map[string]interface{}, len(src)+2)
+	for key, value := range src {
+		out[key] = value
+	}
+	return out
+}
+
 // reviewKindFilter pins one row kind on top of the caller's filters.
 func reviewKindFilter(base map[string]interface{}, kind string) map[string]interface{} {
-	out := make(map[string]interface{}, len(base)+1)
-	for k, v := range base {
-		out[k] = v
-	}
+	out := cloneFilter(base)
 	out["knowledge_graph_kwd"] = []string{kind}
 	return out
 }

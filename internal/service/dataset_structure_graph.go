@@ -37,8 +37,14 @@ const (
 // attribute names, and without the column the ontology's data itself would be
 // unreachable from the UI. Non-ontology rows have no such column, so the cost is
 // paid only where the value exists.
-var graphEntityFields = []string{"id", "content_with_weight", "name_kwd", "entity_type_kwd", "mention_count_int", "source_chunk_ids", "doc_id", "doc_ids_kwd", "source_doc_ids", "attr", "contract", "compilation_template_version_int", "scope_kwd", "review_status_kwd", "review_by_kwd", "review_at_flt", "review_note"}
-var graphRelationFields = []string{"id", "content_with_weight", "from_entity_kwd", "to_entity_kwd", "prop_kwd", "from_type_kwd", "to_type_kwd", "doc_id", "doc_ids_kwd", "source_doc_ids", "source_chunk_ids", "compilation_template_version_int", "scope_kwd", "review_status_kwd", "review_by_kwd", "review_at_flt", "review_note"}
+//
+// `kb_id` is the dataset a row belongs to. The review queue annotates every item
+// with it, and the decision endpoint validates (row id, dataset) together — an
+// engine returns only the columns named here, so leaving it out makes every
+// queue item report an empty dataset and every verdict is refused as "not a
+// compiled assertion of this model".
+var graphEntityFields = []string{"id", "kb_id", "content_with_weight", "name_kwd", "entity_type_kwd", "mention_count_int", "source_chunk_ids", "doc_id", "doc_ids_kwd", "source_doc_ids", "attr", "contract", "compilation_template_version_int", "scope_kwd", "review_status_kwd", "review_by_kwd", "review_at_flt", "review_note"}
+var graphRelationFields = []string{"id", "kb_id", "content_with_weight", "from_entity_kwd", "to_entity_kwd", "prop_kwd", "from_type_kwd", "to_type_kwd", "doc_id", "doc_ids_kwd", "source_doc_ids", "source_chunk_ids", "compilation_template_version_int", "scope_kwd", "review_status_kwd", "review_by_kwd", "review_at_flt", "review_note"}
 var graphAllFields = []string{
 	"id", "content_with_weight", "name_kwd", "mention_count_int", "source_chunk_ids",
 	"from_entity_kwd", "to_entity_kwd", "type_kwd", "knowledge_graph_kwd", "doc_id", "doc_ids_kwd", "source_doc_ids",

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"reflect"
 	"testing"
 )
@@ -65,6 +66,115 @@ func TestNormalizeAssertionReviewStatusAndDecision(t *testing.T) {
 		if got := NormalizeAssertionReviewDecision(raw); got != want {
 			t.Errorf("NormalizeAssertionReviewDecision(%q) = %q, want %q", raw, got, want)
 		}
+	}
+}
+
+// TestReviewScopeFilter_CarriesTheReadersNarrowing pins the translation from a
+// reader's filters to engine terms.
+//
+// The queue and its headline numbers now share this function: a key it dropped
+// would leave the count describing the whole model while the page below it
+// describes one class, which is exactly the mismatch a "5 rows, 320 total"
+// header produces.
+func TestReviewScopeFilter_CarriesTheReadersNarrowing(t *testing.T) {
+	scope := reviewScopeFilter(ModelAssertionReviewInput{
+		Class:      "  action ",
+		Property:   "located_in",
+		SourceType: "component",
+		TargetType: "site",
+		Missing:    []string{"authorization", " "},
+	})
+	want := map[string][]string{
+		"entity_type_kwd":      {"action"},
+		"prop_kwd":             {"located_in"},
+		"from_type_kwd":        {"component"},
+		"to_type_kwd":          {"site"},
+		"contract_missing_kwd": {"authorization"},
+	}
+	for key, values := range want {
+		got, ok := scope[key].([]string)
+		if !ok || !reflect.DeepEqual(got, values) {
+			t.Errorf("%s: got %v, want %v", key, scope[key], values)
+		}
+	}
+	if len(scope) != len(want) {
+		t.Errorf("unexpected keys: %v", scope)
+	}
+	if empty := reviewScopeFilter(ModelAssertionReviewInput{}); len(empty) != 0 {
+		t.Errorf("an unfiltered read must not narrow anything: %v", empty)
+	}
+}
+
+// TestReviewActionCount_NonActionViewsCountNothing covers the two scopes that can
+// hold no action: a class pinned to something else, and the relation columns,
+// which entity rows never carry.
+//
+// Both must answer zero without a query. Handing the engine "entity_type_kwd =
+// component" next to "= action" would be two contradicting terms on one field —
+// an answer the engines are free to spell differently.
+func TestReviewActionCount_NonActionViewsCountNothing(t *testing.T) {
+	for name, scope := range map[string]map[string]interface{}{
+		"another class":       {"entity_type_kwd": []string{"component"}},
+		"relation property":   {"prop_kwd": []string{"located_in"}},
+		"relation endpoint":   {"from_type_kwd": []string{"component"}},
+		"target endpoint":     {"to_type_kwd": []string{"site"}},
+		"action class, lower": {"entity_type_kwd": []string{"ACTION"}, "prop_kwd": []string{"x"}},
+	} {
+		got, err := reviewActionCount(context.Background(), "tenant", "template", []string{"kb"}, scope, AssertionReviewAll, "")
+		if err != nil {
+			t.Errorf("%s: unexpected error: %v", name, err)
+		}
+		if got != 0 {
+			t.Errorf("%s: got %d, want 0", name, got)
+		}
+	}
+}
+
+// TestGraphProjectionRequestKbID guards the contract the review queue depends on.
+//
+// An engine returns only the columns named in the projection, and the decision
+// endpoint validates (row id, dataset) together. A projection without `kb_id`
+// therefore produces queue items with an empty dataset, and every verdict is
+// refused as "not a compiled assertion of this model" — the queue looks fine and
+// nothing can be accepted.
+func TestGraphProjectionRequestKbID(t *testing.T) {
+	for name, fields := range map[string][]string{
+		"entity":   graphEntityFields,
+		"relation": graphRelationFields,
+	} {
+		found := false
+		for _, field := range fields {
+			if field == "kb_id" {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("%s projection must request kb_id: %v", name, fields)
+		}
+	}
+}
+
+// TestAnnotateReviewRow_CarriesTheDataset pins the other half: the item's dataset
+// comes from the row's kb_id column, not from a parameter the caller already
+// knows, because one query covers every dataset the model compiles.
+func TestAnnotateReviewRow_CarriesTheDataset(t *testing.T) {
+	node := StructureGraphNode{"id": "row-1"}
+	annotateReviewRow(node, map[string]interface{}{"kb_id": "kb-1"}, map[string]string{"kb-1": "Manuals"})
+	if node["dataset_id"] != "kb-1" {
+		t.Errorf("dataset_id: got %v", node["dataset_id"])
+	}
+	if node["dataset_name"] != "Manuals" {
+		t.Errorf("dataset_name: got %v", node["dataset_name"])
+	}
+
+	// A row without kb_id says so by leaving the field out rather than inventing
+	// a dataset: a made-up id would pass the endpoint's membership check for the
+	// wrong dataset.
+	orphan := StructureGraphNode{"id": "row-2"}
+	annotateReviewRow(orphan, map[string]interface{}{}, map[string]string{"kb-1": "Manuals"})
+	if _, ok := orphan["dataset_id"]; ok {
+		t.Errorf("orphan row must not claim a dataset: %v", orphan)
 	}
 }
 

@@ -48,6 +48,7 @@ import {
 } from '@/interfaces/database/compilation-model';
 import { IAssertionReviewRequestParams } from '@/interfaces/request/compilation-model';
 import { cn } from '@/lib/utils';
+import { formatDate } from '@/utils/date';
 import { Check, RotateCcw, X } from 'lucide-react';
 import {
   ChangeEvent,
@@ -73,6 +74,13 @@ interface OntologyReviewSheetProps {
   /** Declared entities / properties, so the filters can offer what is not on screen. */
   entities?: string[];
   properties?: string[];
+  /**
+   * Opening filters. A caller that links here for one kind of row (the actions
+   * page sends `action` + unreviewed) must arrive filtered, not with the reader
+   * hunting for the next click.
+   */
+  initialClass?: string;
+  initialView?: ReviewView;
 }
 
 /**
@@ -81,10 +89,14 @@ interface OntologyReviewSheetProps {
  * They are not three status values: "missing contract fields" is a filter over
  * the corpus, and the server has to apply it — narrowing the page that happens to
  * be loaded would answer a question about the window instead of the corpus.
+ *
+ * The first view is unreviewed, not "everything": a queue that starts by showing
+ * rows the reader already judged cannot tell them whether there is work left, and
+ * a verdict that leaves its row on screen reads as a verdict that did not apply.
  */
-type ReviewView = 'all' | 'missing' | 'reviewed';
+type ReviewView = 'unreviewed' | 'missing' | 'reviewed';
 
-const ReviewViews: ReviewView[] = ['all', 'missing', 'reviewed'];
+const ReviewViews: ReviewView[] = ['unreviewed', 'missing', 'reviewed'];
 
 /**
  * The six contract fields, in the order the contract declares them.
@@ -104,12 +116,17 @@ const ContractFieldNames = [
 /**
  * The review state a view asks for.
  *
- * "Reviewed" is the closest the queue can get to "my decisions": rows record
- * their verdict but not who made it, so the view is everything already judged.
- * Telling the reader that is better than a tab that quietly claims more.
+ * "Reviewed" spans both verdicts (`decided`): rows record their verdict but the
+ * queue cannot filter by reviewer, so this is everything already judged rather
+ * than "mine". Accepted-only would also hide every rejection — the rows a reader
+ * most often needs to look at again.
+ *
+ * "Missing contract fields" looks at the whole corpus on purpose: the question is
+ * which rows lack a field, not which *undecided* rows lack one, and a row can be
+ * accepted while its authorization is still unstated.
  */
 const viewStatus = (view: ReviewView): AssertionReviewStatus =>
-  view === 'reviewed' ? 'accepted' : 'all';
+  view === 'reviewed' ? 'decided' : view === 'missing' ? 'all' : 'unreviewed';
 
 const viewMissing = (view: ReviewView) =>
   view === 'missing' ? ContractFieldNames.join(',') : undefined;
@@ -186,12 +203,20 @@ export function OntologyReviewSheet({
   trigger,
   entities,
   properties,
+  initialClass,
+  initialView,
 }: OntologyReviewSheetProps) {
   const { t } = useTranslation();
   const [uncontrolledOpen, setUncontrolledOpen] = useState(false);
-  const [view, setView] = useState<ReviewView>('all');
-  const [entityType, setClassType] = useState('');
+  const [view, setView] = useState<ReviewView>(initialView ?? 'unreviewed');
+  const [entityType, setClassType] = useState(initialClass ?? '');
   const [property, setProperty] = useState('');
+  /**
+   * The queue is paged on the server: the reviewer decides the corpus, and a
+   * page of fifty is a window on it, not the whole answer. Offset is reset by
+   * every filter, because page 3 of a different question is meaningless.
+   */
+  const [offset, setOffset] = useState(0);
   /** Where `R` sends the reader when a rejection has no reason yet. */
   const noteRef = useRef<HTMLTextAreaElement>(null);
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
@@ -216,9 +241,10 @@ export function OntologyReviewSheet({
       missing: viewMissing(view),
       class: entityType || undefined,
       property: property || undefined,
+      offset,
       limit: ReviewPageSize,
     }),
-    [view, entityType, property],
+    [view, entityType, property, offset],
   );
 
   const { queue, loading } = useFetchAssertionReview(
@@ -289,11 +315,11 @@ export function OntologyReviewSheet({
         value,
         label: t(`knowledgeCompilation.ontologyInspect.reviewView_${value}`, {
           defaultValue:
-            value === 'all'
-              ? 'All'
+            value === 'unreviewed'
+              ? 'Awaiting review'
               : value === 'missing'
                 ? 'Missing contract fields'
-                : 'Reviewed',
+                : 'Judged',
         }),
       })),
     [t],
@@ -425,18 +451,19 @@ export function OntologyReviewSheet({
     [templateId, submitReview, note, t],
   );
 
-  const handleViewChange = useCallback(
-    (value: string) => setView(value as ReviewView),
-    [],
-  );
-  const handleClassChange = useCallback(
-    (value: string) => setClassType(value),
-    [],
-  );
-  const handlePropertyChange = useCallback(
-    (value: string) => setProperty(value),
-    [],
-  );
+  const handleViewChange = useCallback((value: string) => {
+    setView(value as ReviewView);
+    // Page 3 of the previous question does not mean anything in this one.
+    setOffset(0);
+  }, []);
+  const handleClassChange = useCallback((value: string) => {
+    setClassType(value);
+    setOffset(0);
+  }, []);
+  const handlePropertyChange = useCallback((value: string) => {
+    setProperty(value);
+    setOffset(0);
+  }, []);
   const handleNoteChange = useCallback(
     (event: ChangeEvent<HTMLTextAreaElement>) => setNote(event.target.value),
     [],
@@ -684,6 +711,18 @@ export function OntologyReviewSheet({
                   })}
                 </Badge>
               )}
+              {/* A verdict without an author is an anonymous opinion. The server
+                  already records both; showing them is what makes a decision
+                  answerable later. */}
+              {item.review_by && (
+                <span className="text-text-disabled">
+                  {/* A missing timestamp must not leave a dangling separator:
+                      the two are one fact, and half of it reads as a typo. */}
+                  {[item.review_by, formatDate(item.review_at)]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+              )}
             </div>
 
             {(item.description || item.review_note) && (
@@ -769,6 +808,22 @@ export function OntologyReviewSheet({
             })}
           </p>
 
+          {/* A caller that links here from a class-specific page (actions → the
+              action class) must say so: the queue's title is the generic one,
+              and without this line the reader cannot tell whether the numbers
+              describe the class or the whole model. The line follows the filter
+              rather than the entry point, because narrowing the class by hand
+              narrows the numbers the same way. */}
+          {entityType && (
+            <p className="text-text-secondary">
+              {t('knowledgeCompilation.ontologyInspect.reviewScopedToClass', {
+                class: entityType,
+                defaultValue:
+                  'Only {{class}} assertions are in this queue: the rows and the numbers above count the same ones.',
+              })}
+            </p>
+          )}
+
           <div className="flex flex-wrap items-center gap-2">
             <div
               className="flex items-center gap-1"
@@ -830,6 +885,42 @@ export function OntologyReviewSheet({
                 )}
               </div>
             )}
+          </div>
+
+          {/* The page is a window on the corpus, and the reviewer has to be able
+              to move it: a queue that always shows the first fifty rows cannot
+              be worked through. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-text-secondary">
+              {t('knowledgeCompilation.ontologyInspect.reviewRange', {
+                start: queue && items.length > 0 ? offset + 1 : 0,
+                end: offset + items.length,
+                total: queue?.total ?? 0,
+                defaultValue: '{{start}}–{{end}} of {{total}}',
+              })}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={loading || offset === 0}
+              onClick={() => setOffset(Math.max(0, offset - ReviewPageSize))}
+            >
+              {t('knowledgeCompilation.ontologyInspect.reviewPrev', {
+                defaultValue: 'Previous',
+              })}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={
+                loading || offset + ReviewPageSize >= (queue?.total ?? 0)
+              }
+              onClick={() => setOffset(offset + ReviewPageSize)}
+            >
+              {t('knowledgeCompilation.ontologyInspect.reviewNext', {
+                defaultValue: 'Next',
+              })}
+            </Button>
           </div>
 
           {queue?.truncated && (

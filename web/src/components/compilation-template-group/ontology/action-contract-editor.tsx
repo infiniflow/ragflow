@@ -177,7 +177,11 @@ export function ActionContractEditor({
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="max-w-2xl">
+      {/* Six fields plus a reason is taller than a laptop viewport. The dialog is
+          centred with a fixed offset and the page behind it is scroll-locked, so
+          without a ceiling the footer (Cancel/Save) landed below the screen and
+          the editor looked like a form with no buttons. */}
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {t('knowledgeCompilation.ontologyInspect.actionContractEditTitle', {

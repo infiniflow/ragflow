@@ -2258,7 +2258,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         reviewUnreviewed: '未审核',
         reviewAccepted: '已接受',
         reviewRejected: '已驳回',
-        reviewAll: '全部',
+        reviewView_unreviewed: '待审',
+        reviewView_missing: '缺契约字段',
+        reviewView_reviewed: '已判',
         reviewAccept: '接受',
         reviewReject: '驳回',
         reviewReset: '重置',
@@ -2279,7 +2281,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
           '缺失表示文档没有规定这一项，不代表没有约束。',
         actionContractMissing: '文档未规定',
         actionContractExplicitNone: '明确无要求',
-        actionContractManual: '人工录入',
+        actionContractManual: '无原文',
         actionContractMissingAuth: '{{count}} 个动作缺少授权',
         actionContractField: {
           authorization: '授权',
@@ -2297,7 +2299,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         actionContractReasonRequired: '请说明为什么要修改契约。',
         actionContractNoChange: '没有任何改动。',
         actionContractSaved: '契约已更新。',
-        actionsTitle: '动作与绑定',
+        actionsTitle: '动作',
         actionsExecOff: '本次部署未开启执行',
         actionsEmpty: '该模型没有抽出动作。动作是 `action` 类的实例。',
         actionsPickOne: '请选择一个动作。',
@@ -2322,7 +2324,13 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         actionStatus_unreviewed: '待审核',
         actionStatus_rejected: '已驳回',
         actionStatus_blocked: '不可执行',
-        actionStatus_manual: '人工',
+        actionStatus_manual: '无原文',
+        actionReviewLink: '打开只看该类断言的审核队列',
+        actionGroupRows: '{{rows}} 处断言 · {{judged}} 已判',
+        actionScopeDoc: '文档级',
+        actionScopeDataset: '数据集级',
+        reviewScopedToClass:
+          '本队列只包含 {{class}} 类断言：列表与上方数字都按这一类计算。',
         actionAuditIntro:
           '每一次尝试，包括被闸门拒绝的。被拒是模型或绑定的事实，不是错误。',
         actionAuditEmptyAll: '该模型还没有任何执行尝试。',
@@ -2489,10 +2497,11 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       ontologyInstancesPickOne: '选择一行查看它的原文出处。',
       ontologyInstancesPage: '实例与断言 — {{name}}',
       // 编辑器右上角的三个工作区入口，标题与入口同名，免得同一个面板有两个叫法。
-      ontologyOpenInstances: '实例',
-      ontologyOpenActions: '动作与绑定',
+      ontologyOpenInstances: '实例与断言',
+      // 绑定目前没有可编辑的界面，入口叫"动作"，绑定只作为每个动作的状态出现。
+      ontologyOpenActions: '动作',
       ontologyOpenAudit: '审计',
-      ontologyActionsPage: '动作与绑定 — {{name}}',
+      ontologyActionsPage: '动作 — {{name}}',
       ontologyInstancesNoDataset:
         '还没有数据集用这个模型编译过，暂时没有可读取的行。',
       aboxAllClasses: '全部类',

@@ -24,10 +24,14 @@ import { useFetchCompilationTemplateGroup } from '@/hooks/use-compilation-templa
 import type { ICompilationTemplate } from '@/interfaces/database/compilation-template';
 import { CompilationTemplateKind } from '@/constants/compilation';
 import { Routes } from '@/routes';
-import { ontologyTemplateIdOf } from '@/utils/compilation-template-util';
-import { useEffect, useMemo, useState } from 'react';
+import {
+  ontologyTemplateIdOf,
+  ReviewSourceActions,
+  ReviewSourceParam,
+} from '@/utils/compilation-template-util';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useParams } from 'react-router';
+import { useNavigate, useParams, useSearchParams } from 'react-router';
 
 /**
  * The ABox of one model, as a page.
@@ -48,6 +52,39 @@ import { useParams } from 'react-router';
 export default function CompilationTemplateInstancesPage() {
   const { t } = useTranslation();
   const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
+  /**
+   * The actions page links here with `?review=1&class=action&from=actions`: a
+   * row that says "awaiting review" must lead to the place where it can be
+   * reviewed, or the badge is a dead end.
+   */
+  const [reviewOpen, setReviewOpen] = useState(
+    searchParams.get('review') === '1',
+  );
+  const reviewClass = searchParams.get('class') ?? undefined;
+  const reviewSource = searchParams.get(ReviewSourceParam);
+  /**
+   * Closing the queue returns the reader where they came from.
+   *
+   * The queue is the *only* place a verdict can be recorded, which is why the
+   * actions page links into it; but this page is not where that reader works.
+   * Leaving them here would strand them on a workspace they never chose, with
+   * the queue already closed.
+   *
+   * `replace` keeps the review URL out of history: Back must not reopen a sheet
+   * the reader just dismissed.
+   */
+  const handleReviewOpenChange = useCallback(
+    (open: boolean) => {
+      setReviewOpen(open);
+      if (open || reviewSource !== ReviewSourceActions || !id) return;
+      navigate(`${Routes.CompilationTemplatesEditNext}/${id}/actions`, {
+        replace: true,
+      });
+    },
+    [id, navigate, reviewSource],
+  );
   const { data: group } = useFetchCompilationTemplateGroup(id);
   // `:id` addresses the group (the editor route's unit); every model-scoped read
   // below is keyed by the template row inside it.
@@ -98,6 +135,9 @@ export default function CompilationTemplateInstancesPage() {
               so the queue opens from here rather than from a separate page. */}
           <OntologyReviewSheet
             templateId={templateId}
+            open={reviewOpen}
+            onOpenChange={handleReviewOpenChange}
+            initialClass={reviewClass}
             entities={declaredClasses(group?.templates, templateId)?.map(
               (item) => item.type,
             )}

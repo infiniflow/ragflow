@@ -269,12 +269,49 @@ func (h *CompilationModelHandler) ListExecutions(c *gin.Context) {
 	}
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "50"))
-	rows, total, err := h.actions.ListExecutions(c.Request.Context(), dao.DB, tenantID, c.Param("template_id"), page, pageSize)
+	fromMS, _ := strconv.ParseInt(c.Query("from"), 10, 64)
+	toMS, _ := strconv.ParseInt(c.Query("to"), 10, 64)
+	rows, total, err := h.actions.ListExecutions(c.Request.Context(), dao.DB, tenantID, c.Param("template_id"),
+		service.ExecutionQuery{
+			ActionName: c.Query("action_name"),
+			Verdict:    c.Query("verdict"),
+			Status:     c.Query("status"),
+			Mode:       c.Query("mode"),
+			FromMS:     fromMS,
+			ToMS:       toMS,
+			Page:       page,
+			PageSize:   pageSize,
+		})
 	if err != nil {
 		common.RespondError(c, common.CodeExceptionError, err.Error())
 		return
 	}
 	common.RespondSuccess(c, gin.H{"executions": rows, "total": total}, "success")
+}
+
+// ListContractEdits returns the manual edit history of one action.
+//
+//	@Summary List manual contract edits of an action
+//	@Tags compilation model
+//	@Security ApiKeyAuth
+//	@Router /v1/compilation-models/{template_id}/actions/{action_name}/contract-edits [get]
+func (h *CompilationModelHandler) ListContractEdits(c *gin.Context) {
+	_, tenantID, ok := h.resolveReader(c)
+	if !ok {
+		return
+	}
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "20"))
+	if page < 1 {
+		page = 1
+	}
+	rows, total, err := h.governance.ListActionContractEdits(c.Request.Context(), dao.DB, tenantID,
+		c.Param("template_id"), c.Param("action_name"), (page-1)*pageSize, pageSize)
+	if err != nil {
+		respondActionError(c, err)
+		return
+	}
+	common.RespondSuccess(c, gin.H{"edits": rows, "total": total}, "success")
 }
 
 // respondActionError maps the two rejection families to their status codes.
