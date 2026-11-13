@@ -160,6 +160,26 @@ var additiveChunkColumns = []columnDefinition{
 	{"token_num", "INTEGER NULL"},
 	{"aliases", "ARRAY(VARCHAR(256)) NULL"},
 	{"aliases_flat_kwd", "VARCHAR(256) NULL"},
+	// Ontology rows. The class/property stamps and the endpoints' declared
+	// classes are keyword strings; `attr` and `contract` are the row's own
+	// payloads, and the review state is what the review queue filters on
+	// (status is low-cardinality, so it is a keyword column rather than JSON).
+	{"prop_kwd", "VARCHAR(256) NULL"},
+	{"from_type_kwd", "VARCHAR(256) NULL"},
+	{"to_type_kwd", "VARCHAR(256) NULL"},
+	{"node_role_kwd", "VARCHAR(256) NULL"},
+	{"node_value_kwd", "VARCHAR(256) NULL"},
+	{"path_kwd", "VARCHAR(256) NULL"},
+	{"attr", "JSON NULL"},
+	{"contract", "JSON NULL"},
+	{"contract_missing_kwd", "ARRAY(VARCHAR(256)) NULL"},
+	{"compilation_template_version_int", "INTEGER NULL"},
+	{"review_status_kwd", "VARCHAR(256) NULL"},
+	{"review_by_kwd", "VARCHAR(256) NULL"},
+	{"review_note", "LONGTEXT NULL"},
+	{"review_at_flt", "DOUBLE NULL"},
+	// Hypergraph membership: the ids of the hyperedges a chunk belongs to.
+	{"hyperedge_ids", "ARRAY(VARCHAR(256)) NULL"},
 }
 
 var chunkColumns = append(append([]columnDefinition{}, baseChunkColumns...), additiveChunkColumns...)

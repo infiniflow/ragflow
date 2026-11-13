@@ -230,7 +230,7 @@ func TestMappingListColumnsKeepTheirEncoding(t *testing.T) {
 		"source_chunk_ids", "source_doc_ids", "compilation_template_ids",
 		"doc_ids_kwd", "entity_names_kwd", "entity_names", "outlinks_kwd",
 		"related_kb_pages_kwd", "page_ids", "rechunked_from_chunk_ids", "aliases",
-		"children_kwd",
+		"children_kwd", "contract_missing_kwd", "hyperedge_ids",
 	} {
 		if !arrayColumns[name] {
 			t.Errorf("%q stores a list but is not registered in arrayColumns", name)
@@ -239,7 +239,7 @@ func TestMappingListColumnsKeepTheirEncoding(t *testing.T) {
 			t.Errorf("%q is not an ARRAY column: %q", name, types[name])
 		}
 	}
-	for _, name := range []string{"claims", "source_chunk_hashes"} {
+	for _, name := range []string{"claims", "source_chunk_hashes", "attr", "contract"} {
 		if !jsonColumns[name] {
 			t.Errorf("%q stores an object payload but is not registered in jsonColumns", name)
 		}
