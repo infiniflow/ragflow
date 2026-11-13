@@ -9,6 +9,7 @@ import (
 	"ragflow/internal/common"
 	"strings"
 	"testing"
+	"time"
 )
 
 func newAnthropicServer(t *testing.T, expectedPath string, handler func(t *testing.T, body map[string]interface{}, w http.ResponseWriter)) *httptest.Server {
@@ -81,7 +82,7 @@ func TestAnthropicToolOptionalFields(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			body := make(map[string]any)
-			err := applyAnthropicChatConfig(body, &ChatConfig{Tools: []any{map[string]any{"type": "function", "function": tc.function}}})
+			err := applyAnthropicChatConfig(body, "claude-sonnet-4-5-20250929", &ChatConfig{Tools: []any{map[string]any{"type": "function", "function": tc.function}}}, 0)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatal("expected invalid parameters to be rejected")
@@ -108,12 +109,20 @@ func TestAnthropicToolOptionalFields(t *testing.T) {
 
 func TestAnthropicChatHappyPath(t *testing.T) {
 	withSSRFBypass(t)
+	dir, restore := setupProviderTestDir(t, "anthropic.json")
+	defer restore()
+	if err := InitProviderManager(dir); err != nil {
+		t.Fatalf("InitProviderManager: %v", err)
+	}
 	srv := newAnthropicServer(t, "/v1/messages", func(t *testing.T, body map[string]interface{}, w http.ResponseWriter) {
 		if body["model"] != "claude-sonnet-4-5-20250929" {
 			t.Errorf("model=%v", body["model"])
 		}
-		if body["max_tokens"] != float64(1024) {
-			t.Errorf("max_tokens=%v want 1024", body["max_tokens"])
+		// The catalog declares 64000 for this model, and an unset max_tokens
+		// must use a catalog budget instead of the driver's 1024 fallback. A
+		// non-streaming request stops at the ten-minute derived bound.
+		if body["max_tokens"] != float64(anthropicNonStreamingMaxTokens) {
+			t.Errorf("max_tokens=%v want %d", body["max_tokens"], anthropicNonStreamingMaxTokens)
 		}
 		msgs, ok := body["messages"].([]interface{})
 		if !ok || len(msgs) != 1 {
@@ -736,5 +745,81 @@ func TestAnthropicUnsupportedMethods(t *testing.T) {
 	}
 	if _, err := m.ShowTask(ctx, "task-id", &APIConfig{ApiKey: &apiKey}); err == nil || !strings.Contains(err.Error(), "no such method") {
 		t.Errorf("ShowTask: got %v", err)
+	}
+}
+
+// The Messages API requires max_tokens, so an unset value must resolve to the
+// model's declared max_output instead of the legacy 1024 fallback, capped on
+// the non-streaming path at the budget a non-streaming call can finish.
+// Thinking must reach the wire when the caller disables it, because the API
+// keeps a model's server-side thinking on unless the request turns it off.
+func TestAnthropicMaxTokensAndThinking(t *testing.T) {
+	dir, restore := setupProviderTestDir(t, "anthropic.json")
+	defer restore()
+	if err := InitProviderManager(dir); err != nil {
+		t.Fatalf("InitProviderManager: %v", err)
+	}
+
+	explicit := 4096
+	largeExplicit := 96000
+	thinkingOn := true
+	thinkingOff := false
+	for _, tc := range []struct {
+		name       string
+		model      string
+		config     *ChatConfig
+		derivedCap int
+		wantTokens int
+		wantThink  string
+	}{
+		{"caller max_tokens wins", "claude-sonnet-4-5-20250929", &ChatConfig{MaxTokens: &explicit}, anthropicNonStreamingMaxTokens, explicit, ""},
+		{"caller max_tokens above the derived cap is kept", "claude-sonnet-4-5-20250929", &ChatConfig{MaxTokens: &largeExplicit}, anthropicNonStreamingMaxTokens, largeExplicit, ""},
+		{"catalog max_output capped for non-streaming", "claude-sonnet-4-5-20250929", &ChatConfig{}, anthropicNonStreamingMaxTokens, anthropicNonStreamingMaxTokens, ""},
+		{"catalog max_output kept for streaming", "claude-sonnet-4-5-20250929", &ChatConfig{}, 0, 64000, ""},
+		{"catalog max_output below the cap is kept", "claude-3-5-sonnet-20241022", &ChatConfig{}, anthropicNonStreamingMaxTokens, 8192, ""},
+		{"unknown model keeps fallback", "claude-haiku-5-5", nil, anthropicNonStreamingMaxTokens, anthropicDefaultMaxTokens, ""},
+		{"catalog cap equal to context keeps fallback", "claude-haiku-4-5", nil, anthropicNonStreamingMaxTokens, anthropicDefaultMaxTokens, ""},
+		{"thinking disabled is sent", "claude-sonnet-4-5-20250929", &ChatConfig{Thinking: &thinkingOff}, anthropicNonStreamingMaxTokens, anthropicNonStreamingMaxTokens, "disabled"},
+		{"thinking enabled stays model default", "claude-sonnet-4-5-20250929", &ChatConfig{Thinking: &thinkingOn}, anthropicNonStreamingMaxTokens, anthropicNonStreamingMaxTokens, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body := make(map[string]any)
+			if err := applyAnthropicChatConfig(body, tc.model, tc.config, tc.derivedCap); err != nil {
+				t.Fatalf("applyAnthropicChatConfig: %v", err)
+			}
+			if got := body["max_tokens"]; got != tc.wantTokens {
+				t.Errorf("max_tokens=%v, want %d", got, tc.wantTokens)
+			}
+			got, present := body["thinking"]
+			if tc.wantThink == "" {
+				if present {
+					t.Errorf("thinking=%v, want it omitted", got)
+				}
+				return
+			}
+			thinking, ok := got.(map[string]any)
+			if !ok || thinking["type"] != tc.wantThink {
+				t.Errorf("thinking=%v, want type %q", got, tc.wantThink)
+			}
+		})
+	}
+}
+
+// A streaming request may now carry the catalog's full max_output. Anthropic
+// produces about 128k tokens per hour, so a 128k budget needs an hour even
+// when every event arrives on time; the fixed floor still bounds a stall.
+func TestAnthropicStreamTimeoutFollowsTheCatalogBudget(t *testing.T) {
+	for _, tc := range []struct {
+		maxTokens int
+		want      time.Duration
+	}{
+		{0, streamCallTimeout},
+		{1024, streamCallTimeout},
+		{64000, 30 * time.Minute},
+		{128000, time.Hour},
+	} {
+		if got := anthropicStreamTimeout(tc.maxTokens); got != tc.want {
+			t.Errorf("anthropicStreamTimeout(%d) = %v, want %v", tc.maxTokens, got, tc.want)
+		}
 	}
 }
