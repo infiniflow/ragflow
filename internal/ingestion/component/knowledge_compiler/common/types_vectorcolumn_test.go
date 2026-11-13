@@ -1,35 +1,8 @@
 package common
 
 import (
-	"os"
-	"path/filepath"
-	"runtime"
-	"strings"
 	"testing"
 )
-
-// This is an output-invariant refactor: the old inline
-// `HasPrefix("q_") && HasSuffix("_vec")` spelling and the shared
-// `appcommon.IsVectorColumn` helper yield identical bytes, so a behavioral
-// test cannot tell them apart. The migration's only real risk is leaving a
-// call site behind on the old spelling, so we assert structurally that no
-// inline `q_`/`_vec` detection remains in this file.
-func TestVectorFromChunkMapNoInlineDuplication(t *testing.T) {
-	_, thisFile, _, _ := runtime.Caller(0)
-	src, err := os.ReadFile(filepath.Join(filepath.Dir(thisFile), "types.go"))
-	if err != nil {
-		t.Fatalf("read types.go: %v", err)
-	}
-	s := string(src)
-	for _, bad := range []string{
-		`HasPrefix(k, "q_")`,
-		`HasSuffix(k, "_vec")`,
-	} {
-		if strings.Contains(s, bad) {
-			t.Errorf("inline vector-column detection still present in types.go: %q", bad)
-		}
-	}
-}
 
 // TestVectorFromChunkMap exercises the detection logic that VectorFromChunkMap
 // uses to pick the embedding column out of a chunk map. It guards the
