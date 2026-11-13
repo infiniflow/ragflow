@@ -299,18 +299,8 @@ func (h *UserHandler) GetUserByID(c *gin.Context) {
 // @Router /v1/user/logout [post]
 func (h *UserHandler) Logout(c *gin.Context) {
 	ctx := c.Request.Context()
-	startAt := time.Now()
-	operationLog := &common.OperationLog{
-		EventTime:  startAt,
-		Operation:  "logout",
-		APIPath:    c.FullPath(),
-		HTTPMethod: c.Request.Method,
-		IPAddress:  c.ClientIP(),
-	}
-	defer func() {
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		common.Audit(operationLog)
-	}()
+	common.StartOperationLog(c, "logout")
+	defer common.FinishOperationLog(c)
 
 	http.SetCookie(c.Writer, &http.Cookie{
 		Name:     oauthAuthCookie,
@@ -327,8 +317,6 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	if token == "" {
 		common.Respond(c, http.StatusUnauthorized, common.CodeUnauthorized, nil, "missing authorization header")
 		c.Abort()
-		operationLog.Code = int(common.CodeUnauthorized)
-		operationLog.Error = fmt.Errorf("missing authorization header")
 		return
 	}
 
@@ -337,19 +325,14 @@ func (h *UserHandler) Logout(c *gin.Context) {
 	if err != nil {
 		common.Respond(c, http.StatusUnauthorized, code, nil, "Invalid access token")
 		c.Abort()
-		operationLog.Code = int(code)
-		operationLog.Error = err
 		return
 	}
 	user := identity.User
-	operationLog.UserID = user.ID
 
 	// Logout user
 	code, err = h.userService.Logout(ctx, user)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
-		operationLog.Code = int(code)
-		operationLog.Error = err
 		return
 	}
 
@@ -386,6 +369,8 @@ func (h *UserHandler) Info(c *gin.Context) {
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/users/me [patch]
 func (h *UserHandler) Setting(c *gin.Context) {
+	common.StartOperationLog(c, "update_user_settings")
+	defer common.FinishOperationLog(c)
 	ctx := c.Request.Context()
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -453,27 +438,14 @@ func (h *UserHandler) ChangePassword(c *gin.Context) {
 // @Router /v1/user/set_tenant_info [post]
 func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 	ctx := c.Request.Context()
-	startAt := time.Now()
-	operationLog := &common.OperationLog{
-		EventTime:  startAt,
-		Operation:  "set_tenant_info",
-		APIPath:    c.FullPath(),
-		HTTPMethod: c.Request.Method,
-		IPAddress:  c.ClientIP(),
-	}
-	defer func() {
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		common.Audit(operationLog)
-	}()
+	common.StartOperationLog(c, "set_tenant_info")
+	defer common.FinishOperationLog(c)
 
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
-		operationLog.Code = int(errorCode)
-		operationLog.Error = errors.New(errorMessage)
 		return
 	}
-	operationLog.UserID = user.ID
 
 	requiredKeys := []string{"tenant_id", "asr_id", "embd_id", "img2txt_id", "llm_id"}
 	missingArgumentMessage := "required argument are missing: tenant_id,asr_id,embd_id,img2txt_id,llm_id; "
@@ -481,8 +453,6 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 	var payload map[string]interface{}
 	if err := c.ShouldBindBodyWith(&payload, binding.JSON); err != nil {
 		common.RespondError(c, common.CodeArgumentError, missingArgumentMessage)
-		operationLog.Code = int(common.CodeArgumentError)
-		operationLog.Error = err
 		return
 	}
 
@@ -494,8 +464,6 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 	}
 	if len(missing) > 0 {
 		common.RespondError(c, common.CodeArgumentError, fmt.Sprintf("required argument are missing: %s; ", joinStrings(missing)))
-		operationLog.Code = int(common.CodeArgumentError)
-		operationLog.Error = errors.New(fmt.Sprintf("required argument are missing: %s; ", joinStrings(missing)))
 		return
 	}
 
@@ -525,8 +493,6 @@ func (h *UserHandler) SetTenantInfo(c *gin.Context) {
 	code, err := h.userTenantService.SetModelSettings(ctx, &req)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
-		operationLog.Code = int(code)
-		operationLog.Error = err
 		return
 	}
 
