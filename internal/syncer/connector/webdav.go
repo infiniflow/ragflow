@@ -38,12 +38,22 @@ const (
 	defaultWebDAVBatchSize     = 2
 	defaultWebDAVSizeThreshold = 20 * 1024 * 1024
 	webdavRequestTimeout       = 60 * time.Second
-	maxWebDAVResponseSize      = 32 * 1024 * 1024
+	maxWebDAVListResponseSize  = 32 * 1024 * 1024
 	webdavPropfindBody         = `<?xml version="1.0" encoding="utf-8"?><propfind xmlns="DAV:"><allprop/></propfind>`
 )
 
 var (
-	webdavTextExtensions = map[string]struct{}{
+	// webdavDownloadHeaderTimeout bounds dial, TLS handshake and the wait for
+	// response headers on a download. The body is deliberately left to the
+	// sync run's context: a file the threshold allows must be able to finish at
+	// the server's pace, and a stalled transfer still ends with the run.
+	webdavDownloadHeaderTimeout = webdavRequestTimeout
+	// webdavBodyIdleTimeout bounds how long a download may go without
+	// receiving body bytes. Every read resets it, so a large file that keeps
+	// arriving completes while a server that sends headers and then stalls is
+	// cut off instead of holding the sync run.
+	webdavBodyIdleTimeout = webdavRequestTimeout
+	webdavTextExtensions        = map[string]struct{}{
 		".txt": {}, ".md": {}, ".mdx": {}, ".conf": {}, ".log": {}, ".json": {},
 		".csv": {}, ".tsv": {}, ".xml": {}, ".yml": {}, ".yaml": {}, ".sql": {},
 	}
@@ -96,7 +106,9 @@ func NewWebDAVConnector(config map[string]any) (*WebDAVConnector, error) {
 	connector.client.username = username
 	connector.client.password = password
 	connector.listFiles = connector.client.listRecursive
-	connector.downloadFile = connector.client.download
+	connector.downloadFile = func(ctx context.Context, fileURL string) ([]byte, error) {
+		return connector.client.download(ctx, fileURL, connector.sizeThreshold)
+	}
 	return connector, nil
 }
 
@@ -427,25 +439,29 @@ func (c *webdavClient) propfind(ctx context.Context, target string) ([]webdavFil
 	if resp.StatusCode != http.StatusMultiStatus {
 		return nil, &webdavStatusError{status: resp.StatusCode, url: resolved}
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, maxWebDAVResponseSize))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxWebDAVListResponseSize))
 	if err != nil {
 		return nil, err
 	}
 	return parseWebDAVMultistatus(data, c.baseURL)
 }
 
-// download fetches a file body over GET.
-func (c *webdavClient) download(ctx context.Context, fileURL string) ([]byte, error) {
+// download fetches a file body over GET, bounded by the connector's configured
+// size threshold. The listing filter already drops files above it; this bound
+// also covers a server that under-reports a file's size.
+func (c *webdavClient) download(ctx context.Context, fileURL string, limit int64) ([]byte, error) {
 	headers := map[string]string{}
 	if c.username != "" {
 		headers["Authorization"] = "Basic " + basicAuthHeader(c.username, c.password)
 	}
-	resp, err := connectorRequest(ctx, connectorRequestOptions{
-		Method:  http.MethodGet,
-		RawURL:  fileURL,
-		Headers: headers,
-		Timeout: webdavRequestTimeout,
-		Base:    c.httpClient,
+	downloadCtx, cancelDownload := context.WithCancel(ctx)
+	defer cancelDownload()
+	resp, err := connectorRequest(downloadCtx, connectorRequestOptions{
+		Method:        http.MethodGet,
+		RawURL:        fileURL,
+		Headers:       headers,
+		HeaderTimeout: webdavDownloadHeaderTimeout,
+		Base:          c.httpClient,
 	})
 	if err != nil {
 		return nil, err
@@ -454,14 +470,45 @@ func (c *webdavClient) download(ctx context.Context, fileURL string) ([]byte, er
 	if resp.StatusCode != http.StatusOK {
 		return nil, &webdavStatusError{status: resp.StatusCode, url: fileURL}
 	}
-	blob, err := io.ReadAll(io.LimitReader(resp.Body, maxWebDAVResponseSize+1))
+	if limit <= 0 {
+		limit = defaultWebDAVSizeThreshold
+	}
+	body := newIdleTimeoutReader(resp.Body, webdavBodyIdleTimeout, cancelDownload)
+	defer body.Stop()
+	blob, err := io.ReadAll(io.LimitReader(body, limit+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(blob) > maxWebDAVResponseSize {
-		return nil, fmt.Errorf("webdav response exceeds maximum size of %d bytes", maxWebDAVResponseSize)
+	if int64(len(blob)) > limit {
+		return nil, fmt.Errorf("webdav response exceeds maximum size of %d bytes", limit)
 	}
 	return blob, nil
+}
+
+// idleTimeoutReader cancels its request when a read waits longer than idle, so
+// a body that stops arriving ends the transfer instead of parking the caller.
+// The deadline restarts on every completed read, which keeps a slow but
+// progressing download alive.
+type idleTimeoutReader struct {
+	body  io.Reader
+	timer *time.Timer
+	idle  time.Duration
+}
+
+func newIdleTimeoutReader(body io.Reader, idle time.Duration, expire func()) *idleTimeoutReader {
+	r := &idleTimeoutReader{body: body, idle: idle}
+	r.timer = time.AfterFunc(idle, expire)
+	return r
+}
+
+func (r *idleTimeoutReader) Read(p []byte) (int, error) {
+	n, err := r.body.Read(p)
+	r.timer.Reset(r.idle)
+	return n, err
+}
+
+func (r *idleTimeoutReader) Stop() {
+	r.timer.Stop()
 }
 
 // resolve joins a server-relative path or href onto the configured base URL.
