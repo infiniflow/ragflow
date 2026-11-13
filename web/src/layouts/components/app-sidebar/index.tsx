@@ -1,5 +1,6 @@
 import { SidebarHeader } from '@/components/sidebar-header';
 import { Button } from '@/components/ui/button';
+import { Separator } from '@/components/ui/separator';
 import { EnterpriseHeaderUpgradeBadge } from '@/ee/layouts/components/header-enterprise';
 import { useAgentSidebarCollapse } from '@/hooks/use-agent-sidebar-collapse';
 import { useChatSidebarCollapse } from '@/hooks/use-chat-sidebar-collapse';
@@ -119,6 +120,9 @@ function AppSidebarContent() {
               <NavItemLink item={item} />
             </li>
           ))}
+          <li aria-hidden>
+            <Separator className="my-2" />
+          </li>
           <li>
             <IntegrationsNavGroup />
           </li>
