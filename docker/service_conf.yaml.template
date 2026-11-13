@@ -132,7 +132,8 @@ otel:
   stdout: false
   enable: false
 # Retries for a failed model-provider call (network error, HTTP 408/429/5xx).
-# 0 disables retries; valid range [0, 10]. The env var LLM_MAX_RETRIES overrides it.
+# 0 disables retries; valid range [0, 10]. The env var LLM_MAX_RETRIES overrides it,
+# and an administrator can override both at runtime in the admin console (Models).
 llm:
   max_retries: 3
 ingestor:

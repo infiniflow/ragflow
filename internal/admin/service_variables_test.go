@@ -64,3 +64,24 @@ func TestInferSystemSettingDataType(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateLLMMaxRetriesSetting(t *testing.T) {
+	tests := []struct {
+		value     string
+		wantError bool
+	}{
+		{value: "", wantError: false},
+		{value: "0"}, {value: "3"}, {value: "10"},
+		{value: "-1", wantError: true}, {value: "11", wantError: true},
+		{value: "1.5", wantError: true}, {value: "three", wantError: true},
+	}
+	for _, tt := range tests {
+		setting := entity.SystemSettings{Name: "llm.max_retries", DataType: "integer"}
+		if err := entity.ValidateSystemSettingValue(setting, tt.value); (err != nil) != tt.wantError {
+			t.Errorf("value %q: error = %v, wantError %v", tt.value, err, tt.wantError)
+		}
+	}
+	if got := entity.InferSystemSettingDataType("llm.max_retries"); got != "integer" {
+		t.Errorf("data type = %q, want integer", got)
+	}
+}

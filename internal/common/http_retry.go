@@ -40,6 +40,15 @@ const (
 	// caller's request deadline, so a larger budget only delays the failure.
 	MaxLLMMaxRetries = 10
 
+	// SettingLLMMaxRetries is the system setting an administrator edits to
+	// override the configured retry count at runtime. An empty value keeps the
+	// configured one.
+	SettingLLMMaxRetries = "llm.max_retries"
+
+	// RetryAttemptsHeader is set on a retryable response the transport gave up
+	// on, carrying how many requests were sent, so the caller can report it.
+	RetryAttemptsHeader = "X-Ragflow-Retry-Attempts"
+
 	llmRetryBaseDelay = 500 * time.Millisecond
 	llmRetryMaxDelay  = 30 * time.Second
 	// retryDrainBytes bounds how much of a discarded failed response is read
@@ -122,6 +131,12 @@ func (t *retryTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			return resp, nil
 		}
 		if attempt >= retries {
+			if resp != nil && attempt > 0 {
+				resp.Header.Set(RetryAttemptsHeader, strconv.Itoa(attempt+1))
+			}
+			if err != nil && attempt > 0 {
+				err = fmt.Errorf("%w (gave up after %d attempts)", err, attempt+1)
+			}
 			return resp, err
 		}
 
@@ -200,6 +215,16 @@ func retryableError(err error) bool {
 	}
 	var netErr net.Error
 	return errors.As(err, &netErr)
+}
+
+// RetryAttempts returns how many requests were sent for a response the retry
+// transport gave up on, or 0 when it was not retried.
+func RetryAttempts(resp *http.Response) int {
+	attempts, err := strconv.Atoi(resp.Header.Get(RetryAttemptsHeader))
+	if err != nil {
+		return 0
+	}
+	return attempts
 }
 
 // retryAfter returns the delay a provider asks for through Retry-After, given

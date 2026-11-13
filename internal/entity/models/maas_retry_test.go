@@ -21,6 +21,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -79,6 +80,12 @@ func TestDriverCallsRetryProviderFailures(t *testing.T) {
 			var statusErr *APIStatusError
 			if !errors.As(err, &statusErr) || statusErr.Status != tt.wantStatus {
 				t.Fatalf("err = %v, want APIStatusError with status %d", err, tt.wantStatus)
+			}
+			if got, want := statusErr.Attempts, int(tt.wantRequests); (want > 1 && got != want) || (want == 1 && got != 0) {
+				t.Errorf("Attempts = %d, want %d", got, want)
+			}
+			if tt.wantRequests > 1 && !strings.Contains(err.Error(), "gave up after") {
+				t.Errorf("err = %q, want it to say the call was retried", err)
 			}
 		})
 	}

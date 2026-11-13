@@ -506,3 +506,43 @@ func TestLLMMaxRetries(t *testing.T) {
 		}
 	}
 }
+
+func TestRetryTransportReportsAttempts(t *testing.T) {
+	t.Run("status response", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(503) }))
+		defer srv.Close()
+		resp, err := post(t, newTestRetryClient(2), context.Background(), srv.URL, "x")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if got := RetryAttempts(resp); got != 3 {
+			t.Errorf("RetryAttempts = %d, want 3", got)
+		}
+	})
+
+	t.Run("not retried", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(401) }))
+		defer srv.Close()
+		resp, err := post(t, newTestRetryClient(2), context.Background(), srv.URL, "x")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if got := RetryAttempts(resp); got != 0 {
+			t.Errorf("RetryAttempts = %d, want 0", got)
+		}
+	})
+
+	t.Run("network error", func(t *testing.T) {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			conn, _, _ := w.(http.Hijacker).Hijack()
+			_ = conn.Close()
+		}))
+		defer srv.Close()
+		_, err := post(t, newTestRetryClient(2), context.Background(), srv.URL, "x")
+		if err == nil || !strings.Contains(err.Error(), "gave up after 3 attempts") {
+			t.Fatalf("err = %v, want it to report 3 attempts", err)
+		}
+	})
+}

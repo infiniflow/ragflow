@@ -103,7 +103,8 @@ otel:
 # Calls to model providers (chat, embedding, rerank, ...) that fail on a network
 # error or HTTP 408/429/5xx are retried with exponential backoff; a streamed
 # answer is retried only before its first byte arrives. 0 disables retries.
-# Valid range [0, 10]. Override with the env var LLM_MAX_RETRIES.
+# Valid range [0, 10]. Override with the env var LLM_MAX_RETRIES. An administrator
+# can override both at runtime in the admin console (Models).
 llm:
   max_retries: 3
 ingestor:

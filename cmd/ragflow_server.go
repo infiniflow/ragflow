@@ -45,6 +45,7 @@ import (
 	deepdocpkg "ragflow/internal/server/deepdoc"
 	ingestorpkg "ragflow/internal/server/ingestor"
 	syncerpkg "ragflow/internal/server/syncer"
+	"ragflow/internal/service"
 	billing "ragflow/internal/service/billing"
 	"ragflow/internal/storage"
 )
@@ -565,6 +566,10 @@ func main() {
 			common.Fatal("Failed to start billing", zap.Error(err))
 		}
 	}
+
+	// The admin console can override llm.max_retries at runtime; every service
+	// polls it so a saved change applies without a restart.
+	go service.SyncLLMMaxRetries(ctx, dao.DB, globalConfig.GetLLMConfig().MaxRetries)
 
 	err = server.StartServer(ctx, cancel, serverName, serverType)
 	if err != nil {
