@@ -179,15 +179,10 @@ func TestSwitch_LegacyEndCpnIDsFallback(t *testing.T) {
 }
 
 // TestSwitch_LegacyEndCpnIDsMultiTargetFallback pins #22314: the
-// legacy "ELSE"/"Other" branch (end_cpn_ids) can fan out to several
-// targets, and Python's Switch (v0.27 agent/component/switch.py) set
-// _next to the WHOLE end_cpn_ids list, firing every target. The Go
-// port returned only the first entry, so agents migrated from v0.27.x
-// failed on every query that reached the ELSE branch with
-// "Can't find variable" for the skipped targets. The matched-condition
-// path already returns every "to" target; the scheduler side
-// (makeSwitchBranchCondition) already fires every whitelisted entry
-// of a multi-element _next list.
+// "ELSE"/"Other" branch (end_cpn_ids) fans out to every configured
+// target. The matched-condition path returns every "to" target, and
+// the scheduler side (makeSwitchBranchCondition) fires every
+// whitelisted entry of a multi-element _next list.
 func TestSwitch_LegacyEndCpnIDsMultiTargetFallback(t *testing.T) {
 	s, _ := NewSwitchComponent(nil)
 	state := canvas.NewCanvasState("run-else-multi", "task-else-multi")

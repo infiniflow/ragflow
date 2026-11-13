@@ -71,8 +71,7 @@ func (s *SwitchComponent) Name() string { return s.name }
 // group matches, outputs["_next"] is the explicit "default" cpn_id
 // when set; otherwise it is every non-empty end_cpn_ids entry — the
 // legacy ELSE/Other destinations, which may fan out to several
-// targets, exactly like Python's v0.27 Switch (see
-// switchDefaultTargets and #22314).
+// targets (see switchDefaultTargets).
 // Unknown / empty inputs are tolerated: an absent "conditions"
 // list yields the default / end_cpn_ids routing described above.
 //
@@ -323,16 +322,11 @@ func switchGroupTarget(group map[string]any) (string, bool) {
 
 // switchDefaultTargets resolves the no-match routing set: the
 // explicit "default" cpn_id when set, otherwise every non-empty
-// end_cpn_ids entry. Python's v0.27 Switch set _next to the WHOLE
-// end_cpn_ids list (agent/component/switch.py:
-// self.set_output("_next", self._param.end_cpn_ids)), so an ELSE
-// branch that fans out to several targets must fire all of them —
-// the same way the matched-condition path already returns every
-// "to" target (#22314: returning only the first entry broke agents
-// migrated from v0.27.x with "Can't find variable" on the skipped
-// targets). When neither source yields a target, the legacy
-// single-empty-string shape is kept so downstream consumers see the
-// same "no successor" signal as before.
+// end_cpn_ids entry in configuration order, mirroring the
+// matched-condition path, which returns every "to" target. Entries
+// that are empty or not strings are skipped. When neither source
+// yields a target, the single-empty-string shape is kept so
+// downstream consumers see the "no successor" signal.
 func switchDefaultTargets(merged map[string]any) []string {
 	if next, _ := merged["default"].(string); next != "" {
 		return []string{next}
