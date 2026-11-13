@@ -506,6 +506,7 @@ jobs:
                case "${DOC_ENGINE}" in
                  elasticsearch) PARTITION_BASE=1000 ;;   # offsets 1000-3999 -> ports <= 27819
                  infinity) PARTITION_BASE=4000 ;;        # offsets 4000-6999 -> ports <= 30819
+                 opensearch) PARTITION_BASE=7000; PARTITION_SIZE=1800 ;; # offsets 7000-8799 -> ports <= 32620
                  *) echo "Unsupported DOC_ENGINE=${DOC_ENGINE}" >&2; exit 1 ;;
                esac
                # Runners run inside docker containers that share the host docker daemon
@@ -1135,6 +1136,7 @@ jobs:
                case "${DOC_ENGINE}" in
                  elasticsearch) PARTITION_BASE=1000 ;;   # offsets 1000-3999 -> ports <= 27819
                  infinity) PARTITION_BASE=4000 ;;        # offsets 4000-6999 -> ports <= 30819
+                 opensearch) PARTITION_BASE=7000; PARTITION_SIZE=1800 ;; # offsets 7000-8799 -> ports <= 32620
                  *) echo "Unsupported DOC_ENGINE=${DOC_ENGINE}" >&2; exit 1 ;;
                esac
                # Runners run inside docker containers that share the host docker daemon
@@ -1450,16 +1452,539 @@ jobs:
             done
           fi
 
+  ragflow_tests_opensearch:
+    name: ragflow_tests_opensearch
+    needs: ragflow_preflight
+    if: ${{ github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci')) }}
+    runs-on: [ "self-hosted", "ragflow-test" ]
+    env:
+      DOC_ENGINE: opensearch
+      RAGFLOW_IMAGE: infiniflow/ragflow:${{ github.run_id }}-opensearch
+      HAS_GO: ${{ needs.ragflow_preflight.outputs.has_go_changes }}
+      HAS_WEB: ${{ needs.ragflow_preflight.outputs.has_web_changes }}
+    steps:
+      - name: Ensure workspace ownership
+        if: always()
+        run: |
+          echo "Workflow triggered by ${{ github.event_name }}"
+          echo "chown -R ${USER} ${GITHUB_WORKSPACE}" && sudo chown -R ${USER} ${GITHUB_WORKSPACE}
+
+      - name: Check out code
+        if: always()
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ (github.event_name == 'pull_request' || github.event_name == 'pull_request_target') && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.sha }}
+          fetch-depth: 0
+          fetch-tags: true
+          allow-unsafe-pr-checkout: true
+          persist-credentials: false
+
+      - name: Build ragflow go server
+        run: |
+          set -euo pipefail
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
+          fi
+
+          NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
+          for lib in office_oxide pdfium-static pdf_oxide onnxruntime; do
+            if [ ! -d "${NATIVE_LIBS_DIR}/${lib}" ]; then
+              echo "ERROR: ${NATIVE_LIBS_DIR}/${lib} missing — native-lib cache not mounted on this runner." >&2
+              exit 1
+            fi
+          done
+
+          BUILDER_CONTAINER=ragflow_build_${GITHUB_RUN_ID}_${DOC_ENGINE}_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
+          cleanup_builder() {
+            if [[ -n "${BUILDER_CONTAINER:-}" ]]; then
+              sudo docker rm -f -v "${BUILDER_CONTAINER}" >/dev/null 2>&1 || true
+            fi
+          }
+          trap cleanup_builder EXIT
+
+          TZ=${TZ:-$(readlink -f /etc/localtime | awk -F '/zoneinfo/' '{print $2}')}
+          export RAGFLOW_NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
+          sudo docker run --privileged -d --name "${BUILDER_CONTAINER}" \
+            -e TZ="${TZ}" \
+            -e UV_INDEX=https://mirrors.aliyun.com/pypi/simple \
+            -e "RAGFLOW_NATIVE_LIBS_DIR=${RAGFLOW_NATIVE_LIBS_DIR}" \
+            -v "${PWD}:/ragflow" \
+            -v "${PWD}/internal/binding/cpp/resource:/usr/share/infinity/resource" \
+            -v "${RAGFLOW_NATIVE_LIBS_DIR}:${RAGFLOW_NATIVE_LIBS_DIR}:ro" \
+            infiniflow/infinity_builder:ubuntu22_clang20
+          sudo docker exec "${BUILDER_CONTAINER}" bash -c 'git config --global safe.directory "*" && cd /ragflow && ./build.sh --cpp'
+          ./build.sh --go
+
+      - name: Run Go unit tests
+        if: ${{ env.HAS_GO == 'true' }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p deps
+          cp /opt/ragflow_deps/cl100k_base.tiktoken deps/cl100k_base.tiktoken || true
+          if [ ! -f deps/cl100k_base.tiktoken ]; then
+            mkdir -p deps
+            if command -v curl >/dev/null 2>&1; then
+              if curl -fsSL -o deps/cl100k_base.tiktoken \
+                https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken; then
+                echo "tiktoken: cl100k table fetched via curl from openai blob"
+              else
+                echo "tiktoken: curl fetch failed (network/GFW); will try cached image"
+              fi
+            fi
+            if [ ! -f deps/cl100k_base.tiktoken ] && docker image inspect infiniflow/ragflow_deps:latest >/dev/null 2>&1; then
+              CID=$(docker create infiniflow/ragflow_deps:latest true) || true
+              if [ -n "${CID:-}" ]; then
+                if docker cp "$CID":/cl100k_base.tiktoken deps/cl100k_base.tiktoken 2>/dev/null; then
+                  echo "tiktoken: cl100k table copied from cached infiniflow/ragflow_deps image"
+                fi
+                docker rm -f "$CID" >/dev/null 2>&1 || true
+              fi
+            fi
+          fi
+          if [ -f deps/cl100k_base.tiktoken ]; then
+            echo "tiktoken: cl100k table provisioned ($(wc -c < deps/cl100k_base.tiktoken) bytes)"
+          else
+            echo "tiktoken: cl100k table NOT provisioned — offline loader will fail loudly"
+          fi
+
+          TOKENIZER_ASSET_PATHS=(
+            BAAI/bge-m3/sentencepiece.bpe.model
+            BAAI/bge-large-en-v1.5/vocab.txt
+            Qwen/Qwen3-Embedding-0.6B/tokenizer.json
+            intfloat/e5-mistral-7b-instruct/tokenizer.json
+          )
+          if docker image inspect infiniflow/ragflow_deps:latest >/dev/null 2>&1; then
+            CID=$(docker create infiniflow/ragflow_deps:latest true) || true
+            if [ -n "${CID:-}" ]; then
+              for asset in "${TOKENIZER_ASSET_PATHS[@]}"; do
+                target="deps/huggingface.co/$asset"
+                if [ -f "$target" ]; then
+                  continue
+                fi
+                mkdir -p "$(dirname "$target")"
+                if docker cp "$CID:/huggingface.co/$asset" "$target" 2>/dev/null; then
+                  echo "tokenizer: $asset copied from cached infiniflow/ragflow_deps image"
+                else
+                  echo "tokenizer: $asset absent from the cached image — its counter will skip"
+                fi
+              done
+              docker rm -f "$CID" >/dev/null 2>&1 || true
+            fi
+          else
+            echo "tokenizer: infiniflow/ragflow_deps not cached on this runner — non-cl100k counters will skip"
+          fi
+
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
+          fi
+
+          PKGS=$(go list ./... 2>/dev/null \
+            | grep -v '/internal/storage$' \
+            | grep -v '/internal/handler$' || true)
+          if [ -z "$PKGS" ]; then
+            ./build.sh --test
+          else
+            ./build.sh --test -- $PKGS
+          fi
+
+      - name: Build ragflow:nightly
+        run: |
+          set -euo pipefail
+          RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
+          DOCKER_BUILD_HELP="$(sudo docker build --help 2>&1 || true)"
+          if [[ "${DOCKER_BUILD_HELP}" != *"--build-context"* ]]; then
+            echo "ERROR: docker build lacks --build-context (need Docker 23+ / Buildx 0.8+)." >&2
+            echo "       Upgrade Docker Engine or install the buildx plugin on this runner." >&2
+            exit 1
+          fi
+          NATIVE_LIBS_DIR="${RAGFLOW_NATIVE_LIBS_DIR:-${HOME}/ragflow-native-libs}"
+          for lib in office_oxide pdfium-static pdf_oxide onnxruntime; do
+            if [ ! -d "${NATIVE_LIBS_DIR}/${lib}" ]; then
+              echo "ERROR: ${NATIVE_LIBS_DIR}/${lib} missing — native-lib cache not mounted on this runner." >&2
+              exit 1
+            fi
+          done
+          BUILD_LOCK_DIR=${BUILD_LOCK_DIR:-${RUNNER_WORKSPACE_PREFIX}/ragflow-ci/${GITHUB_REPOSITORY}}
+          if ! mkdir -p "${BUILD_LOCK_DIR}" 2>/dev/null || [ ! -w "${BUILD_LOCK_DIR}" ]; then
+            echo "ERROR: build lock dir '${BUILD_LOCK_DIR}' is missing or not writable by the runner user." >&2
+            echo "       Ensure ${RUNNER_WORKSPACE_PREFIX} (or BUILD_LOCK_DIR) is a writable, host-local dir mounted into every runner (NOT nfs)." >&2
+            exit 1
+          fi
+          BUILD_LOCK_FILE=${BUILD_LOCK_DIR}/docker-build.lock
+          (
+            flock -w 4200 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
+            echo "Acquired Docker build slot for ${DOC_ENGINE}"
+            timeout 1800 sudo DOCKER_BUILDKIT=1 docker build \
+              --build-arg NEED_MIRROR=1 \
+              --build-arg HTTPS_PROXY=${HTTPS_PROXY} \
+              --build-arg HTTP_PROXY=${HTTP_PROXY} \
+              --build-arg GITEE_TOKEN=${GITEE_TOKEN} \
+              --build-arg NATIVE_LIBS_REQUIRED=1 \
+              --build-context "native-libs=${NATIVE_LIBS_DIR}" \
+              -f Dockerfile -t ${RAGFLOW_IMAGE} .
+          ) 9>"${BUILD_LOCK_FILE}"
+
+      - name: Prepare Python test environment
+        run: |
+          export GIT_CONFIG_COUNT=1
+          export GIT_CONFIG_KEY_0="url.https://oauth2:${GITEE_TOKEN:-}@gitee.com/.insteadOf"
+          export GIT_CONFIG_VALUE_0="https://gitee.com/"
+          uv sync --python 3.13 --group test --frozen
+          uv pip install -e sdk/python
+
+      - name: Prepare function test environment
+        working-directory: docker
+        run: |
+          set -euo pipefail
+          sudo chmod 1777 /tmp
+          RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
+          COMPOSE_PROJECT_NAME="${GITHUB_RUN_ID}-${DOC_ENGINE}"
+          echo "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}" >> ${GITHUB_ENV}
+          echo "RAGFLOW_CONTAINER=${COMPOSE_PROJECT_NAME}-ragflow-cpu-1" >> ${GITHUB_ENV}
+          ARTIFACTS_DIR=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/${GITHUB_RUN_ID}/${DOC_ENGINE}
+          echo "ARTIFACTS_DIR=${ARTIFACTS_DIR}" >> ${GITHUB_ENV}
+          rm -rf "${ARTIFACTS_DIR}" && mkdir -p "${ARTIFACTS_DIR}"
+
+          RUNNER_NUM=$(sudo docker inspect $(hostname) --format '{{index .Config.Labels "com.docker.compose.container-number"}}' 2>/dev/null || true)
+          if [[ -z "${RUNNER_NUM:-}" ]]; then
+            if [[ -n "${RUNNER_NAME:-}" ]]; then
+              RUNNER_NUM=$(( $(printf '%d' 0x$(echo -n "${RUNNER_NAME}" | md5sum | cut -c1-4)) % 1000 ))
+            else
+              RUNNER_NUM=$(( GITHUB_RUN_ID % 1000 ))
+            fi
+          fi
+
+          PORT_BASES=(1200 1201 23817 23820 5432 5455 9000 9001 6379 6380 6381 6601 9380 9381 9382 9385 80 443 4222 8222 9900 8123)
+          PARTITION_SIZE=3000
+          case "${DOC_ENGINE}" in
+            elasticsearch) PARTITION_BASE=1000 ;;   # offsets 1000-3999 -> ports <= 27819
+            infinity) PARTITION_BASE=4000 ;;        # offsets 4000-6999 -> ports <= 30819
+            opensearch) PARTITION_BASE=7000; PARTITION_SIZE=1800 ;; # offsets 7000-8799 -> ports <= 32620
+            *) echo "Unsupported DOC_ENGINE=${DOC_ENGINE}" >&2; exit 1 ;;
+          esac
+
+          cleanup_stale_port_locks() {
+            local now stale_after net ts before after
+            now=$(date -u +%s)
+            stale_after=$((60 * 60))
+            before=$(sudo docker network ls --filter "label=ragflow-ci-created" --format '{{.Name}}' | wc -l)
+            for net in $(sudo docker network ls --filter "label=ragflow-ci-created" --format '{{.Name}}'); do
+              ts=$(sudo docker network inspect --format '{{ index .Labels "ragflow-ci-created" }}' "${net}" 2>/dev/null || true)
+              if [[ ! "${ts}" =~ ^[0-9]+$ ]] || (( now - ts > stale_after )); then
+                sudo docker network rm "${net}" >/dev/null 2>&1 || true
+              fi
+            done
+            after=$(sudo docker network ls --filter "label=ragflow-ci-created" --format '{{.Name}}' | wc -l)
+            echo "  cleanup_stale_port_locks: ${before} -> ${after} guards (TTL=${stale_after}s)" >&2
+          }
+
+          reserve_port_offset() {
+            local attempt candidate base port guard g ok reject_reason create_err guard_subnet
+            local -a guards
+            local used guarded need_refresh used_n guarded_n debug_count create_fail_streak
+            cleanup_stale_port_locks
+            echo "Reserving host ports for ${DOC_ENGINE} compose stack..." >&2
+            if ! sudo docker info >/dev/null 2>&1; then
+              echo "  ERROR: 'sudo docker info' failed — docker daemon is not reachable from this runner" >&2
+              return 1
+            fi
+            echo "  Running containers on shared daemon: $(sudo docker ps -q 2>/dev/null | wc -l)" >&2
+            echo "  Docker networks on shared daemon: $(sudo docker network ls -q 2>/dev/null | wc -l)" >&2
+            need_refresh=1
+            debug_count=0
+            create_fail_streak=0
+            for attempt in $(seq 0 499); do
+              candidate=$(( PARTITION_BASE + ((GITHUB_RUN_ID + RUNNER_NUM * 1000 + attempt * 97) % PARTITION_SIZE) ))
+              if [[ ${need_refresh} -eq 1 ]]; then
+                used=$(sudo docker ps --format '{{.Ports}}' 2>/dev/null | grep -oE '[0-9]+->' | tr -d '>-' | sort -u || true)
+                guarded=$(sudo docker network ls --filter "label=ragflow-ci-created" --format '{{.Name}}' 2>/dev/null | sed 's/^ragflow-ci-port\(guard\)\?-//' | sort -u || true)
+                used_n=$(echo "${used}" | grep -c . 2>/dev/null || true)
+                guarded_n=$(echo "${guarded}" | grep -c . 2>/dev/null || true)
+                echo "  Snapshot: ${used_n} bound ports, ${guarded_n} guarded ports" >&2
+                [[ ${used_n} -gt 0 ]] && echo "  Bound sample: $(echo "${used}" | tr '\n' ' ' | cut -d' ' -f1-10)" >&2
+                [[ ${guarded_n} -gt 0 ]] && echo "  Guarded sample: $(echo "${guarded}" | tr '\n' ' ' | cut -d' ' -f1-10)" >&2
+                need_refresh=0
+              fi
+
+              ok=1
+              reject_reason=""
+              for base in "${PORT_BASES[@]}"; do
+                port=$((base + candidate))
+                if grep -qx "${port}" <<< "${used}" 2>/dev/null; then
+                  ok=0; reject_reason="port ${port} (base ${base}) already bound"; break
+                fi
+                if grep -qx "${port}" <<< "${guarded}" 2>/dev/null; then
+                  ok=0; reject_reason="port ${port} (base ${base}) already guarded"; break
+                fi
+              done
+
+              if [[ ${ok} -eq 0 ]]; then
+                if [[ ${debug_count} -lt 5 ]]; then
+                  echo "  Candidate ${candidate}: rejected — ${reject_reason}" >&2
+                  debug_count=$((debug_count + 1))
+                fi
+                continue
+              fi
+
+              guards=()
+              ok=1
+              for base in "${PORT_BASES[@]}"; do
+                port=$((base + candidate))
+                guard="ragflow-ci-port-${port}"
+                # Use an explicit subnet from 10.0.0.0/8 (outside Docker's
+                # default 172.17-31.x.x pools) to bypass "all predefined
+                # address pools have been fully subnetted" errors on shared
+                # daemons where auto-allocation is exhausted.
+                guard_subnet="10.$((port / 256)).$((port % 256)).0/24"
+                if ! create_err=$(sudo docker network create --subnet "${guard_subnet}" --label ragflow-ci-created="$(date -u +%s)" "${guard}" 2>&1 >/dev/null); then
+                  echo "  docker network create ${guard} failed: ${create_err}" >&2
+                  ok=0; break
+                fi
+                guards+=("${guard}")
+              done
+              if [[ ${ok} -eq 1 ]]; then
+                PORT_OFFSET=${candidate}
+                PORT_RESERVATION="${guards[*]}"
+                echo "Reserved offset ${PORT_OFFSET} (attempt ${attempt})" >&2
+                return 0
+              fi
+              for g in "${guards[@]}"; do
+                sudo docker network rm "${g}" >/dev/null 2>&1 || true
+              done
+              create_fail_streak=$((create_fail_streak + 1))
+              if [[ ${create_fail_streak} -ge 10 ]]; then
+                echo "  docker network create failed ${create_fail_streak} consecutive candidates; aborting" >&2
+                return 1
+              fi
+              need_refresh=1
+            done
+            echo "  Exhausted ${attempt} candidates. Last snapshot: ${used_n} bound, ${guarded_n} guarded" >&2
+            return 1
+          }
+
+          if ! reserve_port_offset; then
+            echo "Failed to reserve a free host port range for ${DOC_ENGINE} docker compose" >&2
+            exit 1
+          fi
+          echo "PORT_RESERVATION=${PORT_RESERVATION}" >> ${GITHUB_ENV}
+          echo "Using ${DOC_ENGINE} host port offset ${PORT_OFFSET}"
+          ES_PORT=$((1200 + PORT_OFFSET))
+          OS_PORT=$((1201 + PORT_OFFSET))
+          echo "OS_PORT=${OS_PORT}" >> ${GITHUB_ENV}
+          INFINITY_THRIFT_PORT=$((23817 + PORT_OFFSET))
+          INFINITY_HTTP_PORT=$((23820 + PORT_OFFSET))
+          INFINITY_PSQL_PORT=$((5432 + PORT_OFFSET))
+          EXPOSE_MYSQL_PORT=$((5455 + PORT_OFFSET))
+          MINIO_PORT=$((9000 + PORT_OFFSET))
+          MINIO_CONSOLE_PORT=$((9001 + PORT_OFFSET))
+          REDIS_PORT=$((6379 + PORT_OFFSET))
+          EXPOSE_NATS_PORT=$((4222 + PORT_OFFSET))
+          EXPOSE_NATS_MONITORING_PORT=$((8222 + PORT_OFFSET))
+          TEI_PORT=$((6380 + PORT_OFFSET))
+          KVROCKS_PORT=$((6381 + PORT_OFFSET))
+          KIBANA_PORT=$((6601 + PORT_OFFSET))
+          SVR_HTTP_PORT=$((9380 + PORT_OFFSET))
+          ADMIN_SVR_HTTP_PORT=$((9381 + PORT_OFFSET))
+          SVR_MCP_PORT=$((9382 + PORT_OFFSET))
+          SVR_WEB_HTTP_PORT=$((80 + PORT_OFFSET))
+          SVR_WEB_HTTPS_PORT=$((443 + PORT_OFFSET))
+          EXPOSE_CLICKHOUSE_TCP_PORT=$((9900 + PORT_OFFSET))
+          CLICKHOUSE_HTTP_PORT=$((8123 + PORT_OFFSET))
+
+          sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^KVROCKS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^EXPOSE_NATS_MONITORING_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d' .env
+          sed -i '/^COMPOSE_PROFILES=/d;/^RAGFLOW_DEV_MODE=/d;/^TEI_MODEL=/d' .env
+          {
+            echo ""
+            echo "ES_PORT=${ES_PORT}"
+            echo "OS_PORT=${OS_PORT}"
+            echo "INFINITY_THRIFT_PORT=${INFINITY_THRIFT_PORT}"
+            echo "INFINITY_HTTP_PORT=${INFINITY_HTTP_PORT}"
+            echo "INFINITY_PSQL_PORT=${INFINITY_PSQL_PORT}"
+            echo "EXPOSE_MYSQL_PORT=${EXPOSE_MYSQL_PORT}"
+            echo "MINIO_PORT=${MINIO_PORT}"
+            echo "MINIO_CONSOLE_PORT=${MINIO_CONSOLE_PORT}"
+            echo "REDIS_PORT=${REDIS_PORT}"
+            echo "KVROCKS_PORT=${KVROCKS_PORT}"
+            echo "EXPOSE_NATS_PORT=${EXPOSE_NATS_PORT}"
+            echo "EXPOSE_NATS_MONITORING_PORT=${EXPOSE_NATS_MONITORING_PORT}"
+            echo "TEI_PORT=${TEI_PORT}"
+            echo "KIBANA_PORT=${KIBANA_PORT}"
+            echo "SVR_HTTP_PORT=${SVR_HTTP_PORT}"
+            echo "ADMIN_SVR_HTTP_PORT=${ADMIN_SVR_HTTP_PORT}"
+            echo "SVR_MCP_PORT=${SVR_MCP_PORT}"
+            echo "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}"
+            echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
+            echo "EXPOSE_CLICKHOUSE_TCP_PORT=${EXPOSE_CLICKHOUSE_TCP_PORT}"
+            echo "CLICKHOUSE_HTTP_PORT=${CLICKHOUSE_HTTP_PORT}"
+            echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
+            echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
+            echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}"
+            echo "DOC_ENGINE=${DOC_ENGINE}"
+          } >> .env
+          {
+            echo ""
+            echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
+            echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
+            echo "RAGFLOW_DEV_MODE=true"
+          } >> .env
+          if [[ -z "${OPENSEARCH_PASSWORD:-}" ]]; then
+            OPENSEARCH_PASSWORD="CiOs_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')_A9!"
+          fi
+          sed -i '/^OPENSEARCH_PASSWORD=/d' .env
+          env_password="${OPENSEARCH_PASSWORD//\$/\$\$}"
+          echo "OPENSEARCH_PASSWORD=${env_password}" >> .env
+          echo "::add-mask::${OPENSEARCH_PASSWORD}"
+          echo "OPENSEARCH_PASSWORD=${OPENSEARCH_PASSWORD}" >> ${GITHUB_ENV}
+          RAGFLOW_HTTP_PORT=${SVR_WEB_HTTP_PORT}
+          echo "RAGFLOW_HTTP_PORT=${RAGFLOW_HTTP_PORT}" >> ${GITHUB_ENV}
+          echo "HOST_ADDRESS=http://host.docker.internal:${RAGFLOW_HTTP_PORT}" >> ${GITHUB_ENV}
+
+      - name: Start ragflow:nightly for OpenSearch
+        run: |
+          set -euo pipefail
+          COMPOSE_FILE=docker/docker-compose.yml
+          sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} down -v || true
+          sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
+          sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} up -d
+
+      - name: Wait for OpenSearch readiness
+        if: ${{ env.HAS_GO == 'true' }}
+        run: |
+          set -euo pipefail
+          export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
+          escaped_pw="${OPENSEARCH_PASSWORD//\\/\\\\}"
+          escaped_pw="${escaped_pw//\"/\\\"}"
+          echo "Waiting for OpenSearch cluster readiness on port ${OS_PORT}..."
+          ready_host=""
+          for i in $(seq 1 60); do
+            for host in host.docker.internal 127.0.0.1; do
+              status=$(printf 'user = "admin:%s"\n' "${escaped_pw}" \
+                | curl -s --connect-timeout 5 --max-time 5 -K - \
+                "http://${host}:${OS_PORT}/_cluster/health" 2>/dev/null \
+                | grep -o '"status":"[^"]*"' | cut -d'"' -f4 || true)
+              if [[ "${status}" == "green" || "${status}" == "yellow" ]]; then
+                echo "OpenSearch ready via ${host} (status=${status}) after ${i} attempts"
+                ready_host="${host}"
+                break 2
+              fi
+            done
+            sleep 2
+          done
+          if [[ -z "${ready_host}" ]]; then
+            echo "ERROR: OpenSearch failed to become ready within timeout" >&2
+            sudo docker compose -f docker/docker-compose.yml -p "${COMPOSE_PROJECT_NAME}" logs --tail=100 opensearch39 >&2 || true
+            exit 1
+          fi
+          echo "OS_READY_HOST=${ready_host}" >> "${GITHUB_ENV}"
+          echo "HOST_ADDRESS=http://${ready_host}:${RAGFLOW_HTTP_PORT}" >> "${GITHUB_ENV}"
+
+      - name: Run OpenSearch engine integration tests
+        if: ${{ env.HAS_GO == 'true' }}
+        run: |
+          set -euo pipefail
+          export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
+          fi
+          mkdir -p "${ARTIFACTS_DIR}"
+          set +eo pipefail
+          OS_TEST=1 \
+          OS_HOST="http://${OS_READY_HOST:-host.docker.internal}:${OS_PORT}" \
+          OS_HOSTS="http://${OS_READY_HOST:-host.docker.internal}:${OS_PORT}" \
+          OS_USERNAME="admin" \
+          OS_PASSWORD="${OPENSEARCH_PASSWORD}" \
+          ./build.sh --test-integration-go ./internal/engine/opensearch/... 2>&1 | tee "${ARTIFACTS_DIR}/os_engine_integration_test.log"
+          TEST_RC=${PIPESTATUS[0]}
+          set -eo pipefail
+          exit ${TEST_RC}
+
+      - name: Run Go API tests against OpenSearch
+        if: ${{ env.HAS_GO == 'true' }}
+        run: |
+          set -euo pipefail
+          export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
+          fi
+          mkdir -p "${ARTIFACTS_DIR}"
+          set +eo pipefail
+          ./build.sh --test-integration-go -timeout 60m ./test/api 2>&1 | tee "${ARTIFACTS_DIR}/os_go_api_test.log"
+          TEST_RC=${PIPESTATUS[0]}
+          set -eo pipefail
+          exit ${TEST_RC}
+
+      - name: Run Python SDK integration tests
+        if: ${{ env.HAS_GO == 'true' }}
+        env:
+          RAGFLOW_SDK_CI: "1"
+        run: |
+          set -euo pipefail
+          export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
+          uv pip install sdk/python
+          mkdir -p "${ARTIFACTS_DIR}"
+          set +eo pipefail
+          uv run --no-sync python -m pytest -s --tb=short --level=p2 test/testcases/test_sdk_api 2>&1 | tee "${ARTIFACTS_DIR}/os_sdk_test.log"
+          TEST_RC=${PIPESTATUS[0]}
+          set -eo pipefail
+          exit ${TEST_RC}
+
+      - name: Collect ragflow log OpenSearch
+        if: ${{ !cancelled() }}
+        run: |
+          set -uo pipefail
+          RUNNER_WORKSPACE_PREFIX="${RUNNER_WORKSPACE_PREFIX:-${HOME}}"
+          ARTIFACTS_DIR="${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/${GITHUB_RUN_ID}/${DOC_ENGINE}"
+          LOG_DEST="${ARTIFACTS_DIR}/ragflow-logs-os"
+          mkdir -p "${ARTIFACTS_DIR}"
+          if [ -d docker/ragflow-logs ]; then
+            sudo rm -rf "${LOG_DEST}"
+            if sudo cp -a docker/ragflow-logs "${LOG_DEST}"; then
+              sudo chown -R "$(id -u):$(id -g)" "${LOG_DEST}" || true
+              echo "Copied ragflow logs to ${LOG_DEST}"
+            else
+              echo "::warning::Failed to copy ragflow logs to ${LOG_DEST}; continuing"
+            fi
+            echo "ragflow log" && sudo tail -n 200 docker/ragflow-logs/ragflow_server.log || true
+          else
+            echo "No docker/ragflow-logs directory found; skipping log collection"
+          fi
+          sudo rm -rf docker/ragflow-logs || true
+
+      - name: Stop ragflow:nightly for OpenSearch
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          COMPOSE_FILE=docker/docker-compose.yml
+          if [[ -z "${COMPOSE_PROJECT_NAME:-}" ]]; then
+            echo "COMPOSE_PROJECT_NAME is unset; nothing to tear down"
+            exit 0
+          fi
+          sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} down -v || true
+          sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
+          if [[ -n ${RAGFLOW_IMAGE} ]]; then
+            sudo docker rmi -f ${RAGFLOW_IMAGE} || true
+          fi
+          if [[ -n ${PORT_RESERVATION:-} ]]; then
+            for guard in ${PORT_RESERVATION}; do
+              sudo docker network rm "${guard}" >/dev/null 2>&1 || true
+            done
+          fi
+
   ragflow_native_backend:
     name: ragflow_native_backend
-    # Runs AFTER both per-engine go jobs (which contain the doc-engine-specific
+    # Runs AFTER the per-engine go jobs (which contain the doc-engine-specific
     # server build + Go API and Python search correctness runs). The DeepDoc native
     # backend is doc-engine-independent, so running it ONCE here — instead of
     # duplicated (and memory-competing) inside each go job — removes the
     # redundant second -race pass and the concurrent -race OOM risk. Running it
     # last also keeps a flaky -race OOM from ever obscuring the functional
     # verdict produced by the go jobs.
-    needs: [ragflow_tests_infinity, ragflow_tests_elasticsearch]
+    needs: [ragflow_tests_infinity, ragflow_tests_elasticsearch, ragflow_tests_opensearch]
     # Skip unless DeepDoc native backend code/build/testdata actually changed.
     if: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci'))) && needs.ragflow_preflight.outputs.has_native_deepdoc_changes == 'true' }}
     runs-on: [ "self-hosted", "ragflow-test" ]
@@ -1686,6 +2211,7 @@ jobs:
                case "${DOC_ENGINE}" in
                  elasticsearch) PARTITION_BASE=1000 ;;   # offsets 1000-3999 -> ports <= 27819
                  infinity) PARTITION_BASE=4000 ;;        # offsets 4000-6999 -> ports <= 30819
+                 opensearch) PARTITION_BASE=7000; PARTITION_SIZE=1800 ;; # offsets 7000-8799 -> ports <= 32620
                  *) echo "Unsupported DOC_ENGINE=${DOC_ENGINE}" >&2; exit 1 ;;
                esac
                # Runners run inside docker containers that share the host docker daemon
@@ -2053,7 +2579,7 @@ jobs:
           # skipping — the runner bakes MODEL_DIR=/opt/ragflow-deepdoc-models.
           # The ./test/api HTTP e2e suite needs a live ragflow-cpu server, which
           # this job does not start.
-          # Like the per-engine go jobs (ragflow_tests_{infinity,elasticsearch}),
+          # Like the per-engine go jobs (ragflow_tests_{infinity,elasticsearch,opensearch}),
           # we also drop internal/storage: its MinIO-backed integration tests need
           # a fully-ready MinIO that this CI stack does not reliably provide
           # (the compose /live probe passes while the S3 API still 502s), so they
