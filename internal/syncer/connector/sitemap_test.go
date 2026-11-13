@@ -25,6 +25,7 @@ import (
 	"io"
 	"strings"
 	"testing"
+	"time"
 )
 
 // sitemapFixture is an in-memory site: URL -> (Content-Type, body).
@@ -175,19 +176,64 @@ func TestSitemapConnectorFullSync(t *testing.T) {
 func TestSitemapConnectorIncrementalSync(t *testing.T) {
 	connector := newSitemapTestConnector(t, map[string]any{}, defaultSitemapFixture())
 
-	start := mustTime(t, "2026-01-02T00:00:00Z")
+	// At 12:00 UTC on 2026-01-02, 2026-01-01 has ended in every time zone but
+	// 2026-01-02 has not: old falls before the window and brochure.pdf does not.
+	start := mustTime(t, "2026-01-02T12:00:00Z")
 	session, err := connector.OpenSync(t.Context(), SyncRequest{WindowStart: &start, WindowEnd: mustTime(t, "2026-01-04T00:00:00Z")})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
 	_, documents := drainSitemapSession(t, session)
 
-	want := []string{"https://example.com/new"}
+	want := []string{"https://example.com/new", "https://example.com/brochure.pdf"}
 	if got := sitemapDocIDs(documents); strings.Join(got, ",") != strings.Join(want, ",") {
 		t.Fatalf("incremental documents = %v, want %v", got, want)
 	}
 	if documents[0].UpdatedAt != mustTime(t, "2026-01-03T10:00:00.123Z") {
 		t.Fatalf("fractional lastmod not preserved: %v", documents[0].UpdatedAt)
+	}
+}
+
+// TestSitemapConnectorIncrementalSyncDateOnlyLastmod verifies that a <lastmod>
+// without a time keeps a page in the window until that day has ended in every
+// time zone. A page edited after the previous sync started still carries the
+// same date.
+func TestSitemapConnectorIncrementalSyncDateOnlyLastmod(t *testing.T) {
+	fixture := sitemapFixture{
+		"https://example.com/sitemap.xml": {"application/xml", `<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://example.com/today</loc><lastmod>2026-01-02</lastmod></url>
+  <url><loc>https://example.com/yesterday</loc><lastmod>2026-01-01</lastmod></url>
+</urlset>`},
+		"https://example.com/today":     {"text/html", `<html><body><p>Today body</p></body></html>`},
+		"https://example.com/yesterday": {"text/html", `<html><body><p>Yesterday body</p></body></html>`},
+	}
+	connector := newSitemapTestConnector(t, map[string]any{}, fixture)
+
+	cases := []struct {
+		name        string
+		windowStart string
+		want        []string
+	}{
+		// The previous sync started at 15:00 UTC on 2026-01-02, and /today was
+		// edited after it. 2026-01-01 had ended in every time zone by 12:00 UTC.
+		{"same day", "2026-01-02T15:00:00Z", []string{"https://example.com/today"}},
+		// 02:00 UTC is 21:00 on 2026-01-01 in New York (UTC-5), so a site that
+		// dates pages in local time can still stamp an edit 2026-01-01.
+		{"previous day west of UTC", "2026-01-02T02:00:00Z", []string{"https://example.com/today", "https://example.com/yesterday"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			start := mustTime(t, tc.windowStart)
+			session, err := connector.OpenSync(t.Context(), SyncRequest{WindowStart: &start, WindowEnd: start.Add(5 * time.Minute)})
+			if err != nil {
+				t.Fatalf("OpenSync failed: %v", err)
+			}
+			_, documents := drainSitemapSession(t, session)
+			if got := sitemapDocIDs(documents); strings.Join(got, ",") != strings.Join(tc.want, ",") {
+				t.Fatalf("incremental documents = %v, want %v", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -412,7 +458,10 @@ func TestParseSitemapLastmod(t *testing.T) {
 		"yesterday":                       "",
 	}
 	for input, want := range cases {
-		got := parseSitemapLastmod(input)
+		got, dateOnly := parseSitemapLastmod(input)
+		if dateOnly != (input == "2026-01-02") {
+			t.Fatalf("parseSitemapLastmod(%q) date only = %v", input, dateOnly)
+		}
 		if want == "" {
 			if !got.IsZero() {
 				t.Fatalf("parseSitemapLastmod(%q) = %v, want zero", input, got)
