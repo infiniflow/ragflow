@@ -104,3 +104,57 @@ func TestDeleteDatasetContinuesWhenStorageIsMissing(t *testing.T) {
 		t.Fatalf("dataset retained after missing storage: count=%d, err=%v", count, err)
 	}
 }
+
+func TestDeleteDatasetRemovesIngestionTasks(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Dataset")
+	insertDatasetUpdateKB(t, "kb-2", "tenant-1", "Other")
+	for _, row := range [][2]string{{"doc-1", "kb-1"}, {"doc-2", "kb-2"}, {"doc-3", "kb-1"}} {
+		if err := db.Exec("INSERT INTO document (id, kb_id, name, parser_id, parser_config, type, created_by, suffix, location) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", row[0], row[1], row[0], "general", "{}", "pdf", "tenant-1", "pdf", "").Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	tasks := []entity.IngestionTask{
+		{ID: "task-1", UserID: "tenant-1", DocumentID: "doc-1", DatasetID: "kb-1", Status: common.SCHEDULED},
+		{ID: "task-2", UserID: "tenant-1", DocumentID: "doc-2", DatasetID: "kb-2", Status: common.SCHEDULED},
+		{ID: "task-3", UserID: "tenant-1", DocumentID: "doc-3", DatasetID: "kb-1", Status: common.RUNNING},
+	}
+	if err := db.Create(&tasks).Error; err != nil {
+		t.Fatal(err)
+	}
+	logs := []entity.IngestionTaskLog{
+		{TaskID: "task-1", Checkpoint: entity.JSONMap{}},
+		{TaskID: "task-2", Checkpoint: entity.JSONMap{}},
+		{TaskID: "task-3", Checkpoint: entity.JSONMap{}},
+	}
+	if err := db.Create(&logs).Error; err != nil {
+		t.Fatal(err)
+	}
+	factory := storage.GetStorageFactory()
+	previous := factory.GetStorage()
+	factory.SetStorage(storage.NewMemoryStorage())
+	t.Cleanup(func() { factory.SetStorage(previous) })
+
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := testDatasetUpdateService(t).deleteDataset(t.Context(), kb); err != nil {
+		t.Fatalf("delete dataset: %v", err)
+	}
+	var remaining []string
+	if err := db.Model(&entity.IngestionTask{}).Order("id").Pluck("id", &remaining).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(remaining) != 2 || remaining[0] != "task-2" || remaining[1] != "task-3" {
+		t.Fatalf("ingestion tasks after deleting kb-1 = %v, want [task-2 task-3] (RUNNING kept)", remaining)
+	}
+	var logTasks []string
+	if err := db.Model(&entity.IngestionTaskLog{}).Pluck("task_id", &logTasks).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(logTasks) != 2 {
+		t.Fatalf("ingestion task logs after deleting kb-1 = %v, want logs of task-2 and task-3 only", logTasks)
+	}
+}
