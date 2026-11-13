@@ -18,6 +18,7 @@ package retrievalbridge
 
 import (
 	"context"
+	"sort"
 
 	agentrunt "ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
@@ -70,15 +71,28 @@ func (a *RuntimeAdapter) Search(ctx context.Context, db *gorm.DB, req agentrunt.
 	toolReq := agenttool.RetrievalRequest(req)
 	toolReq.AllowDenseFallback = new(false)
 	toolReq.RankFeature = rankFeatureOrNil(req.RankFeature)
-	chunks, err := svc.Search(ctx, db, toolReq)
+	scopes, err := agentrunt.GroupDatasetTenantScopes(ctx, req.TenantID, req.DatasetIDs)
 	if err != nil {
 		return nil, err
 	}
-	// agenttool.RetrievalChunk is a type ALIAS of agentrunt.RetrievalChunk (single
-	// owner: internal/agent/runtime), so the result already is the runtime slice:
-	// returning it directly is exact. Hand-writing a field-by-field copy here is
-	// how ChunkIndex/PageNum were silently dropped — every field the shared type
-	// gains now flows through without this file having to know about it.
+	if len(scopes) == 1 {
+		return svc.Search(ctx, db, toolReq)
+	}
+	// The NLP adapter resolves one embedding model and searches one storage
+	// tenant. Keep those pairings when several shared datasets are selected.
+	var chunks []agentrunt.RetrievalChunk
+	for _, scope := range scopes {
+		toolReq.DatasetIDs = scope.DatasetIDs
+		results, err := svc.Search(ctx, db, toolReq)
+		if err != nil {
+			return nil, err
+		}
+		chunks = append(chunks, results...)
+	}
+	sort.SliceStable(chunks, func(i, j int) bool { return chunks[i].Score > chunks[j].Score })
+	if req.TopN > 0 && len(chunks) > req.TopN {
+		chunks = chunks[:req.TopN]
+	}
 	return chunks, nil
 }
 

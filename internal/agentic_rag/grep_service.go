@@ -54,6 +54,37 @@ type regexpSearchable interface {
 	SearchByRegexp(ctx context.Context, req *enginetypes.RegexpSearchRequest) (*enginetypes.SearchResult, error)
 }
 
+func searchCorpusByRegexp(ctx context.Context, searcher regexpSearchable, req enginetypes.RegexpSearchRequest) (*enginetypes.SearchResult, error) {
+	scopes, err := runtime.GroupDatasetTenantScopes(ctx, req.TenantID, req.KbIDs)
+	if err != nil {
+		return nil, err
+	}
+	combined := &enginetypes.SearchResult{}
+	for _, scope := range scopes {
+		scoped := req
+		scoped.TenantID, scoped.KbIDs = scope.TenantID, scope.DatasetIDs
+		result, err := searcher.SearchByRegexp(ctx, &scoped)
+		if err != nil {
+			return nil, err
+		}
+		combined.Chunks = append(combined.Chunks, result.Chunks...)
+		combined.Total += result.Total
+	}
+	return combined, nil
+}
+
+func corpusIndexNames(ctx context.Context, tenantID string, datasetIDs []string) ([]string, error) {
+	scopes, err := runtime.GroupDatasetTenantScopes(ctx, tenantID, datasetIDs)
+	if err != nil {
+		return nil, err
+	}
+	indexes := make([]string, 0, len(scopes))
+	for _, scope := range scopes {
+		indexes = append(indexes, indexNameFor(scope.TenantID, ""))
+	}
+	return indexes, nil
+}
+
 // ListByDocIDs reads the full original chunks belonging to the given document
 // ids, skipping graph (relation/entity/location) chunks so callers get the
 // actual document text. It backs the list_chunks deep-read runtime.
@@ -82,7 +113,7 @@ func (g *GrepAdapter) ListByDocIDs(ctx context.Context, req runtime.GrepRequest)
 	// restricted to ordinary text chunks (available_int=1, no compile_kwd). When
 	// the caller requests a sort (e.g. reading order), push it down so the engine
 	// returns the deterministic first page.
-	res, err := se.SearchByRegexp(ectx, &enginetypes.RegexpSearchRequest{
+	res, err := searchCorpusByRegexp(ectx, se, enginetypes.RegexpSearchRequest{
 		TenantID:     req.TenantID,
 		KbIDs:        req.DatasetIDs,
 		Pattern:      ".*",
@@ -254,7 +285,7 @@ func (g *GrepAdapter) fetchScoped(
 	// current mapping the field is a searchable keyword, so this is the cheapest
 	// read: the scope filter and the reading-order sort both go to the engine.
 	if se, ok := g.docEngine.(regexpSearchable); ok {
-		res, err := se.SearchByRegexp(ectx, &enginetypes.RegexpSearchRequest{
+		res, err := searchCorpusByRegexp(ectx, se, enginetypes.RegexpSearchRequest{
 			TenantID:     req.TenantID,
 			KbIDs:        req.DatasetIDs,
 			Pattern:      ".*",
@@ -287,8 +318,12 @@ func (g *GrepAdapter) fetchScoped(
 	// generation, keeps chunks longer than a keyword's ignore_above limit
 	// visible, and needs no regex support from the engine. Reading order is
 	// restored in Go by toChunks.
+	indexes, err := corpusIndexNames(ectx, req.TenantID, req.DatasetIDs)
+	if err != nil || len(indexes) == 0 {
+		return nil, err
+	}
 	res, err := g.docEngine.Search(ectx, &enginetypes.SearchRequest{
-		IndexNames:   []string{indexNameFor(req.TenantID, "")},
+		IndexNames:   indexes,
 		KbIDs:        req.DatasetIDs,
 		Limit:        deepReadFetchLimit,
 		Filter:       filter,
@@ -351,7 +386,7 @@ func (g *GrepAdapter) Grep(ctx context.Context, req runtime.GrepRequest) ([]runt
 	// fallback (a pushdown failure is a real error the caller should surface,
 	// not silently "no matches").
 	if se, ok := g.docEngine.(regexpSearchable); ok {
-		res, err := se.SearchByRegexp(ectx, &enginetypes.RegexpSearchRequest{
+		res, err := searchCorpusByRegexp(ectx, se, enginetypes.RegexpSearchRequest{
 			TenantID:     req.TenantID,
 			KbIDs:        req.DatasetIDs,
 			Pattern:      req.Pattern,

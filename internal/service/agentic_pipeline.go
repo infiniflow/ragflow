@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/permission"
@@ -85,6 +86,27 @@ func (s *ChatPipelineService) agenticRag(
 	tmpl, err := resolveChatAgenticTemplate(chat, kwargs)
 	if err != nil {
 		return nil, err
+	}
+	datasetIDs := chatDatasetIDs(chat)
+	// AsyncChat has already checked the caller's access to these datasets.
+	// Keep the chat tenant for model selection and session state, and route
+	// corpus reads to the tenants that actually own the bound datasets.
+	datasets, err := dao.NewKnowledgebaseDAO().GetByIDs(ctx, dao.DB, datasetIDs)
+	if err != nil {
+		return nil, fmt.Errorf("resolve Agentic chat datasets: %w", err)
+	}
+	datasetTenants := make(map[string]string, len(datasets))
+	for _, dataset := range datasets {
+		datasetTenants[dataset.ID] = dataset.TenantID
+	}
+	ctx = runtime.WithDatasetTenants(ctx, datasetTenants)
+	scopes, err := runtime.GroupDatasetTenantScopes(ctx, chat.TenantID, datasetIDs)
+	if err != nil {
+		return nil, err
+	}
+	corpusTenantID := chat.TenantID
+	if len(scopes) == 1 {
+		corpusTenantID = scopes[0].TenantID
 	}
 	out := make(chan AsyncChatResult, 16)
 	// Wire the document-metadata resolver the metadata_search tool needs. The
@@ -199,7 +221,7 @@ func (s *ChatPipelineService) agenticRag(
 			emitResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", chainErr.Error()), Final: true})
 			return
 		}
-		docIDs := s.chatMetadataDocIDs(runCtx, chat, lastUserQuestion(messages), chain[0], nil, chatDatasetIDs(chat))
+		docIDs := s.chatMetadataDocIDs(runCtx, chat, lastUserQuestion(messages), chain[0], nil, datasetIDs)
 		modelType := "chat"
 		if info := chain[0].Info(); info != nil && entity.ModelTypeFromStrings(info.ModelTypes).Has(entity.ModelTypeImage2Text) {
 			modelType = "image2text"
@@ -265,8 +287,9 @@ func (s *ChatPipelineService) agenticRag(
 			TemplateID:      mode,
 			Template:        &tmpl,
 			TenantID:        chat.TenantID,
+			CorpusTenantID:  corpusTenantID,
 			UserID:          userID,
-			DatasetIDs:      chatDatasetIDs(chat),
+			DatasetIDs:      datasetIDs,
 			DocIDs:          docIDs,
 			ConversationKey: chat.ID,
 			Stream:          stream,
@@ -341,7 +364,7 @@ func (s *ChatPipelineService) agenticRag(
 		}
 		reference := map[string]interface{}{}
 		if quote {
-			reference, answer = s.buildAgenticReference(ctx, chat.TenantID, chatDatasetIDs(chat), answer, registry)
+			reference, answer = s.buildAgenticReference(ctx, chat.TenantID, datasetIDs, answer, registry)
 		} else {
 			if len(agentic_rag.CitedIDsFromMarkers(answer, registry)) > 0 || len(agentic_rag.ExtractCitedChunkIDs(answer)) > 0 {
 				common.InfoCtx(ctx, "agentic citations suppressed by quote=false")

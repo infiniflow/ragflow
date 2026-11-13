@@ -23,6 +23,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
@@ -147,18 +148,25 @@ func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantI
 	}, marked
 }
 
-// fetchChunksByIDs loads the cited chunks from the tenant's index, keeping the
+// fetchChunksByIDs loads the cited chunks from the datasets' indexes, keeping the
 // engine row shape (chunk_id / content_with_weight / docnm_kwd / doc_id /
-// kb_id / img_id / position_int) so chunksFormat can normalize it. The index is
-// the chat's OWNING tenant's - the same scoping the agent's retrieval tools
-// use.
+// kb_id / img_id / position_int) so chunksFormat can normalize it.
 func fetchChunksByIDs(ctx context.Context, tenantID string, datasetIDs, ids []string) []map[string]interface{} {
 	de := engine.Get()
-	if de == nil || len(ids) == 0 {
+	if de == nil || len(ids) == 0 || len(datasetIDs) == 0 {
 		return nil
 	}
+	scopes, err := runtime.GroupDatasetTenantScopes(ctx, tenantID, datasetIDs)
+	if err != nil {
+		common.WarnCtx(ctx, "agentic citation dataset scope is invalid", zap.Error(err))
+		return nil
+	}
+	indexes := make([]string, 0, len(scopes))
+	for _, scope := range scopes {
+		indexes = append(indexes, fmt.Sprintf("ragflow_%s", scope.TenantID))
+	}
 	req := &enginetypes.SearchRequest{
-		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
+		IndexNames:   indexes,
 		KbIDs:        datasetIDs,
 		Filter:       map[string]interface{}{"id": ids},
 		SelectFields: []string{"content_with_weight", "docnm_kwd", "doc_id", "kb_id", "img_id", "position_int"},
