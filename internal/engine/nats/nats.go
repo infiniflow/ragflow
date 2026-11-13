@@ -568,9 +568,10 @@ func isExpiredFetchErr(err error, ctx context.Context) bool {
 // fetchOnce performs a single pull and folds the batch error into the returned
 // error. A spent deadline means "nothing (or only a partial batch) was
 // delivered" and is not an error - the caller's priority loop relies on that -
-// while any other batch failure nacks whatever did arrive so the messages stay
-// available. Cancellation is propagated. Errors can surface either from Fetch
-// itself or from the returned batch, so both paths are handled.
+// while a failed batch (cancellation included) nacks whatever did arrive so
+// the messages stay available; cancellation is still propagated to the caller.
+// Errors can surface either from Fetch itself or from the returned batch, so
+// both paths are handled.
 func (n *NatsEngine) fetchOnce(ctx context.Context, consumer jetstream.Consumer, messageCount int) ([]common.TaskHandle, error) {
 	if err := ctx.Err(); err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -589,24 +590,41 @@ func (n *NatsEngine) fetchOnce(ctx context.Context, consumer jetstream.Consumer,
 		return nil, err
 	}
 	resultMessages := make([]common.TaskHandle, 0, messageCount)
+	delivered := make([]jetstream.Msg, 0, messageCount)
 	for message := range messages.Messages() {
+		delivered = append(delivered, message)
 		resultMessages = append(resultMessages, NewNatsMessageHandle(message))
 	}
 	if batchErr := messages.Error(); batchErr != nil {
 		if errors.Is(batchErr, context.Canceled) {
-			return resultMessages, batchErr
+			// The caller drops the handles on cancellation, so nack whatever
+			// did arrive — leaving them in AckPending would strand them until
+			// the server's redelivery backoff expires.
+			nackAbandoned(delivered)
+			return nil, batchErr
 		}
 		if isExpiredFetchErr(batchErr, ctx) {
 			return resultMessages, nil // keep the partial batch, no spurious error
 		}
-		for _, message := range resultMessages {
-			if nackErr := message.Nack(); nackErr != nil {
-				common.Error("nack message after failed pull", nackErr)
-			}
-		}
+		nackAbandoned(delivered)
 		return nil, batchErr
 	}
 	return resultMessages, nil
+}
+
+// abandonedNackDelay gives nats.go time to deliver the UNSUB for a fetch's
+// inbox, which it queues only after closing the batch channel. A NAK the
+// server processes before that UNSUB can be redelivered straight into the
+// dead inbox, where the message sits unacked until AckWait plus a backoff and
+// burns a delivery attempt; delaying the redelivery aims it at a later pull.
+const abandonedNackDelay = 500 * time.Millisecond
+
+func nackAbandoned(messages []jetstream.Msg) {
+	for _, message := range messages {
+		if nackErr := message.NakWithDelay(abandonedNackDelay); nackErr != nil {
+			common.Error("nack message after failed pull", nackErr)
+		}
+	}
 }
 
 // PullMessage returns one task handle from PullMessages. A nil handle
