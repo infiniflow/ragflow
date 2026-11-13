@@ -28,6 +28,7 @@ import (
 	"sync"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine/kvrocks"
 )
 
@@ -363,7 +364,7 @@ func (e *Engine) ensureVectorColumnAndIndex(ctx context.Context, tableName strin
 	if vectorSize <= 0 {
 		return nil
 	}
-	columnName := fmt.Sprintf("q_%d_vec", vectorSize)
+	columnName := common.VectorColumnName(vectorSize)
 	if err := e.withDDLLock(ctx, prefix+"add_vector_column_"+tableName+"_"+columnName, func() (bool, error) {
 		return e.columnExists(ctx, tableName, columnName)
 	}, func() error {

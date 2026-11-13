@@ -18,6 +18,7 @@ package serenedb
 
 import (
 	"fmt"
+	"ragflow/internal/common"
 	"regexp"
 )
 
@@ -145,7 +146,7 @@ func normColumn(vectorSize int) string {
 }
 
 func rawVectorColumn(vectorSize int) string {
-	return fmt.Sprintf("q_%d_vec", vectorSize)
+	return common.VectorColumnName(vectorSize)
 }
 
 // indexRelation is the inverted index name for a table.

@@ -237,7 +237,7 @@ func RerankStandard(
 
 	// Get vector information
 	vectorSize := len(questionVector)
-	vectorColumn := getVectorColumnName(vectorSize)
+	vectorColumn := common.VectorColumnName(vectorSize)
 	zeroVector := make([]float64, vectorSize)
 
 	// Extract embeddings and tokens from search results
@@ -413,11 +413,6 @@ func ArgsortDescending(values []float64) []int {
 }
 
 // Helper functions
-
-// getVectorColumnName returns the vector column name based on dimension
-func getVectorColumnName(dim int) string {
-	return "q_" + strconv.Itoa(dim) + "_vec"
-}
 
 // extractVector extracts vector from chunk fields
 func extractVector(fields map[string]interface{}, column string, zeroVector []float64) []float64 {
