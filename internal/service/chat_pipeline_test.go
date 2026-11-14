@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"reflect"
 	"sort"
 	"strings"
@@ -35,6 +36,8 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/permission"
+	ragprompts "ragflow/internal/rag/prompts"
+	"ragflow/internal/service/graph"
 )
 
 // dialForTest builds a minimal *entity.Chat suitable for the
@@ -1681,6 +1684,199 @@ func TestClampChatConfigMaxTokensUsesRemainingBudget(t *testing.T) {
 	}
 	if dialog.LLMSetting["max_tokens"] != float64(1024) {
 		t.Fatalf("dialog max_tokens was mutated: %v", dialog.LLMSetting["max_tokens"])
+	}
+}
+
+func TestCompletionReserveTiers(t *testing.T) {
+	maxTokens := func(v int) *modelModule.ChatConfig { return &modelModule.ChatConfig{MaxTokens: &v} }
+	for _, tc := range []struct {
+		name      string
+		cfg       *modelModule.ChatConfig
+		maxOutput int
+		window    int
+		want      int
+	}{
+		{"chat max_tokens is honoured exactly", maxTokens(1000), 2048, 32768, 1000},
+		{"chat max_tokens is not capped at a quarter", maxTokens(20000), 2048, 32768, 20000},
+		{"model max output below a quarter", &modelModule.ChatConfig{}, 2048, 32768, 2048},
+		{"model max output capped at a quarter", &modelModule.ChatConfig{}, 131072, 32768, 8192},
+		{"default reserve", nil, 0, 32768, defaultCompletionReserve},
+		{"default reserve capped at a quarter", nil, 0, 8000, 2000},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := completionReserve(tc.cfg, tc.maxOutput, tc.window); got != tc.want {
+				t.Errorf("completionReserve = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestBuildLLMModelConfigCarriesMaxOutput(t *testing.T) {
+	cfg, _, _, _, err := NewChatPipelineService().buildLLMModelConfig(&modelModule.ModelInfo{Name: "m", ContextLength: 32768, MaxOutput: 8192})
+	if err != nil {
+		t.Fatalf("buildLLMModelConfig: %v", err)
+	}
+	if got, _ := cfg["max_output"].(int); got != 8192 {
+		t.Errorf("max_output = %v, want 8192", cfg["max_output"])
+	}
+}
+
+func TestKnowledgeTokenBudgetSubtractsTemplateCitationAndReserve(t *testing.T) {
+	s := NewChatPipelineService()
+	template := "You are a helpful assistant. Answer from the knowledge base.\n{knowledge}"
+	kwargs := map[string]interface{}{"knowledge": strings.Repeat("caller knowledge ", 500)}
+	templateTokens := graph.NumTokensFromString("You are a helpful assistant. Answer from the knowledge base.\n ")
+	citationTokens := graph.NumTokensFromString(ragprompts.CitationPrompt(""))
+	if got, want := s.knowledgeTokenBudget(32768, template, kwargs, true, 4096), 32768-templateTokens-citationTokens-4096; got != want {
+		t.Errorf("quoted budget = %d, want %d", got, want)
+	}
+	if got, want := s.knowledgeTokenBudget(32768, template, kwargs, false, 4096), 32768-templateTokens-4096; got != want {
+		t.Errorf("unquoted budget = %d, want %d", got, want)
+	}
+	if _, ok := kwargs["knowledge"]; !ok {
+		t.Error("knowledgeTokenBudget must not change the caller's kwargs")
+	}
+	if got := s.knowledgeTokenBudget(100, strings.Repeat("word ", 200), nil, false, 25); got != 0 {
+		t.Errorf("a template larger than the window must leave no budget, got %d", got)
+	}
+}
+
+func TestKnowledgeTokenBudgetSplitsAcrossKnowledgeInsertions(t *testing.T) {
+	s := NewChatPipelineService()
+	for _, tc := range []struct {
+		name, template, rendered string
+		insertions               int
+	}{
+		{"no placeholder, appended once", "Answer from the knowledge base.", "Answer from the knowledge base.", 1},
+		{"one placeholder", "Answer from the knowledge base.\n{knowledge}", "Answer from the knowledge base.\n ", 1},
+		{"two placeholders", "Answer from the knowledge base.\n{knowledge}\nAgain:\n{knowledge}", "Answer from the knowledge base.\n \nAgain:\n ", 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			want := (32768 - graph.NumTokensFromString(tc.rendered) - 4096) / tc.insertions
+			if got := s.knowledgeTokenBudget(32768, tc.template, nil, false, 4096); got != want {
+				t.Errorf("budget = %d, want %d", got, want)
+			}
+		})
+	}
+}
+
+func TestKBPromptKeepsNoPassageWithoutBudget(t *testing.T) {
+	s := NewChatPipelineService()
+	kbinfos := map[string]interface{}{"chunks": []map[string]interface{}{
+		{"content_with_weight": "The regional council approved the budget amendment.", "docnm_kwd": "a.pdf"},
+		{"content_with_weight": "The amendment takes effect next year.", "docnm_kwd": "b.pdf"},
+	}}
+	for _, budget := range []int{0, -1} {
+		if got := s.kbPrompt(kbinfos, budget); len(got) != 0 {
+			t.Errorf("kbPrompt(budget %d) kept %d passages, want none", budget, len(got))
+		}
+	}
+}
+
+// A zero knowledge budget keeps every retrieved chunk out of the prompt, so the
+// empty-response fallback must not send them as references; an empty retrieval
+// keeps closing with the retrieval result.
+func TestEmptyResponseReferenceOmitsChunksOutsideThePrompt(t *testing.T) {
+	s := NewChatPipelineService()
+	retrieved := map[string]interface{}{
+		"total": 1,
+		"chunks": []map[string]interface{}{
+			{"content_with_weight": "The regional council approved the budget amendment.", "doc_id": "d1", "docnm_kwd": "a.pdf"},
+		},
+		"doc_aggs": []interface{}{map[string]interface{}{"doc_id": "d1", "doc_name": "a.pdf", "count": 1}},
+	}
+	budget := s.knowledgeTokenBudget(100, strings.Repeat("word ", 200), nil, true, 25)
+	knowledges := s.kbPrompt(retrieved, budget)
+	if !emptyResponseApplies(len(knowledges), "", false) {
+		t.Fatalf("budget %d kept %d passages, want the fallback to apply", budget, len(knowledges))
+	}
+	if ref := emptyResponseReference(retrieved, knowledges, true); len(ref) != 0 {
+		t.Errorf("zero budget, quote on: reference = %#v, want empty", ref)
+	}
+
+	empty := map[string]interface{}{"total": 0, "chunks": []map[string]interface{}{}, "doc_aggs": []interface{}{}}
+	if ref := emptyResponseReference(empty, nil, true); !reflect.DeepEqual(ref, empty) {
+		t.Errorf("empty retrieval, quote on: reference = %#v, want the retrieval result", ref)
+	}
+	if ref := emptyResponseReference(empty, nil, false); ref == nil || len(ref) != 0 {
+		t.Errorf("quote off: reference = %#v, want an explicit empty object", ref)
+	}
+}
+
+const fullWindowTemplate = "You are a helpful assistant. Answer from the knowledge base.\n{knowledge}"
+
+// fillWindowAndClamp runs the request-building steps of AsyncChat's phase 10 on a
+// retrieval far larger than the window: passages sized by knowledgeTokenBudget,
+// system prompt formatted with the prompt parameters in params, citation rules
+// appended, messages fitted at 95% of the window, completion clamped. The
+// passages are about 550 tokens each, near the default chunk size. It returns
+// the room left for the completion.
+func fillWindowAndClamp(t *testing.T, window int, cfg *modelModule.ChatConfig, maxOutput int, template string, params map[string]interface{}) int {
+	t.Helper()
+	s := NewChatPipelineService()
+	chunks := make([]map[string]interface{}, 0, 200)
+	for i := 0; i < 200; i++ {
+		chunks = append(chunks, map[string]interface{}{
+			"content_with_weight": strings.Repeat(fmt.Sprintf("Passage %d: the regional council approved the budget amendment for the year. ", i), 35),
+			"docnm_kwd":           fmt.Sprintf("document-%d.pdf", i),
+		})
+	}
+	kbinfos := map[string]interface{}{"chunks": chunks}
+
+	reserve := completionReserve(cfg, maxOutput, window)
+	kwargs := maps.Clone(params)
+	if kwargs == nil {
+		kwargs = map[string]interface{}{}
+	}
+	knowledges := s.kbPrompt(kbinfos, s.knowledgeTokenBudget(window, template, kwargs, true, reserve))
+	if len(knowledges) == 0 || len(knowledges) == len(chunks) {
+		t.Fatalf("kept %d of %d passages; the retrieval must be cut by the budget", len(knowledges), len(chunks))
+	}
+	kwargs["knowledge"] = "\n------\n" + strings.Join(knowledges, "\n\n------\n\n")
+	messages := []map[string]interface{}{
+		{"role": "system", "content": s.formatPrompt(template, kwargs)},
+		{"role": "user", "content": "Which budget amendments did the regional council approve this year?"},
+	}
+	used, _ := s.messageFitIn(messages, int(float64(window)*0.95))
+	citation := graph.NumTokensFromString(ragprompts.CitationPrompt(""))
+	if _, _, err := clampChatConfigMaxTokens(cfg, window, used+citation); err != nil {
+		t.Fatalf("full-window retrieval left no completion room: %v", err)
+	}
+	return window - used - citation
+}
+
+func TestFullWindowRetrievalKeepsDefaultCompletionReserve(t *testing.T) {
+	if room := fillWindowAndClamp(t, 32768, &modelModule.ChatConfig{}, 0, fullWindowTemplate, nil); room < defaultCompletionReserve {
+		t.Errorf("completion room = %d tokens, want at least the %d-token reserve", room, defaultCompletionReserve)
+	}
+}
+
+func TestFullWindowRetrievalKeepsModelMaxOutputReserve(t *testing.T) {
+	if room := fillWindowAndClamp(t, 32768, &modelModule.ChatConfig{}, 131072, fullWindowTemplate, nil); room < 32768/4 {
+		t.Errorf("completion room = %d tokens, want at least a quarter of the window (%d)", room, 32768/4)
+	}
+}
+
+func TestFullWindowRetrievalKeepsReserveWithLargePromptParameter(t *testing.T) {
+	const template = "You are a helpful assistant. Answer from the knowledge base.\nCase file:\n{case_file}\n{knowledge}"
+	params := map[string]interface{}{"case_file": strings.Repeat("The applicant filed an appeal against the permit decision. ", 600)}
+	if tokens := graph.NumTokensFromString(params["case_file"].(string)); tokens < 4000 {
+		t.Fatalf("case_file is %d tokens, want a parameter of several thousand", tokens)
+	}
+	if room := fillWindowAndClamp(t, 32768, &modelModule.ChatConfig{}, 0, template, params); room < defaultCompletionReserve {
+		t.Errorf("completion room = %d tokens, want at least the %d-token reserve", room, defaultCompletionReserve)
+	}
+}
+
+func TestFullWindowRetrievalHonoursChatMaxTokens(t *testing.T) {
+	maxTokens := 6000
+	cfg := BuildChatConfig(&entity.Chat{LLMSetting: entity.JSONMap{"max_tokens": float64(maxTokens)}}, nil)
+	fillWindowAndClamp(t, 32768, cfg, 2048, fullWindowTemplate, nil)
+	if cfg.MaxTokens == nil {
+		t.Fatalf("max_tokens sent to the model is unset, want exactly %d", maxTokens)
+	}
+	if *cfg.MaxTokens != maxTokens {
+		t.Errorf("max_tokens sent to the model = %d, want exactly %d", *cfg.MaxTokens, maxTokens)
 	}
 }
 
