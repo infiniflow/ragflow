@@ -72,6 +72,14 @@ type SyncCheckpointState struct {
 	ErrorMsg      string          `json:"error_msg,omitempty"`
 }
 
+// SyncFailure describes one source document whose fetch failed during a sync
+// session. UpdatedAt is the source modification time, or the zero time when
+// the source does not report one.
+type SyncFailure struct {
+	SourceID  string
+	UpdatedAt time.Time
+}
+
 // SyncRequest describes one fixed sync window.
 type SyncRequest struct {
 	TaskID       string

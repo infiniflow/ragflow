@@ -33,11 +33,12 @@ import (
 )
 
 type webdavTestFile struct {
-	content  string
-	size     int64
-	hasSize  bool
-	modified string
-	isDir    bool
+	content   string
+	size      int64
+	hasSize   bool
+	modified  string
+	isDir     bool
+	getStatus int
 }
 
 // newWebDAVTestServer serves a small static WebDAV tree.
@@ -103,6 +104,10 @@ func newWebDAVTestServerAtMount(t *testing.T, mountPath string, files map[string
 				return
 			}
 			getRequests = append(getRequests, r.URL.Path)
+			if entry.getStatus != 0 {
+				w.WriteHeader(entry.getStatus)
+				return
+			}
 			_, _ = io.WriteString(w, entry.content)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
@@ -416,6 +421,73 @@ func TestWebDAVConnectorOpenSyncIncremental(t *testing.T) {
 	}
 	if batch.Documents[0].SemanticIdentifier != "beta.md" {
 		t.Fatalf("incremental document = %q", batch.Documents[0].SemanticIdentifier)
+	}
+}
+
+func TestWebDAVConnectorOpenSyncReportsFailedDownloads(t *testing.T) {
+	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "20")
+	tree := webDAVTestTree()
+	tree["/notes/flaky.txt"] = webdavTestFile{content: "", size: 5, hasSize: true, modified: "Sat, 03 Jan 2026 00:00:00 GMT", getStatus: http.StatusServiceUnavailable}
+	server, _, _ := newWebDAVTestServer(t, tree)
+	connector := webDAVTestConnector(t, server.URL, false, 2)
+
+	start := mustTime(t, "2026-01-02T00:00:00Z")
+	session, err := connector.OpenSync(t.Context(), SyncRequest{
+		WindowStart: &start,
+		WindowEnd:   mustTime(t, "2026-01-04T00:00:00Z"),
+	})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	defer session.Close()
+
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 1 || batch.Documents[0].SemanticIdentifier != "beta.md" {
+		t.Fatalf("failed download should leave the other document: %+v", batch.Documents)
+	}
+
+	reporter, ok := session.(SyncFailureReporter)
+	if !ok {
+		t.Fatalf("session does not implement SyncFailureReporter")
+	}
+	failures := reporter.SyncFailures()
+	if len(failures) != 1 {
+		t.Fatalf("failures len = %d, want 1: %+v", len(failures), failures)
+	}
+	if failures[0].SourceID != "webdav:"+server.URL+":"+server.URL+"/notes/flaky.txt" {
+		t.Fatalf("failure source id = %q", failures[0].SourceID)
+	}
+	if !failures[0].UpdatedAt.Equal(mustTime(t, "2026-01-03T00:00:00Z")) {
+		t.Fatalf("failure updated at = %v, want the file Last-Modified", failures[0].UpdatedAt)
+	}
+}
+
+func TestWebDAVConnectorOpenSyncFailedDownloadWithoutLastModifiedReportsZeroTime(t *testing.T) {
+	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "20")
+	tree := webDAVTestTree()
+	tree["/notes/nodate.txt"] = webdavTestFile{content: "", size: 5, hasSize: true, getStatus: http.StatusServiceUnavailable}
+	server, _, _ := newWebDAVTestServer(t, tree)
+	connector := webDAVTestConnector(t, server.URL, false, 2)
+
+	start := mustTime(t, "2026-01-02T00:00:00Z")
+	session, err := connector.OpenSync(t.Context(), SyncRequest{
+		WindowStart: &start,
+		WindowEnd:   mustTime(t, "2026-01-04T00:00:00Z"),
+	})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	defer session.Close()
+
+	failures := session.(SyncFailureReporter).SyncFailures()
+	if len(failures) != 1 {
+		t.Fatalf("failures len = %d, want 1: %+v", len(failures), failures)
+	}
+	if !failures[0].UpdatedAt.IsZero() {
+		t.Fatalf("failure without Last-Modified updated at = %v, want zero", failures[0].UpdatedAt)
 	}
 }
 
