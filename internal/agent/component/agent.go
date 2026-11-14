@@ -22,6 +22,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/cloudwego/eino/components/model"
 	einotool "github.com/cloudwego/eino/components/tool"
@@ -42,6 +43,17 @@ import (
 
 const maxSubAgentDepth = 8
 const defaultAgentDeferredTimeout = 10 * time.Minute
+
+// Citation grounding prompt size guards. The grounding prompt embeds
+// retrieved chunks plus the full answer; a single oversized call
+// regularly outlives provider stream limits and the answer is lost.
+// Chunk bodies are truncated, chunks are grounded in batches capped
+// by characters and count; beyond the batch cap the tail stays uncited.
+const (
+	citationGroundingMaxChunkChars = 3000
+	citationGroundingBatchChars    = 40_000
+	citationGroundingMaxBatches    = 4
+)
 
 // agentProviderLastSegmentSplit takes a composite llm_id and
 // returns (bareModelName, providerName, true) — or ("", "", false)
@@ -528,6 +540,12 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture, cite
 	done := make(chan error, 1)
 	go func() {
 		var firstErr error
+		// Cite mode holds content deltas for the grounding call. Models that
+		// inline <think>...</think> inside the content stream would otherwise
+		// be completely silent: stream the held reasoning part out as it
+		// completes so the client sees progress like non-cite runs.
+		var heldContent strings.Builder
+		emittedThinkLen := 0
 		iter := future.GetMessageStreams()
 		for {
 			msgStream, hasNext, err := iter.Next()
@@ -565,9 +583,27 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture, cite
 				if msg.Content == "" && msg.ReasoningContent == "" {
 					continue
 				}
-				// Retrieval tools can add chunks during this call. Hold the first
-				// answer until we know whether citation grounding will run.
+				// When citation grounding will run, hold content deltas
+				// but still stream thinking so the client sees progress
+				// and the SSE connection stays alive.
 				if cite {
+					if msg.ReasoningContent != "" {
+						runtime.EmitAgentMessage(ctx, "", msg.ReasoningContent)
+					}
+					if msg.Content != "" {
+						heldContent.WriteString(msg.Content)
+						held := heldContent.String()
+						if start := strings.Index(held, "<think>"); start >= 0 {
+							think := held[start+len("<think>"):]
+							if end := strings.Index(think, "</think>"); end >= 0 {
+								think = think[:end]
+							}
+							if len(think) > emittedThinkLen {
+								runtime.EmitAgentMessage(ctx, "", think[emittedThinkLen:])
+								emittedThinkLen = len(think)
+							}
+						}
+					}
 					continue
 				}
 				if runtime.AgentMessageEventsEmitted(ctx) && !runtime.HasDeferredAgentMessageSink(ctx) {
@@ -657,11 +693,14 @@ func citationGroundingHasSubstantiveText(s string) bool {
 // the model to insert [ID:N] tags into the assistant's final
 // content.
 //
-// Streams grounded deltas when the invoker supports streaming. Returns the
-// original content when no chunks are available or the call fails before
-// emitting anything. Marker-only grounding responses fall back to the
-// original answer; if invalid deltas were already streamed, an error is
-// returned so the caller does not append the first-pass text afterward.
+// Chunk bodies are truncated and the chunk set is split into batches;
+// each batch is grounded by a separate sequential call whose output
+// feeds the next one. On a batch failure the last successful version
+// is returned, so a single provider timeout loses only the remaining
+// batches, never the answer itself. Grounded deltas are buffered
+// rather than streamed, so a failed call never reached the client.
+//
+// Returns the grounded content and the first batch error, if any.
 func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, content string, chunks []prompts.CitationSource) (string, error) {
 	if !p.Cite {
 		return content, nil
@@ -672,7 +711,79 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 	if strings.TrimSpace(content) == "" {
 		return content, nil
 	}
-	systemPrompt, ids := prompts.CitationPlusPrompt(chunks)
+	truncated := make([]prompts.CitationSource, len(chunks))
+	for i, c := range chunks {
+		truncated[i] = c
+		if utf8.RuneCountInString(c.Content) > citationGroundingMaxChunkChars {
+			truncated[i].Content = string([]rune(c.Content)[:citationGroundingMaxChunkChars])
+		}
+	}
+	chunks = truncated
+	batches := citationBatches(chunks, content, citationGroundingBatchChars)
+	if len(batches) > citationGroundingMaxBatches {
+		batches = batches[:citationGroundingMaxBatches]
+	}
+	// Later batches receive text already tagged by earlier ones; marker
+	// filtering must allow every chunk id, not just the current batch's,
+	// or it would strip citations from previous batches.
+	allowedIDs := make([]string, 0, len(chunks))
+	for _, c := range chunks {
+		allowedIDs = append(allowedIDs, c.ID)
+	}
+	grounded := content
+	var firstErr error
+	for i, batch := range batches {
+		out, err := citationGroundingCall(ctx, db, p, grounded, batch, allowedIDs, i > 0)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("citation grounding batch %d/%d: %w", i+1, len(batches), err)
+			}
+			break
+		}
+		if trimmed := strings.TrimSpace(out); trimmed != "" {
+			grounded = out
+		}
+	}
+	return grounded, firstErr
+}
+
+// citationBatches packs chunks into batches whose combined content
+// stays under budget characters.
+func citationBatches(chunks []prompts.CitationSource, content string, budget int) [][]prompts.CitationSource {
+	var batches [][]prompts.CitationSource
+	var cur []prompts.CitationSource
+	for _, c := range chunks {
+		candidate := append(cur, c)
+		prompt, _ := prompts.CitationPlusPrompt(candidate)
+		if len(cur) > 0 && utf8.RuneCountInString(prompt)+utf8.RuneCountInString(content)+utf8.RuneCountInString(citationKeepExistingPrompt) > budget {
+			batches = append(batches, cur)
+			cur = nil
+		}
+		cur = append(cur, c)
+	}
+	if len(cur) > 0 {
+		batches = append(batches, cur)
+	}
+	return batches
+}
+
+const citationKeepExistingPrompt = "\nThe text already contains [ID:<ID>] citation tags; keep every existing tag unchanged.\n"
+
+// citationGroundingCall makes one grounding invocation over a single
+// batch of chunks.
+// citationGroundingCall makes one grounding invocation over a single
+// batch of chunks. allowedIDs carries every chunk id across all batches so
+// marker filtering keeps citations written by earlier batches.
+func citationGroundingCall(ctx context.Context, db *gorm.DB, p AgentParam, content string, batch []prompts.CitationSource, allowedIDs []string, keepExisting bool) (string, error) {
+	systemPrompt, _ := prompts.CitationPlusPrompt(batch)
+	if keepExisting {
+		// Later batches see text already tagged by earlier ones; without
+		// this instruction models tend to strip prior [ID:] citations.
+		systemPrompt += citationKeepExistingPrompt
+	}
+	if utf8.RuneCountInString(systemPrompt)+utf8.RuneCountInString(content) > citationGroundingBatchChars {
+		return content, fmt.Errorf("citation grounding request exceeds %d characters", citationGroundingBatchChars)
+	}
 	inv := getDefaultChatInvoker()
 	req := ChatInvokeRequest{
 		Driver:    p.Driver,
@@ -687,71 +798,32 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 	}
 	var resp *ChatInvokeResponse
 	var err error
-	emittedVisible := false
-	var leadingWhitespace strings.Builder
-	emitting := false
-	emitContent := func(text string) error {
-		if text == "" {
-			return nil
-		}
-		if !emitting {
-			leadingWhitespace.WriteString(text)
-			if strings.TrimSpace(leadingWhitespace.String()) == "" {
-				return nil
-			}
-			text = leadingWhitespace.String()
-			emitting = true
-		}
-		emittedVisible = true
-		runtime.EmitAgentMessage(ctx, text, "")
-		return nil
-	}
 	if streamer, ok := inv.(chat.StreamingInvoker); ok {
-		streamFilter := newCitationMarkerStreamFilter(ids)
+		// Deltas are discarded: grounding runs in batches and the caller emits
+		// only the final grounded text, so streaming each batch would repeat
+		// the whole answer once per batch — and a failed or marker-only
+		// stream must not leave partial output visible while the caller
+		// falls back to the original answer.
 		resp, err = streamer.Stream(ctx, db, req, func(delta string, isThink bool) error {
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			if isThink || delta == "" {
-				return nil
-			}
-			// Structured output is normalized once after grounding. Streaming
-			// these deltas would duplicate that final emission, and the raw
-			// chunks would not match the cleaned content.
-			if len(p.OutputStructure) > 0 {
-				return nil
-			}
-			return emitContent(streamFilter.Push(delta))
+			return ctx.Err()
 		})
-		if err == nil {
-			if flushErr := emitContent(streamFilter.Flush()); flushErr != nil {
-				err = flushErr
-			}
-		}
 	} else {
 		resp, err = inv.Invoke(ctx, db, req)
 	}
 	if err != nil {
-		// Grounding is best-effort. Return the original content
-		// so the message still flows; the caller can decide
-		// whether to surface the error.
-		return content, err
+		return "", err
 	}
 	if resp == nil {
 		return content, fmt.Errorf("citation grounding returned no response")
 	}
-	grounded := filterCitationMarkers(resp.Content, ids)
+	grounded := filterCitationMarkers(resp.Content, allowedIDs)
 	if strings.TrimSpace(grounded) == "" {
 		return content, nil
 	}
 	// Marker-only grounding must not silently replace the first-pass answer
-	// (#20613). Non-stream (or stream that never emitted) can fall back.
-	// Once invalid deltas have already been streamed, surface an error so the
-	// caller does not append the original answer after the bad markers.
+	// (#20613); the buffered call never reached the client, so falling back
+	// to the original content is always safe.
 	if !citationGroundingHasSubstantiveText(grounded) {
-		if emittedVisible {
-			return content, fmt.Errorf("citation grounding returned markers without answer text")
-		}
 		return content, nil
 	}
 	return grounded, nil
@@ -1287,14 +1359,23 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 			groundingStatus = "no_chunks"
 		} else {
 			grounded, gErr := applyCitationGrounding(ctx, db, p, content, chunks)
-			if gErr == nil && grounded != content {
+			if grounded != content {
+				// A failed later batch keeps the batches that already
+				// succeeded: grounded carries their output, so emit it
+				// rather than discarding all grounding.
 				content = grounded
-				groundingStatus = "applied"
-			} else if gErr != nil {
-				if ctx.Err() != nil || runtime.AgentMessageEventsEmitted(ctx) || runtime.DeferredAgentMessageEventsEmitted(ctx) {
-					return nil, fmt.Errorf("component: Agent citation grounding stream: %w", gErr)
+				if gErr != nil {
+					groundingStatus = "partial: " + gErr.Error()
+				} else {
+					groundingStatus = "applied"
 				}
+			} else if gErr != nil {
+				// Grounded deltas are buffered inside applyCitationGrounding,
+				// so a failed call never reached the client — the original
+				// answer is safe to emit.
 				groundingStatus = "error: " + gErr.Error()
+			} else {
+				groundingStatus = "unchanged"
 			}
 		}
 	}
@@ -1328,14 +1409,21 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 				zap.Strings("expected_keys", sortedMapKeys(structuredExpectedKeySet(p.OutputStructure))))
 		}
 	}
-	streamed := runtime.AgentMessageEventsEmitted(ctx) || runtime.DeferredAgentMessageEventsEmitted(ctx)
+	contentStreamed := runtime.AgentMessageContentEmitted(ctx)
 	switch {
 	case structuredHeld:
 		// Content deltas were held above; emit the normalized body once so the
 		// live stream matches outputs["content"] (no fenced/raw mismatch).
 		runtime.EmitAgentMessage(ctx, content+artifactMD, "")
-	case !streamed:
-		runtime.EmitAgentMessage(ctx, content+artifactMD, thinking)
+	case !contentStreamed:
+		// No answer content has reached the client yet. When only thinking
+		// was streamed (e.g., citation grounding held the answer), avoid
+		// re-emitting the thinking delta at the end.
+		if runtime.AgentMessageEventsEmitted(ctx) {
+			runtime.EmitAgentMessage(ctx, content+artifactMD, "")
+		} else {
+			runtime.EmitAgentMessage(ctx, content+artifactMD, thinking)
+		}
 	case artifactMD != "":
 		// Python's stream_output_with_tools_async yields the tool-artifact
 		// markdown as a trailing delta after the LLM stream, so the live SSE
@@ -1391,7 +1479,7 @@ func (c *AgentComponent) Outputs() map[string]string {
 		"thinking":         "Model reasoning content, when the provider returns it separately.",
 		"tool_calls":       "One entry per tool call observed during the run",
 		"artifacts":        "Artifacts collected from tool responses (empty in P0)",
-		"grounding_status": "'applied' | 'no_chunks' | 'error: <msg>' (present when cite=true).",
+		"grounding_status": "'applied' | 'partial: <msg>' | 'unchanged' | 'no_chunks' | 'error: <msg>' (present when cite=true).",
 	}
 }
 

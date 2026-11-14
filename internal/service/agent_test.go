@@ -35,6 +35,15 @@ import (
 	"ragflow/internal/permission"
 )
 
+func TestAgentRunFailureTextDoesNotAttributeUnknownTimeoutToModel(t *testing.T) {
+	for _, err := range []error{context.DeadlineExceeded, fmt.Errorf("database ping: %w", context.DeadlineExceeded), errors.New("database timeout")} {
+		text, ok := agentRunFailureText(err)
+		if !ok || strings.Contains(text, "model endpoint") || !strings.Contains(text, "timed out") {
+			t.Fatalf("failure text=%q recognized=%v for %v", text, ok, err)
+		}
+	}
+}
+
 func TestBuildAgentMessageEventsThinkingProtocol(t *testing.T) {
 	events := buildAgentMessageEvents("final answer", "think step", nil)
 	if len(events) < 4 {
