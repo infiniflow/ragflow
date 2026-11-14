@@ -464,9 +464,9 @@ func TestIssue22340_RewriteToSelfLoopFilter(t *testing.T) {
 }
 
 // TestIssue22340_ConfiguredEndpointsSurviveReplacement verifies that relations built with
-// custom configured endpoint fields (e.g. left/right) retain those resolved endpoints
-// across LLMMergeDecider.BuildReplacement even when conflicting alias keys
-// (e.g. from_entity/to_entity) are present in the payload.
+// custom configured endpoint fields (e.g. left/right) retain both their resolved metadata endpoints
+// AND their payload member fields across LLMMergeDecider.BuildReplacement even when conflicting
+// alias keys (e.g. from_entity/to_entity) or conflicting member values are present in the merged payload.
 func TestIssue22340_ConfiguredEndpointsSurviveReplacement(t *testing.T) {
 	for _, conflict := range []bool{false, true} {
 		name := "without_aliases"
@@ -487,13 +487,34 @@ func TestIssue22340_ConfiguredEndpointsSurviveReplacement(t *testing.T) {
 			if rows[0].Meta["from"] != "A" || rows[0].Meta["to"] != "B" {
 				t.Fatalf("initial endpoints=%v", rows[0].Meta)
 			}
+			srcField, tgtField := RelationMemberFields(cfg.ParserConfig)
 			d := LLMMergeDecider{Embed: constEmbedder{dim: 4}}
-			out, err := d.BuildReplacement(context.Background(), rows[0], rows[0], parsePayload(rows[0].Content))
+			d.SetRelationMembers(srcField, tgtField)
+
+			// Simulate LLM returning changed values for both configured members and aliases
+			mergedInput := map[string]any{"left": "WRONG_A", "right": "WRONG_B", "type": "linked", "description": "richer"}
+			if conflict {
+				mergedInput["from_entity"] = "WRONG_X"
+				mergedInput["to_entity"] = "WRONG_Y"
+			}
+			out, err := d.BuildReplacement(context.Background(), rows[0], rows[0], mergedInput)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if out.Meta["from"] != "A" || out.Meta["to"] != "B" {
-				t.Errorf("replacement changed endpoints: %v", out.Meta)
+				t.Errorf("replacement changed metadata endpoints: %v", out.Meta)
+			}
+			outPayload := parsePayload(out.Content)
+			if outPayload["left"] != "A" || outPayload["right"] != "B" {
+				t.Errorf("replacement failed to restore configured member fields in payload: %v", outPayload)
+			}
+			if conflict {
+				if outPayload["from_entity"] != "A" || outPayload["to_entity"] != "B" {
+					t.Errorf("replacement failed to synchronize aliases in payload: %v", outPayload)
+				}
+			}
+			if outPayload["description"] != "richer" {
+				t.Errorf("non-endpoint fields must survive: %v", outPayload)
 			}
 		})
 	}
