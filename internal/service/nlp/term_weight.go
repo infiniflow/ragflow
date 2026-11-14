@@ -45,10 +45,14 @@ var (
 	reTagNumeric     = regexp.MustCompile(`^[0-9-]+`)
 )
 
-// Does not parse: the trailing \] escapes the closing bracket. MatchString used
-// to swallow that error and report "no match", so Pretoken's "#" substitution
-// has never fired. Compiling once keeps that behaviour.
-const pretokenPunctPattern = `[~—\t @#%!<>,\.\?":;'\{\}\[\]_=\(\)\|，。？》•●○↓《；'：""【¥ 】…￥！、·（）×\` + "`" + `&/「」\]`
+// Mirrors the punctuation class of the Python pretoken in rag/nlp/term_weight.py
+// (removed in #20289). The Go port escaped the closing bracket, so the class
+// never terminated, the pattern never compiled, and Pretoken's "#" substitution
+// never fired; #20610 kept that behaviour and surfaced the parse error through
+// warnPunctPatternOnce. The pattern is anchored so MatchString matches the
+// Python re.match on the same class: only tokens that start with punctuation
+// are dropped, and tokens that merely contain it ("3.5", "don't") are kept.
+const pretokenPunctPattern = `^[~—\t @#%!<>,\.\?\":;'\{\}\[\]_=\(\)\|，。？》•●○↓《；‘’：“”【¥ 】…￥！、·（）×` + "`" + `&\\/「」\\]`
 
 // Compiling here keeps the pattern off the per-token path, but the error cannot
 // be reported here: package-level variables are initialised before
