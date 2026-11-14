@@ -10,16 +10,19 @@ import {
 } from '@/components/ui/tooltip';
 import { AgentCategory } from '@/constants/agent';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
+import { useSidebarCollapse } from '@/layouts/components/app-sidebar/use-sidebar-collapse';
+import { useCallback, useRef, useState } from 'react';
 import { AgentListItemType, IFlow } from '@/interfaces/database/agent';
 import { CanvasCategoryToFlowType, FlowType, FlowTypeConfig } from './constant';
 import { AgentDropdown } from './agent-dropdown';
 import { useRenameAgent } from './use-rename-agent';
-import { useRef, useState } from 'react';
 import { Tag } from 'lucide-react';
 
 export type DatasetCardProps = {
-  data: IFlow & { type?: AgentListItemType };
-} & Pick<ReturnType<typeof useRenameAgent>, 'showAgentRenameModal'>;
+  data: IFlow;
+} & Pick<ReturnType<typeof useRenameAgent>, 'showAgentRenameModal'> & {
+    showPrivilegeModal(): void;
+  };
 
 function AgentTypeIcon({
   data,
@@ -73,6 +76,7 @@ function AgentTags({ tags }: { tags?: string }) {
             <Badge
               key={tag}
               variant="secondary"
+
               className="text-xs font-normal mr-1 space-x-1"
             >
               <Tag className="size-3" />
@@ -99,8 +103,23 @@ function AgentTags({ tags }: { tags?: string }) {
   );
 }
 
-export function AgentCard({ data, showAgentRenameModal }: DatasetCardProps) {
+export function AgentCard({
+  data,
+  showAgentRenameModal,
+  showPrivilegeModal,
+}: DatasetCardProps) {
   const { navigateToAgent } = useNavigatePage();
+  const { setCollapsed: setPrimarySidebarCollapsed } = useSidebarCollapse();
+
+  const handleCardClick = useCallback(() => {
+    setPrimarySidebarCollapsed(true);
+    navigateToAgent(data.id, data.canvas_category as AgentCategory)();
+  }, [
+    data.canvas_category,
+    data.id,
+    navigateToAgent,
+    setPrimarySidebarCollapsed,
+  ]);
 
   return (
     <HomeCard
@@ -112,17 +131,16 @@ export function AgentCard({ data, showAgentRenameModal }: DatasetCardProps) {
         release_time: data.release_time,
       }}
       moreDropdown={
-        <AgentDropdown showAgentRenameModal={showAgentRenameModal} agent={data}>
-          <MoreButton></MoreButton>
+        <AgentDropdown
+          showAgentRenameModal={showAgentRenameModal}
+          agent={data}
+          showPrivilegeModal={showPrivilegeModal}
+        >
+          <MoreButton />
         </AgentDropdown>
       }
       sharedBadge={<SharedBadge>{data.nickname}</SharedBadge>}
-      onClick={
-        // data.canvas_category === AgentCategory.DataflowCanvas
-        //   ? navigateToDataflow(data.id)
-        //   :
-        navigateToAgent(data?.id, data.canvas_category as AgentCategory)
-      }
+      onClick={handleCardClick}
       icon={<AgentTypeIcon data={data} />}
       extra={<AgentTags tags={data.tags} />}
       showReleaseTime

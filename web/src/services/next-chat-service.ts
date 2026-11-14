@@ -21,6 +21,7 @@ const {
   createChat,
   listChats,
   getChat,
+  getAgenticRagConfig,
   updateChat,
   patchChat,
   deleteChat,
@@ -52,6 +53,10 @@ const methods = {
     url: getChat,
     method: 'get',
   },
+  getAgenticRagConfig: {
+    url: getAgenticRagConfig,
+    method: 'get',
+  },
   updateChat: {
     url: updateChat,
     method: 'put',
@@ -73,7 +78,7 @@ const methods = {
     method: 'post',
   },
   listSessions: {
-    url: listSessions,
+    url: ({ chatId }: { chatId: string }) => listSessions(chatId),
     method: 'get',
   },
   getSession: {

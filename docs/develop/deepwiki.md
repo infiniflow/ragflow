@@ -8,7 +8,7 @@ sidebar_custom_props: {
 
 # Explore RAGFlow on DeepWiki
 
-An AI-generated, always-up-to-date knowledge base for understanding RAGFlow's codebase — designed for developers doing secondary development or deep-diving into RAGFlow's internals.
+An AI-generated, always-up-to-date Dataset for understanding RAGFlow's codebase — designed for developers doing secondary development or deep-diving into RAGFlow's internals.
 
 ---
 
@@ -35,7 +35,7 @@ This resource is primarily intended for:
 - **Researchers and engineers** who want to study RAGFlow's internal design principles — chunking strategies, embedding pipelines, graph-based retrieval, and agent orchestration.
 
 :::tip NOTE
-For general usage of RAGFlow (configuring knowledge bases, running chat, etc.), the [Guides](../guides/) section is a better starting point.
+For general usage of RAGFlow (configuring Datasets, running chat, etc.), the [Guides](../guides/) section is a better starting point.
 :::
 
 ## What You Can Find on DeepWiki

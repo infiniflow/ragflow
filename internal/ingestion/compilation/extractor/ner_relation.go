@@ -21,7 +21,7 @@ import (
 	"strings"
 )
 
-// Multilingual relation patterns — matching Python MULTILANG_RELATION_PATTERNS.
+// Multilingual relation patterns — matching MULTILANG_RELATION_PATTERNS
 // Entity groups [A-Z] are case-sensitive; relation keywords use (?i) inline.
 // _entWord: uppercase-start word with optional trailing period (e.g. "Inc.", "Corp.")
 // Periods between initials are also supported (e.g. "U.S.", "J.K.")
@@ -64,7 +64,7 @@ type relPatternEntry struct {
 }
 
 // ExtractRelations extracts typed relations between entities.
-// Matches the Python RelationExtractor pattern-based approach,
+// Matches the RelationExtractor pattern-based approach
 // including cross-sentence filtering via sentence boundary checks.
 func ExtractRelations(text string, entities []Entity, lang string) []Relation {
 	return extractRelationsWithOpts(text, entities, lang, 100)
@@ -91,7 +91,7 @@ func extractRelationsWithOpts(text string, entities []Entity, lang string, maxDi
 		}
 	}
 
-	// Build sentence spans (matching Python's sentence splitting regex)
+	// Build sentence spans (matching sentence splitting regex)
 	hasOffsets := false
 	for _, e := range entities {
 		if e.StartChar != 0 || e.EndChar != 0 {
@@ -206,7 +206,7 @@ func extractRelationsWithOpts(text string, entities []Entity, lang string, maxDi
 		}
 	}
 
-	// Multi-hop inference + dedup (matching Python always applies these)
+	// Multi-hop inference + dedup (matching always applies these)
 	relations = inferMultiHop(relations)
 	relations = dedupRelations(relations)
 
@@ -368,7 +368,7 @@ func abs(x int) int {
 }
 
 // splitSentences splits text into sentence spans [start, end).
-// Matches Python's: re.finditer(r'[^.!?]+(?:[.!?](?=\s|$))+', text)
+// Matches re.finditer(r'[^.!?]+(?:[.!?](?=\s|$))+', text)
 // Go RE2 lacks lookahead, so this manually identifies sentence boundaries:
 // - Periods followed by uppercase letter or end-of-string are sentence ends.
 // - Periods followed by lowercase letter are abbreviations (e.g., "Inc."), not sentence ends.

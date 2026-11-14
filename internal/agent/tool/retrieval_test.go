@@ -143,6 +143,84 @@ func TestAgenticSearchDisablesDenseFallback(t *testing.T) {
 	}
 }
 
+// TestRetrievalToolDisablesDenseFallback pins the agentic/human split for the
+// retrieval tool itself. An agent reads these chunks as evidence, so there is
+// no dense-only rescue: it would hand the model rows the query's own words
+// never matched. Only human-facing retrieval keeps that rescue on.
+func TestRetrievalToolDisablesDenseFallback(t *testing.T) {
+	prev := GetRetrievalService()
+	svc := &capturingRetrievalService{}
+	SetRetrievalService(svc)
+	t.Cleanup(func() { SetRetrievalService(prev) })
+
+	state := runtime.NewCanvasState("run-1", "task-1")
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := runtime.WithState(t.Context(), state)
+
+	if _, err := NewRetrievalTool().InvokableRun(ctx, `{"query":"hello","dataset_ids":["kb-1"]}`); err != nil {
+		t.Fatalf("InvokableRun: %v", err)
+	}
+	if svc.req.AllowDenseFallback == nil || *svc.req.AllowDenseFallback {
+		t.Fatal("the agent retrieval tool must disable the dense fallback")
+	}
+}
+
+func TestAgenticSearchExcludesCompiledResults(t *testing.T) {
+	previous := GetRetrievalService()
+	service := &capturingRetrievalService{}
+	SetRetrievalService(service)
+	t.Cleanup(func() { SetRetrievalService(previous) })
+
+	state := runtime.NewCanvasState("run-compiled", "session-compiled")
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := runtime.WithState(t.Context(), state)
+
+	if _, err := NewAgenticSearchTool(toolHybridSearch).InvokableRun(ctx, `{"query":"plain","kb_ids":["kb-1"]}`); err != nil {
+		t.Fatal(err)
+	}
+	if !service.req.ExcludeCompiled {
+		t.Fatal("default agentic search should exclude compiled results")
+	}
+	if service.req.TenantID != "tenant-1" {
+		t.Fatalf("TenantID = %q, want tenant-1", service.req.TenantID)
+	}
+}
+
+func TestAgenticSearchDoesNotAdvertiseUnsupportedCompiledExpansion(t *testing.T) {
+	info, err := NewAgenticSearchTool(toolHybridSearch).Info(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	schemaJSON, err := json.Marshal(info.ParamsOneOf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(schemaJSON), `"use_compiled"`) {
+		t.Fatalf("schema advertises unsupported compiled expansion: %s", schemaJSON)
+	}
+}
+
+type failingAgenticRetrievalService struct{}
+
+func (failingAgenticRetrievalService) Search(context.Context, *gorm.DB, RetrievalRequest) ([]RetrievalChunk, error) {
+	return nil, errors.New("backend unavailable")
+}
+
+func TestAgenticSearchReturnsRetrievalError(t *testing.T) {
+	previous := GetRetrievalService()
+	SetRetrievalService(failingAgenticRetrievalService{})
+	t.Cleanup(func() { SetRetrievalService(previous) })
+
+	state := runtime.NewCanvasState("run-error", "session-error")
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := runtime.WithState(t.Context(), state)
+
+	_, err := NewAgenticSearchTool(toolHybridSearch).InvokableRun(ctx, `{"query":"hello","kb_ids":["kb-1"]}`)
+	if err == nil || !strings.Contains(err.Error(), "backend unavailable") {
+		t.Fatalf("error = %v, want backend unavailable", err)
+	}
+}
+
 func TestRetrieval_PassesTenantIDFromCanvasState(t *testing.T) {
 	prev := GetRetrievalService()
 	svc := &capturingRetrievalService{}
@@ -197,7 +275,6 @@ func TestRetrieval_UsesNodeParamsAsDefaults(t *testing.T) {
 		"similarity_threshold":       0.42,
 		"rerank_id":                  "rerank@provider",
 		"cross_languages":            []any{"English", "Chinese"},
-		"toc_enhance":                true,
 		"meta_data_filter":           map[string]any{"method": "manual"},
 	})
 	if err != nil {
@@ -235,7 +312,7 @@ func TestRetrieval_UsesNodeParamsAsDefaults(t *testing.T) {
 	if len(svc.req.CrossLanguages) != 2 || svc.req.CrossLanguages[1] != "Chinese" {
 		t.Fatalf("CrossLanguages=%#v", svc.req.CrossLanguages)
 	}
-	if !svc.req.TOCEnhance || svc.req.MetaDataFilter["method"] != "manual" {
+	if svc.req.MetaDataFilter["method"] != "manual" {
 		t.Fatalf("enhancement request=%#v", svc.req)
 	}
 }
@@ -271,7 +348,6 @@ func TestRetrieval_ParsesEnhancementNodeParams(t *testing.T) {
 
 	built, err := BuildByName("retrieval", map[string]any{
 		"rerank_id":        "rerank-1",
-		"toc_enhance":      true,
 		"meta_data_filter": map[string]any{"method": "manual"},
 		"empty_response":   "empty",
 		"retrieval_from":   "dataset",
@@ -286,7 +362,7 @@ func TestRetrieval_ParsesEnhancementNodeParams(t *testing.T) {
 	if !ok {
 		t.Fatalf("BuildByName(retrieval) returned %T, want *RetrievalTool", built)
 	}
-	if rt.defaults.RerankID != "rerank-1" || !rt.defaults.TOCEnhance {
+	if rt.defaults.RerankID != "rerank-1" {
 		t.Fatalf("enhancement defaults were not parsed: %#v", rt.defaults)
 	}
 	if len(rt.defaults.CrossLanguages) != 1 || rt.defaults.CrossLanguages[0] != "English" {

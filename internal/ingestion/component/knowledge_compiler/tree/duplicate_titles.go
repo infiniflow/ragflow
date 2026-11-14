@@ -4,22 +4,22 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sort"
 	"strconv"
 	"strings"
 
+	"go.uber.org/zap"
+
+	rfcommon "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
 // rewriteDuplicateTreeNames rewrites duplicate summary titles whose
-// descriptions differ, mirroring Python
-// chunk_post_processor.rewrite_duplicate_tree_names (called by
-// Compiler._compile_tree_templates before raptor_tree_to_graph): the graph
-// projection uses titles as entity names and relation endpoints, so two nodes
-// sharing a title render as one ambiguous node.
+// descriptions differ: the graph projection uses titles as entity names and
+// relation endpoints, so two nodes sharing a title render as one ambiguous
+// node.
 //
-// Two passes, matching Python:
+// Two passes:
 //  1. LLM pass — group summary/root products by title; for a group with ≥2
 //     members and ≥2 distinct descriptions, ask the LLM for a concise distinct
 //     title per node (best-effort: a failed group keeps its titles).
@@ -65,11 +65,11 @@ func rewriteDuplicateTreeNames(ctx context.Context, deps common.Deps, llmID stri
 			continue
 		}
 		if err := rewriteTitleGroup(ctx, deps, llmID, title, products, idxs); err != nil {
-			log.Printf("tree: duplicate title rewrite failed for title=%q (keeping titles): %v", title, err)
+			rfcommon.Warn("tree: duplicate title rewrite failed, keeping titles", zap.String("title", title), zap.Error(err))
 		}
 	}
 
-	// ---- Deterministic uniqueness pass (always, matching Python) ----
+	// ---- Deterministic uniqueness pass (always) ----
 	used := map[string]int{}
 	for i := range products {
 		if !isTreeSummaryProduct(products[i]) {

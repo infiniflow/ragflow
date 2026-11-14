@@ -14,11 +14,13 @@ import (
 // per-box geometry signals those detectors rely on are still intact; they are
 // intentionally not repeated here.
 type pdfPostProcessOptions struct {
-	outputFormat       string
-	pageWidth          float64
-	zoom               float64
-	enableMultiColumn  bool
-	flattenMediaToText bool
+	pageWidth         float64
+	zoom              float64
+	enableMultiColumn bool
+	// parseMethod carries the PDFParser.ParseMethod so the DeepDoc analyzer can
+	// be resolved per request (in-process vs a registered external backend).
+	// Empty means the historical in-process default.
+	parseMethod string
 }
 
 func applyPDFPostProcess(result *deepdoctype.ParseResult, opts pdfPostProcessOptions) {
@@ -30,7 +32,7 @@ func applyPDFPostProcess(result *deepdoctype.ParseResult, opts pdfPostProcessOpt
 		reorderPDFMultiColumn(result, opts.pageWidth, opts.zoom)
 	}
 	normalizePDFLayoutTypes(result)
-	assignPDFDocTypeKeywords(result, opts.flattenMediaToText)
+	assignPDFDocTypeKeywords(result)
 }
 
 func normalizePDFLayoutTypes(result *deepdoctype.ParseResult) {
@@ -43,13 +45,9 @@ func normalizePDFLayoutTypes(result *deepdoctype.ParseResult) {
 	}
 }
 
-func assignPDFDocTypeKeywords(result *deepdoctype.ParseResult, flatten bool) {
+func assignPDFDocTypeKeywords(result *deepdoctype.ParseResult) {
 	for i := range result.Sections {
 		section := &result.Sections[i]
-		if flatten {
-			section.DocTypeKwd = "text"
-			continue
-		}
 		switch strings.TrimSpace(section.LayoutType) {
 		case deepdoctype.LayoutTypeTable:
 			section.DocTypeKwd = "table"

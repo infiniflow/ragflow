@@ -47,7 +47,7 @@ func NewFileCommitDAO() *FileCommitDAO {
 // GetByID gets a file commit by ID
 func (dao *FileCommitDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.FileCommit, error) {
 	var commit entity.FileCommit
-	err := db.WithContext(ctx).Where("id = ?", id).First(&commit).Error
+	err := db.WithContext(ctx).Take(&commit, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}

@@ -17,9 +17,51 @@
 package handler
 
 import (
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+// TestExtractBySchemaHeaderNames keeps HTTP lookup case-insensitive without changing output keys.
+func TestExtractBySchemaHeaderNames(t *testing.T) {
+	for _, field := range []string{"x-request-id", "X-Request-ID", "X-REQUEST-ID"} {
+		t.Run(field, func(t *testing.T) {
+			request := httptest.NewRequest("POST", "/", nil)
+			request.Header.Set("x-request-id", "request-123")
+			data := map[string]any{}
+			for key, values := range request.Header {
+				data[key] = values[0]
+			}
+			schema := map[string]any{
+				"properties": map[string]any{field: map[string]any{"type": "string"}},
+				"required":   []string{field},
+			}
+			got, err := extractBySchema(data, schema, "headers")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got) != 1 || got[field] != "request-123" {
+				t.Fatalf("extracted headers = %#v, want configured key %q", got, field)
+			}
+		})
+	}
+}
+
+// TestExtractBySchemaCaseSensitiveSections preserves case-sensitive body and query fields.
+func TestExtractBySchemaCaseSensitiveSections(t *testing.T) {
+	for _, section := range []string{"query", "body"} {
+		t.Run(section, func(t *testing.T) {
+			schema := map[string]any{
+				"properties": map[string]any{"ID": map[string]any{"type": "string"}},
+				"required":   []string{"ID"},
+			}
+			_, err := extractBySchema(map[string]any{"id": "123"}, schema, section)
+			if err == nil || !strings.Contains(err.Error(), "missing required field") {
+				t.Fatalf("error = %v, want missing required field", err)
+			}
+		})
+	}
+}
 
 // TestExtractBySchema_RequiredMissing pins the required-field-missing
 // branch (mirrors python agent_api.py:1913).

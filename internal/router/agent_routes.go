@@ -16,7 +16,7 @@
 
 // Package router contains the HTTP route registration helpers used by
 // cmd/ragflow. This file is the dedicated registration site for the
-// agent canvas endpoints described in plan §4.8.
+// agent canvas endpoints.
 package router
 
 import (
@@ -25,16 +25,13 @@ import (
 	"ragflow/internal/handler"
 )
 
-// RegisterAgentRoutes wires the Phase 5 agent endpoints onto an
+// RegisterAgentRoutes wires the agent canvas endpoints onto an
 // existing /agents RouterGroup. The orchestrator passes the v1 group's
 // "/agents" sub-group here, so the function does not know about the
 // v1 prefix itself.
 //
-// The existing GET /api/v1/agents (added in commit 0a7662cf3) is replaced
-// by this registration so the route count, ordering and middleware all
-// live in one place. The original GET is preserved verbatim at
-// router.go:349 until the orchestrator swaps it for a call to this
-// function.
+// All agent routes (count, ordering, middleware) are registered here so
+// they live in one place.
 func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 	if g == nil || h == nil {
 		return
@@ -43,6 +40,7 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 	g.GET("/templates", h.ListAgentTemplates)
 	g.GET("/prompts", h.Prompts)
 	g.GET("/tags", h.ListAgentTags)
+	g.GET("/versions", h.ListVersionCatalog)
 
 	// Agent CRUD.
 	g.GET("", h.ListAgents)
@@ -66,7 +64,9 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 	// Versions.
 	g.GET("/:canvas_id/versions", h.ListVersions)
 	g.GET("/:canvas_id/versions/:version_id", h.GetVersion)
+	g.PATCH("/:canvas_id/versions/:version_id", h.PatchVersion)
 	g.DELETE("/:canvas_id/versions/:version_id", h.DeleteVersion)
+	g.POST("/:canvas_id/versions/:version_id/apply", h.ApplyVersion)
 
 	// Sessions.
 	g.GET("/:canvas_id/sessions", h.ListAgentSessions)
@@ -78,23 +78,29 @@ func RegisterAgentRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
 	// Logs and webhook.
 	g.GET("/:canvas_id/logs/:message_id", h.GetAgentLogs)
 	g.GET("/:canvas_id/webhook/logs", h.GetAgentWebhookLogs)
-	// Webhook trigger endpoints. The Python agent API
-	// (api/apps/restful_apis/agent_api.py:1563-1564) registers six
-	// HTTP methods on a single path. Gin has no Match() helper, so we
-	// register each verb explicitly via registerAnyMethod. The handler
-	// is identical for all six; semantics differ only by
-	// c.Request.Method.
-	registerAnyMethod(g, "/:canvas_id/webhook", h.Webhook)
+	// The test trigger remains authenticated. Production triggers live on the
+	// public API group and use per-user webhook credentials.
 	registerAnyMethod(g, "/:canvas_id/webhook/test", h.Webhook)
+	g.POST("/:canvas_id/webhook/credentials", h.CreateWebhookCredential)
+	g.DELETE("/:canvas_id/webhook/credentials", h.RevokeWebhookCredential)
 
 	// Top-level actions (no canvas id in path).
 	// NOTE: `/chat/completion` (singular) is intentionally NOT registered.
-	// The singular form was a historical typo in earlier Python releases —
-	// no client, SDK, or doc ever called it, and the Python side
-	// (api/apps/restful_apis/agent_api.py) has since removed the route.
-	// See plan: .claude/plans/agent-api-gaps-go-port.md §Gap E.
+	// The singular form was a historical typo in earlier releases; no
+	// client, SDK, or doc ever called it, so it is intentionally not
+	// registered.
 	g.POST("/chat/completions", h.AgentChatCompletions)
-	g.POST("/test_db_connection", h.TestDBConnection)
+	g.POST("/test-db-connection", h.TestDBConnection)
+}
+
+// RegisterPublicAgentWebhookRoutes registers external webhook triggers on
+// the public API group. Each request is authenticated by its per-user
+// credential and rechecked against current membership and run permission.
+func RegisterPublicAgentWebhookRoutes(g *gin.RouterGroup, h *handler.AgentHandler) {
+	if g == nil || h == nil {
+		return
+	}
+	registerAnyMethod(g, "/:canvas_id/webhook", h.Webhook)
 }
 
 // RegisterAgentCancelRoutes registers ordinary Agent session cancellation on

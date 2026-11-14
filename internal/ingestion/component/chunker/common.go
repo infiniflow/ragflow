@@ -17,13 +17,19 @@
 package chunker
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/chunk"
+	"ragflow/internal/parser/tableutil"
 	"ragflow/internal/tokenizer"
 )
 
@@ -36,7 +42,7 @@ import (
 func newChunkerByName(name string, params map[string]any) (runtime.Component, error) {
 	switch name {
 	case ComponentNameTokenChunker:
-		// The DSL contract (shared by the web UI and the Python runtime)
+		// The DSL contract (shared by the web UI and the runtime)
 		// expresses single-chunk mode as TokenChunker delimiter_mode "one";
 		// in Go that behaviour lives in the OneChunker component.
 		if mode, _ := params["delimiter_mode"].(string); mode == "one" {
@@ -86,9 +92,9 @@ func stringListFromAny(in []any) []string {
 
 // compileDelimPattern compiles a TokenChunker-style []string delimiter list.
 // Every non-empty entry is active, including bare (non-backtick) delimiters,
-// mirroring Python naive_merge / rag/nlp/delim where bare single-character
-// delimiters still split. Backtick-wrapped entries contribute their inner
-// content. invokeTextPayload decides whether an active delimiter yields one
+// and bare single-character delimiters still split the text. Backtick-wrapped
+// entries contribute their inner content. invokeTextPayload decides whether an
+// active delimiter yields one
 // chunk per segment (custom/backtick, no merge) or splits into paragraphs that
 // are merged by token size (bare). Canonical single-string parser_config.delimiter
 // Legacy single-string parsing is performed by GeneralChunker at its
@@ -98,15 +104,19 @@ func compileDelimPattern(delims []string) *regexp.Regexp {
 	return chunk.CompileDelimiterPatternList(delims, true)
 }
 
-// splitDroppingDelim mirrors Python's _split_text_by_pattern
-// (token_chunker.py:79-90). The captured delimiter is DISCARDED rather than
-// glued to a segment: re.split with a captured group keeps delimiters at odd
-// indices, and only the even-index (text) parts are kept. This is the
-// behavior shared TokenChunker paths and General's primary/Markdown splits
-// reproduce so a split chunk reads "first sentence here" without the trailing
-// delimiter. General's legacy-compatible children split is implemented
-// separately because that path keeps the delimiter attached to its parent.
-func splitDroppingDelim(text string, pattern *regexp.Regexp) []string {
+// splitByDelim splits text on every match of pattern.
+//
+// When keepDelim is true the matched delimiter is preserved by gluing it to the
+// end of the segment that precedes it, so concatenating the returned segments
+// reproduces text exactly: "a。b。" yields ["a。", "b。"] and a leading or
+// trailing delimiter stays attached to its neighbour. This is the lossless
+// TokenChunker contract — a delimiter is a hint for where the chunker MAY
+// break, never a character to delete, so "。" must not vanish (or be swapped
+// for "\n") after chunking.
+//
+// When keepDelim is false the delimiter is discarded. Custom backtick
+// delimiters use this mode because they explicitly mark content to split away.
+func splitByDelim(text string, pattern *regexp.Regexp, keepDelim bool) []string {
 	if pattern == nil {
 		return []string{text}
 	}
@@ -114,21 +124,64 @@ func splitDroppingDelim(text string, pattern *regexp.Regexp) []string {
 	if len(idxs) == 0 {
 		return []string{text}
 	}
+	if !keepDelim {
+		var out []string
+		for _, part := range splitDroppedDelimiterRanges(len(text), idxs) {
+			out = append(out, text[part[0]:part[1]])
+		}
+		return out
+	}
+	// Keep mode: attach each delimiter to the segment ending just before it so
+	// the concatenation is lossless. Trailing text with no trailing delimiter
+	// is appended as the final segment.
 	var out []string
 	cursor := 0
 	for _, idx := range idxs {
 		start, end := idx[0], idx[1]
-		if start == cursor {
-			cursor = end
-			continue
-		}
-		out = append(out, text[cursor:start])
+		out = append(out, text[cursor:start]+text[start:end])
 		cursor = end
 	}
-	if cursor < len(text) {
-		out = append(out, text[cursor:])
+	if tail := text[cursor:]; tail != "" {
+		out = append(out, tail)
 	}
 	return out
+}
+
+func splitDroppedDelimiterRanges(length int, matches [][]int) [][2]int {
+	var ranges [][2]int
+	cursor := 0
+	for _, match := range matches {
+		if match[0] > cursor {
+			ranges = append(ranges, [2]int{cursor, match[0]})
+		}
+		cursor = match[1]
+	}
+	if cursor < length {
+		ranges = append(ranges, [2]int{cursor, length})
+	}
+	return ranges
+}
+
+// foldWhitespaceSegments attaches blank runs to neighboring text without
+// changing their position in the reconstructed source.
+func foldWhitespaceSegments(parts []string) []string {
+	var kept []string
+	var leading string
+	for _, part := range parts {
+		if strings.TrimSpace(part) == "" {
+			leading += part
+			continue
+		}
+		if leading != "" {
+			part = leading + part
+			leading = ""
+		}
+		kept = append(kept, part)
+	}
+	if leading != "" && len(kept) > 0 {
+		kept[len(kept)-1] += leading
+	}
+	return kept
 }
 
 // ---------------------------------------------------------------------------
@@ -168,12 +221,50 @@ func itemDocType(it schema.ChunkDoc) string {
 	return "text"
 }
 
+// isMediaChunk reports whether a chunk is an image or table region. The
+// content type lives on doc_type_kwd; layout never describes media.
+func isMediaChunk(ck schema.ChunkDoc) bool {
+	return isMediaDocType(ck.DocType)
+}
+
+// isMediaDocType reports whether a doc_type_kwd value denotes a media region.
+func isMediaDocType(docType string) bool {
+	switch strings.ToLower(strings.TrimSpace(docType)) {
+	case "image", "table":
+		return true
+	}
+	return false
+}
+
+// hasMediaPayload reports whether a chunk still carries retrievable media:
+// inline bytes, an uploaded reference, or a deferred media_ref that the
+// upload pass will materialize. A present but unusable reference counts:
+// dropping the item here would silently lose the image instead of letting
+// the materializer reject it.
+func hasMediaPayload(ck schema.ChunkDoc) bool {
+	return ck.Image != "" || ck.ImgID != "" || ck.MediaRef != nil
+}
+
 // itemTextOrFallback returns the item's preferred text, or "".
 func itemTextOrFallback(it schema.ChunkDoc) string {
 	if t, ok := itemText(it); ok {
 		return t
 	}
 	return ""
+}
+
+// materializeTableText fills Text with the HTML rendering of a structured
+// TableData when the item carries no text of its own — the shape every parser
+// emits for tables. Every consumer then works on a real table it can store and
+// display, and the chunk id (a hash of Text) matches the stored content.
+// RenderTableHTML marks the leading HeaderRows rows as <th>. Idempotent: an
+// item that already carries text is left untouched.
+func materializeTableText(docs []schema.ChunkDoc) {
+	for i := range docs {
+		if docs[i].TableData != nil && docs[i].Text == "" {
+			docs[i].Text = tableutil.RenderTableHTML(docs[i].TableData)
+		}
+	}
 }
 
 // tokenizeStr is the shared NumTokensFromString wrapper used by
@@ -211,6 +302,16 @@ func emptyOutputs() map[string]any {
 	}
 }
 
+// inputErrorOutput is the canonical short-circuit for an undecodable upstream
+// payload, shared by every chunker variant's decode step.
+func inputErrorOutput(err error) map[string]any {
+	return map[string]any{
+		"output_format": "chunks",
+		"chunks":        []map[string]any{},
+		"_ERROR":        fmt.Sprintf("Input error: %v", err),
+	}
+}
+
 // chunkOutputs builds the canonical chunker output (output_format="chunks" +
 // chunks). The Go runtime passes only this explicit output to the next node,
 // so the run-level metadata that downstream components still need (e.g.
@@ -226,6 +327,11 @@ func chunkOutputs(chunks []schema.ChunkDoc) map[string]any {
 	materialized := make([]schema.ChunkDoc, len(chunks))
 	for i := range chunks {
 		materialized[i] = materializeMediaContext(chunks[i])
+		// Structural layout is chunker-internal: it is consumed by merge,
+		// split, and crop, and must not cross the output boundary. PDF model
+		// layouts (title/figure/equation/...) are not structural and pass
+		// through unchanged.
+		clearStructuralLayout(&materialized[i])
 	}
 	return map[string]any{
 		"output_format": "chunks",
@@ -233,15 +339,125 @@ func chunkOutputs(chunks []schema.ChunkDoc) map[string]any {
 	}
 }
 
+// canonicalChunkText returns the normalized text a chunk id is derived
+// from. It folds media context (when present) and strips position tags,
+// matching exactly the text the decorator keys on after
+// finalizeGeneralChunks runs removeTag and chunkOutputs materializes
+// context. Routing every chunk id through this one function — instead of
+// recomputing the text at each consumption point — guarantees the streamed
+// crop-upload key and the decorator's ck["id"] can never diverge, including
+// for image/table chunks whose text still carries position tags when there
+// is no media context.
+func canonicalChunkText(ck schema.ChunkDoc) string {
+	return removeTag(materializeMediaContext(ck).Text)
+}
+
+// mediaChunkIDPrefix marks a media-specific identity source. The NUL byte
+// keeps the source from colliding with ordinary chunk text.
+const mediaChunkIDPrefix = "\x00media:"
+
+// canonicalChunkID derives the crop/upload key from the canonical chunk source.
+// The decorator in register.go reuses stamped IDs or derives the same identity
+// from finalized text, media payloads and crop regions for chunks without a stamp.
+// Title-family media IDs also retain source identity when context or headings
+// give distinct captionless media the same text.
+func canonicalChunkID(docID string, ck schema.ChunkDoc) string {
+	// A title-family captionless image can already carry a source/payload/body
+	// identity. Only the title crop bridge marks these finalized IDs; other
+	// chunkers may carry upstream IDs whose text they have since rewritten.
+	if ck.ID != "" && string(ck.Extra[titleMediaContextIDKey]) == "true" {
+		return ck.ID
+	}
+	return common.ChunkID(docID, chunkIDSource(ck))
+}
+
+// chunkIDSource returns the identity string hashed into a chunk id. For a
+// media chunk whose canonical text is empty - a captionless image - hashing
+// the text alone would give every such chunk in a document the same id
+// (ChunkID(docID, "")), silently overwriting images in MinIO and merging
+// index entries. Position-only figures use the crop region; otherwise a
+// stable per-image payload identity is folded in. Non-empty media text also
+// folds its region in: two figures can share a caption (for example "Figure"),
+// and their previews must not collapse onto one id. Text chunks hash their text
+// unchanged.
+func chunkIDSource(ck schema.ChunkDoc) string {
+	text := canonicalChunkText(ck)
+	matrix := mergePositionMatrix(ck.PDFPositions, ck.Positions)
+	if text == "" {
+		if isMediaChunk(ck) && len(matrix) > 0 {
+			return mediaTextIdentity(text, true, matrix)
+		}
+		return mediaChunkIdentity(ck.Image, ck.ImgID, ck.MediaRef)
+	}
+	return mediaTextIdentity(text, isMediaChunk(ck), matrix)
+}
+
+// mediaTextIdentity appends a region digest to a media chunk's text identity.
+// Non-media chunks and media without a region keep their text-only id.
+func mediaTextIdentity(text string, isMedia bool, matrix [][]any) string {
+	if !isMedia || len(matrix) == 0 {
+		return text
+	}
+	sum := sha256.Sum256(positionMatrixBytes(matrix))
+	return text + mediaChunkIDPrefix + "region:" + hex.EncodeToString(sum[:16])
+}
+
+// positionMatrixBytes renders a position matrix deterministically for hashing.
+// mergePositionMatrix already sorts the rows, so equal regions always encode
+// identically.
+func positionMatrixBytes(matrix [][]any) []byte {
+	raw, err := json.Marshal(matrix)
+	if err != nil {
+		return nil
+	}
+	return raw
+}
+
+// chunkPositionMatrix decodes the position rows of a chunk map for identity
+// computation, using the same decoder as the crop path.
+func chunkPositionMatrix(ck map[string]any) [][]any {
+	var sources []json.RawMessage
+	for _, key := range []string{"_pdf_positions", "positions"} {
+		value, ok := ck[key]
+		if !ok || value == nil {
+			continue
+		}
+		if raw, err := json.Marshal(value); err == nil {
+			sources = append(sources, raw)
+		}
+	}
+	return mergePositionMatrix(sources...)
+}
+
+// mediaChunkIdentity returns the stable identity of a text-less media chunk:
+// a digest of the image payload when present (identical images collapse onto
+// one id, which is harmless — they carry identical bytes), else the
+// content-addressed media reference, else the uploaded image id. Empty when
+// the chunk has none of them; callers with PDF crop regions use
+// mediaTextIdentity instead.
+func mediaChunkIdentity(image, imgID string, ref *entity.MediaRef) string {
+	if image != "" {
+		sum := sha256.Sum256([]byte(image))
+		return mediaChunkIDPrefix + hex.EncodeToString(sum[:])
+	}
+	if ref.Valid() {
+		return mediaChunkIDPrefix + "sha256:" + ref.SHA256
+	}
+	if imgID != "" {
+		return mediaChunkIDPrefix + imgID
+	}
+	return ""
+}
+
 // materializeMediaContext folds a media chunk's surrounding context into its
-// body and clears the two fields that carried it. Python's chunker emits the
+// body and clears the two fields that carried it. chunker emits the
 // same shape — its finalize builds remove_tag(context_above + text +
-// context_below) and drops the fields (rag/flow/chunker/token_chunker.py:343-
-// 359) — which is why Python persists the context inside the chunk body.
+// context_below) and drops the fields — which is why persists the context
+// inside the chunk body
 // Folding here also puts the context into the chunk id (ChunkID hashes the
-// body), matching Python's id, which hashes the context-bearing body.
+// body), matching id, which hashes the context-bearing body
 //
-// Tag stripping runs after the merge, as in Python: the payload was already
+// Tag stripping runs after the merge, as in : the payload was already
 // stripped by the chunker, so this only covers the context, which is collected
 // from neighbouring units.
 //

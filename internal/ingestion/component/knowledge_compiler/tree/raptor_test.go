@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/tokenizer"
@@ -108,7 +109,7 @@ func TestSummarizeTextsFailsAfterMaxRetries(t *testing.T) {
 	f := &fakeChat{responses: []*common.ChatResponse{
 		{Content: "**ERROR** 1"}, {Content: "**ERROR** 2"}, {Content: "**ERROR** 3"},
 	}}
-	if _, err := summarizeTexts(context.Background(), depsWithChat(f), "llm", "sys", "user", 512); err == nil {
+	if _, err := summarizeTexts(common.WithRetryDelay(context.Background(), time.Millisecond), depsWithChat(f), "llm", "sys", "user", 512); err == nil {
 		t.Fatal("expected error after exhausting retries")
 	}
 	if f.calls != raptorMaxRetries {
@@ -167,7 +168,7 @@ func TestBuildTreeNoPanicWhenAllSummariesFail(t *testing.T) {
 		{Text: "beta", Vector: []float32{0, 1, 0, 0}},
 	}
 	var products []common.Product
-	if err := buildTree(context.Background(), deps, "llm", "t", "d", chunks, 4, "", common.Param{}, &products, nil); err != nil {
+	if err := buildTree(common.WithRetryDelay(context.Background(), time.Millisecond), deps, "llm", "t", "d", chunks, 4, "", common.Param{}, &products, nil); err != nil {
 		t.Fatalf("buildTree returned unexpected error: %v", err)
 	}
 	if len(products) != 0 {
@@ -177,11 +178,7 @@ func TestBuildTreeNoPanicWhenAllSummariesFail(t *testing.T) {
 
 // TestDefaultRaptorPromptMatchesTreeYAML locks the default summary prompt to the
 // production tree.yaml template. It must equal the Python tree compilation
-// template prompt (api/db/init_data/compilation_templates/tree.yaml), NOT the
-// compiler.py:128 fallback. Critically, the YAML literal block carries a base
-// indent of 6 spaces before {cluster_content}; those 6 spaces are part of the
-// prompt and must be preserved (Python does self._prompt.format(...), splicing
-// the cluster text after the 6-space indent).
+// template prompt.
 func TestDefaultRaptorPromptMatchesTreeYAML(t *testing.T) {
 	want := "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize."
 	if defaultRaptorPrompt != want {

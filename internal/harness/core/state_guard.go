@@ -38,20 +38,16 @@ func copyMessage[M MessageType](msg M) M {
 	switch v := any(msg).(type) {
 	case *schema.Message:
 		cp := &schema.Message{
-			Role:    v.Role,
-			Content: v.Content,
-			Name:    v.Name,
+			Role:     v.Role,
+			Content:  v.Content,
+			Name:     v.Name,
+			ToolName: v.ToolName,
 		}
 		if len(v.ToolCalls) > 0 {
 			cp.ToolCalls = make([]schema.ToolCall, len(v.ToolCalls))
 			copy(cp.ToolCalls, v.ToolCalls)
 		}
-		if v.Extra != nil {
-			cp.Extra = make(map[string]any, len(v.Extra))
-			for k, val := range v.Extra {
-				cp.Extra[k] = deepCopyAny(val)
-			}
-		}
+		cp.Extra = copyExtra(v.Extra)
 		return any(cp).(M)
 	case *schema.AgenticMessage:
 		cp := &schema.AgenticMessage{
@@ -61,10 +57,39 @@ func copyMessage[M MessageType](msg M) M {
 		if len(v.ContentBlocks) > 0 {
 			cp.ContentBlocks = make([]schema.ContentBlock, len(v.ContentBlocks))
 			copy(cp.ContentBlocks, v.ContentBlocks)
+			for i, block := range v.ContentBlocks {
+				if block.ToolCall != nil {
+					cp.ContentBlocks[i].ToolCall = &schema.ToolCallInfo{
+						ID:        block.ToolCall.ID,
+						Name:      block.ToolCall.Name,
+						Arguments: block.ToolCall.Arguments,
+					}
+				}
+				if block.ToolResult != nil {
+					cp.ContentBlocks[i].ToolResult = &schema.ToolResult{
+						ToolCallID: block.ToolResult.ToolCallID,
+						Name:       block.ToolResult.Name,
+						Content:    block.ToolResult.Content,
+						Error:      block.ToolResult.Error,
+						Extra:      copyExtra(block.ToolResult.Extra),
+					}
+				}
+			}
 		}
 		return any(cp).(M)
 	}
 	return msg
+}
+
+func copyExtra(extra map[string]any) map[string]any {
+	if extra == nil {
+		return nil
+	}
+	copied := make(map[string]any, len(extra))
+	for k, val := range extra {
+		copied[k] = deepCopyAny(val)
+	}
+	return copied
 }
 
 // deepCopyAny performs a deep copy of an arbitrary value via JSON round-trip.

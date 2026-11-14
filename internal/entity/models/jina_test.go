@@ -50,6 +50,58 @@ func newJinaForTest(baseURL string) *JinaModel {
 	)
 }
 
+func TestJinaListModelsRejectsMalformedResponsesWithoutPanicking(t *testing.T) {
+	withSSRFBypass(t)
+	cases := []struct {
+		name string
+		body string
+	}{
+		{name: "missing data", body: `{}`},
+		{name: "data is not an array", body: `{"data":{}}`},
+		{name: "model is not an object", body: `{"data":[null]}`},
+		{name: "model id is missing", body: `{"data":[{}]}`},
+		{name: "model id is not a string", body: `{"data":[{"id":1}]}`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			defer server.Close()
+
+			var callErr error
+			var panicValue any
+			func() {
+				defer func() { panicValue = recover() }()
+				_, callErr = newJinaForTest(server.URL).ListModels(t.Context(), &APIConfig{})
+			}()
+			if panicValue != nil {
+				t.Fatalf("ListModels panicked for malformed response: %v", panicValue)
+			}
+			if callErr == nil {
+				t.Fatal("ListModels error = nil, want malformed response error")
+			}
+		})
+	}
+}
+
+func TestJinaListModelsParsesValidResponse(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, `{"data":[{"id":"jina-embeddings-v3"}]}`)
+	}))
+	defer server.Close()
+
+	models, err := newJinaForTest(server.URL).ListModels(t.Context(), &APIConfig{})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if len(models) != 1 || models[0].Name != "jina-embeddings-v3" {
+		t.Fatalf("ListModels = %+v, want one jina-embeddings-v3 model", models)
+	}
+}
+
 func TestJinaChatHappyPath(t *testing.T) {
 	withSSRFBypass(t)
 	ctx := t.Context()

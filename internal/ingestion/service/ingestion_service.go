@@ -28,12 +28,12 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/engine"
-	kvrocks "ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion"
 	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	taskpkg "ragflow/internal/ingestion/task"
+	"ragflow/internal/observability"
 	servicepkg "ragflow/internal/service"
 	documentpkg "ragflow/internal/service/document"
 	"ragflow/internal/utility"
@@ -70,12 +70,14 @@ type Ingestor struct {
 	memoryReconcileBatchSize int
 
 	// Runtime state
-	currentTasks  map[string]struct{} // set of task IDs currently claimed by a worker
-	tasksMu       sync.RWMutex
-	activeWorkers atomic.Int32 // number of worker goroutines currently in workerLoop
-	activeLeases  map[*Heartbeat]*activeLease
-	leasesMu      sync.Mutex
-	stopLeases    atomic.Bool
+	currentTasks         map[string]struct{} // set of task IDs currently claimed by a worker
+	tasksMu              sync.RWMutex
+	pendingCompileEvents map[string]pendingDocumentCompileEvent
+	compileEventsMu      sync.Mutex
+	activeWorkers        atomic.Int32 // number of worker goroutines currently in workerLoop
+	activeLeases         map[*Heartbeat]*activeLease
+	leasesMu             sync.Mutex
+	stopLeases           atomic.Bool
 
 	// Shutdown channel - receive on this to trigger graceful shutdown
 	ShutdownCh chan struct{}
@@ -100,7 +102,7 @@ type Ingestor struct {
 	// Option E) owned by this ingestor. It is driven by kcConcurrency owned
 	// worker goroutines, each running the Consumer's Run loop (poll MySQL
 	// scheduling rows + NATS notify → claim closed batch → merge → ack). The
-	// MySQL knowledge_compile_docs table — not the broker — is the scheduling
+	// MySQL knowledge_compile_docs and its queue tables are the scheduling
 	// system of record and the source of same-KB serialization, so different
 	// datasets compile in parallel while the same dataset is serialized by its
 	// claim row. The workers are started/joined within the ingestor (via
@@ -130,12 +132,21 @@ type Ingestor struct {
 	// may replace it to verify lifecycle behavior without a database or broker.
 	reconcileMemoryTasks func(ctx context.Context) error
 
-	// cancelCheck is polled periodically (every 3s) during task execution.
-	// When it returns true the task's context is cancelled, which causes the
-	// pipeline to stop at the next ctx.Err() check. Defaults to a Redis
-	// cancel-flag lookup that mirrors Python's has_canceled(). Tests may
-	// override this to simulate cancel without Redis.
+	// cancelCheck is polled periodically (pollCancelInterval) during task
+	// execution. When it returns true the task's context is cancelled, which
+	// causes the pipeline to stop at the next ctx.Err() check. Defaults to a
+	// Redis cancel-flag lookup that mirrors has_canceled(), with a
+	// DB fallback when Redis is unavailable. Tests may override this to
+	// simulate cancel without Redis.
 	cancelCheck func(ctx context.Context, taskID string) bool
+
+	// deps bundles the process-wide singletons the ingestor depends on
+	// (document engine, relational handle, task broker, kvrocks). It is
+	// injected at construction (NewIngestor) rather than read from the
+	// package globals (arch_test.go guards that rule). A nil bundle is
+	// normalized to an empty Deps; a nil sub-value disables the matching
+	// capability (e.g. a nil DB skips startup task scheduling).
+	deps *ingestion.Deps
 }
 
 type worker struct {
@@ -147,13 +158,36 @@ type activeLease struct {
 	abandoned atomic.Bool
 }
 
-func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *Ingestor {
+type pendingDocumentCompileEvent struct {
+	tenantID  string
+	variants  []string
+	taskTypes []string
+}
+
+// NewIngestor constructs the ingestion consumer. db, mq, and kv are the
+// process-wide relational handle, message-queue engine, and kvrocks client;
+// they are resolved once at the server assembly point and injected here rather
+// than read from the package globals (arch_test.go guards that rule).
+func NewIngestor(name string, maxConcurrency int32, supportedTypes []string, deps *ingestion.Deps) *Ingestor {
 	if maxConcurrency <= 0 {
 		maxConcurrency = int32(runtime.NumCPU())
 	}
+	if deps == nil {
+		deps = &ingestion.Deps{}
+	}
 	ctx, cancel := context.WithCancel(context.Background())
+	// Carry process-level ingest identity on the ingestor's root context so that
+	// every lifecycle event emitted through this ingestor (including scheduled/
+	// created events raised outside a worker) attributes to this ingestor and the
+	// NATS subject it consumes. The per-worker name is added per task on the
+	// task context (see handleAndExecute). The EE build may layer additional,
+	// per-execution identity onto the context upstream of the emit.
+	ctx = observability.WithIngestIdentity(ctx, observability.IngestIdentity{
+		IngestorName: name,
+		NatsQueue:    common.TaskSubject,
+	})
 	dispatchCtx, dispatchCancel := context.WithCancel(context.Background())
-	id := utility.GenerateUUID()
+	id := common.GenerateUUID()
 	ingestor := &Ingestor{
 		id:                       id,
 		name:                     name,
@@ -165,6 +199,7 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 		supportedDocTypes:        supportedTypes,
 		version:                  "1.0.0",
 		currentTasks:             make(map[string]struct{}),
+		pendingCompileEvents:     make(map[string]pendingDocumentCompileEvent),
 		activeLeases:             make(map[*Heartbeat]*activeLease),
 		workerQueue:              make(chan *worker, maxConcurrency),
 		ShutdownCh:               make(chan struct{}, 1),
@@ -173,6 +208,7 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 		heartbeatInterval:        defaultHeartbeatInterval,
 		memoryReconcileInterval:  defaultMemoryTaskReconcileInterval,
 		memoryReconcileBatchSize: defaultMemoryTaskReconcileBatchSize,
+		deps:                     deps,
 	}
 	ingestor.runDocumentTask = ingestor.defaultRunDocumentTask
 	ingestor.runMemoryTask = ingestor.defaultRunMemoryTask
@@ -190,8 +226,6 @@ func (e *Ingestor) ID() string {
 // does not pin a CPU. The backoff is cancellable and does not block another
 // idle worker from making its own Pull request.
 const consumeErrorBackoff = 1 * time.Second
-
-const taskPullRequestTimeout = 1 * time.Second
 
 const (
 	defaultMemoryTaskReconcileInterval  = 10 * time.Second
@@ -211,14 +245,14 @@ func (e *Ingestor) Start() error {
 // pools, compile consumers, or consume loops, and the first initialization
 // error is retained and returned to every later caller.
 func (e *Ingestor) start() error {
-	msgQueueEngine := engine.GetMessageQueueEngine()
+	msgQueueEngine := e.deps.MQ
 	if msgQueueEngine == nil {
 		return fmt.Errorf("message queue engine not initialized; run engine.InitMessageQueue first")
 	}
 	if err := msgQueueEngine.InitConsumer(common.TaskSubject); err != nil {
 		return err
 	}
-	if dao.DB != nil {
+	if e.deps.DB != nil {
 		if err := e.ingestionTaskSvc.ScheduleCreatedTasks(e.ctx); err != nil {
 			common.Warn(fmt.Sprintf("schedule CREATED ingestion tasks at startup: %v", err))
 		}
@@ -230,6 +264,7 @@ func (e *Ingestor) start() error {
 	// these off rather than blocking on the consume loop itself.
 	e.startWorkerPool()
 	e.startMemoryTaskReconciler()
+	e.startEvaluationTaskReconciler()
 	e.startDatasetKnowledgeCompile()
 
 	// Run the main tasks.RAGFLOW dispatcher off the caller's goroutine so Start
@@ -243,7 +278,7 @@ func (e *Ingestor) start() error {
 // startMemoryTaskReconciler starts the owned loop that recovers durable memory
 // tasks whose initial wake-up was lost or whose retry became due.
 func (e *Ingestor) startMemoryTaskReconciler() {
-	if e.memorySvc == nil || dao.DB == nil || e.reconcileMemoryTasks == nil {
+	if e.memorySvc == nil || e.deps.DB == nil || e.reconcileMemoryTasks == nil {
 		return
 	}
 	e.memoryReconcileWg.Add(1)
@@ -286,12 +321,13 @@ func (e *Ingestor) defaultReconcileMemoryTasks(ctx context.Context) error {
 	return e.memorySvc.ReconcileMemoryTasks(ctx, batchSize)
 }
 
-// consumeLoop is the worker dispatcher for tasks.RAGFLOW. It waits for an
-// available worker before synchronously pulling one task, preventing prefetch
-// and limiting this ingestor to one outstanding broker request.
+// consumeLoop is the worker dispatcher for the tiered task lanes. It waits for
+// an available worker before synchronously pulling one task, preventing prefetch
+// and limiting this ingestor to one outstanding broker request. Priority
+// (high -> medium -> low) is enforced inside PullMessage, not here.
 func (e *Ingestor) consumeLoop() {
 	defer e.dispatcherWg.Done()
-	msgQueueEngine := engine.GetMessageQueueEngine()
+	msgQueueEngine := e.deps.MQ
 	for {
 		var w *worker
 		select {
@@ -334,7 +370,7 @@ func (e *Ingestor) consumeLoop() {
 				zap.Duration("handoff_duration", handoffDuration),
 			)
 		case <-e.dispatchCtx.Done():
-			if err := handle.Nack(); err != nil {
+			if err = handle.Nack(); err != nil {
 				common.Error("nack task after shutdown interrupted handoff", err)
 			}
 			return
@@ -388,7 +424,7 @@ func (e *Ingestor) SetKnowledgeCompileConcurrency(n int32) {
 }
 
 // startDatasetKnowledgeCompile provisions the dataset-level compile scheduling
-// store (MySQL knowledge_compile_docs + NATS notify subject), builds the
+// store (MySQL scheduling tables + NATS notify subject), builds the
 // Consumer, and starts the owned compile-worker pool. The consumer is driven by
 // the ingestor's own goroutine set — kcConcurrency compileLoop workers, each
 // running the Consumer's Run loop (see §11.7 of knowledge_compile_design.md) —
@@ -396,17 +432,17 @@ func (e *Ingestor) SetKnowledgeCompileConcurrency(n int32) {
 // is logged and the pipeline continues to write available_int=0 compiled
 // chunks; they just won't be merged until a scheduler is available.
 func (e *Ingestor) startDatasetKnowledgeCompile() {
-	mq := engine.GetMessageQueueEngine()
+	mq := e.deps.MQ
 	if mq == nil {
 		common.Warn("message queue not initialized; dataset-level compile consumer disabled")
 		return
 	}
 	knowledge_compile.SetModelConfig(e.kcLLMID, e.kcEmbedding)
-	if err := knowledge_compile.Provision(e.ctx, mq, dao.DB); err != nil {
+	if err := knowledge_compile.Provision(e.ctx, mq, e.deps.DB); err != nil {
 		common.Warn(fmt.Sprintf("dataset-level compile consumer unavailable; compiled chunks will not be merged: %v", err))
 		return
 	}
-	e.knowledgeCompile = knowledge_compile.NewConsumer(knowledge_compile.DefaultClaimer())
+	e.knowledgeCompile = e.newKnowledgeCompileConsumer()
 	n := e.kcConcurrency
 	if n <= 0 {
 		n = int32(runtime.NumCPU())
@@ -420,6 +456,19 @@ func (e *Ingestor) startDatasetKnowledgeCompile() {
 		e.compileWg.Add(1)
 		go e.compileLoop(i)
 	}
+}
+
+// newKnowledgeCompileConsumer builds the dataset-level knowledge-compile
+// consumer with its storage dependencies injected from the ingestor's Deps
+// bundle. The consumer fails fast on storage access when WithStorage is omitted
+// (see knowledge_compile.NewConsumer), so the doc engine + db MUST be threaded
+// through here — never construct it with a bare NewConsumer in production. The
+// assembly point can assert c.IsStorageConfigured() before relying on merges.
+func (e *Ingestor) newKnowledgeCompileConsumer() *knowledge_compile.Consumer {
+	return knowledge_compile.NewConsumer(
+		knowledge_compile.DefaultClaimer(),
+		knowledge_compile.WithStorage(e.deps.Engine, e.deps.DB),
+	)
 }
 
 // compileLoop is one of the owned dataset-level compile workers. It runs the
@@ -436,7 +485,7 @@ func (e *Ingestor) compileLoop(id int32) {
 
 // handleAndExecute owns one handle from its hand-off to final settlement. It
 // runs only in the worker that received the handle through its private inbox.
-func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
+func (e *Ingestor) handleAndExecute(w *worker, handle common.TaskHandle) {
 	startTime := time.Now()
 	taskMessage := handle.GetMessage()
 	common.Info(fmt.Sprintf("Received task id: %s, type: %s", taskMessage.TaskID, taskMessage.TaskType),
@@ -475,6 +524,10 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 		return
 	}
 
+	if e.handleEvaluationTask(handle, hb) {
+		return
+	}
+
 	if taskMessage.TaskType != common.TaskTypeIngestionTask {
 		common.Info(fmt.Sprintf("task %s is not an ingestion task", taskMessage.TaskID))
 		e.ackHandle(hb, handle, taskMessage.TaskID)
@@ -509,7 +562,7 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 			var identityErr *servicepkg.InvalidRunIdentityError
 			if errors.As(validateErr, &identityErr) {
 				common.Error(fmt.Sprintf("task %s has permanent run identity error: %s", task.ID, identityErr.Reason), validateErr)
-				if e.markFailed(e.ctx, task.ID) {
+				if e.markFailed(e.ctx, task.ID, fmt.Sprintf("Task rejected: invalid run identity (%s).", identityErr.Reason)) {
 					e.recordTerminalPipelineLog(e.ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task rejected: invalid run identity (%s).", identityErr.Reason))
 					e.ackHandle(hb, handle, taskMessage.TaskID)
 				} else {
@@ -531,7 +584,16 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 		// Claim the task before applying document/log side effects. A duplicate
 		// delivery must only renew its broker lease; resetting the document here
 		// would race the owning worker and erase its in-flight progress.
-		e.ingestionTaskSvc.PrepareValidatedRun(e.ctx, task)
+		//
+		// The running lifecycle event emitted by PrepareValidatedRun must name
+		// the worker that claimed this task, so we carry the per-task worker
+		// identity on the context here (before the call) rather than only on the
+		// task-scheduling context used for terminal events below.
+		runCtx := e.ctx
+		if w != nil {
+			runCtx = observability.WithWorkerName(runCtx, fmt.Sprintf("worker-%d", w.id))
+		}
+		e.ingestionTaskSvc.PrepareValidatedRun(runCtx, task)
 	default:
 		common.Warn(fmt.Sprintf("task %s in unexpected status %s, ack-skip", taskMessage.TaskID, task.Status))
 		e.ackHandle(hb, handle, taskMessage.TaskID)
@@ -540,6 +602,13 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 
 	taskCtx := taskpkg.NewTaskContextForScheduling(e.ctx, task)
 	taskCtx.Handle = handle
+	// The ingestor name and NATS subject already ride on the root context
+	// (set in NewIngestor); here we add the worker that claimed this task so the
+	// emitted lifecycle event names it. An absent worker (e.g. test callers that
+	// pass nil) simply yields an empty field.
+	if w != nil {
+		taskCtx.Ctx = observability.WithWorkerName(taskCtx.Ctx, fmt.Sprintf("worker-%d", w.id))
+	}
 	e.executeTaskWithHeartbeat(e.ctx, taskCtx, hb)
 }
 
@@ -640,7 +709,7 @@ func (e *Ingestor) workerLoop(w *worker) {
 
 		select {
 		case handle := <-w.inbox:
-			e.handleAndExecute(handle)
+			e.handleAndExecute(w, handle)
 		case <-e.dispatchCtx.Done():
 			return
 		}
@@ -684,7 +753,7 @@ func (e *Ingestor) executeMemoryTaskWithHeartbeat(ctx context.Context, taskCtx *
 		settleAck = true
 		return
 	}
-	leaseOwner := fmt.Sprintf("%s:%s", e.id, utility.GenerateUUID())
+	leaseOwner := fmt.Sprintf("%s:%s", e.id, common.GenerateUUID())
 	disposition, err := e.runMemoryTask(ctx, taskID, leaseOwner)
 	if err != nil {
 		common.Error(fmt.Sprintf("memory task %s execution failed", taskID), err)
@@ -721,7 +790,7 @@ func (e *Ingestor) executeTaskWithHeartbeat(ctx context.Context, taskCtx *taskpk
 	defer e.releaseTask(task.ID)
 
 	// Derive a per-task cancelable context so that an external cancel
-	// signal (Redis cancel flag, mirrored from Python's {task_id}-cancel)
+	// signal (Redis cancel flag, mirrored from {task_id}-cancel)
 	// can stop only this task without affecting the whole Ingestor.
 	perTaskCtx, perTaskCancel := context.WithCancel(taskCtx.Ctx)
 	taskCtx.Ctx = perTaskCtx
@@ -768,7 +837,7 @@ func (e *Ingestor) markStopped(ctx context.Context, taskID string) bool {
 		common.Error(fmt.Sprintf("markStopped: MarkStopped task %s: %v", taskID, err), err)
 		return false
 	}
-	if rc := kvrocks.Get(); rc != nil {
+	if rc := e.deps.KV; rc != nil {
 		utility.BestEffort(fmt.Sprintf("clear cancel flag for %s", taskID), func() error {
 			rc.Delete(ctx, fmt.Sprintf("%s-cancel", taskID))
 			return nil // Delete returns bool; the bool does not distinguish "not found" from "error"
@@ -782,10 +851,10 @@ func (e *Ingestor) markStopped(ctx context.Context, taskID string) bool {
 // The caller's context is detached before touching the DB (see markStopped):
 // failure paths usually carry an already-cancelled context, and losing the
 // FAILED write would turn a settled task into a redelivery loop.
-func (e *Ingestor) markFailed(ctx context.Context, taskID string) bool {
+func (e *Ingestor) markFailed(ctx context.Context, taskID, reason string) bool {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	if uErr := e.ingestionTaskSvc.MarkFailed(ctx, taskID); uErr != nil {
+	if uErr := e.ingestionTaskSvc.MarkFailed(ctx, taskID, reason); uErr != nil {
 		common.Error(fmt.Sprintf("Failed to set task %s to FAILED", taskID), uErr)
 		return false
 	}
@@ -818,7 +887,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	// by the DB status (STOPPING), which defaultCancelCheck falls back to
 	// when the Redis flag is absent. Clearing a stale flag here is safe:
 	// a genuine concurrent cancel sets the task to STOPPING in DB.
-	if rc := kvrocks.Get(); rc != nil {
+	if rc := e.deps.KV; rc != nil {
 		key := fmt.Sprintf("%s-cancel", task.ID)
 		utility.BestEffort(fmt.Sprintf("clear stale cancel flag for %s", task.ID), func() error {
 			rc.Delete(ctx, key)
@@ -827,6 +896,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 	}
 
 	if err := e.runDocumentTask(ctx, task); err != nil {
+		e.clearPendingCompileEvent(task.ID)
 		if errors.Is(err, context.Canceled) {
 			if e.ctx.Err() != nil || e.dispatchCtx.Err() != nil {
 				common.Info(fmt.Sprintf("Task %s pipeline interrupted by ingestor shutdown, leaving for redelivery", task.ID))
@@ -843,14 +913,14 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		if errors.Is(err, context.DeadlineExceeded) {
 			common.Info(fmt.Sprintf("Task %s timed out during pipeline", task.ID))
 			e.markTerminalProgress(task)
-			ok := e.markFailed(ctx, task.ID)
+			ok := e.markFailed(ctx, task.ID, "Task timed out.")
 			if ok {
 				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), "Task timed out.")
 			}
 			return ok
 		}
 		common.Error(fmt.Sprintf("Task %s failed", task.ID), err)
-		ok := e.markFailed(ctx, task.ID)
+		ok := e.markFailed(ctx, task.ID, fmt.Sprintf("Task failed: %v", err))
 		if ok {
 			e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task failed: %v", err))
 		}
@@ -862,6 +932,7 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		return false
 	}
 	e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusDone), "Task completed.")
+	e.publishPendingCompileEvent(ctx, task)
 
 	common.Info(fmt.Sprintf("Task %s completed", task.ID))
 	return true
@@ -979,7 +1050,7 @@ func (e *Ingestor) settleMessage(ctx context.Context, taskCtx *taskpkg.TaskConte
 					}
 				}()
 				common.Error(fmt.Sprintf("task %s panicked: %v", taskID, r), fmt.Errorf("%v", r))
-				e.markFailed(ctx, taskID)
+				e.markFailed(ctx, taskID, fmt.Sprintf("Task panicked: %v", r))
 				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusFail), fmt.Sprintf("Task panicked: %v", r))
 			}()
 			terminal = false
@@ -1031,12 +1102,12 @@ func (e *Ingestor) ackOrNack(taskCtx *taskpkg.TaskContext, terminal bool) {
 	}
 }
 
-// defaultCancelCheck reads the Redis cancel flag that Python sets via
+// defaultCancelCheck reads the Redis cancel flag that sets via
 // REDIS_CONN.set(f"{task_id}-cancel", "x"). Falls back to checking the
 // task status in DB when Redis is unavailable — a STOPPING status
 // (set by RequestStop) is treated as a cancel signal.
 func (e *Ingestor) defaultCancelCheck(ctx context.Context, taskID string) bool {
-	rc := kvrocks.Get()
+	rc := e.deps.KV
 	if rc != nil {
 		if ok, _ := rc.Exist(ctx, fmt.Sprintf("%s-cancel", taskID)); ok {
 			return true
@@ -1049,10 +1120,17 @@ func (e *Ingestor) defaultCancelCheck(ctx context.Context, taskID string) bool {
 	return task.Status == common.STOPPING
 }
 
-// pollCancel ticks every 3s to check the cancel flag. When cancelCheck
+const pollCancelInterval = 500 * time.Millisecond
+
+// pollCancel ticks every pollCancelInterval to check the cancel flag. When cancelCheck
 // returns true it cancels the per-task context, which causes the pipeline's
 // next ctx.Err() check to abort and runTask to record progress=-1. The
 // goroutine exits when done is closed (executeTask returns).
+//
+// Cost note: without Redis in the deployment, every tick falls through to the
+// DB fallback in defaultCancelCheck — two GetTask reads per second per running
+// task. That is the accepted trade-off for fast cancel detection; with Redis
+// configured the hot path is a single EXISTS lookup.
 func (e *Ingestor) pollCancel(taskID string, cancel context.CancelFunc, done <-chan struct{}) {
 	// checkOnce runs cancelCheck in a goroutine so the caller can select
 	// between the result and the done signal. This prevents a blocked
@@ -1079,7 +1157,7 @@ func (e *Ingestor) pollCancel(taskID string, cancel context.CancelFunc, done <-c
 		}
 	}
 
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(pollCancelInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -1152,7 +1230,7 @@ func (e *Ingestor) releaseTask(taskID string) {
 func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *entity.IngestionTask) error {
 	const documentBulkSize = 32
 
-	docTaskCtx, err := taskpkg.LoadFromIngestionTask(ctx, ingestionTask)
+	docTaskCtx, err := taskpkg.LoadFromIngestionTask(ctx, e.deps.DB, ingestionTask)
 	if err != nil {
 		return fmt.Errorf("load task context for %s: %w", ingestionTask.ID, err)
 	}
@@ -1176,7 +1254,7 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	// text, source-chunk references, images, or vectors, so sending the whole
 	// document through one Elasticsearch bulk request can exceed the request
 	// size limit even when the individual chunks are valid.
-	executor, err := taskpkg.NewPipelineExecutor(docTaskCtx, pipelineID, documentBulkSize)
+	executor, err := taskpkg.NewPipelineExecutor(docTaskCtx, pipelineID, documentBulkSize, e.deps)
 	if err != nil {
 		return err
 	}
@@ -1206,8 +1284,48 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	if err != nil {
 		return err
 	}
+	e.stagePendingCompileEvent(ingestionTask.ID, docTaskCtx.Tenant.ID, result)
 	e.docState.apply(ctx, result)
 	return nil
+}
+
+func (e *Ingestor) stagePendingCompileEvent(taskID, tenantID string, result *taskpkg.PipelineResult) {
+	if taskID == "" {
+		return
+	}
+	e.compileEventsMu.Lock()
+	defer e.compileEventsMu.Unlock()
+	if result == nil || len(result.CompiledVariants) == 0 {
+		delete(e.pendingCompileEvents, taskID)
+		return
+	}
+	e.pendingCompileEvents[taskID] = pendingDocumentCompileEvent{
+		tenantID:  tenantID,
+		variants:  append([]string(nil), result.CompiledVariants...),
+		taskTypes: append([]string(nil), result.CompiledTaskTypes...),
+	}
+}
+
+func (e *Ingestor) clearPendingCompileEvent(taskID string) {
+	e.compileEventsMu.Lock()
+	delete(e.pendingCompileEvents, taskID)
+	e.compileEventsMu.Unlock()
+}
+
+func (e *Ingestor) publishPendingCompileEvent(ctx context.Context, task *entity.IngestionTask) {
+	if task == nil {
+		return
+	}
+	e.compileEventsMu.Lock()
+	event, ok := e.pendingCompileEvents[task.ID]
+	delete(e.pendingCompileEvents, task.ID)
+	e.compileEventsMu.Unlock()
+	if !ok || len(event.variants) == 0 {
+		return
+	}
+	if err := knowledge_compile.PublishCompleted(ctx, event.tenantID, task.DatasetID, task.DocumentID, event.variants, event.taskTypes); err != nil {
+		common.Logger.Warn(fmt.Sprintf("knowledge_compile: publish doc_completed for %s failed: %v", task.DocumentID, err))
+	}
 }
 
 func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask *entity.IngestionTask, status, message string) {
@@ -1219,7 +1337,7 @@ func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask 
 		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s: missing run identity", ingestionTask.ID))
 		return
 	}
-	run, err := dao.NewPipelineOperationLogDAO().GetByID(ctx, dao.DB, *ingestionTask.PipelineLogID)
+	run, err := dao.NewPipelineOperationLogDAO().GetByID(ctx, e.deps.DB, *ingestionTask.PipelineLogID)
 	if err != nil {
 		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s: load run %s: %v", ingestionTask.ID, *ingestionTask.PipelineLogID, err))
 		return
@@ -1228,13 +1346,24 @@ func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask 
 		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s: run %s belongs to document %s/dataset %s, expected %s/%s", ingestionTask.ID, run.ID, run.DocumentID, run.KbID, ingestionTask.DocumentID, ingestionTask.DatasetID))
 		return
 	}
-	input := taskpkg.PipelineLogInput{
-		KbID:          ingestionTask.DatasetID,
-		DocumentID:    ingestionTask.DocumentID,
-		Status:        status,
-		PipelineLogID: *ingestionTask.PipelineLogID,
+	// Keep the run's own binding: the document may have been re-bound since.
+	pipelineID := ""
+	if run.PipelineID != nil {
+		pipelineID = strings.TrimSpace(*run.PipelineID)
 	}
-	if err := taskpkg.RecordPipelineLog(ctx, dao.DB, input); err != nil {
+	versionID := ""
+	if pipelineID != "" && run.PipelineVersionID != nil {
+		versionID = strings.TrimSpace(*run.PipelineVersionID)
+	}
+	input := taskpkg.PipelineLogInput{
+		KbID:              ingestionTask.DatasetID,
+		DocumentID:        ingestionTask.DocumentID,
+		PipelineID:        pipelineID,
+		PipelineVersionID: versionID,
+		Status:            status,
+		PipelineLogID:     *ingestionTask.PipelineLogID,
+	}
+	if err := taskpkg.RecordPipelineLog(ctx, e.deps.DB, input); err != nil {
 		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s document %s: %v", ingestionTask.ID, ingestionTask.DocumentID, err))
 		return
 	}

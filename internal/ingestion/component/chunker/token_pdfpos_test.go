@@ -37,8 +37,8 @@ func TestMergeByTokenSizeFromJSON_ExtendsPDFPositions(t *testing.T) {
 	posB := json.RawMessage(`[[2,15,25,35,45]]`)
 	items := [][]schema.ChunkDoc{
 		{
-			{Text: "alpha", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posA},
-			{Text: "beta", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posB},
+			{Text: "alpha", DocType: "text", TKNums: intPtr(5), PDFPositions: posA},
+			{Text: "beta", DocType: "text", TKNums: intPtr(5), PDFPositions: posB},
 		},
 	}
 	got := mergeByTokenSizeFromJSON(items, 128, 0)
@@ -62,8 +62,8 @@ func TestMergeByTokenSizeFromJSON_ExtendsPositions(t *testing.T) {
 	posB := json.RawMessage(`[[4,5,6]]`)
 	items := [][]schema.ChunkDoc{
 		{
-			{Text: "a", DocType: "text", CKType: "text", TKNums: intPtr(5), Positions: posA},
-			{Text: "b", DocType: "text", CKType: "text", TKNums: intPtr(5), Positions: posB},
+			{Text: "a", DocType: "text", TKNums: intPtr(5), Positions: posA},
+			{Text: "b", DocType: "text", TKNums: intPtr(5), Positions: posB},
 		},
 	}
 	got := mergeByTokenSizeFromJSON(items, 128, 0)
@@ -93,7 +93,7 @@ func TestCloneChunkDoc_DeepCopiesPDFPositions(t *testing.T) {
 // TestMergeByTokenSizeFromJSON_PositionsDecodeToMatrix verifies the
 // chunker-side contract for diff 1.4: preserved `positions` must decode
 // (via ChunkDoc.ToMap → decodeStructuredValue) to a [][]float64 matrix so
-// the downstream task-layer processChunkPositions → AddPositions can
+// the downstream task-layer processChunkPositions → addPDFPositions can
 // convert it to page_num_int / top_int / position_int. The coordinate
 // conversion itself lives in internal/ingestion/task (processChunkPositions),
 // not in the chunker.
@@ -102,8 +102,8 @@ func TestMergeByTokenSizeFromJSON_PositionsDecodeToMatrix(t *testing.T) {
 	posB := json.RawMessage(`[[6,7,8,9,10]]`)
 	items := [][]schema.ChunkDoc{
 		{
-			{Text: "a", DocType: "text", CKType: "text", TKNums: intPtr(5), Positions: posA},
-			{Text: "b", DocType: "text", CKType: "text", TKNums: intPtr(5), Positions: posB},
+			{Text: "a", DocType: "text", TKNums: intPtr(5), Positions: posA},
+			{Text: "b", DocType: "text", TKNums: intPtr(5), Positions: posB},
 		},
 	}
 	got := mergeByTokenSizeFromJSON(items, 128, 0)
@@ -144,9 +144,9 @@ func TestMergeByTokenSizeFromJSON_OverlapPrefixCarriesPrevPositions(t *testing.T
 	// first starts a fresh chunk carrying the WHOLE previous chunk as overlap.
 	items := [][]schema.ChunkDoc{
 		{
-			{Text: "alpha", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posA},
-			{Text: "beta", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posB},
-			{Text: "gamma", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posC},
+			{Text: "alpha", DocType: "text", TKNums: intPtr(5), PDFPositions: posA},
+			{Text: "beta", DocType: "text", TKNums: intPtr(5), PDFPositions: posB},
+			{Text: "gamma", DocType: "text", TKNums: intPtr(5), PDFPositions: posC},
 		},
 	}
 	got := mergeByTokenSizeFromJSON(items, 20, 100)
@@ -198,25 +198,25 @@ func TestMergeByTokenSizeFromJSON_PartialOverlapPrefixCarriesOnlyTailPositions(t
 	posD := json.RawMessage(`[[4,0,40,0,16]]`)
 	posE := json.RawMessage(`[[5,0,50,0,20]]`)
 	posF := json.RawMessage(`[[6,0,60,0,24]]`)
-	// 6 single-token items. With chunkTokens=9 (5 item tokens + 4 joinSep "\n"
-	// tokens), items 0..4 merge into one chunk — the re-tokenize guard lets the
-	// joined text fill the cap exactly (9 tokens), and item5 starts a fresh
-	// chunk. Its overlap prefix (overlappedPct=20) is the last ~20% of the
+	// 6 single-token items. The JSON path joins with joinSep="" (no synthetic
+	// "\n"), so the budget is pure item tokens. With chunkTokens=5, items 0..4
+	// merge into one chunk (5 tokens, filling the cap exactly), and item5 starts
+	// a fresh chunk. Its overlap prefix (overlappedPct=20) is the last ~20% of the
 	// 5-item previous chunk's text => only the last item ("e", posE) intersects
 	// the tail. So chunk[1] must carry posE (tail) + posF (own), but NOT
 	// posA/posB/posC/posD. (Texts are single-token so the re-tokenize guard's
 	// actual-count check agrees with the declared TKNums.)
 	items := [][]schema.ChunkDoc{
 		{
-			{Text: "a", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posA},
-			{Text: "b", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posB},
-			{Text: "c", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posC},
-			{Text: "d", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posD},
-			{Text: "e", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posE},
-			{Text: "f", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posF},
+			{Text: "a", DocType: "text", TKNums: intPtr(1), PDFPositions: posA},
+			{Text: "b", DocType: "text", TKNums: intPtr(1), PDFPositions: posB},
+			{Text: "c", DocType: "text", TKNums: intPtr(1), PDFPositions: posC},
+			{Text: "d", DocType: "text", TKNums: intPtr(1), PDFPositions: posD},
+			{Text: "e", DocType: "text", TKNums: intPtr(1), PDFPositions: posE},
+			{Text: "f", DocType: "text", TKNums: intPtr(1), PDFPositions: posF},
 		},
 	}
-	got := mergeByTokenSizeFromJSON(items, 9, 20)
+	got := mergeByTokenSizeFromJSON(items, 5, 20)
 	merged := got[0]
 	if len(merged) != 2 {
 		t.Fatalf("want 2 chunks (5 items merge, 6th starts fresh with partial overlap), got %d", len(merged))
@@ -254,10 +254,9 @@ func TestChunkFromItem_SlicesPositionsAcrossDelimiterPieces(t *testing.T) {
 	it := schema.ChunkDoc{
 		Text:         "AAAA\nBBBB",
 		DocType:      "text",
-		CKType:       "text",
 		PDFPositions: json.RawMessage(`[[1,0,200,0,40]]`),
 	}
-	got := chunkFromItem(it, compileDelimPattern([]string{"`\n`"}))
+	got := chunkFromItem(it, compileDelimPattern([]string{"`\n`"}), false)
 	if len(got) != 2 {
 		t.Fatalf("want 2 delimiter-split pieces, got %d", len(got))
 	}
@@ -266,11 +265,15 @@ func TestChunkFromItem_SlicesPositionsAcrossDelimiterPieces(t *testing.T) {
 	if len(p0) != 1 || len(p1) != 1 {
 		t.Fatalf("single-row input must yield single-row slices: %v / %v", p0, p1)
 	}
-	if p0[0][3] != 0 || math.Abs(p0[0][4]-20) > 1e-9 {
-		t.Errorf("piece 0 bounds = [%v,%v], want [0,20]", p0[0][3], p0[0][4])
+	// The custom ("`\n`") delimiter is DROPPED (Python-compatible split
+	// instruction), so piece 0 is "AAAA" (4 runes) and piece 1 is "BBBB" (4);
+	// the slice is therefore proportional to 4/8 of the box height.
+	wantSplit := 40.0 * 4.0 / 8.0
+	if p0[0][3] != 0 || math.Abs(p0[0][4]-wantSplit) > 1e-9 {
+		t.Errorf("piece 0 bounds = [%v,%v], want [0,%v]", p0[0][3], p0[0][4], wantSplit)
 	}
-	if math.Abs(p1[0][3]-20) > 1e-9 || p1[0][4] != 40 {
-		t.Errorf("piece 1 bounds = [%v,%v], want [20,40]", p1[0][3], p1[0][4])
+	if math.Abs(p1[0][3]-wantSplit) > 1e-9 || p1[0][4] != 40 {
+		t.Errorf("piece 1 bounds = [%v,%v], want [%v,40]", p1[0][3], p1[0][4], wantSplit)
 	}
 }
 
@@ -290,7 +293,6 @@ func TestSplitOversizedText_SlicedPositionsTrackPieceTextShare(t *testing.T) {
 		return schema.ChunkDoc{
 			Text:         text,
 			DocType:      "text",
-			CKType:       "text",
 			TKNums:       intPtr(tokenizeStr(text)),
 			PDFPositions: json.RawMessage(`[[1,10,200,50,80]]`),
 		}
@@ -354,10 +356,9 @@ func TestChunkFromItem_SlicesPositionsIgnoresPositionTags(t *testing.T) {
 	it := schema.ChunkDoc{
 		Text:         "AAAA@@1\t0\t200\t0\t40##\nCCCC",
 		DocType:      "text",
-		CKType:       "text",
 		PDFPositions: json.RawMessage(`[[1,0,200,0,40]]`),
 	}
-	got := chunkFromItem(it, compileDelimPattern([]string{"`\n`"}))
+	got := chunkFromItem(it, compileDelimPattern([]string{"`\n`"}), false)
 	if len(got) != 2 {
 		t.Fatalf("want 2 delimiter-split pieces, got %d", len(got))
 	}
@@ -366,11 +367,15 @@ func TestChunkFromItem_SlicesPositionsIgnoresPositionTags(t *testing.T) {
 	if len(p0) != 1 || len(p1) != 1 {
 		t.Fatalf("single-row input must yield single-row slices: %v / %v", p0, p1)
 	}
-	if math.Abs(p0[0][4]-20) > 1e-9 {
-		t.Errorf("piece 0 bottom = %v, want 20 (tag runes must not shift ratio)", p0[0][4])
+	// The parser tag is excluded from the ratio (removeTag strips it), and the
+	// custom ("`\n`") delimiter is DROPPED, so piece 0 is "AAAA" (4 runes) and
+	// piece 1 is "CCCC" (4); the split is proportional to 4/8 of the box height.
+	wantSplit := 40.0 * 4.0 / 8.0
+	if math.Abs(p0[0][4]-wantSplit) > 1e-9 {
+		t.Errorf("piece 0 bottom = %v, want %v (tag runes excluded, retained delimiter counted)", p0[0][4], wantSplit)
 	}
-	if math.Abs(p1[0][3]-20) > 1e-9 {
-		t.Errorf("piece 1 top = %v, want 20 (tag runes must not shift ratio)", p1[0][3])
+	if math.Abs(p1[0][3]-wantSplit) > 1e-9 {
+		t.Errorf("piece 1 top = %v, want %v (tag runes excluded, retained delimiter counted)", p1[0][3], wantSplit)
 	}
 }
 
@@ -384,7 +389,6 @@ func TestSplitOversizedText_SlicesPositionsIgnoreTags(t *testing.T) {
 	ck := schema.ChunkDoc{
 		Text:         body,
 		DocType:      "text",
-		CKType:       "text",
 		TKNums:       intPtr(tokenizeStr(body)),
 		PDFPositions: json.RawMessage(`[[1,0,200,0,40]]`),
 	}
@@ -453,7 +457,6 @@ func TestMergeByTokenSizeFromJSON_ChainedOverlapNoHeadAccumulation(t *testing.T)
 		row = append(row, schema.ChunkDoc{
 			Text:         string(rune('a' + i)),
 			DocType:      "text",
-			CKType:       "text",
 			TKNums:       intPtr(1),
 			PDFPositions: pos(i + 1),
 		})
@@ -593,7 +596,6 @@ func TestMergeByTokenSizeFromJSON_ChainedOverlapPerChunkConvergence(t *testing.T
 		row = append(row, schema.ChunkDoc{
 			Text:         string(rune('a' + i)),
 			DocType:      "text",
-			CKType:       "text",
 			TKNums:       intPtr(1),
 			PDFPositions: pos(i + 1),
 		})

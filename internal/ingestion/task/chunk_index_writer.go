@@ -37,10 +37,11 @@ type InsertFunc func(ctx context.Context, chunks []map[string]any, baseName, dat
 // chunkIndexWriter batches chunks and writes them to the search engine in
 // bulkSize-sized batches. Progress is reported every 128 batches.
 type chunkIndexWriter struct {
-	insertFunc InsertFunc
-	baseName   string
-	datasetID  string
-	bulkSize   int
+	insertFunc      InsertFunc
+	finalInsertFunc InsertFunc
+	baseName        string
+	datasetID       string
+	bulkSize        int
 }
 
 // newChunkIndexWriter creates a chunkIndexWriter. When bulkSize is <= 0 the
@@ -52,11 +53,17 @@ func newChunkIndexWriter(
 	bulkSize int,
 ) *chunkIndexWriter {
 	return &chunkIndexWriter{
-		insertFunc: insertFunc,
-		baseName:   baseName,
-		datasetID:  datasetID,
-		bulkSize:   bulkSize,
+		insertFunc:      insertFunc,
+		finalInsertFunc: insertFunc,
+		baseName:        baseName,
+		datasetID:       datasetID,
+		bulkSize:        bulkSize,
 	}
+}
+
+func (w *chunkIndexWriter) withFinalInsertFunc(insertFunc InsertFunc) *chunkIndexWriter {
+	w.finalInsertFunc = insertFunc
+	return w
 }
 
 // Write inserts chunks in batches. An empty or nil slice is forwarded to the
@@ -78,9 +85,13 @@ func (w *chunkIndexWriter) Write(ctx context.Context, chunks []map[string]any) e
 		if err := ctx.Err(); err != nil {
 			return err
 		}
+		insert := w.insertFunc
+		if end == len(chunks) && w.finalInsertFunc != nil {
+			insert = w.finalInsertFunc
+		}
 		var err error
 		for attempt := 1; attempt <= chunkInsertAttempts; attempt++ {
-			_, err = w.insertFunc(ctx, chunks[b:end], w.baseName, w.datasetID)
+			_, err = insert(ctx, chunks[b:end], w.baseName, w.datasetID)
 			if err == nil {
 				break
 			}

@@ -67,11 +67,10 @@ func (t *TokenHubModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, err
 	}
 
-	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	url, err := t.baseModel.EndpointURL(apiConfig, t.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	body, err := t.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
@@ -97,11 +96,10 @@ func (t *TokenHubModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		return err
 	}
 
-	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	url, err := t.baseModel.EndpointURL(apiConfig, t.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
 
@@ -122,11 +120,10 @@ func (t *TokenHubModel) Embed(ctx context.Context, modelName *string, request Em
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	url, err := t.baseModel.EndpointURL(apiConfig, t.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -191,31 +188,31 @@ func (t *TokenHubModel) Embed(ctx context.Context, modelName *string, request Em
 }
 
 func (t *TokenHubModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: Rerank", t.Name())
 }
 
 func (t *TokenHubModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", t.Name())
 }
 
 func (t *TokenHubModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s no such method", t.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", t.Name())
 }
 
 func (t *TokenHubModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", t.Name())
 }
 
 func (t *TokenHubModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s no such method", t.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", t.Name())
 }
 
 func (t *TokenHubModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", t.Name())
 }
 
 func (t *TokenHubModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", t.Name())
 }
 
 func (t *TokenHubModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
@@ -223,11 +220,10 @@ func (t *TokenHubModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([
 		return nil, err
 	}
 
-	resolvedBaseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	url, err := t.baseModel.EndpointURL(apiConfig, t.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, t.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -286,7 +282,7 @@ func (t *TokenHubModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([
 }
 
 func (t *TokenHubModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", t.Name())
 }
 
 func (t *TokenHubModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
@@ -295,9 +291,13 @@ func (t *TokenHubModel) CheckConnection(ctx context.Context, apiConfig *APIConfi
 }
 
 func (t *TokenHubModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", t.Name())
 }
 
 func (t *TokenHubModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s no such method", t.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", t.Name())
+}
+
+func (t *TokenHubModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", t.Name())
 }

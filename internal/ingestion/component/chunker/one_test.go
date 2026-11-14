@@ -18,6 +18,7 @@ package chunker
 
 import (
 	"context"
+	"ragflow/internal/ingestion/component/schema"
 	"testing"
 )
 
@@ -32,7 +33,7 @@ func oneChunksOf(t *testing.T, inputs map[string]any) []map[string]any {
 	if err != nil {
 		t.Fatalf("OneChunker.Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok {
 		t.Fatalf("chunks not []map[string]any: %T", out["chunks"])
 	}
@@ -153,5 +154,18 @@ func assertCoordTuple(t *testing.T, key string, got any, want []float64) {
 		if rows[0][i] != w {
 			t.Errorf("%s[0][%d] = %v, want %v", key, i, rows[0][i], w)
 		}
+	}
+}
+
+// TestOneChunkerKeepsImgIDForTextlessItem covers the single-item guard: an
+// item kept alive by ImgID must carry that ID into the output chunk.
+func TestOneChunkerKeepsImgIDForTextlessItem(t *testing.T) {
+	out := emitOneFromItems([]schema.ChunkDoc{{DocType: "image", ImgID: "kb-1-chunk-1"}}, nil)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
+	if len(chunks) != 1 {
+		t.Fatalf("chunks = %d, want 1", len(chunks))
+	}
+	if chunks[0]["img_id"] != "kb-1-chunk-1" {
+		t.Fatalf("img_id = %v, want kb-1-chunk-1", chunks[0]["img_id"])
 	}
 }

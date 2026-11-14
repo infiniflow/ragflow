@@ -23,7 +23,6 @@ func wikiIntRow(id, pageType, slug, title, topic, summary string, outlinks int) 
 		"scope_kwd":           "dataset",
 		"compile_kwd":         CompileKwdWikiPage,
 		"slug_kwd":            fullSlug,
-		"artifact_slug_kwd":   fullSlug,
 		"title_kwd":           title,
 		"page_type_kwd":       pageType,
 		"topic_kwd":           topic,
@@ -67,8 +66,8 @@ func TestWikiKeywordFilter_Integration(t *testing.T) {
 		row["kb_id"] = kbID
 	}
 	// Best effort: the store may already exist from a previous run.
-	_ = de.CreateChunkStore(ctx, idx, kbID, 1024, "naive")
-	if _, err := de.InsertChunks(ctx, rows, idx, kbID); err != nil {
+	_ = de.CreateChunkStore(ctx, idx, kbID, 1024, "naive", "")
+	if _, err := de.InsertChunks(ctx, rows, idx, kbID, ""); err != nil {
 		t.Fatalf("seed wiki rows: %v", err)
 	}
 	t.Cleanup(func() {

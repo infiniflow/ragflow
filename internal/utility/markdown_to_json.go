@@ -139,17 +139,17 @@ func Dictify(md string) OMap {
 	if len(blocks) == 0 {
 		return OMap{}
 	}
-	min := 100000
+	minVal := 100000
 	for _, b := range blocks {
 		lvl := 100000
 		if b.typ == headingBlock {
 			lvl = b.level
 		}
-		if lvl < min {
-			min = lvl
+		if lvl < minVal {
+			minVal = lvl
 		}
 	}
-	switch t := dictifyBlocks(blocks, min).(type) {
+	switch t := dictifyBlocks(blocks, minVal).(type) {
 	case OMap:
 		out := OMap{}
 		for _, e := range t {

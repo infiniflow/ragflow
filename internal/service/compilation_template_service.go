@@ -27,8 +27,10 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/utility"
 
 	"gopkg.in/yaml.v3"
@@ -36,24 +38,28 @@ import (
 
 // fillConfigDefaultLLM mirrors Python CompilationTemplateService.
 // fill_config_default_llm: when the config has no explicit llm_id it lazily
-// fills the tenant's default chat model id (read-side only; the DB row is left
+// fills the current member's default chat model id (read-side only; the DB row is left
 // untouched).
-func fillConfigDefaultLLM(ctx context.Context, tenantDAO *dao.TenantDAO, config entity.JSONMap, tenantID *string) entity.JSONMap {
-	if len(config) == 0 || tenantID == nil || *tenantID == "" {
+func fillConfigDefaultLLM(ctx context.Context, config entity.JSONMap, tenantID string) entity.JSONMap {
+	if len(config) == 0 || tenantID == "" {
 		return config
 	}
 	if _, ok := config["llm_id"]; ok {
 		return config
 	}
-	tenant, err := tenantDAO.GetByID(ctx, dao.DB, *tenantID)
-	if err != nil || tenant == nil || tenant.TenantLLMID == nil {
+	info, err := NewModelFactory().ResolveDefaultInfo(permission.WithTenantID(ctx, tenantID), entity.ModelTypeChat)
+	if err != nil {
+		return config
+	}
+	modelID := ModelReference(info)
+	if modelID == "" {
 		return config
 	}
 	out := make(entity.JSONMap, len(config)+1)
 	for k, v := range config {
 		out[k] = v
 	}
-	out["llm_id"] = *tenant.TenantLLMID
+	out["llm_id"] = modelID
 	return out
 }
 
@@ -114,23 +120,24 @@ func NewCompilationTemplateService() *CompilationTemplateService {
 
 // ListBuiltins returns the read-only template palette loaded from the YAML
 // definitions. Built-in templates are never persisted in the database.
-func (s *CompilationTemplateService) ListBuiltins(ctx context.Context, tenantID string) ([]*BuiltinTemplate, error) {
+func (s *CompilationTemplateService) ListBuiltins(ctx context.Context) ([]*BuiltinTemplate, error) {
+	tenantID, err := requireCurrentTenantID(ctx)
+	if err != nil {
+		return nil, err
+	}
 	templates, err := loadBuiltinTemplates()
 	if err != nil {
 		return nil, err
 	}
-	tenantPtr := &tenantID
 	for _, template := range templates {
-		template.Config = fillConfigDefaultLLM(ctx, s.tenantDAO, template.Config, tenantPtr)
+		template.Config = fillConfigDefaultLLM(ctx, template.Config, tenantID)
 	}
 	return s.sortBuiltins(templates), nil
 }
 
 // LoadWikiPresets loads the wiki page-structure presets from the
-// init_data/compilation_templates/wiki/*.yaml files, filesystem-fresh per call.
 func (s *CompilationTemplateService) LoadWikiPresets() ([]*WikiPreset, error) {
-	wikiDir := filepath.Join(utility.GetProjectBaseDirectory(),
-		"api", "db", "init_data", "compilation_templates", "wiki")
+	wikiDir := filepath.Join(utility.GetProjectBaseDirectory(), "internal", "ingestion", "knowledge_compile", "templates", "wiki")
 	entries, err := os.ReadDir(wikiDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -175,7 +182,7 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 	}
 	if name, ok := req["name"]; ok {
 		nameStr, ok2 := name.(string)
-		if !ok2 || strings.TrimSpace(nameStr) == "" || len([]byte(nameStr)) > 128 {
+		if !ok2 || common.ValidateNameRunes(nameStr, common.NameLimit128) != nil {
 			return errors.New("invalid template name")
 		}
 	}
@@ -288,8 +295,7 @@ func (s *CompilationTemplateService) sortBuiltins(templates []*BuiltinTemplate) 
 }
 
 func loadBuiltinTemplates() ([]*BuiltinTemplate, error) {
-	dir := filepath.Join(utility.GetProjectBaseDirectory(),
-		"api", "db", "init_data", "compilation_templates")
+	dir := filepath.Join(utility.GetProjectBaseDirectory(), "internal", "ingestion", "knowledge_compile", "templates")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {

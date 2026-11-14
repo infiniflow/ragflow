@@ -100,6 +100,18 @@ const PipelineOperatorForm = ({
           externalErrors={externalErrors}
         />
       );
+    case Operator.ManualChunker:
+      // The backend pins ManualChunker to the title chunker's "group" method
+      // (manual.go) and ignores its token cap, so expose only the rules.
+      return (
+        <TitleChunkerForm
+          node={node}
+          onValuesChange={handleValuesChange}
+          hideOutputs
+          externalErrors={externalErrors}
+          pinMethodGroup
+        />
+      );
     case Operator.Extractor:
       return (
         <ExtractorForm

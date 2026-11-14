@@ -10,12 +10,12 @@
 //   - Fresh run: iterate from iteration 1 using the outer input.
 //   - Sub-graph interrupt: the closure captures its own state
 //     (iteration, current input, sub-checkpoint ID), serialises it to
-//     JSON, and re-throws via interrupt.Interrupt(ctx, encodedState).
+//     JSON, and re-throws it via interrupt.Interrupt.
 //     The outer Pregel engine saves a checkpoint and surfaces the
 //     GraphInterrupt error.
 //   - Resume: the closure is re-invoked. It reads the encoded state
-//     from interrupt.GetResumeValues(ctx), decodes iteration/input/
-//     sub-checkpoint ID, and continues from where it left off.
+//     from the context populated by checkpoint restore, decodes iteration/
+//     input/sub-checkpoint ID, and continues from where it left off.
 //     The sub-graph is invoked with a RunnableConfig whose ThreadID
 //     incorporates the sub-checkpoint namespace, so the sub-graph's
 //     own checkpointer can resume the interrupted sub-iteration.
@@ -242,9 +242,7 @@ func runLoop(
 	}
 }
 
-// loadLoopSnapshot reads the loop state from context (set by the engine
-// during checkpoint restore). Falls back to interrupt resume values for
-// backward compatibility.
+// loadLoopSnapshot reads the loop state from context set by checkpoint restore.
 func loadLoopSnapshot(ctx context.Context) (loopInterruptState, bool) {
 	// Check context key first (set by engine's checkpoint restore).
 	if ctx != nil {
@@ -255,23 +253,6 @@ func loadLoopSnapshot(ctx context.Context) (loopInterruptState, bool) {
 				if err := json.Unmarshal(tv, &st); err == nil && st.Iteration > 0 {
 					return st, true
 				}
-			}
-		}
-	}
-	// Fallback: interrupt resume values (deprecated, remove when
-	// engine.go and graph.go are migrated to loopStateCtxKey).
-	values := interrupt.GetResumeValues(ctx)
-	for _, v := range values {
-		switch tv := v.(type) {
-		case []byte:
-			var st loopInterruptState
-			if err := json.Unmarshal(tv, &st); err == nil && st.Iteration > 0 {
-				return st, true
-			}
-		case string:
-			var st loopInterruptState
-			if err := json.Unmarshal([]byte(tv), &st); err == nil && st.Iteration > 0 {
-				return st, true
 			}
 		}
 	}

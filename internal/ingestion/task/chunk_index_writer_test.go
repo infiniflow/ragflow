@@ -19,6 +19,8 @@ package task
 import (
 	"context"
 	"errors"
+	"fmt"
+	"reflect"
 	"testing"
 	"time"
 )
@@ -94,6 +96,29 @@ func TestChunkIndexWriter_MultipleBatches(t *testing.T) {
 	}
 	if batchSizes[0] != 3 || batchSizes[1] != 3 || batchSizes[2] != 1 {
 		t.Fatalf("batch sizes = %v, want [3,3,1]", batchSizes)
+	}
+}
+
+func TestChunkIndexWriter_UsesFinalInserterForLastBatch(t *testing.T) {
+	var calls []string
+	w := newChunkIndexWriter(
+		func(_ context.Context, chunks []map[string]any, _, _ string) ([]string, error) {
+			calls = append(calls, fmt.Sprintf("regular:%d", len(chunks)))
+			return nil, nil
+		},
+		"base",
+		"kb-1",
+		3,
+	).withFinalInsertFunc(func(_ context.Context, chunks []map[string]any, _, _ string) ([]string, error) {
+		calls = append(calls, fmt.Sprintf("final:%d", len(chunks)))
+		return nil, nil
+	})
+
+	if err := w.Write(t.Context(), make([]map[string]any, 7)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if want := []string{"regular:3", "regular:3", "final:1"}; !reflect.DeepEqual(calls, want) {
+		t.Fatalf("insert calls = %v, want %v", calls, want)
 	}
 }
 

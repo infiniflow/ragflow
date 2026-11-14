@@ -56,6 +56,56 @@ func TestFakeSchedulerReclaimsInterruptedClaim(t *testing.T) {
 	}
 }
 
+func TestPublishDeletedPreservesRemovedProductTypes(t *testing.T) {
+	scheduler := NewFakeScheduler()
+	previousPublisher, previousClaimer := defaultPublisher, defaultClaimer
+	defaultPublisher, defaultClaimer = scheduler, scheduler
+	t.Cleanup(func() {
+		defaultPublisher, defaultClaimer = previousPublisher, previousClaimer
+	})
+
+	variants := []string{"mindmap", "structure"}
+	taskTypes := []string{"Graph", "MindMap"}
+	if err := PublishDeleted(t.Context(), "t1", "kb1", "d1", variants, taskTypes); err != nil {
+		t.Fatalf("publish deleted: %v", err)
+	}
+	claim, ok, err := scheduler.Claim(t.Context(), "kb1")
+	if err != nil || !ok {
+		t.Fatalf("claim deleted event: ok=%v err=%v", ok, err)
+	}
+	if len(claim.Entries) != 1 {
+		t.Fatalf("entries = %d, want 1", len(claim.Entries))
+	}
+	entry := claim.Entries[0]
+	if entry.EventType != string(EventTypeDeleted) {
+		t.Fatalf("event type = %q, want %q", entry.EventType, EventTypeDeleted)
+	}
+	if !reflect.DeepEqual(entry.Variants, variants) {
+		t.Fatalf("variants = %v, want %v", entry.Variants, variants)
+	}
+	if !reflect.DeepEqual(entry.TaskTypes, taskTypes) {
+		t.Fatalf("task types = %v, want %v", entry.TaskTypes, taskTypes)
+	}
+}
+
+func TestPublishDeletedSkipsUnscopedEvent(t *testing.T) {
+	scheduler := NewFakeScheduler()
+	previousPublisher, previousClaimer := defaultPublisher, defaultClaimer
+	defaultPublisher, defaultClaimer = scheduler, scheduler
+	t.Cleanup(func() {
+		defaultPublisher, defaultClaimer = previousPublisher, previousClaimer
+	})
+
+	if err := PublishDeleted(t.Context(), "t1", "kb1", "d1", nil, nil); err != nil {
+		t.Fatalf("publish deleted: %v", err)
+	}
+	if _, ok, err := scheduler.Claim(t.Context(), "kb1"); err != nil {
+		t.Fatalf("claim deleted event: %v", err)
+	} else if ok {
+		t.Fatal("unscoped deletion should not enqueue an event")
+	}
+}
+
 func TestFakeSchedulerProgressIsClaimScoped(t *testing.T) {
 	f := NewFakeScheduler()
 	if err := f.Publish(t.Context(), "t1", "kb1", "d1", string(EventTypeCompleted), nil, nil); err != nil {

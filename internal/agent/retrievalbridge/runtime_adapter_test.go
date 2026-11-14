@@ -34,6 +34,76 @@ func TestRuntimeAdapterDisablesDenseFallback(t *testing.T) {
 	}
 }
 
+func TestRuntimeAdapterPreservesMetadataFilter(t *testing.T) {
+	service := &captureRetrievalService{}
+	filter := map[string]any{"method": "manual", "value": "invoice"}
+	_, err := NewRuntimeAdapter(service).Search(t.Context(), nil, agentrunt.RetrievalRequest{
+		Query:          "test",
+		MetaDataFilter: filter,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(service.req.MetaDataFilter, filter) {
+		t.Fatalf("MetaDataFilter = %#v, want %#v", service.req.MetaDataFilter, filter)
+	}
+}
+
+func TestRuntimeAdapterPreservesCompiledExclusion(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		excludeCompiled  bool
+		onlyOriginalText bool
+	}{
+		{name: "neither"},
+		{name: "exclude compiled", excludeCompiled: true},
+		{name: "original text", onlyOriginalText: true},
+		{name: "both", excludeCompiled: true, onlyOriginalText: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			service := &captureRetrievalService{}
+			req := agentrunt.RetrievalRequest{
+				Query:            "test",
+				RerankID:         "reranker",
+				ExcludeCompiled:  tc.excludeCompiled,
+				OnlyOriginalText: tc.onlyOriginalText,
+			}
+			if _, err := NewRuntimeAdapter(service).Search(t.Context(), nil, req); err != nil {
+				t.Fatal(err)
+			}
+			if service.req.ExcludeCompiled != req.ExcludeCompiled || service.req.OnlyOriginalText != req.OnlyOriginalText {
+				t.Fatalf("retrieval flags = (%v, %v), want (%v, %v)", service.req.ExcludeCompiled, service.req.OnlyOriginalText, req.ExcludeCompiled, req.OnlyOriginalText)
+			}
+			if service.req.RerankID != req.RerankID {
+				t.Fatalf("RerankID = %q, want %q", service.req.RerankID, req.RerankID)
+			}
+		})
+	}
+}
+
+func TestAgenticSearchSurvivesProductionRegistryBridge(t *testing.T) {
+	previous := agenttool.GetRetrievalService()
+	service := &captureRetrievalService{}
+	agenttool.SetRetrievalService(NewRuntimeAdapter(service))
+	t.Cleanup(func() { agenttool.SetRetrievalService(previous) })
+
+	state := agentrunt.NewCanvasState("run-1", "task-1")
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := agentrunt.WithState(t.Context(), state)
+	if _, err := agenttool.NewAgenticSearchTool("hybrid_search").InvokableRun(ctx, `{"query":"test","kb_ids":["kb-1"]}`); err != nil {
+		t.Fatal(err)
+	}
+	if service.req.TenantID != "tenant-1" {
+		t.Fatalf("TenantID = %q, want tenant-1", service.req.TenantID)
+	}
+	if !service.req.ExcludeCompiled {
+		t.Fatal("AgenticSearch ExcludeCompiled was overwritten by the production bridge")
+	}
+	if service.req.AllowDenseFallback == nil || *service.req.AllowDenseFallback {
+		t.Fatal("AgenticSearch dense fallback policy was lost by the production bridge")
+	}
+}
+
 // TestRuntimeAdapterDoesNotResolveItsTargetFromTheSharedRegistry reproduces the
 // server's boot order (cmd/ragflow_server.go): the NLP adapter is registered,
 // then the bridge REPLACES it in the same shared registry

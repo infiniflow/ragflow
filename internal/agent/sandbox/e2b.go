@@ -14,12 +14,7 @@
 //  limitations under the License.
 //
 
-// e2b.go is the Go port of
-// `agent/sandbox/providers/e2b.py` (which is itself a stub on the
-// Python side — see Python E2BProvider.execute_code raising
-// "E2B provider is not yet fully implemented"). On the Go side we
-// go further: we ship a real implementation that talks to e2b
-// cloud sandboxes via the community Go SDK.
+// E2B execution uses cloud sandboxes through the community Go SDK.
 //
 // The community SDK is at github.com/eric642/e2b-go-sdk
 // (Apache-2.0; community-maintained port of the official
@@ -62,10 +57,7 @@ const e2bDefaultTemplate = "base"
 // the Python e2b-code-interpreter SDK's default.
 const e2bDefaultSandboxTimeout = 5 * time.Minute
 
-// E2BProvider is the Go port of
-// `agent/sandbox/providers/e2b.py::E2BProvider`. On the Python
-// side this class is a stub; on the Go side it is a real
-// implementation that talks to e2b cloud sandboxes.
+// E2BProvider executes code in E2B cloud sandboxes.
 type E2BProvider struct {
 	client         *e2bsdk.Client
 	template       string

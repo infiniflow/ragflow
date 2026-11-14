@@ -11,7 +11,7 @@ import (
 // read from plan §2.11.10 — P0 (8) + P1 (5) + P2 (4) + P3 (2) + P4 (3) = 22
 // at plan completion, plus v1 fixture wrappers/stubs (including Retrieval,
 // TavilySearch, TavilyExtract, ExeSQL, CodeExec, Google, BGPT, YahooFinance,
-// Wikipedia, GoogleScholar, ArXiv, PubMed, DuckDuckGo, Generate, Answer,
+// Wikipedia, GoogleScholar, ArXiv, PubMed, DuckDuckGo, Generate,
 // Iteration, and IterationItem) registered by fixture_stubs.go to keep the
 // dsl-examples and canvas tool surface compiling. The test allows counts
 // between 12 (P0+P1 minus the removed ExitLoop) and 55 to roll forward as
@@ -60,7 +60,7 @@ func TestVerifyRegistration_P1(t *testing.T) {
 
 	// Case-insensitive lookup on a real component to prove the
 	// registry's name normalization works at lookup time.
-	if c, err := New("Message", nil); err != nil || c == nil {
+	if c, err := New("Message", map[string]any{"text": "registered"}); err != nil || c == nil {
 		t.Errorf("New(Message) failed: c=%v err=%v", c, err)
 	}
 

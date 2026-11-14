@@ -67,6 +67,10 @@ const (
 	// bpeFlavorQwen is byte-level BPE: NFC, split by regex, map bytes through the
 	// GPT-2 alphabet, then merge inside each split piece.
 	bpeFlavorQwen
+	// bpeFlavorMetaspace is the mmBERT family: Replace(" " -> "▁") normalizer,
+	// a Metaspace pre-tokenizer that prepends "▁" and splits on it (newline runs
+	// stand alone), and <0xXX> byte fallback per merge unit.
+	bpeFlavorMetaspace
 )
 
 // bpeModel is a tokenizer.json BPE model plus the flavor it is served with.
@@ -173,10 +177,27 @@ func (m *bpeModel) normalize(text string) string {
 	case bpeFlavorQwen:
 		// normalizer: NFC
 		return normNFC(text)
+	case bpeFlavorMetaspace:
+		// normalizer: Replace(" " -> "▁"). The prepend belongs to the
+		// pre-tokenizer (pretokenizeMetaspace), not here.
+		return strings.ReplaceAll(text, " ", "\u2581")
 	default:
 		// normalizer: Sequence(Prepend("▁"), Replace(" " -> "▁"))
 		s := strings.ReplaceAll(text, " ", "\u2581")
 		return "\u2581" + s
+	}
+}
+
+// pretokenize splits normalized text into merge units, one rule set per flavor.
+// The llama flavor keeps the whole text as a single unit.
+func (m *bpeModel) pretokenize(normalized string) []string {
+	switch m.flavor {
+	case bpeFlavorQwen:
+		return pretokenizeQwen(normalized)
+	case bpeFlavorMetaspace:
+		return pretokenizeMetaspace(normalized)
+	default:
+		return []string{normalized}
 	}
 }
 
@@ -189,12 +210,8 @@ func (m *bpeModel) countTokens(text string) int {
 	if normalized == "" {
 		return 0
 	}
-	pieces := []string{normalized}
-	if m.flavor == bpeFlavorQwen {
-		pieces = pretokenizeQwen(normalized)
-	}
 	total := 0
-	for _, piece := range pieces {
+	for _, piece := range m.pretokenize(normalized) {
 		total += m.countPiece(piece)
 	}
 	return total
@@ -252,12 +269,8 @@ func (m *bpeModel) tokenIDs(text string) []int32 {
 	if normalized == "" {
 		return nil
 	}
-	pieces := []string{normalized}
-	if m.flavor == bpeFlavorQwen {
-		pieces = pretokenizeQwen(normalized)
-	}
 	var ids []int32
-	for _, piece := range pieces {
+	for _, piece := range m.pretokenize(normalized) {
 		ids = append(ids, m.pieceIDs(piece)...)
 	}
 	return ids
@@ -566,6 +579,90 @@ func (m *bpeModel) trimToLimit(text string, limit int) string {
 }
 
 // ---------------------------------------------------------------------------
+// Metaspace pre-tokenization (mmBERT family)
+// ---------------------------------------------------------------------------
+
+// pretokenizeMetaspace splits normalized text the way the mmBERT tokenizer.json's
+// Metaspace(replacement="▁", prepend_scheme="always", split=true) pre-tokenizer
+// does. The rules were pinned against the reference tokenizer (HF tokenizers) on
+// the deploy golden examples plus boundary probes; three of them are NOT obvious
+// from the config alone:
+//
+//   - a run of '\n' stands alone as one unit (no "▁" prefix), and the text after
+//     it starts a new unit that DOES get the prefix ("a\nb" -> ▁a, \n, ▁b);
+//   - '\t' and '\r' are not boundaries — they stay inside their unit;
+//   - within a unit, "▁" attaches to the part that follows it, so "a▁▁b" is
+//     three units ("a", "▁", "▁b"), and a leading "▁" is never doubled.
+//
+// An empty leading unit is dropped, so " a" is one unit ("▁a"), not two.
+func pretokenizeMetaspace(s string) []string {
+	if s == "" {
+		return nil
+	}
+	units := make([]string, 0, 8)
+	for _, segment := range splitNewlineSegments(s) {
+		if segment == "" {
+			continue
+		}
+		if segment[0] == '\n' {
+			units = append(units, segment)
+			continue
+		}
+		for _, unit := range splitMetaspace(segment) {
+			if unit == "" {
+				continue
+			}
+			if !strings.HasPrefix(unit, "\u2581") {
+				unit = "\u2581" + unit
+			}
+			units = append(units, unit)
+		}
+	}
+	return units
+}
+
+// splitNewlineSegments cuts s at every '\n', keeping each run of consecutive
+// newlines as ONE segment so "a\n\nb" yields "a", "\n\n", "b".
+func splitNewlineSegments(s string) []string {
+	var segments []string
+	for i := 0; i < len(s); {
+		j := i
+		for j < len(s) && s[j] == '\n' {
+			j++
+		}
+		if j > i {
+			segments = append(segments, s[i:j])
+			i = j
+			continue
+		}
+		for j < len(s) && s[j] != '\n' {
+			j++
+		}
+		segments = append(segments, s[i:j])
+		i = j
+	}
+	return segments
+}
+
+// splitMetaspace cuts one non-newline segment at every '▁', re-attaching the
+// delimiter to the part that follows it. A segment without '▁' is one unit; a
+// trailing '▁' becomes the standalone "▁" unit.
+func splitMetaspace(segment string) []string {
+	if !strings.Contains(segment, "\u2581") {
+		return []string{segment}
+	}
+	chunks := strings.Split(segment, "\u2581")
+	units := make([]string, 0, len(chunks))
+	if chunks[0] != "" {
+		units = append(units, chunks[0])
+	}
+	for _, chunk := range chunks[1:] {
+		units = append(units, "\u2581"+chunk)
+	}
+	return units
+}
+
+// ---------------------------------------------------------------------------
 // Qwen pre-tokenization
 // ---------------------------------------------------------------------------
 
@@ -804,12 +901,12 @@ const (
 )
 
 var llamaBPEAssetNames = []string{
-	"ragflow_deps/huggingface.co/intfloat/e5-mistral-7b-instruct/tokenizer.json",
+	"deps/huggingface.co/intfloat/e5-mistral-7b-instruct/tokenizer.json",
 	"llama_bpe_tokenizer.json",
 }
 
 var qwenBPEAssetNames = []string{
-	"ragflow_deps/huggingface.co/Qwen/Qwen3-Embedding-0.6B/tokenizer.json",
+	"deps/huggingface.co/Qwen/Qwen3-Embedding-0.6B/tokenizer.json",
 	"qwen_bpe_tokenizer.json",
 }
 
@@ -840,6 +937,37 @@ func LoadQwenBPECounter() (Counter, error) {
 		qwenBPEOnce.counter, qwenBPEOnce.err = loadBPECounter(qwenBPEAssetNames, qwenBPEAssetPinKey, bpeFlavorQwen, CounterQwenBPE)
 	})
 	return qwenBPEOnce.counter, qwenBPEOnce.err
+}
+
+// MetaspaceEncoder encodes text with a Metaspace-flavored BPE tokenizer.json
+// (the mmBERT family). It is the text -> token-id half of the decision-head
+// model's input contract (DEPLOY_CONTRACT.md §三): the ONNX graph consumes ids
+// and marker positions are absolute indices into that id sequence, so a
+// one-token drift moves every marker without anything raising. The deploy
+// golden examples in the model directory are the only proof the encoding is
+// exact; see bpe_metaspace_golden_test.go.
+type MetaspaceEncoder interface {
+	// IDs returns the exact token ids of text, without special tokens.
+	IDs(text string) []int32
+	// Count is the number of tokens text occupies for this tokenizer.
+	Count(text string) int
+}
+
+// metaspaceCounterID identifies this flavor in logs; it is deliberately NOT a
+// catalog id (embedlimit.go), because the mmBERT tokenizer is not an embedding
+// model in conf/all_models.json and must not resolve through the catalog.
+const metaspaceCounterID = "metaspace-bpe"
+
+// LoadMetaspaceBPE loads a Metaspace-flavored BPE tokenizer.json from an
+// operator-provided path. Unlike the catalog counters this path is not pinned:
+// the file ships inside the Laya model directory (RAGFLOW_DECISION_DIR), not in
+// deps, so there is no shipped digest to check here.
+func LoadMetaspaceBPE(path string) (MetaspaceEncoder, error) {
+	model, err := loadBPEModel(path, bpeFlavorMetaspace)
+	if err != nil {
+		return nil, err
+	}
+	return &bpeCounter{model: model, path: path, counterID: metaspaceCounterID}, nil
 }
 
 func loadBPECounter(names []string, pinKey string, flavor bpeFlavor, counterID string) (Counter, error) {

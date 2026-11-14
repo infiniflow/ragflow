@@ -13,10 +13,71 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
+	"ragflow/internal/utility"
 )
+
+func TestExtractorTagsShareExtractionConcurrency(t *testing.T) {
+	pushExtractorTagChatStub(t, map[string]string{"__static__": `{"finance": 8}`})
+	pushExtractorTagTargetResolverStub(t)
+
+	previous := extractorPool
+	pool := utility.NewWorkerPool[extractorJob, struct{}](1, 4,
+		func(_ context.Context, job extractorJob) (struct{}, error) { return struct{}{}, job() })
+	extractorPool = pool
+	t.Cleanup(func() { pool.StopWait(); extractorPool = previous })
+	release := make(chan struct{})
+	defer close(release)
+	started := make(chan struct{})
+	if _, err := pool.Submit(t.Context(), func() error { close(started); <-release; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{}.Defaults()}
+	c.Param.Tags.TopN = 1
+	chunks := []map[string]any{{"text": "unrelated astronomy observations"}, {"text": "unrelated mountain geology"}}
+	indexed := &MemoryTagIndex{allTags: map[string]float64{"finance": 1}}
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- c.runLLMTags(ctx, nil, extractorInputs{llmID: "test@test", modelID: "test@test"}, chunks, indexed, nil, progress.Window{})
+	}()
+
+	// The occupied shared slot must hold up tags, rather than letting their
+	// own pool bypass extraction work already in flight.
+	ticker := time.NewTicker(time.Millisecond)
+	defer ticker.Stop()
+	for pool.Stats().SubmittedTotal < 3 {
+		select {
+		case err := <-done:
+			t.Fatalf("tagging bypassed the occupied extraction pool: %v", err)
+		case <-ctx.Done():
+			t.Fatal("tagging did not queue in the shared extraction pool")
+		case <-ticker.C:
+		}
+	}
+	release <- struct{}{}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-ctx.Done():
+		t.Fatal("tagging did not finish after the extraction slot was released")
+	}
+	for i, chunk := range chunks {
+		weights, ok := chunk[common.TAG_FLD].(OrderedTagWeights)
+		if !ok || weights["finance"] != 8 {
+			t.Fatalf("chunk %d tags = %v, want finance=8", i, chunk[common.TAG_FLD])
+		}
+	}
+}
 
 type stubExtractorTagChat struct {
 	responses map[string]string
@@ -57,7 +118,7 @@ func TestExtractorTags_NoTagFileID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("expected 1 chunk, got %d", len(chunks))
 	}
@@ -80,7 +141,7 @@ func TestExtractorTags_NoLLMID(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if _, ok := chunks[0][common.TAG_FLD]; ok {
 		t.Fatal("tag_feas should not be set without tag_file_id")
 	}
@@ -110,7 +171,7 @@ func TestExtractorTags_WithKeywords(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if chunks[0][common.TAG_FLD] != nil {
 		t.Fatal("tag_feas should not be set without tag_file_id")
 	}
@@ -208,7 +269,7 @@ func TestTagVocabularyFromTagFileID_RejectsForeignTenantFile(t *testing.T) {
 
 	// A dataset whose tenant does not own the file must be denied, and must not
 	// get the bytes.
-	vocab, err := TagVocabularyFromTagFileID(t.Context(), fileID, attackerTenant)
+	vocab, err := TagVocabularyFromTagFileID(t.Context(), dao.DB, fileID, attackerTenant)
 	if err == nil {
 		t.Fatalf("IDOR: foreign tenant read the tag source file, vocab=%v", vocab)
 	}
@@ -217,12 +278,12 @@ func TestTagVocabularyFromTagFileID_RejectsForeignTenantFile(t *testing.T) {
 	}
 
 	// An empty owner tenant fails closed as well.
-	if _, err := TagVocabularyFromTagFileID(t.Context(), fileID, ""); err == nil {
+	if _, err := TagVocabularyFromTagFileID(t.Context(), dao.DB, fileID, ""); err == nil {
 		t.Fatal("empty owner tenant must fail closed")
 	}
 
 	// The owning tenant still gets the vocabulary.
-	vocab, err = TagVocabularyFromTagFileID(t.Context(), fileID, ownerTenant)
+	vocab, err = TagVocabularyFromTagFileID(t.Context(), dao.DB, fileID, ownerTenant)
 	if err != nil {
 		t.Fatalf("owner tenant load failed: %v", err)
 	}
@@ -234,7 +295,7 @@ func TestTagVocabularyFromTagFileID_RejectsForeignTenantFile(t *testing.T) {
 	// file's ParentID is never compared against the referencing dataset), so any
 	// number of datasets in ownerTenant can point at this same tag source file —
 	// each passes its own dataset tenant (kb.TenantID) here.
-	shared, err := TagVocabularyFromTagFileID(t.Context(), fileID, ownerTenant)
+	shared, err := TagVocabularyFromTagFileID(t.Context(), dao.DB, fileID, ownerTenant)
 	if err != nil {
 		t.Fatalf("a second dataset in the same tenant must resolve the shared file: %v", err)
 	}

@@ -194,6 +194,54 @@ func TestSendEvent_NotInAgentExec(t *testing.T) {
 	}
 }
 
+type sendEventBeforeAgentMiddleware struct {
+	BaseMiddleware[*schema.Message]
+	err      error
+	typedErr error
+}
+
+func (m *sendEventBeforeAgentMiddleware) BeforeAgent(ctx context.Context, rc *ReActAgentContext) (context.Context, *ReActAgentContext, error) {
+	m.err = SendEvent(ctx, EventFromMessage(schema.AssistantMessage("middleware event"), nil, schema.RoleAssistant, ""))
+	m.typedErr = TypedSendEvent[*schema.Message](ctx, EventFromMessage(schema.AssistantMessage("typed middleware event"), nil, schema.RoleAssistant, ""))
+	return ctx, rc, nil
+}
+
+func TestSendEventInsideReActExecution(t *testing.T) {
+	model := &mockModel{}
+	model.addResp("model response")
+	mw := &sendEventBeforeAgentMiddleware{}
+	agent := NewReActAgent(&ReActConfig[*schema.Message]{
+		Model:       model,
+		Middlewares: []TypedReActMiddleware[*schema.Message]{mw, NewEventSenderModelWrapper[*schema.Message]()},
+	})
+	runner := NewTypedRunner(RunnerConfig[*schema.Message]{Agent: agent})
+	iter := runner.Run(t.Context(), []*schema.Message{schema.UserMessage("run")})
+	events := drainAgentEvents(t, iter)
+	if mw.err != nil {
+		t.Fatalf("SendEvent inside ReAct middleware: %v", mw.err)
+	}
+	if mw.typedErr != nil {
+		t.Fatalf("TypedSendEvent inside ReAct middleware: %v", mw.typedErr)
+	}
+	wanted := map[string]bool{
+		"middleware event":       false,
+		"typed middleware event": false,
+		"model response":         false,
+	}
+	for _, event := range events {
+		if event.Output != nil && event.Output.MessageOutput != nil && event.Output.MessageOutput.Message != nil {
+			if _, ok := wanted[event.Output.MessageOutput.Message.Content]; ok {
+				wanted[event.Output.MessageOutput.Message.Content] = true
+			}
+		}
+	}
+	for content, found := range wanted {
+		if !found {
+			t.Errorf("event %q was not sent to the run", content)
+		}
+	}
+}
+
 func TestCheckGobEncodability_StringValue(t *testing.T) {
 	err := checkGobEncodability("key", "string value")
 	if err != nil {

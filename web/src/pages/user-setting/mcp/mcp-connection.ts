@@ -7,8 +7,8 @@ type Connection = {
   variables?: Record<string, unknown>;
 };
 
-// Python accepts $name/${name} and $$ escapes; Go accepts arbitrary ${name}
-// keys. Classify both interpretations without rewriting unrelated templates.
+// Resolve arbitrary ${name} and bare $name placeholders against the variables
+// to classify the header without rewriting unrelated templates.
 function isAuthorizationHeader(
   key: string,
   variables: Record<string, unknown>,
@@ -17,13 +17,12 @@ function isAuthorizationHeader(
     Object.prototype.hasOwnProperty.call(variables, name)
       ? String(variables[name])
       : match;
-  const python = key.replace(
-    /\$\$|\$\{([a-z_][a-z0-9_]*)\}|\$([a-z_][a-z0-9_]*)/gi,
-    (match, braced, plain) =>
-      match === '$$' ? '$' : lookup(match, braced ?? plain),
-  );
-  const go = key.replace(/\$\{([^}]*)\}/g, lookup);
-  return [key, python, go].some((name) =>
+  // Braced forms first, then bare $name (require a word-leading name so
+  // "$$literal" is not treated as a placeholder).
+  const resolved = key
+    .replace(/\$\{([^}]*)\}/g, lookup)
+    .replace(/\$([A-Za-z][\w ]*)/g, lookup);
+  return [key, resolved].some((name) =>
     ['authorization', 'authorization_token'].includes(name.toLowerCase()),
   );
 }

@@ -69,6 +69,7 @@ export function useGraphEntitySearch(
       }
       setSelectedNodeId(name);
       setGraphKeywords(name);
+      setSearchKeyword('');
       const entity = (selectedTemplate?.entities ?? []).find(
         (item) => getEntityDisplayName(item) === name,
       );
@@ -139,7 +140,13 @@ export function useGraphEntitySearch(
     isGraphKind,
     entityOptions,
     searchKeyword,
-    graphSelectValue: selectedEntityName || graphKeywords,
+    // Mirror the fetch driver (debouncedSearchKeyword || graphKeywords): the
+    // two keyword inputs swap whenever the result kind flips isGraphKind, so
+    // when the expandable-input channel drove the current subgraph, show its
+    // keyword — not a stale graph keyword left behind by an earlier failed
+    // Enter search.
+    graphSelectValue:
+      selectedEntityName || debouncedSearchKeyword || graphKeywords,
     highlightNodeId: selectedEntityName || null,
     handleSelectEntity,
     handleNoMatchEnter,

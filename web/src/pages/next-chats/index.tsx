@@ -2,6 +2,7 @@ import { CardContainer } from '@/components/card-container';
 import { EmptyCardType } from '@/components/empty/constant';
 import { EmptyAppCard } from '@/components/empty/empty';
 import ListFilterBar from '@/components/list-filter-bar';
+import { PrivilegeManagementDialog } from '@/ee/components/privilege-management/privilege-management-dialog';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
@@ -18,6 +19,7 @@ import { useSearchParams } from 'react-router';
 import { ChatCard } from './chat-card';
 import { useCreateChatDialog } from './hooks/use-create-chat';
 import { useRenameChat } from './hooks/use-rename-chat';
+import { useShowPrivilegeDialog } from '@/ee/pages/next-chats/use-show-privilege-dialog';
 
 export default function ChatList() {
   const {
@@ -79,6 +81,13 @@ export default function ChatList() {
     }
   }, [isCreate, handleShowCreateModal, searchParams, setSearchParams]);
 
+  const {
+    handleShowPrivilegeModal,
+    privilegeRecord,
+    hidePrivilegeModal,
+    privilegeModalVisible,
+  } = useShowPrivilegeDialog();
+
   const renameDialogProps = useMemo(() => {
     if (chatRenameVisible) {
       return {
@@ -114,14 +123,14 @@ export default function ChatList() {
 
   return (
     <>
-      {loading && !data.chats?.length ? (
+      {loading && !data?.chats?.length ? (
         <article
           className="size-full flex items-center justify-center"
           data-testid="chats-list"
         >
           <Spin size="large" />
         </article>
-      ) : data.chats?.length || searchString ? (
+      ) : data?.chats?.length || searchString ? (
         <article
           className="size-full min-w-0 flex flex-col"
           data-testid="chats-list"
@@ -143,14 +152,15 @@ export default function ChatList() {
             </ListFilterBar>
           </header>
 
-          {data.chats?.length ? (
+          {data?.chats?.length ? (
             <>
               <CardContainer className="flex-1 overflow-auto px-5">
-                {data.chats.map((x) => (
+                {data?.chats.map((x) => (
                   <ChatCard
                     key={x.id}
                     data={x}
                     showChatRenameModal={showChatRenameModal}
+                    showPrivilegeModal={handleShowPrivilegeModal(x)}
                   />
                 ))}
               </CardContainer>
@@ -194,6 +204,12 @@ export default function ChatList() {
 
       {renameDialogProps && (
         <RenameDialog {...renameDialogProps}></RenameDialog>
+      )}
+      {privilegeModalVisible && (
+        <PrivilegeManagementDialog
+          hideModal={hidePrivilegeModal}
+          initialValues={privilegeRecord}
+        ></PrivilegeManagementDialog>
       )}
     </>
   );

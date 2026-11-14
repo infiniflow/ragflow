@@ -4,6 +4,7 @@
     "doc_parse": "file_parse",
     "task": "tasks"
   },
+  "url_hint": "http://host.docker.internal:9987",
   "class": "local",
   "models": [
     {

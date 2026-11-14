@@ -3,11 +3,7 @@
 package pdf
 
 import (
-	"bytes"
-	"encoding/base64"
 	"encoding/json"
-	"image"
-	_ "image/png"
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
@@ -15,6 +11,7 @@ import (
 	"testing"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	"ragflow/internal/parser/tableutil"
 )
 
 // ── golden-file helpers ────────────────────────────────────────────────────
@@ -211,45 +208,6 @@ func TestIntegration_TableStructure(t *testing.T) {
 						i, ri, ci, goldenCell, gotCell)
 				}
 			}
-		}
-	}
-}
-
-// TestIntegration_TableImageB64 verifies table ImageB64 is valid base64 PNG.
-func TestIntegration_TableImageB64(t *testing.T) {
-	client := mustConnectInProcessAnalyzer(t)
-	data := mustReadPDF(t, "06_table_content.pdf")
-
-	cfg := pdf.DefaultParserConfig()
-	p := NewParser(cfg)
-	result, err := p.Parse(t.Context(), data, client)
-	if err != nil {
-		t.Fatalf("Parse: %v", err)
-	}
-	if len(result.Tables) == 0 {
-		t.Skip("DLA did not detect any tables in fixture — skipping image check")
-	}
-
-	for i, tbl := range result.Tables {
-		if tbl.ImageB64 == "" {
-			t.Errorf("table[%d] ImageB64 is empty", i)
-			continue
-		}
-		// Verify base64 decodable.
-		raw, err := base64.StdEncoding.DecodeString(tbl.ImageB64)
-		if err != nil {
-			t.Errorf("table[%d] ImageB64: not valid base64: %v", i, err)
-			continue
-		}
-		// Verify it's a valid image.
-		img, _, err := image.Decode(bytes.NewReader(raw))
-		if err != nil {
-			t.Errorf("table[%d] ImageB64: not a valid image: %v", i, err)
-			continue
-		}
-		b := img.Bounds()
-		if b.Dx() <= 0 || b.Dy() <= 0 {
-			t.Errorf("table[%d] ImageB64: zero-size image %dx%d", i, b.Dx(), b.Dy())
 		}
 	}
 }
@@ -718,4 +676,74 @@ func TestE2E_ParseAndPostProcess(t *testing.T) {
 
 	figs := result.Figures()
 	t.Logf("figures: %d", len(figs))
+}
+
+func TestManualAN0590TableRows(t *testing.T) {
+	path := os.Getenv("AN0590_PDF")
+	if path == "" {
+		t.Skip("AN0590_PDF required")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := NewEngine(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer engine.Close()
+	cfg := pdf.DefaultParserConfig()
+	result, err := NewParser(cfg).ParseRaw(t.Context(), engine, mustConnectInProcessAnalyzer(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	functions, registers := 0, 0
+	for _, s := range result.Sections {
+		if s.LayoutType == pdf.LayoutTypeTable && strings.Contains(s.Text, ">SIMA6<") {
+			registers++
+			td, err := tableutil.ParseTableHTML(s.Text)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(td.Grid) != 4 {
+				t.Fatalf("register rows = %d, want 4", len(td.Grid))
+			}
+			for _, row := range td.Grid {
+				if len(row) != 9 {
+					t.Fatalf("register columns = %d, want 9", len(row))
+				}
+			}
+		}
+		if s.LayoutType != pdf.LayoutTypeTable || !strings.Contains(s.Text, "函数名") {
+			continue
+		}
+		functions++
+		td, err := tableutil.ParseTableHTML(s.Text)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(td.Grid) != 6 {
+			t.Fatalf("function rows = %d, want 6", len(td.Grid))
+		}
+		want := []string{"函数名", "功能", "Buffer_data", "WriteAddr", "NumByteToWrite", "输出"}
+		if strings.Contains(s.Text, "I2C_EEPROM_BufferRead") {
+			want[2], want[3], want[4] = "Receive_buffer", "ReadAddr", "NumByteToRead"
+		}
+		for r, row := range td.Grid {
+			var text strings.Builder
+			for _, cell := range row {
+				text.WriteString(cell.Text)
+			}
+			if !strings.Contains(text.String(), want[r]) {
+				t.Errorf("row %d = %q, want %q", r, text.String(), want[r])
+			}
+		}
+		t.Log(s.Text)
+	}
+	if functions != 3 {
+		t.Fatalf("function tables = %d, want 3", functions)
+	}
+	if registers != 1 {
+		t.Fatalf("register tables = %d, want 1", registers)
+	}
 }

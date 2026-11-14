@@ -61,10 +61,15 @@ type retrievalArgs struct {
 	SimilarityThreshold      *float64       `json:"similarity_threshold,omitempty"`
 	RerankID                 string         `json:"rerank_id,omitempty"`
 	CrossLanguages           []string       `json:"cross_languages,omitempty"`
-	TOCEnhance               bool           `json:"toc_enhance,omitempty"`
 	MetaDataFilter           map[string]any `json:"meta_data_filter,omitempty"`
 	RetrievalFrom            string         `json:"retrieval_from,omitempty"`
 	EmptyResponse            string         `json:"empty_response,omitempty"`
+	// FunctionName is the agent-visible tool name from the DSL. It is not
+	// exposed to the model as part of the tool arguments.
+	FunctionName string `json:"-"`
+	// Description is the agent-visible tool description from the DSL. It is
+	// not exposed to the model as part of the tool arguments.
+	Description string `json:"-"`
 }
 
 // retrievalResult is the JSON shape returned to the model. The `_ERROR`
@@ -94,6 +99,8 @@ type chunkPayload struct {
 // surfaces ErrRetrievalServiceMissing.
 type RetrievalTool struct {
 	defaults retrievalArgs
+	name     string
+	desc     string
 }
 
 // NewRetrievalTool returns a RetrievalTool implementing eino's
@@ -108,15 +115,23 @@ func NewRetrievalToolWithDefaults(defaults retrievalArgs) *RetrievalTool {
 	if len(defaults.DatasetIDs) == 0 && len(defaults.KBIDs) != 0 {
 		defaults.DatasetIDs = append([]string(nil), defaults.KBIDs...)
 	}
-	return &RetrievalTool{defaults: defaults}
+	name := defaults.FunctionName
+	if strings.TrimSpace(name) == "" {
+		name = retrievalToolName
+	}
+	desc := defaults.Description
+	if strings.TrimSpace(desc) == "" {
+		desc = retrievalToolDescription
+	}
+	return &RetrievalTool{defaults: defaults, name: name, desc: desc}
 }
 
 // Info returns the tool's metadata for the chat model. The schema mirrors
 // the Python RetrievalParam ToolMeta (plan, field alignment).
 func (r *RetrievalTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 	return &schema.ToolInfo{
-		Name: retrievalToolName,
-		Desc: retrievalToolDescription,
+		Name: r.name,
+		Desc: r.desc,
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"query": {
 				Type:     schema.String,
@@ -194,6 +209,9 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 	// ErrRetrievalServiceMissing; once a real impl is installed
 	// via SetRetrievalService (or SetSimpleRetrievalService for
 	// dev), the chunks flow through normally.
+	//
+	// Agentic: no dense-only rescue — a row the query's own words never
+	// matched is not evidence the model asked for.
 	searchReq := RetrievalRequest{
 		Query:                    args.Query,
 		DatasetIDs:               args.DatasetIDs,
@@ -204,9 +222,9 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		KeywordsSimilarityWeight: args.KeywordsSimilarityWeight,
 		UseKG:                    args.UseKG,
 		SimilarityThreshold:      args.SimilarityThreshold,
+		AllowDenseFallback:       new(false),
 		RerankID:                 args.RerankID,
 		CrossLanguages:           append([]string(nil), args.CrossLanguages...),
-		TOCEnhance:               args.TOCEnhance,
 		MetaDataFilter:           cloneStringAnyMap(args.MetaDataFilter),
 		RetrievalFrom:            args.RetrievalFrom,
 		UserID:                   args.UserID,
@@ -252,7 +270,7 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 	// citation grounding call can read them. The recording is
 	// best-effort — when the canvas state is not
 	// attached (e.g. unit tests), we skip silently.
-	if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil && len(chunks) > 0 && args.RetrievalFrom == "dataset" {
+	if state, sErr := runtime.GetStateFromContext(ctx); sErr == nil && state != nil && len(chunks) > 0 && args.RetrievalFrom == "dataset" {
 		state.SetRetrievalReferences(referenceChunksFromRetrieval(chunks), referenceDocAggsFromRetrieval(chunks))
 	}
 	result, err := stubJSONWithErr(out)
@@ -311,7 +329,6 @@ func (r *RetrievalTool) mergeDefaults(args retrievalArgs) retrievalArgs {
 	if args.RetrievalFrom == "" && len(args.MemoryIDs) > 0 {
 		args.RetrievalFrom = "memory"
 	}
-	args.TOCEnhance = args.TOCEnhance || r.defaults.TOCEnhance
 	args.UseKG = args.UseKG || r.defaults.UseKG
 	return args
 }
@@ -328,7 +345,7 @@ func cloneStringAnyMap(src map[string]any) map[string]any {
 }
 
 func resolveRetrievalQuery(ctx context.Context, query string) (string, error) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return query, nil
 	}
@@ -362,7 +379,7 @@ func resolveRetrievalUserID(ctx context.Context, userID string) (string, error) 
 	if trimmed == "" {
 		return "", nil
 	}
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return trimmed, nil
 	}
@@ -388,7 +405,7 @@ func resolveRetrievalUserID(ctx context.Context, userID string) (string, error) 
 }
 
 func resolveRetrievalDatasetIDs(ctx context.Context, datasetIDs []string) ([]string, error) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return compactStrings(datasetIDs), nil
 	}
@@ -429,7 +446,7 @@ func resolveRetrievalFilter(ctx context.Context, filter map[string]any) (map[str
 	if filter == nil {
 		return nil, nil
 	}
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return cloneStringAnyMap(filter), nil
 	}
@@ -501,14 +518,14 @@ func renderMemoryChunks(chunks []RetrievalChunk) string {
 }
 
 func retrievalTenantID(ctx context.Context) string {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return ""
 	}
-	if tenantID, _ := state.Sys["tenant_id"].(string); tenantID != "" {
+	if tenantID, _ := state.GetSysString("tenant_id"); tenantID != "" {
 		return tenantID
 	}
-	userID, _ := state.Sys["user_id"].(string)
+	userID, _ := state.GetSysString("user_id")
 	return userID
 }
 

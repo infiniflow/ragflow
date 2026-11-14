@@ -20,14 +20,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/permission"
 	"ragflow/internal/service/nav"
 )
 
@@ -131,9 +133,11 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 	if args.Topic == "" {
 		return "", fmt.Errorf("dataset_navigation: topic is required")
 	}
-	// Per-request max_docs overrides the node default; default to a sane cap.
+	// Per-request max_docs may narrow the budget; it never raises it. The model's
+	// argument JSON is not schema-validated, so the ceiling must be enforced here,
+	// after mergeDefaults, to cover both the request value and the node default.
 	maxDocs := args.MaxDocs
-	if maxDocs <= 0 {
+	if maxDocs <= 0 || maxDocs > datasetNavigationDefaultMaxDocs {
 		maxDocs = datasetNavigationDefaultMaxDocs
 	}
 
@@ -151,6 +155,9 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 			NotFound: true,
 			Error:    "dataset navigation requires a tenant and dataset context",
 		}), nil
+	}
+	if err := CheckCanvasDependencies(ctx, dao.DB, permission.ResourceKindDataset, datasetIDs); err != nil {
+		return "", err
 	}
 
 	// Route RELEVANT docs by querying the nav tree with the topic (semantic KNN).
@@ -232,9 +239,11 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 			TenantID:                 tenantID,
 			DocScope:                 docScope,
 			RetrievalFrom:            "dataset",
+			// Agentic, so no dense-only rescue.
+			AllowDenseFallback: new(false),
 		})
 		if err != nil {
-			log.Printf("[Dataset navigation] content-recall retrieval failed: %v", err)
+			common.Warn("dataset navigation: content-recall retrieval failed", zap.Error(err))
 		} else {
 			// Python :557-563 — the retrieval's doc_aggs read in order; the ES
 			// aggregation orders by hit count descending, so the same order is
@@ -252,7 +261,7 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 				counts[did]++
 			}
 			sort.SliceStable(order, func(i, j int) bool { return counts[order[i]] > counts[order[j]] })
-			log.Printf("[Dataset navigation] Content recall found %d candidate doc(s).", len(order))
+			common.Info("dataset navigation: content recall found candidates", zap.Int("docs", len(order)))
 			for _, did := range order {
 				collect(did)
 			}

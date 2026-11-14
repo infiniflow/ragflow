@@ -147,8 +147,12 @@ func TestDistributeTokenCountSumsToProviderUsage(t *testing.T) {
 	limiter := tokenizer.NewExactLimiter(tokenizer.CountCL100K())
 	texts := []string{strings.Repeat("word ", 10), strings.Repeat("word ", 40), strings.Repeat("word ", 20)}
 	embeds := make([]models.EmbeddingData, len(texts))
+	own := make([]int, len(texts))
+	for i, t := range texts {
+		own[i] = limiter.Counter().Count(t)
+	}
 
-	got := distributeTokenCount(embeds, 100, texts, limiter)
+	got := distributeTokenCount(embeds, 100, own)
 	sum := 0
 	largest, largestIdx := -1, -1
 	for i, v := range got {
@@ -169,11 +173,14 @@ func TestDistributeTokenCountFallsBackToOwnCountWithoutUsage(t *testing.T) {
 	limiter := tokenizer.NewExactLimiter(tokenizer.CountCL100K())
 	texts := []string{"alpha beta", "gamma delta epsilon zeta"}
 	embeds := make([]models.EmbeddingData, len(texts))
-	got := distributeTokenCount(embeds, 0, texts, limiter)
+	own := make([]int, len(texts))
+	for i, t := range texts {
+		own[i] = limiter.Counter().Count(t)
+	}
+	got := distributeTokenCount(embeds, 0, own)
 	for i := range got {
-		want := limiter.Counter().Count(texts[i])
-		if got[i].TokenCount != want {
-			t.Errorf("input %d token count = %d, want our own count %d", i, got[i].TokenCount, want)
+		if got[i].TokenCount != own[i] {
+			t.Errorf("input %d token count = %d, want our own count %d", i, got[i].TokenCount, own[i])
 		}
 	}
 }

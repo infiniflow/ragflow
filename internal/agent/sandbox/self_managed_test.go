@@ -17,6 +17,7 @@
 package sandbox
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -34,7 +35,6 @@ func newSelfManagedForTest(endpoint string) *SelfManagedProvider {
 	return &SelfManagedProvider{
 		endpoint:     endpoint,
 		timeout:      5 * time.Second,
-		poolSize:     3,
 		helper:       NewHTTPClient(HTTPConfig{}),
 		healthHelper: NewHTTPClient(HTTPConfig{Timeout: 2 * time.Second}),
 	}
@@ -553,12 +553,8 @@ func handleRunWithResult(t *testing.T, w http.ResponseWriter, _ *http.Request, s
 	_ = json.NewEncoder(w).Encode(resp)
 }
 
-// TestNewSelfManagedProviderFromConfig_CanonicalPythonSchema pins the
-// canonical lowercase admin-panel settings shape that the Python provider
-// persists and reads (`sandbox.self_managed`: endpoint, timeout,
-// max_retries, pool_size, api_token). The Go provider must map the same
-// schema so a standard settings row configures both runtimes identically.
-func TestNewSelfManagedProviderFromConfig_CanonicalPythonSchema(t *testing.T) {
+// Retired keys in stored settings must not affect connection settings.
+func TestNewSelfManagedProviderFromConfig_LegacySettings(t *testing.T) {
 	t.Parallel()
 	p := newSelfManagedProviderFromConfig(map[string]any{
 		"endpoint":    "https://manager.example:9385/",
@@ -567,17 +563,14 @@ func TestNewSelfManagedProviderFromConfig_CanonicalPythonSchema(t *testing.T) {
 		"pool_size":   float64(9),
 		"api_token":   "settings-secret",
 	})
-	if p.helper.maxAttempts != 5 {
-		t.Errorf("helper maxAttempts = %d, want 5 from settings max_retries", p.helper.maxAttempts)
+	if p.helper.maxAttempts != 1 {
+		t.Errorf("execution maxAttempts = %d, want 1", p.helper.maxAttempts)
 	}
 	if p.endpoint != "https://manager.example:9385" {
 		t.Errorf("endpoint = %q, want trailing slash stripped", p.endpoint)
 	}
 	if p.timeout != 20*time.Second {
 		t.Errorf("timeout = %v, want 20s", p.timeout)
-	}
-	if p.poolSize != 9 {
-		t.Errorf("poolSize = %d, want 9", p.poolSize)
 	}
 	if p.apiToken != "settings-secret" {
 		t.Errorf("apiToken = %q, want settings-secret", p.apiToken)
@@ -675,7 +668,6 @@ func TestNewSelfManagedProvider_EnvOnlyFallbacks(t *testing.T) {
 	t.Setenv("SANDBOX_EXECUTOR_MANAGER_TIMEOUT", "15s")
 	t.Setenv("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE", "11")
 	t.Setenv("SANDBOX_EXECUTOR_MANAGER_MAX_RETRIES", "6")
-	// asserted via p.helper.maxAttempts below
 	t.Setenv("SANDBOX_BASE_PYTHON_IMAGE", "reg.example.com/envpy:2")
 	t.Setenv("SANDBOX_EXECUTOR_MANAGER_API_TOKEN", "env-only-secret")
 
@@ -686,17 +678,14 @@ func TestNewSelfManagedProvider_EnvOnlyFallbacks(t *testing.T) {
 	if p.timeout != 15*time.Second {
 		t.Errorf("timeout = %v, want 15s from env", p.timeout)
 	}
-	if p.poolSize != 11 {
-		t.Errorf("poolSize = %d, want 11 from env", p.poolSize)
-	}
 	if p.baseImages["python"] != "reg.example.com/envpy:2" {
 		t.Errorf("python baseImage = %q, want env value", p.baseImages["python"])
 	}
 	if p.apiToken != "env-only-secret" {
 		t.Errorf("apiToken = %q, want env value", p.apiToken)
 	}
-	if p.helper.maxAttempts != 6 {
-		t.Errorf("helper maxAttempts = %d, want 6 from env max retries", p.helper.maxAttempts)
+	if p.helper.maxAttempts != 1 {
+		t.Errorf("execution maxAttempts = %d, want 1", p.helper.maxAttempts)
 	}
 }
 
@@ -711,10 +700,102 @@ func TestNewSelfManagedProviderFromConfig_SettingsBeatEnv(t *testing.T) {
 		"pool_size":         float64(4),
 		"base_python_image": "reg.example.com/settingspy:3",
 	})
-	if p.poolSize != 4 {
-		t.Errorf("poolSize = %d, want settings value 4 to beat env 11", p.poolSize)
-	}
 	if p.baseImages["python"] != "reg.example.com/settingspy:3" {
 		t.Errorf("python baseImage = %q, want settings value to beat env", p.baseImages["python"])
+	}
+}
+
+// selfManagedErrorServer answers /run with the given status and body size,
+// padding the body with a recognisable filler byte.
+func selfManagedErrorServer(t *testing.T, status, bodyBytes int, filler byte) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(status)
+		if bodyBytes == 0 {
+			return
+		}
+		chunk := bytes.Repeat([]byte{filler}, 32*1024)
+		for written := 0; written < bodyBytes; {
+			n := min(len(chunk), bodyBytes-written)
+			if _, err := w.Write(chunk[:n]); err != nil {
+				return
+			}
+			written += n
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func selfManagedRunFailing(t *testing.T, srv *httptest.Server) error {
+	t.Helper()
+	p := newSelfManagedForTest(srv.URL)
+	p.initialized = true // bypass probe, as the other self_managed tests do
+	_, err := p.ExecuteCode(t.Context(), &SandboxInstance{
+		InstanceID: "x", Provider: ProviderSelfManaged,
+	}, "print(1)", "python", 10, nil)
+	if err == nil {
+		t.Fatal("ExecuteCode succeeded, want an error from the non-200 response")
+	}
+	return err
+}
+
+// TestSelfManaged_ErrorBodyIsBounded is the regression test for the failure
+// path draining the executor_manager's body without a limit. That endpoint is
+// operator-configured and reached over the network, so a compromised or
+// misbehaving one could otherwise make this process buffer — and then log —
+// an arbitrarily large body. Before the fix a 32 MiB body produced a 32 MiB
+// error string.
+func TestSelfManaged_ErrorBodyIsBounded(t *testing.T) {
+	const flood = 32 << 20
+	srv := selfManagedErrorServer(t, http.StatusInternalServerError, flood, 'E')
+	err := selfManagedRunFailing(t, srv)
+
+	// Budget for the quoted body plus the error prefix and the truncation
+	// marker; anything larger means the drain is still unbounded.
+	const overhead = 256
+	if got := len(err.Error()); got > selfManagedMaxErrorBody+overhead {
+		t.Errorf("error carries %d bytes for a %d-byte body, want at most %d: the drain is unbounded",
+			got, flood, selfManagedMaxErrorBody+overhead)
+	}
+	if !strings.Contains(err.Error(), "truncated") {
+		t.Error("error does not report that the body was truncated, so a cut body reads as complete")
+	}
+	if !strings.Contains(err.Error(), "returned 500") {
+		t.Errorf("error = %v, want it to keep the status code", err)
+	}
+}
+
+// TestSelfManaged_SmallErrorBodyIsPreserved keeps the bound from mangling the
+// ordinary case: a body at or under the cap is quoted verbatim with no
+// truncation marker.
+func TestSelfManaged_SmallErrorBodyIsPreserved(t *testing.T) {
+	const bodyBytes = 4096
+	srv := selfManagedErrorServer(t, http.StatusBadGateway, bodyBytes, 'S')
+	err := selfManagedRunFailing(t, srv)
+
+	if strings.Contains(err.Error(), "truncated") {
+		t.Errorf("error = %v, want no truncation marker for a %d-byte body", err, bodyBytes)
+	}
+	if !strings.Contains(err.Error(), strings.Repeat("S", bodyBytes)) {
+		t.Errorf("error = %v, want the whole body quoted", err)
+	}
+	if !strings.Contains(err.Error(), "returned 502") {
+		t.Errorf("error = %v, want it to keep the status code", err)
+	}
+}
+
+// TestSelfManaged_ErrorBodyExactlyAtCapIsNotTruncated pins the boundary: a
+// body exactly at the cap is complete, so the "> cap" test must not fire on
+// the extra byte the drain reads to detect overflow.
+func TestSelfManaged_ErrorBodyExactlyAtCapIsNotTruncated(t *testing.T) {
+	srv := selfManagedErrorServer(t, http.StatusInternalServerError, selfManagedMaxErrorBody, 'B')
+	err := selfManagedRunFailing(t, srv)
+
+	if strings.Contains(err.Error(), "truncated") {
+		t.Errorf("error = %v, want no truncation for a body exactly at the cap", err)
+	}
+	if !strings.Contains(err.Error(), strings.Repeat("B", selfManagedMaxErrorBody)) {
+		t.Error("error does not carry the whole body at exactly the cap")
 	}
 }

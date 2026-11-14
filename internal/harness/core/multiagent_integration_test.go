@@ -395,7 +395,7 @@ func TestMultiAgent_ErrorRecovery(t *testing.T) {
 	case *planExecState:
 		msgCount = len(s.Messages)
 	case map[string]interface{}:
-		if msgs, ok := s["Messages"].([]interface{}); ok {
+		if msgs, ok := s["Messages"].([]string); ok {
 			msgCount = len(msgs)
 		}
 	}

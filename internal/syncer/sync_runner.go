@@ -47,6 +47,9 @@ func checkTaskCanceled(taskDAO *dao.SyncTaskDAO, ctx context.Context, taskID str
 		return err
 	}
 	canceled, err := taskDAO.IsTaskCanceled(ctx, taskID)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
 	if err != nil {
 		return err
 	}

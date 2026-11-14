@@ -18,8 +18,8 @@ package entity
 
 import "encoding/json"
 
-// API4Conversation API for conversation model. Message and Reference are
-// hydrated from their ordered child tables.
+// API4Conversation API for conversation model. Messages are
+// hydrated from the ordered message table.
 type API4Conversation struct {
 	ID           string          `gorm:"column:id;primaryKey;size:32" json:"id"`
 	Name         *string         `gorm:"column:name;size:255" json:"name,omitempty"`
@@ -27,7 +27,6 @@ type API4Conversation struct {
 	UserID       string          `gorm:"column:user_id;size:255;not null;index" json:"user_id"`
 	ExpUserID    *string         `gorm:"column:exp_user_id;size:255;index" json:"exp_user_id,omitempty"`
 	Message      json.RawMessage `gorm:"-" json:"message,omitempty"`
-	Reference    json.RawMessage `gorm:"-" json:"reference,omitempty"`
 	Tokens       int             `gorm:"column:tokens" json:"tokens"`
 	Source       *string         `gorm:"column:source;size:16" json:"source,omitempty"`
 	DSL          JSONMap         `gorm:"column:dsl;type:longtext" json:"dsl,omitempty"`

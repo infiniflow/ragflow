@@ -79,7 +79,7 @@ func (p *variableAggregatorParam) Update(conf map[string]any) error {
 	out := make([]map[string]any, 0, len(groupsList))
 	for i, raw := range groupsList {
 		g, ok := raw.(map[string]any)
-		if !ok {
+		if !ok || g == nil {
 			return &ParamError{Field: fmt.Sprintf("groups[%d]", i), Reason: "must be a map"}
 		}
 		out = append(out, g)
@@ -90,26 +90,7 @@ func (p *variableAggregatorParam) Update(conf map[string]any) error {
 
 // Check performs shallow validation. Mirrors VariableAggregatorParam.check.
 func (p *variableAggregatorParam) Check() error {
-	if len(p.Groups) == 0 {
-		return &ParamError{Field: "groups", Reason: "must not be empty"}
-	}
-	for i, g := range p.Groups {
-		name, _ := g["group_name"].(string)
-		if name == "" {
-			return &ParamError{Field: fmt.Sprintf("groups[%d].group_name", i), Reason: "must not be empty"}
-		}
-		vars, ok := g["variables"]
-		if !ok {
-			return &ParamError{Field: fmt.Sprintf("groups[%d].variables", i), Reason: "must be a list"}
-		}
-		switch vars.(type) {
-		case []any, []map[string]any:
-			// accept both shapes
-		default:
-			return &ParamError{Field: fmt.Sprintf("groups[%d].variables", i), Reason: "must be a list"}
-		}
-	}
-	return nil
+	return validateVariableAggregatorGroups(componentNameVariableAggregator, p.AsDict(), false)
 }
 
 // AsDict returns the params as a plain map.
@@ -137,7 +118,7 @@ func NewVariableAggregatorComponent(params map[string]any) (Component, error) {
 		return nil, fmt.Errorf("VariableAggregator: param update: %w", err)
 	}
 	if err := p.Check(); err != nil {
-		return nil, fmt.Errorf("VariableAggregator: param check: %w", err)
+		return nil, runtime.NewUserFacingError(err.Error())
 	}
 	return &VariableAggregatorComponent{
 		name:  componentNameVariableAggregator,
@@ -163,7 +144,7 @@ func (v *VariableAggregatorComponent) Name() string { return v.name }
 // per-invocation. When inputs["variables"] is absent the static param
 // config is used unchanged.
 func (v *VariableAggregatorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("VariableAggregator: %w", err)
 	}

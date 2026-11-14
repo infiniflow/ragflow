@@ -1,0 +1,9 @@
+.modelInputs:global(.json-view) {
+  color: rgb(var(--text-primary));
+  --json-property: rgb(var(--text-primary));
+  --json-index: rgb(var(--text-secondary));
+  --json-number: rgb(var(--text-primary));
+  --json-string: rgb(var(--text-primary));
+  --json-boolean: rgb(var(--text-primary));
+  --json-null: rgb(var(--text-primary));
+}

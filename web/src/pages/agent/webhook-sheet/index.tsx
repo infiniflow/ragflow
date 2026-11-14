@@ -56,7 +56,9 @@ const WebhookSheet = ({ hideModal }: RunSheetProps) => {
         </SheetHeader>
 
         <div className="space-y-2">
-          <div className="text-sm font-medium">Webhook URL:</div>
+          <div className="text-sm font-medium">
+            {t('flow.webhook.testEndpoint')}:
+          </div>
           <CopyToClipboardWithText text={text}></CopyToClipboardWithText>
         </div>
 

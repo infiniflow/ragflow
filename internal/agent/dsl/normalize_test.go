@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -30,6 +31,20 @@ import (
 func fixturesDir(t *testing.T) string {
 	t.Helper()
 	return filepath.Join("testdata")
+}
+
+func TestNormalizeForRunDoesNotMutateNestedDSLValues(t *testing.T) {
+	in := map[string]any{
+		"globals":   map[string]any{"nested": map[string]any{"value": "{IterationItem:x@item}"}},
+		"variables": []any{map[string]any{"value": "{IterationItem:x@index}"}},
+	}
+	original := deepCopyDSL(in)
+
+	_ = NormalizeForRun(in)
+
+	if !reflect.DeepEqual(in, original) {
+		t.Fatalf("NormalizeForRun mutated nested input: got %#v, want %#v", in, original)
+	}
 }
 
 // loadFixture reads a JSON file from internal/agent/dsl/testdata into a
@@ -708,4 +723,26 @@ func equalStringSlices(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+// TestDeepCopyDSL_ByteSliceSafe guards the contract of the deep copy used by
+// DSL normalization: []byte values must be copied defensively rather than
+// aliasing the caller's backing array. The local copy in normalize.go must
+// route through common.DeepCopyMap (which copies []byte), not share it by
+// reference, so a later mutation of the copy can never corrupt the caller's
+// original input.
+func TestDeepCopyDSL_ByteSliceSafe(t *testing.T) {
+	src := []byte("secret-bytes")
+	in := map[string]any{"raw": src}
+
+	got := deepCopyDSL(in)
+	bs, ok := got["raw"].([]byte)
+	if !ok {
+		t.Fatalf("[]byte value changed type: %T", got["raw"])
+	}
+	bs[0] = 'X'
+
+	if src[0] != 's' {
+		t.Fatal("deepCopyDSL shares the []byte backing array with the original input")
+	}
 }

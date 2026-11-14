@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -39,6 +40,9 @@ import (
 func TestAgentRoutesRegistered(t *testing.T) {
 	eng := gin.New()
 	g := eng.Group("/api/v1/agents")
+	g.Use(func(c *gin.Context) {
+		c.AbortWithStatus(http.StatusUnauthorized)
+	})
 	RegisterAgentRoutes(g, &handler.AgentHandler{})
 
 	cases := []struct {
@@ -52,22 +56,50 @@ func TestAgentRoutesRegistered(t *testing.T) {
 		{http.MethodDelete, "/api/v1/agents/abc"},
 		{http.MethodPost, "/api/v1/agents/abc/run"},
 		{http.MethodPost, "/api/v1/agents/abc/publish"},
+		{http.MethodGet, "/api/v1/agents/versions?category=dataflow"},
 		{http.MethodGet, "/api/v1/agents/abc/versions"},
 		{http.MethodGet, "/api/v1/agents/abc/versions/v1"},
 		{http.MethodDelete, "/api/v1/agents/abc/versions/v1"},
+		{http.MethodPost, "/api/v1/agents/abc/versions/v1/apply"},
 		{http.MethodPost, "/api/v1/agents/abc/reset"},
+		{http.MethodPost, "/api/v1/agents/abc/webhook/credentials"},
+		{http.MethodDelete, "/api/v1/agents/abc/webhook/credentials"},
 	}
-	if len(cases) != 11 {
-		t.Fatalf("expected 11 routes, listed %d", len(cases))
+	foundCatalog := false
+	for _, route := range eng.Routes() {
+		if route.Method == http.MethodGet && route.Path == "/api/v1/agents/versions" && strings.HasSuffix(route.Handler, ".ListVersionCatalog-fm") {
+			foundCatalog = true
+		}
+	}
+	if !foundCatalog {
+		t.Fatal("static version catalog route missing")
+	}
+	if len(cases) != 15 {
+		t.Fatalf("expected 15 routes, listed %d", len(cases))
 	}
 	for _, c := range cases {
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(c.method, c.path, nil)
 		eng.ServeHTTP(w, req)
-		// The handler dereferences a nil AgentService so a non-404 here
-		// would panic; what we care about is "not NoRoute 404".
-		if w.Code == http.StatusNotFound {
-			t.Errorf("route %s %s returned 404 — RegisterAgentRoutes did not wire it", c.method, c.path)
+		// The auth middleware stops the request before handler dependencies
+		// are reached. Registered routes return 401; unmatched routes return 404.
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("route %s %s returned %d, want %d", c.method, c.path, w.Code, http.StatusUnauthorized)
+		}
+	}
+}
+
+func TestPublicAgentWebhookRouteRegistered(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	engine := gin.New()
+	RegisterPublicAgentWebhookRoutes(engine.Group("/api/v1/agents"), &handler.AgentHandler{})
+
+	for _, method := range []string{http.MethodPost, http.MethodGet, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodHead} {
+		response := httptest.NewRecorder()
+		request := httptest.NewRequest(method, "/api/v1/agents/agent-1/webhook", nil)
+		engine.ServeHTTP(response, request)
+		if response.Code == http.StatusNotFound {
+			t.Errorf("%s production webhook route was not registered", method)
 		}
 	}
 }

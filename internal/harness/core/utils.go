@@ -9,8 +9,10 @@ import (
 // Multiple goroutines reading from the same iterator will receive each item
 // exactly once.
 type AsyncIterator[T any] struct {
-	ch   chan iterationItem[T]
-	done bool
+	ch        chan iterationItem[T]
+	stop      chan struct{}
+	done      <-chan struct{}
+	closeOnce sync.Once
 }
 
 type iterationItem[T any] struct {
@@ -19,54 +21,98 @@ type iterationItem[T any] struct {
 }
 
 func NewAsyncIterator[T any]() *AsyncIterator[T] {
-	return &AsyncIterator[T]{ch: make(chan iterationItem[T], 64)}
+	return &AsyncIterator[T]{
+		ch:   make(chan iterationItem[T], 64),
+		stop: make(chan struct{}),
+	}
 }
 
 func (it *AsyncIterator[T]) Next() (T, bool) {
-	item, ok := <-it.ch
-	if !ok {
-		it.done = true
+	select {
+	case <-it.stop:
 		var zero T
 		return zero, false
+	default:
 	}
-	return item.value, item.ok
+
+	select {
+	case <-it.stop:
+		var zero T
+		return zero, false
+	case item, ok := <-it.ch:
+		if !ok {
+			var zero T
+			return zero, false
+		}
+		return item.value, item.ok
+	case <-it.done:
+		// The generator closes done only after all in-flight sends have ended.
+		// Drain buffered values before reporting the end of the stream.
+		select {
+		case item, ok := <-it.ch:
+			if !ok {
+				var zero T
+				return zero, false
+			}
+			return item.value, item.ok
+		default:
+			var zero T
+			return zero, false
+		}
+	}
 }
 
 func (it *AsyncIterator[T]) Close() {
-	if !it.done {
-		it.done = true
-		close(it.ch)
-	}
+	it.closeOnce.Do(func() { close(it.stop) })
 }
 
 // AsyncGenerator produces items for an AsyncIterator.
 // Multiple goroutines can safely Send to the same generator.
 type AsyncGenerator[T any] struct {
-	ch     chan iterationItem[T]
-	closed bool
-	mu     sync.Mutex
+	ch      chan iterationItem[T]
+	stop    <-chan struct{}
+	closing chan struct{}
+	done    chan struct{}
+	closed  bool
+	mu      sync.Mutex
+	sends   sync.WaitGroup
 }
 
 func NewAsyncIteratorPair[T any]() (*AsyncIterator[T], *AsyncGenerator[T]) {
 	ch := make(chan iterationItem[T], 64)
-	return &AsyncIterator[T]{ch: ch}, &AsyncGenerator[T]{ch: ch}
+	stop := make(chan struct{})
+	closing := make(chan struct{})
+	done := make(chan struct{})
+	return &AsyncIterator[T]{ch: ch, stop: stop, done: done}, &AsyncGenerator[T]{
+		ch:      ch,
+		stop:    stop,
+		closing: closing,
+		done:    done,
+	}
 }
 
 func (g *AsyncGenerator[T]) Send(value T) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if !g.closed {
-		g.ch <- iterationItem[T]{value: value, ok: true}
+	if !g.beginSend() {
+		return
+	}
+	defer g.sends.Done()
+	select {
+	case <-g.stop:
+	case <-g.closing:
+	case g.ch <- iterationItem[T]{value: value, ok: true}:
 	}
 }
 
 func (g *AsyncGenerator[T]) trySend(value T) bool {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-	if g.closed {
+	if !g.beginSend() {
 		return false
 	}
+	defer g.sends.Done()
 	select {
+	case <-g.stop:
+		return false
+	case <-g.closing:
+		return false
 	case g.ch <- iterationItem[T]{value: value, ok: true}:
 		return true
 	default:
@@ -76,34 +122,67 @@ func (g *AsyncGenerator[T]) trySend(value T) bool {
 
 func (g *AsyncGenerator[T]) Close() {
 	g.mu.Lock()
-	defer g.mu.Unlock()
-	if !g.closed {
-		g.closed = true
-		close(g.ch)
+	if g.closed {
+		done := g.done
+		g.mu.Unlock()
+		<-done
+		return
 	}
+	g.closed = true
+	close(g.closing)
+	g.mu.Unlock()
+
+	g.sends.Wait()
+	close(g.done)
 }
 
 func (g *AsyncGenerator[T]) IsClosed() bool {
 	g.mu.Lock()
-	defer g.mu.Unlock()
-	return g.closed
+	closed := g.closed
+	g.mu.Unlock()
+	if closed {
+		return true
+	}
+	select {
+	case <-g.stop:
+		return true
+	default:
+		return false
+	}
 }
 
 // SendCtx sends a value, respecting context cancellation to prevent goroutine leaks
 // when the consumer stops reading from the iterator.
 func (g *AsyncGenerator[T]) SendCtx(ctx context.Context, value T) bool {
-	g.mu.Lock()
-	if g.closed {
-		g.mu.Unlock()
+	if !g.beginSend() {
 		return false
 	}
-	g.mu.Unlock()
+	defer g.sends.Done()
 
 	select {
+	case <-g.stop:
+		return false
+	case <-g.closing:
+		return false
 	case g.ch <- iterationItem[T]{value: value, ok: true}:
 		return true
 	case <-ctx.Done():
 		return false
+	}
+}
+
+func (g *AsyncGenerator[T]) beginSend() bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.closed {
+		return false
+	}
+	select {
+	case <-g.stop:
+		return false
+	default:
+		g.sends.Add(1)
+		return true
 	}
 }
 

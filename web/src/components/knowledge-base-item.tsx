@@ -45,7 +45,7 @@ function DatasetLabel({ text }: { text: string }) {
 
 export function useDisableDifferenceEmbeddingDataset(
   name: string,
-  ownerTenantId?: string,
+  canvasID?: string,
 ) {
   const form = useFormContext();
   const datasetId = useWatch({ name, control: form.control });
@@ -56,12 +56,7 @@ export function useDisableDifferenceEmbeddingDataset(
     loading,
     handleScroll,
     hasNextPage,
-  } = useFetchKnowledgeList(
-    false,
-    debouncedSearchString,
-    undefined,
-    ownerTenantId,
-  );
+  } = useFetchKnowledgeList(false, debouncedSearchString, undefined, canvasID);
   const selectedDatasetIds = useMemo(
     () => (Array.isArray(datasetId) ? datasetId : []),
     [datasetId],
@@ -73,7 +68,7 @@ export function useDisableDifferenceEmbeddingDataset(
   // comes back missing and its badge falls back to the raw id.
   const { data: selectedDatasets } = useFetchDatasetsByIds(
     selectedDatasetIds,
-    ownerTenantId,
+    canvasID,
   );
 
   const datasetList = useMemo(() => {
@@ -149,13 +144,15 @@ export function useDisableDifferenceEmbeddingDataset(
 export function KnowledgeBaseFormField({
   showVariable = false,
   name = 'dataset_ids',
+  label,
   required = false,
-  ownerTenantId,
+  canvasID,
 }: {
   showVariable?: boolean;
   name?: string;
+  label?: ReactNode;
   required?: boolean;
-  ownerTenantId?: string;
+  canvasID?: string;
 }) {
   const { t } = useTranslation();
 
@@ -166,7 +163,7 @@ export function KnowledgeBaseFormField({
     searchString,
     handleScroll,
     hasNextPage,
-  } = useDisableDifferenceEmbeddingDataset(name, ownerTenantId);
+  } = useDisableDifferenceEmbeddingDataset(name, canvasID);
 
   const nextOptions = buildQueryVariableOptionsByShowVariable(showVariable)();
 
@@ -215,7 +212,7 @@ export function KnowledgeBaseFormField({
       name={name}
       tooltip={t('chat.knowledgeBasesTip')}
       required={required}
-      label={t('chat.knowledgeBases')}
+      label={label ?? t('chat.knowledgeBases')}
     >
       {(field) => (
         <MultiSelect

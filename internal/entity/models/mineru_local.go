@@ -24,7 +24,9 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"ragflow/internal/common"
+	"strings"
 )
 
 type MinerULocalModel struct {
@@ -50,52 +52,180 @@ func (m *MinerULocalModel) Name() string {
 	return "mineru"
 }
 
+// GetBaseURL prefers the instance URL, then mineru_apiserver from the
+// provider api_key JSON, then MINERU_APISERVER, then the factory default.
+func (m *MinerULocalModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
+	if u := ResolveMinerUAPIServer(apiConfig); u != "" {
+		return u, nil
+	}
+	return m.baseModel.GetBaseURL(apiConfig)
+}
+
 func (m *MinerULocalModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
-	return nil, fmt.Errorf("%s no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: ChatWithMessages", m.Name())
 }
 
 func (m *MinerULocalModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s no such method", m.Name())
+	return fmt.Errorf("%s: no such method: ChatStreamlyWithSender", m.Name())
 }
 
 func (m *MinerULocalModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("%s no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: Embed", m.Name())
 }
 
 func (m *MinerULocalModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: Rerank", m.Name())
 }
 
 func (m *MinerULocalModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", m.Name())
 }
 
 func (m *MinerULocalModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s no such method", m.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", m.Name())
 }
 
 func (m *MinerULocalModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", m.Name())
 }
 
 func (m *MinerULocalModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s no such method", m.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", m.Name())
 }
 
+// OCRFile is exercised during model verification (verifyOCRModel). Local MinerU
+// is a document-parsing API and has no image-OCR endpoint, so delegate to
+// CheckConnection — same pattern as the hosted mineru.net driver (mineru.go).
 func (m *MinerULocalModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s no such method", m.Name())
+	if err := m.CheckConnection(ctx, apiConfig); err != nil {
+		return nil, err
+	}
+	return &OCRFileResponse{}, nil
 }
 
 func (m *MinerULocalModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
-	return nil, fmt.Errorf("%s no such method", m.Name())
+	if err := m.CheckConnection(ctx, apiConfig); err != nil {
+		return nil, err
+	}
+	return []ListModelResponse{{
+		Name:       "MinerU-model",
+		ModelTypes: []string{"ocr"},
+	}}, nil
 }
 
 func (m *MinerULocalModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", m.Name())
 }
 
 func (m *MinerULocalModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
-	return fmt.Errorf("%s no such method", m.Name())
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+	resolvedBaseURL, err := m.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	if !strings.HasPrefix(resolvedBaseURL, "http://") && !strings.HasPrefix(resolvedBaseURL, "https://") {
+		resolvedBaseURL = "http://" + resolvedBaseURL
+	}
+
+	u, err := url.Parse(resolvedBaseURL)
+	if err != nil {
+		return fmt.Errorf("invalid base URL: %w", err)
+	}
+	token := ""
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		token = MinerUBearerTokenFromAPIKey(*apiConfig.ApiKey)
+	}
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	// mineru.net is the hosted product. It has no /v1/health; reachability of
+	// the site is the check. A self-hosted URL must answer with MinerU's
+	// health JSON. A reachable server that is not MinerU, including one that
+	// answers 404, is a failure.
+	if IsMinerUCloudBase(u.String()) {
+		return minerUCloudReachable(ctx, m.baseModel.httpClient, u)
+	}
+	v1URL := *u
+	v1URL.Path = "/v1/health"
+	v1Code, v1Body, v1Err := minerUGET(ctx, m.baseModel.httpClient, v1URL.String(), token)
+	if v1Err == nil && (v1Code == http.StatusUnauthorized || v1Code == http.StatusForbidden) {
+		return fmt.Errorf("authentication failed (HTTP %d)", v1Code)
+	}
+	if v1Err == nil && minerUHealthOK(v1Code, v1Body) {
+		return nil
+	}
+
+	legacy := *u
+	legacy.Path = "/health"
+	code, body, err := minerUGET(ctx, m.baseModel.httpClient, legacy.String(), token)
+	if err != nil {
+		if v1Err != nil {
+			return fmt.Errorf("connection failed: %w", v1Err)
+		}
+		return fmt.Errorf("connection failed: %w", err)
+	}
+	if code == http.StatusUnauthorized || code == http.StatusForbidden {
+		return fmt.Errorf("authentication failed (HTTP %d)", code)
+	}
+	if minerUHealthOK(code, body) {
+		return nil
+	}
+	if v1Err != nil {
+		return fmt.Errorf("not a MinerU service: %s: %w", v1URL.String(), v1Err)
+	}
+	return fmt.Errorf("not a MinerU service: %s HTTP %d, %s HTTP %d", v1URL.String(), v1Code, legacy.String(), code)
+}
+
+func minerUGET(ctx context.Context, client *http.Client, rawURL, token string) (int, []byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+	if err != nil {
+		return 0, nil, err
+	}
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	if err != nil {
+		return resp.StatusCode, nil, err
+	}
+	return resp.StatusCode, body, nil
+}
+
+func minerUHealthOK(code int, body []byte) bool {
+	if code < http.StatusOK || code >= http.StatusMultipleChoices {
+		return false
+	}
+	var payload struct {
+		Status  string `json:"status"`
+		Version string `json:"version"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(payload.Status)) {
+	case "ok", "healthy":
+		return true
+	}
+	return strings.TrimSpace(payload.Version) != ""
+}
+
+func minerUCloudReachable(ctx context.Context, client *http.Client, u *url.URL) error {
+	origin := u.Scheme + "://" + u.Host + "/"
+	code, _, err := minerUGET(ctx, client, origin, "")
+	if err != nil {
+		return fmt.Errorf("connection failed: %w", err)
+	}
+	if code < http.StatusOK || code >= http.StatusMultipleChoices {
+		return fmt.Errorf("not a MinerU service: %s HTTP %d", origin, code)
+	}
+	return nil
 }
 
 func (m *MinerULocalModel) ParseFile(ctx context.Context, modelName *string, content []byte, documentURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
@@ -107,11 +237,11 @@ func (m *MinerULocalModel) ParseFile(ctx context.Context, modelName *string, con
 		return nil, fmt.Errorf("local MinerU API requires file content byte array, but content is empty")
 	}
 
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	resolvedBaseURL, err := m.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
-	apiURL := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.DocumentParse)
+	apiURL := joinURL(resolvedBaseURL, m.baseModel.URLSuffix.DocumentParse)
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -125,10 +255,28 @@ func (m *MinerULocalModel) ParseFile(ctx context.Context, modelName *string, con
 		return nil, fmt.Errorf("failed to write file content: %w", err)
 	}
 
-	if modelName != nil && *modelName != "" {
-		_ = writer.WriteField("backend", *modelName)
-	} else {
-		_ = writer.WriteField("backend", "pipeline")
+	apiKeyRaw := ""
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		apiKeyRaw = *apiConfig.ApiKey
+	}
+	setupBackend := ""
+	if modelName != nil && strings.TrimSpace(*modelName) != "" {
+		setupBackend = strings.TrimSpace(*modelName)
+	} else if parseFileConfig != nil {
+		setupBackend = strings.TrimSpace(parseFileConfig.Backend)
+	}
+	setupServerURL := ""
+	if parseFileConfig != nil {
+		setupServerURL = parseFileConfig.ServerURL
+	}
+	backend := ResolveMinerUBackend(setupBackend, apiKeyRaw)
+	serverURL := ResolveMinerUServerURL(setupServerURL, apiKeyRaw)
+	if err := ValidateMinerUConfig(backend, serverURL); err != nil {
+		return nil, err
+	}
+	_ = writer.WriteField("backend", backend)
+	if serverURL != "" {
+		_ = writer.WriteField("server_url", serverURL)
 	}
 
 	if err = writer.Close(); err != nil {
@@ -145,8 +293,10 @@ func (m *MinerULocalModel) ParseFile(ctx context.Context, modelName *string, con
 
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	if auth := BearerAuth(apiConfig); auth != "" {
-		req.Header.Set("Authorization", auth)
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		if token := MinerUBearerTokenFromAPIKey(*apiConfig.ApiKey); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
 	}
 
 	resp, err := m.baseModel.httpClient.Do(req)
@@ -188,7 +338,7 @@ func (m *MinerULocalModel) ParseFile(ctx context.Context, modelName *string, con
 }
 
 func (m *MinerULocalModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s no such method", m.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", m.Name())
 }
 
 func (m *MinerULocalModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
@@ -200,11 +350,11 @@ func (m *MinerULocalModel) ShowTask(ctx context.Context, taskID string, apiConfi
 		return nil, fmt.Errorf("taskID is empty")
 	}
 
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	taskURL, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Task)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s/%s/result", resolvedBaseURL, m.baseModel.URLSuffix.Task, taskID)
+	url := taskURL + "/" + taskID + "/result"
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
@@ -213,8 +363,10 @@ func (m *MinerULocalModel) ShowTask(ctx context.Context, taskID string, apiConfi
 		return nil, fmt.Errorf("failed to create status request: %w", err)
 	}
 
-	if auth := BearerAuth(apiConfig); auth != "" {
-		req.Header.Set("Authorization", auth)
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		if token := MinerUBearerTokenFromAPIKey(*apiConfig.ApiKey); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
 	}
 
 	resp, err := m.baseModel.httpClient.Do(req)
@@ -274,4 +426,8 @@ func (m *MinerULocalModel) ShowTask(ctx context.Context, taskID string, apiConfi
 			},
 		},
 	}, nil
+}
+
+func (m *MinerULocalModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", m.Name())
 }

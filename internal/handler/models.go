@@ -19,7 +19,6 @@ package handler
 import (
 	"ragflow/internal/common"
 	"ragflow/internal/service"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -38,54 +37,46 @@ func NewModelHandler(modelProviderService *service.ModelProviderService) *ModelH
 
 func (h *ModelHandler) ListAllModels(c *gin.Context) {
 
-	page := 0
-	if v := c.Query("page"); v != "" {
-		if p, err := strconv.Atoi(v); err == nil && p > 0 {
-			page = p
-		}
-	}
-
-	pageSize := 0
-	if v := c.Query("page_size"); v != "" {
-		if ps, err := strconv.Atoi(v); err == nil && ps > 0 {
-			pageSize = ps
-		}
+	page, pageSize, err := common.ParsePagination(c.Request.URL.Query())
+	if err != nil {
+		common.RespondError(c, common.CodeArgumentError, err.Error())
+		return
 	}
 
 	// list tenant models
 	models, err := h.modelProviderService.ListAllModels(page, pageSize)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, models, "success")
+	common.RespondSuccessList(c, models, "success")
 	return
 }
 
 func (h *ModelHandler) ShowModel(c *gin.Context) {
 	encodedModelName := c.Param("model_name")
 	if encodedModelName == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Encoded model name is empty")
+		common.RespondError(c, common.CodeBadRequest, "Encoded model name is empty")
 		return
 	}
 
 	decodedModelName, err := common.DecodeFromBase64(encodedModelName)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		common.RespondError(c, common.CodeBadRequest, err.Error())
 		return
 	}
 	if decodedModelName == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Decoded model name is empty")
+		common.RespondError(c, common.CodeBadRequest, "Decoded model name is empty")
 		return
 	}
 
 	// Get model
 	model, err := h.modelProviderService.ShowModel(decodedModelName)
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
 
-	common.SuccessWithData(c, model, "success")
+	common.RespondSuccess(c, model, "success")
 }

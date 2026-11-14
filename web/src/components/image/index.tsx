@@ -26,10 +26,14 @@ interface IImage extends React.ImgHTMLAttributes<HTMLImageElement> {
   documentId?: string;
   t?: string | number;
   label?: string;
+  previewButton?: React.ReactNode;
 }
 
 type ImageCacheItem = {
   count: number;
+  // The URL the bytes belong to, without the cache-busting `_t` query, so an
+  // entry can be found again no matter which `_t` fetched it.
+  baseUrl: string;
   objectUrl?: string;
   promise?: Promise<string>;
   timer?: ReturnType<typeof setTimeout>;
@@ -55,12 +59,32 @@ export const buildDocumentImageUrl = (
   return `${restAPIv1}${path}${query ? `?${query}` : ''}`;
 };
 
+// Drop the cached bytes of one document image. A chunk keeps its img_id when
+// its image is updated in place, so mounted <Image>s would otherwise keep
+// rendering the previously fetched picture.
+export const evictDocumentImage = (id: string, documentId?: string) => {
+  const baseUrl = buildDocumentImageUrl(id, documentId);
+
+  imageCache.forEach((item, cacheKey) => {
+    if (item.baseUrl !== baseUrl) {
+      return;
+    }
+    if (item.timer) {
+      clearTimeout(item.timer);
+    }
+    if (item.objectUrl) {
+      URL.revokeObjectURL(item.objectUrl);
+    }
+    imageCache.delete(cacheKey);
+  });
+};
+
 const fetchDocumentImage = (url: string, authorization: string) => {
   const cacheKey = `${authorization}:${url}`;
   let item = imageCache.get(cacheKey);
 
   if (!item) {
-    item = { count: 0 };
+    item = { count: 0, baseUrl: url.split('?')[0] };
     imageCache.set(cacheKey, item);
   }
   if (item.timer) {
@@ -82,7 +106,10 @@ const fetchDocumentImage = (url: string, authorization: string) => {
         return item.objectUrl;
       })
       .catch((error) => {
-        imageCache.delete(cacheKey);
+        // A re-fetch may have installed a newer entry under this key.
+        if (imageCache.get(cacheKey) === item) {
+          imageCache.delete(cacheKey);
+        }
         throw error;
       });
   }
@@ -97,7 +124,10 @@ const fetchDocumentImage = (url: string, authorization: string) => {
             if (item.objectUrl) {
               URL.revokeObjectURL(item.objectUrl);
             }
-            imageCache.delete(cacheKey);
+            // Eviction or a re-fetch may have replaced this entry meanwhile.
+            if (imageCache.get(cacheKey) === item) {
+              imageCache.delete(cacheKey);
+            }
           }
         }, 30000);
       }
@@ -238,7 +268,7 @@ export const AuthenticatedImg = ({
 };
 
 const Image = React.forwardRef<HTMLImageElement, IImage>(function Image(
-  { id, documentId, t, label, className, ...props },
+  { id, documentId, t, label, previewButton, className, ...props },
   ref,
 ) {
   const src = useDocumentImageUrl(id, documentId, t);
@@ -258,6 +288,7 @@ const Image = React.forwardRef<HTMLImageElement, IImage>(function Image(
   return (
     <div className="relative inline-block w-full">
       {imageElement}
+      {previewButton}
       <div className="absolute bottom-2 right-2 bg-accent-primary text-white px-2 py-0.5 rounded-xl text-xs font-normal backdrop-blur-sm">
         {label}
       </div>

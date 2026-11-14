@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -135,6 +136,14 @@ func (s *progressSink) flush(ctx context.Context, force bool) {
 		return
 	}
 	if err := s.docSvc.UpdateRunState(ctx, docID, p); err != nil {
+		// A stop tears the run context down while a periodic flush is in
+		// flight, aborting that UPDATE. It is the normal cancel path, not a
+		// persistence failure: the final flush in Close detaches from the
+		// cancelled context and still writes the last percent.
+		if errors.Is(err, context.Canceled) {
+			common.Debug(fmt.Sprintf("progressSink: flush progress for document %s aborted: %v", docID, err))
+			return
+		}
 		common.Warn(fmt.Sprintf("progressSink: flush progress for document %s failed: %v", docID, err))
 		return
 	}

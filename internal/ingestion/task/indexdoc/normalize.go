@@ -20,10 +20,12 @@ import (
 	"fmt"
 
 	"ragflow/internal/common"
+	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 )
 
 // NormalizeChunks converts pipeline output into a uniform []map[string]any slice.
-// Mirrors Python: DataflowService._normalize_chunks()
+// Mirrors DataflowService._normalize_chunks()
 func NormalizeChunks(output map[string]any) []map[string]any {
 	if output == nil {
 		return nil
@@ -32,11 +34,23 @@ func NormalizeChunks(output map[string]any) []map[string]any {
 	if chunks, ok := output["chunks"].([]map[string]any); ok {
 		return DeepCopyChunks(chunks)
 	}
+	// Typed []ChunkDoc carrier (post-migration chunker/tokenizer output):
+	// normalize it to the map wire form. Match the concrete typed slice only —
+	// do NOT use schema.GetChunks here, because it also accepts the legacy
+	// []any carrier and would round-trip it through ChunkDoc, dropping
+	// non-ChunkDoc fields (e.g. content_with_weight). The legacy []any carrier
+	// must stay on the value-preserving toChunkMaps path below.
+	if typed, ok := output["chunks"].([]schema.ChunkDoc); ok {
+		return DeepCopyChunks(schema.ChunkDocsToMaps(typed))
+	}
 	if chunks, ok := toChunkMaps(output["chunks"]); ok {
 		return DeepCopyChunks(chunks)
 	}
 	if json, ok := output["json"].([]map[string]any); ok {
 		return DeepCopyChunks(json)
+	}
+	if docs, ok := output["json"].([]parser.DocItem); ok {
+		return DeepCopyChunks(parser.ItemsToMaps(docs))
 	}
 	if json, ok := toChunkMaps(output["json"]); ok {
 		return DeepCopyChunks(json)
@@ -76,7 +90,7 @@ func toChunkMaps(v any) ([]map[string]any, bool) {
 // Other value types (nested maps, [][]float64 positions, etc.) are shared by
 // reference, not recursively deep-copied; positions are later flattened and
 // copied independently by processChunkPositions. It is therefore NOT a full
-// recursive deep copy (unlike Python's copy.deepcopy), only the copy needed
+// recursive deep copy (unlike copy.deepcopy), only the copy needed
 // for the post-processing pass over pipeline output.
 func DeepCopyChunks(chunks []map[string]any) []map[string]any {
 	if chunks == nil {
@@ -110,7 +124,7 @@ func DeepCopyChunks(chunks []map[string]any) []map[string]any {
 
 // PrepareTextsForPipelineEmbedding extracts texts for embedding from chunks.
 // Priority: questions > summary > text.
-// Mirrors Python: EmbeddingUtils.prepare_texts_for_dataflow_embedding()
+// Mirrors EmbeddingUtils.prepare_texts_for_dataflow_embedding()
 func PrepareTextsForPipelineEmbedding(chunks []map[string]any) []string {
 	if chunks == nil {
 		return nil

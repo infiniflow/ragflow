@@ -122,8 +122,11 @@ func TestRunTask_RedeliveryAfterIncompleteRunCountsOnce(t *testing.T) {
 	// MarkCompleted) - the task row is left RUNNING, so the broker redelivers.
 	applyResult(ingestor, docID, kbID)(context.Background(), nil)
 
-	// Redelivery of the still-RUNNING task: re-runs and completes.
-	if terminal := ingestor.runTask(context.Background(), rcMsg(taskID, docID, kbID)); !terminal {
+	// Redelivery prepares the still-RUNNING task before re-running the pipeline.
+	// Preparation must preserve the counts already included in the KB aggregate.
+	msg := rcMsg(taskID, docID, kbID)
+	ingestor.ingestionTaskSvc.PrepareValidatedRun(context.Background(), msg)
+	if terminal := ingestor.runTask(context.Background(), msg); !terminal {
 		t.Fatalf("expected the redelivery run to complete (terminal=true)")
 	}
 

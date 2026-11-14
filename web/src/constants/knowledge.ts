@@ -57,20 +57,20 @@ export enum IngestionTaskStatus {
 }
 
 export const RunningStatusMap = {
-  [RunningStatus.UNSTART]: 'Pending',
+  [RunningStatus.UNSTART]: 'Unstarted',
   [RunningStatus.RUNNING]: 'Running',
-  [RunningStatus.CANCEL]: 'Cancel',
+  [RunningStatus.CANCEL]: 'Canceled',
   [RunningStatus.DONE]: 'Success',
   [RunningStatus.FAIL]: 'Failed',
-  [RunningStatus.SCHEDULE]: 'Schedule',
+  [RunningStatus.SCHEDULE]: 'Scheduled',
   [RunningStatus.QUEUED]: 'Queued',
 
-  [RunningStatusOld.UNSTART]: 'Pending',
+  [RunningStatusOld.UNSTART]: 'Unstarted',
   [RunningStatusOld.RUNNING]: 'Running',
-  [RunningStatusOld.CANCEL]: 'Cancel',
+  [RunningStatusOld.CANCEL]: 'Canceled',
   [RunningStatusOld.DONE]: 'Success',
   [RunningStatusOld.FAIL]: 'Failed',
-  [RunningStatusOld.SCHEDULE]: 'Schedule',
+  [RunningStatusOld.SCHEDULE]: 'Scheduled',
 };
 
 export enum ModelVariableType {
@@ -158,6 +158,11 @@ export enum ProcessingType {
   timeline = 'Timeline',
   sessionEssence = 'Session_Essence',
   sessionGraph = 'Session_Graph',
+  // Task types written by the Go knowledge-compile pipeline
+  // (kccommon.TaskType*); they intentionally match the frontend categories.
+  wiki = 'Wiki',
+  tree = 'Tree',
+  pageIndex = 'PageIndex',
 }
 
 export const ProcessingTypeMap = {

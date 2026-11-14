@@ -1,0 +1,13 @@
+{
+  "name": "Radeon Cloud",
+  "rank": 50,
+  "url": {
+    "default": "https://developer.amd.com.cn/radeon/api/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models"
+  },
+  "class": "radeon-cloud",
+  "models": []
+}

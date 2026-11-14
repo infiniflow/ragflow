@@ -47,7 +47,7 @@ jest.mock('@/hooks/logic-hooks', () => ({
   useSelectDerivedMessages: () => ({
     derivedMessages: [],
     setDerivedMessages: jest.fn(),
-    scrollRef: { current: null },
+    virtualizer: {},
     messageContainerRef: { current: null },
     removeLatestMessage: jest.fn(),
     removeMessageById: jest.fn(),

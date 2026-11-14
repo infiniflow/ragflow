@@ -5,10 +5,12 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"html"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/parser/tableutil"
+	"ragflow/internal/permission"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strings"
@@ -16,13 +18,13 @@ import (
 
 // GetFileContent gets file metadata and checks permission for download
 // Matches Python's file_api_service.get_file_content function
-func (s *FileService) GetFileContent(ctx context.Context, uid, fileID string) (*entity.File, error) {
+func (s *FileService) GetFileContent(ctx context.Context, fileID string) (*entity.File, error) {
 	file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
 	if err != nil || file == nil {
 		return nil, fmt.Errorf("document not found")
 	}
-	if !s.checkFilePerm(ctx, s.fileDAO, file, uid) {
-		return nil, fmt.Errorf("no authorization")
+	if err := checkFileAccess(ctx, file, permission.OperationRead); err != nil {
+		return nil, err
 	}
 	return file, nil
 }
@@ -78,13 +80,17 @@ func (s *FileService) GetStorageAddress(ctx context.Context, fileID string) (*St
 }
 
 // DownloadAgentFile downloads an agent-generated file directly from MinIO without querying the database.
-func (s *FileService) DownloadAgentFile(ctx context.Context, tenantID, location string) ([]byte, error) {
+func (s *FileService) DownloadAgentFile(ctx context.Context, location string) ([]byte, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, fmt.Errorf("storage not initialized")
 	}
 
-	bucketName := fmt.Sprintf("%s-downloads", tenantID)
+	bucketName := fmt.Sprintf("%s-downloads", userID)
 
 	blob, err := storageImpl.Get(ctx, bucketName, location)
 	if err != nil {
@@ -110,7 +116,11 @@ func (s *FileService) DownloadAgentFile(ctx context.Context, tenantID, location 
 // Blobs are stored directly in "{created_by}-downloads/{id}" in object
 // storage WITHOUT a corresponding File entity row in the database.
 // Mirrors Python's FileService.get_files → get_blob(user_id, file_id).
-func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts []map[string]interface{}) (texts []string, images []string, err error) {
+func (s *FileService) GetFileContents(ctx context.Context, fileDicts []map[string]interface{}) (texts []string, images []string, err error) {
+	uid := permission.UserIDFromContext(ctx)
+	if uid == "" {
+		return nil, nil, permission.ErrUnauthenticated
+	}
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, nil, fmt.Errorf("storage not initialized")
@@ -138,6 +148,13 @@ func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts
 		}
 
 		ft := utility.FilenameType(name)
+		if utility.IsVideoFilename(name) {
+			// Uploads accept video, but no parser implements video analysis.
+			// Report that instead of inlining the container as a bogus image
+			// data URI (the old visual classification) or dumping raw bytes.
+			texts = append(texts, fmt.Sprintf("\n -----------------\nFile: %s\nContent as following: \n(video content is not supported)\n", name))
+			continue
+		}
 		if ft == utility.FileTypeVISUAL {
 			mediaType := strings.ToLower(strings.TrimSpace(strings.Split(mimeType, ";")[0]))
 			if mediaType == "" {
@@ -155,7 +172,11 @@ func (s *FileService) GetFileContents(ctx context.Context, uid string, fileDicts
 
 // ParseAgentUploads resolves descriptors returned by upload_info from the
 // caller's downloads bucket and converts them to sys.files values.
-func (s *FileService) ParseAgentUploads(ctx context.Context, userID string, fileDicts []map[string]interface{}, layoutRecognize string) ([]string, error) {
+func (s *FileService) ParseAgentUploads(ctx context.Context, fileDicts []map[string]interface{}, layoutRecognize string) ([]string, error) {
+	userID := permission.UserIDFromContext(ctx)
+	if userID == "" {
+		return nil, permission.ErrUnauthenticated
+	}
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
 		return nil, fmt.Errorf("storage not initialized")
@@ -182,6 +203,14 @@ func (s *FileService) ParseAgentUploads(ctx context.Context, userID string, file
 			return nil, fmt.Errorf("file %q: upload is empty", name)
 		}
 
+		// Reject video filenames before the MIME-based image branch: a
+		// mislabeled video (e.g. clip.mp4 declaring image/png) would otherwise
+		// be inlined as a bogus image data URI without ever reaching the
+		// parser-level video check.
+		if utility.IsVideoFilename(name) {
+			return nil, fmt.Errorf("file %q: video content is not supported", name)
+		}
+
 		mediaType := strings.ToLower(strings.TrimSpace(strings.Split(mimeType, ";")[0]))
 		if strings.HasPrefix(mediaType, "image/") {
 			contents = append(contents, "data:"+mediaType+";base64,"+base64.StdEncoding.EncodeToString(data))
@@ -201,9 +230,12 @@ func parseAgentUploadContent(ctx context.Context, filename string, data []byte, 
 	content := string(data)
 	fileType := utility.GetFileType(filename)
 	if fileType != utility.FileTypeOTHER {
-		fp, err := parser.GetParser(fileType)
+		fp, actual, err := parser.GetTextOnlyParser(fileType, data)
 		if err != nil {
 			return "", err
+		}
+		if actual != fileType {
+			common.Warn(fmt.Sprintf("file %q: requested format %s; detected %s; continuing with the %s parser", filename, fileType, actual, actual))
 		}
 		if configurable, ok := fp.(interface{ ConfigureFromSetup(map[string]any) }); ok {
 			configurable.ConfigureFromSetup(map[string]any{"layout_recognize": layoutRecognize})
@@ -222,205 +254,28 @@ func parseAgentUploadContent(ctx context.Context, filename string, data []byte, 
 }
 
 // parseResultText converts a parser result into the readable text expected by
-// sys.files. JSON results are flattened in item order, preferring each item's
-// text field and serializing items without one as a final fallback.
+// sys.files. Every parser result is structured JSON, so the items are flattened
+// in order, preferring each item's text field and rendering tables; items
+// without either are serialized as a final fallback.
 func parseResultText(res parser.ParseResult) (string, error) {
-	switch strings.ToLower(strings.TrimSpace(res.OutputFormat)) {
-	case "text":
-		return res.Text, nil
-	case "markdown":
-		return res.Markdown, nil
-	case "html":
-		return res.HTML, nil
-	case "json":
-		if len(res.JSON) > 0 {
-			if rendered, ok := renderSpreadsheetJSON(res.JSON); ok {
-				return rendered, nil
-			}
-			parts := make([]string, 0, len(res.JSON))
-			for _, item := range res.JSON {
-				if text, ok := item["text"].(string); ok {
-					parts = append(parts, text)
-					continue
-				}
-				raw, err := json.Marshal(item)
-				if err != nil {
-					return "", err
-				}
-				parts = append(parts, string(raw))
-			}
-			return strings.Join(parts, "\n"), nil
-		}
-		// Some legacy parsers mark the result as JSON while only populating a
-		// rendered companion field. Preserve that content instead of returning
-		// an empty sys.files value.
-		for _, fallback := range []string{res.Markdown, res.HTML, res.Text} {
-			if fallback != "" {
-				return fallback, nil
-			}
-		}
-		return "", nil
-	default:
-		return "", fmt.Errorf("unsupported parser output format %q", res.OutputFormat)
-	}
-}
-
-func renderSpreadsheetJSON(items []map[string]any) (string, bool) {
-	parts := make([]string, 0, len(items))
-	rendered := false
-	for i := 0; i < len(items); {
-		if !isSpreadsheetRowItem(items[i]) {
-			if text, ok := items[i]["text"].(string); ok {
-				parts = append(parts, text)
-			} else {
-				raw, err := json.Marshal(items[i])
-				if err != nil {
-					return "", false
-				}
-				parts = append(parts, string(raw))
-			}
-			i++
+	parts := make([]string, 0, len(res.JSON))
+	for _, item := range res.JSON {
+		m := item.ToMap()
+		if text, ok := m["text"].(string); ok {
+			parts = append(parts, text)
 			continue
 		}
-
-		start := i
-		i = spreadsheetTableEnd(items, start)
-		parts = append(parts, renderSpreadsheetTable(items[start:i]))
-		rendered = true
-	}
-	if !rendered {
-		return "", false
-	}
-	return strings.Join(parts, "\n"), true
-}
-
-func isSpreadsheetRowItem(item map[string]any) bool {
-	kind, _ := item["ck_type"].(string)
-	return kind == "table_header" || kind == "table_row"
-}
-
-func spreadsheetTableKey(item map[string]any) string {
-	if tableID, _ := item["table_id"].(string); strings.TrimSpace(tableID) != "" {
-		return "table:" + tableID
-	}
-	if sheetIndex, ok := item["sheet_index"].(float64); ok {
-		return fmt.Sprintf("sheet-index:%g", sheetIndex)
-	}
-	if sheetIndex, ok := item["sheet_index"].(int); ok {
-		return fmt.Sprintf("sheet-index:%d", sheetIndex)
-	}
-	if sheet, _ := item["sheet"].(string); strings.TrimSpace(sheet) != "" {
-		return "sheet:" + sheet
-	}
-	return ""
-}
-
-func spreadsheetTableEnd(items []map[string]any, start int) int {
-	key := spreadsheetTableKey(items[start])
-	if key != "" {
-		i := start
-		for i < len(items) && isSpreadsheetRowItem(items[i]) && spreadsheetTableKey(items[i]) == key {
-			i++
-		}
-		return i
-	}
-
-	// Without a stable table identity, do not merge unrelated row sequences.
-	// A header can still own the following anonymous rows until the next
-	// anonymous header; anonymous row-only inputs are kept as separate tables
-	// because their table boundary cannot be inferred safely.
-	if kind, _ := items[start]["ck_type"].(string); kind == "table_header" {
-		i := start + 1
-		for i < len(items) && isSpreadsheetRowItem(items[i]) {
-			if nextKind, _ := items[i]["ck_type"].(string); nextKind == "table_header" {
-				break
-			}
-			if spreadsheetTableKey(items[i]) != "" {
-				break
-			}
-			i++
-		}
-		return i
-	}
-	return start + 1
-}
-
-func renderSpreadsheetTable(items []map[string]any) string {
-	if len(items) == 0 {
-		return ""
-	}
-	var header []string
-	if kind, _ := items[0]["ck_type"].(string); kind == "table_header" {
-		header = spreadsheetStringSlice(items[0]["cells"])
-		if len(header) == 0 {
-			header = spreadsheetStringSlice(items[0]["text"])
-		}
-	} else {
-		// Row IR carries the logical column names separately from its cells.
-		// Use those names as a preview header without consuming the first row.
-		header = spreadsheetStringSlice(items[0]["headers"])
-	}
-
-	sheet, _ := items[0]["sheet"].(string)
-	var builder strings.Builder
-	builder.WriteString("<table>")
-	if strings.TrimSpace(sheet) != "" {
-		builder.WriteString("<caption>")
-		builder.WriteString(html.EscapeString(strings.TrimSpace(sheet)))
-		builder.WriteString("</caption>")
-	}
-	if len(header) > 0 {
-		builder.WriteString("<tr>")
-		for _, cell := range header {
-			builder.WriteString("<th>")
-			builder.WriteString(html.EscapeString(cell))
-			builder.WriteString("</th>")
-		}
-		builder.WriteString("</tr>")
-	}
-	for _, item := range items {
-		kind, _ := item["ck_type"].(string)
-		if kind == "table_header" {
+		if td, ok := m["table"].(*entity.TableData); ok && td != nil {
+			parts = append(parts, tableutil.RenderTableHTML(td))
 			continue
 		}
-		cells := spreadsheetStringSlice(item["cells"])
-		if len(cells) == 0 {
-			cells = spreadsheetStringSlice(item["text"])
+		raw, err := json.Marshal(m)
+		if err != nil {
+			return "", err
 		}
-		builder.WriteString("<tr>")
-		for _, cell := range cells {
-			builder.WriteString("<td>")
-			builder.WriteString(html.EscapeString(cell))
-			builder.WriteString("</td>")
-		}
-		builder.WriteString("</tr>")
+		parts = append(parts, string(raw))
 	}
-	builder.WriteString("</table>")
-	return builder.String()
-}
-
-func spreadsheetStringSlice(value any) []string {
-	switch values := value.(type) {
-	case []string:
-		out := make([]string, len(values))
-		for i, value := range values {
-			out[i] = strings.TrimSpace(value)
-		}
-		return out
-	case []any:
-		out := make([]string, 0, len(values))
-		for _, value := range values {
-			out = append(out, strings.TrimSpace(fmt.Sprint(value)))
-		}
-		return out
-	case string:
-		if strings.TrimSpace(values) == "" {
-			return nil
-		}
-		return []string{strings.TrimSpace(values)}
-	default:
-		return nil
-	}
+	return strings.Join(parts, "\n"), nil
 }
 
 // parseFileContent tries to parse a file's contents using the appropriate parser.
@@ -430,9 +285,12 @@ func parseFileContent(ctx context.Context, filename string, data []byte) string 
 	if fileType == utility.FileTypeOTHER {
 		return string(data)
 	}
-	fp, err := parser.GetParser(fileType)
+	fp, actual, err := parser.GetTextOnlyParser(fileType, data)
 	if err != nil {
 		return string(data)
+	}
+	if actual != fileType {
+		common.Warn(fmt.Sprintf("file %q: requested format %s; detected %s; continuing with the %s parser", filename, fileType, actual, actual))
 	}
 	res := fp.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {

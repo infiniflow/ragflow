@@ -19,10 +19,12 @@ package chunker
 
 import (
 	"errors"
-	"log/slog"
-	"strings"
 	"testing"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
+
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component"
 )
 
@@ -33,10 +35,10 @@ func TestGeneralChunkerPDFContinuesWhenStorageResolutionFails(t *testing.T) {
 	}
 	t.Cleanup(func() { component.ResolveDocumentStorageOverride = previousResolver })
 
-	var logs strings.Builder
-	previousLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn})))
-	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+	core, logs := observer.New(zap.WarnLevel)
+	originalLogger := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = originalLogger })
 
 	chunker, err := NewGeneralChunker(nil)
 	if err != nil {
@@ -52,8 +54,8 @@ func TestGeneralChunkerPDFContinuesWhenStorageResolutionFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GeneralChunker.Invoke: %v", err)
 	}
-	if !strings.Contains(logs.String(), "could not open PDF") {
-		t.Fatalf("logs = %q, want PDF open warning", logs.String())
+	if logs.FilterMessage("GeneralChunker: could not open PDF for on-demand cropping").Len() != 1 {
+		t.Fatalf("logs = %v, want PDF open warning", logs.All())
 	}
 	chunks := outputChunks(t, out)
 	if len(chunks) != 1 || chunks[0]["text"] != "body" {

@@ -17,6 +17,7 @@ import (
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 func newAgentCancelTracker(t *testing.T) (*canvas.RunTracker, *miniredis.Miniredis) {
@@ -40,13 +41,13 @@ func TestCancelSessionRunLocalPermissionAndIdempotency(t *testing.T) {
 	}
 	svc.activeSessions[active.sessionID] = active
 
-	if err := svc.CancelSessionRun(t.Context(), "user-b", "session-1"); !errors.Is(err, ErrAgentNotOwner) {
+	if err := svc.CancelSessionRun(permission.WithIdentity(t.Context(), "user-b", ""), "session-1"); !errors.Is(err, ErrAgentNotOwner) {
 		t.Fatalf("other user cancel error = %v, want ErrAgentNotOwner", err)
 	}
 	if calls.Load() != 0 {
 		t.Fatal("unauthorized cancel invoked the active cancel func")
 	}
-	if err := svc.CancelSessionRun(t.Context(), "user-a", "session-1"); err != nil {
+	if err := svc.CancelSessionRun(permission.WithIdentity(t.Context(), "user-a", ""), "session-1"); err != nil {
 		t.Fatalf("owner CancelSessionRun: %v", err)
 	}
 	if calls.Load() != 1 || !active.cancelRequested.Load() {
@@ -54,10 +55,10 @@ func TestCancelSessionRunLocalPermissionAndIdempotency(t *testing.T) {
 	}
 
 	delete(svc.activeSessions, "session-1")
-	if err := svc.CancelSessionRun(t.Context(), "user-a", "session-1"); err != nil {
+	if err := svc.CancelSessionRun(permission.WithIdentity(t.Context(), "user-a", ""), "session-1"); err != nil {
 		t.Fatalf("finished session cancel must be idempotent: %v", err)
 	}
-	if err := svc.CancelSessionRun(t.Context(), "user-a", "unknown"); err != nil {
+	if err := svc.CancelSessionRun(permission.WithIdentity(t.Context(), "user-a", ""), "unknown"); err != nil {
 		t.Fatalf("unknown session cancel must be idempotent: %v", err)
 	}
 }
@@ -71,7 +72,7 @@ func TestCancelSessionRunDoesNotAffectAnotherSession(t *testing.T) {
 	svc.activeSessions["session-b"] = &activeAgentRun{
 		userID: "user-a", sessionID: "session-b", cancelRun: func() { callsB.Add(1) },
 	}
-	if err := svc.CancelSessionRun(t.Context(), "user-a", "session-a"); err != nil {
+	if err := svc.CancelSessionRun(permission.WithIdentity(t.Context(), "user-a", ""), "session-a"); err != nil {
 		t.Fatalf("CancelSessionRun: %v", err)
 	}
 	if callsA.Load() != 1 || callsB.Load() != 0 {
@@ -83,11 +84,10 @@ func TestCancelSessionRunFinishedSessionDoesNotCreateCancelMarker(t *testing.T) 
 	testDB := setupServiceTestDB(t)
 	pushServiceDB(t, testDB)
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
-		ID:        "session-persisted",
-		DialogID:  "agent-1",
-		UserID:    "user-a",
-		Message:   json.RawMessage(`[]`),
-		Reference: json.RawMessage(`[]`),
+		ID:       "session-persisted",
+		DialogID: "agent-1",
+		UserID:   "user-a",
+		Message:  json.RawMessage(`[]`),
 	}); err != nil {
 		t.Fatalf("create conversation: %v", err)
 	}
@@ -126,13 +126,13 @@ func TestCancelSessionRunFinishedSessionDoesNotCreateCancelMarker(t *testing.T) 
 	}
 
 	svc := NewAgentServiceWithOptions(nil, nil, tracker)
-	if err := svc.CancelSessionRun(t.Context(), "user-a", "session-persisted"); err != nil {
+	if err := svc.CancelSessionRun(permission.WithIdentity(t.Context(), "user-a", ""), "session-persisted"); err != nil {
 		t.Fatalf("late owner cancel error = %v", err)
 	}
 	if mr.Exists(sessionID + "-cancel") {
 		t.Fatal("late cancel recreated a marker after the run finished")
 	}
-	if err := svc.CancelSessionRun(t.Context(), "user-a", "missing-session"); err != nil {
+	if err := svc.CancelSessionRun(permission.WithIdentity(t.Context(), "user-a", ""), "missing-session"); err != nil {
 		t.Fatalf("missing session cancel must be idempotent: %v", err)
 	}
 	if mr.Exists("missing-session-cancel") {
@@ -147,13 +147,13 @@ func TestRunAgentInitializationFailureReleasesActiveSession(t *testing.T) {
 		t.Fatalf("migrate agent tables: %v", err)
 	}
 	if err := testDB.Create(&entity.UserCanvas{ID: "agent-1", UserID: "user-a"}).Error; err != nil {
-		t.Fatalf("create canvas: %v", err)
+		t.Fatalf("create agent: %v", err)
 	}
 	tracker, mr := newAgentCancelTracker(t)
 	svc := NewAgentServiceWithOptions(nil, nil, tracker)
 
 	const sessionID = "session-initialization-failure"
-	if _, err := svc.RunAgent(t.Context(), "user-a", "agent-1", sessionID, "missing-version", "", nil); err == nil {
+	if _, err := svc.RunAgent(permission.WithIdentity(t.Context(), "user-a", ""), "agent-1", sessionID, "missing-version", "", nil); err == nil {
 		t.Fatal("RunAgent with missing version returned nil error")
 	}
 	active, err := tracker.GetActiveSession(t.Context(), sessionID)

@@ -18,12 +18,13 @@
 //
 // Pipeline (KnowledgeCompiler, per document) writes compiled chunks with
 // available_int=0. Its completion/deletion is recorded by appending a
-// BacklogEntry to the KB's durable MySQL scheduling row
-// (knowledge_compile_docs), then waking idle workers over NATS. A cluster of
+// BacklogEntry to knowledge_compile_docs_backlog under the KB's scheduling row
+// lock (knowledge_compile_docs), then waking idle workers over NATS. A cluster of
 // competing workers claims a closed batch (backlog -> inflight) per KB, runs
 // dataset-level dedup on that batch, and writes the merged dataset-level
-// products with available_int=1. The MySQL row — not the broker — is the
-// scheduling system of record and the source of same-KB serialization.
+// products with available_int=1. The MySQL scheduling row and its backlog and
+// inflight tables are the scheduling system of record; the row lock serializes
+// same-KB processing.
 package knowledge_compile
 
 import (
@@ -118,13 +119,16 @@ func PublishCompleted(ctx context.Context, tenantID, datasetID, docID string, va
 }
 
 // PublishDeleted records a doc_deleted event the same way (Publish handles the
-// append + notify pairing). taskTypes identifies the document-level artifacts
-// that were removed before the event was published.
-func PublishDeleted(ctx context.Context, tenantID, datasetID, docID string, taskTypes []string) error {
-	if defaultPublisher == nil {
+// append + notify pairing). variants and taskTypes identify the document-level
+// artifacts that were removed before the event was published.
+func PublishDeleted(ctx context.Context, tenantID, datasetID, docID string, variants, taskTypes []string) error {
+	// A deletion event without artifact variants cannot be scoped safely. Do not
+	// enqueue it: the consumer treats empty routing metadata as a legacy
+	// all-variants event, which could rebuild unrelated dataset artifacts.
+	if defaultPublisher == nil || len(variants) == 0 {
 		return nil
 	}
-	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeDeleted), nil, taskTypes)
+	return defaultPublisher.Publish(ctx, tenantID, datasetID, docID, string(EventTypeDeleted), variants, taskTypes)
 }
 
 // PublishEnabled records that a document with compiled products became

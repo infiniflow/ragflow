@@ -188,14 +188,15 @@ func TestBegin_InitializesNilGlobalsAfterRestore(t *testing.T) {
 // arbitrary keys beyond query / user_id — is returned unchanged as
 // outputs. This is the contract downstream components rely on to access
 // DSL-level inputs the engine has not explicitly modeled.
-func TestBegin_PassesThroughInputs(t *testing.T) {
+func TestBegin_PassesThroughInputsWithoutOverridingIdentity(t *testing.T) {
 	c, _ := NewBeginComponent(nil)
 	state := canvas.NewCanvasState("run-2", "task-2")
+	state.SeedIdentity("authenticated-user", "tenant-7")
 	ctx := canvas.WithState(t.Context(), state)
 
 	inputs := map[string]any{
 		"query":   "what is ragflow",
-		"user_id": "tenant-7",
+		"user_id": "input-user",
 		"inputs":  map[string]any{"k": "v"},
 		"extra":   42,
 	}
@@ -206,8 +207,8 @@ func TestBegin_PassesThroughInputs(t *testing.T) {
 	if !reflect.DeepEqual(out, inputs) {
 		t.Errorf("output passthrough failed:\n got  %v\n want %v", out, inputs)
 	}
-	if got, _ := state.Sys["user_id"].(string); got != "tenant-7" {
-		t.Errorf("state.Sys[user_id]: got %q, want %q", got, "tenant-7")
+	if got, _ := state.Sys["user_id"].(string); got != "authenticated-user" {
+		t.Errorf("state.Sys[user_id]: got %q, want authenticated identity", got)
 	}
 }
 
@@ -256,6 +257,19 @@ func TestBegin_InjectsWebhookPayload(t *testing.T) {
 	// Passthrough preserved.
 	if outPayload, _ := out["webhook_payload"].(map[string]any); !reflect.DeepEqual(outPayload, payload) {
 		t.Errorf("outputs[webhook_payload] mismatch:\n got  %v\n want %v", outPayload, payload)
+	}
+	for key, value := range out {
+		state.SetVar("Begin", key, value)
+	}
+	for _, tt := range []struct{ ref, want string }{
+		{"Begin@headers.x-token", "abc"},
+		{"Begin@query.q", "hello"},
+		{"Begin@body.k", "v"},
+	} {
+		got, err := canvas.ResolveTemplate("{{"+tt.ref+"}}", state)
+		if err != nil || got != tt.want {
+			t.Errorf("resolve %s = %q, %v; want %q", tt.ref, got, err, tt.want)
+		}
 	}
 }
 

@@ -22,14 +22,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// DefaultTrustedProxies is the proxy set whose X-Forwarded-For / X-Real-IP
-// headers gin honours when no `ragflow.trusted_proxies` list is configured.
-// It covers the nginx that docker/entrypoint.sh starts inside the same
-// container as this server: docker/nginx/ragflow.conf.golang proxies /v1 and
-// /api to 127.0.0.1:9384 and proxy.conf appends the caller to
-// X-Forwarded-For. Nothing else is trusted, so a request that reaches the
-// server from any other peer is attributed to that peer regardless of the
-// headers it carries.
 var DefaultTrustedProxies = []string{"127.0.0.0/8", "::1/128"}
 
 // ConfigureTrustedProxies replaces gin's default trust-everything proxy list

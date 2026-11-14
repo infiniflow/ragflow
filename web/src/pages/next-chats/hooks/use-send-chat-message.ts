@@ -1,10 +1,8 @@
 import { NextMessageInputOnPressEnterParameter } from '@/components/message-input/next';
 import { MessageType } from '@/constants/chat';
-import {
-  useHandleMessageInputChange,
-  useScrollToBottom,
-} from '@/hooks/logic-hooks';
+import { useHandleMessageInputChange } from '@/hooks/logic-hooks';
 import { useFetchChat, useGetChatSearchParams } from '@/hooks/use-chat-request';
+import { useVirtualMessages } from '@/hooks/use-virtual-messages';
 import { buildMessageListWithUuid } from '@/utils/chat';
 import { IMessage, Message } from '@/interfaces/database/chat';
 import notification from '@/utils/notification';
@@ -40,7 +38,11 @@ export const useCurrentChatSession = () => {
   const isStreaming = useIsChatStreaming(conversationId);
 
   const messageContainerRef = useRef<HTMLDivElement>(null);
-  const { scrollRef } = useScrollToBottom(messages, messageContainerRef);
+  const { virtualizer, scrollToBottom } = useVirtualMessages(
+    messages,
+    messageContainerRef,
+    { resetKey: conversationId },
+  );
 
   const ensureSession = useChatStreamStore((state) => state.ensureSession);
   const seedPrologue = useChatStreamStore((state) => state.seedPrologue);
@@ -58,8 +60,9 @@ export const useCurrentChatSession = () => {
   return {
     messages,
     isStreaming,
-    scrollRef,
+    virtualizer,
     messageContainerRef,
+    scrollToBottom,
   };
 };
 
@@ -73,8 +76,13 @@ export const useSendMessage = () => {
 
   const { id: chatId } = useParams();
   const { data: currentDialog } = useFetchChat();
-  const { messages, isStreaming, scrollRef, messageContainerRef } =
-    useCurrentChatSession();
+  const {
+    messages,
+    isStreaming,
+    virtualizer,
+    messageContainerRef,
+    scrollToBottom,
+  } = useCurrentChatSession();
 
   const appendQuestion = useChatStreamStore((state) => state.appendQuestion);
   const failStream = useChatStreamStore((state) => state.failStream);
@@ -99,13 +107,11 @@ export const useSendMessage = () => {
     async ({
       message,
       currentConversationId,
-      messages: explicitMessages,
       enableInternet,
       enableThinking,
     }: {
       message: IMessage;
       currentConversationId?: string;
-      messages?: IMessage[];
     } & NextMessageInputOnPressEnterParameter) => {
       const sessionId = currentConversationId ?? conversationId;
 
@@ -114,12 +120,8 @@ export const useSendMessage = () => {
       const { ok, aborted } = await runChatCompletionStream({
         conversationId: sessionId,
         chatId,
-        // An explicitly provided list is authoritative, even when empty
-        // (e.g. regenerating the first question must truncate history).
-        messages: [
-          ...(Array.isArray(explicitMessages) ? explicitMessages : messages),
-          message,
-        ],
+        question: message.content,
+        files: message.files,
         enableThinking,
         enableInternet,
         llmSetting: currentDialog?.llm_setting,
@@ -134,14 +136,7 @@ export const useSendMessage = () => {
         notification.error({ message: t('message.requestError') });
       }
     },
-    [
-      conversationId,
-      chatId,
-      messages,
-      failStream,
-      t,
-      currentDialog?.llm_setting,
-    ],
+    [conversationId, chatId, failStream, t, currentDialog?.llm_setting],
   );
 
   // Hand a failed question back to the input box, but only once the box is
@@ -211,12 +206,9 @@ export const useSendMessage = () => {
 
       const id = uuid();
 
-      // useUploadFile tracks files as loosely typed records; narrow once here.
-      const attachedFiles = files as IMessage['files'];
-
       const questionMessage: IMessage = {
         content: value,
-        files: attachedFiles,
+        files,
         id,
         role: MessageType.User,
         conversationId: targetConversationId,
@@ -237,26 +229,16 @@ export const useSendMessage = () => {
 
       // Route the question to the conversation it was asked in, not whichever
       // is currently displayed.
-      //
-      // Snapshot the history before appendQuestion writes the question and its
-      // assistant placeholder into the store.
-      const history =
-        useChatStreamStore.getState().sessions[targetConversationId]
-          ?.messages ?? [];
-
       appendQuestion(targetConversationId, questionMessage);
 
       setValue('');
       sendMessage({
         currentConversationId: targetConversationId,
-        // For an existing conversation currentMessages is empty; fall back to
-        // the store's message list instead of sending an empty history.
-        messages: currentMessages.length > 0 ? currentMessages : history,
         message: {
           id,
           content: value.trim(),
           role: MessageType.User,
-          files: attachedFiles,
+          files,
           conversationId: targetConversationId,
         },
         enableInternet,
@@ -266,15 +248,7 @@ export const useSendMessage = () => {
       clearFiles();
 
       // Auto scroll to bottom when sending new message
-      if (messageContainerRef.current) {
-        const el = messageContainerRef.current;
-
-        requestAnimationFrame(() => {
-          el.scrollTo({
-            top: el.scrollHeight,
-          });
-        });
-      }
+      requestAnimationFrame(scrollToBottom);
     },
     [
       value,
@@ -286,7 +260,7 @@ export const useSendMessage = () => {
       clearFiles,
       setValue,
       sendMessage,
-      messageContainerRef,
+      scrollToBottom,
     ],
   );
 
@@ -301,7 +275,7 @@ export const useSendMessage = () => {
     setValue,
     regenerateMessage,
     sendLoading: isStreaming,
-    scrollRef,
+    virtualizer,
     messageContainerRef,
     messages,
     removeMessageById,

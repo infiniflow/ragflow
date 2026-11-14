@@ -28,8 +28,7 @@ import (
 
 // RuntimeAdapter exposes the agent tool's NLPRetrievalAdapter (the production
 // hybrid-retrieval backend installed by the server) through the runtime
-// RetrievalService singleton that the agentic-RAG harness reads via
-// harness.RuntimeRetriever.
+// RetrievalService singleton the smart-reasoning agent reads per call.
 //
 // The wrapped service is captured at construction, NOT resolved from the runtime
 // singleton on every call: agenttool.SetRetrievalService and
@@ -38,7 +37,7 @@ import (
 // at call time therefore returned this adapter itself, and Search called itself
 // until the stack overflowed on every agentic retrieval.
 //
-// This keeps a single retrieval implementation: the harness and the canvas both
+// This keeps a single retrieval implementation: the agent and the canvas both
 // search through the same NLPRetrievalAdapter.
 type RuntimeAdapter struct {
 	svc agenttool.RetrievalService
@@ -58,36 +57,19 @@ func (a *RuntimeAdapter) Search(ctx context.Context, db *gorm.DB, req agentrunt.
 	if svc == nil {
 		return nil, agenttool.ErrRetrievalServiceMissing
 	}
-	// The harness calls the runtime service with a nil *gorm.DB (see
-	// harness.RuntimeRetriever.Retrieve), while the underlying NLPRetrievalAdapter
-	// needs a real connection to resolve knowledge bases. Fall back to the
-	// process-wide DB handle used by the rest of the chat pipeline.
+	// Callers of the runtime service pass a nil *gorm.DB, while the underlying
+	// NLPRetrievalAdapter needs a real connection to resolve knowledge bases.
+	// Fall back to the process-wide DB handle used by the rest of the chat
+	// pipeline.
 	if db == nil {
 		db = dao.DB
 	}
-	toolReq := agenttool.RetrievalRequest{
-		Query:                    req.Query,
-		DatasetIDs:               req.DatasetIDs,
-		MemoryIDs:                req.MemoryIDs,
-		TopN:                     req.TopN,
-		RerankCandidatesCount:    req.RerankCandidatesCount,
-		TopK:                     req.TopK,
-		KeywordsSimilarityWeight: req.KeywordsSimilarityWeight,
-		UseKG:                    req.UseKG,
-		SimilarityThreshold:      req.SimilarityThreshold,
-		AllowDenseFallback:       new(false),
-		CrossLanguages:           req.CrossLanguages,
-		RetrievalFrom:            req.RetrievalFrom,
-		DocScope:                 req.DocScope,
-		TenantID:                 req.TenantID,
-		// rank_feature (Python retrieve: rank_feature=label_question(question,
-		// self.kbs)) — forwarded from the RAGTools-computed value so the agentic
-		// tool stays authoritative; the adapter falls back to its own resolution.
-		RankFeature: rankFeatureOrNil(req.RankFeature),
-		// OnlyOriginalText restricts retrieval to ordinary document chunks (no
-		// compile_kwd) — Python hybrid_search's must_not={"exists":"compile_kwd"}.
-		ExcludeCompiled: req.OnlyOriginalText,
-	}
+	// RetrievalRequest is shared by the runtime and tool layers, so preserve it
+	// whole. A field-by-field copy previously dropped RerankID, causing agent
+	// completions to silently use local KNN scoring even when a reranker was set.
+	toolReq := agenttool.RetrievalRequest(req)
+	toolReq.AllowDenseFallback = new(false)
+	toolReq.RankFeature = rankFeatureOrNil(req.RankFeature)
 	chunks, err := svc.Search(ctx, db, toolReq)
 	if err != nil {
 		return nil, err

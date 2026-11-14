@@ -24,7 +24,6 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
-	"strings"
 )
 
 // HunyuanModel implements ModelDriver for Tencent Hunyuan
@@ -76,12 +75,10 @@ func (h *HunyuanModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := h.baseModel.GetBaseURL(apiConfig)
+	url, err := h.baseModel.EndpointURL(apiConfig, h.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, h.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	body, err := h.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
@@ -112,12 +109,10 @@ func (h *HunyuanModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		chatModelConfig.UsageResult = nil
 	}
 
-	baseURL, err := h.baseModel.GetBaseURL(apiConfig)
+	url, err := h.baseModel.EndpointURL(apiConfig, h.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, h.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]any{"include_usage": true}
 
@@ -131,12 +126,10 @@ func (h *HunyuanModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 		return nil, err
 	}
 
-	baseURL, err := h.baseModel.GetBaseURL(apiConfig)
+	url, err := h.baseModel.EndpointURL(apiConfig, h.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, h.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -190,12 +183,10 @@ func (h *HunyuanModel) Embed(ctx context.Context, modelName *string, request Emb
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	baseURL, err := h.baseModel.GetBaseURL(apiConfig)
+	url, err := h.baseModel.EndpointURL(apiConfig, h.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, h.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -260,41 +251,45 @@ func (h *HunyuanModel) Embed(ctx context.Context, modelName *string, request Emb
 }
 
 func (h *HunyuanModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: Rerank", h.Name())
 }
 
 func (h *HunyuanModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", h.Name())
 }
 
 func (h *HunyuanModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", h.Name())
 }
 
 func (h *HunyuanModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", h.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", h.Name())
 }
 
 func (h *HunyuanModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", h.Name())
 }
 
 func (h *HunyuanModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", h.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", h.Name())
 }
 
 func (h *HunyuanModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", h.Name())
 }
 
 func (h *HunyuanModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", h.Name())
 }
 
 func (h *HunyuanModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", h.Name())
 }
 
 func (h *HunyuanModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", h.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", h.Name())
+}
+
+func (h *HunyuanModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", h.Name())
 }

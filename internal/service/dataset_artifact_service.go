@@ -30,6 +30,7 @@ import (
 	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/service/nav"
+	"ragflow/internal/tokenizer"
 )
 
 // Compile keyword constants used by the knowledge-compilation artifacts stored
@@ -48,7 +49,12 @@ const (
 
 // DatasetArtifactService reads knowledge-compilation artifacts (wiki pages,
 // graphs, structures, navigation, skills) from the document engine.
-type DatasetArtifactService struct{}
+type DatasetArtifactService struct {
+	// docEngine, when set, overrides the global engine returned by engine.Get()
+	// for compiled-search calls. Tests inject a fake here; production leaves it
+	// nil and falls back to the global engine.
+	docEngine engine.DocEngine
+}
 
 // NewDatasetArtifactService creates a DatasetArtifactService.
 func NewDatasetArtifactService() *DatasetArtifactService {
@@ -67,7 +73,17 @@ func (s *DatasetArtifactService) searchCompiled(ctx context.Context, tenantID, d
 }
 
 func (s *DatasetArtifactService) searchCompiledWithMatch(ctx context.Context, tenantID, datasetID string, filter map[string]interface{}, selectFields []string, offset, limit int, orderBy *types.OrderByExpr, matchExprs []interface{}) ([]map[string]interface{}, int64, error) {
-	docEngine := engine.Get()
+	// Read the optional injected engine only when the receiver is non-nil so
+	// that callers passing a nil *DatasetArtifactService (which the wiki-graph
+	// error-path tests rely on) keep getting a clean error instead of a nil
+	// dereference.
+	var docEngine engine.DocEngine
+	if s != nil {
+		docEngine = s.docEngine
+	}
+	if docEngine == nil {
+		docEngine = engine.Get()
+	}
 	if docEngine == nil {
 		return nil, 0, fmt.Errorf("document engine is not initialized")
 	}
@@ -139,7 +155,7 @@ func intValue(v interface{}) int {
 // HasWiki reports whether the dataset has any compiled wiki artifact.
 func (s *DatasetArtifactService) HasWiki(ctx context.Context, tenantID, datasetID string) (bool, error) {
 	_, total, err := s.searchCompiled(ctx, tenantID, datasetID,
-		map[string]interface{}{"compile_kwd": []string{CompileKwdWikiPage}}, nil, 0, 1, nil)
+		map[string]interface{}{"type_kwd": []string{CompileKwdWikiPage}}, nil, 0, 1, nil)
 	if err != nil {
 		return false, err
 	}
@@ -166,7 +182,7 @@ type WikiPageItem struct {
 }
 
 // wikiPageSelectFields are the engine fields ListWikiPages reads.
-var wikiPageSelectFields = []string{"slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "outlinks_int", "summary_with_weight"}
+var wikiPageSelectFields = []string{"slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "entity_type_kwd", "type_kwd", "topic_kwd", "outlinks_int", "summary_with_weight"}
 
 // wikiPageOrderBy ranks wiki pages by connectivity then title.
 func wikiPageOrderBy() *types.OrderByExpr {
@@ -183,7 +199,7 @@ func (s *DatasetArtifactService) ListWikiPages(ctx context.Context, tenantID, da
 	// list_wiki_pages has no such duplication because its writer emits one row
 	// per page, so mirror that by selecting the merged rows (available_int=1).
 	filter := map[string]interface{}{
-		"compile_kwd":   []string{CompileKwdWikiPage},
+		"type_kwd":      []string{CompileKwdWikiPage},
 		"available_int": 1, // merged dataset-level rows only (see engine available_int handling)
 	}
 	if pageType != "" {
@@ -249,7 +265,7 @@ func wikiPageItemsFromChunks(chunks []map[string]interface{}) []WikiPageItem {
 }
 
 func wikiPageItemFromChunk(c map[string]interface{}) WikiPageItem {
-	pageType := firstStringValue(c["page_type_kwd"])
+	pageType := types.WikiPageCategory(c)
 	// slug_kwd is stored as the full "<page_type>/<slug>" form (Python
 	// contract); expose the bare slug to the frontend so it can be placed in
 	// a single URL path segment (gin :slug does not match '/').
@@ -281,8 +297,8 @@ func containsFold(s, lowerKeyword string) bool {
 }
 
 // WikiPageDetail is the full wiki page payload. The content field is exposed as
-// content_md_rendered to match the frontend IArtifactPage contract (and Python's
-// get_wiki_page), which renders it directly.
+// content_md_rendered to match the frontend IArtifactPage contract, which
+// renders the page's Markdown body directly.
 type WikiPageDetail struct {
 	Slug           string   `json:"slug"`
 	Title          string   `json:"title"`
@@ -305,13 +321,13 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 	// filter matches the stored value exactly.
 	slugKwd := pageType + "/" + slug
 	filter := map[string]interface{}{
-		"compile_kwd":   []string{CompileKwdWikiPage},
+		"type_kwd":      []string{CompileKwdWikiPage},
 		"page_type_kwd": []string{pageType},
 		"slug_kwd":      []string{slugKwd},
 		"available_int": 1, // merged dataset-level page, not the per-doc source row
 	}
 	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{"slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "md_with_weight",
+		[]string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "entity_type_kwd", "type_kwd", "topic_kwd",
 			"content_with_weight", "summary_with_weight", "entity_names_kwd", "outlinks_kwd",
 			"related_kb_pages_kwd", "source_chunk_ids", "source_doc_ids"},
 		0, 1, nil)
@@ -322,16 +338,14 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 		return nil, nil
 	}
 	c := chunks[0]
-	// Python stores the page body in md_with_weight (incremental writer), falling
-	// back to content_with_weight for legacy rows; mirror that here.
-	content := firstStringValue(c["md_with_weight"])
-	if content == "" {
-		content = firstStringValue(c["content_with_weight"])
+	content, err := loadWikiPageBody(ctx, engine.Get(), wikiIndexName(tenantID), datasetID, c)
+	if err != nil {
+		return nil, err
 	}
 	// slug_kwd is the full "<page_type>/<slug>" form; expose the bare slug so a
 	// client can pass it straight back to GetWikiPage/UpdateWikiPage without the
 	// "<page_type>/" prefix being doubled (matches ListWikiPages).
-	detailPageType := firstStringValue(c["page_type_kwd"])
+	detailPageType := types.WikiPageCategory(c)
 	detailSlug := firstStringValue(c["slug_kwd"])
 	if detailPageType != "" {
 		detailSlug = strings.TrimPrefix(detailSlug, detailPageType+"/")
@@ -352,6 +366,18 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 	return detail, nil
 }
 
+func loadWikiPageBody(ctx context.Context, docEngine engine.DocEngine, indexName, datasetID string, row map[string]interface{}) (string, error) {
+	if content := types.WikiPageContent(row); content != "" {
+		return content, nil
+	}
+	raw, err := docEngine.GetChunk(ctx, indexName, firstStringValue(row["id"]), []string{datasetID})
+	if err != nil {
+		return "", err
+	}
+	stored, _ := raw.(map[string]interface{})
+	return types.WikiPageContent(stored), nil
+}
+
 // UpdateWikiPage performs a partial field update of a wiki page's content,
 // title and outlinks through the document engine, then returns the refreshed
 // page.
@@ -364,7 +390,7 @@ func (s *DatasetArtifactService) UpdateWikiPage(ctx context.Context, tenantID, d
 	// deterministically from the bare slug (see GetWikiPage).
 	slugKwd := pageType + "/" + slug
 	filter := map[string]interface{}{
-		"compile_kwd":   []string{CompileKwdWikiPage},
+		"type_kwd":      []string{CompileKwdWikiPage},
 		"page_type_kwd": []string{pageType},
 		"slug_kwd":      []string{slugKwd},
 		"available_int": 1, // merged dataset-level page only
@@ -382,9 +408,6 @@ func (s *DatasetArtifactService) UpdateWikiPage(ctx context.Context, tenantID, d
 	}
 	update := map[string]interface{}{}
 	if contentMd != "" {
-		// GetWikiPage prefers md_with_weight and falls back to content_with_weight,
-		// so write both to keep the edit readable regardless of the row's writer.
-		update["md_with_weight"] = contentMd
 		update["content_with_weight"] = contentMd
 	}
 	if title != "" {
@@ -417,7 +440,7 @@ type WikiTopicItem struct {
 // title/slug/summary, mirroring Python list_wiki_topics.
 func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, datasetID, keywords string) ([]WikiTopicItem, int64, error) {
 	filter := map[string]interface{}{
-		"compile_kwd":   []string{CompileKwdWikiPage},
+		"type_kwd":      []string{CompileKwdWikiPage},
 		"page_type_kwd": []string{"concept", "entity", "topic"},
 		"available_int": 1, // count only merged pages, not per-doc source rows
 	}
@@ -461,7 +484,7 @@ func (s *DatasetArtifactService) ListWikiTopics(ctx context.Context, tenantID, d
 // contains the keyword.
 func (s *DatasetArtifactService) wikiTopicsWithKeywordPages(ctx context.Context, tenantID, datasetID, lowerKeyword string) (map[string]bool, error) {
 	filter := map[string]interface{}{
-		"compile_kwd":   []string{CompileKwdWikiPage},
+		"type_kwd":      []string{CompileKwdWikiPage},
 		"page_type_kwd": []string{"concept", "entity"},
 	}
 	fields := []string{"topic_kwd", "title_kwd", "slug_kwd", "summary_with_weight"}
@@ -579,8 +602,8 @@ type WikiGraphRelation struct {
 // GetWikiGraph returns an incremental wiki graph slice for a dataset. keywords
 // seeds the overview with BM25 entity matches; topN overrides the entity cap.
 func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, datasetID, keywords string, topN *int) (*WikiGraph, error) {
-	entityFilter := map[string]interface{}{"compile_kwd": []string{CompileKwdWikiEntity}, "available_int": 1}
-	relationFilter := map[string]interface{}{"compile_kwd": []string{CompileKwdWikiRelation}, "available_int": 1}
+	entityFilter := map[string]interface{}{"type_kwd": []string{CompileKwdWikiEntity}, "available_int": 1}
+	relationFilter := map[string]interface{}{"type_kwd": []string{CompileKwdWikiRelation}, "available_int": 1}
 	_, totalEntities, err := s.searchCompiled(ctx, tenantID, datasetID, entityFilter, []string{"id"}, 0, 1, nil)
 	if err != nil {
 		return nil, err
@@ -605,25 +628,42 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 	var matchExprs []interface{}
 	var orderBy *types.OrderByExpr
 	if keywords != "" {
+		// The token columns (title_tks / content_ltks / *_sm_ltks) are
+		// whitespace-analyzed and hold RAGFlow's pre-tokenized tokens
+		// (space-joined). ES analyzes the query with the whitespace analyzer too,
+		// so a raw multi-token keyword (e.g. "桃园三结义") never equals a stored
+		// token and silently matches nothing. Tokenize the query like the other
+		// lexical callers (see navKeywordExpressions); the raw input stays on
+		// original_query for engines that analyze the query themselves. The
+		// entity rows are tokenized in the dataset language, so the query is too.
+		kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, dao.DB, datasetID)
+		if err != nil {
+			return nil, err
+		}
+		kbLanguage := ""
+		if kb.Language != nil {
+			kbLanguage = *kb.Language
+		}
+		originalQuery := keywords
+		if tokenized, err := tokenizer.New(kbLanguage).Tokenize(keywords); err == nil && tokenized != "" {
+			keywords = tokenized
+		}
 		matchExprs = []interface{}{&types.MatchTextExpr{
 			Fields:       []string{"title_tks^10", "title_sm_tks^5", "content_ltks^2", "content_sm_ltks"},
 			MatchingText: keywords,
 			TopN:         limit,
-			ExtraOptions: map[string]interface{}{"original_query": keywords},
+			ExtraOptions: map[string]interface{}{"original_query": originalQuery},
 		}}
 	} else {
 		orderBy = (&types.OrderByExpr{}).Desc("weight_int")
 	}
 	entityChunks, _, err := s.searchCompiledWithMatch(ctx, tenantID, datasetID, entityFilter,
-		[]string{"id", "slug_kwd", "title_kwd", "aliases_kwd", "description_with_weight", "entity_type_kwd", "weight_int", "source_chunk_ids"},
+		[]string{"id", "slug_kwd", "title_kwd", "entity_type_kwd", "weight_int", "source_chunk_ids", "content_with_weight"},
 		0, limit, orderBy, matchExprs)
 	if err != nil {
 		return nil, err
 	}
-	fromKwds := make([]string, 0, len(entityChunks))
-	for _, c := range entityChunks {
-		fromKwds = append(fromKwds, firstStringValue(c["slug_kwd"]))
-	}
+	fromKwds := wikiEntitySlugs(entityChunks)
 	graph := &WikiGraph{
 		Entities:       []WikiGraphEntity{},
 		Relations:      []WikiGraphRelation{},
@@ -645,12 +685,23 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 			pageType = bareSlug[:idx]
 			bareSlug = bareSlug[idx+1:]
 		}
+		// name / aliases / description live in the content_with_weight payload
+		// (as Python writes them); the columns they replaced exist in no mapping.
+		payload := wikiEntityPayload(c)
+		name := firstStringValue(c["title_kwd"])
+		if v := payloadString(payload, "name"); v != "" {
+			name = v
+		}
+		entityType := pageType
+		if v := payloadString(payload, "type"); v != "" {
+			entityType = v
+		}
 		graph.Entities = append(graph.Entities, WikiGraphEntity{
 			Slug:           bareSlug,
-			Name:           firstStringValue(c["title_kwd"]),
-			Aliases:        toStringSlice(c["aliases_kwd"]),
-			Description:    firstStringValue(c["description_with_weight"]),
-			Type:           pageType,
+			Name:           name,
+			Aliases:        payloadStrings(payload, "aliases"),
+			Description:    payloadString(payload, "description"),
+			Type:           entityType,
 			Weight:         w,
 			SourceChunkIDs: toStringSlice(c["source_chunk_ids"]),
 		})
@@ -678,6 +729,21 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 	return graph, nil
 }
 
+// wikiEntitySlugs returns the entity slugs the graph's relation lookup filters
+// on. Rows without a slug are skipped: a blank value would render as
+// filter_fulltext('from_kwd', ”), which Infinity rejects with 3052 ("Trying to
+// match:  on fields: from_kwd failed") and fails the whole graph request, while
+// ES happily returns an empty result.
+func wikiEntitySlugs(entityChunks []map[string]interface{}) []string {
+	slugs := make([]string, 0, len(entityChunks))
+	for _, c := range entityChunks {
+		if slug := firstStringValue(c["slug_kwd"]); slug != "" {
+			slugs = append(slugs, slug)
+		}
+	}
+	return slugs
+}
+
 // WikiAlteration is the alteration summary for a dataset's wiki artifacts.
 type WikiAlteration struct {
 	Removed             int      `json:"removed"`
@@ -693,7 +759,7 @@ func (s *DatasetArtifactService) GetWikiAlteration(ctx context.Context, tenantID
 	involved := map[string]struct{}{}
 	for offset := 0; ; offset += 1000 {
 		chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID,
-			map[string]interface{}{"compile_kwd": []string{CompileKwdWikiPage}},
+			map[string]interface{}{"type_kwd": []string{CompileKwdWikiPage}},
 			[]string{"source_doc_ids"}, offset, 1000, nil)
 		if err != nil {
 			return nil, err
@@ -714,10 +780,42 @@ func (s *DatasetArtifactService) GetWikiAlteration(ctx context.Context, tenantID
 	// pages as both sides of the comparison, which made deletion impossible to
 	// observe. In particular, a deleted document remains in source_doc_ids until
 	// the dataset-level consumer removes the old page.
+	//
+	// Only the four columns actually consumed below are projected; the full row
+	// (including the potentially large parser_config-independent payload) is
+	// never pulled into memory.
 	var documents []entity.Document
-	if err := dao.DB.WithContext(ctx).Where("kb_id = ?", datasetID).Find(&documents).Error; err != nil {
+	if err := dao.DB.WithContext(ctx).
+		Select("id", "status", "pipeline_id", "parser_config").
+		Where("kb_id = ?", datasetID).Find(&documents).Error; err != nil {
 		return nil, fmt.Errorf("list dataset documents for wiki alteration: %w", err)
 	}
+
+	// Collect the distinct pipeline ids and load every referenced canvas in a
+	// single IN query instead of one point query per document. Wiki datasets
+	// typically share one pipeline across many documents, so the naive loop was
+	// a classic N+1.
+	canvasByID := make(map[string]entity.UserCanvas)
+	pipelineIDs := make(map[string]struct{})
+	for i := range documents {
+		if documents[i].PipelineID != nil && *documents[i].PipelineID != "" {
+			pipelineIDs[*documents[i].PipelineID] = struct{}{}
+		}
+	}
+	if len(pipelineIDs) > 0 {
+		ids := make([]string, 0, len(pipelineIDs))
+		for id := range pipelineIDs {
+			ids = append(ids, id)
+		}
+		var canvases []entity.UserCanvas
+		if err := dao.DB.WithContext(ctx).Where("id IN ?", ids).Find(&canvases).Error; err != nil {
+			return nil, fmt.Errorf("load pipelines for wiki alteration: %w", err)
+		}
+		for _, c := range canvases {
+			canvasByID[c.ID] = c
+		}
+	}
+
 	eligible := make(map[string]struct{}, len(documents))
 	for i := range documents {
 		if documents[i].Status != nil && *documents[i].Status == "0" {
@@ -727,7 +825,7 @@ func (s *DatasetArtifactService) GetWikiAlteration(ctx context.Context, tenantID
 		if documents[i].PipelineID != nil {
 			pipelineID = *documents[i].PipelineID
 		}
-		ok, err := s.documentHasWikiTemplate(ctx, tenantID, documents[i].ParserConfig, pipelineID)
+		ok, err := s.wikiTemplateEligible(ctx, tenantID, documents[i].ParserConfig, pipelineID, canvasByID)
 		if err != nil {
 			return nil, err
 		}
@@ -748,11 +846,16 @@ func (s *DatasetArtifactService) GetWikiAlteration(ctx context.Context, tenantID
 	}, nil
 }
 
-// documentHasWikiTemplate reports whether a document's saved pipeline config
-// contains a valid wiki compiler template. A document is eligible only when it
-// is configured for wiki compilation; treating every document in the dataset
-// as eligible would hide both template removal and document deletion.
-func (s *DatasetArtifactService) documentHasWikiTemplate(ctx context.Context, tenantID string, config entity.JSONMap, pipelineID string) (bool, error) {
+// wikiTemplateEligible reports whether a document is configured for wiki
+// compilation. A document is eligible only when it is configured for wiki
+// compilation; treating every document in the dataset as eligible would hide
+// both template removal and document deletion.
+//
+// The caller pre-loads the referenced canvases into canvasByID (a single IN
+// query) so that the pipeline lookup here is a map read rather than a per-
+// document point query. A pipeline id absent from canvasByID is equivalent to
+// the original ErrRecordNotFound branch and yields false.
+func (s *DatasetArtifactService) wikiTemplateEligible(ctx context.Context, tenantID string, config entity.JSONMap, pipelineID string, canvasByID map[string]entity.UserCanvas) (bool, error) {
 	ok, err := s.valueHasWikiTemplate(ctx, tenantID, config)
 	if err != nil || ok {
 		return ok, err
@@ -760,12 +863,9 @@ func (s *DatasetArtifactService) documentHasWikiTemplate(ctx context.Context, te
 	if pipelineID == "" {
 		return false, nil
 	}
-	var canvas entity.UserCanvas
-	if err := dao.DB.WithContext(ctx).Where("id = ?", pipelineID).First(&canvas).Error; err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return false, nil
-		}
-		return false, fmt.Errorf("load pipeline %q for wiki alteration: %w", pipelineID, err)
+	canvas, found := canvasByID[pipelineID]
+	if !found {
+		return false, nil
 	}
 	return s.valueHasWikiTemplate(ctx, tenantID, canvas.DSL)
 }
@@ -967,7 +1067,7 @@ func (s *DatasetArtifactService) GetSkillTree(ctx context.Context, tenantID, dat
 		filter["kwd"] = []string{kwd}
 	}
 	chunks, total, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{"kwd", "title_kwd", "page_type_kwd", "outlinks_int", "inlinks_int"}, 0, 10000, nil)
+		[]string{"kwd", "title_kwd", "page_type_kwd", "compile_kwd", "entity_type_kwd", "type_kwd", "outlinks_int", "inlinks_int"}, 0, 10000, nil)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -977,7 +1077,7 @@ func (s *DatasetArtifactService) GetSkillTree(ctx context.Context, tenantID, dat
 		items = append(items, SkillTreeItem{
 			Kwd:      firstStringValue(c["kwd"]),
 			Title:    firstStringValue(c["title_kwd"]),
-			PageType: firstStringValue(c["page_type_kwd"]),
+			PageType: types.WikiPageCategory(c),
 			Outlinks: outlinks,
 			Inlinks:  inlinks,
 		})
@@ -1062,6 +1162,47 @@ func firstStringValue(v interface{}) string {
 		}
 	}
 	return ""
+}
+
+// wikiEntityPayload decodes the canvas payload a wiki_entity row stores in
+// content_with_weight (Python `_wiki_entity_payload`); the payload is
+// authoritative for name/aliases/description/type.
+func wikiEntityPayload(row map[string]interface{}) map[string]interface{} {
+	raw := firstStringValue(row["content_with_weight"])
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var payload map[string]interface{}
+	if json.Unmarshal([]byte(raw), &payload) != nil {
+		return nil
+	}
+	return payload
+}
+
+// payloadString reads a payload field, accepting the legacy Go key too.
+func payloadString(payload map[string]interface{}, key string) string {
+	if payload == nil {
+		return ""
+	}
+	if v, ok := payload[key].(string); ok {
+		return strings.TrimSpace(v)
+	}
+	// Legacy Go rows named the same values title / page_type / summary.
+	legacy := map[string]string{"name": "title", "type": "page_type", "description": "summary"}[key]
+	if legacy != "" {
+		if v, ok := payload[legacy].(string); ok {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}
+
+// payloadStrings returns a string-list payload field.
+func payloadStrings(payload map[string]interface{}, key string) []string {
+	if payload == nil {
+		return []string{}
+	}
+	return toStringSlice(payload[key])
 }
 
 // bareWikiSlug strips only the first path segment from a full wiki slug

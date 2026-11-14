@@ -1,10 +1,11 @@
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useCallback, useMemo } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router';
+import { useParams, useSearchParams } from 'react-router';
 
 export const useExploreUrlParams = () => {
   const { id: canvasId } = useParams();
   const [searchParams] = useSearchParams();
-  const navigate = useNavigate();
+  const { navigateToAgentExplore } = useNavigatePage();
 
   const sessionId = useMemo(
     () => searchParams.get('sessionId') || undefined,
@@ -18,21 +19,19 @@ export const useExploreUrlParams = () => {
 
   const setCanvasId = useCallback(
     (id: string) => {
-      navigate(`/agent/${id}/explore`);
+      navigateToAgentExplore(id);
     },
-    [navigate],
+    [navigateToAgentExplore],
   );
 
   const setSessionId = useCallback(
     (id: string, isNewParam?: boolean) => {
-      const params = new URLSearchParams();
-      if (id) params.set('sessionId', id);
-      if (isNewParam) params.set('isNew', 'true');
-      navigate(
-        `/agent/${canvasId}/explore${params.toString() ? `?${params}` : ''}`,
-      );
+      navigateToAgentExplore(canvasId, {
+        sessionId: id,
+        isNew: isNewParam,
+      });
     },
-    [canvasId, navigate],
+    [canvasId, navigateToAgentExplore],
   );
 
   return {

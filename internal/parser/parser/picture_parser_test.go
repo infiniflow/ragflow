@@ -17,40 +17,45 @@
 package parser
 
 import (
+	"encoding/base64"
 	"strings"
 	"testing"
 )
+
+func TestPictureParserKeepsImageWithoutOCR(t *testing.T) {
+	data := []byte("picture bytes")
+	res := NewPictureParser().ParseWithResult(t.Context(), "photo.png", data)
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	if len(res.JSON) != 1 || res.JSON[0].ToMap()["text"] != "" {
+		t.Fatalf("picture text = %+v, want empty text", res.JSON)
+	}
+	wantImage := "data:image/png;base64," + base64.StdEncoding.EncodeToString(data)
+	if res.JSON[0].ToMap()["image"] != wantImage {
+		t.Fatalf("picture image = %v, want %q", res.JSON[0].ToMap()["image"], wantImage)
+	}
+	if len(res.Warnings) != 0 {
+		t.Fatalf("picture warnings = %v, want none", res.Warnings)
+	}
+}
 
 func TestNewPictureParser(t *testing.T) {
 	p := NewPictureParser()
 	if p == nil {
 		t.Fatal("NewPictureParser returned nil")
 	}
-	if p.OutputFormat != "" {
-		t.Errorf("OutputFormat = %q, want empty", p.OutputFormat)
-	}
-}
-
-func TestPictureParser_ConfigureFromSetup(t *testing.T) {
-	p := NewPictureParser()
-	p.ConfigureFromSetup(map[string]any{
-		"output_format": "text",
-	})
-	if p.OutputFormat != "text" {
-		t.Errorf("OutputFormat = %q, want text", p.OutputFormat)
-	}
 }
 
 func TestPictureParser_ParseWithResult_NilSetup(t *testing.T) {
 	ctx := t.Context()
 	p := NewPictureParser()
-	p.ConfigureFromSetup(nil)
 	res := p.ParseWithResult(ctx, "photo.png", []byte("\x89PNG"))
 	if res.Err != nil {
 		t.Errorf("unexpected error for nil setup: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Errorf("OutputFormat = %q, want json (image only allows json)", res.OutputFormat)
+	if !res.Produced() {
+		t.Errorf("produced = %t, want true (image only allows json)", res.Produced())
 	}
 	file, ok := res.File["doc_type_kwd"].(string)
 	if !ok || file != "image" {
@@ -68,8 +73,8 @@ func TestPictureParser_ParseWithResult_ValidExtensions(t *testing.T) {
 		if res.Err != nil {
 			t.Errorf("unexpected error for .%s: %v", ext, res.Err)
 		}
-		if res.OutputFormat != "json" {
-			t.Errorf("OutputFormat = %q for .%s, want json (image only allows json)", res.OutputFormat, ext)
+		if !res.Produced() {
+			t.Errorf("produced = %t for .%s, want true (image only allows json)", res.Produced(), ext)
 		}
 	}
 }
@@ -98,18 +103,15 @@ func TestPictureParser_ParseWithResult_VideoExtension(t *testing.T) {
 	}
 }
 
-func TestPictureParser_ParseWithResult_OutputFormat(t *testing.T) {
+func TestPictureParser_ParseWithResult_produced(t *testing.T) {
 	ctx := t.Context()
 	p := NewPictureParser()
-	p.ConfigureFromSetup(map[string]any{
-		"output_format": "json",
-	})
 	res := p.ParseWithResult(ctx, "photo.jpg", []byte{1, 2, 3})
 	if res.Err != nil {
 		t.Fatalf("unexpected error: %v", res.Err)
 	}
-	if res.OutputFormat != "json" {
-		t.Errorf("OutputFormat = %q, want json", res.OutputFormat)
+	if !res.Produced() {
+		t.Errorf("produced = %t, want true", res.Produced())
 	}
 }
 

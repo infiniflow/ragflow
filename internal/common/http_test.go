@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -70,6 +71,27 @@ type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
+}
+
+func TestGetMaxDocumentUploadBytes(t *testing.T) {
+	tests := []struct {
+		name  string
+		value string
+		want  int64
+	}{
+		{name: "default", want: DefaultMaxDocumentUploadBytes},
+		{name: "configured", value: "4096", want: 4096},
+		{name: "invalid uses default", value: "invalid", want: DefaultMaxDocumentUploadBytes},
+		{name: "nonpositive uses default", value: "0", want: DefaultMaxDocumentUploadBytes},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(EnvMaxDocumentUploadSize, tt.value)
+			if got := GetMaxDocumentUploadBytes(); got != tt.want {
+				t.Fatalf("GetMaxDocumentUploadBytes() = %d, want %d", got, tt.want)
+			}
+		})
+	}
 }
 
 func TestProviderLoggingRecordsTimingsAndTruncatesVectors(t *testing.T) {
@@ -158,7 +180,7 @@ func TestProviderLoggingDisabledAvoidsPayloadWork(t *testing.T) {
 	})
 
 	payload := &trackingReadCloser{reader: strings.NewReader(`{"query":"hello"}`)}
-	client := &http.Client{Transport: newProviderLoggingTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+	client := &http.Client{Transport: NewProviderLoggingTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusNoContent,
 			Header:     make(http.Header),
@@ -261,5 +283,126 @@ func TestProviderSlowStreamReportsTimingsWithoutDebug(t *testing.T) {
 	}
 	if _, ok := fields["payload"]; ok {
 		t.Errorf("timing log must not carry payloads while LLM_DEBUG is disabled: %v", fields)
+	}
+}
+
+// resetSharedHTTPClients drops the process-wide client cache so the next Get*
+// call rebuilds it under the test's environment, and restores the previous
+// cache afterwards. A test that changed the env must not leave a client built
+// from it behind for later tests.
+func resetSharedHTTPClients(t *testing.T) {
+	t.Helper()
+	previousSSRF, previousSchemeSafe := ssrfHTTPClient, schemeSafeHTTPClient
+	ssrfHTTPClient = sync.OnceValue(newSSRFHTTPClient)
+	schemeSafeHTTPClient = sync.OnceValue(newSchemeSafeHTTPClient)
+	t.Cleanup(func() {
+		ssrfHTTPClient, schemeSafeHTTPClient = previousSSRF, previousSchemeSafe
+	})
+}
+
+func TestSharedHTTPClientsConcurrentInitialization(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		get  func() *http.Client
+	}{
+		{name: "SSRF", get: GetSSRFHTTPClient},
+		{name: "SchemeSafe", get: GetSchemeSafeHTTPClient},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			resetSharedHTTPClients(t)
+			t.Setenv(EnvLLMHTTPResponseHeaderTimeout, "17s")
+			const workers = 64
+			clients := make([]*http.Client, workers)
+			start := make(chan struct{})
+			var wg sync.WaitGroup
+			for i := range clients {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					<-start
+					clients[i] = tc.get()
+				}()
+			}
+			close(start)
+			wg.Wait()
+
+			client := clients[0]
+			if client == nil {
+				t.Fatal("shared HTTP client is nil")
+			}
+			for i, got := range clients {
+				if got != client {
+					t.Errorf("worker %d got client %p, want %p", i, got, client)
+				}
+			}
+			if got := tc.get(); got != client {
+				t.Errorf("subsequent call got client %p, want %p", got, client)
+			}
+			if got := responseHeaderTimeoutOf(t, client); got != 17*time.Second {
+				t.Errorf("response header timeout = %v, want 17s", got)
+			}
+		})
+	}
+}
+
+func responseHeaderTimeoutOf(t *testing.T, client *http.Client) time.Duration {
+	t.Helper()
+	logging, ok := client.Transport.(*providerLoggingTransport)
+	if !ok {
+		t.Fatalf("client transport = %T, want *providerLoggingTransport", client.Transport)
+	}
+	var inner http.RoundTripper
+	switch tr := logging.base.(type) {
+	case *schemeSafeTransport:
+		inner = tr.base
+	case *strictSSRFTransport:
+		inner = tr.base
+	default:
+		t.Fatalf("inner transport = %T, want scheme-safe or SSRF transport", logging.base)
+	}
+	transport, ok := inner.(*http.Transport)
+	if !ok {
+		t.Fatalf("inner transport base = %T, want *http.Transport", inner)
+	}
+	return transport.ResponseHeaderTimeout
+}
+
+func TestProviderHTTPClientResponseHeaderTimeoutDefaults(t *testing.T) {
+	t.Setenv(EnvLLMHTTPResponseHeaderTimeout, "")
+	resetSharedHTTPClients(t)
+
+	if got := responseHeaderTimeoutOf(t, GetSchemeSafeHTTPClient()); got != schemeSafeResponseHeaderTimeoutDefault {
+		t.Errorf("scheme-safe response header timeout = %v, want %v", got, schemeSafeResponseHeaderTimeoutDefault)
+	}
+	if got := responseHeaderTimeoutOf(t, GetSSRFHTTPClient()); got != ssrfResponseHeaderTimeoutDefault {
+		t.Errorf("SSRF response header timeout = %v, want %v", got, ssrfResponseHeaderTimeoutDefault)
+	}
+}
+
+func TestProviderHTTPClientResponseHeaderTimeoutOverride(t *testing.T) {
+	t.Setenv(EnvLLMHTTPResponseHeaderTimeout, "15s")
+	resetSharedHTTPClients(t)
+
+	if got := responseHeaderTimeoutOf(t, GetSchemeSafeHTTPClient()); got != 15*time.Second {
+		t.Errorf("scheme-safe response header timeout = %v, want 15s", got)
+	}
+	if got := responseHeaderTimeoutOf(t, GetSSRFHTTPClient()); got != 15*time.Second {
+		t.Errorf("SSRF response header timeout = %v, want 15s", got)
+	}
+}
+
+func TestProviderHTTPClientResponseHeaderTimeoutIgnoresInvalidValues(t *testing.T) {
+	for _, value := range []string{"not-a-duration", "0s", "-5s", "30"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv(EnvLLMHTTPResponseHeaderTimeout, value)
+			resetSharedHTTPClients(t)
+
+			if got := responseHeaderTimeoutOf(t, GetSchemeSafeHTTPClient()); got != schemeSafeResponseHeaderTimeoutDefault {
+				t.Errorf("scheme-safe response header timeout = %v, want default %v for %q", got, schemeSafeResponseHeaderTimeoutDefault, value)
+			}
+			if got := responseHeaderTimeoutOf(t, GetSSRFHTTPClient()); got != ssrfResponseHeaderTimeoutDefault {
+				t.Errorf("SSRF response header timeout = %v, want default %v for %q", got, ssrfResponseHeaderTimeoutDefault, value)
+			}
+		})
 	}
 }

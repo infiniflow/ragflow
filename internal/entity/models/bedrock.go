@@ -623,7 +623,7 @@ func (b *BedrockModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, err
 	}
 
-	body, err := buildConverseRequest(messages, chatModelConfig)
+	body, err := buildConverseRequest(messages, withClaudeSamplingPolicy(modelName, chatModelConfig))
 	if err != nil {
 		return nil, err
 	}
@@ -711,7 +711,7 @@ func (b *BedrockModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		return err
 	}
 
-	body, err := buildConverseRequest(messages, chatModelConfig)
+	body, err := buildConverseRequest(messages, withClaudeSamplingPolicy(modelName, chatModelConfig))
 	if err != nil {
 		return err
 	}
@@ -1169,51 +1169,55 @@ func decodeCohereEmbeddingVectors(raw json.RawMessage) ([][]float64, error) {
 
 // Rerank is not exposed by Bedrock.
 func (b *BedrockModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", b.Name())
+	return nil, fmt.Errorf("%s: no such method: Rerank", b.Name())
 }
 
 // Balance is not exposed by Bedrock.
 func (b *BedrockModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("%s, no such method", b.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", b.Name())
 }
 
 // TranscribeAudio is not exposed by Bedrock. Speech-to-text on AWS
 // lives in Amazon Transcribe, a separate service.
 func (b *BedrockModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", b.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", b.Name())
 }
 
 func (b *BedrockModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", b.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", b.Name())
 }
 
 // AudioSpeech is not exposed by Bedrock. Text-to-speech on AWS lives
 // in Amazon Polly, a separate service.
 func (b *BedrockModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", b.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", b.Name())
 }
 
 func (b *BedrockModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", b.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", b.Name())
 }
 
 // OCRFile is not exposed by Bedrock. OCR on AWS lives in Amazon
 // Textract, a separate service.
 func (b *BedrockModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", b.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", b.Name())
 }
 
 // ParseFile is not exposed by Bedrock.
 func (b *BedrockModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", b.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", b.Name())
 }
 
 // ListTasks is not exposed by Bedrock through the Converse API.
 func (b *BedrockModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", b.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", b.Name())
 }
 
 // ShowTask is not exposed by Bedrock through the Converse API.
 func (b *BedrockModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", b.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", b.Name())
+}
+
+func (b *BedrockModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", b.Name())
 }

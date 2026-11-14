@@ -15,8 +15,7 @@
 //
 
 // Tokenizer ingestion component (Phase 2.4 of
-// port-rag-flow-pipeline-to-go.md §4). Port of Python
-// `rag/flow/tokenizer/tokenizer.py`. Computes (a) full-text token
+// port-rag-flow-pipeline-to-go.md §4). It computes (a) full-text token
 // counts via the Go tokenizer package and (b) embedding vectors via
 // the tenant's embedding model.
 //
@@ -26,62 +25,62 @@
 //     `content_ltks` (tokenized string via `tokenizer.Tokenize`) and
 //     `content_sm_ltks` (fine-grained variant) when `search_method`
 //     includes `full_text`. `title_tks` / `title_sm_tks` mirror the
-//     upstream `name` field. Python uses C++ RAGAnalyzer via
-//     `rag_tokenizer`; the Go side goes through `internal/tokenizer`
-//     which itself calls into the same C++ binding (`internal/binding`).
-//     For non-ASCII (CJK) input, Python's `rag_tokenizer.tokenize`
-//     falls back gracefully; the Go path uses the CGo analyzer
-//     when initialized, otherwise an empty string — see
-//     `internal/tokenizer/tokenizer.go:Tokenize` (Infinity engine
-//     returns input unchanged; otherwise the C++ binding is used).
+//     upstream `name` field. The C++ RAGAnalyzer (`rag_tokenizer`) is
+//     reached through `internal/tokenizer`, which itself calls into
+//     the same C++ binding (`internal/binding`).
 //
-//   - EMBEDDING MODEL RESOLUTION: mirrored. Python uses
-//     `LLMBundle(tenant_id, embd_id).encode([...])` from
-//     `rag/flow/tokenizer/tokenizer.py:54-66`; the Go port goes
-//     through `service.ModelProviderService.GetEmbeddingModel`
-//     (callers inject the resolver, see `DefaultEmbedderResolver`).
-//     The component does NOT directly construct a model driver —
-//     the resolution path depends on tenant/DAO context that lives
-//     in `internal/service`, and importing `internal/service` from
-//     `internal/ingestion/component` would invert the dependency
-//     direction (plan §3 import graph: ingestion → agent/runtime
-//     only). The injection point is `DefaultEmbedderResolver`
-//     (package-level var); the ingestion task package wires it in
-//     its init() and tests inject a stub via the test-only
-//     NewTokenizerComponentWithResolver. When no resolver is
-//     available the component short-circuits the embedding branch
-//     with a clear error — the same fail-loud contract the Python
-//     side enforces via `LLMBundle` constructor.
+// For non-ASCII (CJK) input, `rag_tokenizer.tokenize`
 //
-//   - BATCHED EMBEDDING (plan §AD-5a): matched. The Python path
-//     chunks calls by `settings.EMBEDDING_BATCH_SIZE` (default 16)
-//     and uses an async semaphore (`embed_limiter`). The Go port
-//     issues ONE `Encode([]string)` call with the entire chunk
-//     list (AD-5a calls out "embedding calls batched, not fanned").
-//     Drivers that need to chunk internally can do so — the wire
-//     call is one round-trip.
+//		falls back gracefully; the Go path uses the CGo analyzer
+//		when initialized, otherwise an empty string — see
+//		`internal/tokenizer/tokenizer.go:Tokenize` (Infinity engine
+//		returns input unchanged; otherwise the C++ binding is used).
 //
-//   - TRACKING: TrackProgress, TrackElapsed. See
-//     `internal/agent/runtime/helpers.go` (plan Â§1 Phase 1).
-//     `internal/agent/runtime/helpers.go` (plan §1 Phase 1).
+//	  - EMBEDDING MODEL RESOLUTION: the Go port uses
+//	    `LLMBundle(tenant_id, embd_id).encode([...])` and goes
+//	    through the model solver injected by the ingestion task package
+//	    (callers inject the resolver, see `DefaultEmbedderResolver`).
+//	The component does NOT directly construct a model driver —
+//	the resolution path depends on tenant/DAO context that lives
+//	in `internal/service`, and importing `internal/service` from
+//	`internal/ingestion/component` would invert the dependency
+//	direction (plan §3 import graph: ingestion → agent/runtime
+//	only). The injection point is `DefaultEmbedderResolver`
+//	(package-level var); the ingestion task package wires it in
+//	its init() and tests inject a stub via the test-only
+//	NewTokenizerComponentWithResolver. When no resolver is
+//	available the component short-circuits the embedding branch
 //
-//   - WHAT IS NOT PORTED:
+// with a clear error — the same fail-loud contract the
 //
-//   - The python `finalize_pdf_chunk` post-step — that
-//     normalizes PDF bbox metadata; it lives in
-//     `rag/flow/parser/pdf_chunk_metadata.py` and is the Parser
-//     component's concern (Phase 2.2).
+//		side enforces via `LLMBundle` constructor.
 //
-//   - `rag.flow.tokenizer` `thread_pool_exec` async batching +
-//     `embed_limiter` semaphore — replaced by the single
-//     batched `Encode` call.
+//	  - BATCHED EMBEDDING (plan §AD-5a): matched. The path
+//	    chunks calls by `settings.EMBEDDING_BATCH_SIZE` (default 16)
+//	    and uses an async semaphore (`embed_limiter`). The Go port
+//	    issues ONE `Encode([]string)` call with the entire chunk
+//	    list (AD-5a calls out "embedding calls batched, not fanned").
+//	    Drivers that need to chunk internally can do so — the wire
+//	    call is one round-trip.
+//
+//	  - TRACKING: TrackProgress, TrackElapsed. See
+//	    `internal/agent/runtime/helpers.go` (plan Â§1 Phase 1).
+//	    `internal/agent/runtime/helpers.go` (plan §1 Phase 1).
+//
+//	  - WHAT IS NOT PORTED:
+//
+//	  - The `finalize_pdf_chunk` post-step — that
+//	    normalizes PDF bbox metadata — is the Parser
+//	    component's concern (Phase 2.2).
+//
+//	- async batching plus an `embed_limiter` semaphore — replaced by the
+//	  single batched `Encode` call.
 package component
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"regexp"
 	"slices"
 	"strings"
@@ -99,18 +98,17 @@ import (
 	"ragflow/internal/tokenizer"
 )
 
-const ComponentNameTokenizer = "Tokenizer"
+const ComponentNameTokenizer = schema.ComponentNameTokenizer
 
 // titleExtRE strips a trailing file-extension (e.g. ".pdf") from the
-// upstream document name before tokenizing it. Mirrors the python
-// `re.sub(r"\.[a-zA-Z]+$", "", name)` in tokenizer.py:137.
+// upstream document name before tokenizing it. It mirrors the
+// `re.sub(r"\.[a-zA-Z]+$", "", name)` extension strip performed by the
+// upstream tokenizer.
 var titleExtRE = regexp.MustCompile(`\.[a-zA-Z]+$`)
 
-// htmlTableRE matches HTML table-cell tags so the embedded text fed
-// to the embedding model doesn't carry raw markup. Mirrors the python
-// `re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", txt)` at
-// tokenizer.py:79.
-var htmlTableRE = regexp.MustCompile(`</?(table|td|caption|tr|th)( [^<>]{0,12})?>`)
+// Table chunks carry their row rendered as an HTML <table> on Text (produced
+// by the chunker), so the embedding input intentionally includes the table
+// markup — there is no markup to strip. The legacy htmlTableRE stays removed.
 
 // EmbeddingResult carries a vector plus the model-reported token usage
 // for that input batch entry.
@@ -191,6 +189,21 @@ func resolveEmbedderMaxTokens(embedder Embedder) int {
 	return embedder.MaxTokens()
 }
 
+// tableStructureTagRe mirrors the tokenizer's cleaned_txt step: table-structure tags are replaced
+// with a space before the emptiness check and before the text is embedded,
+// so a chunk that is nothing but an empty table carries no embeddable
+// content. The attribute group is deliberately bounded to 12 non-tag
+// characters, exactly like the pattern: a tag with longer attributes
+// survives the strip. Do not "fix" the bound — it is parity, not a bug.
+var tableStructureTagRe = regexp.MustCompile(`</?(table|td|caption|tr|th)( [^<>]{0,12})?>`)
+
+// cleanEmbedText applies the table-structure strip and trims, mirroring
+// cleaned_txt. The stripped text is both the emptiness check and
+// what gets embedded — appends cleaned_txt to the embedding batch, not the raw chunk
+func cleanEmbedText(raw string) string {
+	return strings.TrimSpace(tableStructureTagRe.ReplaceAllString(raw, " "))
+}
+
 // EmbedderResolver resolves the embedder and its dataset-bound embedding-model
 // id for one tokenizer invocation. The resolver derives the model exclusively
 // from the knowledgebase's configured embd_id (see internal/ingestion/task/
@@ -209,8 +222,7 @@ type EmbedderResolver func(ctx context.Context, tenantID, kbID string) (Embedder
 var DefaultEmbedderResolver EmbedderResolver
 
 // TokenizerComponent computes token counts and (optionally) embedding
-// vectors for an upstream chunk list. Mirrors python
-// rag/flow/tokenizer/tokenizer.py:Tokenizer.
+// vectors for an upstream chunk list.
 //
 // Inputs:
 //
@@ -228,9 +240,13 @@ var DefaultEmbedderResolver EmbedderResolver
 //	chunks                       — the chunk list with tokenized fields
 //	                              and (when embedding is requested)
 //	                              q_<n>_vec vector fields
-//	embedding_token_consumption  — non-negative int (matches the python
-//	                              `embedding_token_consumption` output)
-//	output_format                — always "chunks" (matches python set_output)
+//
+// embedding_token_consumption — non-negative int (matches the
+//
+//	`embedding_token_consumption` output)
+//
+// output_format — always "chunks" (matches set_output)
+//
 //	_created_time / _elapsed_time — TrackElapsed bookkeeping
 type TokenizerComponent struct {
 	param    schema.TokenizerParam
@@ -238,7 +254,7 @@ type TokenizerComponent struct {
 }
 
 // NewTokenizerComponent constructs a production TokenizerComponent from DSL
-// params. Mirrors python `TokenizerParam` defaults (search_method =
+// params. Mirrors `TokenizerParam` defaults (search_method =
 // ["full_text","embedding"], filename_embd_weight=0.1, fields=["text"]). The
 // embedding branch resolves its embedder via the injected
 // DefaultEmbedderResolver (wired by the ingestion task package).
@@ -260,7 +276,7 @@ func newTokenizerComponent(params map[string]any, resolver EmbedderResolver) (ru
 		if v, ok := params["search_method"]; ok {
 			// Replace (not append) so a caller-supplied
 			// search_method = ["full_text"] correctly disables
-			// embedding. Python's TokenizerParam similarly treats
+			// embedding. TokenizerParam similarly treats
 			// caller-supplied values as the full set.
 			p.SearchMethod = nil
 			switch t := v.(type) {
@@ -283,17 +299,32 @@ func newTokenizerComponent(params map[string]any, resolver EmbedderResolver) (ru
 			}
 		}
 		if v, ok := params["fields"]; ok {
+			// Replace (not append) so fields = ["summary"] does not
+			// silently embed the default "text" as well. Blank names
+			// are dropped: an empty selection keeps the default
+			// instead of selecting no text at all.
+			var fields []string
+			add := func(s string) {
+				if s = strings.TrimSpace(s); s != "" {
+					fields = append(fields, s)
+				}
+			}
 			switch t := v.(type) {
 			case string:
-				p.Fields = []string{t}
+				add(t)
 			case []any:
 				for _, x := range t {
 					if s, ok := x.(string); ok {
-						p.Fields = append(p.Fields, s)
+						add(s)
 					}
 				}
 			case []string:
-				p.Fields = append(p.Fields, t...)
+				for _, s := range t {
+					add(s)
+				}
+			}
+			if len(fields) > 0 {
+				p.Fields = fields
 			}
 		}
 	}
@@ -318,7 +349,7 @@ func (c *TokenizerComponent) Inputs() map[string]string {
 	}
 }
 
-// Outputs returns the parameter metadata. Mirrors python set_output
+// Outputs returns the parameter metadata. Mirrors set_output
 // contract for Tokenizer.
 func (c *TokenizerComponent) Outputs() map[string]string {
 	return map[string]string{
@@ -335,14 +366,19 @@ func (c *TokenizerComponent) Outputs() map[string]string {
 // Failure modes:
 //
 //   - "embedding" requested but resolver is nil → returns an
-//     error (fail-loud: same contract as python when LLMBundle is
-//     unconstructable).
-//   - Empty chunks list → returns an empty chunks output without
-//     panicking (python tokenizer.py:121 treats this as valid).
+//
+// error (fail-loud: same contract as when LLMBundle is
+//
+//	  unconstructable).
+//	- Empty chunks list → returns an empty chunks output without
+//
+// panicking ( treats this as valid)
 //   - Per-chunk empty cleaned text → chunk is skipped from the
-//     embedding batch (python tokenizer.py:80-82 `if not cleaned_txt:
-//     continue`), but the chunk still carries tokenized fields if
-//     `full_text` is in `search_method`.
+//
+// embedding batch ( `if not cleaned_txt
+//
+//	continue`), but the chunk still carries tokenized fields if
+//	`full_text` is in `search_method`.
 func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	// Run-level metadata lives in the workflow-wide CanvasState.Globals
 	// bag (seeded at pipeline start, published by the File component),
@@ -369,6 +405,9 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		zap.Int("input_chunks", len(chunks)),
 	)
 	titleStem := titleExtRE.ReplaceAllString(name, "")
+	if toks := declaredTitleTokens(chunks); len(toks) > 0 {
+		titleStem = strings.TrimSpace(titleStem + " " + strings.Join(toks, " "))
+	}
 
 	// chunk_order_int is the position of the chunk in the (post-filter) reading
 	// sequence. It is set unconditionally on every surviving chunk so that all
@@ -381,7 +420,7 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 
 	language := globals.GlobalOrInput(ctx, inputs, "lang", "English")
 
-	if contains(c.param.SearchMethod, "full_text") {
+	if slices.Contains(c.param.SearchMethod, "full_text") {
 		if err := tokenizeChunks(chunks, titleStem, language); err != nil {
 			return nil, err
 		}
@@ -468,11 +507,30 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 	// cacheHits counts the chunks served from the per-chunk embedding cache;
 	// they are already-resolved work, so the progress fraction starts from them.
 	cacheHits := 0
+	// fieldsResolvedNoText counts chunks where the configured fields produced
+	// nothing at all, which is the signature of a `fields` value naming a chunk
+	// field this pipeline does not produce.
+	fieldsResolvedNoText := 0
+	// emptyAfterTrim counts chunks whose text survived that check but produced
+	// nothing after trimming, which means the embedder's trimmer returned no
+	// text for non-empty input.
+	emptyAfterTrim := 0
 	for i, ck := range chunks {
 		raw := concatFields(ck, c.param.Fields)
-		txt := htmlTableRE.ReplaceAllString(raw, " ")
-		txt = strings.TrimSpace(txt)
+		// parity: strip table-structure tags
+		// before the emptiness check and embed the stripped text, so an
+		// empty-table chunk contributes nothing to the batch.
+		txt := cleanEmbedText(raw)
 		if txt == "" {
+			// Two different causes reach this branch and only one is a defect:
+			// no configured field produced text at all (misconfiguration),
+			// versus a chunk that really is only table tags or whitespace (the
+			// supported empty-table case, which must stay silent). Only a
+			// literally empty concatFields result is the first — whitespace-only
+			// content is still content a field produced.
+			if raw == "" {
+				fieldsResolvedNoText++
+			}
 			continue
 		}
 		// Per-chunk embedding cache: identical (dataset embd_id, chunk, embedded
@@ -485,6 +543,19 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 		// every model would collapse onto one key and served vectors could come
 		// from a different model.
 		trunc := trimForEmbedding(embedder, txt)
+		// A provider rejects the WHOLE batch when any input carries no content
+		// token — vLLM answers 400 "Input validation error: `inputs` cannot be
+		// empty" — so an empty input must never reach the batch. The
+		// EmbedderTrimmer seam promises nothing about the result, so a trimmer
+		// that returns no text for non-empty input is handled by embedding the
+		// pre-trim text: that keeps this chunk's vector requirement intact
+		// (validateTokenizerOutputs decides embeddability on the pre-trim text)
+		// and lets the embedder's own over-limit ladder re-cut it if the
+		// untrimmed text is too long.
+		if strings.TrimSpace(trunc) == "" {
+			emptyAfterTrim++
+			trunc = txt
+		}
 		if chunkID, ok := ck.GetExtraString("id"); ok && embdID != "" && store != nil {
 			if cached, hit := chunkcache.Get(ctx, store, chunkcache.Key("emb", embdID, chunkID, trunc)); hit {
 				var vec []float64
@@ -499,11 +570,26 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 		truncs = append(truncs, trunc)
 		pairs = append(pairs, i)
 	}
-	if len(texts) == 0 {
-		// Nothing to embed — but cache hits may still need to be written through.
-		if store == nil {
-			return chunks, 0, nil
-		}
+	// Both warnings sit outside the early return on purpose: a mixed batch can
+	// embed some chunks and drop others, and the dropped ones must still be
+	// reported. Each reports how many chunks it covers, not the batch size.
+	if fieldsResolvedNoText > 0 {
+		common.Warn("Tokenizer: configured fields produced no text for some chunks; they were skipped",
+			zap.Strings("fields", c.param.Fields),
+			zap.Int("chunks", fieldsResolvedNoText),
+			zap.Int("total_chunks", len(chunks)))
+	}
+	if emptyAfterTrim > 0 {
+		common.Warn("Tokenizer: embedder returned no text after trimming; embedded the untrimmed text instead",
+			zap.Int("chunks", emptyAfterTrim),
+			zap.Int("total_chunks", len(chunks)))
+	}
+	if len(texts) == 0 && cacheHits == 0 {
+		// Nothing to embed and nothing to serve from cache: return before the
+		// title encode, exactly like `if not texts: return` — an
+		// all-skipped batch must not burn a title embedding. (When the cache
+		// serves every chunk the flow continues so those vectors attach.)
+		return chunks, 0, nil
 	}
 
 	trimmedName := strings.TrimSpace(name)
@@ -515,18 +601,20 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 	// go_intentional (A3): when the upstream name is empty we skip title
 	// weighting entirely (hasTitleVec stays false, so the merged vector is the
 	// content vector alone). From the end-user perspective an empty title must
-	// not contribute the filename embedding weight; the Python DSL instead
+	// not contribute the filename embedding weight; the DSL instead
 	// computes 0.1*emb(""), injecting an undefined bias into every chunk. Go's
 	// skip is the correct behavior (go_intentional). Do NOT "align" this to
 	// the DSL.
 	if trimmedName == "" {
-		log.Printf("Tokenizer: empty name provided from upstream, embedding will skip title weighting")
+		common.Warn("Tokenizer: empty name provided from upstream, embedding will skip title weighting")
 	} else {
-		// Encode the raw name (no TrimSpace) to mirror Python
-		// tokenizer.py:95 which passes name verbatim to embedding. The
-		// empty-name guard above still uses TrimSpace, matching Python's
-		// `.strip()==""` check at tokenizer.py:200.
+		// Encode the raw name verbatim (no TrimSpace) so the embedding matches
+		// the upstream tokenizer contract, which passes the name through without
+		// trimming. The empty-name guard above still uses TrimSpace to match the
+		// upstream empty-name check.
+		finish := runtime.TrackIO(ctx, "Tokenizer", "Embedding title", "chunks=1")
 		titleResults, err := embedder.Encode(ctx, []string{name})
+		finish()
 		if err != nil {
 			return nil, 0, fmt.Errorf("tokenizer: encode title: %w", err)
 		}
@@ -549,7 +637,11 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 		if end > len(texts) {
 			end = len(texts)
 		}
+		batch := start/batchSize + 1
+		batchTotal := (len(texts) + batchSize - 1) / batchSize
+		finish := runtime.TrackIO(ctx, "Tokenizer", "Embedding chunks", fmt.Sprintf("batch=%d/%d chunks=%d", batch, batchTotal, end-start))
 		batchResults, err := embedder.Encode(ctx, texts[start:end])
+		finish()
 		if err != nil {
 			return nil, 0, fmt.Errorf("tokenizer: encode: %w", err)
 		}
@@ -586,7 +678,7 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 				return nil, 0, fmt.Errorf("tokenizer: merge vectors: %w", err)
 			}
 		}
-		if err := chunks[i].SetExtraValue(fmt.Sprintf("q_%d_vec", len(merged)), merged); err != nil {
+		if err := chunks[i].SetExtraValue(common.VectorColumnName(len(merged)), merged); err != nil {
 			return nil, 0, fmt.Errorf("tokenizer: vector marshal: %w", err)
 		}
 		// Backfill the per-chunk cache only for freshly embedded content; cache
@@ -755,12 +847,157 @@ func cloneTokenizerChunkDoc(in schema.ChunkDoc) schema.ChunkDoc {
 	return out
 }
 
-// tokenizeChunks annotates each chunk with title_tks, content_ltks,
-// and (when applicable) question_tks / important_tks / summary fields.
-// Mirrors python tokenizer.py:130-185 and rag/nlp/__init__.py tokenize() /
-// tokenize_chunks().
+// declaredTitleTokens returns the tokens of the title a document declares about itself, when its
+// header block carries one ("title: Pragyan Ojha", "name: Lesley Manyathela", "fullname: ...").
 //
-// language sets the Snowball stemmer language, matching Python's
+// Why it exists: a corpus whose files are named by id ("93372.md") otherwise leaves title_tks
+// holding nothing but the id, while the retriever weights title_tks on a par with content_ltks -
+// so the declared title is a ranking signal that costs nothing to index. Label words, the word
+// "wikipedia", English stopwords and pure numbers are dropped: they are noise that would match
+// unrelated queries once the field is weighted.
+//
+// Only the first non-empty chunk is inspected, because the header block (when present at all)
+// belongs to the head of the document.
+//
+// The extraction is script-agnostic. A word that is not pure ASCII — Chinese, Japanese, Korean,
+// Cyrillic, Arabic, Greek, Hebrew, Thai, or Latin carrying diacritics — is kept whole and handed
+// to the analyzer downstream, which is what segments it. Splitting such a word here, on ASCII
+// boundaries, is the older behaviour and it dissolved the whole title into nothing.
+// Tokens that ARE pure ASCII keep the older treatment: englishStopwords are dropped (the
+// tokenizer keeps function words such as "the", "for" and "and" as-is — verified via the ES
+// _analyze API on title_tks and via tokenizer.Tokenize — so they have to be filtered here), and
+// so are the label words and pure numbers. The stopword list stays English-only on purpose: a
+// multilingual one would have to be invented, and getting a language wrong silently deletes real
+// content words from that language's titles.
+// This replaced an earlier length heuristic (keep only tokens >= 5 chars) which also removed real
+// content words such as "icc", "cup", "john", "star", "bros".
+var englishStopwords = map[string]bool{
+	"a": true, "an": true, "and": true, "are": true, "as": true, "at": true, "be": true, "been": true,
+	"but": true, "by": true, "d": true, "for": true, "from": true, "had": true, "has": true, "have": true,
+	"he": true, "her": true, "him": true, "his": true, "i": true, "if": true, "in": true, "into": true,
+	"is": true, "it": true, "its": true, "ll": true, "m": true, "me": true, "my": true, "no": true,
+	"not": true, "of": true, "on": true, "or": true, "our": true, "re": true, "s": true, "she": true,
+	"so": true, "t": true, "that": true, "the": true, "their": true, "them": true, "then": true,
+	"there": true, "these": true, "they": true, "this": true, "to": true, "too": true, "up": true,
+	"us": true, "ve": true, "was": true, "we": true, "were": true, "what": true, "when": true,
+	"where": true, "which": true, "who": true, "will": true, "with": true, "y": true,
+	"you": true, "your": true,
+}
+
+// asciiOnly reports whether s is made of ASCII bytes alone. A pure-ASCII string is the only thing
+// ASCII decoding produces, so a byte scan decides it.
+func asciiOnly(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
+}
+
+// allDigits reports whether s is non-empty and made only of decimal digits, in any script.
+func allDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// trimWordEdges drops leading and trailing runes that are neither letters nor digits, so the
+// punctuation a title tends to carry — 《三国演义》, «Война и мир», (1917), a trailing comma — does
+// not reach the token stream.
+func trimWordEdges(s string) string {
+	return strings.TrimFunc(s, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+}
+
+func declaredTitleTokens(chunks []schema.ChunkDoc) []string {
+	const (
+		headerLines = 20
+		maxTokens   = 20
+	)
+	var values []string
+	for i := range chunks {
+		head := chunks[i].Text
+		if head == "" {
+			continue
+		}
+		lines := strings.Split(head, "\n")
+		if len(lines) > headerLines {
+			lines = lines[:headerLines]
+		}
+		for _, line := range lines {
+			l := strings.ToLower(strings.TrimSpace(line))
+			for _, key := range []string{"title:", "name:", "fullname:"} {
+				if strings.HasPrefix(l, key) {
+					values = append(values, l[len(key):])
+				}
+			}
+		}
+		break
+	}
+	if len(values) == 0 {
+		return nil
+	}
+	skip := map[string]bool{"title": true, "name": true, "fullname": true, "wikipedia": true}
+	seen := map[string]bool{}
+	var out []string
+	// keep records one accepted token and reports whether the cap is now reached.
+	keep := func(token string) bool {
+		if seen[token] {
+			return false
+		}
+		seen[token] = true
+		out = append(out, token)
+		return len(out) >= maxTokens
+	}
+	for _, v := range values {
+		// Split on whitespace, NOT on ASCII boundaries. A word in another script is a word, and
+		// the analyzer downstream segments it (RAGFlow's tokenizer handles CJK); the
+		// ASCII-boundary splitter dissolved such a word into fragments of length zero.
+		for _, word := range strings.Fields(v) {
+			word = trimWordEdges(word)
+			if word == "" {
+				continue
+			}
+			if !asciiOnly(word) {
+				// Pure numbers stay out of the title channel whichever script writes them: the
+				// corpus file stem is numeric, so a numeric title token matches every document.
+				if !allDigits(word) && keep(word) {
+					return out
+				}
+				continue
+			}
+			for _, w := range strings.FieldsFunc(word, func(r rune) bool {
+				return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9')
+			}) {
+				// Pure numbers stay out (years, ids, and the corpus file stem are all numeric
+				// noise for the title channel); everything else is kept unless it is an English
+				// stopword, a label or a duplicate.
+				if englishStopwords[w] || skip[w] || allDigits(w) {
+					continue
+				}
+				if keep(w) {
+					return out
+				}
+			}
+		}
+	}
+	return out
+}
+
+// tokenizeChunks annotates each chunk with title_tks, content_ltks,
+// and (when applicable) question_tks / important_tks / summary fields,
+// matching the upstream tokenize_chunks() step.
+//
+// language selects the analyzer language (Snowball stemmer, or diacritics
+// folding without stemming for Slovak/Czech), matching
 // rag_tokenizer.tokenizer.set_language(language) call inside tokenize().
 func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string) error {
 	tok := tokenizer.New(language)
@@ -777,7 +1014,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 		ck.TitleTks = titleTk
 		ck.TitleSmTks = titleSmTk
 
-		// Question / keyword / summary fields are optional. The python
+		// Question / keyword / summary fields are optional. The
 		// path branches on each independently.
 		if q := ck.Questions; q != "" {
 			if err = ck.SetExtraValue("question_kwd", strings.Split(q, "\n")); err != nil {
@@ -796,7 +1033,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 			// contract specifies "delimited by ENGLISH COMMA", so CJK commas,
 			// semicolons and newlines stay part of the keyword rather than
 			// acting as separators. strings.Split also preserves empty
-			// elements, matching Python's "a,,b".split(",") == ["a","","b"].
+			// elements, matching "a,,b".split(",") == ["a","","b"]
 			// Each piece is then bounded to the ES keyword field byte limit and
 			// truncated at a UTF-8 character boundary.
 			rawParts := strings.Split(kw, ",")
@@ -818,7 +1055,7 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 			}
 		}
 		// Keep Go: skip whitespace-only summaries so they don't shadow
-		// the real Text. Python's truthy check (tokenizer.py:155) treats
+		// the real Text. truthy check treats
 		// "   " as present and blanks out content_ltks; Go is more sensible.
 		if s := strings.TrimSpace(ck.Summary); s != "" {
 			st, err := tok.Tokenize(s)
@@ -860,8 +1097,8 @@ func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string)
 }
 
 // concatFields concatenates the configured fields of a chunk into
-// a single string. Mirrors python tokenizer.py:69-79 which
-// concatenates `param.fields` (string or list-of-strings per chunk).
+// a single string. It concatenates `param.fields` (string or
+// list-of-strings per chunk).
 func concatFields(ck schema.ChunkDoc, fields []string) string {
 	var b strings.Builder
 	for _, f := range fields {
@@ -897,11 +1134,11 @@ func concatFields(ck schema.ChunkDoc, fields []string) string {
 // This is a deliberate, go_intentional divergence. Do NOT "align" this to a
 // path that injects a default embedding.
 func shouldHaveEmbedding(searchMethods []string, kbID string) bool {
-	return contains(searchMethods, "embedding") && kbID != ""
+	return slices.Contains(searchMethods, "embedding") && kbID != ""
 }
 
 func validateTokenizerOutputs(chunks []schema.ChunkDoc, searchMethods, fields []string, kbID string) error {
-	needFullText := contains(searchMethods, "full_text")
+	needFullText := slices.Contains(searchMethods, "full_text")
 	needEmbedding := shouldHaveEmbedding(searchMethods, kbID)
 	if !needFullText && !needEmbedding {
 		return nil
@@ -925,12 +1162,11 @@ func requiresFullTextTokens(ck schema.ChunkDoc) bool {
 	return strings.TrimSpace(ck.Summary) != "" || strings.TrimSpace(schema.ContextualText(ck)) != ""
 }
 
+// requiresEmbeddingVector uses the same cleaning as the embed path
+// (cleanEmbedText): a chunk whose cleaned text is empty was skipped from the
+// embedding batch and therefore legitimately carries no vector.
 func requiresEmbeddingVector(ck schema.ChunkDoc, fields []string) bool {
-	return strings.TrimSpace(cleanEmbeddingText(concatFields(ck, fields))) != ""
-}
-
-func cleanEmbeddingText(text string) string {
-	return strings.TrimSpace(htmlTableRE.ReplaceAllString(text, " "))
+	return cleanEmbedText(concatFields(ck, fields)) != ""
 }
 
 func hasEmbeddingVector(ck schema.ChunkDoc) bool {
@@ -938,7 +1174,7 @@ func hasEmbeddingVector(ck schema.ChunkDoc) bool {
 		return false
 	}
 	for key, raw := range ck.Extra {
-		if !strings.HasPrefix(key, "q_") || !strings.HasSuffix(key, "_vec") {
+		if !common.IsVectorColumn(key) {
 			continue
 		}
 		var vec []float64
@@ -971,10 +1207,6 @@ func cloneInputs(m map[string]any) map[string]any {
 		cp[k] = v
 	}
 	return cp
-}
-
-func contains(s []string, v string) bool {
-	return slices.Contains(s, v)
 }
 
 func intPtr(v int) *int { return &v }

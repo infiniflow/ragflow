@@ -62,11 +62,16 @@ import {
 
 import { EMPTY_DATA, createFuzzySearchFn, getSortIcon } from './utils';
 
+import { formatDate } from '@/utils/date';
+
 import dayjs from 'dayjs';
 import useCreateEmailForm from './forms/email-form';
 import useImportExcelForm, {
   ImportExcelFormData,
 } from './forms/import-excel-form';
+
+import NotFound from '@/ee/pages/admin/404';
+import useAdminVariables from '@/ee/pages/admin/hooks/useAdminVariables';
 
 const columnHelper = createColumnHelper<AdminService.ListWhitelistItem>();
 const globalFilterFn = createFuzzySearchFn<AdminService.ListWhitelistItem>([
@@ -175,9 +180,11 @@ function AdminWhitelist() {
       }),
       columnHelper.accessor('create_date', {
         header: t('admin.createDate'),
+        cell: ({ row }) => formatDate(row.original.create_time),
       }),
       columnHelper.accessor('update_date', {
         header: t('admin.updateDate'),
+        cell: ({ row }) => formatDate(row.original.update_time),
       }),
       columnHelper.display({
         id: 'actions',
@@ -541,4 +548,16 @@ function AdminWhitelist() {
   );
 }
 
-export default AdminWhitelist;
+function AdminWhitelistGuard() {
+  const { variables } = useAdminVariables();
+
+  const isWhitelistEnabled = !!variables.enable_whitelist?.value;
+
+  if (!isWhitelistEnabled) {
+    return <NotFound />;
+  }
+
+  return <AdminWhitelist />;
+}
+
+export default AdminWhitelistGuard;

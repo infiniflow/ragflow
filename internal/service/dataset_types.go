@@ -1,5 +1,7 @@
 package service
 
+import "fmt"
+
 // CheckEmbeddingRequest is the request structure for checking embedding compatibility.
 type CheckEmbeddingRequest struct {
 	EmbeddingID string `json:"embd_id" binding:"required"`
@@ -37,29 +39,31 @@ type EmbeddingCheckResponse struct {
 
 // SearchDatasetsRequest is the request structure for searching chunks across datasets.
 type SearchDatasetsRequest struct {
-	DatasetIDs             []string               `json:"dataset_ids" binding:"required"`
-	Question               string                 `json:"question" binding:"required"`
-	Page                   *int                   `json:"page,omitempty"`
-	PageSize               *int                   `json:"page_size,omitempty"`
-	Size                   *int                   `json:"size,omitempty"`
-	RerankCandidatesCount  *int                   `json:"rerank_candidates_count,omitempty"`
-	DocumentIDs            []string               `json:"document_ids,omitempty"`
-	DocIDs                 []string               `json:"doc_ids,omitempty"`
-	UseKG                  *bool                  `json:"use_kg,omitempty"`
-	KNNTopK                *int                   `json:"knn_top_k,omitempty"`
-	TopK                   *int                   `json:"top_k,omitempty"` // Legacy alias for knn_top_k.
-	KNNNumCandidates       *int                   `json:"knn_num_candidates,omitempty"`
-	CrossLanguages         []string               `json:"cross_languages,omitempty"`
-	SearchID               *string                `json:"search_id,omitempty"`
-	MetadataCondition      map[string]interface{} `json:"metadata_condition,omitempty"`
-	MetadataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
-	RerankID               *string                `json:"rerank_id,omitempty"`
-	Keyword                *bool                  `json:"keyword,omitempty"`
-	Highlight              *bool                  `json:"highlight,omitempty"`
-	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
-	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
-	IncludeCompiledChunks  *bool                  `json:"include_knowledge_compilation,omitempty"`
-	ForceRefresh           bool                   `json:"force_refresh"`
+	DatasetIDs               []string               `json:"dataset_ids" binding:"required"`
+	Question                 string                 `json:"question" binding:"required"`
+	Page                     *int                   `json:"page,omitempty"`
+	PageSize                 *int                   `json:"page_size,omitempty"`
+	Size                     *int                   `json:"size,omitempty"`
+	RerankCandidatesCount    *int                   `json:"rerank_candidates_count,omitempty"`
+	DocumentIDs              []string               `json:"document_ids,omitempty"`
+	DocIDs                   []string               `json:"doc_ids,omitempty"`
+	UseKG                    *bool                  `json:"use_kg,omitempty"`
+	KNNTopK                  *int                   `json:"knn_top_k,omitempty"`
+	TopK                     *int                   `json:"top_k,omitempty"` // Legacy alias for knn_top_k.
+	KNNNumCandidates         *int                   `json:"knn_num_candidates,omitempty"`
+	CrossLanguages           []string               `json:"cross_languages,omitempty"`
+	SearchID                 *string                `json:"search_id,omitempty"`
+	MetadataCondition        map[string]interface{} `json:"metadata_condition,omitempty"`
+	MetadataFilter           map[string]interface{} `json:"meta_data_filter,omitempty"`
+	RerankID                 *string                `json:"rerank_id,omitempty"`
+	Keyword                  *bool                  `json:"keyword,omitempty"`
+	Highlight                *bool                  `json:"highlight,omitempty"`
+	SimilarityThreshold      *float64               `json:"similarity_threshold,omitempty"`
+	KeywordsSimilarityWeight *float64               `json:"keywords_similarity_weight,omitempty"`
+	VectorSimilarityWeight   *float64               `json:"vector_similarity_weight,omitempty"`
+	IncludeCompiledChunks    *bool                  `json:"include_knowledge_compilation,omitempty"`
+
+	KnowledgeCompilationScope string `json:"knowledge_compilation_scope,omitempty"`
 }
 
 // SearchDatasetsResponse is the response structure for dataset search results.
@@ -72,26 +76,29 @@ type SearchDatasetsResponse struct {
 
 // SearchDatasetRequest is the request structure for searching chunks within one dataset.
 type SearchDatasetRequest struct {
-	Question               string                 `json:"question"`
-	Page                   *int                   `json:"page,omitempty"`
-	PageSize               *int                   `json:"page_size,omitempty"`
-	Size                   *int                   `json:"size,omitempty"`
-	RerankCandidatesCount  *int                   `json:"rerank_candidates_count,omitempty"`
-	DocumentIDs            []string               `json:"document_ids,omitempty"`
-	DocIDs                 []string               `json:"doc_ids,omitempty"`
-	UseKG                  *bool                  `json:"use_kg,omitempty"`
-	KNNTopK                *int                   `json:"knn_top_k,omitempty"`
-	TopK                   *int                   `json:"top_k,omitempty"` // Legacy alias for knn_top_k.
-	KNNNumCandidates       *int                   `json:"knn_num_candidates,omitempty"`
-	CrossLanguages         []string               `json:"cross_languages,omitempty"`
-	SearchID               *string                `json:"search_id,omitempty"`
-	MetadataCondition      map[string]interface{} `json:"metadata_condition,omitempty"`
-	MetadataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
-	RerankID               *string                `json:"rerank_id,omitempty"`
-	Keyword                *bool                  `json:"keyword,omitempty"`
-	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
-	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
-	IncludeCompiledChunks  *bool                  `json:"include_knowledge_compilation,omitempty"`
+	Question                 string                 `json:"question"`
+	Page                     *int                   `json:"page,omitempty"`
+	PageSize                 *int                   `json:"page_size,omitempty"`
+	Size                     *int                   `json:"size,omitempty"`
+	RerankCandidatesCount    *int                   `json:"rerank_candidates_count,omitempty"`
+	DocumentIDs              []string               `json:"document_ids,omitempty"`
+	DocIDs                   []string               `json:"doc_ids,omitempty"`
+	UseKG                    *bool                  `json:"use_kg,omitempty"`
+	KNNTopK                  *int                   `json:"knn_top_k,omitempty"`
+	TopK                     *int                   `json:"top_k,omitempty"` // Legacy alias for knn_top_k.
+	KNNNumCandidates         *int                   `json:"knn_num_candidates,omitempty"`
+	CrossLanguages           []string               `json:"cross_languages,omitempty"`
+	SearchID                 *string                `json:"search_id,omitempty"`
+	MetadataCondition        map[string]interface{} `json:"metadata_condition,omitempty"`
+	MetadataFilter           map[string]interface{} `json:"meta_data_filter,omitempty"`
+	RerankID                 *string                `json:"rerank_id,omitempty"`
+	Keyword                  *bool                  `json:"keyword,omitempty"`
+	SimilarityThreshold      *float64               `json:"similarity_threshold,omitempty"`
+	KeywordsSimilarityWeight *float64               `json:"keywords_similarity_weight,omitempty"`
+	VectorSimilarityWeight   *float64               `json:"vector_similarity_weight,omitempty"`
+	IncludeCompiledChunks    *bool                  `json:"include_knowledge_compilation,omitempty"`
+
+	KnowledgeCompilationScope string `json:"knowledge_compilation_scope,omitempty"`
 }
 
 // ToSearchDatasetsRequest converts a single-dataset search request into the multi-dataset form.
@@ -100,28 +107,39 @@ func (req *SearchDatasetRequest) ToSearchDatasetsRequest(datasetID string) *Sear
 		return &SearchDatasetsRequest{DatasetIDs: []string{datasetID}}
 	}
 	return &SearchDatasetsRequest{
-		DatasetIDs:             []string{datasetID},
-		Question:               req.Question,
-		Page:                   req.Page,
-		PageSize:               req.PageSize,
-		Size:                   req.Size,
-		RerankCandidatesCount:  req.RerankCandidatesCount,
-		DocumentIDs:            req.DocumentIDs,
-		DocIDs:                 req.DocIDs,
-		UseKG:                  req.UseKG,
-		KNNTopK:                req.KNNTopK,
-		TopK:                   req.TopK,
-		KNNNumCandidates:       req.KNNNumCandidates,
-		CrossLanguages:         req.CrossLanguages,
-		SearchID:               req.SearchID,
-		MetadataCondition:      req.MetadataCondition,
-		MetadataFilter:         req.MetadataFilter,
-		RerankID:               req.RerankID,
-		Keyword:                req.Keyword,
-		SimilarityThreshold:    req.SimilarityThreshold,
-		VectorSimilarityWeight: req.VectorSimilarityWeight,
-		IncludeCompiledChunks:  req.IncludeCompiledChunks,
+		DatasetIDs:               []string{datasetID},
+		Question:                 req.Question,
+		Page:                     req.Page,
+		PageSize:                 req.PageSize,
+		Size:                     req.Size,
+		RerankCandidatesCount:    req.RerankCandidatesCount,
+		DocumentIDs:              req.DocumentIDs,
+		DocIDs:                   req.DocIDs,
+		UseKG:                    req.UseKG,
+		KNNTopK:                  req.KNNTopK,
+		TopK:                     req.TopK,
+		KNNNumCandidates:         req.KNNNumCandidates,
+		CrossLanguages:           req.CrossLanguages,
+		SearchID:                 req.SearchID,
+		MetadataCondition:        req.MetadataCondition,
+		MetadataFilter:           req.MetadataFilter,
+		RerankID:                 req.RerankID,
+		Keyword:                  req.Keyword,
+		SimilarityThreshold:      req.SimilarityThreshold,
+		KeywordsSimilarityWeight: req.KeywordsSimilarityWeight,
+		VectorSimilarityWeight:   req.VectorSimilarityWeight,
+		IncludeCompiledChunks:    req.IncludeCompiledChunks,
+
+		KnowledgeCompilationScope: req.KnowledgeCompilationScope,
 	}
+}
+
+// ValidateKnowledgeCompilationScope checks the supported search scopes.
+func ValidateKnowledgeCompilationScope(scope string) error {
+	if scope != "" && scope != "dataset" && scope != "document" && scope != "all" {
+		return fmt.Errorf("knowledge_compilation_scope must be dataset, document, or all")
+	}
+	return nil
 }
 
 // MetadataConfigField mirrors one field in the dataset metadata config API.
@@ -148,6 +166,10 @@ type CreateDatasetRequest struct {
 	Permission     *string                `json:"permission,omitempty"`
 	ParserID       *string                `json:"parser_id,omitempty"`
 	PipelineID     *string                `json:"pipeline_id,omitempty"`
+	// PipelineVersionID optionally pins a specific canvas version when
+	// ParseType is Pipeline. When empty the latest version is bound (design
+	// section 5 sticky snapshot). Ownership is validated against PipelineID.
+	PipelineVersionID *string `json:"pipeline_version_id,omitempty"`
 	// ParseType indicates pipeline selection mode: 1 = BuiltIn (parser_id),
 	// 2 = Pipeline (pipeline_id). nil means unspecified.
 	ParseType *int `json:"parse_type,omitempty"`
@@ -173,6 +195,10 @@ type UpdateDatasetRequest struct {
 	Pagerank       *int64                     `json:"pagerank,omitempty"`
 	ParserConfig   map[string]interface{}     `json:"parser_config,omitempty"`
 	PipelineID     *string                    `json:"pipeline_id,omitempty"`
+	// PipelineVersionID optionally pins a specific canvas version when
+	// ParseType is Pipeline. When empty the latest version is bound (design
+	// section 5 sticky snapshot). Ownership is validated against PipelineID.
+	PipelineVersionID *string `json:"pipeline_version_id,omitempty"`
 	// ParseType indicates pipeline selection mode: 1 = BuiltIn (parser_id),
 	// 2 = Pipeline (pipeline_id). nil means unspecified.
 	ParseType *int `json:"parse_type,omitempty"`

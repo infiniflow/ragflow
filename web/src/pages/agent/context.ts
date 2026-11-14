@@ -1,5 +1,5 @@
 import { INodeEvent } from '@/hooks/use-send-message';
-import { RAGFlowNodeType } from '@/interfaces/database/agent';
+import { DSL, IGraph, RAGFlowNodeType } from '@/interfaces/database/agent';
 import { IMessage } from '@/interfaces/database/chat';
 import { HandleType, Position } from '@xyflow/react';
 import { Dispatch, SetStateAction, createContext, useContext } from 'react';
@@ -17,6 +17,27 @@ export const OwnerTenantIdContext = createContext<string | undefined>(
 
 // oxlint-disable-next-line react-refresh/only-export-components
 export const useOwnerTenantId = () => useContext(OwnerTenantIdContext);
+
+// CanvasReadonlyContext marks the canvas as view-only (e.g. the built-in
+// pipeline preview page). Node/toolbar/form components consume it to disable
+// every editing entry point while keeping viewing interactions (pan, zoom,
+// selection highlight, opening the parameter sheet) intact.
+export const CanvasReadonlyContext = createContext(false);
+
+// oxlint-disable-next-line react-refresh/only-export-components
+export const useCanvasReadonly = () => useContext(CanvasReadonlyContext);
+
+// CanvasSnapshotContext carries one immutable canvas snapshot (graph plus
+// globals/conversation variables) for read-only previews such as the version
+// history dialog. Variable-resolution hooks prefer it over the live canvas
+// store so a previewed version resolves variables against its own graph
+// instead of the current draft.
+export type CanvasSnapshot = IGraph & Pick<DSL, 'globals' | 'variables'>;
+
+export const CanvasSnapshotContext = createContext<CanvasSnapshot | null>(null);
+
+// oxlint-disable-next-line react-refresh/only-export-components
+export const useCanvasSnapshot = () => useContext(CanvasSnapshotContext);
 
 type AgentInstanceContextType = Pick<
   ReturnType<typeof useAddNode>,

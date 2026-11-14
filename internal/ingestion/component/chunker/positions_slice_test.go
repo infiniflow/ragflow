@@ -197,3 +197,63 @@ func TestTotalRunes(t *testing.T) {
 		t.Errorf("totalRunes(nil) = %d, want 0", got)
 	}
 }
+
+func TestSlicePositionsByCounts_EqualSplitAbuts(t *testing.T) {
+	raw := json.RawMessage(`[[1,10,200,0,100]]`)
+	pdf, pos := slicePositionsByCounts(raw, raw, []int{3, 3})
+	if len(pdf) != 2 || len(pos) != 2 {
+		t.Fatalf("expected 2+2 slices, got %d+%d", len(pdf), len(pos))
+	}
+	assertMatrixNear(t, pdf[0], [][]float64{{1, 10, 200, 0, 50}})
+	assertMatrixNear(t, pdf[1], [][]float64{{1, 10, 200, 50, 100}})
+	assertMatrixNear(t, pos[0], [][]float64{{1, 10, 200, 0, 50}})
+	assertMatrixNear(t, pos[1], [][]float64{{1, 10, 200, 50, 100}})
+}
+
+func TestSlicePositionsByCounts_ZeroWeightPieceKeepsFullBox(t *testing.T) {
+	// Contract lock: a zero-visible-weight piece (e.g. a tag-only segment
+	// between delimiters) falls back to the full source box so it keeps its
+	// preview. This mirrors the Token path; switching zero-weight pieces to
+	// empty positions must be a deliberate, three-call-site change with a
+	// preview-impact check for ImgID-carrying media, not a drive-by.
+	raw := json.RawMessage(`[[1,10,200,0,100]]`)
+	pdf, _ := slicePositionsByCounts(raw, nil, []int{1, 0, 1})
+	if len(pdf) != 3 {
+		t.Fatalf("expected 3 slices, got %d", len(pdf))
+	}
+	assertMatrixNear(t, pdf[0], [][]float64{{1, 10, 200, 0, 50}})
+	assertMatrixNear(t, pdf[1], [][]float64{{1, 10, 200, 0, 100}})
+	assertMatrixNear(t, pdf[2], [][]float64{{1, 10, 200, 50, 100}})
+}
+
+func TestSlicePositionsByCounts_MalformedMatrixFallsBack(t *testing.T) {
+	raw := json.RawMessage(`[[1,10,20,30,30]]`)
+	pdf, pos := slicePositionsByCounts(raw, raw, []int{1, 1})
+	for i := range pdf {
+		if string(pdf[i]) != string(raw) || string(pos[i]) != string(raw) {
+			t.Errorf("piece %d must fall back to the source box, got %s / %s", i, pdf[i], pos[i])
+		}
+	}
+}
+
+func TestSlicePositionsByCounts_NonPositiveTotalFallsBack(t *testing.T) {
+	raw := json.RawMessage(`[[1,10,200,0,100]]`)
+	pdf, pos := slicePositionsByCounts(raw, raw, []int{0, 0})
+	for i := range pdf {
+		if string(pdf[i]) != string(raw) || string(pos[i]) != string(raw) {
+			t.Errorf("piece %d must fall back to the source box, got %s / %s", i, pdf[i], pos[i])
+		}
+	}
+}
+
+func TestSlicePositionsByCounts_EmptySourcesStayEmpty(t *testing.T) {
+	pdf, pos := slicePositionsByCounts(nil, nil, []int{2, 2})
+	if len(pdf) != 2 || len(pos) != 2 {
+		t.Fatalf("expected 2+2 slices, got %d+%d", len(pdf), len(pos))
+	}
+	for i := range pdf {
+		if len(pdf[i]) != 0 || len(pos[i]) != 0 {
+			t.Errorf("piece %d must stay empty, got %s / %s", i, pdf[i], pos[i])
+		}
+	}
+}

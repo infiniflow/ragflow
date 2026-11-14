@@ -1,12 +1,14 @@
 package layout
 
 import (
-	"log/slog"
 	"regexp"
 	"sort"
 	"strings"
 	"unicode/utf8"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
@@ -24,6 +26,19 @@ const (
 	// tocMaxLongBoxes is the maximum number of boxes longer than
 	// tocMaxProseRunes a page may carry and still be classified as TOC.
 	tocMaxLongBoxes = 2
+	// tocBodyRunes is the length (in runes) above which a box that is
+	// neither a chapter marker nor a leader run counts as body evidence.
+	// The prose guard above keys on long boxes, which a corpus of short
+	// lines (a legal code's articles, verse, lists) never produces — the
+	// 民法典's article lines wrap at ~35 runes, so prose stayed 0 on every
+	// page and a mixed TOC-tail + article page was read as a TOC page and
+	// dropped whole. A body line is still longer than a TOC entry title
+	// and does not open with a chapter marker, so a page carrying several
+	// such boxes is a body page no signal may drop.
+	tocBodyRunes = 20
+	// tocMaxBodyBoxes is the maximum number of body-evidence boxes a page
+	// may carry and still be classified as TOC.
+	tocMaxBodyBoxes = 2
 	// tocMinShortBoxes is the minimum number of short boxes a TOC page carries.
 	// A TOC is a list, so its entries usually stay separate boxes. A page whose
 	// entries were merged into one long box is covered by tocMinMergedRuns, and
@@ -38,11 +53,27 @@ const (
 	// entries — so it needs no separate marker count. Prose can accumulate the
 	// occasional run, which is why the threshold is three and not one.
 	tocMinMergedRuns = 3
+	// tocMinLongEntryLeader is the shortest leader run that lets a long box be
+	// read as one TOC entry line. Tab leaders run for many characters; prose
+	// that merely ends in an ellipsis and a number does not, and must keep
+	// counting as prose.
+	tocMinLongEntryLeader = 6
+	// tocMinShortEntryLeader is the same floor for short boxes. A short entry
+	// stays a marker rather than body evidence, but an ellipsis that is only
+	// sentence punctuation ("The result is ... 42") must not turn three prose
+	// lines into a TOC page.
+	tocMinShortEntryLeader = 4
 	// tocMaxLeadPages bounds how many leading pages without body text may
 	// precede the TOC. A cover, copyright page or frontispiece carries no body
 	// text and is skipped, so a TOC that is not physically page one is still
 	// reachable; the first page carrying body text ends the search.
 	tocMaxLeadPages = 3
+	// tocShapeFrontMatterMaxPage is the last 0-based page a parse may start on
+	// for the no-bookmark box-shape fallback to run. A TOC is a document prefix,
+	// so only parses beginning in the front matter may read their leading run as
+	// one; 10 tolerates cover/copyright/preface pages and ranges that start a few
+	// pages before the TOC, while still blocking a mid-book "TOC-shaped" page.
+	tocShapeFrontMatterMaxPage = 10
 )
 
 // ---------------------------------------------------------------------------
@@ -79,7 +110,12 @@ var (
 	// fragment. Counting these runs tells a TOC block that upstream merged into
 	// one long box apart from a paragraph. Digits accept the full-width forms
 	// pageNumberPattern accepts, for the same reason.
-	tocEntryRunPattern = regexp.MustCompile(`(\.{2,}|…{2,}|⋯{2,}|·{2,})\s*[0-9０-９]{1,4}\s*[IVXLCDMivxlcdm]{0,5}`)
+	tocEntryRunPattern = regexp.MustCompile(`(\.{2,}|…{2,}|⋯{2,}|·{2,})\s*([0-9０-９]{1,4}\s*[IVXLCDMivxlcdm]{0,5}|[IVXLCDMivxlcdm]{1,7}\b)`)
+	// tocLeaderOnlyPattern matches a box that is nothing but leader
+	// characters (dots, ellipses, middots, spaces): the leader column of a
+	// dotted TOC entry. Such a box is long but carries no body text, so it
+	// must not count as body evidence.
+	tocLeaderOnlyPattern = regexp.MustCompile(`^[.…⋯·\s]+$`)
 )
 
 // ---------------------------------------------------------------------------
@@ -157,12 +193,17 @@ func outlineTitle(title string) string {
 // geometry collapses into a section), so this MUST run before TextMerge (see
 // Parser.buildLayout).
 //
-// coversDocumentStart reports whether boxes cover the document's first page.
-// The shape signal reads a TOC out of a leading run, so it is skipped when the
-// parse began mid-document (Config.Pages): a TOC-shaped page at the start of a
-// page range says nothing about the document, and reading it as a document
-// prefix would delete content from the middle of the book. The outline signal
-// carries absolute page numbers and is unaffected.
+// firstParsedPage is the first 0-based page in the parsed subset (Config.Pages),
+// or -1 when unknown. The shape signal reads a TOC out of a leading run, so it
+// only runs when the parse begins in the document's front matter
+// (firstParsedPage <= tocShapeFrontMatterMaxPage): a TOC is a document prefix,
+// and reading a mid-book page range's leading run as one would delete content
+// from the middle of the book. The outline signal carries absolute page numbers
+// and is unaffected.
+//
+// totalPages is the document's full engine page count. The all-TOC guard below
+// is document-level: only a document that is nothing but TOC pages is left
+// untouched, not a parsed subset that happens to be all TOC.
 //
 // Two signals select pages and the union is dropped:
 //
@@ -175,14 +216,15 @@ func outlineTitle(title string) string {
 //     that is itself tocMinMergedRuns leader+page-number runs, preceded only by
 //     pages without body text and spanning as many consecutive pages as keep
 //     satisfying that shape. Kept for documents that carry no usable bookmark,
-//     and only consulted when coversDocumentStart.
+//     and only consulted when the parse begins in the document's front matter.
 //
 // Both signals pass through one guard: a page carrying body text (more than
-// tocMaxLongBoxes boxes longer than tocMaxProseRunes) is never dropped, and a
-// document consisting only of TOC pages is left untouched. The detector stays
-// deliberately conservative — missing a TOC page costs noise chunks, deleting a
-// content page loses text.
-func RemoveTOCBoxes(boxes []pdf.TextBox, outlinePages map[int]bool, coversDocumentStart bool) []pdf.TextBox {
+// tocMaxLongBoxes boxes longer than tocMaxProseRunes, or more than
+// tocMaxBodyBoxes marker-less boxes longer than tocBodyRunes) is never
+// dropped, and a document consisting only of TOC pages is left untouched.
+// The detector stays deliberately conservative — missing a TOC page costs
+// noise chunks, deleting a content page loses text.
+func RemoveTOCBoxes(boxes []pdf.TextBox, outlinePages map[int]bool, firstParsedPage, totalPages int) []pdf.TextBox {
 	if len(boxes) == 0 {
 		return boxes
 	}
@@ -212,17 +254,17 @@ func RemoveTOCBoxes(boxes []pdf.TextBox, outlinePages map[int]bool, coversDocume
 	}
 
 	// Heuristic fallback, for documents that carry no usable bookmark. A TOC is
-	// a document prefix, so only a parse that covers the document's first page
-	// is eligible, and then only the leading pages are candidates: pages without
-	// body text (a cover, copyright page) may be skipped, and the run continues
-	// while pages keep satisfying isTOC(). It ends on the first page that does
+	// a document prefix, so only a parse that begins in the document's front
+	// matter is eligible, and then only the leading pages are candidates: pages
+	// without body text (a cover, copyright page) may be skipped, and the run
+	// continues while pages keep satisfying isTOC(). It ends on the first page that does
 	// not — in practice the first page carrying body text, which is what keeps
 	// per-chapter pages that happen to hold several short headings (the Daodejing
 	// case) out of scope. The run is deliberately unbounded in length: a real
 	// TOC can span more pages than any fixed cap would allow, and truncating it
 	// silently keeps the remaining TOC pages in the output. Length is bounded
 	// instead by isTOC() itself and by the all-TOC guard below.
-	if coversDocumentStart {
+	if firstParsedPage >= 0 && firstParsedPage <= tocShapeFrontMatterMaxPage {
 		inTOC, lead := false, 0
 		for _, pg := range pages {
 			if inTOC {
@@ -237,13 +279,21 @@ func RemoveTOCBoxes(boxes []pdf.TextBox, outlinePages map[int]bool, coversDocume
 				selected[pg] = true
 				continue
 			}
-			if shapes[pg].carriesProse() || lead >= tocMaxLeadPages {
+			if shapes[pg].carriesLongProse() || lead >= tocMaxLeadPages {
 				break
 			}
 			lead++
 		}
 	}
 
+	// The all-TOC guard is document-level, not subset-level: a document that is
+	// nothing but TOC pages is left untouched, while a parsed range that happens
+	// to be all TOC still drops. Floor at the observed subset so a caller that
+	// omits totalPages (0) degrades to the previous behavior.
+	docPages := totalPages
+	if docPages < len(pages) {
+		docPages = len(pages)
+	}
 	drop := make(map[int]struct{}, len(boxes))
 	droppedPages := 0
 	for _, pg := range pages {
@@ -255,7 +305,7 @@ func RemoveTOCBoxes(boxes []pdf.TextBox, outlinePages map[int]bool, coversDocume
 			drop[i] = struct{}{}
 		}
 	}
-	if droppedPages == 0 || droppedPages == len(pages) {
+	if droppedPages == 0 || droppedPages == docPages {
 		return boxes
 	}
 
@@ -275,6 +325,8 @@ type pageShape struct {
 	short   int
 	markers int  // short boxes opening with a chapter marker or holding a page number
 	merged  bool // a long box carrying tocMinMergedRuns leader+page-number runs
+	body    int  // marker-less, leader-less short boxes longer than tocBodyRunes
+	entries int  // long entry lines: count toward the list threshold, not as prose
 }
 
 func shapeOfPage(boxes []pdf.TextBox, indices []int) pageShape {
@@ -285,36 +337,105 @@ func shapeOfPage(boxes []pdf.TextBox, indices []int) pageShape {
 			continue
 		}
 		if utf8.RuneCountInString(text) > tocMaxProseRunes {
-			s.prose++
+			// A leader column is typographic filler, never prose. OCR detection
+			// misses it, so the native-text recovery emits it as its own long
+			// box; counting it as prose kept every page it appeared on.
+			if tocLeaderOnlyPattern.MatchString(text) {
+				continue
+			}
 			// A merged TOC block is long by definition, so the run count is the
-			// only evidence it can carry. Cap the search: the answer is a
-			// three-way comparison, not the exact number of runs.
+			// only evidence it can carry. It is confirmed entries, not prose:
+			// counting it as prose let three merged blocks guard their own page.
 			if len(tocEntryRunPattern.FindAllStringIndex(text, tocMinMergedRuns)) >= tocMinMergedRuns {
 				s.merged = true
+				continue
 			}
+			// An entry line — optional title, leaders, page number — is a TOC
+			// entry, not a paragraph. It confirms the page like any other
+			// marker instead of contradicting it as body text. Require a real
+			// tab leader here: a prose sentence that happens to end in an
+			// ellipsis and a number must keep counting as prose.
+			if isTOCEntryLine(text, tocMinLongEntryLeader) {
+				s.markers++
+				s.entries++
+				continue
+			}
+			s.prose++
 			continue
 		}
 		s.short++
-		if chapterEntryPattern.MatchString(text) || pageNumberPattern.MatchString(text) {
+		if chapterEntryPattern.MatchString(text) || pageNumberPattern.MatchString(text) || isTOCEntryLine(text, tocMinShortEntryLeader) {
 			s.markers++
+			continue
+		}
+		if utf8.RuneCountInString(text) > tocBodyRunes && !tocLeaderOnlyPattern.MatchString(text) {
+			s.body++
 		}
 	}
 	return s
 }
 
-// isTOC reports whether the page reads as a table of contents: a list of short
-// boxes carrying entry markers, or one long box that is itself a run of
-// entries, and no body text either way.
+// isTOCEntryLine reports whether text ends with one TOC entry's tail: a leader
+// run followed by the entry's page number. minLeader is the shortest leader run
+// accepted, so a long box only reads as an entry when its tab leader is real.
+// Space-separated leader segments count as one run (OCR often splits them).
+// The leader+number grammar is reuse of tocEntryRunPattern; prose that merely
+// contains an ellipsis does not end in a run and never matches.
+func isTOCEntryLine(text string, minLeader int) bool {
+	locs := tocEntryRunPattern.FindAllStringIndex(text, -1)
+	if len(locs) == 0 {
+		return false
+	}
+	loc := locs[len(locs)-1]
+	if strings.TrimSpace(text[loc[1]:]) != "" {
+		return false
+	}
+	// Walk back over the leader run so segments split by spaces all count.
+	start := loc[0]
+	for start > 0 {
+		r, size := utf8.DecodeLastRuneInString(text[:start])
+		if r == ' ' || r == '\t' || r == '.' || r == '…' || r == '⋯' || r == '·' {
+			start -= size
+			continue
+		}
+		break
+	}
+	leader := 0
+	for _, r := range text[start:loc[1]] {
+		switch r {
+		case '.', '…', '⋯', '·':
+			leader++
+		case ' ', '\t':
+		default:
+			return leader >= minLeader
+		}
+	}
+	return false
+}
+
+// isTOC reports whether the page reads as a table of contents: a list of entry
+// boxes carrying markers, or one long box that is itself a run of entries, and
+// no body text either way.
 func (s pageShape) isTOC() bool {
 	if s.carriesProse() {
 		return false
 	}
-	return s.merged || (s.short >= tocMinShortBoxes && s.markers >= tocMinEntries)
+	return s.merged || (s.short+s.entries >= tocMinShortBoxes && s.markers >= tocMinEntries)
 }
 
 // carriesProse reports whether the page carries body text. No signal may drop
-// such a page: this is the single guard that bounds every removal.
-func (s pageShape) carriesProse() bool { return s.prose > tocMaxLongBoxes }
+// such a page: this is the single guard that bounds every removal. Body text
+// is evidenced by long boxes (prose), or — for corpora whose lines are all
+// short, such as a legal code's articles or verse — by several marker-less,
+// leader-less boxes longer than tocBodyRunes.
+func (s pageShape) carriesProse() bool { return s.carriesLongProse() || s.body > tocMaxBodyBoxes }
+
+// carriesLongProse reports the long-box signal alone. The leading-run scan
+// uses it rather than carriesProse: a cover or copyright page carries short
+// lines (its metadata block) but no body text, and the body-evidence arm
+// would stop the scan on such a page before it reaches the TOC. Every drop
+// still passes carriesProse, so the body evidence keeps bounding removal.
+func (s pageShape) carriesLongProse() bool { return s.prose > tocMaxLongBoxes }
 
 // ---------------------------------------------------------------------------
 // Running header / footer removal.
@@ -345,6 +466,28 @@ const (
 	// even or odd pages. A 0.40 threshold captures alternating bilateral book headers
 	// while the evenPages >= 3 / oddPages >= 3 count guards against accidental matches.
 	minParityCoverageRatio = 0.40
+	// seqBandTopRatio / seqBandBottomRatio bound the wide bands in which the
+	// sequence-backed page-number track looks for bare numeric / Roman-numeral
+	// boxes. The bands are much looser than the header/footer zones because the
+	// track's evidence is not geometric: only boxes that form an incrementing
+	// run across consecutive pages at a stable Y are removed, which tight body
+	// text cannot fake.
+	seqBandTopRatio    = 0.20
+	seqBandBottomRatio = 0.80
+	// seqMinRun / seqMaxDy mirror the locality track: at least 3 consecutive
+	// pages, total top-edge span across the run within 4pt.
+	seqMinRun = 3
+	seqMaxDy  = 4.0
+	// promoCompanionMaxRunes bounds the length of a margin line that may be
+	// learned as a running-header ad companion of a dropped site-promo box.
+	// A piracy header is a short slogan, so anything longer is treated as body
+	// text and never learned.
+	promoCompanionMaxRunes = 24
+	// minCompanionPages is how many distinct pages must carry the same band
+	// peer of a dropped site-promo box before that peer's text is treated as a
+	// running-header ad and propagated to every page. Requiring several pages
+	// keeps a one-off line that merely shares a page with an ad intact.
+	minCompanionPages = 3
 )
 
 var (
@@ -358,6 +501,23 @@ var (
 
 	// strictBareNumberPattern matches lone Arabic digits or Roman numerals: 1, 23, iv, VII.
 	strictBareNumberPattern = regexp.MustCompile(`(?i)^([0-9０-９]{1,4}|((l|xl|x{1,3})(ix|iv|v?i{1,3}|v)?|ix|iv|v?i{1,3}|v))$`)
+
+	// canonicalRomanPattern accepts the full canonical Roman-numeral grammar
+	// (up to M) so the sequence track can parse page numbers beyond the XXX
+	// range strictBareNumberPattern's header/footer idiom covers. Non-canonical
+	// forms (IIII) are rejected by the pattern itself; romanValue only computes
+	// the subtractive sum of a spelling this regex already accepted.
+	canonicalRomanPattern = regexp.MustCompile(`(?i)^(m{0,3})(cm|cd|d?c{0,3})(xc|xl|l?x{0,3})(ix|iv|v?i{0,3})$`)
+
+	// sitePromoPattern matches margin lines that advertise a download site —
+	// a URL core with at most a short non-URL wrapper on either side. Such a
+	// line is a running header/footer regardless of page count: piracy-supply
+	// PDFs change the wrapper text on some pages ("更多的书籍免费下载 http://…",
+	// "欢迎访问！http://…"), so those variants reach no recurrence track, while
+	// the URL itself is deterministic evidence. Only whole-box, length-capped
+	// boxes in the margin bands use it, so body prose containing a URL is never
+	// touched.
+	sitePromoPattern = regexp.MustCompile(`(?i)^.{0,20}(https?://\S+|www\.[\w-]+(\.[\w-]+)+|(forum|bbs|tieba|phpwind)\.[\w-]+\.[a-z]{2,}\S*|\S*fromuid=\S+).{0,20}$`)
 )
 
 // computePageGaps computes for candidate margin boxes on a page:
@@ -439,6 +599,164 @@ func isNonTextLayout(lt string) bool {
 	return lt == "table" || lt == "figure" || lt == "equation" || lt == "image"
 }
 
+// parseDecimalValue parses a string of lone ASCII or full-width digits.
+func parseDecimalValue(t string) (int, bool) {
+	if t == "" {
+		return 0, false
+	}
+	val := 0
+	for _, r := range t {
+		switch {
+		case r >= '0' && r <= '9':
+			val = val*10 + int(r-'0')
+		case r >= '０' && r <= '９':
+			val = val*10 + int(r-'０')
+		default:
+			return 0, false
+		}
+	}
+	return val, true
+}
+
+// romanValue parses a canonical Roman numeral (I..MMMCMXCIX) and returns its
+// value. The canonical pattern admits only canonical spellings, so non-canonical
+// forms such as "IIII" are rejected before the subtractive sum is computed.
+func romanValue(t string) (int, bool) {
+	if !canonicalRomanPattern.MatchString(t) {
+		return 0, false
+	}
+	values := map[rune]int{'m': 1000, 'd': 500, 'c': 100, 'l': 50, 'x': 10, 'v': 5, 'i': 1}
+	val := 0
+	prev := 0
+	for _, r := range strings.ToLower(t) {
+		v := values[r]
+		if v == 0 {
+			return 0, false
+		}
+		if v > prev {
+			val += v - 2*prev
+		} else {
+			val += v
+		}
+		prev = v
+	}
+	if val <= 0 {
+		return 0, false
+	}
+	return val, true
+}
+
+// parseBareNumberValue reports the numeric value of a box whose entire text is
+// one bare number: lone digits (ASCII or full-width) or a canonical Roman
+// numeral. "12", "４５", "iv", "XIV" parse; "12.", "- 3 -", "2024." do not.
+func parseBareNumberValue(text string) (int, bool) {
+	t := strings.TrimSpace(text)
+	if v, ok := parseDecimalValue(t); ok {
+		return v, true
+	}
+	return romanValue(t)
+}
+
+// pageNumberCeiling bounds which bare numeric values can be page numbers: a
+// document of N pages never carries page number > N+5, and the floor of 20
+// keeps short documents (years like 2024 on a 2-page footer) protected.
+func pageNumberCeiling(numPages int) int {
+	maxAllowed := numPages + 5
+	if maxAllowed < 20 {
+		maxAllowed = 20
+	}
+	return maxAllowed
+}
+
+// isSitePromo reports whether the whole box text advertises a download site.
+func isSitePromo(text string) bool {
+	t := strings.Join(strings.Fields(text), " ")
+	if t == "" || utf8.RuneCountInString(t) > 60 {
+		return false
+	}
+	return sitePromoPattern.MatchString(t)
+}
+
+// bandOf reports which expanded margin band ("header"/"footer") a box sits in,
+// or "" when it is outside both. It uses the same zone bounds the site-promo
+// tier applies, so a box learned as an ad companion and a box later matched
+// against it are judged by one rule.
+func bandOf(b pdf.TextBox, pageHeight float64) string {
+	switch {
+	case b.Bottom <= pageHeight*headerMaxZoneRatio:
+		return "header"
+	case b.Top >= pageHeight*footerMinZoneRatio:
+		return "footer"
+	}
+	return ""
+}
+
+// promoSpot is the page and band where a site-promo box was dropped, recorded
+// so the companion pass can harvest its in-band peers as running-header ads.
+type promoSpot struct {
+	page int
+	band string
+}
+
+// promoCompanionDrops returns indices of margin-band boxes that are the slogan
+// half of an advertisement already seen in the same band next to a dropped
+// site-promo box. It harvests the short, non-title, in-band peers of every
+// promo spot, then flags every band box whose collapsed text was harvested on
+// at least minCompanionPages distinct pages — so a piracy header whose URL line
+// is omitted or split on some pages still goes. The peers are keyed on
+// collapseText (whitespace + case only, digits preserved) so two lines that
+// differ only by a number are never merged. `skip` holds indices already doomed
+// by an earlier tier and is consulted, never mutated.
+func promoCompanionDrops(boxes []pdf.TextBox, perPage map[int][]int, pageHeights map[int]float64, skip map[int]struct{}, promoSpots []promoSpot) []int {
+	companionPages := make(map[string]map[int]bool)
+	for _, sp := range promoSpots {
+		h := pageHeights[sp.page]
+		for _, j := range perPage[sp.page] {
+			if _, dropped := skip[j]; dropped {
+				continue
+			}
+			b := boxes[j]
+			if isNonTextLayout(b.LayoutType) || strings.TrimSpace(b.LayoutType) == "title" {
+				continue
+			}
+			if bandOf(b, h) != sp.band {
+				continue
+			}
+			key := collapseText(b.Text)
+			if key == "" || utf8.RuneCountInString(key) > promoCompanionMaxRunes {
+				continue
+			}
+			if companionPages[key] == nil {
+				companionPages[key] = make(map[int]bool)
+			}
+			companionPages[key][sp.page] = true
+		}
+	}
+	var out []int
+	for key, pages := range companionPages {
+		if len(pages) < minCompanionPages {
+			continue
+		}
+		for i := range boxes {
+			if _, dropped := skip[i]; dropped {
+				continue
+			}
+			b := boxes[i]
+			if isNonTextLayout(b.LayoutType) || strings.TrimSpace(b.LayoutType) == "title" {
+				continue
+			}
+			h, ok := pageHeights[b.PageNumber]
+			if !ok || h <= 0 {
+				continue
+			}
+			if bandOf(b, h) != "" && collapseText(b.Text) == key {
+				out = append(out, i)
+			}
+		}
+	}
+	return out
+}
+
 // isDeterministicPageNumber reports whether text is unambiguously a page number.
 func isDeterministicPageNumber(text string, zone string, gapAbove, gapBelow float64, numPages int) bool {
 	t := strings.TrimSpace(text)
@@ -460,24 +778,8 @@ func isDeterministicPageNumber(text string, zone string, gapAbove, gapBelow floa
 		}
 		// For bare numeric digits, verify the value is within a reasonable range of the document page count.
 		// Protects isolated years (e.g. "2024"), IDs, or footnote indexes on short/medium documents.
-		var val int
-		isDigits := true
-		for _, r := range t {
-			if r >= '0' && r <= '9' {
-				val = val*10 + int(r-'0')
-			} else if r >= '０' && r <= '９' {
-				val = val*10 + int(r-'０')
-			} else {
-				isDigits = false
-				break
-			}
-		}
-		if isDigits && len(t) > 0 {
-			maxAllowed := numPages + 5
-			if maxAllowed < 20 {
-				maxAllowed = 20
-			}
-			if val > maxAllowed {
+		if val, ok := parseDecimalValue(t); ok {
+			if val > pageNumberCeiling(numPages) {
 				return false
 			}
 		}
@@ -497,19 +799,152 @@ type zoneKey struct {
 	text string
 }
 
+// pageNumCand is one bare-number box inside a wide margin band, a candidate
+// for the sequence-backed page-number track.
+type pageNumCand struct {
+	idx   int
+	page  int
+	value int
+	top   float64
+	band  string
+}
+
+// collectPageNumberCandidates gathers boxes whose entire text is one bare
+// number (digits or Roman) sitting in the wide margin bands, bounded by the
+// page-count ceiling. It walks EVERY box, including ones earlier tiers already
+// dropped: the +1 chain must stay contiguous when the gap-backed tiers took
+// the roomy pages and only the tight ones remain to this track.
+func collectPageNumberCandidates(boxes []pdf.TextBox, pageHeights map[int]float64, ceiling int) []pageNumCand {
+	var cands []pageNumCand
+	for i := range boxes {
+		b := boxes[i]
+		if isNonTextLayout(b.LayoutType) {
+			continue
+		}
+		h, ok := pageHeights[b.PageNumber]
+		if !ok || h <= 0 {
+			continue
+		}
+		band := ""
+		switch {
+		case b.Top >= h*seqBandBottomRatio:
+			band = "footer"
+		case b.Bottom <= h*seqBandTopRatio:
+			band = "header"
+		default:
+			continue
+		}
+		val, ok := parseBareNumberValue(b.Text)
+		if !ok || val > ceiling {
+			continue
+		}
+		cands = append(cands, pageNumCand{idx: i, page: b.PageNumber, value: val, top: b.Top, band: band})
+	}
+	return cands
+}
+
+// findPageNumberSequenceDrops returns the indices of candidates that take part
+// in a run of at least seqMinRun consecutive pages whose bare numbers step by
+// exactly one (up or down) while the run's total top-edge span stays within
+// seqMaxDy — the same full-window criterion the locality track applies, so a
+// per-hop check never lets drift accumulate past the threshold. Such a run is
+// a page-number series on sequence evidence alone — enough to remove tight
+// footers the geometric zone gate rejected; isolated or non-stepping numbers
+// are left alone.
+func findPageNumberSequenceDrops(cands []pageNumCand) []int {
+	byBand := make(map[string][]pageNumCand, 2)
+	for _, c := range cands {
+		byBand[c.band] = append(byBand[c.band], c)
+	}
+	dropped := make(map[int]bool, len(cands))
+	for _, group := range byBand {
+		if len(group) < seqMinRun {
+			continue
+		}
+		sort.Slice(group, func(i, j int) bool {
+			if group[i].page != group[j].page {
+				return group[i].page < group[j].page
+			}
+			return group[i].top < group[j].top
+		})
+		for _, dir := range []int{1, -1} {
+			n := len(group)
+			dp := make([]int, n)
+			prev := make([]int, n)
+			minTop := make([]float64, n)
+			maxTop := make([]float64, n)
+			for i := range group {
+				dp[i], prev[i] = 1, -1
+				minTop[i], maxTop[i] = group[i].top, group[i].top
+			}
+			for i := 0; i < n; i++ {
+				for j := 0; j < i; j++ {
+					if group[j].page != group[i].page-1 || group[j].value != group[i].value-dir {
+						continue
+					}
+					newMin, newMax := minTop[j], maxTop[j]
+					if group[i].top < newMin {
+						newMin = group[i].top
+					}
+					if group[i].top > newMax {
+						newMax = group[i].top
+					}
+					if newMax-newMin > seqMaxDy {
+						continue
+					}
+					// Among equal-length chains prefer the tighter Y span, so a
+					// wide early detour cannot block a later legal extension.
+					if dp[j]+1 > dp[i] || (dp[j]+1 == dp[i] && newMax-newMin < maxTop[i]-minTop[i]) {
+						dp[i] = dp[j] + 1
+						prev[i] = j
+						minTop[i], maxTop[i] = newMin, newMax
+					}
+				}
+			}
+			for i := 0; i < n; i++ {
+				if dp[i] < seqMinRun {
+					continue
+				}
+				for k := i; k >= 0; k = prev[k] {
+					dropped[group[k].idx] = true
+				}
+			}
+		}
+	}
+	out := make([]int, 0, len(dropped))
+	for idx := range dropped {
+		out = append(out, idx)
+	}
+	return out
+}
+
 // RemoveHeaderFooterBoxes drops boxes that are running headers or footers.
 //
 // It uses a 3D Cascaded Fusion scheme:
 //  1. Tier 1: Deterministic Pattern & Semantic Tagging. Explicit DLA header/footer
-//     tags in margin zones and unambiguously formatted page numbers are removed
-//     immediately (even on 1- or 2-page documents).
+//     tags in margin zones, unambiguously formatted page numbers, and margin
+//     lines advertising a download site are removed immediately (even on 1- or
+//     2-page documents).
 //  2. Tier 2: Dual-Track Recurrence Engine. Evaluates recurrence across:
 //     - Global half-pages threshold ((numPages + 1) / 2).
 //     - Parity partition (even/odd) to eliminate bilateral alternating headers.
 //     - Locality track (consecutive pages with stable Y) to remove chapter-varying headers.
 //  3. Tier 3: Adaptive Whitespace Gap. Automatically extends the candidate zone
-//     from 10% to up to 14% when separated from body content by >= 18pt of blank space.
-func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) []pdf.TextBox {
+//     from 10% to up to 14% when separated from body content by >= 18pt of blank
+//     space.
+//  4. Sequence track: bare numeric / Roman-numeral boxes in wide margin bands
+//     are removed when they step by one across >= 3 consecutive pages at a
+//     stable Y, catching page numbers that sit too tight under body text for
+//     the geometric gate in any tier above.
+//
+// totalPages is the document's full page count (engine.PageCount). The
+// document-level judgments — the bare-page-number ceiling, the short-document
+// guard, the global half-pages threshold, and the sequence-track ceiling — are
+// computed from it, not from len(pageHeights): when Config.Pages parses a
+// subset, pageHeights covers only those pages, while the page numbers are
+// absolute and the document size is unchanged. The parity and locality tracks
+// stay scope-relative (they judge the pages actually observed).
+func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64, totalPages int) []pdf.TextBox {
 	if len(pageHeights) == 0 || len(boxes) == 0 {
 		return boxes
 	}
@@ -535,8 +970,17 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		}
 	}
 
-	numPages := len(pageHeights)
+	// Document-level basis. Never smaller than the observed subset so a caller
+	// that omits totalPages (0) degrades to the previous subset behavior and a
+	// bogus small value cannot shrink the thresholds below what was parsed.
+	docPages := totalPages
+	if docPages < len(pageHeights) {
+		docPages = len(pageHeights)
+	}
 	drop := make(map[int]struct{}, len(boxes))
+	// promoSpots records where a site-promo box was dropped in Tier 1 so the
+	// companion pass can learn its band peers' text as running-header ads.
+	var promoSpots []promoSpot
 
 	// Tier 1: Deterministic page numbers & DLA semantic tags.
 	for i := range boxes {
@@ -548,6 +992,23 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		if !ok || h <= 0 {
 			continue
 		}
+
+		// A URL ad in either expanded margin zone (top 14% / bottom 14%,
+		// narrower than the sequence track's 20% bands) is an advertising
+		// header/footer on sight — no whitespace gap and no recurrence required,
+		// and this also fires on documents too short for the recurrence tracks.
+		if isSitePromo(b.Text) && (b.Bottom <= h*headerMaxZoneRatio || b.Top >= h*footerMinZoneRatio) {
+			common.Debug("header_footer: dropped by site promo",
+				zap.Int("page", b.PageNumber), zap.Int("textLen", utf8.RuneCountInString(b.Text)))
+			drop[i] = struct{}{}
+			if b.Bottom <= h*headerMaxZoneRatio {
+				promoSpots = append(promoSpots, promoSpot{page: b.PageNumber, band: "header"})
+			} else {
+				promoSpots = append(promoSpots, promoSpot{page: b.PageNumber, band: "footer"})
+			}
+			continue
+		}
+
 		zone := classifyZone(b, h, allGapAbove[i], allGapBelow[i])
 		if zone == "" {
 			continue
@@ -555,24 +1016,38 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 
 		lt := strings.TrimSpace(b.LayoutType)
 		if (zone == "header" && lt == "header") || (zone == "footer" && lt == "footer") {
-			slog.Debug("header_footer: dropped by DLA label", "page", b.PageNumber, "zone", zone, "layoutType", lt, "textLen", utf8.RuneCountInString(b.Text))
+			common.Debug("header_footer: dropped by DLA label",
+				zap.Int("page", b.PageNumber), zap.String("zone", zone),
+				zap.String("layoutType", lt), zap.Int("textLen", utf8.RuneCountInString(b.Text)))
 			drop[i] = struct{}{}
 			continue
 		}
 
-		if isDeterministicPageNumber(b.Text, zone, allGapAbove[i], allGapBelow[i], numPages) {
-			slog.Debug("header_footer: dropped by page-number pattern", "page", b.PageNumber, "zone", zone, "textLen", utf8.RuneCountInString(b.Text))
+		if isDeterministicPageNumber(b.Text, zone, allGapAbove[i], allGapBelow[i], docPages) {
+			common.Debug("header_footer: dropped by page-number pattern",
+				zap.Int("page", b.PageNumber), zap.String("zone", zone),
+				zap.Int("textLen", utf8.RuneCountInString(b.Text)))
 			drop[i] = struct{}{}
 			continue
 		}
 	}
 
-	if numPages < minHeaderFooterPages {
+	if docPages < minHeaderFooterPages {
 		if len(drop) == 0 {
 			return boxes
 		}
-		slog.Debug("header_footer: removal completed (short document)", "total_boxes", len(boxes), "dropped_boxes", len(drop))
+		common.Debug("header_footer: removal completed (short document)",
+			zap.Int("total_boxes", len(boxes)), zap.Int("dropped_boxes", len(drop)))
 		return applyDrop(boxes, drop)
+	}
+
+	// Promo-companion propagation. Runs after Tier 1 and before the recurrence
+	// engine, so the boxes it removes never enter the recurrence statistics
+	// (which already skip dropped indices) and cannot perturb any "#"-masked count.
+	for _, idx := range promoCompanionDrops(boxes, perPage, pageHeights, drop, promoSpots) {
+		common.Debug("header_footer: dropped by promo companion",
+			zap.Int("page", boxes[idx].PageNumber), zap.String("zone", bandOf(boxes[idx], pageHeights[boxes[idx].PageNumber])), zap.Int("textLen", utf8.RuneCountInString(boxes[idx].Text)))
+		drop[idx] = struct{}{}
 	}
 
 	// Tier 2: Dual-Track Recurrence Engine.
@@ -610,7 +1085,7 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		}
 	}
 
-	minGlobalPages := (numPages + 1) / 2
+	minGlobalPages := (docPages + 1) / 2
 	if minGlobalPages < 2 {
 		minGlobalPages = 2
 	}
@@ -644,7 +1119,9 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		}
 
 		if reason != "" {
-			slog.Debug("header_footer: dropped by recurrence", "zone", key.zone, "textLen", utf8.RuneCountInString(key.text), "reason", reason, "pages", distinctPages)
+			common.Debug("header_footer: dropped by recurrence",
+				zap.String("zone", key.zone), zap.Int("textLen", utf8.RuneCountInString(key.text)),
+				zap.String("reason", reason), zap.Int("pages", distinctPages))
 			for _, m := range metas {
 				drop[m.idx] = struct{}{}
 			}
@@ -657,7 +1134,9 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		if len(metas) >= 3 && utf8.RuneCountInString(key.text) <= 60 {
 			runIndices := findStableConsecutiveRunIndices(metas, 3, 4.0)
 			if len(runIndices) > 0 {
-				slog.Debug("header_footer: dropped by recurrence", "zone", key.zone, "textLen", utf8.RuneCountInString(key.text), "reason", "local_consecutive_run", "boxes", len(runIndices))
+				common.Debug("header_footer: dropped by recurrence",
+					zap.String("zone", key.zone), zap.Int("textLen", utf8.RuneCountInString(key.text)),
+					zap.String("reason", "local_consecutive_run"), zap.Int("boxes", len(runIndices)))
 				for _, idx := range runIndices {
 					drop[idx] = struct{}{}
 				}
@@ -665,17 +1144,27 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		}
 	}
 
+	// Sequence-backed page numbers. Word-derived books sit their page numbers
+	// a few points under body text — below the 90% footer line AND below the
+	// expanded band's whitespace requirement — so the geometric gate rejects
+	// them before any tier can see a pattern or count a recurrence. A run of
+	// bare numbers stepping by one across consecutive pages at a stable Y is a
+	// page-number series on sequence evidence alone. This runs after the
+	// recurrence engine so it only adds drops: the recurrence counts, which
+	// include these boxes under their masked key, stay untouched.
+	if seqDrops := findPageNumberSequenceDrops(collectPageNumberCandidates(boxes, pageHeights, pageNumberCeiling(docPages))); len(seqDrops) > 0 {
+		common.Debug("header_footer: dropped by page-number sequence", zap.Int("boxes", len(seqDrops)))
+		for _, idx := range seqDrops {
+			drop[idx] = struct{}{}
+		}
+	}
+
 	if len(drop) == 0 {
 		return boxes
 	}
-	slog.Debug("header_footer: removal completed", "total_boxes", len(boxes), "dropped_boxes", len(drop))
+	common.Debug("header_footer: removal completed",
+		zap.Int("total_boxes", len(boxes)), zap.Int("dropped_boxes", len(drop)))
 	return applyDrop(boxes, drop)
-}
-
-// hasStableConsecutiveRun checks if metas has a run of at least minRun
-// consecutive pages where the top variation is within maxDy.
-func hasStableConsecutiveRun(metas []boxMeta, minRun int, maxDy float64) bool {
-	return len(findStableConsecutiveRunIndices(metas, minRun, maxDy)) > 0
 }
 
 // findStableConsecutiveRunIndices finds all box indices that belong to any qualifying
@@ -767,6 +1256,14 @@ func applyDrop(boxes []pdf.TextBox, drop map[int]struct{}) []pdf.TextBox {
 		out = append(out, boxes[i])
 	}
 	return out
+}
+
+// collapseText lower-cases and whitespace-collapses text without masking
+// digits, for comparison keys that must not treat two differently-numbered
+// lines as identical (unlike normalizeRunningText, which is for running
+// headers/footers whose per-page number must be folded away).
+func collapseText(text string) string {
+	return strings.ToLower(strings.Join(strings.Fields(text), " "))
 }
 
 // normalizeRunningText collapses whitespace, replaces digit runs with a single

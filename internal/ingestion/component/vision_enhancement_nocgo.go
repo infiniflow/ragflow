@@ -35,11 +35,15 @@ func newVisionImageCropper(_ context.Context, _ *gorm.DB, _ map[string]any) (vis
 	return visionPDFCropperNoop{}, nil
 }
 
-func (visionPDFCropperNoop) Crop(item map[string]any) (string, error) {
+func (visionPDFCropperNoop) Prepare(ctx context.Context, _ map[string]any) error {
+	return ctx.Err()
+}
+
+func (visionPDFCropperNoop) Crop(_ context.Context, item map[string]any) (*visionImage, error) {
 	if img, _ := item["image"].(string); img != "" {
-		return img, nil
+		return materializeInlineVisionImage(img)
 	}
-	return "", nil
+	return nil, nil
 }
 
 func (visionPDFCropperNoop) Close() error { return nil }

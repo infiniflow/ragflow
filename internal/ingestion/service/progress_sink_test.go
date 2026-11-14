@@ -18,11 +18,18 @@ package service
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"runtime"
 	"sync"
 	"testing"
 	"time"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
+
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/ingestion/testutil"
@@ -406,5 +413,66 @@ func TestProgressSinkCloseFlushSurvivesCancelledRunContext(t *testing.T) {
 	calls, gotDocID, gotProgress := stub.snapshot()
 	if calls != 1 || gotDocID != docID || gotProgress != 0.5 {
 		t.Fatalf("final flush = calls:%d doc:%q progress:%v, want 1/%q/0.5 (ticker flushes must fail on cancelled ctx, Close flush must succeed)", calls, gotDocID, gotProgress, docID)
+	}
+}
+
+// failingDocProgressSvc fails every mirror write, so tests can drive the
+// sink's flush-error branch deterministically.
+type failingDocProgressSvc struct {
+	err      error
+	attempts int
+}
+
+func (s *failingDocProgressSvc) UpdateRunState(_ context.Context, _ string, _ float64) error {
+	s.attempts++
+	return s.err
+}
+
+// TestProgressSinkFlushCancellationDoesNotWarn pins the log level of the
+// periodic-flush error branch. A stop cancels the run context underneath an
+// in-flight UPDATE, so the call comes back as a cancellation (GORM joins
+// ctx.Err() with sql.ErrTxDone, hence the errors.Is check - the reported error
+// is not context.Canceled itself). That abort is the normal stop path and must
+// stay at debug; a genuine write failure must still warn.
+func TestProgressSinkFlushCancellationDoesNotWarn(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	prevLogger := common.Logger
+	defer func() { common.Logger = prevLogger }()
+	core, logs := observer.New(zapcore.WarnLevel)
+	common.Logger = zap.New(core)
+
+	ctx := t.Context()
+	sink := newProgressSink(ctx, servicepkg.NewIngestionTaskService(), "run-1")
+	defer sink.Close()
+	sink.bindDocument("doc-1")
+
+	// Cancellation, in the joined shape a cancelled DB call produces.
+	cancelStub := &failingDocProgressSvc{
+		err: errors.Join(context.Canceled, sql.ErrTxDone),
+	}
+	sink.docSvc = cancelStub
+	sink.flush(ctx, true)
+	if cancelStub.attempts != 1 {
+		t.Fatalf("flush attempts = %d, want 1 (the branch under test must actually run)", cancelStub.attempts)
+	}
+	if logs.Len() != 0 {
+		t.Fatalf("cancelled flush logged %d warn entries: %v", logs.Len(), logs.All())
+	}
+
+	// A real failure keeps warning.
+	failStub := &failingDocProgressSvc{err: errors.New("db down")}
+	sink.docSvc = failStub
+	sink.flush(ctx, true)
+	if failStub.attempts != 1 {
+		t.Fatalf("flush attempts = %d, want 1", failStub.attempts)
+	}
+	if logs.Len() != 1 {
+		t.Fatalf("write failure logged %d warn entries, want 1", logs.Len())
+	}
+	if entry := logs.All()[0]; entry.Level != zapcore.WarnLevel {
+		t.Fatalf("write failure logged at %v, want warn", entry.Level)
 	}
 }

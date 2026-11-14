@@ -260,21 +260,6 @@ func (s *NATSSaver) List(ctx context.Context, config map[string]interface{}, lim
 	return results, nil
 }
 
-// ---- Garbage Collection ----
-//
-// GC原理：
-//
-//	每个 key 对应一个 graph instance（一个执行线程）。
-//	活跃的 graph 会持续写入 checkpoint，其 key 永远不会变"冷"。
-//	当一个 graph 执行完毕（正常结束、被中断、或崩溃），其 key 不再更新。
-//
-//	GC 定期扫描所有 key，检查最新 checkpoint 的创建时间。
-//	如果超过 MaxGraphIdle 没有新 checkpoint，说明该 graph instance 已经结束，
-//	GC 会删除该 key 的所有历史版本。这样就实现了"每个 graph 结束后自动清理"。
-//
-//   NATS KV 的 History=N 在 GC 之上提供了一层增量保护：
-//   活跃 graph 的超旧版本会被 NATS 自动丢弃，防止单个 key 无限膨胀。
-
 // runGC periodically scans for completed graph instances and purges them.
 func (s *NATSSaver) runGC(interval time.Duration) {
 	defer s.wg.Done()
@@ -318,9 +303,8 @@ func (s *NATSSaver) collectGarbage() {
 			continue
 		}
 
-		// 最新 checkpoint 的创建时间超过 MaxGraphIdle → graph instance 已结束
 		if entry.Created().Before(cutoff) {
-			if err := s.kv.Delete(ctx, key); err == nil {
+			if err = s.kv.Delete(ctx, key); err == nil {
 				purged++
 			}
 		}

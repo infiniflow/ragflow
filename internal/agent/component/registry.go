@@ -38,6 +38,7 @@ import (
 	"fmt"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/agent/tool"
 )
 
 // Factory constructs a Component from a params map (loaded from the DSL).
@@ -68,6 +69,9 @@ type Factory func(params map[string]any) (Component, error)
 func Register(name string, f Factory) {
 	if err := runtime.DefaultRegistry.Register(name, runtime.CategoryAgent,
 		func(_ string, params map[string]any) (runtime.Component, error) {
+			if err := tool.ValidateSearchFilters(params, false); err != nil {
+				return nil, runtime.NewUserFacingError(fmt.Sprintf("[%s] %s", name, err))
+			}
 			return f(params)
 		},
 		runtime.Metadata{Version: "legacy"}); err != nil {

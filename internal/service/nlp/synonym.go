@@ -61,7 +61,7 @@ func NewSynonym(redis Client, resPath string, wordnetDir string) *Synonym {
 	s.lookupNum.Store(100000000)
 
 	if resPath == "" {
-		s.resPath = "rag/res"
+		s.resPath = "internal/rag/res"
 	}
 
 	// Initialize WordNet with provided path

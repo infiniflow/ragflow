@@ -205,6 +205,8 @@ export default {
       parserRequired: 'طريقة التقسيم مطلوبة',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'تابع الرفع، وسيحوّل النظام هذه الملفات تلقائيًا إلى إعداد تحليل مدمج يدعم أنواعها.',
       metadata: {
         fields: 'الحقول',
         selectFiles: 'الملفات المحددة ({{count}})',
@@ -318,7 +320,7 @@ export default {
       webCrawl: 'الزحف على شبكة الإنترنت',
       chunkNumber: 'قطع',
       uploadDate: 'تاريخ التحميل',
-      chunkMethod: 'طريقة التقطيع',
+      parsingMode: 'نمط التحليل',
       enabled: 'يُمكَِن',
       disabled: 'إبطال',
       action: 'فعل',
@@ -370,10 +372,6 @@ export default {
       layoutRecognize: 'محلل قوات الدفاع الشعبي',
       layoutRecognizeTip:
         'استخدم نموذجًا مرئيًا لتحليل تخطيط PDF لتحديد موقع عناوين المستندات وكتل النص والصور والجداول بشكل فعال. إذا تم اختيار الخيار البسيط، فسيتم استرداد النص العادي فقط في ملف PDF. يرجى ملاحظة أن هذا الخيار يعمل حاليًا فقط مع مستندات PDF.',
-      taskPageSize: 'حجم صفحة المهمة',
-      taskPageSizeMessage: 'الرجاء إدخال حجم صفحة المهمة الخاصة بك!',
-      taskPageSizeTip:
-        'أثناء التعرف على التخطيط، يتم تقسيم ملف PDF إلى أجزاء ومعالجته بالتوازي لزيادة سرعة المعالجة. تحدد هذه المعلمة حجم كل قطعة. يقلل حجم القطعة الأكبر من احتمالية تقسيم النص المستمر بين الصفحات.',
       addPage: 'إضافة صفحة',
       greaterThan: 'يجب أن تكون القيمة الحالية أكبر من!',
       greaterThanPrevious: 'يجب أن تكون القيمة الحالية أكبر من السابقة!',
@@ -400,9 +398,6 @@ export default {
       childrenDelimiter: 'محدد للنص',
       childrenDelimiterTip:
         'يمكن أن يتكون المحدد أو الفاصل من حرف خاص واحد أو عدة أحرف. إذا كانت هناك أحرف متعددة، فتأكد من أنها محاطة بعلامات التحديد الخلفية (``). على سبيل المثال، إذا قمت بتكوين المحددات الخاصة بك على النحو التالي: \\n`##`;، فسيتم فصل النصوص الخاصة بك عند فواصل الأسطر ورموز التجزئة المزدوجة (##) والفواصل المنقوطة.',
-      html4excel: 'إكسل إلى HTML',
-      html4excelTip:
-        'استخدم مع طريقة التقطيع العامة. عند التعطيل، سيتم تحليل جداول البيانات (XLSX أو XLS(Excel 97-2003)) الموجودة في قاعدة المعرفة إلى أزواج قيمة المفتاح. عند التمكين، سيتم تحليلها إلى جداول HTML، مع تقسيم كل 12 صفًا إذا كان الجدول الأصلي يحتوي على أكثر من 12 صفًا. راجع https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration للحصول على التفاصيل.',
       autoKeywords: 'الكلمة الرئيسية التلقائية',
       autoKeywordsTip:
         'قم باستخراج الكلمات الرئيسية N تلقائيًا لكل مجموعة لزيادة تصنيفها للاستعلامات التي تحتوي على تلك الكلمات الرئيسية. انتبه إلى أنه سيتم استهلاك الرموز المميزة الإضافية بواسطة نموذج الفهرسة المحدد في "التكوين". يمكنك التحقق من الكلمات الأساسية المضافة أو تحديثها لمقطع من قائمة المقاطع. للحصول على التفاصيل، راجع https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',
@@ -421,6 +416,7 @@ export default {
       reRankModelWaring: 'يستغرق نموذج إعادة التصنيف وقتًا طويلاً للغاية.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       globalIndexModelTip:
         'يستخدم لإنشاء بيانات التعريف التلقائية والكلمات الرئيسية التلقائية والأسئلة التلقائية. سيؤثر أداء النموذج على جودة التوليد.',
       globalIndexModel: 'نموذج الفهرسة',
@@ -447,8 +443,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         'على سبيل المثال https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'رمز الوصول إلى استوديو الذكاء الاصطناعي',
-      paddleocrAccessTokenTip: 'رمز الوصول إلى PaddleOCR API (اختياري)',
-      paddleocrAccessTokenPlaceholder: 'رمز AI Studio الخاص بك (اختياري)',
+      paddleocrAccessTokenTip: 'رمز الوصول إلى PaddleOCR API',
+      paddleocrAccessTokenPlaceholder: 'رمز AI Studio الخاص بك',
       paddleocrAlgorithm: 'خوارزمية PaddleOCR',
       paddleocrAlgorithmTip: 'الخوارزمية المستخدمة لتحليل PaddleOCR',
       paddleocrSelectAlgorithm: 'حدد الخوارزمية',
@@ -486,7 +482,7 @@ export default {
       dataFlowPlaceholder: 'الرجاء تحديد خط أنابيب.',
       buildItFromScratch: 'بنائها من الصفر',
       dataFlow: 'خط أنابيب',
-      parseType: 'نوع التحليل',
+      parsingMode: 'نمط التحليل',
       manualSetup: 'اختر خط الأنابيب',
       builtIn: 'مدمج',
       titleDescription:
@@ -508,8 +504,6 @@ export default {
         'إذا تم تعيينه على "فريق"، فسيتمكن جميع أعضاء فريقك من إدارة قاعدة المعرفة.',
       chunkTokenNumberTip:
         'إنه يعين نوعًا ما عتبة الرمز المميز لإنشاء قطعة. سيتم دمج المقطع الذي يحتوي على عدد أقل من الرموز المميزة من هذا الحد مع المقاطع التالية حتى يتجاوز عدد الرموز المميزة الحد، وعند هذه النقطة يتم إنشاء القطعة. لا يتم إنشاء أي قطعة جديدة ما لم تتم مواجهة محدد، حتى لو تم تجاوز الحد.',
-      chunkMethod: 'طريقة التقطيع',
-      chunkMethodTip: 'عرض النصائح على اليمين.',
       upload: 'رفع',
       english: 'إنجليزي',
       chinese: 'الصينية',
@@ -825,9 +819,6 @@ export default {
       },
       cancel: 'يلغي',
       chatSetting: 'إعداد الدردشة',
-      tocEnhance: 'فهرس الصفحة',
-      tocEnhanceTip:
-        'أثناء تحليل المستند، تم إنشاء معلومات جدول المحتويات (راجع خيار "تمكين استخراج جدول المحتويات" في الطريقة العامة). يسمح هذا للنموذج الكبير بإرجاع عناصر جدول المحتويات ذات الصلة باستعلام المستخدم، وبالتالي استخدام هذه العناصر لاسترداد الأجزاء ذات الصلة وتطبيق الترجيح على هذه القطع أثناء عملية الفرز. يحاكي هذا الأسلوب سلوك الإنسان في البحث عن المعلومات في الكتب.',
       batchDeleteSessions: 'حذف دفعة',
       deleteSelectedConfirm: 'هل تريد حذف الجلسة/الجلسات المحددة ({{count}})؟',
       showChunkMetadata: 'عرض بيانات التعريف للمقطع',
@@ -1112,19 +1103,19 @@ export default {
       chatModelTip: 'LLM الافتراضي لكل قاعدة معرفية تم إنشاؤها حديثًا.',
       embeddingModel: 'التضمين',
       embeddingModelTip:
-        'نموذج التضمين الافتراضي لكل قاعدة معرفية تم إنشاؤها حديثًا. إذا لم تتمكن من العثور على نموذج التضمين من القائمة المنسدلة، فتحقق مما إذا كنت تستخدم إصدار RAGFlow النحيف (الذي لا يتضمن نماذج التضمين) أو تحقق من https://ragflow.io/docs/dev/supported_models لمعرفة ما إذا كان موفر النموذج الخاص بك يدعم هذا النموذج.',
+        'نموذج التضمين الافتراضي لكل قاعدة معرفية تم إنشاؤها حديثًا. إذا لم تتمكن من العثور على نموذج التضمين من القائمة المنسدلة، فتحقق مما إذا كنت تستخدم إصدار RAGFlow النحيف (الذي لا يتضمن نماذج التضمين) أو تحقق من صفحة «موفرو النماذج» لمعرفة ما إذا كان موفر النموذج الخاص بك يدعم هذا النموذج.',
       img2txtModel: 'VLM',
       img2txtModelTip:
-        'VLM الافتراضي لكل قاعدة معارف تم إنشاؤها حديثًا. وهو يصف صورة أو مقطع فيديو. إذا لم تتمكن من العثور على نموذج من القائمة المنسدلة، فراجع https://ragflow.io/docs/dev/supported_models لمعرفة ما إذا كان موفر النموذج الخاص بك يدعم هذا النموذج.',
+        'VLM الافتراضي لكل قاعدة معارف تم إنشاؤها حديثًا. وهو يصف صورة أو مقطع فيديو. إذا لم تتمكن من العثور على نموذج من القائمة المنسدلة، فراجع صفحة «موفرو النماذج» لمعرفة ما إذا كان موفر النموذج الخاص بك يدعم هذا النموذج.',
       sequence2txtModel: 'ASR',
       sequence2txtModelTip:
         'نموذج ASR الافتراضي لكل مجموعة بيانات تم إنشاؤها حديثًا. استخدم هذا النموذج لترجمة الأصوات إلى النص المقابل.',
       rerankModel: 'إعادة الترتيب',
       rerankModelTip:
-        'نموذج إعادة الترتيب الافتراضي لإعادة ترتيب القطع. إذا لم تتمكن من العثور على نموذج من القائمة المنسدلة، فراجع https://ragflow.io/docs/dev/supported_models لمعرفة ما إذا كان موفر النموذج الخاص بك يدعم هذا النموذج.',
+        'نموذج إعادة الترتيب الافتراضي لإعادة ترتيب القطع. إذا لم تتمكن من العثور على نموذج من القائمة المنسدلة، فراجع صفحة «موفرو النماذج» لمعرفة ما إذا كان موفر النموذج الخاص بك يدعم هذا النموذج.',
       ttsModel: 'تحويل النص إلى كلام',
       ttsModelTip:
-        'النموذج الافتراضي لتحويل النص إلى كلام. إذا لم تتمكن من العثور على نموذج من القائمة المنسدلة، فراجع https://ragflow.io/docs/dev/supported_models لمعرفة ما إذا كان موفر النموذج الخاص بك يدعم هذا النموذج.',
+        'النموذج الافتراضي لتحويل النص إلى كلام. إذا لم تتمكن من العثور على نموذج من القائمة المنسدلة، فراجع صفحة «موفرو النماذج» لمعرفة ما إذا كان موفر النموذج الخاص بك يدعم هذا النموذج.',
       workspace: 'مساحة العمل',
       upgrade: 'يرقي',
       addLlmTitle: 'أضف LLM',
@@ -1143,7 +1134,7 @@ export default {
         apiUrlPlaceholder:
           'على سبيل المثال: https://paddleocr-server.com/layout-parsing',
         accessToken: 'رمز الوصول إلى استوديو الذكاء الاصطناعي',
-        accessTokenPlaceholder: 'رمز AI Studio الخاص بك (اختياري)',
+        accessTokenPlaceholder: 'رمز AI Studio الخاص بك',
         algorithm: 'خوارزمية PaddleOCR',
         selectAlgorithm: 'حدد الخوارزمية',
         modelNamePlaceholder: 'على سبيل المثال: paddleocr-from-env-1',
@@ -1291,6 +1282,7 @@ export default {
         tts: 'تحويل النص إلى كلام',
         image2text: 'التعرف الضوئي على الحروف',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       showToc: 'عرض المحتوى',
       hideToc: 'إخفاء المحتوى',
@@ -1356,13 +1348,6 @@ export default {
       pleaseUploadAtLeastOneFile: 'يرجى تحميل ملف واحد على الأقل',
     },
     flow: {
-      preprocess: {
-        preprocess: 'المعالجة المسبقة',
-        mainContent: 'المحتوى الرئيسي',
-        abstract: 'خلاصة',
-        author: 'مؤلف',
-        sectionTitle: 'عنوان القسم',
-      },
       autoPlay: 'تشغيل الصوت تلقائيًا',
       downloadFileTypeTip: 'نوع الملف المراد تنزيله',
       downloadFileType: 'تنزيل نوع الملف',
@@ -1445,7 +1430,7 @@ export default {
       dataManipulation: 'التلاعب بالبيانات',
       flow: 'تدفق',
       dialog: 'حوار',
-      cite: 'استشهد',
+      cite: 'إظهار الاستشهادات',
       citeTip: 'citeTip',
       name: 'اسم',
       nameMessage: 'الرجاء إدخال الاسم',
@@ -1898,9 +1883,9 @@ export default {
       dynamicParameters: 'المعلمات الديناميكية',
       jsonFormatTip: 'يجب أن يوفر المكون الرئيسي سلسلة JSON بالتنسيق التالي:',
       toEmailTip: 'to_email: البريد الإلكتروني للمستلم (مطلوب)',
-      ccEmailTip: 'cc_email: البريد الإلكتروني CC (اختياري)',
-      subjectTip: 'الموضوع: موضوع البريد الإلكتروني (اختياري)',
-      contentTip: 'المحتوى: محتوى البريد الإلكتروني (اختياري)',
+      ccEmailTip: 'cc_email: البريد الإلكتروني CC',
+      subjectTip: 'الموضوع: موضوع البريد الإلكتروني',
+      contentTip: 'المحتوى: محتوى البريد الإلكتروني',
       jsonUploadTypeErrorMessage: 'يرجى تحميل ملف json',
       jsonUploadContentErrorMessage: 'خطأ في ملف json',
       iteration: 'التكرار',
@@ -2238,7 +2223,7 @@ export default {
       saveToMemory: 'حفظ في الذاكرة',
       retrievalFrom: 'الاسترجاع من',
       tags: 'العلامات',
-      canvasCategory: 'فئة قماش',
+      agentCategory: 'فئة قماش',
       id: 'ID',
       logTitle: 'العنوان',
     },
@@ -2408,10 +2393,10 @@ export default {
         write: 'يكتب',
         share: 'يشارك',
       },
-      serviceStatus: 'حالة الخدمة',
-      userManagement: 'إدارة المستخدم',
-      sandboxSettings: 'إعدادات وضع الحماية',
-      registrationWhitelist: 'القائمة البيضاء للتسجيل',
+      serviceStatus: 'الخدمات',
+      userManagement: 'المستخدمون',
+      sandboxSettings: 'صندوق الرمل',
+      registrationWhitelist: 'القائمة البيضاء',
       roles: 'الأدوار',
       monitoring: 'يراقب',
       sandboxSettingsPage: {
@@ -2498,7 +2483,7 @@ export default {
       importSelectExcelFile: 'ملف اكسل (.xlsx)',
       importOverwriteExistingEmails:
         'الكتابة فوق رسائل البريد الإلكتروني الموجودة',
-      importInvalidExcelFile: 'الرجاء تحديد ملف Excel صالح',
+      importValidExcelFile: 'الرجاء تحديد ملف Excel صالح',
       importFileRequired: 'الرجاء تحديد ملف لاستيراده',
       importFileTips:
         'يجب أن يحتوي الملف على عمود رأس واحد يسمى <code>email</code>.',
@@ -2510,7 +2495,6 @@ export default {
       updateDate: 'تاريخ التحديث',
       permission: 'إذن',
       agentTitle: 'عنوان الوكيل',
-      canvasCategory: 'فئة قماش',
       newRole: 'دور جديد',
       addNewRole: 'إضافة دور جديد',
       roleName: 'اسم الدور',
@@ -2526,18 +2510,14 @@ export default {
     },
     explore: {
       title: 'يطلق',
-      canvasList: 'قائمة قماش',
       sessions: 'الجلسات',
       newSession: 'جلسة جديدة',
       newSessionLabel: 'ابدأ محادثة جديدة',
       deleteSession: 'حذف الجلسة',
-      searchCanvas: 'لوحة بحث...',
       searchSessions: 'جلسات البحث...',
-      noCanvasSelected: 'الرجاء تحديد لوحة قماشية',
       noSessionSelected: 'الرجاء تحديد جلسة أو إنشاء جلسة جديدة',
       noSessionsFound: 'لم يتم العثور على جلسات',
       createFirstSession: 'قم بإنشاء جلستك الأولى',
-      noCanvasFound: 'لم يتم العثور على قماش',
       deleteSelectedConfirm:
         'هل أنت متأكد أنك تريد حذف الجلسة/الجلسات ({{count}})؟',
       batchDeleteSessions: 'حذف الجلسات',

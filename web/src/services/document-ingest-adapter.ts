@@ -1,5 +1,3 @@
-import { pickByBackend } from '@/utils/backend-variant';
-
 export type DocumentIngestOption = {
   delete: boolean;
   apply_kb: boolean;
@@ -27,8 +25,5 @@ export const buildDocumentIngestPayload = ({
     ...(option || {}),
   };
 
-  return pickByBackend({
-    go: run === 1 ? { ...payload, delete: true } : payload,
-    python: payload,
-  });
+  return run === 1 ? { ...payload, delete: true } : payload;
 };

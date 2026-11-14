@@ -1,0 +1,17 @@
+{
+  "name": "MonkeyOCR",
+  "url_suffix": {
+    "doc_parse": "file_parse",
+    "task": "tasks"
+  },
+  "url_hint": "http://host.docker.internal:7861",
+  "class": "local",
+  "models": [
+    {
+      "name": "MonkeyOCR-model",
+      "model_types": [
+        "ocr"
+      ]
+    }
+  ]
+}

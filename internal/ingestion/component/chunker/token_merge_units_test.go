@@ -216,7 +216,10 @@ func TestMergeUnitsMatchesHardCapOracle(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			units := make([]schema.ChunkDoc, len(c.texts))
 			for i, tx := range c.texts {
-				units[i] = schema.ChunkDoc{Text: tx, TKNums: intPtr(c.tkNums[i]), CKType: c.kinds[i]}
+				units[i] = schema.ChunkDoc{Text: tx, TKNums: intPtr(c.tkNums[i])}
+				if c.kinds[i] == "image" || c.kinds[i] == "table" {
+					units[i].DocType = c.kinds[i]
+				}
 			}
 			want := hardCapMergeUnitsOracle(c.texts, c.tkNums, c.kinds, c.target, c.overlap, c.joinSep)
 			got := mergeUnits(units, c.target, c.overlap, c.joinSep)
@@ -255,8 +258,8 @@ func TestMergeUnitsOverlapPrefixIsTagFree(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			units := []schema.ChunkDoc{
-				{Text: c.prev, TKNums: intPtr(10), CKType: "text"},
-				{Text: c.cur, TKNums: intPtr(4), CKType: "text"},
+				{Text: c.prev, TKNums: intPtr(10)},
+				{Text: c.cur, TKNums: intPtr(4)},
 			}
 			got := mergeUnits(units, c.target, c.overlap, "\n")
 			if len(got) < 2 {

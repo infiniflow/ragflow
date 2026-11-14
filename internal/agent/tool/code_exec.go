@@ -35,11 +35,7 @@ import (
 	"go.uber.org/zap"
 )
 
-// ErrCodeExecSandboxMissing is returned when no sandbox client is
-// registered. The Python sandbox itself is kept as-is (the Go
-// side never reimplemented the sandbox). When a client is
-// registered via SetSandboxClient at boot, the tool dispatches
-// the execution.
+// ErrCodeExecSandboxMissing is returned when no sandbox client is registered.
 var ErrCodeExecSandboxMissing = errors.New(
 	"CodeExec sandbox client not registered — call SetSandboxClient at boot",
 )
@@ -93,9 +89,7 @@ type codeExecResult struct {
 	Attachments []map[string]any `json:"attachments,omitempty"`
 }
 
-// CodeExecTool is the  for the CodeExec tool
-// ( . It validates language +
-// non-empty code and returns a structured "not-yet-wired" error.
+// CodeExecTool validates input and dispatches execution to the sandbox client.
 type CodeExecTool struct{}
 
 // NewCodeExecTool returns a CodeExecTool implementing eino's
@@ -223,6 +217,7 @@ func codeExecResultJSON(ctx context.Context, r *SandboxResponse) (string, error)
 	}
 	if strings.TrimSpace(r.Stderr) != "" &&
 		!hasStructuredResult &&
+		r.Returned == "" &&
 		len(out.Artifacts) == 0 &&
 		strings.TrimSpace(r.Stdout) == "" {
 		out.Error = r.Stderr
@@ -231,8 +226,8 @@ func codeExecResultJSON(ctx context.Context, r *SandboxResponse) (string, error)
 			fmt.Fprintln(os.Stderr, "code_exec: falling back to stdout deserialization because no structured result metadata was provided")
 		}
 		out.RawResult = NormalizeCodeExecOutputValue(resolvedValue)
-		out.ActualType = InferCodeExecActualType(out.RawResult)
-		out.Content = RenderCodeExecCanonicalContent(out.RawResult)
+		out.ActualType = inferCodeExecActualType(out.RawResult)
+		out.Content = renderCodeExecCanonicalContent(out.RawResult)
 	}
 	common.Debug("CodeExec tool",
 		zap.Any("structured_result", r.StructuredResult),
@@ -384,6 +379,9 @@ func resolveCodeExecResultValue(r *SandboxResponse) (any, bool) {
 		if present, _ := r.StructuredResult["present"].(bool); present {
 			return r.StructuredResult["value"], false
 		}
+	}
+	if r != nil && r.Returned != "" {
+		return r.Returned, false
 	}
 	return deserializeCodeExecStdout(r.Stdout), true
 }

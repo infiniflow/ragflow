@@ -34,7 +34,7 @@
 //	    Failed   []MemoryFailure
 //	}
 //
-//	func (s *MemoryMessageService) QueueSaveToMemoryTask(
+//	func (s *MemoryMessageService) queueSaveToMemoryTask(
 //	    ctx context.Context,
 //	    memoryIDs []string,
 //	    msg MemoryMessage,
@@ -61,15 +61,16 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	kvrocks "ragflow/internal/engine/kvrocks"
+	"ragflow/internal/engine"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
-	models "ragflow/internal/entity/models"
-	"ragflow/internal/utility"
+	"ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 
 	"gorm.io/gorm"
 )
 
-// MemoryMessage is the wire shape for QueueSaveToMemoryTask. It
+// MemoryMessage is the message payload used to queue memory persistence. It
 // mirrors the Python `message_dict` built in
 // agent/component/message.py:_save_to_memory:
 //
@@ -109,23 +110,64 @@ type MemoryMessageService struct {
 	memoryTaskDAO *dao.MemoryTaskDAO
 	taskPublisher TaskPublisher
 	resumeTask    func(context.Context, *entity.MemoryTask, string) error
+	// tierResolver maps a tenant to its ingestion queue tier so memory
+	// wake-ups land on the same priority lane as document ingestion for that
+	// tenant. Injected (defaults to defaultTierResolver) rather than read from
+	// a package global, keeping the memory module free of global state.
+	tierResolver tierResolver
+	// kvrocksClient mints raw-message ids via Redis auto-increment. It is
+	// injected at construction (inherited from the owning MemoryService) rather
+	// than read from a package global, so the memory module holds no mutable
+	// package-level state and has no init-order race. A nil client falls back
+	// to wall-clock ids.
+	kvrocksClient *kvrocks.Client
+	// mqEngine backs the publish path. It is injected at construction
+	// (inherited from the owning MemoryService) rather than read from the
+	// process-wide engine.GetMessageQueueEngine() global, so the memory
+	// module's publish path carries no package-level global dependency.
+	mqEngine engine.MessageQueue
+	// memoryConfigFn resolves a memory's config (owner tenant, etc.) for the
+	// reconciler. Injected (defaults to s.memories.getMemoryConfig) so the
+	// reconciler can cache per-pass lookups and stay testable without a live
+	// MemoryService.
+	memoryConfigFn func(context.Context, string) (*CreateMemoryResponse, error)
 }
 
 // NewMemoryMessageService constructs a service bound to the
 // supplied MemoryService. Caller is expected to register this as
 // the default MemorySaver in the Message component via
 // `component.SetMemorySaver(...)` at boot.
+//
+// The kvrocks client used to mint raw-message ids is inherited from the
+// supplied MemoryService (which receives it via WithMemoryKvrocks at the
+// composition root), so the memory module carries no package-level global.
+// When the MemoryService has no client bound, ids fall back to wall-clock
+// values — acceptable for local/test paths.
 func NewMemoryMessageService(memories *MemoryService) *MemoryMessageService {
+	var mq engine.MessageQueue
+	var kv *kvrocks.Client
+	if memories != nil {
+		mq = memories.mqEngine
+		kv = memories.kvrocksClient
+	}
 	return &MemoryMessageService{
 		memories:      memories,
 		taskDAO:       dao.NewTaskDAO(),
 		memoryTaskDAO: dao.NewMemoryTaskDAO(),
-		taskPublisher: NewMessageQueueTaskPublisher(),
+		taskPublisher: NewMessageQueueTaskPublisherWithEngine(mq),
+		tierResolver:  defaultTierResolver,
+		kvrocksClient: kv,
+		memoryConfigFn: func(ctx context.Context, memoryID string) (*CreateMemoryResponse, error) {
+			if memories == nil {
+				return nil, errors.New("memory: nil MemoryService")
+			}
+			return memories.getMemoryConfig(ctx, memoryID)
+		},
 	}
 }
 
-// QueueSaveToMemoryTask runs the memory-persistence flow for the
-// supplied memory_ids + message. See package comment for the
+// queueSaveToMemoryTask runs the memory-persistence flow for the
+// permission-filtered memory IDs and message. See the package comment for the
 // step-by-step contract. The function is synchronous — the Python
 // async version awaits `embed_and_save` and Redis calls; this Go port does the
 // same work synchronously from the HTTP request path.
@@ -134,7 +176,7 @@ func NewMemoryMessageService(memories *MemoryService) *MemoryMessageService {
 // the per-memory outcomes. The outer error is reserved for
 // call-level failures (e.g. invalid input); per-memory failures
 // go into Failed, mirroring the Python tuple shape.
-func (s *MemoryMessageService) QueueSaveToMemoryTask(ctx context.Context, memoryIDs []string, msg MemoryMessage) (*QueueSaveResult, error) {
+func (s *MemoryMessageService) queueSaveToMemoryTask(ctx context.Context, memoryIDs []string, msg MemoryMessage) (*QueueSaveResult, error) {
 	if len(memoryIDs) == 0 {
 		return &QueueSaveResult{}, nil
 	}
@@ -164,7 +206,7 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(ctx context.Context, memory
 		// keeps the same field set as Python:344-386 so the
 		// downstream extractor can consume the row without
 		// schema changes.
-		rawMessageID := generateRawMessageID(ctx)
+		rawMessageID := generateRawMessageID(ctx, s.kvrocksClient)
 		rawMessage := buildRawMessage(rawMessageID, memoryID, msg)
 		task, memoryTask := buildMemoryTaskRecords(rawMessageID, memoryID, msg)
 		if err := s.insertMemoryTask(ctx, task, memoryTask); err != nil {
@@ -177,7 +219,7 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(ctx context.Context, memory
 
 		if err := s.embedAndSave(ctx, mem, rawMessage); err != nil {
 			failure := fmt.Errorf("store raw memory message: %w", err)
-			failed, failErr := s.memoryTaskDAO.MarkUnclaimedFailed(ctx, dao.DB, task.ID, failure.Error())
+			failed, failErr := s.memoryTaskDAO.MarkUnclaimedFailed(ctx, s.memories.db, task.ID, failure.Error())
 			if failErr != nil {
 				failure = errors.Join(failure, fmt.Errorf("mark memory task failed: %w", failErr))
 			} else if !failed {
@@ -190,11 +232,35 @@ func (s *MemoryMessageService) QueueSaveToMemoryTask(ctx context.Context, memory
 			continue
 		}
 
-		if err = publishMemoryTaskWakeup(s.taskPublisher, task.ID); err != nil {
+		if err = publishMemoryTaskWakeup(ctx, s.taskPublisher, s.tierResolver, mem.TenantID, task.ID); err != nil {
 			common.Warn(fmt.Sprintf("memory: initial task wake-up failed; reconciler will retry: %v", err))
 		}
 	}
 	return res, nil
+}
+
+// resolveMemoryTenant returns the owning tenant for a memory, caching the
+// outcome (including a missing-memory fallback) across a single reconcile pass
+// via the supplied map. A lookup failure never strands the wake-up: a missing
+// or unresolvable memory resolves to an empty tenant, which the caller routes
+// to the default lane, and the failure is cached for the pass so lingering
+// task rows for the same memory do not re-query the store or repeat the warning
+// on every task of every pass. Because the underlying DAO wraps a not-found
+// result into the same error as a genuine store failure, a lookup error is
+// intentionally not surfaced as a reconcile error — it is a benign fallback to
+// the default lane, not an anomaly the caller must act on.
+func (s *MemoryMessageService) resolveMemoryTenant(ctx context.Context, memoryID string, cache map[string]string) (string, error) {
+	if tenantID, ok := cache[memoryID]; ok {
+		return tenantID, nil
+	}
+	tenantID := ""
+	if mem, memErr := s.memoryConfigFn(ctx, memoryID); memErr != nil {
+		common.Warn(fmt.Sprintf("memory: reconcile could not resolve tenant for memory %s (lookup failed: %v); publishing to default lane", memoryID, memErr))
+	} else if mem != nil {
+		tenantID = mem.TenantID
+	}
+	cache[memoryID] = tenantID
+	return tenantID, nil
 }
 
 // ReconcileMemoryTasks publishes wake-ups for due, unleased durable memory
@@ -204,6 +270,9 @@ func (s *MemoryMessageService) ReconcileMemoryTasks(ctx context.Context, limit i
 	if s == nil {
 		return errors.New("memory: nil MemoryMessageService")
 	}
+	if s.memories == nil {
+		return errors.New("memory: nil memory service dependency")
+	}
 	if s.memoryTaskDAO == nil {
 		s.memoryTaskDAO = dao.NewMemoryTaskDAO()
 	}
@@ -211,16 +280,25 @@ func (s *MemoryMessageService) ReconcileMemoryTasks(ctx context.Context, limit i
 		return errors.New("memory task publisher is not initialized")
 	}
 
-	tasks, err := s.memoryTaskDAO.ListDue(ctx, dao.DB, memoryNow(), limit)
+	tasks, err := s.memoryTaskDAO.ListDue(ctx, s.memories.db, memoryNow(), limit)
 	if err != nil {
 		return fmt.Errorf("memory: list due tasks: %w", err)
 	}
 	var reconcileErr error
+	// Per-pass cache so repeated tasks for the same memory look the config up
+	// once, not once per task.
+	tenantByMemory := make(map[string]string)
 	for _, task := range tasks {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return errors.Join(reconcileErr, ctxErr)
 		}
-		if err = publishMemoryTaskWakeup(s.taskPublisher, task.TaskID); err != nil {
+		// resolveMemoryTenant never returns a non-nil error: a missing or
+		// unresolvable memory is an expected fallback to the default lane, not
+		// an anomaly. The previous `if err != nil { continue }` was dead code
+		// (it could never fire) and, worse, would have stranded the wake-up
+		// had the seam ever errored — so it is removed outright.
+		tenantID, _ := s.resolveMemoryTenant(ctx, task.MemoryID, tenantByMemory)
+		if err = publishMemoryTaskWakeup(ctx, s.taskPublisher, s.tierResolver, tenantID, task.TaskID); err != nil {
 			reconcileErr = errors.Join(reconcileErr, err)
 		}
 	}
@@ -228,10 +306,14 @@ func (s *MemoryMessageService) ReconcileMemoryTasks(ctx context.Context, limit i
 }
 
 // generateRawMessageID returns the Redis auto-increment id used by the Python
-// side (`REDIS_CONN.generate_auto_increment_id(namespace="memory")`).
-func generateRawMessageID(ctx context.Context) int64 {
-	if redisClient := kvrocks.Get(); redisClient != nil {
-		if id := redisClient.GenerateAutoIncrementID(ctx, "id_generator", "memory", 1, nil); id > 0 {
+// side (`REDIS_CONN.generate_auto_increment_id(namespace="memory")`). When kv
+// is nil it falls back to a wall-clock id, so callers that do not configure a
+// kvrocks client (local/test paths) still produce a unique-enough id. The
+// client is passed in explicitly rather than read from a package global, which
+// keeps the memory module free of mutable package-level state and its init race.
+func generateRawMessageID(ctx context.Context, kv *kvrocks.Client) int64 {
+	if kv != nil {
+		if id := kv.GenerateAutoIncrementID(ctx, "id_generator", "memory", 1, nil); id > 0 {
 			return id
 		}
 	}
@@ -324,14 +406,13 @@ func (s *MemoryMessageService) embedAndSaveMessages(ctx context.Context, mem *Cr
 	for i, message := range messages {
 		contents[i], _ = message["content"].(string)
 	}
-	target, err := NewModelSolver().ResolveModelConfig(ctx, mem.TenantID, entity.ModelTypeEmbedding, mem.EmbdID)
+	embeddingModel, err := NewModelFactory().NewEmbeddingModel(permission.WithTenantID(ctx, mem.TenantID), mem.EmbdID)
 	if err != nil {
 		return err
 	}
-	embeddingModel := models.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 	// Embed inside the model's window: memory contents are caller-supplied and
 	// unbounded, and the provider answers 400/20015 instead of truncating them.
-	embeddings, err := embeddingModel.EmbedWithinLimit(ctx, models.EmbedRequest{Texts: contents}, &models.EmbeddingConfig{Dimension: 0}, nil)
+	embeddings, err := embeddingModel.Embed(ctx, models.EmbedRequest{Texts: contents}, &models.EmbeddingConfig{Dimension: 0}, nil)
 	if err != nil {
 		return fmt.Errorf("embed model: %w", err)
 	}
@@ -346,20 +427,20 @@ func (s *MemoryMessageService) embedAndSaveMessages(ctx context.Context, mem *Cr
 			return errors.New("embedding response is empty")
 		}
 		vectorDim = len(vector)
-		message[fmt.Sprintf("q_%d_vec", len(vector))] = vector
+		message[common.VectorColumnName(len(vector))] = vector
 		if id, ok := message["id"].(string); !ok || id == "" {
 			message["id"] = fmt.Sprintf("%s_%v", message["memory_id"], message["message_id"])
 		}
 		message["doc_id"] = message["memory_id"]
 	}
 
-	indexName := memoryIndexName(mem.TenantID)
+	indexName := MemoryIndexName(mem.TenantID)
 	exists, err := s.memories.docEngine.ChunkStoreExists(ctx, indexName, mem.ID)
 	if err != nil {
 		return fmt.Errorf("check message index: %w", err)
 	}
 	if !exists {
-		if err := s.memories.docEngine.CreateChunkStore(ctx, indexName, mem.ID, vectorDim, ""); err != nil {
+		if err := s.memories.docEngine.CreateChunkStore(ctx, indexName, mem.ID, vectorDim, "", ""); err != nil {
 			return fmt.Errorf("create message index: %w", err)
 		}
 	}
@@ -367,7 +448,7 @@ func (s *MemoryMessageService) embedAndSaveMessages(ctx context.Context, mem *Cr
 	for i, message := range messages {
 		docs[i] = mapStringAny(message)
 	}
-	if _, err := s.memories.docEngine.InsertChunks(ctx, docs, indexName, mem.ID); err != nil {
+	if _, err := s.memories.docEngine.InsertChunks(ctx, docs, indexName, mem.ID, ""); err != nil {
 		return fmt.Errorf("insert message into memory: %w", err)
 	}
 
@@ -382,27 +463,46 @@ func (s *MemoryMessageService) insertMemoryTask(ctx context.Context, task *entit
 	if s.memoryTaskDAO == nil {
 		s.memoryTaskDAO = dao.NewMemoryTaskDAO()
 	}
-	return s.memoryTaskDAO.CreateWithTask(ctx, dao.DB, task, memoryTask)
+	return s.memoryTaskDAO.CreateWithTask(ctx, s.memories.db, task, memoryTask)
 }
 
 // newUUIDString is a thin wrapper so we can swap in a real UUID
 // generator later without changing call sites. Avoids an
 // import-cycle with internal/uuid at the package boundary.
 func newUUIDString() string {
-	return utility.GenerateUUID()
+	return common.GenerateUUID()
 }
 
-// publishMemoryTaskWakeup publishes only the durable task identity. Workers
-// load all execution input and checkpoints from memory_task.
-func publishMemoryTaskWakeup(publisher TaskPublisher, taskID string) error {
+// publishMemoryTaskWakeup publishes only the durable task identity, routed to
+// the tenant's ingestion tier so memory wake-ups share the same priority lanes
+// as that tenant's document ingestion. Workers load all execution input and
+// checkpoints from memory_task.
+func publishMemoryTaskWakeup(ctx context.Context, publisher TaskPublisher, resolver tierResolver, tenantID, taskID string) error {
 	if publisher == nil {
 		return errors.New("memory task publisher is not initialized")
+	}
+	if resolver == nil {
+		resolver = defaultTierResolver
+	}
+	tier, err := resolver(ctx, tenantID)
+	if err != nil {
+		// A tier resolution failure must not strand a memory task: fall back to
+		// the default lane so the reconciler can still retry it. A transient
+		// outage never downgrades a tenant's priority — it only risks briefly
+		// elevating a lower-priority wake-up to the default lane.
+		common.Warn(fmt.Sprintf("memory: tier resolution for tenant %s failed (%v); using default lane", tenantID, err))
+		tier = common.DefaultTier()
+	}
+	subject, err := common.SubjectForTier(tier)
+	if err != nil {
+		common.Warn(fmt.Sprintf("memory: invalid tier %q for tenant %s; using default subject", tier, tenantID))
+		subject = common.DefaultTierSubject()
 	}
 	taskMessage := common.TaskMessage{
 		TaskID:   taskID,
 		TaskType: common.TaskTypeMemory,
 	}
-	if err := publisher.PublishTaskMessage(common.TaskSubject, taskMessage); err != nil {
+	if err := publisher.PublishTaskMessage(subject, taskMessage); err != nil {
 		return fmt.Errorf("publish memory task %s: %w", taskID, err)
 	}
 	return nil

@@ -129,6 +129,13 @@ func navigateToComponent(dsl map[string]any, componentID string) (map[string]any
 	}
 	comp, ok := comps[componentID]
 	if !ok {
+		for _, raw := range comps {
+			cm, _ := raw.(map[string]any)
+			obj, _ := cm["obj"].(map[string]any)
+			if nested := findAgentTool(obj, componentID); nested != nil {
+				return map[string]any{"obj": nested}, nil
+			}
+		}
 		return nil, fmt.Errorf("%w: %q", ErrComponentNotFound, componentID)
 	}
 	cm, ok := comp.(map[string]any)
@@ -136,6 +143,28 @@ func navigateToComponent(dsl map[string]any, componentID string) (map[string]any
 		return nil, fmt.Errorf("%w: %q is not a dict", ErrMalformedDSL, componentID)
 	}
 	return cm, nil
+}
+
+// findAgentTool follows the same params.tools nesting used to serialize Subagents.
+func findAgentTool(obj map[string]any, componentID string) map[string]any {
+	if obj["component_name"] != "Agent" {
+		return nil
+	}
+	params, _ := obj["params"].(map[string]any)
+	tools, _ := params["tools"].([]any)
+	for _, raw := range tools {
+		tool, _ := raw.(map[string]any)
+		if tool["component_name"] != "Agent" {
+			continue
+		}
+		if tool["id"] == componentID {
+			return tool
+		}
+		if nested := findAgentTool(tool, componentID); nested != nil {
+			return nested
+		}
+	}
+	return nil
 }
 
 // FindBeginComponentID returns the component_id of the canvas component

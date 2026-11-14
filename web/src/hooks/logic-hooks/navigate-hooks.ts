@@ -15,20 +15,32 @@
  */
 
 import { AgentCategory, AgentQuery } from '@/constants/agent';
+import { AgentListItemType } from '@/interfaces/database/agent';
 import { NavigateToDataflowResultProps } from '@/pages/dataflow-result/interface';
 import { Routes } from '@/routes';
 import { useCallback } from 'react';
-import { useNavigate, useParams, useSearchParams } from 'react-router';
+import { useLocation, useNavigate, useSearchParams } from 'react-router';
 
 export enum QueryStringMap {
   KnowledgeId = 'knowledgeId',
   id = 'id',
 }
 
+type UserSettingLocationState = {
+  returnTo?: string;
+};
+
+type AgentExploreNavigationOptions = {
+  sessionId?: string;
+  isNew?: boolean;
+};
+
 export const useNavigatePage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { id } = useParams();
+  const returnTo = (location.state as UserSettingLocationState | null)
+    ?.returnTo;
 
   const navigateToDatasetList = useCallback(
     ({ isCreate = false }: { isCreate?: boolean }) => {
@@ -52,6 +64,14 @@ export const useNavigatePage = () => {
     [navigate],
   );
 
+  const navigateToApplicationList = useCallback(
+    (route: Routes, { isCreate = false }: { isCreate?: boolean } = {}) =>
+      () => {
+        navigate(isCreate ? `${route}?isCreate=true` : route);
+      },
+    [navigate],
+  );
+
   const navigateToDataset = useCallback(
     (id: string) => () => {
       // navigate(`${Routes.DatasetBase}${Routes.DataSetOverview}/${id}`);
@@ -59,6 +79,13 @@ export const useNavigatePage = () => {
     },
     [navigate],
   );
+  const navigateToDatasetSection = useCallback(
+    (id: string | undefined, section: Routes, state?: unknown) => () => {
+      navigate(`${Routes.DatasetBase}${section}/${id}`, { state });
+    },
+    [navigate],
+  );
+
   const navigateToDatasetOverview = useCallback(
     (id: string) => () => {
       navigate(`${Routes.DatasetBase}${Routes.DataSetOverview}/${id}`);
@@ -91,13 +118,42 @@ export const useNavigatePage = () => {
     navigate(Routes.Root);
   }, [navigate]);
 
+  const navigateToDefaultPage = useCallback(
+    (pathname: string) => () => {
+      navigate(pathname.startsWith(Routes.Admin) ? Routes.Admin : Routes.Root);
+    },
+    [navigate],
+  );
+
   const navigateToProfile = useCallback(() => {
     navigate(Routes.ProfileSetting);
   }, [navigate]);
 
-  const navigateToOldProfile = useCallback(() => {
-    navigate(Routes.UserSetting);
-  }, [navigate]);
+  const navigateToUserSetting = useCallback(
+    (section: string) => {
+      const isUserSettingPath =
+        location.pathname === Routes.UserSetting ||
+        location.pathname.startsWith(`${Routes.UserSetting}/`);
+      const currentPath = `${location.pathname}${location.search}${location.hash}`;
+
+      navigate(`${Routes.UserSetting}${section}`, {
+        state: { returnTo: isUserSettingPath ? returnTo : currentPath },
+      });
+    },
+    [location, navigate, returnTo],
+  );
+
+  const navigateToUserSettingProfile = useCallback(() => {
+    navigateToUserSetting(Routes.Profile);
+  }, [navigateToUserSetting]);
+
+  const navigateToUserSettingApi = useCallback(() => {
+    navigateToUserSetting(Routes.Api);
+  }, [navigateToUserSetting]);
+
+  const closeUserSetting = useCallback(() => {
+    navigate(returnTo || Routes.Datasets, { replace: true });
+  }, [navigate, returnTo]);
 
   const navigateToChatList = useCallback(() => {
     navigate(Routes.Chats);
@@ -110,9 +166,30 @@ export const useNavigatePage = () => {
     [navigate],
   );
 
-  const navigateToAgents = useCallback(() => {
-    navigate(Routes.Agents);
-  }, [navigate]);
+  // The agents list selects its tab from the canvas_category query param, so
+  // callers back on a canvas page pass their own category to land on the
+  // matching tab instead of the default workflow tab.
+  const navigateToAgents = useCallback(
+    (canvasCategory?: AgentCategory | AgentListItemType) => {
+      navigate(
+        canvasCategory
+          ? `${Routes.Agents}?${AgentQuery.CanvasCategory}=${canvasCategory}`
+          : Routes.Agents,
+      );
+    },
+    [navigate],
+  );
+
+  const navigateToAgentsFromCompilation = useCallback(
+    (source: string | null) => () => {
+      navigateToAgents(
+        source === 'agents'
+          ? AgentListItemType.CompilationTemplateGroup
+          : undefined,
+      );
+    },
+    [navigateToAgents],
+  );
 
   const navigateToAgentList = useCallback(() => {
     navigate(Routes.AgentList);
@@ -126,8 +203,33 @@ export const useNavigatePage = () => {
   );
 
   const navigateToAgentExplore = useCallback(
+    (
+      canvasId: string | undefined,
+      { sessionId, isNew }: AgentExploreNavigationOptions = {},
+    ) => {
+      const params = new URLSearchParams();
+      if (sessionId) {
+        params.set('sessionId', sessionId);
+      }
+      if (isNew) {
+        params.set('isNew', 'true');
+      }
+      const queryString = params.toString();
+      navigate(
+        `${Routes.Agent}/${canvasId}${Routes.Explore}${queryString ? `?${queryString}` : ''}`,
+      );
+    },
+    [navigate],
+  );
+
+  // Built-in pipelines open on the dedicated read-only canvas, not on the
+  // editing canvas. The dataflow_canvas category query keeps the pipeline
+  // rendering semantics (handle topology, node forms) identical to editing.
+  const navigateToBuiltinPipeline = useCallback(
     (id: string) => () => {
-      navigate(`${Routes.Agent}/${id}/explore`);
+      navigate(
+        `${Routes.Pipeline}/${id}?${AgentQuery.Category}=${AgentCategory.DataflowCanvas}`,
+      );
     },
     [navigate],
   );
@@ -139,9 +241,29 @@ export const useNavigatePage = () => {
     [navigate],
   );
 
-  const navigateToAgentTemplates = useCallback(() => {
-    navigate(Routes.AgentTemplates);
-  }, [navigate]);
+  const navigateToAgentTemplates = useCallback(
+    (canvasCategory: string) => {
+      const params = new URLSearchParams({
+        [AgentQuery.CanvasCategory]: canvasCategory,
+      });
+      navigate(`${Routes.AgentTemplates}?${params.toString()}`);
+    },
+    [navigate],
+  );
+
+  const navigateToCompilationEditor = useCallback(
+    (id?: string) => {
+      const params = new URLSearchParams({
+        source: 'agents',
+        [AgentQuery.CanvasCategory]: AgentListItemType.CompilationTemplateGroup,
+      });
+      const path = id
+        ? `${Routes.CompilationTemplatesEditNext}/${id}`
+        : Routes.CompilationTemplatesEditNext;
+      navigate(`${path}?${params.toString()}`);
+    },
+    [navigate],
+  );
 
   const navigateToSearchList = useCallback(() => {
     navigate(Routes.Searches);
@@ -156,6 +278,13 @@ export const useNavigatePage = () => {
   const navigateToMemory = useCallback(
     (id: string) => () => {
       navigate(`${Routes.Memory}${Routes.MemoryMessage}/${id}`);
+    },
+    [navigate],
+  );
+
+  const navigateToMemorySection = useCallback(
+    (id: string | undefined, section: Routes) => () => {
+      navigate(`${Routes.Memory}${section}/${id}`);
     },
     [navigate],
   );
@@ -186,26 +315,33 @@ export const useNavigatePage = () => {
     [searchParams],
   );
 
-  const navigateToChunk = useCallback(
-    (route: Routes) => {
-      navigate(
-        `${route}/${id}?${QueryStringMap.KnowledgeId}=${getQueryString(QueryStringMap.KnowledgeId)}`,
-      );
-    },
-    [getQueryString, id, navigate],
-  );
-
   const navigateToFiles = useCallback(
     (folderId?: string) => {
-      navigate(`${Routes.Files}?folderId=${folderId}`);
+      const params = new URLSearchParams();
+      if (folderId) {
+        params.set('folderId', folderId);
+      }
+      const queryString = params.toString();
+      navigate(`${Routes.Files}${queryString ? `?${queryString}` : ''}`);
     },
     [navigate],
   );
 
+  const navigateToFolder = useCallback(
+    (folderId?: string) => () => {
+      navigateToFiles(folderId);
+    },
+    [navigateToFiles],
+  );
+
+  const navigateToSkills = useCallback(() => {
+    navigate(Routes.Skills);
+  }, [navigate]);
+
   const navigateToDataSourceDetail = useCallback(
     (id?: string) => {
       navigate(
-        `${Routes.UserSetting}${Routes.DataSource}${Routes.DataSourceDetailPage}?id=${id}`,
+        `${Routes.Integrations}${Routes.DataSource}${Routes.DataSourceDetailPage}?id=${id}`,
       );
     },
     [navigate],
@@ -232,37 +368,48 @@ export const useNavigatePage = () => {
   );
 
   const navigateToModelSetting = useCallback(() => {
-    navigate(`${Routes.UserSetting}${Routes.Model}`);
+    navigate(`${Routes.Integrations}${Routes.Model}`);
   }, [navigate]);
 
   return {
     navigateToDatasetList,
     navigateToDataset,
+    navigateToDatasetSection,
     navigateToDatasetOverview,
     navigateToHome,
+    navigateToDefaultPage,
     navigateToProfile,
     navigateToChatList,
     navigateToChat,
     navigateToChunkParsedResult,
     getQueryString,
-    navigateToChunk,
     navigateToAgents,
+    navigateToAgentsFromCompilation,
     navigateToAgent,
     navigateToAgentExplore,
     navigateToAgentLogs,
     navigateToAgentTemplates,
+    navigateToCompilationEditor,
+    navigateToBuiltinPipeline,
     navigateToSearchList,
     navigateToSearch,
     navigateToFiles,
+    navigateToFolder,
+    navigateToSkills,
     navigateToAgentList,
-    navigateToOldProfile,
+    navigateToUserSetting,
+    navigateToUserSettingProfile,
+    navigateToUserSettingApi,
+    closeUserSetting,
     navigateToDataflowResult,
     navigateToDataFile,
     navigateToDatasetSetting,
     navigateToCompilation,
     navigateToDataSourceDetail,
     navigateToMemory,
+    navigateToMemorySection,
     navigateToMemoryList,
+    navigateToApplicationList,
     navigateToModelSetting,
   };
 };

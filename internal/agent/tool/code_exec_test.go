@@ -22,6 +22,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -179,6 +180,27 @@ func TestCodeExec_Info(t *testing.T) {
 	}
 	if len(gotEnum) != 2 || gotEnum[0] != "python" || gotEnum[1] != "javascript" {
 		t.Errorf("lang.enum = %v, want [python javascript]", gotEnum)
+	}
+}
+
+func TestCodeExecPublicFormattingHandlesTypedNilSlice(t *testing.T) {
+	t.Parallel()
+
+	var value []any
+	if got := InferCodeExecActualType(value); got != "Array<Any>" {
+		t.Fatalf("InferCodeExecActualType(typed nil) = %q, want Array<Any>", got)
+	}
+	if got := RenderCodeExecCanonicalContent(value); got != "[]" {
+		t.Fatalf("RenderCodeExecCanonicalContent(typed nil) = %q, want []", got)
+	}
+
+	contract, err := BuildCodeExecContract(map[string]any{"result": nil}, value)
+	if err != nil {
+		t.Fatalf("BuildCodeExecContract(typed nil): %v", err)
+	}
+	normalized, ok := contract.Value.([]any)
+	if !ok || normalized == nil {
+		t.Fatalf("contract.Value = %#v, want non-nil empty []any", contract.Value)
 	}
 }
 
@@ -523,6 +545,90 @@ func TestCodeExec_ResultUsesStructuredResultValue(t *testing.T) {
 	}
 	if got["actual_type"] != "Number" {
 		t.Fatalf("actual_type = %#v, want Number", got["actual_type"])
+	}
+}
+
+func TestCodeExec_ResultPrecedence(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		response   *SandboxResponse
+		wantResult any
+		wantType   string
+	}{
+		{
+			name: "structured result wins over legacy and streams",
+			response: &SandboxResponse{
+				StructuredResult: map[string]any{"present": true, "value": float64(8)},
+				Returned:         "legacy",
+				Stdout:           "stdout",
+				Stderr:           "warning",
+			},
+			wantResult: float64(8),
+			wantType:   "Number",
+		},
+		{
+			name: "explicit structured null wins over legacy and streams",
+			response: &SandboxResponse{
+				StructuredResult: map[string]any{"present": true, "value": nil},
+				Returned:         "legacy",
+				Stdout:           "stdout",
+				Stderr:           "warning",
+			},
+			wantType: "Null",
+		},
+		{
+			name: "legacy returned value tolerates warning streams",
+			response: &SandboxResponse{
+				Returned: "legacy result",
+				Stderr:   "warning",
+			},
+			wantResult: "legacy result",
+			wantType:   "String",
+		},
+		{
+			name: "legacy returned value wins over stdout and stderr",
+			response: &SandboxResponse{
+				Returned: "legacy result",
+				Stdout:   "diagnostic output",
+				Stderr:   "warning",
+			},
+			wantResult: "legacy result",
+			wantType:   "String",
+		},
+		{
+			name:       "stdout remains the final fallback",
+			response:   &SandboxResponse{Stdout: `{"a":[1,2]}`},
+			wantResult: map[string]any{"a": []any{float64(1), float64(2)}},
+			wantType:   "Object",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := codeExecResultJSON(t.Context(), tt.response)
+			if err != nil {
+				t.Fatalf("codeExecResultJSON: %v", err)
+			}
+			var got map[string]any
+			if err := json.Unmarshal([]byte(out), &got); err != nil {
+				t.Fatalf("output not valid JSON: %v", err)
+			}
+			if got["_ERROR"] != nil {
+				t.Fatalf("_ERROR = %#v, want successful result", got["_ERROR"])
+			}
+			if tt.wantResult == nil {
+				if _, ok := got["raw_result"]; ok {
+					t.Fatalf("raw_result = %#v, want omitted JSON null", got["raw_result"])
+				}
+			} else if !reflect.DeepEqual(got["raw_result"], tt.wantResult) {
+				t.Fatalf("raw_result = %#v, want %#v", got["raw_result"], tt.wantResult)
+			}
+			if got["actual_type"] != tt.wantType {
+				t.Fatalf("actual_type = %#v, want %q", got["actual_type"], tt.wantType)
+			}
+		})
 	}
 }
 
