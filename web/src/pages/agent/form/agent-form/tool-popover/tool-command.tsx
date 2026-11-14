@@ -35,6 +35,7 @@ const Menus = [
       Operator.SofyaSearch,
       Operator.Search1APISearch,
       Operator.Search1APICrawl,
+      Operator.Datacircle,
       Operator.YahooFinance,
       Operator.PubMed,
       Operator.BGPT,

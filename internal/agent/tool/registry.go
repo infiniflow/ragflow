@@ -39,6 +39,7 @@ var registry = map[string]Factory{
 	"bgpt":                       buildBGPTTool,
 	"code_exec":                  noConfig("code_exec", func() einotool.BaseTool { return NewCodeExecTool() }),
 	"crawler":                    noConfig("crawler", func() einotool.BaseTool { return NewCrawlerTool() }),
+	"datacircle":                 buildDatacircleTool,
 	"dataset_navigation_by_tree": noConfig("dataset_navigation_by_tree", func() einotool.BaseTool { return NewDatasetNavigationByTree() }),
 	"hybrid_search":              noConfig("hybrid_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolHybridSearch) }),
 	"vector_search":              noConfig("vector_search", func() einotool.BaseTool { return NewAgenticSearchTool(toolVectorSearch) }),
@@ -902,6 +903,32 @@ func buildSofyaTool(params map[string]any) (einotool.BaseTool, error) {
 		defaults.TopN = topN
 	}
 	return newSofyaTool(nil, apiKey, defaults), nil
+}
+
+func buildDatacircleTool(params map[string]any) (einotool.BaseTool, error) {
+	defaults := datacircleDefaults{}
+	if value, ok := params["api"]; ok {
+		api, valid := value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param api", "datacircle")
+		}
+		defaults.API = strings.TrimSpace(api)
+	}
+	if value, ok := params["sort"]; ok {
+		sortBy, valid := value.(string)
+		if !valid || !slices.Contains(datacircleSortValues, sortBy) {
+			return nil, fmt.Errorf("agent tool: tool %q has unsupported sort %v", "datacircle", value)
+		}
+		defaults.Sort = sortBy
+	}
+	if value, ok := params["top_n"]; ok {
+		topN, valid := strictInt(value)
+		if !valid || topN <= 0 || topN > datacircleMaxResults {
+			return nil, fmt.Errorf("agent tool: tool %q requires integer node-level param top_n within [1, %d]", "datacircle", datacircleMaxResults)
+		}
+		defaults.TopN = topN
+	}
+	return newDatacircleTool(nil, defaults), nil
 }
 
 func buildSearch1APITool(params map[string]any) (einotool.BaseTool, error) {

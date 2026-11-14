@@ -2678,6 +2678,18 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       search1APICrawlUrl: '网页地址',
       search1APICrawlUrlTip:
         '要读取页面的完整 HTTP 或 HTTPS 地址。作为智能体工具时，由智能体提供地址。',
+      datacircle: 'Datacircle',
+      datacircleDescription:
+        '用 Datacircle 找到最好的 GTM API：列出所有 API，查看每个 API 谁最好，并搜索所有套餐。无需 API Key。',
+      datacircleApi: 'API',
+      datacircleApiTip:
+        '要列出套餐的 API，例如 Employee email 或 email-finder。留空则列出所有 API 及其最佳套餐。作为 Agent 工具时，由 Agent 为每次调用选择 API。',
+      datacircleSort: '排序方式',
+      datacircleSortTip:
+        '评分：最好的套餐排在前面。价格：每 1,000 次价格最低的排在前面。提供商：按名称排序。作为 Agent 工具时，Agent 可以为每次调用更改排序。',
+      datacircleSortScore: '评分',
+      datacircleSortPrice: '价格',
+      datacircleSortProvider: '提供商',
       docGenerator: '文档生成器',
       docGeneratorDescription: `从 Markdown 内容生成文件。`,
       subtitle: '副标题',

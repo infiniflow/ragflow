@@ -80,6 +80,7 @@ export const SVGIconMap = {
   [Operator.QueritSearch]: 'querit',
   [Operator.Search1APISearch]: 'search1api',
   [Operator.Search1APICrawl]: 'search1api',
+  [Operator.Datacircle]: 'datacircle',
   [Operator.Wikipedia]: 'wikipedia',
   [Operator.YahooFinance]: 'yahoo-finance',
   [Operator.WenCai]: 'wencai',
