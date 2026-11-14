@@ -38,6 +38,7 @@ export const ModelTypeMap: Record<string, string[]> = {
   llm_id: ['chat', 'vision'],
   decision_id: ['decision'],
   embd_id: ['embedding'],
+  scoring_id: ['scoring'],
   img2txt_id: ['vision'],
   asr_id: ['asr'],
   rerank_id: ['rerank'],
