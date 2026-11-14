@@ -46,7 +46,7 @@ func TestFilterDocumentsKeepsBaseScopeWhenTheFilterCannotNarrow(t *testing.T) {
 	base := []string{"doc-1", "doc-2"}
 
 	got, err := NewEnhancer(nil, nil).FilterDocuments(
-		t.Context(), map[string]any{"method": "auto"}, "who wrote it?", newFilterChatModel(), base, nil,
+		t.Context(), map[string]any{"method": "auto"}, "who wrote it?", newFilterChatModel(), base, nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("FilterDocuments: %v", err)
@@ -77,7 +77,7 @@ func TestFilterDocumentsReturnsTheSentinelForManualNoMatch(t *testing.T) {
 	}
 
 	got, err := NewEnhancer(nil, nil).FilterDocuments(
-		t.Context(), filter, "", nil, []string{"doc-1"}, nil,
+		t.Context(), filter, "", nil, []string{"doc-1"}, nil, nil,
 	)
 	if err != nil {
 		t.Fatalf("FilterDocuments: %v", err)

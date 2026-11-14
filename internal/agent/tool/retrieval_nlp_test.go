@@ -34,6 +34,7 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/permission"
@@ -639,7 +640,7 @@ func (s *stubRankFeatureEnhancer) CrossLanguages(context.Context, string, string
 }
 
 func (s *stubRankFeatureEnhancer) FilterDocuments(
-	context.Context, map[string]any, string, *modelModule.ChatModel, []string, []string,
+	context.Context, map[string]any, string, *modelModule.ChatModel, []string, []string, *common.MetadataFilterDiagnostic,
 ) ([]string, error) {
 	return nil, nil
 }
