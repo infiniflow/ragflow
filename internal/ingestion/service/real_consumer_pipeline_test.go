@@ -64,7 +64,7 @@ func TestRealConsumer_PipelineMessageRoutesToExecuteTask(t *testing.T) {
 		TaskID:   ingestionTask.ID,
 		TaskType: common.TaskTypeIngestionTask,
 	})
-	if err := natsEngine.PublishTask("tasks.RAGFLOW", payload); err != nil {
+	if err := natsEngine.PublishTask(common.DefaultTierSubject(), payload); err != nil {
 		t.Fatalf("PublishTask: %v", err)
 	}
 

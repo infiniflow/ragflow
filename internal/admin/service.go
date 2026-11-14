@@ -40,6 +40,7 @@ import (
 	"ragflow/internal/server"
 	servicepkg "ragflow/internal/service"
 	"ragflow/internal/storage"
+	"ragflow/internal/utility"
 	"regexp"
 	"strings"
 	"time"
@@ -216,7 +217,7 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 
 	// 2. Create tenant (tenant_id = user_id)
 	// tenant name = nickname + "'s Kingdom" (same as Python)
-	tenantName := user.Nickname + "'s Kingdom"
+	tenantName := utility.TruncateRunes(user.Nickname+"'s Kingdom", common.TenantNameLimit)
 
 	// Get default model IDs from config
 	cfg := server.GetConfig()
@@ -248,10 +249,6 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 		ParserIDs: parserIDs,
 		Credit:    512,
 		Status:    &tenantStatus,
-	}
-	if err = dao.ApplyDefaultTenantInviteEnabled(ctx, tx, tenant); err != nil {
-		rollbackTx()
-		return nil, fmt.Errorf("failed to initialize tenant invitation setting: %w", err)
 	}
 	if err = dao.NewTenantDAO().Create(ctx, tx, tenant); err != nil {
 		rollbackTx()
@@ -286,6 +283,7 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 	file := &entity.File{
 		ID:        fileID,
 		ParentID:  fileID,
+		UserID:    userID,
 		TenantID:  userID,
 		CreatedBy: userID,
 		Name:      "/",
@@ -712,6 +710,8 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 		docHost, docPort = serviceEndpoint(globalConfig.GetInfinityConfig().URI, 0)
 	} else if docEngineImpl.GetType() == "elasticsearch" {
 		docHost, docPort = serviceEndpoint(globalConfig.GetElasticsearchConfig().Hosts, 0)
+	} else if docEngineImpl.GetType() == "opensearch" {
+		docHost, docPort = serviceEndpoint(globalConfig.GetOpenSearchConfig().Hosts, 0)
 	}
 	err := docEngineImpl.Ping(ctx)
 	if err == nil {
@@ -778,46 +778,6 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 // GetServicesByType get services by type
 func (s *Service) GetServicesByType(serviceType string) ([]map[string]interface{}, error) {
 	return nil, errors.New("get_services_by_type: not implemented")
-}
-
-// GetServiceDetails get service details
-func (s *Service) GetServiceDetails(configDict map[string]interface{}) ([]ServiceStatus, error) {
-	//serviceType, _ := configDict["service_type"].(string)
-	//name, _ := configDict["name"].(string)
-	//ctx := context.Background()
-	//
-	//// Call detail function based on service type
-	//switch serviceType {
-	//case "meta_data":
-	//	return s.getMySQLStatus(ctx), nil
-	//case "cache":
-	//	return s.getKvrocksStatus(ctx), nil
-	//case "message_queue":
-	//	host := configDict["host"].(string)
-	//	port := configDict["port"].(int)
-	//	return s.checkNatsAlive(name, host, port)
-	//case "retrieval":
-	//	// Check the extra.retrieval_type to determine which retrieval service
-	//	if extra, ok := configDict["extra"].(map[string]interface{}); ok {
-	//		if retrievalType, ok := extra["retrieval_type"].(string); ok {
-	//			if retrievalType == "infinity" {
-	//				return s.getInfinityStatus(name)
-	//			}
-	//		}
-	//	}
-	//	return s.getESClusterStats(name)
-	//case "ragflow_server":
-	//	return s.checkRAGFlowServerAlive(name)
-	//case "file_store":
-	//	return s.checkMinioAlive(name)
-	//case "olap":
-	//	return s.checkOlapAlive(name)
-	//case "tracing":
-	//	return s.checkTracingAlive(name)
-	//default:
-	//	return nil, nil
-	//}
-	return nil, nil
 }
 
 // getMySQLStatus gets MySQL service status
@@ -1548,16 +1508,12 @@ func (s *Service) InitDefaultAdmin() error {
 func (s *Service) addTenantForAdmin(userID, nickname string) error {
 	status := "1"
 	role := "owner"
-	tenantName := nickname + "'s Kingdom"
+	tenantName := utility.TruncateRunes(nickname+"'s Kingdom", common.TenantNameLimit)
 
 	tenant := &entity.Tenant{
 		ID:   userID,
 		Name: &tenantName,
 	}
-	if err := dao.ApplyDefaultTenantInviteEnabled(context.Background(), dao.DB, tenant); err != nil {
-		return fmt.Errorf("failed to initialize tenant invitation setting: %w", err)
-	}
-
 	if err := dao.NewTenantDAO().Create(context.Background(), dao.DB, tenant); err != nil {
 		return err
 	}
@@ -1571,18 +1527,6 @@ func (s *Service) addTenantForAdmin(userID, nickname string) error {
 	}
 
 	return dao.DB.Create(userTenant).Error
-}
-
-// ListAllModels list all models
-func (s *Service) ListAllModels(pageIndex, pageSize int) ([]map[string]interface{}, error) {
-	models, err := dao.GetModelProviderManager().ListAllModels()
-	if err != nil {
-		return nil, err
-	}
-	if pageSize > 0 && pageIndex >= 0 && pageIndex*pageSize < len(models) {
-		return models[pageIndex*pageSize : (pageIndex+1)*pageSize], nil
-	}
-	return models, nil
 }
 
 func (s *Service) GetModelByModelName(modelName string) (*modelModule.Model, error) {

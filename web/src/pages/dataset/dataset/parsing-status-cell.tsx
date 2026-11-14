@@ -140,10 +140,12 @@ export function ParseDropdownButton({
 export function ParsingStatusCell({
   record,
   showLog,
+  datasetEditButtonDisabled = false,
   showChangeParserModal,
 }: {
   record: IDocumentInfo;
   showLog: (record: IDocumentInfo) => void;
+  datasetEditButtonDisabled?: boolean;
 } & UseChangeDocumentParserShowType) {
   const { t } = useTranslation();
   const { progress, chunk_count, id } = record;
@@ -168,6 +170,9 @@ export function ParsingStatusCell({
     delete: boolean;
     apply_kb: boolean;
   }) => {
+    if (datasetEditButtonDisabled) {
+      return;
+    }
     handleRunDocumentByIds(record, isRunning, option);
   };
 

@@ -63,6 +63,7 @@ function parseChunkTokenCap(value: unknown): number {
   return Number.isFinite(cap) ? cap : 512;
 }
 
+// Restore title/manual configuration without losing independently saved media windows.
 function transformApiResponseToForm(
   apiData: Record<string, any>,
 ): TitleChunkerFormSchemaType {
@@ -149,6 +150,8 @@ function transformApiResponseToForm(
     hierarchyGroup,
     include_heading_content: Boolean(apiData.include_heading_content),
     root_chunk_as_heading: Boolean(apiData.root_chunk_as_heading),
+    table_context_size: Number(apiData.table_context_size ?? 0),
+    image_context_size: Number(apiData.image_context_size ?? 0),
     hierarchyChunkTokenCap,
     groupChunkTokenCap,
     hierarchyRules,

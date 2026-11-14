@@ -13,10 +13,12 @@ jest.mock('@/constants/agent', () => ({
     Search1APICrawl: 'Search1APICrawl',
     AnySearchSearch: 'AnySearchSearch',
     AnySearchDiscover: 'AnySearchDiscover',
+    Begin: 'Begin',
   },
+  AgentDialogueMode: { Webhook: 'Webhook' },
 }));
 
-import { Operator } from '@/constants/agent';
+import { AgentDialogueMode, Operator } from '@/constants/agent';
 import { clearSensitiveFields } from './clear-sensitive-fields';
 
 describe('clearSensitiveFields', () => {
@@ -301,5 +303,65 @@ describe('clearSensitiveFields', () => {
     };
 
     expect(clearSensitiveFields(dsl)).toEqual(dsl);
+  });
+
+  it('clears webhook authentication secrets from a begin node', () => {
+    const dsl = {
+      graph: {
+        nodes: [
+          {
+            data: {
+              label: Operator.Begin,
+              form: {
+                mode: AgentDialogueMode.Webhook,
+                security: {
+                  auth_type: 'basic',
+                  token: {
+                    token_header: 'X-Token',
+                    token_value: 'token-secret',
+                  },
+                  basic_auth: { username: 'service', password: 'basic-secret' },
+                  jwt: { secret: 'jwt-secret', issuer: 'ragflow' },
+                  hmac: { header: 'X-Signature', secret: 'hmac-secret' },
+                },
+              },
+            },
+          },
+        ],
+      },
+      components: {
+        begin: {
+          obj: {
+            component_name: Operator.Begin,
+            params: {
+              mode: AgentDialogueMode.Webhook,
+              security: {
+                auth_type: 'token',
+                token: { token_value: 'component-token-secret' },
+              },
+            },
+          },
+        },
+      },
+    };
+
+    const sanitized = clearSensitiveFields(dsl);
+    const security = sanitized.graph.nodes[0].data.form.security;
+
+    expect(security.token.token_value).toBe('');
+    expect(security.basic_auth.password).toBe('');
+    expect(security.jwt.secret).toBe('');
+    expect(security.hmac.secret).toBe('');
+    expect(security.basic_auth.username).toBe('service');
+    expect(security.token.token_header).toBe('X-Token');
+    expect(
+      sanitized.components.begin.obj.params.security.token.token_value,
+    ).toBe('');
+    expect(dsl.graph.nodes[0].data.form.security.token.token_value).toBe(
+      'token-secret',
+    );
+    expect(dsl.components.begin.obj.params.security.token.token_value).toBe(
+      'component-token-secret',
+    );
   });
 });

@@ -46,13 +46,13 @@ func canvasStateFromContext(ctx context.Context) *runtime.CanvasState {
 // run, instead of threading through each component's output map.
 //
 // The Go ingestion runtime wires components through eino: a component's output
-// map is the sole input to the next node, and — unlike the Python
-// ProcessBase.invoke (rag/flow/base.py:42-44) — it does NOT auto-merge every
+// map is the sole input to the next node, and — unlike the
+// ProcessBase.invoke — it does NOT auto-merge every
 // input kwarg into the output. A narrowing component (File, Parser, Chunker,
 // Tokenizer, Extractor, ...) would otherwise drop fields the next node still
 // depends on (e.g. TokenChunker drops `name`, which Tokenizer consumes for
 // title embedding). Storing the shared fields in CanvasState.Globals restores
-// the Python behaviour without mutating every component output.
+// the behaviour without mutating every component output
 // The embedding-model id is intentionally NOT a global: the Tokenizer resolves
 // it from the dataset's own embd_id (kb_id) via its injected resolver, never
 // from a run input. Keeping it out of the shared bag prevents another component

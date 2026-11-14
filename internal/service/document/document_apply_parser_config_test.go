@@ -40,7 +40,7 @@ func TestApplyDatasetParserConfigReplacesSettingsAndPreservesContent(t *testing.
 		t.Fatal(err)
 	}
 	svc := testDocumentService(t)
-	result, code, err := svc.ApplyDatasetParserConfig(documentTestContext(t.Context()), "user-1", "kb-1")
+	result, code, err := svc.ApplyDatasetParserConfig(documentTestContext(t.Context()), "kb-1")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("apply: code=%d err=%v", code, err)
 	}
@@ -68,7 +68,7 @@ func TestApplyDatasetParserConfigReplacesSettingsAndPreservesContent(t *testing.
 	if err != nil || other.ParserID != "naive" || len(other.ParserConfig) != 0 {
 		t.Fatalf("other dataset changed: doc=%+v err=%v", other, err)
 	}
-	result, code, err = svc.ApplyDatasetParserConfig(documentTestContext(t.Context()), "user-1", "kb-1")
+	result, code, err = svc.ApplyDatasetParserConfig(documentTestContext(t.Context()), "kb-1")
 	if err != nil || code != common.CodeSuccess || result.UpdatedDocuments != 0 || result.UnchangedDocuments != 205 {
 		t.Fatalf("repeat: result=%+v code=%d err=%v", result, code, err)
 	}
@@ -102,7 +102,7 @@ func TestApplyDatasetParserConfigRollsBackAllBatches(t *testing.T) {
 			} else {
 				insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-200", "kb-1", failure)
 			}
-			result, code, err := testDocumentService(t).ApplyDatasetParserConfig(documentTestContext(t.Context()), "user-1", "kb-1")
+			result, code, err := testDocumentService(t).ApplyDatasetParserConfig(documentTestContext(t.Context()), "kb-1")
 			if err == nil || code != wantCode || result != nil {
 				t.Fatalf("result=%+v code=%d err=%v", result, code, err)
 			}
@@ -136,7 +136,7 @@ func TestApplyDatasetParserConfigResolvesMixedFileTypes(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	_, code, err := testDocumentService(t).ApplyDatasetParserConfig(documentTestContext(t.Context()), "user-1", "kb-1")
+	_, code, err := testDocumentService(t).ApplyDatasetParserConfig(documentTestContext(t.Context()), "kb-1")
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("apply: code=%d err=%v", code, err)
 	}
@@ -159,21 +159,21 @@ func TestApplyDatasetParserConfigAuthorizationAndEmptyDataset(t *testing.T) {
 	}
 	svc := testDocumentService(t)
 	for _, id := range []string{"kb-1", "missing"} {
-		result, code, err := svc.ApplyDatasetParserConfig(documentTestActorContext(t.Context(), "outsider", "tenant-other"), "outsider", id)
+		result, code, err := svc.ApplyDatasetParserConfig(documentTestActorContext(t.Context(), "outsider", "tenant-other"), id)
 		if err == nil || code == common.CodeSuccess || result != nil {
 			t.Fatalf("unauthorized apply: result=%+v code=%d err=%v", result, code, err)
 		}
 	}
-	result, code, err := svc.ApplyDatasetParserConfig(documentTestContext(t.Context()), "user-1", "kb-1")
+	result, code, err := svc.ApplyDatasetParserConfig(documentTestContext(t.Context()), "kb-1")
 	if err != nil || code != common.CodeSuccess || result.TotalDocuments != 0 {
 		t.Fatalf("empty dataset: result=%+v code=%d err=%v", result, code, err)
 	}
 	ctx, cancel := context.WithCancel(documentTestContext(t.Context()))
 	cancel()
-	if _, _, err := svc.ApplyDatasetParserConfig(ctx, "user-1", "kb-1"); err == nil {
+	if _, _, err := svc.ApplyDatasetParserConfig(ctx, "kb-1"); err == nil {
 		t.Fatal("canceled request succeeded")
 	}
-	if _, _, err := svc.ApplyDatasetParserConfig(t.Context(), "user-1", " "); err == nil || !strings.Contains(err.Error(), "dataset_id") {
+	if _, _, err := svc.ApplyDatasetParserConfig(t.Context(), " "); err == nil || !strings.Contains(err.Error(), "dataset_id") {
 		t.Fatalf("empty dataset ID: %v", err)
 	}
 }
@@ -211,7 +211,7 @@ func TestApplyDatasetParserConfigCopiesPipelineVersion(t *testing.T) {
 			}).Error; err != nil {
 				t.Fatal(err)
 			}
-			_, code, err := testDocumentService(t).ApplyDatasetParserConfig(documentTestContext(t.Context()), "user-1", "kb-1")
+			_, code, err := testDocumentService(t).ApplyDatasetParserConfig(documentTestContext(t.Context()), "kb-1")
 			doc, readErr := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1")
 			if readErr != nil {
 				t.Fatal(readErr)

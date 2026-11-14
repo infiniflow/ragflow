@@ -48,21 +48,23 @@ func NewAgentWebhookCredentialService(db *gorm.DB) *AgentWebhookCredentialServic
 
 // Issue creates or rotates the credential for the authenticated user and the
 // canvas tenant. The raw token is returned once; only its SHA-256 hash is saved.
-func (s *AgentWebhookCredentialService) Issue(ctx context.Context, subject permission.Subject, canvas *entity.UserCanvas) (string, error) {
+func (s *AgentWebhookCredentialService) Issue(ctx context.Context, canvas *entity.UserCanvas) (string, error) {
 	if s == nil || s.db == nil || canvas == nil {
 		return "", gorm.ErrInvalidDB
 	}
-	userID := strings.TrimSpace(subject.UserID)
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
 	tenantID := canvas.EffectiveTenantID()
 	if userID == "" || tenantID == "" || strings.TrimSpace(canvas.ID) == "" {
-		return "", permission.ErrInvalidSubject
+		return "", permission.ErrUnauthenticated
 	}
-	subject.TenantID = tenantID
+	if contextTenantID := permission.TenantIDFromContext(ctx); contextTenantID != "" && contextTenantID != tenantID {
+		return "", permission.ErrIdentityMismatch
+	}
 	checker := permission.NewDatabaseChecker(s.db)
-	if err := checker.CheckTenant(ctx, subject, tenantID, permission.TenantMember); err != nil {
+	if err := checker.CheckTenant(ctx, tenantID, permission.TenantMember); err != nil {
 		return "", err
 	}
-	if err := checker.CheckResource(ctx, subject, permission.ResourceRef{
+	if err := checker.CheckResource(ctx, permission.ResourceRef{
 		Kind: permission.ResourceKindCanvas,
 		ID:   canvas.ID,
 	}, permission.OperationRun); err != nil {
@@ -119,19 +121,25 @@ func (s *AgentWebhookCredentialService) Resolve(ctx context.Context, canvasID, t
 	if canvas.EffectiveTenantID() != credential.TenantID {
 		return nil, ErrInvalidAgentWebhookCredential
 	}
-	subject := permission.Subject{UserID: credential.UserID, TenantID: credential.TenantID}
+	if userID := permission.UserIDFromContext(ctx); userID != "" && userID != credential.UserID {
+		return nil, ErrInvalidAgentWebhookCredential
+	}
+	if tenantID := permission.TenantIDFromContext(ctx); tenantID != "" && tenantID != credential.TenantID {
+		return nil, ErrInvalidAgentWebhookCredential
+	}
+	ctx = permission.WithIdentity(ctx, credential.UserID, credential.TenantID)
 	checker := permission.NewDatabaseChecker(s.db)
-	if err := checker.CheckTenant(ctx, subject, credential.TenantID, permission.TenantMember); err != nil {
-		if errors.Is(err, permission.ErrMembershipNotFound) || errors.Is(err, permission.ErrPermissionDenied) || errors.Is(err, permission.ErrInvalidSubject) {
+	if err := checker.CheckTenant(ctx, credential.TenantID, permission.TenantMember); err != nil {
+		if errors.Is(err, permission.ErrMembershipNotFound) || errors.Is(err, permission.ErrPermissionDenied) || errors.Is(err, permission.ErrIdentityMismatch) {
 			return nil, ErrInvalidAgentWebhookCredential
 		}
 		return nil, fmt.Errorf("check webhook tenant membership: %w", err)
 	}
-	if err := checker.CheckResource(ctx, subject, permission.ResourceRef{
+	if err := checker.CheckResource(ctx, permission.ResourceRef{
 		Kind: permission.ResourceKindCanvas,
 		ID:   canvasID,
 	}, permission.OperationRun); err != nil {
-		if errors.Is(err, permission.ErrMembershipNotFound) || errors.Is(err, permission.ErrPermissionDenied) || errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrInvalidSubject) {
+		if errors.Is(err, permission.ErrMembershipNotFound) || errors.Is(err, permission.ErrPermissionDenied) || errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrIdentityMismatch) {
 			return nil, ErrInvalidAgentWebhookCredential
 		}
 		return nil, fmt.Errorf("check webhook run permission: %w", err)
@@ -141,12 +149,16 @@ func (s *AgentWebhookCredentialService) Resolve(ctx context.Context, canvasID, t
 
 // Revoke removes the authenticated user's ability to trigger this canvas with
 // their webhook credential. The operation is idempotent.
-func (s *AgentWebhookCredentialService) Revoke(ctx context.Context, canvasID, userID string) error {
+func (s *AgentWebhookCredentialService) Revoke(ctx context.Context, canvasID string) error {
 	if s == nil || s.db == nil {
 		return gorm.ErrInvalidDB
 	}
-	if strings.TrimSpace(canvasID) == "" || strings.TrimSpace(userID) == "" {
-		return permission.ErrInvalidSubject
+	if strings.TrimSpace(canvasID) == "" {
+		return permission.ErrInvalidPermission
+	}
+	userID := strings.TrimSpace(permission.UserIDFromContext(ctx))
+	if userID == "" {
+		return permission.ErrUnauthenticated
 	}
 	return dao.RevokeAgentWebhookCredential(ctx, s.db, canvasID, userID)
 }

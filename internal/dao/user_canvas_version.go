@@ -73,35 +73,46 @@ var ErrCanvasVersionLimitExceeded = errors.New("version limit reached (maximum 6
 // ErrPipelineVersionMissing so callers can surface a Missing (unparseable) state.
 // Both the service (component-param resolution) and task (runtime parse) layers
 // delegate here, so the resolution logic and its error contract live in one place.
-func LoadCanvasVersionDSL(ctx context.Context, db *gorm.DB, canvasID, versionID string) ([]byte, error) {
+//
+// The second result is the resolved version id, used by callers that record
+// which version a run executed.
+func LoadCanvasVersionDSL(ctx context.Context, db *gorm.DB, canvasID, versionID string) ([]byte, string, error) {
 	versionDAO := NewUserCanvasVersionDAO()
 	if versionID != "" {
 		v, err := versionDAO.GetByID(ctx, db, versionID)
 		if err != nil {
 			if errors.Is(err, ErrUserCanvasVersionNotFound) {
-				return nil, fmt.Errorf("%s (version %s): %w", userFacingVersionHint, versionID, ErrPipelineVersionMissing)
+				return nil, "", fmt.Errorf("%s (version %s): %w", userFacingVersionHint, versionID, ErrPipelineVersionMissing)
 			}
-			return nil, fmt.Errorf("load pipeline version %s: %w", versionID, err)
+			return nil, "", fmt.Errorf("load pipeline version %s: %w", versionID, err)
 		}
 		if v.UserCanvasID != canvasID {
-			return nil, fmt.Errorf("%s (version %s does not belong to canvas %s): %w", userFacingVersionHint, versionID, canvasID, ErrPipelineVersionMissing)
+			return nil, "", fmt.Errorf("%s (version %s does not belong to canvas %s): %w", userFacingVersionHint, versionID, canvasID, ErrPipelineVersionMissing)
 		}
 		if len(v.DSL) == 0 {
-			return nil, fmt.Errorf("%s (version %s has no DSL): %w", userFacingVersionHint, versionID, ErrPipelineVersionMissing)
+			return nil, "", fmt.Errorf("%s (version %s has no DSL): %w", userFacingVersionHint, versionID, ErrPipelineVersionMissing)
 		}
-		return marshalCanvasVersionDSL(versionID, v.DSL)
+		raw, err := marshalCanvasVersionDSL(versionID, v.DSL)
+		if err != nil {
+			return nil, "", err
+		}
+		return raw, versionID, nil
 	}
 	v, err := versionDAO.GetLatest(ctx, db, canvasID)
 	if err != nil {
 		if errors.Is(err, ErrUserCanvasVersionNotFound) {
-			return nil, fmt.Errorf("%s (canvas %s has no published version): %w", userFacingVersionHint, canvasID, ErrPipelineVersionMissing)
+			return nil, "", fmt.Errorf("%s (canvas %s has no published version): %w", userFacingVersionHint, canvasID, ErrPipelineVersionMissing)
 		}
-		return nil, fmt.Errorf("load latest version for canvas %s: %w", canvasID, err)
+		return nil, "", fmt.Errorf("load latest version for canvas %s: %w", canvasID, err)
 	}
 	if len(v.DSL) == 0 {
-		return nil, fmt.Errorf("%s (latest version %s has no DSL): %w", userFacingVersionHint, v.ID, ErrPipelineVersionMissing)
+		return nil, "", fmt.Errorf("%s (latest version %s has no DSL): %w", userFacingVersionHint, v.ID, ErrPipelineVersionMissing)
 	}
-	return marshalCanvasVersionDSL(v.ID, v.DSL)
+	raw, err := marshalCanvasVersionDSL(v.ID, v.DSL)
+	if err != nil {
+		return nil, "", err
+	}
+	return raw, v.ID, nil
 }
 
 func marshalCanvasVersionDSL(versionID string, dsl entity.JSONMap) ([]byte, error) {
@@ -161,6 +172,18 @@ func (dao *UserCanvasVersionDAO) ListByCanvasID(ctx context.Context, db *gorm.DB
 		Order("create_time DESC").
 		Find(&vs).Error
 	return vs, err
+}
+
+// ListMetadataByCanvasIDs loads version metadata without reading DSL blobs.
+func (dao *UserCanvasVersionDAO) ListMetadataByCanvasIDs(ctx context.Context, db *gorm.DB, canvasIDs []string) ([]entity.UserCanvasVersion, error) {
+	if len(canvasIDs) == 0 {
+		return []entity.UserCanvasVersion{}, nil
+	}
+	var versions []entity.UserCanvasVersion
+	err := db.WithContext(ctx).Select("id", "user_canvas_id", "title", "alias").
+		Where("user_canvas_id IN ?", canvasIDs).
+		Order("create_time DESC").Order("id ASC").Find(&versions).Error
+	return versions, err
 }
 
 // GetLatest returns the most recently created version of canvasID, or

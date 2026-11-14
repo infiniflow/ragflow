@@ -276,8 +276,7 @@ func operate(state *runtime.CanvasState, oldVal any, op string, param any) (any,
 				if v, err := state.GetVar(s); err == nil && v != nil {
 					return v, ""
 				}
-				// also try template resolution against state for {{...}}
-				if strings.Contains(s, "{{") {
+				if runtime.VarRefPattern.MatchString(s) {
 					if resolved, err := runtime.ResolveTemplate(s, state); err == nil {
 						return resolved, ""
 					}

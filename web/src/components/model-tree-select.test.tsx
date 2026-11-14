@@ -47,7 +47,13 @@ function addedModel(overrides: Record<string, unknown>) {
 }
 
 function build(models: unknown[], types: string[], providers?: string[]) {
-  return buildModelTree(models as never, types, undefined, providers);
+  return buildModelTree(
+    models as never,
+    types,
+    undefined,
+    undefined,
+    providers,
+  );
 }
 
 /** Flattens the tree into leaf ids so assertions do not depend on tree shape. */

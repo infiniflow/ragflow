@@ -52,11 +52,14 @@ export const RenameSpaceDialog: React.FC<RenameSpaceDialogProps> = ({
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
           <DialogTitle>
-            {t('skills.renameSpaceTitle') || 'Rename Skill Space'}
+            {t('skills.renameSpaceTitle', {
+              defaultValue: 'Rename Skill Space',
+            })}
           </DialogTitle>
           <DialogDescription>
-            {t('skills.renameSpaceDescription') ||
-              'Enter a new name for this skill space.'}
+            {t('skills.renameSpaceDescription', {
+              defaultValue: 'Enter a new name for this skill space.',
+            })}
           </DialogDescription>
         </DialogHeader>
         <div className="py-4">

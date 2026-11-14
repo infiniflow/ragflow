@@ -125,7 +125,8 @@ func TestCallTool_StreamableHTTP(t *testing.T) {
 		defer mu.Unlock()
 		requestOrder = append(requestOrder, method)
 	}
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// TLS server: CallTool refuses to send credential headers over http.
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
 			t.Errorf("Authorization=%q, want rendered header", got)
 		}
@@ -615,5 +616,40 @@ func TestCallToolSSE(t *testing.T) {
 	}
 	if !called.Load() || result.Text != "metro route" {
 		t.Fatalf("called=%v result=%+v", called.Load(), result)
+	}
+}
+
+// TestCallTool_SuppliedClientRejectsCrossOriginRedirect covers the
+// caller-supplied HTTPClient path: even without the pinned transport,
+// a redirect to a different port/origin must not be followed.
+func TestCallTool_SuppliedClientRejectsCrossOriginRedirect(t *testing.T) {
+	defer allowLoopbackForTests(t)()
+
+	var targetHits int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&targetHits, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer target.Close()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Location", target.URL)
+		w.WriteHeader(http.StatusTemporaryRedirect)
+	}))
+	defer srv.Close()
+
+	_, err := CallTool(t.Context(), CallOptions{
+		URL:        srv.URL,
+		ServerType: TransportStreamableHTTP,
+		ToolName:   "echo",
+		Arguments:  json.RawMessage(`{}`),
+		HTTPClient: srv.Client(),
+		Timeout:    2 * time.Second,
+	})
+	if err == nil {
+		t.Fatal("CallTool should fail when the supplied client is redirected to a different origin")
+	}
+	if got := atomic.LoadInt32(&targetHits); got != 0 {
+		t.Errorf("redirect target hits=%d, want 0", got)
 	}
 }

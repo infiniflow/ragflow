@@ -15,6 +15,7 @@
  */
 
 import Spotlight from '@/components/spotlight';
+import { ProviderInstanceCardWithPrivilege } from '@/ee/pages/user-setting/setting-model/provider-instance-card-with-privilege';
 import { useTranslate } from '@/hooks/common-hooks';
 import {
   useFetchAddedProviders,
@@ -178,7 +179,7 @@ const SettingModelV2: FC = () => {
                 </div>
               )}
               {instances.map((instance, index) => (
-                <ProviderInstanceCard
+                <ProviderInstanceCardWithPrivilege
                   key={instance.instance_name}
                   providerName={selection as string}
                   instance={instance}

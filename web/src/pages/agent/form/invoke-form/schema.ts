@@ -1,10 +1,33 @@
 import { z } from 'zod';
 
-export const VariableFormSchema = z.object({
-  key: z.string(),
-  ref: z.string(),
-  value: z.string(),
-});
+export const VariableFormSchema = z
+  .object({
+    key: z.string(),
+    ref: z.string(),
+    value: z.string(),
+    type: z.enum(['string', 'object']).optional(),
+  })
+  .superRefine(({ type, ref, value }, context) => {
+    if (type !== 'object' || ref) return;
+
+    try {
+      const object = JSON.parse(value);
+      if (
+        object !== null &&
+        typeof object === 'object' &&
+        !Array.isArray(object)
+      )
+        return;
+    } catch {
+      // Report malformed JSON and non-object JSON with the same field error.
+    }
+
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['value'],
+      message: 'Enter a valid JSON object.',
+    });
+  });
 
 // {user_id} or {component@variable}
 const placeholderRegex = /\{([a-zA-Z_][a-zA-Z0-9_.@-]*)\}/g;

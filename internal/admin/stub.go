@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/server"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 // SetupEERouter adds no enterprise middleware in the community edition.
@@ -45,7 +46,7 @@ func (s *Service) GetEEServicesStatus(ctx context.Context) []ServiceStatus { ret
 
 // ListUsersEE reports that per-user billing and quota filters are an
 // enterprise capability.
-func (s *Service) ListUsersEE(ctx context.Context, pageIndex, pageSize int, name string, status, role, sort, orderBy, plan string, top, days int, quota *int) ([]map[string]interface{}, int64, error) {
+func (s *Service) ListUsersEE(ctx context.Context, pageIndex, pageSize int, name string, status, sort, orderBy, plan string, top, days int, quota *int) ([]map[string]interface{}, int64, error) {
 	return nil, 0, errors.New("listing users with plan and quota filters is only available in the enterprise edition")
 }
 
@@ -71,4 +72,8 @@ func InitLicense(ctx context.Context) error { return nil }
 // expiry to watch.
 func CheckServicePeriodically() {
 	GlobalServerStore.CleanupStaleStatuses(server.GetConfig().GetHeartbeatInterval() * 10)
+}
+
+func deleteEvaluationsEE(context.Context, *gorm.DB, string, string, *DeleteUserResult) error {
+	return nil
 }

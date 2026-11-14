@@ -72,7 +72,7 @@ type fakeAgentWebhookCredentialManager struct {
 	revokedUser  string
 }
 
-func (f *fakeAgentWebhookCredentialManager) Issue(_ context.Context, _ permission.Subject, _ *entity.UserCanvas) (string, error) {
+func (f *fakeAgentWebhookCredentialManager) Issue(_ context.Context, _ *entity.UserCanvas) (string, error) {
 	return f.issueToken, f.issueErr
 }
 
@@ -87,21 +87,22 @@ func (f *fakeAgentWebhookCredentialManager) Resolve(_ context.Context, canvasID,
 	return &credential, nil
 }
 
-func (f *fakeAgentWebhookCredentialManager) Revoke(_ context.Context, canvasID, userID string) error {
+func (f *fakeAgentWebhookCredentialManager) Revoke(ctx context.Context, canvasID string) error {
 	f.revokedID = canvasID
-	f.revokedUser = userID
+	f.revokedUser = permission.UserIDFromContext(ctx)
 	return nil
 }
 
-func (f *fakeCanvasLoader) LoadCanvasByID(_ context.Context, userID, _ string) (*entity.UserCanvas, error) {
-	f.loadUserID = userID
+func (f *fakeCanvasLoader) LoadCanvasByID(ctx context.Context, _ string) (*entity.UserCanvas, error) {
+	f.loadUserID = permission.UserIDFromContext(ctx)
 	if f.err != nil {
 		return nil, f.err
 	}
 	return f.canvas, nil
 }
 
-func (f *fakeCanvasLoader) RunAgentWithWebhook(ctx context.Context, userID, canvasID string, payload map[string]any) (<-chan canvas.RunEvent, error) {
+func (f *fakeCanvasLoader) RunAgentWithWebhook(ctx context.Context, canvasID string, payload map[string]any) (<-chan canvas.RunEvent, error) {
+	userID := permission.UserIDFromContext(ctx)
 	f.runCalls.Add(1)
 	f.runUserID = userID
 	f.runCanvasID = canvasID
@@ -199,6 +200,7 @@ func webhookCtx(method, path, body, contentType string) (*gin.Context, *httptest
 		c.Request.Header.Set("Content-Type", contentType)
 	}
 	c.Set("user", &entity.User{ID: "u-1"})
+	c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "u-1", "u-1"))
 	return c, w
 }
 
@@ -250,8 +252,8 @@ func TestPublicWebhookRunsAsCredentialIdentityWithoutUserToken(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("webhook did not start the agent")
 	}
-	if subject, ok := permission.SubjectFromContext(loader.runContext); !ok || subject.TenantID != tenantID {
-		t.Fatalf("run tenant = %q, want %q", subject.TenantID, tenantID)
+	if permission.TenantIDFromContext(loader.runContext) != tenantID {
+		t.Fatalf("run tenant = %q, want %q", permission.TenantIDFromContext(loader.runContext), tenantID)
 	}
 	input := loader.runPayload["input"].(map[string]any)
 	query := input["query"].(map[string]any)
@@ -900,7 +902,7 @@ func TestRunWebhookDetachedAppendsFinishedTrace(t *testing.T) {
 				trace = append(trace, ev)
 			}
 
-			h.runWebhookDetached(t.Context(), "u-1", cv, map[string]any{}, true, time.Now())
+			h.runWebhookDetached(t.Context(), cv, map[string]any{}, true, time.Now())
 
 			assertWebhookFinishedTrace(t, trace, tt.wantSuccess)
 			if tt.forbidden != "" {
@@ -941,7 +943,7 @@ func TestRunWebhookDetachedRecordsTimeoutTrace(t *testing.T) {
 			)
 			defer cancel()
 			<-ctx.Done()
-			h.runWebhookDetachedWithContext(ctx, "u-1", cv, map[string]any{}, true, time.Now(), "session-1")
+			h.runWebhookDetachedWithContext(ctx, cv, map[string]any{}, true, time.Now(), "session-1")
 
 			if len(trace) < 2 || trace[0].Type != "error" || !strings.Contains(trace[0].Data, "timed out") {
 				t.Fatalf("timeout trace = %+v, want error followed by failed finished event", trace)
@@ -964,7 +966,7 @@ func TestRunWebhookSyncRecordsCancelledTrace(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	result := h.runWebhookSync(ctx, "u-1", cv, map[string]any{}, true, time.Now())
+	result := h.runWebhookSync(ctx, cv, map[string]any{}, true, time.Now())
 
 	if result.status != http.StatusConflict {
 		t.Errorf("status = %d, want %d", result.status, http.StatusConflict)
@@ -983,13 +985,13 @@ func TestWebhookBufferedTerminalEventAfterCancellationUsesCleanupContext(t *test
 		{
 			name: "detached",
 			run: func(_ *testing.T, h *AgentHandler, ctx context.Context, cv *entity.UserCanvas) {
-				h.runWebhookDetachedWithContext(ctx, "u-1", cv, map[string]any{}, true, time.Now(), "session-1")
+				h.runWebhookDetachedWithContext(ctx, cv, map[string]any{}, true, time.Now(), "session-1")
 			},
 		},
 		{
 			name: "sync",
 			run: func(t *testing.T, h *AgentHandler, ctx context.Context, cv *entity.UserCanvas) {
-				result := h.runWebhookSync(ctx, "u-1", cv, map[string]any{}, true, time.Now())
+				result := h.runWebhookSync(ctx, cv, map[string]any{}, true, time.Now())
 				if result.status != http.StatusConflict {
 					t.Errorf("status = %d, want %d", result.status, http.StatusConflict)
 				}
