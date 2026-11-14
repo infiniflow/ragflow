@@ -135,9 +135,9 @@ export const initialParserValues = {
       fileFormat: FileType.PowerPoint,
       parse_method: ParseDocumentType.DeepDOC,
     },
-    // {
-    //   fileFormat: FileType.Video,
-    // },
+    {
+      fileFormat: FileType.Video,
+    },
     {
       fileFormat: FileType.Audio,
       vlm: { llm_id: '' },

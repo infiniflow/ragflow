@@ -107,9 +107,10 @@ func maybeDispatchVideo(
 		return parser.ParseResult{}, true, fmt.Errorf("parser: video model driver %q does not support video_url inputs", driver.Name())
 	}
 
-	prompt := strings.TrimSpace(getStringOr(setup, "prompt", ""))
-	if prompt == "" {
-		prompt = "请用通顺完整的语句总结这个视频内容"
+	lang := resolveVisionLanguage(inputs, vision.language)
+	prompt := defaultVideoVisionPrompt(lang)
+	if configured := common.FirstNonEmpty(vision.systemPrompt, getStringOr(setup, "prompt", "")); configured != "" {
+		prompt = configured
 	}
 	videoDataURI := "data:" + videoMIME(filename) + ";base64," + base64.StdEncoding.EncodeToString(binary)
 	messages := []modelModule.Message{{

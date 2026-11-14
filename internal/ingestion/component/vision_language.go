@@ -50,3 +50,7 @@ func renderFigureVisionLanguage(prompt, language string) string {
 func defaultImageVisionPrompt(language string) string {
 	return "Describe this image in detail. Respond in " + normalizeVisionLanguage(language) + ". Preserve all visible text in its original language; do not translate it."
 }
+
+func defaultVideoVisionPrompt(language string) string {
+	return "Describe this video in detail. Respond in " + normalizeVisionLanguage(language) + ". Preserve all visible text in its original language; do not translate it."
+}

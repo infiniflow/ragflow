@@ -1120,6 +1120,63 @@ func TestMaybeDispatchVideoForwardsDataURI(t *testing.T) {
 	}
 }
 
+func TestMaybeDispatchVideoUsesVisionPromptAndLanguage(t *testing.T) {
+	original := resolveTenantModelByType
+	t.Cleanup(func() { resolveTenantModelByType = original })
+
+	for _, tc := range []struct {
+		name          string
+		inputLanguage string
+		vision        visionSettings
+		familyPrompt  string
+		want          string
+	}{
+		{
+			name:          "global prompt wins",
+			inputLanguage: "Japanese",
+			vision:        visionSettings{systemPrompt: "global prompt", language: "French"},
+			familyPrompt:  "family prompt",
+			want:          "global prompt",
+		},
+		{
+			name:          "family prompt is the fallback",
+			inputLanguage: "Japanese",
+			vision:        visionSettings{language: "French"},
+			familyPrompt:  "family prompt",
+			want:          "family prompt",
+		},
+		{
+			name:          "explicit language shapes the default",
+			inputLanguage: "Japanese",
+			vision:        visionSettings{language: "French"},
+			want:          "Respond in French.",
+		},
+		{
+			name:          "dataset language shapes the default",
+			inputLanguage: "Japanese",
+			want:          "Respond in Japanese.",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			driver := &imagePromptCaptureDriver{}
+			resolveTenantModelByType = func(context.Context, *gorm.DB, string, entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+				return driver, "vision", &modelModule.APIConfig{}, 0, nil
+			}
+			setups := defaultSetups()
+			setups["video"]["prompt"] = tc.familyPrompt
+			_, handled, err := maybeDispatchVideo(t.Context(), nil, utility.FileTypeVIDEO, "clip.mp4", []byte("mp4-bytes"),
+				map[string]any{"tenant_id": "t1", "lang": tc.inputLanguage}, setups, tc.vision)
+			if err != nil || !handled {
+				t.Fatalf("maybeDispatchVideo: handled=%t err=%v", handled, err)
+			}
+			got, ok := firstUserText(driver.captured)
+			if !ok || !strings.Contains(got, tc.want) {
+				t.Fatalf("video prompt = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestMaybeDispatchVideoRejectsUnsupportedDriver(t *testing.T) {
 	original := resolveTenantModelByType
 	t.Cleanup(func() { resolveTenantModelByType = original })
