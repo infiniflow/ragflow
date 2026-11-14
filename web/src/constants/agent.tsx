@@ -86,6 +86,7 @@ export enum Operator {
   Begin = 'Begin',
   Retrieval = 'Retrieval',
   Categorize = 'Categorize',
+  ScoredSwitch = 'ScoredSwitch',
   Message = 'Message',
   DuckDuckGo = 'DuckDuckGo',
   Wikipedia = 'Wikipedia',

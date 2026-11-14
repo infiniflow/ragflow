@@ -475,6 +475,7 @@ var componentNameToNodeTypeMap = map[string]string{
 	"Begin":              "beginNode",
 	"Retrieval":          "ragNode",
 	"Categorize":         "categorizeNode",
+	"ScoredSwitch":       "scoredSwitchNode",
 	"Message":            "messageNode",
 	"Answer":             "messageNode",
 	"RewriteQuestion":    "rewriteNode",
