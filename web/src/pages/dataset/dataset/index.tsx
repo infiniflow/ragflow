@@ -4,6 +4,7 @@ import {
 } from '@/components/bulk-operate-bar';
 import { FileUploadDialog } from '@/components/file-upload-dialog';
 import ListFilterBar from '@/components/list-filter-bar';
+import { TruncatedText } from '@/components/truncated-text';
 import { PrivilegeManagementDialog } from '@/ee/components/privilege-management/privilege-management-dialog';
 import { RenameDialog } from '@/components/rename-dialog';
 import { Button } from '@/components/ui/button';
@@ -152,11 +153,10 @@ export default function Dataset() {
     return item;
   });
 
+  const datasetDescription = t('knowledgeDetails.datasetDescription');
+
   return (
-    <Card
-      as="article"
-      className="mb-5 mr-5 min-w-[880px] bg-transparent shadow-none"
-    >
+    <Card as="article" className="mb-5 mr-5 bg-transparent shadow-none">
       <CardHeader as="header" className="p-5 space-y-0">
         <ListFilterBar
           onSearchChange={handleInputChange}
@@ -168,13 +168,17 @@ export default function Dataset() {
           filters={filters}
           className="items-end"
           leftPanel={
-            <div>
-              <h1 className="leading-normal font-medium">
+            <div className="min-w-0">
+              <h1 className="leading-normal font-medium truncate">
                 {t('knowledgeDetails.subbarFiles')}
               </h1>
-              <p className="text-text-secondary text-sm font-normal">
-                {t('knowledgeDetails.datasetDescription')}
-              </p>
+              <TruncatedText
+                as="p"
+                className="text-text-secondary text-sm font-normal truncate"
+                tooltip={datasetDescription}
+              >
+                {datasetDescription}
+              </TruncatedText>
             </div>
           }
         >

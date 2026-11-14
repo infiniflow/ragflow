@@ -84,8 +84,6 @@ var (
 	ErrConnectorTestUnsupported = errors.New("connector test is not supported for this source")
 	// ErrConnectorSourceNotImplemented is returned for connector sources not registered in the Go syncer.
 	ErrConnectorSourceNotImplemented = errors.New("connector source is not implemented")
-	// ErrConnectorInternal is a generic, safe-to-expose internal failure.
-	ErrConnectorInternal = errors.New("Internal server error")
 	// ErrConnectorEncryptedCredentials is returned when a request sends credentials in the stored "enc:" form.
 	ErrConnectorEncryptedCredentials = errors.New("config.credentials must be plaintext, not an \"enc:\" value")
 	// ErrConnectorInvalidFreq is returned when a connector frequency is not
@@ -368,7 +366,7 @@ func (s *ConnectorService) GetConnector(ctx context.Context, connectorID string)
 			return nil, ErrConnectorNotFound
 		}
 		common.Error("get connector failed", err, zap.String("connector_id", connectorID))
-		return nil, ErrConnectorInternal
+		return nil, fmt.Errorf("get connector: %w", err)
 	}
 
 	return withDecryptedCredentials(connector)
@@ -599,7 +597,7 @@ func (s *ConnectorService) StartGoogleWebOAuth(ctx context.Context, source strin
 	flowID := common.GenerateUUID()
 	authorizationURL, err := buildGoogleAuthorizationURL(authURI, clientID, redirectURI, flowID, googleOAuthScopesForSource(source), codeChallenge)
 	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to initialize Google OAuth flow. Please verify the uploaded client configuration")
+		return nil, common.CodeServerError, fmt.Errorf("failed to initialize Google OAuth flow. Please verify the uploaded client configuration: %w", err)
 	}
 
 	redisClient := kvrocks.Get()

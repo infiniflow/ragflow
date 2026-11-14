@@ -3,6 +3,8 @@ import { MoreButton } from '@/components/more-button';
 import { SharedBadge } from '@/components/shared-badge';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IDialog } from '@/interfaces/database/chat';
+import { useSidebarCollapse } from '@/layouts/components/app-sidebar/use-sidebar-collapse';
+import { useCallback } from 'react';
 import { ChatDropdown } from './chat-dropdown';
 import { useRenameChat } from './hooks/use-rename-chat';
 
@@ -17,6 +19,12 @@ export function ChatCard({
   showPrivilegeModal,
 }: IProps) {
   const { navigateToChat } = useNavigatePage();
+  const { setCollapsed: setPrimarySidebarCollapsed } = useSidebarCollapse();
+
+  const handleCardClick = useCallback(() => {
+    setPrimarySidebarCollapsed(true);
+    navigateToChat(data.id)();
+  }, [data.id, navigateToChat, setPrimarySidebarCollapsed]);
 
   return (
     <HomeCard
@@ -36,7 +44,7 @@ export function ChatCard({
         </ChatDropdown>
       }
       sharedBadge={<SharedBadge>{data.nickname}</SharedBadge>}
-      onClick={navigateToChat(data?.id)}
+      onClick={handleCardClick}
     />
   );
 }

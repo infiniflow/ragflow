@@ -55,7 +55,8 @@ func TestDatasetServiceListDatasetsIDsAccessibleViaTeamTenant(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-team", "owner-1", "Shared")
-	if err := dao.DB.Create(&entity.Tenant{ID: "owner-1", Name: sptr("owner"), Status: sptr("1")}).Error; err != nil {
+	tenant := entity.Tenant{ID: "owner-1", Name: sptr("owner"), Status: sptr("1")}
+	if err := dao.DB.Where("id = ?", tenant.ID).FirstOrCreate(&tenant).Error; err != nil {
 		t.Fatalf("insert owner tenant: %v", err)
 	}
 	insertDatasetUpdateTeamMember(t, "user-1", "owner-1")

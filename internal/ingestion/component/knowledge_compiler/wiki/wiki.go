@@ -2,7 +2,7 @@
 // document artifact pipeline MAP -> REDUCE -> PLAN -> REFINE that produces a
 // wiki-style page (and supporting section products). MAP results may be reused
 // from the immutable per-chunk version store; later stages remain in memory.
-// The stage semantics are aligned with the Python wiki.py design, but the Go
+// The stage semantics are aligned with the design, but the Go
 // port keeps all intermediate artifacts in memory instead of persisting them to
 // ES between stages.
 package wiki
@@ -186,9 +186,9 @@ type wikiPlanPage struct {
 }
 
 // Reconciliation thresholds. These are a deliberate Go-specific refinement of
-// the Python wiki.py contract, NOT a byte-for-byte alignment:
+// the contract, NOT a byte-for-byte alignment
 //
-// Python `_wiki_reconcile_with_kb` (wiki.py:1900-1957) queries KNN with
+// `_wiki_reconcile_with_kb` queries KNN with
 // `extra_options={"similarity": update_threshold}` (update_threshold=0.95), so
 // candidates below that threshold are normally filtered out at retrieval and
 // the item becomes CREATE directly. Its MAYBE band ([maybe=0.60, update=0.95))
@@ -196,7 +196,7 @@ type wikiPlanPage struct {
 // the similarity filter.
 //
 // Go's `FindSimilarPages` returns top-K candidates without a similarity floor,
-// so it genuinely sees low-score candidates Python never does. To exploit that
+// so it genuinely sees low-score candidates never does. To exploit that
 // richer signal we keep a real two-band decision:
 //
 //   - Score >= update_threshold (0.92)           -> direct UPDATE
@@ -205,7 +205,7 @@ type wikiPlanPage struct {
 //     heuristic first (direct UPDATE), else MAYBE resolved by the LLM.
 //
 // The title/topic/entity overlap straight-to-UPDATE shortcut is a Go-only
-// enhancement; it is NOT a Python-aligned behavior. Keep it documented as such.
+// enhancement; it is NOT a -aligned behavior. Keep it documented as such
 const (
 	wikiPlanUpdateThreshold = 0.92
 	wikiPlanMaybeThreshold  = 0.78
@@ -319,7 +319,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	}
 
 	// Buffer every product in one slice; the component merges them into the
-	// upstream chunk stream (matching Python, which appends compiled units onto
+	// upstream chunk stream (matching , which appends compiled units onto
 	// the chunk list).
 	out := common.Outputs{
 		Products:          prod,
@@ -1283,7 +1283,7 @@ func (p *wikiPipeline) reconcilePlan(plan wikiPlan) (wikiPlan, error) {
 
 // reconcilePlanPage decides UPDATE / CREATE for one planned page against the
 // existing wiki-page store. See the threshold block above for how the band and
-// the overlap heuristic relate to Python's wiki.py contract.
+// the overlap heuristic relate to contract
 func (p *wikiPipeline) reconcilePlanPage(page wikiPlanPage, queryVec []float32) (*common.WikiPageCandidate, error) {
 	if p.deps.WikiPages == nil {
 		return nil, nil
@@ -2754,7 +2754,7 @@ func pageTypeOf(slug string, slugToPageType map[string]string) string {
 
 // wikiSlugResolver resolves a wikitext slug (a bare "name" or a full
 // "<page_type>/<slug>") to the canonical hyphen full-slug used as the page
-// identifier (slug_kwd), mirroring Python's _wiki_resolve_dead_slug: plain
+// identifier (slug_kwd), mirroring _wiki_resolve_dead_slug: plain
 // names / titles are reverse-mapped to the full pid. An empty result means the
 // target is not a known page and must not be emitted as a link or graph edge.
 type wikiSlugResolver struct {

@@ -534,7 +534,7 @@ func TestBatchUpdateDocumentStatusRetainsPartialFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a partial failure")
 	}
-	if code != common.CodeServerError || err.Error() != "partial failure" {
+	if code != common.CodeServerError || !strings.Contains(err.Error(), "partial failure:") || !strings.Contains(err.Error(), "owner-doc") || !strings.Contains(err.Error(), "Permission denied") {
 		t.Fatalf("result code/error = %d/%v, want partial failure", code, err)
 	}
 }

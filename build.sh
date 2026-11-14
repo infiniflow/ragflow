@@ -193,23 +193,39 @@ ort_static_lib_prefix() {
 # dir means the cache is incomplete, so build.sh triggers the downloader itself
 # (controlled auto-download) rather than silently linking a stale or wrong lib.
 
+_pdfium_deps_present() {
+    local stamp="${PDFIUM_STATIC_PREFIX}/.ragflow_platform" cached_platform
+    [ -s "${PDFIUM_STATIC_PREFIX}/lib/libpdfium.a" ] || return 1
+    if [ "$TARGET_OS" = "linux" ]; then
+        [ -s "${PDFIUM_STATIC_PREFIX}/lib/libc++.a" ] || return 1
+        [ -s "${PDFIUM_STATIC_PREFIX}/lib/libc++abi.a" ] || return 1
+    fi
+    # Preserve pre-provisioned caches without a stamp. A downloader-stamped
+    # cache must match the build target before it can be used.
+    if [ -f "$stamp" ]; then
+        IFS= read -r cached_platform < "$stamp" || return 1
+        [ "$cached_platform" = "${TARGET_OS}/${TARGET_ARCH}" ] || return 1
+    fi
+    return 0
+}
+
 # True when every native lib the Go build links is already in the versioned user
 # cache for the target platform. Used to skip the network entirely on an
 # already-provisioned host.
 _native_libs_present() {
+    if [ -z "$_TARGET_PLATFORM_DETECTED" ]; then
+        detect_target_platform
+        _TARGET_PLATFORM_DETECTED=1
+    fi
     [ -f "${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a" ] || return 1
     [ -f "${OFFICE_OXIDE_PREFIX}/include/office_oxide_c/office_oxide.h" ] || return 1
-    [ -f "${PDFIUM_STATIC_PREFIX}/lib/libpdfium.a" ] || return 1
+    _pdfium_deps_present || return 1
     [ -f "${PDF_OXIDE_PREFIX}/lib/${TARGET_OS}_${TARGET_ARCH}/libpdf_oxide.a" ] || return 1
     # ORT must match the SAME version+platform-keyed dir that check_onnxruntime_deps
     # links (*/${ort_dir_prefix}${ort_version}*/lib/*.a). A shared cache holding
     # only an OLD version or a DIFFERENT platform's ORT must be reported missing so
     # the controlled auto-downloader runs, instead of being silently treated as
     # present and failing only at link time.
-    if [ -z "$_TARGET_PLATFORM_DETECTED" ]; then
-        detect_target_platform
-        _TARGET_PLATFORM_DETECTED=1
-    fi
     local ort_version ort_dir_prefix
     ort_version="$(deepdoc_ort_version "$PROJECT_ROOT")" || return 1
     ort_dir_prefix="$(ort_static_lib_prefix)"
@@ -604,12 +620,12 @@ check_pdfium_deps() {
     # auto-download in setup_cgo_env; there is no /opt pre-bake to recover from.
     local lib_path="${PDFIUM_STATIC_PREFIX}/lib/libpdfium.a"
 
-    if [ -f "$lib_path" ]; then
+    if _pdfium_deps_present; then
         echo "  pdfium (static) → ${PDFIUM_STATIC_PREFIX}"
         return 0
     fi
 
-    echo "  pdfium (static) not found"
+    echo "  pdfium (static) missing or incompatible with ${TARGET_OS}/${TARGET_ARCH}"
     echo "  Expected: ${lib_path}"
     echo "  Run: uv run tools/scripts/download_dev_deps.py"
     echo "  Or: curl -fsSL https://github.com/kognitos/pdfium-static/releases/download/chromium%2F${PDFIUM_STATIC_VERSION}/$(pdfium_asset) | tar xz -C ${PDFIUM_STATIC_PREFIX}"
@@ -721,6 +737,45 @@ check_pdf_oxide_deps() {
     return 1
 }
 
+# Go 1.27+ scans every linker input named in #cgo LDFLAGS and rejects an ELF
+# archive whose members carry LLVM's SHT_LLVM_LINKER_OPTIONS section
+# (".linker-options", type 0x6fff4c01):
+#   "disallowed ELF embedded linker options section in #cgo LDFLAGS: ..."
+# clang-20 emits that section into every object of librag_tokenizer_c_api.a
+# (along with .llvm_addrsig, which Go permits), so strip it before any Go
+# build/test links the archive. Removing the section drops no code or symbols;
+# the dependencies it advertises are already listed explicitly in #cgo LDFLAGS
+# (-lstdc++ -lm -lpthread -lpcre2-8).
+# Idempotent: a no-op when the section is absent (gcc-built archives, or an
+# archive already stripped). Linux/ELF only; macOS objects are Mach-O.
+strip_tokenizer_linker_options() {
+    [ "$(uname -s)" = "Linux" ] || return 0
+    local tok_a="$BUILD_DIR/librag_tokenizer_c_api.a"
+    [ -f "$tok_a" ] || return 0
+
+    # Detect before writing so a clean archive stays byte-for-byte untouched,
+    # and a missing objcopy is only fatal when the section is actually present.
+    # Without readelf, fall through to the strip: objcopy treats a section that
+    # is not there as a no-op, so a gcc-built archive stays valid.
+    if command -v readelf >/dev/null 2>&1; then
+        if ! readelf -S "$tok_a" 2>/dev/null | grep -q '\.linker-options'; then
+            return 0
+        fi
+    fi
+
+    local objcopy_bin=""
+    if command -v objcopy >/dev/null 2>&1; then
+        objcopy_bin=objcopy
+    elif command -v llvm-objcopy >/dev/null 2>&1; then
+        objcopy_bin=llvm-objcopy
+    else
+        echo -e "${RED}Error: librag_tokenizer_c_api.a contains .linker-options sections that Go 1.27+ rejects, but neither objcopy nor llvm-objcopy is installed.${NC}" >&2
+        return 1
+    fi
+    "$objcopy_bin" --remove-section=.linker-options "$tok_a"
+    echo -e "${GREEN}✓ Removed LLVM .linker-options sections from librag_tokenizer_c_api.a${NC}"
+}
+
 # Build C++ static library
 build_cpp() {
     print_section "Building C++ static library"
@@ -740,6 +795,8 @@ build_cpp() {
         echo -e "${RED}Error: Failed to build C++ static library${NC}"
         exit 1
     fi
+
+    strip_tokenizer_linker_options
 
     # Rename the tokenizer's bundled re2 symbols into a private namespace so they
     # never collide with onnxruntime's copy of re2 at final link time.
@@ -894,6 +951,12 @@ build_go() {
 setup_cgo_env() {
     detect_target_platform
 
+    # --test/--go reuse the existing librag_tokenizer_c_api.a without rebuilding
+    # the C++ library. --cpp strips the clang-20 .linker-options section right
+    # after make, but a stale archive from an earlier build would still trip
+    # Go 1.27+'s cgo LDFLAGS check, so sanitize it on every path that links it.
+    strip_tokenizer_linker_options
+
     # Controlled auto-download: fill any missing version-keyed native lib from
     # the user cache before resolving individual libs. On an already-provisioned
     # host (the common CI case, where the cache is mounted in) this is a no-op;
@@ -913,22 +976,24 @@ setup_cgo_env() {
 
     # ── pdfium ────────────────────────────────────────────────────────
     check_pdfium_deps || return 1
-    export CGO_LDFLAGS="$CGO_LDFLAGS ${PDFIUM_STATIC_PREFIX}/lib/libpdfium.a"
+    local pdfium_link_dir
+    pdfium_link_dir="$(pdfium_static_link_dir "${PDFIUM_STATIC_PREFIX}/lib" "$TARGET_OS" "${PROJECT_ROOT}/.cache/pdfium")" || return 1
+    export CGO_LDFLAGS="$CGO_LDFLAGS \"${pdfium_link_dir}/libpdfium.a\""
     # Linux: Chromium-built objects use Clang's .eh_frame format which GNU ld
     # cannot merge. Use lld (LLVM linker) which handles them correctly.
     # --allow-multiple-definition: pdf_oxide and office_oxide are both Rust
     # staticlibs that embed the Rust runtime; linking them together produces
     # duplicate rust_eh_personality / compiler-rt builtins. Those duplicates are
     # ABI-IDENTICAL, so merging them is benign.
-    if [ "$(uname -s)" = "Linux" ]; then
+    if [ "$TARGET_OS" = "linux" ]; then
         if ! command -v ld.lld >/dev/null 2>&1; then
             echo -e "${RED}Error: ld.lld not found. Install with: sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld${NC}"
             echo "  lld is required to static-link Chromium-built pdfium (.eh_frame format)"
             return 1
         fi
         export CGO_LDFLAGS="$CGO_LDFLAGS \
-            ${PDFIUM_STATIC_PREFIX}/lib/libc++.a \
-            ${PDFIUM_STATIC_PREFIX}/lib/libc++abi.a \
+            \"${pdfium_link_dir}/libc++.a\" \
+            \"${pdfium_link_dir}/libc++abi.a\" \
             -fuse-ld=lld -Wl,--allow-multiple-definition"
         # The re2 regex-library collision between onnxruntime.a and
         # librag_tokenizer_c_api.a is fixed at the .a level in build_cpp():

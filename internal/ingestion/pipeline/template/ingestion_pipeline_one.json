@@ -53,47 +53,17 @@
                                 "value": ""
                             }
                         },
-                        "doc": {
-                            "suffix": [
-                                "doc"
-                            ]
-                        },
-                        "docx": {
-                            "suffix": [
-                                "docx"
-                            ]
-                        },
-                        "html": {
-                            "suffix": [
-                                "htm",
-                                "html"
-                            ]
-                        },
-                        "markdown": {
-                            "suffix": [
-                                "md",
-                                "markdown",
-                                "mdx"
-                            ]
-                        },
+                        "doc": {},
+                        "docx": {},
+                        "html": {},
+                        "markdown": {},
                         "pdf": {
-                            "parse_method": "DeepDOC",
-                            "suffix": [
-                                "pdf"
-                            ]
+                            "parse_method": "DeepDOC"
                         },
                         "spreadsheet": {
-                            "parse_method": "DeepDOC",
-                            "suffix": [
-                                "xls",
-                                "xlsx"
-                            ]
+                            "parse_method": "DeepDOC"
                         },
-                        "text&code": {
-                            "suffix": [
-                                "txt"
-                            ]
-                        }
+                        "text&code": {}
                     }
                 },
                 "upstream": [

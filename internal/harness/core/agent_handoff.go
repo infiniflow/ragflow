@@ -310,7 +310,7 @@ func GenTransferMessages(ctx context.Context, agentName string) (*schema.Message
 	return msg, toolMsg
 }
 
-// ---- Message ID utilities (ported from ADK internal/message_id.go) ----
+// ---- Message ID utilities ----
 
 const EinoMsgIDKey = "_eino_msg_id"
 

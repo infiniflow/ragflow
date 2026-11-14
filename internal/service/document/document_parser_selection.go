@@ -35,13 +35,16 @@ func dedicatedDocumentParserID(filetype utility.FileType, filename string) strin
 		return "audio"
 	}
 
-	// The presentation and email extensions all classify as FileTypeDOC, so the
-	// name decides which dedicated pipeline owns them.
+	switch utility.GetFileType(filename) {
+	case utility.FileTypePPT, utility.FileTypePPTX:
+		return "presentation"
+	}
+
+	// Remaining presentation and email formats are selected by filename because
+	// their upload category is the shared document bucket.
 	name := strings.ToLower(filename)
 	switch {
-	case strings.HasSuffix(name, ".ppt"),
-		strings.HasSuffix(name, ".pptx"),
-		strings.HasSuffix(name, ".pages"):
+	case strings.HasSuffix(name, ".pages"):
 		return "presentation"
 	case strings.HasSuffix(name, ".msg"),
 		strings.HasSuffix(name, ".eml"):

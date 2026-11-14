@@ -117,6 +117,8 @@ type AddProviderRequest struct {
 }
 
 func (h *ProviderHandler) AddProvider(c *gin.Context) {
+	common.StartOperationLog(c, "create_model_provider")
+	defer common.FinishOperationLog(c)
 
 	var req AddProviderRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -124,6 +126,7 @@ func (h *ProviderHandler) AddProvider(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "provider_id_or_name", req.ProviderName)
 	ctx := c.Request.Context()
 
 	errorCode, err := h.modelProviderService.AddModelProvider(ctx, req.ProviderName)
@@ -136,6 +139,12 @@ func (h *ProviderHandler) AddProvider(c *gin.Context) {
 }
 
 func (h *ProviderHandler) DeleteProvider(c *gin.Context) {
+	common.StartOperationLog(c, "delete_model_provider")
+	defer common.FinishOperationLog(c)
+	if id := c.Param("provider_id_or_name"); id != "" {
+		common.SetOperationResource(c, "provider_id_or_name", id)
+	}
+
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
 		common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
@@ -302,11 +311,13 @@ func FetchProviderModels(ctx context.Context, providerName, apiKey, baseURL, reg
 							legacyMaxTokens = *m.ContextLength
 						}
 						remoteModels = append(remoteModels, map[string]interface{}{
-							"name":           m.Name,
-							"model_types":    m.ModelTypes,
-							"context_length": m.ContextLength,
-							"max_output":     m.MaxOutput,
-							"max_tokens":     legacyMaxTokens,
+							"name":        m.Name,
+							"model_types": m.ModelTypes,
+							// Internal merge hint, removed by mergeProviderModels.
+							"model_types_inferred": m.ModelTypesInferred,
+							"context_length":       m.ContextLength,
+							"max_output":           m.MaxOutput,
+							"max_tokens":           legacyMaxTokens,
 						})
 					}
 				} else if bedrockAPIKeyAuth {
@@ -369,7 +380,8 @@ func FetchProviderModels(ctx context.Context, providerName, apiKey, baseURL, reg
 // wins, so a model already saved under the catalog's name keeps it.
 //
 // Remote entries override the catalog entry, with two exceptions: a remote
-// entry that carries no model types inherits the catalog's types, and the
+// entry that carries no model types, or types the driver only guessed from the
+// model name (`model_types_inferred`), inherits the catalog's types; and the
 // legacy `max_tokens` alias remains the input/context window. `max_output` is
 // kept as a separate provider generation ceiling.
 func mergeProviderModels(staticModels, remoteModels []map[string]interface{}) []map[string]interface{} {
@@ -401,8 +413,10 @@ func mergeProviderModels(staticModels, remoteModels []map[string]interface{}) []
 			continue
 		}
 		name = strings.TrimSpace(name)
+		inferred, _ := m["model_types_inferred"].(bool)
+		delete(m, "model_types_inferred")
 		if existing, exists := merged[key]; exists {
-			if len(providerModelMapTypes(m)) == 0 && len(providerModelMapTypes(existing)) > 0 {
+			if (len(providerModelMapTypes(m)) == 0 || inferred) && len(providerModelMapTypes(existing)) > 0 {
 				m["model_types"] = existing["model_types"]
 			}
 			if maxTokens, ok := existing["max_tokens"]; ok && maxTokens != nil {
@@ -494,6 +508,12 @@ func (h *ProviderHandler) ShowModel(c *gin.Context) {
 }
 
 func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
+	common.StartOperationLog(c, "create_provider_instance")
+	defer common.FinishOperationLog(c)
+	if id := c.Param("provider_id_or_name"); id != "" {
+		common.SetOperationResource(c, "provider_id_or_name", id)
+	}
+
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
 		common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
@@ -512,6 +532,7 @@ func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "instance_id_or_name", req.InstanceName)
 	apiKey := service.NormalizeAPIKey(req.APIKey)
 
 	// If the request body only contains "instance_name", create a name-only
@@ -603,6 +624,12 @@ func (h *ProviderHandler) ShowInstanceBalance(c *gin.Context) {
 }
 
 func (h *ProviderHandler) CheckConnection(c *gin.Context) {
+	common.StartOperationLog(c, "test_provider_connection")
+	defer common.FinishOperationLog(c)
+	if id := c.Param("provider_id_or_name"); id != "" {
+		common.SetOperationResource(c, "provider_id_or_name", id)
+	}
+
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
 		common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
@@ -616,6 +643,9 @@ func (h *ProviderHandler) CheckConnection(c *gin.Context) {
 		return
 	}
 
+	if req.InstanceID != "" {
+		common.SetOperationResource(c, "instance_id", req.InstanceID)
+	}
 	errCode, err := h.modelProviderService.CheckConnection(ctx, providerName, req)
 	if err != nil {
 		common.RespondError(c, errCode, err.Error())
@@ -626,6 +656,15 @@ func (h *ProviderHandler) CheckConnection(c *gin.Context) {
 }
 
 func (h *ProviderHandler) CheckInstanceConnection(c *gin.Context) {
+	common.StartOperationLog(c, "test_provider_connection")
+	defer common.FinishOperationLog(c)
+	if id := c.Param("provider_id_or_name"); id != "" {
+		common.SetOperationResource(c, "provider_id_or_name", id)
+	}
+	if id := c.Param("instance_id_or_name"); id != "" {
+		common.SetOperationResource(c, "instance_id_or_name", id)
+	}
+
 	ctx := c.Request.Context()
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
@@ -645,6 +684,7 @@ func (h *ProviderHandler) CheckInstanceConnection(c *gin.Context) {
 	}
 
 	instanceID, _ := instanceInfo["id"].(string)
+	common.SetOperationResource(c, "instance_id", instanceID)
 
 	errorCode, err := h.modelProviderService.CheckConnection(ctx, providerName, service.CheckConnectionRequest{
 		UseSavedCredentials: true,
@@ -711,6 +751,15 @@ func (h *ProviderHandler) ShowTask(c *gin.Context) {
 }
 
 func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
+	common.StartOperationLog(c, "update_provider_instance")
+	defer common.FinishOperationLog(c)
+	if id := c.Param("provider_id_or_name"); id != "" {
+		common.SetOperationResource(c, "provider_id_or_name", id)
+	}
+	if id := c.Param("instance_id_or_name"); id != "" {
+		common.SetOperationResource(c, "instance_id_or_name", id)
+	}
+
 	ctx := c.Request.Context()
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
@@ -740,6 +789,12 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 }
 
 func (h *ProviderHandler) DropProviderInstance(c *gin.Context) {
+	common.StartOperationLog(c, "delete_provider_instances")
+	defer common.FinishOperationLog(c)
+	if id := c.Param("provider_id_or_name"); id != "" {
+		common.SetOperationResource(c, "provider_id_or_name", id)
+	}
+
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
 		common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
@@ -751,6 +806,7 @@ func (h *ProviderHandler) DropProviderInstance(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "instance_ids_or_names", req.Instances)
 	ctx := c.Request.Context()
 
 	code, err := h.modelProviderService.DropProviderInstances(ctx, providerName, req.Instances)
@@ -804,6 +860,15 @@ func (h *ProviderHandler) ListInstanceModels(c *gin.Context) {
 }
 
 func (h *ProviderHandler) AlterModel(c *gin.Context) {
+	common.StartOperationLog(c, "update_provider_model")
+	defer common.FinishOperationLog(c)
+	if id := c.Param("provider_id_or_name"); id != "" {
+		common.SetOperationResource(c, "provider_id_or_name", id)
+	}
+	if id := c.Param("instance_id_or_name"); id != "" {
+		common.SetOperationResource(c, "instance_id_or_name", id)
+	}
+
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
 		common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
@@ -826,6 +891,12 @@ func (h *ProviderHandler) AlterModel(c *gin.Context) {
 	modelName = strings.TrimSpace(modelName)
 	modelID := strings.TrimSpace(req.ModelID)
 
+	if modelName != "" {
+		common.SetOperationResource(c, "model_name", modelName)
+	}
+	if modelID != "" {
+		common.SetOperationResource(c, "model_id", modelID)
+	}
 	if modelName == "" && modelID == "" {
 		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "model_name or model_id is required")
 		return
@@ -887,6 +958,15 @@ func prepareProviderInstance(providerName, instanceName, reqProviderName, reqIns
 }
 
 func (h *ProviderHandler) AddModel(c *gin.Context) {
+	common.StartOperationLog(c, "add_provider_model")
+	defer common.FinishOperationLog(c)
+	if id := c.Param("provider_id_or_name"); id != "" {
+		common.SetOperationResource(c, "provider_id_or_name", id)
+	}
+	if id := c.Param("instance_id_or_name"); id != "" {
+		common.SetOperationResource(c, "instance_id_or_name", id)
+	}
+
 	var req service.AddModelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		println("JSON bind error: %v (type: %T)", err, err)
@@ -907,6 +987,7 @@ func (h *ProviderHandler) AddModel(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "model_name", req.ModelName)
 	ctx := c.Request.Context()
 
 	code, err := h.modelProviderService.AddModel(ctx, &req)
@@ -919,6 +1000,15 @@ func (h *ProviderHandler) AddModel(c *gin.Context) {
 }
 
 func (h *ProviderHandler) DropInstanceModels(c *gin.Context) {
+	common.StartOperationLog(c, "delete_provider_models")
+	defer common.FinishOperationLog(c)
+	if id := c.Param("provider_id_or_name"); id != "" {
+		common.SetOperationResource(c, "provider_id_or_name", id)
+	}
+	if id := c.Param("instance_id_or_name"); id != "" {
+		common.SetOperationResource(c, "instance_id_or_name", id)
+	}
+
 	providerName := c.Param("provider_id_or_name")
 	if providerName == "" {
 		common.Respond(c, http.StatusBadRequest, 400, nil, "Provider name is required")
@@ -940,6 +1030,7 @@ func (h *ProviderHandler) DropInstanceModels(c *gin.Context) {
 		return
 	}
 
+	common.SetOperationResource(c, "model_names", req.ModelNames)
 	ctx := c.Request.Context()
 
 	code, err := h.modelProviderService.DropInstanceModels(ctx, providerName, instanceName, req.ModelNames)

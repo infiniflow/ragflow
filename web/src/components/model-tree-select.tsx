@@ -25,6 +25,7 @@ import {
 } from '@/components/ui/form';
 import { ModelTypeProviderMap } from '@/constants/llm';
 import { useFetchAllAddedModels } from '@/hooks/use-llm-request';
+import { useFetchTenantInfo } from '@/hooks/use-user-setting-request';
 import { IAddedModel } from '@/interfaces/database/llm';
 import { buildModelValue, getRealModelName } from '@/utils/llm-util';
 import { forwardRef, useCallback, useEffect, useMemo } from 'react';
@@ -59,6 +60,7 @@ function filterAddedModels(
 export function buildModelTree(
   allModels: IAddedModel[],
   modelTypes: string[],
+  tenantId?: string,
   renderLeafLabel?: (
     node: TreeSelectNode,
     model: IAddedModel,
@@ -69,7 +71,6 @@ export function buildModelTree(
 
   const seenLeafIds = new Set<string>();
   const providerMap = new Map<string, Map<string, IAddedModel[]>>();
-
   for (const model of filtered) {
     let instances = providerMap.get(model.provider_name);
     if (!instances) {
@@ -91,6 +92,7 @@ export function buildModelTree(
       id: `${provider}||${instance}`,
       title: instance,
       children: models.reduce<TreeSelectNode[]>((acc, m) => {
+        const mTenantId = m.tenant_id;
         const modelName = getRealModelName(m.name);
 
         const id =
@@ -114,12 +116,19 @@ export function buildModelTree(
                 imgClass="size-[22px] flex-shrink-0"
               />
               <span className="truncate">{modelName}</span>
+              {m.tenant_name && mTenantId !== tenantId && (
+                <span className="text-text-secondary bg-bg-card rounded-sm px-1 truncate flex-shrink-0">
+                  {m.tenant_name}
+                </span>
+              )}
             </span>
           ),
           data: {
             provider_name: m.provider_name,
             instance_name: m.instance_name,
             model_name: modelName,
+            tenant_id: m.tenant_id,
+            tenant_name: m.tenant_name,
           },
         };
         if (renderLeafLabel) {
@@ -144,6 +153,12 @@ export interface UseModelTreeOptions {
     model: IAddedModel,
   ) => React.ReactNode;
   ownerTenantId?: string;
+  /**
+   * Set where the tenant endpoint is not part of the page's contract (e.g.
+   * the admin gateway, which serves every tenant). Tenant labels are then
+   * not rendered.
+   */
+  skipTenantInfo?: boolean;
 }
 
 /**
@@ -160,12 +175,14 @@ export function useModelTree({
   providers,
   renderLeafLabel,
   ownerTenantId,
+  skipTenantInfo = false,
 }: UseModelTreeOptions = {}) {
   const {
     data: allAddedModels,
     isFetched,
     isError,
   } = useFetchAllAddedModels(undefined, ownerTenantId);
+  const { data: tenantInfo } = useFetchTenantInfo(!skipTenantInfo);
 
   const models = useMemo(
     () => filterAddedModels(allAddedModels, modelTypes, providers),
@@ -174,8 +191,20 @@ export function useModelTree({
 
   const treeData = useMemo(
     () =>
-      buildModelTree(allAddedModels, modelTypes, renderLeafLabel, providers),
-    [allAddedModels, modelTypes, renderLeafLabel, providers],
+      buildModelTree(
+        allAddedModels,
+        modelTypes,
+        tenantInfo?.tenant_id,
+        renderLeafLabel,
+        providers,
+      ),
+    [
+      allAddedModels,
+      modelTypes,
+      tenantInfo?.tenant_id,
+      renderLeafLabel,
+      providers,
+    ],
   );
 
   return { treeData, models, allAddedModels, isFetched, isError };
@@ -199,6 +228,7 @@ export interface ModelTreeSelectProps {
   renderSelected?: (node: TreeSelectNode | undefined) => React.ReactNode;
   testId?: string;
   ownerTenantId?: string;
+  skipTenantInfo?: boolean;
 }
 
 export const ModelTreeSelect = forwardRef<
@@ -218,6 +248,7 @@ export const ModelTreeSelect = forwardRef<
     renderSelected,
     testId,
     ownerTenantId,
+    skipTenantInfo = false,
   },
   ref,
 ) {
@@ -241,6 +272,7 @@ export const ModelTreeSelect = forwardRef<
     modelTypes,
     providers: allowedProviders,
     ownerTenantId,
+    skipTenantInfo,
   });
 
   // Backward compatibility: map legacy concatenated ids
@@ -273,7 +305,7 @@ export const ModelTreeSelect = forwardRef<
 
   const defaultRenderSelected = useCallback(
     (node: TreeSelectNode | undefined) => {
-      if (!node?.data) return null;
+      if (!node?.data) return <span className="truncate">{value}</span>;
       return (
         <LLMLabel
           value={buildModelValue({
@@ -284,7 +316,7 @@ export const ModelTreeSelect = forwardRef<
         />
       );
     },
-    [],
+    [value],
   );
 
   // The persisted model no longer matches any added model (e.g. it was

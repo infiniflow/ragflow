@@ -634,7 +634,6 @@ var overriddenFamilyKeys = map[string]bool{
 // questions (this one, "is the template's value safe to lose"; that one, "may
 // the value the migration writes differ from the template's").
 var inertFamilyKeys = map[string]string{
-	"suffix":       "no Go reader; file routing uses the document's own suffix column, not the family list",
 	"pages":        "the only template that bakes it lists every page ([[1,100000]]), which is what an absent pages means",
 	"parse_method": "a written pdf family always restates it; for the spreadsheet family defaultSetups() re-derives the same deepdoc engine",
 	"column_mode":  "the table template bakes auto, which is what an absent column_mode means to indexdoc's resolveTableColumnConfig",

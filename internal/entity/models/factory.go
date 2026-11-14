@@ -92,6 +92,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewCheaperInferenceModel(baseURL, urlSuffix), nil
 	case "cohere":
 		return NewCoHereModel(baseURL, urlSuffix), nil
+	case "aimlapi.com":
+		return NewAimlapiModel(baseURL, urlSuffix), nil
 	case "cometapi":
 		return NewCometAPIModel(baseURL, urlSuffix), nil
 	case "daoxe":
@@ -199,6 +201,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewAnonRouterModel(baseURL, urlSuffix), nil
 	case "api-route":
 		return NewApiRouteModel(baseURL, urlSuffix), nil
+	case "shengsuanyun":
+		return NewShengsuanyunModel(baseURL, urlSuffix), nil
 	case "opper":
 		return NewOpperModel(baseURL, urlSuffix), nil
 	case "empiriolabs ai":
@@ -224,6 +228,12 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewWallyModel(baseURL, urlSuffix), nil
 	case "synap":
 		return NewSynapModel(baseURL, urlSuffix), nil
+	case "wiro ai":
+		return NewWiroModel(baseURL, urlSuffix), nil
+	case "crusoe":
+		return NewCrusoeModel(baseURL, urlSuffix), nil
+	case "hopbase":
+		return NewHopBaseModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

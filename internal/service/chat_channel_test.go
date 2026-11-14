@@ -25,7 +25,7 @@ func setupChatChannelServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err = db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.UserCanvas{}, &entity.User{}, &entity.UserTenant{}); err != nil {
+	if err = db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.UserCanvas{}, &entity.User{}, &entity.Tenant{}, &entity.UserTenant{}); err != nil {
 		t.Fatalf("failed to migrate test schema: %v", err)
 	}
 
@@ -71,6 +71,10 @@ func createServiceTestChannel(t *testing.T, db *gorm.DB, channel *entity.ChatCha
 
 func createServiceTestMembership(t *testing.T, db *gorm.DB, userID, tenantID string) {
 	t.Helper()
+	tenant := entity.Tenant{ID: tenantID, ParserIDs: ""}
+	if err := db.Where("id = ?", tenantID).FirstOrCreate(&tenant).Error; err != nil {
+		t.Fatalf("failed to create Tenant: %v", err)
+	}
 
 	status := "1"
 	member := &entity.UserTenant{

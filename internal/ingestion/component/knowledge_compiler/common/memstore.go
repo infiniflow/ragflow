@@ -16,7 +16,7 @@ type Hit struct {
 }
 
 // MemStore is an in-memory product store with exact-cosine TopK retrieval.
-// It is the single source of truth for in-run dedup (replacing Python's ES
+// It is the single source of truth for in-run dedup (replacing ES
 // KNN over the current run's products).
 //
 // Vectors are stored as one contiguous float64 row-major matrix (matDense) so
@@ -60,7 +60,7 @@ const (
 // qualifies), whether to add, drop, or merge the incoming product. When it
 // returns KeepMerge, the returned Product replaces the existing entry — its
 // ID is forced to the existing entry's ID so merges preserve identity
-// (mirrors Python's _struct_rebuild_doc_storage_doc preserve_id=True).
+// (mirrors _struct_rebuild_doc_storage_doc preserve_id=True)
 type DedupCallback func(existing Product, score float64) (KeepAction, Product, error)
 
 // Add appends a product and its vector to the store.
@@ -111,7 +111,7 @@ func (m *MemStore) DedupeAdd(row Product, threshold float64, cb DedupCallback) (
 			m.addLocked(row)
 			return KeepAdd, nil
 		}
-		// Merges preserve the existing entry's identity (Python preserve_id).
+		// Merges preserve the existing entry's identity ( preserve_id)
 		replacement.ID = m.items[resolvedIdx].ID
 		m.items[resolvedIdx] = replacement
 		m.replaceMatLocked(resolvedIdx, replacement.Vector)
@@ -268,7 +268,7 @@ func (m *MemStore) Snapshot() []Product {
 // MergeSourceChunkIDs unions the given chunk ids into the source_chunk_ids
 // list of the entry identified by id. Used by structure's dedup path to fold
 // a dropped duplicate's provenance into the surviving canonical entity
-// (mirrors Python's _struct_merge_graph_entities). No-op when id is absent.
+// (mirrors _struct_merge_graph_entities). No-op when id is absent
 func (m *MemStore) MergeSourceChunkIDs(id string, chunkIDs []string) {
 	if id == "" || len(chunkIDs) == 0 {
 		return

@@ -752,15 +752,8 @@ var _ = func() bool {
 // (api/apps/restful_apis/agent_api.py:74-100). ErrAgentNotOwner is the
 // owner-level sentinel used by DeleteAgent only.
 //
-// v3.5.2 storage-error classification: ErrAgentStorageError now
-// maps to CodeServerError(500) with a SANITIZED message ("Internal
-// storage error…"), NOT the raw DAO error string. Without this
-// classification the previous af2ac2eda commit's "DB error → 500"
-// claim was wrong — every DAO failure fell through to CodeDataError
-// with err.Error(), potentially leaking DSNs / table names / gorm
-// stack frames. The wrapped case below also pins that errors.Is
-// finds the sentinel through fmt.Errorf("...: %w: %w", err, sentinel)
-// (Go 1.20+ multi-wrap).
+// Storage failures use a generic message even when a wrapped cause contains
+// database diagnostics; errors.Is must still find the classification sentinel.
 func TestMapAgentError(t *testing.T) {
 	wrappedStorage := fmt.Errorf("RunAgent: load version %q: underlying db: %w: %w",
 		"v-bad", errors.New("connection refused"), service.ErrAgentStorageError)

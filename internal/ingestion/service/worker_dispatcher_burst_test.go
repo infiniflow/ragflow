@@ -101,7 +101,13 @@ func TestWorkerDispatcherBurstCompletesEveryTask(t *testing.T) {
 	// pending. A buffered dispatcher can Nack this burst until MaxDeliver.
 	releaseFirst()
 
-	deadline := time.Now().Add(10 * time.Second)
+	// The drain walks the configured lanes in priority order. When more than one
+	// lane is configured, the sole worker pays one empty-lane probe
+	// (tierFetchWindow = 1s) per higher lane on every pull, so a burst of
+	// lower-lane tasks can finish far slower than the single-lane configuration.
+	// The window scales with the burst size so the test stays green across
+	// configurations without masking the "every task completes" assertion.
+	deadline := time.Now().Add(time.Duration(taskCount) * 3 * time.Second)
 	for time.Now().Before(deadline) {
 		var completed int64
 		if err := db.Model(&entity.IngestionTask{}).

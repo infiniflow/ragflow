@@ -57,8 +57,26 @@ func selectParser(fileType utility.FileType, data []byte, textOnly bool) (ParseR
 	return p, fileType, nil
 }
 
+// parserFactories holds extra FileType→parser factory mappings registered by
+// editions. Lookups consult this map before the built-in switch so an edition
+// can add parsers for its own file types without the community switch changing.
+var parserFactories = map[utility.FileType]func(textOnly bool) (ParseResultProducer, error){}
+
+// RegisterParserFactory registers a parser factory for a FileType not handled by
+// the community switch. Enterprise editions call this from init() to inject
+// parsers for their extra file types.
+func RegisterParserFactory(ft utility.FileType, factory func(textOnly bool) (ParseResultProducer, error)) {
+	if ft == "" {
+		return
+	}
+	parserFactories[ft] = factory
+}
+
 // newParser owns the format routes for both ingestion and text extraction.
 func newParser(fileType utility.FileType, textOnly bool) (ParseResultProducer, error) {
+	if factory, ok := parserFactories[fileType]; ok {
+		return factory(textOnly)
+	}
 	switch fileType {
 	case utility.FileTypePPTX:
 		p := NewPPTXParser()
