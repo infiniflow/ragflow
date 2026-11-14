@@ -519,3 +519,28 @@ func TestIssue22340_ConfiguredEndpointsSurviveReplacement(t *testing.T) {
 		})
 	}
 }
+
+// TestIssue22340_DescriptionMatchingEndpointValueNotOverwritten verifies that unrelated fields
+// (like description) whose existing value happens to match an endpoint name (e.g. description="A")
+// are not treated as endpoint aliases and are not overwritten by applyMergeInvariants.
+func TestIssue22340_DescriptionMatchingEndpointValueNotOverwritten(t *testing.T) {
+	existingPayload := map[string]any{"left": "A", "right": "B", "description": "A", "type": "linked"}
+	cfg := CompileConfig{ParserConfig: map[string]any{"identifiers": map[string]any{"relation_members": map[string]any{"source": "left", "target": "right"}}}}
+	rows, err := buildRows(context.Background(), common.Deps{Embed: constEmbedder{dim: 4}}, cfg, nil, []map[string]any{existingPayload}, nil)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("buildRows: %v rows=%d", err, len(rows))
+	}
+	srcField, tgtField := RelationMemberFields(cfg.ParserConfig)
+	d := LLMMergeDecider{Embed: constEmbedder{dim: 4}}
+	d.SetRelationMembers(srcField, tgtField)
+
+	mergedInput := map[string]any{"left": "A", "right": "B", "type": "linked", "description": "richer merged description"}
+	out, err := d.BuildReplacement(context.Background(), rows[0], rows[0], mergedInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outPayload := parsePayload(out.Content)
+	if outPayload["description"] != "richer merged description" {
+		t.Errorf("unrelated field overwritten by matching endpoint value: got %q, want %q", outPayload["description"], "richer merged description")
+	}
+}
