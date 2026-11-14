@@ -18,6 +18,30 @@ import { FileMimeType } from '@/constants/common';
 import { UploadFile } from '@/interfaces/antd-compat';
 import fileManagerService from '@/services/file-manager-service';
 
+// Extract the filename from a Content-Disposition header value, or return
+// undefined when the header is missing/malformed.
+export const parseContentDispositionFilename = (
+  header?: string,
+): string | undefined => {
+  if (!header) return undefined;
+  const extended = /(?:^|;)\s*filename\*\s*=\s*(?:"([^"]*)"|([^;\r\n]*))/i.exec(
+    header,
+  );
+  const encoded = /^utf-8'[^']*'(.*)$/i.exec(
+    (extended?.[1] ?? extended?.[2] ?? '').trim(),
+  );
+  const plain = /(?:^|;)\s*filename\s*=\s*(?:"([^"]*)"|([^;\r\n]*))/i.exec(
+    header,
+  );
+  const fallback = (plain?.[1] ?? plain?.[2])?.trim() || undefined;
+  if (!encoded) return fallback;
+  try {
+    return decodeURIComponent(encoded[1]).trim() || fallback;
+  } catch {
+    return fallback;
+  }
+};
+
 export const transformFile2Base64 = (
   val: any,
   imgSize?: number,
