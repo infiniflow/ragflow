@@ -219,8 +219,10 @@ func (s *FileService) UploadInfos(ctx context.Context, files []*multipart.FileHe
 			return nil, fmt.Errorf("failed to read file data: %w", readErr)
 		}
 
+		// Let the normalizer recognize Markdown before a content sniff treats
+		// a leading HTML tag as the type of the entire file.
 		contentType := fileHeader.Header.Get("Content-Type")
-		if contentType == "" {
+		if contentType == "" && utility.GetFileType(filename) != utility.FileTypeMarkdown {
 			contentType = http.DetectContentType(data)
 		}
 		filename, contentType, data = utility.NormalizeUploadInfoContent(filename, contentType, data)
