@@ -30,6 +30,7 @@
 package runtime
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -220,8 +221,21 @@ func (s *CanvasState) MarshalJSON() ([]byte, error) {
 // pointer (nodes may poll it concurrently with unmarshal completion).
 func (s *CanvasState) UnmarshalJSON(b []byte) error {
 	var snap canvasStateJSON
-	if err := json.Unmarshal(b, &snap); err != nil {
+	dec := json.NewDecoder(bytes.NewReader(b))
+	dec.UseNumber()
+	if err := dec.Decode(&snap); err != nil {
 		return err
+	}
+	if len(bytes.TrimSpace(b[dec.InputOffset():])) != 0 {
+		return fmt.Errorf("canvas state: unexpected data after JSON value")
+	}
+	// Keep the historical float64 representation for ordinary numbers: several
+	// canvas components read them directly. Exact integer IDs outside the safe
+	// float64 range must remain json.Number, even inside tool output arrays.
+	for _, namespace := range []any{snap.Outputs, snap.Sys, snap.Env, snap.History, snap.Memory, snap.Retrieval, snap.Globals} {
+		if _, err := restoreCheckpointNumbers(namespace); err != nil {
+			return err
+		}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -242,6 +256,54 @@ func (s *CanvasState) UnmarshalJSON(b []byte) error {
 	s.RunID = snap.RunID
 	s.SessionID = snap.SessionID
 	return nil
+}
+
+// restoreCheckpointNumbers normalizes freshly decoded dynamic fields in place.
+// The checkpoint wire format is unchanged: json.Number still encodes as a number.
+func restoreCheckpointNumbers(value any) (any, error) {
+	switch v := value.(type) {
+	case json.Number:
+		const maxSafeInteger = "9007199254740991" // 2^53 - 1
+		magnitude := strings.TrimPrefix(v.String(), "-")
+		if !strings.ContainsAny(magnitude, ".eE") &&
+			(len(magnitude) > len(maxSafeInteger) || len(magnitude) == len(maxSafeInteger) && magnitude > maxSafeInteger) {
+			return v, nil
+		}
+		number, err := v.Float64()
+		if err != nil {
+			return nil, fmt.Errorf("canvas state: decode number %q: %w", v, err)
+		}
+		return number, nil
+	case map[string]any:
+		for key, item := range v {
+			normalized, err := restoreCheckpointNumbers(item)
+			if err != nil {
+				return nil, err
+			}
+			v[key] = normalized
+		}
+	case []any:
+		for i, item := range v {
+			normalized, err := restoreCheckpointNumbers(item)
+			if err != nil {
+				return nil, err
+			}
+			v[i] = normalized
+		}
+	case map[string]map[string]any:
+		for _, item := range v {
+			if _, err := restoreCheckpointNumbers(item); err != nil {
+				return nil, err
+			}
+		}
+	case []map[string]any:
+		for _, item := range v {
+			if _, err := restoreCheckpointNumbers(item); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return value, nil
 }
 
 // GetVar resolves a variable reference to its current value.
