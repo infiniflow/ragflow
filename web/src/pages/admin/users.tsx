@@ -1,3 +1,4 @@
+import { useDebounce } from 'ahooks';
 import { useContext, useLayoutEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router';
@@ -6,9 +7,6 @@ import {
   createColumnHelper,
   flexRender,
   getCoreRowModel,
-  getFilteredRowModel,
-  getPaginationRowModel,
-  getSortedRowModel,
   useReactTable,
 } from '@tanstack/react-table';
 
@@ -73,6 +71,7 @@ import useChangePasswordForm from './forms/change-password-form';
 import useCreateUserForm from './forms/user-form';
 
 import {
+  type AdminUserListParams,
   createUser,
   deleteUser,
   grantSuperuser,
@@ -82,12 +81,7 @@ import {
   updateUserStatus,
 } from '@/services/admin-service';
 
-import {
-  createColumnFilterFn,
-  createFuzzySearchFn,
-  EMPTY_DATA,
-  parseBooleanish,
-} from './utils';
+import { EMPTY_DATA, parseBooleanish } from './utils';
 
 import {
   Select,
@@ -100,10 +94,11 @@ import EnterpriseFeature from './components/enterprise-feature';
 import { CurrentUserInfoContext } from './layouts/root-layout';
 
 const columnHelper = createColumnHelper<AdminService.ListUsersItem>();
-const globalFilterFn = createFuzzySearchFn<AdminService.ListUsersItem>([
-  'email',
-  'nickname',
-]);
+const AdminUserKeys = {
+  all: ['admin/listUsers'] as const,
+  list: (params: AdminUserListParams) =>
+    [...AdminUserKeys.all, params] as const,
+};
 
 const STATUS_FILTER_OPTIONS = [
   { value: '', label: 'admin.all' },
@@ -127,19 +122,50 @@ function AdminUserManagement() {
   const changePasswordForm = useChangePasswordForm();
   const createUserForm = useCreateUserForm();
 
-  const { data: usersList } = useQuery({
-    queryKey: ['admin/listUsers'],
-    queryFn: async () => (await listUsers()).data.data,
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 10 });
+  const [keyword, setKeyword] = useState('');
+  const [status, setStatus] = useState('');
+  const debouncedKeyword = useDebounce(keyword, { wait: 300 });
+  const params: AdminUserListParams = {
+    page: pagination.pageIndex + 1,
+    page_size: pagination.pageSize,
+    keyword: debouncedKeyword,
+    status,
+    order: 'create_time',
+    sort: 'desc',
+  };
+  const { data: usersPage, isPlaceholderData } = useQuery({
+    queryKey: AdminUserKeys.list(params),
+    queryFn: async () => (await listUsers(params)).data,
     retry: false,
     placeholderData: keepPreviousData,
   });
+  const usersList = usersPage?.data;
+  const total = usersPage?.total ?? 0;
+
+  function handleStatusChange(value: string) {
+    setStatus(value);
+    setPagination((current) => ({ ...current, pageIndex: 0 }));
+  }
+
+  function handleKeywordChange(event: React.ChangeEvent<HTMLInputElement>) {
+    setKeyword(event.target.value);
+    setPagination((current) => ({ ...current, pageIndex: 0 }));
+  }
+
+  function handlePaginationChange(page: number, pageSize: number) {
+    setPagination((current) => ({
+      pageIndex: current.pageSize === pageSize ? page - 1 : 0,
+      pageSize,
+    }));
+  }
 
   // Delete user mutation
   const deleteUserMutation = useMutation({
     mutationFn: deleteUser,
     onSuccess: () => {
       // message.success(t('admin.userDeletedSuccessfully'));
-      queryClient.invalidateQueries({ queryKey: ['admin/listUsers'] });
+      queryClient.invalidateQueries({ queryKey: AdminUserKeys.all });
       setDeleteModalOpen(false);
       setUserToMakeAction(null);
     },
@@ -171,7 +197,7 @@ function AdminUserManagement() {
     },
     onSuccess: () => {
       // message.success(t('admin.userCreatedSuccessfully'));
-      queryClient.invalidateQueries({ queryKey: ['admin/listUsers'] });
+      queryClient.invalidateQueries({ queryKey: AdminUserKeys.all });
       setCreateUserModalOpen(false);
       createUserForm.form.reset();
     },
@@ -189,7 +215,7 @@ function AdminUserManagement() {
       return type === 'grant' ? grantSuperuser(email) : revokeSuperuser(email);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin/listUsers'] });
+      queryClient.invalidateQueries({ queryKey: AdminUserKeys.all });
     },
     retry: false,
   });
@@ -199,7 +225,7 @@ function AdminUserManagement() {
     mutationFn: (data: { email: string; isActive: boolean }) =>
       updateUserStatus(data.email, data.isActive ? 'on' : 'off'),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['admin/listUsers'] });
+      queryClient.invalidateQueries({ queryKey: AdminUserKeys.all });
     },
     retry: false,
   });
@@ -266,14 +292,6 @@ function AdminUserManagement() {
             </Select>
           );
         },
-        filterFn: createColumnFilterFn(
-          (row, id, filterValue) => row.getValue(id) === filterValue,
-          {
-            autoRemove: (v) => !v,
-            resolveFilterValue: (v) =>
-              v ? (v === 'active' ? '1' : '0') : null,
-          },
-        ),
       }),
 
       columnHelper.accessor('is_superuser', {
@@ -398,21 +416,20 @@ function AdminUserManagement() {
     data: orderedUsersList,
     columns: columnDefs,
 
-    globalFilterFn,
-
     getCoreRowModel: getCoreRowModel(),
-    getFilteredRowModel: getFilteredRowModel(),
-    getSortedRowModel: getSortedRowModel(),
-    getPaginationRowModel: getPaginationRowModel(),
-
-    autoResetPageIndex: false,
+    state: { pagination },
+    onPaginationChange: setPagination,
+    rowCount: total,
+    manualPagination: true,
   });
 
   useLayoutEffect(() => {
-    if (table.getState().pagination.pageIndex > table.getPageCount()) {
-      table.setPageIndex(Math.max(0, table.getPageCount() - 1));
+    if (!usersPage || isPlaceholderData) return;
+    const lastPage = Math.max(0, Math.ceil(total / pagination.pageSize) - 1);
+    if (pagination.pageIndex > lastPage) {
+      setPagination((current) => ({ ...current, pageIndex: lastPage }));
     }
-  }, [usersList, table]);
+  }, [usersPage, isPlaceholderData, total, pagination]);
 
   return (
     <>
@@ -426,7 +443,11 @@ function AdminUserManagement() {
             <div className="ml-auto flex justify-end gap-4">
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button size="icon-lg" variant="outline">
+                  <Button
+                    aria-label={t('admin.status')}
+                    size="icon-lg"
+                    variant="outline"
+                  >
                     <LucideFilter className="size-4" />
                   </Button>
                 </PopoverTrigger>
@@ -440,14 +461,8 @@ function AdminUserManagement() {
                       <div className="font-bold mb-3">{t('admin.status')}</div>
 
                       <RadioGroup
-                        value={
-                          (table
-                            .getColumn('is_active')
-                            ?.getFilterValue() as string) ?? ''
-                        }
-                        onValueChange={(value) =>
-                          table.getColumn('is_active')?.setFilterValue(value)
-                        }
+                        value={status}
+                        onValueChange={handleStatusChange}
                       >
                         {STATUS_FILTER_OPTIONS.map(({ label, value }) => (
                           <Label
@@ -469,7 +484,7 @@ function AdminUserManagement() {
                     <Button
                       variant="outline"
                       className="dark:bg-bg-input dark:border-border-button text-text-secondary"
-                      onClick={() => table.resetColumnFilters()}
+                      onClick={() => handleStatusChange('')}
                     >
                       {t('admin.reset')}
                     </Button>
@@ -483,8 +498,8 @@ function AdminUserManagement() {
                 <Input
                   className="pl-10 h-10 bg-bg-input border-border-button"
                   placeholder={t('header.search')}
-                  value={table.getState().globalFilter}
-                  onChange={(e) => table.setGlobalFilter(e.target.value)}
+                  value={keyword}
+                  onChange={handleKeywordChange}
                 />
               </div>
 
@@ -553,15 +568,10 @@ function AdminUserManagement() {
 
           <CardFooter className="flex items-center justify-end">
             <RAGFlowPagination
-              total={table.getFilteredRowModel().rows.length}
-              current={table.getState().pagination.pageIndex + 1}
-              pageSize={table.getState().pagination.pageSize}
-              onChange={(page, pageSize) => {
-                table.setPagination({
-                  pageIndex: page - 1,
-                  pageSize,
-                });
-              }}
+              total={total}
+              current={pagination.pageIndex + 1}
+              pageSize={pagination.pageSize}
+              onChange={handlePaginationChange}
             />
           </CardFooter>
         </ScrollArea>
