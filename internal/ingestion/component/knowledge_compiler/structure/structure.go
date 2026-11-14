@@ -232,7 +232,9 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// ---- DEDUP ----
 	// Sequential in batch order so merge outcomes are deterministic and match
 	// _struct_local_dedup (which folds docs in list order)
+	srcField, tgtField := RelationMemberFields(cfg.ParserConfig)
 	decider := NewLLMMergeDecider(deps.Chat, llmID, deps.Embed, param.SimilarityThreshold)
+	decider.SetRelationMembers(srcField, tgtField)
 	deduper := NewGroupedDeduper(decider)
 	dedupDone := remainingWindow.Sub(1, 4).Counter(ctx, rowCount)
 	for _, rows := range perBatch {
