@@ -286,12 +286,13 @@ func TestIssue22340_MergeInvariantsAndRefreshMeta(t *testing.T) {
 		Content: `{"from_entity": "Pump-001", "to_entity": "Bearing-001", "relation": "uses"}`,
 	}
 	mergedPayload := map[string]any{
+		"source":      "Pump-002",
 		"from_entity": "Pump-002",
 		"to_entity":   "Bearing-002",
 		"relation":    "uses_new",
 	}
 	protected := applyMergeInvariants(existing, mergedPayload)
-	if protected["from_entity"] != "Pump-001" || protected["to_entity"] != "Bearing-001" {
+	if protected["from_entity"] != "Pump-001" || protected["source"] != "Pump-001" || protected["to_entity"] != "Bearing-001" {
 		t.Errorf("applyMergeInvariants failed to protect endpoints: %#v", protected)
 	}
 
