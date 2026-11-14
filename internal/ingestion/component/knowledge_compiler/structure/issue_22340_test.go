@@ -462,3 +462,39 @@ func TestIssue22340_RewriteToSelfLoopFilter(t *testing.T) {
 		})
 	}
 }
+
+// TestIssue22340_ConfiguredEndpointsSurviveReplacement verifies that relations built with
+// custom configured endpoint fields (e.g. left/right) retain those resolved endpoints
+// across LLMMergeDecider.BuildReplacement even when conflicting alias keys
+// (e.g. from_entity/to_entity) are present in the payload.
+func TestIssue22340_ConfiguredEndpointsSurviveReplacement(t *testing.T) {
+	for _, conflict := range []bool{false, true} {
+		name := "without_aliases"
+		if conflict {
+			name = "conflicting_aliases"
+		}
+		t.Run(name, func(t *testing.T) {
+			payload := map[string]any{"left": "A", "right": "B", "type": "linked"}
+			if conflict {
+				payload["from_entity"] = "X"
+				payload["to_entity"] = "Y"
+			}
+			cfg := CompileConfig{ParserConfig: map[string]any{"identifiers": map[string]any{"relation_members": map[string]any{"source": "left", "target": "right"}}}}
+			rows, err := buildRows(context.Background(), common.Deps{Embed: constEmbedder{dim: 4}}, cfg, nil, []map[string]any{payload}, nil)
+			if err != nil || len(rows) != 1 {
+				t.Fatalf("buildRows: %v rows=%d", err, len(rows))
+			}
+			if rows[0].Meta["from"] != "A" || rows[0].Meta["to"] != "B" {
+				t.Fatalf("initial endpoints=%v", rows[0].Meta)
+			}
+			d := LLMMergeDecider{Embed: constEmbedder{dim: 4}}
+			out, err := d.BuildReplacement(context.Background(), rows[0], rows[0], parsePayload(rows[0].Content))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if out.Meta["from"] != "A" || out.Meta["to"] != "B" {
+				t.Errorf("replacement changed endpoints: %v", out.Meta)
+			}
+		})
+	}
+}
