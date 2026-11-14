@@ -25,7 +25,9 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
 	kc "ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/service"
 )
 
 // TestKnowledgeCompilerRegisteredByWiring locks the composition-root contract:
@@ -178,4 +180,38 @@ func TestDatasetEmbeddingIDBindsTheDatasetModel(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestResolveCompilerEmbeddingModelID(t *testing.T) {
+	t.Run("explicit wins", func(t *testing.T) {
+		got := resolveCompilerEmbeddingModelID("dsl-model", &models.ModelInfo{
+			Name: "ignored", ProviderName: "Builtin",
+		})
+		if got != "dsl-model" {
+			t.Fatalf("got %q, want dsl-model", got)
+		}
+	})
+	t.Run("builtin falls back to ModelReference", func(t *testing.T) {
+		// Builtin catalog models often have empty ID; datasets store name@Provider.
+		got := resolveCompilerEmbeddingModelID("", &models.ModelInfo{
+			ID: "", Name: "text-embedding", ProviderName: "Builtin",
+		})
+		want := service.ModelReference(&models.ModelInfo{
+			ID: "", Name: "text-embedding", ProviderName: "Builtin",
+		})
+		if got != want {
+			t.Fatalf("got %q, want %q", got, want)
+		}
+		if got == "" {
+			t.Fatal("Builtin default must not resolve to empty (reuse would never trigger)")
+		}
+		if want != "text-embedding@Builtin" {
+			t.Fatalf("ModelReference = %q, want text-embedding@Builtin", want)
+		}
+	})
+	t.Run("nil default is empty", func(t *testing.T) {
+		if got := resolveCompilerEmbeddingModelID("", nil); got != "" {
+			t.Fatalf("got %q, want empty", got)
+		}
+	})
 }
