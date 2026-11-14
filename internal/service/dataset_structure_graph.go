@@ -735,7 +735,15 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 
 	// keywords mode: name/BM25 matching → matched entities' subgraph.
 	if in.Keywords != "" {
-		bucketMeta, entities, relations, err := s.keywordSubgraph(ctx, in.TenantID, in.DatasetID, in.DocumentID, in.Keywords, templateMeta, nil)
+		var filter map[string]interface{}
+		if in.GraphType != "" {
+			filter = map[string]interface{}{
+				"doc_id":              []string{in.DocumentID},
+				"knowledge_graph_kwd": []string{"entity"},
+				"compile_kwd":         []string{types.CanonicalCompilationKind(in.GraphType)},
+			}
+		}
+		bucketMeta, entities, relations, err := s.keywordSubgraph(ctx, in.TenantID, in.DatasetID, in.DocumentID, in.Keywords, templateMeta, filter)
 		if err != nil {
 			return nil, err
 		}

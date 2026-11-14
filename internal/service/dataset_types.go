@@ -68,10 +68,11 @@ type SearchDatasetsRequest struct {
 
 // SearchDatasetsResponse is the response structure for dataset search results.
 type SearchDatasetsResponse struct {
-	Chunks  []map[string]interface{} `json:"chunks"`
-	DocAggs []map[string]interface{} `json:"doc_aggs"`
-	Labels  *map[string]float64      `json:"labels"`
-	Total   int64                    `json:"total"`
+	Chunks         []map[string]interface{}     `json:"chunks"`
+	DocAggs        []map[string]interface{}     `json:"doc_aggs"`
+	Labels         *map[string]float64          `json:"labels"`
+	Total          int64                        `json:"total"`
+	KnowledgeGraph []KnowledgeGraphSearchResult `json:"knowledge_graph,omitempty"`
 }
 
 // SearchDatasetRequest is the request structure for searching chunks within one dataset.
@@ -207,4 +208,12 @@ type UpdateDatasetRequest struct {
 	// "parser_config" key. An explicitly provided parser_config ({} or null) is a
 	// valid no-op that must succeed, unlike a truly empty request body.
 	ParserConfigProvided bool `json:"-"`
+}
+
+// KnowledgeGraphSearchResult contains matched entities and relationships for
+// one dataset or, when the request is document-scoped, one document.
+type KnowledgeGraphSearchResult struct {
+	DatasetID  string                           `json:"dataset_id"`
+	DocumentID string                           `json:"document_id,omitempty"`
+	Templates  []DocumentStructureGraphTemplate `json:"templates"`
 }
