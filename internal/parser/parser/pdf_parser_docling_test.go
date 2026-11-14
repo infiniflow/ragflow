@@ -511,3 +511,53 @@ func TestDoclingPageHeightsFromPagesMetadata(t *testing.T) {
 		t.Fatalf("list-form pages height = %v, want 300", h)
 	}
 }
+
+func TestDoclingStandardResultRestoresPictureTextInReadingOrder(t *testing.T) {
+	response := []byte(`{"document":{
+		"md_content":"Before\n\nFigure caption\n\n<!-- image -->\n\nGroup legend\n\n<!-- image -->\n\nAfter",
+		"json_content":{
+			"body":{"children":[{"$ref":"#/texts/0"},{"$ref":"#/pictures/1"},{"$ref":"#/groups/0"},{"$ref":"#/texts/5"}]},
+			"groups":[{"self_ref":"#/groups/0","children":[{"$ref":"#/texts/3"},{"$ref":"#/pictures/0"}]}],
+			"pictures":[
+				{"self_ref":"#/pictures/0","children":[{"$ref":"#/texts/4"}]},
+				{"self_ref":"#/pictures/1","captions":[{"$ref":"#/texts/1"}],"children":[{"$ref":"#/texts/1"},{"$ref":"#/texts/2"}]}
+			],
+			"texts":[
+				{"self_ref":"#/texts/0","text":"Before"},
+				{"self_ref":"#/texts/1","text":"Figure caption"},
+				{"self_ref":"#/texts/2","text":"600 sec","prov":[{"page_no":1,"bbox":{"l":10,"t":20,"r":30,"b":40,"coord_origin":"TOPLEFT"}}]},
+				{"self_ref":"#/texts/3","text":"Group legend"},
+				{"self_ref":"#/texts/4","text":"1800 sec"},
+				{"self_ref":"#/texts/5","text":"After"}
+			]
+		}
+	}}`)
+	result, ok := parseDoclingStandardResult(t.Context(), "probe.pdf", response, 1)
+	if !ok || result.Err != nil {
+		t.Fatalf("parse failed: %v", result.Err)
+	}
+	var got []string
+	for _, item := range result.JSON {
+		got = append(got, strings.TrimSpace(stringValue(item.ToMap()["text"])))
+	}
+	want := "Before|Figure caption|<!-- image -->|600 sec|Group legend|<!-- image -->|1800 sec|After"
+	if strings.Join(got, "|") != want {
+		t.Fatalf("parsed text = %q, want %q", got, want)
+	}
+	position, err := json.Marshal(result.JSON[3].ToMap()["_pdf_positions"])
+	if err != nil || string(position) != "[[1,10,30,20,40]]" {
+		t.Fatalf("OCR positions = %s, error = %v", position, err)
+	}
+
+	// A response with fewer placeholders than pictures cannot be paired safely.
+	mismatch := bytes.Replace(response, []byte("<!-- image -->"), []byte("Image omitted"), 1)
+	result, ok = parseDoclingStandardResult(t.Context(), "probe.pdf", mismatch, 1)
+	if !ok || result.Err != nil {
+		t.Fatalf("parse with missing placeholder failed: %v", result.Err)
+	}
+	for _, item := range result.JSON {
+		if text := strings.TrimSpace(stringValue(item.ToMap()["text"])); text == "600 sec" || text == "1800 sec" {
+			t.Fatalf("unmatched picture text was inserted: %q", text)
+		}
+	}
+}
