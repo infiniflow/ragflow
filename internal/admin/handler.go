@@ -411,7 +411,12 @@ func (h *Handler) UpdateUserActivateStatus(c *gin.Context) {
 	isActive := req.ActivateStatus == "on"
 	ctx := c.Request.Context()
 	if err = h.service.UpdateUserActivateStatus(ctx, username, isActive); err != nil {
-		common.RespondError(c, common.CodeServerError, err.Error())
+		var coded *common.CodedError
+		if errors.As(err, &coded) {
+			common.RespondError(c, coded.Code, coded.Message)
+		} else {
+			common.RespondError(c, common.CodeServerError, err.Error())
+		}
 		return
 	}
 
@@ -465,7 +470,12 @@ func (h *Handler) RevokeAdmin(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	if err = h.service.RevokeAdmin(ctx, username); err != nil {
-		common.RespondError(c, common.CodeServerError, err.Error())
+		var coded *common.CodedError
+		if errors.As(err, &coded) {
+			common.RespondError(c, coded.Code, coded.Message)
+		} else {
+			common.RespondError(c, common.CodeServerError, err.Error())
+		}
 		return
 	}
 
@@ -971,6 +981,11 @@ func (h *Handler) AuthMiddleware() gin.HandlerFunc {
 		c.Set("user_id", user.ID)
 		c.Set("tenant_id", identity.TenantID)
 		c.Set("email", user.Email)
+		if user.AccessToken != nil {
+			c.Request = c.Request.WithContext(context.WithValue(ctx, adminActorKey{}, adminActor{
+				ID: user.ID, AccessToken: *user.AccessToken,
+			}))
+		}
 		c.Next()
 	}
 }
