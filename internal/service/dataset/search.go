@@ -237,6 +237,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	// Apply meta_data_filter to get filtered doc_ids
 	docIDs := make([]string, len(documentIDs))
 	copy(docIDs, documentIDs)
+	graphDocumentScoped := len(documentIDs) > 0
 	if len(metadataFilter) > 0 {
 		metadataSvc := service.NewMetadataService()
 		flattedMeta, err := metadataSvc.GetFlattedMetaByKBs(ctx, datasetIDs)
@@ -248,6 +249,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		// request keeps the document scope it came with.
 		if filteredDocIDs := service.ApplyMetaDataFilter(ctx, metadataFilter, flattedMeta, question, chatModelForFilter, documentIDs, datasetIDs); filteredDocIDs != nil {
 			docIDs = filteredDocIDs
+			graphDocumentScoped = true
 		}
 	}
 
@@ -328,8 +330,12 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 
 	filteredChunks := retrievalResult.Chunks
 
+	var graphResults []service.KnowledgeGraphSearchResult
 	if useKG {
-		common.Warn("use_kg is not yet implemented in Go - skipping KG retrieval")
+		graphResults, err = d.searchKnowledgeGraphs(ctx, service.NewDatasetArtifactService(), kbRecords, modifiedQuestion, docIDs, graphDocumentScoped)
+		if err != nil {
+			return nil, fmt.Errorf("knowledge graph retrieval failed: %w", err)
+		}
 	}
 
 	filteredChunks = nlp.RetrievalByChildren(filteredChunks, tenantIDs, d.docEngine, ctx)
@@ -340,10 +346,11 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	pyChunks := common.ConvertFloatsToPyFormat(filteredChunks).([]map[string]interface{})
 
 	return &service.SearchDatasetsResponse{
-		Chunks:  pyChunks,
-		DocAggs: retrievalResult.DocAggs,
-		Labels:  &labels,
-		Total:   retrievalResult.Total,
+		Chunks:         pyChunks,
+		DocAggs:        retrievalResult.DocAggs,
+		Labels:         &labels,
+		Total:          retrievalResult.Total,
+		KnowledgeGraph: graphResults,
 	}, nil
 }
 
