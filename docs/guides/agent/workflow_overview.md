@@ -4,7 +4,7 @@ title: Workflow Overview
 sidebar_label: Workflow Overview
 slug: /agent_overview
 sidebar_custom_props: {
-  categoryIcon: RagAiAgent
+  categoryIcon: LucideBookOpenText
 }
 ---
 
@@ -30,4 +30,4 @@ For example, an after-sales Agent can first use `Categorize` to judge the type o
 
 ## Try a complete workflow
 
-Follow [Build a Customer Support Agent](./quickstarts/build_customer_support_agent.md) for a complete example with sample content, prompts, two branches, and expected test results.
+Follow [Use Case: Build a Customer Support Agent](./build_customer_support_agent.md) for a complete example with sample content, prompts, two branches, and expected test results.

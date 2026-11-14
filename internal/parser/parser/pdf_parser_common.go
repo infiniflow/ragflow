@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,6 +34,98 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/utility"
 )
+
+const (
+	MinMinerURequestTimeout = 1 * time.Second
+	MaxMinerURequestTimeout = 24 * time.Hour
+)
+
+// ClampMinerUTimeout clamps duration into a safe operational window [1s, 24h],
+// preventing tiny-duration/zero deadline panics or numeric overflow.
+func ClampMinerUTimeout(d time.Duration) time.Duration {
+	if d <= 0 {
+		return minerUPollTimeout
+	}
+	if d < MinMinerURequestTimeout {
+		return MinMinerURequestTimeout
+	}
+	if d > MaxMinerURequestTimeout {
+		return MaxMinerURequestTimeout
+	}
+	return d
+}
+
+// parseMinerUTimeoutSetupValue extracts and clamps a duration from setup values,
+// safeguarding against integer and floating-point multiplication overflow before conversion.
+func parseMinerUTimeoutSetupValue(raw any) (time.Duration, bool) {
+	if raw == nil {
+		return 0, false
+	}
+	minSec := MinMinerURequestTimeout.Seconds()
+	maxSec := MaxMinerURequestTimeout.Seconds()
+	switch v := raw.(type) {
+	case int:
+		if v <= 0 {
+			return 0, false
+		}
+		if float64(v) < minSec {
+			return MinMinerURequestTimeout, true
+		}
+		if float64(v) > maxSec {
+			return MaxMinerURequestTimeout, true
+		}
+		return ClampMinerUTimeout(time.Duration(v) * time.Second), true
+	case int64:
+		if v <= 0 {
+			return 0, false
+		}
+		if float64(v) < minSec {
+			return MinMinerURequestTimeout, true
+		}
+		if float64(v) > maxSec {
+			return MaxMinerURequestTimeout, true
+		}
+		return ClampMinerUTimeout(time.Duration(v) * time.Second), true
+	case float64:
+		if v <= 0 {
+			return 0, false
+		}
+		if v < minSec {
+			return MinMinerURequestTimeout, true
+		}
+		if v > maxSec {
+			return MaxMinerURequestTimeout, true
+		}
+		return ClampMinerUTimeout(time.Duration(v * float64(time.Second))), true
+	case string:
+		s := strings.TrimSpace(v)
+		if s == "" {
+			return 0, false
+		}
+		if sec, err := strconv.Atoi(s); err == nil && sec > 0 {
+			if float64(sec) < minSec {
+				return MinMinerURequestTimeout, true
+			}
+			if float64(sec) > maxSec {
+				return MaxMinerURequestTimeout, true
+			}
+			return ClampMinerUTimeout(time.Duration(sec) * time.Second), true
+		}
+		if secF, err := strconv.ParseFloat(s, 64); err == nil && secF > 0 {
+			if secF < minSec {
+				return MinMinerURequestTimeout, true
+			}
+			if secF > maxSec {
+				return MaxMinerURequestTimeout, true
+			}
+			return ClampMinerUTimeout(time.Duration(secF * float64(time.Second))), true
+		}
+		if d, err := time.ParseDuration(s); err == nil && d > 0 {
+			return ClampMinerUTimeout(d), true
+		}
+	}
+	return 0, false
+}
 
 // ErrPDFEngineUnavailable is returned by PDFParser.ParseWithResult
 // when the current build cannot construct the DeepDOC PDF backend.
@@ -76,12 +169,16 @@ type PDFParser struct {
 	// caller observes per-page parse progress (done/total). Only the deepdoc
 	// backend invokes it; remote engines poll opaque HTTP jobs and never call
 	// it, so the fraction simply stays where it was.
-	OnPageDone                        func(done, total int)
+	OnPageDone func(done, total int)
+	// OnModelCall reports the start and end of an individual DeepDOC model call.
+	// It is runtime-only and is wired by the ingestion parser component.
+	OnModelCall                       func(ctx context.Context, operation string) func()
 	MinerUAPIServer                   string
 	MinerUAPIKey                      string
 	MinerUBackend                     string
 	MinerUServerURL                   string
 	MinerUPollTimeout                 time.Duration
+	MinerUTimeoutConfigured           bool
 	DoclingServerURL                  string
 	DoclingAPIKey                     string
 	DoclingDoOCR                      *bool
@@ -165,11 +262,12 @@ func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["mineru_server_url"].(string); ok && v != "" {
 		p.MinerUServerURL = v
 	}
-	if v, ok := setup["mineru_timeout_seconds"].(int); ok && v > 0 {
-		p.MinerUPollTimeout = time.Duration(v) * time.Second
-	}
-	if v, ok := setup["mineru_timeout_seconds"].(float64); ok && v > 0 {
-		p.MinerUPollTimeout = time.Duration(v * float64(time.Second))
+	if d, ok := parseMinerUTimeoutSetupValue(setup["mineru_timeout"]); ok {
+		p.MinerUPollTimeout = d
+		p.MinerUTimeoutConfigured = true
+	} else if d, ok := parseMinerUTimeoutSetupValue(setup["mineru_timeout_seconds"]); ok {
+		p.MinerUPollTimeout = d
+		p.MinerUTimeoutConfigured = true
 	}
 	if v, ok := setup["docling_server_url"].(string); ok && v != "" {
 		p.DoclingServerURL = v
@@ -399,6 +497,7 @@ func (p *PDFParser) parseWithResult(ctx context.Context, filename string, data [
 	cfg.RemoveTOC = p.RemoveTOC
 	cfg.RemoveHeaderFooter = p.RemoveHeaderFooter
 	cfg.OnPageDone = p.OnPageDone
+	cfg.OnModelCall = p.OnModelCall
 	res := parsePDFWithDeepDocOptions(ctx, filename, data, pdfPostProcessOptions{
 		zoom:              cfg.Zoom,
 		enableMultiColumn: p.EnableMultiColumn,

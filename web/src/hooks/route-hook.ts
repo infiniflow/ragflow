@@ -14,13 +14,10 @@
  *  limitations under the License.
  */
 
-import {
-  KnowledgeRouteKey,
-  KnowledgeSearchParams,
-} from '@/constants/knowledge';
+import { KnowledgeSearchParams } from '@/constants/knowledge';
 import { Routes } from '@/routes';
 import { useCallback } from 'react';
-import { useLocation, useNavigate, useSearchParams } from 'react-router';
+import { useLocation, useSearchParams } from 'react-router';
 
 export enum SegmentIndex {
   Second = '2',
@@ -55,25 +52,6 @@ export const useGetKnowledgeSearchParams = () => {
       ? currentQueryParameters.get('knowledgeId') || ''
       : currentQueryParameters.get(KnowledgeSearchParams.KnowledgeId) || '',
   };
-};
-
-export const useNavigateWithFromState = () => {
-  const navigate = useNavigate();
-  return useCallback(
-    (path: string) => {
-      navigate(path, { state: { from: path } });
-    },
-    [navigate],
-  );
-};
-
-export const useNavigateToDataset = () => {
-  const navigate = useNavigate();
-  const { knowledgeId } = useGetKnowledgeSearchParams();
-
-  return useCallback(() => {
-    navigate(`/knowledge/${KnowledgeRouteKey.Dataset}?id=${knowledgeId}`);
-  }, [knowledgeId, navigate]);
 };
 
 export const useGetPaginationParams = () => {

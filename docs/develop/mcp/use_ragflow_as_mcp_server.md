@@ -4,7 +4,7 @@ title: Use RAGFlow as an MCP Server
 sidebar_label: Use RAGFlow as an MCP Server
 slug: /use_ragflow_as_mcp_server
 sidebar_custom_props:
-  categoryIcon: LucideBookOpen
+  categoryIcon: LucideServer
 ---
 
 # Use RAGFlow as an MCP Server

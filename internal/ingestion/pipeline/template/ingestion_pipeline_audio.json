@@ -53,25 +53,7 @@
                                 "value": ""
                             }
                         },
-                        "audio": {
-                            "suffix": [
-                                "aac",
-                                "aiff",
-                                "ape",
-                                "au",
-                                "da",
-                                "flac",
-                                "midi",
-                                "mp3",
-                                "ogg",
-                                "oggvorbis",
-                                "realaudio",
-                                "vqf",
-                                "wav",
-                                "wave",
-                                "wma"
-                            ]
-                        }
+                        "audio": {}
                     }
                 },
                 "upstream": [

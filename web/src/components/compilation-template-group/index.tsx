@@ -17,14 +17,17 @@
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { CompilationTemplateKind } from '@/constants/compilation';
-import { FormEvent, useCallback, useMemo } from 'react';
+import { FormEvent, useCallback, useMemo, useState } from 'react';
 import { useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 
-import { useEditNextCompilationTemplateGroup } from './hooks/use-edit-next-compilation-template-group';
-import { CompilationTemplateGroupSaveResult } from './hooks/use-compilation-template-group-submit';
 import { BlueprintSection } from './components/blueprint-section';
+import { CompilationTemplateEditorSidebar } from './components/editor-sidebar';
+import { JsonPreview } from './components/json-preview';
 import { TemplateConfiguration } from './components/template-configuration';
+import { CompilationTemplateEditorView } from './constant';
+import { CompilationTemplateGroupSaveResult } from './hooks/use-compilation-template-group-submit';
+import { useEditNextCompilationTemplateGroup } from './hooks/use-edit-next-compilation-template-group';
 
 const SelectedTemplateIndex = 0;
 
@@ -33,25 +36,37 @@ type CompilationTemplateGroupEditorProps = {
   onSuccess: (result: CompilationTemplateGroupSaveResult) => void;
   onCancel: () => void;
   cancelText: string;
+  sidebarCollapsed?: boolean;
+  onSidebarCollapse?: () => void;
 };
 
-// Shared body of the edit-next route page and the create dialog: the form,
-// its scrollable configuration area, and the cancel/save footer. The parent
-// must give it a bounded-height flex column to fill.
+// Shared body of the edit-next route page and the create dialog: secondary
+// navigation, configuration/JSON content, and the cancel/save footer. The
+// parent must give it a bounded-height flex column to fill.
 export function CompilationTemplateGroupEditor({
   id,
   onSuccess,
   onCancel,
   cancelText,
+  sidebarCollapsed = false,
+  onSidebarCollapse,
 }: CompilationTemplateGroupEditorProps) {
   const { t } = useTranslation();
   const { form, kindOptions, builtins, onSubmit, isLoading } =
     useEditNextCompilationTemplateGroup({ id, onSuccess });
+  const [activeView, setActiveView] = useState(
+    CompilationTemplateEditorView.Configuration,
+  );
 
   const selectedKind = useWatch({
     control: form.control,
     name: `templates.${SelectedTemplateIndex}.kind`,
   });
+  const templateName = useWatch({
+    control: form.control,
+    name: `templates.${SelectedTemplateIndex}.name`,
+  });
+  const allFormValues = useWatch({ control: form.control });
 
   const isArtifacts = selectedKind === CompilationTemplateKind.Artifacts;
 
@@ -71,20 +86,37 @@ export function CompilationTemplateGroupEditor({
   return (
     <Form {...form}>
       <form className="flex-1 min-h-0 flex flex-col" onSubmit={handleSubmit}>
-        <TemplateConfiguration
-          form={form}
-          builtins={builtins}
-          kindOptions={kindOptions}
-          selectedTemplateIndex={SelectedTemplateIndex}
-        >
-          {isArtifacts && (
-            <BlueprintSection
-              form={form}
-              selectedTemplateIndex={SelectedTemplateIndex}
-              builtins={builtins}
+        <div className="flex min-h-0 flex-1">
+          {!sidebarCollapsed && (
+            <CompilationTemplateEditorSidebar
+              activeView={activeView}
+              templateName={templateName}
+              onViewChange={setActiveView}
+              onCollapse={onSidebarCollapse}
             />
           )}
-        </TemplateConfiguration>
+
+          <div className="flex min-w-0 flex-1 flex-col">
+            {activeView === CompilationTemplateEditorView.Json ? (
+              <JsonPreview value={allFormValues} />
+            ) : (
+              <TemplateConfiguration
+                form={form}
+                builtins={builtins}
+                kindOptions={kindOptions}
+                selectedTemplateIndex={SelectedTemplateIndex}
+              >
+                {isArtifacts && (
+                  <BlueprintSection
+                    form={form}
+                    selectedTemplateIndex={SelectedTemplateIndex}
+                    builtins={builtins}
+                  />
+                )}
+              </TemplateConfiguration>
+            )}
+          </div>
+        </div>
 
         <footer className="shrink-0 px-5 py-4 border-t border-border-button flex items-center justify-end gap-5">
           <Button type="button" variant="outline" onClick={onCancel}>

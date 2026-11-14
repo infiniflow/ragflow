@@ -2,8 +2,8 @@ package wiki
 
 import "sort"
 
-// This file implements the PLAN-stage page-budget controls that align the Go
-// wiki variant with Python's wiki.py:
+// This file implements the PLAN-stage page-budget controls for the Go
+// wiki variant.
 //
 //   - a global target_page_count derived from item count (clamp(8, total//3, 60));
 //   - a dynamic max_page_count derived from the model's configured output cap that acts
@@ -17,7 +17,8 @@ import "sort"
 // budget only uses that same value to keep the requested page count within the
 // configured output capacity.
 
-// Python alignment constants (wiki.py:1670-1674, 1783-1787).
+// Plan-stage page-budget constants: default output tokens, a safety reserve,
+// a per-page token estimate, and the min/max target page counts.
 const (
 	wikiPlanDefaultOutputTokens = 4096
 	wikiPlanOutputSafetyTokens  = 256
@@ -26,7 +27,7 @@ const (
 	wikiPlanTargetPageCountMax  = 60
 )
 
-// wikiTargetPageCount mirrors Python _wiki_target_page_count:
+// wikiTargetPageCount mirrors _wiki_target_page_count
 // clamp(8, total//3, 60).
 func wikiTargetPageCount(totalItems int) int {
 	if totalItems <= 0 {

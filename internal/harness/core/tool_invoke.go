@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/harness/core/schema"
 )
 
@@ -49,6 +50,21 @@ type InvokeTool func(ctx context.Context, ictx *ToolInvocationContext) (*schema.
 // It receives the next handler in the chain and the invocation context.
 type ToolInvokeMiddleware func(next InvokeTool) InvokeTool
 
+// toolRetrySleep waits for d, returning early if ctx is canceled. It is a
+// package-level seam so tests can capture (and skip) the backoff delay without
+// real timers.
+var toolRetrySleep = func(ctx context.Context, d time.Duration) {
+	if d <= 0 {
+		return
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+	case <-t.C:
+	}
+}
+
 // ---- ToolWrapper: timeout + retry + fallback ----
 
 // NewTimeoutToolMiddleware creates a ToolInvokeMiddleware that enforces a timeout.
@@ -81,9 +97,14 @@ func NewRetryToolMiddleware(cfg *ToolRetryConfig) ToolInvokeMiddleware {
 			if rc == nil || rc.MaxAttempts <= 0 {
 				return next(ctx, ictx)
 			}
-			backoff := rc.Backoff
-			if backoff <= 0 {
-				backoff = 100 * time.Millisecond
+			// Normalize the backoff base once. A zero/negative configured
+			// Backoff (the documented default in the harness README, which omits the
+			// field entirely) falls back to 100ms, and this normalized value is the
+			// base for every retry so the delay keeps doubling from it instead of
+			// collapsing to zero after the first retry.
+			base := rc.Backoff
+			if base <= 0 {
+				base = 100 * time.Millisecond
 			}
 			var lastErr error
 			for attempt := 0; attempt <= rc.MaxAttempts; attempt++ {
@@ -96,12 +117,14 @@ func NewRetryToolMiddleware(cfg *ToolRetryConfig) ToolInvokeMiddleware {
 					return nil, err
 				}
 				if attempt < rc.MaxAttempts {
-					select {
-					case <-ctx.Done():
+					// Compute the capped delay for the current attempt (1-indexed:
+					// attempt 0 -> base) before sleeping, so the first retry is also
+					// clamped to the 1-minute ceiling.
+					d := common.ExponentialBackoff(base, time.Minute, attempt+1)
+					toolRetrySleep(ctx, d)
+					if ctx.Err() != nil {
 						return nil, ctx.Err()
-					case <-time.After(backoff):
 					}
-					backoff *= 2
 				}
 			}
 			return nil, fmt.Errorf("tool retry exhausted after %d attempts: %w", rc.MaxAttempts, lastErr)

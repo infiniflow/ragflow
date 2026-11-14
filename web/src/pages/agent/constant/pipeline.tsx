@@ -87,9 +87,11 @@ export const initialParserValues = {
     json: { type: 'Array<object>', value: [] },
   },
   // Global vision enhancement, off by default; the model id is prefilled from
-  // the tenant's image2text default when a node is created. The prompt is shared
-  // by the vision paths here; response language belongs to the knowledge base.
-  vlm: { llm_id: '', system_prompt: '' },
+  // the tenant's image2text default when a node is created. The prompt and
+  // optional description language are shared by the vision paths here.
+  // Description language is empty by default: captions follow the knowledge
+  // base language, which also drives tokenization.
+  vlm: { llm_id: '', system_prompt: '', lang: '' },
   enable_vision_enhancement: false,
   setups: [
     {
@@ -112,6 +114,7 @@ export const initialParserValues = {
     },
     {
       fileFormat: FileType.TextMarkdown,
+      remove_toc: false,
     },
     {
       fileFormat: FileType.Code,

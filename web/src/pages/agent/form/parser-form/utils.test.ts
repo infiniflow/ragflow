@@ -65,6 +65,7 @@ describe('parser-form utils', () => {
       expect(values.vlm).toEqual({
         llm_id: 'gpt-4o@OpenAI',
         system_prompt: '',
+        lang: '',
       });
       expect(values.enable_vision_enhancement).toBe(false);
 
@@ -257,10 +258,9 @@ describe('parser-form utils', () => {
         llm_id: '',
         system_prompt: 'Describe the chart.',
       });
-      // Captions follow the knowledge base and the only engine that takes a
-      // language is MinerU on the pdf family, so an image language has no
-      // reader: drop it rather than let it masquerade as a user choice
-      // (issue #20727).
+      // The old image language was machine-defaulted, so it cannot be lifted
+      // into the explicit global vlm.lang: drop it rather than let it
+      // masquerade as a user choice (issue #20727).
       expect(normalized.setups[0]).toEqual({
         fileFormat: FileType.Image,
         ocr_enabled: true,
@@ -281,17 +281,23 @@ describe('parser-form utils', () => {
       });
     });
 
-    it('drops a stale vlm.lang left by an earlier draft of the contract', () => {
+    it('preserves the explicit global description language', () => {
       const normalized = normalizeParserFormValues({
         vlm: { llm_id: '', lang: 'German', system_prompt: '' },
         setups: [
           { fileFormat: FileType.Image, lang: 'French', system_prompt: 'old' },
         ],
       });
-      // Nothing renders that control any more, so it must not survive a save.
+      // The global language is an explicit user choice; the family language
+      // stays dropped because its old default was machine-written.
       expect(normalized.vlm).toEqual({
         llm_id: '',
+        lang: 'German',
         system_prompt: 'old',
+      });
+      expect(normalized.setups[0]).toEqual({
+        fileFormat: FileType.Image,
+        ocr_enabled: true,
       });
     });
 
@@ -320,21 +326,23 @@ describe('parser-form utils', () => {
       expect(normalizeParserFormValues(once)).toEqual(once);
     });
 
-    it('drops the retired per-setup preprocess and output_format from every family', () => {
-      // The Parser derives preprocessing from the chunker and emits JSON only,
-      // so stored legacy values are dead config that must not survive a
-      // load/save round-trip.
+    it('drops the retired per-setup preprocess, output_format and suffix from every family', () => {
+      // The Parser derives preprocessing from the chunker, emits JSON only and
+      // routes files by the document's own suffix, so stored legacy values are
+      // dead config that must not survive a load/save round-trip.
       const normalized = normalizeParserFormValues({
         setups: [
           {
             fileFormat: FileType.PDF,
             preprocess: ['main_content'],
             output_format: 'markdown',
+            suffix: ['pdf'],
           },
           {
             fileFormat: FileType.Audio,
             preprocess: ['main_content'],
             output_format: 'text',
+            suffix: ['mp3'],
             vlm: { llm_id: 'whisper@OpenAI' },
           },
         ],

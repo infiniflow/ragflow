@@ -4,12 +4,14 @@ import (
 	"html"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
-	"github.com/xuri/excelize/v2"
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/tableutil"
+
+	"github.com/xuri/excelize/v2"
 )
 
 func TestXLSXParserEmitsSegmentedHTMLTable(t *testing.T) {
@@ -1091,6 +1093,448 @@ func TestDetectHeaderRow_StyledTextHeaderOverNumeric(t *testing.T) {
 	}
 }
 
+// TestDetectHeaderRow_NarrowMetadataSkipsToWideHeader reproduces a Kros-style
+// budget spreadsheet where rows 1–5 are narrow metadata labels (e.g.
+// "Stavba:", "DSP MILLHAUS") and row 6 is the real 7-column header. The
+// width-validation heuristic must skip the narrow rows and pick row 6.
+func TestDetectHeaderRow_NarrowMetadataSkipsToWideHeader(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		bold := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+		// Row 1: single-cell merged title.
+		mustSetCell(t, f, "Sheet1", "A1", "Rekapitulácia objektov stavby")
+		mustSetCellStyle(t, f, "Sheet1", "A1", "A1", bold)
+		// Row 2: 2-cell metadata (both bold).
+		mustSetCell(t, f, "Sheet1", "A2", "Stavba:")
+		mustSetCell(t, f, "Sheet1", "C2", "DSP MILLHAUS")
+		mustSetCellStyle(t, f, "Sheet1", "A2", "C2", bold)
+		// Row 3: 1-cell metadata.
+		mustSetCell(t, f, "Sheet1", "A3", "Objednávateľ:")
+		// Row 4: 2-cell metadata.
+		mustSetCell(t, f, "Sheet1", "A4", "Zhotoviteľ:")
+		mustSetCell(t, f, "Sheet1", "G4", "Spracoval:")
+		// Row 5: 2-cell metadata.
+		mustSetCell(t, f, "Sheet1", "A5", "Miesto:")
+		mustSetCell(t, f, "Sheet1", "G5", "Dátum:")
+		// Row 6: the REAL header — 7 bold text columns.
+		for i, hdr := range []string{"Kód", "", "Zákazka", "ZRN", "VRN", "Cena bez DPH", "DPH"} {
+			cell := string(rune('A'+i)) + "6"
+			mustSetCell(t, f, "Sheet1", cell, hdr)
+		}
+		mustSetCellStyle(t, f, "Sheet1", "A6", "G6", bold)
+		// Rows 7–20: data rows with 5–7 filled cells each (some have numbers).
+		for r := 7; r <= 20; r++ {
+			mustSetCell(t, f, "Sheet1", cellRef('A', r), "SO01")
+			mustSetCell(t, f, "Sheet1", cellRef('C', r), "BYTOVÝ OBJEKT")
+			mustSetCell(t, f, "Sheet1", cellRef('D', r), "17234914")
+			mustSetCell(t, f, "Sheet1", cellRef('E', r), "689480")
+			mustSetCell(t, f, "Sheet1", cellRef('F', r), "17924395")
+			mustSetCell(t, f, "Sheet1", cellRef('G', r), "3584879")
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "budget.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	markup := spreadsheetText(res)
+	if !strings.Contains(markup, "<th>Cena bez DPH</th>") {
+		t.Fatalf("expected real header (row 6) to be detected, got:\n%s", markup[:min(len(markup), 500)])
+	}
+	hdr := spreadsheetHeaderText(res)
+	if !strings.Contains(hdr, "Cena bez DPH") {
+		t.Fatalf("header text = %q, want it to contain 'Cena bez DPH'", hdr)
+	}
+}
+
+// cellRef builds "A7", "C12" etc. for test fixtures.
+func cellRef(col rune, row int) string {
+	return string(col) + strconv.Itoa(row)
+}
+
+// TestDetectHeaderRow_PlainSheetKeepsRow1 asserts the regression surface the
+// blocker called out: a plain spreadsheet with no bold/contrast header and data
+// starting at row 1 (across more than 4 rows) must keep row 1 as the header.
+// The width-based recovery must not activate when there is no styled metadata
+// fallback candidate.
+func TestDetectHeaderRow_PlainSheetKeepsRow1(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		// Row 1: plain text header, no styling.
+		mustSetCell(t, f, "Sheet1", "A1", "Name")
+		mustSetCell(t, f, "Sheet1", "B1", "Amount")
+		// Rows 2–10: data beginning immediately.
+		for r := 2; r <= 10; r++ {
+			mustSetCell(t, f, "Sheet1", cellRef('A', r), "x")
+			mustSetCell(t, f, "Sheet1", cellRef('B', r), strconv.Itoa(r))
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "plain.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if !strings.Contains(spreadsheetText(res), "<th>Name</th><th>Amount</th>") {
+		t.Fatalf("plain sheet must keep row 1 header:\n%s", spreadsheetText(res))
+	}
+	if strings.Contains(spreadsheetText(res), "<th>x</th><th>2</th>") {
+		t.Fatalf("data row must not be promoted to header:\n%s", spreadsheetText(res))
+	}
+}
+
+// TestDetectHeaderRow_PlainSixColumnSheetKeepsRow1 exercises the fallback gate
+// with a median width >= 4: a wide plain sheet still keeps row 1 because no
+// styled metadata row triggers the width-based recovery.
+func TestDetectHeaderRow_PlainSixColumnSheetKeepsRow1(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		// Row 1: plain text header, no styling.
+		mustSetCell(t, f, "Sheet1", "A1", "Name")
+		mustSetCell(t, f, "Sheet1", "B1", "Unit")
+		mustSetCell(t, f, "Sheet1", "C1", "Qty")
+		mustSetCell(t, f, "Sheet1", "D1", "Cost")
+		mustSetCell(t, f, "Sheet1", "E1", "Tax")
+		mustSetCell(t, f, "Sheet1", "F1", "Total")
+		// Rows 2–18: data beginning immediately so median width is 6.
+		for r := 2; r <= 18; r++ {
+			mustSetCell(t, f, "Sheet1", cellRef('A', r), "item")
+			mustSetCell(t, f, "Sheet1", cellRef('B', r), "m")
+			mustSetCell(t, f, "Sheet1", cellRef('C', r), 1)
+			mustSetCell(t, f, "Sheet1", cellRef('D', r), 2)
+			mustSetCell(t, f, "Sheet1", cellRef('E', r), 0.2)
+			mustSetCell(t, f, "Sheet1", cellRef('F', r), 2.2)
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "plain-wide.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<th>Name</th><th>Unit</th><th>Qty</th><th>Cost</th><th>Tax</th><th>Total</th>") {
+		t.Fatalf("wide plain sheet must keep row 1 header:\n%s", text)
+	}
+	if strings.Contains(text, "<th>item</th>") {
+		t.Fatalf("data row must not be promoted to header:\n%s", text)
+	}
+}
+
+// TestDetectHeaderRow_FourColumnForm skips a narrow bold metadata row and
+// finds the real column header below it (OP#1342 review boundary case).
+func TestDetectHeaderRow_FourColumnForm(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		// Row 1: one-cell title.
+		mustSetCell(t, f, "Sheet1", "A1", "Project budget")
+		// Rows 2–4: two-cell bold metadata labels.
+		bold := mustNewStyle(t, f, &excelize.Style{
+			Font: &excelize.Font{Bold: true},
+		})
+		for r := 2; r <= 4; r++ {
+			mustSetCell(t, f, "Sheet1", cellRef('A', r), "Label")
+			mustSetCell(t, f, "Sheet1", cellRef('B', r), "Value")
+			mustSetCellStyle(t, f, "Sheet1", cellRef('A', r), cellRef('B', r), bold)
+		}
+		// Row 5: real column header.
+		mustSetCell(t, f, "Sheet1", "A5", "Name")
+		mustSetCell(t, f, "Sheet1", "B5", "Unit")
+		mustSetCell(t, f, "Sheet1", "C5", "Qty")
+		mustSetCell(t, f, "Sheet1", "D5", "Cost")
+		// Rows 6–20: data.
+		for r := 6; r <= 20; r++ {
+			mustSetCell(t, f, "Sheet1", cellRef('A', r), "item")
+			mustSetCell(t, f, "Sheet1", cellRef('B', r), "m")
+			mustSetCell(t, f, "Sheet1", cellRef('C', r), 1)
+			mustSetCell(t, f, "Sheet1", cellRef('D', r), 2)
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "form-4col.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<th>Name</th><th>Unit</th><th>Qty</th><th>Cost</th>") {
+		t.Fatalf("four-column form must select row 5 header:\n%s", text)
+	}
+	if strings.Contains(text, "<th>Label</th><th>Value</th>") {
+		t.Fatalf("narrow metadata row must not be promoted to header:\n%s", text)
+	}
+}
+
+// TestDetectHeaderRow_ShortFormSheet covers a ~10-row form sheet: the metadata
+// block reaches past the middle of the sheet, so only bottom-half sampling
+// yields a usable body-width median. Rows 1–5 are narrow (styled) metadata,
+// row 6 is the real 4-column header.
+func TestDetectHeaderRow_ShortFormSheet(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		bold := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+		// Rows 1–5: two-cell bold metadata labels (row 1 included — the width
+		// check must apply to row 1 too).
+		for r := 1; r <= 5; r++ {
+			mustSetCell(t, f, "Sheet1", cellRef('A', r), "Label")
+			mustSetCell(t, f, "Sheet1", cellRef('B', r), "Value")
+			mustSetCellStyle(t, f, "Sheet1", cellRef('A', r), cellRef('B', r), bold)
+		}
+		// Row 6: real 4-column header.
+		for i, hdr := range []string{"Kód", "Popis", "Množstvo", "Cena"} {
+			mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), 6), hdr)
+		}
+		mustSetCellStyle(t, f, "Sheet1", "A6", "D6", bold)
+		// Rows 7–10: data.
+		for r := 7; r <= 10; r++ {
+			mustSetCell(t, f, "Sheet1", cellRef('A', r), "SO01")
+			mustSetCell(t, f, "Sheet1", cellRef('B', r), "item")
+			mustSetCell(t, f, "Sheet1", cellRef('C', r), 3)
+			mustSetCell(t, f, "Sheet1", cellRef('D', r), 9)
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "short-form.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<th>Kód</th><th>Popis</th><th>Množstvo</th><th>Cena</th>") {
+		t.Fatalf("short form must select the row-6 header:\n%s", text)
+	}
+	if strings.Contains(text, "<th>Label</th><th>Value</th>") {
+		t.Fatalf("metadata row must not be promoted to header:\n%s", text)
+	}
+}
+
+// TestDetectHeaderRow_RecoveryStartsAfterCandidate reproduces the ordering bug
+// where the width-recovery scan restarted at the top of the sheet and matched
+// a wide unstyled title row (row 1) instead of the real header below a
+// deferred narrow candidate.
+func TestDetectHeaderRow_RecoveryStartsAfterCandidate(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		bold := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+		// Row 1: four unstyled text cells — wide enough to pass the ±2 median
+		// check if the recovery scan revisits it.
+		for i, v := range []string{"Section", "A", "Summary", "Note"} {
+			mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), 1), v)
+		}
+		// Rows 2–4: narrow bold metadata.
+		for r := 2; r <= 4; r++ {
+			mustSetCell(t, f, "Sheet1", cellRef('A', r), "Meta")
+			mustSetCell(t, f, "Sheet1", cellRef('B', r), "x")
+			mustSetCellStyle(t, f, "Sheet1", cellRef('A', r), cellRef('B', r), bold)
+		}
+		// Row 5: real unstyled 6-column header, outside the styled-scan window.
+		for i, hdr := range []string{"Col1", "Col2", "Col3", "Col4", "Col5", "Col6"} {
+			mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), 5), hdr)
+		}
+		// Rows 6–15: text-only data so the unstyled header gets no contrast
+		// signal and must be found by the width-recovery scan.
+		for r := 6; r <= 15; r++ {
+			for c := 0; c < 6; c++ {
+				mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), "value")
+			}
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "ordering.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<th>Col1</th>") {
+		t.Fatalf("recovery must find the header below the deferred candidate:\n%s", text)
+	}
+	if strings.Contains(text, "<th>Section</th>") {
+		t.Fatalf("title row above the deferred candidate must not be promoted:\n%s", text)
+	}
+}
+
+// TestDetectHeaderRow_MultiBlockKeepsFirstHeader covers multi-block sheets:
+// a narrow styled first header is deferred, but body-width data rows sit
+// between it and a later repeated header, so the recovery scan must stop and
+// keep the first styled header rather than demoting it to a data row.
+func TestDetectHeaderRow_MultiBlockKeepsFirstHeader(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		bold := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+		// Row 1: real header, narrow (5 cells) relative to the 10-wide body.
+		for i, hdr := range []string{"Code", "Item", "Unit", "Qty", "Price"} {
+			mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), 1), hdr)
+		}
+		mustSetCellStyle(t, f, "Sheet1", "A1", "E1", bold)
+		// Rows 2–4: 10-wide numeric-majority data block.
+		for r := 2; r <= 4; r++ {
+			for c := 0; c < 10; c++ {
+				mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), r*c+1)
+			}
+		}
+		// Row 5: repeated header of the second block (styled, body width).
+		for c := 0; c < 10; c++ {
+			mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), 5), "H")
+		}
+		mustSetCellStyle(t, f, "Sheet1", "A5", "J5", bold)
+		// Rows 6–12: more numeric data.
+		for r := 6; r <= 12; r++ {
+			for c := 0; c < 10; c++ {
+				mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), r+c)
+			}
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "multi-block.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<th>Code</th>") {
+		t.Fatalf("first styled header must be kept, not demoted:\n%s", text)
+	}
+	if strings.Contains(text, "<th>H</th>") {
+		t.Fatalf("repeated header of a later block must not be promoted:\n%s", text)
+	}
+}
+
+// TestDetectHeaderRow_MergedHeaderOverWideBody covers a merged header whose
+// merge masters make the row look narrow against a wider body: only three
+// cells (A1:B1, C1:D1, E1:F1) sit over six text columns. The row must stay
+// the header — a lone narrow row is a narrow header, not a metadata preamble,
+// so the recovery scan must not promote the first data row.
+func TestDetectHeaderRow_MergedHeaderOverWideBody(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		bold := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+		mustSetCell(t, f, "Sheet1", "A1", "Name")
+		mustSetCell(t, f, "Sheet1", "C1", "Amount")
+		mustSetCell(t, f, "Sheet1", "E1", "Date")
+		mustMergeCell(t, f, "Sheet1", "A1", "B1")
+		mustMergeCell(t, f, "Sheet1", "C1", "D1")
+		mustMergeCell(t, f, "Sheet1", "E1", "F1")
+		mustSetCellStyle(t, f, "Sheet1", "A1", "F1", bold)
+		// Rows 2–10: six text columns of data.
+		for r := 2; r <= 10; r++ {
+			for c, v := range []string{"item", "cat", "bob", "x", "y", "z"} {
+				mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), v)
+			}
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "merged-header.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<th") || !strings.Contains(text, "Name") {
+		t.Fatalf("merged row-1 header must be kept:\n%s", text)
+	}
+	if strings.Contains(text, "<th>item</th>") {
+		t.Fatalf("first data row must not be promoted to header:\n%s", text)
+	}
+}
+
+// TestDetectHeaderRow_NarrowPlainHeaderOverWideBody covers a plain 3-column
+// bold header over 6 columns of text data. Like the merged-header case the
+// header row is narrower than the body, and the recovery scan must not
+// promote the first data row.
+func TestDetectHeaderRow_NarrowPlainHeaderOverWideBody(t *testing.T) {
+	for _, merge := range [][2]string{{}, {"A2", "A3"}, {"B2", "C2"}} {
+		t.Run(merge[0]+merge[1], func(t *testing.T) {
+			data := newTestXLSX(t, func(f *excelize.File) {
+				bold := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+				for i, hdr := range []string{"Item", "Cat", "Bob"} {
+					mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), 1), hdr)
+				}
+				mustSetCellStyle(t, f, "Sheet1", "A1", "C1", bold)
+				for r := 2; r <= 10; r++ {
+					for c, v := range []string{"item", "cat", "bob", "x", "y", "z"} {
+						mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), v)
+					}
+				}
+				if merge[0] != "" {
+					if err := f.MergeCell("Sheet1", merge[0], merge[1]); err != nil {
+						t.Fatal(err)
+					}
+				}
+			})
+			p, _ := NewXLSXParser("")
+			res := p.ParseWithResult(t.Context(), "narrow-header.xlsx", data)
+			if res.Err != nil {
+				t.Fatalf("ParseWithResult: %v", res.Err)
+			}
+			text := spreadsheetText(res)
+			if !strings.Contains(text, "<th>Item</th>") {
+				t.Fatalf("narrow row-1 header must be kept:\n%s", text)
+			}
+			if strings.Contains(text, "<th>item</th>") {
+				t.Fatalf("first data row must not be promoted to header:\n%s", text)
+			}
+		})
+	}
+}
+
+// TestDetectHeaderRow_RecoveryRejectsHalfNumericRow aligns the recovery scan
+// with the step-2 data-majority reject: a row whose non-empty cells are half
+// numeric is data, not a header, and must not be promoted by the width scan.
+func TestDetectHeaderRow_RecoveryRejectsHalfNumericRow(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		bold := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+		// Rows 1–3: narrow bold metadata block (defers row 1, needs ≥1 more
+		// narrow row before recovery can fire).
+		for r := 1; r <= 3; r++ {
+			mustSetCell(t, f, "Sheet1", cellRef('A', r), "Meta")
+			mustSetCell(t, f, "Sheet1", cellRef('B', r), "x")
+			mustSetCellStyle(t, f, "Sheet1", cellRef('A', r), cellRef('B', r), bold)
+		}
+		// Row 4: body-width row, half text half numeric — data, not a header.
+		for i, v := range []string{"a", "b", "c", "1", "2", "3"} {
+			mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), 4), v)
+		}
+		// Rows 5–12: text data, body width.
+		for r := 5; r <= 12; r++ {
+			for c, v := range []string{"p", "q", "r", "s", "t", "u"} {
+				mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), v)
+			}
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "half-numeric.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if strings.Contains(text, "<th>a</th>") {
+		t.Fatalf("half-numeric row must not be promoted to header:\n%s", text)
+	}
+}
+
+// TestDetectHeaderRow_TitlePlusInvisibleFillHeader pins the title-stub
+// fallback: row 1 is a lone title cell and row 2 carries only excelize's
+// default pattern fill (Fill.Type "pattern" with no pattern or color), which
+// does not count as styled. The first text-majority row below the title is
+// still the header — a lone title cell is never a column header.
+func TestDetectHeaderRow_TitlePlusInvisibleFillHeader(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Report Title")
+		// Row 2: header text with only the default pattern fill — invisible.
+		for i, hdr := range []string{"Name", "Category", "Owner"} {
+			mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), 2), hdr)
+		}
+		fillOnly := mustNewStyle(t, f, &excelize.Style{
+			Fill: excelize.Fill{Type: "pattern"},
+		})
+		mustSetCellStyle(t, f, "Sheet1", "A2", "C2", fillOnly)
+		// Rows 3–8: unstyled data.
+		for r := 3; r <= 8; r++ {
+			for i, v := range []string{"alice", "eng", "bob"} {
+				mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), r), v)
+			}
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "invisible-fill.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<th>Name</th><th>Category</th>") {
+		t.Fatalf("title stub must yield to the first text-majority row:\n%s", text)
+	}
+	if strings.Contains(text, "<th>Report Title</th>") {
+		t.Fatalf("a lone title cell must not be treated as the header:\n%s", text)
+	}
+}
+
 // TestPadRowToWidth asserts the single-row padder widens with empty strings,
 // preserves existing cells, and never shrinks an already-wide row.
 func TestPadRowToWidth(t *testing.T) {
@@ -1111,6 +1555,38 @@ func TestPadRowToWidth(t *testing.T) {
 	padRowToWidth(&row, 2)
 	if len(row) != 5 {
 		t.Fatalf("must not shrink: want 5, got %d", len(row))
+	}
+}
+
+// TestMedianRowWidth verifies the sampling helper.
+func TestMedianRowWidth(t *testing.T) {
+	// Kros-style: 5 narrow rows, then 14 wide rows.
+	records := make([][]string, 20)
+	records[0] = []string{"Title"}
+	records[1] = []string{"Stavba:", "", "DSP MILLHAUS"}
+	records[2] = []string{"Objednávateľ:"}
+	records[3] = []string{"Zhotoviteľ:", "", "", "", "", "", "Spracoval:"}
+	records[4] = []string{"Miesto:", "", "", "", "", "", "Dátum:"}
+	for i := 5; i < 20; i++ {
+		records[i] = []string{"SO01", "", "OBJEKT", "17234914", "689480", "17924395", "3584879"}
+	}
+	got := medianRowWidth(records)
+	if got < 5 || got > 7 {
+		t.Fatalf("medianRowWidth = %d, want 5..7 for Kros-style sheet", got)
+	}
+
+	// Narrow sheet: all 2-cell rows → median = 2.
+	narrow := make([][]string, 10)
+	for i := range narrow {
+		narrow[i] = []string{"a", "b"}
+	}
+	if got := medianRowWidth(narrow); got != 2 {
+		t.Fatalf("medianRowWidth(narrow) = %d, want 2", got)
+	}
+
+	// Too few rows → 0.
+	if got := medianRowWidth([][]string{{"a"}, {"b"}}); got != 0 {
+		t.Fatalf("medianRowWidth(tiny) = %d, want 0", got)
 	}
 }
 
@@ -1139,5 +1615,85 @@ func TestXLSXParser_EmptySheet(t *testing.T) {
 	}
 	if len(res.JSON) != 0 {
 		t.Fatalf("empty sheet must yield empty JSON, got:\n%v", res.JSON)
+	}
+}
+
+// TestDetectHeaderRow_BlankRowBreaksRecovery pins the recovery gate: a blank
+// row inside a candidate metadata block ends the run, so a narrow styled row
+// above a blank row is the header — the scan must not continue past it and
+// promote the first body-width row.
+func TestDetectHeaderRow_BlankRowBreaksRecovery(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		bold := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+		for i, hdr := range []string{"Item", "Cat", "Bob"} {
+			mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), 1), hdr)
+		}
+		mustSetCellStyle(t, f, "Sheet1", "A1", "C1", bold)
+		// Row 2 intentionally left blank.
+		for r := 3; r <= 12; r++ {
+			for c, v := range []string{"item", "cat", "bob", "x", "y", "z"} {
+				mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), v)
+			}
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "blank-row.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<th>Item</th>") {
+		t.Fatalf("narrow row-1 header before a blank row must be kept:\n%s", text)
+	}
+	if strings.Contains(text, "<th>item</th>") {
+		t.Fatalf("first data row must not be promoted to header:\n%s", text)
+	}
+}
+
+// TestDetectHeaderRow_MergedHeaderBelowMetadata pins merge-aware recovery:
+// a single metadata row is ambiguous, while two narrow metadata rows allow
+// recovery of a merged header — merge extents count toward the row width.
+func TestDetectHeaderRow_MergedHeaderBelowMetadata(t *testing.T) {
+	for _, metadataRows := range []int{1, 2} {
+		t.Run([]string{"", "single", "block"}[metadataRows], func(t *testing.T) {
+			data := newTestXLSX(t, func(f *excelize.File) {
+				bold := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+				for r := 1; r <= metadataRows; r++ {
+					mustSetCell(t, f, "Sheet1", cellRef('A', r), "Stavba:")
+					mustSetCell(t, f, "Sheet1", cellRef('B', r), "DSP MILLHAUS")
+					mustSetCellStyle(t, f, "Sheet1", cellRef('A', r), cellRef('B', r), bold)
+				}
+				headerRow := metadataRows + 1
+				for i, hdr := range []string{"Item", "Cat", "Bob", "x", "y", "z"} {
+					mustSetCell(t, f, "Sheet1", cellRef(rune('A'+i), headerRow), hdr)
+				}
+				for _, pair := range [][2]rune{{'A', 'B'}, {'C', 'D'}, {'E', 'F'}} {
+					if err := f.MergeCell("Sheet1", cellRef(pair[0], headerRow), cellRef(pair[1], headerRow)); err != nil {
+						t.Fatalf("merge: %v", err)
+					}
+				}
+				for r := headerRow + 1; r <= 12; r++ {
+					for c, v := range []string{"item", "cat", "bob", "x", "y", "z"} {
+						mustSetCell(t, f, "Sheet1", cellRef(rune('A'+c), r), v)
+					}
+				}
+			})
+			p, _ := NewXLSXParser("")
+			res := p.ParseWithResult(t.Context(), "merged-below-metadata.xlsx", data)
+			if res.Err != nil {
+				t.Fatalf("ParseWithResult: %v", res.Err)
+			}
+			text := spreadsheetText(res)
+			if metadataRows == 1 {
+				if !strings.Contains(text, "<th>Stavba:</th>") || strings.Contains(text, "<th colspan=\"2\">Item</th>") {
+					t.Fatalf("single metadata row must retain the conservative fallback:\n%s", text)
+				}
+			} else if !strings.Contains(text, "<th colspan=\"2\">Item</th>") {
+				t.Fatalf("merged header below a metadata block must be recovered:\n%s", text)
+			}
+			if strings.Contains(text, "<th>item</th>") {
+				t.Fatalf("first data row must not be promoted to header:\n%s", text)
+			}
+		})
 	}
 }

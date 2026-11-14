@@ -298,8 +298,8 @@ func (c *dingTalkChannel) normalizeBotMessage(data *chatbot.BotCallbackDataModel
 	if data == nil {
 		return core.IncomingMessage{}, "", false
 	}
-	chatID := dingTalkFirstNonEmpty(data.ConversationId)
-	senderID := dingTalkFirstNonEmpty(data.SenderId, data.SenderStaffId)
+	chatID := common.FirstNonEmpty(data.ConversationId)
+	senderID := common.FirstNonEmpty(data.SenderId, data.SenderStaffId)
 	text := strings.TrimSpace(data.Text.Content)
 	if text == "" {
 		text = dingTalkExtractText(data.Content)
@@ -324,7 +324,7 @@ func (c *dingTalkChannel) normalizeBotMessage(data *chatbot.BotCallbackDataModel
 		AccountID: c.account.AccountID,
 		ChatID:    chatID,
 		ChatType:  data.ConversationType,
-		MessageID: dingTalkFirstNonEmpty(data.MsgId, dedupKey),
+		MessageID: common.FirstNonEmpty(data.MsgId, dedupKey),
 		SenderID:  senderID,
 		Text:      text,
 		Raw:       raw,
@@ -774,13 +774,13 @@ func dingTalkBotDedupKey(data *chatbot.BotCallbackDataModel, text string) string
 	if data.MsgId != "" {
 		return "msg:" + data.MsgId
 	}
-	if data.ConversationId != "" && dingTalkFirstNonEmpty(data.SenderId, data.SenderStaffId) != "" && strings.TrimSpace(text) != "" {
+	if data.ConversationId != "" && common.FirstNonEmpty(data.SenderId, data.SenderStaffId) != "" && strings.TrimSpace(text) != "" {
 		sum := sha1.Sum([]byte(text))
 		eventTS := ""
 		if data.CreateAt > 0 {
 			eventTS = ":" + strconv.FormatInt(data.CreateAt, 10)
 		}
-		return fmt.Sprintf("fallback:%s:%s%s:%s", data.ConversationId, dingTalkFirstNonEmpty(data.SenderId, data.SenderStaffId), eventTS, hex.EncodeToString(sum[:])[:16])
+		return fmt.Sprintf("fallback:%s:%s%s:%s", data.ConversationId, common.FirstNonEmpty(data.SenderId, data.SenderStaffId), eventTS, hex.EncodeToString(sum[:])[:16])
 	}
 	return ""
 }
@@ -826,14 +826,4 @@ func dingTalkMap(value any) map[string]any {
 		return out
 	}
 	return map[string]any{}
-}
-
-// dingTalkFirstNonEmpty returns the first non-empty string.
-func dingTalkFirstNonEmpty(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
 }

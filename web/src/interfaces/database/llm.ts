@@ -132,4 +132,5 @@ export interface IDefaultModel {
   model_name: string;
   model_provider: string;
   model_type: string;
+  tenant_id?: string;
 }

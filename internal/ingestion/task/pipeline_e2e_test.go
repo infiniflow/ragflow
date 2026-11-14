@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strconv"
 	"testing"
 	"time"
 
@@ -72,7 +73,7 @@ func setupTestDocEngine(t *testing.T, engineType engine.EngineType, tenantID, da
 			Username: esUser,
 			Password: esPassword,
 		}
-		docEngine, err = elasticsearch.NewEngine(cfg)
+		docEngine, err = elasticsearch.NewEngine(t.Context(), cfg)
 		if err != nil {
 			t.Skipf("Could not create Elasticsearch engine: %v (skipping ES subtest)", err)
 			return nil, func() {}
@@ -96,7 +97,7 @@ func setupTestDocEngine(t *testing.T, engineType engine.EngineType, tenantID, da
 			DBName:       "ragflow_e2e_test",
 			PostgresPort: 5432,
 		}
-		docEngine, err = infinity.NewEngine(cfg)
+		docEngine, err = infinity.NewEngine(t.Context(), cfg)
 		if err != nil {
 			t.Skipf("Could not create Infinity engine: %v (skipping Infinity subtest)", err)
 			return nil, func() {}
@@ -151,7 +152,7 @@ func toLowerSnakeCase(s string) string {
 }
 
 func isPortOpen(host string, port int) bool {
-	addr := fmt.Sprintf("%s:%d", host, port)
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
 	conn, err := net.DialTimeout("tcp", addr, 1*time.Second)
 	if err != nil {
 		return false

@@ -4,7 +4,7 @@ title: Tool Components
 sidebar_label: Tool Components
 slug: /tool_components
 sidebar_custom_props: {
-  categoryIcon: RagAiAgent
+  categoryIcon: RagHTTP
 }
 ---
 

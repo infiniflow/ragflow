@@ -130,6 +130,9 @@ func (h *CompilationTemplateGroupHandler) Get(c *gin.Context) {
 //	@Success 200 {object} map[string]interface{}
 //	@Router /v1/compilation-template-groups [post]
 func (h *CompilationTemplateGroupHandler) Save(c *gin.Context) {
+	common.StartOperationLog(c, "create_compilation_template_group")
+	defer common.FinishOperationLog(c)
+
 	var req service.GroupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.RespondError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
@@ -144,6 +147,7 @@ func (h *CompilationTemplateGroupHandler) Save(c *gin.Context) {
 		common.RespondError(c, common.CodeDataError, err.Error())
 		return
 	}
+	common.SetOperationResource(c, "compilation_template_group_id", group.ID)
 	common.RespondSuccess(c, group, "success")
 }
 
@@ -157,7 +161,11 @@ func (h *CompilationTemplateGroupHandler) Save(c *gin.Context) {
 //	@Success 200 {object} map[string]interface{}
 //	@Router /v1/compilation-template-groups/{group_id} [put]
 func (h *CompilationTemplateGroupHandler) Update(c *gin.Context) {
+	common.StartOperationLog(c, "update_compilation_template_group")
+	defer common.FinishOperationLog(c)
+
 	id := c.Param("group_id")
+	common.SetOperationResource(c, "compilation_template_group_id", id)
 	var req service.GroupRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.RespondError(c, common.CodeArgumentError, "Invalid request: "+err.Error())
@@ -199,7 +207,11 @@ func (h *CompilationTemplateGroupHandler) Update(c *gin.Context) {
 //	@Success 200 {object} map[string]interface{}
 //	@Router /v1/compilation-template-groups/{group_id} [delete]
 func (h *CompilationTemplateGroupHandler) Delete(c *gin.Context) {
+	common.StartOperationLog(c, "delete_compilation_template_group")
+	defer common.FinishOperationLog(c)
+
 	id := c.Param("group_id")
+	common.SetOperationResource(c, "compilation_template_group_id", id)
 	ok, err := h.compilationTemplateGroupService.DeleteGroup(c.Request.Context(), id)
 	if err != nil {
 		common.RespondError(c, common.CodeExceptionError, err.Error())

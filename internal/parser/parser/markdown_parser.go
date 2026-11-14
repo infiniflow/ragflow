@@ -21,6 +21,7 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -41,9 +42,51 @@ const dataURIPrefix = "data:image/"
 // GoMarkdown is the lib_type identifier for the pure-Go Markdown backend.
 const GoMarkdown = "go_markdown"
 
+// markdownTOCHeadingPattern matches a Markdown TOC heading. Standalone
+// front/back-matter headings such as 致谢/Acknowledgments are sections, not
+// TOCs, so they stay out of the pattern even though plain-text items match them.
+var markdownTOCHeadingPattern = regexp.MustCompile(`(?i)^(contents|目录|目次|tableofcontents)$`)
+
+// markdownListMarkerPattern matches the unordered (*, -, +) or ordered (1., 1))
+// list markers a Markdown TOC entry carries.
+var markdownListMarkerPattern = regexp.MustCompile(`^(?:[\*\-\+]|\d+[\.\)])\s+`)
+
+// markdownTOCText strips ATX heading markers (#) and list markers so a Markdown
+// TOC heading, its entries and the body headings that end the TOC match on
+// their core text.
+func markdownTOCText(s string) string {
+	s = strings.TrimLeft(strings.TrimSpace(s), "# \t")
+	for {
+		loc := markdownListMarkerPattern.FindStringIndex(s)
+		if loc == nil {
+			return s
+		}
+		s = strings.TrimSpace(s[loc[1]:])
+	}
+}
+
+// markdownTOCEntry reports whether a Markdown item is a TOC entry: a list item
+// (*, -, +, 1., 1)) or a bare link line.
+func markdownTOCEntry(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	if markdownListMarkerPattern.MatchString(trimmed) {
+		return true
+	}
+	return strings.HasPrefix(trimmed, "[") && strings.Contains(trimmed, "](")
+}
+
+// markdownTOCRules adapts TOC removal to Markdown item text.
+var markdownTOCRules = tocRules{
+	clean:      markdownTOCText,
+	heading:    markdownTOCHeadingPattern,
+	asciiExtra: "#*+_",
+	entry:      markdownTOCEntry,
+}
+
 type MarkdownParser struct {
 	libType     string
 	ParseMethod string
+	RemoveTOC   bool
 	// FetchRemoteImages controls whether HTTP(S) Markdown images are
 	// downloaded. NewMarkdownParser enables it for direct Markdown parsing;
 	// callers normalizing untrusted backend responses may disable it.
@@ -76,9 +119,12 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["parse_method"].(string); ok && v != "" {
 		p.ParseMethod = v
 	}
+	if v, ok := setup["remove_toc"].(bool); ok {
+		p.RemoveTOC = v
+	}
 }
 
-// ParseWithResult implements ParseResultProducer (plan §6.5) and
+// ParseWithResult implements ParseResultProducer and
 // returns a structured JSON payload. Each top-level block
 // emits one item with `text` + `doc_type_kwd: "text"`. When the
 // block contains a Markdown image reference (![alt](src)), the image
@@ -124,6 +170,7 @@ func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, da
 		for index, child := range node.GetChildren() {
 			if paragraph, ok := child.(*ast.Paragraph); ok && bytes.Contains(paragraph.Content, []byte("|")) {
 				_, inList := node.(*ast.ListItem)
+				_, topLevel := node.(*ast.Document)
 				afterList := false
 				if index > 0 {
 					_, afterList = node.GetChildren()[index-1].(*ast.List)
@@ -131,6 +178,9 @@ func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, da
 				content := paragraph.Content
 				if afterList {
 					content = dedentMarkdownTable(content)
+				}
+				if topLevel && bytes.Equal(content, paragraph.Content) {
+					content = dedentTopLevelTable(content)
 				}
 				if !inList && bytes.Equal(content, paragraph.Content) {
 					children = append(children, child)
@@ -178,7 +228,10 @@ func (p *MarkdownParser) parseWithState(ctx context.Context, filename string, da
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}
-	if items == nil {
+	if p.RemoveTOC {
+		items = removeContentsTable(items, isEnglishItems(items, markdownTOCRules.asciiExtra), markdownTOCRules)
+	}
+	if len(items) == 0 {
 		items = []map[string]any{{"text": "", "doc_type_kwd": "text"}}
 	}
 	var warnings []string
@@ -322,6 +375,35 @@ func dedentMarkdownTable(data []byte) []byte {
 		lines[i] = strings.TrimPrefix(lines[i], prefix)
 	}
 	return mdparser.NormalizeNewlines([]byte(strings.Join(lines, "\n")))
+}
+
+// GFM allows up to three spaces of indentation before each line of a table. At the top level
+// gomarkdown reads such a table as a paragraph that keeps the indentation of its continuation
+// lines, also when a line of text comes first. Normalize the lines from the first header and
+// delimiter row on, when each of them is indented by at most three spaces; a tab or four spaces
+// leave the paragraph to the parser's own rules, and the text before the table stays as it is.
+func dedentTopLevelTable(data []byte) []byte {
+	lines := strings.Split(string(data), "\n")
+	start := -1
+	for i := 0; i+1 < len(lines); i++ {
+		if isMarkdownTableRow(lines[i]) && isMarkdownTableSeparator(lines[i+1]) {
+			start = i
+			break
+		}
+	}
+	if start == -1 {
+		return data
+	}
+	for i := start; i < len(lines); i++ {
+		trimmed := strings.TrimLeft(lines[i], " ")
+		if strings.HasPrefix(trimmed, "\t") || len(lines[i])-len(trimmed) > 3 {
+			return data
+		}
+		lines[i] = trimmed
+	}
+	// Paragraph content has no final newline, and the block parser reads a delimiter row only
+	// when one ends it, as in a file.
+	return append(mdparser.NormalizeNewlines([]byte(strings.Join(lines, "\n"))), '\n')
 }
 
 // balanceTableColumns pads the header row and its separator up to the widest row's cell

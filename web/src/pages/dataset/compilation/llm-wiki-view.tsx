@@ -1,9 +1,3 @@
-import { Card } from '@/components/ui/card';
-import {
-  ResizableHandle,
-  ResizablePanel,
-  ResizablePanelGroup,
-} from '@/components/ui/resizable';
 import { GenerateType } from '@/constants/knowledge';
 import {
   useGenerateStatus,
@@ -15,6 +9,10 @@ import {
 } from '@/hooks/use-knowledge-request';
 import { useState } from 'react';
 
+import {
+  CompilationViewLayout,
+  CompilationViewProps,
+} from './compilation-view-layout';
 import { LeftPanelTab, ViewMode } from './constants';
 import CompilationEmptyState from './empty-state';
 import { useCompilationArtifact } from './hooks/use-compilation-artifact';
@@ -23,7 +21,7 @@ import { CompilationLoadingCard } from './loading-card';
 import { WikiDetailContent } from './wiki-detail-content';
 import { WikiLeftPanel } from './wiki-left-panel';
 
-export function LlmWikiView() {
+export function LlmWikiView(viewProps: CompilationViewProps) {
   const [leftTab, setLeftTab] = useState<LeftPanelTab>(LeftPanelTab.Contents);
   useFetchKnowledgeBaseConfiguration();
   const { topics, loading: topicListLoading } = useFetchArtifactTopicList();
@@ -48,41 +46,44 @@ export function LlmWikiView() {
   const isEmpty = topics.length === 0 && !topicListLoading;
 
   if (isLoading) {
-    return <CompilationLoadingCard />;
+    return (
+      <CompilationViewLayout {...viewProps}>
+        <CompilationLoadingCard />
+      </CompilationViewLayout>
+    );
   }
 
   if (isEmpty) {
     return (
-      <CompilationEmptyState type={ViewMode.LlmWiki} data={artifactRunData} />
+      <CompilationViewLayout {...viewProps}>
+        <CompilationEmptyState type={ViewMode.LlmWiki} data={artifactRunData} />
+      </CompilationViewLayout>
     );
   }
 
   return (
-    <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
-      <ResizablePanelGroup direction="horizontal" className="flex-1">
-        <ResizablePanel id="wiki-left" order={1} defaultSize={50}>
-          <WikiLeftPanel
-            tab={leftTab}
-            onTabChange={handleLeftTabChange}
-            selectedArtifact={selectedArtifact}
-            onSelectArtifact={handleSelectArtifact}
-            onClearArtifact={clearSelectedArtifact}
-          />
-        </ResizablePanel>
-        {selectedArtifact && (
-          <>
-            <ResizableHandle withHandle />
-            <ResizablePanel id="wiki-detail" order={2}>
-              <WikiDetailContent
-                selectedArtifact={selectedArtifact}
-                selectedVersion={selectedVersion}
-                onSelectVersion={selectVersion}
-                onSelectArtifact={handleSelectArtifact}
-              />
-            </ResizablePanel>
-          </>
-        )}
-      </ResizablePanelGroup>
-    </Card>
+    <CompilationViewLayout
+      {...viewProps}
+      defaultLeftSize={25}
+      showRightPanel={Boolean(selectedArtifact)}
+      navigation={
+        <WikiLeftPanel
+          tab={leftTab}
+          onTabChange={handleLeftTabChange}
+          selectedArtifact={selectedArtifact}
+          onSelectArtifact={handleSelectArtifact}
+          onClearArtifact={clearSelectedArtifact}
+        />
+      }
+    >
+      {selectedArtifact && (
+        <WikiDetailContent
+          selectedArtifact={selectedArtifact}
+          selectedVersion={selectedVersion}
+          onSelectVersion={selectVersion}
+          onSelectArtifact={handleSelectArtifact}
+        />
+      )}
+    </CompilationViewLayout>
   );
 }

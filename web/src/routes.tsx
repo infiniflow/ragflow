@@ -17,6 +17,7 @@
 import { lazy, memo, Suspense } from 'react';
 import { createBrowserRouter, Navigate, type RouteObject } from 'react-router';
 import FallbackComponent from './components/fallback-component';
+import { QueryPreservingNavigate } from './components/query-preserving-navigate';
 import { IS_ENTERPRISE } from './pages/admin/utils';
 
 export enum Routes {
@@ -34,6 +35,7 @@ export enum Routes {
   Pipeline = '/pipeline',
   Explore = '/explore',
   AgentExplore = `${Routes.Agent}/:id/explore`,
+  AgentSetting = `${Routes.Agent}/:id/setting`,
   Memories = '/memories',
   Memory = '/memory',
   MemoryMessage = '/memory-message',
@@ -51,6 +53,7 @@ export enum Routes {
   Api = '/api',
   Mcp = '/mcp',
   Team = '/team',
+  Integrations = '/integrations',
   Plan = '/plan',
   Model = '/model',
   Prompt = '/prompt',
@@ -66,11 +69,8 @@ export enum Routes {
   ProfileProfile = `${ProfileSetting}${Profile}`,
   DatasetTesting = '/retrieval',
   Chunk = '/chunk',
-  ChunkResult = `${Chunk}${Chunk}`,
   Parsed = '/parsed',
   ParsedResult = `${Chunk}${Parsed}`,
-  Result = '/result',
-  ResultView = `${Chunk}${Result}`,
   KnowledgeGraph = '/knowledge-graph',
   Compilation = '/compilation',
   AgentLogPage = '/agent-log-page',
@@ -175,12 +175,74 @@ const routeConfigOptions = [
     Component: () => import('@/pages/next-chats/chat'),
   },
   {
+    path: Routes.UserSetting,
+    Component: () => import('@/pages/user-setting'),
+    layout: false,
+    children: [
+      {
+        path: Routes.UserSetting,
+        element: <Navigate to={`${Routes.UserSetting}/profile`} replace />,
+      },
+      {
+        path: `${Routes.UserSetting}/profile`,
+        Component: () => import('@/pages/user-setting/profile'),
+      },
+      {
+        path: `${Routes.UserSetting}${Routes.Api}`,
+        Component: () => import('@/pages/user-setting/setting-api'),
+      },
+      {
+        path: `${Routes.UserSetting}${Routes.Model}`,
+        element: (
+          <QueryPreservingNavigate
+            to={`${Routes.Integrations}${Routes.Model}`}
+          />
+        ),
+      },
+      {
+        path: `${Routes.UserSetting}${Routes.Team}`,
+        element: <QueryPreservingNavigate to={Routes.Team} />,
+      },
+      {
+        path: `${Routes.UserSetting}${Routes.Mcp}`,
+        element: (
+          <QueryPreservingNavigate to={`${Routes.Integrations}${Routes.Mcp}`} />
+        ),
+      },
+      {
+        path: `${Routes.UserSetting}${Routes.DataSource}`,
+        element: (
+          <QueryPreservingNavigate
+            to={`${Routes.Integrations}${Routes.DataSource}`}
+          />
+        ),
+      },
+      {
+        path: `${Routes.UserSetting}${Routes.ChatChannel}`,
+        element: (
+          <QueryPreservingNavigate
+            to={`${Routes.Integrations}${Routes.ChatChannel}`}
+          />
+        ),
+      },
+    ],
+  },
+  {
     path: Routes.Root,
     Component: () => import('@/layouts/root-layout'),
     children: [
       {
-        path: Routes.Datasets,
-        Component: () => import('@/pages/datasets'),
+        Component: () => import('@/layouts/nav-group-layout'),
+        children: [
+          {
+            path: Routes.Datasets,
+            Component: () => import('@/pages/datasets'),
+          },
+          {
+            path: Routes.Memories,
+            Component: () => import('@/pages/memories'),
+          },
+        ],
       },
       {
         path: Routes.DatasetBase,
@@ -206,15 +268,30 @@ const routeConfigOptions = [
             path: `${Routes.DatasetBase}${Routes.DataSetSetting}/:id`,
             Component: () => import('@/pages/dataset/setting'),
           },
+          {
+            path: `${Routes.DatasetBase}${Routes.Compilation}/:id`,
+            Component: () => import('@/pages/dataset/compilation'),
+          },
         ],
       },
       {
-        path: Routes.Chats,
-        Component: () => import('@/pages/next-chats'),
+        // The chunk page shows the (collapsed) primary sidebar like the
+        // dataset pages it is entered from, so it lives under the root layout.
+        path: `${Routes.ParsedResult}/chunks`,
+        Component: () => import('@/pages/chunk'),
       },
       {
-        path: Routes.Searches,
-        Component: () => import('@/pages/next-searches'),
+        Component: () => import('@/layouts/nav-group-layout'),
+        children: [
+          {
+            path: Routes.Chats,
+            Component: () => import('@/pages/next-chats'),
+          },
+          {
+            path: Routes.Searches,
+            Component: () => import('@/pages/next-searches'),
+          },
+        ],
       },
       {
         path: `${Routes.Search}/:id`,
@@ -226,13 +303,19 @@ const routeConfigOptions = [
         Component: () => import('@/pages/agents'),
       },
       {
+        path: Routes.CompilationTemplatesEditNext,
+        Component: () =>
+          import('@/pages/user-setting/compilation-templates/edit-next'),
+      },
+      {
+        path: `${Routes.CompilationTemplatesEditNext}/:id`,
+        Component: () =>
+          import('@/pages/user-setting/compilation-templates/edit-next'),
+      },
+      {
         path: Routes.AgentTemplates,
         layout: false,
         Component: () => import('@/pages/agents/agent-templates'),
-      },
-      {
-        path: Routes.Memories,
-        Component: () => import('@/pages/memories'),
       },
       {
         path: `${Routes.Memory}`,
@@ -257,96 +340,88 @@ const routeConfigOptions = [
         Component: () => import('@/pages/skills'),
       },
       {
-        path: Routes.UserSetting,
-        Component: () => import('@/pages/user-setting'),
-        layout: false,
+        path: Routes.Integrations,
+        element: (
+          <Navigate to={`${Routes.Integrations}${Routes.Model}`} replace />
+        ),
+      },
+      {
+        Component: () => import('@/layouts/settings-page-layout'),
         children: [
           {
-            path: Routes.UserSetting,
-            element: <Navigate to={`/user-setting/model`} replace />,
-          },
-          {
-            path: `${Routes.UserSetting}/profile`,
-            Component: () => import('@/pages/user-setting/profile'),
-          },
-          /*
-          {
-            path: `${Routes.UserSetting}/locale`,
-            Component: () => import('@/pages/user-setting/setting-locale'),
-          },
-          */
-          {
-            path: `${Routes.UserSetting}/model`,
+            path: `${Routes.Integrations}${Routes.Model}`,
             Component: () => import('@/pages/user-setting/setting-model'),
           },
           {
-            path: `${Routes.UserSetting}/team`,
-            Component: () => import('@/pages/user-setting/setting-team'),
-          },
-          {
-            path: `${Routes.UserSetting}${Routes.Api}`,
-            Component: () => import('@/pages/user-setting/setting-api'),
-          },
-          {
-            path: `${Routes.UserSetting}${Routes.Mcp}`,
-            Component: () => import('@/pages/user-setting/mcp'),
-          },
-
-          {
-            path: `${Routes.UserSetting}${Routes.DataSource}`,
+            path: `${Routes.Integrations}${Routes.DataSource}`,
             Component: () => import('@/pages/user-setting/data-source'),
           },
           {
-            path: `${Routes.UserSetting}${Routes.ChatChannel}`,
+            path: `${Routes.Integrations}${Routes.ChatChannel}`,
             Component: () => import('@/pages/user-setting/chat-channel'),
+          },
+          {
+            path: `${Routes.Integrations}${Routes.Mcp}`,
+            Component: () => import('@/pages/user-setting/mcp'),
+          },
+          {
+            path: Routes.Team,
+            Component: () => import('@/pages/user-setting/setting-team'),
           },
         ],
       },
       {
-        path: `${Routes.UserSetting}${Routes.DataSource}${Routes.DataSourceDetailPage}`,
-        layout: false,
+        path: `${Routes.Integrations}${Routes.DataSource}${Routes.DataSourceDetailPage}`,
         Component: () =>
           import('@/pages/user-setting/data-source/data-source-detail-page'),
       },
+      {
+        path: `${Routes.UserSetting}${Routes.DataSource}${Routes.DataSourceDetailPage}`,
+        element: (
+          <QueryPreservingNavigate
+            to={`${Routes.Integrations}${Routes.DataSource}${Routes.DataSourceDetailPage}`}
+          />
+        ),
+      },
     ],
-  },
-  {
-    path: Routes.CompilationTemplatesEditNext,
-    layout: false,
-    Component: () =>
-      import('@/pages/user-setting/compilation-templates/edit-next'),
-  },
-  {
-    path: `${Routes.CompilationTemplatesEditNext}/:id`,
-    layout: false,
-    Component: () =>
-      import('@/pages/user-setting/compilation-templates/edit-next'),
   },
   {
     path: `${Routes.SearchShare}`,
     Component: () => import('@/pages/next-search/share'),
   },
   {
-    path: `${Routes.DatasetBase}${Routes.Compilation}/:id`,
-    Component: () => import('@/pages/dataset/compilation'),
-  },
-  {
-    path: Routes.Agent,
+    path: Routes.Root,
+    Component: () => import('@/layouts/root-layout'),
     children: [
       {
-        path: `${Routes.Agent}/:id`,
-        Component: () => import('@/pages/agent'),
+        path: Routes.Agent,
+        children: [
+          {
+            path: `${Routes.Agent}/:id`,
+            Component: () => import('@/pages/agent/layout'),
+            children: [
+              {
+                index: true,
+                Component: () => import('@/pages/agent'),
+              },
+              {
+                path: Routes.AgentExplore,
+                Component: () => import('@/pages/agent/explore'),
+                errorElement: <FallbackComponent />,
+              },
+              {
+                path: Routes.AgentSetting,
+                Component: () => import('@/pages/agent/setting'),
+              },
+            ],
+          },
+        ],
       },
       {
-        path: Routes.AgentExplore,
-        Component: () => import('@/pages/agent/explore'),
-        errorElement: <FallbackComponent />,
+        path: `${Routes.Pipeline}/:id`,
+        Component: () => import('@/pages/builtin-pipeline'),
       },
     ],
-  },
-  {
-    path: `${Routes.Pipeline}/:id`,
-    Component: () => import('@/pages/builtin-pipeline'),
   },
   {
     path: `${Routes.AgentLogPage}/:id`,
@@ -355,28 +430,6 @@ const routeConfigOptions = [
   {
     path: `${Routes.DataflowResult}`,
     Component: () => import('@/pages/dataflow-result'),
-  },
-  {
-    path: Routes.Chunk,
-    children: [
-      {
-        path: `${Routes.Chunk}`,
-        Component: () => import('@/pages/chunk'),
-      },
-      {
-        path: `${Routes.ParsedResult}/chunks`,
-        Component: () =>
-          import('@/pages/chunk/parsed-result/add-knowledge/components/knowledge-chunk'),
-      },
-      {
-        path: `${Routes.ChunkResult}/:id`,
-        Component: () => import('@/pages/chunk/chunk-result'),
-      },
-      {
-        path: `${Routes.ResultView}/:id`,
-        Component: () => import('@/pages/chunk/result-view'),
-      },
-    ],
   },
   {
     path: Routes.Admin,

@@ -20,6 +20,8 @@ package common
 import (
 	"time"
 
+	"github.com/gin-gonic/gin"
+
 	"go.uber.org/zap"
 )
 
@@ -77,3 +79,14 @@ func SyncIngestLog() {
 // LogIngest is the OSS no-op implementation of the shared upstream seam. The EE
 // build provides the real sink.
 func LogIngest(log *IngestionLog, fields ...zap.Field) {}
+
+// StartOperationLog leaves community request handling unchanged.
+func StartOperationLog(_ *gin.Context, _ string) {}
+
+// SetOperationResource leaves community request handling unchanged.
+func SetOperationResource(_ *gin.Context, _ string, _ any) {}
+
+// FinishOperationLog leaves community request handling unchanged.
+func FinishOperationLog(_ *gin.Context) {}
+
+func auditResponse(_ *gin.Context, _ ErrorCode) {}

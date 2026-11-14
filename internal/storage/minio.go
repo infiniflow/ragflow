@@ -33,10 +33,11 @@ import (
 
 // MinioStorage implements Storage interface for MinIO
 type MinioStorage struct {
-	client     *minio.Client
-	bucket     string // default bucket
-	prefixPath string // default prefix path
-	config     config.MinioConfig
+	client       *minio.Client
+	healthClient *http.Client
+	bucket       string // default bucket
+	prefixPath   string // default prefix path
+	config       config.MinioConfig
 }
 
 // NewMinioStorage creates a new MinIO storage instance
@@ -87,6 +88,12 @@ func (m *MinioStorage) connect() error {
 	}
 
 	m.client = client
+	m.healthClient = &http.Client{
+		Transport: transport,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	return nil
 }
 
@@ -120,17 +127,22 @@ func (m *MinioStorage) Health(ctx context.Context) bool {
 		return false
 	}
 
-	// A missing or inaccessible probe bucket still proves the endpoint responds.
-	_, err := m.client.BucketExists(probeCtx, "ragflow-health-check")
-	if probeCtx.Err() != nil {
+	healthURL := m.client.EndpointURL()
+	healthURL.Path = "/minio/health/live"
+	req, err := http.NewRequestWithContext(probeCtx, http.MethodHead, healthURL.String(), nil)
+	if err != nil {
 		return false
 	}
-	if err != nil && minio.ToErrorResponse(err).Code != minio.AccessDenied {
-		common.Warn("Failed to check MinIO health", zap.Error(err))
+	resp, err := m.healthClient.Do(req)
+	if err != nil {
+		if probeCtx.Err() == nil {
+			common.Warn("Failed to check MinIO health", zap.Error(err))
+		}
 		return false
 	}
+	defer resp.Body.Close()
 
-	return true
+	return probeCtx.Err() == nil && resp.StatusCode == http.StatusOK
 }
 
 // Put uploads an object to MinIO

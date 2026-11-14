@@ -4,7 +4,7 @@ title: Data Source Categories and Selection
 sidebar_label: Categories and Selection
 slug: /add_data_source/data_source_categories_and_selection
 sidebar_custom_props: {
-  categoryIcon: LucideServer
+  categoryIcon: LucideListTree
 }
 ---
 
@@ -12,7 +12,7 @@ sidebar_custom_props: {
 
 RAGFlow supports many data sources. It is recommended to first select a major category according to the content source, and then go to the corresponding data source configuration. The following categories help users quickly determine which connection method to choose.
 
-**Documents and collaboration platforms**: Used to synchronize team documents, wikis, cloud drive files, and collaborative documents. This category is suitable for building enterprise Datasets or project repositories. It includes Confluence, Notion, Feishu Wiki, Google Drive, OneDrive, SharePoint, Box, Dropbox, WebDAV, and SeaFile.
+**Documents and collaboration platforms**: Used to synchronize team documents, wikis, cloud drive files, and collaborative documents. This category is suitable for building enterprise Datasets or project repositories. It includes Confluence, Notion, Google Drive, OneDrive, SharePoint, Box, Dropbox, WebDAV, and SeaFile.
 
 **Research libraries**: Use **Zotero** to synchronize PDF attachments from papers and references. Choose Zotero cloud or WebDAV according to where the attachments are stored.
 

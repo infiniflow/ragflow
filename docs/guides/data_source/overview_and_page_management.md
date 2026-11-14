@@ -4,7 +4,7 @@ title: Data Source Overview and Page Management
 sidebar_label: Overview and Page Management
 slug: /add_data_source/overview_and_page_management
 sidebar_custom_props: {
-  categoryIcon: LucideServer
+  categoryIcon: LucideLayoutDashboard
 }
 ---
 

@@ -4,7 +4,7 @@ title: Connect the Pipeline to a Dataset
 sidebar_label: Connect the Pipeline to a Dataset
 slug: /connect_the_pipeline_to_a_knowledge_base
 sidebar_custom_props: {
-  categoryIcon: RagAiAgent
+  categoryIcon: LucideDatabaseZap
 }
 ---
 

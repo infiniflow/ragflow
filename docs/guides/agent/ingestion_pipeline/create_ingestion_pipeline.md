@@ -4,7 +4,7 @@ title: Create an Ingestion Pipeline
 sidebar_label: Create an Ingestion Pipeline
 slug: /create_ingestion_pipeline
 sidebar_custom_props: {
-  categoryIcon: RagAiAgent
+  categoryIcon: LucideCirclePlus
 }
 ---
 

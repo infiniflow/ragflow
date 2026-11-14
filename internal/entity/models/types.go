@@ -152,14 +152,18 @@ type OCRFileResponse struct {
 }
 
 type ListModelResponse struct {
-	Name          string         `json:"name"`
-	ContextLength *int           `json:"context_length"`
-	MaxOutput     *int           `json:"max_output"`
-	ModelTypes    []string       `json:"model_types"`
-	Thinking      *ModelThinking `json:"thinking"`
-	MaxDimension  *int           `json:"max_dimension"`  // used by embedding models
-	MaxBatchSize  *int           `json:"max_batch_size"` // used by embedding models
-	Dimensions    []int          `json:"dimensions"`
+	Name          string   `json:"name"`
+	ContextLength *int     `json:"context_length"`
+	MaxOutput     *int     `json:"max_output"`
+	ModelTypes    []string `json:"model_types"`
+	// ModelTypesInferred reports that ModelTypes was guessed from the model
+	// name rather than declared by the provider, so a catalog entry may
+	// override it when listings are merged.
+	ModelTypesInferred bool           `json:"-"`
+	Thinking           *ModelThinking `json:"thinking"`
+	MaxDimension       *int           `json:"max_dimension"`  // used by embedding models
+	MaxBatchSize       *int           `json:"max_batch_size"` // used by embedding models
+	Dimensions         []int          `json:"dimensions"`
 }
 
 type ParseFileResponse struct {
@@ -251,6 +255,8 @@ type DecideResponse struct {
 type ModelListItem struct {
 	ID            string `json:"id"`
 	ContextLength *int   `json:"context_length"`
+	ContextWindow *int   `json:"context_window"`
+	MaxTokens     *int   `json:"max_tokens"`
 	Object        string `json:"object"`
 	OwnedBy       string `json:"owned_by"`
 }
@@ -355,7 +361,6 @@ type TTSConfig struct {
 }
 
 type OCRConfig struct {
-	Algorithm string
 	// Pages restricts OCR to these 1-indexed inclusive [from, to] ranges, the
 	// parser setup's "pages" shape. Empty means the whole document. Drivers
 	// whose backend cannot select pages ignore it.

@@ -99,7 +99,7 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 	}
 
 	qPrefix, aPrefix := "问题：", "回答："
-	// Python qa.py defaults to Chinese when no language is supplied; only
+	// defaults to Chinese when no language is supplied; only
 	// an explicit "english" switches to English prefixes
 	eng := strings.EqualFold(c.param.Lang, "english")
 	if eng {
@@ -178,11 +178,11 @@ func renderMarkdown(s string) string {
 type qaPair struct {
 	Question string
 	Answer   string
-	// RowNum is the 0-based source line/record index, mapped to Python's
-	// top_int (qa.py beAdoc(..., row_num=i)). -1 means unset.
+	// RowNum is the 0-based source line/record index, mapped to
+	// top_int ( beAdoc(..., row_num=i)). -1 means unset
 	RowNum int
 	// Image and positions are carried from the upstream item so the QA
-	// chunk preserves metadata that Python sets via beAdocPdf/beAdocDocx
+	// chunk preserves metadata that sets via beAdocPdf/beAdocDocx
 	//
 	Image        string
 	MediaRef     *entity.MediaRef
@@ -192,7 +192,7 @@ type qaPair struct {
 	SheetIndex   *int
 }
 
-// rmQAPrefixRe mirrors Python qa.py:241 `[\t:： ]+` — one-or-more separator
+// rmQAPrefixRe mirrors `[\t:： ]+` — one-or-more separator
 // chars, so "Q:: answer" is fully stripped
 var rmQAPrefixRe = regexp.MustCompile(`(?i)^(问题|答案|回答|user|assistant|Q|A|Question|Answer|问|答)[\t:： ]+`)
 
@@ -320,7 +320,7 @@ func extractQATextTab(lines []string) []qaPair {
 
 // extractQATextCSV uses a full-text csv.Reader so that quoted fields
 // that span multiple physical lines are parsed correctly (mirrors the
-// Python fix in infiniflow/ragflow#16881).
+// fix in infiniflow/ragflow#16881)
 //
 // Because csv.Reader can merge several physical lines into one record,
 // we track the byte offset via InputOffset() and map it back to the
@@ -423,7 +423,7 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 		// table. isTableHTML is only the cheap candidate filter: the
 		// walker's result decides, so nothing it can read is denied, and a
 		// block that merely opens with "<table" text (no row) stays on the
-		// prose path instead of silently pairing nothing. (Python's qa.py
+		// prose path instead of silently pairing nothing. (
 		// drops plain-text table payloads such as PDF tables entirely; the
 		// walker keeps their pairs.) Pre-upgrade row-IR payloads hold no
 		// markup and fall through to the text extractor, so documents from
@@ -472,7 +472,7 @@ func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 
 // qaPairsFromRows builds the pairs of one table: the first two non-empty
 // cells of a row become the question and the answer. strictPairs is the CSV
-// contract (Python qa.py:365) and requires a row to have exactly two cells
+// contract and requires a row to have exactly two cells
 // instead of taking the first two.
 //
 // positions is the item's own positions payload, and spreadsheetPositions
@@ -481,7 +481,7 @@ func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 // its row's tuple and takes its 0-based record index from that tuple's
 // rowStart (top_int = positions[i][1] - 1), which reproduces the legacy
 // row-IR numbering. Otherwise pairs are numbered by extraction order,
-// mirroring Python qa.py's enumerate over the extracted pairs — PDF items
+// mirroring 's enumerate over the extracted pairs — PDF items
 // write layout boxes into the same field, so they must not be reinterpreted
 // as spreadsheet rows.
 func qaPairsFromRows(rows [][]string, strictPairs bool, positions json.RawMessage, spreadsheetPositions bool) []qaPair {
@@ -502,7 +502,7 @@ func qaPairsFromRows(rows [][]string, strictPairs bool, positions json.RawMessag
 	}
 	pairs := make([]qaPair, 0, len(rows))
 	for i, cells := range rows {
-		// Python qa.py:365 requires exactly two fields for CSV pairs.
+		// requires exactly two fields for CSV pairs
 		if strictPairs && len(cells) != 2 {
 			if len(pairs) > 0 {
 				pairs[len(pairs)-1].Answer += "\n" + strings.Join(cells, ",")

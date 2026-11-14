@@ -39,40 +39,44 @@
 //
 //   - WHAT IS NOT YET PORTED:
 //
-//   - The Python component dispatches to 13 file-format branches
+//   - The component dispatches to 13 file-format branches
 //     (pdf, Markdown, text&code, html, spreadsheet, slides, doc,
-//     docx, image, audio, video, email, epub) — see parser.py
-//     function_map at line ~1273. The Go port is LANDed and LIVE
-//     in production for the families the ingestor claims (see
-//     cmd/ragflow_server.go: Ingestor.supportedTypes =
-//     ["pdf","docx","txt"]); those run their real parsers,
-//     including the cgo-gated office variants via office_oxide.
-//     Families not yet ported fall through to the raw-text path
-//     below rather than printing skeletons.
 //
-//   - For any family NOT yet ported (its Go parser returns no real
-//     data), the component uses a "raw text" fallback: it treats
-//     the input binary as UTF-8 and slices it into 1 page (or N
-//     pages when the upstream signals a page boundary with a literal
-//     "\f" form feed). This is the conservative, observable
-//     behaviour for UNPORTED families only; ported families run
-//     their real parsers.
+// docx, image, audio, video, email, epub) — see
 //
-//   - The Python side's "image2id" pipeline (parser.py:1317-1329)
-//     that uploads embedded images to MinIO is not replicated —
-//     the schema layer carries images as opaque map values, and
-//     the upload step is the responsibility of a separate
-//     side-effect component (out of scope for Phase 2.2).
+//		  function_map at line ~1273. The Go port is LANDed and LIVE
+//		  in production for the families the ingestor claims (see
+//		  cmd/ragflow_server.go: Ingestor.supportedTypes =
+//		  ["pdf","docx","txt"]); those run their real parsers,
+//		  including the cgo-gated office variants via office_oxide.
+//		  Families not yet ported fall through to the raw-text path
+//		  below rather than printing skeletons.
 //
-//   - The Python _param.check() business validation (parse_method whitelist)
-//     is mirrored by (*ParserComponent).Check() below, which NewParserComponent
-//     runs at construction time. Neither backend validates
-//     audio/video vlm.llm_id: Python's check() has no such branch,
-//     and the audio model is resolved at dispatch time with a
-//     tenant-default fallback.
+//		- For any family NOT yet ported (its Go parser returns no real
+//		  data), the component uses a "raw text" fallback: it treats
+//		  the input binary as UTF-8 and slices it into 1 page (or N
+//		  pages when the upstream signals a page boundary with a literal
+//		  "\f" form feed). This is the conservative, observable
+//		  behaviour for UNPORTED families only; ported families run
+//		  their real parsers.
 //
-//   - NO PERSISTENCE: structured parser items live only in the per-run
-//     output map.
+//	  - The Go side's "image2id" pipeline
+//	    that uploads embedded images to MinIO is not replicated —
+//	    the schema layer carries images as opaque map values, and
+//	    the upload step is the responsibility of a separate
+//	    side-effect component (out of scope for Phase 2.2).
+//
+//	  - The _param.check() business validation (parse_method whitelist)
+//	    is mirrored by (*ParserComponent).Check() below, which NewParserComponent
+//	    runs at construction time. Neither backend validates
+//
+// audio/video vlm.llm_id: check() has no such branch
+//
+//	  and the audio model is resolved at dispatch time with a
+//	  tenant-default fallback.
+//
+//	- NO PERSISTENCE: structured parser items live only in the per-run
+//	  output map.
 package component
 
 import (
@@ -102,7 +106,7 @@ const ComponentNameParser = schema.ComponentNameParser
 
 // pageFormFeed is the byte that text-page mode treats as a
 // hard page boundary. Matches the ASCII form feed (\f, 0x0C) — the
-// same convention used by the Python TxtParser and by most
+// same convention used by the TxtParser and by most
 // "page-segmented text" codecs.
 const pageFormFeed = '\f'
 
@@ -122,11 +126,12 @@ type ParserComponent struct {
 // visionSettings carries the global vision-enhancement choices. They sit at the
 // Parser params top level (vlm) instead of a per-family setup, so one model and
 // prompt serve the enhanced file types rather than each family repeating them.
-// Response language is deliberately absent: it belongs to the knowledge base,
-// which also drives tokenization, so the two can never disagree.
+// language is an optional override for the response language; empty follows the
+// knowledge base language, which also drives tokenization.
 type visionSettings struct {
 	modelID      string
 	systemPrompt string
+	language     string
 }
 
 // NewParserComponent constructs a Parser from a DSL param map.
@@ -139,7 +144,7 @@ type visionSettings struct {
 //
 //	{
 //	  "enable_vision_enhancement": bool,
-//	  "vlm":                  {"llm_id": string, "system_prompt": string},
+//	  "vlm":                  {"llm_id": string, "system_prompt": string, "lang": string},
 //	  "pdf":                  map[string]any,
 //	  "docx":                 map[string]any,
 //	  ...
@@ -152,7 +157,7 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 	if params == nil {
 		return &ParserComponent{setups: s}, nil
 	}
-	// Canvases saved by the Python-era frontend nest the per-family setups
+	// Canvases saved by the -era frontend nest the per-family setups
 	// under a "setups" key; lift them so every family lands at the top level.
 	params = schema.FlattenLegacyParserSetups(params)
 	var enableVisionEnhancement bool
@@ -179,6 +184,12 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 			vision.systemPrompt, ok = rawPrompt.(string)
 			if !ok {
 				return nil, errors.New("parser: vlm.system_prompt must be a string")
+			}
+		}
+		if rawLang, exists := vlm["lang"]; exists {
+			vision.language, ok = rawLang.(string)
+			if !ok {
+				return nil, errors.New("parser: vlm.lang must be a string")
 			}
 		}
 	}
@@ -243,7 +254,7 @@ func cloneParserSetupValue(value any) any {
 // surfaces as a canvas compile failure rather than a mid-run error.
 //
 // NOT covered here (intentional):
-//   - audio/video vlm.llm_id: Python's check() does not validate it
+//   - audio/video vlm.llm_id: check() does not validate it
 //     either, and audio dispatch resolves a missing/empty model to
 //     the tenant default, so validating it here would only block
 //     otherwise valid pipelines (see ingestion_pipeline_audio.json).
@@ -304,40 +315,28 @@ func defaultSetups() map[string]schema.ParserSetup {
 			"parse_method":         "deepdoc",
 			"remove_toc":           false,
 			"remove_header_footer": false,
-			"suffix":               []string{"pdf"},
 		},
 		"spreadsheet": {
 			"parse_method": "deepdoc",
-			"suffix":       []string{"xls", "xlsx", "csv"},
 		},
 		"doc": {
 			"remove_toc":           false,
 			"remove_header_footer": false,
-			"suffix":               []string{"doc"},
 		},
 		"docx": {
 			"remove_toc":           false,
 			"remove_header_footer": false,
-			"suffix":               []string{"docx"},
 		},
 		"markdown": {
-			"suffix":     []string{"md", "markdown", "mdx"},
 			"remove_toc": false,
 		},
-		"text&code": {
-			"suffix": []string{
-				"txt", "py", "js", "java", "c", "cpp", "h", "php",
-				"go", "ts", "sh", "cs", "kt", "sql",
-			},
-		},
+		"text&code": {},
 		"html": {
-			"suffix":               []string{"htm", "html"},
 			"remove_toc":           false,
 			"remove_header_footer": false,
 		},
 		"slides": {
 			"parse_method": "deepdoc",
-			"suffix":       []string{"pptx", "ppt"},
 		},
 		"image": {
 			// Default stays on the legacy parse_method shape. ocr_enabled is
@@ -346,34 +345,20 @@ func defaultSetups() map[string]schema.ParserSetup {
 			// merged setup proves the caller chose the switch shape. A default
 			// value would leak the flag onto legacy (parse_method-only) canvases.
 			"parse_method":  "ocr",
-			"llm_id":        "",
 			"system_prompt": "",
-			"suffix":        []string{"jpg", "jpeg", "png", "gif", "bmp", "tif", "tiff", "webp"},
 		},
 		"email": {
-			"suffix": []string{"eml", "msg"},
 			"fields": []string{
 				"from", "to", "cc", "bcc", "date", "subject",
 				"body", "attachments", "metadata",
 			},
 		},
-		"audio": {
-			"suffix": []string{
-				"da", "wave", "wav", "mp3", "aac", "flac", "ogg",
-				"aiff", "au", "midi", "wma", "realaudio", "vqf",
-				"oggvorbis", "ape",
-			},
-		},
+		"audio": {},
 		"video": {
-			"suffix": []string{"mp4", "avi", "mkv"},
 			"prompt": "",
 		},
-		"epub": {
-			"suffix": []string{"epub"},
-		},
-		"json": {
-			"suffix": []string{"json", "jsonl", "ldjson"},
-		},
+		"epub": {},
+		"json": {},
 	}
 	return s
 }
@@ -512,7 +497,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	var handledMedia bool
 	if !handledVision {
 		// Video dispatch: IMAGE2TEXT vision chat.
-		// Mirrors Python's _video().
+		// Mirrors _video()
 		dispatched, handledMedia, visionErr = maybeDispatchVideo(ctx, db, fileTypeExt, filename, binary, inputs, setups)
 		if visionErr != nil {
 			return nil, visionErr
@@ -529,7 +514,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	var handledAudio bool
 	if !handledVision && !handledMedia && !handledImage {
 		// Audio dispatch: SPEECH2TEXT transcription.
-		// Mirrors Python's rag/app/audio.py:chunk().
+		// Mirrors chunk()
 		dispatched, handledAudio, visionErr = maybeDispatchAudio(ctx, db, fileTypeExt, filename, binary, inputs, setups)
 		if visionErr != nil {
 			return nil, visionErr
@@ -571,7 +556,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	out := buildParserOutputs(ctx, dispatched, filename, binary, lang)
 
 	// Parse billing: DeepDOC PDFs are metered per page after a successful
-	// parse. A shortage fails the run, matching the Python hold contract.
+	// parse. A shortage fails the run, matching the hold contract
 	if tenantID, _ := getString(inputs, "tenant_id"); tenantID != "" && docID != "" && fileTypeExt == utility.FileTypePDF {
 		if pdfSetup, ok := c.setups["pdf"]; ok {
 			if method, _ := pdfSetup["parse_method"].(string); strings.Contains(strings.ToUpper(method), "DEEPDOC") {
@@ -684,7 +669,7 @@ func readParserBinary(ctx context.Context, db *gorm.DB, inputs map[string]any) (
 
 // splitIntoPages segments the input bytes on ASCII form-feed
 // (\f, 0x0C). An input with no form-feeds becomes a single page
-// (the whole input). Empty pages are dropped — the python
+// (the whole input). Empty pages are dropped — the
 // TxtParser skips empty splits the same way.
 func splitIntoPages(b []byte) [][]byte {
 	if len(b) == 0 {

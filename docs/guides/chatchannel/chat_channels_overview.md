@@ -4,7 +4,7 @@ title: Chat Channels Overview
 sidebar_label: Chat Channels Overview
 slug: /chat_channels_overview
 sidebar_custom_props: {
-  categoryIcon: LucideMessagesSquare
+  categoryIcon: LucideHouse
 }
 ---
 

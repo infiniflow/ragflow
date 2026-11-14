@@ -7,7 +7,6 @@ import {
   getEntityDisplayName,
 } from '@/components/structure-graph/adapters';
 import { RepresentationRenderer } from '@/components/structure-graph/representation-renderer';
-import { Card } from '@/components/ui/card';
 import {
   useGenerateStatus,
   useTraceRunData,
@@ -21,16 +20,23 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import {
+  CompilationViewLayout,
+  CompilationViewProps,
+} from './compilation-view-layout';
 import { StructureKind, ViewMode, ViewModeGenerateTypeMap } from './constants';
 import { useRunEndEffect } from './hooks/use-run-end-effect';
 import CompilationEmptyState from './empty-state';
 import { CompilationLoadingCard } from './loading-card';
 
-interface DatasetStructureViewProps {
+type DatasetStructureViewProps = CompilationViewProps & {
   kind: StructureKind;
-}
+};
 
-export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
+export function DatasetStructureView({
+  kind,
+  ...viewProps
+}: DatasetStructureViewProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const knowledgeBaseId = useKnowledgeBaseId();
@@ -101,36 +107,46 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
   );
 
   if (loading && !data) {
-    return <CompilationLoadingCard />;
+    return (
+      <CompilationViewLayout {...viewProps}>
+        <CompilationLoadingCard />
+      </CompilationViewLayout>
+    );
   }
 
   if (!template && !graphKeywords) {
-    return <CompilationEmptyState type={kind} data={structureRunData} />;
+    return (
+      <CompilationViewLayout {...viewProps}>
+        <CompilationEmptyState type={kind} data={structureRunData} />
+      </CompilationViewLayout>
+    );
   }
 
   return (
-    <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
-      <div className="flex justify-between gap-4 px-4 pt-4">
-        {kind === ViewMode.Graph && (
-          <SelectWithSearch
-            options={entityOptions}
-            value={selectedEntityName || graphKeywords}
-            onChange={handleSelectEntity}
-            placeholder={t('knowledgeCompilation.searchEntity')}
-            allowClear
-            alwaysShowSearch
-            triggerClassName="ml-auto w-96 max-w-full"
-            onNoMatchEnter={handleNoMatchEnter}
-            disableAutoSelectOnEnter
-          />
-        )}
+    <CompilationViewLayout {...viewProps}>
+      <div className="flex-1 min-h-0 flex flex-col">
+        <div className="flex justify-between gap-4 px-4 pt-4">
+          {kind === ViewMode.Graph && (
+            <SelectWithSearch
+              options={entityOptions}
+              value={selectedEntityName || graphKeywords}
+              onChange={handleSelectEntity}
+              placeholder={t('knowledgeCompilation.searchEntity')}
+              allowClear
+              alwaysShowSearch
+              triggerClassName="ml-auto w-96 max-w-full"
+              onNoMatchEnter={handleNoMatchEnter}
+              disableAutoSelectOnEnter
+            />
+          )}
+        </div>
+        <RepresentationRenderer
+          template={template}
+          highlightNodeId={selectedEntityName || null}
+          totalEntities={data?.total_entities}
+          returnedEntities={data?.returned_entities}
+        />
       </div>
-      <RepresentationRenderer
-        template={template}
-        highlightNodeId={selectedEntityName || null}
-        totalEntities={data?.total_entities}
-        returnedEntities={data?.returned_entities}
-      />
-    </Card>
+    </CompilationViewLayout>
   );
 }
