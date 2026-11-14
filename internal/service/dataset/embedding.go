@@ -58,13 +58,35 @@ func (d *DatasetService) CheckEmbedding(ctx context.Context, datasetID string, r
 		return nil, common.CodeDataError, errors.New("`embd_id` is required")
 	}
 	embeddingID := strings.TrimSpace(req.EmbeddingID)
-	if d.docEngine == nil {
-		return nil, common.CodeServerError, errors.New("doc engine not initialized")
-	}
-
-	embeddingModel, err := service.NewModelFactory().NewEmbeddingModel(permission.WithTenantID(ctx, kb.TenantID), embeddingID)
+	factory := service.NewModelFactory()
+	modelCtx := permission.WithIdentity(ctx, permission.UserIDFromContext(ctx), kb.TenantID)
+	embeddingModel, err := factory.NewEmbeddingModel(modelCtx, embeddingID)
 	if err != nil {
 		return nil, common.CodeDataError, err
+	}
+	// The same saved model can be submitted as its UUID or as its display
+	// alias. Resolve the candidate with permission checks before treating it
+	// as a no-op. Matching base model names alone is insufficient.
+	currentRef := strings.TrimSpace(ptrStringValue(kb.TenantEmbdID))
+	if currentRef == "" {
+		currentRef = strings.TrimSpace(kb.EmbdID)
+	}
+	candidate := embeddingModel.Info()
+	sameModel := embeddingID == currentRef
+	if !sameModel && candidate != nil && candidate.ID != "" {
+		sameModel = candidate.ID == currentRef
+		if !sameModel && strings.Contains(currentRef, "@") {
+			current, resolveErr := factory.ResolveInfo(modelCtx, entity.ModelTypeEmbedding, currentRef)
+			sameModel = resolveErr == nil && current != nil && current.ID == candidate.ID
+		}
+	}
+	if sameModel {
+		return &service.EmbeddingCheckResponse{
+			Summary: datasetEmbeddingCheckSummary(datasetID, embeddingID, 0, nil, "same_model"),
+		}, common.CodeSuccess, nil
+	}
+	if d.docEngine == nil {
+		return nil, common.CodeServerError, errors.New("doc engine not initialized")
 	}
 
 	checkNum := defaultEmbeddingCheckNum
