@@ -51,3 +51,26 @@ func TestRun_PostprocessHonorsTypedNumericOptions(t *testing.T) {
 		t.Errorf("merged content = %q, want %q", ctx.ResultChunks[0].Content, "a bb ccc")
 	}
 }
+
+func TestRun_PostprocessFilterDroppingAllChunksYieldsEmptyResult(t *testing.T) {
+	ctx, err := Run("a b c", ChunkOptions{SplitStrategy: "char", FilterMinLength: 5})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(ctx.SplitChunks) != 5 {
+		t.Fatalf("got %d split chunks, want 5", len(ctx.SplitChunks))
+	}
+	if len(ctx.ResultChunks) != 0 {
+		t.Fatalf("got %d result chunks, want 0: filter dropped every chunk, fallback must not re-emit split output", len(ctx.ResultChunks))
+	}
+}
+
+func TestRun_SplitOnlyPipelineStillPassesSplitOutputThrough(t *testing.T) {
+	ctx, err := Run("a b c", ChunkOptions{SplitStrategy: "char"})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if len(ctx.ResultChunks) != len(ctx.SplitChunks) || len(ctx.ResultChunks) == 0 {
+		t.Fatalf("got %d result chunks for %d split chunks, want passthrough", len(ctx.ResultChunks), len(ctx.SplitChunks))
+	}
+}

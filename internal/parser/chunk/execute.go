@@ -67,6 +67,7 @@ func Run(text string, opts ChunkOptions) (*ChunkContext, error) {
 			"min_length": float64(opts.FilterMinLength),
 		}
 	}
+	postprocessAdded := false
 	if len(postCfg) > 0 {
 		post, err := NewPostprocessOperator(postCfg)
 		if err != nil {
@@ -74,6 +75,7 @@ func Run(text string, opts ChunkOptions) (*ChunkContext, error) {
 		}
 		stages = append(stages, post)
 		stageNames = append(stageNames, "postprocess")
+		postprocessAdded = true
 	}
 
 	for i, op := range stages {
@@ -87,7 +89,11 @@ func Run(text string, opts ChunkOptions) (*ChunkContext, error) {
 			return ctx, fmt.Errorf("%s: finish: %w", stageNames[i], err)
 		}
 	}
-	if len(ctx.ResultChunks) == 0 && len(ctx.SplitChunks) > 0 {
+	// Pass split output through only for split-only pipelines. When a
+	// postprocess stage ran, its (possibly empty) output is the answer:
+	// an empty result means the filter legitimately dropped every chunk,
+	// not that the stage was absent.
+	if !postprocessAdded && len(ctx.ResultChunks) == 0 && len(ctx.SplitChunks) > 0 {
 		ctx.ResultChunks = ctx.SplitChunks
 	}
 	return ctx, nil
