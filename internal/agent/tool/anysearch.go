@@ -19,12 +19,11 @@ package tool
 import (
 	"bytes"
 	"context"
-	"crypto/sha1"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
+	"maps"
 	"net"
 	"net/http"
 	neturl "net/url"
@@ -489,6 +488,21 @@ func (a *AnySearchTool) request(label string, item anySearchItem) (anySearchRequ
 	if len(params) > 0 && tag == "" {
 		return anySearchRequestBody{}, fmt.Errorf("anysearch: %sparams require a tag", label)
 	}
+	if tag == "travel.flight_status" {
+		flight, ok := params["flight_number"].(string)
+		if !ok || strings.TrimSpace(flight) == "" {
+			return anySearchRequestBody{}, fmt.Errorf("anysearch: %sparams.flight_number is required", label)
+		}
+		if departure, present := params["departure"]; present {
+			if _, ok := departure.(string); !ok {
+				return anySearchRequestBody{}, fmt.Errorf("anysearch: %sparams.departure must be a string, or empty when unspecified", label)
+			}
+		} else {
+			// The API requires the field even when no airport was specified.
+			params = maps.Clone(params)
+			params["departure"] = ""
+		}
+	}
 	zone := strings.ToLower(strings.TrimSpace(item.Zone))
 	if zone == "" {
 		zone = a.defaults.Zone
@@ -674,13 +688,10 @@ func collectAnySearchReferences(envelope map[string]any) ([]anySearchRenderQuery
 			if content == "" {
 				continue
 			}
-			documentID := strconv.FormatInt(anySearchHashInt(resultURL+"\x00"+content, 1000000000000000), 10)
+			documentID, displayID := referenceIDs(resultURL, content)
 			title := anySearchText(result["title"])
-			// The run state keeps one reference per id, so the id must stay unique
-			// across a 5 x 10 batch: a small hash bucket would silently drop
-			// colliding results.
 			chunk := map[string]any{
-				"id":            documentID,
+				"id":            displayID,
 				"chunk_id":      documentID,
 				"content":       content,
 				"doc_id":        documentID,
@@ -753,12 +764,6 @@ func renderAnySearchReferences(queries []anySearchRenderQuery, maxTokens int) st
 		}
 	}
 	return strings.Join(blocks, "\n")
-}
-
-func anySearchHashInt(value string, modulus int64) int64 {
-	digest := sha1.Sum([]byte(value))
-	number := new(big.Int).SetBytes(digest[:])
-	return new(big.Int).Mod(number, big.NewInt(modulus)).Int64()
 }
 
 func anySearchJSON(value any) string {

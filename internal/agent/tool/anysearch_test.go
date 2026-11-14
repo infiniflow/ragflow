@@ -147,6 +147,63 @@ func TestAnySearch_KeyedSendsTrimmedBearer(t *testing.T) {
 	}
 }
 
+func TestAnySearch_FlightStatusParameters(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, params, departure, wantErr string
+	}{
+		{"airport omitted", `{"flight_number":"CA981"}`, "", ""},
+		{"airport empty", `{"flight_number":"CA981","departure":""}`, "", ""},
+		{"airport supplied", `{"flight_number":"CA981","departure":"PEK"}`, "PEK", ""},
+		{"flight missing", `{"departure":"PEK"}`, "", "flight_number"},
+		{"flight blank", `{"flight_number":"  "}`, "", "flight_number"},
+		{"flight null", `{"flight_number":null}`, "", "flight_number"},
+		{"airport null", `{"flight_number":"CA981","departure":null}`, "", "departure"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			helper, rec := anySearchTestServer(t, anySearchOK(`[]`))
+			out, err := NewAnySearchToolWith(helper, "").InvokableRun(t.Context(), `{"query":"CA981 flight status","tag":"travel.flight_status","params":`+tc.params+`}`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			env := decodeAnySearchEnvelope(t, out)
+			if tc.wantErr != "" {
+				if !strings.Contains(env.Error, tc.wantErr) || len(rec.all()) != 0 {
+					t.Fatalf("want a %s parameter error without a request; result=%s requests=%d", tc.wantErr, out, len(rec.all()))
+				}
+				return
+			}
+			if env.Error != "" || len(rec.all()) != 1 {
+				t.Fatalf("result=%s requests=%d", out, len(rec.all()))
+			}
+			params := decodeAnySearchBody(t, rec.all()[0].Body)["params"].(map[string]any)
+			if params["flight_number"] != "CA981" || params["departure"] != tc.departure {
+				t.Fatalf("request params=%#v, want flight_number CA981 and departure %q", params, tc.departure)
+			}
+		})
+	}
+}
+
+func TestAnySearch_ReferencesUseSharedCitationIDs(t *testing.T) {
+	t.Parallel()
+	envelope := map[string]any{"queries": []any{map[string]any{"query": "RAGFlow", "results": []any{
+		map[string]any{"title": "RAGFlow", "url": "https://ragflow.io/", "content": "Native agent references."},
+	}}}}
+	search := NewAnySearchTool()
+	chunks, docs := search.BuildReferences(t.Context(), envelope)
+	if len(chunks) != 1 || len(docs) != 1 {
+		t.Fatalf("references=%#v docs=%#v", chunks, docs)
+	}
+	documentID, displayID := referenceIDs("https://ragflow.io/", "Native agent references.")
+	if chunks[0]["id"] != displayID || chunks[0]["chunk_id"] != documentID || chunks[0]["doc_id"] != documentID || docs[0]["doc_id"] != documentID {
+		t.Fatalf("reference IDs do not follow the shared citation contract: chunk=%#v doc=%#v", chunks[0], docs[0])
+	}
+	rendered := search.BuildComponentOutputs(envelope)["formalized_content"].(string)
+	if !strings.Contains(rendered, "ID: "+displayID) {
+		t.Fatalf("prompt has no shared display ID: %q", rendered)
+	}
+}
+
 func TestAnySearch_BodyMappingAndNodeDefaults(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
