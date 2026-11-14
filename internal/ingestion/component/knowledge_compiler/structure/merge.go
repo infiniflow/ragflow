@@ -569,14 +569,18 @@ func applyMergeInvariants(existing common.Product, mergedPayload map[string]any)
 	if existingPayload == nil {
 		return mergedPayload
 	}
-	for _, field := range sourceEndpointAliases {
-		if v, ok := existingPayload[field]; ok {
-			mergedPayload[field] = v
+	if from := relationEndpoint(existingPayload, "", sourceEndpointAliases...); from != "" {
+		for _, field := range sourceEndpointAliases {
+			if _, ok := mergedPayload[field]; ok {
+				mergedPayload[field] = from
+			}
 		}
 	}
-	for _, field := range targetEndpointAliases {
-		if v, ok := existingPayload[field]; ok {
-			mergedPayload[field] = v
+	if to := relationEndpoint(existingPayload, "", targetEndpointAliases...); to != "" {
+		for _, field := range targetEndpointAliases {
+			if _, ok := mergedPayload[field]; ok {
+				mergedPayload[field] = to
+			}
 		}
 	}
 	return mergedPayload
