@@ -22,6 +22,7 @@ import IterationForm from '../form/iteration-form';
 import IterationStartForm from '../form/iteration-start-from';
 import KeenableForm from '../form/keenable-form';
 import SofyaForm from '../form/sofya-form';
+import DatacircleForm from '../form/datacircle-form';
 import Search1APICrawlForm from '../form/search1api-crawl-form';
 import Search1APIForm from '../form/search1api-form';
 import YouComForm from '../form/youcom-form';
@@ -96,6 +97,9 @@ export const FormConfigMap: Partial<Record<Operator, OperatorFormConfig>> = {
   },
   [Operator.Search1APICrawl]: {
     component: Search1APICrawlForm,
+  },
+  [Operator.Datacircle]: {
+    component: DatacircleForm,
   },
   [Operator.Wikipedia]: {
     component: WikipediaForm,

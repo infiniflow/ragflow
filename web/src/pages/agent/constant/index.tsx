@@ -308,6 +308,31 @@ export const initialSearch1APICrawlValues = {
   },
 };
 
+export enum DatacircleSort {
+  Score = 'score',
+  Price = 'price',
+  Provider = 'provider',
+}
+
+// Datacircle's API is open and takes no key. With no API and no query the node
+// lists every API with its best plan; the query matches provider and plan names.
+export const initialDatacircleValues = {
+  query: AgentGlobals.SysQuery,
+  api: '',
+  sort: DatacircleSort.Score,
+  top_n: 10,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
+};
+
 export const initialKeenableValues = {
   api_key: '',
   query: AgentGlobals.SysQuery,
@@ -860,6 +885,7 @@ export const RestrictedUpstreamMap = {
   [Operator.SofyaSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.Search1APISearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.Search1APICrawl]: [Operator.Begin],
+  [Operator.Datacircle]: [Operator.Begin, Operator.Retrieval],
   [Operator.ExeSQL]: [Operator.Begin],
   [Operator.Switch]: [Operator.Begin],
   [Operator.WenCai]: [Operator.Begin],
@@ -919,6 +945,7 @@ export const NodeMap = {
   [Operator.SofyaSearch]: 'ragNode',
   [Operator.Search1APISearch]: 'ragNode',
   [Operator.Search1APICrawl]: 'ragNode',
+  [Operator.Datacircle]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',
   [Operator.Switch]: 'switchNode',
   [Operator.WenCai]: 'ragNode',

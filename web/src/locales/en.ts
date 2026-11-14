@@ -3082,6 +3082,18 @@ Best for: Documents with flowing, contextually connected content — such as boo
       search1APICrawlUrl: 'URL',
       search1APICrawlUrlTip:
         'The absolute HTTP or HTTPS URL of the page to read. As an agent tool, the agent supplies the URL.',
+      datacircle: 'Datacircle',
+      datacircleDescription:
+        'Find the best GTM APIs with Datacircle: list every API, see who is best for each and search every plan. No API Key is needed.',
+      datacircleApi: 'API',
+      datacircleApiTip:
+        'The API whose plans to list, such as Employee email or email-finder. Leave it empty to list every API with its best plan. As an agent tool, the agent picks the API for each call.',
+      datacircleSort: 'Sort by',
+      datacircleSortTip:
+        'Score puts the best plans first. Price puts the lowest price per 1,000 first. Provider sorts by name. As an agent tool, the agent can change the order for each call.',
+      datacircleSortScore: 'Score',
+      datacircleSortPrice: 'Price',
+      datacircleSortProvider: 'Provider',
       docGenerator: 'Doc Generator',
       docGeneratorDescription: `Generate a file from Markdown content.`,
       subtitle: 'Subtitle',
