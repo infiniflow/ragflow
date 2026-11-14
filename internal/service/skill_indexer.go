@@ -1020,32 +1020,5 @@ func (s *SkillIndexerService) generateEmbeddings(ctx context.Context, texts []st
 // This follows Python's approach: use actual embedding result to determine dimension
 // If embedding API fails, returns error (cannot create table without knowing dimension)
 func (s *SkillIndexerService) getEmbeddingDimension(ctx context.Context, tenantID, embdID string) (int, error) {
-	if s.modelFactory == nil {
-		return 0, fmt.Errorf("model provider not set")
-	}
-
-	if embdID == "" {
-		return 0, fmt.Errorf("embedding model ID not configured")
-	}
-
-	embeddingModel, err := s.modelFactory.NewEmbeddingModel(permission.WithTenantID(ctx, tenantID), embdID)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get embedding model: %w", err)
-	}
-
-	// Use simple test text like Python does: embedding_model.encode(["ok"])
-	testText := "ok"
-	var response []models.EmbeddingData
-	response, err = embeddingModel.Embed(ctx, models.EmbedRequest{Texts: []string{testText}}, nil, nil)
-	if err != nil {
-		return 0, fmt.Errorf("failed to encode test text: %w", err)
-	}
-
-	if len(response) == 0 || len(response[0].Embedding) == 0 {
-		return 0, fmt.Errorf("embedding returned empty vector")
-	}
-
-	dimension := len(response[0].Embedding)
-	common.Info(fmt.Sprintf("Got embedding dimension from API: %d", dimension))
-	return dimension, nil
+	return ProbeEmbeddingDimension(ctx, s.modelFactory, tenantID, embdID)
 }
