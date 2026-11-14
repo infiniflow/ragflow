@@ -943,10 +943,10 @@ func (g *GroupedDeduper) RewriteRelations(ctx context.Context, aliases map[strin
 		if row.Meta == nil {
 			row.Meta = map[string]any{}
 		}
-		if from := relationEndpoint(payload, "", "source", "src", "from"); from != "" {
+		if from := relationEndpoint(payload, "", sourceEndpointAliases...); from != "" {
 			row.Meta["from"] = from
 		}
-		if to := relationEndpoint(payload, "", "target", "tgt", "to"); to != "" {
+		if to := relationEndpoint(payload, "", targetEndpointAliases...); to != "" {
 			row.Meta["to"] = to
 		}
 		relations[i] = row
