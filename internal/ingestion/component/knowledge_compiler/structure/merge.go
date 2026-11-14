@@ -128,6 +128,12 @@ type LLMMergeDecider struct {
 	// vCPU-sized concurrency bound.
 	submit func(ctx context.Context, jobs []func() error) error
 
+	// SourceMember and TargetMember are the configured endpoint field names
+	// (e.g. from relation_members config) so BuildReplacement and
+	// relation rewrites preserve custom endpoint schema fields.
+	SourceMember string
+	TargetMember string
+
 	mu      sync.Mutex
 	aliases map[string]string
 }
@@ -135,6 +141,14 @@ type LLMMergeDecider struct {
 // NewLLMMergeDecider constructs the decider used by the structure variant.
 func NewLLMMergeDecider(chat common.ChatInvoker, llmID string, embed common.Embedder, threshold float64) *LLMMergeDecider {
 	return &LLMMergeDecider{Chat: chat, LLMID: llmID, Embed: embed, Threshold: threshold, aliases: map[string]string{}}
+}
+
+// SetRelationMembers sets the configured source and target endpoint member
+// field names (e.g. from relation_members config) so BuildReplacement and
+// relation rewrites preserve custom endpoint schema fields.
+func (d *LLMMergeDecider) SetRelationMembers(src, tgt string) {
+	d.SourceMember = strings.TrimSpace(src)
+	d.TargetMember = strings.TrimSpace(tgt)
 }
 
 // SetMaxBatchTokens sets the two token budgets that bound a single DecideBatch
@@ -284,7 +298,7 @@ func (d *LLMMergeDecider) BuildReplacement(ctx context.Context, existing, incomi
 			}
 		}
 	}
-	merged = applyMergeInvariants(existing, merged)
+	merged = applyMergeInvariants(existing, merged, d.SourceMember, d.TargetMember)
 
 	chunkIDs := unionOrdered(common.MetaStringSlice(existing.Meta, "source_chunk_ids"), common.MetaStringSlice(incoming.Meta, "source_chunk_ids"))
 	texts := []string{payloadDescription(merged)}
@@ -301,7 +315,7 @@ func (d *LLMMergeDecider) BuildReplacement(ctx context.Context, existing, incomi
 		meta[k] = v
 	}
 	meta["source_chunk_ids"] = chunkIDs
-	refreshMetaFromPayload(meta, kind, merged)
+	refreshMetaFromPayload(meta, kind, merged, d.SourceMember, d.TargetMember)
 	return common.Product{
 		ID:       existing.ID,
 		DocID:    existing.DocID,
@@ -560,7 +574,9 @@ func mergePair(ctx context.Context, chat common.ChatInvoker, llmID, existingCont
 // applyMergeInvariants mirrors _struct_apply_merge_invariants: for relations,
 // force the source/target fields back to the existing payload's values —
 // from_entity_kwd / to_entity_kwd must not change across a merge.
-func applyMergeInvariants(existing common.Product, mergedPayload map[string]any) map[string]any {
+// Configured relation member field names (e.g. from relation_members config)
+// and any endpoint fields detected on existingPayload are preserved across the merge.
+func applyMergeInvariants(existing common.Product, mergedPayload map[string]any, memberFields ...string) map[string]any {
 	kind, _ := existing.Meta["kind"].(string)
 	if kind != "relation" {
 		return mergedPayload
@@ -569,17 +585,64 @@ func applyMergeInvariants(existing common.Product, mergedPayload map[string]any)
 	if existingPayload == nil {
 		return mergedPayload
 	}
-	for _, field := range []string{"source", "src", "from"} {
-		if v, ok := existingPayload[field]; ok {
-			mergedPayload[field] = v
-		}
+
+	var srcMember, tgtMember string
+	if len(memberFields) > 0 {
+		srcMember = strings.TrimSpace(memberFields[0])
 	}
-	for _, field := range []string{"target", "tgt", "to"} {
-		if v, ok := existingPayload[field]; ok {
-			mergedPayload[field] = v
-		}
+	if len(memberFields) > 1 {
+		tgtMember = strings.TrimSpace(memberFields[1])
+	}
+
+	from := strings.TrimSpace(stringOf(existing.Meta["from"]))
+	if from == "" {
+		from = relationEndpoint(existingPayload, srcMember, sourceEndpointAliases...)
+	}
+	srcAliases := endpointAliasesWithMember(sourceEndpointAliases, srcMember)
+	if from != "" {
+		setEndpointField(mergedPayload, srcAliases, from)
+	}
+
+	to := strings.TrimSpace(stringOf(existing.Meta["to"]))
+	if to == "" {
+		to = relationEndpoint(existingPayload, tgtMember, targetEndpointAliases...)
+	}
+	tgtAliases := endpointAliasesWithMember(targetEndpointAliases, tgtMember)
+	if to != "" {
+		setEndpointField(mergedPayload, tgtAliases, to)
 	}
 	return mergedPayload
+}
+
+func endpointAliasesWithMember(base []string, explicitMember string) []string {
+	var aliases []string
+	seen := map[string]bool{}
+	if explicitMember != "" {
+		aliases = append(aliases, explicitMember)
+		seen[explicitMember] = true
+	}
+	for _, a := range base {
+		if !seen[a] {
+			aliases = append(aliases, a)
+			seen[a] = true
+		}
+	}
+	return aliases
+}
+
+// setEndpointField updates every endpoint alias already present in payload.
+// When none is present, it writes the canonical (first) alias.
+func setEndpointField(payload map[string]any, aliases []string, value string) {
+	found := false
+	for _, field := range aliases {
+		if _, ok := payload[field]; ok {
+			payload[field] = value
+			found = true
+		}
+	}
+	if !found && len(aliases) > 0 {
+		payload[aliases[0]] = value
+	}
 }
 
 // resolveAlias mirrors _struct_resolve_entity_alias: follow the alias chain
@@ -600,9 +663,18 @@ func resolveAlias(name string, aliases map[string]string) string {
 // rewriteRelationPayload mirrors _struct_rewrite_relation_payload: resolve
 // the relation's endpoint fields through the alias map in place. Returns
 // whether anything changed.
-func rewriteRelationPayload(payload map[string]any, aliases map[string]string) bool {
+func rewriteRelationPayload(payload map[string]any, aliases map[string]string, memberFields ...string) bool {
 	changed := false
-	for _, fields := range [][]string{{"source", "src", "from"}, {"target", "tgt", "to"}} {
+	var srcMember, tgtMember string
+	if len(memberFields) > 0 {
+		srcMember = strings.TrimSpace(memberFields[0])
+	}
+	if len(memberFields) > 1 {
+		tgtMember = strings.TrimSpace(memberFields[1])
+	}
+	srcAliases := endpointAliasesWithMember(sourceEndpointAliases, srcMember)
+	tgtAliases := endpointAliasesWithMember(targetEndpointAliases, tgtMember)
+	for _, fields := range [][]string{srcAliases, tgtAliases} {
 		for _, field := range fields {
 			v, ok := payload[field]
 			if !ok || v == nil {
@@ -624,7 +696,7 @@ func rewriteRelationPayload(payload map[string]any, aliases map[string]string) b
 // refreshMetaFromPayload re-derives the name/type/endpoint meta keys of a
 // merged row from its new payload (mirrors the column re-derivation in
 // _struct_rebuild_doc_storage_doc).
-func refreshMetaFromPayload(meta map[string]any, kind string, payload map[string]any) {
+func refreshMetaFromPayload(meta map[string]any, kind string, payload map[string]any, memberFields ...string) {
 	if kind == "entity" {
 		if name := entityName(payload); name != "" {
 			meta["name"] = name
@@ -639,13 +711,24 @@ func refreshMetaFromPayload(meta map[string]any, kind string, payload map[string
 		}
 		return
 	}
-	if from := relationEndpoint(payload, "", "source", "src", "from"); from != "" {
-		meta["from"] = from
+	var srcMember, tgtMember string
+	if len(memberFields) > 0 {
+		srcMember = strings.TrimSpace(memberFields[0])
 	}
-	if to := relationEndpoint(payload, "", "target", "tgt", "to"); to != "" {
-		meta["to"] = to
+	if len(memberFields) > 1 {
+		tgtMember = strings.TrimSpace(memberFields[1])
 	}
-	if typ := strings.TrimSpace(stringOf(payload["type"])); typ != "" {
+	if strings.TrimSpace(stringOf(meta["from"])) == "" {
+		if from := relationEndpoint(payload, srcMember, sourceEndpointAliases...); from != "" {
+			meta["from"] = from
+		}
+	}
+	if strings.TrimSpace(stringOf(meta["to"])) == "" {
+		if to := relationEndpoint(payload, tgtMember, targetEndpointAliases...); to != "" {
+			meta["to"] = to
+		}
+	}
+	if typ := relationType(payload); typ != "" {
 		meta["relation_type"] = typ
 	}
 }
@@ -930,23 +1013,28 @@ func (g *GroupedDeduper) RewriteRelations(ctx context.Context, aliases map[strin
 
 	// Rewrite endpoints; re-embed only the rows whose payload changed
 	// (mirrors _struct_rewrite_relation_doc). Row ids are preserved.
+	var srcMember, tgtMember string
+	if dec, ok := g.decider.(*LLMMergeDecider); ok && dec != nil {
+		srcMember = dec.SourceMember
+		tgtMember = dec.TargetMember
+	}
 	var changedIdx []int
 	for i, row := range relations {
 		payload := parsePayload(row.Content)
 		if payload == nil {
 			continue
 		}
-		if !rewriteRelationPayload(payload, aliases) {
+		if !rewriteRelationPayload(payload, aliases, srcMember, tgtMember) {
 			continue
 		}
 		row.Content = payloadJSON(payload)
 		if row.Meta == nil {
 			row.Meta = map[string]any{}
 		}
-		if from := relationEndpoint(payload, "", "source", "src", "from"); from != "" {
+		if from := relationEndpoint(payload, srcMember, sourceEndpointAliases...); from != "" {
 			row.Meta["from"] = from
 		}
-		if to := relationEndpoint(payload, "", "target", "tgt", "to"); to != "" {
+		if to := relationEndpoint(payload, tgtMember, targetEndpointAliases...); to != "" {
 			row.Meta["to"] = to
 		}
 		relations[i] = row

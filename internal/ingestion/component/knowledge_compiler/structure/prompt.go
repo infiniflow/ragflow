@@ -421,8 +421,21 @@ func RelationMemberFields(parserConfig map[string]any) (string, string) {
 			}
 		}
 	}
-	if names["source"] && names["target"] {
-		return "source", "target"
+	var srcField, tgtField string
+	for _, k := range []string{"source", "from", "from_entity", "src", "source_entity", "head", "subject"} {
+		if names[k] {
+			srcField = k
+			break
+		}
+	}
+	for _, k := range []string{"target", "to", "to_entity", "tgt", "target_entity", "tail", "object"} {
+		if names[k] {
+			tgtField = k
+			break
+		}
+	}
+	if srcField != "" && tgtField != "" {
+		return srcField, tgtField
 	}
 	return "", ""
 }
