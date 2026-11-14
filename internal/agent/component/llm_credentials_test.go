@@ -173,6 +173,28 @@ func TestCompositeModelCredentialsRejectInactiveDefault(t *testing.T) {
 	}
 }
 
+func TestCompositeModelPublicResolutionDoesNotLeakImplicitCredentials(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		inactiveDefault bool
+	}{
+		{name: "missing default"},
+		{name: "inactive default", inactiveDefault: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := setupOpenAICompositeCredentialTestDB(t, tc.inactiveDefault)
+			model, driver, key, baseURL, err := resolveChatModelRef(
+				stateWithTenant("tenant-1"), db, "gpt-4o@OpenAI", "", "", "")
+			if err != nil {
+				t.Fatalf("resolveChatModelRef: %v", err)
+			}
+			if model != "gpt-4o" || driver != "OpenAI" || key != "" || baseURL != "" {
+				t.Fatalf("implicit credentials leaked through public resolution: model=%q driver=%q key=%q baseURL=%q", model, driver, key, baseURL)
+			}
+		})
+	}
+}
+
 // setupOpenAICompositeCredentialTestDB creates the deployment layout from
 // issue #20140. The model override belongs to prod, while the legacy two-part
 // reference implicitly names default.
