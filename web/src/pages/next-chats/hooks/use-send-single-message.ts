@@ -45,6 +45,8 @@ export function useSendSingleMessage({
     removeLatestMessage,
     removeMessageById,
     removeMessagesAfterCurrentMessage,
+    scrollToBottom,
+    isAtBottom,
   } = useSelectDerivedMessages();
 
   useEffect(() => {
@@ -163,6 +165,8 @@ export function useSendSingleMessage({
     handlePressEnter,
     sendMessage,
     sendLoading: !done,
+    scrollToBottom,
+    isAtBottom,
   };
 }
 

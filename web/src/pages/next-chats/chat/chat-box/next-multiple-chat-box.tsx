@@ -34,7 +34,7 @@ import {
 import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { isEmpty, omit, trim } from 'lodash';
-import { ListCheck, Plus, Trash2 } from 'lucide-react';
+import { ArrowDown, ListCheck, Plus, Trash2 } from 'lucide-react';
 import {
   forwardRef,
   useCallback,
@@ -113,6 +113,8 @@ const ChatCard = forwardRef(function ChatCard(
     sendLoading,
     messageContainerRef,
     virtualizer,
+    scrollToBottom,
+    isAtBottom,
   } = useSendSingleMessage({
     controller,
     value,
@@ -165,6 +167,10 @@ const ChatCard = forwardRef(function ChatCard(
     removeChatBox(id);
   }, [id, removeChatBox]);
 
+  const handleScrollToBottom = useCallback(() => {
+    scrollToBottom();
+  }, [scrollToBottom]);
+
   const handleApplyConfig = useCallback(() => {
     const values = form.getValues();
     const llmId = values.llm_id;
@@ -184,14 +190,17 @@ const ChatCard = forwardRef(function ChatCard(
     });
   }, [dialogId, form, updateChat, findLlmByUuid]);
 
-  useImperativeHandle(ref, (): HandlePressEnterType => (params) => {
-    return handlePressEnter({
-      ...params,
-      ...removeUselessFieldsFromValues(form.getValues(), ''),
-      storeHistoryMessages: false,
-      omitSessionId: true,
-    });
-  });
+  useImperativeHandle(
+    ref,
+    (): HandlePressEnterType => (params) => {
+      return handlePressEnter({
+        ...params,
+        ...removeUselessFieldsFromValues(form.getValues(), ''),
+        storeHistoryMessages: false,
+        omitSessionId: true,
+      });
+    },
+  );
 
   useEffect(() => {
     setLoading(id, sendLoading);
@@ -262,7 +271,7 @@ const ChatCard = forwardRef(function ChatCard(
           </div>
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex-1 min-h-0">
+      <CardContent className="relative flex-1 min-h-0">
         <div ref={messageContainerRef} className="h-full overflow-auto">
           <VirtualMessageList
             className="w-full"
@@ -290,6 +299,17 @@ const ChatCard = forwardRef(function ChatCard(
             )}
           />
         </div>
+        {!isAtBottom && (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="absolute bottom-4 right-4 z-10 gap-1 shadow-md"
+            onClick={handleScrollToBottom}
+          >
+            <ArrowDown className="h-4 w-4" />
+            {t('chat.scrollToBottom')}
+          </Button>
+        )}
       </CardContent>
     </Card>
   );

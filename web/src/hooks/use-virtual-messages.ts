@@ -15,7 +15,7 @@
  */
 
 import { Virtualizer, useVirtualizer } from '@tanstack/react-virtual';
-import { RefObject, useCallback, useEffect } from 'react';
+import { RefObject, useCallback, useEffect, useState } from 'react';
 import { IMessage } from '@/interfaces/database/chat';
 import { buildMessageUuidWithRole } from '@/utils/chat';
 
@@ -25,7 +25,7 @@ import { buildMessageUuidWithRole } from '@/utils/chat';
 const EstimatedMessageHeight = 160;
 
 // Losing the bottom by more than this means the user scrolled up on purpose.
-const FollowBottomThreshold = 60;
+const FollowBottomThreshold = 40;
 
 export type MessageVirtualizer = Virtualizer<HTMLDivElement, HTMLDivElement>;
 
@@ -75,5 +75,28 @@ export const useVirtualMessages = (
     scrollToBottom();
   }, [resetKey, scrollToBottom]);
 
-  return { virtualizer, scrollToBottom };
+  // Drives the scroll-to-bottom button. Recomputed on scroll and on content
+  // resize, since growth while pinned fires no scroll event of its own.
+  const [isAtBottom, setIsAtBottom] = useState(true);
+  const totalSize = virtualizer.getTotalSize();
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const update = () => {
+      setIsAtBottom(
+        container.scrollHeight - container.scrollTop - container.clientHeight <=
+          FollowBottomThreshold,
+      );
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(container);
+    container.addEventListener('scroll', update, { passive: true });
+    return () => {
+      observer.disconnect();
+      container.removeEventListener('scroll', update);
+    };
+  }, [containerRef, totalSize]);
+
+  return { virtualizer, scrollToBottom, isAtBottom };
 };

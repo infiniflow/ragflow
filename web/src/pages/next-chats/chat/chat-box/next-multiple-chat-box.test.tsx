@@ -100,6 +100,10 @@ jest.mock('../../hooks/use-send-single-message', () => ({
     derivedMessages: [],
     handlePressEnter: mockHandlePressEnter,
     sendLoading: false,
+    virtualizer: null,
+    messageContainerRef: { current: null },
+    scrollToBottom: jest.fn(),
+    isAtBottom: true,
   }),
 }));
 jest.mock('../../hooks/use-upload-file', () => ({

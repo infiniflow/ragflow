@@ -38,7 +38,7 @@ export const useCurrentChatSession = () => {
   const isStreaming = useIsChatStreaming(conversationId);
 
   const messageContainerRef = useRef<HTMLDivElement>(null);
-  const { virtualizer, scrollToBottom } = useVirtualMessages(
+  const { virtualizer, scrollToBottom, isAtBottom } = useVirtualMessages(
     messages,
     messageContainerRef,
     { resetKey: conversationId },
@@ -63,6 +63,7 @@ export const useCurrentChatSession = () => {
     virtualizer,
     messageContainerRef,
     scrollToBottom,
+    isAtBottom,
   };
 };
 
@@ -82,6 +83,7 @@ export const useSendMessage = () => {
     virtualizer,
     messageContainerRef,
     scrollToBottom,
+    isAtBottom,
   } = useCurrentChatSession();
 
   const appendQuestion = useChatStreamStore((state) => state.appendQuestion);
@@ -277,6 +279,8 @@ export const useSendMessage = () => {
     sendLoading: isStreaming,
     virtualizer,
     messageContainerRef,
+    scrollToBottom,
+    isAtBottom,
     messages,
     removeMessageById,
     handleUploadFile,
