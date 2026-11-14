@@ -29,6 +29,7 @@ jest.mock('react-syntax-highlighter/dist/esm/styles/prism', () => ({
 }));
 
 import EmbedDialog from '..';
+import storage from '@/utils/authorization-util';
 
 const renderAgentEmbedDialog = (props: Record<string, unknown> = {}) =>
   render(
@@ -55,6 +56,20 @@ beforeAll(() => {
 });
 
 describe('EmbedDialog widget settings persistence', () => {
+  it.each(['0', '5'])(
+    'includes host thinking level %s in the chat share URL',
+    (level) => {
+      storage.setThinkingLevel(level);
+      renderAgentEmbedDialog({ from: SharedFrom.Chat, isAgent: false });
+
+      try {
+        expect(document.body.textContent).toContain(`reasoning=${level}`);
+      } finally {
+        storage.setThinkingLevel('0');
+      }
+    },
+  );
+
   it('saves the full dialog state including the Embed Setup fields', async () => {
     const onSaveWidgetSettings = jest.fn().mockResolvedValue(undefined);
     renderAgentEmbedDialog({ onSaveWidgetSettings });
