@@ -29,7 +29,7 @@ services:
         soft: -1
         hard: -1
     healthcheck:
-      test: ["CMD-SHELL", "curl http://localhost:9200"]
+      test: ["CMD-SHELL", "curl -fsS -u \"elastic:$${ELASTIC_PASSWORD}\" http://localhost:9200/_cluster/health >/dev/null"]
       interval: 10s
       timeout: 10s
       retries: 120
@@ -66,7 +66,7 @@ services:
         soft: -1
         hard: -1
     healthcheck:
-      test: ["CMD-SHELL", "curl http://localhost:9201"]
+      test: ["CMD-SHELL", "curl -fsS -u \"admin:$${OPENSEARCH_PASSWORD}\" http://localhost:9201/_cluster/health >/dev/null"]
       interval: 10s
       timeout: 10s
       retries: 120
