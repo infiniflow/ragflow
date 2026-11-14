@@ -151,6 +151,8 @@ var toolComponentRegistrations = []struct {
 	{componentName: "Search1APISearch", toolName: "search1api"},
 	{componentName: "SearXNG", toolName: "searxng"},
 	{componentName: "SofyaSearch", toolName: "sofya"},
+	{componentName: "SpecStreamExtract", toolName: "specstream_extract"},
+	{componentName: "SpecStreamSearch", toolName: "specstream"},
 	{componentName: "TavilySearch", toolName: "tavily"},
 	{componentName: "TavilyExtract", toolName: "tavily_extract"},
 	{componentName: "WenCai", toolName: "wencai"},

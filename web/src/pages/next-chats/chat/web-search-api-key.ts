@@ -63,6 +63,7 @@ const webSearchApiKeyFields: Record<WebSearchProvider, string> = {
   [WebSearchProvider.Search1API]: 'search1api_api_key',
   [WebSearchProvider.SearchApi]: 'searchapi_api_key',
   [WebSearchProvider.Serply]: 'serply_api_key',
+  [WebSearchProvider.SpecStream]: 'specstream_api_key',
   [WebSearchProvider.Tavily]: 'tavily_api_key',
   [WebSearchProvider.YouCom]: 'youcom_api_key',
 };

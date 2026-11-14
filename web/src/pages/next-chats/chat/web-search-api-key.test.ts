@@ -130,6 +130,25 @@ describe('getWebSearchApiKey', () => {
     expect(getWebSearchApiKey(promptConfig)).toBeUndefined();
   });
 
+  it('uses only the selected SpecStream key', () => {
+    const promptConfig = {
+      web_search_provider: WebSearchProvider.SpecStream,
+      specstream_api_key: 'specstream-test',
+      tavily_api_key: 'tvly-test',
+    } as PromptConfig;
+
+    expect(getWebSearchApiKey(promptConfig)).toBe('specstream-test');
+  });
+
+  it('does not fall back to Tavily when SpecStream is selected without a key', () => {
+    const promptConfig = {
+      web_search_provider: WebSearchProvider.SpecStream,
+      tavily_api_key: 'tvly-test',
+    } as PromptConfig;
+
+    expect(getWebSearchApiKey(promptConfig)).toBeUndefined();
+  });
+
   it('uses only the selected Serply key', () => {
     const promptConfig = {
       web_search_provider: WebSearchProvider.Serply,
@@ -323,6 +342,9 @@ describe('provider key field mapping', () => {
     );
     expect(getWebSearchApiKeyField(WebSearchProvider.Serply)).toBe(
       'serply_api_key',
+    );
+    expect(getWebSearchApiKeyField(WebSearchProvider.SpecStream)).toBe(
+      'specstream_api_key',
     );
     expect(getWebSearchApiKeyField(WebSearchProvider.Tavily)).toBe(
       'tavily_api_key',

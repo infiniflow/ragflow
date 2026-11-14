@@ -24,6 +24,7 @@ import queritLogo from '@/assets/querit.png';
 import search1apiLogo from '@/assets/search1api.png';
 import searchapiLogo from '@/assets/searchapi.png';
 import serplyLogo from '@/assets/serply.png';
+import specstreamLogo from '@/assets/svg/specstream.svg';
 import tavilyLogo from '@/assets/svg/tavily.svg';
 import youcomLogo from '@/assets/svg/youcom.svg';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
@@ -91,6 +92,11 @@ const webSearchProviderCatalog = [
     name: 'Serply',
     logo: serplyLogo,
     value: WebSearchProvider.Serply,
+  },
+  {
+    name: 'SpecStream',
+    logo: specstreamLogo,
+    value: WebSearchProvider.SpecStream,
   },
   {
     name: 'Tavily',
@@ -189,6 +195,12 @@ const providerKeyConfig = {
     tip: 'serplyApiKeyTip',
     placeholder: 'serplyApiKeyMessage',
     helpUrl: 'https://serply.io',
+  },
+  [WebSearchProvider.SpecStream]: {
+    name: 'prompt_config.specstream_api_key',
+    tip: 'specstreamApiKeyTip',
+    placeholder: 'specstreamApiKeyMessage',
+    helpUrl: 'https://specstream.ai/search-api',
   },
   [WebSearchProvider.Tavily]: {
     name: 'prompt_config.tavily_api_key',

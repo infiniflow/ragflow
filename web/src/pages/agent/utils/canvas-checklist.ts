@@ -103,6 +103,7 @@ const OrphanExemptOperators: string[] = [
 const ApiKeyRequiredOperators: string[] = [
   Operator.SofyaSearch,
   Operator.Search1APISearch,
+  Operator.SpecStreamExtract,
 ];
 
 function collectStrings(value: unknown): string[] {
