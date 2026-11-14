@@ -4,6 +4,7 @@ import MessageItem from '@/components/message-item';
 import PdfSheet from '@/components/pdf-drawer';
 import { useClickDrawer } from '@/components/pdf-drawer/hooks';
 import { useSyncThemeFromParams } from '@/components/theme-provider';
+import { Button } from '@/components/ui/button';
 import { VirtualMessageList } from '@/components/virtual-message-list';
 import { MessageType } from '@/constants/chat';
 import { useFetchExternalChatInfo } from '@/hooks/use-chat-request';
@@ -35,6 +36,7 @@ const ChatContainer = () => {
     sendLoading,
     derivedMessages,
     hasError,
+    retryInitialization,
     stopOutputMessage,
     virtualizer,
     messageContainerRef,
@@ -100,24 +102,33 @@ const ChatContainer = () => {
           </div>
           <div className="flex w-full justify-center md:mb-8">
             <div className="w-full md:w-5/6">
-              <NextMessageInput
-                isShared
-                value={value}
-                disabled={hasError}
-                sendDisabled={sendDisabled}
-                resize="vertical"
-                conversationId={conversationId}
-                onInputChange={handleInputChange}
-                onPressEnter={handlePressEnter}
-                sendLoading={sendLoading}
-                uploadMethod="external_upload_and_parse"
-                showUploadIcon={false}
-                stopOutputMessage={stopOutputMessage}
-                showReasoning
-                showInternet={
-                  chatInfo?.has_web_search_provider ?? chatInfo?.has_tavily_key
-                }
-              ></NextMessageInput>
+              {hasError ? (
+                <div className="flex justify-center">
+                  <Button type="button" onClick={retryInitialization}>
+                    Retry
+                  </Button>
+                </div>
+              ) : (
+                <NextMessageInput
+                  isShared
+                  value={value}
+                  disabled={false}
+                  sendDisabled={sendDisabled}
+                  resize="vertical"
+                  conversationId={conversationId}
+                  onInputChange={handleInputChange}
+                  onPressEnter={handlePressEnter}
+                  sendLoading={sendLoading}
+                  uploadMethod="external_upload_and_parse"
+                  showUploadIcon={false}
+                  stopOutputMessage={stopOutputMessage}
+                  showReasoning
+                  showInternet={
+                    chatInfo?.has_web_search_provider ??
+                    chatInfo?.has_tavily_key
+                  }
+                ></NextMessageInput>
+              )}
             </div>
           </div>
         </div>
