@@ -156,7 +156,7 @@ func parseXLSXBytes(data []byte, sink *officeMediaSink) ([]map[string]any, []str
 	items := make([]map[string]any, 0)
 	warnings := make([]string, 0)
 	for sheetIdx, sheet := range sheets {
-		records, dataRows, headerRow, ranges, sheetWarnings, err := readSpreadsheetRecords(f, sheet)
+		records, rawRows, dataRows, headerRow, ranges, sheetWarnings, err := readSpreadsheetRecords(f, sheet)
 		if err != nil {
 			return nil, warnings, len(sheets), err
 		}
@@ -172,6 +172,20 @@ func parseXLSXBytes(data []byte, sink *officeMediaSink) ([]map[string]any, []str
 		// with row-aligned positions, images interleaved at their anchors.
 		items = append(items, buildSheetItems(records, sheet, sheetIdx+1, headerRow, dataRows, images, ranges)...)
 		warnings = append(warnings, imageWarnings...)
+
+		// For form-style sheets (cover pages, Kros "Krycí list"), emit an
+		// additional plain-text KV chunk so the sheet name (which often
+		// carries the discipline, e.g. "E1.2 - Statika") and label→value
+		// pairs become searchable by both keyword and embedding.
+		if isFormSheet(rawRows) {
+			kvText := renderFormSheetKV(sheet, rawRows)
+			if len(kvText) > 0 {
+				kvItem := NewTextJSONItem(kvText).ToMap()
+				kvItem["sheet"] = sheet
+				kvItem["sheet_index"] = sheetIdx + 1
+				items = append(items, kvItem)
+			}
+		}
 	}
 	return items, warnings, len(sheets), nil
 }
