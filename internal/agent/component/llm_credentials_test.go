@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/modelcontext"
 
 	"gorm.io/gorm"
 )
@@ -136,6 +137,99 @@ func TestNaceLegacyFallbackDoesNotSendSavedKeyToAnotherOrigin(t *testing.T) {
 	if key, _, ok := resolveTenantModelInstanceCredentials(stateWithTenant("tenant-1"), db, "tenant-1", "decision-model-preview@default@Nace", "https://console.nace.ai/v1"); !ok || key != "test-key" {
 		t.Fatalf("same-origin override lost the saved key: %q, %t", key, ok)
 	}
+}
+
+func TestCompositeModelCredentialsDoNotBorrowSoleActiveInstance(t *testing.T) {
+	db := setupOpenAICompositeCredentialTestDB(t, false)
+	ctx := stateWithTenant("tenant-1")
+
+	key, baseURL, ok := resolveTenantModelInstanceCredentials(ctx, db, "tenant-1", "gpt-4o@OpenAI", "https://override.example/v1")
+	if ok || key != "" || baseURL != "https://override.example/v1" {
+		t.Fatalf("two-part reference resolved credentials from a non-default instance: key=%q baseURL=%q ok=%t", key, baseURL, ok)
+	}
+	if got := modelcontext.ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@OpenAI", "", ""); got != 128000 {
+		t.Fatalf("two-part reference used the non-default tenant override: context length=%d, want catalog 128000", got)
+	}
+
+	key, baseURL, ok = resolveTenantModelInstanceCredentials(ctx, db, "tenant-1", "gpt-4o@prod@OpenAI", "")
+	if !ok || key != "prod-key" || baseURL != "https://prod.example/v1" {
+		t.Fatalf("explicit instance reference = key=%q baseURL=%q ok=%t, want prod credentials", key, baseURL, ok)
+	}
+	if got := modelcontext.ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@prod@OpenAI", "", ""); got != 32000 {
+		t.Fatalf("explicit instance context length=%d, want 32000 from extra.max_tokens", got)
+	}
+}
+
+func TestCompositeModelCredentialsRejectInactiveDefault(t *testing.T) {
+	db := setupOpenAICompositeCredentialTestDB(t, true)
+	ctx := stateWithTenant("tenant-1")
+
+	key, baseURL, ok := resolveTenantModelInstanceCredentials(ctx, db, "tenant-1", "gpt-4o@OpenAI", "https://override.example/v1")
+	if ok || key != "" || baseURL != "https://override.example/v1" {
+		t.Fatalf("two-part reference used inactive default credentials: key=%q baseURL=%q ok=%t", key, baseURL, ok)
+	}
+	if got := modelcontext.ResolveModelContentLength(ctx, db, "tenant-1", "gpt-4o@OpenAI", "", ""); got != 128000 {
+		t.Fatalf("inactive default changed the catalog fallback: context length=%d, want 128000", got)
+	}
+}
+
+// setupOpenAICompositeCredentialTestDB creates the deployment layout from
+// issue #20140. The model override belongs to prod, while the legacy two-part
+// reference implicitly names default.
+func setupOpenAICompositeCredentialTestDB(t *testing.T, inactiveDefault bool) *gorm.DB {
+	t.Helper()
+	db := setupComponentTestDB(t)
+	status := entity.TenantMembershipStatusJoined
+	if err := db.Create(&entity.UserTenant{
+		ID:       "membership-tenant-1",
+		UserID:   "tenant-1",
+		TenantID: "tenant-1",
+		Role:     "owner",
+		Status:   &status,
+	}).Error; err != nil {
+		t.Fatalf("create tenant owner: %v", err)
+	}
+	if err := db.Create(&entity.TenantModelProvider{
+		ID:           "openai-provider",
+		UserID:       "tenant-1",
+		TenantID:     "tenant-1",
+		ProviderName: "OpenAI",
+	}).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if inactiveDefault {
+		if err := db.Create(&entity.TenantModelInstance{
+			ID:           "openai-default",
+			ProviderID:   "openai-provider",
+			InstanceName: "default",
+			APIKey:       "default-key",
+			Status:       "inactive",
+		}).Error; err != nil {
+			t.Fatalf("create inactive default: %v", err)
+		}
+	}
+	if err := db.Create(&entity.TenantModelInstance{
+		ID:           "openai-prod",
+		ProviderID:   "openai-provider",
+		InstanceName: "prod",
+		APIKey:       "prod-key",
+		Status:       "active",
+		Extra:        `{"base_url":"https://prod.example/v1"}`,
+	}).Error; err != nil {
+		t.Fatalf("create prod instance: %v", err)
+	}
+	if err := db.Create(&entity.TenantModel{
+		ID:         "openai-gpt-4o-prod",
+		ProviderID: "openai-provider",
+		InstanceID: "openai-prod",
+		ModelName:  "gpt-4o",
+		ModelType:  int(entity.ModelTypeChat),
+		Status:     "active",
+		Extra:      `{"max_tokens":32000}`,
+	}).Error; err != nil {
+		t.Fatalf("create prod model: %v", err)
+	}
+	return db
 }
 
 // setupLegacyProviderModels creates a tenant with a non-decision provider and

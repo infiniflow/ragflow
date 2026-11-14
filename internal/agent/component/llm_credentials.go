@@ -161,21 +161,17 @@ func resolveTenantModelInstanceCredentials(ctx context.Context, db *gorm.DB, tid
 
 	instance, err := dao.NewTenantModelInstanceDAO().GetByProviderIDAndInstanceName(ctx, db, provider.ID, instanceName)
 	if err != nil || instance == nil {
-		if instanceName == "default" {
-			if fallback := findSoleActiveProviderInstance(ctx, db, provider.ID); fallback != nil {
-				common.Debug("llm credentials: new-table fallback: remapped default instance to sole active instance",
-					zap.String("instance", fallback.InstanceName),
-					zap.String("provider", providerName))
-				instance = fallback
-				err = nil
-			}
-		}
-	}
-	if err != nil || instance == nil {
 		common.Debug("llm credentials: new-table fallback: instance not found",
 			zap.String("instance", instanceName),
 			zap.String("provider", providerName),
 			zap.Error(err))
+		return "", baseURL, false
+	}
+	if !strings.EqualFold(strings.TrimSpace(instance.Status), "active") {
+		common.Debug("llm credentials: new-table fallback: instance is inactive",
+			zap.String("instance", instanceName),
+			zap.String("provider", providerName),
+			zap.String("status", instance.Status))
 		return "", baseURL, false
 	}
 
