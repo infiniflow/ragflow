@@ -50,10 +50,11 @@ func TestSlovakChunkStoreMatchesWithAndWithoutDiacritics(t *testing.T) {
 	t.Cleanup(func() { _ = eng.Close() })
 
 	baseName := fmt.Sprintf("ragflow_language_test_%d", time.Now().UnixNano())
-	search := func(datasetID, query string) int {
+	search := func(datasetID, language, query string) int {
 		res, err := eng.Search(ctx, &types.SearchRequest{
 			IndexNames:   []string{baseName},
 			KbIDs:        []string{datasetID},
+			Language:     language,
 			Limit:        10,
 			SelectFields: []string{"id", "content_with_weight"},
 			MatchExprs: []interface{}{&types.MatchTextExpr{
@@ -97,10 +98,10 @@ func TestSlovakChunkStoreMatchesWithAndWithoutDiacritics(t *testing.T) {
 			t.Fatalf("InsertChunks(%s): %v", tt.datasetID, err)
 		}
 
-		if got := search(tt.datasetID, "školy"); got != 1 {
+		if got := search(tt.datasetID, tt.language, "školy"); got != 1 {
 			t.Errorf("%s: accented query returned %d chunks, want 1", tt.datasetID, got)
 		}
-		if got := search(tt.datasetID, "skoly"); got != tt.unaccentedHits {
+		if got := search(tt.datasetID, tt.language, "skoly"); got != tt.unaccentedHits {
 			t.Errorf("%s: unaccented query returned %d chunks, want %d", tt.datasetID, got, tt.unaccentedHits)
 		}
 	}

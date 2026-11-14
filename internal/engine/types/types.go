@@ -35,6 +35,9 @@ type SearchRequest struct {
 	// Search target
 	IndexNames []string // For ES: index names; For Infinity: treated as table name prefixes
 	KbIDs      []string // Knowledge base IDs filter
+	// Language is the dataset language. Engines with language-specific
+	// full-text indexes use it to select the matching analyzer index.
+	Language string
 
 	// Pagination
 	Offset int // Offset for pagination (0-based)
