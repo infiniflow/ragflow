@@ -155,6 +155,18 @@ func (s *FileService) listFiles(ctx context.Context, tenantID, pfID string, page
 		return nil, permission.ErrResourceNotFound
 	}
 
+	// One layered walk for the whole page replaces a recursive walk per folder.
+	folderIDs := make([]string, 0, len(files))
+	for _, file := range files {
+		if file.Type == FileTypeFolder {
+			folderIDs = append(folderIDs, file.ID)
+		}
+	}
+	folderSizes, childFolders, err := s.fileDAO.GetFolderAggregates(ctx, dao.DB, folderIDs)
+	if err != nil {
+		folderSizes, childFolders = nil, nil
+	}
+
 	// Process files to add additional info, deduplicating by ID as a safety net
 	// against any leftover duplicate rows (e.g. duplicate 'skills' or '.knowledgebase' folders).
 	fileResponses := make([]map[string]interface{}, 0, len(files))
@@ -168,14 +180,8 @@ func (s *FileService) listFiles(ctx context.Context, tenantID, pfID string, page
 
 		// If folder, calculate size and check for child folders
 		if file.Type == FileTypeFolder {
-			folderSize, err := s.fileDAO.GetFolderSize(ctx, dao.DB, file.ID)
-			if err == nil {
-				fileInfo.Size = folderSize
-			}
-			hasChild, err := s.fileDAO.HasChildFolder(ctx, dao.DB, file.ID)
-			if err == nil {
-				fileInfo.HasChildFolder = hasChild
-			}
+			fileInfo.Size = folderSizes[file.ID]
+			fileInfo.HasChildFolder = childFolders[file.ID]
 			fileInfo.KbsInfo = []map[string]interface{}{}
 		} else {
 			// Get KB info for non-folder files

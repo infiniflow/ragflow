@@ -298,6 +298,91 @@ func (dao *FileDAO) HasChildFolder(ctx context.Context, db *gorm.DB, folderID st
 	return count > 0, err
 }
 
+// GetFolderAggregates returns, for every folder in folderIDs, the total size of
+// everything nested under it and whether it directly contains a folder. One
+// layered parent_id IN query per depth level replaces a recursive walk per
+// folder, so a page of folders costs O(depth) queries instead of one query per
+// subtree node. A folder reached from several page rows contributes its size to
+// each of them.
+func (dao *FileDAO) GetFolderAggregates(ctx context.Context, db *gorm.DB, folderIDs []string) (map[string]int64, map[string]bool, error) {
+	const parentBatchSize = 500
+
+	sizes := make(map[string]int64, len(folderIDs))
+	hasChildFolder := make(map[string]bool, len(folderIDs))
+	if len(folderIDs) == 0 {
+		return sizes, hasChildFolder, nil
+	}
+
+	// A scope pairs a page folder with a node of its subtree: the node's size is
+	// accumulated into that page folder only, and the pair itself is the cycle
+	// guard for dirty parent chains.
+	type scope struct {
+		top string
+		id  string
+	}
+	visited := make(map[scope]struct{}, len(folderIDs))
+	frontier := make([]scope, 0, len(folderIDs))
+	for _, id := range folderIDs {
+		s := scope{top: id, id: id}
+		if _, dup := visited[s]; dup {
+			continue
+		}
+		visited[s] = struct{}{}
+		frontier = append(frontier, s)
+	}
+
+	for len(frontier) > 0 {
+		parents := make([]string, 0, len(frontier))
+		topsByParent := make(map[string][]string, len(frontier))
+		for _, s := range frontier {
+			if _, ok := topsByParent[s.id]; !ok {
+				parents = append(parents, s.id)
+			}
+			topsByParent[s.id] = append(topsByParent[s.id], s.top)
+		}
+
+		next := make([]scope, 0, len(frontier))
+		for start := 0; start < len(parents); start += parentBatchSize {
+			end := start + parentBatchSize
+			if end > len(parents) {
+				end = len(parents)
+			}
+			var children []entity.File
+			if err := db.WithContext(ctx).Model(&entity.File{}).
+				Select("id", "parent_id", "size", "type").
+				Where("parent_id IN ?", parents[start:end]).
+				Find(&children).Error; err != nil {
+				return nil, nil, err
+			}
+			for i := range children {
+				child := &children[i]
+				// A root folder stores parent_id = id, so it comes back as its own
+				// child; it is never a child of the folder it roots.
+				if child.ID == child.ParentID {
+					continue
+				}
+				if child.Type == "folder" {
+					hasChildFolder[child.ParentID] = true
+				}
+				for _, top := range topsByParent[child.ParentID] {
+					s := scope{top: top, id: child.ID}
+					if _, dup := visited[s]; dup {
+						continue
+					}
+					visited[s] = struct{}{}
+					sizes[top] += child.Size
+					if child.Type == "folder" {
+						next = append(next, s)
+					}
+				}
+			}
+		}
+		frontier = next
+	}
+
+	return sizes, hasChildFolder, nil
+}
+
 // GetAllParentFolders gets all parent folders in path (from current to root)
 func (dao *FileDAO) GetAllParentFolders(ctx context.Context, db *gorm.DB, startID string) ([]*entity.File, error) {
 	var parentFolders []*entity.File

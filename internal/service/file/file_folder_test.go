@@ -781,3 +781,61 @@ func TestMoveFilesSingleFolderWithSubtreeStillMoves(t *testing.T) {
 	movedA := childByName(t, "D", "A")
 	childByName(t, movedA.ID, "B")
 }
+
+// A folder row must report the size of its whole subtree from a single lookup
+// for the page, not one recursive walk per folder.
+func TestListFilesReportsNestedFolderSize(t *testing.T) {
+	setupFolderTestDB(t)
+	for _, entry := range []entity.File{
+		{ID: "root", ParentID: "root", TenantID: "tenant-1", CreatedBy: "tenant-1", Name: "/", Type: FileTypeFolder},
+		{ID: "dirA", ParentID: "root", TenantID: "tenant-1", CreatedBy: "tenant-1", Name: "dirA", Type: FileTypeFolder},
+		{ID: "subB", ParentID: "dirA", TenantID: "tenant-1", CreatedBy: "tenant-1", Name: "subB", Type: FileTypeFolder},
+		{ID: "deep", ParentID: "subB", TenantID: "tenant-1", CreatedBy: "tenant-1", Name: "deep.txt", Type: "doc", Size: 300},
+		{ID: "shallow", ParentID: "dirA", TenantID: "tenant-1", CreatedBy: "tenant-1", Name: "shallow.txt", Type: "doc", Size: 200},
+		{ID: "empty", ParentID: "root", TenantID: "tenant-1", CreatedBy: "tenant-1", Name: "empty", Type: FileTypeFolder},
+	} {
+		if err := dao.DB.Create(&entry).Error; err != nil {
+			t.Fatalf("seed %s: %v", entry.ID, err)
+		}
+	}
+
+	list, err := testFileService().ListFilesForTenant(fileTestContext(t, "tenant-1", "tenant-1"), "tenant-1", "root", 1, 15, nil, "")
+	if err != nil {
+		t.Fatalf("list files: %v", err)
+	}
+
+	byID := make(map[string]map[string]interface{}, len(list.Files))
+	for _, file := range list.Files {
+		byID[file["id"].(string)] = file
+	}
+
+	if got := byID["dirA"]["size"]; got != int64(500) {
+		t.Fatalf("dirA size = %v, want 500", got)
+	}
+	if got := byID["dirA"]["has_child_folder"]; got != true {
+		t.Fatalf("dirA has_child_folder = %v, want true", got)
+	}
+	if got := byID["empty"]["size"]; got != int64(0) {
+		t.Fatalf("empty size = %v, want 0", got)
+	}
+	if got := byID["empty"]["has_child_folder"]; got != false {
+		t.Fatalf("empty has_child_folder = %v, want false", got)
+	}
+
+	// The same page walk must also answer for a deeper folder, and a file row
+	// keeps its own size.
+	list, err = testFileService().ListFilesForTenant(fileTestContext(t, "tenant-1", "tenant-1"), "tenant-1", "dirA", 1, 15, nil, "")
+	if err != nil {
+		t.Fatalf("list dirA: %v", err)
+	}
+	byID = make(map[string]map[string]interface{}, len(list.Files))
+	for _, file := range list.Files {
+		byID[file["id"].(string)] = file
+	}
+	if got := byID["subB"]["size"]; got != int64(300) {
+		t.Fatalf("subB size = %v, want 300", got)
+	}
+	if got := byID["shallow"]["size"]; got != int64(200) {
+		t.Fatalf("shallow size = %v, want 200", got)
+	}
+}
