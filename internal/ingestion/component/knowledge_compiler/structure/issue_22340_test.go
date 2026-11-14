@@ -304,6 +304,26 @@ func TestIssue22340_MergeInvariantsAndRefreshMeta(t *testing.T) {
 	if meta["relation_type"] != "uses_new" {
 		t.Errorf("refreshMetaFromPayload relation_type: got %v, want uses_new", meta["relation_type"])
 	}
+
+	// 2. Merged payload omits both endpoints entirely (only relation and description).
+	// Invariants must restore canonical "source" and "target".
+	omittedPayload := map[string]any{
+		"relation":    "uses_omitted",
+		"description": "merged description",
+	}
+	restored := applyMergeInvariants(existing, omittedPayload)
+	if restored["source"] != "Pump-001" || restored["target"] != "Bearing-001" {
+		t.Errorf("applyMergeInvariants failed to restore omitted endpoints: %#v", restored)
+	}
+
+	metaOmitted := map[string]any{"kind": "relation"}
+	refreshMetaFromPayload(metaOmitted, "relation", restored)
+	if metaOmitted["from"] != "Pump-001" || metaOmitted["to"] != "Bearing-001" {
+		t.Errorf("refreshMetaFromPayload failed for restored omitted endpoints: %#v", metaOmitted)
+	}
+	if metaOmitted["relation_type"] != "uses_omitted" {
+		t.Errorf("refreshMetaFromPayload relation_type: got %v, want uses_omitted", metaOmitted["relation_type"])
+	}
 }
 
 // TestIssue22340_RewriteToSelfLoopFilter verifies that when relation endpoints
