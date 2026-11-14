@@ -380,13 +380,15 @@ Each tool has its own node settings, so enter the key on each tool you add.
 
 The tag, params and queries are chosen for each call and are not stored in the node settings. The Agent supplies them when it uses the tools, and the debug form of the standalone component accepts a tag and params. For example, an Agent searching React documentation sends the tag `code.doc` with the params `{"library": "react"}`.
 
+Follow the discovered parameter descriptions, including conditional requirements. For `travel.flight_status`, provide a nonempty `flight_number`. When no departure airport is specified, the tool sends `departure: ""`; an explicitly supplied airport is preserved. A missing flight number or a non-string departure value is rejected before making a request.
+
 #### Output Result
 
 `json` contains one record per search, in the order the searches were sent: the query, the tag, the AnySearch `request_id`, the results, and an `_ERROR` field when that search failed. `formalized_content` renders the results grouped by query and is commonly used as Agent context. Each result keeps its title and link, and each text field of a result, such as the page text or the snippet, is limited to 1,500 characters.
 
 Searches in a `queries` call are independent. If one fails, for example because of an unknown tag, the other results are still returned, and the failed record carries the AnySearch message and `request_id`. The whole call reports an error only when every search failed. An invalid argument, such as an unsupported zone, a missing query, or more than 5 queries, is rejected before any search runs. An invalid API key is reported as an error and is never retried without the key.
 
-The standalone component records its results as references that a later Message node can cite. When the tools are used by an Agent node, the Agent reads the results from the tool output and no references are added.
+Both the standalone component and Agent tool runs record search results as retrieval references. Their document and display IDs use RAGFlow's shared citation contract so the results remain available for citation grounding.
 
 ### Wikipedia
 The Wikipedia component searches encyclopedia entries and extracts entry summaries. It is suitable for querying clear entities, concepts, and historical events. Query terms should be as close as possible to the entry title.
