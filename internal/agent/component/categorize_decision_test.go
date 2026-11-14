@@ -364,3 +364,75 @@ func TestCategorizeDecisionTimeout(t *testing.T) {
 		t.Errorf("SystemOne budget = %v, want 30s", got)
 	}
 }
+
+func TestCategorizeDecisionResolvesInstanceID(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"answers":{"category_0":{"type":"noul","noul":0.1},"category_1":{"type":"noul","noul":0.9}}}`))
+	}))
+	defer srv.Close()
+	db := setupCategorizeDecisionModel(t, srv.URL+"/v1")
+	state := canvas.NewCanvasState("run", "task")
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := canvas.WithState(t.Context(), state)
+
+	// 1. Verify resolveModelRefWithInstance with bare tenant model ID
+	modelID, driver, _, _, instID, _, err := resolveModelRefWithInstance(ctx, db, categorizeDecisionModelID, "", "", "", entity.ModelTypeChat|entity.ModelTypeDecision)
+	if err != nil {
+		t.Fatalf("resolveModelRefWithInstance bare ID: %v", err)
+	}
+	if modelID != "decision-model-preview" || driver != "SystemOne" || instID != "decision-instance" {
+		t.Fatalf("unexpected resolveModelRefWithInstance result: modelID=%q, driver=%q, instID=%q", modelID, driver, instID)
+	}
+
+	// 2. Verify resolveModelRefWithInstance with composite model ID
+	compositeID := "decision-model-preview@default@SystemOne"
+	modelID2, driver2, _, _, instID2, _, err := resolveModelRefWithInstance(ctx, db, compositeID, "", "", "", entity.ModelTypeChat|entity.ModelTypeDecision)
+	if err != nil {
+		t.Fatalf("resolveModelRefWithInstance composite: %v", err)
+	}
+	if modelID2 != "decision-model-preview" || driver2 != "SystemOne" || instID2 != "decision-instance" {
+		t.Fatalf("unexpected composite resolveModelRefWithInstance result: modelID=%q, driver=%q, instID=%q", modelID2, driver2, instID2)
+	}
+
+	// 3. Verify Invoke with bare tenant model ID executes decision model
+	c, err := New("Categorize", map[string]any{
+		"llm_id":     categorizeDecisionModelID,
+		"categories": []any{"cat_0", "cat_1"},
+	})
+	if err != nil {
+		t.Fatalf("New Categorize: %v", err)
+	}
+	out, err := c.Invoke(ctx, db, nil)
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if out["category"] != "cat_1" {
+		t.Fatalf("unexpected category: %v", out["category"])
+	}
+
+	// 4. Verify Invoke prioritizes resolved instance ID over param and input overrides
+	pMerged := mergeCategorizeParam(CategorizeParam{InstanceID: "initial-instance"}, map[string]any{
+		"instance_id": "tampered-input-instance-override",
+	})
+	if pMerged.InstanceID != "initial-instance" {
+		t.Fatalf("expected mergeCategorizeParam to ignore input instance_id, got %q", pMerged.InstanceID)
+	}
+
+	cTampered, err := New("Categorize", map[string]any{
+		"llm_id":      categorizeDecisionModelID,
+		"instance_id": "stale-param-instance-override",
+		"categories":  []any{"cat_0", "cat_1"},
+	})
+	if err != nil {
+		t.Fatalf("New Categorize: %v", err)
+	}
+	outTampered, err := cTampered.Invoke(ctx, db, map[string]any{
+		"instance_id": "tampered-input-instance-override",
+	})
+	if err != nil {
+		t.Fatalf("Invoke with input override: %v", err)
+	}
+	if outTampered["category"] != "cat_1" {
+		t.Fatalf("unexpected category: %v", outTampered["category"])
+	}
+}

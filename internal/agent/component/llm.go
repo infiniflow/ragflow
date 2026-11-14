@@ -110,6 +110,9 @@ type LLMParam struct {
 	// driver decides, which today means Qwen3 is sent
 	// `enable_thinking=false` unless overridden.
 	Thinking string
+
+	// ModelInfo carries the resolved provider and model attribution (e.g. TenantID, InstanceID).
+	ModelInfo *models.ModelInfo
 }
 
 // LLMInput is the resolved input map the factory / Invoke expects.
@@ -217,7 +220,10 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvok
 	}
 	apiKey := req.APIKey
 	cfg := &models.APIConfig{ApiKey: &apiKey}
-	cm := models.NewChatModel(d, &modelName, cfg)
+	cm := models.NewChatModelWithInfo(d, &modelName, cfg, req.ModelInfo)
+	if req.ModelInfo != nil {
+		ctx = models.WithModelInfo(ctx, req.ModelInfo)
+	}
 
 	chatCfg := &models.ChatConfig{
 		Temperature: req.Temperature,
@@ -389,7 +395,11 @@ func (e *einoChatInvoker) Stream(ctx context.Context, _ *gorm.DB, req ChatInvoke
 		return nil, fmt.Errorf("component: LLM: resolve driver %q: %w", driver, err)
 	}
 	apiKey := req.APIKey
-	cm := models.NewChatModel(d, &bareModel, &models.APIConfig{ApiKey: &apiKey})
+	cfg := &models.APIConfig{ApiKey: &apiKey}
+	cm := models.NewChatModelWithInfo(d, &bareModel, cfg, req.ModelInfo)
+	if req.ModelInfo != nil {
+		ctx = models.WithModelInfo(ctx, req.ModelInfo)
+	}
 	chatCfg := &models.ChatConfig{Temperature: req.Temperature, TopP: req.TopP, MaxTokens: req.MaxTokens}
 	switch req.Thinking {
 	case "enabled":
@@ -539,8 +549,18 @@ func NewResolvedInvoker(model *models.ChatModel) ChatInvoker {
 // share it so both send an identical request; only the transport differs.
 func (c *resolvedModelInvoker) resolvedChatWrapper(modelName string, req ChatInvokeRequest) (*models.EinoChatModel, *models.ChatModel, error) {
 	cm := c.model
-	if cm.ModelName == nil || *cm.ModelName != modelName {
-		cm = models.NewChatModelWithInfo(cm.ModelDriver, &modelName, cm.APIConfig, cm.Info())
+	info := cm.Info()
+	if info == nil {
+		info = req.ModelInfo
+	} else if req.ModelInfo != nil {
+		// Only adopt req.ModelInfo if it identifies the same saved provider configuration as the pinned credentials;
+		// otherwise retain cm.Info() to keep attribution bound to the pinned credentials.
+		if !info.IsSavedConfig || (req.ModelInfo.IsSavedConfig && req.ModelInfo.InstanceID == info.InstanceID && (req.ModelInfo.TenantID == "" || req.ModelInfo.TenantID == info.TenantID)) {
+			info = req.ModelInfo
+		}
+	}
+	if cm.ModelName == nil || *cm.ModelName != modelName || info != cm.Info() {
+		cm = models.NewChatModelWithInfo(cm.ModelDriver, &modelName, cm.APIConfig, info)
 	}
 	chatCfg := &models.ChatConfig{
 		Temperature: req.Temperature,
@@ -585,9 +605,12 @@ func (c *resolvedModelInvoker) modelFor(req ChatInvokeRequest) string {
 // Invoke satisfies ChatInvoker.
 func (c *resolvedModelInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
 	modelName := c.modelFor(req)
-	wrapper, _, err := c.resolvedChatWrapper(modelName, req)
+	wrapper, cm, err := c.resolvedChatWrapper(modelName, req)
 	if err != nil {
 		return nil, err
+	}
+	if info := cm.Info(); info != nil {
+		ctx = models.WithModelInfo(ctx, info)
 	}
 	out, err := wrapper.Generate(ctx, toEinoMessages(req.Messages))
 	if err != nil {
@@ -618,6 +641,9 @@ func (c *resolvedModelInvoker) Stream(ctx context.Context, _ *gorm.DB, req ChatI
 	wrapper, cm, err := c.resolvedChatWrapper(modelName, req)
 	if err != nil {
 		return nil, err
+	}
+	if info := cm.Info(); info != nil {
+		ctx = models.WithModelInfo(ctx, info)
 	}
 	return streamEinoChat(ctx, wrapper, toEinoMessages(req.Messages), cm, modelName, onDelta)
 }
@@ -670,7 +696,7 @@ func toEinoMessages(msgs []schema.Message) []*schema.Message {
 // newChatModelDriver returns the provider-configured driver used by regular
 // chat. Provider-specific endpoint suffixes remain owned by conf/models/*.json;
 // a tenant base_url override replaces only the endpoint root.
-func newChatModelDriver(driver, override string) (models.ModelDriver, error) {
+var newChatModelDriver = func(driver, override string) (models.ModelDriver, error) {
 	return models.GetPreconfiguredDriver(driver, override)
 }
 
@@ -800,10 +826,12 @@ func (c *LLMComponent) prepareChatRequest(
 	// driver, causing 400s for custom-added models.
 	var err error
 	originalModelID := p.ModelID
-	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
+	var info *models.ModelInfo
+	p.ModelID, p.Driver, p.APIKey, p.BaseURL, info, err = resolveChatModelRefWithInfo(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
 	if err != nil {
 		return nil, ChatInvokeRequest{}, p, nil, fmt.Errorf("component: LLM.Invoke: resolve model: %w", err)
 	}
+	p.ModelInfo = info
 	// Resolve the model's context window (content_length) for message
 	// fitting. 0 means the model is unknown → chat.FitMessages falls back to
 	// 8192, matching Python's chat_mdl.max_length = model_config.get("max_tokens") or 8192.
@@ -973,6 +1001,7 @@ func (c *LLMComponent) prepareChatRequest(
 		ModelName:        p.ModelID,
 		APIKey:           p.APIKey,
 		BaseURL:          p.BaseURL,
+		ModelInfo:        p.ModelInfo,
 		Messages:         msgs,
 		Temperature:      p.Temperature,
 		TopP:             p.TopP,

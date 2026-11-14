@@ -19,6 +19,7 @@ package models
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/tokenizer"
@@ -57,6 +58,10 @@ func (m *EmbeddingModel) Embed(ctx context.Context, req EmbedRequest, embeddingC
 	if len(req.Texts) == 0 {
 		return []EmbeddingData{}, nil
 	}
+	if m.info != nil {
+		ctx = WithModelInfo(ctx, m.info)
+	}
+	usage = resolveModelUsage(ctx, usage, m.ModelName, m.APIConfig, m.info, "embedding")
 	batchSize := m.ResolveBatchSize()
 	if len(req.Texts) <= batchSize {
 		return m.embedBatch(ctx, req, embeddingConfig, usage)
@@ -69,20 +74,14 @@ func (m *EmbeddingModel) Embed(ctx context.Context, req EmbedRequest, embeddingC
 		}
 		batch := req
 		batch.Texts = req.Texts[start:min(start+batchSize, len(req.Texts))]
-		var batchUsage *common.ModelUsage
-		if usage != nil {
-			copy := *usage
-			copy.InputTokens, copy.OutputTokens, copy.TotalTokens = 0, 0, 0
-			batchUsage = &copy
-		}
-		embeds, err := m.embedBatch(ctx, batch, embeddingConfig, batchUsage)
-		if usage != nil {
-			inputTokens += batchUsage.InputTokens
-			outputTokens += batchUsage.OutputTokens
-			totalTokens += batchUsage.TotalTokens
-			*usage = *batchUsage
-			usage.InputTokens, usage.OutputTokens, usage.TotalTokens = inputTokens, outputTokens, totalTokens
-		}
+		batchUsage := *usage
+		batchUsage.InputTokens, batchUsage.OutputTokens, batchUsage.TotalTokens = 0, 0, 0
+		batchUsage.StartAt, batchUsage.RequestID, batchUsage.ResponseTimeMS = time.Now(), "", 0
+		embeds, err := m.embedBatch(ctx, batch, embeddingConfig, &batchUsage)
+		inputTokens += batchUsage.InputTokens
+		outputTokens += batchUsage.OutputTokens
+		totalTokens += batchUsage.TotalTokens
+		usage.InputTokens, usage.OutputTokens, usage.TotalTokens = inputTokens, outputTokens, totalTokens
 		if err != nil {
 			return nil, err
 		}

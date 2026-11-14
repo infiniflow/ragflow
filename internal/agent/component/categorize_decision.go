@@ -6,7 +6,9 @@ import (
 	"strings"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 )
 
 // categorizeDecisionTimeout bounds one classification. Nace holds a request up
@@ -45,6 +47,24 @@ func categorizeWithDecision(ctx context.Context, p CategorizeParam, query string
 	timeout := categorizeDecisionBudget(p.Driver, len(p.Categories))
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+
+	tenantID := ""
+	if p.ModelInfo != nil && p.ModelInfo.TenantID != "" {
+		tenantID = p.ModelInfo.TenantID
+	} else if p.InstanceID == "" {
+		tenantID = permission.TenantIDFromContext(ctx)
+	}
+	userID := permission.UserIDFromContext(ctx)
+	if tenantID != "" {
+		ctx = permission.WithTenantID(ctx, tenantID)
+	}
+	if userID != "" {
+		ctx = permission.WithUserID(ctx, userID)
+	}
+	if p.ModelInfo != nil {
+		ctx = models.WithModelInfo(ctx, p.ModelInfo)
+	}
+
 	instructions := buildCategorizeDecisionInstructions(p)
 	state := map[string]string{"query": query, "conversation": buildCategorizePrompt(history)}
 	chosen, best := p.DefaultCategory, 0.0
@@ -56,7 +76,12 @@ func categorizeWithDecision(ctx context.Context, p CategorizeParam, query string
 				Instructions: instructions + fmt.Sprintf("\nIs %q the single best category for the current query in the state?", p.Categories[i]),
 			}
 		}
-		response, err := driver.Decide(ctx, &p.ModelID, &models.DecideRequest{State: state, Questions: questions}, &models.APIConfig{ApiKey: &p.APIKey}, nil)
+		usage := &common.ModelUsage{
+			ModelName: p.ModelID,
+			Type:      "decision",
+			StartAt:   time.Now(),
+		}
+		response, err := driver.Decide(ctx, &p.ModelID, &models.DecideRequest{State: state, Questions: questions}, &models.APIConfig{ApiKey: &p.APIKey}, usage)
 		if err != nil {
 			return "", err
 		}

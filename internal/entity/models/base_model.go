@@ -26,8 +26,10 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/clickhouse"
+	"ragflow/internal/permission"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -86,12 +88,16 @@ type chatResponseExtractor func([]byte, *ChatConfig) (chatResponseParts, error)
 // parseChatCompletionResponse applies the shared ChatResponse and
 // usage-accounting flow after the provider-specific response is parsed.
 func parseChatCompletionResponse(body []byte, chatConfig *ChatConfig, modelUsage *common.ModelUsage, extract chatResponseExtractor) (*ChatResponse, error) {
+	return parseChatCompletionResponseWithContext(context.Background(), body, chatConfig, modelUsage, extract)
+}
+
+func parseChatCompletionResponseWithContext(ctx context.Context, body []byte, chatConfig *ChatConfig, modelUsage *common.ModelUsage, extract chatResponseExtractor) (*ChatResponse, error) {
 	parts, err := extract(body, chatConfig)
 	if err != nil {
 		return nil, err
 	}
 
-	recordResponseUsage(modelUsage, parts.RequestID, parts.Usage, "chat")
+	recordResponseUsageWithContext(ctx, modelUsage, parts.RequestID, parts.Usage, "chat")
 
 	return &ChatResponse{
 		Answer:        parts.Content,
@@ -106,27 +112,49 @@ func parseChatCompletionResponse(body []byte, chatConfig *ChatConfig, modelUsage
 //
 // When modelUsage is nil (caller did not pass a usage context) but
 // usage is non-nil, we still surface a single CollectModelUsage call
-// against a synthetic empty ModelUsage so the analytics path can
-// observe the provider's reported token counts. Without this, drivers
-// whose upstream service layer passes nil — common in the current
-// model_chat / generator code paths — would never reach the stats
-// driver and the token usage would be invisible. The synthetic record
-// carries zero UserID/TenantID; production callers should pass a
-// populated *common.ModelUsage to attribute usage to a tenant.
+// against a synthetic ModelUsage so the analytics path can observe the
+// provider's reported token counts. If ctx carries tenant/user identity,
+// it is backfilled onto the synthetic record.
 func recordResponseUsage(modelUsage *common.ModelUsage, requestID string, usage *TokenUsage, modelType string) {
+	recordResponseUsageWithContext(context.Background(), modelUsage, requestID, usage, modelType)
+}
+
+func recordResponseUsageWithContext(ctx context.Context, modelUsage *common.ModelUsage, requestID string, usage *TokenUsage, modelType string) {
 	if usage == nil {
 		return
 	}
 	if modelUsage == nil {
-		modelUsage = &common.ModelUsage{}
-	}
-	if modelUsage.Type == "" {
-		modelUsage.Type = modelType
+		modelUsage = resolveModelUsage(ctx, nil, nil, nil, nil, modelType)
+	} else {
+		if modelUsage.Type == "" {
+			modelUsage.Type = modelType
+		}
+		if modelUsage.StartAt.IsZero() {
+			modelUsage.StartAt = time.Now()
+		}
+		if !modelUsage.IsSavedConfig && modelUsage.TenantID == "" {
+			modelUsage.TenantID = permission.TenantIDFromContext(ctx)
+		}
+		if modelUsage.UserID == "" {
+			modelUsage.UserID = permission.UserIDFromContext(ctx)
+		}
 	}
 	modelUsage.RequestID = requestID
 	if err := collectModelUsage(modelUsage, usage); err != nil {
 		common.Error("Failed to collect model usage", err)
 	}
+}
+
+var droppedMissingAttributionCount uint64
+
+// DroppedMissingAttributionCount returns the number of usage records dropped due to missing attribution on saved configs.
+func DroppedMissingAttributionCount() uint64 {
+	return atomic.LoadUint64(&droppedMissingAttributionCount)
+}
+
+// resetDroppedMissingAttributionCount resets the dropped counter (test helper).
+func resetDroppedMissingAttributionCount() {
+	atomic.StoreUint64(&droppedMissingAttributionCount, 0)
 }
 
 // collectModelUsage records token usage and response time for one model call.
@@ -141,13 +169,34 @@ func collectModelUsage(modelUsage *common.ModelUsage, usage *TokenUsage) error {
 		modelUsage.OutputTokens = usage.CompletionTokens
 		modelUsage.TotalTokens = usage.TotalTokens
 	}
-	// StartAt may be zero when the synthetic ModelUsage came from
-	// recordResponseUsage's nil-caller path. In that case we cannot
-	// compute a meaningful response time; leave it at zero instead
-	// of reporting a 50-year epoch delta.
-	if !modelUsage.StartAt.IsZero() {
+	if modelUsage.StartAt.IsZero() {
+		modelUsage.StartAt = time.Now()
+	}
+	if modelUsage.ResponseTimeMS <= 0 && !modelUsage.StartAt.IsZero() {
 		modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
 	}
+
+	// For calls using saved configurations, tenant_id, provider_name, and instance_id are required.
+	// If any required attribution is missing, log server error with safe diagnostic info (no API key),
+	// count drop, and skip recording.
+	isSaved := modelUsage.IsSavedConfig || modelUsage.InstanceID != ""
+	if isSaved && (modelUsage.TenantID == "" || modelUsage.ProviderName == "" || modelUsage.InstanceID == "") {
+		atomic.AddUint64(&droppedMissingAttributionCount, 1)
+		var missing []string
+		if modelUsage.TenantID == "" {
+			missing = append(missing, "tenant_id")
+		}
+		if modelUsage.ProviderName == "" {
+			missing = append(missing, "provider_name")
+		}
+		if modelUsage.InstanceID == "" {
+			missing = append(missing, "instance_id")
+		}
+		common.Error(fmt.Sprintf("model usage dropped: missing required attribution (%s) for saved model configuration: model=%s provider=%s instance_id=%s tenant_id=%s request_id=%s",
+			strings.Join(missing, ","), modelUsage.ModelName, modelUsage.ProviderName, modelUsage.InstanceID, modelUsage.TenantID, modelUsage.RequestID), nil)
+		return nil
+	}
+
 	driver := clickhouse.GetDriver()
 	if driver == nil {
 		return nil
@@ -159,12 +208,14 @@ func collectModelUsage(modelUsage *common.ModelUsage, usage *TokenUsage) error {
 // for model-usage analytics when a usage event is received. Analytics failures
 // are logged but do not interrupt the stream.
 //
-// Like recordResponseUsage, a nil modelUsage (the common case from the
-// model_chat / generator service layer) still surfaces a synthetic
-// CollectModelUsage call so streaming usage is not silently dropped. The
-// synthetic record carries zero UserID/TenantID; production callers should
-// pass a populated *common.ModelUsage to attribute usage to a tenant.
+// Like recordResponseUsage, a nil modelUsage still surfaces a synthetic
+// CollectModelUsage call so streaming usage is not silently dropped. If
+// ctx carries tenant/user identity, it is backfilled onto the synthetic record.
 func applyStreamUsage(chatConfig *ChatConfig, modelUsage *common.ModelUsage, usage *TokenUsage) {
+	applyStreamUsageWithContext(context.Background(), chatConfig, modelUsage, usage)
+}
+
+func applyStreamUsageWithContext(ctx context.Context, chatConfig *ChatConfig, modelUsage *common.ModelUsage, usage *TokenUsage) {
 	if usage == nil {
 		return
 	}
@@ -172,10 +223,20 @@ func applyStreamUsage(chatConfig *ChatConfig, modelUsage *common.ModelUsage, usa
 		chatConfig.UsageResult = usage
 	}
 	if modelUsage == nil {
-		modelUsage = &common.ModelUsage{}
-	}
-	if modelUsage.Type == "" {
-		modelUsage.Type = "chat"
+		modelUsage = resolveModelUsage(ctx, nil, nil, nil, nil, "chat")
+	} else {
+		if modelUsage.Type == "" {
+			modelUsage.Type = "chat"
+		}
+		if modelUsage.StartAt.IsZero() {
+			modelUsage.StartAt = time.Now()
+		}
+		if !modelUsage.IsSavedConfig && modelUsage.TenantID == "" {
+			modelUsage.TenantID = permission.TenantIDFromContext(ctx)
+		}
+		if modelUsage.UserID == "" {
+			modelUsage.UserID = permission.UserIDFromContext(ctx)
+		}
 	}
 	if err := collectModelUsage(modelUsage, usage); err != nil {
 		common.Error("Failed to collect model usage", err)

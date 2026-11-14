@@ -17,8 +17,11 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
+
+	modelModule "ragflow/internal/entity/models"
 )
 
 // The per-turn cost footer in the chat UI reads these keys off the final SSE
@@ -90,3 +93,85 @@ func TestAsyncChatResultOmitsCostWhenUnset(t *testing.T) {
 		}
 	}
 }
+
+func TestDecorateAnswerPrefersRealUsage(t *testing.T) {
+	s := &ChatPipelineService{}
+	timer, prompt := newTimerAndPrompt()
+	real := &modelModule.TokenUsage{
+		PromptTokens:     150,
+		CompletionTokens: 80,
+		TotalTokens:      230,
+	}
+
+	res := s.decorateAnswer(
+		context.Background(),
+		"Test answer",
+		nil,
+		prompt,
+		[]string{"hello"},
+		50, // usedTokenCount (approximation should be superseded)
+		timer,
+		nil,
+		0.3,
+		false,
+		nil,
+		"",
+		nil,
+		"tenant-1",
+		nil,
+		false,
+		real,
+	)
+
+	if res.Usage == nil {
+		t.Fatal("res.Usage is nil")
+	}
+	if res.Usage.PromptTokens != 150 {
+		t.Errorf("PromptTokens = %d, want 150", res.Usage.PromptTokens)
+	}
+	if res.Usage.CompletionTokens != 80 {
+		t.Errorf("CompletionTokens = %d, want 80", res.Usage.CompletionTokens)
+	}
+	if res.Usage.TotalTokens != 230 {
+		t.Errorf("TotalTokens = %d, want 230", res.Usage.TotalTokens)
+	}
+}
+
+func TestDecorateAnswerFallsBackWhenNoRealUsage(t *testing.T) {
+	s := &ChatPipelineService{}
+	timer, prompt := newTimerAndPrompt()
+
+	res := s.decorateAnswer(
+		context.Background(),
+		"Test answer",
+		nil,
+		prompt,
+		[]string{"hello"},
+		50, // usedTokenCount
+		timer,
+		nil,
+		0.3,
+		false,
+		nil,
+		"",
+		nil,
+		"tenant-1",
+		nil,
+		false,
+		nil,
+	)
+
+	if res.Usage == nil {
+		t.Fatal("res.Usage is nil")
+	}
+	if res.Usage.PromptTokens != 50 {
+		t.Errorf("PromptTokens = %d, want 50", res.Usage.PromptTokens)
+	}
+	if res.Usage.CompletionTokens <= 0 {
+		t.Errorf("CompletionTokens = %d, want > 0", res.Usage.CompletionTokens)
+	}
+	if res.Usage.TotalTokens != res.Usage.PromptTokens+res.Usage.CompletionTokens {
+		t.Errorf("TotalTokens = %d, want %d", res.Usage.TotalTokens, res.Usage.PromptTokens+res.Usage.CompletionTokens)
+	}
+}
+

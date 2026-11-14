@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	models "ragflow/internal/entity/models"
 )
 
 // The judge used to be a process-wide singleton built from the environment.
@@ -221,13 +222,16 @@ func buildDecisionBackendFromModel(ctx context.Context, scope decisionScope, mod
 	// The model row carries no tenant column, so ownership is checked through
 	// its provider. Skipping the check when the run has no tenant is deliberate:
 	// a CLI or test run has no tenant to match and must not lose its judge.
-	if scope.tenantID != "" {
-		var provider entity.TenantModelProvider
-		if err := dao.DB.Where("id = ?", instance.ProviderID).First(&provider).Error; err != nil || provider.TenantID != scope.tenantID {
-			common.WarnCtx(ctx, "agentic_rag: decision model belongs to another tenant, falling back to the env backend",
-				zap.String("model_id", modelID), zap.String("tenant_id", scope.tenantID))
-			return nil
-		}
+	var provider entity.TenantModelProvider
+	if err := dao.DB.Where("id = ?", instance.ProviderID).First(&provider).Error; err != nil {
+		common.WarnCtx(ctx, "agentic_rag: decision model provider not found, falling back to the env backend",
+			zap.String("instance_id", instance.ID), zap.Error(err))
+		return nil
+	}
+	if scope.tenantID != "" && provider.TenantID != scope.tenantID {
+		common.WarnCtx(ctx, "agentic_rag: decision model belongs to another tenant, falling back to the env backend",
+			zap.String("model_id", modelID), zap.String("tenant_id", scope.tenantID))
+		return nil
 	}
 
 	var extra map[string]string
@@ -253,7 +257,17 @@ func buildDecisionBackendFromModel(ctx context.Context, scope decisionScope, mod
 		return nil
 	}
 
-	backend := newDecisionBackend(joinDecisionURL(baseURL, defaultDecisionURL), key, model.ModelName)
+	info := &models.ModelInfo{
+		TenantID:      provider.TenantID,
+		Name:          model.ModelName,
+		ProviderName:  provider.ProviderName,
+		InstanceID:    instance.ID,
+		InstanceName:  instance.InstanceName,
+		ModelTypes:    []string{"decision"},
+		ProductType:   "decision",
+		IsSavedConfig: true,
+	}
+	backend := newDecisionBackendWithInfo(joinDecisionURL(baseURL, defaultDecisionURL), key, model.ModelName, info)
 	common.InfoCtx(ctx, "agentic_rag: decision model resolved from configuration",
 		zap.String("model_id", modelID),
 		zap.String("model_name", model.ModelName),

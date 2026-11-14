@@ -350,16 +350,17 @@ func describeImage(
 	var driver modelModule.ModelDriver
 	var modelName string
 	var apiConfig *modelModule.APIConfig
+	var modelInfo *modelModule.ModelInfo
 	var err error
 	if modelRef != "" {
-		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, modelRef)
+		driver, modelName, apiConfig, modelInfo, _, err = resolveModelConfigFull(ctx, db, tenantID, entity.ModelTypeImage2Text, modelRef)
 		if err != nil {
 			common.Warn("media dispatch image: per-call VLM resolve failed, falling back to tenant default",
 				zap.String("modelRef", modelRef), zap.String("tenant", tenantID), zap.Error(err))
-			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+			driver, modelName, apiConfig, modelInfo, _, err = resolveTenantModelFull(ctx, db, tenantID, entity.ModelTypeImage2Text)
 		}
 	} else {
-		driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+		driver, modelName, apiConfig, modelInfo, _, err = resolveTenantModelFull(ctx, db, tenantID, entity.ModelTypeImage2Text)
 	}
 	if err == nil && driver == nil {
 		err = fmt.Errorf("no usable vision model")
@@ -384,9 +385,10 @@ func describeImage(
 		},
 	}}
 	visionFlag := true
-	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
+	chatModel := modelModule.NewChatModelWithInfo(driver, &modelName, apiConfig, modelInfo)
 	finish := agentruntime.TrackIO(ctx, "Parser", "VLM", "media=image")
-	resp, err := chatModel.ChatWithMessages(ctx, messages, &modelModule.ChatConfig{Vision: &visionFlag}, nil)
+	usage := &common.ModelUsage{TenantID: tenantID, Type: "image2text"}
+	resp, err := chatModel.ChatWithMessages(ctx, messages, &modelModule.ChatConfig{Vision: &visionFlag}, usage)
 	finish()
 	if err != nil {
 		return "", []string{fmt.Sprintf("image VLM enhancement failed: %v", err)}

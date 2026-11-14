@@ -824,7 +824,7 @@ build_cpp() {
     fi
     if [ -n "$objcopy_bin" ]; then
         nm "$tok_a" \
-            | awk '$2 ~ /^[TDBRWtdbrwiIVv]$/ && $3 ~ /^_ZN3re2|_ZNK3re2|_ZTVN3re2|_ZTIN3re2|_ZTSN3re2/ { print $3" ragtokre2_"$3 }' \
+            | awk '$2 ~ /^[TDBRSWtdbrswiIVv]$/ && $3 ~ /^__?(ZN3re2|ZNK3re2|ZTVN3re2|ZTIN3re2|ZTSN3re2)/ { print $3" ragtokre2_"$3 }' \
             | sort -u > "$rename_map"
         if [ -s "$rename_map" ]; then
             "$objcopy_bin" --redefine-syms="$rename_map" "$tok_a"

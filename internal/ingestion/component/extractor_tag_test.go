@@ -466,7 +466,7 @@ func TestLlmtagChunk_MessageFit(t *testing.T) {
 	allTags := map[string]float64{"RAG": 1, "database": 1, "AI": 1}
 	examples := []schema.TaggedChunk{{Content: "example one", TagWeights: map[string]int{"AI": 5}}}
 
-	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, nil, "test@test", "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
+	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, nil, "test@test", "test@test", "test_driver", "test_model", "test_key", "", nil, 3, nil)
 
 	if len(capt.req.Messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(capt.req.Messages))
@@ -489,7 +489,7 @@ func TestLlmtagChunk_NoContextLength_SkipsFit(t *testing.T) {
 	allTags := map[string]float64{"RAG": 1}
 	examples := []schema.TaggedChunk{{Content: "example", TagWeights: map[string]int{"AI": 5}}}
 
-	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, nil, "test@test", "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
+	llmTagChunk(t.Context(), nil, capt, chunk, allTags, examples, nil, "test@test", "test@test", "test_driver", "test_model", "test_key", "", nil, 3, nil)
 
 	if len(capt.req.Messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(capt.req.Messages))
@@ -511,7 +511,7 @@ func TestLlmtagChunk_ColdStartFallback(t *testing.T) {
 	}
 
 	chunk := map[string]any{"text": "some content"}
-	llmTagChunk(t.Context(), nil, capt, chunk, idx.allTags, nil, nil, "test@test", "test@test", "test_driver", "test_model", "test_key", "", 3, idx)
+	llmTagChunk(t.Context(), nil, capt, chunk, idx.allTags, nil, nil, "test@test", "test@test", "test_driver", "test_model", "test_key", "", nil, 3, idx)
 
 	if len(capt.req.Messages) != 2 {
 		t.Fatalf("expected 2 messages, got %d", len(capt.req.Messages))
@@ -925,7 +925,7 @@ func TestLLMTagChunkWritesOnlyTagFeas(t *testing.T) {
 	chunk := map[string]any{"text": "some content"}
 	allTags := map[string]float64{"RAG": 0.5, "vector database": 0.5}
 
-	llmTagChunk(t.Context(), nil, capt, chunk, allTags, nil, nil, "test@test", "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
+	llmTagChunk(t.Context(), nil, capt, chunk, allTags, nil, nil, "test@test", "test@test", "test_driver", "test_model", "test_key", "", nil, 3, nil)
 
 	feas, ok := chunk[common.TAG_FLD].(OrderedTagWeights)
 	if !ok || len(feas) != 2 {

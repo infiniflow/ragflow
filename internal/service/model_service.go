@@ -1233,6 +1233,7 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 	instanceID := strings.TrimSpace(req.InstanceID)
 	modelInfo := req.ModelInfo
 	var savedInstance *entity.TenantModelInstance
+	var savedProvider *entity.TenantModelProvider
 	var instanceAccess permission.Access
 	if instanceID != "" {
 		instance, err := m.modelInstanceDAO.GetByID(ctx, dao.DB, instanceID)
@@ -1272,6 +1273,7 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 			return code, normalizedErr
 		}
 		savedInstance = instance
+		savedProvider = provider
 		providerName = provider.ProviderName
 	}
 
@@ -1346,6 +1348,17 @@ func (m *ModelProviderService) CheckConnection(ctx context.Context, providerName
 		ApiKey:  &apiKey,
 		Region:  &region,
 		BaseURL: &baseURL,
+	}
+
+	if useSavedCredentials && savedInstance != nil && savedProvider != nil {
+		verificationInfo := &modelModule.ModelInfo{
+			TenantID:      savedProvider.TenantID,
+			InstanceID:    savedInstance.ID,
+			InstanceName:  savedInstance.InstanceName,
+			ProviderName:  savedProvider.ProviderName,
+			IsSavedConfig: true,
+		}
+		ctx = modelModule.WithModelInfo(ctx, verificationInfo)
 	}
 
 	modelVerifyResult, verifyErr := verifyProviderModel(ctx, driver, providerInfo.Models, apiConfig, modelInfo)
@@ -1448,6 +1461,7 @@ func (m *ModelProviderService) updateModelVerifyResults(ctx context.Context, pro
 // model catalog (providerModels).
 func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, providerModels []*modelModule.Model, apiConfig *modelModule.APIConfig, modelInfo []CheckConnectionModelInfo) (map[string]string, error) {
 	modelVerifyResult := make(map[string]string)
+	verificationInfo := modelModule.ModelInfoFromContext(ctx)
 
 	// Determine which models to verify: prefer the caller-supplied modelInfo
 	// list; fall back to the full provider model catalog.  Mirrors Python’s
@@ -1531,7 +1545,7 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 			switch mtLower {
 			case "chat", "vision":
 				msg := []modelModule.Message{{Role: "user", Content: "Hi"}}
-				chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
+				chatModel := modelModule.NewChatModelWithInfo(driver, &modelName, apiConfig, verificationInfo)
 				_, err = chatModel.ChatWithMessages(ctx, msg, nil, nil)
 			case "embedding":
 				// Provider discovery can return models without catalog limits. Apply
@@ -1549,7 +1563,7 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 					if model.MaxTokens != nil {
 						maxTokens = *model.MaxTokens
 					}
-					embeddingModel := modelModule.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
+					embeddingModel := modelModule.NewEmbeddingModelWithInfo(driver, &modelName, apiConfig, maxTokens, verificationInfo)
 					_, err = embeddingModel.Embed(ctx, modelModule.EmbedRequest{Texts: []string{"test"}}, nil, nil)
 				}
 			case "rerank":
@@ -1557,11 +1571,11 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 					Query:     "test",
 					Documents: []string{"test"},
 				}
-				rerankModel := modelModule.NewRerankModel(driver, &modelName, apiConfig, 0)
+				rerankModel := modelModule.NewRerankModelWithInfo(driver, &modelName, apiConfig, 0, verificationInfo)
 				_, err = rerankModel.Rerank(ctx, rerankRequest, &modelModule.RerankConfig{}, nil)
 			case "tts":
 				content := "hello"
-				ttsModel := modelModule.NewTTSModel(driver, &modelName, apiConfig)
+				ttsModel := modelModule.NewTTSModelWithInfo(driver, &modelName, apiConfig, verificationInfo)
 				_, err = ttsModel.Speech(ctx, &content, nil, nil)
 			case "asr":
 				err = verifyASRModel(ctx, driver, modelName, apiConfig)

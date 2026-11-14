@@ -445,3 +445,24 @@ func TestResolveModelConfig_MaxTokensOverrideSetsContextWindowOnly(t *testing.T)
 		t.Fatalf("resolved context length %d equals the catalog max_output; the context window and the output cap are indistinguishable", contextLength)
 	}
 }
+
+func TestToModelInfo_SeparatesMultipleModelTypes(t *testing.T) {
+	r := &resolvedModelConfig{
+		requestedType: entity.ModelTypeImage2Text,
+		model: &entity.TenantModel{
+			ModelName: "multimodal-model",
+			ModelType: int(entity.ModelTypeChat | entity.ModelTypeImage2Text),
+		},
+	}
+	info := r.toModelInfo()
+	if info == nil {
+		t.Fatal("expected non-nil ModelInfo")
+	}
+	want := []string{"chat", "vision"}
+	if !reflect.DeepEqual(info.ModelTypes, want) {
+		t.Errorf("ModelTypes = %v, want %v", info.ModelTypes, want)
+	}
+	if info.ProductType != "image2text" {
+		t.Errorf("ProductType = %q, want image2text", info.ProductType)
+	}
+}

@@ -36,6 +36,8 @@ import (
 // modelTarget is the private result of resolving a model reference. Callers
 // should use ModelFactory to construct a typed model or request public metadata.
 type modelTarget struct {
+	TenantID      string
+	UserID        string
 	ModelID       string
 	ModelName     string
 	ModelType     entity.ModelType
@@ -217,7 +219,14 @@ func (f *ModelFactory) ResolveInfo(ctx context.Context, modelType entity.ModelTy
 	modelRef = strings.TrimSpace(modelRef)
 	if name, ok := builtinEmbeddingName(modelRef); ok && modelType == entity.ModelTypeEmbedding {
 		info, _ := dao.GetModelProviderManager().GetModelByName("Builtin", name)
-		return modelInfoFromTarget(&modelTarget{ModelName: name, ModelType: modelType, ProviderName: "Builtin", ModelInfo: info}), nil
+		return modelInfoFromTarget(&modelTarget{
+			TenantID:     strings.TrimSpace(permission.TenantIDFromContext(ctx)),
+			UserID:       strings.TrimSpace(permission.UserIDFromContext(ctx)),
+			ModelName:    name,
+			ModelType:    modelType,
+			ProviderName: "Builtin",
+			ModelInfo:    info,
+		}), nil
 	}
 	identity, err := f.resolveModelIdentity(ctx, modelType, modelRef)
 	if err != nil {
@@ -252,17 +261,25 @@ func modelInfoFromTarget(target *modelTarget) *modelModule.ModelInfo {
 	if target.ModelInfo != nil && len(target.ModelInfo.ModelTypes) > 0 {
 		modelTypes = append([]string(nil), target.ModelInfo.ModelTypes...)
 	}
+	productType := ""
+	if target.ModelType != 0 {
+		productType = target.ModelType.String()
+	}
 	info := &modelModule.ModelInfo{
+		TenantID:      target.TenantID,
+		UserID:        target.UserID,
 		ID:            target.ModelID,
 		Name:          target.ModelName,
 		ProviderName:  target.ProviderName,
 		InstanceID:    target.InstanceID,
 		InstanceName:  target.InstanceName,
 		ModelTypes:    modelTypes,
+		ProductType:   productType,
 		ContextLength: target.ContextLength,
 		MaxOutput:     target.MaxOutput,
 		SupportsTools: target.SupportsTools,
 		Catalog:       target.ModelInfo,
+		IsSavedConfig: target.InstanceID != "" || target.ModelID != "",
 	}
 	if target.ModelInfo != nil {
 		if target.ModelInfo.Class != nil {
@@ -595,6 +612,8 @@ func (s *ModelFactory) ResolveModelType(ctx context.Context, modelRef string) ([
 }
 
 type modelIdentity struct {
+	tenantID       string
+	userID         string
 	modelName      string
 	modelEntity    *entity.TenantModel
 	providerEntity *entity.TenantModelProvider
@@ -683,7 +702,7 @@ func (s *ModelFactory) resolveModelIdentity(ctx context.Context, requestedType e
 	if err != nil {
 		return nil, err
 	}
-	identity := &modelIdentity{modelEntity: model}
+	identity := &modelIdentity{tenantID: tenantID, userID: userID, modelEntity: model}
 	var candidates []*entity.TenantModel
 	if model != nil {
 		identity.modelName = model.ModelName
@@ -791,7 +810,7 @@ func (s *ModelFactory) resolveModel(ctx context.Context, modelType entity.ModelT
 			baseURL := common.GetEnv(common.EnvTEIBaseURL)
 			config.BaseURL = &baseURL
 		}
-		return builtinModelTarget(modelType, name, driver, config, info), nil
+		return builtinModelTarget(ctx, modelType, name, driver, config, info), nil
 	}
 	identity, err := s.resolveModelIdentity(ctx, modelType, modelRef)
 	if err != nil {
@@ -867,7 +886,13 @@ func modelTargetFromIdentity(identity *modelIdentity, modelType entity.ModelType
 		modelExtra = modelEntity.Extra
 		modelID = modelEntity.ID
 	}
+	targetTenantID := identity.tenantID
+	if providerEntity != nil && providerEntity.TenantID != "" {
+		targetTenantID = providerEntity.TenantID
+	}
 	return &modelTarget{
+		TenantID:      targetTenantID,
+		UserID:        identity.userID,
 		ModelID:       modelID,
 		ModelName:     identity.modelName,
 		ModelType:     modelType,
@@ -881,12 +906,14 @@ func modelTargetFromIdentity(identity *modelIdentity, modelType entity.ModelType
 	}, nil
 }
 
-func builtinModelTarget(modelType entity.ModelType, modelName string, driver modelModule.ModelDriver, apiConfig *modelModule.APIConfig, modelInfo *modelModule.Model) *modelTarget {
+func builtinModelTarget(ctx context.Context, modelType entity.ModelType, modelName string, driver modelModule.ModelDriver, apiConfig *modelModule.APIConfig, modelInfo *modelModule.Model) *modelTarget {
 	var apiKey string
 	if apiConfig != nil && apiConfig.ApiKey != nil {
 		apiKey = *apiConfig.ApiKey
 	}
 	return &modelTarget{
+		TenantID:      strings.TrimSpace(permission.TenantIDFromContext(ctx)),
+		UserID:        strings.TrimSpace(permission.UserIDFromContext(ctx)),
 		ModelName:     modelName,
 		ModelType:     modelType,
 		ProviderName:  "Builtin",
