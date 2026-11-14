@@ -498,7 +498,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	if !handledVision {
 		// Video dispatch: IMAGE2TEXT vision chat.
 		// Mirrors _video()
-		dispatched, handledMedia, visionErr = maybeDispatchVideo(ctx, db, fileTypeExt, filename, binary, inputs, setups)
+		dispatched, handledMedia, visionErr = maybeDispatchVideo(ctx, db, fileTypeExt, filename, binary, inputs, setups, c.vision)
 		if visionErr != nil {
 			return nil, visionErr
 		}

@@ -77,6 +77,15 @@ type ModelDriver interface {
 	Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error)
 }
 
+// SupportsVideoURL reports whether a driver can transport OpenAI-style
+// video_url content blocks. The caller resolves the selected model as an
+// IMAGE2TEXT model first. This opt-in gate covers the wire-format capability
+// because providers with similar chat APIs do not all implement video inputs.
+func SupportsVideoURL(driver ModelDriver) bool {
+	capable, ok := driver.(interface{ SupportsVideoURL() bool })
+	return ok && capable.SupportsVideoURL()
+}
+
 type ChatResponse struct {
 	Answer        *string                  `json:"answer"`
 	ReasonContent *string                  `json:"reason_content"`

@@ -202,8 +202,7 @@ describe('getFileTypeByExtension', () => {
 });
 
 // Saved config shaped like a pipeline that declares pdf/image plus audio
-// (ASR model missing) and video. Video needs no model: parsing it is
-// unsupported regardless of the configured vision enhancement.
+// (ASR model missing) and video.
 const SavedConfig: SavedParserConfig = {
   setups: [
     { fileFormat: FileType.PDF, parse_method: 'DeepDOC' },
@@ -244,30 +243,8 @@ describe('findParserGap', () => {
     });
   });
 
-  it('flags video as unsupported even when a vision model is configured', () => {
-    // Video parsing is not implemented yet: a declared family with a vision
-    // model still stays unsupported so upload warns and parse-click blocks.
-    expect(findParserGap(FileType.Video, SavedConfig)).toEqual({
-      reason: ParserGapReason.UnsupportedType,
-      fileType: FileType.Video,
-    });
-  });
-
-  it('flags declared video as unsupported regardless of its setup', () => {
-    const withModel: SavedParserConfig = {
-      setups: [
-        { fileFormat: FileType.Video, vlm: { llm_id: 'gpt-4o@OpenAI' } },
-      ],
-    };
-    const withoutModel: SavedParserConfig = {
-      setups: [{ fileFormat: FileType.Video, vlm: { llm_id: '' } }],
-    };
-    const expected = {
-      reason: ParserGapReason.UnsupportedType,
-      fileType: FileType.Video,
-    };
-    expect(findParserGap(FileType.Video, withModel)).toEqual(expected);
-    expect(findParserGap(FileType.Video, withoutModel)).toEqual(expected);
+  it('lets the backend resolve the tenant default for declared video', () => {
+    expect(findParserGap(FileType.Video, SavedConfig)).toBeNull();
   });
 
   it('passes image/email with a general-like setup — no switch needed', () => {
@@ -311,11 +288,6 @@ describe('findFilesParserGaps', () => {
         fileType: FileType.Docx,
       },
       {
-        name: 'movie.mp4',
-        reason: ParserGapReason.UnsupportedType,
-        fileType: FileType.Video,
-      },
-      {
         name: 'deck.pptx',
         reason: ParserGapReason.UnsupportedType,
         fileType: FileType.PowerPoint,
@@ -351,9 +323,8 @@ describe('hasUnsupportedTypeGap', () => {
 
 describe('builtinParserSwitchTarget', () => {
   it('maps owned file types to their built-in pipelines', () => {
-    // Images switch to picture; video uploads are accepted into the visual
-    // bucket and switched to picture as well, but parsing stays blocked
-    // because no parser implements video analysis.
+    // Images and videos are accepted into the visual bucket and switch to the
+    // built-in picture pipeline when needed.
     expect(switchTarget('photo.JPG')).toBe('picture');
     expect(switchTarget('scan.tif')).toBe('picture');
     expect(switchTarget('scan.tiff')).toBe('picture');
@@ -473,20 +444,22 @@ describe('pickBySwitchFate', () => {
     ).toBe('manual');
   });
 
-  it('does not count video as switchable even though it targets picture', () => {
-    // Video uploads switch to picture but stay unparsable, so a batch of a
-    // video plus a non-switchable file must read as manual, not mixed; a
-    // video plus an auto-switchable file reads as mixed, not auto.
+  it('counts video as switchable when it targets picture', () => {
+    // Video uploads switch to picture, so a batch of a video plus a
+    // non-switchable file reads as mixed. Two switchable files read as auto.
     const videoGap: UploadFileParserGap = {
       name: 'clip.mov',
       reason: ParserGapReason.UnsupportedType,
       fileType: FileType.Video,
       autoSwitchTarget: 'picture',
     };
-    expect(pickBySwitchFate([videoGap], Options)).toBe('manual');
+    expect(pickBySwitchFate([videoGap], Options)).toBe('auto');
+    expect(pickBySwitchFate([videoGap, unsupportedGap(null)], Options)).toBe(
+      'mixed',
+    );
     expect(
       pickBySwitchFate([videoGap, unsupportedGap('general')], Options),
-    ).toBe('mixed');
+    ).toBe('auto');
   });
 });
 
@@ -586,18 +559,11 @@ describe('findDocumentsParserGaps', () => {
         modelKind: ParserModelKind.Asr,
       },
     ]);
-    // No fallback either: nothing can be determined for other types, so
-    // nothing is flagged — except video, which is never parsable.
+    // No fallback means nothing can be determined for other types.
     expect(findDocumentsParserGaps([legacyRow], null)).toEqual([]);
     expect(
       findDocumentsParserGaps([{ name: 'clip.mov', parser_config: {} }], null),
-    ).toEqual([
-      {
-        name: 'clip.mov',
-        reason: ParserGapReason.UnsupportedType,
-        fileType: FileType.Video,
-      },
-    ]);
+    ).toEqual([]);
   });
 
   it('evaluates each document against its own config in a mixed batch', () => {
@@ -621,7 +587,7 @@ describe('findDocumentsParserGaps', () => {
     ]);
   });
 
-  it('reads the document row vision globals for video', () => {
+  it('accepts a declared video document with backend model fallback', () => {
     const videoDoc = {
       name: 'movie.mp4',
       parser_config: {
@@ -632,13 +598,6 @@ describe('findDocumentsParserGaps', () => {
         },
       },
     };
-    // Video stays unsupported even with a vision model configured.
-    expect(findDocumentsParserGaps([videoDoc], null)).toEqual([
-      {
-        name: 'movie.mp4',
-        reason: ParserGapReason.UnsupportedType,
-        fileType: FileType.Video,
-      },
-    ]);
+    expect(findDocumentsParserGaps([videoDoc], null)).toEqual([]);
   });
 });

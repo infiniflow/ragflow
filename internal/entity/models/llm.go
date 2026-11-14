@@ -218,15 +218,14 @@ func toInternalMessages(msgs []*schema.Message) []Message {
 }
 
 // openAIContentBlocksFromEino converts eino multi-modal input parts into
-// OpenAI-style content blocks ("text" / "image_url"). Message.Content is
-// interface{} and every driver already understands this block shape: the
-// generic OpenAI-compatible request builder marshals it verbatim
-// (buildChatMessages in base_model.go), while the native anthropic /
-// google converters type-switch on []interface{} (anthropicContent /
-// googleMessageParts). The slice MUST therefore be []interface{}, not
-// []map[string]interface{}, or googleMessageParts misses it. Unsupported
-// part types are skipped; a nil return tells the caller to fall back to
-// the plain string Content.
+// OpenAI-style content blocks ("text" / "image_url" / "video_url"). Message.Content is
+// interface{} and the generic OpenAI-compatible request builder marshals it
+// verbatim (buildChatMessages in base_model.go). Native provider converters
+// type-switch on []interface{} (anthropicContent / googleMessageParts) and may
+// support a smaller subset. The slice MUST therefore be []interface{}, not
+// []map[string]interface{}, or those converters miss it. Unsupported part
+// types are skipped; a nil return tells the caller to fall back to the plain
+// string Content.
 func openAIContentBlocksFromEino(parts []schema.MessageInputPart) []interface{} {
 	blocks := make([]interface{}, 0, len(parts))
 	for _, part := range parts {
@@ -244,6 +243,15 @@ func openAIContentBlocksFromEino(parts []schema.MessageInputPart) []interface{} 
 			blocks = append(blocks, map[string]interface{}{
 				"type":      "image_url",
 				"image_url": map[string]interface{}{"url": url},
+			})
+		case schema.ChatMessagePartTypeVideoURL:
+			url := einoVideoPartURL(part.Video)
+			if url == "" {
+				continue
+			}
+			blocks = append(blocks, map[string]interface{}{
+				"type":      "video_url",
+				"video_url": map[string]interface{}{"url": url},
 			})
 		}
 	}
@@ -269,6 +277,25 @@ func einoImagePartURL(img *schema.MessageInputImage) string {
 			mime = "image/png"
 		}
 		return "data:" + mime + ";base64," + *img.Base64Data
+	}
+	return ""
+}
+
+// einoVideoPartURL resolves a video part to a single URL string, mirroring
+// einoImagePartURL for OpenAI-compatible video inputs.
+func einoVideoPartURL(video *schema.MessageInputVideo) string {
+	if video == nil {
+		return ""
+	}
+	if video.URL != nil && *video.URL != "" {
+		return *video.URL
+	}
+	if video.Base64Data != nil && *video.Base64Data != "" {
+		mime := video.MIMEType
+		if mime == "" {
+			mime = "video/mp4"
+		}
+		return "data:" + mime + ";base64," + *video.Base64Data
 	}
 	return ""
 }

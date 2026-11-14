@@ -958,7 +958,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     <li>Every row in table will be treated as a chunk.</li>
     </ul>`,
       picture: `
-    <p>Image files are supported, with video support coming soon.</p><p>
+    <p>Image and video files are supported.</p><p>
     This method employs an OCR model to extract texts from images.
     </p><p>
     If the text extracted by the OCR model is deemed insufficient, a specified visual LLM will be used to provide a description of the image.

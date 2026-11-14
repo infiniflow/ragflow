@@ -24,8 +24,8 @@ describe('parser-form utils', () => {
         [ModelTypeToField.vision]: 'gpt-4o@OpenAI',
         [ModelTypeToField.asr]: 'whisper@OpenAI',
       };
-      // The vision model is a global parser option, so video no longer gets
-      // a per-setup prefill.
+      // The vision model is a global parser option, so video does not get a
+      // per-setup prefill.
       expect(buildInitialParserSetup(FileType.Video, dictionary)?.vlm).toBe(
         undefined,
       );
