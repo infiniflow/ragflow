@@ -83,6 +83,40 @@ describe('MinerU provider configuration', () => {
       }),
     ).toMatchObject({ mineru_api_token: 'sk-ui-token' });
   });
+
+  it('does not leak edit-mode instance metadata into api_key', () => {
+    const saved = config.submitTransform?.({
+      instance_name: 'mineru',
+      mineru_apiserver: 'http://172.16.0.119:8000',
+      mineru_api_token: '',
+      mineru_output_dir: '',
+      mineru_backend: 'standard',
+      mineru_delete_output: true,
+      api_key: '',
+      api_key_configured: true,
+      api_key_config: { mineru_apiserver: 'http://172.16.0.119:8000' },
+      credential_status: { mineru_api_token: true },
+      credential_masks: { mineru_api_token: '********' },
+      base_url: 'http://172.16.0.119:8000',
+      region: 'default',
+      model_info: [
+        {
+          model_name: 'MinerU-model',
+          model_type: ['ocr'],
+          max_tokens: 8192,
+        },
+      ],
+    });
+
+    expect(saved?.api_key).toEqual({
+      mineru_apiserver: 'http://172.16.0.119:8000',
+      mineru_api_token: '',
+      mineru_output_dir: '',
+      mineru_backend: 'standard',
+      mineru_delete_output: '1',
+    });
+    expect(JSON.stringify(saved?.api_key).length).toBeLessThan(512);
+  });
 });
 
 describe('provider instance submit transforms', () => {
