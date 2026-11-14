@@ -41,6 +41,7 @@ import {
 } from '@/ee/pages/dataset/dataset/use-show-privilege-dialog';
 import { useHandleUploadDocument } from './use-upload-document';
 
+/** Wait for catalog success before pruning restored choices, so loading cannot discard them. */
 export default function Dataset() {
   const datasetEditButtonDisabled = useDatasetEditButtonDisabled();
 
@@ -67,7 +68,8 @@ export default function Dataset() {
 
   useGoToPreviousPageOnEmpty(documents?.length, loading);
 
-  const { filters, onOpenChange, filterGroup } = useSelectDatasetFilters();
+  const { filters, filterLoaded, onOpenChange, filterGroup } =
+    useSelectDatasetFilters();
 
   const {
     createLoading,
@@ -86,8 +88,8 @@ export default function Dataset() {
   } = useManageMetadata();
 
   useEffect(() => {
-    checkValue(filters);
-  }, [filters]);
+    checkValue(filters, filterLoaded);
+  }, [checkValue, filterLoaded, filters]);
 
   const {
     rowSelection,
