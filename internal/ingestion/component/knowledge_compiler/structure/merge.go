@@ -598,7 +598,7 @@ func applyMergeInvariants(existing common.Product, mergedPayload map[string]any,
 	if from == "" {
 		from = relationEndpoint(existingPayload, srcMember, sourceEndpointAliases...)
 	}
-	srcAliases := endpointAliasesWithMember(sourceEndpointAliases, srcMember, existingPayload, from)
+	srcAliases := endpointAliasesWithMember(sourceEndpointAliases, srcMember)
 	if from != "" {
 		setEndpointField(mergedPayload, srcAliases, from)
 	}
@@ -607,14 +607,14 @@ func applyMergeInvariants(existing common.Product, mergedPayload map[string]any,
 	if to == "" {
 		to = relationEndpoint(existingPayload, tgtMember, targetEndpointAliases...)
 	}
-	tgtAliases := endpointAliasesWithMember(targetEndpointAliases, tgtMember, existingPayload, to)
+	tgtAliases := endpointAliasesWithMember(targetEndpointAliases, tgtMember)
 	if to != "" {
 		setEndpointField(mergedPayload, tgtAliases, to)
 	}
 	return mergedPayload
 }
 
-func endpointAliasesWithMember(base []string, explicitMember string, existingPayload map[string]any, targetVal string) []string {
+func endpointAliasesWithMember(base []string, explicitMember string) []string {
 	var aliases []string
 	seen := map[string]bool{}
 	if explicitMember != "" {
@@ -625,14 +625,6 @@ func endpointAliasesWithMember(base []string, explicitMember string, existingPay
 		if !seen[a] {
 			aliases = append(aliases, a)
 			seen[a] = true
-		}
-	}
-	if targetVal != "" && existingPayload != nil {
-		for k, v := range existingPayload {
-			if !seen[k] && strings.TrimSpace(stringOf(v)) == targetVal {
-				aliases = append(aliases, k)
-				seen[k] = true
-			}
 		}
 	}
 	return aliases
@@ -673,14 +665,15 @@ func resolveAlias(name string, aliases map[string]string) string {
 // whether anything changed.
 func rewriteRelationPayload(payload map[string]any, aliases map[string]string, memberFields ...string) bool {
 	changed := false
-	srcAliases := sourceEndpointAliases
-	tgtAliases := targetEndpointAliases
-	if len(memberFields) > 0 && memberFields[0] != "" {
-		srcAliases = append([]string{memberFields[0]}, sourceEndpointAliases...)
+	var srcMember, tgtMember string
+	if len(memberFields) > 0 {
+		srcMember = strings.TrimSpace(memberFields[0])
 	}
-	if len(memberFields) > 1 && memberFields[1] != "" {
-		tgtAliases = append([]string{memberFields[1]}, targetEndpointAliases...)
+	if len(memberFields) > 1 {
+		tgtMember = strings.TrimSpace(memberFields[1])
 	}
+	srcAliases := endpointAliasesWithMember(sourceEndpointAliases, srcMember)
+	tgtAliases := endpointAliasesWithMember(targetEndpointAliases, tgtMember)
 	for _, fields := range [][]string{srcAliases, tgtAliases} {
 		for _, field := range fields {
 			v, ok := payload[field]
