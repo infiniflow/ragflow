@@ -22,7 +22,14 @@ export const confluenceConstant = (t: TFunction) => [
     label: t('setting.dataSourceFieldConfluenceUsername'),
     name: 'config.credentials.confluence_username',
     type: FormFieldType.Text,
-    required: true,
+    customValidate: (value: string, formValues: any) => {
+      if (formValues?.config?.is_cloud !== false && !value?.trim()) {
+        return t('setting.dataSourceValidationFieldRequired', {
+          label: t('setting.dataSourceFieldConfluenceUsername'),
+        });
+      }
+      return true;
+    },
   },
   {
     label: t('setting.dataSourceFieldConfluenceAccessToken'),
