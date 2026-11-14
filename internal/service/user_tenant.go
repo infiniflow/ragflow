@@ -140,7 +140,7 @@ func (s *UserTenantService) GetUserTenantRelationByUserIDWithContext(ctx context
 	return result, nil
 }
 
-var defaultModelTypeNames = [...]string{"chat", "embedding", "rerank", "asr", "vision", "tts", "ocr", "decision"}
+var defaultModelTypeNames = [...]string{"chat", "embedding", "rerank", "asr", "vision", "tts", "ocr", "decision", "scoring"}
 
 // SetModelSettings validates and updates default models on the user's active tenant membership.
 func (s *UserTenantService) SetModelSettings(ctx context.Context, req *SetModelSettingsRequest) (common.ErrorCode, error) {
@@ -263,7 +263,7 @@ func modelSettingField(key string) (string, string, bool) {
 			continue
 		}
 		if key == legacyField || key == idField {
-			nullable := key == idField || legacyField == "tts_id" || legacyField == "ocr_id" || legacyField == "decision_id"
+			nullable := key == idField || legacyField == "tts_id" || legacyField == "ocr_id" || legacyField == "decision_id" || legacyField == "scoring_id"
 			return legacyField, idField, nullable
 		}
 	}
@@ -326,6 +326,8 @@ func defaultModelFields(modelType string) (string, string, entity.ModelType, err
 		return "ocr_id", "tenant_ocr_id", entity.ModelTypeOCR, nil
 	case "decision":
 		return "decision_id", "tenant_decision_id", entity.ModelTypeDecision, nil
+	case "scoring":
+		return "scoring_id", "tenant_scoring_id", entity.ModelTypeScoring, nil
 	default:
 		return "", "", 0, fmt.Errorf("model type %s is invalid", modelType)
 	}
@@ -363,6 +365,7 @@ func (s *UserTenantService) ListDefaultModels(ctx context.Context) ([]ModelItem,
 		{modelType: "ocr", modelName: ptrStringValue(membership.OCRID), modelID: membership.TenantOCRID},
 		{modelType: "tts", modelName: ptrStringValue(membership.TTSID), modelID: membership.TenantTTSID},
 		{modelType: "decision", modelName: ptrStringValue(membership.DecisionID), modelID: membership.TenantDecisionID},
+		{modelType: "scoring", modelName: ptrStringValue(membership.ScoringID), modelID: membership.TenantScoringID},
 	}
 	factory := NewModelFactory()
 	result := make([]ModelItem, 0, len(models))
