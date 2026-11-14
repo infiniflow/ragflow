@@ -304,3 +304,140 @@ func TestIssue22340_MergeInvariantsAndRefreshMeta(t *testing.T) {
 		t.Errorf("refreshMetaFromPayload relation_type: got %v, want uses_new", meta["relation_type"])
 	}
 }
+
+// TestIssue22340_RewriteToSelfLoopFilter verifies that when relation endpoints
+// are rewritten via aliases to form a self-loop (e.g. from_entity=Al -> Alpha,
+// to_entity=Alpha), RewriteRelations updates row.Meta["from"] and row.Meta["to"]
+// correctly across all endpoint alias variations, and filterSelfLoopRelations
+// filters out the resulting self-loop while preserving non-self-loop controls.
+func TestIssue22340_RewriteToSelfLoopFilter(t *testing.T) {
+	cases := []struct {
+		name   string
+		srcKey string
+		tgtKey string
+		relKey string
+	}{
+		{
+			name:   "from_entity_to_entity",
+			srcKey: "from_entity",
+			tgtKey: "to_entity",
+			relKey: "relation",
+		},
+		{
+			name:   "head_tail",
+			srcKey: "head",
+			tgtKey: "tail",
+			relKey: "type",
+		},
+		{
+			name:   "subject_object",
+			srcKey: "subject",
+			tgtKey: "object",
+			relKey: "predicate",
+		},
+		{
+			name:   "canonical_source_target",
+			srcKey: "source",
+			tgtKey: "target",
+			relKey: "type",
+		},
+	}
+
+	aliases := map[string]string{"Al": "Alpha"}
+	ctx := context.Background()
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			deduper := NewGroupedDeduper(similarityMergeDecider{})
+
+			// 1. Candidate relation: Al -> Alpha (rewrites to Alpha -> Alpha: self-loop)
+			loopPayload := map[string]any{
+				tc.srcKey: "Al",
+				tc.tgtKey: "Alpha",
+				tc.relKey: "connects",
+			}
+			loopMeta := map[string]any{
+				"kind": "relation",
+				"from": "Al",
+				"to":   "Alpha",
+			}
+			loopRow := common.Product{
+				ID:      tc.name + "-loop",
+				Content: payloadJSON(loopPayload),
+				Vector:  []float32{1, 0, 0, 0},
+				Meta:    loopMeta,
+			}
+
+			// 2. Control relation: Al -> Beta (rewrites to Alpha -> Beta: valid edge)
+			ctrlPayload := map[string]any{
+				tc.srcKey: "Al",
+				tc.tgtKey: "Beta",
+				tc.relKey: "connects",
+			}
+			ctrlMeta := map[string]any{
+				"kind": "relation",
+				"from": "Al",
+				"to":   "Beta",
+			}
+			ctrlRow := common.Product{
+				ID:      tc.name + "-ctrl",
+				Content: payloadJSON(ctrlPayload),
+				Vector:  []float32{0, 1, 0, 0},
+				Meta:    ctrlMeta,
+			}
+
+			if err := deduper.Add(ctx, loopRow); err != nil {
+				t.Fatalf("deduper.Add loopRow: %v", err)
+			}
+			if err := deduper.Add(ctx, ctrlRow); err != nil {
+				t.Fatalf("deduper.Add ctrlRow: %v", err)
+			}
+
+			// Perform relation endpoint rewrite
+			if err := deduper.RewriteRelations(ctx, aliases, constEmbedder{dim: 4}); err != nil {
+				t.Fatalf("RewriteRelations: %v", err)
+			}
+
+			rewrittenRows := deduper.Rows()
+			if len(rewrittenRows) != 2 {
+				t.Fatalf("expected 2 relation rows after rewrite, got %d", len(rewrittenRows))
+			}
+
+			// Verify that loopRow metadata endpoints were updated to Alpha -> Alpha
+			var rewrittenLoop common.Product
+			var rewrittenCtrl common.Product
+			for _, r := range rewrittenRows {
+				if r.ID == loopRow.ID {
+					rewrittenLoop = r
+				} else if r.ID == ctrlRow.ID {
+					rewrittenCtrl = r
+				}
+			}
+
+			if rewrittenLoop.Meta["from"] != "Alpha" || rewrittenLoop.Meta["to"] != "Alpha" {
+				t.Errorf("[%s] loop row meta after rewrite: got from=%v to=%v, want Alpha/Alpha",
+					tc.name, rewrittenLoop.Meta["from"], rewrittenLoop.Meta["to"])
+			}
+			loopP := parsePayload(rewrittenLoop.Content)
+			if loopP[tc.srcKey] != "Alpha" || loopP[tc.tgtKey] != "Alpha" {
+				t.Errorf("[%s] loop row payload after rewrite: got %v -> %v, want Alpha -> Alpha",
+					tc.name, loopP[tc.srcKey], loopP[tc.tgtKey])
+			}
+
+			if rewrittenCtrl.Meta["from"] != "Alpha" || rewrittenCtrl.Meta["to"] != "Beta" {
+				t.Errorf("[%s] ctrl row meta after rewrite: got from=%v to=%v, want Alpha/Beta",
+					tc.name, rewrittenCtrl.Meta["from"], rewrittenCtrl.Meta["to"])
+			}
+
+			// Apply filterSelfLoopRelations: the self-loop MUST be dropped, ctrl MUST survive
+			filtered := filterSelfLoopRelations(rewrittenRows)
+			if len(filtered) != 1 {
+				t.Fatalf("[%s] filterSelfLoopRelations: got %d rows, want 1 (self-loop not filtered)",
+					tc.name, len(filtered))
+			}
+			if filtered[0].ID != ctrlRow.ID {
+				t.Errorf("[%s] surviving row: got ID %q, want %q", tc.name, filtered[0].ID, ctrlRow.ID)
+			}
+		})
+	}
+}
