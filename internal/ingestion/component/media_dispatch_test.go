@@ -273,6 +273,8 @@ func (d *imagePromptCaptureDriver) ChatWithMessages(ctx context.Context, modelNa
 	return &modelModule.ChatResponse{Answer: &ans}, nil
 }
 
+func (*imagePromptCaptureDriver) SupportsVideoURL() bool { return true }
+
 // blankAnswerVisionDriver models a vision model that answers successfully but
 // with no usable text, which must still leave a trace behind.
 type blankAnswerVisionDriver struct {
@@ -283,6 +285,12 @@ func (blankAnswerVisionDriver) ChatWithMessages(context.Context, string, []model
 	blank := "   "
 	return &modelModule.ChatResponse{Answer: &blank}, nil
 }
+
+type unsupportedVideoDriver struct {
+	modelModule.ModelDriver
+}
+
+func (unsupportedVideoDriver) Name() string { return "Gemini" }
 
 // firstUserText extracts the text of the first "text" content part from the
 // first captured user message. It scans parts by the "type" discriminator so
@@ -1070,33 +1078,159 @@ func picturePNG(t *testing.T) []byte {
 	return data.Bytes()
 }
 
-// TestMaybeDispatchVideoRejectsExplicitly pins the runtime backstop behind the
-// frontend parse block: a video file whose setups declare the video family
-// gets an explicit "not yet supported" error (not a silent fallback), while
-// configs without a video family fall through to the generic dispatch path.
-func TestMaybeDispatchVideoRejectsExplicitly(t *testing.T) {
-	ctx := t.Context()
-	inputs := map[string]any{"tenant_id": "t1"}
+func TestMaybeDispatchVideoForwardsDataURI(t *testing.T) {
+	original := resolveTenantModelByType
+	t.Cleanup(func() { resolveTenantModelByType = original })
 
-	// Main path: standard component defaults declare the video family, so the
-	// branch handles the file and fails loudly.
-	_, handled, err := maybeDispatchVideo(ctx, nil, utility.FileTypeVIDEO, "clip.mov", []byte("mov-bytes"), inputs, defaultSetups())
+	driver := &imagePromptCaptureDriver{}
+	resolveTenantModelByType = func(context.Context, *gorm.DB, string, entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		return driver, "vision", &modelModule.APIConfig{}, 0, nil
+	}
+
+	setups := defaultSetups()
+	setups["video"]["prompt"] = "Describe the clip"
+	result, handled, err := maybeDispatchVideo(t.Context(), nil, utility.FileTypeVIDEO, "clip.mp4", []byte("mp4-bytes"), map[string]any{"tenant_id": "t1"}, setups, visionSettings{})
+	if err != nil || !handled {
+		t.Fatalf("err = %v, handled = %v", err, handled)
+	}
+	if len(result.JSON) != 1 || result.JSON[0].ToMap()["text"] != "captured" {
+		t.Fatalf("result = %+v, want one captured text item", result.JSON)
+	}
+
+	driver.mu.Lock()
+	messages := append([]modelModule.Message(nil), driver.captured...)
+	driver.mu.Unlock()
+	if len(messages) != 1 {
+		t.Fatalf("captured messages = %d, want 1", len(messages))
+	}
+	parts, ok := messages[0].Content.([]interface{})
+	if !ok || len(parts) != 2 {
+		t.Fatalf("content = %#v, want video and text blocks", messages[0].Content)
+	}
+	video, ok := parts[0].(map[string]any)
+	if !ok || video["type"] != "video_url" {
+		t.Fatalf("video block = %#v, want video_url", parts[0])
+	}
+	videoURL, ok := video["video_url"].(map[string]any)
+	if !ok || videoURL["url"] != "data:video/mp4;base64,bXA0LWJ5dGVz" {
+		t.Fatalf("video URL = %#v, want encoded MP4 data URI", video["video_url"])
+	}
+	if prompt, ok := parts[1].(map[string]any); !ok || prompt["text"] != "Describe the clip" {
+		t.Fatalf("prompt block = %#v, want configured prompt", parts[1])
+	}
+}
+
+func TestMaybeDispatchVideoUsesVisionPromptAndLanguage(t *testing.T) {
+	original := resolveTenantModelByType
+	t.Cleanup(func() { resolveTenantModelByType = original })
+
+	for _, tc := range []struct {
+		name          string
+		inputLanguage string
+		vision        visionSettings
+		familyPrompt  string
+		want          string
+	}{
+		{
+			name:          "global prompt wins",
+			inputLanguage: "Japanese",
+			vision:        visionSettings{systemPrompt: "global prompt", language: "French"},
+			familyPrompt:  "family prompt",
+			want:          "global prompt",
+		},
+		{
+			name:          "family prompt is the fallback",
+			inputLanguage: "Japanese",
+			vision:        visionSettings{language: "French"},
+			familyPrompt:  "family prompt",
+			want:          "family prompt",
+		},
+		{
+			name:          "explicit language shapes the default",
+			inputLanguage: "Japanese",
+			vision:        visionSettings{language: "French"},
+			want:          "Respond in French.",
+		},
+		{
+			name:          "dataset language shapes the default",
+			inputLanguage: "Japanese",
+			want:          "Respond in Japanese.",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			driver := &imagePromptCaptureDriver{}
+			resolveTenantModelByType = func(context.Context, *gorm.DB, string, entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+				return driver, "vision", &modelModule.APIConfig{}, 0, nil
+			}
+			setups := defaultSetups()
+			setups["video"]["prompt"] = tc.familyPrompt
+			_, handled, err := maybeDispatchVideo(t.Context(), nil, utility.FileTypeVIDEO, "clip.mp4", []byte("mp4-bytes"),
+				map[string]any{"tenant_id": "t1", "lang": tc.inputLanguage}, setups, tc.vision)
+			if err != nil || !handled {
+				t.Fatalf("maybeDispatchVideo: handled=%t err=%v", handled, err)
+			}
+			got, ok := firstUserText(driver.captured)
+			if !ok || !strings.Contains(got, tc.want) {
+				t.Fatalf("video prompt = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestMaybeDispatchVideoRejectsUnsupportedDriver(t *testing.T) {
+	original := resolveTenantModelByType
+	t.Cleanup(func() { resolveTenantModelByType = original })
+	resolveTenantModelByType = func(context.Context, *gorm.DB, string, entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		return unsupportedVideoDriver{}, "gemini", &modelModule.APIConfig{}, 0, nil
+	}
+
+	_, handled, err := maybeDispatchVideo(t.Context(), nil, utility.FileTypeVIDEO, "clip.mp4", []byte("mp4-bytes"), map[string]any{"tenant_id": "t1"}, defaultSetups(), visionSettings{})
 	if !handled {
-		t.Fatal("maybeDispatchVideo did not handle a video file with a video setup")
+		t.Fatal("video dispatch did not handle a video file")
 	}
-	if err == nil || !strings.Contains(err.Error(), "not yet supported") {
-		t.Fatalf("video error = %v, want explicit not-yet-supported", err)
+	if err == nil || !strings.Contains(err.Error(), "does not support video_url") {
+		t.Fatalf("error = %v, want unsupported video_url error", err)
 	}
+}
 
-	// Without a video family the branch stays out of the way; the generic
-	// dispatch path (GetParser "unsupported file type") answers instead.
-	_, handled, err = maybeDispatchVideo(ctx, nil, utility.FileTypeVIDEO, "clip.mov", []byte("mov-bytes"), inputs, map[string]schema.ParserSetup{})
+func TestMaybeDispatchVideoRejectsOversizedPayload(t *testing.T) {
+	t.Setenv(common.EnvMaxDocumentUploadSize, "4")
+	_, handled, err := maybeDispatchVideo(t.Context(), nil, utility.FileTypeVIDEO, "clip.mp4", []byte("12345"), map[string]any{"tenant_id": "t1"}, defaultSetups(), visionSettings{})
+	if !handled {
+		t.Fatal("video dispatch did not handle a video file")
+	}
+	if err == nil || !strings.Contains(err.Error(), "exceeds the 4-byte document limit") {
+		t.Fatalf("error = %v, want bounded payload error", err)
+	}
+}
+
+func TestVideoMIME(t *testing.T) {
+	for _, tc := range []struct {
+		filename string
+		want     string
+	}{
+		{filename: "clip.mp4", want: "video/mp4"},
+		{filename: "clip.mov", want: "video/quicktime"},
+		{filename: "clip.webm", want: "video/webm"},
+		{filename: "clip.3gpp", want: "video/3gpp"},
+		{filename: "clip.unknown", want: "video/mp4"},
+	} {
+		t.Run(tc.filename, func(t *testing.T) {
+			if got := videoMIME(tc.filename); got != tc.want {
+				t.Fatalf("videoMIME(%q) = %q, want %q", tc.filename, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestMaybeDispatchVideoSkipsUnconfiguredFamilies(t *testing.T) {
+	inputs := map[string]any{"tenant_id": "t1"}
+	_, handled, err := maybeDispatchVideo(t.Context(), nil, utility.FileTypeVIDEO, "clip.mov", []byte("mov-bytes"), inputs, map[string]schema.ParserSetup{}, visionSettings{})
 	if handled || err != nil {
 		t.Fatalf("handled = %v, err = %v, want pass-through without a video setup", handled, err)
 	}
 
-	// Non-video files never enter the video branch.
-	_, handled, err = maybeDispatchVideo(ctx, nil, utility.FileTypeVISUAL, "photo.jpg", []byte("jpeg-bytes"), inputs, defaultSetups())
+	_, handled, err = maybeDispatchVideo(t.Context(), nil, utility.FileTypeVISUAL, "photo.jpg", []byte("jpeg-bytes"), inputs, defaultSetups(), visionSettings{})
 	if handled || err != nil {
 		t.Fatalf("handled = %v, err = %v, want pass-through for images", handled, err)
 	}

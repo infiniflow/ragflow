@@ -24,11 +24,11 @@ describe('parser-form utils', () => {
         [ModelTypeToField.vision]: 'gpt-4o@OpenAI',
         [ModelTypeToField.asr]: 'whisper@OpenAI',
       };
-      // The vision model is a global parser option, so video no longer gets
-      // a per-setup prefill.
-      expect(buildInitialParserSetup(FileType.Video, dictionary)?.vlm).toBe(
-        undefined,
-      );
+      // The vision model is a global parser option, so video does not get a
+      // per-setup prefill.
+      expect(buildInitialParserSetup(FileType.Video, dictionary)).toEqual({
+        fileFormat: FileType.Video,
+      });
       expect(buildInitialParserSetup(FileType.Audio, dictionary)?.vlm).toEqual({
         llm_id: 'whisper@OpenAI',
       });
@@ -72,7 +72,9 @@ describe('parser-form utils', () => {
       const byFileType = new Map(
         values.setups.map((setup: any) => [setup.fileFormat, setup]),
       );
-      expect(byFileType.get(FileType.Video)?.vlm).toBe(undefined);
+      expect(byFileType.get(FileType.Video)).toEqual({
+        fileFormat: FileType.Video,
+      });
       expect(byFileType.get(FileType.Audio)?.vlm).toEqual({
         llm_id: 'whisper@OpenAI',
       });

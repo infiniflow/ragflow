@@ -151,10 +151,9 @@ export const isDocumentProcessing = (
 // A file cannot be parsed under the dataset's current Parser operator when
 // the operator does not declare the file's type family at all
 // (unsupportedType), or when the family is declared but the model it needs
-// is not set (missingModel): audio reads its per-setup ASR model. Video is
-// temporarily blocked as unsupported until the video-analysis capability
-// lands (maybeDispatchVideo still returns "not yet supported"), so it never
-// reports missingModel even when its family is declared.
+// is not set (missingModel): audio reads its per-setup ASR model. Video uses
+// the tenant's IMAGE2TEXT default when no explicit model is selected, so the
+// backend owns that resolution and the frontend only checks the family.
 // Image files only need their family declared: the image OCR switch runs
 // local extraction independently, and the vision model is a global supplement
 // for it.
@@ -234,8 +233,8 @@ const GeneralFamilyFileTypes = new Set<FileType>([
 // Extension sets mirror the backend upload buckets (utility.FilenameType):
 // the visual bucket admits image containers plus every video container in the
 // shared backend set, so video keeps the picture switch the backend performs.
-// Parsability is judged separately: pickBySwitchFate excludes video from the
-// switchable count because no parser implements video analysis.
+// Parsability is judged separately from the upload bucket because the parser
+// family still needs to be declared in the selected pipeline.
 const VisualSwitchSuffixes = new Set([
   'jpg',
   'jpeg',
@@ -310,12 +309,8 @@ export function builtinParserSwitchTarget(
   name: string,
   fileType: FileType | undefined,
 ): BuiltinSwitchTarget | null {
-  // Video uploads are accepted (visual bucket) but unsupported for parsing (no
-  // parser implements video analysis). The picture switch below mirrors what
-  // the backend performs; the row is still unparsable, so the user is warned
-  // at upload and blocked at parse-click. pickBySwitchFate separately excludes
-  // video from the switchable count so mixed batches never promise an
-  // automatic switch that cannot make the file parsable.
+  // Images and videos share the visual upload bucket, so both switch to the
+  // built-in picture pipeline when the selected parser does not declare them.
   const suffix = getExtension(name);
   if (VisualSwitchSuffixes.has(suffix)) {
     return 'picture';
@@ -364,12 +359,7 @@ export function pickBySwitchFate<T>(
   if (unsupported.length === 0) {
     return options.missingModel;
   }
-  // Video uploads switch to picture but stay unparsable, so they are not
-  // counted as switchable: counting them would promise an automatic switch
-  // that cannot make the file parsable.
-  const switchable = unsupported.filter(
-    (gap) => gap.autoSwitchTarget !== null && gap.fileType !== FileType.Video,
-  );
+  const switchable = unsupported.filter((gap) => gap.autoSwitchTarget !== null);
   if (switchable.length === 0) {
     return options.manualSwitch;
   }
@@ -449,14 +439,8 @@ export function findParserGap(
             modelKind: ParserModelKind.Asr,
           };
     }
-    case FileType.Video: {
-      // Video parsing is not implemented yet (the backend dispatch returns
-      // "video parsing is not yet supported"), so a declared family or a
-      // configured vision model does not make the file parsable. Report it
-      // as unsupported so upload warns and parse-click blocks instead of
-      // prompting for a model that cannot unblock it.
-      return { reason: ParserGapReason.UnsupportedType, fileType };
-    }
+    case FileType.Video:
+      return null;
     default:
       return null;
   }
@@ -485,20 +469,6 @@ export function findDocumentsParserGaps(
 ): FileParserGap[] {
   return documents.flatMap((doc) => {
     const config = getSavedParserConfig(doc) ?? fallbackConfig;
-    if (!config) {
-      // Video is never parsable regardless of configuration, so it stays
-      // blocked even when type support cannot be determined for other files.
-      const fileType = getFileTypeByExtension(getExtension(doc.name));
-      return fileType === FileType.Video
-        ? [
-            {
-              reason: ParserGapReason.UnsupportedType,
-              fileType,
-              name: doc.name,
-            },
-          ]
-        : [];
-    }
-    return findFilesParserGaps([doc.name], config);
+    return config ? findFilesParserGaps([doc.name], config) : [];
   });
 }

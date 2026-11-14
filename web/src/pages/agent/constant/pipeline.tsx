@@ -5,8 +5,8 @@ import { ModelTypeToField } from '@/constants/llm';
 import { cloneDeep } from 'lodash';
 
 // The audio parser defaults to the tenant's ASR model, keyed by the
-// useFetchDefaultModelDictionary fields. (The vision model is a single global
-// parser option, not per file type, so video no longer appears here.)
+// useFetchDefaultModelDictionary fields. The vision model is a single global
+// parser option, so video has no per-family default here.
 export const FileTypeDefaultModelFieldMap: Partial<Record<FileType, string>> = {
   [FileType.Audio]: ModelTypeToField.asr,
 };
@@ -135,9 +135,9 @@ export const initialParserValues = {
       fileFormat: FileType.PowerPoint,
       parse_method: ParseDocumentType.DeepDOC,
     },
-    // {
-    //   fileFormat: FileType.Video,
-    // },
+    {
+      fileFormat: FileType.Video,
+    },
     {
       fileFormat: FileType.Audio,
       vlm: { llm_id: '' },

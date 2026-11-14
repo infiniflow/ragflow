@@ -137,3 +137,55 @@ func TestOpenAICompatibleProvidersExtractStreamingUsage(t *testing.T) {
 		})
 	}
 }
+
+func TestOpenAIAPICompatibleForwardsVideoURL(t *testing.T) {
+	withSSRFBypass(t)
+	var requestBody map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"choices":[{"message":{"role":"assistant","content":"blue"},"finish_reason":"stop"}]}`)
+	}))
+	defer server.Close()
+
+	apiKey := "test-key"
+	videoURL := "data:video/mp4;base64,AAAA"
+	model := NewOpenAIAPICompatibleModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{Chat: "chat/completions"},
+	)
+	_, err := model.ChatWithMessages(t.Context(), "Qwen3-32B", []Message{{
+		Role: "user",
+		Content: []interface{}{
+			map[string]any{"type": "video_url", "video_url": map[string]any{"url": videoURL}},
+			map[string]any{"type": "text", "text": "What color is this video?"},
+		},
+	}}, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: %v", err)
+	}
+
+	messages, ok := requestBody["messages"].([]any)
+	if !ok || len(messages) != 1 {
+		t.Fatalf("messages = %#v, want one message", requestBody["messages"])
+	}
+	message, ok := messages[0].(map[string]any)
+	if !ok {
+		t.Fatalf("message = %#v, want object", messages[0])
+	}
+	content, ok := message["content"].([]any)
+	if !ok || len(content) != 2 {
+		t.Fatalf("content = %#v, want video and text blocks", message["content"])
+	}
+	video, ok := content[0].(map[string]any)
+	if !ok || video["type"] != "video_url" {
+		t.Fatalf("video block = %#v, want video_url", content[0])
+	}
+	videoObject, ok := video["video_url"].(map[string]any)
+	if !ok || videoObject["url"] != videoURL {
+		t.Fatalf("video_url = %#v, want %q", video["video_url"], videoURL)
+	}
+}

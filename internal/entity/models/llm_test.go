@@ -599,7 +599,7 @@ func (u *captureToolDriver) Decide(ctx context.Context, modelName *string, reque
 
 // TestToInternalMessagesConvertsMultiModalContent guards the eino→driver
 // boundary: UserInputMultiContent must become OpenAI-style content blocks
-// ([]interface{} of {type:text} / {type:image_url}) on Message.Content,
+// ([]interface{} of {type:text} / {type:image_url} / {type:video_url}) on Message.Content,
 // otherwise image parts produced by the component layer are silently
 // dropped before the request reaches any driver.
 func TestToInternalMessagesConvertsMultiModalContent(t *testing.T) {
@@ -669,6 +669,76 @@ func TestToInternalMessagesReassemblesBase64Image(t *testing.T) {
 	imageURL, ok := imageBlock["image_url"].(map[string]interface{})
 	if !ok || imageURL["url"] != "data:image/jpeg;base64,aGVsbG8=" {
 		t.Fatalf("image_url = %#v, want reassembled data URI", imageBlock["image_url"])
+	}
+}
+
+func TestToInternalMessagesConvertsVideoContent(t *testing.T) {
+	uri := "data:video/mp4;base64,AAAA"
+	in := toInternalMessages([]*schema.Message{
+		{
+			Role: schema.User,
+			UserInputMultiContent: []schema.MessageInputPart{
+				{Type: schema.ChatMessagePartTypeVideoURL,
+					Video: &schema.MessageInputVideo{
+						MessagePartCommon: schema.MessagePartCommon{URL: &uri},
+					}},
+			},
+		},
+	})
+	blocks, ok := in[0].Content.([]interface{})
+	if !ok || len(blocks) != 1 {
+		t.Fatalf("Content = %#v, want one video block", in[0].Content)
+	}
+	videoBlock, ok := blocks[0].(map[string]interface{})
+	if !ok || videoBlock["type"] != "video_url" {
+		t.Fatalf("block = %#v, want type video_url", blocks[0])
+	}
+	videoURL, ok := videoBlock["video_url"].(map[string]interface{})
+	if !ok || videoURL["url"] != uri {
+		t.Fatalf("video_url = %#v, want url %q", videoBlock["video_url"], uri)
+	}
+}
+
+func TestToInternalMessagesReassemblesBase64Video(t *testing.T) {
+	b64 := "AAAA"
+	in := toInternalMessages([]*schema.Message{
+		{
+			Role: schema.User,
+			UserInputMultiContent: []schema.MessageInputPart{
+				{Type: schema.ChatMessagePartTypeVideoURL,
+					Video: &schema.MessageInputVideo{
+						MessagePartCommon: schema.MessagePartCommon{
+							Base64Data: &b64,
+							MIMEType:   "video/webm",
+						},
+					}},
+			},
+		},
+	})
+	blocks, ok := in[0].Content.([]interface{})
+	if !ok || len(blocks) != 1 {
+		t.Fatalf("Content = %#v, want one video block", in[0].Content)
+	}
+	videoBlock, ok := blocks[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("block = %#v, want map", blocks[0])
+	}
+	videoURL, ok := videoBlock["video_url"].(map[string]interface{})
+	if !ok || videoURL["url"] != "data:video/webm;base64,AAAA" {
+		t.Fatalf("video_url = %#v, want reassembled data URI", videoBlock["video_url"])
+	}
+}
+
+func TestSupportsVideoURLIsOptIn(t *testing.T) {
+	compatible := NewOpenAIAPICompatibleModel(nil, URLSuffix{})
+	if !SupportsVideoURL(NewVllmModel(nil, URLSuffix{})) {
+		t.Fatal("VLLM should advertise video_url support")
+	}
+	if !SupportsVideoURL(compatible) {
+		t.Fatal("OpenAI-API-Compatible should inherit VLLM video_url support")
+	}
+	if SupportsVideoURL(NewGoogleModel(nil, URLSuffix{})) {
+		t.Fatal("Gemini must not advertise OpenAI-style video_url support")
 	}
 }
 

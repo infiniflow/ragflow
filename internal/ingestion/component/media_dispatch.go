@@ -57,6 +57,7 @@ func maybeDispatchVideo(
 	binary []byte,
 	inputs map[string]any,
 	setups map[string]schema.ParserSetup,
+	vision visionSettings,
 ) (parser.ParseResult, bool, error) {
 	if fileType != utility.FileTypeVIDEO {
 		return parser.ParseResult{}, false, nil
@@ -65,19 +66,84 @@ func maybeDispatchVideo(
 		return parser.ParseResult{}, false, nil
 	}
 
-	// Video parsing is intentionally not implemented yet: the underlying
-	// video-analysis capability is pending. The previously-shipped path sent a
-	// video_url data URI, but no model driver honors it — OpenAI-compatible
-	// drivers only accept image_url (the block is ignored), and Gemini's
-	// googleMessageParts only accepts text/image_url and silently drops
-	// video_url. Returning an explicit error is safer than silently producing
-	// a description from the prompt text alone. The real implementation must
-	// be provider-specific (OpenAI-compatible: frame extraction -> image_url;
-	// Gemini: raw-bytes inline_data; Qwen: file://).
-	// When video analysis is implemented, it emits standard Text JSON items:
-	// [{"text": transcript, "doc_type_kwd": "text"}] with output_format "json".
-	return parser.ParseResult{}, true,
-		fmt.Errorf("Parser: video parsing is not yet supported; underlying video analysis capability is pending")
+	setup := setups["video"]
+	tenantID := getStringOr(inputs, "tenant_id", "")
+	if tenantID == "" {
+		return parser.ParseResult{}, true, fmt.Errorf("parser: video requires tenant_id")
+	}
+	if len(binary) == 0 {
+		return parser.ParseResult{}, true, fmt.Errorf("parser: video payload is empty")
+	}
+	maxBytes := common.GetMaxDocumentUploadBytes()
+	if maxBytes > 0 && int64(len(binary)) > maxBytes {
+		return parser.ParseResult{}, true, fmt.Errorf("parser: video payload exceeds the %d-byte document limit", maxBytes)
+	}
+
+	modelRef := vision.modelID
+	if modelRef == "" {
+		modelRef = configuredMediaModelID(setup)
+	}
+	var driver modelModule.ModelDriver
+	var modelName string
+	var apiConfig *modelModule.APIConfig
+	var err error
+	if modelRef != "" {
+		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, modelRef)
+		if err != nil {
+			common.Warn("media dispatch video: per-call VLM resolve failed, falling back to tenant default",
+				zap.String("modelRef", modelRef), zap.String("tenant", tenantID), zap.Error(err))
+			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+		}
+	} else {
+		driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+	}
+	if err != nil {
+		return parser.ParseResult{}, true, fmt.Errorf("parser: video vision model: %w", err)
+	}
+	if driver == nil {
+		return parser.ParseResult{}, true, fmt.Errorf("parser: video vision model is unavailable")
+	}
+	if !modelModule.SupportsVideoURL(driver) {
+		return parser.ParseResult{}, true, fmt.Errorf("parser: video model driver %q does not support video_url inputs", driver.Name())
+	}
+
+	lang := resolveVisionLanguage(inputs, vision.language)
+	prompt := defaultVideoVisionPrompt(lang)
+	if configured := common.FirstNonEmpty(vision.systemPrompt, getStringOr(setup, "prompt", "")); configured != "" {
+		prompt = configured
+	}
+	videoDataURI := "data:" + videoMIME(filename) + ";base64," + base64.StdEncoding.EncodeToString(binary)
+	messages := []modelModule.Message{{
+		Role: "user",
+		Content: []interface{}{
+			map[string]any{"type": "video_url", "video_url": map[string]any{"url": videoDataURI}},
+			map[string]any{"type": "text", "text": prompt},
+		},
+	}}
+	visionFlag := true
+	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
+	finish := agentruntime.TrackIO(ctx, "Parser", "VLM", "media=video")
+	resp, err := chatModel.ChatWithMessages(ctx, messages, &modelModule.ChatConfig{Vision: &visionFlag}, nil)
+	finish()
+	if err != nil {
+		return parser.ParseResult{}, true, fmt.Errorf("parser: video vision model: %w", err)
+	}
+	if resp == nil || resp.Answer == nil || strings.TrimSpace(*resp.Answer) == "" {
+		return parser.ParseResult{}, true, fmt.Errorf("parser: video vision model returned an empty response")
+	}
+
+	return parser.ParseResult{
+		JSON: []parser.DocItem{parser.NewTextJSONItem(strings.TrimSpace(*resp.Answer))},
+	}, true, nil
+}
+
+func configuredMediaModelID(setup schema.ParserSetup) string {
+	if vlm, ok := setup["vlm"].(map[string]any); ok {
+		if ref, _ := vlm["llm_id"].(string); strings.TrimSpace(ref) != "" {
+			return strings.TrimSpace(ref)
+		}
+	}
+	return strings.TrimSpace(getStringOr(setup, "llm_id", ""))
 }
 
 // maybeDispatchImage extracts local or selected-model OCR (native text for SVG)
@@ -489,11 +555,7 @@ func writeTempAudioFile(filename string, binary []byte) (string, error) {
 	return tmp.Name(), nil
 }
 
-// videoMIME maps common video filename extensions to MIME types
-// for constructing base64 data URIs. Retained as a reference for the
-// future real video-parsing implementation (provider-specific frame
-// extraction / inline_data / file://); not currently used because
-// maybeDispatchVideo returns an explicit unsupported error.
+// videoMIME maps common video filename extensions to MIME types for data URIs.
 func videoMIME(filename string) string {
 	dot := strings.LastIndex(filename, ".")
 	if dot == -1 {
@@ -516,8 +578,18 @@ func videoMIME(filename string) string {
 		return "video/webm"
 	case "mpeg", "mpg":
 		return "video/mpeg"
-	case "3gp":
+	case "3gp", "3gpp":
 		return "video/3gpp"
+	case "dat":
+		return "video/mpeg"
+	case "asf":
+		return "video/x-ms-asf"
+	case "wvx":
+		return "video/x-ms-wvx"
+	case "mpe", "mpa":
+		return "video/mpeg"
+	case "rm", "rmvb":
+		return "application/vnd.rn-realmedia"
 	default:
 		return "video/mp4"
 	}
