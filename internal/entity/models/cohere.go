@@ -24,6 +24,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	neturl "net/url"
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
@@ -677,20 +678,71 @@ func (c *CoHereModel) ParseFile(ctx context.Context, modelName *string, content 
 	return nil, fmt.Errorf("%s: no such method: ParseFile", c.Name())
 }
 
+// cohereModelsPageSize is the largest page the models endpoint allows; the
+// default is 20, which silently truncated the list for accounts with more.
+const cohereModelsPageSize = 1000
+
+// cohereModelsMaxPages bounds the pagination loop so a server that keeps
+// returning a fresh cursor cannot make ListModels (and CheckConnection) run forever.
+const cohereModelsMaxPages = 100
+
+type cohereModelsPage struct {
+	Models []struct {
+		ModelName string `json:"name"`
+	} `json:"models"`
+	NextPageToken string `json:"next_page_token"`
+}
+
 func (c *CoHereModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
 
-	url, err := c.baseModel.EndpointURL(apiConfig, c.baseModel.URLSuffix.Models)
+	endpoint, err := c.baseModel.EndpointURL(apiConfig, c.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
+	}
+
+	models := make([]ModelListItem, 0)
+	pageToken := ""
+	for pageNum := 0; pageNum < cohereModelsMaxPages; pageNum++ {
+		page, err := c.listModelsPage(ctx, endpoint, apiConfig, pageToken)
+		if err != nil {
+			return nil, err
+		}
+		for _, model := range page.Models {
+			if model.ModelName != "" {
+				models = append(models, ModelListItem{
+					ID:      model.ModelName,
+					OwnedBy: c.Name(),
+				})
+			}
+		}
+		if page.NextPageToken == "" || page.NextPageToken == pageToken {
+			return ParseListModel(ModelList{Models: models}), nil
+		}
+		pageToken = page.NextPageToken
+	}
+	return nil, fmt.Errorf("models list exceeded %d pages", cohereModelsMaxPages)
+}
+
+func (c *CoHereModel) listModelsPage(ctx context.Context, endpoint string, apiConfig *APIConfig, pageToken string) (*cohereModelsPage, error) {
+	query := neturl.Values{}
+	query.Set("page_size", strconv.Itoa(cohereModelsPageSize))
+	if pageToken != "" {
+		query.Set("page_token", pageToken)
+	}
+	pageURL := endpoint
+	if strings.Contains(pageURL, "?") {
+		pageURL += "&" + query.Encode()
+	} else {
+		pageURL += "?" + query.Encode()
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", pageURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -713,27 +765,11 @@ func (c *CoHereModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 		return nil, fmt.Errorf("cohere API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	// Parse response
-	var result struct {
-		Models []struct {
-			ModelName string `json:"name"`
-		} `json:"models"`
-	}
+	var result cohereModelsPage
 	if err := json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
 	}
-
-	models := make([]ModelListItem, 0, len(result.Models))
-	for _, model := range result.Models {
-		if model.ModelName != "" {
-			models = append(models, ModelListItem{
-				ID:      model.ModelName,
-				OwnedBy: c.Name(),
-			})
-		}
-	}
-
-	return ParseListModel(ModelList{Models: models}), nil
+	return &result, nil
 }
 
 func (c *CoHereModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
