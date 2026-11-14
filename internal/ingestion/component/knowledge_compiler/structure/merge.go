@@ -570,20 +570,27 @@ func applyMergeInvariants(existing common.Product, mergedPayload map[string]any)
 		return mergedPayload
 	}
 	if from := relationEndpoint(existingPayload, "", sourceEndpointAliases...); from != "" {
-		for _, field := range sourceEndpointAliases {
-			if _, ok := mergedPayload[field]; ok {
-				mergedPayload[field] = from
-			}
-		}
+		setEndpointField(mergedPayload, sourceEndpointAliases, from)
 	}
 	if to := relationEndpoint(existingPayload, "", targetEndpointAliases...); to != "" {
-		for _, field := range targetEndpointAliases {
-			if _, ok := mergedPayload[field]; ok {
-				mergedPayload[field] = to
-			}
-		}
+		setEndpointField(mergedPayload, targetEndpointAliases, to)
 	}
 	return mergedPayload
+}
+
+// setEndpointField updates every endpoint alias already present in payload.
+// When none is present, it writes the canonical (first) alias.
+func setEndpointField(payload map[string]any, aliases []string, value string) {
+	found := false
+	for _, field := range aliases {
+		if _, ok := payload[field]; ok {
+			payload[field] = value
+			found = true
+		}
+	}
+	if !found && len(aliases) > 0 {
+		payload[aliases[0]] = value
+	}
 }
 
 // resolveAlias mirrors _struct_resolve_entity_alias: follow the alias chain
