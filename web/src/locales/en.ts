@@ -1593,6 +1593,27 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       dataSourceFieldInitialCursor: 'Initial Cursor',
       dataSourceFieldMaxPages: 'Max Pages',
       dataSourceFieldRequestDelay: 'Request Delay (seconds)',
+      restApiWindowEnabled: 'Enable dynamic time windows',
+      restApiWindowStartParam: 'Start time parameter',
+      restApiWindowEndParam: 'End time parameter',
+      restApiWindowInitialStart: 'Initial or backfill start',
+      restApiWindowInitialStartTip:
+        'Use RFC3339 with a time zone. Saving a changed start or query scope backfills from this time and deduplicates by record ID.',
+      restApiWindowRequestTimeFormat: 'Request time format',
+      restApiWindowResponseTimeFormat: 'Record time format',
+      restApiWindowMaxSeconds: 'Maximum window (seconds)',
+      restApiWindowMaxSecondsTip:
+        'Split by the upstream query limit. Leave blank to use the full time range.',
+      restApiWindowPositiveInteger: 'Enter a positive integer.',
+      restApiWindowPageParam: 'Page number parameter',
+      restApiWindowPageSizeParam: 'Page size parameter',
+      restApiWindowHasNextPage: 'Has next page field',
+      restApiWindowHasNextPageTip:
+        'Use a top-level boolean field such as hasNext, or leave blank to use the default pagination rules.',
+      restApiWindowIdRequired:
+        'Set a stable record ID field to use dynamic time windows.',
+      restApiWindowTimestampRequired:
+        'Set the record time field used by the upstream query.',
       dataSourceFieldPollTimestampField: 'Poll Timestamp Field',
       dataSourceFieldRequestBody: 'Request Body (POST) JSON',
       dataSourceFieldConfluenceUsername: 'Confluence Username',

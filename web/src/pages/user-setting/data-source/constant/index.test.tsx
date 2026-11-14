@@ -15,15 +15,50 @@
  */
 
 import type { TFunction } from 'i18next';
-import { FormFieldType } from '@/components/dynamic-form';
+import { FormFieldConfig, FormFieldType } from '@/components/dynamic-form';
 import {
   DataSourceFormDefaultValues,
   DataSourceKey,
   generateDataSourceInfo,
   getDataSourceFieldsWithExtras,
 } from './index';
+import { RestAPIWindowToggleKey } from './rest-api-window-constant';
 
 const translate = ((key: string) => key) as TFunction;
+
+describe('REST API time windows', () => {
+  it('only shows window settings for GET when enabled', () => {
+    const previewFields = getDataSourceFieldsWithExtras(
+      translate,
+      DataSourceKey.REST_API,
+    ) as FormFieldConfig[];
+    const toggleName = `config.${RestAPIWindowToggleKey}`;
+    const startName = 'config.request_window.start_param';
+    const toggle = previewFields.find(({ name }) => name === toggleName);
+    const start = previewFields.find(({ name }) => name === startName);
+    const values = (method: string, enabled: boolean) => ({
+      config: { method, [RestAPIWindowToggleKey]: enabled },
+    });
+    expect(toggle?.shouldRender?.(values('GET', false))).toBe(true);
+    expect(toggle?.shouldRender?.(values('POST', true))).toBe(false);
+    expect(start?.shouldRender?.(values('GET', false))).toBe(false);
+    expect(start?.shouldRender?.(values('POST', true))).toBe(false);
+    expect(start?.shouldRender?.(values('GET', true))).toBe(true);
+    const pageParam = previewFields.find(
+      ({ name }) => name === 'config.pagination_config.page_param',
+    );
+    expect(
+      pageParam?.shouldRender?.({
+        config: { ...values('GET', true).config, pagination_type: 'page' },
+      }),
+    ).toBe(true);
+    expect(
+      pageParam?.shouldRender?.({
+        config: { ...values('GET', true).config, pagination_type: 'cursor' },
+      }),
+    ).toBe(false);
+  });
+});
 
 describe('Xquik data source', () => {
   it('registers its catalog entry and defaults', () => {
