@@ -113,24 +113,23 @@ func RerankByModel(
 		return nil, nil, nil, err
 	}
 
-	// Use the Index field from the response to place scores in the correct position,
-	// matching the original document order
+	// Normalize only the logits the model returned. An omitted document has
+	// no model evidence; including its zero in a negative batch would give
+	// it the highest normalized score.
+	scores := make([]float64, 0, len(rerankResponse.Data))
+	for _, result := range rerankResponse.Data {
+		if result.Index >= 0 && result.Index < len(insTw) {
+			scores = append(scores, result.RelevanceScore)
+		}
+	}
+	NormalizeRerankScores(scores)
 	modelSim := make([]float64, len(insTw))
 	for _, result := range rerankResponse.Data {
 		if result.Index >= 0 && result.Index < len(modelSim) {
-			modelSim[result.Index] = result.RelevanceScore
+			modelSim[result.Index] = scores[0]
+			scores = scores[1:]
 		}
 	}
-
-	// Reranker drivers do not agree on a score scale: Cohere/Jina/Voyage emit
-	// calibrated [0, 1] relevance scores, but NVIDIA returns raw, often
-	// negative logits. The hybrid blend below (tkWeight * tksim + vtWeight *
-	// modelSim) lives on a fixed [0, 1] scale, so an un-normalized logit
-	// weighted by vtWeight=0.7 can sink a relevant chunk below pure keyword
-	// matches and dominate the blend. Centralize the normalization here so
-	// every provider contributes on the same scale. See
-	// NormalizeRerankScores for the contract.
-	modelSim = NormalizeRerankScores(modelSim)
 
 	// Combine token similarity with model similarity
 	// Model similarity is treated as vector similarity component
@@ -163,7 +162,7 @@ func RerankByModel(
 // zeroed and no NaN leaks into the blend.
 //
 // An empty input is returned verbatim. Mutates the input slice in place
-// to keep the RerankByModel call site allocation-free; the returned
+// without allocating a second score slice; the returned
 // slice is the same backing array.
 func NormalizeRerankScores(scores []float64) []float64 {
 	n := len(scores)
