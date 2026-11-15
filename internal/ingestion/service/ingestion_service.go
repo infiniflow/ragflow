@@ -1243,6 +1243,16 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 		if parserID == "" {
 			return fmt.Errorf("ingestion task %s: no pipeline_id or parser_id configured for document %s", ingestionTask.ID, docTaskCtx.Doc.ID)
 		}
+		// The document parses with the selection on its own row, so a dataset
+		// bound to a pipeline never reaches documents saved before the binding
+		// (binding updates the dataset row only; documents are updated by the
+		// explicit apply-parser-config step). A per-document built-in choice is
+		// legitimate, so surface the fallback instead of rerouting or failing.
+		if kbPipelineID := docTaskCtx.KB.PipelineID; kbPipelineID != nil && strings.TrimSpace(*kbPipelineID) != "" {
+			common.Warn(fmt.Sprintf(
+				"document %s has no pipeline selection; falling back to the built-in %s template while dataset %s is bound to pipeline %s (apply the dataset's parser settings to its documents to run that pipeline)",
+				docTaskCtx.Doc.ID, parserID, docTaskCtx.KB.ID, strings.TrimSpace(*kbPipelineID)))
+		}
 		pipelineID = parserID // builtin: parser_id acts as the logical pipeline identifier
 	}
 
