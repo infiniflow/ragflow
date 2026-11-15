@@ -344,10 +344,12 @@ func (s *wecomWebhookServer) handleRequest(w http.ResponseWriter, r *http.Reques
 				runCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), weComHandlerTimeout)
 				defer cancel()
 				if err := channel.handleTextMessage(runCtx, chatID, senderID, messageID, content, "p2p", raw); err != nil {
-					// The bridge failed before producing a reply, so keep the
+					// The bridge failed before producing a final reply, so keep the
 					// message retryable instead of dropping a later delivery.
 					weComForgetMessage(accountID, messageID)
+					return
 				}
+				weComMarkMessageProcessed(accountID, messageID)
 			}()
 		}
 	}
@@ -364,8 +366,9 @@ const (
 )
 
 var (
-	weComSeenMessagesMu sync.Mutex
-	weComSeenMessages   = map[string]time.Time{}
+	weComSeenMessagesMu   sync.Mutex
+	weComSeenMessages     = map[string]time.Time{}
+	weComInFlightMessages = map[string]struct{}{}
 	// weComWorkSlots bounds detached callback handlers so a burst cannot spawn
 	// unbounded concurrent completions in one process.
 	weComWorkSlots = make(chan struct{}, weComMaxConcurrentHandlers)
@@ -405,6 +408,9 @@ func weComMessageSeen(accountID, messageID string) bool {
 	weComSeenMessagesMu.Lock()
 	defer weComSeenMessagesMu.Unlock()
 
+	if _, ok := weComInFlightMessages[key]; ok {
+		return true
+	}
 	if seenAt, ok := weComSeenMessages[key]; ok && now.Sub(seenAt) < weComDedupeWindow {
 		return true
 	}
@@ -423,8 +429,23 @@ func weComMessageSeen(accountID, messageID string) bool {
 		}
 		delete(weComSeenMessages, oldestKey)
 	}
-	weComSeenMessages[key] = now
+	weComInFlightMessages[key] = struct{}{}
 	return false
+}
+
+// weComMarkMessageProcessed keeps a successfully handled message id in the
+// dedupe window. The window starts after processing, so a long completion stays
+// protected from a concurrent retry for its entire lifetime.
+func weComMarkMessageProcessed(accountID, messageID string) {
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return
+	}
+	key := accountID + ":" + messageID
+	weComSeenMessagesMu.Lock()
+	delete(weComInFlightMessages, key)
+	weComSeenMessages[key] = time.Now()
+	weComSeenMessagesMu.Unlock()
 }
 
 // weComForgetMessage clears a dedupe entry after a retryable handler failure so
@@ -435,7 +456,9 @@ func weComForgetMessage(accountID, messageID string) {
 		return
 	}
 	weComSeenMessagesMu.Lock()
-	delete(weComSeenMessages, accountID+":"+messageID)
+	key := accountID + ":" + messageID
+	delete(weComSeenMessages, key)
+	delete(weComInFlightMessages, key)
 	weComSeenMessagesMu.Unlock()
 }
 

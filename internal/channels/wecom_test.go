@@ -877,10 +877,12 @@ func TestWeComWebhookRecoversPanickingHandlerAndAllowsRetry(t *testing.T) {
 	const dedupeKey = "account-panic:" + messageID
 	weComSeenMessagesMu.Lock()
 	delete(weComSeenMessages, dedupeKey)
+	delete(weComInFlightMessages, dedupeKey)
 	weComSeenMessagesMu.Unlock()
 	t.Cleanup(func() {
 		weComSeenMessagesMu.Lock()
 		delete(weComSeenMessages, dedupeKey)
+		delete(weComInFlightMessages, dedupeKey)
 		weComSeenMessagesMu.Unlock()
 	})
 
