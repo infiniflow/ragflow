@@ -215,8 +215,10 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 			return errors.New("global compilation rules is too long")
 		}
 		for _, section := range []string{"entity", "relation"} {
-			sec, _ := configMap[section].(map[string]interface{})
-			fields, _ := sec["fields"].([]interface{})
+			fields, err := templateSectionFields(configMap, section)
+			if err != nil {
+				return err
+			}
 			seen := map[string]struct{}{}
 			for _, f := range fields {
 				fm, _ := f.(map[string]interface{})
@@ -241,8 +243,10 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 		}
 		if configMap["kind"] == "wiki" || req["kind"] == "wiki" {
 			for _, group := range []string{"claim", "concept"} {
-				sec, _ := configMap[group].(map[string]interface{})
-				fields, _ := sec["fields"].([]interface{})
+				fields, err := templateSectionFields(configMap, group)
+				if err != nil {
+					return err
+				}
 				for _, f := range fields {
 					fm, _ := f.(map[string]interface{})
 					switch group {
@@ -278,6 +282,28 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 		}
 	}
 	return nil
+}
+
+// templateSectionFields checks only sections that were supplied. Sections and
+// their fields may be omitted, but a supplied value must have the declared shape.
+func templateSectionFields(config map[string]interface{}, section string) ([]interface{}, error) {
+	raw, exists := config[section]
+	if !exists {
+		return nil, nil
+	}
+	sec, ok := raw.(map[string]interface{})
+	if !ok {
+		return nil, fmt.Errorf("%s must be an object", capitalizeTitle(section))
+	}
+	rawFields, exists := sec["fields"]
+	if !exists {
+		return nil, nil
+	}
+	fields, ok := rawFields.([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("%s fields must be a list", capitalizeTitle(section))
+	}
+	return fields, nil
 }
 
 // sortBuiltins mirrors Python _sort_builtins: empty-kind entries first, then by
