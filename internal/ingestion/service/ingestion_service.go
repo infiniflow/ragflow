@@ -1250,7 +1250,7 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 		// legitimate, so surface the fallback instead of rerouting or failing.
 		if kbPipelineID := docTaskCtx.KB.PipelineID; kbPipelineID != nil && strings.TrimSpace(*kbPipelineID) != "" {
 			common.Warn(fmt.Sprintf(
-				"document %s has no pipeline selection; falling back to the built-in %s template while dataset %s is bound to pipeline %s (apply the dataset's parser settings to its documents to run that pipeline)",
+				"document %s has no pipeline selection; falling back to the built-in %s template while dataset %s is bound to pipeline %s (run POST /api/v1/datasets/{id}/documents/apply-parser-config to apply the dataset's parser settings to its documents)",
 				docTaskCtx.Doc.ID, parserID, docTaskCtx.KB.ID, strings.TrimSpace(*kbPipelineID)))
 		}
 		pipelineID = parserID // builtin: parser_id acts as the logical pipeline identifier

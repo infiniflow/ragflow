@@ -86,7 +86,7 @@ func TestDefaultRunDocumentTask_WarnsWhenDatasetPipelineNotSelected(t *testing.T
 	if len(warns) != 1 {
 		t.Fatalf("got %d builtin-fallback warnings, want 1; logs: %v", len(warns), logs.All())
 	}
-	for _, want := range []string{docID, kbID, "flow-1", "naive", "parser settings"} {
+	for _, want := range []string{docID, kbID, "flow-1", "naive", "parser settings", "apply-parser-config"} {
 		if !strings.Contains(warns[0], want) {
 			t.Fatalf("warning %q does not mention %q", warns[0], want)
 		}
