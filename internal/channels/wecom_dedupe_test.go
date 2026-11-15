@@ -24,10 +24,12 @@ import (
 func TestWeComMessageSeenDeduplicatesRetries(t *testing.T) {
 	weComSeenMessagesMu.Lock()
 	weComSeenMessages = map[string]time.Time{}
+	weComInFlightMessages = map[string]struct{}{}
 	weComSeenMessagesMu.Unlock()
 	t.Cleanup(func() {
 		weComSeenMessagesMu.Lock()
 		weComSeenMessages = map[string]time.Time{}
+		weComInFlightMessages = map[string]struct{}{}
 		weComSeenMessagesMu.Unlock()
 	})
 
@@ -51,10 +53,12 @@ func TestWeComMessageSeenDeduplicatesRetries(t *testing.T) {
 func TestWeComMessageSeenExpiresAfterWindow(t *testing.T) {
 	weComSeenMessagesMu.Lock()
 	weComSeenMessages = map[string]time.Time{"account-1:msg-1": time.Now().Add(-weComDedupeWindow - time.Second)}
+	weComInFlightMessages = map[string]struct{}{}
 	weComSeenMessagesMu.Unlock()
 	t.Cleanup(func() {
 		weComSeenMessagesMu.Lock()
 		weComSeenMessages = map[string]time.Time{}
+		weComInFlightMessages = map[string]struct{}{}
 		weComSeenMessagesMu.Unlock()
 	})
 
@@ -66,10 +70,12 @@ func TestWeComMessageSeenExpiresAfterWindow(t *testing.T) {
 func TestWeComForgetMessageAllowsRetryAfterFailure(t *testing.T) {
 	weComSeenMessagesMu.Lock()
 	weComSeenMessages = map[string]time.Time{}
+	weComInFlightMessages = map[string]struct{}{}
 	weComSeenMessagesMu.Unlock()
 	t.Cleanup(func() {
 		weComSeenMessagesMu.Lock()
 		weComSeenMessages = map[string]time.Time{}
+		weComInFlightMessages = map[string]struct{}{}
 		weComSeenMessagesMu.Unlock()
 	})
 
@@ -79,6 +85,30 @@ func TestWeComForgetMessageAllowsRetryAfterFailure(t *testing.T) {
 	weComForgetMessage("account-1", "msg-1")
 	if weComMessageSeen("account-1", "msg-1") {
 		t.Fatal("a message cleared after a retryable failure must be handled again")
+	}
+}
+
+func TestWeComMessageStaysDeduplicatedUntilProcessed(t *testing.T) {
+	weComSeenMessagesMu.Lock()
+	weComSeenMessages = map[string]time.Time{}
+	weComInFlightMessages = map[string]struct{}{}
+	weComSeenMessagesMu.Unlock()
+	t.Cleanup(func() {
+		weComSeenMessagesMu.Lock()
+		weComSeenMessages = map[string]time.Time{}
+		weComInFlightMessages = map[string]struct{}{}
+		weComSeenMessagesMu.Unlock()
+	})
+
+	if weComMessageSeen("account-1", "msg-1") {
+		t.Fatal("first delivery must not be treated as a duplicate")
+	}
+	if !weComMessageSeen("account-1", "msg-1") {
+		t.Fatal("an in-flight message must stay deduplicated regardless of the completion window")
+	}
+	weComMarkMessageProcessed("account-1", "msg-1")
+	if !weComMessageSeen("account-1", "msg-1") {
+		t.Fatal("a successfully processed message must stay deduplicated")
 	}
 }
 

@@ -215,6 +215,41 @@ func TestGatewayHealthURLRejectsRemoteHost(t *testing.T) {
 	}
 }
 
+func TestThinkingNotifierOnlySendsForWeCom(t *testing.T) {
+	msg := core.IncomingMessage{ChatID: "user-1", MessageID: "message-1"}
+	wecom := &recordingChannel{channelID: "wecom"}
+	notify := thinkingNotifier(t.Context(), wecom, msg)
+	if notify == nil {
+		t.Fatal("WeCom must have a thinking notifier")
+	}
+	if err := notify(); err != nil {
+		t.Fatalf("thinking notifier error = %v", err)
+	}
+	if len(wecom.sent) != 1 || wecom.sent[0].ChatID != msg.ChatID ||
+		wecom.sent[0].Text != thinkingPlaceholder || wecom.sent[0].ReplyToMessageID != msg.MessageID {
+		t.Fatalf("thinking message = %+v", wecom.sent)
+	}
+
+	if notify := thinkingNotifier(t.Context(), &recordingChannel{channelID: "telegram"}, msg); notify != nil {
+		t.Fatal("non-WeCom channels must not send the thinking placeholder")
+	}
+}
+
+type recordingChannel struct {
+	channelID string
+	sent      []core.OutgoingMessage
+}
+
+func (c *recordingChannel) ChannelID() string                     { return c.channelID }
+func (c *recordingChannel) AccountID() string                     { return "account-1" }
+func (c *recordingChannel) SetMessageHandler(core.MessageHandler) {}
+func (c *recordingChannel) Start(context.Context) error           { return nil }
+func (c *recordingChannel) Stop(context.Context) error            { return nil }
+func (c *recordingChannel) Send(_ context.Context, msg core.OutgoingMessage) error {
+	c.sent = append(c.sent, msg)
+	return nil
+}
+
 func TestGatewayReachableUsesSafeLoopbackProbe(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/health" {
