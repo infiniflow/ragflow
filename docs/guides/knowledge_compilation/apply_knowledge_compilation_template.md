@@ -31,7 +31,8 @@ Note: CompilationTemplate only defines "how to compile". A KnowledgeArtifact is 
 2. Upload the documents to process.
 3. Open **Configuration** and find **Parsing mode**.
 4. Open **Parsing mode**, expand the ingestion pipeline that contains **Compiler**, select its published version within that dropdown, and click **Save**. If it shows **No published versions**, publish the pipeline first.
-5. Start parsing and check in the task logs whether Parser, Chunker, Compiler, and Indexer complete in sequence.
+5. If the dataset already contains documents, apply the saved parser settings to them. A document parses with the parser selection stored on its own record: the one it received when uploaded, or when parser settings were last applied to it. Changing the dataset's parsing mode does not update existing documents. Use the confirmation dialog that appears after saving, or call `POST /api/v1/datasets/{dataset_id}/documents/apply-parser-config`. Without this step, parsing runs each document's previous selection and the Compiler node never executes.
+6. Start parsing and check in the task logs whether Parser, Chunker, Compiler, and Indexer complete in sequence.
 
 ![Select the compilation pipeline in Dataset configuration](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pipeline_dataset_published_version_tree.jpg)
 
