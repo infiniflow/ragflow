@@ -60,6 +60,10 @@ type DocumentStructureGraphResponse struct {
 
 // graphRowSearch runs one raw-row search over the tenant's document index.
 func graphRowSearch(ctx context.Context, tenantID, datasetID string, selectFields []string, filter map[string]interface{}, orderBy *types.OrderByExpr, offset, limit int, matchExprs []interface{}) (map[string]map[string]interface{}, int64, error) {
+	return searchGraphRows(ctx, tenantID, datasetID, selectFields, filter, orderBy, offset, limit, matchExprs, false)
+}
+
+func searchGraphRows(ctx context.Context, tenantID, datasetID string, selectFields []string, filter map[string]interface{}, orderBy *types.OrderByExpr, offset, limit int, matchExprs []interface{}, scanAll bool) (map[string]map[string]interface{}, int64, error) {
 	docEngine := engine.Get()
 	if docEngine == nil {
 		return nil, 0, fmt.Errorf("document engine is not initialized")
@@ -69,13 +73,14 @@ func graphRowSearch(ctx context.Context, tenantID, datasetID string, selectField
 		merged[k] = v
 	}
 	merged["kb_id"] = []string{datasetID}
-	if limit < 1 {
+	if limit < 1 && !scanAll {
 		limit = 1
 	}
 	res, err := docEngine.Search(ctx, &types.SearchRequest{
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
 		Offset:       offset,
+		ScanAll:      scanAll,
 		Limit:        limit,
 		SelectFields: selectFields,
 		Filter:       merged,
@@ -99,6 +104,31 @@ func graphRowSearch(ctx context.Context, tenantID, datasetID string, selectField
 }
 
 // graphLoadPayload parses content_with_weight into a dict.
+// scanGraphRows walks the entire scoped result, including legacy rows which
+// have no sortable stored ID in Elasticsearch and OpenSearch.
+func scanGraphRows(ctx context.Context, tenantID, datasetID string, fields []string, filter map[string]interface{}) (map[string]map[string]interface{}, error) {
+	switch engine.GetEngineType() {
+	case "elasticsearch", "opensearch":
+		rows, _, err := searchGraphRows(ctx, tenantID, datasetID, fields, filter, nil, 0, 0, nil, true)
+		return rows, err
+	}
+	const pageSize = 1000
+	rows := make(map[string]map[string]interface{})
+	order := (&types.OrderByExpr{}).Asc("id")
+	for offset := 0; ; offset += pageSize {
+		page, _, err := graphRowSearch(ctx, tenantID, datasetID, fields, filter, order, offset, pageSize, nil)
+		if err != nil {
+			return nil, err
+		}
+		for id, row := range page {
+			rows[id] = row
+		}
+		if len(page) < pageSize {
+			return rows, nil
+		}
+	}
+}
+
 func graphLoadPayload(row map[string]interface{}) map[string]interface{} {
 	raw := firstStringValue(row["content_with_weight"])
 	if raw == "" {
@@ -461,28 +491,12 @@ func (s *DatasetArtifactService) buildBucket(ctx context.Context, tenantID, data
 	bothCond := copyFilter(scope)
 	bothCond["knowledge_graph_kwd"] = []string{"entity", "relation"}
 
-	// Count, then fetch the whole bucket in one request at the exact limit. That
-	// lets the engine walk the result set in a single cursor pass (search_after
-	// past index.max_result_window) instead of re-skipping from the start on
-	// every offset page. Asc("id") is the stable cursor search_after needs.
-	_, total, err := graphRowSearch(ctx, tenantID, datasetID, []string{"id"}, bothCond, nil, 0, 1, nil)
+	fieldMap, err := scanGraphRows(ctx, tenantID, datasetID, graphAllFields, bothCond)
 	if err != nil {
 		return nil, nil, err
 	}
-	fieldMap := map[string]map[string]interface{}{}
-	if total > 0 {
-		orderBy := (&types.OrderByExpr{}).Asc("id")
-		fieldMap, _, err = graphRowSearch(ctx, tenantID, datasetID, graphAllFields, bothCond, orderBy, 0, int(total), nil)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
 
-	// fieldMap is keyed by id (the engine returns rows in a map), so ranging it
-	// would discard the requested Asc("id") order. Walk the ids in sorted order
-	// to fix a deterministic base: the stable source-position sort below then
-	// orders by reading position, and equal/absent positions keep THIS id order
-	// instead of map iteration order.
+	// Use row IDs to break ties in the source-position sort below.
 	ids := make([]string, 0, len(fieldMap))
 	for id := range fieldMap {
 		ids = append(ids, id)
@@ -774,23 +788,10 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 	// rows. The structure compiler no longer emits a synthetic graph row;
 	// page metadata only so large documents cannot hide later buckets.
 	metaFields := []string{"id", "compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd"}
-	metaRows := map[string]map[string]interface{}{}
-	const pageSize = 1000
-	for offset := 0; ; offset += pageSize {
-		page, _, searchErr := graphRowSearch(ctx, in.TenantID, in.DatasetID, metaFields,
-			map[string]interface{}{"doc_id": []string{in.DocumentID}, "knowledge_graph_kwd": []string{"entity", "relation"}}, nil, offset, pageSize, nil)
-		if searchErr != nil {
-			return nil, searchErr
-		}
-		if len(page) == 0 {
-			break
-		}
-		for id, row := range page {
-			metaRows[id] = row
-		}
-		if len(page) < pageSize {
-			break
-		}
+	metaRows, err := scanGraphRows(ctx, in.TenantID, in.DatasetID, metaFields,
+		map[string]interface{}{"doc_id": []string{in.DocumentID}, "knowledge_graph_kwd": []string{"entity", "relation"}})
+	if err != nil {
+		return nil, err
 	}
 	bucketMetas := map[string]map[string]interface{}{}
 	bucketScopes := map[string]map[string]interface{}{}
@@ -906,51 +907,46 @@ func (s *DatasetArtifactService) discoverDocumentGraphTemplateMeta(ctx context.C
 		"doc_id":              []string{documentID},
 		"knowledge_graph_kwd": []string{"entity", "relation"},
 	}
-	for offset := 0; ; offset += 1000 {
-		rows, _, err := graphRowSearch(ctx, tenantID, datasetID, fields, filter, (&types.OrderByExpr{}).Asc("id"), offset, 1000, nil)
-		if err != nil {
-			return err
+	rows, err := scanGraphRows(ctx, tenantID, datasetID, fields, filter)
+	if err != nil {
+		return err
+	}
+	for _, row := range rows {
+		templateID := rowTemplateID(row)
+		kind := types.CompilationKind(row)
+		if kind == "" {
+			kind = firstStringValue(row["compile_kwd"])
 		}
-		for _, row := range rows {
-			templateID := rowTemplateID(row)
-			kind := types.CompilationKind(row)
-			if kind == "" {
-				kind = firstStringValue(row["compile_kwd"])
-			}
-			if templateID == "" {
-				compileKind := firstStringValue(row["compile_kwd"])
-				if compileKind == "" {
-					continue
-				}
-				templateID = "legacy:" + compileKind
-			}
-			if seen[templateID] {
+		if templateID == "" {
+			compileKind := firstStringValue(row["compile_kwd"])
+			if compileKind == "" {
 				continue
 			}
+			templateID = "legacy:" + compileKind
+		}
+		if seen[templateID] {
+			continue
+		}
 
-			templateName := templateID
-			if !strings.HasPrefix(templateID, "legacy:") {
-				if template, loadErr := templateDAO.GetTemplate(ctx, dao.DB, tenantID, templateID); loadErr == nil && template != nil {
-					templateName = template.Name
-					kind = templateDisplayKind(kind, template.Kind)
-				}
-			} else {
-				templateName = "Legacy (" + strings.TrimPrefix(templateID, "legacy:") + ")"
+		templateName := templateID
+		if !strings.HasPrefix(templateID, "legacy:") {
+			if template, loadErr := templateDAO.GetTemplate(ctx, dao.DB, tenantID, templateID); loadErr == nil && template != nil {
+				templateName = template.Name
+				kind = templateDisplayKind(kind, template.Kind)
 			}
-			if templateName == "" {
-				templateName = templateID
-			}
-			templateMeta[templateID] = map[string]interface{}{
-				"template_id":   templateID,
-				"template_name": templateName,
-				"kind":          kind,
-			}
-			*templateIDs = append(*templateIDs, templateID)
-			seen[templateID] = true
+		} else {
+			templateName = "Legacy (" + strings.TrimPrefix(templateID, "legacy:") + ")"
 		}
-		if len(rows) < 1000 {
-			break
+		if templateName == "" {
+			templateName = templateID
 		}
+		templateMeta[templateID] = map[string]interface{}{
+			"template_id":   templateID,
+			"template_name": templateName,
+			"kind":          kind,
+		}
+		*templateIDs = append(*templateIDs, templateID)
+		seen[templateID] = true
 	}
 	return nil
 }
@@ -1018,23 +1014,18 @@ func (s *DatasetArtifactService) GetDatasetStructure(ctx context.Context, in Dat
 	}
 	resp.TotalEntities = int(entityTotal)
 	resp.TotalRelations = int(relationTotal)
-	for offset := 0; ; offset += 1000 {
-		rows, _, err := graphRowSearch(ctx, in.TenantID, in.DatasetID, metaFields, entityCountFilter, (&types.OrderByExpr{}).Asc("id"), offset, 1000, nil)
-		if err != nil {
-			return nil, err
+	rows, err := scanGraphRows(ctx, in.TenantID, in.DatasetID, metaFields, entityCountFilter)
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		tkind := types.CompilationKind(row)
+		if tkind == "" || resolveDatasetStructureKind(tkind) != resolved {
+			continue
 		}
-		for _, row := range rows {
-			tkind := types.CompilationKind(row)
-			if tkind == "" || resolveDatasetStructureKind(tkind) != resolved {
-				continue
-			}
-			tid := rowTemplateID(row)
-			if tid != "" {
-				templateIDs[tid] = struct{}{}
-			}
-		}
-		if len(rows) < 1000 {
-			break
+		tid := rowTemplateID(row)
+		if tid != "" {
+			templateIDs[tid] = struct{}{}
 		}
 	}
 
@@ -1289,7 +1280,13 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 			row  map[string]interface{}
 			node StructureGraphNode
 		}
-		for _, row := range rows {
+		ids := make([]string, 0, len(rows))
+		for id := range rows {
+			ids = append(ids, id)
+		}
+		sort.Strings(ids)
+		for _, id := range ids {
+			row := rows[id]
 			if !rowHasEnabledSource(row, map[string]bool{}) {
 				continue
 			}
@@ -1331,20 +1328,13 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 		// name_kwd is a keyword field and only supports exact filtering in the
 		// common engine abstraction. Scan the scoped entity rows instead so
 		// prefix/contains matches are not limited by the BM25 candidate cap.
-		// A stable ID sort enables search_after beyond the result window.
-		// Stop on a short page because the reported hit total can be capped.
-		for offset := 0; ; offset += 1000 {
-			nameMap, _, err := graphRowSearch(ctx, tenantID, datasetID, topFields, baseEntityCond, (&types.OrderByExpr{}).Asc("id"), offset, 1000, nil)
-			if err != nil {
-				return nil, nil, nil, err
-			}
-			for _, candidate := range validTop(nameMap) {
-				if nameMatchesQuery(candidate.node, textQuery) {
-					appendCandidate(candidate)
-				}
-			}
-			if len(nameMap) < 1000 {
-				break
+		nameMap, err := scanGraphRows(ctx, tenantID, datasetID, topFields, baseEntityCond)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		for _, candidate := range validTop(nameMap) {
+			if nameMatchesQuery(candidate.node, textQuery) {
+				appendCandidate(candidate)
 			}
 		}
 	}

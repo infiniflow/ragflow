@@ -1099,6 +1099,20 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		}
 	}
 
+	if req.ScanAll {
+		if req.Offset != 0 || req.Limit != 0 || len(req.MatchExprs) != 0 {
+			return nil, fmt.Errorf("chunk scan does not support pagination or match expressions")
+		}
+		if len(req.SelectFields) > 0 {
+			queryBody["_source"] = req.SelectFields
+		}
+		rows, err := esoscommon.ScanChunks(ctx, e.client.Perform, req.IndexNames, queryBody)
+		if err != nil {
+			return nil, err
+		}
+		return &types.SearchResult{Chunks: rows, Total: int64(len(rows))}, nil
+	}
+
 	// Determine use_search_after for deep pagination
 	//
 	// OpenSearch rejects from + size combinations where from + size > index.max_result_window
@@ -1111,7 +1125,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	//   - no dense/KNN match (knn queries do not honour `search_after` in the
 	//     same way and the Python path explicitly disallows them here)
 	hasDense := hasVectorMatch
-	hasExplicitSort := req.OrderBy != nil && len(req.OrderBy.Fields) > 0
+	_, hasExplicitSort := queryBody["sort"]
 	useSearchAfter := limit > 0 && (offset+limit > common.MAX_RESULT_WINDOW) && hasExplicitSort && !hasDense
 
 	// Apply offset/limit pagination. When useSearchAfter is true, the
