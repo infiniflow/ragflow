@@ -234,3 +234,43 @@ func TestMinerULocalOCRFileDelegatesToCheckConnection(t *testing.T) {
 		t.Fatal("OCRFile returned nil response")
 	}
 }
+
+// A reverse-proxied MinerU answers under a path prefix (issue #22327). The probe
+// must extend that prefix instead of replacing it: overwriting Path sent every
+// request to /v1/health on the bare host, so an endpoint configured as
+// http://host/model/proxy/55/ could never pass the connection check.
+func TestMinerULocalCheckConnectionKeepsEndpointPathPrefix(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/model/proxy/55/v1/health" {
+			http.Error(w, "unexpected path "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+		writeMinerUHealth(w)
+	}))
+	defer server.Close()
+
+	baseURL := server.URL + "/model/proxy/55/"
+	driver := NewMinerLocalUModel(map[string]string{"default": baseURL}, URLSuffix{DocumentParse: "file_parse", Task: "tasks"})
+	if err := driver.CheckConnection(context.Background(), &APIConfig{BaseURL: &baseURL}); err != nil {
+		t.Fatalf("CheckConnection with a path-prefixed endpoint: %v", err)
+	}
+}
+
+// An endpoint without a path must keep probing the bare host, so the fix above
+// does not silently move the default case under a prefix.
+func TestMinerULocalCheckConnectionNoPathUnchanged(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/health" {
+			http.Error(w, "unexpected path "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+		writeMinerUHealth(w)
+	}))
+	defer server.Close()
+
+	baseURL := server.URL
+	driver := NewMinerLocalUModel(map[string]string{"default": baseURL}, URLSuffix{DocumentParse: "file_parse", Task: "tasks"})
+	if err := driver.CheckConnection(context.Background(), &APIConfig{BaseURL: &baseURL}); err != nil {
+		t.Fatalf("CheckConnection without a path prefix: %v", err)
+	}
+}

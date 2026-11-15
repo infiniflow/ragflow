@@ -147,8 +147,12 @@ func (m *MinerULocalModel) CheckConnection(ctx context.Context, apiConfig *APICo
 	if IsMinerUCloudBase(u.String()) {
 		return minerUCloudReachable(ctx, m.baseModel.httpClient, u)
 	}
+	// The configured endpoint may be a reverse-proxied URL that carries a path
+	// prefix (e.g. http://host/model/proxy/55/). Extend that prefix instead of
+	// replacing it: overwriting Path sent every probe to /v1/health on the bare
+	// host, so a MinerU behind a proxy could never pass the connection check.
 	v1URL := *u
-	v1URL.Path = "/v1/health"
+	v1URL.Path = strings.TrimSuffix(v1URL.Path, "/") + "/v1/health"
 	v1Code, v1Body, v1Err := minerUGET(ctx, m.baseModel.httpClient, v1URL.String(), token)
 	if v1Err == nil && (v1Code == http.StatusUnauthorized || v1Code == http.StatusForbidden) {
 		return fmt.Errorf("authentication failed (HTTP %d)", v1Code)
@@ -158,7 +162,7 @@ func (m *MinerULocalModel) CheckConnection(ctx context.Context, apiConfig *APICo
 	}
 
 	legacy := *u
-	legacy.Path = "/health"
+	legacy.Path = strings.TrimSuffix(legacy.Path, "/") + "/health"
 	code, body, err := minerUGET(ctx, m.baseModel.httpClient, legacy.String(), token)
 	if err != nil {
 		if v1Err != nil {
