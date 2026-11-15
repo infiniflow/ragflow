@@ -938,3 +938,22 @@ func TestWeightsDependOnlyOnTheTerm(t *testing.T) {
 		t.Errorf("a/hello = %v alone, %v when a repeats last", want, got)
 	}
 }
+
+func TestWeightsDoesNotMergeAcrossStopWords(t *testing.T) {
+	dealer := NewTermWeightDealer(t.TempDir())
+	for _, tc := range []struct {
+		input string
+		want  []string
+	}{
+		{"给 我 李 伟 的 基础 信息", []string{"给", "李 伟", "基础", "信息"}},
+		{"我 多 工位", []string{"多 工位"}},
+	} {
+		var terms []string
+		for _, weight := range dealer.Weights([]string{tc.input}, true, "Chinese") {
+			terms = append(terms, weight.Term)
+		}
+		if !slices.Equal(terms, tc.want) {
+			t.Errorf("weighted terms for %q = %q, want %q", tc.input, terms, tc.want)
+		}
+	}
+}
