@@ -50,3 +50,21 @@ func TestGetOwnerByTenantIDFallsBackToTenantIDUserID(t *testing.T) {
 		t.Fatalf("GetOwnerByTenantID() = %#v, want the tenant_id=user_id membership", membership)
 	}
 }
+
+func TestGetOwnerByTenantIDUsesTenantIDWhenOwnerRowIsMissing(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.UserTenant{}); err != nil {
+		t.Fatalf("migrate user_tenant: %v", err)
+	}
+
+	owner, err := NewUserTenantDAO().GetOwnerByTenantID(t.Context(), db, "personal-tenant")
+	if err != nil {
+		t.Fatalf("GetOwnerByTenantID() error = %v", err)
+	}
+	if owner.UserID != "personal-tenant" || owner.TenantID != "personal-tenant" {
+		t.Fatalf("GetOwnerByTenantID() = %#v, want tenant ID as the personal owner", owner)
+	}
+}

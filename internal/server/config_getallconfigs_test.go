@@ -46,7 +46,7 @@ backends:
   - password: ""
   - password: null
 password_policy: strict
-enable_register: true
+disable_password_login: true
 max_token: 64
 `)); err != nil {
 		t.Fatal(err)
@@ -80,10 +80,10 @@ max_token: 64
 			map[string]any{"password": "******"},
 			map[string]any{"password": "******"},
 		},
-		"credentials":     wantCredentials,
-		"password_policy": "strict",
-		"enable_register": true,
-		"max_token":       int64(64),
+		"credentials":            wantCredentials,
+		"password_policy":        "strict",
+		"disable_password_login": true,
+		"max_token":              int64(64),
 	}
 	if !reflect.DeepEqual(settings, want) {
 		t.Fatalf("logged settings = %#v, want %#v", settings, want)
@@ -180,5 +180,46 @@ func TestMCPConfigurationDoesNotLogKey(t *testing.T) {
 	PrintAll()
 	if strings.Contains(fmt.Sprint(logs.All()), "different-test-secret") {
 		t.Fatal("environment key leaked")
+	}
+}
+
+// TestGetAllConfigsOpenSearchDocEngine verifies the admin configuration export
+// supports the OpenSearch doc engine instead of rejecting it as unsupported.
+func TestGetAllConfigsOpenSearchDocEngine(t *testing.T) {
+	// GetAllConfigs switches on DOC_ENGINE, not on the config file, so the CI
+	// matrix (which exports DOC_ENGINE=infinity/elasticsearch) would otherwise
+	// select another engine and export no OpenSearch entry.
+	t.Setenv(common.EnvDocEngine, "opensearch")
+	dir := t.TempDir()
+	cfgPath := filepath.Join(dir, "service_conf.yaml")
+	content := `
+general:
+  doc_engine: opensearch
+os:
+  hosts: 'http://os.test:9201'
+  username: 'admin'
+  password: 'test-only-os-secret'
+`
+	if err := os.WriteFile(cfgPath, []byte(content), 0o600); err != nil {
+		t.Fatalf("write temp config: %v", err)
+	}
+
+	if err := Init(cfgPath); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	allConfigs, err := GetAllConfigs()
+	if err != nil {
+		t.Fatalf("GetAllConfigs with doc_engine=opensearch: %v", err)
+	}
+
+	var foundOpenSearch bool
+	for _, cfg := range allConfigs {
+		if cfg["hosts"] == "http://os.test:9201" && cfg["username"] == "admin" {
+			foundOpenSearch = true
+		}
+	}
+	if !foundOpenSearch {
+		t.Fatalf("OpenSearch config not exported in GetAllConfigs: %#v", allConfigs)
 	}
 }

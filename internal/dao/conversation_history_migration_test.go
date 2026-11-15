@@ -108,6 +108,46 @@ func writeDatabaseVersion(t *testing.T, db *gorm.DB, version string) {
 	}
 }
 
+func TestConversationMessageDetailsSchemaMigration(t *testing.T) {
+	for _, model := range []interface{}{&entity.ConversationMessage{}, &entity.API4ConversationMessage{}} {
+		t.Run(fmt.Sprintf("%T", model), func(t *testing.T) {
+			db := setupConversationHistoryMigrationDB(t, false)
+			table, parent := conversationMessageTable, "conversation"
+			if _, ok := model.(*entity.API4ConversationMessage); ok {
+				table, parent = apiConversationMessageTable, "api_4_conversation"
+			}
+			for _, column := range []string{"prompt", "usage", "elapsed_ms", "reference"} {
+				if err := db.Migrator().DropColumn(model, column); err != nil {
+					t.Fatal(err)
+				}
+			}
+			insertConversation(t, db, parent, "session-1")
+			if err := db.Table(table).Create(map[string]interface{}{
+				"conversation_id": "session-1", "position": 0, "role": "assistant", "content": "old answer",
+			}).Error; err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				if err := autoMigrateSafely(t.Context(), db, model); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, column := range []string{"prompt", "usage", "elapsed_ms", "reference"} {
+				if !db.Migrator().HasColumn(model, column) {
+					t.Fatalf("missing column %s", column)
+				}
+			}
+			var row entity.ConversationMessage
+			if err := db.Table(table).Where("conversation_id = ?", "session-1").Take(&row).Error; err != nil {
+				t.Fatal(err)
+			}
+			if row.Content == nil || *row.Content != "old answer" || row.Prompt != nil || len(row.Usage) != 0 || row.ElapsedMs != nil || len(row.Reference) != 0 {
+				t.Fatalf("migration changed old answer: %+v", row)
+			}
+		})
+	}
+}
+
 func TestMigrateConversationHistorySplitsPayloads(t *testing.T) {
 	message := `[{"role":"user","content":"hi","id":"m1"},{"role":"assistant","content":"<think>reasoning</think>hello","id":"m2","reference":[{"chunk-0":{"content":"chunk"}}]}]`
 	reference := `[{"chunks":["a"],"doc_aggs":[]},{"chunks":["b"],"doc_aggs":[]}]`

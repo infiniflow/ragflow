@@ -4,6 +4,7 @@ package interrupt
 import (
 	"context"
 	"crypto/sha256"
+	stderrors "errors"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -15,6 +16,9 @@ import (
 // contextKey is the key for interrupt context in context.Context.
 type contextKey struct{}
 
+// ErrMissingInterruptContext is returned when Interrupt is called outside a graph task.
+var ErrMissingInterruptContext = stderrors.New("interrupt requires a graph execution context")
+
 // SubGraphStateCtxKey is the context key for sub-graph checkpoint state
 // (e.g. Loop iteration, currentInput). Defined here so that both the
 // engine (pregel) and the sub-graph node (graph/loop.go) can access it
@@ -25,6 +29,9 @@ var SubGraphStateCtxKey = SubGraphStateCtxKeyType{}
 
 // WithInterruptContext creates a new context with interrupt support.
 func WithInterruptContext(ctx context.Context) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	return context.WithValue(ctx, contextKey{}, &interruptContext{
 		resumeValues: make([]interface{}, 0),
 		index:        0,
@@ -33,6 +40,9 @@ func WithInterruptContext(ctx context.Context) context.Context {
 
 // GetInterruptContext retrieves the interrupt context from the context.
 func GetInterruptContext(ctx context.Context) *interruptContext {
+	if ctx == nil {
+		return nil
+	}
 	if ic, ok := ctx.Value(contextKey{}).(*interruptContext); ok {
 		return ic
 	}
@@ -51,9 +61,9 @@ func IsInterruptContext(ctx context.Context) bool {
 // exception, halting execution. The provided value is included with the exception
 // and sent to the client executing the graph.
 //
-// A client resuming the graph must use the Command primitive to specify a value
-// for the interrupt and continue execution.
-// The graph resumes from the start of the node, re-executing all logic.
+// A caller resumes the graph by supplying task-scoped resume values through
+// the graph runtime. The graph resumes from the start of the node, re-executing
+// all logic.
 //
 // If a node contains multiple interrupt calls, LangGraph matches resume values
 // to interrupts based on their order in the node.
@@ -63,21 +73,12 @@ func IsInterruptContext(ctx context.Context) bool {
 func Interrupt(ctx context.Context, value interface{}) (interface{}, error) {
 	ic := GetInterruptContext(ctx)
 	if ic == nil {
-		// Fall back to global context for backward compatibility
-		ic = globalContext
+		return nil, ErrMissingInterruptContext
 	}
 
 	// Try to consume the next pending resume value under a single lock
 	// (avoids TOCTOU races between separate getResumeValues/getInterruptIndex calls).
 	if v, ok := ic.consumeNextResumeValue(); ok {
-		return v, nil
-	}
-
-	// Check for current resume value
-	v := ic.getNullResume()
-	if v != nil {
-		ic.setNullResume(nil) // consume it before appending
-		ic.appendResumeValue(v)
 		return v, nil
 	}
 
@@ -97,17 +98,10 @@ type interruptContext struct {
 	mu           sync.Mutex
 	resumeValues []interface{}
 	index        int
-	nullResume   interface{}
 }
 
-// Global context for backward compatibility
 // interruptIDCounter provides unique IDs across all interrupt points in the process.
 var interruptIDCounter int64
-
-var globalContext = &interruptContext{
-	resumeValues: make([]interface{}, 0),
-	index:        0,
-}
 
 // consumeNextResumeValue atomically reads the next resume value and advances
 // the index under a single lock (avoids TOCTOU between separate lock acquisitions).
@@ -147,16 +141,6 @@ func (ic *interruptContext) getInterruptIndex() int {
 	return ic.index
 }
 
-// getNullResume checks for a null resume value.
-func (ic *interruptContext) getNullResume() interface{} {
-	if ic == nil {
-		return nil
-	}
-	ic.mu.Lock()
-	defer ic.mu.Unlock()
-	return ic.nullResume
-}
-
 // appendResumeValue appends a resume value.
 func (ic *interruptContext) appendResumeValue(v interface{}) {
 	if ic == nil {
@@ -165,26 +149,6 @@ func (ic *interruptContext) appendResumeValue(v interface{}) {
 	ic.mu.Lock()
 	defer ic.mu.Unlock()
 	ic.resumeValues = append(ic.resumeValues, v)
-}
-
-// setNullResume sets the null resume value.
-func (ic *interruptContext) setNullResume(v interface{}) {
-	if ic == nil {
-		return
-	}
-	ic.mu.Lock()
-	defer ic.mu.Unlock()
-	ic.nullResume = v
-}
-
-// setResumeValues replaces the resume values.
-func (ic *interruptContext) setResumeValues(values []interface{}) {
-	if ic == nil {
-		return
-	}
-	ic.mu.Lock()
-	defer ic.mu.Unlock()
-	ic.resumeValues = values
 }
 
 // reset clears all interrupt context fields.
@@ -196,67 +160,30 @@ func (ic *interruptContext) reset() {
 	defer ic.mu.Unlock()
 	ic.resumeValues = make([]interface{}, 0)
 	ic.index = 0
-	ic.nullResume = nil
 }
 
 // GetResumeValues returns the current resume values from context.
 func GetResumeValues(ctx context.Context) []interface{} {
-	var ic *interruptContext
-	if ctx != nil {
-		ic = GetInterruptContext(ctx)
-	}
-	if ic == nil {
-		ic = globalContext
-	}
+	ic := GetInterruptContext(ctx)
 	return ic.getResumeValues()
 }
 
 // GetInterruptIndex returns the current interrupt index from context.
 func GetInterruptIndex(ctx context.Context) int {
 	ic := GetInterruptContext(ctx)
-	if ic == nil {
-		ic = globalContext
-	}
 	return ic.getInterruptIndex()
 }
 
 // AppendResumeValue appends a resume value to the context.
 func AppendResumeValue(ctx context.Context, value interface{}) {
-	var ic *interruptContext
-	if ctx != nil {
-		ic = GetInterruptContext(ctx)
-	}
-	if ic == nil {
-		ic = globalContext
-	}
+	ic := GetInterruptContext(ctx)
 	ic.appendResumeValue(value)
 }
 
-// GetNullResume gets the null resume value from context.
-// If consume is true, the value is cleared after retrieval.
-func GetNullResume(ctx context.Context, consume bool) interface{} {
-	ic := GetInterruptContext(ctx)
-	if ic == nil {
-		ic = globalContext
-	}
-	v := ic.getNullResume()
-	if consume {
-		ic.setNullResume(nil)
-	}
-	return v
-}
-
-// Reset clears the interrupt context.
-// When a per-request context is found, only that context is reset.
-// The global fallback context is only reset when no per-request context
-// exists, preventing concurrent requests from corrupting each other.
+// Reset clears the interrupt context attached to ctx.
 func Reset(ctx context.Context) {
 	ic := GetInterruptContext(ctx)
-	if ic != nil {
-		ic.reset()
-		return
-	}
-	globalContext.reset()
+	ic.reset()
 }
 
 // generateInterruptID generates a unique ID for an interrupt.
@@ -290,13 +217,4 @@ func GetInterruptValue(err error) (interface{}, bool) {
 	}
 
 	return nil, false
-}
-
-// SetResumeValues sets the resume values for testing.
-func SetResumeValues(ctx context.Context, values []interface{}) {
-	ic := GetInterruptContext(ctx)
-	if ic == nil {
-		ic = globalContext
-	}
-	ic.setResumeValues(values)
 }

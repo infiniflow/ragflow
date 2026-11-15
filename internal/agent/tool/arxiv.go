@@ -45,6 +45,8 @@ const defaultArxivSortBy = "submittedDate"
 
 const arxivPromptMaxTokens = 200000
 
+const arxivMaxResponseBytes = 4 << 20
+
 var arxivDataImagePattern = regexp.MustCompile(`!?\[[a-z]+\]\(data:image/png;base64,[ 0-9A-Za-z/_=+\-]+\)`)
 
 var arxivNewlinePattern = regexp.MustCompile(`\n+`)
@@ -177,7 +179,7 @@ func buildArxivURL(query string, topN int, sortBy string) string {
 	q.Set("search_query", "all:"+query)
 	q.Set("max_results", fmt.Sprintf("%d", topN))
 	q.Set("sortBy", sortBy)
-	return "http://export.arxiv.org/api/query?" + q.Encode()
+	return "https://export.arxiv.org/api/query?" + q.Encode()
 }
 
 // parseArxivAtom decodes the upstream Atom XML and returns the model-
@@ -278,10 +280,14 @@ func (a *ArxivTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool
 			fmt.Errorf("arxiv: upstream returned %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, arxivMaxResponseBytes+1))
 	if err != nil {
 		return arxivErrJSON(fmt.Errorf("arxiv: read body: %w", err)),
 			fmt.Errorf("arxiv: read body: %w", err)
+	}
+	if len(body) > arxivMaxResponseBytes {
+		return arxivErrJSON(fmt.Errorf("arxiv: response too large")),
+			fmt.Errorf("arxiv: response too large")
 	}
 
 	results, err := parseArxivAtom(body)

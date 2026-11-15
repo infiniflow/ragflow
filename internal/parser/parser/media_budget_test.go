@@ -1,50 +1,45 @@
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package parser
 
 import (
-	"reflect"
 	"testing"
+
+	"ragflow/internal/parser/media"
 )
 
-func TestEmbeddedMediaBudgetReservedItemsAndWarnings(t *testing.T) {
-	budget := &embeddedMediaBudget{maxImageBytes: 4, maxTotalBytes: 5, maxItems: 3}
-
-	if !budget.reserveItem() || !budget.includeReservedSize(3) {
-		t.Fatal("first image should fit")
-	}
-	if !budget.reserveItem() || budget.includeReservedSize(3) {
-		t.Fatal("second image should exceed the document byte limit")
-	}
-	if !budget.reserveItem() || budget.includeReservedSize(5) {
-		t.Fatal("third image should exceed the per-image byte limit")
-	}
-	if budget.reserveItem() {
-		t.Fatal("fourth image should be rejected before its source is read")
-	}
-	if included, keepWalking := budget.include([]byte("x")); included || keepWalking {
-		t.Fatalf("include after count exhaustion = (%v, %v), want (false, false)", included, keepWalking)
-	}
-	if budget.items != 3 || budget.totalBytes != 3 {
-		t.Fatalf("budget counters = (%d items, %d bytes), want (3, 3)", budget.items, budget.totalBytes)
-	}
-	want := []string{
-		"omitted 1 embedded image payload(s) larger than the 4-byte per-image limit",
-		"omitted 1 embedded image payload(s) after reaching the 5-byte document image budget",
-		"stopped extracting embedded images after the 3-item document limit",
-	}
-	if got := budget.warnings(); !reflect.DeepEqual(got, want) {
-		t.Fatalf("warnings = %q, want %q", got, want)
-	}
+func newMediaBudgetForTest() *media.Budget {
+	return media.NewBudget()
 }
 
-func TestEmbeddedMediaBudgetIncludesExactByteLimits(t *testing.T) {
-	budget := &embeddedMediaBudget{maxImageBytes: 4, maxTotalBytes: 4, maxItems: 2}
-	if included, keepWalking := budget.include([]byte("abcd")); !included || !keepWalking {
-		t.Fatalf("exact-limit image = (%v, %v), want (true, true)", included, keepWalking)
+func newLimitedMediaBudgetForTest(t *testing.T, maxImageBytes int, maxTotalBytes int64, maxItems int) *media.Budget {
+	t.Helper()
+	return media.NewBudgetWithLimits(media.Limits{
+		ImageMaxBytes:   int64(maxImageBytes),
+		MaxImagesPerRun: maxItems,
+		MaxBytesPerRun:  maxTotalBytes,
+	})
+}
+
+func includeMediaForTest(budget *media.Budget, data []byte) (included, keepWalking bool) {
+	reservation, admission := budget.ReserveOccurrence(media.UnknownSize)
+	if admission == media.RejectedByCount {
+		return false, false
 	}
-	if included, keepWalking := budget.include([]byte("e")); included || !keepWalking {
-		t.Fatalf("image after exact document limit = (%v, %v), want (false, true)", included, keepWalking)
+	if admission != media.Admitted {
+		return false, true
 	}
-	if budget.totalBytes != 4 {
-		t.Fatalf("totalBytes = %d, want 4", budget.totalBytes)
-	}
+	return reservation.Commit(media.Size(len(data))), true
 }

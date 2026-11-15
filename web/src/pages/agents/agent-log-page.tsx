@@ -18,7 +18,6 @@ import {
   IAgentLogMessage,
   IAgentLogResponse,
 } from '@/interfaces/database/agent';
-import { IReferenceObject } from '@/interfaces/database/chat';
 import { formatDate } from '@/utils/date';
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -85,9 +84,7 @@ const AgentLogPage: React.FC = () => {
       dataIndex: 'title',
       key: 'title',
       render: (_text: string, record: IAgentLogResponse) => (
-        <span>
-          {record?.message?.length ? record?.message[0]?.content : ''}
-        </span>
+        <span>{record.name}</span>
       ),
     },
     {
@@ -111,8 +108,8 @@ const AgentLogPage: React.FC = () => {
       dataIndex: 'update_date',
       key: 'update_date',
       sortable: true,
-      render(text: string) {
-        return formatDate(text);
+      render(_text: string, record: IAgentLogResponse) {
+        return formatDate(record.update_time);
       },
     },
     {
@@ -120,8 +117,8 @@ const AgentLogPage: React.FC = () => {
       dataIndex: 'create_date',
       key: 'create_date',
       sortable: true,
-      render(text: string) {
-        return formatDate(text);
+      render(_text: string, record: IAgentLogResponse) {
+        return formatDate(record.create_time);
       },
     },
     {
@@ -376,7 +373,9 @@ const AgentLogPage: React.FC = () => {
                       <TableCell key={column.dataIndex}>
                         {column.render
                           ? column.render(
-                              item[column.dataIndex as keyof IAgentLogResponse],
+                              item[
+                                column.dataIndex as keyof IAgentLogResponse
+                              ] as string,
                               item,
                             )
                           : (item[
@@ -415,7 +414,6 @@ const AgentLogPage: React.FC = () => {
       <AgentLogDetailModal
         isOpen={openModal}
         message={modalData?.message as IAgentLogMessage[]}
-        reference={modalData?.reference as unknown as IReferenceObject}
         onClose={() => setOpenModal(false)}
       />
     </div>

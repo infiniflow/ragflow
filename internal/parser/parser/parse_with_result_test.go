@@ -246,7 +246,7 @@ func TestWalkHTMLBlocksWithState_SkipsHeadLooseText(t *testing.T) {
 	head.AppendChild(&html.Node{Type: html.TextNode, Data: "Head metadata"})
 
 	var items []map[string]any
-	state := &htmlWalkState{}
+	state := &htmlWalkState{budget: newMediaBudgetForTest()}
 	walkHTMLBlocksWithState(head, &items, state)
 	if len(items) != 0 {
 		t.Fatalf("JSON len = %d, want 0: %#v", len(items), items)
@@ -289,7 +289,7 @@ func TestHTMLParser_ParseWithResult_SkipsScriptAndStyle(t *testing.T) {
 // `utility.FileTypeTXT` resolves to a TextParser that satisfies
 // ParseResultProducer.
 func TestGetParser_RoutesTextAndCode(t *testing.T) {
-	p, err := GetParser(utility.FileTypeTXT)
+	p, _, err := GetParser(utility.FileTypeTXT, nil)
 	if err != nil {
 		t.Fatalf("GetParser(FileTypeTXT): %v", err)
 	}

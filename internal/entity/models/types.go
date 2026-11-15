@@ -143,6 +143,7 @@ type OCRBlock struct {
 }
 
 type OCRFileResponse struct {
+	// Text is empty (but non-nil) when the response carries only media regions.
 	Text *string `json:"text"`
 	// Pages is optional structured output for internal parsing; nil means unavailable.
 	Pages []OCRPage `json:"-"`
@@ -151,14 +152,18 @@ type OCRFileResponse struct {
 }
 
 type ListModelResponse struct {
-	Name          string         `json:"name"`
-	ContextLength *int           `json:"context_length"`
-	MaxOutput     *int           `json:"max_output"`
-	ModelTypes    []string       `json:"model_types"`
-	Thinking      *ModelThinking `json:"thinking"`
-	MaxDimension  *int           `json:"max_dimension"`  // used by embedding models
-	MaxBatchSize  *int           `json:"max_batch_size"` // used by embedding models
-	Dimensions    []int          `json:"dimensions"`
+	Name          string   `json:"name"`
+	ContextLength *int     `json:"context_length"`
+	MaxOutput     *int     `json:"max_output"`
+	ModelTypes    []string `json:"model_types"`
+	// ModelTypesInferred reports that ModelTypes was guessed from the model
+	// name rather than declared by the provider, so a catalog entry may
+	// override it when listings are merged.
+	ModelTypesInferred bool           `json:"-"`
+	Thinking           *ModelThinking `json:"thinking"`
+	MaxDimension       *int           `json:"max_dimension"`  // used by embedding models
+	MaxBatchSize       *int           `json:"max_batch_size"` // used by embedding models
+	Dimensions         []int          `json:"dimensions"`
 }
 
 type ParseFileResponse struct {
@@ -237,9 +242,11 @@ type DecisionAnswer struct {
 }
 
 type DecideResponse struct {
-	ID      string                    `json:"id"`
-	Answers map[string]DecisionAnswer `json:"answers"`
-	Usage   struct {
+	ID string `json:"id"`
+	// RequestID is the same identifier under the name Nace uses for it.
+	RequestID string                    `json:"request_id,omitempty"`
+	Answers   map[string]DecisionAnswer `json:"answers"`
+	Usage     struct {
 		InputTokens  int `json:"input_tokens"`
 		OutputTokens int `json:"output_tokens"`
 	} `json:"usage"`
@@ -248,6 +255,8 @@ type DecideResponse struct {
 type ModelListItem struct {
 	ID            string `json:"id"`
 	ContextLength *int   `json:"context_length"`
+	ContextWindow *int   `json:"context_window"`
+	MaxTokens     *int   `json:"max_tokens"`
 	Object        string `json:"object"`
 	OwnedBy       string `json:"owned_by"`
 }
@@ -280,21 +289,23 @@ type URLSuffix struct {
 }
 
 type ChatConfig struct {
-	Stream          *bool
-	Vision          *bool
-	Thinking        *bool
-	MaxTokens       *int
-	Temperature     *float64
-	TopP            *float64
-	DoSample        *bool
-	Stop            *[]string
-	ModelClass      *string
-	Effort          *string
-	Verbosity       *string
-	Tools           interface{}               `json:"tools,omitempty"`
-	ToolChoice      *string                   `json:"tool_choice,omitempty"`
-	ToolChoiceValue any                       `json:"-"`
-	ToolCallsResult *[]map[string]interface{} `json:"-"`
+	Stream           *bool
+	Vision           *bool
+	Thinking         *bool
+	MaxTokens        *int
+	Temperature      *float64
+	TopP             *float64
+	PresencePenalty  *float64
+	FrequencyPenalty *float64
+	DoSample         *bool
+	Stop             *[]string
+	ModelClass       *string
+	Effort           *string
+	Verbosity        *string
+	Tools            interface{}               `json:"tools,omitempty"`
+	ToolChoice       *string                   `json:"tool_choice,omitempty"`
+	ToolChoiceValue  any                       `json:"-"`
+	ToolCallsResult  *[]map[string]interface{} `json:"-"`
 	// UsageResult receives the token usage extracted from the final
 	// streaming chunk when stream_options.include_usage is true.
 	// The ChatStreamlyWithSender driver writes to this pointer (if
@@ -350,7 +361,6 @@ type TTSConfig struct {
 }
 
 type OCRConfig struct {
-	Algorithm string
 	// Pages restricts OCR to these 1-indexed inclusive [from, to] ranges, the
 	// parser setup's "pages" shape. Empty means the whole document. Drivers
 	// whose backend cannot select pages ignore it.

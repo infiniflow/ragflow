@@ -69,11 +69,17 @@ REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 # recording the downloaded hash so the next run detects changes. Both first and
 # later runs therefore run the download directly without manual setup.
 NOTO_CJK_FONT_SHA256 = ""
+GH_PROXY_URL = "https://gh-proxy.com/"
 
 
 def gh_proxy() -> str:
-    """GitHub release proxy prefix (gh-proxy.com behind the GFW), else empty."""
-    return os.environ.get("GH_PROXY") or ""
+    """Return the supported GitHub proxy prefix, rejecting arbitrary hosts."""
+    proxy = (os.environ.get("GH_PROXY") or "").strip()
+    if not proxy:
+        return ""
+    if proxy.rstrip("/") != GH_PROXY_URL.rstrip("/"):
+        raise RuntimeError(f"GH_PROXY must be empty or {GH_PROXY_URL!r}")
+    return GH_PROXY_URL
 
 
 def cl100k_url() -> str:

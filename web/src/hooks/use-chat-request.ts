@@ -368,7 +368,10 @@ export function useFetchSessionManually() {
     mutationKey: [ChatApiAction.FetchSessionManually],
     mutationFn: async (sessionId) => {
       const { data } = await chatService.getSession(
-        { url: api.getSession(chatId!, sessionId) },
+        {
+          url: api.getSession(chatId!, sessionId),
+          params: { include_reference: true, include_prompt: true },
+        },
         true,
       );
 
@@ -607,7 +610,7 @@ export const useFetchExternalChatInfo = () => {
     queryFn: async () => {
       const { data } = await chatService.fetchExternalChatInfo(id!);
 
-      return data?.data;
+      return data?.data ?? ({} as IExternalChatInfo);
     },
   });
 

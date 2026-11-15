@@ -1,11 +1,11 @@
 package parser
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"strings"
 	"testing"
 
 	"ragflow/internal/entity"
@@ -17,8 +17,8 @@ import (
 // pure-Go IR → sections transform without requiring the office_oxide
 // native library, so it runs under CGO_ENABLED=0.
 func TestBuildDOCXJSONSections_FromJSON(t *testing.T) {
-	// "data":"aGVsbG8=" is base64 for "hello"; buildDOCXJSONSections
-	// re-encodes el.Data, so the item's "image" must equal "aGVsbG8=".
+	// A nil sink is the text-only path: the embedded image is skipped, so
+	// no image item is emitted.
 	irJSON := `{"sections":[{"title":"","elements":[
 		{"type":"heading","level":1,"content":[{"type":"text","text":"Title"}]},
 		{"type":"paragraph","content":[{"type":"text","text":"Hello"}]},
@@ -27,15 +27,14 @@ func TestBuildDOCXJSONSections_FromJSON(t *testing.T) {
 		{"type":"list","items":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"item1"}]}]}]}
 	]}]}`
 
-	got := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
+	got := buildDOCXJSONSections(irJSON, nil)
 	want := []map[string]any{
-		{"text": "Title", "image": nil, "doc_type_kwd": "text", "layout": "heading"},
-		{"text": "Hello", "image": nil, "doc_type_kwd": "text"},
-		{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
+		{"text": "Title", "doc_type_kwd": "text", "layout": "heading"},
+		{"text": "Hello", "doc_type_kwd": "text"},
 		// The table sits under heading "Title", so it carries the
 		// heading-location caption (mirrors Python __get_nearest_title).
 		{"doc_type_kwd": "table", "table": &entity.TableData{Grid: [][]entity.TableCell{{{Text: "cell", ColSpan: 1, RowSpan: 1}}}, HeaderRows: 1, Caption: "Table Location: Title"}},
-		{"text": "item1", "image": nil, "doc_type_kwd": "text"},
+		{"text": "item1", "doc_type_kwd": "text"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("buildDOCXJSONSections mismatch:\n got: %+v\nwant: %+v", got, want)
@@ -49,29 +48,70 @@ func TestBuildDOCXJSONSections_EmptyTableSkipped(t *testing.T) {
 		{"type":"paragraph","content":[{"type":"text","text":"keep"}]},
 		{"type":"table","rows":[]}
 	]}]}`
-	got := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
+	got := buildDOCXJSONSections(irJSON, nil)
 	if len(got) != 1 || got[0]["text"] != "keep" {
 		t.Fatalf("expected only the paragraph to survive, got %+v", got)
 	}
 }
 
-// TestBuildDOCXJSONSections_MergesSplitDocTable pins the fix for the
-// office_oxide .doc artifact where a table whose first row is a styled
-// header is emitted as a 1-row "header" table immediately followed by the
-// body table. The two fragments share the same column count and sit under
-// the same heading, so they must be rejoined into a single table item
-// (otherwise the chunker emits a header chunk + body chunk, each carrying
-// the same caption).
-func TestBuildDOCXJSONSections_MergesSplitDocTable(t *testing.T) {
-	const cell = `{"content":[{"type":"paragraph","content":[{"type":"text","text":"x"}]}]}`
-	// header: 1 row x 3 cols; body: 2 rows x 3 cols — same width.
-	irJSON := fmt.Sprintf(`{"sections":[{"title":"","elements":[
-		{"type":"heading","level":1,"content":[{"type":"text","text":"H"}]},
-		{"type":"table","rows":[{"cells":[%s,%s,%s]}]},
-		{"type":"table","rows":[{"cells":[%s,%s,%s]},{"cells":[%s,%s,%s]}]}
-	]}]}`, cell, cell, cell, cell, cell, cell, cell, cell, cell)
+// TestBuildDOCXJSONSections_PreservesMergedHeaderSpans pins that office_oxide's
+// row/column spans and repeated-header flags survive the IR -> TableData
+// projection. The header is two rows: row 0 carries the colspan/rowspan
+// geometry, row 1 fills the seven columns the vertical merges leave open, and
+// the body has ten columns.
+func TestBuildDOCXJSONSections_PreservesMergedHeaderSpans(t *testing.T) {
+	cell := func(text string, colSpan, rowSpan int) docxIRCell {
+		return docxIRCell{
+			Content: []docxIRElement{para(text)},
+			ColSpan: colSpan,
+			RowSpan: rowSpan,
+		}
+	}
+	row := func(header bool, cells ...docxIRCell) docxIRRow {
+		return docxIRRow{IsHeader: header, Cells: cells}
+	}
+	ir := docxIRDocument{Sections: []docxIRSection{{
+		Elements: []docxIRElement{
+			{Type: "heading", Level: 1, Content: rawJSON([]docxIRRun{{Type: "text", Text: "H"}})},
+			{Type: "table", Rows: []docxIRRow{
+				row(true,
+					cell("单位名称", 1, 2),
+					cell("集团公司采用", 3, 1),
+					cell("中国中铁采用", 2, 1),
+					cell("国资委采用", 2, 1),
+					cell("得分", 1, 2),
+					cell("排名", 1, 2),
+				),
+				row(true,
+					cell("政务", 1, 1),
+					cell("政工", 1, 1),
+					cell("得分", 1, 1),
+					cell("数量", 1, 1),
+					cell("得分", 1, 1),
+					cell("数量", 1, 1),
+					cell("得分", 1, 1),
+				),
+				row(false,
+					cell("西安公司", 1, 1),
+					cell("15（1）", 1, 1),
+					cell("12", 1, 1),
+					cell("265", 1, 1),
+					cell("4（3）", 1, 1),
+					cell("50", 1, 1),
+					cell("2（2）", 1, 1),
+					cell("40", 1, 1),
+					cell("355", 1, 1),
+					cell("1", 1, 1),
+				),
+			}},
+		},
+	}}}
+	encoded, err := json.Marshal(ir)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	got := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
+	got := buildDOCXJSONSections(string(encoded), nil)
 	var tables []map[string]any
 	for _, it := range got {
 		if dt, _ := it["doc_type_kwd"].(string); dt == "table" {
@@ -79,31 +119,66 @@ func TestBuildDOCXJSONSections_MergesSplitDocTable(t *testing.T) {
 		}
 	}
 	if len(tables) != 1 {
-		t.Fatalf("expected 1 merged table item, got %d: %#v", len(tables), got)
+		t.Fatalf("expected 1 table item, got %d: %#v", len(tables), got)
 	}
 	td, ok := tables[0]["table"].(*entity.TableData)
 	if !ok || td == nil {
-		t.Fatalf("merged table has no TableData: %#v", tables[0])
+		t.Fatalf("table has no TableData: %#v", tables[0])
 	}
-	if len(td.Grid) != 3 {
-		t.Errorf("merged table should have 3 rows (1 header + 2 body), got %d: %#v", len(td.Grid), td.Grid)
+	if td.HeaderRows != 2 {
+		t.Fatalf("HeaderRows = %d, want 2", td.HeaderRows)
 	}
 	if td.Caption != "Table Location: H" {
-		t.Errorf("merged table caption = %q, want %q", td.Caption, "Table Location: H")
+		t.Errorf("caption = %q, want %q", td.Caption, "Table Location: H")
+	}
+	if len(td.Grid) != 3 {
+		t.Fatalf("grid rows = %d, want 3", len(td.Grid))
+	}
+	for i, row := range td.Grid {
+		if len(row) != 10 {
+			t.Fatalf("grid row %d width = %d, want 10: %#v", i, len(row), row)
+		}
+	}
+	if got := td.Grid[0][0]; got.Text != "单位名称" || got.RowSpan != 2 {
+		t.Errorf("header cell 0 = %#v, want 单位名称 rowspan 2", got)
+	}
+	if got := td.Grid[0][1]; got.Text != "集团公司采用" || got.ColSpan != 3 {
+		t.Errorf("header cell 1 = %#v, want 集团公司采用 colspan 3", got)
+	}
+	if got := td.Grid[0][4]; got.Text != "中国中铁采用" || got.ColSpan != 2 {
+		t.Errorf("header cell at col 4 = %#v, want 中国中铁采用 colspan 2", got)
+	}
+	if got := td.Grid[0][6]; got.Text != "国资委采用" || got.ColSpan != 2 {
+		t.Errorf("header cell at col 6 = %#v, want 国资委采用 colspan 2", got)
+	}
+	if got := td.Grid[0][8]; got.Text != "得分" || got.RowSpan != 2 {
+		t.Errorf("header cell at col 8 = %#v, want 得分 rowspan 2", got)
+	}
+	if got := td.Grid[0][9]; got.Text != "排名" || got.RowSpan != 2 {
+		t.Errorf("header cell at col 9 = %#v, want 排名 rowspan 2", got)
+	}
+	for _, col := range []int{2, 3, 5, 7} {
+		if got := td.Grid[0][col]; !got.Covered {
+			t.Errorf("row 0 col %d = %#v, want covered by a colspan", col, got)
+		}
+	}
+	if got := td.Grid[1][0]; !got.Covered {
+		t.Errorf("row 1 col 0 = %#v, want covered by the rowspan", got)
+	}
+	if got := td.Grid[1][1]; got.Text != "政务" {
+		t.Errorf("row 1 col 1 = %#v, want 政务", got)
 	}
 }
 
-// TestBuildDOCXJSONSections_DifferentColumnTablesStaySeparate pins that
-// two adjacent tables of different column counts are NOT merged: they are
-// genuinely separate tables, not fragments of one.
+// TestBuildDOCXJSONSections_DifferentColumnTablesStaySeparate pins that two
+// adjacent tables of different column counts remain separate.
 func TestBuildDOCXJSONSections_DifferentColumnTablesStaySeparate(t *testing.T) {
 	const cell = `{"content":[{"type":"paragraph","content":[{"type":"text","text":"x"}]}]}`
-	// a 1-row 3-col table followed by a 2-row 2-col table: different widths.
 	irJSON := fmt.Sprintf(`{"sections":[{"title":"","elements":[
 		{"type":"table","rows":[{"cells":[%s,%s,%s]}]},
 		{"type":"table","rows":[{"cells":[%s,%s]},{"cells":[%s,%s]}]}
 	]}]}`, cell, cell, cell, cell, cell, cell, cell)
-	got := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
+	got := buildDOCXJSONSections(irJSON, nil)
 	var n int
 	for _, it := range got {
 		if dt, _ := it["doc_type_kwd"].(string); dt == "table" {
@@ -115,20 +190,16 @@ func TestBuildDOCXJSONSections_DifferentColumnTablesStaySeparate(t *testing.T) {
 	}
 }
 
-// TestBuildDOCXJSONSections_AdjacentMultiRowTablesStaySeparate is the key
-// regression guard for the 1-row merge gate: two genuinely separate multi-row
-// tables of the SAME width, stacked with only a blank paragraph between them
-// (so they are adjacent in the IR), must NOT be merged. Only a 1-row header
-// fragment is folded into the following table.
-func TestBuildDOCXJSONSections_AdjacentMultiRowTablesStaySeparate(t *testing.T) {
+// TestBuildDOCXJSONSections_AdjacentTablesStaySeparate pins that adjacent
+// tables remain separate items. The parser no longer merges table elements;
+// office_oxide now emits one element per logical table.
+func TestBuildDOCXJSONSections_AdjacentTablesStaySeparate(t *testing.T) {
 	const cell = `{"content":[{"type":"paragraph","content":[{"type":"text","text":"x"}]}]}`
-	// table A: 2 rows x 3 cols; table B: 2 rows x 3 cols — same width, both
-	// multi-row, no element between. These are two distinct tables.
 	irJSON := fmt.Sprintf(`{"sections":[{"title":"","elements":[
 		{"type":"table","rows":[{"cells":[%s,%s,%s]},{"cells":[%s,%s,%s]}]},
 		{"type":"table","rows":[{"cells":[%s,%s,%s]},{"cells":[%s,%s,%s]}]}
 	]}]}`, cell, cell, cell, cell, cell, cell, cell, cell, cell, cell, cell, cell)
-	got := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
+	got := buildDOCXJSONSections(irJSON, nil)
 	var tables []map[string]any
 	for _, it := range got {
 		if dt, _ := it["doc_type_kwd"].(string); dt == "table" {
@@ -136,7 +207,7 @@ func TestBuildDOCXJSONSections_AdjacentMultiRowTablesStaySeparate(t *testing.T) 
 		}
 	}
 	if len(tables) != 2 {
-		t.Fatalf("expected 2 separate multi-row tables, got %d: %#v", len(tables), got)
+		t.Fatalf("expected 2 separate tables, got %d: %#v", len(tables), got)
 	}
 	for i, tb := range tables {
 		td, ok := tb["table"].(*entity.TableData)
@@ -149,46 +220,32 @@ func TestBuildDOCXJSONSections_AdjacentMultiRowTablesStaySeparate(t *testing.T) 
 	}
 }
 
-// TestBuildDOCXJSONSections_HeaderFragmentWithParagraphBetweenStaysSplit pins
-// that a 1-row header fragment is only merged when the body is the VERY NEXT
-// element. A paragraph (even blank) between them keeps them as distinct
-// tables, so the gate never reaches across intervening content.
-func TestBuildDOCXJSONSections_HeaderFragmentWithParagraphBetweenStaysSplit(t *testing.T) {
-	const cell = `{"content":[{"type":"paragraph","content":[{"type":"text","text":"x"}]}]}`
-	irJSON := fmt.Sprintf(`{"sections":[{"title":"","elements":[
-		{"type":"table","rows":[{"cells":[%s,%s,%s]}]},
-		{"type":"paragraph","content":[{"type":"text","text":"note"}]},
-		{"type":"table","rows":[{"cells":[%s,%s,%s]},{"cells":[%s,%s,%s]}]}
-	]}]}`, cell, cell, cell, cell, cell, cell, cell, cell, cell)
-	got := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
-	var n int
-	for _, it := range got {
-		if dt, _ := it["doc_type_kwd"].(string); dt == "table" {
-			n++
-		}
-	}
-	if n != 2 {
-		t.Fatalf("expected 2 separate tables (paragraph between), got %d: %#v", n, got)
-	}
-}
-
 func TestBuildDOCXJSONSections_PreservesInlineImageOrder(t *testing.T) {
+	imageData := officeTestPNG(t, 1)
 	irJSON := `{"sections":[{"elements":[
 		{"type":"paragraph","content":[
 			{"type":"text","text":"before"},
-			{"type":"image","data":"aGVsbG8="},
+			{"type":"image","data":"` + base64.StdEncoding.EncodeToString(imageData) + `"},
 			{"type":"text","text":"after"}
 		]}
 	]}]}`
-	got := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
+	sink, cache := officeMediaTestSink(t, officeMediaFormatDOCX)
+	got := buildDOCXJSONSections(irJSON, sink)
+	if sink.err != nil {
+		t.Fatalf("sink error: %v", sink.err)
+	}
 	if len(got) != 3 {
 		t.Fatalf("sections = %+v, want text/image/text sequence", got)
 	}
 	if got[0]["text"] != "before" || got[0]["doc_type_kwd"] != "text" {
 		t.Errorf("first item = %+v, want text before", got[0])
 	}
-	if got[1]["image"] != "aGVsbG8=" || got[1]["doc_type_kwd"] != "image" {
-		t.Errorf("inline image item = %+v", got[1])
+	ref := requireOfficeMediaRef(t, got[1])
+	if ref.Format != officeMediaFormatDOCX || ref.MIME != "image/png" {
+		t.Errorf("media_ref = %+v, want docx image/png", ref)
+	}
+	if len(cache.puts) != 1 || !bytes.Equal(cache.puts[0].data, imageData) {
+		t.Fatalf("cache writes = %+v, want the inline image bytes", cache.puts)
 	}
 	if got[2]["text"] != "after" || got[2]["doc_type_kwd"] != "text" {
 		t.Errorf("last item = %+v, want text after", got[2])
@@ -196,18 +253,23 @@ func TestBuildDOCXJSONSections_PreservesInlineImageOrder(t *testing.T) {
 }
 
 func TestBuildDOCXJSONSections_ExtractsTableCellImages(t *testing.T) {
+	first, second := officeTestPNG(t, 1), officeTestPNG(t, 2)
 	irJSON := `{"sections":[{"elements":[
 		{"type":"table","rows":[{"cells":[
 			{"content":[{"type":"paragraph","content":[
 				{"type":"text","text":"before"},
-				{"type":"image","data":"aGVsbG8="},
+				{"type":"image","data":"` + base64.StdEncoding.EncodeToString(first) + `"},
 				{"type":"text","text":"after"}
 			]}]},
-			{"content":[{"type":"image","data":"aW1hZ2U="}]}
+			{"content":[{"type":"image","data":"` + base64.StdEncoding.EncodeToString(second) + `"}]}
 		]}]}
 	]}]}`
 
-	got := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
+	sink, cache := officeMediaTestSink(t, officeMediaFormatDOCX)
+	got := buildDOCXJSONSections(irJSON, sink)
+	if sink.err != nil {
+		t.Fatalf("sink error: %v", sink.err)
+	}
 	if len(got) != 3 {
 		t.Fatalf("sections = %+v, want table plus two cell image items", got)
 	}
@@ -217,167 +279,21 @@ func TestBuildDOCXJSONSections_ExtractsTableCellImages(t *testing.T) {
 	if _, ok := got[0]["table"].(*entity.TableData); !ok {
 		t.Fatalf("table item missing structured TableData: %+v", got[0])
 	}
-	for i, want := range []string{"aGVsbG8=", "aW1hZ2U="} {
+	if len(cache.puts) != 2 {
+		t.Fatalf("cache writes = %d, want one per cell image", len(cache.puts))
+	}
+	for i, want := range [][]byte{first, second} {
 		item := got[i+1]
-		if item["doc_type_kwd"] != "image" || item["image"] != want {
-			t.Errorf("image item %d = %+v, want payload %q", i, item, want)
+		if item["doc_type_kwd"] != "image" {
+			t.Errorf("image item %d = %+v", i, item)
+		}
+		requireOfficeMediaRef(t, item)
+		if !bytes.Equal(cache.puts[i].data, want) {
+			t.Errorf("cache write %d payload mismatch", i)
 		}
 		if item["parent_table_id"] != "docx-table-1" || item["row_index"] != 1 || item["column_index"] != i+1 || item["media_order"] != i+1 {
 			t.Errorf("image item %d metadata = %+v", i, item)
 		}
-	}
-}
-
-func TestBuildDOCXJSONSections_BudgetKeepsInlineTextAroundOmittedImage(t *testing.T) {
-	irJSON := `{"sections":[{"elements":[{"type":"paragraph","content":[
-		{"type":"text","text":"before"},
-		{"type":"image","data":"YWJjZA=="},
-		{"type":"text","text":"after"}
-	]}]}]}`
-	budget := &embeddedMediaBudget{maxImageBytes: 3, maxTotalBytes: 5, maxItems: 10}
-
-	items := buildDOCXJSONSections(irJSON, budget)
-	if len(items) != 3 {
-		t.Fatalf("items = %+v, want text/image/text with omitted image metadata", items)
-	}
-	if items[0]["text"] != "before" || items[2]["text"] != "after" {
-		t.Fatalf("inline text was lost around omitted image: %+v", items)
-	}
-	if items[1]["doc_type_kwd"] != "image" || items[1]["image"] != nil || items[1]["media_omitted"] != true {
-		t.Fatalf("omitted inline image item = %+v, want metadata without payload", items[1])
-	}
-	if len(budget.warnings()) == 0 {
-		t.Fatal("omitted image should produce a parser warning")
-	}
-}
-
-func TestBuildDOCXJSONSections_BudgetKeepsTableImageMetadata(t *testing.T) {
-	irJSON := `{"sections":[{"elements":[{"type":"table","rows":[{"cells":[
-		{"content":[{"type":"image","data":"YWJj"}]},
-		{"content":[{"type":"image","data":"ZGVm"}]}
-	]}]}]}]}`
-	budget := &embeddedMediaBudget{maxImageBytes: 4, maxTotalBytes: 5, maxItems: 10}
-
-	items := buildDOCXJSONSections(irJSON, budget)
-	if len(items) != 3 {
-		t.Fatalf("items = %+v, want table and two image metadata items", items)
-	}
-	if items[1]["image"] != "YWJj" || items[1]["media_omitted"] == true {
-		t.Fatalf("first table image = %+v, want accepted payload", items[1])
-	}
-	omitted := items[2]
-	if omitted["image"] != nil || omitted["media_omitted"] != true {
-		t.Fatalf("second table image = %+v, want omitted payload", omitted)
-	}
-	if omitted["parent_table_id"] != items[0]["source_table_id"] || omitted["row_index"] != 1 || omitted["column_index"] != 2 || omitted["media_order"] != 2 {
-		t.Fatalf("omitted table image lost location metadata: %+v", omitted)
-	}
-}
-
-func TestBuildDOCXJSONSections_BudgetCapsMediaCount(t *testing.T) {
-	var ir strings.Builder
-	ir.WriteString(`{"sections":[{"elements":[`)
-	for i := 0; i < 257; i++ {
-		if i > 0 {
-			ir.WriteByte(',')
-		}
-		ir.WriteString(`{"type":"image","data":"YQ=="}`)
-	}
-	ir.WriteString(`]}]}`)
-
-	budget := newEmbeddedMediaBudget()
-	items := buildDOCXJSONSections(ir.String(), budget)
-	imageCount := 0
-	for _, item := range items {
-		if item["doc_type_kwd"] == "image" {
-			imageCount++
-		}
-	}
-	if imageCount != budget.maxItems {
-		t.Fatalf("image items = %d, want count limit %d", imageCount, budget.maxItems)
-	}
-	if len(budget.warnings()) == 0 {
-		t.Fatal("truncated media count should produce a parser warning")
-	}
-}
-
-func TestBuildPPTXJSONSections_BudgetKeepsSlideMetadata(t *testing.T) {
-	irJSON := `{"sections":[{"elements":[
-		{"type":"paragraph","content":[{"type":"text","text":"slide text"}]},
-		{"type":"image","data":"YWJjZA=="}
-	]}]}`
-	budget := &embeddedMediaBudget{maxImageBytes: 3, maxTotalBytes: 5, maxItems: 10}
-
-	items, err := buildPPTXJSONSections(irJSON, budget)
-	if err != nil {
-		t.Fatalf("buildPPTXJSONSections: %v", err)
-	}
-	if len(items) != 2 || items[0]["text"] != "slide text" {
-		t.Fatalf("items = %+v, want text and omitted image items", items)
-	}
-	omitted := items[1]
-	if omitted["image"] != nil || omitted["media_omitted"] != true || omitted["slide_number"] != 1 || omitted["media_order"] != 1 {
-		t.Fatalf("omitted slide image lost metadata: %+v", omitted)
-	}
-	if itemsAllEmpty([]map[string]any{omitted}) {
-		t.Fatal("an image-only slide with a budget-omitted image must not be replaced by whole-deck fallback")
-	}
-}
-
-func TestBuildPPTXJSONSections_BudgetCapsMediaCount(t *testing.T) {
-	var ir strings.Builder
-	ir.WriteString(`{"sections":[{"elements":[`)
-	for i := 0; i < 257; i++ {
-		if i > 0 {
-			ir.WriteByte(',')
-		}
-		ir.WriteString(`{"type":"image","data":"YQ=="}`)
-	}
-	ir.WriteString(`]}]}`)
-
-	budget := newEmbeddedMediaBudget()
-	items, err := buildPPTXJSONSections(ir.String(), budget)
-	if err != nil {
-		t.Fatalf("buildPPTXJSONSections: %v", err)
-	}
-	imageCount := 0
-	for _, item := range items {
-		if item["doc_type_kwd"] == "image" {
-			imageCount++
-		}
-	}
-	if imageCount != budget.maxItems {
-		t.Fatalf("image items = %d, want count limit %d", imageCount, budget.maxItems)
-	}
-	if len(budget.warnings()) == 0 {
-		t.Fatal("truncated media count should produce a parser warning")
-	}
-}
-
-func TestEmbeddedMediaBudgetRejectsPerImageAndDocumentByteLimits(t *testing.T) {
-	budget := &embeddedMediaBudget{maxImageBytes: 4, maxTotalBytes: 5, maxItems: 4}
-	if included, keepGoing := budget.include([]byte("abc")); !included || !keepGoing {
-		t.Fatalf("first image admission = (%v, %v), want (true, true)", included, keepGoing)
-	}
-	if included, keepGoing := budget.include([]byte("def")); included || !keepGoing {
-		t.Fatalf("aggregate overflow admission = (%v, %v), want (false, true)", included, keepGoing)
-	}
-	if included, keepGoing := budget.include([]byte("12345")); included || !keepGoing {
-		t.Fatalf("per-image overflow admission = (%v, %v), want (false, true)", included, keepGoing)
-	}
-	if len(budget.warnings()) == 0 {
-		t.Fatal("omitted byte payloads should produce a parser warning")
-	}
-}
-
-func TestBuildDOCXJSONSectionsEncodesOnlyAcceptedImageData(t *testing.T) {
-	data := []byte("text is not a valid image, but the parser preserves it")
-	encoded := base64.StdEncoding.EncodeToString(data)
-	irJSON := fmt.Sprintf(`{"sections":[{"elements":[{"type":"image","data":%q}]}]}`, encoded)
-	budget := &embeddedMediaBudget{maxImageBytes: 8, maxTotalBytes: 8, maxItems: 4}
-	items := buildDOCXJSONSections(irJSON, budget)
-	if len(items) != 1 || items[0]["image"] != nil || items[0]["media_omitted"] != true {
-		t.Fatalf("oversized image items = %+v, want metadata without payload", items)
 	}
 }
 
@@ -407,169 +323,6 @@ func TestJoinDOCXIRRuns_LineBreak(t *testing.T) {
 	}
 	if got := joinDOCXIRRuns(runs); got != "before\nafter" {
 		t.Fatalf("joinDOCXIRRuns = %q, want %q", got, "before\nafter")
-	}
-}
-
-// TestExtractDOCXFiguresFromIR verifies the image-figure context
-// extraction: an image block carries the immediately surrounding text
-// as ContextAbove / ContextBelow / Marker. Pure-Go, runs under !cgo.
-func TestExtractDOCXFiguresFromIR(t *testing.T) {
-	irJSON := `{"sections":[{"elements":[
-		{"type":"paragraph","content":[{"type":"text","text":"before"}]},
-		{"type":"image","data":"aGVsbG8="},
-		{"type":"paragraph","content":[{"type":"text","text":"after"}]}
-	]}]}`
-
-	figs := extractDOCXFiguresFromIR(irJSON, newEmbeddedMediaBudget())
-	if len(figs) != 1 {
-		t.Fatalf("expected 1 figure, got %d", len(figs))
-	}
-	fig := figs[0]
-	want := DOCXFigure{
-		Image:        "aGVsbG8=",
-		ContextAbove: "before",
-		ContextBelow: "after",
-		Marker:       "before",
-	}
-	if !reflect.DeepEqual(fig, want) {
-		t.Fatalf("figure mismatch:\n got: %+v\nwant: %+v", fig, want)
-	}
-}
-
-func TestExtractDOCXFiguresFromIR_InlineImage(t *testing.T) {
-	irJSON := `{"sections":[{"elements":[
-		{"type":"paragraph","content":[
-			{"type":"text","text":"before"},
-			{"type":"image","data":"aGVsbG8="},
-			{"type":"text","text":"after"}
-		]}
-	]}]}`
-	figs := extractDOCXFiguresFromIR(irJSON, newEmbeddedMediaBudget())
-	if len(figs) != 1 {
-		t.Fatalf("expected 1 inline figure, got %d", len(figs))
-	}
-	if figs[0].Image != "aGVsbG8=" || figs[0].ContextAbove != "before" || figs[0].ContextBelow != "after" {
-		t.Fatalf("inline figure = %+v", figs[0])
-	}
-}
-
-func TestExtractDOCXFiguresFromIR_BudgetKeepsContextWithoutPayload(t *testing.T) {
-	irJSON := `{"sections":[{"elements":[
-		{"type":"paragraph","content":[{"type":"text","text":"before"}]},
-		{"type":"image","data":"YWJjZA=="},
-		{"type":"paragraph","content":[{"type":"text","text":"after"}]}
-	]}]}`
-	budget := &embeddedMediaBudget{maxImageBytes: 3, maxTotalBytes: 5, maxItems: 10}
-
-	figures := extractDOCXFiguresFromIR(irJSON, budget)
-	if len(figures) != 1 {
-		t.Fatalf("figures = %+v, want one metadata record", figures)
-	}
-	if figures[0].Image != "" || figures[0].ContextAbove != "before" || figures[0].ContextBelow != "after" || figures[0].Marker != "before" {
-		t.Fatalf("budgeted figure = %+v, want context metadata without payload", figures[0])
-	}
-}
-
-// TestExtractDOCXFiguresFromIR_NoImage returns nil when the IR has no
-// image blocks.
-func TestExtractDOCXFiguresFromIR_NoImage(t *testing.T) {
-	irJSON := `{"sections":[{"elements":[
-		{"type":"paragraph","content":[{"type":"text","text":"only text"}]}
-	]}]}`
-	if figs := extractDOCXFiguresFromIR(irJSON, newEmbeddedMediaBudget()); figs != nil {
-		t.Fatalf("expected nil, got %+v", figs)
-	}
-}
-
-// TestExtractDOCXFiguresFromIR_BadJSON returns nil on unparseable IR,
-// mirroring the json.Unmarshal error guard.
-func TestExtractDOCXFiguresFromIR_BadJSON(t *testing.T) {
-	if figs := extractDOCXFiguresFromIR("{not json", newEmbeddedMediaBudget()); figs != nil {
-		t.Fatalf("expected nil for bad JSON, got %+v", figs)
-	}
-}
-
-// TestExtractDOCXFiguresFromIR_NonParagraphContext verifies that
-// tables, lists, and text boxes adjacent to an image contribute their
-// text to ContextAbove / ContextBelow. Previously the flatten loop
-// called joinDOCXIRRuns(el.contentRuns()) for every non-image element,
-// which returned "" for table/list/text_box (their Content is not text
-// runs), silently dropping the surrounding VLM context.
-func TestExtractDOCXFiguresFromIR_NonParagraphContext(t *testing.T) {
-	irJSON := `{"sections":[{"elements":[
-		{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"table cell"}]}]}]}]},
-		{"type":"image","data":"aGVsbG8="},
-		{"type":"list","items":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"list item"}]}]}]},
-		{"type":"text_box","content":[{"type":"paragraph","content":[{"type":"text","text":"box text"}]}]}
-	]}]}`
-	figs := extractDOCXFiguresFromIR(irJSON, newEmbeddedMediaBudget())
-	if len(figs) != 1 {
-		t.Fatalf("expected 1 figure, got %d", len(figs))
-	}
-	fig := figs[0]
-	if fig.ContextAbove != "table cell" {
-		t.Errorf("ContextAbove = %q, want %q", fig.ContextAbove, "table cell")
-	}
-	// Below the image: list item then text_box, joined by newline.
-	if fig.ContextBelow != "list item\nbox text" {
-		t.Errorf("ContextBelow = %q, want %q", fig.ContextBelow, "list item\nbox text")
-	}
-}
-
-// TestExtractDOCXFiguresFromIR_NestedImages verifies that images inside
-// tables and text boxes reach the figure metadata. Section emission recurses
-// into these containers, so a top-level-only figure walk would omit images
-// the parser actually emits.
-func TestExtractDOCXFiguresFromIR_NestedImages(t *testing.T) {
-	irJSON := `{"sections":[{"elements":[
-		{"type":"paragraph","content":[{"type":"text","text":"before"}]},
-		{"type":"table","rows":[{"cells":[{"content":[{"type":"paragraph","content":[{"type":"text","text":"cell"},{"type":"image","data":"aGVsbG8="}]}]}]}]},
-		{"type":"text_box","content":[{"type":"paragraph","content":[{"type":"image","data":"d29ybGQ="}]}]}
-	]}]}`
-	figs := extractDOCXFiguresFromIR(irJSON, newEmbeddedMediaBudget())
-	if len(figs) != 2 {
-		t.Fatalf("expected 2 nested figures, got %d: %+v", len(figs), figs)
-	}
-	if figs[0].Image != "aGVsbG8=" || figs[1].Image != "d29ybGQ=" {
-		t.Fatalf("nested figures = %+v", figs)
-	}
-	if !strings.Contains(figs[0].ContextAbove, "cell") {
-		t.Errorf("ContextAbove = %q, want the nested cell text", figs[0].ContextAbove)
-	}
-}
-
-// TestCollectDOCXText_BoundedByMaxLen pins that the joined context
-// never exceeds maxLen runes, even though newline separators are
-// inserted between blocks (they are not counted by the per-block
-// `remaining` decrement). Previously 512 one-rune blocks produced
-// 1023 chars (512 runes + 511 separators).
-func TestCollectDOCXText_BoundedByMaxLen(t *testing.T) {
-	// 600 one-rune text blocks before and after an image block.
-	const maxLen = 512
-	var flat []flatBlock
-	for i := 0; i < 600; i++ {
-		flat = append(flat, flatBlock{text: "x"})
-	}
-	imgIdx := len(flat)
-	flat = append(flat, flatBlock{imageData: []byte("img")})
-	for i := 0; i < 600; i++ {
-		flat = append(flat, flatBlock{text: "x"})
-	}
-
-	prev := collectDOCXPrevText(flat, imgIdx, maxLen)
-	next := collectDOCXNextText(flat, imgIdx, maxLen)
-	if r := []rune(prev); len(r) > maxLen {
-		t.Errorf("prev context = %d runes, want <= %d", len(r), maxLen)
-	}
-	if r := []rune(next); len(r) > maxLen {
-		t.Errorf("next context = %d runes, want <= %d", len(r), maxLen)
-	}
-	// Both must still carry content (the closest blocks survive).
-	if prev == "" {
-		t.Error("prev context empty; expected some text")
-	}
-	if next == "" {
-		t.Error("next context empty; expected some text")
 	}
 }
 
@@ -626,7 +379,7 @@ func TestExtractTextFromListItem_NestedNull(t *testing.T) {
 			{"content":[{"type":"paragraph","content":[{"type":"text","text":"only item"}]}],"nested":null}
 		]}
 	]}]}`
-	sections := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
+	sections := buildDOCXJSONSections(irJSON, nil)
 	if len(sections) != 1 || sections[0]["text"] != "only item" {
 		t.Fatalf("expected single item \"only item\", got %+v", sections)
 	}
@@ -648,7 +401,7 @@ func TestExtractTextFromListItem_NestedTable(t *testing.T) {
 			]}
 		]}
 	]}]}`
-	sections := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
+	sections := buildDOCXJSONSections(irJSON, nil)
 	if len(sections) != 2 || sections[0]["text"] != "before" {
 		t.Fatalf("sections=%#v", sections)
 	}
@@ -697,7 +450,7 @@ func TestBuildDOCXJSONSections_TextBoxTable(t *testing.T) {
 			]}
 		]}
 	]}]}`
-	sections := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
+	sections := buildDOCXJSONSections(irJSON, nil)
 	if len(sections) != 1 {
 		t.Fatalf("expected 1 section, got %d: %+v", len(sections), sections)
 	}
@@ -716,7 +469,7 @@ func TestBuildDOCXJSONSections_NestedList(t *testing.T) {
 			 ]}}
 		]}
 	]}]}`
-	sections := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
+	sections := buildDOCXJSONSections(irJSON, nil)
 	if len(sections) != 3 {
 		t.Fatalf("sections=%#v", sections)
 	}
@@ -728,33 +481,38 @@ func TestBuildDOCXJSONSections_NestedList(t *testing.T) {
 }
 
 func TestBuildDOCXJSONSections_EmitsListAndTextBoxImages(t *testing.T) {
+	images := [][]byte{officeTestPNG(t, 1), officeTestPNG(t, 2), officeTestPNG(t, 3)}
 	irJSON := `{"sections":[{"elements":[
 		{"type":"list","items":[
 			{"content":[{"type":"paragraph","content":[
 				{"type":"text","text":"list text"},
-				{"type":"image","data":"aGVsbG8="}
+				{"type":"image","data":"` + base64.StdEncoding.EncodeToString(images[0]) + `"}
 			]}],"nested":{"items":[
 				{"content":[{"type":"paragraph","content":[
-					{"type":"image","data":"d29ybGQ="}
+					{"type":"image","data":"` + base64.StdEncoding.EncodeToString(images[1]) + `"}
 				]}]}
 			]}}
 		]},
 		{"type":"text_box","content":[{"type":"paragraph","content":[
 			{"type":"text","text":"text box text"},
-			{"type":"image","data":"cGljdHVyZQ=="}
+			{"type":"image","data":"` + base64.StdEncoding.EncodeToString(images[2]) + `"}
 		]}]}
 	]}]}`
-	sections := buildDOCXJSONSections(irJSON, newEmbeddedMediaBudget())
+	sink, cache := officeMediaTestSink(t, officeMediaFormatDOCX)
+	sections := buildDOCXJSONSections(irJSON, sink)
+	if sink.err != nil {
+		t.Fatalf("sink error: %v", sink.err)
+	}
 	want := []struct {
 		docType string
 		text    string
-		image   string
+		image   int
 	}{
 		{docType: "text", text: "list text"},
-		{docType: "image", image: "aGVsbG8="},
-		{docType: "image", image: "d29ybGQ="},
+		{docType: "image", image: 0},
+		{docType: "image", image: 1},
 		{docType: "text", text: "text box text"},
-		{docType: "image", image: "cGljdHVyZQ=="},
+		{docType: "image", image: 2},
 	}
 	if len(sections) != len(want) {
 		t.Fatalf("sections = %+v, want %d items", sections, len(want))
@@ -766,8 +524,23 @@ func TestBuildDOCXJSONSections_EmitsListAndTextBoxImages(t *testing.T) {
 		if expected.text != "" && sections[i]["text"] != expected.text {
 			t.Errorf("section %d text = %v, want %q", i, sections[i]["text"], expected.text)
 		}
-		if expected.image != "" && sections[i]["image"] != expected.image {
-			t.Errorf("section %d image = %v, want %q", i, sections[i]["image"], expected.image)
+		if expected.docType == "image" {
+			requireOfficeMediaRef(t, sections[i])
+			if !bytes.Equal(cache.puts[expected.image].data, images[expected.image]) {
+				t.Errorf("section %d image payload mismatch", i)
+			}
 		}
+	}
+}
+
+func TestDOCXImageTraversalStopsAfterFatalFailure(t *testing.T) {
+	elements := []docxIRElement{
+		{Type: "table", Rows: []docxIRRow{{Cells: []docxIRCell{{Content: []docxIRElement{{Type: "image", Data: []byte("first")}, {Type: "image", Data: []byte("second")}}}}}}},
+		{Type: "image", Data: []byte("third")},
+	}
+	visits := 0
+	completed := forEachDOCXIRImage(elements, func([]byte) bool { visits++; return false })
+	if completed || visits != 1 {
+		t.Fatalf("completed=%v visits=%d; want false, 1", completed, visits)
 	}
 }

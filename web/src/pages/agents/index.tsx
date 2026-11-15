@@ -2,6 +2,7 @@ import { CardContainer } from '@/components/card-container';
 import { EmptyCardType } from '@/components/empty/constant';
 import { EmptyAppCard } from '@/components/empty/empty';
 import ListFilterBar from '@/components/list-filter-bar';
+import { PrivilegeManagementDialog } from '@/ee/components/privilege-management/privilege-management-dialog';
 import { RenameDialog } from '@/components/rename-dialog';
 import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { ListDeletionKey } from '@/constants/list-deletion';
@@ -34,6 +35,7 @@ import { useSelectFilters } from './hooks/use-select-filters';
 import { UploadAgentDialog } from './upload-agent-dialog';
 import { useHandleImportJsonFile } from './use-import-json';
 import { useRenameAgent } from './use-rename-agent';
+import { useShowPrivilegeDialog } from '@/ee/pages/agents/use-show-privilege-dialog';
 
 export default function Agents() {
   const {
@@ -108,6 +110,12 @@ export default function Agents() {
     handleImportJson,
   );
 
+  const {
+    privilegeModalVisible,
+    hidePrivilegeModal,
+    handShowPrivilegeModal,
+    recordWithSourceType,
+  } = useShowPrivilegeDialog();
   const { deleteGroup } = useDeleteCompilationTemplateGroup();
 
   const filters = useSelectFilters(activeCategory);
@@ -224,6 +232,7 @@ export default function Agents() {
                     key={x.id}
                     data={x}
                     showAgentRenameModal={showAgentRenameModal}
+                    showPrivilegeModal={handShowPrivilegeModal(x)}
                   />
                 ),
               )}
@@ -296,6 +305,12 @@ export default function Agents() {
           hideModal={hideFileUploadModal}
           onOk={onFileUploadOk}
         ></UploadAgentDialog>
+      )}
+      {privilegeModalVisible && (
+        <PrivilegeManagementDialog
+          hideModal={hidePrivilegeModal}
+          initialValues={recordWithSourceType}
+        ></PrivilegeManagementDialog>
       )}
     </>
   );

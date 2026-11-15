@@ -92,6 +92,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewCheaperInferenceModel(baseURL, urlSuffix), nil
 	case "cohere":
 		return NewCoHereModel(baseURL, urlSuffix), nil
+	case "aimlapi.com":
+		return NewAimlapiModel(baseURL, urlSuffix), nil
 	case "cometapi":
 		return NewCometAPIModel(baseURL, urlSuffix), nil
 	case "daoxe":
@@ -146,6 +148,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewVoyageModel(baseURL, urlSuffix), nil
 	case "paddleocr":
 		return NewPaddleOCRModel(baseURL, urlSuffix), nil
+	case "somark":
+		return NewSoMarkModel(baseURL, urlSuffix), nil
 	case "xunfei spark":
 		return NewXunFeiModel(baseURL, urlSuffix), nil
 	case "deepinfra":
@@ -175,6 +179,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewBedrockModel(baseURL, urlSuffix), nil
 	case "paddleocr.local":
 		return NewPaddleOCRLocalModel(baseURL, urlSuffix), nil
+	case "minicpm-ocr":
+		return NewMiniCPMOCRModel(baseURL, urlSuffix), nil
 	case "orcarouter":
 		return NewOrcaRouterModel(baseURL, urlSuffix), nil
 	case "huaweicloud":
@@ -195,18 +201,39 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewAnonRouterModel(baseURL, urlSuffix), nil
 	case "api-route":
 		return NewApiRouteModel(baseURL, urlSuffix), nil
+	case "shengsuanyun":
+		return NewShengsuanyunModel(baseURL, urlSuffix), nil
 	case "opper":
 		return NewOpperModel(baseURL, urlSuffix), nil
 	case "empiriolabs ai":
 		return NewEmpirioLabsModel(baseURL, urlSuffix), nil
 	case "runcrate":
 		return NewRuncrateModel(baseURL, urlSuffix), nil
+	case "nace":
+		// System One protocol, like "systemone", with Nace's own model catalog.
+		return NewNaceModel(baseURL, urlSuffix), nil
 	case "worldrouter":
 		return NewWorldRouterModel(baseURL, urlSuffix), nil
 	case "cloudgpu":
 		return NewCloudGPUModel(baseURL, urlSuffix), nil
+	case "obscurify.ai":
+		return NewObscurifyModel(baseURL, urlSuffix), nil
+	case "cheapaimodel":
+		return NewCheapaimodelModel(baseURL, urlSuffix), nil
 	case "new api":
 		return NewNewAPIModel(baseURL, urlSuffix), nil
+	case "hostinger router":
+		return NewHostingerRouterModel(baseURL, urlSuffix), nil
+	case "wally":
+		return NewWallyModel(baseURL, urlSuffix), nil
+	case "synap":
+		return NewSynapModel(baseURL, urlSuffix), nil
+	case "wiro ai":
+		return NewWiroModel(baseURL, urlSuffix), nil
+	case "crusoe":
+		return NewCrusoeModel(baseURL, urlSuffix), nil
+	case "hopbase":
+		return NewHopBaseModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

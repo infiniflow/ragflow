@@ -27,13 +27,12 @@ import (
 // buildPPTXJSONSections emits text runs, tables and images in slide order.
 // Every item retains its slide number; a blank slide emits an empty text item.
 // Container elements are traversed recursively so grouped tables remain structured.
-func buildPPTXJSONSections(irJSON string, budget *embeddedMediaBudget) ([]map[string]any, error) {
+// Image bytes are stored in the run media cache and emitted as media_ref; a
+// nil sink is the text-only path and skips images.
+func buildPPTXJSONSections(irJSON string, sink *officeMediaSink) ([]map[string]any, error) {
 	var ir docxIRDocument
 	if err := json.Unmarshal([]byte(irJSON), &ir); err != nil {
 		return nil, fmt.Errorf("presentation ir-json decode: %w", err)
-	}
-	if budget == nil {
-		budget = newEmbeddedMediaBudget()
 	}
 	items := make([]map[string]any, 0, len(ir.Sections))
 	for i, sec := range ir.Sections {
@@ -49,6 +48,9 @@ func buildPPTXJSONSections(irJSON string, budget *embeddedMediaBudget) ([]map[st
 		var emitElements func([]docxIRElement)
 		emitElements = func(elements []docxIRElement) {
 			for _, el := range elements {
+				if sink != nil && sink.err != nil {
+					return
+				}
 				var units []map[string]any
 				switch el.Type {
 				case "table":
@@ -57,7 +59,7 @@ func buildPPTXJSONSections(irJSON string, budget *embeddedMediaBudget) ([]map[st
 					}
 					flushText()
 					tableSequence++
-					items = appendOfficeTableSections(items, el, "", fmt.Sprintf("pptx-slide-%d-table-%d", i+1, tableSequence), budget)
+					items = appendOfficeTableSections(items, el, "", fmt.Sprintf("pptx-slide-%d-table-%d", i+1, tableSequence), sink)
 					continue
 				case "text_box":
 					emitElements(el.contentBlocks())
@@ -71,9 +73,9 @@ func buildPPTXJSONSections(irJSON string, budget *embeddedMediaBudget) ([]map[st
 					}
 					continue
 				case "paragraph", "heading":
-					units = appendDOCXParagraphSections(nil, el, false, budget)
+					units = appendDOCXParagraphSections(nil, el, false, sink)
 				case "image":
-					units, _ = appendDOCXImageSection(nil, el.Data, budget, nil)
+					units = appendDOCXImageSection(nil, el.Data, sink, nil)
 				default:
 					if text := strings.TrimSpace(docxElementText(el, "\n")); text != "" {
 						lines = append(lines, text)
@@ -115,10 +117,7 @@ func itemsAllEmpty(items []map[string]any) bool {
 		if text, _ := it["text"].(string); strings.TrimSpace(text) != "" {
 			return false
 		}
-		if image, _ := it["image"].(string); strings.TrimSpace(image) != "" {
-			return false
-		}
-		if omitted, _ := it["media_omitted"].(bool); omitted {
+		if entity.MediaRefFromAny(it["media_ref"]) != nil {
 			return false
 		}
 	}

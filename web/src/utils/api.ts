@@ -19,7 +19,10 @@ const restAPIv1 = `/api/v1`;
 
 export { restAPIv1, webAPI };
 
-export default {
+import merge from 'lodash/merge';
+import apiPrivate from '@/ee/utils/api-private';
+
+const apiEndpoints = {
   // user
   login: `${restAPIv1}/auth/login`,
   logout: `${restAPIv1}/auth/logout`,
@@ -41,8 +44,6 @@ export default {
   listAllAddedModels: `${restAPIv1}/models`,
   defaultModel: `${restAPIv1}/models/default`,
   // AIMLAPI agent-authorization (OAuth device grant) — obtain a key from the provider dialog
-  aimlapiAuthorizeStart: `${restAPIv1}/llm/aimlapi/authorize/start`,
-  aimlapiAuthorizePoll: `${restAPIv1}/llm/aimlapi/authorize/poll`,
   listProviders: `${restAPIv1}/providers`,
   addProvider: `${restAPIv1}/providers`,
   addProviderInstance: ({ llm_factory }: { llm_factory: string }) =>
@@ -274,6 +275,8 @@ export default {
   documentRename: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}`,
   documentIngest: `${restAPIv1}/documents/ingest`,
+  stopAllDocuments: (datasetId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/stop`,
   documentCreate: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents?type=empty`,
   documentChangeParser: (datasetId: string, documentId: string) =>
@@ -342,6 +345,7 @@ export default {
   // flow
   listAgentTemplate: `${restAPIv1}/agents/templates`,
   listAgents: `${restAPIv1}/agents`,
+  listAgentVersions: `${restAPIv1}/agents/versions`,
   listAgentTags: `${restAPIv1}/agents/tags`,
   updateAgentTags: (agentId: string) => `${restAPIv1}/agents/${agentId}/tags`,
   createAgent: `${restAPIv1}/agents`,
@@ -349,7 +353,7 @@ export default {
   deleteAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}`,
   agentChatCompletion: `${restAPIv1}/agents/chat/completions`,
   resetAgent: (agentId: string) => `${restAPIv1}/agents/${agentId}/reset`,
-  testDbConnect: `${restAPIv1}/agents/test_db_connection`,
+  testDbConnect: `${restAPIv1}/agents/test-db-connection`,
   getInputElements: `${webAPI}/canvas/input_elements`,
   debug: (agentId: string, componentId: string) =>
     `${restAPIv1}/agents/${agentId}/components/${componentId}/debug`,
@@ -445,8 +449,8 @@ export default {
     `${restAPIv1}/searches/${params.search_id}`,
   askShare: `${restAPIv1}/searchbots/ask`,
   mindmapShare: `${restAPIv1}/searchbots/mindmap`,
-  getRelatedQuestionsShare: `${restAPIv1}/searchbots/related_questions`,
-  retrievalTestShare: `${restAPIv1}/searchbots/retrieval_test`,
+  getRelatedQuestionsShare: `${restAPIv1}/searchbots/related-questions`,
+  retrievalTestShare: `${restAPIv1}/searchbots/retrieval`,
 
   // memory
   createMemory: `${restAPIv1}/memories`,
@@ -507,8 +511,6 @@ export default {
   adminUpdateRoleDescription: (roleName: string) =>
     `${restAPIv1}/admin/roles/${roleName}`,
 
-  adminUpdateUserRole: (username: string) =>
-    `${restAPIv1}/admin/users/${username}/role`,
   adminGetUserPermissions: (username: string) =>
     `${restAPIv1}/admin/users/${username}/permissions`,
 
@@ -541,3 +543,10 @@ export default {
   skillIndex: `${restAPIv1}/skills/index`,
   skillReindex: `${restAPIv1}/skills/reindex`,
 };
+
+// Enterprise customization overlays: the enterprise repository carries real
+// implementations under `web/src/ee/utils/`; upstream ships no-op stubs under
+// `web/src/ee-stub/utils/` so this import resolves in both trees. Enterprise
+// endpoints must live only in the enterprise ee/ file, never here. Keys in
+// the overlay override or extend `apiEndpoints`.
+export default merge(apiEndpoints, apiPrivate);

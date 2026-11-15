@@ -270,6 +270,22 @@ func TestPipelineRunAttachesInjectedMediaCacheWithTaskScope(t *testing.T) {
 	}
 }
 
+func TestNewPipelineFromDSLRejectsEmptyTaskID(t *testing.T) {
+	_, err := NewPipelineFromDSL([]byte(`{
+		"dsl": {
+			"components": {
+				"begin": {"obj": {"component_name": "Begin", "params": {}}, "downstream": ["stage"]},
+				"stage": {"obj": {"component_name": "Begin", "params": {}}, "upstream": ["begin"]}
+			},
+			"path": ["begin", "stage"],
+			"graph": {"nodes": []}
+		}
+	}`), "  ")
+	if err == nil {
+		t.Fatal("NewPipelineFromDSL accepted an empty task id")
+	}
+}
+
 func TestPipelineRun_TaskScopedFactoriesDoNotLeakAcrossConcurrentPipelines(t *testing.T) {
 	origFactory := runtime.DefaultFactory()
 	runtime.SetDefaultFactory(func(_ string, _ map[string]any) (runtime.Component, error) {

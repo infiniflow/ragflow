@@ -229,6 +229,18 @@ func fieldJSONList(fieldName string) bool {
 	}
 }
 
+// fieldVarcharJSON reports varchar columns that hold JSON text: the write path
+// json-encodes their values and readers must parse them back. They are not
+// json-typed columns, so fieldJSON does not cover them.
+func fieldVarcharJSON(fieldName string) bool {
+	switch strings.ToLower(fieldName) {
+	case "tag_feas":
+		return true
+	default:
+		return false
+	}
+}
+
 // joinBalanced renders a boolean chain as a balanced tree instead of the flat,
 // left-deep chain strings.Join produces. Infinity's filter string is parsed by
 // the SDK into a Thrift expression tree (infinity-go-sdk expression_parser.go)

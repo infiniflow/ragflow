@@ -132,6 +132,13 @@ func (g *GraphExploreTool) invokableRun(ctx context.Context, argumentsInJSON str
 	if err != nil {
 		return "", fmt.Errorf("graph_explore: %w", err)
 	}
+	docScope, err := resolveDocumentScope(ctx, args.DocScope)
+	if err != nil {
+		return "", fmt.Errorf("graph_explore: %w", err)
+	}
+	if docScope != nil && len(docScope) == 0 {
+		return renderKgExplore(ctx, query, KgExploreResult{}), nil
+	}
 	if len(datasetIDs) == 0 {
 		// Bound scope is empty: short-circuit before touching the backend so the
 		// tool never reads outside the conversation's allowed datasets.
@@ -141,7 +148,7 @@ func (g *GraphExploreTool) invokableRun(ctx context.Context, argumentsInJSON str
 	result, err := GetKgService().Explore(ctx, KgExploreRequest{
 		TenantID:   g.tenantID,
 		DatasetIDs: datasetIDs,
-		DocScope:   args.DocScope,
+		DocScope:   docScope,
 		Query:      query,
 	})
 	if err != nil {
@@ -162,6 +169,7 @@ func (g *GraphExploreTool) invokableRun(ctx context.Context, argumentsInJSON str
 	common.InfoCtx(ctx, "agentic_rag: graph_explore",
 		zap.String("query", query),
 		zap.Int("datasets", len(datasetIDs)),
+		zap.Int("doc_scope", len(docScope)),
 		zap.Int("entities", len(result.Entities)),
 		zap.Int("relations", len(result.Relations)),
 		zap.Int("passages", len(result.Passages)))

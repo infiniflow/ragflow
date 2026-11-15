@@ -20,6 +20,7 @@ import (
 	"context"
 	"strings"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 )
 
@@ -28,7 +29,6 @@ import (
 // and the raw-config factory (used by the test-connection endpoint).
 func RegisterBuiltIns(registry *Registry) {
 	registerBuiltIn(registry, "confluence", NewConfluenceConnector)
-	registerBuiltIn(registry, "feishu_wiki", NewFeishuWikiConnector)
 	registerBuiltIn(registry, "rss", NewRSSConnector)
 	registerBuiltIn(registry, "sitemap", NewSitemapConnector)
 	registerBuiltIn(registry, "salesforce", NewSalesforceConnector)
@@ -86,6 +86,12 @@ func registerBuiltIn[T Connector](registry *Registry, source string, factory fun
 		return factory(config)
 	})
 	registry.Register(source, func(ctx context.Context, taskContext dao.SyncTaskContext) (Connector, error) {
-		return factory(map[string]any(taskContext.Connector.Config))
+		// Decrypt here, not when the task is loaded: a missing key then fails
+		// this task through the normal retry path instead of blocking its claim.
+		config, err := common.DecryptConnectorCredentials(taskContext.Connector.Config)
+		if err != nil {
+			return nil, err
+		}
+		return factory(config)
 	})
 }

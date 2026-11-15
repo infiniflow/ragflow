@@ -113,6 +113,40 @@ func TestExecute_DebugViaEntry(t *testing.T) {
 	}
 }
 
+func TestExecute_DebugViaEntryPurgesRunState(t *testing.T) {
+	taskCtx := NewDebugTaskContext("t1", "canvas-1", "doc.pdf", []byte("page one"))
+	runCtx, cancel := context.WithCancel(context.Background())
+
+	exec, err := NewPipelineExecutor(taskCtx, "canvas-1", 0, testPipelineDeps())
+	if err != nil {
+		t.Fatalf("NewPipelineExecutor: %v", err)
+	}
+	var purgedTaskID string
+	exec.purgeTaskState = func(ctx context.Context, taskID string) error {
+		if err := ctx.Err(); err != nil {
+			t.Errorf("purge context was cancelled with the debug request: %v", err)
+		}
+		purgedTaskID = taskID
+		return nil
+	}
+	exec.
+		WithLoadDSLFunc(func(ctx context.Context, canvasID string) (string, string, error) {
+			return "dsl", "canvas-1", nil
+		}).
+		WithRunPipelineFunc(func(ctx context.Context, dsl string) (map[string]any, string, error) {
+			cancel()
+			return map[string]any{"chunks": []map[string]any{{"text": "c1"}}}, dsl, nil
+		})
+
+	if _, err := exec.Execute(runCtx); err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	want := "pipeline_" + taskCtx.Doc.ID
+	if purgedTaskID != want {
+		t.Fatalf("purged task id = %q, want %q", purgedTaskID, want)
+	}
+}
+
 // TestInjectDebugPageCap verifies the canvas-debug page cap is delivered
 // through Run's override_params channel (the existing ParserConfig shape),
 // NOT through pipeline inputs. The cap must land at

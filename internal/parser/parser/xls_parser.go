@@ -58,7 +58,6 @@ func (p *XLSParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["parse_method"].(string); ok && v != "" {
 		p.ParseMethod = v
 	}
-	deprecatedHTML4Excel(setup, p.String())
 	deprecatedChunkRows(setup, p.String())
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
@@ -83,27 +82,16 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 			p.TCADPAPIServer, p.TCADPAPIKey,
 			p.TCADPTableResultType, p.TCADPMarkdownImageResponseType,
 		)
-	case "", "excelize":
-		// Continue with the local Excelize parser.
+	case "", "excelize", "biff", "biff8":
+		// Continue with the local BIFF8 parser.
 	default:
-		return ParseResult{
-			Err: fmt.Errorf("unsupported XLS parse method: %q", p.ParseMethod),
-		}
+		// PDF-specific methods like "DeepDOC" / "PaddleOCR" / "MinerU"
+		// are meaningless for XLS; treat them as the default BIFF8 path,
+		// matching Python's behaviour where parse_method is irrelevant
+		// for spreadsheet processing.
 	}
 
-	var (
-		items       []map[string]any
-		warnings    []string
-		sheetsCount int
-		err         error
-	)
-	if bytes.HasPrefix(data, CompoundDocumentSignature) {
-		items, sheetsCount, err = parseBIFF8Bytes(ctx, data)
-	} else {
-		mediaBudget := newEmbeddedMediaBudget()
-		items, warnings, sheetsCount, err = parseXLSXBytes(data, mediaBudget)
-		warnings = append(warnings, mediaBudget.warnings()...)
-	}
+	items, sheetsCount, err := parseBIFF8Bytes(ctx, data)
 	if err := ctx.Err(); err != nil {
 		return ParseResult{Err: err}
 	}
@@ -112,9 +100,8 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 	}
 
 	return ParseResult{
-		File:     map[string]any{"name": filename, "format": "xls", "sheets": sheetsCount},
-		JSON:     MapsToItems(items),
-		Warnings: warnings,
+		File: map[string]any{"name": filename, "format": "xls", "sheets": sheetsCount},
+		JSON: MapsToItems(items),
 	}
 }
 

@@ -139,7 +139,7 @@ func (s *DocumentService) ListDocuments(ctx context.Context, page, pageSize int)
 	return responses, total, nil
 }
 
-func (s *DocumentService) GetThumbnails(ctx context.Context, userID string, docIDs []string) (map[string]string, error) {
+func (s *DocumentService) GetThumbnails(ctx context.Context, docIDs []string) (map[string]string, error) {
 	if len(docIDs) == 0 {
 		return map[string]string{}, nil
 	}
@@ -151,7 +151,7 @@ func (s *DocumentService) GetThumbnails(ctx context.Context, userID string, docI
 
 	result := make(map[string]string, len(documents))
 	for _, document := range documents {
-		if document == nil || service.CheckDocumentAccess(ctx, permission.Subject{UserID: userID}, document.ID, document.KbID, permission.OperationRead) != nil {
+		if document == nil || service.CheckDocumentAccess(ctx, document.ID, document.KbID, permission.OperationRead) != nil {
 			continue
 		}
 

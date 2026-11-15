@@ -429,10 +429,6 @@ export default {
       layoutRecognize: 'Analyseur PDF',
       layoutRecognizeTip:
         "Utilise un modèle visuel pour détecter les titres, blocs de texte, images et tableaux dans les PDF. Si l'option naïve est choisie, seul le texte brut est extrait. Ne fonctionne que sur les fichiers PDF.",
-      taskPageSize: 'Taille de page par tâche',
-      taskPageSizeMessage: 'Veuillez saisir une taille de page pour la tâche !',
-      taskPageSizeTip:
-        'Pendant la reconnaissance, un fichier PDF est divisé en segments traités en parallèle. Une taille plus grande réduit les coupures de texte entre pages.',
       addPage: 'Ajouter une page',
       greaterThan: 'La valeur actuelle doit être supérieure à "à" !',
       greaterThanPrevious:
@@ -453,9 +449,6 @@ export default {
       delimiter: 'Délimiteur de texte',
       delimiterTip:
         'Un délimiteur peut être un ou plusieurs caractères spéciaux. Pour plusieurs caractères, encadrez-les de backticks (``). Ex : \\n`##`;',
-      html4excel: 'Excel vers HTML',
-      html4excelTip:
-        'Utilisé avec la méthode "générale". Si désactivé, les tableaux sont convertis en paires clé-valeur. Sinon, ils deviennent des tableaux HTML divisés toutes les 12 lignes.',
       autoKeywords: 'Mots-clés automatiques',
       autoKeywordsTip:
         'Extrait automatiquement N mots-clés par segment. Consomme des tokens. Voir la documentation : https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',
@@ -698,8 +691,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         'Par exemple : https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: "Jeton d'accès AI Studio",
-      paddleocrAccessTokenTip: "Jeton d'accès à l'API PaddleOCR (optionnel)",
-      paddleocrAccessTokenPlaceholder: 'Votre jeton AI Studio (optionnel)',
+      paddleocrAccessTokenTip: "Jeton d'accès à l'API PaddleOCR",
+      paddleocrAccessTokenPlaceholder: 'Votre jeton AI Studio',
       paddleocrAlgorithm: 'Algorithme PaddleOCR',
       paddleocrAlgorithmTip: "Algorithme utilisé pour l'analyse PaddleOCR",
       paddleocrSelectAlgorithm: 'Sélectionner un algorithme',
@@ -1232,9 +1225,8 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
       paddleocrApiUrlPlaceholder:
         'Ex. : https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: "Jeton d'accès AI Studio",
-      paddleocrAccessTokenMessage:
-        "Jeton d'accès à l'API PaddleOCR (optionnel)",
-      paddleocrAccessTokenPlaceholder: 'Votre jeton AI Studio (optionnel)',
+      paddleocrAccessTokenMessage: "Jeton d'accès à l'API PaddleOCR",
+      paddleocrAccessTokenPlaceholder: 'Votre jeton AI Studio',
       paddleocrAlgorithm: 'Algorithme PaddleOCR',
       paddleocrAlgorithmMessage:
         'Veuillez sélectionner un algorithme PaddleOCR',
@@ -1266,7 +1258,7 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
         'Le modèle de chat par défaut pour chaque base de connaissances nouvellement créée.',
       embeddingModel: "Modèle d'embedding",
       embeddingModelTip:
-        "Le modèle d'embedding par défaut pour chaque base de connaissances nouvellement créée. Si vous ne trouvez pas de modèle d'embedding dans la liste déroulante, vérifiez si vous utilisez l'édition RAGFlow slim (qui n'inclut pas les modèles d'embedding) ou consultez la page Fournisseurs de modèles pour voir si votre fournisseur de modèle supporte ce modèle.",
+        "Le modèle d'embedding par défaut pour chaque base de connaissances nouvellement créée. Si vous ne trouvez pas de modèle d'embedding dans la liste déroulante, consultez la page Fournisseurs de modèles pour voir si votre fournisseur de modèle supporte ce modèle.",
       img2txtModel: 'Modèle Img2txt',
       img2txtModelTip:
         'Le modèle img2txt par défaut pour chaque base de connaissances nouvellement créée. Il décrit une image ou une vidéo. Si vous ne trouvez pas de modèle dans la liste déroulante, consultez la page Fournisseurs de modèles pour voir si votre fournisseur le supporte.',
@@ -1301,7 +1293,7 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
         apiUrlPlaceholder:
           'Par exemple : https://paddleocr-server.com/layout-parsing',
         accessToken: "Jeton d'accès AI Studio",
-        accessTokenPlaceholder: 'Votre jeton AI Studio (optionnel)',
+        accessTokenPlaceholder: 'Votre jeton AI Studio',
         algorithm: 'Algorithme PaddleOCR',
         selectAlgorithm: 'Sélectionner un algorithme',
         modelNamePlaceholder: 'Par exemple : paddleocr-from-env-1',
@@ -2364,9 +2356,9 @@ Exemple : Virtual Hosted Style`,
       jsonFormatTip:
         'Le composant en amont doit fournir une chaîne JSON au format suivant :',
       toEmailTip: 'to_email : Email du destinataire (Obligatoire)',
-      ccEmailTip: 'cc_email : Email en copie (Optionnel)',
-      subjectTip: "subject : Sujet de l'email (Optionnel)",
-      contentTip: "content : Contenu de l'email (Optionnel)",
+      ccEmailTip: 'cc_email : Email en copie',
+      subjectTip: "subject : Sujet de l'email",
+      contentTip: "content : Contenu de l'email",
       jsonUploadTypeErrorMessage: 'Veuillez uploader un fichier JSON',
       jsonUploadContentErrorMessage: 'Erreur dans le fichier JSON',
       iteration: 'Itération',
@@ -2470,13 +2462,6 @@ Exemple : Virtual Hosted Style`,
       seconds: 'Secondes',
       subject: 'Sujet',
       // --- clés manquantes ajoutées ---
-      preprocess: {
-        preprocess: 'Prétraitement',
-        mainContent: 'Contenu principal',
-        abstract: 'Résumé',
-        author: 'Auteur',
-        sectionTitle: 'Titre de section',
-      },
       editTags: 'Modifier les étiquettes',
       editTagsDescription:
         'Ajoutez des étiquettes pour organiser et filtrer vos agents. Appuyez sur Entrée ou virgule pour ajouter.',
@@ -2552,9 +2537,6 @@ Idéal pour : les documents avec un contenu fluide et contextuellement lié — 
       oneChunkTitle: 'Note',
       oneChunkDescription:
         'Toutes les sections analysées seront fusionnées dans un seul bloc.',
-      flattenMediaToText: 'Désactiver le modèle de vision',
-      flattenMediaToTextTip:
-        "Traite les sections d'images et de tableaux comme du texte brut et ignore l'amélioration par vision.",
       enableChildrenDelimiters:
         'Les blocs enfants sont utilisés pour la récupération',
       merge: 'Fusionner',

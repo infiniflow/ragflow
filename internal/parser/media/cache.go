@@ -29,6 +29,11 @@ import (
 // be returned to the task rather than treated as a missing image.
 var ErrMediaNotFound = errors.New("media: reference not found")
 
+// ErrMediaLimitExceeded reports that a run-scoped media limit rejected a
+// write. Parser paths may skip the image and warn; every other cache error is
+// fatal to the task.
+var ErrMediaLimitExceeded = errors.New("media: run media limit exceeded")
+
 // Cache stores decoded image bytes for materialization by later ingestion
 // components. Implementations own key scoping, lifecycle bookkeeping and
 // validation of the payload size and digest before returning bytes from Get.
@@ -45,8 +50,8 @@ func WithCache(ctx context.Context, cache Cache) context.Context {
 }
 
 // CacheFromContext returns the run-scoped media cache, or nil when the caller
-// did not attach one. HTML images must fail rather than silently drop when it
-// is absent.
+// did not attach one. Parser paths that emit references must fail rather than
+// silently drop images when it is absent.
 func CacheFromContext(ctx context.Context) Cache {
 	cache, _ := ctx.Value(cacheContextKey{}).(Cache)
 	return cache
@@ -54,8 +59,8 @@ func CacheFromContext(ctx context.Context) Cache {
 
 // ValidatePayload performs the shared cache integrity and size checks.
 func ValidatePayload(data []byte, ref entity.MediaRef) ([]byte, error) {
-	if len(data) > HTMLImageMaxBytes() {
-		return nil, fmt.Errorf("media: image %s exceeds the %d-byte limit", shortMediaDigest(ref.SHA256), HTMLImageMaxBytes())
+	if len(data) > ImageMaxBytes() {
+		return nil, fmt.Errorf("media: image %s exceeds the %d-byte limit", shortMediaDigest(ref.SHA256), ImageMaxBytes())
 	}
 	sum := sha256.Sum256(data)
 	if got := hex.EncodeToString(sum[:]); got != ref.SHA256 {

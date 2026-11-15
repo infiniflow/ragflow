@@ -54,40 +54,9 @@
                             }
                         },
                         "image": {
-                            "ocr_enabled": true,
-                            "preprocess": [
-                                "main_content"
-                            ],
-                            "suffix": [
-                                "bmp",
-                                "gif",
-                                "jpeg",
-                                "jpg",
-                                "png",
-                                "svg",
-                                "tif",
-                                "tiff",
-                                "webp"
-                            ]
+                            "ocr_enabled": true
                         },
-                        "video": {
-                            "preprocess": [
-                                "main_content"
-                            ],
-                            "suffix": [
-                                "3gp",
-                                "3gpp",
-                                "avi",
-                                "flv",
-                                "mkv",
-                                "mov",
-                                "mp4",
-                                "mpeg",
-                                "mpg",
-                                "webm",
-                                "wmv"
-                            ]
-                        }
+                        "video": {}
                     }
                 },
                 "upstream": [
@@ -245,16 +214,10 @@
                             "setups": [
                                 {
                                     "fileFormat": "image",
-                                    "ocr_enabled": true,
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "ocr_enabled": true
                                 },
                                 {
-                                    "fileFormat": "video",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "fileFormat": "video"
                                 }
                             ]
                         },

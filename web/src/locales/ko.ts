@@ -544,9 +544,6 @@ export default {
       layoutRecognize: 'PDF 파서',
       layoutRecognizeTip:
         '비전 모델을 사용하여 PDF 레이아웃을 분석하고 문서 제목, 텍스트 블록, 이미지 및 표를 효과적으로 찾습니다. Naive 옵션을 선택하면 PDF의 일반 텍스트만 검색됩니다. 이 옵션은 현재 PDF 문서에만 적용됩니다.',
-      taskPageSize: '작업 페이지 크기',
-      taskPageSizeMessage: '작업 페이지 크기를 입력해 주세요',
-      taskPageSizeTip: `레이아웃 인식 중 PDF 파일은 처리 속도를 높이기 위해 chunk로 분할되어 병렬로 처리됩니다. 이 파라미터는 각 chunk의 크기를 설정합니다. chunk 크기가 클수록 페이지 간에 연속적인 텍스트가 분리될 가능성이 낮아집니다.`,
       addPage: '페이지 추가',
       greaterThan: '현재 값은 끝 값보다 커야 합니다',
       greaterThanPrevious: '현재 값은 이전 끝 값보다 커야 합니다',
@@ -572,8 +569,6 @@ export default {
       childrenDelimiterTip:
         '구분자는 하나 또는 여러 특수 문자로 구성될 수 있습니다. 여러 문자인 경우 백틱(` `)으로 감싸야 합니다. 예를 들어 구분자를 \\n`##`;으로 설정하면 줄바꿈, 이중 해시 기호(##), 세미콜론에서 텍스트가 분리됩니다.',
 
-      html4excel: 'Excel을 HTML로',
-      html4excelTip: `일반 chunking 방법과 함께 사용합니다. 비활성화 시 데이터셋의 스프레드시트(XLSX 또는 XLS(Excel 97-2003))는 키-값 쌍으로 파싱됩니다. 활성화 시 HTML 표로 파싱되며, 원래 표가 12행을 초과하면 12행마다 분리됩니다. 자세한 내용은 https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration 을 참조하세요.`,
       autoKeywords: '자동 키워드',
       autoKeywordsTip: `각 chunk에서 N개의 키워드를 자동으로 추출하여 해당 키워드가 포함된 쿼리에서의 순위를 높입니다. '설정'에서 지정된 인덱싱 모델이 추가 토큰을 소비합니다. chunk 목록에서 추가된 키워드를 확인하거나 업데이트할 수 있습니다. 자세한 내용은 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration 을 참조하세요.`,
       autoQuestions: '자동 질문',
@@ -636,8 +631,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         '예: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio 액세스 토큰',
-      paddleocrAccessTokenTip: 'PaddleOCR API용 액세스 토큰 (선택 사항)',
-      paddleocrAccessTokenPlaceholder: 'AI Studio 토큰 (선택 사항)',
+      paddleocrAccessTokenTip: 'PaddleOCR API용 액세스 토큰',
+      paddleocrAccessTokenPlaceholder: 'AI Studio 토큰',
       paddleocrAlgorithm: 'PaddleOCR 알고리즘',
       paddleocrAlgorithmTip: 'PaddleOCR 파싱에 사용할 알고리즘',
       paddleocrSelectAlgorithm: '알고리즘 선택',
@@ -1550,7 +1545,7 @@ export default {
         '예: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'PaddleOCR 액세스 토큰',
       paddleocrAccessTokenMessage: 'PaddleOCR 액세스 토큰을 입력해 주세요',
-      paddleocrAccessTokenPlaceholder: 'PaddleOCR 액세스 토큰 (선택 사항)',
+      paddleocrAccessTokenPlaceholder: 'PaddleOCR 액세스 토큰',
       paddleocrAlgorithm: 'PaddleOCR 알고리즘',
       paddleocrAlgorithmMessage: 'PaddleOCR 알고리즘을 선택해 주세요',
       mineruApiserver: 'MinerU API 서버',
@@ -1610,7 +1605,7 @@ export default {
         apiUrl: 'PaddleOCR API URL',
         apiUrlPlaceholder: '예: https://paddleocr-server.com/layout-parsing',
         accessToken: 'AI Studio 액세스 토큰',
-        accessTokenPlaceholder: 'AI Studio 토큰 (선택 사항)',
+        accessTokenPlaceholder: 'AI Studio 토큰',
         algorithm: 'PaddleOCR 알고리즘',
         selectAlgorithm: '알고리즘 선택',
         modelNamePlaceholder: '예: paddleocr-from-env-1',
@@ -1847,13 +1842,6 @@ export default {
       pleaseUploadAtLeastOneFile: '최소 하나의 파일을 업로드해 주세요',
     },
     flow: {
-      preprocess: {
-        preprocess: '전처리',
-        mainContent: '본문 내용',
-        abstract: '요약',
-        author: '저자',
-        sectionTitle: '섹션 제목',
-      },
       editTags: '태그 편집',
       editTagsDescription:
         '에이전트를 정리하고 필터링하기 위한 태그를 추가하세요. Enter 또는 쉼표를 눌러 추가합니다.',
@@ -1928,9 +1916,6 @@ export default {
       oneChunkTitle: '참고',
       oneChunkDescription:
         '파싱된 모든 섹션이 순서대로 단일 chunk로 병합됩니다.',
-      flattenMediaToText: '비전 모델 비활성화',
-      flattenMediaToTextTip:
-        '이미지 및 표 섹션을 일반 텍스트로 처리하고 비전 향상을 건너뜁니다.',
       enableChildrenDelimiters: '하위 chunk를 검색에 사용',
       merge: '병합',
       split: '분할',
@@ -2420,9 +2405,9 @@ export default {
       jsonFormatTip:
         '업스트림 구성 요소는 다음 형식의 JSON 문자열을 제공해야 합니다:',
       toEmailTip: 'to_email: 수신자 이메일 (필수)',
-      ccEmailTip: 'cc_email: 참조 이메일 (선택)',
-      subjectTip: 'subject: 이메일 제목 (선택)',
-      contentTip: 'content: 이메일 내용 (선택)',
+      ccEmailTip: 'cc_email: 참조 이메일',
+      subjectTip: 'subject: 이메일 제목',
+      contentTip: 'content: 이메일 내용',
       jsonUploadTypeErrorMessage: 'json 파일을 업로드해 주세요',
       jsonUploadContentErrorMessage: 'json 파일 오류',
       iteration: '반복',

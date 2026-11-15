@@ -1,6 +1,7 @@
 #pragma STDC FP_CONTRACT OFF
 
 #include "thinc_ner.h"
+#include "thinc_json.h"
 
 #include <algorithm>
 #include <cmath>
@@ -608,7 +609,14 @@ char* ThincNER_Predict(ThincNERHandle h, const char* tj) {
 
 	// ---- Step 8: BILUO decode ----
 	auto ents=decode_biluo(tok,tl);
-    std::string r="["; for(size_t i=0;i<ents.size();i++){if(i)r+=",";r+="{\"text\":\""+ents[i].text+"\",\"label\":\""+ents[i].label+"\",\"start\":"+std::to_string(ents[i].start)+",\"end\":"+std::to_string(ents[i].end)+",\"confidence\":"+std::to_string(ents[i].conf)+"}";} r+="]";
+    std::string r="[";
+    for(size_t i=0;i<ents.size();i++){
+        if(i)r+=",";
+        r+="{\"text\":"+thinc::JsonString(ents[i].text)+",\"label\":"+thinc::JsonString(ents[i].label)+
+           ",\"start\":"+std::to_string(ents[i].start)+",\"end\":"+std::to_string(ents[i].end)+
+           ",\"confidence\":"+std::to_string(ents[i].conf)+"}";
+    }
+    r+="]";
     return strdup(r.c_str());
 }
 
@@ -620,6 +628,11 @@ char* ThincNER_Tokenize(const char* t, const char* l) {
     // de, fr, es, pt: European Latin -> en tokenizer; zh, ja: CJK -> zh tokenizer
     bool is_cjk = (lang == "zh" || lang == "ja");
     auto tok = is_cjk ? tokenize_zh(t) : tokenize_en(t);
-    std::string r="["; for(size_t i=0;i<tok.size();i++){if(i)r+=",";r+="\""+tok[i]+"\"";} r+="]";
+    std::string r="[";
+    for(size_t i=0;i<tok.size();i++){
+        if(i)r+=",";
+        r+=thinc::JsonString(tok[i]);
+    }
+    r+="]";
     return strdup(r.c_str());
 }

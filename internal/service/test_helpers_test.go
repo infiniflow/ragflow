@@ -57,6 +57,17 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
+	// An in-memory SQLite database is a separate database per connection. With
+	// the default pool, a concurrent query (e.g. the fire-and-forget ingest-log
+	// goroutine) opens a second connection that sees an empty schema and fails
+	// with "no such table". Pin the pool to a single connection so every query,
+	// on the test thread or the emit goroutine, reuses the migrated handle.
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("failed to acquire sql.DB: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(1)
+
 	if err = db.AutoMigrate(
 		&entity.Document{},
 		&entity.Knowledgebase{},
@@ -129,7 +140,7 @@ func serviceTestContext(t *testing.T, userID, tenantID string, additionalMemberI
 			}
 		}
 	}
-	return permission.WithSubject(t.Context(), permission.Subject{UserID: userID, TenantID: tenantID})
+	return permission.WithIdentity(t.Context(), userID, tenantID)
 }
 
 func getAPIConversationForTest(t *testing.T, db *gorm.DB, id string) *entity.API4Conversation {
@@ -205,7 +216,7 @@ func (fakeChatDocEngine) GetAggregation([]map[string]interface{}, string) []map[
 func (fakeChatDocEngine) GetHighlight([]map[string]interface{}, []string, string) map[string]string {
 	return nil
 }
-func (fakeChatDocEngine) RunSQL(context.Context, string, string, []string, string) ([]map[string]interface{}, error) {
+func (fakeChatDocEngine) RunSQL(context.Context, string, string) ([]map[string]interface{}, error) {
 	return nil, nil
 }
 func (fakeChatDocEngine) GetChunkIDs([]map[string]interface{}) []string { return nil }

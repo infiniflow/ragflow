@@ -1,87 +1,179 @@
-import { render, screen } from '@testing-library/react';
-
+import { fireEvent, render, screen } from '@testing-library/react';
 import FloatingChatWidgetMarkdown from '../floating-chat-widget-markdown';
 
+type IReference = import('@/interfaces/database/chat').IReference;
+type IReferenceChunk = import('@/interfaces/database/chat').IReferenceChunk;
+
+jest.mock('react-markdown', () => ({
+  __esModule: true,
+  default: ({ children, components }: any) => {
+    const Typography = components['custom-typography'];
+    return <Typography>{children}</Typography>;
+  },
+}));
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
-
 jest.mock('@/hooks/use-document-request', () => ({
   useFetchDocumentThumbnailsByIds: () => ({
     setDocumentIds: jest.fn(),
     data: {},
   }),
-  useGetDocumentUrl: () => () => undefined,
+  useGetDocumentUrl: () => (id: string) => `/document/${id}`,
 }));
-
-jest.mock('@/components/theme-provider', () => ({
-  useIsDarkTheme: () => false,
-}));
-
-// Render the hover card eagerly so the resolved chunk content is assertable.
-jest.mock('@/components/ui/hover-card', () => ({
-  HoverCard: ({ children }: any) => (
-    <div data-testid="citation">{children}</div>
-  ),
-  HoverCardTrigger: ({ children }: any) => (
-    <span data-testid="chip">{children}</span>
-  ),
-  HoverCardContent: ({ children }: any) => (
-    <div data-testid="popover">{children}</div>
-  ),
-}));
-
-jest.mock('@radix-ui/react-hover-card', () => ({
-  Portal: ({ children }: any) => <>{children}</>,
-}));
-
-jest.mock('@/components/ui/tooltip', () => ({
-  Tooltip: ({ children }: any) => <>{children}</>,
-  TooltipTrigger: ({ children }: any) => <>{children}</>,
-  TooltipContent: ({ children }: any) => <>{children}</>,
-}));
-
-jest.mock('@/components/svg-icon', () => ({
-  __esModule: true,
-  default: () => <span />,
-}));
-
-jest.mock('@/components/image', () => ({
+jest.mock('../theme-provider', () => ({ useIsDarkTheme: () => false }));
+jest.mock('../image', () => ({
   __esModule: true,
   default: () => null,
   AuthenticatedImg: () => null,
 }));
-
+jest.mock('../svg-icon', () => ({ __esModule: true, default: () => null }));
+jest.mock('../ui/hover-card', () => {
+  const Wrapper = ({ children }: any) => <div>{children}</div>;
+  return {
+    HoverCard: Wrapper,
+    HoverCardContent: ({ children }: any) => (
+      <div data-testid="popover">{children}</div>
+    ),
+    HoverCardTrigger: Wrapper,
+  };
+});
+jest.mock('@radix-ui/react-hover-card', () => ({
+  Portal: ({ children }: any) => <>{children}</>,
+}));
+jest.mock('../ui/tooltip', () => {
+  const Wrapper = ({ children }: any) => <div>{children}</div>;
+  return { Tooltip: Wrapper, TooltipContent: Wrapper, TooltipTrigger: Wrapper };
+});
+jest.mock('@/utils/chat', () => ({
+  ...jest.requireActual('@/utils/citation-utils'),
+  currentReg: jest.requireActual('@/utils/citation-utils').citationMarkerReg,
+  preprocessLaTeX: (text: string) => text,
+  replaceRetrievingToSection: (text: string) => text,
+  replaceTextByOldReg: (text: string) => text,
+  replaceThinkToSection: (text: string) => text,
+  showImage: () => false,
+}));
+jest.mock('@/constants/markdown-remark-plugins', () => ({
+  MarkdownRemarkPlugins: [],
+}));
+jest.mock('@/constants/markdown-rehype-plugins', () => ({
+  RehypeSanitizeAssistantMarkdown: () => undefined,
+}));
+jest.mock('rehype-katex', () => ({ __esModule: true, default: jest.fn() }));
+jest.mock('rehype-raw', () => ({ __esModule: true, default: jest.fn() }));
+jest.mock('unist-util-visit-parents', () => ({ visitParents: jest.fn() }));
 jest.mock('react-syntax-highlighter', () => ({
   __esModule: true,
-  default: ({ children }: any) => <pre>{children}</pre>,
+  default: () => null,
 }));
-
 jest.mock('react-syntax-highlighter/dist/esm/styles/prism', () => ({
   oneDark: {},
   oneLight: {},
 }));
 
-// react-markdown is ESM-only; feed the whole content through the same
-// custom-typography component that replaces citation markers in production.
-jest.mock('react-markdown', () => ({
-  __esModule: true,
-  default: ({ children, components }: any) => {
-    const ReactLib = jest.requireActual('react');
-    const CustomTypography = components['custom-typography'];
-    return ReactLib.createElement(CustomTypography, null, String(children));
-  },
-}));
+// Synthetic references deliberately use different IDs and documents.
+const FirstChunk: IReferenceChunk = {
+  id: 'a2d067519c9e0db1',
+  document_id: 'first-document',
+  document_name: 'first-source.pdf',
+  content: null,
+  dataset_id: 'dataset',
+  image_id: '',
+  similarity: 1,
+  vector_similarity: 1,
+  term_similarity: 1,
+  positions: [],
+};
+const SecondChunk: IReferenceChunk = {
+  ...FirstChunk,
+  id: 'b3e178620da1fc42',
+  document_id: 'second-document',
+  document_name: 'second-source.pdf',
+};
 
-jest.mock('rehype-katex', () => jest.fn());
-jest.mock('rehype-raw', () => jest.fn());
-jest.mock('unist-util-visit-parents', () => ({ visitParents: jest.fn() }));
-jest.mock('@/constants/markdown-remark-plugins', () => ({
-  MarkdownRemarkPlugins: [],
-}));
-jest.mock('@/constants/markdown-rehype-plugins', () => ({
-  RehypeSanitizeAssistantMarkdown: jest.fn(),
-}));
+function renderCitation(
+  marker: string,
+  chunks: IReferenceChunk[] = [FirstChunk, SecondChunk],
+  loading = false,
+) {
+  const clickDocumentButton = jest.fn();
+  const reference: IReference = {
+    chunks,
+    doc_aggs: chunks.map((chunk) => ({
+      count: 1,
+      doc_id: chunk.document_id,
+      doc_name: chunk.document_name,
+    })),
+    total: chunks.length,
+  };
+  const result = render(
+    <FloatingChatWidgetMarkdown
+      content={`Answer ${marker}`}
+      reference={reference}
+      loading={loading}
+      clickDocumentButton={clickDocumentButton}
+    />,
+  );
+  return { ...result, clickDocumentButton };
+}
+
+describe('floating widget citation resolution', () => {
+  it.each(['[ID:0]', '[0]', '[ID:٠]', '[ID:۰]'])(
+    'resolves the positional marker %s',
+    (marker) => {
+      renderCitation(marker);
+      expect(
+        screen.getByRole('button', { name: FirstChunk.document_name }),
+      ).toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: SecondChunk.document_name }),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it('resolves an agent chunk ID independently of retrieval order', () => {
+    const { clickDocumentButton } = renderCitation(`[ID:${SecondChunk.id}]`);
+    const sourceButton = screen.getByRole('button', {
+      name: SecondChunk.document_name,
+    });
+    expect(sourceButton).toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: FirstChunk.document_name }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(sourceButton);
+    expect(clickDocumentButton).toHaveBeenCalledWith(
+      SecondChunk.document_id,
+      SecondChunk,
+    );
+  });
+
+  it('resolves a legacy chunk_id field', () => {
+    renderCitation(`[ID:${SecondChunk.id}]`, [
+      {
+        ...SecondChunk,
+        id: undefined,
+        chunk_id: SecondChunk.id,
+      } as unknown as IReferenceChunk,
+    ]);
+    expect(
+      screen.getByRole('button', { name: SecondChunk.document_name }),
+    ).toBeInTheDocument();
+  });
+
+  it.each(['[ID:3]', '[ID:ffffffffffffffff]'])(
+    'keeps the unavailable-source fallback for %s',
+    (marker) => {
+      renderCitation(marker);
+      expect(screen.getByText('Reference unavailable')).toBeInTheDocument();
+    },
+  );
+
+  it('keeps the loading fallback until sources arrive', () => {
+    renderCitation('[ID:0]', [], true);
+    expect(screen.getByText('chat.searching')).toBeInTheDocument();
+  });
+});
 
 const buildChunk = (id: string, content: string, documentId: string) => ({
   id,

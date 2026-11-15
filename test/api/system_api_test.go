@@ -22,13 +22,15 @@ func TestRESTSystemPublicContracts(t *testing.T) {
 		t.Fatalf("ping status/body=%d/%q", ping.Status, ping.Body)
 	}
 	version := restOK(t, restCall(t, &config, http.MethodGet, "/system/version", nil, nil))
-	if value, ok := version["data"].(string); !ok || value == "" {
-		t.Fatalf("version must be a nonempty string: %v", version)
+	if value, ok := object(t, version["data"])["version"].(string); !ok || value == "" {
+		t.Fatalf("data.version must be a nonempty string: %v", version)
 	}
 	systemConfig := restOK(t, restCall(t, &config, http.MethodGet, "/system/config", nil, nil))
 	configData := object(t, systemConfig["data"])
-	if _, ok := configData["registerEnabled"]; !ok {
-		t.Fatalf("system config missing %q: %v", "registerEnabled", configData)
+	for _, key := range []string{"registerEnabled", "disablePasswordLogin"} {
+		if _, ok := configData[key]; !ok {
+			t.Fatalf("system config missing %q: %v", key, configData)
+		}
 	}
 	health := restCall(t, &config, http.MethodGet, "/system/healthz", nil, nil)
 	if health.Status != http.StatusOK && health.Status != http.StatusInternalServerError {
@@ -106,8 +108,8 @@ func TestRESTSystemTokenLifecycleAndRedaction(t *testing.T) {
 		}
 	}
 	repeated := restOK(t, restCall(t, TestConfig, http.MethodDelete, "/system/tokens/"+token, nil, nil))
-	if repeated["data"] != true {
-		t.Fatalf("repeated delete should be idempotent: %v", repeated)
+	if data, exists := repeated["data"]; exists {
+		t.Fatalf("data must be omitted, got %v", data)
 	}
 }
 

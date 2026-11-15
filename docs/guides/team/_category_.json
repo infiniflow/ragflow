@@ -3,7 +3,8 @@
   "position": 8,
   "link": {
     "type": "generated-index",
-    "description": "Team-specific guides."
+    "description": "Guides on managing team members, joining and leaving teams, and sharing resources in RAGFlow.",
+    "slug": "/guides/team/"
   },
   "customProps": {
     "categoryIcon": "LucideUsers"

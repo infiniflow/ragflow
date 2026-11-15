@@ -66,12 +66,12 @@ func TestResolveModelConfigForStoredMistralOCRProvider(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+	if err := db.AutoMigrate(&entity.UserTenant{}, &entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	const storedKey = `{"MISTRAL_OCR_API_KEY": "sk-env"}`
 	for _, row := range []interface{}{
-		&entity.TenantModelProvider{ID: "provider-mistral-ocr", TenantID: "tenant-1", ProviderName: "Mistral OCR"},
+		&entity.TenantModelProvider{ID: "provider-mistral-ocr", UserID: "tenant-1", TenantID: "tenant-1", ProviderName: "Mistral OCR"},
 		&entity.TenantModelInstance{ID: "instance-mistral-ocr", ProviderID: "provider-mistral-ocr", InstanceName: "default", APIKey: storedKey, Status: "active", Extra: "{}"},
 		&entity.TenantModel{ID: "model-mistral-ocr", ProviderID: "provider-mistral-ocr", InstanceID: "instance-mistral-ocr", ModelName: "mistral-ocr-latest", ModelType: int(entity.ModelTypeOCR), Status: "active"},
 	} {
@@ -262,12 +262,12 @@ func TestResolveModelConfigByIDScopedQuerySQL(t *testing.T) {
 		t.Fatalf("model queries=%d, want one scoped lookup: %+v", len(queries), queries)
 	}
 	query := queries[0]
-	const wantSQL = "SELECT * FROM `tenant_model` WHERE provider_id IN (SELECT `id` FROM `tenant_model_provider` WHERE tenant_id = ?) AND id = ? LIMIT 1"
+	const wantSQL = "SELECT * FROM `tenant_model` WHERE provider_id IN (SELECT `id` FROM `tenant_model_provider` WHERE tenant_id = ? AND user_id = ?) AND id = ? LIMIT 1"
 	if query.sql != wantSQL {
 		t.Errorf("scoped SQL=%q, want %q", query.sql, wantSQL)
 	}
-	if len(query.vars) != 2 || query.vars[0] != tenantID || query.vars[1] != modelID {
-		t.Errorf("bound vars=%#v, want tenant ID then model ID", query.vars)
+	if len(query.vars) != 3 || query.vars[0] != tenantID || query.vars[2] != modelID {
+		t.Errorf("bound vars=%#v, want tenant ID, owner user ID, then model ID", query.vars)
 	}
 	if strings.Contains(query.sql, tenantID) || strings.Contains(query.sql, modelID) {
 		t.Errorf("an ID was interpolated into SQL: %q", query.sql)
@@ -353,7 +353,7 @@ func openDispatchModelTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+	if err := db.AutoMigrate(&entity.UserTenant{}, &entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 	return db
@@ -367,7 +367,7 @@ func openDispatchModelTestDB(t *testing.T) *gorm.DB {
 func TestResolveModelConfig_InactiveInstanceIsAnExplicitFailure(t *testing.T) {
 	db := openDispatchModelTestDB(t)
 	for _, row := range []interface{}{
-		&entity.TenantModelProvider{ID: "provider-openai", TenantID: "tenant-1", ProviderName: "OpenAI"},
+		&entity.TenantModelProvider{ID: "provider-openai", UserID: "tenant-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
 		&entity.TenantModelInstance{ID: "instance-default", ProviderID: "provider-openai", InstanceName: "default", APIKey: `{"OPENAI_API_KEY": "sk-inactive"}`, Status: "inactive"},
 		&entity.TenantModel{ID: "model-1", ProviderID: "provider-openai", InstanceID: "instance-default", ModelName: "gpt-4o", ModelType: int(entity.ModelTypeChat), Status: "active"},
 	} {
@@ -403,7 +403,7 @@ func TestResolveModelConfig_InactiveInstanceIsAnExplicitFailure(t *testing.T) {
 func TestResolveModelConfig_MaxTokensOverrideSetsContextWindowOnly(t *testing.T) {
 	db := openDispatchModelTestDB(t)
 	for _, row := range []interface{}{
-		&entity.TenantModelProvider{ID: "provider-openai", TenantID: "tenant-1", ProviderName: "OpenAI"},
+		&entity.TenantModelProvider{ID: "provider-openai", UserID: "tenant-1", TenantID: "tenant-1", ProviderName: "OpenAI"},
 		&entity.TenantModelInstance{ID: "instance-default", ProviderID: "provider-openai", InstanceName: "default", Status: "active"},
 		&entity.TenantModel{ID: "model-1", ProviderID: "provider-openai", InstanceID: "instance-default", ModelName: "gpt-4o", ModelType: int(entity.ModelTypeChat), Status: "active"},
 	} {

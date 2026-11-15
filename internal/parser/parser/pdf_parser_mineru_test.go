@@ -9,6 +9,9 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
+
+	models "ragflow/internal/entity/models"
 )
 
 func TestPDFParser_ParseWithResult_MinerUJSONIntegration(t *testing.T) {
@@ -281,5 +284,188 @@ func TestPDFParser_ParseWithResult_MinerURejectsInvalidBackend(t *testing.T) {
 	}
 	if !strings.Contains(res.Err.Error(), "invalid backend") {
 		t.Fatalf("error = %q, want invalid backend context", res.Err.Error())
+	}
+}
+
+func TestPDFParser_ParseWithResult_MinerUV1ReturnsMarkdown(t *testing.T) {
+	withSSRFBypass(t)
+	var fileParseCalled atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/health":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"status":"ok","version":"4.0.12"}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"sample.pdf","status":"completed","output_files":{"markdown":{"file_id":"out-md"}}}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-md/content":
+			_, _ = w.Write([]byte("# From V1\n\nParagraph.\n"))
+		case r.URL.Path == "/file_parse":
+			fileParseCalled.Store(true)
+			http.Error(w, "file_parse", http.StatusBadRequest)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	pdf := NewPDFParser()
+	pdf.ConfigureFromSetup(map[string]any{
+		"parse_method":     "MinerU",
+		"mineru_apiserver": server.URL,
+		"mineru_backend":   "pipeline",
+	})
+	res := pdf.ParseWithResult(t.Context(), "sample.pdf", []byte("%PDF-1.4\nmock"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if fileParseCalled.Load() {
+		t.Fatal("V1 endpoint must not call /file_parse")
+	}
+	var text strings.Builder
+	for _, item := range ItemsToMaps(res.JSON) {
+		value, _ := item["text"].(string)
+		text.WriteString(value)
+		text.WriteString("\n")
+	}
+	if !strings.Contains(text.String(), "From V1") || !strings.Contains(text.String(), "Paragraph.") {
+		t.Fatalf("JSON text = %q, want V1 markdown", text.String())
+	}
+}
+
+func TestMinerUMarkdownResultUsesMarkdownAndRejectsEmpty(t *testing.T) {
+	res := minerUMarkdownResult(t.Context(), "sample.pdf", &models.MinerUV1Result{
+		Markdown: "# Cloud title\n",
+		Zip:      []byte("not-a-zip"),
+	})
+	if res.Err != nil {
+		t.Fatalf("markdown result: %v", res.Err)
+	}
+	var text strings.Builder
+	for _, item := range ItemsToMaps(res.JSON) {
+		value, _ := item["text"].(string)
+		text.WriteString(value)
+	}
+	if !strings.Contains(text.String(), "Cloud title") {
+		t.Fatalf("JSON text = %q, want markdown text", text.String())
+	}
+
+	empty := minerUMarkdownResult(t.Context(), "sample.pdf", &models.MinerUV1Result{Zip: []byte("zip-bytes")})
+	if empty.Err == nil || !strings.Contains(empty.Err.Error(), "empty") {
+		t.Fatalf("empty result error = %v", empty.Err)
+	}
+}
+
+func TestPDFParser_ConfigureFromSetup_MinerUTimeout(t *testing.T) {
+	pdf := NewPDFParser()
+	pdf.ConfigureFromSetup(map[string]any{
+		"parse_method":   "MinerU",
+		"mineru_timeout": "45m",
+	})
+	if pdf.MinerUPollTimeout != 45*time.Minute {
+		t.Fatalf("MinerUPollTimeout = %v, want 45m", pdf.MinerUPollTimeout)
+	}
+
+	pdf2 := NewPDFParser()
+	pdf2.ConfigureFromSetup(map[string]any{
+		"parse_method":   "MinerU",
+		"mineru_timeout": "1800",
+	})
+	if pdf2.MinerUPollTimeout != 1800*time.Second || !pdf2.MinerUTimeoutConfigured {
+		t.Fatalf("MinerUPollTimeout = %v, configured = %t, want 1800s true", pdf2.MinerUPollTimeout, pdf2.MinerUTimeoutConfigured)
+	}
+
+	pdf3 := NewPDFParser()
+	pdf3.ConfigureFromSetup(map[string]any{
+		"parse_method":   "MinerU",
+		"mineru_timeout": 1200,
+	})
+	if pdf3.MinerUPollTimeout != 1200*time.Second || !pdf3.MinerUTimeoutConfigured {
+		t.Fatalf("MinerUPollTimeout numeric int = %v, configured = %t", pdf3.MinerUPollTimeout, pdf3.MinerUTimeoutConfigured)
+	}
+
+	pdf4 := NewPDFParser()
+	pdf4.ConfigureFromSetup(map[string]any{
+		"parse_method":   "MinerU",
+		"mineru_timeout": 900.0,
+	})
+	if pdf4.MinerUPollTimeout != 900*time.Second || !pdf4.MinerUTimeoutConfigured {
+		t.Fatalf("MinerUPollTimeout numeric float = %v, configured = %t", pdf4.MinerUPollTimeout, pdf4.MinerUTimeoutConfigured)
+	}
+
+	// mineru_timeout takes precedence over mineru_timeout_seconds
+	pdf5 := NewPDFParser()
+	pdf5.ConfigureFromSetup(map[string]any{
+		"parse_method":           "MinerU",
+		"mineru_timeout":         1800,
+		"mineru_timeout_seconds": 60,
+	})
+	if pdf5.MinerUPollTimeout != 1800*time.Second || !pdf5.MinerUTimeoutConfigured {
+		t.Fatalf("MinerUPollTimeout precedence = %v, configured = %t, want 1800s true", pdf5.MinerUPollTimeout, pdf5.MinerUTimeoutConfigured)
+	}
+
+	// Huge duration numbers should clamp to MaxMinerURequestTimeout without integer overflow
+	pdfHugeInt := NewPDFParser()
+	pdfHugeInt.ConfigureFromSetup(map[string]any{
+		"parse_method":   "MinerU",
+		"mineru_timeout": 10000000000,
+	})
+	if pdfHugeInt.MinerUPollTimeout != MaxMinerURequestTimeout || !pdfHugeInt.MinerUTimeoutConfigured {
+		t.Fatalf("huge int timeout = %v, want %v", pdfHugeInt.MinerUPollTimeout, MaxMinerURequestTimeout)
+	}
+
+	pdfHugeFloat := NewPDFParser()
+	pdfHugeFloat.ConfigureFromSetup(map[string]any{
+		"parse_method":   "MinerU",
+		"mineru_timeout": 10000000000.0,
+	})
+	if pdfHugeFloat.MinerUPollTimeout != MaxMinerURequestTimeout || !pdfHugeFloat.MinerUTimeoutConfigured {
+		t.Fatalf("huge float timeout = %v, want %v", pdfHugeFloat.MinerUPollTimeout, MaxMinerURequestTimeout)
+	}
+
+	pdfHugeStr := NewPDFParser()
+	pdfHugeStr.ConfigureFromSetup(map[string]any{
+		"parse_method":   "MinerU",
+		"mineru_timeout": "10000000000",
+	})
+	if pdfHugeStr.MinerUPollTimeout != MaxMinerURequestTimeout || !pdfHugeStr.MinerUTimeoutConfigured {
+		t.Fatalf("huge str timeout = %v, want %v", pdfHugeStr.MinerUPollTimeout, MaxMinerURequestTimeout)
+	}
+
+	// Tiny sub-second float values should clamp to MinMinerURequestTimeout without truncating to 0
+	pdfTinyFloat := NewPDFParser()
+	pdfTinyFloat.ConfigureFromSetup(map[string]any{
+		"parse_method":   "MinerU",
+		"mineru_timeout": 1e-10,
+	})
+	if pdfTinyFloat.MinerUPollTimeout != MinMinerURequestTimeout || !pdfTinyFloat.MinerUTimeoutConfigured {
+		t.Fatalf("tiny float timeout = %v, want %v", pdfTinyFloat.MinerUPollTimeout, MinMinerURequestTimeout)
+	}
+
+	pdfTinyStr := NewPDFParser()
+	pdfTinyStr.ConfigureFromSetup(map[string]any{
+		"parse_method":   "MinerU",
+		"mineru_timeout": "1e-10",
+	})
+	if pdfTinyStr.MinerUPollTimeout != MinMinerURequestTimeout || !pdfTinyStr.MinerUTimeoutConfigured {
+		t.Fatalf("tiny str timeout = %v, want %v", pdfTinyStr.MinerUPollTimeout, MinMinerURequestTimeout)
+	}
+}
+
+func TestClampMinerUTimeout(t *testing.T) {
+	if got := ClampMinerUTimeout(0); got != minerUPollTimeout {
+		t.Fatalf("zero fallback = %v, want %v", got, minerUPollTimeout)
+	}
+	if got := ClampMinerUTimeout(100 * time.Millisecond); got != MinMinerURequestTimeout {
+		t.Fatalf("sub-second clamped = %v, want %v", got, MinMinerURequestTimeout)
+	}
+	if got := ClampMinerUTimeout(48 * time.Hour); got != MaxMinerURequestTimeout {
+		t.Fatalf("oversized clamped = %v, want %v", got, MaxMinerURequestTimeout)
+	}
+	if got := ClampMinerUTimeout(15 * time.Minute); got != 15*time.Minute {
+		t.Fatalf("valid duration = %v, want 15m", got)
 	}
 }

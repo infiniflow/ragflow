@@ -1,6 +1,7 @@
 export interface IDebugSingleRequestBody {
   component_id: string;
   params: Record<string, any>;
+  include_model_inputs?: boolean;
 }
 
 export interface IAgentWebhookTraceRequest {
