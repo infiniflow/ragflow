@@ -331,7 +331,7 @@ export default {
       webCrawl: 'Поисковый робот',
       chunkNumber: 'Количество чанков',
       uploadDate: 'Дата загрузки',
-      chunkMethod: 'Метод чанкинга',
+      parsingMode: 'Режим парсинга',
       enabled: 'Включено',
       disabled: 'Выключено',
       action: 'Действие',
@@ -383,9 +383,6 @@ export default {
       layoutRecognize: 'PDF парсер',
       layoutRecognizeTip:
         'Используйте визуальную модель для анализа макета PDF для эффективного определения заголовков документов, текстовых блоков, изображений и таблиц. Если выбран наивный вариант, будет извлекаться только простой текст из PDF. Обратите внимание, что эта опция в настоящее время работает ТОЛЬКО для PDF-документов.',
-      taskPageSize: 'Размер страницы задачи',
-      taskPageSizeMessage: 'Пожалуйста, введите размер страницы задачи!',
-      taskPageSizeTip: `Во время распознавания макета PDF-файл разбивается на части и обрабатывается параллельно для увеличения скорости обработки. Этот параметр устанавливает размер каждой части. Больший размер части снижает вероятность разделения непрерывного текста между страницами.`,
       addPage: 'Добавить страницу',
       greaterThan: 'Текущее значение должно быть больше, чем "до"!',
       greaterThanPrevious:
@@ -412,8 +409,6 @@ export default {
       childrenDelimiterTip:
         'Разделитель может состоять из одного или нескольких специальных символов. Если это несколько символов, убедитесь, что они заключены в обратные кавычки (``). Например, если вы настроите разделители так: \\n`##`;, то ваш текст будет разделен по переводам строк, двойным символам решетки (##) и точкам с запятой.',
 
-      html4excel: 'Excel в HTML',
-      html4excelTip: `Используется с методом чанкинга General. Когда отключено, электронные таблицы (XLSX или XLS (Excel 97-2003)) в базе знаний будут разобраны в пары ключ-значение. Когда включено, они будут разобраны в HTML таблицы, разделяя каждые 12 строк, если исходная таблица имеет более 12 строк. Подробности см. на https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration.`,
       autoKeywords: 'Авто-ключевые слова',
       autoKeywordsTip: `Автоматически извлекает N ключевых слов для каждого чанка, чтобы повысить их рейтинг для запросов, содержащих эти ключевые слова. Имейте в виду, что дополнительные токены будут потребляться чат-моделью, указанной в 'Системных настройках модели'. Вы можете проверить или обновить добавленные ключевые слова для чанка из списка чанков. Подробности см. на https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.`,
       autoQuestions: 'Авто-вопросы',
@@ -476,8 +471,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         'Например: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'Токен доступа AI Studio',
-      paddleocrAccessTokenTip: 'Токен доступа к API PaddleOCR (необязательно)',
-      paddleocrAccessTokenPlaceholder: 'Ваш токен AI Studio (необязательно)',
+      paddleocrAccessTokenTip: 'Токен доступа к API PaddleOCR',
+      paddleocrAccessTokenPlaceholder: 'Ваш токен AI Studio',
       paddleocrAlgorithm: 'Алгоритм PaddleOCR',
       paddleocrAlgorithmTip: 'Алгоритм, используемый для обработки PaddleOCR',
       paddleocrSelectAlgorithm: 'Выбрать алгоритм',
@@ -522,7 +517,7 @@ export default {
       dataFlowPlaceholder: 'Пожалуйста, выберите пайплайн.',
       buildItFromScratch: 'Построить с нуля',
       dataFlow: 'Пайплайн',
-      parseType: 'Тип парсинга',
+      parsingMode: 'Режим парсинга',
       manualSetup: 'Выбрать пайплайн',
       builtIn: 'Встроенный',
       titleDescription:
@@ -544,8 +539,6 @@ export default {
         'Если установлено значение «Команда», все члены команды смогут управлять базой знаний.',
       chunkTokenNumberTip:
         'Это своего рода устанавливает порог токенов для создания чанка. Сегмент с меньшим количеством токенов, чем этот порог, будет объединен со следующими сегментами до тех пор, пока количество токенов не превысит порог, после чего будет создан чанк. Новый чанк не создается, если не встречен разделитель, даже если порог превышен.',
-      chunkMethod: 'Метод чанкинга',
-      chunkMethodTip: 'Смотрите подсказки справа.',
       upload: 'Загрузить',
       english: 'Английский',
       chinese: 'Китайский',
@@ -969,8 +962,6 @@ export default {
       },
       cancel: 'Отмена',
       chatSetting: 'Настройки чата',
-      tocEnhance: 'Улучшение оглавлением',
-      tocEnhanceTip: ` Во время парсинга документа была сгенерирована информация оглавления (см. опцию 'Включить извлечение оглавления' в методе General). Это позволяет большой модели возвращать элементы оглавления, релевантные запросу пользователя, тем самым используя эти элементы для извлечения связанных чанков и применения весов к этим чанкам в процессе сортировки. Этот подход получен из имитации поведенческой логики того, как люди ищут знания в книгах.`,
       deleteSelectedConfirm: 'Удалить выбранные сеансы ({{count}})?',
       showChunkMetadata: 'Показать метаданные чанка',
       showChunkMetadataTip:
@@ -1326,7 +1317,7 @@ export default {
         apiUrlPlaceholder:
           'Например: https://paddleocr-server.com/layout-parsing',
         accessToken: 'Токен доступа AI Studio',
-        accessTokenPlaceholder: 'Ваш токен AI Studio (необязательно)',
+        accessTokenPlaceholder: 'Ваш токен AI Studio',
         algorithm: 'Алгоритм PaddleOCR',
         selectAlgorithm: 'Выбрать алгоритм',
         modelNamePlaceholder: 'Например: paddleocr-from-env-1',
@@ -1477,6 +1468,7 @@ export default {
         tts: 'TTS',
         image2text: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
       showToc: 'Показать содержание',
       hideToc: 'Скрыть содержание',
@@ -1545,13 +1537,6 @@ export default {
       pleaseUploadAtLeastOneFile: 'Пожалуйста, загрузите хотя бы один файл',
     },
     flow: {
-      preprocess: {
-        preprocess: 'Предобработка',
-        mainContent: 'Основное содержимое',
-        abstract: 'Аннотация',
-        author: 'Автор',
-        sectionTitle: 'Заголовок раздела',
-      },
       autoPlay: 'Автовоспроизведение аудио',
       downloadFileTypeTip: 'Тип файла для скачивания',
       downloadFileType: 'Тип скачиваемого файла',
@@ -2092,9 +2077,9 @@ export default {
       jsonFormatTip:
         'Вышестоящий компонент должен предоставить JSON строку в следующем формате:',
       toEmailTip: 'to_email: Email получателя (Обязательно)',
-      ccEmailTip: 'cc_email: Email копии (Опционально)',
-      subjectTip: 'subject: Тема email (Опционально)',
-      contentTip: 'content: Содержимое email (Опционально)',
+      ccEmailTip: 'cc_email: Email копии',
+      subjectTip: 'subject: Тема email',
+      contentTip: 'content: Содержимое email',
       jsonUploadTypeErrorMessage: 'Пожалуйста, загрузите json файл',
       jsonUploadContentErrorMessage: 'Ошибка json файла',
       iteration: 'Итерация',
@@ -2488,7 +2473,7 @@ export default {
       failed: 'Ошибка',
       logTitle: 'Заголовок',
       tags: 'Теги',
-      canvasCategory: 'Категория канваса',
+      agentCategory: 'Категория канваса',
     },
     llmTools: {
       bad_calculator: {
@@ -2677,10 +2662,10 @@ export default {
         share: 'Поделиться',
       },
 
-      serviceStatus: 'Статус сервиса',
-      userManagement: 'Управление пользователями',
-      sandboxSettings: 'Настройки песочницы',
-      registrationWhitelist: 'Белый список регистрации',
+      serviceStatus: 'Сервисы',
+      userManagement: 'Пользователи',
+      sandboxSettings: 'Песочница',
+      registrationWhitelist: 'Белый список',
       roles: 'Роли',
       monitoring: 'Мониторинг',
 
@@ -2786,7 +2771,7 @@ export default {
       importWhitelist: 'Импорт белого списка (Excel)',
       importSelectExcelFile: 'Excel файл (.xlsx)',
       importOverwriteExistingEmails: 'Перезаписать существующие emails',
-      importInvalidExcelFile: 'Пожалуйста, выберите действительный Excel файл',
+      importValidExcelFile: 'Пожалуйста, выберите действительный Excel файл',
       importFileRequired: 'Пожалуйста, выберите файл для импорта',
       importFileTips:
         'Файл должен содержать один заголовочный столбец с именем <code>email</code>.',
@@ -2800,7 +2785,6 @@ export default {
       permission: 'Права доступа',
 
       agentTitle: 'Название агента',
-      canvasCategory: 'Категория канваса',
 
       newRole: 'Новая роль',
       addNewRole: 'Добавить новую роль',
@@ -2819,18 +2803,14 @@ export default {
     },
     explore: {
       title: 'Запуск',
-      canvasList: 'Список канвасов',
       sessions: 'Сессии',
       newSession: 'Новая сессия',
       newSessionLabel: 'Начать новый разговор',
       deleteSession: 'Удалить сессию',
-      searchCanvas: 'Поиск по канвасу...',
       searchSessions: 'Поиск по сессиям...',
-      noCanvasSelected: 'Выберите канвас',
       noSessionSelected: 'Выберите сессию или создайте новую',
       noSessionsFound: 'Сессии не найдены',
       createFirstSession: 'Создайте первую сессию',
-      noCanvasFound: 'Канвасы не найдены',
       deleteSelectedConfirm: 'Удалить выбранные сеансы ({{count}})?',
       batchDeleteSessions: 'Удалить сессии',
     },

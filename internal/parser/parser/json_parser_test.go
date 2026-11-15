@@ -39,6 +39,41 @@ func TestJSONParser_SplitsArrayAndLines(t *testing.T) {
 	assertJSONTexts(t, res, `{"q":"a"}`, `{"q":"b"}`)
 }
 
+// Each number keeps the digits it was written with, and <, > and & stay
+// readable. Decoded into a float64 and re-encoded with json.Marshal, an id
+// above 2^53 changed digits and "a < b" became "a \u003c b".
+func TestJSONParser_KeepsValuesAsWritten(t *testing.T) {
+	p := NewJSONParser()
+	cases := []struct {
+		name, file, data string
+		want             []string
+	}{
+		{
+			name: "object",
+			file: "a.json",
+			data: `{"id": 12345678901234567890, "price": 1.50, "note": "a < b && c > d"}`,
+			want: []string{`{"id":12345678901234567890,"note":"a < b && c > d","price":1.50}`},
+		},
+		{
+			name: "array",
+			file: "a.json",
+			data: `[{"id": 9007199254740993}, 1e5]`,
+			want: []string{`{"id":9007199254740993}`, `1e5`},
+		},
+		{
+			name: "lines",
+			file: "a.jsonl",
+			data: "{\"id\": 12345678901234567890}\n{\"html\": \"<b>x</b>\"}\n",
+			want: []string{`{"id":12345678901234567890}`, `{"html":"<b>x</b>"}`},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			assertJSONTexts(t, p.ParseWithResult(context.Background(), tc.file, []byte(tc.data)), tc.want...)
+		})
+	}
+}
+
 // Files saved by Windows editors and Excel start with a UTF-8 BOM. The shape
 // detection looks at the first byte, so an undecoded BOM turned the whole
 // file into a single raw text item.

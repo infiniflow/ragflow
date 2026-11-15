@@ -1,22 +1,16 @@
 import MarkdownContent from '@/components/next-markdown-content';
 import JsonEditor from '@/components/json-edit';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { SwitchFormField } from '@/components/switch-form-field';
 import { ButtonLoading } from '@/components/ui/button';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { IMessage } from '@/interfaces/database/chat';
 import { cn } from '@/lib/utils';
 import { zodResolver } from '@hookform/resolvers/zod';
-import React, { ReactNode, useCallback, useMemo } from 'react';
+import { ReactNode, useCallback, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
@@ -32,6 +26,7 @@ const StringFields = [
 
 interface IProps {
   parameters: BeginQuery[];
+  initialValues?: Record<string, unknown>;
   message?: IMessage;
   ok(parameters: any[]): void;
   isNext?: boolean;
@@ -44,6 +39,7 @@ interface IProps {
 
 const DebugContent = ({
   parameters,
+  initialValues,
   message,
   ok,
   isNext = true,
@@ -102,157 +98,81 @@ const DebugContent = ({
 
   const form = useForm<z.infer<typeof formSchemaValues.schema>>({
     defaultValues: formSchemaValues.values,
+    values: initialValues
+      ? Object.fromEntries(
+          Object.entries(formSchemaValues.values).map(([key, value]) => [
+            key,
+            initialValues[key] ?? value,
+          ]),
+        )
+      : undefined,
+    resetOptions: { keepDirtyValues: true },
     resolver: zodResolver(formSchemaValues.schema),
   });
 
   const submittable = true;
 
-  const renderWidget = useCallback(
-    (q: BeginQuery, idx: string) => {
-      const props = {
-        key: idx,
-        label: q.name ?? q.key,
-        name: idx,
-      };
+  const renderWidget = useCallback((q: BeginQuery, idx: string) => {
+    const label = q.name ?? q.key;
 
-      const BeginQueryTypeMap = {
-        [BeginQueryType.Line]: (
-          <FormField
-            control={form.control}
-            name={props.name}
-            render={({ field }) => (
-              <FormItem className="flex-1">
-                <FormLabel>{props.label}</FormLabel>
-                <FormControl>
-                  <Input {...field}></Input>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
+    const BeginQueryTypeMap = {
+      [BeginQueryType.Line]: (
+        <RAGFlowFormItem name={idx} label={label}>
+          <Input />
+        </RAGFlowFormItem>
+      ),
+      [BeginQueryType.Paragraph]: (
+        <RAGFlowFormItem name={idx} label={label}>
+          <Textarea rows={1} />
+        </RAGFlowFormItem>
+      ),
+      [BeginQueryType.Options]: (
+        <RAGFlowFormItem name={idx} label={label}>
+          <SelectWithSearch
+            allowClear
+            options={
+              q.options?.map((x) => ({
+                label: x,
+                value: x as string,
+              })) ?? []
+            }
           />
-        ),
-        [BeginQueryType.Paragraph]: (
-          <FormField
-            control={form.control}
-            name={props.name}
-            render={({ field }) => (
-              <FormItem className="flex-1">
-                <FormLabel>{props.label}</FormLabel>
-                <FormControl>
-                  <Textarea rows={1} {...field}></Textarea>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        ),
-        [BeginQueryType.Options]: (
-          <FormField
-            control={form.control}
-            name={props.name}
-            render={({ field }) => (
-              <FormItem className="flex-1">
-                <FormLabel>{props.label}</FormLabel>
-                <FormControl>
-                  <SelectWithSearch
-                    allowClear
-                    options={
-                      q.options?.map((x) => ({
-                        label: x,
-                        value: x as string,
-                      })) ?? []
-                    }
-                    {...field}
-                  ></SelectWithSearch>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        ),
-        [BeginQueryType.File]: (
-          <React.Fragment key={idx}>
-            <FormField
-              control={form.control}
-              name={props.name}
-              render={({ field }) => (
-                <div className="space-y-6">
-                  <FormItem className="w-full">
-                    <FormLabel>{props.label}</FormLabel>
-                    <FormControl>
-                      <FileUploadDirectUpload
-                        value={field.value}
-                        onChange={field.onChange}
-                      ></FileUploadDirectUpload>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                </div>
-              )}
+        </RAGFlowFormItem>
+      ),
+      [BeginQueryType.File]: (
+        <RAGFlowFormItem name={idx} label={label}>
+          {(field) => (
+            <FileUploadDirectUpload
+              value={field.value}
+              onChange={field.onChange}
             />
-          </React.Fragment>
-        ),
-        [BeginQueryType.Integer]: (
-          <FormField
-            control={form.control}
-            name={props.name}
-            render={({ field }) => (
-              <FormItem className="flex-1">
-                <FormLabel>{props.label}</FormLabel>
-                <FormControl>
-                  <Input type="number" {...field}></Input>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        ),
-        [BeginQueryType.Boolean]: (
-          <FormField
-            control={form.control}
-            name={props.name}
-            render={({ field }) => (
-              <FormItem className="flex-1">
-                <FormLabel>{props.label}</FormLabel>
-                <FormControl>
-                  <Switch
-                    checked={field.value}
-                    onCheckedChange={field.onChange}
-                  ></Switch>
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        ),
-        [BeginQueryType.Object]: (
-          <FormField
-            control={form.control}
-            name={props.name}
-            render={({ field }) => (
-              <FormItem className="flex-1">
-                <FormLabel>{props.label}</FormLabel>
-                <FormControl>
-                  <JsonEditor
-                    value={field.value ?? {}}
-                    onChange={field.onChange}
-                    height="200px"
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        ),
-      };
+          )}
+        </RAGFlowFormItem>
+      ),
+      [BeginQueryType.Integer]: (
+        <RAGFlowFormItem name={idx} label={label}>
+          <Input type="number" />
+        </RAGFlowFormItem>
+      ),
+      [BeginQueryType.Boolean]: <SwitchFormField name={idx} label={label} />,
+      [BeginQueryType.Object]: (
+        <RAGFlowFormItem name={idx} label={label}>
+          {(field) => (
+            <JsonEditor
+              value={field.value ?? {}}
+              onChange={field.onChange}
+              height="200px"
+            />
+          )}
+        </RAGFlowFormItem>
+      ),
+    };
 
-      return (
-        BeginQueryTypeMap[q.type as BeginQueryType] ??
-        BeginQueryTypeMap[BeginQueryType.Paragraph]
-      );
-    },
-    [form],
-  );
+    return (
+      BeginQueryTypeMap[q.type as BeginQueryType] ??
+      BeginQueryTypeMap[BeginQueryType.Paragraph]
+    );
+  }, []);
 
   const onSubmit = useCallback(
     (values: z.infer<typeof formSchemaValues.schema>) => {
@@ -263,7 +183,7 @@ const DebugContent = ({
 
       ok(nextValues);
     },
-    [formSchemaValues, ok, parameters],
+    [ok, parameters],
   );
   return (
     <>

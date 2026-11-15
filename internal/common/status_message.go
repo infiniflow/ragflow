@@ -31,9 +31,15 @@ const (
 type ServerType string
 
 const (
-	ServerTypeAPI        ServerType = "api_server"  // API server
-	ServerTypeIngestion  ServerType = "ingestor"    // Ingestion server
-	ServerTypeFileSyncer ServerType = "file_syncer" // File syncer server
+	ServerTypeAdmin         ServerType = "admin"          // Admin server
+	ServerTypeAPI           ServerType = "api"            // API server
+	ServerTypeIngestion     ServerType = "ingestor"       // Ingestion server
+	ServerTypeFileSyncer    ServerType = "syncer"         // File syncer server
+	ServerTypeDeepDocGPU    ServerType = "deepdoc_gpu"    // DeepDoc GPU server
+	ServerTypeDeepDocCPU    ServerType = "deepdoc_cpu"    // DeepDoc CPU server
+	ServerTypeDeepDocAscend ServerType = "deepdoc_ascend" // DeepDoc Ascend server
+	ServerTypeMigrate       ServerType = "migrate"        // Migrate server
+	ServerTypeUnknown       ServerType = "unknown"        // Unknown server
 )
 
 type BaseMessage struct {

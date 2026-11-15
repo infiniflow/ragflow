@@ -43,8 +43,8 @@ const (
 	emailSessionTimeout = 30 * time.Second
 )
 
-// emailParams contains both the Python model-call inputs and the Canvas node
-// configuration used to deliver the message. Info exposes only the former.
+// emailParams contains the resolved message fields and node-level SMTP
+// configuration used to deliver the message.
 type emailParams struct {
 	SMTPServer   string `json:"smtp_server"`
 	SMTPPort     int    `json:"smtp_port"`
@@ -56,6 +56,15 @@ type emailParams struct {
 	CCEmail      string `json:"cc_email"`
 	Content      string `json:"content"`
 	Subject      string `json:"subject"`
+}
+
+// emailCallParams is the subset of emailParams that may be supplied by the
+// model. SMTP configuration must come only from the Canvas node.
+type emailCallParams struct {
+	ToEmail string `json:"to_email"`
+	CCEmail string `json:"cc_email"`
+	Content string `json:"content"`
+	Subject string `json:"subject"`
 }
 
 // emailEnvelope is what the model sees.
@@ -171,10 +180,20 @@ var sendEmail = sendEmailSMTP
 // InvokableRun sends the email.
 func (e *EmailTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool.Option) (string, error) {
 	p := e.defaults
-	if err := json.Unmarshal([]byte(argsJSON), &p); err != nil {
+	callParams := emailCallParams{
+		ToEmail: p.ToEmail,
+		CCEmail: p.CCEmail,
+		Content: p.Content,
+		Subject: p.Subject,
+	}
+	if err := json.Unmarshal([]byte(argsJSON), &callParams); err != nil {
 		return emailErrJSON(fmt.Errorf("email: parse arguments: %w", err)),
 			fmt.Errorf("email: parse arguments: %w", err)
 	}
+	p.ToEmail = callParams.ToEmail
+	p.CCEmail = callParams.CCEmail
+	p.Content = callParams.Content
+	p.Subject = callParams.Subject
 	state, _ := runtime.GetStateFromContext(ctx)
 	p.ToEmail = runtime.ResolveTemplateForDisplay(p.ToEmail, state)
 	p.CCEmail = runtime.ResolveTemplateForDisplay(p.CCEmail, state)

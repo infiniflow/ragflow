@@ -16,7 +16,7 @@
 
 // Package component — Begin component (T3).
 //
-// Begin is the DSL entry node. It injects the request's `inputs` into
+// Begin is the DSL entry node. It injects the request's query into
 // the shared *CanvasState.Sys namespace and passes the input map
 // through to its downstream unchanged. File-input handling
 // (FileService.get_files) handles `query`, `user_id`, and file
@@ -43,21 +43,20 @@ func mapsCopy(dst, src map[string]any) {
 
 const componentNameBegin = "Begin"
 
-// BeginComponent is the canvas entry node. The exported fields are
-// populated by the factory (registered via init) from the DSL params map.
-// ParamBase surface is intentionally omitted for P0 — Begin is trivial
-// and needs no validation beyond what the State writes perform.
+// BeginComponent is the canvas entry node with its declared input metadata.
 type BeginComponent struct {
-	name        string
-	inputFields []string
+	name             string
+	inputFields      []string
+	inputDefinitions map[string]any
 }
 
-// NewBeginComponent constructs a Begin component. It accepts the DSL params
-// map but does not retain it (Begin has no per-instance configuration).
+// NewBeginComponent constructs a Begin component from its declared inputs.
 func NewBeginComponent(params map[string]any) (Component, error) {
+	definitions, _ := params["inputs"].(map[string]any)
 	return &BeginComponent{
-		name:        componentNameBegin,
-		inputFields: beginInputFields(params),
+		name:             componentNameBegin,
+		inputFields:      beginInputFields(params),
+		inputDefinitions: definitions,
 	}, nil
 }
 
@@ -65,9 +64,10 @@ func NewBeginComponent(params map[string]any) (Component, error) {
 // the eino node-name injection in BuildWorkflow.
 func (b *BeginComponent) Name() string { return b.name }
 
-// Invoke writes inputs["query"] and (when present) inputs["user_id"] into
-// the shared *CanvasState.Sys namespace, then returns the input map as
-// outputs, exposing structured webhook sections at top level.
+// Invoke writes inputs["query"] into the shared *CanvasState.Sys namespace,
+// then returns the input map as outputs, exposing structured webhook
+// sections at top level. Other inputs, including user_id, remain ordinary
+// Begin outputs and cannot override the authenticated runtime identity.
 // The input map is shallow-copied to avoid aliasing
 // surprises across concurrent goroutines that share an inputs map.
 func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
@@ -81,14 +81,7 @@ func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[str
 
 	// Query: required to drive downstream components.
 	query, _ := inputs["query"].(string)
-	state.Sys["query"] = query
-
-	// Optional user_id — present in interactive chat flows, absent in
-	// background jobs. Always a string when set; cast failure silently
-	// drops the value (mirrors Python's getattr fallback).
-	if uid, ok := inputs["user_id"].(string); ok && uid != "" {
-		state.Sys["user_id"] = uid
-	}
+	state.SetSys("query", query)
 
 	// Webhook payload injection. The webhook HTTP handler sets
 	// root["webhook_payload"] (see service/agent.go RunAgentWithWebhook)
@@ -97,29 +90,35 @@ func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[str
 	// same way they read sys.query / sys.user_id. The chat path never
 	// sets this key, so existing tests stay green.
 	if payload, ok := inputs["webhook_payload"].(map[string]any); ok && len(payload) > 0 {
-		state.Sys["webhook_payload"] = payload
+		state.SetSys("webhook_payload", payload)
 	}
 
 	// Passthrough: a shallow copy keeps the caller's map un-aliased.
 	out := make(map[string]any, len(inputs))
 	mapsCopy(out, inputs)
 	for _, field := range b.inputFields {
+		definition, _ := b.inputDefinitions[field].(map[string]any)
+		optional, _ := definition["optional"].(bool)
+		value, supplied := beginInputValue(inputs, field)
 		if _, direct := inputs[field]; !direct {
-			if query, scalar := inputs["query"].(string); scalar {
-				if value, initialized := state.GetGlobal("begin@" + field); initialized {
-					out[field] = value
-					continue
+			if _, scalar := inputs["query"].(string); scalar {
+				if optional && len(b.inputFields) > 1 {
+					// A conversational query must not fill omitted optional fields.
+					value, supplied = nil, false
+				} else if previous, initialized := state.GetGlobal("begin@" + field); initialized {
+					value, supplied = previous, true
 				}
-				out[field] = query
-				state.SetGlobal("begin@"+field, query)
-				continue
 			}
 		}
-		if value, ok := beginInputValue(inputs, field); ok {
+		if !supplied {
+			value, supplied = state.GetGlobal("begin@" + field)
+		}
+		if optional && value == nil {
+			value, supplied = "", true
+		}
+		if supplied {
 			out[field] = value
 			state.SetGlobal("begin@"+field, value)
-		} else if value, ok := state.GetGlobal("begin@" + field); ok {
-			out[field] = value
 		}
 	}
 	// Webhook fields are public Begin outputs referenced as Begin@headers.key,
@@ -208,7 +207,7 @@ func (b *BeginComponent) Stream(ctx context.Context, db *gorm.DB, inputs map[str
 func (b *BeginComponent) Inputs() map[string]string {
 	return map[string]string{
 		"query":           "User query string (the chat input).",
-		"user_id":         "Optional user/tenant identifier.",
+		"user_id":         "Optional user identifier passed through as a Begin input.",
 		"webhook_payload": "Optional structured webhook request (set by the webhook HTTP handler; absent on chat flows).",
 		"inputs":          "Optional free-form inputs map; passthrough only.",
 	}

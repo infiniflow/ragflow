@@ -37,6 +37,11 @@ func CharsToBoxes(chars []pdf.TextChar, pageNum int, sortByTop bool) []pdf.TextB
 
 	boxes := make([]pdf.TextBox, 0, len(lines))
 	for _, line := range lines {
+		// GroupCharsToLines sorts by Bottom (or Top), so a raised superscript
+		// arrives before the base line and LineToTextBox would prepend it
+		// ("2I C" instead of "I2C"). Re-order each line X-first within fuzzy Y
+		// bands before assembling text and splitting columns.
+		sortLineByXY(line)
 		thr := threshold
 		if thr > 100 {
 			// No significant column gaps on this page → use per-line threshold.
@@ -51,6 +56,49 @@ func CharsToBoxes(chars []pdf.TextChar, pageNum int, sortByTop bool) []pdf.TextB
 		}
 	}
 	return boxes
+}
+
+// sortLineByXY orders one line's glyphs by X inside fuzzy Y bands (half the
+// median glyph height), falling back to Y across clearly different baselines.
+// Superscripts/subscripts stay at their text position instead of sorting to
+// the start of the line.
+//
+// Bands are assigned before sorting: a pairwise |Top difference| comparator is
+// not transitive (Top 0/4/8 with band 5 forms a cycle), and sort.SliceStable
+// requires a strict weak ordering.
+func sortLineByXY(chars []pdf.TextChar) {
+	if len(chars) < 2 {
+		return
+	}
+	band := util.MedianCharHeight(chars) * 0.5
+	if band <= 0 {
+		return
+	}
+	type glyph struct {
+		char pdf.TextChar
+		band int
+	}
+	glyphs := make([]glyph, len(chars))
+	for i, c := range chars {
+		glyphs[i] = glyph{char: c}
+	}
+	sort.SliceStable(glyphs, func(i, j int) bool { return glyphs[i].char.Top < glyphs[j].char.Top })
+	bandIdx := 0
+	for i := 1; i < len(glyphs); i++ {
+		if math.Abs(glyphs[i].char.Top-glyphs[i-1].char.Top) >= band {
+			bandIdx++
+		}
+		glyphs[i].band = bandIdx
+	}
+	sort.SliceStable(glyphs, func(i, j int) bool {
+		if glyphs[i].band != glyphs[j].band {
+			return glyphs[i].band < glyphs[j].band
+		}
+		return glyphs[i].char.X0 < glyphs[j].char.X0
+	})
+	for i := range chars {
+		chars[i] = glyphs[i].char
+	}
 }
 
 // perLineXGapThreshold computes a dynamic X-gap threshold for column
@@ -123,7 +171,21 @@ func splitLineByXGap(chars []pdf.TextChar, threshold float64) [][]pdf.TextChar {
 
 // ---- internal helpers ----
 
-// GroupCharsToLines groups characters into horizontal lines based on vertical overlap.
+// GroupCharsToLines groups characters into horizontal lines based on vertical
+// overlap, and returns each line in reading order. The input slice is sorted in
+// place.
+//
+// The vertical key (Top, or Bottom when sortByTop is false) only decides which
+// line a character joins; it must not decide the character order inside a line.
+// Superscripts and subscripts share their line's vertical band but sit above or
+// below the baseline, so keeping the vertical-first order moves them to the front
+// (or the back) of the assembled text — `图 3. I²C 时序图` came out as
+// `2图 3. IC 时序图` — and leaves splitLineByXGap and LineToTextBox, which both
+// measure the gap between consecutive characters, with non-monotonic X positions
+// and therefore negative gaps. Each line is re-sorted by X0 once grouping is done;
+// the sort is stable, so characters sharing an X0 keep the order the vertical pass
+// left them in (their own relative X is undefined, so the pass decides). X0 is
+// assumed finite: a NaN X0 defeats the gap measurement whichever key orders it.
 func GroupCharsToLines(chars []pdf.TextChar, sortByTop bool) [][]pdf.TextChar {
 	if len(chars) == 0 {
 		return nil
@@ -167,6 +229,9 @@ func GroupCharsToLines(chars []pdf.TextChar, sortByTop bool) [][]pdf.TextChar {
 	if len(currentLine) > 0 {
 		lines = append(lines, currentLine)
 	}
+	for _, line := range lines {
+		sort.SliceStable(line, func(i, j int) bool { return line[i].X0 < line[j].X0 })
+	}
 	return lines
 }
 
@@ -179,8 +244,7 @@ func verticalOverlap(a, b pdf.TextChar) bool {
 	return math.Abs(a.Top-b.Top) < mh*0.5
 }
 
-// lineToTextBox converts a line of characters to a single pdf.TextBox.
-
+// LineToTextBox converts a line of characters to a single pdf.TextBox.
 func LineToTextBox(chars []pdf.TextChar) pdf.TextBox {
 	if len(chars) == 0 {
 		return pdf.TextBox{}

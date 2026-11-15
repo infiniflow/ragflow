@@ -23,6 +23,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"ragflow/internal/utility"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -76,7 +77,12 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 
 	// Middleware
 	ginEngine.Use(common.GinLogger())
-	ginEngine.Use(gin.Recovery())
+	ginEngine.Use(gin.CustomRecovery(func(c *gin.Context, recovered interface{}) {
+		if !c.Writer.Written() {
+			common.Respond(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprint(recovered))
+		}
+		c.Abort()
+	}))
 
 	// Setup routes
 	r.Setup(ginEngine)
@@ -100,6 +106,12 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 
 	// Set log level
 	bootstrap.SetLogger(serverName, args)
+
+	validator := utility.NewScheduledTask("Admin validator", globalConfig.GetHeartbeatInterval(), adminapi.CheckServicePeriodically)
+	validator.Start()
+	defer validator.Stop()
+	stopMetrics := startMetrics(ctx)
+	defer stopMetrics()
 
 	// Start HTTP server in a goroutine
 	go func() {

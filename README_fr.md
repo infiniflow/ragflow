@@ -82,6 +82,7 @@ Essayez notre service cloud sur [https://cloud.ragflow.io](https://cloud.ragflow
 
 ## 🔥 Dernières mises à jour
 
+- 2026-11-06 Publication de RAGFlow 1.0.0.
 - 2026-09-29 Publication de RAGFlow 1.0.0-rc1.
 
 - 2026-09-10 Ajout de l’ingestion de contenus Web à partir de sitemaps.
@@ -90,14 +91,6 @@ Essayez notre service cloud sur [https://cloud.ragflow.io](https://cloud.ragflow
 - 2026-07-02 Ajout de l’ingestion de données depuis Google BigQuery et de la synchronisation incrémentielle.
 
 Consultez les [notes de version complètes](https://ragflow.io/docs/dev/release_notes) pour découvrir les autres nouveautés.
-
-## 🎉 Restez informé
-
-⭐️ Mettez une étoile à notre dépôt pour rester informé des nouvelles fonctionnalités et améliorations passionnantes ! Recevez des notifications instantanées pour les nouvelles versions ! 🌟
-
-<div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
-</div>
 
 ## 🌟 Fonctionnalités clés
 
@@ -173,7 +166,7 @@ Le déploiement local prend en charge Docker et le lancement depuis les sources.
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc2
+   git checkout v1.0.0
    docker compose -f docker-compose.yml up -d
    ```
 
@@ -213,10 +206,10 @@ Docker utilise `docker/.env` et `docker/docker-compose.yml`. Suivez le [guide de
 
    ```bash
    uv run tools/scripts/download_dev_deps.py
-   uv run ragflow_deps/download_deps.py
+   uv run deps/download_deps.py
    ```
 
-   `download_dev_deps.py` télécharge et décompresse pdfium, pdf_oxide, office_oxide et onnxruntime sous `~/ragflow-native-libs` ; `download_deps.py` télécharge le vocabulaire cl100k, les modèles DeepDoc et les ressources de tokeniseurs d'embedding sous `ragflow_deps/`. Les deux sont des scripts Python ; `uv run` installe automatiquement leurs dépendances déclarées (`requests`, plus `huggingface-hub` pour les téléchargements de modèles et de tokeniseurs). Ignorez cette étape si vous avez déjà préparé les mêmes ressources autrement. Lors du démarrage depuis la racine du dépôt, les services Go trouvent automatiquement `internal/rag/res/deepdoc` ; pour démarrer depuis un autre répertoire, définissez `DEEPDOC_MODEL_DIR` sur son chemin absolu.
+   `download_dev_deps.py` télécharge et décompresse pdfium, pdf_oxide, office_oxide et onnxruntime sous `~/ragflow-native-libs` ; `download_deps.py` télécharge le vocabulaire cl100k, les modèles DeepDoc et les ressources de tokeniseurs d'embedding sous `deps/`. Les deux sont des scripts Python ; `uv run` installe automatiquement leurs dépendances déclarées (`requests`, plus `huggingface-hub` pour les téléchargements de modèles et de tokeniseurs). Ignorez cette étape si vous avez déjà préparé les mêmes ressources autrement. Lors du démarrage depuis la racine du dépôt, les services Go trouvent automatiquement `internal/rag/res/deepdoc` ; pour démarrer depuis un autre répertoire, définissez `DEEPDOC_MODEL_DIR` sur son chemin absolu.
 
 3. Compilez les services :
 

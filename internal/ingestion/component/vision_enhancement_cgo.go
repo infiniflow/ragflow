@@ -101,6 +101,9 @@ func newVisionImageCropper(ctx context.Context, db *gorm.DB, inputs map[string]a
 // share this predicate so a future condition change cannot make Prepare skip a
 // fetch that Crop then performs under image admission, silently reintroducing
 // the admission block.
+//
+// A page-only position (page number, no geometry) carries no crop region and
+// is skipped, so it never triggers a page render.
 func pdfSourcePositions(item map[string]any) ([]deepdoctype.Position, bool) {
 	if img, _ := item["image"].(string); img != "" {
 		return nil, false
@@ -110,10 +113,16 @@ func pdfSourcePositions(item map[string]any) ([]deepdoctype.Position, bool) {
 		return nil, false
 	}
 	positions := util.PositionsFromMatrix(matrix)
-	if len(positions) == 0 {
+	regions := positions[:0]
+	for _, pos := range positions {
+		if pos.Right > pos.Left && pos.Bottom > pos.Top {
+			regions = append(regions, pos)
+		}
+	}
+	if len(regions) == 0 {
 		return nil, false
 	}
-	return positions, true
+	return regions, true
 }
 
 func (c *visionPDFCropper) Crop(ctx context.Context, item map[string]any) (*visionImage, error) {

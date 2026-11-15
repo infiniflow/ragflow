@@ -40,13 +40,13 @@ func TestChunkDocsFromDocItem_ParallelsMapPath(t *testing.T) {
 		{
 			name: "text with extra passthrough",
 			items: []parser.DocItem{
-				parser.TextItem{Text: "hello", CKType: "heading", Extra: map[string]any{"layout": "1", "page_number": 3}},
+				parser.TextItem{Text: "hello", Extra: map[string]any{"layout": "1", "page_number": 3}},
 			},
 		},
 		{
 			name: "image with extra passthrough",
 			items: []parser.DocItem{
-				parser.ImageItem{Text: "alt", Image: "data:image/png;base64,xxx", CKType: "image", Extra: map[string]any{"page_number": 2}},
+				parser.ImageItem{Text: "alt", Image: "data:image/png;base64,xxx", Extra: map[string]any{"page_number": 2}},
 			},
 		},
 		{
@@ -66,7 +66,7 @@ func TestChunkDocsFromDocItem_ParallelsMapPath(t *testing.T) {
 			items: []parser.DocItem{
 				parser.TextItem{Text: "a"},
 				parser.RawItem{M: map[string]any{"text": "b", "doc_type_kwd": "text"}},
-				parser.ImageItem{Image: "i", CKType: "image"},
+				parser.ImageItem{Image: "i"},
 			},
 		},
 		// A canonical key present in Extra must NOT shadow the typed field when
@@ -83,7 +83,7 @@ func TestChunkDocsFromDocItem_ParallelsMapPath(t *testing.T) {
 		{
 			name: "empty image text must not be shadowed by extra text",
 			items: []parser.DocItem{
-				parser.ImageItem{Text: "", Image: "i", CKType: "image", Extra: map[string]any{"text": "stale"}},
+				parser.ImageItem{Text: "", Image: "i", Extra: map[string]any{"text": "stale"}},
 			},
 		},
 	}
@@ -149,7 +149,7 @@ func TestChunkDocsFromDocItem_SkipsNilElement(t *testing.T) {
 	items := []parser.DocItem{
 		parser.TextItem{Text: "a"},
 		nil,
-		parser.ImageItem{Image: "i", CKType: "image"},
+		parser.ImageItem{Image: "i"},
 	}
 	got, found, err := ChunkDocsFromDocItem(items)
 	if err != nil {
@@ -179,19 +179,19 @@ func TestDocItemsFromMaps_ParallelsMapPath(t *testing.T) {
 		{
 			name: "text with extra passthrough",
 			maps: []map[string]any{
-				{"text": "hello", parser.DocTypeKey: parser.DocTypeText, "ck_type": "heading", "layout": "1", "page_number": 3},
+				{"text": "hello", parser.DocTypeKey: parser.DocTypeText, "layout": "1", "page_number": 3},
 			},
 		},
 		{
 			name: "image with extra passthrough",
 			maps: []map[string]any{
-				{"text": "alt", "image": "data:image/png;base64,xxx", parser.DocTypeKey: parser.DocTypeImage, "ck_type": "image", "page_number": 2},
+				{"text": "alt", "image": "data:image/png;base64,xxx", parser.DocTypeKey: parser.DocTypeImage, "page_number": 2},
 			},
 		},
 		{
 			name: "table with sheet and positions",
 			maps: []map[string]any{
-				{"table": &entity.TableData{}, parser.DocTypeKey: parser.DocTypeTable, "ck_type": parser.DocTypeTable, "sheet": "s", "positions": [][]float64{{1, 2}}, "sheet_index": 0},
+				{"table": &entity.TableData{}, parser.DocTypeKey: parser.DocTypeTable, "sheet": "s", "positions": [][]float64{{1, 2}}, "sheet_index": 0},
 			},
 		},
 		{
@@ -203,7 +203,8 @@ func TestDocItemsFromMaps_ParallelsMapPath(t *testing.T) {
 		{
 			name: "mixed typed and opaque",
 			maps: []map[string]any{
-				{"text": "a", parser.DocTypeKey: parser.DocTypeText, "ck_type": "text"},
+				{"text": "a", parser.DocTypeKey: parser.DocTypeText},
+
 				{"foo": "bar"},
 			},
 		},

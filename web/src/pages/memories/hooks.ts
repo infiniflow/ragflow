@@ -49,6 +49,7 @@ export const useCreateMemory = () => {
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to create memory');
       }
+      queryClient.invalidateQueries({ queryKey: MemoryKeys.list() });
       queryClient.invalidateQueries({ queryKey: MemoryKeys.filters() });
       return response.data;
     },
@@ -95,7 +96,7 @@ export const useFetchMemoryList = () => {
   };
 
   if (Array.isArray(owner) && owner.length > 0) {
-    requestParams.owner_ids = owner.join(',');
+    requestParams.tenant_id = owner.join(',');
   }
   const { data, isLoading, isError, refetch } = useQuery<
     MemoryListResponse,
@@ -173,30 +174,22 @@ export const useFetchMemoryFilters = () => {
   return { data, isLoading, isError };
 };
 
+/** Loads the memory configuration for a route or shared memory link. */
 export const useFetchMemoryDetail = (tenantId?: string) => {
   const { id } = useParams();
 
   const [memoryParams] = useSearchParams();
   const shared_id = memoryParams.get('shared_id');
   const memoryId = id || shared_id;
-  let param: { id: string | null; tenant_id?: string } = {
-    id: memoryId,
-  };
-  if (shared_id) {
-    param = {
-      id: memoryId,
-      tenant_id: tenantId,
-    };
-  }
-  const fetchMemoryDetailFunc = shared_id
-    ? memoryService.getMemoryDetailShare
-    : memoryService.getMemoryDetail;
 
   const { data, isLoading, isError } = useQuery<MemoryDetailResponse, Error>({
     queryKey: ['memoryDetail', memoryId],
-    enabled: !shared_id || !!tenantId,
+    enabled: !!memoryId && (!shared_id || !!tenantId),
     queryFn: async () => {
-      const { data: response } = await fetchMemoryDetailFunc(param);
+      if (!memoryId) {
+        throw new Error('Memory id is required');
+      }
+      const { data: response } = await memoryService.getMemoryConfig(memoryId);
       if (response.code !== 0) {
         throw new Error(response.message || 'Failed to fetch memory detail');
       }
@@ -232,9 +225,6 @@ export const useDeleteMemory = () => {
     onSuccess: () => {
       message.success(t('message.deleted'));
     },
-    onError: (error) => {
-      message.error(t('message.error', { error: error.message }));
-    },
   });
 
   const deleteMemory = useCallback(
@@ -266,7 +256,7 @@ export const useUpdateMemory = () => {
 
       return response.data;
     },
-    onSuccess: (data, variables) => {
+    onSuccess: (_data, variables) => {
       message.success(t('message.updated'));
       queryClient.invalidateQueries({
         queryKey: ['memoryDetail', variables.id],
@@ -274,6 +264,7 @@ export const useUpdateMemory = () => {
       queryClient.invalidateQueries({
         queryKey: [MemoryApiAction.FetchMemoryDetail],
       });
+      queryClient.invalidateQueries({ queryKey: MemoryKeys.list() });
       queryClient.invalidateQueries({ queryKey: MemoryKeys.filters() });
     },
   });
@@ -323,24 +314,22 @@ export const useRenameMemory = () => {
 
   const onMemoryRenameOk = useCallback(
     async (data: ICreateMemoryProps, callBack?: () => void) => {
-      let res;
-      if (memory?.id) {
-        try {
+      let saved = false;
+      try {
+        if (memory?.id) {
           await updateMemory({
-            // ...memoryDataTemp,
             name: data.name,
-            id: memory?.id,
+            id: memory.id,
           } as unknown as IMemoryAppDetailProps);
-        } catch (e) {
-          console.error('error', e);
+        } else {
+          await createMemory(data);
         }
-      } else {
-        res = await createMemory(data);
+        saved = true;
+      } catch {
+        // Request failures are already reported by the request layer; keep
+        // the dialog open so the user can retry.
       }
-      // if (res && !memory?.id) {
-      //   navigateToMemory(res?.id)();
-      // }
-      if (res) {
+      if (saved) {
         callBack?.();
         handleHideModal();
       }

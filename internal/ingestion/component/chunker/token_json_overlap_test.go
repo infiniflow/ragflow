@@ -59,9 +59,9 @@ func TestMergeByTokenSizeFromJSON_TKNumsConsistency(t *testing.T) {
 			}
 			items := [][]schema.ChunkDoc{
 				{
-					{Text: aText, DocType: "text", CKType: "text", TKNums: intPtr(aN)},
-					{Text: bText, DocType: "text", CKType: "text", TKNums: intPtr(bN)},
-					{Text: cText, DocType: "text", CKType: "text", TKNums: intPtr(cN)},
+					{Text: aText, DocType: "text", TKNums: intPtr(aN)},
+					{Text: bText, DocType: "text", TKNums: intPtr(bN)},
+					{Text: cText, DocType: "text", TKNums: intPtr(cN)},
 				},
 			}
 			got := mergeByTokenSizeFromJSON(items, budget, overlapPct)

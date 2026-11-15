@@ -16,6 +16,7 @@ package chunker
 
 import (
 	"context"
+	"ragflow/internal/ingestion/component/schema"
 	"strings"
 	"testing"
 )
@@ -59,7 +60,7 @@ func TestTokenChunker_OversizeUnitSplit(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Invoke: %v", err)
 			}
-			chunks, ok := out["chunks"].([]map[string]any)
+			chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 			if !ok {
 				t.Fatalf("chunks missing or wrong type: %T", out["chunks"])
 			}
@@ -128,7 +129,7 @@ func TestTokenChunker_OversizeUnitSplitAfterInBudgetUnit(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Invoke: %v", err)
 			}
-			chunks, ok := out["chunks"].([]map[string]any)
+			chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 			if !ok {
 				t.Fatalf("chunks missing or wrong type: %T", out["chunks"])
 			}

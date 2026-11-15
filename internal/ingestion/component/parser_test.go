@@ -181,11 +181,9 @@ func TestParserComponentInvoke_LanguageFromGlobals(t *testing.T) {
 	}
 }
 
-func TestNewParserComponentNormalizesOutputFormatToJSON(t *testing.T) {
+func TestNewParserComponentSkipsNonFamilyParams(t *testing.T) {
 	component, err := NewParserComponent(map[string]any{
-		"pdf":         map[string]any{"output_format": "markdown"},
-		"spreadsheet": map[string]any{"output_format": "html"},
-		"email":       map[string]any{"output_format": "text"},
+		"pdf": map[string]any{"parse_method": "deepdoc"},
 		"allowed_output_format": map[string]any{
 			"pdf": []any{"json", "markdown"},
 		},
@@ -195,26 +193,24 @@ func TestNewParserComponentNormalizesOutputFormatToJSON(t *testing.T) {
 	}
 
 	parserComponent := component.(*ParserComponent)
-	for _, family := range []string{"pdf", "spreadsheet", "email"} {
-		if got := parserComponent.setups[family]["output_format"]; got != "json" {
-			t.Errorf("%s output_format = %v, want json", family, got)
-		}
-	}
 	if _, ok := parserComponent.setups["allowed_output_format"]; ok {
 		t.Error("allowed_output_format must not be treated as a parser setup")
 	}
 }
 
-// A canvas saved by the Python frontend stores the Parser params in the
-// nested shape {outputs, setups: {pdf: {...}}}; the Go component reads the
-// flat shape with file families as top-level keys. The nested group must be
-// lifted instead of being treated as a bogus "setups" file family.
+func TestSpreadsheetDefaultsDoNotExposeRetiredOption(t *testing.T) {
+	if _, ok := defaultSetups()["spreadsheet"]["html4excel"]; ok {
+		t.Fatal("spreadsheet defaults expose the retired option")
+	}
+}
+
+// A canvas can store Parser params as nested setups; lift the families before use.
 func TestNewParserComponentFlattensNestedSetups(t *testing.T) {
 	component, err := NewParserComponent(map[string]any{
 		"outputs": map[string]any{"html": map[string]any{"type": "string"}},
 		"setups": map[string]any{
 			"pdf":         map[string]any{"parse_method": "vision"},
-			"spreadsheet": map[string]any{"html4excel": true},
+			"spreadsheet": map[string]any{"parse_method": "tcadp"},
 		},
 	})
 	if err != nil {
@@ -228,8 +224,8 @@ func TestNewParserComponentFlattensNestedSetups(t *testing.T) {
 	if got := parserComponent.setups["pdf"]["parse_method"]; got != "vision" {
 		t.Errorf("pdf parse_method = %v, want vision (nested setups not flattened)", got)
 	}
-	if got := parserComponent.setups["spreadsheet"]["html4excel"]; got != true {
-		t.Errorf("spreadsheet html4excel = %v, want true (nested setups not flattened)", got)
+	if got := parserComponent.setups["spreadsheet"]["parse_method"]; got != "tcadp" {
+		t.Errorf("spreadsheet parse_method = %v, want tcadp (nested setups not flattened)", got)
 	}
 
 	// When both shapes carry the same family, the top-level (Go-native, flat)
@@ -377,24 +373,6 @@ func TestParserComponent_Invoke_DeterministicMerge(t *testing.T) {
 		if string(encoded) != string(canonical) {
 			t.Errorf("run %d output differs from canonical:\n got=%s\nwant=%s",
 				i, encoded, canonical)
-		}
-	}
-}
-
-// TestParserComponent_New_Defaults constructs a Parser from a nil param map
-// and verifies every parser family uses the canonical JSON output format.
-func TestParserComponent_New_Defaults(t *testing.T) {
-	c, err := NewParserComponent(nil)
-	if err != nil {
-		t.Fatalf("NewParserComponent(nil): %v", err)
-	}
-	pc, ok := c.(*ParserComponent)
-	if !ok {
-		t.Fatalf("NewParserComponent returned %T, want *ParserComponent", c)
-	}
-	for family, setup := range pc.setups {
-		if got := setup["output_format"]; got != "json" {
-			t.Errorf("%s output_format = %v, want json", family, got)
 		}
 	}
 }
@@ -573,5 +551,14 @@ func TestParserComponent_Invoke_AcceptsBytes(t *testing.T) {
 	}
 	if jsonItems[0]["text"] != "alpha" || jsonItems[1]["text"] != "beta" {
 		t.Errorf("json = %+v, want [alpha beta]", jsonItems)
+	}
+}
+
+func TestReportParserWarningsDeduplicatesMessages(t *testing.T) {
+	var got []string
+	ctx := runtime.WithProgressMessageCallback(t.Context(), func(component, message string) { got = append(got, component+": "+message) })
+	reportParserWarnings(ctx, []string{"repeated", "repeated", "distinct", "repeated"})
+	if len(got) != 2 || got[0] != "Parser: WARNING: repeated" || got[1] != "Parser: WARNING: distinct" {
+		t.Fatalf("warnings=%v", got)
 	}
 }

@@ -25,7 +25,7 @@ import (
 )
 
 func TestSplitTextParserSentencesKeepsSentenceUnits(t *testing.T) {
-	item := schema.ChunkDoc{Text: "First!Second?第三。Fourth；", DocType: "text", CKType: "text"}
+	item := schema.ChunkDoc{Text: "First!Second?第三。Fourth；", DocType: "text"}
 	parts := splitTextParserSentences(item)
 	if got, want := len(parts), 4; got != want {
 		t.Fatalf("sentence parts = %d, want %d: %#v", got, want, parts)
@@ -136,8 +136,8 @@ func TestGeneralChunkerMarkdownLongHeadingKeepsFollowingTableAtomic(t *testing.T
 		"file_type":     "md",
 		"output_format": "json",
 		"json": []map[string]any{
-			{"text": longHeading, "doc_type_kwd": "text", "ck_type": "heading"},
-			{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table", "ck_type": "table"},
+			{"text": longHeading, "doc_type_kwd": "text", "layout": "heading"},
+			{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table"},
 		},
 	})
 	if err != nil {
@@ -147,10 +147,10 @@ func TestGeneralChunkerMarkdownLongHeadingKeepsFollowingTableAtomic(t *testing.T
 	if len(chunks) != 2 {
 		t.Fatalf("chunks = %#v, want separate heading and table chunks", chunks)
 	}
-	if chunks[0]["ck_type"] != "heading" || chunks[0]["text"] != strings.TrimSpace(longHeading) {
+	if chunks[0]["doc_type_kwd"] != "text" || chunks[0]["text"] != strings.TrimSpace(longHeading) {
 		t.Errorf("heading chunk = %#v", chunks[0])
 	}
-	if chunks[1]["ck_type"] != "table" || chunks[1]["text"] != "<table><tr><td>A</td></tr></table>" {
+	if chunks[1]["doc_type_kwd"] != "table" || chunks[1]["text"] != "<table><tr><td>A</td></tr></table>" {
 		t.Errorf("table chunk = %#v", chunks[1])
 	}
 }

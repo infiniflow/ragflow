@@ -445,7 +445,7 @@ func TestTitleCap_GroupPipeline_RespectsCap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("invokeGroup: %v", err)
 	}
-	chunks := got["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(got["chunks"])
 	if len(chunks) <= 1 {
 		t.Fatalf("expected split, got %d", len(chunks))
 	}
@@ -469,7 +469,7 @@ func TestTitleCap_GroupPipeline_ValidatedInRangeCap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("invokeGroup: %v", err)
 	}
-	chunks := got["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(got["chunks"])
 	if len(chunks) <= 1 {
 		t.Fatalf("expected cap=128 to re-split the oversized body, got %d", len(chunks))
 	}
@@ -486,7 +486,7 @@ func TestTitleCap_HierarchyPipeline_RespectsCap(t *testing.T) {
 	if err != nil {
 		t.Fatalf("invokeHierarchy: %v", err)
 	}
-	chunks := got["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(got["chunks"])
 	if len(chunks) <= 1 {
 		t.Fatalf("expected split, got %d", len(chunks))
 	}
@@ -503,7 +503,7 @@ func TestTitleCap_GroupPipeline_CapZeroNoop(t *testing.T) {
 	if err != nil {
 		t.Fatalf("invokeGroup: %v", err)
 	}
-	chunks := got["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(got["chunks"])
 	if len(chunks) != 1 {
 		t.Fatalf("cap=0 must keep 1 chunk, got %d", len(chunks))
 	}
@@ -524,7 +524,7 @@ func TestTitleCap_GroupPipeline_MultiRecordMerged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("invokeGroup: %v", err)
 	}
-	chunks := got["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(got["chunks"])
 	if len(chunks) <= 1 {
 		t.Fatalf("expected merged split, got %d", len(chunks))
 	}
@@ -553,7 +553,7 @@ func TestTitleCap_HierarchyPipeline_SubChunksKeepPositions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("invokeHierarchy: %v", err)
 	}
-	chunks := got["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(got["chunks"])
 	if len(chunks) <= 1 {
 		t.Fatalf("expected split, got %d", len(chunks))
 	}
@@ -593,7 +593,7 @@ func TestTitleCap_HierarchyPipeline_SubChunksKeepHeadingChain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("invokeHierarchy: %v", err)
 	}
-	chunks := got["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(got["chunks"])
 	if len(chunks) <= 1 {
 		t.Fatalf("expected split, got %d", len(chunks))
 	}
@@ -639,7 +639,7 @@ func TestTitleCap_HierarchyPipeline_RootAsHeadingKeepsChain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("invokeHierarchy: %v", err)
 	}
-	chunks := got["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(got["chunks"])
 	if len(chunks) <= 1 {
 		t.Fatalf("expected split, got %d", len(chunks))
 	}
@@ -677,7 +677,7 @@ func TestTitleCap_HierarchyPipeline_AncestorBodyKeepsLeadingChain(t *testing.T) 
 	if err != nil {
 		t.Fatalf("invokeHierarchy: %v", err)
 	}
-	chunks := got["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(got["chunks"])
 	if len(chunks) <= 1 {
 		t.Fatalf("expected split, got %d", len(chunks))
 	}
@@ -718,7 +718,7 @@ func TestTitleCap_HierarchyPipeline_IncludeHeadingContentKeepsTitles(t *testing.
 	if err != nil {
 		t.Fatalf("invokeHierarchy: %v", err)
 	}
-	chunks := got["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(got["chunks"])
 	if len(chunks) <= 2 {
 		t.Fatalf("expected parent chunk + split leaf pieces, got %d", len(chunks))
 	}
@@ -761,7 +761,7 @@ func TestTitleCap_HierarchyPipeline_NearCapPrefixFallsBack(t *testing.T) {
 	if err != nil {
 		t.Fatalf("invokeHierarchy: %v", err)
 	}
-	chunks := got["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(got["chunks"])
 	if len(chunks) <= 1 {
 		t.Fatalf("expected split, got %d", len(chunks))
 	}

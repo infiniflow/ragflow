@@ -30,8 +30,11 @@ import (
 func seedBurstTasks(t *testing.T, db *gorm.DB, n int) []string {
 	t.Helper()
 	const tenantID, kbID = "burst-tenant", "burst-kb"
-	if err := db.Create(&entity.Tenant{ID: tenantID, LLMID: "gpt-4", Status: testutil.StrPtr("1")}).Error; err != nil {
+	if err := db.Create(&entity.Tenant{ID: tenantID, Status: testutil.StrPtr("1")}).Error; err != nil {
 		t.Fatalf("create tenant: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{ID: "owner-" + tenantID, UserID: tenantID, TenantID: tenantID, Role: "owner", Status: testutil.StrPtr("1"), LLMID: "gpt-4"}).Error; err != nil {
+		t.Fatalf("create owner membership: %v", err)
 	}
 	if err := db.Create(&entity.Knowledgebase{
 		ID: kbID, TenantID: tenantID, EmbdID: "embd-1", Status: testutil.StrPtr("1"), ParserConfig: entity.JSONMap{},

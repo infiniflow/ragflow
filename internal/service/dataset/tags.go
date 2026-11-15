@@ -14,7 +14,7 @@ import (
 	permissionresponse "ragflow/internal/permission/response"
 )
 
-func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string, userID string) ([]map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string) ([]map[string]interface{}, common.ErrorCode, error) {
 	if len(datasetIDs) == 0 {
 		return nil, common.CodeDataError, errors.New("Lack of dataset_ids in query parameters")
 	}
@@ -34,7 +34,9 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 	// chunk-level aggregation.
 	loader := d.tagVocabularyLoader
 	if loader == nil {
-		loader = component.TagVocabularyFromTagFileID
+		loader = func(ctx context.Context, tagFileID, ownerTenantID string) (map[string]int, error) {
+			return component.TagVocabularyFromTagFileID(ctx, dao.DB, tagFileID, ownerTenantID)
+		}
 	}
 	merged := make(map[string]int)
 	// The handler accepts repeated IDs, and distinct raw IDs can normalize to
@@ -68,7 +70,7 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 	}
 	authorized := make([]authorizedDataset, 0, len(orderedIDs))
 	for _, datasetID := range orderedIDs {
-		if err := d.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}, permission.OperationRead); err != nil {
 			code, permissionErr := permissionresponse.Normalize(err)
 			return nil, code, permissionErr
 		}
@@ -77,7 +79,7 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 			if dao.IsNotFoundErr(err) {
 				return nil, common.CodeDataError, fmt.Errorf("Invalid Dataset ID '%s'", datasetID)
 			}
-			return nil, common.CodeServerError, errors.New("Database operation failed")
+			return nil, common.CodeServerError, fmt.Errorf("Database operation failed: %w", err)
 		}
 		authorized = append(authorized, authorizedDataset{
 			id:     datasetID,
@@ -87,7 +89,7 @@ func (d *DatasetService) AggregateTags(ctx context.Context, datasetIDs []string,
 
 	docConfigs, err := d.documentDAO.ListParserConfigsByKBIDs(ctx, dao.DB, orderedIDs)
 	if err != nil {
-		return nil, common.CodeServerError, errors.New("Database operation failed")
+		return nil, common.CodeServerError, fmt.Errorf("Database operation failed: %w", err)
 	}
 
 	// Every source below comes from a document — that is the copy the extractor

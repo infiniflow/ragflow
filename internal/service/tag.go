@@ -23,6 +23,7 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component"
 )
@@ -109,7 +110,7 @@ func (s *MetadataService) LabelQuestion(ctx context.Context, question string, kb
 			zap.Int("kbCount", len(kbs)))
 		return nil
 	}
-	idx, err := component.LoadTagQueryIndex(ctx, refs)
+	idx, err := component.LoadTagQueryIndex(ctx, dao.DB, refs)
 	if err != nil {
 		common.WarnCtx(ctx, "LabelQuestion: failed to load tag source index",
 			zap.Int("tagSources", len(refs)), zap.Error(err))

@@ -31,9 +31,11 @@ import (
 	"net"
 	"net/http"
 	neturl "net/url"
+	"strings"
 	"time"
 
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"ragflow/internal/common"
 )
 
 // RetryConfig controls the HTTPHelper retry policy. The defaults
@@ -205,7 +207,7 @@ func (h *HTTPHelper) DoPinned(
 	if err != nil {
 		return nil, fmt.Errorf("http_helper: parse url: %w", err)
 	}
-	if u.Hostname() != originalHost {
+	if !strings.EqualFold(u.Hostname(), originalHost) {
 		return nil, fmt.Errorf(
 			"http_helper: DoPinned url host %q != originalHost %q "+
 				"(refusing to pin — would break TLS SNI / cert check)",
@@ -356,18 +358,13 @@ func (h *HTTPHelper) doRawWithClient(
 }
 
 // backoff returns an exponentially increasing duration with full jitter,
-// capped at max. attempt is 1-indexed; the first retry uses BaseBackoff.
+// capped at max. attempt is 1-indexed; the first retry uses BaseBackoff. The
+// capped exponential is delegated to common.ExponentialBackoff so the cap
+// behavior stays consistent with the other retry loops in the codebase.
 func backoff(base, max time.Duration, attempt int) time.Duration {
-	if attempt < 1 {
-		attempt = 1
-	}
-	d := base
-	for i := 1; i < attempt; i++ {
-		d *= 2
-		if d > max {
-			d = max
-			break
-		}
+	d := common.ExponentialBackoff(base, max, attempt)
+	if d <= 0 {
+		return 0
 	}
 	// full jitter: randomize in [0, d] to avoid thundering herd
 	return time.Duration(rand.Int64N(int64(d) + 1))

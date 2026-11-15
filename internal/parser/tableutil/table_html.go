@@ -52,6 +52,12 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 	var rows [][]CellInput
 	var headerFlags []bool
 	var caption string
+	// A <tfoot> shows below the body wherever the markup puts it, and HTML 4
+	// required it before <tbody>, so its rows are collected apart and placed
+	// last; read in source order, a "Total" row came before the data it sums.
+	var footRows [][]CellInput
+	var footFlags []bool
+	inFoot := false
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
 		if n.Type == html.ElementNode && isInertElement(n.Data) {
@@ -59,6 +65,25 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 		}
 		if isHTMLElement(n, "caption") {
 			caption = cellText(n)
+			return
+		}
+		// A table's footer goes below that table's own body, not below every table
+		// the fragment holds
+		if isHTMLElement(n, "table") && !inFoot {
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				walk(c)
+			}
+			rows = append(rows, footRows...)
+			headerFlags = append(headerFlags, footFlags...)
+			footRows, footFlags = nil, nil
+			return
+		}
+		if isHTMLElement(n, "tfoot") && !inFoot {
+			inFoot = true
+			for c := n.FirstChild; c != nil; c = c.NextSibling {
+				walk(c)
+			}
+			inFoot = false
 			return
 		}
 		if isHTMLElement(n, "tr") {
@@ -76,6 +101,11 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 					})
 				}
 			}
+			if inFoot {
+				footRows = append(footRows, cells)
+				footFlags = append(footFlags, anyTh)
+				return
+			}
 			rows = append(rows, cells)
 			headerFlags = append(headerFlags, anyTh)
 			// Do not recurse into the row's cells: a nested <table> inside a
@@ -88,6 +118,8 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 		}
 	}
 	walk(doc)
+	rows = append(rows, footRows...)
+	headerFlags = append(headerFlags, footFlags...)
 	return BuildTableData(rows, headerFlags, caption), nil
 }
 

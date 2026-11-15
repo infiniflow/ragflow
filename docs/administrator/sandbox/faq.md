@@ -1,5 +1,5 @@
 ---
-sidebar_position: 5
+sidebar_position: 3
 title: Code Execution Sandbox FAQ
 sidebar_label: FAQ
 slug: /sandbox_faq

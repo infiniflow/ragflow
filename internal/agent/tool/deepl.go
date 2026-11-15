@@ -26,6 +26,8 @@ import (
 
 	"github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/common"
 )
 
 const deeplToolName = "deepl"
@@ -34,7 +36,6 @@ const deeplToolDescription = "Translate text via the DeepL API. Returns translat
 
 // deeplParams is the JSON shape the model sends into InvokableRun.
 type deeplParams struct {
-	APIKey     string `json:"api_key"`
 	Text       string `json:"text"`
 	SourceLang string `json:"source_lang"`
 	TargetLang string `json:"target_lang"`
@@ -68,23 +69,33 @@ var deeplProEndpoint = "https://api.deepl.com/v2/translate"
 // DeepLTool is the DeepL
 // translation tool. It POSTs
 // a translation request to the DeepL /v2/translate endpoint via the
-// shared HTTPHelper.
+// shared HTTPHelper. The API key is a server-side credential: it never
+// appears in the model-facing tool params.
 type DeepLTool struct {
 	helper *HTTPHelper
+	apiKey string
 }
 
-// NewDeepLTool returns a DeepLTool using the default HTTPHelper.
+// NewDeepLTool returns a DeepLTool using the default HTTPHelper and the
+// DEEPL_API_KEY env var for credential resolution.
 func NewDeepLTool() *DeepLTool {
-	return NewDeepLToolWith(NewHTTPHelper())
+	return NewDeepLToolWith(nil, "")
 }
 
-// NewDeepLToolWith returns a DeepLTool that uses the provided
-// HTTPHelper. Useful for tests.
-func NewDeepLToolWith(h *HTTPHelper) *DeepLTool {
+func NewDeepLToolWith(h *HTTPHelper, apiKey string) *DeepLTool {
 	if h == nil {
 		h = NewHTTPHelper()
 	}
-	return &DeepLTool{helper: h}
+	return &DeepLTool{helper: h, apiKey: strings.TrimSpace(apiKey)}
+}
+
+// resolveAPIKey returns the node-level credential, or DEEPL_API_KEY when
+// the node does not carry one.
+func (d *DeepLTool) resolveAPIKey() string {
+	if d.apiKey != "" {
+		return d.apiKey
+	}
+	return strings.TrimSpace(common.GetEnv(common.EnvDeepLAPIKey))
 }
 
 // Info returns the tool's metadata for the chat model.
@@ -93,11 +104,6 @@ func (d *DeepLTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 		Name: deeplToolName,
 		Desc: deeplToolDescription,
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
-			"api_key": {
-				Type:     schema.String,
-				Desc:     "DeepL API authentication key. Free keys end in ':fx'.",
-				Required: true,
-			},
 			"text": {
 				Type:     schema.String,
 				Desc:     "Text to translate.",
@@ -139,9 +145,10 @@ func (d *DeepLTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool
 		return deeplErrJSON(fmt.Errorf("deepl: parse arguments: %w", err)),
 			fmt.Errorf("deepl: parse arguments: %w", err)
 	}
-	if p.APIKey == "" {
-		return deeplErrJSON(fmt.Errorf("api_key is required")),
-			fmt.Errorf("deepl: api_key is required")
+	apiKey := d.resolveAPIKey()
+	if apiKey == "" {
+		return deeplErrJSON(fmt.Errorf("api_key is not configured")),
+			fmt.Errorf("deepl: api_key is not configured (set the node-level api_key or DEEPL_API_KEY)")
 	}
 	if strings.TrimSpace(p.Text) == "" {
 		return deeplErrJSON(fmt.Errorf("text is required")),
@@ -155,14 +162,14 @@ func (d *DeepLTool) InvokableRun(ctx context.Context, argsJSON string, _ ...tool
 	}
 
 	endpoint := deeplFreeEndpoint
-	if !strings.HasSuffix(p.APIKey, ":fx") {
+	if !strings.HasSuffix(apiKey, ":fx") {
 		// non-:fx keys are pro plan keys; route to the pro endpoint.
 		endpoint = deeplProEndpoint
 	}
 
 	body := buildDeepLFormBody(p.Text, p.SourceLang, p.TargetLang)
 	headers := map[string]string{
-		"Authorization": "DeepL-Auth-Key " + p.APIKey,
+		"Authorization": "DeepL-Auth-Key " + apiKey,
 	}
 
 	resp, err := d.helper.Do(ctx, http.MethodPost, endpoint, body,

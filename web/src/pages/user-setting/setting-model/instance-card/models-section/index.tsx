@@ -16,11 +16,27 @@
 
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { SearchInput } from '@/components/ui/input';
 import { useCommonTranslation, useTranslate } from '@/hooks/common-hooks';
 import { useFetchInstanceModels } from '@/hooks/use-llm-request';
 import { IProviderModelItem } from '@/interfaces/request/llm';
-import { Loader2, Plus, Search, ShieldCheck } from 'lucide-react';
+import {
+  ListMinus,
+  ListPlus,
+  Loader2,
+  LogIn,
+  LogOut,
+  MoreHorizontal,
+  Plus,
+  Search,
+  ShieldCheck,
+} from 'lucide-react';
 import {
   useCallback,
   useEffect,
@@ -70,7 +86,11 @@ export function ModelsSection(props: ModelsSectionProps) {
     !instanceName || instanceName === DRAFT_INSTANCE_SENTINEL;
 
   // 1. Credentials for catalog / verify / batch calls.
-  const { resolveCreds } = useResolveCreds(instance, getFormValues);
+  const { resolveCreds } = useResolveCreds(
+    providerName,
+    instance,
+    getFormValues,
+  );
 
   // Snapshot of the current api_key so `useModelsCatalog` can gate the
   // auto-fetch for VolcEngine on the user actually having typed one.
@@ -147,8 +167,10 @@ export function ModelsSection(props: ModelsSectionProps) {
     hideActions,
     resolveCreds,
     instanceModels,
+    instance,
     apiKeyValue: currentCreds.apiKey,
     baseUrlValue: currentCreds.baseUrl,
+    regionValue: currentCreds.region,
     instanceDetailsLoaded,
     onCatalogFetched: isDraftInstance ? mergeCatalogIntoDraft : undefined,
   });
@@ -282,6 +304,9 @@ export function ModelsSection(props: ModelsSectionProps) {
 
   // Add-custom-model dialog open state (local UI state).
   const [dialogOpen, setDialogOpen] = useState(false);
+  const handleAddCustomClick = useCallback(() => {
+    setDialogOpen(true);
+  }, []);
 
   // Mirror dialog open state up to the host so it can pause its
   // blur-driven auto-save while the dialog is open (focus shifts into a
@@ -306,75 +331,52 @@ export function ModelsSection(props: ModelsSectionProps) {
           {t('setting.models')}
         </div>
         {!hideActions && (
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleListModels}
-                disabled={manualListLoading}
-                data-testid="models-list-button"
-              >
-                {manualListLoading && (
-                  <Loader2 className="size-3 animate-spin" />
-                )}
-                {t('setting.listModels')}
-              </Button>
-              <Button
-                variant="outline"
-                size="icon-sm"
-                onClick={() => setDialogOpen(true)}
-                data-testid="models-add-custom"
-                aria-label={t('setting.addCustomModel')}
-              >
-                <Plus className="size-4" />
-              </Button>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleBatchVerifyClick}
-                disabled={batchVerifying || filteredModels.length === 0}
-                data-testid="models-batch-verify"
-                className="ml-auto"
-              >
-                {batchVerifying ? (
-                  <Loader2 className="size-3 animate-spin" />
-                ) : (
-                  <ShieldCheck className="size-3" />
-                )}
-                {tSetting('batchVerifyModels')}
-              </Button>
-              {!hideActions && (
-                // When the toggle is in "remove all" mode the click opens a
-                // confirmation dialog instead of mutating directly; the button
-                // acts as the dialog trigger, so the handler moves to `onOk`.
-                <ConfirmDeleteDialog
-                  hidden={!allFilteredAdded}
-                  onOk={handleBatchToggleModels}
-                  title={t('common.removeModalTitle')}
-                  okButtonText={t('common.remove')}
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleListModels}
+              disabled={manualListLoading}
+              data-testid="models-list-button"
+            >
+              {manualListLoading && <Loader2 className="size-3 animate-spin" />}
+              {t('setting.listModels')}
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  aria-label={tSetting('moreActions')}
+                  data-testid="models-more-actions"
                 >
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={
-                      allFilteredAdded ? undefined : handleBatchToggleModels
-                    }
-                    disabled={batchLoading || filteredModels.length === 0}
-                    data-testid="models-batch-toggle"
-                  >
-                    {batchLoading && (
-                      <Loader2 className="size-3 animate-spin" />
-                    )}
-                    {allFilteredAdded
-                      ? tSetting('batchRemoveModels')
-                      : tSetting('batchAddModels')}
-                  </Button>
-                </ConfirmDeleteDialog>
-              )}
-            </div>
+                  <MoreHorizontal className="size-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                <DropdownMenuItem
+                  justifyBetween={false}
+                  onClick={handleAddCustomClick}
+                  data-testid="models-add-custom"
+                >
+                  <Plus className="size-4" />
+                  {tSetting('addCustomModel')}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  justifyBetween={false}
+                  onClick={handleBatchVerifyClick}
+                  disabled={batchVerifying || filteredModels.length === 0}
+                  data-testid="models-batch-verify"
+                >
+                  {batchVerifying ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : (
+                    <ShieldCheck className="size-4" />
+                  )}
+                  {tSetting('batchVerifyModels')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         )}
       </div>
@@ -388,6 +390,47 @@ export function ModelsSection(props: ModelsSectionProps) {
               placeholder={t('setting.search')}
               rootClassName="flex-1"
             />
+            {!hideActions && (
+              // When every filtered model is already added the toggle
+              // switches to "remove all" mode: the click opens a
+              // confirmation dialog instead of mutating directly, so the
+              // button acts as the dialog trigger and the handler moves
+              // to `onOk`.
+              <ConfirmDeleteDialog
+                hidden={!allFilteredAdded}
+                onOk={handleBatchToggleModels}
+                title={t('common.removeThem')}
+                okButtonText={t('common.remove')}
+              >
+                <Button
+                  variant="outline"
+                  size="icon-sm"
+                  onClick={
+                    allFilteredAdded ? undefined : handleBatchToggleModels
+                  }
+                  disabled={batchLoading || filteredModels.length === 0}
+                  aria-label={
+                    allFilteredAdded
+                      ? tSetting('batchRemoveModels')
+                      : tSetting('batchAddModels')
+                  }
+                  title={
+                    allFilteredAdded
+                      ? tSetting('batchRemoveModels')
+                      : tSetting('batchAddModels')
+                  }
+                  data-testid="models-batch-toggle"
+                >
+                  {batchLoading ? (
+                    <Loader2 className="size-4 animate-spin" />
+                  ) : allFilteredAdded ? (
+                    <ListMinus className="size-4" />
+                  ) : (
+                    <ListPlus className="size-4" />
+                  )}
+                </Button>
+              </ConfirmDeleteDialog>
+            )}
           </div>
           <div className="flex flex-wrap gap-1.5">
             <TagFilterButton

@@ -180,7 +180,7 @@ ORACLES = {
 # the served behaviour comes from tokenizer.json above.
 SPM_MODEL = "huggingface.co/BAAI/bge-m3/sentencepiece.bpe.model"
 
-# The cl100k table as provisioned by download_deps.py or build.sh in ragflow_deps.
+# The cl100k table as provisioned by download_deps.py or build.sh in deps.
 # The Go counter loads this file; tiktoken reads its own cached copy of the same blob, so
 # the check in main() is what keeps the check-out honest about what it ships.
 CL100K_TABLE = "cl100k_base.tiktoken"
@@ -302,7 +302,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--model", choices=sorted(ORACLES), required=True)
     parser.add_argument("--out", required=True, help="fixture path to write")
-    parser.add_argument("--deps", default="ragflow_deps", help="directory holding huggingface.co/")
+    parser.add_argument("--deps", default="deps", help="directory holding huggingface.co/")
     parser.add_argument(
         "--corpus",
         required=True,
@@ -323,13 +323,13 @@ def main() -> int:
     rows_src = samples(args.corpus) + (fuzz_samples(args.fuzz, args.seed) if args.fuzz else [])
 
     if rel is None:
-        # cl100k: OpenAI's own implementation on the table shipped in ragflow_deps.
+        # cl100k: OpenAI's own implementation on the table shipped in deps.
         # tiktoken reads its own cached copy of the blob, so a checkout without the
         # shipped table would be checked against something else without a word -
         # fail loudly instead, the way the Go loader does.
         table = os.path.join(args.deps, CL100K_TABLE)
         if not os.path.isfile(table):
-            print(f"missing cl100k table: {table}\nrun `uv run ragflow_deps/download_deps.py`", file=sys.stderr)
+            print(f"missing cl100k table: {table}\nrun `uv run deps/download_deps.py`", file=sys.stderr)
             return 1
         encoder = tiktoken.get_encoding("cl100k_base")
         rows = [{"label": label, "text": text, "ids": encoder.encode(text), "chars": len(text)} for label, text in rows_src]
@@ -337,7 +337,7 @@ def main() -> int:
     else:
         tokenizer_path = os.path.join(args.deps, rel)
         if not os.path.isfile(tokenizer_path):
-            print(f"missing oracle tokenizer: {tokenizer_path}\nrun `uv run ragflow_deps/download_deps.py`", file=sys.stderr)
+            print(f"missing oracle tokenizer: {tokenizer_path}\nrun `uv run deps/download_deps.py`", file=sys.stderr)
             return 1
         tokenizer = Tokenizer.from_file(tokenizer_path)
         vocab = tokenizer.get_vocab()
@@ -379,7 +379,7 @@ def main() -> int:
             # --spm-crosscheck was asked for, so the asset it reads has to be there:
             # skipping quietly would turn "the second opinion agrees" into a claim
             # nobody made. Assets are not optional in this script - they are checked.
-            print(f"missing sentencepiece model: {model_file}\nrun `uv run ragflow_deps/download_deps.py`", file=sys.stderr)
+            print(f"missing sentencepiece model: {model_file}\nrun `uv run deps/download_deps.py`", file=sys.stderr)
             return 1
         processor = spm.SentencePieceProcessor(model_file=model_file)
         divergent = 0

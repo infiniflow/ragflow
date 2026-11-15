@@ -1,7 +1,5 @@
 import { buildUpstreamNodeOutputOptions } from '@/utils/canvas-util';
 import { useMemo } from 'react';
-import { Operator } from '../constant';
-import OperatorIcon from '@/components/operator-icon';
 import useGraphStore from '../store';
 
 export function useBuildNodeOutputOptions(nodeId?: string) {
@@ -13,7 +11,6 @@ export function useBuildNodeOutputOptions(nodeId?: string) {
       nodes,
       edges,
       nodeId,
-      Icon: ({ name }) => <OperatorIcon name={name as Operator}></OperatorIcon>,
     });
   }, [edges, nodeId, nodes]);
 }

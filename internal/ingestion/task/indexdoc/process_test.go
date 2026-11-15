@@ -1,7 +1,9 @@
 package indexdoc
 
 import (
+	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +12,27 @@ import (
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 )
+
+// TestStampDatasetPagerank pins the index-time stamp: a configured dataset
+// pagerank lands on every chunk the run indexes, and zero leaves chunks
+// untouched (Python only stamps a truthy pagerank).
+func TestStampDatasetPagerank(t *testing.T) {
+	chunks := []map[string]any{{"id": "a"}, {"id": "b"}}
+
+	StampDatasetPagerank(chunks, 0)
+	for _, chunk := range chunks {
+		if _, ok := chunk[common.PAGERANK_FLD]; ok {
+			t.Fatalf("zero pagerank stamped a field: %#v", chunk)
+		}
+	}
+
+	StampDatasetPagerank(chunks, 7)
+	for _, chunk := range chunks {
+		if got := chunk[common.PAGERANK_FLD]; got != int64(7) {
+			t.Fatalf("pagerank_fea = %#v, want 7", got)
+		}
+	}
+}
 
 func TestProcessChunksForPipeline_PreservesTypedMetadata(t *testing.T) {
 	want := map[string]any{
@@ -456,6 +479,135 @@ func TestProcessChunkPositions_2DFloat64(t *testing.T) {
 	}
 }
 
+// TestProcessChunkPositions_ToMapMixedMatrix pins the real production type
+// boundary: ChunkDoc.ToMap() decodes a list-page matrix through the generic
+// JSON path, so the indexer receives []any (not [][]any). Every valid scalar
+// and list-page row must still reach page_num_int/top_int/position_int.
+func TestProcessChunkPositions_ToMapMixedMatrix(t *testing.T) {
+	raw := json.RawMessage(`[[[1,2],10,100,20,80],[3,30,120,40,90]]`)
+	doc := schema.ChunkDoc{
+		Text:         "Figure 1: caption",
+		DocType:      "image",
+		Positions:    raw,
+		PDFPositions: raw,
+	}
+	ck := doc.ToMap()
+	if _, ok := ck["positions"].([]any); !ok {
+		t.Fatalf("production positions type = %T, want []any", ck["positions"])
+	}
+
+	processChunkPositions(ck, false)
+
+	pageNum, ok := ck["page_num_int"].([]int)
+	if !ok {
+		t.Fatalf("page_num_int = %#v, want []int", ck["page_num_int"])
+	}
+	if !reflect.DeepEqual(pageNum, []int{1, 2, 3}) {
+		t.Errorf("page_num_int = %v, want [1 2 3]", pageNum)
+	}
+	top, ok := ck["top_int"].([]int)
+	if !ok {
+		t.Fatalf("top_int = %#v, want []int", ck["top_int"])
+	}
+	if !reflect.DeepEqual(top, []int{20, 20, 40}) {
+		t.Errorf("top_int = %v, want [20 20 40]", top)
+	}
+	matrix, ok := ck["position_int"].([][]int)
+	if !ok || len(matrix) != 3 {
+		t.Fatalf("position_int = %#v, want 3 rows", ck["position_int"])
+	}
+	if !reflect.DeepEqual(matrix[1], []int{2, 10, 100, 20, 80}) {
+		t.Errorf("expanded row = %v, want [2 10 100 20 80]", matrix[1])
+	}
+}
+
+// TestProcessChunkPositions_FlatMultiTuple pins the flat multi-row shape:
+// ChunkDoc.ToMap produces a flat []any of numbers, and every five-tuple must
+// reach the index fields, not just the first.
+func TestProcessChunkPositions_FlatMultiTuple(t *testing.T) {
+	raw := json.RawMessage(`[1,10,100,20,80,2,30,120,40,90]`)
+	doc := schema.ChunkDoc{
+		Text:         "two rows",
+		Positions:    raw,
+		PDFPositions: raw,
+	}
+	ck := doc.ToMap()
+	processChunkPositions(ck, false)
+
+	pageNum, ok := ck["page_num_int"].([]int)
+	if !ok {
+		t.Fatalf("page_num_int = %#v, want []int", ck["page_num_int"])
+	}
+	if !reflect.DeepEqual(pageNum, []int{1, 2}) {
+		t.Errorf("page_num_int = %v, want [1 2]", pageNum)
+	}
+	matrix, ok := ck["position_int"].([][]int)
+	if !ok || len(matrix) != 2 {
+		t.Fatalf("position_int = %#v, want two rows", ck["position_int"])
+	}
+	if !reflect.DeepEqual(matrix[1], []int{2, 30, 120, 40, 90}) {
+		t.Errorf("second row = %v, want [2 30 120 40 90]", matrix[1])
+	}
+}
+
+// TestProcessChunkPositions_SkipsInvalidRows pins the partial-loss guard: a
+// null row must not discard the valid rows around it.
+func TestProcessChunkPositions_SkipsInvalidRows(t *testing.T) {
+	raw := json.RawMessage(`[[1,10,100,20,80],null,[2,30,120,40,90]]`)
+	doc := schema.ChunkDoc{
+		Text:         "Figure 1: caption",
+		DocType:      "image",
+		Positions:    raw,
+		PDFPositions: raw,
+	}
+	ck := doc.ToMap()
+	processChunkPositions(ck, false)
+
+	pageNum, ok := ck["page_num_int"].([]int)
+	if !ok {
+		t.Fatalf("page_num_int = %#v, want []int", ck["page_num_int"])
+	}
+	if !reflect.DeepEqual(pageNum, []int{1, 2}) {
+		t.Errorf("page_num_int = %v, want [1 2]", pageNum)
+	}
+	matrix, ok := ck["position_int"].([][]int)
+	if !ok || len(matrix) != 2 {
+		t.Fatalf("position_int = %#v, want the two valid rows", ck["position_int"])
+	}
+}
+
+// TestProcessChunkPositions_MixedPageList covers the matrix shape left by the
+// title-family merge when a row spans pages: a list page expands into one
+// scalar tuple per page instead of discarding the whole matrix.
+func TestProcessChunkPositions_MixedPageList(t *testing.T) {
+	chunk := map[string]any{
+		"positions": [][]any{
+			{[]any{1, 2}, 100, 50, 200, 150},
+			{3, 200, 60, 300, 250},
+		},
+	}
+	processChunkPositions(chunk, false)
+
+	if _, exists := chunk["positions"]; exists {
+		t.Fatal("positions key must be removed")
+	}
+	pageNum := chunk["page_num_int"].([]int)
+	if len(pageNum) != 3 || pageNum[0] != 1 || pageNum[1] != 2 || pageNum[2] != 3 {
+		t.Errorf("page_num_int = %v, want [1 2 3]", pageNum)
+	}
+	top := chunk["top_int"].([]int)
+	if len(top) != 3 || top[0] != 200 || top[1] != 200 || top[2] != 300 {
+		t.Errorf("top_int = %v, want [200 200 300]", top)
+	}
+	matrix, ok := chunk["position_int"].([][]int)
+	if !ok || len(matrix) != 3 {
+		t.Fatalf("position_int = %v, want 3 rows", chunk["position_int"])
+	}
+	if matrix[1][0] != 2 {
+		t.Errorf("expanded row page = %d, want 2", matrix[1][0])
+	}
+}
+
 func TestProcessChunkPositions_NoPositions(t *testing.T) {
 	// _pdf_positions is pruned unconditionally, even on the early-return path
 	// where "positions" is absent, since the two fields are independent.
@@ -538,15 +690,30 @@ func TestCleanupConsumedChunkFields_ImportantKwdDropsEmptyParts(t *testing.T) {
 
 // TestProcessChunksForPipeline_StripsPipelineOnlyFields pins the index boundary
 // against the parser/chunker bookkeeping keys: none of them is a chunk-store
-// column, and a strict engine rejects the whole insert over one of them
-// ("Column ck_type not found in table", InfinityException 3013). ES only
-// swallowed them because its mapping is dynamic.
+// column, and a strict engine rejects the whole insert over one of them (e.g.
+// Infinity would reject an unknown column). ES only swallowed them because its
+// mapping is dynamic.
+//
+// The media_ref case is realistic rather than a bare map: the upload pass
+// replaces the parser reference with the persisted img_id, and a chunk that
+// still carries both must reach the index with the image key intact and no
+// trace of the run-scoped cache reference (scope or digest).
 func TestProcessChunksForPipeline_StripsPipelineOnlyFields(t *testing.T) {
+	mediaRef := entity.MediaRef{
+		Format: "html",
+		Kind:   entity.MediaKindKV,
+		Scope:  "it-mediacache-index-boundary",
+		SHA256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+		MIME:   "image/png",
+		Size:   4,
+	}
 	ck := map[string]any{
 		"text": "hello",
 		// Every bookkeeping key the chunkers/parsers can leave on a chunk.
-		"ck_type": "text", "tk_nums": 3, "layout": "text", "layout_type": "text",
+		"tk_nums": 3, "layout": "text", "layout_type": "text",
 		"layoutno": "0", "image": "data:image/png;base64,AAAA",
+		"media_ref":     mediaRef,
+		"img_id":        "kb-1-chunk-1",
 		"context_above": "above", "context_below": "below", "page_number": 2,
 		"table_id": "t1", "sheet": "s1", "sheet_index": 0,
 		"headers": []string{"h"}, "cells": []string{"c"},
@@ -567,6 +734,18 @@ func TestProcessChunksForPipeline_StripsPipelineOnlyFields(t *testing.T) {
 	}
 	if ck["doc_id"] != "doc-1" {
 		t.Errorf("doc_id = %v, want doc-1 (the strip must not touch persist fields)", ck["doc_id"])
+	}
+	if ck["img_id"] != "kb-1-chunk-1" {
+		t.Errorf("img_id = %v, want kb-1-chunk-1 (the persisted image key must survive the strip)", ck["img_id"])
+	}
+	encoded, err := json.Marshal(ck)
+	if err != nil {
+		t.Fatalf("marshal processed chunk: %v", err)
+	}
+	for _, leaked := range []string{mediaRef.Scope, mediaRef.SHA256} {
+		if strings.Contains(string(encoded), leaked) {
+			t.Errorf("processed chunk leaks media cache bookkeeping %q: %s", leaked, encoded)
+		}
 	}
 }
 
@@ -664,9 +843,9 @@ func TestProcessChunkPositions_ChunkerRoundTrip(t *testing.T) {
 	// normalizes it to [][]float64 at the chunker boundary too, so the parser
 	// container type never reaches the indexer.
 	pdfItem := parser.ImageItem{
-		Text:   "fig",
-		Image:  "",
-		CKType: "image",
+		Text:  "fig",
+		Image: "",
+
 		Positions: parser.Positions{
 			parser.AbsoluteBox{PageNumber: 1, Left: 100, Right: 50, Top: 200, Bottom: 150},
 		},

@@ -18,7 +18,6 @@ package cli
 
 import (
 	"fmt"
-	"ragflow/internal/cli/utils"
 	"strings"
 	"sync"
 	"time"
@@ -59,9 +58,17 @@ func (c *CLI) RunBenchmark(commandCount int, cmd *Command) (ResponseIf, error) {
 	nestedCmd.Params["iterations"] = iterations
 
 	if concurrency == 1 {
-		return c.runBenchmarkSingle(iterations, nestedCmd)
+		response, err := c.runBenchmarkSingle(iterations, nestedCmd)
+		if err != nil {
+			return nil, err
+		}
+		return response, nil
 	}
-	return c.runBenchmarkConcurrent(concurrency, iterations, nestedCmd)
+	response, err := c.runBenchmarkConcurrent(concurrency, iterations, nestedCmd)
+	if err != nil {
+		return nil, err
+	}
+	return response, nil
 }
 
 // runBenchmarkSingle runs benchmark with single concurrency (sequential execution)
@@ -138,7 +145,11 @@ func (c *CLI) runBenchmarkSingle(iterations int, nestedCmd *Command) (*Benchmark
 
 // runBenchmarkConcurrent runs benchmark with multiple concurrent workers
 func (c *CLI) runBenchmarkConcurrent(concurrency, iterations int, nestedCmd *Command) (*BenchmarkResponse, error) {
-	results := make([]map[string]interface{}, concurrency)
+	type workerResult struct {
+		response *BenchmarkResponse
+		err      error
+	}
+	results := make([]workerResult, concurrency)
 	var wg sync.WaitGroup
 
 	// For search_on_datasets, convert dataset names to IDs first
@@ -165,23 +176,12 @@ func (c *CLI) runBenchmarkConcurrent(concurrency, iterations int, nestedCmd *Com
 		go func(idx int) {
 			defer wg.Done()
 
-			//// Create a new client for each goroutine to avoid race conditions
-			//workerClient, err := NewCLIWithConfig(Arguments)
-			//if err != nil {
-			//	fmt.Printf("fail to create worker client: %s", err)
-			//	return
-			//}
-			//workerClient.AdminServerClient = c.AdminServerClient
-			//workerClient.APIServerClientMap = c.APIServerClientMap
-
-			// Execute benchmark silently (no output)
-			//responseList := workerClient.executeBenchmarkSilent(nestedCmd, iterations)
-			benchmarkResponse, _ := c.runBenchmarkSingle(iterations, nestedCmd)
-
-			results[idx] = map[string]interface{}{
-				"duration":      0.0,
-				"response_list": benchmarkResponse,
+			workerCmd := *nestedCmd
+			workerCmd.Params = make(map[string]interface{}, len(nestedCmd.Params))
+			for key, value := range nestedCmd.Params {
+				workerCmd.Params[key] = value
 			}
+			results[idx].response, results[idx].err = c.runBenchmarkSingle(iterations, &workerCmd)
 		}(i)
 	}
 
@@ -192,13 +192,15 @@ func (c *CLI) runBenchmarkConcurrent(concurrency, iterations int, nestedCmd *Com
 	successCount := 0
 	failureCount := 0
 
-	for _, result := range results {
-		if result == nil {
-			continue
+	for i, result := range results {
+		if result.err != nil {
+			return nil, fmt.Errorf("benchmark worker %d: %w", i+1, result.err)
 		}
-		res, _ := result["response_list"].(*BenchmarkResponse)
-		successCount += res.SuccessCount
-		failureCount += res.FailureCount
+		if result.response == nil {
+			return nil, fmt.Errorf("benchmark worker %d returned no response", i+1)
+		}
+		successCount += result.response.SuccessCount
+		failureCount += result.response.FailureCount
 	}
 
 	//totalCommands := iterations * concurrency
@@ -211,82 +213,4 @@ func (c *CLI) runBenchmarkConcurrent(concurrency, iterations int, nestedCmd *Com
 	benchmarkResponse.Concurrency = concurrency
 
 	return &benchmarkResponse, nil
-}
-
-// executeBenchmarkSilent executes a command for benchmark without printing output
-func (c *CLI) executeBenchmarkSilent(cmd *Command, iterations int) []*Response {
-	responseList := make([]*Response, 0, iterations)
-
-	httpClient := c.APIServerClientMap[c.Config.APIClientConfig.CurrentAPIServer]
-
-	for i := 0; i < iterations; i++ {
-		var resp *Response
-		var err error
-
-		switch cmd.Type {
-		case "ping":
-			resp, err = httpClient.Request(1, "GET", "/system/ping", "web", nil, nil)
-		case "list_user_datasets":
-			resp, err = httpClient.Request(1, "POST", "/kb/list", "web", nil, nil)
-		case "api_list_datasets":
-			userName, _ := cmd.Params["user_name"].(string)
-			resp, err = httpClient.Request(1, "GET", utils.APIPath("/admin/users", userName, "datasets"), "admin", nil, nil)
-		case "search_on_datasets":
-			question, _ := cmd.Params["question"].(string)
-			datasetIDs, _ := cmd.Params["dataset_ids"].([]string)
-			payload := map[string]interface{}{
-				"dataset_ids":              datasetIDs,
-				"question":                 question,
-				"similarity_threshold":     0.2,
-				"vector_similarity_weight": 0.3,
-			}
-			resp, err = httpClient.Request(1, "POST", "/datasets/search", "web", nil, payload)
-		default:
-			// For other commands, we would need to add specific handling
-			// For now, mark as failed
-			resp = &Response{StatusCode: 0}
-		}
-
-		if err != nil {
-			resp = &Response{StatusCode: 0}
-		}
-
-		responseList = append(responseList, resp)
-	}
-
-	return responseList
-}
-
-// isSuccess checks if a response is successful based on command type
-func isSuccess(resp *Response, commandType string) bool {
-	if resp == nil {
-		return false
-	}
-
-	switch commandType {
-	case "ping":
-		return resp.StatusCode == 200 && string(resp.Body) == "pong"
-	case "list_user_datasets", "api_list_datasets", "search_on_datasets":
-		// Check status code and JSON response code for dataset commands
-		if resp.StatusCode != 200 {
-			return false
-		}
-		resJSON, err := resp.JSON()
-		if err != nil {
-			return false
-		}
-		code, ok := resJSON["code"].(float64)
-		return ok && code == 0
-	default:
-		// For other commands, check status code and response code
-		if resp.StatusCode != 200 {
-			return false
-		}
-		resJSON, err := resp.JSON()
-		if err != nil {
-			return false
-		}
-		code, ok := resJSON["code"].(float64)
-		return ok && code == 0
-	}
 }

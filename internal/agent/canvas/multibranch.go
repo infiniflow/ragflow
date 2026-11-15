@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// multibranch.go — runtime branch wiring for Switch / Categorize.
+// multibranch.go — runtime branch wiring for control and exception paths.
 //
 // Switch and Categorize are control-flow components that produce a
 // `_next` output identifying which downstream child should run at
@@ -72,9 +72,8 @@ func isBranchableControl(name string) bool {
 	return branchableControlNames[strings.ToLower(name)]
 }
 
-// wireMultiBranches registers an eino MultiBranch on every
-// branchable parent that has at least one declared downstream
-// child. Pass-2 already wired AddInput edges from parent to each
+// wireMultiBranches registers an eino MultiBranch on control parents and
+// parents with exception targets. Pass-2 already wired AddInput edges from parent to each
 // child; the branch adds the control-only gating so only the
 // chosen child fires at runtime.
 //
@@ -103,7 +102,8 @@ func wireMultiBranches(
 		if loopMembers[cpnID] {
 			continue
 		}
-		if !isBranchableControl(comp.Obj.ComponentName) {
+		exceptions := exceptionTargets(comp.Obj.Params)
+		if !isBranchableControl(comp.Obj.ComponentName) && len(exceptions) == 0 {
 			continue
 		}
 		// Filter downstreams: keep only nodes that exist in the
@@ -111,7 +111,7 @@ func wireMultiBranches(
 		// children are all inside a loop body has no
 		// outer-graph routing to install.
 		endNodes := make(map[string]bool, len(comp.Downstream))
-		for _, child := range comp.Downstream {
+		for _, child := range append(append([]string(nil), comp.Downstream...), exceptions...) {
 			if loopMembers[child] {
 				continue
 			}
@@ -129,6 +129,16 @@ func wireMultiBranches(
 			endNodesList = append(endNodesList, n)
 		}
 		cond := makeSwitchBranchCondition(endNodes, branchTargetDependencies(c, cpnID, endNodes))
+		if len(exceptions) > 0 {
+			// Rejoining paths must not pull the opposite exception route into execution.
+			selectNext := makeSwitchBranchCondition(endNodes)
+			cond = func(ctx context.Context, in map[string]any) (map[string]bool, error) {
+				if _, hasNext := in["_next"]; hasNext || isBranchableControl(comp.Obj.ComponentName) {
+					return selectNext(ctx, in)
+				}
+				return selectNext(ctx, map[string]any{"_next": comp.Downstream})
+			}
+		}
 		wf.AddBranch(cpnID, compose.NewGraphMultiBranch(cond, endNodes))
 		out = append(out, branchRegistration{
 			Parent:   cpnID,

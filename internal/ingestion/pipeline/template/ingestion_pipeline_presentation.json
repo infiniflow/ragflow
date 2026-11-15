@@ -54,27 +54,10 @@
                             }
                         },
                         "pdf": {
-                            "flatten_media_to_text": false,
-                            "output_format": "json",
-                            "parse_method": "DeepDOC",
-                            "preprocess": [
-                                "main_content"
-                            ],
-                            "suffix": [
-                                "pdf"
-                            ],
-                            "vlm": {}
+                            "parse_method": "DeepDOC"
                         },
                         "slides": {
-                            "output_format": "json",
-                            "parse_method": "DeepDOC",
-                            "preprocess": [
-                                "main_content"
-                            ],
-                            "suffix": [
-                                "pptx",
-                                "ppt"
-                            ]
+                            "parse_method": "DeepDOC"
                         }
                     }
                 },
@@ -233,21 +216,11 @@
                             "setups": [
                                 {
                                     "fileFormat": "pdf",
-                                    "flatten_media_to_text": false,
-                                    "output_format": "json",
-                                    "parse_method": "DeepDOC",
-                                    "preprocess": [
-                                        "main_content"
-                                    ],
-                                    "vlm": {}
+                                    "parse_method": "DeepDOC"
                                 },
                                 {
                                     "fileFormat": "slides",
-                                    "output_format": "json",
-                                    "parse_method": "DeepDOC",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "parse_method": "DeepDOC"
                                 }
                             ]
                         },

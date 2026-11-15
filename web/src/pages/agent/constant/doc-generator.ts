@@ -38,5 +38,5 @@ export const DocGeneratorFormatFeatures: Record<
   [DocGeneratorOutputFormat.Docx]: { decorations: true, timestamp: true },
   [DocGeneratorOutputFormat.Txt]: { decorations: false, timestamp: true },
   [DocGeneratorOutputFormat.Markdown]: { decorations: false, timestamp: true },
-  [DocGeneratorOutputFormat.Html]: { decorations: false, timestamp: true },
+  [DocGeneratorOutputFormat.Html]: { decorations: true, timestamp: true },
 };

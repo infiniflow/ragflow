@@ -572,3 +572,101 @@ func TestSwitch_SatisfiedAndConditionStillRoutes(t *testing.T) {
 		t.Errorf("satisfied and-condition must route to CORRECT_TARGET, got %v", targets)
 	}
 }
+
+// TestSwitch_NumericOperatorUnparseableOperandFallsThrough pins #19416: the
+// comparison value comes straight from the condition config and defaults to
+// "" (check() only requires a branch target), so a numeric variable compared
+// with an empty or non-numeric value must be a non-match that falls through
+// to the default — not an error that aborts the canvas run. The == case is
+// already safe via equalFoldValues; the ordered operators are the fix.
+func TestSwitch_NumericOperatorUnparseableOperandFallsThrough(t *testing.T) {
+	cases := []struct {
+		name  string
+		op    string
+		value any
+	}{
+		{name: "empty value", op: ">", value: ""},
+		{name: "text value", op: ">", value: "abc"},
+		{name: "less than empty", op: "<", value: ""},
+		{name: "gte text", op: ">=", value: "high"},
+		{name: "lte nil", op: "<=", value: nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s, _ := NewSwitchComponent(nil)
+			state := canvas.NewCanvasState("run-num", "task-num")
+			state.Sys["score"] = 5
+			ctx := withStateForTest(t.Context(), state)
+
+			inputs := map[string]any{
+				"conditions": []any{
+					map[string]any{
+						"op": "and",
+						"clauses": []any{
+							map[string]any{"left": "{{sys.score}}", "op": c.op, "right": c.value},
+						},
+						"to": "numeric_target",
+					},
+				},
+				"default": "fallback",
+			}
+			out, err := s.Invoke(ctx, nil, inputs)
+			if err != nil {
+				t.Fatalf("Invoke must not fail on an unparseable comparison value: %v", err)
+			}
+			targets := nextTargets(out)
+			if len(targets) != 1 || targets[0] != "fallback" {
+				t.Errorf("unparseable operand must fall through to the default, got %v", targets)
+			}
+		})
+	}
+}
+
+// TestSwitch_NumericOperatorsStillCompare verifies the ordered operators
+// keep working when both operands parse, so the fall-through change cannot
+// regress the matching path.
+func TestSwitch_NumericOperatorsStillCompare(t *testing.T) {
+	cases := []struct {
+		name  string
+		op    string
+		right any
+		want  bool
+	}{
+		{name: "5 > 3", op: ">", right: 3, want: true},
+		{name: "5 > 9", op: ">", right: 9, want: false},
+		{name: "5 < 9", op: "<", right: 9, want: true},
+		{name: "5 >= 5", op: ">=", right: 5, want: true},
+		{name: "5 <= 4", op: "<=", right: 4, want: false},
+		{name: "numeric string right", op: ">", right: "4", want: true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			s, _ := NewSwitchComponent(nil)
+			state := canvas.NewCanvasState("run-num2", "task-num2")
+			state.Sys["score"] = 5
+			ctx := withStateForTest(t.Context(), state)
+
+			inputs := map[string]any{
+				"conditions": []any{
+					map[string]any{
+						"op": "and",
+						"clauses": []any{
+							map[string]any{"left": "{{sys.score}}", "op": c.op, "right": c.right},
+						},
+						"to": "numeric_target",
+					},
+				},
+				"default": "fallback",
+			}
+			out, err := s.Invoke(ctx, nil, inputs)
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			targets := nextTargets(out)
+			matched := len(targets) == 1 && targets[0] == "numeric_target"
+			if matched != c.want {
+				t.Errorf("5 %s %v: routed %v, want match=%v", c.op, c.right, targets, c.want)
+			}
+		})
+	}
+}

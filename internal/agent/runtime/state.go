@@ -26,8 +26,7 @@
 // Concurrency: a single sync.RWMutex guards every map in CanvasState
 // (plan §2.5 — "start simple"). Helper methods (GetVar / SetVar /
 // ReadVars / Snapshot / etc.) lock internally; callers should not
-// acquire OutputsLock unless they have a specific reason to extend a
-// critical section.
+// access the exported map fields directly from concurrent run paths.
 package runtime
 
 import (
@@ -719,6 +718,64 @@ func (s *CanvasState) SetGlobal(key string, val any) {
 	s.Globals[key] = val
 }
 
+// GetSys reads a value from the sys namespace.
+func (s *CanvasState) GetSys(key string) (any, bool) {
+	if s == nil {
+		return nil, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	value, ok := s.Sys[key]
+	return value, ok
+}
+
+// GetSysString reads a string value from the sys namespace.
+func (s *CanvasState) GetSysString(key string) (string, bool) {
+	value, ok := s.GetSys(key)
+	if !ok {
+		return "", false
+	}
+	text, ok := value.(string)
+	return text, ok
+}
+
+// SetSys writes a value into the sys namespace.
+func (s *CanvasState) SetSys(key string, value any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Sys == nil {
+		s.Sys = make(map[string]any)
+	}
+	s.Sys[key] = value
+}
+
+// GetEnv reads a value from the env namespace.
+func (s *CanvasState) GetEnv(key string) (any, bool) {
+	if s == nil {
+		return nil, false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	value, ok := s.Env[key]
+	return value, ok
+}
+
+// SetEnv writes a value into the env namespace.
+func (s *CanvasState) SetEnv(key string, value any) {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.Env == nil {
+		s.Env = make(map[string]any)
+	}
+	s.Env[key] = value
+}
+
 // GetRetrievalChunks returns a snapshot of the chunks recorded in
 // state.Retrieval["chunks"]. The Retrieval map is the canvas-level
 // aggregate that the Retrieval tool populates during the ReAct loop;
@@ -813,7 +870,23 @@ func copyRetrievalDocAggs(value any) []any {
 		for key := range aggs {
 			keys = append(keys, key)
 		}
-		sort.Strings(keys)
+		// Sort by document name to keep the payload stable across runs. The
+		// document id breaks ties between sources that share a title.
+		sort.SliceStable(keys, func(i, j int) bool {
+			aggI, _ := aggs[keys[i]].(map[string]any)
+			aggJ, _ := aggs[keys[j]].(map[string]any)
+			nameI, _ := aggI["doc_name"].(string)
+			nameJ, _ := aggJ["doc_name"].(string)
+			if nameI != nameJ {
+				return nameI < nameJ
+			}
+			idI, _ := aggI["doc_id"].(string)
+			idJ, _ := aggJ["doc_id"].(string)
+			if idI != idJ {
+				return idI < idJ
+			}
+			return keys[i] < keys[j]
+		})
 		out := make([]any, 0, len(keys))
 		for _, key := range keys {
 			out = append(out, aggs[key])
@@ -846,8 +919,7 @@ func (s *CanvasState) SetRetrievalChunks(chunks []map[string]any) {
 }
 
 // SetRetrievalReferences records the chunks and document aggregates emitted by
-// a canvas search component. It is the lock-safe counterpart of Python
-// Graph.add_reference for components that produce externally sourced results.
+// a canvas search component.
 func (s *CanvasState) SetRetrievalReferences(chunks, docAggs []map[string]any) {
 	if s == nil {
 		return
@@ -885,16 +957,32 @@ func (s *CanvasState) SetRetrievalReferences(chunks, docAggs []map[string]any) {
 	if docAggValues == nil {
 		docAggValues = make(map[string]any, len(docAggs))
 	}
-	for _, docAgg := range docAggs {
-		docName, _ := docAgg["doc_name"].(string)
-		if docName == "" {
+	seenDocAggKeys := make(map[string]struct{}, len(docAggValues)+len(docAggs))
+	for _, item := range docAggValues {
+		existing, ok := item.(map[string]any)
+		if !ok {
 			continue
 		}
-		// Match Python Graph.add_reference: retain the first aggregate for
-		// a document name across the run-level reference set.
-		if _, exists := docAggValues[docName]; !exists {
-			docAggValues[docName] = docAgg
+		if key, ok := retrievalDocAggKey(existing); ok {
+			seenDocAggKeys[key] = struct{}{}
 		}
+	}
+	for _, docAgg := range docAggs {
+		key, ok := retrievalDocAggKey(docAgg)
+		if !ok {
+			continue
+		}
+		// Retain the first aggregate per document id. Aggregates without an
+		// id fall back to the document name, matching the previous behavior.
+		// Keying by id keeps two sources with the same title but different
+		// URLs from collapsing into one doc_agg. Existing entries are re-keyed
+		// from their fields so checkpoints written before this change also
+		// dedupe correctly.
+		if _, exists := seenDocAggKeys[key]; exists {
+			continue
+		}
+		seenDocAggKeys[key] = struct{}{}
+		docAggValues[key] = docAgg
 	}
 	s.Retrieval["chunks"] = chunkValues
 	s.Retrieval["doc_aggs"] = docAggValues
@@ -909,7 +997,24 @@ func retrievalReferenceID(chunk map[string]any) (string, bool) {
 	return id, id != ""
 }
 
-// GetRetrievalDocAggs returns a shallow snapshot keyed by document name.
+// retrievalDocAggKey returns the dedupe key for a document aggregate.
+// Documents with an id are keyed by that id so same-title sources from
+// different URLs stay distinct. Aggregates without an id fall back to the
+// document name. Empty document names are skipped, matching the previous
+// behavior.
+func retrievalDocAggKey(docAgg map[string]any) (string, bool) {
+	docName, _ := docAgg["doc_name"].(string)
+	if docName == "" {
+		return "", false
+	}
+	if docID, _ := docAgg["doc_id"].(string); docID != "" {
+		return "id:" + docID, true
+	}
+	return "name:" + docName, true
+}
+
+// GetRetrievalDocAggs returns a shallow snapshot keyed by document id when
+// present, otherwise by document name.
 func (s *CanvasState) GetRetrievalDocAggs() map[string]map[string]any {
 	if s == nil {
 		return nil
@@ -921,10 +1026,19 @@ func (s *CanvasState) GetRetrievalDocAggs() map[string]map[string]any {
 		return nil
 	}
 	out := make(map[string]map[string]any, len(raw))
-	for name, item := range raw {
-		if agg, ok := item.(map[string]any); ok {
-			out[name] = agg
+	for _, item := range raw {
+		agg, ok := item.(map[string]any)
+		if !ok {
+			continue
 		}
+		key, _ := agg["doc_id"].(string)
+		if key == "" {
+			key, _ = agg["doc_name"].(string)
+		}
+		if key == "" {
+			continue
+		}
+		out[key] = agg
 	}
 	return out
 }

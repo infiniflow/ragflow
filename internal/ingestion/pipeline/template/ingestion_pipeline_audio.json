@@ -53,29 +53,7 @@
                                 "value": ""
                             }
                         },
-                        "audio": {
-                            "output_format": "text",
-                            "preprocess": [
-                                "main_content"
-                            ],
-                            "suffix": [
-                                "aac",
-                                "aiff",
-                                "ape",
-                                "au",
-                                "da",
-                                "flac",
-                                "midi",
-                                "mp3",
-                                "ogg",
-                                "oggvorbis",
-                                "realaudio",
-                                "vqf",
-                                "wav",
-                                "wave",
-                                "wma"
-                            ]
-                        }
+                        "audio": {}
                     }
                 },
                 "upstream": [
@@ -232,11 +210,7 @@
                             },
                             "setups": [
                                 {
-                                    "fileFormat": "audio",
-                                    "output_format": "text",
-                                    "preprocess": [
-                                        "main_content"
-                                    ]
+                                    "fileFormat": "audio"
                                 }
                             ]
                         },

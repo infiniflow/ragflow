@@ -191,7 +191,7 @@ func TestTitleFamilyChunkersRecognizeHeadingsAfterFirstParserLine(t *testing.T) 
 			if err != nil {
 				t.Fatalf("Invoke: %v", err)
 			}
-			chunks, _ := out["chunks"].([]map[string]any)
+			chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 			if len(chunks) != 2 {
 				t.Fatalf("got %d chunks, want one per heading section", len(chunks))
 			}
@@ -216,7 +216,7 @@ func TestGroupTitleChunker_InvokeEmptyInput(t *testing.T) {
 	if got, want := out["output_format"], "chunks"; got != want {
 		t.Errorf("output_format = %v, want %v", got, want)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) != 0 {
 		t.Errorf("chunks = %d, want 0", len(chunks))
 	}
@@ -240,7 +240,7 @@ func TestGroupTitleChunker_Headings_ASCII(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
@@ -263,7 +263,7 @@ func TestGroupTitleChunker_RootChunkAsHeading_StillSingleGroup(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) == 0 {
 		t.Fatal("chunks: want >=1, got 0")
 	}
@@ -311,7 +311,7 @@ func TestGroupChunker_StructuredMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	found := false
 	for _, ck := range chunks {
 		if dt, _ := ck["doc_type_kwd"].(string); dt == "image" {
@@ -352,7 +352,7 @@ func TestGroupChunker_MergesPDFPositionsAndRemovesTags(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, _ := out["chunks"].([]map[string]any)
+	chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 	if len(chunks) == 0 {
 		t.Fatal("no chunks emitted")
 	}
@@ -367,7 +367,7 @@ func TestGroupChunker_MergesPDFPositionsAndRemovesTags(t *testing.T) {
 			t.Errorf("parser position tags leaked into chunk text: %q", text)
 		}
 		// (b) positions must be merged across both records.
-		pos, ok := ck["positions"].([][]float64)
+		pos, ok := ck["positions"].([][]any)
 		if !ok {
 			t.Fatalf("positions missing or wrong type %T on merged group chunk", ck["positions"])
 		}
@@ -400,7 +400,7 @@ func TestGroupTitleChunker_InvokeDeterministic(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Invoke run %d: %v", run, err)
 		}
-		chunks, _ := out["chunks"].([]map[string]any)
+		chunks, _ := schema.ChunkCarrierToMaps(out["chunks"])
 		texts := make([]string, len(chunks))
 		for i, ck := range chunks {
 			texts[i], _ = ck["text"].(string)

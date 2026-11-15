@@ -54,7 +54,7 @@ func TestConfigureFromSetup_Pages(t *testing.T) {
 
 	t.Run("missing pages key -> nil", func(t *testing.T) {
 		p := &PDFParser{}
-		setup := map[string]any{"flatten_media_to_text": true}
+		setup := map[string]any{}
 		p.ConfigureFromSetup(setup)
 		if p.Pages != nil {
 			t.Errorf("Pages = %v, want nil", p.Pages)
@@ -65,22 +65,14 @@ func TestConfigureFromSetup_Pages(t *testing.T) {
 	t.Run("other fields still read (no regression)", func(t *testing.T) {
 		p := &PDFParser{}
 		setup := map[string]any{
-			"flatten_media_to_text": true,
-			"parse_method":          "DeepDOC",
-			"output_format":         "json",
+			"parse_method": "DeepDOC",
 			"pages": []any{
 				[]any{float64(1), float64(100)},
 			},
 		}
 		p.ConfigureFromSetup(setup)
-		if !p.FlattenMediaToText {
-			t.Error("FlattenMediaToText not read")
-		}
 		if p.ParseMethod != "DeepDOC" {
 			t.Errorf("ParseMethod = %q, want DeepDOC", p.ParseMethod)
-		}
-		if p.OutputFormat != "json" {
-			t.Errorf("OutputFormat = %q, want json", p.OutputFormat)
 		}
 		if want := [][]int{{1, 100}}; !reflect.DeepEqual(p.Pages, want) {
 			t.Errorf("Pages = %v, want %v", p.Pages, want)

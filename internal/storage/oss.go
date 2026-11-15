@@ -17,42 +17,47 @@
 package storage
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/server/config"
-	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	s3Config "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/smithy-go"
-	"github.com/aws/smithy-go/encoding/httpbinding"
 	"go.uber.org/zap"
 )
 
-// OSSStorage implements Storage interface for Aliyun OSS
-// OSS uses S3-compatible API
+// OSSStorage implements Storage for Aliyun OSS. The shared S3-compatible
+// surface lives in s3Base; this file holds only what differs for OSS: the
+// connection setup, the path-folding semantics (no logical-bucket segment —
+// see doc.go), and the refusal to remove logical buckets in shared-bucket
+// mode.
 type OSSStorage struct {
-	client     *s3.Client
-	bucket     string
-	prefixPath string
-	config     config.OSSConfig
+	s3Base
+	client *s3.Client // owned by connect/reconnect; the base reads it via its getter
+	config config.OSSConfig
 }
 
 // NewOSSStorage creates a new OSS storage instance
 func NewOSSStorage(ctx context.Context, config config.OSSConfig) (*OSSStorage, error) {
 	storage := &OSSStorage{
-		bucket:     config.Bucket,
-		prefixPath: config.PrefixPath,
-		config:     config,
+		config: config,
 	}
 
 	if err := storage.connect(ctx); err != nil {
 		return nil, err
+	}
+
+	storage.s3Base = s3Base{
+		client:     func() *s3.Client { return storage.client },
+		bucket:     config.Bucket,
+		prefixPath: config.PrefixPath,
+		typeName:   "oss",
+		resolve:    storage.resolveBucketAndPath,
+		makeBucket: storage.createBucket,
+		reconnect:  storage.reconnect,
 	}
 
 	return storage, nil
@@ -104,277 +109,16 @@ func (o *OSSStorage) resolveBucketAndPath(bucket, fnm string) (string, string) {
 	return actualBucket, actualPath
 }
 
-func (o *OSSStorage) Type() string { return "oss" }
-
-// Health checks OSS service availability
-func (o *OSSStorage) Health(ctx context.Context) bool {
-	bucket := o.bucket
-	if bucket == "" {
-		bucket = "health-check-bucket"
-	}
-
-	fnm := "txtxtxtxt1"
-	if o.prefixPath != "" {
-		fnm = fmt.Sprintf("%s/%s", o.prefixPath, fnm)
-	}
-	binary := []byte("_t@@@1")
-
-	// Ensure bucket exists
-	if !o.BucketExists(ctx, bucket) {
-		_, err := o.client.CreateBucket(ctx, &s3.CreateBucketInput{
-			Bucket: aws.String(bucket),
-		})
-		if err != nil {
-			common.Error("Failed to create bucket for health check", err, zap.String("bucket", bucket))
-			return false
-		}
-	}
-
-	// Try to upload a test object
-	reader := bytes.NewReader(binary)
-	_, err := o.client.PutObject(ctx, &s3.PutObjectInput{
+func (o *OSSStorage) createBucket(ctx context.Context, bucket string) error {
+	_, err := o.client.CreateBucket(ctx, &s3.CreateBucketInput{
 		Bucket: aws.String(bucket),
-		Key:    aws.String(fnm),
-		Body:   reader,
 	})
-
-	if err != nil {
-		common.Error("Health check failed", err)
-		return false
-	}
-
-	return true
+	return err
 }
 
-// Put uploads an object to OSS
-func (o *OSSStorage) Put(ctx context.Context, bucket, fnm string, binary []byte, tenantID ...string) error {
-	bucket, fnm = o.resolveBucketAndPath(bucket, fnm)
-	var lastErr error
-
-	for i := 0; i < 2; i++ {
-		// Ensure bucket exists
-		if !o.BucketExists(ctx, bucket) {
-			_, err := o.client.CreateBucket(ctx, &s3.CreateBucketInput{
-				Bucket: aws.String(bucket),
-			})
-			if err != nil {
-				lastErr = err
-				if ctxErr := ctx.Err(); ctxErr != nil {
-					return ctxErr
-				}
-				common.Error("Failed to create bucket", err, zap.String("bucket", bucket))
-				o.reconnect(ctx)
-				if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
-					return sleepErr
-				}
-				continue
-			}
-			common.Info("Created bucket", zap.String("bucket", bucket))
-		}
-
-		reader := bytes.NewReader(binary)
-		_, err := o.client.PutObject(ctx, &s3.PutObjectInput{
-			Bucket: aws.String(bucket),
-			Key:    aws.String(fnm),
-			Body:   reader,
-		})
-		if err != nil {
-			lastErr = err
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return ctxErr
-			}
-			common.Error("Failed to put object", err, zap.String("bucket", bucket), zap.String("key", fnm))
-			o.reconnect(ctx)
-			if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
-				return sleepErr
-			}
-			continue
-		}
-
-		return nil
-	}
-
-	return lastErr
-}
-
-// Get retrieves an object from OSS
-func (o *OSSStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
-	bucket, fnm = o.resolveBucketAndPath(bucket, fnm)
-	var lastErr error
-
-	for i := 0; i < 2; i++ {
-		result, err := o.client.GetObject(ctx, &s3.GetObjectInput{
-			Bucket: aws.String(bucket),
-			Key:    aws.String(fnm),
-		})
-		if err != nil {
-			lastErr = err
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return nil, ctxErr
-			}
-			common.Error("Failed to get object", err, zap.String("bucket", bucket), zap.String("key", fnm))
-			o.reconnect(ctx)
-			if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
-				return nil, sleepErr
-			}
-			continue
-		}
-		buf := new(bytes.Buffer)
-
-		readErr := func() error {
-			defer result.Body.Close()
-			_, err = buf.ReadFrom(result.Body)
-			return err
-		}()
-		if readErr != nil {
-			lastErr = readErr
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return nil, ctxErr
-			}
-			common.Error("Failed to read object data", readErr, zap.String("bucket", bucket), zap.String("key", fnm))
-			o.reconnect(ctx)
-			if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
-				return nil, sleepErr
-			}
-			continue
-		}
-
-		return buf.Bytes(), nil
-	}
-
-	return nil, lastErr
-}
-
-// Remove removes an object from OSS
-func (o *OSSStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
-	bucket, fnm = o.resolveBucketAndPath(bucket, fnm)
-
-	_, err := o.client.DeleteObject(ctx, &s3.DeleteObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(fnm),
-	})
-	if err != nil {
-		if isS3NotFound(err) {
-			return nil
-		}
-		common.Error("Failed to remove object", err, zap.String("bucket", bucket), zap.String("key", fnm))
-		return err
-	}
-
-	return nil
-}
-
-// ObjExist checks if an object exists in OSS
-func (o *OSSStorage) ObjExist(ctx context.Context, bucket, fnm string, tenantID ...string) bool {
-	bucket, fnm = o.resolveBucketAndPath(bucket, fnm)
-
-	_, err := o.client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: aws.String(bucket),
-		Key:    aws.String(fnm),
-	})
-	if err != nil {
-		if isOSSNotFound(err) {
-			return false
-		}
-		return false
-	}
-
-	return true
-}
-
-func (o *OSSStorage) ObjectExists(ctx context.Context, bucket, fnm string) (bool, error) {
-	bucket, fnm = o.resolveBucketAndPath(bucket, fnm)
-	_, err := o.client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(bucket), Key: aws.String(fnm)})
-	if err == nil {
-		return true, nil
-	}
-	if isS3NotFound(err) {
-		return false, nil
-	}
-	return false, err
-}
-
-func (o *OSSStorage) ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error) {
-
-	listInput := &s3.ListObjectsV2Input{
-		Bucket: aws.String(bucket),
-	}
-
-	result, err := o.client.ListObjectsV2(ctx, listInput)
-	if err != nil {
-		return nil, err
-	}
-
-	var objects []string
-
-	for _, obj := range result.Contents {
-		objects = append(objects, *obj.Key)
-	}
-
-	return objects, nil
-}
-
-func (o *OSSStorage) GetPresignedURL(ctx context.Context, bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
-	bucket, fnm = o.resolveBucketAndPath(bucket, fnm)
-
-	presignClient := s3.NewPresignClient(o.client)
-
-	for i := 0; i < 10; i++ {
-		req, err := presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
-			Bucket: aws.String(bucket),
-			Key:    aws.String(fnm),
-		}, s3.WithPresignExpires(expires))
-		if err != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return "", ctxErr
-			}
-			common.Error("Failed to generate presigned URL", err, zap.String("bucket", bucket), zap.String("key", fnm))
-			o.reconnect(ctx)
-			if err = sleepOrAbort(ctx, time.Second); err != nil {
-				return "", err
-			}
-			continue
-		}
-
-		return req.URL, nil
-	}
-
-	return "", fmt.Errorf("failed to generate presigned URL after 10 retries")
-}
-
-// BucketExists checks if a bucket exists
-func (o *OSSStorage) BucketExists(ctx context.Context, bucket string) bool {
-	actualBucket := bucket
-	if o.bucket != "" {
-		actualBucket = o.bucket
-	}
-
-	_, err := o.client.HeadBucket(ctx, &s3.HeadBucketInput{
-		Bucket: aws.String(actualBucket),
-	})
-	if err != nil {
-		common.Error("Bucket does not exist or error", err, zap.String("bucket", actualBucket))
-		return false
-	}
-
-	return true
-}
-
-func (o *OSSStorage) BucketExistsWithError(ctx context.Context, bucket string) (bool, error) {
-	if o.bucket != "" {
-		bucket = o.bucket
-	}
-	_, err := o.client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(bucket)})
-	if err == nil {
-		return true, nil
-	}
-	if isS3BucketNotFound(err) {
-		return false, nil
-	}
-	return false, err
-}
-
-// RemoveBucket removes a bucket and all its objects
+// RemoveBucket removes a bucket and all its objects. In shared-bucket mode a
+// logical bucket has no physical isolation, so removal is refused rather than
+// silently clearing the shared prefix.
 func (o *OSSStorage) RemoveBucket(ctx context.Context, bucket string) error {
 	if o.bucket != "" {
 		return fmt.Errorf("cannot remove logical OSS bucket %s: shared bucket mode does not isolate objects by logical bucket", bucket)
@@ -400,11 +144,10 @@ func (o *OSSStorage) RemoveBucket(ctx context.Context, bucket string) error {
 		}
 
 		for _, obj := range result.Contents {
-			_, err = o.client.DeleteObject(ctx, &s3.DeleteObjectInput{
+			if _, err = o.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 				Bucket: aws.String(actualBucket),
 				Key:    obj.Key,
-			})
-			if err != nil {
+			}); err != nil {
 				common.Error("Failed to delete object", err, zap.String("bucket", actualBucket))
 			}
 		}
@@ -416,10 +159,9 @@ func (o *OSSStorage) RemoveBucket(ctx context.Context, bucket string) error {
 	}
 
 	// Delete bucket
-	_, err := o.client.DeleteBucket(ctx, &s3.DeleteBucketInput{
+	if _, err := o.client.DeleteBucket(ctx, &s3.DeleteBucketInput{
 		Bucket: aws.String(actualBucket),
-	})
-	if err != nil {
+	}); err != nil {
 		common.Error("Failed to delete bucket", err, zap.String("bucket", actualBucket))
 		return err
 	}
@@ -427,7 +169,8 @@ func (o *OSSStorage) RemoveBucket(ctx context.Context, bucket string) error {
 	return nil
 }
 
-// RemoveEmptyBucket removes a physical bucket only when it is empty.
+// RemoveEmptyBucket removes a physical bucket only when it is empty. In
+// shared-bucket mode a logical bucket cannot be removed at all.
 func (o *OSSStorage) RemoveEmptyBucket(ctx context.Context, bucket string) error {
 	if o.bucket != "" {
 		return fmt.Errorf("cannot remove logical OSS bucket %s: shared bucket mode does not isolate objects by logical bucket", bucket)
@@ -437,56 +180,4 @@ func (o *OSSStorage) RemoveEmptyBucket(ctx context.Context, bucket string) error
 		return nil
 	}
 	return err
-}
-
-// Copy copies an object from source to destination
-func (o *OSSStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
-	srcBucket, srcPath = o.resolveBucketAndPath(srcBucket, srcPath)
-	destBucket, destPath = o.resolveBucketAndPath(destBucket, destPath)
-
-	copySource := httpbinding.EscapePath(fmt.Sprintf("%s/%s", srcBucket, srcPath), false)
-
-	_, err := o.client.CopyObject(ctx, &s3.CopyObjectInput{
-		Bucket:     aws.String(destBucket),
-		Key:        aws.String(destPath),
-		CopySource: aws.String(copySource),
-	})
-	if err != nil {
-		common.Error("Failed to copy object", err, zap.String("src", copySource), zap.String("dest", fmt.Sprintf("%s/%s", destBucket, destPath)))
-		return false
-	}
-
-	return true
-}
-
-// Move moves an object from source to destination
-func (o *OSSStorage) Move(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
-	if o.Copy(ctx, srcBucket, srcPath, destBucket, destPath) {
-		if err := o.Remove(ctx, srcBucket, srcPath); err != nil {
-			common.Error("Failed to remove source object after copy", err, zap.String("bucket", srcBucket), zap.String("key", srcPath))
-			rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-			defer cancel()
-			err = o.Remove(rollbackCtx, destBucket, destPath)
-			if err != nil {
-				common.Warn("Failed to roll back copied destination object", zap.String("bucket", destBucket), zap.String("key", destPath), zap.Error(err))
-			}
-			return false
-		}
-		return true
-	}
-	return false
-}
-
-func (o *OSSStorage) Close() error { return nil }
-
-// Helper functions
-func isOSSNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	var apiErr smithy.APIError
-	if errors.As(err, &apiErr) {
-		return apiErr.ErrorCode() == "NotFound" || apiErr.ErrorCode() == "404" || apiErr.ErrorCode() == "NoSuchKey"
-	}
-	return false
 }

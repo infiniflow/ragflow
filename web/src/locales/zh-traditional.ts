@@ -108,7 +108,7 @@ export default {
       webCrawl: '網頁抓取',
       chunkNumber: '分塊數',
       uploadDate: '上傳日期',
-      chunkMethod: '切片方法',
+      parsingMode: '解析方式',
       enabled: '啟用',
       disabled: '禁用',
       action: '動作',
@@ -155,9 +155,6 @@ export default {
       layoutRecognize: 'PDF解析器',
       layoutRecognizeTip:
         '使用視覺模型進行 PDF 布局分析，以更好地識別文檔結構，找到標題、文字塊、圖像和表格的位置。若選擇 Naive 選項，則只能取得 PDF 的純文字。請注意此功能僅適用於 PDF 文檔，對其他文檔不生效。如需更多資訊，請參閱 https://ragflow.io/docs/dataset_configuration#document-parsing-configuration。',
-      taskPageSize: '任務頁面大小',
-      taskPageSizeMessage: '請輸入您的任務頁面大小！',
-      taskPageSizeTip: `如果使用佈局識別，PDF 文件將被分成連續的組。佈局分析將在組之間並行執行，以提高處理速度。“任務頁面大小”決定組的大小。頁面大小越大，將頁面之間的連續文本分割成不同塊的機會就越低。`,
       addPage: '新增頁面',
       greaterThan: '當前值必須大於起始值！',
       greaterThanPrevious: '當前值必須大於之前的值！',
@@ -181,8 +178,6 @@ export default {
       childrenDelimiter: '文字分段標識符',
       childrenDelimiterTip:
         '支持多字符作為分隔符，多字符用兩個反引號 \\`\\` 分隔符包裹。若配置成：\\n`##`; 系統將首先使用換行符、兩個#號以及分號先對文本進行分割，隨後再對分得的小文本塊按照「建議文字塊大小」設定的大小進行拼裝。在設定文字分段標識符前請確保理解上述文字分段切片機制。',
-      html4excel: '表格轉HTML',
-      html4excelTip: `與 General 切片方法配合使用。未開啟狀態下，表格檔案（XLSX、XLS（Excel 97-2003）會按行解析為鍵值對。開啟後，表格檔案會被解析為 HTML 表格。若原始表格超過 12 行，系統會自動按每 12 行拆分為多個 HTML 表格。欲了解更多資訊，請參閱 https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration。`,
       autoKeywords: '自動關鍵字擷取數',
       autoKeywordsTip: `自動為每個文字區塊中提取 N 個關鍵詞，以提升查詢精度。請注意：此功能採用「系統模型設定」中設定的預設聊天模型提取關鍵詞，因此也會產生更多 Token 消耗。此外，你也可以手動更新生成的關鍵詞。詳情請參見 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。`,
       autoQuestions: '自動問題擷取數',
@@ -217,6 +212,7 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文檔不能被刪除',
     },
     knowledgeConfiguration: {
+      parsingMode: '解析方式',
       builtInSuffix: ' (built in)',
       settings: '設置',
       autoMetadataTip:
@@ -241,8 +237,6 @@ export default {
       permissionsTip: '如果權限是“團隊”，則所有團隊成員都可以操作知識庫。',
       chunkTokenNumberTip:
         '建議的生成文本塊的 token 數閾值。如果切分得到的小文本段 token 數達不到這一閾值，系統就會不斷與之後的文本段合併，直至再合併下一個文本段會超過這一閾值為止，此時產生一個最終文本塊。如果系統在切分文本段時始終沒有遇到文本分段標識符，即便文本段 token 數已經超過這一閾值，系統也不會生成新文本塊。',
-      chunkMethod: '切片方法',
-      chunkMethodTip: '說明位於右側。',
       upload: '上傳',
       english: '英語',
       chinese: '中文',
@@ -400,8 +394,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         '例如：https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studio 訪問令牌',
-      paddleocrAccessTokenTip: 'PaddleOCR API 的訪問令牌（可選）',
-      paddleocrAccessTokenPlaceholder: '您的 AI Studio 令牌（可選）',
+      paddleocrAccessTokenTip: 'PaddleOCR API 的訪問令牌',
+      paddleocrAccessTokenPlaceholder: '您的 AI Studio 令牌',
       paddleocrAlgorithm: 'PaddleOCR 算法',
       paddleocrAlgorithmTip: '用於 PaddleOCR 解析的算法',
       paddleocrSelectAlgorithm: '選擇算法',
@@ -530,7 +524,7 @@ export default {
       thinkingEnabled: '開啟',
       thinkingDisabled: '關閉',
       thinkingTip:
-        '僅控制官方模型提供商中的 Qwen、Kimi 和 GLM 模型思考模式。系統預設會關閉 Qwen 思考，以避免任務長時間執行。',
+        '僅控制官方模型供应商中的 Qwen、Kimi 和 GLM 模型思考模式。系統預設會關閉 Qwen 思考，以避免任務長時間執行。',
       quote: '顯示引文',
       quoteTip: '是否應該顯示原文出處？',
       selfRag: 'Self-RAG',
@@ -654,7 +648,7 @@ export default {
       maxTokensMinMessage: '最大標記數不能小於 0。',
       password: '密碼',
       passwordDescription: '請輸入您當前的密碼以更改您的密碼。',
-      model: '模型提供商',
+      model: '模型供应商',
       modelDescription: '在此設置模型參數和 API Key。',
       team: '團隊',
       api: 'API',
@@ -694,7 +688,7 @@ export default {
       hideModels: '隱藏模型',
       baseUrl: 'Base URL',
       baseUrlTip:
-        '如果您的 API 密鑰來自 OpenAI，請忽略它。任何其他中間提供商都會提供帶有 API 密鑰的基本 URL。',
+        '如果您的 API 密鑰來自 OpenAI，請忽略它。任何其他中間供应商都會提供帶有 API 密鑰的基本 URL。',
       tongyiBaseUrlTip:
         '中國用戶無需填寫或使用 https://dashscope.aliyuncs.com/compatible-mode/v1。國際用戶請使用 https://dashscope-intl.aliyuncs.com/compatible-mode/v1',
       siliconBaseUrlTip:
@@ -711,7 +705,7 @@ export default {
         '默認的tts模型會被用於在對話過程中請求語音生成時使用。如未显示可选模型，請前往「模型供應商」頁面，確認你的模型供应商是否提供该模型。',
       embeddingModel: '嵌入模型',
       embeddingModelTip:
-        '如未顯示可選模型，請檢查你是否在使用 RAGFlow slim 版（不含嵌入模型）；或前往「模型供應商」頁面，確認你的模型供應商是否提供該模型。',
+        '如未顯示可選模型，前往「模型供應商」頁面，確認你的模型供應商是否提供該模型。',
       img2txtModel: 'img2Txt模型',
       img2txtModelTip:
         '所有新創建的知識庫都將使用默認的 img2txt 模型。它可以描述圖片或視頻。如未顯示可選模型，請前往「模型供應商」頁面，確認你的模型供應商是否提供該模型。',
@@ -736,7 +730,7 @@ export default {
         apiUrl: 'PaddleOCR API URL',
         apiUrlPlaceholder: '例如：https://paddleocr-server.com/layout-parsing',
         accessToken: 'AI Studio 存取權杖',
-        accessTokenPlaceholder: '您的 AI Studio 權杖（選填）',
+        accessTokenPlaceholder: '您的 AI Studio 權杖',
         algorithm: 'PaddleOCR 演算法',
         selectAlgorithm: '選擇演算法',
         modelNamePlaceholder: '例如：paddleocr-from-env-1',
@@ -1361,7 +1355,7 @@ export default {
       openingSwitchTip: '您的用戶將在開始時看到此歡迎訊息。',
       modeTip: '模式定義工作流程如何啟動。 ',
       beginInputTip: `透過定義輸入參數，這些內容可以在後續流程中被其他元件存取。`,
-      canvasCategory: '畫布分類',
+      agentCategory: '畫布分類',
       tags: '標籤',
       created: '建立於',
       id: 'ID',
@@ -1398,6 +1392,170 @@ export default {
       copySuccess: '複製成功',
       welcomeBack: '歡迎回來',
       selectLocalePlaceholder: '選擇語言',
+    },
+
+    admin: {
+      confirm: '確認',
+      close: '關閉',
+      yes: '是',
+      no: '否',
+      delete: '刪除',
+      cancel: '取消',
+      reset: '重置',
+      import: '匯入',
+      description: '描述',
+      noDescription: '無描述',
+      none: '無',
+
+      resourceType: {
+        dataset: '資料集',
+        chat: '對話',
+        agent: 'Agent',
+        search: '搜尋',
+        file: '檔案',
+        team: '團隊',
+        memory: '記憶',
+      },
+
+      permissionType: {
+        enable: '啟用',
+        read: '讀取',
+        write: '寫入',
+        share: '共用',
+      },
+
+      serviceStatus: '服務',
+      userManagement: '使用者',
+      sandboxSettings: '沙箱',
+      registrationWhitelist: '白名單',
+      roles: '角色',
+      monitoring: '監控',
+
+      sandboxSettingsPage: {
+        description:
+          '配置程式碼執行沙箱供应商。沙箱由 Agent 中的程式碼元件使用。',
+        providerSelection: '供应商選擇',
+        providerSelectionDescription: '為程式碼執行選擇沙箱供应商',
+
+        namedProviderConfiguration: '{{name}} 配置',
+        namedProviderConfigurationDescription: '配置 {{name}} 的連線設定。',
+
+        saveConfiguration: '儲存配置',
+        saving: '儲存中...',
+
+        testConnectionResultModal: {
+          title: '連線測試結果',
+          testing: '正在測試與沙箱供应商的連線...',
+          success: '已成功連線沙箱供应商',
+          failed: '連線沙箱供应商失敗',
+
+          exitCode: '退出碼',
+          executionTime: '執行時間',
+          stdout: '標準輸出',
+          stderr: '錯誤輸出 / 堆疊追蹤',
+        },
+
+        testConnection: '測試連線',
+        testing: '測試中...',
+      },
+
+      selectFile: '選擇檔案',
+      noFileSelected: '未選擇檔案',
+
+      back: '返回',
+      active: '啟用',
+      inactive: '停用',
+      enable: '啟用',
+      disable: '停用',
+      all: '全部',
+      actions: '操作',
+      newUser: '新增使用者',
+      email: '信箱',
+      name: '名稱',
+      nickname: '暱稱',
+      status: '狀態',
+      id: 'ID',
+      serviceType: '服務類型',
+      host: '主機',
+      port: '連接埠',
+
+      role: '角色',
+      user: '使用者',
+      userType: '使用者類型',
+      superuser: '超級使用者',
+      normalUser: '普通',
+
+      createTime: '建立時間',
+      lastLoginTime: '最後登入時間',
+      lastUpdateTime: '最後更新時間',
+
+      isAnonymous: '是否匿名',
+      isSuperuser: '是否超級使用者',
+
+      deleteUser: '刪除使用者',
+      deleteUserConfirmation: '確定要刪除該使用者嗎？',
+
+      createNewUser: '建立新使用者',
+      changePassword: '修改密碼',
+      newPassword: '新密碼',
+      confirmNewPassword: '確認新密碼',
+      password: '密碼',
+      confirmPassword: '確認密碼',
+
+      invalidEmail: '請輸入有效的信箱地址！',
+      passwordRequired: '請輸入密碼！',
+      passwordMinLength: '密碼長度必須大於 8 個字元。',
+      confirmPasswordRequired: '請確認密碼！',
+      confirmPasswordDoNotMatch: '兩次輸入的密碼不一致！',
+
+      read: '讀取',
+      write: '寫入',
+      share: '共用',
+      create: '新增',
+
+      extraInfo: '額外資訊',
+      serviceDetail: '服務 {{name}} 詳情',
+      taskExecutorDetail: '任務執行器詳情',
+
+      whitelistManagement: '白名單管理',
+      exportAsExcel: '匯出 Excel',
+      importFromExcel: '匯入 Excel',
+      createEmail: '新增信箱',
+      deleteEmail: '刪除信箱',
+      editEmail: '編輯信箱',
+      deleteWhitelistEmailConfirmation:
+        '確定要從白名單中刪除該信箱嗎？此操作不可撤銷。',
+
+      importWhitelist: '匯入白名單（Excel）',
+      importSelectExcelFile: 'Excel 檔案（.xlsx）',
+      importOverwriteExistingEmails: '覆蓋已存在的信箱',
+      importValidExcelFile: '請選擇有效的 Excel 檔案',
+      importFileRequired: '請選擇要匯入的檔案',
+      importFileTips: '檔案必須包含名為 <code>email</code> 的單一表頭欄。',
+
+      chunkNum: '分塊',
+      docNum: '文件',
+      tokenNum: '已用 Token',
+      language: '語言',
+      createDate: '建立日期',
+      updateDate: '更新日期',
+      permission: '權限',
+
+      agentTitle: 'Agent 標題',
+
+      newRole: '新增角色',
+      addNewRole: '新增角色',
+      roleName: '角色名稱',
+      roleNameRequired: '角色名稱為必填項',
+      resources: '資源',
+
+      editRoleDescription: '編輯角色描述',
+      deleteRole: '刪除角色',
+      deleteRoleConfirmation: '確定要刪除該角色嗎？此操作不可撤銷。',
+
+      alive: '存活',
+      timeout: '逾時',
+      fail: '失敗',
     },
   },
 };

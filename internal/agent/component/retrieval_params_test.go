@@ -40,7 +40,6 @@ func TestRetrievalComponentAppliesAdvancedNodeParams(t *testing.T) {
 		"dataset_ids":      []any{"dataset-1"},
 		"memory_ids":       []any{"memory-1", "memory-2"},
 		"cross_languages":  []any{"English", "Chinese", "Spanish"},
-		"toc_enhance":      true,
 		"use_kg":           true,
 		"meta_data_filter": map[string]any{"method": "manual"},
 		"retrieval_from":   "memory",
@@ -55,9 +54,6 @@ func TestRetrievalComponentAppliesAdvancedNodeParams(t *testing.T) {
 	}
 	if got := merged["cross_languages"]; !reflect.DeepEqual(got, []string{"English", "Chinese", "Spanish"}) {
 		t.Errorf("cross_languages = %#v", got)
-	}
-	if got := merged["toc_enhance"]; got != true {
-		t.Errorf("toc_enhance = %#v", got)
 	}
 	if got := merged["use_kg"]; got != true {
 		t.Errorf("use_kg = %#v", got)
@@ -80,7 +76,6 @@ func TestRetrievalComponentForwardsAdvancedNodeParams(t *testing.T) {
 		"dataset_ids":      []any{"dataset-1"},
 		"memory_ids":       []any{"memory-1"},
 		"cross_languages":  []any{"English", "Chinese", "Spanish"},
-		"toc_enhance":      true,
 		"use_kg":           false,
 		"meta_data_filter": map[string]any{"method": "manual"},
 		"retrieval_from":   "dataset",
@@ -99,9 +94,6 @@ func TestRetrievalComponentForwardsAdvancedNodeParams(t *testing.T) {
 	}
 	if !reflect.DeepEqual(request.CrossLanguages, []string{"English", "Chinese", "Spanish"}) {
 		t.Errorf("CrossLanguages = %#v", request.CrossLanguages)
-	}
-	if !request.TOCEnhance {
-		t.Error("TOCEnhance = false")
 	}
 	if request.UseKG {
 		t.Error("UseKG = true")

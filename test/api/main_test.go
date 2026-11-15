@@ -25,22 +25,33 @@ import (
 )
 
 func TestMain(m *testing.M) {
-	if TestConfig.APIKey != "" {
-		os.Exit(m.Run())
-	}
-	fmt.Fprintln(os.Stderr, "Login")
+	logf := func(format string, args ...any) { fmt.Fprintf(os.Stderr, format+"\n", args...) }
 
-	err := TestConfig.Login()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to login: %v\n", err)
-		os.Exit(1)
+	// An externally supplied API key means the caller owns the tenant; only a
+	// self-registered session is logged out again below.
+	loggedIn := false
+	if TestConfig.APIKey == "" {
+		fmt.Fprintln(os.Stderr, "Login")
+		if err := TestConfig.Login(); err != nil {
+			fmt.Fprintf(os.Stderr, "Failed to login: %v\n", err)
+			os.Exit(1)
+		}
+		loggedIn = true
 	}
+
+	// Register the providers, instances, and tenant defaults the suite needs.
+	// This used to be the job of the pytest session fixture, which is why the
+	// Go suite had to run after the Python tests in CI.
+	prepareDefaultModels(logf)
 
 	// Run the test cases
 	code := m.Run()
 
-	err = TestConfig.Logout()
-	if err != nil {
+	if !loggedIn {
+		os.Exit(code)
+	}
+
+	if err := TestConfig.Logout(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to logout: %v\n", err)
 		os.Exit(1)
 	}

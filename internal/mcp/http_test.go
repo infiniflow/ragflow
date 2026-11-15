@@ -15,6 +15,8 @@ import (
 	"time"
 
 	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"ragflow/internal/permission"
 )
 
 type headerTransport struct {
@@ -50,17 +52,18 @@ func TestSDKTransportsAndTools(t *testing.T) {
 	for _, mode := range []string{"json", "stream", "sse"} {
 		t.Run(mode, func(t *testing.T) {
 			var retrieval RetrievalRequest
-			factory := func(user string) Connector {
-				return NewServiceConnector(user,
-					func(ctx context.Context, user string, page, size int, _ string, _ bool) ([]map[string]any, int64, error) {
+			factory := func() Connector {
+				return NewServiceConnector(
+					func(ctx context.Context, page, size int, _ string, _ bool) ([]map[string]any, int64, error) {
+						user := permission.UserIDFromContext(ctx)
 						if user == "empty" {
 							return nil, 0, nil
 						}
 						return []map[string]any{{"id": user, "name": "Dataset", "description": nil}}, 1, nil
-					}, func(context.Context, string, int, int, string, bool) ([]map[string]any, int64, error) {
+					}, func(context.Context, int, int, string, bool) ([]map[string]any, int64, error) {
 						return nil, 0, nil
 					},
-					func(ctx context.Context, user string, req RetrievalRequest) (string, error) {
+					func(ctx context.Context, req RetrievalRequest) (string, error) {
 						retrieval = req
 						return `{"chunks":[],"query_info":{"question":"hello"}}`, nil
 					})
@@ -92,6 +95,17 @@ func TestSDKTransportsAndTools(t *testing.T) {
 				if string(got) != string(want) {
 					t.Fatalf("schema mismatch: %s vs %s", got, want)
 				}
+				if tool.Name == "ragflow_retrieval" {
+					var schema struct {
+						Properties map[string]json.RawMessage `json:"properties"`
+					}
+					if err := json.Unmarshal(got, &schema); err != nil {
+						t.Fatal(err)
+					}
+					if _, ok := schema.Properties["force_refresh"]; ok {
+						t.Fatal("retrieval advertises force_refresh")
+					}
+				}
 			}
 			result, err := ss.CallTool(t.Context(), &sdk.CallToolParams{Name: "ragflow_retrieval", Arguments: map[string]any{"question": "hello"}})
 			if err != nil || result.IsError {
@@ -112,11 +126,14 @@ func TestSDKTransportsAndTools(t *testing.T) {
 					}
 				}
 			}
-			for _, args := range []map[string]any{{}, {"question": 3}, {"question": "x", "page": 0}, {"question": "x", "page": 1.5}, {"question": "x", "page_size": 101}, {"question": "x", "top_k": 1025}, {"question": "x", "keyword": "true"}, {"question": "x", "dataset_ids": []any{3}}, {"question": "x", "similarity_threshold": -1}} {
+			for _, args := range []map[string]any{{}, {"question": 3}, {"question": "x", "page": 0}, {"question": "x", "page": 1.5}, {"question": "x", "page_size": 101}, {"question": "x", "top_k": 1025}, {"question": "x", "keyword": "true"}, {"question": "x", "dataset_ids": []any{3}}, {"question": "x", "similarity_threshold": -1}, {"question": "x", "force_refresh": true}, {"question": "x", "force_refresh": false}} {
 				result, err := ss.CallTool(t.Context(), &sdk.CallToolParams{Name: "ragflow_retrieval", Arguments: args})
 				if err != nil || !result.IsError {
 					t.Fatalf("invalid input accepted: %v result=%v err=%v", args, result, err)
 				}
+			}
+			if retrieval.Question != "hello" {
+				t.Fatalf("invalid input reached retrieval: %+v", retrieval)
 			}
 			empty := clientSession(t, hs.URL, mode, "empty")
 			result, err = empty.CallTool(t.Context(), &sdk.CallToolParams{Name: "ragflow_list_datasets"})
@@ -144,7 +161,7 @@ func TestCredential(t *testing.T) {
 }
 func TestConnectorPaginationAndNulls(t *testing.T) {
 	var pages, sizes []int
-	c := NewServiceConnector("tenant", func(_ context.Context, user string, page, size int, _ string, _ bool) ([]map[string]any, int64, error) {
+	c := NewServiceConnector(func(_ context.Context, page, size int, _ string, _ bool) ([]map[string]any, int64, error) {
 		pages = append(pages, page)
 		sizes = append(sizes, size)
 		return []map[string]any{{"id": fmt.Sprint(page)}}, 2, nil
@@ -165,10 +182,11 @@ func TestConcurrentTenantsAndSSEOwnership(t *testing.T) {
 			return "", fmt.Errorf("denied")
 		}
 		return key, nil
-	}, func(user string) Connector {
-		return NewServiceConnector(user, func(_ context.Context, user string, _, _ int, _ string, _ bool) ([]map[string]any, int64, error) {
+	}, func() Connector {
+		return NewServiceConnector(func(ctx context.Context, _, _ int, _ string, _ bool) ([]map[string]any, int64, error) {
+			user := permission.UserIDFromContext(ctx)
 			return []map[string]any{{"id": user}}, 1, nil
-		}, func(context.Context, string, int, int, string, bool) ([]map[string]any, int64, error) {
+		}, func(context.Context, int, int, string, bool) ([]map[string]any, int64, error) {
 			return nil, 0, nil
 		}, nil)
 	}, Options{true, true, true})
@@ -250,12 +268,12 @@ func TestConcurrentTenantsAndSSEOwnership(t *testing.T) {
 
 func TestProtocolErrorsAndCancellation(t *testing.T) {
 	started := make(chan context.Context, 1)
-	h := NewHandler(func(_ context.Context, key string) (string, error) { return key, nil }, func(user string) Connector {
-		return NewServiceConnector(user, func(context.Context, string, int, int, string, bool) ([]map[string]any, int64, error) {
+	h := NewHandler(func(_ context.Context, key string) (string, error) { return key, nil }, func() Connector {
+		return NewServiceConnector(func(context.Context, int, int, string, bool) ([]map[string]any, int64, error) {
 			return nil, 0, nil
-		}, func(context.Context, string, int, int, string, bool) ([]map[string]any, int64, error) {
+		}, func(context.Context, int, int, string, bool) ([]map[string]any, int64, error) {
 			return nil, 0, nil
-		}, func(ctx context.Context, _ string, _ RetrievalRequest) (string, error) {
+		}, func(ctx context.Context, _ RetrievalRequest) (string, error) {
 			started <- ctx
 			<-ctx.Done()
 			return "", ctx.Err()

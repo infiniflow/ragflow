@@ -23,7 +23,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -233,12 +232,8 @@ func TestSearXNGComponentContractReferencesAndOutputs(t *testing.T) {
 		t.Fatalf("references = %#v / %#v", chunks, docAggs)
 	}
 	cleaned := "RAGFlow content  remains"
-	documentID := hashSearXNGString(cleaned, 100000000)
-	referenceID := hashSearXNGString(strconv.Itoa(documentID), 500)
-	if documentID != 93760153 || referenceID != 491 {
-		t.Fatalf("hash parity = %d/%d, want Python 93760153/491", documentID, referenceID)
-	}
-	if chunks[0]["document_id"] != strconv.Itoa(documentID) || chunks[0]["id"] != strconv.Itoa(referenceID) || chunks[0]["content"] != cleaned {
+	documentID, referenceID := referenceIDs("https://ragflow.io", cleaned)
+	if chunks[0]["document_id"] != documentID || chunks[0]["id"] != referenceID || chunks[0]["content"] != cleaned {
 		t.Fatalf("reference chunk = %#v", chunks[0])
 	}
 
@@ -249,7 +244,7 @@ func TestSearXNGComponentContractReferencesAndOutputs(t *testing.T) {
 	}
 	formalized := outputs["formalized_content"].(string)
 	for _, want := range []string{
-		"ID: " + strconv.Itoa(referenceID),
+		"ID: " + referenceID,
 		"Title: RAGFlow Docs",
 		"URL: https://ragflow.io",
 		"Content:\n" + cleaned,

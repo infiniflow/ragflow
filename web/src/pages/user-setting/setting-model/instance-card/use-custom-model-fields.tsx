@@ -49,6 +49,7 @@ export const MODEL_FIELD_SCHEMA: AddCustomModelDialogFields[] = [
       { value: 'vision', label: 'modelTypes.image2text' },
       { value: 'ocr', label: 'modelTypes.ocr' },
       { value: 'asr', label: 'modelTypes.speech2text' },
+      { value: 'decision', label: 'modelTypes.decision' },
     ],
   },
   {

@@ -62,9 +62,9 @@ func TestRESTSessionLifecyclePersistsAndDeletes(t *testing.T) {
 		t.Fatalf("updated name was not persisted: %v", persisted)
 	}
 
-	deleted := restOK(t, restCall(t, TestConfig, http.MethodDelete, "/chats/"+chatID+"/sessions", apiObject{"ids": []string{sessionID}}, nil))["data"]
-	if deleted != true {
-		t.Fatalf("delete result=%v", deleted)
+	deleted := restOK(t, restCall(t, TestConfig, http.MethodDelete, "/chats/"+chatID+"/sessions", apiObject{"ids": []string{sessionID}}, nil))
+	if data, exists := deleted["data"]; exists {
+		t.Fatalf("data must be omitted, got %v", data)
 	}
 	remaining := restOK(t, restCall(t, TestConfig, http.MethodGet, "/chats/"+chatID+"/sessions", nil, apiObject{"page_size": 20}))
 	if slicesContainsID(t, array(t, remaining["data"]), sessionID) {

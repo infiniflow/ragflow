@@ -37,6 +37,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/ingestion/task/indexdoc"
+	parserlib "ragflow/internal/parser/parser"
 	"ragflow/internal/parser/tableutil"
 )
 
@@ -80,9 +81,65 @@ func spreadsheetSegmentItem(sheet string, header []string, rows [][]string, shee
 		// so text-bound assertions (e.g. TokenChunker boundary tests) stay valid.
 		"text":         tableutil.RenderTableHTML(td),
 		"doc_type_kwd": "table",
-		"ck_type":      "table",
 		"sheet_index":  sheetIndex,
 		"positions":    matrix,
+	}
+}
+
+func TestSpreadsheetIndexPositionsStartWithDataRow(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{"chunk_token_size": 1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := spreadsheetSegmentItem("Sheet1", []string{"Name"}, [][]string{{"Alice"}, {"Bob"}}, 1, 20)
+	out, err := component.Invoke(t.Context(), nil, map[string]any{"name": "test.xlsx", "file_type": "xlsx", "output_format": "json", "json": []map[string]any{item}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 1 {
+		t.Fatalf("got %d chunks", len(chunks))
+	}
+	want := [][]int{{1, 20, 20, 1, 1}, {1, 19, 19, 1, 1}, {1, 21, 21, 1, 1}}
+	var previewPositions [][]int
+	raw, err := json.Marshal(chunks[0]["positions"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &previewPositions); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(previewPositions, want) {
+		t.Fatalf("chunk preview positions = %v, want data row first", previewPositions)
+	}
+	if _, err := indexdoc.ProcessChunksForPipeline(chunks, "doc", "test.xlsx", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(chunks[0]["position_int"], want) {
+		t.Fatalf("positions = %v, want %v", chunks[0]["position_int"], want)
+	}
+}
+
+func TestSpreadsheetIndexPositionsKeepHeaderWhenNoData(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{"chunk_token_size": 1000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := spreadsheetSegmentItem("Sheet1", []string{"Name"}, nil, 1, 20)
+	out, err := component.Invoke(t.Context(), nil, map[string]any{"name": "test.xlsx", "file_type": "xlsx", "output_format": "json", "json": []map[string]any{item}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 1 {
+		t.Fatalf("got %d chunks", len(chunks))
+	}
+	if _, err := indexdoc.ProcessChunksForPipeline(chunks, "doc", "test.xlsx", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	want := [][]int{{1, 19, 19, 1, 1}}
+	if !reflect.DeepEqual(chunks[0]["position_int"], want) {
+		t.Fatalf("positions = %v, want %v", chunks[0]["position_int"], want)
 	}
 }
 
@@ -300,7 +357,7 @@ func TestGeneralChunkerPreservesSingleParserUnit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("chunks = %#v, want one chunk", out["chunks"])
 	}
@@ -319,8 +376,8 @@ func TestGeneralChunkerMarkdownShortHeadingForcesNextUnit(t *testing.T) {
 		"file_type":     "md",
 		"output_format": "json",
 		"json": []map[string]any{
-			{"text": "Title", "doc_type_kwd": "text", "ck_type": "heading"},
-			{"text": "body", "doc_type_kwd": "text", "ck_type": "text"},
+			{"text": "Title", "doc_type_kwd": "text", "layout": "heading"},
+			{"text": "body", "doc_type_kwd": "text"},
 		},
 	})
 	if err != nil {
@@ -346,8 +403,8 @@ func TestGeneralChunkerMarkdownLongHeadingUsesNormalCap(t *testing.T) {
 		"file_type":     "md",
 		"output_format": "json",
 		"json": []map[string]any{
-			{"text": longHeading, "doc_type_kwd": "text", "ck_type": "heading"},
-			{"text": "body", "doc_type_kwd": "text", "ck_type": "text"},
+			{"text": longHeading, "doc_type_kwd": "text", "layout": "heading"},
+			{"text": "body", "doc_type_kwd": "text"},
 		},
 	})
 	if err != nil {
@@ -375,7 +432,7 @@ func TestGeneralChunkerMarkdownImageMergesWithTextAndPreservesPayload(t *testing
 		"file_type":     "md",
 		"output_format": "json",
 		"json": []map[string]any{
-			{"text": "Title", "doc_type_kwd": "text", "ck_type": "heading"},
+			{"text": "Title", "doc_type_kwd": "text", "layout": "heading"},
 			{"text": "figure caption", "doc_type_kwd": "image", "image": "data:image/png;base64,AAAA"},
 		},
 	})
@@ -516,9 +573,9 @@ func TestGeneralChunkerMarkdownShortHeadingKeepsFollowingTableAtomic(t *testing.
 		"file_type":     "md",
 		"output_format": "json",
 		"json": []map[string]any{
-			{"text": "Title", "doc_type_kwd": "text", "ck_type": "heading"},
-			{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table", "ck_type": "table"},
-			{"text": "body", "doc_type_kwd": "text", "ck_type": "text"},
+			{"text": "Title", "doc_type_kwd": "text", "layout": "heading"},
+			{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table"},
+			{"text": "body", "doc_type_kwd": "text"},
 		},
 	})
 	if err != nil {
@@ -533,9 +590,6 @@ func TestGeneralChunkerMarkdownShortHeadingKeepsFollowingTableAtomic(t *testing.
 	}
 	if got := chunks[0]["doc_type_kwd"]; got != "table" {
 		t.Errorf("table doc_type_kwd = %v, want table", got)
-	}
-	if got := chunks[0]["ck_type"]; got != "table" {
-		t.Errorf("table ck_type = %v, want table", got)
 	}
 }
 
@@ -639,7 +693,7 @@ func TestGeneralChunkerMarkdownTableDoesNotDuplicateShortHeadingInContext(t *tes
 		"file_type":     "md",
 		"output_format": "json",
 		"json": []map[string]any{
-			{"text": "## Section", "doc_type_kwd": "text", "ck_type": "heading"},
+			{"text": "## Section", "doc_type_kwd": "text", "layout": "heading"},
 			{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table"},
 		},
 	})
@@ -678,7 +732,7 @@ func TestGeneralChunkerMarkdownTableKeepsEarlierContextWhenHeadingFolds(t *testi
 		"output_format": "json",
 		"json": []map[string]any{
 			{"text": "intro", "doc_type_kwd": "text"},
-			{"text": "## Section", "doc_type_kwd": "text", "ck_type": "heading"},
+			{"text": "## Section", "doc_type_kwd": "text", "layout": "heading"},
 			{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table"},
 		},
 	})
@@ -803,11 +857,11 @@ func TestGeneralChunkerDOCXAttachesMediaContextBeforeTextMerge(t *testing.T) {
 
 func TestGeneralMediaContextSeparatesAdjacentSourceUnits(t *testing.T) {
 	units := []schema.ChunkDoc{
-		{Text: "before one", DocType: "text", CKType: "text", TKNums: intPtr(1)},
-		{Text: "before two", DocType: "text", CKType: "text", TKNums: intPtr(1)},
-		{Text: "", DocType: "table", CKType: "table"},
-		{Text: "after one", DocType: "text", CKType: "text", TKNums: intPtr(1)},
-		{Text: "after two", DocType: "text", CKType: "text", TKNums: intPtr(1)},
+		{Text: "before one", DocType: "text", TKNums: intPtr(1)},
+		{Text: "before two", DocType: "text", TKNums: intPtr(1)},
+		{Text: "", DocType: "table"},
+		{Text: "after one", DocType: "text", TKNums: intPtr(1)},
+		{Text: "after two", DocType: "text", TKNums: intPtr(1)},
 	}
 
 	if got, want := collectGeneralMediaContext(units, 2, 10, true, contextSentencePattern), "before one\nbefore two"; got != want {
@@ -815,6 +869,145 @@ func TestGeneralMediaContextSeparatesAdjacentSourceUnits(t *testing.T) {
 	}
 	if got, want := collectGeneralMediaContext(units, 2, 10, false, contextSentencePattern), "after one\nafter two"; got != want {
 		t.Fatalf("below context = %q, want %q", got, want)
+	}
+}
+
+func TestGeneralChunkerDOCXCustomDelimiterGroupsMultiParagraphRecords(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size": 512,
+		"delimiters":       []string{"\n", "`问：`"},
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.docx",
+		"file_type":     "docx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "问：first question", "doc_type_kwd": "text"},
+			{"text": "名　　称：item one", "doc_type_kwd": "text"},
+			{"text": "答：first answer", "doc_type_kwd": "text"},
+			{"text": "问：second question", "doc_type_kwd": "text"},
+			{"text": "答：second answer", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	texts := outputTexts(t, out)
+	if len(texts) != 2 {
+		t.Fatalf("texts = %q, want two record chunks", texts)
+	}
+	// A custom delimiter is a split instruction, not content: the leading
+	// record prefix is dropped (Python naive_merge_docx/_build_cks parity).
+	if strings.Contains(texts[0], "问：") || !strings.Contains(texts[0], "first question") || !strings.Contains(texts[0], "名　　称：item one") || !strings.Contains(texts[0], "答：first answer") {
+		t.Fatalf("first record = %q", texts[0])
+	}
+	if strings.Contains(texts[1], "问：") || !strings.Contains(texts[1], "second question") || !strings.Contains(texts[1], "答：second answer") {
+		t.Fatalf("second record = %q", texts[1])
+	}
+}
+
+func TestGeneralChunkerDOCXDropsCustomDelimiterRecordPrefix(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size": 512,
+		"delimiters":       []string{"`AAA`"},
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.docx",
+		"file_type":     "docx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "first section", "doc_type_kwd": "text"},
+			{"text": "AAA", "doc_type_kwd": "text"},
+			{"text": "second section", "doc_type_kwd": "text"},
+			{"text": "AAA", "doc_type_kwd": "text"},
+			{"text": "before AAA after", "doc_type_kwd": "text"},
+			{"text": "AAA", "doc_type_kwd": "text"},
+			{"text": "third section", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	texts := outputTexts(t, out)
+	for _, text := range texts {
+		if strings.Contains(text, "AAA") {
+			t.Fatalf("custom delimiter survived: %q", text)
+		}
+	}
+	if !reflect.DeepEqual(texts, []string{"first section", "second section", "before", "after", "third section"}) {
+		t.Fatalf("texts = %q", texts)
+	}
+}
+
+func TestGeneralChunkerDOCXDropsTrailingDelimiterOnlyRecord(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size":   512,
+		"overlapped_percent": 50,
+		"delimiters":         []string{"`AAA`"},
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.docx",
+		"file_type":     "docx",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "AAAfirst", "doc_type_kwd": "text"},
+			{"text": "AAA", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	// The delimiter-only record must not survive as an empty unit: overlap
+	// would otherwise synthesize a spurious chunk from the previous tail.
+	if texts := outputTexts(t, out); !reflect.DeepEqual(texts, []string{"first"}) {
+		t.Fatalf("texts = %q, want [first]", texts)
+	}
+}
+
+func TestGeneralChunkerDOCXPrefersDelimiterMatchBeforeTrimming(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size": 512,
+		"delimiters":       []string{"`  A`", "`A123`"},
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.docx",
+		"file_type":     "docx",
+		"output_format": "json",
+		"json":          []map[string]any{{"text": "  A123hello", "doc_type_kwd": "text"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	// The delimiter that includes the leading whitespace matches the original
+	// text first, so "123" stays in the indexed content.
+	if texts := outputTexts(t, out); !reflect.DeepEqual(texts, []string{"123hello"}) {
+		t.Fatalf("texts = %q, want [123hello]", texts)
+	}
+}
+
+func TestGroupDOCXUnitsByRecordBoundaryInactiveWithoutBoundary(t *testing.T) {
+	units := []schema.ChunkDoc{
+		{Text: "plain paragraph one", DocType: "text"},
+		{Text: "plain paragraph two", DocType: "text"},
+	}
+	got, grouped := groupDOCXUnitsByRecordBoundary(units, []string{"问："})
+	if grouped {
+		t.Fatal("grouping should stay inactive without a record boundary")
+	}
+	if !reflect.DeepEqual(got, units) {
+		t.Fatalf("units = %#v, want unchanged %#v", got, units)
 	}
 }
 
@@ -964,9 +1157,9 @@ func TestSortPDFUnitsKeepsUnpositionedMediaInInputOrder(t *testing.T) {
 		return json.RawMessage(fmt.Sprintf("[[1,0,10,%g,%g]]", top, top+5))
 	}
 	units := []schema.ChunkDoc{
-		{Text: "before", DocType: "text", CKType: "text", Positions: position(10)},
-		{Text: "figure", DocType: "image", CKType: "image"},
-		{Text: "after", DocType: "text", CKType: "text", Positions: position(30)},
+		{Text: "before", DocType: "text", Positions: position(10)},
+		{Text: "figure", DocType: "image"},
+		{Text: "after", DocType: "text", Positions: position(30)},
 	}
 
 	got := sortPDFUnits(units)
@@ -995,7 +1188,7 @@ func TestGeneralChunkerSpreadsheetHeaderOnlyPreservesHeaderChunk(t *testing.T) {
 		t.Fatalf("chunks = %#v, want one header-only chunk", chunks)
 	}
 	text, _ := chunks[0]["text"].(string)
-	if chunks[0]["ck_type"] != "table" || text == "" || !strings.Contains(text, "Name") || !strings.Contains(text, "Amount") {
+	if chunks[0]["doc_type_kwd"] != "table" || text == "" || !strings.Contains(text, "Name") || !strings.Contains(text, "Amount") {
 		t.Fatalf("header-only chunk = %#v", chunks[0])
 	}
 }
@@ -1014,7 +1207,7 @@ func TestGeneralChunkerSpreadsheetAttachesImageContext(t *testing.T) {
 		"output_format": "json",
 		"json": []map[string]any{
 			spreadsheetSegmentItem("Sheet1", []string{"Name"}, [][]string{{"Revenue"}}, 1, 2),
-			{"text": "B2", "doc_type_kwd": "image", "ck_type": "image", "image": "figure", "sheet_index": 1},
+			{"text": "B2", "doc_type_kwd": "image", "image": "figure", "sheet_index": 1},
 			spreadsheetSegmentItem("Sheet1", []string{"Name"}, [][]string{{"Growth"}}, 1, 3),
 		},
 	})
@@ -1025,7 +1218,7 @@ func TestGeneralChunkerSpreadsheetAttachesImageContext(t *testing.T) {
 	if len(chunks) != 3 {
 		t.Fatalf("chunks = %#v, want segment, image, segment", chunks)
 	}
-	if chunks[1]["ck_type"] != "image" {
+	if chunks[1]["doc_type_kwd"] != "image" {
 		t.Fatalf("image chunk = %#v", chunks[1])
 	}
 	assertMaterializedMediaContext(t, chunks[1], "RevenueB2Growth")
@@ -1042,7 +1235,7 @@ func TestGeneralChunkerSpreadsheetImageContextStopsAtSheetBoundary(t *testing.T)
 		"output_format": "json",
 		"json": []map[string]any{
 			spreadsheetSegmentItem("Sheet1", []string{"Name"}, [][]string{{"Sheet one"}}, 1, 2),
-			{"text": "B2", "doc_type_kwd": "image", "ck_type": "image", "image": "figure", "sheet_index": 1},
+			{"text": "B2", "doc_type_kwd": "image", "image": "figure", "sheet_index": 1},
 			spreadsheetSegmentItem("Sheet2", []string{"Name"}, [][]string{{"Sheet two"}}, 2, 2),
 		},
 	})
@@ -1105,18 +1298,25 @@ func TestGeneralChunkerSpreadsheetSplitsLargeSegmentIntoBoundedChunks(t *testing
 		var matrix [][]float64
 		raw, _ := json.Marshal(chunk["positions"])
 		if err := json.Unmarshal(raw, &matrix); err != nil {
-			t.Fatalf("chunk %d positions = %v, want a row-aligned matrix", i, chunk["positions"])
+			t.Fatalf("chunk %d positions = %v, want a position matrix", i, chunk["positions"])
 		}
 		// One header tuple + this sub-table's own data tuples, never the
 		// full segment matrix.
 		if len(matrix) < 2 {
 			t.Fatalf("chunk %d matrix = %v, want header plus data rows", i, matrix)
 		}
-		if matrix[0][1] != 1 {
-			t.Errorf("chunk %d header tuple = %v, want sheet 1 row 1", i, matrix[0])
+		if matrix[1][1] != 1 {
+			t.Errorf("chunk %d header tuple = %v, want sheet 1 row 1", i, matrix[1])
 		}
 		if dataRows != len(matrix)-1 {
 			t.Errorf("chunk %d data rows %d != position tuples %d", i, dataRows, len(matrix)-1)
+		}
+		if _, err := indexdoc.ProcessChunksForPipeline([]map[string]any{chunk}, "doc", "long.xlsx", time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		indexed := chunk["position_int"].([][]int)
+		if indexed[0][1] != covered+2 || indexed[1][1] != 1 {
+			t.Fatalf("chunk %d indexed positions = %v, want first data row %d then header", i, indexed, covered+2)
 		}
 		covered += dataRows
 	}
@@ -1194,9 +1394,8 @@ func TestGeneralChunkerMediaContextReachesChunkIDAndIndexContent(t *testing.T) {
 	}
 
 	const wantText = "before<table><tr><td>A</td></tr></table>after"
-	// The table chunk is selected by the STORED type column: ck_type is chunker
-	// bookkeeping and the index boundary strips it (it has no chunk-store
-	// column, and a strict engine rejects the whole insert over one).
+	// The table chunk is selected by the STORED type column: doc_type_kwd is
+	// the content-type contract and the index boundary keeps it.
 	var table map[string]any
 	for _, ck := range chunks {
 		if ck["doc_type_kwd"] == "table" {
@@ -1298,7 +1497,6 @@ func TestGeneralChunkerNonSpreadsheetTableNotMediaContext(t *testing.T) {
 	table := map[string]any{
 		"text":         "<table><caption>Doc</caption>\n<tr><th>Name</th></tr>\n<tr><td>Revenue</td></tr>\n</table>\n",
 		"doc_type_kwd": "table",
-		"ck_type":      "table",
 	}
 	out, err := component.Invoke(t.Context(), nil, map[string]any{
 		"name":          "document.docx",
@@ -1306,7 +1504,7 @@ func TestGeneralChunkerNonSpreadsheetTableNotMediaContext(t *testing.T) {
 		"output_format": "json",
 		"json": []map[string]any{
 			table,
-			{"text": "B2", "doc_type_kwd": "image", "ck_type": "image", "image": "figure"},
+			{"text": "B2", "doc_type_kwd": "image", "image": "figure"},
 			table,
 		},
 	})
@@ -1317,7 +1515,7 @@ func TestGeneralChunkerNonSpreadsheetTableNotMediaContext(t *testing.T) {
 	if len(chunks) != 3 {
 		t.Fatalf("chunks = %#v, want table, image, table", chunks)
 	}
-	if chunks[1]["ck_type"] != "image" {
+	if chunks[1]["doc_type_kwd"] != "image" {
 		t.Fatalf("image chunk = %#v", chunks[1])
 	}
 	if got, _ := chunks[1]["text"].(string); got != "B2" {
@@ -1372,5 +1570,108 @@ func TestGeneralChunkerSpreadsheetSplitDropsNonSpreadsheetPositions(t *testing.T
 				}
 			}
 		})
+	}
+}
+
+// TestGeneralContextSourceTextProjectsMergedRows pins the general-context
+// projection: data-origin row spans stay visible, header-origin spans do not
+// leak into data rows, and a colspan is not duplicated.
+func TestGeneralContextSourceTextProjectsMergedRows(t *testing.T) {
+	cases := []struct {
+		name string
+		td   *entity.TableData
+		want string
+	}{
+		{
+			name: "data rowspan",
+			td: &entity.TableData{HeaderRows: 1, Grid: [][]entity.TableCell{
+				{{Text: "Group"}, {Text: "Item"}},
+				{{Text: "G1", RowSpan: 2}, {Text: "x"}},
+				{{Covered: true}, {Text: "y"}},
+			}},
+			want: "G1 x\nG1 y",
+		},
+		{
+			name: "header-origin rowspan",
+			td: &entity.TableData{HeaderRows: 1, Grid: [][]entity.TableCell{
+				{{Text: "H", RowSpan: 2}, {Text: "Name"}},
+				{{Covered: true}, {Text: "Alice"}},
+			}},
+			want: "Alice",
+		},
+		{
+			name: "data colspan",
+			td: &entity.TableData{HeaderRows: 1, Grid: [][]entity.TableCell{
+				{{Text: "A"}, {Text: "B"}, {Text: "C"}},
+				{{Text: "Wide", ColSpan: 2}, {Covered: true}, {Text: "z"}},
+			}},
+			want: "Wide z",
+		},
+		{
+			name: "rowspan and colspan block",
+			td: &entity.TableData{HeaderRows: 1, Grid: [][]entity.TableCell{
+				{{Text: "A"}, {Text: "B"}, {Text: "C"}},
+				{{Text: "Wide", RowSpan: 2, ColSpan: 2}, {Covered: true}, {Text: "x"}},
+				{{Covered: true}, {Covered: true}, {Text: "y"}},
+			}},
+			want: "Wide x\nWide y",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := generalContextSourceText(schema.ChunkDoc{
+				DocType:   "table",
+				Sheet:     "Sheet1",
+				TableData: tc.td,
+			})
+			if !ok {
+				t.Fatal("generalContextSourceText did not accept the spreadsheet table")
+			}
+			if got != tc.want {
+				t.Fatalf("context = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGeneralChunkerMarkdownPreservesUnresolvedImageReferences(t *testing.T) {
+	markdown, err := parserlib.NewMarkdownParser(parserlib.GoMarkdown)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := "# Title\n\n![figure](images/fig-1.png)\n\n![](images/bare.png)\n\n" +
+		"| A | B |\n|---|---|\n| x | ![table](images/table.png) |\n"
+	parsed := markdown.ParseWithResult(t.Context(), "doc.md", []byte(source))
+	if parsed.Err != nil {
+		t.Fatalf("ParseWithResult: %v", parsed.Err)
+	}
+	comp, err := NewGeneralChunker(map[string]any{"chunk_token_size": 512})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := comp.Invoke(t.Context(), nil, map[string]any{
+		"name": "doc.md", "file_type": "md", "output_format": "json", "json": parsed.JSON,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) == 0 {
+		t.Fatal("chunks are empty")
+	}
+	var text strings.Builder
+	for _, chunk := range chunks {
+		body, _ := chunk["text"].(string)
+		text.WriteString(body)
+		text.WriteByte('\n')
+	}
+	for _, want := range []string{
+		"![figure](images/fig-1.png)",
+		"![](images/bare.png)",
+		"![table](images/table.png)",
+	} {
+		if !strings.Contains(text.String(), want) {
+			t.Errorf("chunk text = %q, want it to contain %q", text.String(), want)
+		}
 	}
 }

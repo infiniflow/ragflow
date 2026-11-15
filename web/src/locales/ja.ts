@@ -167,7 +167,7 @@ export default {
       webCrawl: 'ウェブクロール',
       chunkNumber: 'チャンク数',
       uploadDate: 'アップロード日',
-      chunkMethod: 'チャンク方法',
+      parsingMode: '解析モード',
       enabled: '有効',
       disabled: '無効',
       action: 'アクション',
@@ -224,9 +224,6 @@ export default {
       layoutRecognizeTip:
         'レイアウト分析のためにビジュアルモデルを使用し、文書の構造を理解しやすくします。詳細については、https://ragflow.io/docs/dataset_configuration#document-parsing-configuration をご覧ください。',
 
-      taskPageSize: 'タスクページサイズ',
-      taskPageSizeMessage: 'タスクページサイズを入力してください',
-      taskPageSizeTip: `レイアウト認識中、PDFファイルはチャンクに分割され、処理速度を向上させるために並列処理されます。`,
       addPage: 'ページを追加',
       greaterThan: '現在の値は終了ページより大きくなければなりません',
 
@@ -253,8 +250,6 @@ export default {
       delimiterTip:
         'デリミタやセパレータは、一つまたは複数の特殊文字で構成できます。複数の文字の場合、バッククォート(``)で囲むようにしてください。たとえば、デリミタを次のように設定した場合: \\n ## ;、テキストは行末、ダブルハッシュ記号(##)、およびセミコロンで分割されます。デリミタを設定する前に、テキストのセグメンテーションとチャンキングのメカニズムを理解していることを確認してください。',
 
-      html4excel: 'ExcelをHTMLに変換',
-      html4excelTip: `General切片方法と併用してください。無効の場合、表計算ファイル（XLSX、XLS（Excel 97-2003））は行ごとにキーと値のペアとして解析されます。有効の場合、表計算ファイルはHTML表として解析されます。元の表が12行を超える場合、システムは自動的に12行ごとに複数のHTML表に分割します。詳細については、https://ragflow.io/docs/dataset_configuration#other-format-processing-configuration をご覧ください。`,
       autoKeywords: '自動キーワード',
       autoKeywordsTip: `各チャンクに含まれるキーワードのランキングを向上させるために、自動的にN個のキーワードを抽出します。「システムモデル設定」で指定されたチャットモデルによって追加のトークンが消費されることに注意してください。チャンクリストから追加されたキーワードを確認または更新することができます。詳細は https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration をご覧ください。`,
       autoQuestions: '自動質問',
@@ -422,8 +417,6 @@ export default {
       chunkTokenNumberTip:
         'チャンクのトークンしきい値を設定します。このしきい値を下回る段落は、次の段落と結合され、しきい値を超えた時点でチャンクが作成されます。新しいチャンクは、デリミタが検出されるまで作成されません。このしきい値が超過されていてもです。',
 
-      chunkMethod: 'チャンク方法',
-      chunkMethodTip: '詳細は右側の説明をご覧ください。',
       upload: 'アップロード',
       english: '英語',
       chinese: '中国語',
@@ -577,8 +570,8 @@ export default {
       paddleocrApiUrlTip: 'PaddleOCRサービスのAPIエンドポイントURL',
       paddleocrApiUrlPlaceholder: '例: https://paddleocr-server.com/api',
       paddleocrAccessToken: 'AI Studioアクセストークン',
-      paddleocrAccessTokenTip: 'PaddleOCR APIのアクセストークン（オプション）',
-      paddleocrAccessTokenPlaceholder: 'AI Studioトークン（オプション）',
+      paddleocrAccessTokenTip: 'PaddleOCR APIのアクセストークン',
+      paddleocrAccessTokenPlaceholder: 'AI Studioトークン',
       paddleocrAlgorithm: 'PaddleOCRアルゴリズム',
       paddleocrAlgorithmTip: 'PaddleOCR解析に使用するアルゴリズム',
       paddleocrSelectAlgorithm: 'アルゴリズムを選択',
@@ -637,7 +630,7 @@ export default {
       dataFlowPlaceholder: 'パイプラインを選択してください。',
       buildItFromScratch: '最初から構築',
       dataFlow: 'パイプライン',
-      parseType: 'パースタイプ',
+      parsingMode: '解析モード',
       manualSetup: 'パイプライン',
       builtIn: '組み込み',
       portugueseBr: 'ポルトガル語（ブラジル）',
@@ -1008,9 +1001,6 @@ export default {
       muteWidget: 'ウィジェットの音声をミュート',
       crossLanguagePlaceholder: '値を選択してください',
       metadataKeys: 'フィルター可能な項目',
-      tocEnhance: 'PageIndex',
-      tocEnhanceTip:
-        'ドキュメントの解析時に目次情報が生成されます（「全般」方式の「目次抽出を有効にする」オプションを参照）。これにより、大規模モデルはユーザーのクエリに関連する目次項目を返すことができ、これらの項目を使って関連チャンクを取得し、並べ替え時にこれらのチャンクへ重み付けを適用します。この手法は、人間が書籍の中で情報を探す際の行動を模倣したものです。',
       batchDeleteSessions: '一括削除',
       deleteSelectedConfirm: '選択した{{count}}件のセッションを削除しますか？',
     },
@@ -1143,7 +1133,7 @@ export default {
         apiUrl: 'PaddleOCR API URL',
         apiUrlPlaceholder: '例：https://paddleocr-server.com/layout-parsing',
         accessToken: 'AI Studio アクセストークン',
-        accessTokenPlaceholder: 'AI Studio のトークン（任意）',
+        accessTokenPlaceholder: 'AI Studio のトークン',
         algorithm: 'PaddleOCR アルゴリズム',
         selectAlgorithm: 'アルゴリズムを選択',
         modelNamePlaceholder: '例：paddleocr-from-env-1',
@@ -1633,8 +1623,8 @@ export default {
       paddleocrApiUrlPlaceholder:
         '例: https://paddleocr-server.com/layout-parsing',
       paddleocrAccessToken: 'AI Studioアクセストークン',
-      paddleocrAccessTokenMessage: 'PaddleOCR APIのアクセストークン (任意)',
-      paddleocrAccessTokenPlaceholder: 'AI Studioのトークン (任意)',
+      paddleocrAccessTokenMessage: 'PaddleOCR APIのアクセストークン',
+      paddleocrAccessTokenPlaceholder: 'AI Studioのトークン',
       paddleocrAlgorithm: 'PaddleOCRアルゴリズム',
       paddleocrAlgorithmMessage: 'PaddleOCRアルゴリズムを選択してください',
       mineruApiserver: 'MinerU APIサーバー',
@@ -1773,6 +1763,7 @@ export default {
         image2text: 'VLM',
         ocr: 'OCR',
         speech2text: 'ASR',
+        decision: 'Decision',
       },
 
       showToc: 'コンテンツを表示',
@@ -2385,9 +2376,9 @@ export default {
         '上流コンポーネントは、次の形式のJSON文字列を提供する必要があります：',
 
       toEmailTip: 'to_email: 受信者のメール（必須）',
-      ccEmailTip: 'cc_email: CCメール（オプション）',
-      subjectTip: 'subject: メールの件名（オプション）',
-      contentTip: 'content: メールの内容（オプション）',
+      ccEmailTip: 'cc_email: CCメール',
+      subjectTip: 'subject: メールの件名',
+      contentTip: 'content: メールの内容',
       jsonUploadTypeErrorMessage: 'jsonファイルをアップロードしてください',
       jsonUploadContentErrorMessage: 'jsonファイルエラー',
       prompt: 'プロンプト',
@@ -2398,18 +2389,10 @@ export default {
       promptMessage: 'プロンプトは必須です',
       runningHintText: '動作中です...🕞 ',
       tags: 'タグ',
-      canvasCategory: 'キャンバスカテゴリ',
+      agentCategory: 'キャンバスカテゴリ',
       created: '作成日',
       id: 'ID',
       logTitle: 'タイトル',
-
-      preprocess: {
-        preprocess: '前処理',
-        mainContent: '本文',
-        abstract: '概要',
-        author: '著者',
-        sectionTitle: 'セクションタイトル',
-      },
 
       editTags: 'タグを編集',
       editTagsDescription:
@@ -2487,9 +2470,6 @@ export default {
       oneChunkTitle: '注記',
       oneChunkDescription:
         '解析されたすべてのセクションが順番に1つのチャンクにマージされます。',
-      flattenMediaToText: 'ビジョンモデルを無効化',
-      flattenMediaToTextTip:
-        '画像や表のセクションをプレーンテキストとして扱い、ビジョンによる拡張処理をスキップします。',
       enableChildrenDelimiters: '子チャンクを検索に使用する',
       merge: 'マージ',
       split: '分割',
@@ -2510,20 +2490,6 @@ export default {
       maxRounds: '最大リフレクション回数',
       delayAfterError: 'エラー後の遅延',
       maxRetries: '最大リトライ回数',
-      maxSteps: '最大ステップ数',
-      headless: 'ヘッドレス',
-      enableDefaultExtensions: 'デフォルト拡張機能を有効化',
-      enableDefaultExtensionsTip:
-        'browser-useのデフォルト拡張機能(uBlock、Cookie処理、ClearURLs)を有効にします。実行時の拡張機能ダウンロードを避けたい場合は無効にしてください。',
-      chromiumSandbox: 'Chromiumサンドボックス',
-      chromiumSandboxTip:
-        'Chromiumサンドボックスを有効にするかどうかです。Dockerのroot環境では通常無効化されており、通常のホストでは有効化することを推奨します。',
-      persistSession: 'セッションを永続化',
-      persistSessionTip:
-        '有効にすると、このBrowserノードはブラウザセッションを再利用し、ログインの繰り返しを回避します。',
-      uploadSources: 'アップロードソース',
-      uploadSourcesTip:
-        'ファイルID、ファイルURL、または変数に対応しています。複数の値はカンマで区切るか、JSON配列形式(例: ["id1","https://example.com/a.pdf"])で指定できます。',
       advancedSettings: '詳細設定',
       addTools: 'ツールを追加',
       sysPromptDefaultValue:
@@ -2559,9 +2525,6 @@ export default {
       keenableSite: 'サイト',
       keenableApiKeyTip:
         '任意項目です。キー不要の無料プランを使用する場合は空欄のままにしてください。',
-      browser: 'ブラウザ',
-      browserDescription:
-        'ブラウザ操作を自動化します。モデル設定とプロンプト駆動のアクションに対応しています。アップロードソースはファイルIDとURLに対応しており、ダウンロードしたファイルは指定フォルダに保存できます。',
       channel: 'チャンネル',
       channelTip:
         'コンポーネントの入力に対してテキスト検索またはニュース検索を実行します',
@@ -3042,10 +3005,10 @@ export default {
         share: '共有',
       },
 
-      serviceStatus: 'サービスステータス',
-      userManagement: 'ユーザー管理',
-      sandboxSettings: 'サンドボックス設定',
-      registrationWhitelist: '登録ホワイトリスト',
+      serviceStatus: 'サービス',
+      userManagement: 'ユーザー',
+      sandboxSettings: 'サンドボックス',
+      registrationWhitelist: 'ホワイトリスト',
       roles: 'ロール',
       monitoring: 'モニタリング',
 
@@ -3135,7 +3098,7 @@ export default {
       importWhitelist: 'ホワイトリストをインポート（Excel）',
       importSelectExcelFile: 'Excelファイル（.xlsx）',
       importOverwriteExistingEmails: '既存のメールアドレスを上書き',
-      importInvalidExcelFile: '有効なExcelファイルを選択してください',
+      importValidExcelFile: '有効なExcelファイルを選択してください',
       importFileRequired: 'インポートするファイルを選択してください',
       importFileTips:
         'ファイルには、<code>email</code>という名前のヘッダー列を1つだけ含める必要があります。',
@@ -3147,7 +3110,6 @@ export default {
       updateDate: '更新日',
       permission: '権限',
       agentTitle: 'エージェントタイトル',
-      canvasCategory: 'キャンバスカテゴリー',
       newRole: '新規ロール',
       addNewRole: '新規ロールを追加',
       roleName: 'ロール名',
@@ -3499,18 +3461,14 @@ export default {
 
     explore: {
       title: '起動',
-      canvasList: 'キャンバス一覧',
       sessions: 'セッション',
       newSession: '新しいセッション',
       newSessionLabel: '新しい会話を開始',
       deleteSession: 'セッションを削除',
-      searchCanvas: 'キャンバスを検索...',
       searchSessions: 'セッションを検索...',
-      noCanvasSelected: 'キャンバスを選択してください',
       noSessionSelected: 'セッションを選択するか、新規作成してください',
       noSessionsFound: 'セッションが見つかりません',
       createFirstSession: '最初のセッションを作成',
-      noCanvasFound: 'キャンバスが見つかりません',
       deleteSelectedConfirm:
         '{{count}} 件のセッションを削除してもよろしいですか？',
       batchDeleteSessions: 'セッションを削除',

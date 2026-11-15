@@ -316,11 +316,13 @@ func TestOCR_MergeChars(t *testing.T) {
 		}
 		chars := []pdf.TextChar{{X0: 10, X1: 20, Top: 10, Bottom: 20, Text: "A", PageNumber: 0}}
 		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0, pdf.DlaScale)
-		if len(boxes) != 1 {
-			t.Fatalf("expected 1 box (OCR), got %d", len(boxes))
+		// The OCR box is filled from the image; the native char no detect box
+		// covers is kept (detection must not drop native text).
+		if len(boxes) != 2 {
+			t.Fatalf("expected 2 boxes (OCR + uncovered native), got %d", len(boxes))
 		}
-		if boxes[0].Text != "OCR" {
-			t.Errorf("expected OCR text 'OCR', got %q", boxes[0].Text)
+		if boxes[0].Text != "A" || boxes[1].Text != "OCR" {
+			t.Errorf("expected native 'A' then OCR 'OCR', got %q,%q", boxes[0].Text, boxes[1].Text)
 		}
 	})
 
@@ -332,8 +334,9 @@ func TestOCR_MergeChars(t *testing.T) {
 		}
 		chars := []pdf.TextChar{{X0: 10, X1: 20, Top: 10, Bottom: 20, Text: "A", PageNumber: 0}}
 		boxes := p.ocrMergeChars(t.Context(), dummyImg, chars, mock, 0, pdf.DlaScale)
-		if len(boxes) != 0 {
-			t.Fatalf("expected 0 boxes (empty OCR), got %d", len(boxes))
+		// Empty OCR output is dropped; the uncovered native char survives.
+		if len(boxes) != 1 || boxes[0].Text != "A" {
+			t.Fatalf("expected 1 native box 'A', got %+v", boxes)
 		}
 	})
 
