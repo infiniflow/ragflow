@@ -14,6 +14,9 @@ type knowledgeGraphReader interface {
 }
 
 func (d *DatasetService) searchKnowledgeGraphs(ctx context.Context, graphs knowledgeGraphReader, datasets []*entity.Knowledgebase, question string, docIDs []string, documentScoped bool) ([]service.KnowledgeGraphSearchResult, error) {
+	if d.docEngine != nil && !service.SupportsKnowledgeGraphSearch(d.docEngine.GetType()) {
+		return nil, nil
+	}
 	var results []service.KnowledgeGraphSearchResult
 	if documentScoped {
 		docs, err := d.documentDAO.GetByIDs(ctx, dao.DB, docIDs)

@@ -656,7 +656,12 @@ var ErrInvalidStructureKind = errors.New("invalid structure kind")
 // in agreement without exporting an ingestion-internal helper across package
 // boundaries.
 func datasetStructureSupported() bool {
-	switch engine.GetEngineType() {
+	return SupportsKnowledgeGraphSearch(engine.GetEngineType())
+}
+
+// SupportsKnowledgeGraphSearch reports whether the engine supports the graph filters.
+func SupportsKnowledgeGraphSearch(engineType string) bool {
+	switch engineType {
 	case "infinity", "elasticsearch", "opensearch", "":
 		return true
 	default:
@@ -902,7 +907,7 @@ func (s *DatasetArtifactService) discoverDocumentGraphTemplateMeta(ctx context.C
 		"knowledge_graph_kwd": []string{"entity", "relation"},
 	}
 	for offset := 0; ; offset += 1000 {
-		rows, total, err := graphRowSearch(ctx, tenantID, datasetID, fields, filter, nil, offset, 1000, nil)
+		rows, _, err := graphRowSearch(ctx, tenantID, datasetID, fields, filter, (&types.OrderByExpr{}).Asc("id"), offset, 1000, nil)
 		if err != nil {
 			return err
 		}
@@ -943,7 +948,7 @@ func (s *DatasetArtifactService) discoverDocumentGraphTemplateMeta(ctx context.C
 			*templateIDs = append(*templateIDs, templateID)
 			seen[templateID] = true
 		}
-		if int64(offset+1000) >= total || len(rows) == 0 {
+		if len(rows) < 1000 {
 			break
 		}
 	}
@@ -1014,7 +1019,7 @@ func (s *DatasetArtifactService) GetDatasetStructure(ctx context.Context, in Dat
 	resp.TotalEntities = int(entityTotal)
 	resp.TotalRelations = int(relationTotal)
 	for offset := 0; ; offset += 1000 {
-		rows, total, err := graphRowSearch(ctx, in.TenantID, in.DatasetID, metaFields, entityCountFilter, nil, offset, 1000, nil)
+		rows, _, err := graphRowSearch(ctx, in.TenantID, in.DatasetID, metaFields, entityCountFilter, (&types.OrderByExpr{}).Asc("id"), offset, 1000, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -1028,7 +1033,7 @@ func (s *DatasetArtifactService) GetDatasetStructure(ctx context.Context, in Dat
 				templateIDs[tid] = struct{}{}
 			}
 		}
-		if int64(offset+1000) >= total || len(rows) == 0 {
+		if len(rows) < 1000 {
 			break
 		}
 	}
@@ -1326,8 +1331,10 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 		// name_kwd is a keyword field and only supports exact filtering in the
 		// common engine abstraction. Scan the scoped entity rows instead so
 		// prefix/contains matches are not limited by the BM25 candidate cap.
+		// A stable ID sort enables search_after beyond the result window.
+		// Stop on a short page because the reported hit total can be capped.
 		for offset := 0; ; offset += 1000 {
-			nameMap, total, err := graphRowSearch(ctx, tenantID, datasetID, topFields, baseEntityCond, nil, offset, 1000, nil)
+			nameMap, _, err := graphRowSearch(ctx, tenantID, datasetID, topFields, baseEntityCond, (&types.OrderByExpr{}).Asc("id"), offset, 1000, nil)
 			if err != nil {
 				return nil, nil, nil, err
 			}
@@ -1336,7 +1343,7 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 					appendCandidate(candidate)
 				}
 			}
-			if int64(offset+1000) >= total || len(nameMap) == 0 {
+			if len(nameMap) < 1000 {
 				break
 			}
 		}

@@ -62,3 +62,19 @@ func TestSearchKnowledgeGraphsRespectsDocumentScope(t *testing.T) {
 		t.Fatalf("unexpected dataset graph search: %+v, %v, requests: %+v", got, err, graphs.datasets)
 	}
 }
+
+type unsupportedGraphEngine struct{ fakeChatDocEngine }
+
+func (unsupportedGraphEngine) GetType() string { return "seekdb" }
+
+func TestSearchKnowledgeGraphsSkipsUnsupportedEngine(t *testing.T) {
+	svc := &DatasetService{docEngine: unsupportedGraphEngine{}}
+	datasets := []*entity.Knowledgebase{{ID: "ds", TenantID: "owner"}}
+	for _, scoped := range []bool{false, true} {
+		graphs := &graphSearchRecorder{}
+		got, err := svc.searchKnowledgeGraphs(t.Context(), graphs, datasets, "Daisy", []string{"doc"}, scoped)
+		if err != nil || len(got) != 0 || len(graphs.datasets) != 0 || len(graphs.documents) != 0 {
+			t.Fatalf("scoped=%v: unsupported engine should skip graph lookups, got %v, %v, %+v", scoped, got, err, graphs)
+		}
+	}
+}
