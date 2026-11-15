@@ -1227,6 +1227,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       firecrawlApiKeyTip:
         '选择 Firecrawl 后，将使用其搜索结果补充知识库检索。只取搜索摘要，不抓取整页。',
       firecrawlApiKeyMessage: '请输入你的 Firecrawl API Key',
+      keirolabsApiKeyTip: '选择 Keirolabs 后，将使用其搜索结果补充知识库检索。',
+      keirolabsApiKeyMessage: '请输入你的 Keirolabs API Key',
       linkupApiKeyTip: '选择 Linkup 后，将使用其搜索结果补充知识库检索。',
       linkupApiKeyMessage: '请输入你的 Linkup API Key',
       parallelApiKeyTip: '选择 Parallel 后，将使用其搜索摘录补充知识库检索。',
