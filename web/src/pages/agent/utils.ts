@@ -1,4 +1,4 @@
-import { FileType, FileTypeSuffixMap } from '@/constants/file';
+import { FileType } from '@/constants/file';
 import {
   DSL,
   DSLComponents,
@@ -7,6 +7,7 @@ import {
   ICategorizeForm,
   ICategorizeItem,
   ICategorizeItemResult,
+  ISwitchForm,
   RAGFlowNodeType,
 } from '@/interfaces/database/agent';
 import { buildSelectOptions } from '@/utils/component-util';
@@ -33,6 +34,7 @@ import {
   NoDebugOperatorsList,
   NodeHandleId,
   Operator,
+  SwitchElseTo,
   TitleChunkerMethod,
   TypesWithArray,
   WebhookSecurityAuthType,
@@ -135,6 +137,10 @@ function buildAgentTools(edges: Edge[], nodes: Node[], nodeId: string) {
   };
 }
 
+export const generateSwitchHandleText = (idx: number) => {
+  return `Case ${idx + 1}`;
+};
+
 function filterTargetsBySourceHandleId(edges: Edge[], handleId: string) {
   return edges.filter((x) => x.sourceHandle === handleId).map((x) => x.target);
 }
@@ -222,15 +228,11 @@ export function transformParserParams(params: ParserFormSchemaType) {
     if (cur.fileFormat) {
       let filteredSetup: Partial<
         Omit<ParserFormSchemaType['setups'][0], 'pages'> & {
-          suffix: string[];
-        } & {
           two_column_check: boolean;
           enable_multi_column: boolean;
           pages: number[][];
         }
-      > = {
-        suffix: FileTypeSuffixMap[cur.fileFormat as FileType],
-      };
+      > = {};
 
       switch (cur.fileFormat) {
         case FileType.PDF:
@@ -307,6 +309,12 @@ export function transformParserParams(params: ParserFormSchemaType) {
           filteredSetup = {
             ...filteredSetup,
             remove_header_footer: cur.remove_header_footer || false,
+          };
+          break;
+        case FileType.TextMarkdown:
+          filteredSetup = {
+            ...filteredSetup,
+            remove_toc: cur.remove_toc || false,
           };
           break;
         case FileType.Audio:
@@ -438,6 +446,7 @@ export function transformGeneralChunkerParams(
   return result;
 }
 
+// Resolve active heading settings and preserve independent media-context budgets.
 export function transformTitleChunkerParams(
   params: TitleChunkerFormSchemaType,
 ) {
@@ -482,6 +491,8 @@ export function transformTitleChunkerParams(
     hierarchy: Number(hierarchyValue || 0),
     include_heading_content: Boolean(params.include_heading_content),
     root_chunk_as_heading: Boolean(params.root_chunk_as_heading),
+    table_context_size: Number(params.table_context_size ?? 0),
+    image_context_size: Number(params.image_context_size ?? 0),
     ...(chunkTokenCap === undefined || chunkTokenCap === null
       ? {}
       : { chunk_token_cap: Number(chunkTokenCap) }),
@@ -736,6 +747,28 @@ export const buildDslComponentsByGraph = (
           params = buildCategorize(edges, nodes, id);
           break;
 
+        case Operator.Switch: {
+          const switchParams = params as ISwitchForm;
+          const branchEdges = edges.filter((edge) => edge.source === id);
+          params = {
+            ...switchParams,
+            conditions: (switchParams.conditions ?? []).map(
+              (condition, index) => ({
+                ...condition,
+                to: filterTargetsBySourceHandleId(
+                  branchEdges,
+                  generateSwitchHandleText(index),
+                ),
+              }),
+            ),
+            [SwitchElseTo]: filterTargetsBySourceHandleId(
+              branchEdges,
+              SwitchElseTo,
+            ),
+          };
+          break;
+        }
+
         case Operator.Parser:
           params = transformParserParams(params);
           break;
@@ -908,10 +941,6 @@ export const isKeysEqual = (currentKeys: string[], previousKeys: string[]) => {
 
 export const getOperatorIndex = (handleTitle: string) => {
   return handleTitle.split(' ').at(-1);
-};
-
-export const generateSwitchHandleText = (idx: number) => {
-  return `Case ${idx + 1}`;
 };
 
 export const getNodeDragHandle = (nodeType?: string) => {

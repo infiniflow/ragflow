@@ -33,7 +33,7 @@ import (
 // core count regardless of which stage is running.
 func init() {
 	submit := func(ctx context.Context, jobs []func() error) error {
-		return knowledge_compile.SubmitCompilerJobs(ctx, jobs)
+		return knowledge_compile.SubmitCompilerLLMJobs(ctx, jobs)
 	}
 	structure.SetBatchSubmitter(submit)
 	mindmap.SetBatchSubmitter(submit)

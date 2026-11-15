@@ -17,6 +17,7 @@
 package tool
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -44,6 +45,8 @@ const duckduckgoChannelGeneral = "general"
 const duckduckgoChannelNews = "news"
 
 const duckduckgoPromptMaxTokens = 200000
+
+const duckduckgoMaxResponseBytes = 4 << 20
 
 var duckduckgoSearchEndpoint = "https://duckduckgo.com/html/"
 var duckduckgoNewsEndpoint = "https://duckduckgo.com/news.js"
@@ -230,7 +233,17 @@ func (d *DuckDuckGoTool) InvokableRun(ctx context.Context, argsJSON string, _ ..
 			fmt.Errorf("duckduckgo: upstream returned %d", resp.StatusCode)
 	}
 
-	results, err := parseDuckDuckGoHTML(resp.Body, topN)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, duckduckgoMaxResponseBytes+1))
+	if err != nil {
+		return duckduckgoErrJSON(fmt.Errorf("duckduckgo: read body: %w", err)),
+			fmt.Errorf("duckduckgo: read body: %w", err)
+	}
+	if len(body) > duckduckgoMaxResponseBytes {
+		return duckduckgoErrJSON(fmt.Errorf("duckduckgo: response too large")),
+			fmt.Errorf("duckduckgo: response too large")
+	}
+
+	results, err := parseDuckDuckGoHTML(bytes.NewReader(body), topN)
 	if err != nil {
 		return duckduckgoErrJSON(fmt.Errorf("duckduckgo: parse html: %w", err)),
 			fmt.Errorf("duckduckgo: parse html: %w", err)
@@ -354,8 +367,18 @@ func (d *DuckDuckGoTool) runNewsSearch(ctx context.Context, query string, topN i
 			fmt.Errorf("duckduckgo: upstream returned %d", resp.StatusCode)
 	}
 
+	body, err := io.ReadAll(io.LimitReader(resp.Body, duckduckgoMaxResponseBytes+1))
+	if err != nil {
+		return duckduckgoErrJSON(fmt.Errorf("duckduckgo: read news response: %w", err)),
+			fmt.Errorf("duckduckgo: read news response: %w", err)
+	}
+	if len(body) > duckduckgoMaxResponseBytes {
+		return duckduckgoErrJSON(fmt.Errorf("duckduckgo: news response too large")),
+			fmt.Errorf("duckduckgo: news response too large")
+	}
+
 	var raw duckduckgoNewsResponse
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+	if err := json.Unmarshal(body, &raw); err != nil {
 		return duckduckgoErrJSON(fmt.Errorf("duckduckgo: decode news response: %w", err)),
 			fmt.Errorf("duckduckgo: decode news response: %w", err)
 	}
@@ -398,9 +421,12 @@ func (d *DuckDuckGoTool) fetchDuckDuckGoNewsVQD(ctx context.Context, query strin
 		return "", fmt.Errorf("duckduckgo: news bootstrap returned %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, duckduckgoMaxResponseBytes+1))
 	if err != nil {
 		return "", fmt.Errorf("duckduckgo: read news bootstrap: %w", err)
+	}
+	if len(body) > duckduckgoMaxResponseBytes {
+		return "", fmt.Errorf("duckduckgo: news bootstrap response too large")
 	}
 	matches := duckduckgoVQDPattern.FindSubmatch(body)
 	if len(matches) != 2 {

@@ -45,6 +45,18 @@ func CheckCanvasDependencies(ctx context.Context, db *gorm.DB, kind permission.R
 	if userID == "" {
 		return permission.ErrUnauthenticated
 	}
+	tenantID := canvasTenantID(ctx)
+	contextUserID := permission.UserIDFromContext(ctx)
+	contextTenantID := permission.TenantIDFromContext(ctx)
+	if contextUserID != "" && contextUserID != userID {
+		return permission.ErrIdentityMismatch
+	}
+	if contextTenantID != "" && tenantID != "" && contextTenantID != tenantID {
+		return permission.ErrIdentityMismatch
+	}
+	if contextUserID == "" || contextTenantID == "" {
+		ctx = permission.WithIdentity(ctx, userID, tenantID)
+	}
 
 	checker := permission.NewDatabaseChecker(db)
 	entry := permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}
@@ -59,7 +71,7 @@ func CheckCanvasDependencies(ctx context.Context, db *gorm.DB, kind permission.R
 		}
 		seen[id] = struct{}{}
 		dependency := permission.ResourceRef{Kind: kind, ID: id}
-		if err := checker.CheckDependency(ctx, permission.Subject{UserID: userID}, entry, dependency, permission.OperationRun, permission.OperationUse); err != nil {
+		if err := checker.CheckDependency(ctx, entry, dependency, permission.OperationRun, permission.OperationUse); err != nil {
 			return fmt.Errorf("%s %q: %w", kind, id, err)
 		}
 	}

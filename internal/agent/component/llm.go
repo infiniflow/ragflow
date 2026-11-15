@@ -30,8 +30,8 @@ import (
 	"ragflow/internal/agent/component/prompts"
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
-	"ragflow/internal/dao"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/modelcontext"
 
 	"go.uber.org/zap"
 )
@@ -815,7 +815,7 @@ func (c *LLMComponent) prepareChatRequest(
 			tenantID = tid
 		}
 	}
-	contentLength := dao.ResolveModelContentLength(ctx, db, tenantID, originalModelID, p.Driver, p.ModelID)
+	contentLength := modelcontext.ResolveModelContentLength(ctx, db, tenantID, originalModelID, p.Driver, p.ModelID)
 	if contentLength <= 0 {
 		// A 0 makes chat.FitMessages fall back to the 8192 default budget, which
 		// can silently discard most of a large-context prompt, so surface the

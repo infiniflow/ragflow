@@ -74,6 +74,7 @@ func seedDSLVersionTables(t *testing.T, db *gorm.DB) {
 	t.Cleanup(func() {
 		for _, m := range []interface{}{
 			&entity.UserCanvasVersion{}, &entity.UserCanvas{}, &entity.Document{}, &entity.Knowledgebase{},
+			&entity.SystemSettings{},
 		} {
 			_ = db.WithContext(context.Background()).Migrator().DropTable(m)
 		}

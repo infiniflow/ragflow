@@ -28,7 +28,6 @@ import (
 	"io"
 	"net"
 	netmail "net/mail"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -82,8 +81,8 @@ type imapClient interface {
 func NewIMAPConnector(config map[string]any) (*IMAPConnector, error) {
 	credentials, _ := config["credentials"].(map[string]any)
 	threshold := int64(defaultIMAPSizeThreshold)
-	if rawThreshold, err := strconv.ParseInt(os.Getenv("IMAP_CONNECTOR_SIZE_THRESHOLD"), 10, 64); err == nil && rawThreshold > 0 {
-		threshold = rawThreshold
+	if v := common.GetEnvInt("IMAP_CONNECTOR_SIZE_THRESHOLD", 0); v > 0 {
+		threshold = int64(v)
 	}
 	return &IMAPConnector{
 		host:          strings.TrimSpace(stringConfig(config["imap_host"])),

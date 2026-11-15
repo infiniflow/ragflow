@@ -74,7 +74,7 @@ func (b *BuiltinModel) Embed(ctx context.Context, modelName *string, request Emb
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, err
 	}

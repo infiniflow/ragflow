@@ -151,6 +151,9 @@ func (dao *SearchDAO) GetByNameAndTenant(ctx context.Context, db *gorm.DB, name 
 
 // Create creates a new search
 func (dao *SearchDAO) Create(ctx context.Context, db *gorm.DB, search *entity.Search) error {
+	if search.UserID == "" {
+		search.UserID = search.CreatedBy
+	}
 	return db.WithContext(ctx).Create(search).Error
 }
 

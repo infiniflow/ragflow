@@ -81,21 +81,6 @@ func (p *PDFParser) NormalizeResult(ctx context.Context, filename string, result
 				fields["doc_type_kwd"] = "text"
 			}
 		}
-		if p.FlattenMediaToText {
-			// Flattened output keeps one text carrier per item. Structured
-			// tables (MinerU content_list, projected HTML) carry cells in
-			// `table` and footnotes in `text`; rendering the table preserves
-			// cells, caption, and footnote in that order. The render
-			// normalizes markup (header inference, escaping, whitespace), so
-			// it is not byte-identical to the source HTML, but it is
-			// content-preserving. Items without a table keep their text verbatim.
-			if table, ok := fields["table"].(*entity.TableData); ok && table != nil {
-				text, _ := fields["text"].(string)
-				fields["text"] = strings.TrimSpace(tableutil.RenderTableHTML(table) + "\n" + text)
-				delete(fields, "table")
-			}
-			fields["doc_type_kwd"] = "text"
-		}
 		items = appendPDFItem(items, fields)
 	}
 	if droppedPositions > 0 {

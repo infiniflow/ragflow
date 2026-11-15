@@ -123,12 +123,15 @@ func parsePaddleOCRResultBody(body []byte) (*OCRFileResponse, error) {
 		text.WriteString("\n\n")
 	}
 	content := strings.TrimSpace(text.String())
-	if content == "" {
+	if content == "" && !hasOCRMediaBlocks(response.Pages) {
 		if len(response.Warnings) > 0 {
 			return nil, fmt.Errorf("paddleocr result: no usable text; %s", response.Warnings[0])
 		}
 		return nil, fmt.Errorf("paddleocr result: parsed empty text")
 	}
+	// A response that only carries media regions has no text; Text stays
+	// non-nil and empty so callers can dereference it, while Pages still feeds
+	// the PDF media path.
 	response.Text = &content
 	return response, nil
 }
@@ -153,14 +156,27 @@ func paddleOCRPages(result paddleOCRResult, nextPage int) []OCRPage {
 		}
 		page.Blocks = pruned.blocks()
 		hasText := false
+		hasMedia := false
 		for _, block := range page.Blocks {
 			if strings.TrimSpace(utility.StripMarkdownImages(block.Text)) != "" {
 				hasText = true
-				break
+			}
+			if IsOCRMediaLabel(block.Label) || IsOCRImageOnlyText(block.Text) {
+				hasMedia = true
 			}
 		}
 		if !hasText && strings.TrimSpace(markdown) != "" {
-			page.Blocks = []OCRBlock{{Text: markdown}}
+			if hasMedia {
+				// Media blocks own page regions but no body text. Keep them and
+				// append the Markdown only when it carries text of its own, so
+				// neither the regions nor text that exists only in the Markdown
+				// are dropped.
+				if strings.TrimSpace(utility.StripMarkdownImages(markdown)) != "" {
+					page.Blocks = append(page.Blocks, OCRBlock{Text: markdown})
+				}
+			} else {
+				page.Blocks = []OCRBlock{{Text: markdown}}
+			}
 		}
 		pages = append(pages, page)
 		nextPage = page.Index + 1
@@ -174,6 +190,38 @@ func paddleOCRPages(result paddleOCRResult, nextPage int) []OCRPage {
 		}
 	}
 	return pages
+}
+
+// IsOCRMediaLabel reports whether a PaddleX layout label denotes a figure-like
+// region. Such a block has no body text of its own but still carries a page
+// region, so the page fallback must keep it and the PDF projection must emit a
+// media item. chart_title and figure_title are captions, not media.
+func IsOCRMediaLabel(label string) bool {
+	switch strings.ToLower(strings.TrimSpace(label)) {
+	case "figure", "image", "chart", "seal":
+		return true
+	}
+	return false
+}
+
+// IsOCRImageOnlyText reports whether block text carries image markup but no
+// body text. Some providers leave the layout label empty, so the label alone
+// cannot decide whether a block is media.
+func IsOCRImageOnlyText(text string) bool {
+	return strings.TrimSpace(text) != "" && strings.TrimSpace(utility.StripMarkdownImages(text)) == ""
+}
+
+// hasOCRMediaBlocks reports whether any page kept a media region. Such a
+// response has no text of its own but must still reach the PDF media path.
+func hasOCRMediaBlocks(pages []OCRPage) bool {
+	for _, page := range pages {
+		for _, block := range page.Blocks {
+			if IsOCRMediaLabel(block.Label) || IsOCRImageOnlyText(block.Text) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (pruned paddleOCRPrunedResult) blocks() []OCRBlock {

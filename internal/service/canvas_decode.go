@@ -46,8 +46,7 @@ import (
 //
 // All non-sentinel failures wrap ErrAgentStorageError so the
 // handler's mapAgentError classifies them as CodeServerError
-// (500) with a sanitized message — the raw decoder error string
-// never reaches the client.
+// (500) while retaining the underlying decoder error.
 //
 // Decoder strategy: direct map walking, NOT JSON round-trip. The
 // Phase 4.4 V2 plan §4.3 originally specified JSON round-trip

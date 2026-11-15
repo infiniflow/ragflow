@@ -1,5 +1,6 @@
 import { Modal } from '@/components/ui/modal/modal';
 import { FileType } from '@/constants/file';
+import { useExtraBulkActions } from '@/ee/pages/dataset/dataset/use-extra-bulk-actions';
 import {
   UseRowSelectionType,
   useSelectedIds,
@@ -23,6 +24,7 @@ import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { toast } from 'sonner';
+import { ShowPrivilegeModalReturnType } from '@/ee/pages/dataset/dataset/use-show-privilege-dialog';
 import { DocumentType, ParserGapReason } from './constant';
 import { buildParserGapModalContent } from './parser-gap-content';
 import { useParserGapValidation } from './use-parser-gap-validation';
@@ -32,9 +34,10 @@ export function useBulkOperateDataset({
   rowSelection,
   setRowSelection,
   documents,
+  handShowPrivilegeModal,
 }: Pick<UseRowSelectionType, 'rowSelection' | 'setRowSelection'> & {
   documents: IDocumentInfo[];
-}) {
+} & Pick<ShowPrivilegeModalReturnType, 'handShowPrivilegeModal'>) {
   const { t } = useTranslation();
   const { selectedIds: selectedRowKeys } = useSelectedIds(
     rowSelection,
@@ -46,6 +49,10 @@ export function useBulkOperateDataset({
   const { setDocumentStatus } = useSetDocumentStatus();
   const { removeDocument } = useRemoveDocument();
   const { findDocumentParseGaps } = useParserGapValidation();
+  const extraBulkActions = useExtraBulkActions(
+    handShowPrivilegeModal,
+    selectedRowKeys,
+  );
 
   const runDocument = useCallback(
     async (run: number) => {
@@ -209,6 +216,7 @@ export function useBulkOperateDataset({
       icon: <LucideCircleX />,
       onClick: handleCancelClick,
     },
+    ...extraBulkActions,
     {
       id: 'enabled',
       label: t('knowledgeDetails.enabled'),

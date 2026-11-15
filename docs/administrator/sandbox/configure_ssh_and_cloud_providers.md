@@ -18,7 +18,7 @@ Saving a provider configuration makes it the active code execution provider for 
 Use the same workflow for every provider:
 
 1. Prepare the remote host or cloud account, credentials, and network access.
-2. Open **Admin > Sandbox Settings**.
+2. Open **Admin > Sandbox**.
 3. Select the provider and complete its settings.
 4. Select **Test connection**.
 5. Confirm that the result shows `PASSED`, then select **Save**.
@@ -53,7 +53,7 @@ Make sure that:
 
 RAGFlow verifies the SSH server's host key before sending credentials or running code. Confirm the server's host-key fingerprint with the server administrator, then add the verified key to the `known_hosts` file used by RAGFlow.
 
-For a server that listens on a non-default port, include the port when collecting the key. Replace `SSH_HOST` and `SSH_PORT` with the values configured in **Admin > Sandbox Settings**. For example, if the actual host is `sandbox.example.com` and the port is `2222`, use `[sandbox.example.com]:2222`.
+For a server that listens on a non-default port, include the port when collecting the key. Replace `SSH_HOST` and `SSH_PORT` with the values configured in **Admin > Sandbox**. For example, if the actual host is `sandbox.example.com` and the port is `2222`, use `[sandbox.example.com]:2222`.
 
 The `[SSH_HOST]:SSH_PORT` format is for non-default ports. For port `22`, use `SSH_HOST` without brackets or a port in the `ssh-keygen -F` and `ssh-keygen -R` commands.
 
@@ -137,7 +137,7 @@ In **SSH known_hosts File**, enter the path that is visible to the RAGFlow proce
 
 ### Configure the connection
 
-In **Admin > Sandbox Settings**, select **SSH** and configure:
+In **Admin > Sandbox**, select **SSH** and configure:
 
 | Setting | Required | Value |
 | --- | --- | --- |
@@ -177,7 +177,7 @@ Select **Test connection**. Confirm that the result shows `PASSED`, then select 
 
 ## Configure Aliyun Code Interpreter
 
-Prepare a RAM user with Code Interpreter permissions and [create an Alibaba Cloud AccessKey pair](https://help.aliyun.com/en/ram/user-guide/create-an-accesskey-pair). Then select **Aliyun Code Interpreter** in **Admin > Sandbox Settings** and configure:
+Prepare a RAM user with Code Interpreter permissions and [create an Alibaba Cloud AccessKey pair](https://help.aliyun.com/en/ram/user-guide/create-an-accesskey-pair). Then select **Aliyun Code Interpreter** in **Admin > Sandbox** and configure:
 
 | Setting | Required | Default | Description |
 | --- | --- | --- | --- |
@@ -190,7 +190,7 @@ Prepare a RAM user with Code Interpreter permissions and [create an Alibaba Clou
 
 ## Configure E2B
 
-Create an API key in the [E2B dashboard](https://e2b.dev/dashboard). Then select **E2B** in **Admin > Sandbox Settings** and configure:
+Create an API key in the [E2B dashboard](https://e2b.dev/dashboard). Then select **E2B** in **Admin > Sandbox** and configure:
 
 | Setting | Required | Default | Description |
 | --- | --- | --- | --- |
@@ -209,7 +209,7 @@ For source deployments, set `E2B_DOMAIN` in the RAGFlow process environment and 
 
 ## Configure Tenki
 
-Create an API key in the [Tenki console](https://app.tenki.cloud). For provider setup, see the [Tenki Sandbox Quickstart](https://tenki.cloud/docs/sandbox/quickstart). Then select **Tenki** in **Admin > Sandbox Settings** and configure:
+Create an API key in the [Tenki console](https://app.tenki.cloud). For provider setup, see the [Tenki Sandbox Quickstart](https://tenki.cloud/docs/sandbox/quickstart). Then select **Tenki** in **Admin > Sandbox** and configure:
 
 | Setting | Required | Default | Description |
 | --- | --- | --- | --- |
@@ -230,7 +230,7 @@ Keep outbound networking disabled unless executed code requires it.
 
 ## Configure UCloud Agent Sandbox
 
-Obtain an API key from [UCloud ModelVerse API Keys](https://astraflow.ucloud.cn/modelverse/api-keys). Then select **UCloud Agent Sandbox** in **Admin > Sandbox Settings** and configure:
+Obtain an API key from [UCloud ModelVerse API Keys](https://astraflow.ucloud.cn/modelverse/api-keys). Then select **UCloud Agent Sandbox** in **Admin > Sandbox** and configure:
 
 | Setting | Required | Default | Description |
 | --- | --- | --- | --- |

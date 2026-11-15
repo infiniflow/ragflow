@@ -6,6 +6,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"sort"
 
 	"go.uber.org/zap"
 
@@ -136,9 +137,12 @@ func buildSectionRasterPlan(positions []pdf.Position, decodedImages map[int]imag
 			right = math.Max(left+10, right)
 		}
 		firstPage := pos.PageNumbers[0]
+		// Bottom is local to the last page, so add the heights of the pages
+		// before it (Python: sum of page heights over pns[:-1]).
+		bottomPage := pos.PageNumbers[len(pos.PageNumbers)-1]
 		accumBottom := pos.Bottom * zoom
-		for _, pageNum := range pos.PageNumbers[1:] {
-			if pageNum != firstPage {
+		for _, pageNum := range pos.PageNumbers {
+			if pageNum != bottomPage {
 				accumBottom += float64(decodedImages[pageNum].Bounds().Dy())
 			}
 		}
@@ -307,9 +311,10 @@ func CropSectionByDLA(sec pdf.Section, dlaRegions []pdf.DLAPageRegions, pageImag
 		// Spanning height in pixels for this position across its pages,
 		// mirroring CropSectionImage's accumBottom computation.
 		pn0 := pos.PageNumbers[0]
+		bottomPage := pos.PageNumbers[len(pos.PageNumbers)-1]
 		accumBottom := pos.Bottom * scale
-		for _, pn := range pos.PageNumbers[1:] {
-			if pn == pn0 {
+		for _, pn := range pos.PageNumbers {
+			if pn == bottomPage {
 				continue
 			}
 			if img, ok := pageImages[pn]; ok {
@@ -631,6 +636,21 @@ func CropMediaSectionPositions(positions []pdf.Position, decodedImages map[int]i
 		}
 	}
 	plan.segments = body
+	// Captions are appended to source metadata after the primary region, so
+	// stitch in page and reading order. The parser canonicalizes section
+	// positions, but serialized _pdf_positions can come from any parser
+	// backend: the renderer enforces the order it stitches in instead of
+	// trusting the caller.
+	sort.SliceStable(plan.segments, func(i, j int) bool {
+		a, b := plan.segments[i], plan.segments[j]
+		if a.page != b.page {
+			return a.page < b.page
+		}
+		if a.y0 != b.y0 {
+			return a.y0 < b.y0
+		}
+		return a.x0 < b.x0
+	})
 	if len(plan.segments) == 0 {
 		return ""
 	}

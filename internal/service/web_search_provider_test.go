@@ -388,7 +388,7 @@ func TestDecodeSerplyWebSearchResultsAcceptsMissingResults(t *testing.T) {
 }
 
 func TestResolveWebSearchProviderSelectsYouComWithoutAKey(t *testing.T) {
-	// You.com is the only provider usable with no credentials at all.
+	// You.com stays usable when no key is saved.
 	provider := resolveWebSearchProvider(map[string]interface{}{
 		"web_search_provider": "youcom",
 	})
@@ -406,7 +406,7 @@ func TestResolveWebSearchProviderSelectsYouComWithoutAKey(t *testing.T) {
 
 // Exa has a free tier of 1,000 requests/month, but it is NOT keyless: every
 // REST call must carry a key, so selecting Exa without one leaves web search
-// unconfigured. (Only You.com is keyless — see the carve-out below.)
+// unconfigured. AnySearch and You.com are the providers that allow a blank key.
 func TestResolveWebSearchProviderRequiresExaKeyForFreeTier(t *testing.T) {
 	if got := resolveWebSearchProvider(map[string]interface{}{
 		"web_search_provider": "exa",

@@ -1,6 +1,7 @@
 import message from '@/components/ui/message';
 import { useExportAgentLog } from '@/hooks/use-agent-request';
 import { IAgentLogResponse } from '@/interfaces/database/agent';
+import { formatDate } from '@/utils/date';
 import { downloadFileFromBlob } from '@/utils/file-util';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
@@ -50,12 +51,12 @@ export const useExportAgentLogToCSV = () => {
     const rows = data.map((item) => [
       item.id,
       item.user_id,
-      item.message?.length ? item.message[0]?.content : '',
+      item.name,
       formatConversation(item),
       item.errors ? t('flow.failed') : t('flow.success'),
       item.round,
-      item.update_date,
-      item.create_date,
+      formatDate(item.update_time),
+      formatDate(item.create_time),
       item.version_title,
     ]);
 

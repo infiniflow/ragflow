@@ -1038,3 +1038,74 @@ func TestExtractTableAndReplace_NoReMergeAfterPageAbsoluteRejection(t *testing.T
 		t.Errorf("ExtractTableAndReplace re-merged the page-absolute-rejected tables: got %d table boxes, want 2 (the two pages-4/5 tables must stay separate)", got)
 	}
 }
+
+func TestConsolidateFiguresRemovesOnlyDuplicateTableGeometry(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*pdf.TextBox, *pdf.TextBox)
+		want   int
+	}{
+		{"same region", func(*pdf.TextBox, *pdf.TextBox) {}, 1},
+		{"floating point noise", func(_ *pdf.TextBox, f *pdf.TextBox) { f.FigureBounds.Right += 1e-8 }, 1},
+		{"different page", func(_ *pdf.TextBox, f *pdf.TextBox) { f.PageNumber++ }, 2},
+		{"missing page", func(t *pdf.TextBox, _ *pdf.TextBox) { t.HasPageNumber = false }, 2},
+		{"missing figure page", func(_ *pdf.TextBox, f *pdf.TextBox) { f.HasPageNumber = false }, 2},
+		{"nested image", func(_ *pdf.TextBox, f *pdf.TextBox) { f.FigureBounds.Right = 50 }, 2},
+		{"containing image", func(_ *pdf.TextBox, f *pdf.TextBox) { f.FigureBounds.Right = 200 }, 2},
+		{"caption", func(_ *pdf.TextBox, f *pdf.TextBox) { f.Text = "independent caption" }, 2},
+		{"unsuccessful table", func(t *pdf.TextBox, _ *pdf.TextBox) { t.Text = "unprocessed text" }, 2},
+		{"cross page table", func(t *pdf.TextBox, _ *pdf.TextBox) { t.Pages = []int{0, 1} }, 2},
+		{"cross page figure", func(_ *pdf.TextBox, f *pdf.TextBox) { f.Pages = []int{0, 1} }, 2},
+		{"different region", func(_ *pdf.TextBox, f *pdf.TextBox) { f.FigureBounds.Right += 1 }, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			table := tableRegionBox(&pdf.TableItem{Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 10, Right: 100, Top: 20, Bottom: 80}}, RegionLeft: 10, RegionRight: 100, RegionTop: 20, RegionBottom: 80}, &pdf.TextBox{}, "<table><tr><td>value</td></tr></table>")
+			figure := pdf.TextBox{LayoutType: pdf.LayoutTypeFigure, LayoutNo: "figure-0", HasPageNumber: true, PageNumber: 0, FigureBounds: &pdf.Position{Left: 10, Right: 100, Top: 20, Bottom: 80}}
+			tc.change(&table, &figure)
+			got := ConsolidateFigures([]pdf.TextBox{table, figure})
+			if len(got) != tc.want {
+				t.Fatalf("boxes=%d want=%d: %+v", len(got), tc.want, got)
+			}
+			if got[0].Text != table.Text {
+				t.Fatal("table text changed")
+			}
+		})
+	}
+}
+
+func TestConsolidateFiguresRequiresKnownTableAnchorPage(t *testing.T) {
+	const html = "<table><tr><td>value</td></tr></table>"
+	for _, builder := range []struct {
+		name  string
+		build func(*pdf.TableItem) pdf.TextBox
+	}{
+		{"region", func(tbl *pdf.TableItem) pdf.TextBox { return tableRegionBox(tbl, &pdf.TextBox{}, html) }},
+		{"anchor bounds", func(tbl *pdf.TableItem) pdf.TextBox {
+			copy := *tbl
+			copy.RegionLeft, copy.RegionRight, copy.RegionTop, copy.RegionBottom = 0, 0, 0, 0
+			return tableRegionBox(&copy, &pdf.TextBox{X0: 10, X1: 100, Top: 20, Bottom: 80}, html)
+		}},
+		{"image only", func(tbl *pdf.TableItem) pdf.TextBox { return createTableBoxFromItem(tbl, html) }},
+	} {
+		for _, tc := range []struct {
+			name      string
+			positions []pdf.Position
+			page      int
+			want      int
+		}{
+			{"first page", []pdf.Position{{PageNumbers: []int{0}}}, 0, 1},
+			{"later page", []pdf.Position{{PageNumbers: []int{5}}}, 5, 1},
+			{"missing anchor page", []pdf.Position{{}, {PageNumbers: []int{5}}}, 0, 2},
+			{"missing pages", nil, 0, 2},
+		} {
+			t.Run(builder.name+"/"+tc.name, func(t *testing.T) {
+				table := builder.build(&pdf.TableItem{Positions: tc.positions, RegionLeft: 10, RegionRight: 100, RegionTop: 20, RegionBottom: 80})
+				figure := pdf.TextBox{LayoutType: pdf.LayoutTypeFigure, HasPageNumber: true, PageNumber: tc.page, FigureBounds: &pdf.Position{Left: 10, Right: 100, Top: 20, Bottom: 80}}
+				got := ConsolidateFigures([]pdf.TextBox{table, figure})
+				if len(got) != tc.want {
+					t.Fatalf("boxes=%d want=%d: %+v", len(got), tc.want, got)
+				}
+			})
+		}
+	}
+}

@@ -34,36 +34,36 @@ type logListCapture struct {
 	pageSize int
 }
 
-func (s fakeConnectorService) ListConnectors(context.Context, string, string) (*service.ListConnectorsResponse, error) {
+func (s fakeConnectorService) ListConnectors(context.Context, string) (*service.ListConnectorsResponse, error) {
 	return &service.ListConnectorsResponse{}, nil
 }
 
-func (s fakeConnectorService) TestConnector(context.Context, string, string, entity.JSONMap) error {
+func (s fakeConnectorService) TestConnector(context.Context, string, entity.JSONMap) error {
 	return s.err
 }
 
-func (s fakeConnectorService) CreateConnector(context.Context, string, *service.CreateConnectorRequest) (*entity.Connector, error) {
+func (s fakeConnectorService) CreateConnector(context.Context, *service.CreateConnectorRequest) (*entity.Connector, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
 	return s.connector, nil
 }
 
-func (s fakeConnectorService) GetConnector(context.Context, string, string) (*entity.Connector, error) {
+func (s fakeConnectorService) GetConnector(context.Context, string) (*entity.Connector, error) {
 	if s.err != nil {
 		return nil, s.err
 	}
 	return s.connector, nil
 }
 
-func (s fakeConnectorService) UpdateConnector(context.Context, string, string, *service.UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
+func (s fakeConnectorService) UpdateConnector(context.Context, string, *service.UpdateConnectorRequest) (*entity.Connector, common.ErrorCode, error) {
 	if s.err != nil {
 		return nil, s.code, s.err
 	}
 	return s.connector, common.CodeSuccess, nil
 }
 
-func (s fakeConnectorService) StartGoogleWebOAuth(context.Context, string, string, *service.StartGoogleWebOAuthRequest) (*service.StartGoogleWebOAuthResponse, common.ErrorCode, error) {
+func (s fakeConnectorService) StartGoogleWebOAuth(context.Context, string, *service.StartGoogleWebOAuthRequest) (*service.StartGoogleWebOAuthResponse, common.ErrorCode, error) {
 	if s.err != nil {
 		return nil, s.code, s.err
 	}
@@ -74,14 +74,14 @@ func (s fakeConnectorService) GoogleWebOAuthCallback(context.Context, string, st
 	return ""
 }
 
-func (s fakeConnectorService) PollGoogleWebOAuthResult(context.Context, string, string, *service.PollGoogleWebOAuthResultRequest) (*service.PollGoogleWebOAuthResultResponse, common.ErrorCode, error) {
+func (s fakeConnectorService) PollGoogleWebOAuthResult(context.Context, string, *service.PollGoogleWebOAuthResultRequest) (*service.PollGoogleWebOAuthResultResponse, common.ErrorCode, error) {
 	if s.err != nil {
 		return nil, s.code, s.err
 	}
 	return &service.PollGoogleWebOAuthResultResponse{}, common.CodeSuccess, nil
 }
 
-func (s fakeConnectorService) StartBoxWebOAuth(context.Context, string, *service.StartBoxWebOAuthRequest) (*service.StartBoxWebOAuthResponse, common.ErrorCode, error) {
+func (s fakeConnectorService) StartBoxWebOAuth(context.Context, *service.StartBoxWebOAuthRequest) (*service.StartBoxWebOAuthResponse, common.ErrorCode, error) {
 	if s.err != nil {
 		return nil, s.code, s.err
 	}
@@ -99,21 +99,21 @@ func (s fakeConnectorService) BoxWebOAuthCallback(context.Context, string, strin
 	return "<html>box</html>"
 }
 
-func (s fakeConnectorService) PollBoxWebOAuthResult(context.Context, string, *service.PollBoxWebOAuthResultRequest) (*service.PollBoxWebOAuthResultResponse, common.ErrorCode, error) {
+func (s fakeConnectorService) PollBoxWebOAuthResult(context.Context, *service.PollBoxWebOAuthResultRequest) (*service.PollBoxWebOAuthResultResponse, common.ErrorCode, error) {
 	if s.err != nil {
 		return nil, s.code, s.err
 	}
 	return &service.PollBoxWebOAuthResultResponse{}, common.CodeSuccess, nil
 }
 
-func (s fakeConnectorService) ListLog(context.Context, string, string, int, int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
+func (s fakeConnectorService) ListLog(context.Context, string, int, int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
 	if s.err != nil {
 		return nil, 0, s.code, s.err
 	}
 	return s.logs, s.total, common.CodeSuccess, nil
 }
 
-func (s fakeConnectorService) ListLogs(_ context.Context, _, _ string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
+func (s fakeConnectorService) ListLogs(_ context.Context, _ string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error) {
 	if s.err != nil {
 		return nil, 0, s.code, s.err
 	}
@@ -124,21 +124,21 @@ func (s fakeConnectorService) ListLogs(_ context.Context, _, _ string, page, pag
 	return s.logs, s.total, common.CodeSuccess, nil
 }
 
-func (s fakeConnectorService) DeleteConnector(context.Context, string, string) (bool, common.ErrorCode, error) {
+func (s fakeConnectorService) DeleteConnector(context.Context, string) (bool, common.ErrorCode, error) {
 	if s.err != nil {
 		return false, s.code, s.err
 	}
 	return true, common.CodeSuccess, nil
 }
 
-func (s fakeConnectorService) RebuildConnector(context.Context, string, string, string) (bool, common.ErrorCode, error) {
+func (s fakeConnectorService) RebuildConnector(context.Context, string, string) (bool, common.ErrorCode, error) {
 	if s.err != nil {
 		return false, s.code, s.err
 	}
 	return true, common.CodeSuccess, nil
 }
 
-func (s fakeConnectorService) ResumeFailedSync(context.Context, string, string, *service.ResumeFailedSyncRequest) (bool, common.ErrorCode, error) {
+func (s fakeConnectorService) ResumeFailedSync(context.Context, string, *service.ResumeFailedSyncRequest) (bool, common.ErrorCode, error) {
 	if s.err != nil {
 		return false, s.code, s.err
 	}
@@ -461,20 +461,17 @@ func TestConnectorHandlerDeleteConnector(t *testing.T) {
 		name     string
 		service  fakeConnectorService
 		wantCode common.ErrorCode
-		wantData interface{}
 		wantMsg  string
 	}{
 		{
 			name:     "success",
 			service:  fakeConnectorService{},
 			wantCode: common.CodeSuccess,
-			wantData: true,
 		},
 		{
 			name:     "unauthorized",
 			service:  fakeConnectorService{code: common.CodeAuthenticationError, err: fmt.Errorf("no authorization")},
 			wantCode: common.CodeAuthenticationError,
-			wantData: nil,
 			wantMsg:  "no authorization",
 		},
 	}
@@ -502,8 +499,8 @@ func TestConnectorHandlerDeleteConnector(t *testing.T) {
 			if body["code"] != float64(tt.wantCode) {
 				t.Fatalf("code=%v body=%v", body["code"], body)
 			}
-			if body["data"] != tt.wantData {
-				t.Fatalf("data=%v body=%v", body["data"], body)
+			if data, exists := body["data"]; exists {
+				t.Fatalf("data must be omitted, got %v", data)
 			}
 			if tt.wantMsg != "" && body["message"] != tt.wantMsg {
 				t.Fatalf("message=%v", body["message"])
@@ -641,14 +638,14 @@ func TestConnectorHandlerListSyncLogs(t *testing.T) {
 			query:        "",
 			wantCode:     common.CodeSuccess,
 			wantPage:     1,
-			wantPageSize: 15,
+			wantPageSize: 30,
 		},
 		{
 			name:         "page only defaults page_size",
 			query:        "?page=3",
 			wantCode:     common.CodeSuccess,
 			wantPage:     3,
-			wantPageSize: 15,
+			wantPageSize: 30,
 		},
 		{
 			name:         "page_size only defaults page",
@@ -687,13 +684,13 @@ func TestConnectorHandlerListSyncLogs(t *testing.T) {
 				capture: capture,
 			}}
 			router := gin.New()
-			router.GET("/api/v1/connectors/sync_logs", func(c *gin.Context) {
+			router.GET("/api/v1/connectors/sync-logs", func(c *gin.Context) {
 				c.Set("user", &entity.User{ID: "tenant-1"})
 				h.ListSyncLogs(c)
 			})
 
 			resp := httptest.NewRecorder()
-			req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/sync_logs"+tt.query, nil)
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/connectors/sync-logs"+tt.query, nil)
 			router.ServeHTTP(resp, req)
 
 			var body map[string]interface{}
@@ -712,5 +709,25 @@ func TestConnectorHandlerListSyncLogs(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestConnectorHandlerCreateConnectorRejectsEncryptedCredentials(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	h := &ConnectorHandler{connectorService: fakeConnectorService{err: service.ErrConnectorEncryptedCredentials}}
+	resp := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(resp)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/connectors", strings.NewReader(`{"name":"n","source":"github","config":{"credentials":"enc:v1:abc"}}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("user", &entity.User{ID: "user-1"})
+
+	h.CreateConnector(c)
+
+	var body map[string]interface{}
+	if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if body["code"] != float64(common.CodeDataError) || body["message"] != service.ErrConnectorEncryptedCredentials.Error() {
+		t.Fatalf("body=%v, want CodeDataError and the encrypted credentials message", body)
 	}
 }

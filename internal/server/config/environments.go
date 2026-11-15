@@ -30,7 +30,8 @@ type Environments struct {
 
 	SecretKey string `mapstructure:"secret_key"`
 
-	EnableRegister *bool `mapstructure:"enable_register"`
+	EnableRegister       *bool `mapstructure:"enable_register"`
+	DisablePasswordLogin *bool `mapstructure:"disable_password_login"`
 
 	DocumentEngineType string `mapstructure:"document_engine_type"`
 	DatabaseType       string `mapstructure:"database_type"`
@@ -78,7 +79,6 @@ type Environments struct {
 	PaddleOCRBaseURL                  string `mapstructure:"paddle_ocr_base_url"`               // PADDLEOCR_BASE_URL
 	PaddleOCRAPIURL                   string `mapstructure:"paddle_ocr_api_url"`                // PADDLEOCR_API_URL
 	PaddleOCRAccessToken              string `mapstructure:"paddle_ocr_access_token"`           // PADDLEOCR_ACCESS_TOKEN
-	PaddleOCRAlgorithm                string `mapstructure:"paddle_ocr_algorithm"`              // PADDLEOCR_ALGORITHM
 	SOMarkBaseURL                     string `mapstructure:"somark_base_url"`                   // SOMARK_BASE_URL
 	SOMarkAPIKey                      string `mapstructure:"somark_api_key"`                    // SOMARK_API_KEY
 	SOMarkImageFormat                 string `mapstructure:"somark_image_format"`               // SOMARK_IMAGE_FORMAT
@@ -131,6 +131,11 @@ func (c *Config) GetEnvironments() error {
 		c.environments.SecretKey = envVal
 	}
 
+	// Fail at startup, not on the first connector write.
+	if _, err := common.ConnectorKey(); err != nil {
+		return err
+	}
+
 	if envVal := common.GetEnv(common.EnvEnableRegister); envVal != "" {
 		if c.environments.EnableRegister == nil {
 			c.environments.EnableRegister = new(bool)
@@ -143,14 +148,24 @@ func (c *Config) GetEnvironments() error {
 		}
 	}
 
+	if envVal := common.GetEnv(common.EnvDisablePasswordLogin); envVal != "" {
+		if c.environments.DisablePasswordLogin == nil {
+			c.environments.DisablePasswordLogin = new(bool)
+		}
+		str := envVal
+		if str == "true" || str == "1" || str == "yes" {
+			*c.environments.DisablePasswordLogin = true
+		} else {
+			*c.environments.DisablePasswordLogin = false
+		}
+	}
+
 	// Doc engine
 	docEngine := common.GetEnvSmall(common.EnvDocEngine)
 	if docEngine != "" {
 		switch docEngine {
-		case "infinity", "elasticsearch", "oceanbase", "seekdb", "vastbase":
+		case "infinity", "elasticsearch", "oceanbase", "opensearch", "seekdb", "vastbase":
 			c.environments.DocumentEngineType = docEngine
-		case "opensearch":
-			return fmt.Errorf("not implemented: %s", docEngine)
 		default:
 			return fmt.Errorf("invalid doc engine: %s", docEngine)
 		}
@@ -160,7 +175,7 @@ func (c *Config) GetEnvironments() error {
 	databaseType := common.GetEnvSmall(common.EnvDBType)
 	if databaseType != "" {
 		switch databaseType {
-		case "mysql", "oceanbase":
+		case "mysql", "oceanbase", "vastbase":
 			c.environments.DatabaseType = databaseType
 		default:
 			return fmt.Errorf("invalid database type: %s", databaseType)
@@ -406,11 +421,6 @@ func (c *Config) GetEnvironments() error {
 		c.environments.PaddleOCRAccessToken = PaddleOCRAccessTokenStr
 	}
 
-	PaddleOCRAlgorithmStr := common.GetEnv(common.EnvPaddleOCRAlgorithm)
-	if PaddleOCRAlgorithmStr != "" {
-		c.environments.PaddleOCRAlgorithm = PaddleOCRAlgorithmStr
-	}
-
 	SOMarkBaseURLStr := common.GetEnv(common.EnvSOMarkBaseUrl)
 	if SOMarkBaseURLStr != "" {
 		c.environments.SOMarkBaseURL = SOMarkBaseURLStr
@@ -587,6 +597,10 @@ func (c *Config) GetEnvEnableRegister() bool {
 	return *c.environments.EnableRegister
 }
 
+func (c *Config) GetEnvDisablePasswordLogin() bool {
+	return *c.environments.DisablePasswordLogin
+}
+
 func (c *Config) GetEnvDocumentEngineType() string {
 	return c.environments.DocumentEngineType
 }
@@ -725,10 +739,6 @@ func (c *Config) GetPaddleOCRAPIURL() string {
 
 func (c *Config) GetPaddleOCRAccessToken() string {
 	return c.environments.PaddleOCRAccessToken
-}
-
-func (c *Config) GetPaddleOCRAlgorithm() string {
-	return c.environments.PaddleOCRAlgorithm
 }
 
 func (c *Config) GetSOMarkBaseURL() string {

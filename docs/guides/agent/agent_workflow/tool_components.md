@@ -4,7 +4,7 @@ title: Tool Components
 sidebar_label: Tool Components
 slug: /tool_components
 sidebar_custom_props: {
-  categoryIcon: RagAiAgent
+  categoryIcon: RagHTTP
 }
 ---
 
@@ -709,6 +709,10 @@ The HTTP Request component calls external HTTP APIs, allowing business systems, 
 | Proxy | Optional proxy address. |
 | Clean HTML | Remove HTML markup from the response. |
 | Parameter | Click `+` to add request parameters and set their values using constants or variables. |
+
+To add a parameter, click **+** beside **Parameter**. In **Variable settings**, enter the **Key**, then select a **Variable** or enter a constant using **Type** and **Value**. Click **Confirm** to add it. The example below sends `topic=ragflow` as a string constant.
+
+![HTTP Request parameter settings](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/http_request_parameter_settings.jpg)
 
 #### Configuration Example
 

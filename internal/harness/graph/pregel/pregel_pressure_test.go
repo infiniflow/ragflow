@@ -27,10 +27,6 @@ func safeMap(state any) map[string]any {
 	return m
 }
 
-// ============================================================
-// P1: 多步循环图 — 条件路由循环 10 轮
-// ============================================================
-
 func newLoopGraph(t *testing.T, maxIter int) types.StateGraph {
 	t.Helper()
 	sg := graph.NewStateGraph(map[string]any{
@@ -112,10 +108,6 @@ func TestEngine_Loop100Iterations(t *testing.T) {
 	}
 }
 
-// ============================================================
-// P2: 50 节点顺序链 — 线性图可靠性
-// ============================================================
-
 func newChainGraph(t *testing.T, n int) types.StateGraph {
 	t.Helper()
 	sg := graph.NewStateGraph(map[string]any{"idx": 0})
@@ -154,10 +146,6 @@ func TestEngine_Chain50Nodes(t *testing.T) {
 		t.Errorf("expected idx=50, got %d", idx)
 	}
 }
-
-// ============================================================
-// P3: 10 路扇出 + DAG 汇聚 — AllPredecessor 模式
-// ============================================================
 
 func TestEngine_FanOut10_FanInDAG(t *testing.T) {
 	sg := graph.NewStateGraph(map[string]any{"count": 0, "value": ""})
@@ -213,10 +201,6 @@ func TestEngine_FanOut10_FanInDAG(t *testing.T) {
 	}
 }
 
-// ============================================================
-// P4: 并发安全 — 50 个 goroutine 同时 Invoke 同一个 Engine
-// ============================================================
-
 func TestEngine_Concurrent50SameGraph(t *testing.T) {
 	// Create the graph once, then a new Engine per goroutine (Engine is not designed for concurrent RunSync).
 	sg := graph.NewStateGraph(map[string]any{"val": ""})
@@ -249,10 +233,6 @@ func TestEngine_Concurrent50SameGraph(t *testing.T) {
 	}
 }
 
-// ============================================================
-// P5: 50 个独立 Engine 同时运行 — 多租户模拟
-// ============================================================
-
 func TestEngine_MultiTenant50Engines(t *testing.T) {
 	var wg sync.WaitGroup
 	errs := make(chan error, 50)
@@ -282,10 +262,6 @@ func TestEngine_MultiTenant50Engines(t *testing.T) {
 		t.Error(err)
 	}
 }
-
-// ============================================================
-// P6: BinaryOperatorAggregate channel 类型
-// ============================================================
 
 func TestEngine_BinaryOperatorAggregate(t *testing.T) {
 	sg := graph.NewStateGraph(map[string]any{"total": 0})
@@ -327,10 +303,6 @@ func TestEngine_BinaryOperatorAggregate(t *testing.T) {
 	}
 }
 
-// ============================================================
-// P7: 超时取消 — 超长节点被上下文取消
-// ============================================================
-
 func TestEngine_TimeoutCancel(t *testing.T) {
 	sg := graph.NewStateGraph(map[string]any{"val": ""})
 	sg.AddChannel("val", channels.NewLastValue(""))
@@ -352,10 +324,6 @@ func TestEngine_TimeoutCancel(t *testing.T) {
 	t.Logf("got expected error: %v", err)
 }
 
-// ============================================================
-// P8: 递归限制 — 超过 recursionLimit 报错
-// ============================================================
-
 func TestEngine_RecursionLimitExceeded(t *testing.T) {
 	sg := newLoopGraph(t, 50)
 	engine := NewEngine(sg, WithRecursionLimit(10))
@@ -365,14 +333,6 @@ func TestEngine_RecursionLimitExceeded(t *testing.T) {
 	}
 	t.Logf("got expected error: %v", err)
 }
-
-// ============================================================
-// P0 — 核心稳定性缺口
-// ============================================================
-
-// ============================================================
-// P0-1: 节点 panic 恢复
-// ============================================================
 
 func TestEngine_NodePanicRecovery(t *testing.T) {
 	t.Parallel()
@@ -396,10 +356,6 @@ func TestEngine_NodePanicRecovery(t *testing.T) {
 	}
 	t.Logf("engine correctly recovered panic: %v", err)
 }
-
-// ============================================================
-// P0-2: 错误传播 — 单节点失败
-// ============================================================
 
 func TestEngine_NodeErrorPropagation(t *testing.T) {
 	t.Parallel()
@@ -427,10 +383,6 @@ func TestEngine_NodeErrorPropagation(t *testing.T) {
 	}
 	t.Logf("error correctly propagated: %v", err)
 }
-
-// ============================================================
-// P0-3: 多节点并发执行时部分节点失败
-// ============================================================
 
 func TestEngine_PartialNodeFailureInFanOut(t *testing.T) {
 	t.Parallel()
@@ -487,10 +439,6 @@ func TestEngine_PartialNodeFailureInFanOut(t *testing.T) {
 	}
 }
 
-// ============================================================
-// P0-4: 节点执行过程中 context 取消 — 资源清理
-// ============================================================
-
 func TestEngine_ContextCancellationMidExecution(t *testing.T) {
 	t.Parallel()
 	sg := graph.NewStateGraph(map[string]any{"val": ""})
@@ -523,14 +471,6 @@ func TestEngine_ContextCancellationMidExecution(t *testing.T) {
 		t.Logf("engine correctly cancelled: %v", err)
 	}
 }
-
-// ============================================================
-// P1 — 重要场景
-// ============================================================
-
-// ============================================================
-// P1-1: 混合模式 — 同一个 Graph 同时包含 BSP 和 DAG 边
-// ============================================================
 
 func TestEngine_MixedBSPAndDAG(t *testing.T) {
 	t.Parallel()
@@ -609,10 +549,6 @@ func TestEngine_MixedBSPAndDAG(t *testing.T) {
 	t.Logf("mixed BSP/DAG complete: counter=%d, merged=%s", c, v)
 }
 
-// ============================================================
-// P1-2: 条件边 + DAG 组合
-// ============================================================
-
 func TestEngine_ConditionalEdgesWithDAG(t *testing.T) {
 	t.Parallel()
 	sg := graph.NewStateGraph(map[string]any{"route": "", "result": ""})
@@ -666,10 +602,6 @@ func TestEngine_ConditionalEdgesWithDAG(t *testing.T) {
 	t.Logf("conditional+DAG complete: result=%s", r)
 }
 
-// ============================================================
-// P1-3: Large fan-in — 100+ 入边汇聚到单一节点
-// ============================================================
-
 func TestEngine_LargeFanIn100(t *testing.T) {
 	t.Parallel()
 	const n = 100
@@ -722,10 +654,6 @@ func TestEngine_LargeFanIn100(t *testing.T) {
 	}
 }
 
-// ============================================================
-// P1-4: Large fan-out — 100+ 出边
-// ============================================================
-
 func TestEngine_LargeFanOut100(t *testing.T) {
 	t.Parallel()
 	const n = 100
@@ -774,10 +702,6 @@ func TestEngine_LargeFanOut100(t *testing.T) {
 	}
 	t.Logf("large fan-out complete: aggregated=%d", c)
 }
-
-// ============================================================
-// P1-5: 中断 + 恢复 + 循环边组合
-// ============================================================
 
 func TestEngine_InterruptAndLoop(t *testing.T) {
 	t.Parallel()
@@ -843,10 +767,6 @@ func TestEngine_InterruptAndLoop(t *testing.T) {
 	}
 }
 
-// ============================================================
-// P1-6: 空节点执行 — 节点返回 nil/空结果
-// ============================================================
-
 func TestEngine_EmptyNodeExecution(t *testing.T) {
 	t.Parallel()
 	sg := graph.NewStateGraph(map[string]any{"val": ""})
@@ -883,10 +803,6 @@ func TestEngine_EmptyNodeExecution(t *testing.T) {
 		t.Errorf("expected final, got %v", m)
 	}
 }
-
-// ============================================================
-// P1-7: 同一个 Node 对象被多个 Engine 并发 Run — Node 复用安全
-// ============================================================
 
 func TestEngine_NodeReuseConcurrentRun(t *testing.T) {
 	t.Parallel()
@@ -931,14 +847,6 @@ func TestEngine_NodeReuseConcurrentRun(t *testing.T) {
 	}
 }
 
-// ============================================================
-// P2 — 边缘情况
-// ============================================================
-
-// ============================================================
-// P2-1: Durability 模式组合
-// ============================================================
-
 func TestEngine_DurabilityModes(t *testing.T) {
 	t.Parallel()
 
@@ -975,10 +883,6 @@ func TestEngine_DurabilityModes(t *testing.T) {
 		})
 	}
 }
-
-// ============================================================
-// P2-12: Channel 写入冲突 — LastValue 多写入报错 vs BinaryOperator 合并
-// ============================================================
 
 func TestEngine_ChannelWriteConflict(t *testing.T) {
 	t.Parallel()
@@ -1058,10 +962,6 @@ func TestEngine_ChannelWriteConflict(t *testing.T) {
 	})
 }
 
-// ============================================================
-// P2-13: State 数据竞争 — 高压并发 state 读写
-// ============================================================
-
 func TestEngine_StateConcurrentHighPressure(t *testing.T) {
 	t.Parallel()
 	const concurrency = 30
@@ -1120,10 +1020,6 @@ func TestEngine_StateConcurrentHighPressure(t *testing.T) {
 		t.Errorf("expected 0 failures, got %d", failures)
 	}
 }
-
-// ============================================================
-// P2-14: MaxIterations 耗尽 vs 条件边自然终止
-// ============================================================
 
 func TestEngine_MaxIterationsVsConditionStable(t *testing.T) {
 	t.Parallel()
@@ -1208,10 +1104,6 @@ func TestEngine_MaxIterationsVsConditionStable(t *testing.T) {
 	})
 }
 
-// ============================================================
-// P2-15: Channel 类型组合 — SendUnique + BinaryOperator + Ephemeral
-// ============================================================
-
 func TestEngine_ChannelTypeCombinations(t *testing.T) {
 	t.Parallel()
 	sg := graph.NewStateGraph(map[string]any{"val": "", "total": 0})
@@ -1266,10 +1158,6 @@ func TestEngine_ChannelTypeCombinations(t *testing.T) {
 	}
 	t.Logf("channel combination: val=%s, total=%d", val, total)
 }
-
-// ============================================================
-// P2-16: 动态边 — 条件边根据运行时 state 动态路由
-// ============================================================
 
 func TestEngine_DynamicConditionalRouting(t *testing.T) {
 	t.Parallel()
@@ -1345,10 +1233,6 @@ func TestEngine_DynamicConditionalRouting(t *testing.T) {
 	t.Logf("dynamic routing: counter=%d, history=%s", c, hist)
 }
 
-// ============================================================
-// P2-17: Checkpoint + BSP Pregel 混合 — 每步 checkpoint 验证
-// ============================================================
-
 func TestEngine_CheckpointWithBSPLoop(t *testing.T) {
 	t.Parallel()
 	cp := checkpoint.NewMemorySaver()
@@ -1384,10 +1268,6 @@ func TestEngine_CheckpointWithBSPLoop(t *testing.T) {
 	}
 }
 
-// ============================================================
-// P2-18: 重复节点 ID — AddNode 同名覆盖
-// ============================================================
-
 func TestEngine_DuplicateNodeID(t *testing.T) {
 	t.Parallel()
 	sg := graph.NewStateGraph(map[string]any{"val": ""})
@@ -1421,10 +1301,6 @@ func TestEngine_DuplicateNodeID(t *testing.T) {
 	}
 	t.Logf("duplicate node: second AddNode correctly overwrote first")
 }
-
-// ============================================================
-// P2-2: 极端配置值
-// ============================================================
 
 func TestEngine_ExtremeConfigValues(t *testing.T) {
 	t.Parallel()
@@ -1473,10 +1349,6 @@ func TestEngine_ExtremeConfigValues(t *testing.T) {
 	})
 }
 
-// ============================================================
-// P2-3: 多 Entry Point — 多个 Start 节点
-// ============================================================
-
 func TestEngine_MultipleEntryPoints(t *testing.T) {
 	t.Parallel()
 	sg := graph.NewStateGraph(map[string]any{"val_a": "", "val_b": ""})
@@ -1512,10 +1384,6 @@ func TestEngine_MultipleEntryPoints(t *testing.T) {
 	// Both entry nodes should have executed
 	t.Logf("multi-entry result: %v", m)
 }
-
-// ============================================================
-// P2-4: 节点同时有 BSP 边和条件边
-// ============================================================
 
 func TestEngine_NodeWithBothEdgeAndConditionalEdge(t *testing.T) {
 	t.Parallel()
@@ -1570,10 +1438,6 @@ func TestEngine_NodeWithBothEdgeAndConditionalEdge(t *testing.T) {
 	t.Logf("node with both edges: %v", m)
 }
 
-// ============================================================
-// P2-5: 长时间运行节点超时
-// ============================================================
-
 func TestEngine_NodeTimeout(t *testing.T) {
 	t.Parallel()
 	sg := graph.NewStateGraph(map[string]any{"val": ""})
@@ -1602,10 +1466,6 @@ func TestEngine_NodeTimeout(t *testing.T) {
 		t.Log("engine completed before timeout (timing-dependent)")
 	}
 }
-
-// ============================================================
-// P2-6: 多个 fan-in 在同一 DAG 中
-// ============================================================
 
 func TestEngine_MultipleFanInNodes(t *testing.T) {
 	t.Parallel()
@@ -1691,10 +1551,6 @@ func TestEngine_MultipleFanInNodes(t *testing.T) {
 	t.Logf("multiple fan-in: a=%d, b=%d, result=%s", a, b, r)
 }
 
-// ============================================================
-// P2-7: 节点返回 Overwrite 包装值
-// ============================================================
-
 func TestEngine_OverwriteValue(t *testing.T) {
 	t.Parallel()
 	sg := graph.NewStateGraph(map[string]any{"value": ""})
@@ -1723,10 +1579,6 @@ func TestEngine_OverwriteValue(t *testing.T) {
 	t.Logf("overwrite value: %s", v)
 }
 
-// ============================================================
-// P2-8: 空图（仅 Start → End）
-// ============================================================
-
 func TestEngine_TrivialEmptyGraph(t *testing.T) {
 	t.Parallel()
 	sg := graph.NewStateGraph(map[string]any{"x": ""})
@@ -1741,10 +1593,6 @@ func TestEngine_TrivialEmptyGraph(t *testing.T) {
 	}
 	t.Logf("trivial graph result: %v", result)
 }
-
-// ============================================================
-// P2-9: 节点 Pregel 模式 + 自定义 channel 读写
-// ============================================================
 
 func TestEngine_PregelWithCustomChannels(t *testing.T) {
 	t.Parallel()
@@ -1782,10 +1630,6 @@ func TestEngine_PregelWithCustomChannels(t *testing.T) {
 	t.Logf("custom channel state: total=%d", total)
 }
 
-// ============================================================
-// P2-10: 大迭代数循环 — 在 BSP 模式下验证状态累积正确
-// ============================================================
-
 func TestEngine_LargeLoopBSP(t *testing.T) {
 	t.Parallel()
 	const iterations = 50
@@ -1810,10 +1654,6 @@ func TestEngine_LargeLoopBSP(t *testing.T) {
 	}
 	t.Logf("large BSP loop complete: counter=%d, value=%s", c, v)
 }
-
-// ============================================================
-// P2-11: 单节点图 — 直线执行
-// ============================================================
 
 func TestEngine_SingleNodeGraph(t *testing.T) {
 	t.Parallel()
@@ -1850,9 +1690,3 @@ func TestEngine_SingleNodeGraph(t *testing.T) {
 		})
 	}
 }
-
-// ============================================================
-
-// ============================================================
-// #2: Channel 写入冲突 — LastValue 多写入报错 vs BinaryOperator 合并
-// ============================================================

@@ -26,6 +26,7 @@ import (
 )
 
 type XLSXParser struct {
+	textOnly                       bool
 	ParseMethod                    string
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
@@ -51,7 +52,6 @@ func (p *XLSXParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["parse_method"].(string); ok && v != "" {
 		p.ParseMethod = v
 	}
-	deprecatedHTML4Excel(setup, p.String())
 	deprecatedChunkRows(setup, p.String())
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
@@ -69,7 +69,7 @@ func (p *XLSXParser) ConfigureFromSetup(setup map[string]any) {
 
 func normalizeXLSXParseMethod(raw string) string {
 	method := strings.ToLower(strings.TrimSpace(raw))
-	if method == "tcadp parser" {
+	if method == "tcadp parser" || method == "tcadp" {
 		return "tcadp"
 	}
 	// "deepdoc" / "deepdoc parser" is the default spreadsheet parse_method
@@ -102,13 +102,19 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 		// for spreadsheet processing.
 	}
 
-	mediaBudget := newEmbeddedMediaBudget()
-	items, warnings, sheets, err := parseXLSXBytes(data, mediaBudget)
+	var sink *officeMediaSink
+	if !p.textOnly {
+		sink = newOfficeMediaSink(ctx, officeMediaFormatXLSX)
+	}
+	items, warnings, sheets, err := parseXLSXBytes(data, sink)
 	if err == nil {
+		if sink != nil && sink.err != nil {
+			return ParseResult{Err: sink.err}
+		}
 		if ctx.Err() != nil {
 			return ParseResult{Err: ctx.Err()}
 		}
-		warnings = append(warnings, mediaBudget.warnings()...)
+		warnings = append(warnings, sink.warnings()...)
 		return xlsxParseResult(filename, items, warnings, sheets)
 	}
 	if ctx.Err() != nil {
@@ -122,22 +128,24 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 	if !changed {
 		return ParseResult{Err: fmt.Errorf("xlsx parse: %w", err)}
 	}
-	// The first parse attempt is discarded, so its media reservations must not
-	// affect the normalized retry's output.
-	mediaBudget = newEmbeddedMediaBudget()
-	items, warnings, sheets, retryErr := parseXLSXBytes(normalized, mediaBudget)
+	// Normalization changes only workbook sheet names. Reuse source memo and
+	// admissions: already cached image bytes are identical on the second pass.
+	items, warnings, sheets, retryErr := parseXLSXBytes(normalized, sink)
 	if retryErr != nil {
 		return ParseResult{Err: fmt.Errorf("xlsx parse: %w; retry after normalization: %v", err, retryErr)}
+	}
+	if sink != nil && sink.err != nil {
+		return ParseResult{Err: sink.err}
 	}
 	if ctx.Err() != nil {
 		return ParseResult{Err: ctx.Err()}
 	}
 	warnings = append(normalizeWarnings, warnings...)
-	warnings = append(warnings, mediaBudget.warnings()...)
+	warnings = append(warnings, sink.warnings()...)
 	return xlsxParseResult(filename, items, warnings, sheets)
 }
 
-func parseXLSXBytes(data []byte, mediaBudget *embeddedMediaBudget) ([]map[string]any, []string, int, error) {
+func parseXLSXBytes(data []byte, sink *officeMediaSink) ([]map[string]any, []string, int, error) {
 	f, err := excelize.OpenReader(bytes.NewReader(data))
 	if err != nil {
 		return nil, nil, 0, fmt.Errorf("open XLSX: %w", err)
@@ -153,7 +161,7 @@ func parseXLSXBytes(data []byte, mediaBudget *embeddedMediaBudget) ([]map[string
 			return nil, warnings, len(sheets), err
 		}
 		warnings = append(warnings, sheetWarnings...)
-		images, imageWarnings := extractXLSXImages(f, sheet, mediaBudget)
+		images, imageWarnings := extractXLSXImages(f, sheet, sink)
 		for _, image := range images {
 			row, _ := numericItemInt(image["row_start"])
 			col, _ := numericItemInt(image["col_start"])

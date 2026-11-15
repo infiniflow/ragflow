@@ -249,14 +249,19 @@ func (o *SplitOperator) splitByLength(text string) []ChunkData {
 func (o *SplitOperator) splitByParagraph(text string) []ChunkData {
 	paragraphs := strings.Split(text, "\n")
 	chunks := make([]ChunkData, 0, len(paragraphs))
-	for i, p := range paragraphs {
+	for _, p := range paragraphs {
 		trimmed := strings.TrimSpace(p)
 		if trimmed == "" {
 			continue
 		}
 		chunks = append(chunks, ChunkData{
-			Content:  trimmed,
-			Index:    i,
+			Content: trimmed,
+			// Index is the chunk's position in the output, the same as for
+			// the other strategies. Using the paragraph's position in the
+			// split left gaps wherever a blank line was skipped (a two-chunk
+			// document came back as 0 and 3), and those gaps only disappeared
+			// when a postprocess stage happened to re-index the result.
+			Index:    len(chunks),
 			Metadata: map[string]interface{}{"language": DetectLanguage(trimmed)},
 		})
 	}

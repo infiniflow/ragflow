@@ -21,12 +21,10 @@ import (
 )
 
 const (
-	// RunErrorKindInternal marks an error whose cause is safe for server logs
-	// but must not be exposed through Agent event streams.
+	// RunErrorKindInternal marks an internal Agent execution failure.
 	RunErrorKindInternal = "internal"
 
-	// InternalRunErrorMessage is the public message used for internal Agent
-	// execution failures.
+	// InternalRunErrorMessage is the public message for internal Agent failures.
 	InternalRunErrorMessage = "Internal storage error while accessing the agent."
 )
 
@@ -34,8 +32,7 @@ type internalRunError struct {
 	cause error
 }
 
-// NewInternalRunError preserves cause for server-side logging and errors.Is
-// while exposing only InternalRunErrorMessage in the terminal RunEvent.
+// NewInternalRunError preserves cause and classifies the terminal RunEvent.
 func NewInternalRunError(cause error) error {
 	if cause == nil {
 		cause = errors.New("internal agent run error")

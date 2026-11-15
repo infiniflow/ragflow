@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+import { useEnterpriseAuthRedirect } from '@/ee/hooks/auth-hooks-private';
 import authorizationUtil, {
   type CredentialStorage,
 } from '@/utils/authorization-util';
@@ -22,11 +23,13 @@ import { useEffect, useState } from 'react';
 export const useAuth = (
   credentialStorage: CredentialStorage = authorizationUtil,
 ) => {
+  const redirectUrl = useEnterpriseAuthRedirect();
+
   const [isLogin, setIsLogin] = useState<Nullable<boolean>>(null);
 
   useEffect(() => {
     setIsLogin(!!credentialStorage.getAuthorization());
   }, [credentialStorage]);
 
-  return { isLogin };
+  return { isLogin, redirectUrl };
 };

@@ -79,7 +79,7 @@ func TestSearchServiceGetSearchShareDetail(t *testing.T) {
 	}
 
 	ctx := serviceTestContext(t, "tenant-1", "tenant-1")
-	detail, err := NewSearchService().GetSearchShareDetail(ctx, "tenant-1", "search-1")
+	detail, err := NewSearchService().GetSearchShareDetail(ctx, "search-1")
 	if err != nil {
 		t.Fatalf("GetSearchShareDetail failed: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestSearchServiceGetSearchShareDetailRejectsUnauthorizedUser(t *testing.T) 
 	}
 
 	ctx := serviceTestContext(t, "user-2", "tenant-1", "tenant-1")
-	_, err := NewSearchService().GetSearchShareDetail(ctx, "user-2", "search-1")
+	_, err := NewSearchService().GetSearchShareDetail(ctx, "search-1")
 	if err == nil {
 		t.Fatal("expected permission error")
 	}

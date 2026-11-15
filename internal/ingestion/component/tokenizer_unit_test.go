@@ -383,6 +383,39 @@ func TestTokenizerComponent_NewTokenizerComponent_Defaults(t *testing.T) {
 	}
 }
 
+// TestTokenizerComponent_NewTokenizerComponent_FieldsReplaceDefault
+// verifies that a caller-supplied fields value is the full set, not an
+// addition to the ["text"] default, and that an empty value keeps it.
+func TestTokenizerComponent_NewTokenizerComponent_FieldsReplaceDefault(t *testing.T) {
+	cases := []struct {
+		name   string
+		fields any
+		want   []string
+	}{
+		{name: "string", fields: "summary", want: []string{"summary"}},
+		{name: "string slice", fields: []string{"text"}, want: []string{"text"}},
+		{name: "any slice", fields: []any{"keywords", "summary"}, want: []string{"keywords", "summary"}},
+		{name: "empty string slice", fields: []string{}, want: []string{"text"}},
+		{name: "empty any slice", fields: []any{}, want: []string{"text"}},
+		{name: "blank string", fields: "", want: []string{"text"}},
+		{name: "blank entries dropped", fields: []any{"keywords", ""}, want: []string{"keywords"}},
+		{name: "whitespace string", fields: "   ", want: []string{"text"}},
+		{name: "whitespace trimmed", fields: []string{" summary ", "  "}, want: []string{"summary"}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := NewTokenizerComponent(map[string]any{"fields": tc.fields})
+			if err != nil {
+				t.Fatalf("NewTokenizerComponent: %v", err)
+			}
+			got := c.(*TokenizerComponent).param.Fields
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("fields = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestTokenizerComponent_NewTokenizerComponent_BadParam covers
 // the param-validation branch (invalid search_method value).
 func TestTokenizerComponent_NewTokenizerComponent_BadParam(t *testing.T) {

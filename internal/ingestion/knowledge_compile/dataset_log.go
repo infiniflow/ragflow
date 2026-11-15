@@ -47,7 +47,7 @@ var structureTaskTypes = []string{
 	kccommon.TaskTypePageIndex,
 }
 
-// Dataset ingestion logs use the status values exposed by the Python API and
+// Dataset ingestion logs use the status values exposed by the API and
 // consumed by the shared frontend. The Go scheduler uses a different set of
 // internal terminal names, so translate them at the persistence boundary.
 func datasetLogOperationStatus(status string) string {

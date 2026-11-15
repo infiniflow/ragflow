@@ -59,6 +59,12 @@ export const LocalLlmFactories = [
   LLMFactory.FunASR,
 ];
 
+export enum TenantMembershipStatus {
+  Joined = '1',
+  Invited = '2',
+  Left = '0',
+}
+
 export enum TenantRole {
   Owner = 'owner',
   Invite = 'invite',

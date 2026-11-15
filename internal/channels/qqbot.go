@@ -497,12 +497,12 @@ func (c *qqBotChannel) requestJSON(
 		return err
 	}
 	defer resp.Body.Close()
-	payload, err := io.ReadAll(resp.Body)
+	payload, err := io.ReadAll(io.LimitReader(resp.Body, 1024*1024))
 	if err != nil {
 		return err
 	}
 	if resp.StatusCode >= http.StatusBadRequest {
-		return fmt.Errorf("status: %d, response: %s", resp.StatusCode, payload)
+		return fmt.Errorf("status: %d, response: %.200s", resp.StatusCode, payload)
 	}
 	if len(bytes.TrimSpace(payload)) == 0 {
 		return nil

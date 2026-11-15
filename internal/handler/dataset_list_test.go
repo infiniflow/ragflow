@@ -85,7 +85,7 @@ func newListDatasetsTestRouter() *gin.Engine {
 	r := gin.New()
 	r.GET("/api/v1/datasets", func(c *gin.Context) {
 		c.Set("user", &entity.User{ID: "user-1"})
-		c.Request = c.Request.WithContext(permission.WithSubject(c.Request.Context(), permission.Subject{UserID: "user-1", TenantID: "user-1"}))
+		c.Request = c.Request.WithContext(permission.WithIdentity(c.Request.Context(), "user-1", "user-1"))
 		h.ListDatasets(c)
 	})
 	return r
@@ -174,7 +174,7 @@ func TestDatasetsHandlerListDatasetsRejectsDuplicateIDs(t *testing.T) {
 	if body.Code != int(common.CodeArgumentError) {
 		t.Fatalf("code=%d want=%d", body.Code, common.CodeArgumentError)
 	}
-	expected := fmt.Sprintf("Duplicate ids: '%s'", listDatasetsTestKBID)
+	expected := fmt.Sprintf("duplicate ids: '%s'", listDatasetsTestKBID)
 	if body.Message != expected {
 		t.Fatalf("message=%q want=%q", body.Message, expected)
 	}

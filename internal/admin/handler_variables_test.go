@@ -62,7 +62,7 @@ func putVariable(t *testing.T, h *Handler, body string) setVariableResponse {
 }
 
 // TestSetVariableFlattensNativeJSONScalars covers the reported regression: the
-// admin console sends a JSON boolean for a toggle, and a string-typed request
+// admin console toggles SSO with a JSON boolean, and a string-typed request
 // field used to reject it as a missing var_name.
 func TestSetVariableFlattensNativeJSONScalars(t *testing.T) {
 	gin.SetMode(gin.TestMode)
@@ -74,15 +74,15 @@ func TestSetVariableFlattensNativeJSONScalars(t *testing.T) {
 		wantValue string
 	}{
 		{
-			name:      "bool true keeps its literal",
-			varName:   "mail.enabled",
-			body:      `{"var_name":"mail.enabled","var_value":true}`,
+			name:      "sso enable sends true",
+			varName:   "feishu|sso.enabled",
+			body:      `{"var_name":"feishu|sso.enabled","var_value":true}`,
 			wantValue: "true",
 		},
 		{
-			name:      "bool false keeps its literal",
-			varName:   "mail.enabled",
-			body:      `{"var_name":"mail.enabled","var_value":false}`,
+			name:      "sso disable sends false",
+			varName:   "feishu|sso.enabled",
+			body:      `{"var_name":"feishu|sso.enabled","var_value":false}`,
 			wantValue: "false",
 		},
 		{
@@ -137,15 +137,15 @@ func TestSetVariableUpdatesExistingSetting(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	handler, db := setupSetVariableHandler(t)
 
-	if response := putVariable(t, handler, `{"var_name":"mail.enabled","var_value":true}`); response.Code != int(common.CodeSuccess) {
+	if response := putVariable(t, handler, `{"var_name":"feishu|sso.enabled","var_value":true}`); response.Code != int(common.CodeSuccess) {
 		t.Fatalf("enable: code = %d, message = %s", response.Code, response.Message)
 	}
-	if response := putVariable(t, handler, `{"var_name":"mail.enabled","var_value":false}`); response.Code != int(common.CodeSuccess) {
+	if response := putVariable(t, handler, `{"var_name":"feishu|sso.enabled","var_value":false}`); response.Code != int(common.CodeSuccess) {
 		t.Fatalf("disable: code = %d, message = %s", response.Code, response.Message)
 	}
 
 	var stored entity.SystemSettings
-	if err := db.Where("name = ?", "mail.enabled").First(&stored).Error; err != nil {
+	if err := db.Where("name = ?", "feishu|sso.enabled").First(&stored).Error; err != nil {
 		t.Fatalf("load stored setting: %v", err)
 	}
 	if stored.Value != "false" {
@@ -190,9 +190,9 @@ func TestSetVariableRejectsUnusableRequests(t *testing.T) {
 			// A value rejected by ValidateSystemSettingValue surfaces as a
 			// server error, which is the pre-existing contract of this endpoint.
 			name:        "bool-typed setting rejects non bool",
-			body:        `{"var_name":"mail.enabled","var_value":"yes"}`,
+			body:        `{"var_name":"feishu|sso.enabled","var_value":"yes"}`,
 			wantCode:    common.CodeServerError,
-			wantMessage: "invalid bool value for mail.enabled: expected true or false",
+			wantMessage: "invalid bool value for feishu|sso.enabled: expected true or false",
 		},
 		{
 			// Falsy scalars are legitimate values, not missing fields.

@@ -98,10 +98,10 @@ func tenantPDFParserFixture(t *testing.T, provider string) (*gorm.DB, string, ch
 	}
 	sqlDB.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err := db.AutoMigrate(&entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
+	if err := db.AutoMigrate(&entity.UserTenant{}, &entity.TenantModelProvider{}, &entity.TenantModelInstance{}, &entity.TenantModel{}); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.Create(&entity.TenantModelProvider{ID: "provider", ProviderName: provider, TenantID: "tenant-1"}).Error; err != nil {
+	if err := db.Create(&entity.TenantModelProvider{ID: "provider", ProviderName: provider, UserID: "tenant-1", TenantID: "tenant-1"}).Error; err != nil {
 		t.Fatal(err)
 	}
 	for _, inst := range []struct{ id, url string }{{"a", decoy.URL}, {"b", server.URL}} {
@@ -483,7 +483,7 @@ func TestTenantPDFParserEnvironmentIsolation(t *testing.T) {
 // bypass the repository's production transport policy.
 func TestTenantPDFParserKeepsSSRFGuard(t *testing.T) {
 	db, ref, requests := tenantPDFParserFixture(t, "SoMark")
-	common.AllowAnyHostForTest = false
+	t.Setenv(common.EnvAllowAnyHost, "")
 	_, handled, err := maybeDispatchTenantPDFParser(t.Context(), db, "sample.pdf", []byte("pdf"),
 		"tenant-1", schema.ParserSetup{"parse_method": ref})
 	if !handled || err == nil || !strings.Contains(err.Error(), "non-public address") || len(requests) != 0 {
