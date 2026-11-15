@@ -28,10 +28,9 @@ import (
 // Message fitting (Python message_fit_in).
 //
 // This lives in the chat package rather than internal/agent/component so that
-// both component (which owns the production eino invoker) and
-// internal/rag/agentic-rag/harness (which composes answers) can fit prompts
-// without forming an import cycle — component cannot import harness, because
-// harness's own tests import component.
+// both component (which owns the production eino invoker) and its callers can
+// fit prompts without forming an import cycle — component cannot be imported
+// by the packages that also need component's own test doubles.
 
 // EffectiveContextLength returns maxLength if positive, otherwise 8192.
 // Mirrors Python's LLM.effective_context_length in PR #16413 — prevents

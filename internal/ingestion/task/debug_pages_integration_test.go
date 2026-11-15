@@ -191,7 +191,7 @@ func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 	defer func() { common.Logger = oldLogger }()
 
 	// Uncapped baseline: explicit pages=all → executor respects override.
-	uncappedExec, err := NewPipelineExecutor(newDebugCtx(allPages), canvasID, 0)
+	uncappedExec, err := NewPipelineExecutor(newDebugCtx(allPages), canvasID, 0, testPipelineDeps())
 	if err != nil {
 		t.Fatalf("NewPipelineExecutor (uncapped): %v", err)
 	}
@@ -201,7 +201,7 @@ func TestExecute_DebugViaEntry_HonorsPagesCap_Integration(t *testing.T) {
 	}
 
 	// Capped: no pages override → executor injects [[1, debugPageCapPages]].
-	cappedExec, err := NewPipelineExecutor(newDebugCtx(nil), canvasID, 0)
+	cappedExec, err := NewPipelineExecutor(newDebugCtx(nil), canvasID, 0, testPipelineDeps())
 	if err != nil {
 		t.Fatalf("NewPipelineExecutor (capped): %v", err)
 	}

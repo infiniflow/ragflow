@@ -627,6 +627,7 @@ func (p *Parser) buildLayout(ctx context.Context,
 	result.Sections = lyt.BoxesToSections(boxes, result.PageHeight)
 	result.Metrics.BoxesFinal = len(result.Sections)
 	result.Sections = tbl.MergeCaptions(result.Sections)
+	result.Sections = lyt.JoinPageContinuations(result.Sections)
 	return nil
 }
 

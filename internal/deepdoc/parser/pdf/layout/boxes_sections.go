@@ -55,14 +55,30 @@ func BoxesToSections(boxes []pdf.TextBox, pageHeights map[int]float64) []pdf.Sec
 	sections := make([]pdf.Section, 0, len(boxes))
 	for _, b := range boxes {
 		t := strings.TrimSpace(b.Text)
-		if t == "" {
+		if t == "" && b.LayoutType != pdf.LayoutTypeFigure {
 			continue
 		}
 
 		var posTag string
 		var pageNums []int
 		var bottom float64
-		if len(b.Pages) > 0 {
+		positions := b.Positions
+		if len(positions) > 0 {
+			// Per-page positions carry the full geometry; the tag is only the
+			// legacy single-box summary of it. A one-page section must keep the
+			// @@N form: @@N-N round-trips through ExtractPositions as two
+			// identical page numbers.
+			first, last := positions[0], positions[len(positions)-1]
+			if len(first.PageNumbers) > 0 && len(last.PageNumbers) > 0 {
+				fromPage := first.PageNumbers[0]
+				toPage := last.PageNumbers[len(last.PageNumbers)-1]
+				if fromPage == toPage {
+					posTag = util.FormatPositionTag(fromPage, first.Left, last.Right, first.Top, last.Bottom)
+				} else {
+					posTag = util.FormatPositionTagRange(fromPage, toPage, first.Left, last.Right, first.Top, last.Bottom)
+				}
+			}
+		} else if len(b.Pages) > 0 {
 			// Box carries an explicit page span (e.g. a cross-page merged
 			// table). Use it directly instead of inferring from geometry, so
 			// the section records every page the box occupies.
@@ -87,11 +103,14 @@ func BoxesToSections(boxes []pdf.TextBox, pageHeights map[int]float64) []pdf.Sec
 				}
 			}
 		}
+		if len(positions) == 0 {
+			positions = []pdf.Position{{PageNumbers: pageNums, Left: b.X0, Right: b.X1, Top: b.Top, Bottom: bottom}}
+		}
 		sections = append(sections, pdf.Section{
 			Text:        t,
 			PositionTag: posTag,
 			LayoutType:  b.LayoutType,
-			Positions:   []pdf.Position{{PageNumbers: pageNums, Left: b.X0, Right: b.X1, Top: b.Top, Bottom: bottom}},
+			Positions:   positions,
 		})
 	}
 	return sections
@@ -144,25 +163,6 @@ func InlinePNGDataURL(raw string) string {
 		}
 	}
 	return "data:image/png;base64," + cleaned
-}
-
-func SectionsToMarkdown(sections []pdf.Section) string {
-	var b strings.Builder
-	for _, s := range sections {
-		if s.LayoutType == pdf.LayoutTypeTitle {
-			b.WriteString("\n## ")
-		}
-		imgURL := InlinePNGDataURL(s.Image)
-		if (s.LayoutType == pdf.LayoutTypeFigure || s.LayoutType == "image" || s.DocTypeKwd == "image" || (s.LayoutType == pdf.LayoutTypeTable && strings.TrimSpace(s.Text) == "")) && imgURL != "" {
-			b.WriteString("\n![Image](")
-			b.WriteString(imgURL)
-			b.WriteString(")")
-			continue
-		}
-		b.WriteString(s.Text)
-		b.WriteString("\n")
-	}
-	return b.String()
 }
 
 // SectionsToJSON converts Sections to a Python-compatible JSON dict format.

@@ -75,7 +75,7 @@
 
 当社のクラウドサービスをぜひお試しください：[https://cloud.ragflow.io](https://cloud.ragflow.io)。
 
-ローカルにデプロイする場合は、[セルフホスティング](#-セルフホスティング)を参照してください。
+ローカルにデプロイする場合は、[セルフホスティング](#-ローカルデプロイ)を参照してください。
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -84,6 +84,7 @@
 
 ## 🔥 最新情報
 
+- 2026-11-06 RAGFlow 1.0.0 をリリース。
 - 2026-09-29 RAGFlow 1.0.0-rc1 をリリース。
 
 - 2026-09-10 SitemapによるWebコンテンツの取り込みに対応。
@@ -92,15 +93,6 @@
 - 2026-07-02 Google BigQueryデータソースの取り込みと増分同期に対応。
 
 その他の更新については[リリースノート全文](https://ragflow.io/docs/dev/release_notes)を参照してください。
-
-
-## 🎉 続きを楽しみに
-
-⭐️ リポジトリをスター登録して、エキサイティングな新機能やアップデートを最新の状態に保ちましょう！すべての新しいリリースに関する即時通知を受け取れます！ 🌟
-
-<div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
-</div>
 
 ## 🌟 主な特徴
 
@@ -187,7 +179,7 @@ Docker は迅速な評価、統合テスト、本番環境に、ソース起動�
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc1
+   git checkout v1.0.0
    docker compose -f docker-compose.yml up -d
    ```
 
@@ -219,13 +211,14 @@ Docker は迅速な評価、統合テスト、本番環境に、ソース起動�
    cd ragflow
    ```
 
-2. 依存関係を準備します:
+2. Go ビルドがリンクするネイティブ静的ライブラリ（`download_dev_deps.py`）と、バックエンドが実行時に読み込むモデル / トークナイザーリソース（`download_deps.py`）を、依存関係ダウンロードスクリプトで用意します:
 
    ```bash
-   python3 -m venv /tmp/ragflow-go-download-venv
-   /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
+   uv run tools/scripts/download_dev_deps.py
+   uv run deps/download_deps.py
    ```
+
+   `download_dev_deps.py` は pdfium、pdf_oxide、office_oxide、onnxruntime を `~/ragflow-native-libs` にダウンロードして展開します。`download_deps.py` は cl100k 語彙、DeepDoc モデル、embedding トークナイザーリソースを `deps/` にダウンロードします。どちらも Python スクリプトで、`uv run` が宣言された依存関係（`requests`、モデルとトークナイザーのダウンロードには `huggingface-hub`）を自動的にインストールします。同等のリソースを他の方法で用意済みの場合はこの手順をスキップしてください。リポジトリルートから起動する場合、Go サービスは `internal/rag/res/deepdoc` を自動的に見つけます。他のディレクトリから起動する場合は、`DEEPDOC_MODEL_DIR` にその絶対パスを設定してください。
 
 3. サービスをビルドします:
 
@@ -280,7 +273,7 @@ Docker は迅速な評価、統合テスト、本番環境に、ソース起動�
 
 詳細は[ソースコードからサービスを起動](./docs/develop/launch_ragflow_from_source.md)を参照してください。
 
-> **運用上の注意:** Elasticsearch の設定を永続化するには、`/etc/sysctl.conf` に `vm.max_map_count=262144` を追加します。既定の MySQL 構成では、Docker エントリポイントが移行後に Admin、Syncer、Ingestor、API を起動します。オープンソース 1.0 の DeepDoc はレイアウト解析、OCR、表認識に CPU 推論を使用します。Docker 設定変更後の再起動とデータ保持・削除は [Docker ガイド](./docker/README.md)に従ってください。`download_deps.py` はネイティブライブラリとモデルを準備し、`requests` と `huggingface-hub` を使用します。`--migrate` は移行後に終了し、`--admin` は管理サービス、`--ingestor` は取り込みサービス、`--syncer` は外部データソース同期サービス、`--api` は Web UI と SDK 向けの API サービスを起動します。HTTP 200 は API の準備完了を示します。
+> **運用上の注意:** Elasticsearch の設定を永続化するには、`/etc/sysctl.conf` に `vm.max_map_count=262144` を追加します。既定の MySQL 構成では、Docker エントリポイントが移行後に Admin、Syncer、Ingestor、API を起動します。オープンソース 1.0 の DeepDoc はレイアウト解析、OCR、表認識に CPU 推論を使用します。Docker 設定変更後の再起動とデータ保持・削除は [Docker ガイド](./docker/README.md)に従ってください。`download_dev_deps.py` はネイティブライブラリを、`download_deps.py` はモデルとトークナイザーリソースを準備します。どちらも `uv run` で実行します。`--migrate` は移行後に終了し、`--admin` は管理サービス、`--ingestor` は取り込みサービス、`--syncer` は外部データソース同期サービス、`--api` は Web UI と SDK 向けの API サービスを起動します。HTTP 200 は API の準備完了を示します。
 
 ## 📚 ドキュメンテーション
 

@@ -135,16 +135,20 @@ func (t *Timer) MarshalJSON() ([]byte, error) {
 	return json.Marshal(t.Report())
 }
 
-// Markdown renders the Timer as a "## Time elapsed:" block matching
+// Markdown renders the Timer as a "## Time elapsed:" block.
 func (t *Timer) Markdown() string {
 	r := t.Report()
 	var b strings.Builder
 	b.WriteString("\n## Time elapsed:\n")
 	b.WriteString(fmt.Sprintf("  - Total: %.1fms\n", r.TotalMs))
+	var measuredMs float64
 	for _, p := range allPhases {
 		ms := r.PhasesMs[string(p)]
+		measuredMs += ms
 		b.WriteString(fmt.Sprintf("  - %s: %.1fms\n", displayName(p), ms))
 	}
+	// Nested or concurrent spans can exceed wall-clock time.
+	b.WriteString(fmt.Sprintf("  - Other: %.1fms\n", max(0, r.TotalMs-measuredMs)))
 	b.WriteString("\n")
 	return b.String()
 }

@@ -215,11 +215,9 @@ async function sanitizeSheetNames(data: ArrayBuffer): Promise<ArrayBuffer> {
   });
 }
 
-type ExcelLocatePos = number[];
-
 /** x-spreadsheet Data instance used by @js-preview/excel (not a plain object). */
 type XsData = {
-  addStyle: (style: Record<string, unknown>) => number;
+  styles: Record<string, unknown>[];
   rows: {
     setCell: (
       ri: number,
@@ -235,6 +233,10 @@ type XsData = {
   scroll?: { x: number; y: number };
 };
 
+type XsScrollbar = {
+  move: (offset: { top?: number; left?: number }) => unknown;
+};
+
 type XsInstance = {
   datas: XsData[];
   reRender?: () => void;
@@ -243,6 +245,8 @@ type XsInstance = {
     data?: XsData & { row?: { height?: number } };
     reload?: () => void;
     table?: { render?: () => void };
+    verticalScrollbar?: XsScrollbar;
+    horizontalScrollbar?: XsScrollbar;
   };
   bottombar?: {
     items: HTMLElement[];
@@ -253,47 +257,56 @@ type XsInstance = {
 /** Locate inside @js-preview/excel: switch sheet, paint range via Data API, scroll. */
 export function applyExcelSourceLocate(
   previewer: ReturnType<typeof jsPreviewExcel.init>,
-  pos: ExcelLocatePos,
+  positions: number[][],
 ) {
-  if (!pos || pos.length < 5) return;
   const xs = (previewer as { xs?: XsInstance }).xs;
   if (!xs?.datas?.length) return;
+  const ranges = positions.flatMap((pos) => {
+    if (
+      !Array.isArray(pos) ||
+      pos.length < 5 ||
+      !pos.slice(0, 5).every((v) => Number.isInteger(v) && v > 0)
+    )
+      return [];
+    const sheetIdx = pos[0] - 1;
+    const data = xs.datas[sheetIdx];
+    if (!data?.styles || !data.rows?.setCell) return [];
+    const r1 = pos[1] - 1;
+    const r2 = Math.min(pos[2] - 1, (data.rows.len ?? Infinity) - 1);
+    const c1 = pos[3] - 1;
+    const c2 = Math.min(pos[4] - 1, (data.cols?.len ?? Infinity) - 1);
+    if (r2 < r1 || c2 < c1) return [];
+    return [{ sheetIdx, data, r1, r2, c1, c2 }];
+  });
+  const first = ranges[0];
+  if (!first) return;
+  const { sheetIdx, data, r1 } = first;
 
-  const sheetIdx = Math.min(
-    xs.datas.length - 1,
-    Math.max(0, (pos[0] || 1) - 1),
-  );
-  let r1 = Math.max(0, (pos[1] || 1) - 1);
-  let r2 = Math.max(r1, (pos[2] || pos[1] || 1) - 1);
-  let c1 = (pos[3] || 1) - 1;
-  let c2 = (pos[4] || pos[3] || 1) - 1;
-  if (c1 < 0) c1 = 0;
-  if (c2 < c1) c2 = c1;
-
-  const data = xs.datas[sheetIdx];
-  if (!data?.addStyle || !data.rows?.setCell) return;
-
-  if (typeof data.rows.len === 'number') {
-    const lastRow = Math.max(0, data.rows.len - 1);
-    r1 = Math.min(r1, lastRow);
-    r2 = Math.min(r2, lastRow);
-  }
-  if (typeof data.cols?.len === 'number') {
-    const lastCol = Math.max(0, data.cols.len - 1);
-    c1 = Math.min(c1, lastCol);
-    c2 = Math.min(c2, lastCol);
-  }
-
-  const theme = getComputedStyle(document.documentElement);
-  if (r2 >= r1 && c2 >= c1) {
-    const styleIdx = data.addStyle({
-      bgcolor:
-        theme.getPropertyValue('--background-highlight').trim() || '#ffe58f',
-      color: theme.getPropertyValue('--text-title').trim() || '#1a1a1a',
-    });
-    for (let r = r1; r <= r2; r++) {
-      for (let c = c1; c <= c2; c++) {
-        data.rows.setCell(r, c, { style: styleIdx }, 'format');
+  // The spreadsheet canvas is always rendered on a light sheet background
+  // regardless of app theme, so the locate highlight must use fixed light
+  // colors rather than theme tokens (which resolve to near-white text in dark
+  // mode and become invisible). Matches the yellow used by the PDF highlighter.
+  const stylesBySheet = new Map<XsData, Map<string, number>>();
+  for (const range of ranges) {
+    let styles = stylesBySheet.get(range.data);
+    if (!styles) {
+      styles = new Map();
+      stylesBySheet.set(range.data, styles);
+    }
+    for (let r = range.r1; r <= range.r2; r++) {
+      for (let c = range.c1; c <= range.c2; c++) {
+        const cell = range.data.rows.getCellOrNew(r, c);
+        const original = range.data.styles[cell.style ?? -1] ?? {};
+        if (original.bgcolor === '#ffe58f' && original.color === '#1a1a1a')
+          continue;
+        const highlight = { ...original, bgcolor: '#ffe58f', color: '#1a1a1a' };
+        const key = JSON.stringify(highlight);
+        let styleIdx = styles.get(key);
+        if (styleIdx === undefined) {
+          styleIdx = range.data.styles.push(highlight) - 1;
+          styles.set(key, styleIdx);
+        }
+        range.data.rows.setCell(r, c, { style: styleIdx }, 'format');
       }
     }
   }
@@ -314,6 +327,19 @@ export function applyExcelSourceLocate(
   for (let r = 0; r < r1; r++) {
     y += data.rows.getHeight?.(r) ?? rowHeight;
   }
+
+  // Drive the scroll through the library scrollbar: setting data.scroll and
+  // re-rendering directly moves the canvas but leaves the scrollbar thumb at
+  // the top, so the user has to scroll down before they can scroll back up.
+  // move() sets the native scroll element, whose scroll event updates
+  // data.scroll and re-renders the table, keeping both in sync.
+  const vScrollbar = xs.sheet.verticalScrollbar;
+  if (vScrollbar?.move) {
+    xs.sheet.horizontalScrollbar?.move?.({ left: 0 });
+    vScrollbar.move({ top: y > 0 ? y - 1 : 0 });
+    return;
+  }
+
   data.scroll = { ...(data.scroll || { x: 0, y: 0 }), x: 0, y };
   if (xs.sheet.data && xs.sheet.data !== data) {
     xs.sheet.data.scroll = {
@@ -341,7 +367,7 @@ export const useFetchExcel = (filePath: string, positions?: number[][]) => {
   const [dataReady, setDataReady] = useState(false);
   const positionsRef = useRef(positions);
   positionsRef.current = positions;
-  const locateKey = positions?.[0]?.join(',') ?? '';
+  const locateKey = JSON.stringify(positions ?? []);
   const locateTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // @js-preview/excel reads the container's width/height at init time and
@@ -364,12 +390,12 @@ export const useFetchExcel = (filePath: string, positions?: number[][]) => {
 
     try {
       await previewer.preview(dataRef.current);
-      const pos = positionsRef.current?.[0];
-      if (pos) {
+      const currentPositions = positionsRef.current;
+      if (currentPositions?.length) {
         // bottombar tabs are created during loadData; apply after paint.
         const run = () => {
           if (previewerRef.current !== previewer) return;
-          applyExcelSourceLocate(previewer, pos);
+          applyExcelSourceLocate(previewer, currentPositions);
         };
         requestAnimationFrame(() => {
           run();

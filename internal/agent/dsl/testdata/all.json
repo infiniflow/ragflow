@@ -236,7 +236,7 @@
               "input_mode": "constant",
               "type": "string",
               "value": "",
-              "variable": ""
+              "variable": "loop_input"
             }
           ],
           "maximum_loop_count": 50,
@@ -523,7 +523,6 @@
           "rerank_id": "",
           "retrieval_from": "dataset",
           "similarity_threshold": 0.2,
-          "toc_enhance": false,
           "top_k": 512,
           "top_n": 5,
           "use_kg": false
@@ -2290,7 +2289,7 @@
                 "input_mode": "constant",
                 "type": "string",
                 "value": "",
-                "variable": ""
+                "variable": "loop_input"
               }
             ],
             "maximum_loop_count": 50,
@@ -3308,7 +3307,6 @@
             "rerank_id": "",
             "retrieval_from": "dataset",
             "similarity_threshold": 0.2,
-            "toc_enhance": false,
             "top_k": 512,
             "top_n": 5,
             "use_kg": false

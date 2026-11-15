@@ -26,7 +26,7 @@ import (
 )
 
 // InsertChunks writes chunks or memory messages with legacy REPLACE semantics.
-func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName, datasetID string) ([]string, error) {
+func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName, datasetID, language string) ([]string, error) {
 	if len(chunks) == 0 {
 		return []string{}, nil
 	}
@@ -48,11 +48,23 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 		if vectorSize == 0 {
 			return nil, fmt.Errorf("cannot infer vector size from documents")
 		}
-		if err := e.CreateChunkStore(ctx, baseName, datasetID, vectorSize, ""); err != nil {
+		if err := e.CreateChunkStore(ctx, baseName, datasetID, vectorSize, "", ""); err != nil {
 			return nil, err
 		}
 	} else if vectorSize > 0 {
 		if err := e.ensureVectorColumnAndIndex(ctx, baseName, vectorSize, lockPrefix(baseName)); err != nil {
+			return nil, err
+		}
+	}
+
+	// One metadata read resolves every row of the batch against the table that
+	// actually exists, so fields an existing table lacks go to its extra column
+	// instead of a column it does not have. Read before the transaction so the
+	// metadata query does not borrow a second connection mid-transaction.
+	var chunkTableColumns map[string]bool
+	if !strings.HasPrefix(baseName, "memory_") && !strings.HasPrefix(baseName, "skill_") && datasetID != "skill" {
+		chunkTableColumns, err = e.tableColumns(ctx, baseName)
+		if err != nil {
 			return nil, err
 		}
 	}
@@ -83,7 +95,7 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 				return nil, err
 			}
 		default:
-			normalized, err = normalizeChunk(chunk)
+			normalized, err = normalizeChunk(chunk, chunkTableColumns)
 			if err != nil {
 				return nil, err
 			}
@@ -177,7 +189,7 @@ func (e *Engine) GetChunk(ctx context.Context, baseName, chunkID string, dataset
 		}
 		return nil, nil
 	}
-	return decodeLogicalRow(rows[0], kind), nil
+	return decodeLogicalRow(rows[0], kind, nil), nil
 }
 
 // UpdateChunks updates rows while retaining the dataset-level scope used by

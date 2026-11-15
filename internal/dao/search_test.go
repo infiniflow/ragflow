@@ -278,3 +278,52 @@ func TestSearchDAOListByResourceIDsKeepsOwnerFilter(t *testing.T) {
 	}
 	assertSearchIDs(t, rows, []string{"search-t1"}, "owner filter")
 }
+
+// TestSearchDAODeleteByIDRemovesRow pins the delete semantics against Python:
+// SearchService.delete_by_id inherits CommonService.delete_by_id, which issues a
+// real DELETE on the `search` table. A soft delete (status = "0") only hid the
+// row from the permission layer and left it in MySQL.
+func TestSearchDAODeleteByIDRemovesRow(t *testing.T) {
+	db := setupSearchDetailDAOTestDB(t)
+	pushDB(t, db)
+	seedOrderableSearches(t, db)
+	ctx := t.Context()
+	d := NewSearchDAO()
+
+	if err := d.DeleteByID(ctx, db, "s-2"); err != nil {
+		t.Fatalf("DeleteByID: %v", err)
+	}
+
+	// The row is gone, not merely marked invalid.
+	assertSearchRowCount(t, db, "s-2", 0)
+	assertSearchRowCount(t, db, "s-1", 1)
+
+	// Deletion is by id alone, so a row the permission layer would already hide
+	// (status != "1") is removed too, exactly as Python deletes it.
+	legacy := entity.Search{
+		ID:           "s-legacy",
+		TenantID:     "t1",
+		Name:         "legacy",
+		CreatedBy:    "t1",
+		SearchConfig: entity.JSONMap{},
+		Status:       stringPtr("0"),
+	}
+	if err := db.Create(&legacy).Error; err != nil {
+		t.Fatalf("failed to create legacy search: %v", err)
+	}
+	if err := d.DeleteByID(ctx, db, "s-legacy"); err != nil {
+		t.Fatalf("DeleteByID legacy: %v", err)
+	}
+	assertSearchRowCount(t, db, "s-legacy", 0)
+}
+
+func assertSearchRowCount(t *testing.T, db *gorm.DB, id string, want int64) {
+	t.Helper()
+	var count int64
+	if err := db.Model(&entity.Search{}).Where("id = ?", id).Count(&count).Error; err != nil {
+		t.Fatalf("count search %s: %v", id, err)
+	}
+	if count != want {
+		t.Fatalf("search %s row count = %d, want %d", id, count, want)
+	}
+}

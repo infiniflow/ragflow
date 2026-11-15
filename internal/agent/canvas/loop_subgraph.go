@@ -42,7 +42,6 @@ import (
 	"slices"
 	"strings"
 
-	"ragflow/internal/agent/runtime"
 	"ragflow/internal/agent/workflowx"
 
 	"github.com/cloudwego/eino/compose"
@@ -86,6 +85,10 @@ func buildLoopExpansion(ctx context.Context, c *Canvas, loopID string) (*loopExp
 	}
 
 	loopComp := c.Components[loopID]
+	// Loop expansion bypasses normal node construction; validate its params here.
+	if _, err := buildNodeBody(ctx, loopID, "Loop", "", loopComp.Obj.Params); err != nil {
+		return nil, fmt.Errorf("agent: loop %q: %w", loopID, err)
+	}
 
 	members := collectLoopMembers(c, loopID)
 
@@ -251,11 +254,7 @@ func buildSubWorkflow(
 		if name == "" {
 			return nil, fmt.Errorf("agent: loop %q member %q has empty component_name", loopID, cpnID)
 		}
-		deferToMessage := directMessageDownstream(c, cpnID)
-		nodeOpts := runtime.ComponentExecutionOptions{
-			DeferAgentToMessage:        deferToMessage,
-			SuppressAgentMessageEvents: strings.EqualFold(name, "Agent") && !deferToMessage,
-		}
+		nodeOpts := resolveComponentExecutionOptions(c, cpnID, name)
 		body, err := buildNodeBodyWithOptions(ctx, cpnID, name, c.Components[cpnID].DisplayName, c.Components[cpnID].Obj.Params, nodeOpts)
 		if err != nil {
 			return nil, err

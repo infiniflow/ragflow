@@ -75,7 +75,7 @@
 
 Bulut hizmetimizi [https://cloud.ragflow.io](https://cloud.ragflow.io) adresinden deneyin.
 
-Yerel dağıtım için [Kendi Sunucusunda Barındırma](#-kendi-sunucusunda-barındırma) bölümüne bakın.
+Yerel dağıtım için [Kendi Sunucusunda Barındırma](#-yerel-dağıtım) bölümüne bakın.
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -84,6 +84,7 @@ Yerel dağıtım için [Kendi Sunucusunda Barındırma](#-kendi-sunucusunda-bar�
 
 ## 🔥 Son Güncellemeler
 
+- 2026-11-06 RAGFlow 1.0.0 yayımlandı.
 - 2026-09-29 RAGFlow 1.0.0-rc1 yayımlandı.
 
 - 2026-09-10 Site haritaları üzerinden web içeriği alımı eklendi.
@@ -92,14 +93,6 @@ Yerel dağıtım için [Kendi Sunucusunda Barındırma](#-kendi-sunucusunda-bar�
 - 2026-07-02 Google BigQuery veri kaynağı alımı ve artımlı eşitleme eklendi.
 
 Diğer güncellemeler için [tam sürüm notlarına](https://ragflow.io/docs/dev/release_notes) bakın.
-
-## 🎉 Bizi Takip Edin
-
-⭐️ Heyecan verici yeni özellikler ve iyileştirmelerden haberdar olmak için depomuzı yıldızlayın! Yeni sürümler için anında bildirim alın! 🌟
-
-<div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
-</div>
 
 ## 🌟 Temel Özellikler
 
@@ -187,7 +180,7 @@ Docker hızlı değerlendirme, entegrasyon testi ve üretim; kaynak kod ise geli
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc1
+   git checkout v1.0.0
    docker compose -f docker-compose.yml up -d
    ```
 
@@ -219,13 +212,14 @@ Ayrıntılar için [hızlı başlangıç kılavuzuna](./docs/quickstart.mdx) bak
    cd ragflow
    ```
 
-2. Bağımlılıkları hazırlayın:
+2. Go derlemesinin bağladığı yerel statik kitaplıkları (`download_dev_deps.py`) ve backend'in çalışma zamanında yüklediği model / tokenizer kaynaklarını (`download_deps.py`) hazırlamak için bağımlılık indirme betiklerini çalıştırın:
 
    ```bash
-   python3 -m venv /tmp/ragflow-go-download-venv
-   /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
+   uv run tools/scripts/download_dev_deps.py
+   uv run deps/download_deps.py
    ```
+
+   `download_dev_deps.py`, pdfium, pdf_oxide, office_oxide ve onnxruntime'ı `~/ragflow-native-libs` altına indirir ve açar; `download_deps.py`, cl100k sözlüğünü, DeepDoc modellerini ve gömme tokenizer varlıklarını `deps/` altına indirir. İkisi de Python betiğidir; `uv run`, bildirilen bağımlılıkları (`requests` ve model ile tokenizer indirmeleri için `huggingface-hub`) otomatik olarak kurar. Aynı kaynakları başka şekilde hazırladıysanız bu adımı atlayın. Depo kökünden başlatıldığında Go hizmetleri `internal/rag/res/deepdoc` dizinini otomatik bulur; başka bir dizinden başlatmak için `DEEPDOC_MODEL_DIR` değişkenini o dizinin mutlak yoluna ayarlayın.
 
 3. Hizmetleri derleyin:
 
@@ -280,7 +274,7 @@ Ayrıntılar için [hızlı başlangıç kılavuzuna](./docs/quickstart.mdx) bak
 
 Ayrıntılar için [Kaynaktan Başlatma](./docs/develop/launch_ragflow_from_source.md) belgesine bakın.
 
-> **İşletim notları:** Elasticsearch ayarını kalıcı yapmak için `/etc/sysctl.conf` dosyasına `vm.max_map_count=262144` ekleyin. Varsayılan MySQL yapılandırmasında Docker giriş noktası Admin, Syncer, Ingestor ve API'den önce geçişi çalıştırır. Açık kaynak 1.0'da DeepDoc düzen, OCR ve tablo tanıma için CPU kullanır. Docker değişikliklerinden sonra hizmetleri yeniden başlatın ve verileri korumak veya kaldırmak için [Docker kılavuzunu](./docker/README.md) izleyin. `download_deps.py` yerel kitaplıkları ve modelleri hazırlar; `requests` ve `huggingface-hub` gerektirir. `--migrate` geçişi çalıştırıp çıkar; `--admin` yönetim hizmetini, `--ingestor` veri alma hizmetini, `--syncer` harici veri kaynağı eşitleme hizmetini ve `--api` Web UI ile SDK'lara yönelik API hizmetini başlatır. HTTP 200 API'nin hazır olduğunu gösterir.
+> **İşletim notları:** Elasticsearch ayarını kalıcı yapmak için `/etc/sysctl.conf` dosyasına `vm.max_map_count=262144` ekleyin. Varsayılan MySQL yapılandırmasında Docker giriş noktası Admin, Syncer, Ingestor ve API'den önce geçişi çalıştırır. Açık kaynak 1.0'da DeepDoc düzen, OCR ve tablo tanıma için CPU kullanır. Docker değişikliklerinden sonra hizmetleri yeniden başlatın ve verileri korumak veya kaldırmak için [Docker kılavuzunu](./docker/README.md) izleyin. `download_dev_deps.py` yerel kitaplıkları, `download_deps.py` modelleri ve tokenizer kaynaklarını hazırlar; ikisi de `uv run` ile çalıştırılır. `--migrate` geçişi çalıştırıp çıkar; `--admin` yönetim hizmetini, `--ingestor` veri alma hizmetini, `--syncer` harici veri kaynağı eşitleme hizmetini ve `--api` Web UI ile SDK'lara yönelik API hizmetini başlatır. HTTP 200 API'nin hazır olduğunu gösterir.
 
 ## 📚 Dokümantasyon
 

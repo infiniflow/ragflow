@@ -18,6 +18,10 @@ package utility
 
 import (
 	"bytes"
+	"context"
+	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"ragflow/internal/common"
@@ -43,16 +47,16 @@ func TestFetchRemoteFileSafely_PDFAddsExtension(t *testing.T) {
 	}))
 	defer server.Close()
 
-	origAssert := common.AssertURLSafe
+	origAssert := common.AssertURLSafeWithContext
 	origPinned := PinnedHTTPClient
-	common.AssertURLSafe = func(rawURL string) (string, string, error) {
+	common.AssertURLSafeWithContext = func(ctx context.Context, rawURL string) (string, string, error) {
 		return "127.0.0.1", "127.0.0.1", nil
 	}
 	PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) *http.Client {
 		return server.Client()
 	}
 	t.Cleanup(func() {
-		common.AssertURLSafe = origAssert
+		common.AssertURLSafeWithContext = origAssert
 		PinnedHTTPClient = origPinned
 	})
 
@@ -76,16 +80,16 @@ func TestFetchRemoteFileSafely_ReturnsContentAndHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	origAssert := common.AssertURLSafe
+	origAssert := common.AssertURLSafeWithContext
 	origPinned := PinnedHTTPClient
-	common.AssertURLSafe = func(rawURL string) (string, string, error) {
+	common.AssertURLSafeWithContext = func(ctx context.Context, rawURL string) (string, string, error) {
 		return "127.0.0.1", "127.0.0.1", nil
 	}
 	PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) *http.Client {
 		return server.Client()
 	}
 	t.Cleanup(func() {
-		common.AssertURLSafe = origAssert
+		common.AssertURLSafeWithContext = origAssert
 		PinnedHTTPClient = origPinned
 	})
 
@@ -102,5 +106,56 @@ func TestFetchRemoteFileSafely_ReturnsContentAndHeaders(t *testing.T) {
 	}
 	if !bytes.Equal(data, []byte(`<html><body>Hello World</body></html>`)) {
 		t.Fatalf("data = %q", string(data))
+	}
+}
+
+func TestFetchRemoteFileSafelyCancelsDNS(t *testing.T) {
+	for _, redirect := range []bool{false, true} {
+		t.Run(fmt.Sprintf("redirect=%t", redirect), func(t *testing.T) {
+			started := make(chan struct{}, 4)
+			release := make(chan struct{})
+			previousResolver := net.DefaultResolver
+			net.DefaultResolver = &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				select {
+				case started <- struct{}{}:
+				default:
+				}
+				select {
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				case <-release:
+					return nil, errors.New("DNS test released")
+				}
+			}}
+			t.Cleanup(func() { net.DefaultResolver = previousResolver })
+			defer close(release)
+			t.Setenv(common.EnvAllowAnyHost, "true")
+			target := "http://blocked-dns.invalid/image.png"
+			if redirect {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					http.Redirect(w, r, "http://blocked-dns.invalid/image.png", http.StatusFound)
+				}))
+				defer server.Close()
+				target = server.URL
+			}
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			done := make(chan error, 1)
+			go func() { _, _, _, err := FetchRemoteFileSafely(ctx, target, 1024); done <- err }()
+			select {
+			case <-started:
+			case <-time.After(time.Second):
+				t.Fatal("DNS lookup did not start")
+			}
+			cancel()
+			select {
+			case err := <-done:
+				if !errors.Is(err, context.Canceled) {
+					t.Fatalf("fetch error = %v, want cancellation", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("fetch did not stop during DNS lookup")
+			}
+		})
 	}
 }

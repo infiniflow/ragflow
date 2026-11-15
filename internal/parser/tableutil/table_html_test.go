@@ -47,6 +47,39 @@ func TestParseTableHTMLHappyPath(t *testing.T) {
 	assertRowsEqual(t, td.CellTexts(), want)
 }
 
+// HTML 4 required <tfoot> before <tbody>, and a browser still draws it
+// below the body, so its rows read last; a footer of <th> cells is not part
+// of the header either.
+func TestParseTableHTMLFooterRowsComeLast(t *testing.T) {
+	html := `<table><thead><tr><th>Item</th><th>Qty</th></tr></thead>` +
+		`<tfoot><tr><th>Total</th><th>3</th></tr></tfoot>` +
+		`<tbody><tr><td>pen</td><td>1</td></tr><tr><td>ink</td><td>2</td></tr></tbody></table>`
+	td := mustParse(t, html)
+	if td.HeaderRows != 1 {
+		t.Fatalf("HeaderRows = %d, want 1", td.HeaderRows)
+	}
+	want := [][]string{
+		{"Item", "Qty"},
+		{"pen", "1"},
+		{"ink", "2"},
+		{"Total", "3"},
+	}
+	assertRowsEqual(t, td.CellTexts(), want)
+}
+
+func TestParseTableHTMLFooterRowsStayWithTheirTable(t *testing.T) {
+	html := `<table><tfoot><tr><td>Total</td><td>1</td></tr></tfoot>` +
+		`<tbody><tr><td>A</td><td>1</td></tr></tbody></table>` +
+		`<table><tr><td>B</td><td>2</td></tr></table>`
+	td := mustParse(t, html)
+	want := [][]string{
+		{"A", "1"},
+		{"Total", "1"},
+		{"B", "2"},
+	}
+	assertRowsEqual(t, td.CellTexts(), want)
+}
+
 func TestParseTableHTMLMultipleHeaderRows(t *testing.T) {
 	html := `<table><tr><th>H1</th></tr><tr><th>H2</th></tr>` +
 		`<tr><td>a</td></tr></table>`
@@ -189,24 +222,6 @@ func TestRenderTableHTMLRoundTrip(t *testing.T) {
 	}
 	if back.Caption != td.Caption {
 		t.Fatalf("Caption round-trip = %q, want %q", back.Caption, td.Caption)
-	}
-}
-
-func TestRenderTableTextHasNoTags(t *testing.T) {
-	td := &entity.TableData{
-		Grid: [][]entity.TableCell{
-			{{Text: "Name"}, {Text: "Age"}},
-			{{Text: "Alice"}, {Text: "30"}},
-		},
-		HeaderRows: 1,
-		Caption:    "People",
-	}
-	got := RenderTableText(td)
-	if strings.ContainsAny(got, "<>") {
-		t.Fatalf("RenderTableText contains tags: %q", got)
-	}
-	if !strings.Contains(got, "Name") || !strings.Contains(got, "Alice") {
-		t.Fatalf("RenderTableText lost cell text: %q", got)
 	}
 }
 

@@ -55,7 +55,7 @@ func TestInsertChunksWaitsForRefresh(t *testing.T) {
 	var refresh []string
 	engine := newBulkCaptureEngine(t, &refresh)
 
-	if _, err := engine.InsertChunks(t.Context(), oneChunk(), "ragflow_tenant", "kb-1"); err != nil {
+	if _, err := engine.InsertChunks(t.Context(), oneChunk(), "ragflow_tenant", "kb-1", ""); err != nil {
 		t.Fatalf("InsertChunks: %v", err)
 	}
 	if len(refresh) != 1 || refresh[0] != "wait_for" {
@@ -71,7 +71,7 @@ func TestInsertChunksNoRefreshOmitsRefreshParam(t *testing.T) {
 	var refresh []string
 	engine := newBulkCaptureEngine(t, &refresh)
 
-	if _, err := engine.InsertChunksNoRefresh(t.Context(), oneChunk(), "ragflow_tenant", "kb-1"); err != nil {
+	if _, err := engine.InsertChunksNoRefresh(t.Context(), oneChunk(), "ragflow_tenant", "kb-1", ""); err != nil {
 		t.Fatalf("InsertChunksNoRefresh: %v", err)
 	}
 	if len(refresh) != 1 {

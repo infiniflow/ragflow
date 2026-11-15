@@ -168,7 +168,7 @@ export const useDeleteMcpServer = () => {
         ids.map((id) => mcpServerService.delete({ mcp_id: id })),
       );
       const failed = results.find(({ data = {} }) => data.code !== 0);
-      const data = failed?.data ?? { code: 0, data: true };
+      const data = failed?.data ?? { code: 0 };
       if (!failed) {
         message.success(i18n.t(`message.deleted`));
 

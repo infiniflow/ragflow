@@ -1,5 +1,5 @@
 ---
-sidebar_position: 20
+sidebar_position: 21
 slug: /faq
 sidebar_custom_props: {
   sidebarIcon: LucideCircleQuestionMark
@@ -33,9 +33,7 @@ RAGFlow provides an end-to-end RAG platform that goes beyond basic document chun
 
 ### Where can I find the RAGFlow version, and how do I interpret it?
 
-You can find the RAGFlow version number on the **System** page of the UI:
-
-![Image](https://github.com/user-attachments/assets/20cf7213-2537-4e18-a88c-4dadf6228c6b)
+For self-hosted deployments, open **User settings** on a desktop-sized screen. The RAGFlow version number is displayed at the bottom-left of the settings page. It is hidden on narrow screens and is not displayed in RAGFlow Cloud (`cloud.ragflow.io`).
 
 If you build RAGFlow from source, the Go admin and ingestor log their versions at startup. The server also prints its version with `bin/ragflow_server --api --version`.
 
@@ -312,7 +310,7 @@ Use the [system health API](./references/http_api_reference.md#check-system-heal
 
 ### How do I run RAGFlow with a locally deployed LLM?
 
-You can use Ollama or Xinference to deploy a local LLM. See [Deploy a local LLM](./guides/models/deploy_local_llm.mdx) for configuration details.
+You can use Ollama or vLLM to deploy local models. See [Deploy Local Models](./guides/models/deploy_local_llm.mdx) for configuration instructions.
 
 ---
 
@@ -326,13 +324,11 @@ If your model is not currently supported but has APIs compatible with those of O
 
 ### How do I change the file size limit?
 
-The Go file-manager upload endpoint allows up to 1 GiB per file by default. The dataset document upload path has a separate 128 MiB per-file limit. Check which upload endpoint rejected the file before changing deployment settings.
+The Go API limits non-multipart request bodies to 1 MiB by default. Set `MAX_JSON_CONTENT_LENGTH` to change that limit in bytes. Multipart upload requests share a 1 GiB default total-body limit; set `MAX_MULTIPART_CONTENT_LENGTH` to change it in bytes. Upload endpoints can enforce smaller per-file or per-request limits.
 
-To change the file-manager upload limit in a Go Compose deployment, set `MAX_CONTENT_LENGTH` in **docker/.env** to the desired number of bytes. The default 1 GiB value is `1073741824`.
+The file-manager per-file limit follows `MAX_MULTIPART_CONTENT_LENGTH` (1 GiB by default). Dataset documents allow 128 MiB per file by default; set `MAX_DOCUMENT_UPLOAD_SIZE` to change that limit in bytes. The total multipart request limit must also be large enough for the file and multipart overhead. Document-info uploads allow 100 MiB per file, and increasing the shared multipart limit does not raise that limit.
 
-If you raise the limit above 1 GiB, also increase `client_max_body_size` in **docker/nginx/nginx.conf**. The Go image contains its own copy of this file, so make the change effective by either rebuilding `RAGFLOW_IMAGE` or enabling the `./nginx/nginx.conf:/etc/nginx/nginx.conf` bind mount for the deployed service in **docker/docker-compose.yml**, then recreate that service. Lowering `MAX_CONTENT_LENGTH` below 1 GiB does not require changing the default Nginx limit.
-
-These settings do not raise the dataset document upload path's fixed 128 MiB limit.
+If you raise the multipart limit above 1 GiB, also increase `client_max_body_size` in **docker/nginx/nginx.conf**. The Go image contains its own copy of this file, so make the change effective by either rebuilding `RAGFLOW_IMAGE` or enabling the `./nginx/nginx.conf:/etc/nginx/nginx.conf` bind mount for the deployed service in **docker/docker-compose.yml**, then recreate that service.
 
 ---
 
@@ -532,12 +528,14 @@ Use the following environment variables when MinerU is not configured directly i
 | `MINERU_APISERVER`     | URL of the MinerU API service      | _unset_                             | `MINERU_APISERVER=http://your-mineru-server:8886`                                              |
 | `MINERU_API_KEY`       | API key, when required by MinerU   | _unset_                             | `MINERU_API_KEY=your-key`                                                                       |
 | `MINERU_BACKEND`       | MinerU 3.x backend or 4.0 tier     | `pipeline`                          | `MINERU_BACKEND=pipeline\|standard\|vlm-http-client` |
+| `MINERU_TIMEOUT`       | MinerU request timeout             | `1800` (30m)                        | `MINERU_TIMEOUT=3600`                                                                           |
 
 1. Set `MINERU_APISERVER` to point RAGFlow to your MinerU API server.
 2. Set `MINERU_API_KEY` if your MinerU service requires authentication.
 3. Set `MINERU_BACKEND` to specify the backend sent with the parse request.
+4. Optionally set `MINERU_TIMEOUT` (seconds or duration string like `1h`) to bound the parse request.
 
-For a custom Parser component, the numeric `mineru_timeout_seconds` setup field controls how long RAGFlow polls for the result. Its default is 30 seconds; zero or a negative value also falls back to 30 seconds.
+Both native ingestion component parsing (`dispatchMinerUPDF`) and the legacy `PDFParser` path (`pdf_parser_mineru.go`) honor `MINERU_TIMEOUT` (as well as setup overrides `mineru_timeout` / `mineru_timeout_seconds`), ensuring a unified timeout knob across all MinerU execution modes (cloud, V1, and legacy polling). Non-default durations are safely clamped within 1s to 24h.
 
 :::tip NOTE
 For other environment variables supported by MinerU itself, see the [MinerU environment variable documentation](https://opendatalab.github.io/MinerU/usage/cli_tools/#environment-variables-description).
@@ -599,9 +597,12 @@ This method uses PaddleOCR's official API service with an access token.
    ```bash
    # In your docker/.env file:
    PADDLEOCR_API_URL=https://paddleocr.aistudio-app.com/api
-   PADDLEOCR_ALGORITHM=PaddleOCR-VL
    PADDLEOCR_ACCESS_TOKEN=your-access-token-here
    ```
+
+   :::tip NOTE
+   Setting environment variables auto-provisions the provider instance. Be sure to add or select a supported model (such as `PaddleOCR-VL-1.6` or `PP-StructureV3`) under **Model providers** and select that specific model in your dataset configuration, as the cloud API requires a valid model name rather than the generated `paddleocr-from-env` instance handle.
+   :::
 
 - **Via UI:**
 
@@ -609,8 +610,8 @@ This method uses PaddleOCR's official API service with an access token.
    - Add a new OCR model with factory type "PaddleOCR"
    - Configure the following fields:
       - **PaddleOCR API URL**: The API base URL, such as `https://paddleocr.aistudio-app.com/api`, without the `/v2/ocr/jobs` suffix
-      - **PaddleOCR Algorithm**: Select the algorithm corresponding to the API endpoint
       - **AI Studio Access Token**: Your access token for the PaddleOCR API
+   - Select or add the model you want to use (such as `PaddleOCR-VL-1.6` or `PP-StructureV3`)
 
 **Step 2: Usage in Dataset Configuration**
 
@@ -663,7 +664,6 @@ Enter the base URL without the `/layout-parsing` suffix because the Go provider 
 |---------------------|-------------|---------|----------|
 | `PADDLEOCR_API_URL` | Asynchronous model-provider base URL, including `/api` but without `/v2/ocr/jobs` | _unset_ | Yes, when configuring the model provider through environment variables |
 | `PADDLEOCR_BASE_URL` | Direct PDF-parser service origin, without `/api/v2/ocr/jobs` | _unset_ | Yes, when configuring the parser directly through environment variables |
-| `PADDLEOCR_ALGORITHM` | Algorithm to use for parsing | `"PaddleOCR-VL"` | No |
 | `PADDLEOCR_ACCESS_TOKEN` | Bearer token for the PaddleOCR service | _unset_ | When the service requires authentication |
 
 `PADDLEOCR_API_URL` configures and auto-provisions the asynchronous **PaddleOCR** model provider. `PADDLEOCR_BASE_URL` is the fallback used by the direct PDF parser. These variables are not required when configuring a provider through the UI and do not select **PaddleOCR.local**.

@@ -17,6 +17,7 @@ package chunker
 
 import (
 	"context"
+	"ragflow/internal/ingestion/component/schema"
 	"testing"
 )
 
@@ -74,7 +75,7 @@ func invokeTokenChunkerJSON(t *testing.T, texts ...string) string {
 		t.Fatalf("TokenChunker returned _ERROR: %s", msg)
 	}
 
-	chunks, ok := out["chunks"].([]map[string]any)
+	chunks, ok := schema.ChunkCarrierToMaps(out["chunks"])
 	if !ok || len(chunks) != 1 {
 		t.Fatalf("chunks = %#v, want one merged chunk", out["chunks"])
 	}

@@ -18,6 +18,7 @@ package service
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"ragflow/internal/tokenizer"
@@ -103,8 +104,13 @@ func formatChunkEntry(ck SourcedChunk, index int) string {
 		fmt.Fprintf(&b, "├── URL: %s\n", collapseNewlines(ck.URL))
 	}
 	if ck.DocumentMetadata != nil {
-		for k, v := range ck.DocumentMetadata {
-			fmt.Fprintf(&b, "├── %s: %v\n", k, collapseNewlines(fmt.Sprint(v)))
+		keys := make([]string, 0, len(ck.DocumentMetadata))
+		for k := range ck.DocumentMetadata {
+			keys = append(keys, k)
+		}
+		sort.Strings(keys)
+		for _, k := range keys {
+			fmt.Fprintf(&b, "├── %s: %v\n", k, collapseNewlines(fmt.Sprint(ck.DocumentMetadata[k])))
 		}
 	}
 	b.WriteString("└── Content:\n")

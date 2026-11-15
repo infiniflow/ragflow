@@ -90,3 +90,61 @@ describe('useSaveDatasetSetting parser_config metadata scoping', () => {
     });
   });
 });
+
+describe('useSaveDatasetSetting pipeline_version_id passthrough', () => {
+  beforeEach(() => {
+    mockUseUpdateKnowledge.mockReset();
+  });
+
+  function setup() {
+    const saveKnowledgeConfiguration = jest.fn();
+    mockUseUpdateKnowledge.mockReturnValue({
+      saveKnowledgeConfiguration,
+      loading: false,
+    } as never);
+    const {
+      result: { current },
+    } = renderHook(() => useSaveDatasetSetting());
+    return { handleSave: current.handleSave, saveKnowledgeConfiguration };
+  }
+
+  it('passes a pinned pipeline_version_id through in pipeline mode', async () => {
+    const { handleSave, saveKnowledgeConfiguration } = setup();
+
+    await handleSave({
+      parse_type: 2,
+      pipeline_id: 'canvas-1',
+      pipeline_version_id: 'v-1',
+    } as never);
+
+    const payload = saveKnowledgeConfiguration.mock.calls[0][0];
+    expect(payload.pipeline_version_id).toBe('v-1');
+  });
+
+  it('keeps an explicit empty pipeline_version_id (track latest)', async () => {
+    const { handleSave, saveKnowledgeConfiguration } = setup();
+
+    await handleSave({
+      parse_type: 2,
+      pipeline_id: 'canvas-1',
+      pipeline_version_id: '',
+    } as never);
+
+    const payload = saveKnowledgeConfiguration.mock.calls[0][0];
+    expect(payload.pipeline_version_id).toBe('');
+  });
+
+  it('drops pipeline_version_id in built-in mode', async () => {
+    const { handleSave, saveKnowledgeConfiguration } = setup();
+
+    await handleSave({
+      parse_type: 1,
+      parser_id: 'naive',
+      pipeline_version_id: 'v-1',
+    } as never);
+
+    const payload = saveKnowledgeConfiguration.mock.calls[0][0];
+    expect(payload.pipeline_version_id).toBeUndefined();
+    expect(payload.pipeline_id).toBeUndefined();
+  });
+});

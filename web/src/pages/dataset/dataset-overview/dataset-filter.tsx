@@ -59,22 +59,24 @@ const DatasetFilter = (
         />
       </div>
 
-      <div className="flex items-center gap-4">
-        <FilterPopover
-          value={value}
-          onChange={onChange}
-          filters={filters}
-          onOpenChange={onOpenChange}
-        >
-          <FilterButton count={filterCount}></FilterButton>
-        </FilterPopover>
+      {active !== LogTabs.DATASOURCE_LOGS && (
+        <div className="flex items-center gap-4">
+          <FilterPopover
+            value={value}
+            onChange={onChange}
+            filters={filters}
+            onOpenChange={onOpenChange}
+          >
+            <FilterButton count={filterCount}></FilterButton>
+          </FilterPopover>
 
-        <SearchInput
-          value={searchString}
-          onChange={onSearchChange}
-          className="w-32"
-        ></SearchInput>
-      </div>
+          <SearchInput
+            value={searchString}
+            onChange={onSearchChange}
+            className="w-32"
+          ></SearchInput>
+        </div>
+      )}
     </div>
   );
 };

@@ -63,6 +63,7 @@ function InnerAgentNode({
             type="target"
             position={Position.Top}
             isConnectable={false}
+            isConnectableStart={false}
             id={NodeHandleId.AgentTop}
             className="!bg-accent-primary !size-2"
           ></Handle>

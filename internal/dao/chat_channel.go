@@ -63,8 +63,9 @@ func (dao *ChatChannelDAO) ListByIDs(ctx context.Context, db *gorm.DB, ids []str
 	}
 
 	err := db.WithContext(ctx).Table("chat_channel").
-		Select("chat_channel.id, chat_channel.name, chat_channel.channel, chat_channel.chat_id, chat_channel.status, dialog.name as dialog_name").
+		Select("chat_channel.id, chat_channel.name, chat_channel.channel, chat_channel.chat_id, chat_channel.agent_id, chat_channel.status, dialog.name as dialog_name, user_canvas.title as agent_name").
 		Joins("LEFT JOIN dialog ON dialog.id = chat_channel.chat_id").
+		Joins("LEFT JOIN user_canvas ON user_canvas.id = chat_channel.agent_id").
 		Where("chat_channel.id IN ?", ids).
 		Order("chat_channel.create_time DESC").
 		Scan(&results).Error

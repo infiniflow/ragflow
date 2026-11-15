@@ -15,7 +15,10 @@
  */
 
 import { IngestionTaskStatus } from '@/constants/knowledge';
-import kbService, { listDocument } from '@/services/knowledge-service';
+import kbService, {
+  documentFilter,
+  listDocument,
+} from '@/services/knowledge-service';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import React from 'react';
@@ -24,6 +27,7 @@ jest.mock('@/services/knowledge-service', () => ({
   __esModule: true,
   default: { documentIngest: jest.fn() },
   listDocument: jest.fn(),
+  documentFilter: jest.fn(),
 }));
 
 jest.mock('@/components/list-filter-bar/use-handle-filter-submit', () => ({
@@ -77,9 +81,14 @@ jest.mock('@/pages/dataset/dataset/use-select-filters', () => ({
   EMPTY_METADATA_FIELD: 'empty_metadata',
 }));
 
-import { useFetchDocumentList, useRunDocument } from '../use-document-request';
+import {
+  useFetchDocumentList,
+  useGetDocumentFilter,
+  useRunDocument,
+} from '../use-document-request';
 
 const mockList = jest.mocked(listDocument);
+const mockFilter = jest.mocked(documentFilter);
 const mockIngest = jest.mocked(kbService.documentIngest);
 
 // Declared locally: an imported binding used in a type position breaks the
@@ -106,6 +115,11 @@ const listResult = (doc: ChainDocument) => ({
 // through the real React Query runtime.
 const useCancelChain = () => ({
   list: useFetchDocumentList(true),
+  run: useRunDocument(),
+});
+
+const useStartFilterChain = () => ({
+  filter: useGetDocumentFilter(),
   run: useRunDocument(),
 });
 
@@ -149,6 +163,42 @@ describe('document cancel chain (list polling + stop-loss retry)', () => {
 
   afterEach(() => {
     jest.useRealTimers();
+  });
+
+  it('refreshes the pending counts when a parse start succeeds', async () => {
+    mockFilter
+      .mockResolvedValueOnce({
+        data: {
+          code: 0,
+          data: { filter: { ingestion_status: { UNSTART: 1 } } },
+        },
+      } as never)
+      .mockResolvedValue({
+        data: {
+          code: 0,
+          data: { filter: { ingestion_status: { SCHEDULED: 1 } } },
+        },
+      } as never);
+    mockIngest.mockResolvedValue({ data: { code: 0 } } as never);
+
+    const { result } = renderHook(useStartFilterChain, {
+      wrapper: makeWrapper(),
+    });
+    await waitFor(() =>
+      expect(result.current.filter.statusCounts).toEqual({ UNSTART: 1 }),
+    );
+
+    await act(async () => {
+      await result.current.run.runDocumentByIds({
+        documentIds: ['doc-start'],
+        run: 1,
+      });
+    });
+
+    await waitFor(() =>
+      expect(result.current.filter.statusCounts).toEqual({ SCHEDULED: 1 }),
+    );
+    expect(mockFilter).toHaveBeenCalledTimes(2);
   });
 
   it('keeps polling fast after the click and re-sends the cancel once it is overdue', async () => {

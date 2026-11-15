@@ -10,6 +10,9 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	mcpclient "ragflow/internal/mcp/client"
+	"ragflow/internal/permission"
+	"ragflow/internal/permission/testsupport"
 	"ragflow/internal/utility"
 	"strings"
 	"sync/atomic"
@@ -42,7 +45,8 @@ func TestAgentMCPModelDispatch(t *testing.T) {
 	t.Cleanup(func() { common.LookupHost = lookup })
 	var dispatched atomic.Bool
 	const authToken = "ragflow-secret"
-	mcp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	// TLS server: CallTool refuses to send credential headers over http.
+	mcp := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.RawQuery != "" {
 			t.Error("MCP authentication unexpectedly appeared in the URL")
 		}
@@ -80,7 +84,7 @@ func TestAgentMCPModelDispatch(t *testing.T) {
 	pinned := utility.PinnedHTTPClient
 	utility.PinnedHTTPClient = func(string, string, time.Duration) *http.Client { return mcp.Client() }
 	t.Cleanup(func() { utility.PinnedHTTPClient = pinned })
-	if err := db.Create(&entity.MCPServer{ID: "mcp", TenantID: "tenant", Name: "route server", URL: mcp.URL, ServerType: utility.TransportStreamableHTTP, Headers: entity.JSONMap{"Authorization": "Bearer ${authorization_token}"}, Variables: entity.JSONMap{"authorization_token": authToken}}).Error; err != nil {
+	if err := db.Create(&entity.MCPServer{ID: "mcp", TenantID: "tenant", Name: "route server", URL: mcp.URL, ServerType: mcpclient.TransportStreamableHTTP, Headers: entity.JSONMap{"Authorization": "Bearer ${authorization_token}"}, Variables: entity.JSONMap{"authorization_token": authToken}}).Error; err != nil {
 		t.Fatal(err)
 	}
 	addAgentMCPPermissionFixtures(t, db)
@@ -88,7 +92,7 @@ func TestAgentMCPModelDispatch(t *testing.T) {
 	state.Sys["tenant_id"] = "tenant"
 	state.Sys["user_id"] = "tenant"
 	state.Sys["canvas_id"] = "canvas"
-	ctx := withStateForTest(t.Context(), state)
+	ctx := permission.WithIdentity(withStateForTest(t.Context(), state), "tenant", "tenant")
 	p := mergeAgentParam(AgentParam{}, map[string]any{"mcp": []any{map[string]any{"mcp_id": "mcp", "tools": map[string]any{"route": map[string]any{"name": "route", "inputSchema": map[string]any{"type": "object", "properties": map[string]any{"origin": map[string]any{"type": "string"}}, "required": []string{"origin"}}}}}}})
 	tools, err := buildAgentTools(ctx, p)
 	if err != nil {
@@ -165,6 +169,7 @@ func TestAgentMCPModelDispatch(t *testing.T) {
 	}
 	state.Sys["user_id"] = "outsider"
 	state.Sys["tenant_id"] = "other-tenant"
+	ctx = permission.WithIdentity(withStateForTest(t.Context(), state), "outsider", "other-tenant")
 	if _, err := buildAgentTools(ctx, p); err == nil {
 		t.Fatal("MCP dependency access without canvas permission was allowed")
 	}
@@ -177,7 +182,7 @@ func TestAgentMCPToolNamesDoNotCollide(t *testing.T) {
 	}
 	pushComponentDB(t, db)
 	for _, id := range []string{"first", "second"} {
-		if err := db.Create(&entity.MCPServer{ID: id, TenantID: "tenant", Name: id, URL: "https://example.com/mcp", ServerType: utility.TransportStreamableHTTP}).Error; err != nil {
+		if err := db.Create(&entity.MCPServer{ID: id, TenantID: "tenant", Name: id, URL: "https://example.com/mcp", ServerType: mcpclient.TransportStreamableHTTP}).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -186,7 +191,7 @@ func TestAgentMCPToolNamesDoNotCollide(t *testing.T) {
 	state.Sys["tenant_id"] = "tenant"
 	state.Sys["user_id"] = "tenant"
 	state.Sys["canvas_id"] = "canvas"
-	ctx := withStateForTest(t.Context(), state)
+	ctx := permission.WithIdentity(withStateForTest(t.Context(), state), "tenant", "tenant")
 	p := AgentParam{Tools: nil, MCP: []any{
 		map[string]any{"mcp_id": "first", "tools": map[string]any{"search": map[string]any{"name": "web_search"}}},
 		map[string]any{"mcp_id": "second", "tools": map[string]any{"search": map[string]any{"name": "web_search"}}},
@@ -223,5 +228,8 @@ func addAgentMCPPermissionFixtures(t *testing.T, db *gorm.DB) {
 		ID: "canvas", UserID: "tenant", Permission: string(entity.TenantPermissionMe),
 	}).Error; err != nil {
 		t.Fatalf("create canvas permission fixture: %v", err)
+	}
+	if err := testsupport.PrepareEnterprisePermissionFixture(db, "tenant", "tenant"); err != nil {
+		t.Fatalf("prepare permission fixture: %v", err)
 	}
 }

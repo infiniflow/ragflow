@@ -19,6 +19,7 @@ package common
 import (
 	"encoding/json"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -177,6 +178,8 @@ func TestTimer_Report(t *testing.T) {
 func TestTimer_Markdown(t *testing.T) {
 	tm := NewTimer()
 	tm.Start()
+	// Include preparation time outside the named phases.
+	tm.start = tm.start.Add(-10 * time.Millisecond)
 	tm.Enter(PhaseCheckLLM)
 	time.Sleep(2 * time.Millisecond)
 	tm.Exit(PhaseCheckLLM)
@@ -193,8 +196,8 @@ func TestTimer_Markdown(t *testing.T) {
 	if !strings.HasPrefix(md, "\n## Time elapsed:") {
 		t.Errorf("Markdown missing header: %q", md)
 	}
-	// Should contain all 6 phase labels
-	for _, label := range []string{"Check LLM", "Check Langfuse tracer", "Bind models", "Query refinement(LLM)", "Retrieval", "Generate answer", "Total"} {
+	// Should contain all phase labels and the unmeasured time.
+	for _, label := range []string{"Check LLM", "Check Langfuse tracer", "Bind models", "Query refinement(LLM)", "Retrieval", "Generate answer", "Other", "Total"} {
 		if !strings.Contains(md, label+":") {
 			t.Errorf("Markdown missing label %q: %q", label, md)
 		}
@@ -202,14 +205,27 @@ func TestTimer_Markdown(t *testing.T) {
 	// Phase durations should be numeric with "ms" suffix.
 	mdRE := regexp.MustCompile(`(?m)^\s*-\s+([A-Za-z ()\.]+):\s+([0-9.]+)ms$`)
 	matches := mdRE.FindAllStringSubmatch(md, -1)
-	if len(matches) < 7 {
-		t.Errorf("expected 7 phase lines, found %d in:\n%s", len(matches), md)
+	if len(matches) != 8 {
+		t.Errorf("expected 8 timing lines, found %d in:\n%s", len(matches), md)
 	}
-	// Total should be the sum-ish of the three measured phases.
-	totalRE := regexp.MustCompile(`Total:\s+([0-9.]+)ms`)
-	totalMatch := totalRE.FindStringSubmatch(md)
-	if len(totalMatch) < 2 {
-		t.Fatalf("Markdown missing Total line: %q", md)
+	var total, sum float64
+	for _, match := range matches {
+		ms, err := strconv.ParseFloat(match[2], 64)
+		if err != nil {
+			t.Fatalf("invalid timing %q: %v", match[2], err)
+		}
+		if match[1] == "Total" {
+			total = ms
+		} else {
+			sum += ms
+		}
+		if match[1] == "Other" && ms < 10 {
+			t.Errorf("Other = %.1fms, want at least 10ms of preparation time", ms)
+		}
+	}
+	// Each of the eight displayed values is rounded to 0.1ms.
+	if diff := total - sum; diff < -0.401 || diff > 0.401 {
+		t.Errorf("timing lines sum to %.1fms, want Total %.1fms within rounding precision", sum, total)
 	}
 }
 

@@ -94,12 +94,6 @@ func (dao *TaskDAO) DeleteByDocIDs(ctx context.Context, db *gorm.DB, docIDs []st
 	return result.RowsAffected, result.Error
 }
 
-// DeleteByTenantID deletes all tasks by tenant ID (hard delete via document join)
-func (dao *TaskDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("doc_id IN (SELECT id FROM document WHERE tenant_id = ?)", tenantID).Delete(&entity.Task{})
-	return result.RowsAffected, result.Error
-}
-
 // GetByDocID gets all tasks by document ID
 func (dao *TaskDAO) GetByDocID(ctx context.Context, db *gorm.DB, docID string) ([]*entity.Task, error) {
 	var tasks []*entity.Task

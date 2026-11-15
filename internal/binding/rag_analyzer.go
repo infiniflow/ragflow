@@ -97,7 +97,8 @@ func (a *Analyzer) SetEnablePosition(enablePosition bool) {
 }
 
 // SetLanguage configures the Snowball stemmer for the given language (e.g. "English", "Dutch").
-// Falls back to the English Porter stemmer for unmapped languages.
+// Diacritic-folding languages ("Slovak", "Czech") disable stemming and
+// lemmatization instead; other unmapped languages keep the previous stemmer.
 func (a *Analyzer) SetLanguage(language string) {
 	if a.handle == nil {
 		return
@@ -263,9 +264,9 @@ func (a *Analyzer) GetTermTag(term string) string {
 	return C.GoString(cResult)
 }
 
-// Copy creates a new independent analyzer instance from the current one
-// The new instance shares the loaded dictionaries but has independent internal state
-// This is useful for creating per-request analyzer instances in concurrent environments
+// Copy creates a new independent analyzer instance from the current one.
+// The instance shares the tokenizer dictionaries and owns an independent OpenCC converter.
+// This is useful for creating per-request analyzer instances in concurrent environments.
 func (a *Analyzer) Copy() *Analyzer {
 	if a.handle == nil {
 		return nil

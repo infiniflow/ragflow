@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 )
@@ -41,7 +42,7 @@ import (
 // of capacity can fix — the waiter is outlasted, not outnumbered.
 //
 // Two concurrent calls model two documents parsed in the same process, which
-// requires ingestor.max_concurrent_workers >= 2.
+// requires ingestor.concurrent_workers >= 2.
 func TestVisionSourceFetchDoesNotBlockImageAdmission(t *testing.T) {
 	if testing.Short() {
 		t.Skip("needs the stub fetch to outlast visionMediaItemBudget")
@@ -75,10 +76,10 @@ func TestVisionSourceFetchDoesNotBlockImageAdmission(t *testing.T) {
 		}
 	}
 	run := func(inputs map[string]any) []string {
-		dispatched := parser.ParseResult{OutputFormat: "json", JSON: []map[string]any{newItem()}}
+		dispatched := parser.ParseResult{JSON: parser.MapsToItems([]map[string]any{newItem()})}
 		res, _, err := maybeDispatchVisionEnhancement(
 			context.Background(), dao.DB, utility.FileTypePDF, dispatched,
-			inputs, visionSettings{}, fractionWindow{},
+			inputs, visionSettings{}, progress.Window{},
 		)
 		if err != nil {
 			t.Errorf("maybeDispatchVisionEnhancement: %v", err)

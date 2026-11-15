@@ -24,6 +24,7 @@ package component
 
 import (
 	"context"
+	"ragflow/internal/ingestion/component/schema"
 	"testing"
 )
 
@@ -77,7 +78,7 @@ func TestTokenizerComponent_DebugSkipsEmbedding(t *testing.T) {
 	if got := debugOut["embedding_token_consumption"]; got != nil {
 		t.Errorf("embedding_token_consumption = %v under debug; must be omitted when embedding is skipped", got)
 	}
-	got, ok := debugOut["chunks"].([]map[string]any)
+	got, ok := schema.ChunkCarrierToMaps(debugOut["chunks"])
 	if !ok || len(got) != 2 {
 		t.Fatalf("chunks malformed under debug: %v", debugOut["chunks"])
 	}
@@ -96,7 +97,7 @@ func TestTokenizerComponent_DebugSkipsEmbedding(t *testing.T) {
 	if got := kbOut["embedding_token_consumption"]; got == nil {
 		t.Error("embedding_token_consumption missing with kb_id set; embedding accounting must run")
 	}
-	kbChunks, ok := kbOut["chunks"].([]map[string]any)
+	kbChunks, ok := schema.ChunkCarrierToMaps(kbOut["chunks"])
 	if !ok || len(kbChunks) != 2 {
 		t.Fatalf("chunks malformed with kb_id: %v", kbOut["chunks"])
 	}

@@ -105,25 +105,21 @@ func (s *databaseSource) loadTenantOwnerIDs(ctx context.Context, tenantIDs []str
 	return ownersByTenant, nil
 }
 
-func (s *databaseSource) tenantIDsForSubject(ctx context.Context, subject Subject) ([]string, error) {
-	var tenantIDs []string
-	err := s.db.WithContext(ctx).Model(&entity.UserTenant{}).
-		Distinct("tenant_id").
-		Where("user_id = ? AND status = ? AND role IN ?", subject.UserID, string(entity.StatusValid), []string{
-			string(RoleOwner), string(RoleAdmin), string(RoleNormal),
-		}).
-		Pluck("tenant_id", &tenantIDs).Error
+func (s *databaseSource) tenantIDsForCurrentUser(ctx context.Context) ([]string, error) {
+	userID := UserIDFromContext(ctx)
+	tenantIDs, err := s.activeTenantIDsForUser(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
-	return uniqueStringValues(append(tenantIDs, subject.UserID)), nil
+	return uniqueStringValues(append(tenantIDs, userID)), nil
 }
 
-func modelProviderResource(provider *entity.TenantModelProvider, ownerUserID string) Resource {
+// modelProviderResource builds permission metadata for a model provider.
+func modelProviderResource(provider *entity.TenantModelProvider) Resource {
 	return Resource{
 		Ref:               ResourceRef{Kind: ResourceKindModelProvider, ID: provider.ID},
 		TenantID:          provider.TenantID,
-		OwnerUserID:       ownerUserID,
+		OwnerUserID:       provider.UserID,
 		Visibility:        VisibilityTenant,
 		TenantRequirement: TenantMember,
 		OwnerOperations:   []Operation{OperationRead, OperationCreate, OperationUpdate, OperationDelete},
@@ -132,11 +128,12 @@ func modelProviderResource(provider *entity.TenantModelProvider, ownerUserID str
 	}
 }
 
-func modelInstanceResource(instance *entity.TenantModelInstance, provider *entity.TenantModelProvider, ownerUserID string) Resource {
+// modelInstanceResource builds permission metadata for a model instance.
+func modelInstanceResource(instance *entity.TenantModelInstance, provider *entity.TenantModelProvider) Resource {
 	return Resource{
 		Ref:               ResourceRef{Kind: ResourceKindModelInstance, ID: instance.ID},
 		TenantID:          provider.TenantID,
-		OwnerUserID:       ownerUserID,
+		OwnerUserID:       provider.UserID,
 		Visibility:        VisibilityTenant,
 		TenantRequirement: TenantMember,
 		OwnerOperations:   []Operation{OperationRead, OperationCreate, OperationUpdate, OperationDelete, OperationUse},
@@ -145,11 +142,12 @@ func modelInstanceResource(instance *entity.TenantModelInstance, provider *entit
 	}
 }
 
-func tenantModelResource(model *entity.TenantModel, provider *entity.TenantModelProvider, ownerUserID string) Resource {
+// tenantModelResource builds permission metadata for a tenant model.
+func tenantModelResource(model *entity.TenantModel, provider *entity.TenantModelProvider) Resource {
 	return Resource{
 		Ref:               ResourceRef{Kind: ResourceKindModel, ID: model.ID},
 		TenantID:          provider.TenantID,
-		OwnerUserID:       ownerUserID,
+		OwnerUserID:       provider.UserID,
 		Visibility:        VisibilityTenant,
 		TenantRequirement: TenantMember,
 		OwnerOperations:   []Operation{OperationRead, OperationCreate, OperationUpdate, OperationDelete, OperationUse},

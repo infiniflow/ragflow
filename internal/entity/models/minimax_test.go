@@ -65,6 +65,145 @@ func newMinimaxForTest(baseURL string) *MinimaxModel {
 	)
 }
 
+func TestMinimaxCredentialsUnwrapsStoredBundle(t *testing.T) {
+	tests := []struct {
+		name      string
+		stored    string
+		wantKey   string
+		wantGroup string
+	}{
+		{"plain key", "sk-plain", "sk-plain", ""},
+		{"padded plain key", " sk-plain ", "sk-plain", ""},
+		{"bundle", `{"api_key":"sk-bundled","group_id":"12345"}`, "sk-bundled", "12345"},
+		{"bundle without group", `{"api_key":"sk-bundled"}`, "sk-bundled", ""},
+		{"padded bundle", `{"api_key":" sk-bundled ","group_id":" 12345 "}`, "sk-bundled", "12345"},
+		{"malformed bundle", `{"api_key":`, `{"api_key":`, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			stored := tt.stored
+			key, groupID := minimaxCredentials(&APIConfig{ApiKey: &stored})
+			if key != tt.wantKey {
+				t.Errorf("apiKey=%q, want %q", key, tt.wantKey)
+			}
+			if groupID != tt.wantGroup {
+				t.Errorf("groupID=%q, want %q", groupID, tt.wantGroup)
+			}
+		})
+	}
+
+	if key, groupID := minimaxCredentials(nil); key != "" || groupID != "" {
+		t.Errorf("nil config: apiKey=%q groupID=%q, want both empty", key, groupID)
+	}
+	if key, groupID := minimaxCredentials(&APIConfig{}); key != "" || groupID != "" {
+		t.Errorf("nil key: apiKey=%q groupID=%q, want both empty", key, groupID)
+	}
+}
+
+func TestMinimaxEndpointURLAppendsGroupID(t *testing.T) {
+	model := NewMinimaxModel(
+		map[string]string{"default": "https://api.minimax.chat"},
+		URLSuffix{Chat: "v1/text/chatcompletion_v2"},
+	)
+	suffix := model.baseModel.URLSuffix.Chat
+
+	plain := "sk-plain"
+	got, err := model.endpointURL(&APIConfig{ApiKey: &plain}, suffix)
+	if err != nil {
+		t.Fatalf("endpointURL: %v", err)
+	}
+	if want := "https://api.minimax.chat/v1/text/chatcompletion_v2"; got != want {
+		t.Errorf("url=%q, want %q: a plain key sends no GroupId", got, want)
+	}
+
+	bundle := `{"api_key":"sk-bundled","group_id":"12345"}`
+	got, err = model.endpointURL(&APIConfig{ApiKey: &bundle}, suffix)
+	if err != nil {
+		t.Fatalf("endpointURL: %v", err)
+	}
+	if want := "https://api.minimax.chat/v1/text/chatcompletion_v2?GroupId=12345"; got != want {
+		t.Errorf("url=%q, want %q", got, want)
+	}
+
+	// A suffix that already carries a query keeps it.
+	got, err = model.endpointURL(&APIConfig{ApiKey: &bundle}, suffix+"?beta=1")
+	if err != nil {
+		t.Fatalf("endpointURL: %v", err)
+	}
+	if want := "https://api.minimax.chat/v1/text/chatcompletion_v2?beta=1&GroupId=12345"; got != want {
+		t.Errorf("url=%q, want %q", got, want)
+	}
+
+	// A group ID is not necessarily numeric: whatever is stored has to reach
+	// the query string escaped, not break the URL.
+	email := `{"api_key":"sk-bundled","group_id":"a@b.com"}`
+	got, err = model.endpointURL(&APIConfig{ApiKey: &email}, suffix)
+	if err != nil {
+		t.Fatalf("endpointURL: %v", err)
+	}
+	if want := "https://api.minimax.chat/v1/text/chatcompletion_v2?GroupId=a%40b.com"; got != want {
+		t.Errorf("url=%q, want %q", got, want)
+	}
+}
+
+// TestMinimaxChatUnwrapsKeyBundle pins that a stored {api_key, group_id}
+// bundle is unwrapped before it is sent: the Bearer token is the api_key and
+// the group travels as the GroupId query parameter. The model settings form
+// stores that bundle whenever the group ID field is filled, and sending the
+// raw JSON object as the token made every MiniMax call fail authentication.
+func TestMinimaxChatUnwrapsKeyBundle(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newMinimaxServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
+		if got := r.URL.Query().Get("GroupId"); got != "12345" {
+			t.Errorf("GroupId=%q, want 12345", got)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"choices": []map[string]interface{}{{
+				"message": map[string]interface{}{"content": "pong"},
+			}},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := `{"api_key":"test-key","group_id":"12345"}`
+	resp, err := newMinimaxForTest(srv.URL).ChatWithMessages(
+		t.Context(),
+		"MiniMax-M3",
+		[]Message{{Role: "user", Content: "ping"}},
+		&APIConfig{ApiKey: &apiKey},
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("ChatWithMessages: %v", err)
+	}
+	if resp.Answer == nil || *resp.Answer != "pong" {
+		t.Errorf("Answer=%v, want pong", resp.Answer)
+	}
+}
+
+func TestMinimaxListModelsUnwrapsKeyBundle(t *testing.T) {
+	withSSRFBypass(t)
+	srv := newMinimaxServer(t, func(t *testing.T, r *http.Request, _ map[string]interface{}, w http.ResponseWriter) {
+		if got := r.URL.Query().Get("GroupId"); got != "12345" {
+			t.Errorf("GroupId=%q, want 12345", got)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": []map[string]string{{"id": "MiniMax-M3"}},
+		})
+	})
+	defer srv.Close()
+
+	apiKey := `{"api_key":"test-key","group_id":"12345"}`
+	models, err := newMinimaxForTest(srv.URL).ListModels(t.Context(), &APIConfig{ApiKey: &apiKey})
+	if err != nil {
+		t.Fatalf("ListModels: %v", err)
+	}
+	if got := joinModelNames(models, ","); got != "MiniMax-M3" {
+		t.Errorf("models=%q", got)
+	}
+}
+
 func TestMinimaxNewInstancePreservesConfig(t *testing.T) {
 	model := NewMinimaxModel(
 		map[string]string{"default": "http://old.example"},
@@ -574,6 +713,17 @@ func TestMinimaxValidatesInputs(t *testing.T) {
 			name: "models api key",
 			run: func() error {
 				_, err := newMinimaxForTest("http://unused").ListModels(ctx, &APIConfig{})
+				return err
+			},
+			want: "api key is required",
+		},
+		{
+			// A bundle that only filled in the group ID must fail here
+			// instead of sending an empty Bearer token.
+			name: "bundle without api key",
+			run: func() error {
+				onlyGroup := `{"group_id":"12345"}`
+				_, err := newMinimaxForTest("http://unused").ChatWithMessages(ctx, "MiniMax-M3", []Message{{Role: "user", Content: "x"}}, &APIConfig{ApiKey: &onlyGroup}, nil, nil)
 				return err
 			},
 			want: "api key is required",

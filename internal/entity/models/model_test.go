@@ -29,6 +29,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"ragflow/internal/tokenizer"
@@ -73,6 +74,88 @@ func TestOpenAIAPICompatibleDeclaresRerankSuffix(t *testing.T) {
 	}
 	if strings.TrimSpace(cfg.URLSuffix.Rerank) == "" {
 		t.Fatal("openai-api-compatible.json declares no rerank url_suffix")
+	}
+}
+
+// providerConfDir locates conf/models relative to the test's CWD.
+func providerConfDir(t *testing.T) string {
+	t.Helper()
+
+	for _, candidate := range []string{
+		filepath.Join("..", "..", "..", "conf", "models"),
+		filepath.Join("conf", "models"),
+	} {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+
+	t.Fatal("could not locate conf/models")
+	return ""
+}
+
+// A provider keeps the API version either in its base URL (OpenAI-compatible
+// shape: base ".../v1" + suffix "chat/completions") or in url_suffix (MiniMax
+// shape: base "https://api.minimaxi.com" + suffix "v1/text/chatcompletion_v2").
+// url_hint is the example endpoint shown in the base URL field, so a hint that
+// carries the version the suffix already supplies makes every request 404 on a
+// doubled "/v1/v1/..." as soon as the user pastes it. GPUStack shipped exactly
+// that hint before joinURL deduplicated the segment.
+func TestProviderConfURLHintsFollowVersionConvention(t *testing.T) {
+	dir := providerConfDir(t)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read %s: %v", dir, err)
+	}
+
+	checked := 0
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			t.Fatalf("read %s: %v", entry.Name(), err)
+		}
+
+		var cfg struct {
+			Name      string         `json:"name"`
+			URLHint   string         `json:"url_hint"`
+			URLSuffix map[string]any `json:"url_suffix"`
+		}
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			t.Fatalf("parse %s: %v", entry.Name(), err)
+		}
+		if cfg.URLHint == "" {
+			continue
+		}
+
+		trimmed := strings.TrimRight(strings.TrimSpace(cfg.URLHint), "/")
+		idx := strings.LastIndex(trimmed, "/")
+		if idx < 0 {
+			continue
+		}
+		hintVersion := apiVersionSegment(trimmed[idx+1:])
+		if hintVersion == "" {
+			continue
+		}
+
+		checked++
+		for key, value := range cfg.URLSuffix {
+			suffix, ok := value.(string)
+			if !ok {
+				continue
+			}
+			if apiVersionSegment(firstPathSegment(suffix)) == hintVersion {
+				t.Errorf("%s: url_hint %q ends with %q but url_suffix.%s also starts with it; "+
+					"the version must live in one place only",
+					entry.Name(), cfg.URLHint, hintVersion, key)
+			}
+		}
+	}
+
+	if checked == 0 {
+		t.Fatal("no provider url_hint was checked; conf/models layout changed")
 	}
 }
 
@@ -931,4 +1014,45 @@ func sortedKeys(set map[string]bool) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+// TestProviderManagerPublishIsVisibleToConcurrentReaders pins the publication
+// contract: InitProviderManager hands the catalog to an atomic pointer, so a
+// reader running while a publish is in flight observes a complete catalog
+// instead of racing on the field. Run with -race to catch a regression back to
+// a plain package variable.
+func TestProviderManagerPublishIsVisibleToConcurrentReaders(t *testing.T) {
+	saved := GetProviderManager()
+	published := &ProviderManager{Providers: []Provider{{Name: "atomic-fixture"}}}
+	setProviderManager(published)
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for {
+			select {
+			case <-stop:
+				return
+			default:
+				setProviderManager(published)
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		close(stop)
+		wg.Wait()
+		setProviderManager(saved)
+	})
+
+	for i := 0; i < 1000; i++ {
+		got := GetProviderManager()
+		if got == nil {
+			t.Fatal("GetProviderManager returned nil while a catalog was published")
+		}
+		if len(got.Providers) != 1 || got.Providers[0].Name != "atomic-fixture" {
+			t.Fatalf("reader observed a catalog that was never published: %+v", got)
+		}
+	}
 }

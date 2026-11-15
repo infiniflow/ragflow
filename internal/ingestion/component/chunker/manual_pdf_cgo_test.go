@@ -79,10 +79,14 @@ func TestManualChunker_RealPDFResort(t *testing.T) {
 	// Same shape the chunker receives in production.
 	input := map[string]any{
 		"name":          "Doc1.pdf",
-		"output_format": "json",
+		"output_format": "chunks",
 		"chunks":        res.JSON,
 	}
-	records := extractLineRecords(input)
+	upstream, err := decodeChunkerFromUpstream(input)
+	if err != nil {
+		t.Fatalf("decodeChunkerFromUpstream: %v", err)
+	}
+	records := extractLineRecords(upstream)
 	if len(records) == 0 {
 		t.Fatal("extractLineRecords produced no records from real parser output")
 	}

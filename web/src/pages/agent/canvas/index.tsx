@@ -77,7 +77,6 @@ import NoteNode from './node/note-node';
 import ParserNode from './node/parser-node';
 import { PlaceholderNode } from './node/placeholder-node';
 import { RetrievalNode } from './node/retrieval-node';
-import { RewriteNode } from './node/rewrite-node';
 import { SwitchNode } from './node/switch-node';
 import TokenizerNode from './node/tokenizer-node';
 import { ToolNode } from './node/tool-node';
@@ -93,7 +92,6 @@ export const nodeTypes: NodeTypes = {
   switchNode: SwitchNode,
   retrievalNode: RetrievalNode,
   messageNode: MessageNode,
-  rewriteNode: RewriteNode,
   keywordNode: KeywordNode,
   // emailNode: EmailNode,
   iterationNode: IterationNode,
@@ -322,7 +320,7 @@ function AgentCanvas({
       currentEventListWithoutMessageById,
     });
   return (
-    <div className={cn(styles.canvasWrapper, 'px-5 pb-5')}>
+    <div className={cn(styles.canvasWrapper, 'pr-5 pb-5')}>
       <svg
         xmlns="http://www.w3.org/2000/svg"
         style={{ position: 'absolute', top: 10, left: 0 }}

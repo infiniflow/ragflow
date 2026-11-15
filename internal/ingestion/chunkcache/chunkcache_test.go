@@ -31,14 +31,16 @@ import (
 // manifest bookkeeping, with call counters so tests can assert the exact
 // command sequence (a real Redis is an integration-tier dependency).
 type fakeStore struct {
-	kv          map[string]string
-	sets        map[string]map[string]bool
-	ttl         map[string]time.Duration
-	deleted     []string
-	failSet     bool
-	expireFails bool
-	membersErr  error
-	deleteFails map[string]bool
+	kv              map[string]string
+	sets            map[string]map[string]bool
+	ttl             map[string]time.Duration
+	deleted         []string
+	deleteManyCalls int
+	lastDeleteMany  []string
+	failSet         bool
+	expireFails     bool
+	membersErr      error
+	deleteFails     map[string]bool
 }
 
 func newFakeStore() *fakeStore {
@@ -93,6 +95,22 @@ func (f *fakeStore) Delete(_ context.Context, key string) bool {
 	}
 	delete(f.kv, key)
 	delete(f.sets, key)
+	return true
+}
+
+func (f *fakeStore) DeleteMany(_ context.Context, keys ...string) bool {
+	f.deleteManyCalls++
+	f.lastDeleteMany = append([]string(nil), keys...)
+	for _, k := range keys {
+		if f.deleteFails[k] {
+			return false
+		}
+	}
+	for _, k := range keys {
+		delete(f.kv, k)
+		delete(f.sets, k)
+		delete(f.ttl, k)
+	}
 	return true
 }
 
@@ -240,9 +258,9 @@ func TestGet_HitAndMiss(t *testing.T) {
 }
 
 // TestPurgeTask_DeletesEveryEntryThenManifest asserts persist-time reclaim
-// removes all recorded entries and finally the manifest itself, leaving no
-// key behind that would otherwise wait out the 7-day TTL.
-func TestPurgeTask_DeletesEveryEntryThenManifest(t *testing.T) {
+// removes all recorded entries in one batch and then the manifest itself,
+// leaving no key behind that would otherwise wait out the 7-day TTL.
+func TestPurgeTaskDeletesEveryEntryAndManifest(t *testing.T) {
 	f := newFakeStore()
 	ctx := taskCtx("task-1")
 	Set(ctx, f, "kc:extractor:keywords:a", "1")
@@ -251,21 +269,25 @@ func TestPurgeTask_DeletesEveryEntryThenManifest(t *testing.T) {
 
 	PurgeTask(context.Background(), f, "task-1")
 
-	want := []string{"kc:emb:c", "kc:extractor:keywords:a", "kc:meta:b", "kc:manifest:task-1"}
-	if len(f.deleted) != len(want) {
-		t.Fatalf("deleted = %v, want %v", f.deleted, want)
+	// Entries are reclaimed in one batch; the manifest is deleted separately
+	// (so a failed entry batch leaves the task resumable). Nothing may remain.
+	if f.deleteManyCalls != 1 {
+		t.Fatalf("DeleteMany calls = %d, want 1 (single batch)", f.deleteManyCalls)
 	}
-	// Entry deletes may arrive in any order, but the manifest must be last:
-	// dropping it early would orphan the remaining entries if we crash midway.
-	if f.deleted[len(f.deleted)-1] != "kc:manifest:task-1" {
-		t.Errorf("last delete = %q, want the manifest key", f.deleted[len(f.deleted)-1])
+	if len(f.deleted) != 1 || f.deleted[0] != manifestKey("task-1") {
+		t.Fatalf("per-key Delete = %v, want exactly the manifest key", f.deleted)
 	}
-	entries := append([]string(nil), f.deleted[:len(f.deleted)-1]...)
-	sort.Strings(entries)
-	for i, w := range want[:len(want)-1] {
-		if entries[i] != w {
-			t.Errorf("entry deletes = %v, want %v", entries, want[:len(want)-1])
-			break
+	want := map[string]bool{
+		"kc:emb:c":                true,
+		"kc:extractor:keywords:a": true,
+		"kc:meta:b":               true,
+	}
+	if len(f.lastDeleteMany) != len(want) {
+		t.Fatalf("batch size = %d, want %d (%v)", len(f.lastDeleteMany), len(want), f.lastDeleteMany)
+	}
+	for _, k := range f.lastDeleteMany {
+		if !want[k] {
+			t.Errorf("batch carried unexpected key %q", k)
 		}
 	}
 	if len(f.kv) != 0 {

@@ -34,9 +34,8 @@ func TestGroupBoxesByRCSpanHeaderRowCellCount(t *testing.T) {
 	// (H==0, SP>0) cellPosFromBox must use those bounds, otherwise the span
 	// cell falls back to [0,450] and covers only 5 columns.
 	//
-	// R starts at 1 (not 0): GroupBoxesByRC falls back to YX grouping when
-	// maxR<=0, which would skip cellPosFromBox entirely; a real table has
-	// multiple rows so maxR>0 and the R/C path runs.
+	// R starts at 1 (not 0) so the box carries a positive annotation;
+	// all-zero R/C boxes are treated as annotation-free and use YX grouping.
 	boxes = append(boxes, pdf.TextBox{
 		X0: 0, X1: 450, Top: 0, Bottom: 20,
 		Text: "HEADER", R: 1, C: 0,

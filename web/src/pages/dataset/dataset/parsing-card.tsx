@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { IDocumentInfo } from '@/interfaces/database/document';
+import { formatDate } from '@/utils/date';
 import { useTranslation } from 'react-i18next';
 import reactStringReplace from 'react-string-replace';
 import { RunningStatus, RunningStatusMap } from './constant';
@@ -49,7 +50,7 @@ export const PopoverContent = ({ record }: IProps) => {
     {
       key: 'process_begin_at',
       label: t('knowledgeDetails.processBeginAt'),
-      children: record.process_begin_at,
+      children: formatDate(record.process_begin_at),
     },
     {
       key: 'knowledgeDetails.process_duration',

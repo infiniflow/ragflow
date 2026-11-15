@@ -278,28 +278,60 @@ func (d *SyncTaskDAO) IsTaskCanceled(ctx context.Context, taskID string) (bool, 
 	return task.Status == SyncStatusCancel, nil
 }
 
+// GetTaskStatus returns the current status of a sync task. found is false when
+// the task no longer exists, allowing consumers to acknowledge stale messages.
+func (d *SyncTaskDAO) GetTaskStatus(ctx context.Context, taskID string) (status string, found bool, err error) {
+	var task entity.SyncLogs
+	err = d.db.WithContext(ctx).Select("status").Where("id = ?", taskID).Take(&task).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return task.Status, true, nil
+}
+
 // MarkConnectorRunning marks a connector running.
 func (d *SyncTaskDAO) MarkConnectorRunning(ctx context.Context, connectorID string) error {
 	return d.db.WithContext(ctx).Model(&entity.Connector{}).Where("id = ?", connectorID).Update("status", SyncStatusRunning).Error
 }
 
-// RescheduleClaimed puts a claimed task back into schedule state.
-func (d *SyncTaskDAO) RescheduleClaimed(ctx context.Context, taskID string) error {
-	return d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+// RescheduleClaimed puts a claimed task back into schedule state. When
+// startedAt is non-nil, only the worker that owns that exact claim may restore
+// it, so a delayed retry cannot overwrite a newer claim.
+func (d *SyncTaskDAO) RescheduleClaimed(ctx context.Context, taskID string, startedAt *time.Time) (bool, error) {
+	var restored bool
+	err := d.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var task entity.SyncLogs
-		if err := tx.WithContext(ctx).Where("id = ? AND status = ?", taskID, SyncStatusRunning).First(&task).Error; err != nil {
+		query := tx.WithContext(ctx).Where("id = ? AND status = ?", taskID, SyncStatusRunning)
+		if startedAt != nil {
+			query = query.Where("time_started = ?", *startedAt)
+		}
+		if err := query.First(&task).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil
 			}
 			return err
 		}
-		if err := tx.Model(&entity.SyncLogs{}).
-			Where("id = ? AND status = ?", taskID, SyncStatusRunning).
-			Update("status", SyncStatusSchedule).Error; err != nil {
+		update := tx.Model(&entity.SyncLogs{}).Where("id = ? AND status = ?", taskID, SyncStatusRunning)
+		if startedAt != nil {
+			update = update.Where("time_started = ?", *startedAt)
+		}
+		result := update.Update("status", SyncStatusSchedule)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil
+		}
+		if err := tx.Model(&entity.Connector{}).Where("id = ? AND status = ?", task.ConnectorID, SyncStatusRunning).Update("status", SyncStatusSchedule).Error; err != nil {
 			return err
 		}
-		return tx.Model(&entity.Connector{}).Where("id = ? AND status = ?", task.ConnectorID, SyncStatusRunning).Update("status", SyncStatusSchedule).Error
+		restored = true
+		return nil
 	})
+	return restored, err
 }
 
 // FailTask marks a task failed without advancing its poll waterline.

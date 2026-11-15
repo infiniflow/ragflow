@@ -69,11 +69,10 @@ func (x *XiaomiModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, x.baseModel.URLSuffix.Chat)
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
@@ -116,11 +115,10 @@ func (x *XiaomiModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
@@ -153,11 +151,11 @@ func (x *XiaomiModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 }
 
 func (x *XiaomiModel) Embed(ctx context.Context, modelName *string, request EmbedRequest, apiConfig *APIConfig, embeddingConfig *EmbeddingConfig, modelUsage *common.ModelUsage) ([]EmbeddingData, error) {
-	return nil, fmt.Errorf("no such method %s", x.Name())
+	return nil, fmt.Errorf("%s: no such method: Embed", x.Name())
 }
 
 func (x *XiaomiModel) Rerank(ctx context.Context, modelName *string, request RerankRequest, apiConfig *APIConfig, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
-	return nil, fmt.Errorf("no such method %s", x.Name())
+	return nil, fmt.Errorf("%s: no such method: Rerank", x.Name())
 }
 
 func (x *XiaomiModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
@@ -322,11 +320,10 @@ func (x *XiaomiModel) newXiaomiASRRequest(ctx context.Context, modelName *string
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(x.baseModel.URLSuffix.Chat, "/"))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -516,11 +513,10 @@ func (x *XiaomiModel) newXiaomiTTSRequest(ctx context.Context, modelName *string
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(x.baseModel.URLSuffix.Chat, "/"))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -600,11 +596,11 @@ func decodeXiaomiAudioData(data string) ([]byte, error) {
 }
 
 func (x *XiaomiModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("no such method %s", x.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", x.Name())
 }
 
 func (x *XiaomiModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("no such method %s", x.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", x.Name())
 }
 
 func (x *XiaomiModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
@@ -612,15 +608,14 @@ func (x *XiaomiModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 		return nil, err
 	}
 
-	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return nil, err
-	}
 	modelsSuffix := strings.Trim(strings.TrimSpace(x.baseModel.URLSuffix.Models), "/")
 	if modelsSuffix == "" {
 		return nil, fmt.Errorf("xiaomi: models URL suffix is not configured")
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), modelsSuffix)
+	url, err := x.baseModel.EndpointURL(apiConfig, modelsSuffix)
+	if err != nil {
+		return nil, err
+	}
 
 	body, err := x.baseModel.doGetRequest(ctx, url, apiConfig, nonStreamCallTimeout)
 	if err != nil {
@@ -639,7 +634,7 @@ func (x *XiaomiModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 }
 
 func (x *XiaomiModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("no such method %s", x.Name())
+	return nil, fmt.Errorf("%s: no such method: Balance", x.Name())
 }
 
 func (x *XiaomiModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
@@ -648,9 +643,13 @@ func (x *XiaomiModel) CheckConnection(ctx context.Context, apiConfig *APIConfig)
 }
 
 func (x *XiaomiModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("no such method %s", x.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", x.Name())
 }
 
 func (x *XiaomiModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("no such method %s", x.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", x.Name())
+}
+
+func (x *XiaomiModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", x.Name())
 }

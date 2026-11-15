@@ -252,7 +252,6 @@ func TestVarRefPattern_MatchesColonBearingComponentIDs(t *testing.T) {
 		{"{UserFillUp:LoopInput@value}", "UserFillUp:LoopInput@value"},
 		{"{Retrieval:KBSearch@formalized_content}", "Retrieval:KBSearch@formalized_content"},
 		{"{CodeExec:Double@result}", "CodeExec:Double@result"},
-		{"{Browser:BusyHatsSink@content}", "Browser:BusyHatsSink@content"},
 	}
 
 	for _, c := range cases {

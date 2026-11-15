@@ -202,28 +202,6 @@ func SetFieldArray(result map[string]interface{}, destKey string, v interface{})
 	}
 }
 
-// ToFloat64 converts various types to float64
-func ToFloat64(val interface{}) (float64, bool) {
-	switch v := val.(type) {
-	case float64:
-		return v, true
-	case float32:
-		return float64(v), true
-	case int:
-		return float64(v), true
-	case int64:
-		return float64(v), true
-	case string:
-		f, err := strconv.ParseFloat(v, 64)
-		if err != nil {
-			return 0, false
-		}
-		return f, true
-	default:
-		return 0, false
-	}
-}
-
 // ConvertToStringSlice converts an interface{} to []string
 // e.g. []interface{}{"a", "b", "c"} -> []string{"a", "b", "c"}
 // e.g. "hello" -> []string{"hello"}

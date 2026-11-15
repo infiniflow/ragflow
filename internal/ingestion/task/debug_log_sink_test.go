@@ -202,7 +202,7 @@ func TestDebugLogSink_OnComponentTotalIsNoOp(t *testing.T) {
 func TestPipelineExecutor_DebugRunWritesLogViaSink(t *testing.T) {
 	ctx := t.Context()
 	taskCtx := NewDebugTaskContext("tenant-1", "c1", "doc.pdf", nil)
-	exec, err := NewPipelineExecutor(taskCtx, "c1", 0)
+	exec, err := NewPipelineExecutor(taskCtx, "c1", 0, testPipelineDeps())
 	if err != nil {
 		t.Fatalf("NewPipelineExecutor: %v", err)
 	}

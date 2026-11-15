@@ -85,6 +85,27 @@ func TestSearchSemanticChunksToolAsksForTheDenseLegAlone(t *testing.T) {
 	}
 }
 
+// TestLocateSearchDisablesDenseFallback pins the agentic/human split on the
+// shared locate path: search_chunks and search_semantic_chunks both hand
+// chunks to the model as evidence, so neither may ask for a dense-only
+// rescue. Only human-facing retrieval keeps it on.
+func TestLocateSearchDisablesDenseFallback(t *testing.T) {
+	fake := newCaptureService()
+	runtime.SetRetrievalService(fake)
+	defer runtime.SetRetrievalService(nil)
+
+	if _, err := NewSearchSemanticChunksTool("t", []string{"kb1"}).InvokableRun(context.Background(),
+		`{"queries":["an Italian family restaurant"]}`); err != nil {
+		t.Fatalf("invokable run: %v", err)
+	}
+	if len(fake.reqs) != 1 {
+		t.Fatalf("requests = %d, want 1", len(fake.reqs))
+	}
+	if req := fake.reqs[0]; req.AllowDenseFallback == nil || *req.AllowDenseFallback {
+		t.Fatal("locate search is agentic and must disable the dense fallback")
+	}
+}
+
 // TestSearchSemanticChunksToolSchemaHasNoWeightKnob keeps the fusion weight out
 // of the model's reach: offering it would let the caller rebuild search_chunks
 // by hand, which is the one thing this tool must not degrade into.

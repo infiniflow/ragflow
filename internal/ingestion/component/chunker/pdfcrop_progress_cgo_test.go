@@ -44,17 +44,14 @@ func TestCropImageChunks_ReportsFractions(t *testing.T) {
 		{
 			Text:      "content 1",
 			Positions: jsonPositions(t, []float64{1, 0, 100, 0, 100}),
-			CKType:    "text",
 		},
 		{
 			Text:      "content 2",
 			Positions: jsonPositions(t, []float64{1, 100, 200, 100, 200}),
-			CKType:    "text",
 		},
 		{
 			Text:      "content 3",
 			Positions: jsonPositions(t, []float64{1, 200, 300, 200, 300}),
-			CKType:    "text",
 		},
 	}
 
@@ -91,8 +88,7 @@ func TestCropImageChunks_ZeroTasksReportsNothing(t *testing.T) {
 
 	chunks := []schema.ChunkDoc{
 		{
-			Text:   "no positions",
-			CKType: "text",
+			Text: "no positions",
 		},
 	}
 
@@ -116,12 +112,10 @@ func TestCropImageChunks_CancelledContextDoesNotReport(t *testing.T) {
 		{
 			Text:      "content 1",
 			Positions: jsonPositions(t, []float64{1, 0, 100, 0, 100}),
-			CKType:    "text",
 		},
 		{
 			Text:      "content 2",
 			Positions: jsonPositions(t, []float64{1, 100, 200, 100, 200}),
-			CKType:    "text",
 		},
 	}
 

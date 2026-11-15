@@ -24,6 +24,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"ragflow/internal/common"
 	"strings"
 	"time"
@@ -63,11 +64,10 @@ func (g *GiteeModel) ChatWithMessages(ctx context.Context, modelName string, mes
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	url, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, g.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
@@ -106,11 +106,10 @@ func (g *GiteeModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 		chatModelConfig.UsageResult = nil
 	}
 
-	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	url, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), g.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]any{"include_usage": true}
 
@@ -171,7 +170,7 @@ func (g *GiteeModel) Embed(ctx context.Context, modelName *string, request Embed
 	}
 	baseURL := resolvedBaseURL
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.baseModel.URLSuffix.Embedding)
+	url := joinURL(baseURL, g.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -280,7 +279,7 @@ func (g *GiteeModel) Rerank(ctx context.Context, modelName *string, request Rera
 	}
 	baseURL := resolvedBaseURL
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.baseModel.URLSuffix.Rerank)
+	url := joinURL(baseURL, g.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 {
@@ -349,20 +348,20 @@ func (g *GiteeModel) Rerank(ctx context.Context, modelName *string, request Rera
 
 // TranscribeAudio transcribe audio
 func (g *GiteeModel) TranscribeAudio(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage) (*ASRResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: TranscribeAudio", g.Name())
 }
 
 func (g *GiteeModel) TranscribeAudioWithSender(ctx context.Context, modelName *string, file *string, apiConfig *APIConfig, asrConfig *ASRConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", g.Name())
+	return fmt.Errorf("%s: no such method: TranscribeAudioWithSender", g.Name())
 }
 
 // AudioSpeech convert text to audio
 func (g *GiteeModel) AudioSpeech(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage) (*TTSResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", g.Name())
+	return nil, fmt.Errorf("%s: no such method: AudioSpeech", g.Name())
 }
 
 func (g *GiteeModel) AudioSpeechWithSender(ctx context.Context, modelName *string, audioContent *string, apiConfig *APIConfig, ttsConfig *TTSConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
-	return fmt.Errorf("%s, no such method", g.Name())
+	return fmt.Errorf("%s: no such method: AudioSpeechWithSender", g.Name())
 }
 
 type giteeOCRResponse struct {
@@ -390,7 +389,7 @@ func (g *GiteeModel) OCRFile(ctx context.Context, modelName *string, content []b
 	}
 	baseURL := resolvedBaseURL
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.baseModel.URLSuffix.OCR)
+	url := joinURL(baseURL, g.baseModel.URLSuffix.OCR)
 
 	payload := &bytes.Buffer{}
 	writer := multipart.NewWriter(payload)
@@ -487,7 +486,7 @@ func (g *GiteeModel) ParseFile(ctx context.Context, modelName *string, content [
 	}
 	baseURL := resolvedBaseURL
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), g.baseModel.URLSuffix.DocumentParse)
+	url := joinURL(baseURL, g.baseModel.URLSuffix.DocumentParse)
 
 	payload := &bytes.Buffer{}
 	writer := multipart.NewWriter(payload)
@@ -544,41 +543,47 @@ func (g *GiteeModel) ParseFile(ctx context.Context, modelName *string, content [
 	if err = json.Unmarshal(body, &giteeParseFileResp); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
+	if strings.TrimSpace(giteeParseFileResp.TaskID) == "" {
+		return nil, fmt.Errorf("Gitee parse API response is missing task_id")
+	}
 
 	_, err = g.getParseFile(ctx, &baseURL, apiConfig.ApiKey, &giteeParseFileResp.TaskID, 5*time.Second, 10)
 	if err != nil {
 		return nil, err
 	}
 
-	var parseFileResponse = ParseFileResponse{}
-
-	return &parseFileResponse, nil
+	return &ParseFileResponse{TaskID: giteeParseFileResp.TaskID}, nil
 }
 
 type giteeGetParseFileResponse struct {
+	Status string `json:"status"`
 }
 
-func (g *GiteeModel) getParseFile(ctx context.Context, baseURL *string, apiKey, taskID *string, timeOut time.Duration, count int) (*giteeGetParseFileResponse, error) {
-	url := fmt.Sprintf("%s/task/%s/status", strings.TrimSuffix(*baseURL, "/"), *taskID)
-
-	reqBody := map[string]interface{}{}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
+func (g *GiteeModel) getParseFile(ctx context.Context, baseURL *string, apiKey, taskID *string, pollInterval time.Duration, maxPolls int) (*giteeGetParseFileResponse, error) {
+	if baseURL == nil || strings.TrimSpace(*baseURL) == "" {
+		return nil, fmt.Errorf("Gitee base URL is required")
 	}
+	if apiKey == nil || strings.TrimSpace(*apiKey) == "" {
+		return nil, fmt.Errorf("Gitee API key is required")
+	}
+	if taskID == nil || strings.TrimSpace(*taskID) == "" {
+		return nil, fmt.Errorf("Gitee task ID is required")
+	}
+	if maxPolls <= 0 {
+		return nil, fmt.Errorf("Gitee parse task polling count must be positive")
+	}
+	statusURL := fmt.Sprintf("%s/task/%s/status", strings.TrimRight(strings.TrimSpace(*baseURL), "/"), url.PathEscape(strings.TrimSpace(*taskID)))
 
 	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
 
-	for i := 0; i < count; i++ {
-		req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
+	for i := 0; i < maxPolls; i++ {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, statusURL, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create request: %w", err)
 		}
 
-		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiKey))
+		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(*apiKey)))
 
 		resp, err := g.baseModel.httpClient.Do(req)
 		if err != nil {
@@ -595,32 +600,40 @@ func (g *GiteeModel) getParseFile(ctx context.Context, baseURL *string, apiKey, 
 			return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 		}
 
-		// Parse response
-		var result map[string]interface{}
+		var result giteeGetParseFileResponse
 		if err = json.Unmarshal(body, &result); err != nil {
 			return nil, fmt.Errorf("failed to parse response: %w", err)
 		}
+		switch status := strings.ToLower(strings.TrimSpace(result.Status)); status {
+		case "success":
+			return &result, nil
+		case "failure", "cancelled":
+			return nil, fmt.Errorf("Gitee parse task %s: %s", strings.TrimSpace(*taskID), status)
+		case "waiting", "in_progress":
+		default:
+			return nil, fmt.Errorf("Gitee parse task %s returned unknown status %q", strings.TrimSpace(*taskID), result.Status)
+		}
 
-		// Wait before the next poll, but honor context cancellation /
-		// longOpCallTimeout instead of blocking uninterruptibly.
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(timeOut):
+		if i+1 < maxPolls && pollInterval > 0 {
+			timer := time.NewTimer(pollInterval)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return nil, ctx.Err()
+			case <-timer.C:
+			}
 		}
 	}
 
-	// if resp show the file is ok, download it. otherwise, provide timeout info
-	return nil, nil
+	return nil, fmt.Errorf("timed out waiting for Gitee parse task %s after %d polls", strings.TrimSpace(*taskID), maxPolls)
 }
 
 func (g *GiteeModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 
-	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	url, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, g.baseModel.URLSuffix.Models)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -668,12 +681,10 @@ func (g *GiteeModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[str
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	url, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.Balance)
 	if err != nil {
 		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", baseURL, g.baseModel.URLSuffix.Balance)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -710,15 +721,18 @@ func (g *GiteeModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[str
 	}
 
 	// Parse response
-	var result map[string]interface{}
+	var result struct {
+		Balance *float64 `json:"balance"`
+	}
 	if err = json.Unmarshal(body, &result); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
-
-	balance := result["balance"].(float64)
+	if result.Balance == nil {
+		return nil, fmt.Errorf("invalid balance response: balance must be a number")
+	}
 
 	var response = map[string]interface{}{
-		"balance":  balance,
+		"balance":  *result.Balance,
 		"currency": "CNY",
 	}
 
@@ -730,11 +744,10 @@ func (g *GiteeModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) 
 		return err
 	}
 
-	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	url, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.Status)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, g.baseModel.URLSuffix.Status)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -779,15 +792,15 @@ type giteeTaskListResponse struct {
 }
 
 type giteeTaskItem struct {
-	TaskID string `json:"task_id"`
-	//Output      giteeTaskOutput `json:"output"`
-	Status      string        `json:"status"`
-	CreatedAt   int64         `json:"created_at"`
-	StartedAt   int64         `json:"started_at,omitempty"`
-	CompletedAt int64         `json:"completed_at,omitempty"`
-	Price       float64       `json:"price"`
-	Currency    string        `json:"currency"`
-	URLs        giteeTaskURLs `json:"urls"`
+	TaskID      string          `json:"task_id"`
+	Output      giteeTaskOutput `json:"output"`
+	Status      string          `json:"status"`
+	CreatedAt   int64           `json:"created_at"`
+	StartedAt   int64           `json:"started_at,omitempty"`
+	CompletedAt int64           `json:"completed_at,omitempty"`
+	Price       float64         `json:"price"`
+	Currency    string          `json:"currency"`
+	URLs        giteeTaskURLs   `json:"urls"`
 }
 
 type giteeTaskOutput struct {
@@ -808,11 +821,10 @@ func (g *GiteeModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Lis
 		return nil, err
 	}
 
-	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	url, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.Tasks)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, g.baseModel.URLSuffix.Tasks)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -868,25 +880,21 @@ func (g *GiteeModel) ShowTask(ctx context.Context, taskID string, apiConfig *API
 	if err := g.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return nil, fmt.Errorf("Gitee task ID is required")
+	}
 
-	resolvedBaseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	taskURL, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.Task)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s/%s/get", resolvedBaseURL, g.baseModel.URLSuffix.Task, taskID)
-
-	// Build request body
-	reqBody := map[string]interface{}{}
-
-	jsonData, err := json.Marshal(reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
+	taskRecordURL := taskURL + "/" + url.PathEscape(taskID)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", url, bytes.NewBuffer(jsonData))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, taskRecordURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -909,14 +917,17 @@ func (g *GiteeModel) ShowTask(ctx context.Context, taskID string, apiConfig *API
 		return nil, fmt.Errorf("API request failed with status %d: %s", resp.StatusCode, string(body))
 	}
 
-	var taskOutput giteeTaskOutput
-	if err = json.Unmarshal(body, &taskOutput); err != nil {
+	var taskRecord giteeTaskItem
+	if err = json.Unmarshal(body, &taskRecord); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+	if strings.ToLower(strings.TrimSpace(taskRecord.Status)) != "success" {
+		return nil, fmt.Errorf("Gitee parse task %s is not successful: status %q", taskID, taskRecord.Status)
 	}
 
 	taskResp := &TaskResponse{}
 
-	for _, segment := range taskOutput.Segments {
+	for _, segment := range taskRecord.Output.Segments {
 		taskResp.Segments = append(taskResp.Segments, TaskSegment{
 			Index:   segment.Index,
 			Content: segment.Content,
@@ -924,4 +935,8 @@ func (g *GiteeModel) ShowTask(ctx context.Context, taskID string, apiConfig *API
 	}
 
 	return taskResp, nil
+}
+
+func (g *GiteeModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", g.Name())
 }

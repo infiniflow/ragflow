@@ -362,6 +362,103 @@ func TestTokenize_DefaultLanguageResetsAnalyzerState(t *testing.T) {
 	}
 }
 
+func TestTokenize_SlovakCzechFoldDiacriticsAndSkipStemming(t *testing.T) {
+	restore := saveEngineType()
+	defer restore()
+	SetEngineType("")
+
+	if err := Init(&PoolConfig{
+		DictPath:       "",
+		MinSize:        1,
+		MaxSize:        1,
+		IdleTimeout:    5 * time.Second,
+		AcquireTimeout: 5 * time.Second,
+	}); err != nil {
+		t.Fatalf("Failed to initialize pool: %v", err)
+	}
+	defer Close()
+
+	tests := []struct {
+		lang  string
+		input string
+		want  string
+	}{
+		// The analyzer folds diacritics before splitting, so the split regex
+		// keeps words whole, and stemming/lemmatization are off.
+		{"Slovak", "škola daňové priznanie", "skola danove priznanie"},
+		{"Czech", "příliš žluťoučký kůň", "prilis zlutoucky kun"},
+		// No stemming for folding languages: the token survives unchanged.
+		{"Slovak", "running", "running"},
+	}
+	for _, tt := range tests {
+		got, err := New(tt.lang).Tokenize(tt.input)
+		if err != nil {
+			t.Fatalf("Tokenize(%s, %q) unexpected error: %v", tt.lang, tt.input, err)
+		}
+		if got != tt.want {
+			t.Errorf("Tokenize(%s, %q) = %q, want %q", tt.lang, tt.input, got, tt.want)
+		}
+	}
+
+	// English tokenization is unchanged and the pool resets sticky Slovak
+	// state: the default-language path still stems.
+	engGot, err := Tokenize("running")
+	if err != nil {
+		t.Fatalf("Tokenize(default, \"running\") unexpected error: %v", err)
+	}
+	if engGot == "running" {
+		t.Errorf("Tokenize(default, \"running\") = %q, want a stemmed form (English stemming must stay enabled)", engGot)
+	}
+
+	// FineGrainedTokenize on folded tokens must not stem either.
+	fg, err := New("Slovak").FineGrainedTokenize("danove priznanie")
+	if err != nil {
+		t.Fatalf("FineGrainedTokenize(Slovak) unexpected error: %v", err)
+	}
+	if fg != "danove priznanie" {
+		t.Errorf("FineGrainedTokenize(Slovak, \"danove priznanie\") = %q, want unchanged tokens", fg)
+	}
+}
+
+func TestTokenize_RussianFoldsCyrillicBeforeStemming(t *testing.T) {
+	restore := saveEngineType()
+	defer restore()
+	SetEngineType("")
+
+	if err := Init(&PoolConfig{
+		DictPath:       "",
+		MinSize:        1,
+		MaxSize:        1,
+		IdleTimeout:    5 * time.Second,
+		AcquireTimeout: 5 * time.Second,
+	}); err != nil {
+		t.Fatalf("Failed to initialize pool: %v", err)
+	}
+	defer Close()
+
+	// Index-side folding must be Unicode-aware: the Russian stemmer only
+	// accepts lower-case input, so an upper-case word would otherwise reach
+	// the suffix table unchanged while the query side folds it with
+	// strings.ToLower.
+	var want string
+	for _, form := range []string{"ДОГОВОРАМИ", "Договора", "договорами", "договор"} {
+		got, err := New("Russian").Tokenize(form)
+		if err != nil {
+			t.Fatalf("Tokenize(Russian, %q) unexpected error: %v", form, err)
+		}
+		if want == "" {
+			want = got
+			continue
+		}
+		if got != want {
+			t.Errorf("Tokenize(Russian, %q) = %q, want the shared stem %q", form, got, want)
+		}
+	}
+	if want != "договор" {
+		t.Errorf("Russian stem for the договор forms = %q, want %q", want, "договор")
+	}
+}
+
 func findEnglishDutchDifferentiator(t *testing.T) languageDifferentiator {
 	t.Helper()
 

@@ -342,6 +342,38 @@ func TestCanvasState_EnsureSysDate(t *testing.T) {
 	}
 }
 
+func TestCanvasState_SeedIdentity(t *testing.T) {
+	t.Parallel()
+
+	state := NewCanvasState("r", "t")
+	state.SeedIdentity("user-1", "tenant-1")
+	if got := state.Sys["user_id"]; got != "user-1" {
+		t.Fatalf("sys.user_id = %v, want user-1", got)
+	}
+	if got := state.Sys["tenant_id"]; got != "tenant-1" {
+		t.Fatalf("sys.tenant_id = %v, want tenant-1", got)
+	}
+
+	// Empty values must not materialize empty-string keys.
+	state = NewCanvasState("r", "t")
+	state.SeedIdentity("", "")
+	if _, ok := state.Sys["user_id"]; ok {
+		t.Fatal("empty user_id should not be written")
+	}
+	if _, ok := state.Sys["tenant_id"]; ok {
+		t.Fatal("empty tenant_id should not be written")
+	}
+
+	// A second call overwrites the previously seeded identity.
+	state.SeedIdentity("user-2", "tenant-2")
+	if got := state.Sys["user_id"]; got != "user-2" {
+		t.Fatalf("sys.user_id = %v, want user-2", got)
+	}
+	if got := state.Sys["tenant_id"]; got != "tenant-2" {
+		t.Fatalf("sys.tenant_id = %v, want tenant-2", got)
+	}
+}
+
 func TestCanvasState_SetRetrievalReferencesMergesCalls(t *testing.T) {
 	t.Parallel()
 
@@ -387,6 +419,79 @@ func TestCanvasState_SetRetrievalReferencesMergesCalls(t *testing.T) {
 	}
 	if _, ok := docAggs[""]; ok {
 		t.Error("doc_aggs retained an empty document name")
+	}
+}
+
+// TestCanvasState_SetRetrievalReferencesKeepsSameTitleDifferentIDs covers two
+// search hits that share a title but point at different URLs. Keying doc_aggs
+// by document name would drop the second source; the chunk and its doc_agg must
+// both survive so the citation card can resolve the document.
+func TestCanvasState_SetRetrievalReferencesKeepsSameTitleDifferentIDs(t *testing.T) {
+	t.Parallel()
+
+	state := NewCanvasState("run-1", "task-1")
+	state.SetRetrievalReferences(
+		[]map[string]any{{"id": "chunk-1", "document_id": "doc-1"}},
+		[]map[string]any{{"doc_name": "Same Title", "doc_id": "doc-1", "url": "https://a.example", "count": 1}},
+	)
+	state.SetRetrievalReferences(
+		[]map[string]any{{"id": "chunk-2", "document_id": "doc-2"}},
+		[]map[string]any{{"doc_name": "Same Title", "doc_id": "doc-2", "url": "https://b.example", "count": 1}},
+	)
+	// A repeated id keeps the first aggregate, preserving the previous
+	// first-writer-wins behavior.
+	state.SetRetrievalReferences(nil, []map[string]any{
+		{"doc_name": "Same Title", "doc_id": "doc-1", "url": "https://duplicate.example", "count": 9},
+	})
+
+	docAggs := state.GetRetrievalDocAggs()
+	if len(docAggs) != 2 {
+		t.Fatalf("doc_aggs length = %d, want 2", len(docAggs))
+	}
+	if got := docAggs["doc-1"]["url"]; got != "https://a.example" {
+		t.Errorf("doc-1 url = %v, want the first aggregate", got)
+	}
+	if got := docAggs["doc-2"]["url"]; got != "https://b.example" {
+		t.Errorf("doc-2 url = %v, want the second aggregate", got)
+	}
+
+	reference := state.GetRetrievalReference()
+	list, _ := reference["doc_aggs"].([]any)
+	if len(list) != 2 {
+		t.Fatalf("reference doc_aggs length = %d, want 2", len(list))
+	}
+	// Same document name sorts by document id, so doc-1 precedes doc-2.
+	for i, want := range []string{"doc-1", "doc-2"} {
+		agg, _ := list[i].(map[string]any)
+		if got := agg["doc_id"]; got != want {
+			t.Errorf("doc_aggs[%d].doc_id = %v, want %s", i, got, want)
+		}
+	}
+}
+
+// TestCanvasState_SetRetrievalReferencesDedupesLegacyCheckpointKeys covers a
+// checkpoint restored from the previous storage scheme, where doc_aggs were
+// keyed by document name. Merging by the aggregate's fields must not append a
+// second copy of the same document.
+func TestCanvasState_SetRetrievalReferencesDedupesLegacyCheckpointKeys(t *testing.T) {
+	t.Parallel()
+
+	state := NewCanvasState("run-1", "task-1")
+	state.Retrieval["doc_aggs"] = map[string]any{
+		"Same Title": map[string]any{
+			"doc_name": "Same Title",
+			"doc_id":   "doc-1",
+			"url":      "https://a.example",
+		},
+	}
+	state.SetRetrievalReferences(nil, []map[string]any{
+		{"doc_name": "Same Title", "doc_id": "doc-1", "url": "https://duplicate.example"},
+	})
+
+	reference := state.GetRetrievalReference()
+	list, _ := reference["doc_aggs"].([]any)
+	if len(list) != 1 {
+		t.Fatalf("reference doc_aggs length = %d, want 1 after legacy merge", len(list))
 	}
 }
 

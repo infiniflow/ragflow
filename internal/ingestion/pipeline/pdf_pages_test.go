@@ -76,7 +76,7 @@ func TestNormalizeParserConfigPages(t *testing.T) {
 	t.Run("no pages key -> unchanged", func(t *testing.T) {
 		cfg := map[string]any{
 			"Parser:X": map[string]any{
-				"pdf": map[string]any{"output_format": "json"},
+				"pdf": map[string]any{"parse_method": "DeepDOC"},
 			},
 		}
 		if err := NormalizeParserConfigPages(cfg); err != nil {
@@ -86,7 +86,7 @@ func TestNormalizeParserConfigPages(t *testing.T) {
 		if _, ok := pdf["pages"]; ok {
 			t.Error("pages key should not exist")
 		}
-		if pdf["output_format"] != "json" {
+		if pdf["parse_method"] != "DeepDOC" {
 			t.Error("other fields should not be touched")
 		}
 	})

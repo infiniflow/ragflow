@@ -13,7 +13,6 @@ import {
   initialArXivValues,
   initialBeginValues,
   initialBingValues,
-  initialBrowserValues,
   initialCategorizeValues,
   initialCodeValues,
   initialCompilationValues,
@@ -44,7 +43,6 @@ import {
   initialQueritContentsValues,
   initialQueritValues,
   initialRetrievalValues,
-  initialRewriteQuestionValues,
   initialSearXNGValues,
   initialStringTransformValues,
   initialSwitchValues,
@@ -163,10 +161,6 @@ export const useInitializeOperatorParams = () => {
         ...initialCategorizeValues,
         llm_id: llmId,
       },
-      [Operator.RewriteQuestion]: {
-        ...initialRewriteQuestionValues,
-        llm_id: llmId,
-      },
       [Operator.Message]: initialMessageValues,
       [Operator.DuckDuckGo]: initialDuckValues,
       [Operator.Wikipedia]: initialWikipediaValues,
@@ -213,6 +207,12 @@ export const useInitializeOperatorParams = () => {
       // The manual chunker shares the title chunker's form (TitleChunkerForm
       // with pinMethodGroup) and initial values, like normalizeOperatorForm.
       [Operator.ManualChunker]: initialTitleChunkerValues,
+      // Parser-internal chunkers are never added through the canvas; these
+      // entries only keep the map exhaustive over Operator.
+      [Operator.TableChunker]: {},
+      [Operator.QAChunker]: {},
+      [Operator.OneChunker]: {},
+      [Operator.PageChunker]: {},
       [Operator.Extractor]: {
         ...getInitialExtractorValues(),
         llm_id: llmId,
@@ -226,17 +226,13 @@ export const useInitializeOperatorParams = () => {
       [Operator.LoopStart]: {},
       [Operator.ExitLoop]: {},
       [Operator.DocGenerator]: initialDocGeneratorValues,
-      [Operator.Browser]: { ...initialBrowserValues, llm_id: llmId },
       [Operator.ExcelProcessor]: {},
-    };
+    } satisfies Record<Operator, unknown>;
   }, [defaultModelDictionary, llmId]);
 
   const initializeOperatorParams = useCallback(
     (operatorName: Operator, position: Position) => {
-      // The map only covers canvas operators; parser-internal chunkers
-      // (Table/QA/One/Page) are never added through this path.
-      const initialValues =
-        initialFormValuesMap[operatorName as keyof typeof initialFormValuesMap];
+      const initialValues = initialFormValuesMap[operatorName];
       if (isBottomSubAgent(operatorName, position)) {
         return {
           ...initialValues,
@@ -337,15 +333,20 @@ function useAddChildEdge() {
 }
 
 function useAddToolNode() {
-  const { nodes, edges, addEdge, getNode, addNode } = useGraphStore(
-    (state) => state,
-  );
+  const { addEdge, getNode, addNode } = useGraphStore((state) => state);
 
   const addToolNode = useCallback(
     (newNode: Node<any>, nodeId?: string): boolean => {
       const agentNode = getNode(nodeId);
 
       if (agentNode) {
+        // Read edges/nodes from the store at call time, not from the
+        // render-time snapshot: React StrictMode double-invokes the mount
+        // effect that auto-adds this node (ToolPopover), and the second
+        // invocation must see the edge the first one just committed —
+        // otherwise both pass the guard and stack a duplicate tool node at
+        // the same position.
+        const { nodes, edges } = useGraphStore.getState();
         const childToolNodeIds = edges
           .filter(
             (x) => x.source === nodeId && x.sourceHandle === NodeHandleId.Tool,
@@ -377,7 +378,7 @@ function useAddToolNode() {
       }
       return false;
     },
-    [addEdge, addNode, edges, getNode, nodes],
+    [addEdge, addNode, getNode],
   );
 
   return { addToolNode };

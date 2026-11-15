@@ -191,3 +191,16 @@ func IsValidString(v interface{}) bool {
 func ChunkID(docID, text string) string {
 	return fmt.Sprintf("%016x", xxhash.Sum64String(text+docID))
 }
+
+// FirstNonEmpty returns the first value that is non-empty after trimming,
+// trimmed. Trimming the returned value means callers receive a normalized result
+// and need not TrimSpace again at every use site. Used as a generic
+// settings/value precedence helper across the codebase.
+func FirstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if strings.TrimSpace(v) != "" {
+			return strings.TrimSpace(v)
+		}
+	}
+	return ""
+}

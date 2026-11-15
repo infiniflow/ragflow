@@ -9,8 +9,14 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
+
+func writeMinerUHealth(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write([]byte(`{"status":"ok","version":"4.0.12"}`))
+}
 
 func TestMinerULocalParseFileResolvesServerURLFromProviderAPIKey(t *testing.T) {
 	var gotServerURL string
@@ -112,7 +118,7 @@ func TestMinerULocalCheckConnectionPlainKey(t *testing.T) {
 			return
 		}
 		gotAuth = r.Header.Get("Authorization")
-		w.WriteHeader(http.StatusOK)
+		writeMinerUHealth(w)
 	}))
 	defer server.Close()
 
@@ -135,7 +141,7 @@ func TestMinerULocalCheckConnectionJSONConfigNoBearer(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
 		_, authSeen = r.Header["Authorization"]
-		w.WriteHeader(http.StatusOK)
+		writeMinerUHealth(w)
 	}))
 	defer server.Close()
 
@@ -150,9 +156,7 @@ func TestMinerULocalCheckConnectionJSONConfigNoBearer(t *testing.T) {
 	}
 }
 
-// Non-auth codes (e.g. 404 on a service without /health) still prove the
-// endpoint is reachable.
-func TestMinerULocalCheckConnectionNonAuthCodeIsReachable(t *testing.T) {
+func TestMinerULocalCheckConnectionRejectsNonMinerU(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "not found", http.StatusNotFound)
 	}))
@@ -160,8 +164,12 @@ func TestMinerULocalCheckConnectionNonAuthCodeIsReachable(t *testing.T) {
 
 	baseURL := server.URL
 	driver := NewMinerLocalUModel(map[string]string{"default": baseURL}, URLSuffix{DocumentParse: "file_parse", Task: "tasks"})
-	if err := driver.CheckConnection(context.Background(), &APIConfig{BaseURL: &baseURL}); err != nil {
-		t.Fatalf("CheckConnection on 404: %v", err)
+	err := driver.CheckConnection(context.Background(), &APIConfig{BaseURL: &baseURL})
+	if err == nil || !strings.Contains(err.Error(), "not a MinerU service") {
+		t.Fatalf("CheckConnection on 404 = %v, want not a MinerU service", err)
+	}
+	if _, listErr := driver.ListModels(context.Background(), &APIConfig{BaseURL: &baseURL}); listErr == nil {
+		t.Fatal("ListModels on a non-MinerU server: expected error")
 	}
 }
 
@@ -198,7 +206,7 @@ func TestMinerULocalCheckConnectionUsesMinerUAPIServerFromAPIKeyJSON(t *testing.
 			http.Error(w, "unexpected path "+r.URL.Path, http.StatusNotFound)
 			return
 		}
-		w.WriteHeader(http.StatusOK)
+		writeMinerUHealth(w)
 	}))
 	defer server.Close()
 
@@ -212,7 +220,7 @@ func TestMinerULocalCheckConnectionUsesMinerUAPIServerFromAPIKeyJSON(t *testing.
 
 func TestMinerULocalOCRFileDelegatesToCheckConnection(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
+		writeMinerUHealth(w)
 	}))
 	defer server.Close()
 

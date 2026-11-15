@@ -31,6 +31,7 @@ type EngineType string
 
 const (
 	EngineElasticsearch EngineType = "elasticsearch"
+	EngineOpenSearch    EngineType = "opensearch"
 	EngineInfinity      EngineType = "infinity"
 	EngineOceanBase     EngineType = "oceanbase"
 	EngineSeekDB        EngineType = "seekdb"
@@ -41,8 +42,14 @@ const (
 // DocEngine document storage engine interface
 type DocEngine interface {
 	// Chunk operations
-	CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error
-	InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error)
+	// CreateChunkStore creates the chunk store for a dataset. language is the
+	// dataset language, needed by engines whose fulltext analyzer is fixed when
+	// the index is created; the others ignore it.
+	CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID, language string) error
+	// InsertChunks writes chunks, creating the chunk store on first write.
+	// language is the dataset language, needed there for the same reason as in
+	// CreateChunkStore; engines that analyse client-side ignore it.
+	InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string, language string) ([]string, error)
 	UpdateChunks(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, baseName string, datasetID string) error
 	DeleteChunks(ctx context.Context, condition map[string]interface{}, baseName string, datasetID string) (int64, error)
 	Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error)
@@ -71,7 +78,7 @@ type DocEngine interface {
 	GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string
 
 	// RunSQL runs a SQL query
-	RunSQL(ctx context.Context, tableName string, sqlText string, kbIDs []string, format string) ([]map[string]interface{}, error)
+	RunSQL(ctx context.Context, sqlText string, format string) ([]map[string]interface{}, error)
 
 	GetChunkIDs(chunks []map[string]interface{}) []string
 	KNNScores(ctx context.Context, chunks []map[string]interface{}, queryVector []float64, topK int) (map[string]interface{}, error)
@@ -122,6 +129,10 @@ func IsVastbase(engineName string) bool {
 type MessageQueue interface {
 	Init() error
 	Type() string
+	// InitConsumer creates the durable task consumers. The subject argument is
+	// retained from the single-lane contract but ignored: the engine creates one
+	// durable consumer per edition-specific priority lane — the enterprise build
+	// defines its own lane set, while the community build uses a single lane.
 	InitConsumer(subject string) error
 	PublishTask(subject string, payload []byte) error
 	PullMessages(ctx context.Context, messageCount int) ([]common.TaskHandle, error)

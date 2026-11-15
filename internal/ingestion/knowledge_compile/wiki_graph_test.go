@@ -18,8 +18,11 @@ package knowledge_compile
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
+
+	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
 // page builds a wikiPageProjection with the full "<page_type>/<slug>" identity.
@@ -68,7 +71,7 @@ func TestProjectWikiGraphRowsWritesSearchContent(t *testing.T) {
 	var payload struct {
 		Description string `json:"description"`
 	}
-	if err := json.Unmarshal([]byte(metaString(entity, "content_with_weight")), &payload); err != nil {
+	if err := json.Unmarshal([]byte(kccommon.MetaString(entity, "content_with_weight")), &payload); err != nil {
 		t.Fatalf("decode graph entity: %v", err)
 	}
 	if payload.Description != p.Summary {
@@ -112,6 +115,11 @@ func TestProjectWikiGraphRowsCrossBatchEdgeSurvives(t *testing.T) {
 	}
 	if findRelation(rows, "entity/alpha", "entity/beta") == nil {
 		t.Fatalf("cross-page edge entity/alpha -> entity/beta not materialized")
+	}
+	for _, row := range rows {
+		if row["scope_kwd"] != "dataset" {
+			t.Fatalf("scope_kwd = %v, want dataset for wiki graph row", row["scope_kwd"])
+		}
 	}
 }
 
@@ -355,5 +363,28 @@ func TestProjectWikiGraphRowsSelfLoopSkipped(t *testing.T) {
 	}
 	if findEntity(rows, "entity/alpha") == nil {
 		t.Fatalf("the self-referencing entity must still exist")
+	}
+}
+
+// TestProjectWikiGraphRowsResolvesDatasetLanguage pins that graph rows are
+// tokenized with the language of the dataset they are written to.
+func TestProjectWikiGraphRowsResolvesDatasetLanguage(t *testing.T) {
+	var resolved []string
+	w := engineWriter{resolveLanguage: func(_ context.Context, datasetID string) (string, error) {
+		resolved = append(resolved, datasetID)
+		return "slovak", nil
+	}}
+	if _, err := w.projectWikiGraphRows(context.Background(), "t1", kbForTest, []wikiPageProjection{page("entity", "škola")}); err != nil {
+		t.Fatalf("project: %v", err)
+	}
+	if len(resolved) != 1 || resolved[0] != kbForTest {
+		t.Fatalf("language resolved for %v, want [%s]", resolved, kbForTest)
+	}
+
+	w.resolveLanguage = func(context.Context, string) (string, error) {
+		return "", errors.New("dataset lookup failed")
+	}
+	if _, err := w.projectWikiGraphRows(context.Background(), "t1", kbForTest, []wikiPageProjection{page("entity", "škola")}); err == nil {
+		t.Fatal("projection must fail when the dataset language cannot be resolved")
 	}
 }

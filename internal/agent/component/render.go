@@ -44,6 +44,8 @@ import (
 	"html"
 	"regexp"
 	"strings"
+
+	"github.com/cloudwego/eino/compose"
 )
 
 // OutputFormat is the value type of the `output_format` field on
@@ -72,6 +74,10 @@ type DownloadInfo struct {
 	Content    string `json:"content,omitempty"`
 	Size       int    `json:"size,omitempty"`
 	PreviewURL string `json:"preview_url,omitempty"`
+}
+
+func init() {
+	_ = compose.RegisterSerializableType[DownloadInfo]("component.DownloadInfo")
 }
 
 // RenderRequest is the renderer input. Text is the resolved

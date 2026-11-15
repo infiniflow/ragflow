@@ -12,13 +12,15 @@ import {
 import { topnSchema } from '@/components/top-n-item';
 import { WebSearchProvider } from '@/constants/chat';
 import { useTranslate } from '@/hooks/common-hooks';
+import { useMemo } from 'react';
 import { z, ZodIssueCode } from 'zod';
 import { missingWebSearchApiKeyField } from '../web-search-api-key';
 import { chatPromptKbIssues } from './validate-chat-prompt';
 
-export function useChatSettingSchema() {
-  const { t } = useTranslate('chat');
-
+// Pure builder so the schema can be unit-tested without rendering a form.
+// All settings remain in one schema because both naive and agentic fields are
+// available in the settings form at the same time.
+export function buildChatSettingFormSchema(t: (key: string) => string) {
   const promptConfigSchema = z.object({
     quote: z.boolean(),
     keyword: z.boolean(),
@@ -35,6 +37,7 @@ export function useChatSettingSchema() {
         }),
       )
       .optional(),
+    anysearch_api_key: z.string().optional(),
     brave_api_key: z.string().optional(),
     exa_api_key: z.string().optional(),
     firecrawl_api_key: z.string().optional(),
@@ -42,11 +45,13 @@ export function useChatSettingSchema() {
     parallel_api_key: z.string().optional(),
     querit_api_key: z.string().optional(),
     search1api_api_key: z.string().optional(),
+    searchapi_api_key: z.string().optional(),
     serply_api_key: z.string().optional(),
     tavily_api_key: z.string().optional(),
     youcom_api_key: z.string().optional(),
     web_search_provider: z
       .enum([
+        WebSearchProvider.AnySearch,
         WebSearchProvider.Brave,
         WebSearchProvider.Exa,
         WebSearchProvider.Firecrawl,
@@ -54,6 +59,7 @@ export function useChatSettingSchema() {
         WebSearchProvider.Parallel,
         WebSearchProvider.Querit,
         WebSearchProvider.Search1API,
+        WebSearchProvider.SearchApi,
         WebSearchProvider.Serply,
         WebSearchProvider.Tavily,
         WebSearchProvider.YouCom,
@@ -62,11 +68,18 @@ export function useChatSettingSchema() {
       .or(z.literal('')),
     reasoning: z.boolean().optional(),
     cross_languages: z.array(z.string()).optional(),
-    reference_metadata: z
+    // The per-chat agentic template override lives here; without this
+    // declaration zod strips the key at parse time and the full-replace PUT
+    // would silently delete a saved override on every settings save.
+    agentic_rag: z
       .object({
-        include: z.boolean().optional(),
-        fields: z.array(z.string()).optional(),
+        content: z
+          .string()
+          .max(32768, { message: t('agenticTemplateTooLong') })
+          .optional(),
+        tools: z.array(z.string()).optional(),
       })
+      .nullable()
       .optional(),
   });
 
@@ -83,6 +96,12 @@ export function useChatSettingSchema() {
       llm_setting: z.object(LlmSettingFieldSchema),
       ...LlmSettingEnabledSchema,
       llm_id: z.string().optional(),
+      // Empty means "inherit the tenant default": most chats never override
+      // the decision model, so the backend returns null for them and clearing
+      // must be expressible. optional() alone only permits undefined, so a
+      // loaded null would fail validation and block every save — nullable()
+      // is required to represent the inherited state.
+      decision_id: z.string().nullable().optional(),
       ...keywordsSimilarityWeightSchema,
       ...similarityThresholdSchema,
       ...topnSchema,
@@ -100,7 +119,7 @@ export function useChatSettingSchema() {
 
       // A keyed provider selected without its key fails SILENTLY at runtime —
       // the Internet switch never appears in the chat box — so block the save
-      // here instead. Keyless providers (You.com) are exempt. The rule lives in
+      // here instead. Keyless providers are exempt. The rule lives in
       // missingWebSearchApiKeyField so it can be unit-tested without the form.
       const missingKeyField = missingWebSearchApiKeyField(value?.prompt_config);
       if (missingKeyField) {
@@ -113,4 +132,13 @@ export function useChatSettingSchema() {
     });
 
   return formSchema;
+}
+
+export function useChatSettingSchema() {
+  const { t } = useTranslate('chat');
+
+  return useMemo(
+    () => buildChatSettingFormSchema((key: string) => t(key)),
+    [t],
+  );
 }

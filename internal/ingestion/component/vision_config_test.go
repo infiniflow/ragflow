@@ -10,6 +10,8 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/parser/media"
+	"ragflow/internal/parser/parser"
 )
 
 func TestParserGlobalVisionModel(t *testing.T) {
@@ -57,7 +59,8 @@ func TestParserGlobalVisionModel(t *testing.T) {
 					filename = "figure.html"
 					binary = []byte(`<p><img src="data:image/png;base64,` + visionTestPNGBase64(t) + `" alt="figure"></p>`)
 				}
-				result, err := component.Invoke(t.Context(), nil, map[string]any{"name": filename, "file_type": fileType, "binary": binary, "tenant_id": "tenant-1"})
+				ctx := media.WithCache(t.Context(), &materializeCache{data: picturePNG(t)})
+				result, err := component.Invoke(ctx, nil, map[string]any{"name": filename, "file_type": fileType, "binary": binary, "tenant_id": "tenant-1"})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -69,7 +72,8 @@ func TestParserGlobalVisionModel(t *testing.T) {
 					t.Fatalf("resolved %v, want [%s]", resolved, tc.want)
 				}
 				if fileType == "image" {
-					items := result["json"].([]map[string]any)
+					jsonDocs := result["json"].([]parser.DocItem)
+					items := parser.ItemsToMaps(jsonDocs)
 					if !strings.Contains(items[0]["text"].(string), "OCR text") {
 						t.Fatalf("OCR text lost: %v", items)
 					}
@@ -86,18 +90,22 @@ func TestParserGlobalVisionConfigValidation(t *testing.T) {
 	}{
 		{"model-B", "vlm must be an object"},
 		{map[string]any{"llm_id": 42}, "vlm.llm_id must be a string"},
+		{map[string]any{"lang": 42}, "vlm.lang must be a string"},
 	} {
 		_, err := NewParserComponent(map[string]any{"vlm": tc.value})
 		if err == nil || !strings.Contains(err.Error(), tc.wantError) {
 			t.Fatalf("vlm %v: error = %v, want %s", tc.value, err, tc.wantError)
 		}
 	}
-	component, err := NewParserComponent(map[string]any{"vlm": map[string]any{}})
+	component, err := NewParserComponent(map[string]any{"vlm": map[string]any{"lang": "Japanese"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, exists := component.(*ParserComponent).setups["vlm"]; exists {
 		t.Fatal("global vlm was interpreted as a file family")
+	}
+	if got := component.(*ParserComponent).vision.language; got != "Japanese" {
+		t.Fatalf("vision.language = %q, want Japanese", got)
 	}
 }
 
@@ -124,7 +132,8 @@ func TestParserGlobalVisionDoesNotOverrideASR(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	items := result["json"].([]map[string]any)
+	jsonDocs := result["json"].([]parser.DocItem)
+	items := parser.ItemsToMaps(jsonDocs)
 	if calls != 1 || len(items) != 1 || items[0]["text"] != "transcribed" {
 		t.Fatalf("ASR calls = %d, items = %v", calls, items)
 	}

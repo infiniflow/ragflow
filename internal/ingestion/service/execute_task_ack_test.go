@@ -452,7 +452,7 @@ func TestSettleMessage_DBTruthOverridesBodyReturn(t *testing.T) {
 	// recovery where markFailed succeeded: the task is terminal (FAILED)
 	// but the body signals non-terminal.
 	body := func(ctx context.Context) bool {
-		ingestor.markFailed(ctx, taskID)
+		ingestor.markFailed(ctx, taskID, "")
 		return false
 	}
 

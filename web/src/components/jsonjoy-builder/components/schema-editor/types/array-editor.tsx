@@ -43,13 +43,13 @@ const ArrayEditor: React.FC<TypeEditorProps> = ({
   );
 
   // Handle validation settings change
-  const handleValidationChange = () => {
+  const handleValidationChange = (nextUniqueItems = uniqueItems) => {
     const validationProps: ObjectJSONSchema = {
       type: 'array',
       ...(isBooleanSchema(schema) ? {} : schema),
       minItems: minItems,
       maxItems: maxItems,
-      uniqueItems: uniqueItems || undefined,
+      uniqueItems: nextUniqueItems || undefined,
     };
 
     // Keep the items schema
@@ -66,6 +66,10 @@ const ArrayEditor: React.FC<TypeEditorProps> = ({
     }
 
     onChange(propsToKeep as ObjectJSONSchema);
+  };
+
+  const handleValidationBlur = () => {
+    handleValidationChange();
   };
 
   // Handle item schema changes
@@ -109,7 +113,9 @@ const ArrayEditor: React.FC<TypeEditorProps> = ({
         <div className="space-y-2">
           <Label
             htmlFor={minItemsId}
-            className={(!!minMaxError || !!minItemsError) && 'text-destructive'}
+            className={
+              !!minMaxError || !!minItemsError ? 'text-destructive' : undefined
+            }
           >
             {t.arrayMinimumLabel}
           </Label>
@@ -123,7 +129,7 @@ const ArrayEditor: React.FC<TypeEditorProps> = ({
               setMinItems(value);
               // Don't update immediately to avoid too many rerenders
             }}
-            onBlur={handleValidationChange}
+            onBlur={handleValidationBlur}
             placeholder={t.arrayMinimumPlaceholder}
             className={cn('h-8', !!minMaxError && 'border-destructive')}
           />
@@ -132,7 +138,9 @@ const ArrayEditor: React.FC<TypeEditorProps> = ({
         <div className="space-y-2">
           <Label
             htmlFor={maxItemsId}
-            className={(!!minMaxError || !!maxItemsError) && 'text-destructive'}
+            className={
+              !!minMaxError || !!maxItemsError ? 'text-destructive' : undefined
+            }
           >
             {t.arrayMaximumLabel}
           </Label>
@@ -146,7 +154,7 @@ const ArrayEditor: React.FC<TypeEditorProps> = ({
               setMaxItems(value);
               // Don't update immediately to avoid too many rerenders
             }}
-            onBlur={handleValidationChange}
+            onBlur={handleValidationBlur}
             placeholder={t.arrayMaximumPlaceholder}
             className={cn('h-8', !!minMaxError && 'border-destructive')}
           />
@@ -166,7 +174,7 @@ const ArrayEditor: React.FC<TypeEditorProps> = ({
           checked={uniqueItems}
           onCheckedChange={(checked) => {
             setUniqueItems(checked);
-            setTimeout(handleValidationChange, 0);
+            handleValidationChange(checked);
           }}
         />
         <Label htmlFor={uniqueItemsId} className="cursor-pointer">

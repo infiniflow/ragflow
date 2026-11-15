@@ -29,7 +29,6 @@ type RetrievalRequest struct {
 	TopK                   int      `json:"top_k"`
 	RerankID               string   `json:"rerank_id,omitempty"`
 	Keyword                bool     `json:"keyword"`
-	ForceRefresh           bool     `json:"force_refresh"`
 }
 
 // toolsJSON contains the schemas and base descriptions from mcp/server/server.py.
@@ -83,7 +82,9 @@ func newServer(ctx context.Context, connector Connector) *sdk.Server {
 					return nil, err
 				}
 				// Descriptions are built for this request, never stored on a shared server.
+				// They include this caller's datasets and chats, so the result is not shareable.
 				result := &sdk.ListToolsResult{Tools: make([]*sdk.Tool, len(tools))}
+				result.CacheScope = "private"
 				for i, tool := range tools {
 					copy := *tool
 					if i == 2 {

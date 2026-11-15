@@ -36,6 +36,12 @@ import (
 // OpenAIModel implements ModelDriver for OpenAI (GPT models).
 type OpenAIModel struct {
 	baseModel BaseModel
+	// skipTTSVoiceValidation delegates voice selection and validation to the
+	// model backend when this driver is reused by a local provider.
+	skipTTSVoiceValidation bool
+	// detectEmbeddedAudioErrors treats a 200 response whose JSON body carries an
+	// error status as a failure, for backends that report errors that way.
+	detectEmbeddedAudioErrors bool
 }
 
 // NewOpenAIModel creates a new OpenAI model instance.
@@ -67,12 +73,10 @@ func (o *OpenAIModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	url, err := o.baseModel.EndpointURL(apiConfig, o.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, o.baseModel.URLSuffix.Chat)
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
@@ -103,12 +107,10 @@ func (o *OpenAIModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	url, err := o.baseModel.EndpointURL(apiConfig, o.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, o.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]interface{}{
@@ -168,12 +170,10 @@ func (o *OpenAIModel) Embed(ctx context.Context, modelName *string, request Embe
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	baseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	url, err := o.baseModel.EndpointURL(apiConfig, o.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, o.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -249,12 +249,10 @@ func (o *OpenAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 		return nil, err
 	}
 
-	baseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	url, err := o.baseModel.EndpointURL(apiConfig, o.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, o.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -300,7 +298,7 @@ func (o *OpenAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 
 // Balance is not exposed by the OpenAI API, so this returns "no such method".
 func (o *OpenAIModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[string]interface{}, error) {
-	return nil, fmt.Errorf("no such method")
+	return nil, fmt.Errorf("%s: no such method: Balance", o.Name())
 }
 
 // CheckConnection runs a lightweight ListModels call to verify the API key.
@@ -348,6 +346,11 @@ func (o *OpenAIModel) TranscribeAudio(ctx context.Context, modelName *string, fi
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
+	if o.detectEmbeddedAudioErrors {
+		if err := embeddedAudioError(respBody); err != nil {
+			return nil, err
+		}
+	}
 
 	return decodeOpenAIASRResponse(respBody, responseFormat)
 }
@@ -381,6 +384,11 @@ func (o *OpenAIModel) TranscribeAudioWithSender(ctx context.Context, modelName *
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return fmt.Errorf("failed to read response body: %w", err)
+		}
+		if o.detectEmbeddedAudioErrors {
+			if err := embeddedAudioError(respBody); err != nil {
+				return err
+			}
 		}
 		response, err := decodeOpenAIASRResponse(respBody, responseFormat)
 		if err != nil {
@@ -430,6 +438,19 @@ func (o *OpenAIModel) TranscribeAudioWithSender(ctx context.Context, modelName *
 	return sender(&done, nil)
 }
 
+// embeddedAudioError returns the failure reported inside a 200 response body, or
+// nil when the body is not such a report (audio bytes included).
+func embeddedAudioError(body []byte) error {
+	var report struct {
+		StatusCode int             `json:"status_code"`
+		Detail     json.RawMessage `json:"detail"`
+	}
+	if err := json.Unmarshal(body, &report); err != nil || report.StatusCode < http.StatusBadRequest {
+		return nil
+	}
+	return fmt.Errorf("audio backend error %d: %s", report.StatusCode, string(report.Detail))
+}
+
 func decodeOpenAIASRResponse(respBody []byte, responseFormat string) (*ASRResponse, error) {
 	switch responseFormat {
 	case "text", "srt", "vtt":
@@ -475,6 +496,12 @@ func (o *OpenAIModel) AudioSpeech(ctx context.Context, modelName *string, audioC
 		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
+	if o.detectEmbeddedAudioErrors {
+		if err := embeddedAudioError(body); err != nil {
+			return nil, err
+		}
+	}
+
 	return &TTSResponse{Audio: body}, nil
 }
 
@@ -508,6 +535,16 @@ func (o *OpenAIModel) AudioSpeechWithSender(ctx context.Context, modelName *stri
 	if streamFormat == "sse" || strings.Contains(resp.Header.Get("Content-Type"), "text/event-stream") {
 		return readOpenAITTSSSEStream(resp.Body, sender)
 	}
+	if o.detectEmbeddedAudioErrors && strings.Contains(resp.Header.Get("Content-Type"), "application/json") {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("failed to read response body: %w", err)
+		}
+		if err := embeddedAudioError(body); err != nil {
+			return err
+		}
+		return readOpenAITTSRawStream(bytes.NewReader(body), sender)
+	}
 	return readOpenAITTSRawStream(resp.Body, sender)
 }
 
@@ -525,12 +562,10 @@ func (o *OpenAIModel) newOpenAIASRRequest(ctx context.Context, modelName *string
 		return nil, "", fmt.Errorf("openai ASR URL suffix is required")
 	}
 
-	baseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	url, err := o.baseModel.EndpointURL(apiConfig, o.baseModel.URLSuffix.ASR)
 	if err != nil {
 		return nil, "", err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(o.baseModel.URLSuffix.ASR, "/"))
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -582,7 +617,7 @@ func (o *OpenAIModel) newOpenAIASRRequest(ctx context.Context, modelName *string
 		return nil, "", fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	o.baseModel.applyAuth(req, apiConfig)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	return req, responseFormat, nil
 }
@@ -601,12 +636,10 @@ func (o *OpenAIModel) newOpenAITTSRequest(ctx context.Context, modelName *string
 		return nil, "", fmt.Errorf("openai TTS URL suffix is required")
 	}
 
-	baseURL, err := o.baseModel.GetBaseURL(apiConfig)
+	url, err := o.baseModel.EndpointURL(apiConfig, o.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return nil, "", err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(o.baseModel.URLSuffix.TTS, "/"))
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -627,13 +660,15 @@ func (o *OpenAIModel) newOpenAITTSRequest(ctx context.Context, modelName *string
 		}
 	}
 
-	voice, ok := reqBody["voice"]
-	if !ok || voice == nil {
-		return nil, "", fmt.Errorf("voice is required")
-	}
-	voiceString, ok := voice.(string)
-	if !ok || strings.TrimSpace(voiceString) == "" {
-		return nil, "", fmt.Errorf("voice is required")
+	if !o.skipTTSVoiceValidation {
+		voice, ok := reqBody["voice"]
+		if !ok || voice == nil {
+			return nil, "", fmt.Errorf("voice is required")
+		}
+		voiceString, ok := voice.(string)
+		if !ok || strings.TrimSpace(voiceString) == "" {
+			return nil, "", fmt.Errorf("voice is required")
+		}
 	}
 
 	streamFormat := ""
@@ -652,7 +687,7 @@ func (o *OpenAIModel) newOpenAITTSRequest(ctx context.Context, modelName *string
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", *apiConfig.ApiKey))
+	o.baseModel.applyAuth(req, apiConfig)
 	return req, streamFormat, nil
 }
 
@@ -746,18 +781,22 @@ func writeOpenAIMultipartField(writer *multipart.Writer, key string, value inter
 
 // OCRFile OCR file
 func (o *OpenAIModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	return nil, fmt.Errorf("%s: no such method: OCRFile", o.Name())
 }
 
 // ParseFile parse file
 func (o *OpenAIModel) ParseFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	return nil, fmt.Errorf("%s: no such method: ParseFile", o.Name())
 }
 
 func (o *OpenAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTaskStatus, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	return nil, fmt.Errorf("%s: no such method: ListTasks", o.Name())
 }
 
 func (o *OpenAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
-	return nil, fmt.Errorf("%s, no such method", o.Name())
+	return nil, fmt.Errorf("%s: no such method: ShowTask", o.Name())
+}
+
+func (o *OpenAIModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s: no such method: Decide", o.Name())
 }

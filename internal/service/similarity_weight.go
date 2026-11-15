@@ -63,9 +63,18 @@ func NormalizeSimilarityWeights(values map[string]interface{}) error {
 		return nil
 	}
 
-	values["vector_similarity_weight"] = *resolvedVectorWeight
-	values["keywords_similarity_weight"] = 1 - *resolvedVectorWeight
+	// Round before persisting: the float64 complement (1 - 0.7 =
+	// 0.30000000000000004) would otherwise land in search_config verbatim.
+	// keywords derives from the rounded vector, so the pair stays complementary.
+	vectorWeight := roundSimilarityWeight(*resolvedVectorWeight)
+	values["vector_similarity_weight"] = vectorWeight
+	values["keywords_similarity_weight"] = roundSimilarityWeight(1 - vectorWeight)
 	return nil
+}
+
+// roundSimilarityWeight snaps a weight to 6 decimal places.
+func roundSimilarityWeight(weight float64) float64 {
+	return math.Round(weight*1e6) / 1e6
 }
 
 func similarityWeightFromMap(values map[string]interface{}, key string) (*float64, error) {

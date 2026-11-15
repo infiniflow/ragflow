@@ -1,15 +1,10 @@
 import { FormContainer } from '@/components/form-container';
+import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { TopNFormField } from '@/components/top-n-item';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from '@/components/ui/form';
+import { Form } from '@/components/ui/form';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { useTranslate } from '@/hooks/common-hooks';
+import i18n from '@/locales/config';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { memo, useEffect, useMemo } from 'react';
 import { useForm, useFormContext, useWatch } from 'react-hook-form';
@@ -58,7 +53,7 @@ const Search1APIServiceLabels: Record<string, string> = {
 };
 
 export const Search1APIFormPartialSchema = {
-  api_key: z.string().optional(),
+  api_key: z.string().min(1, i18n.t('flow.apiKeyRequired')),
   channel: z.string().optional(),
   search_service: z.string().optional(),
   top_n: z.coerce.number(),
@@ -106,37 +101,24 @@ export function Search1APIWidgets() {
 
   return (
     <>
-      <ApiKeyField placeholder={t('search1APIApiKeyTip')}></ApiKeyField>
-      <FormField
-        control={form.control}
-        name={'channel'}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel tooltip={t('search1APIChannelTip')}>
-              {t('channel')}
-            </FormLabel>
-            <FormControl>
-              <SelectWithSearch {...field} options={channelOptions} />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
-      <FormField
-        control={form.control}
-        name={'search_service'}
-        render={({ field }) => (
-          <FormItem>
-            <FormLabel tooltip={t('search1APIServiceTip')}>
-              {t('search1APIService')}
-            </FormLabel>
-            <FormControl>
-              <SelectWithSearch {...field} options={serviceOptions} />
-            </FormControl>
-            <FormMessage />
-          </FormItem>
-        )}
-      />
+      <ApiKeyField
+        placeholder={t('search1APIApiKeyTip')}
+        required
+      ></ApiKeyField>
+      <RAGFlowFormItem
+        name="channel"
+        label={t('channel')}
+        tooltip={t('search1APIChannelTip')}
+      >
+        <SelectWithSearch options={channelOptions} />
+      </RAGFlowFormItem>
+      <RAGFlowFormItem
+        name="search_service"
+        label={t('search1APIService')}
+        tooltip={t('search1APIServiceTip')}
+      >
+        <SelectWithSearch options={serviceOptions} />
+      </RAGFlowFormItem>
       <TopNFormField max={50}></TopNFormField>
     </>
   );
@@ -152,6 +134,7 @@ function Search1APIForm({ node }: INextOperatorForm) {
   const form = useForm<z.infer<typeof FormSchema>>({
     defaultValues,
     resolver: zodResolver(FormSchema),
+    mode: 'onChange',
   });
 
   useWatchFormChange(node?.id, form);

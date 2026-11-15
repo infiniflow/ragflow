@@ -27,7 +27,7 @@ import (
 
 // ConnectorLocker serializes work for one connector and knowledge base.
 type ConnectorLocker interface {
-	TryLock(connectorID, kbID string) (ConnectorLockLease, bool)
+	TryLock(connectorID, kbID string) (ConnectorLockLease, bool, error)
 	Unlock(connectorID, kbID string)
 }
 
@@ -52,33 +52,46 @@ func NewConnectorLock() *ConnectorLock {
 }
 
 // TryLock attempts to acquire the connector/KB lock without blocking.
-func (l *ConnectorLock) TryLock(connectorID, kbID string) (ConnectorLockLease, bool) {
+func (l *ConnectorLock) TryLock(connectorID, kbID string) (ConnectorLockLease, bool, error) {
 	if l == nil {
-		return ConnectorLockLease{}, false
+		return ConnectorLockLease{}, false, nil
 	}
 	key := connectorLockKey(connectorID, kbID)
 	l.mu.Lock()
 	if _, ok := l.local[key]; ok {
 		l.mu.Unlock()
-		return ConnectorLockLease{}, false
+		return ConnectorLockLease{}, false, nil
 	}
 	l.local[key] = struct{}{}
 	l.mu.Unlock()
 
 	if client := kvrocks.Get(); client != nil {
 		lock := kvrocks.NewDistributedLock(key, l.holder, connectorLockTTL, 0)
-		if lock == nil || !lock.Acquire(context.Background()) {
+		if lock == nil {
 			l.mu.Lock()
 			delete(l.local, key)
 			l.mu.Unlock()
-			return ConnectorLockLease{}, false
+			return ConnectorLockLease{}, false, fmt.Errorf("create distributed connector lock %q", key)
+		}
+		acquired, err := lock.Acquire(context.Background())
+		if err != nil {
+			l.mu.Lock()
+			delete(l.local, key)
+			l.mu.Unlock()
+			return ConnectorLockLease{}, false, fmt.Errorf("acquire distributed connector lock %q: %w", key, err)
+		}
+		if !acquired {
+			l.mu.Lock()
+			delete(l.local, key)
+			l.mu.Unlock()
+			return ConnectorLockLease{}, false, nil
 		}
 		l.mu.Lock()
 		l.redis[key] = lock
 		l.mu.Unlock()
-		return newConnectorLockLease(), true
+		return newConnectorLockLease(), true, nil
 	}
-	return newConnectorLockLease(), true
+	return newConnectorLockLease(), true, nil
 }
 
 // Unlock releases the connector/KB lock.

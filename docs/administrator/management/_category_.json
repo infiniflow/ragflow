@@ -1,0 +1,11 @@
+{
+  "label": "Admin Tools",
+  "position": 1,
+  "link": {
+    "type": "generated-index",
+    "description": "Manage RAGFlow with the Admin UI or RAGFlow CLI."
+  },
+  "customProps": {
+    "categoryIcon": "LucideUserCog"
+  }
+}
