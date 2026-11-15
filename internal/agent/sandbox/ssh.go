@@ -208,6 +208,14 @@ func (p *SSHProvider) Initialize(ctx context.Context) error {
 	if p.port < 1 || p.port > 65535 {
 		return fmt.Errorf("ssh: invalid port %d", p.port)
 	}
+	// A non-positive limit would silently disable the output bound:
+	// newOutputBudget treats it as "unlimited", so remote output could grow
+	// this process without limit. The settings path already rejects this in
+	// catalog.go and LocalProvider.Initialize does the same, but the
+	// env-var path reaches Initialize without passing the catalog validator.
+	if p.maxOutputBytes <= 0 {
+		return fmt.Errorf("ssh: max_output_bytes must be greater than 0")
+	}
 	p.mu.Lock()
 	p.initialized = true
 	p.mu.Unlock()

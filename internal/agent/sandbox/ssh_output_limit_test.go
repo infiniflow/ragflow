@@ -308,19 +308,44 @@ func TestSSH_RunRemoteCommand_WithinLimitIsUnaffected(t *testing.T) {
 	}
 }
 
-// TestSSH_RunRemoteCommand_UnlimitedBudgetRetainsAll documents that a
-// provider configured without max_output_bytes is unaffected: the bound
-// only applies when a positive budget is passed.
-func TestSSH_RunRemoteCommand_UnlimitedBudgetRetainsAll(t *testing.T) {
-	const payload = 64 << 10
-	addr, keyPEM := startSSHExecServer(t, payload, 0)
-	p, client := dialSSHExecServer(t, addr, keyPEM)
-
-	stdout, _, _, err := p.runRemoteCommand(t.Context(), client, "flood", 30, 0)
-	if err != nil {
-		t.Fatalf("runRemoteCommand with no budget: %v", err)
+// TestSSH_Initialize_RejectsNonPositiveOutputLimit closes the configuration
+// path that would otherwise disable the bound. newOutputBudget treats a
+// non-positive limit as "unlimited", so without this check an operator setting
+// SSH_MAX_OUTPUT_BYTES=0 got a provider that accepted the config and then
+// buffered remote output without limit. The settings path already rejects it
+// in catalog.go, but env-built providers reach Initialize without passing that
+// validator. LocalProvider.Initialize already guards the same value.
+func TestSSH_Initialize_RejectsNonPositiveOutputLimit(t *testing.T) {
+	for _, limit := range []int{0, -1} {
+		p := newSSHProviderFromConfig(map[string]any{
+			"host": "h", "username": "u", "password": "p",
+			"max_output_bytes": limit,
+		})
+		err := p.Initialize(t.Context())
+		if err == nil {
+			t.Errorf("max_output_bytes=%d: Initialize succeeded, want a rejection", limit)
+			continue
+		}
+		if !strings.Contains(err.Error(), "max_output_bytes") {
+			t.Errorf("max_output_bytes=%d: err = %v, want it to name max_output_bytes", limit, err)
+		}
+		if p.isInitialized() {
+			t.Errorf("max_output_bytes=%d: provider flagged initialized after a rejected config", limit)
+		}
 	}
-	if len(stdout) != payload {
-		t.Errorf("stdout length = %d, want %d", len(stdout), payload)
+}
+
+// TestSSH_Initialize_AcceptsPositiveOutputLimit keeps the new guard from
+// rejecting a valid configuration.
+func TestSSH_Initialize_AcceptsPositiveOutputLimit(t *testing.T) {
+	p := newSSHProviderFromConfig(map[string]any{
+		"host": "h", "username": "u", "password": "p",
+		"max_output_bytes": 4096,
+	})
+	if err := p.Initialize(t.Context()); err != nil {
+		t.Fatalf("Initialize with a positive limit: %v", err)
+	}
+	if !p.isInitialized() {
+		t.Error("provider not flagged initialized after a valid config")
 	}
 }

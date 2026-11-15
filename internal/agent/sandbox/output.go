@@ -36,8 +36,12 @@ type outputBudget struct {
 	total int
 }
 
-// newOutputBudget returns a budget of limit bytes, or an unlimited one
-// when limit is not positive.
+// newOutputBudget returns a budget of limit bytes. A non-positive limit is
+// treated as unlimited, which is a defensive fallback rather than a supported
+// configuration: every provider rejects max_output_bytes <= 0 during
+// Initialize (see LocalProvider/SSHProvider), so production cannot reach it.
+// Callers must not rely on zero meaning "no limit" — that would silently
+// disable the bound this type exists to enforce.
 func newOutputBudget(limit int) *outputBudget {
 	return &outputBudget{limit: limit, left: limit}
 }

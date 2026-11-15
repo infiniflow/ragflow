@@ -104,8 +104,12 @@ func TestOutputBudget_WithinLimitRetainsEverything(t *testing.T) {
 	}
 }
 
-// TestOutputBudget_Unlimited retains everything when no positive limit is
-// configured, so deployments without max_output_bytes are unaffected.
+// TestOutputBudget_Unlimited pins the primitive's defensive fallback: a
+// non-positive limit retains everything and never reports overflow. This is
+// deliberately NOT a supported configuration — both providers reject
+// max_output_bytes <= 0 in Initialize, and TestSSH_Initialize_RejectsNonPositiveOutputLimit
+// covers that. The test exists so the fallback stays well-defined rather than
+// silently changing meaning if the guard is ever relaxed.
 func TestOutputBudget_Unlimited(t *testing.T) {
 	for _, limit := range []int{0, -1} {
 		budget := newOutputBudget(limit)
