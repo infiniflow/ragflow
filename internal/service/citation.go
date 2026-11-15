@@ -44,7 +44,14 @@ var badCitationPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`\(\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*\)`), // (ID: 12)
 	regexp.MustCompile(`\[\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*\]`), // [ID: 12]
 	regexp.MustCompile(`【\s*ID\s*[:： ]*\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*】`),   // 【ID: 12】
-	regexp.MustCompile(`(?i)\bref\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\b`),           // ref12
+	// [ref=31] / [ref:31] / [ref 31] / [ref31] — bracket-wrapped ref handles. Some
+	// models quote the evidence ` ref="31"` attribute verbatim instead of the
+	// prescribed [ID:n], so the `=`-separated form never matches the bare refN
+	// rule below (whose `\s*` does not consume `=`). This must precede the refN
+	// rule: without it, `[ref31]` would be rewritten into `[[ID:31]]`.
+	regexp.MustCompile(`(?i)[\[【]\s*ref\s*[=:：]?\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\s*[\]】]`), // [ref=31]
+	regexp.MustCompile(`(?i)\bref\s*[=:：]\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\b`),              // ref=31
+	regexp.MustCompile(`(?i)\bref\s*([0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+)\b`),                      // ref12
 	// (**ID:5**) / (*ID: 5*) — markdown-asterisk-wrapped parenthetical cites that
 	// models sometimes emit instead of [ID:5]. Mirrors Python agentic_rag.py:885
 	// `re.sub(r"\(\**(ID:\d+)\**\)", r"[\1]", ...)`, which deep-research runs over

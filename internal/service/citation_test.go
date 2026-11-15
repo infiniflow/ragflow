@@ -366,6 +366,18 @@ func TestRepairBadCitationFormats(t *testing.T) {
 		{"[ID: 12]", "[ID:12]"},  // already canonical-ish but spaced
 		{"Built in 1865 (**ID:1**).", "Built in 1865 [ID:1]."},
 		{"plain text no cites", "plain text no cites"},
+		// ref-handle forms models emit when quoting the evidence ` ref="31"`
+		// attribute verbatim instead of [ID:n] (issue #22373).
+		{"[ref=31][ref=66]", "[ID:31][ID:66]"},
+		{"[ref:31]", "[ID:31]"},
+		{"[ref 31]", "[ID:31]"},
+		{"[ref31]", "[ID:31]"},
+		{"【ref=31】", "[ID:31]"},
+		{"ref=31", "[ID:31]"},
+		{"ref:31", "[ID:31]"},
+		{"ref=31 ref=66", "[ID:31] [ID:66]"},
+		{"see ref=31 for details", "see [ID:31] for details"},
+		{"ref12", "[ID:12]"}, // existing bare refN form still works
 	}
 	for _, c := range cases {
 		if got := RepairBadCitationFormats(c.in); got != c.want {
