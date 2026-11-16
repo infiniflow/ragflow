@@ -59,6 +59,10 @@ func InferType(parserConfig map[string]any) Type {
 	if common.Get(output, "entities") != nil && common.Get(output, "relations") != nil {
 		return TypeHypergraph
 	}
+	if configSection(parserConfig, "entity", "EntitySpecification", "entity_specification", "entitySpecification") != nil &&
+		configSection(parserConfig, "relation", "RelationSpecification", "relation_specification", "relationSpecification") != nil {
+		return TypeHypergraph
+	}
 	return TypeList
 }
 
@@ -207,6 +211,23 @@ func renderTypeFields(fields []any, lang, kind string, extraFields []any) (strin
 	return strings.Join(lines, "\n"), skeleton
 }
 
+// configSection returns the first non-empty map found under any of the candidate keys,
+// supporting both canonical snake_case ("entity", "relation") and UI/documentation
+// specification names ("EntitySpecification", "RelationSpecification", etc.).
+func configSection(parserConfig map[string]any, keys ...string) map[string]any {
+	if parserConfig == nil {
+		return nil
+	}
+	for _, k := range keys {
+		if v := common.Get(parserConfig, k); v != nil {
+			if m := common.GetMap(parserConfig, k); m != nil {
+				return m
+			}
+		}
+	}
+	return nil
+}
+
 // HypergraphPrompts mirrors _struct_hypergraph_prompts: it renders the node
 // (entity) and edge (relation) system prompts from the parser_config template.
 // The returned edge prompt still contains the "{known_nodes}" placeholder,
@@ -232,12 +253,10 @@ func HypergraphPrompts(parserConfig map[string]any, lang string) (nodePrompt, ed
 		rulesT = strings.ReplaceAll(rulesT, "{observation_time}", observationTime)
 	}
 
-	usesTemplateShape := common.Get(parserConfig, "entity") != nil || common.Get(parserConfig, "relation") != nil
-	var entitiesCfg, relationsCfg map[string]any
-	if usesTemplateShape {
-		entitiesCfg = common.GetMap(parserConfig, "entity")
-		relationsCfg = common.GetMap(parserConfig, "relation")
-	} else {
+	entitiesCfg := configSection(parserConfig, "entity", "EntitySpecification", "entity_specification", "entitySpecification", "entities")
+	relationsCfg := configSection(parserConfig, "relation", "RelationSpecification", "relation_specification", "relationSpecification", "relations")
+	usesTemplateShape := entitiesCfg != nil || relationsCfg != nil
+	if !usesTemplateShape {
 		entitiesCfg = common.GetMap(output, "entities")
 		relationsCfg = common.GetMap(output, "relations")
 	}
@@ -367,7 +386,7 @@ func PackBatch(batch []common.Chunk) (string, []string) {
 
 // EntityIDField mirrors _struct_entity_id_field.
 func EntityIDField(parserConfig map[string]any) string {
-	if common.Get(parserConfig, "entity") != nil {
+	if configSection(parserConfig, "entity", "EntitySpecification", "entity_specification", "entitySpecification") != nil {
 		return "name"
 	}
 	identifiers := common.GetMap(parserConfig, "identifiers")
@@ -408,7 +427,7 @@ func RelationMemberFields(parserConfig map[string]any) (string, string) {
 			return src, tgt
 		}
 	}
-	if common.Get(parserConfig, "relation") != nil {
+	if configSection(parserConfig, "relation", "RelationSpecification", "relation_specification", "relationSpecification") != nil {
 		return "source", "target"
 	}
 	output := common.GetMap(parserConfig, "output")
