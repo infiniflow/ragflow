@@ -44,7 +44,9 @@ func TestDiffWikiDocumentContributionIncludesChangedAndRemovedPages(t *testing.T
 		wikiContributionTestProduct("cao-cao", "new content", "chunk-3"),
 	})
 	keys, slugs := diffWikiDocumentContribution(previous, current)
-	for _, key := range []string{"entity\x00cao-cao", "entity\x00liu-bei"} {
+	// The merge key carries the storage form of the slug ("<page_type>/<slug>"),
+	// the same identity mergedChunkMap writes into slug_kwd.
+	for _, key := range []string{"entity\x00entity/cao-cao", "entity\x00entity/liu-bei"} {
 		if _, ok := keys[key]; !ok {
 			t.Fatalf("affected key %q missing from %v", key, keys)
 		}
@@ -62,7 +64,7 @@ func TestDiffWikiDocumentContributionTreatsDisabledDocumentAsRetraction(t *testi
 	})
 	current := wikiDocumentContribution{DocumentID: "doc-1"}
 	keys, _ := diffWikiDocumentContribution(previous, current)
-	if _, ok := keys["entity\x00cao-cao"]; !ok {
+	if _, ok := keys["entity\x00entity/cao-cao"]; !ok {
 		t.Fatalf("disabled document did not retract its page: %v", keys)
 	}
 }

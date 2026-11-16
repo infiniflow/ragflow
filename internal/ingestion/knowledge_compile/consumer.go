@@ -1390,8 +1390,9 @@ func wikiPageMergeKey(product kccommon.Product) string {
 	if slug == "" {
 		return ""
 	}
-	pageType := strings.ToLower(strings.TrimSpace(kccommon.MetaString(product.Meta, "page_type")))
-	return pageType + "\x00" + strings.ToLower(strings.Join(strings.Fields(slug), " "))
+	pageType := strings.TrimSpace(kccommon.MetaString(product.Meta, "page_type"))
+	slug = wikiPageStorageSlug(pageType, slug)
+	return strings.ToLower(pageType) + "\x00" + strings.ToLower(strings.Join(strings.Fields(slug), " "))
 }
 
 type mergedWikiPageDeleter interface {
