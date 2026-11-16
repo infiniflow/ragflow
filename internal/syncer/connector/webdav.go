@@ -197,7 +197,6 @@ func (c *WebDAVConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 
 	nameCounts := webdavBasenameCounts(files)
 	documents := make([]SourceDocument, 0, len(files))
-	var failures []SyncFailure
 	for _, file := range files {
 		if !file.hasModified {
 			file.modified = end
@@ -208,25 +207,13 @@ func (c *WebDAVConnector) OpenSync(ctx context.Context, request SyncRequest) (Sy
 		if !c.isAcceptedExtension(file) || !file.hasSize || file.size > c.sizeThreshold {
 			continue
 		}
-		blob, err := c.downloadFile(ctx, file.url)
-		if err != nil || len(blob) == 0 {
-			// A failed fetch must not look like an unchanged document: record
-			// it so the runner can hold the waterline behind it and count it.
-			// Files without a Last-Modified get no hold time here because they
-			// take the window end as their modification time on every run and
-			// are therefore re-selected anyway.
-			failure := SyncFailure{SourceID: c.sourceID(file.url)}
-			if file.hasModified {
-				failure.UpdatedAt = file.modified
-			}
-			failures = append(failures, failure)
-			continue
-		}
-		documents = append(documents, c.buildDocument(file, blob, nameCounts))
+		// Downloads stay lazy: the runner fetches the body through the
+		// session's Fetcher and retries transient failures per document.
+		documents = append(documents, c.buildDocument(file, nameCounts))
 	}
 	sort.Slice(documents, func(i, j int) bool { return documents[i].SourceID < documents[j].SourceID })
 
-	session := &webdavSyncSession{documents: documents, failures: failures, batchSize: c.batchSize}
+	session := &webdavSyncSession{connector: c, documents: documents, batchSize: c.batchSize}
 	if err := session.applyResume(request.Resume); err != nil {
 		return nil, err
 	}
@@ -250,16 +237,36 @@ func (c *WebDAVConnector) OpenPrune(ctx context.Context, request PruneRequest) (
 	return &webdavPruneSession{documents: documents, batchSize: c.batchSize}, nil
 }
 
-func (c *WebDAVConnector) buildDocument(file webdavFile, blob []byte, nameCounts map[string]int) SourceDocument {
+func (c *WebDAVConnector) buildDocument(file webdavFile, nameCounts map[string]int) SourceDocument {
 	return SourceDocument{
 		SourceID:           c.sourceID(file.url),
 		SemanticIdentifier: webdavSemanticIdentifier(file, c.remotePath, nameCounts),
 		Extension:          webdavExtension(file.url),
-		Blob:               blob,
+		FetchRef:           &FetchReference{Key: file.url, SizeHint: file.size},
 		UpdatedAt:          file.modified,
 		SizeBytes:          file.size,
-		Fingerprint:        contentFingerprint(blob),
 	}
+}
+
+// Fetch downloads a WebDAV file referenced by a previous sync batch.
+func (c *WebDAVConnector) Fetch(ctx context.Context, ref FetchReference) ([]byte, error) {
+	if ref.Key == "" {
+		return nil, fmt.Errorf("WebDAV fetch reference is incomplete")
+	}
+	if _, err := resolveWebDAVURL(c.baseURL, ref.Key); err != nil {
+		return nil, err
+	}
+	if ref.SizeHint > c.sizeThreshold {
+		return nil, fmt.Errorf("WebDAV file %s exceeds size threshold of %d bytes", ref.Key, c.sizeThreshold)
+	}
+	blob, err := c.downloadFile(ctx, ref.Key)
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(blob)) > c.sizeThreshold {
+		return nil, fmt.Errorf("WebDAV file %s exceeds size threshold of %d bytes", ref.Key, c.sizeThreshold)
+	}
+	return blob, nil
 }
 
 func (c *WebDAVConnector) sourceID(fileURL string) string {
@@ -283,8 +290,8 @@ func (c *WebDAVConnector) isAcceptedExtension(file webdavFile) bool {
 }
 
 type webdavSyncSession struct {
+	connector *WebDAVConnector
 	documents []SourceDocument
-	failures  []SyncFailure
 	batchSize int
 	index     int
 }
@@ -304,10 +311,9 @@ func (s *webdavSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 	return batch, nil
 }
 
-// SyncFailures reports the source documents whose download failed while the
-// session was opened.
-func (s *webdavSyncSession) SyncFailures() []SyncFailure {
-	return s.failures
+// Fetch downloads a delayed WebDAV document body.
+func (s *webdavSyncSession) Fetch(ctx context.Context, ref FetchReference) ([]byte, error) {
+	return s.connector.Fetch(ctx, ref)
 }
 
 // Close closes the WebDAV sync session.
@@ -533,6 +539,12 @@ type webdavStatusError struct {
 
 func (e *webdavStatusError) Error() string {
 	return fmt.Sprintf("webdav request failed with status %d for %s", e.status, e.url)
+}
+
+// Temporary reports whether the failure is worth retrying: rate limiting and
+// server-side errors are usually transient.
+func (e *webdavStatusError) Temporary() bool {
+	return e.status == http.StatusTooManyRequests || e.status >= http.StatusInternalServerError
 }
 
 type webdavMultistatus struct {

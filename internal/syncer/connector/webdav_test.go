@@ -356,14 +356,21 @@ func TestWebDAVConnectorOpenSyncFull(t *testing.T) {
 	if alphaDocs.Extension != ".txt" {
 		t.Fatalf("docs alpha extension = %q", alphaDocs.Extension)
 	}
-	if string(alphaDocs.Blob) != "hello alpha docs" || alphaDocs.SizeBytes != 15 {
-		t.Fatalf("docs alpha blob/size = %q/%d", alphaDocs.Blob, alphaDocs.SizeBytes)
+	if len(alphaDocs.Blob) != 0 || alphaDocs.SizeBytes != 15 {
+		t.Fatalf("docs alpha blob/size = %q/%d, want lazy empty blob and size 15", alphaDocs.Blob, alphaDocs.SizeBytes)
 	}
 	if !alphaDocs.UpdatedAt.Equal(mustTime(t, "2026-01-02T00:00:00Z")) {
 		t.Fatalf("docs alpha updated at = %v", alphaDocs.UpdatedAt)
 	}
-	if alphaDocs.Fingerprint == "" {
-		t.Fatalf("docs alpha fingerprint is empty")
+	if alphaDocs.FetchRef == nil || alphaDocs.FetchRef.Key != server.URL+"/docs/alpha.txt" || alphaDocs.FetchRef.SizeHint != 15 {
+		t.Fatalf("docs alpha fetch ref = %+v", alphaDocs.FetchRef)
+	}
+	alphaBlob, err := session.(Fetcher).Fetch(context.Background(), *alphaDocs.FetchRef)
+	if err != nil {
+		t.Fatalf("Fetch docs alpha failed: %v", err)
+	}
+	if string(alphaBlob) != "hello alpha docs" {
+		t.Fatalf("docs alpha fetched blob = %q", alphaBlob)
 	}
 	if first.Checkpoint == nil || first.Checkpoint.SourceID != "webdav:"+server.URL+":"+server.URL+"/docs/gamma.pdf" {
 		t.Fatalf("first checkpoint = %+v", first.Checkpoint)
@@ -383,8 +390,16 @@ func TestWebDAVConnectorOpenSyncFull(t *testing.T) {
 	if notesAlpha.SemanticIdentifier != "notes / alpha.txt" {
 		t.Fatalf("notes alpha semantic identifier = %q", notesAlpha.SemanticIdentifier)
 	}
-	if string(second.Documents[1].Blob) != "hello beta" {
-		t.Fatalf("beta blob = %q", second.Documents[1].Blob)
+	betaDoc := second.Documents[1]
+	if len(betaDoc.Blob) != 0 || betaDoc.FetchRef == nil {
+		t.Fatalf("beta doc should be lazy: blob %q, ref %+v", betaDoc.Blob, betaDoc.FetchRef)
+	}
+	betaBlob, err := session.(Fetcher).Fetch(context.Background(), *betaDoc.FetchRef)
+	if err != nil {
+		t.Fatalf("Fetch beta failed: %v", err)
+	}
+	if string(betaBlob) != "hello beta" {
+		t.Fatalf("beta fetched blob = %q", betaBlob)
 	}
 
 	if _, err := session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
@@ -424,12 +439,33 @@ func TestWebDAVConnectorOpenSyncIncremental(t *testing.T) {
 	}
 }
 
-func TestWebDAVConnectorOpenSyncReportsFailedDownloads(t *testing.T) {
+func TestWebDAVConnectorOpenSyncMakesNoDownloadRequests(t *testing.T) {
+	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "20")
+	server, _, getRequests := newWebDAVTestServer(t, webDAVTestTree())
+	connector := webDAVTestConnector(t, server.URL, false, 2)
+
+	session, err := connector.OpenSync(t.Context(), SyncRequest{
+		FromBeginning: true,
+		WindowEnd:     mustTime(t, "2026-01-07T00:00:00Z"),
+	})
+	if err != nil {
+		t.Fatalf("OpenSync failed: %v", err)
+	}
+	defer session.Close()
+	if _, err := session.NextBatch(context.Background()); err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(*getRequests) != 0 {
+		t.Fatalf("OpenSync must not download files, got GETs: %v", *getRequests)
+	}
+}
+
+func TestWebDAVConnectorOpenSyncKeepsFailedDownloadInBatch(t *testing.T) {
 	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "20")
 	tree := webDAVTestTree()
 	tree["/notes/flaky.txt"] = webdavTestFile{content: "", size: 5, hasSize: true, modified: "Sat, 03 Jan 2026 00:00:00 GMT", getStatus: http.StatusServiceUnavailable}
 	server, _, _ := newWebDAVTestServer(t, tree)
-	connector := webDAVTestConnector(t, server.URL, false, 2)
+	connector := webDAVTestConnector(t, server.URL, false, 10)
 
 	start := mustTime(t, "2026-01-02T00:00:00Z")
 	session, err := connector.OpenSync(t.Context(), SyncRequest{
@@ -445,49 +481,110 @@ func TestWebDAVConnectorOpenSyncReportsFailedDownloads(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NextBatch failed: %v", err)
 	}
-	if len(batch.Documents) != 1 || batch.Documents[0].SemanticIdentifier != "beta.md" {
-		t.Fatalf("failed download should leave the other document: %+v", batch.Documents)
+	var flaky *SourceDocument
+	for i := range batch.Documents {
+		if batch.Documents[i].FetchRef != nil && strings.HasSuffix(batch.Documents[i].FetchRef.Key, "/notes/flaky.txt") {
+			flaky = &batch.Documents[i]
+		}
+	}
+	if flaky == nil {
+		t.Fatalf("failed download must stay in the batch with a fetch ref: %+v", batch.Documents)
+	}
+	if !flaky.UpdatedAt.Equal(mustTime(t, "2026-01-03T00:00:00Z")) {
+		t.Fatalf("flaky updated at = %v, want the file Last-Modified", flaky.UpdatedAt)
 	}
 
-	reporter, ok := session.(SyncFailureReporter)
-	if !ok {
-		t.Fatalf("session does not implement SyncFailureReporter")
+	_, fetchErr := session.(Fetcher).Fetch(context.Background(), *flaky.FetchRef)
+	var statusErr *webdavStatusError
+	if !errors.As(fetchErr, &statusErr) {
+		t.Fatalf("Fetch error = %v, want a webdavStatusError", fetchErr)
 	}
-	failures := reporter.SyncFailures()
-	if len(failures) != 1 {
-		t.Fatalf("failures len = %d, want 1: %+v", len(failures), failures)
-	}
-	if failures[0].SourceID != "webdav:"+server.URL+":"+server.URL+"/notes/flaky.txt" {
-		t.Fatalf("failure source id = %q", failures[0].SourceID)
-	}
-	if !failures[0].UpdatedAt.Equal(mustTime(t, "2026-01-03T00:00:00Z")) {
-		t.Fatalf("failure updated at = %v, want the file Last-Modified", failures[0].UpdatedAt)
+	if !statusErr.Temporary() {
+		t.Fatalf("503 fetch error must classify as temporary")
 	}
 }
 
-func TestWebDAVConnectorOpenSyncFailedDownloadWithoutLastModifiedReportsZeroTime(t *testing.T) {
-	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "20")
-	tree := webDAVTestTree()
-	tree["/notes/nodate.txt"] = webdavTestFile{content: "", size: 5, hasSize: true, getStatus: http.StatusServiceUnavailable}
-	server, _, _ := newWebDAVTestServer(t, tree)
-	connector := webDAVTestConnector(t, server.URL, false, 2)
+func TestWebDAVStatusErrorTemporary(t *testing.T) {
+	cases := []struct {
+		status int
+		want   bool
+	}{
+		{http.StatusBadRequest, false},
+		{http.StatusUnauthorized, false},
+		{http.StatusForbidden, false},
+		{http.StatusNotFound, false},
+		{http.StatusTooManyRequests, true},
+		{http.StatusInternalServerError, true},
+		{http.StatusBadGateway, true},
+		{http.StatusServiceUnavailable, true},
+	}
+	for _, tc := range cases {
+		err := &webdavStatusError{status: tc.status, url: "http://example.com/x"}
+		if got := err.Temporary(); got != tc.want {
+			t.Fatalf("status %d Temporary() = %v, want %v", tc.status, got, tc.want)
+		}
+	}
+}
 
-	start := mustTime(t, "2026-01-02T00:00:00Z")
-	session, err := connector.OpenSync(t.Context(), SyncRequest{
-		WindowStart: &start,
-		WindowEnd:   mustTime(t, "2026-01-04T00:00:00Z"),
+func TestWebDAVConnectorFetchZeroByteFileSucceeds(t *testing.T) {
+	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "20")
+	server, _, _ := newWebDAVTestServer(t, map[string]webdavTestFile{
+		"/":              {isDir: true},
+		"/notes/":        {isDir: true},
+		"/notes/zero.md": {content: "", size: 0, hasSize: true, modified: "Fri, 02 Jan 2026 01:00:00 GMT"},
 	})
+	connector := webDAVTestConnector(t, server.URL, false, 10)
+
+	session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, WindowEnd: mustTime(t, "2026-01-07T00:00:00Z")})
 	if err != nil {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
 	defer session.Close()
-
-	failures := session.(SyncFailureReporter).SyncFailures()
-	if len(failures) != 1 {
-		t.Fatalf("failures len = %d, want 1: %+v", len(failures), failures)
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
 	}
-	if !failures[0].UpdatedAt.IsZero() {
-		t.Fatalf("failure without Last-Modified updated at = %v, want zero", failures[0].UpdatedAt)
+	if len(batch.Documents) != 1 {
+		t.Fatalf("zero-byte file must stay in the batch: %+v", batch.Documents)
+	}
+	blob, err := session.(Fetcher).Fetch(context.Background(), *batch.Documents[0].FetchRef)
+	if err != nil {
+		t.Fatalf("zero-byte fetch must succeed: %v", err)
+	}
+	if len(blob) != 0 {
+		t.Fatalf("zero-byte fetch blob = %q, want empty", blob)
+	}
+}
+
+func TestWebDAVConnectorFetchRejectsOversizedFile(t *testing.T) {
+	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "20")
+	server, _, _ := newWebDAVTestServer(t, map[string]webdavTestFile{
+		"/":             {isDir: true},
+		"/notes/":       {isDir: true},
+		"/notes/big.md": {content: "this is way more than twenty bytes of content", size: 45, hasSize: true, modified: "Fri, 02 Jan 2026 01:00:00 GMT"},
+	})
+	connector := webDAVTestConnector(t, server.URL, false, 10)
+
+	if _, err := connector.Fetch(context.Background(), FetchReference{Key: server.URL + "/notes/big.md", SizeHint: 45}); err == nil {
+		t.Fatalf("Fetch with an oversized size hint must fail before downloading")
+	}
+	if _, err := connector.Fetch(context.Background(), FetchReference{Key: server.URL + "/notes/big.md", SizeHint: 5}); err == nil {
+		t.Fatalf("Fetch must reject a downloaded body larger than the threshold")
+	}
+}
+
+func TestWebDAVConnectorFetchRejectsExternalHref(t *testing.T) {
+	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", "20")
+	server, _, _ := newWebDAVTestServer(t, webDAVTestTree())
+	connector := webDAVTestConnector(t, server.URL, false, 10)
+
+	externalServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("external server must not receive requests")
+	}))
+	t.Cleanup(externalServer.Close)
+
+	if _, err := connector.Fetch(context.Background(), FetchReference{Key: externalServer.URL + "/secret.txt", SizeHint: 5}); err == nil {
+		t.Fatalf("Fetch of an external-origin ref must fail")
 	}
 }
 
@@ -533,8 +630,16 @@ func TestWebDAVConnectorMountedUnderNonRootPath(t *testing.T) {
 	if !foundMountedSourceID {
 		t.Fatalf("missing mounted source id %q in %+v", mountedSourceID, batch.Documents)
 	}
-	if len(*getRequests) != 4 {
-		t.Fatalf("download requests = %d, want 4: %v", len(*getRequests), *getRequests)
+	if len(*getRequests) != 0 {
+		t.Fatalf("OpenSync must not download files, got GETs: %v", *getRequests)
+	}
+	for _, doc := range batch.Documents {
+		if doc.FetchRef == nil || !strings.HasPrefix(doc.FetchRef.Key, server.URL+"/webdav/") {
+			t.Fatalf("fetch ref escaped mount path: %+v", doc.FetchRef)
+		}
+		if _, err := session.(Fetcher).Fetch(context.Background(), *doc.FetchRef); err != nil {
+			t.Fatalf("Fetch %s failed: %v", doc.FetchRef.Key, err)
+		}
 	}
 	for _, requestPath := range *getRequests {
 		if !strings.HasPrefix(requestPath, "/webdav/") {
@@ -587,15 +692,19 @@ func TestWebDAVConnectorOpenSyncIncludesSizedFileWithoutLastModified(t *testing.
 	if batch.Documents[0].SourceID != unsetBatch.Documents[0].SourceID {
 		t.Fatalf("unset window source id = %q", unsetBatch.Documents[0].SourceID)
 	}
-	if string(unsetBatch.Documents[0].Blob) != "no modified" {
-		t.Fatalf("unset window blob = %q", unsetBatch.Documents[0].Blob)
+	unsetBlob, err := unsetSession.(Fetcher).Fetch(context.Background(), *unsetBatch.Documents[0].FetchRef)
+	if err != nil {
+		t.Fatalf("unset window fetch failed: %v", err)
+	}
+	if string(unsetBlob) != "no modified" {
+		t.Fatalf("unset window fetched blob = %q", unsetBlob)
 	}
 	if unsetBatch.Documents[0].UpdatedAt.IsZero() {
 		t.Fatalf("unset window updated at is zero")
 	}
 }
 
-func TestWebDAVConnectorOpenSyncRejectsOversizedResponse(t *testing.T) {
+func TestWebDAVConnectorFetchRejectsOversizedResponse(t *testing.T) {
 	t.Setenv("BLOB_STORAGE_SIZE_THRESHOLD", fmt.Sprintf("%d", maxWebDAVResponseSize+1))
 	content := strings.Repeat("x", maxWebDAVResponseSize+1)
 	server, _, getRequests := newWebDAVTestServer(t, map[string]webdavTestFile{
@@ -610,8 +719,15 @@ func TestWebDAVConnectorOpenSyncRejectsOversizedResponse(t *testing.T) {
 		t.Fatalf("OpenSync failed: %v", err)
 	}
 	defer session.Close()
-	if _, err := session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
-		t.Fatalf("NextBatch = %v, want EOF", err)
+	batch, err := session.NextBatch(context.Background())
+	if err != nil {
+		t.Fatalf("NextBatch failed: %v", err)
+	}
+	if len(batch.Documents) != 1 {
+		t.Fatalf("batch len = %d, want 1: %+v", len(batch.Documents), batch.Documents)
+	}
+	if _, err := session.(Fetcher).Fetch(context.Background(), *batch.Documents[0].FetchRef); err == nil {
+		t.Fatalf("Fetch of an oversized response must fail")
 	}
 	if len(*getRequests) != 1 {
 		t.Fatalf("download requests = %d, want 1", len(*getRequests))
@@ -805,10 +921,10 @@ func TestWebDAVConnectorOpenSyncRejectsExternalHref(t *testing.T) {
 		}
 	}
 
+	if len(getPaths) != 0 {
+		t.Fatalf("OpenSync must not download files, got GETs: %v", getPaths)
+	}
 	if externalRequests != 0 {
 		t.Fatalf("external server received %d request(s), want 0", externalRequests)
-	}
-	if len(getPaths) == 0 {
-		t.Fatalf("expected GET for the legitimate file")
 	}
 }

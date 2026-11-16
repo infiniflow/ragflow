@@ -22,6 +22,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"net"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/service"
@@ -172,8 +173,7 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, c
 	if err := checkTaskCanceled(r.taskDAO, ctx, taskContext.Task.ID); err != nil {
 		return "", err
 	}
-	waterline := commitWaterline(session, checkpointState.WindowEnd, &stats)
-	nextTaskID, err := r.taskService.CompleteSync(ctx, taskContext, waterline, stats)
+	nextTaskID, err := r.taskService.CompleteSync(ctx, taskContext, checkpointState.WindowEnd, stats)
 	if err != nil {
 		return "", err
 	}
@@ -183,27 +183,6 @@ func (r *SyncRunner) Run(ctx context.Context, taskContext dao.SyncTaskContext, c
 		common.Info("delete sync checkpoint completed", zap.String("task_id", taskContext.Task.ID))
 	}
 	return nextTaskID, nil
-}
-
-// commitWaterline returns the waterline the sync should commit. When the
-// session reports failed fetches, the failures are counted in the task stats
-// and the waterline is held just before the earliest failed document's
-// modification time, so the strict half-open selection window (start, end]
-// covers it again on the next run instead of dropping it silently.
-func commitWaterline(session syncerconnector.SyncSession, windowEnd time.Time, stats *service.SyncStats) time.Time {
-	reporter, ok := session.(syncerconnector.SyncFailureReporter)
-	if !ok {
-		return windowEnd
-	}
-	failures := reporter.SyncFailures()
-	if len(failures) == 0 {
-		return windowEnd
-	}
-	stats.Add(service.SyncStats{
-		ErrorCount: int64(len(failures)),
-		ErrorMsg:   fmt.Sprintf("%d source document(s) failed to download and will be retried", len(failures)),
-	})
-	return syncerconnector.HoldWaterline(windowEnd, failures)
 }
 
 func (r *SyncRunner) openSyncSession(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, fingerprints map[string]string, checkpointState *syncerconnector.SyncCheckpointState, connector syncerconnector.Connector) (syncerconnector.SyncSession, error) {
@@ -422,6 +401,34 @@ func (r *SyncRunner) processDocumentWithRetry(ctx context.Context, taskContext d
 	return service.DocumentUpsertResult{}, lastErr
 }
 
+// isTransientSyncError reports whether a fetch error looks transient: an
+// explicit Temporary() classification (such as a 429 or 5xx response) or a
+// network timeout.
+func isTransientSyncError(err error) bool {
+	var transient interface{ Temporary() bool }
+	if errors.As(err, &transient) {
+		return transient.Temporary()
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) {
+		return netErr.Timeout()
+	}
+	return false
+}
+
+// retryableFetchError wraps a transient fetch failure so the per-document
+// retry loop retries it; permanent failures pass through unchanged and stop
+// after the first attempt.
+func retryableFetchError(err error) error {
+	if err == nil || service.IsRetryable(err) {
+		return err
+	}
+	if isTransientSyncError(err) {
+		return &service.RetryableError{Err: err}
+	}
+	return err
+}
+
 // processDocument resolves IDs, skips unchanged fingerprints, fetches blobs, and upserts.
 func (r *SyncRunner) processDocument(ctx context.Context, taskContext dao.SyncTaskContext, sourceType string, session syncerconnector.SyncSession, sourceDocument syncerconnector.SourceDocument) (service.DocumentUpsertResult, error) {
 	resolved, err := r.idResolver.Resolve(ctx, taskContext.Knowledgebase.ID, taskContext.Connector.ID, sourceType, sourceDocument.SourceID)
@@ -439,7 +446,7 @@ func (r *SyncRunner) processDocument(ctx context.Context, taskContext dao.SyncTa
 		}
 		blob, err := fetcher.Fetch(ctx, *sourceDocument.FetchRef)
 		if err != nil {
-			return service.DocumentUpsertResult{}, err
+			return service.DocumentUpsertResult{}, retryableFetchError(err)
 		}
 		sourceDocument.Blob = blob
 	}
