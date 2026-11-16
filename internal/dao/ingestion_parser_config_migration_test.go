@@ -3,7 +3,9 @@ package dao
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -19,6 +21,10 @@ import (
 var MigrateIngestionParserConfigsForTest = migrateIngestionParserConfigs
 var MigrateParserChunkerTokenizerConfigForTest = migrateParserChunkerTokenizerConfig
 var MigrateExtractorConfigForTest = migrateExtractorConfig
+
+func IngestionMigrationParserIDsForTest() []string {
+	return slices.Sorted(maps.Keys(ingestionTargets))
+}
 
 // TestMigrateParserChunkerTokenizerConfig pins component ownership, explicit
 // values, existing scoped precedence and idempotence for each supported shape.
