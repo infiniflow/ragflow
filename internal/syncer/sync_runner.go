@@ -401,10 +401,10 @@ func (r *SyncRunner) processDocumentWithRetry(ctx context.Context, taskContext d
 	return service.DocumentUpsertResult{}, lastErr
 }
 
-// isTransientSyncError reports whether a fetch error looks transient: an
+// isTransientFetchError reports whether a fetch error looks transient: an
 // explicit Temporary() classification (such as a 429 or 5xx response) or a
 // network timeout.
-func isTransientSyncError(err error) bool {
+func isTransientFetchError(err error) bool {
 	var transient interface{ Temporary() bool }
 	if errors.As(err, &transient) {
 		return transient.Temporary()
@@ -423,7 +423,7 @@ func retryableFetchError(err error) error {
 	if err == nil || service.IsRetryable(err) {
 		return err
 	}
-	if isTransientSyncError(err) {
+	if isTransientFetchError(err) {
 		return &service.RetryableError{Err: err}
 	}
 	return err
