@@ -1824,15 +1824,13 @@ func buildBoolQueryFromConditionRaw(filter map[string]interface{}, kbIDs []strin
 		if v == nil || v == "" {
 			continue
 		}
-		if isMemoryIndex && k == "session_id" {
-			if strVal, ok := v.(string); ok && strVal != "" {
-				filterClauses = append(filterClauses, map[string]interface{}{
-					"query_string": map[string]interface{}{
-						"query":            fmt.Sprintf("*%s*", strVal),
-						"fields":           []string{"session_id"},
-						"analyze_wildcard": true,
-					},
-				})
+		if isMemoryIndex && (k == "session_id" || k == "session_id_contains") {
+			if text, ok := v.(string); ok {
+				pattern := strings.NewReplacer(`\`, `\\`, "*", `\*`, "?", `\?`).Replace(text)
+				filterClauses = append(filterClauses, map[string]interface{}{"wildcard": map[string]interface{}{"session_id": "*" + pattern + "*"}})
+				continue
+			}
+			if k == "session_id_contains" {
 				continue
 			}
 		}
@@ -2042,6 +2040,17 @@ func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map
 
 			if val == nil {
 				continue
+			}
+
+			if mapVal, ok := val.(map[string]interface{}); ok {
+				// Nested objects (tag_feas is a "rank_features" object) cannot
+				// take the string conversion below: "%v" renders map[k:v], which
+				// no rank-feature parser accepts. JSON is the string form the
+				// reranker parses.
+				if raw, err := json.Marshal(mapVal); err == nil {
+					m[field] = string(raw)
+					continue
+				}
 			}
 
 			if listVal, ok := val.([]interface{}); ok {
