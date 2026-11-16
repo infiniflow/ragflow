@@ -4,6 +4,7 @@ import (
 	"reflect"
 	"testing"
 
+	"ragflow/internal/engine/internal/esoscommon"
 	"ragflow/internal/engine/types"
 )
 
@@ -41,9 +42,9 @@ func TestParseOrderByExprSkipsLogicalID(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := parseOrderByExpr(tc.expr)
+			got := esoscommon.ParseOrderByExpr(tc.expr)
 			if !reflect.DeepEqual(got, tc.want) {
-				t.Fatalf("parseOrderByExpr(%v) = %#v, want %#v", tc.expr, got, tc.want)
+				t.Fatalf("esoscommon.ParseOrderByExpr(%v) = %#v, want %#v", tc.expr, got, tc.want)
 			}
 		})
 	}
@@ -52,10 +53,10 @@ func TestParseOrderByExprSkipsLogicalID(t *testing.T) {
 // TestParseOrderByExprIDNotDroppedToIDMetadata is the explicit regression guard:
 // parseOrderByExpr must never emit a {"_id": ...} sort for the logical id column.
 func TestParseOrderByExprIDNotDroppedToIDMetadata(t *testing.T) {
-	got := parseOrderByExpr((&types.OrderByExpr{}).Asc("id"))
+	got := esoscommon.ParseOrderByExpr((&types.OrderByExpr{}).Asc("id"))
 	for _, sort := range got {
 		if _, ok := sort["_id"]; ok {
-			t.Fatalf("parseOrderByExpr(id) emitted a _id sort %#v; this breaks on default ES 8.x", sort)
+			t.Fatalf("esoscommon.ParseOrderByExpr(id) emitted a _id sort %#v; this breaks on default ES 8.x", sort)
 		}
 	}
 }

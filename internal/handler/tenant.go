@@ -18,7 +18,6 @@ package handler
 
 import (
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/mail"
@@ -27,7 +26,6 @@ import (
 	"ragflow/internal/permission"
 	"ragflow/internal/server"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -72,6 +70,8 @@ type SetModelRequest struct {
 }
 
 func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
+	common.StartOperationLog(c, "update_default_models")
+	defer common.FinishOperationLog(c)
 	// Parse request body (same as Python get_request_json())
 	var req SetModelRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -79,6 +79,8 @@ func (h *TenantHandler) setDefaultModels(c *gin.Context, wrapModels bool) {
 		return
 	}
 
+	common.SetOperationResource(c, "model_id", req.ModelID)
+	common.SetOperationResource(c, "model_type", req.ModelType)
 	ctx := c.Request.Context()
 	code, err := h.userTenantService.SetModelSettings(ctx, &service.SetModelSettingsRequest{
 		DefaultModel: &service.DefaultModelSelection{
@@ -470,47 +472,29 @@ func sendMailWithTLS(addr, host string, auth smtp.Auth, from string, to []string
 // @Param request body service.AddMemberRequest true "Invite request"
 // @Router /api/v1/tenants/{tenant_id}/users [post]
 func (h *TenantHandler) AddTenantMember(c *gin.Context) {
-	startAt := time.Now()
-	operationLog := &common.OperationLog{
-		EventTime:  startAt,
-		Operation:  "set_tenant_info",
-		APIPath:    c.FullPath(),
-		HTTPMethod: c.Request.Method,
-		IPAddress:  c.ClientIP(),
-	}
-	defer func() {
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		common.Audit(operationLog)
-	}()
+	common.StartOperationLog(c, "invite_tenant_member")
+	defer common.FinishOperationLog(c)
 
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
-		operationLog.Code = int(errorCode)
-		operationLog.Error = errors.New(errorMessage)
 		return
 	}
-	operationLog.UserID = user.ID
 
 	tenantID := c.Param("tenant_id")
+	common.SetOperationResource(c, "target_tenant_id", tenantID)
 	if tenantID == "" {
 		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "tenant_id is required")
-		operationLog.Code = int(common.CodeBadRequest)
-		operationLog.Error = errors.New("tenant_id is required")
 		return
 	}
 	if !matchesActiveTenant(c, tenantID) {
 		common.RespondError(c, common.CodeForbidden, "Tenant does not match the active token context")
-		operationLog.Code = int(common.CodeForbidden)
-		operationLog.Error = errors.New("tenant does not match the active token context")
 		return
 	}
 
 	var req service.AddMemberRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "invalid request body: "+err.Error())
-		operationLog.Code = int(common.CodeBadRequest)
-		operationLog.Error = errors.New("invalid request body: " + err.Error())
 		return
 	}
 
@@ -518,11 +502,10 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 	resp, code, err := h.tenantService.AddMember(ctx, tenantID, &req)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
-		operationLog.Code = int(code)
-		operationLog.Error = err
 		return
 	}
 
+	common.SetOperationResource(c, "target_user_id", resp.ID)
 	inviter := user.Nickname
 	if inviter == "" {
 		inviter = user.Email
@@ -535,8 +518,6 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 				zap.String("tenant_id", tenantID),
 				zap.String("email", req.Email),
 				zap.Error(err))
-			operationLog.Code = int(common.CodeServerError)
-			operationLog.Error = err
 		}
 	}
 
@@ -550,32 +531,19 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 // @Param request body object true "Remove member request" SchemaExample({"user_id":"string"})
 // @Router /api/v1/tenants/{tenant_id}/users [delete]
 func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
-	startAt := time.Now()
-	operationLog := &common.OperationLog{
-		EventTime:  startAt,
-		Operation:  "set_tenant_info",
-		APIPath:    c.FullPath(),
-		HTTPMethod: c.Request.Method,
-		IPAddress:  c.ClientIP(),
-	}
-	defer func() {
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		common.Audit(operationLog)
-	}()
+	common.StartOperationLog(c, "remove_tenant_member")
+	defer common.FinishOperationLog(c)
+
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
-		operationLog.Code = int(errorCode)
-		operationLog.Error = errors.New(errorMessage)
 		return
 	}
-	operationLog.UserID = user.ID
 
 	tenantID := c.Param("tenant_id")
+	common.SetOperationResource(c, "target_tenant_id", tenantID)
 	if tenantID == "" {
 		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "tenant_id is required")
-		operationLog.Code = int(common.CodeBadRequest)
-		operationLog.Error = errors.New("tenant_id is required")
 		return
 	}
 	var body struct {
@@ -583,14 +551,11 @@ func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&body); err != nil || body.UserID == "" {
 		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "user_id is required")
-		operationLog.Code = int(common.CodeBadRequest)
-		operationLog.Error = errors.New("user_id is required")
 		return
 	}
+	common.SetOperationResource(c, "target_user_id", body.UserID)
 	if body.UserID != user.ID && !matchesActiveTenant(c, tenantID) {
 		common.RespondError(c, common.CodeForbidden, "Tenant does not match the active token context")
-		operationLog.Code = int(common.CodeForbidden)
-		operationLog.Error = errors.New("tenant does not match the active token context")
 		return
 	}
 
@@ -598,8 +563,6 @@ func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 	code, err := h.tenantService.RemoveMember(ctx, tenantID, body.UserID)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
-		operationLog.Code = int(code)
-		operationLog.Error = err
 		return
 	}
 	common.RespondSuccess(c, nil, "success")
@@ -612,41 +575,25 @@ func (h *TenantHandler) RemoveTenantMember(c *gin.Context) {
 // @Param tenant_id path string true "Tenant ID"
 // @Router /api/v1/tenants/{tenant_id} [patch]
 func (h *TenantHandler) AcceptTenantInvite(c *gin.Context) {
-	startAt := time.Now()
-	operationLog := &common.OperationLog{
-		EventTime:  startAt,
-		Operation:  "set_tenant_info",
-		APIPath:    c.FullPath(),
-		HTTPMethod: c.Request.Method,
-		IPAddress:  c.ClientIP(),
-	}
-	defer func() {
-		operationLog.DurationMS = time.Since(startAt).Milliseconds()
-		common.Audit(operationLog)
-	}()
+	common.StartOperationLog(c, "accept_tenant_invitation")
+	defer common.FinishOperationLog(c)
 
-	user, errorCode, errorMessage := GetUser(c)
+	_, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.RespondError(c, errorCode, errorMessage)
-		operationLog.Code = int(errorCode)
-		operationLog.Error = errors.New(errorMessage)
 		return
 	}
-	operationLog.UserID = user.ID
 
 	tenantID := c.Param("tenant_id")
+	common.SetOperationResource(c, "target_tenant_id", tenantID)
 	if tenantID == "" {
 		common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "tenant_id is required")
-		operationLog.Code = int(common.CodeArgumentError)
-		operationLog.Error = errors.New("tenant_id is required")
 		return
 	}
 	ctx := c.Request.Context()
 	code, err := h.tenantService.AcceptInvite(ctx, tenantID)
 	if err != nil {
 		common.RespondError(c, code, err.Error())
-		operationLog.Code = int(code)
-		operationLog.Error = err
 		return
 	}
 	common.RespondSuccess(c, nil, "success")

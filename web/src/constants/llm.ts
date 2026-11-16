@@ -129,6 +129,8 @@ export enum LLMFactory {
   Shengsuanyun = 'Shengsuanyun',
   Synap = 'Synap',
   Wiro = 'Wiro AI',
+  Crusoe = 'Crusoe',
+  HopBase = 'HopBase',
 }
 
 // Please lowercase the file name
@@ -239,6 +241,8 @@ export const IconMap = {
   [LLMFactory.Shengsuanyun]: 'shengsuanyun',
   [LLMFactory.Synap]: 'synap',
   [LLMFactory.Wiro]: 'wiro',
+  [LLMFactory.Crusoe]: 'crusoe',
+  [LLMFactory.HopBase]: 'hopbase',
 };
 
 /**
@@ -298,6 +302,8 @@ export const APIMapUrl = {
   [LLMFactory.Wally]: 'https://console.runanywhere.ai',
   [LLMFactory.Synap]: 'https://synap.linkrra.com/pricing',
   [LLMFactory.Wiro]: 'https://wiro.ai/panel/project/new',
+  [LLMFactory.Crusoe]: 'https://console.crusoecloud.com',
+  [LLMFactory.HopBase]: 'https://api.hop-base.com/login',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',

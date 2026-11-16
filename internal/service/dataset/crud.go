@@ -489,9 +489,11 @@ func (d *DatasetService) deleteDataset(ctx context.Context, kb *entity.Knowledge
 	datasetNameID := datasetNameAndID(kb)
 
 	// Collect document IDs first so engine cleanup can run before the
-	// transaction (engine ops are not transactional).
+	// transaction (engine ops are not transactional). Only the columns the
+	// loop actually reads (id, name, location) are fetched; the full document
+	// row - including the potentially large parser_config - is never loaded.
 	var documents []entity.Document
-	if err := dao.DB.Where("kb_id = ?", kb.ID).Find(&documents).Error; err != nil {
+	if err := dao.DB.Select("id", "name", "location").Where("kb_id = ?", kb.ID).Find(&documents).Error; err != nil {
 		return fmt.Errorf("delete dataset error for %s: %w", kb.ID, err)
 	}
 	cleanupCtx, cancel := context.WithTimeout(ctx, 5*time.Minute)

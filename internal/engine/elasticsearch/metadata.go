@@ -30,6 +30,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine/internal/esoscommon"
 	"ragflow/internal/engine/metafilter"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/utility"
@@ -622,7 +623,7 @@ func (e *Engine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRe
 
 	// Add sorting if order_by specified
 	if req.OrderBy != nil && len(req.OrderBy.Fields) > 0 {
-		sort := parseOrderByExpr(req.OrderBy)
+		sort := esoscommon.ParseOrderByExpr(req.OrderBy)
 		if len(sort) > 0 {
 			queryBody["sort"] = sort
 		}

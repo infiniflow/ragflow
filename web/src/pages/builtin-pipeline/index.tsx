@@ -1,71 +1,42 @@
 import { PageHeader } from '@/components/page-header';
+import { TruncatedText } from '@/components/truncated-text';
 import { Badge } from '@/components/ui/badge';
-import {
-  Breadcrumb,
-  BreadcrumbItem,
-  BreadcrumbLink,
-  BreadcrumbList,
-  BreadcrumbPage,
-  BreadcrumbSeparator,
-} from '@/components/ui/breadcrumb';
 import { Spin } from '@/components/ui/spin';
-import { AgentCategory } from '@/constants/agent';
-import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { useFetchBuiltinPipelines } from '@/hooks/use-agent-request';
 import { ReactFlowProvider } from '@xyflow/react';
-import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import AgentCanvas from '../agent/canvas';
 import { DropdownProvider } from '../agent/canvas/context';
 import { useFetchBuiltinPipelineDataOnMount } from './use-fetch-builtin-pipeline-data';
 
-// BuiltinPipelinePage renders a built-in ingestion pipeline on the shared
-// agent canvas in read-only mode: no editing, no autosave, no run/publish
-// chrome. Unlike the editing page it mounts none of the save/run/log hooks
-// (useWatchAgentChange, useAgentHistoryManager, pipeline log polling), so a
-// built-in template can never be persisted back as a user canvas from here.
-// The title comes from the pipeline catalog query rather than route state so
-// a directly opened or refreshed URL still resolves it.
+// Built-in pipelines use the shared read-only canvas without save/run/log
+// hooks. They have no secondary navigation or sidebar.
 export default function BuiltinPipelinePage() {
   const { id } = useParams();
   const { t } = useTranslation();
-  const { navigateToAgents } = useNavigatePage();
   const { loading } = useFetchBuiltinPipelineDataOnMount();
   const { data } = useFetchBuiltinPipelines();
   const title = data.canvas.find((x) => x.id === id)?.title ?? '';
-  // Built-in pipelines live under the ingestion pipeline tab of the agents
-  // list, so the back-link targets that tab rather than the workflow default.
-  const handleBackToAgents = useCallback(() => {
-    navigateToAgents(AgentCategory.DataflowCanvas);
-  }, [navigateToAgents]);
 
   return (
     <section className="h-full" data-testid="builtin-pipeline-page">
-      <PageHeader>
-        <section>
-          <Breadcrumb>
-            <BreadcrumbList>
-              <BreadcrumbItem>
-                <BreadcrumbLink onClick={handleBackToAgents}>
-                  {t('flow.agents')}
-                </BreadcrumbLink>
-              </BreadcrumbItem>
-              <BreadcrumbSeparator />
-              <BreadcrumbItem>
-                <BreadcrumbPage className="flex items-center gap-2">
-                  {title}
-                  <Badge variant="secondary">
-                    {t('knowledgeConfiguration.builtInBadge')}
-                  </Badge>
-                </BreadcrumbPage>
-              </BreadcrumbItem>
-            </BreadcrumbList>
-          </Breadcrumb>
+      <PageHeader className="pl-0">
+        <section className="flex min-w-0 items-center gap-2">
+          <TruncatedText
+            as="h3"
+            className="min-w-0 truncate text-lg font-semibold text-text-primary"
+            tooltip={title}
+          >
+            {title}
+          </TruncatedText>
+          <Badge variant="secondary" className="shrink-0">
+            {t('knowledgeConfiguration.builtInBadge')}
+          </Badge>
         </section>
       </PageHeader>
       {loading ? (
-        <div className="flex items-center justify-center h-[calc(100%-64px)]">
+        <div className="flex h-[calc(100%-64px)] items-center justify-center">
           <Spin size="large" />
         </div>
       ) : (

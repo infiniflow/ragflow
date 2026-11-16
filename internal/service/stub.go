@@ -73,6 +73,10 @@ func (*TenantService) listTenantMembersEE(context.Context, string) ([]*dao.Tenan
 	return nil, common.CodeSuccess, false, nil
 }
 
+func markJoinedTenantMemberLeftEE(context.Context, *gorm.DB, string, string, *entity.UserTenant) (bool, error) {
+	return false, nil
+}
+
 // recordTenantPermissionChangeEE records nothing: the community edition has no
 // permission audit trail.
 func recordTenantPermissionChangeEE(ctx context.Context, tx *gorm.DB, tenantID, eventType, targetType, targetID, resourceType, resourceID, actionType string, beforePermission, afterPermission int32, beforeData, afterData interface{}) error {

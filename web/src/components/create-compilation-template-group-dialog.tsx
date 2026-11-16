@@ -14,12 +14,7 @@
  *  limitations under the License.
  */
 
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { ICompilationTemplateGroup } from '@/interfaces/database/compilation-template';
 import { CompilationTemplateGroupEditor } from '@/components/compilation-template-group';
 import { CompilationTemplateGroupSaveResult } from '@/components/compilation-template-group/hooks/use-compilation-template-group-submit';
@@ -73,11 +68,9 @@ export function CreateCompilationTemplateGroupDialog({
         className="max-w-5xl h-[85vh] flex flex-col gap-0 p-0"
         onPointerDownOutside={handlePointerDownOutside}
       >
-        <DialogHeader className="mx-0 mt-0 shrink-0 px-5 py-4">
-          <DialogTitle>
-            {t('knowledgeCompilation.addTemplateGroup')}
-          </DialogTitle>
-        </DialogHeader>
+        <DialogTitle className="sr-only">
+          {t('knowledgeCompilation.addTemplateGroup')}
+        </DialogTitle>
         <CompilationTemplateGroupEditor
           onSuccess={handleSuccess}
           onCancel={handleCancel}

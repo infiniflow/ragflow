@@ -110,6 +110,7 @@ func (h *AgentHandler) handleOpenAICompat(c *gin.Context, req *agentChatCompleti
 		c.Request = c.Request.WithContext(service.WithAgentSessionID(c.Request.Context(), req.SessionID))
 	}
 
+	common.SetOperationResource(c, "session_id", req.SessionID)
 	runContext, cancel := context.WithCancel(service.WithOpenAICompatMessages(c.Request.Context(), req.Messages))
 	defer cancel()
 	events, err := h.chatRunner.RunAgent(
@@ -123,6 +124,7 @@ func (h *AgentHandler) handleOpenAICompat(c *gin.Context, req *agentChatCompleti
 	completionID := req.SessionID
 	promptTokens := countOpenAICompatPromptTokens(req.Messages)
 	if req.Stream {
+		common.FinishOperationLog(c)
 		h.streamOpenAICompat(c, events, completionID, req.AgentID, promptTokens)
 		return
 	}

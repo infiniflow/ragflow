@@ -22,7 +22,7 @@ const (
 	TenantMembershipStatusInvited   = "2"
 	TenantMembershipStatusRejected  = "3"
 	TenantMembershipStatusRequested = "4"
-	TenantMembershipStatusLeft      = "5"
+	TenantMembershipStatusLeft      = TenantMembershipStatusRemoved
 )
 
 // UserTenant user tenant relationship model.

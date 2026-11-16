@@ -58,7 +58,6 @@ package handler
 //     unchanged.
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -72,6 +71,7 @@ import (
 	"ragflow/internal/common"
 	kvrocks "ragflow/internal/engine/kvrocks"
 	"ragflow/internal/service"
+	"ragflow/internal/utility"
 	"strconv"
 	"strings"
 	"time"
@@ -115,12 +115,16 @@ type agentWebhookCredentialManager interface {
 // a single path. Gin has no Match() — the router registers each verb
 // individually via registerAnyMethod (see internal/router/agent_routes.go).
 func (h *AgentHandler) Webhook(c *gin.Context) {
+	isTest := strings.HasSuffix(c.Request.URL.Path, "/webhook/test")
+	if isTest {
+		common.StartOperationLog(c, "request_agent_webhook_test")
+		defer common.FinishOperationLog(c)
+	}
 	canvasID := c.Param("canvas_id")
 	if h.loader == nil {
 		jsonInternalError(c, errors.New("agent webhook: loader not configured"))
 		return
 	}
-	isTest := strings.HasSuffix(c.Request.URL.Path, "/webhook/test")
 	ctx := c.Request.Context()
 	if isTest {
 	} else {
@@ -256,11 +260,17 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 		}
 		// Detached background run — does NOT inherit c.Request.Context()
 		// so a client disconnect does not cancel the canvas run.
+		if isTest {
+			common.FinishOperationLog(c)
+		}
 		go h.runWebhookDetached(ctx, cv, clean, isTest, startTs)
 		c.Data(status, contentType, payload)
 		return
 	}
 	// Streaming / blocking mode.
+	if isTest {
+		common.FinishOperationLog(c)
+	}
 	out := h.runWebhookSync(ctx, cv, clean, isTest, startTs)
 	c.JSON(out.status, out.body)
 }
@@ -268,6 +278,9 @@ func (h *AgentHandler) Webhook(c *gin.Context) {
 // CreateWebhookCredential issues or rotates the authenticated user's
 // capability for this Agent and returns the URL once.
 func (h *AgentHandler) CreateWebhookCredential(c *gin.Context) {
+	common.StartOperationLog(c, "create_agent_webhook_credential")
+	defer common.FinishOperationLog(c)
+
 	if h.loader == nil {
 		jsonInternalError(c, errors.New("agent webhook: loader not configured"))
 		return
@@ -300,6 +313,9 @@ func (h *AgentHandler) CreateWebhookCredential(c *gin.Context) {
 // RevokeWebhookCredential revokes only the authenticated user's capability
 // for this Agent.
 func (h *AgentHandler) RevokeWebhookCredential(c *gin.Context) {
+	common.StartOperationLog(c, "revoke_agent_webhook_credential")
+	defer common.FinishOperationLog(c)
+
 	if err := h.webhookCredentialManager().Revoke(c.Request.Context(), c.Param("canvas_id")); err != nil {
 		jsonInternalError(c, err)
 		return
@@ -736,7 +752,7 @@ func webhookStartErrorEvent(err error, sessionID string) canvas.RunEvent {
 	return canvas.RunEvent{
 		Type:      "error",
 		SessionID: sessionID,
-		Data:      mustJSON(payload),
+		Data:      utility.MustJSON(payload),
 	}
 }
 
@@ -805,7 +821,7 @@ func webhookContextTerminalEvent(err error, sessionID string) canvas.RunEvent {
 	return canvas.RunEvent{
 		Type:      eventType,
 		SessionID: sessionID,
-		Data:      mustJSON(canvas.ErrorEvent{Message: message}),
+		Data:      utility.MustJSON(canvas.ErrorEvent{Message: message}),
 	}
 }
 
@@ -817,7 +833,7 @@ func (h *AgentHandler) appendWebhookRunTrace(
 		var payload canvas.ErrorEvent
 		if err := json.Unmarshal([]byte(ev.Data), &payload); err == nil && payload.Kind == canvas.RunErrorKindInternal {
 			payload.Message = canvas.InternalRunErrorMessage
-			ev.Data = mustJSON(payload)
+			ev.Data = utility.MustJSON(payload)
 		}
 	}
 	if h.webhookTraceAppender != nil {
@@ -833,7 +849,7 @@ func (h *AgentHandler) appendWebhookFinishedTrace(
 	h.appendWebhookRunTrace(ctx, agentID, startTs, canvas.RunEvent{
 		Type:      "finished",
 		SessionID: sessionID,
-		Data: mustJSON(map[string]any{
+		Data: utility.MustJSON(map[string]any{
 			"elapsed_time": time.Since(startTs).Seconds(),
 			"success":      success,
 		}),
@@ -847,15 +863,6 @@ func (h *AgentHandler) appendWebhookInterruptedTrace(
 	defer cancel()
 	h.appendWebhookRunTrace(traceCtx, agentID, startTs, event)
 	h.appendWebhookFinishedTrace(traceCtx, agentID, startTs, sessionID, false)
-}
-
-// mustJSON marshals v to a JSON object string. Used by trace appenders;
-// panics on marshal failure (acceptable because we only marshal
-// statically-typed map[string]any values).
-func mustJSON(v any) string {
-	var buf bytes.Buffer
-	_ = json.NewEncoder(&buf).Encode(v)
-	return buf.String()
 }
 
 const (
