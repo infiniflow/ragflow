@@ -21,9 +21,9 @@ func ListKnowledgeCompileEntries(ctx context.Context, db *gorm.DB, table, datase
 	return entries, err
 }
 
-// CountCompilationStatusEntries counts all queue entries for datasetID using
+// CountKnowledgeCompileEntries counts all queue entries for datasetID using
 // a SQL aggregate. Duplicates are intentional and must be counted separately.
-func CountCompilationStatusEntries(ctx context.Context, db *gorm.DB, table, datasetID string) (int, error) {
+func CountKnowledgeCompileEntries(ctx context.Context, db *gorm.DB, table, datasetID string) (int, error) {
 	var count int64
 	err := db.WithContext(ctx).Table(table).Where("dataset_id = ?", datasetID).Count(&count).Error
 	return int(count), err

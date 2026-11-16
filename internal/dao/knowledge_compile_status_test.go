@@ -18,6 +18,11 @@ func setupCompilationStatusCountTestDB(t *testing.T) (*gorm.DB, string) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
+	pool, err := db.DB()
+	if err != nil {
+		t.Fatalf("access sqlite pool: %v", err)
+	}
+	t.Cleanup(func() { _ = pool.Close() })
 	table := (entity.KnowledgeCompileBacklog{}).TableName()
 	if err := db.AutoMigrate(&entity.KnowledgeCompileBacklog{}); err != nil {
 		t.Fatalf("migrate %s: %v", table, err)
@@ -74,9 +79,9 @@ func TestListKnowledgeCompileEntries(t *testing.T) {
 	}
 }
 
-// TestCountCompilationStatusEntries locks the SQL aggregation path: dataset
+// TestCountKnowledgeCompileEntries locks the SQL aggregation path: dataset
 // scoping and duplicate preservation.
-func TestCountCompilationStatusEntries(t *testing.T) {
+func TestCountKnowledgeCompileEntries(t *testing.T) {
 	db, table := setupCompilationStatusCountTestDB(t)
 	insertCompilationStatusCountEntries(t, db, table, []entity.KnowledgeCompileEntry{
 		{DatasetID: "kb", DocID: "same", QueuePosition: 1},
@@ -85,7 +90,7 @@ func TestCountCompilationStatusEntries(t *testing.T) {
 		{DatasetID: "other", DocID: "x", QueuePosition: 1},
 	})
 
-	got, err := CountCompilationStatusEntries(t.Context(), db, table, "kb")
+	got, err := CountKnowledgeCompileEntries(t.Context(), db, table, "kb")
 	if err != nil {
 		t.Fatalf("count: %v", err)
 	}
@@ -107,12 +112,12 @@ func TestCompilationStatusEntriesEmptyAndError(t *testing.T) {
 	if err != nil || len(entries) != 0 {
 		t.Fatalf("list missing dataset: entries=%d err=%v", len(entries), err)
 	}
-	count, err := CountCompilationStatusEntries(t.Context(), db, table, "missing")
+	count, err := CountKnowledgeCompileEntries(t.Context(), db, table, "missing")
 	if err != nil || count != 0 {
 		t.Fatalf("count missing dataset: count=%d err=%v", count, err)
 	}
 
-	if _, err := CountCompilationStatusEntries(t.Context(), db, "no_such_compile_table", "kb"); err == nil {
+	if _, err := CountKnowledgeCompileEntries(t.Context(), db, "no_such_compile_table", "kb"); err == nil {
 		t.Fatal("expected database error for missing table, got nil")
 	}
 }
@@ -133,7 +138,7 @@ func TestKnowledgeCompileEntriesHonorContext(t *testing.T) {
 	if _, err := ListKnowledgeCompileEntries(cancelled, db, table, "kb"); err == nil {
 		t.Fatal("ListKnowledgeCompileEntries ignored cancelled context")
 	}
-	if _, err := CountCompilationStatusEntries(cancelled, db, table, "kb"); err == nil {
-		t.Fatal("CountCompilationStatusEntries ignored cancelled context")
+	if _, err := CountKnowledgeCompileEntries(cancelled, db, table, "kb"); err == nil {
+		t.Fatal("CountKnowledgeCompileEntries ignored cancelled context")
 	}
 }

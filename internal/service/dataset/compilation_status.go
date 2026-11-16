@@ -100,7 +100,7 @@ func (d *DatasetService) GetDatasetCompilationStatus(ctx context.Context, datase
 
 func countCompilationStatusEntries(ctx context.Context, db *gorm.DB, table, datasetID, kind string) (int, error) {
 	if kind == "" {
-		return dao.CountCompilationStatusEntries(ctx, db, table, datasetID)
+		return dao.CountKnowledgeCompileEntries(ctx, db, table, datasetID)
 	}
 	entries, err := dao.ListKnowledgeCompileEntries(ctx, db, table, datasetID)
 	if err != nil {
