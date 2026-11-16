@@ -80,6 +80,9 @@ func (o *OpenAIModel) ChatWithMessages(ctx context.Context, modelName string, me
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	if chatModelConfig != nil && chatModelConfig.Effort != nil && *chatModelConfig.Effort != "" {
+		reqBody["reasoning_effort"] = *chatModelConfig.Effort
+	}
 
 	if strings.Contains(strings.ToLower(modelName), "qwen3") {
 		if chatModelConfig != nil && chatModelConfig.Thinking != nil {
@@ -121,7 +124,9 @@ func (o *OpenAIModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		if chatModelConfig.Stream != nil && !*chatModelConfig.Stream {
 			return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 		}
-
+		if chatModelConfig.Effort != nil && *chatModelConfig.Effort != "" {
+			reqBody["reasoning_effort"] = *chatModelConfig.Effort
+		}
 	}
 
 	// Qwen3 family: disable thinking unless explicitly enabled.
