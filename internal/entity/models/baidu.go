@@ -50,6 +50,51 @@ func (b *BaiduModel) Name() string {
 	return "BaiduYiyan"
 }
 
+// ERNIE / Qianfan chat APIs take the system prompt through a dedicated
+// top-level `system` field, and older ERNIE versions reject a "system" role
+// inside messages. Mirror the Python BaiduYiyanChat driver: leading system
+// messages become the system prompt, and system roles are removed from the
+// message list wherever they appear.
+func splitBaiduSystemMessages(messages []Message) (string, []Message) {
+	rest := make([]Message, 0, len(messages))
+	systemParts := make([]string, 0, 1)
+	sawSystem := false
+	for _, msg := range messages {
+		if isBaiduSystemRole(msg) {
+			sawSystem = true
+			// Only a leading system run feeds the top-level prompt; a system
+			// role later in the conversation has no ERNIE equivalent.
+			if len(rest) == 0 {
+				if content, ok := msg.Content.(string); ok && strings.TrimSpace(content) != "" {
+					systemParts = append(systemParts, content)
+				}
+			}
+			continue
+		}
+		rest = append(rest, msg)
+	}
+	if !sawSystem {
+		return "", messages
+	}
+	return strings.Join(systemParts, "\n\n"), rest
+}
+
+func isBaiduSystemRole(msg Message) bool {
+	return strings.EqualFold(strings.TrimSpace(msg.Role), "system")
+}
+
+func buildBaiduChatBody(cfg *ChatConfig, modelName string, messages []Message, stream bool) (map[string]interface{}, error) {
+	system, chatMessages := splitBaiduSystemMessages(messages)
+	if len(chatMessages) == 0 {
+		return nil, fmt.Errorf("baidu: no user/assistant messages after extracting system prompt")
+	}
+	reqBody := buildRequestBody(cfg, modelName, chatMessages, stream)
+	if system != "" {
+		reqBody["system"] = system
+	}
+	return reqBody, nil
+}
+
 func (b *BaiduModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := b.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -63,8 +108,10 @@ func (b *BaiduModel) ChatWithMessages(ctx context.Context, modelName string, mes
 		return nil, err
 	}
 
-	// Build request body
-	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	reqBody, err := buildBaiduChatBody(chatModelConfig, modelName, messages, false)
+	if err != nil {
+		return nil, err
+	}
 
 	if chatModelConfig != nil {
 
@@ -133,7 +180,10 @@ func (b *BaiduModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 	}
 
 	// Build request body with streaming enabled
-	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
+	reqBody, err := buildBaiduChatBody(modelConfig, modelName, messages, true)
+	if err != nil {
+		return err
+	}
 	reqBody["stream_options"] = map[string]interface{}{
 		"include_usage": true,
 	}
