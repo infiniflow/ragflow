@@ -865,11 +865,12 @@ func TestAnySearch_RealReactAgentRunsBatchAndDiscovery(t *testing.T) {
 
 func TestAnySearch_ModelResultBoundsEveryFieldButKeepsSmallOnes(t *testing.T) {
 	t.Parallel()
-	bigNested := map[string]any{"rows": []any{strings.Repeat("x", anySearchResultNestedBytes+1)}}
+	bigNested := map[string]any{"rows": []any{strings.Repeat("x", 2049)}}
 	small := map[string]any{"currency": "USD"}
-	out := anySearchModelResult(map[string]any{
+	longURL := "https://example.com/" + strings.Repeat("u", 5000)
+	out, _ := anySearchModelResult(map[string]any{
 		"title":     "  " + strings.Repeat("t", 5000) + "  ",
-		"url":       "https://example.com/" + strings.Repeat("u", 5000),
+		"url":       longURL,
 		"snippet":   "summary",
 		"content":   "",
 		"price":     json.Number("9007199254740993"),
@@ -878,10 +879,8 @@ func TestAnySearch_ModelResultBoundsEveryFieldButKeepsSmallOnes(t *testing.T) {
 		"small":     small,
 		"too_large": bigNested,
 	})
-	for _, key := range []string{"title", "url"} {
-		if got := utf8.RuneCountInString(out[key].(string)); got != anySearchResultTextRunes {
-			t.Errorf("%s has %d runes, want it capped at %d", key, got, anySearchResultTextRunes)
-		}
+	if got := utf8.RuneCountInString(out["title"].(string)); got != 5004 {
+		t.Errorf("title has %d runes, want the original 5004", got)
 	}
 	if out["snippet"] != "summary" || out["content"] != "" {
 		t.Errorf("snippet/content = %#v / %#v, want both kept as they are", out["snippet"], out["content"])
@@ -889,14 +888,110 @@ func TestAnySearch_ModelResultBoundsEveryFieldButKeepsSmallOnes(t *testing.T) {
 	if out["price"] != json.Number("9007199254740993") || out["listed"] != true {
 		t.Errorf("scalars changed: %#v", out)
 	}
-	if _, has := out["too_large"]; has {
-		t.Error("a nested value larger than the limit was kept")
+	if _, has := out["too_large"]; !has || out["url"] != longURL {
+		t.Error("structured fields or the URL were not preserved")
 	}
 	if _, has := out["small"]; !has {
 		t.Error("a small nested value was dropped")
 	}
 	if _, has := out["missing"]; !has {
 		t.Error("a null field was dropped")
+	}
+}
+
+func TestAnySearch_LongURLAndStructuredResultFidelity(t *testing.T) {
+	t.Parallel()
+	longURL := "https://example.com/" + strings.Repeat("x", 1800)
+	largeValue := strings.Repeat("a", 2148)
+	resultJSON, err := json.Marshal(map[string]any{"title": "Market", "url": longURL, "content": "Market result", "data": map[string]any{"details": largeValue}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	helper, _ := anySearchTestServer(t, anySearchOK("["+string(resultJSON)+"]"))
+	out, err := NewAnySearchToolWith(helper, "").InvokableRun(t.Context(), `{"query":"market","tag":"finance.quote","params":{"type":"stock"}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := decodeAnySearchEnvelope(t, out)
+	if env.Error != "" || len(env.Queries) != 1 || len(env.Queries[0].Results) != 1 {
+		t.Fatalf("search result = %s", out)
+	}
+	result := env.Queries[0].Results[0]
+	if result["url"] != longURL {
+		t.Fatalf("URL was changed: got %d bytes, want %d", len(anySearchText(result["url"])), len(longURL))
+	}
+	data, ok := result["data"].(map[string]any)
+	if !ok || data["details"] != largeValue {
+		t.Fatalf("structured field was lost or changed: %#v", result["data"])
+	}
+}
+
+func TestAnySearch_OversizedStructuredResultReturnsError(t *testing.T) {
+	t.Parallel()
+	resultJSON, err := json.Marshal(map[string]any{"url": "https://example.com/", "content": "market", "data": map[string]any{"details": strings.Repeat("x", anySearchMaxQueryResultBytes)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	helper, _ := anySearchTestServer(t, anySearchOK("["+string(resultJSON)+"]"))
+	out, err := NewAnySearchToolWith(helper, "").InvokableRun(t.Context(), `{"query":"market"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := decodeAnySearchEnvelope(t, out)
+	if env.Error == "" || len(env.Queries) != 1 || env.Queries[0].Error == "" || len(env.Queries[0].Results) != 0 {
+		t.Fatalf("oversized data must report an error instead of returning a partial success: %s", out)
+	}
+}
+
+func TestAnySearch_ReportsTruncatedTextFields(t *testing.T) {
+	t.Parallel()
+	resultJSON, err := json.Marshal(map[string]any{"url": "https://example.com/", "title": strings.Repeat("t", 1600), "content": strings.Repeat("c", 1600), "snippet": strings.Repeat("s", 1600)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	helper, _ := anySearchTestServer(t, anySearchOK("["+string(resultJSON)+"]"))
+	out, err := NewAnySearchToolWith(helper, "").InvokableRun(t.Context(), `{"query":"q"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	query := decoded["queries"].([]any)[0].(map[string]any)
+	result := query["results"].([]any)[0].(map[string]any)
+	if len(result["title"].(string)) != 1600 || len(result["content"].(string)) != 1500 || len(result["snippet"].(string)) != 1500 {
+		t.Fatalf("non-text values or text bounds were not preserved: %s", out)
+	}
+	fields, ok := query["truncated_fields"].(map[string]any)
+	fieldList, hasFields := fields["0"].([]any)
+	if !ok || !hasFields || len(fieldList) != 2 || fieldList[0] != "content" || fieldList[1] != "snippet" {
+		t.Fatalf("missing truncation metadata: %s", out)
+	}
+}
+
+func TestAnySearch_BatchPreservesResultsWhenOneExceedsOutputLimit(t *testing.T) {
+	t.Parallel()
+	helper, _ := anySearchTestServer(t, func(w http.ResponseWriter, _ *http.Request, body []byte) {
+		request := decodeAnySearchBody(t, body)
+		result := map[string]any{"url": "https://example.com/", "content": "market"}
+		if request["query"] == "large" {
+			result["data"] = map[string]any{"details": strings.Repeat("x", anySearchMaxQueryResultBytes)}
+		}
+		resultJSON, err := json.Marshal(result)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		anySearchOK("["+string(resultJSON)+"]")(w, nil, nil)
+	})
+	out, err := NewAnySearchToolWith(helper, "").InvokableRun(t.Context(), `{"queries":[{"query":"large"},{"query":"small"}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := decodeAnySearchEnvelope(t, out)
+	if env.Error != "" || len(env.Queries) != 2 || env.Queries[0].Error == "" || len(env.Queries[0].Results) != 0 || env.Queries[1].Error != "" || len(env.Queries[1].Results) != 1 {
+		t.Fatalf("partial batch result = %s", out)
 	}
 }
 

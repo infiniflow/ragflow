@@ -53,8 +53,8 @@ const (
 	// anySearchResultTextRunes caps each result's text so five queries of ten
 	// results cannot flood the model's context.
 	anySearchResultTextRunes = 1500
-	// anySearchResultNestedBytes drops a nested result field larger than this.
-	anySearchResultNestedBytes = 2048
+	// Share the response budget across the largest supported batch.
+	anySearchMaxQueryResultBytes = anySearchMaxResponseBytes / anySearchMaxQueries
 	// anySearchMessageRunes caps the vendor message copied into an error.
 	anySearchMessageRunes    = 200
 	anySearchPromptMaxTokens = 200000
@@ -129,12 +129,13 @@ type anySearchRequestBody struct {
 // anySearchQueryResult is one search's outcome. request_id is kept for
 // diagnostics, including on failures.
 type anySearchQueryResult struct {
-	Index     int              `json:"index"`
-	Query     string           `json:"query"`
-	Tag       string           `json:"tag,omitempty"`
-	RequestID string           `json:"request_id,omitempty"`
-	Results   []map[string]any `json:"results"`
-	Error     string           `json:"_ERROR,omitempty"`
+	Index           int              `json:"index"`
+	Query           string           `json:"query"`
+	Tag             string           `json:"tag,omitempty"`
+	RequestID       string           `json:"request_id,omitempty"`
+	Results         []map[string]any `json:"results"`
+	Error           string           `json:"_ERROR,omitempty"`
+	TruncatedFields map[int][]string `json:"truncated_fields,omitempty"`
 }
 
 // anySearchSearchEnvelope is what the model and the Canvas component see. The
@@ -563,41 +564,60 @@ func (a *AnySearchTool) search(ctx context.Context, index int, request anySearch
 		return record
 	}
 	results := make([]map[string]any, 0, len(rawResults))
+	truncatedFields := make(map[int][]string)
+	resultBytes := 2 // JSON array brackets.
 	for _, raw := range rawResults {
 		item, ok := raw.(map[string]any)
 		if !ok {
 			record.Error = anySearchFailure("invalid results", "", reply.requestID).Error()
 			return record
 		}
-		results = append(results, anySearchModelResult(item))
-	}
-	if len(results) > request.MaxResults {
-		results = results[:request.MaxResults]
+		if len(results) >= request.MaxResults {
+			continue
+		}
+		result, truncated := anySearchModelResult(item)
+		encoded, err := json.Marshal(result)
+		if err != nil || resultBytes+len(encoded)+1 > anySearchMaxQueryResultBytes {
+			record.Error = anySearchFailure("results exceed output limit", "", reply.requestID).Error()
+			return record
+		}
+		resultBytes += len(encoded) + 1
+		if len(truncated) > 0 {
+			truncatedFields[len(results)] = truncated
+		}
+		results = append(results, result)
 	}
 	record.Results = results
+	record.TruncatedFields = truncatedFields
 	return record
 }
 
-// anySearchModelResult copies a result for the model and bounds its size: every
-// string is trimmed and capped, and a nested value larger than
-// anySearchResultNestedBytes is dropped. Snippet and content are both kept,
+// anySearchModelResult copies a result for the model. Content and snippet are
+// capped, while other fields are preserved within the query output budget.
+// Snippet and content are both kept,
 // because for vertical results the snippet is a separate summary, not a prefix
 // of the content.
-func anySearchModelResult(item map[string]any) map[string]any {
+func anySearchModelResult(item map[string]any) (map[string]any, []string) {
 	out := make(map[string]any, len(item))
+	var truncated []string
 	for k, v := range item {
 		switch value := v.(type) {
 		case string:
-			out[k] = truncateAnySearchRunes(strings.TrimSpace(value), anySearchResultTextRunes, false)
-		case map[string]any, []any:
-			if encoded, err := json.Marshal(value); err == nil && len(encoded) <= anySearchResultNestedBytes {
+			if k == "content" || k == "snippet" {
+				value = strings.TrimSpace(value)
+				if utf8.RuneCountInString(value) > anySearchResultTextRunes {
+					truncated = append(truncated, k)
+				}
+				out[k] = truncateAnySearchRunes(value, anySearchResultTextRunes, false)
+			} else {
 				out[k] = value
 			}
 		default:
 			out[k] = v
 		}
 	}
-	return out
+	slices.Sort(truncated)
+	return out, truncated
 }
 
 func anySearchText(value any) string {

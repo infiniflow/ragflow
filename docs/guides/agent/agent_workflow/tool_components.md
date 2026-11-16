@@ -384,7 +384,7 @@ Follow the discovered parameter descriptions, including conditional requirements
 
 #### Output Result
 
-`json` contains one record per search, in the order the searches were sent: the query, the tag, the AnySearch `request_id`, the results, and an `_ERROR` field when that search failed. `formalized_content` renders the results grouped by query and is commonly used as Agent context. Each result keeps its title and link, and each text field of a result, such as the page text or the snippet, is limited to 1,500 characters.
+`json` contains one record per search, in the order the searches were sent: the query, the tag, the AnySearch `request_id`, the results, and an `_ERROR` field when that search failed. `formalized_content` renders the results grouped by query and is commonly used as Agent context. Content and snippets are limited to 1,500 characters; `truncated_fields` identifies shortened fields by result index. URLs and other fields are preserved. A query exceeding the approximately 819 KiB result budget returns an error, while other batch queries can still succeed.
 
 Searches in a `queries` call are independent. If one fails, for example because of an unknown tag, the other results are still returned, and the failed record carries the AnySearch message and `request_id`. The whole call reports an error only when every search failed. An invalid argument, such as an unsupported zone, a missing query, or more than 5 queries, is rejected before any search runs. An invalid API key is reported as an error and is never retried without the key.
 
