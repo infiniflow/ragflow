@@ -21,6 +21,7 @@ jest.mock('@/components/ragflow-avatar', () => ({
 jest.mock('@/ee/layouts/components/header-enterprise', () => ({
   EnterpriseHeaderPlanBadge: () => null,
   EnterpriseHeaderTicketsLink: () => null,
+  EnterpriseSidebarTenantSwitcher: () => null,
 }));
 
 jest.mock('@/hooks/logic-hooks', () => ({

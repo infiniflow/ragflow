@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"ragflow/internal/common"
+	"ragflow/internal/compliance"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/rag/prompts"
 
@@ -149,6 +150,10 @@ func (s *AskService) StreamWithOptions(ctx context.Context, llm StreamingLLM, qu
 }
 
 func (s *AskService) run(ctx context.Context, llm StreamingLLM, question string, datasetIDs []string, opts AskStreamOptions, out chan<- AskDelta) {
+	if err := compliance.ValidateQuestion(ctx, question); err != nil {
+		s.sendOrCancel(out, AskDelta{Kind: AskDeltaError, Value: err.Error()}, ctx)
+		return
+	}
 	// Phase 1: Retrieval.
 	topK := DefaultAskTopK
 	if opts.TopK != nil {
