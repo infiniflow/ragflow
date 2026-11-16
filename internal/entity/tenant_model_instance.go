@@ -21,9 +21,12 @@ type TenantModelInstance struct {
 	ID           string `gorm:"column:id;primaryKey;size:32" json:"id"`
 	InstanceName string `gorm:"column:instance_name;size:128;not null" json:"instance_name"`
 	ProviderID   string `gorm:"column:provider_id;size:32;not null" json:"provider_id"`
-	APIKey       string `gorm:"column:api_key;size:512;not null" json:"api_key"`
-	Status       string `gorm:"column:status;size:32;default:'active'" json:"status"`
-	Extra        string `gorm:"column:extra;size:512;default:'{}'" json:"extra"`
+	// TEXT, matching tenant_llm.api_key: provider keys are not uniformly short
+	// (IONOS model-hub keys exceed 1,700 chars) and MySQL rejects writes past a
+	// sized varchar with Error 1406 (#22422).
+	APIKey string `gorm:"column:api_key;type:text;not null" json:"api_key"`
+	Status string `gorm:"column:status;size:32;default:'active'" json:"status"`
+	Extra  string `gorm:"column:extra;size:512;default:'{}'" json:"extra"`
 	BaseModel
 }
 
