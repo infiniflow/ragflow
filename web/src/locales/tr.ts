@@ -1459,17 +1459,6 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       dataSourceFieldClientSecret: 'İstemci Gizli Anahtarı',
       dataSourceFieldFolderPathOptional: 'Klasör Yolu',
       dataSourceFieldBatchSize: 'Toplu İşlem Boyutu',
-      dataSourceFieldFeishuAppId: 'Feishu uygulama kimliği',
-      dataSourceFieldFeishuAppSecret: 'Feishu uygulama gizli anahtarı',
-      dataSourceFieldWikiSpaceId: 'Wiki alan kimliği',
-      dataSourceFieldRootNodeToken: "Wiki kök düğüm token'ı",
-      dataSourceFieldIncludeExtensions: 'İzin verilen dosya uzantıları',
-      dataSourceFieldIncludeKeywords: 'Gerekli dosya adı anahtar kelimeleri',
-      dataSourceFieldExcludeKeywords:
-        'Hariç tutulan dosya adı anahtar kelimeleri',
-      dataSourceFieldMaxFileSizeBytes: 'Maksimum dosya boyutu (bayt)',
-      dataSourceValidationFeishuBatchSize:
-        'Toplu işlem boyutu 1 ile 10 arasında olmalıdır',
       dataSourceFieldMailFolder: 'Posta Klasörü',
       dataSourceFieldMailboxUserIds: 'Posta Kutusu Kullanıcı Kimlikleri',
       dataSourceFieldInstanceUrl: "Örnek URL'si",
@@ -1738,8 +1727,6 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
         "Bilgi alımı için Notion'dan sayfaları ve veritabanlarını senkronize edin.",
       google_driveDescription:
         "Google Drive'ınızı OAuth ile bağlayın ve belirli klasörleri veya sürücüleri senkronize edin.",
-      feishu_wikiDescription:
-        'Bir Feishu Wiki alt ağacındaki indirilebilir dosya düğümlerini eşitleyin.',
       gmailDescription:
         "E-postaları senkronize etmek için Gmail'inizi OAuth ile bağlayın.",
       webdavDescription:

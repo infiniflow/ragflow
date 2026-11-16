@@ -1,10 +1,14 @@
 ---
 sidebar_position: 7
-title: Build a Customer Support Agent
+title: "Use Case: Build a Customer Support Agent"
+sidebar_label: "Use Case: Build a Customer Support Agent"
 slug: /build_customer_support_agent
+sidebar_custom_props: {
+  categoryIcon: LucideMessageSquareReply
+}
 ---
 
-# Build a Customer Support Agent
+# Use Case: Build a Customer Support Agent
 
 Build a workflow that answers product questions through retrieval and collects customer details for an installation visit.
 
@@ -15,7 +19,7 @@ Build a workflow that answers product questions through retrieval and collects c
 
 ## Build the workflow
 
-1. [Create a blank Workflow Agent](../create_and_manage_workflows.md#create-from-blank-workflow) named `Customer support demo`.
+1. [Create a blank Workflow Agent](./create_and_manage_workflows.md#create-from-blank-workflow) named `Customer support demo`.
 2. After **Begin**, add **Categorize**. Use `sys.query` as the query variable and select the chat model.
 3. Add two categories:
 
@@ -40,7 +44,7 @@ If the guide does not contain the answer, say so and ask for clarification.
 
 ### Appointment branch
 
-Connect **Appointment → Await Response → Message**. Follow the [form example](../agent_workflow/dialogue_component.md#example-collect-appointment-details) to collect the customer's name and preferred installation time, then display them in Message. This branch collects installation preferences; it does not book a service visit.
+Connect **Appointment → Await Response → Message**. Follow the [form example](./agent_workflow/dialogue_component.md#example-collect-appointment-details) to collect the customer's name and preferred installation time, then display them in Message. This branch collects installation preferences; it does not book a service visit.
 
 ## Test
 

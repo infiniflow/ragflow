@@ -535,7 +535,7 @@ Use the following environment variables when MinerU is not configured directly i
 3. Set `MINERU_BACKEND` to specify the backend sent with the parse request.
 4. Optionally set `MINERU_TIMEOUT` (seconds or duration string like `1h`) to bound the parse request.
 
-For native ingestion pipeline component parsing (`dispatchMinerUPDF`), `mineru_timeout` or `mineru_timeout_seconds` in the parser setup overrides this timeout; zero or negative values fall back to the default 30 minutes. Note that the legacy `PDFParser` path (`pdf_parser_mineru.go`) continues to use `mineru_timeout_seconds` with a 30s poll interval default.
+Both native ingestion component parsing (`dispatchMinerUPDF`) and the legacy `PDFParser` path (`pdf_parser_mineru.go`) honor `MINERU_TIMEOUT` (as well as setup overrides `mineru_timeout` / `mineru_timeout_seconds`), ensuring a unified timeout knob across all MinerU execution modes (cloud, V1, and legacy polling). Non-default durations are safely clamped within 1s to 24h.
 
 :::tip NOTE
 For other environment variables supported by MinerU itself, see the [MinerU environment variable documentation](https://opendatalab.github.io/MinerU/usage/cli_tools/#environment-variables-description).

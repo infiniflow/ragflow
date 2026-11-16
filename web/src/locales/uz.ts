@@ -1258,17 +1258,6 @@ export default {
       dataSourceFieldClientSecret: 'Client Secret',
       dataSourceFieldFolderPathOptional: 'Papka yo‘li',
       dataSourceFieldBatchSize: 'Partiya hajmi',
-      dataSourceFieldFeishuAppId: 'Feishu app ID',
-      dataSourceFieldFeishuAppSecret: 'Feishu app kaliti (secret)',
-      dataSourceFieldWikiSpaceId: 'Wiki maydon ID',
-      dataSourceFieldRootNodeToken: 'Wiki ildiz tugmasi tokeni',
-      dataSourceFieldIncludeExtensions: 'Ruxsat etilgan fayl kengaytmalari',
-      dataSourceFieldIncludeKeywords: 'Majburiy fayl nomi kalit so‘zlari',
-      dataSourceFieldExcludeKeywords:
-        'Istisno qilinadigan fayl nomi kalit so‘zlari',
-      dataSourceFieldMaxFileSizeBytes: 'Maksimal fayl hajmi (bayt)',
-      dataSourceValidationFeishuBatchSize:
-        'Partiya hajmi 1 dan 10 gacha bo‘lishi kerak',
       dataSourceFieldMailFolder: 'Pochta papkasi',
       dataSourceFieldMailboxUserIds: 'Pochta qutilari foydalanuvchi ID’lari',
       dataSourceFieldInstanceUrl: 'Instansiya URL',
@@ -1543,8 +1532,6 @@ export default {
         'Bilim olish uchun Notion’dan sahifa va ma’lumotlar bazalarini sinxronlang.',
       google_driveDescription:
         'Google Drive’ingizni OAuth orqali ulang va aniq papkalar yoki drivelarni sinxronlang.',
-      feishu_wikiDescription:
-        'Feishu Wiki subtreesidan yuklab olinadigan fayl tugmalarini sinxronlash.',
       gmailDescription:
         'Email sinxronlash uchun Gmail’ingizni OAuth orqali ulang.',
       webdavDescription:
