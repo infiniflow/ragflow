@@ -65,7 +65,7 @@ func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID strin
 	}
 	defer release()
 
-	return e.createChunkStoreWithDB(db, baseName, datasetID, vectorSize, parserID, language)
+	return e.createChunkStoreWithDB(ctx, db, baseName, datasetID, vectorSize, parserID, language)
 }
 
 // memoryIndexPrefix marks per-memory message indexes (MemoryIndexName).
@@ -91,7 +91,7 @@ func chunkMappingFileName(baseName, datasetID, configured string) string {
 	}
 }
 
-func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, datasetID string, vectorSize int, parserID, language string) error {
+func (e *Engine) createChunkStoreWithDB(ctx context.Context, db *infinity.Database, baseName, datasetID string, vectorSize int, parserID, language string) error {
 	vecSize := vectorSize
 
 	// Determine table name and mapping file based on index type
@@ -125,7 +125,7 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 	vectorColName := common.VectorColumnName(vecSize)
 
 	// Check if table already exists
-	exists, err := e.tableExistsWithDB(db, tableName)
+	exists, err := e.tableExistsWithDB(ctx, db, tableName)
 	if err != nil {
 		return fmt.Errorf("failed to check if table exists: %w", err)
 	}
@@ -134,7 +134,7 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 	if exists {
 		// Table exists, open it and check if vector column needs to be added
 		common.Info("Table already exists, checking for vector column", zap.String("tableName", tableName))
-		table, err = db.GetTable(tableName)
+		table, err = getTableWithRetry(ctx, db, tableName)
 		if err != nil {
 			return fmt.Errorf("failed to open existing table %s: %w", tableName, err)
 		}
@@ -344,11 +344,10 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 	}
 	defer release()
 
-	table, err := db.GetTable(tableName)
+	table, err := getTableWithRetry(ctx, db, tableName)
 	if err != nil {
 		// Table doesn't exist, try to create it
-		errMsg := strings.ToLower(err.Error())
-		if !strings.Contains(errMsg, "not found") && !strings.Contains(errMsg, "doesn't exist") {
+		if !isTableMissingError(err) {
 			return nil, fmt.Errorf("failed to get table %s: %w", tableName, err)
 		}
 
@@ -373,11 +372,11 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 
 		// Create table. This is the path the ingestion pipeline actually takes,
 		// so the dataset language has to reach it here.
-		if err := e.createChunkStoreWithDB(db, baseName, datasetID, vectorSize, parserIDFromChunks(chunks), language); err != nil {
+		if err := e.createChunkStoreWithDB(ctx, db, baseName, datasetID, vectorSize, parserIDFromChunks(chunks), language); err != nil {
 			return nil, fmt.Errorf("failed to create table: %w", err)
 		}
 
-		table, err = db.GetTable(tableName)
+		table, err = getTableWithRetry(ctx, db, tableName)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get table after creation: %w", err)
 		}
@@ -596,12 +595,11 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition map[string]interfac
 	}
 	defer release()
 
-	table, err := db.GetTable(tableName)
+	table, err := getTableWithRetry(ctx, db, tableName)
 	if err != nil {
 		// Tolerate missing table (mirrors Python's docStoreConn which
 		// silently returns False on a non-existent table).
-		errMsg := strings.ToLower(err.Error())
-		if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "doesn't exist") {
+		if isTableMissingError(err) {
 			return nil
 		}
 		return fmt.Errorf("failed to get table %s: %w", tableName, err)
@@ -781,7 +779,7 @@ func (e *Engine) AdjustChunkPagerank(ctx context.Context, baseName, chunkID, dat
 		return fmt.Errorf("failed to get database: %w", err)
 	}
 	defer release()
-	table, err := db.GetTable(tableName)
+	table, err := getTableWithRetry(ctx, db, tableName)
 	if err != nil {
 		return fmt.Errorf("failed to get table %s: %w", tableName, err)
 	}
@@ -860,7 +858,7 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 	}
 	defer release()
 
-	table, err := db.GetTable(tableName)
+	table, err := getTableWithRetry(ctx, db, tableName)
 	if err != nil {
 		common.Warn(fmt.Sprintf("Table %s does not exist, skipping delete", tableName))
 		return 0, nil
@@ -1165,6 +1163,11 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		}
 
 		for _, tableName := range tableNames {
+			// Direct open, no missing-table retry: in the multi-table loops a
+			// missing table is a normal skip path (tables are created on first
+			// write; multi-KB queries routinely walk KBs without a table yet),
+			// and retrying every empty table would cost 3 RPCs + ~550ms each
+			// while holding one of the few pooled connections.
 			tbl, err := db.GetTable(tableName)
 			if err != nil {
 				// A dataset whose table does not exist yet is normal (tables are
@@ -1618,12 +1621,13 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 	var queryErr error
 
 	for _, tableName := range tableNames {
+		// Direct open, no missing-table retry — same multi-table skip rationale
+		// as the Search loop above.
 		tbl, err := db.GetTable(tableName)
 		if err != nil {
 			// A dataset table that does not exist yet is normal (tables are created on
 			// first write); any other open failure is real and must reach the caller.
-			errMsg := strings.ToLower(err.Error())
-			tableMissing := strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "doesn't exist")
+			tableMissing := isTableMissingError(err)
 			if isConnectionLevelError(err) {
 				e.client.dropConnectionFor(db, "SearchByRegexp")
 			}
@@ -1859,6 +1863,8 @@ func (e *Engine) GetChunk(ctx context.Context, tableName, chunkID string, datase
 	allChunks := make(map[string]map[string]interface{})
 
 	for _, tblName := range tableNames {
+		// Direct open, no missing-table retry — same multi-table skip rationale
+		// as the Search loop above.
 		table, err := db.GetTable(tblName)
 		if err != nil {
 			if isMemoryIndexName(tableName) {

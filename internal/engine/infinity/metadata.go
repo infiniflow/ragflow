@@ -43,14 +43,14 @@ func (e *Engine) CreateMetadataStore(ctx context.Context, tenantID string) error
 	}
 	defer release()
 
-	return e.createMetadataStoreWithDB(db, tenantID)
+	return e.createMetadataStoreWithDB(ctx, db, tenantID)
 }
 
-func (e *Engine) createMetadataStoreWithDB(db *infinity.Database, tenantID string) error {
+func (e *Engine) createMetadataStoreWithDB(ctx context.Context, db *infinity.Database, tenantID string) error {
 	tableName := buildMetadataTableName(tenantID)
 
 	// Check if table already exists
-	exists, err := e.tableExistsWithDB(db, tableName)
+	exists, err := e.tableExistsWithDB(ctx, db, tableName)
 	if err != nil {
 		return fmt.Errorf("failed to check if table exists: %w", err)
 	}
@@ -93,7 +93,7 @@ func (e *Engine) createMetadataStoreWithDB(db *infinity.Database, tenantID strin
 	common.Debug("Infinity created doc meta table", zap.String("tableName", tableName))
 
 	// Get table for creating indexes
-	table, err := db.GetTable(tableName)
+	table, err := getTableWithRetry(ctx, db, tableName)
 	if err != nil {
 		return fmt.Errorf("failed to get table: %w", err)
 	}
@@ -148,7 +148,7 @@ func (e *Engine) InsertMetadata(ctx context.Context, metadata []map[string]inter
 	}
 	defer release()
 
-	table, err := db.GetTable(tableName)
+	table, err := getTableWithRetry(ctx, db, tableName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get table %s: %w", tableName, err)
 	}
@@ -235,7 +235,7 @@ func (e *Engine) UpdateMetadata(ctx context.Context, docID string, datasetID str
 	}
 	defer release()
 
-	table, err := db.GetTable(tableName)
+	table, err := getTableWithRetry(ctx, db, tableName)
 	if err != nil {
 		return fmt.Errorf("failed to get metadata table %s: %w", tableName, err)
 	}
@@ -341,7 +341,7 @@ func (e *Engine) DeleteMetadata(ctx context.Context, condition map[string]interf
 	}
 	defer release()
 
-	table, err := db.GetTable(tableName)
+	table, err := getTableWithRetry(ctx, db, tableName)
 	if err != nil {
 		common.Warn(fmt.Sprintf("Metadata table %s does not exist, skipping delete", tableName))
 		return 0, nil
@@ -413,7 +413,7 @@ func (e *Engine) DeleteMetadataKeys(ctx context.Context, docID string, datasetID
 	}
 	defer release()
 
-	table, err := db.GetTable(tableName)
+	table, err := getTableWithRetry(ctx, db, tableName)
 	if err != nil {
 		// Tolerate missing metadata table (mirrors Python's docStoreConn
 		// which silently returns False on a non-existent table).
@@ -599,7 +599,7 @@ func (e *Engine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRe
 	}
 	defer release()
 
-	exists, err := e.tableExistsWithDB(db, tableName)
+	exists, err := e.tableExistsWithDB(ctx, db, tableName)
 	if err != nil {
 		common.Warn("Infinity SearchMetadata table existence check failed", zap.String("table", tableName), zap.Error(err))
 		return nil, fmt.Errorf("failed to check metadata table existence: %w", err)
@@ -616,7 +616,7 @@ func (e *Engine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRe
 		}, nil
 	}
 
-	tbl, err := db.GetTable(tableName)
+	tbl, err := getTableWithRetry(ctx, db, tableName)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get metadata table %s: %w", tableName, err)
 	}
@@ -867,7 +867,7 @@ func (e *Engine) filterDocIDsByMetaInTenant(ctx context.Context, tenantID string
 	}
 	defer release()
 
-	table, err := infinityDB.GetTable(tableName)
+	table, err := getTableWithRetry(ctx, infinityDB, tableName)
 	if err != nil || table == nil {
 		return nil
 	}

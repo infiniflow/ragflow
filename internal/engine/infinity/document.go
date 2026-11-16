@@ -45,11 +45,10 @@ func (e *Engine) InsertSkill(ctx context.Context, tableName, docID string, doc i
 	}
 	defer release()
 
-	table, err := db.GetTable(tableName)
+	table, err := getTableWithRetry(ctx, db, tableName)
 	if err != nil {
 		// Table doesn't exist, try to create it
-		errMsg := strings.ToLower(err.Error())
-		if !strings.Contains(errMsg, "not found") && !strings.Contains(errMsg, "doesn't exist") {
+		if !isTableMissingError(err) {
 			return fmt.Errorf("failed to get table %s: %w", tableName, err)
 		}
 
@@ -114,7 +113,7 @@ func (e *Engine) BulkInsertSkill(ctx context.Context, tableName string, docs []i
 	}
 	defer release()
 
-	table, err := db.GetTable(tableName)
+	table, err := getTableWithRetry(ctx, db, tableName)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get table %s: %w", tableName, err)
 	}
@@ -213,7 +212,7 @@ func (e *Engine) DeleteDocument(ctx context.Context, tableName, docID string) er
 	}
 	defer release()
 
-	table, err := db.GetTable(tableName)
+	table, err := getTableWithRetry(ctx, db, tableName)
 	if err != nil {
 		return fmt.Errorf("failed to get table: %w", err)
 	}

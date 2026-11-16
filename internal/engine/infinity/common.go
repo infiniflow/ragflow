@@ -26,6 +26,7 @@ import (
 	"ragflow/internal/engine/types"
 	"regexp"
 	"strings"
+	"time"
 	"unicode"
 
 	infinity "github.com/infiniflow/infinity-go-sdk"
@@ -73,24 +74,83 @@ func (e *Engine) tableExists(ctx context.Context, tableName string) (bool, error
 	}
 	defer release()
 
-	return e.tableExistsWithDB(db, tableName)
+	return e.tableExistsWithDB(ctx, db, tableName)
 }
 
-func (e *Engine) tableExistsWithDB(db *infinity.Database, tableName string) (bool, error) {
+func (e *Engine) tableExistsWithDB(ctx context.Context, db *infinity.Database, tableName string) (bool, error) {
 	if db == nil {
 		return false, fmt.Errorf("database is nil")
 	}
 
-	// Try to get the table - if it exists, no error
-	_, err := db.GetTable(tableName)
+	// Try to get the table - if it exists, no error. The open goes through
+	// getTableWithRetry: a transient missing-table report on a table that
+	// does exist would otherwise yield a false here, and the create paths
+	// treat a false as permission to CREATE.
+	_, err := getTableWithRetry(ctx, db, tableName)
 	if err != nil {
-		errMsg := strings.ToLower(err.Error())
-		if strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "doesn't exist") {
+		if isTableMissingError(err) {
 			return false, nil
 		}
 		return false, fmt.Errorf("failed to check table existence: %w", err)
 	}
 	return true, nil
+}
+
+// tableMissingBackoffs paces the retries for a missing-table report that may
+// be a transient catalog blip rather than a genuinely absent table.
+var tableMissingBackoffs = []time.Duration{150 * time.Millisecond, 400 * time.Millisecond}
+
+// isTableMissingError reports whether err says the table does not exist. The
+// typed SDK code decides when the error still carries its type; the message
+// fallback covers an error that lost its type across a wrapping layer.
+func isTableMissingError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var infinityErr *infinity.InfinityException
+	if errors.As(err, &infinityErr) {
+		return infinity.ErrorCode(infinityErr.ErrorCode) == infinity.ErrorCodeTableNotExist
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "not found") || strings.Contains(msg, "doesn't exist")
+}
+
+// retryOnTableMissing is the testable core of getTableWithRetry. Under
+// sustained concurrent writes with frequent index dump/optimize activity in
+// flight, get_table can transiently report a long-existing table as missing;
+// the immediate retry recovers. A genuinely missing table still surfaces
+// after the backoffs, so auto-create paths keep working. Only missing-table
+// errors retry — any other error returns on the first attempt.
+func retryOnTableMissing(ctx context.Context, open func() (*infinity.Table, error)) (*infinity.Table, error) {
+	var table *infinity.Table
+	var err error
+	for attempt := 0; ; attempt++ {
+		table, err = open()
+		if err == nil || !isTableMissingError(err) || attempt >= len(tableMissingBackoffs) {
+			return table, err
+		}
+		// Cancellation-aware backoff: callers typically hold one of the few
+		// pooled database connections across this call, so a sleep that
+		// ignores ctx would amplify pool exhaustion under a caller timeout.
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(tableMissingBackoffs[attempt]):
+		}
+	}
+}
+
+// getTableWithRetry opens tableName through retryOnTableMissing. Open paths
+// that treat a missing table as normal skip (multi-table search loops, where
+// tables are created on first write and empty datasets are routine) should
+// keep calling db.GetTable directly instead — see Search and GetChunk.
+func getTableWithRetry(ctx context.Context, db *infinity.Database, tableName string) (*infinity.Table, error) {
+	if db == nil {
+		return nil, fmt.Errorf("database is nil")
+	}
+	return retryOnTableMissing(ctx, func() (*infinity.Table, error) {
+		return db.GetTable(tableName)
+	})
 }
 
 // fieldInfo represents a field in the infinity mapping schema
