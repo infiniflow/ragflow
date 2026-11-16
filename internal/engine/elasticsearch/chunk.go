@@ -25,11 +25,9 @@ import (
 	"io"
 	"net/http"
 	"reflect"
-	"regexp"
 	"slices"
 	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"ragflow/internal/common"
 	"ragflow/internal/engine/internal/esoscommon"
@@ -2270,7 +2268,7 @@ func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map
 	}
 
 	for _, chunk := range chunks {
-		docID, ok := elasticsearchChunkID(chunk)
+		docID, ok := esoscommon.ChunkID(chunk)
 		if !ok {
 			continue
 		}
@@ -2366,7 +2364,7 @@ func (e *Engine) GetAggregation(chunks []map[string]interface{}, fieldName strin
 				separator = "###"
 			}
 			for tag := range strings.SplitSeq(valueStr, separator) {
-				countElasticsearchAggregationTag(tagCounts, tag)
+				esoscommon.CountAggregationTag(tagCounts, tag)
 			}
 			continue
 		}
@@ -2374,7 +2372,7 @@ func (e *Engine) GetAggregation(chunks []map[string]interface{}, fieldName strin
 		if valueList, ok := value.([]interface{}); ok {
 			for _, item := range valueList {
 				if itemStr, ok := item.(string); ok {
-					countElasticsearchAggregationTag(tagCounts, itemStr)
+					esoscommon.CountAggregationTag(tagCounts, itemStr)
 				}
 			}
 		}
@@ -2408,7 +2406,7 @@ func (e *Engine) GetAggregation(chunks []map[string]interface{}, fieldName strin
 func (e *Engine) GetChunkIDs(chunks []map[string]interface{}) []string {
 	ids := make([]string, 0, len(chunks))
 	for _, chunk := range chunks {
-		if id, ok := elasticsearchChunkID(chunk); ok {
+		if id, ok := esoscommon.ChunkID(chunk); ok {
 			ids = append(ids, id)
 		}
 	}
@@ -2418,10 +2416,10 @@ func (e *Engine) GetChunkIDs(chunks []map[string]interface{}) []string {
 // GetHighlight returns highlighted text for matching keywords
 func (e *Engine) GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string {
 	result := make(map[string]string)
-	pattern := compileElasticsearchHighlightPattern(keywords)
+	pattern := esoscommon.CompileHighlightPattern(keywords)
 
 	for _, chunk := range chunks {
-		docID, ok := elasticsearchChunkID(chunk)
+		docID, ok := esoscommon.ChunkID(chunk)
 		if !ok {
 			continue
 		}
@@ -2438,45 +2436,6 @@ func (e *Engine) GetHighlight(chunks []map[string]interface{}, keywords []string
 		result[docID] = txt
 	}
 	return result
-}
-
-func elasticsearchChunkID(chunk map[string]interface{}) (string, bool) {
-	if id, ok := chunk["id"].(string); ok && id != "" {
-		return id, true
-	}
-	if id, ok := chunk["_id"].(string); ok && id != "" {
-		return id, true
-	}
-	return "", false
-}
-
-func countElasticsearchAggregationTag(counts map[string]int, tag string) {
-	if tag = strings.TrimSpace(tag); tag != "" {
-		counts[tag]++
-	}
-}
-
-func compileElasticsearchHighlightPattern(keywords []string) *regexp.Regexp {
-	nonEmpty := make([]string, 0, len(keywords))
-	for _, kw := range keywords {
-		if kw != "" {
-			nonEmpty = append(nonEmpty, kw)
-		}
-	}
-	if len(nonEmpty) == 0 {
-		return nil
-	}
-	slices.SortStableFunc(nonEmpty, func(a, b string) int {
-		return cmp.Compare(utf8.RuneCountInString(b), utf8.RuneCountInString(a))
-	})
-	parts := make([]string, len(nonEmpty))
-	for i, keyword := range nonEmpty {
-		parts[i] = regexp.QuoteMeta(keyword)
-		if esoscommon.IsLatinKeyword(keyword) {
-			parts[i] += `\p{Latin}*`
-		}
-	}
-	return regexp.MustCompile("(?i)" + strings.Join(parts, "|"))
 }
 
 // DropChunkStore deletes a chunk index
