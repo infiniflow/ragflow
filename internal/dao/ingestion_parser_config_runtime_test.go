@@ -321,7 +321,7 @@ func TestMigratedParentChildEnabledWithoutDelimiterDefaultsToNewline(t *testing.
 }
 
 // TestIngestionMigrationMatchesBuiltinTemplates pins the migration's literal
-// target table against its embedded templates by reading the node IDs and file
+// target table against the embedded templates by reading the node IDs and file
 // families out of the templates themselves: a renamed component, a dropped
 // family, or a new chunker type fails here instead of silently skipping a row or
 // thinning a family.
@@ -332,7 +332,7 @@ func TestIngestionMigrationMatchesBuiltinTemplates(t *testing.T) {
 	}
 	// targetFamilies are the only Parser families the migration can write.
 	const targetFamilies = "pdf,spreadsheet"
-	for _, ref := range dao.IngestionMigrationParserIDsForTest() {
+	for _, ref := range append(registry.Refs(), "naive") {
 		t.Run(ref, func(t *testing.T) {
 			template, ok := registry.Get(ref)
 			if !ok {
@@ -392,10 +392,7 @@ func TestIngestionMigrationMatchesBuiltinTemplates(t *testing.T) {
 				t.Run(tc.name, func(t *testing.T) {
 					config := decodeIngestionConfig(t, tc.config)
 					changed, err := dao.MigrateParserChunkerTokenizerConfigForTest(config, ref, nil, "knowledgebase", "row-1")
-					if err != nil {
-						t.Fatalf("migrate: %v", err)
-					}
-					if !changed {
+					if err != nil || !changed {
 						t.Fatalf("changed=%v err=%v", changed, err)
 					}
 
@@ -801,7 +798,7 @@ func TestExtractorMigrationMatchesBuiltinTemplates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, ref := range dao.IngestionMigrationParserIDsForTest() {
+	for _, ref := range append(registry.Refs(), "naive") {
 		t.Run(ref, func(t *testing.T) {
 			template, ok := registry.Get(ref)
 			if !ok {
