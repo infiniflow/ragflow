@@ -17,6 +17,8 @@ package wiki
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -58,6 +60,137 @@ func (s *memoryWikiMapVersionStore) PutWikiMapVersions(_ context.Context, versio
 type countingWikiMapChat struct {
 	mu    sync.Mutex
 	calls int
+}
+
+type claimRequestChat struct {
+	countingWikiMapChat
+	requests []common.ChatRequest
+}
+
+type claimGuidanceCacheStore struct {
+	memoryWikiMapVersionStore
+	activeStates map[string][]byte
+	activeReads  []string
+}
+
+func (s *claimGuidanceCacheStore) GetWikiMapActiveState(_ context.Context, tenantID, datasetID, key string) ([]byte, error) {
+	if tenantID != "tenant-1" || datasetID != "kb-1" {
+		return nil, fmt.Errorf("unexpected active-state scope: %s/%s", tenantID, datasetID)
+	}
+	s.activeReads = append(s.activeReads, key)
+	return s.activeStates[key], nil
+}
+
+func (s *claimGuidanceCacheStore) PutWikiMapActiveState(_ context.Context, state common.WikiMapActiveState) error {
+	if state.TenantID != "tenant-1" || state.DatasetID != "kb-1" || state.DocumentID != "doc-1" {
+		return fmt.Errorf("unexpected active-state scope: %s/%s/%s", state.TenantID, state.DatasetID, state.DocumentID)
+	}
+	s.activeStates[state.Key] = append([]byte(nil), state.Payload...)
+	return nil
+}
+
+func (c *claimRequestChat) Chat(ctx context.Context, req common.ChatRequest) (*common.ChatResponse, error) {
+	c.requests = append(c.requests, req)
+	return c.countingWikiMapChat.Chat(ctx, req)
+}
+
+// Cache fixtures were produced by the MAP fingerprint before canonical claim
+// fields were read. Only configurations whose rendered guidance changes need a
+// new MAP request; the following run must reuse the new immutable result.
+func TestVersionedMapRefreshesCanonicalClaimGuidance(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		config    map[string]any
+		oldKey    string
+		oldActive string
+		wantCalls int
+	}{
+		{
+			name: "canonical claim guidance",
+			config: map[string]any{"claim": map[string]any{"fields": []any{map[string]any{
+				"statement": "Extract audited financial claims.", "subject": "Use legal entity names.",
+			}}}},
+			oldKey: "9c642c4dc3c80dca321f0d9e0bf3d73ada735e1d73e3f12a6031182b77e22aa9", wantCalls: 1,
+			oldActive: "e483b7cc26f82581f10a6a7d9b789cfd92d0718f236b0edb06a77fd090c2a6cb",
+		},
+		{
+			name: "no claim guidance", config: map[string]any{},
+			oldKey:    "e1a30f6aa9da75ae27839f4b561326cc5751c7bcb3e26c5997081ecc45ea673e",
+			oldActive: "2452ff89474f54b2b0fc137cba1e958fb1c99fb84f32e2a0032c8c4d8470e933",
+		},
+		{
+			name: "empty claim guidance", config: map[string]any{"claim": map[string]any{"fields": []any{}}},
+			oldKey:    "4c3e0f2f1926ad93402083427b3c99cc57a293854f2412445f17f7b2e86ee47f",
+			oldActive: "bd296f8dfc82e4ce3987c2dbcb48bdf1418506ef553333975cafdea396ce4b8d",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oldExtract := wikiExtract{Claims: []wikiClaim{{Statement: "cached without guidance", Subject: "Alpha", SourceChunkIDs: []string{"c1"}}}}
+			oldPayload, err := json.Marshal(oldExtract)
+			if err != nil {
+				t.Fatal(err)
+			}
+			oldActive, err := json.Marshal(wikiMapActiveSnapshot{Chunks: map[string]wikiMapActiveChunk{"c1": {Key: tc.oldKey, Extract: oldExtract}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			store := &claimGuidanceCacheStore{
+				memoryWikiMapVersionStore: memoryWikiMapVersionStore{payloads: map[string][]byte{tc.oldKey: oldPayload}},
+				activeStates:              map[string][]byte{tc.oldActive: oldActive},
+			}
+			chat := &claimRequestChat{}
+			newPipeline := func() *wikiPipeline {
+				return &wikiPipeline{
+					ctx: t.Context(), deps: common.Deps{Chat: chat, WikiMapVersions: store},
+					param: common.Param{TemplateID: "tpl-claim", Language: "English", TemplateConfig: tc.config},
+					inputs: common.Inputs{
+						Chunks:          []common.Chunk{{ID: "c1", Text: "Alpha exists."}},
+						VariantSpecific: map[string]any{"parser_config": tc.config},
+					},
+					docID: "doc-1", tenantID: "tenant-1", datasetID: "kb-1", llmID: "llm-1",
+				}
+			}
+			first := newPipeline()
+			if err := first.runMap(); err != nil {
+				t.Fatal(err)
+			}
+			if len(chat.requests) != tc.wantCalls {
+				t.Fatalf("MAP requests = %d, want %d; old cache may have bypassed corrected guidance", len(chat.requests), tc.wantCalls)
+			}
+			if len(store.activeReads) != 1 || store.activeReads[0] != first.activeStateKey || first.mapChanged != (tc.wantCalls > 0) {
+				t.Fatalf("unexpected active-state read/change: keys=%v changed=%t", store.activeReads, first.mapChanged)
+			}
+			if (first.activeStateKey != tc.oldActive) != (tc.wantCalls > 0) {
+				t.Fatalf("active-state scope did not follow claim rendering: key=%s old=%s", first.activeStateKey, tc.oldActive)
+			}
+			if tc.wantCalls > 0 {
+				for _, guidance := range []string{"Extract audited financial claims.", "Use legal entity names."} {
+					if !strings.Contains(chat.requests[0].UserPrompt, guidance) {
+						t.Errorf("refresh request missing %q", guidance)
+					}
+				}
+				if len(first.mapExtracts) != 1 || len(first.mapExtracts[0].Claims) != 1 || first.mapExtracts[0].Claims[0].Statement != "Alpha exists" {
+					t.Fatalf("MAP result did not replace old cached extraction: %#v", first.mapExtracts)
+				}
+			}
+			activePayload, err := json.Marshal(first.nextActiveState)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := store.PutWikiMapActiveState(t.Context(), common.WikiMapActiveState{
+				Key: first.activeStateKey, TenantID: "tenant-1", DatasetID: "kb-1", DocumentID: "doc-1", Payload: activePayload,
+			}); err != nil {
+				t.Fatal(err)
+			}
+			second := newPipeline()
+			if err := second.runMap(); err != nil {
+				t.Fatal(err)
+			}
+			if len(chat.requests) != tc.wantCalls || len(store.payloads) != 1+tc.wantCalls || second.mapChanged || second.activeStateKey != first.activeStateKey {
+				t.Fatalf("repeated run did not reuse cache: requests=%d versions=%d", len(chat.requests), len(store.payloads))
+			}
+		})
+	}
 }
 
 type staticWikiEmbedder struct{}

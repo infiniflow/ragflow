@@ -208,18 +208,27 @@ func (p *wikiPipeline) wikiMapTemplateFingerprint() (string, error) {
 	if configured, ok := p.inputs.VariantSpecific["parser_config"].(map[string]any); ok {
 		mapConfig = configured
 	}
+	// Existing MAP results used generic defaults for canonical claim fields.
+	// Refresh only configurations whose claim guidance now renders differently.
+	claimGuidanceFormat := ""
+	claimFields := wikiTemplateFields(mapConfig, "claim")
+	if wikiJoinFields(claimFields, "statement", "\n") != "" || wikiJoinFields(claimFields, "subject", "\n") != "" {
+		claimGuidanceFormat = "statement-subject-v1"
+	}
 	payload, err := json.Marshal(struct {
-		TemplateID     string         `json:"template_id"`
-		TemplateConfig map[string]any `json:"template_config"`
-		Language       string         `json:"language"`
-		SystemPrompt   string         `json:"system_prompt"`
-		UserTemplate   string         `json:"user_template"`
+		TemplateID          string         `json:"template_id"`
+		TemplateConfig      map[string]any `json:"template_config"`
+		Language            string         `json:"language"`
+		SystemPrompt        string         `json:"system_prompt"`
+		UserTemplate        string         `json:"user_template"`
+		ClaimGuidanceFormat string         `json:"claim_guidance_format,omitempty"`
 	}{
-		TemplateID:     p.param.TemplateID,
-		TemplateConfig: mapConfig,
-		Language:       p.param.Language,
-		SystemPrompt:   wikiMapSystem,
-		UserTemplate:   wikiMapUserTemplate,
+		TemplateID:          p.param.TemplateID,
+		TemplateConfig:      mapConfig,
+		Language:            p.param.Language,
+		SystemPrompt:        wikiMapSystem,
+		UserTemplate:        wikiMapUserTemplate,
+		ClaimGuidanceFormat: claimGuidanceFormat,
 	})
 	if err != nil {
 		return "", fmt.Errorf("wiki: fingerprint MAP template: %w", err)

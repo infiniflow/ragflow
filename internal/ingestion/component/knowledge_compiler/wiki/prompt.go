@@ -296,7 +296,7 @@ func buildWikiMapPrompt(docID string, batch []common.Chunk, parserConfig any, la
 			}
 		}
 		if conceptFields := wikiTemplateFields(cfg, "concept"); len(conceptFields) > 0 {
-			if s := wikiPipeJoin(conceptFields, "term"); s != "" {
+			if s := wikiJoinFields(conceptFields, "term", "|"); s != "" {
 				conceptTerm = s
 			}
 			if s := wikiColonJoin(conceptFields, "term", "definition_excerpt"); s != "" {
@@ -304,10 +304,10 @@ func buildWikiMapPrompt(docID string, batch []common.Chunk, parserConfig any, la
 			}
 		}
 		if claimFields := wikiTemplateFields(cfg, "claim"); len(claimFields) > 0 {
-			if s := wikiNamedFieldDescription(claimFields, "statement"); s != "" {
+			if s := wikiJoinFields(claimFields, "statement", "\n"); s != "" {
 				claimStatement = s
 			}
-			if s := wikiNamedFieldDescription(claimFields, "subject"); s != "" {
+			if s := wikiJoinFields(claimFields, "subject", "\n"); s != "" {
 				claimSubject = s
 			}
 		}
@@ -436,7 +436,7 @@ func wikiRenderSchemaBody(fields []any, language, defaultBody string) string {
 	return strings.Join(lines, ",\n")
 }
 
-func wikiPipeJoin(fields []any, key string) string {
+func wikiJoinFields(fields []any, key, separator string) string {
 	var vals []string
 	for _, raw := range fields {
 		field, ok := raw.(map[string]any)
@@ -447,7 +447,7 @@ func wikiPipeJoin(fields []any, key string) string {
 			vals = append(vals, s)
 		}
 	}
-	return strings.Join(vals, "|")
+	return strings.Join(vals, separator)
 }
 
 func wikiColonJoin(fields []any, leftKey, rightKey string) string {
@@ -464,19 +464,4 @@ func wikiColonJoin(fields []any, leftKey, rightKey string) string {
 		}
 	}
 	return strings.Join(vals, "\n")
-}
-
-func wikiNamedFieldDescription(fields []any, name string) string {
-	for _, raw := range fields {
-		field, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		if strings.EqualFold(strings.TrimSpace(firstString(field["name"])), name) {
-			if s := strings.TrimSpace(common.Localize(field["description"], "en")); s != "" {
-				return s
-			}
-		}
-	}
-	return ""
 }
