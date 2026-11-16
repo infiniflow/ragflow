@@ -261,7 +261,8 @@ func familyToExt(family string) utility.FileType {
 // Returns "" when the hint is unknown.
 func pythonFamilyName(raw string) string {
 	// Resolve registered extension aliases before selecting a parser setup.
-	if fileType := utility.GetFileType("file." + raw); fileType != utility.FileTypeOTHER {
+	fileType := utility.GetFileType("file." + raw)
+	if fileType != utility.FileTypeOTHER {
 		raw = string(fileType)
 	}
 	if utility.IsVideoExtension(raw) || raw == "video" {
@@ -300,6 +301,10 @@ func pythonFamilyName(raw string) string {
 		"png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif",
 		"webp", "svg", "ico", "avif", "heic", "apng":
 		return "image"
+	}
+	// Registered file types use their own name as the setup family.
+	if fileType != utility.FileTypeOTHER {
+		return string(fileType)
 	}
 	return ""
 }

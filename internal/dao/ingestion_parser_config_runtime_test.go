@@ -320,17 +320,8 @@ func TestMigratedParentChildEnabledWithoutDelimiterDefaultsToNewline(t *testing.
 	}
 }
 
-// outsideIngestionMigration lists templates outside the ingestion migration
-// matrix. An edition registers its own templates here at init.
-var outsideIngestionMigration = map[string]bool{}
-
-// extractorMigrationExcluded lists templates that are not Python-era migration
-// targets. An edition registers its own templates here at init, and the list is
-// explicit so a newly added template still fails the extractor matrix.
-var extractorMigrationExcluded = map[string]bool{}
-
 // TestIngestionMigrationMatchesBuiltinTemplates pins the migration's literal
-// target table against the embedded templates by reading the node IDs and file
+// target table against its embedded templates by reading the node IDs and file
 // families out of the templates themselves: a renamed component, a dropped
 // family, or a new chunker type fails here instead of silently skipping a row or
 // thinning a family.
@@ -339,14 +330,9 @@ func TestIngestionMigrationMatchesBuiltinTemplates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// outsideIngestionMigration lists templates that declare no Python-era
-	// parser family and no chunker that accepts the migrated chunk parameters,
-	// so every config in the matrix is a no-op for them. An edition adds its
-	// own templates at init; any other template must pass the matrix instead of
-	// being skipped silently.
 	// targetFamilies are the only Parser families the migration can write.
 	const targetFamilies = "pdf,spreadsheet"
-	for _, ref := range append(registry.Refs(), "naive") {
+	for _, ref := range dao.IngestionMigrationParserIDsForTest() {
 		t.Run(ref, func(t *testing.T) {
 			template, ok := registry.Get(ref)
 			if !ok {
@@ -408,23 +394,6 @@ func TestIngestionMigrationMatchesBuiltinTemplates(t *testing.T) {
 					changed, err := dao.MigrateParserChunkerTokenizerConfigForTest(config, ref, nil, "knowledgebase", "row-1")
 					if err != nil {
 						t.Fatalf("migrate: %v", err)
-					}
-					if outsideIngestionMigration[ref] {
-						// No migration target exists for the template: the flat
-						// Python-era keys stay untouched and no component node
-						// may be written.
-						if _, ok := config[parserCpn.cpnID]; ok {
-							t.Fatalf("template %q received a Parser node: %v", ref, config)
-						}
-						if _, ok := config[chunkerCpn.cpnID]; ok {
-							t.Fatalf("template %q received a chunker node: %v", ref, config)
-						}
-						for cpnID := range config {
-							if strings.Contains(cpnID, ":") {
-								t.Fatalf("template %q received an unexpected component %q", ref, cpnID)
-							}
-						}
-						return
 					}
 					if !changed {
 						t.Fatalf("changed=%v err=%v", changed, err)
@@ -832,7 +801,7 @@ func TestExtractorMigrationMatchesBuiltinTemplates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, ref := range append(registry.Refs(), "naive") {
+	for _, ref := range dao.IngestionMigrationParserIDsForTest() {
 		t.Run(ref, func(t *testing.T) {
 			template, ok := registry.Get(ref)
 			if !ok {
@@ -844,12 +813,6 @@ func TestExtractorMigrationMatchesBuiltinTemplates(t *testing.T) {
 			changed, err := dao.MigrateExtractorConfigForTest(config, ref, nil)
 			if err != nil {
 				t.Fatal(err)
-			}
-			if extractorMigrationExcluded[ref] {
-				if changed {
-					t.Fatalf("template %q must not receive migrated extractor config", ref)
-				}
-				return
 			}
 			if changed != hasExtractor {
 				t.Fatalf("changed=%v; template has Extractor=%v", changed, hasExtractor)

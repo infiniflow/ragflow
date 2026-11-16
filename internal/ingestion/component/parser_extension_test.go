@@ -22,7 +22,7 @@ import (
 	"ragflow/internal/utility"
 )
 
-func TestParserFileFamilyRegisteredOfficeExtensions(t *testing.T) {
+func TestParserFileFamilyRegisteredExtensions(t *testing.T) {
 	for _, tc := range []struct {
 		ext    string
 		ft     utility.FileType
@@ -34,6 +34,7 @@ func TestParserFileFamilyRegisteredOfficeExtensions(t *testing.T) {
 		{"officebookxml", utility.FileTypeXLSX, "spreadsheet"},
 		{"officedeck", utility.FileTypePPT, "slides"},
 		{"officedeckxml", utility.FileTypePPTX, "slides"},
+		{"drawingfile", utility.FileType("drawing"), "drawing"},
 	} {
 		t.Run(tc.ext, func(t *testing.T) {
 			utility.RegisterExtensionFileType(tc.ext, tc.ft)
