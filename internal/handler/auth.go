@@ -18,6 +18,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"ragflow/internal/common"
@@ -45,13 +46,19 @@ func (h *AuthHandler) ResolveMCPUser(ctx context.Context, authorization string) 
 		return identity.User, nil
 	}
 	if identity, code, err := h.userService.ResolveAPIToken(ctx, authorization); err == nil && code == common.CodeSuccess {
-		if _, err := billing.Get().APIAuthAllowed(ctx, identity.TenantID); err != nil {
+		if allowed, err := billing.Get().APIAuthAllowed(ctx, identity.TenantID); !allowed {
+			if err == nil {
+				err = errors.New("access is not allowed")
+			}
 			return nil, err
 		}
 		return identity.User, nil
 	}
 	if identity, code, err := h.userService.ResolveBetaAPIToken(ctx, authorization); err == nil && code == common.CodeSuccess {
-		if _, err := billing.Get().APIAuthAllowed(ctx, identity.TenantID); err != nil {
+		if allowed, err := billing.Get().APIAuthAllowed(ctx, identity.TenantID); !allowed {
+			if err == nil {
+				err = errors.New("access is not allowed")
+			}
 			return nil, err
 		}
 		return identity.User, nil
@@ -112,7 +119,10 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 		}
 		// Then try a regular API token (non-beta public bot flow).
 		if identity, code, err := h.userService.ResolveAPIToken(ctx, auth); err == nil && code == common.CodeSuccess {
-			if _, err := billing.Get().APIAuthAllowed(ctx, identity.TenantID); err != nil {
+			if allowed, err := billing.Get().APIAuthAllowed(ctx, identity.TenantID); !allowed {
+				if err == nil {
+					err = errors.New("access is not allowed")
+				}
 				common.RespondError(c, common.CodeForbidden, err.Error())
 				c.Abort()
 				return
@@ -124,7 +134,10 @@ func (h *AuthHandler) BetaAuthMiddleware() gin.HandlerFunc {
 		}
 		// Fall back to beta API token (public bot access).
 		if identity, code, err := h.userService.ResolveBetaAPIToken(ctx, auth); err == nil && code == common.CodeSuccess {
-			if _, err := billing.Get().APIAuthAllowed(ctx, identity.TenantID); err != nil {
+			if allowed, err := billing.Get().APIAuthAllowed(ctx, identity.TenantID); !allowed {
+				if err == nil {
+					err = errors.New("access is not allowed")
+				}
 				common.RespondError(c, common.CodeForbidden, err.Error())
 				c.Abort()
 				return
@@ -169,7 +182,10 @@ func (h *AuthHandler) AuthMiddleware() gin.HandlerFunc {
 		}
 
 		if authViaAPIToken {
-			if _, err := billing.Get().APIAuthAllowed(ctx, identity.TenantID); err != nil {
+			if allowed, err := billing.Get().APIAuthAllowed(ctx, identity.TenantID); !allowed {
+				if err == nil {
+					err = errors.New("access is not allowed")
+				}
 				common.Respond(c, http.StatusForbidden, common.CodeForbidden, nil, err.Error())
 				c.Abort()
 				return

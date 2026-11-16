@@ -115,7 +115,10 @@ func (s *ChatChannelService) CreateChatChannel(ctx context.Context, name, channe
 	if err := permission.NewDatabaseChecker(dao.DB).CheckFeature(ctx, "chat", permission.ActionWrite); err != nil {
 		return nil, err
 	}
-	if _, err := billing.Get().APIAuthAllowed(ctx, tenantID); err != nil {
+	if allowed, err := billing.Get().APIAuthAllowed(ctx, tenantID); !allowed {
+		if err == nil {
+			err = errors.New("access is not allowed")
+		}
 		return nil, err
 	}
 	chatID, agentID = normalizedChannelTarget(chatID), normalizedChannelTarget(agentID)
@@ -188,7 +191,10 @@ func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, channelID st
 		return nil, common.CodeServerError, err
 	}
 
-	if _, err := billing.Get().APIAuthAllowed(ctx, channel.TenantID); err != nil {
+	if allowed, err := billing.Get().APIAuthAllowed(ctx, channel.TenantID); !allowed {
+		if err == nil {
+			err = errors.New("access is not allowed")
+		}
 		return nil, common.CodeForbidden, err
 	}
 
@@ -341,7 +347,10 @@ func (s *ChatChannelService) handleIncomingMessage(ctx context.Context, msg Chat
 	if channel.AgentID == nil && (channel.ChatID == nil || strings.TrimSpace(*channel.ChatID) == "") {
 		return "", nil
 	}
-	if _, err := billing.Get().APIAuthAllowed(ctx, channel.TenantID); err != nil {
+	if allowed, err := billing.Get().APIAuthAllowed(ctx, channel.TenantID); !allowed {
+		if err == nil {
+			err = errors.New("access is not allowed")
+		}
 		return err.Error(), nil
 	}
 	ownerCtx := permission.WithIdentity(ctx, channel.TenantID, channel.TenantID)
