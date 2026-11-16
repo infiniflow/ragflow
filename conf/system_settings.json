@@ -89,6 +89,12 @@
       "source": "variable",
       "data_type": "json",
       "value": "{}"
+    },
+    {
+      "name": "sandbox.kosa8",
+      "source": "variable",
+      "data_type": "json",
+      "value": "{}"
     }
   ]
 }
