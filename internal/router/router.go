@@ -231,6 +231,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 		// API v1 route group
 		v1 := authorized.Group("/api/v1")
 		{
+			// Doc-analyzer availability: which PDF structure/table engines this
+			// deployment can actually serve. Requires auth so the availability
+			// of internal backends is not exposed to anonymous clients.
+			v1.GET("/system/doc-analyzers", r.systemHandler.DocAnalyzers)
+
 			// Auth routes
 			auth := v1.Group("/auth")
 			{
