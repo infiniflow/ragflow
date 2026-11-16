@@ -373,9 +373,49 @@ check_pcre2() {
     return 1
 }
 
+# A toolchain that is no longer installed must not poison the build. A removed
+# Homebrew LLVM, for example, leaves CC/CXX and -I/-L/LIBRARY_PATH entries
+# behind, and both cmake and cgo honour them — every compiler probe then fails
+# with an error that names neither the cause nor the fix. Drop what points at a
+# path that does not exist; a missing entry can never contribute anything.
+drop_stale_toolchain_env() {
+    local var value dir
+    for var in CC CXX; do
+        value="${!var}"
+        [ -n "$value" ] || continue
+        command -v "$value" >/dev/null 2>&1 && continue
+        echo -e "${YELLOW}Warning: $var=$value does not exist; falling back to the default compiler${NC}"
+        unset "$var"
+    done
+    for var in CPPFLAGS CFLAGS CXXFLAGS LDFLAGS; do
+        value="${!var}"
+        [ -n "$value" ] || continue
+        for dir in $(printf '%s\n' "$value" | tr ' ' '\n' | sed -nE 's/^-[IL](.*)$/\1/p'); do
+            [ -z "$dir" ] && continue
+            [ -e "$dir" ] && continue
+            echo -e "${YELLOW}Warning: $var points at the missing path $dir; ignoring $var${NC}"
+            unset "$var"
+            break
+        done
+    done
+    for var in LIBRARY_PATH CPATH; do
+        value="${!var}"
+        [ -n "$value" ] || continue
+        for dir in $(printf '%s' "$value" | tr ':' ' '); do
+            [ -z "$dir" ] && continue
+            [ -e "$dir" ] && continue
+            echo -e "${YELLOW}Warning: $var points at the missing path $dir; ignoring $var${NC}"
+            unset "$var"
+            break
+        done
+    done
+}
+
 # Check dependencies
 check_cpp_deps() {
     print_section "Checking c++ dependencies"
+
+    drop_stale_toolchain_env
 
     command -v cmake >/dev/null 2>&1 || { echo -e "${RED}Error: cmake is required but not installed.${NC}"; exit 1; }
     command -v clang++ >/dev/null 2>&1 || { echo -e "${RED}Error: clang++ is required but not installed.${NC}"; exit 1; }
@@ -398,6 +438,7 @@ check_cpp_deps() {
 check_go_deps() {
     print_section "Checking go dependencies"
 
+    drop_stale_toolchain_env
     command -v go >/dev/null 2>&1 || { echo -e "${RED}Error: go is required but not installed.${NC}"; exit 1; }
 
     echo "✓ Required tools are available"
@@ -776,28 +817,72 @@ strip_tokenizer_linker_options() {
     echo -e "${GREEN}✓ Removed LLVM .linker-options sections from librag_tokenizer_c_api.a${NC}"
 }
 
-# Print the objcopy to rewrite symbols with, or nothing. GNU objcopy is standard
-# on Linux; on macOS it is LLVM's llvm-objcopy, which Homebrew installs keg-only
-# (outside PATH).
-find_objcopy() {
-    if command -v objcopy >/dev/null 2>&1; then
-        echo objcopy
-    elif command -v llvm-objcopy >/dev/null 2>&1; then
-        echo llvm-objcopy
-    elif command -v brew >/dev/null 2>&1 && [ -x "$(brew --prefix llvm 2>/dev/null)/bin/llvm-objcopy" ]; then
-        echo "$(brew --prefix llvm)/bin/llvm-objcopy"
+# Rewrite symbol names in a static archive from an "old new" map (objcopy's
+# --redefine-syms format). Linux uses GNU objcopy; macOS has no objcopy in the
+# base toolchain (llvm-objcopy ships only with a Homebrew LLVM install) and ld64
+# has no --allow-multiple-definition, so the same rename runs through the
+# in-tree Go rewriter instead — no LLVM toolchain required.
+rename_archive_symbols() {
+    local archive="$1" map="$2"
+    if [ "$(uname -s)" = "Darwin" ]; then
+        # Progress goes to stderr: callers capture this function's stdout as the
+        # archive path.
+        ( cd "$PROJECT_ROOT" && go run ./tools/machorename --redefine-syms="$map" "$archive" ) >&2
+        return
     fi
+    local objcopy_bin=""
+    if command -v objcopy >/dev/null 2>&1; then
+        objcopy_bin=objcopy
+    elif command -v llvm-objcopy >/dev/null 2>&1; then
+        objcopy_bin=llvm-objcopy
+    else
+        echo -e "${RED}Error: objcopy not found; install binutils.${NC}" >&2
+        return 1
+    fi
+    "$objcopy_bin" --redefine-syms="$map" "$archive"
 }
 
 # Build C++ static library
 build_cpp() {
     print_section "Building C++ static library"
 
+    # A cache left behind by a compiler that has since been removed (e.g. a
+    # purged Homebrew LLVM) makes cmake abort before it can reconfigure itself.
+    # Start over in that case: a full rebuild is the only correct answer.
+    local cache="$BUILD_DIR/CMakeCache.txt" cached_compiler
+    if [ -f "$cache" ]; then
+        for cached_compiler in $(sed -nE 's/^CMAKE_(C|CXX)_COMPILER:FILEPATH=(.*)$/\2/p' "$cache"); do
+            if ! command -v "$cached_compiler" >/dev/null 2>&1; then
+                echo -e "${YELLOW}Warning: CMake cache points at a missing compiler ($cached_compiler); reconfiguring${NC}"
+                rm -rf "$BUILD_DIR"
+                break
+            fi
+        done
+    fi
+
     mkdir -p "$BUILD_DIR"
     cd "$BUILD_DIR"
 
+    # The tokenizer archive is linked into the Go binary, so it has to be built
+    # for the architecture Go produces. Deriving it from `go env GOARCH` keeps
+    # the two in step even when the shell runs under Rosetta (uname reports
+    # x86_64) or cmake itself is an Intel-only Homebrew build.
+    local cmake_args=(-DCMAKE_BUILD_TYPE=Release)
+    if [ "$(uname -s)" = "Darwin" ]; then
+        local goarch
+        goarch="$(go env GOARCH 2>/dev/null)"
+        [ -n "$goarch" ] && cmake_args+=("-DCMAKE_OSX_ARCHITECTURES=${goarch}")
+    fi
+    # Extra arguments for the C++ configure step, e.g. to point pcre2 at a
+    # specific static archive:
+    #   RAGFLOW_CMAKE_ARGS=-DPCRE2_STATIC_LIB=/path/to/libpcre2-8.a bash build.sh
+    if [ -n "${RAGFLOW_CMAKE_ARGS:-}" ]; then
+        # shellcheck disable=SC2206 # deliberate word splitting of the flag list
+        cmake_args+=(${RAGFLOW_CMAKE_ARGS})
+    fi
+
     echo "Running cmake..."
-    cmake .. -DCMAKE_BUILD_TYPE=Release
+    cmake .. "${cmake_args[@]}"
 
     echo "Building librag_tokenizer_c_api.a..."
     local jobs
@@ -825,26 +910,20 @@ build_cpp() {
     # Renaming the tokenizer's re2 symbols into a private prefix gives each copy
     # its own namespace, so the tokenizer calls its own ABI-compatible re2 and
     # onnxruntime keeps calling its own. Verified to eliminate the crash.
+    #
+    # Both desktop linkers reject the duplicate symbols the two copies define
+    # (GNU ld only on request, ld64 never), so this rename is required on every
+    # platform: rename_archive_symbols() picks objcopy on Linux and the in-tree
+    # Go rewriter on macOS.
     local tok_a="$BUILD_DIR/librag_tokenizer_c_api.a"
     local rename_map="$BUILD_DIR/re2_rename.map"
-    local objcopy_bin
-    objcopy_bin="$(find_objcopy)"
-    if [ -z "$objcopy_bin" ] && [ "$(uname -s)" = "Darwin" ]; then
-        # ld64 cannot merge the two re2 copies, so the link fails without the rename.
-        echo -e "${RED}Error: llvm-objcopy not found. Install it with: brew install llvm${NC}"
-        exit 1
-    fi
-    if [ -n "$objcopy_bin" ]; then
-        # Mach-O prefixes C++ symbols with an extra underscore (__ZN3re2...).
-        nm "$tok_a" \
-            | awk '$2 ~ /^[TDBRWtdbrwiIVv]$/ && $3 ~ /^_?_Z(N|NK|TVN|TIN|TSN)3re2/ { print $3" ragtokre2_"$3 }' \
-            | sort -u > "$rename_map"
-        if [ -s "$rename_map" ]; then
-            "$objcopy_bin" --redefine-syms="$rename_map" "$tok_a"
-            echo -e "${GREEN}✓ Renamed $(wc -l < "$rename_map") tokenizer re2 symbols into private namespace (ragtokre2_)${NC}"
-        fi
-    else
-        echo -e "${YELLOW}Warning: objcopy/llvm-objcopy not found, skipping re2 symbol rename (re2 collision with onnxruntime may cause SIGSEGV)${NC}"
+    # Mach-O prefixes C++ symbols with an extra underscore (__ZN3re2...).
+    nm "$tok_a" \
+        | awk '$2 ~ /^[TDBRWtdbrwiIVv]$/ && $3 ~ /^_?_Z(N|NK|TVN|TIN|TSN)3re2/ { print $3" ragtokre2_"$3 }' \
+        | sort -u > "$rename_map"
+    if [ -s "$rename_map" ]; then
+        rename_archive_symbols "$tok_a" "$rename_map" || exit 1
+        echo -e "${GREEN}✓ Renamed $(wc -l < "$rename_map") tokenizer re2 symbols into private namespace (ragtokre2_)${NC}"
     fi
 
     echo -e "${GREEN}✓ C++ static library built successfully${NC}"
@@ -973,12 +1052,6 @@ darwin_pdf_oxide_archive() {
         echo "$out"
         return 0
     fi
-    local objcopy_bin
-    objcopy_bin="$(find_objcopy)"
-    if [ -z "$objcopy_bin" ]; then
-        echo -e "${RED}Error: llvm-objcopy not found (brew install llvm); needed to link pdf_oxide next to office_oxide on macOS${NC}" >&2
-        return 1
-    fi
     mkdir -p "$out_dir"
     # liboffice_oxide.a holds Rust LLVM bitcode that nm cannot always read, so
     # the shared set is taken from pdf_oxide alone: office_oxide's C API
@@ -988,7 +1061,7 @@ darwin_pdf_oxide_archive() {
         | awk 'NF == 3 && ($3 ~ /^_office_/ || $3 == "_rust_eh_personality") { print $3" pdfoxide_"$3 }' \
         | sort -u > "$rename_map"
     cp "$src" "$out.tmp"
-    "$objcopy_bin" --redefine-syms="$rename_map" "$out.tmp" || { rm -f "$out.tmp"; return 1; }
+    rename_archive_symbols "$out.tmp" "$rename_map" || { rm -f "$out.tmp"; return 1; }
     mv "$out.tmp" "$out"
     echo -e "${GREEN}✓ Renamed $(wc -l < "$rename_map") pdf_oxide symbols shared with office_oxide${NC}" >&2
     echo "$out"
@@ -998,6 +1071,17 @@ darwin_pdf_oxide_archive() {
 # All three are statically linked — no LD_LIBRARY_PATH or -Wl,-rpath needed.
 setup_cgo_env() {
     detect_target_platform
+
+    # macOS links pcre2 from the static archive the CMake build stages next to
+    # the tokenizer archive (see the cgo directives in internal/binding): cgo
+    # cannot search library paths, so the path has to be a build artifact
+    # instead of a machine-specific Homebrew prefix.
+    if [ "$TARGET_OS" = "darwin" ] && [ ! -f "${BUILD_DIR}/libpcre2-8.a" ]; then
+        echo -e "${RED}Error: ${BUILD_DIR}/libpcre2-8.a is missing.${NC}" >&2
+        echo "  The macOS Go link takes pcre2 from the C++ build dir." >&2
+        echo "  Run 'bash build.sh --cpp' so CMake stages it there." >&2
+        return 1
+    fi
 
     # --test/--go reuse the existing librag_tokenizer_c_api.a without rebuilding
     # the C++ library. --cpp strips the clang-20 .linker-options section right
@@ -1422,6 +1506,11 @@ DEPENDENCIES:
         - Debian/Ubuntu: libpcre2-dev
         - openSUSE/RHEL/Fedora: pcre2-devel
         - macOS (Homebrew): pcre2
+
+ENVIRONMENT:
+    RAGFLOW_GO_TAGS=ee      # build the enterprise sources
+    RAGFLOW_CMAKE_ARGS=...  # extra arguments for the C++ configure step, e.g.
+                            # -DPCRE2_STATIC_LIB=/path/to/libpcre2-8.a
 EOF
 }
 
