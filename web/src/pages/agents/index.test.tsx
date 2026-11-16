@@ -45,11 +45,8 @@ jest.mock('@/hooks/logic-hooks/navigate-hooks', () => ({
 jest.mock('@/layouts/components/app-sidebar/use-sidebar-collapse', () => ({
   useSidebarCollapse: () => ({ setCollapsed: jest.fn() }),
 }));
-// Avoid loading routes.tsx (it builds a data router that needs the `Request`
-// global jsdom lacks); the route constants are only passed to mocked navigators.
-jest.mock('@/routes', () => ({
-  Routes: new Proxy({}, { get: () => '' }),
-}));
+// The global routes mock supplies path constants without loading the data
+// router, which needs the `Request` global jsdom lacks.
 jest.mock('@/pages/agents/hooks/use-create-agent', () => ({
   useCreateAgentOrPipeline: () => ({
     creatingVisible: false,
@@ -103,7 +100,7 @@ function LocationProbe() {
   return null;
 }
 
-function renderAgents(initialEntry = '/') {
+function renderAgents(initialEntry = '/agents') {
   return render(
     <MemoryRouter initialEntries={[initialEntry]}>
       <QueryClientProvider client={new QueryClient()}>
@@ -155,20 +152,42 @@ beforeEach(() => {
 describe('Agents tabs', () => {
   it('defaults to the Workflow tab and requests the agent canvas list', () => {
     renderAgents();
+    expect(screen.getByRole('heading', { name: 'Studio' })).toBeInTheDocument();
     expect(agentRequest.useFetchAgentListByPage).toHaveBeenCalledWith(
       AgentCategory.AgentCanvas,
     );
   });
 
-  it('renders the three tabs in Compilation / Pipeline / Workflow order', () => {
+  it('renders text-only tabs below Studio and beside the toolbar', () => {
     renderAgents();
+
+    const heading = screen.getByRole('heading', { name: 'Studio' });
+    const workflowTab = screen.getByText('Workflow');
+    const toolbar = screen.getByRole('toolbar');
+
     expect(screen.getByText('Compilation operator')).toBeInTheDocument();
     expect(screen.getByText('Ingestion pipeline')).toBeInTheDocument();
-    expect(screen.getByText('Workflow')).toBeInTheDocument();
+    expect(heading.compareDocumentPosition(workflowTab)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(workflowTab.compareDocumentPosition(toolbar)).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(workflowTab.closest('h1')?.parentElement).toBe(
+      toolbar.parentElement,
+    );
+
+    for (const label of [
+      'Compilation operator',
+      'Ingestion pipeline',
+      'Workflow',
+    ]) {
+      expect(screen.getByText(label).querySelector('svg')).toBeNull();
+    }
   });
 
   it('switches the tab through the URL and resets the page', () => {
-    renderAgents('/?page=3');
+    renderAgents('/agents?page=3');
     fireEvent.click(screen.getByText('Ingestion pipeline'));
 
     expect(currentSearch).toContain(
@@ -181,7 +200,7 @@ describe('Agents tabs', () => {
   });
 
   it('falls back to the Workflow tab for an unknown canvas_category', () => {
-    renderAgents('/?canvas_category=bogus');
+    renderAgents('/agents?canvas_category=bogus');
     expect(agentRequest.useFetchAgentListByPage).toHaveBeenCalledWith(
       AgentCategory.AgentCanvas,
     );
@@ -205,7 +224,7 @@ describe('Agents create actions per tab', () => {
     setListPage({ data: [], debouncedSearchString: '' });
     // An empty built-in catalog keeps the Pipeline tab on the empty card.
     setBuiltin([]);
-    renderAgents(`/?canvas_category=${AgentCategory.DataflowCanvas}`);
+    renderAgents(`/agents?canvas_category=${AgentCategory.DataflowCanvas}`);
     expect(screen.getByText('Create from blank')).toBeInTheDocument();
     expect(screen.getByText('Create from template')).toBeInTheDocument();
     expect(screen.getByText('Import JSON file')).toBeInTheDocument();
@@ -214,7 +233,7 @@ describe('Agents create actions per tab', () => {
   it('shows only blank creation on the Compilation tab', () => {
     setListPage({ data: [], debouncedSearchString: '' });
     renderAgents(
-      `/?canvas_category=${AgentListItemType.CompilationTemplateGroup}`,
+      `/agents?canvas_category=${AgentListItemType.CompilationTemplateGroup}`,
     );
     expect(screen.getByText('Create from blank')).toBeInTheDocument();
     expect(screen.queryByText('Create from template')).toBeNull();
@@ -223,7 +242,7 @@ describe('Agents create actions per tab', () => {
 
   it('navigates straight to the compilation editor from the + button (no dropdown)', () => {
     renderAgents(
-      `/?canvas_category=${AgentListItemType.CompilationTemplateGroup}`,
+      `/agents?canvas_category=${AgentListItemType.CompilationTemplateGroup}`,
     );
     fireEvent.click(screen.getByTestId('create-agent'));
     expect(mockNavigateToCompilationEditor).toHaveBeenCalledWith();
@@ -233,7 +252,7 @@ describe('Agents create actions per tab', () => {
   it('carries the active category when navigating to templates', () => {
     setListPage({ data: [], debouncedSearchString: '' });
     setBuiltin([]);
-    renderAgents(`/?canvas_category=${AgentCategory.DataflowCanvas}`);
+    renderAgents(`/agents?canvas_category=${AgentCategory.DataflowCanvas}`);
     fireEvent.click(screen.getByText('Create from template'));
     expect(mockNavigateToAgentTemplates).toHaveBeenCalledWith(
       AgentCategory.DataflowCanvas,
@@ -243,14 +262,14 @@ describe('Agents create actions per tab', () => {
   it('opens the compilation editor for blank creation on the Compilation tab', () => {
     setListPage({ data: [], debouncedSearchString: '' });
     renderAgents(
-      `/?canvas_category=${AgentListItemType.CompilationTemplateGroup}`,
+      `/agents?canvas_category=${AgentListItemType.CompilationTemplateGroup}`,
     );
     fireEvent.click(screen.getByTestId('agents-empty-create'));
     expect(mockNavigateToCompilationEditor).toHaveBeenCalledWith();
   });
 
   it('scopes JSON import to the active tab category', () => {
-    renderAgents(`/?canvas_category=${AgentCategory.DataflowCanvas}`);
+    renderAgents(`/agents?canvas_category=${AgentCategory.DataflowCanvas}`);
     expect(importJson.useHandleImportJsonFile).toHaveBeenCalledWith(
       AgentCategory.DataflowCanvas,
     );
@@ -261,7 +280,7 @@ describe('Agents create actions per tab', () => {
     const selectFilters = jest.requireMock(
       '@/pages/agents/hooks/use-select-filters',
     );
-    renderAgents(`/?canvas_category=${AgentCategory.DataflowCanvas}`);
+    renderAgents(`/agents?canvas_category=${AgentCategory.DataflowCanvas}`);
     expect(selectFilters.useSelectFilters).toHaveBeenCalledWith(
       AgentCategory.DataflowCanvas,
     );
@@ -276,7 +295,7 @@ describe('Agents empty-state (built-in pipeline regression)', () => {
       data: [],
       debouncedSearchString: 'zzz-no-match',
     });
-    renderAgents(`/?canvas_category=${AgentCategory.DataflowCanvas}`);
+    renderAgents(`/agents?canvas_category=${AgentCategory.DataflowCanvas}`);
 
     expect(screen.getByTestId('agents-search-empty')).toBeInTheDocument();
     expect(
@@ -289,7 +308,7 @@ describe('Agents empty-state (built-in pipeline regression)', () => {
       data: [],
       debouncedSearchString: 'general',
     });
-    renderAgents(`/?canvas_category=${AgentCategory.DataflowCanvas}`);
+    renderAgents(`/agents?canvas_category=${AgentCategory.DataflowCanvas}`);
 
     expect(screen.getByTestId('builtin-pipeline-section')).toBeInTheDocument();
     expect(screen.queryByTestId('agents-search-empty')).not.toBeInTheDocument();
@@ -309,7 +328,7 @@ describe('Agents empty-state (built-in pipeline regression)', () => {
   it('shows only blank creation in the Compilation empty card', () => {
     setListPage({ data: [], debouncedSearchString: '' });
     renderAgents(
-      `/?canvas_category=${AgentListItemType.CompilationTemplateGroup}`,
+      `/agents?canvas_category=${AgentListItemType.CompilationTemplateGroup}`,
     );
 
     expect(screen.getByTestId('agents-empty-create')).toBeInTheDocument();

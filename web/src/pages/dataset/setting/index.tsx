@@ -303,7 +303,7 @@ export default function DatasetSetting() {
       (parseType === ParseType.BuiltIn && !!builtinPipelineId));
 
   return (
-    <div className="pr-5 pb-5">
+    <div className="h-full pr-5 pb-5">
       <ApplyParserConfigDialog
         datasetId={knowledgeDetails.id}
         open={applyParserConfigOpen}
