@@ -544,3 +544,93 @@ func TestIssue22340_DescriptionMatchingEndpointValueNotOverwritten(t *testing.T)
 		t.Errorf("unrelated field overwritten by matching endpoint value: got %q, want %q", outPayload["description"], "richer merged description")
 	}
 }
+
+// TestIssue22340_PascalCaseSpecifications verifies that HypergraphPrompts,
+// InferType, EntityIDField, RelationMemberFields, and RelationExpectsEvidence
+// support templates configured with PascalCase / TitleCase specification keys
+// ("EntitySpecification", "RelationSpecification") as saved by the UI editor.
+func TestIssue22340_PascalCaseSpecifications(t *testing.T) {
+	parserConfig := map[string]any{
+		"kind":         "graph",
+		"global_rules": "Extract domain knowledge only.",
+		"EntitySpecification": map[string]any{
+			"description": "Extractor for domain entities",
+			"fields": []any{
+				map[string]any{
+					"type":        "person",
+					"description": "A natural person",
+					"rule":        "Use official full name",
+				},
+				map[string]any{
+					"type":        "org",
+					"description": "An organization or team",
+					"rule":        "Use standard acronym if known",
+				},
+			},
+		},
+		"RelationSpecification": map[string]any{
+			"description":   "Extractor for semantic relations",
+			"output_fields": []any{"source", "target", "type", "evidence"},
+			"fields": []any{
+				map[string]any{
+					"type":        "works_for",
+					"description": "Employment relation",
+					"rule":        "Person to Org",
+				},
+				map[string]any{
+					"type":        "collaborates_with",
+					"description": "Collaboration between entities",
+				},
+			},
+		},
+	}
+
+	// 1. InferType recognizes kind / specifications as hypergraph
+	if got := InferType(parserConfig); got != TypeHypergraph {
+		t.Errorf("InferType: got %q, want %q", got, TypeHypergraph)
+	}
+
+	// Also verify InferType when kind is omitted
+	noKindConfig := map[string]any{
+		"EntitySpecification":   parserConfig["EntitySpecification"],
+		"RelationSpecification": parserConfig["RelationSpecification"],
+	}
+	if got := InferType(noKindConfig); got != TypeHypergraph {
+		t.Errorf("InferType without kind: got %q, want %q", got, TypeHypergraph)
+	}
+
+	// 2. HypergraphPrompts generates both node and edge prompts
+	nodePrompt, edgePrompt := HypergraphPrompts(parserConfig, "en")
+	if strings.TrimSpace(nodePrompt) == "" {
+		t.Fatal("HypergraphPrompts: nodePrompt must not be empty")
+	}
+	if !strings.Contains(nodePrompt, "person") || !strings.Contains(nodePrompt, "org") {
+		t.Errorf("HypergraphPrompts: nodePrompt missing configured entity types: %s", nodePrompt)
+	}
+
+	if strings.TrimSpace(edgePrompt) == "" {
+		t.Fatal("HypergraphPrompts: edgePrompt must not be empty for RelationSpecification (was skipped in root cause #5)")
+	}
+	if !strings.Contains(edgePrompt, "works_for") || !strings.Contains(edgePrompt, "collaborates_with") {
+		t.Errorf("HypergraphPrompts: edgePrompt missing configured relation types: %s", edgePrompt)
+	}
+	if !strings.Contains(edgePrompt, "{known_nodes}") {
+		t.Errorf("HypergraphPrompts: edgePrompt missing {known_nodes} placeholder: %s", edgePrompt)
+	}
+
+	// 3. EntityIDField resolves to "name"
+	if idField := EntityIDField(parserConfig); idField != "name" {
+		t.Errorf("EntityIDField: got %q, want %q", idField, "name")
+	}
+
+	// 4. RelationMemberFields resolves endpoints to "source", "target"
+	srcField, tgtField := RelationMemberFields(parserConfig)
+	if srcField != "source" || tgtField != "target" {
+		t.Errorf("RelationMemberFields: got (%q, %q), want (%q, %q)", srcField, tgtField, "source", "target")
+	}
+
+	// 5. RelationExpectsEvidence detects evidence in output_fields
+	if !RelationExpectsEvidence(parserConfig) {
+		t.Errorf("RelationExpectsEvidence: got false, want true")
+	}
+}
