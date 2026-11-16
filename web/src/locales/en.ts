@@ -1231,7 +1231,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       thinking: 'Thinking',
       thinkingMode: 'Thinking',
       thought: 'Thought',
-      thinkingDefault: 'System default',
+      thinkingDefault: 'System default (disabled)',
       thinkingEnabled: 'Enabled',
       thinkingDisabled: 'Disabled',
       thinkingLevelNone: 'Naive',
@@ -1245,7 +1245,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       agenticTemplateTooLong: 'Template must be at most 32768 characters',
       resetToDefault: 'Reset to default',
       thinkingTip:
-        'Only controls thinking mode for official Qwen, Kimi, and GLM model providers. System default disables Qwen thinking to avoid long-running tasks.',
+        'Thinking is disabled by default. Select Enabled to turn it on for models that support thinking mode.',
       quote: 'Show citations',
       quoteTip: 'Whether to display the original text as a reference.',
       selfRag: 'Self-RAG',

@@ -1648,6 +1648,30 @@ func TestBuildChatConfig_RequestOverrides(t *testing.T) {
 	}
 }
 
+func TestBuildChatConfigThinkingDefaults(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		saved   any
+		request map[string]interface{}
+		want    bool
+	}{
+		{name: "unset"},
+		{name: "saved default", saved: "default"},
+		{name: "saved enabled", saved: "enabled", want: true},
+		{name: "saved bool enabled", saved: true, want: true},
+		{name: "request default overrides enabled", saved: true, request: map[string]interface{}{"thinking": "default"}},
+		{name: "request enabled", request: map[string]interface{}{"thinking": true}, want: true},
+		{name: "request disabled", saved: true, request: map[string]interface{}{"thinking": false}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := BuildChatConfig(&entity.Chat{LLMSetting: entity.JSONMap{"thinking": tc.saved}}, tc.request)
+			if cfg.Thinking == nil || *cfg.Thinking != tc.want {
+				t.Fatalf("Thinking = %v, want %v", cfg.Thinking, tc.want)
+			}
+		})
+	}
+}
+
 // TestBuildChatConfig_FromEmptyDialog verifies the merger works even when
 // dialog.LLMSetting is nil.
 func TestBuildChatConfig_FromEmptyDialog(t *testing.T) {

@@ -4833,7 +4833,7 @@ func kbTenantIDStrings(kbs []*entity.Knowledgebase) []string {
 // per-request overrides) into a typed ChatConfig for the LLM driver.
 // Dialog values are read first; request config values win when present.
 func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelModule.ChatConfig {
-	cfg := &modelModule.ChatConfig{}
+	cfg := &modelModule.ChatConfig{Thinking: new(false)}
 
 	if dialog.LLMSetting != nil {
 		if v, ok := dialog.LLMSetting["stream"].(bool); ok {
@@ -4841,6 +4841,8 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		}
 		if v, ok := dialog.LLMSetting["thinking"].(bool); ok {
 			cfg.Thinking = &v
+		} else if v, ok := dialog.LLMSetting["thinking"].(string); ok {
+			cfg.Thinking = new(v == "enabled")
 		}
 		if v, ok := chatConfigPositiveInt(dialog.LLMSetting["max_tokens"]); ok {
 			i := v
@@ -4881,6 +4883,8 @@ func BuildChatConfig(dialog *entity.Chat, config map[string]interface{}) *modelM
 		}
 		if v, ok := config["thinking"].(bool); ok {
 			cfg.Thinking = &v
+		} else if v, ok := config["thinking"].(string); ok {
+			cfg.Thinking = new(v == "enabled")
 		}
 		if v, ok := chatConfigPositiveInt(config["max_tokens"]); ok {
 			i := v
