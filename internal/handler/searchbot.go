@@ -27,6 +27,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/compliance"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
@@ -211,6 +212,10 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	}
 
 	svcReq := toRetrievalServiceRequest(&req)
+	if err := compliance.ValidateQuestion(c.Request.Context(), req.Question); err != nil {
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		return
+	}
 	ctx := c.Request.Context()
 	result, err := h.chunkSvc.RetrievalTest(ctx, svcReq)
 	if err != nil {

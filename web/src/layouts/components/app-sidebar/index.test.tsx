@@ -179,3 +179,48 @@ describe('AppSidebar secondary sidebar expansion', () => {
     expect(screen.getByRole('link', { name: 'RAGFlow' })).toBeInTheDocument();
   });
 });
+
+describe('AppSidebar primary sidebar border', () => {
+  beforeEach(() => {
+    mockPrimarySidebarCollapsed = true;
+    mockDatasetSidebarCollapsed = false;
+    mockAgentSidebarCollapsed = false;
+    mockChatSidebarCollapsed = false;
+    mockCompilationTemplateSidebarCollapsed = false;
+  });
+
+  it('is hidden on list pages without a secondary sidebar', () => {
+    renderAppSidebar('/agents');
+
+    expect(screen.getByRole('complementary')).not.toHaveClass('border-r');
+  });
+
+  it('is shown when the agent secondary sidebar is visible', () => {
+    renderAppSidebar('/agent/agent-1');
+
+    expect(screen.getByRole('complementary')).toHaveClass(
+      'border-r',
+      'border-border-button',
+    );
+  });
+
+  it('is shown when the agent secondary sidebar is collapsed', () => {
+    mockAgentSidebarCollapsed = true;
+    renderAppSidebar('/agent/agent-1');
+
+    expect(screen.getByRole('complementary')).toHaveClass('border-r');
+  });
+
+  it('is shown on memory detail routes with a secondary sidebar', () => {
+    renderAppSidebar('/memory/memory-message/memory-1');
+
+    expect(screen.getByRole('complementary')).toHaveClass('border-r');
+  });
+
+  it('is hidden when the primary sidebar is expanded', () => {
+    mockPrimarySidebarCollapsed = false;
+    renderAppSidebar('/agent/agent-1');
+
+    expect(screen.getByRole('complementary')).not.toHaveClass('border-r');
+  });
+});

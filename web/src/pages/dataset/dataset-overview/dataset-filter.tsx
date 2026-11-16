@@ -27,18 +27,28 @@ const DatasetFilter = (
     onOpenChange,
     active = LogTabs.FILE_LOGS,
     setActive,
-    ...rest
   } = props;
   const { t } = useTranslation();
   const filterCount = useMemo(() => {
     return typeof value === 'object' && value !== null
       ? Object.values(value).reduce((pre, cur) => {
-          return pre + cur.length;
+          if (Array.isArray(cur)) {
+            return pre + cur.length;
+          }
+          if (typeof cur === 'object') {
+            return (
+              pre +
+              Object.values(cur).reduce((pre, cur) => {
+                return pre + (cur?.length || 0);
+              }, 0)
+            );
+          }
+          return pre;
         }, 0)
       : 0;
   }, [value]);
   return (
-    <div className="flex items-center justify-between mb-4">
+    <div className="flex items-center justify-between mb-4 shrink-0">
       <div>
         <Segmented
           value={active}
