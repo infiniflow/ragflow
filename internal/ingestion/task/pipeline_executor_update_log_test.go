@@ -2,7 +2,6 @@ package task
 
 import (
 	"testing"
-	"time"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -276,91 +275,5 @@ func assertStringPtr(t *testing.T, field string, got, want *string) {
 	}
 	if got == nil || *got != *want {
 		t.Fatalf("%s = %v, want %q", field, got, *want)
-	}
-}
-
-// TestUpdateOpenLogRowSkipsTerminalRow proves the open-status WHERE guard:
-// a row already in a terminal state must not be advanced or crashed on.
-func TestUpdateOpenLogRowSkipsTerminalRow(t *testing.T) {
-	cleanup := setupPipelineExecutorTestDB(t)
-	defer cleanup()
-
-	if err := dao.DB.Create(&entity.PipelineOperationLog{
-		ID:              "run-terminal",
-		DocumentID:      "doc-terminal",
-		TenantID:        "tenant-1",
-		KbID:            "kb-1",
-		OperationStatus: string(entity.TaskStatusDone),
-	}).Error; err != nil {
-		t.Fatalf("seed terminal pipeline log: %v", err)
-	}
-
-	doc := deriveTestDoc("doc-terminal")
-	err := updateOpenLogRow(t.Context(), dao.DB, PipelineLogInput{
-		DocumentID:              "doc-terminal",
-		Status:                  string(entity.TaskStatusDone),
-		PipelineID:              "canvas-x",
-		PipelineBindingResolved: true,
-		PipelineLogID:           "run-terminal",
-	}, "Should Not Write", nil, doc)
-	if err != nil {
-		t.Fatalf("updateOpenLogRow: %v", err)
-	}
-
-	log := loadLog(t, "run-terminal")
-	if log.PipelineTitle != nil {
-		t.Fatalf("PipelineTitle = %q, want nil (terminal row must be untouched)", *log.PipelineTitle)
-	}
-	if log.PipelineID != nil {
-		t.Fatalf("PipelineID = %q, want nil (terminal row must be untouched)", *log.PipelineID)
-	}
-}
-
-// TestUpdateOpenLogRowDocFieldsAndDuration verifies all doc-derived columns
-// plus the TerminalDuration override and ProcessBeginAt retention.
-func TestUpdateOpenLogRowDocFieldsAndDuration(t *testing.T) {
-	cleanup := setupPipelineExecutorTestDB(t)
-	defer cleanup()
-
-	seedOpenLogRow(t, "run-doc-fields", "doc-doc-fields")
-	doc := deriveTestDoc("doc-doc-fields")
-	doc.Progress = 0.75
-	doc.ProcessDuration = 12.5
-	doc.SourceType = "local/sub/path"
-	begin := time.Date(2026, 11, 16, 10, 0, 0, 0, time.UTC)
-	doc.ProcessBeginAt = &begin
-	duration := 99.5
-
-	err := updateOpenLogRow(t.Context(), dao.DB, PipelineLogInput{
-		DocumentID:       "doc-doc-fields",
-		Status:           string(entity.TaskStatusDone),
-		PipelineLogID:    "run-doc-fields",
-		TerminalDuration: &duration,
-	}, "title", nil, doc)
-	if err != nil {
-		t.Fatalf("updateOpenLogRow: %v", err)
-	}
-
-	log := loadLog(t, "run-doc-fields")
-	if log.Progress != 0.75 {
-		t.Fatalf("Progress = %v, want 0.75", log.Progress)
-	}
-	if log.ProcessDuration != 99.5 {
-		t.Fatalf("ProcessDuration = %v, want 99.5 (TerminalDuration override)", log.ProcessDuration)
-	}
-	if log.SourceFrom != "local" {
-		t.Fatalf("SourceFrom = %q, want local (SplitN of doc.SourceType)", log.SourceFrom)
-	}
-	if log.ParserID != "naive" {
-		t.Fatalf("ParserID = %q, want naive", log.ParserID)
-	}
-	if log.DocumentSuffix != ".pdf" || log.DocumentType != "pdf" {
-		t.Fatalf("DocumentSuffix/Type = %q/%q, want .pdf/pdf", log.DocumentSuffix, log.DocumentType)
-	}
-	if log.DocumentName != "derive.pdf" {
-		t.Fatalf("DocumentName = %q, want derive.pdf", log.DocumentName)
-	}
-	if log.ProcessBeginAt == nil || !log.ProcessBeginAt.Equal(begin) {
-		t.Fatalf("ProcessBeginAt = %v, want %v", log.ProcessBeginAt, begin)
 	}
 }

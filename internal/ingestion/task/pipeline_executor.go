@@ -1026,7 +1026,7 @@ func recordPipelineLog(
 	// operation-log creation path).
 	pipelineTitle := doc.ParserID
 	pipelineAvatar := doc.Thumbnail
-	if input.PipelineID != "" && db != nil {
+	if input.PipelineID != "" {
 		if canvas, err := dao.NewUserCanvasDAO().GetByID(ctx, db, input.PipelineID); err == nil && canvas != nil {
 			if canvas.Title != nil {
 				pipelineTitle = *canvas.Title
