@@ -1,6 +1,7 @@
 package dao
 
 import (
+	"context"
 	"net/url"
 	"strings"
 	"testing"
@@ -31,10 +32,10 @@ func insertCompilationStatusCountEntries(t *testing.T, db *gorm.DB, table string
 	}
 }
 
-// TestListCompilationStatusEntries locks the data-access contract: rows are
+// TestListKnowledgeCompileEntries locks the data-access contract: rows are
 // scoped by dataset, duplicates are preserved, and serializer:json columns
 // (Variants/TaskTypes) round-trip through Find.
-func TestListCompilationStatusEntries(t *testing.T) {
+func TestListKnowledgeCompileEntries(t *testing.T) {
 	db, table := setupCompilationStatusCountTestDB(t)
 	insertCompilationStatusCountEntries(t, db, table, []entity.KnowledgeCompileEntry{
 		{DatasetID: "kb", DocID: "same", QueuePosition: 1, TaskTypes: []string{"Graph"}},
@@ -44,7 +45,7 @@ func TestListCompilationStatusEntries(t *testing.T) {
 		{DatasetID: "other", DocID: "x", QueuePosition: 1, TaskTypes: []string{"Graph"}},
 	})
 
-	got, err := ListCompilationStatusEntries(db, table, "kb")
+	got, err := ListKnowledgeCompileEntries(t.Context(), db, table, "kb")
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
@@ -84,7 +85,7 @@ func TestCountCompilationStatusEntries(t *testing.T) {
 		{DatasetID: "other", DocID: "x", QueuePosition: 1},
 	})
 
-	got, err := CountCompilationStatusEntries(db, table, "kb")
+	got, err := CountCompilationStatusEntries(t.Context(), db, table, "kb")
 	if err != nil {
 		t.Fatalf("count: %v", err)
 	}
@@ -102,16 +103,37 @@ func TestCompilationStatusEntriesEmptyAndError(t *testing.T) {
 		{DatasetID: "kb", DocID: "d1", QueuePosition: 1, TaskTypes: []string{"Graph"}},
 	})
 
-	entries, err := ListCompilationStatusEntries(db, table, "missing")
+	entries, err := ListKnowledgeCompileEntries(t.Context(), db, table, "missing")
 	if err != nil || len(entries) != 0 {
 		t.Fatalf("list missing dataset: entries=%d err=%v", len(entries), err)
 	}
-	count, err := CountCompilationStatusEntries(db, table, "missing")
+	count, err := CountCompilationStatusEntries(t.Context(), db, table, "missing")
 	if err != nil || count != 0 {
 		t.Fatalf("count missing dataset: count=%d err=%v", count, err)
 	}
 
-	if _, err := CountCompilationStatusEntries(db, "no_such_compile_table", "kb"); err == nil {
+	if _, err := CountCompilationStatusEntries(t.Context(), db, "no_such_compile_table", "kb"); err == nil {
 		t.Fatal("expected database error for missing table, got nil")
+	}
+}
+
+// TestKnowledgeCompileEntriesHonorContext is the adversarial guard for the
+// context contract: a cancelled context must abort both queries. An
+// implementation that drops ctx would still pass every happy-path fixture but
+// fail here.
+func TestKnowledgeCompileEntriesHonorContext(t *testing.T) {
+	db, table := setupCompilationStatusCountTestDB(t)
+	insertCompilationStatusCountEntries(t, db, table, []entity.KnowledgeCompileEntry{
+		{DatasetID: "kb", DocID: "d1", QueuePosition: 1, TaskTypes: []string{"Graph"}},
+	})
+
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	if _, err := ListKnowledgeCompileEntries(cancelled, db, table, "kb"); err == nil {
+		t.Fatal("ListKnowledgeCompileEntries ignored cancelled context")
+	}
+	if _, err := CountCompilationStatusEntries(cancelled, db, table, "kb"); err == nil {
+		t.Fatal("CountCompilationStatusEntries ignored cancelled context")
 	}
 }

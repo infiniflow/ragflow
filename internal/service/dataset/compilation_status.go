@@ -73,11 +73,11 @@ func (d *DatasetService) GetDatasetCompilationStatus(ctx context.Context, datase
 		st.CurrentPhase = row.CurrentPhase
 		st.ProgressMsg = row.ProgressMsg
 		var err error
-		st.Inflight, err = countCompilationStatusEntries(tx, (entity.KnowledgeCompileInflight{}).TableName(), datasetID, normalizedKind)
+		st.Inflight, err = countCompilationStatusEntries(ctx, tx, (entity.KnowledgeCompileInflight{}).TableName(), datasetID, normalizedKind)
 		if err != nil {
 			return err
 		}
-		st.Backlog, err = countCompilationStatusEntries(tx, (entity.KnowledgeCompileBacklog{}).TableName(), datasetID, normalizedKind)
+		st.Backlog, err = countCompilationStatusEntries(ctx, tx, (entity.KnowledgeCompileBacklog{}).TableName(), datasetID, normalizedKind)
 		if err != nil {
 			return err
 		}
@@ -98,11 +98,11 @@ func (d *DatasetService) GetDatasetCompilationStatus(ctx context.Context, datase
 	return st, common.CodeSuccess, nil
 }
 
-func countCompilationStatusEntries(db *gorm.DB, table, datasetID, kind string) (int, error) {
+func countCompilationStatusEntries(ctx context.Context, db *gorm.DB, table, datasetID, kind string) (int, error) {
 	if kind == "" {
-		return dao.CountCompilationStatusEntries(db, table, datasetID)
+		return dao.CountCompilationStatusEntries(ctx, db, table, datasetID)
 	}
-	entries, err := dao.ListCompilationStatusEntries(db, table, datasetID)
+	entries, err := dao.ListKnowledgeCompileEntries(ctx, db, table, datasetID)
 	if err != nil {
 		return 0, err
 	}
