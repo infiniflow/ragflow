@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -19,8 +20,24 @@ import (
 	"ragflow/internal/parser/media"
 )
 
-const soMarkPollTimeout = 30 * time.Minute
-const soMarkPollInterval = 2 * time.Second
+const (
+	// defaultSoMarkPollTimeout bounds how long soMarkPoll waits for an async
+	// task. SoMark parses on a remote service whose own task timeout
+	// (EXTRACT_MAX_TIMEOUT) defaults to 24h, so a short hard-coded client
+	// window would fail valid large PDFs while the service still considers
+	// them in flight. SOMARK_POLL_TIMEOUT (Go duration, e.g. "30m") overrides
+	// the default, and a tighter caller context deadline still wins over both.
+	defaultSoMarkPollTimeout = 30 * time.Minute
+	// maxSoMarkPollFailures caps consecutive transient poll failures. A single
+	// blip must not abort the parse — absorbing exactly that flakiness is why
+	// the poll loop exists — but a persistently broken endpoint should fail
+	// instead of retrying until the deadline.
+	maxSoMarkPollFailures = 5
+)
+
+// soMarkPollInterval is the delay between /parse/async_check polls. It is a
+// variable only so tests can shorten it; production code never mutates it.
+var soMarkPollInterval = 2 * time.Second
 
 // parsePDFWithSoMark submits a PDF and converts the task result into parser
 // output. Explicit tenant configuration never borrows a global endpoint or key.
@@ -128,61 +145,183 @@ func soMarkSubmit(ctx context.Context, baseURL, filename string, data []byte, pa
 	return payload.Data.TaskID, nil
 }
 
+// soMarkPollTimeout reads the poll budget. An unset or malformed
+// SOMARK_POLL_TIMEOUT degrades to the default: a typo must not disable the
+// timeout or silently turn it into zero.
+func soMarkPollTimeout() time.Duration {
+	raw := strings.TrimSpace(common.GetEnv(common.EnvSOMarkPollTimeout))
+	if raw == "" {
+		return defaultSoMarkPollTimeout
+	}
+	d, err := time.ParseDuration(raw)
+	if err != nil || d <= 0 {
+		return defaultSoMarkPollTimeout
+	}
+	return d
+}
+
+// soMarkStatus is the classified state of an async task under SoMark's
+// explicit status model.
+type soMarkStatus int
+
+const (
+	soMarkStatusInProgress soMarkStatus = iota
+	soMarkStatusSuccess
+	soMarkStatusFailed
+	soMarkStatusUnknown
+)
+
+// classifySoMarkStatus maps a raw status onto SoMark's explicit state model:
+// only the documented in-progress states keep polling, SUCCESS/FAILED are
+// terminal, and anything else is a protocol error rather than an implicit
+// "keep polling until the deadline". An empty status lands here too.
+func classifySoMarkStatus(status string) soMarkStatus {
+	switch strings.ToUpper(strings.TrimSpace(status)) {
+	case "SUCCESS":
+		return soMarkStatusSuccess
+	case "WAITING", "QUEUING", "QUEUEING", "PENDING", "CONVERTING", "PROCESSING", "RUNNING":
+		return soMarkStatusInProgress
+	case "FAILED", "FAILURE", "CANCELED", "CANCELLED", "ERROR":
+		return soMarkStatusFailed
+	}
+	return soMarkStatusUnknown
+}
+
+// soMarkPollError marks whether a poll failure is worth retrying. Transport
+// errors, 429/5xx, non-JSON bodies (e.g. an HTML 502 from a proxy), and
+// business errors are transient. Business errors are deliberately retryable:
+// SoMark returns the same code (e.g. 1133) both for a task that is not visible
+// yet ("task not found") and for a genuinely bad request ("invalid PDF"), so
+// trusting them as terminal would abort the parse on a task that is still
+// being registered.
+type soMarkPollError struct {
+	err       error
+	transient bool
+}
+
+func (e *soMarkPollError) Error() string { return e.err.Error() }
+func (e *soMarkPollError) Unwrap() error { return e.err }
+
+func soMarkTransientError(err error) error { return &soMarkPollError{err: err, transient: true} }
+func soMarkTerminalError(err error) error  { return &soMarkPollError{err: err} }
+
+// soMarkPoll polls /parse/async_check until the task reaches a terminal state,
+// the deadline expires, or ctx is cancelled. SoMark submission is asynchronous
+// (POST /parse/async), so a single check almost never sees SUCCESS.
 func soMarkPoll(ctx context.Context, baseURL, taskID, apiKey string) (map[string]any, error) {
-	pollCtx, cancel := context.WithTimeout(ctx, soMarkPollTimeout)
+	// context.WithTimeout yields the earlier of this budget and a caller
+	// deadline, so a tighter caller context is honoured as-is.
+	pollCtx, cancel := context.WithTimeout(ctx, soMarkPollTimeout())
 	defer cancel()
-	ticker := time.NewTicker(soMarkPollInterval)
-	defer ticker.Stop()
+
+	wait := func() error {
+		select {
+		case <-pollCtx.Done():
+			return pollCtx.Err()
+		case <-time.After(soMarkPollInterval):
+			return nil
+		}
+	}
+
+	// The task is queued by definition right after submit, so an immediate
+	// check would spend a request on a status that cannot have moved yet.
+	if err := wait(); err != nil {
+		return nil, soMarkPollDeadlineError(taskID, "", err)
+	}
+
+	failures := 0
+	lastStatus := ""
 	for {
-		form := url.Values{"task_id": {taskID}}
-		if apiKey != "" {
-			form.Set("api_key", apiKey)
-		}
-		req, err := http.NewRequestWithContext(pollCtx, http.MethodPost, baseURL+"/parse/async_check", strings.NewReader(form.Encode()))
+		result, status, err := soMarkPollOnce(pollCtx, baseURL, taskID, apiKey)
 		if err != nil {
-			return nil, fmt.Errorf("parser: SoMark poll request: %w", err)
-		}
-		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-		resp, err := common.GetSSRFHTTPClient().Do(req)
-		if err != nil {
-			if pollCtx.Err() != nil {
-				return nil, fmt.Errorf("parser: timed out waiting for SoMark task %s: %w", taskID, pollCtx.Err())
+			var pollErr *soMarkPollError
+			if !errors.As(err, &pollErr) || !pollErr.transient {
+				return nil, err
 			}
-			return nil, fmt.Errorf("parser: SoMark poll: %w", err)
-		}
-		raw, readErr := io.ReadAll(resp.Body)
-		_ = resp.Body.Close()
-		if readErr != nil {
-			return nil, fmt.Errorf("parser: SoMark read poll: %w", readErr)
-		}
-		var payload struct {
-			Code    int            `json:"code"`
-			Message string         `json:"message"`
-			Data    map[string]any `json:"data"`
-		}
-		if err = json.Unmarshal(raw, &payload); err != nil {
-			return nil, fmt.Errorf("parser: SoMark decode poll: %w", err)
-		}
-		if payload.Code != 0 {
-			return nil, fmt.Errorf("parser: SoMark poll business error code=%d message=%s", payload.Code, payload.Message)
-		}
-		status, _ := payload.Data["status"].(string)
-		switch strings.ToUpper(status) {
-		case "SUCCESS":
-			result, _ := payload.Data["result"].(map[string]any)
-			if result == nil {
-				return nil, fmt.Errorf("parser: SoMark SUCCESS without result")
+			failures++
+			if failures >= maxSoMarkPollFailures {
+				return nil, fmt.Errorf("parser: SoMark task %s: %w (after %d consecutive transient failures)", taskID, err, failures)
 			}
-			return result, nil
-		case "QUEUING", "PENDING", "RUNNING", "PROCESSING":
-			select {
-			case <-pollCtx.Done():
-				return nil, fmt.Errorf("parser: timed out waiting for SoMark task %s; last status=%s: %w", taskID, status, pollCtx.Err())
-			case <-ticker.C:
+		} else {
+			failures = 0
+			lastStatus = status
+			if result != nil {
+				return result, nil
 			}
-		default:
-			return nil, fmt.Errorf("parser: SoMark task %s status=%s", taskID, status)
 		}
+		if err := wait(); err != nil {
+			return nil, soMarkPollDeadlineError(taskID, lastStatus, err)
+		}
+	}
+}
+
+// soMarkPollDeadlineError distinguishes a cancelled poll from one that ran out
+// of budget, so the caller can tell "user went away" from "SoMark too slow".
+func soMarkPollDeadlineError(taskID, lastStatus string, err error) error {
+	if errors.Is(err, context.Canceled) {
+		return fmt.Errorf("parser: SoMark task %s cancelled: %w", taskID, err)
+	}
+	return fmt.Errorf("parser: SoMark task %s timed out (last status=%q): %w", taskID, lastStatus, err)
+}
+
+// soMarkPollOnce performs a single /parse/async_check. On success it returns
+// the result map; while the task is in progress it returns the raw status and
+// a nil result. Errors say whether they are transient (retry) or terminal.
+func soMarkPollOnce(ctx context.Context, baseURL, taskID, apiKey string) (result map[string]any, status string, err error) {
+	form := url.Values{"task_id": {taskID}}
+	if apiKey != "" {
+		form.Set("api_key", apiKey)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/parse/async_check", strings.NewReader(form.Encode()))
+	if err != nil {
+		return nil, "", soMarkTerminalError(fmt.Errorf("parser: SoMark poll request: %w", err))
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := common.GetSSRFHTTPClient().Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			// The caller's context, not the network, ended the request.
+			return nil, "", soMarkTerminalError(fmt.Errorf("parser: SoMark poll: %w", err))
+		}
+		return nil, "", soMarkTransientError(fmt.Errorf("parser: SoMark poll: %w", err))
+	}
+	raw, readErr := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+	if readErr != nil {
+		return nil, "", soMarkTransientError(fmt.Errorf("parser: SoMark read poll: %w", readErr))
+	}
+	if resp.StatusCode == http.StatusTooManyRequests || resp.StatusCode >= http.StatusInternalServerError {
+		return nil, "", soMarkTransientError(fmt.Errorf("parser: SoMark poll: HTTP %d", resp.StatusCode))
+	}
+	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
+		return nil, "", soMarkTerminalError(fmt.Errorf("parser: SoMark poll: HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(raw))))
+	}
+	var payload struct {
+		Code    int            `json:"code"`
+		Message string         `json:"message"`
+		Data    map[string]any `json:"data"`
+	}
+	if err = json.Unmarshal(raw, &payload); err != nil {
+		return nil, "", soMarkTransientError(fmt.Errorf("parser: SoMark decode poll: %w", err))
+	}
+	if payload.Code != 0 {
+		return nil, "", soMarkTransientError(fmt.Errorf("parser: SoMark poll business error code=%d message=%s", payload.Code, payload.Message))
+	}
+	status, _ = payload.Data["status"].(string)
+	switch classifySoMarkStatus(status) {
+	case soMarkStatusSuccess:
+		result, _ = payload.Data["result"].(map[string]any)
+		if result == nil {
+			// A SUCCESS without result is a service hiccup worth another poll.
+			return nil, status, soMarkTransientError(fmt.Errorf("parser: SoMark SUCCESS without result"))
+		}
+		return result, status, nil
+	case soMarkStatusInProgress:
+		return nil, status, nil
+	case soMarkStatusFailed:
+		return nil, status, soMarkTerminalError(fmt.Errorf("parser: SoMark task %s failed status=%s", taskID, status))
+	default:
+		return nil, status, soMarkTerminalError(fmt.Errorf("parser: SoMark task %s returned unknown status %q", taskID, status))
 	}
 }
 

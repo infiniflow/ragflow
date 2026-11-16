@@ -18,8 +18,19 @@ import (
 	"github.com/signintech/gopdf"
 )
 
+// withSoMarkPollInterval shortens the poll interval for the duration of a test
+// so poll-loop cases do not spend real seconds sleeping. Tests in this package
+// run sequentially, so mutating the package variable is safe.
+func withSoMarkPollInterval(t *testing.T, d time.Duration) {
+	t.Helper()
+	prev := soMarkPollInterval
+	soMarkPollInterval = d
+	t.Cleanup(func() { soMarkPollInterval = prev })
+}
+
 func TestPDFParser_ParseWithResult_SoMarkJSONIntegration(t *testing.T) {
 	withSSRFBypass(t)
+	withSoMarkPollInterval(t, time.Millisecond)
 	var submitSeen bool
 	var pollSeen bool
 	pollCount := 0
@@ -208,6 +219,7 @@ func TestSoMarkItemsRejectInvalidPageIdx(t *testing.T) {
 
 func TestPDFParser_ParseWithResult_SoMarkJSONCarriesPositions(t *testing.T) {
 	withSSRFBypass(t)
+	withSoMarkPollInterval(t, time.Millisecond)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case "/parse/async":
@@ -503,5 +515,160 @@ func TestSoMarkPagePointSizesStopsAtParentCycle(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("soMarkPagePointSizes hung on a self-referencing /Parent")
+	}
+}
+
+// soMarkPollServer serves /parse/async_check from a scripted sequence of
+// responses and reports how many polls were made. Once the sequence is
+// exhausted the last response repeats, so "always failing" is one entry.
+func soMarkPollServer(t *testing.T, responses ...func(w http.ResponseWriter, poll int)) (*httptest.Server, *int) {
+	t.Helper()
+	polls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/parse/async_check" {
+			http.NotFound(w, r)
+			return
+		}
+		polls++
+		idx := polls - 1
+		if idx >= len(responses) {
+			idx = len(responses) - 1
+		}
+		responses[idx](w, polls)
+	}))
+	t.Cleanup(server.Close)
+	return server, &polls
+}
+
+func soMarkStatusResponse(status string) func(http.ResponseWriter, int) {
+	return func(w http.ResponseWriter, _ int) {
+		_, _ = w.Write([]byte(`{"code":0,"data":{"status":"` + status + `"}}`))
+	}
+}
+
+func soMarkSuccessResponse(w http.ResponseWriter, _ int) {
+	_, _ = w.Write([]byte(`{"code":0,"data":{"status":"SUCCESS","result":{"outputs":{"json":{"pages":[]}}}}}`))
+}
+
+func TestSoMarkPollRetriesTransientFailures(t *testing.T) {
+	withSSRFBypass(t)
+	withSoMarkPollInterval(t, time.Millisecond)
+	server, polls := soMarkPollServer(t,
+		func(w http.ResponseWriter, _ int) {
+			w.WriteHeader(http.StatusBadGateway)
+			_, _ = w.Write([]byte("<html>502 Bad Gateway</html>"))
+		},
+		func(w http.ResponseWriter, _ int) {
+			_, _ = w.Write([]byte(`{"code":1133,"message":"task not found"}`))
+		},
+		soMarkSuccessResponse,
+	)
+	result, err := soMarkPoll(t.Context(), server.URL, "task-1", "")
+	if err != nil {
+		t.Fatalf("soMarkPoll: %v", err)
+	}
+	if result == nil || *polls != 3 {
+		t.Fatalf("result=%v polls=%d, want success after 3 polls", result, *polls)
+	}
+}
+
+func TestSoMarkPollFailsAfterConsecutiveTransientFailures(t *testing.T) {
+	withSSRFBypass(t)
+	withSoMarkPollInterval(t, time.Millisecond)
+	server, polls := soMarkPollServer(t, func(w http.ResponseWriter, _ int) {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	})
+	_, err := soMarkPoll(t.Context(), server.URL, "task-1", "")
+	if err == nil || !strings.Contains(err.Error(), "consecutive transient failures") {
+		t.Fatalf("error = %v, want consecutive transient failure", err)
+	}
+	if *polls != maxSoMarkPollFailures {
+		t.Fatalf("polls = %d, want %d", *polls, maxSoMarkPollFailures)
+	}
+}
+
+func TestSoMarkPollPollsDocumentedInProgressStatuses(t *testing.T) {
+	withSSRFBypass(t)
+	withSoMarkPollInterval(t, time.Millisecond)
+	server, polls := soMarkPollServer(t,
+		soMarkStatusResponse("WAITING"),
+		soMarkStatusResponse("QUEUING"),
+		soMarkStatusResponse("CONVERTING"),
+		soMarkStatusResponse("PROCESSING"),
+		soMarkSuccessResponse,
+	)
+	result, err := soMarkPoll(t.Context(), server.URL, "task-1", "")
+	if err != nil {
+		t.Fatalf("soMarkPoll: %v", err)
+	}
+	if result == nil || *polls != 5 {
+		t.Fatalf("result=%v polls=%d, want success after 5 polls", result, *polls)
+	}
+}
+
+func TestSoMarkPollFailedStatusFailsFast(t *testing.T) {
+	withSSRFBypass(t)
+	withSoMarkPollInterval(t, time.Millisecond)
+	server, polls := soMarkPollServer(t, soMarkStatusResponse("FAILED"))
+	_, err := soMarkPoll(t.Context(), server.URL, "task-1", "")
+	if err == nil || !strings.Contains(err.Error(), "failed status=FAILED") {
+		t.Fatalf("error = %v, want failed status", err)
+	}
+	if *polls != 1 {
+		t.Fatalf("polls = %d, want 1 (no retry on a terminal status)", *polls)
+	}
+}
+
+func TestSoMarkPollRejectsUnknownStatus(t *testing.T) {
+	withSSRFBypass(t)
+	withSoMarkPollInterval(t, time.Millisecond)
+	server, polls := soMarkPollServer(t, soMarkStatusResponse("MYSTERY"))
+	_, err := soMarkPoll(t.Context(), server.URL, "task-1", "")
+	if err == nil || !strings.Contains(err.Error(), "unknown status") {
+		t.Fatalf("error = %v, want unknown status protocol error", err)
+	}
+	if *polls != 1 {
+		t.Fatalf("polls = %d, want 1 (unknown status is a protocol error, not in-progress)", *polls)
+	}
+}
+
+func TestSoMarkPollRejectsEmptyStatus(t *testing.T) {
+	withSSRFBypass(t)
+	withSoMarkPollInterval(t, time.Millisecond)
+	server, _ := soMarkPollServer(t, func(w http.ResponseWriter, _ int) {
+		_, _ = w.Write([]byte(`{"code":0,"data":{}}`))
+	})
+	_, err := soMarkPoll(t.Context(), server.URL, "task-1", "")
+	if err == nil || !strings.Contains(err.Error(), `unknown status ""`) {
+		t.Fatalf("error = %v, want empty-status protocol error", err)
+	}
+}
+
+func TestSoMarkPollHonorsConfiguredTimeout(t *testing.T) {
+	withSSRFBypass(t)
+	withSoMarkPollInterval(t, time.Millisecond)
+	t.Setenv("SOMARK_POLL_TIMEOUT", "20ms")
+	server, _ := soMarkPollServer(t, soMarkStatusResponse("PROCESSING"))
+	_, err := soMarkPoll(t.Context(), server.URL, "task-1", "")
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("error = %v, want timeout", err)
+	}
+}
+
+func TestSoMarkPollTimeoutFallsBackOnMalformedEnv(t *testing.T) {
+	t.Setenv("SOMARK_POLL_TIMEOUT", "not-a-duration")
+	if got := soMarkPollTimeout(); got != defaultSoMarkPollTimeout {
+		t.Fatalf("soMarkPollTimeout() = %v, want default %v", got, defaultSoMarkPollTimeout)
+	}
+	t.Setenv("SOMARK_POLL_TIMEOUT", "")
+	if got := soMarkPollTimeout(); got != defaultSoMarkPollTimeout {
+		t.Fatalf("empty SOMARK_POLL_TIMEOUT = %v, want default %v", got, defaultSoMarkPollTimeout)
+	}
+}
+
+func TestSoMarkPollTimeoutReadsEnv(t *testing.T) {
+	t.Setenv("SOMARK_POLL_TIMEOUT", "90s")
+	if got := soMarkPollTimeout(); got != 90*time.Second {
+		t.Fatalf("soMarkPollTimeout() = %v, want 90s", got)
 	}
 }
