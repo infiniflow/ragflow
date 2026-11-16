@@ -20,10 +20,11 @@ func TestAgentTemplateExtractorsUseModularParams(t *testing.T) {
 	// DSL component, so only the former must have a matching form.
 	dirs := []struct {
 		path        string
+		pattern     string
 		requireForm bool
 	}{
-		{filepath.Join("..", "..", "agent", "templates"), true},
-		{filepath.Join("template"), false},
+		{filepath.Join("..", "..", "agent", "templates"), "*.json", true},
+		{filepath.Join("template"), builtinTemplatePrefix + "*.json", false},
 	}
 	legacyKeys := []string{"field_name", "prompts", "sys_prompt", "tenant_llm_id"}
 	modularKeys := []string{"keywords", "questions", "tags", "summary", "metadata"}
@@ -65,7 +66,7 @@ func TestAgentTemplateExtractorsUseModularParams(t *testing.T) {
 
 	seen := 0
 	for _, dir := range dirs {
-		files, err := filepath.Glob(filepath.Join(dir.path, "*.json"))
+		files, err := filepath.Glob(filepath.Join(dir.path, dir.pattern))
 		if err != nil {
 			t.Fatalf("glob %s: %v", dir.path, err)
 		}

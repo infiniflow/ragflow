@@ -3,7 +3,9 @@ package pipeline
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+	"testing/fstest"
 )
 
 func TestRegistryLoadsSummaries(t *testing.T) {
@@ -264,5 +266,70 @@ func TestLoadBuiltinDSL_UnknownFails(t *testing.T) {
 	_, err := LoadBuiltinDSL("nonexistent")
 	if err == nil {
 		t.Fatal("LoadBuiltinDSL(nonexistent) = nil, want error")
+	}
+}
+
+func TestRegistryAddTemplatesMergesAndSorts(t *testing.T) {
+	registry, err := NewRegistryFromFS(fstest.MapFS{
+		"ingestion_pipeline_general.json": {Data: []byte(`{"title":{"en":"General"},"dsl":{"components":{}}}`)},
+	}, ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	extra := &BuiltinPipeline{
+		BuiltinPipelineMeta: BuiltinPipelineMeta{ParserID: "alpha", Title: "Alpha", Description: "Additional pipeline", Filename: "ingestion_pipeline_alpha.json"},
+		DSL:                 map[string]any{"components": map[string]any{"File": map[string]any{}}},
+	}
+	if err := registry.addTemplates([]*BuiltinPipeline{
+		{BuiltinPipelineMeta: BuiltinPipelineMeta{ParserID: "zeta"}},
+		extra,
+		{BuiltinPipelineMeta: BuiltinPipelineMeta{ParserID: "book"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"general", "book", "alpha", "zeta"}
+	if got := registry.Refs(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("Refs() = %v, want %v", got, want)
+	}
+	list := registry.List()
+	if list.Total != 4 || len(list.BuiltinPipelines) != 4 {
+		t.Fatalf("List() = %#v", list)
+	}
+	if got := list.BuiltinPipelines[2]; !reflect.DeepEqual(*got, extra.BuiltinPipelineMeta) {
+		t.Fatalf("listed metadata = %#v, want %#v", got, extra.BuiltinPipelineMeta)
+	}
+	got, ok := registry.Get("alpha")
+	if !ok || !reflect.DeepEqual(got, extra) {
+		t.Fatalf("Get(alpha) = %#v, %v; want %#v", got, ok, extra)
+	}
+}
+
+func TestRegistryAddTemplatesRejectsDuplicateIDs(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		ids  []string
+	}{
+		{"builtin collision", []string{"general"}},
+		{"contribution collision", []string{"extra", "extra"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			registry, err := NewRegistryFromFS(fstest.MapFS{
+				"ingestion_pipeline_general.json": {Data: []byte(`{"title":{"en":"General"},"dsl":{"components":{}}}`)},
+			}, ".")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var additions []*BuiltinPipeline
+			for _, id := range tc.ids {
+				additions = append(additions, &BuiltinPipeline{BuiltinPipelineMeta: BuiltinPipelineMeta{ParserID: id, Title: "Replacement"}})
+			}
+			if err := registry.addTemplates(additions); err == nil {
+				t.Fatal("duplicate parser_id was accepted")
+			}
+			original, ok := registry.Get("general")
+			if !ok || original.Title != "General" {
+				t.Fatalf("builtin template was replaced: %#v", original)
+			}
+		})
 	}
 }
