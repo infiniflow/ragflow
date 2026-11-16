@@ -435,6 +435,57 @@ func TestKosa8Provider_LongTimeoutStreams(t *testing.T) {
 	}
 }
 
+func TestKosa8Provider_HostWithoutStreamedTimeoutTimesInTheSandbox(t *testing.T) {
+	t.Parallel()
+	f, srv := newFakeKosa8(t)
+	p := newTestKosa8Provider(t, srv, map[string]any{"timeout": 300})
+	ctx := context.Background()
+	inst, err := p.CreateInstance(ctx, "python")
+	if err != nil {
+		t.Fatal(err)
+	}
+	refuse := func(w http.ResponseWriter, _ map[string]any) {
+		writeJSON(w, http.StatusNotImplemented, map[string]any{"error": "not_available", "message": "timeout_s on a streamed exec is not available on this sandbox's host yet"})
+	}
+	done := func(exit int) func(http.ResponseWriter, map[string]any) {
+		return func(w http.ResponseWriter, _ map[string]any) {
+			w.Header().Set("Content-Type", "application/x-ndjson")
+			_, _ = fmt.Fprintf(w, "{\"done\":true,\"exit\":%d}\n", exit)
+		}
+	}
+	f.mu.Lock()
+	f.execAnswers = []func(http.ResponseWriter, map[string]any){refuse, done(0), done(143)}
+	f.mu.Unlock()
+
+	for i, want := range []int{0, 143} {
+		res, err := p.ExecuteCode(ctx, inst, "print('x')", "python", 200, nil)
+		if err != nil {
+			t.Fatalf("ExecuteCode %d: %v", i, err)
+		}
+		// A 143 well before the deadline is the command's own exit.
+		if res.ExitCode != want {
+			t.Errorf("ExecuteCode %d: exit %d, want %d", i, res.ExitCode, want)
+		}
+	}
+	cmds := f.commands()
+	if len(cmds) != 4 {
+		t.Fatalf("exec calls = %d, want 4 (mkdir, refused, two fallbacks)", len(cmds))
+	}
+	if cmds[1]["timeout_s"] != float64(200) {
+		t.Errorf("first streamed body = %v", cmds[1])
+	}
+	// The refusal is remembered: the next command goes straight to the fallback.
+	for _, body := range cmds[2:] {
+		if _, ok := body["timeout_s"]; ok || body["stream"] != true {
+			t.Errorf("fallback body = %v", body)
+		}
+		cmd := cmdOf(body)
+		if len(cmd) < 6 || cmd[0] != "sh" || !strings.Contains(cmd[2], `timeout "$t" "$@"; exit $?`) || cmd[4] != "200" || cmd[5] != "sh" {
+			t.Errorf("fallback cmd = %q", cmd)
+		}
+	}
+}
+
 func TestKosa8Provider_HostWithoutFilesAPIUsesExec(t *testing.T) {
 	t.Parallel()
 	f, srv := newFakeKosa8(t)

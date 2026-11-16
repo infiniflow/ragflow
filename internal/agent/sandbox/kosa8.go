@@ -44,6 +44,7 @@ import (
 	"path"
 	"ragflow/internal/common"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -76,6 +77,16 @@ const (
 // no working-directory field.
 var kosa8InWorkdir = []string{"sh", "-c", `cd -- "$1" || exit 1; shift; exec "$@"`, "ragflow"}
 
+// kosa8Timed runs a command under the sandbox's own `timeout` (GNU or
+// busybox), for hosts that refuse timeout_s on a streamed exec. It runs
+// as a child of the shell, not in its place: the shell can be the
+// container's PID 1, and a PID 1 without a handler ignores SIGTERM.
+var kosa8Timed = []string{"sh", "-c", `t=$1; shift; if command -v timeout >/dev/null 2>&1; then timeout "$t" "$@"; exit $?; fi; exec "$@"`, "ragflow"}
+
+// kosa8StreamGrace is how long past its timeout a streamed command is
+// waited for before the client gives up on it.
+const kosa8StreamGrace = 30 * time.Second
+
 type kosa8Instance struct {
 	sandboxID     string
 	remoteWorkDir string
@@ -101,7 +112,10 @@ type Kosa8Provider struct {
 	mu          sync.RWMutex
 	initialized bool
 	filesAPI    bool
-	instances   map[string]kosa8Instance
+	// noStreamTimeout is set once a host refuses timeout_s on a
+	// streamed exec (HTTP 501); commands are then timed in the sandbox.
+	noStreamTimeout bool
+	instances       map[string]kosa8Instance
 }
 
 // kosa8APIError is an error answered by the kosa8 API. Code is the
@@ -497,7 +511,7 @@ type kosa8ExecResult struct {
 func (p *Kosa8Provider) exec(ctx context.Context, sandboxID string, argv []string, timeoutSec int) (*kosa8ExecResult, error) {
 	body := map[string]any{"cmd": argv, "timeout_s": timeoutSec}
 	if timeoutSec > kosa8BufferedExecLimit {
-		return p.execStreamed(ctx, sandboxID, body)
+		return p.execLong(ctx, sandboxID, argv, timeoutSec)
 	}
 	callCtx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSec+30)*time.Second)
 	defer cancel()
@@ -513,6 +527,44 @@ func (p *Kosa8Provider) exec(ctx context.Context, sandboxID string, argv []strin
 		return nil, errors.New("kosa8: command ended without an exit status")
 	}
 	return &kosa8ExecResult{stdout: answer.Stdout, stderr: answer.Stderr, exit: *answer.Exit}, nil
+}
+
+// execLong runs a command past the buffered limit as a streamed exec.
+// A host that refuses timeout_s there (HTTP 501) gets the command
+// without it, wrapped in kosa8Timed, and the client stops waiting
+// kosa8StreamGrace after the deadline.
+func (p *Kosa8Provider) execLong(ctx context.Context, sandboxID string, argv []string, timeoutSec int) (*kosa8ExecResult, error) {
+	p.mu.RLock()
+	timed := !p.noStreamTimeout
+	p.mu.RUnlock()
+	if timed {
+		res, err := p.execStreamed(ctx, sandboxID, map[string]any{"cmd": argv, "timeout_s": timeoutSec})
+		var apiErr *kosa8APIError
+		if !errors.As(err, &apiErr) || apiErr.Status != http.StatusNotImplemented || !strings.Contains(apiErr.Message, "timeout_s") {
+			return res, err
+		}
+		p.mu.Lock()
+		p.noStreamTimeout = true
+		p.mu.Unlock()
+	}
+	cmd := append(slices.Clone(kosa8Timed), strconv.Itoa(timeoutSec))
+	cmd = append(cmd, argv...)
+	deadline := time.Duration(timeoutSec) * time.Second
+	callCtx, cancel := context.WithTimeout(ctx, deadline+kosa8StreamGrace)
+	defer cancel()
+	started := time.Now()
+	res, err := p.execStreamed(callCtx, sandboxID, map[string]any{"cmd": cmd})
+	if err != nil {
+		if ctx.Err() == nil && callCtx.Err() != nil {
+			return nil, &kosa8APIError{Status: http.StatusGatewayTimeout, Code: "exec_timeout", Message: "command did not end after its timeout"}
+		}
+		return nil, err
+	}
+	// GNU timeout exits 124; busybox's ends the command with SIGTERM (143).
+	if (res.exit == 124 || res.exit == 143) && time.Since(started) >= deadline {
+		return nil, &kosa8APIError{Status: http.StatusGatewayTimeout, Code: "exec_timeout", Message: "command timed out"}
+	}
+	return res, nil
 }
 
 // execStreamed reads NDJSON frames: {stream, data: base64} while the
