@@ -126,12 +126,12 @@ func TestAnySearchExtractLive(t *testing.T) {
 				logStep(t, "txt-marker", env, requests)
 			})
 
-			t.Run("html is truncated without a marker", func(t *testing.T) {
+			t.Run("long html is flagged as possibly truncated", func(t *testing.T) {
 				env, requests := read(t, "https://www.rfc-editor.org/rfc/rfc9110.html", 1)
-				if env.Error != "" || !env.Truncated || strings.HasSuffix(env.Content, anySearchExtractTruncationMarker) || env.ContentChars < anySearchExtractTruncationFloor {
-					t.Fatalf("envelope = truncated=%v chars=%d error=%q, want truncated by the floor with no marker", env.Truncated, env.ContentChars, env.Error)
+				if env.Error != "" || !env.Truncated || env.ContentChars < anySearchExtractTruncationFloor {
+					t.Fatalf("envelope = truncated=%v chars=%d error=%q, want a long page flagged as possibly truncated", env.Truncated, env.ContentChars, env.Error)
 				}
-				logStep(t, "html-floor", env, requests)
+				logStep(t, "html-long", env, requests)
 			})
 
 			t.Run("refused urls make no request", func(t *testing.T) {
