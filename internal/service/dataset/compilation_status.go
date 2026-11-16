@@ -99,28 +99,20 @@ func (d *DatasetService) GetDatasetCompilationStatus(ctx context.Context, datase
 }
 
 func countCompilationStatusEntries(db *gorm.DB, table, datasetID, kind string) (int, error) {
-	query := db.Table(table).Where("dataset_id = ?", datasetID)
 	if kind == "" {
-		var count int64
-		err := query.Count(&count).Error
-		return int(count), err
+		return dao.CountCompilationStatusEntries(db, table, datasetID)
 	}
-	rows, err := query.Select("variants", "task_types").Rows()
+	entries, err := dao.ListCompilationStatusEntries(db, table, datasetID)
 	if err != nil {
 		return 0, err
 	}
-	defer rows.Close()
 	count := 0
-	for rows.Next() {
-		var entry entity.KnowledgeCompileEntry
-		if err := db.ScanRows(rows, &entry); err != nil {
-			return 0, err
-		}
+	for _, entry := range entries {
 		if compilationStatusEntryMatches(entry, kind) {
 			count++
 		}
 	}
-	return count, rows.Err()
+	return count, nil
 }
 
 func compilationStatusEntryMatches(entry entity.KnowledgeCompileEntry, kind string) bool {
