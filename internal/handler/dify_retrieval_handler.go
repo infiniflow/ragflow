@@ -28,6 +28,7 @@ import (
 	"strings"
 
 	"ragflow/internal/common"
+	"ragflow/internal/compliance"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -212,6 +213,10 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
+	if err := compliance.ValidateQuestion(ctx, req.Query); err != nil {
+		common.Respond(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		return
+	}
 	kb, err := h.kbSvc.GetKnowledgebaseByID(ctx, req.KnowledgeID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
