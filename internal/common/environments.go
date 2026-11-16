@@ -365,6 +365,12 @@ const (
 	// ingestor.page_concurrency config key and is itself overridden by the
 	// --ingestor-page-concurrency CLI flag.
 	EnvIngestorPageConcurrency = "RAGFLOW_INGESTOR_PAGE_CONCURRENCY"
+	// EnvIngestorTier restricts which ingestion lanes an ingestor consumes
+	// (high/medium/low). It is overridden by the --ingestor-tier CLI flag and
+	// defaults to the default (low) lane when unset. The accepted values are
+	// edition-specific: the community build accepts only the default lane, the
+	// enterprise build accepts its full high/medium/low set.
+	EnvIngestorTier = "RAGFLOW_INGESTOR_TIER"
 	// EnvDeepDocInferenceCPUCores bounds the CPU-core budget N for DeepDoc
 	// in-process inference (0 = all cores). It overrides the
 	// ingestor.inference_cpu_cores config key and is itself overridden by the
