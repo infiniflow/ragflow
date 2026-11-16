@@ -1231,7 +1231,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       thinking: 'Thinking',
       thinkingMode: 'Thinking',
       thought: 'Thought',
-      thinkingDefault: 'System default (disabled)',
+      thinkingDefault: 'System default',
       thinkingEnabled: 'Enabled',
       thinkingDisabled: 'Disabled',
       thinkingLevelNone: 'Naive',
