@@ -494,15 +494,14 @@ func (n *NatsEngine) pullLane(ctx context.Context, tier common.Tier, messageCoun
 	return resultMessages, nil
 }
 
-// PullMessages fetches up to messageCount messages, draining lanes in the
-// edition's configured priority order. It stops as soon as the batch is full.
-func (n *NatsEngine) PullMessages(ctx context.Context, messageCount int) ([]common.TaskHandle, error) {
-	if messageCount < 1 || messageCount > common.MaxManualPullMessages {
-		return nil, fmt.Errorf("message count must be between 1 and %d", common.MaxManualPullMessages)
-	}
+// pullMessagesFromLanes drains the given lanes in priority order until the
+// batch is full, the caller's deadline is spent, or cancellation arrives. It
+// holds the validation and error handling shared by both public pull entry
+// points so the tier-aware and whole-queue paths cannot drift apart.
+func (n *NatsEngine) pullMessagesFromLanes(ctx context.Context, lanes []common.Tier, messageCount int) ([]common.TaskHandle, error) {
 	// Fail fast on a half-initialized engine before the deadline requirement,
-	// so an uninitialized engine always reports "not properly initialized"
-	// regardless of the caller's context (mirrors PublishTask/ShowMessageQueue).
+	// so an uninitialized engine reports "not properly initialized" instead
+	// of a deadline error (mirrors PublishTask/ShowMessageQueue).
 	if _, err := n.consumerHandle(defaultTier()); err != nil {
 		return nil, err
 	}
@@ -511,7 +510,7 @@ func (n *NatsEngine) PullMessages(ctx context.Context, messageCount int) ([]comm
 	}
 
 	result := make([]common.TaskHandle, 0, messageCount)
-	for _, tier := range tierOrder {
+	for _, lane := range lanes {
 		if err := ctx.Err(); err != nil {
 			if errors.Is(err, context.Canceled) {
 				nackAll(result)
@@ -520,7 +519,7 @@ func (n *NatsEngine) PullMessages(ctx context.Context, messageCount int) ([]comm
 			break // DeadlineExceeded: budget spent, return what we have
 		}
 		remaining := messageCount - len(result)
-		handles, err := n.pullLane(ctx, tier, remaining)
+		handles, err := n.pullLane(ctx, lane, remaining)
 		if err != nil {
 			if errors.Is(err, context.Canceled) {
 				nackAll(result)
@@ -538,6 +537,15 @@ func (n *NatsEngine) PullMessages(ctx context.Context, messageCount int) ([]comm
 		}
 	}
 	return result, nil
+}
+
+// PullMessages fetches up to messageCount messages, draining lanes in the
+// edition's configured priority order. It stops as soon as the batch is full.
+func (n *NatsEngine) PullMessages(ctx context.Context, messageCount int) ([]common.TaskHandle, error) {
+	if messageCount < 1 || messageCount > common.MaxManualPullMessages {
+		return nil, fmt.Errorf("message count must be between 1 and %d", common.MaxManualPullMessages)
+	}
+	return n.pullMessagesFromLanes(ctx, tierOrder, messageCount)
 }
 
 // isExpiredFetchErr reports whether err means the caller's deadline ran out
@@ -624,8 +632,8 @@ func (n *NatsEngine) PullMessage(ctx context.Context) (common.TaskHandle, error)
 
 // PullMessagesForTier fetches up to messageCount messages, but only from the
 // lanes the given ingestor tier is allowed to consume (see ingestorLanes),
-// draining them in the edition's priority order (tierOrder) and stopping as
-// soon as the batch is full. An ingestor tier whose lane set is unknown (e.g.
+// draining them in priority order and stopping as soon as the batch is full.
+// An ingestor tier whose lane set is unknown (e.g.
 // an enterprise-only tier name in the community build) is rejected. In the
 // community build the only tier is default, so this is equivalent to
 // PullMessages.
@@ -637,52 +645,7 @@ func (n *NatsEngine) PullMessagesForTier(ctx context.Context, tier common.Tier, 
 	if err != nil {
 		return nil, err
 	}
-	// Fail fast on a half-initialized engine before the deadline requirement,
-	// so an uninitialized engine always reports "not properly initialized"
-	// regardless of the caller's context (mirrors PullMessages/PublishTask).
-	if _, err := n.consumerHandle(defaultTier()); err != nil {
-		return nil, err
-	}
-	if _, ok := ctx.Deadline(); !ok {
-		return nil, errors.New("pull messages context must have a deadline")
-	}
-
-	allowed := make(map[common.Tier]struct{}, len(lanes))
-	for _, l := range lanes {
-		allowed[l] = struct{}{}
-	}
-
-	result := make([]common.TaskHandle, 0, messageCount)
-	for _, lane := range tierOrder {
-		if _, ok := allowed[lane]; !ok {
-			continue
-		}
-		if err := ctx.Err(); err != nil {
-			if errors.Is(err, context.Canceled) {
-				nackAll(result)
-				return nil, err
-			}
-			break // DeadlineExceeded: budget spent, return what we have
-		}
-		remaining := messageCount - len(result)
-		handles, err := n.pullLane(ctx, lane, remaining)
-		if err != nil {
-			if errors.Is(err, context.Canceled) {
-				nackAll(result)
-				return nil, err
-			}
-			if ctx.Err() != nil {
-				break
-			}
-			nackAll(result)
-			return nil, err
-		}
-		result = append(result, handles...)
-		if len(result) >= messageCount {
-			break
-		}
-	}
-	return result, nil
+	return n.pullMessagesFromLanes(ctx, lanes, messageCount)
 }
 
 // PullMessageForTier returns one task handle from PullMessagesForTier. A nil

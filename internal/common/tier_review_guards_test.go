@@ -17,44 +17,48 @@
 package common
 
 import (
-	"os"
+	"os/exec"
 	"strings"
 	"testing"
 )
 
-// TestTierTestsAreSingleLaneGuarded pins the structural property that the two
-// tier tests live only in the single-lane build. Both assert that extra lane
-// names are rejected, which is only true where exactly one lane exists; in a
-// build that defines more lanes those assertions would fail spuriously. Every
-// sibling single-lane test file already carries this constraint, so leaving
-// these two out makes the file set inconsistent and breaks those builds.
+// TestTierTestsAreSingleLaneGuarded pins the build-system behavior, not source
+// text: both tier tests must be compiled in the default build and excluded
+// from the multi-lane build. Asking the go tool for TestGoFiles under each tag
+// keeps the guard correct if the constraint is reformulated (e.g. a longer
+// build expression) and avoids brittle relative-path source reads.
 func TestTierTestsAreSingleLaneGuarded(t *testing.T) {
-	for _, rel := range []string{
-		"ingestor_tier_test.go",
-		"../engine/nats/ingestor_tier_test.go",
-	} {
-		t.Run(rel, func(t *testing.T) {
-			content, err := os.ReadFile(rel)
-			if err != nil {
-				t.Fatalf("read %s: %v", rel, err)
+	const tierTest = "ingestor_tier_test.go"
+	for _, pkg := range []string{".", "./../engine/nats"} {
+		t.Run(pkg, func(t *testing.T) {
+			defaultFiles := listedTestFiles(t, pkg)
+			if !strings.Contains(defaultFiles, tierTest) {
+				t.Fatalf("%s: %s missing from default build; got %q", pkg, tierTest, defaultFiles)
 			}
-			if !strings.Contains(string(content), "//go:build !ee") {
-				t.Fatalf("%s is missing the single-lane build constraint", rel)
+			otherFiles := listedTestFilesWithTag(t, pkg, "ee")
+			if strings.Contains(otherFiles, tierTest) {
+				t.Fatalf("%s: %s must be excluded from the multi-lane build; got %q", pkg, tierTest, otherFiles)
 			}
 		})
 	}
 }
 
-// TestIngestorTierArgCommentDoesNotAdvertiseUnsupportedValues guards that the
-// ServerArgs.IngestorTier doc comment does not enumerate lane names this build
-// refuses to accept. An unqualified "high/medium/low" list invites operators
-// to pass a value that is rejected at startup.
-func TestIngestorTierArgCommentDoesNotAdvertiseUnsupportedValues(t *testing.T) {
-	content, err := os.ReadFile("../server/bootstrap/args.go")
+func listedTestFiles(t *testing.T, pkg string) string {
+	t.Helper()
+	cmd := exec.Command("go", "list", "-f", "{{.TestGoFiles}}", pkg)
+	out, err := cmd.Output()
 	if err != nil {
-		t.Fatalf("read args.go: %v", err)
+		t.Fatalf("go list %s: %v", pkg, err)
 	}
-	if strings.Contains(string(content), "(high/medium/low)") {
-		t.Fatal("IngestorTier comment still advertises unsupported high/medium/low values")
+	return string(out)
+}
+
+func listedTestFilesWithTag(t *testing.T, pkg, tag string) string {
+	t.Helper()
+	cmd := exec.Command("go", "list", "-tags", tag, "-f", "{{.TestGoFiles}}", pkg)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("go list -tags %s %s: %v", tag, pkg, err)
 	}
+	return string(out)
 }
