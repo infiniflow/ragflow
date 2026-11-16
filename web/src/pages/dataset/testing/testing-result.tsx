@@ -59,8 +59,8 @@ export function TestingResult({
   }, [data.doc_aggs]);
 
   return (
-    <article className="size-full flex flex-col">
-      <header className="flex-0 px-5 py-3 flex justify-between items-center">
+    <article className="size-full min-h-0 flex flex-col">
+      <header className="shrink-0 px-5 py-3 flex justify-between items-center">
         <h2 className="font-semibold text-base leading-8">
           {t('knowledgeDetails.testResults')}
         </h2>
@@ -80,7 +80,7 @@ export function TestingResult({
       <>
         {data.chunks?.length > 0 && !loading && (
           <>
-            <section className="px-5 pb-5 flex flex-col gap-5 overflow-auto scrollbar-thin min-h-0">
+            <section className="px-5 pb-5 flex-1 min-h-0 flex flex-col gap-5 overflow-auto scrollbar-thin">
               {data.chunks?.map((x) => (
                 <article key={x.id}>
                   <Card className="px-5 py-2.5 bg-transparent shadow-none">
@@ -103,7 +103,7 @@ export function TestingResult({
           </>
         )}
         {!data.chunks?.length && !loading && (
-          <div className="size-full p-5 flex justify-center items-center">
+          <div className="flex-1 min-h-0 p-5 flex justify-center items-center">
             <div>
               <Empty type={EmptyType.SearchData} iconWidth={80}>
                 <div className="text-text-secondary text-sm">
