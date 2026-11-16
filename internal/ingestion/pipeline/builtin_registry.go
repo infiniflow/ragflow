@@ -83,40 +83,9 @@ func NewRegistryFromDir(dir string) (*Registry, error) {
 
 func DefaultRegistry() (*Registry, error) {
 	defaultRegistryOnce.Do(func() {
-		registry, err := NewRegistryFromFS(builtinTemplateFS, "template")
-		if err != nil {
-			defaultRegistryErr = err
-			return
-		}
-		if err := registry.addTemplates(editionTemplates); err != nil {
-			defaultRegistryErr = err
-			return
-		}
-		defaultRegistry = registry
+		defaultRegistry, defaultRegistryErr = NewRegistryFromFS(builtinTemplateFS, "template")
 	})
 	return defaultRegistry, defaultRegistryErr
-}
-
-// editionTemplates holds builtin pipelines supplied by the running edition.
-// An edition appends to it from its init; the community build leaves it empty,
-// so its registry is exactly the embedded template set.
-var editionTemplates []*BuiltinPipeline
-
-// addTemplates merges templates into the registry and re-sorts the listing.
-func (r *Registry) addTemplates(templates []*BuiltinPipeline) error {
-	if len(templates) == 0 {
-		return nil
-	}
-	for _, tpl := range templates {
-		if _, exists := r.templates[tpl.ParserID]; exists {
-			return fmt.Errorf("duplicate parser_id %q", tpl.ParserID)
-		}
-		r.templates[tpl.ParserID] = tpl
-		meta := tpl.BuiltinPipelineMeta
-		r.list = append(r.list, &meta)
-	}
-	sortBuiltinList(r.list)
-	return nil
 }
 
 func NewRegistryFromFS(files fs.FS, dir string) (*Registry, error) {
@@ -124,12 +93,8 @@ func NewRegistryFromFS(files fs.FS, dir string) (*Registry, error) {
 	if err != nil {
 		return nil, err
 	}
-	registry := &Registry{
-		templates: make(map[string]*BuiltinPipeline, len(entries)),
-		aliases:   builtinAliases(),
-		list:      make([]*BuiltinPipelineMeta, 0, len(entries)),
-	}
-	parsed := make([]*BuiltinPipeline, 0, len(entries))
+	templates := make(map[string]*BuiltinPipeline)
+	list := make([]*BuiltinPipelineMeta, 0, len(entries))
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -146,17 +111,13 @@ func NewRegistryFromFS(files fs.FS, dir string) (*Registry, error) {
 		if err != nil {
 			return nil, err
 		}
-		parsed = append(parsed, tpl)
+		if _, exists := templates[tpl.ParserID]; exists {
+			return nil, fmt.Errorf("duplicate parser_id %q", tpl.ParserID)
+		}
+		templates[tpl.ParserID] = tpl
+		meta := tpl.BuiltinPipelineMeta
+		list = append(list, &meta)
 	}
-	if err := registry.addTemplates(parsed); err != nil {
-		return nil, err
-	}
-	return registry, nil
-}
-
-// sortBuiltinList orders the registry listing by the canonical parser order,
-// then by parser_id so an unknown template still has a stable position.
-func sortBuiltinList(list []*BuiltinPipelineMeta) {
 	sort.SliceStable(list, func(i, j int) bool {
 		iOrder, iKnown := builtinParserOrder[list[i].ParserID]
 		jOrder, jKnown := builtinParserOrder[list[j].ParserID]
@@ -168,6 +129,7 @@ func sortBuiltinList(list []*BuiltinPipelineMeta) {
 		}
 		return list[i].ParserID < list[j].ParserID
 	})
+	return &Registry{templates: templates, aliases: builtinAliases(), list: list}, nil
 }
 
 // builtinAliases returns the legacy parser_id -> canonical pipeline id
@@ -283,6 +245,8 @@ func parseTemplate(filename string, raw []byte) (*BuiltinPipeline, error) {
 func builtinRefFromFilename(filename string) string {
 	name := strings.TrimSuffix(filename, filepath.Ext(filename))
 	name = strings.TrimPrefix(name, builtinTemplatePrefix)
+	// The optional edition suffix identifies the asset, not the parser_id.
+	name = strings.TrimSuffix(name, "_ee")
 	if name == filename || name == "" {
 		return ""
 	}

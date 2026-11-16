@@ -269,22 +269,14 @@ func TestLoadBuiltinDSL_UnknownFails(t *testing.T) {
 	}
 }
 
-func TestRegistryAddTemplatesMergesAndSorts(t *testing.T) {
+func TestRegistryDiscoversTemplatesWithEditionSuffix(t *testing.T) {
 	registry, err := NewRegistryFromFS(fstest.MapFS{
-		"ingestion_pipeline_general.json": {Data: []byte(`{"title":{"en":"General"},"dsl":{"components":{}}}`)},
+		"ingestion_pipeline_general.json":  {Data: []byte(`{"title":{"en":"General"},"dsl":{"components":{}}}`)},
+		"ingestion_pipeline_zeta_ee.json":  {Data: []byte(`{"title":{"en":"Zeta"},"dsl":{"components":{}}}`)},
+		"ingestion_pipeline_alpha_ee.json": {Data: []byte(`{"title":{"en":"Alpha"},"description":{"en":"Additional pipeline"},"dsl":{"components":{"File":{}}}}`)},
+		"ingestion_pipeline_book.json":     {Data: []byte(`{"title":{"en":"Book"},"dsl":{"components":{}}}`)},
 	}, ".")
 	if err != nil {
-		t.Fatal(err)
-	}
-	extra := &BuiltinPipeline{
-		BuiltinPipelineMeta: BuiltinPipelineMeta{ParserID: "alpha", Title: "Alpha", Description: "Additional pipeline", Filename: "ingestion_pipeline_alpha.json"},
-		DSL:                 map[string]any{"components": map[string]any{"File": map[string]any{}}},
-	}
-	if err := registry.addTemplates([]*BuiltinPipeline{
-		{BuiltinPipelineMeta: BuiltinPipelineMeta{ParserID: "zeta"}},
-		extra,
-		{BuiltinPipelineMeta: BuiltinPipelineMeta{ParserID: "book"}},
-	}); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{"general", "book", "alpha", "zeta"}
@@ -295,40 +287,31 @@ func TestRegistryAddTemplatesMergesAndSorts(t *testing.T) {
 	if list.Total != 4 || len(list.BuiltinPipelines) != 4 {
 		t.Fatalf("List() = %#v", list)
 	}
-	if got := list.BuiltinPipelines[2]; !reflect.DeepEqual(*got, extra.BuiltinPipelineMeta) {
-		t.Fatalf("listed metadata = %#v, want %#v", got, extra.BuiltinPipelineMeta)
+	wantMeta := BuiltinPipelineMeta{ParserID: "alpha", Title: "Alpha", Description: "Additional pipeline", Filename: "ingestion_pipeline_alpha_ee.json"}
+	if got := list.BuiltinPipelines[2]; !reflect.DeepEqual(*got, wantMeta) {
+		t.Fatalf("listed metadata = %#v, want %#v", got, wantMeta)
 	}
 	got, ok := registry.Get("alpha")
-	if !ok || !reflect.DeepEqual(got, extra) {
-		t.Fatalf("Get(alpha) = %#v, %v; want %#v", got, ok, extra)
+	if !ok {
+		t.Fatal("normalized parser_id alpha is not registered")
+	}
+	if _, ok := got.DSL["components"].(map[string]any)["File"]; !ok {
+		t.Fatalf("additional template lost DSL: %#v", got.DSL)
+	}
+	if registry.IsValid("alpha_ee") {
+		t.Fatal("edition suffix leaked into the public parser_id")
 	}
 }
 
-func TestRegistryAddTemplatesRejectsDuplicateIDs(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		ids  []string
-	}{
-		{"builtin collision", []string{"general"}},
-		{"contribution collision", []string{"extra", "extra"}},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			registry, err := NewRegistryFromFS(fstest.MapFS{
-				"ingestion_pipeline_general.json": {Data: []byte(`{"title":{"en":"General"},"dsl":{"components":{}}}`)},
+func TestRegistryRejectsDuplicateNormalizedParserIDs(t *testing.T) {
+	for _, ref := range []string{"general", "extra"} {
+		t.Run(ref, func(t *testing.T) {
+			_, err := NewRegistryFromFS(fstest.MapFS{
+				"ingestion_pipeline_" + ref + ".json":    {Data: []byte(`{"title":{"en":"Original"},"dsl":{"components":{}}}`)},
+				"ingestion_pipeline_" + ref + "_ee.json": {Data: []byte(`{"title":{"en":"Replacement"},"dsl":{"components":{}}}`)},
 			}, ".")
-			if err != nil {
-				t.Fatal(err)
-			}
-			var additions []*BuiltinPipeline
-			for _, id := range tc.ids {
-				additions = append(additions, &BuiltinPipeline{BuiltinPipelineMeta: BuiltinPipelineMeta{ParserID: id, Title: "Replacement"}})
-			}
-			if err := registry.addTemplates(additions); err == nil {
-				t.Fatal("duplicate parser_id was accepted")
-			}
-			original, ok := registry.Get("general")
-			if !ok || original.Title != "General" {
-				t.Fatalf("builtin template was replaced: %#v", original)
+			if err == nil {
+				t.Fatal("two files defining the same parser_id were accepted")
 			}
 		})
 	}
