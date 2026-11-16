@@ -37,7 +37,7 @@ function AppSidebarContent() {
   } = useCompilationTemplateSidebarCollapse();
   const { pathname } = useLocation();
 
-  const collapsedSecondarySidebar = [
+  const activeSecondarySidebar = [
     {
       route: Routes.DatasetBase,
       collapsed: datasetSidebarCollapsed,
@@ -58,16 +58,21 @@ function AppSidebarContent() {
       collapsed: compilationTemplateSidebarCollapsed,
       onExpand: toggleCompilationTemplateSidebar,
     },
-  ].find(
-    (sidebar) => sidebar.collapsed && matchesPath(pathname, sidebar.route),
-  );
+    {
+      route: Routes.Memory,
+      collapsed: false,
+    },
+  ].find((sidebar) => matchesPath(pathname, sidebar.route));
+  const collapsedSecondarySidebar = activeSecondarySidebar?.collapsed
+    ? activeSecondarySidebar
+    : undefined;
 
   return (
     <aside
       className={cn(
         'flex h-full w-16 shrink-0 flex-col overflow-hidden bg-bg-base transition-[width]',
         !collapsed && 'md:w-60',
-        collapsed && 'border-r border-border-button',
+        collapsed && activeSecondarySidebar && 'border-r border-border-button',
       )}
     >
       <SidebarHeader
