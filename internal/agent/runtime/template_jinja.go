@@ -55,13 +55,23 @@ func ContainsJinjaSyntax(s string) bool {
 	if strings.Contains(s, "{#") {
 		return true
 	}
-	// Filter pipe: a '|' inside a {{...}} block. We don't need to
-	// track whether we're inside braces — the regex fast path
-	// would not match `{{x|filter}}` correctly because the '|'
-	// isn't part of the ref grammar, so any pipe anywhere is
-	// grounds for falling back to gonja.
-	if strings.ContainsRune(s, '|') {
-		return true
+	// Filter pipes only require the Jinja path when they occur inside
+	// an expression. A pipe in ordinary text must not change how the
+	// surrounding variable references are resolved.
+	for offset := 0; offset < len(s); {
+		start := strings.Index(s[offset:], "{{")
+		if start < 0 {
+			break
+		}
+		start += offset + 2
+		end := strings.Index(s[start:], "}}")
+		if end < 0 {
+			break
+		}
+		if strings.ContainsRune(s[start:start+end], '|') {
+			return true
+		}
+		offset = start + end + 2
 	}
 	return false
 }
@@ -100,16 +110,18 @@ func ResolveTemplateJinja(s string, state *CanvasState) (string, error) {
 }
 
 // stateToGonjaContext builds a map[string]any from a CanvasState
-// that gonja can resolve. Top-level keys are the cpn ids
-// (begin_0, llm_0, ...); values are the per-cpn output buckets
-// passed through unchanged so gonja can walk nested structures
-// with its native dot syntax ({{ agent_0.user.name }} resolves
-// to the bucket's "user" sub-map's "name" key).
+// that gonja can resolve. Top-level keys include cpn ids
+// (begin_0, llm_0, ...), plus the sys and env namespaces used by
+// the regex resolver. Per-cpn buckets and namespaces are passed
+// through so gonja can walk nested structures with dot syntax.
 func stateToGonjaContext(state *CanvasState) map[string]any {
-	ctx := make(map[string]any, len(state.Outputs))
+	ctx := make(map[string]any, len(state.Outputs)+2)
 	for cpnID, bucket := range state.Snapshot() {
 		ctx[cpnID] = bucket
 	}
+	sys, env, _ := state.SnapshotNamespaces()
+	ctx["sys"] = sys
+	ctx["env"] = env
 	return ctx
 }
 

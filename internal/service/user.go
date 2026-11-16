@@ -119,6 +119,10 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 	if !emailRegex.MatchString(req.Email) {
 		return nil, common.CodeOperatingError, fmt.Errorf("invalid email address: %s", req.Email)
 	}
+	req.Nickname = strings.TrimSpace(req.Nickname)
+	if err := common.ValidateNameRunes(req.Nickname, common.NicknameLimit); err != nil {
+		return nil, common.CodeDataError, err
+	}
 
 	existUser, err := s.userDAO.GetByEmail(ctx, dao.DB, req.Email)
 	if existUser != nil {
@@ -131,6 +135,12 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 	decryptedPassword, err := common.DecryptPassword(req.Password)
 	if err != nil {
 		return nil, common.CodeExceptionError, err
+	}
+	// Admission policies are checked by middleware before this service runs.
+	// This hook may consume a single-use proof, so reject duplicate accounts
+	// and invalid encrypted passwords before calling it.
+	if code, err := consumeRegistrationProof(ctx, req.Email); err != nil {
+		return nil, code, err
 	}
 
 	var hashedPassword string
@@ -225,6 +235,7 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 	rootFile := &entity.File{
 		ID:        fileID,
 		ParentID:  fileID,
+		UserID:    userID,
 		TenantID:  userID,
 		CreatedBy: userID,
 		Name:      "/",
@@ -239,10 +250,6 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 		if err = tx.Create(user).Error; err != nil {
 			return fmt.Errorf("failed to create user: %w", err)
 		}
-		if err = dao.ApplyDefaultTenantInviteEnabled(ctx, tx, tenant); err != nil {
-			return fmt.Errorf("failed to initialize tenant invitation setting: %w", err)
-		}
-
 		if err = tenantDAO.Create(ctx, tx, tenant); err != nil {
 			return fmt.Errorf("failed to create tenant: %w", err)
 		}
@@ -283,6 +290,9 @@ func (s *UserService) Login(ctx context.Context, req *LoginRequest) (*entity.Use
 	if user.Status == nil || *user.Status != "1" {
 		return nil, common.CodeForbidden, fmt.Errorf("user is disabled")
 	}
+	if code, err := validateLoginTenant(ctx, user); err != nil {
+		return nil, code, err
+	}
 
 	// Generate new access token
 	token := common.GenerateToken()
@@ -313,7 +323,7 @@ func (s *UserService) LoginByEmail(ctx context.Context, req *EmailLoginRequest) 
 
 	decryptedPassword, err := common.DecryptPassword(req.Password)
 	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("fail to crypt password")
+		return nil, common.CodeServerError, fmt.Errorf("fail to crypt password: %w", err)
 	}
 
 	if user.Password == nil || !s.VerifyPassword(*user.Password, decryptedPassword) {
@@ -322,6 +332,9 @@ func (s *UserService) LoginByEmail(ctx context.Context, req *EmailLoginRequest) 
 
 	if user.IsActive == "0" {
 		return nil, common.CodeForbidden, fmt.Errorf("this account has been disabled, please contact the administrator")
+	}
+	if code, err := validateLoginTenant(ctx, user); err != nil {
+		return nil, code, err
 	}
 
 	// Generate new access token
@@ -340,8 +353,19 @@ func (s *UserService) LoginByEmail(ctx context.Context, req *EmailLoginRequest) 
 	return user, common.CodeSuccess, nil
 }
 
-// GetUserByID get user by ID
-func (s *UserService) GetUserByID(ctx context.Context, id uint) (*UserResponse, common.ErrorCode, error) {
+func validateLoginTenant(ctx context.Context, user *entity.User) (common.ErrorCode, error) {
+	if _, err := ResolveLoginTenantID(ctx, user); err != nil {
+		var coded *common.CodedError
+		if errors.As(err, &coded) {
+			return coded.Code, err
+		}
+		return common.CodeServerError, err
+	}
+	return common.CodeSuccess, nil
+}
+
+// GetUserByID get user by ID (a 32-char hex UUID string).
+func (s *UserService) GetUserByID(ctx context.Context, id string) (*UserResponse, common.ErrorCode, error) {
 	user, err := s.userDAO.GetByID(ctx, dao.DB, id)
 	if err != nil {
 		return nil, common.CodeNotFound, err
@@ -689,7 +713,11 @@ func (s *UserService) UpdateUserSettings(ctx context.Context, user *entity.User,
 		}
 	}
 	if req.Nickname != nil {
-		user.Nickname = *req.Nickname
+		nickname := strings.TrimSpace(*req.Nickname)
+		if err := common.ValidateNameRunes(nickname, common.NicknameLimit); err != nil {
+			return common.CodeDataError, err
+		}
+		user.Nickname = nickname
 	}
 	if req.Avatar != nil {
 		// In Go version, avatar might be stored differently
@@ -777,7 +805,7 @@ func (s *UserService) resolveAPITokenIdentity(ctx context.Context, apiToken *ent
 		return nil, common.CodeUnauthorized, fmt.Errorf("API token is missing user identity")
 	}
 
-	user, err := s.userDAO.GetByIDString(ctx, dao.DB, *apiToken.UserID)
+	user, err := s.userDAO.GetByID(ctx, dao.DB, *apiToken.UserID)
 	if err != nil {
 		return nil, common.CodeUnauthorized, fmt.Errorf("user not found for API token")
 	}

@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -552,6 +553,9 @@ func Run(ctx context.Context, in Input) (string, error) {
 		inputMessageIDs[adk.GetMessageID(msg)] = true
 	}
 	final, evidence, runErr := consumeAgentEvents(ctx, iter, in.OnDelta, in.ToolCallCounts, in.ToolCallErrors, in.ToolErrorSamples)
+	if runErr != nil {
+		runErr = fmt.Errorf("agentic research failed: %w", withCancellationCause(ctx, runErr))
+	}
 
 	// Recovery, cheapest and most faithful first. A run that ended on a
 	// narration tail or on a bare tool call still holds the model's own answer
@@ -585,7 +589,7 @@ func Run(ctx context.Context, in Input) (string, error) {
 		// would reintroduce the failure this call exists to survive. The
 		// unbounded-work risk that WithoutCancel normally carries is covered
 		// by the bounded budget attached here.
-		synthCtx, synthCancel := context.WithTimeout(context.WithoutCancel(ctx), finalizeTimeout)
+		synthCtx, synthCancel := context.WithTimeoutCause(context.WithoutCancel(ctx), finalizeTimeout, fmt.Errorf("final answer synthesis timed out after %s", finalizeTimeout))
 		defer synthCancel()
 		synthCtx = tokenizer.WithUsagePhase(synthCtx, "synth")
 		synthMessages := in.Messages
@@ -593,15 +597,17 @@ func Run(ctx context.Context, in Input) (string, error) {
 			synthMessages = append([]*schema.Message{schema.SystemMessage(tmpl.Content)}, synthMessages...)
 		}
 		synth, synthErr := finalizeAnswer(synthCtx, synthModelFor(in), synthMessages, final, evidence)
+		if synthErr == nil && strings.TrimSpace(synth) == "" {
+			synthErr = errors.New("empty answer")
+		}
 		if synthErr != nil {
+			synthErr = fmt.Errorf("final answer synthesis failed: %w", withCancellationCause(synthCtx, synthErr))
 			// Without this an empty final is completely silent: the run looks
 			// healthy in every other log line and the user simply gets nothing.
 			common.WarnCtx(ctx, "agentic_rag: finalizeAnswer failed", zap.Error(synthErr))
-		} else if strings.TrimSpace(synth) == "" {
-			common.WarnCtx(ctx, "agentic_rag: finalizeAnswer returned an empty answer")
 		}
 		switch {
-		case synthErr == nil && strings.TrimSpace(synth) != "":
+		case synthErr == nil:
 			// Replace rather than append: appending leaves the reader with a
 			// narration paragraph followed by the real answer. The single
 			// answer emission at the end of Run carries it.
@@ -610,6 +616,8 @@ func Run(ctx context.Context, in Input) (string, error) {
 		case runErr == nil:
 			// Normal termination but synthesis failed — surface the reason.
 			runErr = synthErr
+		default:
+			runErr = fmt.Errorf("%w; %w", runErr, synthErr)
 		}
 	}
 
@@ -619,6 +627,16 @@ func Run(ctx context.Context, in Input) (string, error) {
 	// handed several competing answers.
 	emit(ctx, in.OnDelta, final, "")
 	return final, runErr
+}
+
+// Eino wraps ctx.Err(), which omits cancellation causes such as token exhaustion.
+func withCancellationCause(ctx context.Context, err error) error {
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		if cause := context.Cause(ctx); cause != nil && !errors.Is(err, cause) {
+			return fmt.Errorf("%w: %w", cause, err)
+		}
+	}
+	return err
 }
 
 var modelFailureRe = regexp.MustCompile(`exceeds max retries|failed on every model|short-circuited by failover cooldown|overloaded_error|status 529|insufficient balance`)
@@ -860,7 +878,12 @@ func emit(
 // expired mid-investigation, so inheriting that deadline would guarantee its
 // failure — q268 shipped a 60-char narration sentence because the final
 // synthesis call was itself killed by the budget that had just run out.
-const finalizeTimeout = 90 * time.Second
+//
+// A local LLM over a large evidence block can legitimately need more than the
+// default to produce its first token (#21829), so operators can raise the
+// budget with AGENTIC_FINALIZE_TIMEOUT (Go duration, e.g. "5m"); the default
+// stays 90s.
+var finalizeTimeout = durationFromEnv("AGENTIC_FINALIZE_TIMEOUT", 90*time.Second)
 
 // finalizeEvidenceMaxRunes caps the evidence block handed to the synthesis
 // call. Tool outputs accumulate 4KB each; without a cap a long investigation
@@ -877,8 +900,30 @@ const finalizeEvidenceMaxRunes = 40000
 // claimAnswerTimeout bounds the claims path as a whole: an answer call over
 // evidence that was already retrieved and, only if it produced an answer, its
 // verification. Both are non-streaming and need a fraction of the loop's budget -
-// and a hung provider must not eat the turn.
-const claimAnswerTimeout = 90 * time.Second
+// and a hung provider must not eat the turn. AGENTIC_CLAIM_ANSWER_TIMEOUT
+// raises it for a provider that legitimately needs longer than the 90s
+// default to start answering (#21829).
+var claimAnswerTimeout = durationFromEnv("AGENTIC_CLAIM_ANSWER_TIMEOUT", 90*time.Second)
+
+// durationFromEnv parses one Go-duration environment variable, falling back to
+// the default when unset or malformed so a typo cannot zero out a budget.
+func durationFromEnv(name string, fallback time.Duration) time.Duration {
+	if raw := strings.TrimSpace(os.Getenv(name)); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+			return d
+		}
+		// Package-level vars evaluate before main installs the logger, so
+		// WarnCtx would drop this warning on every startup path; stderr is
+		// the only channel that exists that early.
+		if common.Logger != nil {
+			common.WarnCtx(context.Background(), "agentic_rag: ignoring malformed duration override",
+				zap.String("env", name), zap.String("value", raw), zap.Duration("default", fallback))
+		} else {
+			fmt.Fprintf(os.Stderr, "agentic_rag: ignoring malformed duration override %s=%q, using default %s\n", name, raw, fallback)
+		}
+	}
+	return fallback
+}
 
 // synthModelFor picks the model that answers without tools: the caller's
 // dedicated synthesis instance when it supplied one, else the agent's own model.

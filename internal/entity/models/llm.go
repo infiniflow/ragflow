@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// Package models — EinoChatModel thin wrapper (Phase 2 P0, plan §2.11.6 D1).
+// Package models — EinoChatModel thin wrapper.
 //
 // Bridges the existing RAGFlow provider-specific *ChatModel (OpenAI, Anthropic,
 // Gemini, …) to eino's model.BaseChatModel / model.ToolCallingChatModel
@@ -400,9 +400,9 @@ func (m *EinoChatModel) generateOnce(ctx context.Context, cm *ChatModel, msgs []
 	if cm.ModelName == nil {
 		return nil, fmt.Errorf("models: EinoChatModel: nil model name")
 	}
-	// ChatWithMessages does not take a context.Context today — Phase 0 kept
-	// the signature stable. We log a guard so a future context-aware
-	// signature can be slotted in without changing call sites.
+	// ChatWithMessages does not take a context.Context today; this guard
+	// lets a future context-aware signature be slotted in without changing
+	// call sites.
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}

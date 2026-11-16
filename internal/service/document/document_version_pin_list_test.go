@@ -85,7 +85,7 @@ func TestUpdateDatasetDocumentListReturnsPinnedVersion(t *testing.T) {
 	pid := canvasID
 	pv := "v-pinned"
 	pt := 2
-	_, code, err := svc.UpdateDatasetDocument(documentTestContext(t.Context()), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	_, code, err := svc.UpdateDatasetDocument(documentTestContext(t.Context()), "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParseType:         &pt,
 		PipelineID:        &pid,
 		PipelineVersionID: &pv,

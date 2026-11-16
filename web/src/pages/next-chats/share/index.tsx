@@ -73,7 +73,7 @@ const ChatContainer = () => {
             ref={messageContainerRef}
           >
             <VirtualMessageList
-              className="w-full"
+              className="w-full pr-6"
               items={derivedMessages}
               virtualizer={virtualizer}
               renderItem={(message, i) => (
@@ -89,6 +89,8 @@ const ChatContainer = () => {
                     derivedMessages.length - 1 === i
                   }
                   index={i}
+                  isLast={derivedMessages.length - 1 === i}
+                  sendLoading={sendLoading}
                   clickDocumentButton={clickDocumentButton}
                   showLikeButton={false}
                   showLoudspeaker={false}

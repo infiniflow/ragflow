@@ -15,6 +15,7 @@
  */
 
 import message from '@/components/ui/message';
+import { TenantRole } from '@/ee/constants/team';
 import { ResponseGetType } from '@/interfaces/database/base';
 import { IToken } from '@/interfaces/database/chat';
 import { ITenantInfo } from '@/interfaces/database/dataset';
@@ -83,18 +84,27 @@ export const useFetchUserInfo = (): ResponseGetType<IUserInfo> => {
   return { data, loading };
 };
 
-export const useFetchTenantData = (): ResponseGetType<ITenantInfo> => {
+/**
+ * @param enabled Set to `false` where the tenant endpoint is not part of the
+ *   page's contract (e.g. the admin gateway, which serves every tenant and
+ *   has no `/users/me/models`). Defaults to `true`, so existing callers are
+ *   unchanged.
+ */
+export const useFetchTenantData = (
+  enabled: boolean = true,
+): ResponseGetType<ITenantInfo> => {
   const { data, isFetching: loading } = useQuery({
     queryKey: [UserSettingApiAction.TenantInfo],
     initialData: {},
     gcTime: 0,
+    enabled,
     queryFn: async () => {
       const { data: res } = await userService.getTenantInfo();
       if (res.code === 0) {
         return res.data ?? {};
       }
 
-      return res;
+      return res ?? {};
     },
   });
   return { data, loading };
@@ -206,6 +216,20 @@ export const useSaveSetting = (silent = false) => {
   return { data, loading, saveSetting: mutateAsync };
 };
 
+// The version endpoint returns either a bare string or `{ version: string }`
+// depending on the backend implementation. Normalize both so the sidebar
+// never attempts to render an object as a React child.
+const normalizeSystemVersion = (payload: unknown): string => {
+  if (typeof payload === 'string') {
+    return payload;
+  }
+  if (payload && typeof payload === 'object' && 'version' in payload) {
+    const { version } = payload as { version?: unknown };
+    return typeof version === 'string' ? version : '';
+  }
+  return '';
+};
+
 export const useFetchSystemVersion = () => {
   const [version, setVersion] = useState('');
   const [loading, setLoading] = useState(false);
@@ -215,7 +239,7 @@ export const useFetchSystemVersion = () => {
       setLoading(true);
       const { data } = await userService.getSystemVersion();
       if (data.code === 0) {
-        setVersion(data.data);
+        setVersion(normalizeSystemVersion(data.data));
         setLoading(false);
       }
     } catch (error) {
@@ -281,7 +305,7 @@ export const useRemoveSystemToken = () => {
           queryKey: [UserSettingApiAction.FetchSystemTokenList],
         });
       }
-      return data?.data ?? [];
+      return data?.code;
     },
   });
 
@@ -311,9 +335,10 @@ export const useCreateSystemToken = () => {
   return { data, loading, createToken: mutateAsync };
 };
 
-export const useListTenantUser = () => {
-  const { data: tenantInfo } = useFetchTenantInfo();
-  const tenantId = tenantInfo.tenant_id;
+export const useListTenantUser = (
+  tenantId: string,
+  excludePendingInvitations = false,
+) => {
   const {
     data,
     isFetching: loading,
@@ -323,6 +348,10 @@ export const useListTenantUser = () => {
     initialData: [],
     gcTime: 0,
     enabled: !!tenantId,
+    select: (data) =>
+      excludePendingInvitations
+        ? data.filter((x) => x.role !== TenantRole.Invite)
+        : data,
     queryFn: async () => {
       const { data } = await listTenantUser(tenantId);
 
@@ -380,6 +409,8 @@ export const useDeleteTenantUser = () => {
       });
       if (data.code === 0) {
         message.success(t('message.deleted'));
+        // Refresh the member table; the tenant list also changes when the
+        // deleted user is the current user quitting a team.
         queryClient.invalidateQueries({
           queryKey: [UserSettingApiAction.ListTenantUser],
         });
@@ -387,7 +418,7 @@ export const useDeleteTenantUser = () => {
           queryKey: [UserSettingApiAction.ListTenant],
         });
       }
-      return data?.data ?? [];
+      return data?.code;
     },
   });
 
@@ -409,7 +440,7 @@ export const useListTenant = () => {
     queryFn: async () => {
       const { data } = await listTenant();
 
-      return data?.data ?? [];
+      return Array.isArray(data?.data) ? data.data : [];
     },
   });
 
@@ -434,7 +465,7 @@ export const useAgreeTenant = () => {
           queryKey: [UserSettingApiAction.ListTenant],
         });
       }
-      return data?.data ?? [];
+      return data?.code;
     },
   });
 
@@ -472,11 +503,7 @@ export const useDeleteLangfuseConfig = () => {
     mutationFn: async () => {
       const { data } = await userService.deleteLangfuseConfig();
       if (data.code === 0) {
-        if (data.data) {
-          message.success(t('message.deleted'));
-        } else {
-          message.warning(t('message.noLangfuseConfigToDelete'));
-        }
+        message.success(t('message.deleted'));
       }
       return data?.code;
     },

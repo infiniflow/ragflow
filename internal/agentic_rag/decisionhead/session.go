@@ -112,6 +112,21 @@ func OpenSession(modelPath string) (*Session, error) {
 	return &Session{sess: sess}, nil
 }
 
+// openInProcess is the cgo branch of openScorer's URL-less path. It is the
+// only place outside session.go that names Session, so the !cgo fallback in
+// session_nocgo.go can replace it without the rest of the package caring.
+func openInProcess(modelPath string) (scorer, error) {
+	return OpenSession(modelPath)
+}
+
+// closeInProcess releases the underlying session when the scorer is the
+// in-process one; remote scorers hold nothing to free.
+func closeInProcess(m scorer) {
+	if s, ok := m.(*Session); ok {
+		s.Close()
+	}
+}
+
 // Poisoned reports whether a cancelled Run left the session unusable.
 func (s *Session) Poisoned() bool { return s.poisoned }
 

@@ -15,6 +15,7 @@
  */
 
 import '@tanstack/react-table';
+import type { RowData } from '@tanstack/react-table';
 declare module 'lodash';
 
 declare global {
@@ -22,9 +23,12 @@ declare global {
 }
 
 declare module '@tanstack/react-table' {
-  interface ColumnMeta {
+  // Type parameters must match the library declaration exactly for merging.
+  interface ColumnMeta<TData extends RowData, TValue> {
     headerClassName?: string;
     headerCellClassName?: string;
     cellClassName?: string;
+    colWidth?: string;
+    colClassName?: string;
   }
 }

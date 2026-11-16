@@ -111,7 +111,7 @@ func callGetArtifactGraph(t *testing.T, datasetID, query string) (int, artifactG
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/datasets/"+datasetID+"/artifacts/graph"+query, nil)
 	c, _ := gin.CreateTestContext(w)
-	c.Request = req.WithContext(permission.WithSubject(req.Context(), permission.Subject{UserID: "user-1", TenantID: "user-1"}))
+	c.Request = req.WithContext(permission.WithIdentity(req.Context(), "user-1", "user-1"))
 	c.Set("user", &entity.User{ID: "user-1"})
 	c.Params = gin.Params{{Key: "dataset_id", Value: datasetID}}
 	h := &DatasetArtifactHandler{

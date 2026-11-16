@@ -143,7 +143,11 @@ func (s *Scheduler) publishStartupTasks(ctx context.Context) error {
 
 		for _, task := range tasks {
 			if err = s.ScheduleTask(ctx, task); err != nil {
-				return err
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+				common.Warn("syncer scheduler startup task publish failed", zap.String("task_id", task.ID), zap.Error(err))
+				s.ScheduleTaskAfter(ctx, task.ID, 3*time.Second)
 			}
 		}
 		if len(tasks) < scheduledTaskStartupPageSize {

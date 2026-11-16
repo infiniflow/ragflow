@@ -54,13 +54,18 @@ func (s *Service) ListUsers(ctx context.Context, pageIndex, pageSize int, name, 
 
 func parseUserListOptions(page, pageSize int, keyword, status, direction, field string) (dao.UserListOptions, error) {
 	opts := dao.UserListOptions{Keyword: strings.TrimSpace(keyword), Limit: pageSize}
-	if page < 1 || pageSize < 1 {
+	// pageSize==0 means "unpaged": the handler only produces it from the
+	// omitted page_size default (an explicit page_size=0 is rejected there),
+	// and the DAO leaves the query unlimited when Limit is 0.
+	if page < 1 || pageSize < 0 {
 		return opts, fmt.Errorf("%w: page and page_size must be positive integers", errInvalidUserListQuery)
 	}
-	if page-1 > math.MaxInt/pageSize {
-		return opts, fmt.Errorf("%w: pagination offset is too large", errInvalidUserListQuery)
+	if pageSize > 0 {
+		if page-1 > math.MaxInt/pageSize {
+			return opts, fmt.Errorf("%w: pagination offset is too large", errInvalidUserListQuery)
+		}
+		opts.Offset = (page - 1) * pageSize
 	}
-	opts.Offset = (page - 1) * pageSize
 	status = strings.ToLower(strings.TrimSpace(status))
 	switch status {
 	case "":

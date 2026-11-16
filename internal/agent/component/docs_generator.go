@@ -278,7 +278,7 @@ func (d *DocsGenerator) Invoke(ctx context.Context, db *gorm.DB, inputs map[stri
 		})
 		mime = "text/markdown; charset=utf-8"
 	case "html":
-		payload = iow.WriteHTML(param.Content, iow.HTMLOptions{
+		payload = iow.WriteHTML(markdownToHTML(param.Content), iow.HTMLOptions{
 			HeaderText:    param.HeaderText,
 			FooterText:    param.FooterText,
 			WatermarkText: param.WatermarkText,
@@ -474,22 +474,11 @@ func formatExtension(format string) string {
 // 255-byte filename limit on a rune boundary, keeping the extension.
 // Returns "file.<ext>" when the resulting base is empty.
 func sanitizeFilename(raw, ext string) string {
-	const forbidden = `\/:*?"<>|`
 	const maxBase = 180
 	const maxBytes = 255
-	trimmed := strings.TrimSpace(raw)
-	// Strip control characters first; they're never valid in filenames.
-	var b strings.Builder
-	for _, r := range trimmed {
-		if r < 0x20 || r == 0x7f {
-			continue
-		}
-		if strings.ContainsRune(forbidden, r) {
-			r = '_'
-		}
-		b.WriteRune(r)
-	}
-	base := strings.Join(strings.Fields(b.String()), "_")
+	// Delegate control-char stripping and forbidden-char mapping to the
+	// shared component; collapse whitespace to a single underscore.
+	base := strings.Join(strings.Fields(utility.SanitizeFileNameComponent(raw)), "_")
 	if runes := []rune(base); len(runes) > maxBase {
 		base = string(runes[:maxBase])
 	}

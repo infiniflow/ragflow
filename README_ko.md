@@ -76,7 +76,7 @@
 
 [https://cloud.ragflow.io](https://cloud.ragflow.io)에서 저희 클라우드 서비스를 이용해 보세요.
 
-로컬 배포는 [자체 호스팅](#-자체-호스팅)을 참조하세요.
+로컬 배포는 [자체 호스팅](#-로컬-배포)을 참조하세요.
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -85,6 +85,7 @@
 
 ## 🔥 업데이트
 
+- 2026-11-06 RAGFlow 1.0.0을 출시했습니다.
 - 2026-09-29 RAGFlow 1.0.0-rc1을 출시했습니다.
 
 - 2026-09-10 사이트맵을 통한 웹 콘텐츠 수집을 추가했습니다.
@@ -93,15 +94,6 @@
 - 2026-07-02 Google BigQuery 데이터 소스 수집 및 증분 동기화를 추가했습니다.
 
 자세한 내용은 [전체 릴리스 노트](https://ragflow.io/docs/dev/release_notes)를 참조하세요.
-
-
-## 🎉 계속 지켜봐 주세요
-
-⭐️우리의 저장소를 즐겨찾기에 등록하여 흥미로운 새로운 기능과 업데이트를 최신 상태로 유지하세요! 모든 새로운 릴리스에 대한 즉시 알림을 받으세요! 🌟
-
-<div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
-</div>
 
 ## 🌟 주요 기능
 
@@ -187,7 +179,7 @@ Docker는 빠른 평가, 통합 테스트 및 프로덕션에 적합하고 소�
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc3
+   git checkout v1.0.0
    docker compose -f docker-compose.yml up -d
    ```
 

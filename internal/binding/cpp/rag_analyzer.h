@@ -100,8 +100,6 @@ protected:
 private:
     static constexpr float DENOMINATOR = 1000000;
 
-    static std::string StrQ2B(const std::string& input);
-
     // Fold Latin-1 Supplement / Latin Extended-A letters whose NFD
     // decomposition is one ASCII letter plus combining marks to that base
     // letter, preserving case (Š→S, ď→d). Letters without such a

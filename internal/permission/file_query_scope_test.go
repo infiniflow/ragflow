@@ -75,7 +75,7 @@ func TestFileQueryScopeFiltersInSQLAndReturnsBatchAccessMasks(t *testing.T) {
 
 	checker := newCommunityDatabaseChecker(db)
 	ctx := context.Background()
-	scope, err := checker.QueryScope(ctx, Subject{UserID: "reader", TenantID: "file-tenant"}, ScopeQuery{
+	scope, err := checker.QueryScope(WithIdentity(ctx, "reader", "file-tenant"), ScopeQuery{
 		Kind:      ResourceKindFile,
 		Parent:    ResourceRef{Kind: ResourceKindFolder, ID: "root"},
 		Operation: OperationRead,
@@ -98,7 +98,7 @@ func TestFileQueryScopeFiltersInSQLAndReturnsBatchAccessMasks(t *testing.T) {
 		{Kind: ResourceKindFile, ID: "reader-owned"},
 		{Kind: ResourceKindFile, ID: "team-linked"},
 	}
-	accesses, err := checker.FilterAccesses(ctx, Subject{UserID: "reader", TenantID: "file-tenant"}, refs, OperationRead)
+	accesses, err := checker.FilterAccesses(WithIdentity(ctx, "reader", "file-tenant"), refs, OperationRead)
 	if err != nil {
 		t.Fatalf("resolve page access masks: %v", err)
 	}

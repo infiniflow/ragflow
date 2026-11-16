@@ -1,5 +1,42 @@
 # RAGFlow Go implementation - Development Guide
 
+## API response helpers
+
+Pass response data directly to the helper:
+
+```go
+common.RespondSuccessList(c, items, "success")
+common.RespondSuccess(c, item, "success")
+common.RespondError(c, common.CodeBadRequest, "Missing name")
+```
+
+For HTTP 200, use `RespondSuccess` when the application code is `CodeSuccess`
+and `RespondError` otherwise. `RespondError` omits `data`. `Respond` takes the
+HTTP status before the application code for responses with other HTTP statuses:
+
+```go
+common.RespondSuccess(c, nil, "success")
+common.Respond(c, httpStatus, code, data, message)
+```
+
+The convenience helpers use HTTP 200. Pass an optional `int64` total directly to
+`RespondSuccessList` for pagination. Omit it when no total is available; an explicit
+zero remains present in the response. Use `ResponseOptions` with the other helpers
+for envelope metadata such as error details:
+
+```go
+common.RespondSuccessList(c, items, "success", total)
+common.Respond(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Missing name")
+```
+
+Use objects or lists for result data and plain nil for operation acknowledgments.
+The system version is returned as `gin.H{"version": version}`. Return chunk-deletion counts as
+`gin.H{"deleted_count": count}`. Callers determine success from the envelope code.
+`Respond` checks Go kinds using reflection and accepts structs, maps, slices,
+arrays, and pointers to those types. Other kinds and typed nils are silently
+omitted. Empty objects and lists remain present. The helper does not pre-encode
+data or validate its JSON shape; accepted types retain their custom JSON encoding.
+
 ## 1. Prepare dependencies
 
 ### 1.1 Install CMake and build RAGFlow on Ubuntu 24.04
@@ -87,7 +124,6 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 >
 > ```bash
 > RAGFLOW_DEPS="${HOME}/ragflow-native-libs"  # created by download_dev_deps.py
-> PLATFORM="linux_amd64"  # or darwin_amd64, linux_arm64, darwin_arm64
 > # Native libs are fetched for the *host* platform by download_dev_deps.py
 > # (override with RAGFLOW_TARGET_OS / RAGFLOW_TARGET_ARCH). ONNX Runtime static
 > # libs are published for linux-x86_64, linux-aarch64, osx-arm64 and
@@ -95,36 +131,44 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 > # so the production DeepDoc backend links on all four. On Linux the link force-pulls
 > # OrtGetApiBase and exports just it (--undefined=OrtGetApiBase + --dynamic-list,
 > # no --whole-archive) with -fuse-ld=lld + -lstdc++; on macOS (ld64) it uses
-> # -force_load + -export_dynamic + -lc++ instead, since ld64 has no GNU ld
-> # equivalents. The macOS path is written but NOT yet verified on real
-> # Apple-Silicon hardware — confirm the dlopen(NULL) resolution of OrtGetApiBase
-> # there. (待 Mac 验证)
+> # -u _OrtGetApiBase + -export_dynamic + -lc++ instead (using ld64's -u rather
+> # than -force_load to avoid pulling in unused objects from the static archive).
 >
 > # Resolve the version-stamped ORT archive path FIRST, in its own unquoted
 > # assignment: the shell does not expand `*` inside the double-quoted
 > # CGO_LDFLAGS below. If this lists more than one match, delete the stale
 > # version dir — build.sh refuses to link two ORT versions.
-> # The glob must pin the target platform: the extracted dir is
-> # onnxruntime-<os>-<arch>-static_lib-<version> (see ort_static_lib_prefix in
-> # build.sh). A bare */ would also match ORT built for another OS/arch in a
-> # shared cache. For linux_amd64 the prefix is onnxruntime-linux-x64-static_lib-;
-> # for linux_arm64 use onnxruntime-linux-aarch64-static_lib-; for macOS use
-> # onnxruntime-osx-arm64-static_lib- (darwin_arm64) or
-> # onnxruntime-osx-universal-static_lib- (darwin_amd64, Intel Macs).
-> ORT_A="$(ls ${RAGFLOW_DEPS}/onnxruntime/static_lib/onnxruntime-linux-x64-static_lib-*/lib/libonnxruntime.a)"
+> # Derive target platform and ORT prefix matching build.sh:
+> TARGET_OS="${RAGFLOW_TARGET_OS:-$(uname -s)}"
+> TARGET_ARCH="${RAGFLOW_TARGET_ARCH:-$(uname -m)}"
+> case "$TARGET_OS" in
+>   Linux|linux)   TARGET_OS="linux" ;;
+>   Darwin|darwin) TARGET_OS="darwin" ;;
+> esac
+> case "$TARGET_ARCH" in
+>   x86_64|amd64)  TARGET_ARCH="amd64" ;;
+>   arm64|aarch64) TARGET_ARCH="arm64" ;;
+> esac
+> PLATFORM="${TARGET_OS}_${TARGET_ARCH}"
+> case "$TARGET_OS-$TARGET_ARCH" in
+>   linux-amd64)   ORT_PREFIX="onnxruntime-linux-x64-static_lib-" ;;
+>   linux-arm64)   ORT_PREFIX="onnxruntime-linux-aarch64-static_lib-" ;;
+>   darwin-arm64)  ORT_PREFIX="onnxruntime-osx-arm64-static_lib-" ;;
+>   darwin-amd64)  ORT_PREFIX="onnxruntime-osx-universal-static_lib-" ;;
+>   *)             ORT_PREFIX="onnxruntime-*-static_lib-" ;;
+> esac
+> ORT_A="$(ls ${RAGFLOW_DEPS}/onnxruntime/static_lib/${ORT_PREFIX}*/lib/libonnxruntime.a)"
 >
-> # Link flags differ between Linux (GNU ld) and macOS (ld64). On macOS the
-> # path below is written but NOT yet verified on real Apple-Silicon hardware
-> # (see "待 Mac 验证" above) — prefer `build.sh` which derives the same flags.
-> if [ "$(uname -s)" = "Darwin" ]; then
->   ORT_LINK="-Wl,-export_dynamic"
->   for a in ${ORT_A}; do ORT_LINK="${ORT_LINK} -Wl,-force_load,${a}"; done
->   ORT_LINK="${ORT_LINK} -lc++"
+> # Link flags differ between Linux (GNU ld) and macOS (ld64).
+> # Prefer `build.sh` which derives the same flags automatically.
+> if [ "$TARGET_OS" = "darwin" ]; then
+>   ORT_LINK="-Wl,-export_dynamic -Wl,-u,_OrtGetApiBase ${ORT_A} -lc++"
 >   # System libs mirror setup_cgo_env in build.sh for darwin: the frameworks are
 >   # required by ONNX Runtime's Core ML / system integrations, and -liconv /
 >   # -lresolv back the string/network code paths the static archive references.
 >   SYS_LIBS="-framework CoreGraphics -framework CoreFoundation \
 >     -framework Security -framework SystemConfiguration \
+>     -framework Foundation \
 >     -liconv -lresolv -lm -lpthread -ldl -lutil -lc -lc++"
 > else
 >   # The binding reaches ORT with dlopen(NULL)+dlsym("OrtGetApiBase"), so
@@ -139,16 +183,54 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 >   SYS_LIBS="-fuse-ld=lld -lm -lpthread -ldl -lrt -lgcc_s -lutil -lc"
 > fi
 >
-> export CGO_CFLAGS="-I${RAGFLOW_DEPS}/office_oxide/include/office_oxide_c"
-> export CGO_LDFLAGS="\
->     ${RAGFLOW_DEPS}/office_oxide/lib/liboffice_oxide.a \
->     ${RAGFLOW_DEPS}/pdfium-static/lib/libpdfium.a \
->     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++.a \
->     ${RAGFLOW_DEPS}/pdfium-static/lib/libc++abi.a \
->     ${RAGFLOW_DEPS}/pdf_oxide/lib/${PLATFORM}/libpdf_oxide.a \
->     ${ORT_LINK} \
->     ${SYS_LIBS}"
+> # Native libs are version-keyed under <lib>/v<version>/ (one mounted cache can
+> # hold several versions at once), matching the layout download_dev_deps.py and
+> # build.sh resolve. Resolve each version from its single source of truth — NOT
+> # by glob + `head -1`, which silently pins the lexicographically-oldest version
+> # in the cache (e.g. v0.1.12 over the pinned v0.1.16, dropping PPT97 slide
+> # content). build.sh does exactly this in setup_cgo_env(); mirror it here.
+> # Run this snippet from the ragflow repo root (where go.mod lives).
+> source tools/scripts/native_lib_version.sh
+> REPO_ROOT="$(pwd)"
+> OFFICE_OXIDE_VERSION="$(go_module_version "github.com/yfedoseev/office_oxide/go" "$REPO_ROOT")"
+> PDFIUM_STATIC_VERSION="$(pdfium_static_version "$REPO_ROOT")"
+> PDF_OXIDE_VERSION="$(go_module_version "github.com/yfedoseev/pdf_oxide/go" "$REPO_ROOT")"
+>
+> OFFICE_OXIDE_PREFIX="${RAGFLOW_DEPS}/office_oxide/v${OFFICE_OXIDE_VERSION}"
+> PDFIUM_PREFIX="${RAGFLOW_DEPS}/pdfium-static/v${PDFIUM_STATIC_VERSION}"
+> PDF_OXIDE_PREFIX="${RAGFLOW_DEPS}/pdf_oxide/v${PDF_OXIDE_VERSION}"
+> # Keep the Go link cache keyed to PDFium contents, even for a reissued archive
+> # with the same version. Resolve the same linker paths as build.sh.
+> if PDFIUM_LINK_DIR="$(pdfium_static_link_dir "${PDFIUM_PREFIX}/lib" "$TARGET_OS" "${REPO_ROOT}/.cache/pdfium")"; then
+>   OFFICE_OXIDE_A="${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a"
+>   PDFIUM_A="${PDFIUM_LINK_DIR}/libpdfium.a"
+>   PDF_OXIDE_A="${PDF_OXIDE_PREFIX}/lib/${PLATFORM}/libpdf_oxide.a"
+>   # macOS PDFium uses the system libc++ provided by the flags above.
+>   PDFIUM_CXX_ARCHIVES=""
+>   if [ "$TARGET_OS" = "linux" ]; then
+>     PDFIUM_CXX_ARCHIVES="\"${PDFIUM_LINK_DIR}/libc++.a\" \"${PDFIUM_LINK_DIR}/libc++abi.a\""
+>   fi
+>
+>   # Derive the include dir from the resolved office_oxide archive: the shell does
+>   # not expand globs inside double quotes, so a literal
+>   # ".../office_oxide/v*/include/..." passed to CGO_CFLAGS would never resolve and
+>   # cgo would fail to find office_oxide.h on the first native compile.
+>   export CGO_CFLAGS="-I$(dirname "$(dirname "$OFFICE_OXIDE_A")")/include/office_oxide_c"
+>   export CGO_LDFLAGS="\
+>       ${OFFICE_OXIDE_A} \
+>       \"${PDFIUM_A}\" \
+>       ${PDFIUM_CXX_ARCHIVES} \
+>       ${PDF_OXIDE_A} \
+>       ${ORT_LINK} \
+>       ${SYS_LIBS}"
+> else
+>   unset CGO_CFLAGS CGO_LDFLAGS
+>   printf '%s\n' 'Could not prepare PDFium linker inputs. Run uv run tools/scripts/download_dev_deps.py.' >&2
+>   false
+> fi
 > ```
+>
+> When sourcing this block from a build script, check its exit status before invoking Go.
 >
 > All four native libraries are statically linked — no `LD_LIBRARY_PATH` or `-Wl,-rpath` needed.
 >
@@ -157,9 +239,8 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 > only symbol that must be visible process-wide is `OrtGetApiBase`: it is
 > force-pulled with `-Wl,--undefined=OrtGetApiBase` and exported via
 > `--dynamic-list` (no `--whole-archive`, so unreferenced kernels are dropped).
-> On macOS (ld64) the archives are instead pulled in with `-force_load` and
-> exported with `-export_dynamic`, since ld64 has no GNU ld equivalents; this
-> path is written but NOT yet verified on real Apple-Silicon hardware. In both
+> On macOS (ld64) `OrtGetApiBase` is force-pulled with `-Wl,-u,_OrtGetApiBase`
+> and exported with `-export_dynamic`. In both
 > cases `OrtGetApiBase` is resolved at runtime through `dlopen(NULL)`. The org
 > `onnxruntime_go` binding
 > (github.com/infiniflow/onnxruntime_go, the mirror of yalue/onnxruntime_go) only
@@ -171,23 +252,27 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 > Since `build.sh` (`build_go`) now **fails fast** when ORT is absent from
 > `CGO_LDFLAGS`, this breakage surfaces at build time instead of at runtime. If
 > you see `Error: ONNX Runtime static libraries are not linked`, run
-> `uv run tools/scripts/download_dev_deps.py` (or pre-seed
-> `/opt/ragflow-native-libs/onnxruntime` as the CI runner image does). There is
-> no ORT-free production build path — if ORT is absent the binary fails at
-> startup, so the remedy is always to seed the static lib above, never to build
-> without it.
+> `uv run tools/scripts/download_dev_deps.py` (or pre-seed the versioned user
+> cache at `${RAGFLOW_NATIVE_LIBS_DIR:-$HOME/ragflow-native-libs}/onnxruntime/static_lib
+> `; CI mounts the host cache into the builder). There is no ORT-free
+> production build path — if ORT is absent the binary fails at startup, so the
+> remedy is always to seed the static lib above, never to build without it.
 
-> **Note**: The ONNX Runtime native version is pinned in a few places that must
-> stay in sync. Bumping it in one spot and not the others fails the build with
+> **Note**: The ONNX Runtime native version is pinned in two places that must
+> stay in sync. Bumping one and not the other fails the build with
 > `Error: ONNX Runtime version is inconsistent`:
 > - `internal/common/environments.go` — `DeepDocORTVersion`
 > - `Dockerfile` — `ARG ORT_VERSION`
-> - `tools/scripts/download_dev_deps.py` — `ORT_VERSION` (used by the dev downloader to fetch the matching release; build.sh does not grep it, but it must match what gets linked)
+>
+> `build.sh` and `tools/scripts/download_dev_deps.py` derive the ORT version at
+> build/download time from `DeepDocORTVersion` in `environments.go` (the Go const
+> is the single source of truth), so the downloader has no separate `ORT_VERSION`
+> pin to edit. To upgrade ORT, edit the two entries above to the same version,
+> then run the check.
 >
 > `build.sh` runs this consistency check automatically before the Go build
 > (through `check_go_deps`) and fails fast on any mismatch. Run it on demand
-> with `./build.sh --check-ort-version`. To upgrade ORT, edit every entry above
-> to the same version, then run the check. The Python pip `onnxruntime==` pin in
+> with `./build.sh --check-ort-version`. The Python pip `onnxruntime==` pin in
 > `pyproject.toml` is versioned independently and is intentionally not part of
 > this check.
 
@@ -200,9 +285,10 @@ The image contains Go DeepDoc weights, tokenizer assets, and the BPE table. Deep
 >   published `onnxruntime-v<ver>-<target>.zip.sha256` sidecar. A local ZIP
 >   mismatch only emits a warning with the expected/actual SHA-256 and the
 >   refresh command (`rm -f <zip>` + `uv run tools/scripts/download_dev_deps.py`);
->   the build continues checking and linking the extracted static libraries. CI seeds
->   ORT from `/opt` and has no local zip, so the check is skipped there (the bake
->   is authoritative). This matters because the `onnxruntime_go` binding reaches
+>   the build continues checking and linking the extracted static libraries. On CI
+>   the version-keyed cache is mounted from the build host and no local ZIP is
+>   present, so the sha256 check is skipped there and the mounted cache seed is
+>   treated as authoritative. This matters because the `onnxruntime_go` binding reaches
 >   ORT only through the OrtApi function-pointer table
 >   (`ort_api->SessionGetInitializer*`), so a `.a` lacking a custom slot links
 >   successfully and only crashes at runtime — not at link time.

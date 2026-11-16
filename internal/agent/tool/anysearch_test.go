@@ -147,6 +147,63 @@ func TestAnySearch_KeyedSendsTrimmedBearer(t *testing.T) {
 	}
 }
 
+func TestAnySearch_FlightStatusParameters(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, params, departure, wantErr string
+	}{
+		{"airport omitted", `{"flight_number":"CA981"}`, "", ""},
+		{"airport empty", `{"flight_number":"CA981","departure":""}`, "", ""},
+		{"airport supplied", `{"flight_number":"CA981","departure":"PEK"}`, "PEK", ""},
+		{"flight missing", `{"departure":"PEK"}`, "", "flight_number"},
+		{"flight blank", `{"flight_number":"  "}`, "", "flight_number"},
+		{"flight null", `{"flight_number":null}`, "", "flight_number"},
+		{"airport null", `{"flight_number":"CA981","departure":null}`, "", "departure"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			helper, rec := anySearchTestServer(t, anySearchOK(`[]`))
+			out, err := NewAnySearchToolWith(helper, "").InvokableRun(t.Context(), `{"query":"CA981 flight status","tag":"travel.flight_status","params":`+tc.params+`}`)
+			if err != nil {
+				t.Fatal(err)
+			}
+			env := decodeAnySearchEnvelope(t, out)
+			if tc.wantErr != "" {
+				if !strings.Contains(env.Error, tc.wantErr) || len(rec.all()) != 0 {
+					t.Fatalf("want a %s parameter error without a request; result=%s requests=%d", tc.wantErr, out, len(rec.all()))
+				}
+				return
+			}
+			if env.Error != "" || len(rec.all()) != 1 {
+				t.Fatalf("result=%s requests=%d", out, len(rec.all()))
+			}
+			params := decodeAnySearchBody(t, rec.all()[0].Body)["params"].(map[string]any)
+			if params["flight_number"] != "CA981" || params["departure"] != tc.departure {
+				t.Fatalf("request params=%#v, want flight_number CA981 and departure %q", params, tc.departure)
+			}
+		})
+	}
+}
+
+func TestAnySearch_ReferencesUseSharedCitationIDs(t *testing.T) {
+	t.Parallel()
+	envelope := map[string]any{"queries": []any{map[string]any{"query": "RAGFlow", "results": []any{
+		map[string]any{"title": "RAGFlow", "url": "https://ragflow.io/", "content": "Native agent references."},
+	}}}}
+	search := NewAnySearchTool()
+	chunks, docs := search.BuildReferences(t.Context(), envelope)
+	if len(chunks) != 1 || len(docs) != 1 {
+		t.Fatalf("references=%#v docs=%#v", chunks, docs)
+	}
+	documentID, displayID := referenceIDs("https://ragflow.io/", "Native agent references.")
+	if chunks[0]["id"] != displayID || chunks[0]["chunk_id"] != documentID || chunks[0]["doc_id"] != documentID || docs[0]["doc_id"] != documentID {
+		t.Fatalf("reference IDs do not follow the shared citation contract: chunk=%#v doc=%#v", chunks[0], docs[0])
+	}
+	rendered := search.BuildComponentOutputs(envelope)["formalized_content"].(string)
+	if !strings.Contains(rendered, "ID: "+displayID) {
+		t.Fatalf("prompt has no shared display ID: %q", rendered)
+	}
+}
+
 func TestAnySearch_BodyMappingAndNodeDefaults(t *testing.T) {
 	t.Parallel()
 	cases := []struct {
@@ -808,11 +865,12 @@ func TestAnySearch_RealReactAgentRunsBatchAndDiscovery(t *testing.T) {
 
 func TestAnySearch_ModelResultBoundsEveryFieldButKeepsSmallOnes(t *testing.T) {
 	t.Parallel()
-	bigNested := map[string]any{"rows": []any{strings.Repeat("x", anySearchResultNestedBytes+1)}}
+	bigNested := map[string]any{"rows": []any{strings.Repeat("x", 2049)}}
 	small := map[string]any{"currency": "USD"}
-	out := anySearchModelResult(map[string]any{
+	longURL := "https://example.com/" + strings.Repeat("u", 5000)
+	out, _ := anySearchModelResult(map[string]any{
 		"title":     "  " + strings.Repeat("t", 5000) + "  ",
-		"url":       "https://example.com/" + strings.Repeat("u", 5000),
+		"url":       longURL,
 		"snippet":   "summary",
 		"content":   "",
 		"price":     json.Number("9007199254740993"),
@@ -821,10 +879,8 @@ func TestAnySearch_ModelResultBoundsEveryFieldButKeepsSmallOnes(t *testing.T) {
 		"small":     small,
 		"too_large": bigNested,
 	})
-	for _, key := range []string{"title", "url"} {
-		if got := utf8.RuneCountInString(out[key].(string)); got != anySearchResultTextRunes {
-			t.Errorf("%s has %d runes, want it capped at %d", key, got, anySearchResultTextRunes)
-		}
+	if got := utf8.RuneCountInString(out["title"].(string)); got != 5004 {
+		t.Errorf("title has %d runes, want the original 5004", got)
 	}
 	if out["snippet"] != "summary" || out["content"] != "" {
 		t.Errorf("snippet/content = %#v / %#v, want both kept as they are", out["snippet"], out["content"])
@@ -832,14 +888,110 @@ func TestAnySearch_ModelResultBoundsEveryFieldButKeepsSmallOnes(t *testing.T) {
 	if out["price"] != json.Number("9007199254740993") || out["listed"] != true {
 		t.Errorf("scalars changed: %#v", out)
 	}
-	if _, has := out["too_large"]; has {
-		t.Error("a nested value larger than the limit was kept")
+	if _, has := out["too_large"]; !has || out["url"] != longURL {
+		t.Error("structured fields or the URL were not preserved")
 	}
 	if _, has := out["small"]; !has {
 		t.Error("a small nested value was dropped")
 	}
 	if _, has := out["missing"]; !has {
 		t.Error("a null field was dropped")
+	}
+}
+
+func TestAnySearch_LongURLAndStructuredResultFidelity(t *testing.T) {
+	t.Parallel()
+	longURL := "https://example.com/" + strings.Repeat("x", 1800)
+	largeValue := strings.Repeat("a", 2148)
+	resultJSON, err := json.Marshal(map[string]any{"title": "Market", "url": longURL, "content": "Market result", "data": map[string]any{"details": largeValue}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	helper, _ := anySearchTestServer(t, anySearchOK("["+string(resultJSON)+"]"))
+	out, err := NewAnySearchToolWith(helper, "").InvokableRun(t.Context(), `{"query":"market","tag":"finance.quote","params":{"type":"stock"}}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := decodeAnySearchEnvelope(t, out)
+	if env.Error != "" || len(env.Queries) != 1 || len(env.Queries[0].Results) != 1 {
+		t.Fatalf("search result = %s", out)
+	}
+	result := env.Queries[0].Results[0]
+	if result["url"] != longURL {
+		t.Fatalf("URL was changed: got %d bytes, want %d", len(anySearchText(result["url"])), len(longURL))
+	}
+	data, ok := result["data"].(map[string]any)
+	if !ok || data["details"] != largeValue {
+		t.Fatalf("structured field was lost or changed: %#v", result["data"])
+	}
+}
+
+func TestAnySearch_OversizedStructuredResultReturnsError(t *testing.T) {
+	t.Parallel()
+	resultJSON, err := json.Marshal(map[string]any{"url": "https://example.com/", "content": "market", "data": map[string]any{"details": strings.Repeat("x", anySearchMaxQueryResultBytes)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	helper, _ := anySearchTestServer(t, anySearchOK("["+string(resultJSON)+"]"))
+	out, err := NewAnySearchToolWith(helper, "").InvokableRun(t.Context(), `{"query":"market"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := decodeAnySearchEnvelope(t, out)
+	if env.Error == "" || len(env.Queries) != 1 || env.Queries[0].Error == "" || len(env.Queries[0].Results) != 0 {
+		t.Fatalf("oversized data must report an error instead of returning a partial success: %s", out)
+	}
+}
+
+func TestAnySearch_ReportsTruncatedTextFields(t *testing.T) {
+	t.Parallel()
+	resultJSON, err := json.Marshal(map[string]any{"url": "https://example.com/", "title": strings.Repeat("t", 1600), "content": strings.Repeat("c", 1600), "snippet": strings.Repeat("s", 1600)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	helper, _ := anySearchTestServer(t, anySearchOK("["+string(resultJSON)+"]"))
+	out, err := NewAnySearchToolWith(helper, "").InvokableRun(t.Context(), `{"query":"q"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal([]byte(out), &decoded); err != nil {
+		t.Fatal(err)
+	}
+	query := decoded["queries"].([]any)[0].(map[string]any)
+	result := query["results"].([]any)[0].(map[string]any)
+	if len(result["title"].(string)) != 1600 || len(result["content"].(string)) != 1500 || len(result["snippet"].(string)) != 1500 {
+		t.Fatalf("non-text values or text bounds were not preserved: %s", out)
+	}
+	fields, ok := query["truncated_fields"].(map[string]any)
+	fieldList, hasFields := fields["0"].([]any)
+	if !ok || !hasFields || len(fieldList) != 2 || fieldList[0] != "content" || fieldList[1] != "snippet" {
+		t.Fatalf("missing truncation metadata: %s", out)
+	}
+}
+
+func TestAnySearch_BatchPreservesResultsWhenOneExceedsOutputLimit(t *testing.T) {
+	t.Parallel()
+	helper, _ := anySearchTestServer(t, func(w http.ResponseWriter, _ *http.Request, body []byte) {
+		request := decodeAnySearchBody(t, body)
+		result := map[string]any{"url": "https://example.com/", "content": "market"}
+		if request["query"] == "large" {
+			result["data"] = map[string]any{"details": strings.Repeat("x", anySearchMaxQueryResultBytes)}
+		}
+		resultJSON, err := json.Marshal(result)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		anySearchOK("["+string(resultJSON)+"]")(w, nil, nil)
+	})
+	out, err := NewAnySearchToolWith(helper, "").InvokableRun(t.Context(), `{"queries":[{"query":"large"},{"query":"small"}]}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	env := decodeAnySearchEnvelope(t, out)
+	if env.Error != "" || len(env.Queries) != 2 || env.Queries[0].Error == "" || len(env.Queries[0].Results) != 0 || env.Queries[1].Error != "" || len(env.Queries[1].Results) != 1 {
+		t.Fatalf("partial batch result = %s", out)
 	}
 }
 

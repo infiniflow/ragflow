@@ -42,7 +42,7 @@ import (
 func newChunkerByName(name string, params map[string]any) (runtime.Component, error) {
 	switch name {
 	case ComponentNameTokenChunker:
-		// The DSL contract (shared by the web UI and the Python runtime)
+		// The DSL contract (shared by the web UI and the runtime)
 		// expresses single-chunk mode as TokenChunker delimiter_mode "one";
 		// in Go that behaviour lives in the OneChunker component.
 		if mode, _ := params["delimiter_mode"].(string); mode == "one" {
@@ -92,9 +92,9 @@ func stringListFromAny(in []any) []string {
 
 // compileDelimPattern compiles a TokenChunker-style []string delimiter list.
 // Every non-empty entry is active, including bare (non-backtick) delimiters,
-// mirroring Python naive_merge / rag/nlp/delim where bare single-character
-// delimiters still split. Backtick-wrapped entries contribute their inner
-// content. invokeTextPayload decides whether an active delimiter yields one
+// and bare single-character delimiters still split the text. Backtick-wrapped
+// entries contribute their inner content. invokeTextPayload decides whether an
+// active delimiter yields one
 // chunk per segment (custom/backtick, no merge) or splits into paragraphs that
 // are merged by token size (bare). Canonical single-string parser_config.delimiter
 // Legacy single-string parsing is performed by GeneralChunker at its
@@ -125,21 +125,9 @@ func splitByDelim(text string, pattern *regexp.Regexp, keepDelim bool) []string 
 		return []string{text}
 	}
 	if !keepDelim {
-		// Drop mode: keep only the text between delimiters, skipping any
-		// delimiter that sits at the very start (no preceding text).
 		var out []string
-		cursor := 0
-		for _, idx := range idxs {
-			start, end := idx[0], idx[1]
-			if start == cursor {
-				cursor = end
-				continue
-			}
-			out = append(out, text[cursor:start])
-			cursor = end
-		}
-		if cursor < len(text) {
-			out = append(out, text[cursor:])
+		for _, part := range splitDroppedDelimiterRanges(len(text), idxs) {
+			out = append(out, text[part[0]:part[1]])
 		}
 		return out
 	}
@@ -157,6 +145,21 @@ func splitByDelim(text string, pattern *regexp.Regexp, keepDelim bool) []string 
 		out = append(out, tail)
 	}
 	return out
+}
+
+func splitDroppedDelimiterRanges(length int, matches [][]int) [][2]int {
+	var ranges [][2]int
+	cursor := 0
+	for _, match := range matches {
+		if match[0] > cursor {
+			ranges = append(ranges, [2]int{cursor, match[0]})
+		}
+		cursor = match[1]
+	}
+	if cursor < length {
+		ranges = append(ranges, [2]int{cursor, length})
+	}
+	return ranges
 }
 
 // foldWhitespaceSegments attaches blank runs to neighboring text without
@@ -353,21 +356,16 @@ func canonicalChunkText(ck schema.ChunkDoc) string {
 // keeps the source from colliding with ordinary chunk text.
 const mediaChunkIDPrefix = "\x00media:"
 
-// canonicalChunkID returns the deterministic chunk id: the single identity
-// used both as the MinIO object key and as ck["id"]. The id formula (ChunkID
-// over chunkIDSource) is centralized here, so the identity that feeds the
-// hash lives in exactly one place. The decorator in register.go re-derives
-// ck["id"] from the same already-finalized text as a fallback for chunks that
-// bypassed the streamed crop-upload path; the two routes cannot disagree
-// because a chunk is either stamped by crop-upload (and the decorator reuses
-// that id) or computed by the decorator fallback — never both. Position-only
-// title media instead reuses the coordinate-and-text id finalized after headings
-// are applied.
+// canonicalChunkID derives the crop/upload key from the canonical chunk source.
+// The decorator in register.go reuses stamped IDs or derives the same identity
+// from finalized text, media payloads and crop regions for chunks without a stamp.
+// Title-family media IDs also retain source identity when context or headings
+// give distinct captionless media the same text.
 func canonicalChunkID(docID string, ck schema.ChunkDoc) string {
-	// Title-family position-only media is stamped with both coordinates and
-	// finalized heading text. Keep that identity through crop uploads,
-	// including failed-upload retries.
-	if isMediaChunk(ck) && ck.ID != "" {
+	// A title-family captionless image can already carry a source/payload/body
+	// identity. Only the title crop bridge marks these finalized IDs; other
+	// chunkers may carry upstream IDs whose text they have since rewritten.
+	if ck.ID != "" && string(ck.Extra[titleMediaContextIDKey]) == "true" {
 		return ck.ID
 	}
 	return common.ChunkID(docID, chunkIDSource(ck))
@@ -452,14 +450,14 @@ func mediaChunkIdentity(image, imgID string, ref *entity.MediaRef) string {
 }
 
 // materializeMediaContext folds a media chunk's surrounding context into its
-// body and clears the two fields that carried it. Python's chunker emits the
+// body and clears the two fields that carried it. chunker emits the
 // same shape — its finalize builds remove_tag(context_above + text +
-// context_below) and drops the fields (rag/flow/chunker/token_chunker.py:343-
-// 359) — which is why Python persists the context inside the chunk body.
+// context_below) and drops the fields — which is why persists the context
+// inside the chunk body
 // Folding here also puts the context into the chunk id (ChunkID hashes the
-// body), matching Python's id, which hashes the context-bearing body.
+// body), matching id, which hashes the context-bearing body
 //
-// Tag stripping runs after the merge, as in Python: the payload was already
+// Tag stripping runs after the merge, as in : the payload was already
 // stripped by the chunker, so this only covers the context, which is collected
 // from neighbouring units.
 //

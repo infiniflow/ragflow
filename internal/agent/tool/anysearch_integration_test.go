@@ -24,6 +24,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"os"
 	"regexp"
 	"strings"
@@ -50,7 +51,7 @@ type anySearchLiveTransport struct {
 	seen []anySearchLiveRequest
 }
 
-var anySearchUUID = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+var anySearchLiveRequestID = regexp.MustCompile(`^([0-9a-fA-F]{32}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$`)
 
 func (tr *anySearchLiveTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	seen := anySearchLiveRequest{Method: req.Method, Path: req.URL.Path, RawQuery: req.URL.RawQuery}
@@ -76,7 +77,7 @@ func (tr *anySearchLiveTransport) RoundTrip(req *http.Request) (*http.Response, 
 	var reply struct {
 		RequestID string `json:"request_id"`
 	}
-	if json.Unmarshal(data, &reply) == nil && anySearchUUID.MatchString(reply.RequestID) &&
+	if json.Unmarshal(data, &reply) == nil && anySearchLiveRequestID.MatchString(reply.RequestID) &&
 		(tr.key == "" || !strings.Contains(strings.ToLower(reply.RequestID), strings.ToLower(tr.key))) {
 		seen.RequestID = reply.RequestID
 	}
@@ -93,6 +94,31 @@ func (tr *anySearchLiveTransport) take() []anySearchLiveRequest {
 	out := tr.seen
 	tr.seen = nil
 	return out
+}
+
+func TestAnySearchLiveRequestIDFormats(t *testing.T) {
+	for _, requestID := range []string{"afc46a53d1874905b912103642d412ef", "56f9d6d5-2b01-4688-8d4b-28110daecb91"} {
+		t.Run(requestID, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_ = json.NewEncoder(w).Encode(map[string]any{"code": 0, "request_id": requestID, "data": map[string]any{}})
+			}))
+			defer server.Close()
+			request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			recorder := &anySearchLiveTransport{}
+			response, err := recorder.RoundTrip(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			seen := recorder.take()
+			if len(seen) != 1 || seen[0].RequestID != requestID {
+				t.Fatalf("recorded requests=%+v, want request_id %q", seen, requestID)
+			}
+		})
+	}
 }
 
 func liveAnySearchTools(key string) (*AnySearchTool, *AnySearchDiscoverTool, *anySearchLiveTransport) {

@@ -16,6 +16,7 @@
 
 import { Collapse } from '@/components/collapse';
 import { Button, ButtonLoading } from '@/components/ui/button';
+import { useMcpReadOnly } from '@/ee/pages/user-setting/mcp/use-mcp-read-only';
 import { Card, CardContent } from '@/components/ui/card';
 import { DialogFooter } from '@/components/ui/dialog';
 import { Modal } from '@/components/ui/modal/modal';
@@ -64,7 +65,8 @@ export function EditMcpDialog({
   loading,
   onOk,
   id,
-}: IModalProps<any> & { id: string }) {
+  operatorPermission,
+}: IModalProps<any> & { id: string; operatorPermission?: number }) {
   const { t } = useTranslation();
   const {
     testMcpServer,
@@ -127,10 +129,19 @@ export function EditMcpDialog({
   }, [data, form]);
 
   const disabled = !tools?.length || testLoading || fieldChanged;
+  const isReadOnly = useMcpReadOnly(
+    operatorPermission ?? data.operator_permission,
+  );
 
   return (
     <Modal
-      title={id ? t('mcp.editMCP') : t('mcp.addMCP')}
+      title={
+        id
+          ? isReadOnly
+            ? t('common.view')
+            : t('mcp.editMCP')
+          : t('mcp.addMCP')
+      }
       open={true}
       onCancel={hideModal}
       cancelText={t('common.cancel')}
@@ -157,6 +168,7 @@ export function EditMcpDialog({
         onOk={handleOk}
         form={form}
         setFieldChanged={setFieldChanged}
+        readOnly={isReadOnly}
       ></EditMcpForm>
       <Card className="bg-transparent mt-4">
         <CardContent className="p-3">
@@ -169,19 +181,21 @@ export function EditMcpDialog({
             open={collapseOpen}
             onOpenChange={setCollapseOpen}
             rightContent={
-              <Button
-                variant={'transparent'}
-                form={FormId}
-                type="submit"
-                onClick={handleTest}
-                className="border-none p-0 text-text-secondary hover:bg-transparent hover:text-text-primary"
-              >
-                <RefreshCw
-                  className={cn({
-                    'animate-spin': testLoading,
-                  })}
-                />
-              </Button>
+              isReadOnly ? undefined : (
+                <Button
+                  variant={'transparent'}
+                  form={FormId}
+                  type="submit"
+                  onClick={handleTest}
+                  className="border-none p-0 text-text-secondary hover:bg-transparent hover:text-text-primary"
+                >
+                  <RefreshCw
+                    className={cn({
+                      'animate-spin': testLoading,
+                    })}
+                  />
+                </Button>
+              )
             }
           >
             <div className="overflow-auto max-h-80 divide-y-[0.5px] divide-border-button bg-bg-card rounded-md px-2.5 scrollbar-auto">

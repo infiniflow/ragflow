@@ -22,7 +22,7 @@ import (
 	"ragflow/internal/permission"
 )
 
-// Normalize maps permission decisions to stable API codes and safe messages
+// Normalize maps permission decisions to stable API codes and messages
 // while retaining the original error for errors.Is/errors.As.
 func Normalize(err error) (common.ErrorCode, error) {
 	return normalize(err, false)

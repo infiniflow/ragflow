@@ -17,7 +17,8 @@ export function useAgentToolInitialValues() {
             ...omit(initialValues, 'query'),
             description: '',
           };
-        case (Operator.TavilySearch, Operator.TavilyExtract):
+        case Operator.TavilySearch:
+        case Operator.TavilyExtract:
           return {
             api_key: '',
           };

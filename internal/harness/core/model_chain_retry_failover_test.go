@@ -285,7 +285,7 @@ func TestBuildModelWrapperChain_RetryThenFailover_Integration(t *testing.T) {
 		FailoverConfig: &FailoverConfig[Message]{Models: []Model[Message]{m2}},
 	}
 
-	wrapped := BuildModelWrapperChain(m1, nil, cfg, nil)
+	wrapped := BuildModelWrapperChain(context.Background(), m1, nil, cfg, nil)
 
 	ctx := t.Context()
 	resp, err := wrapped.Generate(ctx, []Message{schema.UserMessage("test")})

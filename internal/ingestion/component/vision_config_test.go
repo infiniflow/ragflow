@@ -90,18 +90,22 @@ func TestParserGlobalVisionConfigValidation(t *testing.T) {
 	}{
 		{"model-B", "vlm must be an object"},
 		{map[string]any{"llm_id": 42}, "vlm.llm_id must be a string"},
+		{map[string]any{"lang": 42}, "vlm.lang must be a string"},
 	} {
 		_, err := NewParserComponent(map[string]any{"vlm": tc.value})
 		if err == nil || !strings.Contains(err.Error(), tc.wantError) {
 			t.Fatalf("vlm %v: error = %v, want %s", tc.value, err, tc.wantError)
 		}
 	}
-	component, err := NewParserComponent(map[string]any{"vlm": map[string]any{}})
+	component, err := NewParserComponent(map[string]any{"vlm": map[string]any{"lang": "Japanese"}})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, exists := component.(*ParserComponent).setups["vlm"]; exists {
 		t.Fatal("global vlm was interpreted as a file family")
+	}
+	if got := component.(*ParserComponent).vision.language; got != "Japanese" {
+		t.Fatalf("vision.language = %q, want Japanese", got)
 	}
 }
 
