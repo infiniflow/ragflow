@@ -148,7 +148,6 @@ export default {
       library: 'Library',
       integrations: 'Integrations',
       team: 'Team',
-      models: 'Models',
       mcp: 'MCP',
       theme: 'Theme',
       language: 'Language',

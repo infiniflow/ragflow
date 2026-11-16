@@ -128,7 +128,6 @@ export default {
       library: '文件库',
       integrations: '集成',
       team: '团队',
-      models: '模型',
       mcp: 'MCP',
       theme: '主题',
       language: '语言',
