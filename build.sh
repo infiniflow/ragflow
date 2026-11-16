@@ -776,6 +776,19 @@ strip_tokenizer_linker_options() {
     echo -e "${GREEN}✓ Removed LLVM .linker-options sections from librag_tokenizer_c_api.a${NC}"
 }
 
+# Print the objcopy to rewrite symbols with, or nothing. GNU objcopy is standard
+# on Linux; on macOS it is LLVM's llvm-objcopy, which Homebrew installs keg-only
+# (outside PATH).
+find_objcopy() {
+    if command -v objcopy >/dev/null 2>&1; then
+        echo objcopy
+    elif command -v llvm-objcopy >/dev/null 2>&1; then
+        echo llvm-objcopy
+    elif command -v brew >/dev/null 2>&1 && [ -x "$(brew --prefix llvm 2>/dev/null)/bin/llvm-objcopy" ]; then
+        echo "$(brew --prefix llvm)/bin/llvm-objcopy"
+    fi
+}
+
 # Build C++ static library
 build_cpp() {
     print_section "Building C++ static library"
@@ -814,17 +827,17 @@ build_cpp() {
     # onnxruntime keeps calling its own. Verified to eliminate the crash.
     local tok_a="$BUILD_DIR/librag_tokenizer_c_api.a"
     local rename_map="$BUILD_DIR/re2_rename.map"
-    # GNU objcopy is standard on Linux; on macOS it is provided by LLVM as
-    # llvm-objcopy (brew install llvm). Prefer whichever is available.
-    local objcopy_bin=""
-    if command -v objcopy >/dev/null 2>&1; then
-        objcopy_bin=objcopy
-    elif command -v llvm-objcopy >/dev/null 2>&1; then
-        objcopy_bin=llvm-objcopy
+    local objcopy_bin
+    objcopy_bin="$(find_objcopy)"
+    if [ -z "$objcopy_bin" ] && [ "$(uname -s)" = "Darwin" ]; then
+        # ld64 cannot merge the two re2 copies, so the link fails without the rename.
+        echo -e "${RED}Error: llvm-objcopy not found. Install it with: brew install llvm${NC}"
+        exit 1
     fi
     if [ -n "$objcopy_bin" ]; then
+        # Mach-O prefixes C++ symbols with an extra underscore (__ZN3re2...).
         nm "$tok_a" \
-            | awk '$2 ~ /^[TDBRWtdbrwiIVv]$/ && $3 ~ /^_ZN3re2|_ZNK3re2|_ZTVN3re2|_ZTIN3re2|_ZTSN3re2/ { print $3" ragtokre2_"$3 }' \
+            | awk '$2 ~ /^[TDBRWtdbrwiIVv]$/ && $3 ~ /^_?_Z(N|NK|TVN|TIN|TSN)3re2/ { print $3" ragtokre2_"$3 }' \
             | sort -u > "$rename_map"
         if [ -s "$rename_map" ]; then
             "$objcopy_bin" --redefine-syms="$rename_map" "$tok_a"
@@ -946,6 +959,41 @@ build_go() {
     echo -e "${GREEN}✓ Go ragflow_server built successfully: $RAGFLOW_SERVER_BINARY${NC}"
 }
 
+# Print the path of a libpdf_oxide.a that links next to liboffice_oxide.a on
+# macOS. pdf_oxide bundles its own office_oxide and Rust runtime, and ld64 has
+# no --allow-multiple-definition, so the symbols both archives define are
+# renamed in a cached copy of pdf_oxide. Renaming covers definitions and
+# references alike, so pdf_oxide keeps calling its own copies.
+darwin_pdf_oxide_archive() {
+    local src="$1/libpdf_oxide.a"
+    local office_a="${OFFICE_OXIDE_PREFIX}/lib/liboffice_oxide.a"
+    local out_dir="${PROJECT_ROOT}/.cache/pdf_oxide/$(basename "$PDF_OXIDE_PREFIX")-office-$(basename "$OFFICE_OXIDE_PREFIX")/${TARGET_OS}_${TARGET_ARCH}"
+    local out="$out_dir/libpdf_oxide.a"
+    if [ -f "$out" ] && [ "$out" -nt "$src" ] && [ "$out" -nt "$office_a" ]; then
+        echo "$out"
+        return 0
+    fi
+    local objcopy_bin
+    objcopy_bin="$(find_objcopy)"
+    if [ -z "$objcopy_bin" ]; then
+        echo -e "${RED}Error: llvm-objcopy not found (brew install llvm); needed to link pdf_oxide next to office_oxide on macOS${NC}" >&2
+        return 1
+    fi
+    mkdir -p "$out_dir"
+    # liboffice_oxide.a holds Rust LLVM bitcode that nm cannot always read, so
+    # the shared set is taken from pdf_oxide alone: office_oxide's C API
+    # (office_*) and the Rust personality routine.
+    local rename_map="$out_dir/rename.map"
+    nm -g --defined-only "$src" 2>/dev/null \
+        | awk 'NF == 3 && ($3 ~ /^_office_/ || $3 == "_rust_eh_personality") { print $3" pdfoxide_"$3 }' \
+        | sort -u > "$rename_map"
+    cp "$src" "$out.tmp"
+    "$objcopy_bin" --redefine-syms="$rename_map" "$out.tmp" || { rm -f "$out.tmp"; return 1; }
+    mv "$out.tmp" "$out"
+    echo -e "${GREEN}✓ Renamed $(wc -l < "$rename_map") pdf_oxide symbols shared with office_oxide${NC}" >&2
+    echo "$out"
+}
+
 # Configure CGO flags for native libraries (office_oxide, pdfium, pdf_oxide).
 # All three are statically linked — no LD_LIBRARY_PATH or -Wl,-rpath needed.
 setup_cgo_env() {
@@ -1017,7 +1065,11 @@ setup_cgo_env() {
     # (${PDF_OXIDE_PREFIX} = .../pdf_oxide/v<version>), so the linked path
     # carries the version and Go's build cache relinks on a version bump.
     local pdf_oxide_lib_dir="${PDF_OXIDE_PREFIX}/lib/${pdf_oxide_subdir}"
-    export CGO_LDFLAGS="$CGO_LDFLAGS ${pdf_oxide_lib_dir}/libpdf_oxide.a"
+    local pdf_oxide_a="${pdf_oxide_lib_dir}/libpdf_oxide.a"
+    if [ "$TARGET_OS" = "darwin" ]; then
+        pdf_oxide_a="$(darwin_pdf_oxide_archive "$pdf_oxide_lib_dir")" || return 1
+    fi
+    export CGO_LDFLAGS="$CGO_LDFLAGS ${pdf_oxide_a}"
 
     # ── onnxruntime (static, resolved via dlopen(NULL)) ────────────────
     # Statically link libonnxruntime*.a into the binary. The org Go binding
