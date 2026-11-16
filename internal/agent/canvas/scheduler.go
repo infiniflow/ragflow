@@ -242,17 +242,6 @@ func statePost(ctx context.Context, out map[string]any, state *CanvasState) (map
 	return out, nil
 }
 
-// emitEventFromCtx reads the events channel from the RunMeta attached to
-// ctx (via WithRunMeta) and pushes the event. No-op when no metadata is
-// present (test paths without a full service harness).
-func emitEventFromCtx(ctx context.Context, ev RunEvent) {
-	meta := GetRunMeta(ctx)
-	if meta == nil || meta.Events == nil {
-		return
-	}
-	PushEvent(ctx, meta.Events, ev)
-}
-
 func sanitizeNodeInputs(inputs map[string]any) map[string]any {
 	if len(inputs) == 0 {
 		return map[string]any{}
@@ -275,17 +264,19 @@ func sanitizeNodeInputs(inputs map[string]any) map[string]any {
 // Metadata (message/session ids) is read from ctx via RunMeta.
 func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName, componentType string, inputs map[string]any) {
 	common.Debug("node_started", zap.String("cpnID", cpnID), zap.String("componentName", componentName))
-	if state == nil {
+	meta := GetRunMeta(ctx)
+	if state == nil || meta == nil || meta.Events == nil {
 		return
 	}
 	now := float64(time.Now().UnixNano()) / 1e9
 
+	inputs = sanitizeNodeInputs(inputs)
 	state.MergeNamespaces(map[string]any{
 		"_node_start_" + cpnID:  now,
-		"_node_inputs_" + cpnID: sanitizeNodeInputs(inputs),
+		"_node_inputs_" + cpnID: inputs,
 	}, nil, nil)
 	nsData, err := runtime.SafeJSONMarshal(NodeStartedData{
-		Inputs:        sanitizeNodeInputs(inputs),
+		Inputs:        inputs,
 		CreatedAt:     now,
 		ComponentID:   cpnID,
 		ComponentName: componentName,
@@ -301,15 +292,10 @@ func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName
 		nsData = []byte(fmt.Sprintf(`{"component_id":%q,"component_name":%q,"component_type":%q}`,
 			cpnID, componentName, componentType))
 	}
-	meta := GetRunMeta(ctx)
-	msgID, sessionID := "", ""
-	if meta != nil {
-		msgID, sessionID = meta.MessageID, meta.SessionID
-	}
-	emitEventFromCtx(ctx, RunEvent{
+	PushEvent(ctx, meta.Events, RunEvent{
 		Type: "node_started", Data: string(nsData),
-		MessageID: msgID, CreatedAt: time.Now().Unix(),
-		SessionID: sessionID,
+		MessageID: meta.MessageID, CreatedAt: time.Now().Unix(),
+		SessionID: meta.SessionID,
 	})
 }
 
@@ -317,7 +303,10 @@ func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName
 // statePost wrapper. The elapsed time is computed from the time recorded
 // by nodeStartedAt. Metadata is read from ctx via RunMeta.
 func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentName, componentType string, nodeErr error) {
-	if state == nil {
+	// Ingestion persists its progress separately and has no canvas event stream.
+	// Skip snapshots and JSON encoding of the full chunk and vector payload.
+	meta := GetRunMeta(ctx)
+	if state == nil || meta == nil || meta.Events == nil {
 		return
 	}
 	now := float64(time.Now().UnixNano()) / 1e9
@@ -374,15 +363,10 @@ func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentNa
 		nfData = []byte(fmt.Sprintf(`{"component_id":%q,"component_name":%q,"component_type":%q}`,
 			cpnID, componentName, componentType))
 	}
-	meta := GetRunMeta(ctx)
-	msgID, sessionID := "", ""
-	if meta != nil {
-		msgID, sessionID = meta.MessageID, meta.SessionID
-	}
-	emitEventFromCtx(ctx, RunEvent{
+	PushEvent(ctx, meta.Events, RunEvent{
 		Type: "node_finished", Data: string(nfData),
-		MessageID: msgID, CreatedAt: time.Now().Unix(),
-		SessionID: sessionID,
+		MessageID: meta.MessageID, CreatedAt: time.Now().Unix(),
+		SessionID: meta.SessionID,
 	})
 }
 
