@@ -26,6 +26,7 @@ import (
 
 	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
+	"ragflow/internal/compliance"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -246,6 +247,18 @@ func (s *ChatPipelineService) AsyncChat(
 		return nil, fmt.Errorf("the last content of this conversation is not from user")
 	}
 	if err := validateChatDatasetAccess(ctx, chat.KBIDs); err != nil {
+		return nil, err
+	}
+	question, err := NormalizeOpenAIMessageContent(lastMsg["content"])
+	if err != nil {
+		return nil, err
+	}
+	if err := compliance.ValidateQuestion(ctx, question); err != nil {
+		if ctx.Err() != nil {
+			out := make(chan AsyncChatResult)
+			close(out)
+			return out, nil
+		}
 		return nil, err
 	}
 
