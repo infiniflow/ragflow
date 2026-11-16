@@ -341,6 +341,7 @@ func printHelp(args *bootstrap.ServerArgs) {
 		fmt.Fprintf(os.Stderr, "  --name string\t\t\tIngestion server name (default: \"default_ingestion\")\n")
 		fmt.Fprintf(os.Stderr, "  --ingestor-concurrent-workers int\tIngestor NATS worker count K, range [1, 256] (default: 1)\n")
 		fmt.Fprintf(os.Stderr, "  --ingestor-page-concurrency int\tProcess-wide page concurrency N, range [1, 16] (default: 2)\n")
+		fmt.Fprintf(os.Stderr, "  --ingestor-tier string\tIngestor task lane (default: low)\n")
 		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
 		fmt.Fprintf(os.Stderr, "  --log-level string\tLog level: debug, info, warn, error (default: warn)\n")

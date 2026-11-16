@@ -14,6 +14,8 @@
 //  limitations under the License.
 //
 
+//go:build !ee
+
 package common
 
 import "testing"

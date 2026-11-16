@@ -46,7 +46,7 @@ type ServerArgs struct {
 	// budget from env/config. nil means "unspecified" (0 means "all cores").
 	DeepdocInferenceCPUCores *int
 	// IngestorTier, when set, restricts which ingestion lanes the ingestor
-	// consumes (high/medium/low). nil means "unspecified" (default: low).
+	// consumes. nil means "unspecified" (default: the lowest-priority lane).
 	IngestorTier *string
 }
 
