@@ -420,7 +420,7 @@ A URL is checked before anything is sent to AnySearch. It must use `http` or `ht
 
 A page that cannot be read, such as a PDF or an unreachable address, is reported as an error that carries the AnySearch message and `request_id`. An invalid API key is reported as an error and is never retried without the key.
 
-The standalone component records the page as a reference that a later Message node can cite. When the tool is used by an Agent node, the Agent reads the page from the tool output and no reference is added.
+Both the standalone component and Agent tool runs record the page as a retrieval reference for citation grounding.
 
 ### Wikipedia
 The Wikipedia component searches encyclopedia entries and extracts entry summaries. It is suitable for querying clear entities, concepts, and historical events. Query terms should be as close as possible to the entry title.

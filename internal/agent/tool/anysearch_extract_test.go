@@ -635,7 +635,8 @@ func TestAnySearchExtract_ReferencesAndOutputs(t *testing.T) {
 		if chunks[0]["content"] != "page text" || chunks[0]["url"] != "https://p.example/x" || chunks[0]["docnm_kwd"] != "Page" || chunks[0]["id"] == "" {
 			t.Errorf("chunk = %#v, want content with whitespace collapsed, url, title and an id", chunks[0])
 		}
-		if docAggs[0]["doc_name"] != "Page" || docAggs[0]["url"] != "https://p.example/x" || docAggs[0]["doc_id"] != chunks[0]["id"] {
+		documentID, displayID := referenceIDs("https://p.example/x", "page text")
+		if chunks[0]["id"] != displayID || chunks[0]["chunk_id"] != documentID || docAggs[0]["doc_name"] != "Page" || docAggs[0]["url"] != "https://p.example/x" || docAggs[0]["doc_id"] != documentID {
 			t.Errorf("docAgg = %#v", docAggs[0])
 		}
 		outputs := tool.BuildComponentOutputs(envelope)
@@ -712,6 +713,15 @@ func TestAnySearchExtract_ReferencesAndOutputs(t *testing.T) {
 	})
 }
 
+func TestAnySearchExtract_LongPageReferencesPreserveContent(t *testing.T) {
+	content := strings.Repeat("content ", 300)
+	envelope := anySearchExtractEnvelopeMap("https://example.com/page", "Page", content)
+	chunks, docs := NewAnySearchExtractToolWith(nil, "").BuildReferences(t.Context(), envelope)
+	if len(chunks) != 1 || len(docs) != 1 || chunks[0]["content"] != strings.TrimSpace(content) {
+		t.Fatalf("long extracted page was not preserved: chunks=%d docs=%d", len(chunks), len(docs))
+	}
+}
+
 func TestAnySearchExtract_RenderCountsTheWholeBlock(t *testing.T) {
 	t.Parallel()
 	content := strings.TrimSpace(strings.Repeat("alpha ", 200))
@@ -740,6 +750,20 @@ func TestAnySearchExtract_RenderCountsTheWholeBlock(t *testing.T) {
 	}
 	if fits := renderAnySearchExtract(page, blockTokens*2); !strings.Contains(fits, content) {
 		t.Errorf("a block inside the budget must be rendered in full:\n%s", fits)
+	}
+}
+
+func TestAnySearchExtract_RenderWarnsOfPossibleTruncation(t *testing.T) {
+	page := anySearchExtractEnvelopeMap("https://example.com/page", "Page", "page text")
+	page["truncated"] = true
+	for _, budget := range []int{0, 1} {
+		if rendered := renderAnySearchExtract(page, budget); !strings.Contains(rendered, "content may be truncated") {
+			t.Errorf("budget %d: missing truncation warning: %s", budget, rendered)
+		}
+	}
+	page["truncated"] = false
+	if rendered := renderAnySearchExtract(page, 0); strings.Contains(rendered, "content may be truncated") {
+		t.Errorf("unexpected truncation warning: %s", rendered)
 	}
 }
 
