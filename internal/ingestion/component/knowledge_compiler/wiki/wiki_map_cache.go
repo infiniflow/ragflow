@@ -215,6 +215,11 @@ func (p *wikiPipeline) wikiMapTemplateFingerprint() (string, error) {
 	if wikiJoinFields(claimFields, "statement", "\n") != "" || wikiJoinFields(claimFields, "subject", "\n") != "" {
 		claimGuidanceFormat = "statement-subject-v1"
 	}
+	typeGuidanceFormat := ""
+	if wikiTypeGuidance(wikiTemplateFields(mapConfig, "entity"), p.param.Language) != "" ||
+		wikiTypeGuidance(wikiTemplateFields(mapConfig, "relation"), p.param.Language) != "" {
+		typeGuidanceFormat = "type-description-rule-v1"
+	}
 	payload, err := json.Marshal(struct {
 		TemplateID          string         `json:"template_id"`
 		TemplateConfig      map[string]any `json:"template_config"`
@@ -222,6 +227,7 @@ func (p *wikiPipeline) wikiMapTemplateFingerprint() (string, error) {
 		SystemPrompt        string         `json:"system_prompt"`
 		UserTemplate        string         `json:"user_template"`
 		ClaimGuidanceFormat string         `json:"claim_guidance_format,omitempty"`
+		TypeGuidanceFormat  string         `json:"type_guidance_format,omitempty"`
 	}{
 		TemplateID:          p.param.TemplateID,
 		TemplateConfig:      mapConfig,
@@ -229,6 +235,7 @@ func (p *wikiPipeline) wikiMapTemplateFingerprint() (string, error) {
 		SystemPrompt:        wikiMapSystem,
 		UserTemplate:        wikiMapUserTemplate,
 		ClaimGuidanceFormat: claimGuidanceFormat,
+		TypeGuidanceFormat:  typeGuidanceFormat,
 	})
 	if err != nil {
 		return "", fmt.Errorf("wiki: fingerprint MAP template: %w", err)

@@ -23,9 +23,9 @@ func (c *claimGuidanceChat) Chat(_ context.Context, req compilercommon.ChatReque
 	return nil, c.err
 }
 
-// Saved claim guidance must reach the actual MAP model request on both create
-// and update, using the same statement/subject shape as the template editor.
-func TestCompilationTemplateGroupSavedClaimGuidanceReachesWiki(t *testing.T) {
+// Saved claim and type guidance must reach the actual MAP model request on both create
+// and update, using the same canonical field shapes as the template editor.
+func TestCompilationTemplateGroupSavedGuidanceReachesWiki(t *testing.T) {
 	db := setupGroupHandlerDB(t)
 	r := newCompilationTemplateGroupHandlerRouter()
 	groupID := ""
@@ -33,7 +33,9 @@ func TestCompilationTemplateGroupSavedClaimGuidanceReachesWiki(t *testing.T) {
 		t.Run(operation, func(t *testing.T) {
 			statement := "Extract audited financial claims for " + operation + "."
 			subject := "Use the legal entity name for " + operation + "."
-			body := fmt.Sprintf(`{"name":"Wiki","templates":[{"name":"Wiki","kind":"wiki","config":{"kind":"wiki","claim":{"fields":[{"statement":%q,"subject":%q}]}}}]}`, statement, subject)
+			entityRule := "Keep the commissioning identifier for " + operation + "."
+			relationRule := "Direction is technician to sensor for " + operation + "."
+			body := fmt.Sprintf(`{"name":"Wiki","templates":[{"name":"Wiki","kind":"wiki","config":{"kind":"wiki","claim":{"fields":[{"statement":%q,"subject":%q}]},"entity":{"fields":[{"type":"sensor","description":"Installed physical sensor","rule":%q}]},"relation":{"fields":[{"type":"calibrates","description":"Calibration performed on equipment","rule":%q}]}}}]}`, statement, subject, entityRule, relationRule)
 			var saved groupSaveResponse
 			if operation == "create" {
 				saved = postCompilationTemplateGroup(t, r, body)
@@ -63,7 +65,7 @@ func TestCompilationTemplateGroupSavedClaimGuidanceReachesWiki(t *testing.T) {
 			if len(chat.requests) != 1 {
 				t.Fatalf("expected one MAP model request, got %d", len(chat.requests))
 			}
-			for _, want := range []string{statement, subject} {
+			for _, want := range []string{statement, subject, "sensor", "Installed physical sensor", entityRule, "calibrates", "Calibration performed on equipment", relationRule} {
 				if !strings.Contains(chat.requests[0].UserPrompt, want) {
 					t.Errorf("successfully saved guidance missing from MAP model request: %q", want)
 				}

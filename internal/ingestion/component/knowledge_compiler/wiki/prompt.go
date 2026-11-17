@@ -286,12 +286,12 @@ func buildWikiMapPrompt(docID string, batch []common.Chunk, parserConfig any, la
 			customRules = rules
 		}
 		if ent := wikiTemplateFields(cfg, "entity"); len(ent) > 0 {
-			if s := wikiRenderSchemaBody(ent, language, defaultEntitySchemaBody); s != "" {
+			if s := wikiTypeGuidance(ent, language); s != "" {
 				entityTypeRules = s
 			}
 		}
 		if rel := wikiTemplateFields(cfg, "relation"); len(rel) > 0 {
-			if s := wikiRenderSchemaBody(rel, language, defaultRelationSchemaBody); s != "" {
+			if s := wikiTypeGuidance(rel, language); s != "" {
 				relationTypeRules = s
 			}
 		}
@@ -339,16 +339,6 @@ func buildWikiRefineWriterSystem(example string) string {
 	})
 }
 
-const defaultEntitySchemaBody = `"name": "string — entity canonical name as it appears in text",
-      "type": "string — one of: person|org|product|regulation|location|system|equipment|other",
-      "aliases": ["string"],
-      "source_chunk_id": "string — exact value from the chunk_id list above"`
-
-const defaultRelationSchemaBody = `"from": "string — source entity/concept name",
-      "to": "string — target entity/concept name",
-      "type": "string — e.g. owns|part_of|caused_by|regulates|uses|located_in|other",
-      "source_chunk_id": "string — exact value from the chunk_id list above"`
-
 func wikiTemplateCustomRules(parserConfig map[string]any, language string) string {
 	if rules := common.Localize(common.Get(parserConfig, "global_rules"), language); strings.TrimSpace(rules) != "" {
 		return strings.TrimSpace(rules)
@@ -388,52 +378,27 @@ func wikiTemplateFields(parserConfig map[string]any, section string) []any {
 	return nil
 }
 
-func wikiRenderSchemaBody(fields []any, language, defaultBody string) string {
-	if len(fields) == 0 {
-		return defaultBody
-	}
-	lines := make([]string, 0, len(fields)+1)
-	seen := map[string]bool{}
+func wikiTypeGuidance(fields []any, language string) string {
+	var lines []string
 	for _, raw := range fields {
 		field, ok := raw.(map[string]any)
 		if !ok {
 			continue
 		}
-		name := strings.TrimSpace(firstString(field["name"]))
-		if name == "" || name == "source_chunk_id" || seen[name] {
+		typeName := strings.TrimSpace(firstString(field["type"]))
+		if typeName == "" {
 			continue
 		}
-		seen[name] = true
-		ftype := strings.TrimSpace(firstString(field["type"]))
-		if ftype == "" {
-			ftype = "str"
+		line := typeName
+		if description := strings.TrimSpace(common.Localize(field["description"], language)); description != "" {
+			line += ": " + description
 		}
-		desc := common.Localize(field["description"], language)
-		var placeholder string
-		switch ftype {
-		case "list":
-			placeholder = `["string"]`
-		case "int":
-			placeholder = "0"
-		case "float":
-			placeholder = "0.0"
-		case "bool":
-			placeholder = "false"
-		default:
-			if strings.TrimSpace(desc) != "" {
-				desc = strings.NewReplacer("\n", " ", "{", "(", "}", ")").Replace(desc)
-				placeholder = fmt.Sprintf(`"string — %s"`, strings.TrimSpace(desc))
-			} else {
-				placeholder = `"string"`
-			}
+		if rule := strings.TrimSpace(common.Localize(field["rule"], language)); rule != "" {
+			line += "\n" + rule
 		}
-		lines = append(lines, fmt.Sprintf(`      "%s": %s`, name, placeholder))
+		lines = append(lines, line)
 	}
-	if len(lines) == 0 {
-		return defaultBody
-	}
-	lines = append(lines, `      "source_chunk_id": "string — exact value from the chunk_id list above"`)
-	return strings.Join(lines, ",\n")
+	return strings.Join(lines, "\n")
 }
 
 func wikiJoinFields(fields []any, key, separator string) string {
