@@ -16,8 +16,6 @@
 
 package config
 
-import "ragflow/internal/common"
-
 type Config struct {
 	general                 GeneralConfig
 	generalStorageEngineSet bool
@@ -35,7 +33,7 @@ type Config struct {
 	ingestor  IngestorConfig
 
 	log  LogConfig
-	smtp common.SMTPConfig
+	smtp SMTPConfig
 
 	// From environments
 	environments Environments

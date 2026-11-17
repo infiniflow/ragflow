@@ -30,6 +30,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/server/config"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
 
@@ -339,20 +340,20 @@ func (h *TenantHandler) ListTenantMembers(c *gin.Context) {
 // tenantSMTPConfig returns the SMTP settings together with a flag telling
 // whether they are usable. SMTP is optional: when it is not configured the
 // caller must skip sending instead of failing the request.
-func tenantSMTPConfig() (common.SMTPConfig, bool) {
-	config := server.GetConfig()
-	if config == nil {
-		return common.SMTPConfig{}, false
+func tenantSMTPConfig() (config.SMTPConfig, bool) {
+	cfg := server.GetConfig()
+	if cfg == nil {
+		return config.SMTPConfig{}, false
 	}
 
-	smtpCfg := config.GetSMTPConfig()
+	smtpCfg := cfg.GetSMTPConfig()
 	if smtpCfg.MailServer == "" || smtpCfg.MailPort == 0 || smtpCfg.MailFromAddress == "" {
-		return common.SMTPConfig{}, false
+		return config.SMTPConfig{}, false
 	}
 	return smtpCfg, true
 }
 
-func sendTenantInviteEmail(smtpCfg common.SMTPConfig, toEmail, recipientEmail, tenantID, inviter string) error {
+func sendTenantInviteEmail(smtpCfg config.SMTPConfig, toEmail, recipientEmail, tenantID, inviter string) error {
 	from := mail.Address{
 		Name:    smtpCfg.MailFromName,
 		Address: smtpCfg.MailFromAddress,

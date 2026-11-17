@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package common
+package graph
 
 import (
 	"encoding/json"

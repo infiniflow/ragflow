@@ -24,6 +24,7 @@ import (
 	"strings"
 
 	"ragflow/internal/common"
+	"ragflow/internal/server/config"
 
 	"go.uber.org/zap"
 )
@@ -59,7 +60,7 @@ func (SMTPInsecureAuthError) Error() string {
 //
 // — same subject, same plaintext body shape (see RESET_CODE_EMAIL_TMPL in
 // api/utils/email_templates.py).
-func SendResetCodeEmail(cfg common.SMTPConfig, toEmail, otp string, ttlMinutes int) error {
+func SendResetCodeEmail(cfg config.SMTPConfig, toEmail, otp string, ttlMinutes int) error {
 	if cfg.MailServer == "" || cfg.MailPort == 0 {
 		return SMTPNotConfiguredError{}
 	}
@@ -114,7 +115,7 @@ func buildPlainEmail(from, to, subject, body string) []byte {
 // Authentication is only attempted over an encrypted session. If the
 // caller asks for auth (MailUsername set) on a plaintext connection,
 // SMTPInsecureAuthError is returned before any credential is written.
-func sendMail(cfg common.SMTPConfig, from, to string, msg []byte) error {
+func sendMail(cfg config.SMTPConfig, from, to string, msg []byte) error {
 	if cfg.MailUsername != "" && !cfg.MailUseSSL && !cfg.MailUseTLS {
 		return SMTPInsecureAuthError{}
 	}

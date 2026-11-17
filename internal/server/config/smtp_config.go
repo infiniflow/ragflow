@@ -17,8 +17,6 @@
 package config
 
 import (
-	"ragflow/internal/common"
-
 	"github.com/spf13/viper"
 )
 
@@ -81,6 +79,6 @@ func (c *Config) ParseSMTPConfig(v *viper.Viper) error {
 	return nil
 }
 
-func (c *Config) GetSMTPConfig() common.SMTPConfig {
+func (c *Config) GetSMTPConfig() SMTPConfig {
 	return c.smtp
 }

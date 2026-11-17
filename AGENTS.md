@@ -61,6 +61,7 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 - Do not add or preserve deprecated Go APIs just to ease migration inside the repo.
 - Remove commented-out Go code instead of leaving recovery notes in place.
 - Keep package comments and doc comments aligned with the current runtime path, not with migration history.
+- `internal/common` is a leaf package imported across the tree; admitting a file there is a deliberate decision, not a default. New code belongs in `common` only when it is a cross-layer contract with no owning domain (response envelope, error codes, logging, environment access). Single-consumer concerns go in their consumer's package; domain concepts go in the owning domain package; stateless data algorithms go in `internal/utility`; config values and their parsers go in `internal/server/config`. The explicit allowlist in `internal/common/placement_test.go` enforces this — a new file must be registered there with a rationale in `internal/common/doc.go`.
 
 ## Enterprise stubs
 Enterprise-only code lives in the downstream enterprise repository, never here: it is written as `*_ee.go` / `*_ee_test.go` files carrying `//go:build ee`. This tree keeps only what the open-source build needs:

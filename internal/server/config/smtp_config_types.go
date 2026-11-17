@@ -14,16 +14,11 @@
 //  limitations under the License.
 //
 
-package common
+package config
 
 // SMTPConfig is the SMTP block from conf/service_conf.yaml, used by the
-// forgot-password OTP flow and any other transactional email path.
-//
-// It lives in internal/common rather than internal/server so that
-// internal/utility (which renders/sends the email) can reference the
-// type without importing internal/server. internal/server already
-// imports internal/utility (via variable.go), so the reverse import
-// would close an import cycle.
+// forgot-password OTP flow and any other transactional email path. It lives
+// with the config that parses it; consumers receive it via GetSMTPConfig.
 type SMTPConfig struct {
 	MailServer      string `mapstructure:"mail_server"`
 	MailPort        int    `mapstructure:"mail_port"`

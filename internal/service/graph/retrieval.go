@@ -240,14 +240,14 @@ func queryRewrite(ctx context.Context, chatModel *modelModule.ChatModel, questio
 		return nil, nil
 	}
 	if chatModel != nil && chatModel.ModelName != nil && chatModel.APIConfig != nil {
-		prompt := common.BuildQueryRewritePrompt(question, ty2entsJSON)
+		prompt := BuildQueryRewritePrompt(question, ty2entsJSON)
 		messages := []modelModule.Message{
 			{Role: "system", Content: prompt},
 			{Role: "user", Content: "Output:"},
 		}
 		response, err := chatModel.ChatWithMessages(ctx, messages, nil, nil)
 		if err == nil && response != nil && response.Answer != nil {
-			result, parseErr := common.ParseQueryRewriteResponse(*response.Answer)
+			result, parseErr := ParseQueryRewriteResponse(*response.Answer)
 			if parseErr == nil && result != nil {
 				return result.TypeKeywords, result.Entities
 			}
