@@ -69,6 +69,7 @@ func TestUniqueName_CounterContinuation(t *testing.T) {
 		{"topic", map[string]bool{"topic": true, "topic(1)": true}, "topic(2)"},
 		{"topic(1)", map[string]bool{"topic(1)": true}, "topic(2)"},
 		{"topic(2)", map[string]bool{"topic(2)": true, "topic(3)": true}, "topic(4)"},
+		{"topic(2023)", map[string]bool{"topic(2023)": true}, "topic(2023)(1)"},
 	}
 	for _, tc := range cases {
 		taken := tc.taken
