@@ -17,10 +17,14 @@
 package elasticsearch
 
 import (
+	"context"
+	"fmt"
 	"reflect"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
+	"ragflow/internal/engine/types"
 	"ragflow/internal/server/config"
 )
 
@@ -81,6 +85,71 @@ func TestInsertChunks_ReadBackSuffixedFields(t *testing.T) {
 	assertStoredField(t, stored, "kb_id", datasetID)
 	if v, ok := stored["question_kwd"]; !ok || !reflect.DeepEqual(v, []interface{}{"q1", "q2"}) {
 		t.Errorf("stored question_kwd = %#v, want [q1 q2]", v)
+	}
+}
+
+func TestWalkChunkPagesBeyondResultWindow(t *testing.T) {
+	if common.GetEnv(common.EnvESTest) != "1" {
+		t.Skip("requires local Elasticsearch and ES_TEST=1")
+	}
+	ctx := t.Context()
+	es, err := NewEngine(ctx, getESTestConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	index := fmt.Sprintf("ragflow_chunk_pages_%d", time.Now().UnixNano())
+	const datasetID = "kb-1"
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := es.DropChunkStore(ctx, index, datasetID); err != nil {
+			t.Error(err)
+		}
+	})
+	const count = 10044
+	chunks := make([]map[string]any, 0, count+1)
+	for i := range count {
+		chunks = append(chunks, map[string]any{
+			"id":            fmt.Sprintf("chunk-%05d", i),
+			"doc_id":        "target-doc",
+			"available_int": i % 2,
+		})
+	}
+	chunks = append(chunks, map[string]any{"id": "other-document", "doc_id": "other-doc"})
+	if _, err := es.InsertChunks(ctx, chunks, index, datasetID, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := es.InsertChunks(ctx, []map[string]any{
+		{"id": "other-dataset", "doc_id": "target-doc"},
+	}, index, "kb-2", ""); err != nil {
+		t.Fatal(err)
+	}
+	req := &types.SearchRequest{
+		IndexNames:         []string{index},
+		KbIDs:              []string{datasetID},
+		Limit:              1000,
+		SelectFields:       []string{"id"},
+		Filter:             map[string]any{"doc_id": "target-doc"},
+		IncludeUnavailable: true,
+	}
+	seen := make(map[string]bool, count)
+	if err := es.WalkChunkPages(ctx, req, func(page []map[string]any) error {
+		if len(page) > req.Limit {
+			t.Errorf("page size = %d, want at most %d", len(page), req.Limit)
+		}
+		for _, chunk := range page {
+			id, _ := chunk["id"].(string)
+			if id == "" || id == "other-document" || id == "other-dataset" || seen[id] {
+				t.Errorf("unexpected chunk ID %q", id)
+			}
+			seen[id] = true
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(seen) != count {
+		t.Fatalf("visited %d unique chunks, want %d", len(seen), count)
 	}
 }
 
