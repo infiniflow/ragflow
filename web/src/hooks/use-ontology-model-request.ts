@@ -66,8 +66,7 @@ export const OntologyModelKeys = {
     [OntologyModelApiAction.FetchVersions, id] as const,
   diff: (id?: string, from?: number, to?: number) =>
     [OntologyModelApiAction.FetchVersionDiff, { id, from, to }] as const,
-  datasets: (id?: string) =>
-    [OntologyModelApiAction.FetchImpact, id] as const,
+  datasets: (id?: string) => [OntologyModelApiAction.FetchImpact, id] as const,
   assertionReview: (id?: string, params?: IAssertionReviewRequestParams) =>
     [OntologyModelApiAction.ReviewAssertions, id, params] as const,
   /**

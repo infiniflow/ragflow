@@ -102,9 +102,7 @@ interface OntologyModelsSheetProps {
  * navigating away from that context to read the answer is what the sheet
  * exists to avoid.
  */
-export function OntologyModelsSheet({
-  templateId,
-}: OntologyModelsSheetProps) {
+export function OntologyModelsSheet({ templateId }: OntologyModelsSheetProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const { models, loading } = useFetchOntologyModels();
@@ -112,9 +110,7 @@ export function OntologyModelsSheet({
   const [publishTarget, setPublishTarget] = useState<IOntologyModel | null>(
     null,
   );
-  const [check, setCheck] = useState<IOntologyModelPublishCheck | null>(
-    null,
-  );
+  const [check, setCheck] = useState<IOntologyModelPublishCheck | null>(null);
   const [note, setNote] = useState('');
   const [historyTarget, setHistoryTarget] = useState<IOntologyModel | null>(
     null,
@@ -123,14 +119,10 @@ export function OntologyModelsSheet({
     from: number;
     to: number;
   } | null>(null);
-  const [impactTarget, setImpactTarget] = useState<IOntologyModel | null>(
-    null,
-  );
+  const [impactTarget, setImpactTarget] = useState<IOntologyModel | null>(null);
   // A rehearsal is an action, not a report: the dialog opens on a warning that
   // says what it will cost, and only then runs.
-  const [trialTarget, setTrialTarget] = useState<IOntologyModel | null>(
-    null,
-  );
+  const [trialTarget, setTrialTarget] = useState<IOntologyModel | null>(null);
   const [trial, setTrial] = useState<IOntologyModelTrial | null>(null);
 
   const { checkModel, loading: checking } = useCheckOntologyModel();
@@ -140,8 +132,9 @@ export function OntologyModelsSheet({
   const { rejectModel, loading: rejecting } = useRejectOntologyModel();
   const { retireModel, loading: retiring } = useRetireOntologyModel();
 
-  const { versions, loading: versionsLoading } =
-    useFetchOntologyModelVersions(historyTarget?.id);
+  const { versions, loading: versionsLoading } = useFetchOntologyModelVersions(
+    historyTarget?.id,
+  );
   const { diff, loading: diffLoading } = useFetchOntologyModelVersionDiff(
     historyTarget?.id,
     diffVersions?.from,
@@ -636,8 +629,7 @@ function ModelRow({
   onTrial: (model: IOntologyModel) => void;
 }) {
   const { t } = useTranslation();
-  const isReview =
-    model.publish_status === OntologyModelPublishStatus.Review;
+  const isReview = model.publish_status === OntologyModelPublishStatus.Review;
   const isPublished =
     model.publish_status === OntologyModelPublishStatus.Published;
 

@@ -495,7 +495,7 @@ func TestOntologyTermFilterNarrowOrNothing(t *testing.T) {
 // An empty class or property name must short-circuit to an empty page rather
 // than query the engine for "everything", which is what an empty term filter
 // would become. Widening the read is the model-scope inspection's job, and it
-// asks for it explicitly with All (compilation_model_inspect.go).
+// asks for it explicitly with All (ontology_model_inspect.go).
 func TestOntologyDrilldownRejectsEmptyName(t *testing.T) {
 	svc := &DatasetArtifactService{}
 	page, err := svc.GetOntologyClassEntities(context.Background(), OntologyClassEntitiesInput{Class: "  "})
