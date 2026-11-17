@@ -7,8 +7,8 @@ import (
 	"ragflow/internal/parser/parser"
 )
 
-func TestGeneralChunkerPDFAndMarkdownPreserveBlockBoundaries(t *testing.T) {
-	for _, fileType := range []string{"pdf", "md"} {
+func TestGeneralChunkerPreservesBlockBoundaries(t *testing.T) {
+	for _, fileType := range []string{"pdf", "md", "html", "json"} {
 		for _, tc := range []struct {
 			name, first, second string
 		}{
@@ -34,6 +34,32 @@ func TestGeneralChunkerPDFAndMarkdownPreserveBlockBoundaries(t *testing.T) {
 			})
 		}
 	}
+}
+
+func TestGeneralChunkerBlockSeparatorStaysOutOfMediaContext(t *testing.T) {
+	c, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size": 512, "delimiters": []string{"\n", "!"}, "table_context_size": tokenizeStr("second") + 1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"name": "document.html", "file_type": "html", "output_format": "json",
+		"json": []map[string]any{
+			{"text": "first!", "doc_type_kwd": "text"},
+			{"text": "second", "doc_type_kwd": "text"},
+			{"text": "\n", "doc_type_kwd": "text"},
+			{"text": "<table>A</table>", "doc_type_kwd": "table"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 2 {
+		t.Fatalf("chunks = %#v", chunks)
+	}
+	assertMaterializedMediaContext(t, chunks[1], "first!\nsecond<table>A</table>")
 }
 
 func TestGeneralChunkerPDFPunctuationPreservesMediaOrderAndContext(t *testing.T) {
