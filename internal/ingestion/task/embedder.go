@@ -266,8 +266,16 @@ func (e *embedder) embedWithRetry(ctx context.Context, texts []string) ([]models
 		if cerr := waitOutCooldown(ctx, quota); cerr != nil {
 			return nil, 0, cerr
 		}
-		usage := &common.ModelUsage{StartAt: time.Now()}
-		embeds, err = e.model.Embed(ctx, req, config, usage)
+		encodeCtx := ctx
+		if e.tenantID != "" && permission.TenantIDFromContext(encodeCtx) == "" {
+			encodeCtx = permission.WithTenantID(encodeCtx, e.tenantID)
+		}
+		usage := &common.ModelUsage{
+			TenantID: e.tenantID,
+			Type:     "embedding",
+			StartAt:  time.Now(),
+		}
+		embeds, err = e.model.Embed(encodeCtx, req, config, usage)
 		if err == nil {
 			return embeds, usage.InputTokens, nil
 		}

@@ -50,12 +50,12 @@ type chatGroupFailover struct {
 // name and credentials. Messages and sampling parameters are carried over
 // unchanged — only the endpoint identity is swapped.
 func reresolveChatRequest(ctx context.Context, db *gorm.DB, fo chatGroupFailover, base ChatInvokeRequest) (ChatInvokeRequest, error) {
-	modelName, driver, apiKey, baseURL, err := resolveChatModelRef(ctx, db, fo.modelRef, fo.driver, fo.apiKey, fo.baseURL)
+	modelName, driver, apiKey, baseURL, info, err := resolveChatModelRefWithInfo(ctx, db, fo.modelRef, fo.driver, fo.apiKey, fo.baseURL)
 	if err != nil {
 		return ChatInvokeRequest{}, err
 	}
 	next := base
-	next.ModelName, next.Driver, next.APIKey, next.BaseURL = modelName, driver, apiKey, baseURL
+	next.ModelName, next.Driver, next.APIKey, next.BaseURL, next.ModelInfo = modelName, driver, apiKey, baseURL, info
 	return next, nil
 }
 

@@ -123,10 +123,11 @@ type AgentParam struct {
 	// renders prompts.CitationPlusPrompt, and makes a second LLM
 	// call to insert [ID:N] tags into the final content. Mirrors
 	// Python's `_generate_with_citation` flow.
-	Cite    bool
-	Driver  string
-	APIKey  string
-	BaseURL string
+	Cite      bool
+	Driver    string
+	APIKey    string
+	BaseURL   string
+	ModelInfo *models.ModelInfo
 
 	// MaxTokensDisabled, TopPDisabled and TemperatureDisabled record a DSL
 	// *Enabled switch set to false, so runtime inputs that carry the value
@@ -198,6 +199,9 @@ var agentRunner = runEinoReActAgent
 // runEinoReActAgent creates an eino react agent and runs it against the
 // model built from p.
 func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, error) {
+	if p.ModelInfo != nil {
+		ctx = models.WithModelInfo(ctx, p.ModelInfo)
+	}
 	chatModel, err := buildAgentChatModel(ctx, p)
 	if err != nil {
 		return nil, fmt.Errorf("build model: %w", err)
@@ -799,6 +803,7 @@ func addToolCallMemory(ctx context.Context, db *gorm.DB, p AgentParam, msg *sche
 		ModelName: p.ModelID,
 		APIKey:    p.APIKey,
 		BaseURL:   p.BaseURL,
+		ModelInfo: p.ModelInfo,
 		Messages: []schema.Message{
 			{Role: schema.System, Content: system},
 			{Role: schema.User, Content: user},
@@ -857,6 +862,7 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 		ModelName: p.ModelID,
 		APIKey:    p.APIKey,
 		BaseURL:   p.BaseURL,
+		ModelInfo: p.ModelInfo,
 		Messages: []schema.Message{
 			{Role: schema.System, Content: systemPrompt},
 			{Role: schema.User, Content: content},
@@ -1089,6 +1095,7 @@ func optimizeMultiTurnQuestion(ctx context.Context, db *gorm.DB, p AgentParam, h
 		ModelName: p.ModelID,
 		APIKey:    p.APIKey,
 		BaseURL:   p.BaseURL,
+		ModelInfo: p.ModelInfo,
 		Messages: []schema.Message{
 			{Role: schema.System, Content: system},
 			{Role: schema.User, Content: user},
@@ -1193,6 +1200,7 @@ func (t *subAgentTool) InvokableRun(ctx context.Context, argsJSON string, _ ...e
 	}
 
 	ctx = context.WithValue(ctx, subAgentDepthKey{}, depth+1)
+	ctx = models.WithModelInfo(ctx, nil)
 
 	inputs := map[string]any{}
 	if strings.TrimSpace(argsJSON) != "" {
@@ -1326,9 +1334,14 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 
 	var err error
 	preDriver, preKey, preURL := p.Driver, p.APIKey, p.BaseURL
-	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
+	var info *models.ModelInfo
+	p.ModelID, p.Driver, p.APIKey, p.BaseURL, info, err = resolveChatModelRefWithInfo(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
 	if err != nil {
 		return nil, err
+	}
+	p.ModelInfo = info
+	if p.ModelInfo != nil {
+		ctx = models.WithModelInfo(ctx, p.ModelInfo)
 	}
 
 	var state *runtime.CanvasState
@@ -1624,7 +1637,7 @@ func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatMod
 	}
 	apiKey := p.APIKey
 	cfg := &models.APIConfig{ApiKey: &apiKey}
-	cm := models.NewChatModel(d, &modelID, cfg)
+	cm := models.NewChatModelWithInfo(d, &modelID, cfg, p.ModelInfo)
 	chatCfg := &models.ChatConfig{
 		TopP:        p.TopP,
 		MaxTokens:   p.MaxTokens,

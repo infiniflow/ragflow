@@ -41,6 +41,7 @@ import (
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/permission"
 	"ragflow/internal/rag/prompts"
 	"ragflow/internal/utility"
 
@@ -241,17 +242,21 @@ func maybeDispatchVisionEnhancement(
 	var prompt string
 	vlmReady := false
 	var resolveErr error
+	if tenantID != "" && permission.TenantIDFromContext(ctx) == "" {
+		ctx = permission.WithTenantID(ctx, tenantID)
+	}
+	var info *modelModule.ModelInfo
 	if tenantID != "" {
 		var err error
 		if vision.modelID != "" {
-			driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, vision.modelID)
+			driver, modelName, apiConfig, info, _, err = resolveModelConfigFull(ctx, db, tenantID, entity.ModelTypeImage2Text, vision.modelID)
 			if err != nil {
 				common.Warn("vision enhancement: per-call VLM resolve failed, falling back to tenant default",
 					zap.String("family", family), zap.String("modelRef", vision.modelID), zap.String("tenant", tenantID), zap.Error(err))
-				driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+				driver, modelName, apiConfig, info, _, err = resolveTenantModelFull(ctx, db, tenantID, entity.ModelTypeImage2Text)
 			}
 		} else {
-			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+			driver, modelName, apiConfig, info, _, err = resolveTenantModelFull(ctx, db, tenantID, entity.ModelTypeImage2Text)
 		}
 		if err == nil {
 			prompt = strings.TrimSpace(vision.systemPrompt)
@@ -263,6 +268,9 @@ func maybeDispatchVisionEnhancement(
 			vlmReady = err == nil && driver != nil
 		}
 		resolveErr = err
+	}
+	if info != nil {
+		ctx = modelModule.WithModelInfo(ctx, info)
 	}
 	if !vlmReady {
 		warning := "vision enhancement skipped: tenant ID is missing"
@@ -551,7 +559,8 @@ func defaultVisionChatInvoker(
 	chatCtx, cancel := context.WithTimeout(ctx, visionChatTimeout)
 	defer cancel()
 	config := &modelModule.ChatConfig{Vision: new(true), Thinking: new(false)}
-	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
+	info := modelModule.ModelInfoFromContext(ctx)
+	chatModel := modelModule.NewChatModelWithInfo(driver, &modelName, apiConfig, info)
 	finish := agentruntime.TrackIO(chatCtx, "Parser", "VLM", "operation=vision_enhancement")
 	resp, err := chatModel.ChatWithMessages(chatCtx, messages, config, nil)
 	finish()

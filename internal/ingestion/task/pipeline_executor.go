@@ -43,6 +43,7 @@ import (
 	"ragflow/internal/ingestion/mediacache"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
+	"ragflow/internal/permission"
 	"ragflow/internal/service/chunkversion"
 	"ragflow/internal/service/datasetversion"
 
@@ -354,6 +355,9 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 	ctx, finishIOProgress := agentruntime.WithIOProgress(ctx)
 	defer finishIOProgress()
 
+	if s.taskCtx != nil && s.taskCtx.Tenant.ID != "" && permission.TenantIDFromContext(ctx) == "" {
+		ctx = permission.WithTenantID(ctx, s.taskCtx.Tenant.ID)
+	}
 	start := time.Now()
 	if err := ctx.Err(); err != nil {
 		return nil, err

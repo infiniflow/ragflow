@@ -724,6 +724,9 @@ type kcChatInvoker struct {
 }
 
 func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatResponse, error) {
+	if c.tenantID != "" && permission.TenantIDFromContext(ctx) == "" {
+		ctx = permission.WithTenantID(ctx, c.tenantID)
+	}
 	llmID := c.llmID
 	if req.LLMID != "" {
 		llmID = req.LLMID
@@ -869,6 +872,9 @@ type kcEmbedder struct {
 func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, error) {
 	if len(texts) == 0 {
 		return nil, nil
+	}
+	if e.tenantID != "" && permission.TenantIDFromContext(ctx) == "" {
+		ctx = permission.WithTenantID(ctx, e.tenantID)
 	}
 	// Group failover: a gp- reference whose member fails any batch flips
 	// inactive and the whole Encode replays once on the next member. An empty

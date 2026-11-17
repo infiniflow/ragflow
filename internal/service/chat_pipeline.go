@@ -452,6 +452,20 @@ func (s *ChatPipelineService) AsyncChat(
 		kwargs = make(map[string]interface{})
 	}
 
+	tenantID := permission.TenantIDFromContext(ctx)
+	if tenantID == "" && chat != nil {
+		tenantID = chat.TenantID
+	}
+	uID := permission.UserIDFromContext(ctx)
+	if uID == "" && kwargs != nil {
+		if raw, ok := kwargs["user_id"].(string); ok {
+			uID = raw
+		}
+	}
+	if tenantID != "" || uID != "" {
+		ctx = permission.WithIdentity(ctx, uID, tenantID)
+	}
+
 	// Spawn goroutine for the async pipeline. All remaining phases run inside.
 	out := make(chan AsyncChatResult, 16)
 
@@ -485,7 +499,11 @@ func (s *ChatPipelineService) AsyncChat(
 			return
 		}
 		modelMaxTokens := 8192
+		chatProductModelType := "chat"
 		if llmModelConfig != nil {
+			if t, ok := llmModelConfig["product_model_type"].(string); ok && t != "" {
+				chatProductModelType = t
+			}
 			// Treat max_tokens=0 as unset (default 8192) — mirrors
 			// PR #16413 Python fix: model_extra.get("max_tokens") or 8192
 			if mt, ok := llmModelConfig["max_tokens"].(int); ok && mt > 0 {
@@ -524,6 +542,9 @@ func (s *ChatPipelineService) AsyncChat(
 				Final:  true,
 			})
 			return
+		}
+		if chatModel != nil && chatProductModelType != "" {
+			chatModel.SetProductType(chatProductModelType)
 		}
 
 		// Toolcall binding
@@ -1255,6 +1276,9 @@ func (s *ChatPipelineService) AsyncChat(
 			})
 			return
 		}
+		if chatProductModelType != "" {
+			chatDriver.SetProductType(chatProductModelType)
+		}
 		chatMessages := s.buildChatMessages(prompt+prompt4citation, llmMessages[1:])
 
 		// Langfuse generation start observation.
@@ -1491,7 +1515,8 @@ func (s *ChatPipelineService) AsyncChat(
 						_, err := model.ChatStreamlyWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg, onToolDelta)
 						return err
 					}
-					return model.ChatStreamlyWithSender(ctx, chatMessages, chatCfg, nil, onDelta)
+					modelUsage := &common.ModelUsage{TenantID: tenantID, UserID: uID, Type: chatProductModelType, StartAt: time.Now()}
+					return model.ChatStreamlyWithSender(ctx, chatMessages, chatCfg, modelUsage, onDelta)
 				},
 				func(error) bool { return fullAnswer == "" })
 			if driverErr != nil {
@@ -1559,7 +1584,7 @@ func (s *ChatPipelineService) AsyncChat(
 			visibleAnswer := s.extractVisibleAnswer(thinkState.fullText)
 
 			// Pass nil for ttsModel — audio was already produced per-delta.
-			final := s.decorateAnswer(ctx, visibleAnswer, kbinfos, prompt, questions, usedTokenCount, timer, embModel, chat.VectorSimilarityWeight, quote, nil, langfuseTraceID, llmModelConfig, chat.TenantID, kbTenantIDStrings(kbs), len(knowledges) > 0)
+			final := s.decorateAnswer(ctx, visibleAnswer, kbinfos, prompt, questions, usedTokenCount, timer, embModel, chat.VectorSimilarityWeight, quote, nil, langfuseTraceID, llmModelConfig, chat.TenantID, kbTenantIDStrings(kbs), len(knowledges) > 0, chatCfg.UsageResult)
 			final.Final = true
 			final.AudioBinary = nil
 			send(final)
@@ -1567,6 +1592,7 @@ func (s *ChatPipelineService) AsyncChat(
 			// Non-streaming: get the answer synchronously, with gp- group
 			// failover (flip + re-resolve + retry once on invocation error).
 			var answer string
+			var resp *modelModule.ChatResponse
 			err := dao.InvokeWithGroupFailover(ctx, dao.DB, chat.TenantID, entity.ModelTypeChat, chat.LLMID,
 				func(context.Context) (*modelModule.ChatModel, error) { return chatDriver, nil },
 				func(ctx context.Context) (*modelModule.ChatModel, error) {
@@ -1582,12 +1608,14 @@ func (s *ChatPipelineService) AsyncChat(
 						answer = a
 						return callErr
 					}
-					resp, callErr := model.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
+					modelUsage := &common.ModelUsage{TenantID: tenantID, UserID: uID, Type: chatProductModelType, StartAt: time.Now()}
+					r, callErr := model.ChatWithMessages(ctx, chatMessages, chatCfg, modelUsage)
 					if callErr != nil {
 						return callErr
 					}
-					if resp != nil && resp.Answer != nil {
-						answer = *resp.Answer
+					resp = r
+					if r != nil && r.Answer != nil {
+						answer = *r.Answer
 					}
 					return nil
 				},
@@ -1611,8 +1639,14 @@ func (s *ChatPipelineService) AsyncChat(
 			}
 			common.Debug("User: " + userContent + "|Assistant: " + answer)
 
+			var actualUsage *modelModule.TokenUsage
+			if resp != nil {
+				actualUsage = resp.Usage
+			} else if chatCfg.UsageResult != nil {
+				actualUsage = chatCfg.UsageResult
+			}
 			// Synthesize TTS for the full answer (non-stream, one-shot).
-			final := s.decorateAnswer(ctx, answer, kbinfos, prompt, questions, usedTokenCount, timer, embModel, chat.VectorSimilarityWeight, quote, ttsModel, langfuseTraceID, llmModelConfig, chat.TenantID, kbTenantIDStrings(kbs), len(knowledges) > 0)
+			final := s.decorateAnswer(ctx, answer, kbinfos, prompt, questions, usedTokenCount, timer, embModel, chat.VectorSimilarityWeight, quote, ttsModel, langfuseTraceID, llmModelConfig, chat.TenantID, kbTenantIDStrings(kbs), len(knowledges) > 0, actualUsage)
 			final.Final = true
 			sendResult(final)
 		}
@@ -1675,6 +1709,20 @@ func (s *ChatPipelineService) AsyncChatSolo(
 	config map[string]interface{},
 ) (<-chan AsyncChatResult, error) {
 
+	tenantID := permission.TenantIDFromContext(ctx)
+	if tenantID == "" && chat != nil {
+		tenantID = chat.TenantID
+	}
+	uID := permission.UserIDFromContext(ctx)
+	if uID == "" && config != nil {
+		if raw, ok := config["user_id"].(string); ok {
+			uID = raw
+		}
+	}
+	if tenantID != "" || uID != "" {
+		ctx = permission.WithIdentity(ctx, uID, tenantID)
+	}
+
 	out := make(chan AsyncChatResult, 16)
 
 	go func() {
@@ -1721,9 +1769,13 @@ func (s *ChatPipelineService) AsyncChatSolo(
 		attachmentsStr := ""
 		var imageFiles []string
 		modelType := "chat"
+		chatProductModelType := "chat"
 		if llmModelConfig != nil {
 			if mt, ok := llmModelConfig["model_type"].(string); ok && mt != "" {
 				modelType = mt
+			}
+			if pt, ok := llmModelConfig["product_model_type"].(string); ok && pt != "" {
+				chatProductModelType = pt
 			}
 		}
 		isImage2Text := modelType == "image2text"
@@ -1790,6 +1842,9 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				Final:  true,
 			})
 			return
+		}
+		if chatModel != nil && chatProductModelType != "" {
+			chatModel.SetProductType(chatProductModelType)
 		}
 
 		// 5. Resolve TTS model. Best-effort: warn and proceed without TTS on lookup failure.
@@ -1926,7 +1981,8 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				func(ctx context.Context, model *modelModule.ChatModel) error {
 					thinkState = &ThinkStreamState{}
 					fullAnswer = ""
-					return model.ChatStreamlyWithSender(ctx, chatMessages, chatCfg, nil, onDelta)
+					modelUsage := &common.ModelUsage{TenantID: tenantID, UserID: uID, Type: chatProductModelType, StartAt: time.Now()}
+					return model.ChatStreamlyWithSender(ctx, chatMessages, chatCfg, modelUsage, onDelta)
 				},
 				func(error) bool { return fullAnswer == "" })
 			if driverErr != nil {
@@ -1988,12 +2044,28 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			if finalAnswer == "" {
 				finalAnswer = fullAnswer
 			}
+			var streamTurnUsage *TurnUsage
+			if chatCfg != nil && chatCfg.UsageResult != nil && chatCfg.UsageResult.TotalTokens > 0 {
+				streamTurnUsage = &TurnUsage{
+					PromptTokens:     chatCfg.UsageResult.PromptTokens,
+					CompletionTokens: chatCfg.UsageResult.CompletionTokens,
+					TotalTokens:      chatCfg.UsageResult.TotalTokens,
+				}
+			} else {
+				cTokens := graph.NumTokensFromString(finalAnswer)
+				streamTurnUsage = &TurnUsage{
+					CompletionTokens: cTokens,
+					TotalTokens:      cTokens,
+				}
+			}
 			sendResult(AsyncChatResult{
 				Answer:      finalAnswer,
 				Reference:   map[string]interface{}{},
 				AudioBinary: nil,
 				CreatedAt:   float64(time.Now().Unix()),
 				Final:       true,
+				Usage:       streamTurnUsage,
+				ElapsedMs:   timer.Total().Seconds() * 1000,
 			})
 		} else {
 			// Non-streaming: one-shot call, with gp- group failover (flip +
@@ -2007,7 +2079,8 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				},
 				func(ctx context.Context, model *modelModule.ChatModel) error {
 					timer.Enter(common.PhaseGenerateAnswer)
-					r, callErr := model.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
+					modelUsage := &common.ModelUsage{TenantID: tenantID, UserID: uID, Type: chatProductModelType, StartAt: time.Now()}
+					r, callErr := model.ChatWithMessages(ctx, chatMessages, chatCfg, modelUsage)
 					timer.Exit(common.PhaseGenerateAnswer)
 					if callErr != nil {
 						return callErr
@@ -2036,6 +2109,21 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			}
 			common.Debug("User: " + userContent + "|Assistant: " + answer)
 
+			var nonStreamTurnUsage *TurnUsage
+			if resp != nil && resp.Usage != nil && resp.Usage.TotalTokens > 0 {
+				nonStreamTurnUsage = &TurnUsage{
+					PromptTokens:     resp.Usage.PromptTokens,
+					CompletionTokens: resp.Usage.CompletionTokens,
+					TotalTokens:      resp.Usage.TotalTokens,
+				}
+			} else {
+				cTokens := graph.NumTokensFromString(answer)
+				nonStreamTurnUsage = &TurnUsage{
+					CompletionTokens: cTokens,
+					TotalTokens:      cTokens,
+				}
+			}
+
 			// Raw answer with full TTS, no decorate_answer. Caller handles decoration.
 			sendResult(AsyncChatResult{
 				Answer:      answer,
@@ -2043,6 +2131,8 @@ func (s *ChatPipelineService) AsyncChatSolo(
 				AudioBinary: s.synthesizeTTS(ctx, ttsModel, answer),
 				CreatedAt:   float64(time.Now().Unix()),
 				Final:       true,
+				Usage:       nonStreamTurnUsage,
+				ElapsedMs:   timer.Total().Seconds() * 1000,
 			})
 		}
 	}()
@@ -2319,10 +2409,27 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 	ctx = permission.WithTenantID(ctx, chat.TenantID)
 	var info *modelModule.ModelInfo
 	var err error
+	productType := resolveChatProductModelType(chat)
+	resolveType := entity.ModelTypeChat
+	if productType == entity.ModelTypeImage2Text.String() {
+		resolveType = entity.ModelTypeImage2Text
+	}
 	if strings.TrimSpace(chat.LLMID) == "" {
-		info, err = s.ModelFactory.ResolveDefaultInfo(ctx, entity.ModelTypeChat)
+		info, err = s.ModelFactory.ResolveDefaultInfo(ctx, resolveType)
+		if err != nil && resolveType != entity.ModelTypeChat {
+			info, err = s.ModelFactory.ResolveDefaultInfo(ctx, entity.ModelTypeChat)
+			if err == nil {
+				productType = entity.ModelTypeChat.String()
+			}
+		}
 	} else {
-		info, err = s.ModelFactory.ResolveInfo(ctx, entity.ModelTypeChat, chat.LLMID)
+		info, err = s.ModelFactory.ResolveInfo(ctx, resolveType, chat.LLMID)
+		if err != nil && resolveType != entity.ModelTypeChat {
+			info, err = s.ModelFactory.ResolveInfo(ctx, entity.ModelTypeChat, chat.LLMID)
+			if err == nil {
+				productType = entity.ModelTypeChat.String()
+			}
+		}
 	}
 	if err != nil {
 		return nil, "", "", "", err
@@ -2335,8 +2442,16 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 	if entity.ModelTypeFromStrings(info.ModelTypes).Has(entity.ModelTypeImage2Text) {
 		cfg["model_type"] = "image2text"
 	}
+	cfg["product_model_type"] = productType
 	cfg["is_tools"] = info.SupportsTools
 	return cfg, modelName, factoryName, baseURL, nil
+}
+
+func resolveChatProductModelType(chat *entity.Chat) string {
+	if chat == nil || chat.LLMSetting == nil {
+		return "chat"
+	}
+	return resolveChatModelTypeFromSetting(chat.LLMSetting).String()
 }
 
 // buildLLMModelConfig returns only the public metadata needed by RAG's token
@@ -3348,6 +3463,7 @@ func (s *ChatPipelineService) decorateAnswer(
 	tenantID string,
 	tenantIDs []string,
 	hasKnowledges bool,
+	realUsage *modelModule.TokenUsage,
 ) AsyncChatResult {
 
 	// Handle think markers: split on </think>.
@@ -3516,12 +3632,21 @@ func (s *ChatPipelineService) decorateAnswer(
 	totalMs := timer.Total().Seconds() * 1000
 	tkNum := graph.NumTokensFromString(think + ans)
 
+	promptTokens := usedTokenCount
+	completionTokens := tkNum
+	totalTokens := usedTokenCount + tkNum
+	if realUsage != nil && realUsage.TotalTokens > 0 {
+		promptTokens = realUsage.PromptTokens
+		completionTokens = realUsage.CompletionTokens
+		totalTokens = realUsage.TotalTokens
+	}
+
 	prompt += fmt.Sprintf("\n\n### Query:\n%s", strings.Join(questions, " "))
 
 	timeStats := prompt + timer.Markdown() + "\n"
-	timeStats += fmt.Sprintf("  - Generated tokens(approximately): %d\n", tkNum)
+	timeStats += fmt.Sprintf("  - Generated tokens(approximately): %d\n", completionTokens)
 	if totalMs > 0 {
-		timeStats += fmt.Sprintf("  - Token speed: %d/s", int(float64(tkNum)/(totalMs/1000.0)))
+		timeStats += fmt.Sprintf("  - Token speed: %d/s", int(float64(completionTokens)/(totalMs/1000.0)))
 	}
 
 	// TTS synthesis for the final answer.
@@ -3536,9 +3661,9 @@ func (s *ChatPipelineService) decorateAnswer(
 			// markdown line breaks.
 			langfuseOutput := langfuseExtractTimeElapsed(timeStats)
 			usage := &LangfuseUsage{
-				PromptTokens:     usedTokenCount,
-				CompletionTokens: tkNum,
-				TotalTokens:      usedTokenCount + tkNum,
+				PromptTokens:     promptTokens,
+				CompletionTokens: completionTokens,
+				TotalTokens:      totalTokens,
 			}
 			modelName := ""
 			if llmModelConfig != nil {
@@ -3574,9 +3699,9 @@ func (s *ChatPipelineService) decorateAnswer(
 		// Same numbers the Langfuse generation above records, on the wire so a
 		// client does not have to parse the human-readable prompt to learn them.
 		Usage: &TurnUsage{
-			PromptTokens:     usedTokenCount,
-			CompletionTokens: tkNum,
-			TotalTokens:      usedTokenCount + tkNum,
+			PromptTokens:     promptTokens,
+			CompletionTokens: completionTokens,
+			TotalTokens:      totalTokens,
 		},
 		ElapsedMs: totalMs,
 	}

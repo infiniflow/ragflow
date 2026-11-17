@@ -36,6 +36,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
 )
 
 // CategorizeComponent classifies with a chat or decision model.
@@ -46,6 +47,7 @@ type CategorizeComponent struct {
 // CategorizeParam captures the (resolved) DSL parameters for a Categorize node.
 type CategorizeParam struct {
 	ModelID                  string
+	InstanceID               string
 	Query                    string
 	Items                    []string
 	Categories               []string
@@ -58,6 +60,7 @@ type CategorizeParam struct {
 	Driver                   string
 	APIKey                   string
 	BaseURL                  string
+	ModelInfo                *models.ModelInfo
 }
 
 // CategorizeOutput mirrors the outputs map (per plan §2.11.3 row 6):
@@ -85,12 +88,17 @@ func (c *CategorizeComponent) Name() string { return "Categorize" }
 // something outside the configured set).
 func (c *CategorizeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	p := mergeCategorizeParam(c.param, inputs)
-	var err error
-	var modelType entity.ModelType
-	p.ModelID, p.Driver, p.APIKey, p.BaseURL, modelType, err = resolveModelRefWithType(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL, entity.ModelTypeChat|entity.ModelTypeDecision)
+	resolved, err := resolveModelRef(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL, entity.ModelTypeChat|entity.ModelTypeDecision)
 	if err != nil {
 		return nil, err
 	}
+	p.ModelID = resolved.ModelName
+	p.Driver = resolved.Driver
+	p.APIKey = resolved.APIKey
+	p.BaseURL = resolved.BaseURL
+	p.InstanceID = resolved.InstanceID
+	p.ModelInfo = resolved.ModelInfo
+	modelType := resolved.ModelType
 	if modelType == 0 && isDecisionOnlyDriver(p.Driver) {
 		// The type could not be resolved (an unregistered model name with an
 		// explicit driver); these drivers only serve decision models.
@@ -130,7 +138,7 @@ func (c *CategorizeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs ma
 			sysPrompt = buildCategorizeSystemPrompt(p)
 		}
 		resp, invokeErr := getDefaultChatInvoker().Invoke(ctx, db, ChatInvokeRequest{
-			Driver: p.Driver, ModelName: p.ModelID, APIKey: p.APIKey, BaseURL: p.BaseURL,
+			Driver: p.Driver, ModelName: p.ModelID, APIKey: p.APIKey, BaseURL: p.BaseURL, ModelInfo: p.ModelInfo,
 			Messages: []schema.Message{
 				{Role: schema.System, Content: sysPrompt},
 				{Role: schema.User, Content: buildCategorizePrompt(history)},
