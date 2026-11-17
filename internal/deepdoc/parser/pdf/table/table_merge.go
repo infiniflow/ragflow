@@ -60,6 +60,17 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 		merged[it.idx] = true
 		var contGrids [][][]pdf.TSRCell
 		anchor.RegionPositions = tableRegionPositions(anchor)
+		// EE V/H per-page spans: record each page's slice of the flat Cells and
+		// its crop transform so the EE V/H renderer can overlay each page's
+		// boxes on only that page's cells. Harmless to OSS: no OSS TableItem
+		// sets VHPageSpans/RenderVH, so this data is never read there.
+		var vhSpans []pdf.VHPageSpan
+		if len(anchor.Cells) > 0 {
+			vhSpans = append(vhSpans, pdf.VHPageSpan{
+				Page: it.pg, CellStart: 0, CellEnd: len(anchor.Cells),
+				Scale: anchor.Scale, CropOffX: anchor.CropOffX, CropOffY: anchor.CropOffY,
+			})
+		}
 
 		// Python nomerge_lout_no: tables whose box is followed by a
 		// caption/title/reference should not be merged cross-page.
@@ -157,7 +168,14 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 				candidateHeader.text == anchorHeader.text {
 				cells, grid = dropTableHeaderRows(tables[jt.idx], candidateHeader.rows)
 			}
+			contStart := len(anchor.Cells)
 			anchor.Cells = append(anchor.Cells, cells...)
+			if len(cells) > 0 {
+				vhSpans = append(vhSpans, pdf.VHPageSpan{
+					Page: bpg, CellStart: contStart, CellEnd: len(anchor.Cells),
+					Scale: tables[jt.idx].Scale, CropOffX: tables[jt.idx].CropOffX, CropOffY: tables[jt.idx].CropOffY,
+				})
+			}
 			anchor.Positions = append(anchor.Positions, tables[jt.idx].Positions...)
 			anchor.RegionPositions = append(anchor.RegionPositions, tableRegionPositions(tables[jt.idx])...)
 			if len(grid) > 0 {
@@ -240,6 +258,9 @@ func MergeTablesAcrossPages(tables []pdf.TableItem, medianHeights, pageHeights m
 				anchor.Grid = CleanupOrphanRows(anchor.Grid)
 				anchor.Rows = RowsToStrings(anchor.Grid)
 			}
+		}
+		if len(vhSpans) > 0 {
+			anchor.VHPageSpans = vhSpans
 		}
 		result = append(result, anchor)
 	}
