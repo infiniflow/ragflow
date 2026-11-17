@@ -26,7 +26,6 @@ import (
 	"ragflow/internal/server"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/gorm"
 )
 
 // SetupEERouter adds no enterprise middleware in the community edition.
@@ -72,8 +71,4 @@ func InitLicense(ctx context.Context) error { return nil }
 // expiry to watch.
 func CheckServicePeriodically() {
 	GlobalServerStore.CleanupStaleStatuses(server.GetConfig().GetHeartbeatInterval() * 10)
-}
-
-func deleteEvaluationsEE(context.Context, *gorm.DB, string, string, *DeleteUserResult) error {
-	return nil
 }
